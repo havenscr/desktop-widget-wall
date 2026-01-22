@@ -1,0 +1,85 @@
+<!-- WEATHER WIDGET - iOS Widget Wall Style -->
+<div class="widget widget-weather" id="weather-widget">
+  <!-- Configurable Skyline Background -->
+  <div class="weather-skyline" id="weather-skyline"></div>
+
+  <!-- Skyline Config Button (appears on hover) -->
+  <button class="weather-skyline-config" id="weather-skyline-config" title="Change skyline">
+    <svg viewBox="0 0 24 24" fill="currentColor">
+      <path d="M19.14 12.94c.04-.31.06-.63.06-.94 0-.31-.02-.63-.06-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>
+    </svg>
+  </button>
+
+  <!-- Skyline Selection Dropdown (hidden until config clicked) -->
+  <div class="weather-skyline-dropdown" id="weather-skyline-dropdown"></div>
+
+  <!-- Add Skyline Modal -->
+  <div class="skyline-modal" id="skyline-modal">
+    <div class="skyline-modal-content">
+      <div class="skyline-modal-header">
+        <span>Add City Skyline</span>
+        <button class="skyline-modal-close" id="skyline-modal-close">&times;</button>
+      </div>
+      <div class="skyline-modal-body">
+        <div class="skyline-form-group">
+          <label for="skyline-name-input">City Name</label>
+          <input type="text" id="skyline-name-input" placeholder="e.g. New York" />
+        </div>
+        <div class="skyline-form-group">
+          <label>SVG File</label>
+          <div class="skyline-file-drop" id="skyline-file-drop">
+            <input type="file" id="skyline-file-input" accept=".svg" />
+            <span class="skyline-file-label">Drop SVG here or click to browse</span>
+          </div>
+        </div>
+        <div class="skyline-preview-container" id="skyline-preview-container" style="display: none;">
+          <label>Preview</label>
+          <div class="skyline-preview" id="skyline-preview"></div>
+        </div>
+      </div>
+      <div class="skyline-modal-footer">
+        <button class="skyline-btn skyline-btn-cancel" id="skyline-cancel-btn">Cancel</button>
+        <button class="skyline-btn skyline-btn-save" id="skyline-save-btn" disabled>Add Skyline</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Weather Effects Container (rain, snow, lightning, etc.) -->
+  <div class="weather-effects" id="weather-effects"></div>
+
+  <!-- Top: City + Temp + Condition -->
+  <div class="weather-header-row">
+    <div class="weather-city-temp">
+      <span class="weather-city" id="weather-location">Kirkland, WA</span>
+      <span class="weather-current-temp" id="weather-temp">--°</span>
+    </div>
+    <div class="weather-condition-block">
+      <span class="weather-condition" id="weather-condition">Loading...</span>
+      <span class="weather-highlow" id="weather-highlow">H:--° L:--°</span>
+      <div class="weather-stats-row">
+        <span class="weather-uv" id="weather-uv">UV --</span>
+        <span class="weather-humidity" id="weather-humidity">--% H</span>
+        <span class="weather-wind" id="weather-wind">-- mph</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Middle: Hourly Forecast (5 hours) -->
+  <div class="weather-hourly" id="weather-hourly">
+    <div class="hourly-item"><span class="hourly-time">--</span><span class="hourly-temp">--°</span></div>
+    <div class="hourly-item"><span class="hourly-time">--</span><span class="hourly-temp">--°</span></div>
+    <div class="hourly-item"><span class="hourly-time">--</span><span class="hourly-temp">--°</span></div>
+    <div class="hourly-item"><span class="hourly-time">--</span><span class="hourly-temp">--°</span></div>
+    <div class="hourly-item"><span class="hourly-time">--</span><span class="hourly-temp">--°</span></div>
+  </div>
+
+  <!-- Bottom: Daily Forecast (rows) -->
+  <div class="weather-daily" id="weather-daily">
+    <div class="daily-row"><span class="daily-day">Today</span><span class="daily-icon">--</span><span class="daily-temps"><span class="daily-high">--°</span><span class="daily-low">--°</span></span></div>
+    <div class="daily-row"><span class="daily-day">Tomorrow</span><span class="daily-icon">--</span><span class="daily-temps"><span class="daily-high">--°</span><span class="daily-low">--°</span></span></div>
+    <div class="daily-row"><span class="daily-day">--</span><span class="daily-icon">--</span><span class="daily-temps"><span class="daily-high">--°</span><span class="daily-low">--°</span></span></div>
+    <div class="daily-row"><span class="daily-day">--</span><span class="daily-icon">--</span><span class="daily-temps"><span class="daily-high">--°</span><span class="daily-low">--°</span></span></div>
+    <div class="daily-row"><span class="daily-day">--</span><span class="daily-icon">--</span><span class="daily-temps"><span class="daily-high">--°</span><span class="daily-low">--°</span></span></div>
+    <div class="daily-row"><span class="daily-day">--</span><span class="daily-icon">--</span><span class="daily-temps"><span class="daily-high">--°</span><span class="daily-low">--°</span></span></div>
+  </div>
+</div>

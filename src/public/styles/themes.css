@@ -1,0 +1,256 @@
+/*
+  ========================================================================
+  WIDGET WALL DESKTOP - Theme CSS Variables
+  All 6 theme definitions
+  Copyright (c) 2024-2025 Havens Consulting Inc. All Rights Reserved.
+  ========================================================================
+*/
+
+/* ================================================================
+   CSS VARIABLES & THEME SYSTEM
+   ================================================================ */
+:root {
+  /* AE Fingerprint: UDB-9F7C3E2A | analyticendeavors.com */
+  --ae-fp: "AE-UDB-9F7C3E2A";
+  --ae-origin: "analyticendeavors.com";
+  --ae-author: "Reid Havens";
+
+  /* Text Scale: 1.5x for touchscreen readability */
+  --text-scale: 1.5;
+  --base-font: calc(12px * var(--text-scale));
+
+  /* Theme: Pink/Purple (Default - WidgetWall Style) */
+  --gradient-1: #3d1a54;
+  --gradient-2: #3a1c71;
+  --gradient-3: #d76d77;
+  --gradient-4: #ff6b9d;
+  --gradient-5: #667eea;
+  --gradient-6: #84a4fc;
+
+  /* Accent Colors */
+  --accent-primary: #ff2d85;
+  --accent-primary-rgb: 255, 45, 133;
+  --accent-secondary: #5ac8fa;
+  --accent-gold: #fdb800;
+  --accent-green: #30d158;
+  --accent-orange: #ff9500;
+  --accent-purple: #bf5af2;
+
+  /* System Stats Ring Colors */
+  --ring-cpu: #ff2d85;
+  --ring-ram: #5ac8fa;
+  --ring-hd: #bf5af2;
+  --ring-gpu: #30d158;
+
+  /* Visualizer Colors */
+  --vis-color-1: #ff2d85;
+  --vis-color-2: #bf5af2;
+  --vis-color-3: #5ac8fa;
+
+  /* Glass effects */
+  --glass-bg-dark: rgba(20, 20, 35, 0.55);
+  --glass-bg-light: rgba(255, 255, 255, 0.9);
+  --glass-border: transparent;
+  --modal-border: rgba(255, 255, 255, 0.12);
+  --glass-blur: 16px;
+  --glass-radius: 24px;
+
+  /* Shadows */
+  --shadow-card: 0 8px 32px rgba(0, 0, 0, 0.25);
+  --shadow-glow: 0 0 30px rgba(255, 45, 133, 0.3);
+
+  /* Text */
+  --text-primary: #ffffff;
+  --text-secondary: rgba(255, 255, 255, 0.7);
+  --text-muted: rgba(255, 255, 255, 0.5);
+
+  /* Universal Header Properties */
+  --header-padding-top: 10px;
+  --header-padding-horizontal: 12px;
+  --header-padding-bottom: 6px;
+  --header-font-size: calc(11px * var(--text-scale));
+  --header-font-weight: 600;
+  --header-text-transform: uppercase;
+  --header-letter-spacing: 1.5px;
+  --header-color: var(--text-secondary);
+
+  /* Clock panel */
+  --clock-panel-bg: rgba(71, 44, 75, 0.8);
+  --clock-digit-color: #fdb800;
+
+  /* Calculator buttons */
+  --calc-operator-bg: rgba(255, 149, 0, 0.3);
+  --calc-operator-bg-hover: rgba(255, 149, 0, 0.5);
+  --calc-operator-color: #ff9500;
+
+  /* Animation */
+  --transition-theme: 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* SVG Background Filters */
+  --bg-hue-rotate: 0deg;
+  --bg-saturate: 1.2;
+  --bg-brightness: 1.4;
+
+  /* Custom Background Hue (grayscale-first colorization) */
+  --custom-bg-hue: 280deg;
+}
+
+/* Theme: Teal/Cyan (Brand) */
+[data-theme="teal"] {
+  --gradient-1: #0a1f1f;
+  --gradient-2: #0d3f3f;
+  --gradient-3: #009999;
+  --gradient-4: #00B8B8;
+  --gradient-5: #00d4d4;
+  --gradient-6: #4dfff3;
+  --accent-primary: #00B8B8;
+  --accent-primary-rgb: 0, 184, 184;
+  --accent-secondary: #00d4d4;
+  --shadow-glow: 0 0 30px rgba(0, 184, 184, 0.3);
+  --clock-panel-bg: rgba(13, 63, 63, 0.8);
+  --clock-digit-color: #4dfff3;
+  --calc-operator-bg: rgba(0, 212, 212, 0.3);
+  --calc-operator-bg-hover: rgba(0, 212, 212, 0.5);
+  --calc-operator-color: #00d4d4;
+  --ring-cpu: #00d4d4;
+  --ring-ram: #4dfff3;
+  --ring-gpu: #ffd700;
+  --ring-hd: #30d158;
+  --vis-color-1: #00B8B8;
+  --vis-color-2: #009999;
+  --vis-color-3: #4dfff3;
+  /* SVG Background: Purple -> Teal/Cyan */
+  --bg-hue-rotate: 210deg;
+  --bg-saturate: 1.2;
+  --bg-brightness: 1.3;
+  /* Custom Background Hue */
+  --custom-bg-hue: 120deg;
+}
+
+/* Theme: Sunset Orange */
+[data-theme="sunset"] {
+  --gradient-1: #1a0a00;
+  --gradient-2: #4a1a00;
+  --gradient-3: #ff6b35;
+  --gradient-4: #f7931e;
+  --gradient-5: #ffcc00;
+  --gradient-6: #fff4b0;
+  --accent-primary: #ff6b35;
+  --accent-primary-rgb: 255, 107, 53;
+  --accent-secondary: #f7931e;
+  --shadow-glow: 0 0 30px rgba(255, 107, 53, 0.3);
+  --clock-panel-bg: rgba(74, 26, 0, 0.8);
+  --clock-digit-color: #ffcc00;
+  --calc-operator-bg: rgba(247, 147, 30, 0.3);
+  --calc-operator-bg-hover: rgba(247, 147, 30, 0.5);
+  --calc-operator-color: #f7931e;
+  --ring-cpu: #ff4444;
+  --ring-ram: #ff9500;
+  --ring-gpu: #ffcc00;
+  --ring-hd: #e040fb;
+  --vis-color-1: #ff6b35;
+  --vis-color-2: #f7931e;
+  --vis-color-3: #ffcc00;
+  /* SVG Background: Purple -> Orange/Warm */
+  --bg-hue-rotate: 60deg;
+  --bg-saturate: 1.5;
+  --bg-brightness: 1.3;
+  /* Custom Background Hue */
+  --custom-bg-hue: 350deg;
+}
+
+/* Theme: Midnight Blue */
+[data-theme="midnight"] {
+  --gradient-1: #0a0a1a;
+  --gradient-2: #0f1a3a;
+  --gradient-3: #1e3a5f;
+  --gradient-4: #3a7bd5;
+  --gradient-5: #5a9fd4;
+  --gradient-6: #87ceeb;
+  --accent-primary: #3a7bd5;
+  --accent-primary-rgb: 58, 123, 213;
+  --accent-secondary: #5a9fd4;
+  --shadow-glow: 0 0 30px rgba(58, 123, 213, 0.3);
+  --clock-panel-bg: rgba(15, 26, 58, 0.8);
+  --clock-digit-color: #87ceeb;
+  --calc-operator-bg: rgba(90, 159, 212, 0.3);
+  --calc-operator-bg-hover: rgba(90, 159, 212, 0.5);
+  --calc-operator-color: #5a9fd4;
+  --ring-cpu: #3a7bd5;
+  --ring-ram: #00d4ff;
+  --ring-gpu: #a855f7;
+  --ring-hd: #34d399;
+  --vis-color-1: #3a7bd5;
+  --vis-color-2: #5a9fd4;
+  --vis-color-3: #87ceeb;
+  /* SVG Background: Purple -> Blue */
+  --bg-hue-rotate: 240deg;
+  --bg-saturate: 1.3;
+  --bg-brightness: 1.2;
+  /* Custom Background Hue */
+  --custom-bg-hue: 190deg;
+}
+
+/* Theme: Emerald Forest */
+[data-theme="emerald"] {
+  --gradient-1: #0a1a0f;
+  --gradient-2: #0f2a1a;
+  --gradient-3: #1a4a2a;
+  --gradient-4: #2d8a4e;
+  --gradient-5: #34d399;
+  --gradient-6: #a7f3d0;
+  --accent-primary: #2d8a4e;
+  --accent-primary-rgb: 45, 138, 78;
+  --accent-secondary: #34d399;
+  --shadow-glow: 0 0 30px rgba(45, 138, 78, 0.3);
+  --clock-panel-bg: rgba(15, 42, 26, 0.8);
+  --clock-digit-color: #a7f3d0;
+  --calc-operator-bg: rgba(52, 211, 153, 0.3);
+  --calc-operator-bg-hover: rgba(52, 211, 153, 0.5);
+  --calc-operator-color: #34d399;
+  --ring-cpu: #22c55e;
+  --ring-ram: #34d399;
+  --ring-gpu: #fbbf24;
+  --ring-hd: #06b6d4;
+  --vis-color-1: #2d8a4e;
+  --vis-color-2: #34d399;
+  --vis-color-3: #a7f3d0;
+  /* SVG Background: Purple -> Green */
+  --bg-hue-rotate: 145deg;
+  --bg-saturate: 1.3;
+  --bg-brightness: 1.15;
+  /* Custom Background Hue */
+  --custom-bg-hue: 90deg;
+}
+
+/* Theme: Rose Berry */
+[data-theme="rose"] {
+  --gradient-1: #1a0a10;
+  --gradient-2: #3a1020;
+  --gradient-3: #6b1a3a;
+  --gradient-4: #db2777;
+  --gradient-5: #f472b6;
+  --gradient-6: #fbcfe8;
+  --accent-primary: #db2777;
+  --accent-primary-rgb: 219, 39, 119;
+  --accent-secondary: #f472b6;
+  --shadow-glow: 0 0 30px rgba(219, 39, 119, 0.3);
+  --clock-panel-bg: rgba(58, 16, 32, 0.8);
+  --clock-digit-color: #fbcfe8;
+  --calc-operator-bg: rgba(244, 114, 182, 0.3);
+  --calc-operator-bg-hover: rgba(244, 114, 182, 0.5);
+  --calc-operator-color: #f472b6;
+  --ring-cpu: #f43f5e;
+  --ring-ram: #f472b6;
+  --ring-gpu: #a855f7;
+  --ring-hd: #fbbf24;
+  --vis-color-1: #db2777;
+  --vis-color-2: #f472b6;
+  --vis-color-3: #fbcfe8;
+  /* SVG Background: Purple -> Warm Pink/Red */
+  --bg-hue-rotate: 45deg;
+  --bg-saturate: 1.3;
+  --bg-brightness: 1.25;
+  /* Custom Background Hue */
+  --custom-bg-hue: 310deg;
+}

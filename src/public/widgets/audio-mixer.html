@@ -1,0 +1,136 @@
+<!-- Controls Widget (Native Tauri - Audio Mixer + Actions) -->
+<div class="widget widget-controls" id="controls-widget">
+  <div class="controls-header">
+    <span class="controls-title">Controls</span>
+    <button class="controls-config-btn" id="controls-config-btn" title="Configure Background">
+      <svg viewBox="0 0 24 24" fill="currentColor">
+        <path d="M19.14 12.94c.04-.31.06-.63.06-.94 0-.31-.02-.63-.06-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>
+      </svg>
+    </button>
+  </div>
+
+  <!-- iOS Control Center Style Action Buttons -->
+  <div class="controls-actions" id="controls-actions">
+    <button class="controls-action-btn ios-btn" id="action-mute-all" title="Mute All Audio">
+      <svg viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg"><path d="m5.19 35.72a6 6 0 0 1 0-11.44l1.81 5.72z" fill="#3f5c6c"/><path d="m13 18h5a0 0 0 0 1 0 0v24a0 0 0 0 1 0 0h-5a8 8 0 0 1 -8-8v-8a8 8 0 0 1 8-8z" fill="#2980ba"/><path d="m41 38.48a8.993 8.993 0 0 0 0-16.96l-1 8.48z" fill="#90bae1"/><path d="m53.444 44.434a1 1 0 0 1 -.707-1.707 18.019 18.019 0 0 0 0-25.454 1 1 0 1 1 1.414-1.414 20.022 20.022 0 0 1 0 28.282 1 1 0 0 1 -.707.293z" fill="#2980ba"/><path d="m49.953 40.77a1 1 0 0 1 -.707-1.708 12.815 12.815 0 0 0 0-18.124 1 1 0 0 1 1.414-1.415 14.816 14.816 0 0 1 0 20.954 1 1 0 0 1 -.707.293z" fill="#2980ba"/><path d="m14 18h5v24h-5z" fill="#285680"/><path d="m18 42 17.032 9.627a4 4 0 0 0 5.968-3.483v-36.288a4 4 0 0 0 -5.968-3.483l-17.032 9.627z" fill="#ecf0f1"/><path d="m56 59a2.989 2.989 0 0 1 -2.121-.879l-52-52a3 3 0 0 1 4.242-4.242l52 52a3 3 0 0 1 -2.121 5.121z" fill="#e64c3c"/></svg>
+    </button>
+    <button class="controls-action-btn ios-btn" id="action-mute-mics" title="Mute All Microphones">
+      <svg viewBox="-7 0 512 512" xmlns="http://www.w3.org/2000/svg"><path d="m345.796875 208.773438v20.742187c.015625 25.757813-10.210937 50.464844-28.425781 68.679687-18.210938 18.214844-42.917969 28.441407-68.675782 28.425782-6.34375.011718-12.671874-.609375-18.890624-1.855469l-60.472657-39.28125c-11.589843-16.355469-17.792969-35.921875-17.742187-55.96875v-132.414063c0-53.625 43.476562-97.101562 97.105468-97.101562 53.628907 0 97.101563 43.476562 97.101563 97.101562zm0 0" fill="#35495e"/><path d="m201.378906 353.191406c6.761719 2.585938 13.730469 4.59375 20.832032 6.003906 17.46875 3.644532 35.5 3.644532 52.964843 0 62.300781-14.113281 106.378907-69.6875 105.933594-133.5625v-40.253906c0-14.625 11.855469-26.480468 26.480469-26.480468s26.484375 11.855468 26.484375 26.480468v39.460938c-.078125 92.113281-67.734375 170.222656-158.898438 183.4375v50.757812h44.140625c14.625 0 26.480469 11.855469 26.480469 26.480469 0 14.628906-11.855469 26.484375-26.480469 26.484375h-141.242187c-14.628907 0-26.484375-11.855469-26.484375-26.484375 0-14.625 11.855468-26.480469 26.484375-26.480469h44.136719v-50.757812c-20.082032-2.835938-39.542969-9.046875-57.554688-18.363282l-55.96875-43.785156c-29.308594-33.601562-45.429688-76.699218-45.371094-121.289062v-39.460938c0-14.625 11.855469-26.480468 26.480469-26.480468s26.484375 11.855468 26.484375 26.480468v44.136719c-.03125 29.402344 9.789062 57.960937 27.894531 81.128906zm0 0" fill="#3b97d3"/><path d="m489.632812 64.9375-82.042968 82.042969-90.660156 90.65625-27.1875 27.191406-232.109376 232.109375c-10.34375 10.339844-27.109374 10.339844-37.453124 0l-12.421876-12.425781c-10.34375-10.339844-10.34375-27.109375 0-37.449219l431.996094-432c10.34375-10.34375 27.113282-10.34375 37.453125 0l12.425781 12.425781c10.339844 10.339844 10.339844 27.109375 0 37.449219zm0 0" fill="#ff5364"/></svg>
+    </button>
+    <button class="controls-action-btn ios-btn" id="action-volume-mixer" title="Open Volume Mixer">
+      <svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg"><rect fill="#cfdce5" height="490" rx="43.74" width="490" x="11" y="11"/><path d="m217.2 501h-162.46a43.74 43.74 0 0 1 -43.74-43.75v-268c26.13 128.82 101.78 239.64 206.2 311.75z" fill="#bcc6cc"/><path d="m146 88v194.57a49.61 49.61 0 0 0 -40 0v-194.57a20 20 0 0 1 40 0z" fill="#4a5058"/><path d="m146 373.15v50.85a20 20 0 0 1 -40 0v-50.85a49.61 49.61 0 0 0 40 0z" fill="#4a5058"/><circle cx="126" cy="327.87" fill="#f17b89" r="49.5"/><path d="m276 229.42v194.58a20 20 0 0 1 -40 0v-194.58a49.61 49.61 0 0 0 40 0z" fill="#4a5058"/><path d="m276 88v50.84a49.61 49.61 0 0 0 -40 0v-50.84a20 20 0 0 1 40 0z" fill="#4a5058"/><circle cx="256" cy="184.13" fill="#90d1bb" r="49.5"/><path d="m406 88v139.57a49.61 49.61 0 0 0 -40 0v-139.57a20 20 0 0 1 40 0z" fill="#4a5058"/><path d="m406 318.15v105.85a20 20 0 0 1 -40 0v-105.85a49.61 49.61 0 0 0 40 0z" fill="#4a5058"/><circle cx="386" cy="272.87" fill="#f5d367" r="49.5"/><path d="m141.43 436.72a20 20 0 0 1 -35.43-12.72v-28.12a496.68 496.68 0 0 0 35.43 40.84z" fill="#3f4449"/></svg>
+    </button>
+    <button class="controls-action-btn ios-btn" id="action-monitors-off" title="Turn Off Monitors">
+      <svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg"><g transform="translate(0,512) scale(1,-1)"><circle cx="256" cy="256" r="256" fill="#ff6446"/><path d="M256 0c68.38 0 132.667 26.629 181.02 74.98C485.371 123.333 512 187.62 512 256c0 68.38-26.629 132.667-74.98 181.02C388.667 485.371 324.38 512 256 512V0" fill="#ff320a"/><circle cx="256" cy="195" r="195" fill="#ff320a"/><path d="M451 256c0 107.523-87.477 195-195 195V61c107.523 0 195 87.477 195 195" fill="#d21900"/><path d="M256 141c-63.411 0-115 51.589-115 115 0 36.485 16.836 70.02 46.19 92.006 6.63 4.966 16.032 3.617 20.998-3.014 4.967-6.631 3.618-16.032-3.013-20.998C183.456 307.728 171 282.944 171 256c0-46.869 38.131-85 85-85s85 38.131 85 85c0 26.944-12.456 51.728-34.175 67.994-6.631 4.966-7.98 14.367-3.013 20.998 4.965 6.631 14.368 7.98 20.998 3.014C354.164 326.02 371 292.485 371 256c0-63.411-51.589-115-115-115" fill="#dcf5fa"/><path d="M256 301c-8.284 0-15 6.716-15 15v60c0 8.284 6.716 15 15 15s15-6.716 15-15v-60c0-8.284-6.716-15-15-15" fill="#dcf5fa"/><path d="M371 256c0 36.485-16.836 70.02-46.19 92.006-6.63 4.966-16.033 3.617-20.998-3.014-4.967-6.631-3.618-16.032 3.013-20.998C328.544 307.728 341 282.944 341 256c0-46.869-38.131-85-85-85v-30c63.411 0 115 51.589 115 115" fill="#bedce6"/><path d="M271 316v60c0 8.284-6.716 15-15 15v-90c8.284 0 15 6.716 15 15" fill="#bedce6"/></g></svg>
+    </button>
+  </div>
+
+  <!-- Audio Sliders Section - Fixed 4 Channels -->
+  <div class="controls-audio" id="controls-audio">
+    <!-- Master Volume -->
+    <div class="controls-channel controls-channel-master" data-session="master">
+      <div class="controls-channel-icon">
+        <svg viewBox="0 0 24 24" fill="currentColor">
+          <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>
+        </svg>
+      </div>
+      <div class="controls-channel-info">
+        <span class="controls-channel-name">Master</span>
+        <span class="controls-channel-value" id="master-value">100</span>
+      </div>
+      <div class="controls-slider-wrap controls-slider-master">
+        <input type="range" class="controls-slider" min="0" max="100" value="100" id="master-slider">
+        <div class="controls-slider-fill" id="master-fill" style="width: 100%"></div>
+      </div>
+      <button class="controls-mute-btn" id="master-mute" title="Mute">
+        <svg viewBox="0 0 24 24" fill="currentColor" class="icon-unmuted">
+          <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/>
+        </svg>
+        <svg viewBox="0 0 24 24" fill="currentColor" class="icon-muted">
+          <path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/>
+        </svg>
+      </button>
+    </div>
+
+    <!-- Web Browsers (grouped) -->
+    <div class="controls-channel" data-session="browsers">
+      <div class="controls-channel-icon">
+        <svg viewBox="0 0 24 24" fill="currentColor">
+          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
+        </svg>
+      </div>
+      <div class="controls-channel-info">
+        <span class="controls-channel-name">Browsers</span>
+        <span class="controls-channel-value" id="browsers-value">--</span>
+      </div>
+      <div class="controls-slider-wrap">
+        <input type="range" class="controls-slider" min="0" max="100" value="100" id="browsers-slider">
+        <div class="controls-slider-fill" id="browsers-fill" style="width: 100%"></div>
+      </div>
+      <button class="controls-mute-btn" id="browsers-mute" title="Mute">
+        <svg viewBox="0 0 24 24" fill="currentColor" class="icon-unmuted">
+          <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/>
+        </svg>
+        <svg viewBox="0 0 24 24" fill="currentColor" class="icon-muted">
+          <path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/>
+        </svg>
+      </button>
+    </div>
+
+    <!-- Spotify -->
+    <div class="controls-channel" data-session="spotify">
+      <div class="controls-channel-icon">
+        <svg viewBox="0 0 24 24" fill="currentColor">
+          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 14.36c-.19.31-.58.4-.88.2-2.4-1.46-5.42-1.79-8.98-.98-.34.08-.68-.14-.76-.48-.08-.34.14-.68.48-.76 3.89-.88 7.22-.5 9.92 1.14.31.2.4.58.22.88zm1.23-2.71c-.24.39-.75.51-1.14.26-2.74-1.69-6.93-2.18-10.17-1.19-.41.13-.85-.1-.98-.51-.13-.41.1-.85.51-.98 3.7-1.13 8.29-.58 11.53 1.36.38.24.51.74.25 1.06zm.1-2.81c-3.29-1.96-8.73-2.14-11.87-1.18-.5.15-1.03-.13-1.18-.63-.15-.5.13-1.03.63-1.18 3.61-1.1 9.6-.89 13.39 1.37.46.27.61.87.34 1.33-.27.45-.87.6-1.31.29z"/>
+        </svg>
+      </div>
+      <div class="controls-channel-info">
+        <span class="controls-channel-name">Spotify</span>
+        <span class="controls-channel-value" id="spotify-value">--</span>
+      </div>
+      <div class="controls-slider-wrap">
+        <input type="range" class="controls-slider" min="0" max="100" value="100" id="spotify-slider">
+        <div class="controls-slider-fill" id="spotify-fill" style="width: 100%"></div>
+      </div>
+      <button class="controls-mute-btn" id="spotify-mute" title="Mute">
+        <svg viewBox="0 0 24 24" fill="currentColor" class="icon-unmuted">
+          <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/>
+        </svg>
+        <svg viewBox="0 0 24 24" fill="currentColor" class="icon-muted">
+          <path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/>
+        </svg>
+      </button>
+    </div>
+
+    <!-- Teams/Comms -->
+    <div class="controls-channel" data-session="teams">
+      <div class="controls-channel-icon">
+        <svg viewBox="0 0 24 24" fill="currentColor">
+          <path d="M19.19 8.77q-.46 0-.87.16-.35-.72-.97-1.2-.63-.48-1.44-.48h-5.29q-1.16 0-1.88.85-.72.85-.72 2.11v4.15q0 .74.37 1.36.37.62.98.99-.01.06-.01.12v3.32q0 .54.29.88.29.34.71.34h5.4q.42 0 .71-.34.29-.34.29-.88v-.88q.65-.09 1.15-.52.5-.43.5-1.08v-4.74q.61-.42.97-1.08.36-.66.36-1.44v-.53q0-.68-.5-1.18-.5-.5-1.18-.5zM14.45 19.67H9.33v-2.4q.3.07.59.07h4.53v2.33zm.99-3.54h-5.52q-.41 0-.7-.35-.29-.35-.29-.89v-4.46q0-.55.29-.89.29-.34.7-.34h5.52q.41 0 .7.34.29.34.29.89v4.46q0 .54-.29.89-.29.35-.7.35zm3.41-1.26q-.26.26-.62.26h-.89v-4.19h.89q.36 0 .62.26.26.26.26.63v2.4q0 .37-.26.64z"/>
+        </svg>
+      </div>
+      <div class="controls-channel-info">
+        <span class="controls-channel-name">Teams</span>
+        <span class="controls-channel-value" id="teams-value">--</span>
+      </div>
+      <div class="controls-slider-wrap">
+        <input type="range" class="controls-slider" min="0" max="100" value="100" id="teams-slider">
+        <div class="controls-slider-fill" id="teams-fill" style="width: 100%"></div>
+      </div>
+      <button class="controls-mute-btn" id="teams-mute" title="Mute">
+        <svg viewBox="0 0 24 24" fill="currentColor" class="icon-unmuted">
+          <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/>
+        </svg>
+        <svg viewBox="0 0 24 24" fill="currentColor" class="icon-muted">
+          <path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- Placeholder shown while loading -->
+  <div class="controls-placeholder" id="controls-placeholder" style="display: none;">
+    <div class="controls-placeholder-icon">&#128266;</div>
+    <div class="controls-placeholder-text">Loading audio sessions...</div>
+  </div>
+</div>

@@ -1,0 +1,64 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+src-tauri/target/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Claude Code
+.claude/
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+ehthumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment and secrets - CRITICAL: Never commit these
+.env
+.env.*
+.env.local
+.env.development
+.env.production
+*.pem
+*.key
+credentials.json
+secrets.json
+*-secret*
+*_secret*
+
+# OAuth tokens (if accidentally saved to files)
+*token*.json
+auth-tokens/
+
+# Lock files (optional - uncomment if you want to track them)
+# package-lock.json
+# yarn.lock
+# Cargo.lock
+
+# Tauri dev files
+WixTools/
+*.wixpdb
+*.wixobj
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# Certificates (mkcert generates these)
+*.pem
+cert/
+certs/

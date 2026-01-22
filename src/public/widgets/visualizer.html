@@ -1,0 +1,280 @@
+<!-- MUSIC VISUALIZER WIDGET - Multi-mode -->
+<!-- Fingerprint: AE-WWD-8B4F2C1E | analyticendeavors.com -->
+<div class="widget widget-visualizer" id="visualizer-widget">
+  <!-- Widget Header -->
+  <div class="widget-header">
+    <span>Visualizer</span>
+    <div class="visualizer-controls">
+      <select class="visualizer-device-select" id="visualizer-device-select" title="Select Audio Device">
+        <option value="system-default">System Default</option>
+        <option value="demo">Demo Mode</option>
+      </select>
+      <button class="visualizer-btn visualizer-refresh-btn" id="visualizer-refresh-btn" title="Refresh Devices">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M23 4v6h-6M1 20v-6h6"/>
+          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+        </svg>
+      </button>
+      <button class="visualizer-btn visualizer-config-btn" id="visualizer-config-btn" title="Visualizer Settings">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="3"></circle>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- Config Panel (dropdown) - Mode Specific -->
+  <div class="visualizer-config-panel" id="visualizer-config-panel">
+    <!-- Background Config (applies to all modes) -->
+    <div class="config-mode-section" id="config-mode-background">
+      <div class="config-panel-header">Background</div>
+      <div class="config-panel-content">
+        <div class="visualizer-bg-options">
+          <label class="visualizer-bg-option">
+            <input type="radio" name="visualizer-bg" value="none" checked>
+            <span>None</span>
+          </label>
+          <label class="visualizer-bg-option">
+            <input type="radio" name="visualizer-bg" value="svg">
+            <span>Custom SVG</span>
+          </label>
+        </div>
+        <div class="visualizer-svg-upload" id="visualizer-svg-upload" style="display: none;">
+          <div class="visualizer-svg-controls">
+            <label class="visualizer-svg-file-btn" for="visualizer-svg-input">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+              </svg>
+              Choose File
+            </label>
+            <input type="file" id="visualizer-svg-input" accept=".svg" style="display: none;">
+            <button type="button" class="visualizer-svg-clear-btn" id="visualizer-svg-clear">Clear</button>
+          </div>
+          <div class="visualizer-svg-preview" id="visualizer-svg-preview"></div>
+          <div class="blur-control-row" id="visualizer-blur-row">
+            <label>Blur</label>
+            <input type="range" id="visualizer-blur-slider" min="0" max="30" value="0">
+            <input type="number" id="visualizer-blur-input" min="0" max="30" value="0">
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- MilkDrop Config -->
+    <div class="config-mode-section" id="config-mode-milkdrop">
+      <div class="config-panel-header">MilkDrop Settings</div>
+      <div class="config-panel-content">
+        <div class="config-row config-row-select">
+          <label>Preset</label>
+          <select id="vis-config-md-preset" class="config-select">
+            <option value="0">Cosmic Swirl</option>
+            <option value="1">Plasma Tunnel</option>
+            <option value="2">Kaleidoscope</option>
+            <option value="3">Electric Waves</option>
+            <option value="4">Fractal Pulse</option>
+            <option value="5">Spiral Galaxy</option>
+            <option value="6">Neon Grid</option>
+            <option value="7">Liquid Mirror</option>
+            <option value="8">Starburst</option>
+            <option value="9">Waveform Rings</option>
+            <option value="10">Plasma Ball</option>
+            <option value="11">Northern Lights</option>
+          </select>
+        </div>
+        <div class="config-row-hint">Press Space to cycle presets</div>
+        <div class="config-row">
+          <label>Speed</label>
+          <input type="range" id="vis-config-md-speed" min="0.5" max="3" value="1" step="0.1">
+          <span class="config-value" id="vis-config-md-speed-value">1.0</span>
+        </div>
+        <div class="config-row">
+          <label>Intensity</label>
+          <input type="range" id="vis-config-md-intensity" min="0" max="5" value="2.5" step="0.5">
+          <span class="config-value" id="vis-config-md-intensity-value">2.5</span>
+        </div>
+        <div class="config-row">
+          <label>Complexity</label>
+          <input type="range" id="vis-config-md-complexity" min="1" max="10" value="6" step="1">
+          <span class="config-value" id="vis-config-md-complexity-value">6</span>
+        </div>
+        <div class="config-row">
+          <label>Glow</label>
+          <input type="range" id="vis-config-md-glow" min="0" max="1" value="0.2" step="0.05">
+          <span class="config-value" id="vis-config-md-glow-value">0.2</span>
+        </div>
+        <button class="config-reset-btn" id="vis-config-reset-milkdrop">Reset Defaults</button>
+      </div>
+    </div>
+
+    <!-- PowerAudio Config (Creature) -->
+    <div class="config-mode-section" id="config-mode-poweraudio">
+      <div class="config-panel-header">Creature Settings</div>
+      <div class="config-panel-content">
+        <div class="config-row-hint">Click creature to flip! Settings:</div>
+        <div class="config-row config-row-toggle">
+          <label>Color Variation</label>
+          <button class="config-toggle active" id="vis-config-pa-colorful" data-value="true">
+            <span class="toggle-on">On</span>
+            <span class="toggle-off">Off</span>
+          </button>
+        </div>
+        <div class="config-row">
+          <label>FPS</label>
+          <input type="range" id="vis-config-pa-fps" min="5" max="60" value="30" step="5">
+          <span class="config-value" id="vis-config-pa-fps-value">30</span>
+        </div>
+        <div class="config-row">
+          <label>Sensitivity</label>
+          <input type="range" id="vis-config-pa-sensitivity" min="0" max="2" value="1" step="0.1">
+          <span class="config-value" id="vis-config-pa-sensitivity-value">1.0</span>
+        </div>
+        <div class="config-row">
+          <label>Movement Speed</label>
+          <input type="range" id="vis-config-pa-speed" min="0" max="0.4" value="0.2" step="0.05">
+          <span class="config-value" id="vis-config-pa-speed-value">0.2</span>
+        </div>
+        <div class="config-row">
+          <label>Spike Height</label>
+          <input type="range" id="vis-config-pa-spikeheight" min="0.3" max="2" value="0.8" step="0.1">
+          <span class="config-value" id="vis-config-pa-spikeheight-value">0.8</span>
+        </div>
+        <div class="config-row">
+          <label>Node Count</label>
+          <input type="range" id="vis-config-pa-nodecount" min="0" max="60" value="20" step="5">
+          <span class="config-value" id="vis-config-pa-nodecount-value">20</span>
+        </div>
+        <div class="config-row">
+          <label>Line Opacity</label>
+          <input type="range" id="vis-config-pa-lineopacity" min="0" max="1" value="0.5" step="0.1">
+          <span class="config-value" id="vis-config-pa-lineopacity-value">0.5</span>
+        </div>
+        <div class="config-row">
+          <label>Spore Burst</label>
+          <input type="range" id="vis-config-pa-sporefreq" min="0" max="0.6" value="0.3" step="0.05">
+          <span class="config-value" id="vis-config-pa-sporefreq-value">0.3</span>
+        </div>
+        <div class="config-row">
+          <label>Spore Chance</label>
+          <input type="range" id="vis-config-pa-sporechance" min="0" max="0.6" value="0.3" step="0.05">
+          <span class="config-value" id="vis-config-pa-sporechance-value">0.3</span>
+        </div>
+        <div class="config-row">
+          <label>Spore Fade</label>
+          <input type="range" id="vis-config-pa-sporefade" min="0.2" max="0.8" value="0.5" step="0.05">
+          <span class="config-value" id="vis-config-pa-sporefade-value">0.5</span>
+        </div>
+        <div class="config-row">
+          <label>Creature Size</label>
+          <input type="range" id="vis-config-pa-size" min="0.5" max="1.5" value="1" step="0.1">
+          <span class="config-value" id="vis-config-pa-size-value">1.0</span>
+        </div>
+        <button class="config-reset-btn" id="vis-config-reset-poweraudio">Reset Defaults</button>
+      </div>
+    </div>
+
+    <!-- Circular Config -->
+    <div class="config-mode-section" id="config-mode-circular" style="display:none;">
+      <div class="config-panel-header">Circular Settings</div>
+      <div class="config-panel-content">
+        <div class="config-row">
+          <label>Ring Points</label>
+          <input type="range" id="vis-config-circular-points" min="32" max="128" value="64" step="8">
+          <span class="config-value" id="vis-config-circular-points-value">64</span>
+        </div>
+        <div class="config-row">
+          <label>Glow</label>
+          <input type="range" id="vis-config-circular-glow" min="0" max="1" value="0.6" step="0.1">
+          <span class="config-value" id="vis-config-circular-glow-value">0.6</span>
+        </div>
+        <div class="config-row">
+          <label>Sensitivity</label>
+          <input type="range" id="vis-config-circular-sensitivity" min="0.5" max="3" value="1.5" step="0.25">
+          <span class="config-value" id="vis-config-circular-sensitivity-value">1.5</span>
+        </div>
+        <div class="config-row">
+          <label>Rotation</label>
+          <input type="range" id="vis-config-circular-rotation" min="0" max="2" value="1" step="0.1">
+          <span class="config-value" id="vis-config-circular-rotation-value">1.0</span>
+        </div>
+        <div class="config-row">
+          <label>Particles</label>
+          <input type="range" id="vis-config-circular-particles" min="0" max="200" value="50" step="10">
+          <span class="config-value" id="vis-config-circular-particles-value">50</span>
+        </div>
+        <button class="config-reset-btn" id="vis-config-reset-circular">Reset Defaults</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Visualizer Container (holds all modes) -->
+  <div class="visualizer-modes-container">
+    <!-- PowerAudio Mode (Creature - Default) -->
+    <div class="visualizer-mode" id="visualizer-mode-poweraudio" data-mode="poweraudio">
+      <div class="poweraudio-container" id="poweraudio-container">
+        <div class="poweraudio-placeholder">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <circle cx="12" cy="12" r="8"></circle>
+            <rect x="8" y="9" width="2" height="2" fill="currentColor"></rect>
+            <rect x="14" y="9" width="2" height="2" fill="currentColor"></rect>
+          </svg>
+          <span>Loading Creature...</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- MilkDrop Mode -->
+    <div class="visualizer-mode" id="visualizer-mode-milkdrop" data-mode="milkdrop" style="display:none;">
+      <div class="milkdrop-container" id="milkdrop-container">
+        <div class="milkdrop-placeholder">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M12 1v6M12 17v6M1 12h6M17 12h6M4.22 4.22l4.24 4.24M15.54 15.54l4.24 4.24M4.22 19.78l4.24-4.24M15.54 8.46l4.24-4.24"></path>
+          </svg>
+          <span>MilkDrop Visualizer</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Circular Mode (replaces PowerAudio) -->
+    <div class="visualizer-mode" id="visualizer-mode-circular" data-mode="circular" style="display:none;">
+      <div class="circular-container" id="circular-container">
+        <div class="circular-placeholder">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <circle cx="12" cy="12" r="10"></circle>
+            <circle cx="12" cy="12" r="6"></circle>
+            <circle cx="12" cy="12" r="2"></circle>
+          </svg>
+          <span>Circular Visualizer</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mode Navigation Dots -->
+  <div class="visualizer-nav-dots" id="visualizer-nav-dots">
+    <button class="nav-dot active" data-mode="poweraudio" title="Creature">
+      <span class="dot"></span>
+      <span class="dot-label">Creature</span>
+    </button>
+    <button class="nav-dot" data-mode="milkdrop" title="MilkDrop">
+      <span class="dot"></span>
+      <span class="dot-label">MilkDrop</span>
+    </button>
+    <button class="nav-dot" data-mode="circular" title="Circular">
+      <span class="dot"></span>
+      <span class="dot-label">Circular</span>
+    </button>
+  </div>
+
+  <!-- Source indicator -->
+  <span class="visualizer-source-label" id="visualizer-source-label">Demo Mode</span>
+
+  <!-- Fallback for browser mode -->
+  <div class="visualizer-fallback" id="visualizer-fallback" style="display:none;">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+      <circle cx="12" cy="12" r="10"></circle>
+      <path d="M12 8v4M12 16h.01"></path>
+    </svg>
+    <span>Audio visualization requires desktop app</span>
+  </div>
+</div>

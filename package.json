@@ -1,0 +1,26 @@
+{
+  "name": "widget-wall-desktop",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "generate-icons": "node scripts/generate-icons.js"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^1.6.3",
+    "@vitejs/plugin-basic-ssl": "^1.2.0",
+    "png-to-ico": "^3.0.1",
+    "sharp": "^0.34.5",
+    "vite": "^5.0.0",
+    "vite-plugin-mkcert": "^1.17.9"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^1.5.0",
+    "bluelinky": "^8.4.0",
+    "hls.js": "^1.5.0"
+  }
+}

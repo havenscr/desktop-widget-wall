@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Widget Wall - Authentication</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      color: #fff;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .container {
+      background: rgba(255, 255, 255, 0.1);
+      backdrop-filter: blur(10px);
+      border-radius: 16px;
+      padding: 40px;
+      max-width: 500px;
+      text-align: center;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    }
+    .icon {
+      width: 64px;
+      height: 64px;
+      margin-bottom: 20px;
+    }
+    .icon.success { color: #4ade80; }
+    .icon.error { color: #f87171; }
+    h1 {
+      font-size: 24px;
+      margin-bottom: 16px;
+    }
+    p {
+      color: rgba(255, 255, 255, 0.8);
+      line-height: 1.6;
+      margin-bottom: 20px;
+    }
+    .code-box {
+      background: rgba(0, 0, 0, 0.3);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 8px;
+      padding: 16px;
+      margin: 20px 0;
+      font-family: monospace;
+      font-size: 12px;
+      word-break: break-all;
+      color: #fbbf24;
+      max-height: 100px;
+      overflow-y: auto;
+    }
+    .btn {
+      background: #3b82f6;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 8px;
+      font-size: 16px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .btn:hover {
+      background: #2563eb;
+    }
+    .btn.copied {
+      background: #22c55e;
+    }
+    .instructions {
+      background: rgba(59, 130, 246, 0.2);
+      border-radius: 8px;
+      padding: 16px;
+      margin-top: 20px;
+      text-align: left;
+    }
+    .instructions ol {
+      margin-left: 20px;
+    }
+    .instructions li {
+      margin: 8px 0;
+      color: rgba(255, 255, 255, 0.9);
+    }
+    .error-details {
+      background: rgba(248, 113, 113, 0.2);
+      border-radius: 8px;
+      padding: 16px;
+      margin-top: 20px;
+      text-align: left;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container" id="container">
+    <div id="loading">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="10"/>
+        <path d="M12 6v6l4 2"/>
+      </svg>
+      <h1>Processing...</h1>
+      <p>Please wait while we complete authentication.</p>
+    </div>
+  </div>
+
+  <script>
+    (function() {
+      const container = document.getElementById('container');
+
+      // Check for Twitch implicit grant (token in URL fragment)
+      const hash = window.location.hash.substring(1);
+      const hashParams = new URLSearchParams(hash);
+      const accessToken = hashParams.get('access_token');
+
+      // Check for Microsoft auth code (in query string)
+      const params = new URLSearchParams(window.location.search);
+      const code = params.get('code');
+      const error = params.get('error') || hashParams.get('error');
+      const errorDescription = params.get('error_description') || hashParams.get('error_description');
+      const state = params.get('state') || hashParams.get('state');
+
+      // Handle Twitch OAuth token (implicit grant flow)
+      if (accessToken) {
+        localStorage.setItem('twitch-access-token', accessToken);
+        localStorage.setItem('twitch-logged-in', 'true');
+
+        container.innerHTML = `
+          <svg class="icon success" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/>
+            <path d="M8 12l2 2 4-4"/>
+          </svg>
+          <h1>Twitch Connected!</h1>
+          <p>Your Twitch account has been linked. This window will close automatically.</p>
+        `;
+
+        setTimeout(() => window.close(), 1500);
+        return;
+      }
+
+      if (error) {
+        // Authentication error
+        container.innerHTML = `
+          <svg class="icon error" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="15" y1="9" x2="9" y2="15"/>
+            <line x1="9" y1="9" x2="15" y2="15"/>
+          </svg>
+          <h1>Authentication Failed</h1>
+          <p>${errorDescription || error}</p>
+          <div class="error-details">
+            <strong>Error:</strong> ${error}<br>
+            ${errorDescription ? `<strong>Details:</strong> ${errorDescription}` : ''}
+          </div>
+          <p style="margin-top: 20px;">Please close this window and try again in Widget Wall Desktop.</p>
+        `;
+        return;
+      }
+
+      if (code) {
+        // Success - show the code
+        container.innerHTML = `
+          <svg class="icon success" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/>
+            <path d="M8 12l2 2 4-4"/>
+          </svg>
+          <h1>Authentication Successful!</h1>
+          <p>Your Microsoft account has been authenticated. Copy the code below and paste it in Widget Wall Desktop.</p>
+          <div class="code-box" id="code-box">${code}</div>
+          <button class="btn" id="copy-btn" onclick="copyCode()">Copy Code to Clipboard</button>
+          <div class="instructions">
+            <strong>Next steps:</strong>
+            <ol>
+              <li>Click "Copy Code to Clipboard" above</li>
+              <li>Return to Widget Wall Desktop</li>
+              <li>Open Settings and click "Paste Auth Code"</li>
+              <li>Close this browser tab</li>
+            </ol>
+          </div>
+        `;
+
+        // Try to auto-copy
+        setTimeout(() => {
+          copyCode();
+        }, 500);
+      } else {
+        // No code or error - unexpected state
+        container.innerHTML = `
+          <svg class="icon error" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="12" y1="8" x2="12" y2="12"/>
+            <circle cx="12" cy="16" r="1" fill="currentColor"/>
+          </svg>
+          <h1>Unexpected Response</h1>
+          <p>No authentication code was received. Please close this window and try signing in again from Widget Wall Desktop.</p>
+        `;
+      }
+    })();
+
+    function copyCode() {
+      const codeBox = document.getElementById('code-box');
+      const copyBtn = document.getElementById('copy-btn');
+
+      if (codeBox && copyBtn) {
+        navigator.clipboard.writeText(codeBox.textContent).then(() => {
+          copyBtn.textContent = 'Copied!';
+          copyBtn.classList.add('copied');
+          setTimeout(() => {
+            copyBtn.textContent = 'Copy Code to Clipboard';
+            copyBtn.classList.remove('copied');
+          }, 2000);
+        }).catch(err => {
+          // Fallback: select text
+          const range = document.createRange();
+          range.selectNode(codeBox);
+          window.getSelection().removeAllRanges();
+          window.getSelection().addRange(range);
+          copyBtn.textContent = 'Select All (Ctrl+C to copy)';
+        });
+      }
+    }
+  </script>
+</body>
+</html>
