@@ -6,6 +6,8 @@
    Fingerprint: AE-WWD-8B4F2C1E-2025
    ================================================================ */
 
+console.log('[InboxWidget] Loading version 2026-01-23-v10 - reduced picker height');
+
 const InboxWidget = (function() {
   const AVATAR_COLORS = [
     '#5856D6', '#FF9500', '#30D158', '#FF2D55',
@@ -15,6 +17,7 @@ const InboxWidget = (function() {
   const SYNC_INTERVAL = 30 * 1000; // 30 seconds
   const VIEW_STORAGE_KEY = 'inbox-active-view';
   const ACCOUNT_STORAGE_KEY = 'inbox-active-account';
+  const STICKY_EFFECT_KEY = 'twitch-chat-sticky-effect';
   const MAX_EMAILS = 50;
 
   // Multi-account state
@@ -389,6 +392,7 @@ const InboxWidget = (function() {
               </div>
               <div class="twitch-emote-picker-tabs">
                 <button class="twitch-emote-tab active" data-provider="all">All</button>
+                <button class="twitch-emote-tab" data-provider="favorites">Fav</button>
                 <button class="twitch-emote-tab" data-provider="twitch">Twitch</button>
                 <button class="twitch-emote-tab" data-provider="7tv">7TV</button>
                 <button class="twitch-emote-tab" data-provider="ffz">FFZ</button>
@@ -396,8 +400,10 @@ const InboxWidget = (function() {
               </div>
               <div class="twitch-emote-picker-grid"></div>
             </div>
+            <div class="twitch-text-effects-picker" style="display: none;"></div>
             <div class="twitch-emote-autocomplete" style="display: none;"></div>
             <div class="twitch-emote-preview" style="display: none;"></div>
+            <div class="twitch-text-effects-preview" style="display: none;"></div>
             <textarea class="twitch-irc-input" rows="1" placeholder="${hasToken ? 'Type a message...' : 'Add OAuth token in Settings to chat'}" ${hasToken ? '' : 'disabled'}></textarea>
             <button class="twitch-emote-picker-btn" title="Emotes (Twitch/7TV/FFZ/BTTV)">
               <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" stroke="currentColor" stroke-width="2">
@@ -406,6 +412,30 @@ const InboxWidget = (function() {
                 <circle cx="9" cy="9" r="1.5" stroke="none"/>
                 <circle cx="15" cy="9" r="1.5" stroke="none"/>
               </svg>
+            </button>
+            <button class="twitch-marco-text-btn" title="Quick Phrases (Marco Text)">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <path d="M14 2v6h6"/>
+                <line x1="16" y1="13" x2="8" y2="13"/>
+                <line x1="16" y1="17" x2="8" y2="17"/>
+              </svg>
+            </button>
+            <div class="twitch-marco-text-picker" style="display: none;">
+              <div class="twitch-marco-text-header">
+                <span>Quick Phrases</span>
+                <button class="twitch-marco-text-edit-btn" title="Edit Phrases">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                  </svg>
+                </button>
+              </div>
+              <div class="twitch-marco-text-list"></div>
+              <div class="twitch-marco-text-empty">No phrases saved yet.<br>Click edit to add some!</div>
+            </div>
+            <button class="twitch-text-effects-btn" title="Text Effects">
+              <span class="text-effects-icon">Aa</span>
             </button>
           </div>
         </div>
@@ -450,21 +480,361 @@ const InboxWidget = (function() {
       const chatInput = container.querySelector('.twitch-irc-input');
       let currentFilter = 'all';
 
-      // Render emotes to grid
-      function renderEmotesToGrid(emotes) {
+      // ================================================================
+      // FAVORITE EMOTES
+      // ================================================================
+      const FAVORITE_EMOTES_KEY = 'twitch-favorite-emotes';
+      const FAVORITE_EMOTES_ORDER_KEY = 'twitch-favorite-emotes-order';
+
+      // Load favorite emotes from localStorage
+      function loadFavoriteEmotes() {
+        try {
+          const saved = localStorage.getItem(FAVORITE_EMOTES_KEY);
+          return saved ? JSON.parse(saved) : {};
+        } catch (e) {
+          console.warn('Failed to load favorite emotes:', e);
+          return {};
+        }
+      }
+
+      // Load favorite emotes order
+      function loadFavoriteEmotesOrder() {
+        try {
+          const saved = localStorage.getItem(FAVORITE_EMOTES_ORDER_KEY);
+          return saved ? JSON.parse(saved) : [];
+        } catch (e) {
+          return [];
+        }
+      }
+
+      // Save favorite emotes order
+      function saveFavoriteEmotesOrder(order) {
+        try {
+          localStorage.setItem(FAVORITE_EMOTES_ORDER_KEY, JSON.stringify(order));
+        } catch (e) {
+          console.warn('Failed to save favorite emotes order:', e);
+        }
+      }
+
+      // Get favorites in order (returns ordered object)
+      function getOrderedFavorites() {
+        const favorites = loadFavoriteEmotes();
+        const order = loadFavoriteEmotesOrder();
+        console.log('[Emotes] getOrderedFavorites - order:', order);
+        const ordered = {};
+
+        // First add emotes in saved order
+        for (const code of order) {
+          if (favorites[code]) {
+            ordered[code] = favorites[code];
+          }
+        }
+
+        // Then add any new favorites not in order yet
+        for (const [code, data] of Object.entries(favorites)) {
+          if (!ordered[code]) {
+            ordered[code] = data;
+          }
+        }
+
+        return ordered;
+      }
+
+      // Save a favorite emote
+      function saveFavoriteEmote(code, data, channel) {
+        const favorites = loadFavoriteEmotes();
+        favorites[code] = {
+          url: data.url,
+          provider: data.provider,
+          channel: channel || 'unknown'
+        };
+        try {
+          localStorage.setItem(FAVORITE_EMOTES_KEY, JSON.stringify(favorites));
+          // Add to order if not already there
+          const order = loadFavoriteEmotesOrder();
+          if (!order.includes(code)) {
+            order.push(code);
+            saveFavoriteEmotesOrder(order);
+          }
+        } catch (e) {
+          console.warn('Failed to save favorite emote:', e);
+        }
+      }
+
+      // Remove a favorite emote
+      function removeFavoriteEmote(code) {
+        const favorites = loadFavoriteEmotes();
+        delete favorites[code];
+        try {
+          localStorage.setItem(FAVORITE_EMOTES_KEY, JSON.stringify(favorites));
+          // Remove from order
+          const order = loadFavoriteEmotesOrder();
+          const idx = order.indexOf(code);
+          if (idx !== -1) {
+            order.splice(idx, 1);
+            saveFavoriteEmotesOrder(order);
+          }
+        } catch (e) {
+          console.warn('Failed to remove favorite emote:', e);
+        }
+      }
+
+      // Reorder favorites (move emote to new position)
+      function reorderFavoriteEmote(code, newIndex) {
+        let order = loadFavoriteEmotesOrder();
+
+        // If order is empty, initialize it from existing favorites
+        if (order.length === 0) {
+          const favorites = loadFavoriteEmotes();
+          order = Object.keys(favorites);
+          console.log('[Emotes] Initialized order from favorites:', order);
+        }
+
+        console.log('[Emotes] Before reorder:', [...order]);
+
+        // Make sure the code is in the order array
+        if (!order.includes(code)) {
+          order.push(code);
+        }
+
+        // Remove from old position and insert at new position
+        const currentIndex = order.indexOf(code);
+        order.splice(currentIndex, 1);
+        order.splice(newIndex, 0, code);
+        console.log('[Emotes] After reorder:', [...order]);
+        saveFavoriteEmotesOrder(order);
+
+        // Verify it was saved
+        const savedOrder = loadFavoriteEmotesOrder();
+        console.log('[Emotes] Verified saved order:', savedOrder);
+      }
+
+      // Check if emote is a favorite
+      function isFavoriteEmote(code) {
+        const favorites = loadFavoriteEmotes();
+        return !!favorites[code];
+      }
+
+      // Create/show emote context menu for favoriting
+      let emoteContextMenu = null;
+      let emoteContextMenuOpen = false; // Flag to prevent autocomplete from hiding
+      function showEmoteContextMenu(x, y, code, data, isCurrentlyFavorite) {
+        emoteContextMenuOpen = true;
+
+        if (!emoteContextMenu) {
+          emoteContextMenu = document.createElement('div');
+          emoteContextMenu.className = 'twitch-emote-context-menu';
+          document.body.appendChild(emoteContextMenu);
+
+          // Close on click outside
+          document.addEventListener('click', () => {
+            emoteContextMenu.style.display = 'none';
+            emoteContextMenuOpen = false;
+          });
+        }
+
+        const currentChannel = typeof TwitchChat !== 'undefined' ? TwitchChat.getChannel() : 'unknown';
+
+        emoteContextMenu.innerHTML = isCurrentlyFavorite
+          ? `<button class="emote-context-item emote-context-unfav">
+               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                 <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+               </svg>
+               Remove from Favorites
+             </button>`
+          : `<button class="emote-context-item emote-context-fav">
+               <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+                 <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+               </svg>
+               Add to Favorites
+             </button>`;
+
+        // Position menu
+        emoteContextMenu.style.left = x + 'px';
+        emoteContextMenu.style.top = y + 'px';
+        emoteContextMenu.style.display = 'block';
+
+        // Adjust if off screen
+        const rect = emoteContextMenu.getBoundingClientRect();
+        if (rect.right > window.innerWidth) {
+          emoteContextMenu.style.left = (window.innerWidth - rect.width - 10) + 'px';
+        }
+        if (rect.bottom > window.innerHeight) {
+          emoteContextMenu.style.top = (window.innerHeight - rect.height - 10) + 'px';
+        }
+
+        // Add click handler
+        const btn = emoteContextMenu.querySelector('button');
+        btn.onclick = (e) => {
+          e.stopPropagation();
+          if (isCurrentlyFavorite) {
+            removeFavoriteEmote(code);
+          } else {
+            saveFavoriteEmote(code, data, currentChannel);
+          }
+          emoteContextMenu.style.display = 'none';
+          // Refresh grid if on favorites tab
+          if (currentFilter === 'favorites') {
+            populateEmoteGrid('favorites', emoteSearch?.value || '');
+          }
+        };
+      }
+
+      // Render emotes to grid (with favorites support)
+      // Mouse-based drag state (more reliable than HTML5 drag/drop in Tauri)
+      let isDragging = false;
+      let draggedEmoteCode = null;
+      let draggedEl = null;
+      let dragClone = null;
+
+      function renderEmotesToGrid(emotes, options = {}) {
         if (!emoteGrid) return;
         emoteGrid.innerHTML = '';
+
+        const { showUnavailable = false, availableEmotes = null, enableDragDrop = false } = options;
 
         // Use DocumentFragment for better performance when adding many elements
         const fragment = document.createDocumentFragment();
         let count = 0;
 
         for (const [code, data] of Object.entries(emotes)) {
-          const btn = document.createElement('button');
+          // Use div for draggable items (buttons have issues with HTML5 drag/drop in some webviews)
+          const btn = document.createElement(enableDragDrop ? 'div' : 'button');
+
+          // Check if emote is available on current channel
+          const isAvailable = !showUnavailable || (availableEmotes && availableEmotes[code]);
+          const isFav = isFavoriteEmote(code);
+
           btn.className = 'twitch-emote-picker-item';
-          btn.title = `${code} (${data.provider})`;
-          btn.innerHTML = `<img src="${data.url}" alt="${code}" loading="lazy">`;
-          btn.addEventListener('click', () => {
+          if (!isAvailable) btn.classList.add('emote-unavailable');
+          if (isFav) btn.classList.add('emote-favorite');
+
+          // Build tooltip
+          let tooltip = `${code} (${data.provider})`;
+          if (data.channel) {
+            tooltip += `\nFavorited from: ${data.channel}`;
+          }
+          if (!isAvailable) {
+            tooltip += `\nNot available on this channel`;
+          }
+          if (enableDragDrop) {
+            tooltip += `\nDrag to reorder`;
+          }
+          btn.title = tooltip;
+
+          btn.innerHTML = `<img src="${data.url}" alt="${code}" loading="lazy" draggable="false">`;
+          btn.dataset.emoteCode = code;
+
+          // Mouse-based drag for favorites reordering (more reliable than HTML5 drag/drop in Tauri)
+          if (enableDragDrop) {
+            btn.classList.add('emote-draggable');
+            btn.setAttribute('role', 'button');
+            btn.setAttribute('tabindex', '0');
+
+            btn.addEventListener('mousedown', (e) => {
+              if (e.button !== 0) return; // Left click only
+              e.preventDefault();
+
+              console.log('[Emotes] Drag start:', code, 'element:', btn);
+              isDragging = true;
+              draggedEmoteCode = code;
+              draggedEl = btn;
+              btn.classList.add('emote-dragging');
+
+              // Create visual clone that follows mouse
+              dragClone = btn.cloneNode(true);
+              dragClone.classList.add('emote-drag-clone');
+              dragClone.style.cssText = `
+                position: fixed;
+                pointer-events: none;
+                z-index: 10000;
+                opacity: 0.8;
+                transform: scale(1.1);
+                left: ${e.clientX - 24}px;
+                top: ${e.clientY - 24}px;
+              `;
+              document.body.appendChild(dragClone);
+
+              const onMouseMove = (moveE) => {
+                if (!isDragging) return;
+                dragClone.style.left = `${moveE.clientX - 24}px`;
+                dragClone.style.top = `${moveE.clientY - 24}px`;
+
+                // Hide clone to find element below
+                dragClone.style.visibility = 'hidden';
+                const elemBelow = document.elementFromPoint(moveE.clientX, moveE.clientY);
+                dragClone.style.visibility = 'visible';
+
+                const targetItem = elemBelow?.closest('.twitch-emote-picker-item');
+
+                // Clear all hover states
+                emoteGrid.querySelectorAll('.emote-drag-over').forEach(el => {
+                  el.classList.remove('emote-drag-over');
+                });
+
+                // Add hover state to target
+                if (targetItem && targetItem !== draggedEl && targetItem.dataset.emoteCode) {
+                  targetItem.classList.add('emote-drag-over');
+                }
+              };
+
+              const onMouseUp = (upE) => {
+                document.removeEventListener('mousemove', onMouseMove);
+                document.removeEventListener('mouseup', onMouseUp);
+
+                if (!isDragging) return;
+
+                // Hide clone temporarily so elementFromPoint finds the real element
+                if (dragClone) dragClone.style.display = 'none';
+
+                // Find drop target
+                const elemBelow = document.elementFromPoint(upE.clientX, upE.clientY);
+                const targetItem = elemBelow?.closest('.twitch-emote-picker-item');
+
+                console.log('[Emotes] Drop check:', { elemBelow, targetItem, draggedEmoteCode });
+
+                if (targetItem && targetItem !== draggedEl && targetItem.dataset.emoteCode) {
+                  const targetCode = targetItem.dataset.emoteCode;
+                  // Get visual index from DOM (position in grid)
+                  const allItems = Array.from(emoteGrid.querySelectorAll('.twitch-emote-picker-item'));
+                  const newIndex = allItems.indexOf(targetItem);
+                  console.log('[Emotes] Reorder attempt:', { draggedEmoteCode, targetCode, newIndex });
+                  if (newIndex !== -1 && draggedEmoteCode) {
+                    reorderFavoriteEmote(draggedEmoteCode, newIndex);
+                    // Force refresh after small delay
+                    setTimeout(() => {
+                      populateEmoteGrid('favorites', emoteSearch?.value || '');
+                    }, 10);
+                  }
+                }
+
+                // Cleanup
+                if (dragClone) {
+                  dragClone.remove();
+                  dragClone = null;
+                }
+                if (draggedEl) {
+                  draggedEl.classList.remove('emote-dragging');
+                }
+                emoteGrid.querySelectorAll('.emote-drag-over').forEach(el => {
+                  el.classList.remove('emote-drag-over');
+                });
+                isDragging = false;
+                draggedEmoteCode = null;
+                draggedEl = null;
+              };
+
+              document.addEventListener('mousemove', onMouseMove);
+              document.addEventListener('mouseup', onMouseUp);
+            });
+          }
+
+          // Left click to insert (only if available)
+          btn.addEventListener('click', (e) => {
+            if (!isAvailable) {
+              e.preventDefault();
+              return;
+            }
             if (chatInput) {
               const cursorPos = chatInput.selectionStart;
               const before = chatInput.value.substring(0, cursorPos);
@@ -477,6 +847,13 @@ const InboxWidget = (function() {
               chatInput.setSelectionRange(newPos, newPos);
             }
           });
+
+          // Right click to favorite/unfavorite
+          btn.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            showEmoteContextMenu(e.clientX, e.clientY, code, data, isFav);
+          });
+
           fragment.appendChild(btn);
           count++;
         }
@@ -521,6 +898,27 @@ const InboxWidget = (function() {
       // Populate emote grid with local emotes (sync) - for immediate display
       function populateEmoteGridLocal(filter = 'all', search = '') {
         if (!emoteGrid || typeof TwitchChat === 'undefined') return;
+
+        // Handle favorites filter specially
+        if (filter === 'favorites') {
+          const favorites = getOrderedFavorites(); // Use ordered favorites
+          const availableEmotes = TwitchChat.getEmotes();
+
+          // Filter favorites by search if provided
+          let filteredFavorites = {};
+          for (const [code, data] of Object.entries(favorites)) {
+            if (!search || fuzzyMatch(code, search)) {
+              filteredFavorites[code] = data;
+            }
+          }
+
+          renderEmotesToGrid(filteredFavorites, {
+            showUnavailable: true,
+            availableEmotes: availableEmotes,
+            enableDragDrop: !search // Only enable drag/drop when not searching
+          });
+          return;
+        }
 
         // Use the new searchEmotesLocal for scored fuzzy matching
         const emotes = TwitchChat.searchEmotesLocal(search, filter);
@@ -572,6 +970,275 @@ const InboxWidget = (function() {
         });
       });
 
+      // ================================================================
+      // TEXT EFFECTS SETUP
+      // ================================================================
+      const textEffectsBtn = container.querySelector('.twitch-text-effects-btn');
+      const textEffectsPicker = container.querySelector('.twitch-text-effects-picker');
+      const textEffectsPreview = container.querySelector('.twitch-text-effects-preview');
+      let currentTextEffect = null;
+      // Sticky mode: true = effect stays on after send, false = turns off after send
+      let stickyEffectMode = localStorage.getItem(STICKY_EFFECT_KEY) !== 'false'; // default true
+
+      // Render text effects picker options
+      function renderTextEffectsPicker() {
+        if (!textEffectsPicker || typeof TextEffects === 'undefined') return;
+
+        const effects = TextEffects.getEffects();
+        textEffectsPicker.innerHTML = `
+          <div class="twitch-text-effects-picker-header">
+            <span>Text Effects</span>
+            <label class="twitch-text-effects-sticky-toggle" title="${stickyEffectMode ? 'Effect stays on after sending' : 'Effect turns off after sending'}">
+              <input type="checkbox" ${stickyEffectMode ? 'checked' : ''}>
+              <span class="sticky-label">Sticky</span>
+            </label>
+            <button class="twitch-text-effects-close">&times;</button>
+          </div>
+          <div class="twitch-text-effects-options">
+            <button class="twitch-text-effect-option ${!currentTextEffect ? 'active' : ''}" data-effect="">
+              <span class="effect-name">None</span>
+              <span class="effect-example">Normal text</span>
+            </button>
+            ${effects.map(effect => `
+              <button class="twitch-text-effect-option ${currentTextEffect === effect.id ? 'active' : ''}" data-effect="${effect.id}">
+                <span class="effect-name">${effect.name}</span>
+                <span class="effect-example">${effect.example}</span>
+              </button>
+            `).join('')}
+          </div>
+        `;
+
+        // Add click handlers to effect options
+        textEffectsPicker.querySelectorAll('.twitch-text-effect-option').forEach(option => {
+          option.addEventListener('click', () => {
+            const effectId = option.dataset.effect || null;
+            // Toggle off if clicking the already active effect
+            if (effectId && effectId === currentTextEffect) {
+              selectTextEffect(null);
+            } else {
+              selectTextEffect(effectId);
+            }
+            textEffectsPicker.style.display = 'none';
+          });
+        });
+
+        // Close button
+        const closeBtn = textEffectsPicker.querySelector('.twitch-text-effects-close');
+        if (closeBtn) {
+          closeBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            textEffectsPicker.style.display = 'none';
+          });
+        }
+
+        // Sticky toggle handler
+        const stickyToggle = textEffectsPicker.querySelector('.twitch-text-effects-sticky-toggle input');
+        const stickyLabel = textEffectsPicker.querySelector('.twitch-text-effects-sticky-toggle');
+        if (stickyToggle) {
+          stickyToggle.addEventListener('click', (e) => e.stopPropagation());
+          stickyToggle.addEventListener('change', (e) => {
+            e.stopPropagation();
+            stickyEffectMode = stickyToggle.checked;
+            localStorage.setItem(STICKY_EFFECT_KEY, stickyEffectMode ? 'true' : 'false');
+            // Update tooltip
+            if (stickyLabel) {
+              stickyLabel.title = stickyEffectMode ? 'Effect stays on after sending' : 'Effect turns off after sending';
+            }
+          });
+        }
+        if (stickyLabel) {
+          stickyLabel.addEventListener('click', (e) => e.stopPropagation());
+        }
+      }
+
+      // Select a text effect
+      function selectTextEffect(effectId) {
+        currentTextEffect = effectId;
+        // Update button to show active state
+        if (textEffectsBtn) {
+          textEffectsBtn.classList.toggle('active', !!effectId);
+        }
+        updateTextEffectsPreview();
+      }
+
+      // Update text effects preview
+      function updateTextEffectsPreview() {
+        if (!textEffectsPreview || !chatInput) return;
+
+        const text = chatInput.value.trim();
+        if (!text || !currentTextEffect || typeof TextEffects === 'undefined') {
+          textEffectsPreview.style.display = 'none';
+          // Reposition autocomplete if visible
+          if (emoteAutocomplete && emoteAutocomplete.style.display !== 'none') {
+            positionAutocomplete();
+          }
+          return;
+        }
+
+        const effect = TextEffects.getEffect(currentTextEffect);
+        const transformed = TextEffects.applyEffect(text, currentTextEffect);
+        textEffectsPreview.innerHTML = `<span class="effect-label">${effect?.name || 'Effect'}:</span> ${transformed}`;
+        textEffectsPreview.style.display = 'block';
+
+        // Reposition autocomplete after preview changes
+        if (emoteAutocomplete && emoteAutocomplete.style.display !== 'none') {
+          requestAnimationFrame(positionAutocomplete);
+        }
+      }
+
+      // Toggle text effects picker
+      if (textEffectsBtn && textEffectsPicker) {
+        textEffectsBtn.addEventListener('click', () => {
+          const isVisible = textEffectsPicker.style.display !== 'none';
+          // Close emote picker if open
+          if (emotePicker) emotePicker.style.display = 'none';
+          textEffectsPicker.style.display = isVisible ? 'none' : 'block';
+          if (!isVisible) {
+            renderTextEffectsPicker();
+          }
+        });
+
+        // Double-click on Aa button to instantly disable effect
+        textEffectsBtn.addEventListener('dblclick', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (currentTextEffect) {
+            selectTextEffect(null);
+          }
+          // Close the picker if it opened from the first click
+          textEffectsPicker.style.display = 'none';
+        });
+
+        // Right-click on Aa button to instantly disable effect
+        textEffectsBtn.addEventListener('contextmenu', (e) => {
+          if (currentTextEffect) {
+            e.preventDefault();
+            selectTextEffect(null);
+          }
+        });
+      }
+
+      // Close text effects picker when emote picker opens
+      if (emotePickerBtn && textEffectsPicker) {
+        emotePickerBtn.addEventListener('click', () => {
+          textEffectsPicker.style.display = 'none';
+        });
+      }
+
+      // ================================================================
+      // MARCO TEXT (QUICK PHRASES) SETUP
+      // ================================================================
+      const marcoTextBtn = container.querySelector('.twitch-marco-text-btn');
+      const marcoTextPicker = container.querySelector('.twitch-marco-text-picker');
+      const marcoTextList = container.querySelector('.twitch-marco-text-list');
+      const marcoTextEmpty = container.querySelector('.twitch-marco-text-empty');
+      const marcoTextEditBtn = container.querySelector('.twitch-marco-text-edit-btn');
+      const MARCO_TEXT_STORAGE_KEY = 'twitch-marco-text-phrases';
+
+      // Load saved phrases from localStorage
+      function loadMarcoTextPhrases() {
+        try {
+          const saved = localStorage.getItem(MARCO_TEXT_STORAGE_KEY);
+          return saved ? JSON.parse(saved) : [];
+        } catch (e) {
+          console.warn('Failed to load Marco Text phrases:', e);
+          return [];
+        }
+      }
+
+      // Save phrases to localStorage
+      function saveMarcoTextPhrases(phrases) {
+        try {
+          localStorage.setItem(MARCO_TEXT_STORAGE_KEY, JSON.stringify(phrases));
+        } catch (e) {
+          console.warn('Failed to save Marco Text phrases:', e);
+        }
+      }
+
+      // Render the phrase list in the picker dropdown
+      function renderMarcoTextList() {
+        if (!marcoTextList || !marcoTextEmpty) return;
+
+        const phrases = loadMarcoTextPhrases();
+
+        if (phrases.length === 0) {
+          marcoTextList.style.display = 'none';
+          marcoTextEmpty.style.display = 'block';
+          return;
+        }
+
+        marcoTextEmpty.style.display = 'none';
+        marcoTextList.style.display = 'flex';
+        marcoTextList.innerHTML = phrases.map((phrase, index) => `
+          <button class="twitch-marco-text-item" data-index="${index}" title="${phrase.text.replace(/"/g, '&quot;')}">
+            <span class="marco-text-shortname">${phrase.shortName}</span>
+          </button>
+        `).join('');
+
+        // Add click handlers to insert phrase
+        marcoTextList.querySelectorAll('.twitch-marco-text-item').forEach(item => {
+          item.addEventListener('click', () => {
+            const index = parseInt(item.dataset.index);
+            const phrases = loadMarcoTextPhrases();
+            if (phrases[index] && chatInput) {
+              const cursorPos = chatInput.selectionStart;
+              const before = chatInput.value.substring(0, cursorPos);
+              const after = chatInput.value.substring(cursorPos);
+              const space = before.length > 0 && !before.endsWith(' ') ? ' ' : '';
+              chatInput.value = before + space + phrases[index].text + after;
+              chatInput.focus();
+              // Move cursor after inserted text
+              const newPos = cursorPos + space.length + phrases[index].text.length;
+              chatInput.setSelectionRange(newPos, newPos);
+              // Close picker
+              marcoTextPicker.style.display = 'none';
+              // Trigger emote preview update
+              updateEmotePreview();
+              updateTextEffectsPreview();
+            }
+          });
+        });
+      }
+
+      // Toggle Marco Text picker
+      if (marcoTextBtn && marcoTextPicker) {
+        marcoTextBtn.addEventListener('click', () => {
+          const isVisible = marcoTextPicker.style.display !== 'none';
+          // Close other pickers
+          if (emotePicker) emotePicker.style.display = 'none';
+          if (textEffectsPicker) textEffectsPicker.style.display = 'none';
+          marcoTextPicker.style.display = isVisible ? 'none' : 'block';
+          if (!isVisible) {
+            renderMarcoTextList();
+          }
+        });
+      }
+
+      // Close Marco Text picker when other pickers open
+      if (emotePickerBtn && marcoTextPicker) {
+        emotePickerBtn.addEventListener('click', () => {
+          marcoTextPicker.style.display = 'none';
+        });
+      }
+      if (textEffectsBtn && marcoTextPicker) {
+        textEffectsBtn.addEventListener('click', () => {
+          marcoTextPicker.style.display = 'none';
+        });
+      }
+
+      // Edit button opens the Marco Text modal
+      if (marcoTextEditBtn) {
+        marcoTextEditBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const modal = document.getElementById('marco-text-modal');
+          if (modal) {
+            initMarcoTextModal();
+            modal.classList.add('active');
+          }
+          marcoTextPicker.style.display = 'none';
+        });
+      }
+
       // Set up chat input with emote autocomplete and preview
       const emoteAutocomplete = container.querySelector('.twitch-emote-autocomplete');
       const emotePreview = container.querySelector('.twitch-emote-preview');
@@ -605,8 +1272,7 @@ const InboxWidget = (function() {
             .map(name => ({ code: name, type: 'user' }));
 
           if (autocompleteMatches.length === 0) {
-            emoteAutocomplete.style.display = 'none';
-            autocompleteIndex = -1;
+            hideAutocomplete();
             return;
           }
 
@@ -617,6 +1283,7 @@ const InboxWidget = (function() {
             </div>
           `).join('');
           emoteAutocomplete.style.display = 'flex';
+          positionAutocomplete();
 
           // Add click handlers
           emoteAutocomplete.querySelectorAll('.twitch-emote-autocomplete-item').forEach(item => {
@@ -629,9 +1296,7 @@ const InboxWidget = (function() {
 
         // Need at least 2 characters to trigger emote autocomplete
         if (currentWord.length < 2) {
-          emoteAutocomplete.style.display = 'none';
-          autocompleteMatches = [];
-          autocompleteIndex = -1;
+          hideAutocomplete();
           return;
         }
 
@@ -648,8 +1313,7 @@ const InboxWidget = (function() {
         }
 
         if (autocompleteMatches.length === 0) {
-          emoteAutocomplete.style.display = 'none';
-          autocompleteIndex = -1;
+          hideAutocomplete();
           return;
         }
 
@@ -662,12 +1326,26 @@ const InboxWidget = (function() {
           </div>
         `).join('');
         emoteAutocomplete.style.display = 'flex';
+        positionAutocomplete();
 
         // Add click handlers to autocomplete items
         emoteAutocomplete.querySelectorAll('.twitch-emote-autocomplete-item').forEach(item => {
           item.addEventListener('click', () => {
             selectAutocomplete(parseInt(item.dataset.index));
           });
+
+          // Right-click to favorite (only for emotes, not users)
+          if (autocompleteType === 'emote') {
+            item.addEventListener('contextmenu', (e) => {
+              e.preventDefault();
+              const index = parseInt(item.dataset.index);
+              const emote = autocompleteMatches[index];
+              if (emote) {
+                const isFav = isFavoriteEmote(emote.code);
+                showEmoteContextMenu(e.clientX, e.clientY, emote.code, emote, isFav);
+              }
+            });
+          }
         });
       }
 
@@ -677,6 +1355,25 @@ const InboxWidget = (function() {
         autocompleteDebounceTimer = setTimeout(updateAutocomplete, 600);
       }
 
+      // Position autocomplete - CSS handles positioning with bottom: 100%
+      function positionAutocomplete() {
+        // Autocomplete uses position: absolute with bottom: 100%
+        // This places it directly at the top of the container
+        // The previews are inside the container, so no offset calculation needed
+        // Just ensure bottom is set correctly
+        if (emoteAutocomplete) {
+          emoteAutocomplete.style.bottom = '100%';
+        }
+      }
+
+      // Hide autocomplete
+      function hideAutocomplete() {
+        if (!emoteAutocomplete) return;
+        emoteAutocomplete.style.display = 'none';
+        autocompleteMatches = [];
+        autocompleteIndex = -1;
+      }
+
       // Update emote preview bar
       function updateEmotePreview() {
         if (!emotePreview || !chatInput || typeof TwitchChat === 'undefined') return;
@@ -684,6 +1381,10 @@ const InboxWidget = (function() {
         const value = chatInput.value.trim();
         if (!value) {
           emotePreview.style.display = 'none';
+          // Reposition autocomplete if visible
+          if (emoteAutocomplete && emoteAutocomplete.style.display !== 'none') {
+            positionAutocomplete();
+          }
           return;
         }
 
@@ -706,6 +1407,11 @@ const InboxWidget = (function() {
           emotePreview.style.display = 'flex';
         } else {
           emotePreview.style.display = 'none';
+        }
+
+        // Reposition autocomplete after preview changes (use requestAnimationFrame for layout)
+        if (emoteAutocomplete && emoteAutocomplete.style.display !== 'none') {
+          requestAnimationFrame(positionAutocomplete);
         }
       }
 
@@ -733,9 +1439,7 @@ const InboxWidget = (function() {
         chatInput.focus();
 
         // Hide autocomplete and update preview
-        emoteAutocomplete.style.display = 'none';
-        autocompleteMatches = [];
-        autocompleteIndex = -1;
+        hideAutocomplete();
         updateEmotePreview();
       }
 
@@ -758,6 +1462,7 @@ const InboxWidget = (function() {
         chatInput.addEventListener('input', () => {
           debouncedUpdateAutocomplete();
           updateEmotePreview();
+          updateTextEffectsPreview();
           autoResizeInput();
         });
 
@@ -782,9 +1487,7 @@ const InboxWidget = (function() {
               return;
             }
             if (e.key === 'Escape') {
-              emoteAutocomplete.style.display = 'none';
-              autocompleteMatches = [];
-              autocompleteIndex = -1;
+              hideAutocomplete();
               return;
             }
           }
@@ -793,27 +1496,187 @@ const InboxWidget = (function() {
           // Shift+Enter allows newlines in the textarea
           if (e.key === 'Enter' && !e.shiftKey && chatInput.value.trim() && hasToken) {
             e.preventDefault();
-            const sent = TwitchChat.sendMessage(chatInput.value.trim());
+            // Apply text effect if one is selected
+            let messageToSend = chatInput.value.trim();
+            if (currentTextEffect && typeof TextEffects !== 'undefined') {
+              messageToSend = TextEffects.applyEffect(messageToSend, currentTextEffect);
+            }
+            const sent = TwitchChat.sendMessage(messageToSend);
             if (sent) {
               chatInput.value = '';
               chatInput.style.height = 'auto'; // Reset height
               chatInput.classList.remove('has-overflow'); // Reset scrollbar
-              emoteAutocomplete.style.display = 'none';
-              autocompleteMatches = [];
+              hideAutocomplete();
               if (emotePreview) emotePreview.style.display = 'none';
+              if (textEffectsPreview) textEffectsPreview.style.display = 'none';
+              // Clear effect after sending if not in sticky mode
+              if (!stickyEffectMode && currentTextEffect) {
+                selectTextEffect(null);
+              }
             }
           }
-          // Close emote picker on Escape
-          if (e.key === 'Escape' && emotePicker) {
-            emotePicker.style.display = 'none';
+          // Close emote picker and text effects picker on Escape
+          if (e.key === 'Escape') {
+            if (emotePicker) emotePicker.style.display = 'none';
+            if (textEffectsPicker) textEffectsPicker.style.display = 'none';
           }
         });
 
         // Hide autocomplete when input loses focus (with delay for click handling)
         chatInput.addEventListener('blur', () => {
           setTimeout(() => {
-            if (emoteAutocomplete) emoteAutocomplete.style.display = 'none';
+            // Don't hide if emote context menu is open (right-click to favorite)
+            if (!emoteContextMenuOpen) {
+              hideAutocomplete();
+            }
           }, 150);
+        });
+
+        // Context menu for applying effects to selected text
+        let textEffectContextMenu = null;
+
+        function createTextEffectContextMenu() {
+          if (textEffectContextMenu) return textEffectContextMenu;
+
+          textEffectContextMenu = document.createElement('div');
+          textEffectContextMenu.className = 'twitch-text-effect-context-menu';
+          textEffectContextMenu.style.cssText = `
+            position: fixed;
+            background: rgba(30, 30, 30, 0.95);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 6px;
+            padding: 4px 0;
+            z-index: 10000;
+            display: none;
+            min-width: 140px;
+            max-height: 300px;
+            overflow-y: auto;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+          `;
+
+          // Add "Apply Effect" header
+          const header = document.createElement('div');
+          header.style.cssText = `
+            padding: 6px 12px;
+            font-size: 11px;
+            color: rgba(255, 255, 255, 0.5);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            margin-bottom: 4px;
+          `;
+          header.textContent = 'Apply Effect to Selection';
+          textEffectContextMenu.appendChild(header);
+
+          // Add effect options
+          if (typeof TextEffects !== 'undefined') {
+            const effects = TextEffects.getEffects();
+            effects.forEach(effect => {
+              const item = document.createElement('div');
+              item.className = 'context-menu-item';
+              item.dataset.effect = effect.id;
+              item.style.cssText = `
+                padding: 6px 12px;
+                cursor: pointer;
+                font-size: 13px;
+                color: #fff;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                gap: 12px;
+              `;
+              item.innerHTML = `
+                <span>${effect.name}</span>
+                <span style="opacity: 0.6; font-size: 11px;">${effect.example.slice(0, 6)}</span>
+              `;
+              item.addEventListener('mouseenter', () => {
+                item.style.background = 'rgba(255, 255, 255, 0.1)';
+              });
+              item.addEventListener('mouseleave', () => {
+                item.style.background = 'transparent';
+              });
+              item.addEventListener('click', () => {
+                applyEffectToSelection(effect.id);
+                hideTextEffectContextMenu();
+              });
+              textEffectContextMenu.appendChild(item);
+            });
+          }
+
+          document.body.appendChild(textEffectContextMenu);
+          return textEffectContextMenu;
+        }
+
+        function showTextEffectContextMenu(x, y) {
+          const menu = createTextEffectContextMenu();
+          menu.style.left = x + 'px';
+          menu.style.top = y + 'px';
+          menu.style.display = 'block';
+
+          // Adjust if menu goes off screen
+          const rect = menu.getBoundingClientRect();
+          if (rect.right > window.innerWidth) {
+            menu.style.left = (window.innerWidth - rect.width - 10) + 'px';
+          }
+          if (rect.bottom > window.innerHeight) {
+            menu.style.top = (window.innerHeight - rect.height - 10) + 'px';
+          }
+        }
+
+        function hideTextEffectContextMenu() {
+          if (textEffectContextMenu) {
+            textEffectContextMenu.style.display = 'none';
+          }
+        }
+
+        function applyEffectToSelection(effectId) {
+          if (!chatInput || typeof TextEffects === 'undefined') return;
+
+          const start = chatInput.selectionStart;
+          const end = chatInput.selectionEnd;
+          const selectedText = chatInput.value.substring(start, end);
+
+          if (!selectedText) return;
+
+          const transformed = TextEffects.applyEffect(selectedText, effectId);
+          const before = chatInput.value.substring(0, start);
+          const after = chatInput.value.substring(end);
+
+          chatInput.value = before + transformed + after;
+          chatInput.focus();
+
+          // Set cursor after the transformed text
+          const newCursorPos = start + transformed.length;
+          chatInput.setSelectionRange(newCursorPos, newCursorPos);
+
+          // Update preview if global effect is active
+          updateTextEffectsPreview();
+        }
+
+        // Right-click handler for context menu
+        chatInput.addEventListener('contextmenu', (e) => {
+          const selectedText = chatInput.value.substring(
+            chatInput.selectionStart,
+            chatInput.selectionEnd
+          );
+
+          // Only show custom menu if text is selected
+          if (selectedText && selectedText.length > 0) {
+            e.preventDefault();
+            showTextEffectContextMenu(e.clientX, e.clientY);
+          }
+        });
+
+        // Hide context menu when clicking elsewhere
+        document.addEventListener('click', (e) => {
+          if (textEffectContextMenu && !textEffectContextMenu.contains(e.target)) {
+            hideTextEffectContextMenu();
+          }
+        });
+
+        // Hide context menu on escape
+        document.addEventListener('keydown', (e) => {
+          if (e.key === 'Escape') {
+            hideTextEffectContextMenu();
+          }
         });
       }
 
@@ -1791,6 +2654,212 @@ const InboxWidget = (function() {
     if (svgFileInput) {
       svgFileInput.value = '';
       svgFileInput.dataset.pendingSvg = '';
+    }
+  }
+
+  // ================================================================
+  // MARCO TEXT (QUICK PHRASES) MODAL
+  // ================================================================
+
+  const MARCO_TEXT_STORAGE_KEY = 'twitch-marco-text-phrases';
+  let marcoTextModalInitialized = false;
+
+  /**
+   * Load saved phrases from localStorage
+   */
+  function loadMarcoTextPhrasesGlobal() {
+    try {
+      const saved = localStorage.getItem(MARCO_TEXT_STORAGE_KEY);
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      console.warn('Failed to load Marco Text phrases:', e);
+      return [];
+    }
+  }
+
+  /**
+   * Save phrases to localStorage
+   */
+  function saveMarcoTextPhrasesGlobal(phrases) {
+    try {
+      localStorage.setItem(MARCO_TEXT_STORAGE_KEY, JSON.stringify(phrases));
+    } catch (e) {
+      console.warn('Failed to save Marco Text phrases:', e);
+    }
+  }
+
+  /**
+   * Setup Marco Text modal event listeners (called once)
+   */
+  function setupMarcoTextModal() {
+    const modal = document.getElementById('marco-text-modal');
+    if (!modal || marcoTextModalInitialized) return;
+    marcoTextModalInitialized = true;
+
+    const addBtn = document.getElementById('marco-text-add-btn');
+    const saveBtn = document.getElementById('marco-text-save-btn');
+    const cancelBtn = document.getElementById('marco-text-cancel-btn');
+
+    // Add new phrase button
+    addBtn?.addEventListener('click', () => {
+      addPhraseRow();
+    });
+
+    // Save button handler
+    saveBtn?.addEventListener('click', () => {
+      savePhrases();
+      modal.classList.remove('active');
+      // Refresh the picker list if it's open
+      const marcoTextList = document.querySelector('.twitch-marco-text-list');
+      if (marcoTextList) {
+        renderMarcoTextListGlobal();
+      }
+    });
+
+    // Cancel button handler
+    cancelBtn?.addEventListener('click', () => {
+      modal.classList.remove('active');
+    });
+
+    // Close on backdrop click
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) {
+        modal.classList.remove('active');
+      }
+    });
+  }
+
+  /**
+   * Add a new phrase row to the modal
+   */
+  function addPhraseRow(shortName = '', text = '') {
+    const list = document.getElementById('marco-text-phrases-list');
+    if (!list) return;
+
+    const row = document.createElement('div');
+    row.className = 'marco-text-phrase-row';
+    row.innerHTML = `
+      <input type="text" class="marco-text-shortname-input" placeholder="Short name" value="${escapeHtml(shortName)}" maxlength="20">
+      <input type="text" class="marco-text-fulltext-input" placeholder="Full phrase text" value="${escapeHtml(text)}">
+      <button type="button" class="marco-text-delete-btn" title="Delete phrase">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+        </svg>
+      </button>
+    `;
+
+    // Add delete handler
+    const deleteBtn = row.querySelector('.marco-text-delete-btn');
+    deleteBtn?.addEventListener('click', () => {
+      row.remove();
+    });
+
+    list.appendChild(row);
+
+    // Focus the shortname input
+    const shortNameInput = row.querySelector('.marco-text-shortname-input');
+    shortNameInput?.focus();
+  }
+
+  /**
+   * Save phrases from the modal
+   */
+  function savePhrases() {
+    const list = document.getElementById('marco-text-phrases-list');
+    if (!list) return;
+
+    const phrases = [];
+    const rows = list.querySelectorAll('.marco-text-phrase-row');
+
+    rows.forEach(row => {
+      const shortName = row.querySelector('.marco-text-shortname-input')?.value.trim();
+      const text = row.querySelector('.marco-text-fulltext-input')?.value.trim();
+
+      // Only save if both fields have content
+      if (shortName && text) {
+        phrases.push({ shortName, text });
+      }
+    });
+
+    saveMarcoTextPhrasesGlobal(phrases);
+  }
+
+  /**
+   * Render phrases in the global picker (called from modal save)
+   */
+  function renderMarcoTextListGlobal() {
+    const marcoTextList = document.querySelector('.twitch-marco-text-list');
+    const marcoTextEmpty = document.querySelector('.twitch-marco-text-empty');
+    const chatInput = document.querySelector('.twitch-irc-input');
+    const marcoTextPicker = document.querySelector('.twitch-marco-text-picker');
+
+    if (!marcoTextList || !marcoTextEmpty) return;
+
+    const phrases = loadMarcoTextPhrasesGlobal();
+
+    if (phrases.length === 0) {
+      marcoTextList.style.display = 'none';
+      marcoTextEmpty.style.display = 'block';
+      return;
+    }
+
+    marcoTextEmpty.style.display = 'none';
+    marcoTextList.style.display = 'flex';
+    marcoTextList.innerHTML = phrases.map((phrase, index) => `
+      <button class="twitch-marco-text-item" data-index="${index}" title="${phrase.text.replace(/"/g, '&quot;')}">
+        <span class="marco-text-shortname">${escapeHtml(phrase.shortName)}</span>
+      </button>
+    `).join('');
+
+    // Add click handlers to insert phrase
+    marcoTextList.querySelectorAll('.twitch-marco-text-item').forEach(item => {
+      item.addEventListener('click', () => {
+        const index = parseInt(item.dataset.index);
+        const phrases = loadMarcoTextPhrasesGlobal();
+        if (phrases[index] && chatInput) {
+          const cursorPos = chatInput.selectionStart;
+          const before = chatInput.value.substring(0, cursorPos);
+          const after = chatInput.value.substring(cursorPos);
+          const space = before.length > 0 && !before.endsWith(' ') ? ' ' : '';
+          chatInput.value = before + space + phrases[index].text + after;
+          chatInput.focus();
+          // Move cursor after inserted text
+          const newPos = cursorPos + space.length + phrases[index].text.length;
+          chatInput.setSelectionRange(newPos, newPos);
+          // Close picker
+          if (marcoTextPicker) marcoTextPicker.style.display = 'none';
+          // Trigger emote preview update by dispatching input event
+          chatInput.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+      });
+    });
+  }
+
+  /**
+   * Open the Marco Text modal and populate with current phrases
+   */
+  function initMarcoTextModal() {
+    // Setup event listeners once
+    setupMarcoTextModal();
+
+    // Get modal elements
+    const modal = document.getElementById('marco-text-modal');
+    const list = document.getElementById('marco-text-phrases-list');
+    if (!modal || !list) return;
+
+    // Clear existing rows
+    list.innerHTML = '';
+
+    // Load and populate with saved phrases
+    const phrases = loadMarcoTextPhrasesGlobal();
+
+    if (phrases.length === 0) {
+      // Add one empty row to get started
+      addPhraseRow();
+    } else {
+      phrases.forEach(phrase => {
+        addPhraseRow(phrase.shortName, phrase.text);
+      });
     }
   }
 

@@ -47,6 +47,7 @@ const widgetScripts = [
   'scripts/widgets/audio-mixer.js',
   'scripts/widgets/calendar.js',
   'scripts/widgets/twitch-chat.js',
+  'scripts/widgets/text-effects.js',
   'scripts/widgets/inbox.js',
   'scripts/widgets/claude-stats.js',
   'scripts/widgets/settings-panel.js',
@@ -61,7 +62,8 @@ const widgetScripts = [
  */
 async function loadWidget(containerId, path) {
   try {
-    const response = await fetch(path);
+    // Add cache-busting version parameter
+    const response = await fetch(path + '?v=' + Date.now());
     if (!response.ok) {
       throw new Error(`Failed to load ${path}: ${response.status}`);
     }
@@ -85,7 +87,8 @@ async function loadWidget(containerId, path) {
 function loadScript(src) {
   return new Promise((resolve, reject) => {
     const script = document.createElement('script');
-    script.src = src;
+    // Add cache-busting version parameter
+    script.src = src + '?v=' + Date.now();
     script.onload = resolve;
     script.onerror = () => reject(new Error(`Failed to load script: ${src}`));
     document.body.appendChild(script);

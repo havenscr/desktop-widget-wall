@@ -818,6 +818,11 @@ function hideHLSControls() {
  * @param {HTMLElement} twitchFallback - Fallback overlay
  */
 async function updateTwitchWidgetHLS(channel, hlsVideo, twitchEmbed, twitchOffline, twitchFallback) {
+  // Check if Twitch should auto-start based on smart widget's saved page
+  // If another page (YouTube) is the saved active page, don't auto-start Twitch
+  const savedPage = localStorage.getItem('smart-widget-current-page');
+  const shouldAutoStart = savedPage === null || savedPage === '0';
+
   // Hide embed, show HLS video
   if (twitchEmbed) twitchEmbed.style.display = 'none';
   if (twitchOffline) twitchOffline.style.display = 'none';
@@ -847,6 +852,13 @@ async function updateTwitchWidgetHLS(channel, hlsVideo, twitchEmbed, twitchOffli
 
   // Show HLS video controls
   showHLSControls(hlsVideo);
+
+  // If YouTube is the active page, don't start Twitch stream - save CPU/bandwidth
+  if (!shouldAutoStart) {
+    console.log('[Twitch] Skipping auto-start - YouTube tab is active');
+    twitchEmbedLoaded = true; // Mark as loaded so it can start when user switches to Twitch
+    return;
+  }
 
   try {
     await window.HLSPlayer.play(channel, hlsVideo);
@@ -1107,23 +1119,8 @@ function updateTwitchWidget() {
             console.log('Could not trigger Twitch autoplay:', e);
           }
 
-          // Enforce minimum 720p quality
-          try {
-            const player = twitchPlayer.getPlayer();
-            if (player && typeof player.setQuality === 'function') {
-              const qualities = player.getQualities();
-              // Find 720p or higher quality
-              const hd = qualities.find(q =>
-                q.name?.includes('720') || q.name?.includes('1080') || q.group === '720p' || q.group === '1080p'
-              );
-              if (hd) {
-                player.setQuality(hd.group || hd.name);
-              }
-            }
-          } catch (e) {
-            console.log('Could not set Twitch quality:', e);
-          }
         });
+
 
         twitchPlayer.addEventListener(Twitch.Embed.OFFLINE, () => {
           console.log('Twitch: OFFLINE event fired');

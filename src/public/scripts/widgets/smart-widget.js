@@ -143,12 +143,17 @@ function createYouTubeEmbed(containerId, videoId, muted = true) {
         return;
       }
 
+      // Check if this YouTube page should auto-start based on saved page
+      // Don't autoplay if Twitch (page 0) is the active page - saves CPU/bandwidth
+      const savedPage = localStorage.getItem('smart-widget-current-page');
+      const shouldAutoplay = savedPage !== null && savedPage !== '0';
+
       const player = new YT.Player(containerId, {
         videoId: videoId,
         width: '100%',
         height: '100%',
         playerVars: {
-          autoplay: 1,
+          autoplay: shouldAutoplay ? 1 : 0,
           mute: muted ? 1 : 0,
           controls: 1,
           loop: 1,
@@ -173,6 +178,9 @@ function createYouTubeEmbed(containerId, videoId, muted = true) {
               setTimeout(() => {
                 event.target.playVideo();
               }, 100);
+            } else {
+              // Not active page - ensure video is stopped to save resources
+              event.target.stopVideo();
             }
 
             // DISABLED: Ambient background was cloning iframe and breaking playback
@@ -380,11 +388,13 @@ function buildSmartWidgetUI() {
 
 /**
  * Switch to a specific page
+ * Completely stops non-visible video streams to save CPU and bandwidth
  */
 function switchToPage(pageIndex) {
   const twitchWidget = document.getElementById('twitch-widget');
   if (!twitchWidget) return;
 
+  const previousPage = smartWidgetConfig.currentPage;
   smartWidgetConfig.currentPage = pageIndex;
 
   // Update dots
@@ -399,42 +409,83 @@ function switchToPage(pageIndex) {
     const isActive = index === pageIndex;
     page.classList.toggle('active', isActive);
 
-    // Handle YouTube playback
+    // Handle YouTube playback - STOP completely when not visible
     if (page.youtubePlayer) {
       if (isActive) {
         page.youtubePlayer.playVideo();
       } else {
-        page.youtubePlayer.pauseVideo();
+        // Stop video completely to save bandwidth/CPU (not just pause)
+        page.youtubePlayer.stopVideo();
       }
     }
 
-    // Handle Twitch playback (page 0)
+    // Handle Twitch playback (page 0) - STOP completely when not visible
     if (index === 0) {
-      // Handle HLS video player
       const hlsVideo = document.getElementById('hls-video');
-      if (hlsVideo && hlsVideo.classList.contains('active')) {
-        if (isActive) {
+
+      if (isActive) {
+        // Switching TO Twitch - restart the stream if it was stopped
+        if (window.HLSPlayer && !window.HLSPlayer.isPlaying()) {
+          // Get current channel from twitchStreamInfo or config
+          const channel = window.twitchStreamInfo?.channel ||
+            (window.getDashboardConfig?.()?.twitch?.channel) ||
+            JSON.parse(localStorage.getItem('dashboard-config') || '{}')?.twitch?.channel;
+
+          if (channel && hlsVideo) {
+            console.log('[SmartWidget] Restarting HLS stream for:', channel);
+            window.HLSPlayer.play(channel, hlsVideo).catch(e => {
+              console.log('[SmartWidget] HLS restart failed:', e);
+            });
+          }
+        } else if (hlsVideo) {
+          // HLS still playing, just unmute and ensure playing
           hlsVideo.muted = false;
           hlsVideo.play().catch(e => console.log('HLS autoplay blocked:', e));
-        } else {
-          hlsVideo.muted = true;
-          hlsVideo.pause();
         }
-      }
 
-      // Handle native Twitch embed
-      if (window.twitchPlayer) {
-        try {
-          const player = window.twitchPlayer.getPlayer ? window.twitchPlayer.getPlayer() : window.twitchPlayer;
-          if (player && typeof player.pause === 'function') {
-            if (isActive) {
-              player.play();
-            } else {
-              player.pause();
-            }
+        // Handle native Twitch embed - restore iframe src
+        const twitchEmbed = document.getElementById('twitch-embed');
+        if (twitchEmbed) {
+          const iframe = twitchEmbed.querySelector('iframe');
+          if (iframe && iframe.dataset.originalSrc) {
+            iframe.src = iframe.dataset.originalSrc;
+            delete iframe.dataset.originalSrc;
+            console.log('[SmartWidget] Twitch iframe restored');
           }
-        } catch (e) {
-          // Twitch player might not be fully initialized
+        }
+      } else {
+        // Switching AWAY from Twitch - STOP completely to save CPU/bandwidth
+        console.log('[SmartWidget] Switching away from Twitch - stopping all playback');
+
+        // Stop HLS player module (destroys stream connection)
+        if (window.HLSPlayer) {
+          try {
+            window.HLSPlayer.stop();
+            console.log('[SmartWidget] HLSPlayer.stop() called');
+          } catch (e) {
+            console.log('[SmartWidget] HLSPlayer.stop() error:', e);
+          }
+        }
+
+        // Also directly stop the video element
+        if (hlsVideo) {
+          hlsVideo.pause();
+          hlsVideo.muted = true;
+          // Clear the source to fully stop network activity
+          hlsVideo.removeAttribute('src');
+          hlsVideo.load();
+          console.log('[SmartWidget] HLS video element stopped and cleared');
+        }
+
+        // Handle native Twitch embed - clear iframe to fully stop
+        const twitchEmbed = document.getElementById('twitch-embed');
+        if (twitchEmbed) {
+          const iframe = twitchEmbed.querySelector('iframe');
+          if (iframe && iframe.src && !iframe.src.includes('about:blank')) {
+            iframe.dataset.originalSrc = iframe.src;
+            iframe.src = 'about:blank';
+            console.log('[SmartWidget] Twitch iframe stopped');
+          }
         }
       }
     }

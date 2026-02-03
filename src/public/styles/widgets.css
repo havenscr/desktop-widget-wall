@@ -4178,6 +4178,19 @@
   border-color: var(--accent-primary);
 }
 
+/* Make date/time picker icons visible on dark background */
+.countdown-modal-field input[type="date"]::-webkit-calendar-picker-indicator,
+.countdown-modal-field input[type="time"]::-webkit-calendar-picker-indicator {
+  filter: invert(1);
+  cursor: pointer;
+  opacity: 0.7;
+}
+
+.countdown-modal-field input[type="date"]::-webkit-calendar-picker-indicator:hover,
+.countdown-modal-field input[type="time"]::-webkit-calendar-picker-indicator:hover {
+  opacity: 1;
+}
+
 .countdown-modal-buttons {
   display: flex;
   gap: 10px;
@@ -9029,8 +9042,9 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 0 8px; /* row-gap: 0, column-gap: 8px */
   padding: 8px 12px;
+  padding-top: 0; /* No top padding - previews handle their own spacing */
   background: rgba(0, 0, 0, 0.3);
   border-top: 1px solid rgba(255, 255, 255, 0.1);
 }
@@ -9067,13 +9081,527 @@
   color: var(--accent-primary);
 }
 
+/* Text Effects Button */
+.twitch-text-effects-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.twitch-text-effects-btn .text-effects-icon {
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 600;
+  font-style: italic;
+}
+
+.twitch-text-effects-btn:hover {
+  background: rgba(var(--accent-primary-rgb), 0.2);
+  border-color: rgba(var(--accent-primary-rgb), 0.3);
+}
+
+.twitch-text-effects-btn:hover .text-effects-icon {
+  color: var(--accent-primary);
+}
+
+.twitch-text-effects-btn.active {
+  background: rgba(var(--accent-primary-rgb), 0.3);
+  border-color: var(--accent-primary);
+}
+
+.twitch-text-effects-btn.active .text-effects-icon {
+  color: var(--accent-secondary);
+}
+
+/* Text Effects Picker Panel */
+.twitch-text-effects-picker {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  max-height: 415px;
+  background: rgba(18, 18, 28, 0.97);
+  border: 1px solid rgba(var(--accent-primary-rgb), 0.3);
+  border-radius: 12px 12px 0 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  z-index: 100;
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.6);
+}
+
+.twitch-text-effects-picker-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: rgba(var(--accent-primary-rgb), 0.1);
+  border-bottom: 1px solid rgba(var(--accent-primary-rgb), 0.2);
+  color: var(--text-primary);
+  font-size: calc(13px * var(--text-scale, 1));
+  font-weight: 600;
+  gap: 8px;
+  position: relative;
+  z-index: 10;
+}
+
+.twitch-text-effects-picker-header > span:first-child {
+  flex: 1;
+}
+
+.twitch-text-effects-sticky-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  transition: color 0.2s ease;
+}
+
+.twitch-text-effects-sticky-toggle:hover {
+  color: var(--text-primary);
+}
+
+.twitch-text-effects-sticky-toggle input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--accent-primary);
+  cursor: pointer;
+}
+
+.twitch-text-effects-sticky-toggle:has(input:checked) {
+  color: var(--accent-primary);
+}
+
+.twitch-text-effects-sticky-toggle .sticky-label {
+  user-select: none;
+}
+
+.twitch-text-effects-close {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 20px;
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+.twitch-text-effects-close:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-primary);
+}
+
+.twitch-text-effects-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  padding: 10px;
+  overflow-y: auto;
+  max-height: 355px;
+}
+
+.twitch-text-effect-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 12px 14px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s;
+  text-align: left;
+  min-width: 0;
+}
+
+.twitch-text-effect-option:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.twitch-text-effect-option.active {
+  background: rgba(var(--accent-primary-rgb), 0.2);
+  border-color: rgba(var(--accent-primary-rgb), 0.4);
+}
+
+.twitch-text-effect-option .effect-name {
+  color: var(--text-primary);
+  font-size: calc(13px * var(--text-scale, 1));
+  font-weight: 600;
+}
+
+.twitch-text-effect-option .effect-example {
+  color: var(--text-secondary);
+  font-size: calc(12px * var(--text-scale, 1));
+  opacity: 0.8;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.twitch-text-effect-option.active .effect-name {
+  color: var(--accent-secondary);
+}
+
+/* Text Effects Preview - uses flex ordering like emote preview */
+.twitch-text-effects-preview {
+  order: -2; /* Appears before emote preview */
+  width: 100%; /* Full width forces it to own row */
+  padding: 8px 14px;
+  background: rgba(24, 24, 27, 0.98);
+  border: 1px solid rgba(var(--accent-primary-rgb), 0.3);
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--text-primary);
+  position: relative;
+  z-index: 50;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+.twitch-text-effects-preview .effect-label {
+  color: var(--accent-secondary);
+  font-weight: 600;
+  margin-right: 8px;
+}
+
+/* ================================================================
+   MARCO TEXT (QUICK PHRASES) BUTTON & PICKER
+   ================================================================ */
+.twitch-marco-text-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.twitch-marco-text-btn svg {
+  color: var(--text-secondary);
+}
+
+.twitch-marco-text-btn:hover {
+  background: rgba(var(--accent-primary-rgb), 0.2);
+  border-color: rgba(var(--accent-primary-rgb), 0.3);
+}
+
+.twitch-marco-text-btn:hover svg {
+  color: var(--accent-primary);
+}
+
+/* Marco Text Picker Dropdown */
+.twitch-marco-text-picker {
+  position: absolute;
+  bottom: 100%;
+  right: 40px;
+  min-width: 180px;
+  max-width: 280px;
+  background: rgba(18, 18, 28, 0.97);
+  border: 1px solid rgba(var(--accent-primary-rgb), 0.3);
+  border-radius: 12px;
+  overflow: hidden;
+  z-index: 100;
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.6);
+  margin-bottom: 8px;
+}
+
+.twitch-marco-text-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: rgba(var(--accent-primary-rgb), 0.1);
+  border-bottom: 1px solid rgba(var(--accent-primary-rgb), 0.2);
+  color: var(--text-primary);
+  font-size: calc(12px * var(--text-scale, 1));
+  font-weight: 600;
+}
+
+.twitch-marco-text-edit-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.twitch-marco-text-edit-btn svg {
+  color: var(--text-secondary);
+}
+
+.twitch-marco-text-edit-btn:hover {
+  background: rgba(var(--accent-primary-rgb), 0.3);
+  border-color: var(--accent-primary);
+}
+
+.twitch-marco-text-edit-btn:hover svg {
+  color: var(--accent-primary);
+}
+
+.twitch-marco-text-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 250px;
+  overflow-y: auto;
+  padding: 6px;
+  gap: 4px;
+}
+
+.twitch-marco-text-item {
+  display: flex;
+  align-items: center;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+  text-align: left;
+}
+
+.twitch-marco-text-item:hover {
+  background: rgba(var(--accent-primary-rgb), 0.2);
+  border-color: rgba(var(--accent-primary-rgb), 0.4);
+}
+
+.twitch-marco-text-item .marco-text-shortname {
+  color: var(--text-primary);
+  font-size: calc(13px * var(--text-scale, 1));
+  font-weight: 500;
+}
+
+.twitch-marco-text-empty {
+  padding: 20px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: calc(12px * var(--text-scale, 1));
+  line-height: 1.5;
+}
+
+/* ================================================================
+   MARCO TEXT MODAL
+   ================================================================ */
+.marco-text-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.2s, visibility 0.2s;
+}
+
+.marco-text-modal.active {
+  opacity: 1;
+  visibility: visible;
+}
+
+.marco-text-modal-content {
+  background: var(--glass-bg-darker, rgba(18, 18, 28, 0.95));
+  border: 1px solid rgba(var(--accent-primary-rgb), 0.3);
+  border-radius: 16px;
+  padding: 24px;
+  width: 90%;
+  max-width: 500px;
+  max-height: 80vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.marco-text-modal-content h3 {
+  margin: 0 0 8px;
+  color: var(--text-primary);
+  font-size: calc(18px * var(--text-scale, 1));
+  font-weight: 600;
+}
+
+.marco-text-modal-desc {
+  margin: 0 0 20px;
+  color: var(--text-muted);
+  font-size: calc(13px * var(--text-scale, 1));
+  line-height: 1.5;
+}
+
+.marco-text-phrases-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 16px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.marco-text-phrase-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.marco-text-shortname-input {
+  width: 100px;
+  flex-shrink: 0;
+  padding: 10px 12px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: calc(13px * var(--text-scale, 1));
+  outline: none;
+}
+
+.marco-text-shortname-input:focus {
+  border-color: var(--accent-primary);
+}
+
+.marco-text-fulltext-input {
+  flex: 1;
+  padding: 10px 12px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: calc(13px * var(--text-scale, 1));
+  outline: none;
+}
+
+.marco-text-fulltext-input:focus {
+  border-color: var(--accent-primary);
+}
+
+.marco-text-delete-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: rgba(255, 100, 100, 0.1);
+  border: 1px solid rgba(255, 100, 100, 0.2);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.marco-text-delete-btn svg {
+  color: rgba(255, 100, 100, 0.7);
+}
+
+.marco-text-delete-btn:hover {
+  background: rgba(255, 100, 100, 0.3);
+  border-color: rgba(255, 100, 100, 0.5);
+}
+
+.marco-text-delete-btn:hover svg {
+  color: #ff6464;
+}
+
+.marco-text-add-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 12px;
+  background: rgba(var(--accent-primary-rgb), 0.1);
+  border: 1px dashed rgba(var(--accent-primary-rgb), 0.3);
+  border-radius: 8px;
+  color: var(--accent-primary);
+  font-size: calc(13px * var(--text-scale, 1));
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-bottom: 20px;
+}
+
+.marco-text-add-btn:hover {
+  background: rgba(var(--accent-primary-rgb), 0.2);
+  border-color: var(--accent-primary);
+}
+
+.marco-text-add-btn svg {
+  color: var(--accent-primary);
+}
+
+.marco-text-modal-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.marco-text-modal-btn {
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: calc(13px * var(--text-scale, 1));
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.marco-text-modal-btn.secondary {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-secondary);
+}
+
+.marco-text-modal-btn.secondary:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.marco-text-modal-btn.primary {
+  background: var(--accent-primary);
+  border: 1px solid var(--accent-primary);
+  color: white;
+}
+
+.marco-text-modal-btn.primary:hover {
+  background: var(--accent-secondary);
+  border-color: var(--accent-secondary);
+}
+
 /* Emote Picker Panel */
 .twitch-emote-picker {
   position: absolute;
   bottom: 100%;
   left: 0;
   right: 0;
-  max-height: 400px;
+  max-height: 415px;
   background: rgba(18, 18, 28, 0.97);
   border: 1px solid rgba(var(--accent-primary-rgb), 0.3);
   border-radius: 12px 12px 0 0;
@@ -9169,7 +9697,7 @@
   gap: 6px;
   padding: 12px;
   overflow-y: auto;
-  max-height: 260px;
+  max-height: 355px;
 }
 
 .twitch-emote-picker-item {
@@ -9206,6 +9734,124 @@
   font-size: 14px;
 }
 
+/* Unavailable favorite emotes (greyed out) */
+.twitch-emote-picker-item.emote-unavailable {
+  opacity: 0.35;
+  cursor: not-allowed;
+  filter: grayscale(100%);
+}
+
+.twitch-emote-picker-item.emote-unavailable:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.1);
+  transform: scale(1.05);
+}
+
+/* Favorite emote indicator (subtle star in corner) */
+.twitch-emote-picker-item.emote-favorite {
+  position: relative;
+}
+
+.twitch-emote-picker-item.emote-favorite::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 8px;
+  height: 8px;
+  background: var(--accent-secondary);
+  border-radius: 50%;
+  opacity: 0.8;
+}
+
+/* Draggable emotes in favorites */
+.twitch-emote-picker-item.emote-draggable {
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-user-drag: element;
+  touch-action: none;
+}
+
+.twitch-emote-picker-item.emote-draggable img {
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-drag: none;
+  -webkit-touch-callout: none;
+}
+
+.twitch-emote-picker-item.emote-draggable:active {
+  cursor: grabbing;
+}
+
+/* Ensure divs look like buttons when used as draggable emote items */
+div.twitch-emote-picker-item {
+  box-sizing: border-box;
+}
+
+.twitch-emote-picker-item.emote-dragging {
+  opacity: 0.4;
+  transform: scale(0.9);
+}
+
+.twitch-emote-picker-item.emote-drag-over {
+  background: rgba(var(--accent-primary-rgb), 0.4);
+  border-color: var(--accent-primary);
+  transform: scale(1.1);
+}
+
+/* Drag clone for mouse-based dragging */
+.emote-drag-clone {
+  border-radius: 6px;
+  background: rgba(var(--accent-primary-rgb), 0.3);
+  border: 2px solid var(--accent-primary);
+}
+
+/* Emote Context Menu (for favoriting) */
+.twitch-emote-context-menu {
+  position: fixed;
+  background: rgba(18, 18, 28, 0.98);
+  border: 1px solid rgba(var(--accent-primary-rgb), 0.4);
+  border-radius: 8px;
+  padding: 4px;
+  z-index: 10001;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  display: none;
+  min-width: 160px;
+}
+
+.emote-context-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 12px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: calc(13px * var(--text-scale, 1));
+  cursor: pointer;
+  transition: all 0.15s;
+  text-align: left;
+}
+
+.emote-context-item:hover {
+  background: rgba(var(--accent-primary-rgb), 0.2);
+}
+
+.emote-context-item svg {
+  flex-shrink: 0;
+}
+
+.emote-context-fav svg {
+  color: #ffd700;
+}
+
+.emote-context-unfav svg {
+  color: #ff6464;
+}
+
 /* Emote Autocomplete Dropdown - 2 column layout */
 .twitch-emote-autocomplete {
   position: absolute;
@@ -9217,12 +9863,13 @@
   background: rgba(24, 24, 27, 0.98);
   border: 1px solid rgba(145, 70, 255, 0.3);
   border-radius: 8px;
-  margin-bottom: 4px;
+  margin-bottom: 0;
   max-height: 200px;
   overflow-y: auto;
   z-index: 100;
   box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.4);
 }
+
 
 .twitch-emote-autocomplete-item {
   display: flex;
@@ -9286,12 +9933,14 @@
   align-items: center;
   gap: 4px;
   padding: 8px 12px;
-  background: rgba(145, 70, 255, 0.1);
-  border: 1px solid rgba(145, 70, 255, 0.2);
+  background: rgba(24, 24, 27, 0.98);
+  border: 1px solid rgba(145, 70, 255, 0.3);
   border-radius: 6px;
   font-size: 14px;
   color: #efeff1;
   line-height: 1.4;
+  position: relative;
+  z-index: 50;
 }
 
 .twitch-emote-preview-img {

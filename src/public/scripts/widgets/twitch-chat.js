@@ -555,11 +555,15 @@ const TwitchChat = (function() {
         return [];
       }
       const data = await response.json();
+      // Return messages if available, even if there's a non-critical error
+      // (e.g., "channel_not_joined" still returns cached messages)
+      if (data.messages && data.messages.length > 0) {
+        return data.messages;
+      }
       if (data.error) {
         console.warn('TwitchChat: Recent messages error:', data.error);
-        return [];
       }
-      return data.messages || [];
+      return [];
     } catch (e) {
       console.warn('TwitchChat: Failed to fetch recent messages:', e);
       return [];
@@ -575,6 +579,7 @@ const TwitchChat = (function() {
 
     const recentMessages = await fetchRecentMessages(channelName);
     if (recentMessages.length === 0) {
+      clearSystemMessages();
       return;
     }
 
@@ -928,13 +933,18 @@ const TwitchChat = (function() {
       msgData.message = message.slice(8, -1);
     }
 
-    // Play appropriate sound if we're mentioned (but not for historical messages)
-    if (isMention && !isHistorical) {
-      // Check if it's a hug action - play awww sound instead of zelda
-      if (checkForHugAction(message)) {
-        playHugSound();
-      } else {
-        playMentionSound();
+    // Play appropriate sound (but not for historical messages)
+    if (!isHistorical) {
+      // Check for !kok bot response first (highest priority meme sound)
+      if (checkForKokResponse(message)) {
+        playKokSound();
+      } else if (isMention) {
+        // Check if it's a hug action - play awww sound instead of zelda
+        if (checkForHugAction(message)) {
+          playHugSound();
+        } else {
+          playMentionSound();
+        }
       }
     }
 
@@ -1064,9 +1074,20 @@ const TwitchChat = (function() {
     return hugPatterns.some(pattern => pattern.test(message));
   }
 
+  /**
+   * Check if a message is a !kok bot response
+   * Pattern: "[username]'s kok is XXX [mm/inches] long today!"
+   */
+  function checkForKokResponse(message) {
+    // Match pattern like "FappyMealTime's kok is 11.05 inches long today!"
+    // Supports both mm and inches, and decimal numbers
+    return /\S+'s .+ is [\d.]+ (mm|inches) long today!/i.test(message);
+  }
+
   // Sound effects
   let mentionAudio = null;
   let hugAudio = null;
+  let kokAudio = null;
   let lastSoundTime = 0;
   const SOUND_COOLDOWN = 500; // Don't spam sounds
 
@@ -1129,6 +1150,35 @@ const TwitchChat = (function() {
   }
 
   /**
+   * Play !kok bot response sound (yamate kudesai)
+   */
+  function playKokSound() {
+    const now = Date.now();
+    if (now - lastSoundTime < SOUND_COOLDOWN) return;
+    lastSoundTime = now;
+
+    try {
+      // Check if mentions are muted (reuse same setting)
+      const config = JSON.parse(localStorage.getItem('dashboard-config') || '{}');
+      if (config.twitch?.muteMentions) return;
+
+      // Create audio element if not exists
+      if (!kokAudio) {
+        kokAudio = new Audio('assets/Sounds/yamate-kudesai.mp3');
+        kokAudio.volume = 0.5;
+      }
+
+      // Reset and play
+      kokAudio.currentTime = 0;
+      kokAudio.play().catch(e => {
+        console.warn('Could not play kok sound:', e);
+      });
+    } catch (e) {
+      console.warn('Could not play kok sound:', e);
+    }
+  }
+
+  /**
    * Add message to list and render
    */
   function addMessage(msgData) {
@@ -1158,6 +1208,16 @@ const TwitchChat = (function() {
     div.textContent = text;
     chatMessages.appendChild(div);
     chatMessages.scrollTop = chatMessages.scrollHeight;
+  }
+
+  /**
+   * Clear all system messages from the chat
+   */
+  function clearSystemMessages() {
+    if (!container) return;
+    const chatMessages = container.querySelector('.twitch-irc-messages');
+    if (!chatMessages) return;
+    chatMessages.querySelectorAll('.twitch-irc-system').forEach(el => el.remove());
   }
 
   /**
@@ -1242,9 +1302,26 @@ const TwitchChat = (function() {
       const emoteCodes = Object.keys(thirdPartyEmotes).sort((a, b) => b.length - a.length);
 
       // Helper to check if character is a word boundary (non-alphanumeric)
-      const isWordBoundary = (char) => {
+      // Special cases: apostrophe and hyphen are NOT boundaries if part of a word
+      // e.g., "you're" - apostrophe between letters is not a boundary
+      // e.g., "re-watched" - hyphen between letters is not a boundary
+      const isWordBoundary = (char, prevChar = null) => {
         if (!char) return true; // Start/end of string
-        return !/[a-zA-Z0-9_]/.test(char);
+        if (/[a-zA-Z0-9_]/.test(char)) return false; // Alphanumeric is not a boundary
+
+        // Special case: apostrophe in a contraction (you're, they're, we're, etc.)
+        // If the char is an apostrophe AND there's a letter before it, it's part of a word
+        if ((char === "'" || char === "'") && prevChar && /[a-zA-Z]/.test(prevChar)) {
+          return false; // Part of a contraction, not a boundary
+        }
+
+        // Special case: hyphen in a compound word (re-watched, self-aware, etc.)
+        // If the char is a hyphen AND there's a letter before it, it's part of a word
+        if (char === '-' && prevChar && /[a-zA-Z]/.test(prevChar)) {
+          return false; // Part of a hyphenated word, not a boundary
+        }
+
+        return true; // Everything else is a boundary
       };
 
       // Scan through the message looking for emotes
@@ -1272,9 +1349,11 @@ const TwitchChat = (function() {
 
             // Check for word boundaries around the ENTIRE emote sequence
             const charBefore = pos > 0 ? message[pos - 1] : null;
+            const charBeforeThat = pos > 1 ? message[pos - 2] : null; // For contraction detection
             const totalEmoteLength = code.length * repeatCount;
             const charAfter = message[pos + totalEmoteLength] || null;
-            const atWordBoundary = isWordBoundary(charBefore) && isWordBoundary(charAfter);
+            // Pass charBeforeThat to detect contractions like "you're" where ' is not a boundary
+            const atWordBoundary = isWordBoundary(charBefore, charBeforeThat) && isWordBoundary(charAfter);
 
             // Must be at word boundary - repeated emotes just get all rendered
             if (atWordBoundary) {

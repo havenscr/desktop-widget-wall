@@ -6,6 +6,54 @@
 const COUNTDOWN_CIRCUMFERENCE = 97.4; // 2 * PI * 15.5
 const FOCUS_TIMER_CIRCUMFERENCE = 263.89; // 2 * PI * 42
 
+// ================================================================
+// PERSISTENT STORAGE HELPERS
+// Uses Tauri app data directory (survives reinstalls) with localStorage fallback
+// ================================================================
+
+async function savePersistentConfig(key, value) {
+  const jsonValue = JSON.stringify(value);
+  // Always save to localStorage for quick access
+  localStorage.setItem(key, jsonValue);
+
+  // Also save to Tauri persistent storage (survives reinstalls)
+  if (window.__TAURI__?.invoke) {
+    try {
+      await window.__TAURI__.invoke('save_widget_config', { key, value: jsonValue });
+    } catch (e) {
+      console.warn(`Failed to save ${key} to persistent storage:`, e);
+    }
+  }
+}
+
+async function loadPersistentConfig(key) {
+  // Try Tauri persistent storage first (survives reinstalls)
+  if (window.__TAURI__?.invoke) {
+    try {
+      const value = await window.__TAURI__.invoke('load_widget_config', { key });
+      if (value) {
+        // Also update localStorage to keep them in sync
+        localStorage.setItem(key, value);
+        return JSON.parse(value);
+      }
+    } catch (e) {
+      console.warn(`Failed to load ${key} from persistent storage:`, e);
+    }
+  }
+
+  // Fall back to localStorage
+  const localValue = localStorage.getItem(key);
+  if (localValue) {
+    try {
+      return JSON.parse(localValue);
+    } catch (e) {
+      console.warn(`Failed to parse ${key} from localStorage:`, e);
+    }
+  }
+
+  return null;
+}
+
 // Current widget mode: 'countdown' or 'focus'
 let currentWidgetMode = 'countdown';
 
@@ -73,6 +121,28 @@ if (savedFocusConfig) {
 const savedMode = localStorage.getItem('countdown-widget-mode');
 if (savedMode === 'focus' || savedMode === 'countdown') {
   currentWidgetMode = savedMode;
+}
+
+// Load saved timer state (persist across refreshes)
+const savedTimerState = localStorage.getItem('focus-timer-state');
+if (savedTimerState) {
+  try {
+    const parsed = JSON.parse(savedTimerState);
+    focusTimerState.duration = parsed.duration;
+    focusTimerState.lastIntervalAlert = parsed.lastIntervalAlert || 0;
+
+    if (parsed.isRunning && parsed.runStartedAt) {
+      // Timer was running - calculate elapsed time while page was closed
+      const elapsed = Math.floor((Date.now() - parsed.runStartedAt) / 1000);
+      focusTimerState.remaining = Math.max(0, parsed.remaining - elapsed);
+      focusTimerState._shouldResume = true;
+    } else {
+      // Timer was paused - restore exact remaining time
+      focusTimerState.remaining = parsed.remaining;
+    }
+  } catch (e) {
+    console.warn('Failed to parse focus timer state:', e);
+  }
 }
 
 function applyCountdownBackground(bgType) {
@@ -168,7 +238,7 @@ function updateCountdown() {
 function updateCountdownConfig(title, targetDate) {
   countdownConfig.title = title || 'Days to Event';
   countdownConfig.targetDate = targetDate || countdownConfig.targetDate;
-  localStorage.setItem('countdown-config', JSON.stringify(countdownConfig));
+  savePersistentConfig('countdown-config', countdownConfig);
 
   const titleEl = document.getElementById('countdown-title');
   if (titleEl) titleEl.textContent = countdownConfig.title;
@@ -272,7 +342,7 @@ function playAlarm() {
     : 'assets/Sounds/alarm.mp3';
 
   alarmAudio = new Audio(audioSrc);
-  alarmAudio.loop = focusTimerConfig.alarmType === 'custom';  // Loop custom sounds
+  alarmAudio.loop = true;  // Always loop until user dismisses
 
   alarmAudio.play().catch(e => console.warn('Failed to play alarm:', e));
   isAlarmPlaying = true;
@@ -284,18 +354,6 @@ function playAlarm() {
     stopAlarm();
     updatePlayPauseButton();
   }, ALARM_AUTO_STOP_MS);
-
-  // For default alarm, stop after it plays once
-  if (focusTimerConfig.alarmType !== 'custom') {
-    alarmAudio.onended = () => {
-      isAlarmPlaying = false;
-      alarmAudio = null;
-      if (alarmAutoStopTimeout) {
-        clearTimeout(alarmAutoStopTimeout);
-        alarmAutoStopTimeout = null;
-      }
-    };
-  }
 }
 
 function stopAlarm() {
@@ -336,12 +394,9 @@ function focusTimerTick() {
 
   if (focusTimerState.remaining <= 0) {
     focusTimerState.isRunning = false;
+    clearFocusTimerState();
     playAlarm();
     updatePlayPauseButton();  // Update after playAlarm so stop icon shows
-
-    // Visual feedback - pulse the lotus button
-    const lotusBtn = document.getElementById('focus-lotus-btn');
-    lotusBtn?.classList.add('active');
   }
 }
 
@@ -361,6 +416,7 @@ function startFocusTimer() {
     clearInterval(focusTimerState.intervalId);
   }
   focusTimerState.intervalId = setInterval(focusTimerTick, 1000);
+  saveFocusTimerState();
 }
 
 function pauseFocusTimer() {
@@ -371,6 +427,7 @@ function pauseFocusTimer() {
     clearInterval(focusTimerState.intervalId);
     focusTimerState.intervalId = null;
   }
+  saveFocusTimerState();
 }
 
 function toggleFocusTimer() {
@@ -392,16 +449,13 @@ function resetFocusTimerState() {
   // Helper to reset timer state without starting
   pauseFocusTimer();
 
-  // Get currently selected preset
-  const activePreset = document.querySelector('.focus-preset-btn.active');
-  const minutes = activePreset ? parseInt(activePreset.dataset.minutes) || 25 : focusTimerConfig.defaultDuration;
-
-  focusTimerState.duration = minutes * 60;
-  focusTimerState.remaining = minutes * 60;
+  // Reset remaining to the original duration (preserves the timer length user selected)
+  focusTimerState.remaining = focusTimerState.duration;
   focusTimerState.lastIntervalAlert = 0;
 
   updateFocusTimerDisplay();
   updatePlayPauseButton();
+  clearFocusTimerState();
 
   // Reset lotus button state
   const lotusBtn = document.getElementById('focus-lotus-btn');
@@ -409,16 +463,12 @@ function resetFocusTimerState() {
 }
 
 function resetFocusTimer() {
-  const wasAlarmPlaying = isAlarmPlaying;
-
   pauseFocusTimer();
   stopAlarm();
   resetFocusTimerState();
 
-  // If alarm was playing, restart the timer immediately
-  if (wasAlarmPlaying) {
-    startFocusTimer();
-  }
+  // Always restart the timer immediately when reset is clicked
+  startFocusTimer();
 }
 
 function setFocusDuration(minutes) {
@@ -428,6 +478,7 @@ function setFocusDuration(minutes) {
   focusTimerState.duration = minutes * 60;
   focusTimerState.remaining = minutes * 60;
   focusTimerState.lastIntervalAlert = 0;
+  clearFocusTimerState();
 
   updateFocusTimerDisplay();
 
@@ -473,10 +524,43 @@ function applyCustomDuration() {
 }
 
 function saveFocusTimerConfig() {
-  localStorage.setItem('focus-timer-config', JSON.stringify(focusTimerConfig));
+  // Save to both localStorage and persistent storage
+  savePersistentConfig('focus-timer-config', focusTimerConfig);
 }
 
-function initCountdown() {
+function saveFocusTimerState() {
+  const stateToSave = {
+    duration: focusTimerState.duration,
+    remaining: focusTimerState.remaining,
+    isRunning: focusTimerState.isRunning,
+    runStartedAt: focusTimerState.isRunning ? Date.now() : null,
+    lastIntervalAlert: focusTimerState.lastIntervalAlert
+  };
+  localStorage.setItem('focus-timer-state', JSON.stringify(stateToSave));
+}
+
+function clearFocusTimerState() {
+  localStorage.removeItem('focus-timer-state');
+}
+
+async function initCountdown() {
+  // Load configs from persistent storage (survives reinstalls)
+  // This runs after sync localStorage load, so it will override if persistent data exists
+  const persistentCountdown = await loadPersistentConfig('countdown-config');
+  if (persistentCountdown) {
+    Object.assign(countdownConfig, persistentCountdown);
+  }
+
+  const persistentFocus = await loadPersistentConfig('focus-timer-config');
+  if (persistentFocus) {
+    Object.assign(focusTimerConfig, persistentFocus);
+    // Update focus timer state with loaded duration (if timer isn't running)
+    if (!focusTimerState.isRunning && !focusTimerState._shouldResume) {
+      focusTimerState.duration = focusTimerConfig.defaultDuration * 60;
+      focusTimerState.remaining = focusTimerConfig.defaultDuration * 60;
+    }
+  }
+
   // Update title from config
   const titleEl = document.getElementById('countdown-title');
   if (titleEl) titleEl.textContent = countdownConfig.title;
@@ -689,8 +773,9 @@ function initCountdown() {
       focusTimerConfig.svgBlur = parseInt(focusBlurSlider?.value) || 0;
 
       try {
-        localStorage.setItem('countdown-config', JSON.stringify(countdownConfig));
-        localStorage.setItem('focus-timer-config', JSON.stringify(focusTimerConfig));
+        // Save to both localStorage and persistent storage (survives reinstalls)
+        savePersistentConfig('countdown-config', countdownConfig);
+        savePersistentConfig('focus-timer-config', focusTimerConfig);
       } catch (e) {
         // localStorage quota exceeded
         alert('Failed to save: File too large for storage. Please use smaller files.');
@@ -719,6 +804,7 @@ function initCountdown() {
       focusTimerState.duration = customMinutes * 60;
       focusTimerState.remaining = customMinutes * 60;
       focusTimerState.lastIntervalAlert = 0;
+      clearFocusTimerState();
       updateFocusTimerDisplay();
 
       // Clear all preset buttons since this is a custom duration
@@ -933,6 +1019,20 @@ function initCountdown() {
     const btnMinutes = parseInt(btn.dataset.minutes);
     btn.classList.toggle('active', btnMinutes === loadedMinutes && presets.includes(loadedMinutes));
   });
+
+  // Resume focus timer if it was running before page refresh
+  if (focusTimerState._shouldResume) {
+    delete focusTimerState._shouldResume;
+    if (focusTimerState.remaining > 0) {
+      startFocusTimer();
+    } else {
+      // Timer expired while page was closed
+      focusTimerState.remaining = 0;
+      updateFocusTimerDisplay();
+      playAlarm();
+      updatePlayPauseButton();
+    }
+  }
 
   // Nav dots click handlers
   const navDots = document.querySelectorAll('.countdown-nav-dots .nav-dot');

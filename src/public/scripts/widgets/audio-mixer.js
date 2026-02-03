@@ -400,9 +400,15 @@
 
   async function handleMuteMics() {
     const btn = document.getElementById('action-mute-mics');
-    btn?.classList.toggle('active');
-    // TODO: Implement mic muting via Windows API
-    console.log('Mute mics clicked - feature pending');
+    try {
+      const isMuted = await invoke('toggle_all_microphones_mute');
+      btn?.classList.toggle('active', isMuted);
+      console.log('[Controls] Microphones ' + (isMuted ? 'muted' : 'unmuted'));
+    } catch (e) {
+      console.warn('[Controls] Failed to toggle microphone mute:', e);
+      // Still toggle visual state for feedback
+      btn?.classList.toggle('active');
+    }
   }
 
   async function handleOpenMixer() {

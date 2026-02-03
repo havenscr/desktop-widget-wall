@@ -30,8 +30,9 @@ use windows::Media::MediaPlaybackAutoRepeatMode;
 
 // Windows Core Audio API imports
 use windows::Win32::Media::Audio::{
-    eMultimedia, eRender, IAudioSessionControl, IAudioSessionControl2, IAudioSessionEnumerator,
-    IAudioSessionManager2, IMMDevice, IMMDeviceEnumerator, ISimpleAudioVolume, MMDeviceEnumerator,
+    eMultimedia, eRender, eCapture, IAudioSessionControl, IAudioSessionControl2, IAudioSessionEnumerator,
+    IAudioSessionManager2, IMMDevice, IMMDeviceEnumerator, IMMDeviceCollection, ISimpleAudioVolume, MMDeviceEnumerator,
+    DEVICE_STATE_ACTIVE,
     Endpoints::IAudioEndpointVolume,
 };
 use windows::Win32::System::Com::{
@@ -2301,6 +2302,68 @@ async fn toggle_audio_session_mute(session_name: String) -> Result<bool, String>
     .map_err(|e| e.to_string())?
 }
 
+/// Toggle mute for ALL microphones/capture devices
+/// Returns true if microphones are now muted, false if unmuted
+#[tauri::command]
+async fn toggle_all_microphones_mute() -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        unsafe {
+            let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+
+            let enumerator: IMMDeviceEnumerator =
+                CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL)
+                    .map_err(|e| format!("Failed to create device enumerator: {}", e))?;
+
+            // Get ALL active capture (input) devices
+            let device_collection: IMMDeviceCollection = enumerator
+                .EnumAudioEndpoints(eCapture, DEVICE_STATE_ACTIVE)
+                .map_err(|e| format!("Failed to enumerate capture devices: {}", e))?;
+
+            let device_count = device_collection.GetCount().unwrap_or(0);
+
+            if device_count == 0 {
+                return Err("No active microphones found".to_string());
+            }
+
+            println!("[MicMute] Found {} active capture device(s)", device_count);
+
+            // First, check if ANY mic is unmuted to determine toggle direction
+            let mut any_unmuted = false;
+            for i in 0..device_count {
+                if let Ok(device) = device_collection.Item(i) {
+                    if let Ok(endpoint_volume) = device.Activate::<IAudioEndpointVolume>(CLSCTX_ALL, None) {
+                        let is_muted = endpoint_volume.GetMute().unwrap_or(BOOL(0)).as_bool();
+                        if !is_muted {
+                            any_unmuted = true;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // If any mic is unmuted, mute all. If all are muted, unmute all.
+            let new_mute_state = any_unmuted;
+
+            for i in 0..device_count {
+                if let Ok(device) = device_collection.Item(i) {
+                    if let Ok(endpoint_volume) = device.Activate::<IAudioEndpointVolume>(CLSCTX_ALL, None) {
+                        match endpoint_volume.SetMute(new_mute_state, std::ptr::null()) {
+                            Ok(_) => println!("[MicMute] Device {}: {}",
+                                i,
+                                if new_mute_state { "MUTED" } else { "UNMUTED" }),
+                            Err(e) => eprintln!("[MicMute] Failed to set mute on device {}: {}", i, e),
+                        }
+                    }
+                }
+            }
+
+            Ok(new_mute_state)
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 // ================================================================
 // CLAUDE STATS - Local Analytics Reading
 // ================================================================
@@ -2757,6 +2820,53 @@ async fn is_oauth_server_running() -> bool {
     OAUTH_SERVER_RUNNING.load(Ordering::SeqCst)
 }
 
+// ================================================================
+// PERSISTENT CONFIG STORAGE
+// Saves widget config to app data directory (survives reinstalls)
+// ================================================================
+
+/// Get the config directory path, creating it if needed
+fn get_config_dir() -> Result<PathBuf, String> {
+    let app_data = std::env::var("APPDATA")
+        .map_err(|_| "Failed to get APPDATA directory")?;
+    let config_dir = PathBuf::from(app_data).join("Widget Wall").join("config");
+
+    if !config_dir.exists() {
+        fs::create_dir_all(&config_dir)
+            .map_err(|e| format!("Failed to create config directory: {}", e))?;
+    }
+
+    Ok(config_dir)
+}
+
+/// Save widget configuration to persistent storage
+#[tauri::command]
+async fn save_widget_config(key: String, value: String) -> Result<(), String> {
+    let config_dir = get_config_dir()?;
+    let file_path = config_dir.join(format!("{}.json", key));
+
+    fs::write(&file_path, value)
+        .map_err(|e| format!("Failed to save config '{}': {}", key, e))?;
+
+    Ok(())
+}
+
+/// Load widget configuration from persistent storage
+#[tauri::command]
+async fn load_widget_config(key: String) -> Result<Option<String>, String> {
+    let config_dir = get_config_dir()?;
+    let file_path = config_dir.join(format!("{}.json", key));
+
+    if !file_path.exists() {
+        return Ok(None);
+    }
+
+    let content = fs::read_to_string(&file_path)
+        .map_err(|e| format!("Failed to load config '{}': {}", key, e))?;
+
+    Ok(Some(content))
+}
+
 fn main() {
     // Create system tray menu
     let show = CustomMenuItem::new("show".to_string(), "Show Window");
@@ -2814,6 +2924,7 @@ fn main() {
             get_audio_sessions,
             set_audio_session_volume,
             toggle_audio_session_mute,
+            toggle_all_microphones_mute,
             // Claude Stats command
             get_claude_stats,
             // LibreHardwareMonitor proxy
@@ -2824,7 +2935,10 @@ fn main() {
             is_oauth_server_running,
             // Google Maps commands
             get_drive_time,
-            validate_address
+            validate_address,
+            // Persistent config storage
+            save_widget_config,
+            load_widget_config
         ])
         .setup(|app| {
             // Position window on monitor 2 at startup

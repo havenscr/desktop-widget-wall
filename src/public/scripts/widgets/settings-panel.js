@@ -55,12 +55,6 @@ function populateSettingsPanel() {
   if (settingsClaudeEnabled) settingsClaudeEnabled.checked = dashboardConfig.claude?.enabled !== false;
   if (settingsVisualizerMode) settingsVisualizerMode.value = dashboardConfig.visualizer?.defaultMode || 'demo';
 
-  // Git widget settings
-  const settingsGitScanPaths = document.getElementById('settings-git-scan-paths');
-  const settingsGitAutoPush = document.getElementById('settings-git-autopush');
-  if (settingsGitScanPaths) settingsGitScanPaths.value = dashboardConfig.gitScanPaths || 'C:\\dev';
-  if (settingsGitAutoPush) settingsGitAutoPush.checked = dashboardConfig.gitAutoPush === true;
-
   // Location Services settings
   const settingsGoogleMapsKey = document.getElementById('settings-google-maps-key');
   const settingsLeaveNotifications = document.getElementById('settings-leave-notifications');
@@ -390,12 +384,6 @@ function saveSettings() {
   };
   dashboardConfig.hcClientId = settingsHcClientId?.value.trim() || '';
   dashboardConfig.aeClientId = settingsAeClientId?.value.trim() || '';
-
-  // Git widget settings
-  const settingsGitScanPaths = document.getElementById('settings-git-scan-paths');
-  const settingsGitAutoPush = document.getElementById('settings-git-autopush');
-  dashboardConfig.gitScanPaths = settingsGitScanPaths?.value.trim() || 'C:\\dev';
-  dashboardConfig.gitAutoPush = settingsGitAutoPush?.checked === true;
 
   // Location Services settings
   dashboardConfig.googleMapsApiKey = document.getElementById('settings-google-maps-key')?.value.trim() || '';
