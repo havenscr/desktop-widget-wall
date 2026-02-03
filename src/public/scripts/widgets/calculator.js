@@ -44,13 +44,19 @@ function getOperatorSymbol(op) {
 }
 
 function calculate(first, second, operator) {
+  let result;
   switch (operator) {
-    case 'add': return first + second;
-    case 'subtract': return first - second;
-    case 'multiply': return first * second;
-    case 'divide': return second !== 0 ? first / second : 'Error';
+    case 'add': result = first + second; break;
+    case 'subtract': result = first - second; break;
+    case 'multiply': result = first * second; break;
+    case 'divide': result = second !== 0 ? first / second : 'Error'; break;
     default: return second;
   }
+  // Fix floating-point precision errors (e.g., 1031.25 - 1001.04 = 30.21000000000036)
+  if (typeof result === 'number') {
+    result = parseFloat(result.toPrecision(12));
+  }
+  return result;
 }
 
 function handleOperator(nextOperator) {
