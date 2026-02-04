@@ -17,7 +17,8 @@ const MicrosoftAuth = (function() {
   const REDIRECT_URI_CALLBACK = 'http://localhost:8420/auth-callback.html';
 
   // Scopes needed for calendar, email, and category colors
-  const SCOPES = ['User.Read', 'Calendars.Read', 'Mail.Read', 'MailboxSettings.Read'];
+  // offline_access is required for refresh tokens to persist sessions across reboots
+  const SCOPES = ['User.Read', 'Calendars.Read', 'Mail.Read', 'MailboxSettings.Read', 'offline_access'];
 
   // Account types
   const ACCOUNT_TYPES = {
