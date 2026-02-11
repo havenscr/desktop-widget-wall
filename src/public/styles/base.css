@@ -246,6 +246,18 @@ body::after {
   grid-row: 1 / -1;
 }
 
+/* Chat Half mode - chat in top half, calendar in bottom half */
+.widget-calendarinbox[data-view="chat-half"] {
+  grid-template-rows: 1fr 1fr;
+  grid-template-areas:
+    "email"
+    "calendar";
+}
+
+.widget-calendarinbox[data-view="chat-half"] .widget-email {
+  overflow: hidden;
+}
+
 /* Clock/Weather split: clock 1/3, weather 2/3 */
 .widget-clockweather .widget-clock {
   flex: 0 0 32%;

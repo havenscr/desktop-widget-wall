@@ -218,7 +218,7 @@ const InboxWidget = (function() {
 
     // Restore saved view preference
     const savedView = localStorage.getItem(VIEW_STORAGE_KEY);
-    if (savedView && (savedView === 'email' || savedView === 'twitch-chat')) {
+    if (savedView && (savedView === 'email' || savedView === 'twitch-chat' || savedView === 'chat-half')) {
       currentView = savedView;
       switchView(currentView, false);
     }
@@ -246,6 +246,8 @@ const InboxWidget = (function() {
       calendarInboxContainer.dataset.view = view;
     }
 
+    const isChatView = view === 'twitch-chat' || view === 'chat-half';
+
     // Toggle body class for Twitch chat mode (allows CSS to override html/body overflow)
     document.body.classList.toggle('twitch-chat-active', view === 'twitch-chat');
 
@@ -254,7 +256,7 @@ const InboxWidget = (function() {
     const chatView = document.getElementById('inbox-view-twitch-chat');
 
     if (emailView) emailView.style.display = view === 'email' ? 'block' : 'none';
-    if (chatView) chatView.style.display = view === 'twitch-chat' ? 'block' : 'none';
+    if (chatView) chatView.style.display = isChatView ? 'block' : 'none';
 
     // Update nav dots
     const navDots = document.querySelectorAll('.inbox-nav-dots .nav-dot');
@@ -265,7 +267,9 @@ const InboxWidget = (function() {
     // Update header text
     const headerText = document.querySelector('.widget-email .inbox-header-text');
     if (headerText) {
-      headerText.textContent = view === 'email' ? 'Inbox' : 'Twitch Chat';
+      if (view === 'email') headerText.textContent = 'Inbox';
+      else if (view === 'chat-half') headerText.textContent = 'IRC Chat';
+      else headerText.textContent = 'Twitch Chat';
     }
 
     // Hide badge when in chat view
@@ -274,8 +278,8 @@ const InboxWidget = (function() {
       badge.style.display = view === 'email' && emailsCache.size > 0 ? 'inline-flex' : 'none';
     }
 
-    // Load Twitch chat if switching to chat view
-    if (view === 'twitch-chat' && !twitchChatLoaded) {
+    // Load Twitch chat if switching to any chat view
+    if (isChatView && !twitchChatLoaded) {
       loadTwitchChat();
     }
 

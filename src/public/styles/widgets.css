@@ -7208,8 +7208,22 @@
 }
 
 /* Hide account tabs in Twitch chat view */
-.widget-calendarinbox[data-view="twitch-chat"] .inbox-account-tabs {
+.widget-calendarinbox[data-view="twitch-chat"] .inbox-account-tabs,
+.widget-calendarinbox[data-view="chat-half"] .inbox-account-tabs {
   display: none;
+}
+
+/* Chat Half mode - chat in top half, calendar stays visible */
+.widget-calendarinbox[data-view="chat-half"] .widget-email .widget-header {
+  display: none;
+}
+
+.widget-calendarinbox[data-view="chat-half"] .inbox-views-container {
+  height: 100%;
+}
+
+.widget-calendarinbox[data-view="chat-half"] .twitch-chat-container {
+  padding: 0;
 }
 
 /* Calendar & Email - Connect/Empty/Error States */
