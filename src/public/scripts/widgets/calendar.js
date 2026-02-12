@@ -922,7 +922,7 @@ const CalendarWidget = (function() {
         }
       }
 
-      // Track next event for drive time and notifications
+      // Track next event for notifications (only on event change)
       if (displayEvent.id !== currentNextEventId) {
         currentNextEventId = displayEvent.id;
         currentNextEventAddress = eventAddress;
@@ -932,21 +932,29 @@ const CalendarWidget = (function() {
         if (leaveIndicator) {
           leaveIndicator.style.display = 'none';
         }
+      }
 
-        // Fetch drive time for the new event (only if within 4 hours)
+      // Fetch drive time when within window (check every cycle, not just on event change)
+      if (eventAddress) {
         const eventTime = new Date(displayEvent.start.dateTime);
         const timeUntilEvent = eventTime - now;
         const isWithinDriveTimeWindow = timeUntilEvent <= DRIVE_TIME_MAX_WINDOW;
 
-        if (eventAddress && isWithinDriveTimeWindow) {
+        if (isWithinDriveTimeWindow && !driveTimeRefreshInterval) {
           updateNextEventDriveTime();
           startDriveTimeRefresh();
-        } else {
+        } else if (!isWithinDriveTimeWindow) {
           stopDriveTimeRefresh();
           if (nextDriveTimeEl) {
             nextDriveTimeEl.textContent = '';
             nextDriveTimeEl.title = '';
           }
+        }
+      } else {
+        stopDriveTimeRefresh();
+        if (nextDriveTimeEl) {
+          nextDriveTimeEl.textContent = '';
+          nextDriveTimeEl.title = '';
         }
       }
     } else if (nextTimeEl && nextTitleEl) {
