@@ -36,6 +36,16 @@ const MicrosoftAuth = (function() {
   let initPromise = null;
   let pendingPKCE = null; // Store PKCE for Tauri flow
   let pendingAccountType = null; // Track which account is being authenticated
+  let tokenRefreshTimers = {}; // Proactive refresh timers per account
+
+  // Errors that indicate the refresh token is permanently invalid (don't retry)
+  const PERMANENT_REFRESH_ERRORS = ['invalid_grant', 'interaction_required', 'consent_required', 'invalid_client'];
+
+  // Max retries for transient refresh failures (network errors, 5xx, etc.)
+  const MAX_REFRESH_RETRIES = 3;
+  const REFRESH_RETRY_DELAYS = [2000, 5000, 15000]; // ms between retries
+  // Refresh access token 5 minutes before expiry
+  const PROACTIVE_REFRESH_BUFFER = 5 * 60 * 1000;
 
   // Legacy compatibility - points to HC account by default
   let currentAccount = null;
@@ -180,6 +190,7 @@ const MicrosoftAuth = (function() {
 
   /**
    * Restore account from stored token data
+   * Designed to be resilient: never clears refresh tokens on transient failures
    */
   async function restoreAccountFromToken(accountType) {
     const storageKey = getTokenStorageKey(accountType);
@@ -198,7 +209,7 @@ const MicrosoftAuth = (function() {
 
         // Try to refresh using stored refresh token
         if (tokenData.refreshToken) {
-          const newAccessToken = await refreshAccessToken(tokenData.refreshToken, accountType);
+          const newAccessToken = await refreshAccessTokenWithRetry(tokenData.refreshToken, accountType);
           if (newAccessToken) {
             console.log(`MicrosoftAuth: Successfully refreshed token for ${accountType}`);
             activeAccessToken = newAccessToken;
@@ -210,9 +221,17 @@ const MicrosoftAuth = (function() {
               accounts[accountType].tokenData = updatedTokenData;
             }
           } else {
-            console.log(`MicrosoftAuth: Token refresh failed for ${accountType}, clearing...`);
-            localStorage.removeItem(storageKey);
-            return false;
+            // Refresh failed - check if refresh token was permanently revoked
+            // If localStorage was cleared by refreshAccessToken (permanent error), we're done
+            const stillStored = localStorage.getItem(storageKey);
+            if (!stillStored) {
+              console.log(`MicrosoftAuth: Refresh token permanently revoked for ${accountType}`);
+              return false;
+            }
+            // Transient failure - still restore account from stored data so UI shows logged in
+            // The next getAccessToken() call will retry the refresh
+            console.log(`MicrosoftAuth: Transient refresh failure for ${accountType}, restoring account from cache`);
+            activeAccessToken = null; // Mark as needing refresh but keep account alive
           }
         } else {
           console.log(`MicrosoftAuth: No refresh token available for ${accountType}, clearing...`);
@@ -221,7 +240,7 @@ const MicrosoftAuth = (function() {
         }
       }
 
-      // At this point we have a valid access token (either existing or refreshed)
+      // Restore account info from stored ID token (works even without a valid access token)
       let username = null;
       let name = null;
       let localAccountId = null;
@@ -246,7 +265,7 @@ const MicrosoftAuth = (function() {
         }
       }
 
-      // If no username from ID token, fetch from /me endpoint
+      // If no username from ID token, try /me endpoint only if we have a valid access token
       if (!username && activeAccessToken) {
         try {
           const meResponse = await fetch('https://graph.microsoft.com/v1.0/me', {
@@ -278,12 +297,15 @@ const MicrosoftAuth = (function() {
         accounts[accountType].tokenData = tokenData;
       }
 
+      // Schedule proactive token refresh
+      scheduleTokenRefresh(accountType);
+
       console.log(`MicrosoftAuth: Restored ${accountType.toUpperCase()} account from stored token:`, accounts[accountType].account.username);
       dispatchAuthEvent(true, accountType);
       return true;
     } catch (e) {
       console.error(`MicrosoftAuth: Error restoring from stored token for ${accountType}:`, e);
-      localStorage.removeItem(storageKey);
+      // Don't clear tokens on parse/unexpected errors - leave them for next attempt
     }
     return false;
   }
@@ -633,6 +655,9 @@ const MicrosoftAuth = (function() {
         } catch (e) { /* ignore */ }
       }
 
+      // Schedule proactive token refresh
+      scheduleTokenRefresh(targetAccountType);
+
       console.log(`MicrosoftAuth: Sign-in completed for ${targetAccountType.toUpperCase()}!`, accountObj.username);
       dispatchAuthEvent(true, targetAccountType);
       return true;
@@ -765,11 +790,17 @@ const MicrosoftAuth = (function() {
         if (tokenData.accessToken && tokenData.expiresOn > Date.now() + 300000) {
           return tokenData.accessToken;
         }
-        // Token expired - try to refresh
+        // Token expired or expiring soon - try to refresh with retry
         if (tokenData.refreshToken) {
-          const newToken = await refreshAccessToken(tokenData.refreshToken, accountType);
+          const newToken = await refreshAccessTokenWithRetry(tokenData.refreshToken, accountType);
           if (newToken) {
             return newToken;
+          }
+          // If refresh failed but token hasn't fully expired yet, use it anyway
+          // (better to try with a slightly stale token than fail entirely)
+          if (tokenData.accessToken && tokenData.expiresOn > Date.now()) {
+            console.log(`MicrosoftAuth: Using not-yet-expired token despite refresh failure for ${accountType}`);
+            return tokenData.accessToken;
           }
         }
       } catch (e) {
@@ -806,7 +837,9 @@ const MicrosoftAuth = (function() {
   }
 
   /**
-   * Refresh access token using refresh token
+   * Refresh access token using refresh token (single attempt)
+   * Only clears stored tokens on PERMANENT errors (invalid_grant, etc.)
+   * Returns null on failure but preserves refresh token for transient errors
    * @param {string} refreshToken - The refresh token
    * @param {string} accountType - 'hc' or 'ae' (defaults to HC)
    */
@@ -837,16 +870,24 @@ const MicrosoftAuth = (function() {
       const data = await response.json();
 
       if (!response.ok) {
-        console.error(`MicrosoftAuth: Token refresh failed for ${accountType}:`, data);
-        // Clear stored data if refresh fails
-        const storageKey = getTokenStorageKey(accountType);
-        localStorage.removeItem(storageKey);
-        accounts[accountType].account = null;
-        accounts[accountType].tokenData = null;
-        if (accountType === ACCOUNT_TYPES.HC) {
-          currentAccount = null;
+        const errorCode = data.error || '';
+        const isPermanent = PERMANENT_REFRESH_ERRORS.includes(errorCode);
+
+        if (isPermanent) {
+          // Permanent failure - refresh token is revoked/expired, must re-login
+          console.error(`MicrosoftAuth: Refresh token permanently invalid for ${accountType} (${errorCode}):`, data.error_description);
+          const storageKey = getTokenStorageKey(accountType);
+          localStorage.removeItem(storageKey);
+          accounts[accountType].account = null;
+          accounts[accountType].tokenData = null;
+          if (accountType === ACCOUNT_TYPES.HC) {
+            currentAccount = null;
+          }
+          dispatchAuthEvent(false, accountType);
+        } else {
+          // Transient failure (server error, rate limit, etc.) - keep refresh token
+          console.warn(`MicrosoftAuth: Transient refresh failure for ${accountType} (${errorCode}):`, data.error_description || response.status);
         }
-        dispatchAuthEvent(false, accountType);
         return null;
       }
 
@@ -862,12 +903,87 @@ const MicrosoftAuth = (function() {
       localStorage.setItem(storageKey, JSON.stringify(tokenData));
       accounts[accountType].tokenData = tokenData;
 
+      // Schedule next proactive refresh
+      scheduleTokenRefresh(accountType);
+
       console.log(`MicrosoftAuth: Token refreshed successfully for ${accountType.toUpperCase()}`);
       return data.access_token;
 
     } catch (error) {
-      console.error(`MicrosoftAuth: Token refresh error for ${accountType}:`, error);
+      // Network error, DNS not ready, etc. - keep refresh token for retry
+      console.warn(`MicrosoftAuth: Network error during refresh for ${accountType}:`, error.message);
       return null;
+    }
+  }
+
+  /**
+   * Refresh access token with retry logic for transient failures
+   * Retries up to MAX_REFRESH_RETRIES times with increasing delays
+   * @param {string} refreshToken - The refresh token
+   * @param {string} accountType - 'hc' or 'ae' (defaults to HC)
+   */
+  async function refreshAccessTokenWithRetry(refreshToken, accountType = ACCOUNT_TYPES.HC) {
+    for (let attempt = 0; attempt <= MAX_REFRESH_RETRIES; attempt++) {
+      const result = await refreshAccessToken(refreshToken, accountType);
+      if (result) return result;
+
+      // Check if tokens were cleared (permanent failure) - don't retry
+      const storageKey = getTokenStorageKey(accountType);
+      if (!localStorage.getItem(storageKey)) {
+        console.log(`MicrosoftAuth: Permanent failure, not retrying for ${accountType}`);
+        return null;
+      }
+
+      // Transient failure - wait before retry
+      if (attempt < MAX_REFRESH_RETRIES) {
+        const delay = REFRESH_RETRY_DELAYS[attempt] || 15000;
+        console.log(`MicrosoftAuth: Retry ${attempt + 1}/${MAX_REFRESH_RETRIES} for ${accountType} in ${delay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+
+    console.warn(`MicrosoftAuth: All refresh retries exhausted for ${accountType}, will retry on next token request`);
+    return null;
+  }
+
+  /**
+   * Schedule proactive token refresh before expiry
+   * Runs in the background to keep auth alive during long sessions
+   * @param {string} accountType - 'hc' or 'ae'
+   */
+  function scheduleTokenRefresh(accountType) {
+    // Clear any existing timer for this account
+    if (tokenRefreshTimers[accountType]) {
+      clearTimeout(tokenRefreshTimers[accountType]);
+      tokenRefreshTimers[accountType] = null;
+    }
+
+    const storageKey = getTokenStorageKey(accountType);
+    const storedData = localStorage.getItem(storageKey);
+    if (!storedData) return;
+
+    try {
+      const tokenData = JSON.parse(storedData);
+      if (!tokenData.refreshToken || !tokenData.expiresOn) return;
+
+      // Schedule refresh 5 minutes before expiry
+      const refreshAt = tokenData.expiresOn - PROACTIVE_REFRESH_BUFFER;
+      const delay = Math.max(refreshAt - Date.now(), 10000); // At least 10 seconds from now
+
+      console.log(`MicrosoftAuth: Scheduling proactive refresh for ${accountType.toUpperCase()} in ${Math.round(delay / 1000)}s`);
+
+      tokenRefreshTimers[accountType] = setTimeout(async () => {
+        console.log(`MicrosoftAuth: Proactive refresh triggered for ${accountType.toUpperCase()}`);
+        const currentData = localStorage.getItem(storageKey);
+        if (!currentData) return;
+
+        const current = JSON.parse(currentData);
+        if (current.refreshToken) {
+          await refreshAccessTokenWithRetry(current.refreshToken, accountType);
+        }
+      }, delay);
+    } catch (e) {
+      console.warn(`MicrosoftAuth: Could not schedule refresh for ${accountType}:`, e);
     }
   }
 
