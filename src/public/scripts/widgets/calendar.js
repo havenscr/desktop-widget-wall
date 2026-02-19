@@ -567,7 +567,7 @@ const CalendarWidget = (function() {
 
         // Classify location type for icon display
         const locationType = classifyLocation(event.location);
-        const eventAddress = event.location?.displayName || null;
+        const eventAddress = isPhysicalAddress(event.location) ? getResolvedAddress(event.location) : null;
 
         // Trigger async validation for uncertain addresses (updates cache for next render)
         if (locationType === LocationType.UNCERTAIN && eventAddress) {
@@ -893,7 +893,7 @@ const CalendarWidget = (function() {
       const nextLocationType = classifyLocation(displayEvent.location);
       const hasPhysicalAddress = nextLocationType === LocationType.VALIDATED_ADDRESS ||
                                  nextLocationType === LocationType.UNCERTAIN;
-      const eventAddress = hasPhysicalAddress ? displayEvent.location.displayName : null;
+      const eventAddress = hasPhysicalAddress ? getResolvedAddress(displayEvent.location) : null;
 
       // Trigger validation for uncertain addresses
       if (nextLocationType === LocationType.UNCERTAIN && eventAddress) {
@@ -1074,7 +1074,7 @@ const CalendarWidget = (function() {
 
     // Not a URL - check cache for validation result
     if (addressValidationCache.has(loc)) {
-      return addressValidationCache.get(loc) ?
+      return addressValidationCache.get(loc)?.isValid ?
              LocationType.VALIDATED_ADDRESS : LocationType.UNCERTAIN;
     }
 
@@ -1091,6 +1091,33 @@ const CalendarWidget = (function() {
   }
 
   /**
+   * Get the best address string for a location (for drive time / maps).
+   * Prefers: Graph API address fields > validated/geocoded address > displayName
+   */
+  function getResolvedAddress(location) {
+    if (!location?.displayName) return null;
+
+    // 1. Try structured address from Graph API location object
+    const addr = location.address;
+    if (addr?.street && addr?.city) {
+      const parts = [addr.street, addr.city];
+      if (addr.state) parts.push(addr.state);
+      if (addr.postalCode) parts.push(addr.postalCode);
+      return parts.join(', ');
+    }
+
+    // 2. Check validation cache for a geocoded formatted address
+    const displayName = location.displayName.trim();
+    const cached = addressValidationCache.get(displayName);
+    if (cached?.isValid && cached.formattedAddress) {
+      return cached.formattedAddress;
+    }
+
+    // 3. Fall back to displayName
+    return displayName;
+  }
+
+  /**
    * Validate an address via Google Maps Geocoding API (async, updates cache)
    * Triggers UI update when validation completes successfully
    */
@@ -1099,13 +1126,13 @@ const CalendarWidget = (function() {
 
     // Check cache first
     if (addressValidationCache.has(address)) {
-      return addressValidationCache.get(address);
+      return addressValidationCache.get(address)?.isValid;
     }
 
     const apiKey = dashboardConfig?.googleMapsApiKey;
     if (!apiKey) {
-      // No API key - can't validate, mark as uncertain (false)
-      addressValidationCache.set(address, false);
+      // No API key - can't validate, mark as uncertain
+      addressValidationCache.set(address, { isValid: false, formattedAddress: null, lat: null, lng: null });
       return false;
     }
 
@@ -1115,11 +1142,17 @@ const CalendarWidget = (function() {
         address
       });
 
-      addressValidationCache.set(address, result.is_valid);
+      // Cache full result including formatted address and coordinates
+      addressValidationCache.set(address, {
+        isValid: result.is_valid,
+        formattedAddress: result.formatted_address || null,
+        lat: result.lat || null,
+        lng: result.lng || null
+      });
 
       // If validation succeeded, trigger UI update to change yellow icon to green
       if (result.is_valid) {
-        updateNextMeeting();
+        updateCalendarInfo();
         // Also update event list if currently displayed
         const selectedDay = document.querySelector('.cal-day.selected');
         if (selectedDay) {
@@ -1138,7 +1171,7 @@ const CalendarWidget = (function() {
       return result.is_valid;
     } catch (e) {
       console.warn('Address validation failed:', e);
-      addressValidationCache.set(address, false);
+      addressValidationCache.set(address, { isValid: false, formattedAddress: null, lat: null, lng: null });
       return false;
     }
   }

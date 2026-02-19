@@ -51,6 +51,60 @@ const MicrosoftAuth = (function() {
   let currentAccount = null;
   let msalInstance = null;
 
+  // ---- Persistent token storage via Tauri filesystem ----
+  // WebView2 localStorage can be wiped across reboots. These helpers
+  // mirror token data to %APPDATA%/Widget Wall/config/ via Tauri commands.
+  // All existing code keeps using sync localStorage reads; we just:
+  //  1) Rehydrate localStorage from file on startup (before any reads)
+  //  2) Fire-and-forget file writes alongside localStorage writes
+
+  /**
+   * On startup, load tokens from Tauri file storage into localStorage
+   * so all existing sync reads work immediately.
+   */
+  async function rehydrateTokensFromFile() {
+    if (!isTauri()) return;
+    const { invoke } = window.__TAURI__.tauri;
+    for (const type of [ACCOUNT_TYPES.HC, ACCOUNT_TYPES.AE]) {
+      try {
+        const value = await invoke('load_widget_config', { key: `msal_token_${type}` });
+        if (value && value !== '{}') {
+          const storageKey = getTokenStorageKey(type);
+          if (!localStorage.getItem(storageKey)) {
+            localStorage.setItem(storageKey, value);
+            console.log(`MicrosoftAuth: Rehydrated ${type.toUpperCase()} token from file storage`);
+          }
+        }
+      } catch (e) {
+        console.warn(`MicrosoftAuth: Failed to rehydrate token for ${type}:`, e);
+      }
+    }
+  }
+
+  /**
+   * Fire-and-forget: mirror current localStorage token data to file.
+   * Call after every localStorage.setItem for token data.
+   */
+  function persistTokenToFile(accountType) {
+    if (!isTauri()) return;
+    const data = localStorage.getItem(getTokenStorageKey(accountType));
+    if (!data) return;
+    window.__TAURI__.tauri.invoke('save_widget_config', {
+      key: `msal_token_${accountType}`, value: data
+    }).catch(e => console.warn(`MicrosoftAuth: File persist failed for ${accountType}:`, e));
+  }
+
+  /**
+   * Fire-and-forget: clear the file-based token.
+   * Call after every localStorage.removeItem for token data.
+   */
+  function clearTokenFile(accountType) {
+    if (!isTauri()) return;
+    window.__TAURI__.tauri.invoke('save_widget_config', {
+      key: `msal_token_${accountType}`, value: '{}'
+    }).catch(e => console.warn(`MicrosoftAuth: File clear failed for ${accountType}:`, e));
+  }
+
   /**
    * Get Client ID for account type
    */
@@ -96,6 +150,9 @@ const MicrosoftAuth = (function() {
     }
 
     console.log('MicrosoftAuth: Initializing...', isTauri() ? '(Tauri detected)' : '(Browser)');
+
+    // Rehydrate tokens from file storage into localStorage before any reads
+    await rehydrateTokensFromFile();
 
     // Initialize HC account (always available)
     await initializeAccount(ACCOUNT_TYPES.HC);
@@ -236,6 +293,7 @@ const MicrosoftAuth = (function() {
         } else {
           console.log(`MicrosoftAuth: No refresh token available for ${accountType}, clearing...`);
           localStorage.removeItem(storageKey);
+          clearTokenFile(accountType);
           return false;
         }
       }
@@ -581,6 +639,7 @@ const MicrosoftAuth = (function() {
       };
       const storageKey = getTokenStorageKey(targetAccountType);
       localStorage.setItem(storageKey, JSON.stringify(tokenData));
+      persistTokenToFile(targetAccountType);
 
       // Try to decode the ID token to get user info
       let username = null;
@@ -731,6 +790,7 @@ const MicrosoftAuth = (function() {
     // Clear custom token storage for this account
     const storageKey = getTokenStorageKey(accountType);
     localStorage.removeItem(storageKey);
+    clearTokenFile(accountType);
 
     // Legacy compatibility
     if (accountType === ACCOUNT_TYPES.HC) {
@@ -878,6 +938,7 @@ const MicrosoftAuth = (function() {
           console.error(`MicrosoftAuth: Refresh token permanently invalid for ${accountType} (${errorCode}):`, data.error_description);
           const storageKey = getTokenStorageKey(accountType);
           localStorage.removeItem(storageKey);
+          clearTokenFile(accountType);
           accounts[accountType].account = null;
           accounts[accountType].tokenData = null;
           if (accountType === ACCOUNT_TYPES.HC) {
@@ -901,6 +962,7 @@ const MicrosoftAuth = (function() {
       };
       const storageKey = getTokenStorageKey(accountType);
       localStorage.setItem(storageKey, JSON.stringify(tokenData));
+      persistTokenToFile(accountType);
       accounts[accountType].tokenData = tokenData;
 
       // Schedule next proactive refresh
