@@ -60,6 +60,8 @@ function populateSettingsPanel() {
   const settingsLeaveNotifications = document.getElementById('settings-leave-notifications');
   if (settingsGoogleMapsKey) settingsGoogleMapsKey.value = dashboardConfig.googleMapsApiKey || '';
   if (settingsLeaveNotifications) settingsLeaveNotifications.checked = dashboardConfig.leaveNotificationsEnabled !== false;
+  const settingsHomeAddress = document.getElementById('settings-home-address');
+  if (settingsHomeAddress) settingsHomeAddress.value = dashboardConfig.homeAddress || '';
 
   // Startup Window settings
   const settingsWindowMonitor = document.getElementById('settings-window-monitor');
@@ -388,6 +390,7 @@ function saveSettings() {
   // Location Services settings
   dashboardConfig.googleMapsApiKey = document.getElementById('settings-google-maps-key')?.value.trim() || '';
   dashboardConfig.leaveNotificationsEnabled = document.getElementById('settings-leave-notifications')?.checked !== false;
+  dashboardConfig.homeAddress = document.getElementById('settings-home-address')?.value.trim() || '';
 
   // Save Startup Window settings
   const settingsWindowMonitor = document.getElementById('settings-window-monitor');

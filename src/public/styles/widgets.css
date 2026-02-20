@@ -6879,7 +6879,7 @@
 .next-drive-col .leave-indicator {
   position: absolute;
   bottom: 100%;
-  right: 0;
+  right: 4px;
   margin-bottom: 2px;
   white-space: nowrap;
 }
@@ -6961,6 +6961,28 @@
   margin-right: 6px;
   font-weight: 600;
   opacity: 0.9;
+}
+
+/* Drive time error/status indicator */
+.next-drive-time.drive-status-error {
+  color: #f59e0b;
+  opacity: 0.7;
+  font-size: calc(10px * var(--text-scale));
+  cursor: help;
+}
+
+.next-drive-time.drive-status-error::before {
+  content: '!';
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: rgba(245, 158, 11, 0.2);
+  color: #f59e0b;
+  font-size: 10px;
+  font-weight: 700;
 }
 
 /* Leave notification visual effects */

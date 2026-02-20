@@ -44,10 +44,14 @@ const CalendarWidget = (function() {
   const EVENTS_STORAGE_KEY = 'calendar-month-events';
   const ACCOUNT_STORAGE_KEY = 'inbox-active-account'; // Share with inbox widget
 
-  // Location cache (5-minute expiry)
+  // Location cache (5-minute expiry for geolocation fallback)
   let cachedLocation = null;
   let locationCacheTime = 0;
   const LOCATION_CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
+  // Home address geocoded coordinates cache (invalidates on address change only)
+  let cachedHomeLocation = null;
+  let cachedHomeAddress = null;
 
   // Location type classification
   const LocationType = {
@@ -93,6 +97,17 @@ const CalendarWidget = (function() {
   let selectedDate = new Date();
 
   /**
+   * Invoke a Tauri command with consistent path handling.
+   * Tauri 1.x with withGlobalTauri: true exposes invoke at window.__TAURI__.tauri.invoke
+   */
+  function tauriInvoke(command, args) {
+    if (window.__TAURI__?.tauri?.invoke) {
+      return window.__TAURI__.tauri.invoke(command, args);
+    }
+    throw new Error('Tauri invoke not available');
+  }
+
+  /**
    * Initialize the calendar widget
    */
   function initialize() {
@@ -129,6 +144,16 @@ const CalendarWidget = (function() {
       const accountType = event.detail.accountType;
       if (accountType && accountType !== currentAccount) {
         switchAccount(accountType);
+      }
+    });
+
+    // Listen for config changes to invalidate home address cache
+    window.addEventListener('dashboard-config-changed', (e) => {
+      const newConfig = e.detail;
+      if (newConfig?.homeAddress !== cachedHomeAddress) {
+        cachedHomeLocation = null;
+        cachedHomeAddress = null;
+        console.log('Calendar DRIVE: Home address changed, cache invalidated');
       }
     });
 
@@ -895,6 +920,17 @@ const CalendarWidget = (function() {
                                  nextLocationType === LocationType.UNCERTAIN;
       const eventAddress = hasPhysicalAddress ? getResolvedAddress(displayEvent.location) : null;
 
+      console.log('Calendar DRIVE DEBUG:', {
+        subject: displayEvent.subject,
+        locationType: nextLocationType,
+        hasPhysicalAddress,
+        eventAddress,
+        locationRaw: displayEvent.location,
+        nextDriveColExists: !!nextDriveCol,
+        nextMapsBtnExists: !!nextMapsBtn,
+        nextDriveTimeElExists: !!nextDriveTimeEl
+      });
+
       // Trigger validation for uncertain addresses
       if (nextLocationType === LocationType.UNCERTAIN && eventAddress) {
         validateAddress(eventAddress);
@@ -922,7 +958,7 @@ const CalendarWidget = (function() {
         }
       }
 
-      // Track next event for notifications (only on event change)
+      // Track next event for notifications (only reset on event change)
       if (displayEvent.id !== currentNextEventId) {
         currentNextEventId = displayEvent.id;
         currentNextEventAddress = eventAddress;
@@ -934,13 +970,21 @@ const CalendarWidget = (function() {
         }
       }
 
+      // Update address if it was resolved after validation (same event, better address)
+      const addressChanged = eventAddress && eventAddress !== currentNextEventAddress;
+      if (addressChanged) {
+        currentNextEventAddress = eventAddress;
+      }
+
       // Fetch drive time when within window (check every cycle, not just on event change)
       if (eventAddress) {
         const eventTime = new Date(displayEvent.start.dateTime);
         const timeUntilEvent = eventTime - now;
         const isWithinDriveTimeWindow = timeUntilEvent <= DRIVE_TIME_MAX_WINDOW;
 
-        if (isWithinDriveTimeWindow && !driveTimeRefreshInterval) {
+        if (isWithinDriveTimeWindow && (!driveTimeRefreshInterval || addressChanged)) {
+          // Restart refresh if address was resolved to a better value
+          if (addressChanged) stopDriveTimeRefresh();
           updateNextEventDriveTime();
           startDriveTimeRefresh();
         } else if (!isWithinDriveTimeWindow) {
@@ -1129,7 +1173,8 @@ const CalendarWidget = (function() {
       return addressValidationCache.get(address)?.isValid;
     }
 
-    const apiKey = dashboardConfig?.googleMapsApiKey;
+    const config = JSON.parse(localStorage.getItem('dashboard-config') || '{}');
+    const apiKey = config.googleMapsApiKey;
     if (!apiKey) {
       // No API key - can't validate, mark as uncertain
       addressValidationCache.set(address, { isValid: false, formattedAddress: null, lat: null, lng: null });
@@ -1137,7 +1182,7 @@ const CalendarWidget = (function() {
     }
 
     try {
-      const result = await window.__TAURI__.invoke('validate_address', {
+      const result = await tauriInvoke('validate_address', {
         apiKey,
         address
       });
@@ -1185,19 +1230,52 @@ const CalendarWidget = (function() {
   }
 
   /**
-   * Get user's current location (cached for 5 minutes)
+   * Get user's origin location for drive time calculations.
+   * Priority: 1) Stored home address (geocoded via Google Maps API) - reliable in Tauri/WebView2
+   *           2) navigator.geolocation (fallback - unreliable in WebView2)
+   * Home address coordinates are cached until the address string changes.
    */
   async function getUserLocation() {
-    const now = Date.now();
+    // 1. Try stored home address (preferred - WebView2 geolocation is unreliable)
+    const config = JSON.parse(localStorage.getItem('dashboard-config') || '{}');
+    const homeAddress = config.homeAddress;
+    const apiKey = config.googleMapsApiKey;
 
-    // Return cached location if still valid
+    if (homeAddress && apiKey) {
+      // Return cached coordinates if home address hasn't changed
+      if (cachedHomeLocation && cachedHomeAddress === homeAddress) {
+        return cachedHomeLocation;
+      }
+
+      // Geocode the home address using existing validate_address Tauri command
+      try {
+        const result = await tauriInvoke('validate_address', {
+          apiKey,
+          address: homeAddress
+        });
+
+        if (result.is_valid && result.lat && result.lng) {
+          cachedHomeLocation = { lat: result.lat, lng: result.lng };
+          cachedHomeAddress = homeAddress;
+          console.log('Calendar DRIVE: Using home address as origin:', homeAddress);
+          return cachedHomeLocation;
+        } else {
+          console.warn('Calendar DRIVE: Home address could not be geocoded:', homeAddress);
+        }
+      } catch (e) {
+        console.warn('Calendar DRIVE: Failed to geocode home address:', e);
+      }
+    }
+
+    // 2. Fallback: navigator.geolocation (with existing cache)
+    const now = Date.now();
     if (cachedLocation && (now - locationCacheTime) < LOCATION_CACHE_DURATION) {
       return cachedLocation;
     }
 
     return new Promise((resolve, reject) => {
       if (!navigator.geolocation) {
-        reject(new Error('Geolocation not supported'));
+        reject(new Error('No location available: geolocation not supported and no home address configured'));
         return;
       }
 
@@ -1208,15 +1286,47 @@ const CalendarWidget = (function() {
             lng: position.coords.longitude
           };
           locationCacheTime = now;
+          console.log('Calendar DRIVE: Using browser geolocation as origin');
           resolve(cachedLocation);
         },
         (error) => {
-          console.warn('Calendar: Geolocation error:', error.message);
-          reject(error);
+          console.warn('Calendar DRIVE: Geolocation error:', error.message);
+          reject(new Error('No location available: geolocation failed and no home address configured'));
         },
         { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 }
       );
     });
+  }
+
+  /**
+   * Update drive time status indicator when drive time can't be fetched.
+   * Shows an amber warning icon with descriptive tooltip so the user knows what to configure.
+   */
+  function updateDriveStatus(status) {
+    const driveTimeEl = document.getElementById('next-drive-time');
+    if (!driveTimeEl) return;
+
+    driveTimeEl.classList.remove('drive-status-error');
+
+    switch (status) {
+      case 'no-api-key':
+        driveTimeEl.textContent = '';
+        driveTimeEl.title = 'Drive time unavailable: No Google Maps API key (Settings > Location Services)';
+        driveTimeEl.classList.add('drive-status-error');
+        break;
+      case 'no-location':
+        driveTimeEl.textContent = '';
+        driveTimeEl.title = 'Drive time unavailable: Set a home address in Settings > Location Services';
+        driveTimeEl.classList.add('drive-status-error');
+        break;
+      case 'error':
+        driveTimeEl.textContent = '';
+        driveTimeEl.title = 'Drive time unavailable: API error (check console)';
+        driveTimeEl.classList.add('drive-status-error');
+        break;
+      case 'ok':
+        break;
+    }
   }
 
   /**
@@ -1227,23 +1337,28 @@ const CalendarWidget = (function() {
     const apiKey = config.googleMapsApiKey;
 
     if (!apiKey) {
-      return null; // No API key configured
+      console.warn('Calendar DRIVE: No Google Maps API key configured');
+      updateDriveStatus('no-api-key');
+      return null;
     }
 
     try {
       const location = await getUserLocation();
-
-      if (window.__TAURI__?.tauri?.invoke) {
-        const result = await window.__TAURI__.tauri.invoke('get_drive_time', {
-          apiKey: apiKey,
-          originLat: location.lat,
-          originLng: location.lng,
-          destination: destination
-        });
-        return result;
-      }
+      const result = await tauriInvoke('get_drive_time', {
+        apiKey: apiKey,
+        originLat: location.lat,
+        originLng: location.lng,
+        destination: destination
+      });
+      updateDriveStatus('ok');
+      return result;
     } catch (error) {
-      console.warn('Calendar: Drive time fetch failed:', error);
+      console.warn('Calendar DRIVE: Drive time fetch failed:', error);
+      if (error.message?.includes('No location available') || error.message?.includes('no home address')) {
+        updateDriveStatus('no-location');
+      } else {
+        updateDriveStatus('error');
+      }
     }
 
     return null;
@@ -1261,6 +1376,63 @@ const CalendarWidget = (function() {
       return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
     }
     return `${mins}m`;
+  }
+
+  /**
+   * Extract actual appointment time from event subject.
+   * Handles patterns like "Chiro (145PM)", "Chiro (1:45 PM)", "Chiro (2PM)", etc.
+   * Returns a Date with the extracted time on the same day as eventDate, or null if no time found.
+   */
+  function extractAppointmentTime(subject, eventDate) {
+    if (!subject || !eventDate) return null;
+
+    // Match time patterns in parentheses: (145PM), (1:45 PM), (1:45PM), (2PM), (2 PM), (1245PM), etc.
+    const match = subject.match(/\((\d{1,4})\s*(?::?\s*(\d{2}))?\s*(AM|PM)\)/i);
+    if (!match) return null;
+
+    const digits = match[1];
+    const explicitMinutes = match[2]; // only set if colon format like (1:45PM)
+    const ampm = match[3].toUpperCase();
+
+    let hours, minutes;
+
+    if (explicitMinutes) {
+      // Colon format: (1:45PM) -> digits="1", explicitMinutes="45"
+      hours = parseInt(digits, 10);
+      minutes = parseInt(explicitMinutes, 10);
+    } else if (digits.length <= 2) {
+      // Just hour: (2PM) -> 2:00 PM
+      hours = parseInt(digits, 10);
+      minutes = 0;
+    } else if (digits.length === 3) {
+      // 3 digits: (145PM) -> 1:45 PM
+      hours = parseInt(digits[0], 10);
+      minutes = parseInt(digits.substring(1), 10);
+    } else {
+      // 4 digits: (1245PM) -> 12:45 PM
+      hours = parseInt(digits.substring(0, 2), 10);
+      minutes = parseInt(digits.substring(2), 10);
+    }
+
+    // Convert to 24-hour
+    if (ampm === 'PM' && hours < 12) hours += 12;
+    if (ampm === 'AM' && hours === 12) hours = 0;
+
+    if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null;
+
+    const result = new Date(eventDate);
+    result.setHours(hours, minutes, 0, 0);
+    return result;
+  }
+
+  /**
+   * Get the effective arrival time for an event (for drive/leave calculations).
+   * Uses extracted title time if present, otherwise falls back to event start time.
+   */
+  function getEffectiveArrivalTime(event) {
+    const startTime = new Date(event.start.dateTime);
+    const titleTime = extractAppointmentTime(event.subject, startTime);
+    return titleTime || startTime;
   }
 
   /**
@@ -1310,7 +1482,7 @@ const CalendarWidget = (function() {
     const nextEvent = monthEventsCache.find(e => e.id === currentNextEventId);
     if (!nextEvent) return;
 
-    const eventTime = new Date(nextEvent.start.dateTime);
+    const eventTime = getEffectiveArrivalTime(nextEvent);
     const times = getLeaveAlertTimes(eventTime, leaveNotificationState.driveTimeSeconds);
     const leaveIndicator = document.getElementById('leave-indicator');
 
@@ -1408,12 +1580,14 @@ const CalendarWidget = (function() {
    * Update drive time display for next event
    */
   async function updateNextEventDriveTime() {
+    console.log('Calendar DRIVE: updateNextEventDriveTime called, address:', currentNextEventAddress);
     if (!currentNextEventAddress) return;
 
     const driveTimeEl = document.getElementById('next-drive-time');
     const mapsBtn = document.getElementById('next-maps-btn');
 
     const driveTime = await fetchDriveTime(currentNextEventAddress);
+    console.log('Calendar DRIVE: fetchDriveTime result:', driveTime);
 
     if (driveTime && driveTimeEl) {
       // Use traffic time if available, otherwise regular duration
@@ -1619,7 +1793,9 @@ const CalendarWidget = (function() {
   return {
     initialize,
     refresh: loadMonthData,
-    testLeave: testLeaveNotification
+    testLeave: testLeaveNotification,
+    // Debug: inspect internal state from console
+    _debug: () => ({ monthEventsCache, addressValidationCache: Object.fromEntries(addressValidationCache), currentNextEventAddress, currentNextEventId })
   };
 })();
 
