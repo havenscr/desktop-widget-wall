@@ -95,14 +95,15 @@ const CalendarWidget = (function() {
   let currentMonth = new Date().getMonth();
   let currentYear = new Date().getFullYear();
   let selectedDate = new Date();
+  selectedDate.setHours(0, 0, 0, 0); // Normalize to midnight so all events for today show
 
   /**
    * Invoke a Tauri command with consistent path handling.
-   * Tauri 1.x with withGlobalTauri: true exposes invoke at window.__TAURI__.tauri.invoke
+   * Tauri 2.x with withGlobalTauri: true exposes invoke at window.__TAURI__.core.invoke
    */
   function tauriInvoke(command, args) {
-    if (window.__TAURI__?.tauri?.invoke) {
-      return window.__TAURI__.tauri.invoke(command, args);
+    if (window.__TAURI__?.core?.invoke) {
+      return window.__TAURI__.core.invoke(command, args);
     }
     throw new Error('Tauri invoke not available');
   }
@@ -157,13 +158,11 @@ const CalendarWidget = (function() {
       }
     });
 
-    // Check if current account is authenticated
+    // Show calendar UI immediately -- data will load when microsoft-auth-change fires.
+    showCalendar();
     if (typeof MicrosoftAuth !== 'undefined' && MicrosoftAuth.isAuthenticated(currentAccount)) {
-      showCalendar();
       loadData();
       startAutoRefresh();
-    } else {
-      showPlaceholder();
     }
 
     // Setup navigation buttons
@@ -516,10 +515,14 @@ const CalendarWidget = (function() {
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
 
+    // Normalize to start of day so all events on the selected date are included
+    const dayStart = new Date(startDate);
+    dayStart.setHours(0, 0, 0, 0);
+
     // Filter events from startDate onwards
     const filteredEvents = monthEventsCache.filter(event => {
       const eventDate = new Date(event.start.dateTime);
-      return eventDate >= startDate;
+      return eventDate >= dayStart;
     }).sort((a, b) => new Date(a.start.dateTime) - new Date(b.start.dateTime));
 
     if (filteredEvents.length === 0) {
@@ -1198,19 +1201,8 @@ const CalendarWidget = (function() {
       // If validation succeeded, trigger UI update to change yellow icon to green
       if (result.is_valid) {
         updateCalendarInfo();
-        // Also update event list if currently displayed
-        const selectedDay = document.querySelector('.cal-day.selected');
-        if (selectedDay) {
-          const day = parseInt(selectedDay.dataset.day, 10);
-          const monthYear = document.getElementById('cal-month-year')?.textContent || '';
-          const [monthName, year] = monthYear.split(' ');
-          const months = ['January', 'February', 'March', 'April', 'May', 'June',
-                          'July', 'August', 'September', 'October', 'November', 'December'];
-          const month = months.indexOf(monthName);
-          if (month >= 0 && year) {
-            renderEventsForDate(new Date(parseInt(year), month, day));
-          }
-        }
+        // Re-render event list to update location icons
+        renderEventsForDate(selectedDate);
       }
 
       return result.is_valid;
@@ -1638,8 +1630,8 @@ const CalendarWidget = (function() {
   async function openMapsDirections(address) {
     const url = getGoogleMapsUrl(address);
     try {
-      if (window.__TAURI__?.shell?.open) {
-        await window.__TAURI__.shell.open(url);
+      if (window.__TAURI__?.opener?.openUrl) {
+        await window.__TAURI__.opener.openUrl(url);
       } else {
         window.open(url, '_blank');
       }
@@ -1711,10 +1703,10 @@ const CalendarWidget = (function() {
 
     try {
       // Use Tauri command to open in Outlook desktop
-      if (window.__TAURI__?.tauri?.invoke) {
-        await window.__TAURI__.tauri.invoke('open_in_outlook', { url: webLink });
-      } else if (window.__TAURI__?.shell?.open) {
-        await window.__TAURI__.shell.open(webLink);
+      if (window.__TAURI__?.core?.invoke) {
+        await window.__TAURI__.core.invoke('open_in_outlook', { url: webLink });
+      } else if (window.__TAURI__?.opener?.openUrl) {
+        await window.__TAURI__.opener.openUrl(webLink);
       } else {
         window.open(webLink, '_blank');
       }
@@ -1733,10 +1725,10 @@ const CalendarWidget = (function() {
 
     try {
       // Use Tauri command that opens and positions on primary monitor
-      if (window.__TAURI__?.tauri?.invoke) {
-        await window.__TAURI__.tauri.invoke('open_meeting_on_primary', { url: meetingUrl });
-      } else if (window.__TAURI__?.shell?.open) {
-        await window.__TAURI__.shell.open(meetingUrl);
+      if (window.__TAURI__?.core?.invoke) {
+        await window.__TAURI__.core.invoke('open_meeting_on_primary', { url: meetingUrl });
+      } else if (window.__TAURI__?.opener?.openUrl) {
+        await window.__TAURI__.opener.openUrl(meetingUrl);
       } else {
         window.open(meetingUrl, '_blank');
       }
@@ -1744,8 +1736,8 @@ const CalendarWidget = (function() {
       console.error('Failed to open meeting:', error);
       // Fallback to shell open or browser
       try {
-        if (window.__TAURI__?.shell?.open) {
-          await window.__TAURI__.shell.open(meetingUrl);
+        if (window.__TAURI__?.opener?.openUrl) {
+          await window.__TAURI__.opener.openUrl(meetingUrl);
         } else {
           window.open(meetingUrl, '_blank');
         }

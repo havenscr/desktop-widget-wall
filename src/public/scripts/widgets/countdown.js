@@ -17,9 +17,9 @@ async function savePersistentConfig(key, value) {
   localStorage.setItem(key, jsonValue);
 
   // Also save to Tauri persistent storage (survives reinstalls)
-  if (window.__TAURI__?.invoke) {
+  if (window.__TAURI__?.core?.invoke) {
     try {
-      await window.__TAURI__.invoke('save_widget_config', { key, value: jsonValue });
+      await window.__TAURI__.core.invoke('save_widget_config', { key, value: jsonValue });
     } catch (e) {
       console.warn(`Failed to save ${key} to persistent storage:`, e);
     }
@@ -28,9 +28,9 @@ async function savePersistentConfig(key, value) {
 
 async function loadPersistentConfig(key) {
   // Try Tauri persistent storage first (survives reinstalls)
-  if (window.__TAURI__?.invoke) {
+  if (window.__TAURI__?.core?.invoke) {
     try {
-      const value = await window.__TAURI__.invoke('load_widget_config', { key });
+      const value = await window.__TAURI__.core.invoke('load_widget_config', { key });
       if (value) {
         // Also update localStorage to keep them in sync
         localStorage.setItem(key, value);
@@ -1072,9 +1072,9 @@ async function initCountdown() {
       lotusBtn.classList.remove('active');
     }
     // Open Windows Focus Sessions (temporarily disables always-on-top)
-    if (window.__TAURI__?.invoke) {
+    if (window.__TAURI__?.core?.invoke) {
       try {
-        await window.__TAURI__.invoke('open_focus_sessions');
+        await window.__TAURI__.core.invoke('open_focus_sessions');
       } catch (e) {
         console.warn('Failed to open Focus Sessions:', e);
       }

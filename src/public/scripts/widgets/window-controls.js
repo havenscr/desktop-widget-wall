@@ -8,8 +8,8 @@ let isFullscreen = false;
 async function toggleFullscreen() {
   try {
     // Check if we're running in Tauri
-    if (window.__TAURI__?.window?.appWindow) {
-      const { appWindow } = window.__TAURI__.window;
+    if (window.__TAURI__?.webviewWindow?.getCurrentWebviewWindow?.()) {
+      const appWindow = window.__TAURI__.webviewWindow.getCurrentWebviewWindow();
       isFullscreen = await appWindow.isFullscreen();
 
       // Toggle fullscreen state
@@ -71,7 +71,7 @@ function updateFullscreenButton() {
 async function checkFullscreenState() {
   try {
     if (window.__TAURI__) {
-      const { appWindow } = window.__TAURI__.window;
+      const appWindow = window.__TAURI__.webviewWindow.getCurrentWebviewWindow();
       isFullscreen = await appWindow.isFullscreen();
       updateFullscreenButton();
     }

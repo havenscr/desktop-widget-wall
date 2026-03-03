@@ -2091,10 +2091,10 @@ const InboxWidget = (function() {
 
     try {
       // Use Tauri command to open in Outlook desktop
-      if (window.__TAURI__?.tauri?.invoke) {
-        await window.__TAURI__.tauri.invoke('open_in_outlook', { url: webLink });
-      } else if (window.__TAURI__?.shell?.open) {
-        await window.__TAURI__.shell.open(webLink);
+      if (window.__TAURI__?.core?.invoke) {
+        await window.__TAURI__.core.invoke('open_in_outlook', { url: webLink });
+      } else if (window.__TAURI__?.opener?.openUrl) {
+        await window.__TAURI__.opener.openUrl(webLink);
       } else {
         window.open(webLink, '_blank');
       }

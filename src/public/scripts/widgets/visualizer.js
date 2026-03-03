@@ -1409,7 +1409,7 @@
     if (!visualizerTauriAvailable) return [];
 
     try {
-      const { invoke } = window.__TAURI__.tauri;
+      const { invoke } = window.__TAURI__.core;
       const devices = await invoke('list_audio_devices');
       return devices || [];
     } catch (e) {
@@ -1431,7 +1431,7 @@
   async function getWindowsDefaultDevice() {
     if (!visualizerTauriAvailable) return null;
     try {
-      const { invoke } = window.__TAURI__.tauri;
+      const { invoke } = window.__TAURI__.core;
       const deviceName = await invoke('get_default_output_device');
       return deviceName;
     } catch (e) {
@@ -1445,7 +1445,7 @@
   async function getDefaultLoopbackDevice() {
     if (!visualizerTauriAvailable) return null;
     try {
-      const { invoke } = window.__TAURI__.tauri;
+      const { invoke } = window.__TAURI__.core;
       const deviceId = await invoke('get_default_loopback_device');
       console.log('Visualizer: Rust returned default loopback device:', deviceId);
       return deviceId;
@@ -1656,7 +1656,7 @@
     if (!visualizerTauriAvailable) return false;
 
     try {
-      const { invoke } = window.__TAURI__.tauri;
+      const { invoke } = window.__TAURI__.core;
       await invoke('start_audio_capture', { deviceId });
 
       if (nativeAudioInterval) clearInterval(nativeAudioInterval);
@@ -1731,7 +1731,7 @@
     if (!visualizerTauriAvailable) return;
 
     try {
-      const { invoke } = window.__TAURI__.tauri;
+      const { invoke } = window.__TAURI__.core;
       await invoke('stop_audio_capture');
     } catch (e) {
       console.log('Failed to stop native audio capture:', e);

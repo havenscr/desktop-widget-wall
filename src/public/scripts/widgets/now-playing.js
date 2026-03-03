@@ -1218,7 +1218,7 @@ async function fetchNowPlaying() {
   if (!isTauriAvailable) return;
 
   try {
-    const { invoke } = window.__TAURI__.tauri;
+    const { invoke } = window.__TAURI__.core;
     const info = await invoke('get_now_playing');
     updateNowPlayingUI(info);
   } catch (e) {
@@ -1235,7 +1235,7 @@ async function fetchNowPlaying() {
 function setupControls() {
   if (!isTauriAvailable) return;
 
-  const { invoke } = window.__TAURI__.tauri;
+  const { invoke } = window.__TAURI__.core;
 
   const prevBtn = document.getElementById('nowplaying-prev');
   const playPauseBtn = document.getElementById('nowplaying-playpause');

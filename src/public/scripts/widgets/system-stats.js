@@ -68,14 +68,14 @@ async function fetchSystemStats() {
       return;
     }
 
-    if (!window.__TAURI__.tauri) {
-      console.warn('[SystemStats] Tauri.tauri namespace not available');
+    if (!window.__TAURI__.core) {
+      console.warn('[SystemStats] Tauri.core namespace not available');
       updateStatusIndicator(false);
       return;
     }
 
     console.log('[SystemStats] Invoking get_libre_hardware_stats...');
-    const { invoke } = window.__TAURI__.tauri;
+    const { invoke } = window.__TAURI__.core;
     const data = await invoke('get_libre_hardware_stats');
     console.log('[SystemStats] Received data:', data ? 'OK' : 'empty');
     parseHardwareData(data);
@@ -209,9 +209,9 @@ function initSystemStats() {
     statsTitle.style.cursor = 'pointer';
     statsTitle.title = 'Open Task Manager';
     statsTitle.addEventListener('click', async () => {
-      if (window.__TAURI__?.tauri?.invoke) {
+      if (window.__TAURI__?.core?.invoke) {
         try {
-          await window.__TAURI__.tauri.invoke('open_task_manager');
+          await window.__TAURI__.core.invoke('open_task_manager');
         } catch (e) {
           console.error('[SystemStats] Failed to open Task Manager:', e);
         }

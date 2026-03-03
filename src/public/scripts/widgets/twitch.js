@@ -1503,8 +1503,8 @@ function initTwitch() {
   oauthOpenBtn?.addEventListener('click', () => {
     const oauthUrl = getTwitchOAuthUrl();
     // Use Tauri shell.open if available (opens in default browser)
-    if (window.__TAURI__?.shell?.open) {
-      window.__TAURI__.shell.open(oauthUrl);
+    if (window.__TAURI__?.opener?.openUrl) {
+      window.__TAURI__.opener.openUrl(oauthUrl);
     } else {
       window.open(oauthUrl, '_blank');
     }

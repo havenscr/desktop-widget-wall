@@ -6450,9 +6450,10 @@
 
 /* Mini Calendar */
 .calendar-mini {
-  flex: 0 0 auto;
+  flex: 1 1 auto;
   display: flex;
   flex-direction: column;
+  min-height: 0;
 }
 
 .calendar-nav {
@@ -6485,6 +6486,9 @@
 
 .calendar-grid {
   flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .cal-weekdays {
@@ -6500,11 +6504,13 @@
 .cal-days {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
+  grid-auto-rows: 1fr;
   gap: 2px;
+  flex: 1;
+  min-height: 0;
 }
 
 .cal-day {
-  aspect-ratio: 1 / 0.92;  /* Slightly shorter than square to give more room for next event */
   display: flex;
   align-items: center;
   justify-content: center;
@@ -6513,6 +6519,7 @@
   cursor: pointer;
   transition: background 0.15s;
   color: var(--text-primary);
+  min-height: 0;
 }
 
 .cal-day:hover {

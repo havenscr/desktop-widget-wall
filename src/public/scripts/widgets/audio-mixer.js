@@ -192,12 +192,12 @@
   }
 
   // Check if Tauri is available
-  if (!window.__TAURI__?.tauri?.invoke) {
+  if (!window.__TAURI__?.core?.invoke) {
     console.warn('Controls Widget: Tauri not available, skipping initialization');
     return;
   }
-  const { invoke } = window.__TAURI__.tauri;
-  const { open } = window.__TAURI__.shell;
+  const { invoke } = window.__TAURI__.core;
+  const { openUrl: open } = window.__TAURI__.opener;
 
   // Browser apps that should be grouped together (without .exe for flexible matching)
   const browserApps = ['firefox', 'chrome', 'msedge', 'brave', 'opera', 'vivaldi', 'browser'];

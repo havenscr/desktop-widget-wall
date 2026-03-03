@@ -64,7 +64,7 @@ const MicrosoftAuth = (function() {
    */
   async function rehydrateTokensFromFile() {
     if (!isTauri()) return;
-    const { invoke } = window.__TAURI__.tauri;
+    const { invoke } = window.__TAURI__.core;
     for (const type of [ACCOUNT_TYPES.HC, ACCOUNT_TYPES.AE]) {
       try {
         const value = await invoke('load_widget_config', { key: `msal_token_${type}` });
@@ -89,7 +89,7 @@ const MicrosoftAuth = (function() {
     if (!isTauri()) return;
     const data = localStorage.getItem(getTokenStorageKey(accountType));
     if (!data) return;
-    window.__TAURI__.tauri.invoke('save_widget_config', {
+    window.__TAURI__.core.invoke('save_widget_config', {
       key: `msal_token_${accountType}`, value: data
     }).catch(e => console.warn(`MicrosoftAuth: File persist failed for ${accountType}:`, e));
   }
@@ -100,7 +100,7 @@ const MicrosoftAuth = (function() {
    */
   function clearTokenFile(accountType) {
     if (!isTauri()) return;
-    window.__TAURI__.tauri.invoke('save_widget_config', {
+    window.__TAURI__.core.invoke('save_widget_config', {
       key: `msal_token_${accountType}`, value: '{}'
     }).catch(e => console.warn(`MicrosoftAuth: File clear failed for ${accountType}:`, e));
   }
@@ -487,14 +487,14 @@ const MicrosoftAuth = (function() {
         console.log('MicrosoftAuth: Tauri detected, checking shell API...');
 
         // Verify shell API is available
-        if (!window.__TAURI__?.shell?.open) {
-          throw new Error('Tauri shell.open API not available. Check tauri.conf.json allowlist.');
+        if (!window.__TAURI__?.opener?.openUrl) {
+          throw new Error('Tauri opener.openUrl API not available. Check tauri.conf.json permissions.');
         }
 
         // Start the OAuth callback server to catch the redirect
         console.log('MicrosoftAuth: Starting OAuth callback server...');
         try {
-          const { invoke } = window.__TAURI__.tauri;
+          const { invoke } = window.__TAURI__.core;
           const serverResult = await invoke('start_oauth_server');
           console.log('MicrosoftAuth: OAuth server:', serverResult);
         } catch (serverError) {
@@ -535,7 +535,7 @@ const MicrosoftAuth = (function() {
         });
 
         // Call the Tauri shell open API
-        await window.__TAURI__.shell.open(finalUrl);
+        await window.__TAURI__.opener.openUrl(finalUrl);
         console.log('MicrosoftAuth: Browser open command sent');
 
         // Return a flag indicating we're waiting for manual code entry
@@ -545,7 +545,7 @@ const MicrosoftAuth = (function() {
         console.error('MicrosoftAuth: Failed to open browser:', error);
         // Stop OAuth server if it was started
         try {
-          const { invoke } = window.__TAURI__.tauri;
+          const { invoke } = window.__TAURI__.core;
           await invoke('stop_oauth_server');
         } catch (e) { /* ignore */ }
         throw error;
@@ -709,7 +709,7 @@ const MicrosoftAuth = (function() {
       // Stop OAuth callback server if running
       if (isTauri()) {
         try {
-          const { invoke } = window.__TAURI__.tauri;
+          const { invoke } = window.__TAURI__.core;
           await invoke('stop_oauth_server');
         } catch (e) { /* ignore */ }
       }
@@ -732,7 +732,7 @@ const MicrosoftAuth = (function() {
       // Stop OAuth callback server if running
       if (isTauri()) {
         try {
-          const { invoke } = window.__TAURI__.tauri;
+          const { invoke } = window.__TAURI__.core;
           await invoke('stop_oauth_server');
         } catch (e) { /* ignore */ }
       }
@@ -763,7 +763,7 @@ const MicrosoftAuth = (function() {
     // Stop OAuth callback server if running
     if (isTauri()) {
       try {
-        const { invoke } = window.__TAURI__.tauri;
+        const { invoke } = window.__TAURI__.core;
         await invoke('stop_oauth_server');
       } catch (e) { /* ignore */ }
     }

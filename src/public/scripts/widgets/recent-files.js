@@ -192,11 +192,11 @@
   }
 
   // Check if Tauri is available
-  if (!window.__TAURI__?.tauri?.invoke) {
+  if (!window.__TAURI__?.core?.invoke) {
     console.warn('Recent Files: Tauri not available, skipping initialization');
     return;
   }
-  const { invoke } = window.__TAURI__.tauri;
+  const { invoke } = window.__TAURI__.core;
 
   // Cache for file icons (keyed by file extension)
   const iconCache = new Map();
