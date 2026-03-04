@@ -338,6 +338,44 @@
         </div>
       </div>
 
+      <!-- Theme Cycling Section -->
+      <div class="settings-section">
+        <div class="settings-section-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/>
+            <path d="M12 6v6l4 2"/>
+          </svg>
+          Theme Cycling
+        </div>
+        <div class="settings-row">
+          <div class="settings-label">
+            Auto Cycle
+            <small>Automatically rotate through color themes</small>
+          </div>
+          <label class="settings-toggle">
+            <input type="checkbox" id="settings-theme-autocycle">
+            <span class="settings-toggle-slider"></span>
+          </label>
+        </div>
+        <div class="settings-row">
+          <div class="settings-label">
+            Transition Mode
+            <small>Fade smoothly or snap to next theme</small>
+          </div>
+          <select class="settings-select" id="settings-theme-mode">
+            <option value="fade">Fade</option>
+            <option value="rotate">Rotate (Instant)</option>
+          </select>
+        </div>
+        <div class="settings-row">
+          <div class="settings-label">
+            Interval (seconds)
+            <small>Time between theme changes (1 to 1800)</small>
+          </div>
+          <input type="number" class="settings-input" id="settings-theme-interval" value="30" min="1" max="1800" style="width: 100px;">
+        </div>
+      </div>
+
       <!-- Location Services Section -->
       <div class="settings-section">
         <div class="settings-section-title">

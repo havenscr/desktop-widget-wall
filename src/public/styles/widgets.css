@@ -480,38 +480,14 @@
   background-position: center;
   background-repeat: no-repeat;
   border-radius: inherit;
-  filter: blur(var(--clock-svg-blur, 0px)) grayscale(1) sepia(1) hue-rotate(var(--svg-hue-rotate, 280deg)) saturate(1.5) brightness(0.35);
+  filter: blur(var(--clock-svg-blur, 0px)) grayscale(1) sepia(1) hue-rotate(var(--custom-bg-hue, 280deg)) saturate(1.5) brightness(0.35);
   transform: scale(calc(1 + var(--clock-svg-blur-scale, 0)));
   transition: filter var(--transition-theme);
   pointer-events: none;
   z-index: 0;
 }
 
-/* Theme-specific SVG colorization for clock */
-[data-theme="pink"] .widget-clock[data-bg="svg"]::before,
-:root .widget-clock[data-bg="svg"]::before {
-  --svg-hue-rotate: 280deg;
-}
 
-[data-theme="teal"] .widget-clock[data-bg="svg"]::before {
-  --svg-hue-rotate: 120deg;
-}
-
-[data-theme="sunset"] .widget-clock[data-bg="svg"]::before {
-  --svg-hue-rotate: 350deg;
-}
-
-[data-theme="midnight"] .widget-clock[data-bg="svg"]::before {
-  --svg-hue-rotate: 190deg;
-}
-
-[data-theme="emerald"] .widget-clock[data-bg="svg"]::before {
-  --svg-hue-rotate: 90deg;
-}
-
-[data-theme="rose"] .widget-clock[data-bg="svg"]::before {
-  --svg-hue-rotate: 310deg;
-}
 
 .widget-clock > .clock-inner-frame {
   position: relative;
@@ -1812,38 +1788,14 @@
   background-position: center;
   background-repeat: no-repeat;
   border-radius: inherit;
-  filter: blur(var(--nowplaying-svg-blur, 0px)) grayscale(1) sepia(1) hue-rotate(var(--svg-hue-rotate, 280deg)) saturate(1.5) brightness(0.35);
+  filter: blur(var(--nowplaying-svg-blur, 0px)) grayscale(1) sepia(1) hue-rotate(var(--custom-bg-hue, 280deg)) saturate(1.5) brightness(0.35);
   transform: scale(calc(1 + var(--nowplaying-svg-blur-scale, 0)));
   transition: filter var(--transition-theme);
   pointer-events: none;
   z-index: 0;
 }
 
-/* Theme-specific SVG colorization for Now Playing */
-[data-theme="pink"] .widget-nowplaying[data-bg="svg"]::before,
-:root .widget-nowplaying[data-bg="svg"]::before {
-  --svg-hue-rotate: 280deg;
-}
 
-[data-theme="teal"] .widget-nowplaying[data-bg="svg"]::before {
-  --svg-hue-rotate: 120deg;
-}
-
-[data-theme="sunset"] .widget-nowplaying[data-bg="svg"]::before {
-  --svg-hue-rotate: 350deg;
-}
-
-[data-theme="midnight"] .widget-nowplaying[data-bg="svg"]::before {
-  --svg-hue-rotate: 190deg;
-}
-
-[data-theme="emerald"] .widget-nowplaying[data-bg="svg"]::before {
-  --svg-hue-rotate: 90deg;
-}
-
-[data-theme="rose"] .widget-nowplaying[data-bg="svg"]::before {
-  --svg-hue-rotate: 310deg;
-}
 
 .widget-nowplaying > *:not(.nowplaying-config-btn):not(.nowplaying-blur-bg):not(.nowplaying-btn-like-corner):not(.nowplaying-color-mesh) {
   position: relative;
@@ -3444,38 +3396,14 @@
   background-position: center;
   background-repeat: no-repeat;
   border-radius: inherit;
-  filter: blur(var(--controls-svg-blur, 0px)) grayscale(1) sepia(1) hue-rotate(var(--svg-hue-rotate, 280deg)) saturate(1.5) brightness(0.35);
+  filter: blur(var(--controls-svg-blur, 0px)) grayscale(1) sepia(1) hue-rotate(var(--custom-bg-hue, 280deg)) saturate(1.5) brightness(0.35);
   transform: scale(calc(1 + var(--controls-svg-blur-scale, 0)));
   transition: filter var(--transition-theme);
   pointer-events: none;
   z-index: 0;
 }
 
-/* Theme-specific SVG colorization for controls */
-[data-theme="pink"] .widget-controls[data-bg="svg"]::before,
-:root .widget-controls[data-bg="svg"]::before {
-  --svg-hue-rotate: 280deg;
-}
 
-[data-theme="teal"] .widget-controls[data-bg="svg"]::before {
-  --svg-hue-rotate: 120deg;
-}
-
-[data-theme="sunset"] .widget-controls[data-bg="svg"]::before {
-  --svg-hue-rotate: 350deg;
-}
-
-[data-theme="midnight"] .widget-controls[data-bg="svg"]::before {
-  --svg-hue-rotate: 190deg;
-}
-
-[data-theme="emerald"] .widget-controls[data-bg="svg"]::before {
-  --svg-hue-rotate: 90deg;
-}
-
-[data-theme="rose"] .widget-controls[data-bg="svg"]::before {
-  --svg-hue-rotate: 310deg;
-}
 
 .widget-controls[data-bg="svg"] > * {
   position: relative;
@@ -3871,37 +3799,11 @@
   border-radius: inherit;
   /* Grayscale -> sepia creates warm base -> hue-rotate shifts to theme color */
   /* Lower brightness to match dark glass effect of other widgets */
-  filter: blur(var(--countdown-svg-blur, 0px)) grayscale(1) sepia(1) hue-rotate(var(--svg-hue-rotate, 280deg)) saturate(1.5) brightness(0.35);
+  /* Uses --custom-bg-hue from theme system so JS fade interpolation works */
+  filter: blur(var(--countdown-svg-blur, 0px)) grayscale(1) sepia(1) hue-rotate(var(--custom-bg-hue, 280deg)) saturate(1.5) brightness(0.35);
   transform: scale(calc(1 + var(--countdown-svg-blur-scale, 0)));
-  transition: filter var(--transition-theme);
   pointer-events: none;
   z-index: 0;
-}
-
-/* Theme-specific SVG colorization */
-[data-theme="pink"] .widget-countdown[data-bg="svg"]::before,
-:root .widget-countdown[data-bg="svg"]::before {
-  --svg-hue-rotate: 280deg; /* Pink/magenta */
-}
-
-[data-theme="teal"] .widget-countdown[data-bg="svg"]::before {
-  --svg-hue-rotate: 120deg; /* Teal/cyan */
-}
-
-[data-theme="sunset"] .widget-countdown[data-bg="svg"]::before {
-  --svg-hue-rotate: 350deg; /* Warm orange */
-}
-
-[data-theme="midnight"] .widget-countdown[data-bg="svg"]::before {
-  --svg-hue-rotate: 190deg; /* Deep blue/indigo */
-}
-
-[data-theme="emerald"] .widget-countdown[data-bg="svg"]::before {
-  --svg-hue-rotate: 90deg; /* Green */
-}
-
-[data-theme="rose"] .widget-countdown[data-bg="svg"]::before {
-  --svg-hue-rotate: 310deg; /* Rose/berry */
 }
 
 .widget-countdown > * {
@@ -4340,7 +4242,7 @@
   max-height: 100%;
   object-fit: contain;
   /* Same colorization as the widget background */
-  filter: grayscale(1) sepia(1) hue-rotate(var(--svg-hue-rotate, 280deg)) saturate(2) brightness(0.9);
+  filter: grayscale(1) sepia(1) hue-rotate(var(--custom-bg-hue, 280deg)) saturate(2) brightness(0.9);
 }
 
 /* ================================================================
@@ -4858,38 +4760,14 @@
   background-position: center;
   background-repeat: no-repeat;
   border-radius: inherit;
-  filter: blur(var(--recentfiles-svg-blur, 0px)) grayscale(1) sepia(1) hue-rotate(var(--svg-hue-rotate, 280deg)) saturate(1.5) brightness(0.35);
+  filter: blur(var(--recentfiles-svg-blur, 0px)) grayscale(1) sepia(1) hue-rotate(var(--custom-bg-hue, 280deg)) saturate(1.5) brightness(0.35);
   transform: scale(calc(1 + var(--recentfiles-svg-blur-scale, 0)));
   transition: filter var(--transition-theme);
   pointer-events: none;
   z-index: 0;
 }
 
-/* Theme-specific SVG colorization for Recent Files */
-[data-theme="pink"] .widget-recentfiles[data-bg="svg"]::before,
-:root .widget-recentfiles[data-bg="svg"]::before {
-  --svg-hue-rotate: 280deg;
-}
 
-[data-theme="teal"] .widget-recentfiles[data-bg="svg"]::before {
-  --svg-hue-rotate: 120deg;
-}
-
-[data-theme="sunset"] .widget-recentfiles[data-bg="svg"]::before {
-  --svg-hue-rotate: 350deg;
-}
-
-[data-theme="midnight"] .widget-recentfiles[data-bg="svg"]::before {
-  --svg-hue-rotate: 190deg;
-}
-
-[data-theme="emerald"] .widget-recentfiles[data-bg="svg"]::before {
-  --svg-hue-rotate: 90deg;
-}
-
-[data-theme="rose"] .widget-recentfiles[data-bg="svg"]::before {
-  --svg-hue-rotate: 310deg;
-}
 
 .widget-recentfiles > * {
   position: relative;
@@ -7748,38 +7626,14 @@
   background-position: center;
   background-repeat: no-repeat;
   border-radius: inherit;
-  filter: blur(var(--visualizer-svg-blur, 0px)) grayscale(1) sepia(1) hue-rotate(var(--svg-hue-rotate, 280deg)) saturate(1.5) brightness(0.35);
+  filter: blur(var(--visualizer-svg-blur, 0px)) grayscale(1) sepia(1) hue-rotate(var(--custom-bg-hue, 280deg)) saturate(1.5) brightness(0.35);
   transform: scale(calc(1 + var(--visualizer-svg-blur-scale, 0)));
   transition: filter var(--transition-theme);
   pointer-events: none;
   z-index: 0;
 }
 
-/* Theme-specific SVG colorization for visualizer */
-[data-theme="pink"] .widget-visualizer[data-bg="svg"]::before,
-:root .widget-visualizer[data-bg="svg"]::before {
-  --svg-hue-rotate: 280deg;
-}
 
-[data-theme="teal"] .widget-visualizer[data-bg="svg"]::before {
-  --svg-hue-rotate: 120deg;
-}
-
-[data-theme="sunset"] .widget-visualizer[data-bg="svg"]::before {
-  --svg-hue-rotate: 350deg;
-}
-
-[data-theme="midnight"] .widget-visualizer[data-bg="svg"]::before {
-  --svg-hue-rotate: 190deg;
-}
-
-[data-theme="emerald"] .widget-visualizer[data-bg="svg"]::before {
-  --svg-hue-rotate: 90deg;
-}
-
-[data-theme="rose"] .widget-visualizer[data-bg="svg"]::before {
-  --svg-hue-rotate: 310deg;
-}
 
 .widget-visualizer[data-bg="svg"] > * {
   position: relative;
@@ -10233,7 +10087,7 @@ div.twitch-emote-picker-item {
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
-  filter: grayscale(1) sepia(1) hue-rotate(var(--svg-hue-rotate, 280deg)) saturate(2) brightness(0.9);
+  filter: grayscale(1) sepia(1) hue-rotate(var(--custom-bg-hue, 280deg)) saturate(2) brightness(0.9);
 }
 
 /* IRC Chat Background Options */
@@ -10257,7 +10111,7 @@ div.twitch-emote-picker-item {
   background-position: center;
   background-repeat: no-repeat;
   border-radius: inherit;
-  filter: blur(var(--irc-svg-blur, 0px)) grayscale(1) sepia(1) hue-rotate(var(--svg-hue-rotate, 280deg)) saturate(1.5) brightness(0.35);
+  filter: blur(var(--irc-svg-blur, 0px)) grayscale(1) sepia(1) hue-rotate(var(--custom-bg-hue, 280deg)) saturate(1.5) brightness(0.35);
   transform: scale(calc(1 + var(--irc-svg-blur-scale, 0)));
   transition: filter var(--transition-theme);
   pointer-events: none;
@@ -10269,31 +10123,7 @@ div.twitch-emote-picker-item {
   z-index: 1;
 }
 
-/* Theme-specific SVG colorization for IRC chat */
-[data-theme="pink"] .twitch-irc-chat[data-bg="svg"]::before,
-:root .twitch-irc-chat[data-bg="svg"]::before {
-  --svg-hue-rotate: 280deg;
-}
 
-[data-theme="teal"] .twitch-irc-chat[data-bg="svg"]::before {
-  --svg-hue-rotate: 120deg;
-}
-
-[data-theme="sunset"] .twitch-irc-chat[data-bg="svg"]::before {
-  --svg-hue-rotate: 350deg;
-}
-
-[data-theme="midnight"] .twitch-irc-chat[data-bg="svg"]::before {
-  --svg-hue-rotate: 190deg;
-}
-
-[data-theme="emerald"] .twitch-irc-chat[data-bg="svg"]::before {
-  --svg-hue-rotate: 90deg;
-}
-
-[data-theme="rose"] .twitch-irc-chat[data-bg="svg"]::before {
-  --svg-hue-rotate: 310deg;
-}
 
 /* ================================================================
    SCROLLBAR STYLING

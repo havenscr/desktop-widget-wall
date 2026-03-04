@@ -600,14 +600,30 @@
     return typeof window.__TAURI__ !== 'undefined';
   }
 
+  // Convert any CSS color string (hex, rgb(), etc.) to #rrggbb hex.
+  // Registered @property colors return rgb() from getComputedStyle.
+  function cssColorToHex(cssColor) {
+    if (!cssColor) return null;
+    const s = cssColor.trim();
+    if (s.startsWith('#')) return s;
+    const m = s.match(/^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
+    if (m) {
+      const r = parseInt(m[1]).toString(16).padStart(2, '0');
+      const g = parseInt(m[2]).toString(16).padStart(2, '0');
+      const b = parseInt(m[3]).toString(16).padStart(2, '0');
+      return '#' + r + g + b;
+    }
+    return s;
+  }
+
   // Get theme colors from CSS variables
   function getThemeColors() {
     const style = getComputedStyle(document.body);
     return {
-      primary: style.getPropertyValue('--vis-color-1').trim() || '#00B8B8',
-      secondary: style.getPropertyValue('--vis-color-2').trim() || '#009999',
-      accent: style.getPropertyValue('--vis-color-3').trim() || '#4dfff3',
-      glow: style.getPropertyValue('--accent-primary').trim() || '#00B8B8'
+      primary: cssColorToHex(style.getPropertyValue('--vis-color-1')) || '#00B8B8',
+      secondary: cssColorToHex(style.getPropertyValue('--vis-color-2')) || '#009999',
+      accent: cssColorToHex(style.getPropertyValue('--vis-color-3')) || '#4dfff3',
+      glow: cssColorToHex(style.getPropertyValue('--accent-primary')) || '#00B8B8'
     };
   }
 

@@ -9,6 +9,7 @@
 /* ================================================================
    CSS VARIABLES & THEME SYSTEM
    ================================================================ */
+
 :root {
   /* AE Fingerprint: UDB-9F7C3E2A | analyticendeavors.com */
   --ae-fp: "AE-UDB-9F7C3E2A";
@@ -83,8 +84,8 @@
   --calc-operator-bg-hover: rgba(255, 149, 0, 0.5);
   --calc-operator-color: #ff9500;
 
-  /* Animation */
-  --transition-theme: 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+  /* Animation (used by theme-no-transition helper) */
+  --transition-theme: 0s;
 
   /* SVG Background Filters */
   --bg-hue-rotate: 0deg;
@@ -93,6 +94,16 @@
 
   /* Custom Background Hue (grayscale-first colorization) */
   --custom-bg-hue: 280deg;
+}
+
+
+/* Disable all theme transitions for instant "rotate" mode */
+body.theme-no-transition,
+body.theme-no-transition *,
+body.theme-no-transition::before,
+body.theme-no-transition::after {
+  --transition-theme: 0s !important;
+  transition-duration: 0s !important;
 }
 
 /* Theme: Teal/Cyan (Brand) */

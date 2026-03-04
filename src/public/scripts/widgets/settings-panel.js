@@ -13,6 +13,7 @@ dashboardConfig = {
   claude: { gistUrl: '', enabled: true },
   visualizer: { defaultMode: 'demo' },
   background: { type: 'mountains', customSvg: null },
+  theme: { autoCycle: false, mode: 'fade', interval: 30 },
   ...dashboardConfig
 };
 
@@ -71,6 +72,15 @@ function populateSettingsPanel() {
   if (settingsWindowMonitor) settingsWindowMonitor.value = localStorage.getItem('windowMonitor') || '2';
   if (settingsWindowWidth) settingsWindowWidth.value = localStorage.getItem('windowWidth') || '2304';
   if (settingsWindowHeight) settingsWindowHeight.value = localStorage.getItem('windowHeight') || '648';
+
+  // Theme cycling settings
+  const themeAutoCycle = document.getElementById('settings-theme-autocycle');
+  const themeMode = document.getElementById('settings-theme-mode');
+  const themeInterval = document.getElementById('settings-theme-interval');
+  const themeConfig = dashboardConfig.theme || { autoCycle: false, mode: 'fade', interval: 30 };
+  if (themeAutoCycle) themeAutoCycle.checked = themeConfig.autoCycle === true;
+  if (themeMode) themeMode.value = themeConfig.mode || 'fade';
+  if (themeInterval) themeInterval.value = themeConfig.interval || 30;
 
   // Background settings
   populateBackgroundSettings();
@@ -386,6 +396,14 @@ function saveSettings() {
   };
   dashboardConfig.hcClientId = settingsHcClientId?.value.trim() || '';
   dashboardConfig.aeClientId = settingsAeClientId?.value.trim() || '';
+
+  // Theme cycling settings
+  const themeIntervalVal = parseInt(document.getElementById('settings-theme-interval')?.value) || 30;
+  dashboardConfig.theme = {
+    autoCycle: document.getElementById('settings-theme-autocycle')?.checked === true,
+    mode: document.getElementById('settings-theme-mode')?.value || 'fade',
+    interval: Math.max(1, Math.min(1800, themeIntervalVal))
+  };
 
   // Location Services settings
   dashboardConfig.googleMapsApiKey = document.getElementById('settings-google-maps-key')?.value.trim() || '';
