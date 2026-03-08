@@ -1367,6 +1367,8 @@
 
   let lastAnimateLogTime = 0;
 
+  let lastColorUpdateTime = 0;
+
   function animate(currentTime) {
     // Stop loop entirely when hidden (saves CPU)
     if (document.hidden) {
@@ -1380,6 +1382,14 @@
     // Frame rate limiting - skip render if not enough time has passed (30fps target)
     if (currentTime - lastFrameTime < frameInterval) return;
     lastFrameTime = currentTime - ((currentTime - lastFrameTime) % frameInterval);
+
+    // Poll theme colors periodically so JS-driven fade transitions look smooth
+    if (currentTime - lastColorUpdateTime > 200) {
+      lastColorUpdateTime = currentTime;
+      updatePowerAudioColors();
+      updateMilkdropColors();
+      updateCircularColors();
+    }
 
     let raw;
     if (audioSourceMode === 'native' && nativeSamples.length > 0) {

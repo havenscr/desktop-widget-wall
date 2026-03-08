@@ -1097,18 +1097,18 @@
       // Check for wake-up triggers
       // Only sustained petting (intensity > 0.3) prevents sleep, not brief mouse movements
       const isInteracting = this.isDragging || this.petIntensity > 0.3;
-      // Audio wakes creature only when already sleeping (threshold 0.15)
-      const audioWake = this.isSleeping && waveform.averageGainLinearized > 0.15;
+      // Audio above threshold keeps the creature awake (not just when sleeping)
+      const hasAudio = waveform.averageGainLinearized > 0.08;
 
-      if (isInteracting || audioWake) {
-        // Wake up!
+      if (isInteracting || hasAudio) {
+        // Stay awake / wake up
         this.lastInteractionTime = now;
         this.sleepiness = Math.max(0, this.sleepiness - delta * 3);
         if (this.isSleeping && this.sleepiness < 0.3) {
           this.isSleeping = false;
         }
       } else {
-        // Build up sleepiness over time (falls asleep after ~30 seconds of inactivity)
+        // Build up sleepiness over time (falls asleep after ~30 seconds of silence)
         if (timeSinceInteraction > 10) {
           this.sleepiness = Math.min(1, this.sleepiness + delta * 0.04);
         }

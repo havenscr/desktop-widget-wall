@@ -103,35 +103,6 @@ function loadYouTubeAPI() {
 }
 
 /**
- * Enforce minimum 480p quality on YouTube player
- * Quality levels: small (240p), medium (360p), large (480p), hd720, hd1080, highres
- */
-function enforceMinimumQuality(player) {
-  try {
-    const quality = player.getPlaybackQuality();
-    const tooLowQualities = ['small', 'medium']; // 240p, 360p - below 480p minimum
-
-    if (tooLowQualities.includes(quality)) {
-      // Get available qualities and pick the best one at or above 480p
-      const available = player.getAvailableQualityLevels();
-      const preferred = ['hd1080', 'hd720', 'large']; // Best to minimum acceptable
-
-      for (const pref of preferred) {
-        if (available.includes(pref)) {
-          player.setPlaybackQuality(pref);
-          console.log(`[SmartWidget] Quality upgraded from ${quality} to ${pref}`);
-          return;
-        }
-      }
-      // Fallback: just try setting large (480p)
-      player.setPlaybackQuality('large');
-    }
-  } catch (e) {
-    console.warn('[SmartWidget] Could not enforce quality:', e);
-  }
-}
-
-/**
  * Create YouTube embed for a source
  */
 function createYouTubeEmbed(containerId, videoId, muted = true) {
@@ -160,14 +131,10 @@ function createYouTubeEmbed(containerId, videoId, muted = true) {
           playlist: videoId,
           modestbranding: 1,
           rel: 0,
-          showinfo: 0,
-          vq: 'hd720'
+          showinfo: 0
         },
         events: {
           onReady: (event) => {
-            // Set quality to 480p minimum (large), prefer 720p
-            event.target.setPlaybackQuality('large'); // 480p minimum
-
             // Check if this player's page is currently active and play if so
             // This fixes the race condition where switchToPage() runs before player is ready
             // Use getIframe() since YouTube replaces the original container div
@@ -194,18 +161,12 @@ function createYouTubeEmbed(containerId, videoId, muted = true) {
             resolve(player);
           },
           onStateChange: (event) => {
-            // Enforce minimum 480p when video starts playing
             if (event.data === YT.PlayerState.PLAYING) {
-              enforceMinimumQuality(event.target);
               // Notify other widgets that YouTube is playing (auto-pause Twitch)
               window.dispatchEvent(new CustomEvent('video-playback-start', {
                 detail: { source: 'youtube', player: event.target }
               }));
             }
-          },
-          onPlaybackQualityChange: (event) => {
-            // YouTube changed quality - enforce minimum
-            enforceMinimumQuality(event.target);
           }
         }
       });
