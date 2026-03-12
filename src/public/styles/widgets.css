@@ -6397,7 +6397,9 @@
   cursor: pointer;
   transition: background 0.15s;
   color: var(--text-primary);
-  min-height: 0;
+  height: 100%;
+  aspect-ratio: 1;
+  justify-self: center;
 }
 
 .cal-day:hover {
