@@ -1963,7 +1963,7 @@ const InboxWidget = (function() {
       return;
     }
 
-    emailList.innerHTML = emails.map((email) => {
+    const renderedHtml = emails.map((email) => {
       const sender = email.from?.emailAddress?.name || email.from?.emailAddress?.address || 'Unknown';
       const initials = getInitials(sender);
       const subject = escapeHtml(email.subject || 'No Subject');
@@ -1983,6 +1983,13 @@ const InboxWidget = (function() {
         </div>
       `;
     }).join('');
+
+    // Guard against any "undefined" text leaking into the rendered output
+    if (renderedHtml.includes('undefined')) {
+      console.warn('[InboxWidget] Detected "undefined" in rendered email HTML. Dumping first 3 emails:', emails.slice(0, 3));
+    }
+
+    emailList.innerHTML = renderedHtml;
 
     // Add click handlers to open emails in Outlook
     emailList.querySelectorAll('.email-item[data-weblink]').forEach(item => {
@@ -2006,7 +2013,7 @@ const InboxWidget = (function() {
       name = name.split('@')[0];
     }
 
-    const parts = name.trim().split(/[\s.]+/);
+    const parts = name.trim().split(/[\s.]+/).filter(p => p.length > 0);
     if (parts.length >= 2) {
       return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
     }
