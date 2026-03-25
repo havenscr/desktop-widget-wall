@@ -132,7 +132,9 @@ function createYouTubeEmbed(containerId, videoId, muted = true) {
           modestbranding: 1,
           rel: 0,
           showinfo: 0,
-          vq: 'medium'
+          vq: 'medium',
+          origin: window.location.origin,
+          widget_referrer: window.location.origin
         },
         events: {
           onReady: (event) => {

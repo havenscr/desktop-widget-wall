@@ -2884,6 +2884,13 @@ fn main() {
     // Create shared audio buffer
     let audio_buffer = Arc::new(SharedAudioBuffer::default());
 
+    // Disable WebView2 tracking prevention so embedded players (Spotify, YouTube) can access storage.
+    // Must be set before WebView2 is initialized.
+    #[allow(deprecated)]
+    {
+        std::env::set_var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "--disable-features=msTrackingProtection --autoplay-policy=no-user-gesture-required");
+    }
+
     tauri::Builder::default()
         .manage(audio_buffer)
         .invoke_handler(tauri::generate_handler![
