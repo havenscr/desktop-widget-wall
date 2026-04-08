@@ -132,15 +132,11 @@ function createYouTubeEmbed(containerId, videoId, muted = true) {
           modestbranding: 1,
           rel: 0,
           showinfo: 0,
-          vq: 'medium',
           origin: window.location.origin,
           widget_referrer: window.location.origin
         },
         events: {
           onReady: (event) => {
-            // Cap quality to reduce buffering in WebView2
-            try { event.target.setPlaybackQuality('medium'); } catch (_) {}
-
             // Check if this player's page is currently active and play if so
             // This fixes the race condition where switchToPage() runs before player is ready
             // Use getIframe() since YouTube replaces the original container div
