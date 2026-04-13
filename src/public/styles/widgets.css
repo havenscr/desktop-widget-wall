@@ -6320,7 +6320,7 @@
 
 /* Left column container */
 .calendar-left {
-  flex: 0 0 220px;
+  flex: 0 0 228px;
   display: flex;
   flex-direction: column;
   gap: 12px;
