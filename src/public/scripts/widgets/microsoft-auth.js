@@ -625,18 +625,11 @@ const MicrosoftAuth = (function() {
     }
 
     try {
-      // Exchange the code for tokens via direct POST to token endpoint
-      const tokenEndpoint = `${AUTHORITY}/oauth2/v2.0/token`;
-
-      const params = new URLSearchParams();
-      params.append('client_id', clientId);
-      params.append('grant_type', 'authorization_code');
-      params.append('code', code.trim());
-      params.append('redirect_uri', REDIRECT_URI_CALLBACK);
-      params.append('code_verifier', codeVerifier);
-      params.append('scope', SCOPES.join(' '));
-
-      console.log(`MicrosoftAuth: Exchanging code for ${targetAccountType.toUpperCase()} at token endpoint`);
+      // Exchange via Rust backend to avoid the Origin header that Azure
+      // interprets as a SPA call (desktop-registered redirect URIs reject
+      // SPA-style requests). See Microsoft docs: v2-oauth2-auth-code-flow
+      // "redirect-uris-for-single-page-apps-spas".
+      console.log(`MicrosoftAuth: Exchanging code for ${targetAccountType.toUpperCase()} via Rust backend`);
       console.log(`MicrosoftAuth: Token request params:`, {
         client_id: clientId,
         redirect_uri: REDIRECT_URI_CALLBACK,
@@ -644,17 +637,22 @@ const MicrosoftAuth = (function() {
         verifier_length: codeVerifier?.length
       });
 
-      const response = await fetch(tokenEndpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded'
-        },
-        body: params.toString()
+      if (!isTauri()) {
+        throw new Error('Token exchange requires the Tauri backend (not available in browser preview)');
+      }
+
+      const { invoke } = window.__TAURI__.core;
+      const rawBody = await invoke('exchange_oauth_code', {
+        clientId: clientId,
+        code: code.trim(),
+        codeVerifier: codeVerifier,
+        redirectUri: REDIRECT_URI_CALLBACK,
+        scope: SCOPES.join(' ')
       });
 
-      const data = await response.json();
+      const data = JSON.parse(rawBody);
 
-      if (!response.ok) {
+      if (data.error) {
         console.error('MicrosoftAuth: Token endpoint error:', data);
         throw new Error(data.error_description || data.error || 'Token exchange failed');
       }
@@ -944,25 +942,21 @@ const MicrosoftAuth = (function() {
         return null;
       }
 
-      const tokenEndpoint = `${AUTHORITY}/oauth2/v2.0/token`;
+      if (!isTauri()) {
+        console.warn('MicrosoftAuth: Refresh skipped (Tauri backend not available)');
+        return null;
+      }
 
-      const params = new URLSearchParams();
-      params.append('client_id', clientId);
-      params.append('grant_type', 'refresh_token');
-      params.append('refresh_token', refreshToken);
-      params.append('scope', SCOPES.join(' '));
-
-      const response = await fetch(tokenEndpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded'
-        },
-        body: params.toString()
+      const { invoke } = window.__TAURI__.core;
+      const rawBody = await invoke('refresh_oauth_token', {
+        clientId: clientId,
+        refreshToken: refreshToken,
+        scope: SCOPES.join(' ')
       });
 
-      const data = await response.json();
+      const data = JSON.parse(rawBody);
 
-      if (!response.ok) {
+      if (data.error) {
         const errorCode = data.error || '';
         const isPermanent = PERMANENT_REFRESH_ERRORS.includes(errorCode);
 
@@ -980,7 +974,7 @@ const MicrosoftAuth = (function() {
           dispatchAuthEvent(false, accountType);
         } else {
           // Transient failure (server error, rate limit, etc.) - keep refresh token
-          console.warn(`MicrosoftAuth: Transient refresh failure for ${accountType} (${errorCode}):`, data.error_description || response.status);
+          console.warn(`MicrosoftAuth: Transient refresh failure for ${accountType} (${errorCode}):`, data.error_description);
         }
         return null;
       }
