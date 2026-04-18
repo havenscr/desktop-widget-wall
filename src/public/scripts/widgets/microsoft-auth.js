@@ -46,10 +46,6 @@ const MicrosoftAuth = (function() {
   const REFRESH_RETRY_DELAYS = [2000, 5000, 15000]; // ms between retries
   // Refresh access token 5 minutes before expiry
   const PROACTIVE_REFRESH_BUFFER = 5 * 60 * 1000;
-  // SPA refresh tokens expire after 24h; re-auth before that
-  const REFRESH_TOKEN_LIFETIME = 24 * 60 * 60 * 1000;
-  const REAUTH_THRESHOLD = 18 * 60 * 60 * 1000; // re-auth when token > 18h old
-  const REAUTH_CHECK_INTERVAL = 4 * 60 * 60 * 1000; // check every 4 hours
 
   // Legacy compatibility - points to HC account by default
   let currentAccount = null;
@@ -173,21 +169,38 @@ const MicrosoftAuth = (function() {
 
     isInitialized = true;
 
-    // Start periodic re-auth check (every 4 hours) to keep sessions alive
-    startPeriodicReauthCheck();
-
-    // Re-check auth on wake from sleep/visibility change
+    // On wake from sleep / tab refocus: re-arm refresh timers and eagerly
+    // refresh any token that's expired or within the 5-min buffer.
+    // setTimeout doesn't run while the machine is asleep, so the previously
+    // scheduled refresh can be well past due after a long sleep.
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible') {
-        for (const accountType of Object.values(ACCOUNT_TYPES)) {
-          if (accounts[accountType]?.account) {
-            checkAndReauthIfNeeded(accountType);
-          }
-        }
+      if (document.visibilityState !== 'visible') return;
+      for (const accountType of Object.values(ACCOUNT_TYPES)) {
+        if (!accounts[accountType]?.account) continue;
+        refreshIfStale(accountType);
+        scheduleTokenRefresh(accountType);
       }
     });
 
     return true;
+  }
+
+  /**
+   * Refresh the access token immediately if it's expired or within the
+   * proactive refresh buffer. No-op otherwise.
+   */
+  async function refreshIfStale(accountType) {
+    const storageKey = getTokenStorageKey(accountType);
+    const stored = localStorage.getItem(storageKey);
+    if (!stored) return;
+    try {
+      const tokenData = JSON.parse(stored);
+      if (!tokenData.refreshToken) return;
+      if (tokenData.expiresOn > Date.now() + PROACTIVE_REFRESH_BUFFER) return;
+      await refreshAccessTokenWithRetry(tokenData.refreshToken, accountType);
+    } catch (e) {
+      console.warn(`MicrosoftAuth: refreshIfStale failed for ${accountType}:`, e);
+    }
   }
 
   /**
@@ -376,9 +389,6 @@ const MicrosoftAuth = (function() {
 
       // Schedule proactive token refresh
       scheduleTokenRefresh(accountType);
-
-      // Check if refresh token is aging and needs re-auth (handles reboot/sleep gaps)
-      checkAndReauthIfNeeded(accountType);
 
       console.log(`MicrosoftAuth: Restored ${accountType.toUpperCase()} account from stored token:`, accounts[accountType].account.username);
       dispatchAuthEvent(true, accountType);
@@ -1072,125 +1082,6 @@ const MicrosoftAuth = (function() {
     } catch (e) {
       console.warn(`MicrosoftAuth: Could not schedule refresh for ${accountType}:`, e);
     }
-  }
-
-  /**
-   * Check if a refresh token is old enough to need re-authentication.
-   * If so, perform a silent re-auth to get a fresh token set.
-   * @param {string} accountType
-   */
-  async function checkAndReauthIfNeeded(accountType) {
-    const storageKey = getTokenStorageKey(accountType);
-    const storedData = localStorage.getItem(storageKey);
-    if (!storedData) return;
-
-    try {
-      const tokenData = JSON.parse(storedData);
-      if (!tokenData.refreshToken) return;
-
-      const issuedAt = tokenData.refreshTokenIssuedAt;
-      if (!issuedAt) {
-        // No issue time tracked yet; stamp it now so future checks work
-        tokenData.refreshTokenIssuedAt = Date.now();
-        localStorage.setItem(storageKey, JSON.stringify(tokenData));
-        persistTokenToFile(accountType);
-        return;
-      }
-
-      const tokenAge = Date.now() - issuedAt;
-
-      if (tokenAge >= REFRESH_TOKEN_LIFETIME) {
-        // Refresh token is already dead
-        console.log(`MicrosoftAuth: Refresh token expired for ${accountType.toUpperCase()} (age: ${Math.round(tokenAge / 3600000)}h), clearing session`);
-        localStorage.removeItem(storageKey);
-        clearTokenFile(accountType);
-        accounts[accountType].account = null;
-        accounts[accountType].tokenData = null;
-        dispatchAuthEvent(false, accountType);
-        window.dispatchEvent(new CustomEvent('microsoft-auth-reauth-needed', {
-          detail: { accountType, reason: 'refresh_token_expired' }
-        }));
-        return;
-      }
-
-      if (tokenAge >= REAUTH_THRESHOLD) {
-        console.log(`MicrosoftAuth: Refresh token aging for ${accountType.toUpperCase()} (age: ${Math.round(tokenAge / 3600000)}h), starting silent re-auth`);
-        await performSilentReauth(accountType);
-      }
-    } catch (e) {
-      console.warn(`MicrosoftAuth: Error checking re-auth for ${accountType}:`, e);
-    }
-  }
-
-  /**
-   * Perform silent re-authentication to get a completely new token set.
-   * Opens the authorize endpoint with prompt=none in the system browser.
-   * @param {string} accountType
-   */
-  async function performSilentReauth(accountType) {
-    const clientId = getClientId(accountType);
-    if (!clientId) return;
-
-    const account = accounts[accountType]?.account;
-    if (!account) return;
-
-    console.log(`MicrosoftAuth: Attempting silent re-auth for ${accountType.toUpperCase()}...`);
-
-    if (isTauri()) {
-      try {
-        const { invoke } = window.__TAURI__.core;
-        try {
-          await invoke('start_oauth_server');
-        } catch (e) { /* server may already be running */ }
-
-        const pkce = await generatePKCE();
-        pendingPKCE = pkce;
-        pendingAccountType = accountType;
-        localStorage.setItem('msal_pkce_verifier', pkce.verifier);
-        localStorage.setItem('msal_pending_account_type', accountType);
-
-        const authUrl = new URL(`${AUTHORITY}/oauth2/v2.0/authorize`);
-        authUrl.searchParams.set('client_id', clientId);
-        authUrl.searchParams.set('response_type', 'code');
-        authUrl.searchParams.set('redirect_uri', REDIRECT_URI_CALLBACK);
-        authUrl.searchParams.set('scope', SCOPES.join(' '));
-        authUrl.searchParams.set('response_mode', 'query');
-        authUrl.searchParams.set('prompt', 'none');
-        authUrl.searchParams.set('login_hint', account.username);
-        authUrl.searchParams.set('code_challenge', pkce.challenge);
-        authUrl.searchParams.set('code_challenge_method', 'S256');
-
-        const state = crypto.randomUUID();
-        localStorage.setItem('msal_state', state);
-        authUrl.searchParams.set('state', state);
-
-        await window.__TAURI__.opener.openUrl(authUrl.toString());
-        console.log(`MicrosoftAuth: Silent re-auth URL opened for ${accountType.toUpperCase()}`);
-      } catch (error) {
-        console.warn(`MicrosoftAuth: Silent re-auth failed for ${accountType}:`, error);
-        window.dispatchEvent(new CustomEvent('microsoft-auth-reauth-needed', {
-          detail: { accountType, reason: 'silent_reauth_failed' }
-        }));
-      }
-    }
-  }
-
-  /**
-   * Start periodic re-auth checks (every 4 hours).
-   * Uses setInterval so it catches up after sleep/wake.
-   */
-  let reauthIntervalId = null;
-  function startPeriodicReauthCheck() {
-    if (reauthIntervalId) return;
-
-    console.log(`MicrosoftAuth: Starting periodic re-auth check every ${REAUTH_CHECK_INTERVAL / 3600000}h`);
-    reauthIntervalId = setInterval(() => {
-      for (const accountType of Object.values(ACCOUNT_TYPES)) {
-        if (accounts[accountType]?.account) {
-          checkAndReauthIfNeeded(accountType);
-        }
-      }
-    }, REAUTH_CHECK_INTERVAL);
   }
 
   /**
