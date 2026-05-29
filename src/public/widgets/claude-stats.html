@@ -1,0 +1,44 @@
+<!-- CLAUDE STATS WIDGET (Native Tauri - reads from ~/.claude/) -->
+<div class="widget widget-claudestats" id="claude-widget">
+  <div class="claude-header">
+    <span class="claude-title">Claude Stats</span>
+  </div>
+
+  <!-- Stats display -->
+  <div class="claude-stats-display" id="claude-stats-display" style="display: none;">
+    <div class="claude-lifetime">
+      <div class="claude-lifetime-value" id="claude-lifetime-value">$0.00</div>
+      <div class="claude-lifetime-label">Lifetime Cost</div>
+    </div>
+    <div class="claude-today">
+      Today: <span class="claude-today-value" id="claude-today-value">$0.00</span>
+    </div>
+    <div class="claude-metrics">
+      <span id="claude-input-tokens">--</span> in | <span id="claude-output-tokens">--</span> out | <span id="claude-requests">--</span> msgs
+    </div>
+    <div class="claude-sparkline" id="claude-sparkline">
+      <svg viewBox="0 0 120 30" preserveAspectRatio="none">
+        <defs>
+          <linearGradient id="sparkline-gradient" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" style="stop-color:var(--accent-primary);stop-opacity:0.5"/>
+            <stop offset="100%" style="stop-color:var(--accent-primary);stop-opacity:0"/>
+          </linearGradient>
+        </defs>
+        <path class="claude-sparkline-line" id="claude-spark-path" stroke="var(--accent-primary)" stroke-width="2" fill="none" d="M0,15 L120,15"/>
+      </svg>
+    </div>
+    <div class="claude-models" id="claude-models">
+      <!-- Model breakdown populated dynamically -->
+    </div>
+  </div>
+
+  <!-- Placeholder (shown while loading) -->
+  <div class="claude-placeholder" id="claude-placeholder" style="display: flex;">
+    <div class="placeholder-icon">
+      <svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24">
+        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+      </svg>
+    </div>
+    <p class="placeholder-text">Loading Claude analytics...</p>
+  </div>
+</div>

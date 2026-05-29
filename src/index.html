@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<!--
+  ========================================================================
+  WIDGET WALL DESKTOP - Tauri Application
+  Based on Analytic Endeavors Unified Dashboard
+  Copyright (c) 2024-2025 Havens Consulting Inc. All Rights Reserved.
+
+  Fingerprint: AE-WWD-8B4F2C1E-2025
+  Origin: analyticendeavors.com | havens-consulting.com
+  Created: Reid Havens | Havens Consulting Inc.
+  ========================================================================
+-->
+<html lang="en" data-ae-origin="analyticendeavors.com" data-ae-fp="WWD-8B4F2C1E">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Widget Wall Desktop</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#127899;</text></svg>">
+
+  <!-- AE Provenance -->
+  <meta name="author" content="Reid Havens, Havens Consulting Inc.">
+  <meta name="designer" content="Analytic Endeavors">
+  <meta name="copyright" content="(c) 2024-2025 Havens Consulting Inc.">
+  <meta name="ae:fingerprint" content="AE-WWD-8B4F2C1E-2025">
+  <meta name="ae:origin" content="analyticendeavors.com">
+
+  <!-- ATC Fonts for flip clock -->
+  <link rel="stylesheet" href="https://s3-us-west-2.amazonaws.com/s.cdpn.io/80729/atc-fonts.css">
+
+  <!-- SQL.js for parsing SQLite databases in browser (Claude Stats) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.min.js"></script>
+
+  <!-- MSAL.js for Microsoft Graph API authentication (local copy to avoid tracking prevention) -->
+  <script src="scripts/lib/msal-browser.min.js"></script>
+
+  <!-- Three.js for 3D Earth Visualizer -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
+
+  <!-- PixiJS for PowerAudio Visualizer -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/5.3.12/pixi.min.js"></script>
+
+  <!-- PowerAudio Visualizer Library -->
+  <script src="scripts/lib/poweraudio.js"></script>
+
+  <!-- CSS Stylesheets -->
+  <link rel="stylesheet" href="styles/themes.css">
+  <link rel="stylesheet" href="styles/base.css">
+  <link rel="stylesheet" href="styles/widgets.css?v=20260123-6">
+</head>
+<body data-ae-page="widget-wall-desktop" data-ae-ver="2025.1" data-ae-license="proprietary" data-theme="pink">
+  <!-- AE-WATERMARK -->
+  <div id="ae-provenance" data-fingerprint="AE-WWD-8B4F2C1E" data-origin="analyticendeavors.com"
+       data-author="Reid Havens" data-company="Havens Consulting Inc."
+       data-license="All Rights Reserved" style="display:none!important;visibility:hidden!important;position:absolute!important;left:-9999px!important;" aria-hidden="true">
+    Widget Wall Desktop - Copyright 2024-2025 Havens Consulting Inc. Unauthorized use prohibited.
+  </div>
+
+  <!-- Widget Grid -->
+  <div class="widget-grid">
+
+    <!-- CLOCK + WEATHER CONTAINER -->
+    <div class="widget-clockweather">
+      <div id="clock-container"></div>
+      <div id="weather-container"></div>
+    </div>
+
+    <!-- CARD STACK COLUMN (Countdown + Recent Files) -->
+    <div class="widget-cardstack">
+      <div id="countdown-container"></div>
+      <div id="recent-files-container"></div>
+    </div>
+
+    <!-- NOW PLAYING + VISUALIZER CONTAINER (50/50 split) -->
+    <div class="widget-nowplaying-visualizer">
+      <div id="now-playing-container"></div>
+      <div id="visualizer-container"></div>
+    </div>
+
+    <!-- TWITCH + STATS/CALC CONTAINER -->
+    <div class="widget-twitchstats">
+      <div id="twitch-container"></div>
+      <div class="widget-statscalc">
+        <div id="audio-mixer-container"></div>
+        <div class="widget-statscalc-right">
+          <div id="system-stats-container"></div>
+          <div id="calculator-container"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CALENDAR + INBOX + CLAUDE STATS CONTAINER -->
+    <div class="widget-calendarinbox" data-view="email">
+      <div id="calendar-container"></div>
+      <div id="inbox-container"></div>
+      <div id="claude-stats-container"></div>
+
+      <!-- View Navigation Dots (Inbox / Full Chat / Half Chat) -->
+      <div class="inbox-nav-dots" id="inbox-nav-dots">
+        <button class="nav-dot active" data-view="email" title="Inbox">
+          <span class="dot"></span>
+          <span class="dot-label">Inbox</span>
+        </button>
+        <button class="nav-dot" data-view="twitch-chat" title="Twitch Chat">
+          <span class="dot"></span>
+          <span class="dot-label">Chat</span>
+        </button>
+        <button class="nav-dot" data-view="chat-half" title="Chat + Calendar">
+          <span class="dot"></span>
+          <span class="dot-label">IRC</span>
+        </button>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Modal Containers (loaded dynamically) -->
+  <div id="modals-container"></div>
+
+  <!-- Fixed Button Cluster (Fullscreen + Settings + Theme Toggle) -->
+  <div class="fixed-button-cluster">
+    <button class="fullscreen-toggle" id="fullscreen-toggle" title="Toggle Fullscreen (F11)">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="fullscreen-expand">
+        <polyline points="15 3 21 3 21 9"/>
+        <polyline points="9 21 3 21 3 15"/>
+        <polyline points="21 15 21 21 15 21"/>
+        <polyline points="3 9 3 3 9 3"/>
+      </svg>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="fullscreen-compress" style="display:none;">
+        <polyline points="4 14 10 14 10 20"/>
+        <polyline points="20 10 14 10 14 4"/>
+        <polyline points="14 20 14 14 20 14"/>
+        <polyline points="10 4 10 10 4 10"/>
+      </svg>
+    </button>
+    <button class="global-settings-btn" id="global-settings-btn" title="Dashboard Settings">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="3"/>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+      </svg>
+    </button>
+    <button class="theme-toggle" id="theme-toggle" data-theme-name="Pink/Purple">
+      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9c.83 0 1.5-.67 1.5-1.5 0-.39-.15-.74-.39-1.01-.23-.26-.38-.61-.38-.99 0-.83.67-1.5 1.5-1.5H16c2.76 0 5-2.24 5-5 0-4.42-4.03-8-9-8zm-5.5 9c-.83 0-1.5-.67-1.5-1.5S5.67 9 6.5 9 8 9.67 8 10.5 7.33 12 6.5 12zm3-4C8.67 8 8 7.33 8 6.5S8.67 5 9.5 5s1.5.67 1.5 1.5S10.33 8 9.5 8zm5 0c-.83 0-1.5-.67-1.5-1.5S13.67 5 14.5 5s1.5.67 1.5 1.5S15.33 8 14.5 8zm3 4c-.83 0-1.5-.67-1.5-1.5S16.67 9 17.5 9s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/>
+      </svg>
+    </button>
+  </div>
+
+  <!-- Settings Panel Overlay (loaded dynamically) -->
+  <div id="settings-panel-container"></div>
+
+  <!-- Main Application Script - loads all components -->
+  <script src="scripts/main.js?v=20260123"></script>
+</body>
+</html>
+<!-- Fingerprint: AE-WWD-8B4F2C1E | (c) 2024-2025 Havens Consulting Inc. | Unauthorized reproduction prohibited -->

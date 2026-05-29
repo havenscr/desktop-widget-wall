@@ -1,0 +1,484 @@
+<!-- COUNTDOWN CONFIG MODAL -->
+<div class="countdown-modal" id="countdown-modal" data-config-mode="countdown">
+  <div class="countdown-modal-content">
+    <h3 id="countdown-modal-title">Configure Countdown</h3>
+
+    <!-- COUNTDOWN MODE CONFIG -->
+    <div class="countdown-mode-config" data-config-mode="countdown">
+      <div class="countdown-modal-field">
+        <label for="countdown-title-input">Event Title</label>
+        <input type="text" id="countdown-title-input" placeholder="Days to Event" maxlength="30">
+      </div>
+      <div class="countdown-modal-field">
+        <label for="countdown-date-input">Target Date</label>
+        <input type="date" id="countdown-date-input">
+      </div>
+      <div class="countdown-modal-field">
+        <label for="countdown-time-input">Target Time (optional)</label>
+        <input type="time" id="countdown-time-input" value="00:00">
+      </div>
+      <div class="countdown-modal-field">
+        <label>Background Style</label>
+        <div class="countdown-bg-options">
+          <label class="countdown-bg-option">
+            <input type="radio" name="countdown-bg" value="none" checked>
+            <span>None</span>
+          </label>
+          <label class="countdown-bg-option">
+            <input type="radio" name="countdown-bg" value="svg">
+            <span>Custom SVG</span>
+          </label>
+        </div>
+        <div class="countdown-svg-upload" id="countdown-svg-upload" style="display: none;">
+          <div class="countdown-svg-controls">
+            <label class="countdown-svg-file-btn" for="countdown-svg-input">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+              </svg>
+              Choose File
+            </label>
+            <input type="file" id="countdown-svg-input" accept=".svg" style="display: none;">
+            <button type="button" class="countdown-svg-clear-btn" id="countdown-svg-clear">Clear</button>
+          </div>
+          <div class="countdown-svg-preview" id="countdown-svg-preview"></div>
+          <div class="blur-control-row" id="countdown-blur-row">
+            <label>Blur</label>
+            <input type="range" id="countdown-blur-slider" min="0" max="30" value="0">
+            <input type="number" id="countdown-blur-input" min="0" max="30" value="0">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- FOCUS TIMER MODE CONFIG -->
+    <div class="focus-timer-config" data-config-mode="focus" style="display: none;">
+      <div class="focus-config-row">
+        <label for="focus-default-duration">Custom Duration (minutes)</label>
+        <input type="number" id="focus-default-duration" min="1" max="999" value="25">
+      </div>
+      <div class="focus-config-row">
+        <label for="focus-interval-enabled">Interval Reminders</label>
+        <input type="checkbox" id="focus-interval-enabled">
+      </div>
+      <div class="focus-config-row" id="focus-interval-row" style="display: none;">
+        <label for="focus-interval-minutes">Remind every (minutes)</label>
+        <input type="number" id="focus-interval-minutes" min="1" max="120" value="25">
+      </div>
+      <div class="countdown-modal-field" style="margin-top: 12px;">
+        <label>Background Style</label>
+        <div class="focus-bg-options">
+          <label class="focus-bg-option">
+            <input type="radio" name="focus-bg" value="none" checked>
+            <span>None</span>
+          </label>
+          <label class="focus-bg-option">
+            <input type="radio" name="focus-bg" value="inherit">
+            <span>Same as Countdown</span>
+          </label>
+          <label class="focus-bg-option">
+            <input type="radio" name="focus-bg" value="svg">
+            <span>Custom SVG</span>
+          </label>
+        </div>
+        <div class="focus-svg-upload" id="focus-svg-upload" style="display: none;">
+          <div class="focus-svg-controls">
+            <label class="focus-svg-file-btn" for="focus-svg-input">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+              </svg>
+              Choose File
+            </label>
+            <input type="file" id="focus-svg-input" accept=".svg" style="display: none;">
+            <button type="button" class="focus-svg-clear-btn" id="focus-svg-clear">Clear</button>
+          </div>
+          <div class="focus-svg-preview" id="focus-svg-preview"></div>
+          <div class="blur-control-row" id="focus-blur-row">
+            <label>Blur</label>
+            <input type="range" id="focus-blur-slider" min="0" max="30" value="0">
+            <input type="number" id="focus-blur-input" min="0" max="30" value="0">
+          </div>
+        </div>
+      </div>
+      <div class="countdown-modal-field" style="margin-top: 12px;">
+        <label>Alarm Sound</label>
+        <div class="focus-alarm-options">
+          <label class="focus-alarm-option">
+            <input type="radio" name="focus-alarm" value="default" checked>
+            <span>Default</span>
+          </label>
+          <label class="focus-alarm-option">
+            <input type="radio" name="focus-alarm" value="custom">
+            <span>Custom Audio</span>
+          </label>
+        </div>
+        <div class="focus-custom-audio-controls" id="focus-custom-audio-controls">
+          <label class="focus-audio-file-btn" for="focus-audio-input">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+            </svg>
+            Choose Audio File
+          </label>
+          <input type="file" id="focus-audio-input" accept="audio/*" style="display: none;">
+          <div class="focus-audio-preview" id="focus-audio-preview">
+            <span class="focus-audio-filename" id="focus-audio-filename">No file selected</span>
+            <button type="button" class="focus-audio-preview-btn" id="focus-audio-preview-btn">Preview</button>
+            <button type="button" class="focus-audio-preview-btn" id="focus-audio-clear-btn">Clear</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="countdown-modal-buttons">
+      <button class="countdown-modal-btn secondary" id="countdown-cancel-btn">Cancel</button>
+      <button class="countdown-modal-btn primary" id="countdown-save-btn">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- TWITCH IRC CHAT CONFIG MODAL -->
+<div class="twitch-irc-modal" id="twitch-irc-modal">
+  <div class="twitch-irc-modal-content">
+    <h3>Configure Chat</h3>
+    <div class="twitch-irc-modal-field">
+      <label>Background Style</label>
+      <div class="twitch-irc-bg-options">
+        <label class="twitch-irc-bg-option">
+          <input type="radio" name="twitch-irc-bg" value="none" checked>
+          <span>None</span>
+        </label>
+        <label class="twitch-irc-bg-option">
+          <input type="radio" name="twitch-irc-bg" value="svg">
+          <span>Custom SVG</span>
+        </label>
+      </div>
+      <!-- None options: blur and darkness -->
+      <div class="twitch-irc-none-options" id="twitch-irc-none-options">
+        <div class="blur-control-row">
+          <label>Blur</label>
+          <input type="range" id="twitch-irc-blur-slider" min="0" max="30" value="16">
+          <input type="number" id="twitch-irc-blur-input" min="0" max="30" value="16">
+        </div>
+        <div class="blur-control-row">
+          <label>Darkness</label>
+          <input type="range" id="twitch-irc-darkness-slider" min="0" max="100" value="55">
+          <input type="number" id="twitch-irc-darkness-input" min="0" max="100" value="55">
+        </div>
+      </div>
+      <!-- Custom SVG options -->
+      <div class="twitch-irc-svg-upload" id="twitch-irc-svg-upload" style="display: none;">
+        <div class="twitch-irc-svg-controls">
+          <label class="twitch-irc-svg-file-btn" for="twitch-irc-svg-input">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+            </svg>
+            Choose File
+          </label>
+          <input type="file" id="twitch-irc-svg-input" accept=".svg" style="display: none;">
+          <button type="button" class="twitch-irc-svg-clear-btn" id="twitch-irc-svg-clear">Clear</button>
+        </div>
+        <div class="twitch-irc-svg-preview" id="twitch-irc-svg-preview"></div>
+        <div class="blur-control-row">
+          <label>Blur</label>
+          <input type="range" id="twitch-irc-svg-blur-slider" min="0" max="30" value="0">
+          <input type="number" id="twitch-irc-svg-blur-input" min="0" max="30" value="0">
+        </div>
+      </div>
+    </div>
+    <div class="twitch-irc-modal-buttons">
+      <button class="twitch-irc-modal-btn secondary" id="twitch-irc-cancel-btn">Cancel</button>
+      <button class="twitch-irc-modal-btn primary" id="twitch-irc-save-btn">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- MARCO TEXT (QUICK PHRASES) MODAL -->
+<div class="marco-text-modal" id="marco-text-modal">
+  <div class="marco-text-modal-content">
+    <h3>Edit Quick Phrases</h3>
+    <p class="marco-text-modal-desc">Create short names for phrases you use often. Click a phrase in the picker to paste it into chat.</p>
+    <div class="marco-text-phrases-list" id="marco-text-phrases-list">
+      <!-- Phrase rows added dynamically -->
+    </div>
+    <button type="button" class="marco-text-add-btn" id="marco-text-add-btn">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+        <line x1="12" y1="5" x2="12" y2="19"/>
+        <line x1="5" y1="12" x2="19" y2="12"/>
+      </svg>
+      Add Phrase
+    </button>
+    <div class="marco-text-modal-buttons">
+      <button class="marco-text-modal-btn secondary" id="marco-text-cancel-btn">Cancel</button>
+      <button class="marco-text-modal-btn primary" id="marco-text-save-btn">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- CLAUDE STATS CONFIG MODAL -->
+<div class="claude-modal" id="claude-modal">
+  <div class="claude-modal-content">
+    <h3>Configure Claude Stats</h3>
+    <div class="claude-modal-field">
+      <label for="claude-gist-input">GitHub Gist URL</label>
+      <input type="text" id="claude-gist-input" placeholder="https://gist.githubusercontent.com/...">
+      <small style="color: rgba(255,255,255,0.5); margin-top: 4px; display: block;">Enter the raw URL to your claude-stats.json gist file</small>
+    </div>
+    <div class="claude-modal-buttons">
+      <button class="claude-modal-btn secondary" id="claude-cancel-btn">Cancel</button>
+      <button class="claude-modal-btn primary" id="claude-save-btn">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- TWITCH CONFIG MODAL -->
+<div class="twitch-modal" id="twitch-modal">
+  <div class="twitch-modal-content">
+    <h3>Configure Media Widget</h3>
+    <div class="twitch-modal-field">
+      <label for="twitch-channel-input">Twitch Channel</label>
+      <div class="twitch-channel-dropdown-wrapper">
+        <input type="text" id="twitch-channel-input" placeholder="e.g., anya, shroud, pokimane" autocomplete="off">
+        <div class="twitch-channel-dropdown" id="twitch-channel-dropdown">
+          <!-- Dynamically populated with recent + followed channels -->
+        </div>
+      </div>
+    </div>
+    <div class="twitch-modal-divider"></div>
+    <div class="twitch-modal-field">
+      <label>YouTube Videos <span style="opacity: 0.5; font-weight: normal;">(cozy vibes)</span></label>
+      <div id="twitch-modal-media-list" class="twitch-modal-media-list">
+        <!-- Dynamically populated -->
+      </div>
+      <button type="button" class="twitch-modal-add-btn" id="twitch-modal-add-video">+ Add YouTube Video</button>
+    </div>
+    <div class="twitch-modal-divider"></div>
+    <div class="twitch-modal-field">
+      <label>Twitch Account <span style="opacity: 0.5; font-weight: normal;">(for ad-free)</span></label>
+      <div class="twitch-login-section">
+        <div class="twitch-login-status" id="twitch-login-status">
+          <span class="status-dot"></span>
+          <span class="status-text">Not logged in</span>
+        </div>
+        <div class="twitch-login-buttons">
+          <button type="button" class="twitch-modal-login-btn" id="twitch-login-btn">
+            <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
+              <path d="M11.571 4.714h1.715v5.143H11.57zm4.715 0H18v5.143h-1.714zM6 0L1.714 4.286v15.428h5.143V24l4.286-4.286h3.428L22.286 12V0zm14.571 11.143l-3.428 3.428h-3.429l-3 3v-3H6.857V1.714h13.714z"/>
+            </svg>
+            Login to Twitch
+          </button>
+          <button type="button" class="twitch-modal-logout-btn" id="twitch-logout-btn" style="display: none;">
+            Logout
+          </button>
+        </div>
+      </div>
+      <small style="color: rgba(255,255,255,0.5); margin-top: 4px; display: block;">Login to your Twitch account for ad-free viewing (requires Turbo or channel sub)</small>
+    </div>
+    <div class="twitch-modal-buttons">
+      <button class="twitch-modal-btn secondary" id="twitch-cancel-btn">Cancel</button>
+      <button class="twitch-modal-btn primary" id="twitch-save-btn">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- RECENT FILES CONFIG MODAL -->
+<div class="recentfiles-modal" id="recentfiles-modal">
+  <div class="recentfiles-modal-content">
+    <h3>Configure Recent Files</h3>
+    <div class="recentfiles-modal-field">
+      <label>Background Style</label>
+      <div class="recentfiles-bg-options">
+        <label class="recentfiles-bg-option">
+          <input type="radio" name="recentfiles-bg" value="none" checked>
+          <span>None</span>
+        </label>
+        <label class="recentfiles-bg-option">
+          <input type="radio" name="recentfiles-bg" value="svg">
+          <span>Custom SVG</span>
+        </label>
+      </div>
+      <div class="recentfiles-svg-upload" id="recentfiles-svg-upload" style="display: none;">
+        <div class="recentfiles-svg-controls">
+          <label class="recentfiles-svg-file-btn" for="recentfiles-svg-input">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+            </svg>
+            Choose File
+          </label>
+          <input type="file" id="recentfiles-svg-input" accept=".svg" style="display: none;">
+          <button type="button" class="recentfiles-svg-clear-btn" id="recentfiles-svg-clear">Clear</button>
+        </div>
+        <div class="recentfiles-svg-preview" id="recentfiles-svg-preview"></div>
+        <div class="blur-control-row" id="recentfiles-blur-row">
+          <label>Blur</label>
+          <input type="range" id="recentfiles-blur-slider" min="0" max="30" value="0">
+          <input type="number" id="recentfiles-blur-input" min="0" max="30" value="0">
+        </div>
+      </div>
+    </div>
+    <div class="recentfiles-modal-buttons">
+      <button class="recentfiles-modal-btn secondary" id="recentfiles-cancel-btn">Cancel</button>
+      <button class="recentfiles-modal-btn primary" id="recentfiles-save-btn">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- NOW PLAYING CONFIG MODAL -->
+<div class="nowplaying-modal" id="nowplaying-modal">
+  <div class="nowplaying-modal-content">
+    <h3>Configure Now Playing</h3>
+    <div class="nowplaying-modal-field">
+      <label>Background Style</label>
+      <div class="nowplaying-bg-options">
+        <label class="nowplaying-bg-option">
+          <input type="radio" name="nowplaying-bg" value="none" checked>
+          <span>None</span>
+        </label>
+        <label class="nowplaying-bg-option">
+          <input type="radio" name="nowplaying-bg" value="album-blur">
+          <span>Album Blur</span>
+        </label>
+        <label class="nowplaying-bg-option">
+          <input type="radio" name="nowplaying-bg" value="color-mesh">
+          <span>Color Mesh</span>
+        </label>
+        <label class="nowplaying-bg-option">
+          <input type="radio" name="nowplaying-bg" value="svg">
+          <span>Custom SVG</span>
+        </label>
+      </div>
+      <div class="nowplaying-svg-upload" id="nowplaying-svg-upload" style="display: none;">
+        <div class="nowplaying-svg-controls">
+          <label class="nowplaying-svg-file-btn" for="nowplaying-svg-input">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+            </svg>
+            Choose File
+          </label>
+          <input type="file" id="nowplaying-svg-input" accept=".svg" style="display: none;">
+          <button type="button" class="nowplaying-svg-clear-btn" id="nowplaying-svg-clear">Clear</button>
+        </div>
+        <div class="nowplaying-svg-preview" id="nowplaying-svg-preview"></div>
+      </div>
+      <div class="blur-control-row" id="nowplaying-blur-row" style="display: none;">
+        <label>Blur</label>
+        <input type="range" id="nowplaying-blur-slider" min="0" max="30" value="0">
+        <input type="number" id="nowplaying-blur-input" min="0" max="30" value="0">
+      </div>
+    </div>
+    <div class="nowplaying-modal-buttons">
+      <button class="nowplaying-modal-btn secondary" id="nowplaying-cancel-btn">Cancel</button>
+      <button class="nowplaying-modal-btn primary" id="nowplaying-save-btn">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- CLOCK CONFIG MODAL -->
+<div class="clock-modal" id="clock-modal">
+  <div class="clock-modal-content">
+    <h3>Configure Clock</h3>
+    <div class="clock-modal-field">
+      <label>Background Style</label>
+      <div class="clock-bg-options">
+        <label class="clock-bg-option">
+          <input type="radio" name="clock-bg" value="none" checked>
+          <span>None</span>
+        </label>
+        <label class="clock-bg-option">
+          <input type="radio" name="clock-bg" value="svg">
+          <span>Custom SVG</span>
+        </label>
+      </div>
+      <div class="clock-svg-upload" id="clock-svg-upload" style="display: none;">
+        <div class="clock-svg-controls">
+          <label class="clock-svg-file-btn" for="clock-svg-input">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+            </svg>
+            Choose File
+          </label>
+          <input type="file" id="clock-svg-input" accept=".svg" style="display: none;">
+          <button type="button" class="clock-svg-clear-btn" id="clock-svg-clear">Clear</button>
+        </div>
+        <div class="clock-svg-preview" id="clock-svg-preview"></div>
+        <div class="blur-control-row" id="clock-blur-row">
+          <label>Blur</label>
+          <input type="range" id="clock-blur-slider" min="0" max="30" value="0">
+          <input type="number" id="clock-blur-input" min="0" max="30" value="0">
+        </div>
+      </div>
+    </div>
+    <div class="clock-modal-buttons">
+      <button class="clock-modal-btn secondary" id="clock-cancel-btn">Cancel</button>
+      <button class="clock-modal-btn primary" id="clock-save-btn">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- TWITCH OAUTH MODAL -->
+<div class="twitch-modal" id="twitch-oauth-modal">
+  <div class="twitch-modal-content" style="max-width: 480px;">
+    <h3>Connect Twitch Account</h3>
+    <div class="twitch-modal-field">
+      <p style="color: rgba(255,255,255,0.7); margin: 0 0 16px 0; line-height: 1.5;">
+        1. Click the button below to open Twitch authorization<br>
+        2. Log in and authorize Widget Wall<br>
+        3. Copy the <strong>entire URL</strong> from your browser after redirect<br>
+        4. Paste it below and click Connect
+      </p>
+      <button type="button" class="twitch-modal-login-btn" id="twitch-oauth-open-btn" style="width: 100%; justify-content: center; margin-bottom: 16px;">
+        <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
+          <path d="M11.571 4.714h1.715v5.143H11.57zm4.715 0H18v5.143h-1.714zM6 0L1.714 4.286v15.428h5.143V24l4.286-4.286h3.428L22.286 12V0zm14.571 11.143l-3.428 3.428h-3.429l-3 3v-3H6.857V1.714h13.714z"/>
+        </svg>
+        Open Twitch Authorization
+      </button>
+      <label for="twitch-oauth-url-input">Paste the redirect URL here:</label>
+      <input type="text" id="twitch-oauth-url-input" placeholder="http://localhost:1420/auth-callback.html#access_token=..." style="font-size: 12px;">
+      <small id="twitch-oauth-status" style="color: rgba(255,255,255,0.5); margin-top: 8px; display: block;"></small>
+    </div>
+    <div class="twitch-modal-buttons">
+      <button class="twitch-modal-btn secondary" id="twitch-oauth-cancel-btn">Cancel</button>
+      <button class="twitch-modal-btn primary" id="twitch-oauth-connect-btn">Connect</button>
+    </div>
+  </div>
+</div>
+
+<!-- AUDIO CONTROLS CONFIG MODAL -->
+<div class="controls-modal" id="controls-modal">
+  <div class="controls-modal-content">
+    <h3>Configure Audio Controls</h3>
+    <div class="controls-modal-field">
+      <label>Background Style</label>
+      <div class="controls-bg-options">
+        <label class="controls-bg-option">
+          <input type="radio" name="controls-bg" value="none" checked>
+          <span>None</span>
+        </label>
+        <label class="controls-bg-option">
+          <input type="radio" name="controls-bg" value="svg">
+          <span>Custom SVG</span>
+        </label>
+      </div>
+      <div class="controls-svg-upload" id="controls-svg-upload" style="display: none;">
+        <div class="controls-svg-controls">
+          <label class="controls-svg-file-btn" for="controls-svg-input">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+            </svg>
+            Choose File
+          </label>
+          <input type="file" id="controls-svg-input" accept=".svg" style="display: none;">
+          <button type="button" class="controls-svg-clear-btn" id="controls-svg-clear">Clear</button>
+        </div>
+        <div class="controls-svg-preview" id="controls-svg-preview"></div>
+        <div class="blur-control-row" id="controls-blur-row">
+          <label>Blur</label>
+          <input type="range" id="controls-blur-slider" min="0" max="30" value="0">
+          <input type="number" id="controls-blur-input" min="0" max="30" value="0">
+        </div>
+      </div>
+    </div>
+    <div class="controls-modal-buttons">
+      <button class="controls-modal-btn secondary" id="controls-cancel-btn">Cancel</button>
+      <button class="controls-modal-btn primary" id="controls-save-btn">Save</button>
+    </div>
+  </div>
+</div>
