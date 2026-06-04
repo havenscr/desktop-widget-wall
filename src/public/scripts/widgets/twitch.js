@@ -20,6 +20,11 @@ let streamInfoPollInterval = null;
 let twitchPlayer = null;
 let twitchEmbedLoaded = false;
 
+// Native-embed stall watchdog: the Twitch embed iframe has no live-edge API,
+// so the only way to snap back to live after a stall is to rebuild the embed.
+let twitchStallMonitor = null;
+let twitchStallStrikes = 0;
+
 // Expose twitchPlayer globally for smart widget control
 window.twitchPlayer = null;
 
@@ -496,6 +501,87 @@ function startStreamInfoPolling() {
 }
 
 /**
+ * Pin a fixed quality on the native embed instead of leaving it on auto-ABR.
+ * Auto-ABR thrashing under GPU contention reads as buffering/stutter. We avoid
+ * "chunked" (source) because the highest bitrate is the most rebuffer-prone on
+ * a busy WebView2; we target a stable mid-high rung if one exists.
+ */
+function setNativeQuality(player) {
+  try {
+    if (!player || typeof player.getQualities !== 'function') return;
+    const qualities = player.getQualities() || [];
+    if (!qualities.length) return;
+    const current = typeof player.getQuality === 'function' ? player.getQuality() : null;
+    // Only override if Twitch left us on auto (don't fight a manual user choice)
+    if (current && current !== 'auto') return;
+    // Quality `group` names, best-to-worst, that we prefer to land on.
+    const prefer = ['720p60', '720p', '900p60', '480p'];
+    const names = qualities.map(q => q.group || q.name);
+    const pick = prefer.find(p => names.includes(p)) || names.find(n => n && n !== 'auto');
+    if (pick) {
+      player.setQuality(pick);
+      console.log('Twitch: pinned native quality to', pick, '(was auto)');
+    }
+  } catch (e) {
+    console.warn('Twitch: setNativeQuality failed', e);
+  }
+}
+
+/**
+ * Watchdog for the native embed. The embed API has no seek-to-live, so if the
+ * player gets stuck not-playing while the stream is live (and we didn't pause
+ * it), we rebuild the embed via updateTwitchWidget() to jump back to the edge.
+ */
+function startTwitchStallMonitor() {
+  stopTwitchStallMonitor();
+  twitchStallStrikes = 0;
+  twitchStallMonitor = setInterval(() => {
+    try {
+      // Only watch when the Twitch page is the active one (don't rebuild a paused-on-purpose player)
+      const twitchEmbed = document.getElementById('twitch-embed');
+      const twitchPage = twitchEmbed?.closest('.smart-widget-page');
+      const isPageActive = !twitchPage || twitchPage.classList.contains('active');
+      if (!isPageActive || !twitchPlayer) { twitchStallStrikes = 0; return; }
+
+      const player = typeof twitchPlayer.getPlayer === 'function' ? twitchPlayer.getPlayer() : null;
+      if (!player) { twitchStallStrikes = 0; return; }
+
+      // If the user/we paused it, that's intentional - not a stall.
+      const paused = typeof player.isPaused === 'function' ? player.isPaused() : false;
+      const ended = typeof player.getEnded === 'function' ? player.getEnded() : false;
+      if (paused) { twitchStallStrikes = 0; return; }
+
+      // "Stuck" = reports not-paused but also not progressing/ended. getPlayerState
+      // exposes playback state; treat anything other than a healthy playing state as a strike.
+      const state = typeof player.getPlayerState === 'function' ? player.getPlayerState() : null;
+      const playback = state && (state.playback || state.playbackState);
+      const stuck = ended || (playback && playback !== 'Playing' && playback !== 'playing');
+
+      if (stuck) {
+        twitchStallStrikes += 1;
+        console.log(`Twitch: stall strike ${twitchStallStrikes}/3 (playback=${playback}, ended=${ended})`);
+        if (twitchStallStrikes >= 3) {
+          console.log('Twitch: native player stalled - rebuilding embed to snap to live');
+          twitchStallStrikes = 0;
+          updateTwitchWidget(); // rebuilds the embed fresh at the live edge
+        }
+      } else {
+        twitchStallStrikes = 0;
+      }
+    } catch (e) {
+      console.warn('Twitch: stall monitor error', e);
+    }
+  }, 4000); // 3 strikes * 4s => ~12s of confirmed stall before a rebuild
+}
+
+function stopTwitchStallMonitor() {
+  if (twitchStallMonitor) {
+    clearInterval(twitchStallMonitor);
+    twitchStallMonitor = null;
+  }
+}
+
+/**
  * Refresh stream info from API
  */
 async function refreshStreamInfo() {
@@ -944,6 +1030,9 @@ function updateTwitchWidgetNative(channel, twitchEmbed, twitchOffline, twitchFal
           if (twitchFallback) twitchFallback.style.display = 'none';
           twitchEmbedLoaded = true;
           startStreamInfoPolling();
+          // Stabilize the native player: pin quality + watch for stalls
+          try { setNativeQuality(twitchPlayer.getPlayer()); } catch (e) {}
+          startTwitchStallMonitor();
         });
 
         twitchPlayer.addEventListener(Twitch.Embed.OFFLINE, () => {
@@ -1096,6 +1185,8 @@ function updateTwitchWidget() {
           // This handles the case where the embed was created before the page was fully visible
           try {
             const player = twitchPlayer.getPlayer();
+            // Stabilize the native player: pin a fixed quality instead of auto-ABR thrash
+            setNativeQuality(player);
             if (player && typeof player.play === 'function') {
               // Small delay to ensure visibility has been applied
               setTimeout(() => {
@@ -1119,6 +1210,9 @@ function updateTwitchWidget() {
             console.log('Could not trigger Twitch autoplay:', e);
           }
 
+          // Watch for stalls and rebuild the embed to snap back to live if stuck
+          startTwitchStallMonitor();
+
         });
 
 
@@ -1129,6 +1223,8 @@ function updateTwitchWidget() {
             clearInterval(streamInfoPollInterval);
             streamInfoPollInterval = null;
           }
+          // Offline is not a stall - stop watching so we don't rebuild in a loop
+          stopTwitchStallMonitor();
           showTwitchOffline();
         });
 
