@@ -1588,10 +1588,32 @@
     }
   }
 
-  // Auto-recover when audio samples stop flowing in system-default mode
+  // Only recover if the NATIVE capture has actually died. Prolonged silence on
+  // its own is not a failure (a muted/paused player produces no samples), so we
+  // ask Rust for the real capture status first and bail out if it's still alive.
+  // This is the guard that stops the old restart-every-1.6s thrash loop.
+  async function maybeRecoverIfCaptureDead() {
+    if (!visualizerTauriAvailable) return;
+    try {
+      const { invoke } = window.__TAURI__.core;
+      const status = await invoke('get_audio_status'); // [capturing, deviceName]
+      const capturing = Array.isArray(status) ? status[0] : status?.capturing;
+      if (capturing) {
+        // Capture is alive; the endpoint is simply silent. Do nothing.
+        return;
+      }
+      console.log('Visualizer: native capture reported STOPPED - attempting recovery');
+      handleSystemDefaultRecovery();
+    } catch (e) {
+      // If we can't even query status, don't thrash; let the next cycle retry.
+      console.log('Visualizer: could not query capture status, skipping recovery:', e);
+    }
+  }
+
+  // Auto-recover when the system-default capture has genuinely stopped.
   async function handleSystemDefaultRecovery() {
     const now = Date.now();
-    const cooldownMs = 4000; // 4 second cooldown between recovery attempts
+    const cooldownMs = 10000; // 10s cooldown; recovery is now rare (real failures only)
 
     if (now - lastRecoveryAttempt < cooldownMs) {
       console.log('Visualizer: Recovery cooldown active, skipping');
@@ -1712,17 +1734,33 @@
             zeroSampleCount++;
             const timeSinceStart = Date.now() - captureStartTime;
 
-            // Log if we've had many consecutive zero-sample polls
+            // IMPORTANT: zero/empty samples are NORMAL. They just mean the
+            // captured endpoint is silent right now (e.g. a muted Twitch/YouTube
+            // player, paused media, or a quiet moment). Silence is NOT a capture
+            // failure. The visualizer simply falls back to its idle/demo render.
+            //
+            // Previously, ~1.6s of zeros triggered handleSystemDefaultRecovery(),
+            // which tore down and restarted the WASAPI loopback capture on the
+            // shared default render endpoint. With a normally-silent endpoint this
+            // looped every ~1.6s forever, churning the audio subsystem and
+            // disrupting the embedded video player's audio path -> buffering.
+            //
+            // We now only recover when Rust reports the capture has ACTUALLY
+            // stopped (a real error), checked on a long interval with backoff.
             if (zeroSampleCount === 50) {
-              console.log('Visualizer: Warning - no samples received for ~1 second');
-            } else if (zeroSampleCount === 100 && isSystemDefaultMode && timeSinceStart > startupImmunityMs) {
-              // Auto-recover in system-default mode when samples stop flowing
-              // But only after startup immunity period to avoid false triggers
-              console.log('Visualizer: No samples for ~1.6 seconds in system-default mode, triggering recovery');
-              zeroSampleCount = 0; // Reset to prevent repeated triggers
-              handleSystemDefaultRecovery();
-            } else if (zeroSampleCount === 200) {
-              console.log('Visualizer: Warning - no samples received for ~3 seconds, capture may have stopped');
+              console.log('Visualizer: endpoint silent (no samples ~1s) - this is normal, idling');
+            }
+
+            // Real-failure check: only every ~5s of continuous silence, and only
+            // in system-default mode, ask Rust whether capture is still alive.
+            // 300 polls * 16ms ~= 4.8s. handleSystemDefaultRecovery itself has a
+            // cooldown, and it now no-ops unless capture is genuinely dead.
+            if (
+              isSystemDefaultMode &&
+              timeSinceStart > startupImmunityMs &&
+              zeroSampleCount % 300 === 0
+            ) {
+              maybeRecoverIfCaptureDead();
             }
           }
         } catch (e) {
