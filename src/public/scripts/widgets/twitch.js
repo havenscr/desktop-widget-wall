@@ -501,26 +501,28 @@ function startStreamInfoPolling() {
 }
 
 /**
- * Pin a fixed quality on the native embed instead of leaving it on auto-ABR.
- * Auto-ABR thrashing under GPU contention reads as buffering/stutter. We avoid
- * "chunked" (source) because the highest bitrate is the most rebuffer-prone on
- * a busy WebView2; we target a stable mid-high rung if one exists.
+ * Ensure the native embed uses Twitch's auto-ABR (adaptive bitrate).
+ *
+ * History: we USED to pin a fixed rung (720p60) to avoid perceived ABR thrash.
+ * That backfired badly: a fixed high bitrate cannot downshift when segments
+ * arrive late, so the forward buffer drained to zero and the player stalled at
+ * the buffer end every ~85s (and occasionally snapped forward 20s to catch up).
+ * ABR exists precisely to prevent that starvation by dropping quality when the
+ * connection or the WebView2 fetch pipeline dips. With the aggressive GPU flags
+ * now removed, the original thrash concern is moot. So we leave the player on
+ * "auto" and only correct it back to auto if something pinned a fixed rung
+ * (never override a deliberate manual user choice we can't distinguish, so we
+ * only act when a non-auto value is set programmatically at startup).
  */
 function setNativeQuality(player) {
   try {
-    if (!player || typeof player.getQualities !== 'function') return;
-    const qualities = player.getQualities() || [];
-    if (!qualities.length) return;
+    if (!player || typeof player.setQuality !== 'function') return;
     const current = typeof player.getQuality === 'function' ? player.getQuality() : null;
-    // Only override if Twitch left us on auto (don't fight a manual user choice)
-    if (current && current !== 'auto') return;
-    // Quality `group` names, best-to-worst, that we prefer to land on.
-    const prefer = ['720p60', '720p', '900p60', '480p'];
-    const names = qualities.map(q => q.group || q.name);
-    const pick = prefer.find(p => names.includes(p)) || names.find(n => n && n !== 'auto');
-    if (pick) {
-      player.setQuality(pick);
-      console.log('Twitch: pinned native quality to', pick, '(was auto)');
+    // Leave on auto. If a previous build/session persisted a fixed quality,
+    // restore auto so ABR can manage the buffer and prevent stalls.
+    if (current && current !== 'auto') {
+      player.setQuality('auto');
+      console.log('Twitch: restored auto-ABR quality (was', current + ')');
     }
   } catch (e) {
     console.warn('Twitch: setNativeQuality failed', e);
