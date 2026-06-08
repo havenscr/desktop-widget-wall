@@ -166,12 +166,25 @@ function createYouTubeEmbed(containerId, videoId, muted = true) {
           },
           onStateChange: (event) => {
             if (event.data === YT.PlayerState.PLAYING) {
-              // Notify other widgets that YouTube is playing (auto-pause Twitch)
-              window.dispatchEvent(new CustomEvent('video-playback-start', {
-                detail: { source: 'youtube', player: event.target }
-              }));
+              // Only the player on the ACTIVE page may claim playback. A hidden
+              // YouTube page that auto-plays/buffers must NOT pause Twitch, or the
+              // two players ping-pong (YT plays -> pauses Twitch -> Twitch
+              // restarts -> pauses YT ...), which reloads the IVS player and
+              // shows up as constant buffering. If this player's page isn't
+              // active, stop it instead of announcing playback.
+              const iframe = event.target.getIframe?.();
+              const page = iframe?.closest('.smart-widget-page');
+              const isActive = !page || page.classList.contains('active');
+              if (isActive) {
+                window.dispatchEvent(new CustomEvent('video-playback-start', {
+                  detail: { source: 'youtube', player: event.target }
+                }));
+              } else {
+                // Inactive page should not be playing at all.
+                try { event.target.stopVideo(); } catch (e) {}
+              }
             } else if (event.data === YT.PlayerState.BUFFERING) {
-              // Observability: correlate buffering with GPU load (do NOT pin quality - ABR adapts)
+              // Observability only. Do NOT pin quality - ABR adapts.
               console.log('YT: buffering', { quality: event.target.getPlaybackQuality?.() });
             }
           }
