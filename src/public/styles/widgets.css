@@ -8090,6 +8090,83 @@
   pointer-events: none;
 }
 
+/* InfiniDream mode (external launcher - opens in default browser) */
+.infinidream-launcher {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-align: center;
+  padding: 16px;
+  color: var(--text-muted);
+}
+.infinidream-launcher-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  margin-bottom: 4px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--accent-primary);
+}
+.infinidream-launcher-icon svg {
+  width: 30px;
+  height: 30px;
+}
+.infinidream-launcher-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.infinidream-launcher-sub {
+  font-size: 11px;
+  max-width: 220px;
+  line-height: 1.4;
+}
+.infinidream-launch-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 9px 18px;
+  background: var(--accent-primary);
+  border: none;
+  border-radius: 8px;
+  color: #fff;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  transition: filter 0.15s, transform 0.1s;
+}
+.infinidream-launch-btn:hover {
+  filter: brightness(1.1);
+}
+.infinidream-launch-btn:active {
+  transform: scale(0.97);
+}
+
+/* Text input in the visualizer config panel (none existed before) */
+.config-text-input {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 11px;
+}
+.config-text-input:focus {
+  outline: none;
+  border-color: var(--accent-primary);
+}
+
 /* Earth visualizer container */
 .visualizer-earth-container {
   width: 100%;

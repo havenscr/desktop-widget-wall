@@ -35,6 +35,11 @@
   let circularInitialized = false;
   let milkdropInitialized = false;
   let poweraudioInitialized = false;
+  let infinidreamInitialized = false;
+
+  // InfiniDream (external launcher - opens playlist in default browser)
+  const DEFAULT_INFINIDREAM_URL = 'https://alpha.infinidream.ai/playlist/d9726526-b8f2-4221-a0bf-67fbacc01f4d';
+  let infinidreamConfig = { url: DEFAULT_INFINIDREAM_URL };
 
   // PowerAudio visualizer (the cute creature)
   let poweraudioViz = null;
@@ -1915,7 +1920,7 @@
       return;
     }
 
-    const modes = ['poweraudio', 'milkdrop', 'circular'];
+    const modes = ['poweraudio', 'milkdrop', 'circular', 'infinidream'];
     if (!modes.includes(mode)) {
       console.warn('Visualizer: Invalid mode:', mode);
       return;
@@ -1946,6 +1951,8 @@
       circularInitialized = initCircularVisualizer();
     } else if (mode === 'milkdrop' && !milkdropInitialized) {
       milkdropInitialized = initMilkdropVisualizer();
+    } else if (mode === 'infinidream' && !infinidreamInitialized) {
+      infinidreamInitialized = initInfiniDreamVisualizer();
     }
 
     // Pause/resume PowerAudio based on mode to save CPU
@@ -2001,7 +2008,7 @@
 
     try {
       const saved = localStorage.getItem('visualizer-display-mode');
-      if (saved && ['poweraudio', 'milkdrop', 'circular'].includes(saved)) {
+      if (saved && ['poweraudio', 'milkdrop', 'circular', 'infinidream'].includes(saved)) {
         switchDisplayMode(saved);
       } else {
         switchDisplayMode('poweraudio');
@@ -2123,6 +2130,10 @@
       if (savedPowerAudio) {
         poweraudioConfig = { ...defaultPowerAudioConfig, ...JSON.parse(savedPowerAudio) };
       }
+      const savedInfini = localStorage.getItem('visualizer-infinidream-config');
+      if (savedInfini) {
+        infinidreamConfig = { ...infinidreamConfig, ...JSON.parse(savedInfini) };
+      }
     } catch (e) {
       console.warn('Failed to load visualizer config:', e);
     }
@@ -2136,6 +2147,43 @@
     } catch (e) {
       console.warn('Failed to save visualizer background config:', e);
     }
+  }
+
+  function saveInfiniDreamConfig() {
+    try {
+      localStorage.setItem('visualizer-infinidream-config', JSON.stringify(infinidreamConfig));
+    } catch (e) {
+      console.warn('Failed to save InfiniDream config:', e);
+    }
+  }
+
+  function updateInfiniDreamConfigUI() {
+    const input = document.getElementById('vis-config-id-url');
+    if (input) input.value = infinidreamConfig.url || DEFAULT_INFINIDREAM_URL;
+  }
+
+  async function openInfiniDreamExternal() {
+    const url = (infinidreamConfig.url || DEFAULT_INFINIDREAM_URL).trim();
+    try {
+      if (window.__TAURI__?.opener?.openUrl) {
+        await window.__TAURI__.opener.openUrl(url);
+      } else {
+        // Browser-preview fallback (opener only exists inside the Tauri app)
+        window.open(url, '_blank', 'noopener');
+      }
+    } catch (e) {
+      console.warn('InfiniDream: failed to open externally', e);
+    }
+  }
+
+  // InfiniDream is a token-auth SPA whose login cannot survive inside a
+  // cross-site iframe in WebView2 (storage partitioned/denied -> immediate 401s
+  // and a forced /signin redirect). So this mode is a launcher: it opens the
+  // configured playlist in the default browser, where it runs first-party and
+  // stays logged in. See openInfiniDreamExternal + lib.rs webview_args note.
+  function initInfiniDreamVisualizer() {
+    document.getElementById('infinidream-launch-btn')?.addEventListener('click', openInfiniDreamExternal);
+    return true;
   }
 
   function applyVisualizerBackground(bgType) {
@@ -2295,6 +2343,7 @@
     updateMilkdropConfigUI();
     updateCircularConfigUI();
     updatePowerAudioConfigUI();
+    updateInfiniDreamConfigUI();
   }
 
   function setupConfigPanel() {
@@ -2521,6 +2570,20 @@
       applyPowerAudioConfig();
       savePowerAudioConfig();
     });
+
+    // InfiniDream config handlers
+    const idUrlInput = document.getElementById('vis-config-id-url');
+    document.getElementById('vis-config-id-save')?.addEventListener('click', () => {
+      const raw = idUrlInput?.value.trim();
+      if (!raw || !/^https?:\/\//i.test(raw)) {
+        alert('Please enter a valid http(s) URL.');
+        return;
+      }
+      infinidreamConfig.url = raw;
+      saveInfiniDreamConfig();
+      // Launcher reads infinidreamConfig.url live on click; nothing to re-apply.
+    });
+    document.getElementById('vis-config-id-open')?.addEventListener('click', openInfiniDreamExternal);
   }
 
   // ================================================================

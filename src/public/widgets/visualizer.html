@@ -204,6 +204,20 @@
         <button class="config-reset-btn" id="vis-config-reset-circular">Reset Defaults</button>
       </div>
     </div>
+    <!-- InfiniDream Config -->
+    <div class="config-mode-section" id="config-mode-infinidream" style="display:none;">
+      <div class="config-panel-header">InfiniDream Settings</div>
+      <div class="config-panel-content">
+        <div class="config-row config-row-text">
+          <label>Playlist URL</label>
+          <input type="text" id="vis-config-id-url" class="config-text-input"
+            placeholder="https://alpha.infinidream.ai/playlist/...">
+        </div>
+        <div class="config-row-hint">External AI music visualizer. Embeds the playlist page.</div>
+        <button class="config-reset-btn" id="vis-config-id-save">Save &amp; Apply</button>
+        <button class="config-reset-btn" id="vis-config-id-open">Open in Browser</button>
+      </div>
+    </div>
   </div>
 
   <!-- Visualizer Container (holds all modes) -->
@@ -248,6 +262,29 @@
         </div>
       </div>
     </div>
+
+    <!-- InfiniDream Mode (external launcher - opens in default browser) -->
+    <!-- InfiniDream is a token-auth SPA whose login cannot persist inside a
+         cross-site iframe in WebView2 (storage is partitioned/denied, see
+         lib.rs webview_args note). So this mode opens it in the real browser. -->
+    <div class="visualizer-mode" id="visualizer-mode-infinidream" data-mode="infinidream" style="display:none;">
+      <div class="infinidream-launcher" id="infinidream-launcher">
+        <div class="infinidream-launcher-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+          </svg>
+        </div>
+        <span class="infinidream-launcher-title">InfiniDream</span>
+        <span class="infinidream-launcher-sub">AI music visualizer. Opens in your browser so your login persists.</span>
+        <button class="infinidream-launch-btn" id="infinidream-launch-btn">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+            <path d="M15 3h6v6M10 14L21 3"/>
+          </svg>
+          Open InfiniDream
+        </button>
+      </div>
+    </div>
   </div>
 
   <!-- Mode Navigation Dots -->
@@ -263,6 +300,10 @@
     <button class="nav-dot" data-mode="circular" title="Circular">
       <span class="dot"></span>
       <span class="dot-label">Circular</span>
+    </button>
+    <button class="nav-dot" data-mode="infinidream" title="InfiniDream">
+      <span class="dot"></span>
+      <span class="dot-label">InfiniDream</span>
     </button>
   </div>
 
