@@ -498,14 +498,14 @@ function isInternalRadioPlaying() {
 
   // Primary check: the state flag and station
   if (window.radioState.isPlaying && window.radioState.station) {
-    console.log('Radio detected via state flag:', window.radioState.station.name);
+    dlog('Radio detected via state flag:', window.radioState.station.name);
     return true;
   }
 
   // Secondary check: if audio element exists and is actually playing
   const audio = window.radioState.audio;
   if (audio && !audio.paused && !audio.ended && audio.src) {
-    console.log('Radio detected via audio element, paused:', audio.paused, 'src:', audio.src);
+    dlog('Radio detected via audio element, paused:', audio.paused, 'src:', audio.src);
     return true;
   }
 
@@ -924,7 +924,7 @@ function updateNowPlayingUI(info) {
   const internalRadioActive = isInternalRadioPlaying();
   const internalRadioInfo = getInternalRadioInfo();
 
-  console.log('updateNowPlayingUI - window.forceRadioOverride:', window.forceRadioOverride, 'internalRadioActive:', internalRadioActive, 'info.source_app:', info?.source_app);
+  dlog('updateNowPlayingUI - window.forceRadioOverride:', window.forceRadioOverride, 'internalRadioActive:', internalRadioActive, 'info.source_app:', info?.source_app);
 
   // Check for Twitch as source - override display when active
   const twitchActive = !internalRadioActive && isTwitchActive(info.source_app, info);

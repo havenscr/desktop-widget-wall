@@ -15,6 +15,7 @@ dashboardConfig = {
   background: { type: 'mountains', customSvg: null },
   theme: { autoCycle: false, mode: 'fade', interval: 30 },
   perfMode: 'full',
+  debugLogging: false,
   ...dashboardConfig
 };
 
@@ -86,6 +87,8 @@ function populateSettingsPanel() {
   // Performance settings
   const perfModeSelect = document.getElementById('settings-perf-mode');
   if (perfModeSelect) perfModeSelect.value = dashboardConfig.perfMode || 'full';
+  const debugLoggingToggle = document.getElementById('settings-debug-logging');
+  if (debugLoggingToggle) debugLoggingToggle.checked = dashboardConfig.debugLogging === true;
 
   // Background settings
   populateBackgroundSettings();
@@ -414,6 +417,8 @@ function saveSettings() {
   const perfModeVal = document.getElementById('settings-perf-mode')?.value;
   dashboardConfig.perfMode = (perfModeVal === 'lite' || perfModeVal === 'off') ? perfModeVal : 'full';
   applyPerfMode();
+  dashboardConfig.debugLogging = document.getElementById('settings-debug-logging')?.checked === true;
+  window._debugLogging = dashboardConfig.debugLogging;
 
   // Location Services settings
   dashboardConfig.googleMapsApiKey = document.getElementById('settings-google-maps-key')?.value.trim() || '';

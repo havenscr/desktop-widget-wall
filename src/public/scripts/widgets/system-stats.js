@@ -74,10 +74,10 @@ async function fetchSystemStats() {
       return;
     }
 
-    console.log('[SystemStats] Invoking get_libre_hardware_stats...');
+    dlog('[SystemStats] Invoking get_libre_hardware_stats...');
     const { invoke } = window.__TAURI__.core;
     const data = await invoke('get_libre_hardware_stats');
-    console.log('[SystemStats] Received data:', data ? 'OK' : 'empty');
+    dlog('[SystemStats] Received data:', data ? 'OK' : 'empty');
     parseHardwareData(data);
     updateStatusIndicator(true);
   } catch (e) {

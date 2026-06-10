@@ -217,7 +217,7 @@
   async function fetchAudioLevels() {
     try {
       const data = await invoke('get_audio_sessions');
-      console.log('[Controls] Audio data:', {
+      dlog('[Controls] Audio data:', {
         master: data?.master,
         sessionCount: data?.sessions?.length || 0,
         sessions: data?.sessions?.map(s => s.name) || []
