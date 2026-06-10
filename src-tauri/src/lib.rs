@@ -101,6 +101,10 @@ pub struct NowPlayingInfo {
     pub duration_seconds: Option<f64>,
     pub shuffle_active: Option<bool>,
     pub repeat_mode: Option<RepeatMode>,
+    /// True when the track is unchanged since the previous poll. In that case
+    /// album_art_* are omitted and the frontend keeps the art it already has.
+    #[serde(default)]
+    pub art_unchanged: bool,
 }
 
 impl Default for NowPlayingInfo {
@@ -117,6 +121,7 @@ impl Default for NowPlayingInfo {
             duration_seconds: None,
             shuffle_active: None,
             repeat_mode: None,
+            art_unchanged: false,
         }
     }
 }
@@ -584,17 +589,74 @@ fn stop_audio_capture(state: State<Arc<SharedAudioBuffer>>) -> Result<String, St
     Ok("Audio capture stopped".to_string())
 }
 
-// Get audio samples for visualization
+/// Audio levels + downsampled waveform for the visualizer.
+///
+/// Computed here instead of shipping raw samples over IPC: the previous
+/// get_audio_samples command returned up to 512 floats as JSON ~62x/sec while
+/// the renderer only runs at 30fps. The banding mirrors the old JS
+/// processNativeSamples() exactly (positional split of the drained buffer:
+/// first 15% -> bass, to 35% -> mid, rest -> high; abs-mean scaled by
+/// 3.0 / 2.5 / 2.0, clamped to 1.0) so the visuals are unchanged.
+#[derive(Debug, Clone, Serialize)]
+pub struct AudioLevels {
+    pub bass: f32,
+    pub mid: f32,
+    pub high: f32,
+    /// Up to 128 raw samples for the circular waveform ring. Empty when the
+    /// endpoint produced no samples since the last poll (silence/no capture).
+    pub waveform: Vec<f32>,
+}
+
 #[tauri::command]
-fn get_audio_samples(state: State<Arc<SharedAudioBuffer>>) -> Vec<f32> {
-    if let Ok(mut samples) = state.samples.lock() {
-        let len = samples.len().min(512);
-        if len > 0 {
-            let result: Vec<f32> = samples.drain(0..len).collect();
-            return result;
+fn get_audio_levels(state: State<Arc<SharedAudioBuffer>>) -> AudioLevels {
+    let samples: Vec<f32> = match state.samples.lock() {
+        Ok(mut s) => {
+            let len = s.len().min(512);
+            s.drain(0..len).collect()
         }
+        Err(_) => Vec::new(),
+    };
+
+    if samples.is_empty() {
+        return AudioLevels {
+            bass: 0.0,
+            mid: 0.0,
+            high: 0.0,
+            waveform: Vec::new(),
+        };
     }
-    Vec::new()
+
+    let len = samples.len();
+    let bass_end = ((len as f32) * 0.15) as usize;
+    let mid_end = ((len as f32) * 0.35) as usize;
+
+    fn abs_mean(slice: &[f32]) -> f32 {
+        if slice.is_empty() {
+            return 0.0;
+        }
+        slice.iter().map(|v| v.abs()).sum::<f32>() / slice.len() as f32
+    }
+
+    let bass = (abs_mean(&samples[..bass_end]) * 3.0).min(1.0);
+    let mid = (abs_mean(&samples[bass_end..mid_end]) * 2.5).min(1.0);
+    let high = (abs_mean(&samples[mid_end..]) * 2.0).min(1.0);
+
+    const WAVEFORM_POINTS: usize = 128;
+    let waveform = if len <= WAVEFORM_POINTS {
+        samples
+    } else {
+        let step = len as f32 / WAVEFORM_POINTS as f32;
+        (0..WAVEFORM_POINTS)
+            .map(|i| samples[((i as f32) * step) as usize])
+            .collect()
+    };
+
+    AudioLevels {
+        bass,
+        mid,
+        high,
+        waveform,
+    }
 }
 
 // Get current capture status
@@ -723,6 +785,11 @@ fn read_thumbnail_sync(
     Some((BASE64.encode(&buffer), content_type))
 }
 
+/// Last (title|artist|album|app) we shipped album art for. The 2s
+/// now-playing poll skips the thumbnail stream read + base64 encode (often
+/// 100KB+ per poll) while this key is unchanged.
+static LAST_ART_TRACK_KEY: Mutex<Option<String>> = Mutex::new(None);
+
 /// Get current now playing information from Windows Media Session (async to avoid blocking main thread)
 #[tauri::command]
 async fn get_now_playing() -> NowPlayingInfo {
@@ -740,7 +807,15 @@ async fn get_now_playing() -> NowPlayingInfo {
         // Get current session
         let session = match manager.GetCurrentSession() {
             Ok(s) => s,
-            Err(_) => return NowPlayingInfo::default(),
+            Err(_) => {
+                // No active session: forget the art key so the art is re-sent
+                // when playback resumes (the frontend shows a placeholder in
+                // the meantime and needs the bytes again).
+                if let Ok(mut key) = LAST_ART_TRACK_KEY.lock() {
+                    *key = None;
+                }
+                return NowPlayingInfo::default();
+            }
         };
 
         let mut info = NowPlayingInfo::default();
@@ -805,11 +880,32 @@ async fn get_now_playing() -> NowPlayingInfo {
                     }
                 }
 
-                // Get album art
-                if let Ok(thumbnail) = props.Thumbnail() {
-                    if let Some((data, mime)) = read_thumbnail_sync(&thumbnail) {
-                        info.album_art_base64 = Some(data);
-                        info.album_art_mime = Some(mime);
+                // Album art is the heavy part of this poll (WinRT stream read
+                // + base64 of often 100KB+, every 2s). Skip it while the
+                // track key is unchanged; the frontend keeps the art it has.
+                let track_key = format!(
+                    "{}|{}|{}|{}",
+                    info.title.as_deref().unwrap_or(""),
+                    info.artist.as_deref().unwrap_or(""),
+                    info.album.as_deref().unwrap_or(""),
+                    info.source_app.as_deref().unwrap_or("")
+                );
+                let unchanged = LAST_ART_TRACK_KEY
+                    .lock()
+                    .map(|key| key.as_deref() == Some(track_key.as_str()))
+                    .unwrap_or(false);
+
+                if unchanged {
+                    info.art_unchanged = true;
+                } else {
+                    if let Ok(thumbnail) = props.Thumbnail() {
+                        if let Some((data, mime)) = read_thumbnail_sync(&thumbnail) {
+                            info.album_art_base64 = Some(data);
+                            info.album_art_mime = Some(mime);
+                        }
+                    }
+                    if let Ok(mut key) = LAST_ART_TRACK_KEY.lock() {
+                        *key = Some(track_key);
                     }
                 }
             }
@@ -3008,7 +3104,7 @@ pub fn run() {
             list_audio_devices,
             start_audio_capture,
             stop_audio_capture,
-            get_audio_samples,
+            get_audio_levels,
             get_audio_status,
             get_default_output_device,
             get_default_loopback_device,

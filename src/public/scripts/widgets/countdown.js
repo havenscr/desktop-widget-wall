@@ -201,20 +201,28 @@ function updateCountdownRing(elementId, value, maxValue) {
   ring.style.strokeDashoffset = offset;
 }
 
+// Cache of last-rendered values so the 1s tick only touches the DOM nodes
+// whose digit actually changed (secs every tick, mins once a minute, ...)
+const lastCountdownShown = {};
+
+function setCountdownPart(id, value, ringId, ringValue, ringMax) {
+  if (lastCountdownShown[id] === value) return;
+  lastCountdownShown[id] = value;
+  const el = document.getElementById(id);
+  if (el) el.textContent = value;
+  updateCountdownRing(ringId, ringValue, ringMax);
+}
+
 function updateCountdown() {
   const targetDateTime = new Date(`${countdownConfig.targetDate}T${countdownConfig.targetTime || '00:00'}:00`);
   const now = new Date();
   const diff = targetDateTime - now;
 
   if (diff <= 0) {
-    document.getElementById('countdown-days').textContent = '0';
-    document.getElementById('countdown-hours').textContent = '0';
-    document.getElementById('countdown-mins').textContent = '0';
-    document.getElementById('countdown-secs').textContent = '0';
-    updateCountdownRing('countdown-days-ring', 0, 1);
-    updateCountdownRing('countdown-hours-ring', 0, 1);
-    updateCountdownRing('countdown-mins-ring', 0, 1);
-    updateCountdownRing('countdown-secs-ring', 0, 1);
+    setCountdownPart('countdown-days', 0, 'countdown-days-ring', 0, 1);
+    setCountdownPart('countdown-hours', 0, 'countdown-hours-ring', 0, 1);
+    setCountdownPart('countdown-mins', 0, 'countdown-mins-ring', 0, 1);
+    setCountdownPart('countdown-secs', 0, 'countdown-secs-ring', 0, 1);
     return;
   }
 
@@ -223,15 +231,10 @@ function updateCountdown() {
   const mins = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
   const secs = Math.floor((diff % (1000 * 60)) / 1000);
 
-  document.getElementById('countdown-days').textContent = days;
-  document.getElementById('countdown-hours').textContent = hours;
-  document.getElementById('countdown-mins').textContent = mins;
-  document.getElementById('countdown-secs').textContent = secs;
-
-  updateCountdownRing('countdown-days-ring', Math.min(days, 365), 365);
-  updateCountdownRing('countdown-hours-ring', hours, 24);
-  updateCountdownRing('countdown-mins-ring', mins, 60);
-  updateCountdownRing('countdown-secs-ring', secs, 60);
+  setCountdownPart('countdown-days', days, 'countdown-days-ring', Math.min(days, 365), 365);
+  setCountdownPart('countdown-hours', hours, 'countdown-hours-ring', hours, 24);
+  setCountdownPart('countdown-mins', mins, 'countdown-mins-ring', mins, 60);
+  setCountdownPart('countdown-secs', secs, 'countdown-secs-ring', secs, 60);
 }
 
 // Function called by settings panel
@@ -1122,9 +1125,13 @@ async function initCountdown() {
     }
   });
 
-  // Start updates
+  // Start updates (paused while the dashboard is hidden)
   updateCountdown();
-  setInterval(updateCountdown, 1000);
+  if (window.VisibilityManager) {
+    window.VisibilityManager.managedInterval(updateCountdown, 1000);
+  } else {
+    setInterval(updateCountdown, 1000);
+  }
 }
 
 // Export for settings panel

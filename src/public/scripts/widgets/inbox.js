@@ -1735,11 +1735,14 @@ const InboxWidget = (function() {
   }
 
   /**
-   * Start auto-refresh with delta sync
+   * Start auto-refresh with delta sync.
+   * Paused while the dashboard is hidden; refreshes immediately on return.
    */
   function startAutoRefresh() {
     stopAutoRefresh();
-    refreshInterval = setInterval(fetchAllEmails, SYNC_INTERVAL);
+    refreshInterval = window.VisibilityManager
+      ? window.VisibilityManager.managedInterval(fetchAllEmails, SYNC_INTERVAL)
+      : { stop: ((id) => () => clearInterval(id))(setInterval(fetchAllEmails, SYNC_INTERVAL)) };
   }
 
   /**
@@ -1747,7 +1750,7 @@ const InboxWidget = (function() {
    */
   function stopAutoRefresh() {
     if (refreshInterval) {
-      clearInterval(refreshInterval);
+      refreshInterval.stop();
       refreshInterval = null;
     }
   }

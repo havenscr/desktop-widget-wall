@@ -37,12 +37,17 @@ const RemindersWidget = (function() {
       renderStaticTasks();
     }
 
-    // Refresh tasks periodically (every 5 minutes)
-    setInterval(() => {
+    // Refresh tasks periodically (every 5 minutes, paused while hidden)
+    const refreshTasks = () => {
       if (typeof MicrosoftAuth !== 'undefined' && MicrosoftAuth.isAuthenticated()) {
         fetchTasks();
       }
-    }, 5 * 60 * 1000);
+    };
+    if (window.VisibilityManager) {
+      window.VisibilityManager.managedInterval(refreshTasks, 5 * 60 * 1000);
+    } else {
+      setInterval(refreshTasks, 5 * 60 * 1000);
+    }
   }
 
   /**

@@ -496,8 +496,13 @@ function startStreamInfoPolling() {
   // Fetch immediately
   refreshStreamInfo();
 
-  // Poll every 60 seconds (Twitch rate limits are generous but no need to spam)
-  streamInfoPollInterval = setInterval(refreshStreamInfo, 60000);
+  // Poll every 60 seconds (Twitch rate limits are generous but no need to spam).
+  // Skip the Helix calls while the dashboard is hidden - the next visible tick
+  // refreshes. (Plain interval kept: several call sites clearInterval this id.)
+  streamInfoPollInterval = setInterval(() => {
+    if (window.VisibilityManager && !window.VisibilityManager.isVisible()) return;
+    refreshStreamInfo();
+  }, 60000);
 }
 
 /**
@@ -539,6 +544,12 @@ function startTwitchStallMonitor() {
   twitchStallStrikes = 0;
   twitchStallMonitor = setInterval(() => {
     try {
+      // Nothing to watch (or rebuild) while the dashboard is hidden
+      if (window.VisibilityManager && !window.VisibilityManager.isVisible()) {
+        twitchStallStrikes = 0;
+        return;
+      }
+
       // Only watch when the Twitch page is the active one (don't rebuild a paused-on-purpose player)
       const twitchEmbed = document.getElementById('twitch-embed');
       const twitchPage = twitchEmbed?.closest('.smart-widget-page');
