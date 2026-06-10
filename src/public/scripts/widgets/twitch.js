@@ -144,7 +144,7 @@ async function fetchTwitchUserProfile(channel) {
 async function fetchTwitchStreamInfo(channel) {
   const accessToken = localStorage.getItem('twitch-access-token');
   if (!accessToken) {
-    console.log('No Twitch access token - stream info unavailable');
+    dlog('No Twitch access token - stream info unavailable');
     return null;
   }
 

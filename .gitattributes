@@ -1,0 +1,13 @@
+# Normalize line endings: text files are LF in the repo, checked out per-OS.
+# Prevents whole-file phantom diffs when a file is rewritten with CRLF.
+* text=auto
+
+# Windows batch files must stay CRLF
+*.bat text eol=crlf
+
+# Binary assets
+*.png binary
+*.ico binary
+*.jpg binary
+*.mp3 binary
+*.svg text

@@ -4,6 +4,21 @@
    Copyright (c) 2024-2025 Havens Consulting Inc. All Rights Reserved.
    ================================================================ */
 
+// Gated debug logger. Hot-path widget logs (per-poll status lines) route
+// through this so the steady-state console stays quiet; errors and warnings
+// keep using console directly. Toggle: Settings -> Performance -> Debug
+// Logging (persisted in dashboard-config; settings-panel.js updates the
+// flag live on save).
+window._debugLogging = false;
+try {
+  window._debugLogging =
+    JSON.parse(localStorage.getItem('dashboard-config') || '{}').debugLogging === true;
+} catch (e) { /* corrupted config - leave logging off */ }
+
+window.dlog = (...args) => {
+  if (window._debugLogging) console.log(...args);
+};
+
 // Widget configuration - maps container IDs to HTML partial paths
 const widgetConfig = [
   { container: 'clock-container', path: 'widgets/clock.html' },

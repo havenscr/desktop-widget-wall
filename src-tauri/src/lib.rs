@@ -47,6 +47,7 @@ use windows::Win32::Graphics::Gdi::{
 };
 use windows::Win32::UI::Shell::{
     IShellLinkW, SHGetFileInfoW, ShellLink, SHFILEINFOW, SHGFI_ICON, SHGFI_SMALLICON,
+    SHGFI_USEFILEATTRIBUTES,
 };
 use windows::Win32::UI::WindowsAndMessaging::{DestroyIcon, GetIconInfo, ICONINFO};
 
@@ -1543,13 +1544,28 @@ async fn get_file_icon(path: String) -> Result<String, String> {
 
             // Get file info with icon
             let mut shfi: SHFILEINFOW = std::mem::zeroed();
-            let result = SHGetFileInfoW(
+            let mut result = SHGetFileInfoW(
                 PCWSTR(wide_path.as_ptr()),
                 windows::Win32::Storage::FileSystem::FILE_ATTRIBUTE_NORMAL,
                 Some(&mut shfi),
                 std::mem::size_of::<SHFILEINFOW>() as u32,
                 SHGFI_ICON | SHGFI_SMALLICON,
             );
+
+            if result == 0 || shfi.hIcon.is_invalid() {
+                // Direct extraction fails for cloud placeholders (OneDrive/
+                // SharePoint files-on-demand) and some shell paths. Fall back
+                // to the extension's generic type icon, which is derived from
+                // the path string alone and never touches the file.
+                shfi = std::mem::zeroed();
+                result = SHGetFileInfoW(
+                    PCWSTR(wide_path.as_ptr()),
+                    windows::Win32::Storage::FileSystem::FILE_ATTRIBUTE_NORMAL,
+                    Some(&mut shfi),
+                    std::mem::size_of::<SHFILEINFOW>() as u32,
+                    SHGFI_ICON | SHGFI_SMALLICON | SHGFI_USEFILEATTRIBUTES,
+                );
+            }
 
             if result == 0 || shfi.hIcon.is_invalid() {
                 return Err("Failed to get file icon".to_string());

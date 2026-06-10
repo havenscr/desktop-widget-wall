@@ -303,7 +303,7 @@ const CalendarWidget = (function() {
 
       const cacheKey = `${CATEGORIES_STORAGE_KEY}-${currentAccount}`;
       localStorage.setItem(cacheKey, JSON.stringify(categoryColorMap));
-      console.log(`Calendar[${currentAccount.toUpperCase()}]: Loaded`, Object.keys(categoryColorMap).length, 'categories');
+      dlog(`Calendar[${currentAccount.toUpperCase()}]: Loaded`, Object.keys(categoryColorMap).length, 'categories');
     } catch (error) {
       console.error(`Calendar[${currentAccount.toUpperCase()}]: Failed to fetch categories:`, error);
       // Try to load from cache
@@ -351,7 +351,7 @@ const CalendarWidget = (function() {
       // Update account state and reference
       accountState[currentAccount].monthEventsCache = events;
       monthEventsCache = events;
-      console.log(`Calendar[${currentAccount.toUpperCase()}]: Loaded`, monthEventsCache.length, 'events for', currentMonth + 1, '/', currentYear, 'in timezone:', timezone);
+      dlog(`Calendar[${currentAccount.toUpperCase()}]: Loaded`, monthEventsCache.length, 'events for', currentMonth + 1, '/', currentYear, 'in timezone:', timezone);
     } catch (error) {
       console.error(`Calendar[${currentAccount.toUpperCase()}]: Failed to fetch month events:`, error);
       accountState[currentAccount].monthEventsCache = [];
@@ -927,7 +927,7 @@ const CalendarWidget = (function() {
                                  nextLocationType === LocationType.UNCERTAIN;
       const eventAddress = hasPhysicalAddress ? getResolvedAddress(displayEvent.location) : null;
 
-      console.log('Calendar DRIVE DEBUG:', {
+      dlog('Calendar DRIVE DEBUG:', {
         subject: displayEvent.subject,
         locationType: nextLocationType,
         hasPhysicalAddress,
@@ -1253,7 +1253,7 @@ const CalendarWidget = (function() {
         if (result.is_valid && result.lat && result.lng) {
           cachedHomeLocation = { lat: result.lat, lng: result.lng };
           cachedHomeAddress = homeAddress;
-          console.log('Calendar DRIVE: Using home address as origin:', homeAddress);
+          dlog('Calendar DRIVE: Using home address as origin:', homeAddress);
           return cachedHomeLocation;
         } else {
           console.warn('Calendar DRIVE: Home address could not be geocoded:', homeAddress);
@@ -1282,7 +1282,7 @@ const CalendarWidget = (function() {
             lng: position.coords.longitude
           };
           locationCacheTime = now;
-          console.log('Calendar DRIVE: Using browser geolocation as origin');
+          dlog('Calendar DRIVE: Using browser geolocation as origin');
           resolve(cachedLocation);
         },
         (error) => {
@@ -1585,14 +1585,14 @@ const CalendarWidget = (function() {
    * Update drive time display for next event
    */
   async function updateNextEventDriveTime() {
-    console.log('Calendar DRIVE: updateNextEventDriveTime called, address:', currentNextEventAddress);
+    dlog('Calendar DRIVE: updateNextEventDriveTime called, address:', currentNextEventAddress);
     if (!currentNextEventAddress) return;
 
     const driveTimeEl = document.getElementById('next-drive-time');
     const mapsBtn = document.getElementById('next-maps-btn');
 
     const driveTime = await fetchDriveTime(currentNextEventAddress);
-    console.log('Calendar DRIVE: fetchDriveTime result:', driveTime);
+    dlog('Calendar DRIVE: fetchDriveTime result:', driveTime);
 
     if (driveTime && driveTimeEl) {
       // Use traffic time if available, otherwise regular duration

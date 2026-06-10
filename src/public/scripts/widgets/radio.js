@@ -67,7 +67,7 @@ function updateRadioState() {
   // DIRECTLY set the override flag on window (bypasses event system issues)
   window.forceRadioOverride = isRadioPlaying;
 
-  console.log('Radio state updated:', window.radioState.isPlaying, window.radioState.station?.name, 'forceRadioOverride:', window.forceRadioOverride);
+  dlog('Radio state updated:', window.radioState.isPlaying, window.radioState.station?.name, 'forceRadioOverride:', window.forceRadioOverride);
 
   // Dispatch custom event so now-playing can react immediately
   window.dispatchEvent(new CustomEvent('radio-state-change', {
@@ -209,7 +209,7 @@ function toggleRadio() {
     // Set flag IMMEDIATELY before async play
     isRadioPlaying = true;
     window.forceRadioOverride = true;
-    console.log('RADIO: Play clicked - window.forceRadioOverride set to TRUE');
+    dlog('RADIO: Play clicked - window.forceRadioOverride set to TRUE');
     radioPlay?.classList.add('playing');
     updateRadioButtonIcons(true);
 
