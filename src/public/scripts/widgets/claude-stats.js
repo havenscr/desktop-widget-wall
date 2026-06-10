@@ -43,6 +43,12 @@ function generateSparkline(data, width = 120, height = 30) {
 }
 
 async function fetchClaudeStats() {
+  // The widget is currently display:none in base.css ("hidden for now") -
+  // don't open and query the analytics SQLite DB for an invisible widget.
+  // offsetParent is null whenever the element or an ancestor is display:none.
+  const widget = document.querySelector('.widget-claudestats');
+  if (widget && widget.offsetParent === null) return;
+
   try {
     const data = await invoke('get_claude_stats');
 

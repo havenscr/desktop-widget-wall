@@ -285,11 +285,19 @@ function setRecentFilesConnected(connected) {
   if (filesList) filesList.style.display = connected ? 'flex' : 'none';
 }
 
+let lastFilesSignature = null;
+
 async function fetchRecentFiles() {
   try {
     const files = await invoke('get_recent_files', { limit: 15 });
     setRecentFilesConnected(true);
-    renderRecentFiles(files || []);
+    // Skip the DOM rebuild (and icon refetches) when the list is unchanged -
+    // the 30s refresh usually returns the identical set
+    const signature = (files || []).map(f => f.path + '|' + f.modified).join(';');
+    if (signature !== lastFilesSignature) {
+      lastFilesSignature = signature;
+      renderRecentFiles(files || []);
+    }
     return true;
   } catch (e) {
     console.warn('Failed to fetch recent files:', e);

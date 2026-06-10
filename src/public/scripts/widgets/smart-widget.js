@@ -363,6 +363,18 @@ function buildSmartWidgetUI() {
     }
   });
 
+  // Remove pages whose source no longer exists, destroying their players
+  // first - YT.Player instances otherwise leak when sources are edited away
+  pagesContainer.querySelectorAll('.smart-widget-page').forEach(page => {
+    const idx = parseInt(page.getAttribute('data-page'), 10);
+    if (idx > 0 && idx >= smartWidgetConfig.sources.length) {
+      if (page.youtubePlayer && typeof page.youtubePlayer.destroy === 'function') {
+        try { page.youtubePlayer.destroy(); } catch (e) { /* already torn down */ }
+      }
+      page.remove();
+    }
+  });
+
   // Show correct page
   switchToPage(smartWidgetConfig.currentPage);
 }
@@ -390,11 +402,15 @@ function switchToPage(pageIndex) {
     const isActive = index === pageIndex;
     page.classList.toggle('active', isActive);
 
-    // Handle YouTube playback - STOP completely when not visible
+    // Handle YouTube playback - STOP completely when not visible.
+    // Guard the calls: the player object exists before the iframe API
+    // finishes initializing, when these methods aren't functions yet.
     if (page.youtubePlayer) {
       if (isActive) {
-        page.youtubePlayer.playVideo();
-      } else {
+        if (typeof page.youtubePlayer.playVideo === 'function') {
+          page.youtubePlayer.playVideo();
+        }
+      } else if (typeof page.youtubePlayer.stopVideo === 'function') {
         // Stop video completely to save bandwidth/CPU (not just pause)
         page.youtubePlayer.stopVideo();
       }

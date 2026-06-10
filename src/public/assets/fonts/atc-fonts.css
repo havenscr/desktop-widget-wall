@@ -1,0 +1,28 @@
+/* ATC fonts used by the flip clock - vendored locally (previously loaded
+   from a CodePen S3 bucket, which broke the clock font offline and left a
+   third-party dependency in the startup path). Only the faces the dashboard
+   actually uses (Duel 400/800, Timberline 400/500) are included. */
+
+@font-face {
+  font-family: 'ATC Duel';
+  src: url('./ATCDuel-V4.woff2') format('woff2');
+  font-weight: 400;
+}
+
+@font-face {
+  font-family: 'ATC Duel';
+  src: url('./ATCDuel-V8Sharp.woff2') format('woff2');
+  font-weight: 800;
+}
+
+@font-face {
+  font-family: 'ATC Timberline';
+  src: url('./ATCTimberline-Medium-webfont.woff2') format('woff2');
+  font-weight: 500;
+}
+
+@font-face {
+  font-family: 'ATC Timberline';
+  src: url('./ATCTimberline-Regular-webfont.woff2') format('woff2');
+  font-weight: 400;
+}

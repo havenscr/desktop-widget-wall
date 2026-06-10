@@ -8,7 +8,11 @@
 const TwitchChat = (function() {
   const IRC_URL = 'wss://irc-ws.chat.twitch.tv:443';
   const RECENT_MESSAGES_API = 'https://recent-messages.robotty.de/api/v2/recent-messages';
-  const RECONNECT_DELAY = 3000;
+  // Reconnect backoff: a fixed short delay hammered the IRC endpoint forever
+  // during network blips. Delay grows per consecutive failure, capped at 60s;
+  // reset on successful welcome (001).
+  const RECONNECT_DELAYS = [3000, 10000, 30000, 60000];
+  let reconnectAttempts = 0;
   const MAX_MESSAGES = 100;
   const MAX_RECENT_MESSAGES = 50; // Limit history to avoid overwhelming the UI
 
@@ -793,6 +797,7 @@ const TwitchChat = (function() {
           // Connection established
           if (parsed.command === '001') {
             isConnected = true;
+            reconnectAttempts = 0; // healthy connection - reset the backoff
             console.log('TwitchChat: Connected to', channel);
             // Load chat history then show connected message
             loadRecentMessages(channel).then(() => {
@@ -1434,13 +1439,15 @@ const TwitchChat = (function() {
 
     // Only reconnect if we still have a channel
     if (channel) {
-      renderSystemMessage('Disconnected. Reconnecting...');
+      const delay = RECONNECT_DELAYS[Math.min(reconnectAttempts, RECONNECT_DELAYS.length - 1)];
+      reconnectAttempts++;
+      renderSystemMessage(`Disconnected. Reconnecting in ${Math.round(delay / 1000)}s...`);
       reconnectTimeout = setTimeout(() => {
         // Double-check connectionId hasn't changed during the timeout
         if (channel && closedConnectionId === connectionId) {
           connect(channel, { container, onMessage: onMessageCallback, oauthToken, username });
         }
-      }, RECONNECT_DELAY);
+      }, delay);
     }
   }
 

@@ -2739,11 +2739,100 @@ fn chrono_lite_today() -> String {
 // LIBRE HARDWARE MONITOR PROXY
 // Fetches data from local LibreHardwareMonitor HTTP server
 // Needed because HTTPS page can't fetch HTTP (mixed content)
+//
+// The full sensor tree (often 100s of KB) used to be shipped to JS and
+// traversed there every 2s just to extract four numbers; the traversal now
+// happens here and only the summary crosses the IPC boundary. The matching
+// rules mirror the old JS parseHardwareData exactly.
 // ================================================================
 
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct SystemStatsSummary {
+    pub cpu: f32,
+    pub gpu: f32,
+    pub ram: f32,
+    pub drives: Vec<DriveUsage>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DriveUsage {
+    pub name: String,
+    pub used_percent: f32,
+}
+
+/// Parse the leading float out of a sensor value like "12.5 %" (mirrors the
+/// old JS /([\d.]+)/ match).
+fn leading_float(s: &str) -> Option<f32> {
+    let t = s.trim_start();
+    let end = t
+        .char_indices()
+        .take_while(|(_, c)| c.is_ascii_digit() || *c == '.')
+        .last()
+        .map(|(i, c)| i + c.len_utf8())
+        .unwrap_or(0);
+    if end == 0 {
+        None
+    } else {
+        t[..end].parse::<f32>().ok()
+    }
+}
+
+fn traverse_hardware_tree(
+    node: &serde_json::Value,
+    drive_ctx: Option<&str>,
+    out: &mut SystemStatsSummary,
+) {
+    let text = node.get("Text").and_then(|t| t.as_str()).unwrap_or("");
+    let value = node.get("Value").and_then(|v| v.as_str()).unwrap_or("");
+
+    if text.contains("CPU Total") && !value.is_empty() {
+        if let Some(v) = leading_float(value) {
+            out.cpu = v;
+        }
+    }
+    if text.contains("GPU Core") && value.contains('%') {
+        if let Some(v) = leading_float(value) {
+            out.gpu = v;
+        }
+    }
+    if text == "Memory" && value.contains('%') {
+        if let Some(v) = leading_float(value) {
+            out.ram = v;
+        }
+    }
+
+    // Storage devices are identified by their hdd.png node icon; their
+    // "Used Space" sensors live somewhere in the subtree below.
+    let is_drive = node
+        .get("ImageURL")
+        .and_then(|u| u.as_str())
+        .map(|u| u.contains("hdd.png"))
+        .unwrap_or(false);
+    let ctx = if is_drive { Some(text) } else { drive_ctx };
+
+    if text == "Used Space" && value.contains('%') {
+        if let (Some(name), Some(v)) = (ctx, leading_float(value)) {
+            if let Some(existing) = out.drives.iter_mut().find(|d| d.name == name) {
+                existing.used_percent = v;
+            } else {
+                out.drives.push(DriveUsage {
+                    name: name.to_string(),
+                    used_percent: v,
+                });
+            }
+        }
+    }
+
+    if let Some(children) = node.get("Children").and_then(|c| c.as_array()) {
+        for child in children {
+            traverse_hardware_tree(child, ctx, out);
+        }
+    }
+}
+
 #[tauri::command]
-async fn get_libre_hardware_stats() -> Result<serde_json::Value, String> {
-    tauri::async_runtime::spawn_blocking(|| -> Result<serde_json::Value, String> {
+async fn get_system_stats() -> Result<SystemStatsSummary, String> {
+    tauri::async_runtime::spawn_blocking(|| -> Result<SystemStatsSummary, String> {
         let response = ureq::get("http://localhost:8085/data.json")
             .timeout(std::time::Duration::from_secs(2))
             .call()
@@ -2756,7 +2845,9 @@ async fn get_libre_hardware_stats() -> Result<serde_json::Value, String> {
         let json: serde_json::Value =
             serde_json::from_str(&body).map_err(|e| format!("Failed to parse JSON: {}", e))?;
 
-        Ok(json)
+        let mut out = SystemStatsSummary::default();
+        traverse_hardware_tree(&json, None, &mut out);
+        Ok(out)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -3158,7 +3249,7 @@ pub fn run() {
             // Claude Stats command
             get_claude_stats,
             // LibreHardwareMonitor proxy
-            get_libre_hardware_stats,
+            get_system_stats,
             // OAuth callback server commands
             start_oauth_server,
             stop_oauth_server,

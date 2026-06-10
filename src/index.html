@@ -24,20 +24,15 @@
   <meta name="ae:fingerprint" content="AE-WWD-8B4F2C1E-2025">
   <meta name="ae:origin" content="analyticendeavors.com">
 
-  <!-- ATC Fonts for flip clock -->
-  <link rel="stylesheet" href="https://s3-us-west-2.amazonaws.com/s.cdpn.io/80729/atc-fonts.css">
+  <!-- ATC Fonts for flip clock (vendored locally - no CDN dependency) -->
+  <link rel="stylesheet" href="assets/fonts/atc-fonts.css">
 
   <!-- MSAL.js for Microsoft Graph API authentication (local copy to avoid tracking prevention) -->
   <script src="scripts/lib/msal-browser.min.js"></script>
 
-  <!-- Three.js for MilkDrop + Circular visualizers -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-
-  <!-- PixiJS for PowerAudio Visualizer -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/5.3.12/pixi.min.js"></script>
-
-  <!-- PowerAudio Visualizer Library -->
-  <script src="scripts/lib/poweraudio.js"></script>
+  <!-- Visualizer libraries (three.min.js, pixi.min.js, poweraudio.js) are
+       vendored in scripts/lib/ and lazy-loaded by visualizer.js for the
+       active mode only - they are intentionally NOT loaded here. -->
 
   <!-- CSS Stylesheets -->
   <link rel="stylesheet" href="styles/themes.css">
