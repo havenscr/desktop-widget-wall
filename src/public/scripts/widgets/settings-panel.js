@@ -14,6 +14,7 @@ dashboardConfig = {
   visualizer: { defaultMode: 'demo' },
   background: { type: 'mountains', customSvg: null },
   theme: { autoCycle: false, mode: 'fade', interval: 30 },
+  perfMode: 'full',
   ...dashboardConfig
 };
 
@@ -81,6 +82,10 @@ function populateSettingsPanel() {
   if (themeAutoCycle) themeAutoCycle.checked = themeConfig.autoCycle === true;
   if (themeMode) themeMode.value = themeConfig.mode || 'fade';
   if (themeInterval) themeInterval.value = themeConfig.interval || 30;
+
+  // Performance settings
+  const perfModeSelect = document.getElementById('settings-perf-mode');
+  if (perfModeSelect) perfModeSelect.value = dashboardConfig.perfMode || 'full';
 
   // Background settings
   populateBackgroundSettings();
@@ -405,6 +410,11 @@ function saveSettings() {
     interval: Math.max(1, Math.min(1800, themeIntervalVal))
   };
 
+  // Performance settings
+  const perfModeVal = document.getElementById('settings-perf-mode')?.value;
+  dashboardConfig.perfMode = (perfModeVal === 'lite' || perfModeVal === 'off') ? perfModeVal : 'full';
+  applyPerfMode();
+
   // Location Services settings
   dashboardConfig.googleMapsApiKey = document.getElementById('settings-google-maps-key')?.value.trim() || '';
   dashboardConfig.leaveNotificationsEnabled = document.getElementById('settings-leave-notifications')?.checked !== false;
@@ -482,6 +492,21 @@ function applyBackground() {
   }
 }
 
+/**
+ * Apply performance mode from config.
+ * Sets body[data-perf], which themes.css uses to reduce ('lite') or
+ * disable ('off') the always-on widget backdrop-filter blur - the
+ * dashboard's biggest standing GPU cost. 'full' removes the attribute.
+ */
+function applyPerfMode() {
+  const mode = dashboardConfig.perfMode || 'full';
+  if (mode === 'lite' || mode === 'off') {
+    document.body.dataset.perf = mode;
+  } else {
+    delete document.body.dataset.perf;
+  }
+}
+
 function applyInitialConfig() {
   const twitchWidget = document.querySelector('.widget-twitch');
   if (twitchWidget && dashboardConfig.twitch?.enabled === false) {
@@ -493,8 +518,9 @@ function applyInitialConfig() {
     claudeWidget.style.display = 'none';
   }
 
-  // Apply background on initial load
+  // Apply background and performance mode on initial load
   applyBackground();
+  applyPerfMode();
 }
 
 function initSettingsPanel() {

@@ -1074,14 +1074,10 @@
     circularCore.material.color.set(colors.primary);
     if (circularParticles) circularParticles.material.color.set(colors.accent);
 
-    // Update blue ring colors (vertex colors)
-    if (circularRing && circularRingGeometry) {
-      const colorAttr = circularRingGeometry.attributes.color;
-      const color = new THREE.Color(colors.accent);
-      for (let i = 0; i < colorAttr.count; i++) {
-        colorAttr.setXYZ(i, color.r, color.g, color.b);
-      }
-      colorAttr.needsUpdate = true;
+    // Update blue ring color (the ring geometry has no vertex color
+    // attribute - color lives on the LineBasicMaterial)
+    if (circularRing && circularRing.material) {
+      circularRing.material.color.set(colors.accent);
     }
 
     // Update blue glow ring color

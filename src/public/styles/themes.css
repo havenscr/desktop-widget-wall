@@ -100,8 +100,9 @@
 
 /* Performance modes: trim always-on GPU compositing (backdrop-filter blur is
    re-sampled every repaint while the visualizer paints). The --glass-bg-dark
-   tint keeps widgets legible even at blur(0). Toggle live with no rebuild:
-   document.body.dataset.perf = 'lite' | 'off' | '' (remove for full). */
+   tint keeps widgets legible even at blur(0). Exposed in Settings ->
+   Performance -> Glass Blur (settings-panel.js applyPerfMode); can also be
+   toggled live: document.body.dataset.perf = 'lite' | 'off' | '' (full). */
 body[data-perf="lite"] {
   --glass-blur: 4px;
   --irc-blur: 4px;

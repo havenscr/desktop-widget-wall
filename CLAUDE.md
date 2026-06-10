@@ -253,6 +253,9 @@ The settings panel (`settings-panel.html`) provides configuration for:
 - Countdown date/title
 - Claude Stats Gist URL
 - Visualizer mode
+- Performance mode (Glass Blur: Full/Lite/Off) - sets `body[data-perf]`, which
+  `themes.css` uses to reduce or disable the always-on widget backdrop blur
+  (the dashboard's biggest standing GPU cost)
 
 Settings are persisted to `localStorage`.
 

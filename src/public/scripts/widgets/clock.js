@@ -1,7 +1,7 @@
 /* ================================================================
    CLOCK MODULE
-   Updates time display every second with flip animation
-   Includes integrated radio player functionality
+   Minute-aligned time display with flip animation
+   (Radio playback lives in radio.js)
    ================================================================ */
 
 // Store previous digit values for flip animation detection
@@ -45,18 +45,6 @@ function applyClockBackground(bgType) {
     }
   }
 }
-
-// Radio state
-let clockRadioAudio = null;
-let isClockRadioPlaying = false;
-let clockCurrentStationIndex = 0;
-
-const clockRadioStations = [
-  { name: 'Lofi Hip Hop', freq: '98.7', url: 'https://streams.ilovemusic.de/iloveradio17.mp3' },
-  { name: 'Chillhop', freq: '101.3', url: 'https://streams.fluxfm.de/Chillhop/mp3-320/audio/' },
-  { name: 'Jazz Radio', freq: '104.5', url: 'https://jazz-wr04.ice.infomaniak.ch/jazz-wr04-128.mp3' },
-  { name: 'Classical', freq: '91.9', url: 'https://live.musopen.org:8085/streamvbr0' }
-];
 
 /**
  * Animate a digit flip when value changes
@@ -144,154 +132,6 @@ function updateClock() {
   // Update date
   const options = { weekday: 'long', month: 'long', day: 'numeric' };
   document.getElementById('clock-date').textContent = now.toLocaleDateString('en-US', options);
-}
-
-/**
- * Toggle radio playback
- */
-function toggleClockRadio() {
-  const inlineBtn = document.getElementById('clock-radio-inline');
-  const dropdownBtn = document.getElementById('radio-btn');
-
-  if (isClockRadioPlaying) {
-    clockRadioAudio.pause();
-    clockRadioAudio.src = '';
-    isClockRadioPlaying = false;
-    inlineBtn?.classList.remove('playing');
-    dropdownBtn?.classList.remove('active');
-    updateRadioButtonIcon(false);
-  } else {
-    clockRadioAudio.src = clockRadioStations[clockCurrentStationIndex].url;
-    clockRadioAudio.play()
-      .then(() => {
-        isClockRadioPlaying = true;
-        inlineBtn?.classList.add('playing');
-        dropdownBtn?.classList.add('active');
-        updateRadioButtonIcon(true);
-      })
-      .catch(e => console.log('Radio play error:', e));
-  }
-}
-
-/**
- * Update the radio button icon between play/pause
- */
-function updateRadioButtonIcon(playing) {
-  const inlineBtn = document.getElementById('clock-radio-inline');
-  if (!inlineBtn) return;
-
-  const svg = inlineBtn.querySelector('svg');
-  if (svg) {
-    if (playing) {
-      // Pause icon (two vertical bars)
-      svg.innerHTML = '<path d="M6 4h4v16H6zM14 4h4v16h-4z"/>';
-    } else {
-      // Play icon (triangle)
-      svg.innerHTML = '<path d="M8 5v14l11-7z"/>';
-    }
-  }
-  // Keep "Radio" text - don't change it
-}
-
-/**
- * Cycle to next radio station
- */
-function nextStation() {
-  clockCurrentStationIndex = (clockCurrentStationIndex + 1) % clockRadioStations.length;
-  localStorage.setItem('clock-radio-station', clockCurrentStationIndex);
-  updateStationDisplay();
-
-  if (isClockRadioPlaying) {
-    clockRadioAudio.src = clockRadioStations[clockCurrentStationIndex].url;
-    clockRadioAudio.play().catch(e => console.log('Radio play error:', e));
-  }
-}
-
-/**
- * Update station frequency display
- */
-function updateStationDisplay() {
-  const freqDisplay = document.getElementById('radio-freq');
-  if (freqDisplay) {
-    freqDisplay.textContent = clockRadioStations[clockCurrentStationIndex].freq;
-  }
-}
-
-/**
- * Initialize radio controls
- */
-function initClockRadio() {
-  // Initialize audio element
-  clockRadioAudio = new Audio();
-  clockRadioAudio.volume = 0.5;
-
-  // Load saved station
-  const savedStation = localStorage.getItem('clock-radio-station');
-  if (savedStation !== null) {
-    clockCurrentStationIndex = parseInt(savedStation) || 0;
-  }
-  updateStationDisplay();
-
-  // Load saved volume
-  const savedVolume = localStorage.getItem('clock-radio-volume');
-  if (savedVolume !== null) {
-    clockRadioAudio.volume = parseFloat(savedVolume);
-    const volumeSlider = document.getElementById('radio-volume');
-    if (volumeSlider) {
-      volumeSlider.value = parseFloat(savedVolume) * 100;
-    }
-  }
-
-  // Inline radio button (main toggle)
-  const inlineBtn = document.getElementById('clock-radio-inline');
-  inlineBtn?.addEventListener('click', (e) => {
-    e.stopPropagation();
-    toggleClockRadio();
-  });
-
-  // Radio toggle button (top-right, opens dropdown)
-  const radioToggle = document.getElementById('clock-radio-toggle');
-  const radioDropdown = document.getElementById('clock-radio-dropdown');
-
-  radioToggle?.addEventListener('click', (e) => {
-    e.stopPropagation();
-    radioDropdown?.classList.toggle('active');
-    radioToggle.classList.toggle('active');
-  });
-
-  // Dropdown play/pause button
-  const dropdownBtn = document.getElementById('radio-btn');
-  dropdownBtn?.addEventListener('click', (e) => {
-    e.stopPropagation();
-    toggleClockRadio();
-  });
-
-  // Volume slider
-  const volumeSlider = document.getElementById('radio-volume');
-  volumeSlider?.addEventListener('input', (e) => {
-    const volume = e.target.value / 100;
-    clockRadioAudio.volume = volume;
-    localStorage.setItem('clock-radio-volume', volume);
-  });
-
-  // Frequency display click to change station
-  const freqDisplay = document.getElementById('radio-freq');
-  freqDisplay?.addEventListener('click', (e) => {
-    e.stopPropagation();
-    nextStation();
-  });
-  freqDisplay?.style.setProperty('cursor', 'pointer');
-
-  // Close dropdown when clicking outside
-  document.addEventListener('click', () => {
-    radioDropdown?.classList.remove('active');
-    radioToggle?.classList.remove('active');
-  });
-
-  // Prevent dropdown clicks from closing it
-  radioDropdown?.addEventListener('click', (e) => {
-    e.stopPropagation();
-  });
 }
 
 function initClockBackground() {
@@ -476,8 +316,6 @@ function initClock() {
   scheduleNextUpdate();
 
   initClockBackground();
-  // Radio functionality moved to radio.js for Now Playing integration
-  // initClockRadio();
 }
 
 // Auto-initialize if DOM is ready

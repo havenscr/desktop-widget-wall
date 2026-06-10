@@ -16,6 +16,7 @@ A personal dashboard application built with Tauri for ultra-wide monitors (32:9 
 
 - **Always-on-top dashboard** - Stays visible above other windows
 - **6 color themes** - Pink, Teal, Sunset, Midnight, Emerald, Rose
+- **Performance mode** - Glass Blur Full/Lite/Off in Settings to cut standing GPU usage
 - **System tray integration** - Minimizes to tray, hides from taskbar in fullscreen
 - **Native Windows integration**:
   - Now Playing (media session)
@@ -24,8 +25,8 @@ A personal dashboard application built with Tauri for ultra-wide monitors (32:9 
   - Recent files access
 - **Widget collection**:
   - Clock with date
-  - Weather (OpenWeatherMap)
-  - Spotify/Now Playing
+  - Weather (Open-Meteo)
+  - Now Playing (Windows media session)
   - Twitch stream embed with IRC chat
   - Countdown timer
   - Reminders/Task list
