@@ -259,15 +259,19 @@ const CalendarWidget = (function() {
   }
 
   /**
-   * Start auto-refresh
+   * Start auto-refresh.
+   * Paused while the dashboard is hidden; refreshes immediately on return.
    */
   function startAutoRefresh() {
     stopAutoRefresh();
-    refreshInterval = setInterval(async () => {
+    const refresh = async () => {
       await fetchMonthEvents();
       renderCalendarGrid();
       renderEventsForDate(selectedDate);
-    }, SYNC_INTERVAL);
+    };
+    refreshInterval = window.VisibilityManager
+      ? window.VisibilityManager.managedInterval(refresh, SYNC_INTERVAL)
+      : { stop: ((id) => () => clearInterval(id))(setInterval(refresh, SYNC_INTERVAL)) };
   }
 
   /**
@@ -275,7 +279,7 @@ const CalendarWidget = (function() {
    */
   function stopAutoRefresh() {
     if (refreshInterval) {
-      clearInterval(refreshInterval);
+      refreshInterval.stop();
       refreshInterval = null;
     }
   }
@@ -1539,19 +1543,28 @@ const CalendarWidget = (function() {
 
   /**
    * Start drive time and leave notification intervals
+   * (both paused while the dashboard is hidden)
    */
   function startDriveTimeRefresh() {
     stopDriveTimeRefresh();
 
-    // Refresh drive time every 60 seconds
-    driveTimeRefreshInterval = setInterval(() => {
+    const refreshDriveTime = () => {
       if (currentNextEventAddress) {
         updateNextEventDriveTime();
       }
-    }, DRIVE_TIME_REFRESH_INTERVAL);
+    };
 
-    // Check leave notifications every 30 seconds
-    leaveCheckInterval = setInterval(checkLeaveNotifications, LEAVE_CHECK_INTERVAL);
+    if (window.VisibilityManager) {
+      // Refresh drive time every 60 seconds, check leave alerts every 30
+      driveTimeRefreshInterval = window.VisibilityManager.managedInterval(
+        refreshDriveTime, DRIVE_TIME_REFRESH_INTERVAL);
+      leaveCheckInterval = window.VisibilityManager.managedInterval(
+        checkLeaveNotifications, LEAVE_CHECK_INTERVAL);
+    } else {
+      const wrap = (id) => ({ stop: () => clearInterval(id) });
+      driveTimeRefreshInterval = wrap(setInterval(refreshDriveTime, DRIVE_TIME_REFRESH_INTERVAL));
+      leaveCheckInterval = wrap(setInterval(checkLeaveNotifications, LEAVE_CHECK_INTERVAL));
+    }
   }
 
   /**
@@ -1559,11 +1572,11 @@ const CalendarWidget = (function() {
    */
   function stopDriveTimeRefresh() {
     if (driveTimeRefreshInterval) {
-      clearInterval(driveTimeRefreshInterval);
+      driveTimeRefreshInterval.stop();
       driveTimeRefreshInterval = null;
     }
     if (leaveCheckInterval) {
-      clearInterval(leaveCheckInterval);
+      leaveCheckInterval.stop();
       leaveCheckInterval = null;
     }
   }

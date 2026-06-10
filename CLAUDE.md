@@ -11,7 +11,7 @@
 ## Architecture
 
 ### Tech Stack
-- **Tauri 1.5** - Rust backend with WebView2 (Windows)
+- **Tauri 2** - Rust backend with WebView2 (Windows)
 - **Vite** - Dev server and build tool
 - **Plain HTML/CSS/JS** - No frontend framework (intentional for simplicity)
 - **Runtime component loading** - JavaScript fetch() loads widget HTML partials
@@ -63,10 +63,13 @@ widget-wall-desktop/
 │           ├── textures/       # 3D textures (earth, galaxy)
 │           └── Sounds/         # Audio files (alarm, etc.)
 ├── src-tauri/
-│   ├── Cargo.toml              # Rust dependencies
-│   ├── tauri.conf.json         # Tauri config (window settings, etc.)
+│   ├── Cargo.toml              # Rust dependencies (Tauri 2)
+│   ├── tauri.conf.json         # Tauri v2 config (window settings, etc.)
+│   ├── capabilities/
+│   │   └── default.json        # Tauri v2 permissions for the main window
 │   └── src/
-│       └── main.rs             # Rust backend (system access)
+│       ├── lib.rs              # Rust backend (commands, tray, run())
+│       └── main.rs             # Thin binary entry calling the lib's run()
 ├── package.json
 ├── vite.config.ts
 └── CLAUDE.md                   # This file
@@ -186,6 +189,11 @@ npm run tauri build
 Build outputs:
 - `src-tauri/target/release/Widget Wall.exe`
 - `src-tauri/target/release/bundle/msi/Widget Wall_1.0.0_x64_en-US.msi`
+- `src-tauri/target/release/bundle/nsis/Widget Wall_1.0.0_x64-setup.exe`
+
+CI: `.github/workflows/build-windows.yml` builds all of the above on a Windows
+runner for every push and uploads them as the `widget-wall-windows` artifact
+on the Actions run page - no local toolchain needed.
 
 ---
 
@@ -253,6 +261,9 @@ The settings panel (`settings-panel.html`) provides configuration for:
 - Countdown date/title
 - Claude Stats Gist URL
 - Visualizer mode
+- Performance mode (Glass Blur: Full/Lite/Off) - sets `body[data-perf]`, which
+  `themes.css` uses to reduce or disable the always-on widget backdrop blur
+  (the dashboard's biggest standing GPU cost)
 
 Settings are persisted to `localStorage`.
 

@@ -75,6 +75,58 @@
     },
 
     /**
+     * setInterval that only runs while the dashboard is visible.
+     * Clears the timer when hidden; on return to visible runs the callback
+     * immediately (so stale widgets refresh right away) and re-arms.
+     * @param {function} callback
+     * @param {number} intervalMs
+     * @param {{runOnResume?: boolean}} [opts]
+     * @returns {{stop: function}} Handle - call stop() to end the interval
+     */
+    managedInterval: (callback, intervalMs, opts = {}) => {
+      const runOnResume = opts.runOnResume !== false;
+      let timer = null;
+      let stopped = false;
+
+      const start = () => {
+        if (!timer && !stopped) timer = setInterval(callback, intervalMs);
+      };
+      const pause = () => {
+        if (timer) {
+          clearInterval(timer);
+          timer = null;
+        }
+      };
+
+      const onChange = (visible) => {
+        if (stopped) return;
+        if (visible) {
+          if (runOnResume) {
+            try {
+              callback();
+            } catch (e) {
+              console.error('VisibilityManager: managedInterval callback error:', e);
+            }
+          }
+          start();
+        } else {
+          pause();
+        }
+      };
+      listeners.add(onChange);
+
+      if (isVisible) start();
+
+      return {
+        stop: () => {
+          stopped = true;
+          pause();
+          listeners.delete(onChange);
+        }
+      };
+    },
+
+    /**
      * Manually trigger a visibility check (useful after app init)
      */
     check: () => {

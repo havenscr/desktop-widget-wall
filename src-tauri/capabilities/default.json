@@ -1,0 +1,21 @@
+{
+  "identifier": "default",
+  "description": "Capabilities for the main Widget Wall window",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-is-fullscreen",
+    "core:window:allow-set-fullscreen",
+    "core:window:allow-set-decorations",
+    "core:window:allow-set-skip-taskbar",
+    "core:window:allow-set-position",
+    "core:window:allow-set-size",
+    "core:window:allow-set-always-on-top",
+    "core:window:allow-show",
+    "core:window:allow-hide",
+    "core:window:allow-set-focus",
+    "opener:default",
+    "shell:allow-open",
+    "fs:default"
+  ]
+}

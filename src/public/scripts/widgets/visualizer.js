@@ -12,7 +12,8 @@
   let audioSourceMode = 'demo'; // 'demo' or 'native'
   let currentDeviceId = 'demo';
   let nativeAudioInterval = null;
-  let nativeSamples = [];
+  let nativeSamples = [];      // downsampled waveform for the circular ring
+  let nativeLevels = null;     // {bass, mid, high} computed in Rust
   let demoPhase = 0;
 
   // Visualizer display mode (milkdrop, circular)
@@ -1074,14 +1075,10 @@
     circularCore.material.color.set(colors.primary);
     if (circularParticles) circularParticles.material.color.set(colors.accent);
 
-    // Update blue ring colors (vertex colors)
-    if (circularRing && circularRingGeometry) {
-      const colorAttr = circularRingGeometry.attributes.color;
-      const color = new THREE.Color(colors.accent);
-      for (let i = 0; i < colorAttr.count; i++) {
-        colorAttr.setXYZ(i, color.r, color.g, color.b);
-      }
-      colorAttr.needsUpdate = true;
+    // Update blue ring color (the ring geometry has no vertex color
+    // attribute - color lives on the LineBasicMaterial)
+    if (circularRing && circularRing.material) {
+      circularRing.material.color.set(colors.accent);
     }
 
     // Update blue glow ring color
@@ -1338,34 +1335,6 @@
     };
   }
 
-  function processNativeSamples() {
-    if (nativeSamples.length === 0) {
-      return getDemoAudioLevels();
-    }
-
-    const len = nativeSamples.length;
-    const bassRange = Math.floor(len * 0.15);
-    const midRange = Math.floor(len * 0.35);
-
-    let bassSum = 0, midSum = 0, highSum = 0;
-
-    for (let i = 0; i < bassRange; i++) {
-      bassSum += Math.abs(nativeSamples[i]);
-    }
-    for (let i = bassRange; i < midRange; i++) {
-      midSum += Math.abs(nativeSamples[i]);
-    }
-    for (let i = midRange; i < len; i++) {
-      highSum += Math.abs(nativeSamples[i]);
-    }
-
-    return {
-      bass: Math.min(1, (bassSum / bassRange) * 3),
-      mid: Math.min(1, (midSum / (midRange - bassRange)) * 2.5),
-      high: Math.min(1, (highSum / (len - midRange)) * 2)
-    };
-  }
-
   // ================================================================
   // ANIMATION LOOP
   // ================================================================
@@ -1397,18 +1366,16 @@
     }
 
     let raw;
-    if (audioSourceMode === 'native' && nativeSamples.length > 0) {
-      raw = processNativeSamples();
-      // Log periodically to show we're using native audio
-      if (currentTime - lastAnimateLogTime > 3000) {
-        console.log(`Visualizer: Using NATIVE audio, samples=${nativeSamples.length}, bass=${raw.bass.toFixed(3)}, mid=${raw.mid.toFixed(3)}, high=${raw.high.toFixed(3)}`);
-        lastAnimateLogTime = currentTime;
-      }
+    if (audioSourceMode === 'native' && nativeLevels) {
+      // Levels are computed in Rust (get_audio_levels) to keep the IPC
+      // payload tiny; this object sustains its last value through brief
+      // silent polls, matching the old raw-sample behavior.
+      raw = nativeLevels;
     } else {
       raw = getDemoAudioLevels();
       // Log when falling back to demo mode
       if (currentTime - lastAnimateLogTime > 5000 && audioSourceMode === 'native') {
-        console.log(`Visualizer: audioSourceMode=${audioSourceMode} but nativeSamples.length=${nativeSamples.length}, falling back to demo`);
+        console.log(`Visualizer: audioSourceMode=${audioSourceMode} but no native levels yet, falling back to demo`);
         lastAnimateLogTime = currentTime;
       }
     }
@@ -1713,36 +1680,31 @@
       await invoke('start_audio_capture', { deviceId });
 
       if (nativeAudioInterval) clearInterval(nativeAudioInterval);
-      let sampleCount = 0;
-      let lastLogTime = Date.now();
       let zeroSampleCount = 0;
       const captureStartTime = Date.now(); // Track when capture started
       const startupImmunityMs = 3000; // Don't trigger recovery for first 3 seconds
 
+      // Poll at 30Hz to match the 30fps render cap. Rust computes bass/mid/high
+      // and returns a downsampled waveform, so the IPC payload is ~131 floats
+      // at 30Hz instead of the old 512 raw samples at 62Hz.
       nativeAudioInterval = setInterval(async () => {
+        // No renders consume audio while hidden (animate() stops itself) or in
+        // InfiniDream mode (external launcher) - skip the IPC entirely.
+        if (document.hidden || currentDisplayMode === 'infinidream') return;
         try {
-          const samples = await invoke('get_audio_samples');
-          if (samples && samples.length > 0) {
-            nativeSamples = samples;
-            sampleCount += samples.length;
+          const levels = await invoke('get_audio_levels');
+          if (levels && levels.waveform && levels.waveform.length > 0) {
+            nativeLevels = { bass: levels.bass, mid: levels.mid, high: levels.high };
+            nativeSamples = levels.waveform;
             zeroSampleCount = 0; // Reset zero counter when we get data
-
-            // Log every 2 seconds
-            const now = Date.now();
-            if (now - lastLogTime > 2000) {
-              const maxSample = Math.max(...samples.map(Math.abs));
-              console.log(`Visualizer: Received ${sampleCount} samples, max level: ${maxSample.toFixed(4)}`);
-              sampleCount = 0;
-              lastLogTime = now;
-            }
           } else {
             zeroSampleCount++;
             const timeSinceStart = Date.now() - captureStartTime;
 
-            // IMPORTANT: zero/empty samples are NORMAL. They just mean the
+            // IMPORTANT: an empty waveform is NORMAL. It just means the
             // captured endpoint is silent right now (e.g. a muted Twitch/YouTube
             // player, paused media, or a quiet moment). Silence is NOT a capture
-            // failure. The visualizer simply falls back to its idle/demo render.
+            // failure. The visualizer simply sustains its last levels/idle render.
             //
             // Previously, ~1.6s of zeros triggered handleSystemDefaultRecovery(),
             // which tore down and restarted the WASAPI loopback capture on the
@@ -1752,26 +1714,26 @@
             //
             // We now only recover when Rust reports the capture has ACTUALLY
             // stopped (a real error), checked on a long interval with backoff.
-            if (zeroSampleCount === 50) {
+            if (zeroSampleCount === 30) {
               console.log('Visualizer: endpoint silent (no samples ~1s) - this is normal, idling');
             }
 
             // Real-failure check: only every ~5s of continuous silence, and only
             // in system-default mode, ask Rust whether capture is still alive.
-            // 300 polls * 16ms ~= 4.8s. handleSystemDefaultRecovery itself has a
+            // 150 polls * 33ms ~= 5s. handleSystemDefaultRecovery itself has a
             // cooldown, and it now no-ops unless capture is genuinely dead.
             if (
               isSystemDefaultMode &&
               timeSinceStart > startupImmunityMs &&
-              zeroSampleCount % 300 === 0
+              zeroSampleCount % 150 === 0
             ) {
               maybeRecoverIfCaptureDead();
             }
           }
         } catch (e) {
-          console.error('Audio sample fetch error:', e);
+          console.error('Audio levels fetch error:', e);
         }
-      }, 16);
+      }, 33);
 
       // Log capture status after a short delay
       setTimeout(async () => {
@@ -1796,6 +1758,7 @@
       nativeAudioInterval = null;
     }
     nativeSamples = [];
+    nativeLevels = null;
 
     if (!visualizerTauriAvailable) return;
 

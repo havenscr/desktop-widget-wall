@@ -549,8 +549,11 @@
       }
     }
 
-    // Start polling initially
-    startAudioPolling();
+    // Start polling initially (unless the app loaded hidden - the
+    // visibilitychange handler below starts it when we become visible)
+    if (!document.hidden) {
+      startAudioPolling();
+    }
 
     // Listen for visibility changes
     document.addEventListener('visibilitychange', () => {

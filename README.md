@@ -1,6 +1,6 @@
 # Widget Wall Desktop
 
-![Tauri](https://img.shields.io/badge/Tauri-1.5-24C8D8?style=flat-square&logo=tauri&logoColor=white)
+![Tauri](https://img.shields.io/badge/Tauri-2-24C8D8?style=flat-square&logo=tauri&logoColor=white)
 ![Rust](https://img.shields.io/badge/Rust-stable-000000?style=flat-square&logo=rust&logoColor=white)
 ![Vite](https://img.shields.io/badge/Vite-5.0-646CFF?style=flat-square&logo=vite&logoColor=white)
 ![Node.js](https://img.shields.io/badge/Node.js-18+-339933?style=flat-square&logo=node.js&logoColor=white)
@@ -16,6 +16,7 @@ A personal dashboard application built with Tauri for ultra-wide monitors (32:9 
 
 - **Always-on-top dashboard** - Stays visible above other windows
 - **6 color themes** - Pink, Teal, Sunset, Midnight, Emerald, Rose
+- **Performance mode** - Glass Blur Full/Lite/Off in Settings to cut standing GPU usage
 - **System tray integration** - Minimizes to tray, hides from taskbar in fullscreen
 - **Native Windows integration**:
   - Now Playing (media session)
@@ -24,8 +25,8 @@ A personal dashboard application built with Tauri for ultra-wide monitors (32:9 
   - Recent files access
 - **Widget collection**:
   - Clock with date
-  - Weather (OpenWeatherMap)
-  - Spotify/Now Playing
+  - Weather (Open-Meteo)
+  - Now Playing (Windows media session)
   - Twitch stream embed with IRC chat
   - Countdown timer
   - Reminders/Task list
@@ -64,7 +65,14 @@ npm install
 npm run tauri build
 ```
 
-The installer will be at: `src-tauri/target/release/bundle/msi/Widget Wall_1.0.0_x64_en-US.msi`
+The installers will be at:
+- `src-tauri/target/release/bundle/msi/Widget Wall_1.0.0_x64_en-US.msi`
+- `src-tauri/target/release/bundle/nsis/Widget Wall_1.0.0_x64-setup.exe`
+
+### Option 3: GitHub Actions (no local toolchain)
+Every push runs `.github/workflows/build-windows.yml` on a Windows runner and
+uploads the exe + MSI + NSIS installers as the `widget-wall-windows` artifact -
+download it from the run's page under the repo's **Actions** tab.
 
 ## Development
 
@@ -168,8 +176,10 @@ widget-wall-desktop/
 │       ├── styles/           # CSS files
 │       └── assets/           # Images, sounds, textures
 ├── src-tauri/
-│   ├── src/main.rs           # Rust backend
-│   ├── tauri.conf.json       # Tauri config
+│   ├── src/lib.rs            # Rust backend (commands, tray)
+│   ├── src/main.rs           # Binary entry point
+│   ├── capabilities/         # Tauri v2 window permissions
+│   ├── tauri.conf.json       # Tauri v2 config
 │   └── icons/                # App icons
 ├── scripts/                  # Build scripts
 ├── package.json

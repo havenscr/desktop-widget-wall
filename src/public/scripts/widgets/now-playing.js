@@ -325,16 +325,24 @@ function renderColorMesh(canvas, ctx, time) {
   ctx.fillRect(0, 0, width, height);
 }
 
-// Animation loop for color mesh
+// Animation loop for color mesh (30fps cap - ambient blobs don't need
+// monitor refresh rate, and this canvas sits behind a backdrop-blurred widget)
+let colorMeshLastFrame = 0;
+const COLOR_MESH_FRAME_MS = 1000 / 30;
+
 function animateColorMesh(canvas, ctx) {
-  if (nowPlayingConfig.background !== 'color-mesh') {
+  if (nowPlayingConfig.background !== 'color-mesh' || document.hidden) {
     colorMeshAnimationId = null;
     return;
   }
 
-  const time = performance.now();
-  renderColorMesh(canvas, ctx, time);
   colorMeshAnimationId = requestAnimationFrame(() => animateColorMesh(canvas, ctx));
+
+  const time = performance.now();
+  if (time - colorMeshLastFrame < COLOR_MESH_FRAME_MS) return;
+  colorMeshLastFrame = time - ((time - colorMeshLastFrame) % COLOR_MESH_FRAME_MS);
+
+  renderColorMesh(canvas, ctx, time);
 }
 
 // Update color mesh with new album art colors
@@ -1029,6 +1037,11 @@ function updateNowPlayingUI(info) {
   }
 
   // Album art - only update if changed (avoid flicker)
+  // The backend omits the art bytes and sets art_unchanged while the track
+  // key is stable, so skip the whole art/background path in that case. Only
+  // honor the flag for plain media: Twitch/radio art comes from other sources
+  // (API thumbnails, local icons) that can change independently of the track.
+  const skipArtUpdate = info.art_unchanged === true && !twitchActive && !internalRadioActive;
   // Include thumbnail URL in hash to update art when API provides thumbnail
   const twitchThumbnail = twitchActive && twitchInfo ? twitchInfo.thumbnailUrl : null;
   const artHashKey = twitchActive
@@ -1036,7 +1049,7 @@ function updateNowPlayingUI(info) {
     : info.album_art_base64;
   const newArtHash = hashString(artHashKey);
 
-  if (newArtHash !== lastAlbumArtHash) {
+  if (!skipArtUpdate && newArtHash !== lastAlbumArtHash) {
     lastAlbumArtHash = newArtHash;
     if (elements.art) {
       if (info.album_art_base64 && info.album_art_mime && !twitchActive) {
@@ -1608,7 +1621,9 @@ function initNowPlaying() {
       stopColorMeshAnimation();
     } else {
       startNowPlayingPolling();
-      // Color mesh will restart on next update if enabled
+      // Restart the color mesh if it's the configured background (it stops
+      // itself when hidden and previously stayed frozen until a track change)
+      toggleColorMeshAnimation();
     }
   });
 

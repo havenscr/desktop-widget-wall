@@ -421,9 +421,13 @@ function initRecentFiles() {
     setTimeout(() => refreshBtn.classList.remove('spinning'), 500);
   });
 
-  // Initial fetch and periodic refresh
+  // Initial fetch and periodic refresh (paused while the dashboard is hidden)
   fetchRecentFiles();
-  setInterval(fetchRecentFiles, 30000); // Refresh every 30 seconds
+  if (window.VisibilityManager) {
+    window.VisibilityManager.managedInterval(fetchRecentFiles, 30000);
+  } else {
+    setInterval(fetchRecentFiles, 30000);
+  }
 }
 
   // Auto-initialize

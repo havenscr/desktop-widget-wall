@@ -431,12 +431,30 @@ const ThemeModule = (function() {
     }
 
     const el = document.body;
-    const varNames = Object.keys(fromVals);
+    /* Only interpolate variables that actually differ between the two
+       themes - identical vars (accent-gold, glass-bg-dark, ...) would
+       otherwise be rewritten every tick for nothing. */
+    const varNames = Object.keys(fromVals).filter(v => fromVals[v] !== toVals[v]);
     const startTime = performance.now();
+
+    /* Writing CSS vars on <body> invalidates var-dependent styles
+       document-wide, and --bg-hue-rotate re-rasterizes the full-screen
+       background filter. At a monitor's full refresh rate that is the
+       single biggest standing GPU cost of fade mode, so apply at ~10fps -
+       imperceptible for multi-second color fades. rAF still drives the
+       loop so it suspends for free while the window is hidden. */
+    const FADE_APPLY_MS = 100;
+    let lastApplyTime = -Infinity;
 
     function tick(now) {
       const elapsed = now - startTime;
       const t = Math.min(elapsed / durationMs, 1);
+
+      if (t < 1 && now - lastApplyTime < FADE_APPLY_MS) {
+        fadeAnimFrame = requestAnimationFrame(tick);
+        return;
+      }
+      lastApplyTime = now;
 
       /* Smooth ease in/out */
       const eased = t < 0.5

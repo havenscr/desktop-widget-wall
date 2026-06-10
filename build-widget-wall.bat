@@ -19,7 +19,12 @@ del /f /q "src-tauri\target\release\Widget Wall.exe" 2>nul
 del /f /q "src-tauri\target\release\deps\widget_wall_desktop.exe" 2>nul
 rmdir /s /q "src-tauri\target\release\bundle" 2>nul
 
-npm run tauri build
+REM Keep frontend deps in sync; "call" is required for .cmd scripts or the
+REM rest of this file (success check + pause) never runs.
+echo Checking dependencies...
+call npm install --no-audit --no-fund
+
+call npm run tauri build
 
 if exist "src-tauri\target\release\Widget Wall.exe" (
     echo.

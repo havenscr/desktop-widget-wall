@@ -115,9 +115,13 @@ async function fetchClaudeStats() {
 }
 
 function initClaudeStats() {
-  // Initial fetch and periodic refresh
+  // Initial fetch and periodic refresh (paused while the dashboard is hidden)
   fetchClaudeStats();
-  setInterval(fetchClaudeStats, 60 * 1000); // Refresh every minute
+  if (window.VisibilityManager) {
+    window.VisibilityManager.managedInterval(fetchClaudeStats, 60 * 1000);
+  } else {
+    setInterval(fetchClaudeStats, 60 * 1000);
+  }
 }
 
   // Auto-initialize

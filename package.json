@@ -11,7 +11,7 @@
     "generate-icons": "node scripts/generate-icons.js"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "1.6.3",
+    "@tauri-apps/cli": "^2.0.0",
     "@vitejs/plugin-basic-ssl": "1.2.0",
     "png-to-ico": "3.0.1",
     "sharp": "0.34.5",
@@ -19,8 +19,6 @@
     "vite-plugin-mkcert": "1.17.9"
   },
   "dependencies": {
-    "@tauri-apps/api": "1.6.0",
-    "bluelinky": "8.4.0",
     "hls.js": "1.6.15"
   }
 }
