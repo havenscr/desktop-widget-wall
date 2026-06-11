@@ -74,11 +74,13 @@ async function fetchSystemStats() {
       return;
     }
 
-    dlog('[SystemStats] Invoking get_libre_hardware_stats...');
+    dlog('[SystemStats] Invoking get_system_stats...');
     const { invoke } = window.__TAURI__.core;
-    const data = await invoke('get_libre_hardware_stats');
+    // Rust traverses the LibreHardwareMonitor sensor tree and returns just
+    // {cpu, gpu, ram, drives} - the full tree no longer crosses IPC.
+    const data = await invoke('get_system_stats');
     dlog('[SystemStats] Received data:', data ? 'OK' : 'empty');
-    parseHardwareData(data);
+    applySystemStats(data);
     updateStatusIndicator(true);
   } catch (e) {
     // LibreHardwareMonitor not running or Tauri not available
@@ -87,62 +89,17 @@ async function fetchSystemStats() {
   }
 }
 
-function parseHardwareData(data) {
-  let cpuLoad = 0, gpuLoad = 0, ramUsed = 0, hdUsed = 0;
-  const driveUsages = {}; // Collect all drives: { 'Micron 2300': 54, 'WD_BLACK': 78, ... }
-  let currentDriveName = null;
+function applySystemStats(data) {
+  const cpuLoad = data?.cpu || 0;
+  const gpuLoad = data?.gpu || 0;
+  const ramUsed = data?.ram || 0;
+  let hdUsed = 0;
 
-  function traverse(node, path = '') {
-    if (!node) return;
-
-    const currentPath = path ? `${path} > ${node.Text}` : node.Text;
-
-    // CPU Load
-    if (node.Text && node.Text.includes('CPU Total') && node.Value) {
-      const match = node.Value.match(/([\d.]+)/);
-      if (match) cpuLoad = parseFloat(match[1]);
-    }
-
-    // GPU Load
-    if (node.Text && node.Text.includes('GPU Core') && node.Value && node.Value.includes('%')) {
-      const match = node.Value.match(/([\d.]+)/);
-      if (match) gpuLoad = parseFloat(match[1]);
-    }
-
-    // RAM Usage
-    if (node.Text && node.Text === 'Memory' && node.Value && node.Value.includes('%')) {
-      const match = node.Value.match(/([\d.]+)/);
-      if (match) ramUsed = parseFloat(match[1]);
-    }
-
-    // Detect storage device by ImageURL or by being a direct child with storage-like children
-    if (node.ImageURL && node.ImageURL.includes('hdd.png')) {
-      currentDriveName = node.Text;
-    }
-
-    // Hard Drive Usage - collect all drives using the current drive context
-    if (node.Text && node.Text === 'Used Space' && node.Value && node.Value.includes('%')) {
-      const match = node.Value.match(/([\d.]+)/);
-      if (match && currentDriveName) {
-        const usedValue = parseFloat(match[1]);
-        // Create a short display name from the drive model
-        const shortName = createShortDriveName(currentDriveName);
-        driveUsages[shortName] = usedValue;
-      }
-    }
-
-    // Traverse children
-    if (node.Children) {
-      node.Children.forEach(child => traverse(child, currentPath));
-    }
-
-    // Reset drive context after traversing storage device
-    if (node.ImageURL && node.ImageURL.includes('hdd.png')) {
-      currentDriveName = null;
-    }
+  // Map drive model names to short display names for the dropdown
+  const driveUsages = {};
+  for (const drive of data?.drives || []) {
+    driveUsages[createShortDriveName(drive.name)] = drive.used_percent;
   }
-
-  traverse(data, '');
 
   // Update discovered drives and populate dropdown if changed
   const driveKeys = Object.keys(driveUsages).sort();

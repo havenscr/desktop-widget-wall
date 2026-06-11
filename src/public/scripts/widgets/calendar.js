@@ -154,6 +154,7 @@ const CalendarWidget = (function() {
       if (newConfig?.homeAddress !== cachedHomeAddress) {
         cachedHomeLocation = null;
         cachedHomeAddress = null;
+        driveTimeCache.clear(); // origin changed - cached durations are wrong
         console.log('Calendar DRIVE: Home address changed, cache invalidated');
       }
     });
@@ -1326,8 +1327,14 @@ const CalendarWidget = (function() {
   }
 
   /**
-   * Fetch drive time from Tauri backend
+   * Fetch drive time from Tauri backend.
+   * Results are cached per destination: Distance Matrix requests are billable
+   * and the 60s refresh was re-sending identical queries. Traffic estimates
+   * being up to 10 minutes stale is fine for a "leave by" hint.
    */
+  const driveTimeCache = new Map();
+  const DRIVE_TIME_CACHE_TTL = 10 * 60 * 1000;
+
   async function fetchDriveTime(destination) {
     const config = JSON.parse(localStorage.getItem('dashboard-config') || '{}');
     const apiKey = config.googleMapsApiKey;
@@ -1336,6 +1343,12 @@ const CalendarWidget = (function() {
       console.warn('Calendar DRIVE: No Google Maps API key configured');
       updateDriveStatus('no-api-key');
       return null;
+    }
+
+    const cached = driveTimeCache.get(destination);
+    if (cached && Date.now() - cached.fetchedAt < DRIVE_TIME_CACHE_TTL) {
+      updateDriveStatus('ok');
+      return cached.result;
     }
 
     try {
@@ -1347,6 +1360,7 @@ const CalendarWidget = (function() {
         destination: destination
       });
       updateDriveStatus('ok');
+      driveTimeCache.set(destination, { result, fetchedAt: Date.now() });
       return result;
     } catch (error) {
       console.warn('Calendar DRIVE: Drive time fetch failed:', error);

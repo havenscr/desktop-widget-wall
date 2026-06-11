@@ -355,15 +355,16 @@ async function updateColorMesh(albumArtBase64, albumArtMime, imageUrl = null, so
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
 
-  // Set canvas size to match widget
+  // Set canvas size to match widget at device resolution. All drawing math
+  // (blob init + render) consistently uses canvas.width/height device pixels,
+  // so no ctx.scale - scaling here while initializing blobs in device pixels
+  // previously misplaced/oversized the blobs on scaled displays.
   const widget = canvas.closest('.widget-nowplaying');
   if (widget) {
     const rect = widget.getBoundingClientRect();
-    // Use device pixel ratio for crisp rendering
     const dpr = window.devicePixelRatio || 1;
     canvas.width = rect.width * dpr;
     canvas.height = rect.height * dpr;
-    ctx.scale(dpr, dpr);
   }
 
   // Get fallback colors based on source type
@@ -440,10 +441,9 @@ function setupColorMeshResizeObserver() {
         const dpr = window.devicePixelRatio || 1;
         canvas.width = rect.width * dpr;
         canvas.height = rect.height * dpr;
-        ctx.setTransform(1, 0, 0, 1, 0, 0); // Reset transform
-        ctx.scale(dpr, dpr);
-        // Reinitialize blobs for new size
-        initColorMeshBlobs(colorMeshColors, rect.width, rect.height);
+        // Reinitialize blobs for the new size (device pixels, matching the
+        // unscaled render path)
+        initColorMeshBlobs(colorMeshColors, canvas.width, canvas.height);
       }
     }
   });

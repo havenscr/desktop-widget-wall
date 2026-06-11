@@ -19,6 +19,12 @@ window.dlog = (...args) => {
   if (window._debugLogging) console.log(...args);
 };
 
+// Asset cache key for widget partials/scripts. Date.now() previously forced
+// WebView2 to re-fetch and re-parse every asset on every launch; a fixed
+// version lets the cache work between launches. Bump when shipping changes
+// to widget HTML/JS.
+const ASSET_VERSION = '20260610';
+
 // Widget configuration - maps container IDs to HTML partial paths
 const widgetConfig = [
   { container: 'clock-container', path: 'widgets/clock.html' },
@@ -77,8 +83,7 @@ const widgetScripts = [
  */
 async function loadWidget(containerId, path) {
   try {
-    // Add cache-busting version parameter
-    const response = await fetch(path + '?v=' + Date.now());
+    const response = await fetch(path + '?v=' + ASSET_VERSION);
     if (!response.ok) {
       throw new Error(`Failed to load ${path}: ${response.status}`);
     }
@@ -102,8 +107,7 @@ async function loadWidget(containerId, path) {
 function loadScript(src) {
   return new Promise((resolve, reject) => {
     const script = document.createElement('script');
-    // Add cache-busting version parameter
-    script.src = src + '?v=' + Date.now();
+    script.src = src + '?v=' + ASSET_VERSION;
     script.onload = resolve;
     script.onerror = () => reject(new Error(`Failed to load script: ${src}`));
     document.body.appendChild(script);

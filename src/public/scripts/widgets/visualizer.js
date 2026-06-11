@@ -31,6 +31,7 @@
   let circularScene, circularCamera, circularRenderer;
   let circularCore, circularRing, circularGlowRing, circularTorus, circularParticles;
   let circularRingGeometry, circularWaveformGeometry, circularWaveformGlow;
+  const circularWaveAmplitudes = new Float32Array(128); // reused per frame
 
   // Lazy initialization flags
   let circularInitialized = false;
@@ -749,10 +750,13 @@
     milkdropScene = new THREE.Scene();
     milkdropCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
 
-    const pixelRatio = Math.min(window.devicePixelRatio, 2);
+    // Full-quad fragment shaders gain nothing from MSAA, and rendering at
+    // devicePixelRatio up to 2x quadrupled the per-pixel shader cost for a
+    // soft plasma effect - render at 1x.
+    const pixelRatio = 1;
 
     milkdropRenderer = new THREE.WebGLRenderer({
-      antialias: true,
+      antialias: false,
       alpha: true,
       powerPreference: 'high-performance'
     });
@@ -1176,8 +1180,9 @@
       const samples = nativeSamples.length > 0 ? nativeSamples : [];
       const sampleStep = samples.length > 0 ? samples.length / waveformPoints : 1;
 
-      // Calculate waveform amplitudes for each point
-      const waveAmplitudes = new Float32Array(waveformPoints);
+      // Calculate waveform amplitudes for each point (buffer reused across
+      // frames - this runs 30x/sec)
+      const waveAmplitudes = circularWaveAmplitudes;
       for (let i = 0; i < waveformPoints; i++) {
         const angle = (i / waveformPoints) * Math.PI * 2;
 
@@ -1876,7 +1881,45 @@
   // MODE SWITCHING
   // ================================================================
 
-  function switchDisplayMode(mode) {
+  // The render libraries (three.min.js ~600KB, pixi.min.js ~400KB,
+  // poweraudio.js) used to be parsed at startup for every mode; now only the
+  // active mode's library is loaded, on first use, from the vendored copies
+  // in scripts/lib/ (no CDN dependency).
+  const libPromises = {};
+  function loadLib(src) {
+    if (!libPromises[src]) {
+      libPromises[src] = new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = src;
+        s.onload = resolve;
+        s.onerror = () => {
+          delete libPromises[src]; // allow a retry on next mode switch
+          reject(new Error('Failed to load ' + src));
+        };
+        document.head.appendChild(s);
+      });
+    }
+    return libPromises[src];
+  }
+
+  async function ensureModeLibs(mode) {
+    if (mode === 'milkdrop' || mode === 'circular') {
+      if (typeof THREE === 'undefined') {
+        await loadLib('scripts/lib/three.min.js');
+      }
+    } else if (mode === 'poweraudio') {
+      if (typeof PIXI === 'undefined') {
+        await loadLib('scripts/lib/pixi.min.js');
+      }
+      if (typeof PowerAudio === 'undefined') {
+        // poweraudio.js references PIXI at parse time - must load after it
+        await loadLib('scripts/lib/poweraudio.js');
+      }
+    }
+    // infinidream is an external launcher - no library needed
+  }
+
+  async function switchDisplayMode(mode) {
     console.log(`Visualizer: switchDisplayMode called with mode=${mode}, currentMode=${currentDisplayMode}`);
 
     if (mode === currentDisplayMode) {
@@ -1906,6 +1949,13 @@
         configSection.style.display = m === mode ? 'block' : 'none';
       }
     });
+
+    try {
+      await ensureModeLibs(mode);
+    } catch (e) {
+      console.error('Visualizer: could not load libraries for mode', mode, e);
+      return;
+    }
 
     // Lazy initialize visualizers on first switch
     if (mode === 'poweraudio' && !poweraudioInitialized) {
@@ -2562,20 +2612,12 @@
 
     if (!widget) {
       console.error('Visualizer: Widget not found');
+      if (fallback) fallback.style.display = 'flex';
       return;
     }
 
-    if (typeof THREE === 'undefined') {
-      console.error('Visualizer: Three.js not loaded');
-      if (fallback) {
-        fallback.style.display = 'flex';
-        const span = fallback.querySelector('span');
-        if (span) span.textContent = 'Three.js library not loaded';
-      }
-      return;
-    }
-
-    console.log('Visualizer: Three.js version', THREE.REVISION);
+    // Render libraries are lazy-loaded per mode by switchDisplayMode -
+    // nothing to check here at startup.
 
     const tryInit = async () => {
       const width = widget.clientWidth;

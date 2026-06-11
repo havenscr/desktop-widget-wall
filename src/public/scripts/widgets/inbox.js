@@ -1925,6 +1925,8 @@ const InboxWidget = (function() {
   /**
    * Render email list from cache
    */
+  let lastRenderSignature = null;
+
   function renderEmails() {
     const emailList = document.querySelector('.email-list');
     const badge = document.querySelector('.widget-email .badge');
@@ -1956,6 +1958,13 @@ const InboxWidget = (function() {
 
     // Update account tabs
     updateAccountTabs();
+
+    // Skip the list rebuild when nothing visible changed - delta syncs run
+    // every 30s and usually return zero changes
+    const signature = currentAccount + ':' +
+      emails.map(e => e.id + (e.isRead ? '1' : '0')).join(',');
+    if (signature === lastRenderSignature) return;
+    lastRenderSignature = signature;
 
     if (emails.length === 0) {
       emailList.innerHTML = `

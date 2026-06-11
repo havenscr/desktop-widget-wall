@@ -112,6 +112,15 @@ body[data-perf="off"] {
   --irc-blur: 0px;
 }
 
+/* With blur fully off there are no backdrop-filter corner artifacts for the
+   mask to hide and no re-sampling for will-change to pre-composite, so drop
+   the per-widget mask texture and permanent layer promotion too (VRAM). */
+body[data-perf="off"] .widget {
+  -webkit-mask-image: none;
+  mask-image: none;
+  will-change: auto;
+}
+
 
 /* Disable all theme transitions for instant "rotate" mode */
 body.theme-no-transition,
