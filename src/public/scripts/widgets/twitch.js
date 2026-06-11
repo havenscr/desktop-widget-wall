@@ -1341,7 +1341,7 @@ function initTwitch() {
         const player = twitchPlayer.getPlayer();
         if (player && typeof player.pause === 'function') {
           player.pause();
-          console.log('Twitch: Auto-paused because YouTube started playing');
+          dlog('Twitch: Auto-paused because YouTube started playing');
         }
       } catch (err) {
         console.log('Could not auto-pause Twitch:', err);

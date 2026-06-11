@@ -114,17 +114,14 @@ function createYouTubeEmbed(containerId, videoId, muted = true) {
         return;
       }
 
-      // Check if this YouTube page should auto-start based on saved page
-      // Don't autoplay if Twitch (page 0) is the active page - saves CPU/bandwidth
-      const savedPage = localStorage.getItem('smart-widget-current-page');
-      const shouldAutoplay = savedPage !== null && savedPage !== '0';
-
       const player = new YT.Player(containerId, {
         videoId: videoId,
         width: '100%',
         height: '100%',
         playerVars: {
-          autoplay: shouldAutoplay ? 1 : 0,
+          // Players are only created while their page is active (see
+          // ensureYouTubePlayer), so always autoplay
+          autoplay: 1,
           mute: muted ? 1 : 0,
           controls: 1,
           loop: 1,
@@ -185,12 +182,58 @@ function createYouTubeEmbed(containerId, videoId, muted = true) {
               }
             } else if (event.data === YT.PlayerState.BUFFERING) {
               // Observability only. Do NOT pin quality - ABR adapts.
-              console.log('YT: buffering', { quality: event.target.getPlaybackQuality?.() });
+              dlog('YT: buffering', { quality: event.target.getPlaybackQuality?.() });
             }
           }
         }
       });
     });
+  });
+}
+
+/**
+ * Tear down a page's YouTube player and its DOM so the next activation
+ * starts from a clean container.
+ */
+function destroyYouTubePlayer(page) {
+  if (page.youtubePlayer) {
+    if (typeof page.youtubePlayer.destroy === 'function') {
+      try { page.youtubePlayer.destroy(); } catch (e) { /* already torn down */ }
+    }
+    page.youtubePlayer = null;
+  }
+  delete page.dataset.playerVideoId;
+  const wrapper = page.querySelector('.smart-widget-youtube');
+  if (wrapper) wrapper.remove();
+}
+
+/**
+ * Create the page's YouTube player if it doesn't exist yet. Players live
+ * only while their page is active: exactly one media pipeline at a time,
+ * and live streams re-enter at the live edge on every activation instead
+ * of resuming a stale, starvation-prone DVR position.
+ */
+function ensureYouTubePlayer(page, pageIndex) {
+  const videoId = page.dataset.videoId;
+  if (!videoId || page.youtubePlayer) return;
+
+  const embedId = `youtube-embed-${pageIndex}`;
+  const youtubeWrapper = document.createElement('div');
+  youtubeWrapper.className = 'smart-widget-youtube';
+  const youtubeInner = document.createElement('div');
+  youtubeInner.id = embedId;
+  youtubeWrapper.appendChild(youtubeInner);
+  page.appendChild(youtubeWrapper);
+
+  page.dataset.playerVideoId = videoId;
+  createYouTubeEmbed(embedId, videoId, true).then(player => {
+    if (!player) return;
+    // The page may have been deactivated or rebuilt while the API loaded
+    if (page.dataset.playerVideoId !== videoId || !page.classList.contains('active')) {
+      try { player.destroy(); } catch (e) { /* never attached */ }
+      return;
+    }
+    page.youtubePlayer = player;
   });
 }
 
@@ -244,7 +287,7 @@ function initSmartWidget() {
       pages.forEach((page) => {
         if (page.youtubePlayer && typeof page.youtubePlayer.pauseVideo === 'function') {
           page.youtubePlayer.pauseVideo();
-          console.log('[SmartWidget] Auto-paused YouTube because Twitch started playing');
+          dlog('[SmartWidget] Auto-paused YouTube because Twitch started playing');
         }
       });
     }
@@ -337,28 +380,19 @@ function buildSmartWidgetUI() {
       pagesContainer.appendChild(page);
     }
 
-    // Initialize YouTube embed if needed
+    // Record the video id; the player itself is created on activation and
+    // destroyed on deactivation (ensureYouTubePlayer/destroyYouTubePlayer),
+    // so only the visible page ever holds a live media pipeline.
     if (source.type === 'youtube' && source.url) {
       const videoId = parseYouTubeUrl(source.url);
       if (videoId) {
-        const embedId = `youtube-embed-${index}`;
-        if (!document.getElementById(embedId)) {
-          // Create wrapper (keeps the class after YT API replaces inner div)
-          const youtubeWrapper = document.createElement('div');
-          youtubeWrapper.className = 'smart-widget-youtube';
-          // Create inner div that YouTube API will replace with iframe
-          const youtubeInner = document.createElement('div');
-          youtubeInner.id = embedId;
-          youtubeWrapper.appendChild(youtubeInner);
-          page.appendChild(youtubeWrapper);
-
-          // Create YouTube embed (muted by default for non-primary)
-          createYouTubeEmbed(embedId, videoId, true).then(player => {
-            if (player) {
-              page.youtubePlayer = player;
-            }
-          });
+        if (page.youtubePlayer && page.dataset.playerVideoId !== videoId) {
+          destroyYouTubePlayer(page); // URL changed - rebuild on next activation
         }
+        page.dataset.videoId = videoId;
+      } else {
+        destroyYouTubePlayer(page);
+        delete page.dataset.videoId;
       }
     }
   });
@@ -368,9 +402,7 @@ function buildSmartWidgetUI() {
   pagesContainer.querySelectorAll('.smart-widget-page').forEach(page => {
     const idx = parseInt(page.getAttribute('data-page'), 10);
     if (idx > 0 && idx >= smartWidgetConfig.sources.length) {
-      if (page.youtubePlayer && typeof page.youtubePlayer.destroy === 'function') {
-        try { page.youtubePlayer.destroy(); } catch (e) { /* already torn down */ }
-      }
+      destroyYouTubePlayer(page);
       page.remove();
     }
   });
@@ -402,17 +434,14 @@ function switchToPage(pageIndex) {
     const isActive = index === pageIndex;
     page.classList.toggle('active', isActive);
 
-    // Handle YouTube playback - STOP completely when not visible.
-    // Guard the calls: the player object exists before the iframe API
-    // finishes initializing, when these methods aren't functions yet.
-    if (page.youtubePlayer) {
+    // YouTube lifecycle: a player exists only while its page is active.
+    // Destroying on deactivation frees the whole media pipeline, and
+    // recreating on activation re-enters live streams at the live edge.
+    if (page.dataset.videoId) {
       if (isActive) {
-        if (typeof page.youtubePlayer.playVideo === 'function') {
-          page.youtubePlayer.playVideo();
-        }
-      } else if (typeof page.youtubePlayer.stopVideo === 'function') {
-        // Stop video completely to save bandwidth/CPU (not just pause)
-        page.youtubePlayer.stopVideo();
+        ensureYouTubePlayer(page, index);
+      } else {
+        destroyYouTubePlayer(page);
       }
     }
 
