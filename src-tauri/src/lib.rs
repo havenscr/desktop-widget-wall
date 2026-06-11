@@ -2854,6 +2854,75 @@ async fn get_system_stats() -> Result<SystemStatsSummary, String> {
 }
 
 // ================================================================
+// MICROSOFT OAUTH TOKEN EXCHANGE
+// The webview cannot call the Azure token endpoint itself: WebView2 sends
+// an Origin header, which Azure interprets as a SPA call and rejects for
+// desktop-registered redirect URIs. These commands proxy the two
+// token-endpoint calls; the raw response body is returned for the frontend
+// to parse - including Azure's error JSON on 4xx, which the frontend
+// classifies as permanent vs transient. Only genuine transport failures
+// surface as Err (the frontend's "network error, retry later" path).
+// ================================================================
+
+const MS_TOKEN_ENDPOINT: &str = "https://login.microsoftonline.com/common/oauth2/v2.0/token";
+
+fn post_token_request(form: &[(&str, &str)]) -> Result<String, String> {
+    let result = ureq::post(MS_TOKEN_ENDPOINT)
+        .timeout(std::time::Duration::from_secs(15))
+        .send_form(form);
+
+    match result {
+        Ok(response) => response
+            .into_string()
+            .map_err(|e| format!("Failed to read token response: {}", e)),
+        Err(ureq::Error::Status(_code, response)) => response
+            .into_string()
+            .map_err(|e| format!("Failed to read token error response: {}", e)),
+        Err(e) => Err(format!("Token request failed: {}", e)),
+    }
+}
+
+#[tauri::command]
+async fn exchange_oauth_code(
+    client_id: String,
+    code: String,
+    code_verifier: String,
+    redirect_uri: String,
+    scope: String,
+) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        post_token_request(&[
+            ("client_id", client_id.as_str()),
+            ("grant_type", "authorization_code"),
+            ("code", code.as_str()),
+            ("redirect_uri", redirect_uri.as_str()),
+            ("code_verifier", code_verifier.as_str()),
+            ("scope", scope.as_str()),
+        ])
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn refresh_oauth_token(
+    client_id: String,
+    refresh_token: String,
+    scope: String,
+) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        post_token_request(&[
+            ("client_id", client_id.as_str()),
+            ("grant_type", "refresh_token"),
+            ("refresh_token", refresh_token.as_str()),
+            ("scope", scope.as_str()),
+        ])
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+// ================================================================
 // OAUTH CALLBACK SERVER
 // Temporary HTTP server to catch OAuth redirects in production builds
 // ================================================================
@@ -3254,6 +3323,9 @@ pub fn run() {
             start_oauth_server,
             stop_oauth_server,
             is_oauth_server_running,
+            // Microsoft OAuth token exchange (Origin-header-free proxy)
+            exchange_oauth_code,
+            refresh_oauth_token,
             // Google Maps commands
             get_drive_time,
             validate_address,
