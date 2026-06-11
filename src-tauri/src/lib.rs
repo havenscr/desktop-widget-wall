@@ -1539,6 +1539,12 @@ async fn open_folder_in_explorer(path: String) -> Result<(), String> {
 async fn get_file_icon(path: String) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {
         unsafe {
+            // SHGetFileInfoW requires COM on the calling thread. Blocking-pool
+            // threads only had it when reused after another COM-initializing
+            // command, which made icon extraction fail for a random subset of
+            // files each launch.
+            let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+
             // Convert path to wide string
             let wide_path: Vec<u16> = path.encode_utf16().chain(std::iter::once(0)).collect();
 
@@ -3261,12 +3267,14 @@ pub fn run() {
     #[allow(deprecated)]
     {
         std::env::set_var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
+            // No forced GPU flags here: --ignore-gpu-blocklist /
+            // --enable-zero-copy / --enable-hardware-overlays /
+            // --enable-gpu-rasterization destabilized hardware video decode
+            // (recurring embed buffering; see the "decode starvation" notes
+            // in hls-player.js and the "aggressive GPU flags now removed"
+            // note in twitch.js - the removal had never reached this repo).
             "--disable-features=msTrackingProtection \
              --autoplay-policy=no-user-gesture-required \
-             --enable-gpu-rasterization \
-             --ignore-gpu-blocklist \
-             --enable-zero-copy \
-             --enable-hardware-overlays \
              --disable-background-timer-throttling \
              --disable-renderer-backgrounding");
     }
