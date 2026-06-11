@@ -31,36 +31,51 @@ widget-wall-desktop/
 │   └── public/                 # ALL runtime assets (copied to dist/)
 │       ├── scripts/
 │       │   ├── main.js         # Component loader (THE ONLY main.js!)
-│       │   ├── lib/            # Third-party libraries (MSAL, PowerAudio)
+│       │   │                   #   also defines window.dlog + ASSET_VERSION
+│       │   ├── lib/            # Vendored libraries: msal-browser.min.js,
+│       │   │                   #   three.min.js, pixi.min.js, poweraudio.js
+│       │   │                   #   (visualizer libs lazy-loaded per mode)
 │       │   └── widgets/        # Widget JavaScript modules
+│       │       ├── visibility-manager.js  # isVisible + managedInterval()
 │       │       ├── theme.js        # Theme switching (6 color schemes)
-│       │       ├── clock.js        # Clock widget logic
-│       │       ├── weather.js      # Weather API integration
-│       │       ├── twitch.js       # Twitch embed
-│       │       ├── countdown.js    # Countdown timer
-│       │       ├── claude-stats.js # Claude usage stats
-│       │       └── ...             # Other widget modules
+│       │       ├── clock.js        # Flip clock (minute-aligned updates)
+│       │       ├── weather.js      # Open-Meteo API + skyline
+│       │       ├── now-playing.js  # Windows media session display
+│       │       ├── visualizer.js   # PowerAudio/MilkDrop/Circular modes
+│       │       ├── twitch.js       # Twitch embed (smart widget pages)
+│       │       ├── twitch-chat.js  # IRC chat client
+│       │       ├── smart-widget.js # Twitch/YouTube page switcher
+│       │       ├── countdown.js    # Countdown + focus timer
+│       │       ├── calendar.js     # Microsoft Graph calendar + drive time
+│       │       ├── inbox.js        # Microsoft Graph email
+│       │       ├── microsoft-auth.js # MSAL token handling (HC + AE)
+│       │       ├── system-stats.js # CPU/GPU/RAM/HD arcs
+│       │       ├── claude-stats.js # Claude usage stats (widget hidden)
+│       │       └── ...             # radio, skylines, recent-files, etc.
 │       ├── widgets/            # HTML partials (loaded by main.js)
 │       │   ├── clock.html
 │       │   ├── weather.html
-│       │   ├── twitch.html
 │       │   ├── countdown.html
 │       │   ├── recent-files.html
-│       │   ├── calendar.html
-│       │   ├── inbox.html
+│       │   ├── now-playing.html
+│       │   ├── visualizer.html
+│       │   ├── twitch.html
 │       │   ├── system-stats.html
 │       │   ├── calculator.html
 │       │   ├── audio-mixer.html
-│       │   ├── visualizer.html
+│       │   ├── calendar.html
+│       │   ├── inbox.html
 │       │   ├── claude-stats.html
+│       │   ├── reminders.html
+│       │   ├── modals.html
 │       │   └── settings-panel.html
 │       ├── styles/             # CSS stylesheets
-│       │   ├── themes.css      # Theme variables (colors, filters)
+│       │   ├── themes.css      # Theme variables + body[data-perf] modes
 │       │   ├── base.css        # Reset, grid layout, widget base styles
 │       │   └── widgets.css     # Individual widget styles
 │       └── assets/             # Static assets
 │           ├── backgrounds/    # SVG backgrounds (mountains.svg)
-│           ├── textures/       # 3D textures (earth, galaxy)
+│           ├── fonts/          # Vendored ATC clock fonts (woff2)
 │           └── Sounds/         # Audio files (alarm, etc.)
 ├── src-tauri/
 │   ├── Cargo.toml              # Rust dependencies (Tauri 2)
@@ -91,21 +106,25 @@ Vite copies `public/` contents directly to `dist/` without processing. Since wid
 ## Grid Layout (5 columns x 3 rows)
 
 ```
-┌─────────────┬─────────────┬─────────────┬─────────────┬─────────────┐
-│ Clock       │ Countdown   │             │             │ Calendar    │
-│─────────────│─────────────│   Spotify   │   Twitch    │─────────────│
-│             │ Reminders   │             │             │ Email       │
-│  Weather    │─────────────│             │─────────────│─────────────│
-│             │ Recent Files│ Visualizer  │Stats│Calc   │Claude Stats │
-└─────────────┴─────────────┴─────────────┴─────────────┴─────────────┘
+┌─────────────┬──────────────┬─────────────┬───────────────┬──────────────┐
+│ Clock       │ Countdown /  │ Now Playing │    Twitch     │ Inbox / Chat │
+│─────────────│ Focus Timer  │             │ (smart pages) │              │
+│             │──────────────│─────────────│───────────────│──────────────│
+│  Weather    │              │             │ Audio │ Stats │              │
+│             │ Recent Files │ Visualizer  │ Mixer │───────│   Calendar   │
+│             │              │             │       │ Calc  │              │
+└─────────────┴──────────────┴─────────────┴───────────────┴──────────────┘
 ```
 
-Grid areas defined in `base.css`:
+Grid areas defined in `base.css` (grid-template-areas v9):
 - `clockweather` - Flex column: clock (32%), weather (68%)
-- `cardstack` - Flex column: countdown, reminders, recent-files (equal thirds)
-- `spotify` - Full height
-- `twitchstats` - Flex column: twitch (50%), stats+calc (50%)
-- `calendarinbox` - 2x2 grid: calendar, email, claude-stats spanning bottom
+- `cardstack` - Flex column: countdown/focus timer (32%), recent-files (rest)
+- `nowplaying-visualizer` - Flex column: now-playing (50%), visualizer (50%)
+- `twitchstats` - Flex column: twitch smart widget (50%), stats/calc row (50%)
+  with audio-mixer on the left and system-stats + calculator stacked right
+- `calendarinbox` - Grid: inbox (top), calendar (bottom). Nav dots switch the
+  column between Inbox / full Twitch chat / half chat views. The claude-stats
+  widget lives here too but is `display: none` ("hidden for now")
 
 ---
 
@@ -264,6 +283,8 @@ The settings panel (`settings-panel.html`) provides configuration for:
 - Performance mode (Glass Blur: Full/Lite/Off) - sets `body[data-perf]`, which
   `themes.css` uses to reduce or disable the always-on widget backdrop blur
   (the dashboard's biggest standing GPU cost)
+- Debug Logging (default off) - gates `window.dlog()`, which the per-poll
+  widget status logs route through; errors/warnings always print
 
 Settings are persisted to `localStorage`.
 
