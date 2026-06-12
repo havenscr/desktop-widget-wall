@@ -1103,12 +1103,18 @@ function updateTwitchWidget() {
 
   // Building an embed inside a hidden smart-widget page trips Twitch's
   // autoplay visibility requirement (the "style visibility" embed error)
-  // and streams a channel nobody is watching. Defer the rebuild; the
-  // smart widget runs it when the Twitch page becomes active again.
+  // and streams a channel nobody is watching. The same applies at startup:
+  // this runs before smart-widget.js wraps #twitch-embed into its pages,
+  // and the later reparenting reloads the iframe mid-flight (one-shot
+  // autoplay error). Defer both cases; the smart widget runs the pending
+  // rebuild from switchToPage once the Twitch page exists and is active.
   const twitchPage = twitchEmbed?.closest('.smart-widget-page');
-  if (twitchPage && !twitchPage.classList.contains('active')) {
+  const pagesNotBuiltYet = !twitchPage &&
+    !!document.getElementById('twitch-widget') &&
+    !document.querySelector('#twitch-widget .smart-widget-pages');
+  if (pagesNotBuiltYet || (twitchPage && !twitchPage.classList.contains('active'))) {
     window._pendingTwitchRebuild = true;
-    dlog('Twitch: page hidden - embed rebuild deferred until activation');
+    dlog('Twitch: page hidden or not built yet - embed rebuild deferred');
     return;
   }
   window._pendingTwitchRebuild = false;

@@ -225,24 +225,52 @@ const TwitchChat = (function() {
   }
 
   /**
-   * Fetch Twitch global emotes
+   * Resolve a channel's broadcaster id via Helix (cached per channel).
+   * Shared by the badge and emote fetchers; requires the user's token.
+   */
+  let cachedBroadcaster = { name: null, id: null };
+  async function resolveBroadcasterId(channelName) {
+    if (!oauthToken) return null;
+    if (cachedBroadcaster.name === channelName) return cachedBroadcaster.id;
+
+    try {
+      const res = await fetch(
+        `https://api.twitch.tv/helix/users?login=${encodeURIComponent(channelName)}`,
+        { headers: helixHeaders() }
+      );
+      const id = res.ok ? (await res.json()).data?.[0]?.id || null : null;
+      cachedBroadcaster = { name: channelName, id };
+      return id;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /** Map a Helix emote response ({data:[{name, images:{url_1x,...}}]}) into
+   *  the {code: {url, provider}} shape the renderer uses. */
+  function mapHelixEmotes(data, emotes) {
+    for (const emote of data.data || []) {
+      const url = emote.images?.url_1x || emote.images?.url_2x;
+      if (emote.name && url) {
+        emotes[emote.name] = { url, provider: 'twitch' };
+      }
+    }
+  }
+
+  /**
+   * Fetch Twitch global emotes.
+   * The old emotes.adamcy.pl aggregator stopped sending CORS headers, so
+   * these come from Helix now (needs the user's token; anonymous chat skips).
    */
   async function fetchTwitchGlobalEmotes() {
     const emotes = {};
+    if (!oauthToken) return emotes;
     try {
-      // Use emotes.adamcy.pl API for global Twitch emotes (no auth required)
-      const res = await fetch('https://emotes.adamcy.pl/v1/global/emotes/twitch');
+      const res = await fetch('https://api.twitch.tv/helix/chat/emotes/global', {
+        headers: helixHeaders()
+      });
       if (res.ok) {
-        const data = await res.json();
-        for (const emote of data) {
-          if (emote.code && emote.urls?.length > 0) {
-            // Get the smallest size URL
-            const url = emote.urls.find(u => u.size === '1x')?.url || emote.urls[0]?.url;
-            if (url) {
-              emotes[emote.code] = { url, provider: 'twitch' };
-            }
-          }
-        }
+        mapHelixEmotes(await res.json(), emotes);
       }
     } catch (e) {
       console.warn('Twitch global emotes failed:', e);
@@ -251,23 +279,21 @@ const TwitchChat = (function() {
   }
 
   /**
-   * Fetch Twitch channel subscriber emotes
+   * Fetch Twitch channel subscriber emotes (Helix, see fetchTwitchGlobalEmotes)
    */
   async function fetchTwitchChannelEmotes(channelName) {
     const emotes = {};
+    if (!oauthToken) return emotes;
     try {
-      // Use emotes.adamcy.pl API for channel emotes (no auth required)
-      const res = await fetch(`https://emotes.adamcy.pl/v1/channel/${channelName}/emotes/twitch`);
+      const channelId = await resolveBroadcasterId(channelName);
+      if (!channelId) return emotes;
+
+      const res = await fetch(
+        `https://api.twitch.tv/helix/chat/emotes?broadcaster_id=${channelId}`,
+        { headers: helixHeaders() }
+      );
       if (res.ok) {
-        const data = await res.json();
-        for (const emote of data) {
-          if (emote.code && emote.urls?.length > 0) {
-            const url = emote.urls.find(u => u.size === '1x')?.url || emote.urls[0]?.url;
-            if (url) {
-              emotes[emote.code] = { url, provider: 'twitch' };
-            }
-          }
-        }
+        mapHelixEmotes(await res.json(), emotes);
       }
     } catch (e) {
       console.warn('Twitch channel emotes failed:', e);
@@ -512,14 +538,7 @@ const TwitchChat = (function() {
     }
 
     try {
-      // Resolve the broadcaster id via Helix (replaces the old 7TV/FFZ
-      // third-party lookup, which 404s for channels not on those services)
-      const userRes = await fetch(
-        `https://api.twitch.tv/helix/users?login=${encodeURIComponent(channelName)}`,
-        { headers: helixHeaders() }
-      );
-      const channelId = userRes.ok ? (await userRes.json()).data?.[0]?.id : null;
-
+      const channelId = await resolveBroadcasterId(channelName);
       if (!channelId) {
         console.warn('TwitchChat: Could not resolve channel id for badge fetch');
         badgesLoaded = true;
