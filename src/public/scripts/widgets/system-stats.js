@@ -82,12 +82,20 @@ async function fetchSystemStats() {
     dlog('[SystemStats] Received data:', data ? 'OK' : 'empty');
     applySystemStats(data);
     updateStatusIndicator(true);
+    lastStatsError = null;
   } catch (e) {
-    // LibreHardwareMonitor not running or Tauri not available
-    console.error('[SystemStats] Error:', e);
+    // LibreHardwareMonitor not running or Tauri not available. This polls
+    // every 2s - log each distinct failure once, not per poll.
+    const msg = String(e);
+    if (msg !== lastStatsError) {
+      lastStatsError = msg;
+      console.error('[SystemStats] Error (logged once until it changes):', e);
+    }
     updateStatusIndicator(false);
   }
 }
+
+let lastStatsError = null;
 
 function applySystemStats(data) {
   const cpuLoad = data?.cpu || 0;
