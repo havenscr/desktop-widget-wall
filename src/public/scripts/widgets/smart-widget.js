@@ -450,6 +450,13 @@ function switchToPage(pageIndex) {
       const hlsVideo = document.getElementById('hls-video');
 
       if (isActive) {
+        // A channel change while this page was hidden deferred the embed
+        // rebuild (Twitch refuses to autoplay into a hidden iframe) - run
+        // it now that the page is visible, instead of restoring stale state
+        if (window._pendingTwitchRebuild && typeof updateTwitchWidget === 'function') {
+          window._pendingTwitchRebuild = false;
+          updateTwitchWidget();
+        } else
         // Switching TO Twitch - restart the stream if it was stopped
         if (window.HLSPlayer && !window.HLSPlayer.isPlaying()) {
           // Get current channel from twitchStreamInfo or config

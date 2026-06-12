@@ -41,15 +41,7 @@ use windows::Win32::System::Com::{
 // Windows Shell Link imports for Recent Files
 use windows::core::{Interface, PCWSTR};
 use windows::Win32::Foundation::BOOL;
-use windows::Win32::Graphics::Gdi::{
-    CreateCompatibleDC, DeleteDC, DeleteObject, GetDIBits, SelectObject, BITMAPINFO,
-    BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS,
-};
-use windows::Win32::UI::Shell::{
-    IShellLinkW, SHGetFileInfoW, ShellLink, SHFILEINFOW, SHGFI_ICON, SHGFI_SMALLICON,
-    SHGFI_USEFILEATTRIBUTES,
-};
-use windows::Win32::UI::WindowsAndMessaging::{DestroyIcon, GetIconInfo, ICONINFO};
+use windows::Win32::UI::Shell::{IShellLinkW, ShellLink};
 
 // File system
 use std::fs;
@@ -1529,164 +1521,6 @@ async fn open_folder_in_explorer(path: String) -> Result<(), String> {
         }
 
         Ok(())
-    })
-    .await
-    .map_err(|e| e.to_string())?
-}
-
-/// Get file icon as base64-encoded PNG
-#[tauri::command]
-async fn get_file_icon(path: String) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        unsafe {
-            // SHGetFileInfoW requires COM on the calling thread. Blocking-pool
-            // threads only had it when reused after another COM-initializing
-            // command, which made icon extraction fail for a random subset of
-            // files each launch.
-            let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
-
-            // Convert path to wide string
-            let wide_path: Vec<u16> = path.encode_utf16().chain(std::iter::once(0)).collect();
-
-            // Get file info with icon
-            let mut shfi: SHFILEINFOW = std::mem::zeroed();
-            let mut result = SHGetFileInfoW(
-                PCWSTR(wide_path.as_ptr()),
-                windows::Win32::Storage::FileSystem::FILE_ATTRIBUTE_NORMAL,
-                Some(&mut shfi),
-                std::mem::size_of::<SHFILEINFOW>() as u32,
-                SHGFI_ICON | SHGFI_SMALLICON,
-            );
-
-            if result == 0 || shfi.hIcon.is_invalid() {
-                // Direct extraction fails for cloud placeholders (OneDrive/
-                // SharePoint files-on-demand) and some shell paths. Fall back
-                // to the extension's generic type icon, which is derived from
-                // the path string alone and never touches the file.
-                shfi = std::mem::zeroed();
-                result = SHGetFileInfoW(
-                    PCWSTR(wide_path.as_ptr()),
-                    windows::Win32::Storage::FileSystem::FILE_ATTRIBUTE_NORMAL,
-                    Some(&mut shfi),
-                    std::mem::size_of::<SHFILEINFOW>() as u32,
-                    SHGFI_ICON | SHGFI_SMALLICON | SHGFI_USEFILEATTRIBUTES,
-                );
-            }
-
-            if result == 0 || shfi.hIcon.is_invalid() {
-                return Err("Failed to get file icon".to_string());
-            }
-
-            let hicon = shfi.hIcon;
-
-            // Get icon info to access the bitmap
-            let mut icon_info: ICONINFO = std::mem::zeroed();
-            if GetIconInfo(hicon, &mut icon_info).is_err() {
-                DestroyIcon(hicon).ok();
-                return Err("Failed to get icon info".to_string());
-            }
-
-            // Create a device context
-            let hdc = CreateCompatibleDC(None);
-            if hdc.is_invalid() {
-                if !icon_info.hbmColor.is_invalid() {
-                    let _ = DeleteObject(icon_info.hbmColor);
-                }
-                if !icon_info.hbmMask.is_invalid() {
-                    let _ = DeleteObject(icon_info.hbmMask);
-                }
-                DestroyIcon(hicon).ok();
-                return Err("Failed to create DC".to_string());
-            }
-
-            // Use the color bitmap
-            let hbitmap = if !icon_info.hbmColor.is_invalid() {
-                icon_info.hbmColor
-            } else {
-                icon_info.hbmMask
-            };
-
-            // Icon size (small icons are typically 16x16)
-            let icon_size = 16i32;
-
-            // Set up bitmap info header
-            let mut bmi = BITMAPINFO {
-                bmiHeader: BITMAPINFOHEADER {
-                    biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
-                    biWidth: icon_size,
-                    biHeight: -icon_size, // Top-down DIB
-                    biPlanes: 1,
-                    biBitCount: 32,
-                    biCompression: BI_RGB.0 as u32,
-                    biSizeImage: 0,
-                    biXPelsPerMeter: 0,
-                    biYPelsPerMeter: 0,
-                    biClrUsed: 0,
-                    biClrImportant: 0,
-                },
-                bmiColors: [Default::default()],
-            };
-
-            // Allocate buffer for pixel data (BGRA)
-            let pixel_count = (icon_size * icon_size) as usize;
-            let mut pixels: Vec<u8> = vec![0u8; pixel_count * 4];
-
-            // Select bitmap into DC and get pixels
-            let old_bitmap = SelectObject(hdc, hbitmap);
-            let scan_lines = GetDIBits(
-                hdc,
-                hbitmap,
-                0,
-                icon_size as u32,
-                Some(pixels.as_mut_ptr() as *mut _),
-                &mut bmi,
-                DIB_RGB_COLORS,
-            );
-
-            SelectObject(hdc, old_bitmap);
-            let _ = DeleteDC(hdc);
-
-            // Clean up GDI objects
-            if !icon_info.hbmColor.is_invalid() {
-                let _ = DeleteObject(icon_info.hbmColor);
-            }
-            if !icon_info.hbmMask.is_invalid() {
-                let _ = DeleteObject(icon_info.hbmMask);
-            }
-            DestroyIcon(hicon).ok();
-
-            if scan_lines == 0 {
-                return Err("Failed to get bitmap bits".to_string());
-            }
-
-            // Convert BGRA to RGBA for PNG
-            for i in 0..pixel_count {
-                let offset = i * 4;
-                pixels.swap(offset, offset + 2); // Swap B and R
-            }
-
-            // Create PNG image using the image crate
-            let img = image::RgbaImage::from_raw(icon_size as u32, icon_size as u32, pixels)
-                .ok_or("Failed to create image")?;
-
-            // Encode as PNG
-            let mut png_data = Vec::new();
-            {
-                use image::ImageEncoder;
-                let encoder = image::codecs::png::PngEncoder::new(&mut png_data);
-                encoder
-                    .write_image(
-                        &img,
-                        icon_size as u32,
-                        icon_size as u32,
-                        image::ExtendedColorType::Rgba8,
-                    )
-                    .map_err(|e| format!("PNG encoding failed: {}", e))?;
-            }
-
-            // Return base64 encoded PNG
-            Ok(BASE64.encode(&png_data))
-        }
     })
     .await
     .map_err(|e| e.to_string())?
@@ -3308,7 +3142,6 @@ pub fn run() {
             open_task_manager,
             open_folder_in_explorer,
             copy_file_to_clipboard,
-            get_file_icon,
             open_volume_mixer,
             open_meeting_on_primary,
             open_in_outlook,

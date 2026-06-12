@@ -450,23 +450,44 @@ const TwitchChat = (function() {
   /**
    * Fetch global Twitch badges
    */
+  // badges.twitch.tv was decommissioned by Twitch (the domain no longer
+  // resolves), so badges come from Helix now - which requires the user's
+  // OAuth token. Anonymous (justinfan) chat skips the fetch and relies on
+  // FALLBACK_BADGE_URLS for the common badges.
+  const HELIX_CLIENT_ID = '6og5fv8xx0tq8xw67itgl8whmoa5ru';
+
+  function helixHeaders() {
+    return {
+      'Client-ID': HELIX_CLIENT_ID,
+      'Authorization': `Bearer ${oauthToken}`
+    };
+  }
+
+  /** Map a Helix badge response ({data:[{set_id, versions:[{id, image_url_2x}]}]})
+   *  into the {badgeName: {version: url}} shape the renderer uses. */
+  function mapHelixBadgeSets(data, target) {
+    for (const set of data.data || []) {
+      target[set.set_id] = {};
+      for (const version of set.versions || []) {
+        target[set.set_id][version.id] = version.image_url_2x || version.image_url_1x;
+      }
+    }
+  }
+
   async function fetchGlobalBadges() {
     if (Object.keys(globalBadges).length > 0) {
       return; // Already loaded
     }
+    if (!oauthToken) {
+      return; // Helix needs auth; anonymous chat uses the fallback URLs
+    }
 
     try {
-      const res = await fetch('https://badges.twitch.tv/v1/badges/global/display');
+      const res = await fetch('https://api.twitch.tv/helix/chat/badges/global', {
+        headers: helixHeaders()
+      });
       if (res.ok) {
-        const data = await res.json();
-        // data.badge_sets is { badgeName: { versions: { "1": { image_url_1x, image_url_2x, image_url_4x } } } }
-        for (const [badgeName, badgeData] of Object.entries(data.badge_sets || {})) {
-          globalBadges[badgeName] = {};
-          for (const [version, versionData] of Object.entries(badgeData.versions || {})) {
-            // Prefer 2x size for crisp display
-            globalBadges[badgeName][version] = versionData.image_url_2x || versionData.image_url_1x;
-          }
-        }
+        mapHelixBadgeSets(await res.json(), globalBadges);
         console.log(`TwitchChat: Loaded ${Object.keys(globalBadges).length} global badge types`);
       }
     } catch (e) {
@@ -485,49 +506,32 @@ const TwitchChat = (function() {
     currentBadgeChannel = channelName;
     channelBadges = {};
 
-    // First we need the channel ID - get it from 7TV or FFZ API
-    let channelId = null;
-
-    // Try 7TV first (they have a users/twitch endpoint)
-    try {
-      const res = await fetch(`https://7tv.io/v3/users/twitch/${channelName}`);
-      if (res.ok) {
-        const data = await res.json();
-        channelId = data.id; // This is the Twitch user ID
-      }
-    } catch (e) {
-      // 7TV might not have this user
-    }
-
-    // Try FFZ as fallback
-    if (!channelId) {
-      try {
-        const res = await fetch(`https://api.frankerfacez.com/v1/room/${channelName}`);
-        if (res.ok) {
-          const data = await res.json();
-          channelId = data.room?.twitch_id;
-        }
-      } catch (e) {
-        // FFZ might not have this user
-      }
-    }
-
-    if (!channelId) {
-      console.warn('TwitchChat: Could not get channel ID for badge fetch');
+    if (!oauthToken) {
+      badgesLoaded = true;
       return;
     }
 
-    // Fetch channel badges
     try {
-      const res = await fetch(`https://badges.twitch.tv/v1/badges/channels/${channelId}/display`);
+      // Resolve the broadcaster id via Helix (replaces the old 7TV/FFZ
+      // third-party lookup, which 404s for channels not on those services)
+      const userRes = await fetch(
+        `https://api.twitch.tv/helix/users?login=${encodeURIComponent(channelName)}`,
+        { headers: helixHeaders() }
+      );
+      const channelId = userRes.ok ? (await userRes.json()).data?.[0]?.id : null;
+
+      if (!channelId) {
+        console.warn('TwitchChat: Could not resolve channel id for badge fetch');
+        badgesLoaded = true;
+        return;
+      }
+
+      const res = await fetch(
+        `https://api.twitch.tv/helix/chat/badges?broadcaster_id=${channelId}`,
+        { headers: helixHeaders() }
+      );
       if (res.ok) {
-        const data = await res.json();
-        for (const [badgeName, badgeData] of Object.entries(data.badge_sets || {})) {
-          channelBadges[badgeName] = {};
-          for (const [version, versionData] of Object.entries(badgeData.versions || {})) {
-            channelBadges[badgeName][version] = versionData.image_url_2x || versionData.image_url_1x;
-          }
-        }
+        mapHelixBadgeSets(await res.json(), channelBadges);
         console.log(`TwitchChat: Loaded ${Object.keys(channelBadges).length} channel badge types for ${channelName}`);
       }
     } catch (e) {
