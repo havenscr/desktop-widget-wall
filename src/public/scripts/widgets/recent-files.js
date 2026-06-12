@@ -198,10 +198,7 @@
   }
   const { invoke } = window.__TAURI__.core;
 
-  // Cache for file icons (keyed by file extension)
-  const iconCache = new Map();
-
-  // Fallback text labels for when icon extraction fails
+  // Colored extension badges (the file list's icon style)
   const fileTypeMap = {
     pdf: { icon: 'PDF', class: 'pdf' },
     doc: { icon: 'DOC', class: 'word' },
@@ -238,26 +235,6 @@
   function getFileTypeInfo(filename) {
     const ext = filename.split('.').pop().toLowerCase();
     return fileTypeMap[ext] || { icon: 'FILE', class: 'default' };
-  }
-
-  // Fetch system icon for a file (with caching by extension)
-  async function getFileIconBase64(filePath) {
-    const ext = filePath.split('.').pop().toLowerCase();
-
-    // Check cache first
-    if (iconCache.has(ext)) {
-      return iconCache.get(ext);
-    }
-
-    try {
-      const base64 = await invoke('get_file_icon', { path: filePath });
-      iconCache.set(ext, base64);
-      return base64;
-    } catch (e) {
-      console.warn('Failed to get icon for', filePath, e);
-      iconCache.set(ext, null); // Cache the failure to avoid retries
-      return null;
-    }
   }
 
 function formatTimeAgo(dateString) {
@@ -317,8 +294,9 @@ async function renderRecentFiles(files) {
     return;
   }
 
-  // Create all items first (with placeholder icons), then load real icons async
-  const itemPromises = files.map(async file => {
+  // Colored extension badges are the icon style by design - the native
+  // Windows icon pipeline (get_file_icon) was removed in favor of these.
+  files.forEach(file => {
     const typeInfo = getFileTypeInfo(file.name);
     const ext = file.name.split('.').pop().toUpperCase();
     const timeAgo = formatTimeAgo(file.modified);
@@ -370,24 +348,7 @@ async function renderRecentFiles(files) {
       openFolderInExplorer(file.path);
     });
     filesList.appendChild(item);
-
-    // Load system icon asynchronously
-    const iconEl = item.querySelector('.recent-file-icon');
-    try {
-      const base64Icon = await getFileIconBase64(file.path);
-      if (base64Icon && iconEl) {
-        // Replace text with actual icon image
-        iconEl.innerHTML = `<img src="data:image/png;base64,${base64Icon}" alt="${ext}" class="system-icon" />`;
-        iconEl.classList.add('has-system-icon');
-      }
-    } catch (e) {
-      // Keep fallback text icon
-    }
-
-    return item;
   });
-
-  await Promise.all(itemPromises);
 }
 
 async function openFile(filePath) {

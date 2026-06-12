@@ -65,9 +65,6 @@ urlencoding = "2.1"
 # Recent Files - directory operations
 dirs = "5.0"
 
-# File icon extraction - PNG encoding
-image = "0.25"
-
 [features]
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
