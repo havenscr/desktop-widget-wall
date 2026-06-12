@@ -24,6 +24,13 @@ let twitchEmbedLoaded = false;
 // so the only way to snap back to live after a stall is to rebuild the embed.
 let twitchStallMonitor = null;
 let twitchStallStrikes = 0;
+// Ad breaks and the "Preparing stream..." interstitial report non-Playing
+// states for well over the old ~12s stall window, so the monitor used to
+// declare a stall mid-ad and rebuild the embed - triggering a fresh pre-roll
+// and looping. No strikes are counted during this grace window, re-armed on
+// every monitor start and after every rebuild.
+const TWITCH_STALL_GRACE_MS = 120000;
+let twitchStallGraceUntil = 0;
 
 // Expose twitchPlayer globally for smart widget control
 window.twitchPlayer = null;
@@ -339,7 +346,7 @@ window.fetchUserTwitchEmotes = async function() {
         }
       });
 
-      console.log('[Twitch] fetchUserTwitchEmotes response status:', response.status);
+      dlog('[Twitch] fetchUserTwitchEmotes response status:', response.status);
 
       if (response.status === 401) {
         console.warn('[Twitch] Token expired for user emotes');
@@ -542,10 +549,18 @@ function setNativeQuality(player) {
 function startTwitchStallMonitor() {
   stopTwitchStallMonitor();
   twitchStallStrikes = 0;
+  twitchStallGraceUntil = Date.now() + TWITCH_STALL_GRACE_MS;
   twitchStallMonitor = setInterval(() => {
     try {
       // Nothing to watch (or rebuild) while the dashboard is hidden
       if (window.VisibilityManager && !window.VisibilityManager.isVisible()) {
+        twitchStallStrikes = 0;
+        return;
+      }
+
+      // Pre-roll ads / "Preparing stream..." legitimately idle for a long
+      // time right after (re)build - don't count strikes during the grace
+      if (Date.now() < twitchStallGraceUntil) {
         twitchStallStrikes = 0;
         return;
       }
@@ -572,10 +587,12 @@ function startTwitchStallMonitor() {
 
       if (stuck) {
         twitchStallStrikes += 1;
-        console.log(`Twitch: stall strike ${twitchStallStrikes}/3 (playback=${playback}, ended=${ended})`);
-        if (twitchStallStrikes >= 3) {
+        console.log(`Twitch: stall strike ${twitchStallStrikes}/5 (playback=${playback}, ended=${ended})`);
+        if (twitchStallStrikes >= 5) {
           console.log('Twitch: native player stalled - rebuilding embed to snap to live');
           twitchStallStrikes = 0;
+          // The rebuilt embed starts with its own pre-roll/preparing phase
+          twitchStallGraceUntil = Date.now() + TWITCH_STALL_GRACE_MS;
           updateTwitchWidget(); // rebuilds the embed fresh at the live edge
         }
       } else {
@@ -584,7 +601,7 @@ function startTwitchStallMonitor() {
     } catch (e) {
       console.warn('Twitch: stall monitor error', e);
     }
-  }, 4000); // 3 strikes * 4s => ~12s of confirmed stall before a rebuild
+  }, 4000); // 5 strikes * 4s => ~20s of confirmed stall (after grace) before a rebuild
 }
 
 function stopTwitchStallMonitor() {
@@ -1083,6 +1100,18 @@ function updateTwitchWidget() {
   if (twitchChannelName) twitchChannelName.textContent = channel;
   if (twitchChannelLink) twitchChannelLink.href = `https://twitch.tv/${channel}`;
   if (twitchFallbackLink) twitchFallbackLink.href = `https://twitch.tv/${channel}`;
+
+  // Building an embed inside a hidden smart-widget page trips Twitch's
+  // autoplay visibility requirement (the "style visibility" embed error)
+  // and streams a channel nobody is watching. Defer the rebuild; the
+  // smart widget runs it when the Twitch page becomes active again.
+  const twitchPage = twitchEmbed?.closest('.smart-widget-page');
+  if (twitchPage && !twitchPage.classList.contains('active')) {
+    window._pendingTwitchRebuild = true;
+    dlog('Twitch: page hidden - embed rebuild deferred until activation');
+    return;
+  }
+  window._pendingTwitchRebuild = false;
 
   // Check if HLS mode is enabled
   // Use getDashboardConfig if available, otherwise fall back to raw localStorage
