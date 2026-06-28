@@ -23,7 +23,7 @@ window.dlog = (...args) => {
 // WebView2 to re-fetch and re-parse every asset on every launch; a fixed
 // version lets the cache work between launches. Bump when shipping changes
 // to widget HTML/JS.
-const ASSET_VERSION = '20260610';
+const ASSET_VERSION = '20260628-video';
 
 // Widget configuration - maps container IDs to HTML partial paths
 const widgetConfig = [
