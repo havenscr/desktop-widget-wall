@@ -3092,22 +3092,42 @@ async fn load_widget_config(key: String) -> Result<Option<String>, String> {
     Ok(Some(content))
 }
 
+#[cfg(windows)]
+fn disable_webview_tracking_prevention(webview: tauri::webview::PlatformWebview) {
+    use webview2_com::Microsoft::Web::WebView2::Win32::{
+        ICoreWebView2Profile3, ICoreWebView2_13,
+        COREWEBVIEW2_TRACKING_PREVENTION_LEVEL_NONE,
+    };
+    use windows_core::Interface as WebView2Interface;
+
+    let result = (|| -> windows_core::Result<()> {
+        unsafe {
+            let core = webview.controller().CoreWebView2()?;
+            let profile = core
+                .cast::<ICoreWebView2_13>()?
+                .Profile()?
+                .cast::<ICoreWebView2Profile3>()?;
+            profile.SetPreferredTrackingPreventionLevel(
+                COREWEBVIEW2_TRACKING_PREVENTION_LEVEL_NONE,
+            )?;
+        }
+        Ok(())
+    })();
+
+    if let Err(error) = result {
+        eprintln!("WebView2: failed to disable tracking prevention: {error}");
+    }
+}
+
 pub fn run() {
     // Create shared audio buffer
     let audio_buffer = Arc::new(SharedAudioBuffer::default());
 
-    // Disable WebView2 tracking prevention so embedded players (Spotify, YouTube) can access storage.
-    // Must be set before WebView2 is initialized.
+    // WebView2 flags that affect embedded media startup.
     #[allow(deprecated)]
     {
         std::env::set_var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
-            // No forced GPU flags here: --ignore-gpu-blocklist /
-            // --enable-zero-copy / --enable-hardware-overlays /
-            // --enable-gpu-rasterization destabilized hardware video decode
-            // (recurring embed buffering; see the "decode starvation" notes
-            // in hls-player.js and the "aggressive GPU flags now removed"
-            // note in twitch.js - the removal had never reached this repo).
-            "--disable-features=msTrackingProtection \
+            "--disable-features=msTrackingPrevention,msTrackingProtection \
              --autoplay-policy=no-user-gesture-required \
              --disable-background-timer-throttling \
              --disable-renderer-backgrounding");
@@ -3175,6 +3195,12 @@ pub fn run() {
             load_widget_config
         ])
         .setup(|app| {
+            #[cfg(windows)]
+            if let Some(window) = app.get_webview_window("main") {
+                if let Err(error) = window.with_webview(disable_webview_tracking_prevention) {
+                    eprintln!("WebView2: failed to access native webview: {error}");
+                }
+            }
             // === SYSTEM TRAY ===
             let show_item = MenuItem::with_id(app, "show", "Show Window", true, None::<&str>)?;
             let fullscreen_item = MenuItem::with_id(app, "fullscreen", "Toggle Fullscreen", true, None::<&str>)?;
