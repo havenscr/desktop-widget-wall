@@ -35,7 +35,8 @@ const HLSPlayer = (function() {
    */
   function isEnabled() {
     const config = getEffectiveConfig();
-    return config.twitch?.hlsEnabled === true;
+    // Default-on: HLS is used unless the user explicitly picked Embed mode.
+    return config.twitch?.hlsEnabled !== false;
   }
 
   /**
@@ -71,8 +72,12 @@ const HLSPlayer = (function() {
         return;
       }
 
+      // Vendored locally (scripts/lib/hls.min.js, pinned hls.js 1.6.16) to match
+      // the project's no-CDN-dependency convention: no jsDelivr uptime reliance
+      // and no risk of an unpinned @latest shipping a breaking build.
+      const version = window.ASSET_VERSION ? '?v=' + window.ASSET_VERSION : '';
       const script = document.createElement('script');
-      script.src = 'https://cdn.jsdelivr.net/npm/hls.js@latest';
+      script.src = 'scripts/lib/hls.min.js' + version;
       script.onload = resolve;
       script.onerror = () => reject(new Error('Failed to load HLS.js'));
       document.head.appendChild(script);
@@ -252,9 +257,15 @@ const HLSPlayer = (function() {
       }
     });
 
-    // Stall events surface decode starvation (e.g. GPU-busy WebView2)
-    video.addEventListener('waiting', () => resyncToLive('waiting'));
-    video.addEventListener('stalled', () => resyncToLive('stalled'));
+    // Stall events surface decode starvation (e.g. GPU-busy WebView2). Wire once
+    // per video element: initHLSjs runs on every channel change / restart, and
+    // resyncToLive reads the current module-level hlsInstance, so a single pair of
+    // listeners stays correct while re-adding them would stack duplicate resyncs.
+    if (!video._hlsResyncWired) {
+      video.addEventListener('waiting', () => resyncToLive('waiting'));
+      video.addEventListener('stalled', () => resyncToLive('stalled'));
+      video._hlsResyncWired = true;
+    }
 
     // Periodic drift guard for slow creep the rate-catchup can't close
     if (window._hlsDriftTimer) clearInterval(window._hlsDriftTimer);
@@ -296,18 +307,33 @@ const HLSPlayer = (function() {
     const hlsUrl = buildHLSUrl(channel, token);
     console.log('HLSPlayer: Starting playback');
 
-    // Use native HLS on Safari, HLS.js elsewhere
+    // Prefer the browser's NATIVE HLS. WebView2 plays an m3u8 via <video> as a
+    // media load, which is CORS-exempt. HLS.js instead fetches the manifest over
+    // XHR, and Twitch's usher.ttvnw.net does NOT send Access-Control-Allow-Origin
+    // for the tauri.localhost origin, so HLS.js dies with manifestLoadError here.
+    // Native HLS is therefore the only path that actually plays in this app.
+    // (Making HLS.js viable would need a CORS-adding segment proxy or a Tauri
+    // native-HTTP custom loader - not implemented.) HLS.js stays as the fallback
+    // for real browsers that lack native HLS.
     if (supportsNativeHLS()) {
+      console.log('HLSPlayer: playback path = native (CORS-exempt media load)');
       video.src = hlsUrl;
       video.load();
       await video.play();
     } else {
-      // Load HLS.js if not already loaded
+      console.log('HLSPlayer: playback path = hls.js (MSE)');
       await loadHLSjs();
 
       if (!initHLSjs(video, hlsUrl)) {
         throw new Error('Failed to initialize HLS.js');
       }
+
+      // The HLS.js (Chromium/WebView2) path returns below, so schedule the token
+      // refresh HERE. The shared scheduleTokenRefresh() after this block only runs
+      // on the native-HLS (Safari) path; without this, a Chromium client's token
+      // would never refresh and playback would drop when it expires (~2h) - a real
+      // regression for a 24/7 dashboard.
+      scheduleTokenRefresh();
 
       // HLS.js will auto-play when ready
       return new Promise((resolve, reject) => {

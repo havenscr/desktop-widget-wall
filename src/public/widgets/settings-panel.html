@@ -125,6 +125,23 @@
         </div>
         <div class="settings-row">
           <div class="settings-label">
+            Video Mode
+            <small>HLS = smoother buffering; Embed = official player</small>
+          </div>
+          <select class="settings-select" id="settings-twitch-video-mode">
+            <option value="hls">HLS (low-latency)</option>
+            <option value="embed">Embed (Twitch player)</option>
+          </select>
+        </div>
+        <div class="settings-row" id="settings-hls-worker-row">
+          <div class="settings-label">
+            HLS Worker URL
+            <small>Token proxy for HLS playback</small>
+          </div>
+          <input type="text" class="settings-input" id="settings-hls-worker-url" placeholder="https://bold-art-d9fe.havenscr.workers.dev">
+        </div>
+        <div class="settings-row">
+          <div class="settings-label">
             Chat Mode
             <small>IRC has FFZ/7TV/BTTV emotes</small>
           </div>

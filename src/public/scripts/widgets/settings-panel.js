@@ -44,9 +44,9 @@ function populateSettingsPanel() {
   if (settingsHcClientId) settingsHcClientId.value = dashboardConfig.hcClientId || '';
   if (settingsTwitchChannel) settingsTwitchChannel.value = dashboardConfig.twitch?.channel || 'anya';
   if (settingsTwitchEnabled) settingsTwitchEnabled.checked = dashboardConfig.twitch?.enabled !== false;
-  if (settingsTwitchVideoMode) settingsTwitchVideoMode.value = dashboardConfig.twitch?.hlsEnabled ? 'hls' : 'embed';
+  if (settingsTwitchVideoMode) settingsTwitchVideoMode.value = dashboardConfig.twitch?.hlsEnabled !== false ? 'hls' : 'embed';
   if (settingsHlsWorkerUrl) settingsHlsWorkerUrl.value = dashboardConfig.twitch?.hlsWorkerUrl || 'https://bold-art-d9fe.havenscr.workers.dev';
-  if (settingsHlsWorkerRow) settingsHlsWorkerRow.style.display = dashboardConfig.twitch?.hlsEnabled ? 'flex' : 'none';
+  if (settingsHlsWorkerRow) settingsHlsWorkerRow.style.display = dashboardConfig.twitch?.hlsEnabled !== false ? 'flex' : 'none';
   if (settingsTwitchChatMode) settingsTwitchChatMode.value = dashboardConfig.twitch?.chatMode || 'iframe';
   if (settingsTwitchEmoteChannels) settingsTwitchEmoteChannels.value = dashboardConfig.twitch?.emoteChannels || '';
   if (settingsTwitchAutoloadFollowed) settingsTwitchAutoloadFollowed.checked = dashboardConfig.twitch?.autoloadFollowedEmotes === true;
@@ -385,7 +385,9 @@ function saveSettings() {
   dashboardConfig.twitch = {
     channel: settingsTwitchChannel?.value.trim() || 'anya',
     enabled: settingsTwitchEnabled?.checked !== false,
-    hlsEnabled: settingsTwitchVideoMode?.value === 'hls',
+    // Guard: if the video-mode select is somehow absent, preserve the effective
+    // mode (default-on) instead of writing false and silently disabling HLS.
+    hlsEnabled: settingsTwitchVideoMode ? settingsTwitchVideoMode.value === 'hls' : (dashboardConfig.twitch?.hlsEnabled !== false),
     hlsWorkerUrl: settingsHlsWorkerUrl?.value.trim() || 'https://bold-art-d9fe.havenscr.workers.dev',
     chatMode: settingsTwitchChatMode?.value || 'iframe',
     emoteChannels: settingsTwitchEmoteChannels?.value.trim() || '',

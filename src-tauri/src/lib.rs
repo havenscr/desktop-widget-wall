@@ -3126,11 +3126,19 @@ pub fn run() {
     // WebView2 flags that affect embedded media startup.
     #[allow(deprecated)]
     {
+        // --disable-direct-composition-video-overlays: route video through the
+        // normal GPU compositor instead of DirectComposition MultiPlane Overlays.
+        // Chromium's MPO/DComp video-overlay path is a documented source of video
+        // stutter/blur on Windows dedicated GPUs (esp. new cards/drivers - e.g. an
+        // RTX 5070), and it interacts badly with backdrop-filter + WebGL on the
+        // page. Disabling it lets the glass blur + visualizer coexist with smooth
+        // video. Costs a little power (MPO is a power optimization); trivial here.
         std::env::set_var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
             "--disable-features=msTrackingPrevention,msTrackingProtection \
              --autoplay-policy=no-user-gesture-required \
              --disable-background-timer-throttling \
-             --disable-renderer-backgrounding");
+             --disable-renderer-backgrounding \
+             --disable-direct-composition-video-overlays");
     }
 
     tauri::Builder::default()

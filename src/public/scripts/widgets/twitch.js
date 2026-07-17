@@ -717,6 +717,13 @@ function showTwitchFallback() {
   if (twitchFallback) twitchFallback.style.display = 'flex';
 }
 
+// showHLSControls runs on every channel change, but #hls-video, #hls-controls,
+// #twitch-widget and document are stable singletons - so their addEventListener
+// bindings must be wired once, not re-added each call (which leaked listeners).
+// The per-call .onclick assignments below are idempotent (they replace), so only
+// the addEventListener groups are guarded by this flag.
+let hlsControlsWired = false;
+
 /**
  * Show HLS video controls overlay and wire up event handlers
  * @param {HTMLVideoElement} videoElement - The HLS video element
@@ -797,8 +804,12 @@ function showHLSControls(videoElement) {
 
   // Quality menu functionality
   if (qualityBtn && qualityMenu) {
-    // Apply inline styles to quality menu (CSS caching workaround)
+    // Apply inline styles to quality menu (CSS caching workaround).
+    // Include display:none - cssText replaces ALL inline styles, so without it
+    // the HTML's initial display:none is wiped and the menu shows by default.
+    // The qualityBtn toggle sets .style.display = 'block'/'none' to open/close.
     qualityMenu.style.cssText = `
+      display: none;
       position: absolute !important;
       bottom: 100% !important;
       right: 0 !important;
@@ -821,12 +832,16 @@ function showHLSControls(videoElement) {
       console.log('Quality menu toggled:', !isOpen ? 'open' : 'closed');
     };
 
-    // Close menu when clicking outside
-    document.addEventListener('click', (e) => {
-      if (!qualityBtn.contains(e.target) && !qualityMenu.contains(e.target)) {
-        qualityMenu.style.display = 'none';
-      }
-    });
+    // Close menu when clicking outside (wire once - see hlsControlsWired)
+    if (!hlsControlsWired) {
+      document.addEventListener('click', (e) => {
+        const qb = document.getElementById('hls-quality-btn');
+        const qm = document.getElementById('hls-quality-menu');
+        if (qm && qb && !qb.contains(e.target) && !qm.contains(e.target)) {
+          qm.style.display = 'none';
+        }
+      });
+    }
   }
 
   // Populate quality levels from HLS.js
@@ -861,7 +876,7 @@ function showHLSControls(videoElement) {
     autoBtn.onclick = (e) => {
       e.stopPropagation();
       hlsInstance.currentLevel = -1;
-      qualityMenu.classList.remove('open');
+      qualityMenu.style.display = 'none'; // visibility is display-controlled, not the 'open' class
       updateQualityButtons(-1);
     };
     qualityMenu.appendChild(autoBtn);
@@ -876,7 +891,7 @@ function showHLSControls(videoElement) {
       btn.onclick = (e) => {
         e.stopPropagation();
         hlsInstance.currentLevel = index;
-        qualityMenu.classList.remove('open');
+        qualityMenu.style.display = 'none'; // visibility is display-controlled, not the 'open' class
         updateQualityButtons(index);
       };
       qualityMenu.appendChild(btn);
@@ -890,26 +905,35 @@ function showHLSControls(videoElement) {
     });
   }
 
-  // Listen for video events to keep icons in sync
-  videoElement.addEventListener('play', updatePlayIcon);
-  videoElement.addEventListener('pause', updatePlayIcon);
-  videoElement.addEventListener('volumechange', updateMuteIcon);
+  // Listen for video events to keep icons in sync (wire once)
+  if (!hlsControlsWired) {
+    videoElement.addEventListener('play', updatePlayIcon);
+    videoElement.addEventListener('pause', updatePlayIcon);
+    videoElement.addEventListener('volumechange', updateMuteIcon);
+  }
 
   // Initial state
   updatePlayIcon();
   updateMuteIcon();
 
-  // Add hover listeners to show/hide controls (JS fallback for CSS caching)
+  // Add hover listeners to show/hide controls (JS fallback for CSS caching).
+  // controls/#twitch-widget are stable, so wire the hover once.
   const widget = document.getElementById('twitch-widget');
-  if (widget) {
+  if (widget && !hlsControlsWired) {
     widget.addEventListener('mouseenter', () => {
-      controls.style.opacity = '1';
+      const c = document.getElementById('hls-controls');
+      if (c) c.style.opacity = '1';
     });
     widget.addEventListener('mouseleave', () => {
-      controls.style.opacity = '0';
-      if (qualityMenu) qualityMenu.classList.remove('open');
+      const c = document.getElementById('hls-controls');
+      if (c) c.style.opacity = '0';
+      const qm = document.getElementById('hls-quality-menu');
+      if (qm) qm.style.display = 'none';
     });
   }
+
+  // All singleton listeners are now bound; subsequent calls skip re-binding.
+  hlsControlsWired = true;
 
   console.log('HLS controls initialized');
 }
@@ -992,6 +1016,14 @@ async function updateTwitchWidgetHLS(channel, hlsVideo, twitchEmbed, twitchOffli
     startStreamInfoPolling();
   } catch (error) {
     console.error('HLS playback failed:', error.message);
+
+    // Tear down the HLS player: play() may have already armed the token-refresh
+    // timer and left the hls.js instance attached/decoding before rejecting.
+    // Without this, falling back to the embed leaves a background HLS stream and
+    // a dangling refresh timer running alongside it.
+    if (window.HLSPlayer) {
+      try { window.HLSPlayer.stop(); } catch (e) { /* best-effort teardown */ }
+    }
 
     // Hide HLS controls on error
     hideHLSControls();
@@ -1128,7 +1160,11 @@ function updateTwitchWidget() {
   const effectiveConfig = typeof window.getDashboardConfig === 'function'
     ? dashboardConfig
     : rawConfig;
-  const useHLS = effectiveConfig.twitch?.hlsEnabled === true;
+  // HLS is the default video path: it gives real buffer/live-sync/resync
+  // control the native IVS embed lacks (the embed only exposes setQuality).
+  // Only fall back to the embed when the user has explicitly opted out via
+  // Settings -> Twitch Video Mode: Embed (stored hlsEnabled === false).
+  const useHLS = effectiveConfig.twitch?.hlsEnabled !== false;
 
   // Debug logging for HLS mode decision
   console.log('Twitch: HLS check -', {
@@ -1154,7 +1190,9 @@ function updateTwitchWidget() {
     // HLSPlayer not yet loaded - load it dynamically
     console.log('Twitch: HLS mode enabled, dynamically loading HLSPlayer module...');
     const script = document.createElement('script');
-    script.src = 'scripts/widgets/hls-player.js';
+    // Cache-bust with the shared asset version so a rebuilt app can't serve a
+    // stale hls-player.js from the WebView cache (matches main.js loadScript).
+    script.src = 'scripts/widgets/hls-player.js' + (window.ASSET_VERSION ? '?v=' + window.ASSET_VERSION : '');
     script.onload = () => {
       console.log('Twitch: HLSPlayer module loaded dynamically');
       if (window.HLSPlayer) {
@@ -1175,8 +1213,14 @@ function updateTwitchWidget() {
   // Standard Twitch Embed mode
   console.log('Twitch: Using native embed mode (hlsEnabled:', dashboardConfig.twitch?.hlsEnabled, ')');
 
-  // Hide HLS video when using embed
-  if (hlsVideo) hlsVideo.classList.remove('active');
+  // Hide HLS video when using embed. Removing .active is not enough:
+  // updateTwitchWidgetHLS sets an inline `display: block !important` that would
+  // otherwise leave a black video layer (z-index 50) covering the embed.
+  if (hlsVideo) {
+    hlsVideo.classList.remove('active');
+    hlsVideo.style.display = 'none';
+  }
+  hideHLSControls();
 
   // Twitch requires parent domains - include both localhost and tauri.localhost for Tauri builds
   const parents = ['localhost', 'tauri.localhost'];
@@ -1934,15 +1978,25 @@ function initTwitch() {
   updateTwitchWidget();
 }
 
-// Track last known HLS state for change detection
-let lastKnownHlsEnabled = null;
+// Track last known HLS state for change detection. Seed from persisted config
+// so the FIRST video-mode toggle is detected - a null seed would swallow the
+// first change (its guard skips when lastKnownHlsEnabled is null) until reload.
+let lastKnownHlsEnabled = (() => {
+  try {
+    return JSON.parse(localStorage.getItem('dashboard-config') || '{}').twitch?.hlsEnabled !== false;
+  } catch {
+    return true;
+  }
+})();
 
 // Listen for dashboard config changes (from settings panel)
 // This keeps Twitch video in sync with settings changes
 window.addEventListener('dashboard-config-changed', (e) => {
   const dashboardConfig = e.detail || {};
   const newChannel = dashboardConfig.twitch?.channel;
-  const newHlsEnabled = dashboardConfig.twitch?.hlsEnabled === true;
+  // Match the default-on semantics in updateTwitchWidget so change detection
+  // tracks the effective mode (undefined = HLS), not just an explicit true.
+  const newHlsEnabled = dashboardConfig.twitch?.hlsEnabled !== false;
 
   let needsRefresh = false;
 

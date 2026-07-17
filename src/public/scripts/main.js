@@ -23,7 +23,31 @@ window.dlog = (...args) => {
 // WebView2 to re-fetch and re-parse every asset on every launch; a fixed
 // version lets the cache work between launches. Bump when shipping changes
 // to widget HTML/JS.
-const ASSET_VERSION = '20260628-video';
+const ASSET_VERSION = '20260706-hls3';
+// Exposed so lazily-loaded widget scripts (e.g. twitch.js loading hls-player.js)
+// can cache-bust their own dynamic imports with the same version.
+window.ASSET_VERSION = ASSET_VERSION;
+
+// One-time migration: older builds had NO Twitch "Video Mode" UI, so saveSettings
+// wrote twitch.hlsEnabled:false on every save. That stale false pins the widget to
+// the buffering native embed even though HLS is now the default. Clear it once so
+// default-on (hlsEnabled !== false) applies; the user can still pick Embed in
+// Settings afterward (which sets the marker's already-set, so this won't re-run).
+(function migrateStaleHlsEnabled() {
+  const MIGRATION_KEY = 'wwd-hls-default-migrated';
+  try {
+    if (localStorage.getItem(MIGRATION_KEY)) return;
+    const cfg = JSON.parse(localStorage.getItem('dashboard-config') || '{}');
+    if (cfg.twitch && cfg.twitch.hlsEnabled === false) {
+      delete cfg.twitch.hlsEnabled; // fall back to the HLS-by-default path
+      localStorage.setItem('dashboard-config', JSON.stringify(cfg));
+      console.log('Migration: cleared stale twitch.hlsEnabled=false (HLS is now default)');
+    }
+    localStorage.setItem(MIGRATION_KEY, '1');
+  } catch (e) {
+    console.warn('Migration: hlsEnabled cleanup failed', e);
+  }
+})();
 
 // Widget configuration - maps container IDs to HTML partial paths
 const widgetConfig = [

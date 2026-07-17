@@ -5408,6 +5408,54 @@
   display: block;
 }
 
+/* HLS video-mode custom controls. #hls-controls and #hls-quality-menu get
+   inline layout styles from showHLSControls() (a CSS-cache workaround); this
+   block sizes the buttons/icons/menu items so unstyled SVGs don't blow out. */
+.hls-control-btn {
+  background: transparent;
+  border: none;
+  color: white;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
+}
+
+.hls-control-btn:hover {
+  background: rgba(145, 70, 255, 0.8);
+}
+
+.hls-control-btn svg {
+  width: 18px;
+  height: 18px;
+  display: block;
+}
+
+.hls-quality-option {
+  display: block;
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.85);
+  text-align: left;
+  padding: 8px 16px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.hls-quality-option:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.hls-quality-option.active {
+  color: #a970ff;
+  font-weight: 600;
+}
+
 .twitch-offline {
   display: none;
   flex-direction: column;

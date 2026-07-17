@@ -341,6 +341,8 @@ function buildSmartWidgetUI() {
 
     // Move existing twitch content into first page
     const twitchEmbed = document.getElementById('twitch-embed');
+    const hlsVideo = document.getElementById('hls-video');
+    const hlsControls = document.getElementById('hls-controls');
     const twitchOffline = document.getElementById('twitch-offline');
     const twitchFallback = document.getElementById('twitch-fallback');
 
@@ -350,6 +352,10 @@ function buildSmartWidgetUI() {
     twitchPage.setAttribute('data-type', 'twitch');
 
     if (twitchEmbed) twitchPage.appendChild(twitchEmbed);
+    // HLS mode renders into #hls-video (with #hls-controls overlaid) - keep them
+    // in the active Twitch page so layering + stop-when-hidden lifecycle work.
+    if (hlsVideo) twitchPage.appendChild(hlsVideo);
+    if (hlsControls) twitchPage.appendChild(hlsControls);
     if (twitchOffline) twitchPage.appendChild(twitchOffline);
     if (twitchFallback) twitchPage.appendChild(twitchFallback);
 
@@ -453,24 +459,33 @@ function switchToPage(pageIndex) {
         // A channel change while this page was hidden deferred the embed
         // rebuild (Twitch refuses to autoplay into a hidden iframe) - run
         // it now that the page is visible, instead of restoring stale state
+        // Only drive the HLS player when HLS is the active video mode. In Embed
+        // mode the native iframe (restored below) handles playback; starting HLS
+        // here would run a hidden, unmuted stream behind the embed (HLSPlayer can
+        // still be loaded from an earlier HLS session after switching to Embed).
+        const cfg = window.getDashboardConfig?.() || JSON.parse(localStorage.getItem('dashboard-config') || '{}');
+        const useHLS = cfg?.twitch?.hlsEnabled !== false;
+
         if (window._pendingTwitchRebuild && typeof updateTwitchWidget === 'function') {
           window._pendingTwitchRebuild = false;
           updateTwitchWidget();
-        } else
-        // Switching TO Twitch - restart the stream if it was stopped
-        if (window.HLSPlayer && !window.HLSPlayer.isPlaying()) {
-          // Get current channel from twitchStreamInfo or config
+        } else if (useHLS && window.HLSPlayer && !window.HLSPlayer.isPlaying()) {
+          // Switching TO Twitch - restart the stream if it was stopped
           const channel = window.twitchStreamInfo?.channel ||
             (window.getDashboardConfig?.()?.twitch?.channel) ||
             JSON.parse(localStorage.getItem('dashboard-config') || '{}')?.twitch?.channel;
 
           if (channel && hlsVideo) {
             console.log('[SmartWidget] Restarting HLS stream for:', channel);
-            window.HLSPlayer.play(channel, hlsVideo).catch(e => {
-              console.log('[SmartWidget] HLS restart failed:', e);
-            });
+            window.HLSPlayer.play(channel, hlsVideo)
+              // This branch only runs when switching TO the (active) Twitch page,
+              // so restore audio - switching away muted the element.
+              .then(() => { hlsVideo.muted = false; })
+              .catch(e => {
+                console.log('[SmartWidget] HLS restart failed:', e);
+              });
           }
-        } else if (hlsVideo) {
+        } else if (useHLS && hlsVideo) {
           // HLS still playing, just unmute and ensure playing
           hlsVideo.muted = false;
           hlsVideo.play().catch(e => console.log('HLS autoplay blocked:', e));
