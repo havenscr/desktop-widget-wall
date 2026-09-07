@@ -77,7 +77,7 @@ function parseYouTubeUrl(url) {
  */
 function loadYouTubeAPI() {
   // Already loaded
-  if (youtubeAPILoaded || window.YT) {
+  if (typeof window.YT?.Player === 'function') {
     youtubeAPILoaded = true;
     return Promise.resolve();
   }
@@ -105,16 +105,11 @@ function loadYouTubeAPI() {
 /**
  * Create YouTube embed for a source
  */
-function createYouTubeEmbed(containerId, videoId, muted = true) {
-  return new Promise((resolve) => {
-    loadYouTubeAPI().then(() => {
-      const container = document.getElementById(containerId);
-      if (!container) {
-        resolve(null);
-        return;
-      }
+function createYouTubeEmbed(container, videoId, muted, creation) {
+  return loadYouTubeAPI().then(() => {
+      if (!creation.isCurrent() || !container.isConnected) return null;
 
-      const player = new YT.Player(containerId, {
+      const player = new YT.Player(container, {
         videoId: videoId,
         width: '100%',
         height: '100%',
@@ -136,32 +131,19 @@ function createYouTubeEmbed(containerId, videoId, muted = true) {
         },
         events: {
           onReady: (event) => {
-            // Check if this player's page is currently active and play if so
-            // This fixes the race condition where switchToPage() runs before player is ready
-            // Use getIframe() since YouTube replaces the original container div
-            const iframe = event.target.getIframe();
-            const page = iframe?.closest('.smart-widget-page');
-            if (page && page.classList.contains('active')) {
-              // Small delay to ensure iframe is fully rendered
-              setTimeout(() => {
-                event.target.playVideo();
-              }, 100);
-            } else {
-              // Not active page - ensure video is stopped to save resources
-              event.target.stopVideo();
-            }
-
-            // DISABLED: Ambient background was cloning iframe and breaking playback
-            // const youtubeWrapper = iframe?.closest('.smart-widget-youtube');
-            // if (youtubeWrapper) {
-            //   setTimeout(() => {
-            //     createAmbientBackground(youtubeWrapper);
-            //   }, 200);
-            // }
-
-            resolve(player);
+            if (!creation.isCurrent()) return;
+            clearTimeout(creation.readyTimer);
+            creation.readyTimer = setTimeout(() => {
+              if (creation.isCurrent()) event.target.playVideo();
+            }, 100);
           },
           onStateChange: (event) => {
+            if (!creation.isCurrent()) {
+              if (event.data === YT.PlayerState.PLAYING) {
+                try { event.target.stopVideo(); } catch (e) {}
+              }
+              return;
+            }
             if (event.data === YT.PlayerState.PLAYING) {
               // Only the player on the ACTIVE page may claim playback. A hidden
               // YouTube page that auto-plays/buffers must NOT pause Twitch, or the
@@ -171,7 +153,7 @@ function createYouTubeEmbed(containerId, videoId, muted = true) {
               // active, stop it instead of announcing playback.
               const iframe = event.target.getIframe?.();
               const page = iframe?.closest('.smart-widget-page');
-              const isActive = !page || page.classList.contains('active');
+              const isActive = page?.isConnected && page.classList.contains('active');
               if (isActive) {
                 window.dispatchEvent(new CustomEvent('video-playback-start', {
                   detail: { source: 'youtube', player: event.target }
@@ -187,7 +169,8 @@ function createYouTubeEmbed(containerId, videoId, muted = true) {
           }
         }
       });
-    });
+      creation.player = player;
+      return player;
   });
 }
 
@@ -196,12 +179,12 @@ function createYouTubeEmbed(containerId, videoId, muted = true) {
  * starts from a clean container.
  */
 function destroyYouTubePlayer(page) {
-  if (page.youtubePlayer) {
-    if (typeof page.youtubePlayer.destroy === 'function') {
-      try { page.youtubePlayer.destroy(); } catch (e) { /* already torn down */ }
-    }
-    page.youtubePlayer = null;
-  }
+  const creation = page.youtubeCreation;
+  const player = creation?.player || page.youtubePlayer;
+  page.youtubeCreation = null;
+  page.youtubePlayer = null;
+  clearTimeout(creation?.readyTimer);
+  try { player?.destroy?.(); } catch (e) { /* already torn down */ }
   delete page.dataset.playerVideoId;
   const wrapper = page.querySelector('.smart-widget-youtube');
   if (wrapper) wrapper.remove();
@@ -215,7 +198,13 @@ function destroyYouTubePlayer(page) {
  */
 function ensureYouTubePlayer(page, pageIndex) {
   const videoId = page.dataset.videoId;
-  if (!videoId || page.youtubePlayer) return;
+  if (!videoId || page.youtubePlayer || page.youtubeCreation) return;
+
+  const creation = {
+    isCurrent: () => page.youtubeCreation === creation && page.isConnected &&
+      page.classList.contains('active') && page.dataset.videoId === videoId
+  };
+  page.youtubeCreation = creation;
 
   const embedId = `youtube-embed-${pageIndex}`;
   const youtubeWrapper = document.createElement('div');
@@ -226,21 +215,32 @@ function ensureYouTubePlayer(page, pageIndex) {
   page.appendChild(youtubeWrapper);
 
   page.dataset.playerVideoId = videoId;
-  createYouTubeEmbed(embedId, videoId, true).then(player => {
+  createYouTubeEmbed(youtubeInner, videoId, true, creation).then(player => {
     if (!player) return;
     // The page may have been deactivated or rebuilt while the API loaded
-    if (page.dataset.playerVideoId !== videoId || !page.classList.contains('active')) {
-      try { player.destroy(); } catch (e) { /* never attached */ }
-      return;
-    }
+    if (!creation.isCurrent()) return;
     page.youtubePlayer = player;
+  }).catch(error => {
+    if (!creation.isCurrent()) return;
+    destroyYouTubePlayer(page);
+    dlog('[SmartWidget] YouTube creation failed', error.message);
   });
 }
 
 /**
  * Initialize smart widget functionality for the media widget
  */
+// Both auto-init paths at the bottom of this file can fire in the same load:
+// main.js appends widget scripts after DOMContentLoaded, so readyState is
+// already past 'loading' when this runs AND the dashboard-ready event still
+// arrives. Without this guard the widget was built twice and the
+// 'video-playback-start' listener registered twice.
+let smartWidgetInitialized = false;
+
 function initSmartWidget() {
+  if (smartWidgetInitialized) return;
+  smartWidgetInitialized = true;
+
   // Load saved config
   const savedConfig = localStorage.getItem('smart-widget-config');
   if (savedConfig) {
@@ -392,7 +392,7 @@ function buildSmartWidgetUI() {
     if (source.type === 'youtube' && source.url) {
       const videoId = parseYouTubeUrl(source.url);
       if (videoId) {
-        if (page.youtubePlayer && page.dataset.playerVideoId !== videoId) {
+        if (page.dataset.playerVideoId && page.dataset.playerVideoId !== videoId) {
           destroyYouTubePlayer(page); // URL changed - rebuild on next activation
         }
         page.dataset.videoId = videoId;
@@ -400,6 +400,9 @@ function buildSmartWidgetUI() {
         destroyYouTubePlayer(page);
         delete page.dataset.videoId;
       }
+    } else {
+      destroyYouTubePlayer(page);
+      delete page.dataset.videoId;
     }
   });
 
@@ -437,6 +440,10 @@ function switchToPage(pageIndex) {
   // Update pages
   const pages = twitchWidget.querySelectorAll('.smart-widget-page');
   pages.forEach((page, index) => {
+    page.classList.toggle('active', index === pageIndex);
+    if (index !== pageIndex) destroyYouTubePlayer(page);
+  });
+  pages.forEach((page, index) => {
     const isActive = index === pageIndex;
     page.classList.toggle('active', isActive);
 
@@ -453,88 +460,14 @@ function switchToPage(pageIndex) {
 
     // Handle Twitch playback (page 0) - STOP completely when not visible
     if (index === 0) {
-      const hlsVideo = document.getElementById('hls-video');
-
       if (isActive) {
-        // A channel change while this page was hidden deferred the embed
-        // rebuild (Twitch refuses to autoplay into a hidden iframe) - run
-        // it now that the page is visible, instead of restoring stale state
-        // Only drive the HLS player when HLS is the active video mode. In Embed
-        // mode the native iframe (restored below) handles playback; starting HLS
-        // here would run a hidden, unmuted stream behind the embed (HLSPlayer can
-        // still be loaded from an earlier HLS session after switching to Embed).
-        const cfg = window.getDashboardConfig?.() || JSON.parse(localStorage.getItem('dashboard-config') || '{}');
-        const useHLS = cfg?.twitch?.hlsEnabled !== false;
-
-        if (window._pendingTwitchRebuild && typeof updateTwitchWidget === 'function') {
-          window._pendingTwitchRebuild = false;
+        if (window.TwitchPlayback) {
+          window.TwitchPlayback.resume();
+        } else if (typeof updateTwitchWidget === 'function') {
           updateTwitchWidget();
-        } else if (useHLS && window.HLSPlayer && !window.HLSPlayer.isPlaying()) {
-          // Switching TO Twitch - restart the stream if it was stopped
-          const channel = window.twitchStreamInfo?.channel ||
-            (window.getDashboardConfig?.()?.twitch?.channel) ||
-            JSON.parse(localStorage.getItem('dashboard-config') || '{}')?.twitch?.channel;
-
-          if (channel && hlsVideo) {
-            console.log('[SmartWidget] Restarting HLS stream for:', channel);
-            window.HLSPlayer.play(channel, hlsVideo)
-              // This branch only runs when switching TO the (active) Twitch page,
-              // so restore audio - switching away muted the element.
-              .then(() => { hlsVideo.muted = false; })
-              .catch(e => {
-                console.log('[SmartWidget] HLS restart failed:', e);
-              });
-          }
-        } else if (useHLS && hlsVideo) {
-          // HLS still playing, just unmute and ensure playing
-          hlsVideo.muted = false;
-          hlsVideo.play().catch(e => console.log('HLS autoplay blocked:', e));
-        }
-
-        // Handle native Twitch embed - restore iframe src
-        const twitchEmbed = document.getElementById('twitch-embed');
-        if (twitchEmbed) {
-          const iframe = twitchEmbed.querySelector('iframe');
-          if (iframe && iframe.dataset.originalSrc) {
-            iframe.src = iframe.dataset.originalSrc;
-            delete iframe.dataset.originalSrc;
-            console.log('[SmartWidget] Twitch iframe restored');
-          }
         }
       } else {
-        // Switching AWAY from Twitch - STOP completely to save CPU/bandwidth
-        console.log('[SmartWidget] Switching away from Twitch - stopping all playback');
-
-        // Stop HLS player module (destroys stream connection)
-        if (window.HLSPlayer) {
-          try {
-            window.HLSPlayer.stop();
-            console.log('[SmartWidget] HLSPlayer.stop() called');
-          } catch (e) {
-            console.log('[SmartWidget] HLSPlayer.stop() error:', e);
-          }
-        }
-
-        // Also directly stop the video element
-        if (hlsVideo) {
-          hlsVideo.pause();
-          hlsVideo.muted = true;
-          // Clear the source to fully stop network activity
-          hlsVideo.removeAttribute('src');
-          hlsVideo.load();
-          console.log('[SmartWidget] HLS video element stopped and cleared');
-        }
-
-        // Handle native Twitch embed - clear iframe to fully stop
-        const twitchEmbed = document.getElementById('twitch-embed');
-        if (twitchEmbed) {
-          const iframe = twitchEmbed.querySelector('iframe');
-          if (iframe && iframe.src && !iframe.src.includes('about:blank')) {
-            iframe.dataset.originalSrc = iframe.src;
-            iframe.src = 'about:blank';
-            console.log('[SmartWidget] Twitch iframe stopped');
-          }
-        }
+        window.TwitchPlayback?.suspend();
       }
     }
   });
@@ -613,7 +546,10 @@ function rebuildSmartWidgetPages() {
   const pagesContainer = twitchWidget.querySelector('.smart-widget-pages');
   if (pagesContainer) {
     const additionalPages = pagesContainer.querySelectorAll('.smart-widget-page:not([data-page="0"])');
-    additionalPages.forEach(page => page.remove());
+    additionalPages.forEach(page => {
+      destroyYouTubePlayer(page);
+      page.remove();
+    });
   }
 
   // Remove existing indicators

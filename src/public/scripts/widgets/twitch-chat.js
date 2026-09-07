@@ -53,13 +53,47 @@ const TwitchChat = (function() {
   // Maps lowercase username to display name for proper casing
   let chatParticipants = new Map();
 
-  /**
-   * Fetch FFZ global and channel emotes
-   */
-  async function fetchFFZEmotes(channelName) {
+  // --- Global emote/badge cache -------------------------------------------
+  // Every channel switch re-downloaded the channel-INDEPENDENT global sets
+  // (Twitch global, FFZ global, 7TV global, BTTV global, global badges) - the
+  // bulk of the ~15 HTTP requests a switch used to cost. These change rarely,
+  // so they are cached in localStorage behind a TTL. Every original fetch path
+  // is kept intact as the miss path, so a cold cache, a quota error or a
+  // corrupt entry all degrade to exactly the previous behavior.
+  const GLOBAL_CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
+  const GLOBAL_CACHE_PREFIX = 'ww-emote-cache:';
+
+  async function cachedGlobal(cacheKey, fetchFn) {
+    const storageKey = GLOBAL_CACHE_PREFIX + cacheKey;
+    try {
+      const raw = localStorage.getItem(storageKey);
+      if (raw) {
+        const entry = JSON.parse(raw);
+        if (entry && entry.t && (Date.now() - entry.t) < GLOBAL_CACHE_TTL_MS &&
+            entry.v && typeof entry.v === 'object') {
+          return entry.v;
+        }
+      }
+    } catch (e) {
+      // Corrupt/unreadable entry - fall through and refetch
+    }
+
+    const value = await fetchFn();
+    try {
+      // Only cache a non-empty result. An empty map means the request failed or
+      // there was no token; persisting that would cache the failure for 6h.
+      if (value && Object.keys(value).length > 0) {
+        localStorage.setItem(storageKey, JSON.stringify({ t: Date.now(), v: value }));
+      }
+    } catch (e) {
+      // Quota exceeded - caching is best-effort, carry on with the live value
+    }
+    return value;
+  }
+
+  async function fetchFFZGlobalEmotesUncached() {
     const emotes = {};
     try {
-      // Global emotes
       const globalRes = await fetch('https://api.frankerfacez.com/v1/set/global');
       if (globalRes.ok) {
         const data = await globalRes.json();
@@ -78,6 +112,15 @@ const TwitchChat = (function() {
     } catch (e) {
       console.warn('FFZ global emotes failed:', e);
     }
+    return emotes;
+  }
+
+  /**
+   * Fetch FFZ global and channel emotes
+   */
+  async function fetchFFZEmotes(channelName) {
+    // Globals first so channel emotes still override them, as before
+    const emotes = { ...(await cachedGlobal('ffz-global', fetchFFZGlobalEmotesUncached)) };
 
     try {
       // Channel emotes
@@ -125,10 +168,9 @@ const TwitchChat = (function() {
   /**
    * Fetch 7TV global and channel emotes
    */
-  async function fetch7TVEmotes(channelName) {
+  async function fetch7TVGlobalEmotesUncached() {
     const emotes = {};
     try {
-      // Global emotes
       const globalRes = await fetch('https://7tv.io/v3/emote-sets/global');
       if (globalRes.ok) {
         const data = await globalRes.json();
@@ -147,6 +189,11 @@ const TwitchChat = (function() {
     } catch (e) {
       console.warn('7TV global emotes failed:', e);
     }
+    return emotes;
+  }
+
+  async function fetch7TVEmotes(channelName) {
+    const emotes = { ...(await cachedGlobal('7tv-global', fetch7TVGlobalEmotesUncached)) };
 
     try {
       // Channel emotes - try username first, then fall back to user ID lookup
@@ -188,10 +235,9 @@ const TwitchChat = (function() {
   /**
    * Fetch BTTV global and channel emotes
    */
-  async function fetchBTTVEmotes(channelName) {
+  async function fetchBTTVGlobalEmotesUncached() {
     const emotes = {};
     try {
-      // Global emotes
       const globalRes = await fetch('https://api.betterttv.net/3/cached/emotes/global');
       if (globalRes.ok) {
         const data = await globalRes.json();
@@ -202,6 +248,11 @@ const TwitchChat = (function() {
     } catch (e) {
       console.warn('BTTV global emotes failed:', e);
     }
+    return emotes;
+  }
+
+  async function fetchBTTVEmotes(channelName) {
+    const emotes = { ...(await cachedGlobal('bttv-global', fetchBTTVGlobalEmotesUncached)) };
 
     try {
       // Channel emotes - need broadcaster ID, try by username
@@ -263,19 +314,24 @@ const TwitchChat = (function() {
    * these come from Helix now (needs the user's token; anonymous chat skips).
    */
   async function fetchTwitchGlobalEmotes() {
-    const emotes = {};
-    if (!oauthToken) return emotes;
-    try {
-      const res = await fetch('https://api.twitch.tv/helix/chat/emotes/global', {
-        headers: helixHeaders()
-      });
-      if (res.ok) {
-        mapHelixEmotes(await res.json(), emotes);
+    // Requires a token, but the returned set is identical for every user, so
+    // it caches like the other global sets. The no-token case returns early and
+    // is never cached (cachedGlobal skips empty results anyway).
+    if (!oauthToken) return {};
+    return cachedGlobal('twitch-global', async () => {
+      const emotes = {};
+      try {
+        const res = await fetch('https://api.twitch.tv/helix/chat/emotes/global', {
+          headers: helixHeaders()
+        });
+        if (res.ok) {
+          mapHelixEmotes(await res.json(), emotes);
+        }
+      } catch (e) {
+        console.warn('Twitch global emotes failed:', e);
       }
-    } catch (e) {
-      console.warn('Twitch global emotes failed:', e);
-    }
-    return emotes;
+      return emotes;
+    });
   }
 
   /**
@@ -508,17 +564,26 @@ const TwitchChat = (function() {
       return; // Helix needs auth; anonymous chat uses the fallback URLs
     }
 
-    try {
-      const res = await fetch('https://api.twitch.tv/helix/chat/badges/global', {
-        headers: helixHeaders()
-      });
-      if (res.ok) {
-        mapHelixBadgeSets(await res.json(), globalBadges);
-        console.log(`TwitchChat: Loaded ${Object.keys(globalBadges).length} global badge types`);
+    // Global badges are identical for everyone and change very rarely. The
+    // in-memory guard above only survives until disconnect() resets it, so this
+    // also persists them across channel switches and app restarts.
+    const cached = await cachedGlobal('twitch-global-badges', async () => {
+      const fresh = {};
+      try {
+        const res = await fetch('https://api.twitch.tv/helix/chat/badges/global', {
+          headers: helixHeaders()
+        });
+        if (res.ok) {
+          mapHelixBadgeSets(await res.json(), fresh);
+        }
+      } catch (e) {
+        console.warn('TwitchChat: Failed to fetch global badges:', e);
       }
-    } catch (e) {
-      console.warn('TwitchChat: Failed to fetch global badges:', e);
-    }
+      return fresh;
+    });
+
+    Object.assign(globalBadges, cached);
+    console.log(`TwitchChat: Loaded ${Object.keys(globalBadges).length} global badge types`);
   }
 
   /**
@@ -1235,6 +1300,14 @@ const TwitchChat = (function() {
     div.className = 'twitch-irc-system';
     div.textContent = text;
     chatMessages.appendChild(div);
+
+    // Same cap renderMessage applies. Without it, a channel with no chat
+    // traffic (offline, or a dead connection) grows the DOM one reconnect
+    // notice at a time with nothing to ever trigger a trim.
+    while (chatMessages.children.length > MAX_MESSAGES) {
+      chatMessages.removeChild(chatMessages.firstChild);
+    }
+
     chatMessages.scrollTop = chatMessages.scrollHeight;
   }
 
@@ -1312,6 +1385,67 @@ const TwitchChat = (function() {
   /**
    * Format message with emotes (Twitch native + third-party)
    */
+  // --- Emote lookup index -------------------------------------------------
+  // The third-party emote map holds 1000-3000 codes. Scanning every code at
+  // every character position (and re-sorting the key list per message) was the
+  // single hottest path in the app. Bucketing codes by their FIRST CHARACTER is
+  // provably equivalent: the old comparison
+  //   message.substring(pos, pos + code.length) === code
+  // can only succeed when code[0] === message[pos], so restricting candidates
+  // to that bucket removes only guaranteed-failing comparisons. Buckets are
+  // sorted length-descending at build time, preserving the original
+  // longest-match-first tie-break exactly.
+  //
+  // thirdPartyEmotes is only ever wholesale-reassigned (never mutated in
+  // place), so comparing object identity is a sufficient invalidation check.
+  let emoteIndex = null;
+  let emoteIndexSource = null;
+  const EMPTY_BUCKET = [];
+
+  function getEmoteIndex() {
+    if (emoteIndex && emoteIndexSource === thirdPartyEmotes) return emoteIndex;
+
+    const index = new Map();
+    for (const code of Object.keys(thirdPartyEmotes)) {
+      if (!code) continue;
+      const first = code[0];
+      let bucket = index.get(first);
+      if (!bucket) index.set(first, bucket = []);
+      bucket.push(code);
+    }
+    // Longest-first within each bucket - matches the old global sort order
+    for (const bucket of index.values()) {
+      bucket.sort((a, b) => b.length - a.length);
+    }
+
+    emoteIndex = index;
+    emoteIndexSource = thirdPartyEmotes;
+    return emoteIndex;
+  }
+
+  // Hoisted out of formatMessageWithEmotes - these were re-allocated per message
+  const RE_WORD_CHAR = /[a-zA-Z0-9_]/;
+  const RE_LETTER = /[a-zA-Z]/;
+
+  // Word-boundary test. Apostrophes and hyphens are NOT boundaries when they
+  // sit inside a word ("you're", "re-watched").
+  function isWordBoundary(char, prevChar = null) {
+    if (!char) return true; // Start/end of string
+    if (RE_WORD_CHAR.test(char)) return false; // Alphanumeric is not a boundary
+    // NOTE: the original wrote this as `char === "'" || char === "'"` - both
+    // branches were the same ASCII apostrophe, so the curly '’' was never
+    // actually matched despite the comment's intent. Behavior preserved
+    // verbatim here (ASCII only); treating '’' as a contraction char would be
+    // a real fix but is a deliberate behavior change, so it is left alone.
+    if (char === "'" && prevChar && RE_LETTER.test(prevChar)) {
+      return false; // Part of a contraction
+    }
+    if (char === '-' && prevChar && RE_LETTER.test(prevChar)) {
+      return false; // Part of a hyphenated word
+    }
+    return true;
+  }
+
   function formatMessageWithEmotes(message, twitchEmotes) {
     // First, collect all emote matches with their positions
     const emoteMatches = []; // { start, end, html }
@@ -1324,33 +1458,25 @@ const TwitchChat = (function() {
       }
     }
 
-    // Find third-party emotes by scanning the message
-    if (emotesLoaded && Object.keys(thirdPartyEmotes).length > 0) {
-      // Sort emote codes by length descending to match longer codes first
-      const emoteCodes = Object.keys(thirdPartyEmotes).sort((a, b) => b.length - a.length);
+    // Find third-party emotes by scanning the message.
+    // Candidate codes are bucketed by first character (see getEmoteIndex).
+    // Map.size is O(1) - the emptiness test here used to be
+    // Object.keys(thirdPartyEmotes).length, which allocated a ~2000-element
+    // array on every single message just to compare against zero.
+    const index = emotesLoaded ? getEmoteIndex() : null;
+    if (index && index.size > 0) {
 
-      // Helper to check if character is a word boundary (non-alphanumeric)
-      // Special cases: apostrophe and hyphen are NOT boundaries if part of a word
-      // e.g., "you're" - apostrophe between letters is not a boundary
-      // e.g., "re-watched" - hyphen between letters is not a boundary
-      const isWordBoundary = (char, prevChar = null) => {
-        if (!char) return true; // Start/end of string
-        if (/[a-zA-Z0-9_]/.test(char)) return false; // Alphanumeric is not a boundary
-
-        // Special case: apostrophe in a contraction (you're, they're, we're, etc.)
-        // If the char is an apostrophe AND there's a letter before it, it's part of a word
-        if ((char === "'" || char === "'") && prevChar && /[a-zA-Z]/.test(prevChar)) {
-          return false; // Part of a contraction, not a boundary
-        }
-
-        // Special case: hyphen in a compound word (re-watched, self-aware, etc.)
-        // If the char is a hyphen AND there's a letter before it, it's part of a word
-        if (char === '-' && prevChar && /[a-zA-Z]/.test(prevChar)) {
-          return false; // Part of a hyphenated word, not a boundary
-        }
-
-        return true; // Everything else is a boundary
-      };
+      // Occupancy mask of positions already claimed by native Twitch emotes.
+      // Replaces an O(matches) .some() scan that ran inside the innermost loop.
+      // Only native emotes need to be represented: `pos` jumps past the whole
+      // matched sequence when a third-party emote is accepted, so the scan
+      // never revisits a position it already claimed.
+      const claimed = new Uint8Array(message.length);
+      for (const m of emoteMatches) {
+        const from = Math.max(0, m.start);
+        const to = Math.min(message.length - 1, m.end);
+        for (let i = from; i <= to; i++) claimed[i] = 1;
+      }
 
       // Scan through the message looking for emotes
       let pos = 0;
@@ -1359,13 +1485,11 @@ const TwitchChat = (function() {
         let foundEmote = null;
         let repeatCount = 0;
 
-        for (const code of emoteCodes) {
+        for (const code of (index.get(message[pos]) || EMPTY_BUCKET)) {
           if (message.substring(pos, pos + code.length) === code) {
             // Check this position isn't already covered by a Twitch emote
-            const overlaps = emoteMatches.some(m =>
-              (pos >= m.start && pos <= m.end) || (pos + code.length - 1 >= m.start && pos + code.length - 1 <= m.end)
-            );
-            if (overlaps) continue;
+            const endPos = pos + code.length - 1;
+            if (claimed[pos] || claimed[endPos]) continue;
 
             // Count consecutive repetitions of this emote (e.g., "nutnutnut")
             repeatCount = 1;

@@ -13,6 +13,64 @@ const HLSPlayer = (function() {
   let hlsInstance = null;
   let videoElement = null;
   let tokenRefreshTimeout = null;
+  let playbackSession = null;
+
+  function cancelled() {
+    const error = new Error('Playback request cancelled');
+    error.name = 'AbortError';
+    return error;
+  }
+
+  function isCurrent(session) {
+    return playbackSession === session && !session.controller.signal.aborted;
+  }
+
+  function requireCurrent(session) {
+    if (!isCurrent(session)) throw cancelled();
+  }
+
+  // Abort promptly even when an SDK promise does not support AbortSignal.
+  function whileCurrent(promise, session) {
+    return new Promise((resolve, reject) => {
+      const signal = session.controller.signal;
+      const onAbort = () => reject(cancelled());
+      if (!isCurrent(session)) onAbort();
+      else signal.addEventListener('abort', onAbort, { once: true });
+      Promise.resolve(promise).then(value => {
+        signal.removeEventListener('abort', onAbort);
+        if (isCurrent(session)) resolve(value);
+        else reject(cancelled());
+      }, error => {
+        signal.removeEventListener('abort', onAbort);
+        reject(isCurrent(session) ? error : cancelled());
+      });
+    });
+  }
+
+  function watchPlayback(session) {
+    const video = session.video;
+    for (const event of ['waiting', 'stalled', 'playing', 'error']) {
+      const listener = () => {
+        if (!window._debugLogging || !isCurrent(session)) return;
+        let bufferAhead = 0;
+        for (let i = 0; i < video.buffered.length; i++) {
+          if (video.buffered.start(i) <= video.currentTime && video.currentTime <= video.buffered.end(i)) {
+            bufferAhead = video.buffered.end(i) - video.currentTime;
+            break;
+          }
+        }
+        const quality = video.getVideoPlaybackQuality?.();
+        window.dlog?.('HLSPlayer: playback', {
+          event, channel: session.channel, currentTime: video.currentTime,
+          readyState: video.readyState, bufferAhead,
+          droppedFrames: quality?.droppedVideoFrames,
+          totalFrames: quality?.totalVideoFrames, errorCode: video.error?.code
+        });
+      };
+      video.addEventListener(event, listener);
+      session.cleanup.push(() => video.removeEventListener(event, listener));
+    }
+  }
 
   /**
    * Get effective config (from getDashboardConfig or localStorage fallback)
@@ -91,7 +149,7 @@ const HLSPlayer = (function() {
    * We use anonymous requests which work for video playback.
    * Ad-free requires Twitch Turbo subscription (first-party auth).
    */
-  async function getStreamToken(channel) {
+  async function getStreamToken(channel, signal) {
     const workerUrl = getWorkerUrl();
     console.log('HLSPlayer: Worker URL =', workerUrl);
 
@@ -133,6 +191,7 @@ const HLSPlayer = (function() {
     const res = await fetch(fetchUrl, {
       method: 'POST',
       headers,
+      signal,
       body: JSON.stringify(query)
     });
 
@@ -184,7 +243,7 @@ const HLSPlayer = (function() {
   /**
    * Initialize HLS.js for playback
    */
-  function initHLSjs(video, url) {
+  function initHLSjs(video, session) {
     if (typeof Hls === 'undefined') {
       console.error('HLSPlayer: HLS.js not loaded');
       return false;
@@ -210,13 +269,14 @@ const HLSPlayer = (function() {
       maxBufferLength: 12,           // cap forward buffer; a big fwd buffer = more drift
       liveDurationInfinity: true     // correct seekable handling for true live
     });
+    const instance = hlsInstance;
 
     // --- Live-edge resync: snap back toward live after a stall or excess drift ---
     const resyncToLive = (reason) => {
       try {
-        if (!hlsInstance) return;
-        const live = (typeof hlsInstance.liveSyncPosition === 'number')
-          ? hlsInstance.liveSyncPosition
+        if (!isCurrent(session)) return;
+        const live = (typeof instance.liveSyncPosition === 'number')
+          ? instance.liveSyncPosition
           : (video.seekable.length ? video.seekable.end(video.seekable.length - 1) : null);
         if (live == null) return;
         const behind = live - video.currentTime;
@@ -231,7 +291,12 @@ const HLSPlayer = (function() {
       }
     };
 
-    hlsInstance.on(Hls.Events.ERROR, (event, data) => {
+    const recoverLater = reason => {
+      const timer = setTimeout(() => resyncToLive(reason), 2000);
+      session.cleanup.push(() => clearTimeout(timer));
+    };
+    instance.on(Hls.Events.ERROR, (event, data) => {
+      if (!isCurrent(session)) return;
       console.warn('HLSPlayer: HLS.js error', data.type, data.details);
       // Non-fatal buffer stall (decoder starved): snap back to live
       if (data.details === Hls.ErrorDetails.BUFFER_STALLED_ERROR) {
@@ -241,47 +306,40 @@ const HLSPlayer = (function() {
         switch (data.type) {
           case Hls.ErrorTypes.NETWORK_ERROR:
             console.log('HLSPlayer: Fatal network error, attempting recovery');
-            hlsInstance.startLoad();
-            setTimeout(() => resyncToLive('post-network-recovery'), 2000);
+            instance.startLoad();
+            recoverLater('post-network-recovery');
             break;
           case Hls.ErrorTypes.MEDIA_ERROR:
             console.log('HLSPlayer: Fatal media error, attempting recovery');
-            hlsInstance.recoverMediaError();
-            setTimeout(() => resyncToLive('post-media-recovery'), 2000);
+            instance.recoverMediaError();
+            recoverLater('post-media-recovery');
             break;
           default:
             console.error('HLSPlayer: Unrecoverable error');
-            stop();
+            if (session.started) stop();
             break;
         }
       }
     });
 
-    // Stall events surface decode starvation (e.g. GPU-busy WebView2). Wire once
-    // per video element: initHLSjs runs on every channel change / restart, and
-    // resyncToLive reads the current module-level hlsInstance, so a single pair of
-    // listeners stays correct while re-adding them would stack duplicate resyncs.
-    if (!video._hlsResyncWired) {
-      video.addEventListener('waiting', () => resyncToLive('waiting'));
-      video.addEventListener('stalled', () => resyncToLive('stalled'));
-      video._hlsResyncWired = true;
+    for (const event of ['waiting', 'stalled']) {
+      const listener = () => resyncToLive(event);
+      video.addEventListener(event, listener);
+      session.cleanup.push(() => video.removeEventListener(event, listener));
     }
 
     // Periodic drift guard for slow creep the rate-catchup can't close
     if (window._hlsDriftTimer) clearInterval(window._hlsDriftTimer);
     window._hlsDriftTimer = setInterval(() => {
-      if (!hlsInstance || !video || video.paused) return;
-      const lat = (typeof hlsInstance.latency === 'number') ? hlsInstance.latency : null;
+      if (!isCurrent(session) || video.paused) return;
+      const lat = (typeof instance.latency === 'number') ? instance.latency : null;
       if (lat != null && lat > 8) resyncToLive(`latency=${lat.toFixed(1)}s`);
     }, 5000);
 
-    hlsInstance.loadSource(url);
-    hlsInstance.attachMedia(video);
-
     // Expose instance globally for quality menu access
-    window._hlsInstance = hlsInstance;
+    window._hlsInstance = instance;
 
-    return true;
+    return instance;
   }
 
   /**
@@ -300,103 +358,100 @@ const HLSPlayer = (function() {
 
     currentChannel = channel;
     videoElement = video;
+    const session = { controller: new AbortController(), cleanup: [], channel, video };
+    playbackSession = session;
+    watchPlayback(session);
 
-    console.log('HLSPlayer: Getting stream token for', channel);
-    const token = await getStreamToken(channel);
+    try {
+      const token = await whileCurrent(getStreamToken(channel, session.controller.signal), session);
+      requireCurrent(session);
+      const hlsUrl = buildHLSUrl(channel, token);
 
-    const hlsUrl = buildHLSUrl(channel, token);
-    console.log('HLSPlayer: Starting playback');
+      if (supportsNativeHLS()) {
+        window.dlog?.('HLSPlayer: playback path = native');
+        video.src = hlsUrl;
+        video.load();
+        await whileCurrent(video.play(), session);
+        requireCurrent(session);
+      } else {
+        window.dlog?.('HLSPlayer: playback path = hls.js');
+        await whileCurrent(loadHLSjs(), session);
+        requireCurrent(session);
+        const instance = initHLSjs(video, session);
+        if (!instance) throw new Error('Failed to initialize HLS.js');
 
-    // Prefer the browser's NATIVE HLS. WebView2 plays an m3u8 via <video> as a
-    // media load, which is CORS-exempt. HLS.js instead fetches the manifest over
-    // XHR, and Twitch's usher.ttvnw.net does NOT send Access-Control-Allow-Origin
-    // for the tauri.localhost origin, so HLS.js dies with manifestLoadError here.
-    // Native HLS is therefore the only path that actually plays in this app.
-    // (Making HLS.js viable would need a CORS-adding segment proxy or a Tauri
-    // native-HTTP custom loader - not implemented.) HLS.js stays as the fallback
-    // for real browsers that lack native HLS.
-    if (supportsNativeHLS()) {
-      console.log('HLSPlayer: playback path = native (CORS-exempt media load)');
-      video.src = hlsUrl;
-      video.load();
-      await video.play();
-    } else {
-      console.log('HLSPlayer: playback path = hls.js (MSE)');
-      await loadHLSjs();
-
-      if (!initHLSjs(video, hlsUrl)) {
-        throw new Error('Failed to initialize HLS.js');
+        const ready = new Promise((resolve, reject) => {
+          const onManifest = () => {
+            if (!isCurrent(session)) return;
+            video.play().then(resolve, error => {
+              if (error.name === 'NotAllowedError') resolve();
+              else reject(error);
+            });
+          };
+          const onError = (event, data) => {
+            if (data.fatal) reject(new Error(`HLS startup failed: ${data.details || data.type}`));
+          };
+          const timer = setTimeout(() => reject(new Error('Timeout loading stream')), 10000);
+          const cleanup = () => {
+            clearTimeout(timer);
+            instance.off(Hls.Events.MANIFEST_PARSED, onManifest);
+            instance.off(Hls.Events.ERROR, onError);
+          };
+          instance.on(Hls.Events.MANIFEST_PARSED, onManifest);
+          instance.on(Hls.Events.ERROR, onError);
+          session.cleanup.push(cleanup);
+          session.startupCleanup = cleanup;
+          instance.loadSource(hlsUrl);
+          instance.attachMedia(video);
+        });
+        await whileCurrent(ready, session);
+        requireCurrent(session);
+        session.startupCleanup();
       }
 
-      // The HLS.js (Chromium/WebView2) path returns below, so schedule the token
-      // refresh HERE. The shared scheduleTokenRefresh() after this block only runs
-      // on the native-HLS (Safari) path; without this, a Chromium client's token
-      // would never refresh and playback would drop when it expires (~2h) - a real
-      // regression for a 24/7 dashboard.
-      scheduleTokenRefresh();
-
-      // HLS.js will auto-play when ready
-      return new Promise((resolve, reject) => {
-        hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => {
-          video.play()
-            .then(() => resolve(true))
-            .catch(e => {
-              console.warn('HLSPlayer: Autoplay blocked', e);
-              resolve(true); // Still consider it success, user can click to unmute
-            });
-        });
-
-        hlsInstance.on(Hls.Events.ERROR, (event, data) => {
-          if (data.fatal && data.type === Hls.ErrorTypes.NETWORK_ERROR) {
-            reject(new Error('Network error - stream may be offline'));
-          }
-        });
-
-        // Timeout for initial load
-        setTimeout(() => {
-          if (!video.readyState) {
-            reject(new Error('Timeout loading stream'));
-          }
-        }, 10000);
-      });
+      session.started = true;
+      scheduleTokenRefresh(session);
+      return true;
+    } catch (error) {
+      if (isCurrent(session)) stop();
+      throw error;
     }
-
-    // Schedule token refresh (tokens expire after ~2 hours, refresh at 1.5 hours)
-    scheduleTokenRefresh();
-
-    return true;
   }
 
   /**
    * Schedule token refresh to maintain playback
    */
-  function scheduleTokenRefresh() {
+  function scheduleTokenRefresh(session) {
+    if (!isCurrent(session)) return;
     clearTokenRefresh();
 
     // Refresh token every 90 minutes (tokens last ~2 hours)
     tokenRefreshTimeout = setTimeout(async () => {
-      if (currentChannel && videoElement) {
+      if (isCurrent(session)) {
         console.log('HLSPlayer: Refreshing stream token');
         try {
-          const token = await getStreamToken(currentChannel);
-          const hlsUrl = buildHLSUrl(currentChannel, token);
+          const token = await whileCurrent(getStreamToken(session.channel, session.controller.signal), session);
+          requireCurrent(session);
+          const hlsUrl = buildHLSUrl(session.channel, token);
 
           if (supportsNativeHLS()) {
             // For native HLS, we need to reload
-            const currentTime = videoElement.currentTime;
-            videoElement.src = hlsUrl;
-            videoElement.load();
-            videoElement.currentTime = currentTime;
-            videoElement.play();
+            const currentTime = session.video.currentTime;
+            session.video.src = hlsUrl;
+            session.video.load();
+            session.video.currentTime = currentTime;
+            await whileCurrent(session.video.play(), session);
+            requireCurrent(session);
           } else if (hlsInstance) {
             // HLS.js can load new source without interruption
             hlsInstance.loadSource(hlsUrl);
           }
 
-          scheduleTokenRefresh(); // Schedule next refresh
+          scheduleTokenRefresh(session);
         } catch (e) {
+          if (!isCurrent(session)) return;
           console.error('HLSPlayer: Token refresh failed', e);
-          scheduleTokenRefresh(); // Retry on next schedule
+          scheduleTokenRefresh(session);
         }
       }
     }, 90 * 60 * 1000); // 90 minutes
@@ -416,6 +471,12 @@ const HLSPlayer = (function() {
    * Stop playback
    */
   function stop() {
+    const session = playbackSession;
+    playbackSession = null;
+    if (session) {
+      session.controller.abort();
+      session.cleanup.forEach(cleanup => cleanup());
+    }
     clearTokenRefresh();
 
     if (window._hlsDriftTimer) {
@@ -436,6 +497,7 @@ const HLSPlayer = (function() {
     }
 
     currentChannel = null;
+    videoElement = null;
   }
 
   /**

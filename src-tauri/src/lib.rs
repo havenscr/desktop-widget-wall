@@ -8,11 +8,11 @@
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use serde::{Deserialize, Serialize};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use tauri::{
-    Manager, State,
+    Emitter, Manager, State,
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
 };
@@ -119,9 +119,91 @@ impl Default for NowPlayingInfo {
     }
 }
 
+/// Ring capacity in samples. Power of two so the index wrap is a mask.
+/// At 48 kHz stereo this is ~85 ms of audio, far more than the 33 ms the
+/// visualizer consumes per frame.
+const AUDIO_RING_CAPACITY: usize = 8192;
+
+/// Lock-free single-producer / single-consumer ring for captured audio.
+///
+/// The producer is the WASAPI data callback, which Windows runs on the audio
+/// engine's MMCSS real-time thread. It must never block and never move memory.
+/// The previous implementation did both: a `Mutex<Vec<f32>>` shared with a
+/// UI-priority consumer (priority inversion against the audio engine), plus a
+/// `drain(0..4096)` 16 KB memmove that ran on *every* callback because the
+/// producer (~96k samples/sec at 48 kHz stereo) permanently outran the consumer
+/// (512 samples per 33 ms poll, ~15.5k/sec), pinning the buffer at its cap.
+/// Both showed up as system-wide stutter.
+///
+/// Samples are stored as `AtomicU32` bit patterns so the whole thing is safe
+/// Rust with no `unsafe`; on x86 a relaxed atomic store is a plain `mov`.
+/// Writes are wait-free and overwrite the oldest samples. Dropping stale audio
+/// is correct here: the visualizer only ever wants the most recent window.
+pub struct AudioRing {
+    slots: Box<[AtomicU32]>,
+    /// Total samples ever written. Monotonic.
+    written: AtomicU64,
+    /// How far the consumer has read. Used to distinguish "new audio" from
+    /// "producer is idle", which the frontend relies on to detect silence.
+    read_to: AtomicU64,
+}
+
+impl AudioRing {
+    fn new() -> Self {
+        Self {
+            slots: (0..AUDIO_RING_CAPACITY)
+                .map(|_| AtomicU32::new(0))
+                .collect(),
+            written: AtomicU64::new(0),
+            read_to: AtomicU64::new(0),
+        }
+    }
+
+    /// Producer side. Wait-free: no lock, no allocation, no memmove.
+    fn write(&self, data: &[f32]) {
+        let start = self.written.load(Ordering::Relaxed);
+        for (i, &sample) in data.iter().enumerate() {
+            let idx = (start.wrapping_add(i as u64) as usize) & (AUDIO_RING_CAPACITY - 1);
+            self.slots[idx].store(sample.to_bits(), Ordering::Relaxed);
+        }
+        // Release pairs with the consumer's Acquire load so the samples above
+        // are visible before the new count is.
+        self.written
+            .store(start.wrapping_add(data.len() as u64), Ordering::Release);
+    }
+
+    /// Consumer side. Returns up to `max` of the most recent samples, oldest
+    /// first. Returns empty when the producer has written nothing new since the
+    /// last call, which is how the frontend recognises a silent endpoint.
+    fn take_recent(&self, max: usize) -> Vec<f32> {
+        let end = self.written.load(Ordering::Acquire);
+        let last = self.read_to.swap(end, Ordering::AcqRel);
+        if end <= last {
+            return Vec::new();
+        }
+        // Never read further back than the ring actually holds.
+        let fresh = (end - last).min(AUDIO_RING_CAPACITY as u64) as usize;
+        let count = fresh.min(max);
+        let start = end - count as u64;
+        (0..count)
+            .map(|i| {
+                let idx = (start.wrapping_add(i as u64) as usize) & (AUDIO_RING_CAPACITY - 1);
+                f32::from_bits(self.slots[idx].load(Ordering::Relaxed))
+            })
+            .collect()
+    }
+
+    /// Drop anything buffered so a new capture does not start with samples from
+    /// the previous device.
+    fn reset(&self) {
+        let end = self.written.load(Ordering::Acquire);
+        self.read_to.store(end, Ordering::Release);
+    }
+}
+
 // Shared audio buffer - only this crosses thread boundaries
 pub struct SharedAudioBuffer {
-    samples: Mutex<Vec<f32>>,
+    samples: AudioRing,
     is_capturing: AtomicBool,
     current_device: Mutex<Option<String>>,
     stop_signal: AtomicBool,
@@ -133,7 +215,7 @@ pub struct SharedAudioBuffer {
 impl Default for SharedAudioBuffer {
     fn default() -> Self {
         Self {
-            samples: Mutex::new(Vec::with_capacity(4096)),
+            samples: AudioRing::new(),
             is_capturing: AtomicBool::new(false),
             current_device: Mutex::new(None),
             stop_signal: AtomicBool::new(false),
@@ -337,19 +419,24 @@ async fn list_audio_devices() -> Vec<AudioDeviceInfo> {
 }
 
 // Start audio capture from specified device
+//
+// `async` on purpose: Tauri v2 runs non-async commands on the main thread, and
+// this one used to block the message pump for 150ms on every capture restart.
+// The settle wait now happens on the spawned capture thread instead.
 #[tauri::command]
-fn start_audio_capture(
+async fn start_audio_capture(
     device_id: String,
-    state: State<Arc<SharedAudioBuffer>>,
+    app: tauri::AppHandle,
+    state: State<'_, Arc<SharedAudioBuffer>>,
 ) -> Result<String, String> {
     // Generate new capture ID FIRST - this invalidates any running capture
     let new_capture_id = state.current_capture_id.fetch_add(1, Ordering::SeqCst) + 1;
     println!("Starting new capture session, ID={}", new_capture_id);
 
-    // Signal any existing capture to stop
+    // Signal any existing capture to stop. The old thread notices on its next
+    // tick; the settle wait is done by the new thread below so no UI-facing
+    // thread blocks here.
     state.stop_signal.store(true, Ordering::SeqCst);
-    thread::sleep(std::time::Duration::from_millis(150)); // Give old thread time to notice
-    state.stop_signal.store(false, Ordering::SeqCst);
 
     let parts: Vec<&str> = device_id.splitn(2, ':').collect();
     if parts.len() != 2 {
@@ -371,6 +458,13 @@ fn start_audio_capture(
     let device_name_clone = device_name.clone();
     let device_type_clone = device_type.clone();
     thread::spawn(move || {
+        // Give the outgoing capture time to notice the stop signal, then clear
+        // it so this capture is not immediately told to stop.
+        thread::sleep(std::time::Duration::from_millis(150));
+        buffer.stop_signal.store(false, Ordering::SeqCst);
+        // Drop anything the previous device left in the ring.
+        buffer.samples.reset();
+
         println!(
             "Starting audio capture: type={}, device={}, capture_id={}",
             device_type_clone, device_name_clone, new_capture_id
@@ -380,6 +474,7 @@ fn start_audio_capture(
             &device_name_clone,
             buffer,
             new_capture_id,
+            app,
         ) {
             Ok(_) => println!("Audio capture ended normally (ID={})", new_capture_id),
             Err(e) => eprintln!("Audio capture error (ID={}): {}", new_capture_id, e),
@@ -397,6 +492,7 @@ fn run_audio_capture(
     device_name: &str,
     buffer: Arc<SharedAudioBuffer>,
     capture_id: u64,
+    app: tauri::AppHandle,
 ) -> Result<(), String> {
     let host = cpal::default_host();
 
@@ -465,13 +561,7 @@ fn run_audio_capture(
                             max_val
                         );
                     }
-                    if let Ok(mut samples) = buffer_clone.samples.lock() {
-                        // Keep buffer at reasonable size
-                        if samples.len() > 8192 {
-                            samples.drain(0..4096);
-                        }
-                        samples.extend_from_slice(data);
-                    }
+                    buffer_clone.samples.write(data);
                 },
                 err_fn,
                 None,
@@ -480,13 +570,14 @@ fn run_audio_capture(
         cpal::SampleFormat::I16 => device.build_input_stream(
             &config,
             move |data: &[i16], _: &_| {
-                if let Ok(mut samples) = buffer_clone.samples.lock() {
-                    if samples.len() > 8192 {
-                        samples.drain(0..4096);
+                // Convert on the stack, then one wait-free ring write. Stack
+                // chunking keeps this allocation-free on the real-time thread.
+                let mut scratch = [0.0f32; 1024];
+                for chunk in data.chunks(scratch.len()) {
+                    for (dst, &src) in scratch.iter_mut().zip(chunk) {
+                        *dst = src as f32 / i16::MAX as f32;
                     }
-                    for &sample in data.iter() {
-                        samples.push(sample as f32 / i16::MAX as f32);
-                    }
+                    buffer_clone.samples.write(&scratch[..chunk.len()]);
                 }
             },
             err_fn,
@@ -495,14 +586,12 @@ fn run_audio_capture(
         cpal::SampleFormat::U16 => device.build_input_stream(
             &config,
             move |data: &[u16], _: &_| {
-                if let Ok(mut samples) = buffer_clone.samples.lock() {
-                    if samples.len() > 8192 {
-                        samples.drain(0..4096);
+                let mut scratch = [0.0f32; 1024];
+                for chunk in data.chunks(scratch.len()) {
+                    for (dst, &src) in scratch.iter_mut().zip(chunk) {
+                        *dst = (src as f32 / u16::MAX as f32) * 2.0 - 1.0;
                     }
-                    for &sample in data.iter() {
-                        let normalized = (sample as f32 / u16::MAX as f32) * 2.0 - 1.0;
-                        samples.push(normalized);
-                    }
+                    buffer_clone.samples.write(&scratch[..chunk.len()]);
                 }
             },
             err_fn,
@@ -532,7 +621,17 @@ fn run_audio_capture(
     let startup_immunity_ms = 500; // Ignore stop signals for first 500ms
 
     loop {
-        thread::sleep(std::time::Duration::from_millis(50));
+        // 33ms: this loop doubles as the 30Hz level pump. Pushing from here
+        // replaced a 30x/sec invoke('get_audio_levels') round-trip from the
+        // renderer, which is 30 fewer IPC hops per second and, more importantly,
+        // keeps the ring consumer running at producer pace.
+        thread::sleep(std::time::Duration::from_millis(33));
+
+        // Emit even when the banding comes back empty: the frontend treats an
+        // empty waveform as "endpoint is silent", which is a normal state, and
+        // uses the steady tick to time its capture-health checks.
+        let levels = compute_audio_levels(&buffer);
+        let _ = app.emit("audio-levels", &levels);
 
         let current_id = buffer.current_capture_id.load(Ordering::SeqCst);
         let stop_requested = buffer.stop_signal.load(Ordering::SeqCst);
@@ -572,7 +671,7 @@ fn run_audio_capture(
 
 // Stop audio capture
 #[tauri::command]
-fn stop_audio_capture(state: State<Arc<SharedAudioBuffer>>) -> Result<String, String> {
+async fn stop_audio_capture(state: State<'_, Arc<SharedAudioBuffer>>) -> Result<String, String> {
     state.stop_signal.store(true, Ordering::SeqCst);
 
     if let Ok(mut dev) = state.current_device.lock() {
@@ -600,15 +699,12 @@ pub struct AudioLevels {
     pub waveform: Vec<f32>,
 }
 
-#[tauri::command]
-fn get_audio_levels(state: State<Arc<SharedAudioBuffer>>) -> AudioLevels {
-    let samples: Vec<f32> = match state.samples.lock() {
-        Ok(mut s) => {
-            let len = s.len().min(512);
-            s.drain(0..len).collect()
-        }
-        Err(_) => Vec::new(),
-    };
+/// Pull the newest samples off the ring and band them.
+///
+/// Shared by the `audio-levels` push emitted from the capture thread and by the
+/// `get_audio_levels` command that remains as a pull-mode fallback.
+fn compute_audio_levels(buffer: &SharedAudioBuffer) -> AudioLevels {
+    let samples: Vec<f32> = buffer.samples.take_recent(512);
 
     if samples.is_empty() {
         return AudioLevels {
@@ -652,12 +748,25 @@ fn get_audio_levels(state: State<Arc<SharedAudioBuffer>>) -> AudioLevels {
     }
 }
 
+/// Pull-mode fallback for the visualizer.
+///
+/// `async` on purpose: Tauri v2 runs non-async commands on the main thread, so
+/// the previous sync version put this on the window's message pump. It is now
+/// only a fallback - the normal path is the `audio-levels` event pushed from
+/// the capture thread, which costs no IPC round-trips at all.
+#[tauri::command]
+async fn get_audio_levels(state: State<'_, Arc<SharedAudioBuffer>>) -> Result<AudioLevels, String> {
+    Ok(compute_audio_levels(&state))
+}
+
 // Get current capture status
 #[tauri::command]
-fn get_audio_status(state: State<Arc<SharedAudioBuffer>>) -> (bool, Option<String>) {
+async fn get_audio_status(
+    state: State<'_, Arc<SharedAudioBuffer>>,
+) -> Result<(bool, Option<String>), String> {
     let is_capturing = state.is_capturing.load(Ordering::SeqCst);
     let device = state.current_device.lock().ok().and_then(|d| d.clone());
-    (is_capturing, device)
+    Ok((is_capturing, device))
 }
 
 // Get the current Windows default audio output device name
@@ -1118,9 +1227,57 @@ pub struct RecentFileInfo {
 }
 
 /// Resolve a .lnk shortcut to its target path
+/// Resolved-shortcut cache, keyed by .lnk path and its modification time.
+///
+/// get_recent_files polls every 30s and resolved up to 30 shortcuts each time,
+/// with a full CoCreateInstance(ShellLink) + IPersistFile::Load per shortcut.
+/// The Recent folder barely changes between polls, so a target is re-resolved
+/// only when that .lnk's mtime moves.
+static SHORTCUT_CACHE: Mutex<
+    Option<std::collections::HashMap<(PathBuf, std::time::SystemTime), PathBuf>>,
+> = Mutex::new(None);
+
+fn resolve_shortcut_cached(
+    lnk_path: &std::path::Path,
+    modified: std::time::SystemTime,
+) -> Option<PathBuf> {
+    let key = (lnk_path.to_path_buf(), modified);
+
+    if let Ok(guard) = SHORTCUT_CACHE.lock() {
+        if let Some(map) = guard.as_ref() {
+            if let Some(hit) = map.get(&key) {
+                return Some(hit.clone());
+            }
+        }
+    }
+
+    let resolved = resolve_shortcut(lnk_path);
+
+    // Only successful resolutions are cached. A failure is often transient (the
+    // target lives on a disconnected network share or removable drive), and
+    // caching the miss would suppress the retry until that .lnk's mtime changed
+    // - the uncached original retried on every 30s poll.
+    if let Some(ref path) = resolved {
+        if let Ok(mut guard) = SHORTCUT_CACHE.lock() {
+            let map = guard.get_or_insert_with(std::collections::HashMap::new);
+            // Bound growth: the Recent folder churns, and stale (path, mtime)
+            // keys are never revisited. A simple size cap keeps this from
+            // growing without limit over a long session.
+            if map.len() > 512 {
+                map.clear();
+            }
+            map.insert(key, path.clone());
+        }
+    }
+
+    resolved
+}
+
 fn resolve_shortcut(lnk_path: &std::path::Path) -> Option<PathBuf> {
     unsafe {
-        // Initialize COM
+        // COM init is per-thread and idempotent (returns S_FALSE when the
+        // apartment already exists), so this is cheap on the reused
+        // spawn_blocking pool threads.
         let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
 
         // Create ShellLink instance
@@ -1220,7 +1377,7 @@ async fn get_recent_files(limit: Option<usize>) -> Vec<RecentFileInfo> {
 
         // Resolve shortcuts and build result
         for (lnk_path, modified) in lnk_files.into_iter().take(limit * 2) {
-            if let Some(target_path) = resolve_shortcut(&lnk_path) {
+            if let Some(target_path) = resolve_shortcut_cached(&lnk_path, modified) {
                 // Skip if target doesn't exist or is a directory
                 if !target_path.exists() || target_path.is_dir() {
                     continue;
@@ -1989,20 +2146,30 @@ Add-Type -TypeDefinition $code
 async fn turn_off_monitors() -> Result<(), String> {
     use windows::Win32::Foundation::WPARAM;
     use windows::Win32::UI::WindowsAndMessaging::{
-        SendMessageW, HWND_BROADCAST, SC_MONITORPOWER, WM_SYSCOMMAND,
+        SendMessageTimeoutW, HWND_BROADCAST, SC_MONITORPOWER, SMTO_ABORTIFHUNG, SMTO_BLOCK,
+        WM_SYSCOMMAND,
     };
 
     tauri::async_runtime::spawn_blocking(|| {
         unsafe {
             // SC_MONITORPOWER with lParam = 2 turns off the monitor
             // lParam values: -1 = on, 1 = low power, 2 = off
-            let result = SendMessageW(
+            //
+            // SendMessageTimeoutW rather than SendMessageW: a broadcast reaches
+            // every top-level window in the session, and the blocking variant
+            // hangs this thread for as long as any one of them is unresponsive.
+            // SMTO_ABORTIFHUNG plus a 1s cap bounds that.
+            let mut result: usize = 0;
+            let sent = SendMessageTimeoutW(
                 HWND_BROADCAST,
                 WM_SYSCOMMAND,
                 WPARAM(SC_MONITORPOWER as usize),
                 windows::Win32::Foundation::LPARAM(2),
+                SMTO_ABORTIFHUNG | SMTO_BLOCK,
+                1000,
+                Some(&mut result as *mut usize),
             );
-            println!("Monitor power off sent, result: {:?}", result);
+            println!("Monitor power off sent, result: {:?}", sent);
         }
         Ok(())
     })
@@ -2188,7 +2355,20 @@ async fn get_audio_sessions() -> Result<AudioLevelsResponse, String> {
     .map_err(|e| e.to_string())?
 }
 
-/// Get process name from PID
+/// PID -> process-name cache.
+///
+/// get_audio_sessions runs every 2s and used to do an OpenProcess +
+/// K32GetModuleBaseNameW for every active session on every poll - the bulk of
+/// the cost of the most expensive recurring command in the app. A process name
+/// never changes for a live PID, so the lookup is memoized.
+///
+/// Windows does recycle PIDs, so the map is flushed periodically to bound how
+/// long a recycled PID could report the previous process's name.
+static PROCESS_NAME_CACHE: Mutex<Option<(std::time::Instant, std::collections::HashMap<u32, String>)>> =
+    Mutex::new(None);
+const PROCESS_NAME_CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(300);
+
+/// Get process name from PID (memoized, see PROCESS_NAME_CACHE)
 fn get_process_name(pid: u32) -> Option<String> {
     use windows::Win32::Foundation::CloseHandle;
     use windows::Win32::System::ProcessStatus::K32GetModuleBaseNameW;
@@ -2196,7 +2376,30 @@ fn get_process_name(pid: u32) -> Option<String> {
         OpenProcess, PROCESS_QUERY_INFORMATION, PROCESS_VM_READ,
     };
 
-    unsafe {
+    if pid == 0 {
+        return None;
+    }
+
+    // Fast path: serve from cache, flushing it first if it has aged out.
+    if let Ok(mut guard) = PROCESS_NAME_CACHE.lock() {
+        let now = std::time::Instant::now();
+        match guard.as_ref() {
+            Some((stamped, _)) if now.duration_since(*stamped) >= PROCESS_NAME_CACHE_TTL => {
+                *guard = Some((now, std::collections::HashMap::new()));
+            }
+            None => {
+                *guard = Some((now, std::collections::HashMap::new()));
+            }
+            _ => {}
+        }
+        if let Some((_, map)) = guard.as_ref() {
+            if let Some(name) = map.get(&pid) {
+                return Some(name.clone());
+            }
+        }
+    }
+
+    let resolved = unsafe {
         let handle = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, false, pid).ok()?;
         let mut name = [0u16; 260];
         let len = K32GetModuleBaseNameW(handle, None, &mut name);
@@ -2207,7 +2410,19 @@ fn get_process_name(pid: u32) -> Option<String> {
         } else {
             None
         }
+    };
+
+    // Only successful lookups are cached; a failure may be a transient
+    // permission issue and should be retried on the next poll.
+    if let Some(ref name) = resolved {
+        if let Ok(mut guard) = PROCESS_NAME_CACHE.lock() {
+            if let Some((_, map)) = guard.as_mut() {
+                map.insert(pid, name.clone());
+            }
+        }
     }
+
+    resolved
 }
 
 /// Set volume for a specific audio session
@@ -2576,14 +2791,26 @@ fn chrono_lite_today() -> String {
 }
 
 // ================================================================
-// LIBRE HARDWARE MONITOR PROXY
-// Fetches data from local LibreHardwareMonitor HTTP server
-// Needed because HTTPS page can't fetch HTTP (mixed content)
+// SYSTEM STATS
 //
-// The full sensor tree (often 100s of KB) used to be shipped to JS and
-// traversed there every 2s just to extract four numbers; the traversal now
-// happens here and only the summary crosses the IPC boundary. The matching
-// rules mirror the old JS parseHardwareData exactly.
+// The stats widget draws four percentages: CPU, GPU, RAM and per-drive used
+// space. It used to get them by polling LibreHardwareMonitor's HTTP server on
+// localhost:8085 every 2s and walking its sensor tree. That meant a second
+// application had to be running, and LHM's ring-0 driver polls SMBus / EC /
+// SuperIO sensors (temperatures, fans, voltages, clocks) that this widget never
+// reads - a well-documented source of system-wide DPC latency spikes and mouse
+// micro-stutter.
+//
+// None of the four numbers need kernel access:
+//   CPU / RAM / disk -> sysinfo (NtQuerySystemInformation, GlobalMemoryStatusEx,
+//                       GetDiskFreeSpaceEx), all user mode.
+//   GPU              -> NVML, NVIDIA's user-mode management library that ships
+//                       with the driver, falling back to the PDH "GPU Engine"
+//                       performance counter, which is the same vendor-agnostic
+//                       source Task Manager uses.
+//
+// The SystemStatsSummary / DriveUsage shape is unchanged so the frontend needs
+// no changes.
 // ================================================================
 
 #[derive(Debug, Clone, Serialize, Default)]
@@ -2600,93 +2827,209 @@ pub struct DriveUsage {
     pub used_percent: f32,
 }
 
-/// Parse the leading float out of a sensor value like "12.5 %" (mirrors the
-/// old JS /([\d.]+)/ match).
-fn leading_float(s: &str) -> Option<f32> {
-    let t = s.trim_start();
-    let end = t
-        .char_indices()
-        .take_while(|(_, c)| c.is_ascii_digit() || *c == '.')
-        .last()
-        .map(|(i, c)| i + c.len_utf8())
-        .unwrap_or(0);
-    if end == 0 {
-        None
-    } else {
-        t[..end].parse::<f32>().ok()
-    }
+/// Long-lived `System` handle.
+///
+/// CPU usage is a delta between two refreshes, so the handle has to persist
+/// across polls. Refreshes are targeted (`refresh_cpu_usage`, `refresh_memory`)
+/// rather than `refresh_all`, which would re-enumerate every process on the
+/// machine every 2 seconds.
+static SYSINFO: std::sync::OnceLock<Mutex<sysinfo::System>> = std::sync::OnceLock::new();
+
+fn sysinfo_handle() -> &'static Mutex<sysinfo::System> {
+    SYSINFO.get_or_init(|| Mutex::new(sysinfo::System::new()))
 }
 
-fn traverse_hardware_tree(
-    node: &serde_json::Value,
-    drive_ctx: Option<&str>,
-    out: &mut SystemStatsSummary,
-) {
-    let text = node.get("Text").and_then(|t| t.as_str()).unwrap_or("");
-    let value = node.get("Value").and_then(|v| v.as_str()).unwrap_or("");
+/// Disks are enumerated separately and refreshed on a slower cadence than the
+/// 2s stats poll - used space does not move meaningfully in two seconds, and
+/// re-enumerating volumes hits the filesystem.
+static DISKS: std::sync::OnceLock<Mutex<(sysinfo::Disks, std::time::Instant)>> =
+    std::sync::OnceLock::new();
+const DISK_REFRESH_SECS: u64 = 60;
 
-    if text.contains("CPU Total") && !value.is_empty() {
-        if let Some(v) = leading_float(value) {
-            out.cpu = v;
-        }
-    }
-    if text.contains("GPU Core") && value.contains('%') {
-        if let Some(v) = leading_float(value) {
-            out.gpu = v;
-        }
-    }
-    if text == "Memory" && value.contains('%') {
-        if let Some(v) = leading_float(value) {
-            out.ram = v;
-        }
-    }
+/// NVML handle. `Err` means no NVIDIA driver on this machine, in which case we
+/// use the PDH counter instead. Initialised once; NVML init is not cheap.
+static NVML: std::sync::OnceLock<Result<nvml_wrapper::Nvml, String>> = std::sync::OnceLock::new();
 
-    // Storage devices are identified by their hdd.png node icon; their
-    // "Used Space" sensors live somewhere in the subtree below.
-    let is_drive = node
-        .get("ImageURL")
-        .and_then(|u| u.as_str())
-        .map(|u| u.contains("hdd.png"))
-        .unwrap_or(false);
-    let ctx = if is_drive { Some(text) } else { drive_ctx };
+fn nvml_handle() -> Option<&'static nvml_wrapper::Nvml> {
+    NVML.get_or_init(|| {
+        nvml_wrapper::Nvml::init().map_err(|e| {
+            println!("NVML unavailable ({}); falling back to PDH GPU counter", e);
+            e.to_string()
+        })
+    })
+    .as_ref()
+    .ok()
+}
 
-    if text == "Used Space" && value.contains('%') {
-        if let (Some(name), Some(v)) = (ctx, leading_float(value)) {
-            if let Some(existing) = out.drives.iter_mut().find(|d| d.name == name) {
-                existing.used_percent = v;
-            } else {
-                out.drives.push(DriveUsage {
-                    name: name.to_string(),
-                    used_percent: v,
-                });
+/// GPU utilisation 0-100, or None if neither source is available.
+fn read_gpu_percent() -> Option<f32> {
+    if let Some(nvml) = nvml_handle() {
+        if let Ok(device) = nvml.device_by_index(0) {
+            if let Ok(util) = device.utilization_rates() {
+                return Some(util.gpu as f32);
             }
         }
     }
+    pdh_gpu_percent()
+}
 
-    if let Some(children) = node.get("Children").and_then(|c| c.as_array()) {
-        for child in children {
-            traverse_hardware_tree(child, ctx, out);
+/// Vendor-agnostic GPU utilisation via PDH.
+///
+/// `\GPU Engine(*)\Utilization Percentage` is what Task Manager graphs. The
+/// query handle is kept open across polls: PDH rate counters need two samples
+/// to produce a value, and at a 2s poll interval the previous sample is always
+/// there after the first call.
+struct PdhQuery(isize);
+// The handle is owned by this process and only touched under the mutex below.
+unsafe impl Send for PdhQuery {}
+
+static PDH_GPU: std::sync::OnceLock<Option<Mutex<PdhQuery>>> = std::sync::OnceLock::new();
+
+fn pdh_gpu_percent() -> Option<f32> {
+    use windows::core::w;
+    use windows::Win32::System::Performance::{
+        PdhAddEnglishCounterW, PdhCollectQueryData, PdhGetFormattedCounterArrayW, PdhOpenQueryW,
+        PDH_FMT, PDH_FMT_COUNTERVALUE_ITEM_W,
+    };
+
+    // PDH_FMT_DOUBLE (0x200) | PDH_FMT_NOCAP100 (0x8000). The windows crate
+    // exports the former but not the latter. NOCAP100 stops PDH clamping each
+    // engine instance at 100, which matters because we sum instances.
+    const FMT: PDH_FMT = PDH_FMT(0x200 | 0x8000);
+
+    let query = PDH_GPU
+        .get_or_init(|| unsafe {
+            let mut handle: isize = 0;
+            if PdhOpenQueryW(None, 0, &mut handle) != 0 {
+                return None;
+            }
+            let mut counter: isize = 0;
+            // engtype_3D only: summing every engine (copy, video decode, ...)
+            // double-counts work and can exceed 100%.
+            if PdhAddEnglishCounterW(
+                handle,
+                w!("\\GPU Engine(*engtype_3D)\\Utilization Percentage"),
+                0,
+                &mut counter,
+            ) != 0
+            {
+                return None;
+            }
+            // Prime the counter so the next collection has a baseline.
+            let _ = PdhCollectQueryData(handle);
+            Some(Mutex::new(PdhQuery(handle)))
+        })
+        .as_ref()?;
+
+    let guard = query.lock().ok()?;
+    unsafe {
+        if PdhCollectQueryData(guard.0) != 0 {
+            return None;
         }
+
+        // Size the buffer, then fill it.
+        let mut buf_size: u32 = 0;
+        let mut item_count: u32 = 0;
+        PdhGetFormattedCounterArrayW(
+            guard.0,
+            FMT,
+            &mut buf_size,
+            &mut item_count,
+            None,
+        );
+        if buf_size == 0 || item_count == 0 {
+            return Some(0.0);
+        }
+
+        let mut buffer = vec![0u8; buf_size as usize];
+        if PdhGetFormattedCounterArrayW(
+            guard.0,
+            FMT,
+            &mut buf_size,
+            &mut item_count,
+            Some(buffer.as_mut_ptr() as *mut PDH_FMT_COUNTERVALUE_ITEM_W),
+        ) != 0
+        {
+            return None;
+        }
+
+        let items = std::slice::from_raw_parts(
+            buffer.as_ptr() as *const PDH_FMT_COUNTERVALUE_ITEM_W,
+            item_count as usize,
+        );
+        let total: f64 = items.iter().map(|i| i.FmtValue.Anonymous.doubleValue).sum();
+        Some((total as f32).clamp(0.0, 100.0))
     }
 }
 
 #[tauri::command]
 async fn get_system_stats() -> Result<SystemStatsSummary, String> {
     tauri::async_runtime::spawn_blocking(|| -> Result<SystemStatsSummary, String> {
-        let response = ureq::get("http://localhost:8085/data.json")
-            .timeout(std::time::Duration::from_secs(2))
-            .call()
-            .map_err(|e| format!("Failed to connect to LibreHardwareMonitor: {}", e))?;
-
-        let body = response
-            .into_string()
-            .map_err(|e| format!("Failed to read response: {}", e))?;
-
-        let json: serde_json::Value =
-            serde_json::from_str(&body).map_err(|e| format!("Failed to parse JSON: {}", e))?;
+        use sysinfo::Disks;
 
         let mut out = SystemStatsSummary::default();
-        traverse_hardware_tree(&json, None, &mut out);
+
+        {
+            let mut sys = sysinfo_handle()
+                .lock()
+                .map_err(|_| "system info lock poisoned".to_string())?;
+            sys.refresh_cpu_usage();
+            sys.refresh_memory();
+
+            out.cpu = sys.global_cpu_usage();
+
+            let total = sys.total_memory();
+            if total > 0 {
+                out.ram = (sys.used_memory() as f64 / total as f64 * 100.0) as f32;
+            }
+        }
+
+        out.gpu = read_gpu_percent().unwrap_or(0.0);
+
+        {
+            let disks_cell = DISKS.get_or_init(|| {
+                Mutex::new((
+                    Disks::new_with_refreshed_list(),
+                    std::time::Instant::now(),
+                ))
+            });
+            let mut guard = disks_cell
+                .lock()
+                .map_err(|_| "disk info lock poisoned".to_string())?;
+            if guard.1.elapsed().as_secs() >= DISK_REFRESH_SECS {
+                guard.0.refresh_list();
+                guard.1 = std::time::Instant::now();
+            }
+
+            for disk in guard.0.list() {
+                let total = disk.total_space();
+                if total == 0 {
+                    continue;
+                }
+                let used = total.saturating_sub(disk.available_space());
+                // Mount point without the trailing separator: "C:" rather than
+                // "C:\", matching the drive names the widget used to show.
+                let name = disk
+                    .mount_point()
+                    .to_string_lossy()
+                    .trim_end_matches(['\\', '/'])
+                    .to_string();
+                if name.is_empty() {
+                    continue;
+                }
+                let used_percent = (used as f64 / total as f64 * 100.0) as f32;
+                if let Some(existing) = out.drives.iter_mut().find(|d| d.name == name) {
+                    existing.used_percent = used_percent;
+                } else {
+                    out.drives.push(DriveUsage {
+                        name,
+                        used_percent,
+                    });
+                }
+            }
+            out.drives.sort_by(|a, b| a.name.cmp(&b.name));
+        }
+
         Ok(out)
     })
     .await
@@ -3119,6 +3462,17 @@ fn disable_webview_tracking_prevention(webview: tauri::webview::PlatformWebview)
     }
 }
 
+#[cfg(windows)]
+fn set_webview_visibility(window: &tauri::WebviewWindow, visible: bool) {
+    if let Err(error) = window.with_webview(move |webview| unsafe {
+        if let Err(error) = webview.controller().SetIsVisible(visible) {
+            eprintln!("WebView2: failed to update visibility: {error}");
+        }
+    }) {
+        eprintln!("WebView2: failed to access visibility controller: {error}");
+    }
+}
+
 pub fn run() {
     // Create shared audio buffer
     let audio_buffer = Arc::new(SharedAudioBuffer::default());
@@ -3230,7 +3584,10 @@ pub fn run() {
                     match event.id.as_ref() {
                         "show" => {
                             if let Some(window) = app.get_webview_window("main") {
+                                let _ = window.unminimize();
                                 let _ = window.show();
+                                #[cfg(windows)]
+                                set_webview_visibility(&window, true);
                                 let _ = window.set_focus();
                             }
                         }
@@ -3259,7 +3616,10 @@ pub fn run() {
                     {
                         let app = tray.app_handle();
                         if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.unminimize();
                             let _ = window.show();
+                            #[cfg(windows)]
+                            set_webview_visibility(&window, true);
                             let _ = window.set_focus();
                         }
                     }
@@ -3329,7 +3689,19 @@ pub fn run() {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 // Minimize to tray instead of closing
                 let _ = window.hide();
+                #[cfg(windows)]
+                if let Some(webview) = window.get_webview_window(window.label()) {
+                    set_webview_visibility(&webview, false);
+                }
                 api.prevent_close();
+            } else if matches!(event, tauri::WindowEvent::Resized(_) | tauri::WindowEvent::Focused(_)) {
+                // WebView2 does not inherit its parent window's visibility.
+                #[cfg(windows)]
+                if let Some(webview) = window.get_webview_window(window.label()) {
+                    let visible = window.is_visible().unwrap_or(true)
+                        && !window.is_minimized().unwrap_or(false);
+                    set_webview_visibility(&webview, visible);
+                }
             }
         })
         .run(tauri::generate_context!())

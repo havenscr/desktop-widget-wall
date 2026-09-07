@@ -335,13 +335,22 @@ body::after {
   overflow: hidden;
   position: relative;
   isolation: isolate;
-  /* Force clip to rounded corners - prevents backdrop-filter artifacts */
-  -webkit-mask-image: radial-gradient(white, white);
-  mask-image: radial-gradient(white, white);
+  /* backdrop-filter renders into its own layer, and that layer is NOT clipped
+     by overflow: hidden + border-radius - the filtered backdrop bleeds square
+     past the rounded corners and shows as dark notches between widgets.
+     This was previously handled with mask-image: radial-gradient(white, white),
+     which works but allocates a full-size gradient mask texture and an extra
+     offscreen render target per widget (~13 of them, held all session).
+     clip-path with a rounded inset clips the same region geometrically, with no
+     texture and no extra render target. If corner artifacts ever come back,
+     the mask is the known-good fallback. */
+  clip-path: inset(0 round var(--glass-radius));
+  /* NOTE: no will-change here on purpose. will-change: transform pinned all ~13
+     widgets to their own compositor layer permanently; it is meant to be set
+     just before an animation and removed after, so declared statically it is a
+     standing VRAM and compositing cost. backface-visibility: hidden was doing
+     the same thing by proxy. */
   transition: transform 0.3s ease, box-shadow 0.3s ease;
-  /* Prevent sub-pixel shift on hover by pre-compositing */
-  will-change: transform;
-  backface-visibility: hidden;
 
   /* Entrance animation */
   opacity: 0;

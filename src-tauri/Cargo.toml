@@ -50,7 +50,9 @@ windows = { version = "0.58", features = [
     "Win32_System_DataExchange",
     "Win32_System_Memory",
     # Registry operations (Do Not Disturb toggle)
-    "Win32_System_Registry"
+    "Win32_System_Registry",
+    # GPU utilisation fallback via PDH performance counters
+    "Win32_System_Performance"
 ] }
 base64 = "0.22"
 
@@ -60,12 +62,22 @@ rusqlite = { version = "0.31", features = ["bundled"] }
 # OAuth callback server
 tiny_http = "0.12"
 
-# HTTP client for LibreHardwareMonitor proxy and Google Maps API
+# HTTP client for Google Maps API and Microsoft OAuth token endpoint
 ureq = "2.9"
 urlencoding = "2.1"
 
 # Recent Files - directory operations
 dirs = "5.0"
+
+# System stats (CPU / RAM / disk). Pure user-mode: NtQuerySystemInformation,
+# GlobalMemoryStatusEx, GetDiskFreeSpaceEx. Replaces the LibreHardwareMonitor
+# HTTP dependency, whose ring-0 sensor driver polls SMBus/EC hardware we never
+# read - the widget only ever wanted four percentages.
+sysinfo = "0.32"
+
+# GPU utilisation via NVIDIA's user-mode NVML library (ships with the driver).
+# Falls back to the PDH "GPU Engine" performance counter for non-NVIDIA parts.
+nvml-wrapper = "0.10"
 
 [features]
 default = ["custom-protocol"]

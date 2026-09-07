@@ -19,6 +19,100 @@ let streamInfoPollInterval = null;
 
 let twitchPlayer = null;
 let twitchEmbedLoaded = false;
+let twitchPlaybackSession = 0;
+let twitchPlaybackBackend = null;
+let twitchResumeBackend = null;
+const twitchPlaybackTimers = new Set();
+let hlsPlayerLoadPromise = null;
+
+function loadHLSPlayerModule() {
+  if (window.HLSPlayer) return Promise.resolve();
+  if (hlsPlayerLoadPromise) return hlsPlayerLoadPromise;
+  hlsPlayerLoadPromise = new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = 'scripts/widgets/hls-player.js' + (window.ASSET_VERSION ? '?v=' + window.ASSET_VERSION : '');
+    script.onload = () => {
+      if (window.HLSPlayer) resolve();
+      else reject(new Error('HLSPlayer module did not initialize'));
+    };
+    script.onerror = () => {
+      script.remove();
+      reject(new Error('Failed to load HLSPlayer module'));
+    };
+    document.head.appendChild(script);
+  }).catch(error => {
+    hlsPlayerLoadPromise = null;
+    throw error;
+  });
+  return hlsPlayerLoadPromise;
+}
+
+function isTwitchPlaybackCurrent(session, backend) {
+  const embed = document.getElementById('twitch-embed');
+  const page = embed?.closest('.smart-widget-page');
+  return session === twitchPlaybackSession && backend === twitchPlaybackBackend &&
+    !!embed?.isConnected && (!page || page.classList.contains('active'));
+}
+
+function scheduleTwitchPlayback(callback, delay, session) {
+  const timer = setTimeout(() => {
+    twitchPlaybackTimers.delete(timer);
+    if (isTwitchPlaybackCurrent(session, 'embed')) callback();
+  }, delay);
+  twitchPlaybackTimers.add(timer);
+}
+
+function stopTwitchPlayback(rememberBackend = false) {
+  twitchResumeBackend = rememberBackend ? twitchPlaybackBackend || twitchResumeBackend : null;
+  twitchPlaybackSession += 1;
+  twitchPlaybackBackend = null;
+  twitchEmbedLoaded = false;
+  stopTwitchStallMonitor();
+  twitchPlaybackTimers.forEach(clearTimeout);
+  twitchPlaybackTimers.clear();
+  const embedPlayer = twitchPlayer;
+  twitchPlayer = null;
+  window.twitchPlayer = null;
+  try { embedPlayer?.getPlayer?.()?.pause?.(); } catch (e) {}
+  try {
+    if (typeof embedPlayer?.destroy === 'function') embedPlayer.destroy();
+    else embedPlayer?.getPlayer?.()?.destroy?.();
+  } catch (e) {}
+  const embed = document.getElementById('twitch-embed');
+  if (embed) {
+    embed.querySelectorAll('iframe').forEach(iframe => {
+      delete iframe.dataset.originalSrc;
+      iframe.src = 'about:blank';
+    });
+    embed.innerHTML = '';
+    embed.style.display = 'none';
+  }
+  // stop() also cancels startup and a pending refresh, even before playback.
+  try { window.HLSPlayer?.stop(); } catch (e) {}
+  const video = document.getElementById('hls-video');
+  if (video) {
+    video.pause();
+    video.muted = true;
+    video.removeAttribute('src');
+    video.load();
+    video.classList.remove('active');
+    video.style.display = 'none';
+  }
+  hideHLSControls();
+  dlog('[Twitch] Playback stopped', { session: twitchPlaybackSession });
+}
+
+// Page lifecycle API. Backend includes pending startup; null means suspended.
+// Resume retains a native fallback until a channel or settings rebuild.
+window.TwitchPlayback = {
+  suspend: () => stopTwitchPlayback(true),
+  resume: () => {
+    if (window._pendingTwitchRebuild || !twitchPlaybackBackend) {
+      updateTwitchWidget(window._pendingTwitchRebuild ? null : twitchResumeBackend);
+    }
+  },
+  getBackend: () => twitchPlaybackBackend
+};
 
 // Native-embed stall watchdog: the Twitch embed iframe has no live-edge API,
 // so the only way to snap back to live after a stall is to rebuild the embed.
@@ -201,11 +295,27 @@ async function fetchTwitchStreamInfo(channel) {
  * Required for fetching followed channels
  * Defined directly on window to avoid Vite bundling scope issues
  */
+// Memoized /helix/users result, keyed on the access token. This is called at
+// the top of both fetchFollowedChannels and fetchUserTwitchEmotes, so opening
+// the channel dropdown or switching channels used to re-issue the same identity
+// request several times. Cleared automatically when the token changes.
+let cachedUserId = null;
+let cachedUserIdToken = null;
+window.invalidateTwitchUserIdCache = function() {
+  cachedUserId = null;
+  cachedUserIdToken = null;
+};
+
 window.getAuthenticatedUserId = async function() {
   const accessToken = localStorage.getItem('twitch-access-token');
   if (!accessToken) {
     console.log('[Twitch] getAuthenticatedUserId: No access token');
+    window.invalidateTwitchUserIdCache();
     return null;
+  }
+
+  if (cachedUserId && cachedUserIdToken === accessToken) {
+    return cachedUserId;
   }
 
   try {
@@ -220,6 +330,8 @@ window.getAuthenticatedUserId = async function() {
 
     if (!response.ok) {
       console.warn('[Twitch] getAuthenticatedUserId failed:', response.status, response.statusText);
+      // 401 means the token is dead - make sure nothing serves a stale id
+      if (response.status === 401) window.invalidateTwitchUserIdCache();
       return null;
     }
 
@@ -236,6 +348,8 @@ window.getAuthenticatedUserId = async function() {
       if (user.display_name) {
         localStorage.setItem('twitch-display-name', user.display_name);
       }
+      cachedUserId = user.id;
+      cachedUserIdToken = accessToken;
       return user.id;
     }
     return null;
@@ -548,9 +662,12 @@ function setNativeQuality(player) {
  */
 function startTwitchStallMonitor() {
   stopTwitchStallMonitor();
+  const session = twitchPlaybackSession;
+  if (!isTwitchPlaybackCurrent(session, 'embed')) return;
   twitchStallStrikes = 0;
   twitchStallGraceUntil = Date.now() + TWITCH_STALL_GRACE_MS;
   twitchStallMonitor = setInterval(() => {
+    if (!isTwitchPlaybackCurrent(session, 'embed')) return;
     try {
       // Nothing to watch (or rebuild) while the dashboard is hidden
       if (window.VisibilityManager && !window.VisibilityManager.isVisible()) {
@@ -756,7 +873,7 @@ function showHLSControls(videoElement) {
     z-index: 55 !important;
     opacity: 0 !important;
     transition: opacity 0.3s ease !important;
-    backdrop-filter: blur(8px) !important;
+    backdrop-filter: blur(var(--glass-blur, 6px)) !important;
   `;
   controls.classList.add('active');
 
@@ -788,8 +905,13 @@ function showHLSControls(videoElement) {
 
   // Play/Pause button handler
   playBtn.onclick = () => {
+    const session = twitchPlaybackSession;
+    if (!isTwitchPlaybackCurrent(session, 'hls')) return;
     if (videoElement.paused) {
-      videoElement.play();
+      videoElement.play().catch(error => {
+        if (error.name === 'AbortError' || !isTwitchPlaybackCurrent(session, 'hls')) return;
+        dlog('[Twitch] HLS play blocked', error.message);
+      });
     } else {
       videoElement.pause();
     }
@@ -820,7 +942,7 @@ function showHLSControls(videoElement) {
       min-width: 140px !important;
       overflow: hidden !important;
       box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6) !important;
-      backdrop-filter: blur(12px) !important;
+      backdrop-filter: blur(var(--glass-blur, 6px)) !important;
       z-index: 100 !important;
     `;
 
@@ -957,11 +1079,8 @@ function hideHLSControls() {
  * @param {HTMLElement} twitchOffline - Offline overlay
  * @param {HTMLElement} twitchFallback - Fallback overlay
  */
-async function updateTwitchWidgetHLS(channel, hlsVideo, twitchEmbed, twitchOffline, twitchFallback) {
-  // Check if Twitch should auto-start based on smart widget's saved page
-  // If another page (YouTube) is the saved active page, don't auto-start Twitch
-  const savedPage = localStorage.getItem('smart-widget-current-page');
-  const shouldAutoStart = savedPage === null || savedPage === '0';
+async function updateTwitchWidgetHLS(channel, hlsVideo, twitchEmbed, twitchOffline, twitchFallback, session) {
+  if (!isTwitchPlaybackCurrent(session, 'hls')) return;
 
   // Hide embed, show HLS video
   if (twitchEmbed) twitchEmbed.style.display = 'none';
@@ -993,15 +1112,9 @@ async function updateTwitchWidgetHLS(channel, hlsVideo, twitchEmbed, twitchOffli
   // Show HLS video controls
   showHLSControls(hlsVideo);
 
-  // If YouTube is the active page, don't start Twitch stream - save CPU/bandwidth
-  if (!shouldAutoStart) {
-    console.log('[Twitch] Skipping auto-start - YouTube tab is active');
-    twitchEmbedLoaded = true; // Mark as loaded so it can start when user switches to Twitch
-    return;
-  }
-
   try {
     await window.HLSPlayer.play(channel, hlsVideo);
+    if (!isTwitchPlaybackCurrent(session, 'hls')) return;
     console.log('HLS playback started successfully');
     twitchEmbedLoaded = true;
 
@@ -1015,6 +1128,7 @@ async function updateTwitchWidgetHLS(channel, hlsVideo, twitchEmbed, twitchOffli
     // Start stream info polling for Now Playing widget
     startStreamInfoPolling();
   } catch (error) {
+    if (error.name === 'AbortError' || !isTwitchPlaybackCurrent(session, 'hls')) return;
     console.error('HLS playback failed:', error.message);
 
     // Tear down the HLS player: play() may have already armed the token-refresh
@@ -1041,81 +1155,14 @@ async function updateTwitchWidgetHLS(channel, hlsVideo, twitchEmbed, twitchOffli
       hlsVideo.style.display = 'none';
 
       // Call native embed function
-      updateTwitchWidgetNative(channel, twitchEmbed, twitchOffline, twitchFallback);
+      updateTwitchWidgetNative(channel, twitchEmbed, twitchOffline, twitchFallback, session);
     }
   }
 }
 
-/**
- * Update Twitch widget using native embed (internal use for fallback)
- */
-function updateTwitchWidgetNative(channel, twitchEmbed, twitchOffline, twitchFallback) {
-  // Hide HLS video and controls when using native embed
-  const hlsVideo = document.getElementById('hls-video');
-  if (hlsVideo) {
-    hlsVideo.classList.remove('active');
-    hlsVideo.style.display = 'none';
-  }
-  hideHLSControls();
-
-  const hostname = window.location.hostname || 'localhost';
-  const parents = ['localhost', 'tauri.localhost'];
-  if (hostname && hostname !== 'localhost' && hostname !== 'tauri.localhost') {
-    parents.push(hostname);
-  }
-
-  loadTwitchEmbedAPI()
-    .then(() => {
-      if (twitchEmbed) twitchEmbed.innerHTML = '';
-      twitchEmbedLoaded = false;
-
-      if (twitchEmbed) {
-        twitchEmbed.style.display = 'block';
-        twitchEmbed.style.visibility = 'visible';
-      }
-
-      try {
-        twitchPlayer = new Twitch.Embed('twitch-embed', {
-          width: '100%',
-          height: '100%',
-          channel: channel,
-          parent: parents,
-          layout: twitchConfig.showChat ? 'video-with-chat' : 'video',
-          muted: true,
-          autoplay: true
-        });
-        window.twitchPlayer = twitchPlayer;
-
-        twitchPlayer.addEventListener(Twitch.Embed.VIDEO_READY, () => {
-          if (twitchEmbed) twitchEmbed.style.display = 'block';
-          if (twitchOffline) twitchOffline.style.display = 'none';
-          if (twitchFallback) twitchFallback.style.display = 'none';
-          twitchEmbedLoaded = true;
-          startStreamInfoPolling();
-          // Stabilize the native player: pin quality + watch for stalls
-          try { setNativeQuality(twitchPlayer.getPlayer()); } catch (e) {}
-          startTwitchStallMonitor();
-        });
-
-        twitchPlayer.addEventListener(Twitch.Embed.OFFLINE, () => {
-          updateTwitchStreamInfo(channel, false, '', '', 0, null);
-          showTwitchOffline();
-        });
-
-        setTimeout(() => {
-          if (!twitchEmbedLoaded) showTwitchFallback();
-        }, 5000);
-      } catch (e) {
-        console.warn('Twitch Embed API error:', e);
-        showTwitchFallback();
-      }
-    })
-    .catch(() => {
-      showTwitchFallback();
-    });
-}
-
-function updateTwitchWidget() {
+function updateTwitchWidget(backendOverride = null) {
+  stopTwitchPlayback();
+  const session = twitchPlaybackSession;
   const twitchEmbed = document.getElementById('twitch-embed');
   const twitchOffline = document.getElementById('twitch-offline');
   const twitchFallback = document.getElementById('twitch-fallback');
@@ -1126,7 +1173,6 @@ function updateTwitchWidget() {
   const twitchFallbackLink = document.getElementById('twitch-fallback-link');
 
   const channel = twitchConfig.channel || 'anya';
-  const hostname = window.location.hostname || 'localhost';
 
   if (twitchAvatar) twitchAvatar.textContent = channel.charAt(0).toUpperCase();
   if (twitchChannelName) twitchChannelName.textContent = channel;
@@ -1164,7 +1210,9 @@ function updateTwitchWidget() {
   // control the native IVS embed lacks (the embed only exposes setQuality).
   // Only fall back to the embed when the user has explicitly opted out via
   // Settings -> Twitch Video Mode: Embed (stored hlsEnabled === false).
-  const useHLS = effectiveConfig.twitch?.hlsEnabled !== false;
+  const useHLS = backendOverride === 'embed' ? false : effectiveConfig.twitch?.hlsEnabled !== false;
+  twitchPlaybackBackend = useHLS && hlsVideo ? 'hls' : 'embed';
+  dlog('[Twitch] Starting playback', { session, backend: twitchPlaybackBackend, channel });
 
   // Debug logging for HLS mode decision
   console.log('Twitch: HLS check -', {
@@ -1177,41 +1225,33 @@ function updateTwitchWidget() {
     getDashboardConfigExists: typeof window.getDashboardConfig === 'function'
   });
 
-  // Stop any existing HLS playback before switching
-  if (window.HLSPlayer?.isPlaying()) {
-    window.HLSPlayer.stop();
-  }
-
   if (useHLS && hlsVideo && window.HLSPlayer) {
     console.log('Twitch: Using HLS player mode');
-    updateTwitchWidgetHLS(channel, hlsVideo, twitchEmbed, twitchOffline, twitchFallback);
+    updateTwitchWidgetHLS(channel, hlsVideo, twitchEmbed, twitchOffline, twitchFallback, session);
     return;
   } else if (useHLS && hlsVideo && !window.HLSPlayer) {
     // HLSPlayer not yet loaded - load it dynamically
     console.log('Twitch: HLS mode enabled, dynamically loading HLSPlayer module...');
-    const script = document.createElement('script');
-    // Cache-bust with the shared asset version so a rebuilt app can't serve a
-    // stale hls-player.js from the WebView cache (matches main.js loadScript).
-    script.src = 'scripts/widgets/hls-player.js' + (window.ASSET_VERSION ? '?v=' + window.ASSET_VERSION : '');
-    script.onload = () => {
-      console.log('Twitch: HLSPlayer module loaded dynamically');
-      if (window.HLSPlayer) {
-        updateTwitchWidgetHLS(channel, hlsVideo, twitchEmbed, twitchOffline, twitchFallback);
-      } else {
-        console.error('Twitch: HLSPlayer failed to initialize, falling back to native embed');
-        updateTwitchWidgetNative(channel, twitchEmbed, twitchOffline, twitchFallback);
-      }
-    };
-    script.onerror = () => {
-      console.error('Twitch: Failed to load HLSPlayer script, falling back to native embed');
-      updateTwitchWidgetNative(channel, twitchEmbed, twitchOffline, twitchFallback);
-    };
-    document.head.appendChild(script);
+    loadHLSPlayerModule().then(() => {
+      if (!isTwitchPlaybackCurrent(session, 'hls')) return;
+      updateTwitchWidgetHLS(channel, hlsVideo, twitchEmbed, twitchOffline, twitchFallback, session);
+    }).catch(error => {
+      if (!isTwitchPlaybackCurrent(session, 'hls')) return;
+      console.error('Twitch: HLSPlayer load failed, falling back to native embed', error);
+      updateTwitchWidgetNative(channel, twitchEmbed, twitchOffline, twitchFallback, session);
+    });
     return;
   }
 
-  // Standard Twitch Embed mode
-  console.log('Twitch: Using native embed mode (hlsEnabled:', dashboardConfig.twitch?.hlsEnabled, ')');
+  updateTwitchWidgetNative(channel, twitchEmbed, twitchOffline, twitchFallback, session);
+}
+
+function updateTwitchWidgetNative(channel, twitchEmbed, twitchOffline, twitchFallback, session) {
+  if (!isTwitchPlaybackCurrent(session, twitchPlaybackBackend)) return;
+  twitchPlaybackBackend = 'embed';
+  try { window.HLSPlayer?.stop(); } catch (e) {}
+  const hlsVideo = document.getElementById('hls-video');
+  const hostname = window.location.hostname || 'localhost';
 
   // Hide HLS video when using embed. Removing .active is not enough:
   // updateTwitchWidgetHLS sets an inline `display: block !important` that would
@@ -1231,6 +1271,7 @@ function updateTwitchWidget() {
 
   loadTwitchEmbedAPI()
     .then(() => {
+      if (!isTwitchPlaybackCurrent(session, 'embed')) return;
       if (twitchEmbed) twitchEmbed.innerHTML = '';
       twitchEmbedLoaded = false;
 
@@ -1260,6 +1301,7 @@ function updateTwitchWidget() {
         window.twitchPlayer = twitchPlayer; // Expose globally for smart widget
 
         twitchPlayer.addEventListener(Twitch.Embed.VIDEO_READY, () => {
+          if (!isTwitchPlaybackCurrent(session, 'embed')) return;
           console.log('Twitch: VIDEO_READY event fired');
           if (twitchEmbed) twitchEmbed.style.display = 'block';
           if (twitchOffline) twitchOffline.style.display = 'none';
@@ -1281,7 +1323,7 @@ function updateTwitchWidget() {
             setNativeQuality(player);
             if (player && typeof player.play === 'function') {
               // Small delay to ensure visibility has been applied
-              setTimeout(() => {
+              scheduleTwitchPlayback(() => {
                 // Check if Twitch page is active (page 0 in smart widget)
                 const twitchPage = twitchEmbed?.closest('.smart-widget-page');
                 const isPageActive = !twitchPage || twitchPage.classList.contains('active');
@@ -1296,7 +1338,7 @@ function updateTwitchWidget() {
                     }));
                   }
                 }
-              }, 100);
+              }, 100, session);
             }
           } catch (e) {
             console.log('Could not trigger Twitch autoplay:', e);
@@ -1309,6 +1351,7 @@ function updateTwitchWidget() {
 
 
         twitchPlayer.addEventListener(Twitch.Embed.OFFLINE, () => {
+          if (!isTwitchPlaybackCurrent(session, 'embed')) return;
           console.log('Twitch: OFFLINE event fired');
           updateTwitchStreamInfo(channel, false, '', '', 0, null);
           if (streamInfoPollInterval) {
@@ -1320,16 +1363,17 @@ function updateTwitchWidget() {
           showTwitchOffline();
         });
 
-        setTimeout(() => {
+        scheduleTwitchPlayback(() => {
           if (!twitchEmbedLoaded) showTwitchFallback();
-        }, 5000);
+        }, 5000, session);
       } catch (e) {
+        if (!isTwitchPlaybackCurrent(session, 'embed')) return;
         console.warn('Twitch Embed API error:', e);
         showTwitchFallback();
       }
     })
     .catch(() => {
-      showTwitchFallback();
+      if (isTwitchPlaybackCurrent(session, 'embed')) showTwitchFallback();
     });
 }
 

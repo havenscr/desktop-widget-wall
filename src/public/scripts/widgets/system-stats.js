@@ -18,6 +18,10 @@ const ARC_CIRCUMFERENCE = {
 let discoveredDrives = {};
 
 // Create a short display name from drive model
+// Drive names are now mount points ("C:", "D:") rather than the hardware model
+// strings LibreHardwareMonitor reported. Mount points pass through this
+// untouched. A previously saved HD-source preference holding an old model name
+// no longer matches and falls back to the average until re-picked.
 function createShortDriveName(fullName) {
   // Remove common suffixes and clean up
   let name = fullName
@@ -76,16 +80,17 @@ async function fetchSystemStats() {
 
     dlog('[SystemStats] Invoking get_system_stats...');
     const { invoke } = window.__TAURI__.core;
-    // Rust traverses the LibreHardwareMonitor sensor tree and returns just
-    // {cpu, gpu, ram, drives} - the full tree no longer crosses IPC.
+    // Rust reads these from user-mode sources (sysinfo for CPU/RAM/disk, NVML
+    // or the PDH GPU Engine counter for GPU) and returns just
+    // {cpu, gpu, ram, drives}. No LibreHardwareMonitor, no second process.
     const data = await invoke('get_system_stats');
     dlog('[SystemStats] Received data:', data ? 'OK' : 'empty');
     applySystemStats(data);
     updateStatusIndicator(true);
     lastStatsError = null;
   } catch (e) {
-    // LibreHardwareMonitor not running or Tauri not available. This polls
-    // every 2s - log each distinct failure once, not per poll.
+    // Tauri not available (browser preview), or a stats source failed. This
+    // polls every 2s - log each distinct failure once, not per poll.
     const msg = String(e);
     if (msg !== lastStatsError) {
       lastStatsError = msg;

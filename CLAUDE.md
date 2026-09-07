@@ -186,7 +186,19 @@ body::before {
 Features requiring system access are implemented in Rust:
 - **Recent files** - File system access
 - **Audio mixer** - System audio control
-- **System stats** - CPU/RAM/disk monitoring
+- **System stats** - CPU/GPU/RAM/disk. All user-mode, no kernel driver and no
+  second process: `sysinfo` for CPU/RAM/disk, NVML (NVIDIA's user-mode library,
+  ships with the driver) for GPU with the PDH `\GPU Engine(*engtype_3D)` counter
+  as the vendor-agnostic fallback. This replaced a LibreHardwareMonitor HTTP
+  poll on `localhost:8085`; LHM's ring-0 driver polls SMBus/EC sensors the
+  widget never read, and that is a known cause of system-wide DPC latency
+  spikes. Do not reintroduce it.
+- **Audio capture** - WASAPI loopback via `cpal`. Samples go into a lock-free
+  SPSC ring (`AudioRing`), never a `Mutex`: the capture callback runs on the
+  audio engine's MMCSS real-time thread, so it must not block or memmove.
+  Levels are **pushed** to the frontend on the `audio-levels` event at 30Hz from
+  the capture thread. Do not add a polling command back. All audio commands are
+  `async` so Tauri keeps them off the main thread.
 
 These won't work in browser preview - only in Tauri app.
 
@@ -281,8 +293,14 @@ The settings panel (`settings-panel.html`) provides configuration for:
 - Claude Stats Gist URL
 - Visualizer mode
 - Performance mode (Glass Blur: Full/Lite/Off) - sets `body[data-perf]`, which
-  `themes.css` uses to reduce or disable the always-on widget backdrop blur
-  (the dashboard's biggest standing GPU cost)
+  `themes.css` uses to scale back the always-on widget backdrop blur (the
+  dashboard's biggest standing GPU cost). Full is 6px, Lite 3px, Off 0px.
+  "Off" also disables the infinite weather/indicator animations, the
+  `filter: blur()` layers, and the hardcoded-radius backdrop filters, since
+  `--glass-blur` alone never reached those. JS that sets `backdrop-filter`
+  inline must clamp to the current mode (see `applyIrcBackground` in
+  `inbox.js`); an inline `!important` otherwise outranks every stylesheet rule
+  and silently opts that element out of the setting.
 - Debug Logging (default off) - gates `window.dlog()`, which the per-poll
   widget status logs route through; errors/warnings always print
 

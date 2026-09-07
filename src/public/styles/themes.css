@@ -53,8 +53,12 @@
   --glass-bg-light: rgba(255, 255, 255, 0.9);
   --glass-border: transparent;
   --modal-border: rgba(255, 255, 255, 0.12);
-  --glass-blur: 10px;
-  --irc-blur: 10px;
+  /* backdrop-filter is re-sampled every time anything behind a widget repaints,
+     and ~13 widgets tile the whole window over a live video embed, a chat
+     embed and the visualizer. Halving the radius roughly halves that standing
+     cost; the glass still reads as glass. */
+  --glass-blur: 6px;
+  --irc-blur: 6px;
   --glass-radius: 24px;
 
   /* Shadows */
@@ -104,21 +108,65 @@
    Performance -> Glass Blur (settings-panel.js applyPerfMode); can also be
    toggled live: document.body.dataset.perf = 'lite' | 'off' | '' (full). */
 body[data-perf="lite"] {
-  --glass-blur: 4px;
-  --irc-blur: 4px;
+  --glass-blur: 3px;
+  --irc-blur: 3px;
 }
 body[data-perf="off"] {
   --glass-blur: 0px;
   --irc-blur: 0px;
 }
 
-/* With blur fully off there are no backdrop-filter corner artifacts for the
-   mask to hide and no re-sampling for will-change to pre-composite, so drop
-   the per-widget mask texture and permanent layer promotion too (VRAM). */
-body[data-perf="off"] .widget {
-  -webkit-mask-image: none;
-  mask-image: none;
-  will-change: auto;
+/* "Off" has to mean off. Zeroing the two blur variables only covered the
+   variable-driven backdrop-filters; everything below is a separate property or
+   a hardcoded radius that the variables never reached, so the mode was leaving
+   most of its cost on the table. */
+
+/* 1. Infinite animations. Up to ~100 weather particles plus the always-on
+      indicator pulses keep the compositor awake permanently, which in turn
+      keeps re-dirtying every widget's backdrop. */
+body[data-perf="off"] .raindrop,
+body[data-perf="off"] .snowflake,
+body[data-perf="off"] .cloud,
+body[data-perf="off"] .weather-lightning,
+body[data-perf="off"] .weather-fog,
+body[data-perf="off"] .weather-star,
+body[data-perf="off"] .live-dot::after,
+body[data-perf="off"] .clock-separator,
+body[data-perf="off"] .status-bars span,
+body[data-perf="off"] .leave-indicator.urgent {
+  animation: none !important;
+}
+
+/* 2. filter: blur() is a different property from backdrop-filter and was never
+      touched by the perf variables. */
+body[data-perf="off"] .cloud,
+body[data-perf="off"] .nowplaying-blur-bg,
+body[data-perf="off"] .ambient-video-bg {
+  filter: none !important;
+}
+
+/* 3. Hardcoded-radius backdrop-filters on always-visible elements. */
+body[data-perf="off"] .calc-display,
+body[data-perf="off"] .twitch-emote-tooltip {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+/* Respect the OS-level reduced-motion setting. The dashboard had no
+   prefers-reduced-motion support at all. */
+@media (prefers-reduced-motion: reduce) {
+  .raindrop,
+  .snowflake,
+  .cloud,
+  .weather-lightning,
+  .weather-fog,
+  .weather-star,
+  .live-dot::after,
+  .clock-separator,
+  .status-bars span,
+  .leave-indicator.urgent {
+    animation: none !important;
+  }
 }
 
 

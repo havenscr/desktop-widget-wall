@@ -39,6 +39,15 @@ const InboxWidget = (function() {
   let currentAccount = 'hc'; // 'hc' or 'ae'
   let twitchChatLoaded = false;
 
+  // Text-effect context menu state lives at MODULE scope, not inside
+  // loadTwitchChat(). That function re-runs on every chat re-entry after the
+  // 30s suspend (and on config change), so closure-scoped state meant a fresh
+  // menu appended to document.body plus a fresh pair of document-level
+  // click/keydown listeners every single time, none of which were ever
+  // removed. Hoisting makes the element and the listeners singletons.
+  let textEffectContextMenu = null;
+  let textEffectMenuListenersWired = false;
+
   // Legacy compatibility
   let emailsCache = accountState.hc.emailsCache;
 
@@ -278,14 +287,87 @@ const InboxWidget = (function() {
       badge.style.display = view === 'email' && emailsCache.size > 0 ? 'inline-flex' : 'none';
     }
 
-    // Load Twitch chat if switching to any chat view
-    if (isChatView && !twitchChatLoaded) {
-      loadTwitchChat();
+    // Load / resume / suspend Twitch chat as the view changes
+    if (isChatView) {
+      cancelChatSuspend();
+      if (!twitchChatLoaded) {
+        loadTwitchChat();
+      } else {
+        resumeTwitchChat(); // un-park a previously suspended iframe
+      }
+    } else if (twitchChatLoaded && !chatSuspendTimer) {
+      // Left the chat view - tear it down after a grace period so rapid
+      // dot-flipping doesn't cause repeated reconnects.
+      chatSuspendTimer = setTimeout(() => {
+        chatSuspendTimer = null;
+        if (currentView !== 'twitch-chat' && currentView !== 'chat-half') {
+          suspendTwitchChat();
+        }
+      }, CHAT_SUSPEND_DELAY_MS);
     }
 
     // Save preference
     if (save) {
       localStorage.setItem(VIEW_STORAGE_KEY, view);
+    }
+  }
+
+  // --- Hidden-chat suspension ---------------------------------------------
+  // switchView used to only set display:none on the chat view. In iframe mode
+  // that left an entire second Twitch web app (its own WebSocket, animated
+  // emotes and compositing) running invisibly forever; in IRC mode every
+  // arriving message still ran the full emote-format path to build DOM nobody
+  // could see. Suspend it instead, mirroring how the video embed is parked in
+  // smart-widget.js (src -> about:blank) and how YouTube players are destroyed.
+  //
+  // A grace delay avoids reconnect churn when flipping between the nav dots;
+  // only a sustained absence actually tears the chat down.
+  const CHAT_SUSPEND_DELAY_MS = 30000;
+  let chatSuspendTimer = null;
+
+  function cancelChatSuspend() {
+    if (chatSuspendTimer) {
+      clearTimeout(chatSuspendTimer);
+      chatSuspendTimer = null;
+    }
+  }
+
+  function suspendTwitchChat() {
+    const container = document.getElementById('twitch-chat-container');
+    if (!container) return;
+
+    // iframe mode: park the iframe. Keeps the element (and its listeners) so
+    // re-entry is just a src restore.
+    const iframe = container.querySelector('iframe');
+    if (iframe) {
+      if (iframe.src && iframe.src !== 'about:blank') {
+        iframe.dataset.originalSrc = iframe.src;
+        iframe.src = 'about:blank';
+        dlog('Inbox: parked hidden Twitch chat iframe');
+      }
+      return;
+    }
+
+    // IRC mode: drop the socket. twitchChatLoaded=false makes switchView
+    // rebuild via loadTwitchChat() on re-entry, which also re-fetches recent
+    // messages so scrollback is restored.
+    if (container.querySelector('#twitch-irc-chat')) {
+      if (typeof TwitchChat !== 'undefined' && TwitchChat.isConnected()) {
+        TwitchChat.disconnect();
+      }
+      twitchChatLoaded = false;
+      dlog('Inbox: disconnected hidden IRC chat');
+    }
+  }
+
+  function resumeTwitchChat() {
+    const container = document.getElementById('twitch-chat-container');
+    if (!container) return;
+    const iframe = container.querySelector('iframe');
+    if (iframe && iframe.dataset.originalSrc) {
+      iframe.src = iframe.dataset.originalSrc;
+      delete iframe.dataset.originalSrc;
+      dlog('Inbox: restored Twitch chat iframe');
     }
   }
 
@@ -1536,8 +1618,18 @@ const InboxWidget = (function() {
           }, 150);
         });
 
-        // Context menu for applying effects to selected text
-        let textEffectContextMenu = null;
+        // Context menu for applying effects to selected text.
+        // textEffectContextMenu is module-scoped so it survives (and is reused
+        // across) repeated loadTwitchChat() calls.
+
+        // Drop any menu left over from a previous loadTwitchChat() call. Its
+        // item handlers close over that call's chatInput, which no longer
+        // exists, and without this each chat re-entry stacked another orphaned
+        // menu in document.body.
+        if (textEffectContextMenu) {
+          textEffectContextMenu.remove();
+          textEffectContextMenu = null;
+        }
 
         function createTextEffectContextMenu() {
           if (textEffectContextMenu) return textEffectContextMenu;
@@ -1669,19 +1761,24 @@ const InboxWidget = (function() {
           }
         });
 
-        // Hide context menu when clicking elsewhere
-        document.addEventListener('click', (e) => {
-          if (textEffectContextMenu && !textEffectContextMenu.contains(e.target)) {
-            hideTextEffectContextMenu();
-          }
-        });
+        // Hide-on-outside-click and hide-on-Escape are registered ONCE for the
+        // lifetime of the page. They only touch the module-scoped menu element,
+        // so they do not need to close over anything in this call's scope.
+        if (!textEffectMenuListenersWired) {
+          textEffectMenuListenersWired = true;
 
-        // Hide context menu on escape
-        document.addEventListener('keydown', (e) => {
-          if (e.key === 'Escape') {
-            hideTextEffectContextMenu();
-          }
-        });
+          document.addEventListener('click', (e) => {
+            if (textEffectContextMenu && !textEffectContextMenu.contains(e.target)) {
+              hideTextEffectContextMenu();
+            }
+          });
+
+          document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+              hideTextEffectContextMenu();
+            }
+          });
+        }
       }
 
       // Set up emote hover tooltip
@@ -2406,7 +2503,13 @@ const InboxWidget = (function() {
     if (ircConfig.bgStyle === 'none') {
       // Apply blur and darkness directly as inline styles with !important to override CSS
       const alpha = (ircConfig.darkness / 100).toFixed(2);
-      const blurPx = `${ircConfig.blur}px`;
+      // Clamp the user's blur to the current performance mode. An inline
+      // !important declaration outranks every stylesheet rule, so writing the
+      // raw configured radius here made this the one element that ignored the
+      // Glass Blur setting entirely, including "Off".
+      const perfMode = document.body.dataset.perf;
+      const perfCeiling = perfMode === 'off' ? 0 : perfMode === 'lite' ? 3 : Infinity;
+      const blurPx = `${Math.min(ircConfig.blur, perfCeiling)}px`;
       chatContainer.style.setProperty('background', `rgba(20, 20, 35, ${alpha})`, 'important');
       chatContainer.style.setProperty('backdrop-filter', `blur(${blurPx})`, 'important');
       chatContainer.style.setProperty('-webkit-backdrop-filter', `blur(${blurPx})`, 'important');

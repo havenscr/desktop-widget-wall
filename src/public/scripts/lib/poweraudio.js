@@ -57,7 +57,17 @@
       if (isNaN(vector.x) || isNaN(vector.y)) {
         return;
       }
-      this.forces[name] = { x: vector.x, y: vector.y };
+      // Mutate the existing slot instead of allocating a new object each call.
+      // Nothing retains a reference to a force vector (the accumulator below
+      // only reads .x/.y, clearForce deletes the key), so this is equivalent
+      // and removes one allocation per force per object per frame.
+      const existing = this.forces[name];
+      if (existing) {
+        existing.x = vector.x;
+        existing.y = vector.y;
+      } else {
+        this.forces[name] = { x: vector.x, y: vector.y };
+      }
     }
 
     clearForce(name) {
@@ -77,11 +87,13 @@
     }
 
     update(delta) {
-      // Friction force
-      this.setForce('friction', new PIXI.Point(
-        -this.friction.x * this.velocity.x,
-        -this.friction.y * this.velocity.y
-      ));
+      // Friction force. setForce copies .x/.y into its own slot, so a plain
+      // literal is equivalent to constructing a PIXI.Point that is immediately
+      // discarded - this ran for every display object, every frame.
+      this.setForce('friction', {
+        x: -this.friction.x * this.velocity.x,
+        y: -this.friction.y * this.velocity.y
+      });
 
       // Calculate acceleration from all forces
       this.acceleration.set(0, 0);
@@ -131,8 +143,12 @@
     }
 
     update(delta) {
+      // The background is intentionally empty (CSS draws it, for transparency).
+      // redraw() only ever did graphics.clear(), and nothing anywhere draws
+      // into these graphics - DisplayObject.update() is pure physics - so the
+      // per-frame clear was a no-op running 30x/sec. redraw() is kept for API
+      // compatibility in case a caller invokes it directly.
       super.update(delta);
-      this.redraw();
     }
 
     redraw() {
@@ -338,6 +354,11 @@
       this.life -= delta * this.decay;
       if (this.life <= 0) {
         this.parent?.removeChild(this);
+        // removeChild only unparents. Each spore owns a PIXI.Graphics with its
+        // own GraphicsGeometry and WebGL batch buffers, and spores are emitted
+        // continuously, so without an explicit destroy those buffers accumulate
+        // for the life of the process.
+        this.destroy({ children: true });
         return;
       }
       this.redraw();
@@ -409,29 +430,43 @@
         const fy = -Math.sin(angle) * 100000 / dist;
         node.setForce('tocenter', { x: fx, y: fy });
 
-        // Repulsion between nodes
+        // Repulsion between nodes.
+        // This inner loop is O(N^2) (435 pairs/frame at N=30) and used to
+        // allocate two template-literal keys plus two PIXI.Points per pair -
+        // roughly 26k short-lived objects/sec. Three changes below, all
+        // numerically identical to the original:
+        //   1. force keys are memoized per node (ids are stable)
+        //   2. plain literals instead of PIXI.Point (setForce copies x/y)
+        //   3. the >300 cutoff is tested on squared distance, so the sqrt is
+        //      only paid for pairs that are actually close enough to matter
+        const nodeKey = node._forceKey || (node._forceKey = 'node_' + node.id);
+        const nx = node.position.x;
+        const ny = node.position.y;
+
         for (let k = i + 1; k < N; k++) {
           const otherNode = this.nodeParent.children[k];
-          const nodeDist = Point.distance(node.position, otherNode.position);
+          const otherKey = otherNode._forceKey || (otherNode._forceKey = 'node_' + otherNode.id);
 
-          if (nodeDist > 300) {
-            node.clearForce('node_' + otherNode.id);
-            otherNode.clearForce('node_' + node.id);
+          const ddx = nx - otherNode.position.x;
+          const ddy = ny - otherNode.position.y;
+          const distSq = ddx * ddx + ddy * ddy;
+
+          if (distSq > 90000) { // 300^2 - avoids the sqrt for distant pairs
+            node.clearForce(otherKey);
+            otherNode.clearForce(nodeKey);
             continue;
           }
 
-          const a = Math.atan2(
-            node.position.y - otherNode.position.y,
-            node.position.x - otherNode.position.x
-          );
+          const nodeDist = Math.sqrt(distSq);
+          const a = Math.atan2(ddy, ddx);
           let rfx = 0, rfy = 0;
           if (nodeDist !== 0) {
             rfx = Math.cos(a) * 10000 / nodeDist;
             rfy = Math.sin(a) * 10000 / nodeDist;
           }
 
-          node.setForce('node_' + otherNode.id, new PIXI.Point(-rfx, -rfy));
-          otherNode.setForce('node_' + node.id, new PIXI.Point(rfx, rfy));
+          node.setForce(otherKey, { x: -rfx, y: -rfy });
+          otherNode.setForce(nodeKey, { x: rfx, y: rfy });
         }
       }
 
@@ -510,6 +545,11 @@
         while (this.nodes.children.length > count) {
           const node = this.nodes.children[this.nodes.children.length - 1];
           this.nodes.removeChild(node);
+          const forceKey = node._forceKey || 'node_' + node.id;
+          for (const remaining of this.nodes.children) {
+            remaining.clearForce(forceKey);
+          }
+          node.destroy({ children: true, texture: false, baseTexture: false });
         }
       }
     }
@@ -611,8 +651,19 @@
       // Audio-reactive line width
       this.lineWidth = 1 + waveform.averageGainLinearized * 8;
 
-      // Blur decreases with audio intensity
-      this.filter.blur = Math.floor(0.2 + 4 * Math.exp(-24 * waveform.averageGainLinearized));
+      // Blur decreases with audio intensity. A BlurFilter forces a
+      // render-to-texture plus a 2-pass gaussian every frame - even when the
+      // radius rounds to 0, which is most of the time during playback
+      // (4*exp(-24*gain) hits 0 as soon as the audio is moderately loud).
+      // Detaching the filter at 0 is visually identical to a 0-radius blur but
+      // skips the offscreen round-trip entirely.
+      const blurAmount = Math.floor(0.2 + 4 * Math.exp(-24 * waveform.averageGainLinearized));
+      this.filter.blur = blurAmount;
+      if (blurAmount <= 0) {
+        if (this.filters) this.filters = null;
+      } else if (!this.filters) {
+        this.filters = [this.filter];
+      }
 
       // Radius expands with audio
       this.radius = this.baseRadius + 100 * waveform.averageGainLinearized;
@@ -1338,12 +1389,13 @@
       });
 
       canvas.addEventListener('mousemove', (e) => {
+        // Check isDragging BEFORE measuring. getBoundingClientRect forces a
+        // synchronous layout, and this fires on every mouse move over the
+        // canvas, so the unconditional version made the pointer feel heavy
+        // whenever it crossed the visualizer.
+        if (!this.powerCircle || !this.powerCircle.isDragging) return;
         const rect = canvas.getBoundingClientRect();
-        const mouseX = e.clientX - rect.left;
-        const mouseY = e.clientY - rect.top;
-        if (this.powerCircle && this.powerCircle.isDragging) {
-          this.powerCircle.updateDrag(mouseX, mouseY);
-        }
+        this.powerCircle.updateDrag(e.clientX - rect.left, e.clientY - rect.top);
       });
 
       canvas.addEventListener('mouseup', () => {

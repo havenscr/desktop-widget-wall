@@ -1112,7 +1112,9 @@
   border-radius: 0 0 2px 2px;
   animation: raindropFall linear infinite;
   opacity: 0;
-  will-change: transform, opacity;
+  /* No will-change: there are 50-60 of these at once and each one would get its
+     own permanent compositor layer. The keyframes animate transform/opacity,
+     which the compositor handles without the hint. */
 }
 
 @keyframes raindropFall {
@@ -1166,7 +1168,7 @@
   border-radius: 50%;
   animation: snowFall linear infinite;
   box-shadow: 0 0 4px rgba(255,255,255,0.5);
-  will-change: transform, opacity;
+  /* No will-change - see .raindrop. */
 }
 
 @keyframes snowFall {
@@ -1188,7 +1190,6 @@
   background: rgba(255,255,255,1);
   opacity: 0;
   animation: lightningFlash 4s ease-in-out infinite;
-  will-change: opacity;
 }
 
 @keyframes lightningFlash {
@@ -1227,7 +1228,6 @@
     rgba(200,200,200,0.5) 100%
   );
   animation: fogDrift 8s ease-in-out infinite;
-  will-change: transform, opacity;
 }
 
 @keyframes fogDrift {
@@ -1247,7 +1247,6 @@
   border-radius: 50%;
   filter: blur(8px);
   animation: cloudDrift linear infinite;
-  will-change: transform;
 }
 
 @keyframes cloudDrift {
@@ -1855,25 +1854,35 @@
   filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.25));
 }
 
-/* Live indicator dot for streams */
+/* Live indicator dot for streams.
+   The glow is a pseudo-element animating opacity/transform rather than the dot
+   animating box-shadow. box-shadow cannot be composited, so the old version
+   forced a repaint every frame for as long as the app was open. */
 .live-dot {
   display: inline-block;
+  position: relative;
   width: 8px;
   height: 8px;
   background: #ff4444;
   border-radius: 50%;
   box-shadow: 0 0 6px 2px rgba(255, 68, 68, 0.5);
-  animation: live-pulse 2s ease-in-out infinite;
   vertical-align: middle;
 }
 
+.live-dot::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  box-shadow: 0 0 10px 4px rgba(255, 68, 68, 0.7);
+  opacity: 0;
+  animation: live-pulse 2s ease-in-out infinite;
+  pointer-events: none;
+}
+
 @keyframes live-pulse {
-  0%, 100% {
-    box-shadow: 0 0 6px 2px rgba(255, 68, 68, 0.5);
-  }
-  50% {
-    box-shadow: 0 0 10px 4px rgba(255, 68, 68, 0.7);
-  }
+  0%, 100% { opacity: 0; }
+  50% { opacity: 1; }
 }
 
 /* Playback status indicator (animated bars) */
@@ -9945,8 +9954,8 @@ div.twitch-emote-picker-item {
 /* IRC Chat Background Options */
 .twitch-irc-chat[data-bg="none"] {
   background: rgba(20, 20, 35, var(--irc-darkness, 0.55));
-  backdrop-filter: blur(var(--irc-blur, 16px));
-  -webkit-backdrop-filter: blur(var(--irc-blur, 16px));
+  backdrop-filter: blur(var(--irc-blur, 0px));
+  -webkit-backdrop-filter: blur(var(--irc-blur, 0px));
 }
 
 .twitch-irc-chat[data-bg="svg"] {

@@ -11,13 +11,19 @@
   let visualizerTauriAvailable = false;
   let audioSourceMode = 'demo'; // 'demo' or 'native'
   let currentDeviceId = 'demo';
-  let nativeAudioInterval = null;
+  // Unlisten handle for the pushed 'audio-levels' stream, plus a slow watchdog.
+  // The push has no natural heartbeat if the Rust capture thread dies, so the
+  // watchdog is what keeps the dead-capture recovery reachable. 5s, not 33ms.
+  let nativeLevelsUnlisten = null;
+  let nativeLevelsWatchdog = null;
+  let lastNativeLevelsAt = 0;
   let nativeSamples = [];      // downsampled waveform for the circular ring
   let nativeLevels = null;     // {bass, mid, high} computed in Rust
   let demoPhase = 0;
 
   // Visualizer display mode (milkdrop, circular)
   let currentDisplayMode = '';
+  let displayModeGeneration = 0;
 
   // Audio levels for visualization
   let audioLevels = { bass: 0, mid: 0, high: 0 };
@@ -29,6 +35,10 @@
 
   // Circular visualizer (Three.js)
   let circularScene, circularCamera, circularRenderer;
+  // Resize observers are held here so the per-mode dispose can disconnect them
+  let milkdropResizeObserver = null;
+  let circularResizeObserver = null;
+  let idleModeDisposeTimer = null;
   let circularCore, circularRing, circularGlowRing, circularTorus, circularParticles;
   let circularRingGeometry, circularWaveformGeometry, circularWaveformGlow;
   const circularWaveAmplitudes = new Float32Array(128); // reused per frame
@@ -817,7 +827,10 @@
       }
     }, 100);
 
-    const resizeObserver = new ResizeObserver(() => {
+    // Held at module scope so disposeMilkdrop() can disconnect it - otherwise
+    // each dispose/re-init cycle would leave another live observer behind.
+    if (milkdropResizeObserver) milkdropResizeObserver.disconnect();
+    milkdropResizeObserver = new ResizeObserver(() => {
       if (!container || !milkdropRenderer) return;
       const w = container.clientWidth;
       const h = container.clientHeight;
@@ -829,7 +842,7 @@
         milkdropMesh.material.uniforms.resolution.value.set(w * pr, h * pr);
       }
     });
-    resizeObserver.observe(container);
+    milkdropResizeObserver.observe(container);
 
     console.log('Visualizer: MilkDrop initialized successfully');
     return true;
@@ -1055,8 +1068,9 @@
       }
     }, 100);
 
-    // Handle resize
-    const resizeObserver = new ResizeObserver(() => {
+    // Handle resize (module-scoped so disposeCircular() can disconnect it)
+    if (circularResizeObserver) circularResizeObserver.disconnect();
+    circularResizeObserver = new ResizeObserver(() => {
       if (!container || !circularRenderer) return;
       const w = container.clientWidth;
       const h = container.clientHeight;
@@ -1066,7 +1080,7 @@
       circularCamera.updateProjectionMatrix();
       circularRenderer.setSize(w, h);
     });
-    resizeObserver.observe(container);
+    circularResizeObserver.observe(container);
 
     console.log('Visualizer: Circular visualizer initialized successfully');
     return true;
@@ -1355,6 +1369,15 @@
       return;
     }
 
+    // InfiniDream is an external-browser launcher - nothing of ours is on
+    // screen, so there is nothing to draw. Previously the loop kept running at
+    // 30fps and fell through the switch below to renderPowerAudio(). The loop
+    // is re-armed by switchDisplayMode when leaving this mode.
+    if (currentDisplayMode === 'infinidream') {
+      animationId = null;
+      return;
+    }
+
     // Schedule next frame
     animationId = requestAnimationFrame(animate);
 
@@ -1362,19 +1385,34 @@
     if (currentTime - lastFrameTime < frameInterval) return;
     lastFrameTime = currentTime - ((currentTime - lastFrameTime) % frameInterval);
 
-    // Poll theme colors periodically so JS-driven fade transitions look smooth
+    // Poll theme colors periodically so JS-driven fade transitions look smooth.
+    // Only the ACTIVE mode needs updating: each updater calls getThemeColors(),
+    // which forces a style resolution via getComputedStyle(document.body), and
+    // doing all three meant 3 forced resolutions 5x/sec forever on a document
+    // with 14 blurred glass widgets. Theme *switches* are still covered by the
+    // MutationObserver on data-theme; this poll exists only to track the
+    // inline var writes theme.js makes during a fade.
     if (currentTime - lastColorUpdateTime > 200) {
       lastColorUpdateTime = currentTime;
-      updatePowerAudioColors();
-      updateMilkdropColors();
-      updateCircularColors();
+      switch (currentDisplayMode) {
+        case 'circular':
+          updateCircularColors();
+          break;
+        case 'milkdrop':
+          updateMilkdropColors();
+          break;
+        case 'poweraudio':
+        default:
+          updatePowerAudioColors();
+          break;
+      }
     }
 
     let raw;
     if (audioSourceMode === 'native' && nativeLevels) {
-      // Levels are computed in Rust (get_audio_levels) to keep the IPC
-      // payload tiny; this object sustains its last value through brief
-      // silent polls, matching the old raw-sample behavior.
+      // Levels are computed in Rust and pushed on 'audio-levels' to keep the
+      // IPC payload tiny; this object sustains its last value through brief
+      // silent stretches, matching the old raw-sample behavior.
       raw = nativeLevels;
     } else {
       raw = getDemoAudioLevels();
@@ -1533,6 +1571,11 @@
 
     systemDefaultPollInterval = setInterval(async () => {
       if (!isSystemDefaultMode) return;
+      // Skip the Rust round-trip while the dashboard is hidden. This was the
+      // one audio timer with no visibility gate, so it kept enumerating Windows
+      // audio endpoints every 2s while minimized. The next visible tick picks
+      // up any device change.
+      if (document.hidden) return;
 
       const newDefaultName = await getWindowsDefaultDevice();
 
@@ -1684,61 +1727,79 @@
       const { invoke } = window.__TAURI__.core;
       await invoke('start_audio_capture', { deviceId });
 
-      if (nativeAudioInterval) clearInterval(nativeAudioInterval);
+      await stopNativeLevelStream();
       let zeroSampleCount = 0;
       const captureStartTime = Date.now(); // Track when capture started
       const startupImmunityMs = 3000; // Don't trigger recovery for first 3 seconds
 
-      // Poll at 30Hz to match the 30fps render cap. Rust computes bass/mid/high
-      // and returns a downsampled waveform, so the IPC payload is ~131 floats
-      // at 30Hz instead of the old 512 raw samples at 62Hz.
-      nativeAudioInterval = setInterval(async () => {
+      // Levels are PUSHED from the Rust capture thread at 30Hz on the
+      // 'audio-levels' event, not polled. The old version invoked
+      // get_audio_levels every 33ms, which was 30 IPC round-trips/sec into a
+      // command Tauri ran on the MAIN thread, contending with the WASAPI
+      // real-time callback for the sample buffer. Rust computes bass/mid/high
+      // and downsamples the waveform, so each event is ~131 floats.
+      nativeLevelsUnlisten = await window.__TAURI__.event.listen('audio-levels', (event) => {
+        lastNativeLevelsAt = Date.now();
         // No renders consume audio while hidden (animate() stops itself) or in
-        // InfiniDream mode (external launcher) - skip the IPC entirely.
+        // InfiniDream mode (external launcher) - ignore the payload.
         if (document.hidden || currentDisplayMode === 'infinidream') return;
-        try {
-          const levels = await invoke('get_audio_levels');
-          if (levels && levels.waveform && levels.waveform.length > 0) {
-            nativeLevels = { bass: levels.bass, mid: levels.mid, high: levels.high };
-            nativeSamples = levels.waveform;
-            zeroSampleCount = 0; // Reset zero counter when we get data
-          } else {
-            zeroSampleCount++;
-            const timeSinceStart = Date.now() - captureStartTime;
 
-            // IMPORTANT: an empty waveform is NORMAL. It just means the
-            // captured endpoint is silent right now (e.g. a muted Twitch/YouTube
-            // player, paused media, or a quiet moment). Silence is NOT a capture
-            // failure. The visualizer simply sustains its last levels/idle render.
-            //
-            // Previously, ~1.6s of zeros triggered handleSystemDefaultRecovery(),
-            // which tore down and restarted the WASAPI loopback capture on the
-            // shared default render endpoint. With a normally-silent endpoint this
-            // looped every ~1.6s forever, churning the audio subsystem and
-            // disrupting the embedded video player's audio path -> buffering.
-            //
-            // We now only recover when Rust reports the capture has ACTUALLY
-            // stopped (a real error), checked on a long interval with backoff.
-            if (zeroSampleCount === 30) {
-              console.log('Visualizer: endpoint silent (no samples ~1s) - this is normal, idling');
-            }
+        const levels = event.payload;
+        if (levels && levels.waveform && levels.waveform.length > 0) {
+          nativeLevels = { bass: levels.bass, mid: levels.mid, high: levels.high };
+          nativeSamples = levels.waveform;
+          zeroSampleCount = 0; // Reset zero counter when we get data
+        } else {
+          zeroSampleCount++;
+          const timeSinceStart = Date.now() - captureStartTime;
 
-            // Real-failure check: only every ~5s of continuous silence, and only
-            // in system-default mode, ask Rust whether capture is still alive.
-            // 150 polls * 33ms ~= 5s. handleSystemDefaultRecovery itself has a
-            // cooldown, and it now no-ops unless capture is genuinely dead.
-            if (
-              isSystemDefaultMode &&
-              timeSinceStart > startupImmunityMs &&
-              zeroSampleCount % 150 === 0
-            ) {
-              maybeRecoverIfCaptureDead();
-            }
+          // IMPORTANT: an empty waveform is NORMAL. It just means the
+          // captured endpoint is silent right now (e.g. a muted Twitch/YouTube
+          // player, paused media, or a quiet moment). Silence is NOT a capture
+          // failure. The visualizer simply sustains its last levels/idle render.
+          //
+          // Previously, ~1.6s of zeros triggered handleSystemDefaultRecovery(),
+          // which tore down and restarted the WASAPI loopback capture on the
+          // shared default render endpoint. With a normally-silent endpoint this
+          // looped every ~1.6s forever, churning the audio subsystem and
+          // disrupting the embedded video player's audio path -> buffering.
+          //
+          // We now only recover when Rust reports the capture has ACTUALLY
+          // stopped (a real error), checked on a long interval with backoff.
+          if (zeroSampleCount === 30) {
+            console.log('Visualizer: endpoint silent (no samples ~1s) - this is normal, idling');
           }
-        } catch (e) {
-          console.error('Audio levels fetch error:', e);
+
+          // Real-failure check: only every ~5s of continuous silence, and only
+          // in system-default mode, ask Rust whether capture is still alive.
+          // 150 events * 33ms ~= 5s. handleSystemDefaultRecovery itself has a
+          // cooldown, and it now no-ops unless capture is genuinely dead.
+          if (
+            isSystemDefaultMode &&
+            timeSinceStart > startupImmunityMs &&
+            zeroSampleCount % 150 === 0
+          ) {
+            maybeRecoverIfCaptureDead();
+          }
         }
-      }, 33);
+      });
+
+      // Watchdog for the push itself. If the Rust capture thread exits, the
+      // event stream simply stops and the silence counter above stops advancing,
+      // so nothing would ever notice. 5s tick, negligible next to the 30Hz it
+      // replaced.
+      lastNativeLevelsAt = Date.now();
+      nativeLevelsWatchdog = setInterval(() => {
+        if (document.hidden || currentDisplayMode === 'infinidream') return;
+        if (
+          isSystemDefaultMode &&
+          Date.now() - captureStartTime > startupImmunityMs &&
+          Date.now() - lastNativeLevelsAt > 5000
+        ) {
+          console.warn('Visualizer: no audio-levels events for 5s - checking capture health');
+          maybeRecoverIfCaptureDead();
+        }
+      }, 5000);
 
       // Log capture status after a short delay
       setTimeout(async () => {
@@ -1757,11 +1818,25 @@
     }
   }
 
-  async function stopNativeCapture() {
-    if (nativeAudioInterval) {
-      clearInterval(nativeAudioInterval);
-      nativeAudioInterval = null;
+  /// Detach the pushed level stream and its watchdog. Safe to call when neither
+  /// is active.
+  async function stopNativeLevelStream() {
+    if (nativeLevelsUnlisten) {
+      try {
+        await nativeLevelsUnlisten();
+      } catch (e) {
+        console.error('Visualizer: failed to unlisten audio-levels:', e);
+      }
+      nativeLevelsUnlisten = null;
     }
+    if (nativeLevelsWatchdog) {
+      clearInterval(nativeLevelsWatchdog);
+      nativeLevelsWatchdog = null;
+    }
+  }
+
+  async function stopNativeCapture() {
+    await stopNativeLevelStream();
     nativeSamples = [];
     nativeLevels = null;
 
@@ -1932,7 +2007,14 @@
       return;
     }
 
+    const generation = ++displayModeGeneration;
     currentDisplayMode = mode;
+    if (poweraudioViz?.stage) poweraudioViz.stage.pause();
+    if (animationId !== null) {
+      cancelAnimationFrame(animationId);
+      animationId = null;
+    }
+    scheduleIdleModeDispose();
 
     // Update mode visibility
     modes.forEach(m => {
@@ -1956,6 +2038,7 @@
       console.error('Visualizer: could not load libraries for mode', mode, e);
       return;
     }
+    if (generation !== displayModeGeneration) return;
 
     // Lazy initialize visualizers on first switch
     if (mode === 'poweraudio' && !poweraudioInitialized) {
@@ -1968,6 +2051,13 @@
       infinidreamInitialized = initInfiniDreamVisualizer();
     }
 
+    // Re-arm the render loop if it self-stopped (it bails out entirely while
+    // in infinidream mode, and on document.hidden).
+    if (animationId === null && mode !== 'infinidream' && !document.hidden) {
+      lastFrameTime = 0;
+      animationId = requestAnimationFrame(animate);
+    }
+
     // Pause/resume PowerAudio based on mode to save CPU
     if (poweraudioViz && poweraudioViz.stage) {
       if (mode === 'poweraudio') {
@@ -1975,7 +2065,7 @@
         poweraudioViz.stage.resume();
         poweraudioViz.lastUpdateDate = new Date();
         setTimeout(() => {
-          poweraudioViz.stage.resize();
+          if (generation === displayModeGeneration) poweraudioViz?.stage?.resize();
         }, 50);
       } else {
         // Pause PowerAudio when switching away (saves significant CPU)
@@ -2667,7 +2757,99 @@
     setTimeout(tryInit, 500);
   }
 
+  // --- Per-mode teardown ---------------------------------------------------
+  // Modes were lazily initialized and never torn down, so visiting all of them
+  // left 2 live THREE.WebGLRenderer contexts resident for the rest of the
+  // session (browsers also cap concurrent WebGL contexts, so this is
+  // correctness insurance as well as VRAM). The init paths append their canvas
+  // without clearing the container, so dispose must remove the element too.
+  //
+  // PowerAudio is deliberately NOT disposed here: it is the default mode, it
+  // already stops work via stage.pause(), and churning its PIXI app on every
+  // mode switch would cost more than it saves.
+  function disposeMilkdrop() {
+    if (!milkdropInitialized && !milkdropRenderer) return;
+    if (milkdropResizeObserver) {
+      milkdropResizeObserver.disconnect();
+      milkdropResizeObserver = null;
+    }
+    if (milkdropMesh) {
+      if (milkdropMesh.geometry) milkdropMesh.geometry.dispose();
+      if (milkdropMesh.material) milkdropMesh.material.dispose();
+    }
+    if (milkdropRenderer) {
+      const el = milkdropRenderer.domElement;
+      milkdropRenderer.dispose();
+      try { milkdropRenderer.forceContextLoss(); } catch (e) { /* older three */ }
+      if (el && el.parentNode) el.parentNode.removeChild(el);
+    }
+    milkdropScene = null;
+    milkdropCamera = null;
+    milkdropRenderer = null;
+    milkdropMesh = null;
+    milkdropInitialized = false;
+    dlog('Visualizer: disposed MilkDrop WebGL context');
+  }
+
+  function disposeCircular() {
+    if (!circularInitialized && !circularRenderer) return;
+    if (circularResizeObserver) {
+      circularResizeObserver.disconnect();
+      circularResizeObserver = null;
+    }
+    // Note: circularGlowRing and the waveform layers are disposed here but were
+    // missed by the original beforeunload-only cleanup. That was harmless when
+    // it ran once at exit; now that dispose runs on every mode switch, skipping
+    // them would leak a geometry+material per switch.
+    for (const obj of [circularCore, circularRing, circularGlowRing, circularTorus, circularParticles]) {
+      if (!obj) continue;
+      if (obj.geometry) obj.geometry.dispose();
+      if (obj.material) obj.material.dispose();
+    }
+    if (circularWaveformGlow && Array.isArray(circularWaveformGlow.layers)) {
+      for (const layer of circularWaveformGlow.layers) {
+        if (!layer) continue;
+        if (layer.geometry) layer.geometry.dispose();
+        if (layer.material) layer.material.dispose();
+      }
+    }
+    circularGlowRing = null;
+    circularWaveformGlow = null;
+    circularWaveformGeometry = null;
+    if (circularRenderer) {
+      const el = circularRenderer.domElement;
+      circularRenderer.dispose();
+      try { circularRenderer.forceContextLoss(); } catch (e) { /* older three */ }
+      if (el && el.parentNode) el.parentNode.removeChild(el);
+    }
+    circularScene = null;
+    circularCamera = null;
+    circularRenderer = null;
+    circularCore = null;
+    circularRing = null;
+    circularTorus = null;
+    circularParticles = null;
+    circularRingGeometry = null;
+    circularInitialized = false;
+    dlog('Visualizer: disposed Circular WebGL context');
+  }
+
+  // Debounced so clicking through the mode dots doesn't thrash init/dispose.
+  function scheduleIdleModeDispose() {
+    if (idleModeDisposeTimer) clearTimeout(idleModeDisposeTimer);
+    idleModeDisposeTimer = setTimeout(() => {
+      idleModeDisposeTimer = null;
+      if (currentDisplayMode !== 'milkdrop') disposeMilkdrop();
+      if (currentDisplayMode !== 'circular') disposeCircular();
+    }, 30000);
+  }
+
   function cleanupVisualizer() {
+    displayModeGeneration += 1;
+    if (idleModeDisposeTimer) {
+      clearTimeout(idleModeDisposeTimer);
+      idleModeDisposeTimer = null;
+    }
     if (animationId) {
       cancelAnimationFrame(animationId);
       animationId = null;

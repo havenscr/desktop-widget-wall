@@ -298,22 +298,32 @@ function renderColorMesh(canvas, ctx, time) {
     // Pulsating radius
     const pulseRadius = blob.radius * (1 + Math.sin(time * 0.001 + blob.phase) * 0.1);
 
-    // Create radial gradient for soft blob
-    const gradient = ctx.createRadialGradient(
-      blob.x, blob.y, 0,
-      blob.x, blob.y, pulseRadius
-    );
-
+    // Build the gradient once per blob (per colour) at UNIT radius, then place
+    // and size it with the canvas transform. Gradient coordinates live in the
+    // current transform space, so translate+scale reproduces a radius-N
+    // gradient at (x,y) exactly - no quantization. Previously this allocated a
+    // fresh CanvasGradient plus 4 colour stops for every blob every frame
+    // (~150 gradient objects/sec).
     const { r, g, b } = blob.color;
-    gradient.addColorStop(0, `rgba(${r}, ${g}, ${b}, 0.6)`);
-    gradient.addColorStop(0.4, `rgba(${r}, ${g}, ${b}, 0.3)`);
-    gradient.addColorStop(0.7, `rgba(${r}, ${g}, ${b}, 0.1)`);
-    gradient.addColorStop(1, `rgba(${r}, ${g}, ${b}, 0)`);
+    const colorKey = r + ',' + g + ',' + b;
+    if (!blob._gradient || blob._gradientKey !== colorKey) {
+      const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, 1);
+      grad.addColorStop(0, `rgba(${r}, ${g}, ${b}, 0.6)`);
+      grad.addColorStop(0.4, `rgba(${r}, ${g}, ${b}, 0.3)`);
+      grad.addColorStop(0.7, `rgba(${r}, ${g}, ${b}, 0.1)`);
+      grad.addColorStop(1, `rgba(${r}, ${g}, ${b}, 0)`);
+      blob._gradient = grad;
+      blob._gradientKey = colorKey;
+    }
 
-    ctx.fillStyle = gradient;
+    ctx.save();
+    ctx.translate(blob.x, blob.y);
+    ctx.scale(pulseRadius, pulseRadius);
+    ctx.fillStyle = blob._gradient;
     ctx.beginPath();
-    ctx.arc(blob.x, blob.y, pulseRadius, 0, Math.PI * 2);
+    ctx.arc(0, 0, 1, 0, Math.PI * 2);
     ctx.fill();
+    ctx.restore();
   }
 
   // Overlay gradient for depth
@@ -345,6 +355,18 @@ function animateColorMesh(canvas, ctx) {
   renderColorMesh(canvas, ctx, time);
 }
 
+function resizeColorMeshCanvas(canvas, widget) {
+  const rect = widget.getBoundingClientRect();
+  // Soft, blurred blobs use the same capped backing size on every resize path.
+  const dpr = Math.min(window.devicePixelRatio || 1, 1);
+  const width = Math.floor(rect.width * dpr);
+  const height = Math.floor(rect.height * dpr);
+  if (canvas.width === width && canvas.height === height) return false;
+  if (canvas.width !== width) canvas.width = width;
+  if (canvas.height !== height) canvas.height = height;
+  return true;
+}
+
 // Update color mesh with new album art colors
 // Accepts either base64 data (albumArtBase64 + albumArtMime) or a URL (imageUrl)
 // sourceType hint: 'twitch', 'youtube', 'radio', or null for default fallback colors
@@ -355,16 +377,10 @@ async function updateColorMesh(albumArtBase64, albumArtMime, imageUrl = null, so
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
 
-  // Set canvas size to match widget at device resolution. All drawing math
-  // (blob init + render) consistently uses canvas.width/height device pixels,
-  // so no ctx.scale - scaling here while initializing blobs in device pixels
-  // previously misplaced/oversized the blobs on scaled displays.
+  // Blob positions and rendering both use the capped canvas pixel dimensions.
   const widget = canvas.closest('.widget-nowplaying');
   if (widget) {
-    const rect = widget.getBoundingClientRect();
-    const dpr = window.devicePixelRatio || 1;
-    canvas.width = rect.width * dpr;
-    canvas.height = rect.height * dpr;
+    resizeColorMeshCanvas(canvas, widget);
   }
 
   // Get fallback colors based on source type
@@ -436,13 +452,7 @@ function setupColorMeshResizeObserver() {
   colorMeshResizeObserver = new ResizeObserver(() => {
     if (nowPlayingConfig.background === 'color-mesh' && colorMeshColors) {
       const ctx = canvas.getContext('2d');
-      if (ctx) {
-        const rect = widget.getBoundingClientRect();
-        const dpr = window.devicePixelRatio || 1;
-        canvas.width = rect.width * dpr;
-        canvas.height = rect.height * dpr;
-        // Reinitialize blobs for the new size (device pixels, matching the
-        // unscaled render path)
+      if (ctx && resizeColorMeshCanvas(canvas, widget)) {
         initColorMeshBlobs(colorMeshColors, canvas.width, canvas.height);
       }
     }

@@ -261,12 +261,20 @@ function updateWeatherBackgroundWMO(code, isDay) {
   currentWeatherType = weatherType;
 }
 
+// Particle counts. Each particle is an independently animating element inside
+// a backdrop-filtered widget, so every one of them re-dirties the backdrop and
+// forces all the widget blurs to recompute. These were 50/30/60; at the size
+// the weather widget actually renders, the reduced counts read the same.
+const RAIN_DROPS = 20;
+const SNOW_FLAKES = 15;
+const THUNDER_DROPS = 24;
+
 function createWeatherEffects(type, container) {
   switch(type) {
     case 'rainy':
       const rainContainer = document.createElement('div');
       rainContainer.className = 'weather-rain';
-      for (let i = 0; i < 50; i++) {
+      for (let i = 0; i < RAIN_DROPS; i++) {
         const drop = document.createElement('div');
         drop.className = 'raindrop';
         drop.style.left = Math.random() * 100 + '%';
@@ -281,7 +289,7 @@ function createWeatherEffects(type, container) {
     case 'snow':
       const snowContainer = document.createElement('div');
       snowContainer.className = 'weather-snow-container';
-      for (let i = 0; i < 30; i++) {
+      for (let i = 0; i < SNOW_FLAKES; i++) {
         const flake = document.createElement('div');
         flake.className = 'snowflake';
         flake.style.left = Math.random() * 100 + '%';
@@ -298,7 +306,7 @@ function createWeatherEffects(type, container) {
     case 'thunder':
       const thunderRainContainer = document.createElement('div');
       thunderRainContainer.className = 'weather-rain';
-      for (let i = 0; i < 60; i++) {
+      for (let i = 0; i < THUNDER_DROPS; i++) {
         const drop = document.createElement('div');
         drop.className = 'raindrop';
         drop.style.left = Math.random() * 100 + '%';
@@ -339,6 +347,10 @@ function createWeatherEffects(type, container) {
     case 'night':
       for (let i = 0; i < 8; i++) {
         const star = document.createElement('div');
+        // Class so perf-mode Off and prefers-reduced-motion can switch the
+        // twinkle off; the inline animation below is otherwise unreachable
+        // from a stylesheet.
+        star.className = 'weather-star';
         star.style.cssText = `
           position: absolute;
           width: 2px;

@@ -23,7 +23,7 @@ window.dlog = (...args) => {
 // WebView2 to re-fetch and re-parse every asset on every launch; a fixed
 // version lets the cache work between launches. Bump when shipping changes
 // to widget HTML/JS.
-const ASSET_VERSION = '20260706-hls3';
+const ASSET_VERSION = '20260906-playback';
 // Exposed so lazily-loaded widget scripts (e.g. twitch.js loading hls-player.js)
 // can cache-bust their own dynamic imports with the same version.
 window.ASSET_VERSION = ASSET_VERSION;
