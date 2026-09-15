@@ -212,8 +212,8 @@ npm run tauri build
 
 Build outputs:
 - `src-tauri/target/release/Widget Wall.exe`
-- `src-tauri/target/release/bundle/msi/Widget Wall_1.0.0_x64_en-US.msi`
-- `src-tauri/target/release/bundle/nsis/Widget Wall_1.0.0_x64-setup.exe`
+- `src-tauri/target/release/bundle/msi/Widget Wall_<version>_x64_en-US.msi`
+- `src-tauri/target/release/bundle/nsis/Widget Wall_<version>_x64-setup.exe`
 
 CI: `.github/workflows/build-windows.yml` builds all of the above on a Windows
 runner for every push and uploads them as the `widget-wall-windows` artifact
@@ -280,10 +280,16 @@ Ensure only ONE element has `id="theme-toggle"` (not duplicated in settings-pane
 ## Settings Panel
 
 The settings panel (`settings-panel.html`) provides configuration for:
-- Twitch channel
-- Countdown date/title
-- Claude Stats Gist URL
-- Visualizer mode
+- HC account: Azure client ID, sign-in, connection status
+- AE account: Azure client ID, sign-in, connection status (AE inbox)
+- Twitch: default channel, show widget, video mode, HLS worker URL, chat mode, emote channels
+- Media sources: additional YouTube videos
+- Countdown: event title, target date
+- Claude Stats: data source, show widget
+- Visualizer: default mode
+- Startup window: target monitor, width, height
+- Background: image source, custom SVG upload
+- Theme cycling: auto cycle, transition mode, interval
 - Performance mode (Glass Blur: Full/Lite/Off) - sets `body[data-perf]`, which
   `themes.css` uses to scale back the always-on widget backdrop blur (the
   dashboard's biggest standing GPU cost). Full is 6px, Lite 3px, Off 0px.
@@ -295,6 +301,7 @@ The settings panel (`settings-panel.html`) provides configuration for:
   and silently opts that element out of the setting.
 - Debug Logging (default off) - gates `window.dlog()`, which the per-poll
   widget status logs route through; errors/warnings always print
+- Location services: Google Maps API key, home address, leave notifications
 
 Settings are persisted to `localStorage`.
 
