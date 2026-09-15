@@ -30,7 +30,7 @@ widget-wall-desktop/
 │   ├── auth-callback.html      # OAuth callback page
 │   └── public/                 # ALL runtime assets (copied to dist/)
 │       ├── scripts/
-│       │   ├── main.js         # Component loader (THE ONLY main.js!)
+│       │   ├── main.js         # Component loader
 │       │   │                   #   also defines window.dlog + ASSET_VERSION
 │       │   ├── lib/            # Vendored libraries: msal-browser.min.js,
 │       │   │                   #   three.min.js, pixi.min.js, poweraudio.js
@@ -266,7 +266,7 @@ Ensure only ONE element has `id="theme-toggle"` (not duplicated in settings-pane
 
 5. Create `src/public/scripts/widgets/new-widget.js` if JS logic needed
 
-6. Register in `src/public/scripts/main.js` (THE ONLY main.js):
+6. Register in `src/public/scripts/main.js`:
 ```javascript
 // In widgetConfig array:
 { container: 'new-widget-container', path: 'widgets/new-widget.html' },
@@ -280,7 +280,6 @@ Ensure only ONE element has `id="theme-toggle"` (not duplicated in settings-pane
 ## Settings Panel
 
 The settings panel (`settings-panel.html`) provides configuration for:
-- Desktop Bridge port (for native features)
 - Twitch channel
 - Countdown date/title
 - Claude Stats Gist URL
@@ -314,5 +313,4 @@ All HTML files should include Analytic Endeavors fingerprinting per parent proje
 3. **Theme compatibility** - Test all 6 themes when making visual changes
 4. **Mobile not supported** - This is a desktop-only 32:9 dashboard
 5. **Browser vs Tauri** - Native features only work in Tauri app
-6. **ONLY ONE main.js** - Edit `src/public/scripts/main.js`
-7. **Update documentation** - When adding or changing features, update relevant documentation files (README.md, CLAUDE.md, inline code comments) to reflect the changes
+6. **Update documentation** - When adding or changing features, update relevant documentation files (README.md, CLAUDE.md, inline code comments) to reflect the changes
