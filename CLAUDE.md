@@ -90,16 +90,9 @@ widget-wall-desktop/
 └── CLAUDE.md                   # This file
 ```
 
-**CRITICAL:** ALL CSS, JS, and assets MUST be in `src/public/`. Do NOT create `src/styles/`, `src/assets/`, or `src/scripts/` - these will NOT be included in builds!
+### Vite public folder
 
-### CRITICAL: Vite Public Folder
-
-**All widget JS and HTML files MUST be in `src/public/`!**
-
-Vite copies `public/` contents directly to `dist/` without processing. Since widgets are loaded dynamically at runtime via `loadScript()` and `fetch()`, they must be in the public folder.
-
-- **DO edit:** `src/public/scripts/widgets/*.js` and `src/public/widgets/*.html`
-- **DO NOT create:** `src/scripts/widgets/` or `src/widgets/` - these won't be included in builds!
+All CSS, JS, widget partials, and assets live under `src/public/`. Vite copies `public/` to `dist/` without processing, and widgets are loaded at runtime via `loadScript()` and `fetch()`, so anything placed in `src/styles/`, `src/scripts/`, `src/assets/`, or `src/widgets/` is silently left out of the build. Edit `src/public/scripts/widgets/*.js` and `src/public/widgets/*.html`.
 
 ---
 
@@ -317,10 +310,9 @@ All HTML files should include Analytic Endeavors fingerprinting per parent proje
 ## Important Reminders
 
 1. **No frameworks** - Keep it plain HTML/CSS/JS for easy maintenance
-2. **EVERYTHING in src/public/** - All CSS, JS, assets, and widgets MUST be in `src/public/`. Do NOT create `src/styles/`, `src/assets/`, or `src/scripts/` folders.
-3. **display: contents** - Always add to new container IDs
-4. **Theme compatibility** - Test all 6 themes when making visual changes
-5. **Mobile not supported** - This is a desktop-only 32:9 dashboard
-6. **Browser vs Tauri** - Native features only work in Tauri app
-7. **ONLY ONE main.js** - Edit `src/public/scripts/main.js`
-8. **Update documentation** - When adding or changing features, update relevant documentation files (README.md, CLAUDE.md, inline code comments) to reflect the changes
+2. **display: contents** - Always add to new container IDs
+3. **Theme compatibility** - Test all 6 themes when making visual changes
+4. **Mobile not supported** - This is a desktop-only 32:9 dashboard
+5. **Browser vs Tauri** - Native features only work in Tauri app
+6. **ONLY ONE main.js** - Edit `src/public/scripts/main.js`
+7. **Update documentation** - When adding or changing features, update relevant documentation files (README.md, CLAUDE.md, inline code comments) to reflect the changes
