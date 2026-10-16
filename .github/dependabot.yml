@@ -1,0 +1,61 @@
+# ============================================================
+# Dependabot for desktop-widget-wall.
+#
+# Watches the npm dependencies at the repo root and the GitHub Actions
+# in .github/workflows/.
+# Monthly on Fridays; security updates arrive whenever an
+# advisory lands, whatever this schedule says.
+#
+# Merging is not done here. dependency-sweep.yml in
+# analyticendeavors/agents-and-automation merges patch and minor
+# updates (security updates included) once checks are green, and
+# emails a weekly digest of majors, red CI and anything else held.
+# Majors are grouped apart so one never holds the other updates back.
+# ============================================================
+
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: monthly
+      day: friday
+      time: "13:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+    commit-message:
+      prefix: deps
+      include: scope
+    groups:
+      non-major:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+      major:
+        patterns:
+          - "*"
+        update-types:
+          - "major"
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly
+      day: friday
+      time: "13:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - github-actions
+    commit-message:
+      prefix: ci
+      include: scope
+    groups:
+      actions:
+        patterns:
+          - "*"
