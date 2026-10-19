@@ -12,11 +12,11 @@
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.12.2",
-    "@vitejs/plugin-basic-ssl": "1.2.0",
+    "@vitejs/plugin-basic-ssl": "2.3.0",
     "png-to-ico": "3.0.2",
     "sharp": "0.35.5",
-    "vite": "5.4.21",
-    "vite-plugin-mkcert": "1.17.9"
+    "vite": "8.3.4",
+    "vite-plugin-mkcert": "2.1.0"
   },
   "dependencies": {
     "hls.js": "1.7.3"
