@@ -31,6 +31,10 @@
   /* Accent Colors */
   --accent-primary: #ff2d85;
   --accent-primary-rgb: 255, 45, 133;
+  /* Accent for text and small glyphs: a lighter step of the theme accent so
+     labels like the now-playing source and the Radio pill clear 4.5:1 on the
+     glass (emerald, midnight and rose accents measure under 3:1). */
+  --accent-text: #ff6b9d;
   --accent-secondary: #5ac8fa;
   --accent-gold: #fdb800;
   --accent-green: #30d158;
@@ -67,8 +71,8 @@
 
   /* Text */
   --text-primary: #ffffff;
-  --text-secondary: rgba(255, 255, 255, 0.7);
-  --text-muted: rgba(255, 255, 255, 0.5);
+  --text-secondary: rgba(255, 255, 255, 0.8);
+  --text-muted: rgba(255, 255, 255, 0.68);
 
   /* Universal Header Properties */
   --header-padding-top: 10px;
@@ -189,6 +193,7 @@ body.theme-no-transition::after {
   --gradient-6: #4dfff3;
   --accent-primary: #00B8B8;
   --accent-primary-rgb: 0, 184, 184;
+  --accent-text: #00d4d4;
   --accent-secondary: #00d4d4;
   --shadow-glow: 0 0 30px rgba(0, 184, 184, 0.3);
   --clock-panel-bg: rgba(13, 63, 63, 0.8);
@@ -221,6 +226,7 @@ body.theme-no-transition::after {
   --gradient-6: #fff4b0;
   --accent-primary: #ff6b35;
   --accent-primary-rgb: 255, 107, 53;
+  --accent-text: #f7931e;
   --accent-secondary: #f7931e;
   --shadow-glow: 0 0 30px rgba(255, 107, 53, 0.3);
   --clock-panel-bg: rgba(74, 26, 0, 0.8);
@@ -253,6 +259,7 @@ body.theme-no-transition::after {
   --gradient-6: #87ceeb;
   --accent-primary: #3a7bd5;
   --accent-primary-rgb: 58, 123, 213;
+  --accent-text: #6aa8ff;
   --accent-secondary: #5a9fd4;
   --shadow-glow: 0 0 30px rgba(58, 123, 213, 0.3);
   --clock-panel-bg: rgba(15, 26, 58, 0.8);
@@ -285,6 +292,7 @@ body.theme-no-transition::after {
   --gradient-6: #a7f3d0;
   --accent-primary: #2d8a4e;
   --accent-primary-rgb: 45, 138, 78;
+  --accent-text: #3ddc84;
   --accent-secondary: #34d399;
   --shadow-glow: 0 0 30px rgba(45, 138, 78, 0.3);
   --clock-panel-bg: rgba(15, 42, 26, 0.8);
@@ -317,6 +325,7 @@ body.theme-no-transition::after {
   --gradient-6: #fbcfe8;
   --accent-primary: #db2777;
   --accent-primary-rgb: 219, 39, 119;
+  --accent-text: #f472b6;
   --accent-secondary: #f472b6;
   --shadow-glow: 0 0 30px rgba(219, 39, 119, 0.3);
   --clock-panel-bg: rgba(58, 16, 32, 0.8);
