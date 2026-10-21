@@ -3510,9 +3510,20 @@ fn set_webview_visibility(window: &tauri::WebviewWindow, visible: bool) {
 /// Show the WebView only when the user has not hidden the window and Windows
 /// is neither locked nor showing dark displays.
 #[cfg(windows)]
-fn apply_webview_visibility(window: &tauri::WebviewWindow) {
+fn apply_webview_visibility_locked(window: &tauri::WebviewWindow) {
     let visible = !USER_HIDDEN.load(Ordering::SeqCst) && !display_watch::os_hidden();
     set_webview_visibility(window, visible);
+}
+
+/// Serializes read-state, apply and emit so two quick transitions (lock, then
+/// display-off) cannot be applied out of order. Not on the audio path.
+#[cfg(windows)]
+static DISPLAY_STATE_LOCK: Mutex<()> = Mutex::new(());
+
+#[cfg(windows)]
+fn apply_webview_visibility(window: &tauri::WebviewWindow) {
+    let _guard = DISPLAY_STATE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    apply_webview_visibility_locked(window);
 }
 
 /// Lock / unlock / display power change, from the display watcher. Runs on the
@@ -3525,9 +3536,12 @@ fn on_display_state_change() {
     tauri::async_runtime::spawn(async move {
         // Read the state now rather than at notification time, so a quick
         // lock-unlock pair always settles on the latest state.
+        // The lock is held across read, apply and emit so the last task to run
+        // also emits last.
+        let _guard = DISPLAY_STATE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let reason = display_watch::os_hidden_reason();
         if let Some(window) = app.get_webview_window("main") {
-            apply_webview_visibility(&window);
+            apply_webview_visibility_locked(&window);
         }
         println!("[Display] os_hidden={:?}", reason);
         let _ = app.emit(

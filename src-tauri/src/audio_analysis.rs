@@ -236,6 +236,15 @@ impl AudioAnalyzer {
             self.mono.push(sum * inv);
         }
 
+        // Some loopback devices (a paused but open browser stream, a virtual
+        // cable) keep delivering zero-filled packets. Treat those as silence so
+        // the idle path takes over instead of holding the full analysis rate.
+        let peak = self.mono.iter().fold(0.0f32, |m, &s| m.max(s.abs()));
+        if peak < 1e-5 {
+            self.reset();
+            return AudioLevels::silent();
+        }
+
         // Roll the history left and append.
         let n = self.mono.len();
         self.history.copy_within(n.., 0);
@@ -365,6 +374,15 @@ mod tests {
         let mut a = AudioAnalyzer::new(2, 48_000);
         a.process(&sine(60.0, 48_000, 0.3, 1500, 2));
         let l = a.process(&[]);
+        assert!(l.waveform.is_empty() && l.bands.is_empty() && l.bass == 0.0);
+        assert_eq!(a.filled, 0);
+    }
+
+    #[test]
+    fn zero_filled_packet_is_silent_and_resets() {
+        let mut a = AudioAnalyzer::new(2, 48_000);
+        a.process(&sine(60.0, 48_000, 0.3, 1500, 2));
+        let l = a.process(&vec![0.0f32; 2048]);
         assert!(l.waveform.is_empty() && l.bands.is_empty() && l.bass == 0.0);
         assert_eq!(a.filled, 0);
     }

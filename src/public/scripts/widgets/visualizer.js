@@ -1313,6 +1313,9 @@
       // Apply saved config settings
       applyPowerAudioConfig();
 
+      // Created during silence: start at the idle rate until sound arrives.
+      if (silentIdle) poweraudioViz.stage?.setIdle?.(true);
+
       // Add click handler to make creature flip
       container.addEventListener('click', () => {
         if (poweraudioViz) {
