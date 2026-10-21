@@ -134,3 +134,19 @@ test('palette: near-black colored cover is lifted to a lively lightness', () => 
   const lum = (h) => { const n = parseInt(h.slice(1), 16); return Math.max(n >> 16, (n >> 8) & 255, n & 255); };
   assert.ok(lum(p.primary) > 150, 'primary is bright enough');
 });
+
+test('ring: follows the card, no ring while an in-progress event is shown', () => {
+  const a = { id: 'a' };
+  const b = { id: 'b' };
+  assert.equal(ring.pickRingEvent(b, b), b);
+  assert.equal(ring.pickRingEvent(a, b), null);
+  assert.equal(ring.pickRingEvent(null, null), null);
+});
+
+test('palette: a stale request is not current once a newer one begins', () => {
+  const gate = np.createLatestGate();
+  const first = gate.begin();
+  const second = gate.begin();
+  assert.equal(gate.isCurrent(first), false);
+  assert.equal(gate.isCurrent(second), true);
+});

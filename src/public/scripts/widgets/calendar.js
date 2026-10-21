@@ -1032,7 +1032,7 @@ const CalendarWidget = (function() {
       stopDriveTimeRefresh();
     }
 
-    scheduleMeetingRing(nextEvent);
+    scheduleMeetingRing(pickRingEvent(displayEvent, nextEvent));
   }
 
   // <meeting-ring-plan>
@@ -1061,10 +1061,25 @@ const CalendarWidget = (function() {
     if (event.responseStatus && event.responseStatus.response === 'declined') return false;
     return !!(event.start && event.start.dateTime);
   }
+
+  // The ring follows the card: when the card shows an in-progress event, no ring.
+  function pickRingEvent(displayEvent, nextEvent) {
+    return displayEvent === nextEvent ? nextEvent : null;
+  }
   // </meeting-ring-plan>
 
   let meetingRingTimers = [];
-  let meetingRingSoundedKey = null;
+  // Last time the shared "second notify" chime played (ring or leave alert).
+  let lastChimeAt = 0;
+  const CHIME_COOLDOWN_MS = 60 * 1000;
+
+  // True (and records the time) when a chime may play; false inside the cooldown.
+  function claimChime() {
+    const now = Date.now();
+    if (now - lastChimeAt < CHIME_COOLDOWN_MS) return false;
+    lastChimeAt = now;
+    return true;
+  }
 
   function clearMeetingRing() {
     meetingRingTimers.forEach(clearTimeout);
@@ -1092,9 +1107,12 @@ const CalendarWidget = (function() {
         el.classList.toggle('meeting-ring-soon', plan.phase === 'soon');
         el.classList.toggle('meeting-ring-urgent', plan.phase === 'urgent');
       }
-      if (plan.phase === 'urgent' && meetingRingSoundedKey !== key) {
-        meetingRingSoundedKey = key;
-        try {
+      const soundKey = `meetingRingSounded:${key}`;
+      let alreadySounded = false;
+      try { alreadySounded = sessionStorage.getItem(soundKey) === '1'; } catch (e) { /* storage unavailable */ }
+      if (plan.phase === 'urgent' && !alreadySounded) {
+        try { sessionStorage.setItem(soundKey, '1'); } catch (e) { /* storage unavailable */ }
+        if (claimChime()) try {
           const audio = new Audio('assets/Sounds/second notify.mp3');
           audio.volume = 0.7;
           audio.play().catch(() => {});
@@ -1623,9 +1641,12 @@ const CalendarWidget = (function() {
    */
   function playLeaveSound(type) {
     const soundFile = type === 'gentle' ? 'assets/Sounds/first notify.mp3' : 'assets/Sounds/second notify.mp3';
-    const audio = new Audio(soundFile);
-    audio.volume = 0.7;
-    audio.play().catch(e => console.warn('Calendar: Could not play leave alert:', e));
+    // The urgent sound is the ring's chime file; share its cooldown to avoid a double chime.
+    if (type === 'gentle' || claimChime()) {
+      const audio = new Audio(soundFile);
+      audio.volume = 0.7;
+      audio.play().catch(e => console.warn('Calendar: Could not play leave alert:', e));
+    }
 
     // Visual flash effect on next-meeting element
     const nextMeetingEl = document.getElementById('next-meeting');

@@ -417,17 +417,30 @@ function publishNowPlayingColors(colors) {
   window.nowPlayingPalette = palette;
   window.dispatchEvent(new CustomEvent('nowplaying-colors', { detail: palette }));
 }
+
+// Latest-request guard: async palette work publishes only if no newer request began.
+function createLatestGate() {
+  let counter = 0;
+  return {
+    begin() { return ++counter; },
+    isCurrent(token) { return token === counter; }
+  };
+}
 // </np-palette>
 
 // Update color mesh with new album art colors
 // Accepts either base64 data (albumArtBase64 + albumArtMime) or a URL (imageUrl)
 // sourceType hint: 'twitch', 'youtube', 'radio', or null for default fallback colors
+const colorMeshGate = createLatestGate();
+
 async function updateColorMesh(albumArtBase64, albumArtMime, imageUrl = null, sourceType = null) {
   const canvas = document.getElementById('nowplaying-color-mesh');
   if (!canvas) return;
 
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
+
+  const requestToken = colorMeshGate.begin();
 
   // Blob positions and rendering both use the capped canvas pixel dimensions.
   const widget = canvas.closest('.widget-nowplaying');
@@ -445,22 +458,28 @@ async function updateColorMesh(albumArtBase64, albumArtMime, imageUrl = null, so
     }
   }
 
-  // Extract colors from album art or use source-appropriate defaults
+  // Extract colors from album art or use source-appropriate defaults.
+  // Held in a local so a stale request cannot overwrite the shared palette.
+  let colors;
   if (imageUrl) {
     // Use URL directly (for Twitch/YouTube thumbnails)
     // May fail due to CORS, so use fallback colors on error
-    colorMeshColors = await extractColorsFromImage(imageUrl);
+    colors = await extractColorsFromImage(imageUrl);
     // If extraction returned default colors (error case), use source-specific colors instead
-    if (colorMeshColors === getDefaultMeshColors()) {
-      colorMeshColors = getFallbackColors();
+    if (colors === getDefaultMeshColors()) {
+      colors = getFallbackColors();
     }
   } else if (albumArtBase64 && albumArtMime) {
     // Use base64 data (for Spotify/other sources)
     const imgSrc = `data:${albumArtMime};base64,${albumArtBase64}`;
-    colorMeshColors = await extractColorsFromImage(imgSrc);
+    colors = await extractColorsFromImage(imgSrc);
   } else {
-    colorMeshColors = getFallbackColors();
+    colors = getFallbackColors();
   }
+
+  // A newer track change started while extraction ran; drop this stale palette.
+  if (!colorMeshGate.isCurrent(requestToken)) return;
+  colorMeshColors = colors;
 
   // Share the palette with the visualizer (null when there is no real art)
   const hasArt = !!(imageUrl || (albumArtBase64 && albumArtMime)) && sourceType !== 'radio';
