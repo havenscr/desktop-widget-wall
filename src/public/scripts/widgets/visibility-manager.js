@@ -8,8 +8,27 @@
 (function() {
   'use strict';
 
+  // Visible means the page is not hidden AND Windows reports the wall can be
+  // seen. The Rust side emits 'display-state' on lock/unlock and display
+  // off/on; an always-on-top wall is almost never minimized, so
+  // document.hidden alone kept everything running overnight.
+  let displayVisible = true;
   let isVisible = !document.hidden;
   const listeners = new Set();
+
+  function computeVisible() {
+    return !document.hidden && displayVisible;
+  }
+
+  /**
+   * Recompute visibility and notify only when it actually changed.
+   */
+  function update() {
+    const next = computeVisible();
+    if (next === isVisible) return;
+    isVisible = next;
+    notifyListeners();
+  }
 
   /**
    * Notify all listeners of visibility change
@@ -34,10 +53,7 @@
   }
 
   // Listen for browser visibility changes (tab switch, minimize)
-  document.addEventListener('visibilitychange', () => {
-    isVisible = !document.hidden;
-    notifyListeners();
-  });
+  document.addEventListener('visibilitychange', update);
 
   // Listen for Tauri window events if available
   if (window.__TAURI__?.event) {
@@ -48,11 +64,16 @@
     });
 
     window.__TAURI__.event.listen('tauri://focus', () => {
-      // Window gained focus
-      if (!isVisible) {
-        isVisible = true;
-        notifyListeners();
-      }
+      // Window gained focus. Focus alone is not visibility: it can arrive
+      // while the page is still hidden or the session is still locked.
+      update();
+    });
+
+    // Lock / display-off from Rust: { visible: false, reason: 'lock' |
+    // 'display-off' } and { visible: true } when Windows can show us again.
+    window.__TAURI__.event.listen('display-state', (event) => {
+      displayVisible = event?.payload?.visible !== false;
+      update();
     });
   }
 
@@ -129,13 +150,13 @@
     /**
      * Manually trigger a visibility check (useful after app init)
      */
-    check: () => {
-      const newVisible = !document.hidden;
-      if (newVisible !== isVisible) {
-        isVisible = newVisible;
-        notifyListeners();
-      }
-    }
+    check: update,
+
+    /**
+     * Whether Windows reports the displays on and the session unlocked.
+     * @returns {boolean}
+     */
+    isDisplayVisible: () => displayVisible
   };
 
   console.log('VisibilityManager: Initialized, visible =', isVisible);

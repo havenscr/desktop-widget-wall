@@ -16,6 +16,8 @@
   }
 
   const BIN_COUNT = 256;
+  // Silent-idle frame interval (8fps), see Stage.setIdle.
+  const IDLE_FRAME_INTERVAL_MS = 125;
 
   // ================================================================
   // Point Utility
@@ -1242,6 +1244,11 @@
       this.lastFrameTime = 0;
       this.isPaused = false;
       this.animationId = null;
+      // Silent-idle: the visualizer sets this after 5s of silence so the
+      // sleep animation runs at 8fps instead of the configured rate.
+      this.idle = false;
+      // Bound once: a fresh .bind() closure per frame was pure GC churn.
+      this.boundUpdate = this.update.bind(this);
 
       // Create PIXI renderer with transparency and GPU preference
       this.renderer = PIXI.autoDetectRenderer({
@@ -1281,12 +1288,13 @@
       }
 
       // Schedule next frame
-      this.animationId = requestAnimationFrame(this.update.bind(this));
+      this.animationId = requestAnimationFrame(this.boundUpdate);
 
       // Frame rate limiting - skip render if not enough time has passed
       const now = performance.now();
-      if (now - this.lastFrameTime < this.frameInterval) return;
-      this.lastFrameTime = now - ((now - this.lastFrameTime) % this.frameInterval);
+      const interval = this.idle ? Math.max(this.frameInterval, IDLE_FRAME_INTERVAL_MS) : this.frameInterval;
+      if (now - this.lastFrameTime < interval) return;
+      this.lastFrameTime = now - ((now - this.lastFrameTime) % interval);
 
       const currentDateMs = Date.now() / 1000;
       this.lastDelta = currentDateMs - this.lastUpdateDelta;
@@ -1300,6 +1308,14 @@
       const adjustedDelta = this.lastDelta * this.viz.config.movementSpeed;
       super.update(adjustedDelta);
       this.renderer.render(this);
+    }
+
+    /**
+     * Slow the loop to 8fps while the audio is silent (true) or restore the
+     * configured rate (false). Takes effect on the next frame.
+     */
+    setIdle(idle) {
+      this.idle = !!idle;
     }
 
     /**
@@ -1415,7 +1431,7 @@
       this.lastUpdateDelta = Date.now() / 1000;
       this.lastFrameTime = performance.now();
       this._setupVisibilityListener();
-      this.animationId = requestAnimationFrame(this.update.bind(this));
+      this.animationId = requestAnimationFrame(this.boundUpdate);
     }
 
     destroy() {

@@ -36,7 +36,7 @@ widget-wall-desktop/
 │       │   │                   #   three.min.js, pixi.min.js, poweraudio.js
 │       │   │                   #   (visualizer libs lazy-loaded per mode)
 │       │   └── widgets/        # Widget JavaScript modules
-│       │       ├── visibility-manager.js  # isVisible + managedInterval()
+│       │       ├── visibility-manager.js  # isVisible (page + lock/display) + managedInterval()
 │       │       ├── theme.js        # Theme switching (6 color schemes)
 │       │       ├── clock.js        # Flip clock (minute-aligned updates)
 │       │       ├── weather.js      # Open-Meteo API + skyline
@@ -192,6 +192,22 @@ Features requiring system access are implemented in Rust:
   Levels are **pushed** to the frontend on the `audio-levels` event at 30Hz from
   the capture thread. Do not add a polling command back. All audio commands are
   `async` so Tauri keeps them off the main thread.
+  `audio_analysis.rs` mixes to mono, applies a Hann window and runs a 1024-point
+  real FFT (`realfft`, plan built once) to produce `bass` / `mid` / `high`
+  (20-250 Hz, 250-4000 Hz, 4-16 kHz), `bands` (32 log-spaced, 0..255) and a
+  128-point mono `waveform`. The push is skipped (ring still drained) while the
+  WebView is hidden or the visualizer calls `set_audio_push(false)` (hidden or
+  InfiniDream mode). During silence Rust sends one empty event, then a 1Hz
+  heartbeat; the visualizer zeroes its levels after ~1/3 s of silence and drops
+  to 8fps after 5 s, so its timers are time-based, never event-counted.
+- **Sleep on lock / display off** - `display_watch.rs` subclasses the main
+  window for `WM_WTSSESSION_CHANGE` and `GUID_CONSOLE_DISPLAY_STATE` (dimmed
+  counts as on). Lock or display off hides the WebView and emits `display-state`
+  `{ visible: false, reason: "lock" | "display-off" }`; unlock or display on
+  emits `{ visible: true }` and shows it again only if the user has not hidden
+  the window to the tray or minimized it (`USER_HIDDEN`).
+  `visibility-manager.js` folds `display-state` into `isVisible()` and notifies
+  only on a real change.
 
 These won't work in browser preview - only in Tauri app.
 
