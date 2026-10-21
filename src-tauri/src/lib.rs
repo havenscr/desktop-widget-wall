@@ -213,12 +213,11 @@ impl AudioRing {
             .store(start.wrapping_add(data.len() as u64), Ordering::Release);
     }
 
-    /// Consumer side. Copies up to `max` of the most recent samples, oldest
-    /// first. Leaves `out` empty when the producer has written nothing new
-    /// since the last call, which is how the frontend recognises a silent
-    /// endpoint.
-    /// Fills `out` (cleared first, capacity reused) so the 30Hz consumer does
-    /// not allocate.
+    /// Consumer side. Copies up to `max` of the most recent samples into `out`
+    /// (cleared first, capacity reused so the 30Hz consumer does not
+    /// allocate), oldest first. Leaves `out` empty when the producer has
+    /// written nothing new since the last call, which is how the frontend
+    /// recognises a silent endpoint.
     fn take_recent_into(&self, max: usize, out: &mut Vec<f32>) {
         out.clear();
         let end = self.written.load(Ordering::Acquire);
