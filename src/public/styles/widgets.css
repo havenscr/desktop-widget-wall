@@ -10037,3 +10037,52 @@ div.twitch-emote-picker-item {
     flex-wrap: wrap;
   }
 }
+
+/* ================================================================
+   THEME IDENTITY: steady digits and readable accent text
+   Appended block; rules above are left as they were.
+   ================================================================ */
+
+/* Ticking numbers: equal-width figures so values do not shift sideways
+   every second (a "1" is narrower than an "8" in proportional figures). */
+.countdown-value,
+.focus-timer-time,
+.stat-value,
+.nowplaying-time,
+.calc-display,
+.controls-channel-value,
+.hourly-temp,
+.daily-temps,
+.next-time,
+.next-drive-time,
+.email-time,
+.twitch-irc-time,
+.claude-today-value,
+.claude-lifetime-value,
+.cal-day {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Accent-colored text uses --accent-text (themes.css), a lighter step of
+   the accent. Fills, borders and rings keep --accent-primary. */
+.clock-radio-inline:not(.playing),
+.nowplaying-source,
+.nowplaying-btn-toggle.active,
+.focus-preset-btn.active,
+.focus-lotus-btn.active,
+.focus-lotus-btn.dnd-active,
+.recent-file-folder-btn,
+.next-time,
+.claude-lifetime-value,
+.config-value,
+.nav-dot.active .dot-label,
+.twitch-irc-channel,
+.clock-config-btn:hover,
+.nowplaying-config-btn:hover,
+.controls-config-btn:hover,
+.countdown-config-btn:hover,
+.recent-config-btn:hover,
+.recent-refresh-btn:hover,
+.claude-config-btn:hover {
+  color: var(--accent-text);
+}
