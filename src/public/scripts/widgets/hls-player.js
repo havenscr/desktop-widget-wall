@@ -267,7 +267,9 @@ const HLSPlayer = (function() {
       maxLiveSyncPlaybackRate: 1.08, // gentle catch-up (<=8% faster) to close small drift
       backBufferLength: 10,          // was 30; low-latency never rewinds, saves RAM
       maxBufferLength: 12,           // cap forward buffer; a big fwd buffer = more drift
-      liveDurationInfinity: true     // correct seekable handling for true live
+      liveDurationInfinity: true,    // correct seekable handling for true live
+      capLevelToPlayerSize: true,    // don't climb to 1080p60 for a tile a few hundred px tall
+      capLevelOnFPSDrop: true        // step down when the decoder drops frames
     });
     const instance = hlsInstance;
 

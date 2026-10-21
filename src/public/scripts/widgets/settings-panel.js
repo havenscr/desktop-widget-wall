@@ -14,7 +14,7 @@ dashboardConfig = {
   visualizer: { defaultMode: 'demo' },
   background: { type: 'mountains', customSvg: null },
   theme: { autoCycle: false, mode: 'fade', interval: 30 },
-  perfMode: 'full',
+  perfMode: 'off',
   debugLogging: false,
   ...dashboardConfig
 };
@@ -86,7 +86,7 @@ function populateSettingsPanel() {
 
   // Performance settings
   const perfModeSelect = document.getElementById('settings-perf-mode');
-  if (perfModeSelect) perfModeSelect.value = dashboardConfig.perfMode || 'full';
+  if (perfModeSelect) perfModeSelect.value = dashboardConfig.perfMode || 'off';
   const debugLoggingToggle = document.getElementById('settings-debug-logging');
   if (debugLoggingToggle) debugLoggingToggle.checked = dashboardConfig.debugLogging === true;
 
@@ -417,7 +417,7 @@ function saveSettings() {
 
   // Performance settings
   const perfModeVal = document.getElementById('settings-perf-mode')?.value;
-  dashboardConfig.perfMode = (perfModeVal === 'lite' || perfModeVal === 'off') ? perfModeVal : 'full';
+  dashboardConfig.perfMode = (perfModeVal === 'lite' || perfModeVal === 'full') ? perfModeVal : 'off';
   applyPerfMode();
   dashboardConfig.debugLogging = document.getElementById('settings-debug-logging')?.checked === true;
   window._debugLogging = dashboardConfig.debugLogging;
@@ -506,7 +506,7 @@ function applyBackground() {
  * dashboard's biggest standing GPU cost. 'full' removes the attribute.
  */
 function applyPerfMode() {
-  const mode = dashboardConfig.perfMode || 'full';
+  const mode = dashboardConfig.perfMode || 'off';
   if (mode === 'lite' || mode === 'off') {
     document.body.dataset.perf = mode;
   } else {

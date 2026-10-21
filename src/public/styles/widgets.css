@@ -2986,7 +2986,7 @@
   height: 6px;
   border-radius: 50%;
   background: currentColor;
-  animation: pulse-dot 2s infinite;
+  animation: pulse-dot 2s infinite; /* connecting/disconnected only; .live is static */
 }
 
 .stats-mode-indicator.live {
@@ -3763,6 +3763,12 @@
   transition: stroke-dashoffset 1s ease;
 }
 
+/* Updates every second: a 1s transition would run back to back and repaint
+   the SVG at display refresh rate all day. Step instead. */
+#countdown-secs-ring {
+  transition: none;
+}
+
 .countdown-value {
   position: absolute;
   top: 50%;
@@ -4097,7 +4103,7 @@
   stroke: var(--accent-primary);
   stroke-width: 8;
   stroke-linecap: round;
-  transition: stroke-dashoffset 1s ease;
+  /* No transition: ring steps once a second while the timer runs */
 }
 
 .focus-timer-center {

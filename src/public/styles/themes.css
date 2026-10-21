@@ -131,6 +131,9 @@ body[data-perf="off"] .weather-lightning,
 body[data-perf="off"] .weather-fog,
 body[data-perf="off"] .weather-star,
 body[data-perf="off"] .live-dot::after,
+body[data-perf="off"] .stats-mode-indicator .mode-dot,
+body[data-perf="off"] .twitch-channel-dropdown-item .live-indicator,
+body[data-perf="off"] .quickswitch-live-dot,
 body[data-perf="off"] .clock-separator,
 body[data-perf="off"] .status-bars span,
 body[data-perf="off"] .leave-indicator.urgent {
@@ -162,6 +165,9 @@ body[data-perf="off"] .twitch-emote-tooltip {
   .weather-fog,
   .weather-star,
   .live-dot::after,
+  .stats-mode-indicator .mode-dot,
+  .twitch-channel-dropdown-item .live-indicator,
+  .quickswitch-live-dot,
   .clock-separator,
   .status-bars span,
   .leave-indicator.urgent {
@@ -337,4 +343,19 @@ body.theme-no-transition::after {
   --bg-brightness: 1.25;
   /* Custom Background Hue */
   --custom-bg-hue: 310deg;
+}
+
+
+/* Variables that widgets.css uses but no theme block defines (settings panel,
+   modals, toggles, inputs). Appended as its own block; derived from the
+   theme accent where one exists so all six themes follow. */
+:root {
+  --accent-color: var(--accent-primary);
+  --accent-rgb: var(--accent-primary-rgb);
+  --card-bg: rgba(24, 20, 36, 0.96);
+  --widget-bg: rgba(24, 20, 36, 0.96);
+  --glass-bg: var(--glass-bg-dark);
+  --border-color: rgba(255, 255, 255, 0.12);
+  --border-rgb: 255, 255, 255;
+  --bg-primary: #1a1424;
 }

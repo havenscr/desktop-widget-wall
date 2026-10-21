@@ -32,6 +32,7 @@ widget-wall-desktop/
 │       ├── scripts/
 │       │   ├── main.js         # Component loader
 │       │   │                   #   also defines window.dlog + ASSET_VERSION
+│       │   │                   #   (= window.WW_BUILD, stamped per build by vite.config.ts)
 │       │   ├── lib/            # Vendored libraries: msal-browser.min.js,
 │       │   │                   #   three.min.js, pixi.min.js, poweraudio.js
 │       │   │                   #   (visualizer libs lazy-loaded per mode)
@@ -293,6 +294,10 @@ The settings panel (`settings-panel.html`) provides configuration for:
 - Performance mode (Glass Blur: Full/Lite/Off) - sets `body[data-perf]`, which
   `themes.css` uses to scale back the always-on widget backdrop blur (the
   dashboard's biggest standing GPU cost). Full is 6px, Lite 3px, Off 0px.
+  Defaults to Off: on the built-in background Full and Off differ by under 1
+  level on average. `migratePerfModeDefault` in `main.js` moves a saved 'full'
+  (or missing) value to 'off' once when the built-in background is in use
+  (marker `wwd-perf-off-migrated`), so a later explicit Full sticks.
   "Off" also disables the infinite weather/indicator animations, the
   `filter: blur()` layers, and the hardcoded-radius backdrop filters, since
   `--glass-blur` alone never reached those. JS that sets `backdrop-filter`
