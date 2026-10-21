@@ -5,6 +5,12 @@
 
 let dashboardConfig = JSON.parse(localStorage.getItem('dashboard-config') || '{}');
 
+// Glass Blur default: 'off' for the built-in background, 'full' for a custom
+// one (main.js's migration skips custom backgrounds for the same reason).
+function defaultPerfMode(cfg) {
+  return cfg && cfg.background && cfg.background.type === 'custom' ? 'full' : 'off';
+}
+
 // Initialize defaults
 dashboardConfig = {
   bridgePort: 8099,
@@ -14,7 +20,7 @@ dashboardConfig = {
   visualizer: { defaultMode: 'demo' },
   background: { type: 'mountains', customSvg: null },
   theme: { autoCycle: false, mode: 'fade', interval: 30 },
-  perfMode: 'off',
+  perfMode: defaultPerfMode(dashboardConfig),
   debugLogging: false,
   ...dashboardConfig
 };
@@ -86,7 +92,7 @@ function populateSettingsPanel() {
 
   // Performance settings
   const perfModeSelect = document.getElementById('settings-perf-mode');
-  if (perfModeSelect) perfModeSelect.value = dashboardConfig.perfMode || 'off';
+  if (perfModeSelect) perfModeSelect.value = dashboardConfig.perfMode || defaultPerfMode(dashboardConfig);
   const debugLoggingToggle = document.getElementById('settings-debug-logging');
   if (debugLoggingToggle) debugLoggingToggle.checked = dashboardConfig.debugLogging === true;
 
@@ -417,7 +423,7 @@ function saveSettings() {
 
   // Performance settings
   const perfModeVal = document.getElementById('settings-perf-mode')?.value;
-  dashboardConfig.perfMode = (perfModeVal === 'lite' || perfModeVal === 'full') ? perfModeVal : 'off';
+  dashboardConfig.perfMode = (perfModeVal === 'lite' || perfModeVal === 'full' || perfModeVal === 'off') ? perfModeVal : defaultPerfMode(dashboardConfig);
   applyPerfMode();
   dashboardConfig.debugLogging = document.getElementById('settings-debug-logging')?.checked === true;
   window._debugLogging = dashboardConfig.debugLogging;
@@ -506,7 +512,7 @@ function applyBackground() {
  * dashboard's biggest standing GPU cost. 'full' removes the attribute.
  */
 function applyPerfMode() {
-  const mode = dashboardConfig.perfMode || 'off';
+  const mode = dashboardConfig.perfMode || defaultPerfMode(dashboardConfig);
   if (mode === 'lite' || mode === 'off') {
     document.body.dataset.perf = mode;
   } else {
