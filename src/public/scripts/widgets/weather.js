@@ -207,7 +207,14 @@ function updateDailyForecast(data) {
 
 function getWeatherIcon(code) {
   // Using basic Unicode symbols that render consistently in WebView2
-  // Avoiding surrogate pairs (emoji beyond U+FFFF) which can show boxes
+  // Avoiding surrogate pairs (emoji beyond U+FFFF) which can show boxes.
+  // Every symbol gets U+FE0F (emoji presentation): without it, sun, cloud and
+  // snowflake default to flat text glyphs while partly cloudy, umbrella and
+  // lightning default to color, so one column mixed both styles.
+  return weatherSymbol(code) + '\uFE0F';
+}
+
+function weatherSymbol(code) {
   if (code === 0 || code === 1) return '\u2600'; // Sun (☀)
   if (code === 2) return '\u26C5'; // Sun behind cloud (⛅)
   if (code === 3) return '\u2601'; // Cloud (☁)
