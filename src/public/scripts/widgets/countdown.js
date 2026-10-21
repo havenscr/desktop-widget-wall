@@ -388,6 +388,41 @@ function checkIntervalReminder() {
   }
 }
 
+// <focus-dnd>
+// Focus mode asks Windows for Do Not Disturb. A localStorage flag records that
+// WE turned it on, so startup cleanup and pause/reset only undo our own change
+// and never a Do Not Disturb the user set themselves.
+const FOCUS_DND_FLAG = 'focus-dnd-active';
+
+function focusDndInvoke(command) {
+  const invoke = window.__TAURI__?.core?.invoke;
+  if (!invoke) return Promise.resolve(false);
+  return Promise.resolve()
+    .then(() => invoke(command))
+    .then(() => true)
+    .catch((e) => {
+      window.dlog?.('Focus DND', command, 'failed:', e);
+      return false;
+    });
+}
+
+async function focusDndEnable() {
+  if (localStorage.getItem(FOCUS_DND_FLAG)) return;
+  // Set the flag before the async call so a quick pause still sees it.
+  localStorage.setItem(FOCUS_DND_FLAG, '1');
+  if (!(await focusDndInvoke('enable_do_not_disturb'))) {
+    localStorage.removeItem(FOCUS_DND_FLAG);
+  }
+}
+
+async function focusDndRelease() {
+  if (!localStorage.getItem(FOCUS_DND_FLAG)) return;
+  // Clear the flag first so a failing invoke cannot trap us in a retry loop.
+  localStorage.removeItem(FOCUS_DND_FLAG);
+  await focusDndInvoke('disable_do_not_disturb');
+}
+// </focus-dnd>
+
 function focusTimerTick() {
   if (!focusTimerState.isRunning || focusTimerState.remaining <= 0) return;
 
@@ -398,6 +433,7 @@ function focusTimerTick() {
   if (focusTimerState.remaining <= 0) {
     focusTimerState.isRunning = false;
     clearFocusTimerState();
+    focusDndRelease();
     playAlarm();
     updatePlayPauseButton();  // Update after playAlarm so stop icon shows
   }
@@ -420,10 +456,12 @@ function startFocusTimer() {
   }
   focusTimerState.intervalId = setInterval(focusTimerTick, 1000);
   saveFocusTimerState();
+  focusDndEnable();
 }
 
 function pauseFocusTimer() {
   focusTimerState.isRunning = false;
+  focusDndRelease();
   updatePlayPauseButton();
 
   if (focusTimerState.intervalId) {
@@ -1030,12 +1068,16 @@ async function initCountdown() {
       startFocusTimer();
     } else {
       // Timer expired while page was closed
+      focusDndRelease();
       focusTimerState.remaining = 0;
       updateFocusTimerDisplay();
       playAlarm();
       updatePlayPauseButton();
     }
   }
+
+  // A reload can strand a Do Not Disturb that focus turned on; undo only ours.
+  if (!focusTimerState.isRunning) focusDndRelease();
 
   // Nav dots click handlers
   const navDots = document.querySelectorAll('.countdown-nav-dots .nav-dot');

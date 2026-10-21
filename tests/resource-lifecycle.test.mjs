@@ -225,6 +225,8 @@ test('color mesh keeps its DPR cap and skips unchanged backing sizes and blob re
     closest: () => widget, getContext: () => ({}),
   };
   context.devicePixelRatio = 2;
+  context.CustomEvent = class { constructor(type, init) { this.type = type; this.detail = init?.detail; } };
+  context.dispatchEvent = noop;
   context.document.getElementById = () => canvas;
   context.ResizeObserver = class { constructor(fn) { resize = fn; } observe() {} };
   vm.runInContext(source('widgets/now-playing.js'), context);

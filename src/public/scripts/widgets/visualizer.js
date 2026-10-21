@@ -634,8 +634,20 @@
   }
 
   // Get theme colors from CSS variables
+  // Album palette from now-playing.js ({ primary, secondary, accent } hex, or null)
+  let albumPalette = window.nowPlayingPalette || null;
+  window.addEventListener('nowplaying-colors', (e) => { albumPalette = e.detail || null; });
+
   function getThemeColors() {
     const style = getComputedStyle(document.body);
+    if (albumPalette) {
+      return {
+        primary: albumPalette.primary,
+        secondary: albumPalette.secondary,
+        accent: albumPalette.accent,
+        glow: albumPalette.primary
+      };
+    }
     return {
       primary: cssColorToHex(style.getPropertyValue('--vis-color-1')) || '#00B8B8',
       secondary: cssColorToHex(style.getPropertyValue('--vis-color-2')) || '#009999',
