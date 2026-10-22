@@ -161,9 +161,11 @@ const CalendarWidget = (function() {
 
     // Show calendar UI immediately -- data will load when microsoft-auth-change fires.
     showCalendar();
-    if (typeof MicrosoftAuth !== 'undefined' && MicrosoftAuth.isAuthenticated(currentAccount)) {
+    if (isSignedIn()) {
       loadData();
       startAutoRefresh();
+    } else {
+      showPlaceholder();
     }
 
     // Setup navigation buttons
@@ -183,7 +185,7 @@ const CalendarWidget = (function() {
     monthEventsCache = accountState[currentAccount].monthEventsCache;
 
     // Check if new account is authenticated
-    if (typeof MicrosoftAuth !== 'undefined' && MicrosoftAuth.isAuthenticated(currentAccount)) {
+    if (isSignedIn()) {
       showCalendar();
       loadData();
     } else {
@@ -227,14 +229,30 @@ const CalendarWidget = (function() {
     if (placeholder) placeholder.style.display = 'none';
   }
 
+  function isSignedIn() {
+    return typeof MicrosoftAuth !== 'undefined' && MicrosoftAuth.isAuthenticated(currentAccount);
+  }
+
   /**
-   * Show placeholder, hide calendar layout
+   * Signed out: keep the month grid on screen (current month, no events) and
+   * put the "Connect Microsoft account" prompt in the event list area.
    */
   function showPlaceholder() {
-    const layout = document.getElementById('calendar-layout');
+    showCalendar();
+    monthEventsCache = [];
+    updateMonthHeader();
+    renderCalendarGrid();
+    renderConnectPrompt();
+  }
+
+  /**
+   * Fill the event list with the connect prompt from #calendar-placeholder.
+   */
+  function renderConnectPrompt() {
+    const eventsList = document.getElementById('events-list');
     const placeholder = document.getElementById('calendar-placeholder');
-    if (layout) layout.style.display = 'none';
-    if (placeholder) placeholder.style.display = 'flex';
+    if (!eventsList || !placeholder) return;
+    eventsList.innerHTML = `<div class="calendar-placeholder">${placeholder.innerHTML}</div>`;
   }
 
   /**
@@ -254,6 +272,12 @@ const CalendarWidget = (function() {
    */
   async function loadMonthData() {
     updateMonthHeader();
+    if (!isSignedIn()) {
+      // Month navigation while signed out: redraw the grid, keep the prompt
+      renderCalendarGrid();
+      renderConnectPrompt();
+      return;
+    }
     await fetchMonthEvents();
     renderCalendarGrid();
     renderEventsForDate(selectedDate);
@@ -503,7 +527,7 @@ const CalendarWidget = (function() {
       currentMonth = date.getMonth();
       currentYear = date.getFullYear();
       loadMonthData();
-    } else {
+    } else if (isSignedIn()) {
       renderEventsForDate(date);
     }
   }

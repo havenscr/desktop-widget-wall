@@ -157,6 +157,11 @@ Container divs must use `display: contents` so they don't break flex layout:
 
 Theme variables in `src/public/styles/themes.css`, toggle logic in `src/public/scripts/widgets/theme.js`.
 
+Each theme sets `--accent-text`, a lighter step of its accent for text and
+small glyphs (emerald, midnight and rose accents measure under 3:1 on the
+glass). Fills, borders and rings keep `--accent-primary`. `--text-muted` (0.68)
+and `--text-secondary` (0.8) are sized to clear WCAG AA 4.5:1 on the top row.
+
 ### Background
 SVG background (`mountains.svg`) uses CSS filters for theme reactivity:
 ```css
@@ -165,6 +170,12 @@ body::before {
   filter: hue-rotate(var(--bg-hue-rotate)) saturate(...) brightness(...);
 }
 ```
+
+The sky in the top half of `mountains.svg` is near-white, which `hue-rotate`
+cannot tint, so `body::after` carries the theme color there: an
+`--accent-primary-rgb` gradient over a top-weighted dark gradient. Without it
+every theme sampled the same grey behind the top row. `body.custom-bg::after`
+keeps a much lighter version for custom images.
 
 ---
 
