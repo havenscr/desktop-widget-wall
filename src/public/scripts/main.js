@@ -20,10 +20,11 @@ window.dlog = (...args) => {
 };
 
 // Asset cache key for widget partials/scripts. Date.now() previously forced
-// WebView2 to re-fetch and re-parse every asset on every launch; a fixed
-// version lets the cache work between launches. Bump when shipping changes
-// to widget HTML/JS.
-const ASSET_VERSION = '20260906-playback';
+// WebView2 to re-fetch and re-parse every asset on every launch; a per-build
+// ID lets the cache work between launches yet changes on every build. vite.config.ts
+// stamps window.WW_BUILD into index.html; the fallback only applies when the
+// page is served without that transform.
+const ASSET_VERSION = window.WW_BUILD || '20261020-fallback';
 // Exposed so lazily-loaded widget scripts (e.g. twitch.js loading hls-player.js)
 // can cache-bust their own dynamic imports with the same version.
 window.ASSET_VERSION = ASSET_VERSION;
@@ -46,6 +47,31 @@ window.ASSET_VERSION = ASSET_VERSION;
     localStorage.setItem(MIGRATION_KEY, '1');
   } catch (e) {
     console.warn('Migration: hlsEnabled cleanup failed', e);
+  }
+})();
+
+// One-time: Glass Blur defaults to Off. On the built-in mountains background
+// Full vs Off differs by under 1 level on average, but the blur re-runs on
+// every widget repaint. A saved 'full' is usually just an old default written
+// back by Save, so move it to 'off' once; a later explicit Full sticks. A custom
+// background keeps its blur, since it is visible there.
+(function migratePerfModeDefault() {
+  const MIGRATION_KEY = 'wwd-perf-off-migrated';
+  try {
+    if (localStorage.getItem(MIGRATION_KEY)) return;
+    const raw = localStorage.getItem('dashboard-config');
+    if (raw) {
+      const cfg = JSON.parse(raw);
+      const customBg = cfg.background && cfg.background.type === 'custom';
+      if (!customBg && (!cfg.perfMode || cfg.perfMode === 'full')) {
+        cfg.perfMode = 'off';
+        localStorage.setItem('dashboard-config', JSON.stringify(cfg));
+        console.log('Migration: Glass Blur set to Off (built-in background)');
+      }
+    }
+    localStorage.setItem(MIGRATION_KEY, '1');
+  } catch (e) {
+    console.warn('Migration: perfMode default failed', e);
   }
 })();
 

@@ -3490,8 +3490,6 @@ pub fn run() {
         std::env::set_var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
             "--disable-features=msTrackingPrevention,msTrackingProtection \
              --autoplay-policy=no-user-gesture-required \
-             --disable-background-timer-throttling \
-             --disable-renderer-backgrounding \
              --disable-direct-composition-video-overlays");
     }
 

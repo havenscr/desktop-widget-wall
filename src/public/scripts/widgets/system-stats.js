@@ -55,6 +55,7 @@ function updateStatusIndicator(connected) {
   if (!indicator) return;
   const dot = indicator.querySelector('.mode-dot');
   const text = indicator.querySelector('.mode-text');
+  indicator.classList.toggle('live', !!connected);
   if (dot) {
     dot.style.background = connected ? 'var(--accent-green, #34c759)' : '#ff3b30';
   }

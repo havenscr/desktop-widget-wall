@@ -1,8 +1,16 @@
 import { defineConfig } from 'vite';
 import mkcert from 'vite-plugin-mkcert';
 
+// Per-build cache key. Replaces __WW_BUILD__ in index.html (CSS links, main.js
+// tag, window.WW_BUILD) so asset URLs change on every build with no manual bump.
+const buildId = Date.now().toString(36);
+const buildStamp = () => ({
+  name: 'ww-build-stamp',
+  transformIndexHtml: (html: string) => html.replaceAll('__WW_BUILD__', buildId),
+});
+
 export default defineConfig({
-  plugins: [mkcert()],
+  plugins: [mkcert(), buildStamp()],
   // Use src as the root directory for plain HTML/CSS/JS
   root: 'src',
 
