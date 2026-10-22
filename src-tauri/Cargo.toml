@@ -52,9 +52,16 @@ windows = { version = "0.58", features = [
     # Registry operations (Do Not Disturb toggle)
     "Win32_System_Registry",
     # GPU utilisation fallback via PDH performance counters
-    "Win32_System_Performance"
+    "Win32_System_Performance",
+    # Lock / display-off detection (display_watch.rs)
+    "Win32_System_RemoteDesktop",
+    "Win32_System_Power",
+    "Win32_System_SystemServices"
 ] }
 base64 = "0.22"
+
+# Visualizer frequency bands: one 1024-point real FFT per audio-levels event.
+realfft = "3.5"
 
 # Claude Stats - SQLite database reading
 rusqlite = { version = "0.31", features = ["bundled"] }

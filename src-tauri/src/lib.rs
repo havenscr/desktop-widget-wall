@@ -47,6 +47,47 @@ use windows::Win32::UI::Shell::{IShellLinkW, ShellLink};
 use std::fs;
 use std::path::PathBuf;
 
+mod audio_analysis;
+#[cfg(windows)]
+mod display_watch;
+use audio_analysis::{AudioAnalyzer, AudioLevels};
+
+// ================================================================
+// SLEEP STATE - what decides whether the WebView and the audio push run
+// ================================================================
+
+/// The user hid the window to the tray or minimized it. Lock and display-off
+/// never touch this, so waking from them cannot show a window the user hid.
+static USER_HIDDEN: AtomicBool = AtomicBool::new(false);
+/// Last value handed to the WebView2 controller's SetIsVisible.
+static WEBVIEW_SHOWN: AtomicBool = AtomicBool::new(true);
+/// The visualizer wants levels (it is drawing, and not in InfiniDream mode).
+/// Set by the `set_audio_push` command.
+static AUDIO_PUSH_REQUESTED: AtomicBool = AtomicBool::new(true);
+/// For the display watcher callback, which has no other way to reach the app.
+static APP_HANDLE: std::sync::OnceLock<tauri::AppHandle> = std::sync::OnceLock::new();
+
+/// Levels are only worth computing when someone can see them.
+fn audio_push_active() -> bool {
+    WEBVIEW_SHOWN.load(Ordering::SeqCst) && AUDIO_PUSH_REQUESTED.load(Ordering::SeqCst)
+}
+
+/// Turn the `audio-levels` push on or off. The visualizer calls this when it
+/// stops drawing (hidden, InfiniDream mode) and when it resumes. While off the
+/// capture thread still drains the ring but skips analysis and the emit.
+#[tauri::command]
+async fn set_audio_push(enabled: bool) -> Result<(), String> {
+    AUDIO_PUSH_REQUESTED.store(enabled, Ordering::SeqCst);
+    Ok(())
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct DisplayState {
+    visible: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reason: Option<&'static str>,
+}
+
 // Audio device info for frontend
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AudioDeviceInfo {
@@ -172,29 +213,31 @@ impl AudioRing {
             .store(start.wrapping_add(data.len() as u64), Ordering::Release);
     }
 
-    /// Consumer side. Returns up to `max` of the most recent samples, oldest
-    /// first. Returns empty when the producer has written nothing new since the
-    /// last call, which is how the frontend recognises a silent endpoint.
-    fn take_recent(&self, max: usize) -> Vec<f32> {
+    /// Consumer side. Copies up to `max` of the most recent samples into `out`
+    /// (cleared first, capacity reused so the 30Hz consumer does not
+    /// allocate), oldest first. Leaves `out` empty when the producer has
+    /// written nothing new since the last call, which is how the frontend
+    /// recognises a silent endpoint.
+    fn take_recent_into(&self, max: usize, out: &mut Vec<f32>) {
+        out.clear();
         let end = self.written.load(Ordering::Acquire);
         let last = self.read_to.swap(end, Ordering::AcqRel);
         if end <= last {
-            return Vec::new();
+            return;
         }
         // Never read further back than the ring actually holds.
         let fresh = (end - last).min(AUDIO_RING_CAPACITY as u64) as usize;
         let count = fresh.min(max);
         let start = end - count as u64;
-        (0..count)
-            .map(|i| {
-                let idx = (start.wrapping_add(i as u64) as usize) & (AUDIO_RING_CAPACITY - 1);
-                f32::from_bits(self.slots[idx].load(Ordering::Relaxed))
-            })
-            .collect()
+        out.extend((0..count).map(|i| {
+            let idx = (start.wrapping_add(i as u64) as usize) & (AUDIO_RING_CAPACITY - 1);
+            f32::from_bits(self.slots[idx].load(Ordering::Relaxed))
+        }));
     }
 
     /// Drop anything buffered so a new capture does not start with samples from
-    /// the previous device.
+    /// the previous device. Also how the capture loop drains while the push is
+    /// off: the ring overwrites old samples anyway, this just marks them read.
     fn reset(&self) {
         let end = self.written.load(Ordering::Acquire);
         self.read_to.store(end, Ordering::Release);
@@ -204,6 +247,10 @@ impl AudioRing {
 // Shared audio buffer - only this crosses thread boundaries
 pub struct SharedAudioBuffer {
     samples: AudioRing,
+    /// FFT plan and scratch buffers, reused for every event. A Mutex is fine
+    /// here: only the capture loop and the pull-mode fallback command take it,
+    /// never the real-time capture callback.
+    analysis: Mutex<AnalysisState>,
     is_capturing: AtomicBool,
     current_device: Mutex<Option<String>>,
     stop_signal: AtomicBool,
@@ -216,6 +263,7 @@ impl Default for SharedAudioBuffer {
     fn default() -> Self {
         Self {
             samples: AudioRing::new(),
+            analysis: Mutex::new(AnalysisState::default()),
             is_capturing: AtomicBool::new(false),
             current_device: Mutex::new(None),
             stop_signal: AtomicBool::new(false),
@@ -538,6 +586,11 @@ fn run_audio_capture(
         config.channels(),
         config.sample_rate().0
     );
+    if let Ok(mut state) = buffer.analysis.lock() {
+        state
+            .analyzer
+            .configure(config.channels() as usize, config.sample_rate().0);
+    }
     let config: cpal::StreamConfig = config.into();
 
     let buffer_clone = Arc::clone(&buffer);
@@ -619,6 +672,9 @@ fn run_audio_capture(
     // This prevents race conditions where a new capture starts before we fully exit
     let start_time = std::time::Instant::now();
     let startup_immunity_ms = 500; // Ignore stop signals for first 500ms
+    const SILENT_HEARTBEAT: std::time::Duration = std::time::Duration::from_secs(1);
+    let mut silence_announced = false;
+    let mut last_silent_emit = std::time::Instant::now();
 
     loop {
         // 33ms: this loop doubles as the 30Hz level pump. Pushing from here
@@ -627,11 +683,28 @@ fn run_audio_capture(
         // keeps the ring consumer running at producer pace.
         thread::sleep(std::time::Duration::from_millis(33));
 
-        // Emit even when the banding comes back empty: the frontend treats an
-        // empty waveform as "endpoint is silent", which is a normal state, and
-        // uses the steady tick to time its capture-health checks.
-        let levels = compute_audio_levels(&buffer);
-        let _ = app.emit("audio-levels", &levels);
+        if !audio_push_active() {
+            // Nobody is drawing: hidden, locked, displays off, or a mode that
+            // ignores audio. Mark the ring read so nothing stale is analyzed
+            // when the push resumes, and skip the FFT and the IPC entirely.
+            buffer.samples.reset();
+            silence_announced = false;
+        } else {
+            let levels = compute_audio_levels(&buffer);
+            if !levels.waveform.is_empty() {
+                let _ = app.emit("audio-levels", &levels);
+                silence_announced = false;
+            } else if !silence_announced
+                || last_silent_emit.elapsed() >= SILENT_HEARTBEAT
+            {
+                // Silence: one empty event so the frontend zeroes its levels,
+                // then a 1Hz heartbeat instead of 30Hz so the frontend's
+                // watchdog still sees a live capture thread.
+                let _ = app.emit("audio-levels", &levels);
+                silence_announced = true;
+                last_silent_emit = std::time::Instant::now();
+            }
+        }
 
         let current_id = buffer.current_capture_id.load(Ordering::SeqCst);
         let stop_requested = buffer.stop_signal.load(Ordering::SeqCst);
@@ -681,71 +754,30 @@ async fn stop_audio_capture(state: State<'_, Arc<SharedAudioBuffer>>) -> Result<
     Ok("Audio capture stopped".to_string())
 }
 
-/// Audio levels + downsampled waveform for the visualizer.
-///
-/// Computed here instead of shipping raw samples over IPC: the previous
-/// get_audio_samples command returned up to 512 floats as JSON ~62x/sec while
-/// the renderer only runs at 30fps. The banding mirrors the old JS
-/// processNativeSamples() exactly (positional split of the drained buffer:
-/// first 15% -> bass, to 35% -> mid, rest -> high; abs-mean scaled by
-/// 3.0 / 2.5 / 2.0, clamped to 1.0) so the visuals are unchanged.
-#[derive(Debug, Clone, Serialize)]
-pub struct AudioLevels {
-    pub bass: f32,
-    pub mid: f32,
-    pub high: f32,
-    /// Up to 128 raw samples for the circular waveform ring. Empty when the
-    /// endpoint produced no samples since the last poll (silence/no capture).
-    pub waveform: Vec<f32>,
+/// Spectrum analyzer plus the reusable buffer the ring is drained into.
+/// The analysis itself (mono mix, Hann window, FFT, bands) lives in
+/// `audio_analysis.rs`.
+#[derive(Default)]
+pub struct AnalysisState {
+    analyzer: AudioAnalyzer,
+    raw: Vec<f32>,
 }
 
-/// Pull the newest samples off the ring and band them.
+/// Pull the newest samples off the ring and analyze them.
 ///
 /// Shared by the `audio-levels` push emitted from the capture thread and by the
 /// `get_audio_levels` command that remains as a pull-mode fallback.
 fn compute_audio_levels(buffer: &SharedAudioBuffer) -> AudioLevels {
-    let samples: Vec<f32> = buffer.samples.take_recent(512);
-
-    if samples.is_empty() {
-        return AudioLevels {
-            bass: 0.0,
-            mid: 0.0,
-            high: 0.0,
-            waveform: Vec::new(),
-        };
-    }
-
-    let len = samples.len();
-    let bass_end = ((len as f32) * 0.15) as usize;
-    let mid_end = ((len as f32) * 0.35) as usize;
-
-    fn abs_mean(slice: &[f32]) -> f32 {
-        if slice.is_empty() {
-            return 0.0;
-        }
-        slice.iter().map(|v| v.abs()).sum::<f32>() / slice.len() as f32
-    }
-
-    let bass = (abs_mean(&samples[..bass_end]) * 3.0).min(1.0);
-    let mid = (abs_mean(&samples[bass_end..mid_end]) * 2.5).min(1.0);
-    let high = (abs_mean(&samples[mid_end..]) * 2.0).min(1.0);
-
-    const WAVEFORM_POINTS: usize = 128;
-    let waveform = if len <= WAVEFORM_POINTS {
-        samples
-    } else {
-        let step = len as f32 / WAVEFORM_POINTS as f32;
-        (0..WAVEFORM_POINTS)
-            .map(|i| samples[((i as f32) * step) as usize])
-            .collect()
+    let Ok(mut state) = buffer.analysis.lock() else {
+        return AudioLevels::silent();
     };
-
-    AudioLevels {
-        bass,
-        mid,
-        high,
-        waveform,
-    }
+    let state = &mut *state;
+    // Enough whole frames for one FFT window. Capped by the ring, which holds
+    // 8192 samples, so 8 channels still fit.
+    let channels = state.analyzer.channels();
+    let max = (audio_analysis::FFT_SIZE * channels).min(AUDIO_RING_CAPACITY / channels * channels);
+    buffer.samples.take_recent_into(max, &mut state.raw);
+    state.analyzer.process(&state.raw)
 }
 
 /// Pull-mode fallback for the visualizer.
@@ -3464,6 +3496,8 @@ fn disable_webview_tracking_prevention(webview: tauri::webview::PlatformWebview)
 
 #[cfg(windows)]
 fn set_webview_visibility(window: &tauri::WebviewWindow, visible: bool) {
+    // Also gates the audio push: a hidden WebView throws the levels away.
+    WEBVIEW_SHOWN.store(visible, Ordering::SeqCst);
     if let Err(error) = window.with_webview(move |webview| unsafe {
         if let Err(error) = webview.controller().SetIsVisible(visible) {
             eprintln!("WebView2: failed to update visibility: {error}");
@@ -3471,6 +3505,53 @@ fn set_webview_visibility(window: &tauri::WebviewWindow, visible: bool) {
     }) {
         eprintln!("WebView2: failed to access visibility controller: {error}");
     }
+}
+
+/// Show the WebView only when the user has not hidden the window and Windows
+/// is neither locked nor showing dark displays.
+#[cfg(windows)]
+fn apply_webview_visibility_locked(window: &tauri::WebviewWindow) {
+    let visible = !USER_HIDDEN.load(Ordering::SeqCst) && !display_watch::os_hidden();
+    set_webview_visibility(window, visible);
+}
+
+/// Serializes read-state, apply and emit so two quick transitions (lock, then
+/// display-off) cannot be applied out of order. Not on the audio path.
+#[cfg(windows)]
+static DISPLAY_STATE_LOCK: Mutex<()> = Mutex::new(());
+
+#[cfg(windows)]
+fn apply_webview_visibility(window: &tauri::WebviewWindow) {
+    let _guard = DISPLAY_STATE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    apply_webview_visibility_locked(window);
+}
+
+/// Lock / unlock / display power change, from the display watcher. Runs on the
+/// window procedure, so the work is moved off it.
+#[cfg(windows)]
+fn on_display_state_change() {
+    let Some(app) = APP_HANDLE.get().cloned() else {
+        return;
+    };
+    tauri::async_runtime::spawn(async move {
+        // Read the state now rather than at notification time, so a quick
+        // lock-unlock pair always settles on the latest state.
+        // The lock is held across read, apply and emit so the last task to run
+        // also emits last.
+        let _guard = DISPLAY_STATE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let reason = display_watch::os_hidden_reason();
+        if let Some(window) = app.get_webview_window("main") {
+            apply_webview_visibility_locked(&window);
+        }
+        println!("[Display] os_hidden={:?}", reason);
+        let _ = app.emit(
+            "display-state",
+            DisplayState {
+                visible: reason.is_none(),
+                reason,
+            },
+        );
+    });
 }
 
 pub fn run() {
@@ -3504,6 +3585,7 @@ pub fn run() {
             stop_audio_capture,
             get_audio_levels,
             get_audio_status,
+            set_audio_push,
             get_default_output_device,
             get_default_loopback_device,
             // Now Playing commands
@@ -3561,6 +3643,18 @@ pub fn run() {
                     eprintln!("WebView2: failed to access native webview: {error}");
                 }
             }
+            let _ = APP_HANDLE.set(app.handle().clone());
+            #[cfg(windows)]
+            if let Some(window) = app.get_webview_window("main") {
+                match window.hwnd() {
+                    Ok(hwnd) => {
+                        if let Err(error) = display_watch::install(hwnd.0, on_display_state_change) {
+                            eprintln!("[Display] lock/display watcher not installed: {error}");
+                        }
+                    }
+                    Err(error) => eprintln!("[Display] no HWND for main window: {error}"),
+                }
+            }
             // === SYSTEM TRAY ===
             let show_item = MenuItem::with_id(app, "show", "Show Window", true, None::<&str>)?;
             let fullscreen_item = MenuItem::with_id(app, "fullscreen", "Toggle Fullscreen", true, None::<&str>)?;
@@ -3584,8 +3678,9 @@ pub fn run() {
                             if let Some(window) = app.get_webview_window("main") {
                                 let _ = window.unminimize();
                                 let _ = window.show();
+                                USER_HIDDEN.store(false, Ordering::SeqCst);
                                 #[cfg(windows)]
-                                set_webview_visibility(&window, true);
+                                apply_webview_visibility(&window);
                                 let _ = window.set_focus();
                             }
                         }
@@ -3616,8 +3711,9 @@ pub fn run() {
                         if let Some(window) = app.get_webview_window("main") {
                             let _ = window.unminimize();
                             let _ = window.show();
+                            USER_HIDDEN.store(false, Ordering::SeqCst);
                             #[cfg(windows)]
-                            set_webview_visibility(&window, true);
+                            apply_webview_visibility(&window);
                             let _ = window.set_focus();
                         }
                     }
@@ -3687,18 +3783,23 @@ pub fn run() {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 // Minimize to tray instead of closing
                 let _ = window.hide();
+                USER_HIDDEN.store(true, Ordering::SeqCst);
                 #[cfg(windows)]
                 if let Some(webview) = window.get_webview_window(window.label()) {
-                    set_webview_visibility(&webview, false);
+                    apply_webview_visibility(&webview);
                 }
                 api.prevent_close();
             } else if matches!(event, tauri::WindowEvent::Resized(_) | tauri::WindowEvent::Focused(_)) {
                 // WebView2 does not inherit its parent window's visibility.
+                // Lock and display-off are folded in by apply_webview_visibility,
+                // so the focus event that follows an unlock cannot wake the
+                // WebView early, and one that fires while locked keeps it asleep.
+                let user_visible = window.is_visible().unwrap_or(true)
+                    && !window.is_minimized().unwrap_or(false);
+                USER_HIDDEN.store(!user_visible, Ordering::SeqCst);
                 #[cfg(windows)]
                 if let Some(webview) = window.get_webview_window(window.label()) {
-                    let visible = window.is_visible().unwrap_or(true)
-                        && !window.is_minimized().unwrap_or(false);
-                    set_webview_visibility(&webview, visible);
+                    apply_webview_visibility(&webview);
                 }
             }
         })

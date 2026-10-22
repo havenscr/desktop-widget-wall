@@ -19,7 +19,24 @@
   let lastNativeLevelsAt = 0;
   let nativeSamples = [];      // downsampled waveform for the circular ring
   let nativeLevels = null;     // {bass, mid, high} computed in Rust
+  let nativeBands = [];        // 32 log-spaced FFT bands, 0..255, from Rust
+  let nativeCaptureStartedAt = 0;
   let demoPhase = 0;
+
+  // Silence handling. Time-based, not event-counted: while the endpoint is
+  // silent Rust sends one empty event and then a 1 Hz heartbeat instead of
+  // 30 Hz, so counting events no longer measures time.
+  const SILENCE_ZERO_MS = 330;      // ~10 events at 30 Hz: drop stale levels
+  const SILENCE_IDLE_MS = 5000;     // then drop the draw rate
+  const IDLE_FRAME_INTERVAL = 125;  // 8 fps while silent
+  const HEALTH_CHECK_MS = 5000;
+  const STARTUP_IMMUNITY_MS = 3000; // no recovery checks right after a start
+  let silenceStartedAt = 0;         // performance.now() of the first empty event; 0 while sound flows
+  let silenceLogged = false;
+  let lastHealthCheckAt = 0;
+  let silentIdle = false;
+  // Last value sent to Rust's set_audio_push (null = never sent).
+  let audioPushEnabled = null;
 
   // Visualizer display mode (milkdrop, circular)
   let currentDisplayMode = '';
@@ -1308,6 +1325,9 @@
       // Apply saved config settings
       applyPowerAudioConfig();
 
+      // Created during silence: start at the idle rate until sound arrives.
+      if (silentIdle) poweraudioViz.stage?.setIdle?.(true);
+
       // Add click handler to make creature flip
       container.addEventListener('click', () => {
         if (poweraudioViz) {
@@ -1375,8 +1395,8 @@
   let lastColorUpdateTime = 0;
 
   function animate(currentTime) {
-    // Stop loop entirely when hidden (saves CPU)
-    if (document.hidden) {
+    // Stop loop entirely when hidden, locked or displays off (saves CPU)
+    if (!pageVisible()) {
       animationId = null;
       return;
     }
@@ -1393,9 +1413,15 @@
     // Schedule next frame
     animationId = requestAnimationFrame(animate);
 
-    // Frame rate limiting - skip render if not enough time has passed (30fps target)
-    if (currentTime - lastFrameTime < frameInterval) return;
-    lastFrameTime = currentTime - ((currentTime - lastFrameTime) % frameInterval);
+    // Silence may need to zero the levels or drop to the idle rate even
+    // though no event arrives (the heartbeat is only 1 Hz).
+    updateSilence(performance.now());
+
+    // Frame rate limiting - skip render if not enough time has passed
+    // (30fps target, 8fps after 5s of silence)
+    const interval = silentIdle ? IDLE_FRAME_INTERVAL : frameInterval;
+    if (currentTime - lastFrameTime < interval) return;
+    lastFrameTime = currentTime - ((currentTime - lastFrameTime) % interval);
 
     // Poll theme colors periodically so JS-driven fade transitions look smooth.
     // Only the ACTIVE mode needs updating: each updater calls getThemeColors(),
@@ -1423,8 +1449,8 @@
     let raw;
     if (audioSourceMode === 'native' && nativeLevels) {
       // Levels are computed in Rust and pushed on 'audio-levels' to keep the
-      // IPC payload tiny; this object sustains its last value through brief
-      // silent stretches, matching the old raw-sample behavior.
+      // IPC payload tiny; this object sustains its last value through a brief
+      // gap and is zeroed by updateSilence() once silence lasts ~1/3 s.
       raw = nativeLevels;
     } else {
       raw = getDemoAudioLevels();
@@ -1732,6 +1758,109 @@
     return select.value;
   }
 
+  // Visible to the user: not document.hidden, and Windows is neither locked
+  // nor showing dark displays (VisibilityManager folds in 'display-state').
+  function pageVisible() {
+    const manager = window.VisibilityManager;
+    return manager ? manager.isVisible() : !document.hidden;
+  }
+
+  // Whether any mode is drawing audio right now. InfiniDream is an external
+  // launcher, so nothing of ours consumes levels there.
+  function isVisualizerDrawing() {
+    return pageVisible() && currentDisplayMode !== 'infinidream';
+  }
+
+  // Tell Rust to skip the FFT and the 30 Hz emit while nothing draws. Only
+  // sends on change.
+  function syncAudioPush() {
+    if (!visualizerTauriAvailable || !window.__TAURI__?.core) return;
+    const want = isVisualizerDrawing();
+    if (want === audioPushEnabled) return;
+    audioPushEnabled = want;
+    // Events stopped on purpose; do not let the watchdog read the gap as a
+    // dead capture.
+    if (want) lastNativeLevelsAt = Date.now();
+    Promise.resolve(window.__TAURI__.core.invoke('set_audio_push', { enabled: want }))
+      .catch((e) => console.warn('Visualizer: set_audio_push failed:', e));
+  }
+
+  function resetSilence() {
+    silenceStartedAt = 0;
+    silenceLogged = false;
+    lastHealthCheckAt = 0;
+    setSilentIdle(false);
+  }
+
+  function setSilentIdle(idle) {
+    if (silentIdle === idle) return;
+    silentIdle = idle;
+    // PowerAudio runs its own render loop; slow it down too.
+    if (poweraudioViz?.stage?.setIdle) poweraudioViz.stage.setIdle(idle);
+  }
+
+  // Zero stale levels after ~1/3 s of silence, and drop to the idle frame
+  // rate after 5 s. Called per event and per frame.
+  function updateSilence(now) {
+    if (audioSourceMode !== 'native' || !silenceStartedAt) return;
+    const silentFor = now - silenceStartedAt;
+    if (silentFor >= SILENCE_ZERO_MS && nativeSamples.length > 0) {
+      nativeLevels = { bass: 0, mid: 0, high: 0 };
+      nativeSamples = [];
+      nativeBands = [];
+    }
+    if (silentFor >= SILENCE_IDLE_MS) setSilentIdle(true);
+  }
+
+  function handleNativeLevels(levels) {
+    lastNativeLevelsAt = Date.now();
+    // No renders consume audio while hidden (animate() stops itself) or in
+    // InfiniDream mode. Rust normally stops sending then; this covers the
+    // events already in flight.
+    if (!isVisualizerDrawing()) return;
+
+    const now = performance.now();
+    if (levels && levels.waveform && levels.waveform.length > 0) {
+      nativeLevels = { bass: levels.bass, mid: levels.mid, high: levels.high };
+      nativeSamples = levels.waveform;
+      nativeBands = Array.isArray(levels.bands) ? levels.bands : [];
+      if (silenceStartedAt) resetSilence();
+      return;
+    }
+
+    // IMPORTANT: an empty waveform is NORMAL. It just means the captured
+    // endpoint is silent right now (e.g. a muted Twitch/YouTube player,
+    // paused media, or a quiet moment). Silence is NOT a capture failure.
+    //
+    // Previously, ~1.6s of zeros triggered handleSystemDefaultRecovery(),
+    // which tore down and restarted the WASAPI loopback capture on the shared
+    // default render endpoint. With a normally-silent endpoint this looped
+    // every ~1.6s forever, churning the audio subsystem and disrupting the
+    // embedded video player's audio path -> buffering. We now only recover
+    // when Rust reports the capture has ACTUALLY stopped (a real error).
+    if (!silenceStartedAt) silenceStartedAt = now;
+    updateSilence(now);
+    const silentFor = now - silenceStartedAt;
+    if (!silenceLogged && silentFor >= 1000) {
+      silenceLogged = true;
+      console.log('Visualizer: endpoint silent (no samples ~1s) - this is normal, idling');
+    }
+
+    // Real-failure check: at most every 5s of continuous silence, and only in
+    // system-default mode, ask Rust whether capture is still alive.
+    // handleSystemDefaultRecovery has its own cooldown and no-ops unless
+    // capture is genuinely dead.
+    if (
+      isSystemDefaultMode &&
+      Date.now() - nativeCaptureStartedAt > STARTUP_IMMUNITY_MS &&
+      silentFor >= HEALTH_CHECK_MS &&
+      now - lastHealthCheckAt >= HEALTH_CHECK_MS
+    ) {
+      lastHealthCheckAt = now;
+      maybeRecoverIfCaptureDead();
+    }
+  }
+
   async function startNativeCapture(deviceId) {
     if (!visualizerTauriAvailable) return false;
 
@@ -1740,61 +1869,22 @@
       await invoke('start_audio_capture', { deviceId });
 
       await stopNativeLevelStream();
-      let zeroSampleCount = 0;
-      const captureStartTime = Date.now(); // Track when capture started
-      const startupImmunityMs = 3000; // Don't trigger recovery for first 3 seconds
+      nativeCaptureStartedAt = Date.now();
+      resetSilence();
 
       // Levels are PUSHED from the Rust capture thread at 30Hz on the
       // 'audio-levels' event, not polled. The old version invoked
       // get_audio_levels every 33ms, which was 30 IPC round-trips/sec into a
       // command Tauri ran on the MAIN thread, contending with the WASAPI
       // real-time callback for the sample buffer. Rust computes bass/mid/high
-      // and downsamples the waveform, so each event is ~131 floats.
+      // from an FFT, 32 bands and a mono waveform, so each event is small.
       nativeLevelsUnlisten = await window.__TAURI__.event.listen('audio-levels', (event) => {
-        lastNativeLevelsAt = Date.now();
-        // No renders consume audio while hidden (animate() stops itself) or in
-        // InfiniDream mode (external launcher) - ignore the payload.
-        if (document.hidden || currentDisplayMode === 'infinidream') return;
-
-        const levels = event.payload;
-        if (levels && levels.waveform && levels.waveform.length > 0) {
-          nativeLevels = { bass: levels.bass, mid: levels.mid, high: levels.high };
-          nativeSamples = levels.waveform;
-          zeroSampleCount = 0; // Reset zero counter when we get data
-        } else {
-          zeroSampleCount++;
-          const timeSinceStart = Date.now() - captureStartTime;
-
-          // IMPORTANT: an empty waveform is NORMAL. It just means the
-          // captured endpoint is silent right now (e.g. a muted Twitch/YouTube
-          // player, paused media, or a quiet moment). Silence is NOT a capture
-          // failure. The visualizer simply sustains its last levels/idle render.
-          //
-          // Previously, ~1.6s of zeros triggered handleSystemDefaultRecovery(),
-          // which tore down and restarted the WASAPI loopback capture on the
-          // shared default render endpoint. With a normally-silent endpoint this
-          // looped every ~1.6s forever, churning the audio subsystem and
-          // disrupting the embedded video player's audio path -> buffering.
-          //
-          // We now only recover when Rust reports the capture has ACTUALLY
-          // stopped (a real error), checked on a long interval with backoff.
-          if (zeroSampleCount === 30) {
-            console.log('Visualizer: endpoint silent (no samples ~1s) - this is normal, idling');
-          }
-
-          // Real-failure check: only every ~5s of continuous silence, and only
-          // in system-default mode, ask Rust whether capture is still alive.
-          // 150 events * 33ms ~= 5s. handleSystemDefaultRecovery itself has a
-          // cooldown, and it now no-ops unless capture is genuinely dead.
-          if (
-            isSystemDefaultMode &&
-            timeSinceStart > startupImmunityMs &&
-            zeroSampleCount % 150 === 0
-          ) {
-            maybeRecoverIfCaptureDead();
-          }
-        }
+        handleNativeLevels(event.payload);
       });
+      // A new capture starts with the push in whatever state the visualizer
+      // needs right now.
+      audioPushEnabled = null;
+      syncAudioPush();
 
       // Watchdog for the push itself. If the Rust capture thread exits, the
       // event stream simply stops and the silence counter above stops advancing,
@@ -1802,10 +1892,11 @@
       // replaced.
       lastNativeLevelsAt = Date.now();
       nativeLevelsWatchdog = setInterval(() => {
-        if (document.hidden || currentDisplayMode === 'infinidream') return;
+        // While the push is off nothing arrives by design.
+        if (!isVisualizerDrawing()) return;
         if (
           isSystemDefaultMode &&
-          Date.now() - captureStartTime > startupImmunityMs &&
+          Date.now() - nativeCaptureStartedAt > STARTUP_IMMUNITY_MS &&
           Date.now() - lastNativeLevelsAt > 5000
         ) {
           console.warn('Visualizer: no audio-levels events for 5s - checking capture health');
@@ -1851,6 +1942,8 @@
     await stopNativeLevelStream();
     nativeSamples = [];
     nativeLevels = null;
+    nativeBands = [];
+    resetSilence();
 
     if (!visualizerTauriAvailable) return;
 
@@ -2021,6 +2114,7 @@
 
     const generation = ++displayModeGeneration;
     currentDisplayMode = mode;
+    syncAudioPush();
     if (poweraudioViz?.stage) poweraudioViz.stage.pause();
     if (animationId !== null) {
       cancelAnimationFrame(animationId);
@@ -2065,7 +2159,7 @@
 
     // Re-arm the render loop if it self-stopped (it bails out entirely while
     // in infinidream mode, and on document.hidden).
-    if (animationId === null && mode !== 'infinidream' && !document.hidden) {
+    if (animationId === null && mode !== 'infinidream' && pageVisible()) {
       lastFrameTime = 0;
       animationId = requestAnimationFrame(animate);
     }
@@ -2744,13 +2838,17 @@
         // Start animation immediately
         animate(0);
 
-        // Restart animation when document becomes visible
-        document.addEventListener('visibilitychange', () => {
-          if (!document.hidden && !animationId && isInitialized) {
+        // Restart animation when the wall becomes visible again (page shown,
+        // unlocked, displays on), and turn the Rust push off and on with it.
+        const onVisibility = () => {
+          syncAudioPush();
+          if (pageVisible() && !animationId && isInitialized) {
             lastFrameTime = performance.now();
             animate(performance.now());
           }
-        });
+        };
+        document.addEventListener('visibilitychange', onVisibility);
+        window.addEventListener('dashboard-visibility-change', onVisibility);
 
         // Populate devices and auto-connect to saved preference (or system-default)
         setTimeout(async () => {
