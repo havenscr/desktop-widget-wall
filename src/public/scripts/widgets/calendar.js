@@ -1031,6 +1031,105 @@ const CalendarWidget = (function() {
       currentNextEventAddress = null;
       stopDriveTimeRefresh();
     }
+
+    scheduleMeetingRing(pickRingEvent(displayEvent, nextEvent));
+  }
+
+  // <meeting-ring-plan>
+  const RING_SOON_MS = 5 * 60 * 1000;
+  const RING_URGENT_MS = 60 * 1000;
+
+  /**
+   * Work out the ring phase for a meeting start time.
+   * phase: 'none' | 'soon' | 'urgent'. toUrgent / toEnd are ms until the next
+   * phase change (null when it already passed). The ring ends when the meeting starts.
+   */
+  function computeMeetingRingPlan(startMs, nowMs) {
+    const until = startMs - nowMs;
+    if (!Number.isFinite(until) || until <= 0 || until > RING_SOON_MS) {
+      return { phase: 'none', toSoon: until > RING_SOON_MS ? until - RING_SOON_MS : null, toUrgent: null, toEnd: null };
+    }
+    if (until <= RING_URGENT_MS) {
+      return { phase: 'urgent', toSoon: null, toUrgent: null, toEnd: until };
+    }
+    return { phase: 'soon', toSoon: null, toUrgent: until - RING_URGENT_MS, toEnd: until };
+  }
+
+  /** Skip all-day, cancelled and declined events. */
+  function isRingEligible(event) {
+    if (!event || event.isAllDay || event.isCancelled) return false;
+    if (event.responseStatus && event.responseStatus.response === 'declined') return false;
+    return !!(event.start && event.start.dateTime);
+  }
+
+  // The ring follows the card: when the card shows an in-progress event, no ring.
+  function pickRingEvent(displayEvent, nextEvent) {
+    return displayEvent === nextEvent ? nextEvent : null;
+  }
+  // </meeting-ring-plan>
+
+  let meetingRingTimers = [];
+  // Last time the shared "second notify" chime played (ring or leave alert).
+  let lastChimeAt = 0;
+  const CHIME_COOLDOWN_MS = 60 * 1000;
+
+  // True (and records the time) when a chime may play; false inside the cooldown.
+  function claimChime() {
+    const now = Date.now();
+    if (now - lastChimeAt < CHIME_COOLDOWN_MS) return false;
+    lastChimeAt = now;
+    return true;
+  }
+
+  function clearMeetingRing() {
+    meetingRingTimers.forEach(clearTimeout);
+    meetingRingTimers = [];
+    const el = document.getElementById('next-meeting');
+    if (el) el.classList.remove('meeting-ring-soon', 'meeting-ring-urgent');
+  }
+
+  /**
+   * Pulse the next-meeting card 5 minutes before the meeting, go urgent (with one
+   * sound) at 1 minute, stop at start. One-shot timeouts, not the 30 s poll, so it
+   * fires on time even while managed intervals are paused. Called on every
+   * updateCalendarInfo, so changed or deleted events clear and recompute the timers.
+   */
+  function scheduleMeetingRing(event) {
+    clearMeetingRing();
+    if (!isRingEligible(event)) return;
+    const startMs = new Date(event.start.dateTime).getTime();
+    const key = `${event.id || ''}|${startMs}`;
+
+    const apply = () => {
+      const el = document.getElementById('next-meeting');
+      const plan = computeMeetingRingPlan(startMs, Date.now());
+      if (el) {
+        el.classList.toggle('meeting-ring-soon', plan.phase === 'soon');
+        el.classList.toggle('meeting-ring-urgent', plan.phase === 'urgent');
+      }
+      const soundKey = `meetingRingSounded:${key}`;
+      let alreadySounded = false;
+      try { alreadySounded = sessionStorage.getItem(soundKey) === '1'; } catch (e) { /* storage unavailable */ }
+      if (plan.phase === 'urgent' && !alreadySounded) {
+        try { sessionStorage.setItem(soundKey, '1'); } catch (e) { /* storage unavailable */ }
+        if (claimChime()) try {
+          const audio = new Audio('assets/Sounds/second notify.mp3');
+          audio.volume = 0.7;
+          audio.play().catch(() => {});
+        } catch (e) { /* no audio in this environment */ }
+      }
+      return plan;
+    };
+
+    const plan = apply();
+    // Each timeout recomputes from the clock, so a late or capped timer self-corrects.
+    const later = (ms) => {
+      if (ms != null) {
+        meetingRingTimers.push(setTimeout(() => scheduleMeetingRing(event), Math.min(ms, 2147483647)));
+      }
+    };
+    // Only the nearest boundary needs a timer; the recompute schedules the next.
+    later(plan.toSoon ?? plan.toUrgent ?? plan.toEnd);
   }
 
   /**
@@ -1542,9 +1641,12 @@ const CalendarWidget = (function() {
    */
   function playLeaveSound(type) {
     const soundFile = type === 'gentle' ? 'assets/Sounds/first notify.mp3' : 'assets/Sounds/second notify.mp3';
-    const audio = new Audio(soundFile);
-    audio.volume = 0.7;
-    audio.play().catch(e => console.warn('Calendar: Could not play leave alert:', e));
+    // The urgent sound is the ring's chime file; share its cooldown to avoid a double chime.
+    if (type === 'gentle' || claimChime()) {
+      const audio = new Audio(soundFile);
+      audio.volume = 0.7;
+      audio.play().catch(e => console.warn('Calendar: Could not play leave alert:', e));
+    }
 
     // Visual flash effect on next-meeting element
     const nextMeetingEl = document.getElementById('next-meeting');

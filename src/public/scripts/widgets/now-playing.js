@@ -367,15 +367,80 @@ function resizeColorMeshCanvas(canvas, widget) {
   return true;
 }
 
+// <np-palette>
+// Turn extracted album colors into a lively { primary, secondary, accent } hex palette.
+// Returns null for failed extraction (default colors) or grey covers, which have no hue
+// worth showing, so the visualizer falls back to the theme.
+function buildAlbumPalette(colors, defaults) {
+  if (!Array.isArray(colors) || colors.length === 0) return null;
+  if (defaults && JSON.stringify(colors) === JSON.stringify(defaults)) return null;
+
+  const toHsl = ({ r, g, b }) => {
+    r /= 255; g /= 255; b /= 255;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b);
+    const l = (max + min) / 2;
+    const d = max - min;
+    if (d === 0) return { h: 0, s: 0, l };
+    const s = d / (1 - Math.abs(2 * l - 1));
+    let h;
+    if (max === r) h = ((g - b) / d) % 6;
+    else if (max === g) h = (b - r) / d + 2;
+    else h = (r - g) / d + 4;
+    return { h: ((h * 60) + 360) % 360, s, l };
+  };
+  const toHex = ({ h, s, l }) => {
+    const a = s * Math.min(l, 1 - l);
+    const f = (n) => {
+      const k = (n + h / 30) % 12;
+      const v = l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1));
+      return Math.round(v * 255).toString(16).padStart(2, '0');
+    };
+    return '#' + f(0) + f(8) + f(4);
+  };
+
+  const hsl = colors.map(toHsl);
+  // Most saturated color first; a cover with no saturated color is grey
+  const ranked = hsl.slice().sort((a, b) => b.s - a.s);
+  if (ranked[0].s < 0.15) return null;
+
+  const clamp = (c) => ({
+    h: c.h,
+    s: Math.min(0.95, Math.max(0.55, c.s)),
+    l: Math.min(0.7, Math.max(0.45, c.l))
+  });
+  const pick = (i) => toHex(clamp(ranked[Math.min(i, ranked.length - 1)].s < 0.15 ? ranked[0] : ranked[Math.min(i, ranked.length - 1)]));
+  return { primary: pick(0), secondary: pick(1), accent: pick(2) };
+}
+
+function publishNowPlayingColors(colors) {
+  const palette = buildAlbumPalette(colors, getDefaultMeshColors());
+  window.nowPlayingPalette = palette;
+  window.dispatchEvent(new CustomEvent('nowplaying-colors', { detail: palette }));
+}
+
+// Latest-request guard: async palette work publishes only if no newer request began.
+function createLatestGate() {
+  let counter = 0;
+  return {
+    begin() { return ++counter; },
+    isCurrent(token) { return token === counter; }
+  };
+}
+// </np-palette>
+
 // Update color mesh with new album art colors
 // Accepts either base64 data (albumArtBase64 + albumArtMime) or a URL (imageUrl)
 // sourceType hint: 'twitch', 'youtube', 'radio', or null for default fallback colors
+const colorMeshGate = createLatestGate();
+
 async function updateColorMesh(albumArtBase64, albumArtMime, imageUrl = null, sourceType = null) {
   const canvas = document.getElementById('nowplaying-color-mesh');
   if (!canvas) return;
 
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
+
+  const requestToken = colorMeshGate.begin();
 
   // Blob positions and rendering both use the capped canvas pixel dimensions.
   const widget = canvas.closest('.widget-nowplaying');
@@ -393,22 +458,32 @@ async function updateColorMesh(albumArtBase64, albumArtMime, imageUrl = null, so
     }
   }
 
-  // Extract colors from album art or use source-appropriate defaults
+  // Extract colors from album art or use source-appropriate defaults.
+  // Held in a local so a stale request cannot overwrite the shared palette.
+  let colors;
   if (imageUrl) {
     // Use URL directly (for Twitch/YouTube thumbnails)
     // May fail due to CORS, so use fallback colors on error
-    colorMeshColors = await extractColorsFromImage(imageUrl);
+    colors = await extractColorsFromImage(imageUrl);
     // If extraction returned default colors (error case), use source-specific colors instead
-    if (colorMeshColors === getDefaultMeshColors()) {
-      colorMeshColors = getFallbackColors();
+    if (colors === getDefaultMeshColors()) {
+      colors = getFallbackColors();
     }
   } else if (albumArtBase64 && albumArtMime) {
     // Use base64 data (for Spotify/other sources)
     const imgSrc = `data:${albumArtMime};base64,${albumArtBase64}`;
-    colorMeshColors = await extractColorsFromImage(imgSrc);
+    colors = await extractColorsFromImage(imgSrc);
   } else {
-    colorMeshColors = getFallbackColors();
+    colors = getFallbackColors();
   }
+
+  // A newer track change started while extraction ran; drop this stale palette.
+  if (!colorMeshGate.isCurrent(requestToken)) return;
+  colorMeshColors = colors;
+
+  // Share the palette with the visualizer (null when there is no real art)
+  const hasArt = !!(imageUrl || (albumArtBase64 && albumArtMime)) && sourceType !== 'radio';
+  publishNowPlayingColors(hasArt ? colorMeshColors : null);
 
   // Initialize blobs with new colors
   initColorMeshBlobs(colorMeshColors, canvas.width, canvas.height);

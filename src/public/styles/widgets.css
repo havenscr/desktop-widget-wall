@@ -6674,6 +6674,50 @@
   animation: leaveUrgent 0.5s ease-in-out 3;
 }
 
+/* Meeting ring: soft pulse 5 min before, urgent at 1 min. Opacity only. */
+.next-meeting.meeting-ring-soon::after,
+.next-meeting.meeting-ring-urgent::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  border: 1px solid rgba(34, 197, 94, 0.7);
+  box-shadow: 0 0 14px rgba(34, 197, 94, 0.45), inset 0 0 8px rgba(34, 197, 94, 0.15);
+  opacity: 0;
+  animation: meetingRingSoft 2.4s ease-in-out infinite;
+}
+
+.next-meeting.meeting-ring-urgent::after {
+  border-color: rgba(251, 146, 60, 0.9);
+  box-shadow: 0 0 18px rgba(251, 146, 60, 0.6), inset 0 0 10px rgba(251, 146, 60, 0.2);
+  animation: meetingRingUrgent 0.9s ease-in-out infinite;
+}
+
+@keyframes meetingRingSoft {
+  0%, 100% { opacity: 0.15; }
+  50% { opacity: 0.8; }
+}
+
+@keyframes meetingRingUrgent {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .next-meeting.meeting-ring-soon::after,
+  .next-meeting.meeting-ring-urgent::after {
+    animation: none;
+    opacity: 0.6;
+  }
+}
+
+body[data-perf="off"] .next-meeting.meeting-ring-soon::after,
+body[data-perf="off"] .next-meeting.meeting-ring-urgent::after {
+  animation: none;
+  opacity: 0.6;
+}
+
 @keyframes leaveGlow {
   0%, 100% { box-shadow: none; }
   50% { box-shadow: 0 0 20px rgba(34, 197, 94, 0.5), inset 0 0 10px rgba(34, 197, 94, 0.1); }

@@ -187,6 +187,11 @@ Features requiring system access are implemented in Rust:
   poll on `localhost:8085`; LHM's ring-0 driver polls SMBus/EC sensors the
   widget never read, and that is a known cause of system-wide DPC latency
   spikes. Do not reintroduce it.
+- **Focus Do Not Disturb** - `countdown.js` calls `enable_do_not_disturb` when
+  the focus timer starts and `disable_do_not_disturb` on pause, reset, alarm and
+  startup cleanup. A `focus-dnd-active` localStorage flag marks a Do Not Disturb
+  that focus turned on, so a Do Not Disturb the user set is never undone. The
+  backend writes an undocumented WNF state that may do nothing on Windows 11 24H2.
 - **Audio capture** - WASAPI loopback via `cpal`. Samples go into a lock-free
   SPSC ring (`AudioRing`), never a `Mutex`: the capture callback runs on the
   audio engine's MMCSS real-time thread, so it must not block or memmove.
@@ -291,6 +296,15 @@ The settings panel (`settings-panel.html`) provides configuration for:
 - Startup window: target monitor, width, height
 - Background: image source, custom SVG upload
 - Theme cycling: auto cycle, transition mode, interval
+- Visualizer colors: `now-playing.js` publishes the album-art palette
+  (`window.nowPlayingPalette` plus a `nowplaying-colors` event, null when there is
+  no art, grey art or radio) and `visualizer.js` `getThemeColors` prefers it over
+  the theme colors. No setting; it is always on.
+- Meeting ring: `calendar.js` `scheduleMeetingRing` pulses the next-meeting card
+  5 minutes before start and goes urgent (one sound) at 1 minute, using one-shot
+  timeouts recomputed on every `updateCalendarInfo`. Styles sit after the
+  `.leave-alert-*` rules in `widgets.css` and honor reduced motion and
+  `body[data-perf="off"]`.
 - Performance mode (Glass Blur: Full/Lite/Off) - sets `body[data-perf]`, which
   `themes.css` uses to scale back the always-on widget backdrop blur (the
   dashboard's biggest standing GPU cost). Full is 6px, Lite 3px, Off 0px.
