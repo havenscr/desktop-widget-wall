@@ -391,35 +391,58 @@ function checkIntervalReminder() {
 // <focus-dnd>
 // Focus mode asks Windows for Do Not Disturb. A localStorage flag records that
 // WE turned it on, so startup cleanup and pause/reset only undo our own change
-// and never a Do Not Disturb the user set themselves.
+// and never a Do Not Disturb the user set themselves. At start the current
+// state is read first: if Do Not Disturb is already on, focus leaves it and
+// sets no flag. If the state cannot be read, focus enables it as before.
 const FOCUS_DND_FLAG = 'focus-dnd-active';
 
-function focusDndInvoke(command) {
+// Each PowerShell-backed command runs in order, so a quick start then pause
+// can never land the disable before the enable.
+let focusDndQueue = Promise.resolve();
+// Bumped by every release, so an enable still waiting on the state read
+// knows focus was paused or reset meanwhile and backs off.
+let focusDndGeneration = 0;
+
+function focusDndCall(command) {
   const invoke = window.__TAURI__?.core?.invoke;
-  if (!invoke) return Promise.resolve(false);
-  return Promise.resolve()
+  if (!invoke) return Promise.resolve({ ok: false, value: null });
+  const run = () => Promise.resolve()
     .then(() => invoke(command))
-    .then(() => true)
+    .then((value) => ({ ok: true, value }))
     .catch((e) => {
       window.dlog?.('Focus DND', command, 'failed:', e);
-      return false;
+      return { ok: false, value: null };
     });
+  focusDndQueue = focusDndQueue.then(run, run);
+  return focusDndQueue;
+}
+
+// true / false when Windows reports the state, null when it cannot be read.
+async function focusDndQuery() {
+  const { ok, value } = await focusDndCall('get_do_not_disturb');
+  return ok && typeof value === 'boolean' ? value : null;
 }
 
 async function focusDndEnable() {
   if (localStorage.getItem(FOCUS_DND_FLAG)) return;
-  // Set the flag before the async call so a quick pause still sees it.
+  if (!window.__TAURI__?.core?.invoke) return;
+  const generation = focusDndGeneration;
+  const alreadyOn = await focusDndQuery();
+  if (generation !== focusDndGeneration) return;
+  if (localStorage.getItem(FOCUS_DND_FLAG)) return;
+  if (alreadyOn === true) return;  // the user's own: not ours to undo
+  // Set the flag before the enable so a pause during it still releases.
   localStorage.setItem(FOCUS_DND_FLAG, '1');
-  if (!(await focusDndInvoke('enable_do_not_disturb'))) {
-    localStorage.removeItem(FOCUS_DND_FLAG);
-  }
+  const { ok } = await focusDndCall('enable_do_not_disturb');
+  if (!ok) localStorage.removeItem(FOCUS_DND_FLAG);
 }
 
 async function focusDndRelease() {
+  focusDndGeneration++;
   if (!localStorage.getItem(FOCUS_DND_FLAG)) return;
   // Clear the flag first so a failing invoke cannot trap us in a retry loop.
   localStorage.removeItem(FOCUS_DND_FLAG);
-  await focusDndInvoke('disable_do_not_disturb');
+  await focusDndCall('disable_do_not_disturb');
 }
 // </focus-dnd>
 

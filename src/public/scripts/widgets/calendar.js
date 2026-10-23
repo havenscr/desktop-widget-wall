@@ -243,6 +243,10 @@ const CalendarWidget = (function() {
     updateMonthHeader();
     renderCalendarGrid();
     renderConnectPrompt();
+    // With the cache empty this resets the next-event card, stops the drive
+    // time refresh and clears the meeting ring timers.
+    updateCalendarInfo();
+    resetLeaveNotifications(null);
   }
 
   /**
@@ -363,7 +367,7 @@ const CalendarWidget = (function() {
       // Request events in local timezone to avoid UTC conversion issues
       const timezone = getLocalTimezone();
       const response = await MicrosoftAuth.graphRequest(
-        `/me/calendarView?startDateTime=${startISO}&endDateTime=${endISO}&$orderby=start/dateTime&$top=100&$select=id,subject,start,end,categories,showAs,isAllDay,isCancelled,webLink,onlineMeeting,isOnlineMeeting,onlineMeetingUrl,location`,
+        `/me/calendarView?startDateTime=${startISO}&endDateTime=${endISO}&$orderby=start/dateTime&$top=100&$select=id,subject,start,end,categories,showAs,isAllDay,isCancelled,responseStatus,webLink,onlineMeeting,isOnlineMeeting,onlineMeetingUrl,location`,
         {
           headers: {
             'Prefer': `outlook.timezone="${timezone}"`
@@ -844,6 +848,30 @@ const CalendarWidget = (function() {
     return null;
   }
 
+  // <next-event-pick>
+  /**
+   * Pick the card's events. Current: started within the last 10 minutes and
+   * not ended. Next: the first one starting later. All-day events (reminders,
+   * birthdays) and declined meetings are skipped; the month grid still shows
+   * both. Tentative, organizer and missing responses all count.
+   */
+  function isDeclined(event) {
+    return !!(event && event.responseStatus && event.responseStatus.response === 'declined');
+  }
+
+  function pickCardEvents(events, now) {
+    const tenMinutesAgo = new Date(now.getTime() - 10 * 60 * 1000);
+    const candidates = (events || []).filter(e => e && !e.isAllDay && !isDeclined(e));
+    const currentEvent = candidates.find(e => {
+      const startTime = new Date(e.start.dateTime);
+      const endTime = new Date(e.end.dateTime);
+      return startTime <= now && startTime > tenMinutesAgo && endTime > now;
+    });
+    const nextEvent = candidates.find(e => new Date(e.start.dateTime) > now);
+    return { currentEvent, nextEvent };
+  }
+  // </next-event-pick>
+
   /**
    * Calculate and display next meeting countdown
    * Shows "EVENT" with "In Progress" for events in their first 10 minutes
@@ -851,23 +879,7 @@ const CalendarWidget = (function() {
    */
   function updateCalendarInfo() {
     const now = new Date();
-    const tenMinutesAgo = new Date(now.getTime() - 10 * 60 * 1000);
-
-    // Find current event (started within last 10 minutes and not ended yet)
-    // Skip all-day events as they're typically reminders (birthdays, etc.)
-    const currentEvent = monthEventsCache.find(e => {
-      if (e.isAllDay) return false; // Skip all-day events
-      const startTime = new Date(e.start.dateTime);
-      const endTime = new Date(e.end.dateTime);
-      return startTime <= now && startTime > tenMinutesAgo && endTime > now;
-    });
-
-    // Find next upcoming event (starts in the future)
-    // Skip all-day events as they're typically reminders (birthdays, etc.)
-    const nextEvent = monthEventsCache.find(e => {
-      if (e.isAllDay) return false; // Skip all-day events
-      return new Date(e.start.dateTime) > now;
-    });
+    const { currentEvent, nextEvent } = pickCardEvents(monthEventsCache, now);
 
     // Use current event if exists, otherwise next event
     const displayEvent = currentEvent || nextEvent;

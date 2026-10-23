@@ -2054,123 +2054,139 @@ if ($hwnd -ne [IntPtr]::Zero) {
     Ok(())
 }
 
-/// Enable Do Not Disturb (suppress Windows notifications)
-/// Uses PowerShell to toggle Focus Assist via WNF state
-#[tauri::command]
-async fn enable_do_not_disturb() -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(|| {
-        // Use PowerShell to enable Focus Assist (Priority Only mode = 1, Alarms Only = 2)
-        let script = r#"
+/// C# helper shared by the Do Not Disturb commands. Both entry points throw
+/// on a failing NTSTATUS so the PowerShell process exits nonzero and the
+/// command can report the failure instead of returning Ok.
+const FOCUS_ASSIST_CS: &str = r#"
+$ErrorActionPreference = 'Stop'
 $code = @'
 using System;
 using System.Runtime.InteropServices;
 public class FocusAssist {
+    const ulong WNF_SHEL_QUIETHOURS_ACTIVE_PROFILE_CHANGED = 0x0D83063EA3BF5075;
+
     [DllImport("ntdll.dll")]
     public static extern int NtUpdateWnfStateData(ref ulong StateName, IntPtr Buffer, uint Length, IntPtr TypeId, IntPtr ExplicitScope, uint MatchingChangeStamp, uint CheckChangeStamp);
 
+    [DllImport("ntdll.dll")]
+    public static extern int NtQueryWnfStateData(ref ulong StateName, IntPtr TypeId, IntPtr ExplicitScope, out uint ChangeStamp, IntPtr Buffer, ref uint BufferSize);
+
     public static void SetMode(int mode) {
-        ulong WNF_SHEL_QUIETHOURS_ACTIVE_PROFILE_CHANGED = 0x0D83063EA3BF5075;
-        byte[] buffer = BitConverter.GetBytes(mode);
+        ulong state = WNF_SHEL_QUIETHOURS_ACTIVE_PROFILE_CHANGED;
         IntPtr ptr = Marshal.AllocHGlobal(4);
-        Marshal.Copy(buffer, 0, ptr, 4);
-        NtUpdateWnfStateData(ref WNF_SHEL_QUIETHOURS_ACTIVE_PROFILE_CHANGED, ptr, 4, IntPtr.Zero, IntPtr.Zero, 0, 0);
-        Marshal.FreeHGlobal(ptr);
+        try {
+            Marshal.Copy(BitConverter.GetBytes(mode), 0, ptr, 4);
+            int status = NtUpdateWnfStateData(ref state, ptr, 4, IntPtr.Zero, IntPtr.Zero, 0, 0);
+            if (status != 0) throw new Exception("NtUpdateWnfStateData 0x" + status.ToString("X8"));
+        } finally {
+            Marshal.FreeHGlobal(ptr);
+        }
+    }
+
+    // Returns the active profile: 0 off, 1 priority only, 2 alarms only.
+    // An empty state (never written since boot) reads as 0.
+    public static int GetMode() {
+        ulong state = WNF_SHEL_QUIETHOURS_ACTIVE_PROFILE_CHANGED;
+        uint stamp;
+        uint size = 4;
+        IntPtr ptr = Marshal.AllocHGlobal(4);
+        try {
+            Marshal.WriteInt32(ptr, 0);
+            int status = NtQueryWnfStateData(ref state, IntPtr.Zero, IntPtr.Zero, out stamp, ptr, ref size);
+            if (status != 0) throw new Exception("NtQueryWnfStateData 0x" + status.ToString("X8"));
+            return size >= 4 ? Marshal.ReadInt32(ptr) : 0;
+        } finally {
+            Marshal.FreeHGlobal(ptr);
+        }
     }
 }
 '@
 Add-Type -TypeDefinition $code
-[FocusAssist]::SetMode(2)
 "#;
-        let result = std::process::Command::new("powershell")
-            .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script])
-            .output();
 
-        match result {
-            Ok(out) => {
-                if out.status.success() {
-                    println!("Do Not Disturb enabled (Focus Assist: Alarms Only)");
-                } else {
-                    let stderr = String::from_utf8_lossy(&out.stderr);
-                    eprintln!("DND enable error: {}", stderr);
-                }
-                Ok(())
-            }
-            Err(e) => {
-                eprintln!("PowerShell not available: {}", e);
-                Ok(())
-            }
+/// Run a PowerShell script on a blocking thread. Ok carries stdout; a nonzero
+/// exit or a missing PowerShell is an Err with the reason.
+async fn run_powershell(script: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let out = std::process::Command::new("powershell")
+            .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &script])
+            .output()
+            .map_err(|e| format!("PowerShell not available: {e}"))?;
+        if out.status.success() {
+            Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+        } else {
+            Err(String::from_utf8_lossy(&out.stderr).trim().to_string())
         }
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+/// Parse the profile number `GetMode` prints. Any nonzero profile counts as
+/// Do Not Disturb on; anything unparseable is None.
+fn parse_dnd_mode(stdout: &str) -> Option<bool> {
+    stdout.trim().parse::<i32>().ok().map(|mode| mode != 0)
+}
+
+/// Read whether Do Not Disturb is on, through the same WNF state the enable
+/// and disable commands write. None when the state cannot be read.
+#[tauri::command]
+async fn get_do_not_disturb() -> Option<bool> {
+    let script = format!("{FOCUS_ASSIST_CS}\n[FocusAssist]::GetMode()\n");
+    match run_powershell(script).await {
+        Ok(stdout) => parse_dnd_mode(&stdout),
+        Err(e) => {
+            eprintln!("DND read error: {e}");
+            None
+        }
+    }
+}
+
+/// Enable Do Not Disturb (suppress Windows notifications)
+/// Uses PowerShell to set Focus Assist to Alarms Only via WNF state
+#[tauri::command]
+async fn enable_do_not_disturb() -> Result<(), String> {
+    let script = format!("{FOCUS_ASSIST_CS}\n[FocusAssist]::SetMode(2)\n");
+    match run_powershell(script).await {
+        Ok(_) => {
+            println!("Do Not Disturb enabled (Focus Assist: Alarms Only)");
+            Ok(())
+        }
+        Err(e) => {
+            eprintln!("DND enable error: {e}");
+            Err(e)
+        }
+    }
 }
 
 /// Disable Do Not Disturb (restore Windows notifications)
-/// Uses PowerShell to modify registry keys for Focus Assist
+/// Clears the Focus Assist registry keys, then sets the WNF state to off.
+/// Only the WNF write decides success; the registry writes are best effort.
 #[tauri::command]
 async fn disable_do_not_disturb() -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(|| {
-        // Use PowerShell with registry + WNF approach to disable Focus Assist/DND
-        let script = r#"
-# Registry Method - Create keys if they don't exist and set to disabled
+    let registry = r#"
 $notifPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Notifications\Settings"
 $faPath = "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\FocusAssist"
-
-# Create Notifications\Settings if needed
-if (!(Test-Path $notifPath)) {
-    New-Item -Path $notifPath -Force | Out-Null
-}
-New-ItemProperty -Path $notifPath -Name "NOC_GLOBAL_SETTING_DND" -Value 0 -PropertyType DWord -Force -ErrorAction SilentlyContinue | Out-Null
-
-# Create FocusAssist if needed
-if (!(Test-Path $faPath)) {
-    New-Item -Path $faPath -Force | Out-Null
-}
-New-ItemProperty -Path $faPath -Name "QuietHoursActive" -Value 0 -PropertyType DWord -Force -ErrorAction SilentlyContinue | Out-Null
-New-ItemProperty -Path $faPath -Name "QuietHoursEnabled" -Value 0 -PropertyType DWord -Force -ErrorAction SilentlyContinue | Out-Null
-
-# WNF Method - same as enable but with mode 0
-$code = @'
-using System;
-using System.Runtime.InteropServices;
-public class FocusOff2 {
-    [DllImport("ntdll.dll")]
-    public static extern int NtUpdateWnfStateData(ref ulong StateName, IntPtr Buffer, uint Length, IntPtr TypeId, IntPtr ExplicitScope, uint MatchingChangeStamp, uint CheckChangeStamp);
-    public static void SetMode(int mode) {
-        ulong WNF_SHEL_QUIETHOURS_ACTIVE_PROFILE_CHANGED = 0x0D83063EA3BF5075;
-        byte[] buffer = BitConverter.GetBytes(mode);
-        IntPtr ptr = Marshal.AllocHGlobal(4);
-        Marshal.Copy(buffer, 0, ptr, 4);
-        NtUpdateWnfStateData(ref WNF_SHEL_QUIETHOURS_ACTIVE_PROFILE_CHANGED, ptr, 4, IntPtr.Zero, IntPtr.Zero, 0, 0);
-        Marshal.FreeHGlobal(ptr);
-    }
-}
-'@
-Add-Type -TypeDefinition $code
-[FocusOff2]::SetMode(0)
+try {
+    if (!(Test-Path $notifPath)) { New-Item -Path $notifPath -Force | Out-Null }
+    New-ItemProperty -Path $notifPath -Name "NOC_GLOBAL_SETTING_DND" -Value 0 -PropertyType DWord -Force | Out-Null
+    if (!(Test-Path $faPath)) { New-Item -Path $faPath -Force | Out-Null }
+    New-ItemProperty -Path $faPath -Name "QuietHoursActive" -Value 0 -PropertyType DWord -Force | Out-Null
+    New-ItemProperty -Path $faPath -Name "QuietHoursEnabled" -Value 0 -PropertyType DWord -Force | Out-Null
+} catch {}
+[FocusAssist]::SetMode(0)
 "#;
-        let result = std::process::Command::new("powershell")
-            .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script])
-            .output();
-
-        match result {
-            Ok(out) => {
-                if out.status.success() {
-                    println!("Do Not Disturb disabled (registry + WNF)");
-                } else {
-                    let stderr = String::from_utf8_lossy(&out.stderr);
-                    eprintln!("DND disable error: {}", stderr);
-                }
-                Ok(())
-            }
-            Err(e) => {
-                eprintln!("PowerShell not available: {}", e);
-                Ok(())
-            }
+    let script = format!("{FOCUS_ASSIST_CS}\n{registry}");
+    match run_powershell(script).await {
+        Ok(_) => {
+            println!("Do Not Disturb disabled (registry + WNF)");
+            Ok(())
         }
-    })
-    .await
-    .map_err(|e| e.to_string())?
+        Err(e) => {
+            eprintln!("DND disable error: {e}");
+            Err(e)
+        }
+    }
 }
 
 /// Turn off all monitors (computer stays running)
@@ -3611,6 +3627,7 @@ pub fn run() {
             open_focus_sessions,
             turn_off_monitors,
             // Do Not Disturb commands
+            get_do_not_disturb,
             enable_do_not_disturb,
             disable_do_not_disturb,
             // Audio Mixer commands
@@ -3805,4 +3822,18 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_dnd_mode;
+
+    #[test]
+    fn dnd_mode_parses_profile_number() {
+        assert_eq!(parse_dnd_mode("0\r\n"), Some(false));
+        assert_eq!(parse_dnd_mode("1\r\n"), Some(true));
+        assert_eq!(parse_dnd_mode(" 2 "), Some(true));
+        assert_eq!(parse_dnd_mode(""), None);
+        assert_eq!(parse_dnd_mode("garbage"), None);
+    }
 }

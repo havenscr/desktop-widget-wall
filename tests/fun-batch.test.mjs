@@ -57,8 +57,46 @@ test('ring: skips all-day, cancelled, declined and signed-out data', () => {
   assert.equal(ring.isRingEligible({}), false);
 });
 
+// ---------- Next event pick (declined filter) ----------
+const pick = loadBlock('calendar.js', 'next-event-pick');
+const at = (h, m = 0) => `2026-10-23T${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00`;
+const ev = (id, h, extra = {}) => ({ id, start: { dateTime: at(h) }, end: { dateTime: at(h + 1) }, ...extra });
+const nine = new Date(at(9));
+
+test('pick: declined meetings are skipped for current and next', () => {
+  const events = [
+    ev('now-declined', 9, { responseStatus: { response: 'declined' } }),
+    ev('later-declined', 10, { responseStatus: { response: 'declined' } }),
+    ev('later', 11),
+  ];
+  const { currentEvent, nextEvent } = pick.pickCardEvents(events, nine);
+  assert.equal(currentEvent, undefined);
+  assert.equal(nextEvent.id, 'later');
+});
+
+test('pick: tentative, organizer, none and missing responses all count', () => {
+  for (const responseStatus of [{ response: 'tentativelyAccepted' }, { response: 'organizer' }, { response: 'none' }, undefined]) {
+    const { nextEvent } = pick.pickCardEvents([ev('x', 10, { responseStatus })], nine);
+    assert.equal(nextEvent?.id, 'x');
+  }
+});
+
+test('pick: a declined event alone today leaves no card event', () => {
+  const { currentEvent, nextEvent } = pick.pickCardEvents([ev('only', 10, { responseStatus: { response: 'declined' } })], nine);
+  assert.equal(currentEvent, undefined);
+  assert.equal(nextEvent, undefined);
+  // Nothing for the ring either, since the ring follows the card's next event.
+  assert.equal(ring.isRingEligible(nextEvent), false);
+});
+
+test('pick: all-day events and an empty or signed-out cache give nothing', () => {
+  assert.equal(pick.pickCardEvents([ev('bday', 10, { isAllDay: true })], nine).nextEvent, undefined);
+  assert.equal(pick.pickCardEvents([], nine).nextEvent, undefined);
+  assert.equal(pick.pickCardEvents(null, nine).nextEvent, undefined);
+});
+
 // ---------- Focus Do Not Disturb flag ----------
-function dndEnv({ tauri = true, failing = false } = {}) {
+function dndEnv({ tauri = true, failing = false, state } = {}) {
   const saved = new Map();
   const calls = [];
   const sandbox = {
@@ -71,7 +109,16 @@ function dndEnv({ tauri = true, failing = false } = {}) {
   };
   const ctx = loadBlock('countdown.js', 'focus-dnd', sandbox);
   ctx.__TAURI__ = tauri ? {
-    core: { invoke: async (cmd) => { calls.push(cmd); if (failing) throw new Error('boom'); } },
+    core: {
+      invoke: async (cmd) => {
+        calls.push(cmd);
+        if (cmd === 'get_do_not_disturb') {
+          if (state instanceof Error) throw state;
+          return state;
+        }
+        if (failing) throw new Error('boom');
+      },
+    },
   } : undefined;
   return { ctx, saved, calls };
 }
@@ -83,7 +130,50 @@ test('dnd: enable sets the flag, release clears it and disables once', async () 
   await ctx.focusDndEnable(); // already held: no second call
   await ctx.focusDndRelease();
   assert.equal(saved.has('focus-dnd-active'), false);
-  assert.deepEqual(calls, ['enable_do_not_disturb', 'disable_do_not_disturb']);
+  assert.deepEqual(calls, ['get_do_not_disturb', 'enable_do_not_disturb', 'disable_do_not_disturb']);
+});
+
+test('dnd: Do Not Disturb already on is left alone through start and pause', async () => {
+  const { ctx, saved, calls } = dndEnv({ state: true });
+  await ctx.focusDndEnable();
+  assert.equal(saved.has('focus-dnd-active'), false);
+  await ctx.focusDndRelease();
+  assert.deepEqual(calls, ['get_do_not_disturb']);
+});
+
+test('dnd: Do Not Disturb off at start is enabled and owned', async () => {
+  const { ctx, saved, calls } = dndEnv({ state: false });
+  await ctx.focusDndEnable();
+  assert.equal(saved.get('focus-dnd-active'), '1');
+  assert.deepEqual(calls, ['get_do_not_disturb', 'enable_do_not_disturb']);
+});
+
+test('dnd: unreadable state (null or a failed read) keeps the old enable path', async () => {
+  for (const state of [null, new Error('no wnf')]) {
+    const { ctx, saved, calls } = dndEnv({ state });
+    await ctx.focusDndEnable();
+    assert.equal(saved.get('focus-dnd-active'), '1');
+    assert.deepEqual(calls, ['get_do_not_disturb', 'enable_do_not_disturb']);
+  }
+});
+
+test('dnd: pause while the state read is pending never enables', async () => {
+  const { ctx, saved, calls } = dndEnv({ state: false });
+  const starting = ctx.focusDndEnable();
+  await ctx.focusDndRelease();
+  await starting;
+  assert.equal(saved.has('focus-dnd-active'), false);
+  assert.deepEqual(calls, ['get_do_not_disturb']);
+});
+
+test('dnd: pause during the enable runs the disable after it', async () => {
+  const { ctx, saved, calls } = dndEnv({ state: false });
+  const starting = ctx.focusDndEnable();
+  await new Promise((r) => setImmediate(r));
+  await ctx.focusDndRelease();
+  await starting;
+  assert.equal(saved.has('focus-dnd-active'), false);
+  assert.deepEqual(calls, ['get_do_not_disturb', 'enable_do_not_disturb', 'disable_do_not_disturb']);
 });
 
 test('dnd: release without our flag never touches the user\'s own Do Not Disturb', async () => {
