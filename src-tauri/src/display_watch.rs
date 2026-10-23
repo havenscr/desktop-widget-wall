@@ -30,7 +30,7 @@ use windows::Win32::System::SystemServices::GUID_CONSOLE_DISPLAY_STATE;
 use windows::Win32::UI::Shell::{DefSubclassProc, SetWindowSubclass};
 use windows::Win32::UI::WindowsAndMessaging::{
     DEVICE_NOTIFY_WINDOW_HANDLE, PBT_POWERSETTINGCHANGE, WM_POWERBROADCAST, WM_WTSSESSION_CHANGE,
-    WTS_CONSOLE_CONNECT, WTS_CONSOLE_DISCONNECT, WTS_REMOTE_CONNECT, WTS_REMOTE_DISCONNECT,
+    WTS_CONSOLE_CONNECT, WTS_CONSOLE_DISCONNECT, WTS_REMOTE_CONNECT,
     WTS_SESSION_LOCK, WTS_SESSION_UNLOCK,
 };
 
@@ -73,13 +73,14 @@ fn hidden_reason(locked: bool, away: bool, display_off: bool) -> Option<&'static
 
 /// Which flag a WM_WTSSESSION_CHANGE code sets, and to what. Remote connect
 /// and console disconnect mean the console no longer shows this session;
-/// console connect and remote disconnect bring it back.
+/// console connect brings it back. Remote disconnect is ignored: the session
+/// then shows on no screen, and returning to the console sends console connect.
 fn session_change(code: u32) -> Option<(&'static AtomicBool, bool)> {
     match code {
         WTS_SESSION_LOCK => Some((&SESSION_LOCKED, true)),
         WTS_SESSION_UNLOCK => Some((&SESSION_LOCKED, false)),
         WTS_CONSOLE_DISCONNECT | WTS_REMOTE_CONNECT => Some((&SESSION_AWAY, true)),
-        WTS_CONSOLE_CONNECT | WTS_REMOTE_DISCONNECT => Some((&SESSION_AWAY, false)),
+        WTS_CONSOLE_CONNECT => Some((&SESSION_AWAY, false)),
         _ => None,
     }
 }
@@ -151,6 +152,7 @@ fn notify() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use windows::Win32::UI::WindowsAndMessaging::WTS_REMOTE_DISCONNECT;
 
     #[test]
     fn reason_priority() {
@@ -166,7 +168,7 @@ mod tests {
         assert_eq!(away(WTS_CONSOLE_DISCONNECT), Some((true, true)));
         assert_eq!(away(WTS_REMOTE_CONNECT), Some((true, true)));
         assert_eq!(away(WTS_CONSOLE_CONNECT), Some((true, false)));
-        assert_eq!(away(WTS_REMOTE_DISCONNECT), Some((true, false)));
+        assert_eq!(away(WTS_REMOTE_DISCONNECT), None);
         assert_eq!(away(WTS_SESSION_LOCK), Some((false, true)));
         assert_eq!(away(WTS_SESSION_UNLOCK), Some((false, false)));
         assert_eq!(away(0), None);

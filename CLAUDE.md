@@ -227,7 +227,8 @@ Features requiring system access are implemented in Rust:
   session (`WTS_CONSOLE_DISCONNECT` for a fast user switch, `WTS_REMOTE_CONNECT`
   for remote desktop) hides the WebView and emits `display-state`
   `{ visible: false, reason: "lock" | "disconnected" | "display-off" }`;
-  `WTS_CONSOLE_CONNECT` and `WTS_REMOTE_DISCONNECT` clear the disconnect. Unlock or display on
+  `WTS_CONSOLE_CONNECT` clears the disconnect (`WTS_REMOTE_DISCONNECT` is
+  ignored, since the session then shows on no screen). Unlock or display on
   emits `{ visible: true }` and shows it again only if the user has not hidden
   the window to the tray or minimized it (`USER_HIDDEN`).
   `visibility-manager.js` folds `display-state` into `isVisible()` and notifies
