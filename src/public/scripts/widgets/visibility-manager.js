@@ -69,8 +69,9 @@
       update();
     });
 
-    // Lock / display-off from Rust: { visible: false, reason: 'lock' |
-    // 'display-off' } and { visible: true } when Windows can show us again.
+    // Lock / disconnect / display-off from Rust: { visible: false, reason:
+    // 'lock' | 'disconnected' | 'display-off' } and { visible: true } when
+    // Windows can show us again.
     window.__TAURI__.event.listen('display-state', (event) => {
       displayVisible = event?.payload?.visible !== false;
       update();

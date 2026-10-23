@@ -200,9 +200,13 @@ Features requiring system access are implemented in Rust:
   spikes. Do not reintroduce it.
 - **Focus Do Not Disturb** - `countdown.js` calls `enable_do_not_disturb` when
   the focus timer starts and `disable_do_not_disturb` on pause, reset, alarm and
-  startup cleanup. A `focus-dnd-active` localStorage flag marks a Do Not Disturb
+  startup cleanup. At start it first calls `get_do_not_disturb` (reads the same
+  WNF state; `null` when unreadable): if Do Not Disturb is already on, focus
+  leaves it alone. A `focus-dnd-active` localStorage flag marks a Do Not Disturb
   that focus turned on, so a Do Not Disturb the user set is never undone. The
-  backend writes an undocumented WNF state that may do nothing on Windows 11 24H2.
+  commands run in order through one queue, and enable and disable return an
+  error when the WNF write fails. The backend uses an undocumented WNF state
+  that may do nothing on Windows 11 24H2.
 - **Audio capture** - WASAPI loopback via `cpal`. Samples go into a lock-free
   SPSC ring (`AudioRing`), never a `Mutex`: the capture callback runs on the
   audio engine's MMCSS real-time thread, so it must not block or memmove.
@@ -219,8 +223,11 @@ Features requiring system access are implemented in Rust:
   to 8fps after 5 s, so its timers are time-based, never event-counted.
 - **Sleep on lock / display off** - `display_watch.rs` subclasses the main
   window for `WM_WTSSESSION_CHANGE` and `GUID_CONSOLE_DISPLAY_STATE` (dimmed
-  counts as on). Lock or display off hides the WebView and emits `display-state`
-  `{ visible: false, reason: "lock" | "display-off" }`; unlock or display on
+  counts as on). Lock, display off, or the console no longer showing this
+  session (`WTS_CONSOLE_DISCONNECT` for a fast user switch, `WTS_REMOTE_CONNECT`
+  for remote desktop) hides the WebView and emits `display-state`
+  `{ visible: false, reason: "lock" | "disconnected" | "display-off" }`;
+  `WTS_CONSOLE_CONNECT` and `WTS_REMOTE_DISCONNECT` clear the disconnect. Unlock or display on
   emits `{ visible: true }` and shows it again only if the user has not hidden
   the window to the tray or minimized it (`USER_HIDDEN`).
   `visibility-manager.js` folds `display-state` into `isVisible()` and notifies
@@ -329,7 +336,10 @@ The settings panel (`settings-panel.html`) provides configuration for:
   the theme colors. No setting; it is always on.
 - Meeting ring: `calendar.js` `scheduleMeetingRing` pulses the next-meeting card
   5 minutes before start and goes urgent (one sound) at 1 minute, using one-shot
-  timeouts recomputed on every `updateCalendarInfo`. Styles sit after the
+  timeouts recomputed on every `updateCalendarInfo`. The card, ring and
+  leave-by alerts skip declined meetings (`pickCardEvents`; the Graph `$select`
+  includes `responseStatus`), while the month grid and day list still show
+  them. Sign-out (`showPlaceholder`) resets the card and clears the ring timers. Styles sit after the
   `.leave-alert-*` rules in `widgets.css` and honor reduced motion and
   `body[data-perf="off"]`.
 - Performance mode (Glass Blur: Full/Lite/Off) - sets `body[data-perf]`, which
