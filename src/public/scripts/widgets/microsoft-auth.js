@@ -492,27 +492,16 @@ const MicrosoftAuth = (function() {
    * @param {string} accountType - 'hc' or 'ae'
    */
   async function signIn(accountType = ACCOUNT_TYPES.HC) {
-    if (!isInitialized) {
-      await initialize();
-    }
-
     const clientId = getClientId(accountType);
     if (!clientId) {
       throw new Error(`No client ID configured for ${accountType.toUpperCase()}. Please add it in Settings.`);
     }
 
-    // Ensure MSAL instance exists for this account
-    if (!accounts[accountType].msalInstance) {
-      await initializeAccount(accountType);
-    }
-
-    const instance = accounts[accountType].msalInstance;
-    if (!instance) {
-      throw new Error(`MSAL not initialized for ${accountType.toUpperCase()}`);
-    }
-
     console.log(`MicrosoftAuth: Starting sign-in for ${accountType.toUpperCase()}...`);
 
+    // The Tauri flow builds its own PKCE request and never touches MSAL, so it
+    // must not wait on initialize(): that can sit for over a minute retrying
+    // an expired stored token, leaving the button stuck on "Opening browser...".
     if (isTauri()) {
       // For Tauri: Start OAuth callback server, then open login URL in system browser
       try {
@@ -583,6 +572,20 @@ const MicrosoftAuth = (function() {
         throw error;
       }
     } else {
+      if (!isInitialized) {
+        await initialize();
+      }
+
+      // Ensure MSAL instance exists for this account
+      if (!accounts[accountType].msalInstance) {
+        await initializeAccount(accountType);
+      }
+
+      const instance = accounts[accountType].msalInstance;
+      if (!instance) {
+        throw new Error(`MSAL not initialized for ${accountType.toUpperCase()}`);
+      }
+
       // For browser: use redirect flow
       try {
         await instance.loginRedirect({
