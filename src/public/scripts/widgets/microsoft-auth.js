@@ -606,9 +606,9 @@ const MicrosoftAuth = (function() {
    * @param {string} accountType - Optional account type override (defaults to pending type)
    */
   async function completeSignIn(code, accountType = null) {
-    if (!isInitialized) {
-      await initialize();
-    }
+    // No initialize() wait here: a startup refresh retrying an expired token
+    // can hold it for over a minute, and refreshAccessToken() yields to the
+    // tokens this sign-in stores if it finishes afterwards.
 
     // Get account type from parameter, memory, or localStorage
     const targetAccountType = accountType || pendingAccountType || localStorage.getItem('msal_pending_account_type') || ACCOUNT_TYPES.HC;
@@ -958,6 +958,14 @@ const MicrosoftAuth = (function() {
       });
 
       const data = JSON.parse(rawBody);
+
+      // A sign-in completed while this request was in flight: its tokens are
+      // newer, so neither clear nor overwrite them.
+      const latest = JSON.parse(localStorage.getItem(getTokenStorageKey(accountType)) || '{}');
+      if (latest.refreshToken && latest.refreshToken !== refreshToken) {
+        console.log(`MicrosoftAuth: Refresh for ${accountType.toUpperCase()} superseded by a newer sign-in`);
+        return latest.accessToken || null;
+      }
 
       if (data.error) {
         const errorCode = data.error || '';
