@@ -4,8 +4,9 @@ Wall 2 is the next front end for Widget Wall. It lives beside the existing app
 (`src/`, untouched) and is built with Vite, React and TypeScript (strict). It
 runs in a plain browser for development and inside Tauri as a second app,
 "Widget Wall 2". So far: a scaled stage, the live horizon, a left rail with
-three places, a clock, the Work tab basics (weather, music, focus timer), a
-small Tauri bridge and tests. Home and Unwind are still placeholders.
+three places, a clock, the Work tab basics (weather, music, focus timer), a task
+card, a network tile on Home, a small Tauri bridge and tests. Unwind and most of
+Home are still placeholders.
 
 ## Requirements
 
@@ -136,7 +137,8 @@ pixels, glass style from the concept; clock is top left in `App.tsx`).
   more. On failure the last reading stays and shows its age in small text. The
   code to label and icon map is one pure function, `describeWeather` in `codes.ts`.
 - **Music bar** (`wall/src/music/`). Polls `get_now_playing` every 2 seconds
-  while visible (never while hidden). Art only from `album_art_base64` with an
+  while visible (never while hidden); each call gives up after 5 seconds so a hung
+  call cannot stall the loop, and a late answer is dropped. Art only from `album_art_base64` with an
   allowed mime (png, jpeg, webp, gif); `art_unchanged` keeps the current art.
   Previous, play or pause, next call `media_previous`, `media_play_pause`,
   `media_next`; failures are swallowed. Stopped or unknown shows a quiet
@@ -147,6 +149,66 @@ pixels, glass style from the concept; clock is top left in `App.tsx`).
 - **Browser dev.** `npm run dev` registers mocks for the music and Do Not
   Disturb commands (`src/bridge/devMocks.ts`, dev server only). Weather needs
   network access to Open-Meteo.
+
+## Home feeds (task card and network tile)
+
+Two cards read Reid's own home services. The web view cannot call them (the task
+app refuses a request from another origin and the home app sends no CORS
+headers), so Rust makes the calls: `src-tauri/src/wall2_feeds.rs`, three async
+commands, one shared `ureq` agent with an 8 second timeout, answers capped at
+1 MB. No secret is stored anywhere and the two addresses are not in the repository.
+
+### Setting it up: `feeds.json`
+
+Create `feeds.json` in Wall 2's app config directory, the folder Tauri calls
+`app_config_dir` for the identifier `com.havens-consulting.widget-wall2`. On
+Windows that is `%APPDATA%\com.havens-consulting.widget-wall2\feeds.json`. The
+file is read on every call, so a change applies on the next refresh.
+
+```json
+{ "tasksBaseUrl": "https://example.invalid:8900", "homeBaseUrl": "http://192.0.2.10:5006" }
+```
+
+- `tasksBaseUrl` must be `https`. `homeBaseUrl` may be `http` or `https`.
+- Each is a scheme, host and optional port only. A path (a trailing `/` too), a
+  query, a fragment or a user name is refused.
+- A missing file or key shows "Not set up" on that card, quietly. A malformed
+  address shows the card as unavailable.
+
+### Task card (Work tab, top right)
+
+`wall/src/tasks/`. Shows the next three open tasks (`GET /api/tasks?status=open`,
+already sorted by due date; only rows with kind `task` and status `open`). Each row:
+a large check button, the title, a small due line ("today 3 PM", "tomorrow",
+"Fri", "Nov 20", "overdue", or nothing) and a "Focus" button. Refreshes every 2
+minutes while visible and after each completion.
+
+- **Check**: the row is struck through at once and fades out after 2 seconds;
+  `wall2_task_done` sends `PATCH /api/tasks/{id}` with `{"status":"done"}`. If that
+  fails the row comes back with a small "Could not save".
+- **Focus**: starts the focus timer with the length chosen on the focus card (25
+  minutes unless changed) and shows the task title under "Focusing". Disabled
+  while a session is running or paused. The label is saved with the session and
+  cleared on reset and when the session finishes.
+- **States**: "Not set up" (no address), "Nothing due" (empty list), "Tasks
+  unavailable" (first read failed), and after a failed refresh the last good list
+  with a small "updated N min ago".
+
+### Network tile (Home tab, right)
+
+`wall/src/home/`. Reads `GET /api/security?lite=1` and shows a status dot and
+line, the open-alert count and "last scan N min ago". Refreshes every 5 minutes
+while visible. The open count follows the home app's own page: an alert whose
+reviewed request is waiting is hidden; a done request hides it until a newer
+summary arrives; a failed request hides nothing.
+
+- **Green**: "Up, box online".
+- **Amber**: the scan is stale, the firewall API state is unknown, or the home app
+  cannot be reached.
+- **Red**: only when the firewall API is down or the box is offline.
+- "Not set up" when there is no address. No links yet.
+
+Browser dev (`npm run dev`) shows both cards from mocks in `devMocks.ts`.
 
 ## Content security policy
 
