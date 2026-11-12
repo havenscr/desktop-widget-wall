@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CAMERAS, HOME_MORNING, SWING_DEGREES, SWING_SECONDS, blendCamera, cameraFor, ease, glideCamera, glideSeconds, homeCameraFor, settled, startGlide, stepGlide, terrainOf, GLIDE_SECONDS } from './cameras';
+import { CAMERAS, CINEMATIC_SECONDS, HOME_MORNING, PANO_MAX_AZ, PANO_MIN_AZ, SWING_DEGREES, cinematicCamera, localDay, SWING_SECONDS, blendCamera, cameraFor, ease, glideCamera, glideSeconds, homeCameraFor, settled, startGlide, stepGlide, terrainOf, GLIDE_SECONDS } from './cameras';
 
 const a = CAMERAS.work;
 const b = CAMERAS.unwind;
@@ -151,5 +151,87 @@ describe('the morning preset', () => {
   it('a glide keeps the panorama at every step', () => {
     expect(blendCamera(CAMERAS.home, HOME_MORNING, 0.5).ter).toBe('pano');
     expect(glideCamera({ from: CAMERAS.home, to: HOME_MORNING, progress: 0.3, seconds: SWING_SECONDS }).ter).toBe('pano');
+  });
+});
+
+describe('the cinematic turn (first turn to Rainier each morning)', () => {
+  const W = 2560;
+  const work = CAMERAS.work;
+
+  it('is exactly the start at k 0 and exactly the morning camera at k 1', () => {
+    expect(cinematicCamera(work, HOME_MORNING, 0)).toBe(work);
+    expect(cinematicCamera(work, HOME_MORNING, 1)).toBe(HOME_MORNING);
+  });
+
+  it('at k 0.5 is halfway on the sine ease, pulled back 10 px per degree with the horizon 14 px lower', () => {
+    const mid = cinematicCamera(work, HOME_MORNING, 0.5);
+    expect(mid.az0).toBeCloseTo((221.5 + 132) / 2, 9);
+    expect(mid.ppd).toBeCloseTo((34 + 42) / 2 - 10, 9);
+    expect(mid.hy).toBeCloseTo(582 + 14, 9);
+    expect(mid.vex).toBeCloseTo((1.25 + 1.9) / 2, 9);
+    expect(mid.snowDeg).toBeCloseTo(0.85, 9);
+    expect(mid.ter).toBe('pano');
+  });
+
+  it('uses the sine ease for every number, not the cubic glide ease', () => {
+    const k = 0.25;
+    const e = 0.5 - 0.5 * Math.cos(Math.PI * k);
+    const cam = cinematicCamera(work, HOME_MORNING, k);
+    expect(cam.vex).toBeCloseTo(1.25 + (1.9 - 1.25) * e, 9);
+    expect(cam.hy).toBeCloseTo(582 + 14 * Math.sin(Math.PI * k), 9);
+    expect(cam.vex).not.toBeCloseTo(blendCamera(work, HOME_MORNING, k).vex, 3);
+  });
+
+  it('clamps ppd so the right edge never passes azimuth 299.8 (Work early in the turn)', () => {
+    const cam = cinematicCamera(work, HOME_MORNING, 0.1);
+    const e = 0.5 - 0.5 * Math.cos(Math.PI * 0.1);
+    const unclamped = 34 + 8 * e - 10 * Math.sin(Math.PI * 0.1);
+    expect(unclamped).toBeLessThan(W / (PANO_MAX_AZ - cam.az0)); // the pull-back alone would overrun the data
+    expect(cam.ppd).toBeCloseTo(W / (PANO_MAX_AZ - cam.az0), 9);
+  });
+
+  it('clamps az0 to at least 128.3', () => {
+    const far = { ...HOME_MORNING, az0: 110 };
+    expect(cinematicCamera(work, far, 0.95).az0).toBe(PANO_MIN_AZ);
+  });
+
+  it('stays on the panorama at every step from each west camera', () => {
+    for (const from of [CAMERAS.work, CAMERAS.home, CAMERAS.unwind]) {
+      let prev = from.az0;
+      for (let i = 0; i <= 100; i++) {
+        const cam = cinematicCamera(from, HOME_MORNING, i / 100);
+        expect(cam.az0).toBeGreaterThanOrEqual(PANO_MIN_AZ);
+        expect(cam.az0 + W / cam.ppd).toBeLessThanOrEqual(PANO_MAX_AZ + 1e-9);
+        expect(cam.az0).toBeLessThanOrEqual(prev); // the turn never doubles back
+        prev = cam.az0;
+      }
+    }
+  });
+
+  it('runs as a glide over 4.6 seconds when started as cinematic; plain glides are unchanged', () => {
+    let g = startGlide(settled(work), HOME_MORNING, false, true);
+    expect(g).toMatchObject({ seconds: CINEMATIC_SECONDS, cinematic: true });
+    expect(CINEMATIC_SECONDS).toBe(4.6);
+    g = stepGlide(g, CINEMATIC_SECONDS / 2);
+    expect(glideCamera(g).hy).toBeCloseTo(596, 9);
+    g = stepGlide(g, CINEMATIC_SECONDS / 2);
+    expect(glideCamera(g)).toBe(HOME_MORNING);
+    const plain = startGlide(settled(work), HOME_MORNING, false);
+    expect(plain.cinematic).toBeUndefined();
+    expect(glideCamera(stepGlide(plain, SWING_SECONDS / 2)).hy).toBe(582);
+    expect(startGlide(settled(work), HOME_MORNING, true, true)).toEqual(settled(HOME_MORNING)); // instant wins
+  });
+
+  it('interrupting the cinematic turn starts from where it is on screen', () => {
+    const g = stepGlide(startGlide(settled(work), HOME_MORNING, false, true), 1.2);
+    const back = startGlide(g, CAMERAS.work, false);
+    expect(back.from).toEqual(glideCamera(g));
+    expect(back.from.hy).toBeGreaterThan(582);
+  });
+
+  it('localDay is the local calendar day', () => {
+    expect(localDay(new Date(2026, 10, 11, 0, 1).getTime())).toBe('2026-11-11');
+    expect(localDay(new Date(2026, 10, 11, 23, 59).getTime())).toBe('2026-11-11');
+    expect(localDay(new Date(2026, 10, 12, 5, 0).getTime())).toBe('2026-11-12');
   });
 });

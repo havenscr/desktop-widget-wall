@@ -1,7 +1,7 @@
 import { act, cleanup, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HorizonCanvas } from './HorizonCanvas';
-import { CAMERAS, HOME_MORNING, SWING_SECONDS, drawHorizon } from './index';
+import { CAMERAS, HOME_MORNING, drawHorizon } from './index';
 import { cameraFor, type CameraPreset } from './cameras';
 import { stubContext } from './canvasStub';
 import { fitScale, STAGE_HEIGHT, STAGE_WIDTH } from '../stage/fitScale';
@@ -438,28 +438,77 @@ describe('Home morning view', () => {
     expect(oldLayer().style.display).toBe('none');
   });
 
-  it('Work to Home at 07:12 swings round to Rainier: one canvas, no fade, az0 falling from 221.5 to 132 over SWING_SECONDS', () => {
+  /** Run `n` frames 0.1 s apart after `ts`; returns the last timestamp and the cameras drawn. */
+  function frames(ts: number, n: number) {
+    const cams: CameraPreset[] = [];
+    for (let i = 0; i < n; i++) {
+      runFrame((ts += 100));
+      cams.push(draw.mock.lastCall![1].camera!);
+    }
+    return { ts, cams };
+  }
+  // 4.6 s at 0.1 s a frame: progress reaches 1 on frame 47 (46 steps of 0.1 / 4.6 sum to just under 1).
+  const CINEMATIC_FRAMES = 47;
+
+  it('the first turn this morning (Work to Home at 07:12) is the cinematic move: 4.6 s, pull-back and lower horizon mid-turn, one canvas', () => {
     setReducedMotion(false);
     render(<HorizonCanvas now={() => MORNING} />);
     runFrame(100);
     act(() => usePlaceStore.getState().setActive('home'));
     draw.mockClear();
-    const az: number[] = [];
-    let ts = 100;
-    const frames = Math.round(SWING_SECONDS / 0.1); // 0.1 s per frame
-    for (let i = 0; i < frames; i++) {
-      runFrame((ts += 100));
-      expect(oldLayer().style.display).toBe('none'); // the second canvas never shows
-      expect(canvases()[0].style.opacity).toBe('');
-      az.push(draw.mock.lastCall![1].camera!.az0);
-    }
-    expect(draw).toHaveBeenCalledTimes(frames); // one draw per frame: no layer underneath
-    expect(az[0]).toBeLessThan(221.5);
-    expect(az[0]).toBeGreaterThan(220); // eased: a slow start
-    for (let i = 1; i < az.length; i++) expect(az[i]).toBeLessThan(az[i - 1]);
-    expect(az[frames - 2]).toBeGreaterThan(132); // still arriving one frame before the end
-    expect(draw.mock.lastCall![1].camera).toBe(HOME_MORNING);
-    for (const c of draw.mock.calls) expect(c[1].camera!.ter).toBe('pano');
+    const { cams } = frames(100, CINEMATIC_FRAMES);
+    expect(draw).toHaveBeenCalledTimes(CINEMATIC_FRAMES); // one draw per frame: no layer underneath
+    expect(oldLayer().style.display).toBe('none');
+    expect(canvases()[0].style.opacity).toBe('');
+    const mid = cams[22]; // 2.3 s: k 0.5
+    expect(mid.az0).toBeCloseTo((221.5 + 132) / 2, 6);
+    expect(mid.ppd).toBeCloseTo((34 + 42) / 2 - 10, 6);
+    expect(mid.hy).toBeCloseTo(582 + 14, 6);
+    for (let i = 1; i < cams.length; i++) expect(cams[i].az0).toBeLessThanOrEqual(cams[i - 1].az0);
+    for (const c of cams) expect(c.az0 + 2560 / c.ppd).toBeLessThanOrEqual(299.8 + 1e-9);
+    expect(cams[CINEMATIC_FRAMES - 2]).not.toBe(HOME_MORNING); // still arriving at 4.6 s minus a frame
+    expect(cams[CINEMATIC_FRAMES - 1]).toBe(HOME_MORNING);
+  });
+
+  it('a later turn the same morning is the plain 3.2 s swing with the cubic ease, and the next morning plays the cinematic move again', () => {
+    setReducedMotion(false);
+    let ms = MORNING;
+    render(<HorizonCanvas now={() => ms} />);
+    runFrame(100);
+    act(() => usePlaceStore.getState().setActive('home'));
+    let { ts } = frames(100, CINEMATIC_FRAMES);
+    act(() => usePlaceStore.getState().setActive('work'));
+    ({ ts } = frames(ts, 32));
+    expect(draw.mock.lastCall![1].camera).toBe(CAMERAS.work);
+    ms = localMs(9, 40); // later the same morning
+    act(() => usePlaceStore.getState().setActive('home'));
+    let run = frames(ts, 32);
+    expect(run.cams[15].hy).toBe(582); // no lift: a plain swing
+    expect(run.cams[15].az0).toBeCloseTo(221.5 + (132 - 221.5) * 0.5, 6); // cubic ease is halfway at 1.6 s
+    expect(run.cams[31]).toBe(HOME_MORNING); // arrives at 3.2 s
+    act(() => usePlaceStore.getState().setActive('work'));
+    ({ ts } = frames(run.ts, 32));
+    ms = new Date(2026, 10, 12, 7, 12).getTime(); // the next morning
+    act(() => usePlaceStore.getState().setActive('home'));
+    run = frames(ts, CINEMATIC_FRAMES);
+    expect(run.cams[22].hy).toBeCloseTo(596, 6);
+    expect(run.cams[CINEMATIC_FRAMES - 1]).toBe(HOME_MORNING);
+  });
+
+  it('5:00 AM passing while Home is open plays the cinematic move (the first turn of the day)', () => {
+    setReducedMotion(false);
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    let ms = localMs(4, 59);
+    usePlaceStore.setState({ active: 'home' });
+    render(<HorizonCanvas now={() => ms} />);
+    runFrame(100);
+    expect(draw.mock.lastCall![1].camera).toBe(CAMERAS.home);
+    ms = localMs(5, 1);
+    act(() => void vi.advanceTimersByTime(60_000));
+    const { cams } = frames(100, CINEMATIC_FRAMES);
+    expect(cams[22].ppd).toBeCloseTo((54 + 42) / 2 - 10, 6);
+    expect(cams[22].hy).toBeCloseTo(596, 6);
+    expect(cams[CINEMATIC_FRAMES - 1]).toBe(HOME_MORNING);
   });
 
   it('a short move (Work to Home in the afternoon) is the usual 1.6 second glide', () => {
@@ -523,6 +572,7 @@ describe('Home morning view', () => {
     expect(draw).toHaveBeenCalledTimes(az.length); // no fade layer
     expect(oldLayer().style.display).toBe('none');
     for (let i = 1; i < az.length; i++) expect(az[i]).toBeGreaterThan(az[i - 1]);
+    for (const c of draw.mock.calls) expect(c[1].camera!.hy).toBe(582); // the plain swing: no lift
     expect(draw.mock.lastCall![1].camera).toBe(CAMERAS.home);
   });
 
@@ -539,7 +589,7 @@ describe('Home morning view', () => {
     expect(oldLayer().style.display).toBe('none');
   });
 
-  it('passes no ripple at any point of the swing to Rainier or back, even while music plays', () => {
+  it('passes no ripple at any point of the turn to Rainier or the swing back, even while music plays', () => {
     setReducedMotion(false);
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
     startMusic();
@@ -549,17 +599,17 @@ describe('Home morning view', () => {
     expect(draw.mock.lastCall![1].echo!.a).toBeGreaterThan(0); // Work ripples
     act(() => usePlaceStore.getState().setActive('home'));
     draw.mockClear();
-    for (let ts = 1600; ts <= 5000; ts += 100) runFrame(ts);
+    for (let ts = 1600; ts <= 6200; ts += 100) runFrame(ts); // the cinematic move, 47 frames
     expect(draw.mock.lastCall![1].camera).toBe(HOME_MORNING);
     for (const c of draw.mock.calls) expect(c[1]).not.toHaveProperty('echo');
     ms = AFTERNOON;
     act(() => void vi.advanceTimersByTime(60_000));
     draw.mockClear();
-    for (let ts = 5100; ts <= 8100; ts += 100) runFrame(ts); // 31 of the swing's 32 frames
+    for (let ts = 6300; ts <= 9300; ts += 100) runFrame(ts); // 31 of the swing's 32 frames
     expect(draw).toHaveBeenCalledTimes(31);
     for (const c of draw.mock.calls) expect(c[1]).not.toHaveProperty('echo');
     expect(draw.mock.lastCall![1].camera).not.toBe(CAMERAS.home);
-    runFrame(8200); // arrived on the west Home view: the ripple returns
+    runFrame(9400); // arrived on the west Home view: the ripple returns
     expect(draw.mock.lastCall![1].camera).toBe(CAMERAS.home);
     expect(draw.mock.lastCall![1].echo!.a).toBeGreaterThan(0);
   });

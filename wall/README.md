@@ -139,10 +139,16 @@ skyline, the lake in front. It is drawn on one canvas by `HorizonCanvas.tsx`.
   south to Mount Rainier (`HOME_MORNING` in `cameras.ts`: azimuth 132 at the left edge,
   42 px per degree, terrain exaggerated 1.9, horizon at y 582 like Home's west view,
   snow line 0.86 against 0.84 on the west presets, and no ripple). Every camera looks at
-  the same panorama, so the turn is a glide: any move of more than 40 degrees
-  (`SWING_DEGREES`) takes `SWING_SECONDS` (3.2 s) instead of 1.6, and Seattle slides out
-  to the right on the way round and back in on the way back. The rest of the day Home
-  keeps the west view. `homeCameraFor(date)`
+  the same panorama, so the turn is a camera move, never a fade. The first turn from a
+  west camera to Rainier each local day (kept in memory, so a restart may play it again)
+  is the cinematic move (`cinematicCamera`): 4.6 s, every number on a sine ease
+  `0.5 - 0.5 cos(pi k)`, plus a pull-back (`ppd - 10 sin(pi k)`) and a lower horizon
+  (`hy + 14 sin(pi k)`), so it widens mid-turn and then pushes in on the mountain. It is
+  clamped to the panorama (`az0` at least 128.3, right edge at most 299.8). Later turns
+  that morning and the 11:30 AM turn back use the plain glide: any move of more than
+  40 degrees (`SWING_DEGREES`) takes `SWING_SECONDS` (3.2 s, cubic ease) instead of 1.6.
+  Seattle slides out to the right on the way round and back in on the way back. The rest
+  of the day Home keeps the west view. `homeCameraFor(date)`
   holds the rule and `cameraFor(place, ms)` applies it to Home only; Work and Unwind never
   change. `HorizonCanvas` looks again once a minute, so 5:00 AM and 11:30 AM take effect
   while Home is open.

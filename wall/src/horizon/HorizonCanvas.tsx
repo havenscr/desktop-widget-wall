@@ -4,7 +4,7 @@ import { STAGE_HEIGHT, STAGE_WIDTH, fitScale } from '../stage/fitScale';
 import { usePlaceStore } from '../state/places';
 import { useAudioStore } from '../audio/store';
 import { loudness, smoothStep } from '../audio/model';
-import { CAMERAS, MOON, cameraFor, glideCamera, settled, startGlide, stepGlide, type CameraPreset, type Glide } from './cameras';
+import { CAMERAS, HOME_MORNING, MOON, cameraFor, glideCamera, localDay, settled, startGlide, stepGlide, type CameraPreset, type Glide } from './cameras';
 import { startFade, stepFade, type Fade } from './crossfade';
 import { echoOptions, stepEchoFade } from './echo';
 import { frameDelta, shouldDraw } from './pacing';
@@ -48,9 +48,13 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
     reducedRef.current = reduced;
   }, [reduced]);
 
+  // Local day the cinematic turn to Rainier last played. In memory only, so a restart may play it again.
+  const cinematicDay = useRef<string | null>(null);
+
   /**
    * Point the camera at `target`. Same terrain (every shipped preset is on the panorama): a
-   * glide, or a 3.2 second swing for a turn of more than 40 degrees. A different terrain cannot
+   * glide, or a 3.2 second swing for a turn of more than 40 degrees. The first turn of each local
+   * day from a west camera to Rainier is the cinematic move instead (4.6 s, `cinematicCamera`). A different terrain cannot
    * be blended, so the old view stays on the lower layer while the new one fades in over it
    * (instantly when motion is reduced). Returns true when something changed on screen at once.
    */
@@ -67,7 +71,10 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
       glide.current = settled(target);
     } else {
       fadeRef.current = null;
-      glide.current = startGlide(oldWins ? settled(from) : glide.current, target, instant);
+      const day = localDay(nowRef.current());
+      const cinematic = !instant && target === HOME_MORNING && from !== HOME_MORNING && cinematicDay.current !== day;
+      if (cinematic) cinematicDay.current = day;
+      glide.current = startGlide(oldWins ? settled(from) : glide.current, target, instant, cinematic);
     }
     if (instant) repaint.current();
   };

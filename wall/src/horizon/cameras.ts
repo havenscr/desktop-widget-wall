@@ -1,4 +1,5 @@
 import type { CameraPlace } from '../state/places';
+import { STAGE_WIDTH } from '../stage/fitScale';
 
 /**
  * One camera framing of the panorama. The first six keys and `snowDeg` feed the renderer;
@@ -100,7 +101,11 @@ export function ease(t: number): number {
 
 /** Camera between `from` (t = 0) and `to` (t = 1), eased. Every numeric key is interpolated. */
 export function blendCamera<T extends object>(from: T, to: T, t: number): T {
-  const k = ease(Math.min(1, Math.max(0, t)));
+  return mixCamera(from, to, ease(Math.min(1, Math.max(0, t))));
+}
+
+/** Camera a fraction `k` (already eased) of the way from `from` to `to`; exact at k 1. */
+function mixCamera<T extends object>(from: T, to: T, k: number): T {
   const out: Record<string, unknown> = {};
   for (const key of Object.keys(to) as (keyof T & string)[]) {
     const a = from[key];
@@ -114,13 +119,51 @@ export function blendCamera<T extends object>(from: T, to: T, t: number): T {
   return out as T;
 }
 
+/** Seconds the cinematic turn to Rainier takes (the first turn of each morning). */
+export const CINEMATIC_SECONDS = 4.6;
+/** Pull-back at the middle of the cinematic turn, in pixels per degree taken off `ppd`. */
+export const CINEMATIC_PULL_PPD = 10;
+/** Lift at the middle of the cinematic turn, in design pixels added to `hy` (the horizon drops). */
+export const CINEMATIC_DROP_HY = 14;
+/** The panorama's usable azimuths: the left edge never goes below `PANO_MIN_AZ` and the right edge never past `PANO_MAX_AZ`. */
+export const PANO_MIN_AZ = 128.3;
+export const PANO_MAX_AZ = 299.8;
+
+/**
+ * The cinematic turn at `k` (0 to 1, linear in time). Every number blends with a sine ease,
+ * `e = 0.5 - 0.5 cos(pi k)`; on top, the view pulls back (`ppd - 10 sin(pi k)`) and the horizon
+ * drops (`hy + 14 sin(pi k)`), so it widens mid-turn and then pushes in on the mountain.
+ * Clamped so the view stays on the panorama: `az0` at least 128.3 and `ppd` at least
+ * `2560 / (299.8 - az0)`. Exactly `from` at 0 and `to` at 1.
+ */
+export function cinematicCamera(from: CameraPreset, to: CameraPreset, k: number): CameraPreset {
+  if (k <= 0) return from;
+  if (k >= 1) return to;
+  const e = 0.5 - 0.5 * Math.cos(Math.PI * k);
+  const s = Math.sin(Math.PI * k);
+  const cam = mixCamera(from, to, e);
+  cam.ppd -= CINEMATIC_PULL_PPD * s;
+  cam.hy += CINEMATIC_DROP_HY * s;
+  cam.az0 = Math.max(cam.az0, PANO_MIN_AZ);
+  cam.ppd = Math.max(cam.ppd, STAGE_WIDTH / (PANO_MAX_AZ - cam.az0));
+  return cam;
+}
+
+/** The local calendar day of a moment, as `YYYY-M-D`; the cinematic turn plays once per day. */
+export function localDay(ms: number): string {
+  const d = new Date(ms);
+  return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+}
+
 /** A glide in progress: `progress` runs 0 to 1 linearly; easing is applied when blending. */
 export interface Glide {
   from: CameraPreset;
   to: CameraPreset;
   progress: number;
-  /** Seconds the whole glide takes (`glideSeconds` of its ends). */
+  /** Seconds the whole glide takes (`glideSeconds` of its ends, or `CINEMATIC_SECONDS`). */
   seconds: number;
+  /** True for the cinematic turn (`cinematicCamera`); a plain cubic glide otherwise. */
+  cinematic?: boolean;
 }
 
 /** Glide with nothing left to do, sitting on `camera`. */
@@ -130,13 +173,18 @@ export function settled(camera: CameraPreset): Glide {
 
 /** Where the camera is now. */
 export function glideCamera(g: Glide): CameraPreset {
-  return g.progress >= 1 ? g.to : blendCamera(g.from, g.to, g.progress);
+  if (g.progress >= 1) return g.to;
+  return g.cinematic ? cinematicCamera(g.from, g.to, g.progress) : blendCamera(g.from, g.to, g.progress);
 }
 
-/** Start a glide from wherever the camera is now; `instant` jumps straight to the target. A big turn takes `SWING_SECONDS`. */
-export function startGlide(g: Glide, target: CameraPreset, instant: boolean): Glide {
+/**
+ * Start a glide from wherever the camera is now; `instant` jumps straight to the target. A big
+ * turn takes `SWING_SECONDS`; `cinematic` plays `cinematicCamera` over `CINEMATIC_SECONDS`.
+ */
+export function startGlide(g: Glide, target: CameraPreset, instant: boolean, cinematic = false): Glide {
   if (instant) return settled(target);
   const from = glideCamera(g);
+  if (cinematic) return { from, to: target, progress: 0, seconds: CINEMATIC_SECONDS, cinematic: true };
   return { from, to: target, progress: 0, seconds: glideSeconds(from, target) };
 }
 
