@@ -25,9 +25,7 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
   const glide = useRef<Glide>(settled(CAMERAS[review?.place ?? place]));
   const repaint = useRef<() => void>(() => {});
   const first = useRef(true);
-  // Moon only while Unwind is the place; the ripple fade (0 to 1) follows `playing`.
-  const placeRef = useRef(place);
-  placeRef.current = place;
+  // The ripple fade (0 to 1) follows `playing`.
   const fade = useRef(0);
   const loud = useRef(0); // smoothed loudness, so the ripple eases out when the store drops to zero
   // Latest clock, read at draw time so an inline `now` prop never restarts the loop.
@@ -66,12 +64,14 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
         t: review ? 0 : T,
         phase: review ? 0 : (T * 0.32) % 1,
       };
-      // Ripple and moon never appear in the review still or under reduced motion's still frames.
+      // The ripple never appears in the review still or under reduced motion's still frames.
       if (!still) {
         const echo = echoOptions(camera, fade.current, loud.current, T);
         if (echo) options.echo = echo;
       }
-      if (!review && placeRef.current === 'unwind') options.moon = MOON;
+      // The moon shows only once the camera has arrived at Unwind (no glide in progress), and
+      // goes the moment a glide away starts. The review still and reduced motion jump straight there.
+      if (glide.current.progress >= 1 && glide.current.to === CAMERAS.unwind) options.moon = MOON;
       drawHorizon(ctx, options);
     };
     repaint.current = paint;

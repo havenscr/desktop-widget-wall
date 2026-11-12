@@ -111,8 +111,8 @@ skyline, the lake in front. It is drawn on one canvas by `HorizonCanvas.tsx`.
     such as `-08:00` needs nothing.)
 
   To match the original demo pixel for pixel, run the demo at the same hour and
-  camera with its echo ripple off (and its moon off for `unwind`, since the review
-  frame never draws a moon) and the same animation time, 0.
+  camera with its echo ripple off (the moon is on for `unwind`, which the review
+  frame draws) and the same animation time, 0.
 
 ## The Work tab
 
@@ -167,8 +167,9 @@ pixels, glass style from the concept; clock is top left in `App.tsx`).
   loudness (bass weighted), `hs` 900. It fades in and out over about a second. Nothing is
   passed when silent, so pixels are unchanged. No ripple under reduced motion or in the
   review still.
-- **Moon.** The Unwind camera draws the moon at (1730, 112) radius 44; no other place does,
-  and the review still never does.
+- **Moon.** The Unwind camera draws the moon at (1730, 112) radius 44, once the glide to
+  Unwind has finished (it goes as soon as a glide away starts); no other place does. The
+  review still `?hz=unwind` draws it, since that camera jumps straight there.
 
 ## Unwind and Watt
 

@@ -105,6 +105,7 @@ it('review URL draws one frozen still: requested camera and time, t 0, phase 0, 
   expect(draw).toHaveBeenCalledWith(expect.anything(), {
     ...sizes(),
     camera: CAMERAS.unwind,
+    moon: [1730, 112, 44],
     ms: Date.UTC(2026, 10, 12, 0, 0, 0),
     t: 0,
     phase: 0,
@@ -285,6 +286,42 @@ it('draws the moon on Unwind only', () => {
   expect(draw.mock.lastCall![1]).not.toHaveProperty('moon');
 });
 
+it('shows the moon only after the glide to Unwind has finished, and hides it when a glide away starts', () => {
+  setReducedMotion(false);
+  render(<HorizonCanvas now={() => NOON} />);
+  runFrame(100);
+  act(() => usePlaceStore.getState().setActive('unwind'));
+  for (let ts = 200; ts <= 1500; ts += 100) {
+    runFrame(ts);
+    expect(draw.mock.lastCall![1]).not.toHaveProperty('moon');
+  }
+  for (let ts = 1600; ts <= 2000; ts += 100) runFrame(ts);
+  expect(draw.mock.lastCall![1].moon).toEqual([1730, 112, 44]);
+  act(() => usePlaceStore.getState().setActive('work'));
+  runFrame(2100);
+  expect(draw.mock.lastCall![1]).not.toHaveProperty('moon');
+});
+
+it('draws the moon on Unwind under reduced motion, where there is no glide', () => {
+  setReducedMotion(true);
+  render(<HorizonCanvas now={() => NOON} />);
+  act(() => usePlaceStore.getState().setActive('unwind'));
+  expect(draw.mock.lastCall![1].moon).toEqual([1730, 112, 44]);
+});
+
+it('hidden pages restart the ripple from nothing', () => {
+  setReducedMotion(false);
+  startMusic();
+  render(<HorizonCanvas now={() => NOON} />);
+  for (let ts = 100; ts <= 1500; ts += 100) runFrame(ts);
+  expect(draw.mock.lastCall![1].echo!.a).toBeGreaterThan(0.1);
+  setHidden(true);
+  act(() => void document.dispatchEvent(new Event('visibilitychange')));
+  setHidden(false);
+  runFrame(1600);
+  expect(draw.mock.lastCall![1].echo!.a).toBeLessThan(0.1);
+});
+
 it('draws no ripple under reduced motion even while music plays', () => {
   setReducedMotion(true);
   startMusic();
@@ -292,12 +329,18 @@ it('draws no ripple under reduced motion even while music plays', () => {
   expect(draw.mock.lastCall![1]).not.toHaveProperty('echo');
 });
 
-it('draws no ripple and no moon in the review still, even with music playing', () => {
+it('draws no ripple in the review still, even with music playing; ?hz=unwind has the moon, others do not', () => {
   setReducedMotion(false);
   startMusic();
   window.history.replaceState(null, '', '/?hz=unwind&at=2026-11-11T16:00:00Z');
+  const { unmount } = render(<HorizonCanvas now={() => 0} />);
+  let o = draw.mock.lastCall![1];
+  expect(o).not.toHaveProperty('echo');
+  expect(o.moon).toEqual([1730, 112, 44]);
+  unmount();
+  window.history.replaceState(null, '', '/?hz=home&at=2026-11-11T16:00:00Z');
   render(<HorizonCanvas now={() => 0} />);
-  const o = draw.mock.lastCall![1];
+  o = draw.mock.lastCall![1];
   expect(o).not.toHaveProperty('echo');
   expect(o).not.toHaveProperty('moon');
 });
