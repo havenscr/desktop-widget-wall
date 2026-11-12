@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { IconMusic, IconPlayerPauseFilled, IconPlayerPlayFilled, IconPlayerSkipBackFilled, IconPlayerSkipForwardFilled } from '@tabler/icons-react';
 import { anchorProgress, formatTime, isPlaying, isQuiet, type ProgressAnchor } from '../music/model';
 import { useNowPlaying } from '../music/useNowPlaying';
+import { ScreensOff } from '../ui/ScreensOff';
 import { useVisible } from '../ui/useVisible';
 
 /** Position and duration, advanced locally between polls while playing. Re-renders twice a second, only while visible. */
@@ -70,6 +71,7 @@ export function Unwind() {
           <IconPlayerSkipForwardFilled size={40} aria-hidden="true" />
         </button>
       </div>
+      <ScreensOff className="u-off" />
     </section>
   );
 }

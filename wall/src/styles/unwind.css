@@ -163,3 +163,32 @@
     transition: none;
   }
 }
+
+/* Screens off: a quiet pill at the bottom of the tab. */
+.screens-off {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  height: 64px;
+  padding: 0 28px;
+  border-radius: 32px;
+  font-size: 22px;
+  color: var(--faint);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--line);
+}
+.screens-off[aria-pressed='true'] {
+  color: var(--cyan);
+}
+.screens-off:active {
+  transform: scale(0.97);
+}
+.screens-off:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: 2px;
+}
+.screens-off.u-off {
+  position: absolute;
+  left: 516px;
+  bottom: 24px;
+}
