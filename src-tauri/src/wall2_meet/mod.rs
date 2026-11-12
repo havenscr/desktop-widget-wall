@@ -86,6 +86,11 @@ fn lock_core() -> std::sync::MutexGuard<'static, service::Core> {
     core().lock().unwrap_or_else(|e| e.into_inner())
 }
 
+fn links() -> &'static Mutex<service::Links> {
+    static LINKS: OnceLock<Mutex<service::Links>> = OnceLock::new();
+    LINKS.get_or_init(|| Mutex::new(service::Links::default()))
+}
+
 fn secrets() -> store::Chunked<store::CredBlobs> {
     store::Chunked(store::CredBlobs)
 }
@@ -167,7 +172,7 @@ pub async fn wall2_meet_next(window: tauri::WebviewWindow) -> Result<service::Me
     let accounts = load_config(&window).map_err(str::to_string)?;
     tauri::async_runtime::spawn_blocking(move || {
         let mut core = lock_core();
-        service::read_next(&accounts, &secrets(), &auth::HttpTokens, &HttpGraph, &mut core, now_secs())
+        service::read_next(&accounts, &secrets(), &auth::HttpTokens, &HttpGraph, &mut core, links(), now_secs())
     })
     .await
     .map_err(|_| "failed".to_string())
@@ -183,8 +188,7 @@ pub async fn wall2_meet_sign_in(window: tauri::WebviewWindow, id: String) -> Res
     let app = window.app_handle().clone();
     tauri::async_runtime::spawn_blocking(move || -> Result<(), &'static str> {
         let granted = auth::authorize(&app, &account)?;
-        let mut core = lock_core();
-        service::complete_sign_in(&account, &granted, &secrets(), &auth::HttpTokens, &mut core, now_secs())
+        service::complete_sign_in(&account, &granted, &secrets(), &auth::HttpTokens, core(), now_secs())
     })
     .await
     .map_err(|_| "failed".to_string())?
@@ -201,7 +205,7 @@ pub fn wall2_meet_cancel_sign_in(window: tauri::WebviewWindow) -> Result<(), Str
 #[tauri::command]
 pub async fn wall2_meet_join(window: tauri::WebviewWindow, key: String) -> Result<(), String> {
     require_wall2(window.label())?;
-    let url = lock_core().links.get(&key).cloned().ok_or_else(|| "gone".to_string())?;
+    let url = service::lookup_link(links(), &key).ok_or_else(|| "gone".to_string())?;
     if !graph::join_allowed(&url) {
         return Err("gone".to_string());
     }
@@ -214,9 +218,13 @@ pub async fn wall2_meet_sign_out(window: tauri::WebviewWindow, id: String) -> Re
     if !valid_id(&id) {
         return Err("failed".to_string());
     }
-    let mut core = lock_core();
-    service::sign_out(&id, &secrets(), &mut core);
-    Ok(())
+    // Deleting credentials and waiting for the core lock can block, so not on an async worker.
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut core = lock_core();
+        service::sign_out(&id, &secrets(), &mut core);
+    })
+    .await
+    .map_err(|_| "failed".to_string())
 }
 
 

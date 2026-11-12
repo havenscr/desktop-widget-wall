@@ -6,6 +6,7 @@ use super::store::SecretStore;
 use super::Account;
 use serde::Serialize;
 use std::collections::HashMap;
+use std::sync::Mutex;
 
 /// Refresh an access token that has less than this left.
 const SKEW_SECS: u64 = 120;
@@ -20,10 +21,20 @@ pub struct Cached {
 #[derive(Default)]
 pub struct Core {
     pub cache: HashMap<String, Cached>,
-    pub generation: u64,
-    pub links: HashMap<String, String>,
     /// Each account's last successful meetings, reused while that account is unavailable.
     pub last: HashMap<String, Vec<Candidate>>,
+}
+
+/// Join links behind opaque keys. Its own lock, never held across network I/O, so Join
+/// answers at once even while a read is waiting on Graph.
+#[derive(Default)]
+pub struct Links {
+    pub generation: u64,
+    pub map: HashMap<String, String>,
+}
+
+pub fn lookup_link(links: &Mutex<Links>, key: &str) -> Option<String> {
+    links.lock().unwrap_or_else(|e| e.into_inner()).map.get(key).cloned()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -151,6 +162,7 @@ pub fn read_next(
     tokens: &dyn TokenClient,
     graph: &dyn GraphClient,
     core: &mut Core,
+    links: &Mutex<Links>,
     now: u64,
 ) -> MeetPayload {
     let mut statuses = Vec::new();
@@ -180,20 +192,24 @@ pub fn read_next(
         lists.push(list);
     }
     let merged = merge(lists);
-    core.generation += 1;
-    core.links.clear();
+    // The link map is swapped in one short step at the end, after all network work is done.
+    let mut guard = links.lock().unwrap_or_else(|e| e.into_inner());
+    guard.generation += 1;
+    guard.map.clear();
+    let generation = guard.generation;
     let meetings = merged
         .into_iter()
         .enumerate()
         .map(|(n, c)| {
-            let key = format!("{}-{n}", core.generation);
+            let key = format!("{generation}-{n}");
             let can_join = c.join.is_some();
             if let Some(url) = c.join {
-                core.links.insert(key.clone(), url);
+                guard.map.insert(key.clone(), url);
             }
             MeetingOut { key, account_id: c.account_id, title: c.title, start: c.start, end: c.end, can_join }
         })
         .collect();
+    drop(guard);
     MeetPayload { accounts: statuses, meetings, stale }
 }
 
@@ -203,9 +219,10 @@ pub fn complete_sign_in(
     granted: &super::auth::Granted,
     store: &dyn SecretStore,
     tokens: &dyn TokenClient,
-    core: &mut Core,
+    core: &Mutex<Core>,
     now: u64,
 ) -> Result<(), &'static str> {
+    // The code is redeemed without holding the core lock; the lock is taken only to store.
     let form = [
         ("client_id", acct.client_id.as_str()),
         ("grant_type", "authorization_code"),
@@ -219,6 +236,7 @@ pub fn complete_sign_in(
             if !store.set(&acct.id, &refresh) {
                 return Err("failed");
             }
+            let mut core = core.lock().unwrap_or_else(|e| e.into_inner());
             core.cache.insert(acct.id.clone(), Cached { access, expires_at: now + expires_in });
             Ok(())
         }
@@ -322,9 +340,10 @@ mod tests {
     fn signed_out_without_a_stored_token() {
         let store = Chunked(MemoryBlobs::default());
         let mut core = Core::default();
+        let links = Mutex::new(Links::default());
         let t = FakeTokens::new(vec![]);
         let g = FakeGraph::new(vec![]);
-        let p = read_next(&[acct("work")], &store, &t, &g, &mut core, NOW);
+        let p = read_next(&[acct("work")], &store, &t, &g, &mut core, &links, NOW);
         assert_eq!(p.accounts[0].state, "signed-out");
         assert_eq!(t.calls.get() + g.calls.get(), 0);
     }
@@ -332,10 +351,11 @@ mod tests {
     #[test]
     fn expired_cache_refreshes_and_rotated_token_is_stored() {
         let (store, mut core) = setup();
+        let links = Mutex::new(Links::default());
         core.cache.insert("work".into(), Cached { access: "old".into(), expires_at: NOW + 60 });
         let t = FakeTokens::new(vec![ok_token("new", Some("refresh-2"))]);
         let g = FakeGraph::new(vec![GraphReply::Ok(body("A", "1"))]);
-        let p = read_next(&[acct("work")], &store, &t, &g, &mut core, NOW);
+        let p = read_next(&[acct("work")], &store, &t, &g, &mut core, &links, NOW);
         assert_eq!(t.calls.get(), 1);
         assert_eq!(g.seen_access.borrow()[0], "new");
         assert_eq!(store.get("work").as_deref(), Some("refresh-2"));
@@ -348,10 +368,11 @@ mod tests {
     #[test]
     fn fresh_cache_is_used_without_a_refresh() {
         let (store, mut core) = setup();
+        let links = Mutex::new(Links::default());
         core.cache.insert("work".into(), Cached { access: "cached".into(), expires_at: NOW + 600 });
         let t = FakeTokens::new(vec![]);
         let g = FakeGraph::new(vec![GraphReply::Ok(body("A", "1"))]);
-        read_next(&[acct("work")], &store, &t, &g, &mut core, NOW);
+        read_next(&[acct("work")], &store, &t, &g, &mut core, &links, NOW);
         assert_eq!(t.calls.get(), 0);
         assert_eq!(g.seen_access.borrow()[0], "cached");
     }
@@ -359,9 +380,10 @@ mod tests {
     #[test]
     fn invalid_grant_deletes_the_token() {
         let (store, mut core) = setup();
+        let links = Mutex::new(Links::default());
         let t = FakeTokens::new(vec![TokenReply::Rejected]);
         let g = FakeGraph::new(vec![]);
-        let p = read_next(&[acct("work")], &store, &t, &g, &mut core, NOW);
+        let p = read_next(&[acct("work")], &store, &t, &g, &mut core, &links, NOW);
         assert_eq!(p.accounts[0].state, "needs-sign-in");
         assert_eq!(store.get("work"), None);
     }
@@ -369,9 +391,10 @@ mod tests {
     #[test]
     fn transient_failure_keeps_the_token() {
         let (store, mut core) = setup();
+        let links = Mutex::new(Links::default());
         let t = FakeTokens::new(vec![TokenReply::Transient]);
         let g = FakeGraph::new(vec![]);
-        let p = read_next(&[acct("work")], &store, &t, &g, &mut core, NOW);
+        let p = read_next(&[acct("work")], &store, &t, &g, &mut core, &links, NOW);
         assert_eq!(p.accounts[0].state, "unavailable");
         assert_eq!(store.get("work").as_deref(), Some("refresh-1"));
     }
@@ -379,18 +402,20 @@ mod tests {
     #[test]
     fn a_401_refreshes_once_and_retries_once() {
         let (store, mut core) = setup();
+        let links = Mutex::new(Links::default());
         let t = FakeTokens::new(vec![ok_token("a1", None), ok_token("a2", None)]);
         let g = FakeGraph::new(vec![GraphReply::Unauthorized, GraphReply::Ok(body("A", "1"))]);
-        let p = read_next(&[acct("work")], &store, &t, &g, &mut core, NOW);
+        let p = read_next(&[acct("work")], &store, &t, &g, &mut core, &links, NOW);
         assert_eq!(t.calls.get(), 2);
         assert_eq!(g.calls.get(), 2);
         assert_eq!(p.accounts[0].state, "ok");
         assert_eq!(g.seen_access.borrow().as_slice(), ["a1", "a2"]);
 
         let (store, mut core) = setup();
+        let links = Mutex::new(Links::default());
         let t = FakeTokens::new(vec![ok_token("a1", None), ok_token("a2", None), ok_token("a3", None)]);
         let g = FakeGraph::new(vec![GraphReply::Unauthorized, GraphReply::Unauthorized, GraphReply::Ok(body("A", "1"))]);
-        let p = read_next(&[acct("work")], &store, &t, &g, &mut core, NOW);
+        let p = read_next(&[acct("work")], &store, &t, &g, &mut core, &links, NOW);
         assert_eq!(g.calls.get(), 2);
         assert_eq!(t.calls.get(), 2);
         assert_eq!(p.accounts[0].state, "unavailable");
@@ -402,13 +427,14 @@ mod tests {
         store.set("work", "r1");
         store.set("second", "r2");
         let mut core = Core::default();
+        let links = Mutex::new(Links::default());
         let t = FakeTokens::new(vec![ok_token("a", None), ok_token("b", None)]);
         let g = FakeGraph::new(vec![GraphReply::Ok(body("Same invite", "dup")), GraphReply::Ok(body("Same invite", "dup"))]);
-        let p = read_next(&[acct("work"), acct("second")], &store, &t, &g, &mut core, NOW);
+        let p = read_next(&[acct("work"), acct("second")], &store, &t, &g, &mut core, &links, NOW);
         assert_eq!(p.meetings.len(), 1);
         assert!(p.meetings[0].can_join);
         assert_eq!(p.meetings[0].key, "1-0");
-        assert!(core.links.get("1-0").unwrap().starts_with("https://teams.microsoft.com/"));
+        assert!(lookup_link(&links, "1-0").unwrap().starts_with("https://teams.microsoft.com/"));
         let text = serde_json::to_string(&p).unwrap();
         for bad in ["joinUrl", "@", "Bearer", "teams.microsoft.com", "secret-part", "refresh", "token"] {
             assert!(!text.contains(bad), "payload leaks {bad}: {text}");
@@ -416,9 +442,9 @@ mod tests {
         // A second read replaces the link map under a new generation.
         let t = FakeTokens::new(vec![]);
         let g = FakeGraph::new(vec![GraphReply::Ok(body("X", "1")), GraphReply::Ok(body("Y", "2"))]);
-        let p = read_next(&[acct("work"), acct("second")], &store, &t, &g, &mut core, NOW + 10);
+        let p = read_next(&[acct("work"), acct("second")], &store, &t, &g, &mut core, &links, NOW + 10);
         assert_eq!(p.meetings[0].key, "2-0");
-        assert!(core.links.get("1-0").is_none());
+        assert!(lookup_link(&links, "1-0").is_none());
     }
 
     #[test]
@@ -427,43 +453,69 @@ mod tests {
         store.set("work", "r1");
         store.set("second", "r2");
         let mut core = Core::default();
+        let links = Mutex::new(Links::default());
         let t = FakeTokens::new(vec![ok_token("a", None), ok_token("b", None)]);
         let g = FakeGraph::new(vec![GraphReply::Ok(body("Work one", "w1")), GraphReply::Ok(body("Second one", "s1"))]);
         let accounts = [acct("work"), acct("second")];
-        let p = read_next(&accounts, &store, &t, &g, &mut core, NOW);
+        let p = read_next(&accounts, &store, &t, &g, &mut core, &links, NOW);
         assert!(!p.stale);
         assert_eq!(p.meetings.len(), 2);
         // The second account now fails; the first still answers.
         let g = FakeGraph::new(vec![GraphReply::Ok(body("Work one", "w1")), GraphReply::Transient]);
-        let p = read_next(&accounts, &store, &t, &g, &mut core, NOW + 10);
+        let p = read_next(&accounts, &store, &t, &g, &mut core, &links, NOW + 10);
         assert!(p.stale);
         assert_eq!(p.accounts[1].state, "unavailable");
         assert_eq!(p.meetings.len(), 2);
         let kept = p.meetings.iter().find(|m| m.account_id == "second").unwrap();
         assert_eq!(kept.title, "Second one");
         assert!(kept.can_join);
-        assert!(core.links.get(&kept.key).unwrap().starts_with("https://teams.microsoft.com/"));
+        assert!(lookup_link(&links, &kept.key).unwrap().starts_with("https://teams.microsoft.com/"));
         // Signing out drops what was kept.
         sign_out("second", &store, &mut core);
         let g = FakeGraph::new(vec![GraphReply::Ok(body("Work one", "w1"))]);
-        let p = read_next(&accounts, &store, &t, &g, &mut core, NOW + 20);
+        let p = read_next(&accounts, &store, &t, &g, &mut core, &links, NOW + 20);
         assert_eq!(p.meetings.len(), 1);
         assert!(!p.stale);
+    }
+
+    struct ProbeGraph<'a> {
+        links: &'a Mutex<Links>,
+        seen: RefCell<Option<Option<String>>>,
+    }
+    impl GraphClient for ProbeGraph<'_> {
+        fn calendar_view(&self, _a: &str, _s: &str, _e: &str) -> GraphReply {
+            // What Join does: look a key up. It must not wait for this read.
+            *self.seen.borrow_mut() = Some(lookup_link(self.links, "1-0"));
+            GraphReply::Ok(body("Next", "n"))
+        }
+    }
+
+    #[test]
+    fn join_resolves_while_a_read_is_in_progress() {
+        let (store, mut core) = setup();
+        let links = Mutex::new(Links::default());
+        let t = FakeTokens::new(vec![ok_token("a", None)]);
+        let g = FakeGraph::new(vec![GraphReply::Ok(body("First", "f"))]);
+        read_next(&[acct("work")], &store, &t, &g, &mut core, &links, NOW);
+        let probe = ProbeGraph { links: &links, seen: RefCell::new(None) };
+        read_next(&[acct("work")], &store, &t, &probe, &mut core, &links, NOW + 10);
+        let seen = probe.seen.borrow().clone().expect("graph was called");
+        assert!(seen.unwrap().starts_with("https://teams.microsoft.com/"));
     }
 
     #[test]
     fn sign_in_stores_the_refresh_token_and_caches_access() {
         let store = Chunked(MemoryBlobs::default());
-        let mut core = Core::default();
+        let core = Mutex::new(Core::default());
         let t = FakeTokens::new(vec![ok_token("acc", Some("ref"))]);
         let granted = super::super::auth::Granted { code: "c".into(), verifier: "v".into(), redirect_uri: "http://localhost:1/auth-callback.html".into() };
-        assert!(complete_sign_in(&acct("work"), &granted, &store, &t, &mut core, NOW).is_ok());
+        assert!(complete_sign_in(&acct("work"), &granted, &store, &t, &core, NOW).is_ok());
         assert_eq!(store.get("work").as_deref(), Some("ref"));
-        assert_eq!(core.cache.get("work").unwrap().access, "acc");
+        assert_eq!(core.lock().unwrap().cache.get("work").unwrap().access, "acc");
         let t = FakeTokens::new(vec![ok_token("acc", None)]);
-        assert_eq!(complete_sign_in(&acct("work"), &granted, &store, &t, &mut core, NOW), Err("failed"));
-        sign_out("work", &store, &mut core);
+        assert_eq!(complete_sign_in(&acct("work"), &granted, &store, &t, &core, NOW), Err("failed"));
+        sign_out("work", &store, &mut core.lock().unwrap());
         assert_eq!(store.get("work"), None);
-        assert!(core.cache.is_empty());
+        assert!(core.lock().unwrap().cache.is_empty());
     }
 }
