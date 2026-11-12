@@ -131,6 +131,18 @@ skyline, the lake in front. It is drawn on one canvas by `HorizonCanvas.tsx`.
   `unwind`). Changing place glides the camera there over 1.6 seconds with a cubic
   ease (`blendCamera(from, to, t)`); the glide starts from wherever the camera is,
   so interrupting it is smooth.
+- **Morning view.** On Home, from 5:00 AM up to 11:30 AM local time, the camera turns
+  south to Mount Rainier (`HOME_MORNING` in `cameras.ts`: `ter: 'south'`, azimuth 132 at
+  the left edge, 42 px per degree, terrain exaggerated 1.9, horizon at y 582 like
+  Home's west view). The rest of the day Home keeps the west view. `homeCameraFor(date)`
+  holds the rule and `cameraFor(place, ms)` applies it to Home only; Work and Unwind never
+  change. `HorizonCanvas` looks again once a minute, so 5:00 AM and 11:30 AM take effect
+  while Home is open.
+- **Cross-fade.** `blendCamera` cannot blend two terrains, so when the new camera has a
+  different `ter` (entering Home in the morning, or 11:30 AM passing) the old view stays
+  on a second canvas underneath while the main canvas fades in over it for 2 seconds
+  (`crossfade.ts`), then the second canvas is hidden again. Moves within one terrain keep
+  the 1.6 second glide. Reduced motion and the review still switch instantly.
 - **Real time.** The sun, sky and city lights come from `Date.now()`, passed in
   as the `now` prop of `HorizonCanvas` (inject one in tests). The hour is never
   taken from the place. The music ripple (`echo`) and the moon are
@@ -139,7 +151,7 @@ skyline, the lake in front. It is drawn on one canvas by `HorizonCanvas.tsx`.
   `document.hidden` (`pacing.ts`). The backing store is stage scale times
   `devicePixelRatio`.
 - **Reduced motion.** With `prefers-reduced-motion: reduce` the horizon is drawn
-  once a minute and cameras switch without the glide.
+  once a minute and cameras switch without the glide or the cross-fade.
 - **Review hook (dev server only).** Open
   `http://localhost:1421/?hz=<place>&at=<ISO time>`. The clock freezes at that
   time, the camera jumps to the place and one still frame is drawn with
@@ -149,6 +161,9 @@ skyline, the lake in front. It is drawn on one canvas by `HorizonCanvas.tsx`.
   - `?hz=home&at=2026-11-11T16:30:00%2B01:00` (a positive offset needs `%2B`; a
     bare `+` is also accepted, but `%2B` is the safe spelling. A negative offset
     such as `-08:00` needs nothing.)
+  - `?hz=home` follows the morning rule for that time, read in the browser's local
+    time zone (not the offset in the URL): `at=2026-11-11T07:12:00-08:00` shows
+    Rainier on a Pacific-time machine and the west view on a UTC one. No fade.
 
   To match the original demo pixel for pixel, run the demo at the same hour and
   camera with its echo ripple off (the moon is on for `unwind`, which the review
