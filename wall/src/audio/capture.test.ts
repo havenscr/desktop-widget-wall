@@ -115,3 +115,16 @@ it('stop clears every timer and the listener', async () => {
   expect(vi.getTimerCount()).toBe(0);
   expect(handler).toBeNull();
 });
+
+it('gives the watchdog a fresh 5 seconds when the page becomes visible again', async () => {
+  const stop = startAudio();
+  await vi.advanceTimersByTimeAsync(10);
+  setHidden(true);
+  await vi.advanceTimersByTimeAsync(WATCHDOG_MS * 3 + 100); // hidden: no events, no restart
+  expect(names().filter((n) => n === 'start_audio_capture')).toHaveLength(1);
+  setHidden(false);
+  // The next watchdog check lands before the first event could: it must not restart yet.
+  await vi.advanceTimersByTimeAsync(4900); // crosses the tick at 20 s, 4.9 s after becoming visible
+  expect(names().filter((n) => n === 'start_audio_capture')).toHaveLength(1);
+  stop();
+});

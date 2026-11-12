@@ -47,7 +47,11 @@ export function startAudio(): () => void {
   let restartedForSilence = false;
 
   const onVisibility = () => {
-    if (!document.hidden) tickAudio(now());
+    if (!document.hidden) {
+      // The push was off while hidden; give the watchdog a fresh 5 seconds before it judges silence.
+      lastEventAt = now();
+      tickAudio(now());
+    }
     void syncPush();
   };
   document.addEventListener('visibilitychange', onVisibility);
