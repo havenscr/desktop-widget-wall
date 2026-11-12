@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { DND_KEY } from './dnd';
+import { FOCUS_DAY_KEY } from './day';
 import { FOCUS_KEY } from './model';
 import { createFocusStore } from './store';
 
@@ -112,5 +113,38 @@ it('takes Do Not Disturb again after the startup release when still running', as
   t.useStore.getState().init();
   await vi.advanceTimersByTimeAsync(50);
   expect(t.calls).toEqual(['disable_do_not_disturb', 'get_do_not_disturb', 'enable_do_not_disturb']);
+  t.useStore.getState().dispose();
+});
+
+it('keeps today\'s sessions: a pause closes one early, a finish closes at its planned end, both saved', async () => {
+  const t = setup();
+  const s = t.useStore.getState();
+  s.init();
+  s.start(); // 10:00, planned 10:25
+  await vi.advanceTimersByTimeAsync(10 * MIN);
+  t.useStore.getState().pause(); // 10:10
+  await vi.advanceTimersByTimeAsync(5 * MIN);
+  t.useStore.getState().resume(); // 10:15, 15 min left
+  await vi.advanceTimersByTimeAsync(20 * MIN); // finishes at 10:30
+  const at = (h: number, m: number) => new Date(2026, 10, 11, h, m).getTime();
+  const want = [
+    { start: at(10, 0), end: at(10, 10) },
+    { start: at(10, 15), end: at(10, 30) },
+  ];
+  expect(t.useStore.getState().state.status).toBe('finished');
+  expect(t.useStore.getState().sessions).toEqual(want);
+  expect(JSON.parse(t.mem.get(FOCUS_DAY_KEY)!)).toEqual({ sessions: want });
+  t.useStore.getState().dispose();
+});
+
+it('restores saved sessions at start and drops earlier days on the next write', () => {
+  const t = setup();
+  const yesterday = new Date(2026, 10, 10, 15, 0).getTime();
+  t.mem.set(FOCUS_DAY_KEY, JSON.stringify({ sessions: [{ start: yesterday, end: yesterday + 25 * MIN }] }));
+  const s = t.useStore.getState();
+  s.init();
+  expect(t.useStore.getState().sessions).toHaveLength(1);
+  s.start();
+  expect(t.useStore.getState().sessions).toEqual([{ start: Date.now(), end: Date.now() + 25 * MIN }]);
   t.useStore.getState().dispose();
 });
