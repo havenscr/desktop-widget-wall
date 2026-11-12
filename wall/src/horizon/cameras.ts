@@ -5,7 +5,7 @@ import type { TerrainName } from './renderer';
 /**
  * One camera framing of the panorama. The first six keys and `snowDeg` feed the renderer;
  * `ecx`, `eamp`, `ea` and `en` shape the music ripple (centre, height, opacity at full
- * loudness, line count) and are used only while music plays.
+ * loudness, line count) and `gp` sets the grid pulse strength; both are used only while music plays.
  */
 export interface CameraPreset {
   /** Compass azimuth in degrees at the left edge. */
@@ -30,6 +30,8 @@ export interface CameraPreset {
   en: number;
   /** Snow line in degrees before vex (0.84 on the west presets, 0.86 in the morning); blended during a glide. */
   snowDeg: number;
+  /** Grid pulse strength, 0 to 1: scales the beat's glow bands and the bass brightening (subtle 0.5 on Work, Home and Rainier, full 1 on Unwind); blended during a glide. */
+  gp: number;
   /** Which terrain the camera looks at; omitted means `'pano'`. */
   ter?: Terrain;
 }
@@ -56,14 +58,14 @@ export function glideSeconds(from: CameraPreset, to: CameraPreset): number {
   return Math.abs(to.az0 - from.az0) > SWING_DEGREES ? SWING_SECONDS : GLIDE_SECONDS;
 }
 
-const WIDE: CameraPreset = { az0: 221.5, ppd: 34, hy: 582, vex: 1.25, cs: 1.25, vx: 1280, ecx: 1900, eamp: 8, ea: 0.3, en: 3, snowDeg: 0.84, ter: 'pano' };
+const WIDE: CameraPreset = { az0: 221.5, ppd: 34, hy: 582, vex: 1.25, cs: 1.25, vx: 1280, ecx: 1900, eamp: 8, ea: 0.3, en: 3, snowDeg: 0.84, gp: 0.5, ter: 'pano' };
 
 /** Framing per place: Work looks wide, Home closes in on the city, Unwind swings to the Olympics. */
 export const CAMERAS: Readonly<Record<CameraPlace, CameraPreset>> = {
   work: { ...WIDE },
-  home: { az0: 218.1, ppd: 54, hy: 582, vex: 1.3, cs: 1, vx: 1280, ecx: 2300, eamp: 6, ea: 0.22, en: 3, snowDeg: 0.84, ter: 'pano' },
+  home: { az0: 218.1, ppd: 54, hy: 582, vex: 1.3, cs: 1, vx: 1280, ecx: 2300, eamp: 6, ea: 0.22, en: 3, snowDeg: 0.84, gp: 0.5, ter: 'pano' },
   meet: { ...WIDE },
-  unwind: { az0: 246, ppd: 49.2, hy: 505, vex: 2.5, cs: 1, vx: 1330, ecx: 1330, eamp: 34, ea: 0.9, en: 11, snowDeg: 0.84, ter: 'pano' },
+  unwind: { az0: 246, ppd: 49.2, hy: 505, vex: 2.5, cs: 1, vx: 1330, ecx: 1330, eamp: 34, ea: 0.9, en: 11, snowDeg: 0.84, gp: 1, ter: 'pano' },
 };
 
 /**
@@ -73,7 +75,7 @@ export const CAMERAS: Readonly<Record<CameraPlace, CameraPreset>> = {
  * y 414, clear of the clock and the mood row. No ripple (ea 0): the echo is a filled copy of
  * the far ridge, which would draw a dark hump over Rainier. Reached by a swing, never a fade.
  */
-export const HOME_MORNING: CameraPreset = { az0: 132, ppd: 42, hy: 582, vex: 1.9, cs: 1, vx: 1280, ecx: 2300, eamp: 6, ea: 0, en: 3, snowDeg: 0.86, ter: 'pano' };
+export const HOME_MORNING: CameraPreset = { az0: 132, ppd: 42, hy: 582, vex: 1.9, cs: 1, vx: 1280, ecx: 2300, eamp: 6, ea: 0, en: 3, snowDeg: 0.86, gp: 0.5, ter: 'pano' };
 
 /** Morning view runs from 5:00 AM to 11:30 AM local time, in minutes after midnight. */
 export const MORNING_START_MIN = 5 * 60;

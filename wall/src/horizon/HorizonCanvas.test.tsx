@@ -668,3 +668,100 @@ describe('Home morning view', () => {
     expect(back[6]).toBeCloseTo(back[5], 9); // full by 0.6 s
   });
 });
+
+describe('grid pulse', () => {
+  const QUIET_BANDS = new Array(32).fill(80);
+  const KICK_BANDS = QUIET_BANDS.map((v, i) => (i < 12 ? 200 : v));
+
+  /** Audio events every 33 ms from `from` to `to` (steady clock ms), with a kick in the low bands every 500 ms. */
+  function feed(from: number, to: number) {
+    for (let t = from; t <= to; t += 33) {
+      ingestLevels({ ...LOUD, bands: (t % 500) < 100 ? KICK_BANDS : QUIET_BANDS }, t);
+      tickAudio(t);
+    }
+  }
+
+  type Snap = { grid?: { bright: number; waves: { p: number; a: number }[] } };
+  /** Record a copy of every draw's grid option (the component reuses one object). */
+  function record(): Snap[] {
+    const snaps: Snap[] = [];
+    draw.mockImplementation((_ctx, o) => {
+      snaps.push(o.grid ? { grid: structuredClone(o.grid) } : {});
+    });
+    return snaps;
+  }
+
+  afterEach(() => draw.mockReset());
+
+  /** Run audio and frames side by side: one frame per 100 ms, audio events in between. */
+  function play(snaps: Snap[], start: number, end: number) {
+    for (let ts = start; ts <= end; ts += 100) {
+      feed(ts - 99, ts);
+      runFrame(ts);
+    }
+    return snaps;
+  }
+
+  const peak = (snaps: Snap[]) => Math.max(0, ...snaps.flatMap((s) => s.grid?.waves.map((w) => w.a) ?? []));
+
+  it('passes a grid with rolling glow bands while music with a kick plays', () => {
+    setReducedMotion(false);
+    const snaps = record();
+    render(<HorizonCanvas now={() => NOON} />);
+    play(snaps, 100, 4000);
+    const withGrid = snaps.filter((s) => s.grid);
+    expect(withGrid.length).toBeGreaterThan(30);
+    expect(peak(snaps)).toBeGreaterThan(0.05);
+    expect(Math.max(...withGrid.map((s) => s.grid!.bright))).toBeGreaterThan(0.2);
+    // A band mid-roll somewhere: past the horizon, not yet at the bottom.
+    expect(withGrid.some((s) => s.grid!.waves.some((w) => w.a > 0 && w.p > 0.3 && w.p < 0.7))).toBe(true);
+  });
+
+  it('passes no grid when silent, and none once the music stops', () => {
+    setReducedMotion(false);
+    const snaps = record();
+    render(<HorizonCanvas now={() => NOON} />);
+    for (let ts = 100; ts <= 1000; ts += 100) runFrame(ts);
+    expect(snaps.every((s) => !s.grid)).toBe(true);
+    play(snaps, 1100, 3000);
+    expect(snaps[snaps.length - 1].grid).toBeDefined();
+    act(() => tickAudio(10_000)); // long silence
+    snaps.length = 0;
+    for (let ts = 3100; ts <= 3500; ts += 100) runFrame(ts);
+    expect(snaps.every((s) => !s.grid)).toBe(true);
+  });
+
+  it('is fuller on Unwind than on Work (camera strength 1 against 0.5)', () => {
+    setReducedMotion(false);
+    const work = record();
+    render(<HorizonCanvas now={() => NOON} />);
+    play(work, 100, 3000);
+    cleanup();
+    resetAudio();
+    frames.clear();
+    usePlaceStore.setState({ active: 'unwind' });
+    const unwind = record();
+    render(<HorizonCanvas now={() => NOON} />);
+    play(unwind, 100, 3000);
+    expect(peak(unwind)).toBeGreaterThan(peak(work) * 1.7);
+  });
+
+  it('never passes a grid under reduced motion or in the review still, even with music playing', () => {
+    setReducedMotion(true);
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    feed(0, 3000);
+    const snaps = record();
+    render(<HorizonCanvas now={() => NOON} />);
+    act(() => void vi.advanceTimersByTime(60_000));
+    expect(snaps.length).toBeGreaterThan(0);
+    expect(snaps.every((s) => !s.grid)).toBe(true);
+    cleanup();
+    setReducedMotion(false);
+    window.history.replaceState(null, '', '/?hz=unwind&at=2026-11-11T21:42:00-08:00');
+    snaps.length = 0;
+    feed(3033, 6000);
+    render(<HorizonCanvas now={() => NOON} />);
+    expect(snaps).toHaveLength(1);
+    expect(snaps[0].grid).toBeUndefined();
+  });
+});
