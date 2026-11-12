@@ -34,6 +34,11 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
   const glide = useRef<Glide>(settled(CAMERAS[review?.place ?? place]));
   const repaint = useRef<() => void>(() => {});
   const first = useRef(true);
+  // Latest clock, read at draw time so an inline `now` prop never restarts the loop.
+  const nowRef = useRef(now);
+  useEffect(() => {
+    nowRef.current = now;
+  }, [now]);
 
   // Drawing: an animated 30 fps loop, or a single frame (a still frame once a minute when motion is reduced).
   useEffect(() => {
@@ -60,7 +65,7 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
         height,
         scale,
         camera: glideCamera(glide.current),
-        ms: review ? review.ms : now(),
+        ms: review ? review.ms : nowRef.current(),
         t: review ? 0 : T,
         phase: review ? 0 : (T * 0.32) % 1,
       });
@@ -96,7 +101,7 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
       window.clearInterval(timer);
       cancelAnimationFrame(raf);
     };
-  }, [reduced, review, now]);
+  }, [reduced, review]);
 
   // Switching places glides the camera (or jumps, when motion is reduced).
   useEffect(() => {

@@ -183,3 +183,13 @@ it('unmount stops the one-minute redraw and removes its listeners (reduced motio
   act(() => void vi.advanceTimersByTime(180_000));
   expect(draw.mock.calls.length).toBe(drawn);
 });
+
+it('an inline now prop does not restart the loop or reset animation time', () => {
+  setReducedMotion(false);
+  const { rerender } = render(<HorizonCanvas now={() => NOON} />);
+  runFrame(100);
+  rerender(<HorizonCanvas now={() => NOON + 5000} />);
+  expect(cancelSpy).not.toHaveBeenCalled();
+  runFrame(200);
+  expect(draw.mock.lastCall![1]).toMatchObject({ ms: NOON + 5000, t: 0.2 });
+});
