@@ -90,12 +90,18 @@ skyline, the lake in front. It is drawn on one canvas by `HorizonCanvas.tsx`.
 - **Reduced motion.** With `prefers-reduced-motion: reduce` the horizon is drawn
   once a minute and cameras switch without the glide.
 - **Review hook (dev server only).** Open
-  `http://localhost:1421/?hz=<place>&at=<ISO time>`, for example
-  `?hz=home&at=2026-11-11T16:30:00-08:00`. The clock freezes at that time, the
-  camera jumps to the place and one still frame is drawn with animation time 0.
-  Give the time an offset, since a time without one is read in local time.
-  `hz` is `work`, `home` or `unwind`. To compare with the original demo, run
-  the demo at the same hour and camera.
+  `http://localhost:1421/?hz=<place>&at=<ISO time>`. The clock freezes at that
+  time, the camera jumps to the place and one still frame is drawn with
+  animation time 0. `hz` is `work`, `home` or `unwind`. Give the time an offset,
+  since a time without one is read in local time:
+  - `?hz=home&at=2026-11-11T16:30:00Z` (UTC)
+  - `?hz=home&at=2026-11-11T16:30:00%2B01:00` (a positive offset needs `%2B`; a
+    bare `+` is also accepted, but `%2B` is the safe spelling. A negative offset
+    such as `-08:00` needs nothing.)
+
+  To match the original demo pixel for pixel, run the demo at the same hour and
+  camera with its echo ripple off (and its moon off for `unwind`, since the review
+  frame never draws a moon) and the same animation time, 0.
 
 ## Touch
 
