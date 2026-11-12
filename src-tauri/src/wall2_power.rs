@@ -313,6 +313,26 @@ pub fn wall2_idle_state(window: tauri::WebviewWindow) -> Result<IdleNow, String>
     Ok(IdleNow { idle: false, idle_secs: 0 })
 }
 
+#[derive(serde::Serialize)]
+pub struct DisplayNow {
+    pub visible: bool,
+    pub reason: Option<&'static str>,
+}
+
+/// The current lock and display state, for the page's first read (the
+/// `display-state` event only fires on a change).
+#[tauri::command]
+pub fn wall2_display_state(window: tauri::WebviewWindow) -> Result<DisplayNow, String> {
+    require_wall2(window.label())?;
+    #[cfg(windows)]
+    {
+        let reason = crate::display_watch::os_hidden_reason();
+        Ok(DisplayNow { visible: reason.is_none(), reason })
+    }
+    #[cfg(not(windows))]
+    Ok(DisplayNow { visible: true, reason: None })
+}
+
 /// Whether the monitors-off mode is running, for the button's first read.
 #[tauri::command]
 pub fn wall2_monitors_mode(window: tauri::WebviewWindow) -> Result<ModeNow, String> {

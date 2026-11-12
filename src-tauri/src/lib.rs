@@ -3711,6 +3711,7 @@ pub fn run() {
             wall2_power::wall2_idle_state,
             wall2_power::wall2_monitors_off,
             wall2_power::wall2_monitors_mode,
+            wall2_power::wall2_display_state,
             list_audio_devices,
             start_audio_capture,
             stop_audio_capture,
