@@ -1,8 +1,9 @@
-import { IconBulb, IconCheck, IconLoader2, IconMoon, IconSun, IconSunset, type Icon } from '@tabler/icons-react';
+import { IconCheck, IconLoader2 } from '@tabler/icons-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { invoke } from '../bridge/tauri';
 import { NOT_CONFIGURED } from '../tasks/model';
 import { useVisible } from '../ui/useVisible';
+import { MoodArt } from './MoodArt';
 
 export interface Mood {
   id: string;
@@ -13,18 +14,43 @@ export const MOODS_REFRESH_MS = 10 * 60_000;
 export const DONE_MS = 2000;
 export const ERROR_MS = 5000;
 export const LAST_MOOD_KEY = 'wall2-last-mood';
+/** The last good list, so the cards stay when the home app is briefly away. */
+export const MOODS_CACHE_KEY = 'wall2-moods-cache';
+
+/** The concept's line under each mood it drew; other moods have none. */
+const NOTES: Record<string, string> = {
+  day: 'bright and cool',
+  evening: 'warm and golden',
+  lateNight: 'dim and violet',
+  movie: 'TV on, lights low',
+  goodnight: 'everything off',
+};
+
+export function moodNote(id: string): string | null {
+  return NOTES[id] ?? null;
+}
+
+function readCache(): Mood[] {
+  try {
+    const raw = JSON.parse(localStorage.getItem(MOODS_CACHE_KEY) ?? '[]') as unknown;
+    if (!Array.isArray(raw)) return [];
+    return raw.filter((m): m is Mood => !!m && typeof m.id === 'string' && typeof m.label === 'string');
+  } catch {
+    return [];
+  }
+}
+
+function writeCache(list: Mood[]): void {
+  try {
+    localStorage.setItem(MOODS_CACHE_KEY, JSON.stringify(list.map((m) => ({ id: m.id, label: m.label }))));
+  } catch {
+    /* storage can be blocked; the cache is a convenience */
+  }
+}
 
 /** "lateNight" becomes "Late Night". The server sends a label from the id; this is the fallback. */
 export function moodLabel(mood: Mood): string {
   return mood.label || mood.id.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/^./, (c) => c.toUpperCase());
-}
-
-/** Sun for day, sunset for evening, moon for lateNight, a plain bulb for anything else. */
-export function moodIcon(id: string): Icon {
-  if (id === 'day') return IconSun;
-  if (id === 'evening') return IconSunset;
-  if (id === 'lateNight') return IconMoon;
-  return IconBulb;
 }
 
 function readLast(): string | null {
@@ -45,11 +71,11 @@ function writeLast(id: string): void {
 
 type Phase = { id: string; kind: 'working' | 'done' } | null;
 
-/** Mood buttons for the Home tab. Lights change only when a button is tapped. */
+/** Mood cards for the Home tab, each with its painted art. Lights change only when a card is tapped. */
 export function Moods() {
   const visible = useVisible();
   const [status, setStatus] = useState<'loading' | 'ready' | 'unconfigured' | 'error'>('loading');
-  const [moods, setMoods] = useState<Mood[]>([]);
+  const [moods, setMoods] = useState<Mood[]>(readCache);
   const [phase, setPhase] = useState<Phase>(null);
   const [error, setError] = useState<string | null>(null);
   const [last, setLast] = useState<string | null>(readLast);
@@ -71,7 +97,9 @@ export function Moods() {
     try {
       const list = await invoke<Mood[]>('wall2_moods');
       if (!mounted.current) return;
-      setMoods(Array.isArray(list) ? list : []);
+      const next = Array.isArray(list) ? list : [];
+      setMoods(next);
+      writeCache(next);
       setStatus('ready');
     } catch (e) {
       if (!mounted.current) return;
@@ -117,46 +145,56 @@ export function Moods() {
   }, []);
 
   if (status === 'ready' && moods.length === 0) return null;
-  if (status === 'loading' && !visible) return null;
+  if (status === 'loading' && !visible && moods.length === 0) return null;
 
-  let body;
-  if (status === 'unconfigured') {
-    body = <div className="s">Not set up</div>;
-  } else if (status === 'loading') {
-    body = <div className="s">Loading</div>;
-  } else if (status === 'error' && moods.length === 0) {
-    body = <div className="s">Home app not reachable</div>;
-  } else {
-    body = (
-      <div className="mood-row">
-        {moods.map((m) => {
-          const Glyph = phase?.id === m.id ? (phase.kind === 'working' ? IconLoader2 : IconCheck) : moodIcon(m.id);
-          const cls = ['mood-btn', phase?.id === m.id ? phase.kind : '', last === m.id ? 'last' : ''].filter(Boolean).join(' ');
-          return (
-            <button
-              key={m.id}
-              type="button"
-              className={cls}
-              data-mood={m.id}
-              disabled={phase?.kind === 'working'}
-              aria-label={last === m.id ? `${moodLabel(m)}, last used` : undefined}
-              onClick={() => void tap(m.id)}
-            >
-              <Glyph size={40} stroke={1.6} aria-hidden="true" />
-              <span className="mood-name">{moodLabel(m)}</span>
-            </button>
-          );
-        })}
-      </div>
-    );
-  }
+  // A list (fresh, or the last good one while the home app is away) shows as cards.
+  const showCards = moods.length > 0 && status !== 'unconfigured';
+  let note: string | null = null;
+  if (status === 'unconfigured') note = 'Not set up';
+  else if (status === 'loading' && !showCards) note = 'Loading';
+  else if (status === 'error') note = 'Home app not reachable';
+  const cols = Math.min(Math.max(moods.length, 1), 5);
   return (
-    <section className="moods" aria-label="Moods">
-      <span className="k">Moods</span>
-      {body}
-      <div className="mood-error s" role="alert">
-        {error}
+    <section className={showCards ? 'moods' : 'moods bare'} aria-label="Moods">
+      <div className="moods-head">
+        <span className="k">Moods</span>
+        <span className={error || status === 'error' ? 's warn-text' : 's'} role="alert">
+          {error ?? note}
+        </span>
       </div>
+      {showCards && (
+        <div className="mood-row" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
+          {moods.map((m) => {
+            const busyHere = phase?.id === m.id ? phase.kind : null;
+            const on = last === m.id;
+            const sub = moodNote(m.id);
+            const cls = ['mood-btn', busyHere ?? '', on ? 'last' : ''].filter(Boolean).join(' ');
+            return (
+              <button
+                key={m.id}
+                type="button"
+                className={cls}
+                data-mood={m.id}
+                disabled={phase?.kind === 'working'}
+                aria-label={on ? `${moodLabel(m)}, on now` : moodLabel(m)}
+                onClick={() => void tap(m.id)}
+              >
+                <MoodArt id={m.id} />
+                {on && <u className="mood-tag">On now</u>}
+                {busyHere && (
+                  <span className="mood-busy" aria-hidden="true">
+                    {busyHere === 'working' ? <IconLoader2 size={30} stroke={2} /> : <IconCheck size={30} stroke={2.4} />}
+                  </span>
+                )}
+                <span className="mood-lb">
+                  <b className="mood-name">{moodLabel(m)}</b>
+                  {sub && <span className="mood-sub">{sub}</span>}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
     </section>
   );
 }
