@@ -1,5 +1,6 @@
 import { act, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { resetAgents } from '../agents/useAgents';
 import { mocks } from '../bridge/tauri';
 import { useFocusStore } from '../focus/store';
 import { resetNowPlaying } from '../music/store';
@@ -40,12 +41,17 @@ beforeEach(() => {
   mocks.set('get_now_playing', () => ({ playback_status: 'stopped' }));
   mocks.set('wall2_machines', () => ({ pc: { cpuPct: 34, gpuPct: 71, ramPct: 58 }, box: null, boxStale: false }));
   mocks.set('get_do_not_disturb', () => false);
+  mocks.set('wall2_omni_summary', () => {
+    throw new Error('not-configured');
+  });
+  resetAgents();
   usePlaceStore.setState({ active: 'work' });
 });
 afterEach(() => {
   useFocusStore.getState().dispose();
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  resetAgents();
   mocks.clear();
   resetNowPlaying();
 });
@@ -56,11 +62,13 @@ it('lays Work out on the three zones: left wing, the centre fill, the next three
   const work = r.container.querySelector('.work.zones')!;
   const zones = [...work.children].map((c) => c.className);
   expect(zones).toEqual(['wing wl left-wing', 'centre centre-fill', 'wing wr right-wing']);
-  // The centre is never an empty "Agents" card: the full focus timer and weather fill it.
+  // Helper not set up: never an empty "Agents" card. The full focus timer and weather fill
+  // the centre, with one quiet line under them.
   const centre = work.querySelector('.centre')!;
   expect(centre.querySelector('[aria-label="Focus timer"]')).not.toBeNull();
   expect(centre.querySelector('[aria-label="Weather"]')!.textContent).toContain('High 61°');
-  expect(centre.textContent).not.toMatch(/Agents|Not set up/);
+  expect(centre.querySelector('.centre-note')!.textContent).toBe('Agents: not set up');
+  expect(centre.querySelector('.lane')).toBeNull();
   expect(work.querySelector('.wr [aria-label="Tasks"]')).not.toBeNull();
 });
 
@@ -105,6 +113,9 @@ it('dims Next with "as of" when the feed marks the list stale', async () => {
   const next = r.container.querySelector('.next')!;
   expect(next.className).toBe('blk next stale');
   expect(next.querySelector('.next-asof')!.textContent).toBe('as of 10:24');
+  // A stale list may be wrong, so no countdown: only the time and the title.
+  expect(next.querySelector('.s')!.textContent).toBe('12:00');
+  expect(next.textContent).not.toMatch(/in \d/);
 });
 
 it('says "may be out of date" for a stale first reply, with no good read to date it', async () => {

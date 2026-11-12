@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { IconBolt, IconCalendar, IconHome } from '@tabler/icons-react';
 import { useFocusStore } from '../focus/store';
+import { AgentRow } from './AgentRow';
 import { useVisible } from '../ui/useVisible';
 import { chips, dueMarks, focusBars, hourLabels, msToNextMinute, needle, skyGradient, sunLabels, ticks } from './model';
 import { sunTimes } from './sun';
@@ -34,8 +35,8 @@ function useMinute(now: () => number): number {
  * 6 AM to 12 AM over the day's sky, sunrise and sunset, today's calendar on row 1, the
  * focus bar from today's sessions (Work and Meet; Home has none, as in the concept), and
  * the needle with the time. Row 2 carries a cyan diamond for each of the next three tasks
- * due at a time today (Work and Meet: tasks without the home tag; Home: with it); the
- * agent lanes and the house schedule join it later.
+ * due at a time today (Work and Meet: tasks without the home tag; Home: with it), and on
+ * Work the agent lanes' day (`AgentRow`) under them; the house schedule joins it later.
  */
 export function Ribbon({ kind, now = Date.now }: { kind: RibbonKind; now?: () => number }) {
   const visible = useVisible();
@@ -77,6 +78,7 @@ export function Ribbon({ kind, now = Date.now }: { kind: RibbonKind; now?: () =>
           {c.narrow ? null : c.title}
         </div>
       ))}
+      {kind === 'work' && <AgentRow now={t} />}
       {kind === 'work' &&
         focusBars(sessions, t).map((b) => (
           <i key={b.x} className="fo" style={{ left: b.x, width: b.width }} aria-hidden="true" />

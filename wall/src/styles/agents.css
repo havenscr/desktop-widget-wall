@@ -1,0 +1,382 @@
+/* The Work centre's agent lanes (concept f_work, v3.src.html `.lane`, `.jr`, `.shelf`) and
+   the ribbon's agent row (`.sg`). Design pixels; the centre zone is 1290 x 490. */
+
+.lanes .t-cyan {
+  --c: var(--cyan);
+}
+.lanes .t-amber,
+.centre-note .t-amber {
+  --c: var(--amber);
+  color: var(--amber);
+}
+.lanes .t-mint {
+  --c: var(--mint);
+}
+
+/* Header, lanes and shelf share the zone's height; the lanes take what is left (up to
+   150 px each), and any height still free spreads between the rows (concept `.col.spread`). */
+.centre.lanes {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  min-height: 0;
+}
+.lanes-hd {
+  flex: none;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 0 4px;
+}
+.lanes-hd-l {
+  gap: 14px;
+  min-width: 0;
+}
+.lanes-age {
+  color: var(--dim);
+}
+.lanes .calm {
+  gap: 12px;
+  font-size: 24px;
+  white-space: nowrap;
+}
+.lanes .calm.t-cyan {
+  color: var(--tx);
+}
+.lanes .calm .xs {
+  margin-left: 2px;
+}
+.lanes .dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--c, var(--cyan));
+  box-shadow: 0 0 14px var(--c, var(--cyan));
+}
+
+/* Glass, as the concept's .g. */
+.lane.g {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.015)), rgba(10, 7, 28, 0.72);
+  border: 1px solid var(--line);
+  border-radius: 26px;
+}
+.lane {
+  flex: 1 1 118px;
+  min-height: 96px;
+  max-height: 150px;
+  display: grid;
+  grid-template-columns: 68px minmax(0, 1fr) 430px 200px;
+  align-items: center;
+  gap: 26px;
+  padding: 0 30px;
+  min-width: 0;
+}
+.lane[role='button'] {
+  cursor: pointer;
+  transition: transform 90ms ease-out;
+}
+.lane[role='button']:active {
+  transform: scale(0.99);
+}
+.lane[role='button']:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: 2px;
+}
+.lane.wait {
+  border-color: rgba(255, 194, 77, 0.45);
+  box-shadow: 0 0 0 1px rgba(255, 194, 77, 0.18), 0 0 30px -12px var(--amber);
+}
+/* With fewer than three lanes they are taller: a larger ring and a third line for the PR. */
+.lanes:not([data-lanes='3']) .lane:not(.slim) {
+  grid-template-columns: 84px minmax(0, 1fr) 430px 200px;
+}
+.lane .lt {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.lane .lm {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  text-align: right;
+}
+.lanes.stale .lane .lt,
+.lanes.stale .lane .jr {
+  opacity: 0.55;
+}
+
+/* Free slots: slim and quiet, never full lane height. */
+.lane.slim {
+  flex: none;
+  height: 58px;
+  min-height: 58px;
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 18px;
+  border: 1px dashed rgba(255, 255, 255, 0.1);
+  border-radius: 20px;
+  background: rgba(10, 7, 28, 0.35);
+}
+.lane.slim .s {
+  color: var(--faint);
+}
+.free-dot {
+  justify-self: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+}
+
+/* The ring. */
+.lane-ring {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  color: var(--c, var(--cyan));
+}
+.lane-ring > .lane-ring-svg {
+  position: absolute;
+  inset: 0;
+}
+.lane-arc {
+  stroke: var(--c, var(--cyan));
+}
+.lane-ring > b {
+  font: 600 24px/1 var(--disp);
+  color: var(--amber);
+}
+
+/* Plan, Build, Review, PR, Live. */
+.jr {
+  display: flex;
+  align-items: flex-start;
+  width: 100%;
+}
+.jr-step {
+  display: contents;
+}
+.jn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 11px;
+  width: 30px;
+  flex: none;
+}
+.jn i {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.28);
+  box-sizing: border-box;
+}
+.jn em {
+  font: 600 14.5px/1 var(--disp);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--faint);
+  font-style: normal;
+  white-space: nowrap;
+}
+.jn.d i {
+  background: var(--cyan);
+  border-color: var(--cyan);
+  opacity: 0.5;
+}
+.jn.c i {
+  border-color: var(--cyan);
+  background: var(--cyan);
+  box-shadow: 0 0 0 5px rgba(53, 230, 234, 0.18), 0 0 18px var(--cyan);
+}
+.jn.c em {
+  color: var(--tx);
+}
+.jn.c.ready i {
+  background: var(--mint);
+  border-color: var(--mint);
+  box-shadow: 0 0 0 5px rgba(93, 242, 182, 0.18), 0 0 18px var(--mint);
+}
+.jn.c.wait i {
+  background: var(--amber);
+  border-color: var(--amber);
+  box-shadow: 0 0 0 5px rgba(255, 194, 77, 0.18), 0 0 18px var(--amber);
+}
+.jc {
+  flex: 1;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.16);
+  margin-top: 7px;
+}
+.jc.d {
+  background: var(--cyan);
+  opacity: 0.45;
+}
+
+/* Hold to merge: the concept's mint button; a hold fills it from the left. */
+.lane .btn.mint {
+  color: var(--mint);
+  border-color: rgba(93, 242, 182, 0.5);
+  background: rgba(93, 242, 182, 0.08);
+}
+.btn.hold {
+  position: relative;
+  overflow: hidden;
+  height: 58px;
+  padding: 0 22px;
+  border-radius: 18px;
+  font-size: 22px;
+  touch-action: none;
+  user-select: none;
+}
+.btn.hold:active {
+  transform: none;
+}
+.hold-fill {
+  position: absolute;
+  inset: 0;
+  transform-origin: left center;
+  transform: scaleX(0);
+  background: rgba(93, 242, 182, 0.22);
+}
+.btn.hold.holding .hold-fill {
+  transform: scaleX(1);
+  transition: transform var(--hold-ms, 600ms) linear;
+}
+.hold-text {
+  position: relative;
+}
+
+/* Shelf. */
+.shelf {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 30px;
+  height: 46px;
+  padding: 0 10px;
+  font-size: 21px;
+  color: var(--dim);
+  white-space: nowrap;
+}
+.shelf b {
+  color: var(--tx);
+  font-weight: 600;
+}
+.shelf .grow {
+  flex: 1;
+  min-width: 0;
+}
+.shelf-week {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+.shelf .bar {
+  display: block;
+  width: 170px;
+  height: 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.13);
+  overflow: hidden;
+}
+.shelf .bar > i {
+  display: block;
+  height: 100%;
+  border-radius: 8px;
+  background: var(--c, var(--cyan));
+}
+
+/* No lane at all: the focus timer and the weather, a little smaller, under the slim row. */
+.lanes-idle {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+}
+.lanes-idle > .centre-fill {
+  flex: 1;
+  min-width: 0;
+}
+.centre-fill.compact .panel {
+  padding: 18px 26px 20px;
+  gap: 10px;
+}
+.centre-fill.compact .focus .ring {
+  width: 168px;
+  height: 168px;
+}
+.centre-fill.compact .focus .ring-num {
+  font-size: 60px;
+}
+.centre-fill.compact .wx-icon svg {
+  width: 72px;
+  height: 72px;
+}
+.centre-fill.compact .wx-temp {
+  font-size: 84px;
+}
+.centre-fill.compact .wx-hours li {
+  padding: 8px 0;
+  gap: 4px;
+}
+.centre-fill.compact .wx-hours svg {
+  width: 30px;
+  height: 30px;
+}
+
+/* The fill's one quiet line about the agents, under the focus timer and the weather. */
+.centre-fill:has(> .centre-note) {
+  grid-template-rows: minmax(0, 1fr) auto;
+  row-gap: 10px;
+}
+.centre-note {
+  grid-column: 1 / -1;
+  padding: 0 10px;
+  line-height: 24px;
+}
+
+/* The ribbon's agent row: three thin rows under the calendar chips. */
+.rib .agent-row {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.rib .agent-row.stale {
+  opacity: 0.4;
+}
+.rib .sg {
+  position: absolute;
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.3);
+}
+.rib .sg.run {
+  background: var(--cyan);
+  box-shadow: 0 0 8px var(--cyan);
+}
+.rib .sg.wait {
+  background: var(--amber);
+  box-shadow: 0 0 10px var(--amber);
+}
+.rib .cap2 {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--mint);
+  margin: -2px 0 0 -3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lane[role='button'],
+  .btn.hold.holding .hold-fill {
+    transition: none;
+  }
+}

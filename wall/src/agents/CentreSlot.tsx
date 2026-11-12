@@ -1,21 +1,22 @@
+import type { ReactNode } from 'react';
 import { FocusTimer } from '../focus/FocusTimer';
 import type { WeatherState } from '../weather/useWeather';
 import { WeatherCardView } from '../weather/WeatherCard';
 import { WeatherIcon } from '../weather/WeatherIcon';
+import { Lanes } from './Lanes';
+import { agentsStale, useAgents } from './useAgents';
 
 /**
- * The Work centre zone (1290 px). Until the agent lanes land (PR 13), and whenever the
- * helper answers not configured, it shows content that fills it rather than an empty
- * "Agents" card: the focus timer at full size and the weather with today's range and
- * the next hours. Before the first weather reading, or when the first fetch fails, the
- * focus card takes the whole centre and the weather status is one line inside it. PR 13
- * changes only this file: it renders the lanes when the helper is configured and keeps
- * this fill otherwise.
+ * The fill: the focus timer at full size and the weather with today's range and the next
+ * hours. Before the first weather reading, or when the first fetch fails, the focus card
+ * takes the whole width and the weather status is one line inside it. `note` is one quiet
+ * line under it (the agents' state when the lanes cannot show).
  */
-export function CentreSlot({ weather }: { weather: WeatherState }) {
+function Fill({ weather, note, className = 'centre centre-fill' }: { weather: WeatherState; note?: ReactNode; className?: string }) {
+  const noteRow = note ? <div className="centre-note xs">{note}</div> : null;
   if (!weather.reading) {
     return (
-      <div className="centre centre-fill solo">
+      <div className={`${className} solo`}>
         <FocusTimer
           note={
             <span className="wx-status">
@@ -24,13 +25,44 @@ export function CentreSlot({ weather }: { weather: WeatherState }) {
             </span>
           }
         />
+        {noteRow}
       </div>
     );
   }
   return (
-    <div className="centre centre-fill">
+    <div className={className}>
       <FocusTimer />
       <WeatherCardView state={weather} />
+      {noteRow}
     </div>
   );
+}
+
+/**
+ * The Work centre zone (1290 px), and the one place that decides what it shows:
+ * - the helper answering (fresh, or stale with an earlier answer): the agent lanes, dimmed
+ *   with "updated N min ago" while stale (also just after the page comes back, until the
+ *   first new read returns);
+ * - the helper not set up: the fill, with one quiet line "Agents: not set up";
+ * - the helper set up but not answering, with no earlier answer (or only an answer whose own
+ *   time is over 30 minutes old): the fill, with one quiet amber line "Agents: not reachable";
+ * - before the first answer: the fill alone.
+ * Never a large empty "Agents" card.
+ */
+export function CentreSlot({ weather }: { weather: WeatherState }) {
+  const a = useAgents();
+  if (a.status === 'ready' && a.summary) {
+    return (
+      <Lanes
+        summary={a.summary}
+        stale={agentsStale(a)}
+        freshAt={a.freshAt}
+        now={a.checkedAt}
+        idle={<Fill weather={weather} className="centre-fill compact" />}
+      />
+    );
+  }
+  if (a.status === 'unconfigured') return <Fill weather={weather} note="Agents: not set up" />;
+  if (a.status === 'unreachable') return <Fill weather={weather} note={<span className="t-amber">Agents: not reachable</span>} />;
+  return <Fill weather={weather} />;
 }

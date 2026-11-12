@@ -85,9 +85,11 @@ export function useTasks(query?: TasksQuery): TasksState {
         more = typeof r?.remaining === 'number' && r.remaining > 0 ? r.remaining : 0;
       } else {
         list = await invoke<TaskItem[]>('wall2_tasks_next');
+        // As on the summary path: anything other than a list is a failed read, not an empty one.
+        if (!Array.isArray(list)) throw new Error('bad answer');
       }
       if (!mounted.current) return;
-      const fresh = (Array.isArray(list) ? list : []) as TaskItem[];
+      const fresh = list as TaskItem[];
       setRemaining(more);
       // A list fetched after a completed row was saved and faded decides that row from now on:
       // gone, or open again (reopened, or a recurring task that keeps its id).
