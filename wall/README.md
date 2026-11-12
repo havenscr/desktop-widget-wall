@@ -173,8 +173,10 @@ skyline, the lake in front. It is drawn on one canvas by `HorizonCanvas.tsx`.
 
 Every place sits on the concept's one grid (`wall/src/styles/frame.css`,
 `wall/src/screens/Frame.tsx`). `Screens.tsx` only picks the place; each place has
-its own component and stylesheet (`Work.tsx`, `Home.tsx` with `home.css`, and so on),
-so a layout change touches only that place's files.
+its own component and stylesheet (`Work.tsx` with `work.css`, `Home.tsx` with
+`home.css`, `Meet.tsx` with `meet.css`, `Unwind.tsx` with `unwind.css`), so a layout
+change touches only that place's files. The shared glass panel, type and button classes
+(`.panel`, `.k`, `.btn` and so on) still sit at the top of `work.css`.
 
 - **Shell**: inset 20, columns `88px 1fr`, gap 16 (rail, then main).
 - **Main**: rows `490px 54px 104px`, gap 16. The top band (`.top`, stage y 20 to
