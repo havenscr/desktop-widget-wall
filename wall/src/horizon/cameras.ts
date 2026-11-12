@@ -90,6 +90,18 @@ export function cameraFor(place: CameraPlace, ms: number): CameraPreset {
   return place === 'home' ? homeCameraFor(new Date(ms)) : CAMERAS[place];
 }
 
+/** Clouds move at this fraction of the horizon's speed when the camera turns. */
+export const CLOUD_PARALLAX = 0.35;
+
+/**
+ * Sideways cloud offset for a camera, in design pixels: `(221.5 - az0) * ppd * 0.35`. Zero on the
+ * Work camera (the clouds sit where they always have); as the view turns, clouds slide the same
+ * way as the land at about a third of its speed, so the move reads as a camera turning.
+ */
+export function cloudShiftFor(camera: CameraPreset): number {
+  return (CAMERAS.work.az0 - camera.az0) * camera.ppd * CLOUD_PARALLAX;
+}
+
 /** Cubic ease in and out, 0 to 1. */
 export function ease(t: number): number {
   return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;

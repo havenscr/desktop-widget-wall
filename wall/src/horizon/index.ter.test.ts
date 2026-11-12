@@ -20,3 +20,10 @@ it('passes the panorama and a 0.84 snow line for the west cameras', () => {
     expect(vi.mocked(draw).mock.lastCall![1]).toMatchObject({ ter: 'pano', snowDeg: 0.84, az0: cam.az0 });
   }
 });
+
+it('passes the cloud shift through, 0 when none is given', () => {
+  drawHorizon(stubContext(), { ...base, camera: CAMERAS.home });
+  expect(vi.mocked(draw).mock.lastCall![1].cloudShift).toBe(0);
+  drawHorizon(stubContext(), { ...base, camera: CAMERAS.home, cloudShift: 64.26 });
+  expect(vi.mocked(draw).mock.lastCall![1].cloudShift).toBe(64.26);
+});

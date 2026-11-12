@@ -2,7 +2,7 @@ import { act, cleanup, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HorizonCanvas } from './HorizonCanvas';
 import { CAMERAS, HOME_MORNING, drawHorizon } from './index';
-import type { CameraPreset } from './cameras';
+import { cloudShiftFor, type CameraPreset } from './cameras';
 import { stubContext } from './canvasStub';
 import { fitScale, STAGE_HEIGHT, STAGE_WIDTH } from '../stage/fitScale';
 import { usePlaceStore } from '../state/places';
@@ -88,6 +88,7 @@ it('draws an animated frame from the injected clock and the active place camera'
     ms: NOON,
     t: 0.1,
     phase: (0.1 * 0.32) % 1,
+    cloudShift: 0, // the Work camera: clouds where they always were
   });
 });
 
@@ -115,6 +116,7 @@ it('review URL draws one frozen still: requested camera and time, t 0, phase 0, 
     ms: Date.UTC(2026, 10, 12, 0, 0, 0),
     t: 0,
     phase: 0,
+    cloudShift: cloudShiftFor(CAMERAS.unwind),
   });
   expect(rafSpy).not.toHaveBeenCalled();
   expect(now).not.toHaveBeenCalled();
@@ -129,7 +131,7 @@ it('reduced motion draws once, no frame loop, then once a minute', () => {
   render(<HorizonCanvas now={() => NOON} />);
   expect(rafSpy).not.toHaveBeenCalled();
   expect(draw).toHaveBeenCalledTimes(1);
-  expect(draw.mock.lastCall![1]).toEqual({ ...sizes(), camera: CAMERAS.work, ms: NOON, t: 0, phase: 0 });
+  expect(draw.mock.lastCall![1]).toEqual({ ...sizes(), camera: CAMERAS.work, ms: NOON, t: 0, phase: 0, cloudShift: 0 });
   act(() => void vi.advanceTimersByTime(60_000));
   expect(draw).toHaveBeenCalledTimes(2);
 });
@@ -139,7 +141,7 @@ it('reduced motion place change draws the new camera exactly, with no glide valu
   render(<HorizonCanvas now={() => NOON} />);
   act(() => usePlaceStore.getState().setActive('home'));
   expect(draw).toHaveBeenCalledTimes(2);
-  expect(draw.mock.calls[1][1]).toEqual({ ...sizes(), camera: CAMERAS.home, ms: NOON, t: 0, phase: 0 });
+  expect(draw.mock.calls[1][1]).toEqual({ ...sizes(), camera: CAMERAS.home, ms: NOON, t: 0, phase: 0, cloudShift: cloudShiftFor(CAMERAS.home) });
   expect(draw.mock.calls[1][1].camera).toEqual(CAMERAS.home);
 });
 
@@ -522,6 +524,21 @@ describe('Home morning view', () => {
     ({ cams } = frames(ts, 32));
     expect(cams[30]).not.toBe(CAMERAS.home); // still moving at 3.1 s
     expect(cams[31]).toBe(CAMERAS.home); // arrives at 3.2 s
+  });
+
+  it('passes a cloud shift that follows the camera through the cinematic turn, the same way as the land', () => {
+    setReducedMotion(false);
+    render(<HorizonCanvas now={() => MORNING} />);
+    runFrame(100);
+    expect(draw.mock.lastCall![1].cloudShift).toBe(0);
+    act(() => usePlaceStore.getState().setActive('home'));
+    draw.mockClear();
+    const { cams } = frames(100, CINEMATIC_FRAMES);
+    const shifts = draw.mock.calls.map((c) => c[1].cloudShift!);
+    cams.forEach((cam, i) => expect(shifts[i]).toBeCloseTo((221.5 - cam.az0) * cam.ppd * 0.35, 9));
+    for (let i = 1; i < shifts.length; i++) expect(shifts[i]).toBeGreaterThanOrEqual(shifts[i - 1]); // az0 falls, so clouds slide right with the land
+    expect(shifts[22]).toBeGreaterThan(shifts[0]);
+    expect(shifts[shifts.length - 1]).toBeCloseTo((221.5 - 132) * 42 * 0.35, 9);
   });
 
   it('5:00 AM passing while Home is open plays the cinematic move (the first turn of the day)', () => {

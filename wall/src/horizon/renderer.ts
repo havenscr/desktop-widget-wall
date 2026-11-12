@@ -211,6 +211,8 @@ export interface HorizonDrawOptions {
   sunV?: number;
   /** Cloud strength multiplier (default 1). */
   clouds?: number;
+  /** Sideways cloud offset in design pixels (default 0). Clouds wrap around the stage width plus a 15 percent margin each side, so they slide in and out. */
+  cloudShift?: number;
   /** Snow strength multiplier (default 1). */
   snow?: number;
   /** Snow line in degrees before vex (default 0.84; the morning camera passes 0.86). */
@@ -254,8 +256,8 @@ export function draw(ctx:CanvasRenderingContext2D,o:HorizonDrawOptions):HorizonD
   g=ctx.createLinearGradient(0,sy-R,0,sy+R);g.addColorStop(0,css(SA));g.addColorStop(.55,css(SB));g.addColorStop(1,css(SC));ctx.fillStyle=g;ctx.beginPath();ctx.arc(sx,sy,R,0,7);ctx.fill();ctx.restore();
   if(sp.alt<8)glit={x:sx,R:R*Math.min(1,hv/R),c:SB,a:smooth(hv/(R*.7))*(1-hi)}}
  /* clouds: soft bands, lit from below when the sun is low */
- const ca=P.cl[2]*(o.clouds===undefined?1:o.clouds);
- if(ca>.02)for(let i=0;i<CLOUDS.length;i++){const c=CLOUDS[i],cx=(fr(c.u+t*c.d*.0016)*1.3-.15)*W,cy=hy*c.v,th=c.h*(1.3-c.v);
+ const ca=P.cl[2]*(o.clouds===undefined?1:o.clouds),cs=(o.cloudShift||0)/(1.3*W);
+ if(ca>.02)for(let i=0;i<CLOUDS.length;i++){const c=CLOUDS[i],cx=(fr(c.u+t*c.d*.0016+cs)*1.3-.15)*W,cy=hy*c.v,th=c.h*(1.3-c.v);
   for(let j=0;j<4;j++){const ox=(hash(i,j,81)-.5)*c.w*.8,oy=(hash(i,j,82)-.5)*th*1.1,rx=c.w*(.22+.3*hash(i,j,83)),ry=th*(.5+.5*hash(i,j,84));wisp(ctx,cx+ox,cy+oy+ry*.5,rx*.92,ry*.7,P.cl[1],ca*.5);wisp(ctx,cx+ox,cy+oy,rx,ry,P.cl[0],ca)}}
  /* the mountains */
  const N=Math.ceil(W/2)+1,cr=new Float32Array(N),ps=new Float32Array(N+1);let cmax=1;for(let i=0;i<N;i++){cr[i]=prof(TR,TR.far,az0+i*2/ppd)*k;if(cr[i]>cmax)cmax=cr[i];ps[i+1]=ps[i]+cr[i]}

@@ -4,7 +4,7 @@ import { STAGE_HEIGHT, STAGE_WIDTH, fitScale } from '../stage/fitScale';
 import { usePlaceStore } from '../state/places';
 import { useAudioStore } from '../audio/store';
 import { loudness, smoothStep } from '../audio/model';
-import { CAMERAS, HOME_MORNING, MOON, cameraFor, glideCamera, localDay, settled, startGlide, stepGlide, type CameraPreset, type Glide } from './cameras';
+import { CAMERAS, HOME_MORNING, MOON, cameraFor, cloudShiftFor, glideCamera, localDay, settled, startGlide, stepGlide, type CameraPreset, type Glide } from './cameras';
 import { echoOptions, initialEchoGate, stepEchoFade, stepEchoGate } from './echo';
 import { frameDelta, shouldDraw } from './pacing';
 import { parseReview } from './review';
@@ -93,6 +93,8 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
         ms: review ? review.ms : nowRef.current(),
         t: review ? 0 : T,
         phase: review ? 0 : (T * 0.32) % 1,
+        // Clouds turn with the camera at about a third of the land's speed.
+        cloudShift: cloudShiftFor(camera),
       };
       // The ripple never appears in the review still or under reduced motion's still frames.
       if (!still) {

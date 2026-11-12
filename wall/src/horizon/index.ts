@@ -23,6 +23,8 @@ export interface HorizonOptions {
   t?: number;
   /** Lake grid scroll phase, 0 to 1 (default 0). */
   phase?: number;
+  /** Sideways cloud offset in design pixels (default 0); see `cloudShiftFor`. */
+  cloudShift?: number;
   /** Music ripple (default off). */
   echo?: HorizonEcho | null;
   /** Moon centre x, centre y and radius in design pixels (default none). */
@@ -49,6 +51,7 @@ export function drawHorizon(ctx: CanvasRenderingContext2D, options: HorizonOptio
     ms: options.ms ?? Date.now(),
     t: options.t ?? 0,
     phase: options.phase ?? 0,
+    cloudShift: options.cloudShift ?? 0,
     echo: options.echo ?? null,
     moon: options.moon ? [options.moon[0], options.moon[1], options.moon[2]] : null,
   });
