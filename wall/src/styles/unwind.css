@@ -116,49 +116,7 @@
   opacity: 0.6;
 }
 
-/* Watt, the electric sheep. Stage coordinates, above the horizon canvas, below the panels. */
-.watt {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  animation: watt-in 600ms ease 800ms backwards;
-}
-.watt-sheep {
-  position: absolute;
-  left: 0;
-  top: 0;
-  transform-origin: 50% 100%;
-  filter: drop-shadow(0 0 10px rgba(180, 160, 255, 0.35));
-}
-.watt-sheep svg {
-  display: block;
-}
-.watt-note,
-.watt-z {
-  position: absolute;
-  opacity: 0;
-  color: var(--mag);
-  line-height: 1;
-}
-.watt-note.cy {
-  color: var(--cyan);
-}
-.watt-z {
-  font: 600 22px/1 var(--disp);
-  color: #dcd3fb;
-}
-.watt-z.sm {
-  font-size: 16px;
-}
-@keyframes watt-in {
-  from {
-    opacity: 0;
-  }
-}
 @media (prefers-reduced-motion: reduce) {
-  .watt {
-    animation: none;
-  }
   .u-rd {
     transition: none;
   }
