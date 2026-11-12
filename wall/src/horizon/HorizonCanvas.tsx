@@ -4,13 +4,16 @@ import { STAGE_HEIGHT, STAGE_WIDTH, fitScale } from '../stage/fitScale';
 import { usePlaceStore } from '../state/places';
 import { useAudioStore } from '../audio/store';
 import { loudness, smoothStep } from '../audio/model';
-import { CAMERAS, MOON, glideCamera, settled, startGlide, stepGlide, type Glide } from './cameras';
+import { CAMERAS, MOON, cameraFor, glideCamera, settled, startGlide, stepGlide, type CameraPreset, type Glide } from './cameras';
+import { startFade, stepFade, type Fade } from './crossfade';
 import { echoOptions, stepEchoFade } from './echo';
 import { frameDelta, shouldDraw } from './pacing';
 import { parseReview } from './review';
 import { drawHorizon, type HorizonOptions } from './index';
 
 const REDRAW_MS = 60_000;
+/** Home's morning rule is re-checked this often. */
+const MORNING_CHECK_MS = 60_000;
 
 /**
  * Canvas filling the stage. Backing store = stage scale x devicePixelRatio.
@@ -18,6 +21,9 @@ const REDRAW_MS = 60_000;
  */
 export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
   const ref = useRef<HTMLCanvasElement>(null);
+  // Second layer, under the main canvas: the old terrain while a cross-fade runs, hidden otherwise.
+  const oldRef = useRef<HTMLCanvasElement>(null);
+  const fadeRef = useRef<Fade | null>(null);
   const active = usePlaceStore((s) => s.active);
   // Zen covers the stage with flames, so the canvas is not drawn then. It keeps the last camera
   // and glides from there to wherever the user goes next.
@@ -26,7 +32,7 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
   const reduced = useReducedMotion();
   // Review hook: dev builds only, `?hz=<place>&at=<ISO time>` draws one frozen frame.
   const [review] = useState(() => (import.meta.env.DEV ? parseReview(window.location.search) : null));
-  const glide = useRef<Glide>(settled(CAMERAS[review?.place ?? place ?? 'work']));
+  const glide = useRef<Glide>(settled(cameraFor(review?.place ?? place ?? 'work', review ? review.ms : now())));
   const repaint = useRef<() => void>(() => {});
   const first = useRef(true);
   // The ripple fade (0 to 1) follows `playing`.
@@ -37,6 +43,33 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
   useEffect(() => {
     nowRef.current = now;
   }, [now]);
+  const reducedRef = useRef(reduced);
+  useEffect(() => {
+    reducedRef.current = reduced;
+  }, [reduced]);
+
+  /**
+   * Point the camera at `target`. Same terrain: the usual glide. A different terrain cannot be
+   * blended, so the old view stays on the lower layer while the new one fades in over it
+   * (instantly when motion is reduced). Returns true when something changed on screen at once.
+   */
+  const retarget = (target: CameraPreset, instant: boolean) => {
+    // Start from the composite on screen: during a fade, whichever layer is more visible
+    // becomes the old layer, so nothing pops when the fade is retargeted.
+    const running = fadeRef.current;
+    const oldWins = running !== null && running.progress < 0.5;
+    const from = oldWins ? running.camera : glideCamera(glide.current);
+    const moon = oldWins ? running.moon : glide.current.progress >= 1 && glide.current.to === CAMERAS.unwind;
+    const fade = startFade(from, target, instant, moon);
+    if (fade) {
+      fadeRef.current = fade;
+      glide.current = settled(target);
+    } else {
+      fadeRef.current = null;
+      glide.current = startGlide(oldWins ? settled(from) : glide.current, target, instant);
+    }
+    if (instant) repaint.current();
+  };
 
   // Drawing: an animated 30 fps loop, or a single frame (a still frame once a minute when motion is reduced).
   useEffect(() => {
@@ -59,6 +92,38 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
       const camera = glideCamera(glide.current);
+      const xfade = fadeRef.current;
+      const oldCanvas = oldRef.current;
+      const oldCtx = xfade && oldCanvas ? oldCanvas.getContext('2d') : null;
+      if (oldCanvas) {
+        if (xfade && oldCtx) {
+          if (oldCanvas.width !== width || oldCanvas.height !== height) {
+            oldCanvas.width = width;
+            oldCanvas.height = height;
+          }
+          oldCanvas.style.display = '';
+          canvas.style.opacity = String(xfade.progress);
+          const oldOptions: HorizonOptions = {
+            width,
+            height,
+            scale,
+            camera: xfade.camera,
+            ms: nowRef.current(),
+            t: T,
+            phase: (T * 0.32) % 1,
+            ...(xfade.moon ? { moon: MOON } : {}),
+          };
+          // The ripple keeps playing in the old view, with the old camera's shape and the same fade and loudness.
+          if (!still) {
+            const oldEcho = echoOptions(xfade.camera, fade.current, loud.current, T);
+            if (oldEcho) oldOptions.echo = oldEcho;
+          }
+          drawHorizon(oldCtx, oldOptions);
+        } else {
+          oldCanvas.style.display = 'none';
+          canvas.style.opacity = '';
+        }
+      }
       const options: HorizonOptions = {
         width,
         height,
@@ -89,15 +154,20 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
       loud.current = smoothStep(loud.current, loudness(useAudioStore.getState()), dt);
       fade.current = stepEchoFade(fade.current, useAudioStore.getState().playing, dt);
       glide.current = stepGlide(glide.current, dt);
+      if (fadeRef.current) fadeRef.current = stepFade(fadeRef.current, dt);
       paint();
     };
 
+    // Reduced motion shows the cameras without a glide or a fade, so settle both before the first
+    // still paint; a half-faded composite would otherwise stay up until the next redraw.
+    if (still) {
+      glide.current = settled(glide.current.to);
+      fadeRef.current = null;
+    }
     paint();
     window.addEventListener('resize', paint);
     let timer = 0;
     if (still) {
-      // Reduced motion shows the cameras without a glide, so snap any glide in progress.
-      glide.current = settled(glide.current.to);
       if (!review) timer = window.setInterval(paint, REDRAW_MS);
       // Also in review mode: a frame skipped while hidden is drawn when the page shows.
       document.addEventListener('visibilitychange', paint);
@@ -111,6 +181,11 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
       cancelAnimationFrame(raf);
     };
   }, [reduced, review, zen]);
+
+  // Zen covers the stage: hide the old layer too (paint is not running then), like the main canvas.
+  useEffect(() => {
+    if (zen && oldRef.current) oldRef.current.style.display = 'none';
+  }, [zen]);
 
   // Hidden pages start the ripple from nothing when they return, never from stale levels.
   useEffect(() => {
@@ -137,10 +212,25 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
     }
     if (review || place === null) return;
     // Back from Zen to the camera already showing: nothing to glide (the moon stays on Unwind).
-    if (glide.current.to === CAMERAS[place] && glide.current.progress >= 1) return;
-    glide.current = startGlide(glide.current, CAMERAS[place], reduced);
-    if (reduced) repaint.current();
+    const target = cameraFor(place, nowRef.current());
+    if (glide.current.to === target && glide.current.progress >= 1) return;
+    retarget(target, reduced);
   }, [place, reduced, review]);
 
-  return <canvas ref={ref} className="horizon-canvas" aria-hidden="true" style={zen ? { display: 'none' } : undefined} />;
+  // Home's camera follows the hour: look again once a minute, so 5:00 AM and 11:30 AM take effect while it is open.
+  useEffect(() => {
+    if (review || place !== 'home') return;
+    const timer = window.setInterval(() => {
+      const target = cameraFor('home', nowRef.current());
+      if (glide.current.to !== target) retarget(target, reducedRef.current);
+    }, MORNING_CHECK_MS);
+    return () => window.clearInterval(timer);
+  }, [place, review]);
+
+  return (
+    <>
+      <canvas ref={ref} className="horizon-canvas" aria-hidden="true" style={zen ? { display: 'none' } : undefined} />
+      <canvas ref={oldRef} className="horizon-canvas horizon-canvas-old" aria-hidden="true" style={{ display: 'none' }} />
+    </>
+  );
 }
