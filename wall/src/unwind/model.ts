@@ -4,10 +4,13 @@ import type { WeatherReading } from '../weather/model';
 /** Day names by `getDay()`; plain local time, so the line follows the zone the wall runs in. */
 const WEEKDAY = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
+/** Until this local hour the night still belongs to the day before (date line and Tomorrow). */
+export const NIGHT_ENDS_HOUR = 5;
+
 /** "morning", "afternoon", "evening" or "night" for the local hour of `d`. */
 export function dayPart(d: Date): 'morning' | 'afternoon' | 'evening' | 'night' {
   const h = d.getHours();
-  if (h >= 5 && h < 12) return 'morning';
+  if (h >= NIGHT_ENDS_HOUR && h < 12) return 'morning';
   if (h >= 12 && h < 17) return 'afternoon';
   if (h >= 17 && h < 21) return 'evening';
   return 'night';
@@ -19,10 +22,20 @@ export function dayPart(d: Date): 'morning' | 'afternoon' | 'evening' | 'night' 
  */
 export function dateLine(d: Date, reading: Pick<WeatherReading, 'temp' | 'look'> | null): string {
   const day = new Date(d.getTime());
-  if (d.getHours() < 5) day.setDate(day.getDate() - 1);
+  if (d.getHours() < NIGHT_ENDS_HOUR) day.setDate(day.getDate() - 1);
   const head = `${WEEKDAY[day.getDay()]} ${dayPart(d)}`;
   if (!reading || !Number.isFinite(reading.temp)) return head;
   return `${head}, ${Math.round(reading.temp)}° and ${reading.look.label.toLowerCase()}`;
+}
+
+/** A weather reading older than this is left off the date line. */
+export const WEATHER_FRESH_MS = 60 * 60_000;
+
+/** The reading when it was fetched under an hour before `nowMs`, otherwise null. */
+export function freshReading<T extends Pick<WeatherReading, 'fetchedAt'>>(reading: T | null, nowMs: number): T | null {
+  if (!reading || !Number.isFinite(reading.fetchedAt)) return null;
+  const age = nowMs - reading.fetchedAt;
+  return age >= 0 && age < WEATHER_FRESH_MS ? reading : null;
 }
 
 /** Local midnight at the start of the day after the one holding `now`. */
@@ -40,10 +53,21 @@ export function tomorrowTime(ms: number): string {
   return h < 12 ? t : `${t} PM`;
 }
 
-/** The first event that starts on or after the coming midnight, or null. */
-export function firstTomorrow(events: readonly DayEvent[], now: number): DayEvent | null {
+/**
+ * The span "Tomorrow" covers, by local calendar date. After 5 AM it is the next local day
+ * (midnight to midnight, so 23 or 25 hours on a clock change). Between midnight and 5 AM,
+ * while the date line still says the previous day's night, it is the day that has just
+ * begun, from now to its end.
+ */
+export function tomorrowSpan(now: number): { from: number; to: number } {
+  if (new Date(now).getHours() < NIGHT_ENDS_HOUR) return { from: now, to: nextMidnight(now) };
   const from = nextMidnight(now);
-  const to = from + 24 * 3_600_000;
+  return { from, to: nextMidnight(from) };
+}
+
+/** The first event that starts inside `tomorrowSpan(now)`, or null. */
+export function firstTomorrow(events: readonly DayEvent[], now: number): DayEvent | null {
+  const { from, to } = tomorrowSpan(now);
   let best: DayEvent | null = null;
   let bestMs = Infinity;
   for (const e of events) {
@@ -59,22 +83,33 @@ export function firstTomorrow(events: readonly DayEvent[], now: number): DayEven
 
 /** The part of `wall2_omni_summary` the status line reads. */
 export interface StatusSummary {
+  stale?: boolean;
   lanes: ReadonlyArray<{ state: string }>;
   yourMove: { total: number };
 }
 
+/** The focus timer as the status line sees it: not loaded yet, a session on, or none. */
+export type FocusSeen = 'unknown' | 'on' | 'off';
+
 /**
- * "Work is put away. 2 agents still running. Nothing needs you." A focus session still
- * on says so instead of the first sentence. Without the helper the agent and needs-you
- * parts are left out, since there is nothing to say them from.
+ * "Work is put away. 2 agents still running. Nothing needs you." The first sentence needs
+ * the focus store loaded: a session running or paused says "Focus is still on.", and
+ * before it has loaded nothing is said about it. The agent and needs-you sentences need a
+ * current helper summary: without the helper, or when it says its data is stale, they are
+ * left out, and so is a needs-you count that is not a number.
  */
-export function statusLine(focusOn: boolean, summary: StatusSummary | null): string {
-  const parts = [focusOn ? 'Focus is still on.' : 'Work is put away.'];
-  if (summary) {
+export function statusLine(focus: FocusSeen, summary: StatusSummary | null): string {
+  const parts: string[] = [];
+  if (focus === 'on') parts.push('Focus is still on.');
+  else if (focus === 'off') parts.push('Work is put away.');
+  if (summary && summary.stale !== true) {
     const running = summary.lanes.filter((l) => l.state === 'working').length;
     if (running > 0) parts.push(`${running} ${running === 1 ? 'agent' : 'agents'} still running.`);
-    const asks = Math.max(0, Math.floor(summary.yourMove.total));
-    parts.push(asks === 0 ? 'Nothing needs you.' : asks === 1 ? 'One thing needs you.' : `${asks} things need you.`);
+    const total = summary.yourMove.total;
+    if (typeof total === 'number' && Number.isFinite(total) && total >= 0) {
+      const asks = Math.floor(total);
+      parts.push(asks === 0 ? 'Nothing needs you.' : asks === 1 ? 'One thing needs you.' : `${asks} things need you.`);
+    }
   }
   return parts.join(' ');
 }
@@ -89,19 +124,27 @@ export interface AudioSession {
 
 const squash = (s: string) => s.toLowerCase().replace(/\.exe$/, '').replace(/[^a-z0-9]/g, '');
 
-/** Process names for the source labels `get_now_playing` gives that do not match their process. */
-const PROCESS_FOR: Record<string, string> = { edge: 'msedge', groovemusic: 'music', applemusic: 'applemusic' };
+/**
+ * Process names (normalised) for the source labels `get_now_playing` gives that are not
+ * their own process name. Any other label must equal the process name exactly.
+ */
+const PROCESSES_FOR: Record<string, readonly string[]> = {
+  edge: ['msedge'],
+  groovemusic: ['musicui'],
+  applemusic: ['applemusic', 'itunes'],
+};
 
 /**
- * The audio session of the app that is playing, matched by name ("Spotify" to
- * "Spotify.exe", "Edge" to "msedge.exe"), or null when none matches.
+ * The audio session of the app that is playing, by exact normalised process name
+ * ("Spotify" to "Spotify.exe") or the alias table ("Edge" to "msedge.exe"); null when none
+ * matches. Never a partial match, so one music app is never taken for another.
  */
 export function playingSession(sessions: readonly AudioSession[], sourceApp: string | null | undefined): AudioSession | null {
   if (!sourceApp) return null;
   const src = squash(sourceApp);
   if (!src) return null;
-  const want = PROCESS_FOR[src] ?? src;
-  return sessions.find((s) => squash(s.name) === want) ?? sessions.find((s) => squash(s.name).includes(want)) ?? null;
+  const want = PROCESSES_FOR[src] ?? [src];
+  return sessions.find((s) => want.includes(squash(s.name))) ?? null;
 }
 
 /** A slider value clamped to 0..1 (anything not a number is 0). */
