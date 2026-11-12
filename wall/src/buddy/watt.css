@@ -1,0 +1,36 @@
+/* Watt, the electric sheep. Stage coordinates, above the horizon canvas and the veil, below
+   the panels. Its opacity and position are set each frame by Watt.tsx (buddy/model.ts). */
+.watt {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  /* Unseen until the first paint; Watt.tsx fades it in once the horizon has settled. */
+  opacity: 0;
+}
+.watt-sheep {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 50% 100%;
+  filter: drop-shadow(0 0 7px rgba(53, 230, 234, 0.5));
+}
+.watt-sheep svg {
+  display: block;
+}
+.watt-note,
+.watt-z {
+  position: absolute;
+  opacity: 0;
+  color: var(--mag);
+  line-height: 1;
+}
+.watt-note.cy {
+  color: var(--cyan);
+}
+.watt-z {
+  font: 600 22px/1 var(--disp);
+  color: #dcd3fb;
+}
+.watt-z.sm {
+  font-size: 16px;
+}

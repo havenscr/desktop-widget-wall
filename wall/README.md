@@ -495,11 +495,33 @@ frame (no ribbon) in the wide zones `470px 1fr 540px`. The parts are in `wall/sr
   app reads (PR 24). Not set up or not reachable shrinks the card to one line. The Live now
   card (PR 27) will stack above it; until then nothing holds its place.
 
-Watt (`wall/src/buddy/`) is the electric sheep, shown on Unwind only, drawn as SVG pixels
-above the horizon canvas. It walks slowly between x 960 and 1220 on the Unwind horizon
-line, sleeps with drifting z's between 9:30 PM and 6:30 AM local time, and shows little
-notes while music plays (awake only). It pauses while hidden. Under reduced motion it is a
-still pose with nothing drifting. The pixel maps in `sprites.ts` are the concept's own.
+Watt (`wall/src/buddy/`) is the electric sheep on the horizon band of every place that has
+one: Work, Home, Meet (hidden during a call, once the in-call pull request detects one) and
+Unwind. Not on Zen (Dream draws its own sleeping Watt). `App.tsx` mounts it once, over the
+horizon canvas and the veil and under the panels; its styles are `buddy/watt.css`.
+
+- Walk table (`WALKS` in `buddy/model.ts`, left edge range and sprite pixel size): Work and
+  Meet 880 to 1090 at 4 px, Home 1506 to 1726 at 5 px, Unwind 430 to 470 at 6 px (the body
+  between about x 430 and 580, the concept's spot in `f_unwind`, below the wind down block and
+  left of the transport row). The feet stand on the camera's `hy` (582 on Work, Home and Meet,
+  505 on Unwind). `model.test.ts` builds the rail, zone and ribbon rectangles from
+  `screens/frameLayout.ts` (plus Unwind's transport row, `UNWIND_ROW`) and checks that no range
+  (every pose, notes and z's included) reaches one at 2560 by 720.
+- Pace: it stands 20 to 40 seconds at each stop, then walks slowly (14 px a second) to the
+  next; it starts standing in the middle of the range.
+- It is up only while the horizon's camera is settled on its place. `horizon/signal.ts` is a
+  small read-only signal the horizon publishes (the camera it is on or heading to, and whether
+  it is moving); Watt hides whenever the camera moves or points somewhere other than the camera
+  Watt expects for its place and hour. So a place change, a quick reversal, the 5:00 AM
+  cinematic turn to Rainier and the 11:30 AM swing back all fade it out where it stands, and it
+  fades in at the new spot once the camera has settled. It never walks across the screen.
+- It sleeps in the middle of its range with drifting z's between 9:30 PM and 6:30 AM local
+  time (fading out and back in at both changes), and shows little notes beside its head while
+  music plays (awake only). Night and Home's camera are worked out once a minute. The frame
+  loop reuses its records, pauses while hidden, and does not run on Zen or in a call. Under
+  reduced motion (and in a dev review still) it is a still pose in the middle of the range
+  with nothing drifting, and it jumps on a place change. The pixel maps in `sprites.ts` are
+  the concept's own.
 
 ## Home feeds (task card and network tile)
 
