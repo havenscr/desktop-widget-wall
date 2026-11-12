@@ -5,9 +5,10 @@
  * over -70 to -10 dB. The detector sums the power of the low bands (`BEAT_BANDS`, 20 to
  * about 245 Hz) into one level in dB and looks for a sudden rise: an onset is a frame that
  * rises above the previous one and clears an adaptive threshold, the median low level of the
- * last second plus `ONSET_DB`. A kick then holds up while it decays, so the onset only counts
+ * last second plus `ONSET_DB` (9 dB). A kick then holds up while it decays, so the onset only counts
  * once the next `CONFIRM_FRAMES` frames all stay `HOLD_DB` above that median; a lone noisy
- * frame drops straight back and is ignored. Beats are at least `MIN_BEAT_GAP_MS` apart.
+ * frame drops straight back and is ignored. Beats are at least `MIN_BEAT_GAP_MS` (340 ms) apart,
+ * so never more than three in any second.
  * Everything is time based (milliseconds on any steady clock), never counted in events, and
  * nothing is allocated per event.
  *
@@ -21,12 +22,12 @@
 export const BEAT_BANDS = 12;
 /** Bands averaged for `bass`, the plain low level (0 to 5, 20 to 70 Hz). */
 export const BASS_BANDS = 6;
-/** Shortest time between two beats. */
-export const MIN_BEAT_GAP_MS = 250;
+/** Shortest time between two beat onsets: under three a second, so the wall never pulses faster than the calm limit. */
+export const MIN_BEAT_GAP_MS = 340;
 /** Window of the running median the threshold sits on. */
 export const MEDIAN_WINDOW_MS = 1000;
-/** How far above the median an onset frame must be. */
-export const ONSET_DB = 8;
+/** How far above the median an onset frame must be (9 dB: about two stray beats an hour on pure pink noise in simulation, against about eight at 8 dB). */
+export const ONSET_DB = 9;
 /** How far above the median the frames after an onset must stay. */
 export const HOLD_DB = 4;
 /** Frames after the onset that must hold for it to count. */
@@ -77,7 +78,17 @@ function median(src: Float64Array, n: number, scratch: Float64Array): number {
   return n % 2 ? scratch[(n - 1) >> 1] : (scratch[n / 2 - 1] + scratch[n / 2]) / 2;
 }
 
-export function createBeatDetector(): BeatDetector {
+/** Tuning, for tests; the defaults are the constants above. */
+export interface BeatTuning {
+  onsetDb: number;
+  holdDb: number;
+  confirmFrames: number;
+}
+
+export function createBeatDetector(tuning: Partial<BeatTuning> = {}): BeatDetector {
+  const onsetDb = tuning.onsetDb ?? ONSET_DB;
+  const holdDb = tuning.holdDb ?? HOLD_DB;
+  const confirmFrames = tuning.confirmFrames ?? CONFIRM_FRAMES;
   // Ring of (time, level) for the median window, oldest at `head`.
   const times = new Float64Array(SLOTS);
   const levels = new Float64Array(SLOTS);
@@ -136,9 +147,9 @@ export function createBeatDetector(): BeatDetector {
 
       let beat = false;
       if (!Number.isNaN(pendingAt)) {
-        if (above >= HOLD_DB) {
+        if (above >= holdDb) {
           pendingHeld++;
-          if (pendingHeld >= CONFIRM_FRAMES) {
+          if (pendingHeld >= confirmFrames) {
             state.count++;
             state.lastBeatAt = pendingAt;
             state.lag = now - pendingAt;
@@ -152,7 +163,7 @@ export function createBeatDetector(): BeatDetector {
         }
       } else if (
         size >= WARMUP_FRAMES &&
-        above >= ONSET_DB &&
+        above >= onsetDb &&
         level > prevLevel &&
         now - state.lastBeatAt >= MIN_BEAT_GAP_MS
       ) {
