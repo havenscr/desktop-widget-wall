@@ -59,7 +59,7 @@ it('shows working, then a check for 2 seconds, and remembers the mood', async ()
   await flush();
   expect(container.querySelector('.mood-btn.done')).toBeTruthy();
   expect(localStorage.getItem(LAST_MOOD_KEY)).toBe('evening');
-  await flush(1999 - 0);
+  await flush(1999);
   expect(container.querySelector('.mood-btn.done')).toBeTruthy();
   await flush(1);
   expect(container.querySelector('.mood-btn.done')).toBeNull();
