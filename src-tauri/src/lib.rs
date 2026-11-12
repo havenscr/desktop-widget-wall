@@ -3684,6 +3684,8 @@ pub fn run() {
             wall2_feeds::wall2_tasks_next,
             wall2_feeds::wall2_task_done,
             wall2_feeds::wall2_home_security,
+            wall2_feeds::wall2_links,
+            wall2_feeds::wall2_open_link,
             list_audio_devices,
             start_audio_capture,
             stop_audio_capture,

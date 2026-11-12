@@ -307,8 +307,8 @@
   right: 0;
   top: 380px;
   width: 596px;
-  height: 200px;
-  gap: 12px;
+  height: 296px;
+  gap: 10px;
 }
 .net-status {
   display: flex;
@@ -332,6 +332,30 @@
 .net-dot.bad {
   background: var(--red);
   box-shadow: 0 0 14px 0 rgba(255, 77, 109, 0.6);
+}
+
+.net-links {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.net-link {
+  min-height: 72px;
+  min-width: 72px;
+  padding: 0 20px;
+  background: none;
+  border: 0;
+  color: var(--cyan, inherit);
+  font: inherit;
+  font-size: 22px;
+  cursor: pointer;
+}
+.net-link:active {
+  opacity: 0.6;
+}
+.net-link:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
 }
 
 /* Music */
