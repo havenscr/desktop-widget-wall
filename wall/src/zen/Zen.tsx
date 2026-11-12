@@ -59,7 +59,11 @@ function Waiting() {
  * into Dream; a tap wakes it. Separate from the focus timer and from Do Not Disturb.
  */
 export function Zen({ nowMs = Date.now }: ZenProps) {
-  const [dream, setDream] = useState(() => isDreamTime(new Date(nowMs())));
+  // Unwind's Dream tab opens Zen straight into Dream; otherwise Dream only at night.
+  const [dream, setDream] = useState(() => usePlaceStore.getState().zenDream || isDreamTime(new Date(nowMs())));
+  useEffect(() => {
+    usePlaceStore.getState().takeZenDream();
+  }, []);
   const [minutes, setMinutes] = useState<SessionMinutes>(5);
   const [startedAt, setStartedAt] = useState<number | null>(null);
   // Set when a tap woke Zen at night, so the night rule does not put it straight back to sleep.
