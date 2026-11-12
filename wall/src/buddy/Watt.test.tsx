@@ -79,3 +79,21 @@ it('stops its frame loop on unmount', () => {
   unmount();
   expect(frames.size).toBe(0);
 });
+
+it('does not paint while hidden under reduced motion, and paints once visible again', () => {
+  reduced(true);
+  vi.useFakeTimers();
+  const clock = vi.fn(day);
+  const hide = (h: boolean) => {
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => h });
+    document.dispatchEvent(new Event('visibilitychange'));
+  };
+  render(<Watt now={clock} />);
+  const afterFirst = clock.mock.calls.length;
+  hide(true);
+  act(() => void vi.advanceTimersByTime(180_000));
+  expect(clock.mock.calls.length).toBe(afterFirst);
+  hide(false);
+  expect(clock.mock.calls.length).toBeGreaterThan(afterFirst);
+  vi.useRealTimers();
+});

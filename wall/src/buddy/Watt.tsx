@@ -60,6 +60,7 @@ function Scene({ now }: { now: () => Date }) {
     const hy = CAMERAS.unwind.hy;
 
     const paint = () => {
+      if (document.hidden) return;
       const f = buddyFrame(nowRef.current(), T, playingRef.current, reduced);
       if (f.pose !== poseRef.current) {
         poseRef.current = f.pose;
