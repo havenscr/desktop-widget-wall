@@ -102,6 +102,11 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
     };
   }, [reduced, review]);
 
+  // Review mode: make the rail and screen match the requested place too.
+  useEffect(() => {
+    if (review) usePlaceStore.getState().setActive(review.place);
+  }, [review]);
+
   // Switching places glides the camera (or jumps, when motion is reduced).
   useEffect(() => {
     if (first.current) {

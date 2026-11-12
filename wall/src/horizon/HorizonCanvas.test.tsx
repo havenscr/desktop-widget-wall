@@ -205,3 +205,11 @@ it('review mode repaints when the page becomes visible after a hidden start', ()
   expect(draw).toHaveBeenCalledTimes(1);
   expect(draw.mock.lastCall![1]).toMatchObject({ camera: CAMERAS.home, ms: Date.UTC(2026, 10, 11, 16), t: 0, phase: 0 });
 });
+
+it('review mode sets the active place in the store so the rail and screen match', () => {
+  setReducedMotion(false);
+  window.history.replaceState(null, '', '/?hz=home&at=2026-11-11T16:00:00Z');
+  expect(usePlaceStore.getState().active).toBe('work');
+  render(<HorizonCanvas now={() => 0} />);
+  expect(usePlaceStore.getState().active).toBe('home');
+});
