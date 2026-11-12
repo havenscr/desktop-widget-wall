@@ -214,17 +214,49 @@ it('the status hooks say nothing for an answer the helper marks stale', async ()
   expect(waiting.result.current).toBe(false);
 });
 
-it('an answer whose own time is over 30 minutes old counts as not reachable', async () => {
-  answer = () => summary({ now: new Date(Date.now() - KEEP_STALE_MS - 60_000).toISOString() });
+const HOUR = 3_600_000;
+
+it('a helper clock 2 hours behind or 2 hours ahead of this PC still shows the lanes, and they stay', async () => {
+  for (const skew of [-2 * HOUR, 2 * HOUR]) {
+    resetAgents();
+    answer = () => summary({ now: new Date(Date.now() + skew).toISOString() });
+    const { result, unmount } = renderHook(() => useAgents());
+    await flush();
+    expect(result.current.status).toBe('ready');
+    expect(result.current.skewMs).toBe(skew);
+    await flush(KEEP_STALE_MS + 5 * POLL_MS);
+    expect(result.current.status).toBe('ready');
+    expect(result.current.summary).not.toBeNull();
+    unmount();
+  }
+});
+
+it('a helper whose own time stops moving for over 30 minutes is not reachable, and comes back when it moves', async () => {
+  // The helper is an hour behind and then freezes.
+  const frozen = new Date(Date.now() - HOUR).toISOString();
+  answer = () => summary({ now: frozen });
   const { result } = renderHook(() => useAgents());
   await flush();
+  expect(result.current.status).toBe('ready');
+  await flush(KEEP_STALE_MS - POLL_MS);
+  expect(result.current.status).toBe('ready');
+  await flush(2 * POLL_MS);
   expect(result.current.status).toBe('unreachable');
   expect(result.current.summary).toBeNull();
-  answer = () => summary({ now: new Date(Date.now() - KEEP_STALE_MS + 60_000).toISOString() });
+  // Still frozen: still not reachable.
+  await flush(POLL_MS);
+  expect(result.current.status).toBe('unreachable');
+  // It moves again (still an hour behind): the lanes come back.
+  answer = () => summary({ now: new Date(Date.now() - HOUR).toISOString() });
   await flush(POLL_MS);
   expect(result.current.status).toBe('ready');
+  expect(result.current.summary).not.toBeNull();
+});
+
+it('a summary whose time is not a time is a failed read', async () => {
   answer = () => summary({ now: 'not a time' });
-  await flush(POLL_MS);
+  const { result } = renderHook(() => useAgents());
+  await flush();
   expect(result.current.status).toBe('unreachable');
 });
 

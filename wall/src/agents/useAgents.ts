@@ -24,6 +24,15 @@ export interface AgentsState {
   checkedAt: number;
   /** The page came back after a while: `summary` is kept but old until the next read returns. */
   awaiting: boolean;
+  /** The helper's own `now` in its last answer (its clock, never compared with this PC's). */
+  helperNow: number | null;
+  /** This PC's time when the helper's `now` last moved forward. */
+  helperMovedAt: number | null;
+  /**
+   * The helper's clock minus this PC's, worked out when the last answer arrived. Helper times
+   * minus this are on the PC's clock, so a skewed clock cannot shift the ribbon.
+   */
+  skewMs: number;
 }
 
 const initial = (): AgentsState => ({
@@ -34,6 +43,9 @@ const initial = (): AgentsState => ({
   okAt: null,
   checkedAt: Date.now(),
   awaiting: false,
+  helperNow: null,
+  helperMovedAt: null,
+  skewMs: 0,
 });
 
 /**
@@ -77,13 +89,21 @@ async function read(): Promise<void> {
     const s = normalizeSummary(raw);
     if (!s) throw new Error('failed');
     const now = Date.now();
-    // An answer whose own time is over 30 minutes old is no better than no answer.
-    const dataAt = Date.parse(s.now);
-    if (!Number.isFinite(dataAt) || now - dataAt > KEEP_STALE_MS) {
-      useAgentsStore.setState({ ...initial(), status: 'unreachable', readFailed: true, checkedAt: now });
+    const helperNow = Date.parse(s.now);
+    if (!Number.isFinite(helperNow)) throw new Error('failed');
+    // A helper whose own clock has not moved for 30 minutes of this PC's time is frozen: no
+    // better than no answer. The two clocks are never compared, so a skew of any size is
+    // fine; the first answer is always accepted.
+    const prev = useAgentsStore.getState();
+    const moved = prev.helperNow === null || prev.helperMovedAt === null || helperNow > prev.helperNow;
+    const helperMovedAt = moved ? now : (prev.helperMovedAt as number);
+    const clock = { helperNow: moved ? helperNow : prev.helperNow, helperMovedAt, skewMs: helperNow - now };
+    if (now - helperMovedAt > KEEP_STALE_MS) {
+      useAgentsStore.setState({ ...initial(), ...clock, status: 'unreachable', readFailed: true, checkedAt: now });
       return;
     }
     useAgentsStore.setState((st) => ({
+      ...clock,
       status: 'ready',
       summary: s,
       readFailed: false,
@@ -147,7 +167,8 @@ export function resetAgents(): void {
  * read when the first one mounts, then every 15 seconds while the page is visible and at
  * least one is mounted. Nothing is read while hidden. One read at a time; a read that takes
  * over 10 seconds counts as failed. A failed read keeps the last answer, marked stale, for
- * up to 30 minutes; an answer whose own time is older than that counts as not reachable.
+ * up to 30 minutes; a helper whose own `now` has not moved for 30 minutes of this PC's
+ * time counts as not reachable (the two machines' clocks are never compared).
  * Coming back after a while marks the kept answer stale until the first new read returns.
  */
 export function useAgents(): AgentsState {
