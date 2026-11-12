@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { useReducedMotion } from '../ui/useReducedMotion';
+import { useIdle } from '../ui/useIdle';
+import { wantsDemo } from '../audio/capture';
 import { STAGE_HEIGHT, STAGE_WIDTH, fitScale } from '../stage/fitScale';
 import { usePlaceStore } from '../state/places';
-import { audioBeats, useAudioStore } from '../audio/store';
+import { audioBeats, pauseBandHistory, useAudioStore } from '../audio/store';
 import { loudness, smoothStep } from '../audio/model';
 import { CAMERAS, HOME_MORNING, MOON, cameraFor, cloudShiftFor, glideCamera, localDay, settled, startGlide, stepGlide, type CameraPreset, type Glide } from './cameras';
-import { echoOptions, initialEchoGate, stepEchoFade, stepEchoGate } from './echo';
+import { createEchoSampler, echoOptions, echoRate, initialEchoGate, stepEchoFade, stepEchoGate } from './echo';
 import { frameDelta, shouldDraw } from './pacing';
 import { clearGridPulse, createGridPulse, stepGridPulse } from './pulse';
 import { parseReview } from './review';
@@ -30,6 +32,18 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
   const reduced = useReducedMotion();
   // Review hook: dev builds only, `?hz=<place>&at=<ISO time>` draws one frozen frame.
   const [review] = useState(() => (import.meta.env.DEV ? parseReview(window.location.search) : null));
+  // With `?audio=demo` (dev only) a review URL keeps its frozen camera and sky but animates, so the
+  // echo and the grid pulse can be seen and captured against the demo levels.
+  const [demo] = useState(() => wantsDemo(window.location.search));
+  // Display idle or off (no input for 4 minutes, screens off, locked): the echo fades away and the
+  // band history stops, so nothing is computed for it while nobody is looking.
+  const idle = useIdle();
+  const idleRef = useRef(idle);
+  useEffect(() => {
+    idleRef.current = idle;
+    pauseBandHistory(idle);
+  }, [idle]);
+  useEffect(() => () => pauseBandHistory(false), []);
   const glide = useRef<Glide>(settled(cameraFor(review?.place ?? place ?? 'work', review ? review.ms : now())));
   const repaint = useRef<() => void>(() => {});
   const first = useRef(true);
@@ -38,6 +52,11 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
   const loud = useRef(0); // smoothed loudness, so the ripple eases out when the store drops to zero
   // The camera gate (0 to 1): ramps the ripple out on a turn to Rainier and back in after the turn away.
   const gate = useRef(initialEchoGate(glide.current));
+  // 1 while the display is in use, easing to 0 over a second once it goes idle.
+  const awake = useRef(1);
+  // The echo's own clock (`echoRate`: slower for the idle lines) and the real-band sampler.
+  const echoT = useRef(0);
+  const sampler = useRef(createEchoSampler());
   // Tell Watt (read only) where the camera is going and whether it is moving; cleared on unmount
   // so the signal can never stick on moving.
   const publish = () => publishCamera(glide.current.to, glide.current.progress < 1);
@@ -83,7 +102,7 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
   useEffect(() => {
     const canvas = ref.current;
     if (!canvas || zen) return;
-    const still = reduced || review !== null;
+    const still = reduced || (review !== null && !demo);
     // Start the pulse from nothing: after Zen or a reduced motion spell the stored bands are stale.
     clearGridPulse(pulse.current);
     grid.current = null;
@@ -109,16 +128,28 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
         scale,
         camera,
         ms: review ? review.ms : nowRef.current(),
-        t: review ? 0 : T,
-        phase: review ? 0 : (T * 0.32) % 1,
+        t: review && still ? 0 : T,
+        phase: review && still ? 0 : (T * 0.32) % 1,
         // Clouds turn with the camera at about a third of the land's speed.
         cloudShift: cloudShiftFor(camera),
       };
-      // The ripple and the grid pulse never appear in the review still or under reduced motion's still frames.
+      // The grid pulse never appears in the review still or under reduced motion's still frames.
+      // The echo there is the visualizer's idle lines, frozen at t 0 (Unwind only; null elsewhere).
       if (!still) {
-        const echo = echoOptions(camera, fade.current * gate.current, loud.current, T);
-        if (echo) options.echo = echo;
+        const echo = echoOptions(camera, fade.current, loud.current, echoT.current, gate.current * awake.current);
+        if (echo) {
+          if (fade.current > 0) {
+            const s = sampler.current;
+            s.t = echoT.current;
+            s.w = fade.current;
+            echo.sample = s.sample;
+          }
+          options.echo = echo;
+        }
         if (grid.current) options.grid = grid.current;
+      } else {
+        const echo = echoOptions(camera, 0, 0, 0, initialEchoGate(glide.current));
+        if (echo) options.echo = echo;
       }
       // The moon shows only once the camera has arrived at Unwind (no glide in progress), and
       // goes the moment a glide away starts. The review still and reduced motion jump straight there.
@@ -135,9 +166,11 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
       T += dt;
       loud.current = smoothStep(loud.current, loudness(useAudioStore.getState()), dt);
       fade.current = stepEchoFade(fade.current, useAudioStore.getState().playing, dt);
+      awake.current = stepEchoFade(awake.current, !idleRef.current, dt);
       glide.current = stepGlide(glide.current, dt);
       publish();
       gate.current = stepEchoGate(gate.current, glide.current, dt);
+      echoT.current += dt * echoRate(glideCamera(glide.current), fade.current);
       const beats = audioBeats();
       const input = pulseIn.current;
       input.playing = useAudioStore.getState().playing;
@@ -170,7 +203,7 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
       window.clearInterval(timer);
       cancelAnimationFrame(raf);
     };
-  }, [reduced, review, zen]);
+  }, [reduced, review, zen, demo]);
 
   // Hidden pages start the ripple and the grid pulse from nothing when they return, never from stale levels.
   useEffect(() => {
