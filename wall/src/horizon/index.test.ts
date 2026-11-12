@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { CAMERAS, drawHorizon, when } from './index';
+import { CAMERAS, HOME_MORNING, drawHorizon, when } from './index';
 import { stubContext } from './canvasStub';
 import type { CameraPlace } from '../state/places';
 
@@ -28,6 +28,15 @@ describe('drawHorizon', () => {
       }
     });
   }
+
+  it('draws the south morning view on the canvas stub without throwing, sunrise to night', () => {
+    stubCanvas();
+    for (const hour of [5.5, 7.2, 11, 16.7, 22]) {
+      expect(() =>
+        drawHorizon(stubContext(), { width: 2560, height: 720, scale: 1, camera: HOME_MORNING, ms: when(2026, 11, 11, hour), t: 1.5, phase: 0.3 }),
+      ).not.toThrow();
+    }
+  });
 
   it('still accepts the original scaffold options', () => {
     stubCanvas();

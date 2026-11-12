@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CAMERAS, blendCamera, ease, glideCamera, settled, startGlide, stepGlide, GLIDE_SECONDS } from './cameras';
+import { CAMERAS, HOME_MORNING, blendCamera, cameraFor, ease, glideCamera, homeCameraFor, settled, startGlide, stepGlide, terrainOf, GLIDE_SECONDS } from './cameras';
 
 const a = CAMERAS.work;
 const b = CAMERAS.unwind;
@@ -13,6 +13,7 @@ describe('blendCamera', () => {
   it('is halfway at 0.5 for every key (the ease is symmetric)', () => {
     const mid = blendCamera(a, b, 0.5);
     for (const key of Object.keys(a) as (keyof typeof a)[]) {
+      if (key === 'ter') continue;
       expect(mid[key]).toBeCloseTo((a[key] + b[key]) / 2, 9);
     }
   });
@@ -55,5 +56,51 @@ describe('glide', () => {
 
   it('jumps when instant (reduced motion)', () => {
     expect(glideCamera(startGlide(settled(a), b, true))).toEqual(b);
+  });
+});
+
+describe('homeCameraFor (the morning rule)', () => {
+  const at = (h: number, m: number) => new Date(2026, 10, 11, h, m, 0);
+
+  it('is the south view from 5:00 AM up to 11:30 AM local time', () => {
+    expect(homeCameraFor(at(4, 59))).toBe(CAMERAS.home);
+    expect(homeCameraFor(at(5, 0))).toBe(HOME_MORNING);
+    expect(homeCameraFor(at(7, 12))).toBe(HOME_MORNING);
+    expect(homeCameraFor(at(11, 29))).toBe(HOME_MORNING);
+    expect(homeCameraFor(at(11, 30))).toBe(CAMERAS.home);
+  });
+
+  it('is the west Home view in the afternoon, evening and small hours', () => {
+    for (const [h, m] of [[12, 0], [16, 30], [21, 15], [0, 0], [3, 40]]) expect(homeCameraFor(at(h, m))).toBe(CAMERAS.home);
+  });
+
+  it('cameraFor applies the rule to Home only', () => {
+    const morning = at(8, 0).getTime();
+    expect(cameraFor('home', morning)).toBe(HOME_MORNING);
+    expect(cameraFor('work', morning)).toBe(CAMERAS.work);
+    expect(cameraFor('unwind', morning)).toBe(CAMERAS.unwind);
+  });
+});
+
+describe('the south preset', () => {
+  it('looks south with the approved strip values and Home echo values', () => {
+    expect(HOME_MORNING).toMatchObject({ ter: 'south', az0: 132, ppd: 42, vex: 1.9, cs: 1, hy: 582 });
+    for (const k of ['ecx', 'eamp', 'ea', 'en', 'vx'] as const) expect(HOME_MORNING[k]).toBe(CAMERAS.home[k]);
+  });
+
+  it('peaks clear of the top of the stage (Rainier about 168 px above the horizon)', () => {
+    expect(HOME_MORNING.hy - 168).toBeGreaterThan(300);
+  });
+
+  it('west cameras name no terrain, which means west', () => {
+    expect(CAMERAS.home.ter).toBeUndefined();
+    expect(terrainOf(CAMERAS.home)).toBe('west');
+    expect(terrainOf(HOME_MORNING)).toBe('south');
+  });
+
+  it('a glide between south cameras keeps the terrain at every step', () => {
+    const other = { ...HOME_MORNING, az0: 140 };
+    expect(blendCamera(HOME_MORNING, other, 0.5).ter).toBe('south');
+    expect(glideCamera({ from: HOME_MORNING, to: other, progress: 0.3 }).ter).toBe('south');
   });
 });

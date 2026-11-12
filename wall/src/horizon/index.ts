@@ -4,7 +4,7 @@ import { draw, type HorizonEcho } from './renderer';
 
 export { sun, when } from './renderer';
 export type { HorizonDrawOptions, HorizonEcho } from './renderer';
-export { CAMERAS, GLIDE_SECONDS, MOON, blendCamera, type CameraPreset } from './cameras';
+export { CAMERAS, GLIDE_SECONDS, HOME_MORNING, MOON, blendCamera, homeCameraFor, type CameraPreset } from './cameras';
 
 export interface HorizonOptions {
   /** Backing store width in canvas pixels. The renderer covers the whole stage, so this is informational. */
@@ -43,6 +43,7 @@ export function drawHorizon(ctx: CanvasRenderingContext2D, options: HorizonOptio
     ppd: cam.ppd,
     vex: cam.vex,
     cityScale: cam.cs,
+    ter: cam.ter,
     vx: cam.vx,
     ms: options.ms ?? Date.now(),
     t: options.t ?? 0,
