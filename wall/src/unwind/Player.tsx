@@ -30,7 +30,8 @@ function useProgress(info: NowPlayingInfo | null, anchor: ProgressAnchor | null)
  * Now playing at concept size (`f_unwind` centre): 224 px art, the source app in pink
  * capitals, a 64 px title, the artist, a 520 px progress bar with times, then the
  * transport with the app's volume. When nothing plays it keeps the same footprint: the
- * last track this wall played with "Play again", or, before anything has played, a calm
+ * last track this wall played with "Play again" (or "Open Spotify to play again" when no
+ * media session exists, since play and pause need one), or, before anything has played, a calm
  * line over the transport. Never a large empty tile.
  */
 export function Player() {
@@ -39,6 +40,8 @@ export function Player() {
   const quiet = isQuiet(info);
   const progress = useProgress(quiet ? null : info, quiet ? null : anchor);
   const playing = isPlaying(info);
+  // A media session exists (stopped or paused counts); with none, play and pause do nothing.
+  const hasSession = !!info && !!info.playback_status && info.playback_status !== 'unknown';
   const pct = progress ? (progress.position / progress.duration) * 100 : 0;
 
   // The idle view: the session's own stopped track first, then the last one seen here.
@@ -59,7 +62,7 @@ export function Player() {
         type="button"
         className="u-rd big"
         aria-label={playing ? 'Pause' : 'Play'}
-        disabled={quiet && !idle}
+        disabled={quiet && !(idle && hasSession)}
         onClick={() => command('media_play_pause')}
       >
         {playing ? <IconPlayerPauseFilled size={40} aria-hidden="true" /> : <IconPlayerPlayFilled size={40} aria-hidden="true" />}
@@ -93,10 +96,14 @@ export function Player() {
             <span className="u-k">{idle.source ? `Last played on ${idle.source}` : 'Last played'}</span>
             <div className="u-np u-was u-ell">{idle.title}</div>
             <div className="u-artist u-ell">{idle.artist}</div>
-            <button type="button" className="u-again" onClick={() => command('media_play_pause')}>
-              <IconPlayerPlayFilled size={24} aria-hidden="true" />
-              Play again
-            </button>
+            {hasSession ? (
+              <button type="button" className="u-again" onClick={() => command('media_play_pause')}>
+                <IconPlayerPlayFilled size={24} aria-hidden="true" />
+                Play again
+              </button>
+            ) : (
+              <div className="u-again-off">{idle.source ? `Open ${idle.source} to play again` : 'Open the player to play again'}</div>
+            )}
           </div>
         </div>
         {transport}
