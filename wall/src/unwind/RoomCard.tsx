@@ -7,18 +7,40 @@ import { useVisible } from '../ui/useVisible';
 const NOT_CONFIGURED = 'not-configured';
 export const ROOM_REFRESH_MS = 10 * 60_000;
 export const ROOM_ERROR_MS = 5000;
+/** While loading or in error, read the moods again this often. */
+export const ROOM_RETRY_MS = 30_000;
+/** The mark on the last applied mood goes after this long. */
+export const MOOD_MARK_MS = 3 * 3_600_000;
+/**
+ * When the last mood was applied from this wall, beside `wall2-last-mood` (whose plain id
+ * format Home reads and which stays as it is): `{"id":"evening","at":<ms>}`.
+ */
+export const LAST_MOOD_AT_KEY = 'wall2-last-mood-at';
 
-function readLast(): string | null {
+interface Mark {
+  id: string;
+  at: number;
+}
+
+/** The marked mood: the shared last mood, if it carries a time under three hours old. */
+function readMark(nowMs: number): Mark | null {
   try {
-    return localStorage.getItem(LAST_MOOD_KEY);
+    const id = localStorage.getItem(LAST_MOOD_KEY);
+    const raw = localStorage.getItem(LAST_MOOD_AT_KEY);
+    if (!id || !raw) return null;
+    const v = JSON.parse(raw) as Partial<Mark> | null;
+    if (!v || v.id !== id || typeof v.at !== 'number' || !Number.isFinite(v.at)) return null;
+    const age = nowMs - v.at;
+    return age >= 0 && age < MOOD_MARK_MS ? { id, at: v.at } : null;
   } catch {
     return null;
   }
 }
 
-function writeLast(id: string): void {
+function writeMark(mark: Mark): void {
   try {
-    localStorage.setItem(LAST_MOOD_KEY, id);
+    localStorage.setItem(LAST_MOOD_KEY, mark.id);
+    localStorage.setItem(LAST_MOOD_AT_KEY, JSON.stringify(mark));
   } catch {
     /* the mark is a convenience */
   }
@@ -28,15 +50,16 @@ type Status = 'loading' | 'ready' | 'unconfigured' | 'error';
 
 /**
  * The Room card (concept: "Room", mood chips, "TV off"). Chips apply a home mood with
- * `wall2_apply_mood`, and the last applied one is marked; Home's mood buttons share the
- * same mark. "TV off" waits for the home app reads (PR 24) and is not shown yet. When the
+ * `wall2_apply_mood`, and the last one applied here is marked for three hours (the id
+ * is shared with Home's mood buttons through `wall2-last-mood`, the time is kept beside it). "TV off" waits for the home app reads (PR 24) and is not shown yet. When the
  * home app is not set up or not reachable the card shrinks to one line.
  */
 export function RoomCard() {
   const visible = useVisible();
   const [status, setStatus] = useState<Status>('loading');
   const [moods, setMoods] = useState<Mood[]>([]);
-  const [last, setLast] = useState<string | null>(readLast);
+  const [mark, setMark] = useState<Mark | null>(() => readMark(Date.now()));
+  const last = mark?.id ?? null;
   const [working, setWorking] = useState<string | null>(null);
   const [error, setError] = useState(false);
   const mounted = useRef(true);
@@ -69,6 +92,20 @@ export function RoomCard() {
     return () => clearInterval(id);
   }, [visible, load]);
 
+  // Not loaded yet or failing: try again every 30 seconds until the moods arrive.
+  useEffect(() => {
+    if (!visible || status === 'ready' || status === 'unconfigured') return;
+    const id = setInterval(() => void load(), ROOM_RETRY_MS);
+    return () => clearInterval(id);
+  }, [visible, status, load]);
+
+  // The mark goes three hours after the mood was applied.
+  useEffect(() => {
+    if (!mark) return;
+    const id = setTimeout(() => setMark(readMark(Date.now())), Math.max(0, mark.at + MOOD_MARK_MS - Date.now()) + 50);
+    return () => clearTimeout(id);
+  }, [mark]);
+
   const apply = async (id: string) => {
     if (working) return;
     setWorking(id);
@@ -77,8 +114,9 @@ export function RoomCard() {
     try {
       await invoke('wall2_apply_mood', { id });
       if (!mounted.current) return;
-      writeLast(id);
-      setLast(id);
+      const next = { id, at: Date.now() };
+      writeMark(next);
+      setMark(next);
     } catch {
       if (!mounted.current) return;
       setError(true);

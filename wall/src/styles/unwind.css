@@ -489,3 +489,13 @@
   font-size: 18px;
   color: var(--faint);
 }
+
+/* Notes inside the left wing and the idle player. */
+.u-asof {
+  color: var(--faint);
+}
+.u-again-off {
+  margin-top: 14px;
+  font-size: 22px;
+  color: var(--faint);
+}

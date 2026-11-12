@@ -2,7 +2,7 @@ import { DateLine } from '../unwind/DateLine';
 import { Player } from '../unwind/Player';
 import { RoomCard } from '../unwind/RoomCard';
 import { StatusLine } from '../unwind/StatusLine';
-import { Tabs } from '../unwind/Tabs';
+import { LISTEN_PANEL_ID, LISTEN_TAB_ID, Tabs } from '../unwind/Tabs';
 import { Tomorrow } from '../unwind/Tomorrow';
 import { ScreensOff } from '../ui/ScreensOff';
 import { reviewDate, reviewNow } from '../ui/reviewClock';
@@ -31,7 +31,7 @@ export function Unwind() {
       </div>
       <div className="u-centre">
         <Tabs />
-        <div className="u-listen">
+        <div className="u-listen" role="tabpanel" id={LISTEN_PANEL_ID} aria-labelledby={LISTEN_TAB_ID}>
           <Player />
         </div>
       </div>
