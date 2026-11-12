@@ -226,7 +226,7 @@ mod tests {
         assert_eq!(s.0.len(), 1);
     }
 
-    /// Fails the Nth write (counting from 1) and every one after it.
+    /// Fails exactly the write whose running number equals `fail_from` (0 means never).
     struct FlakyBlobs {
         inner: MemoryBlobs,
         fail_from: std::cell::Cell<usize>,
@@ -238,7 +238,7 @@ mod tests {
         }
         fn write(&self, t: &str, d: &[u8]) -> bool {
             self.writes.set(self.writes.get() + 1);
-            if self.fail_from.get() != 0 && self.writes.get() >= self.fail_from.get() {
+            if self.fail_from.get() != 0 && self.writes.get() == self.fail_from.get() {
                 return false;
             }
             self.inner.write(t, d)
