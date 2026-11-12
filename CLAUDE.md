@@ -375,6 +375,7 @@ The Zen place and Dream (flames, breathing guide, `wall/src/zen`) are front end 
 `lib.rs` finds the window with `app_window` (labels `main` and `wall2`); behaviour
 only the old app has (fullscreen toggle, monitor 2 placement) must stay on `MAIN_LABEL`.
 Wall 2 is placed through Win32 in `src-tauri/src/wall2_window.rs` (not tao) and writes `wall2-placement.log`; see `wall/README.md`.
+Meet tokens and Graph calls live in `wall2_meet` (Rust); the web view never sees tokens or join URLs. See the Meet section of `wall/README.md`.
 
 ## Fingerprinting
 
