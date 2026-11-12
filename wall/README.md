@@ -4,8 +4,8 @@ Wall 2 is the next front end for Widget Wall. It lives beside the existing app
 (`src/`, untouched) and is built with Vite, React and TypeScript (strict). It
 runs in a plain browser for development and inside Tauri as a second app,
 "Widget Wall 2". So far: a scaled stage, the live horizon, a left rail with
-three places, a clock, a small Tauri bridge and tests. Real screens arrive in
-later pull requests.
+three places, a clock, the Work tab basics (weather, music, focus timer), a
+small Tauri bridge and tests. Home and Unwind are still placeholders.
 
 ## Requirements
 
@@ -102,6 +102,55 @@ skyline, the lake in front. It is drawn on one canvas by `HorizonCanvas.tsx`.
   To match the original demo pixel for pixel, run the demo at the same hour and
   camera with its echo ripple off (and its moon off for `unwind`, since the review
   frame never draws a moon) and the same animation time, 0.
+
+## The Work tab
+
+`wall/src/screens/Work.tsx` lays out three panels over the horizon (design
+pixels, glass style from the concept; clock is top left in `App.tsx`).
+
+- **Focus timer** (`wall/src/focus/`). A ring with the minutes left in the
+  middle. Choose 25, 50 or custom (5 to 120 minutes, steps of 5). Start, pause,
+  resume, reset. The state is stored in `localStorage` key `wall2-focus` as an
+  end time, so a restart resumes and a timer that ended while the app was closed
+  shows as finished. The state lives in an app-level store (`store.ts`) with its
+  own end timer, so the timer finishes and releases Do Not Disturb on any screen
+  and while hidden (a soft glow on the ring, no modal, no chime yet). Do Not
+  Disturb follows the old app's rule (`dnd.ts`): read the state at start; if it
+  is already on, leave it alone; otherwise turn it on and remember that focus did
+  it (key `wall2-focus-dnd`); turn it off on pause, reset, finish and app start
+  only if focus turned it on. Calls run one at a time through a queue.
+- **Weather** (`wall/src/weather/`). Open-Meteo from the front end (same request
+  as the old app: Fahrenheit, mph, `timezone=auto`). Current temperature,
+  condition with an icon, today's high and low, next six hours. Refreshes every
+  15 minutes while visible, and once when the page returns after 15 minutes or
+  more. On failure the last reading stays and shows its age in small text. The
+  code to label and icon map is one pure function, `describeWeather` in `codes.ts`.
+- **Music bar** (`wall/src/music/`). Polls `get_now_playing` every 2 seconds
+  while visible (never while hidden). Art only from `album_art_base64` with an
+  allowed mime (png, jpeg, webp, gif); `art_unchanged` keeps the current art.
+  Previous, play or pause, next call `media_previous`, `media_play_pause`,
+  `media_next`; failures are swallowed. Stopped or unknown shows a quiet
+  "Nothing playing".
+- **Settings** (`wall/src/settings/`). `localStorage` key `wall2-settings`, JSON
+  with optional `latitude` and `longitude` (defaults 47.68, -122.21). No settings
+  screen yet.
+- **Browser dev.** `npm run dev` registers mocks for the music and Do Not
+  Disturb commands (`src/bridge/devMocks.ts`, dev server only). Weather needs
+  network access to Open-Meteo.
+
+## Content security policy
+
+Set in `src-tauri/tauri.wall2.conf.json` under `app.security.csp` (Wall 2 only;
+the old app's config is untouched). It allows own files (`'self'`), data: images,
+own fonts, and connections to the Tauri IPC (`ipc:`, `http://ipc.localhost`,
+`https://ipc.localhost`) and `https://api.open-meteo.com`. Everything else is
+denied (`default-src 'none'`); no `unsafe-eval`, no `unsafe-inline`. React sets
+inline styles through the CSSOM (`element.style`), which CSP allows. To reach a
+new host, add it to `connect-src` (data from `fetch`), `img-src` (pictures) or
+`font-src`, and rerun the schema check: validate the file against
+`node_modules/@tauri-apps/cli/config.schema.json`. `devCsp` is the same policy for `tauri dev`, plus the Vite origin and websocket
+(`http://localhost:1421`, `ws://localhost:1421`) and inline scripts and styles,
+which Vite's hot reload injects. Keep the two in step when you add a host.
 
 ## Touch
 
