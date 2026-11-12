@@ -52,6 +52,11 @@ pub fn os_hidden() -> bool {
     os_hidden_reason().is_some()
 }
 
+/// True while Windows is locked.
+pub fn session_locked() -> bool {
+    SESSION_LOCKED.load(Ordering::SeqCst)
+}
+
 /// True while every console display is off, whatever else holds.
 pub fn display_is_off() -> bool {
     DISPLAY_OFF.load(Ordering::SeqCst)

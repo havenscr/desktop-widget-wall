@@ -3652,6 +3652,7 @@ fn on_display_state_change() {
             apply_webview_visibility_locked(&window);
         }
         println!("[Display] os_hidden={:?}", reason);
+        wall2_power::lock_changed(display_watch::session_locked());
         wall2_power::display_changed(display_watch::display_is_off());
         let _ = app.emit(
             "display-state",
@@ -3709,6 +3710,7 @@ pub fn run() {
             wall2_omni::wall2_machines,
             wall2_power::wall2_idle_state,
             wall2_power::wall2_monitors_off,
+            wall2_power::wall2_monitors_mode,
             list_audio_devices,
             start_audio_capture,
             stop_audio_capture,
@@ -3827,6 +3829,8 @@ pub fn run() {
                             }
                         }
                         "quit" => {
+                            #[cfg(windows)]
+                            wall2_power::shutdown();
                             app.exit(0);
                         }
                         _ => {}
@@ -3938,6 +3942,9 @@ pub fn run() {
             #[cfg(windows)]
             if window.label() == WALL2_LABEL {
                 wall2_window::log_window_event(window, event);
+                if matches!(event, tauri::WindowEvent::Destroyed) {
+                    wall2_power::shutdown();
+                }
             }
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 // Minimize to tray instead of closing
