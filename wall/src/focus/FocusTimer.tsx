@@ -145,8 +145,8 @@ function Picker({
 }
 
 /**
- * The Work left wing's focus row (concept `f_work`): a small ring, the label and the time
- * left, and one round button (start, pause or resume). Tapping the ring while no session
+ * The Work left wing's focus row (concept `f_work`, owner vote A): a small ring with the
+ * minutes left, the label, and one round button (start, pause or resume). Tapping the ring while no session
  * runs opens a sheet with 25, 50, Custom and Start.
  */
 export function FocusMini() {
@@ -163,12 +163,6 @@ export function FocusMini() {
         : state.status === 'idle'
           ? 'Ready to focus'
           : 'Focusing';
-  const sub =
-    state.status === 'running'
-      ? `${minutesLeft(state, f.now)} min left`
-      : state.status === 'paused'
-        ? `Paused, ${minutesLeft(state, f.now)} min left`
-        : `${state.minutes} min session`;
   const sheet = open && adjustable;
 
   return (
@@ -180,12 +174,11 @@ export function FocusMini() {
         aria-expanded={adjustable ? sheet : undefined}
         onClick={() => adjustable && setOpen((o) => !o)}
       >
-        <Ring state={state} now={f.now} size={72} />
+        <Ring state={state} now={f.now} size={64} />
       </button>
       <div className="blk focus-mini-text">
-        <span className="k">Focus</span>
+        <span className="k">{state.status === 'paused' ? 'Focus, paused' : 'Focus'}</span>
         <div className="t2 ellipsis">{title}</div>
-        <div className="s ellipsis">{sub}</div>
       </div>
       {state.status === 'running' ? (
         <button type="button" className="rd" aria-label="Pause" onClick={f.pause}>

@@ -72,14 +72,14 @@ it('custom length moves in steps of 5 within 5 to 120', () => {
 });
 
 describe('FocusMini (the Work row)', () => {
-  it('starts from the round button and then shows the label-less session counting down with a pause', async () => {
+  it('starts from the round button, counts down in the ring, pauses and resumes', async () => {
     render(<FocusMini />);
     expect(screen.getByText('Ready to focus')).toBeTruthy();
     fireEvent.click(screen.getByLabelText('Start'));
     await flush(5 * 60_000);
-    expect(screen.getByText('20 min left')).toBeTruthy();
+    expect(screen.getByRole('img', { name: '20 minutes left' })).toBeTruthy();
     fireEvent.click(screen.getByLabelText('Pause'));
-    expect(screen.getByText('Paused, 20 min left')).toBeTruthy();
+    expect(screen.getByText('Focus, paused')).toBeTruthy();
     fireEvent.click(screen.getByLabelText('Resume'));
     expect(useFocusStore.getState().state.status).toBe('running');
   });
@@ -88,7 +88,7 @@ describe('FocusMini (the Work row)', () => {
     useFocusStore.getState().startLabeled('RFQ response');
     render(<FocusMini />);
     expect(screen.getByText('RFQ response')).toBeTruthy();
-    expect(screen.getByText('25 min left')).toBeTruthy();
+    expect(screen.getByRole('img', { name: '25 minutes left' })).toBeTruthy();
   });
 
   it('tapping the ring opens the sheet with 25, 50 and Custom, and Start uses the choice', () => {

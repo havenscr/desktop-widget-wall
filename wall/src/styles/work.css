@@ -320,8 +320,8 @@
 .work .wl .rd::before {
   content: '';
   position: absolute;
-  inset: -8px;
-  border-radius: 50%;
+  inset: -8px 0 -8px -16px;
+  border-radius: 28px;
 }
 
 /* Left wing rows */
@@ -356,8 +356,8 @@
 .focus-mini-text {
   flex: 1;
 }
-.focus-mini .k {
-  font-size: 17px;
+.focus-mini .blk {
+  gap: 5px;
 }
 .focus-mini .t2 {
   font-size: 27px;
@@ -427,9 +427,9 @@
 }
 .mc-row {
   display: grid;
-  grid-template-columns: 58px repeat(3, 108px) 1fr;
+  grid-template-columns: 52px repeat(3, 104px) minmax(0, 1fr);
   align-items: center;
-  column-gap: 14px;
+  column-gap: 12px;
   height: 22px;
   transition: opacity 600ms ease;
 }
@@ -442,7 +442,7 @@
   letter-spacing: 0.16em;
 }
 .mc-hd span {
-  padding-right: 42px;
+  padding-right: 44px;
   text-align: center;
 }
 .mc-name {
@@ -451,7 +451,8 @@
 .mc-cell {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
+  min-width: 0;
 }
 .mc-bar {
   display: block;
@@ -469,7 +470,7 @@
   transition: width 900ms ease;
 }
 .mc-num {
-  min-width: 30px;
+  min-width: 34px;
   text-align: right;
   font-weight: 500;
   color: var(--dim);
