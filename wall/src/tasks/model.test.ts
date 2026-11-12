@@ -33,6 +33,13 @@ it('all day tasks read the calendar date and never show a time', () => {
   expect(dueLine({ due_at: '2026-12-01', due_is_all_day: true }, NOW)).toBe('Dec 1');
 });
 
+it('a bare date on a timed task is a local calendar date', () => {
+  // West of UTC a UTC reading would give the previous day.
+  expect(dueLine({ due_at: '2026-11-11', due_is_all_day: false }, NOW)).toBe('today');
+  expect(dueLine({ due_at: '2026-11-12', due_is_all_day: false }, NOW)).toBe('tomorrow');
+  expect(dueLine({ due_at: '2026-11-10', due_is_all_day: false }, NOW)).toBe('overdue');
+});
+
 it('a past date is overdue', () => {
   expect(dueLine({ due_at: local(2026, 11, 9, 8), due_is_all_day: false }, NOW)).toBe('overdue');
   expect(dueLine({ due_at: '2026-11-10', due_is_all_day: true }, NOW)).toBe('overdue');

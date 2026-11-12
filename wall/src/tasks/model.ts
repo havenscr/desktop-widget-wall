@@ -41,11 +41,14 @@ function allDayDate(raw: string): Date | null {
  */
 export function dueLine(task: Pick<TaskItem, 'due_at' | 'due_is_all_day'>, now: Date): string | null {
   if (!task.due_at) return null;
-  const when = task.due_is_all_day ? allDayDate(task.due_at) : new Date(task.due_at);
+  // A bare date (no time) is a calendar date, read as local, never shifted by time zone.
+  const bare = /^\d{4}-\d{2}-\d{2}$/.test(task.due_at);
+  const dateOnly = task.due_is_all_day || bare;
+  const when = dateOnly ? allDayDate(task.due_at) : new Date(task.due_at);
   if (!when || Number.isNaN(when.getTime())) return null;
   const days = Math.round((startOfDay(when) - startOfDay(now)) / DAY_MS);
   if (days < 0) return 'overdue';
-  if (days === 0) return task.due_is_all_day ? 'today' : `today ${clockText(when)}`;
+  if (days === 0) return dateOnly ? 'today' : `today ${clockText(when)}`;
   if (days === 1) return 'tomorrow';
   if (days <= 6) return DAYS[when.getDay()] ?? null;
   return `${MONTHS[when.getMonth()]} ${when.getDate()}`;
