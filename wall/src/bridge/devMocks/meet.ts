@@ -23,7 +23,7 @@ export function registerMeetMocks(): void {
       ...(second ? [{ key: '1-3', accountId: 'second', title: 'Board prep', start: at(320), end: at(380), canJoin: true }] : []),
     ],
   }));
-  // The day feed: local midnight to 36 hours after it, past events included.
+  // The day feed: local midnight to the end of tomorrow, past events included.
   mocks.set('wall2_meet_day', () => {
     // A review still (`?hz=&at=`) gets its day on the review's date.
     const midnight = new Date(reviewNow ? reviewNow() : Date.now());
@@ -39,6 +39,7 @@ export function registerMeetMocks(): void {
         { key: 'd1-4', accountId: 'work', title: 'Weekly planning', start: day(17, 0), end: day(17, 30), canJoin: true, isLive: false },
         ...(second ? [{ key: 'd1-5', accountId: 'second', title: 'Board prep', start: day(19, 0), end: day(20, 0), canJoin: true, isLive: false }] : []),
         { key: 'd1-6', accountId: 'work', title: 'Planning check-in', start: day(24 + 9, 30), end: day(24 + 10, 0), canJoin: true, isLive: false },
+        { key: 'd1-7', accountId: 'work', title: 'Quarterly review', start: day(24 + 14, 0), end: day(24 + 15, 0), canJoin: true, isLive: false },
       ],
     };
   });
