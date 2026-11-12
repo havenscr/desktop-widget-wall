@@ -13,10 +13,12 @@
   --c: var(--mint);
 }
 
-/* Header, lanes and shelf share the zone's height; the lanes take what is left. */
+/* Header, lanes and shelf share the zone's height; the lanes take what is left (up to
+   150 px each), and any height still free spreads between the rows (concept `.col.spread`). */
 .centre.lanes {
   display: flex;
   flex-direction: column;
+  justify-content: space-between;
   gap: 12px;
   min-width: 0;
   min-height: 0;
@@ -140,7 +142,7 @@
   flex: none;
   color: var(--c, var(--cyan));
 }
-.lane-ring > svg {
+.lane-ring > .lane-ring-svg {
   position: absolute;
   inset: 0;
 }

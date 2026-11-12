@@ -9,7 +9,7 @@ export function LaneRing({ size, fraction, tone, glyph }: { size: number; fracti
   const icon = Math.round(size * 0.38);
   return (
     <span className={`lane-ring t-${tone}`} style={{ width: size, height: size }} aria-hidden="true">
-      <svg viewBox={`0 0 ${size} ${size}`} width={size} height={size}>
+      <svg className="lane-ring-svg" viewBox={`0 0 ${size} ${size}`} width={size} height={size}>
         <circle cx={m} cy={m} r={rad} fill="none" stroke="rgba(255,255,255,.13)" strokeWidth={5} />
         <circle
           cx={m}
