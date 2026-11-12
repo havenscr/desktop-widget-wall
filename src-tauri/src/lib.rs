@@ -53,6 +53,7 @@ mod wall2_window;
 mod display_watch;
 mod wall2_feeds;
 mod wall2_home;
+mod wall2_meet;
 use audio_analysis::{AudioAnalyzer, AudioLevels};
 
 // ================================================================
@@ -3689,6 +3690,11 @@ pub fn run() {
             wall2_feeds::wall2_open_link,
             wall2_home::wall2_moods,
             wall2_home::wall2_apply_mood,
+            wall2_meet::wall2_meet_next,
+            wall2_meet::wall2_meet_sign_in,
+            wall2_meet::wall2_meet_cancel_sign_in,
+            wall2_meet::wall2_meet_join,
+            wall2_meet::wall2_meet_sign_out,
             list_audio_devices,
             start_audio_capture,
             stop_audio_capture,
