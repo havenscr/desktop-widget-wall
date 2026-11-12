@@ -174,3 +174,21 @@ it('leaves no timer running when unmounted during the done or error timer', asyn
   expect(errors).not.toHaveBeenCalled();
   errors.mockRestore();
 });
+
+it('shows nothing, not Loading, while the page is hidden at first mount', async () => {
+  const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
+  const list = vi.fn(() => LIST);
+  mocks.set('wall2_moods', list);
+  const { container } = render(<Moods />);
+  await flush();
+  expect(container.innerHTML).toBe('');
+  expect(list).not.toHaveBeenCalled();
+  hidden.mockReturnValue(false);
+  await act(async () => {
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  await flush();
+  expect(list).toHaveBeenCalledTimes(1);
+  expect(screen.getAllByRole('button')).toHaveLength(3);
+  hidden.mockRestore();
+});

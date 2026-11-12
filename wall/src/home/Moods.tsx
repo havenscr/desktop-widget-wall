@@ -117,6 +117,7 @@ export function Moods() {
   }, []);
 
   if (status === 'ready' && moods.length === 0) return null;
+  if (status === 'loading' && !visible) return null;
 
   let body;
   if (status === 'unconfigured') {
