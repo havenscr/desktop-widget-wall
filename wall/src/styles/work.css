@@ -430,10 +430,11 @@
 }
 .mood-row {
   display: flex;
+  flex-wrap: wrap;
   gap: 16px;
 }
 .mood-btn {
-  flex: 1 1 0;
+  flex: 1 1 120px;
   min-width: 120px;
   max-width: 240px;
   min-height: 96px;
