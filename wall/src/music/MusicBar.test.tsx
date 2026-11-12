@@ -2,7 +2,7 @@ import { act, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { mocks } from '../bridge/tauri';
 import { resetNowPlaying } from './store';
-import { MusicBar } from './MusicBar';
+import { MusicBar, MusicMini } from './MusicBar';
 
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => {
@@ -118,4 +118,28 @@ it('skips the refresh after a command while hidden and writes nothing after unmo
   unmount();
   await flush(4000); // under the 5 second call timeout
   expect(get.mock.calls.length).toBe(before);
+});
+
+it('MusicMini shows the track with one play or pause button', async () => {
+  const cmd = vi.fn();
+  mocks.set('get_now_playing', () => ({ title: 'Tokyo Burnout', artist: 'Tokyo Rose', playback_status: 'playing' }));
+  mocks.set('media_play_pause', cmd);
+  const { container } = render(<MusicMini />);
+  await flush();
+  expect(screen.getByText('Tokyo Burnout')).toBeTruthy();
+  expect(screen.getByText('Tokyo Rose')).toBeTruthy();
+  expect(container.querySelectorAll('button')).toHaveLength(1);
+  await act(async () => {
+    screen.getByLabelText('Pause').click();
+  });
+  expect(cmd).toHaveBeenCalled();
+});
+
+it('MusicMini is quiet with a disabled button when nothing plays', async () => {
+  mocks.set('get_now_playing', () => ({ playback_status: 'stopped' }));
+  const { container } = render(<MusicMini />);
+  await flush();
+  expect(screen.getByText('Nothing playing')).toBeTruthy();
+  expect(container.querySelector('.music-mini')!.className).toContain('quiet');
+  expect((screen.getByLabelText('Play') as HTMLButtonElement).disabled).toBe(true);
 });
