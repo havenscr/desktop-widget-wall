@@ -13,6 +13,7 @@ pub const GRAPH_NETWORK: &str = "graph-network";
 pub const GRAPH_BODY: &str = "graph-body";
 pub const TOKEN_NETWORK: &str = "token-network";
 pub const STORE_WRITE: &str = "store-write";
+pub const STORE_READ: &str = "store-read";
 
 /// `^[A-Za-z][A-Za-z0-9_]{0,39}$`
 fn clean_code(s: &str) -> Option<&str> {

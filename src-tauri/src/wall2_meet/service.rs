@@ -3,8 +3,8 @@
 use super::auth::{TokenClient, TokenReply, SCOPE};
 use super::graph::{merge, merge_capped, shape_events, MAX_DAY_EVENTS, utc_iso, Candidate, GraphClient, GraphReply};
 use super::meetlog::format_line;
-use super::reason::{is_valid_reason, STORE_WRITE};
-use super::store::SecretStore;
+use super::reason::{is_valid_reason, STORE_READ, STORE_WRITE};
+use super::store::{Fetch, SecretStore};
 use super::Account;
 use serde::Serialize;
 use std::collections::HashMap;
@@ -139,9 +139,14 @@ fn obtain(
         }
         core.pending.remove(&acct.id);
     }
-    let Some(refresh) = store.get(&acct.id) else {
-        core.cache.remove(&acct.id);
-        return Err((AccountState::SignedOut, None));
+    let refresh = match store.fetch(&acct.id) {
+        Fetch::Found(v) => v,
+        Fetch::Missing => {
+            core.cache.remove(&acct.id);
+            return Err((AccountState::SignedOut, None));
+        }
+        // The store could not be read: not signed out. Nothing is deleted or overwritten.
+        Fetch::Failed => return Err((AccountState::Unavailable, Some(STORE_READ.to_string()))),
     };
     if !force {
         if let Some(c) = core.cache.get(&acct.id) {
@@ -708,10 +713,14 @@ mod tests {
     struct FlakySecrets {
         inner: Chunked<MemoryBlobs>,
         fail_set: Cell<bool>,
+        fail_get: Cell<bool>,
     }
     impl SecretStore for FlakySecrets {
-        fn get(&self, id: &str) -> Option<String> {
-            self.inner.get(id)
+        fn fetch(&self, id: &str) -> Fetch<String> {
+            if self.fail_get.get() {
+                return Fetch::Failed;
+            }
+            self.inner.fetch(id)
         }
         fn set(&self, id: &str, value: &str) -> bool {
             !self.fail_set.get() && self.inner.set(id, value)
@@ -723,7 +732,7 @@ mod tests {
 
     #[test]
     fn a_rotated_token_that_cannot_be_stored_is_kept_in_memory_and_reported_unavailable() {
-        let store = FlakySecrets { inner: Chunked(MemoryBlobs::default()), fail_set: Cell::new(false) };
+        let store = FlakySecrets { inner: Chunked(MemoryBlobs::default()), fail_set: Cell::new(false), fail_get: Cell::new(false) };
         store.set("work", "refresh-1");
         store.fail_set.set(true);
         let mut core = Core::default();
@@ -845,7 +854,7 @@ mod tests {
 
     #[test]
     fn an_unwritable_store_reports_store_write() {
-        let store = FlakySecrets { inner: Chunked(MemoryBlobs::default()), fail_set: Cell::new(false) };
+        let store = FlakySecrets { inner: Chunked(MemoryBlobs::default()), fail_set: Cell::new(false), fail_get: Cell::new(false) };
         store.set("work", "refresh-1");
         store.fail_set.set(true);
         let mut core = Core::default();
@@ -854,6 +863,40 @@ mod tests {
         let g = FakeGraph::new(vec![]);
         let p = read_next(&[acct("work")], &store, &t, &g, &mut core, &links, NOW);
         assert_eq!(reasons(&p), vec![Some("store-write")]);
+    }
+
+    #[test]
+    fn a_failed_store_read_is_unavailable_with_store_read_and_keeps_the_token() {
+        let store = FlakySecrets { inner: Chunked(MemoryBlobs::default()), fail_set: Cell::new(false), fail_get: Cell::new(false) };
+        store.set("work", "refresh-1");
+        store.fail_get.set(true);
+        let mut core = Core::default();
+        core.cache.insert("work".into(), Cached { access: "c".into(), expires_at: NOW + 6000 });
+        let links = Mutex::new(Links::default());
+        let t = FakeTokens::new(vec![]);
+        let g = FakeGraph::new(vec![]);
+        let p = read_next(&[acct("work")], &store, &t, &g, &mut core, &links, NOW);
+        assert_eq!(p.accounts[0].state, "unavailable");
+        assert_eq!(reasons(&p), vec![Some("store-read")]);
+        assert_eq!(t.calls.get() + g.calls.get(), 0);
+        // Nothing was deleted: once reads work again the account reads normally.
+        store.fail_get.set(false);
+        assert_eq!(store.get("work").as_deref(), Some("refresh-1"));
+        let g = FakeGraph::new(vec![GraphReply::Ok(body("A", "1"))]);
+        let p = read_next(&[acct("work")], &store, &t, &g, &mut core, &links, NOW + 5);
+        assert_eq!(p.accounts[0].state, "ok");
+    }
+
+    #[test]
+    fn a_missing_store_entry_is_signed_out_with_no_reason() {
+        let store = Chunked(MemoryBlobs::default());
+        let mut core = Core::default();
+        let links = Mutex::new(Links::default());
+        let t = FakeTokens::new(vec![]);
+        let g = FakeGraph::new(vec![]);
+        let p = read_next(&[acct("work")], &store, &t, &g, &mut core, &links, NOW);
+        assert_eq!(p.accounts[0].state, "signed-out");
+        assert_eq!(reasons(&p), vec![None]);
     }
 
     #[test]
@@ -891,7 +934,7 @@ mod tests {
         assert_eq!(complete_sign_in(&acct("work"), &granted, &store, &t, &core, NOW), Err("token-400-65001".to_string()));
         let t = FakeTokens::new(vec![TokenReply::Transient("token-network".into())]);
         assert_eq!(complete_sign_in(&acct("work"), &granted, &store, &t, &core, NOW), Err("token-network".to_string()));
-        let flaky = FlakySecrets { inner: Chunked(MemoryBlobs::default()), fail_set: Cell::new(true) };
+        let flaky = FlakySecrets { inner: Chunked(MemoryBlobs::default()), fail_set: Cell::new(true), fail_get: Cell::new(false) };
         let t = FakeTokens::new(vec![ok_token("acc", Some("ref"))]);
         assert_eq!(complete_sign_in(&acct("work"), &granted, &flaky, &t, &core, NOW), Err("store-write".to_string()));
         let lines = core.lock().unwrap().log_lines.clone();

@@ -9,16 +9,32 @@ use std::collections::HashMap;
 pub const CHUNK: usize = 2560;
 pub const MAX_CHUNKS: usize = 4;
 
+/// The outcome of a read: there, not there, or the store could not be read. A failed read
+/// is never treated as "nothing stored": nothing is deleted or overwritten because of it.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Fetch<T> {
+    Found(T),
+    Missing,
+    Failed,
+}
+
 /// One raw blob per target name.
 pub trait BlobStore {
-    fn read(&self, target: &str) -> Option<Vec<u8>>;
+    fn read(&self, target: &str) -> Fetch<Vec<u8>>;
     fn write(&self, target: &str, data: &[u8]) -> bool;
     fn remove(&self, target: &str);
 }
 
 /// One secret string per account id.
 pub trait SecretStore {
-    fn get(&self, id: &str) -> Option<String>;
+    fn fetch(&self, id: &str) -> Fetch<String>;
+    /// The value, or None when it is missing or could not be read.
+    fn get(&self, id: &str) -> Option<String> {
+        match self.fetch(id) {
+            Fetch::Found(v) => Some(v),
+            _ => None,
+        }
+    }
     fn set(&self, id: &str, value: &str) -> bool;
     fn delete(&self, id: &str);
 }
@@ -30,22 +46,26 @@ pub fn target(id: &str, n: usize) -> String {
 pub struct Chunked<B: BlobStore>(pub B);
 
 impl<B: BlobStore> SecretStore for Chunked<B> {
-    fn get(&self, id: &str) -> Option<String> {
+    fn fetch(&self, id: &str) -> Fetch<String> {
         let mut out: Vec<u8> = Vec::new();
         let mut found = false;
         for n in 0..MAX_CHUNKS {
             match self.0.read(&target(id, n)) {
-                Some(part) => {
+                Fetch::Found(part) => {
                     found = true;
                     out.extend_from_slice(&part);
                 }
-                None => break,
+                Fetch::Missing => break,
+                Fetch::Failed => return Fetch::Failed,
             }
         }
         if !found {
-            return None;
+            return Fetch::Missing;
         }
-        String::from_utf8(out).ok()
+        match String::from_utf8(out) {
+            Ok(v) => Fetch::Found(v),
+            Err(_) => Fetch::Failed,
+        }
     }
 
     fn set(&self, id: &str, value: &str) -> bool {
@@ -55,7 +75,15 @@ impl<B: BlobStore> SecretStore for Chunked<B> {
         }
         let pieces: Vec<&[u8]> = if bytes.is_empty() { vec![&bytes[..0]] } else { bytes.chunks(CHUNK).collect() };
         // Remember the old value: a failed write must leave it as it was, not wipe it.
-        let previous: Vec<Option<Vec<u8>>> = (0..MAX_CHUNKS).map(|n| self.0.read(&target(id, n))).collect();
+        let mut previous: Vec<Option<Vec<u8>>> = Vec::new();
+        for n in 0..MAX_CHUNKS {
+            match self.0.read(&target(id, n)) {
+                Fetch::Found(b) => previous.push(Some(b)),
+                Fetch::Missing => previous.push(None),
+                // The old value cannot be read, so a rollback could not restore it: write nothing.
+                Fetch::Failed => return false,
+            }
+        }
         for (n, piece) in pieces.iter().enumerate() {
             if !self.0.write(&target(id, n), piece) {
                 for (m, old) in previous.iter().enumerate() {
@@ -95,8 +123,11 @@ impl MemoryBlobs {
 }
 
 impl BlobStore for MemoryBlobs {
-    fn read(&self, target: &str) -> Option<Vec<u8>> {
-        self.map.borrow().get(target).cloned()
+    fn read(&self, target: &str) -> Fetch<Vec<u8>> {
+        match self.map.borrow().get(target) {
+            Some(b) => Fetch::Found(b.clone()),
+            None => Fetch::Missing,
+        }
     }
     fn write(&self, target: &str, data: &[u8]) -> bool {
         self.map.borrow_mut().insert(target.to_string(), data.to_vec());
@@ -115,14 +146,19 @@ fn wide(s: &str) -> Vec<u16> {
 }
 
 impl BlobStore for CredBlobs {
-    fn read(&self, target: &str) -> Option<Vec<u8>> {
+    fn read(&self, target: &str) -> Fetch<Vec<u8>> {
         use windows::core::PCWSTR;
+        use windows::Win32::Foundation::ERROR_NOT_FOUND;
         use windows::Win32::Security::Credentials::{CredFree, CredReadW, CREDENTIALW, CRED_TYPE_GENERIC};
         let name = wide(target);
         let mut cred: *mut CREDENTIALW = std::ptr::null_mut();
         unsafe {
-            if CredReadW(PCWSTR(name.as_ptr()), CRED_TYPE_GENERIC, 0, &mut cred).is_err() || cred.is_null() {
-                return None;
+            if let Err(e) = CredReadW(PCWSTR(name.as_ptr()), CRED_TYPE_GENERIC, 0, &mut cred) {
+                // Only ERROR_NOT_FOUND means nothing is stored; any other error is a failed read.
+                return if e.code() == ERROR_NOT_FOUND.to_hresult() { Fetch::Missing } else { Fetch::Failed };
+            }
+            if cred.is_null() {
+                return Fetch::Failed;
             }
             let c = &*cred;
             let data = if c.CredentialBlob.is_null() || c.CredentialBlobSize == 0 {
@@ -131,7 +167,7 @@ impl BlobStore for CredBlobs {
                 std::slice::from_raw_parts(c.CredentialBlob, c.CredentialBlobSize as usize).to_vec()
             };
             CredFree(cred as *const std::ffi::c_void);
-            Some(data)
+            Fetch::Found(data)
         }
     }
 
@@ -211,8 +247,8 @@ mod tests {
         s.set("a", "short");
         assert_eq!(s.get("a"), Some("short".to_string()));
         assert_eq!(s.0.len(), 1);
-        assert!(s.0.read(&target("a", 1)).is_none());
-        assert!(s.0.read(&target("a", 2)).is_none());
+        assert_eq!(s.0.read(&target("a", 1)), Fetch::Missing);
+        assert_eq!(s.0.read(&target("a", 2)), Fetch::Missing);
     }
 
     #[test]
@@ -233,7 +269,7 @@ mod tests {
         writes: std::cell::Cell<usize>,
     }
     impl BlobStore for FlakyBlobs {
-        fn read(&self, t: &str) -> Option<Vec<u8>> {
+        fn read(&self, t: &str) -> Fetch<Vec<u8>> {
             self.inner.read(t)
         }
         fn write(&self, t: &str, d: &[u8]) -> bool {
@@ -264,6 +300,53 @@ mod tests {
         s.0.fail_from.set(s.0.writes.get() + 2);
         assert!(!s.set("b", &value(6000)));
         assert_eq!(s.get("b"), None);
+    }
+
+    /// A store whose reads fail (or fail from one chunk on) while the data is still there.
+    struct FailingReads {
+        inner: MemoryBlobs,
+        fail_target: std::cell::RefCell<Option<String>>,
+    }
+    impl BlobStore for FailingReads {
+        fn read(&self, t: &str) -> Fetch<Vec<u8>> {
+            if self.fail_target.borrow().as_deref() == Some(t) {
+                return Fetch::Failed;
+            }
+            self.inner.read(t)
+        }
+        fn write(&self, t: &str, d: &[u8]) -> bool {
+            self.inner.write(t, d)
+        }
+        fn remove(&self, t: &str) {
+            self.inner.remove(t)
+        }
+    }
+
+    #[test]
+    fn missing_and_failed_reads_are_different() {
+        let s = Chunked(FailingReads { inner: MemoryBlobs::default(), fail_target: Default::default() });
+        assert_eq!(s.fetch("a"), Fetch::Missing);
+        s.set("a", &value(6000));
+        assert_eq!(s.fetch("a"), Fetch::Found(value(6000)));
+        // Chunk 0 fails: failed, not missing.
+        *s.0.fail_target.borrow_mut() = Some(target("a", 0));
+        assert_eq!(s.fetch("a"), Fetch::Failed);
+        assert_eq!(s.get("a"), None);
+        // A later chunk fails: still failed, never a short value.
+        *s.0.fail_target.borrow_mut() = Some(target("a", 1));
+        assert_eq!(s.fetch("a"), Fetch::Failed);
+        // Another account is not affected.
+        assert_eq!(s.fetch("b"), Fetch::Missing);
+    }
+
+    #[test]
+    fn a_set_over_an_unreadable_value_writes_nothing() {
+        let s = Chunked(FailingReads { inner: MemoryBlobs::default(), fail_target: Default::default() });
+        s.set("a", "old");
+        *s.0.fail_target.borrow_mut() = Some(target("a", 0));
+        assert!(!s.set("a", "new"));
+        *s.0.fail_target.borrow_mut() = None;
+        assert_eq!(s.get("a"), Some("old".to_string()));
     }
 
     #[test]
