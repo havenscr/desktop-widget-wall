@@ -86,13 +86,14 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
     const f = createFrame();
     const drift = createDrift();
 
-    /** Advance the presence; returns the place Watt wants to be on (null for nowhere). */
+    /** Advance the presence; returns true when the loop can stop (see `isIdle`). */
     const step = (dt: number) => {
       readClock(clock, nowRef.current());
       const place = wattPlaceFor(usePlaceStore.getState().active, inCallRef.current);
       const camera = place ? cameraOf(place, clock) : null;
-      stepPresence(p, place, camera, clock.night, cameraReady(place, camera, cameraSignal()), dt, reduced);
-      return place;
+      const ready = cameraReady(place, camera, cameraSignal());
+      stepPresence(p, place, camera, clock.night, ready, dt, reduced);
+      return isIdle(p, place, ready);
     };
 
     const paint = () => {
@@ -136,10 +137,11 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
       const dt = frameDelta(ts, last);
       T += dt;
       last = ts;
-      const place = step(dt);
+      const idle = step(dt);
       paint();
-      // Away with nowhere to go (Zen, or Meet in a call): stop until something changes.
-      if (isIdle(p, place)) {
+      // Away with nowhere to go (Zen, Meet in a call) or waiting for the camera: stop until a
+      // place, call or camera change wakes it.
+      if (idle) {
         cancelAnimationFrame(raf);
         raf = 0;
       }
@@ -150,20 +152,20 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
       if (reduced) {
         step(0);
         paint();
-      } else if (!raf && !isIdle(p, step(0))) {
+      } else if (!raf && !step(0)) {
         last = 0;
         raf = requestAnimationFrame(frame);
       }
     };
 
-    const first = step(0);
+    const idle = step(0);
     paint();
     if (reduced) {
       // One still pose; notice the hour changing (and the page returning) once a minute. A place,
       // camera or call change repaints at once (Watt jumps there, as the horizon does).
       timer = window.setInterval(() => wake.current(), 60_000);
       document.addEventListener('visibilitychange', onVisible);
-    } else if (!isIdle(p, first)) {
+    } else if (!idle) {
       raf = requestAnimationFrame(frame);
     }
     const offPlace = usePlaceStore.subscribe(() => wake.current());

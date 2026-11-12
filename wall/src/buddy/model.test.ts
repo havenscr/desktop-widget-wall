@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CAMERAS, HOME_MORNING, type CameraPreset } from '../horizon/cameras';
 import { ribbonKind } from '../screens/Frame';
-import { MAIN_HEIGHT, MAIN_LEFT, MAIN_TOP, MAIN_WIDTH, RAIL_WIDTH, SHELL_INSET, ZONES, ZONES_WIDE, rowEdges, zoneEdges } from '../screens/frameLayout';
+import { MAIN_HEIGHT, MAIN_LEFT, MAIN_TOP, MAIN_WIDTH, RAIL_WIDTH, SHELL_INSET, ZONE_GAP, ZONES, ZONES_WIDE, rowEdges, zoneEdges } from '../screens/frameLayout';
 import { STAGE_HEIGHT, STAGE_WIDTH } from '../stage/fitScale';
 import {
   FADE_IN_S,
@@ -97,6 +97,18 @@ const overlaps = (a: Rect, b: Rect) => a.left < b.right && b.left < a.right && a
  */
 const UNWIND_WING_UPPER_BOTTOM = 414;
 
+/**
+ * The rest of the merged Unwind layout, measured in the Unwind still at 2560 by 720 (flow
+ * layout, so not constants): the album art, and along the bottom the Tomorrow block, the status
+ * line and the Screens off button. The transport and volume row is `UNWIND_ROW`.
+ */
+const UNWIND_MEASURED: Rect[] = [
+  { left: 624, right: 848, top: 126, bottom: 350 }, // art
+  { left: 124, right: 594, top: 572, bottom: 626 }, // Tomorrow
+  { left: 124, right: 663, top: 662, bottom: 686 }, // status line
+  { left: 691, right: 876, top: 648, bottom: 700 }, // Screens off
+];
+
 /** The panel rectangles on a place, in stage pixels: the frame's layout constants, plus Unwind's transport row. */
 function panels(place: WattPlace): Rect[] {
   const out: Rect[] = [{ left: SHELL_INSET, right: SHELL_INSET + RAIL_WIDTH, top: MAIN_TOP, bottom: MAIN_TOP + MAIN_HEIGHT }];
@@ -112,7 +124,7 @@ function panels(place: WattPlace): Rect[] {
     out.push({ ...wing, top: MAIN_TOP, bottom: UNWIND_WING_UPPER_BOTTOM });
     out.push({ ...wing, top: CAMERAS.unwind.hy, bottom: MAIN_TOP + MAIN_HEIGHT });
     out.push({ left: MAIN_LEFT + MAIN_WIDTH - ZONES_WIDE[1], right: MAIN_LEFT + MAIN_WIDTH, top: MAIN_TOP, bottom: MAIN_TOP + MAIN_HEIGHT });
-    out.push({ ...UNWIND_ROW });
+    out.push({ ...UNWIND_ROW }, ...UNWIND_MEASURED);
   }
   return out;
 }
@@ -342,11 +354,13 @@ describe('moving between places', () => {
     const p = upOn('work');
     run(p, { place: null }, { to: CAMERAS.work, moving: false }, 1);
     expect(p).toMatchObject({ place: null, opacity: 0 });
-    expect(isIdle(p, null)).toBe(true);
+    expect(isIdle(p, null, false)).toBe(true);
     // Leaving Zen to Home: the horizon glides from the Work camera first.
     const glide = run(p, { place: 'home' }, { to: CAMERAS.home, moving: true }, 1.6);
     for (const s of glide) expect(s.opacity).toBe(0);
-    expect(isIdle(p, 'home')).toBe(false);
+    // Waiting unseen for the camera: idle (the camera signal wakes it); once ready it is not.
+    expect(isIdle(p, 'home', false)).toBe(true);
+    expect(isIdle(p, 'home', true)).toBe(false);
     run(p, { place: 'home' }, { to: CAMERAS.home, moving: false }, FADE_IN_S + 0.1);
     expect(p.opacity).toBe(1);
   });
@@ -408,6 +422,10 @@ describe('drifting notes and z', () => {
     const n = driftAt('note', walk, 985, y, w, 0, 0);
     expect(Math.abs(n.left - 1065)).toBeLessThanOrEqual(10);
     expect(Math.abs(n.top - 530)).toBeLessThanOrEqual(6);
+  });
+  it('Unwind\'s transport row starts at the centre zone\'s left edge (stage x 624)', () => {
+    expect(UNWIND_ROW.left).toBe(MAIN_LEFT + ZONES_WIDE[0] + ZONE_GAP);
+    expect(UNWIND_ROW.left).toBe(624);
   });
   it('on Unwind stop short of the transport row and under the wind down block', () => {
     const walk = WALKS.unwind;

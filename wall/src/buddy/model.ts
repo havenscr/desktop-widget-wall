@@ -1,5 +1,5 @@
 import { CAMERAS, homeCameraFor, type CameraPreset } from '../horizon/cameras';
-import { rowEdges } from '../screens/frameLayout';
+import { MAIN_LEFT, ZONE_GAP, ZONES_WIDE, rowEdges } from '../screens/frameLayout';
 import type { PlaceId } from '../state/places';
 import { SPRITES, type Pose } from './sprites';
 
@@ -23,10 +23,12 @@ export interface Walk {
 const TOP_BAND_BOTTOM = rowEdges()[0].bottom;
 
 /**
- * Left edge of Unwind's transport and volume row in the concept (`f_unwind`, about x 620 to
- * 1220, y 380 to 470 at 2560 by 720). Watt stays left of it with a small gap.
+ * Unwind's transport and volume row (`.u-transport` in `styles/unwind.css`), stage pixels at 2560
+ * by 720. It starts at the centre zone's left edge (the frame constants); its top and bottom come
+ * from the flow layout and were measured in the Unwind still (y 384 to 472, the row box running
+ * to the player's right edge at x 1402). Watt stays left of it with a small gap.
  */
-export const UNWIND_ROW = { left: 620, right: 1220, top: 380, bottom: 470 } as const;
+export const UNWIND_ROW = { left: MAIN_LEFT + ZONES_WIDE[0] + ZONE_GAP, right: 1402, top: 384, bottom: 472 } as const;
 
 /**
  * Walk range per place. Work and Meet sit around the concept's (985, 534) at 4 px a pixel, Home
@@ -315,7 +317,10 @@ export function stepPresence(p: Presence, place: WattPlace | null, camera: Camer
   return p;
 }
 
-/** True when Watt is away, unseen, and has nowhere to go: the frame loop can stop. */
-export function isIdle(p: Presence, place: WattPlace | null): boolean {
-  return place === null && p.place === null && p.opacity === 0;
+/**
+ * True when Watt is away and unseen, and either has nowhere to go or is waiting for a camera that
+ * is not ready: the frame loop can stop (a place, call or camera change wakes it).
+ */
+export function isIdle(p: Presence, place: WattPlace | null, ready: boolean): boolean {
+  return p.place === null && p.opacity === 0 && (place === null || !ready);
 }

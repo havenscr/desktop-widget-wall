@@ -145,6 +145,24 @@ it('a place change: hidden while the camera moves, then up at the new place, nev
   expect(w).toMatchObject({ x: middle(WALKS.home), width: 18 * 5, opacity: 1 });
 });
 
+it('requests no frames while it waits unseen for the camera, and wakes when the camera settles', () => {
+  usePlaceStore.setState({ active: 'work' });
+  publishCamera(CAMERAS.work, false);
+  const { container } = render(<Watt now={day} />);
+  runFor(1.5);
+  go('home');
+  horizon(CAMERAS.home, true);
+  runFor(FADE_OUT_S + 0.2);
+  expect(where(container).opacity).toBe(0);
+  expect(frames.size).toBe(0);
+  horizon(CAMERAS.home, true); // no change: still asleep
+  expect(frames.size).toBe(0);
+  horizon(CAMERAS.home, false);
+  expect(frames.size).toBe(1);
+  runFor(FADE_IN_S + 0.2);
+  expect(where(container)).toMatchObject({ x: middle(WALKS.home), opacity: 1 });
+});
+
 it('shows notes while music plays and drifting z at night', () => {
   const { container, unmount } = render(<Watt now={day} />);
   act(() => {
@@ -294,5 +312,15 @@ describe('with the real horizon on Home', () => {
     runFor(2);
     expect(cameraSignal()).toMatchObject({ to: CAMERAS.home, moving: false });
     expect(HOME_MORNING).not.toBe(CAMERAS.home);
+  });
+
+  it('the horizon clears the signal when it unmounts, so it never sticks on moving', async () => {
+    const { cameraSignal } = await import('../horizon/signal');
+    usePlaceStore.setState({ active: 'work' });
+    const { unmount } = render(<HorizonCanvas now={day} />);
+    go('home');
+    expect(cameraSignal().moving).toBe(true);
+    unmount();
+    expect(cameraSignal()).toMatchObject({ to: null, moving: false });
   });
 });
