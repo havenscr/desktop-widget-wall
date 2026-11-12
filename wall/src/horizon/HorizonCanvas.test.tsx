@@ -1,7 +1,7 @@
-import { act, render } from '@testing-library/react';
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { act, cleanup, render } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HorizonCanvas } from './HorizonCanvas';
-import { CAMERAS, drawHorizon } from './index';
+import { CAMERAS, HOME_MORNING, drawHorizon } from './index';
 import { stubContext } from './canvasStub';
 import { fitScale, STAGE_HEIGHT, STAGE_WIDTH } from '../stage/fitScale';
 import { usePlaceStore } from '../state/places';
@@ -12,8 +12,13 @@ vi.mock('./index', async (original) => ({
   drawHorizon: vi.fn(),
 }));
 
-const NOON = 1794427200000;
+const NOON = new Date(2026, 10, 11, 12, 0).getTime(); // local noon, after the morning view
 const draw = vi.mocked(drawHorizon);
+
+/** A local-time moment on 2026-11-11, so the morning rule gives the same answer in any time zone. */
+const localMs = (hour: number, minute = 0) => new Date(2026, 10, 11, hour, minute).getTime();
+/** Review URL query for Home at a local time. */
+const homeAt = (hour: number, minute = 0) => `/?hz=home&at=${new Date(localMs(hour, minute)).toISOString()}`;
 
 function setReducedMotion(reduce: boolean) {
   window.matchMedia = ((query: string) => ({
@@ -199,14 +204,14 @@ it('an inline now prop does not restart the loop or reset animation time', () =>
 
 it('review mode repaints when the page becomes visible after a hidden start', () => {
   setReducedMotion(false);
-  window.history.replaceState(null, '', '/?hz=home&at=2026-11-11T16:00:00Z');
+  window.history.replaceState(null, '', homeAt(16, 30));
   setHidden(true);
   render(<HorizonCanvas now={() => 0} />);
   expect(draw).not.toHaveBeenCalled();
   setHidden(false);
   act(() => void document.dispatchEvent(new Event('visibilitychange')));
   expect(draw).toHaveBeenCalledTimes(1);
-  expect(draw.mock.lastCall![1]).toMatchObject({ camera: CAMERAS.home, ms: Date.UTC(2026, 10, 11, 16), t: 0, phase: 0 });
+  expect(draw.mock.lastCall![1]).toMatchObject({ camera: CAMERAS.home, ms: localMs(16, 30), t: 0, phase: 0 });
 });
 
 it('review mode sets the active place in the store so the rail and screen match', () => {
@@ -338,7 +343,7 @@ it('draws no ripple in the review still, even with music playing; ?hz=unwind has
   expect(o).not.toHaveProperty('echo');
   expect(o.moon).toEqual([1730, 112, 44]);
   unmount();
-  window.history.replaceState(null, '', '/?hz=home&at=2026-11-11T16:00:00Z');
+  window.history.replaceState(null, '', homeAt(16, 30));
   render(<HorizonCanvas now={() => 0} />);
   o = draw.mock.lastCall![1];
   expect(o).not.toHaveProperty('echo');
@@ -385,4 +390,130 @@ it('reduced motion: no timer redraw while Zen is active', () => {
   draw.mockClear();
   act(() => void vi.advanceTimersByTime(180_000));
   expect(draw).not.toHaveBeenCalled();
+});
+
+describe('Home morning view', () => {
+  const MORNING = localMs(7, 12);
+  const AFTERNOON = localMs(16, 30);
+  const canvases = () => Array.from(document.querySelectorAll('canvas'));
+  const oldLayer = () => canvases()[1];
+  const cameras = () => draw.mock.calls.map((c) => c[1].camera);
+
+  it('the Home place passes the south preset (ter south) to drawHorizon in the morning', () => {
+    setReducedMotion(false);
+    usePlaceStore.setState({ active: 'home' });
+    render(<HorizonCanvas now={() => MORNING} />);
+    runFrame(100);
+    expect(draw.mock.lastCall![1].camera).toBe(HOME_MORNING);
+    expect(draw.mock.lastCall![1].camera!.ter).toBe('south');
+    expect(oldLayer().style.display).toBe('none'); // opened on Home: nothing to fade from
+  });
+
+  it('Work and Unwind keep their cameras in the morning', () => {
+    setReducedMotion(false);
+    render(<HorizonCanvas now={() => MORNING} />);
+    runFrame(100);
+    expect(draw.mock.lastCall![1].camera).toBe(CAMERAS.work);
+    act(() => usePlaceStore.getState().setActive('unwind'));
+    runFrame(900);
+    expect(draw.mock.lastCall![1].camera!.ter).toBeUndefined();
+    expect(oldLayer().style.display).toBe('none');
+  });
+
+  it('entering Home in the morning cross-fades over 2 seconds and ends with one layer', () => {
+    setReducedMotion(false);
+    render(<HorizonCanvas now={() => MORNING} />);
+    runFrame(100);
+    act(() => usePlaceStore.getState().setActive('home'));
+    draw.mockClear();
+    runFrame(200); // 0.1 s into the fade
+    expect(draw).toHaveBeenCalledTimes(2); // old view underneath, new view on top
+    expect(cameras()).toEqual([CAMERAS.work, HOME_MORNING]);
+    expect(oldLayer().style.display).toBe('');
+    const opacity = Number(canvases()[0].style.opacity);
+    expect(opacity).toBeGreaterThan(0);
+    expect(opacity).toBeLessThan(0.2);
+    let ts = 200;
+    for (let i = 0; i < 10; i++) runFrame((ts += 100)); // 1.1 s in
+    expect(Number(canvases()[0].style.opacity)).toBeGreaterThan(0.4);
+    expect(Number(canvases()[0].style.opacity)).toBeLessThan(0.7);
+    for (let i = 0; i < 12; i++) runFrame((ts += 100)); // well past 2 s
+    expect(oldLayer().style.display).toBe('none');
+    expect(canvases()[0].style.opacity).toBe('');
+    draw.mockClear();
+    runFrame((ts += 100));
+    expect(draw).toHaveBeenCalledTimes(1);
+    expect(draw.mock.lastCall![1].camera).toBe(HOME_MORNING);
+  });
+
+  it('a same-terrain move (Work to Home in the afternoon) glides and starts no fade', () => {
+    setReducedMotion(false);
+    render(<HorizonCanvas now={() => AFTERNOON} />);
+    runFrame(100);
+    act(() => usePlaceStore.getState().setActive('home'));
+    draw.mockClear();
+    runFrame(200);
+    expect(draw).toHaveBeenCalledTimes(1);
+    expect(oldLayer().style.display).toBe('none');
+    expect(canvases()[0].style.opacity).toBe('');
+    const cam = draw.mock.lastCall![1].camera!;
+    expect(cam.az0).toBeLessThan(CAMERAS.work.az0);
+    expect(cam.az0).toBeGreaterThan(CAMERAS.home.az0);
+  });
+
+  it('reduced motion switches terrain instantly, with one layer', () => {
+    setReducedMotion(true);
+    render(<HorizonCanvas now={() => MORNING} />);
+    draw.mockClear();
+    act(() => usePlaceStore.getState().setActive('home'));
+    expect(draw).toHaveBeenCalledTimes(1);
+    expect(draw.mock.lastCall![1].camera).toBe(HOME_MORNING);
+    expect(oldLayer().style.display).toBe('none');
+    expect(canvases()[0].style.opacity).toBe('');
+  });
+
+  it('the review still uses the rule for its time, with no fade', () => {
+    setReducedMotion(false);
+    window.history.replaceState(null, '', homeAt(7, 12));
+    render(<HorizonCanvas now={() => 0} />);
+    expect(draw).toHaveBeenCalledTimes(1);
+    expect(draw.mock.lastCall![1].camera).toBe(HOME_MORNING);
+    expect(oldLayer().style.display).toBe('none');
+    expect(rafSpy).not.toHaveBeenCalled();
+    cleanup();
+    draw.mockClear();
+    window.history.replaceState(null, '', homeAt(16, 30));
+    render(<HorizonCanvas now={() => 0} />);
+    expect(draw.mock.lastCall![1].camera).toBe(CAMERAS.home);
+  });
+
+  it('11:30 AM passing while Home is open fades back to the west view', () => {
+    setReducedMotion(false);
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] }); // keep the mocked animation frames
+    let ms = localMs(11, 29);
+    usePlaceStore.setState({ active: 'home' });
+    render(<HorizonCanvas now={() => ms} />);
+    runFrame(100);
+    expect(draw.mock.lastCall![1].camera).toBe(HOME_MORNING);
+    ms = localMs(11, 31);
+    act(() => void vi.advanceTimersByTime(60_000));
+    draw.mockClear();
+    runFrame(200);
+    expect(draw).toHaveBeenCalledTimes(2);
+    expect(cameras()).toEqual([HOME_MORNING, CAMERAS.home]);
+    expect(oldLayer().style.display).toBe('');
+  });
+
+  it('5:00 AM passing under reduced motion switches the still frame at once', () => {
+    setReducedMotion(true);
+    vi.useFakeTimers();
+    let ms = localMs(4, 59);
+    usePlaceStore.setState({ active: 'home' });
+    render(<HorizonCanvas now={() => ms} />);
+    expect(draw.mock.lastCall![1].camera).toBe(CAMERAS.home);
+    ms = localMs(5, 1);
+    act(() => void vi.advanceTimersByTime(60_000));
+    expect(draw.mock.lastCall![1].camera).toBe(HOME_MORNING);
+    expect(oldLayer().style.display).toBe('none');
+  });
 });
