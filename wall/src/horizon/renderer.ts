@@ -159,6 +159,25 @@ function grain(ctx:Any,w:Any,h:Any){if(typeof document==='undefined')return;if(!
  ctx.save();ctx.setTransform(1,0,0,1,0,0);ctx.fillStyle=ctx.createPattern(GRAIN,'repeat');ctx.fillRect(0,0,w,h);ctx.restore()}
 function wisp(ctx:Any,cx:Any,cy:Any,rx:Any,ry:Any,col:Any,a:Any){ctx.save();ctx.translate(cx,cy);ctx.scale(rx/ry,1);const g=ctx.createRadialGradient(0,0,0,0,0,ry);g.addColorStop(0,css(col,a));g.addColorStop(.5,css(col,a*.5));g.addColorStop(1,css(col,0));ctx.fillStyle=g;ctx.beginPath();ctx.arc(0,0,ry,0,7);ctx.fill();ctx.restore()}
 
+/* grid pulse (music reaction): soft glow bands that roll across the lake grid, drawn additively
+   over the lines. Each band sits at depth p on the same pow(.., 2.1) spacing as the horizontal
+   lines and grows with it, so it reads as one row of the floor coming toward the viewer. */
+const PULSE_COL:RGB=[0,0,0]; // the band colour, filled in place once a band is visible
+function gridPulse(ctx:Any,G:HorizonGrid,W:Any,H:Any,hy:Any,vx:Any,px:Any,grid:RGB){let on=false;const col=PULSE_COL;
+ for(let i=0;i<G.waves.length;i++){const w=G.waves[i];if(!(w.a>.003))continue;
+  if(!on){for(let k=0;k<3;k++)col[k]=mix(grid[k],255,.35);ctx.save();ctx.beginPath();ctx.rect(0,hy,W,H-hy);ctx.clip();ctx.globalCompositeOperation='lighter';on=true}
+  const p=clamp(w.p,0,1),a=clamp(w.a,0,1),y=hy+(H-hy)*Math.pow(p,2.1),th=4+(H-hy)*.26*Math.pow(p,1.1);
+  wisp(ctx,vx,y,W*.72,th,col,a);ctx.fillStyle=css(col,a*.35);ctx.fillRect(0,y-px(.7),W,px(1.4))}
+ if(on)ctx.restore()}
+
+/** Grid pulse (music reaction): the lake grid brightens with the bass and glow bands roll toward the viewer. */
+export interface HorizonGrid {
+  /** 0 to 1: raises the grid line opacity from 0.3 up to 0.55. */
+  bright: number;
+  /** Glow bands: `p` is the depth (0 at the horizon, 1 at the bottom edge), `a` the opacity (0 to 1). Bands with `a` near 0 are skipped. */
+  waves: { p: number; a: number }[];
+}
+
 /** Echo ripple (music reaction): lines of the range that wobble to a spectrum. */
 export interface HorizonEcho {
   /** Number of echo lines. */
@@ -219,6 +238,8 @@ export interface HorizonDrawOptions {
   snowDeg?: number;
   /** Music ripple, or null for none. */
   echo?: HorizonEcho | null;
+  /** Grid pulse, or null for none (the grid then draws exactly as without music). */
+  grid?: HorizonGrid | null;
   /** Set false to hide the city (default shown). */
   city?: boolean;
   /** City size multiplier (default 1). */
@@ -292,11 +313,13 @@ export function draw(ctx:CanvasRenderingContext2D,o:HorizonDrawOptions):HorizonD
  if(o.moon&&P.star>.3){const [mx,,mr]=o.moon;ctx.save();ctx.beginPath();ctx.rect(0,hy,W,H-hy);ctx.clip();wisp(ctx,mx,hy,mr*1.6,(H-hy)*.95,[190,205,255],.2*P.star);ctx.restore()}
  if(glit&&glit.a>.02)for(let i=0;i<9;i++){const w=glit.R*(.5+i*.2)*(.78+.22*Math.sin(t*2.6+i*1.7));ctx.fillStyle=css(glit.c,(.42-i*.04)*glit.a);ctx.fillRect(glit.x-w/2,hy+4+i*(6+i*1.5),w,2.2+i*.45)}
  ctx.globalCompositeOperation='source-over';
- const vx=o.vx===undefined?W/2:o.vx,ph=o.phase||0;ctx.strokeStyle=css(P.grid,.3);ctx.lineWidth=px(1.1);ctx.beginPath();
+ const vx=o.vx===undefined?W/2:o.vx,ph=o.phase||0,GP=o.grid;ctx.strokeStyle=css(P.grid,GP?.3+.25*clamp(GP.bright,0,1):.3);ctx.lineWidth=px(1.1);ctx.beginPath();
  for(let i=-80;i<=80;i++){ctx.moveTo(vx,hy);ctx.lineTo(vx+i*170,H)}
  for(let j=0;j<8;j++){const y=hy+(H-hy)*Math.pow((j+ph)/8,2.1);ctx.moveTo(0,y);ctx.lineTo(W,y)}ctx.stroke();
  const rc=mixc(P.grid,[255,255,255],.35);for(let i=0;i<64;i++){const v=.04+.96*hash(i,95),y=hy+(H-hy)*Math.pow(v,1.7),len=18+v*150,x=fr(hash(i,96)+t*.004*(1+v))*(W+len)-len;ctx.fillStyle=css(rc,(.05+.1*hash(i,97))*(.55+.45*Math.sin(t*1.4+i)));ctx.fillRect(x,y,len,px(1))}
  g=ctx.createLinearGradient(0,hy,0,hy+(H-hy)*.5);g.addColorStop(0,css(P.f[0],.7));g.addColorStop(1,css(P.f[0],0));ctx.fillStyle=g;ctx.fillRect(0,hy,W,(H-hy)*.5);
+ // after the fog, which would otherwise hide the bands for most of their roll
+ if(GP)gridPulse(ctx,GP,W,H,hy,vx,px,P.grid);
  ctx.globalAlpha=.16;ctx.fillStyle=rim;ctx.fillRect(0,hy-3,W,6);ctx.globalAlpha=.9;ctx.fillRect(0,hy-px(.8),W,px(1.6));ctx.globalAlpha=1;
  if(o.grain!==false)grain(ctx,W*sc,H*sc);
  return{sun:sp,x:sx,y:sy,P}}

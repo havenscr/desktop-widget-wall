@@ -2,6 +2,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { invoke, isTauri } from '../bridge/tauri';
 import type { AudioLevelsPayload } from './model';
 import { ingestLevels, resetAudio, tickAudio } from './store';
+import { createSourceClock } from './sourceTime';
 
 export const RETRY_WAIT = 30_000;
 export const WATCHDOG_MS = 5_000;
@@ -9,21 +10,38 @@ export const TICK_MS = 33;
 
 const now = () => performance.now();
 
-/** Fake gentle levels for browser dev; only used with `?audio=demo`. */
+/** Kicks per second in the demo levels (105 BPM). */
+export const DEMO_KICK_HZ = 1.75;
+
+/**
+ * Fake gentle levels for browser dev; only used with `?audio=demo`. The 32 bands are bytes
+ * (0 to 255) as Rust sends them: a sloping bed that wanders slowly, and a kick in the low
+ * bands (0 to 11) at `DEMO_KICK_HZ`, so the beat detector and the grid pulse have something
+ * to find.
+ */
 export function demoPayload(ms: number): AudioLevelsPayload {
   const t = ms / 1000;
-  const beat = Math.exp(-((t * 1.75) % 1) * 5);
+  const beat = Math.exp(-((t * DEMO_KICK_HZ) % 1) * 5);
+  // The kick in the bands holds a little longer than the bass level, as a real kick's body does.
+  const body = Math.exp(-((t * DEMO_KICK_HZ) % 1) * 3.5);
+  const bands: number[] = [];
+  for (let i = 0; i < 32; i++) {
+    const bed = 150 - i * 2.5 + 6 * Math.sin(t * (0.7 + i * 0.13) + i);
+    const kick = i < 12 ? 72 * body * (1 - i / 16) : 0;
+    bands.push(Math.round(Math.min(255, Math.max(0, bed + kick))));
+  }
   return {
     bass: 0.25 + 0.35 * beat,
     mid: 0.2 + 0.1 * Math.sin(t * 0.9),
     high: 0.12 + 0.06 * Math.sin(t * 2.3),
-    bands: [1],
+    bands,
     waveform: [0],
   };
 }
 
+/** True for `?audio=demo` in a development build only; a production bundle ignores the query. */
 export function wantsDemo(search: string): boolean {
-  return new URLSearchParams(search).get('audio') === 'demo';
+  return import.meta.env.DEV && new URLSearchParams(search).get('audio') === 'demo';
 }
 
 /**
@@ -87,9 +105,14 @@ export function startAudio(): () => void {
       await invoke('start_audio_capture', { deviceId });
       if (stopped) return false;
       unlisten?.();
+      // A fresh source clock per capture start: frames that arrive in a burst get their own times.
+      const clock = createSourceClock();
       unlisten = await listen<AudioLevelsPayload>('audio-levels', (e) => {
-        lastEventAt = now();
-        if (!document.hidden) ingestLevels(e.payload, now());
+        const at = now();
+        lastEventAt = at;
+        if (document.hidden) return;
+        const source = clock.stamp(at);
+        if (source !== null) ingestLevels(e.payload, at, source);
       });
       if (stopped) {
         unlisten();

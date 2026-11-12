@@ -2,13 +2,14 @@ import { useEffect, useRef, useState } from 'react';
 import { useReducedMotion } from '../ui/useReducedMotion';
 import { STAGE_HEIGHT, STAGE_WIDTH, fitScale } from '../stage/fitScale';
 import { usePlaceStore } from '../state/places';
-import { useAudioStore } from '../audio/store';
+import { audioBeats, useAudioStore } from '../audio/store';
 import { loudness, smoothStep } from '../audio/model';
 import { CAMERAS, HOME_MORNING, MOON, cameraFor, cloudShiftFor, glideCamera, localDay, settled, startGlide, stepGlide, type CameraPreset, type Glide } from './cameras';
 import { echoOptions, initialEchoGate, stepEchoFade, stepEchoGate } from './echo';
 import { frameDelta, shouldDraw } from './pacing';
+import { clearGridPulse, createGridPulse, stepGridPulse } from './pulse';
 import { parseReview } from './review';
-import { drawHorizon, type HorizonOptions } from './index';
+import { drawHorizon, type HorizonGrid, type HorizonOptions } from './index';
 
 const REDRAW_MS = 60_000;
 /** Home's morning rule is re-checked this often. */
@@ -36,6 +37,11 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
   const loud = useRef(0); // smoothed loudness, so the ripple eases out when the store drops to zero
   // The camera gate (0 to 1): ramps the ripple out on a turn to Rainier and back in after the turn away.
   const gate = useRef(initialEchoGate(glide.current));
+  // The grid pulse: glow bands on the beat and brighter lines with the bass, only while music plays.
+  const pulse = useRef(createGridPulse());
+  const grid = useRef<HorizonGrid | null>(null);
+  // The pulse's per-frame input, reused so the frame loop builds no object for it.
+  const pulseIn = useRef({ playing: false, beats: 0, lag: 0, bass: 0, gp: 0 });
   // Latest clock, read at draw time so an inline `now` prop never restarts the loop.
   const nowRef = useRef(now);
   useEffect(() => {
@@ -69,6 +75,9 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
     const canvas = ref.current;
     if (!canvas || zen) return;
     const still = reduced || review !== null;
+    // Start the pulse from nothing: after Zen or a reduced motion spell the stored bands are stale.
+    clearGridPulse(pulse.current);
+    grid.current = null;
     let T = 0;
     let last = 0;
     let raf = 0;
@@ -96,10 +105,11 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
         // Clouds turn with the camera at about a third of the land's speed.
         cloudShift: cloudShiftFor(camera),
       };
-      // The ripple never appears in the review still or under reduced motion's still frames.
+      // The ripple and the grid pulse never appear in the review still or under reduced motion's still frames.
       if (!still) {
         const echo = echoOptions(camera, fade.current * gate.current, loud.current, T);
         if (echo) options.echo = echo;
+        if (grid.current) options.grid = grid.current;
       }
       // The moon shows only once the camera has arrived at Unwind (no glide in progress), and
       // goes the moment a glide away starts. The review still and reduced motion jump straight there.
@@ -118,6 +128,14 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
       fade.current = stepEchoFade(fade.current, useAudioStore.getState().playing, dt);
       glide.current = stepGlide(glide.current, dt);
       gate.current = stepEchoGate(gate.current, glide.current, dt);
+      const beats = audioBeats();
+      const input = pulseIn.current;
+      input.playing = useAudioStore.getState().playing;
+      input.beats = beats.count;
+      input.lag = beats.lag / 1000;
+      input.bass = beats.bass;
+      input.gp = glideCamera(glide.current).gp;
+      grid.current = stepGridPulse(pulse.current, dt, input);
       if (glide.current.cinematic && glide.current.progress >= 0.5) cinematicDay.current = localDay(nowRef.current());
       paint();
     };
@@ -143,12 +161,14 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
     };
   }, [reduced, review, zen]);
 
-  // Hidden pages start the ripple from nothing when they return, never from stale levels.
+  // Hidden pages start the ripple and the grid pulse from nothing when they return, never from stale levels.
   useEffect(() => {
     const onHide = () => {
       if (document.hidden) {
         fade.current = 0;
         loud.current = 0;
+        clearGridPulse(pulse.current);
+        grid.current = null;
       }
     };
     document.addEventListener('visibilitychange', onHide);

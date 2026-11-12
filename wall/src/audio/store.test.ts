@@ -1,6 +1,6 @@
 import { beforeEach, expect, it } from 'vitest';
 import { SILENCE_MS, hasSound, loudness, smoothStep } from './model';
-import { ingestLevels, resetAudio, tickAudio, useAudioStore } from './store';
+import { audioBands, audioBeats, ingestLevels, resetAudio, tickAudio, useAudioStore } from './store';
 
 const loud = { bass: 0.8, mid: 0.4, high: 0.2, bands: [1], waveform: [0.1] };
 const empty = { bass: 0, mid: 0, high: 0, bands: [], waveform: [] };
@@ -85,4 +85,40 @@ it('loudness weights bass over mid over high and stays within 0 to 1', () => {
   expect(loudness({ bass: 0, mid: 1, high: 0 })).toBeGreaterThan(loudness({ bass: 0, mid: 0, high: 1 }));
   expect(loudness({ bass: 1, mid: 1, high: 1 })).toBe(1);
   expect(loudness({ bass: 0, mid: 0, high: 0 })).toBe(0);
+});
+
+it('keeps the newest bands normalised from 0..255 bytes, and zeros them once silent', () => {
+  const bands = Array.from({ length: 32 }, (_, i) => i * 8);
+  ingestLevels({ ...loud, bands }, 1000);
+  tickAudio(1000);
+  expect(audioBands()[0]).toBe(0);
+  expect(audioBands()[31]).toBeCloseTo(248 / 255, 6);
+  expect(audioBands()).toHaveLength(32);
+  ingestLevels({ ...loud, bands: [255, 300, -4] }, 1033); // short and out of range: clamped, the rest zero
+  expect(Array.from(audioBands().slice(0, 4))).toEqual([1, 1, 0, 0]);
+  tickAudio(1033 + SILENCE_MS + 1);
+  expect(Array.from(audioBands()).every((v) => v === 0)).toBe(true);
+});
+
+it('an empty event leaves the bands alone (silence is decided by the clock)', () => {
+  ingestLevels({ ...loud, bands: new Array(32).fill(255) }, 1000);
+  ingestLevels(empty, 1010);
+  expect(audioBands()[5]).toBe(1);
+});
+
+it('feeds the beat detector: a kick in the low bands every 0.5 s gives beats, and reset clears the count', () => {
+  const quiet = new Array(32).fill(80);
+  const kick = new Array(32).fill(80).map((v, i) => (i < 12 ? 200 : v));
+  for (let t = 0; t <= 4000; t += 33) {
+    const phase = t % 500;
+    ingestLevels({ ...loud, bands: phase < 100 ? kick : quiet }, t);
+    tickAudio(t);
+  }
+  const b = audioBeats();
+  expect(b.count).toBeGreaterThanOrEqual(6);
+  const ts = b.beats();
+  for (let i = 1; i < ts.length; i++) expect(Math.abs(ts[i] - ts[i - 1] - 500)).toBeLessThanOrEqual(33);
+  expect(b.bass).toBeCloseTo(80 / 255, 2);
+  resetAudio();
+  expect(audioBeats().count).toBe(0);
 });

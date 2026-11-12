@@ -128,3 +128,12 @@ it('gives the watchdog a fresh 5 seconds when the page becomes visible again', a
   expect(names().filter((n) => n === 'start_audio_capture')).toHaveLength(1);
   stop();
 });
+
+it('?audio=demo is honoured in a development build and ignored in a production build', async () => {
+  const { wantsDemo } = await import('./capture');
+  vi.stubEnv('DEV', true);
+  expect(wantsDemo('?audio=demo')).toBe(true);
+  vi.stubEnv('DEV', false);
+  expect(wantsDemo('?audio=demo')).toBe(false);
+  vi.unstubAllEnvs();
+});
