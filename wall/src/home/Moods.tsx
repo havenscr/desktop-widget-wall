@@ -138,7 +138,7 @@ export function Moods() {
               className={cls}
               data-mood={m.id}
               disabled={phase?.kind === 'working'}
-              aria-pressed={last === m.id}
+              aria-label={last === m.id ? `${moodLabel(m)}, last used` : undefined}
               onClick={() => void tap(m.id)}
             >
               <Glyph size={40} stroke={1.6} aria-hidden="true" />

@@ -118,3 +118,13 @@ it('shows Not set up when applying fails because the config is missing', async (
   expect(screen.getByText('Not set up')).toBeTruthy();
   expect(screen.queryByText('Could not set the mood')).toBeNull();
 });
+
+it('names the last mood "last used" and does not use aria-pressed', async () => {
+  localStorage.setItem(LAST_MOOD_KEY, 'evening');
+  mocks.set('wall2_moods', () => LIST);
+  render(<Moods />);
+  await flush();
+  expect(screen.getByRole('button', { name: 'Evening, last used' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Day' })).toBeTruthy();
+  for (const b of screen.getAllByRole('button')) expect(b.hasAttribute('aria-pressed')).toBe(false);
+});
