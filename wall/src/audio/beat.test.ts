@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BEAT_BANDS, MIN_BEAT_GAP_MS, createBeatDetector } from './beat';
+import { BEAT_BANDS, BEAT_GAP_TOLERANCE_MS, MIN_BEAT_GAP_MS, createBeatDetector } from './beat';
 import { createSourceClock } from './sourceTime';
 
 /*
@@ -219,8 +219,8 @@ describe('beat detector', () => {
         }
       }
     }
-    expect(fastest).toBeGreaterThanOrEqual(MIN_BEAT_GAP_MS);
-    expect(fastest).toBeLessThan(MIN_BEAT_GAP_MS + 66); // the fastest pattern really does reach the gap
+    expect(fastest).toBeGreaterThanOrEqual(MIN_BEAT_GAP_MS - BEAT_GAP_TOLERANCE_MS);
+    expect(fastest).toBeLessThan(MIN_BEAT_GAP_MS); // the fastest pattern really does reach the slack
   });
 
   it('keeps beats 340 ms apart on the arrival clock too: repeated stalls near that cadence never give four in a real second', () => {
@@ -255,7 +255,32 @@ describe('beat detector', () => {
     const beats = replay(true);
     expect(beats.length).toBeGreaterThan(20);
     expect(mostInASecond(beats)).toBeLessThanOrEqual(3);
-    for (let i = 1; i < beats.length; i++) expect(beats[i] - beats[i - 1]).toBeGreaterThanOrEqual(MIN_BEAT_GAP_MS);
+    for (let i = 1; i < beats.length; i++) expect(beats[i] - beats[i - 1]).toBeGreaterThanOrEqual(MIN_BEAT_GAP_MS - BEAT_GAP_TOLERANCE_MS);
+  });
+
+  it('a steady 170 BPM kick (353 ms) loses no beats, with or without 15 ms of arrival jitter', () => {
+    const period = 60_000 / 170;
+    for (const jitter of [0, 15]) {
+      for (const seed of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]) {
+        const r = rng(seed);
+        const d = createBeatDetector();
+        const clock = createSourceClock();
+        const quiet = new Array(32).fill(0.3);
+        let beats = 0;
+        const frames = 900;
+        for (let i = 0; i < frames; i++) {
+          const t = i * 33;
+          // A kick body decaying over about 90 ms, from 700 ms on (after the warm-up).
+          const since = t < 700 ? Infinity : (t - 700) % period;
+          const v = 0.3 + 0.4 * Math.exp(-since / 90);
+          const bands = quiet.map((q, k) => (k < 12 ? v : q));
+          const arrival = t + (r() * 2 - 1) * jitter;
+          const st = clock.stamp(arrival);
+          if (st !== null && d.push(bands, st, arrival)) beats++;
+        }
+        expect(beats).toBe(Math.floor((frames * 33 - 700) / period));
+      }
+    }
   });
 
   it('reports the plain low level as bass, and reset clears the count', () => {

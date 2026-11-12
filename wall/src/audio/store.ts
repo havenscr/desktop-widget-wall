@@ -61,6 +61,11 @@ export function bandHistory(): BandHistory {
   return history;
 }
 
+/** Empty the band history (the page was hidden: its old spectrum must not replay on return). */
+export function clearBandHistory(): void {
+  clearHistory();
+}
+
 function clearHistory(): void {
   history.data.fill(0);
   history.head = -1;

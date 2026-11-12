@@ -950,6 +950,18 @@ describe('the Unwind visualizer', () => {
     expect(draw.mock.lastCall![1].echo!.a).toBeCloseTo(0.9, 9);
   });
 
+  it('hiding the page empties the band history, so old spectrum never replays on return', () => {
+    setReducedMotion(false);
+    usePlaceStore.setState({ active: 'unwind' });
+    feedBands(0, 2000);
+    render(<HorizonCanvas now={() => NOON} />);
+    expect(bandHistory().rows).toBeGreaterThan(30);
+    setHidden(true);
+    act(() => void document.dispatchEvent(new Event('visibilitychange')));
+    setHidden(false);
+    expect(bandHistory().rows).toBe(0);
+  });
+
   it('a review URL with ?audio=demo animates (frame loop on) at the frozen camera and sky', () => {
     setReducedMotion(false);
     window.history.replaceState(null, '', '/?hz=unwind&at=2026-11-11T21:42:00-08:00&audio=demo');

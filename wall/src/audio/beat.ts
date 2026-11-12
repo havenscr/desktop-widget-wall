@@ -7,12 +7,14 @@
  * rises above the previous one and clears an adaptive threshold, the median low level of the
  * last second plus `ONSET_DB` (9 dB). A kick then holds up while it decays, so the onset only counts
  * once the next `CONFIRM_FRAMES` frames all stay `HOLD_DB` above that median; a lone noisy
- * frame drops straight back and is ignored. Beats are at least `MIN_BEAT_GAP_MS` (340 ms) apart,
- * so never more than three in any second. The gap holds on both clocks a frame carries: onsets
- * are spaced in source time (`now`, see `sourceTime.ts`), and a beat is refused when the frame
- * that would confirm it arrives less than 340 ms after the frame that confirmed the last one.
- * Source time can run up to 200 ms ahead of arrival after a stall, so a gap kept in source
- * time alone let beats land closer than 340 ms apart in real time.
+ * frame drops straight back and is ignored. Beats are about `MIN_BEAT_GAP_MS` (340 ms) apart,
+ * with two frames of slack (`BEAT_GAP_TOLERANCE_MS`, so 274 ms), and never more than three inside
+ * any second (`CALM_WINDOW_MS`): a beat is refused when it would be the fourth in a second. Both
+ * rules hold on both clocks a frame carries: onsets in source time (`now`, see `sourceTime.ts`),
+ * and the frame that confirms a beat on the arrival clock. Source time can run up to 200 ms ahead
+ * of arrival after a stall, so rules kept in source time alone let four beats land inside one
+ * real second; and the slack keeps a steady 170 BPM kick (353 ms, on a 33 ms frame grid and
+ * with 15 ms of arrival jitter) from losing beats.
  * Everything is time based (milliseconds on any steady clock), never counted in events, and
  * nothing is allocated per event.
  *
@@ -26,8 +28,18 @@
 export const BEAT_BANDS = 12;
 /** Bands averaged for `bass`, the plain low level (0 to 5, 20 to 70 Hz). */
 export const BASS_BANDS = 6;
-/** Shortest time between two beat onsets: under three a second, so the wall never pulses faster than the calm limit. */
+/** Nominal shortest time between two beats: under three a second, the calm limit. */
 export const MIN_BEAT_GAP_MS = 340;
+/**
+ * Slack on that gap, on both clocks: one frame because onsets sit on the 33 ms frame grid (a steady
+ * 170 BPM kick, 353 ms, lands 330 or 363 ms apart), and one more because arrival times, and the
+ * source times stamped from them, jitter by up to about 15 ms at each end. So the floor is 274 ms.
+ * The calm limit does not rest on this gap: the three-in-a-second window below does.
+ */
+export const BEAT_GAP_TOLERANCE_MS = 66;
+/** The calm limit itself: never more than `CALM_MAX_BEATS` beats inside any `CALM_WINDOW_MS`. */
+export const CALM_WINDOW_MS = 1000;
+export const CALM_MAX_BEATS = 3;
 /** Window of the running median the threshold sits on. */
 export const MEDIAN_WINDOW_MS = 1000;
 /** How far above the median an onset frame must be (9 dB: about two stray beats an hour on pure pink noise in simulation, against about eight at 8 dB). */
@@ -108,8 +120,8 @@ export function createBeatDetector(tuning: Partial<BeatTuning> = {}): BeatDetect
   // An onset waiting for its confirming frames.
   let pendingAt = NaN;
   let pendingHeld = 0;
-  // Arrival time of the frame that confirmed the newest beat.
-  let lastBeatArrival = -Infinity;
+  // Arrival times of the frames that confirmed the newest beats, newest last.
+  const arrivals = new Float64Array(CALM_MAX_BEATS).fill(-Infinity);
   const stamps = new Float64Array(BEAT_HISTORY);
 
   const state = {
@@ -158,14 +170,19 @@ export function createBeatDetector(tuning: Partial<BeatTuning> = {}): BeatDetect
       if (!Number.isNaN(pendingAt)) {
         if (above >= holdDb) {
           pendingHeld++;
-          if (pendingHeld >= confirmFrames && arrival - lastBeatArrival < MIN_BEAT_GAP_MS) {
+          if (
+            pendingHeld >= confirmFrames &&
+            (arrival - arrivals[CALM_MAX_BEATS - 1] < MIN_BEAT_GAP_MS - BEAT_GAP_TOLERANCE_MS ||
+              arrival - arrivals[0] < CALM_WINDOW_MS)
+          ) {
             // Too soon after the last beat on the real clock (frames that queued behind a stall): refused.
             pendingAt = NaN;
           } else if (pendingHeld >= confirmFrames) {
             state.count++;
             state.lastBeatAt = pendingAt;
             state.lag = now - pendingAt;
-            lastBeatArrival = arrival;
+            for (let i = 1; i < CALM_MAX_BEATS; i++) arrivals[i - 1] = arrivals[i];
+            arrivals[CALM_MAX_BEATS - 1] = arrival;
             for (let i = 1; i < BEAT_HISTORY; i++) stamps[i - 1] = stamps[i];
             stamps[BEAT_HISTORY - 1] = pendingAt;
             pendingAt = NaN;
@@ -178,7 +195,8 @@ export function createBeatDetector(tuning: Partial<BeatTuning> = {}): BeatDetect
         size >= WARMUP_FRAMES &&
         above >= onsetDb &&
         level > prevLevel &&
-        now - state.lastBeatAt >= MIN_BEAT_GAP_MS
+        now - state.lastBeatAt >= MIN_BEAT_GAP_MS - BEAT_GAP_TOLERANCE_MS &&
+        (state.count < CALM_MAX_BEATS || now - stamps[BEAT_HISTORY - CALM_MAX_BEATS] >= CALM_WINDOW_MS)
       ) {
         pendingAt = now;
         pendingHeld = 0;
@@ -202,7 +220,7 @@ export function createBeatDetector(tuning: Partial<BeatTuning> = {}): BeatDetect
       state.count = 0;
       state.lastBeatAt = -Infinity;
       state.lag = 0;
-      lastBeatArrival = -Infinity;
+      arrivals.fill(-Infinity);
       stamps.fill(0);
     },
     get count() {

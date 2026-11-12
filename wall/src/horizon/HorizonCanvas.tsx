@@ -4,7 +4,7 @@ import { useIdle } from '../ui/useIdle';
 import { wantsDemo } from '../audio/capture';
 import { STAGE_HEIGHT, STAGE_WIDTH, fitScale } from '../stage/fitScale';
 import { usePlaceStore } from '../state/places';
-import { audioBeats, pauseBandHistory, useAudioStore } from '../audio/store';
+import { audioBeats, clearBandHistory, pauseBandHistory, useAudioStore } from '../audio/store';
 import { loudness, smoothStep } from '../audio/model';
 import { CAMERAS, HOME_MORNING, MOON, cameraFor, cloudShiftFor, glideCamera, localDay, settled, startGlide, stepGlide, type CameraPreset, type Glide } from './cameras';
 import { createEchoSampler, echoOptions, echoRate, initialEchoGate, stepEchoFade, stepEchoGate } from './echo';
@@ -205,7 +205,7 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
     };
   }, [reduced, review, zen, demo]);
 
-  // Hidden pages start the ripple and the grid pulse from nothing when they return, never from stale levels.
+  // Hidden pages start the ripple, the grid pulse and the band history from nothing when they return, never from stale levels.
   useEffect(() => {
     const onHide = () => {
       if (document.hidden) {
@@ -213,6 +213,8 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
         loud.current = 0;
         clearGridPulse(pulse.current);
         grid.current = null;
+        // And the echo's spectrum: 7 seconds of it would otherwise replay across the lines on return.
+        clearBandHistory();
       }
     };
     document.addEventListener('visibilitychange', onHide);
