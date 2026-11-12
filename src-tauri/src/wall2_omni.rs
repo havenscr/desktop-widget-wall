@@ -75,7 +75,8 @@ pub struct YourMoveFirst {
     pub session_id: String,
     pub title: String,
     pub kind: String,
-    pub since: String,
+    /// None when the helper's value is not an RFC 3339 time.
+    pub since: Option<String>,
     pub question: String,
 }
 
@@ -194,6 +195,73 @@ fn clean_text(v: Option<&Value>, max: usize) -> Option<String> {
     Some(s.chars().take(max).collect())
 }
 
+/// Milliseconds since the Unix epoch of an RFC 3339 time with a `Z` or `+HH:MM` offset
+/// (`2026-11-12T18:24:00Z`, `2026-11-12T10:24:00.5-08:00`). None for anything else: a date
+/// alone, no offset, an impossible date or time, or more than 40 characters.
+fn stamp_millis(s: &str) -> Option<i64> {
+    let b = s.as_bytes();
+    if b.len() < 20 || b.len() > MAX_STAMP_CHARS {
+        return None;
+    }
+    let num = |from: usize, len: usize| -> Option<i64> {
+        let part = b.get(from..from + len)?;
+        part.iter().all(u8::is_ascii_digit).then(|| part.iter().fold(0i64, |n, d| n * 10 + i64::from(d - b'0')))
+    };
+    let sep = |at: usize, c: u8| b.get(at) == Some(&c);
+    let (year, month, day) = (num(0, 4)?, num(5, 2)?, num(8, 2)?);
+    let (hour, minute, second) = (num(11, 2)?, num(14, 2)?, num(17, 2)?);
+    if !(sep(4, b'-') && sep(7, b'-') && (sep(10, b'T') || sep(10, b't')) && sep(13, b':') && sep(16, b':')) {
+        return None;
+    }
+    let leap = (year % 4 == 0 && year % 100 != 0) || year % 400 == 0;
+    let month_days = [31, if leap { 29 } else { 28 }, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    if !(1..=12).contains(&month) || day < 1 || day > month_days[(month - 1) as usize] || hour > 23 || minute > 59 || second > 59 {
+        return None;
+    }
+    let mut i = 19;
+    let mut millis = 0;
+    if sep(i, b'.') {
+        i += 1;
+        let digits = b[i..].iter().take_while(|c| c.is_ascii_digit()).count();
+        if !(1..=9).contains(&digits) {
+            return None;
+        }
+        millis = b[i..i + digits].iter().take(3).enumerate().fold(0i64, |n, (k, d)| n + i64::from(d - b'0') * [100, 10, 1][k]);
+        i += digits;
+    }
+    let offset_min = match b.get(i).copied() {
+        Some(b'Z' | b'z') if b.len() == i + 1 => 0,
+        Some(sign) if (sign == b'+' || sign == b'-') && b.len() == i + 6 && sep(i + 3, b':') => {
+            let (oh, om) = (num(i + 1, 2)?, num(i + 4, 2)?);
+            if oh > 23 || om > 59 {
+                return None;
+            }
+            if sign == b'+' {
+                oh * 60 + om
+            } else {
+                -(oh * 60 + om)
+            }
+        }
+        _ => return None,
+    };
+    // Days from the civil date (proleptic Gregorian), then seconds, then the offset.
+    let y = if month <= 2 { year - 1 } else { year };
+    let era = y.div_euclid(400);
+    let yoe = y - era * 400;
+    let mp = (month + 9) % 12;
+    let doy = (153 * mp + 2) / 5 + day - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146_097 + doe - 719_468;
+    let secs = days * 86_400 + hour * 3600 + minute * 60 + second - offset_min * 60;
+    Some(secs * 1000 + millis)
+}
+
+/// A helper timestamp, passed on only when it is a valid RFC 3339 time (never cut short).
+fn stamp(v: Option<&Value>) -> Option<String> {
+    let s = v?.as_str()?;
+    stamp_millis(s).map(|_| s.to_string())
+}
+
 fn one_of(v: Option<&Value>, allowed: &[&str]) -> Option<String> {
     let s = v?.as_str()?;
     allowed.contains(&s).then(|| s.to_string())
@@ -237,7 +305,7 @@ fn shape_your_move(v: Option<&Value>) -> YourMove {
             session_id: f.get("sessionId")?.as_str().filter(|s| valid_session_id(s))?.to_string(),
             title: clean_text(f.get("title"), MAX_TITLE_CHARS)?,
             kind: one_of(f.get("kind"), &["gate", "awaiting", "blocked", "review"])?,
-            since: clean_text(f.get("since"), MAX_STAMP_CHARS).unwrap_or_default(),
+            since: stamp(f.get("since")),
             question: clean_text(f.get("question"), MAX_QUESTION_CHARS).unwrap_or_default(),
         })
     });
@@ -249,7 +317,7 @@ fn shape_usage(v: Option<&Value>) -> Option<Usage> {
     Some(Usage {
         claude_week_pct: percent(v.get("claudeWeekPct"))?,
         claude5h_pct: percent(v.get("claude5hPct")),
-        week_resets_at: clean_text(v.get("weekResetsAt"), MAX_STAMP_CHARS),
+        week_resets_at: stamp(v.get("weekResetsAt")),
     })
 }
 
@@ -258,10 +326,21 @@ fn shape_day(v: Option<&Value>) -> Vec<DaySpan> {
     items
         .iter()
         .filter_map(|d| {
+            let start = stamp(d.get("start"))?;
+            // A missing or null end is an open span; any other end must be a valid time.
+            let end = match d.get("end") {
+                None | Some(Value::Null) => None,
+                Some(v) => Some(stamp(Some(v))?),
+            };
+            if let Some(e) = &end {
+                if stamp_millis(e)? < stamp_millis(&start)? {
+                    return None;
+                }
+            }
             Some(DaySpan {
                 lane: d.get("lane")?.as_str().filter(|s| valid_session_id(s))?.to_string(),
-                start: clean_text(d.get("start"), MAX_STAMP_CHARS).filter(|s| !s.is_empty())?,
-                end: clean_text(d.get("end"), MAX_STAMP_CHARS).filter(|s| !s.is_empty()),
+                start,
+                end,
                 kind: one_of(d.get("kind"), &["run", "wait", "done"])?,
             })
         })
@@ -291,7 +370,7 @@ fn shape_summary(body: &Value) -> Option<OmniSummary> {
     let limit = slots.and_then(|s| count(s.get("limit"))).unwrap_or(DEFAULT_SLOTS).min(MAX_SLOTS);
     let used = slots.and_then(|s| count(s.get("used"))).unwrap_or(lanes.len() as u64).min(MAX_SLOTS);
     Some(OmniSummary {
-        now: clean_text(obj.get("now"), MAX_STAMP_CHARS)?,
+        now: stamp(obj.get("now"))?,
         tz: clean_text(obj.get("tz"), 64).unwrap_or_default(),
         stale: obj.get("stale").and_then(Value::as_bool).unwrap_or(false),
         slots: Slots { used, limit },
@@ -720,6 +799,73 @@ mod tests {
     }
 
     #[test]
+    fn timestamps_must_be_rfc3339_with_an_offset() {
+        assert_eq!(stamp_millis("1970-01-01T00:00:00Z"), Some(0));
+        assert_eq!(stamp_millis("1970-01-01T00:00:01.5Z"), Some(1500));
+        assert_eq!(stamp_millis("2026-11-12T18:24:00Z"), stamp_millis("2026-11-12T10:24:00-08:00"));
+        assert_eq!(stamp_millis("2026-11-12T18:24:00Z"), stamp_millis("2026-11-12T23:54:00+05:30"));
+        assert_eq!(stamp_millis("2024-02-29T12:00:00.123456789Z"), Some(1_709_208_000_123));
+        assert!(stamp_millis("2026-11-12").is_none()); // date only
+        assert!(stamp_millis("2026-11-12T18:24:00").is_none()); // no offset
+        assert!(stamp_millis("2026-11-12 18:24:00Z").is_none());
+        assert!(stamp_millis("2026-02-29T00:00:00Z").is_none()); // not a leap year
+        assert!(stamp_millis("2026-13-01T00:00:00Z").is_none());
+        assert!(stamp_millis("2026-04-31T00:00:00Z").is_none());
+        assert!(stamp_millis("2026-11-12T24:00:00Z").is_none());
+        assert!(stamp_millis("2026-11-12T18:60:00Z").is_none());
+        assert!(stamp_millis("2026-11-12T18:24:61Z").is_none());
+        assert!(stamp_millis("2026-11-12T18:24:00+25:00").is_none());
+        assert!(stamp_millis("2026-11-12T18:24:00+0800").is_none());
+        assert!(stamp_millis("2026-11-12T18:24:00.Z").is_none());
+        assert!(stamp_millis("2026-11-12T18:24:00.1234567890Z").is_none());
+        assert!(stamp_millis("2026-11-12T18:24:00Zjunk").is_none());
+        assert!(stamp_millis(&format!("2026-11-12T18:24:00.{}Z", "1".repeat(30))).is_none()); // oversized
+        assert!(stamp_millis("+2026-11-12T18:24:00Z").is_none());
+        assert!(stamp_millis("2026-1a-12T18:24:00Z").is_none());
+    }
+
+    #[test]
+    fn a_bad_now_refuses_the_summary_and_bad_optional_times_are_dropped() {
+        let mut body = full();
+        body["now"] = json!("2026-11-12");
+        assert!(shape_summary(&body).is_none());
+        body["now"] = json!("2026-11-12T18:24:00+02:00");
+        assert_eq!(shape_summary(&body).unwrap().now, "2026-11-12T18:24:00+02:00");
+        body["yourMove"]["first"]["since"] = json!("yesterday");
+        body["usage"]["weekResetsAt"] = json!("2026-02-30T00:00:00Z");
+        let s = shape_summary(&body).unwrap();
+        let first = s.your_move.first.unwrap();
+        assert_eq!(first.since, None);
+        assert_eq!(first.title, "Friday social card");
+        assert_eq!(s.usage.unwrap().week_resets_at, None);
+    }
+
+    #[test]
+    fn day_spans_with_bad_or_backwards_times_are_dropped() {
+        let mut body = full();
+        let span = |start: Value, end: Value| json!({ "lane": "a1b2c3d4-0001", "start": start, "end": end, "kind": "run" });
+        body["day"] = json!([
+            span(json!("2026-11-12T17:00:00Z"), json!("2026-11-12T18:00:00Z")),
+            span(json!("2026-11-12T17:00:00Z"), Value::Null),
+            span(json!("2026-11-12T17:00:00Z"), json!("2026-11-12T16:00:00Z")),
+            span(json!("2026-11-12"), Value::Null),
+            span(json!("2026-11-12T17:00:00Z"), json!("soon")),
+            span(json!("2026-11-12T17:00:00Z"), json!("")),
+            span(json!("2026-11-12T10:00:00-08:00"), json!("2026-11-12T18:30:00Z")),
+        ]);
+        let s = shape_summary(&body).unwrap();
+        let kept: Vec<(&str, Option<&str>)> = s.day.iter().map(|d| (d.start.as_str(), d.end.as_deref())).collect();
+        assert_eq!(
+            kept,
+            vec![
+                ("2026-11-12T17:00:00Z", Some("2026-11-12T18:00:00Z")),
+                ("2026-11-12T17:00:00Z", None),
+                ("2026-11-12T10:00:00-08:00", Some("2026-11-12T18:30:00Z")),
+            ]
+        );
+    }
+
+    #[test]
     fn output_uses_camel_case_names() {
         let v = serde_json::to_value(shape_summary(&full()).unwrap()).unwrap();
         assert!(v["lanes"][0].get("elapsedS").is_some());
@@ -865,9 +1011,9 @@ mod tests {
     #[test]
     fn oversized_answers_fail() {
         let pad = " ".repeat(MAX_ANSWER);
-        let text = format!(r#"{{"now":"x","lanes":[]}}{pad}"#);
+        let text = format!(r#"{{"now":"2026-11-12T18:24:00Z","lanes":[]}}{pad}"#);
         assert_eq!(parse_answer(text.as_bytes()), Err("failed".to_string()));
-        assert!(parse_answer(br#"{"now":"x","lanes":[]}"#).is_ok());
+        assert!(parse_answer(br#"{"now":"2026-11-12T18:24:00Z","lanes":[]}"#).is_ok());
     }
 
     #[test]
