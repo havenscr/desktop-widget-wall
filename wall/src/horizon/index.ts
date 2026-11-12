@@ -1,9 +1,9 @@
 import { STAGE_HEIGHT, STAGE_WIDTH } from '../stage/fitScale';
 import { CAMERAS, type CameraPreset } from './cameras';
-import { draw, type HorizonEcho } from './renderer';
+import { draw, type HorizonEcho, type HorizonGrid } from './renderer';
 
 export { sun, when } from './renderer';
-export type { HorizonDrawOptions, HorizonEcho } from './renderer';
+export type { HorizonDrawOptions, HorizonEcho, HorizonGrid } from './renderer';
 export { CAMERAS, GLIDE_SECONDS, HOME_MORNING, SWING_SECONDS, MOON, blendCamera, homeCameraFor, type CameraPreset } from './cameras';
 
 export interface HorizonOptions {
@@ -27,13 +27,15 @@ export interface HorizonOptions {
   cloudShift?: number;
   /** Music ripple (default off). */
   echo?: HorizonEcho | null;
+  /** Grid pulse on the beat (default off). */
+  grid?: HorizonGrid | null;
   /** Moon centre x, centre y and radius in design pixels (default none). */
   moon?: readonly [number, number, number] | null;
 }
 
 export const HORIZON_Y = CAMERAS.work.hy;
 
-/** Draw the panorama for the given camera and time. The music ripple and the moon are off unless passed. */
+/** Draw the panorama for the given camera and time. The music ripple, the grid pulse and the moon are off unless passed. */
 export function drawHorizon(ctx: CanvasRenderingContext2D, options: HorizonOptions): void {
   const cam = options.camera ?? CAMERAS.work;
   draw(ctx, {
@@ -53,6 +55,7 @@ export function drawHorizon(ctx: CanvasRenderingContext2D, options: HorizonOptio
     phase: options.phase ?? 0,
     cloudShift: options.cloudShift ?? 0,
     echo: options.echo ?? null,
+    grid: options.grid ?? null,
     moon: options.moon ? [options.moon[0], options.moon[1], options.moon[2]] : null,
   });
 }
