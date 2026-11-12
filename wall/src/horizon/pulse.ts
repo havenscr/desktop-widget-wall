@@ -14,6 +14,10 @@ const FADE_OUT = 0.7;
 const DEPTH_EASE = 0.75;
 /** Seconds the kick part of the line brightening takes to fall to about a third. */
 export const KICK_DECAY_S = 0.28;
+/** Seconds the kick part of the line brightening takes to rise to full on a beat (an ease, never a jump). */
+export const KICK_ATTACK_S = 0.08;
+/** Time constant of the slow bass level behind the brightening, so frame-to-frame jitter never flickers the lines. */
+export const BASS_SMOOTH_S = 0.6;
 /** Share of the line brightening that follows the kick; the rest follows the plain bass level. */
 const KICK_SHARE = 0.65;
 
@@ -26,8 +30,12 @@ export interface GridPulse {
   ages: Float64Array;
   /** The detector's beat count last seen. */
   seen: number;
-  /** Kick brightness, 1 on a beat, decaying. */
+  /** Kick brightness, eased up to 1 on a beat, then decaying. */
   kick: number;
+  /** True while the kick brightness is still rising toward 1. */
+  rising: boolean;
+  /** The bass level, slowly smoothed. */
+  bass: number;
   /** The renderer option, reused every frame. */
   grid: HorizonGrid;
 }
@@ -42,6 +50,8 @@ export function createGridPulse(): GridPulse {
     ages: new Float64Array(WAVE_SLOTS).fill(Infinity),
     seen: 0,
     kick: 0,
+    rising: false,
+    bass: 0,
     grid: { bright: 0, waves: Array.from({ length: WAVE_SLOTS }, () => ({ p: 0, a: 0 })) },
   };
 }
@@ -50,6 +60,8 @@ export function createGridPulse(): GridPulse {
 export function clearGridPulse(s: GridPulse): void {
   s.ages.fill(Infinity);
   s.kick = 0;
+  s.rising = false;
+  s.bass = 0;
   s.grid.bright = 0;
   for (const w of s.grid.waves) {
     w.p = 0;
@@ -63,8 +75,10 @@ export function clearGridPulse(s: GridPulse): void {
  * `lag` seconds old so it lines up with the kick's onset rather than its confirmation. Over
  * `WAVE_LIFE_S` a band's depth runs 0 to 1 as `u^0.75` of its age fraction `u` (the renderer's
  * perspective spacing still makes it speed up as it nears the viewer); its opacity eases in
- * over the first 12 percent of its life and out over the last 30, times `WAVE_ALPHA * gp`. The lines brighten with
- * `gp * (0.65 * kick + 0.35 * bass)`.
+ * over the first 12 percent of its life and out over the last 30, times `WAVE_ALPHA * gp`. The lines
+ * brighten with `gp * (0.65 * kick + 0.35 * bass)`, where the kick part eases up to 1 over 80 ms on
+ * a beat and then decays, and the bass part is smoothed over about 0.6 s. With beats at least
+ * 340 ms apart the lines rise at most three times a second.
  */
 export function stepGridPulse(
   s: GridPulse,
@@ -84,7 +98,11 @@ export function stepGridPulse(
     let slot = 0;
     for (let i = 1; i < WAVE_SLOTS; i++) if (s.ages[i] > s.ages[slot]) slot = i; // free slots are Infinity, so they win
     s.ages[slot] = Math.max(0, input.lag);
-    s.kick = 1;
+    s.rising = true;
+  }
+  if (s.rising) {
+    s.kick = Math.min(1, s.kick + step / KICK_ATTACK_S);
+    if (s.kick >= 1) s.rising = false;
   } else {
     s.kick *= Math.exp(-step / KICK_DECAY_S);
   }
@@ -102,6 +120,7 @@ export function stepGridPulse(
     w.a = WAVE_ALPHA * gp * smooth(p / FADE_IN) * (1 - smooth((p - FADE_OUT) / (1 - FADE_OUT)));
   }
   const bass = Math.min(1, Math.max(0, input.bass));
-  s.grid.bright = gp * (KICK_SHARE * s.kick + (1 - KICK_SHARE) * bass);
+  s.bass += (bass - s.bass) * (1 - Math.exp(-step / BASS_SMOOTH_S));
+  s.grid.bright = gp * (KICK_SHARE * s.kick + (1 - KICK_SHARE) * s.bass);
   return s.grid;
 }

@@ -1,6 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import { WAVE_ALPHA, WAVE_LIFE_S, WAVE_SLOTS, clearGridPulse, createGridPulse, stepGridPulse } from './pulse';
 import { CAMERAS, HOME_MORNING } from './cameras';
+import { draw, when } from './renderer';
+import { stubContext } from './canvasStub';
+import { createBeatDetector } from '../audio/beat';
+
+/** Seeded random numbers. */
+function rng(seed: number) {
+  let s = seed >>> 0;
+  return () => {
+    s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
+    return s / 4294967296;
+  };
+}
 
 const playing = (beats: number, extra: Partial<{ lag: number; bass: number; gp: number }> = {}) => ({
   playing: true,
@@ -76,14 +88,60 @@ describe('grid pulse state', () => {
     expect(full.bright).toBeLessThanOrEqual(1);
   });
 
-  it('brightens on the kick and settles to the bass level between kicks', () => {
+  it('eases the lines up over about 80 ms on a beat (never a jump), then settles toward the slow bass level', () => {
     const s = createGridPulse();
-    stepGridPulse(s, 0.033, playing(0, { bass: 0.5 }));
-    const on = stepGridPulse(s, 0.033, playing(1, { bass: 0.5 }))!.bright;
+    for (let i = 0; i < 120; i++) stepGridPulse(s, 0.033, playing(0, { bass: 0.5 })); // bass settles over 4 s
+    const before = s.grid.bright;
+    expect(before).toBeCloseTo(0.35 * 0.5, 2);
+    const ramp: number[] = [];
     let g = stepGridPulse(s, 0.033, playing(1, { bass: 0.5 }))!;
+    ramp.push(g.bright);
+    for (let i = 0; i < 3; i++) ramp.push(stepGridPulse(s, 0.033, playing(1, { bass: 0.5 }))!.bright);
+    expect(ramp[0] - before).toBeLessThan(0.65 * 0.5); // the first frame is part way up
+    expect(ramp[1]).toBeGreaterThan(ramp[0]);
+    expect(Math.max(...ramp)).toBeCloseTo(0.65 + 0.35 * 0.5, 2); // full within about 80 ms
     for (let i = 0; i < 60; i++) g = stepGridPulse(s, 0.033, playing(1, { bass: 0.5 }))!;
-    expect(on).toBeCloseTo(0.65 + 0.35 * 0.5, 9);
     expect(g.bright).toBeCloseTo(0.35 * 0.5, 2);
+  });
+
+  it('frame-to-frame bass jitter never flickers the lines: the bass part is smoothed', () => {
+    const s = createGridPulse();
+    const r = rng(5);
+    const out: number[] = [];
+    for (let i = 0; i < 300; i++) out.push(stepGridPulse(s, 0.033, playing(0, { bass: 0.3 + 0.4 * r() }))!.bright);
+    const steps = out.slice(90).map((v, i, a) => (i ? Math.abs(v - a[i - 1]) : 0));
+    expect(Math.max(...steps)).toBeLessThan(0.02);
+  });
+
+  it('at the detector\'s fastest cadence the lines rise at most three times in any second', () => {
+    const quiet = new Array(32).fill(0.3);
+    const loud = new Array(32).fill(0.65);
+    for (let hits = 1; hits <= 3; hits++) {
+      for (let rest = 1; rest <= 12; rest++) {
+        const d = createBeatDetector();
+        const s = createGridPulse();
+        const bright: number[] = [];
+        let t = 0;
+        let frame = 0;
+        const push = (bands: number[]) => {
+          d.push(bands, t);
+          bright.push(stepGridPulse(s, 0.033, playing(d.count, { lag: d.lag / 1000, bass: 0.5 }))!.bright);
+          t += 33;
+          frame++;
+        };
+        for (let i = 0; i < 20; i++) push(quiet);
+        while (frame < 400) {
+          for (let i = 0; i < hits; i++) push(loud);
+          for (let i = 0; i < rest; i++) push(quiet);
+        }
+        // A rise starts on a frame brighter than the one before, after one that was not.
+        const starts: number[] = [];
+        for (let i = 1; i < bright.length; i++) {
+          if (bright[i] > bright[i - 1] + 1e-9 && !(i > 1 && bright[i - 1] > bright[i - 2] + 1e-9)) starts.push(i * 33);
+        }
+        for (const s0 of starts) expect(starts.filter((x) => x >= s0 && x < s0 + 1000).length).toBeLessThanOrEqual(3);
+      }
+    }
   });
 
   it('reuses the same fixed slots every frame (no allocation in the wave loop); a fifth band takes the oldest slot', () => {
@@ -99,6 +157,13 @@ describe('grid pulse state', () => {
       expect(g.waves).toBe(waves);
       expect(g.waves).toHaveLength(WAVE_SLOTS);
       g.waves.forEach((w, k) => expect(w).toBe(objs[k]));
+      if (i % 80 === 40) {
+        // Through the renderer too: drawing reads the option and leaves every object in place.
+        draw(stubContext(), { W: 2560, H: 720, scale: 1, hy: 505, az0: 246, ppd: 49.2, ms: when(2026, 11, 11, 21.7), grain: false, grid: g });
+        expect(g).toBe(grid);
+        expect(g.waves).toBe(waves);
+        g.waves.forEach((w, k) => expect(w).toBe(objs[k]));
+      }
     }
     // With all slots busy, the newest band replaced the oldest: the youngest is near the horizon.
     expect(Math.min(...s.ages)).toBeLessThan(0.15);
