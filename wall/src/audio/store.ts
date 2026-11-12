@@ -29,7 +29,14 @@ export function tickAudio(now: number): void {
   const dt = lastTickAt === null ? 0 : Math.min(0.25, Math.max(0, (now - lastTickAt) / 1000));
   lastTickAt = now;
   const playing = now - lastSoundAt <= SILENCE_MS;
-  const goal: Levels = playing ? target : { bass: 0, mid: 0, high: 0 };
+  if (!playing) {
+    // Past the silence deadline the levels are zero at once, as in the old visualizer.
+    target = { bass: 0, mid: 0, high: 0 };
+    const z = useAudioStore.getState();
+    if (z.bass !== 0 || z.mid !== 0 || z.high !== 0 || z.playing) useAudioStore.setState({ ...QUIET });
+    return;
+  }
+  const goal: Levels = target;
   const s = useAudioStore.getState();
   const next: AudioState = {
     bass: smoothStep(s.bass, goal.bass, dt),

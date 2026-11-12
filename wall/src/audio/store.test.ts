@@ -61,6 +61,25 @@ it('levels fall to zero after silence', () => {
   expect(s.playing).toBe(false);
 });
 
+it('levels are exactly zero at SILENCE_MS + 1, not decaying', () => {
+  for (let t = 0; t <= 600; t += 33) {
+    ingestLevels(loud, t);
+    tickAudio(t);
+  }
+  expect(useAudioStore.getState().bass).toBeGreaterThan(0.7);
+  tickAudio(600 + SILENCE_MS + 1);
+  expect(useAudioStore.getState()).toMatchObject({ bass: 0, mid: 0, high: 0, playing: false });
+});
+
+it('a long hidden gap leaves no stale levels when ticking resumes', () => {
+  for (let t = 0; t <= 300; t += 33) {
+    ingestLevels(loud, t);
+    tickAudio(t);
+  }
+  tickAudio(60_000);
+  expect(useAudioStore.getState()).toMatchObject({ bass: 0, mid: 0, high: 0, playing: false });
+});
+
 it('loudness weights bass over mid over high and stays within 0 to 1', () => {
   expect(loudness({ bass: 1, mid: 0, high: 0 })).toBeGreaterThan(loudness({ bass: 0, mid: 1, high: 0 }));
   expect(loudness({ bass: 0, mid: 1, high: 0 })).toBeGreaterThan(loudness({ bass: 0, mid: 0, high: 1 }));
