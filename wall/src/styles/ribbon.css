@@ -1,0 +1,106 @@
+/* Day ribbon (concept `.rib`, v3.src.html ribbon block). Design pixels: 2416 x 104, grid row 3 of .main. */
+.rib {
+  position: relative;
+  border-radius: 24px;
+  overflow: hidden;
+  background: rgba(8, 6, 24, 0.66);
+  border: 1px solid var(--line);
+  font-variant-numeric: tabular-nums;
+}
+.skyb {
+  position: absolute;
+  inset: 0;
+  opacity: 0.4;
+}
+.skyb::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(6, 4, 22, 0.1), rgba(6, 4, 22, 0.7));
+}
+.rib .hl {
+  position: absolute;
+  top: 9px;
+  transform: translateX(-50%);
+  font: 500 15px/1 var(--disp);
+  letter-spacing: 0.08em;
+  color: var(--dim);
+  white-space: nowrap;
+}
+.rib .hl.sun {
+  color: var(--amber);
+  font-size: 13px;
+  top: 10px;
+  opacity: 0.85;
+}
+.rib .tk {
+  position: absolute;
+  top: 29px;
+  bottom: 0;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.06);
+}
+.rib .li {
+  position: absolute;
+  left: 24px;
+  width: 20px;
+  height: 20px;
+  color: var(--faint);
+}
+/* Calendar chips, row 1. Violet is decoration; pink marks a livestream. */
+.rib .ev {
+  position: absolute;
+  top: 33px;
+  height: 30px;
+  box-sizing: border-box;
+  border-radius: 9px;
+  padding: 0 10px;
+  font: 400 17px/28px var(--body);
+  white-space: nowrap;
+  overflow: hidden;
+  background: rgba(154, 123, 255, 0.22);
+  border: 1px solid rgba(154, 123, 255, 0.55);
+  color: #e4dcff;
+}
+.rib .ev.past {
+  opacity: 0.45;
+}
+.rib .ev.now {
+  background: rgba(154, 123, 255, 0.5);
+  color: #fff;
+}
+.rib .ev.live {
+  background: rgba(255, 61, 154, 0.2);
+  border-color: rgba(255, 61, 154, 0.6);
+  color: #ffd3e8;
+}
+/* Focus bar: today's sessions up to now. */
+.rib .fo {
+  position: absolute;
+  top: 95px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--violet);
+  opacity: 0.85;
+}
+.rib .ndl {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: linear-gradient(180deg, #fff, rgba(255, 255, 255, 0.25));
+  box-shadow: 0 0 12px rgba(255, 255, 255, 0.8);
+}
+.rib .ndl b {
+  position: absolute;
+  top: 5px;
+  left: 1px;
+  transform: translateX(-50%);
+  font: 600 14px/1 var(--disp);
+  letter-spacing: 0.06em;
+  background: #fff;
+  color: #0b0822;
+  border-radius: 7px;
+  padding: 4px 8px;
+  white-space: nowrap;
+}
