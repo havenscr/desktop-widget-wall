@@ -17,6 +17,8 @@ export const HOUR_LABEL_GAP = 70;
 export const SUN_LABEL_GAP = 90;
 /** Narrowest calendar chip, so a 5 minute event still shows. */
 export const MIN_CHIP_PX = 12;
+/** A chip narrower than this shows no title (it keeps a tooltip and an accessible name). */
+export const NARROW_CHIP_PX = 44;
 
 /** x of local hour `h` (6 to 24). */
 export const RX = (h: number) => 72 + (h - START_HOUR) * HOUR_PX;
@@ -124,11 +126,16 @@ export interface Chip {
   width: number;
   state: ChipState;
   live: boolean;
+  /** 0, or 1 when it overlaps an earlier chip in lane 0 (drawn 4 px lower and shorter). */
+  lane: 0 | 1;
+  /** Too narrow for its title. */
+  narrow: boolean;
 }
 
 /**
  * Calendar chips for row 1: today's events between 6 AM and 12 AM, clipped to that span.
- * An event that has ended is `past`; one under the needle is `now`.
+ * An event that has ended is `past`; one under the needle is `now`. A chip that starts
+ * before the last lane 0 chip ends goes in lane 1.
  */
 export function chips(events: readonly DayEvent[], now: number): Chip[] {
   const out: Chip[] = [];
@@ -147,9 +154,18 @@ export function chips(events: readonly DayEvent[], now: number): Chip[] {
       width: Math.max(MIN_CHIP_PX, RX(eh) - x),
       state: end <= now ? 'past' : start <= now ? 'now' : 'next',
       live: e.isLive === true,
+      lane: 0,
+      narrow: false,
     });
   }
-  return out.sort((a, b) => a.x - b.x);
+  out.sort((a, b) => a.x - b.x);
+  const ends = [-Infinity, -Infinity];
+  for (const c of out) {
+    c.lane = c.x >= ends[0] ? 0 : 1;
+    ends[c.lane] = Math.max(ends[c.lane], c.x + c.width);
+    c.narrow = c.width < NARROW_CHIP_PX;
+  }
+  return out;
 }
 
 /** Focus bars: today's sessions up to now, inside 6 AM to 12 AM. */

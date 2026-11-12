@@ -208,8 +208,10 @@ The day ribbon (`wall/src/ribbon/`, `styles/ribbon.css`) is on Work, Home and Me
 - **Row 1**: today's calendar from `wall2_meet_day`, read when the ribbon shows and
   every 5 minutes while visible, clipped to 6 AM to 12 AM. A chip is `past` once it
   has ended, `now` while the needle is inside it, and pink when the event is a
-  livestream (`isLive`). Meet "Not set up" leaves the row empty with no text; any other
-  failed read keeps the last good list.
+  livestream (`isLive`). An event that overlaps an earlier one goes in a second lane, 4 px
+  lower and a little shorter. A chip narrower than 44 px shows no title (it keeps a
+  tooltip and an accessible name). Meet "Not set up" leaves the row empty with no text;
+  any other failed read keeps the last good list.
 - **Focus bar** (Work and Meet): today's focus sessions up to now, from the focus store.
   Each start, pause, reset and finish updates `localStorage` key `wall2-focus-day`
   (`{ sessions: [{ start, end }] }`, epoch ms). A running session is saved with its

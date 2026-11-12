@@ -64,8 +64,14 @@ export function Ribbon({ kind, now = Date.now }: { kind: RibbonKind; now?: () =>
         <Row2 className="li" style={{ top: 70 }} stroke={1.8} />
       </div>
       {chips(events, t).map((c) => (
-        <div key={c.key} className={`ev ${c.state}${c.live ? ' live' : ''}`} style={{ left: c.x, width: c.width }}>
-          {c.title}
+        <div
+          key={c.key}
+          className={`ev ${c.state}${c.live ? ' live' : ''}${c.lane ? ' l2' : ''}`}
+          style={{ left: c.x, width: c.width }}
+          title={c.title}
+          aria-label={c.narrow ? c.title : undefined}
+        >
+          {c.narrow ? null : c.title}
         </div>
       ))}
       {kind === 'work' &&

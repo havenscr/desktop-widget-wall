@@ -116,3 +116,36 @@ it('draws the part of a focus session after midnight, from the ribbon start', ()
   expect(late[0].x).toBe(RX(23.5));
   expect(late[0].x + late[0].width).toBeCloseTo(RX(23 + 59 / 60));
 });
+
+it('puts an event that overlaps an earlier one in the second lane', () => {
+  const now = t('08:00');
+  const out = chips(
+    [
+      { key: 'a', title: 'Workshop', start: iso('09:00'), end: iso('11:00') },
+      { key: 'b', title: 'Call', start: iso('10:00'), end: iso('10:30') },
+      { key: 'c', title: 'Lunch', start: iso('11:00'), end: iso('12:00') },
+      { key: 'd', title: 'Overlap two', start: iso('10:15'), end: iso('10:45') },
+    ],
+    now,
+  );
+  expect(out.map((c) => [c.key, c.lane])).toEqual([
+    ['a', 0],
+    ['b', 1],
+    ['d', 1],
+    ['c', 0],
+  ]);
+});
+
+it('marks a chip narrower than 44 px as narrow', () => {
+  const out = chips(
+    [
+      { key: 'short', title: 'Standup', start: iso('09:00'), end: iso('09:15') }, // 32 px
+      { key: 'long', title: 'Review', start: iso('10:00'), end: iso('10:30') }, // 64 px
+    ],
+    t('08:00'),
+  );
+  expect(out.map((c) => [c.key, c.narrow])).toEqual([
+    ['short', true],
+    ['long', false],
+  ]);
+});

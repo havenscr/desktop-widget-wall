@@ -104,3 +104,22 @@ it('uses the home icon for row 2 on Home, with no focus bar', async () => {
   expect(r.container.querySelector('.tabler-icon-bolt')).toBeNull();
   expect(r.container.querySelector('.fo')).toBeNull();
 });
+
+it('draws overlapping events in two lanes and a narrow chip without its title', async () => {
+  mocks.set('wall2_meet_day', () => ({
+    accounts: [],
+    events: [
+      { key: 'a', accountId: 'work', title: 'Workshop', start: iso('11:00'), end: iso('13:00'), canJoin: false, isLive: false },
+      { key: 'b', accountId: 'work', title: 'Standup', start: iso('12:00'), end: iso('12:15'), canJoin: false, isLive: false },
+    ],
+  }));
+  const r = render(<Ribbon kind="work" />);
+  await flush();
+  const [a, b] = [...r.container.querySelectorAll('.ev')] as HTMLElement[];
+  expect(a.className).toBe('ev next');
+  expect(a.textContent).toBe('Workshop');
+  expect(b.className).toBe('ev next l2');
+  expect(b.textContent).toBe('');
+  expect(b.getAttribute('title')).toBe('Standup');
+  expect(b.getAttribute('aria-label')).toBe('Standup');
+});
