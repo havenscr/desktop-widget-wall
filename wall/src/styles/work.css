@@ -1,0 +1,303 @@
+/* Work tab. Glass panels follow the concept (.g in concept.css). Design pixels, 2560 x 720. */
+.work {
+  position: absolute;
+  inset: 0;
+}
+.panel {
+  position: absolute;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px 26px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.015)), rgba(10, 7, 28, 0.72);
+  border: 1px solid var(--line);
+  border-radius: 26px;
+}
+.k {
+  font: 600 18px/1 var(--disp);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+.t2 {
+  font: 600 29px/1.15 var(--body);
+  letter-spacing: -0.01em;
+}
+.b6 {
+  font: 600 25px/1.2 var(--body);
+}
+.s {
+  font-size: 22px;
+  color: var(--dim);
+}
+.xs {
+  font-size: 19px;
+  color: var(--faint);
+}
+.row {
+  display: flex;
+  align-items: center;
+}
+.sb {
+  justify-content: space-between;
+}
+.ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.btn {
+  min-width: 72px;
+  height: 72px;
+  padding: 0 28px;
+  border-radius: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  font: 600 24px/1 var(--body);
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.06);
+  white-space: nowrap;
+  transition: transform 90ms ease-out;
+}
+.btn.cy {
+  color: #06041a;
+  background: var(--cyan);
+  border-color: transparent;
+}
+.rd {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--line);
+  flex: none;
+  transition: transform 90ms ease-out;
+}
+.rd.big {
+  background: var(--cyan);
+  color: #06041a;
+  border: 0;
+  box-shadow: 0 0 34px -6px var(--cyan);
+}
+.btn:active,
+.rd:active,
+.chip:active {
+  transform: scale(0.94);
+}
+.btn:focus-visible,
+.rd:focus-visible,
+.chip:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: 2px;
+}
+.rd:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.chip {
+  min-width: 72px;
+  height: 72px;
+  padding: 0 24px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.08);
+  font: 600 24px/1 var(--body);
+  color: var(--dim);
+  white-space: nowrap;
+}
+.chip.on {
+  background: rgba(53, 230, 234, 0.14);
+  color: var(--cyan);
+  box-shadow: inset 0 0 0 1px rgba(53, 230, 234, 0.45);
+}
+
+/* Focus */
+.focus {
+  left: 482px;
+  top: 4px;
+  width: 620px;
+  height: 330px;
+}
+.focus-body {
+  display: flex;
+  align-items: center;
+  gap: 26px;
+}
+.focus-side {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.focus-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 8px;
+}
+.focus-pick {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.stepper {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 8px;
+}
+.stepper-val {
+  min-width: 86px;
+  text-align: center;
+}
+.ring {
+  position: relative;
+  width: 176px;
+  height: 176px;
+  flex: none;
+  border-radius: 50%;
+}
+.ring-track {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.13);
+  stroke-width: 10;
+}
+.ring-arc {
+  fill: none;
+  stroke: var(--cyan);
+  stroke-width: 10;
+  stroke-linecap: round;
+  filter: drop-shadow(0 0 8px rgba(53, 230, 234, 0.55));
+}
+.ring-num {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font: 400 64px/1 var(--disp);
+}
+.ring.glow {
+  animation: ring-glow 3.2s ease-in-out infinite;
+}
+.ring.glow .ring-arc {
+  stroke: var(--mint);
+  stroke-dashoffset: 0;
+}
+@keyframes ring-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 18px -4px rgba(93, 242, 182, 0.35);
+  }
+  50% {
+    box-shadow: 0 0 46px 2px rgba(93, 242, 182, 0.6);
+  }
+}
+
+/* Weather */
+.weather {
+  left: 1120px;
+  top: 4px;
+  width: 680px;
+  height: 330px;
+}
+.wx-now {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+}
+.wx-icon {
+  color: var(--cyan);
+  display: grid;
+  place-items: center;
+}
+.wx-temp {
+  font: 300 76px/1 var(--disp);
+}
+.wx-range {
+  margin-left: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: right;
+}
+.wx-hours {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 8px;
+  color: var(--dim);
+}
+.wx-hours li {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Music */
+.music {
+  right: 0;
+  top: 380px;
+  width: 596px;
+  height: 112px;
+  flex-direction: row;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 18px;
+  transition: opacity 600ms ease;
+}
+.music.quiet {
+  opacity: 0.55;
+}
+.music .art {
+  width: 72px;
+  height: 72px;
+  border-radius: 14px;
+  flex: none;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--faint);
+}
+.music .art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.music-text {
+  flex: 1;
+  min-width: 0;
+}
+.music-btns {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.music-btns .rd.big {
+  width: 76px;
+  height: 76px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ring.glow {
+    animation: none;
+    box-shadow: 0 0 36px 0 rgba(93, 242, 182, 0.5);
+  }
+  .music,
+  .btn,
+  .rd,
+  .chip {
+    transition: none;
+  }
+}
