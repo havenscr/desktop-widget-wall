@@ -343,6 +343,22 @@ fn valid_list_name(name: &str) -> bool {
     (1..=60).contains(&name.chars().count()) && !name.chars().any(char::is_control)
 }
 
+type CheckedFilters = (Option<String>, Option<String>, Option<String>);
+
+/// Trim the three filters, then validate them. A value of only spaces is refused.
+#[allow(non_snake_case)]
+fn check_filters(tag: Option<String>, notTag: Option<String>, list: Option<String>) -> Result<CheckedFilters, String> {
+    let trim = |v: Option<String>| v.map(|s| s.trim().to_string());
+    let (tag, notTag, list) = (trim(tag), trim(notTag), trim(list));
+    if tag.as_deref().is_some_and(|t| !valid_tag(t)) || notTag.as_deref().is_some_and(|t| !valid_tag(t)) {
+        return Err("Invalid tag".to_string());
+    }
+    if list.as_deref().is_some_and(|l| !valid_list_name(l)) {
+        return Err("Invalid list name".to_string());
+    }
+    Ok((tag, notTag, list))
+}
+
 /// The id of the bucket whose `name` equals `want`, ignoring case and outer spaces.
 fn find_bucket(body: &Value, want: &str) -> Option<String> {
     let want = want.trim().to_lowercase();
@@ -395,12 +411,7 @@ pub async fn wall2_tasks_summary(
     notTag: Option<String>,
     list: Option<String>,
 ) -> Result<TasksSummary, String> {
-    if tag.as_deref().is_some_and(|t| !valid_tag(t)) || notTag.as_deref().is_some_and(|t| !valid_tag(t)) {
-        return Err("Invalid tag".to_string());
-    }
-    if list.as_deref().is_some_and(|l| !valid_list_name(l)) {
-        return Err("Invalid list name".to_string());
-    }
+    let (tag, notTag, list) = check_filters(tag, notTag, list)?;
     let base = read_base(&app, "tasksBaseUrl", true)?;
     tauri::async_runtime::spawn_blocking(move || {
         let bucket_id = match list.as_deref() {
@@ -855,6 +866,20 @@ mod tests {
         for bad in ["", "0123456789012345678901234567890123456789012345678901234567890", "a\nb", "a\u{7}b"] {
             assert!(!valid_list_name(bad), "{bad:?}");
         }
+    }
+
+    #[test]
+    fn filters_are_trimmed_before_they_are_checked() {
+        let s = |v: &str| Some(v.to_string());
+        assert_eq!(
+            check_filters(s("  home "), None, s(" Tax / Business  ")),
+            Ok((s("home"), None, s("Tax / Business")))
+        );
+        assert!(check_filters(s("   "), None, None).is_err());
+        assert!(check_filters(None, s(""), None).is_err());
+        assert!(check_filters(None, None, s("    ")).is_err());
+        assert!(check_filters(s("a?b"), None, None).is_err());
+        assert_eq!(check_filters(None, None, None), Ok((None, None, None)));
     }
 
     #[test]
