@@ -54,6 +54,7 @@ mod display_watch;
 mod wall2_feeds;
 mod wall2_home;
 mod wall2_meet;
+mod wall2_omni;
 use audio_analysis::{AudioAnalyzer, AudioLevels};
 
 // ================================================================
@@ -3033,78 +3034,81 @@ fn pdh_gpu_percent() -> Option<f32> {
     }
 }
 
+/// Blocking read behind `get_system_stats`; the Wall 2 machines feed calls it too.
+pub(crate) fn read_system_stats() -> Result<SystemStatsSummary, String> {
+    use sysinfo::Disks;
+
+    let mut out = SystemStatsSummary::default();
+
+    {
+        let mut sys = sysinfo_handle()
+            .lock()
+            .map_err(|_| "system info lock poisoned".to_string())?;
+        sys.refresh_cpu_usage();
+        sys.refresh_memory();
+
+        out.cpu = sys.global_cpu_usage();
+
+        let total = sys.total_memory();
+        if total > 0 {
+            out.ram = (sys.used_memory() as f64 / total as f64 * 100.0) as f32;
+        }
+    }
+
+    out.gpu = read_gpu_percent().unwrap_or(0.0);
+
+    {
+        let disks_cell = DISKS.get_or_init(|| {
+            Mutex::new((
+                Disks::new_with_refreshed_list(),
+                std::time::Instant::now(),
+            ))
+        });
+        let mut guard = disks_cell
+            .lock()
+            .map_err(|_| "disk info lock poisoned".to_string())?;
+        if guard.1.elapsed().as_secs() >= DISK_REFRESH_SECS {
+            guard.0.refresh_list();
+            guard.1 = std::time::Instant::now();
+        }
+
+        for disk in guard.0.list() {
+            let total = disk.total_space();
+            if total == 0 {
+                continue;
+            }
+            let used = total.saturating_sub(disk.available_space());
+            // Mount point without the trailing separator: "C:" rather than
+            // "C:\", matching the drive names the widget used to show.
+            let name = disk
+                .mount_point()
+                .to_string_lossy()
+                .trim_end_matches(['\\', '/'])
+                .to_string();
+            if name.is_empty() {
+                continue;
+            }
+            let used_percent = (used as f64 / total as f64 * 100.0) as f32;
+            if let Some(existing) = out.drives.iter_mut().find(|d| d.name == name) {
+                existing.used_percent = used_percent;
+            } else {
+                out.drives.push(DriveUsage {
+                    name,
+                    used_percent,
+                });
+            }
+        }
+        out.drives.sort_by(|a, b| a.name.cmp(&b.name));
+    }
+
+    Ok(out)
+}
+
 #[tauri::command]
 async fn get_system_stats() -> Result<SystemStatsSummary, String> {
-    tauri::async_runtime::spawn_blocking(|| -> Result<SystemStatsSummary, String> {
-        use sysinfo::Disks;
-
-        let mut out = SystemStatsSummary::default();
-
-        {
-            let mut sys = sysinfo_handle()
-                .lock()
-                .map_err(|_| "system info lock poisoned".to_string())?;
-            sys.refresh_cpu_usage();
-            sys.refresh_memory();
-
-            out.cpu = sys.global_cpu_usage();
-
-            let total = sys.total_memory();
-            if total > 0 {
-                out.ram = (sys.used_memory() as f64 / total as f64 * 100.0) as f32;
-            }
-        }
-
-        out.gpu = read_gpu_percent().unwrap_or(0.0);
-
-        {
-            let disks_cell = DISKS.get_or_init(|| {
-                Mutex::new((
-                    Disks::new_with_refreshed_list(),
-                    std::time::Instant::now(),
-                ))
-            });
-            let mut guard = disks_cell
-                .lock()
-                .map_err(|_| "disk info lock poisoned".to_string())?;
-            if guard.1.elapsed().as_secs() >= DISK_REFRESH_SECS {
-                guard.0.refresh_list();
-                guard.1 = std::time::Instant::now();
-            }
-
-            for disk in guard.0.list() {
-                let total = disk.total_space();
-                if total == 0 {
-                    continue;
-                }
-                let used = total.saturating_sub(disk.available_space());
-                // Mount point without the trailing separator: "C:" rather than
-                // "C:\", matching the drive names the widget used to show.
-                let name = disk
-                    .mount_point()
-                    .to_string_lossy()
-                    .trim_end_matches(['\\', '/'])
-                    .to_string();
-                if name.is_empty() {
-                    continue;
-                }
-                let used_percent = (used as f64 / total as f64 * 100.0) as f32;
-                if let Some(existing) = out.drives.iter_mut().find(|d| d.name == name) {
-                    existing.used_percent = used_percent;
-                } else {
-                    out.drives.push(DriveUsage {
-                        name,
-                        used_percent,
-                    });
-                }
-            }
-            out.drives.sort_by(|a, b| a.name.cmp(&b.name));
-        }
-
-        Ok(out)
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    tauri::async_runtime::spawn_blocking(read_system_stats)
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 // ================================================================
@@ -3697,6 +3701,10 @@ pub fn run() {
             wall2_meet::wall2_meet_cancel_sign_in,
             wall2_meet::wall2_meet_join,
             wall2_meet::wall2_meet_sign_out,
+            // Wall 2 helper client and machine numbers
+            wall2_omni::wall2_omni_summary,
+            wall2_omni::wall2_open_session,
+            wall2_omni::wall2_machines,
             list_audio_devices,
             start_audio_capture,
             stop_audio_capture,

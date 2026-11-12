@@ -264,6 +264,7 @@ file is read on every call, so a change applies on the next refresh.
 - Prefer a `homeBaseUrl` that is encrypted: the home box's tailnet address (encrypted
   even over `http`) or an `https` front. Plain `http` on the LAN can be spoofed by
   another device on the same network, which could fake a green tile.
+- `omniHelperUrl` is optional and `https` only; see "Agents".
 - A missing file or key shows "Not set up" on that card, quietly. A malformed
   address shows the card as unavailable.
 - `homeSecurityUrl` is optional: the full address of the home app's Security page,
@@ -420,6 +421,32 @@ The fields are the UTC time, the account `id` from `meet.json`, the old state, t
 ### What is never logged
 
 The Meet module has no `println!`, `eprintln!` or `dbg!`, and the only file it writes is `wall2-meet.log` above. Tokens, codes, `state`, the verifier, query strings, URLs, email addresses, names, meeting subjects and HTTP bodies never reach a log, a reason code or an error text. Every failure maps to a fixed string (`not-configured`, `invalid-config`, `busy`, `cancelled`, `timed-out`, `denied`, `failed`, `gone`, `forbidden`) or to one of the reason codes above, which are built only from numbers and a checked `error.code`.
+
+## Agents
+
+Wall 2 reads a small helper service on the home box (the agent lanes helper) through Rust, like the other feeds: `src-tauri/src/wall2_omni.rs`. The web view never sees the helper's address and never supplies a URL.
+
+### Setting it up
+
+Add one optional key to `feeds.json` (see "Setting it up: `feeds.json`"):
+
+```json
+{ "omniHelperUrl": "https://example.invalid:8790", "omniLinkHost": "example.invalid" }
+```
+
+- `omniHelperUrl` must be `https`, a scheme, host and optional port only. A path, query, fragment or user name is refused, as for `tasksBaseUrl`.
+- A missing key means "not set up", not an error: the commands answer `not-configured` and `wall2_machines` returns no box numbers.
+- A bad address answers `invalid-config`.
+- `omniLinkHost` is optional: the bare hostname the session deep links use (1 to 253 characters, dot separated labels of letters, digits and hyphens; no scheme, port, path or user name). Missing means session links are unavailable: `wall2_open_session` answers `not-configured` and the summary carries `linksAvailable: false` so the UI can hide the tap. An invalid value answers `invalid-config`.
+
+### Commands
+
+- `wall2_omni_summary` reads `GET /wall/v1/summary` and returns the typed summary: slots, up to three lanes, parked count, your move, Claude usage, the day's spans and the box `system` block. Titles and lines are capped at 80 characters, ids must match `^[a-f0-9-]{8,64}$` (a lane with any other id is dropped), the answer is capped at 64 KB, and picture `options` are never passed on. A malformed or oversized answer, or any network failure, answers `failed`.
+- `wall2_open_session(id)` checks the id against the same pattern, builds `omnigent://<omniLinkHost>/c/<id>` in Rust and opens it. Any other id is refused.
+- `wall2_machines` returns `{ pc: { cpuPct, gpuPct, ramPct }, box: { cpuPct, gpuPct, ramPct, tempC } | null, boxStale }`. The PC numbers come from the same function as the old `get_system_stats` (which is unchanged). The box numbers come from the helper summary's `system` block, read at most every 15 seconds however often the PC is polled; `box` is `null` when the helper is not set up or cannot be reached, and `boxStale` is true when the helper reports that its own data is old.
+- All three refuse any window but `wall2` (`forbidden`).
+
+Nothing here logs, and nothing here takes a wake lock or sets an execution state. Browser dev (`npm run dev`) shows mock answers from `devMocks/omni.ts`.
 
 ## Content security policy
 

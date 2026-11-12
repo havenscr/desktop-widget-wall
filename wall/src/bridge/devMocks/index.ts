@@ -2,6 +2,7 @@ import { isTauri } from '../tauri';
 import { registerHomeMocks } from './home';
 import { registerMeetMocks } from './meet';
 import { registerMediaMocks } from './media';
+import { registerOmniMocks } from './omni';
 import { registerTaskMocks } from './tasks';
 
 /**
@@ -15,4 +16,5 @@ export function registerDevMocks(): void {
   registerTaskMocks();
   registerHomeMocks();
   registerMeetMocks();
+  registerOmniMocks();
 }
