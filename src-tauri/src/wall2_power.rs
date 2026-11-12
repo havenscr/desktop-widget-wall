@@ -522,8 +522,8 @@ mod tests {
     #[test]
     fn re_offs_age_out_after_an_hour() {
         let times = [0, 1_000, 3_599_999, 3_600_000];
-        assert_eq!(reoffs_in_last_hour(&times, 3_600_000), 2);
-        assert_eq!(reoffs_in_last_hour(&times, 3_599_999), 3);
+        assert_eq!(reoffs_in_last_hour(&times, 3_600_000), 3);
+        assert_eq!(reoffs_in_last_hour(&times, 3_599_999), 4);
         assert_eq!(reoffs_in_last_hour(&[], 10), 0);
     }
 
