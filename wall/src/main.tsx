@@ -7,6 +7,7 @@ import './styles/work.css';
 import './styles/home.css';
 import './styles/meet.css';
 import './styles/ribbon.css';
+import './styles/agents.css';
 import './styles/unwind.css';
 import './styles/zen.css';
 import { App } from './App';
