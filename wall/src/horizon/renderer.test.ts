@@ -2,17 +2,17 @@ import { describe, expect, it } from 'vitest';
 import { css, hash, pal, peaks, peaksOf, sun, when } from './renderer';
 
 describe('sun', () => {
-  // Expected values come from the original horizon.js, run in Node (see the pull request body).
+  // Expected values come from the original horizon.js with LAT 47.68 and LON -122.21, run in Node (see the pull request body).
   it('matches the reference at noon on 2026-11-11 (Pacific)', () => {
     const s = sun(when(2026, 11, 11, 12));
-    expect(s.az).toBeCloseTo(181.86797042308112, 9);
-    expect(s.alt).toBeCloseTo(24.71273787567999, 9);
+    expect(s.az).toBeCloseTo(181.86662909037594, 9);
+    expect(s.alt).toBeCloseTo(24.714265598607472, 9);
   });
 
   it('matches the reference late on a June night, sun below the horizon', () => {
     const s = sun(when(2026, 6, 21, 21.5));
-    expect(s.az).toBeCloseTo(322.99756346757823, 9);
-    expect(s.alt).toBeCloseTo(-10.238601102614997, 9);
+    expect(s.az).toBeCloseTo(322.9963129158583, 9);
+    expect(s.alt).toBeCloseTo(-10.239272238097705, 9);
   });
 });
 

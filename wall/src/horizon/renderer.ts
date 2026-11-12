@@ -12,7 +12,7 @@ const TER: Record<string, Terrain> = { west: west as Terrain, south: south as Te
 // Local aliases so the hand-tuned helpers below stay in their original compact form.
 type Any = any; // the helpers take canvas contexts, colour triples and option bags; typing each would mean rewriting them
 type RGB = number[];
-const LAT=47.6815,LON=-122.2087;
+const LAT=47.68,LON=-122.21;
 const rad=(d:Any)=>d*Math.PI/180,deg=(r:Any)=>r*180/Math.PI,clamp=(v:Any,a:Any,b:Any)=>v<a?a:v>b?b:v,mix=(a:Any,b:Any,t:Any)=>a+(b-a)*t,smooth=(t:Any)=>{t=clamp(t,0,1);return t*t*(3-2*t)},fr=(x:Any)=>x-Math.floor(x);
 const hx=(h:string)=>[parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),parseInt(h.slice(5,7),16)];
 const css=(c:RGB,a?:number)=>a===undefined?`rgb(${c[0]|0},${c[1]|0},${c[2]|0})`:`rgba(${c[0]|0},${c[1]|0},${c[2]|0},${a<0?0:a>1?1:+a.toFixed(3)})`;

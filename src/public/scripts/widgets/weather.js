@@ -23,8 +23,8 @@ const WMO_CODES = {
 };
 
 const weatherConfig = {
-  latitude: 47.6815,
-  longitude: -122.2087,
+  latitude: 47.68,
+  longitude: -122.21,
   city: 'Kirkland'
 };
 
