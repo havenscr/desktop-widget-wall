@@ -69,8 +69,11 @@ export function useMeet(): MeetState {
     }
     const delay = FAST_RETRY_MS[fastStep.current];
     if (delay === undefined || !onRef.current || !mounted.current) return;
-    fastStep.current += 1;
-    fastTimer.current = setTimeout(() => void refreshRef.current(), delay);
+    // Only the timer moves the step on, so a manual Try again never uses up the fast retries.
+    fastTimer.current = setTimeout(() => {
+      fastStep.current += 1;
+      void refreshRef.current();
+    }, delay);
   }, []);
 
   const readOnce = useCallback(async () => {

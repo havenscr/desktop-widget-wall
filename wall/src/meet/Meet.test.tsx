@@ -375,7 +375,59 @@ it('keeps the usual panels when nothing is scheduled but an account is unavailab
   expect(screen.getByLabelText('Later meetings')).toBeTruthy();
 });
 
-it('the payload from the native side carries no join URL, address or bearer text', async () => {
-  const text = JSON.stringify(unavailable);
-  for (const bad of ['@', 'Bearer', 'http', 'joinUrl']) expect(text.includes(bad), bad).toBe(false);
+it('two quick manual Try again taps leave the 30 s retry scheduled', async () => {
+  const next = vi.fn(() => unavailable);
+  mocks.set('wall2_meet_next', next);
+  render(<Meet />);
+  await flush();
+  fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+  await flush(100);
+  fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+  await flush(100);
+  expect(next).toHaveBeenCalledTimes(3);
+  await flush(29_000);
+  expect(next).toHaveBeenCalledTimes(3);
+  await flush(1_000);
+  expect(next).toHaveBeenCalledTimes(4);
+  // The schedule continues with the 60 s step, not past it.
+  await flush(60_000);
+  expect(next).toHaveBeenCalledTimes(5);
+  await flush(100_000);
+  expect(next).toHaveBeenCalledTimes(5);
+});
+
+it('a needs-sign-in account with a reason explains itself', async () => {
+  mocks.set('wall2_meet_next', () => ({
+    ...unavailable,
+    accounts: [unavailable.accounts[0], { id: 'second', label: 'Second', state: 'needs-sign-in', reason: 'token-400-65001' }],
+  }));
+  render(<Meet />);
+  await flush();
+  expect(screen.getByText('Sign-in was not accepted (token-400-65001)')).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Sign in' })).toBeTruthy();
+});
+
+it('a signed-out account with no reason shows no reason line', async () => {
+  mocks.set('wall2_meet_next', () => data);
+  const { container } = render(<Meet />);
+  await flush();
+  expect(container.querySelector('.meet-reason')).toBeNull();
+});
+
+it('a hostile reason string never reaches the page', async () => {
+  const hostile = 'graph-403-https://example.test/join?x=1 someone@example.test Bearer abc.def';
+  for (const state of ['unavailable', 'needs-sign-in'] as const) {
+    mocks.set('wall2_meet_next', () => ({
+      ...unavailable,
+      accounts: [unavailable.accounts[0], { id: 'second', label: 'Second', state, reason: hostile }],
+    }));
+    const { container, unmount } = render(<Meet />);
+    await flush();
+    const text = container.textContent ?? '';
+    for (const bad of ['example.test', '@', 'Bearer', 'https', 'abc.def', 'graph-403']) {
+      expect(text.includes(bad), `${state}: ${bad}`).toBe(false);
+    }
+    expect(container.querySelector('.meet-reason')).toBeNull();
+    unmount();
+  }
 });

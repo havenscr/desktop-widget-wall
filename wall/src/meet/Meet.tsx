@@ -80,7 +80,7 @@ function LaterPanel({ m, labels }: { m: MeetState; labels: Map<string, string> }
 function AccountRow({ a, m }: { a: MeetAccount; m: MeetState }) {
   const waiting = m.signingIn === a.id;
   const unavailable = a.state === 'unavailable' && !waiting;
-  const why = unavailable ? reasonLine(a.reason) : null;
+  const why = (unavailable || (a.state === 'needs-sign-in' && !waiting)) ? reasonLine(a.reason) : null;
   const busy = m.signingIn !== null;
   return (
     <li className={unavailable ? 'meet-account unavailable' : 'meet-account'}>
