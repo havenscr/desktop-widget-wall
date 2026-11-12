@@ -3,6 +3,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { mocks } from '../bridge/tauri';
 import { FocusTimer } from './FocusTimer';
 import { FOCUS_KEY } from './model';
+import { useFocusStore } from './store';
 
 const flush = async (ms = 0) => {
   await act(async () => {
@@ -11,6 +12,7 @@ const flush = async (ms = 0) => {
 };
 
 beforeEach(() => {
+  useFocusStore.getState().dispose();
   localStorage.clear();
   vi.useFakeTimers();
   vi.setSystemTime(new Date(2026, 10, 11, 10, 0, 0));
@@ -19,6 +21,7 @@ beforeEach(() => {
   mocks.set('disable_do_not_disturb', () => undefined);
 });
 afterEach(() => {
+  useFocusStore.getState().dispose();
   vi.useRealTimers();
   mocks.clear();
 });
@@ -51,6 +54,7 @@ it('resumes a stored running timer and shows finished for an old one', () => {
   render(<FocusTimer />);
   expect(screen.getByRole('img', { name: '30 minutes left' })).toBeTruthy();
   cleanup();
+  useFocusStore.getState().dispose();
   localStorage.setItem(FOCUS_KEY, JSON.stringify({ status: 'running', minutes: 50, endAt: Date.now() - 1000 }));
   render(<FocusTimer />);
   expect(screen.getByText('Focus done')).toBeTruthy();
