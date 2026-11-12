@@ -1,3 +1,4 @@
+import { longOr } from './long';
 import { reviewNow } from '../../ui/reviewClock';
 import { mocks } from '../tauri';
 
@@ -48,7 +49,7 @@ const estMinutes = (e: Est) => (e === '60plus' ? 60 : e ? Number(e) : 0);
 /** The task card, plus the summary the Work and Home screens read. */
 export function registerTaskMocks(): void {
   let tasks: MockTask[] = [
-    { id: 't1', title: 'Send the project proposal', due: 0, allDay: false, hour: 15, estimate: '45', tags: ['work'], bucket: 0 },
+    { id: 't1', title: longOr('Send the project proposal', 'Send the project proposal with the revised budget and the new timeline'), due: 0, allDay: false, hour: 15, estimate: '45', tags: ['work'], bucket: 0 },
     { id: 't2', title: 'Review the dashboard draft', due: 1, allDay: true, hour: 0, estimate: '30', tags: ['work'], bucket: 0 },
     { id: 't3', title: 'Order printer paper', due: 4, allDay: true, hour: 0, estimate: '15', tags: ['home', 'errand'], bucket: 2 },
     { id: 't4', title: 'Book a dentist visit', due: 9, allDay: true, hour: 0, estimate: null, tags: ['home'], bucket: 2 },
@@ -56,6 +57,9 @@ export function registerTaskMocks(): void {
     { id: 't6', title: 'Water the plants', due: 2, allDay: true, hour: 0, estimate: '15', tags: ['home'], bucket: 2 },
     { id: 't7', title: 'Sort the recycling', due: 6, allDay: true, hour: 0, estimate: '15', tags: ['home'], bucket: 2 },
     { id: 't8', title: 'File the quarterly return', due: 12, allDay: true, hour: 0, estimate: '30', tags: ['finance'], bucket: 1 },
+    { id: 't9', title: 'Renew the domain names', due: 14, allDay: true, hour: 0, estimate: '15', tags: ['work'], bucket: 1 },
+    { id: 't10', title: 'Write the workshop outline for the spring conference', due: 16, allDay: true, hour: 0, estimate: '60plus', tags: ['work'], bucket: 0 },
+    { id: 't11', title: 'Clear the shared drive', due: 20, allDay: true, hour: 0, estimate: null, tags: [], bucket: 0 },
   ];
   mocks.set('wall2_tasks_next', () => tasks.slice(0, 3).map(toItem));
   mocks.set('wall2_task_done', (args) => {

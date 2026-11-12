@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { formatClock } from './format';
 
 const systemNow = () => new Date();
 
-/** Time as h:mm with AM or PM, date below. Updates on the minute. */
-export function Clock({ now = systemNow }: { now?: () => Date }) {
+/** Time as h:mm with AM or PM, date below. Updates on the minute. `children` follow the date on its line. */
+export function Clock({ now = systemNow, children }: { now?: () => Date; children?: ReactNode }) {
   const [parts, setParts] = useState(() => formatClock(now()));
 
   useEffect(() => {
@@ -32,7 +32,10 @@ export function Clock({ now = systemNow }: { now?: () => Date }) {
         {parts.time}
         <small>{parts.meridiem}</small>
       </div>
-      <div className="clk-date">{parts.date}</div>
+      <div className="clk-date">
+        <span>{parts.date}</span>
+        {children}
+      </div>
     </div>
   );
 }

@@ -4,11 +4,12 @@ import { mocks } from '../bridge/tauri';
 import type { TaskItem } from '../tasks/model';
 import { RX } from './model';
 import { Ribbon } from './Ribbon';
-import { usePacificTime } from './testZone';
+import { useFixedClock, usePacificTime } from './testZone';
 
 usePacificTime();
 
 const t = (hm: string, day = '11') => Date.parse(`2026-11-${day}T${hm}:00-08:00`);
+useFixedClock(t('10:24'));
 const task = (id: string, title: string, due: string | null, allDay = false): TaskItem => ({
   id,
   title,
@@ -32,8 +33,6 @@ const setHidden = (hidden: boolean) => {
 
 let calls: unknown[] = [];
 beforeEach(() => {
-  vi.useFakeTimers();
-  vi.setSystemTime(t('10:24'));
   calls = [];
   mocks.set('wall2_meet_day', () => ({ accounts: [], events: [] }));
 });
@@ -53,7 +52,7 @@ it('marks only the next three tasks due at a time today, at their hour', async (
     'wall2_tasks_summary',
     summary([
       task('a', 'Send the project proposal', new Date(t('15:00')).toISOString()),
-      task('b', 'Review the dashboard draft', '2026-11-11', true),
+      task('b', 'Review the dashboard draft', new Date(t('12:00')).toISOString(), true),
       task('c', 'No date', null),
       task('d', 'Fourth, never read', new Date(t('16:00')).toISOString()),
     ]),
@@ -66,6 +65,14 @@ it('marks only the next three tasks due at a time today, at their hour', async (
   expect(marks[0].textContent).toBe('Send the project proposal, 3:00');
   expect(marks[0].getAttribute('aria-label')).toBe('Due 3:00: Send the project proposal');
   expect(calls).toEqual([{ notTag: 'home' }]);
+});
+
+it('an all-day task gets no mark', async () => {
+  // Due at noon today, local time: only the all-day flag keeps it off the ribbon.
+  mocks.set('wall2_tasks_summary', summary([task('b', 'Review the dashboard draft', new Date(t('12:00')).toISOString(), true)]));
+  const r = render(<Ribbon kind="work" />);
+  await flush();
+  expect(r.container.querySelectorAll('.due')).toHaveLength(0);
 });
 
 it('leaves out a task due at a time on another day', async () => {

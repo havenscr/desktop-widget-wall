@@ -14,8 +14,21 @@ export interface TasksState {
   hidden: ReadonlySet<string>;
   /** Time of the last good list, or null. */
   lastOk: number | null;
+  /** Open tasks after the three shown (summary reads only), or null. */
+  remaining: number | null;
   now: number;
   complete: (id: string) => void;
+}
+
+/** Filters for `wall2_tasks_summary`. Without them the hook reads `wall2_tasks_next`. */
+export interface TasksQuery {
+  tag?: string;
+  notTag?: string;
+}
+
+interface SummaryAnswer {
+  next?: TaskItem[];
+  remaining?: number;
 }
 
 /**
@@ -24,8 +37,10 @@ export interface TasksState {
  * is sent in the background; if the save fails the row comes back marked "failed".
  * A failed refresh keeps the last good list.
  */
-export function useTasks(): TasksState {
+export function useTasks(query?: TasksQuery): TasksState {
   const visible = useVisible();
+  const queryKey = query ? JSON.stringify({ tag: query.tag, notTag: query.notTag }) : null;
+  const [remaining, setRemaining] = useState<number | null>(null);
   const [status, setStatus] = useState<TasksStatus>('loading');
   const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [marks, setMarks] = useState<Record<string, RowMark>>({});
@@ -56,9 +71,24 @@ export function useTasks(): TasksState {
   const fetchList = useCallback(async () => {
     const mine = ++started.current;
     try {
-      const list = await invoke<TaskItem[]>('wall2_tasks_next');
+      let list: unknown;
+      let more: number | null = null;
+      if (queryKey) {
+        const args = JSON.parse(queryKey) as TasksQuery;
+        const r = await invoke<SummaryAnswer>('wall2_tasks_summary', {
+          ...(args.tag ? { tag: args.tag } : {}),
+          ...(args.notTag ? { notTag: args.notTag } : {}),
+        });
+        // A summary without a `next` list is a bad answer, not an empty one.
+        if (!Array.isArray(r?.next)) throw new Error('bad answer');
+        list = r.next;
+        more = typeof r?.remaining === 'number' && r.remaining > 0 ? r.remaining : 0;
+      } else {
+        list = await invoke<TaskItem[]>('wall2_tasks_next');
+      }
       if (!mounted.current) return;
-      const fresh = Array.isArray(list) ? list : [];
+      const fresh = (Array.isArray(list) ? list : []) as TaskItem[];
+      setRemaining(more);
       // A list fetched after a completed row was saved and faded decides that row from now on:
       // gone, or open again (reopened, or a recurring task that keeps its id).
       const settled: string[] = [];
@@ -90,7 +120,7 @@ export function useTasks(): TasksState {
       if (text === NOT_CONFIGURED) setStatus('unconfigured');
       else setStatus('error');
     }
-  }, []);
+  }, [queryKey]);
 
   // One list request at a time. A request made while one is running queues a single trailing one.
   const refresh = useCallback(async () => {
@@ -168,5 +198,5 @@ export function useTasks(): TasksState {
     [refresh],
   );
 
-  return { status, tasks, marks, hidden, lastOk, now, complete };
+  return { status, tasks, marks, hidden, lastOk, remaining, now, complete };
 }

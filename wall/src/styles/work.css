@@ -1,4 +1,7 @@
-/* Work tab. Glass panels follow the concept (.g in concept.css). Design pixels, 2560 x 720. */
+/* Work tab on the concept's zones (f_work): left wing, centre, right wing. Glass panels
+   follow the concept (.g). Design pixels, inside the top band (2416 x 490). The shared
+   type and control classes below (.panel, .k, .t2, .btn, .rd, .chip, .ring) are used by
+   other places too. */
 .work {
   position: absolute;
   inset: 0;
@@ -24,8 +27,18 @@
   font: 600 29px/1.15 var(--body);
   letter-spacing: -0.01em;
 }
+.t1 {
+  font: 600 34px/1.12 var(--body);
+  letter-spacing: -0.01em;
+}
 .b6 {
   font: 600 25px/1.2 var(--body);
+}
+.blk {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
 }
 .s {
   font-size: 22px;
@@ -119,13 +132,7 @@
   box-shadow: inset 0 0 0 1px rgba(53, 230, 234, 0.45);
 }
 
-/* Focus */
-.focus {
-  left: 482px;
-  top: 4px;
-  width: 620px;
-  height: 330px;
-}
+/* Focus (full card) */
 .focus-body {
   display: flex;
   align-items: center;
@@ -203,13 +210,7 @@
   }
 }
 
-/* Weather */
-.weather {
-  left: 1120px;
-  top: 4px;
-  width: 680px;
-  height: 330px;
-}
+/* Weather (full card) */
 .wx-now {
   display: flex;
   align-items: center;
@@ -246,68 +247,8 @@
   gap: 6px;
 }
 
-/* Tasks: top right, beside the weather card, above the music bar */
-/* .work is 2416 wide (the stage minus the rail), so the card's left edge is at 1820 and it
-   ends flush right like .music, with a 20px gap after the weather card. */
-.tasks {
-  right: 0;
-  top: 4px;
-  width: 596px;
-  height: 366px;
-  gap: 10px;
-}
-.tasks-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-}
-.task-row {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  min-height: 0;
-  border-top: 1px solid var(--line);
-  transition: opacity 600ms ease;
-}
-.task-row:first-child {
-  border-top: 0;
-}
-.task-row.done {
-  opacity: 0.35;
-}
-.task-row.done .task-title {
-  text-decoration: line-through;
-}
-.task-check.on {
-  background: var(--mint);
-  color: #06041a;
-  border: 0;
-}
-.task-text {
-  flex: 1;
-  min-width: 0;
-}
-.task-err {
-  color: var(--amber);
-}
-.task-focus {
-  flex: none;
-  padding: 0 20px;
-}
-.btn:disabled {
-  opacity: 0.4;
-}
-
-/* Music */
+/* Music (full bar; Work uses the row below) */
 .music {
-  right: 0;
-  top: 378px;
-  width: 596px;
-  height: 112px;
   flex-direction: row;
   align-items: center;
   gap: 16px;
@@ -348,13 +289,434 @@
   height: 76px;
 }
 
+/* Work zones. The frame's clock and date line sit in flow at the top-left of the band;
+   the zones lie over the whole band and the left wing starts under the date line. */
+.work.zones {
+  display: grid;
+  grid-template-columns: 470px 1290px 596px;
+  gap: 30px;
+}
+.work .wing {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+/* Clock (116) and date line (12 + 29) end at 157. Below it Next, Focus, Music and
+   Machines share the rest with even air between them (about 16 px each in the normal
+   state; at least 10 when the Next block carries its "as of" line). */
+.work .wl {
+  padding-top: 172px;
+  gap: 10px;
+  justify-content: space-between;
+}
+.work .wr {
+  padding-top: 4px;
+}
+/* A round button keeps a 72 px touch target while drawing 52 px, so the rows stay tight. */
+.work .wl .rd {
+  position: relative;
+  width: 52px;
+  height: 52px;
+}
+.work .wl .rd::before {
+  content: '';
+  position: absolute;
+  inset: -10px 0 -10px -20px;
+  border-radius: 28px;
+}
+
+/* Left wing rows */
+.next {
+  gap: 6px;
+}
+.next.stale .t1,
+.next.stale > .s {
+  opacity: 0.5;
+}
+.next-asof {
+  margin-top: -2px;
+}
+.next .t1 {
+  max-width: 458px;
+}
+.focus-mini {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  min-width: 0;
+  min-height: 60px;
+}
+.focus-mini-ring {
+  width: 72px;
+  height: 72px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  margin: -6px;
+  border-radius: 50%;
+}
+.focus-mini-ring:focus-visible {
+  outline: 3px solid var(--cyan);
+}
+.focus-mini-ring .ring-num {
+  font-weight: 500;
+}
+.focus-mini-text {
+  flex: 1;
+}
+.focus-mini .blk {
+  gap: 5px;
+}
+.focus-mini .t2 {
+  font-size: 27px;
+}
+.focus-sheet {
+  position: absolute;
+  z-index: 5;
+  left: -12px;
+  bottom: calc(100% + 10px);
+  width: 640px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 18px 22px 22px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.02)), rgba(10, 7, 28, 0.94);
+  border: 1px solid rgba(53, 230, 234, 0.35);
+  border-radius: 26px;
+  box-shadow: 0 18px 50px -10px rgba(0, 0, 0, 0.7);
+}
+.focus-sheet .rd {
+  width: 72px;
+  height: 72px;
+}
+.focus-sheet .btn.cy {
+  align-self: flex-start;
+}
+.music-mini {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+  transition: opacity 600ms ease;
+}
+.music-mini.quiet {
+  opacity: 0.55;
+}
+.music-mini .art {
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  flex: none;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--faint);
+}
+.music-mini .art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.music-mini-text {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Machines: owner vote A, whisper bars. Grey; amber only after 30 s over a limit. */
+.mc {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font: 500 17px/1 var(--disp);
+  color: var(--faint);
+}
+.mc-row {
+  display: grid;
+  grid-template-columns: 52px repeat(3, 104px) minmax(0, 1fr);
+  align-items: center;
+  column-gap: 12px;
+  height: 20px;
+  transition: opacity 600ms ease;
+}
+.mc-row.stale {
+  opacity: 0.4;
+}
+.mc-hd {
+  height: 13px;
+  font-size: 13px;
+  letter-spacing: 0.16em;
+}
+/* Each label starts where its bar starts. */
+.mc-hd span {
+  text-align: left;
+}
+.mc-name {
+  letter-spacing: 0.14em;
+}
+.mc-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.mc-bar {
+  display: block;
+  flex: 1;
+  height: 5px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+.mc-bar > i {
+  display: block;
+  height: 100%;
+  border-radius: 5px;
+  background: rgba(183, 175, 214, 0.55);
+  transition: width 900ms ease;
+}
+.mc-num {
+  min-width: 34px;
+  text-align: right;
+  font-weight: 500;
+  color: var(--dim);
+}
+.mc-temp {
+  text-align: left;
+}
+/* No reading for this column: the empty track only, faint, so the columns stay aligned. */
+.mc-cell.none {
+  opacity: 0.6;
+}
+.mc-cell.hot .mc-bar > i {
+  background: var(--amber);
+}
+.mc-cell.hot .mc-num,
+.mc-temp.hot {
+  color: var(--amber);
+}
+
+/* Centre: until the agent lanes land, the focus timer and the weather fill it. */
+.centre-fill {
+  display: grid;
+  grid-template-columns: 540px 1fr;
+  gap: 20px;
+  min-height: 0;
+}
+.centre-fill.solo {
+  grid-template-columns: 1fr;
+}
+/* One focus card across the centre while the weather has no reading: everything centred,
+   the ring larger, the weather status one quiet line at the foot. */
+.centre-fill.solo .focus {
+  align-items: center;
+}
+.centre-fill.solo .focus > .k {
+  align-self: flex-start;
+}
+.centre-fill.solo .focus .ring {
+  width: 280px;
+  height: 280px;
+}
+.centre-fill.solo .focus .ring-num {
+  font-size: 100px;
+}
+.centre-fill.solo .focus-label {
+  max-width: 420px;
+}
+.focus-note {
+  display: flex;
+}
+.wx-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--faint);
+}
+.centre-fill .panel {
+  position: relative;
+  min-width: 0;
+  justify-content: space-between;
+  padding: 24px 30px 28px;
+}
+.centre-fill .focus .ring {
+  width: 236px;
+  height: 236px;
+}
+.centre-fill .focus .ring svg {
+  width: 100%;
+  height: 100%;
+}
+.centre-fill .focus .ring-num {
+  font-size: 84px;
+}
+.centre-fill .focus-body {
+  gap: 30px;
+}
+.centre-fill .focus-label {
+  max-width: 200px;
+}
+.centre-fill .focus-actions {
+  flex-wrap: wrap;
+}
+.centre-fill .wx-now {
+  gap: 28px;
+}
+.centre-fill .wx-icon svg {
+  width: 104px;
+  height: 104px;
+}
+.centre-fill .wx-temp {
+  font-size: 120px;
+}
+.centre-fill .wx-now .s {
+  font-size: 26px;
+}
+.centre-fill .wx-range {
+  font-size: 26px;
+  gap: 12px;
+}
+.centre-fill .wx-hours {
+  gap: 12px;
+}
+.centre-fill .wx-hours li {
+  gap: 10px;
+  padding: 16px 0 14px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--line);
+}
+.centre-fill .wx-hours .xs {
+  font-size: 20px;
+  color: var(--dim);
+}
+.centre-fill .wx-hours svg {
+  width: 40px;
+  height: 40px;
+}
+.centre-fill .wx-hours .b6 {
+  font-size: 28px;
+}
+
+/* Right wing: the next three, as the concept's .tk3 rows (72 px tall for touch). */
+.tasks {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.tasks-hd {
+  margin-bottom: 6px;
+}
+.tasks-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.tk3 {
+  display: flex;
+  align-items: center;
+  height: 72px;
+  border-bottom: 1px solid var(--line);
+  transition: opacity 600ms ease;
+}
+.tk3.done {
+  opacity: 0.35;
+}
+.tk3.done .n {
+  text-decoration: line-through;
+}
+.task-check {
+  width: 72px;
+  height: 72px;
+  margin-left: -22px;
+  flex: none;
+  display: grid;
+  place-items: center;
+}
+.task-check:focus-visible,
+.tk-main:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: -3px;
+  border-radius: 14px;
+}
+.tk3 .ck {
+  width: 28px;
+  height: 28px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  border: 2px solid var(--faint);
+  display: grid;
+  place-items: center;
+}
+.task-check.on .ck {
+  background: var(--mint);
+  border-color: var(--mint);
+  color: #06041a;
+}
+.tk-main {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  text-align: left;
+  font: 400 25px/1.2 var(--body);
+  -webkit-touch-callout: none;
+  overflow: hidden;
+}
+.tk3 .n {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.est {
+  font: 500 18px/1 var(--disp);
+  color: var(--dim);
+  background: rgba(255, 255, 255, 0.07);
+  border-radius: 10px;
+  padding: 6px 10px;
+  white-space: nowrap;
+}
+.task-err {
+  color: var(--amber);
+  white-space: nowrap;
+}
+/* Holding a row fills a faint cyan wash across it over the half second. */
+.tk-main::after {
+  content: '';
+  position: absolute;
+  inset: 8px auto 8px 0;
+  width: 0;
+  border-radius: 12px;
+  background: rgba(53, 230, 234, 0.12);
+  pointer-events: none;
+}
+.tk3.holding .tk-main::after {
+  width: 100%;
+  transition: width 500ms linear;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .ring.glow {
     animation: none;
     box-shadow: 0 0 36px 0 rgba(93, 242, 182, 0.5);
   }
   .music,
-  .task-row,
+  .music-mini,
+  .mc-row,
+  .mc-bar > i,
+  .tk3,
+  .tk3.holding .tk-main::after,
   .btn,
   .rd,
   .chip {

@@ -1,16 +1,105 @@
-import { IconCheck, IconTarget } from '@tabler/icons-react';
+import { IconCheck } from '@tabler/icons-react';
+import { useEffect, useRef, useState } from 'react';
 import { useFocusStore } from '../focus/store';
-import { dueLine, updatedText, visibleRows } from './model';
-import { useTasks } from './useTasks';
+import { estText, HOLD_SLOP_PX, LONG_PRESS_MS, updatedText, visibleRows, type TaskItem } from './model';
+import { useTasks, type TasksQuery } from './useTasks';
 
-/** The next three open tasks: tap the circle to finish one, "Focus" to start a session named after it. */
+/** Work's list: the tasks without the home tag. */
+const WORK_QUERY: TasksQuery = { notTag: 'home' };
+
+/**
+ * One task as the concept draws it (`.tk3`): a check circle, the title and the estimate.
+ * Holding the row for half a second starts a focus session named after the task; lifting,
+ * cancelling or moving more than 12 px first does nothing.
+ */
+function TaskRow({
+  task,
+  mark,
+  canFocus,
+  onDone,
+}: {
+  task: TaskItem;
+  mark: 'done' | 'failed' | undefined;
+  canFocus: boolean;
+  onDone: () => void;
+}) {
+  const [holding, setHolding] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const downAt = useRef<{ x: number; y: number } | null>(null);
+  const stop = () => {
+    clearTimeout(timer.current);
+    timer.current = undefined;
+    downAt.current = null;
+    setHolding(false);
+  };
+  useEffect(() => () => clearTimeout(timer.current), []);
+  const focusable = canFocus && mark !== 'done';
+  const startFocus = () => useFocusStore.getState().startLabeled(task.title);
+  const est = estText(task.est);
+
+  return (
+    <li className={`tk3 task-row${mark === 'done' ? ' done' : ''}${holding ? ' holding' : ''}`}>
+      <button
+        type="button"
+        className={`task-check${mark === 'done' ? ' on' : ''}`}
+        aria-label={`Mark done: ${task.title}`}
+        disabled={mark === 'done'}
+        onClick={onDone}
+      >
+        <i className="ck" aria-hidden="true">
+          {mark === 'done' && <IconCheck size={20} stroke={3} />}
+        </i>
+      </button>
+      <button
+        type="button"
+        className="tk-main"
+        aria-label={`Hold to focus on: ${task.title}`}
+        aria-disabled={!focusable}
+        onPointerDown={(e) => {
+          if (!focusable) return;
+          stop();
+          downAt.current = { x: e.clientX, y: e.clientY };
+          setHolding(true);
+          timer.current = setTimeout(() => {
+            timer.current = undefined;
+            downAt.current = null;
+            setHolding(false);
+            startFocus();
+          }, LONG_PRESS_MS);
+        }}
+        // On touch the pointer is captured and pointerleave does not fire while the finger
+        // slides, so a move of more than 12 px from where it went down cancels the hold.
+        onPointerMove={(e) => {
+          const d = downAt.current;
+          if (d && Math.hypot(e.clientX - d.x, e.clientY - d.y) > HOLD_SLOP_PX) stop();
+        }}
+        onPointerUp={stop}
+        onPointerLeave={stop}
+        onPointerCancel={stop}
+        onContextMenu={(e) => e.preventDefault()}
+        onKeyDown={(e) => {
+          // Keyboards cannot hold: Enter starts focus straight away.
+          if (e.key === 'Enter' && focusable) {
+            e.preventDefault();
+            startFocus();
+          }
+        }}
+      >
+        <span className="n task-title">{task.title}</span>
+        {mark === 'failed' ? <span className="xs task-err">Could not save</span> : est && <span className="est">{est}</span>}
+      </button>
+    </li>
+  );
+}
+
+/** The next three open tasks without the home tag: tap the circle to finish one, hold a row to focus on it. */
 export function TaskCard() {
-  const t = useTasks();
+  const t = useTasks(WORK_QUERY);
   const focusStatus = useFocusStore((s) => s.state.status);
   const canFocus = focusStatus === 'idle' || focusStatus === 'finished';
   const rows = visibleRows(t.tasks, t.hidden);
   const stale = t.status === 'error' && t.lastOk !== null ? updatedText(t.lastOk, t.now) : null;
-  const today = new Date(t.now);
+  const more = t.remaining ? `${t.remaining} more can wait` : null;
 
   let body;
   if (t.status === 'unconfigured') {
@@ -24,49 +113,18 @@ export function TaskCard() {
   } else {
     body = (
       <ul className="tasks-list">
-        {rows.map((task) => {
-          const mark = t.marks[task.id];
-          const due = dueLine(task, today);
-          return (
-            <li key={task.id} className={`task-row${mark === 'done' ? ' done' : ''}`}>
-              <button
-                type="button"
-                className={`rd task-check${mark === 'done' ? ' on' : ''}`}
-                aria-label={`Mark done: ${task.title}`}
-                disabled={mark === 'done'}
-                onClick={() => t.complete(task.id)}
-              >
-                {mark === 'done' && <IconCheck size={36} aria-hidden="true" />}
-              </button>
-              <div className="task-text">
-                <div className="b6 ellipsis task-title">{task.title}</div>
-                {mark === 'failed' ? (
-                  <div className="xs task-err">Could not save</div>
-                ) : (
-                  due && <div className="xs ellipsis">{due}</div>
-                )}
-              </div>
-              <button
-                type="button"
-                className="btn task-focus"
-                disabled={!canFocus || mark === 'done'}
-                onClick={() => useFocusStore.getState().startLabeled(task.title)}
-              >
-                <IconTarget size={26} aria-hidden="true" />
-                Focus
-              </button>
-            </li>
-          );
-        })}
+        {rows.map((task) => (
+          <TaskRow key={task.id} task={task} mark={t.marks[task.id]} canFocus={canFocus} onDone={() => t.complete(task.id)} />
+        ))}
       </ul>
     );
   }
 
   return (
-    <section className="panel tasks" aria-label="Tasks">
-      <div className="row sb">
+    <section className="tasks" aria-label="Tasks">
+      <div className="row sb tasks-hd">
         <span className="k">Next three</span>
-        {stale && <span className="xs">{stale}</span>}
+        {(stale || more) && <span className="xs">{stale ?? more}</span>}
       </div>
       {body}
     </section>

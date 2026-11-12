@@ -1,9 +1,11 @@
 import { expect, it } from 'vitest';
 import { chips, focusBars, hourLabels, hourText, needle, RIBBON_WIDTH, RX, shortTime, skyGradient, sunLabels, ticks, wallHour } from './model';
 import { sunTimes } from './sun';
-import { usePacificTime } from './testZone';
+import { useFixedClock, usePacificTime } from './testZone';
 
 usePacificTime();
+// The wall clock never matters here; pin it anyway so nothing can lean on it.
+useFixedClock(Date.parse('2026-11-11T10:24:00-08:00'));
 
 const t = (hm: string, day = '11') => Date.parse(`2026-11-${day}T${hm}:00-08:00`);
 const iso = (hm: string, day = '11') => new Date(t(hm, day)).toISOString();

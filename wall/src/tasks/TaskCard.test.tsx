@@ -11,9 +11,19 @@ const flush = async (ms = 0) => {
   });
 };
 
-const task = (id: string, title: string): TaskItem => ({ id, title, due_at: null, due_is_all_day: false, quadrant: null });
+const task = (id: string, title: string, est: TaskItem['est'] = null): TaskItem => ({ id, title, due_at: null, due_is_all_day: false, quadrant: null, est });
+
+let summaryArgs: unknown[] = [];
+/** Work reads `wall2_tasks_summary`; `remaining` is the count after the three shown. */
+const setList = (fn: () => TaskItem[] | Promise<TaskItem[]>, remaining = 0) =>
+  mocks.set('wall2_tasks_summary', async (args) => {
+    summaryArgs.push(args);
+    const next = await fn();
+    return { next: next.slice(0, 3), remaining, dueTomorrow: { count: 0, estMinutes: 0 } };
+  });
 
 beforeEach(() => {
+  summaryArgs = [];
   useFocusStore.getState().dispose();
   localStorage.clear();
   vi.useFakeTimers();
@@ -29,14 +39,14 @@ afterEach(() => {
 });
 
 it('shows Not set up when feeds.json has no address', async () => {
-  mocks.set('wall2_tasks_next', () => Promise.reject(new Error('not-configured')));
+  setList(() => Promise.reject(new Error('not-configured')));
   render(<TaskCard />);
   await flush();
   expect(screen.getByText('Not set up')).toBeTruthy();
 });
 
 it('shows Nothing due for an empty list', async () => {
-  mocks.set('wall2_tasks_next', () => []);
+  setList(() => []);
   render(<TaskCard />);
   await flush();
   expect(screen.getByText('Nothing due')).toBeTruthy();
@@ -47,7 +57,7 @@ it('marks a row done at once, fades it after 2 seconds, then refreshes', async (
   const done = vi.fn((args?: Record<string, unknown>) => {
     list = list.filter((t) => t.id !== args?.id);
   });
-  mocks.set('wall2_tasks_next', () => list);
+  setList(() => list);
   mocks.set('wall2_task_done', done);
   render(<TaskCard />);
   await flush();
@@ -62,7 +72,7 @@ it('marks a row done at once, fades it after 2 seconds, then refreshes', async (
 });
 
 it('brings the row back with "Could not save" when the save fails', async () => {
-  mocks.set('wall2_tasks_next', () => [task('a', 'First')]);
+  setList(() => [task('a', 'First')]);
   mocks.set('wall2_task_done', () => Promise.reject(new Error('The service answered 500')));
   render(<TaskCard />);
   await flush();
@@ -74,7 +84,7 @@ it('brings the row back with "Could not save" when the save fails', async () => 
 });
 
 it('brings the row back when the save fails after the fade', async () => {
-  mocks.set('wall2_tasks_next', () => [task('a', 'First')]);
+  setList(() => [task('a', 'First')]);
   mocks.set('wall2_task_done', () => new Promise((_, reject) => setTimeout(() => reject(new Error('x')), 4000)));
   render(<TaskCard />);
   await flush();
@@ -88,7 +98,7 @@ it('brings the row back when the save fails after the fade', async () => {
 
 it('keeps the last good list and shows its age when a refresh fails', async () => {
   let fail = false;
-  mocks.set('wall2_tasks_next', () => (fail ? Promise.reject(new Error('Could not reach the service')) : [task('a', 'First')]));
+  setList(() => (fail ? Promise.reject(new Error('Could not reach the service')) : [task('a', 'First')]));
   render(<TaskCard />);
   await flush();
   fail = true;
@@ -97,20 +107,92 @@ it('keeps the last good list and shows its age when a refresh fails', async () =
   expect(screen.getByText(/updated \d+ min ago/)).toBeTruthy();
 });
 
-it('Focus starts a session named after the task', async () => {
-  mocks.set('wall2_tasks_next', () => [task('a', 'Write the report')]);
+it('holding a row for half a second starts focus named after the task', async () => {
+  setList(() => [task('a', 'Write the report')]);
   render(<TaskCard />);
   await flush();
-  fireEvent.click(screen.getByRole('button', { name: 'Focus' }));
+  const row = screen.getByLabelText('Hold to focus on: Write the report');
+  fireEvent.pointerDown(row);
+  await flush(400);
+  expect(useFocusStore.getState().state.status).toBe('idle');
+  await flush(100);
   const s = useFocusStore.getState().state;
   expect(s.status).toBe('running');
   expect(s.status === 'running' && s.label).toBe('Write the report');
-  expect((screen.getByRole('button', { name: 'Focus' }) as HTMLButtonElement).disabled).toBe(true);
+  expect(row.getAttribute('aria-disabled')).toBe('true');
+});
+
+it('a short tap or a press that slides off starts nothing', async () => {
+  setList(() => [task('a', 'Write the report')]);
+  render(<TaskCard />);
+  await flush();
+  const row = screen.getByLabelText('Hold to focus on: Write the report');
+  fireEvent.pointerDown(row);
+  await flush(200);
+  fireEvent.pointerUp(row);
+  fireEvent.pointerDown(row);
+  await flush(300);
+  fireEvent.pointerLeave(row);
+  await flush(1000);
+  expect(useFocusStore.getState().state.status).toBe('idle');
+});
+
+it('a finger that slides more than 12 px cancels the hold, a small wobble does not', async () => {
+  setList(() => [task('a', 'Write the report')]);
+  render(<TaskCard />);
+  await flush();
+  const row = screen.getByLabelText('Hold to focus on: Write the report');
+  fireEvent.pointerDown(row, { clientX: 100, clientY: 30 });
+  fireEvent.pointerMove(row, { clientX: 110, clientY: 34 });
+  await flush(200);
+  fireEvent.pointerMove(row, { clientX: 113, clientY: 30 });
+  await flush(1000);
+  expect(useFocusStore.getState().state.status).toBe('idle');
+  fireEvent.pointerDown(row, { clientX: 100, clientY: 30 });
+  fireEvent.pointerMove(row, { clientX: 108, clientY: 36 });
+  await flush(500);
+  expect(useFocusStore.getState().state.status).toBe('running');
+});
+
+it('pointercancel cancels the hold', async () => {
+  setList(() => [task('a', 'Write the report')]);
+  render(<TaskCard />);
+  await flush();
+  const row = screen.getByLabelText('Hold to focus on: Write the report');
+  fireEvent.pointerDown(row, { clientX: 100, clientY: 30 });
+  await flush(300);
+  fireEvent.pointerCancel(row);
+  await flush(1000);
+  expect(useFocusStore.getState().state.status).toBe('idle');
+});
+
+it('treats a summary with no next list as a failed read, not as nothing due', async () => {
+  mocks.set('wall2_tasks_summary', () => ({ remaining: 0 }));
+  render(<TaskCard />);
+  await flush();
+  expect(screen.getByText('Tasks unavailable')).toBeTruthy();
+  expect(screen.queryByText('Nothing due')).toBeNull();
+});
+
+it('reads the tasks without the home tag and shows estimates and how many more can wait', async () => {
+  setList(() => [task('a', 'First', '45'), task('b', 'Second', '60plus'), task('c', 'Third')], 9);
+  const r = render(<TaskCard />);
+  await flush();
+  expect(summaryArgs[0]).toEqual({ notTag: 'home' });
+  expect([...r.container.querySelectorAll('.est')].map((e) => e.textContent)).toEqual(['45 m', '60+ m']);
+  expect(screen.getByText('9 more can wait')).toBeTruthy();
+});
+
+it('says nothing about more when there are none', async () => {
+  setList(() => [task('a', 'First')], 0);
+  render(<TaskCard />);
+  await flush();
+  expect(screen.queryByText(/more can wait/)).toBeNull();
 });
 
 it('shows a completed task again when a later list has it open (reopened or recurring)', async () => {
   let list = [task('a', 'First')];
-  mocks.set('wall2_tasks_next', () => list);
+  setList(() => list);
   mocks.set('wall2_task_done', () => {
     list = [];
   });
@@ -133,7 +215,7 @@ it('queues one trailing refresh when a refresh is requested during a request', a
   const waiting: Array<() => void> = [];
   let defer = false;
   const calls = vi.fn();
-  mocks.set('wall2_tasks_next', () => {
+  setList(() => {
     calls();
     const snapshot = [...list];
     if (!defer) return snapshot;

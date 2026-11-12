@@ -40,3 +40,38 @@ export function MusicBar() {
     </section>
   );
 }
+
+/**
+ * The Work left wing's now playing row (concept `f_work`): art, title, artist and one
+ * play or pause button. Quiet when nothing plays.
+ */
+export function MusicMini() {
+  const { info, art, command } = useNowPlaying();
+  const quiet = isQuiet(info);
+  return (
+    <section className={`music-mini${quiet ? ' quiet' : ''}`} aria-label="Music">
+      <div className="art">
+        {!quiet && art ? <img src={art} alt="" /> : <IconMusic size={26} stroke={1.5} aria-hidden="true" />}
+      </div>
+      <div className="music-mini-text">
+        {quiet ? (
+          <div className="s">Nothing playing</div>
+        ) : (
+          <>
+            <div className="b6 ellipsis">{info?.title || 'Unknown title'}</div>
+            <div className="xs ellipsis">{info?.artist || info?.album || ''}</div>
+          </>
+        )}
+      </div>
+      <button
+        type="button"
+        className="rd"
+        aria-label={isPlaying(info) ? 'Pause' : 'Play'}
+        disabled={quiet}
+        onClick={() => command('media_play_pause')}
+      >
+        {isPlaying(info) ? <IconPlayerPauseFilled size={26} aria-hidden="true" /> : <IconPlayerPlayFilled size={26} aria-hidden="true" />}
+      </button>
+    </section>
+  );
+}

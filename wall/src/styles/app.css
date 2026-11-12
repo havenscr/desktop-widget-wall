@@ -133,6 +133,20 @@ button,
   margin-top: 12px;
   font-size: 22px;
   color: var(--dim);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  white-space: nowrap;
+}
+/* The end of the date line, which a place may fill (Work: the weather). */
+.clk-slot {
+  display: contents;
+}
+.wx-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 6px;
 }
 
 @media (prefers-reduced-motion: reduce) {
