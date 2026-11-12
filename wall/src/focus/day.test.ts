@@ -21,12 +21,28 @@ it('closes the last session early, never later than planned', () => {
   expect(closeSession([], at(11, 11))).toEqual([]);
 });
 
-it('keeps only the sessions that started on the given day', () => {
+it('clips sessions to the given day, so one across midnight shows on both days', () => {
   const s = [
+    { start: at(10, 20), end: at(10, 21) },
     { start: at(10, 23, 50), end: at(11, 0, 15) },
     { start: at(11, 9), end: at(11, 9, 30) },
   ];
-  expect(sessionsOn(s, at(11, 12))).toEqual([s[1]]);
+  expect(sessionsOn(s, at(11, 12))).toEqual([
+    { start: at(11, 0), end: at(11, 0, 15) },
+    { start: at(11, 9), end: at(11, 9, 30) },
+  ]);
+  expect(sessionsOn(s, at(10, 22))).toEqual([
+    { start: at(10, 20), end: at(10, 21) },
+    { start: at(10, 23, 50), end: at(11, 0) },
+  ]);
+});
+
+it('keeps a session that ran past midnight when the next one opens', () => {
+  const s = [
+    { start: at(10, 9), end: at(10, 9, 25) },
+    { start: at(10, 23, 50), end: at(11, 0, 15) },
+  ];
+  expect(openSession(s, at(11, 10), at(11, 10, 25))).toEqual([s[1], { start: at(11, 10), end: at(11, 10, 25) }]);
 });
 
 it('round-trips a save and skips bad entries', () => {

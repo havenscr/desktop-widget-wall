@@ -107,3 +107,12 @@ it('places the sky stops on the real sunrise and sunset', () => {
   expect(g).toContain(`#e08f7a ${rise}%`);
   expect(skyGradient({ rise: null, set: null }, t('10:24'))).toContain('#e08f7a 9%');
 });
+
+it('draws the part of a focus session after midnight, from the ribbon start', () => {
+  // A session from 11:50 PM to 6:30 AM shows on the next day's ribbon from 6:00 (its start).
+  const bars = focusBars([{ start: t('23:50', '10'), end: t('06:30') }], t('10:24'));
+  expect(bars).toEqual([{ x: RX(6), width: RX(6.5) - RX(6) }]);
+  const late = focusBars([{ start: t('23:30'), end: t('00:30', '12') }], t('23:59'));
+  expect(late[0].x).toBe(RX(23.5));
+  expect(late[0].x + late[0].width).toBeCloseTo(RX(23 + 59 / 60));
+});
