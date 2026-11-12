@@ -50,7 +50,7 @@ pub struct SecuritySummary {
     pub portal_url: Option<String>,
 }
 
-// ---------------------------------------------------------------- configuration
+// Section: configuration
 
 /// A base URL: `http` or `https` (`https` only when `https_only`), a host and an optional
 /// port, and nothing else. Returns the normalized base without a trailing slash.
@@ -122,7 +122,7 @@ fn read_base(app: &tauri::AppHandle, key: &str, https_only: bool) -> Result<Stri
     base_from_config(text.as_deref(), key, https_only)
 }
 
-// ---------------------------------------------------------------- http
+// Section: http
 
 fn agent() -> &'static ureq::Agent {
     static AGENT: OnceLock<ureq::Agent> = OnceLock::new();
@@ -141,6 +141,20 @@ fn read_body(resp: ureq::Response) -> Result<Vec<u8>, String> {
     Ok(buf)
 }
 
+/// With redirects off, a 3xx comes back as a success from the client; only 2xx counts here.
+fn status_ok(code: u16) -> bool {
+    (200..300).contains(&code)
+}
+
+fn require_ok(resp: ureq::Response) -> Result<ureq::Response, String> {
+    let code = resp.status();
+    if status_ok(code) {
+        Ok(resp)
+    } else {
+        Err(format!("The service answered {code}"))
+    }
+}
+
 fn describe(err: ureq::Error) -> String {
     match err {
         ureq::Error::Status(code, _) => format!("The service answered {code}"),
@@ -150,10 +164,11 @@ fn describe(err: ureq::Error) -> String {
 
 fn get_json(url: &str) -> Result<Value, String> {
     let resp = agent().get(url).set("Accept", "application/json").call().map_err(describe)?;
+    let resp = require_ok(resp)?;
     serde_json::from_slice(&read_body(resp)?).map_err(|_| "The answer was not JSON".to_string())
 }
 
-// ---------------------------------------------------------------- tasks
+// Section: tasks
 
 fn valid_task_id(id: &str) -> bool {
     !id.is_empty() && id.len() <= 64 && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
@@ -212,14 +227,15 @@ pub async fn wall2_task_done(app: tauri::AppHandle, id: String) -> Result<(), St
             .request("PATCH", &format!("{base}/api/tasks/{id}"))
             .set("Content-Type", "application/json")
             .send_string("{\"status\":\"done\"}")
-            .map(|_| ())
             .map_err(describe)
+            .and_then(require_ok)
+            .map(|_| ())
     })
     .await
     .map_err(|_| "The request did not finish".to_string())?
 }
 
-// ---------------------------------------------------------------- home security
+// Section: home security
 
 /// Python truthiness of a JSON value, for the alert `id` test.
 fn truthy(v: Option<&Value>) -> bool {
@@ -250,6 +266,25 @@ fn parse_time(raw: Option<&Value>) -> f64 {
     parse_iso(s.trim()).unwrap_or(f64::NAN)
 }
 
+fn days_in_month(y: i64, m: i64) -> i64 {
+    match m {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        _ => {
+            if (y % 4 == 0 && y % 100 != 0) || y % 400 == 0 {
+                29
+            } else {
+                28
+            }
+        }
+    }
+}
+
+/// Epoch seconds of `YYYY-MM-DDTHH:MM[:SS[.fraction]]` followed by `Z` or `+HH:MM` / `-HH:MM`.
+/// This matches the reference's `datetime.fromisoformat` for the shapes the home app sends,
+/// with one deliberate difference: a value with no offset (naive) or a date only is
+/// unreadable here, where the reference would read it as local time. The home app always
+/// sends an offset, and an unreadable time keeps a done request hiding, the safe side.
 fn parse_iso(s: &str) -> Option<f64> {
     let b = s.as_bytes();
     let num = |from: usize, to: usize| -> Option<i64> {
@@ -259,15 +294,23 @@ fn parse_iso(s: &str) -> Option<f64> {
         }
         part.parse().ok()
     };
-    if b.len() < 19 || b[4] != b'-' || b[7] != b'-' || !(b[10] == b'T' || b[10] == b't' || b[10] == b' ') || b[13] != b':' || b[16] != b':' {
+    if b.len() < 16 || b[4] != b'-' || b[7] != b'-' || b[10] != b'T' || b[13] != b':' {
         return None;
     }
     let (y, mo, d) = (num(0, 4)?, num(5, 7)?, num(8, 10)?);
-    let (h, mi, sec) = (num(11, 13)?, num(14, 16)?, num(17, 19)?);
-    if !(1..=12).contains(&mo) || !(1..=31).contains(&d) || h > 23 || mi > 59 || sec > 60 {
+    let (h, mi) = (num(11, 13)?, num(14, 16)?);
+    if y < 1 || !(1..=12).contains(&mo) || d < 1 || d > days_in_month(y, mo) || h > 23 || mi > 59 {
         return None;
     }
-    let mut i = 19;
+    let mut i = 16;
+    let mut sec = 0;
+    if b.get(i) == Some(&b':') {
+        sec = num(i + 1, i + 3)?;
+        if sec > 59 {
+            return None;
+        }
+        i += 3;
+    }
     let mut frac = 0.0;
     if b.get(i) == Some(&b'.') {
         let start = i + 1;
@@ -282,24 +325,16 @@ fn parse_iso(s: &str) -> Option<f64> {
         i = end;
     }
     let offset = match b.get(i) {
-        None => 0,
-        Some(b'Z') | Some(b'z') if i + 1 == b.len() => 0,
-        Some(&sign) if (sign == b'+' || sign == b'-') && b.len() >= i + 3 => {
-            let oh = num(i + 1, i + 3)?;
-            let rest = &s[i + 3..];
-            let om = if rest.is_empty() {
-                0
-            } else {
-                let r = rest.strip_prefix(':').unwrap_or(rest);
-                if r.len() != 2 {
-                    return None;
-                }
-                r.parse::<i64>().ok()?
-            };
+        Some(b'Z') if i + 1 == b.len() => 0,
+        Some(&sign) if (sign == b'+' || sign == b'-') && b.len() == i + 6 && b[i + 3] == b':' => {
+            let (oh, om) = (num(i + 1, i + 3)?, num(i + 4, i + 6)?);
+            if oh > 23 || om > 59 {
+                return None;
+            }
             let total = oh * 3600 + om * 60;
             if sign == b'-' { -total } else { total }
         }
-        _ => return None,
+        _ => return None, // no offset (naive) or trailing text
     };
     let days = days_from_civil(y, mo, d);
     Some((days * 86_400 + h * 3600 + mi * 60 + sec - offset) as f64 + frac)
@@ -450,10 +485,10 @@ mod tests {
 
     #[test]
     fn base_url_accepts_scheme_host_port() {
-        assert_eq!(validate_base_url("https://example.invalid:8900", true).unwrap(), "https://example.invalid:8900");
-        assert_eq!(validate_base_url(" http://192.0.2.10:5006 ", false).unwrap(), "http://192.0.2.10:5006");
+        assert_eq!(validate_base_url("https://example.invalid:8443", true).unwrap(), "https://example.invalid:8443");
+        assert_eq!(validate_base_url(" http://192.0.2.10:8080 ", false).unwrap(), "http://192.0.2.10:8080");
         assert!(validate_base_url("https://example.invalid", true).is_ok());
-        assert!(validate_base_url("http://[2001:db8::1]:5006", false).is_ok());
+        assert!(validate_base_url("http://[2001:db8::1]:8080", false).is_ok());
     }
 
     #[test]
@@ -463,7 +498,7 @@ mod tests {
         assert!(validate_base_url("https://example.invalid?x=1", true).is_err());
         assert!(validate_base_url("https://example.invalid#top", true).is_err());
         assert!(validate_base_url("https://user:pw@example.invalid", true).is_err());
-        assert!(validate_base_url("http://example.invalid:8900", true).is_err());
+        assert!(validate_base_url("http://example.invalid:8443", true).is_err());
         assert!(validate_base_url("ftp://example.invalid", false).is_err());
         assert!(validate_base_url("example.invalid", false).is_err());
         assert!(validate_base_url("https://", true).is_err());
@@ -475,7 +510,7 @@ mod tests {
     fn config_missing_file_or_key_is_not_configured() {
         assert_eq!(base_from_config(None, "tasksBaseUrl", true), Err(NOT_CONFIGURED.to_string()));
         assert_eq!(base_from_config(Some("{}"), "tasksBaseUrl", true), Err(NOT_CONFIGURED.to_string()));
-        let both = r#"{"tasksBaseUrl":"https://example.invalid:8900","homeBaseUrl":"http://192.0.2.10:5006"}"#;
+        let both = r#"{"tasksBaseUrl":"https://example.invalid:8443","homeBaseUrl":"http://192.0.2.10:8080"}"#;
         assert!(base_from_config(Some(both), "tasksBaseUrl", true).is_ok());
         assert!(base_from_config(Some(both), "homeBaseUrl", false).is_ok());
         assert!(base_from_config(Some("not json"), "tasksBaseUrl", true).is_err());
@@ -561,13 +596,70 @@ mod tests {
     }
 
     #[test]
-    fn time_parsing_handles_zones_and_fractions() {
+    fn time_parsing_accepts_these_shapes() {
         assert_eq!(parse_iso("1970-01-01T00:00:00Z"), Some(0.0));
+        assert_eq!(parse_iso("1970-01-01T00:00Z"), Some(0.0)); // no seconds
         assert_eq!(parse_iso("1970-01-01T01:00:00+01:00"), Some(0.0));
+        assert_eq!(parse_iso("1970-01-01T01:00+01:00"), Some(0.0));
+        assert_eq!(parse_iso("1969-12-31T16:00:00-08:00"), Some(0.0));
         assert_eq!(parse_iso("1970-01-01T00:00:00.500Z"), Some(0.5));
-        assert_eq!(parse_iso("2026-11-11T10:00:00"), parse_iso("2026-11-11T10:00:00Z"));
-        assert_eq!(parse_iso("nope"), None);
-        assert_eq!(parse_iso("2026-13-01T00:00:00Z"), None);
+        assert_eq!(parse_iso("1970-01-01T00:00:00.123456+00:00"), Some(0.123456));
+        assert_eq!(parse_iso("1970-01-01T23:59:59-23:59"), Some(86_399.0 + 86_340.0));
+        assert!(parse_iso("2024-02-29T12:00:00Z").is_some()); // leap day
+        assert!(parse_iso("2000-02-29T12:00:00Z").is_some()); // 400 year rule
+        assert!(parse_iso("2026-12-31T23:59:59Z").is_some());
+    }
+
+    #[test]
+    fn time_parsing_rejects_these_shapes() {
+        for bad in [
+            "nope",
+            "",
+            "2026-11-11",                // date only
+            "2026-11-11T10:00",          // naive, no seconds
+            "2026-11-11T10:00:00",       // naive
+            "2026-11-11T10:00:00.5",     // naive with fraction
+            "2026-11-11 10:00:00Z",      // space separator
+            "2026-11-11t10:00:00Z",      // lower case T
+            "2026-11-11T10:00:00z",      // lower case z
+            "2026-13-01T00:00:00Z",      // month 13
+            "2026-00-10T00:00:00Z",      // month 0
+            "2026-04-31T00:00:00Z",      // April has 30 days
+            "2025-02-29T00:00:00Z",      // not a leap year
+            "1900-02-29T00:00:00Z",      // century, not a leap year
+            "2026-11-00T00:00:00Z",      // day 0
+            "2026-11-11T24:00:00Z",      // hour 24
+            "2026-11-11T10:60:00Z",      // minute 60
+            "2026-11-11T10:00:60Z",      // second 60 (leap seconds are not read)
+            "2026-11-11T10:00:00.Z",     // empty fraction
+            "2026-11-11T10:00:00+24:00", // offset of a full day
+            "2026-11-11T10:00:00+01:60", // offset minute 60
+            "2026-11-11T10:00:00+0100",  // offset without a colon
+            "2026-11-11T10:00:00+01",    // offset hour only
+            "2026-11-11T10:00:00Zjunk",  // trailing text
+            "0000-01-01T00:00:00Z",      // year 0
+            "+026-11-11T10:00:00Z",      // sign in a date field
+        ] {
+            assert_eq!(parse_iso(bad), None, "{bad}");
+        }
+    }
+
+    #[test]
+    fn naive_time_keeps_a_done_request_hiding() {
+        let a = alert(json!({"requests": {"name": {"status": "done", "finishedAt": "2026-11-11T10:00:00"}}}));
+        assert!(alert_hidden(&a, parse_iso("2026-12-01T00:00:00Z").unwrap()));
+    }
+
+    #[test]
+    fn only_2xx_counts_as_success() {
+        assert!(status_ok(200));
+        assert!(status_ok(204));
+        assert!(status_ok(299));
+        assert!(!status_ok(199));
+        assert!(!status_ok(301));
+        assert!(!status_ok(302));
+        assert!(!status_ok(404));
+        assert!(!status_ok(500));
     }
 
     #[test]
