@@ -8,9 +8,10 @@
 use serde::Serialize;
 use serde_json::Value;
 use std::io::Read;
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 use tauri::Manager;
+use tauri_plugin_opener::OpenerExt;
 
 /// Error text the front end treats as "Not set up".
 const NOT_CONFIGURED: &str = "not-configured";
@@ -475,12 +476,96 @@ fn shape_security(body: &Value) -> SecuritySummary {
 #[tauri::command]
 pub async fn wall2_home_security(app: tauri::AppHandle) -> Result<SecuritySummary, String> {
     let base = read_base(&app, "homeBaseUrl", false)?;
-    tauri::async_runtime::spawn_blocking(move || {
+    let summary = tauri::async_runtime::spawn_blocking(move || {
         let body = get_json(&format!("{base}/api/security?lite=1"))?;
-        Ok(shape_security(&body))
+        Ok::<_, String>(shape_security(&body))
     })
     .await
-    .map_err(|_| "The request did not finish".to_string())?
+    .map_err(|_| "The request did not finish".to_string())??;
+    remember_portal(summary.portal_url.clone());
+    Ok(summary)
+}
+
+// Section: links
+
+/// The portal link from the most recent successful security read. Only ever set from
+/// `portal_link`, so it is already checked; the web view never supplies a URL.
+static LAST_PORTAL: Mutex<Option<String>> = Mutex::new(None);
+
+/// The stored value after a good read: replaced only by a new `Some`; a read without a
+/// portal link keeps the last good one.
+fn next_portal(current: Option<String>, read: Option<String>) -> Option<String> {
+    read.or(current)
+}
+
+fn remember_portal(read: Option<String>) {
+    if let Ok(mut slot) = LAST_PORTAL.lock() {
+        *slot = next_portal(slot.take(), read);
+    }
+}
+
+fn last_portal() -> Option<String> {
+    LAST_PORTAL.lock().ok().and_then(|p| p.clone())
+}
+
+/// An `https` link with a host and any path; no userinfo, whitespace or backslashes.
+fn https_link(raw: &str) -> Option<String> {
+    let text = raw.trim();
+    let rest = text.strip_prefix("https://")?;
+    if text.len() > 500 || text.chars().any(|c| c.is_whitespace() || c.is_control() || c == '\\') {
+        return None;
+    }
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
+    if authority.is_empty() || authority.contains('@') {
+        return None;
+    }
+    let host = match authority.rsplit_once(':') {
+        Some((h, p)) if !p.is_empty() && p.chars().all(|c| c.is_ascii_digit()) => h,
+        Some(_) => return None,
+        None => authority,
+    };
+    if host.is_empty()
+        || host.starts_with(['.', '-'])
+        || host.ends_with('.')
+        || !host.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-')
+    {
+        return None;
+    }
+    Some(text.to_string())
+}
+
+/// The optional `homeSecurityUrl` key of `feeds.json` text, validated.
+fn security_link_from_config(json_text: Option<&str>) -> Option<String> {
+    let value: Value = serde_json::from_str(json_text?).ok()?;
+    https_link(value.get("homeSecurityUrl")?.as_str()?)
+}
+
+fn security_link(app: &tauri::AppHandle) -> Option<String> {
+    let dir = app.path().app_config_dir().ok()?;
+    let text = std::fs::read_to_string(dir.join("feeds.json")).ok();
+    security_link_from_config(text.as_deref())
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct LinkAvailability {
+    pub security: bool,
+    pub portal: bool,
+}
+
+#[tauri::command]
+pub fn wall2_links(app: tauri::AppHandle) -> LinkAvailability {
+    LinkAvailability { security: security_link(&app).is_some(), portal: last_portal().is_some() }
+}
+
+#[tauri::command]
+pub fn wall2_open_link(app: tauri::AppHandle, kind: String) -> Result<(), String> {
+    let url = match kind.as_str() {
+        "security" => security_link(&app),
+        "portal" => last_portal(),
+        _ => None,
+    }
+    .ok_or_else(|| "No such link".to_string())?;
+    app.opener().open_url(url, None::<&str>).map_err(|_| "Could not open the link".to_string())
 }
 
 #[cfg(test)]
@@ -667,6 +752,42 @@ mod tests {
         assert!(!status_ok(302));
         assert!(!status_ok(404));
         assert!(!status_ok(500));
+    }
+
+    #[test]
+    fn https_link_checks() {
+        assert!(https_link("https://example.invalid/app/#/security").is_some());
+        assert!(https_link("https://home.example.invalid:8443/a?b=1").is_some());
+        assert!(https_link("http://example.invalid/").is_none());
+        assert!(https_link("https://user@example.invalid/").is_none());
+        assert!(https_link("https://example.invalid@evil.example/").is_none());
+        assert!(https_link("https://example.invalid:abc/").is_none());
+        assert!(https_link("https:///path").is_none());
+        assert!(https_link("https://exa mple.invalid/").is_none());
+        assert!(https_link("https://example.invalid\\evil").is_none());
+        assert!(https_link("javascript:alert(1)").is_none());
+        assert!(https_link("").is_none());
+    }
+
+    #[test]
+    fn security_link_reads_the_optional_key() {
+        let ok = r#"{"homeSecurityUrl": "https://example.invalid/app/#/security"}"#;
+        assert_eq!(security_link_from_config(Some(ok)).as_deref(), Some("https://example.invalid/app/#/security"));
+        assert!(security_link_from_config(Some(r#"{"homeBaseUrl": "http://192.0.2.5:5000"}"#)).is_none());
+        assert!(security_link_from_config(Some(r#"{"homeSecurityUrl": "http://example.invalid/"}"#)).is_none());
+        assert!(security_link_from_config(Some(r#"{"homeSecurityUrl": 5}"#)).is_none());
+        assert!(security_link_from_config(Some("not json")).is_none());
+        assert!(security_link_from_config(None).is_none());
+    }
+
+    #[test]
+    fn portal_link_is_replaced_by_a_new_one_and_never_cleared() {
+        let a = Some("https://my.firewalla.net/a".to_string());
+        let b = Some("https://my.firewalla.net/b".to_string());
+        assert_eq!(next_portal(None, a.clone()), a);
+        assert_eq!(next_portal(a.clone(), b.clone()), b);
+        assert_eq!(next_portal(a.clone(), None), a);
+        assert_eq!(next_portal(None, None), None);
     }
 
     #[test]

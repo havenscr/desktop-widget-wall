@@ -8,6 +8,8 @@ export interface SecurityState {
   status: 'loading' | 'ready' | 'unconfigured' | 'error';
   summary: SecuritySummary | null;
   now: number;
+  /** Counts finished security attempts, good or failed. */
+  attempts: number;
 }
 
 /** Firewall health and open alerts from the home app, every 5 minutes while visible. */
@@ -16,6 +18,7 @@ export function useSecurity(): SecurityState {
   const [status, setStatus] = useState<SecurityState['status']>('loading');
   const [summary, setSummary] = useState<SecuritySummary | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  const [attempts, setAttempts] = useState(0);
   const mounted = useRef(false);
   const inFlight = useRef(false);
 
@@ -40,7 +43,10 @@ export function useSecurity(): SecurityState {
       setStatus(text === NOT_CONFIGURED ? 'unconfigured' : 'error');
     } finally {
       inFlight.current = false;
-      if (mounted.current) setNow(Date.now());
+      if (mounted.current) {
+        setNow(Date.now());
+        setAttempts((n) => n + 1);
+      }
     }
   }, []);
 
@@ -55,5 +61,5 @@ export function useSecurity(): SecurityState {
     };
   }, [visible, refresh]);
 
-  return { status, summary, now };
+  return { status, summary, now, attempts };
 }

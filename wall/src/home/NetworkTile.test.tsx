@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { mocks } from '../bridge/tauri';
 import { NetworkTile } from './NetworkTile';
@@ -52,4 +52,66 @@ it('goes amber when the home app stops answering after a good read', async () =>
   await flush(300_000);
   expect(container.querySelector('.net-dot.warn')).toBeTruthy();
   expect(screen.getByText('Home app not reachable')).toBeTruthy();
+});
+
+const withLinks = (links: { security: boolean; portal: boolean }, open?: (a?: Record<string, unknown>) => unknown) => {
+  mocks.set('wall2_home_security', () => ({ ...summary, portalUrl: links.portal ? 'https://my.firewalla.net/x' : null }));
+  mocks.set('wall2_links', () => links);
+  mocks.set('wall2_open_link', open ?? (() => undefined));
+};
+
+it('shows no link buttons when none are available', async () => {
+  withLinks({ security: false, portal: false });
+  render(<NetworkTile />);
+  await flush();
+  expect(screen.queryByRole('button')).toBeNull();
+});
+
+it('shows only the available links and asks Rust to open them by kind', async () => {
+  const opened: unknown[] = [];
+  withLinks({ security: true, portal: false }, (a) => void opened.push(a));
+  render(<NetworkTile />);
+  await flush();
+  expect(screen.queryByRole('button', { name: 'Firewalla' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Security' }));
+  await flush();
+  expect(opened).toEqual([{ kind: 'security' }]);
+});
+
+it('opens the portal link by kind, and a failure shows Could not open for 3 seconds', async () => {
+  const opened: unknown[] = [];
+  withLinks({ security: true, portal: true }, (a) => {
+    opened.push(a);
+    return Promise.reject(new Error('nope'));
+  });
+  render(<NetworkTile />);
+  await flush();
+  fireEvent.click(screen.getByRole('button', { name: 'Firewalla' }));
+  await flush();
+  expect(opened).toEqual([{ kind: 'portal' }]);
+  expect(screen.getByText('Could not open')).toBeTruthy();
+  await flush(3100);
+  expect(screen.queryByText('Could not open')).toBeNull();
+});
+
+it('keeps the Security button when the security read fails or is not set up', async () => {
+  mocks.set('wall2_home_security', () => Promise.reject(new Error('not-configured')));
+  mocks.set('wall2_links', () => ({ security: true, portal: false }));
+  render(<NetworkTile />);
+  await flush();
+  expect(screen.getByText('Not set up')).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Security' })).toBeTruthy();
+});
+
+it('refreshes link availability after every attempt, even with the same portal', async () => {
+  let security = true;
+  mocks.set('wall2_home_security', () => ({ ...summary, portalUrl: 'https://my.firewalla.net/x' }));
+  mocks.set('wall2_links', () => ({ security, portal: true }));
+  render(<NetworkTile />);
+  await flush();
+  expect(screen.getByRole('button', { name: 'Security' })).toBeTruthy();
+  security = false;
+  await flush(300_000);
+  expect(screen.queryByRole('button', { name: 'Security' })).toBeNull();
+  expect(screen.getByRole('button', { name: 'Firewalla' })).toBeTruthy();
 });

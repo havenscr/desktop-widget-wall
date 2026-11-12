@@ -75,6 +75,13 @@ pub fn target_on_monitor(target: MonitorRect, monitors: &[MonitorRect]) -> bool 
     })
 }
 
+/// After a display change with no exact strip present: clear the stored target
+/// only when one was actually read (`Some`) and it lies on no current monitor.
+/// `None` means nothing stored or a contended lock, and is left alone.
+pub fn should_clear_target(read: Option<MonitorRect>, monitors: &[MonitorRect]) -> bool {
+    read.is_some_and(|t| !target_on_monitor(t, monitors))
+}
+
 /// True when two rectangles are identical.
 pub fn rect_matches(a: MonitorRect, b: MonitorRect) -> bool {
     a == b
@@ -411,8 +418,10 @@ mod win {
     }
 
     /// After a display change: move onto an exact strip if one is present;
-    /// with none, clear the stored target (its coordinates may be off screen
-    /// now) and do nothing else, never jumping to the main monitor on unplug.
+    /// with none, keep the stored target while it still lies on a current
+    /// monitor and clear it only when it is off every one (its coordinates
+    /// are off screen), and do nothing else, never jumping to the main
+    /// monitor on unplug.
     /// Returns true only after the move ran on the main thread and the rect
     /// was verified, so the caller keeps retrying otherwise.
     pub fn follow_strip(app: &tauri::AppHandle, label: &str) -> bool {
@@ -423,7 +432,11 @@ mod win {
             &format!("monitors={} exact_strip={}", rects.len(), found.map(fmt_rect).unwrap_or_else(|| "none".into())),
         );
         let Some(rect) = found else {
-            set_target(None);
+            let clear = should_clear_target(get_target(), &rects);
+            if clear {
+                set_target(None);
+            }
+            log("target_kept", if clear { "cleared" } else { "kept" });
             return false;
         };
         set_target(Some(rect));
@@ -662,6 +675,21 @@ mod tests {
         assert_eq!(choose_target(&[a, b], Some(a)), (Some(b), "smallest height"));
         assert_eq!(choose_target(&[], Some(p)), (Some(p), "primary"));
         assert_eq!(choose_target(&[], None), (None, "none"));
+    }
+
+    #[test]
+    fn display_change_clears_target_only_when_read_and_off_every_monitor() {
+        let main = r(0, 2560, 1440);
+        let strip = MonitorRect { x: 0, y: 1440, width: 2560, height: 720 };
+        // Still on a monitor: kept, even with no exact strip in the list.
+        assert!(!should_clear_target(Some(main), &[main]));
+        assert!(!should_clear_target(Some(strip), &[main, strip]));
+        // Read and gone: cleared.
+        assert!(should_clear_target(Some(strip), &[main]));
+        assert!(should_clear_target(Some(strip), &[]));
+        // Nothing read (no target, or a contended lock): left alone.
+        assert!(!should_clear_target(None, &[main]));
+        assert!(!should_clear_target(None, &[]));
     }
 
     #[test]

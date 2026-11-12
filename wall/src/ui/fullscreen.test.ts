@@ -130,3 +130,32 @@ it('reconciles with the real window on resize', async () => {
   const e = press({ key: 'Escape' });
   expect(e.defaultPrevented).toBe(true);
 });
+
+it('an Esc pressed while entering fullscreen is queued and leaves once it finishes', async () => {
+  remove = installFullscreenKeys();
+  let release!: () => void;
+  gate = new Promise<void>((r) => (release = r));
+  press({ key: 'F11' });
+  await settle();
+  const e = press({ key: 'Escape' });
+  expect(e.defaultPrevented).toBe(true);
+  gate = null;
+  release();
+  await settle();
+  expect(log).toEqual(['fs:true', 'fs:false', 'pos:100,5', 'size:2560x720']);
+});
+
+it('an Esc pressed while leaving fullscreen does nothing extra', async () => {
+  remove = installFullscreenKeys();
+  press({ key: 'F11' });
+  await settle();
+  let release!: () => void;
+  gate = new Promise<void>((r) => (release = r));
+  press({ key: 'F11' });
+  await settle();
+  press({ key: 'Escape' });
+  gate = null;
+  release();
+  await settle();
+  expect(log.filter((l) => l.startsWith('fs:'))).toEqual(['fs:true', 'fs:false']);
+});

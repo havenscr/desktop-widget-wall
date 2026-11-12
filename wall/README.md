@@ -231,6 +231,10 @@ file is read on every call, so a change applies on the next refresh.
   another device on the same network, which could fake a green tile.
 - A missing file or key shows "Not set up" on that card, quietly. A malformed
   address shows the card as unavailable.
+- `homeSecurityUrl` is optional: the full address of the home app's Security page,
+  for example `"homeSecurityUrl": "https://example.invalid/app/#/security"`. It must
+  be `https`, may have any path, query or fragment, and may not carry a user name.
+  Missing or invalid means the Security button stays hidden.
 
 ### Task card (Work tab, top right)
 
@@ -266,7 +270,16 @@ summary arrives; a failed request hides nothing.
 - **Amber**: the scan is stale, the firewall API state is unknown, or the home app
   cannot be reached.
 - **Red**: only when the firewall API is down or the box is offline.
-- "Not set up" when there is no address. No links yet.
+- "Not set up" when there is no address.
+
+Two quiet text buttons sit under the status, each at least 72 design pixels tall and
+shown only when available. **Security** opens `homeSecurityUrl` from `feeds.json`.
+**Firewalla** opens the `portalUrl` from the most recent good security read, and
+only when it is `https` on `firewalla.net` or a subdomain. Both open in the default
+browser, and Rust does the opening (`wall2_open_link`, kinds `security` and
+`portal`); the web view only names the kind and never supplies a URL, and
+`capabilities/wall2.json` grants no opener permission. `wall2_links` tells the tile
+which buttons to show. A failed open shows "Could not open" for 3 seconds.
 
 Browser dev (`npm run dev`) shows both cards from mocks in `devMocks.ts`.
 
@@ -286,7 +299,7 @@ which Vite's hot reload injects. Keep the two in step when you add a host.
 
 ## Fullscreen keys
 
-F11 and Ctrl+F11 toggle true fullscreen; Esc leaves it (only while fullscreen).
+F11 and Ctrl+F11 toggle true fullscreen; Esc leaves it (only while fullscreen; an Esc pressed during a toggle is queued and applied when it finishes).
 A rail button just above Tools does the same (icons `maximize` and `minimize`,
 label "Enter fullscreen" or "Exit fullscreen", follows the real state, hidden
 outside Tauri). Key repeats are ignored and nothing happens in a plain browser. The handler is
