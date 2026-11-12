@@ -1,0 +1,618 @@
+//! Wall 2 home feeds: reads the task app and the home app from Rust.
+//!
+//! A native request carries no `Origin` or `Sec-Fetch-Site` header, which the task app
+//! requires, and the home app sends no CORS headers, so the web view cannot call either.
+//! The two base URLs are private. They are read at call time from `feeds.json` in Wall 2's
+//! app config directory and never written to a log, an error message or the repository.
+
+use serde::Serialize;
+use serde_json::Value;
+use std::io::Read;
+use std::sync::OnceLock;
+use std::time::Duration;
+use tauri::Manager;
+
+/// Error text the front end treats as "Not set up".
+const NOT_CONFIGURED: &str = "not-configured";
+const MAX_BODY: u64 = 1_000_000;
+const TIMEOUT: Duration = Duration::from_secs(8);
+const MAX_TITLE_CHARS: usize = 200;
+const TASK_LIMIT: usize = 3;
+const PORTAL_SUFFIX: &str = ".firewalla.net";
+const ACTIONS: [&str; 3] = ["reviewed", "name", "revoke-key"];
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct TaskItem {
+    pub id: String,
+    pub title: String,
+    pub due_at: Option<String>,
+    pub due_is_all_day: bool,
+    pub quadrant: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FirewallaInfo {
+    pub api: String,
+    pub box_online: Option<bool>,
+    pub checked_at: Option<String>,
+    pub alarms24h: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SecuritySummary {
+    pub reachable: bool,
+    pub stale: bool,
+    pub last_scan: Option<String>,
+    pub alerts: u64,
+    pub firewalla: Option<FirewallaInfo>,
+    pub portal_url: Option<String>,
+}
+
+// ---------------------------------------------------------------- configuration
+
+/// A base URL: `http` or `https` (`https` only when `https_only`), a host and an optional
+/// port, and nothing else. Returns the normalized base without a trailing slash.
+fn validate_base_url(raw: &str, https_only: bool) -> Result<String, String> {
+    let bad = || "feeds.json holds an invalid address".to_string();
+    let text = raw.trim();
+    let rest = if let Some(r) = text.strip_prefix("https://") {
+        r
+    } else if let Some(r) = text.strip_prefix("http://") {
+        if https_only {
+            return Err(bad());
+        }
+        r
+    } else {
+        return Err(bad());
+    };
+    if rest.is_empty() || rest.chars().any(|c| matches!(c, '/' | '?' | '#' | '@' | '\\') || c.is_whitespace() || c.is_control()) {
+        return Err(bad());
+    }
+    let (host, port) = if let Some(inner) = rest.strip_prefix('[') {
+        let end = inner.find(']').ok_or_else(bad)?;
+        let host = &inner[..end];
+        if host.is_empty() || !host.chars().all(|c| c.is_ascii_hexdigit() || c == ':' || c == '.') {
+            return Err(bad());
+        }
+        let tail = &inner[end + 1..];
+        let port = match tail.strip_prefix(':') {
+            Some(p) => Some(p),
+            None if tail.is_empty() => None,
+            None => return Err(bad()),
+        };
+        (host, port)
+    } else {
+        match rest.split_once(':') {
+            Some((h, p)) => (h, Some(p)),
+            None => (rest, None),
+        }
+    };
+    if !rest.starts_with('[') {
+        if host.is_empty() || !host.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-') {
+            return Err(bad());
+        }
+        if host.starts_with('.') || host.ends_with('.') || host.starts_with('-') {
+            return Err(bad());
+        }
+    }
+    if let Some(p) = port {
+        let n: u32 = p.parse().map_err(|_| bad())?;
+        if !p.chars().all(|c| c.is_ascii_digit()) || n == 0 || n > 65535 {
+            return Err(bad());
+        }
+    }
+    Ok(text.to_string())
+}
+
+/// Read one key of `feeds.json` text. Missing file content or key is "not configured".
+fn base_from_config(json_text: Option<&str>, key: &str, https_only: bool) -> Result<String, String> {
+    let text = json_text.ok_or_else(|| NOT_CONFIGURED.to_string())?;
+    let value: Value = serde_json::from_str(text).map_err(|_| "feeds.json is not valid JSON".to_string())?;
+    match value.get(key).and_then(Value::as_str) {
+        Some(s) if !s.trim().is_empty() => validate_base_url(s, https_only),
+        _ => Err(NOT_CONFIGURED.to_string()),
+    }
+}
+
+fn read_base(app: &tauri::AppHandle, key: &str, https_only: bool) -> Result<String, String> {
+    let dir = app.path().app_config_dir().map_err(|_| NOT_CONFIGURED.to_string())?;
+    let text = std::fs::read_to_string(dir.join("feeds.json")).ok();
+    base_from_config(text.as_deref(), key, https_only)
+}
+
+// ---------------------------------------------------------------- http
+
+fn agent() -> &'static ureq::Agent {
+    static AGENT: OnceLock<ureq::Agent> = OnceLock::new();
+    AGENT.get_or_init(|| ureq::AgentBuilder::new().timeout(TIMEOUT).redirects(0).build())
+}
+
+fn read_body(resp: ureq::Response) -> Result<Vec<u8>, String> {
+    let mut buf = Vec::new();
+    resp.into_reader()
+        .take(MAX_BODY + 1)
+        .read_to_end(&mut buf)
+        .map_err(|_| "Could not read the answer".to_string())?;
+    if buf.len() as u64 > MAX_BODY {
+        return Err("The answer was too large".to_string());
+    }
+    Ok(buf)
+}
+
+fn describe(err: ureq::Error) -> String {
+    match err {
+        ureq::Error::Status(code, _) => format!("The service answered {code}"),
+        ureq::Error::Transport(_) => "Could not reach the service".to_string(),
+    }
+}
+
+fn get_json(url: &str) -> Result<Value, String> {
+    let resp = agent().get(url).set("Accept", "application/json").call().map_err(describe)?;
+    serde_json::from_slice(&read_body(resp)?).map_err(|_| "The answer was not JSON".to_string())
+}
+
+// ---------------------------------------------------------------- tasks
+
+fn valid_task_id(id: &str) -> bool {
+    !id.is_empty() && id.len() <= 64 && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+}
+
+fn as_id(v: &Value) -> Option<String> {
+    match v {
+        Value::String(s) if !s.is_empty() => Some(s.clone()),
+        Value::Number(n) => Some(n.to_string()),
+        _ => None,
+    }
+}
+
+/// Open tasks only (`kind` task, `status` open), the first three in server order.
+fn pick_tasks(body: &Value) -> Vec<TaskItem> {
+    let Some(rows) = body.get("tasks").and_then(Value::as_array) else {
+        return Vec::new();
+    };
+    rows.iter()
+        .filter(|t| t.get("kind").and_then(Value::as_str) == Some("task") && t.get("status").and_then(Value::as_str) == Some("open"))
+        .filter_map(|t| {
+            let id = as_id(t.get("id")?)?;
+            let raw_title = t.get("title").and_then(Value::as_str).unwrap_or("");
+            let title: String = raw_title.chars().take(MAX_TITLE_CHARS).collect();
+            Some(TaskItem {
+                id,
+                title,
+                due_at: t.get("due_at").and_then(Value::as_str).map(str::to_string),
+                due_is_all_day: t.get("due_is_all_day").and_then(Value::as_bool).unwrap_or(false),
+                quadrant: t.get("quadrant").and_then(Value::as_str).map(str::to_string),
+            })
+        })
+        .take(TASK_LIMIT)
+        .collect()
+}
+
+#[tauri::command]
+pub async fn wall2_tasks_next(app: tauri::AppHandle) -> Result<Vec<TaskItem>, String> {
+    let base = read_base(&app, "tasksBaseUrl", true)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let body = get_json(&format!("{base}/api/tasks?status=open"))?;
+        Ok(pick_tasks(&body))
+    })
+    .await
+    .map_err(|_| "The request did not finish".to_string())?
+}
+
+#[tauri::command]
+pub async fn wall2_task_done(app: tauri::AppHandle, id: String) -> Result<(), String> {
+    if !valid_task_id(&id) {
+        return Err("Invalid task id".to_string());
+    }
+    let base = read_base(&app, "tasksBaseUrl", true)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        agent()
+            .request("PATCH", &format!("{base}/api/tasks/{id}"))
+            .set("Content-Type", "application/json")
+            .send_string("{\"status\":\"done\"}")
+            .map(|_| ())
+            .map_err(describe)
+    })
+    .await
+    .map_err(|_| "The request did not finish".to_string())?
+}
+
+// ---------------------------------------------------------------- home security
+
+/// Python truthiness of a JSON value, for the alert `id` test.
+fn truthy(v: Option<&Value>) -> bool {
+    match v {
+        None | Some(Value::Null) => false,
+        Some(Value::Bool(b)) => *b,
+        Some(Value::Number(n)) => n.as_f64().map_or(true, |f| f != 0.0),
+        Some(Value::String(s)) => !s.is_empty(),
+        Some(Value::Array(a)) => !a.is_empty(),
+        Some(Value::Object(o)) => !o.is_empty(),
+    }
+}
+
+fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = (if y >= 0 { y } else { y - 399 }) / 400;
+    let yoe = y - era * 400;
+    let doy = (153 * (if m > 2 { m - 3 } else { m + 9 }) + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    era * 146_097 + doe - 719_468
+}
+
+/// Epoch seconds of an ISO 8601 timestamp (`Z` or an offset; none means UTC), or NaN.
+fn parse_time(raw: Option<&Value>) -> f64 {
+    let Some(s) = raw.and_then(Value::as_str) else {
+        return f64::NAN;
+    };
+    parse_iso(s.trim()).unwrap_or(f64::NAN)
+}
+
+fn parse_iso(s: &str) -> Option<f64> {
+    let b = s.as_bytes();
+    let num = |from: usize, to: usize| -> Option<i64> {
+        let part = s.get(from..to)?;
+        if part.is_empty() || !part.bytes().all(|c| c.is_ascii_digit()) {
+            return None;
+        }
+        part.parse().ok()
+    };
+    if b.len() < 19 || b[4] != b'-' || b[7] != b'-' || !(b[10] == b'T' || b[10] == b't' || b[10] == b' ') || b[13] != b':' || b[16] != b':' {
+        return None;
+    }
+    let (y, mo, d) = (num(0, 4)?, num(5, 7)?, num(8, 10)?);
+    let (h, mi, sec) = (num(11, 13)?, num(14, 16)?, num(17, 19)?);
+    if !(1..=12).contains(&mo) || !(1..=31).contains(&d) || h > 23 || mi > 59 || sec > 60 {
+        return None;
+    }
+    let mut i = 19;
+    let mut frac = 0.0;
+    if b.get(i) == Some(&b'.') {
+        let start = i + 1;
+        let mut end = start;
+        while end < b.len() && b[end].is_ascii_digit() {
+            end += 1;
+        }
+        if end == start {
+            return None;
+        }
+        frac = format!("0.{}", &s[start..end]).parse().ok()?;
+        i = end;
+    }
+    let offset = match b.get(i) {
+        None => 0,
+        Some(b'Z') | Some(b'z') if i + 1 == b.len() => 0,
+        Some(&sign) if (sign == b'+' || sign == b'-') && b.len() >= i + 3 => {
+            let oh = num(i + 1, i + 3)?;
+            let rest = &s[i + 3..];
+            let om = if rest.is_empty() {
+                0
+            } else {
+                let r = rest.strip_prefix(':').unwrap_or(rest);
+                if r.len() != 2 {
+                    return None;
+                }
+                r.parse::<i64>().ok()?
+            };
+            let total = oh * 3600 + om * 60;
+            if sign == b'-' { -total } else { total }
+        }
+        _ => return None,
+    };
+    let days = days_from_civil(y, mo, d);
+    Some((days * 86_400 + h * 3600 + mi * 60 + sec - offset) as f64 + frac)
+}
+
+/// Whether the home app's own page hides this alert (port of its `alertHidden` rule).
+/// A waiting "reviewed" request hides at once. A done request hides until a summary
+/// newer than the request arrives. A failed request hides nothing. An unreadable time
+/// leaves a done request hiding.
+fn alert_hidden(alert: &Value, received: f64) -> bool {
+    let Some(obj) = alert.as_object() else {
+        return false;
+    };
+    if !truthy(obj.get("id")) {
+        return false;
+    }
+    let mut found: std::collections::HashMap<String, &Value> = std::collections::HashMap::new();
+    if let Some(reqs) = obj.get("requests").and_then(Value::as_object) {
+        for (k, v) in reqs {
+            if v.is_object() {
+                found.insert(k.clone(), v);
+            }
+        }
+    }
+    if let Some(latest) = obj.get("request").filter(|v| v.is_object()) {
+        if let Some(action) = latest.get("action").and_then(Value::as_str) {
+            found.entry(action.to_string()).or_insert(latest);
+        }
+    }
+    if let Some(r) = found.get("reviewed") {
+        if r.get("status").and_then(Value::as_str) == Some("requested") {
+            return true;
+        }
+    }
+    for action in ACTIONS {
+        let Some(req) = found.get(action) else { continue };
+        if req.get("status").and_then(Value::as_str) != Some("done") {
+            continue;
+        }
+        let finished = parse_time(req.get("finishedAt"));
+        if !(received > finished) {
+            return true;
+        }
+    }
+    false
+}
+
+fn visible_alerts(alerts: &[Value], received_at: Option<&Value>) -> u64 {
+    let received = parse_time(received_at);
+    alerts.iter().filter(|a| !alert_hidden(a, received)).count() as u64
+}
+
+/// The portal link, kept only when it is `https` on `firewalla.net` or a subdomain.
+fn portal_link(raw: Option<&Value>) -> Option<String> {
+    let text = raw?.as_str()?.trim();
+    let rest = text.strip_prefix("https://")?;
+    if text.len() > 300 || text.chars().any(|c| c.is_whitespace() || c.is_control() || c == '\\') {
+        return None;
+    }
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
+    if authority.is_empty() || authority.contains('@') {
+        return None;
+    }
+    let host = match authority.rsplit_once(':') {
+        Some((h, p)) if !p.is_empty() && p.chars().all(|c| c.is_ascii_digit()) => h,
+        Some(_) => return None,
+        None => authority,
+    }
+    .to_ascii_lowercase();
+    if host.is_empty() || !host.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-') {
+        return None;
+    }
+    if host == "firewalla.net" || host.ends_with(PORTAL_SUFFIX) {
+        Some(text.to_string())
+    } else {
+        None
+    }
+}
+
+fn stamp(raw: Option<&Value>) -> Option<String> {
+    match raw.and_then(Value::as_str) {
+        Some(s) if !s.is_empty() && s.chars().count() <= 40 => Some(s.to_string()),
+        _ => None,
+    }
+}
+
+fn firewalla_info(health: Option<&Value>) -> Option<FirewallaInfo> {
+    let fw = health?.get("firewalla")?.as_object()?;
+    let api = match fw.get("api").and_then(Value::as_str) {
+        Some(a @ ("up" | "down" | "unknown")) => a.to_string(),
+        _ => "unknown".to_string(),
+    };
+    Some(FirewallaInfo {
+        api,
+        box_online: fw.get("boxOnline").and_then(Value::as_bool),
+        checked_at: stamp(fw.get("checkedAt")),
+        alarms24h: fw.get("alarms24h").and_then(Value::as_u64),
+    })
+}
+
+/// The compact answer from the home app's body. A body of the wrong shape is unreachable.
+fn shape_security(body: &Value) -> SecuritySummary {
+    let mut out = SecuritySummary {
+        reachable: false,
+        stale: false,
+        last_scan: None,
+        alerts: 0,
+        firewalla: None,
+        portal_url: None,
+    };
+    if body.get("ok").and_then(Value::as_bool) != Some(true) {
+        return out;
+    }
+    out.reachable = true;
+    let Some(summary) = body.get("summary").filter(|s| s.is_object()) else {
+        // The home app answered but has no scan yet: say so as stale.
+        out.stale = true;
+        return out;
+    };
+    out.stale = truthy(body.get("stale"));
+    out.last_scan = stamp(summary.get("lastScan"));
+    if let Some(alerts) = summary.get("alerts").and_then(Value::as_array) {
+        out.alerts = visible_alerts(alerts, body.get("receivedAt"));
+    }
+    let health = summary.get("health");
+    out.firewalla = firewalla_info(health);
+    if let Some(fw) = health.and_then(|h| h.get("firewalla")).filter(|f| f.is_object()) {
+        out.portal_url = portal_link(fw.get("portalUrl"));
+    }
+    out
+}
+
+#[tauri::command]
+pub async fn wall2_home_security(app: tauri::AppHandle) -> Result<SecuritySummary, String> {
+    let base = read_base(&app, "homeBaseUrl", false)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let body = get_json(&format!("{base}/api/security?lite=1"))?;
+        Ok(shape_security(&body))
+    })
+    .await
+    .map_err(|_| "The request did not finish".to_string())?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn base_url_accepts_scheme_host_port() {
+        assert_eq!(validate_base_url("https://example.invalid:8900", true).unwrap(), "https://example.invalid:8900");
+        assert_eq!(validate_base_url(" http://192.0.2.10:5006 ", false).unwrap(), "http://192.0.2.10:5006");
+        assert!(validate_base_url("https://example.invalid", true).is_ok());
+        assert!(validate_base_url("http://[2001:db8::1]:5006", false).is_ok());
+    }
+
+    #[test]
+    fn base_url_rejects_path_query_fragment_userinfo_scheme() {
+        assert!(validate_base_url("https://example.invalid/api", true).is_err());
+        assert!(validate_base_url("https://example.invalid/", true).is_err());
+        assert!(validate_base_url("https://example.invalid?x=1", true).is_err());
+        assert!(validate_base_url("https://example.invalid#top", true).is_err());
+        assert!(validate_base_url("https://user:pw@example.invalid", true).is_err());
+        assert!(validate_base_url("http://example.invalid:8900", true).is_err());
+        assert!(validate_base_url("ftp://example.invalid", false).is_err());
+        assert!(validate_base_url("example.invalid", false).is_err());
+        assert!(validate_base_url("https://", true).is_err());
+        assert!(validate_base_url("https://example.invalid:99999", true).is_err());
+        assert!(validate_base_url("https://example.invalid:", true).is_err());
+    }
+
+    #[test]
+    fn config_missing_file_or_key_is_not_configured() {
+        assert_eq!(base_from_config(None, "tasksBaseUrl", true), Err(NOT_CONFIGURED.to_string()));
+        assert_eq!(base_from_config(Some("{}"), "tasksBaseUrl", true), Err(NOT_CONFIGURED.to_string()));
+        let both = r#"{"tasksBaseUrl":"https://example.invalid:8900","homeBaseUrl":"http://192.0.2.10:5006"}"#;
+        assert!(base_from_config(Some(both), "tasksBaseUrl", true).is_ok());
+        assert!(base_from_config(Some(both), "homeBaseUrl", false).is_ok());
+        assert!(base_from_config(Some("not json"), "tasksBaseUrl", true).is_err());
+    }
+
+    #[test]
+    fn task_id_validation() {
+        assert!(valid_task_id("abc_123-XYZ"));
+        assert!(valid_task_id(&"a".repeat(64)));
+        assert!(!valid_task_id(""));
+        assert!(!valid_task_id(&"a".repeat(65)));
+        assert!(!valid_task_id("../x"));
+        assert!(!valid_task_id("a b"));
+        assert!(!valid_task_id("a?b=1"));
+    }
+
+    #[test]
+    fn tasks_filter_and_cut_to_three() {
+        let body = json!({"tasks": [
+            {"id": "n", "title": "A note", "kind": "note", "status": "open"},
+            {"id": "d", "title": "Done one", "kind": "task", "status": "done"},
+            {"id": "1", "title": "One", "kind": "task", "status": "open", "due_at": "2026-11-11T20:00:00Z", "due_is_all_day": false, "quadrant": "hotfix"},
+            {"id": "2", "title": "Two", "kind": "task", "status": "open", "due_is_all_day": true},
+            {"id": "3", "title": "x".repeat(300), "kind": "task", "status": "open"},
+            {"id": "4", "title": "Four", "kind": "task", "status": "open"}
+        ]});
+        let got = pick_tasks(&body);
+        assert_eq!(got.len(), 3);
+        assert_eq!(got[0].id, "1");
+        assert_eq!(got[0].due_at.as_deref(), Some("2026-11-11T20:00:00Z"));
+        assert_eq!(got[0].quadrant.as_deref(), Some("hotfix"));
+        assert!(got[1].due_is_all_day);
+        assert_eq!(got[1].due_at, None);
+        assert_eq!(got[2].title.chars().count(), 200);
+        assert!(pick_tasks(&json!({"nope": 1})).is_empty());
+    }
+
+    fn alert(extra: Value) -> Value {
+        let mut a = json!({"id": "a1"});
+        a.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+        a
+    }
+
+    #[test]
+    fn requested_review_hides() {
+        let a = alert(json!({"requests": {"reviewed": {"status": "requested"}}}));
+        assert!(alert_hidden(&a, 100.0));
+        let latest = alert(json!({"request": {"action": "reviewed", "status": "requested"}}));
+        assert!(alert_hidden(&latest, 100.0));
+    }
+
+    #[test]
+    fn done_request_hides_until_newer_summary() {
+        let a = alert(json!({"requests": {"name": {"status": "done", "finishedAt": "2026-11-11T10:00:00Z"}}}));
+        let before = parse_iso("2026-11-11T09:00:00Z").unwrap();
+        let after = parse_iso("2026-11-11T11:00:00Z").unwrap();
+        assert!(alert_hidden(&a, before));
+        assert!(alert_hidden(&a, parse_iso("2026-11-11T10:00:00Z").unwrap()));
+        assert!(!alert_hidden(&a, after));
+    }
+
+    #[test]
+    fn failed_request_hides_nothing() {
+        let a = alert(json!({"requests": {"reviewed": {"status": "failed"}, "revoke-key": {"status": "failed"}}}));
+        assert!(!alert_hidden(&a, 100.0));
+    }
+
+    #[test]
+    fn unreadable_times_keep_a_done_request_hiding() {
+        let bad_finished = alert(json!({"requests": {"reviewed": {"status": "done", "finishedAt": "soon"}}}));
+        assert!(alert_hidden(&bad_finished, 100.0));
+        let ok = alert(json!({"requests": {"reviewed": {"status": "done", "finishedAt": "2026-11-11T10:00:00Z"}}}));
+        assert!(alert_hidden(&ok, f64::NAN));
+        // Without a usable receivedAt the count keeps the hidden alert out.
+        assert_eq!(visible_alerts(&[ok.clone(), json!({"id": "b"})], Some(&json!("garbage"))), 1);
+        assert_eq!(visible_alerts(&[ok, json!({"id": "b"})], Some(&json!("2026-11-12T00:00:00Z"))), 2);
+    }
+
+    #[test]
+    fn alert_without_id_is_never_hidden() {
+        assert!(!alert_hidden(&json!({"requests": {"reviewed": {"status": "requested"}}}), 1.0));
+        assert!(!alert_hidden(&json!("text"), 1.0));
+    }
+
+    #[test]
+    fn time_parsing_handles_zones_and_fractions() {
+        assert_eq!(parse_iso("1970-01-01T00:00:00Z"), Some(0.0));
+        assert_eq!(parse_iso("1970-01-01T01:00:00+01:00"), Some(0.0));
+        assert_eq!(parse_iso("1970-01-01T00:00:00.500Z"), Some(0.5));
+        assert_eq!(parse_iso("2026-11-11T10:00:00"), parse_iso("2026-11-11T10:00:00Z"));
+        assert_eq!(parse_iso("nope"), None);
+        assert_eq!(parse_iso("2026-13-01T00:00:00Z"), None);
+    }
+
+    #[test]
+    fn portal_host_check() {
+        let ok = |s: &str| portal_link(Some(&json!(s)));
+        assert!(ok("https://firewalla.net/x").is_some());
+        assert!(ok("https://my.firewalla.net/box/abc?x=1").is_some());
+        assert!(ok("https://MY.Firewalla.NET").is_some());
+        assert!(ok("http://my.firewalla.net/").is_none());
+        assert!(ok("https://evilfirewalla.net/").is_none());
+        assert!(ok("https://firewalla.net.evil.example/").is_none());
+        assert!(ok("https://my.firewalla.net@evil.example/").is_none());
+        assert!(ok("https://example.invalid/").is_none());
+        assert!(portal_link(Some(&json!(5))).is_none());
+        assert!(portal_link(None).is_none());
+    }
+
+    #[test]
+    fn shape_reads_a_full_body() {
+        let body = json!({
+            "ok": true, "stale": false, "receivedAt": "2026-11-11T12:00:00Z",
+            "summary": {
+                "lastScan": "2026-11-11T11:55:00Z",
+                "alerts": [{"id": "a"}, {"id": "b", "requests": {"reviewed": {"status": "requested"}}}],
+                "health": {"firewalla": {"api": "up", "boxOnline": true, "checkedAt": "2026-11-11T11:58:00Z", "alarms24h": 3,
+                    "portalUrl": "https://my.firewalla.net/x"}}
+            }
+        });
+        let s = shape_security(&body);
+        assert!(s.reachable && !s.stale);
+        assert_eq!(s.alerts, 1);
+        assert_eq!(s.last_scan.as_deref(), Some("2026-11-11T11:55:00Z"));
+        let fw = s.firewalla.unwrap();
+        assert_eq!((fw.api.as_str(), fw.box_online, fw.alarms24h), ("up", Some(true), Some(3)));
+        assert_eq!(s.portal_url.as_deref(), Some("https://my.firewalla.net/x"));
+    }
+
+    #[test]
+    fn shape_handles_odd_bodies() {
+        assert!(!shape_security(&json!("x")).reachable);
+        assert!(!shape_security(&json!({"ok": false})).reachable);
+        let no_scan = shape_security(&json!({"ok": true}));
+        assert!(no_scan.reachable && no_scan.stale);
+        let odd = shape_security(&json!({"ok": true, "summary": {"health": {"firewalla": {"api": "sideways", "boxOnline": "yes"}}}}));
+        let fw = odd.firewalla.unwrap();
+        assert_eq!((fw.api.as_str(), fw.box_online), ("unknown", None));
+    }
+}

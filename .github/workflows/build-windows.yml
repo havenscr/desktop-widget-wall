@@ -64,6 +64,13 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      # The frontend must exist first: the Tauri context macro reads frontendDist.
+      - name: Build frontend for Rust tests
+        run: npm run build
+
+      - name: Rust tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+
       - name: Build Tauri app (exe + MSI + NSIS)
         run: npm run tauri build
 
