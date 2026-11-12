@@ -71,6 +71,8 @@ pub enum Callback {
     Code(String),
     Denied,
     Failed,
+    /// A wrong, missing or repeated `state`: not from our sign-in. Answer 400 and keep waiting.
+    BadState,
 }
 
 /// Read the request target the browser was sent back to.
@@ -85,7 +87,7 @@ pub fn parse_callback(request_target: &str, expected_state: &str) -> Callback {
     let all = |name: &str| -> Vec<&str> { pairs.iter().filter(|(k, _)| k == name).map(|(_, v)| v.as_str()).collect() };
     let states = all("state");
     if states.len() != 1 || states[0] != expected_state {
-        return Callback::Failed;
+        return Callback::BadState;
     }
     if !all("error").is_empty() {
         return if all("error") == ["access_denied"] { Callback::Denied } else { Callback::Failed };
@@ -149,12 +151,20 @@ pub fn authorize(app: &tauri::AppHandle, account: &Account) -> Result<Granted, &
     let url = authorize_url(&account.tenant, &account.client_id, &redirect_uri, &challenge, &state);
     app.opener().open_url(url, None::<&str>).map_err(|_| "failed")?;
 
+    let code = wait_for_callback(&server, &state, WAIT)?;
+    Ok(Granted { code, verifier, redirect_uri })
+}
+
+/// Serve the listener until the one valid callback arrives. Other paths get 404 and a callback
+/// with a wrong or missing `state` gets 400; both keep waiting. Ends on the first valid
+/// callback, an error answer, cancel, or the time limit.
+fn wait_for_callback(server: &tiny_http::Server, state: &str, wait: Duration) -> Result<String, &'static str> {
     let started = Instant::now();
     loop {
         if CANCEL.load(Ordering::SeqCst) {
             return Err("cancelled");
         }
-        if started.elapsed() >= WAIT {
+        if started.elapsed() >= wait {
             return Err("timed-out");
         }
         let request = match server.recv_timeout(Duration::from_millis(400)) {
@@ -167,11 +177,12 @@ pub fn authorize(app: &tauri::AppHandle, account: &Account) -> Result<Granted, &
             continue;
         }
         let target = request.url().to_string();
-        match parse_callback(&target, &state) {
+        match parse_callback(&target, state) {
             Callback::Other => respond(request, 404, "Not found".to_string()),
+            Callback::BadState => respond(request, 400, "Bad request".to_string()),
             Callback::Code(code) => {
                 respond(request, 200, page("Signed in. You can close this tab."));
-                return Ok(Granted { code, verifier, redirect_uri });
+                return Ok(code);
             }
             Callback::Denied => {
                 respond(request, 200, page("Sign-in did not finish. You can close this tab."));
@@ -289,15 +300,39 @@ mod tests {
         assert_eq!(parse_callback("/auth-callback.html?state=st&code=a%20b", "st"), Callback::Code("a b".into()));
         assert_eq!(parse_callback("/other?code=abc&state=st", "st"), Callback::Other);
         assert_eq!(parse_callback("/favicon.ico", "st"), Callback::Other);
-        assert_eq!(parse_callback("/auth-callback.html?code=abc&state=nope", "st"), Callback::Failed);
-        assert_eq!(parse_callback("/auth-callback.html?code=abc", "st"), Callback::Failed);
-        assert_eq!(parse_callback("/auth-callback.html?code=abc&state=st&state=st", "st"), Callback::Failed);
+        assert_eq!(parse_callback("/auth-callback.html?code=abc&state=nope", "st"), Callback::BadState);
+        assert_eq!(parse_callback("/auth-callback.html?code=abc", "st"), Callback::BadState);
+        assert_eq!(parse_callback("/auth-callback.html?code=abc&state=st&state=st", "st"), Callback::BadState);
         assert_eq!(parse_callback("/auth-callback.html?code=a&code=b&state=st", "st"), Callback::Failed);
         assert_eq!(parse_callback("/auth-callback.html?state=st", "st"), Callback::Failed);
         assert_eq!(parse_callback("/auth-callback.html?state=st&code=", "st"), Callback::Failed);
         assert_eq!(parse_callback("/auth-callback.html?error=access_denied&state=st", "st"), Callback::Denied);
         assert_eq!(parse_callback("/auth-callback.html?error=server_error&state=st", "st"), Callback::Failed);
-        assert_eq!(parse_callback("/auth-callback.html?error=access_denied&state=bad", "st"), Callback::Failed);
+        assert_eq!(parse_callback("/auth-callback.html?error=access_denied&state=bad", "st"), Callback::BadState);
+    }
+
+    fn get_status(port: u16, target: &str) -> u16 {
+        match ureq::get(&format!("http://127.0.0.1:{port}{target}")).call() {
+            Ok(r) => r.status(),
+            Err(ureq::Error::Status(c, _)) => c,
+            Err(_) => 0,
+        }
+    }
+
+    #[test]
+    fn a_wrong_state_callback_gets_400_and_the_wait_continues() {
+        let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
+        let port = server.server_addr().to_ip().unwrap().port();
+        let client = std::thread::spawn(move || {
+            let bad = get_status(port, "/auth-callback.html?code=stolen&state=wrong");
+            let missing = get_status(port, "/auth-callback.html?code=stolen");
+            let other = get_status(port, "/favicon.ico");
+            let good = get_status(port, "/auth-callback.html?code=real&state=st");
+            (bad, missing, other, good)
+        });
+        let result = wait_for_callback(&server, "st", Duration::from_secs(20));
+        assert_eq!(result, Ok("real".to_string()));
+        assert_eq!(client.join().unwrap(), (400, 400, 404, 200));
     }
 
     #[test]
