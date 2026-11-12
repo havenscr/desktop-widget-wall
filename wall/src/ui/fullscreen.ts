@@ -6,13 +6,16 @@ import { isTauri } from '../bridge/tauri';
  * Fullscreen for Wall 2. The window's outer position and size are saved just
  * before entering fullscreen and restored exactly after leaving, so the window
  * lands back wherever the strip placement had put it. Only one change runs at
- * a time; a request that arrives while one is in flight is ignored.
+ * a time; a toggle that arrives while one is in flight is ignored, but an Esc
+ * is queued and applied once it finishes (it leaves fullscreen if that is where
+ * the window ended up).
  */
 
 type Placement = { position: PhysicalPosition; size: PhysicalSize };
 
 let saved: Placement | null = null;
 let busy = false;
+let pendingExit = false;
 let full = false;
 const listeners = new Set<() => void>();
 
@@ -38,7 +41,11 @@ export async function reconcileFullscreen(): Promise<void> {
 }
 
 async function change(mode: 'toggle' | 'exit'): Promise<void> {
-  if (busy) return;
+  if (busy) {
+    if (mode === 'exit') pendingExit = true;
+    return;
+  }
+  pendingExit = false;
   busy = true;
   try {
     const win = getCurrentWindow();
@@ -62,6 +69,10 @@ async function change(mode: 'toggle' | 'exit'): Promise<void> {
   } finally {
     busy = false;
   }
+  if (pendingExit) {
+    pendingExit = false;
+    if (full) await change('exit');
+  }
 }
 
 export function toggleFullscreen(): Promise<void> {
@@ -76,7 +87,7 @@ export function installFullscreenKeys(): () => void {
     if (e.key === 'F11') {
       e.preventDefault();
       change('toggle').catch(report);
-    } else if (e.key === 'Escape' && full) {
+    } else if (e.key === 'Escape' && (full || busy)) {
       e.preventDefault();
       change('exit').catch(report);
     }
@@ -107,5 +118,6 @@ export function useFullscreen(): boolean {
 export function resetFullscreenForTests(): void {
   saved = null;
   busy = false;
+  pendingExit = false;
   full = false;
 }

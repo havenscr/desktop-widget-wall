@@ -3,6 +3,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { usePlaceStore } from '../state/places';
 import { FLAMES, Flames } from './Flames';
 import { Zen } from './Zen';
+import zenSource from './Zen.tsx?raw';
 import { Dream } from './Dream';
 import { FLAME_ROTATE_MS } from './model';
 
@@ -141,6 +142,29 @@ it('falls into Dream when the clock passes 9:30 PM while Zen is open', () => {
   expect(screen.queryByLabelText('Wake')).toBeNull();
   act(() => void vi.advanceTimersByTime(90_000));
   expect(screen.getByLabelText('Wake')).toBeTruthy();
+});
+
+it('a session ending just before 9:30 PM falls into Dream and stays there through the night ticks', () => {
+  const base = clockAt(new Date(2026, 10, 11, 21, 26, 59, 900).getTime());
+  render(<Zen nowMs={base} />);
+  fireEvent.click(screen.getByRole('radio', { name: '3 min' }));
+  fireEvent.click(screen.getByRole('button', { name: /Start/ }));
+  act(() => void vi.advanceTimersByTime(180_000 + 400));
+  expect(document.querySelector('.zen-guide.ending')).not.toBeNull();
+  act(() => void vi.advanceTimersByTime(1300));
+  expect(screen.getByLabelText('Wake')).toBeTruthy();
+  act(() => void vi.advanceTimersByTime(120_000));
+  expect(screen.getByLabelText('Wake')).toBeTruthy();
+  expect(document.querySelector('.zen-guide')).toBeNull();
+});
+
+it('the night check effect lists ending among its dependencies', () => {
+  // `ending` is only ever true while a session runs, so no timing test can tell a stale read from a
+  // fresh one; the dependency list is what keeps the effect honest, so pin it in the source.
+  const effect = /Night starting while Zen is open[\s\S]*?\n  \}, \[([^\]]*)\]\);/.exec(zenSource);
+  expect(effect).not.toBeNull();
+  const deps = effect![1].split(',').map((d) => d.trim());
+  expect(deps).toEqual(expect.arrayContaining(['startedAt', 'ending', 'nowMs']));
 });
 
 it('Leave goes back to the place Zen was opened from, Work if none', () => {
