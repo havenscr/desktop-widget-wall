@@ -4,7 +4,7 @@ import { usePlaceStore } from './places';
 beforeEach(() => usePlaceStore.setState({ active: 'work' }));
 
 it('starts on work', () => {
-  expect(usePlaceStore.getState().active).toBe('work');
+  expect(usePlaceStore.getInitialState().active).toBe('work');
 });
 it('switches place', () => {
   usePlaceStore.getState().setActive('unwind');
