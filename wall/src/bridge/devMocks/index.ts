@@ -1,4 +1,5 @@
 import { isTauri } from '../tauri';
+import { registerAudioMocks } from './audio';
 import { registerHomeMocks } from './home';
 import { registerMeetMocks } from './meet';
 import { registerMediaMocks } from './media';
@@ -19,4 +20,5 @@ export function registerDevMocks(): void {
   registerMeetMocks();
   registerOmniMocks();
   registerPowerMocks();
+  registerAudioMocks();
 }
