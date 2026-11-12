@@ -145,6 +145,50 @@ pub fn leave_reason_str(r: LeaveReason) -> &'static str {
     }
 }
 
+/// The reason string for any real input in `input`, if there is one.
+pub fn hard_reason(input: InputSummary) -> Option<&'static str> {
+    if input.key {
+        Some("key")
+    } else if input.click {
+        Some("click")
+    } else if input.touch {
+        Some("touch")
+    } else if input.other {
+        Some("other")
+    } else {
+        None
+    }
+}
+
+/// The hidden input window's lifecycle: at most one watcher thread and window exist.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Slot {
+    Empty,
+    Starting,
+    Ready(isize),
+}
+
+impl Slot {
+    /// True when the caller must spawn the watcher thread (only from Empty).
+    pub fn begin(&mut self) -> bool {
+        if *self == Slot::Empty {
+            *self = Slot::Starting;
+            true
+        } else {
+            false
+        }
+    }
+    pub fn ready(&mut self, hwnd: isize) {
+        *self = Slot::Ready(hwnd);
+    }
+    /// Creation failed: the thread is gone, so a later attempt may spawn a fresh one.
+    pub fn failed(&mut self) {
+        if *self == Slot::Starting {
+            *self = Slot::Empty;
+        }
+    }
+}
+
 /// If no display-off is seen this long after sending off, leave the mode.
 pub const WATCHDOG_MS: u64 = 3000;
 
@@ -172,6 +216,8 @@ pub enum Event {
     Tick,
     Display { off: bool },
     Lock(bool),
+    /// The input watcher saw a key, click or touch (posted once per mode).
+    Input,
     Shutdown,
 }
 
@@ -181,6 +227,8 @@ pub enum Action {
     SendOff,
     DisarmWatcher,
     ClearInput,
+    /// Zero only the summed mouse movement. Key, click, touch and other input are never reset.
+    ResetMovement,
     Emit { active: bool, reason: Option<&'static str> },
 }
 
@@ -191,11 +239,17 @@ pub enum Action {
 pub struct Machine {
     pub phase: Phase,
     reoffs: Vec<u64>,
+    display_off: bool,
 }
 
 impl Machine {
     pub fn new() -> Self {
-        Machine { phase: Phase::Idle, reoffs: Vec::new() }
+        Machine { phase: Phase::Idle, reoffs: Vec::new(), display_off: false }
+    }
+
+    /// Seed the display state at a tap, in case no change was heard yet.
+    pub fn set_display_off(&mut self, off: bool) {
+        self.display_off = off;
     }
 
     /// True from the tap until the mode ends (including arming).
@@ -223,6 +277,20 @@ impl Machine {
     }
 
     pub fn step(&mut self, ev: Event, now: u64, input: InputSummary) -> Vec<Action> {
+        if let Event::Display { off } = ev {
+            self.display_off = off;
+        }
+        // Real input from the moment the watcher is ready ends the mode at the next step,
+        // before any off is sent or re-sent. Only small mouse movement may continue.
+        let watching_input = matches!(
+            self.phase,
+            Phase::Delay { .. } | Phase::AwaitOff { .. } | Phase::Watching | Phase::OnSince { .. }
+        );
+        if watching_input && !matches!(ev, Event::Shutdown | Event::Lock(_) | Event::Tap) {
+            if let Some(reason) = hard_reason(input) {
+                return self.leave(reason);
+            }
+        }
         match (ev, self.phase) {
             (Event::Shutdown, _) => self.leave("shutdown"),
             (Event::Lock(true), _) => self.leave("lock"),
@@ -238,8 +306,9 @@ impl Machine {
             }
             (Event::WatcherReady(false), Phase::Arming { .. }) => self.leave("input-unavailable"),
             (Event::Tick, Phase::Delay { until }) if now >= until => {
-                self.phase = Phase::AwaitOff { sent_at: now };
-                vec![Action::ClearInput, Action::Emit { active: true, reason: None }, Action::SendOff]
+                // Already off at the tap: nothing to wait for, so no watchdog.
+                self.phase = if self.display_off { Phase::Watching } else { Phase::AwaitOff { sent_at: now } };
+                vec![Action::ResetMovement, Action::Emit { active: true, reason: None }, Action::SendOff]
             }
             (Event::Tick, Phase::AwaitOff { sent_at }) if now.saturating_sub(sent_at) >= WATCHDOG_MS => {
                 self.leave("watchdog")
@@ -250,18 +319,18 @@ impl Machine {
                     Decision::ReOff => {
                         self.reoffs.push(now);
                         self.phase = Phase::AwaitOff { sent_at: now };
-                        vec![Action::ClearInput, Action::SendOff]
+                        vec![Action::ResetMovement, Action::SendOff]
                     }
                     Decision::Ignore => {
                         self.phase = Phase::Watching;
-                        vec![Action::ClearInput]
+                        vec![Action::ResetMovement]
                     }
                     Decision::Leave(r) => self.leave(leave_reason_str(r)),
                 }
             }
             (Event::Display { off: true }, Phase::AwaitOff { .. } | Phase::OnSince { .. }) => {
                 self.phase = Phase::Watching;
-                vec![Action::ClearInput]
+                vec![Action::ResetMovement]
             }
             (Event::Display { off: false }, Phase::Watching) => {
                 self.phase = Phase::OnSince { since: now };
@@ -372,7 +441,7 @@ mod sys {
     use serde::Serialize;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::mpsc::{channel, Receiver, RecvTimeoutError, Sender};
-    use std::sync::{Mutex, OnceLock};
+    use std::sync::{Condvar, Mutex, OnceLock};
     use std::time::Instant;
     use tauri::{AppHandle, Emitter};
     use windows::core::w;
@@ -385,7 +454,7 @@ mod sys {
     };
     use windows::Win32::UI::Shell::{DefSubclassProc, SetWindowSubclass};
     use windows::Win32::UI::WindowsAndMessaging::{
-        CreateWindowExW, DispatchMessageW, GetMessageW, SendMessageTimeoutW, TranslateMessage, HMENU, HWND_BROADCAST,
+        CreateWindowExW, DestroyWindow, DispatchMessageW, GetMessageW, SendMessageTimeoutW, TranslateMessage, HMENU, HWND_BROADCAST,
         HWND_MESSAGE, MSG, SC_MONITORPOWER, SMTO_ABORTIFHUNG, SMTO_BLOCK, WINDOW_EX_STYLE, WINDOW_STYLE, WM_INPUT,
         WM_SYSCOMMAND,
     };
@@ -451,7 +520,10 @@ mod sys {
     static INPUT: Mutex<InputSummary> = Mutex::new(InputSummary::new());
     /// The hidden message-only window, kept and reused across modes. None until a
     /// creation succeeds, so a failed attempt is retried on the next tap.
-    static INPUT_HWND: Mutex<Option<isize>> = Mutex::new(None);
+    static SLOT: Mutex<Slot> = Mutex::new(Slot::Empty);
+    static SLOT_CHANGED: Condvar = Condvar::new();
+    /// Set when the window procedure has told the worker about real input this mode.
+    static NOTIFIED: AtomicBool = AtomicBool::new(false);
 
     fn with_input(f: impl FnOnce(&mut InputSummary)) {
         let mut guard = INPUT.lock().unwrap_or_else(|e| e.into_inner());
@@ -464,6 +536,11 @@ mod sys {
 
     fn clear_input() {
         with_input(|s| *s = InputSummary::new());
+        NOTIFIED.store(false, Ordering::SeqCst);
+    }
+
+    fn reset_movement() {
+        with_input(|s| s.move_px = 0);
     }
 
     unsafe fn read_raw(lparam: LPARAM) {
@@ -479,6 +556,7 @@ mod sys {
         if got == u32::MAX {
             // Could not read it (a large HID report, for one). Be conservative.
             with_input(|s| s.other = true);
+            notify_hard();
             return;
         }
         match raw.header.dwType {
@@ -487,6 +565,7 @@ mod sys {
                 if m.usFlags.0 & 1 != 0 {
                     // Absolute movement (remote desktop, pen): not a nudge.
                     with_input(|s| s.other = true);
+                    notify_hard();
                 } else {
                     let buttons = m.Anonymous.Anonymous.usButtonFlags;
                     let (dx, dy) = (m.lLastX, m.lLastY);
@@ -496,30 +575,70 @@ mod sys {
                             s.click = true;
                         }
                     });
+                    if buttons != 0 {
+                        notify_hard();
+                    }
                 }
             }
-            1 => with_input(|s| s.key = true),
-            _ => with_input(|s| s.touch = true),
+            1 => {
+                with_input(|s| s.key = true);
+                notify_hard();
+            }
+            _ => {
+                with_input(|s| s.touch = true);
+                notify_hard();
+            }
+        }
+    }
+
+    /// Tell the worker once per mode that real input arrived, so it can leave even when
+    /// no display message follows. A flag swap and one channel send; nothing blocks.
+    fn notify_hard() {
+        if !NOTIFIED.swap(true, Ordering::SeqCst) {
+            send(Event::Input);
         }
     }
 
     unsafe extern "system" fn input_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM, _id: usize, _data: usize) -> LRESULT {
-        if msg == WM_INPUT && WATCHING.load(Ordering::SeqCst) {
-            read_raw(lparam);
-        }
+        // A panic must never unwind across the FFI boundary: catch it and fall through.
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            if msg == WM_INPUT && WATCHING.load(Ordering::SeqCst) {
+                read_raw(lparam);
+            }
+        }));
         DefSubclassProc(hwnd, msg, wparam, lparam)
     }
 
-    /// Create the hidden window on its own thread (which then runs its message
-    /// loop) and wait for the result. Returns the window, or None on failure or
-    /// timeout. Nothing is cached on failure.
+    /// The hidden window. One watcher thread owns it and stores its own handle in `SLOT`;
+    /// a retry after a timeout waits on the same thread instead of spawning another, and
+    /// only a thread that failed (so owns no window) is replaced. None on failure or timeout.
     fn ensure_window() -> Option<HWND> {
-        if let Some(h) = *INPUT_HWND.lock().unwrap_or_else(|e| e.into_inner()) {
-            return Some(HWND(h as *mut _));
+        let mut slot = SLOT.lock().unwrap_or_else(|e| e.into_inner());
+        if slot.begin() {
+            let spawned = std::thread::Builder::new().name("wall2-rawinput".into()).spawn(watcher_thread);
+            if spawned.is_err() {
+                slot.failed();
+                return None;
+            }
         }
-        let (tx, rx) = channel::<Option<isize>>();
-        let spawned = std::thread::Builder::new().name("wall2-rawinput".into()).spawn(move || unsafe {
-            let hwnd = match CreateWindowExW(
+        let deadline = Instant::now() + WINDOW_WAIT;
+        loop {
+            match *slot {
+                Slot::Ready(h) => return Some(HWND(h as *mut _)),
+                Slot::Empty => return None,
+                Slot::Starting => {}
+            }
+            let left = deadline.saturating_duration_since(Instant::now());
+            if left.is_zero() {
+                return None;
+            }
+            slot = SLOT_CHANGED.wait_timeout(slot, left).unwrap_or_else(|e| e.into_inner()).0;
+        }
+    }
+
+    fn watcher_thread() {
+        unsafe {
+            let hwnd = CreateWindowExW(
                 WINDOW_EX_STYLE(0),
                 w!("STATIC"),
                 w!("wall2-rawinput"),
@@ -532,30 +651,29 @@ mod sys {
                 HMENU::default(),
                 HINSTANCE::default(),
                 None,
-            ) {
-                Ok(h) => h,
+            );
+            let hwnd = match hwnd {
+                Ok(h) if SetWindowSubclass(h, Some(input_proc), SUBCLASS_ID, 0).as_bool() => h,
+                Ok(h) => {
+                    let _ = DestroyWindow(h);
+                    SLOT.lock().unwrap_or_else(|e| e.into_inner()).failed();
+                    SLOT_CHANGED.notify_all();
+                    return;
+                }
                 Err(_) => {
-                    let _ = tx.send(None);
+                    SLOT.lock().unwrap_or_else(|e| e.into_inner()).failed();
+                    SLOT_CHANGED.notify_all();
                     return;
                 }
             };
-            if !SetWindowSubclass(hwnd, Some(input_proc), SUBCLASS_ID, 0).as_bool() {
-                let _ = tx.send(None);
-                return;
-            }
-            let _ = tx.send(Some(hwnd.0 as isize));
+            SLOT.lock().unwrap_or_else(|e| e.into_inner()).ready(hwnd.0 as isize);
+            SLOT_CHANGED.notify_all();
             let mut msg = MSG::default();
             while GetMessageW(&mut msg, None, 0, 0).0 > 0 {
                 let _ = TranslateMessage(&msg);
                 DispatchMessageW(&msg);
             }
-        });
-        if spawned.is_err() {
-            return None;
         }
-        let h = rx.recv_timeout(WINDOW_WAIT).ok().flatten()?;
-        *INPUT_HWND.lock().unwrap_or_else(|e| e.into_inner()) = Some(h);
-        Some(HWND(h as *mut _))
     }
 
     /// Start receiving raw mouse, keyboard and touch input (even unfocused).
@@ -654,12 +772,16 @@ mod sys {
                     }
                 }
             };
+            if matches!(ev, Event::Tap) {
+                machine.set_display_off(crate::display_watch::display_is_off());
+            }
             for action in machine.step(ev, now_ms(), peek_input()) {
                 match action {
                     Action::ArmWatcher => pending.push(Event::WatcherReady(arm_watcher())),
                     Action::SendOff => send_off(),
                     Action::DisarmWatcher => disarm_watcher(),
                     Action::ClearInput => clear_input(),
+                    Action::ResetMovement => reset_movement(),
                     Action::Emit { active, reason } => {
                         ACTIVE.store(active, Ordering::SeqCst);
                         let _ = app.emit("monitors-off-mode", ModeState { active, reason });
@@ -916,5 +1038,113 @@ mod tests {
         run(&mut m, Event::Display { off: false }, t + 20, QUIET);
         let a = run(&mut m, Event::Tick, t + 20 + SETTLE_MS, moved(1));
         assert!(left(&a, "cap"));
+    }
+
+    #[test]
+    fn key_during_the_delay_leaves_without_sending_off() {
+        let mut m = Machine::new();
+        run(&mut m, Event::Tap, 0, QUIET);
+        run(&mut m, Event::WatcherReady(true), 10, QUIET);
+        let key = InputSummary { key: true, ..QUIET };
+        let a = run(&mut m, Event::Tick, 500, key);
+        assert!(left(&a, "key"));
+        assert!(!a.contains(&Action::SendOff));
+        assert_eq!(emits(&a), 1);
+        assert_eq!(m.phase, Phase::Idle);
+    }
+
+    #[test]
+    fn key_before_display_off_is_never_erased() {
+        let mut m = started();
+        let key = InputSummary { key: true, ..QUIET };
+        let a = run(&mut m, Event::Display { off: true }, 550, key);
+        assert!(left(&a, "key"));
+        assert_eq!(emits(&a), 1);
+        assert!(!a.contains(&Action::SendOff));
+        // A click or touch in the wait for off ends it on the next timer step too.
+        let mut m2 = started();
+        let click = InputSummary { click: true, ..QUIET };
+        assert!(left(&run(&mut m2, Event::Tick, 600, click), "click"));
+        let mut m3 = started();
+        let touch = InputSummary { touch: true, ..QUIET };
+        assert!(left(&run(&mut m3, Event::Display { off: true }, 600, touch), "touch"));
+    }
+
+    #[test]
+    fn small_nudge_before_display_off_keeps_the_mode() {
+        let mut m = Machine::new();
+        run(&mut m, Event::Tap, 0, QUIET);
+        run(&mut m, Event::WatcherReady(true), 10, QUIET);
+        let a = run(&mut m, Event::Tick, 500, moved(2));
+        assert!(a.contains(&Action::SendOff));
+        assert!(!a.contains(&Action::ClearInput));
+        let a = run(&mut m, Event::Display { off: true }, 550, moved(3));
+        assert_eq!(m.phase, Phase::Watching);
+        assert_eq!(a, vec![Action::ResetMovement]);
+    }
+
+    #[test]
+    fn movement_reset_never_clears_real_input() {
+        // Every non-leave step uses ResetMovement, never ClearInput.
+        let mut m = started();
+        let a = run(&mut m, Event::Display { off: true }, 600, QUIET);
+        assert!(!a.contains(&Action::ClearInput));
+        run(&mut m, Event::Display { off: false }, 5000, QUIET);
+        let a = run(&mut m, Event::Tick, 6000, moved(1));
+        assert!(!a.contains(&Action::ClearInput));
+    }
+
+    #[test]
+    fn real_input_message_leaves_a_stuck_mode() {
+        let mut m = started();
+        run(&mut m, Event::Display { off: true }, 600, QUIET);
+        // A key woke the display with no display-on message.
+        let key = InputSummary { key: true, ..QUIET };
+        let a = run(&mut m, Event::Input, 700, key);
+        assert!(left(&a, "key"));
+        assert_eq!(emits(&a), 1);
+        // A stale Input with nothing recorded does nothing.
+        let mut m2 = started();
+        assert!(run(&mut m2, Event::Input, 700, QUIET).is_empty());
+    }
+
+    #[test]
+    fn display_already_off_at_the_tap_counts_as_off() {
+        let mut m = Machine::new();
+        m.set_display_off(true);
+        run(&mut m, Event::Tap, 0, QUIET);
+        run(&mut m, Event::WatcherReady(true), 10, QUIET);
+        let a = run(&mut m, Event::Tick, 500, QUIET);
+        assert!(a.contains(&Action::SendOff));
+        assert_eq!(m.phase, Phase::Watching);
+        assert_eq!(m.wait_ms(600), None);
+        assert!(run(&mut m, Event::Tick, 9000, QUIET).is_empty());
+        // The same through display events heard while idle.
+        let mut m2 = Machine::new();
+        run(&mut m2, Event::Display { off: true }, 0, QUIET);
+        run(&mut m2, Event::Tap, 1, QUIET);
+        run(&mut m2, Event::WatcherReady(true), 2, QUIET);
+        run(&mut m2, Event::Tick, 501, QUIET);
+        assert_eq!(m2.phase, Phase::Watching);
+    }
+
+    #[test]
+    fn watcher_slot_never_spawns_twice() {
+        let mut s = Slot::Empty;
+        assert!(s.begin());
+        // A retry after a timeout reuses the starting thread.
+        assert!(!s.begin());
+        s.ready(7);
+        assert!(!s.begin());
+        assert_eq!(s, Slot::Ready(7));
+        // A failed thread owns no window, so the next attempt may spawn again.
+        let mut f = Slot::Empty;
+        assert!(f.begin());
+        f.failed();
+        assert_eq!(f, Slot::Empty);
+        assert!(f.begin());
+        // A failure never wipes a ready window.
+        s.failed();
+        assert_eq!(s, Slot::Ready(7));
     }
 }
