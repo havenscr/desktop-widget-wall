@@ -63,7 +63,11 @@ windows = { version = "0.58", features = [
     "Win32_System_SystemServices",
     # Wall 2 Meet: Credential Manager for refresh tokens, BCrypt for PKCE (wall2_meet)
     "Win32_Security_Credentials",
-    "Win32_Security_Cryptography"
+    "Win32_Security_Cryptography",
+    # Wall 2 idle signal and monitors-off mode (wall2_power.rs)
+    "Win32_UI_Input",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_System_SystemInformation"
 ] }
 base64 = "0.22"
 

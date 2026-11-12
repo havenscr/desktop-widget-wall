@@ -52,6 +52,16 @@ pub fn os_hidden() -> bool {
     os_hidden_reason().is_some()
 }
 
+/// True while Windows is locked.
+pub fn session_locked() -> bool {
+    SESSION_LOCKED.load(Ordering::SeqCst)
+}
+
+/// True while every console display is off, whatever else holds.
+pub fn display_is_off() -> bool {
+    DISPLAY_OFF.load(Ordering::SeqCst)
+}
+
 /// Why the OS is hiding the wall, for the `display-state` event. Lock wins
 /// when several hold, since unlocking is what the user will do first.
 pub fn os_hidden_reason() -> Option<&'static str> {

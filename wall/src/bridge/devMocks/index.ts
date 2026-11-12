@@ -3,6 +3,7 @@ import { registerHomeMocks } from './home';
 import { registerMeetMocks } from './meet';
 import { registerMediaMocks } from './media';
 import { registerOmniMocks } from './omni';
+import { registerPowerMocks } from './power';
 import { registerTaskMocks } from './tasks';
 
 /**
@@ -17,4 +18,5 @@ export function registerDevMocks(): void {
   registerHomeMocks();
   registerMeetMocks();
   registerOmniMocks();
+  registerPowerMocks();
 }
