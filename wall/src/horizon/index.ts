@@ -1,31 +1,49 @@
+import { STAGE_HEIGHT, STAGE_WIDTH } from '../stage/fitScale';
+import { CAMERAS, type CameraPreset } from './cameras';
+import { draw } from './renderer';
+
+export { sun, when } from './renderer';
+export type { HorizonDrawOptions, HorizonEcho } from './renderer';
+export { CAMERAS, GLIDE_SECONDS, blendCamera, type CameraPreset } from './cameras';
+
 export interface HorizonOptions {
-  /** Drawing width in canvas pixels (backing store). */
+  /** Backing store width in canvas pixels. The renderer covers the whole stage, so this is informational. */
   width: number;
-  /** Drawing height in canvas pixels (backing store). */
+  /** Backing store height in canvas pixels. */
   height: number;
-  /** Horizon line in design pixels (stage coordinates). */
-  horizonY: number;
+  /** Overrides the camera's horizon line (design pixels) when set. */
+  horizonY?: number;
   /** Design pixels to canvas pixels: stage scale times devicePixelRatio. */
   scale: number;
+  /** Camera framing (default: the Work camera). */
+  camera?: CameraPreset;
+  /** Wall clock in epoch milliseconds; sets the sun and the palette (default: now). */
+  ms?: number;
+  /** Seconds of animation time (default 0). */
+  t?: number;
+  /** Lake grid scroll phase, 0 to 1 (default 0). */
+  phase?: number;
 }
 
-export const HORIZON_Y = 582;
+export const HORIZON_Y = CAMERAS.work.hy;
 
-const SKY_STOPS = ['#070a24', '#0d1f4d', '#16466e', '#2a8fa3'];
-const FLOOR_STOPS = ['#0b0d2e', '#05051a'];
-
-function fill(ctx: CanvasRenderingContext2D, top: number, bottom: number, stops: string[], width: number) {
-  const g = ctx.createLinearGradient(0, top, 0, bottom);
-  stops.forEach((c, i) => g.addColorStop(i / (stops.length - 1), c));
-  ctx.fillStyle = g;
-  ctx.fillRect(0, top, width, bottom - top);
-}
-
-/** Placeholder horizon: sky gradient down to the horizon line, floor gradient below. */
+/** Draw the west view for the given camera and time. The music ripple and moon stay off. */
 export function drawHorizon(ctx: CanvasRenderingContext2D, options: HorizonOptions): void {
-  const { width, height, horizonY, scale } = options;
-  const y = Math.round(horizonY * scale);
-  ctx.clearRect(0, 0, width, height);
-  fill(ctx, 0, y, SKY_STOPS, width);
-  fill(ctx, y, height, FLOOR_STOPS, width);
+  const cam = options.camera ?? CAMERAS.work;
+  draw(ctx, {
+    W: STAGE_WIDTH,
+    H: STAGE_HEIGHT,
+    scale: options.scale,
+    hy: options.horizonY ?? cam.hy,
+    az0: cam.az0,
+    ppd: cam.ppd,
+    vex: cam.vex,
+    cityScale: cam.cs,
+    vx: cam.vx,
+    ms: options.ms ?? Date.now(),
+    t: options.t ?? 0,
+    phase: options.phase ?? 0,
+    echo: null,
+    moon: null,
+  });
 }
