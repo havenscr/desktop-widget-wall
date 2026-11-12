@@ -47,7 +47,11 @@ export const SWING_SECONDS = 3.2;
 /** Azimuth change, in degrees at the left edge, above which a glide is a swing. */
 export const SWING_DEGREES = 40;
 
-/** How long a glide from `from` to `to` takes: a swing for a big turn, the usual glide otherwise. */
+/**
+ * How long a glide between two place cameras takes: a swing for a big turn (any turn between a
+ * west camera and the Rainier camera), the usual glide otherwise. Pass the logical ends (the
+ * presets), never a half-way camera, so the length depends on the kind of move only.
+ */
 export function glideSeconds(from: CameraPreset, to: CameraPreset): number {
   return Math.abs(to.az0 - from.az0) > SWING_DEGREES ? SWING_SECONDS : GLIDE_SECONDS;
 }
@@ -152,7 +156,7 @@ export interface Glide {
   from: CameraPreset;
   to: CameraPreset;
   progress: number;
-  /** Seconds the whole glide takes (`glideSeconds` of its ends, or `CINEMATIC_SECONDS`). */
+  /** Seconds the whole glide takes (`glideSeconds` of its logical ends, or `CINEMATIC_SECONDS`). */
   seconds: number;
   /** True for the cinematic turn (`cinematicCamera`); a plain cubic glide otherwise. */
   cinematic?: boolean;
@@ -177,7 +181,9 @@ export function startGlide(g: Glide, target: CameraPreset, instant: boolean, cin
   if (instant) return settled(target);
   const from = glideCamera(g);
   if (cinematic) return { from, to: target, progress: 0, seconds: CINEMATIC_SECONDS, cinematic: true };
-  return { from, to: target, progress: 0, seconds: glideSeconds(from, target) };
+  // The length comes from the move's logical ends (the camera it was heading to, and the new
+  // target), not from where an interrupted move happens to be, so a turn back is always a swing.
+  return { from, to: target, progress: 0, seconds: glideSeconds(g.to, target) };
 }
 
 /** Advance a glide by `dt` seconds, over the glide's own duration. */

@@ -87,11 +87,27 @@ describe('glide', () => {
     expect(prev).toBe(132);
   });
 
-  it('an interrupted swing takes its duration from where the camera is now', () => {
+  it('an interrupted move takes its duration from its logical ends, not from where the camera is', () => {
     const g = stepGlide(startGlide(settled(CAMERAS.work), HOME_MORNING, false), 1.6); // halfway round
-    expect(startGlide(g, CAMERAS.work, false).seconds).toBe(SWING_SECONDS); // 44.75 degrees back
-    const late = stepGlide(startGlide(settled(CAMERAS.work), HOME_MORNING, false), 3);
-    expect(startGlide(late, HOME_MORNING, false).seconds).toBe(GLIDE_SECONDS); // a few degrees left
+    expect(startGlide(g, CAMERAS.work, false).seconds).toBe(SWING_SECONDS); // Rainier to Work
+    const late = stepGlide(startGlide(settled(CAMERAS.work), HOME_MORNING, false), 3); // a few degrees left
+    expect(startGlide(late, CAMERAS.home, false).seconds).toBe(SWING_SECONDS); // still Rainier to the west
+    const early = stepGlide(startGlide(settled(CAMERAS.work), HOME_MORNING, false), 0.2); // barely moved
+    expect(startGlide(early, CAMERAS.home, false).seconds).toBe(SWING_SECONDS);
+    expect(startGlide(stepGlide(startGlide(settled(CAMERAS.work), CAMERAS.unwind, false), 0.5), CAMERAS.home, false).seconds).toBe(GLIDE_SECONDS);
+  });
+
+  it('the 11:30 return that interrupts the cinematic turn at progress 0.25 lasts 3.2 s', () => {
+    const cine = stepGlide(startGlide(settled(CAMERAS.work), HOME_MORNING, false, true), CINEMATIC_SECONDS * 0.25);
+    expect(cine.progress).toBeCloseTo(0.25, 9);
+    const here = glideCamera(cine);
+    expect(Math.abs(here.az0 - CAMERAS.home.az0)).toBeLessThan(SWING_DEGREES); // the old rule picked 1.6 s here
+    let back = startGlide(cine, CAMERAS.home, false);
+    expect(back.seconds).toBe(SWING_SECONDS);
+    expect(back.cinematic).toBeUndefined();
+    back = stepGlide(back, SWING_SECONDS - 0.01);
+    expect(back.progress).toBeLessThan(1);
+    expect(glideCamera(stepGlide(back, 0.01))).toBe(CAMERAS.home);
   });
 
   it('settled glides carry the usual duration', () => {

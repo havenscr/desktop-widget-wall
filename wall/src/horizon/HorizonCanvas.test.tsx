@@ -486,6 +486,22 @@ describe('Home morning view', () => {
     expect(run.cams[CINEMATIC_FRAMES - 1]).toBe(HOME_MORNING);
   });
 
+  it('11:30 AM arriving a quarter of the way into the cinematic turn sends the camera back over the full 3.2 s', () => {
+    setReducedMotion(false);
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    let ms = localMs(11, 29);
+    render(<HorizonCanvas now={() => ms} />);
+    runFrame(100);
+    act(() => usePlaceStore.getState().setActive('home'));
+    let { ts, cams } = frames(100, 12); // 1.2 s of 4.6: about a quarter of the way
+    expect(cams[11].hy).toBeGreaterThan(582); // the cinematic move is running
+    ms = localMs(11, 31);
+    act(() => void vi.advanceTimersByTime(60_000));
+    ({ cams } = frames(ts, 32));
+    expect(cams[30]).not.toBe(CAMERAS.home); // still moving at 3.1 s
+    expect(cams[31]).toBe(CAMERAS.home); // arrives at 3.2 s
+  });
+
   it('5:00 AM passing while Home is open plays the cinematic move (the first turn of the day)', () => {
     setReducedMotion(false);
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });

@@ -147,6 +147,8 @@ skyline, the lake in front. It is drawn on one canvas by `HorizonCanvas.tsx`.
   clamped to the panorama (`az0` at least 128.3, right edge at most 299.8). Later turns
   that morning and the 11:30 AM turn back use the plain glide: any move of more than
   40 degrees (`SWING_DEGREES`) takes `SWING_SECONDS` (3.2 s, cubic ease) instead of 1.6.
+  The length comes from the move's logical ends (the camera it was heading to and the new
+  one), so a turn back that interrupts another move part-way still takes the full 3.2 s.
   Seattle slides out to the right on the way round and back in on the way back. The rest
   of the day Home keeps the west view. `homeCameraFor(date)`
   holds the rule and `cameraFor(place, ms)` applies it to Home only; Work and Unwind never
