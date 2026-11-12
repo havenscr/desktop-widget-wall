@@ -218,6 +218,14 @@
 /* Network and security: as tall as what it holds, sitting on the band's bottom. */
 .panel.network {
   position: relative;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  /* The glass is restated here so Home does not depend on work.css, which the Work
+     lane changes on its own. */
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.015)), rgba(10, 7, 28, 0.72);
+  border: 1px solid var(--line);
+  border-radius: 26px;
   flex: none;
   gap: 8px;
   padding: 16px 22px;
