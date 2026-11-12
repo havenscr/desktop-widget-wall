@@ -24,7 +24,10 @@ const WALL2_LABEL: &str = "wall2";
 /// The helper caps its own answers at 64 KB; anything larger is not from the helper.
 const MAX_ANSWER: usize = 64 * 1024;
 const MAX_LANES: usize = 3;
-const MAX_SLOTS: u64 = 3;
+/// The slot limit when the helper does not send one.
+const DEFAULT_SLOTS: u64 = 3;
+/// Slot numbers are shown as they are ("5 of 4 slots"); this only refuses nonsense.
+const MAX_SLOTS: u64 = 99;
 const MAX_ELAPSED_S: u64 = 7 * 24 * 3600;
 const MAX_DAY: usize = 200;
 const MAX_TITLE_CHARS: usize = 80;
@@ -86,7 +89,8 @@ pub struct YourMove {
 #[serde(rename_all = "camelCase")]
 pub struct Usage {
     pub claude_week_pct: f64,
-    pub claude5h_pct: f64,
+    /// None when the helper has no five hour figure; the wall hides that part.
+    pub claude5h_pct: Option<f64>,
     pub week_resets_at: Option<String>,
 }
 
@@ -244,7 +248,7 @@ fn shape_usage(v: Option<&Value>) -> Option<Usage> {
     let v = v.filter(|u| u.is_object())?;
     Some(Usage {
         claude_week_pct: percent(v.get("claudeWeekPct"))?,
-        claude5h_pct: percent(v.get("claude5hPct"))?,
+        claude5h_pct: percent(v.get("claude5hPct")),
         week_resets_at: clean_text(v.get("weekResetsAt"), MAX_STAMP_CHARS),
     })
 }
@@ -284,7 +288,7 @@ fn shape_summary(body: &Value) -> Option<OmniSummary> {
     let obj = body.as_object()?;
     let lanes: Vec<Lane> = obj.get("lanes")?.as_array()?.iter().filter_map(shape_lane).take(MAX_LANES).collect();
     let slots = obj.get("slots").filter(|s| s.is_object());
-    let limit = slots.and_then(|s| count(s.get("limit"))).unwrap_or(MAX_SLOTS).min(MAX_SLOTS);
+    let limit = slots.and_then(|s| count(s.get("limit"))).unwrap_or(DEFAULT_SLOTS).min(MAX_SLOTS);
     let used = slots.and_then(|s| count(s.get("used"))).unwrap_or(lanes.len() as u64).min(MAX_SLOTS);
     Some(OmniSummary {
         now: clean_text(obj.get("now"), MAX_STAMP_CHARS)?,
@@ -704,6 +708,18 @@ mod tests {
     }
 
     #[test]
+    fn a_missing_five_hour_figure_keeps_the_week() {
+        let mut body = full();
+        body["usage"]["claude5hPct"] = Value::Null;
+        let u = shape_summary(&body).unwrap().usage.unwrap();
+        assert_eq!((u.claude_week_pct, u.claude5h_pct), (62.0, None));
+        let v = serde_json::to_value(shape_summary(&body).unwrap()).unwrap();
+        assert!(v["usage"]["claude5hPct"].is_null());
+        body["usage"]["claudeWeekPct"] = Value::Null;
+        assert!(shape_summary(&body).unwrap().usage.is_none());
+    }
+
+    #[test]
     fn output_uses_camel_case_names() {
         let v = serde_json::to_value(shape_summary(&full()).unwrap()).unwrap();
         assert!(v["lanes"][0].get("elapsedS").is_some());
@@ -762,12 +778,14 @@ mod tests {
     }
 
     #[test]
-    fn slots_are_clamped_and_elapsed_is_capped() {
+    fn slots_are_kept_as_sent_and_elapsed_is_capped() {
         let mut body = full();
-        body["slots"] = json!({ "used": 9, "limit": 50 });
+        body["slots"] = json!({ "used": 5, "limit": 4 });
         body["lanes"][0]["elapsedS"] = json!(9_000_000_000u64);
         let s = shape_summary(&body).unwrap();
-        assert_eq!(s.slots, Slots { used: 3, limit: 3 });
+        assert_eq!(s.slots, Slots { used: 5, limit: 4 });
+        body["slots"] = json!({ "used": 5000, "limit": 5000 });
+        assert_eq!(shape_summary(&body).unwrap().slots, Slots { used: 99, limit: 99 });
         assert_eq!(s.lanes[0].elapsed_s, 7 * 24 * 3600);
         body["slots"] = json!({ "used": 1.5, "limit": -2 });
         let s = shape_summary(&body).unwrap();
