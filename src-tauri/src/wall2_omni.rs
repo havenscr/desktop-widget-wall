@@ -7,10 +7,11 @@
 //! nothing here takes a wake lock. The web view never supplies a URL: it passes a session
 //! id, and Rust builds the link after checking the id.
 
-use crate::wall2_feeds::{agent, read_base, read_body, require_ok, NOT_CONFIGURED};
+use crate::wall2_feeds::{agent, read_base, require_ok, NOT_CONFIGURED};
 use serde::Serialize;
 use serde_json::Value;
-use std::sync::Mutex;
+use std::io::Read;
+use std::sync::{Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 use tauri::Manager;
 use tauri_plugin_opener::OpenerExt;
@@ -32,6 +33,10 @@ const MAX_QUESTION_CHARS: usize = 200;
 const MAX_STAMP_CHARS: usize = 40;
 /// The box numbers ride on the helper summary, which is read at most this often.
 const BOX_TTL: Duration = Duration::from_secs(15);
+/// The box read has its own, shorter timeout, and runs in the background.
+const BOX_TIMEOUT: Duration = Duration::from_secs(3);
+/// After a failed read the last good numbers stay, marked stale, for this long.
+const BOX_STALE_LIMIT: Duration = Duration::from_secs(600);
 
 // Section: types
 
@@ -320,15 +325,62 @@ fn helper_base(app: &tauri::AppHandle) -> Result<String, String> {
     read_base(app, "omniHelperUrl", true).map_err(config_error)
 }
 
-fn fetch_summary(base: &str) -> Result<OmniSummary, String> {
-    let resp = agent()
-        .get(&format!("{base}/wall/v1/summary"))
-        .set("Accept", "application/json")
-        .call()
+/// Read an answer through the size cap: stop as soon as it is over, never buffer more.
+fn read_limited<R: Read>(reader: R) -> Result<Vec<u8>, String> {
+    let mut buf = Vec::new();
+    reader
+        .take(MAX_ANSWER as u64 + 1)
+        .read_to_end(&mut buf)
         .map_err(|_| FAILED.to_string())?;
-    let resp = require_ok(resp).map_err(|_| FAILED.to_string())?;
-    let bytes = read_body(resp).map_err(|_| FAILED.to_string())?;
-    parse_answer(&bytes)
+    if buf.len() > MAX_ANSWER {
+        return Err(FAILED.to_string());
+    }
+    Ok(buf)
+}
+
+/// Only a 2xx counts (redirects are off, so a 3xx arrives as a response).
+fn accept(resp: ureq::Response) -> Result<ureq::Response, String> {
+    require_ok(resp).map_err(|_| FAILED.to_string())
+}
+
+fn fetch_summary_within(base: &str, timeout: Option<Duration>) -> Result<OmniSummary, String> {
+    let mut request = agent().get(&format!("{base}/wall/v1/summary")).set("Accept", "application/json");
+    if let Some(t) = timeout {
+        request = request.timeout(t);
+    }
+    let resp = accept(request.call().map_err(|_| FAILED.to_string())?)?;
+    parse_answer(&read_limited(resp.into_reader())?)
+}
+
+fn fetch_summary(base: &str) -> Result<OmniSummary, String> {
+    fetch_summary_within(base, None)
+}
+
+// Section: session ids
+
+/// The session ids in the most recent successful summary. A session can be opened only if
+/// its id is in here.
+static KNOWN_IDS: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+fn ids_of(s: &OmniSummary) -> Vec<String> {
+    let mut ids: Vec<String> = s.lanes.iter().map(|l| l.id.clone()).collect();
+    if let Some(first) = &s.your_move.first {
+        ids.push(first.session_id.clone());
+    }
+    ids.extend(s.day.iter().map(|d| d.lane.clone()));
+    ids.sort();
+    ids.dedup();
+    ids
+}
+
+fn remember_ids(ids: Vec<String>) {
+    if let Ok(mut guard) = KNOWN_IDS.lock() {
+        *guard = ids;
+    }
+}
+
+fn id_is_known(id: &str) -> bool {
+    KNOWN_IDS.lock().map(|g| g.iter().any(|k| k == id)).unwrap_or(false)
 }
 
 fn require_wall2(label: &str) -> Result<(), String> {
@@ -346,6 +398,7 @@ pub async fn wall2_omni_summary(window: tauri::WebviewWindow, app: tauri::AppHan
     let mut summary = tauri::async_runtime::spawn_blocking(move || fetch_summary(&base))
         .await
         .map_err(|_| FAILED.to_string())??;
+    remember_ids(ids_of(&summary));
     summary.links_available = link_host(&app).is_ok();
     Ok(summary)
 }
@@ -354,6 +407,9 @@ pub async fn wall2_omni_summary(window: tauri::WebviewWindow, app: tauri::AppHan
 pub fn wall2_open_session(window: tauri::WebviewWindow, app: tauri::AppHandle, id: String) -> Result<(), String> {
     require_wall2(window.label())?;
     if !valid_session_id(&id) {
+        return Err("Unknown session".to_string());
+    }
+    if !id_is_known(&id) {
         return Err("Unknown session".to_string());
     }
     let host = link_host(&app)?;
@@ -407,31 +463,106 @@ fn pc_from(stats: &crate::SystemStatsSummary) -> PcStats {
 
 type BoxReading = (Option<BoxStats>, bool);
 
-/// The last helper reading and when it was taken. A failed read is kept too, so a helper
-/// that is down is asked once per window, not on every PC poll.
-static BOX_CACHE: Mutex<Option<(Instant, BoxReading)>> = Mutex::new(None);
-
-fn cache_fresh(age: Duration) -> bool {
-    age < BOX_TTL
+/// What the last helper reads showed, for one helper address.
+struct BoxState {
+    /// The helper address these numbers belong to; a different address starts over.
+    base: Option<String>,
+    /// When the last good numbers were read, the numbers, and the helper's own stale flag.
+    good: Option<(Instant, BoxStats, bool)>,
+    /// When the last read was started.
+    attempted: Option<Instant>,
+    in_flight: bool,
+    /// The most recent read failed (or had no box numbers).
+    failed: bool,
 }
 
-fn read_box(app: &tauri::AppHandle) -> BoxReading {
-    let Ok(base) = helper_base(app) else { return (None, false) };
-    if let Ok(guard) = BOX_CACHE.lock() {
-        if let Some((at, reading)) = guard.as_ref() {
-            if cache_fresh(at.elapsed()) {
-                return reading.clone();
-            }
+impl BoxState {
+    const fn new() -> Self {
+        BoxState { base: None, good: None, attempted: None, in_flight: false, failed: false }
+    }
+
+    fn sync_base(&mut self, base: &str) {
+        if self.base.as_deref() != Some(base) {
+            *self = BoxState::new();
+            self.base = Some(base.to_string());
         }
     }
-    let reading = match fetch_summary(&base) {
-        Ok(summary) => box_from_summary(&summary),
-        Err(_) => (None, false),
-    };
-    if let Ok(mut guard) = BOX_CACHE.lock() {
-        *guard = Some((Instant::now(), reading.clone()));
+}
+
+/// The box numbers, read in the background: asking never waits for the helper, and only
+/// one read runs at a time, at most one every 15 seconds.
+struct BoxCache(Mutex<BoxState>);
+
+impl BoxCache {
+    const fn new() -> Self {
+        BoxCache(Mutex::new(BoxState::new()))
     }
-    reading
+
+    fn state(&self) -> MutexGuard<'_, BoxState> {
+        self.0.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// The numbers to show now. After a failed read the last good numbers stay, marked
+    /// stale, for 10 minutes since they were read; then none.
+    fn view(&self, base: &str, now: Instant) -> BoxReading {
+        let mut st = self.state();
+        st.sync_base(base);
+        match &st.good {
+            Some((at, stats, helper_stale)) if now.saturating_duration_since(*at) < BOX_STALE_LIMIT => {
+                (Some(stats.clone()), st.failed || *helper_stale)
+            }
+            _ => (None, false),
+        }
+    }
+
+    /// True for exactly one caller when a read is due: none running and none started in
+    /// the last 15 seconds.
+    fn claim(&self, base: &str, now: Instant) -> bool {
+        let mut st = self.state();
+        st.sync_base(base);
+        if st.in_flight {
+            return false;
+        }
+        if let Some(at) = st.attempted {
+            if now.saturating_duration_since(at) < BOX_TTL {
+                return false;
+            }
+        }
+        st.in_flight = true;
+        st.attempted = Some(now);
+        true
+    }
+
+    fn finish(&self, base: &str, result: Result<OmniSummary, String>, now: Instant) {
+        let mut st = self.state();
+        if st.base.as_deref() != Some(base) {
+            return; // the address changed while this read ran
+        }
+        st.in_flight = false;
+        match result.map(|s| box_from_summary(&s)) {
+            Ok((Some(stats), helper_stale)) => {
+                st.good = Some((now, stats, helper_stale));
+                st.failed = false;
+            }
+            _ => st.failed = true,
+        }
+    }
+}
+
+static BOX: BoxCache = BoxCache::new();
+
+/// Claim a read and, if it is due, run `fetch` and record the result.
+#[cfg(test)]
+fn refresh_with<F>(cache: &BoxCache, base: &str, now: Instant, fetch: F) -> bool
+where
+    F: FnOnce() -> Result<OmniSummary, String>,
+{
+    if !cache.claim(base, now) {
+        return false;
+    }
+    let result = fetch();
+    cache.finish(base, result, Instant::now());
+    true
 }
 
 #[tauri::command]
@@ -439,7 +570,20 @@ pub async fn wall2_machines(window: tauri::WebviewWindow, app: tauri::AppHandle)
     require_wall2(window.label())?;
     tauri::async_runtime::spawn_blocking(move || {
         let pc = pc_from(&crate::read_system_stats()?);
-        let (box_stats, box_stale) = read_box(&app);
+        let (box_stats, box_stale) = match helper_base(&app) {
+            Ok(base) => {
+                let now = Instant::now();
+                let reading = BOX.view(&base, now);
+                if BOX.claim(&base, now) {
+                    tauri::async_runtime::spawn_blocking(move || {
+                        let result = fetch_summary_within(&base, Some(BOX_TIMEOUT));
+                        BOX.finish(&base, result, Instant::now());
+                    });
+                }
+                reading
+            }
+            Err(_) => (None, false),
+        };
         Ok(Machines { pc, box_stats, box_stale })
     })
     .await
@@ -754,10 +898,212 @@ mod tests {
         assert_eq!(v["boxStale"], json!(false));
     }
 
+    const BASE: &str = "https://example.invalid:8790";
+
+    fn summary_with(stale: bool, with_system: bool) -> OmniSummary {
+        let mut body = full();
+        body["stale"] = json!(stale);
+        if !with_system {
+            body["system"] = Value::Null;
+        }
+        shape_summary(&body).unwrap()
+    }
+
+    fn secs(t: Instant, n: u64) -> Instant {
+        t + Duration::from_secs(n)
+    }
+
     #[test]
-    fn box_cache_window() {
-        assert!(cache_fresh(Duration::from_secs(0)));
-        assert!(cache_fresh(Duration::from_secs(14)));
-        assert!(!cache_fresh(Duration::from_secs(15)));
+    fn box_cache_hit_inside_the_window() {
+        let cache = BoxCache::new();
+        let t0 = Instant::now();
+        assert_eq!(cache.view(BASE, t0), (None, false));
+        assert!(cache.claim(BASE, t0));
+        cache.finish(BASE, Ok(summary_with(false, true)), t0);
+        let (b, stale) = cache.view(BASE, secs(t0, 1));
+        assert_eq!(b.unwrap().cpu_pct, 61.0);
+        assert!(!stale);
+        assert!(!cache.claim(BASE, secs(t0, 5)));
+        assert!(!cache.claim(BASE, secs(t0, 14)));
+        assert!(cache.claim(BASE, secs(t0, 15)));
+    }
+
+    #[test]
+    fn only_one_read_runs_at_a_time() {
+        let cache = BoxCache::new();
+        let t0 = Instant::now();
+        assert!(cache.claim(BASE, t0));
+        assert!(!cache.claim(BASE, secs(t0, 60)));
+        cache.finish(BASE, Err("failed".into()), secs(t0, 61));
+        assert!(cache.claim(BASE, secs(t0, 61)));
+    }
+
+    #[test]
+    fn failed_read_with_nothing_good_shows_nothing() {
+        let cache = BoxCache::new();
+        let t0 = Instant::now();
+        assert!(cache.claim(BASE, t0));
+        cache.finish(BASE, Err("failed".into()), t0);
+        assert_eq!(cache.view(BASE, secs(t0, 1)), (None, false));
+    }
+
+    #[test]
+    fn failed_read_keeps_last_good_stale_for_ten_minutes() {
+        let cache = BoxCache::new();
+        let t0 = Instant::now();
+        assert!(cache.claim(BASE, t0));
+        cache.finish(BASE, Ok(summary_with(false, true)), t0);
+        assert!(cache.claim(BASE, secs(t0, 16)));
+        cache.finish(BASE, Err("failed".into()), secs(t0, 16));
+        let (b, stale) = cache.view(BASE, secs(t0, 17));
+        assert!(b.is_some() && stale);
+        let (b, stale) = cache.view(BASE, secs(t0, 599));
+        assert!(b.is_some() && stale);
+        assert_eq!(cache.view(BASE, secs(t0, 600)), (None, false));
+        assert_eq!(cache.view(BASE, secs(t0, 900)), (None, false));
+    }
+
+    #[test]
+    fn a_new_good_read_clears_the_stale_mark() {
+        let cache = BoxCache::new();
+        let t0 = Instant::now();
+        assert!(cache.claim(BASE, t0));
+        cache.finish(BASE, Err("failed".into()), t0);
+        assert!(cache.claim(BASE, secs(t0, 16)));
+        cache.finish(BASE, Ok(summary_with(false, true)), secs(t0, 16));
+        assert!(!cache.view(BASE, secs(t0, 17)).1);
+    }
+
+    #[test]
+    fn helper_stale_flag_and_missing_system_block() {
+        let cache = BoxCache::new();
+        let t0 = Instant::now();
+        assert!(cache.claim(BASE, t0));
+        cache.finish(BASE, Ok(summary_with(true, true)), t0);
+        assert!(cache.view(BASE, secs(t0, 1)).1);
+        // A summary with no system block counts as a failed read.
+        assert!(cache.claim(BASE, secs(t0, 16)));
+        cache.finish(BASE, Ok(summary_with(false, false)), secs(t0, 16));
+        let (b, stale) = cache.view(BASE, secs(t0, 17));
+        assert!(b.is_some() && stale);
+        let fresh = BoxCache::new();
+        assert!(fresh.claim(BASE, t0));
+        fresh.finish(BASE, Ok(summary_with(false, false)), t0);
+        assert_eq!(fresh.view(BASE, secs(t0, 1)), (None, false));
+    }
+
+    #[test]
+    fn a_changed_helper_address_never_shows_the_old_numbers() {
+        let cache = BoxCache::new();
+        let other = "https://other.example.invalid";
+        let t0 = Instant::now();
+        assert!(cache.claim(BASE, t0));
+        cache.finish(BASE, Ok(summary_with(false, true)), t0);
+        assert!(cache.view(BASE, secs(t0, 1)).0.is_some());
+        assert_eq!(cache.view(other, secs(t0, 2)), (None, false));
+        // The new address is due at once, and a late answer from the old one is ignored.
+        assert!(cache.claim(other, secs(t0, 2)));
+        cache.finish(BASE, Ok(summary_with(false, true)), secs(t0, 3));
+        assert_eq!(cache.view(other, secs(t0, 4)), (None, false));
+        cache.finish(other, Ok(summary_with(false, true)), secs(t0, 5));
+        assert!(cache.view(other, secs(t0, 6)).0.is_some());
+    }
+
+    #[test]
+    fn simultaneous_cold_calls_cause_one_fetch() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+        let cache = Arc::new(BoxCache::new());
+        let fetches = Arc::new(AtomicUsize::new(0));
+        let mut handles = Vec::new();
+        for _ in 0..8 {
+            let (cache, fetches) = (cache.clone(), fetches.clone());
+            handles.push(std::thread::spawn(move || {
+                refresh_with(&cache, BASE, Instant::now(), || {
+                    fetches.fetch_add(1, Ordering::SeqCst);
+                    std::thread::sleep(Duration::from_millis(100));
+                    Ok(summary_with(false, true))
+                })
+            }));
+        }
+        let ran: usize = handles.into_iter().map(|h| usize::from(h.join().unwrap())).sum();
+        assert_eq!(ran, 1);
+        assert_eq!(fetches.load(Ordering::SeqCst), 1);
+        assert!(cache.view(BASE, Instant::now()).0.is_some());
+    }
+
+    #[test]
+    fn a_slow_helper_never_delays_the_numbers() {
+        use std::sync::{mpsc, Arc};
+        let cache = Arc::new(BoxCache::new());
+        let (release, wait) = mpsc::channel::<()>();
+        let worker = {
+            let cache = cache.clone();
+            std::thread::spawn(move || {
+                refresh_with(&cache, BASE, Instant::now(), || {
+                    let _ = wait.recv_timeout(Duration::from_secs(10));
+                    Err("failed".to_string())
+                })
+            })
+        };
+        // Wait until the slow read has started.
+        let started = Instant::now();
+        while !cache.state().in_flight {
+            assert!(started.elapsed() < Duration::from_secs(5), "read never started");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        let asked = Instant::now();
+        assert_eq!(cache.view(BASE, Instant::now()), (None, false));
+        assert!(!cache.claim(BASE, Instant::now()));
+        assert!(asked.elapsed() < Duration::from_millis(500));
+        release.send(()).unwrap();
+        assert!(worker.join().unwrap());
+    }
+
+    #[test]
+    fn a_redirect_is_not_an_answer() {
+        assert!(accept(ureq::Response::new(302, "Found", "").unwrap()).is_err());
+        assert!(accept(ureq::Response::new(301, "Moved", "").unwrap()).is_err());
+        assert!(accept(ureq::Response::new(404, "Not Found", "").unwrap()).is_err());
+        assert!(accept(ureq::Response::new(200, "OK", "{}").unwrap()).is_ok());
+    }
+
+    #[test]
+    fn the_read_stops_at_the_cap() {
+        use std::io::Cursor;
+        assert_eq!(read_limited(Cursor::new(vec![b' '; 70 * 1024])), Err("failed".to_string()));
+        assert_eq!(read_limited(Cursor::new(vec![b' '; MAX_ANSWER + 1])), Err("failed".to_string()));
+        assert_eq!(read_limited(Cursor::new(vec![b' '; MAX_ANSWER])).unwrap().len(), MAX_ANSWER);
+        assert_eq!(read_limited(Cursor::new(Vec::new())).unwrap().len(), 0);
+    }
+
+    #[test]
+    fn the_cap_reader_never_pulls_more_than_the_cap() {
+        struct Endless(usize);
+        impl Read for Endless {
+            fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+                self.0 += buf.len();
+                buf.fill(b' ');
+                Ok(buf.len())
+            }
+        }
+        let mut src = Endless(0);
+        assert_eq!(read_limited(&mut src), Err("failed".to_string()));
+        assert!(src.0 <= MAX_ANSWER + 1 + 8192, "read {} bytes", src.0);
+    }
+
+    #[test]
+    fn only_ids_from_the_last_summary_can_be_opened() {
+        let s = shape_summary(&full()).unwrap();
+        let ids = ids_of(&s);
+        assert!(ids.contains(&"a1b2c3d4-0001".to_string()));
+        assert!(ids.contains(&"a1b2c3d4-0002".to_string()));
+        assert_eq!(ids.len(), 2);
+        assert!(!id_is_known("deadbeef-0000-0000"));
+        remember_ids(ids);
+        assert!(id_is_known("a1b2c3d4-0001"));
+        // Well formed, but never in a summary.
+        assert!(valid_session_id("deadbeef-0000-0000"));
+        assert!(!id_is_known("deadbeef-0000-0000"));
     }
 }
