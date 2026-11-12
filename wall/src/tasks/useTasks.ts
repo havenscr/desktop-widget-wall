@@ -39,6 +39,9 @@ export function useTasks(): TasksState {
   // Ids completed this session and not yet faded out; a refresh keeps them in place until then.
   const leaving = useRef(new Map<string, TaskItem>());
   const pending = useRef(new Set<string>());
+  const queued = useRef(false);
+  const started = useRef(0);
+  const completed = useRef(new Map<string, { saved: boolean; faded: boolean; savedAfter: number }>());
 
   useEffect(() => {
     mounted.current = true;
@@ -50,17 +53,35 @@ export function useTasks(): TasksState {
     };
   }, []);
 
-  const refresh = useCallback(async () => {
-    if (inFlight.current) return;
-    inFlight.current = true;
+  const fetchList = useCallback(async () => {
+    const mine = ++started.current;
     try {
       const list = await invoke<TaskItem[]>('wall2_tasks_next');
       if (!mounted.current) return;
       const fresh = Array.isArray(list) ? list : [];
+      // A list fetched after a completed row was saved and faded decides that row from now on:
+      // gone, or open again (reopened, or a recurring task that keeps its id).
+      const settled: string[] = [];
+      for (const [id, c] of completed.current) {
+        if (c.saved && c.faded && mine > c.savedAfter) settled.push(id);
+      }
+      for (const id of settled) completed.current.delete(id);
       const kept = [...leaving.current.values()].filter((t) => !fresh.some((f) => f.id === t.id));
       const next = [...fresh, ...kept];
       tasksRef.current = next;
       setTasks(next);
+      if (settled.length > 0) {
+        setHidden((h) => {
+          const n = new Set(h);
+          settled.forEach((id) => n.delete(id));
+          return n;
+        });
+        setMarks((m) => {
+          const n = { ...m };
+          settled.forEach((id) => delete n[id]);
+          return n;
+        });
+      }
       setStatus('ready');
       setLastOk(Date.now());
     } catch (e) {
@@ -68,11 +89,26 @@ export function useTasks(): TasksState {
       const text = e instanceof Error ? e.message : String(e);
       if (text === NOT_CONFIGURED) setStatus('unconfigured');
       else setStatus('error');
+    }
+  }, []);
+
+  // One list request at a time. A request made while one is running queues a single trailing one.
+  const refresh = useCallback(async () => {
+    if (inFlight.current) {
+      queued.current = true;
+      return;
+    }
+    inFlight.current = true;
+    try {
+      do {
+        queued.current = false;
+        await fetchList();
+      } while (queued.current && mounted.current);
     } finally {
       inFlight.current = false;
       if (mounted.current) setNow(Date.now());
     }
-  }, []);
+  }, [fetchList]);
 
   useEffect(() => {
     if (!visible) return;
@@ -92,16 +128,16 @@ export function useTasks(): TasksState {
       setMarks((m) => ({ ...m, [id]: 'done' }));
       const row = tasksRef.current.find((t) => t.id === id);
       if (row) leaving.current.set(id, row);
-      let faded = false;
-      let saved = false;
+      const rec = { saved: false, faded: false, savedAfter: Infinity };
+      completed.current.set(id, rec);
       const finish = () => {
-        if (!faded || !saved || !mounted.current) return;
+        if (!rec.faded || !rec.saved || !mounted.current) return;
         leaving.current.delete(id);
         void refresh();
       };
       const fade = setTimeout(() => {
         fades.current.delete(fade);
-        faded = true;
+        rec.faded = true;
         if (!mounted.current) return;
         setHidden((h) => new Set(h).add(id));
         finish();
@@ -110,12 +146,14 @@ export function useTasks(): TasksState {
       invoke('wall2_task_done', { id })
         .then(() => {
           pending.current.delete(id);
-          saved = true;
+          rec.saved = true;
+          rec.savedAfter = started.current;
           finish();
         })
         .catch(() => {
           pending.current.delete(id);
           leaving.current.delete(id);
+          completed.current.delete(id);
           clearTimeout(fade);
           fades.current.delete(fade);
           if (!mounted.current) return;

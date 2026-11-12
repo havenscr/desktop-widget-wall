@@ -107,3 +107,55 @@ it('Focus starts a session named after the task', async () => {
   expect(s.status === 'running' && s.label).toBe('Write the report');
   expect((screen.getByRole('button', { name: 'Focus' }) as HTMLButtonElement).disabled).toBe(true);
 });
+
+it('shows a completed task again when a later list has it open (reopened or recurring)', async () => {
+  let list = [task('a', 'First')];
+  mocks.set('wall2_tasks_next', () => list);
+  mocks.set('wall2_task_done', () => {
+    list = [];
+  });
+  render(<TaskCard />);
+  await flush();
+  fireEvent.click(screen.getByLabelText('Mark done: First'));
+  await flush(2100);
+  expect(screen.queryByText('First')).toBeNull();
+  await flush(0);
+  // The list fetched after the save no longer has it; the id is free again.
+  list = [task('a', 'First')];
+  await flush(120_000);
+  const row = screen.getByText('First').closest('li');
+  expect(row).toBeTruthy();
+  expect(row?.className).not.toContain('done');
+});
+
+it('queues one trailing refresh when a refresh is requested during a request', async () => {
+  let list = [task('a', 'First'), task('b', 'Second')];
+  const waiting: Array<() => void> = [];
+  let defer = false;
+  const calls = vi.fn();
+  mocks.set('wall2_tasks_next', () => {
+    calls();
+    const snapshot = [...list];
+    if (!defer) return snapshot;
+    return new Promise((resolve) => waiting.push(() => resolve(snapshot)));
+  });
+  mocks.set('wall2_task_done', (args) => {
+    list = list.filter((t) => t.id !== args?.id);
+  });
+  render(<TaskCard />);
+  await flush();
+  defer = true;
+  fireEvent.click(screen.getByLabelText('Mark done: First'));
+  fireEvent.click(screen.getByLabelText('Mark done: Second'));
+  await flush(2100);
+  // The first completion started a refresh; the second one asked while it ran.
+  expect(calls).toHaveBeenCalledTimes(2);
+  await act(async () => waiting.shift()?.());
+  await flush(0);
+  expect(calls).toHaveBeenCalledTimes(3);
+  await act(async () => waiting.shift()?.());
+  await flush(0);
+  expect(screen.queryByText('First')).toBeNull();
+  expect(screen.queryByText('Second')).toBeNull();
+  expect(screen.getByText('Nothing due')).toBeTruthy();
+});
