@@ -123,26 +123,37 @@ skyline, the lake in front. It is drawn on one canvas by `HorizonCanvas.tsx`.
 - **Renderer.** `renderer.ts` is the original hand-tuned drawing code ported to
   TypeScript. The maths and every constant are unchanged, so treat it as art, not
   as code to tidy. `draw(ctx, HorizonDrawOptions)` documents every option.
-  The terrain (public elevation profiles) is in `terrain/west.json` and
-  `terrain/south.json`.
+  The terrain (public elevation profiles) is one panorama, `terrain/pano.json`, from
+  azimuth 128 (Rainier, to the south) round to 300 (the Olympics, to the west). The
+  older single views `terrain/west.json` and `terrain/south.json` are imported only by
+  `pano.parity.test.ts` (through `registerTerrain`), so they are not bundled; that test
+  checks the panorama draws within 0.5 percent of the stage height of them for 99
+  percent of the skyline (the worst sample is 4.1 px, on a cliff on Unwind).
 - **Public API.** `index.ts` exports `drawHorizon(ctx, options)`, `HorizonOptions`,
   `sun`, `when`, `CAMERAS` and `blendCamera`.
 - **Cameras.** `cameras.ts` holds one framing per place (`work`, `home`,
   `unwind`). Changing place glides the camera there over 1.6 seconds with a cubic
   ease (`blendCamera(from, to, t)`); the glide starts from wherever the camera is,
   so interrupting it is smooth.
-- **Morning view.** On Home, from 5:00 AM up to 11:30 AM local time, the camera turns
-  south to Mount Rainier (`HOME_MORNING` in `cameras.ts`: `ter: 'south'`, azimuth 132 at
-  the left edge, 42 px per degree, terrain exaggerated 1.9, horizon at y 582 like
-  Home's west view). The rest of the day Home keeps the west view. `homeCameraFor(date)`
+- **Morning view.** On Home, from 5:00 AM up to 11:30 AM local time, the camera swings
+  south to Mount Rainier (`HOME_MORNING` in `cameras.ts`: azimuth 132 at the left edge,
+  42 px per degree, terrain exaggerated 1.9, horizon at y 582 like Home's west view,
+  snow line 0.86 against 0.84 on the west presets, and no ripple). Every camera looks at
+  the same panorama, so the turn is a glide: any move of more than 40 degrees
+  (`SWING_DEGREES`) takes `SWING_SECONDS` (3.2 s) instead of 1.6, and Seattle slides out
+  to the right on the way round and back in on the way back. The rest of the day Home
+  keeps the west view. `homeCameraFor(date)`
   holds the rule and `cameraFor(place, ms)` applies it to Home only; Work and Unwind never
   change. `HorizonCanvas` looks again once a minute, so 5:00 AM and 11:30 AM take effect
   while Home is open.
 - **Cross-fade.** `blendCamera` cannot blend two terrains, so when the new camera has a
-  different `ter` (entering Home in the morning, or 11:30 AM passing) the old view stays
-  on a second canvas underneath while the main canvas fades in over it for 2 seconds
-  (`crossfade.ts`), then the second canvas is hidden again. Moves within one terrain keep
-  the 1.6 second glide. Reduced motion and the review still switch instantly.
+  different `ter` the old view stays on a second canvas underneath while the main canvas
+  fades in over it for 2 seconds (`crossfade.ts`), then the second canvas is hidden
+  again. No shipped preset reaches it any more: all of them are on `pano`, so entering
+  Home in the morning and 11:30 AM passing both swing. It stays for a future terrain.
+  While a glide runs toward or away from a camera with `ea` 0, `echoOptions` draws no
+  ripple, so the filled echo never crosses Rainier. Reduced motion and the review still
+  switch instantly.
 - **Real time.** The sun, sky and city lights come from `Date.now()`, passed in
   as the `now` prop of `HorizonCanvas` (inject one in tests). The hour is never
   taken from the place. The music ripple (`echo`) and the moon are
