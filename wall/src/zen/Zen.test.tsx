@@ -41,7 +41,7 @@ function clockAt(base: number) {
 beforeEach(() => {
   setReducedMotion(false);
   vi.useFakeTimers();
-  usePlaceStore.setState({ active: 'zen' });
+  usePlaceStore.setState({ active: 'zen', zenDream: false });
 });
 afterEach(() => vi.useRealTimers());
 
@@ -335,4 +335,15 @@ it('the veil leaves the flames at about 45 percent of today and lifts in Dream',
   cleanup();
   const night = render(<Zen nowMs={clockAt(NIGHT)} />);
   expect((night.container.querySelector('.zen-veil') as HTMLElement).style.opacity).toBe('0');
+});
+
+it("opens straight into Dream by day from Unwind's Dream tab, once", () => {
+  usePlaceStore.setState({ active: 'unwind', from: 'work', zenDream: false });
+  usePlaceStore.getState().openDream();
+  const r = render(<Zen nowMs={clockAt(DAY)} />);
+  expect(screen.getByLabelText('Wake')).toBeTruthy();
+  expect(usePlaceStore.getState().zenDream).toBe(false);
+  r.unmount();
+  render(<Zen nowMs={clockAt(DAY)} />);
+  expect(screen.queryByLabelText('Wake')).toBeNull();
 });

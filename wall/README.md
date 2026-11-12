@@ -458,10 +458,50 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
 
 ## Unwind and Watt
 
-`wall/src/screens/Unwind.tsx`: large album art, title, artist, a thin progress bar with
-position and duration (advanced locally twice a second between polls while playing and
-visible, never past the duration) and previous, play or pause, next buttons (96 by 96).
-"Nothing playing" when stopped. The clock is top left as everywhere.
+`wall/src/screens/Unwind.tsx` lays the place out as the concept's `f_unwind`: the tall
+frame (no ribbon) in the wide zones `470px 1fr 540px`. The parts are in `wall/src/unwind/`.
+
+- **Left wing.** The frame's clock, then "Wednesday night, 49° and clear" (`DateLine.tsx`:
+  the day part, morning, afternoon, evening or night, with the reading from the weather
+  hook; before 5 AM the night still belongs to the day before; without a reading under an
+  hour old the weather part is left out). At the bottom, Tomorrow (`Tomorrow.tsx`): "First
+  thing: AE sync at 9:00", the first event on the calendar day feed (`wall2_meet_day`)
+  tomorrow by local calendar date (between midnight and 5 AM, the day that has just
+  begun, from now), or nothing when there is none or Meet is not set up. After a failed
+  refresh it adds "as of 9:40 PM" (the last good read) and hides once that read is more
+  than 30 minutes old. Under it the status line (`StatusLine.tsx`, "Work is put away. 2
+  agents still running. Nothing needs you.", from the focus timer once it has loaded and
+  the helper summary `wall2_omni_summary` every minute while visible; the agent and
+  needs-you sentences are left out without the helper or when it reports stale data) and
+  the Screens off pill (52 px tall). The wind down ring (PR 10) goes between the date line and Tomorrow.
+- **Centre.** The tabs (`Tabs.tsx`): Listen is this view (its tab controls the player
+  panel); Watch is disabled (not focusable) with "Coming" and opens nothing; Dream opens Zen straight into Dream (`openDream` in the place store;
+  Zen reads the flag once). Below them the player (`Player.tsx`): 224 px art, the source
+  app in pink capitals, a 64 px title, the artist, a 520 px progress bar with times
+  (advanced locally twice a second between polls while playing and visible, never past
+  the duration), then previous, play or pause and next with the playing app's volume
+  (`Volume.tsx`). The slider shows only when `get_audio_sessions` has a session for the
+  playing app, by exact process name or a small alias table ("Spotify" is `Spotify.exe`,
+  "Edge" is `msedge.exe`; never a partial match); otherwise the row closes up. The session
+  is tied to the source it was found for, so after a source change the slider hides until
+  the new app's session is read and a move never reaches the previous app. Moves are
+  clamped to 0 to 1 and sent with `set_audio_session_volume` at most every 100 ms, always
+  ending on the last value (also on unmount); a move pending when the session goes away is
+  dropped. The player sits in a `.u-listen` row so a music browser can join it
+  later.
+- **Nothing playing.** The player keeps its footprint: the last track this wall saw
+  playing (`lastPlayed.ts` follows the shared now playing store; title, artist and source
+  are kept in `wall2-last-played`, the art in memory only) with "Play again" when a media
+  session exists, or "Open Spotify to play again" as plain text when none does, or before
+  anything has played, "Nothing playing" with a calm line over the transport. Never a
+  large empty tile.
+- **Right wing.** The Room card (`RoomCard.tsx`): the home moods from `wall2_moods` as
+  chips; a tap applies one with `wall2_apply_mood`, and the last one applied is marked for
+  three hours (the id is `wall2-last-mood`, shared with Home in its plain format; the time
+  is beside it in `wall2-last-mood-at` as `{"id","at"}`). While loading or not reachable
+  it reads the moods again every 30 seconds. "TV off" waits for the home
+  app reads (PR 24). Not set up or not reachable shrinks the card to one line. The Live now
+  card (PR 27) will stack above it; until then nothing holds its place.
 
 Watt (`wall/src/buddy/`) is the electric sheep, shown on Unwind only, drawn as SVG pixels
 above the horizon canvas. It walks slowly between x 960 and 1220 on the Unwind horizon
@@ -619,9 +659,10 @@ The refresh token is kept in Windows Credential Manager (Windows Credentials, Ge
 
 ### Day feed
 
-`wall2_meet_day` returns today's events for the day ribbon and Home: from local
-midnight to 36 hours after it, past events included, up to 40 merged across both
-accounts. Each event has `key`, `accountId`, `title`, `start`, `end`, `canJoin` and
+`wall2_meet_day` returns today's and tomorrow's events for the day ribbon and Unwind's
+Tomorrow: from local midnight to the local midnight that ends tomorrow (found by local
+date, so a 23 or 25 hour day on a clock change is right), past events included, up to 40
+merged across both accounts, earliest first. The ribbon draws only today's. Each event has `key`, `accountId`, `title`, `start`, `end`, `canJoin` and
 `isLive`, with the same rules as the next-meetings read (no body, attendees or
 organizer; cancelled, declined and all-day events left out; the same invite on both
 accounts once; join links behind keys). `isLive` is true when the subject starts with

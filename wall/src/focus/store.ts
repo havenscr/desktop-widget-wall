@@ -14,6 +14,8 @@ export interface FocusDeps {
 
 export interface FocusStore {
   state: m.FocusState;
+  /** True once `init` has restored the saved state. */
+  loaded: boolean;
   /** Last time the display was refreshed; the on-screen ticker updates it. */
   now: number;
   /** Focus sessions, for the day ribbon (`wall2-focus-day`). Only today's are kept on each write. */
@@ -94,6 +96,7 @@ export function createFocusStore(deps: FocusDeps) {
       state: m.initialFocus,
       now: deps.now(),
       sessions: [],
+      loaded: false,
       init: () => {
         if (initialized) return;
         initialized = true;
@@ -106,7 +109,7 @@ export function createFocusStore(deps: FocusDeps) {
           /* unreadable: idle */
         }
         generation++;
-        set({ state: restored, now: deps.now(), sessions });
+        set({ state: restored, now: deps.now(), sessions, loaded: true });
         arm();
         // Undo a Do Not Disturb a previous run left on, then take it again only if
         // this same state is still running when that finishes.
@@ -150,7 +153,7 @@ export function createFocusStore(deps: FocusDeps) {
         initialized = false;
         if (onVisible) document.removeEventListener('visibilitychange', onVisible);
         onVisible = null;
-        set({ state: m.initialFocus, now: deps.now(), sessions: [] });
+        set({ state: m.initialFocus, now: deps.now(), sessions: [], loaded: false });
       },
     };
   });
