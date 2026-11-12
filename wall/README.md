@@ -35,11 +35,14 @@ rejects with a clear error. Inside Tauri, `invoke` calls the real command.
 `src-tauri/tauri.wall2.conf.json` is a second Tauri config. It overrides only
 the product name ("Widget Wall 2"), identifier, version, the `build` block
 (dev URL `http://localhost:1421`, build commands, `frontendDist` at
-`wall/dist`) and one window (2560 by 720, resizable, no decorations, not always
-on top). Everything else comes from `src-tauri/tauri.conf.json`.
+`wall/dist`) and one window (2560 by 720, resizable, not always on top). The window keeps its title bar (decorations on) because the inherited tray
+handler in `src-tauri/src/lib.rs` calls `set_decorations` on fullscreen toggle;
+the borderless window comes later with the window handling change. Everything
+else comes from `src-tauri/tauri.conf.json`.
 
 ```bash
 npm ci                  # root install, provides the Tauri CLI
+npm --prefix wall ci    # dev:wall2 starts Vite from wall/, so install it first
 npm run dev:wall2       # tauri dev with the second config
 npm run build:wall2     # tauri build with the second config (installers)
 ```
