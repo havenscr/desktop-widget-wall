@@ -33,7 +33,7 @@ it('shows the dot, the alert count and the scan age', async () => {
   expect(screen.getByText('Up, box online')).toBeTruthy();
   expect(screen.getByText('2 open alerts')).toBeTruthy();
   expect(screen.getByText('last scan 4 min ago')).toBeTruthy();
-  expect(container.querySelector('.net-dot.ok')).toBeTruthy();
+  expect(container.querySelector('.net-icon.ok')).toBeTruthy();
 });
 
 it('shows Not set up when feeds.json has no address', async () => {
@@ -50,7 +50,7 @@ it('goes amber when the home app stops answering after a good read', async () =>
   await flush();
   fail = true;
   await flush(300_000);
-  expect(container.querySelector('.net-dot.warn')).toBeTruthy();
+  expect(container.querySelector('.net-icon.warn')).toBeTruthy();
   expect(screen.getByText('Home app not reachable')).toBeTruthy();
 });
 
@@ -114,4 +114,37 @@ it('refreshes link availability after every attempt, even with the same portal',
   await flush(300_000);
   expect(screen.queryByRole('button', { name: 'Security' })).toBeNull();
   expect(screen.getByRole('button', { name: 'Firewalla' })).toBeTruthy();
+});
+
+it('fills the card: numbers the feed has, up to three alert rows and the rest as a number', async () => {
+  mocks.set('wall2_home_security', () => ({
+    ...summary,
+    alerts: 5,
+    devices: 31,
+    firewalla: { ...summary.firewalla, alarms24h: 3 },
+    topAlerts: [
+      { text: 'New device joined', severity: 'high', atMs: Date.parse('2026-11-11T11:48:00Z') },
+      { text: 'Port scan blocked', severity: 'low', atMs: Date.parse('2026-11-11T09:00:00Z') },
+      { text: 'Odd upload', severity: null, atMs: null },
+    ],
+  }));
+  const { container } = render(<NetworkTile />);
+  await flush();
+  const nums = [...container.querySelectorAll('.st3')].map((n) => n.textContent);
+  expect(nums).toEqual(['31devices', '3alarms, 24h']);
+  const rows = [...container.querySelectorAll('.net-alert')].map((r) => r.textContent);
+  expect(rows).toEqual(['New device joined12m', 'Port scan blocked3h', 'Odd upload']);
+  expect(container.querySelector('.sev.high')).toBeTruthy();
+  expect(screen.getByText('2 more open')).toBeTruthy();
+  expect(container.querySelector('.net-head')?.textContent).toBe('Network and security2 more open');
+  expect(screen.queryByText('5 open alerts')).toBeNull();
+});
+
+it('says All quiet with no open alerts, and shows no numbers row when the feed has none', async () => {
+  mocks.set('wall2_home_security', () => ({ ...summary, alerts: 0, firewalla: { ...summary.firewalla, alarms24h: null } }));
+  const { container } = render(<NetworkTile />);
+  await flush();
+  expect(screen.getByText('All quiet')).toBeTruthy();
+  expect(container.querySelector('.net-nums')).toBeNull();
+  expect(container.querySelector('.net-alerts')).toBeNull();
 });

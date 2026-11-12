@@ -1,29 +1,54 @@
+import { IconShield, IconShieldCheck, IconShieldExclamation, IconShieldX } from '@tabler/icons-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { invoke } from '../bridge/tauri';
-import { alertsLine, lastScanText, statusLine, tone, type SecuritySummary } from './model';
+import { ageText, alertRows, alertsLine, lastScanText, netNumbers, statusLine, tone, type SecuritySummary, type Tone } from './model';
 import { useSecurity } from './useSecurity';
 
-/** Network and security: a status dot and line, the open-alert count and the last scan age. */
+const SHIELD = { ok: IconShieldCheck, warn: IconShieldExclamation, bad: IconShieldX } as const;
+
+function Status({ t, text, aside }: { t: Tone | 'off'; text: string; aside?: string | null }) {
+  const Glyph = t === 'off' ? IconShield : SHIELD[t];
+  return (
+    <div className="net-status">
+      <Glyph className={`net-icon ${t}`} size={30} stroke={1.8} aria-hidden="true" />
+      <span className="t2 net-line">{text}</span>
+      {aside && <span className="xs net-aside">{aside}</span>}
+    </div>
+  );
+}
+
+/**
+ * Network and security, as the concept's card: the status line with its shield, the
+ * numbers the feed has (devices, alarms in 24 hours, blocked, box temperature) spread
+ * evenly, up to three open alerts as one-line rows, and the Security and Firewalla links
+ * as full-width buttons along the bottom. The card is as tall as what it holds.
+ */
 export function NetworkTile() {
   const { status, summary, now, attempts } = useSecurity();
   let body;
   if (status === 'unconfigured') {
-    body = <div className="s">Not set up</div>;
+    body = <Status t="off" text="Not set up" />;
   } else if (status === 'loading') {
-    body = <div className="s">Loading</div>;
+    body = <Status t="off" text="Loading" />;
   } else if (!summary) {
     body = (
-      <div className="net-status">
-        <span className="net-dot warn" aria-hidden="true" />
-        <span className="t2">Home app not reachable</span>
-      </div>
+      <>
+        <Status t="warn" text="Home app not reachable" />
+        <div className="s">Checks again every 5 minutes.</div>
+      </>
     );
   } else {
     body = <Ready summary={summary} now={now} stale={status === 'error'} />;
   }
+  // Lists stop at three and the rest is a number, on the header line to keep the card short.
+  const more = summary && status !== 'unconfigured' && status !== 'loading' ? summary.alerts - alertRows(summary).length : 0;
+  const shown = summary ? alertRows(summary).length : 0;
   return (
     <section className="panel network" aria-label="Network and security">
-      <span className="k">Network and security</span>
+      <div className="net-head">
+        <span className="k">Network and security</span>
+        {shown > 0 && more > 0 && <span className="xs">{more} more open</span>}
+      </div>
       {body}
       <Links refresh={attempts} />
     </section>
@@ -33,14 +58,37 @@ export function NetworkTile() {
 function Ready({ summary, now, stale }: { summary: SecuritySummary; now: number; stale: boolean }) {
   const t = stale ? 'warn' : tone(summary);
   const scan = lastScanText(summary.lastScan, now);
+  const nums = netNumbers(summary);
+  const rows = alertRows(summary);
   return (
     <>
-      <div className="net-status">
-        <span className={`net-dot ${t}`} aria-hidden="true" />
-        <span className="t2">{stale ? 'Home app not reachable' : statusLine(summary)}</span>
-      </div>
-      <div className="b6">{alertsLine(summary.alerts)}</div>
-      {scan && <div className="s">{scan}</div>}
+      <Status t={t} text={stale ? 'Home app not reachable' : statusLine(summary)} aside={scan} />
+      {nums.length > 0 && (
+        <div className={stale ? 'net-nums stale' : 'net-nums'} style={{ gridTemplateColumns: `repeat(${nums.length}, minmax(0, 1fr))` }}>
+          {nums.map((n) => (
+            <div key={n.key} className="st3">
+              <b>{n.value}</b>
+              <span>{n.label}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {rows.length > 0 ? (
+        <ul className={stale ? 'net-alerts stale' : 'net-alerts'} aria-label="Open alerts">
+          {rows.map((r, i) => {
+            const age = ageText(r.atMs, now);
+            return (
+              <li key={i} className="net-alert">
+                <i className={`sev ${r.severity ?? 'none'}`} aria-hidden="true" />
+                <span className="net-alert-text">{r.text}</span>
+                {age && <span className="xs">{age}</span>}
+              </li>
+            );
+          })}
+        </ul>
+      ) : (
+        summary.alerts > 0 && <div className="b6">{alertsLine(summary.alerts)}</div>
+      )}
     </>
   );
 }
@@ -52,7 +100,7 @@ interface LinkAvailability {
   portal: boolean;
 }
 
-/** Quiet text buttons that open the home app's Security page or the Firewalla portal (Rust opens them). */
+/** Full-width buttons that open the home app's Security page or the Firewalla portal (Rust opens them). */
 function Links({ refresh }: { refresh: number }) {
   const [avail, setAvail] = useState<LinkAvailability>({ security: false, portal: false });
   const [failed, setFailed] = useState(false);

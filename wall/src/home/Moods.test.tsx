@@ -1,8 +1,8 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
-import { IconBulb, IconMoon, IconSun, IconSunset } from '@tabler/icons-react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { mocks } from '../bridge/tauri';
-import { LAST_MOOD_KEY, Moods, moodIcon, moodLabel } from './Moods';
+import { LAST_MOOD_KEY, MOODS_CACHE_KEY, Moods, moodLabel, moodNote } from './Moods';
+import { artKind } from './MoodArt';
 
 const flush = async (ms = 0) => {
   await act(async () => {
@@ -23,13 +23,15 @@ afterEach(() => {
   mocks.clear();
 });
 
-it('maps ids to labels and icons', () => {
+it('maps ids to labels, notes and art', () => {
   expect(moodLabel({ id: 'lateNight', label: '' })).toBe('Late Night');
   expect(moodLabel({ id: 'day', label: 'Day' })).toBe('Day');
-  expect(moodIcon('day')).toBe(IconSun);
-  expect(moodIcon('evening')).toBe(IconSunset);
-  expect(moodIcon('lateNight')).toBe(IconMoon);
-  expect(moodIcon('movie')).toBe(IconBulb);
+  expect(moodNote('day')).toBe('bright and cool');
+  expect(moodNote('reading')).toBeNull();
+  expect(artKind('day')).toBe('day');
+  expect(artKind('evening')).toBe('evening');
+  expect(artKind('lateNight')).toBe('night');
+  expect(artKind('reading')).toBe('lamp');
 });
 
 it('lists the moods in order and never applies one without a tap', async () => {
@@ -38,7 +40,7 @@ it('lists the moods in order and never applies one without a tap', async () => {
   mocks.set('wall2_apply_mood', apply);
   render(<Moods />);
   await flush(11 * 60_000);
-  const names = screen.getAllByRole('button').map((b) => b.textContent);
+  const names = screen.getAllByRole('button').map((b) => b.querySelector('.mood-name')?.textContent);
   expect(names).toEqual(['Day', 'Evening', 'Late Night']);
   expect(apply).not.toHaveBeenCalled();
 });
@@ -90,7 +92,7 @@ it('shows a failure under the row for 5 seconds and does not remember it', async
   expect(screen.queryByText('Moods are not set up in the home app yet')).toBeNull();
 });
 
-it('shows Not set up with no config and nothing for an empty list', async () => {
+it('shows Not set up with no config, and one compact card for an empty list', async () => {
   mocks.set('wall2_moods', () => Promise.reject(new Error('not-configured')));
   const first = render(<Moods />);
   await flush();
@@ -99,7 +101,8 @@ it('shows Not set up with no config and nothing for an empty list', async () => 
   mocks.set('wall2_moods', () => []);
   const second = render(<Moods />);
   await flush();
-  expect(second.container.innerHTML).toBe('');
+  expect(second.container.querySelectorAll('.mood-btn')).toHaveLength(0);
+  expect(second.container.querySelector('.mood-empty')?.textContent).toBe('No moods set up in the home app yet');
 });
 
 it('reloads the list every 10 minutes', async () => {
@@ -123,12 +126,14 @@ it('shows Not set up when applying fails because the config is missing', async (
   expect(screen.queryByText('Could not set the mood')).toBeNull();
 });
 
-it('names the last mood "last used" and does not use aria-pressed', async () => {
+it('marks the last mood "On now" and does not use aria-pressed', async () => {
   localStorage.setItem(LAST_MOOD_KEY, 'evening');
   mocks.set('wall2_moods', () => LIST);
-  render(<Moods />);
+  const { container } = render(<Moods />);
   await flush();
-  expect(screen.getByRole('button', { name: 'Evening, last used' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Evening, on now' })).toBeTruthy();
+  expect(container.querySelectorAll('.mood-tag')).toHaveLength(1);
+  expect(screen.getByText('On now').closest('button')?.getAttribute('data-mood')).toBe('evening');
   expect(screen.getByRole('button', { name: 'Day' })).toBeTruthy();
   for (const b of screen.getAllByRole('button')) expect(b.hasAttribute('aria-pressed')).toBe(false);
 });
@@ -191,4 +196,26 @@ it('shows nothing, not Loading, while the page is hidden at first mount', async 
   expect(list).toHaveBeenCalledTimes(1);
   expect(screen.getAllByRole('button')).toHaveLength(3);
   hidden.mockRestore();
+});
+
+it('keeps the last good cards with a quiet amber line when the home app is away', async () => {
+  mocks.set('wall2_moods', () => LIST);
+  const a = render(<Moods />);
+  await flush();
+  expect(JSON.parse(localStorage.getItem(MOODS_CACHE_KEY) ?? '[]')).toHaveLength(3);
+  a.unmount();
+  mocks.set('wall2_moods', () => Promise.reject(new Error('Could not reach the service')));
+  const { container } = render(<Moods />);
+  await flush();
+  expect(screen.getAllByRole('button')).toHaveLength(3);
+  expect(container.querySelector('.warn-text')?.textContent).toBe('Home app not reachable');
+});
+
+it('with no list ever read, a failure is one quiet line and no cards', async () => {
+  mocks.set('wall2_moods', () => Promise.reject(new Error('Could not reach the service')));
+  const { container } = render(<Moods />);
+  await flush();
+  expect(screen.queryByRole('button')).toBeNull();
+  expect(container.querySelector('.moods.bare')).toBeTruthy();
+  expect(screen.getByText('Home app not reachable')).toBeTruthy();
 });

@@ -51,6 +51,20 @@ pub struct SecuritySummary {
     pub alerts: u64,
     pub firewalla: Option<FirewallaInfo>,
     pub portal_url: Option<String>,
+    /// Up to three of the open alerts as one-line rows, newest first. Empty when the home
+    /// app's alerts carry no readable text.
+    pub top_alerts: Vec<AlertRow>,
+}
+
+/// One open alert, reduced to what the network tile shows on one line.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AlertRow {
+    pub text: String,
+    /// `high`, `medium` or `low`; None when the alert names no severity.
+    pub severity: Option<String>,
+    /// When the alert was raised, epoch milliseconds; None when unreadable.
+    pub at_ms: Option<i64>,
 }
 
 // Section: configuration
@@ -619,6 +633,91 @@ fn visible_alerts(alerts: &[Value], received_at: Option<&Value>) -> u64 {
     alerts.iter().filter(|a| !alert_hidden(a, received)).count() as u64
 }
 
+const MAX_ALERT_ROWS: usize = 3;
+const MAX_ALERT_CHARS: usize = 120;
+
+/// The first string field present among `keys`, trimmed, with control characters removed
+/// and capped at `MAX_ALERT_CHARS`.
+fn first_text(obj: &serde_json::Map<String, Value>, keys: &[&str]) -> Option<String> {
+    keys.iter().find_map(|k| {
+        let raw = obj.get(*k)?.as_str()?;
+        let clean: String = raw.chars().filter(|c| !c.is_control()).collect();
+        let clean = clean.split_whitespace().collect::<Vec<_>>().join(" ");
+        if clean.is_empty() {
+            return None;
+        }
+        Some(clean.chars().take(MAX_ALERT_CHARS).collect())
+    })
+}
+
+/// A type slug as words: underscores and hyphens become spaces, runs of spaces collapse,
+/// and the first letter is capitalised (`abnormal_upload` reads "Abnormal upload").
+fn humanize_slug(raw: &str) -> String {
+    let spaced: String = raw.chars().map(|c| if c == '_' || c == '-' { ' ' } else { c }).collect();
+    let words = spaced.split_whitespace().collect::<Vec<_>>().join(" ");
+    let mut chars = words.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().chain(chars).collect(),
+        None => String::new(),
+    }
+}
+
+/// `high`, `medium` or `low` from the common severity words; None for anything else.
+fn alert_severity(obj: &serde_json::Map<String, Value>) -> Option<String> {
+    let raw = first_text(obj, &["severity", "level", "priority"])?.to_ascii_lowercase();
+    let level = match raw.as_str() {
+        "critical" | "high" | "severe" | "error" | "urgent" => "high",
+        "medium" | "moderate" | "warning" | "warn" => "medium",
+        "low" | "info" | "minor" | "notice" => "low",
+        _ => return None,
+    };
+    Some(level.to_string())
+}
+
+/// Epoch milliseconds from an ISO time string or a number of seconds (or milliseconds,
+/// when it is too large to be seconds).
+fn alert_time(obj: &serde_json::Map<String, Value>) -> Option<i64> {
+    for k in ["ts", "at", "time", "createdAt", "detectedAt", "firstSeen", "lastSeen"] {
+        match obj.get(k) {
+            Some(Value::String(_)) => {
+                let secs = parse_time(obj.get(k));
+                if secs.is_finite() {
+                    return Some((secs * 1000.0).round() as i64);
+                }
+            }
+            Some(Value::Number(n)) => {
+                let Some(f) = n.as_f64().filter(|f| f.is_finite() && *f > 0.0) else { continue };
+                return Some(if f > 1e11 { f.round() as i64 } else { (f * 1000.0).round() as i64 });
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// Up to three visible alerts with readable text, newest first (alerts with no time last,
+/// in the home app's order).
+fn alert_rows(alerts: &[Value], received_at: Option<&Value>) -> Vec<AlertRow> {
+    let received = parse_time(received_at);
+    let mut rows: Vec<AlertRow> = alerts
+        .iter()
+        .filter(|a| !alert_hidden(a, received))
+        .filter_map(|a| {
+            let obj = a.as_object()?;
+            Some(AlertRow {
+                text: first_text(obj, &["title", "message", "text", "summary", "reason"])
+                    .or_else(|| first_text(obj, &["type"]).map(|t| humanize_slug(&t)))
+                    .filter(|t| !t.is_empty())?,
+                severity: alert_severity(obj),
+                at_ms: alert_time(obj),
+            })
+        })
+        .collect();
+    rows.sort_by(|a, b| b.at_ms.unwrap_or(i64::MIN).cmp(&a.at_ms.unwrap_or(i64::MIN)));
+    rows.truncate(MAX_ALERT_ROWS);
+    rows
+}
+
 /// The portal link, kept only when it is `https` on `firewalla.net` or a subdomain.
 fn portal_link(raw: Option<&Value>) -> Option<String> {
     let text = raw?.as_str()?.trim();
@@ -676,6 +775,7 @@ fn shape_security(body: &Value) -> SecuritySummary {
         alerts: 0,
         firewalla: None,
         portal_url: None,
+        top_alerts: Vec::new(),
     };
     if body.get("ok").and_then(Value::as_bool) != Some(true) {
         return out;
@@ -690,6 +790,7 @@ fn shape_security(body: &Value) -> SecuritySummary {
     out.last_scan = stamp(summary.get("lastScan"));
     if let Some(alerts) = summary.get("alerts").and_then(Value::as_array) {
         out.alerts = visible_alerts(alerts, body.get("receivedAt"));
+        out.top_alerts = alert_rows(alerts, body.get("receivedAt"));
     }
     let health = summary.get("health");
     out.firewalla = firewalla_info(health);
@@ -1183,6 +1284,41 @@ mod tests {
         let fw = s.firewalla.unwrap();
         assert_eq!((fw.api.as_str(), fw.box_online, fw.alarms24h), ("up", Some(true), Some(3)));
         assert_eq!(s.portal_url.as_deref(), Some("https://my.firewalla.net/x"));
+    }
+
+    #[test]
+    fn humanize_slug_reads_a_type_as_words() {
+        assert_eq!(humanize_slug("abnormal_upload"), "Abnormal upload");
+        assert_eq!(humanize_slug("new-device__joined"), "New device joined");
+        assert_eq!(humanize_slug("Already words"), "Already words");
+        assert_eq!(humanize_slug("_-_"), "");
+        assert_eq!(humanize_slug("étrange_type"), "Étrange type");
+        // A title is never rewritten, only a type.
+        let rows = alert_rows(&[json!({"id": "t", "title": "keep_this", "type": "x_y"})], None);
+        assert_eq!(rows[0].text, "keep_this");
+    }
+
+    #[test]
+    fn alert_rows_read_text_severity_and_time() {
+        let alerts = vec![
+            json!({"id": "a", "title": "  New device\n joined  ", "severity": "High", "firstSeen": "2026-11-11T10:00:00Z"}),
+            json!({"id": "b", "message": "Port scan blocked", "level": "info", "ts": 1_794_380_000}),
+            json!({"id": "c", "type": "abnormal_upload", "ts": 1_794_395_000_000u64}),
+            json!({"id": "d"}),
+            json!({"id": "e", "title": "Hidden", "requests": {"reviewed": {"status": "requested"}}}),
+            json!({"id": "f", "title": "No time", "severity": "sideways"}),
+        ];
+        let rows = alert_rows(&alerts, None);
+        assert_eq!(rows.len(), 3);
+        assert_eq!(rows[0].text, "Abnormal upload");
+        assert_eq!(rows[0].at_ms, Some(1_794_395_000_000));
+        assert_eq!((rows[1].text.as_str(), rows[1].severity.as_deref()), ("New device joined", Some("high")));
+        assert_eq!(rows[1].at_ms, Some(1_794_391_200_000));
+        assert_eq!((rows[2].text.as_str(), rows[2].severity.as_deref()), ("Port scan blocked", Some("low")));
+        assert_eq!(rows[2].at_ms, Some(1_794_380_000_000));
+        let long = alert_rows(&[json!({"id": "x", "title": "y".repeat(500)})], None);
+        assert_eq!(long[0].text.chars().count(), MAX_ALERT_CHARS);
+        assert_eq!((long[0].severity.clone(), long[0].at_ms), (None, None));
     }
 
     #[test]

@@ -33,13 +33,38 @@ rejects with a clear error. Inside Tauri, `invoke` calls the real command.
 
 ## Home moods
 
-The Home tab shows one big button per mood the home app already defines
-(Day, Evening, Late Night and so on, in the home app's order, at most 12). Tapping
+Home follows the concept's `f_home` on the frame's zones (`screens/Home.tsx`,
+`styles/home.css`): the sun block under the clock in the left wing, the mood cards
+across the centre, and Around the house with the network card in the right wing. The
+Rooms row and the House line stay hidden until the home app reads them (PRs 24 and 25),
+so the mood cards take the centre's full height.
+
+- **Sun block** (`home/LeftWing.tsx`, `home/sunLine.ts`): from the horizon's own sun
+  (`ribbon/sun.ts`), to the nearest minute. "Sunset in N min" in amber within 90
+  minutes before sunset; earlier, the sunset time and the daylight left; before
+  sunrise, the sunrise time; after sunset, tomorrow's sunrise.
+- **Columns** are fixed (`.home-wing` 1, `.moods` 2, `.home-right` 3), so a zone that
+  renders nothing never shifts the others.
+- **Mood cards** (`home/Moods.tsx`, `home/MoodArt.tsx`): one card per mood the home
+  app defines, in its order (today Day, Evening and Late Night). Each card has painted
+  art drawn as one SVG (Day a sun, Evening a striped sunset, Late Night a moon and
+  stars; Movie and Goodnight are drawn too for when they exist, and any other mood gets
+  a lamp glow) and the concept's line under the name where it has one. Nothing fakes a
+  mood the home app lacks. The last mood tapped carries an "On now" tag and a cyan ring.
+
+The Home tab shows one card per mood the home app already defines
+(at most 12). Tapping
 one sets the lights through the home app. Nothing is ever applied by itself: the
 list loads when the tab opens and every 10 minutes while visible, and only a tap
-changes the lights. A tapped button shows a spinner, then a check for 2 seconds; a
-failure shows a short message under the row for 5 seconds. The last mood tapped is
-marked quietly (`wall2-last-mood` in local storage, per device).
+changes the lights. A tapped card shows a spinner, then a check for 2 seconds; a
+failure shows a short amber message on the Moods line for 5 seconds. The last mood
+tapped is kept per device (`wall2-last-mood` in local storage). The last good list is
+kept too (`wall2-moods-cache`), so the cards stay, with a quiet amber "Home app not
+reachable" on the Moods line, when the home app is briefly away; with no list ever
+read, that line is all the row shows. When the home app answers with no moods, one
+compact card says "No moods set up in the home app yet". "On now" marks the last mood
+tapped on this wall; a mood set from a phone or a routine shows only once the home feed
+carries the active mood.
 
 The commands are `wall2_moods` and `wall2_apply_mood` in
 `src-tauri/src/wall2_home.rs`. They read `homeBaseUrl` from `feeds.json` like the
@@ -49,7 +74,31 @@ are the ids) and `POST /api/moods/<id>/apply` with no body. Ids must match
 short and never hold the address: 409 reads "Moods are not set up in the home app
 yet", 404 "Unknown mood", anything else "Could not set the mood". The requests
 use the same 8 second timeout, 1 MB cap and no redirects as the other feeds. With
-no `homeBaseUrl` the row says "Not set up"; with no moods it is hidden.
+no `homeBaseUrl` the row says "Not set up"; with no moods it shows the one compact card.
+
+### Around the house (Home, right wing)
+
+`home/Chores.tsx` and `home/useChores.ts`: the next three open tasks tagged `home` (a
+tag, not a list) from `wall2_tasks_summary({ tag: "home" })`, with "N more can wait"
+for the rest. The pill shows the time for a task due later today at a set time, else
+its estimate. Ticking the circle strikes the row at once, saves it with
+`wall2_task_done`, hides it after 2 seconds and reads the list again; a failed save
+brings the row back marked "not saved". Read on show and every 2 minutes while visible.
+Each read takes a generation number (as in `tasks/useTasks.ts`), and only a read that
+started after a tick's save settled may bring that row back, so an older read landing
+late cannot restore a finished chore. A failed read after a good one keeps the rows,
+dimmed with the count, and puts a quiet amber "Task app not reachable" by the heading.
+With every shown chore ticked it says "Loading the next ones" until the refresh lands
+("Could not load the next ones" if it fails). "Not set up", "Task app not reachable"
+and "Nothing waiting around the house" are one line each. The tick's tap area is the
+button itself, 52 by 44, inside its own row; titles stay on one line with an ellipsis.
+
+**Fit check** (not run by CI, it needs a Chromium binary):
+`node scripts/home-fit-check.mjs /path/to/chrome [shot.png]` (or `CHROME=... npm run
+fit:home`) builds a development bundle, opens Home at 16:36 in headless Chromium, gives
+every chore a long title and checks that the right wing stays inside the 490 px band,
+that titles stay on one line, that three alert rows show and that no two tick hit areas
+overlap. It prints what it measured and exits 1 on any failure.
 
 ## Run and build inside Tauri
 
@@ -489,20 +538,35 @@ visible and after each completion. (`useTasks()` with no filter still reads
 
 ### Network tile (Home tab, right)
 
-`wall/src/home/`. Reads `GET /api/security?lite=1` and shows a status dot and
-line, the open-alert count and "last scan N min ago". Refreshes every 5 minutes
-while visible. The open count follows the home app's own page: an alert whose
+`wall/src/home/`. Reads `GET /api/security?lite=1` and shows, as the concept's card:
+a shield and status line ("All quiet" when nothing is open) with the scan age, the
+numbers the feed has spread evenly (devices, alarms in 24 hours, blocked, box
+temperature; today the home app sends only the alarms, and PR 24 adds the rest), up to
+three open alerts as one-line rows (severity dot, text, age) with "N more open" on the
+header line, and the two links as full-width buttons along the bottom. The card is as
+tall as what it holds, so it is never half empty. Refreshes every 5 minutes while
+visible. The open count follows the home app's own page: an alert whose
 reviewed request is waiting is hidden; a done request hides it until a newer
 summary arrives; a failed request hides nothing.
 
-- **Green**: "Up, box online".
+The alert rows come from Rust (`top_alerts` in `wall2_feeds.rs`): the visible alerts,
+newest first, reading the text from `title`, `message`, `text`, `summary`, `reason` or
+`type` (a type slug is turned into words: `abnormal_upload` reads "Abnormal upload"),
+the severity from `severity`, `level` or `priority` (mapped to high, medium or
+low; amber dot only for high), and the time from an ISO string or epoch seconds or
+milliseconds in `ts`, `at`, `time`, `createdAt`, `detectedAt`, `firstSeen` or
+`lastSeen`. Text is cleaned of control characters and capped at 120 characters. When
+the alerts carry no readable text, the card shows "N open alerts" instead.
+
+- **Green**: "All quiet", or "Up, box online" while alerts are open.
 - **Amber**: the scan is stale, the firewall API state is unknown, or the home app
-  cannot be reached.
+  cannot be reached (a quiet amber line inside the card, never a screen-wide message;
+  after a good read the last numbers and rows stay, dimmed).
 - **Red**: only when the firewall API is down or the box is offline.
 - "Not set up" when there is no address.
 
-Two quiet text buttons sit under the status, each at least 72 design pixels tall and
-shown only when available. **Security** opens `homeSecurityUrl` from `feeds.json`.
+Two buttons share the bottom of the card, each half its width and 52 design pixels
+tall (the in-card size in "Touch" below), shown only when available. **Security** opens `homeSecurityUrl` from `feeds.json`.
 **Firewalla** opens the `portalUrl` from the most recent good security read, and
 only when it is `https` on `firewalla.net` or a subdomain. Both open in the default
 browser, and Rust does the opening (`wall2_open_link`, kinds `security` and
@@ -510,7 +574,8 @@ browser, and Rust does the opening (`wall2_open_link`, kinds `security` and
 `capabilities/wall2.json` grants no opener permission. `wall2_links` tells the tile
 which buttons to show. A failed open shows "Could not open" for 3 seconds.
 
-Browser dev (`npm run dev`) shows both cards from mocks in `devMocks/`.
+Browser dev (`npm run dev`) shows both cards from mocks in `bridge/devMocks/`; the Home
+mock also carries the numbers PR 24 will add, so the dev view shows the full card.
 
 ## Meet
 
@@ -654,7 +719,11 @@ One change runs at a time (a second request while one is in flight is ignored).
 
 The strip is touch only. The app root sets `touch-action: manipulation`, controls
 do not select text or flash a tap highlight, rail buttons show a pressed state on
-`:active` and stay at least 72 by 72, and nothing depends on hover.
+`:active`, and nothing depends on hover. Rail buttons and a place's primary buttons
+stay at least 72 by 72. Controls inside a card are at least 52 wide and 44 tall,
+because the top band is only 490 tall: the Home chore ticks are 52 by 44 with no
+shared hit area between rows, and the network card's Security and Firewalla buttons
+are 52 tall and half the card wide.
 
 ## CI
 
