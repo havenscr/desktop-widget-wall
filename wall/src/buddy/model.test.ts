@@ -61,7 +61,26 @@ describe('buddyFrame', () => {
   });
 });
 
+/** The concept's `SH.idle`, copied from the reference file. */
+const REFERENCE_IDLE = [
+  '....wwwwwww.......',
+  '..wwwwwwwwwww.....',
+  '.wwwwwwwwwwwwwpf..',
+  '.wwwwwwwwwwwwwffff',
+  'wwwwwwwwwwwwwwfeff',
+  'wwwwwwwwwwwwwwffff',
+  'wwwwwwwwwwwwwwwff.',
+  '.wwwwwwwwwwwwww...',
+  '.wwwwwwwwwwwww....',
+  '..wwwwwwwwwww.....',
+  '...l..l...l..l....',
+  '...l..l...l..l....',
+];
+
 describe('sprites', () => {
+  it('idle equals the concept map exactly', () => {
+    expect([...SPRITES.idle]).toEqual(REFERENCE_IDLE);
+  });
   it('has every row the same width and only known pixels', () => {
     for (const map of Object.values(SPRITES)) {
       for (const row of map) {
@@ -71,7 +90,8 @@ describe('sprites', () => {
     }
   });
   it('walk is the idle body rows plus two leg rows', () => {
-    expect(SPRITES.walk.slice(0, 10)).toEqual(SPRITES.idle.slice(0, 10));
+    expect(SPRITES.walk.slice(0, 10)).toEqual(REFERENCE_IDLE.slice(0, 10));
+    expect(SPRITES.walk[10]).toBe('..l...l....l..l...');
     expect(SPRITES.walk).toHaveLength(12);
   });
   it('shades the wool by row and leaves empty pixels empty', () => {
