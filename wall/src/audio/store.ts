@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { SILENCE_MS, clamp01, hasSound, smoothStep, type AudioLevelsPayload, type Levels } from './model';
+import { createBeatDetector, type BeatDetector } from './beat';
 
 export interface AudioState extends Levels {
   /** True while sound arrived in the last 0.35 seconds. */
@@ -15,11 +16,34 @@ let target: Levels = { bass: 0, mid: 0, high: 0 };
 let lastSoundAt = -Infinity;
 let lastTickAt: number | null = null;
 
+/** Number of spectrum bands in an `audio-levels` event. */
+export const BAND_COUNT = 32;
+// The newest bands, normalised 0 to 1 from the event's 0 to 255 bytes. Written in place, so
+// reading it never allocates; zeros while silent. Outside the React store on purpose: it
+// changes 30 times a second and only the horizon's frame loop reads it.
+const bands = new Float32Array(BAND_COUNT);
+const detector = createBeatDetector();
+
+/** The newest spectrum bands, 0 to 1 (bass first). A live view: copy it to keep a frame. */
+export function audioBands(): Readonly<Float32Array> {
+  return bands;
+}
+
+/** The beat detector fed by every `audio-levels` event: `count`, `lastBeatAt`, `lag`, `bass`, `beats()`. */
+export function audioBeats(): Readonly<BeatDetector> {
+  return detector;
+}
+
 /** An `audio-levels` event arrived at `now` (milliseconds on any steady clock). */
 export function ingestLevels(payload: AudioLevelsPayload | null | undefined, now: number): void {
   if (hasSound(payload)) {
     lastSoundAt = now;
     target = { bass: clamp01(payload!.bass ?? 0), mid: clamp01(payload!.mid ?? 0), high: clamp01(payload!.high ?? 0) };
+    const raw = payload!.bands;
+    if (Array.isArray(raw) && raw.length > 0) {
+      for (let i = 0; i < BAND_COUNT; i++) bands[i] = i < raw.length ? clamp01((raw[i] ?? 0) / 255) : 0;
+      detector.push(bands, now);
+    }
   }
   // An empty event changes nothing here: silence is decided by the clock in `tickAudio`.
 }
@@ -32,6 +56,9 @@ export function tickAudio(now: number): void {
   if (!playing) {
     // Past the silence deadline the levels are zero at once, as in the old visualizer.
     target = { bass: 0, mid: 0, high: 0 };
+    // The bands go to zero with the levels, and the beat history starts afresh next time.
+    bands.fill(0);
+    detector.clear();
     const z = useAudioStore.getState();
     if (z.bass !== 0 || z.mid !== 0 || z.high !== 0 || z.playing) useAudioStore.setState({ ...QUIET });
     return;
@@ -54,5 +81,7 @@ export function resetAudio(): void {
   target = { bass: 0, mid: 0, high: 0 };
   lastSoundAt = -Infinity;
   lastTickAt = null;
+  bands.fill(0);
+  detector.reset();
   useAudioStore.setState({ ...QUIET });
 }
