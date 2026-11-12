@@ -8,7 +8,7 @@ use super::store::{Fetch, SecretStore};
 use super::Account;
 use serde::Serialize;
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex, MutexGuard};
 
 /// Refresh an access token that has less than this left.
 const SKEW_SECS: u64 = 120;
@@ -32,6 +32,12 @@ pub struct Core {
     pub states: HashMap<String, (String, Option<String>)>,
     /// Log lines waiting for the caller to hand them to the log writer.
     pub log_lines: Vec<String>,
+    /// Bumped by sign-out and by a new sign-in. A read that started under an older number
+    /// writes nothing back.
+    pub generations: HashMap<String, u64>,
+    /// One turn-taker per account, held across the token request only (never the core lock),
+    /// so two reads never both spend the same rotating refresh token.
+    pub flights: HashMap<String, Arc<Mutex<()>>>,
 }
 
 /// Queue one log line when the account's state or reason differs from the last one logged.
@@ -116,26 +122,59 @@ pub struct MeetPayload {
 /// Why a state is not `Ok`: the state and a reason code when there is one.
 type Fail = (AccountState, Option<String>);
 
+/// Why `obtain` gave no token: a real failure, or the account changed under the read.
+enum Stop {
+    Fail(Fail),
+    /// Sign-out or a new sign-in happened since the read started: change nothing.
+    Stale,
+}
+
 /// What one account's read came to.
 struct Read {
     state: AccountState,
     meetings: Option<Vec<Candidate>>,
     reason: Option<String>,
+    /// The account's generation when the read started. The result is applied only if it is
+    /// still the current one.
+    generation: u64,
+    /// The account changed under the read; nothing from it may be written back.
+    discarded: bool,
 }
 
-/// A fresh access token for the account, from the cache or a refresh.
-fn obtain(
+fn lock(core: &Mutex<Core>) -> MutexGuard<'_, Core> {
+    core.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+fn generation_of(core: &Core, id: &str) -> u64 {
+    core.generations.get(id).copied().unwrap_or(0)
+}
+
+/// What one short look at the account's state decided.
+enum Step {
+    Have(String),
+    Refresh(String),
+}
+
+/// One short critical section: retry a pending rotated token, read the stored token, and use
+/// the cache when it is good. `rejected` is an access token Graph just refused; a cached one
+/// that differs from it (another read already refreshed) is fine to use. The local credential
+/// store is touched here on purpose: its writes and sign-out's delete must be ordered with the
+/// generation check. Nothing here waits on the network.
+fn check(
     acct: &Account,
     store: &dyn SecretStore,
-    tokens: &dyn TokenClient,
     core: &mut Core,
     now: u64,
-    force: bool,
-) -> Result<String, Fail> {
+    generation: u64,
+    rejected: Option<&str>,
+) -> Result<Step, Stop> {
+    if generation_of(core, &acct.id) != generation {
+        return Err(Stop::Stale);
+    }
     if let Some(p) = core.pending.get(&acct.id).cloned() {
         // An earlier rotated token never reached the store: try again before anything else.
         if !store.set(&acct.id, &p) {
-            return Err((AccountState::Unavailable, Some(STORE_WRITE.to_string())));
+            return Err(Stop::Fail((AccountState::Unavailable, Some(STORE_WRITE.to_string()))));
         }
         core.pending.remove(&acct.id);
     }
@@ -143,26 +182,56 @@ fn obtain(
         Fetch::Found(v) => v,
         Fetch::Missing => {
             core.cache.remove(&acct.id);
-            return Err((AccountState::SignedOut, None));
+            return Err(Stop::Fail((AccountState::SignedOut, None)));
         }
         // The store could not be read: not signed out. Nothing is deleted or overwritten.
-        Fetch::Failed => return Err((AccountState::Unavailable, Some(STORE_READ.to_string()))),
+        Fetch::Failed => return Err(Stop::Fail((AccountState::Unavailable, Some(STORE_READ.to_string())))),
     };
-    if !force {
-        if let Some(c) = core.cache.get(&acct.id) {
-            if c.expires_at > now + SKEW_SECS {
-                return Ok(c.access.clone());
-            }
+    if let Some(c) = core.cache.get(&acct.id) {
+        if c.expires_at > now + SKEW_SECS && rejected != Some(c.access.as_str()) {
+            return Ok(Step::Have(c.access.clone()));
         }
     }
     core.cache.remove(&acct.id);
+    Ok(Step::Refresh(refresh))
+}
+
+/// A fresh access token for the account, from the cache or a refresh. The core lock is held
+/// only in short steps; the token request runs with it released, and one refresh per account
+/// runs at a time so two reads never both spend the same rotating refresh token.
+fn obtain(
+    acct: &Account,
+    store: &dyn SecretStore,
+    tokens: &dyn TokenClient,
+    core: &Mutex<Core>,
+    now: u64,
+    generation: u64,
+    rejected: Option<&str>,
+) -> Result<String, Stop> {
+    match check(acct, store, &mut lock(core), now, generation, rejected)? {
+        Step::Have(a) => return Ok(a),
+        Step::Refresh(_) => {}
+    }
+    let flight = lock(core).flights.entry(acct.id.clone()).or_default().clone();
+    let _turn = flight.lock().unwrap_or_else(|e| e.into_inner());
+    // Look again: a read ahead of this one may have refreshed while this one waited its turn.
+    let refresh = match check(acct, store, &mut lock(core), now, generation, rejected)? {
+        Step::Have(a) => return Ok(a),
+        Step::Refresh(r) => r,
+    };
     let form = [
         ("client_id", acct.client_id.as_str()),
         ("grant_type", "refresh_token"),
         ("refresh_token", refresh.as_str()),
         ("scope", SCOPE),
     ];
-    match tokens.post(&acct.tenant, &form) {
+    let reply = tokens.post(&acct.tenant, &form);
+    // Apply the reply in one short step, and only if the account is unchanged.
+    let mut core = lock(core);
+    if generation_of(&core, &acct.id) != generation {
+        return Err(Stop::Stale);
+    }
+    match reply {
         TokenReply::Ok { access, expires_in, refresh: rotated } => {
             core.cache.insert(acct.id.clone(), Cached { access: access.clone(), expires_at: now + expires_in });
             if let Some(new) = rotated {
@@ -170,7 +239,7 @@ fn obtain(
                     // The store kept the old value. Hold the new token in memory, retry next
                     // time, and report unavailable instead of connected-then-signed-out.
                     core.pending.insert(acct.id.clone(), new);
-                    return Err((AccountState::Unavailable, Some(STORE_WRITE.to_string())));
+                    return Err(Stop::Fail((AccountState::Unavailable, Some(STORE_WRITE.to_string()))));
                 }
             }
             Ok(access)
@@ -178,11 +247,11 @@ fn obtain(
         TokenReply::Rejected(why) => {
             store.delete(&acct.id);
             core.pending.remove(&acct.id);
-            Err((AccountState::NeedsSignIn, Some(why)))
+            Err(Stop::Fail((AccountState::NeedsSignIn, Some(why))))
         }
         // Not a dead grant but nothing a retry fixes: offer Sign in, keep the stored token.
-        TokenReply::Refused(why) => Err((AccountState::NeedsSignIn, Some(why))),
-        TokenReply::Transient(why) | TokenReply::Failed(why) => Err((AccountState::Unavailable, Some(why))),
+        TokenReply::Refused(why) => Err(Stop::Fail((AccountState::NeedsSignIn, Some(why)))),
+        TokenReply::Transient(why) | TokenReply::Failed(why) => Err(Stop::Fail((AccountState::Unavailable, Some(why)))),
     }
 }
 
@@ -191,42 +260,59 @@ fn read_account(
     store: &dyn SecretStore,
     tokens: &dyn TokenClient,
     graph: &dyn GraphClient,
-    core: &mut Core,
+    core: &Mutex<Core>,
     now: u64,
 ) -> Read {
     read_window(acct, store, tokens, graph, core, now, now, now + WINDOW_SECS)
 }
 
-/// One account's events between two instants (epoch seconds).
+/// One account's events between two instants (epoch seconds). The core lock is never held
+/// while waiting on the token endpoint or Graph.
 #[allow(clippy::too_many_arguments)]
 fn read_window(
     acct: &Account,
     store: &dyn SecretStore,
     tokens: &dyn TokenClient,
     graph: &dyn GraphClient,
-    core: &mut Core,
+    core: &Mutex<Core>,
     now: u64,
     from: u64,
     to: u64,
 ) -> Read {
     let (start, end) = (utc_iso(from), utc_iso(to));
-    let access = match obtain(acct, store, tokens, core, now, false) {
+    let generation = generation_of(&lock(core), &acct.id);
+    let done = |state, meetings, reason| Read { state, meetings, reason, generation, discarded: false };
+    let stopped = |stop: Stop| match stop {
+        Stop::Fail((state, reason)) => done(state, None, reason),
+        Stop::Stale => Read { state: AccountState::Unavailable, meetings: None, reason: None, generation, discarded: true },
+    };
+    let access = match obtain(acct, store, tokens, core, now, generation, None) {
         Ok(a) => a,
-        Err((state, reason)) => return Read { state, meetings: None, reason },
+        Err(stop) => return stopped(stop),
     };
     let mut reply = graph.calendar_view(&access, &start, &end);
     if matches!(reply, GraphReply::Unauthorized) {
         // The cached token was refused: drop it, refresh once, ask once more.
-        let access = match obtain(acct, store, tokens, core, now, true) {
+        let access = match obtain(acct, store, tokens, core, now, generation, Some(access.as_str())) {
             Ok(a) => a,
-            Err((state, reason)) => return Read { state, meetings: None, reason },
+            Err(stop) => return stopped(stop),
         };
         reply = graph.calendar_view(&access, &start, &end);
     }
     match reply {
-        GraphReply::Ok(body) => Read { state: AccountState::Ok, meetings: Some(shape_events(&body, &acct.id)), reason: None },
-        GraphReply::Unauthorized => Read { state: AccountState::Unavailable, meetings: None, reason: Some("graph-401".to_string()) },
-        GraphReply::Transient(why) | GraphReply::Failed(why) => Read { state: AccountState::Unavailable, meetings: None, reason: Some(why) },
+        GraphReply::Ok(body) => done(AccountState::Ok, Some(shape_events(&body, &acct.id)), None),
+        GraphReply::Unauthorized => done(AccountState::Unavailable, None, Some("graph-401".to_string())),
+        GraphReply::Transient(why) | GraphReply::Failed(why) => done(AccountState::Unavailable, None, Some(why)),
+    }
+}
+
+/// What to report for an account whose read was discarded because it changed under the read:
+/// signed-out when its token is gone, otherwise unavailable. Nothing is written.
+fn discarded_state(acct: &Account, store: &dyn SecretStore, core: &Mutex<Core>) -> AccountState {
+    let _held = lock(core);
+    match store.fetch(&acct.id) {
+        Fetch::Missing => AccountState::SignedOut,
+        _ => AccountState::Unavailable,
     }
 }
 
@@ -236,7 +322,7 @@ pub fn read_next(
     store: &dyn SecretStore,
     tokens: &dyn TokenClient,
     graph: &dyn GraphClient,
-    core: &mut Core,
+    core: &Mutex<Core>,
     links: &Mutex<Links>,
     now: u64,
 ) -> MeetPayload {
@@ -244,25 +330,44 @@ pub fn read_next(
     let mut lists = Vec::new();
     let mut stale = false;
     for acct in accounts {
-        let Read { state, meetings: fresh, reason } = read_account(acct, store, tokens, graph, core, now);
-        record(core, &acct.id, state.as_str(), reason.as_deref(), now);
-        let list = match fresh {
-            Some(l) => {
-                core.last.insert(acct.id.clone(), l.clone());
-                l
+        let read = read_account(acct, store, tokens, graph, core, now);
+        if read.discarded {
+            let state = discarded_state(acct, store, core);
+            statuses.push(AccountOut { id: acct.id.clone(), label: acct.label.clone(), state: state.as_str(), reason: None });
+            lists.push(Vec::new());
+            continue;
+        }
+        let Read { state, meetings: fresh, reason, generation, .. } = read;
+        // One short step: apply the result only if the account is still the one that was read.
+        let list = {
+            let mut c = lock(core);
+            if generation_of(&c, &acct.id) != generation {
+                drop(c);
+                let state = discarded_state(acct, store, core);
+                statuses.push(AccountOut { id: acct.id.clone(), label: acct.label.clone(), state: state.as_str(), reason: None });
+                lists.push(Vec::new());
+                continue;
             }
-            // Unavailable: keep showing what the last good read held, and say so.
-            None if state == AccountState::Unavailable => match core.last.get(&acct.id) {
+            record(&mut c, &acct.id, state.as_str(), reason.as_deref(), now);
+            let list = match fresh {
                 Some(l) => {
-                    stale = true;
-                    l.clone()
+                    c.last.insert(acct.id.clone(), l.clone());
+                    l
                 }
-                None => Vec::new(),
-            },
-            None => {
-                core.last.remove(&acct.id);
-                Vec::new()
-            }
+                // Unavailable: keep showing what the last good read held, and say so.
+                None if state == AccountState::Unavailable => match c.last.get(&acct.id) {
+                    Some(l) => {
+                        stale = true;
+                        l.clone()
+                    }
+                    None => Vec::new(),
+                },
+                None => {
+                    c.last.remove(&acct.id);
+                    Vec::new()
+                }
+            };
+            list
         };
         let reason = reason.filter(|r| is_valid_reason(r));
         statuses.push(AccountOut { id: acct.id.clone(), label: acct.label.clone(), state: state.as_str(), reason });
@@ -321,7 +426,7 @@ pub fn read_day(
     store: &dyn SecretStore,
     tokens: &dyn TokenClient,
     graph: &dyn GraphClient,
-    core: &mut Core,
+    core: &Mutex<Core>,
     links: &Mutex<Links>,
     now: u64,
     from: u64,
@@ -330,8 +435,22 @@ pub fn read_day(
     let mut statuses = Vec::new();
     let mut lists = Vec::new();
     for acct in accounts {
-        let Read { state, meetings: fresh, reason } = read_window(acct, store, tokens, graph, core, now, from, to);
-        record(core, &acct.id, state.as_str(), reason.as_deref(), now);
+        let read = read_window(acct, store, tokens, graph, core, now, from, to);
+        let applied = !read.discarded && {
+            let mut c = lock(core);
+            let current = generation_of(&c, &acct.id) == read.generation;
+            if current {
+                record(&mut c, &acct.id, read.state.as_str(), read.reason.as_deref(), now);
+            }
+            current
+        };
+        if !applied {
+            let state = discarded_state(acct, store, core);
+            statuses.push(AccountOut { id: acct.id.clone(), label: acct.label.clone(), state: state.as_str(), reason: None });
+            lists.push(Vec::new());
+            continue;
+        }
+        let Read { state, meetings: fresh, reason, .. } = read;
         let reason = reason.filter(|r| is_valid_reason(r));
         statuses.push(AccountOut { id: acct.id.clone(), label: acct.label.clone(), state: state.as_str(), reason });
         lists.push(fresh.unwrap_or_default());
@@ -378,13 +497,18 @@ pub fn complete_sign_in(
     ];
     match tokens.post(&acct.tenant, &form) {
         TokenReply::Ok { access, expires_in, refresh: Some(refresh) } => {
+            // Store and bump the generation in one step, so a read that began earlier cannot
+            // slip its own tokens in between.
+            let mut guard = lock(core);
             if !store.set(&acct.id, &refresh) {
+                drop(guard);
                 return Err(sign_in_failed(core, acct, STORE_WRITE, now));
             }
-            let mut core = core.lock().unwrap_or_else(|e| e.into_inner());
+            let core = &mut *guard;
+            *core.generations.entry(acct.id.clone()).or_insert(0) += 1;
             core.pending.remove(&acct.id);
             core.cache.insert(acct.id.clone(), Cached { access, expires_at: now + expires_in });
-            record(&mut core, &acct.id, "signed-in", None, now);
+            record(core, &acct.id, "signed-in", None, now);
             Ok(())
         }
         // A reply without a refresh token is a 2xx that cannot be used.
@@ -403,8 +527,13 @@ fn sign_in_failed(core: &Mutex<Core>, acct: &Account, reason: &str, now: u64) ->
     reason
 }
 
-pub fn sign_out(id: &str, store: &dyn SecretStore, core: &mut Core) {
+/// Delete the stored token and forget everything held for the account, then bump its
+/// generation so a read already waiting on the network cannot put any of it back. The core
+/// lock is held only for these local steps, never across a network call.
+pub fn sign_out(id: &str, store: &dyn SecretStore, core: &Mutex<Core>) {
+    let mut core = lock(core);
     store.delete(id);
+    *core.generations.entry(id.to_string()).or_insert(0) += 1;
     core.cache.remove(id);
     core.last.remove(id);
     core.pending.remove(id);
@@ -493,32 +622,32 @@ mod tests {
 
     const NOW: u64 = 1_794_459_600;
 
-    fn setup() -> (Chunked<MemoryBlobs>, Core) {
+    fn setup() -> (Chunked<MemoryBlobs>, Mutex<Core>) {
         let store = Chunked(MemoryBlobs::default());
         store.set("work", "refresh-1");
-        (store, Core::default())
+        (store, Mutex::new(Core::default()))
     }
 
     #[test]
     fn signed_out_without_a_stored_token() {
         let store = Chunked(MemoryBlobs::default());
-        let mut core = Core::default();
+        let core = Mutex::new(Core::default());
         let links = Mutex::new(Links::default());
         let t = FakeTokens::new(vec![]);
         let g = FakeGraph::new(vec![]);
-        let p = read_next(&[acct("work")], &store, &t, &g, &mut core, &links, NOW);
+        let p = read_next(&[acct("work")], &store, &t, &g, &core, &links, NOW);
         assert_eq!(p.accounts[0].state, "signed-out");
         assert_eq!(t.calls.get() + g.calls.get(), 0);
     }
 
     #[test]
     fn expired_cache_refreshes_and_rotated_token_is_stored() {
-        let (store, mut core) = setup();
+        let (store, core) = setup();
         let links = Mutex::new(Links::default());
-        core.cache.insert("work".into(), Cached { access: "old".into(), expires_at: NOW + 60 });
+        core.lock().unwrap().cache.insert("work".into(), Cached { access: "old".into(), expires_at: NOW + 60 });
         let t = FakeTokens::new(vec![ok_token("new", Some("refresh-2"))]);
         let g = FakeGraph::new(vec![GraphReply::Ok(body("A", "1"))]);
-        let p = read_next(&[acct("work")], &store, &t, &g, &mut core, &links, NOW);
+        let p = read_next(&[acct("work")], &store, &t, &g, &core, &links, NOW);
         assert_eq!(t.calls.get(), 1);
         assert_eq!(g.seen_access.borrow()[0], "new");
         assert_eq!(store.get("work").as_deref(), Some("refresh-2"));
@@ -530,66 +659,66 @@ mod tests {
 
     #[test]
     fn fresh_cache_is_used_without_a_refresh() {
-        let (store, mut core) = setup();
+        let (store, core) = setup();
         let links = Mutex::new(Links::default());
-        core.cache.insert("work".into(), Cached { access: "cached".into(), expires_at: NOW + 600 });
+        core.lock().unwrap().cache.insert("work".into(), Cached { access: "cached".into(), expires_at: NOW + 600 });
         let t = FakeTokens::new(vec![]);
         let g = FakeGraph::new(vec![GraphReply::Ok(body("A", "1"))]);
-        read_next(&[acct("work")], &store, &t, &g, &mut core, &links, NOW);
+        read_next(&[acct("work")], &store, &t, &g, &core, &links, NOW);
         assert_eq!(t.calls.get(), 0);
         assert_eq!(g.seen_access.borrow()[0], "cached");
     }
 
     #[test]
     fn invalid_grant_deletes_the_token() {
-        let (store, mut core) = setup();
+        let (store, core) = setup();
         let links = Mutex::new(Links::default());
         let t = FakeTokens::new(vec![TokenReply::Rejected("token-400-70000".into())]);
         let g = FakeGraph::new(vec![]);
-        let p = read_next(&[acct("work")], &store, &t, &g, &mut core, &links, NOW);
+        let p = read_next(&[acct("work")], &store, &t, &g, &core, &links, NOW);
         assert_eq!(p.accounts[0].state, "needs-sign-in");
         assert_eq!(store.get("work"), None);
     }
 
     #[test]
     fn a_refused_token_request_offers_sign_in_and_keeps_the_token() {
-        let (store, mut core) = setup();
+        let (store, core) = setup();
         let links = Mutex::new(Links::default());
         let t = FakeTokens::new(vec![TokenReply::Refused("token-400".into())]);
         let g = FakeGraph::new(vec![]);
-        let p = read_next(&[acct("work")], &store, &t, &g, &mut core, &links, NOW);
+        let p = read_next(&[acct("work")], &store, &t, &g, &core, &links, NOW);
         assert_eq!(p.accounts[0].state, "needs-sign-in");
         assert_eq!(store.get("work").as_deref(), Some("refresh-1"));
     }
 
     #[test]
     fn transient_failure_keeps_the_token() {
-        let (store, mut core) = setup();
+        let (store, core) = setup();
         let links = Mutex::new(Links::default());
         let t = FakeTokens::new(vec![TokenReply::Transient("token-503".into())]);
         let g = FakeGraph::new(vec![]);
-        let p = read_next(&[acct("work")], &store, &t, &g, &mut core, &links, NOW);
+        let p = read_next(&[acct("work")], &store, &t, &g, &core, &links, NOW);
         assert_eq!(p.accounts[0].state, "unavailable");
         assert_eq!(store.get("work").as_deref(), Some("refresh-1"));
     }
 
     #[test]
     fn a_401_refreshes_once_and_retries_once() {
-        let (store, mut core) = setup();
+        let (store, core) = setup();
         let links = Mutex::new(Links::default());
         let t = FakeTokens::new(vec![ok_token("a1", None), ok_token("a2", None)]);
         let g = FakeGraph::new(vec![GraphReply::Unauthorized, GraphReply::Ok(body("A", "1"))]);
-        let p = read_next(&[acct("work")], &store, &t, &g, &mut core, &links, NOW);
+        let p = read_next(&[acct("work")], &store, &t, &g, &core, &links, NOW);
         assert_eq!(t.calls.get(), 2);
         assert_eq!(g.calls.get(), 2);
         assert_eq!(p.accounts[0].state, "ok");
         assert_eq!(g.seen_access.borrow().as_slice(), ["a1", "a2"]);
 
-        let (store, mut core) = setup();
+        let (store, core) = setup();
         let links = Mutex::new(Links::default());
         let t = FakeTokens::new(vec![ok_token("a1", None), ok_token("a2", None), ok_token("a3", None)]);
         let g = FakeGraph::new(vec![GraphReply::Unauthorized, GraphReply::Unauthorized, GraphReply::Ok(body("A", "1"))]);
-        let p = read_next(&[acct("work")], &store, &t, &g, &mut core, &links, NOW);
+        let p = read_next(&[acct("work")], &store, &t, &g, &core, &links, NOW);
         assert_eq!(g.calls.get(), 2);
         assert_eq!(t.calls.get(), 2);
         assert_eq!(p.accounts[0].state, "unavailable");
@@ -600,11 +729,11 @@ mod tests {
         let store = Chunked(MemoryBlobs::default());
         store.set("work", "r1");
         store.set("second", "r2");
-        let mut core = Core::default();
+        let core = Mutex::new(Core::default());
         let links = Mutex::new(Links::default());
         let t = FakeTokens::new(vec![ok_token("a", None), ok_token("b", None)]);
         let g = FakeGraph::new(vec![GraphReply::Ok(body("Same invite", "dup")), GraphReply::Ok(body("Same invite", "dup"))]);
-        let p = read_next(&[acct("work"), acct("second")], &store, &t, &g, &mut core, &links, NOW);
+        let p = read_next(&[acct("work"), acct("second")], &store, &t, &g, &core, &links, NOW);
         assert_eq!(p.meetings.len(), 1);
         assert!(p.meetings[0].can_join);
         assert_eq!(p.meetings[0].key, "1-0");
@@ -616,7 +745,7 @@ mod tests {
         // A second read replaces the link map under a new generation.
         let t = FakeTokens::new(vec![]);
         let g = FakeGraph::new(vec![GraphReply::Ok(body("X", "1")), GraphReply::Ok(body("Y", "2"))]);
-        let p = read_next(&[acct("work"), acct("second")], &store, &t, &g, &mut core, &links, NOW + 10);
+        let p = read_next(&[acct("work"), acct("second")], &store, &t, &g, &core, &links, NOW + 10);
         assert_eq!(p.meetings[0].key, "2-0");
         assert!(lookup_link(&links, "1-0").is_none());
     }
@@ -635,7 +764,7 @@ mod tests {
 
     #[test]
     fn day_read_keeps_past_events_flags_livestreams_and_keeps_keys_apart() {
-        let (store, mut core) = setup();
+        let (store, core) = setup();
         let links = Mutex::new(Links::default());
         let t = FakeTokens::new(vec![ok_token("a", None)]);
         // NOW is 2026-11-12 05:00 UTC. The first event ended at 02:00 UTC the same day, before NOW.
@@ -647,7 +776,7 @@ mod tests {
         let accounts = [acct("work")];
         // Local midnight (UTC here) to 36 elapsed hours later.
         let (from, to) = (1_794_441_600, 1_794_441_600 + 36 * 3600);
-        let p = read_day(&accounts, &store, &t, &g, &mut core, &links, NOW, from, to);
+        let p = read_day(&accounts, &store, &t, &g, &core, &links, NOW, from, to);
         assert_eq!(g.seen_window.borrow().as_slice(), [("2026-11-12T00:00:00Z".to_string(), "2026-11-13T12:00:00Z".to_string())]);
         assert_eq!(p.accounts[0].state, "ok");
         assert_eq!(p.events.len(), 2);
@@ -664,7 +793,7 @@ mod tests {
             assert!(!text.contains(bad), "payload leaks {bad}: {text}");
         }
         // A next-meetings read does not break the day key, and asks for the usual 24 hours from now.
-        let n = read_next(&accounts, &store, &t, &g, &mut core, &links, NOW + 10);
+        let n = read_next(&accounts, &store, &t, &g, &core, &links, NOW + 10);
         assert!(!is_live(&n.meetings[0].title));
         assert!(lookup_link(&links, &day_key).is_some());
         assert_eq!(g.seen_window.borrow()[1], (utc_iso(NOW + 10), utc_iso(NOW + 10 + WINDOW_SECS)));
@@ -672,17 +801,17 @@ mod tests {
 
     #[test]
     fn an_unavailable_account_in_the_day_read_carries_its_reason_and_is_logged() {
-        let (store, mut core) = setup();
+        let (store, core) = setup();
         let links = Mutex::new(Links::default());
-        core.cache.insert("work".into(), Cached { access: "c".into(), expires_at: NOW + 6000 });
+        core.lock().unwrap().cache.insert("work".into(), Cached { access: "c".into(), expires_at: NOW + 6000 });
         let t = FakeTokens::new(vec![]);
         let g = FakeGraph::new(vec![GraphReply::Failed("graph-403-ErrorAccessDenied".into())]);
         let (from, to) = (1_794_441_600, 1_794_441_600 + 36 * 3600);
-        let p = read_day(&[acct("work")], &store, &t, &g, &mut core, &links, NOW, from, to);
+        let p = read_day(&[acct("work")], &store, &t, &g, &core, &links, NOW, from, to);
         assert_eq!(p.accounts[0].state, "unavailable");
         assert_eq!(p.accounts[0].reason.as_deref(), Some("graph-403-ErrorAccessDenied"));
         assert!(p.events.is_empty());
-        assert_eq!(core.log_lines, vec!["2026-11-12T05:00:00Z work start unavailable graph-403-ErrorAccessDenied\n".to_string()]);
+        assert_eq!(core.lock().unwrap().log_lines, vec!["2026-11-12T05:00:00Z work start unavailable graph-403-ErrorAccessDenied\n".to_string()]);
         assert_eq!(store.get("work").as_deref(), Some("refresh-1"));
     }
 
@@ -691,12 +820,12 @@ mod tests {
         let store = FlakySecrets { inner: Chunked(MemoryBlobs::default()), fail_set: Cell::new(false), fail_get: Cell::new(false) };
         store.set("work", "refresh-1");
         store.fail_get.set(true);
-        let mut core = Core::default();
+        let core = Mutex::new(Core::default());
         let links = Mutex::new(Links::default());
         let t = FakeTokens::new(vec![]);
         let g = FakeGraph::new(vec![]);
         let (from, to) = (1_794_441_600, 1_794_441_600 + 36 * 3600);
-        let p = read_day(&[acct("work")], &store, &t, &g, &mut core, &links, NOW, from, to);
+        let p = read_day(&[acct("work")], &store, &t, &g, &core, &links, NOW, from, to);
         assert_eq!(p.accounts[0].state, "unavailable");
         assert_eq!(p.accounts[0].reason.as_deref(), Some("store-read"));
         assert_eq!(t.calls.get() + g.calls.get(), 0);
@@ -717,17 +846,17 @@ mod tests {
         let store = Chunked(MemoryBlobs::default());
         store.set("work", "r1");
         store.set("second", "r2");
-        let mut core = Core::default();
+        let core = Mutex::new(Core::default());
         let links = Mutex::new(Links::default());
         let t = FakeTokens::new(vec![ok_token("a", None), ok_token("b", None)]);
         let g = FakeGraph::new(vec![GraphReply::Ok(body("Work one", "w1")), GraphReply::Ok(body("Second one", "s1"))]);
         let accounts = [acct("work"), acct("second")];
-        let p = read_next(&accounts, &store, &t, &g, &mut core, &links, NOW);
+        let p = read_next(&accounts, &store, &t, &g, &core, &links, NOW);
         assert!(!p.stale);
         assert_eq!(p.meetings.len(), 2);
         // The second account now fails; the first still answers.
         let g = FakeGraph::new(vec![GraphReply::Ok(body("Work one", "w1")), GraphReply::Transient("graph-503".into())]);
-        let p = read_next(&accounts, &store, &t, &g, &mut core, &links, NOW + 10);
+        let p = read_next(&accounts, &store, &t, &g, &core, &links, NOW + 10);
         assert!(p.stale);
         assert_eq!(p.accounts[1].state, "unavailable");
         assert_eq!(p.meetings.len(), 2);
@@ -736,9 +865,9 @@ mod tests {
         assert!(kept.can_join);
         assert!(lookup_link(&links, &kept.key).unwrap().starts_with("https://teams.microsoft.com/"));
         // Signing out drops what was kept.
-        sign_out("second", &store, &mut core);
+        sign_out("second", &store, &core);
         let g = FakeGraph::new(vec![GraphReply::Ok(body("Work one", "w1"))]);
-        let p = read_next(&accounts, &store, &t, &g, &mut core, &links, NOW + 20);
+        let p = read_next(&accounts, &store, &t, &g, &core, &links, NOW + 20);
         assert_eq!(p.meetings.len(), 1);
         assert!(!p.stale);
     }
@@ -769,23 +898,23 @@ mod tests {
         let store = FlakySecrets { inner: Chunked(MemoryBlobs::default()), fail_set: Cell::new(false), fail_get: Cell::new(false) };
         store.set("work", "refresh-1");
         store.fail_set.set(true);
-        let mut core = Core::default();
+        let core = Mutex::new(Core::default());
         let links = Mutex::new(Links::default());
         let t = FakeTokens::new(vec![ok_token("new", Some("refresh-2"))]);
         let g = FakeGraph::new(vec![GraphReply::Ok(body("A", "1"))]);
-        let p = read_next(&[acct("work")], &store, &t, &g, &mut core, &links, NOW);
+        let p = read_next(&[acct("work")], &store, &t, &g, &core, &links, NOW);
         assert_eq!(p.accounts[0].state, "unavailable");
         assert_eq!(store.get("work").as_deref(), Some("refresh-1"));
-        assert_eq!(core.pending.get("work").map(String::as_str), Some("refresh-2"));
+        assert_eq!(core.lock().unwrap().pending.get("work").map(String::as_str), Some("refresh-2"));
         // Still failing: stays unavailable, token stays pending.
-        let p = read_next(&[acct("work")], &store, &t, &g, &mut core, &links, NOW + 5);
+        let p = read_next(&[acct("work")], &store, &t, &g, &core, &links, NOW + 5);
         assert_eq!(p.accounts[0].state, "unavailable");
         // Store works again: the pending token is written and the account reads normally.
         store.fail_set.set(false);
-        let p = read_next(&[acct("work")], &store, &t, &g, &mut core, &links, NOW + 10);
+        let p = read_next(&[acct("work")], &store, &t, &g, &core, &links, NOW + 10);
         assert_eq!(p.accounts[0].state, "ok");
         assert_eq!(store.get("work").as_deref(), Some("refresh-2"));
-        assert!(core.pending.is_empty());
+        assert!(core.lock().unwrap().pending.is_empty());
     }
 
     struct ProbeGraph<'a> {
@@ -802,13 +931,13 @@ mod tests {
 
     #[test]
     fn join_resolves_while_a_read_is_in_progress() {
-        let (store, mut core) = setup();
+        let (store, core) = setup();
         let links = Mutex::new(Links::default());
         let t = FakeTokens::new(vec![ok_token("a", None)]);
         let g = FakeGraph::new(vec![GraphReply::Ok(body("First", "f"))]);
-        read_next(&[acct("work")], &store, &t, &g, &mut core, &links, NOW);
+        read_next(&[acct("work")], &store, &t, &g, &core, &links, NOW);
         let probe = ProbeGraph { links: &links, seen: RefCell::new(None) };
-        read_next(&[acct("work")], &store, &t, &probe, &mut core, &links, NOW + 10);
+        read_next(&[acct("work")], &store, &t, &probe, &core, &links, NOW + 10);
         let seen = probe.seen.borrow().clone().expect("graph was called");
         assert!(seen.unwrap().starts_with("https://teams.microsoft.com/"));
     }
@@ -824,7 +953,7 @@ mod tests {
         assert_eq!(core.lock().unwrap().cache.get("work").unwrap().access, "acc");
         let t = FakeTokens::new(vec![ok_token("acc", None)]);
         assert_eq!(complete_sign_in(&acct("work"), &granted, &store, &t, &core, NOW), Err("token-200".to_string()));
-        sign_out("work", &store, &mut core.lock().unwrap());
+        sign_out("work", &store, &core);
         assert_eq!(store.get("work"), None);
         assert!(core.lock().unwrap().cache.is_empty());
     }
@@ -841,12 +970,12 @@ mod tests {
             (GraphReply::Transient("graph-network".into()), "graph-network"),
             (GraphReply::Failed("graph-body".into()), "graph-body"),
         ] {
-            let (store, mut core) = setup();
+            let (store, core) = setup();
             let links = Mutex::new(Links::default());
-            core.cache.insert("work".into(), Cached { access: "c".into(), expires_at: NOW + 600 });
+            core.lock().unwrap().cache.insert("work".into(), Cached { access: "c".into(), expires_at: NOW + 600 });
             let t = FakeTokens::new(vec![]);
             let g = FakeGraph::new(vec![reply]);
-            let p = read_next(&[acct("work")], &store, &t, &g, &mut core, &links, NOW);
+            let p = read_next(&[acct("work")], &store, &t, &g, &core, &links, NOW);
             assert_eq!(p.accounts[0].state, "unavailable");
             assert_eq!(reasons(&p), vec![Some(want)]);
             let text = serde_json::to_string(&p).unwrap();
@@ -856,32 +985,32 @@ mod tests {
 
     #[test]
     fn a_second_401_reports_graph_401() {
-        let (store, mut core) = setup();
+        let (store, core) = setup();
         let links = Mutex::new(Links::default());
         let t = FakeTokens::new(vec![ok_token("a1", None), ok_token("a2", None)]);
         let g = FakeGraph::new(vec![GraphReply::Unauthorized, GraphReply::Unauthorized]);
-        let p = read_next(&[acct("work")], &store, &t, &g, &mut core, &links, NOW);
+        let p = read_next(&[acct("work")], &store, &t, &g, &core, &links, NOW);
         assert_eq!(reasons(&p), vec![Some("graph-401")]);
     }
 
     #[test]
     fn token_failures_carry_their_reason() {
-        let (store, mut core) = setup();
+        let (store, core) = setup();
         let links = Mutex::new(Links::default());
         let t = FakeTokens::new(vec![TokenReply::Transient("token-network".into())]);
         let g = FakeGraph::new(vec![]);
-        let p = read_next(&[acct("work")], &store, &t, &g, &mut core, &links, NOW);
+        let p = read_next(&[acct("work")], &store, &t, &g, &core, &links, NOW);
         assert_eq!(p.accounts[0].state, "unavailable");
         assert_eq!(reasons(&p), vec![Some("token-network")]);
     }
 
     #[test]
     fn a_healthy_account_has_no_reason_and_the_payload_has_no_reason_key() {
-        let (store, mut core) = setup();
+        let (store, core) = setup();
         let links = Mutex::new(Links::default());
         let t = FakeTokens::new(vec![ok_token("a", None)]);
         let g = FakeGraph::new(vec![GraphReply::Ok(body("A", "1"))]);
-        let p = read_next(&[acct("work")], &store, &t, &g, &mut core, &links, NOW);
+        let p = read_next(&[acct("work")], &store, &t, &g, &core, &links, NOW);
         assert_eq!(reasons(&p), vec![None]);
         assert!(!serde_json::to_string(&p).unwrap().contains("reason"));
     }
@@ -891,11 +1020,11 @@ mod tests {
         let store = FlakySecrets { inner: Chunked(MemoryBlobs::default()), fail_set: Cell::new(false), fail_get: Cell::new(false) };
         store.set("work", "refresh-1");
         store.fail_set.set(true);
-        let mut core = Core::default();
+        let core = Mutex::new(Core::default());
         let links = Mutex::new(Links::default());
         let t = FakeTokens::new(vec![ok_token("new", Some("refresh-2"))]);
         let g = FakeGraph::new(vec![]);
-        let p = read_next(&[acct("work")], &store, &t, &g, &mut core, &links, NOW);
+        let p = read_next(&[acct("work")], &store, &t, &g, &core, &links, NOW);
         assert_eq!(reasons(&p), vec![Some("store-write")]);
     }
 
@@ -904,12 +1033,12 @@ mod tests {
         let store = FlakySecrets { inner: Chunked(MemoryBlobs::default()), fail_set: Cell::new(false), fail_get: Cell::new(false) };
         store.set("work", "refresh-1");
         store.fail_get.set(true);
-        let mut core = Core::default();
-        core.cache.insert("work".into(), Cached { access: "c".into(), expires_at: NOW + 6000 });
+        let core = Mutex::new(Core::default());
+        core.lock().unwrap().cache.insert("work".into(), Cached { access: "c".into(), expires_at: NOW + 6000 });
         let links = Mutex::new(Links::default());
         let t = FakeTokens::new(vec![]);
         let g = FakeGraph::new(vec![]);
-        let p = read_next(&[acct("work")], &store, &t, &g, &mut core, &links, NOW);
+        let p = read_next(&[acct("work")], &store, &t, &g, &core, &links, NOW);
         assert_eq!(p.accounts[0].state, "unavailable");
         assert_eq!(reasons(&p), vec![Some("store-read")]);
         assert_eq!(t.calls.get() + g.calls.get(), 0);
@@ -917,27 +1046,27 @@ mod tests {
         store.fail_get.set(false);
         assert_eq!(store.get("work").as_deref(), Some("refresh-1"));
         let g = FakeGraph::new(vec![GraphReply::Ok(body("A", "1"))]);
-        let p = read_next(&[acct("work")], &store, &t, &g, &mut core, &links, NOW + 5);
+        let p = read_next(&[acct("work")], &store, &t, &g, &core, &links, NOW + 5);
         assert_eq!(p.accounts[0].state, "ok");
     }
 
     #[test]
     fn a_missing_store_entry_is_signed_out_with_no_reason() {
         let store = Chunked(MemoryBlobs::default());
-        let mut core = Core::default();
+        let core = Mutex::new(Core::default());
         let links = Mutex::new(Links::default());
         let t = FakeTokens::new(vec![]);
         let g = FakeGraph::new(vec![]);
-        let p = read_next(&[acct("work")], &store, &t, &g, &mut core, &links, NOW);
+        let p = read_next(&[acct("work")], &store, &t, &g, &core, &links, NOW);
         assert_eq!(p.accounts[0].state, "signed-out");
         assert_eq!(reasons(&p), vec![None]);
     }
 
     #[test]
     fn a_log_line_is_queued_only_on_a_change() {
-        let (store, mut core) = setup();
+        let (store, core) = setup();
         let links = Mutex::new(Links::default());
-        core.cache.insert("work".into(), Cached { access: "c".into(), expires_at: NOW + 6000 });
+        core.lock().unwrap().cache.insert("work".into(), Cached { access: "c".into(), expires_at: NOW + 6000 });
         let t = FakeTokens::new(vec![]);
         let g = FakeGraph::new(vec![
             GraphReply::Ok(body("A", "1")),
@@ -947,10 +1076,10 @@ mod tests {
             GraphReply::Ok(body("A", "1")),
         ]);
         for n in 0..5 {
-            read_next(&[acct("work")], &store, &t, &g, &mut core, &links, NOW + n);
+            read_next(&[acct("work")], &store, &t, &g, &core, &links, NOW + n);
         }
         assert_eq!(
-            core.log_lines,
+            core.lock().unwrap().log_lines,
             vec![
                 "2026-11-12T05:00:00Z work start ok none\n".to_string(),
                 "2026-11-12T05:00:02Z work ok unavailable graph-403-ErrorAccessDenied\n".to_string(),
@@ -979,13 +1108,242 @@ mod tests {
 
     #[test]
     fn a_hostile_reason_never_reaches_the_payload_or_the_log() {
-        let (store, mut core) = setup();
+        let (store, core) = setup();
         let links = Mutex::new(Links::default());
-        core.cache.insert("work".into(), Cached { access: "c".into(), expires_at: NOW + 600 });
+        core.lock().unwrap().cache.insert("work".into(), Cached { access: "c".into(), expires_at: NOW + 600 });
         let t = FakeTokens::new(vec![]);
         let g = FakeGraph::new(vec![GraphReply::Failed("graph-403-https://example.test/?a=b@c".into())]);
-        let p = read_next(&[acct("work")], &store, &t, &g, &mut core, &links, NOW);
+        let p = read_next(&[acct("work")], &store, &t, &g, &core, &links, NOW);
         assert_eq!(reasons(&p), vec![None]);
-        assert!(core.log_lines[0].ends_with(" none\n"));
+        assert!(core.lock().unwrap().log_lines[0].ends_with(" none\n"));
+    }
+
+    // Section: blocking fakes. Each lets a test hold a read inside the network call.
+
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{Condvar, Mutex as StdMutex};
+    use std::time::Duration;
+
+    /// A door a fake network call waits at until the test opens it.
+    #[derive(Default)]
+    struct Gate {
+        state: StdMutex<(bool, bool)>,
+        cv: Condvar,
+    }
+    impl Gate {
+        /// Called by the fake: say a call arrived, then wait for the door to open.
+        fn pass(&self) {
+            let mut st = self.state.lock().unwrap();
+            st.0 = true;
+            self.cv.notify_all();
+            let (st, timeout) = self.cv.wait_timeout_while(st, Duration::from_secs(20), |s| !s.1).unwrap();
+            drop(st);
+            assert!(!timeout.timed_out(), "gate never opened");
+        }
+        /// Called by the test: wait until a call is inside the fake.
+        fn wait_entered(&self) {
+            let st = self.state.lock().unwrap();
+            let (st, timeout) = self.cv.wait_timeout_while(st, Duration::from_secs(20), |s| !s.0).unwrap();
+            drop(st);
+            assert!(!timeout.timed_out(), "no call arrived");
+        }
+        fn open(&self) {
+            self.state.lock().unwrap().1 = true;
+            self.cv.notify_all();
+        }
+    }
+
+    struct SyncTokens<'a> {
+        replies: StdMutex<Vec<TokenReply>>,
+        calls: AtomicUsize,
+        gate: Option<&'a Gate>,
+    }
+    impl TokenClient for SyncTokens<'_> {
+        fn post(&self, _tenant: &str, _form: &[(&str, &str)]) -> TokenReply {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            if let Some(g) = self.gate {
+                g.pass();
+            }
+            let mut r = self.replies.lock().unwrap();
+            if r.is_empty() {
+                TokenReply::Transient("token-503".into())
+            } else {
+                r.remove(0)
+            }
+        }
+    }
+
+    struct SyncGraph<'a> {
+        replies: StdMutex<Vec<GraphReply>>,
+        calls: AtomicUsize,
+        seen_access: StdMutex<Vec<String>>,
+        gate: Option<&'a Gate>,
+    }
+    impl<'a> SyncGraph<'a> {
+        fn new(replies: Vec<GraphReply>, gate: Option<&'a Gate>) -> Self {
+            SyncGraph { replies: StdMutex::new(replies), calls: AtomicUsize::new(0), seen_access: StdMutex::new(vec![]), gate }
+        }
+    }
+    impl GraphClient for SyncGraph<'_> {
+        fn calendar_view(&self, access: &str, _start: &str, _end: &str) -> GraphReply {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            self.seen_access.lock().unwrap().push(access.to_string());
+            if let Some(g) = self.gate {
+                g.pass();
+            }
+            let mut r = self.replies.lock().unwrap();
+            if r.is_empty() {
+                GraphReply::Transient("graph-503".into())
+            } else {
+                r.remove(0)
+            }
+        }
+    }
+
+    fn no_tokens() -> SyncTokens<'static> {
+        SyncTokens { replies: StdMutex::new(vec![]), calls: AtomicUsize::new(0), gate: None }
+    }
+
+    #[test]
+    fn sign_out_and_join_complete_while_a_read_is_blocked_in_graph() {
+        let (store, core) = setup();
+        let links = Mutex::new(Links::default());
+        core.lock().unwrap().cache.insert("work".into(), Cached { access: "c".into(), expires_at: NOW + 6000 });
+        // A first read puts a join key in the map and a last-good list in the core.
+        let first = SyncGraph::new(vec![GraphReply::Ok(body("First", "f"))], None);
+        read_next(&[acct("work")], &store, &no_tokens(), &first, &core, &links, NOW);
+        let gate = Gate::default();
+        let blocked = SyncGraph::new(vec![GraphReply::Ok(body("Second", "s"))], Some(&gate));
+        let payload = std::thread::scope(|sc| {
+            let h = sc.spawn(|| read_next(&[acct("work")], &store, &no_tokens(), &blocked, &core, &links, NOW + 10));
+            gate.wait_entered();
+            // The read is inside Graph. Both of these must finish with the gate still shut.
+            assert!(lookup_link(&links, "1-0").unwrap().starts_with("https://teams.microsoft.com/"));
+            sign_out("work", &store, &core);
+            gate.open();
+            h.join().unwrap()
+        });
+        assert_eq!(store.get("work"), None);
+        assert_eq!(payload.accounts[0].state, "signed-out");
+        assert!(payload.meetings.is_empty());
+        let c = core.lock().unwrap();
+        assert!(c.cache.is_empty(), "a late read restored the access token");
+        assert!(c.last.is_empty(), "a late read restored the last-good list");
+        assert!(c.pending.is_empty());
+        // Only the first read logged; the discarded one logged nothing.
+        assert_eq!(c.log_lines.len(), 1);
+    }
+
+    #[test]
+    fn sign_in_completes_while_a_read_is_blocked_and_the_late_read_changes_nothing() {
+        let (store, core) = setup();
+        let links = Mutex::new(Links::default());
+        core.lock().unwrap().cache.insert("work".into(), Cached { access: "old".into(), expires_at: NOW + 6000 });
+        let gate = Gate::default();
+        let blocked = SyncGraph::new(vec![GraphReply::Ok(body("Stale", "s"))], Some(&gate));
+        let granted = super::super::auth::Granted { code: "c".into(), verifier: "v".into(), redirect_uri: "http://localhost:1/auth-callback.html".into() };
+        let payload = std::thread::scope(|sc| {
+            let h = sc.spawn(|| read_next(&[acct("work")], &store, &no_tokens(), &blocked, &core, &links, NOW));
+            gate.wait_entered();
+            sign_out("work", &store, &core);
+            let t = FakeTokens::new(vec![ok_token("acc-new", Some("ref-new"))]);
+            assert!(complete_sign_in(&acct("work"), &granted, &store, &t, &core, NOW + 1).is_ok());
+            gate.open();
+            h.join().unwrap()
+        });
+        assert!(payload.meetings.is_empty());
+        assert_eq!(store.get("work").as_deref(), Some("ref-new"));
+        let c = core.lock().unwrap();
+        assert_eq!(c.cache.get("work").unwrap().access, "acc-new");
+        assert!(c.last.is_empty(), "the read that began before the sign-in wrote its list");
+        // The only line is the sign-in's own; the stale read recorded no state.
+        assert_eq!(c.log_lines.len(), 1);
+        assert!(c.log_lines[0].contains(" signed-in "));
+    }
+
+    #[test]
+    fn sign_out_completes_while_a_read_is_blocked_in_the_token_request() {
+        let (store, core) = setup();
+        let links = Mutex::new(Links::default());
+        let gate = Gate::default();
+        let t = SyncTokens { replies: StdMutex::new(vec![ok_token("new", Some("refresh-2"))]), calls: AtomicUsize::new(0), gate: Some(&gate) };
+        let g = SyncGraph::new(vec![GraphReply::Ok(body("A", "1"))], None);
+        std::thread::scope(|sc| {
+            let h = sc.spawn(|| read_next(&[acct("work")], &store, &t, &g, &core, &links, NOW));
+            gate.wait_entered();
+            sign_out("work", &store, &core);
+            gate.open();
+            h.join().unwrap();
+        });
+        // The rotated token and the access token of a signed-out account are not kept.
+        assert_eq!(store.get("work"), None);
+        let c = core.lock().unwrap();
+        assert!(c.cache.is_empty() && c.pending.is_empty() && c.last.is_empty());
+        assert_eq!(g.calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn two_concurrent_reads_cause_one_refresh() {
+        let (store, core) = setup();
+        let links = Mutex::new(Links::default());
+        let gate = Gate::default();
+        let t = SyncTokens { replies: StdMutex::new(vec![ok_token("new", Some("refresh-2"))]), calls: AtomicUsize::new(0), gate: Some(&gate) };
+        let g = SyncGraph::new(vec![GraphReply::Ok(body("A", "1")), GraphReply::Ok(body("A", "1"))], None);
+        let (p1, p2) = std::thread::scope(|sc| {
+            let h1 = sc.spawn(|| read_next(&[acct("work")], &store, &t, &g, &core, &links, NOW));
+            gate.wait_entered();
+            let h2 = sc.spawn(|| read_next(&[acct("work")], &store, &t, &g, &core, &links, NOW));
+            // Give the second read time to reach the refresh while the first one is inside it.
+            std::thread::sleep(Duration::from_millis(100));
+            gate.open();
+            (h1.join().unwrap(), h2.join().unwrap())
+        });
+        assert_eq!(t.calls.load(Ordering::SeqCst), 1, "the rotating refresh token was spent twice");
+        assert_eq!(p1.accounts[0].state, "ok");
+        assert_eq!(p2.accounts[0].state, "ok");
+        assert_eq!(g.calls.load(Ordering::SeqCst), 2);
+        assert!(g.seen_access.lock().unwrap().iter().all(|a| a == "new"));
+        assert_eq!(store.get("work").as_deref(), Some("refresh-2"));
+    }
+
+    #[test]
+    fn two_concurrent_401s_cause_one_forced_refresh() {
+        let (store, core) = setup();
+        let links = Mutex::new(Links::default());
+        core.lock().unwrap().cache.insert("work".into(), Cached { access: "stale".into(), expires_at: NOW + 6000 });
+        let t = SyncTokens { replies: StdMutex::new(vec![ok_token("fresh", None)]), calls: AtomicUsize::new(0), gate: None };
+        let g = SyncGraph::new(
+            vec![GraphReply::Unauthorized, GraphReply::Unauthorized, GraphReply::Ok(body("A", "1")), GraphReply::Ok(body("A", "1"))],
+            None,
+        );
+        std::thread::scope(|sc| {
+            let h1 = sc.spawn(|| read_next(&[acct("work")], &store, &t, &g, &core, &links, NOW));
+            let h2 = sc.spawn(|| read_next(&[acct("work")], &store, &t, &g, &core, &links, NOW));
+            h1.join().unwrap();
+            h2.join().unwrap();
+        });
+        assert_eq!(t.calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn a_day_read_that_finishes_after_sign_out_changes_nothing() {
+        let (store, core) = setup();
+        let links = Mutex::new(Links::default());
+        core.lock().unwrap().cache.insert("work".into(), Cached { access: "c".into(), expires_at: NOW + 6000 });
+        let gate = Gate::default();
+        let g = SyncGraph::new(vec![GraphReply::Ok(body("Late", "l"))], Some(&gate));
+        let (from, to) = (NOW - 3600, NOW + 3600);
+        let payload = std::thread::scope(|sc| {
+            let h = sc.spawn(|| read_day(&[acct("work")], &store, &no_tokens(), &g, &core, &links, NOW, from, to));
+            gate.wait_entered();
+            sign_out("work", &store, &core);
+            gate.open();
+            h.join().unwrap()
+        });
+        assert_eq!(payload.accounts[0].state, "signed-out");
+        assert!(payload.events.is_empty());
+        assert!(lookup_link(&links, "d1-0").is_none());
+        let c = core.lock().unwrap();
+        assert!(c.cache.is_empty() && c.log_lines.is_empty());
     }
 }
