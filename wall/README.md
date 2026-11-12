@@ -257,11 +257,44 @@ The day ribbon (`wall/src/ribbon/`, `styles/ribbon.css`) is on Work, Home and Me
 
 ## The Work tab
 
-`wall/src/screens/Work.tsx` lays out three panels over the horizon (design
-pixels, glass style from the concept; the clock is top left in the frame, `Frame.tsx`).
+`wall/src/screens/Work.tsx` lays Work out on the concept's zones (`f_work`): left
+wing 470, centre 1290, right wing 596 design pixels, 30 apart, over the whole top
+band. The clock and date stay the frame's (`Frame.tsx`); the left wing starts under
+the date line. One weather read (`useWeather`) feeds both the line after the date and
+the centre card; the date line takes it through the frame's `ClockSlot` portal.
+
+- **Left wing** (`wall/src/work/LeftWing.tsx`), top to bottom:
+  - the weather after the date: icon, temperature and a short condition ("58°,
+    clearing"), `WeatherLine` in `weather/WeatherCard.tsx`, empty until a reading;
+  - **Next**: the first meeting that has not ended, from `wall2_meet_next`
+    (`work/useNextMeeting.ts`: read on mount and every 5 minutes while visible, the
+    time ticks every 30 seconds), written as "12:00, in 1 h 36 m", "now, 12 m left"
+    or "tomorrow 9:30" (`work/next.ts`). Hidden when Meet is not set up, when the
+    first read fails, and when there is no meeting;
+  - **Focus** (`FocusMini` in `focus/FocusTimer.tsx`): a 64 pixel ring with the
+    minutes left, the task label (or "Ready to focus"), and one round button: start,
+    pause or resume. Tapping the ring while no session runs opens a sheet with 25, 50,
+    Custom and "Start N min";
+  - **Now playing** (`MusicMini` in `music/MusicBar.tsx`): art, title, artist and one
+    play or pause button, from the same app-wide poll as the music bar;
+  - **Machines** (`wall/src/machines/`, owner vote A, "whisper bars"): a header row
+    (CPU, GPU, RAM) and two thin rows, PC and BOX with the box temperature, from
+    `wall2_machines` every 2 seconds while visible (one read at a time, nothing while
+    hidden). Grey by default. A number turns amber only after it stays over its limit
+    for 30 seconds (RAM over 90, CPU or GPU over 95, box temperature over 90 degrees);
+    a dip back under starts the 30 seconds again, and a gap of more than 6 seconds
+    between reads (hidden, slow) does too. The BOX row is hidden when the box numbers
+    are null and dimmed when `boxStale`. Nothing shows when the command fails.
+  - Round buttons in the wing draw at 56 pixels but keep a 72 pixel touch target.
+- **Centre** (`wall/src/agents/CentreSlot.tsx`): until the agent lanes land (PR 13),
+  and whenever the helper is not set up, the full focus timer and the weather card
+  (now, today's range, the next six hours) fill it, so it is never an empty card. PR 13
+  changes only this file.
+- **Right wing**: the next three tasks (see "Task card" below). The Big screen and Keys
+  rows of the concept come with their own pull requests.
 
 - **Focus timer** (`wall/src/focus/`). A ring with the minutes left in the
-  middle. Choose 25, 50 or custom (5 to 120 minutes, steps of 5). Start, pause,
+  middle (the full card in the centre, the small row in the left wing). Choose 25, 50 or custom (5 to 120 minutes, steps of 5). Start, pause,
   resume, reset. The state is stored in `localStorage` key `wall2-focus` as an
   end time, so a restart resumes and a timer that ended while the app was closed
   shows as finished. The state lives in an app-level store (`store.ts`) with its
@@ -277,8 +310,8 @@ pixels, glass style from the concept; the clock is top left in the frame, `Frame
   15 minutes while visible, and once when the page returns after 15 minutes or
   more. On failure the last reading stays and shows its age in small text. The
   code to label and icon map is one pure function, `describeWeather` in `codes.ts`.
-- **Music bar** (`wall/src/music/`). One app-wide poll (`store.ts`) shared by this bar and
-  the Unwind view: it polls `get_now_playing` every 2 seconds
+- **Music** (`wall/src/music/`). One app-wide poll (`store.ts`) shared by Work's now
+  playing row, the full music bar and the Unwind view: it polls `get_now_playing` every 2 seconds
   while visible (never while hidden); each call gives up after 5 seconds so a hung
   call cannot stall the loop, and a late answer is dropped. Art only from `album_art_base64` with an
   allowed mime (png, jpeg, webp, gif); `art_unchanged` keeps the current art.
@@ -288,9 +321,10 @@ pixels, glass style from the concept; the clock is top left in the frame, `Frame
 - **Settings** (`wall/src/settings/`). `localStorage` key `wall2-settings`, JSON
   with optional `latitude` and `longitude` (defaults 47.68, -122.21). No settings
   screen yet.
-- **Browser dev.** `npm run dev` registers mocks for the music and Do Not
-  Disturb commands (`src/bridge/devMocks.ts`, dev server only). Weather needs
-  network access to Open-Meteo.
+- **Browser dev.** `npm run dev` registers mocks for the commands Work calls
+  (`src/bridge/devMocks/`, dev server only); in a review still (`?hz=&at=`) the
+  meeting and task mocks follow the review's time. Weather needs network access to
+  Open-Meteo.
 
 ## Audio, ripple and moon
 
@@ -360,26 +394,27 @@ file is read on every call, so a change applies on the next refresh.
 
 ### Task card (Work tab, top right)
 
-It sits flush right above the music bar (596 by 366 design pixels, same right edge as
-the music bar, a 20 pixel gap after the weather card).
+The right wing of Work, as the concept's rows (`.tk3`), 72 pixels tall for touch.
 
-`wall/src/tasks/`. Shows the next three open tasks (`GET /api/tasks?status=open`,
-already sorted by due date; only rows with kind `task` and status `open`). Each row:
-a large check button, the title, a small due line ("today 3 PM", "tomorrow",
-"Fri", "Nov 20", "overdue", or nothing) and a "Focus" button. Refreshes every 2
-minutes while visible and after each completion.
+`wall/src/tasks/`. Work reads `wall2_tasks_summary({ notTag: "home" })`: the next three
+open tasks without the home tag, and how many more are open. Each row: a check circle,
+the title, and the estimate chip ("15 m", "45 m", "60+ m", none without an estimate).
+The header says "N more can wait" when there are more. Refreshes every 2 minutes while
+visible and after each completion. (`useTasks()` with no filter still reads
+`wall2_tasks_next`; Zen uses that.)
 
 - **Check**: the row is struck through at once and fades out after 2 seconds;
   `wall2_task_done` sends `PATCH /api/tasks/{id}` with `{"status":"done"}`. If that
   fails the row comes back with a small "Could not save".
-- **Focus**: starts the focus timer with the length chosen on the focus card (25
-  minutes unless changed) and shows the task title under "Focusing". Disabled
+- **Focus**: hold a row for half a second to start the focus timer with the length
+  chosen on the focus card (25 minutes unless changed), named after the task. A short
+  tap or a press that slides off does nothing; with a keyboard, Enter starts it. Ignored
   while a session is running or paused. The label is saved with the session and
   cleared on reset and when the session finishes.
 - **States**: "Not set up" (no address), "Nothing due" (empty list), "Tasks
   unavailable" (first read failed), and after a failed refresh the last good list
   with a small "updated N min ago".
-- **Estimate and summary (feeds for later screens, no card change yet)**: each task
+- **Estimate and summary**: each task
   carries `est` (`"15"`, `"30"`, `"45"`, `"60plus"` or null), read from the row's
   `estimate` field. `wall2_tasks_summary({ tag?, notTag?, list? })` returns
   `{ next, remaining, dueTomorrow }`: the first three open tasks, how many more are
@@ -421,7 +456,7 @@ browser, and Rust does the opening (`wall2_open_link`, kinds `security` and
 `capabilities/wall2.json` grants no opener permission. `wall2_links` tells the tile
 which buttons to show. A failed open shows "Could not open" for 3 seconds.
 
-Browser dev (`npm run dev`) shows both cards from mocks in `devMocks.ts`.
+Browser dev (`npm run dev`) shows both cards from mocks in `devMocks/`.
 
 ## Meet
 
