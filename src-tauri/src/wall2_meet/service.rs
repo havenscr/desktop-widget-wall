@@ -387,16 +387,19 @@ mod tests {
         replies: RefCell<Vec<GraphReply>>,
         calls: Cell<usize>,
         seen_access: RefCell<Vec<String>>,
+        /// The start and end of every calendar read, as asked for.
+        seen_window: RefCell<Vec<(String, String)>>,
     }
     impl FakeGraph {
         fn new(replies: Vec<GraphReply>) -> Self {
-            FakeGraph { replies: RefCell::new(replies), calls: Cell::new(0), seen_access: RefCell::new(vec![]) }
+            FakeGraph { replies: RefCell::new(replies), calls: Cell::new(0), seen_access: RefCell::new(vec![]), seen_window: RefCell::new(vec![]) }
         }
     }
     impl GraphClient for FakeGraph {
-        fn calendar_view(&self, access: &str, _s: &str, _e: &str) -> GraphReply {
+        fn calendar_view(&self, access: &str, start: &str, end: &str) -> GraphReply {
             self.calls.set(self.calls.get() + 1);
             self.seen_access.borrow_mut().push(access.to_string());
+            self.seen_window.borrow_mut().push((start.to_string(), end.to_string()));
             let mut r = self.replies.borrow_mut();
             if r.is_empty() {
                 GraphReply::Transient
@@ -561,18 +564,40 @@ mod tests {
         assert!(lookup_link(&links, "1-0").is_none());
     }
 
+    fn event_at(subject: &str, ical: &str, start: &str, end: &str) -> Value {
+        json!({
+            "subject": subject,
+            "start": { "dateTime": start },
+            "end": { "dateTime": end },
+            "isAllDay": false, "isCancelled": false,
+            "responseStatus": { "response": "accepted" },
+            "iCalUId": ical,
+            "onlineMeeting": { "joinUrl": "https://teams.microsoft.com/l/meetup-join/secret-part" }
+        })
+    }
+
     #[test]
     fn day_read_keeps_past_events_flags_livestreams_and_keeps_keys_apart() {
         let (store, mut core) = setup();
         let links = Mutex::new(Links::default());
         let t = FakeTokens::new(vec![ok_token("a", None)]);
-        let g = FakeGraph::new(vec![GraphReply::Ok(body("Livestream: Q and A", "l1")), GraphReply::Ok(body("Weekly planning", "p1"))]);
+        // NOW is 2026-11-12 05:00 UTC. The first event ended at 02:00 UTC the same day, before NOW.
+        let day_body = json!({ "value": [
+            event_at("Livestream: Q and A", "l1", "2026-11-12T01:00:00.0000000", "2026-11-12T02:00:00.0000000"),
+            event_at("Weekly planning", "p1", "2026-11-12T17:00:00.0000000", "2026-11-12T18:00:00.0000000"),
+        ] });
+        let g = FakeGraph::new(vec![GraphReply::Ok(day_body), GraphReply::Ok(body("Weekly planning", "p1"))]);
         let accounts = [acct("work")];
-        // The window starts before NOW, so an event that began earlier is still listed.
-        let p = read_day(&accounts, &store, &t, &g, &mut core, &links, NOW, NOW - 17 * 3600, NOW + 19 * 3600);
+        // Local midnight (UTC here) to 36 elapsed hours later.
+        let (from, to) = (1_794_441_600, 1_794_441_600 + 36 * 3600);
+        let p = read_day(&accounts, &store, &t, &g, &mut core, &links, NOW, from, to);
+        assert_eq!(g.seen_window.borrow().as_slice(), [("2026-11-12T00:00:00Z".to_string(), "2026-11-13T12:00:00Z".to_string())]);
         assert_eq!(p.accounts[0].state, "ok");
-        assert_eq!(p.events.len(), 1);
+        assert_eq!(p.events.len(), 2);
+        assert_eq!(p.events[0].title, "Livestream: Q and A");
+        assert!(p.events[0].end.as_str() < utc_iso(NOW).as_str(), "the kept event is in the past");
         assert!(p.events[0].is_live);
+        assert!(!p.events[1].is_live);
         assert!(p.events[0].can_join);
         assert!(p.events[0].key.starts_with('d'));
         let day_key = p.events[0].key.clone();
@@ -581,10 +606,11 @@ mod tests {
         for bad in ["joinUrl", "Bearer", "teams.microsoft.com", "secret-part", "refresh", "token", "attendees", "organizer", "body"] {
             assert!(!text.contains(bad), "payload leaks {bad}: {text}");
         }
-        // A next-meetings read does not break the day key, and a plain meeting is not live.
+        // A next-meetings read does not break the day key, and asks for the usual 24 hours from now.
         let n = read_next(&accounts, &store, &t, &g, &mut core, &links, NOW + 10);
         assert!(!is_live(&n.meetings[0].title));
         assert!(lookup_link(&links, &day_key).is_some());
+        assert_eq!(g.seen_window.borrow()[1], (utc_iso(NOW + 10), utc_iso(NOW + 10 + WINDOW_SECS)));
     }
 
     #[test]
