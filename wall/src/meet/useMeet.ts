@@ -9,8 +9,10 @@ export type MeetStatus = 'loading' | 'ready' | 'unconfigured' | 'invalid' | 'err
 export interface MeetState {
   status: MeetStatus;
   data: MeetData | null;
-  /** Time of the last good read, or null. */
+  /** Time of the last complete good read, or null. */
   lastOk: number | null;
+  /** The list holds meetings kept from an earlier read (an account was unavailable). */
+  stale: boolean;
   now: number;
   /** Account id while a sign-in is waiting for the browser. */
   signingIn: string | null;
@@ -35,6 +37,7 @@ export function useMeet(): MeetState {
   const [status, setStatus] = useState<MeetStatus>('loading');
   const [data, setData] = useState<MeetData | null>(null);
   const [lastOk, setLastOk] = useState<number | null>(null);
+  const [stale, setStale] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const [signingIn, setSigningIn] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -56,7 +59,9 @@ export function useMeet(): MeetState {
       if (!mounted.current) return;
       setData({ accounts: next?.accounts ?? [], meetings: next?.meetings ?? [] });
       setStatus('ready');
-      setLastOk(Date.now());
+      const partial = next?.stale === true;
+      setStale(partial);
+      if (!partial) setLastOk(Date.now());
     } catch (e) {
       if (!mounted.current) return;
       const t = text(e);
@@ -128,5 +133,5 @@ export function useMeet(): MeetState {
     [refresh],
   );
 
-  return { status, data, lastOk, now, signingIn, notice, signIn, cancelSignIn, signOut, join };
+  return { status, data, lastOk, stale, now, signingIn, notice, signIn, cancelSignIn, signOut, join };
 }

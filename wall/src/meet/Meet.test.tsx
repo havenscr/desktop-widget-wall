@@ -142,3 +142,15 @@ it('stops polling when another place is active', async () => {
   await flush(20 * 60_000);
   expect(next).toHaveBeenCalledTimes(1);
 });
+
+it('keeps the list and shows the updated hint when the native side marks it stale', async () => {
+  let stale = false;
+  mocks.set('wall2_meet_next', () => ({ ...data, stale }));
+  render(<Meet />);
+  await flush();
+  expect(screen.queryByText(/updated \d+ min ago/)).toBeNull();
+  stale = true;
+  await flush(5 * 60_000);
+  expect(screen.getByText('Planning')).toBeTruthy();
+  expect(screen.getByText(/updated \d+ min ago/)).toBeTruthy();
+});

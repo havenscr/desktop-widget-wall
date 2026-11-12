@@ -22,6 +22,8 @@ pub struct Core {
     pub cache: HashMap<String, Cached>,
     pub generation: u64,
     pub links: HashMap<String, String>,
+    /// Each account's last successful meetings, reused while that account is unavailable.
+    pub last: HashMap<String, Vec<Candidate>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -65,6 +67,8 @@ pub struct MeetingOut {
 pub struct MeetPayload {
     pub accounts: Vec<AccountOut>,
     pub meetings: Vec<MeetingOut>,
+    /// True when some meetings come from an earlier read because an account was unavailable.
+    pub stale: bool,
 }
 
 /// A fresh access token for the account, from the cache or a refresh.
@@ -119,24 +123,24 @@ fn read_account(
     graph: &dyn GraphClient,
     cache: &mut HashMap<String, Cached>,
     now: u64,
-) -> (AccountState, Vec<Candidate>) {
+) -> (AccountState, Option<Vec<Candidate>>) {
     let (start, end) = (utc_iso(now), utc_iso(now + WINDOW_SECS));
     let access = match obtain(acct, store, tokens, cache, now, false) {
         Ok(a) => a,
-        Err(state) => return (state, Vec::new()),
+        Err(state) => return (state, None),
     };
     let mut reply = graph.calendar_view(&access, &start, &end);
     if matches!(reply, GraphReply::Unauthorized) {
         // The cached token was refused: drop it, refresh once, ask once more.
         let access = match obtain(acct, store, tokens, cache, now, true) {
             Ok(a) => a,
-            Err(state) => return (state, Vec::new()),
+            Err(state) => return (state, None),
         };
         reply = graph.calendar_view(&access, &start, &end);
     }
     match reply {
-        GraphReply::Ok(body) => (AccountState::Ok, shape_events(&body, &acct.id)),
-        GraphReply::Unauthorized | GraphReply::Transient | GraphReply::Failed => (AccountState::Unavailable, Vec::new()),
+        GraphReply::Ok(body) => (AccountState::Ok, Some(shape_events(&body, &acct.id))),
+        GraphReply::Unauthorized | GraphReply::Transient | GraphReply::Failed => (AccountState::Unavailable, None),
     }
 }
 
@@ -151,8 +155,27 @@ pub fn read_next(
 ) -> MeetPayload {
     let mut statuses = Vec::new();
     let mut lists = Vec::new();
+    let mut stale = false;
     for acct in accounts {
-        let (state, list) = read_account(acct, store, tokens, graph, &mut core.cache, now);
+        let (state, fresh) = read_account(acct, store, tokens, graph, &mut core.cache, now);
+        let list = match fresh {
+            Some(l) => {
+                core.last.insert(acct.id.clone(), l.clone());
+                l
+            }
+            // Unavailable: keep showing what the last good read held, and say so.
+            None if state == AccountState::Unavailable => match core.last.get(&acct.id) {
+                Some(l) => {
+                    stale = true;
+                    l.clone()
+                }
+                None => Vec::new(),
+            },
+            None => {
+                core.last.remove(&acct.id);
+                Vec::new()
+            }
+        };
         statuses.push(AccountOut { id: acct.id.clone(), label: acct.label.clone(), state: state.as_str() });
         lists.push(list);
     }
@@ -171,7 +194,7 @@ pub fn read_next(
             MeetingOut { key, account_id: c.account_id, title: c.title, start: c.start, end: c.end, can_join }
         })
         .collect();
-    MeetPayload { accounts: statuses, meetings }
+    MeetPayload { accounts: statuses, meetings, stale }
 }
 
 /// After a sign-in: keep the refresh token, cache the access token.
@@ -206,6 +229,7 @@ pub fn complete_sign_in(
 pub fn sign_out(id: &str, store: &dyn SecretStore, core: &mut Core) {
     store.delete(id);
     core.cache.remove(id);
+    core.last.remove(id);
 }
 
 #[cfg(test)]
@@ -395,6 +419,36 @@ mod tests {
         let p = read_next(&[acct("work"), acct("second")], &store, &t, &g, &mut core, NOW + 10);
         assert_eq!(p.meetings[0].key, "2-0");
         assert!(core.links.get("1-0").is_none());
+    }
+
+    #[test]
+    fn a_transient_failure_keeps_that_accounts_meeting_and_join_working() {
+        let store = Chunked(MemoryBlobs::default());
+        store.set("work", "r1");
+        store.set("second", "r2");
+        let mut core = Core::default();
+        let t = FakeTokens::new(vec![ok_token("a", None), ok_token("b", None)]);
+        let g = FakeGraph::new(vec![GraphReply::Ok(body("Work one", "w1")), GraphReply::Ok(body("Second one", "s1"))]);
+        let accounts = [acct("work"), acct("second")];
+        let p = read_next(&accounts, &store, &t, &g, &mut core, NOW);
+        assert!(!p.stale);
+        assert_eq!(p.meetings.len(), 2);
+        // The second account now fails; the first still answers.
+        let g = FakeGraph::new(vec![GraphReply::Ok(body("Work one", "w1")), GraphReply::Transient]);
+        let p = read_next(&accounts, &store, &t, &g, &mut core, NOW + 10);
+        assert!(p.stale);
+        assert_eq!(p.accounts[1].state, "unavailable");
+        assert_eq!(p.meetings.len(), 2);
+        let kept = p.meetings.iter().find(|m| m.account_id == "second").unwrap();
+        assert_eq!(kept.title, "Second one");
+        assert!(kept.can_join);
+        assert!(core.links.get(&kept.key).unwrap().starts_with("https://teams.microsoft.com/"));
+        // Signing out drops what was kept.
+        sign_out("second", &store, &mut core);
+        let g = FakeGraph::new(vec![GraphReply::Ok(body("Work one", "w1"))]);
+        let p = read_next(&accounts, &store, &t, &g, &mut core, NOW + 20);
+        assert_eq!(p.meetings.len(), 1);
+        assert!(!p.stale);
     }
 
     #[test]

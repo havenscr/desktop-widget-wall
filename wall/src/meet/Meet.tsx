@@ -98,7 +98,7 @@ function AccountRow({ a, m }: { a: MeetAccount; m: MeetState }) {
 }
 
 function AccountsPanel({ m }: { m: MeetState }) {
-  const stale = m.status === 'error' && m.lastOk !== null ? updatedText(m.lastOk, m.now) : null;
+  const stale = (m.status === 'error' || m.stale) && m.lastOk !== null ? updatedText(m.lastOk, m.now) : null;
   return (
     <section className="panel meet-accounts" aria-label="Accounts">
       <div className="row sb">

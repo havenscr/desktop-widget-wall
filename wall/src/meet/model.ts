@@ -20,6 +20,8 @@ export interface Meeting {
 export interface MeetData {
   accounts: MeetAccount[];
   meetings: Meeting[];
+  /** True when part of the list is from an earlier read because an account was unavailable. */
+  stale?: boolean;
 }
 
 export const NOT_CONFIGURED = 'not-configured';
