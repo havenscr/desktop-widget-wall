@@ -99,7 +99,7 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
           }
           oldCanvas.style.display = '';
           canvas.style.opacity = String(xfade.progress);
-          drawHorizon(oldCtx, {
+          const oldOptions: HorizonOptions = {
             width,
             height,
             scale,
@@ -108,7 +108,13 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
             t: T,
             phase: (T * 0.32) % 1,
             ...(xfade.moon ? { moon: MOON } : {}),
-          });
+          };
+          // The ripple keeps playing in the old view, with the old camera's shape and the same fade and loudness.
+          if (!still) {
+            const oldEcho = echoOptions(xfade.camera, fade.current, loud.current, T);
+            if (oldEcho) oldOptions.echo = oldEcho;
+          }
+          drawHorizon(oldCtx, oldOptions);
         } else {
           oldCanvas.style.display = 'none';
           canvas.style.opacity = '';
