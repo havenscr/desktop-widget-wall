@@ -3611,8 +3611,7 @@ fn start_displays_worker() {
                     }
                     let found = APP_HANDLE
                         .get()
-                        .and_then(|app| app.get_webview_window(WALL2_LABEL))
-                        .map(|window| wall2_window::follow_strip(&window))
+                        .map(|app| wall2_window::follow_strip(app, WALL2_LABEL))
                         .unwrap_or(true);
                     if found {
                         break;
@@ -3887,15 +3886,19 @@ pub fn run() {
             }
 
             if let Some(window) = app.get_webview_window(WALL2_LABEL) {
+                wall2_window::start_log(app.path().app_log_dir().ok());
                 #[cfg(windows)]
                 {
                     start_displays_worker();
                     display_watch::set_on_displays_changed(on_displays_changed);
+                    wall2_window::install_guard(&window);
+                    // Place hidden, show, place again (see wall2_window.rs).
+                    wall2_window::startup(&window);
+                    wall2_window::delayed_checks(app.handle(), WALL2_LABEL);
                 }
-                wall2_window::place_at_startup(&window);
+                // Non-Windows dev builds: no placement, but never stay hidden.
+                #[cfg(not(windows))]
                 let _ = window.show();
-                // Second pass: settles a display scale change from the move.
-                wall2_window::place_at_startup(&window);
                 // The window was created hidden, so Resized events during placement
                 // marked it user hidden. Clear that or the WebView stays dark.
                 USER_HIDDEN.store(false, Ordering::SeqCst);
@@ -3905,6 +3908,10 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            #[cfg(windows)]
+            if window.label() == WALL2_LABEL {
+                wall2_window::log_window_event(window, event);
+            }
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 // Minimize to tray instead of closing
                 let _ = window.hide();

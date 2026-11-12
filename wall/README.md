@@ -49,7 +49,27 @@ and quits it, and its tray menu has no "Toggle Fullscreen". At startup Rust
 sizes it to the monitor that is exactly 2560 by 720 physical pixels, else the
 monitor with the smallest height, else the primary monitor. When a monitor is
 added or removed it moves back onto an exact 2560 by 720 monitor if one is
-present, and does nothing if none is.
+present. If none is, it stays where it is, and the stored target is cleared so
+a DPI change cannot push the window back to coordinates that are now off
+screen; it re-places itself when the strip returns.
+
+**Placement and its log.** `src-tauri/src/wall2_window.rs` lists monitors with
+Win32 and places the window with `SetWindowPos` on its handle: move onto the
+monitor, set the full rectangle, read it back, retry up to 3 times. A window
+subclass (Wall 2 only) re-applies the target after every `WM_DPICHANGED`, since
+a display scale change while crossing monitors can otherwise undo the move. At
+startup it places hidden, shows, places again, then re-checks at about 250 ms,
+1 s and 3 s. Every step is written to `wall2-placement.log` (truncated at each
+launch, about 256 KB at most): Windows build, DPI awareness, each monitor
+(name, position, size, work area, DPI, scale, primary), the chosen target and
+why, the window rectangle, client size, DPI, scale and visibility after each
+step, DPI changes, and Moved, Resized and ScaleFactorChanged events for the
+first 30 seconds. It holds no user, host or token data. To find it, paste this
+into the Explorer address bar:
+
+```
+%LOCALAPPDATA%\com.havens-consulting.widget-wall2\logs
+```
 
 ```bash
 npm ci                  # root install, provides the Tauri CLI
