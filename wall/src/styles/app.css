@@ -55,10 +55,6 @@ button,
   height: 720px;
   display: block;
 }
-/* The old terrain during a cross-fade: under the main canvas, which fades in over it. */
-.horizon-canvas-old {
-  z-index: -1;
-}
 
 .rail {
   display: flex;

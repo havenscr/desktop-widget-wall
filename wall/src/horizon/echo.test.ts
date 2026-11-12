@@ -1,6 +1,6 @@
-import { expect, it } from 'vitest';
-import { CAMERAS } from './cameras';
-import { ECHO_FADE_S, echoOptions, stepEchoFade } from './echo';
+import { describe, expect, it } from 'vitest';
+import { CAMERAS, HOME_MORNING, settled, startGlide, stepGlide } from './cameras';
+import { ECHO_FADE_S, ECHO_GATE_S, echoOptions, initialEchoGate, stepEchoFade, stepEchoGate } from './echo';
 
 it('takes ea, en, eamp and ecx from the camera preset, with hs 900 and the animation time', () => {
   for (const place of ['work', 'home', 'unwind'] as const) {
@@ -46,4 +46,59 @@ it('fades in and out over about a second', () => {
 it('strength is exactly ea * fade * level, and zero loudness gives no ripple', () => {
   expect(echoOptions(CAMERAS.unwind, 0.5, 0.4, 0)!.a).toBeCloseTo(CAMERAS.unwind.ea * 0.5 * 0.4, 9);
   expect(echoOptions(CAMERAS.unwind, 1, 0, 0)).toBeNull();
+});
+
+describe('the camera gate', () => {
+  it('ramps out over the first 0.6 s of a move to Rainier and stays shut there', () => {
+    let g = startGlide(settled(CAMERAS.work), HOME_MORNING, false, true);
+    let gate = initialEchoGate(settled(CAMERAS.work));
+    expect(gate).toBe(1);
+    const seen: number[] = [];
+    for (let i = 0; i < 6; i++) {
+      g = stepGlide(g, 0.1);
+      gate = stepEchoGate(gate, g, 0.1);
+      seen.push(gate);
+    }
+    for (let i = 1; i < seen.length; i++) expect(seen[i]).toBeLessThan(seen[i - 1]);
+    expect(seen[0]).toBeCloseTo(1 - 0.1 / ECHO_GATE_S, 9);
+    expect(seen[4]).toBeGreaterThan(0); // still ramping at 0.5 s
+    expect(seen[5]).toBeLessThan(1e-9); // gone by 0.6 s
+    g = stepGlide(g, 10);
+    expect(stepEchoGate(1, g, 0.1)).toBe(0); // the Rainier camera is the view: never drawn
+    expect(initialEchoGate(settled(HOME_MORNING))).toBe(0);
+  });
+
+  it('stays shut while the turn away runs, then ramps in over 0.6 s once it settles', () => {
+    let g = startGlide(settled(HOME_MORNING), CAMERAS.home, false);
+    let gate = 0;
+    for (let i = 0; i < 31; i++) {
+      g = stepGlide(g, 0.1);
+      gate = stepEchoGate(gate, g, 0.1);
+      expect(gate).toBe(0);
+    }
+    const ramp: number[] = [];
+    for (let i = 0; i < 7; i++) {
+      g = stepGlide(g, 0.1);
+      gate = stepEchoGate(gate, g, 0.1);
+      ramp.push(gate);
+    }
+    expect(g.progress).toBe(1);
+    expect(ramp[0]).toBeCloseTo(0.1 / ECHO_GATE_S, 9); // the arrival frame
+    for (let i = 1; i < 6; i++) expect(ramp[i]).toBeGreaterThan(ramp[i - 1]);
+    expect(ramp[5]).toBeCloseTo(1, 9);
+    expect(ramp[6]).toBe(1);
+  });
+
+  it('stays open on moves between cameras that both have a ripple', () => {
+    let g = startGlide(settled(CAMERAS.work), CAMERAS.unwind, false);
+    for (let i = 0; i < 20; i++) {
+      g = stepGlide(g, 0.1);
+      expect(stepEchoGate(1, g, 0.1)).toBe(1);
+    }
+  });
+
+  it('the gate scales the ripple through the fade argument', () => {
+    expect(echoOptions(CAMERAS.home, 0.5, 1, 0)!.a).toBeCloseTo(CAMERAS.home.ea * 0.5, 9);
+    expect(echoOptions(CAMERAS.home, 0, 1, 0)).toBeNull();
+  });
 });
