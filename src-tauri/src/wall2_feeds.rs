@@ -265,23 +265,33 @@ fn est_minutes(est: Option<&str>) -> u64 {
     }
 }
 
-/// The task's list name: `list_name`, `list` as text, or `list.name`.
-fn list_of(t: &Value) -> Option<&str> {
-    t.get("list_name")
-        .and_then(Value::as_str)
-        .or_else(|| t.get("list").and_then(Value::as_str))
-        .or_else(|| t.get("list").and_then(|l| l.get("name")).and_then(Value::as_str))
+/// What `wall2_tasks_summary` keeps. Every field is optional.
+#[derive(Debug, Default, Clone, Copy)]
+struct Filters<'a> {
+    /// Keep tasks whose `tags` contains this (case ignored).
+    tag: Option<&'a str>,
+    /// Drop tasks whose `tags` contains this (case ignored).
+    not_tag: Option<&'a str>,
+    /// Keep tasks whose `bucket_id` is this id.
+    bucket_id: Option<&'a str>,
 }
 
-/// Open tasks only (`kind` task, `status` open), every one in server order. With `list`,
-/// only tasks on the list of that name (case ignored).
-fn open_tasks(body: &Value, list: Option<&str>) -> Vec<TaskItem> {
+fn has_tag(t: &Value, want: &str) -> bool {
+    t.get("tags")
+        .and_then(Value::as_array)
+        .is_some_and(|tags| tags.iter().filter_map(Value::as_str).any(|have| have.trim().eq_ignore_ascii_case(want)))
+}
+
+/// Open tasks only (`kind` task, `status` open), every one in server order, narrowed by the filters.
+fn open_tasks(body: &Value, f: Filters) -> Vec<TaskItem> {
     let Some(rows) = body.get("tasks").and_then(Value::as_array) else {
         return Vec::new();
     };
     rows.iter()
         .filter(|t| t.get("kind").and_then(Value::as_str) == Some("task") && t.get("status").and_then(Value::as_str) == Some("open"))
-        .filter(|t| list.map_or(true, |want| list_of(t).is_some_and(|have| have.trim().eq_ignore_ascii_case(want))))
+        .filter(|t| f.tag.map_or(true, |want| has_tag(t, want)))
+        .filter(|t| f.not_tag.map_or(true, |want| !has_tag(t, want)))
+        .filter(|t| f.bucket_id.map_or(true, |id| t.get("bucket_id").and_then(Value::as_str) == Some(id)))
         .filter_map(|t| {
             let id = as_id(t.get("id")?)?;
             let raw_title = t.get("title").and_then(Value::as_str).unwrap_or("");
@@ -300,7 +310,7 @@ fn open_tasks(body: &Value, list: Option<&str>) -> Vec<TaskItem> {
 
 /// Open tasks only, the first three in server order.
 fn pick_tasks(body: &Value) -> Vec<TaskItem> {
-    let mut all = open_tasks(body, None);
+    let mut all = open_tasks(body, Filters::default());
     all.truncate(TASK_LIMIT);
     all
 }
@@ -320,8 +330,27 @@ pub struct TasksSummary {
     pub due_tomorrow: DueTomorrow,
 }
 
+/// A tag: 1 to 40 characters, `^[A-Za-z0-9][A-Za-z0-9 &/_-]{0,39}$`.
+fn valid_tag(tag: &str) -> bool {
+    let mut chars = tag.chars();
+    chars.next().is_some_and(|c| c.is_ascii_alphanumeric())
+        && tag.chars().count() <= 40
+        && chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, ' ' | '&' | '/' | '_' | '-'))
+}
+
+/// A list name: 1 to 60 characters, no control characters.
 fn valid_list_name(name: &str) -> bool {
-    (1..=40).contains(&name.chars().count()) && name.chars().all(|c| c.is_ascii_alphanumeric() || c == ' ' || c == '&' || c == '-')
+    (1..=60).contains(&name.chars().count()) && !name.chars().any(char::is_control)
+}
+
+/// The id of the bucket whose `name` equals `want`, ignoring case and outer spaces.
+fn find_bucket(body: &Value, want: &str) -> Option<String> {
+    let want = want.trim().to_lowercase();
+    body.get("buckets")?
+        .as_array()?
+        .iter()
+        .find(|b| b.get("name").and_then(Value::as_str).is_some_and(|n| n.trim().to_lowercase() == want))
+        .and_then(|b| as_id(b.get("id")?))
 }
 
 /// Whether a task is due on the local day that starts at `tomorrow` (epoch seconds) and
@@ -337,8 +366,8 @@ fn due_tomorrow(t: &TaskItem, tomorrow: i64, after: i64, tomorrow_date: &str) ->
 }
 
 /// The three next tasks, how many more are open, and what is due tomorrow (local day).
-fn summarize(body: &Value, list: Option<&str>, now: i64, off: &dyn Fn(i64) -> i64) -> TasksSummary {
-    let all = open_tasks(body, list);
+fn summarize(body: &Value, f: Filters, now: i64, off: &dyn Fn(i64) -> i64) -> TasksSummary {
+    let all = open_tasks(body, f);
     let today = local_midnight(now, off);
     let tomorrow = local_midnight(today + 36 * 3600, off);
     let after = local_midnight(today + 60 * 3600, off);
@@ -355,17 +384,38 @@ fn summarize(body: &Value, list: Option<&str>, now: i64, off: &dyn Fn(i64) -> i6
     TasksSummary { next, remaining, due_tomorrow: DueTomorrow { count, est_minutes: est_total } }
 }
 
+/// The next tasks with optional filters: `tag`, `notTag` (task tags) and `list` (a list
+/// name, resolved to its bucket through `/api/buckets`). None of them goes into a URL. An
+/// unknown list name gives an empty summary, not an error.
 #[tauri::command]
-pub async fn wall2_tasks_summary(app: tauri::AppHandle, list: Option<String>) -> Result<TasksSummary, String> {
-    if let Some(name) = list.as_deref() {
-        if !valid_list_name(name) {
-            return Err("Invalid list name".to_string());
-        }
+#[allow(non_snake_case)]
+pub async fn wall2_tasks_summary(
+    app: tauri::AppHandle,
+    tag: Option<String>,
+    notTag: Option<String>,
+    list: Option<String>,
+) -> Result<TasksSummary, String> {
+    if tag.as_deref().is_some_and(|t| !valid_tag(t)) || notTag.as_deref().is_some_and(|t| !valid_tag(t)) {
+        return Err("Invalid tag".to_string());
+    }
+    if list.as_deref().is_some_and(|l| !valid_list_name(l)) {
+        return Err("Invalid list name".to_string());
     }
     let base = read_base(&app, "tasksBaseUrl", true)?;
     tauri::async_runtime::spawn_blocking(move || {
+        let bucket_id = match list.as_deref() {
+            None => None,
+            Some(name) => {
+                let buckets = get_json(&format!("{base}/api/buckets"))?;
+                match find_bucket(&buckets, name) {
+                    Some(id) => Some(id),
+                    None => return Ok(summarize(&Value::Null, Filters::default(), now_epoch(), &local_offset_secs)),
+                }
+            }
+        };
         let body = get_json(&format!("{base}/api/tasks?status=open"))?;
-        Ok(summarize(&body, list.as_deref().map(str::trim), now_epoch(), &local_offset_secs))
+        let f = Filters { tag: tag.as_deref(), not_tag: notTag.as_deref(), bucket_id: bucket_id.as_deref() };
+        Ok(summarize(&body, f, now_epoch(), &local_offset_secs))
     })
     .await
     .map_err(|_| "The request did not finish".to_string())?
@@ -792,14 +842,33 @@ mod tests {
     }
 
     #[test]
-    fn list_name_validation() {
-        assert!(valid_list_name("Home"));
-        assert!(valid_list_name("Home & Garden-2"));
-        assert!(!valid_list_name(""));
-        assert!(!valid_list_name(&"a".repeat(41)));
-        assert!(!valid_list_name("a/b"));
-        assert!(!valid_list_name("a?b"));
-        assert!(!valid_list_name("a\nb"));
+    fn tag_and_list_validation() {
+        for ok in ["home", "Home", "a", "errand & chores", "tax/business", "a_b-c", "a234567890123456789012345678901234567890"] {
+            assert!(valid_tag(ok), "{ok}");
+        }
+        for bad in ["", " home", "&home", "a?b", "a.b", "a\nb", "a%20b", "é", "a2345678901234567890123456789012345678901"] {
+            assert!(!valid_tag(bad), "{bad}");
+        }
+        for ok in ["Tasks (To-Do)", "Tax / Business", "DevOps (other board, parked)", "012345678901234567890123456789012345678901234567890123456789"] {
+            assert!(valid_list_name(ok), "{ok}");
+        }
+        for bad in ["", "0123456789012345678901234567890123456789012345678901234567890", "a\nb", "a\u{7}b"] {
+            assert!(!valid_list_name(bad), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn bucket_lookup_ignores_case_and_outer_spaces() {
+        let body = json!({"buckets": [
+            {"id": "B1", "name": "Tasks (To-Do)", "hidden": false},
+            {"id": "B2", "name": "Tax / Business", "hidden": false},
+            {"id": "B3", "name": "DevOps (other board, parked)", "hidden": true}
+        ]});
+        assert_eq!(find_bucket(&body, "  tax / business ").as_deref(), Some("B2"));
+        assert_eq!(find_bucket(&body, "TASKS (to-do)").as_deref(), Some("B1"));
+        assert_eq!(find_bucket(&body, "devops (other board, parked)").as_deref(), Some("B3"));
+        assert_eq!(find_bucket(&body, "Garage"), None);
+        assert_eq!(find_bucket(&json!({"nope": 1}), "Tasks"), None);
     }
 
     #[test]
@@ -813,20 +882,27 @@ mod tests {
 
     fn summary_body() -> Value {
         json!({"tasks": [
-            {"id": "1", "title": "One", "kind": "task", "status": "open", "list_name": "Home", "estimate": "15", "due_at": "2026-03-09T16:00:00Z"},
-            {"id": "2", "title": "Two", "kind": "task", "status": "open", "list_name": "Work", "estimate": "60plus", "due_at": "2026-03-09", "due_is_all_day": true},
-            {"id": "3", "title": "Three", "kind": "task", "status": "open", "list": "home", "estimate": "30", "due_at": "2026-03-09T03:00:00Z"},
-            {"id": "4", "title": "Four", "kind": "task", "status": "open", "list": {"name": "Home"}, "estimate": "45", "due_at": "2026-03-10T03:30:00Z"},
-            {"id": "5", "title": "Five", "kind": "task", "status": "open", "list_name": "Home"},
-            {"id": "6", "title": "Six", "kind": "task", "status": "done", "list_name": "Home", "due_at": "2026-03-09T16:00:00Z"}
+            {"id": "1", "title": "One", "kind": "task", "status": "open", "tags": ["home", "errand"], "bucket_id": "B1", "estimate": "15", "due_at": "2026-03-09T16:00:00Z"},
+            {"id": "2", "title": "Two", "kind": "task", "status": "open", "tags": ["work"], "bucket_id": "B2", "estimate": "60plus", "due_at": "2026-03-09", "due_is_all_day": true},
+            {"id": "3", "title": "Three", "kind": "task", "status": "open", "tags": ["Home"], "bucket_id": "B2", "estimate": "30", "due_at": "2026-03-09T03:00:00Z"},
+            {"id": "4", "title": "Four", "kind": "task", "status": "open", "tags": ["home"], "bucket_id": "B1", "estimate": "45", "due_at": "2026-03-10T03:30:00Z"},
+            {"id": "5", "title": "Five", "kind": "task", "status": "open", "tags": [], "bucket_id": "B1", "estimate": null},
+            {"id": "6", "title": "Six", "kind": "task", "status": "done", "tags": ["home"], "bucket_id": "B1", "due_at": "2026-03-09T16:00:00Z"},
+            {"id": "7", "title": "Seven", "kind": "note", "status": "open", "tags": ["home"], "bucket_id": "B1"}
         ]})
+    }
+
+    const NOW: i64 = 1_772_992_800;
+
+    fn ids(s: &TasksSummary) -> Vec<&str> {
+        s.next.iter().map(|t| t.id.as_str()).collect()
     }
 
     #[test]
     fn summary_counts_remaining_and_tomorrow() {
         // Now is 2026-03-08 14:00 local. Tomorrow is 2026-03-09 local: 04:00Z to 04:00Z next day.
-        let got = summarize(&summary_body(), None, 1_772_992_800, &us_east);
-        assert_eq!(got.next.iter().map(|t| t.id.as_str()).collect::<Vec<_>>(), ["1", "2", "3"]);
+        let got = summarize(&summary_body(), Filters::default(), NOW, &us_east);
+        assert_eq!(ids(&got), ["1", "2", "3"]);
         assert_eq!(got.remaining, 2);
         // Task 1 (16:00Z), task 2 (all-day 03-09), task 4 (2026-03-10T03:30Z = 23:30 local on 03-09).
         // Task 3 (03:00Z on 03-09 = 23:00 local on 03-08) is today, so it does not count.
@@ -834,14 +910,35 @@ mod tests {
     }
 
     #[test]
-    fn summary_filters_by_list() {
-        let got = summarize(&summary_body(), Some("Home"), 1_772_992_800, &us_east);
-        assert_eq!(got.next.iter().map(|t| t.id.as_str()).collect::<Vec<_>>(), ["1", "3", "4"]);
-        assert_eq!(got.remaining, 1);
+    fn summary_filters_by_tag() {
+        let got = summarize(&summary_body(), Filters { tag: Some("HOME"), ..Filters::default() }, NOW, &us_east);
+        assert_eq!(ids(&got), ["1", "3", "4"]);
+        assert_eq!(got.remaining, 0);
         assert_eq!(got.due_tomorrow, DueTomorrow { count: 2, est_minutes: 15 + 45 });
-        let none = summarize(&summary_body(), Some("Garage"), 1_772_992_800, &us_east);
+    }
+
+    #[test]
+    fn summary_drops_by_not_tag() {
+        let got = summarize(&summary_body(), Filters { not_tag: Some("home"), ..Filters::default() }, NOW, &us_east);
+        assert_eq!(ids(&got), ["2", "5"]);
+        assert_eq!(got.due_tomorrow, DueTomorrow { count: 1, est_minutes: 60 });
+    }
+
+    #[test]
+    fn summary_filters_by_bucket_and_combines() {
+        let by_bucket = summarize(&summary_body(), Filters { bucket_id: Some("B1"), ..Filters::default() }, NOW, &us_east);
+        assert_eq!(ids(&by_bucket), ["1", "4", "5"]);
+        let both = summarize(&summary_body(), Filters { tag: Some("home"), bucket_id: Some("B2"), ..Filters::default() }, NOW, &us_east);
+        assert_eq!(ids(&both), ["3"]);
+        let none = summarize(&summary_body(), Filters { bucket_id: Some("B9"), ..Filters::default() }, NOW, &us_east);
         assert!(none.next.is_empty());
         assert_eq!(none.remaining, 0);
+    }
+
+    #[test]
+    fn summary_of_a_missing_body_is_empty() {
+        let got = summarize(&Value::Null, Filters::default(), NOW, &us_east);
+        assert_eq!(got, TasksSummary { next: vec![], remaining: 0, due_tomorrow: DueTomorrow { count: 0, est_minutes: 0 } });
     }
 
     #[test]
