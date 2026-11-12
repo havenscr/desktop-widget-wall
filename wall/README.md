@@ -5,8 +5,8 @@ Wall 2 is the next front end for Widget Wall. It lives beside the existing app
 runs in a plain browser for development and inside Tauri as a second app,
 "Widget Wall 2". So far: a scaled stage, the live horizon, a left rail with
 three places, a clock, the Work tab basics (weather, music, focus timer), a task
-card, a network tile on Home, a small Tauri bridge and tests. Unwind and most of
-Home are still placeholders.
+card, a network tile on Home, the Unwind tab with Watt the sheep, a sound ripple
+on the horizon, a small Tauri bridge and tests. Most of Home is still a placeholder.
 
 ## Requirements
 
@@ -93,8 +93,8 @@ skyline, the lake in front. It is drawn on one canvas by `HorizonCanvas.tsx`.
   so interrupting it is smooth.
 - **Real time.** The sun, sky and city lights come from `Date.now()`, passed in
   as the `now` prop of `HorizonCanvas` (inject one in tests). The hour is never
-  taken from the place. The music ripple (`echo`) and the moon exist in the
-  renderer but are off until later pull requests.
+  taken from the place. The music ripple (`echo`) and the moon are
+  passed in as options; see "Audio, ripple and moon" below.
 - **Frame loop.** About 30 frames a second on `requestAnimationFrame`, none while
   `document.hidden` (`pacing.ts`). The backing store is stage scale times
   `devicePixelRatio`.
@@ -111,8 +111,8 @@ skyline, the lake in front. It is drawn on one canvas by `HorizonCanvas.tsx`.
     such as `-08:00` needs nothing.)
 
   To match the original demo pixel for pixel, run the demo at the same hour and
-  camera with its echo ripple off (and its moon off for `unwind`, since the review
-  frame never draws a moon) and the same animation time, 0.
+  camera with its echo ripple off (the moon is on for `unwind`, which the review
+  frame draws) and the same animation time, 0.
 
 ## The Work tab
 
@@ -136,7 +136,8 @@ pixels, glass style from the concept; clock is top left in `App.tsx`).
   15 minutes while visible, and once when the page returns after 15 minutes or
   more. On failure the last reading stays and shows its age in small text. The
   code to label and icon map is one pure function, `describeWeather` in `codes.ts`.
-- **Music bar** (`wall/src/music/`). Polls `get_now_playing` every 2 seconds
+- **Music bar** (`wall/src/music/`). One app-wide poll (`store.ts`) shared by this bar and
+  the Unwind view: it polls `get_now_playing` every 2 seconds
   while visible (never while hidden); each call gives up after 5 seconds so a hung
   call cannot stall the loop, and a late answer is dropped. Art only from `album_art_base64` with an
   allowed mime (png, jpeg, webp, gif); `art_unchanged` keeps the current art.
@@ -149,6 +150,39 @@ pixels, glass style from the concept; clock is top left in `App.tsx`).
 - **Browser dev.** `npm run dev` registers mocks for the music and Do Not
   Disturb commands (`src/bridge/devMocks.ts`, dev server only). Weather needs
   network access to Open-Meteo.
+
+## Audio, ripple and moon
+
+- **Audio** (`wall/src/audio/`). At app start inside Tauri, `capture.ts` asks Rust for the
+  default loopback device, starts capture and listens to the `audio-levels` event (never
+  `window.__TAURI__`). `store.ts` keeps smoothed `bass`, `mid`, `high` (0 to 1) and
+  `playing`, which is true while sound arrived in the last 0.35 seconds; levels fall away
+  once it is not. Silence is decided by the clock, never by counting events. The push is
+  turned off with `set_audio_push(false)` while the page is hidden and on again when it
+  shows. If the first start fails it stays silent and retries once after 30 seconds; if no
+  event arrives for 5 seconds while visible it restarts capture once (once per app run, by design).
+- **Browser dev.** Silent by default. Add `?audio=demo` to the URL for gentle fake levels.
+- **Ripple.** While `playing`, `HorizonCanvas` passes `echo` to the renderer: `n`, `amp`, `cx`
+  from the camera preset (`en`, `eamp`, `ecx`), opacity `ea` scaled by a smoothed
+  loudness (bass weighted), `hs` 900. It fades in and out over about a second. Nothing is
+  passed when silent, so pixels are unchanged. No ripple under reduced motion or in the
+  review still.
+- **Moon.** The Unwind camera draws the moon at (1730, 112) radius 44, once the glide to
+  Unwind has finished (it goes as soon as a glide away starts); no other place does. The
+  review still `?hz=unwind` draws it, since that camera jumps straight there.
+
+## Unwind and Watt
+
+`wall/src/screens/Unwind.tsx`: large album art, title, artist, a thin progress bar with
+position and duration (advanced locally twice a second between polls while playing and
+visible, never past the duration) and previous, play or pause, next buttons (96 by 96).
+"Nothing playing" when stopped. The clock is top left as everywhere.
+
+Watt (`wall/src/buddy/`) is the electric sheep, shown on Unwind only, drawn as SVG pixels
+above the horizon canvas. It walks slowly between x 960 and 1220 on the Unwind horizon
+line, sleeps with drifting z's between 9:30 PM and 6:30 AM local time, and shows little
+notes while music plays (awake only). It pauses while hidden. Under reduced motion it is a
+still pose with nothing drifting. The pixel maps in `sprites.ts` are the concept's own.
 
 ## Home feeds (task card and network tile)
 

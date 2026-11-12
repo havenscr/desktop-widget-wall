@@ -1,10 +1,10 @@
 import { STAGE_HEIGHT, STAGE_WIDTH } from '../stage/fitScale';
 import { CAMERAS, type CameraPreset } from './cameras';
-import { draw } from './renderer';
+import { draw, type HorizonEcho } from './renderer';
 
 export { sun, when } from './renderer';
 export type { HorizonDrawOptions, HorizonEcho } from './renderer';
-export { CAMERAS, GLIDE_SECONDS, blendCamera, type CameraPreset } from './cameras';
+export { CAMERAS, GLIDE_SECONDS, MOON, blendCamera, type CameraPreset } from './cameras';
 
 export interface HorizonOptions {
   /** Backing store width in canvas pixels. The renderer covers the whole stage, so this is informational. */
@@ -23,11 +23,15 @@ export interface HorizonOptions {
   t?: number;
   /** Lake grid scroll phase, 0 to 1 (default 0). */
   phase?: number;
+  /** Music ripple (default off). */
+  echo?: HorizonEcho | null;
+  /** Moon centre x, centre y and radius in design pixels (default none). */
+  moon?: readonly [number, number, number] | null;
 }
 
 export const HORIZON_Y = CAMERAS.work.hy;
 
-/** Draw the west view for the given camera and time. The music ripple and moon stay off. */
+/** Draw the west view for the given camera and time. The music ripple and the moon are off unless passed. */
 export function drawHorizon(ctx: CanvasRenderingContext2D, options: HorizonOptions): void {
   const cam = options.camera ?? CAMERAS.work;
   draw(ctx, {
@@ -43,7 +47,7 @@ export function drawHorizon(ctx: CanvasRenderingContext2D, options: HorizonOptio
     ms: options.ms ?? Date.now(),
     t: options.t ?? 0,
     phase: options.phase ?? 0,
-    echo: null,
-    moon: null,
+    echo: options.echo ?? null,
+    moon: options.moon ? [options.moon[0], options.moon[1], options.moon[2]] : null,
   });
 }

@@ -1,0 +1,165 @@
+/* Unwind tab. Design pixels; positions are inside .main (stage x minus 124, y minus 20). */
+.unwind {
+  position: absolute;
+  inset: 0;
+}
+.u-art {
+  position: absolute;
+  left: 516px;
+  top: 116px;
+  width: 224px;
+  height: 224px;
+  border-radius: 22px;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--faint);
+  box-shadow: 0 0 60px -14px rgba(154, 123, 255, 0.55);
+}
+.u-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.u-text {
+  position: absolute;
+  left: 776px;
+  top: 112px;
+  width: 760px;
+  min-height: 228px;
+}
+.u-src {
+  font: 600 18px/1 var(--disp);
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--mag);
+}
+.u-title {
+  margin-top: 14px;
+  font: 500 58px/1.1 var(--disp);
+  letter-spacing: -0.01em;
+  text-shadow: 0 0 30px rgba(53, 230, 234, 0.2);
+}
+.u-artist {
+  margin-top: 6px;
+  font-size: 34px;
+  line-height: 1.2;
+  color: var(--dim);
+}
+.u-none {
+  font: 300 44px/1.2 var(--disp);
+  color: var(--faint);
+  padding-top: 60px;
+}
+.u-progress {
+  position: absolute;
+  left: 0;
+  top: 186px;
+  width: 560px;
+}
+.u-bar {
+  height: 8px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.14);
+  overflow: hidden;
+}
+.u-bar > i {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--mag), var(--cyan));
+}
+.u-times {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 8px;
+  font-size: 20px;
+  color: var(--faint);
+}
+.u-btns {
+  position: absolute;
+  left: 516px;
+  top: 360px;
+  display: flex;
+  gap: 16px;
+}
+.u-rd {
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--line);
+  transition: transform 90ms ease-out;
+}
+.u-rd.big {
+  background: var(--cyan);
+  color: #06041a;
+  border: 0;
+  box-shadow: 0 0 40px -6px var(--cyan);
+}
+.u-rd:active {
+  transform: scale(0.94);
+}
+.u-rd:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: 2px;
+}
+.u-rd:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.unwind.quiet .u-art {
+  opacity: 0.6;
+}
+
+/* Watt, the electric sheep. Stage coordinates, above the horizon canvas, below the panels. */
+.watt {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  animation: watt-in 600ms ease 800ms backwards;
+}
+.watt-sheep {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 50% 100%;
+  filter: drop-shadow(0 0 10px rgba(180, 160, 255, 0.35));
+}
+.watt-sheep svg {
+  display: block;
+}
+.watt-note,
+.watt-z {
+  position: absolute;
+  opacity: 0;
+  color: var(--mag);
+  line-height: 1;
+}
+.watt-note.cy {
+  color: var(--cyan);
+}
+.watt-z {
+  font: 600 22px/1 var(--disp);
+  color: #dcd3fb;
+}
+.watt-z.sm {
+  font-size: 16px;
+}
+@keyframes watt-in {
+  from {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .watt {
+    animation: none;
+  }
+  .u-rd {
+    transition: none;
+  }
+}

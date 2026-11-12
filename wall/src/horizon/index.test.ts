@@ -52,3 +52,42 @@ describe('drawHorizon', () => {
     expect(stops(12)).not.toBe(stops(0));
   });
 });
+
+describe('ripple and moon options', () => {
+  /** Every canvas call and property write, as text. Equal logs mean equal pixels. */
+  function record(options: Partial<Parameters<typeof drawHorizon>[1]>): string {
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => stubContext() as never);
+    const log: string[] = [];
+    const base = stubContext();
+    const ctx = new Proxy(base, {
+      get: (t, k: string) => {
+        const v = (t as never as Record<string, unknown>)[k];
+        return typeof v === 'function'
+          ? (...a: unknown[]) => {
+              log.push(`${k}(${a.map((x) => (typeof x === 'object' ? '{}' : String(x))).join(',')})`);
+              return (v as (...x: unknown[]) => unknown).apply(t, a);
+            }
+          : v;
+      },
+      set: (t, k: string, v) => {
+        log.push(`${k}=${String(v)}`);
+        (t as never as Record<string, unknown>)[k] = v;
+        return true;
+      },
+    });
+    drawHorizon(ctx, { width: 2560, height: 720, scale: 1, camera: CAMERAS.unwind, ms: when(2026, 11, 11, 22), t: 0, phase: 0, ...options });
+    return log.join('\n');
+  }
+
+  it('a silent frame is identical with echo omitted, null, or moon omitted', () => {
+    const plain = record({});
+    expect(record({ echo: null })).toBe(plain);
+    expect(record({ moon: null })).toBe(plain);
+  });
+
+  it('passing an echo or a moon changes the drawing', () => {
+    const plain = record({});
+    expect(record({ echo: { n: 11, amp: 34, a: 0.9, t: 1, cx: 1330, hs: 900 } })).not.toBe(plain);
+    expect(record({ moon: [1730, 112, 44] })).not.toBe(plain);
+  });
+});

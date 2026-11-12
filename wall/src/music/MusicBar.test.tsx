@@ -1,12 +1,14 @@
 import { act, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { mocks } from '../bridge/tauri';
+import { resetNowPlaying } from './store';
 import { MusicBar } from './MusicBar';
 
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => {
   vi.useRealTimers();
   mocks.clear();
+  resetNowPlaying();
 });
 
 const flush = async (ms = 0) => {
