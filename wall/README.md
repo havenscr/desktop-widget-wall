@@ -169,10 +169,74 @@ skyline, the lake in front. It is drawn on one canvas by `HorizonCanvas.tsx`.
   camera with its echo ripple off (the moon is on for `unwind`, which the review
   frame draws) and the same animation time, 0.
 
+## The frame and the day ribbon
+
+Every place sits on the concept's one grid (`wall/src/styles/frame.css`,
+`wall/src/screens/Frame.tsx`). `Screens.tsx` only picks the place; each place has
+its own component and stylesheet (`Work.tsx` with `work.css`, `Home.tsx` with
+`home.css`, `Meet.tsx` with `meet.css`, `Unwind.tsx` with `unwind.css`), so a layout
+change touches only that place's files. The shared glass panel, type and button classes
+(`.panel`, `.k`, `.btn` and so on) still sit at the top of `work.css`.
+
+- **Shell**: inset 20, columns `88px 1fr`, gap 16 (rail, then main).
+- **Main**: rows `490px 54px 104px`, gap 16. The top band (`.top`, stage y 20 to
+  510) holds the clock and the place's panels, placed inside it. The empty band (y 526
+  to 580) shows the horizon and Watt. The ribbon sits at y 596 to 700, over the lake.
+  Unwind and Zen use `.main.tall` (one row, no ribbon); Unwind keeps its Tomorrow block
+  instead. The clock and ribbon are one tree for every place, so they stay mounted when
+  the place changes.
+- **Zones**: `.zones` holds the concept's top band columns (`470px 1290px 596px`, the
+  in-call `620px 1140px 596px` as `.zones.call`, Unwind's `470px 1fr 540px` as
+  `.zones.wide`). Places move into them in their own parity pull requests.
+- **Shared numbers**: `screens/frameLayout.ts` holds the shell, row and zone values;
+  `frameLayout.test.ts` reads `frame.css` as text and checks it uses the same ones. The
+  top band has no padding, so the clock sits at the main area's corner (stage x 124,
+  y 20) and the zones end exactly at its right edge (2416).
+- **Veil**: one element over the horizon (`App.tsx`), dark behind the panels and 0.3
+  of that from the band down. Work and Meet 0.52, Home 0.36, Unwind 0.1. It eases
+  between places (no ease when motion is reduced).
+
+The day ribbon (`wall/src/ribbon/`, `styles/ribbon.css`) is on Work, Home and Meet:
+
+- **Hours**: 6 AM to 12 AM, `RX(h) = 72 + (h - 6) * 128` in a ribbon 2416 px wide, a
+  tick every hour and a label every two hours. A label within 70 px of the needle hides.
+- **Sun**: sunrise and sunset in amber, rounded to the minute, hidden within 90 px of the
+  needle. `sun.ts` bisects the horizon renderer's `sun()` for an altitude of -0.833
+  degrees (cached per day). For 2026-11-11 that is 7:09 AM and 4:37 PM, matching the
+  almanac (the concept's "4:40" was a rounded label). The sky gradient behind the hours
+  puts the concept's colour stops on the real sunrise and sunset.
+- **Row 1**: today's calendar from `wall2_meet_day`, read when the ribbon shows and
+  every 5 minutes while visible, clipped to 6 AM to 12 AM. A chip is `past` once it
+  has ended, `now` while the needle is inside it, and pink when the event is a
+  livestream (`isLive`). An event that overlaps an earlier one goes in a second lane, 4 px
+  lower and a little shorter. A chip narrower than 44 px shows no title (it keeps a
+  tooltip and an accessible name). Meet "Not set up" leaves the row empty with no text;
+  any other failed read keeps the last good list.
+- **Focus bar** (Work and Meet): today's focus sessions up to now, from the focus store.
+  Each start, pause, reset and finish updates `localStorage` key `wall2-focus-day`
+  (`{ sessions: [{ start, end }] }`, epoch ms). A running session is saved with its
+  planned end, so one that ends while the app is closed is still right; pausing or
+  resetting moves the end back. Each write keeps only today's sessions, and the ribbon
+  only draws today's, so the bar clears at midnight.
+- **Row 2**: its icon (bolt on Work and Meet, house on Home) and a cyan diamond with a
+  short title and the time ("Send the proposal, 3:00") for each of the next three tasks
+  due at a time today, at that hour. The tasks come from `wall2_tasks_summary`: Work and
+  Meet pass `notTag: "home"`, Home passes `tag: "home"`. They are read when the ribbon
+  shows and every 2 minutes while visible. All-day and undated tasks get no mark. Not set
+  up or a failed read shows no marks. Agent segments come with the lanes, the house
+  schedule with the rooms.
+- **Needle**: a white pill with the time, moved on each whole minute while visible.
+  Before 6 AM it stays at the left end and still shows the real time.
+- **Dev**: the calendar comes from `src/bridge/devMocks/meet.ts`. A review still
+  (`?hz=<place>&at=<ISO time>`, dev builds only) opens on that place, freezes the clock
+  and ribbon at that time, puts the meet and task mocks' days on the review's date, and
+  `src/ribbon/devMock.ts` adds the concept's two focus sessions if none are saved for
+  that day.
+
 ## The Work tab
 
 `wall/src/screens/Work.tsx` lays out three panels over the horizon (design
-pixels, glass style from the concept; clock is top left in `App.tsx`).
+pixels, glass style from the concept; the clock is top left in the frame, `Frame.tsx`).
 
 - **Focus timer** (`wall/src/focus/`). A ring with the minutes left in the
   middle. Choose 25, 50 or custom (5 to 120 minutes, steps of 5). Start, pause,

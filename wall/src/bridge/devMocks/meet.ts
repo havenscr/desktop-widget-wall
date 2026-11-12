@@ -1,3 +1,4 @@
+import { reviewNow } from '../../ui/reviewClock';
 import { mocks } from '../tauri';
 
 /** Meet: two accounts and a few meetings around now. Sign-in just flips the state. */
@@ -19,7 +20,8 @@ export function registerMeetMocks(): void {
   }));
   // The day feed: local midnight to 36 hours after it, past events included.
   mocks.set('wall2_meet_day', () => {
-    const midnight = new Date();
+    // A review still (`?hz=&at=`) gets its day on the review's date.
+    const midnight = new Date(reviewNow ? reviewNow() : Date.now());
     midnight.setHours(0, 0, 0, 0);
     const day = (hour: number, mins: number) => new Date(midnight.getTime() + (hour * 60 + mins) * 60_000).toISOString().replace('.000Z', 'Z');
     return {

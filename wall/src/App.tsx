@@ -5,11 +5,12 @@ import { useFocusStore } from './focus/store';
 import { acquireNowPlaying } from './music/store';
 import { HorizonCanvas } from './horizon/HorizonCanvas';
 import { Rail } from './rail/Rail';
-import { Clock } from './clock/Clock';
+import { usePlaceStore } from './state/places';
 import { Screens } from './screens/Screens';
 import { Stage } from './stage/Stage';
 
 export function App() {
+  const active = usePlaceStore((s) => s.active);
   // The focus timer lives for the whole app, not for the Work screen.
   useEffect(() => {
     useFocusStore.getState().init();
@@ -23,13 +24,11 @@ export function App() {
   return (
     <Stage>
       <HorizonCanvas />
+      <div className="veil" data-place={active} aria-hidden="true" />
       <Watt />
       <div className="shell">
         <Rail />
-        <div className="main">
-          <Clock />
-          <Screens />
-        </div>
+        <Screens />
       </div>
     </Stage>
   );

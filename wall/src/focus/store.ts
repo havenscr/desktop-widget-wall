@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { invoke as bridgeInvoke } from '../bridge/tauri';
+import { closeSession, FOCUS_DAY_KEY, openSession, parseDay, serializeDay, type FocusSession } from './day';
 import { createFocusDnd, type FocusDnd } from './dnd';
 import * as m from './model';
 
@@ -15,6 +16,8 @@ export interface FocusStore {
   state: m.FocusState;
   /** Last time the display was refreshed; the on-screen ticker updates it. */
   now: number;
+  /** Focus sessions, for the day ribbon (`wall2-focus-day`). Only today's are kept on each write. */
+  sessions: FocusSession[];
   /** Idempotent: restore saved state, arm the end timer, undo a leftover Do Not Disturb. */
   init: () => void;
   start: () => void;
@@ -70,9 +73,15 @@ export function createFocusStore(deps: FocusDeps) {
       const prev = get().state;
       if (next === prev) return;
       generation++;
-      set({ state: next, now: deps.now() });
+      const now = deps.now();
+      let sessions = get().sessions;
+      if (next.status === 'running' && prev.status !== 'running') sessions = openSession(sessions, now, next.endAt);
+      else if (next.status !== 'running' && prev.status === 'running') sessions = closeSession(sessions, Math.min(prev.endAt, now));
+      const daySaved = sessions !== get().sessions;
+      set({ state: next, now, sessions });
       try {
         store().setItem(m.FOCUS_KEY, m.serialize(next));
+        if (daySaved) store().setItem(FOCUS_DAY_KEY, serializeDay(sessions));
       } catch {
         /* storage unavailable: the timer still works until restart */
       }
@@ -84,17 +93,20 @@ export function createFocusStore(deps: FocusDeps) {
     return {
       state: m.initialFocus,
       now: deps.now(),
+      sessions: [],
       init: () => {
         if (initialized) return;
         initialized = true;
         let restored = m.initialFocus;
+        let sessions: FocusSession[] = [];
         try {
           restored = m.restore(store().getItem(m.FOCUS_KEY), deps.now());
+          sessions = parseDay(store().getItem(FOCUS_DAY_KEY));
         } catch {
           /* unreadable: idle */
         }
         generation++;
-        set({ state: restored, now: deps.now() });
+        set({ state: restored, now: deps.now(), sessions });
         arm();
         // Undo a Do Not Disturb a previous run left on, then take it again only if
         // this same state is still running when that finishes.
@@ -138,7 +150,7 @@ export function createFocusStore(deps: FocusDeps) {
         initialized = false;
         if (onVisible) document.removeEventListener('visibilitychange', onVisible);
         onVisible = null;
-        set({ state: m.initialFocus, now: deps.now() });
+        set({ state: m.initialFocus, now: deps.now(), sessions: [] });
       },
     };
   });
