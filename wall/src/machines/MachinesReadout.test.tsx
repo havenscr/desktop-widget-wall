@@ -1,0 +1,133 @@
+import { act, render } from '@testing-library/react';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { mocks } from '../bridge/tauri';
+import { MachinesReadout } from './MachinesReadout';
+import { HOLD_MS, isHot, nextOverSince, readings, type Machines } from './model';
+
+const flush = async (ms = 0) => {
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(ms);
+  });
+};
+const setHidden = (hidden: boolean) => {
+  Object.defineProperty(document, 'hidden', { configurable: true, value: hidden });
+  act(() => {
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+};
+
+const calm: Machines = {
+  pc: { cpuPct: 34, gpuPct: 71, ramPct: 58 },
+  box: { cpuPct: 61, gpuPct: null, ramPct: 48, tempC: 52 },
+  boxStale: false,
+};
+
+let answer: Machines = calm;
+let calls = 0;
+beforeEach(() => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date(2026, 10, 11, 10, 24, 0));
+  answer = calm;
+  calls = 0;
+  mocks.set('wall2_machines', () => {
+    calls++;
+    return answer;
+  });
+});
+afterEach(() => {
+  Object.defineProperty(document, 'hidden', { configurable: true, value: false });
+  vi.useRealTimers();
+  mocks.clear();
+});
+
+const hotCells = (c: HTMLElement) => [...c.querySelectorAll('.hot')].map((e) => e.getAttribute('aria-label'));
+
+it('shows grey PC and BOX rows with the box temperature', async () => {
+  const r = render(<MachinesReadout />);
+  await flush();
+  expect(r.container.querySelector('[data-machine="pc"]')!.textContent).toBe('PC347158');
+  expect(r.container.querySelector('[data-machine="box"]')!.textContent).toBe('BOX614852°');
+  expect(hotCells(r.container)).toEqual([]);
+});
+
+it('turns RAM amber only after it stays over 90 for 30 seconds', async () => {
+  answer = { ...calm, pc: { ...calm.pc, ramPct: 93 } };
+  const r = render(<MachinesReadout />);
+  await flush();
+  await flush(28_000);
+  expect(hotCells(r.container)).toEqual([]);
+  await flush(2_000);
+  expect(hotCells(r.container)).toEqual(['PC RAM 93 percent']);
+});
+
+it('starts the 30 seconds again after a dip, so a spike never flickers amber', async () => {
+  answer = { ...calm, pc: { ...calm.pc, cpuPct: 99 } };
+  const r = render(<MachinesReadout />);
+  await flush();
+  await flush(20_000);
+  answer = calm;
+  await flush(2_000);
+  answer = { ...calm, pc: { ...calm.pc, cpuPct: 99 } };
+  // Over again from the read at 24 s: still grey at 50 s, amber at 54 s (30 s over).
+  await flush(28_000);
+  expect(hotCells(r.container)).toEqual([]);
+  await flush(4_000);
+  expect(hotCells(r.container)).toEqual(['PC CPU 99 percent']);
+  answer = calm;
+  await flush(2_000);
+  expect(hotCells(r.container)).toEqual([]);
+});
+
+it('marks the box temperature over 90 degrees and GPU over 95, each on its own', async () => {
+  answer = { ...calm, pc: { ...calm.pc, gpuPct: 96 }, box: { ...calm.box!, tempC: 91 } };
+  const r = render(<MachinesReadout />);
+  await flush();
+  await flush(HOLD_MS);
+  expect(hotCells(r.container)).toEqual(['PC GPU 96 percent', 'Box 91 degrees']);
+});
+
+it('does not count a number at its limit as over', () => {
+  const at = { ...calm, pc: { cpuPct: 95, gpuPct: 95, ramPct: 90 } };
+  const over = nextOverSince({}, readings(at), 0);
+  expect(over).toEqual({});
+  const past = nextOverSince({}, readings({ ...at, pc: { ...at.pc, ramPct: 90.5 } }), 0);
+  expect(isHot(past, 'pc.ram', HOLD_MS - 1)).toBe(false);
+  expect(isHot(past, 'pc.ram', HOLD_MS)).toBe(true);
+});
+
+it('hides the BOX row when the box has no numbers and dims it when stale', async () => {
+  answer = { ...calm, box: null };
+  const r = render(<MachinesReadout />);
+  await flush();
+  expect(r.container.querySelector('[data-machine="box"]')).toBeNull();
+  answer = { ...calm, boxStale: true };
+  await flush(2_000);
+  expect(r.container.querySelector('[data-machine="box"]')!.className).toContain('stale');
+});
+
+it('shows nothing when the numbers cannot be read', async () => {
+  mocks.set('wall2_machines', () => {
+    throw new Error('failed');
+  });
+  const r = render(<MachinesReadout />);
+  await flush();
+  expect(r.container.innerHTML).toBe('');
+});
+
+it('reads every 2 seconds while visible, never while hidden, and stops on unmount', async () => {
+  const r = render(<MachinesReadout />);
+  await flush();
+  expect(calls).toBe(1);
+  await flush(6_000);
+  expect(calls).toBe(4);
+  setHidden(true);
+  await flush(60_000);
+  expect(calls).toBe(4);
+  setHidden(false);
+  await flush();
+  expect(calls).toBe(5);
+  r.unmount();
+  await flush(10_000);
+  expect(calls).toBe(5);
+  expect(vi.getTimerCount()).toBe(0);
+});
