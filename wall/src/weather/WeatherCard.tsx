@@ -3,12 +3,12 @@ import { useWeather } from './useWeather';
 import { WeatherIcon } from './WeatherIcon';
 
 export function WeatherCard() {
-  const { reading, now } = useWeather();
+  const { reading, failed, now } = useWeather();
   if (!reading) {
     return (
       <section className="panel weather" aria-label="Weather">
         <span className="k">Weather</span>
-        <div className="s">Loading weather</div>
+        <div className="s">{failed ? 'Weather unavailable' : 'Loading weather'}</div>
       </section>
     );
   }
