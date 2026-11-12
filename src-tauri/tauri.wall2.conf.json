@@ -33,6 +33,17 @@
         "base-uri": "'none'",
         "form-action": "'none'",
         "object-src": "'none'"
+      },
+      "devCsp": {
+        "default-src": "'none'",
+        "script-src": "'self' 'unsafe-inline'",
+        "style-src": "'self' 'unsafe-inline'",
+        "img-src": "'self' data:",
+        "font-src": "'self'",
+        "connect-src": "'self' ipc: http://ipc.localhost https://ipc.localhost https://api.open-meteo.com http://localhost:1421 ws://localhost:1421",
+        "base-uri": "'none'",
+        "form-action": "'none'",
+        "object-src": "'none'"
       }
     }
   }

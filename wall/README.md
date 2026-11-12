@@ -112,7 +112,9 @@ pixels, glass style from the concept; clock is top left in `App.tsx`).
   middle. Choose 25, 50 or custom (5 to 120 minutes, steps of 5). Start, pause,
   resume, reset. The state is stored in `localStorage` key `wall2-focus` as an
   end time, so a restart resumes and a timer that ended while the app was closed
-  shows as finished (a soft glow on the ring, no modal, no chime yet). Do Not
+  shows as finished. The state lives in an app-level store (`store.ts`) with its
+  own end timer, so the timer finishes and releases Do Not Disturb on any screen
+  and while hidden (a soft glow on the ring, no modal, no chime yet). Do Not
   Disturb follows the old app's rule (`dnd.ts`): read the state at start; if it
   is already on, leave it alone; otherwise turn it on and remember that focus did
   it (key `wall2-focus-dnd`); turn it off on pause, reset, finish and app start
@@ -146,8 +148,9 @@ denied (`default-src 'none'`); no `unsafe-eval`, no `unsafe-inline`. React sets
 inline styles through the CSSOM (`element.style`), which CSP allows. To reach a
 new host, add it to `connect-src` (data from `fetch`), `img-src` (pictures) or
 `font-src`, and rerun the schema check: validate the file against
-`node_modules/@tauri-apps/cli/config.schema.json`. The policy applies to the
-installed app; `tauri dev` serves from the Vite dev server, which it does not cover.
+`node_modules/@tauri-apps/cli/config.schema.json`. `devCsp` is the same policy for `tauri dev`, plus the Vite origin and websocket
+(`http://localhost:1421`, `ws://localhost:1421`) and inline scripts and styles,
+which Vite's hot reload injects. Keep the two in step when you add a host.
 
 ## Touch
 
