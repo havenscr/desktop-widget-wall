@@ -50,7 +50,7 @@ it('polls every 2 seconds and not while hidden', async () => {
     document.dispatchEvent(new Event('visibilitychange'));
   });
   const before = get.mock.calls.length;
-  await flush(10000);
+  await flush(4000); // under the 5 second call timeout
   expect(get).toHaveBeenCalledTimes(before);
   Object.defineProperty(document, 'hidden', { configurable: true, value: false });
 });
@@ -85,7 +85,7 @@ it('never overlaps polls and drops a stale answer', async () => {
   render(<MusicBar />);
   await flush();
   // The first poll is slow: no second poll starts while it is pending.
-  await flush(10000);
+  await flush(4000); // under the 5 second call timeout
   expect(n).toBe(1);
   await act(async () => {
     resolvers.shift()?.();
@@ -114,6 +114,6 @@ it('skips the refresh after a command while hidden and writes nothing after unmo
   Object.defineProperty(document, 'hidden', { configurable: true, value: false });
   expect(get.mock.calls.length).toBe(before);
   unmount();
-  await flush(10000);
+  await flush(4000); // under the 5 second call timeout
   expect(get.mock.calls.length).toBe(before);
 });

@@ -137,6 +137,9 @@
   gap: 8px;
   min-width: 0;
 }
+.focus-label {
+  max-width: 330px;
+}
 .focus-actions {
   display: flex;
   gap: 12px;
@@ -243,6 +246,91 @@
   gap: 6px;
 }
 
+/* Tasks: top right, beside the weather card, above the music bar */
+.tasks {
+  left: 1820px;
+  top: 4px;
+  width: 736px;
+  height: 366px;
+  gap: 10px;
+}
+.tasks-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+.task-row {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-height: 0;
+  border-top: 1px solid var(--line);
+  transition: opacity 600ms ease;
+}
+.task-row:first-child {
+  border-top: 0;
+}
+.task-row.done {
+  opacity: 0.35;
+}
+.task-row.done .task-title {
+  text-decoration: line-through;
+}
+.task-check.on {
+  background: var(--mint);
+  color: #06041a;
+  border: 0;
+}
+.task-text {
+  flex: 1;
+  min-width: 0;
+}
+.task-err {
+  color: var(--amber);
+}
+.task-focus {
+  padding: 0 22px;
+}
+.btn:disabled {
+  opacity: 0.4;
+}
+
+/* Network tile (Home) */
+.network {
+  right: 0;
+  top: 380px;
+  width: 596px;
+  height: 200px;
+  gap: 12px;
+}
+.net-status {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.net-dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  flex: none;
+}
+.net-dot.ok {
+  background: var(--mint);
+  box-shadow: 0 0 14px 0 rgba(93, 242, 182, 0.6);
+}
+.net-dot.warn {
+  background: var(--amber);
+  box-shadow: 0 0 14px 0 rgba(255, 194, 77, 0.55);
+}
+.net-dot.bad {
+  background: var(--red);
+  box-shadow: 0 0 14px 0 rgba(255, 77, 109, 0.6);
+}
+
 /* Music */
 .music {
   right: 0;
@@ -295,6 +383,7 @@
     box-shadow: 0 0 36px 0 rgba(93, 242, 182, 0.5);
   }
   .music,
+  .task-row,
   .btn,
   .rd,
   .chip {

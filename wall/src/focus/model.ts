@@ -5,10 +5,13 @@ export const MAX_MINUTES = 120;
 export const STEP_MINUTES = 5;
 export const PRESETS = [25, 50] as const;
 
+export const MAX_LABEL = 200;
+
+/** `label` names what the session is for (a task title). Only running and paused sessions keep one. */
 export type FocusState =
   | { status: 'idle'; minutes: number }
-  | { status: 'running'; minutes: number; endAt: number }
-  | { status: 'paused'; minutes: number; remainingMs: number }
+  | { status: 'running'; minutes: number; endAt: number; label?: string }
+  | { status: 'paused'; minutes: number; remainingMs: number; label?: string }
   | { status: 'finished'; minutes: number };
 
 export const initialFocus: FocusState = { status: 'idle', minutes: 25 };
@@ -24,20 +27,28 @@ export function adjustMinutes(m: number, direction: 1 | -1): number {
   return clampMinutes(m + direction * STEP_MINUTES);
 }
 
-/** Start from idle or finished, using the chosen length. */
-export function start(s: FocusState, now: number): FocusState {
+/** A usable label, trimmed and capped, or undefined. */
+export function cleanLabel(raw: unknown): string | undefined {
+  if (typeof raw !== 'string') return undefined;
+  const t = raw.trim().slice(0, MAX_LABEL);
+  return t ? t : undefined;
+}
+
+/** Start from idle or finished, using the chosen length, optionally named. */
+export function start(s: FocusState, now: number, label?: string): FocusState {
   const minutes = clampMinutes(s.minutes);
-  return { status: 'running', minutes, endAt: now + minutes * 60_000 };
+  const name = cleanLabel(label);
+  return { status: 'running', minutes, endAt: now + minutes * 60_000, ...(name ? { label: name } : {}) };
 }
 
 export function pause(s: FocusState, now: number): FocusState {
   if (s.status !== 'running') return s;
-  return { status: 'paused', minutes: s.minutes, remainingMs: Math.max(0, s.endAt - now) };
+  return { status: 'paused', minutes: s.minutes, remainingMs: Math.max(0, s.endAt - now), ...(s.label ? { label: s.label } : {}) };
 }
 
 export function resume(s: FocusState, now: number): FocusState {
   if (s.status !== 'paused') return s;
-  return { status: 'running', minutes: s.minutes, endAt: now + s.remainingMs };
+  return { status: 'running', minutes: s.minutes, endAt: now + s.remainingMs, ...(s.label ? { label: s.label } : {}) };
 }
 
 export function reset(s: FocusState): FocusState {
@@ -91,12 +102,14 @@ export function restore(raw: string | null, now: number): FocusState {
       case 'running':
         // An end time further out than the longest session cannot be real: treat as corrupt.
         if (typeof v.endAt === 'number' && Number.isFinite(v.endAt) && v.endAt <= now + MAX_MINUTES * 60_000) {
-          return tick({ status: 'running', minutes, endAt: v.endAt }, now);
+          const label = cleanLabel(v.label);
+          return tick({ status: 'running', minutes, endAt: v.endAt, ...(label ? { label } : {}) }, now);
         }
         break;
       case 'paused':
         if (typeof v.remainingMs === 'number' && v.remainingMs >= 0 && v.remainingMs <= MAX_MINUTES * 60_000) {
-          return { status: 'paused', minutes, remainingMs: v.remainingMs };
+          const label = cleanLabel(v.label);
+          return { status: 'paused', minutes, remainingMs: v.remainingMs, ...(label ? { label } : {}) };
         }
         break;
       case 'finished':

@@ -18,6 +18,8 @@ export interface FocusStore {
   /** Idempotent: restore saved state, arm the end timer, undo a leftover Do Not Disturb. */
   init: () => void;
   start: () => void;
+  /** Start a session named `label` (a task title) from idle or finished; ignored while one is running or paused. */
+  startLabeled: (label: string) => void;
   pause: () => void;
   resume: () => void;
   reset: () => void;
@@ -108,6 +110,10 @@ export function createFocusStore(deps: FocusDeps) {
         }
       },
       start: () => commit(m.start(get().state, deps.now())),
+      startLabeled: (label) => {
+        const s = get().state;
+        if (s.status === 'idle' || s.status === 'finished') commit(m.start(s, deps.now(), label));
+      },
       pause: () => commit(m.pause(get().state, deps.now())),
       resume: () => commit(m.resume(get().state, deps.now())),
       reset: () => commit(m.reset(get().state)),

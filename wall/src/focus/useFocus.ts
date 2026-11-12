@@ -26,6 +26,7 @@ export function useFocus() {
     state,
     now,
     start: a.start,
+    startLabeled: a.startLabeled,
     pause: a.pause,
     resume: a.resume,
     reset: a.reset,

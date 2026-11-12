@@ -4,6 +4,26 @@ import { useVisible } from '../ui/useVisible';
 import { nextArt, type NowPlayingInfo } from './model';
 
 export const POLL_MS = 2000;
+export const CALL_TIMEOUT_MS = 5000;
+
+class TimedOut extends Error {}
+
+/** Rejects after `ms` so a hung call cannot stall the single-flight loop; a late answer is dropped. */
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const id = setTimeout(() => reject(new TimedOut('timed out')), ms);
+    p.then(
+      (v) => {
+        clearTimeout(id);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(id);
+        reject(e);
+      },
+    );
+  });
+}
 
 type Command = 'media_play_pause' | 'media_next' | 'media_previous';
 
@@ -16,7 +36,9 @@ export interface NowPlayingState {
 /**
  * Polls get_now_playing every 2 seconds while the page is visible, never while
  * hidden. One poll runs at a time and the next is scheduled only after it ends;
- * a sequence number drops an answer that a newer poll has already replaced.
+ * a sequence number drops an answer that a newer poll has already replaced. Each
+ * call gives up after 5 seconds, so a hung call cannot stall the loop; its late
+ * answer is dropped (the promise is already settled).
  */
 export function useNowPlaying(): NowPlayingState {
   const visible = useVisible();
@@ -40,7 +62,7 @@ export function useNowPlaying(): NowPlayingState {
   const pollOnce = useCallback(async () => {
     const mine = ++seq.current;
     try {
-      const next = await invoke<NowPlayingInfo | null>('get_now_playing');
+      const next = await withTimeout(invoke<NowPlayingInfo | null>('get_now_playing'), CALL_TIMEOUT_MS);
       if (!mounted.current || mine !== seq.current) return;
       if (!next) {
         artRef.current = null;
