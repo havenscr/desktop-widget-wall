@@ -71,10 +71,11 @@ pub fn place_at_startup(window: &tauri::WebviewWindow) {
 }
 
 /// After a display change: move onto an exact strip if one is present, and do
-/// nothing otherwise (never jump to the main monitor on unplug).
-pub fn follow_strip(window: &tauri::WebviewWindow) {
+/// nothing otherwise (never jump to the main monitor on unplug). Returns
+/// whether an exact strip was found, so the caller can retry.
+pub fn follow_strip(window: &tauri::WebviewWindow) -> bool {
     let Some(rect) = exact_strip(&monitor_rects(window)) else {
-        return;
+        return false;
     };
     if let (Ok(pos), Ok(size)) = (window.outer_position(), window.outer_size()) {
         if pos.x == rect.x
@@ -82,10 +83,11 @@ pub fn follow_strip(window: &tauri::WebviewWindow) {
             && size.width == rect.width
             && size.height == rect.height
         {
-            return;
+            return true;
         }
     }
     fill(window, rect);
+    true
 }
 
 fn fill(window: &tauri::WebviewWindow, rect: MonitorRect) {
@@ -138,6 +140,19 @@ mod tests {
     fn rotated_and_taller_are_not_exact() {
         let list = [r(0, 720, 2560), r(720, 2560, 1440)];
         assert_eq!(exact_strip(&list), None);
+    }
+
+    #[test]
+    fn tie_on_smallest_height_picks_first() {
+        let list = [r(0, 1920, 1080), r(1920, 1280, 1080)];
+        assert_eq!(startup_target(&list, None), Some(list[0]));
+    }
+
+    #[test]
+    fn non_empty_list_never_uses_primary() {
+        let list = [r(0, 1920, 1080), r(1920, 1280, 1080)];
+        let primary = r(5000, 800, 600);
+        assert_eq!(startup_target(&list, Some(primary)), Some(list[0]));
     }
 
     #[test]

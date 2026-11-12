@@ -3564,23 +3564,67 @@ fn apply_webview_visibility(window: &tauri::WebviewWindow) {
 
 #[cfg(windows)]
 static DISPLAYS_GEN: AtomicU64 = AtomicU64::new(0);
+#[cfg(windows)]
+static DISPLAYS_TX: std::sync::OnceLock<std::sync::mpsc::Sender<()>> = std::sync::OnceLock::new();
 
-/// Monitor added or removed (WM_DISPLAYCHANGE). Debounced by one second and
-/// moved off the window procedure. Wall 2 only; the old app never registers it.
+/// Monitor added or removed (WM_DISPLAYCHANGE). Runs on the window procedure,
+/// so it only bumps a counter and signals the worker; nothing here can block
+/// or panic. Wall 2 only; the old app never registers it.
 #[cfg(windows)]
 fn on_displays_changed() {
-    let generation = DISPLAYS_GEN.fetch_add(1, Ordering::SeqCst) + 1;
-    std::thread::spawn(move || {
-        std::thread::sleep(std::time::Duration::from_millis(1000));
-        if DISPLAYS_GEN.load(Ordering::SeqCst) != generation {
-            return;
-        }
-        if let Some(app) = APP_HANDLE.get() {
-            if let Some(window) = app.get_webview_window(WALL2_LABEL) {
-                wall2_window::follow_strip(&window);
+    DISPLAYS_GEN.fetch_add(1, Ordering::SeqCst);
+    if let Some(tx) = DISPLAYS_TX.get() {
+        let _ = tx.send(());
+    }
+}
+
+/// The one long-lived worker behind `on_displays_changed`: waits for one
+/// second of quiet after a signal, then moves Wall 2 onto the strip. If the
+/// strip is not listed yet it retries up to three times, 2 seconds apart,
+/// and gives up until the next display change.
+#[cfg(windows)]
+fn start_displays_worker() {
+    use std::sync::mpsc::{channel, RecvTimeoutError};
+    use std::time::Duration;
+    let (tx, rx) = channel::<()>();
+    let spawned = std::thread::Builder::new()
+        .name("wall2-displays".into())
+        .spawn(move || {
+            while rx.recv().is_ok() {
+                // Debounce: restart the wait on every further signal.
+                loop {
+                    match rx.recv_timeout(Duration::from_millis(1000)) {
+                        Ok(()) => continue,
+                        Err(RecvTimeoutError::Timeout) => break,
+                        Err(RecvTimeoutError::Disconnected) => return,
+                    }
+                }
+                let seen = DISPLAYS_GEN.load(Ordering::SeqCst);
+                for attempt in 0..4 {
+                    if attempt > 0 {
+                        std::thread::sleep(Duration::from_millis(2000));
+                        // A newer change is queued and will restart the cycle.
+                        if DISPLAYS_GEN.load(Ordering::SeqCst) != seen {
+                            break;
+                        }
+                    }
+                    let found = APP_HANDLE
+                        .get()
+                        .and_then(|app| app.get_webview_window(WALL2_LABEL))
+                        .map(|window| wall2_window::follow_strip(&window))
+                        .unwrap_or(true);
+                    if found {
+                        break;
+                    }
+                }
             }
+        });
+    match spawned {
+        Ok(_) => {
+            let _ = DISPLAYS_TX.set(tx);
         }
-    });
+        Err(error) => eprintln!("[Wall2] display worker not started: {error}"),
+    }
 }
 
 /// Lock / unlock / display power change, from the display watcher. Runs on the
@@ -3840,7 +3884,10 @@ pub fn run() {
 
             if let Some(window) = app.get_webview_window(WALL2_LABEL) {
                 #[cfg(windows)]
-                display_watch::set_on_displays_changed(on_displays_changed);
+                {
+                    start_displays_worker();
+                    display_watch::set_on_displays_changed(on_displays_changed);
+                }
                 wall2_window::place_at_startup(&window);
                 let _ = window.show();
                 // Second pass: settles a display scale change from the move.
