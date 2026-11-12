@@ -4,6 +4,41 @@ import { useVisible } from '../ui/useVisible';
 import { nextArt, type NowPlayingInfo } from './model';
 
 export const POLL_MS = 2000;
+export const CALL_TIMEOUT_MS = 5000;
+
+class TimedOut extends Error {}
+
+interface Timed<T> {
+  promise: Promise<T>;
+  /** Clear the timer and reject now (used on unmount). */
+  cancel: () => void;
+}
+
+/**
+ * Rejects after `ms` so a hung call cannot stall the single-flight loop; a late answer is
+ * dropped. The timer is cleared on settle and on `cancel`.
+ */
+function withTimeout<T>(p: Promise<T>, ms: number): Timed<T> {
+  let cancel: () => void = () => {};
+  const promise = new Promise<T>((resolve, reject) => {
+    const id = setTimeout(() => reject(new TimedOut('timed out')), ms);
+    cancel = () => {
+      clearTimeout(id);
+      reject(new TimedOut('cancelled'));
+    };
+    p.then(
+      (v) => {
+        clearTimeout(id);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(id);
+        reject(e);
+      },
+    );
+  });
+  return { promise, cancel };
+}
 
 type Command = 'media_play_pause' | 'media_next' | 'media_previous';
 
@@ -16,7 +51,9 @@ export interface NowPlayingState {
 /**
  * Polls get_now_playing every 2 seconds while the page is visible, never while
  * hidden. One poll runs at a time and the next is scheduled only after it ends;
- * a sequence number drops an answer that a newer poll has already replaced.
+ * a sequence number drops an answer that a newer poll has already replaced. Each
+ * call gives up after 5 seconds, so a hung call cannot stall the loop; its late
+ * answer is dropped (the promise is already settled).
  */
 export function useNowPlaying(): NowPlayingState {
   const visible = useVisible();
@@ -30,17 +67,32 @@ export function useNowPlaying(): NowPlayingState {
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const active = useRef(false);
 
+  // The native call that has not settled yet, and the cancel for its timeout timer.
+  const outstanding = useRef<Promise<unknown> | null>(null);
+  const cancelTimer = useRef<(() => void) | null>(null);
+
   useEffect(() => {
     mounted.current = true;
     return () => {
       mounted.current = false;
+      cancelTimer.current?.();
     };
   }, []);
 
   const pollOnce = useCallback(async () => {
+    // At most one native call at a time: while a timed-out call is still hung, wait for it.
+    if (outstanding.current) return;
     const mine = ++seq.current;
+    const call = invoke<NowPlayingInfo | null>('get_now_playing');
+    outstanding.current = call;
+    const clear = () => {
+      if (outstanding.current === call) outstanding.current = null;
+    };
+    call.then(clear, clear);
+    const timed = withTimeout(call, CALL_TIMEOUT_MS);
+    cancelTimer.current = timed.cancel;
     try {
-      const next = await invoke<NowPlayingInfo | null>('get_now_playing');
+      const next = await timed.promise;
       if (!mounted.current || mine !== seq.current) return;
       if (!next) {
         artRef.current = null;
@@ -52,7 +104,9 @@ export function useNowPlaying(): NowPlayingState {
       setArt(artRef.current);
       setInfo(next);
     } catch {
-      /* a failed poll keeps what is on screen */
+      /* a failed or timed-out poll keeps what is on screen */
+    } finally {
+      if (cancelTimer.current === timed.cancel) cancelTimer.current = null;
     }
   }, []);
 

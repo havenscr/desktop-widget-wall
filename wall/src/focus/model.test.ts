@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
   adjustMinutes,
   clampMinutes,
@@ -76,4 +76,31 @@ it('treats a restored end time beyond the longest session as corrupt', () => {
   expect(restore(raw, T)).toEqual({ status: 'idle', minutes: 25 });
   const ok = JSON.stringify({ status: 'running', minutes: 120, endAt: T + 120 * MIN });
   expect(restore(ok, T).status).toBe('running');
+});
+
+describe('focus label', () => {
+  const now = 1_000_000;
+  it('is kept while running and paused, and survives save and restore', () => {
+    const running = start({ status: 'idle', minutes: 25 }, now, '  Write the report ');
+    expect(running).toMatchObject({ status: 'running', label: 'Write the report' });
+    const paused = pause(running, now + 1000);
+    expect(paused).toMatchObject({ status: 'paused', label: 'Write the report' });
+    expect(resume(paused, now + 2000)).toMatchObject({ status: 'running', label: 'Write the report' });
+    expect(restore(serialize(running), now + 1000)).toMatchObject({ status: 'running', label: 'Write the report' });
+    expect(restore(serialize(paused), now + 1000)).toMatchObject({ status: 'paused', label: 'Write the report' });
+  });
+  it('is cleared on reset and on finish', () => {
+    const running = start({ status: 'idle', minutes: 25 }, now, 'Task');
+    expect('label' in reset(running)).toBe(false);
+    const finished = tick(running, now + 25 * 60_000);
+    expect(finished.status).toBe('finished');
+    expect('label' in finished).toBe(false);
+    expect('label' in restore(serialize(running), now + 26 * 60_000)).toBe(false);
+  });
+  it('ignores an empty or non-text label and caps a long one', () => {
+    expect('label' in start({ status: 'idle', minutes: 25 }, now, '   ')).toBe(false);
+    const long = start({ status: 'idle', minutes: 25 }, now, 'x'.repeat(500));
+    expect(long.status === 'running' && long.label?.length).toBe(200);
+    expect('label' in restore(JSON.stringify({ status: 'running', minutes: 25, endAt: now + 1000, label: 5 }), now)).toBe(false);
+  });
 });

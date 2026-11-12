@@ -51,6 +51,7 @@ mod audio_analysis;
 mod wall2_window;
 #[cfg(windows)]
 mod display_watch;
+mod wall2_feeds;
 use audio_analysis::{AudioAnalyzer, AudioLevels};
 
 // ================================================================
@@ -3681,6 +3682,9 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .manage(audio_buffer)
         .invoke_handler(tauri::generate_handler![
+            wall2_feeds::wall2_tasks_next,
+            wall2_feeds::wall2_task_done,
+            wall2_feeds::wall2_home_security,
             list_audio_devices,
             start_audio_capture,
             stop_audio_capture,

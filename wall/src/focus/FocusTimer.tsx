@@ -49,6 +49,7 @@ export function FocusTimer() {
         <Ring state={state} now={f.now} />
         <div className="focus-side">
           <div className="t2">{caption}</div>
+          {'label' in state && state.label && <div className="b6 focus-label ellipsis">{state.label}</div>}
           <div className="s">
             {state.status === 'idle' || state.status === 'finished'
               ? `${state.minutes} min session`
@@ -56,7 +57,7 @@ export function FocusTimer() {
           </div>
           <div className="focus-actions">
             {(state.status === 'idle' || state.status === 'finished') && (
-              <button type="button" className="btn cy" onClick={f.start}>
+              <button type="button" className="btn cy" onClick={() => f.start()}>
                 <IconPlayerPlayFilled size={26} aria-hidden="true" />
                 Start
               </button>
