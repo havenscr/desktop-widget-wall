@@ -143,19 +143,21 @@ pub fn shape_events(body: &Value, account_id: &str) -> Vec<Candidate> {
         .collect()
 }
 
-/// Both accounts together: the same invite (same `iCalUId`) once, sorted by start, first eight.
+/// Both accounts together, sorted by start, first eight. The same invite seen on two
+/// accounts shows once, but only when `iCalUId`, start, end and join link all match: a copied
+/// UID alone must not hide a different meeting or take its Join button.
 pub fn merge(per_account: Vec<Vec<Candidate>>) -> Vec<Candidate> {
-    let mut seen: Vec<String> = Vec::new();
     let mut all: Vec<Candidate> = Vec::new();
     for list in per_account {
+        let earlier = all.len();
         for c in list {
-            if let Some(id) = &c.ical {
-                if seen.contains(id) {
-                    continue;
-                }
-                seen.push(id.clone());
+            let same_invite_elsewhere = c.ical.is_some()
+                && all[..earlier].iter().any(|e| {
+                    e.account_id != c.account_id && e.ical == c.ical && e.start == c.start && e.end == c.end && e.join == c.join
+                });
+            if !same_invite_elsewhere {
+                all.push(c);
             }
-            all.push(c);
         }
     }
     all.sort_by(|a, b| a.start.cmp(&b.start));
@@ -255,6 +257,39 @@ mod tests {
         let capped = merge(vec![many]);
         assert_eq!(capped.len(), MAX_MEETINGS);
         assert_eq!(capped[0].start, "2026-11-12T00:00:00Z");
+    }
+
+    #[test]
+    fn same_uid_with_different_join_links_both_survive() {
+        let mut a = cand(Some("uid"), "2026-11-12T18:00:00Z", "work");
+        a.join = Some("https://teams.microsoft.com/l/meetup-join/real".into());
+        let mut b = cand(Some("uid"), "2026-11-12T18:00:00Z", "second");
+        b.join = Some("https://teams.microsoft.com/l/meetup-join/other".into());
+        assert_eq!(merge(vec![vec![a], vec![b]]).len(), 2);
+    }
+
+    #[test]
+    fn same_everything_across_two_accounts_shows_once() {
+        let mut a = cand(Some("uid"), "2026-11-12T18:00:00Z", "work");
+        a.join = Some("https://teams.microsoft.com/l/meetup-join/same".into());
+        let mut b = a.clone();
+        b.account_id = "second".into();
+        let out = merge(vec![vec![a], vec![b]]);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].account_id, "work");
+    }
+
+    #[test]
+    fn recurring_occurrences_with_one_uid_both_survive() {
+        let one = cand(Some("series"), "2026-11-12T18:00:00Z", "work");
+        let two = cand(Some("series"), "2026-11-13T18:00:00Z", "work");
+        let other = cand(Some("series"), "2026-11-12T18:00:00Z", "second");
+        let out = merge(vec![vec![one, two], vec![other]]);
+        // Same account, different starts: both stay. The second account's copy of the first
+        // occurrence matches it exactly and collapses.
+        assert_eq!(out.len(), 2);
+        let both_second = merge(vec![vec![cand(Some("series"), "2026-11-12T18:00:00Z", "work")], vec![cand(Some("series"), "2026-11-13T18:00:00Z", "second")]]);
+        assert_eq!(both_second.len(), 2);
     }
 
     #[test]
