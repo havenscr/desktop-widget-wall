@@ -10,7 +10,7 @@ import { SPRITES, SPRITE_PX, pixelColor, type Pose } from './sprites';
 
 const systemNow = () => new Date();
 
-function SheepSvg({ pose }: { pose: Pose }) {
+export function SheepSvg({ pose }: { pose: Pose }) {
   const map = SPRITES[pose];
   const rects = useMemo(() => {
     const out: { x: number; y: number; c: string }[] = [];

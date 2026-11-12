@@ -1,5 +1,6 @@
 import { NetworkTile } from '../home/NetworkTile';
 import { PLACES, usePlaceStore } from '../state/places';
+import { Zen } from '../zen/Zen';
 import { Unwind } from './Unwind';
 import { Work } from './Work';
 
@@ -8,6 +9,7 @@ export function Screens() {
   const active = usePlaceStore((s) => s.active);
   if (active === 'work') return <Work />;
   if (active === 'unwind') return <Unwind />;
+  if (active === 'zen') return <Zen />;
   const label = PLACES.find((p) => p.id === active)?.label ?? '';
   return (
     <>

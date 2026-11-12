@@ -1,0 +1,260 @@
+/* Zen and Dream. A full-stage overlay (the stage is transformed, so fixed means stage-relative). */
+.zen {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: #04020e;
+  overflow: hidden;
+}
+
+/* Flames: two drifting layers, the upper one screen-blended. */
+.flames {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  transition: opacity 2500ms ease;
+}
+.fl-pair {
+  position: absolute;
+  inset: 0;
+}
+.fl-pair:nth-child(2) {
+  animation: fl-in var(--fade, 30000ms) ease-in-out backwards;
+}
+.fl {
+  position: absolute;
+  inset: -7%;
+  background-size: cover;
+  background-position: center;
+  animation: fl-drift 40s ease-in-out infinite alternate;
+}
+.fl.b {
+  mix-blend-mode: screen;
+  animation: fl-drift 52s ease-in-out infinite alternate-reverse, fl-fade 24s ease-in-out infinite alternate;
+}
+.flames.still .fl,
+.flames.still .fl.b {
+  animation: none;
+}
+.flames.still .fl.b {
+  opacity: 0.6;
+}
+@keyframes fl-drift {
+  from {
+    transform: scale(1) translate(0, 0) rotate(0deg);
+  }
+  to {
+    transform: scale(1.18) translate(-2.2%, 1.4%) rotate(1.4deg);
+  }
+}
+@keyframes fl-fade {
+  0%,
+  30% {
+    opacity: 0;
+  }
+  70%,
+  100% {
+    opacity: 0.9;
+  }
+}
+@keyframes fl-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* Breathing guide. */
+.zen-guide {
+  position: absolute;
+  inset: 0;
+  transition: opacity 1200ms ease;
+}
+.zen-guide.ending {
+  opacity: 0;
+  pointer-events: none;
+}
+.breath {
+  position: absolute;
+  inset: 0;
+}
+.breath-ring {
+  position: absolute;
+  left: 50%;
+  top: 280px;
+  width: 280px;
+  height: 280px;
+  margin: -140px 0 0 -140px;
+  display: grid;
+  place-items: center;
+}
+.breath-circle {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  background: radial-gradient(circle, rgba(154, 123, 255, 0.28), rgba(255, 61, 154, 0.12) 70%, transparent) padding-box,
+    linear-gradient(135deg, var(--cyan), var(--mag)) border-box;
+  box-shadow: 0 0 60px -10px rgba(154, 123, 255, 0.5);
+  transform: scale(0.8);
+}
+.breath-words {
+  position: relative;
+  text-align: center;
+}
+.breath-word {
+  font: 300 42px/1 var(--disp);
+  letter-spacing: 0.04em;
+}
+.breath-num {
+  margin-top: 12px;
+  font: 400 24px/1 var(--disp);
+  color: var(--dim);
+}
+.breath-controls {
+  position: absolute;
+  left: 50%;
+  bottom: 44px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 22px;
+}
+.breath-picker {
+  display: flex;
+  gap: 12px;
+}
+.breath-left {
+  font: 500 32px/1 var(--disp);
+  letter-spacing: 0.04em;
+  min-width: 160px;
+  text-align: center;
+}
+.zbtn {
+  min-width: 120px;
+  height: 72px;
+  padding: 0 28px;
+  border-radius: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font: 600 22px/1 var(--disp);
+  letter-spacing: 0.06em;
+  color: var(--dim);
+  background: rgba(10, 7, 28, 0.55);
+  border: 1px solid var(--line);
+  transition: transform 90ms ease-out, background-color 90ms ease-out;
+}
+.zbtn[aria-checked='true'] {
+  color: var(--cyan);
+  background: rgba(53, 230, 234, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(53, 230, 234, 0.45);
+}
+.zbtn.go {
+  color: var(--tx);
+  background: rgba(154, 123, 255, 0.28);
+  border-color: rgba(154, 123, 255, 0.55);
+}
+.zbtn:active {
+  transform: scale(0.94);
+}
+.zbtn:focus-visible,
+.dream:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: 2px;
+}
+.zleave {
+  position: absolute;
+  right: 40px;
+  bottom: 44px;
+  min-width: 0;
+}
+
+/* Dream. */
+.dream {
+  position: absolute;
+  inset: 0;
+  cursor: pointer;
+  animation: dream-in 2500ms ease backwards;
+}
+.dream-clock {
+  position: absolute;
+  left: 70px;
+  top: 52px;
+  font: 300 72px/1 var(--disp);
+  letter-spacing: -0.02em;
+  color: rgba(241, 236, 255, 0.85);
+}
+.dream-clock small {
+  font: 500 22px/1 var(--disp);
+  letter-spacing: 0.08em;
+  color: var(--cyan);
+  margin-left: 10px;
+}
+.dream-hint {
+  position: absolute;
+  right: 70px;
+  bottom: 44px;
+  font: 400 20px/1 var(--body);
+  color: var(--dim);
+}
+.dream-watt {
+  position: absolute;
+  pointer-events: none;
+}
+.dream-bob {
+  filter: drop-shadow(0 0 10px rgba(180, 160, 255, 0.35));
+  animation: dream-bob 5s ease-in-out infinite;
+}
+.dream-z {
+  position: absolute;
+  left: 70px;
+  top: -10px;
+  font: 600 22px/1 var(--disp);
+  color: #dcd3fb;
+  opacity: 0;
+  animation: dream-z 3.6s ease-in-out infinite;
+}
+.dream-z.sm {
+  font-size: 16px;
+  animation-delay: 1.8s;
+}
+@keyframes dream-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes dream-bob {
+  50% {
+    transform: translateY(-1.2px);
+  }
+}
+@keyframes dream-z {
+  0% {
+    opacity: 0;
+    transform: translate(0, 0);
+  }
+  50% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(26px, -46px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .flames,
+  .zen-guide,
+  .zbtn {
+    transition: none;
+  }
+  .fl-pair:nth-child(2),
+  .dream,
+  .dream-bob,
+  .dream-z {
+    animation: none;
+  }
+  .dream-z {
+    opacity: 0.8;
+  }
+}

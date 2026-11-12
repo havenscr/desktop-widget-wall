@@ -1,0 +1,122 @@
+import { act, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { usePlaceStore } from '../state/places';
+import { FLAMES, Flames } from './Flames';
+import { Zen } from './Zen';
+import { FLAME_ROTATE_MS } from './model';
+
+function setReducedMotion(reduce: boolean) {
+  window.matchMedia = ((query: string) => ({
+    matches: reduce && query.includes('reduce'),
+    media: query,
+    addEventListener() {},
+    removeEventListener() {},
+  })) as unknown as typeof window.matchMedia;
+}
+
+const DAY = new Date(2026, 10, 11, 14, 0, 0).getTime();
+const NIGHT = new Date(2026, 10, 11, 23, 0, 0).getTime();
+
+/** A clock tied to the fake timers, shifted so it reads `base` at the moment of the call. */
+function clockAt(base: number) {
+  const offset = base - Date.now();
+  return () => Date.now() + offset;
+}
+
+beforeEach(() => {
+  setReducedMotion(false);
+  vi.useFakeTimers();
+  usePlaceStore.setState({ active: 'zen' });
+});
+afterEach(() => vi.useRealTimers());
+
+it('shows the guide by day with 3, 5 and 10 minute choices', () => {
+  render(<Zen nowMs={clockAt(DAY)} />);
+  expect(screen.getByText('Breathe in')).toBeTruthy();
+  for (const m of ['3 min', '5 min', '10 min']) expect(screen.getByRole('radio', { name: m })).toBeTruthy();
+  expect(screen.getByRole('radio', { name: '5 min' }).getAttribute('aria-checked')).toBe('true');
+  expect(screen.queryByLabelText('Wake')).toBeNull();
+});
+
+it('the guide follows the 12 second cycle', () => {
+  render(<Zen nowMs={clockAt(DAY)} />);
+  act(() => void vi.advanceTimersByTime(4500));
+  expect(screen.getByText('Hold')).toBeTruthy();
+  act(() => void vi.advanceTimersByTime(2000));
+  expect(screen.getByText('Breathe out')).toBeTruthy();
+});
+
+it('a session counts down, then fades the guide and falls into Dream; a tap wakes', () => {
+  render(<Zen nowMs={clockAt(DAY)} />);
+  fireEvent.click(screen.getByRole('radio', { name: '3 min' }));
+  fireEvent.click(screen.getByRole('button', { name: /Start/ }));
+  act(() => void vi.advanceTimersByTime(100));
+  expect(screen.getByText('3:00 left')).toBeTruthy();
+  act(() => void vi.advanceTimersByTime(60_000));
+  expect(screen.getByText('2:00 left')).toBeTruthy();
+  act(() => void vi.advanceTimersByTime(120_000 + 300));
+  expect(document.querySelector('.zen-guide.ending')).not.toBeNull();
+  expect(screen.queryByLabelText('Wake')).toBeNull();
+  act(() => void vi.advanceTimersByTime(1300));
+  expect(screen.getByLabelText('Wake')).toBeTruthy();
+  expect(document.querySelector('.zen-guide')).toBeNull();
+  expect(document.querySelector('.flames')!.getAttribute('data-dim')).toBe('true');
+  fireEvent.click(screen.getByLabelText('Wake'));
+  expect(screen.getByText(/Breathe|Hold/)).toBeTruthy();
+  expect(document.querySelector('.flames')!.getAttribute('data-dim')).toBe('false');
+});
+
+it('Stop ends the session without going to Dream', () => {
+  render(<Zen nowMs={clockAt(DAY)} />);
+  fireEvent.click(screen.getByRole('button', { name: /Start/ }));
+  act(() => void vi.advanceTimersByTime(100));
+  fireEvent.click(screen.getByRole('button', { name: /Stop/ }));
+  expect(screen.getByRole('button', { name: /Start/ })).toBeTruthy();
+  expect(screen.queryByLabelText('Wake')).toBeNull();
+});
+
+it('opens in Dream at night, shows Watt asleep and a small clock; a tap wakes and it stays awake', () => {
+  render(<Zen nowMs={clockAt(NIGHT)} />);
+  expect(screen.getByLabelText('Wake')).toBeTruthy();
+  expect(screen.getByText('PM')).toBeTruthy();
+  const watt = document.querySelector<HTMLElement>('.dream-watt')!;
+  expect(watt.style.left).toBe('1226px');
+  expect(watt.querySelector('svg')).not.toBeNull();
+  fireEvent.click(screen.getByLabelText('Wake'));
+  expect(screen.getByText('Breathe in')).toBeTruthy();
+  act(() => void vi.advanceTimersByTime(120_000));
+  expect(screen.queryByLabelText('Wake')).toBeNull();
+});
+
+it('Leave returns to Work', () => {
+  render(<Zen nowMs={clockAt(DAY)} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Leave Zen' }));
+  expect(usePlaceStore.getState().active).toBe('work');
+});
+
+it('flames: two layers, rotating pair with a cross-fade, dimmed to 35 percent in Dream', () => {
+  const { container, rerender } = render(<Flames />);
+  expect(container.querySelectorAll('.fl-pair')).toHaveLength(1);
+  expect(container.querySelectorAll('.fl')).toHaveLength(2);
+  expect(container.querySelector('.fl.b')).not.toBeNull();
+  const bg = () => Array.from(container.querySelectorAll<HTMLElement>('.fl')).map((e) => e.style.backgroundImage.replace(/"/g, ''));
+  expect(bg()).toEqual([`url(${FLAMES[0]})`, `url(${FLAMES[1]})`]);
+  act(() => void vi.advanceTimersByTime(FLAME_ROTATE_MS));
+  expect(container.querySelectorAll('.fl-pair')).toHaveLength(2); // old pair stays while fading
+  expect(container.querySelector('.fl-pair:nth-child(2)')!.querySelector<HTMLElement>('.fl')!.style.backgroundImage).toBe(
+    `url("${FLAMES[1]}")`,
+  );
+  act(() => void vi.advanceTimersByTime(31_000));
+  expect(container.querySelectorAll('.fl-pair')).toHaveLength(1);
+  expect((container.firstElementChild as HTMLElement).style.opacity).toBe('1');
+  rerender(<Flames dim />);
+  expect((container.firstElementChild as HTMLElement).style.opacity).toBe('0.35');
+});
+
+it('reduced motion: flames are still and change without a cross-fade', () => {
+  setReducedMotion(true);
+  const { container } = render(<Flames />);
+  expect(container.querySelector('.flames')!.classList.contains('still')).toBe(true);
+  act(() => void vi.advanceTimersByTime(FLAME_ROTATE_MS));
+  expect(container.querySelectorAll('.fl-pair')).toHaveLength(1);
+});

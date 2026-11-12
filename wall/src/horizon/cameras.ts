@@ -1,4 +1,4 @@
-import type { PlaceId } from '../state/places';
+import type { CameraPlace } from '../state/places';
 
 /**
  * One camera framing of the west view. The first six keys feed the renderer; `ecx`,
@@ -37,7 +37,7 @@ export const GLIDE_SECONDS = 1.6;
 const WIDE: CameraPreset = { az0: 221.5, ppd: 34, hy: 582, vex: 1.25, cs: 1.25, vx: 1280, ecx: 1900, eamp: 8, ea: 0.3, en: 3 };
 
 /** Framing per place: Work looks wide, Home closes in on the city, Unwind swings to the Olympics. */
-export const CAMERAS: Readonly<Record<PlaceId, CameraPreset>> = {
+export const CAMERAS: Readonly<Record<CameraPlace, CameraPreset>> = {
   work: { ...WIDE },
   home: { az0: 218.1, ppd: 54, hy: 582, vex: 1.3, cs: 1, vx: 1280, ecx: 2300, eamp: 6, ea: 0.22, en: 3 },
   unwind: { az0: 246, ppd: 49.2, hy: 505, vex: 2.5, cs: 1, vx: 1330, ecx: 1330, eamp: 34, ea: 0.9, en: 11 },

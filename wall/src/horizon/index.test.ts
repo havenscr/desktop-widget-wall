@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CAMERAS, drawHorizon, when } from './index';
 import { stubContext } from './canvasStub';
-import type { PlaceId } from '../state/places';
+import type { CameraPlace } from '../state/places';
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -10,7 +10,7 @@ describe('drawHorizon', () => {
   const stubCanvas = () =>
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => stubContext() as never);
 
-  for (const place of Object.keys(CAMERAS) as PlaceId[]) {
+  for (const place of Object.keys(CAMERAS) as CameraPlace[]) {
     it(`draws the ${place} view without throwing, day and night`, () => {
       stubCanvas();
       for (const hour of [7, 12, 16.7, 22]) {
