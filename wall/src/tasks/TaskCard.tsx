@@ -86,7 +86,7 @@ export function TaskCard() {
   const t = useTasks(WORK_QUERY);
   const focusStatus = useFocusStore((s) => s.state.status);
   const canFocus = focusStatus === 'idle' || focusStatus === 'finished';
-  const rows = visibleRows(t.tasks, t.hidden).slice(0, 3);
+  const rows = visibleRows(t.tasks, t.hidden);
   const stale = t.status === 'error' && t.lastOk !== null ? updatedText(t.lastOk, t.now) : null;
   const more = t.remaining ? `${t.remaining} more can wait` : null;
 
