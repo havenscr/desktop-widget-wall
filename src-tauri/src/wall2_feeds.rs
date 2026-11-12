@@ -29,7 +29,7 @@ pub struct TaskItem {
     pub due_at: Option<String>,
     pub due_is_all_day: bool,
     pub quadrant: Option<String>,
-    /// Effort estimate: `15`, `30`, `45` or `60plus`; None when the task has none.
+    /// Effort estimate (the row's `estimate`): `15`, `30`, `45` or `60plus`; None when the task has none.
     pub est: Option<String>,
 }
 
@@ -292,7 +292,7 @@ fn open_tasks(body: &Value, list: Option<&str>) -> Vec<TaskItem> {
                 due_at: t.get("due_at").and_then(Value::as_str).map(str::to_string),
                 due_is_all_day: t.get("due_is_all_day").and_then(Value::as_bool).unwrap_or(false),
                 quadrant: t.get("quadrant").and_then(Value::as_str).map(str::to_string),
-                est: read_est(t.get("est")),
+                est: read_est(t.get("estimate")),
             })
         })
         .collect()
@@ -787,7 +787,7 @@ mod tests {
         assert_eq!(read_est(Some(&json!("soon"))), None);
         assert_eq!(read_est(Some(&json!(null))), None);
         assert_eq!(read_est(None), None);
-        let body = json!({"tasks": [{"id": "1", "title": "A", "kind": "task", "status": "open", "est": "30"}]});
+        let body = json!({"tasks": [{"id": "1", "title": "A", "kind": "task", "status": "open", "estimate": "30"}]});
         assert_eq!(pick_tasks(&body)[0].est.as_deref(), Some("30"));
     }
 
@@ -813,10 +813,10 @@ mod tests {
 
     fn summary_body() -> Value {
         json!({"tasks": [
-            {"id": "1", "title": "One", "kind": "task", "status": "open", "list_name": "Home", "est": "15", "due_at": "2026-03-09T16:00:00Z"},
-            {"id": "2", "title": "Two", "kind": "task", "status": "open", "list_name": "Work", "est": "60plus", "due_at": "2026-03-09", "due_is_all_day": true},
-            {"id": "3", "title": "Three", "kind": "task", "status": "open", "list": "home", "est": 30, "due_at": "2026-03-09T03:00:00Z"},
-            {"id": "4", "title": "Four", "kind": "task", "status": "open", "list": {"name": "Home"}, "est": "45", "due_at": "2026-03-10T03:30:00Z"},
+            {"id": "1", "title": "One", "kind": "task", "status": "open", "list_name": "Home", "estimate": "15", "due_at": "2026-03-09T16:00:00Z"},
+            {"id": "2", "title": "Two", "kind": "task", "status": "open", "list_name": "Work", "estimate": "60plus", "due_at": "2026-03-09", "due_is_all_day": true},
+            {"id": "3", "title": "Three", "kind": "task", "status": "open", "list": "home", "estimate": "30", "due_at": "2026-03-09T03:00:00Z"},
+            {"id": "4", "title": "Four", "kind": "task", "status": "open", "list": {"name": "Home"}, "estimate": "45", "due_at": "2026-03-10T03:30:00Z"},
             {"id": "5", "title": "Five", "kind": "task", "status": "open", "list_name": "Home"},
             {"id": "6", "title": "Six", "kind": "task", "status": "done", "list_name": "Home", "due_at": "2026-03-09T16:00:00Z"}
         ]})
