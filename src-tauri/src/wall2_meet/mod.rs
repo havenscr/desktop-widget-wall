@@ -209,15 +209,18 @@ pub async fn wall2_meet_next(window: tauri::WebviewWindow) -> Result<service::Me
     .map_err(|_| "failed".to_string())
 }
 
-/// The day view's window: the last local midnight at or before `now`, to 36 elapsed hours
-/// after it. `offset` says how far the local clock is ahead of UTC at a given instant, so a
-/// clock change between now and midnight is handled.
+/// The day view's window: the last local midnight at or before `now`, to the local midnight
+/// that ends tomorrow, found by local date (so a 23 or 25 hour day on a clock change is
+/// right). `offset` says how far the local clock is ahead of UTC at a given instant.
 pub(crate) fn day_window(now: i64, offset: &dyn Fn(i64) -> i64) -> (u64, u64) {
-    let start = crate::wall2_feeds::local_midnight(now, offset).max(0) as u64;
-    (start, start + 36 * 3600)
+    let start = crate::wall2_feeds::local_midnight(now, offset);
+    // Two local days are 46 to 50 hours long, so 50 hours after today's midnight is always
+    // inside the day after tomorrow; its midnight is the end of tomorrow.
+    let end = crate::wall2_feeds::local_midnight(start + 50 * 3600, offset);
+    (start.max(0) as u64, end.max(0) as u64)
 }
 
-/// Today's events from local midnight to 36 hours after it, past ones included.
+/// Today's and tomorrow's events, from local midnight to the end of tomorrow, past ones included.
 #[tauri::command]
 pub async fn wall2_meet_day(window: tauri::WebviewWindow) -> Result<service::DayPayload, String> {
     require_wall2(window.label())?;
@@ -380,20 +383,46 @@ mod tests {
 
     #[test]
     fn day_window_on_a_normal_day() {
-        // 2026-11-12 17:00 UTC is 18:00 at UTC+1; local midnight was 2026-11-11 23:00 UTC.
-        assert_eq!(day_window(1_794_502_800, &|_| 3600), (1_794_438_000, 1_794_438_000 + 36 * 3600));
-        assert_eq!(day_window(1_794_502_800, &|_| 0), (1_794_441_600, 1_794_441_600 + 36 * 3600));
+        // 2026-11-12 17:00 UTC is 18:00 at UTC+1; local midnight was 2026-11-11 23:00 UTC,
+        // and tomorrow ends 48 hours after it.
+        assert_eq!(day_window(1_794_502_800, &|_| 3600), (1_794_438_000, 1_794_438_000 + 48 * 3600));
+        assert_eq!(day_window(1_794_502_800, &|_| 0), (1_794_441_600, 1_794_441_600 + 48 * 3600));
+    }
+
+    #[test]
+    fn day_window_covers_all_of_tomorrow_late_in_the_evening() {
+        // 21:00 local at UTC+0: a 13:00 event tomorrow (40 hours after midnight) is inside.
+        let (from, to) = day_window(1_794_441_600 + 21 * 3600, &|_| 0);
+        assert_eq!(from, 1_794_441_600);
+        assert!(from + 40 * 3600 < to);
+        assert_eq!(to, from + 48 * 3600);
     }
 
     #[test]
     fn day_window_on_a_spring_forward_day() {
-        // 14:00 local after the change; midnight was at UTC-5 (05:00 UTC). 36 elapsed hours later.
-        assert_eq!(day_window(1_772_992_800, &spring), (1_772_946_000, 1_772_946_000 + 36 * 3600));
+        // 14:00 local after the change; midnight was at UTC-5 (05:00 UTC). Today has 23 hours
+        // and tomorrow 24, so the window is 47 elapsed hours.
+        assert_eq!(day_window(1_772_992_800, &spring), (1_772_946_000, 1_772_946_000 + 47 * 3600));
     }
 
     #[test]
     fn day_window_on_a_fall_back_day() {
-        // 15:00 local after the change; midnight was at UTC-4 (04:00 UTC), 25 hours before the next one.
-        assert_eq!(day_window(1_793_563_200, &fall), (1_793_505_600, 1_793_505_600 + 36 * 3600));
+        // 15:00 local after the change; midnight was at UTC-4 (04:00 UTC). Today has 25 hours
+        // and tomorrow 24, so the window is 49 elapsed hours.
+        assert_eq!(day_window(1_793_563_200, &fall), (1_793_505_600, 1_793_505_600 + 49 * 3600));
+    }
+
+    #[test]
+    fn day_window_the_evening_before_a_clock_change() {
+        // 2026-03-07 20:00 local (UTC-5) is 2026-03-08 01:00 UTC. Today starts 2026-03-07 05:00
+        // UTC (24 hours) and tomorrow, the spring-forward day, has 23: 47 hours in all.
+        let (from, to) = day_window(1_772_931_600, &spring);
+        assert_eq!(from, 1_772_859_600);
+        assert_eq!(to, 1_772_859_600 + 47 * 3600);
+        // The fall-back day as tomorrow: 2026-10-31 20:00 local (UTC-4) is 2026-11-01 00:00
+        // UTC. Today starts 2026-10-31 04:00 UTC; tomorrow has 25 hours: 49 in all.
+        let (from, to) = day_window(1_793_491_200, &fall);
+        assert_eq!(from, 1_793_419_200);
+        assert_eq!(to, 1_793_419_200 + 49 * 3600);
     }
 }
