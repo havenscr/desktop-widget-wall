@@ -258,7 +258,7 @@ fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
     era * 146_097 + doe - 719_468
 }
 
-/// Epoch seconds of an ISO 8601 timestamp (`Z` or an offset; none means UTC), or NaN.
+/// Epoch seconds of an ISO 8601 timestamp (`Z` or an offset required), or NaN when it is unreadable, including a time with no offset.
 fn parse_time(raw: Option<&Value>) -> f64 {
     let Some(s) = raw.and_then(Value::as_str) else {
         return f64::NAN;
@@ -304,15 +304,20 @@ fn parse_iso(s: &str) -> Option<f64> {
     }
     let mut i = 16;
     let mut sec = 0;
+    let mut has_seconds = false;
     if b.get(i) == Some(&b':') {
         sec = num(i + 1, i + 3)?;
         if sec > 59 {
             return None;
         }
         i += 3;
+        has_seconds = true;
     }
     let mut frac = 0.0;
     if b.get(i) == Some(&b'.') {
+        if !has_seconds {
+            return None; // a fraction needs seconds before it
+        }
         let start = i + 1;
         let mut end = start;
         while end < b.len() && b[end].is_ascii_digit() {
@@ -632,6 +637,8 @@ mod tests {
             "2026-11-11T10:60:00Z",      // minute 60
             "2026-11-11T10:00:60Z",      // second 60 (leap seconds are not read)
             "2026-11-11T10:00:00.Z",     // empty fraction
+            "2026-11-11T10:00.5Z",       // fraction without seconds
+            "2026-11-11T10:00.5+01:00",  // fraction without seconds, with offset
             "2026-11-11T10:00:00+24:00", // offset of a full day
             "2026-11-11T10:00:00+01:60", // offset minute 60
             "2026-11-11T10:00:00+0100",  // offset without a colon
