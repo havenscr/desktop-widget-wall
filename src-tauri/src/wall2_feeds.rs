@@ -29,6 +29,8 @@ pub struct TaskItem {
     pub due_at: Option<String>,
     pub due_is_all_day: bool,
     pub quadrant: Option<String>,
+    /// Effort estimate (the row's `estimate`): `15`, `30`, `45` or `60plus`; None when the task has none.
+    pub est: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -169,6 +171,57 @@ pub(crate) fn get_json(url: &str) -> Result<Value, String> {
     serde_json::from_slice(&read_body(resp)?).map_err(|_| "The answer was not JSON".to_string())
 }
 
+// Section: local day
+
+pub(crate) fn now_epoch() -> i64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0)
+}
+
+/// Seconds the PC's local clock is ahead of UTC at the instant `utc` (daylight saving
+/// included). Zero when the system will not say.
+#[cfg(windows)]
+pub(crate) fn local_offset_secs(utc: i64) -> i64 {
+    use windows::Win32::Foundation::SYSTEMTIME;
+    use windows::Win32::System::Time::SystemTimeToTzSpecificLocalTime;
+    let (y, m, d) = crate::wall2_meet::civil_from_days(utc.div_euclid(86_400));
+    let rem = utc.rem_euclid(86_400);
+    let universal = SYSTEMTIME {
+        wYear: y as u16,
+        wMonth: m as u16,
+        wDayOfWeek: 0,
+        wDay: d as u16,
+        wHour: (rem / 3600) as u16,
+        wMinute: ((rem % 3600) / 60) as u16,
+        wSecond: (rem % 60) as u16,
+        wMilliseconds: 0,
+    };
+    let mut local = SYSTEMTIME::default();
+    // SAFETY: both pointers are valid for the call; None means the current time zone.
+    if unsafe { SystemTimeToTzSpecificLocalTime(None, &universal, &mut local) }.is_err() {
+        return 0;
+    }
+    let secs = days_from_civil(local.wYear as i64, local.wMonth as i64, local.wDay as i64) * 86_400
+        + local.wHour as i64 * 3600
+        + local.wMinute as i64 * 60
+        + local.wSecond as i64;
+    secs - utc
+}
+
+#[cfg(not(windows))]
+pub(crate) fn local_offset_secs(_utc: i64) -> i64 {
+    0
+}
+
+/// Epoch seconds of the last local midnight at or before `utc`, given the zone's offset.
+pub(crate) fn local_midnight(utc: i64, off: &dyn Fn(i64) -> i64) -> i64 {
+    let local = utc + off(utc);
+    let midnight_local = local.div_euclid(86_400) * 86_400;
+    // The offset can differ between now and midnight (a clock change in between), so ask
+    // again at the first guess.
+    let guess = midnight_local - off(utc);
+    midnight_local - off(guess)
+}
+
 // Section: tasks
 
 fn valid_task_id(id: &str) -> bool {
@@ -183,13 +236,62 @@ fn as_id(v: &Value) -> Option<String> {
     }
 }
 
-/// Open tasks only (`kind` task, `status` open), the first three in server order.
-fn pick_tasks(body: &Value) -> Vec<TaskItem> {
+/// `est` as the wall shows it: `15`, `30`, `45` or `60plus`. Text or a number is read;
+/// anything else is None. A number of 60 or more is `60plus`.
+fn read_est(v: Option<&Value>) -> Option<String> {
+    let minutes = match v? {
+        Value::String(s) => match s.trim() {
+            "60plus" => return Some("60plus".to_string()),
+            other => other.parse::<u64>().ok()?,
+        },
+        Value::Number(n) => n.as_u64()?,
+        _ => return None,
+    };
+    match minutes {
+        15 | 30 | 45 => Some(minutes.to_string()),
+        m if m >= 60 => Some("60plus".to_string()),
+        _ => None,
+    }
+}
+
+/// Minutes an `est` counts for in a sum (`60plus` counts as 60).
+fn est_minutes(est: Option<&str>) -> u64 {
+    match est {
+        Some("15") => 15,
+        Some("30") => 30,
+        Some("45") => 45,
+        Some("60plus") => 60,
+        _ => 0,
+    }
+}
+
+/// What `wall2_tasks_summary` keeps. Every field is optional.
+#[derive(Debug, Default, Clone, Copy)]
+struct Filters<'a> {
+    /// Keep tasks whose `tags` contains this (case ignored).
+    tag: Option<&'a str>,
+    /// Drop tasks whose `tags` contains this (case ignored).
+    not_tag: Option<&'a str>,
+    /// Keep tasks whose `bucket_id` is this id.
+    bucket_id: Option<&'a str>,
+}
+
+fn has_tag(t: &Value, want: &str) -> bool {
+    t.get("tags")
+        .and_then(Value::as_array)
+        .is_some_and(|tags| tags.iter().filter_map(Value::as_str).any(|have| have.trim().eq_ignore_ascii_case(want)))
+}
+
+/// Open tasks only (`kind` task, `status` open), every one in server order, narrowed by the filters.
+fn open_tasks(body: &Value, f: Filters) -> Vec<TaskItem> {
     let Some(rows) = body.get("tasks").and_then(Value::as_array) else {
         return Vec::new();
     };
     rows.iter()
         .filter(|t| t.get("kind").and_then(Value::as_str) == Some("task") && t.get("status").and_then(Value::as_str) == Some("open"))
+        .filter(|t| f.tag.map_or(true, |want| has_tag(t, want)))
+        .filter(|t| f.not_tag.map_or(true, |want| !has_tag(t, want)))
+        .filter(|t| f.bucket_id.map_or(true, |id| t.get("bucket_id").and_then(Value::as_str) == Some(id)))
         .filter_map(|t| {
             let id = as_id(t.get("id")?)?;
             let raw_title = t.get("title").and_then(Value::as_str).unwrap_or("");
@@ -200,10 +302,134 @@ fn pick_tasks(body: &Value) -> Vec<TaskItem> {
                 due_at: t.get("due_at").and_then(Value::as_str).map(str::to_string),
                 due_is_all_day: t.get("due_is_all_day").and_then(Value::as_bool).unwrap_or(false),
                 quadrant: t.get("quadrant").and_then(Value::as_str).map(str::to_string),
+                est: read_est(t.get("estimate")),
             })
         })
-        .take(TASK_LIMIT)
         .collect()
+}
+
+/// Open tasks only, the first three in server order.
+fn pick_tasks(body: &Value) -> Vec<TaskItem> {
+    let mut all = open_tasks(body, Filters::default());
+    all.truncate(TASK_LIMIT);
+    all
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DueTomorrow {
+    pub count: u64,
+    pub est_minutes: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TasksSummary {
+    pub next: Vec<TaskItem>,
+    pub remaining: u64,
+    pub due_tomorrow: DueTomorrow,
+}
+
+/// A tag: 1 to 40 characters, `^[A-Za-z0-9][A-Za-z0-9 &/_-]{0,39}$`.
+fn valid_tag(tag: &str) -> bool {
+    let mut chars = tag.chars();
+    chars.next().is_some_and(|c| c.is_ascii_alphanumeric())
+        && tag.chars().count() <= 40
+        && chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, ' ' | '&' | '/' | '_' | '-'))
+}
+
+/// A list name: 1 to 60 characters, no control characters.
+fn valid_list_name(name: &str) -> bool {
+    (1..=60).contains(&name.chars().count()) && !name.chars().any(char::is_control)
+}
+
+type CheckedFilters = (Option<String>, Option<String>, Option<String>);
+
+/// Trim the three filters, then validate them. A value of only spaces is refused.
+#[allow(non_snake_case)]
+fn check_filters(tag: Option<String>, notTag: Option<String>, list: Option<String>) -> Result<CheckedFilters, String> {
+    let trim = |v: Option<String>| v.map(|s| s.trim().to_string());
+    let (tag, notTag, list) = (trim(tag), trim(notTag), trim(list));
+    if tag.as_deref().is_some_and(|t| !valid_tag(t)) || notTag.as_deref().is_some_and(|t| !valid_tag(t)) {
+        return Err("Invalid tag".to_string());
+    }
+    if list.as_deref().is_some_and(|l| !valid_list_name(l)) {
+        return Err("Invalid list name".to_string());
+    }
+    Ok((tag, notTag, list))
+}
+
+/// The id of the bucket whose `name` equals `want`, ignoring case and outer spaces.
+fn find_bucket(body: &Value, want: &str) -> Option<String> {
+    let want = want.trim().to_lowercase();
+    body.get("buckets")?
+        .as_array()?
+        .iter()
+        .find(|b| b.get("name").and_then(Value::as_str).is_some_and(|n| n.trim().to_lowercase() == want))
+        .and_then(|b| as_id(b.get("id")?))
+}
+
+/// Whether a task is due on the local day that starts at `tomorrow` (epoch seconds) and
+/// ends at `after`. A timed task is compared by instant; an all-day one by its date text.
+fn due_tomorrow(t: &TaskItem, tomorrow: i64, after: i64, tomorrow_date: &str) -> bool {
+    let Some(due) = t.due_at.as_deref() else {
+        return false;
+    };
+    if t.due_is_all_day {
+        return due.get(..10) == Some(tomorrow_date);
+    }
+    parse_iso(due).is_some_and(|secs| secs >= tomorrow as f64 && secs < after as f64)
+}
+
+/// The three next tasks, how many more are open, and what is due tomorrow (local day).
+fn summarize(body: &Value, f: Filters, now: i64, off: &dyn Fn(i64) -> i64) -> TasksSummary {
+    let all = open_tasks(body, f);
+    let today = local_midnight(now, off);
+    let tomorrow = local_midnight(today + 36 * 3600, off);
+    let after = local_midnight(today + 60 * 3600, off);
+    let (y, m, d) = crate::wall2_meet::civil_from_days((tomorrow + off(tomorrow)).div_euclid(86_400));
+    let date = format!("{y:04}-{m:02}-{d:02}");
+    let mut count = 0;
+    let mut est_total = 0;
+    for t in all.iter().filter(|t| due_tomorrow(t, tomorrow, after, &date)) {
+        count += 1;
+        est_total += est_minutes(t.est.as_deref());
+    }
+    let remaining = all.len().saturating_sub(TASK_LIMIT) as u64;
+    let next = all.into_iter().take(TASK_LIMIT).collect();
+    TasksSummary { next, remaining, due_tomorrow: DueTomorrow { count, est_minutes: est_total } }
+}
+
+/// The next tasks with optional filters: `tag`, `notTag` (task tags) and `list` (a list
+/// name, resolved to its bucket through `/api/buckets`). None of them goes into a URL. An
+/// unknown list name gives an empty summary, not an error.
+#[tauri::command]
+#[allow(non_snake_case)]
+pub async fn wall2_tasks_summary(
+    app: tauri::AppHandle,
+    tag: Option<String>,
+    notTag: Option<String>,
+    list: Option<String>,
+) -> Result<TasksSummary, String> {
+    let (tag, notTag, list) = check_filters(tag, notTag, list)?;
+    let base = read_base(&app, "tasksBaseUrl", true)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let bucket_id = match list.as_deref() {
+            None => None,
+            Some(name) => {
+                let buckets = get_json(&format!("{base}/api/buckets"))?;
+                match find_bucket(&buckets, name) {
+                    Some(id) => Some(id),
+                    None => return Ok(summarize(&Value::Null, Filters::default(), now_epoch(), &local_offset_secs)),
+                }
+            }
+        };
+        let body = get_json(&format!("{base}/api/tasks?status=open"))?;
+        let f = Filters { tag: tag.as_deref(), not_tag: notTag.as_deref(), bucket_id: bucket_id.as_deref() };
+        Ok(summarize(&body, f, now_epoch(), &local_offset_secs))
+    })
+    .await
+    .map_err(|_| "The request did not finish".to_string())?
 }
 
 #[tauri::command]
@@ -604,6 +830,140 @@ mod tests {
         assert!(base_from_config(Some(both), "tasksBaseUrl", true).is_ok());
         assert!(base_from_config(Some(both), "homeBaseUrl", false).is_ok());
         assert!(base_from_config(Some("not json"), "tasksBaseUrl", true).is_err());
+    }
+
+    /// A zone that is UTC-5 until 2026-03-08 07:00 UTC, then UTC-4 (a spring-forward night).
+    fn us_east(utc: i64) -> i64 {
+        // 2026-03-08T07:00:00Z
+        if utc < 1_772_953_200 { -5 * 3600 } else { -4 * 3600 }
+    }
+
+    #[test]
+    fn est_mapping() {
+        assert_eq!(read_est(Some(&json!("15"))).as_deref(), Some("15"));
+        assert_eq!(read_est(Some(&json!(45))).as_deref(), Some("45"));
+        assert_eq!(read_est(Some(&json!("60plus"))).as_deref(), Some("60plus"));
+        assert_eq!(read_est(Some(&json!(90))).as_deref(), Some("60plus"));
+        assert_eq!(read_est(Some(&json!(20))), None);
+        assert_eq!(read_est(Some(&json!("soon"))), None);
+        assert_eq!(read_est(Some(&json!(null))), None);
+        assert_eq!(read_est(None), None);
+        let body = json!({"tasks": [{"id": "1", "title": "A", "kind": "task", "status": "open", "estimate": "30"}]});
+        assert_eq!(pick_tasks(&body)[0].est.as_deref(), Some("30"));
+    }
+
+    #[test]
+    fn tag_and_list_validation() {
+        for ok in ["home", "Home", "a", "errand & chores", "tax/business", "a_b-c", "a234567890123456789012345678901234567890"] {
+            assert!(valid_tag(ok), "{ok}");
+        }
+        for bad in ["", " home", "&home", "a?b", "a.b", "a\nb", "a%20b", "é", "a2345678901234567890123456789012345678901"] {
+            assert!(!valid_tag(bad), "{bad}");
+        }
+        for ok in ["Tasks (To-Do)", "Tax / Business", "DevOps (other board, parked)", "012345678901234567890123456789012345678901234567890123456789"] {
+            assert!(valid_list_name(ok), "{ok}");
+        }
+        for bad in ["", "0123456789012345678901234567890123456789012345678901234567890", "a\nb", "a\u{7}b"] {
+            assert!(!valid_list_name(bad), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn filters_are_trimmed_before_they_are_checked() {
+        let s = |v: &str| Some(v.to_string());
+        assert_eq!(
+            check_filters(s("  home "), None, s(" Tax / Business  ")),
+            Ok((s("home"), None, s("Tax / Business")))
+        );
+        assert!(check_filters(s("   "), None, None).is_err());
+        assert!(check_filters(None, s(""), None).is_err());
+        assert!(check_filters(None, None, s("    ")).is_err());
+        assert!(check_filters(s("a?b"), None, None).is_err());
+        assert_eq!(check_filters(None, None, None), Ok((None, None, None)));
+    }
+
+    #[test]
+    fn bucket_lookup_ignores_case_and_outer_spaces() {
+        let body = json!({"buckets": [
+            {"id": "B1", "name": "Tasks (To-Do)", "hidden": false},
+            {"id": "B2", "name": "Tax / Business", "hidden": false},
+            {"id": "B3", "name": "DevOps (other board, parked)", "hidden": true}
+        ]});
+        assert_eq!(find_bucket(&body, "  tax / business ").as_deref(), Some("B2"));
+        assert_eq!(find_bucket(&body, "TASKS (to-do)").as_deref(), Some("B1"));
+        assert_eq!(find_bucket(&body, "devops (other board, parked)").as_deref(), Some("B3"));
+        assert_eq!(find_bucket(&body, "Garage"), None);
+        assert_eq!(find_bucket(&json!({"nope": 1}), "Tasks"), None);
+    }
+
+    #[test]
+    fn local_midnight_follows_the_clock_change() {
+        // 2026-03-08T18:00:00Z is 14:00 local (UTC-4); local midnight was 05:00Z (UTC-5).
+        assert_eq!(local_midnight(1_772_992_800, &us_east), 1_772_946_000);
+        // The next midnight is 04:00Z the next day, 23 hours after the first.
+        assert_eq!(local_midnight(1_772_946_000 + 36 * 3600, &us_east), 1_772_946_000 + 23 * 3600);
+        assert_eq!(local_midnight(1_000_000, &|_| 0), 950_400);
+    }
+
+    fn summary_body() -> Value {
+        json!({"tasks": [
+            {"id": "1", "title": "One", "kind": "task", "status": "open", "tags": ["home", "errand"], "bucket_id": "B1", "estimate": "15", "due_at": "2026-03-09T16:00:00Z"},
+            {"id": "2", "title": "Two", "kind": "task", "status": "open", "tags": ["work"], "bucket_id": "B2", "estimate": "60plus", "due_at": "2026-03-09", "due_is_all_day": true},
+            {"id": "3", "title": "Three", "kind": "task", "status": "open", "tags": ["Home"], "bucket_id": "B2", "estimate": "30", "due_at": "2026-03-09T03:00:00Z"},
+            {"id": "4", "title": "Four", "kind": "task", "status": "open", "tags": ["home"], "bucket_id": "B1", "estimate": "45", "due_at": "2026-03-10T03:30:00Z"},
+            {"id": "5", "title": "Five", "kind": "task", "status": "open", "tags": [], "bucket_id": "B1", "estimate": null},
+            {"id": "6", "title": "Six", "kind": "task", "status": "done", "tags": ["home"], "bucket_id": "B1", "due_at": "2026-03-09T16:00:00Z"},
+            {"id": "7", "title": "Seven", "kind": "note", "status": "open", "tags": ["home"], "bucket_id": "B1"}
+        ]})
+    }
+
+    const NOW: i64 = 1_772_992_800;
+
+    fn ids(s: &TasksSummary) -> Vec<&str> {
+        s.next.iter().map(|t| t.id.as_str()).collect()
+    }
+
+    #[test]
+    fn summary_counts_remaining_and_tomorrow() {
+        // Now is 2026-03-08 14:00 local. Tomorrow is 2026-03-09 local: 04:00Z to 04:00Z next day.
+        let got = summarize(&summary_body(), Filters::default(), NOW, &us_east);
+        assert_eq!(ids(&got), ["1", "2", "3"]);
+        assert_eq!(got.remaining, 2);
+        // Task 1 (16:00Z), task 2 (all-day 03-09), task 4 (2026-03-10T03:30Z = 23:30 local on 03-09).
+        // Task 3 (03:00Z on 03-09 = 23:00 local on 03-08) is today, so it does not count.
+        assert_eq!(got.due_tomorrow, DueTomorrow { count: 3, est_minutes: 15 + 60 + 45 });
+    }
+
+    #[test]
+    fn summary_filters_by_tag() {
+        let got = summarize(&summary_body(), Filters { tag: Some("HOME"), ..Filters::default() }, NOW, &us_east);
+        assert_eq!(ids(&got), ["1", "3", "4"]);
+        assert_eq!(got.remaining, 0);
+        assert_eq!(got.due_tomorrow, DueTomorrow { count: 2, est_minutes: 15 + 45 });
+    }
+
+    #[test]
+    fn summary_drops_by_not_tag() {
+        let got = summarize(&summary_body(), Filters { not_tag: Some("home"), ..Filters::default() }, NOW, &us_east);
+        assert_eq!(ids(&got), ["2", "5"]);
+        assert_eq!(got.due_tomorrow, DueTomorrow { count: 1, est_minutes: 60 });
+    }
+
+    #[test]
+    fn summary_filters_by_bucket_and_combines() {
+        let by_bucket = summarize(&summary_body(), Filters { bucket_id: Some("B1"), ..Filters::default() }, NOW, &us_east);
+        assert_eq!(ids(&by_bucket), ["1", "4", "5"]);
+        let both = summarize(&summary_body(), Filters { tag: Some("home"), bucket_id: Some("B2"), ..Filters::default() }, NOW, &us_east);
+        assert_eq!(ids(&both), ["3"]);
+        let none = summarize(&summary_body(), Filters { bucket_id: Some("B9"), ..Filters::default() }, NOW, &us_east);
+        assert!(none.next.is_empty());
+        assert_eq!(none.remaining, 0);
+    }
+
+    #[test]
+    fn summary_of_a_missing_body_is_empty() {
+        let got = summarize(&Value::Null, Filters::default(), NOW, &us_east);
+        assert_eq!(got, TasksSummary { next: vec![], remaining: 0, due_tomorrow: DueTomorrow { count: 0, est_minutes: 0 } });
     }
 
     #[test]

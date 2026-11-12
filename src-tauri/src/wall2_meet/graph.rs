@@ -4,6 +4,8 @@ use super::MAX_TITLE_CHARS;
 use serde_json::Value;
 
 pub const MAX_MEETINGS: usize = 8;
+/// The day view keeps up to this many events.
+pub const MAX_DAY_EVENTS: usize = 40;
 
 /// One meeting as read from one account. `join` stays in Rust.
 #[derive(Debug, Clone, PartialEq)]
@@ -29,7 +31,7 @@ pub trait GraphClient {
 
 // Section: time
 
-fn civil_from_days(z: i64) -> (i64, i64, i64) {
+pub fn civil_from_days(z: i64) -> (i64, i64, i64) {
     let z = z + 719_468;
     let era = z.div_euclid(146_097);
     let doe = z.rem_euclid(146_097);
@@ -147,6 +149,11 @@ pub fn shape_events(body: &Value, account_id: &str) -> Vec<Candidate> {
 /// accounts shows once, but only when `iCalUId`, start, end and join link all match: a copied
 /// UID alone must not hide a different meeting or take its Join button.
 pub fn merge(per_account: Vec<Vec<Candidate>>) -> Vec<Candidate> {
+    merge_capped(per_account, MAX_MEETINGS)
+}
+
+/// `merge` with a chosen cap on how many come back.
+pub fn merge_capped(per_account: Vec<Vec<Candidate>>, cap: usize) -> Vec<Candidate> {
     let mut all: Vec<Candidate> = Vec::new();
     for list in per_account {
         let earlier = all.len();
@@ -161,13 +168,29 @@ pub fn merge(per_account: Vec<Vec<Candidate>>) -> Vec<Candidate> {
         }
     }
     all.sort_by(|a, b| a.start.cmp(&b.start));
-    all.truncate(MAX_MEETINGS);
+    all.truncate(cap);
     all
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn capped_merge_keeps_more_and_still_dedupes() {
+        let one = |n: u32, acct: &str| Candidate {
+            ical: Some(format!("u{n}")),
+            title: "T".into(),
+            start: format!("2026-11-12T{:02}:00:00Z", n),
+            end: format!("2026-11-12T{:02}:30:00Z", n),
+            account_id: acct.into(),
+            join: None,
+        };
+        let a: Vec<_> = (0..12).map(|n| one(n, "a")).collect();
+        let b: Vec<_> = (0..12).map(|n| one(n, "b")).collect();
+        assert_eq!(merge_capped(vec![a.clone(), b.clone()], MAX_DAY_EVENTS).len(), 12);
+        assert_eq!(merge_capped(vec![a, b], 5).len(), 5);
+    }
     use serde_json::json;
 
     #[test]

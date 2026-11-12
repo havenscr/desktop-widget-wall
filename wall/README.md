@@ -292,6 +292,24 @@ minutes while visible and after each completion.
 - **States**: "Not set up" (no address), "Nothing due" (empty list), "Tasks
   unavailable" (first read failed), and after a failed refresh the last good list
   with a small "updated N min ago".
+- **Estimate and summary (feeds for later screens, no card change yet)**: each task
+  carries `est` (`"15"`, `"30"`, `"45"`, `"60plus"` or null), read from the row's
+  `estimate` field. `wall2_tasks_summary({ tag?, notTag?, list? })` returns
+  `{ next, remaining, dueTomorrow }`: the first three open tasks, how many more are
+  open, and the count and summed minutes (`60plus` counts as 60, no estimate counts
+  as 0) of tasks due on the next local day. The three filters are all optional and
+  combine:
+  - `tag` keeps tasks whose `tags` contains it; `notTag` drops tasks whose `tags`
+    contains it. Both ignore case. Each is trimmed, then must match
+    `^[A-Za-z0-9][A-Za-z0-9 &/_-]{0,39}$`.
+  - `list` is a list name, 1 to 60 characters after trimming, no control
+    characters. Rust reads `GET /api/buckets` once for the call, finds the bucket
+    whose `name` equals it (case and outer spaces ignored) and keeps tasks with that
+    `bucket_id`. An unknown name gives an empty summary, not an error.
+  - A bad value is refused before any request. None of the three ever goes into a URL.
+  - "Around the house" is `tag: "home"`. Work is `notTag: "home"`.
+
+  The existing `wall2_tasks_next` is unchanged.
 
 ### Network tile (Home tab, right)
 
@@ -349,6 +367,18 @@ The only scopes asked for are `offline_access` and `Calendars.Read`. After the f
 ### Where the token lives
 
 The refresh token is kept in Windows Credential Manager (Windows Credentials, Generic), target `WidgetWall2/meet/<id>/<n>`, user name `wall2`. A generic credential holds at most 2560 bytes, so a long token is split over up to four entries (`/0`, `/1`, and so on). Credential Manager protects them per Windows user. Access tokens are kept in memory only and are never written anywhere.
+
+### Day feed
+
+`wall2_meet_day` returns today's events for the day ribbon and Home: from local
+midnight to 36 hours after it, past events included, up to 40 merged across both
+accounts. Each event has `key`, `accountId`, `title`, `start`, `end`, `canJoin` and
+`isLive`, with the same rules as the next-meetings read (no body, attendees or
+organizer; cancelled, declined and all-day events left out; the same invite on both
+accounts once; join links behind keys). `isLive` is true when the subject starts with
+"Livestream". Day keys start with `d` and live in their own map, so a day read never
+invalidates a Join key from the next-meetings read. An unavailable account adds no
+events to the day view (there is no "updated N min ago" copy here).
 
 ### Join links
 

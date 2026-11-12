@@ -1,7 +1,7 @@
 //! The silent refresh and the calendar read, behind traits so tests can fake the network.
 
 use super::auth::{TokenClient, TokenReply, SCOPE};
-use super::graph::{merge, shape_events, utc_iso, Candidate, GraphClient, GraphReply};
+use super::graph::{merge, merge_capped, shape_events, MAX_DAY_EVENTS, utc_iso, Candidate, GraphClient, GraphReply};
 use super::store::SecretStore;
 use super::Account;
 use serde::Serialize;
@@ -34,10 +34,14 @@ pub struct Core {
 pub struct Links {
     pub generation: u64,
     pub map: HashMap<String, String>,
+    /// The day view's keys (they start with `d`), swapped separately so a day read never
+    /// breaks a Join key from the next-meetings read, and the other way round.
+    pub day_map: HashMap<String, String>,
 }
 
 pub fn lookup_link(links: &Mutex<Links>, key: &str) -> Option<String> {
-    links.lock().unwrap_or_else(|e| e.into_inner()).map.get(key).cloned()
+    let guard = links.lock().unwrap_or_else(|e| e.into_inner());
+    guard.map.get(key).or_else(|| guard.day_map.get(key)).cloned()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -151,7 +155,22 @@ fn read_account(
     core: &mut Core,
     now: u64,
 ) -> (AccountState, Option<Vec<Candidate>>) {
-    let (start, end) = (utc_iso(now), utc_iso(now + WINDOW_SECS));
+    read_window(acct, store, tokens, graph, core, now, now, now + WINDOW_SECS)
+}
+
+/// One account's events between two instants (epoch seconds).
+#[allow(clippy::too_many_arguments)]
+fn read_window(
+    acct: &Account,
+    store: &dyn SecretStore,
+    tokens: &dyn TokenClient,
+    graph: &dyn GraphClient,
+    core: &mut Core,
+    now: u64,
+    from: u64,
+    to: u64,
+) -> (AccountState, Option<Vec<Candidate>>) {
+    let (start, end) = (utc_iso(from), utc_iso(to));
     let access = match obtain(acct, store, tokens, core, now, false) {
         Ok(a) => a,
         Err(state) => return (state, None),
@@ -229,6 +248,72 @@ pub fn read_next(
     MeetPayload { accounts: statuses, meetings, stale }
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DayEventOut {
+    pub key: String,
+    pub account_id: String,
+    pub title: String,
+    pub start: String,
+    pub end: String,
+    pub can_join: bool,
+    pub is_live: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DayPayload {
+    pub accounts: Vec<AccountOut>,
+    pub events: Vec<DayEventOut>,
+}
+
+/// An event counts as a livestream when its subject starts with "Livestream".
+pub fn is_live(title: &str) -> bool {
+    title.trim_start().to_ascii_lowercase().starts_with("livestream")
+}
+
+/// Every account's events from `from` to `to`, past ones included, merged and sorted. Join
+/// links stay behind keys, as in `read_next`. An unavailable account adds nothing.
+#[allow(clippy::too_many_arguments)]
+pub fn read_day(
+    accounts: &[Account],
+    store: &dyn SecretStore,
+    tokens: &dyn TokenClient,
+    graph: &dyn GraphClient,
+    core: &mut Core,
+    links: &Mutex<Links>,
+    now: u64,
+    from: u64,
+    to: u64,
+) -> DayPayload {
+    let mut statuses = Vec::new();
+    let mut lists = Vec::new();
+    for acct in accounts {
+        let (state, fresh) = read_window(acct, store, tokens, graph, core, now, from, to);
+        statuses.push(AccountOut { id: acct.id.clone(), label: acct.label.clone(), state: state.as_str() });
+        lists.push(fresh.unwrap_or_default());
+    }
+    let merged = merge_capped(lists, MAX_DAY_EVENTS);
+    let mut guard = links.lock().unwrap_or_else(|e| e.into_inner());
+    guard.generation += 1;
+    guard.day_map.clear();
+    let generation = guard.generation;
+    let events = merged
+        .into_iter()
+        .enumerate()
+        .map(|(n, c)| {
+            let key = format!("d{generation}-{n}");
+            let can_join = c.join.is_some();
+            if let Some(url) = c.join {
+                guard.day_map.insert(key.clone(), url);
+            }
+            let is_live = is_live(&c.title);
+            DayEventOut { key, account_id: c.account_id, title: c.title, start: c.start, end: c.end, can_join, is_live }
+        })
+        .collect();
+    drop(guard);
+    DayPayload { accounts: statuses, events }
+}
+
 /// After a sign-in: keep the refresh token, cache the access token.
 pub fn complete_sign_in(
     acct: &Account,
@@ -302,16 +387,19 @@ mod tests {
         replies: RefCell<Vec<GraphReply>>,
         calls: Cell<usize>,
         seen_access: RefCell<Vec<String>>,
+        /// The start and end of every calendar read, as asked for.
+        seen_window: RefCell<Vec<(String, String)>>,
     }
     impl FakeGraph {
         fn new(replies: Vec<GraphReply>) -> Self {
-            FakeGraph { replies: RefCell::new(replies), calls: Cell::new(0), seen_access: RefCell::new(vec![]) }
+            FakeGraph { replies: RefCell::new(replies), calls: Cell::new(0), seen_access: RefCell::new(vec![]), seen_window: RefCell::new(vec![]) }
         }
     }
     impl GraphClient for FakeGraph {
-        fn calendar_view(&self, access: &str, _s: &str, _e: &str) -> GraphReply {
+        fn calendar_view(&self, access: &str, start: &str, end: &str) -> GraphReply {
             self.calls.set(self.calls.get() + 1);
             self.seen_access.borrow_mut().push(access.to_string());
+            self.seen_window.borrow_mut().push((start.to_string(), end.to_string()));
             let mut r = self.replies.borrow_mut();
             if r.is_empty() {
                 GraphReply::Transient
@@ -474,6 +562,63 @@ mod tests {
         let p = read_next(&[acct("work"), acct("second")], &store, &t, &g, &mut core, &links, NOW + 10);
         assert_eq!(p.meetings[0].key, "2-0");
         assert!(lookup_link(&links, "1-0").is_none());
+    }
+
+    fn event_at(subject: &str, ical: &str, start: &str, end: &str) -> Value {
+        json!({
+            "subject": subject,
+            "start": { "dateTime": start },
+            "end": { "dateTime": end },
+            "isAllDay": false, "isCancelled": false,
+            "responseStatus": { "response": "accepted" },
+            "iCalUId": ical,
+            "onlineMeeting": { "joinUrl": "https://teams.microsoft.com/l/meetup-join/secret-part" }
+        })
+    }
+
+    #[test]
+    fn day_read_keeps_past_events_flags_livestreams_and_keeps_keys_apart() {
+        let (store, mut core) = setup();
+        let links = Mutex::new(Links::default());
+        let t = FakeTokens::new(vec![ok_token("a", None)]);
+        // NOW is 2026-11-12 05:00 UTC. The first event ended at 02:00 UTC the same day, before NOW.
+        let day_body = json!({ "value": [
+            event_at("Livestream: Q and A", "l1", "2026-11-12T01:00:00.0000000", "2026-11-12T02:00:00.0000000"),
+            event_at("Weekly planning", "p1", "2026-11-12T17:00:00.0000000", "2026-11-12T18:00:00.0000000"),
+        ] });
+        let g = FakeGraph::new(vec![GraphReply::Ok(day_body), GraphReply::Ok(body("Weekly planning", "p1"))]);
+        let accounts = [acct("work")];
+        // Local midnight (UTC here) to 36 elapsed hours later.
+        let (from, to) = (1_794_441_600, 1_794_441_600 + 36 * 3600);
+        let p = read_day(&accounts, &store, &t, &g, &mut core, &links, NOW, from, to);
+        assert_eq!(g.seen_window.borrow().as_slice(), [("2026-11-12T00:00:00Z".to_string(), "2026-11-13T12:00:00Z".to_string())]);
+        assert_eq!(p.accounts[0].state, "ok");
+        assert_eq!(p.events.len(), 2);
+        assert_eq!(p.events[0].title, "Livestream: Q and A");
+        assert!(p.events[0].end.as_str() < utc_iso(NOW).as_str(), "the kept event is in the past");
+        assert!(p.events[0].is_live);
+        assert!(!p.events[1].is_live);
+        assert!(p.events[0].can_join);
+        assert!(p.events[0].key.starts_with('d'));
+        let day_key = p.events[0].key.clone();
+        assert!(lookup_link(&links, &day_key).unwrap().starts_with("https://teams.microsoft.com/"));
+        let text = serde_json::to_string(&p).unwrap();
+        for bad in ["joinUrl", "Bearer", "teams.microsoft.com", "secret-part", "refresh", "token", "attendees", "organizer", "body"] {
+            assert!(!text.contains(bad), "payload leaks {bad}: {text}");
+        }
+        // A next-meetings read does not break the day key, and asks for the usual 24 hours from now.
+        let n = read_next(&accounts, &store, &t, &g, &mut core, &links, NOW + 10);
+        assert!(!is_live(&n.meetings[0].title));
+        assert!(lookup_link(&links, &day_key).is_some());
+        assert_eq!(g.seen_window.borrow()[1], (utc_iso(NOW + 10), utc_iso(NOW + 10 + WINDOW_SECS)));
+    }
+
+    #[test]
+    fn livestream_subject_rule() {
+        assert!(is_live("Livestream with guest"));
+        assert!(is_live("  livestream"));
+        assert!(!is_live("Weekly livestream prep"));
+        assert!(!is_live(""));
     }
 
     #[test]

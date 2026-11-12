@@ -10,6 +10,8 @@ mod graph;
 mod service;
 mod store;
 
+pub(crate) use graph::civil_from_days;
+
 use serde_json::Value;
 use std::io::Read;
 use std::sync::{Mutex, OnceLock};
@@ -178,6 +180,29 @@ pub async fn wall2_meet_next(window: tauri::WebviewWindow) -> Result<service::Me
     .map_err(|_| "failed".to_string())
 }
 
+/// The day view's window: the last local midnight at or before `now`, to 36 elapsed hours
+/// after it. `offset` says how far the local clock is ahead of UTC at a given instant, so a
+/// clock change between now and midnight is handled.
+pub(crate) fn day_window(now: i64, offset: &dyn Fn(i64) -> i64) -> (u64, u64) {
+    let start = crate::wall2_feeds::local_midnight(now, offset).max(0) as u64;
+    (start, start + 36 * 3600)
+}
+
+/// Today's events from local midnight to 36 hours after it, past ones included.
+#[tauri::command]
+pub async fn wall2_meet_day(window: tauri::WebviewWindow) -> Result<service::DayPayload, String> {
+    require_wall2(window.label())?;
+    let accounts = load_config(&window).map_err(str::to_string)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let now = now_secs();
+        let (from, to) = day_window(now as i64, &crate::wall2_feeds::local_offset_secs);
+        let mut core = lock_core();
+        service::read_day(&accounts, &secrets(), &auth::HttpTokens, &HttpGraph, &mut core, links(), now, from, to)
+    })
+    .await
+    .map_err(|_| "failed".to_string())
+}
+
 #[tauri::command]
 pub async fn wall2_meet_sign_in(window: tauri::WebviewWindow, id: String) -> Result<(), String> {
     require_wall2(window.label())?;
@@ -308,5 +333,34 @@ mod tests {
         assert!(require_wall2("wall2").is_ok());
         assert!(require_wall2("main").is_err());
         assert!(require_wall2("").is_err());
+    }
+
+    // 2026-03-08 07:00 UTC: US east clocks go forward (UTC-5 to UTC-4).
+    fn spring(utc: i64) -> i64 {
+        if utc < 1_772_953_200 { -5 * 3600 } else { -4 * 3600 }
+    }
+
+    // 2026-11-01 06:00 UTC: US east clocks go back (UTC-4 to UTC-5).
+    fn fall(utc: i64) -> i64 {
+        if utc < 1_793_512_800 { -4 * 3600 } else { -5 * 3600 }
+    }
+
+    #[test]
+    fn day_window_on_a_normal_day() {
+        // 2026-11-12 17:00 UTC is 18:00 at UTC+1; local midnight was 2026-11-11 23:00 UTC.
+        assert_eq!(day_window(1_794_502_800, &|_| 3600), (1_794_438_000, 1_794_438_000 + 36 * 3600));
+        assert_eq!(day_window(1_794_502_800, &|_| 0), (1_794_441_600, 1_794_441_600 + 36 * 3600));
+    }
+
+    #[test]
+    fn day_window_on_a_spring_forward_day() {
+        // 14:00 local after the change; midnight was at UTC-5 (05:00 UTC). 36 elapsed hours later.
+        assert_eq!(day_window(1_772_992_800, &spring), (1_772_946_000, 1_772_946_000 + 36 * 3600));
+    }
+
+    #[test]
+    fn day_window_on_a_fall_back_day() {
+        // 15:00 local after the change; midnight was at UTC-4 (04:00 UTC), 25 hours before the next one.
+        assert_eq!(day_window(1_793_563_200, &fall), (1_793_505_600, 1_793_505_600 + 36 * 3600));
     }
 }

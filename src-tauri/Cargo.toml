@@ -58,6 +58,8 @@ windows = { version = "0.58", features = [
     # Lock / display-off detection (display_watch.rs)
     "Win32_System_RemoteDesktop",
     "Win32_System_Power",
+    # Local midnight for the Wall 2 day feeds (wall2_feeds.rs)
+    "Win32_System_Time",
     "Win32_System_SystemServices",
     # Wall 2 Meet: Credential Manager for refresh tokens, BCrypt for PKCE (wall2_meet)
     "Win32_Security_Credentials",
