@@ -265,31 +265,47 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
 
 - **Left wing** (`wall/src/work/LeftWing.tsx`), top to bottom:
   - the weather after the date: icon, temperature and a short condition ("58°,
-    clearing"), `WeatherLine` in `weather/WeatherCard.tsx`, empty until a reading;
+    clearing"), `WeatherLine` in `weather/WeatherCard.tsx`, empty until a reading and
+    hidden while the reading is stale (the line has no room for its age);
   - **Next**: the first meeting that has not ended, from `wall2_meet_next`
     (`work/useNextMeeting.ts`: read on mount and every 5 minutes while visible, the
-    time ticks every 30 seconds), written as "12:00, in 1 h 36 m", "now, 12 m left"
-    or "tomorrow 9:30" (`work/next.ts`). Hidden when Meet is not set up, when the
-    first read fails, and when there is no meeting;
-  - **Focus** (`FocusMini` in `focus/FocusTimer.tsx`): a 64 pixel ring with the
+    time ticks every 30 seconds), written as "12:00, in 1 h 36 m", "now, 12 m
+    left", "tomorrow 9:30" or "Friday 9:30" (`work/next.ts`; whole hours read "1 h"). Hidden
+    when Meet is not set up, when the first read fails, and when there is no meeting.
+    When the feed marks the list `stale` or a refresh fails, the last list stays,
+    dimmed, with a quiet "as of H:MM" (the last complete read; "may be out of date" if
+    there has been none);
+  - **Focus** (`FocusMini` in `focus/FocusTimer.tsx`): a 60 pixel ring with the
     minutes left, the task label (or "Ready to focus"), and one round button: start,
     pause or resume. Tapping the ring while no session runs opens a sheet with 25, 50,
-    Custom and "Start N min";
+    Custom and "Start N min"; a session started elsewhere closes the sheet;
   - **Now playing** (`MusicMini` in `music/MusicBar.tsx`): art, title, artist and one
     play or pause button, from the same app-wide poll as the music bar;
   - **Machines** (`wall/src/machines/`, owner vote A, "whisper bars"): a header row
     (CPU, GPU, RAM) and two thin rows, PC and BOX with the box temperature, from
     `wall2_machines` every 2 seconds while visible (one read at a time, nothing while
-    hidden). Grey by default. A number turns amber only after it stays over its limit
+    hidden; a read that takes over 5 seconds counts as failed, only the read holding the
+    busy flag clears it, and the answer of a superseded read is dropped). Grey by
+    default. A number turns amber only after it stays over its limit
     for 30 seconds (RAM over 90, CPU or GPU over 95, box temperature over 90 degrees);
     a dip back under starts the 30 seconds again, and a gap of more than 6 seconds
-    between reads (hidden, slow) does too. The BOX row is hidden when the box numbers
-    are null and dimmed when `boxStale`. Nothing shows when the command fails.
-  - Round buttons in the wing draw at 56 pixels but keep a 72 pixel touch target.
+    between reads (hidden, slow) does too. Stale box numbers never count toward the
+    hold. The BOX row is hidden when the box numbers are null and dimmed when
+    `boxStale`. A column with no reading (often the box's GPU) shows a faint empty track
+    and no number. Nothing shows when the command fails.
+  - Round buttons in the wing draw at 52 pixels but keep a 72 pixel touch target.
+  - The four blocks share the space under the date with even air between them.
 - **Centre** (`wall/src/agents/CentreSlot.tsx`): until the agent lanes land (PR 13),
   and whenever the helper is not set up, the full focus timer and the weather card
-  (now, today's range, the next six hours) fill it, so it is never an empty card. PR 13
-  changes only this file.
+  (now, today's range, the next six hours) fill it, so it is never an empty card. Before
+  the first weather reading, or when the first fetch fails, the focus card takes the
+  whole centre with the weather status as one line inside it. PR 13 changes only this
+  file.
+- **Fit check** (`wall/scripts/fit-check.mjs`, `npm --prefix wall run fit-check` with
+  `WALL_CHROME` set to a Chromium or chrome-headless-shell binary): builds a development
+  bundle, opens Work with the longest mock strings (`?long=1`) at 2560 by 720 and fails
+  if a wing or centre card overflows. jsdom has no layout, so the unit tests cannot
+  check this; CI does not run it either.
 - **Right wing**: the next three tasks (see "Task card" below). The Big screen and Keys
   rows of the concept come with their own pull requests.
 
@@ -408,8 +424,9 @@ visible and after each completion. (`useTasks()` with no filter still reads
   fails the row comes back with a small "Could not save".
 - **Focus**: hold a row for half a second to start the focus timer with the length
   chosen on the focus card (25 minutes unless changed), named after the task. A short
-  tap or a press that slides off does nothing; with a keyboard, Enter starts it. Ignored
-  while a session is running or paused. The label is saved with the session and
+  tap, a cancelled press or a finger that moves more than 12 pixels does nothing; with a
+  keyboard, Enter starts it. Ignored while a session is running or paused.
+- A summary answer without a `next` list counts as a failed read. The label is saved with the session and
   cleared on reset and when the session finishes.
 - **States**: "Not set up" (no address), "Nothing due" (empty list), "Tasks
   unavailable" (first read failed), and after a failed refresh the last good list
