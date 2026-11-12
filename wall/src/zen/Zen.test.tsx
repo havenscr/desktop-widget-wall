@@ -161,7 +161,7 @@ it('a session ending just before 9:30 PM falls into Dream and stays there throug
 it('the night check effect lists ending among its dependencies', () => {
   // `ending` is only ever true while a session runs, so no timing test can tell a stale read from a
   // fresh one; the dependency list is what keeps the effect honest, so pin it in the source.
-  const effect = /Night starting while Zen is open[\s\S]*?\n  \}, \[([^\]]*)\]\);/.exec(zenSource);
+  const effect = /setDream\(true\);\s*\}, NIGHT_CHECK_MS\);[\s\S]*?\}, \[([^\]]*)\]\);/.exec(zenSource);
   expect(effect).not.toBeNull();
   const deps = effect![1].split(',').map((d) => d.trim());
   expect(deps).toEqual(expect.arrayContaining(['startedAt', 'ending', 'nowMs']));
