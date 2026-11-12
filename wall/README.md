@@ -292,6 +292,15 @@ minutes while visible and after each completion.
 - **States**: "Not set up" (no address), "Nothing due" (empty list), "Tasks
   unavailable" (first read failed), and after a failed refresh the last good list
   with a small "updated N min ago".
+- **Estimate and summary (feeds for later screens, no card change yet)**: each task
+  carries `est` (`"15"`, `"30"`, `"45"`, `"60plus"` or null), read from the row's
+  `est` field. `wall2_tasks_summary(list?)` returns `{ next, remaining, dueTomorrow }`:
+  the first three open tasks, how many more are open, and the count and summed
+  minutes (`60plus` counts as 60, no estimate counts as 0) of tasks due on the next
+  local day. `list` is a list name of 1 to 40 characters from letters, digits, space,
+  `&` and `-`, matched without regard to case against the row's `list_name`, `list`
+  (text) or `list.name`; it picks the Home chores. The existing `wall2_tasks_next`
+  is unchanged.
 
 ### Network tile (Home tab, right)
 
@@ -349,6 +358,18 @@ The only scopes asked for are `offline_access` and `Calendars.Read`. After the f
 ### Where the token lives
 
 The refresh token is kept in Windows Credential Manager (Windows Credentials, Generic), target `WidgetWall2/meet/<id>/<n>`, user name `wall2`. A generic credential holds at most 2560 bytes, so a long token is split over up to four entries (`/0`, `/1`, and so on). Credential Manager protects them per Windows user. Access tokens are kept in memory only and are never written anywhere.
+
+### Day feed
+
+`wall2_meet_day` returns today's events for the day ribbon and Home: from local
+midnight to 36 hours after it, past events included, up to 40 merged across both
+accounts. Each event has `key`, `accountId`, `title`, `start`, `end`, `canJoin` and
+`isLive`, with the same rules as the next-meetings read (no body, attendees or
+organizer; cancelled, declined and all-day events left out; the same invite on both
+accounts once; join links behind keys). `isLive` is true when the subject starts with
+"Livestream". Day keys start with `d` and live in their own map, so a day read never
+invalidates a Join key from the next-meetings read. An unavailable account adds no
+events to the day view (there is no "updated N min ago" copy here).
 
 ### Join links
 

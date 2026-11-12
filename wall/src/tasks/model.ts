@@ -4,6 +4,8 @@ export interface TaskItem {
   due_at: string | null;
   due_is_all_day: boolean;
   quadrant: string | null;
+  /** Effort estimate in minutes: '15', '30', '45' or '60plus'. */
+  est?: '15' | '30' | '45' | '60plus' | null;
 }
 
 /** The error text the native side sends when `feeds.json` has no address for the service. */
