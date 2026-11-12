@@ -48,6 +48,7 @@ use std::fs;
 use std::path::PathBuf;
 
 mod audio_analysis;
+mod wall2_window;
 #[cfg(windows)]
 mod display_watch;
 use audio_analysis::{AudioAnalyzer, AudioLevels};
@@ -3561,6 +3562,27 @@ fn apply_webview_visibility(window: &tauri::WebviewWindow) {
     apply_webview_visibility_locked(window);
 }
 
+#[cfg(windows)]
+static DISPLAYS_GEN: AtomicU64 = AtomicU64::new(0);
+
+/// Monitor added or removed (WM_DISPLAYCHANGE). Debounced by one second and
+/// moved off the window procedure. Wall 2 only; the old app never registers it.
+#[cfg(windows)]
+fn on_displays_changed() {
+    let generation = DISPLAYS_GEN.fetch_add(1, Ordering::SeqCst) + 1;
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(1000));
+        if DISPLAYS_GEN.load(Ordering::SeqCst) != generation {
+            return;
+        }
+        if let Some(app) = APP_HANDLE.get() {
+            if let Some(window) = app.get_webview_window(WALL2_LABEL) {
+                wall2_window::follow_strip(&window);
+            }
+        }
+    });
+}
+
 /// Lock / unlock / display power change, from the display watcher. Runs on the
 /// window procedure, so the work is moved off it.
 #[cfg(windows)]
@@ -3697,12 +3719,14 @@ pub fn run() {
             let separator = PredefinedMenuItem::separator(app)?;
             let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
 
-            let menu = Menu::with_items(app, &[
-                &show_item,
-                &fullscreen_item,
-                &separator,
-                &quit_item,
-            ])?;
+            // Wall 2 is borderless on a fixed strip: no fullscreen toggle.
+            let is_wall2 = app.get_webview_window(WALL2_LABEL).is_some();
+            let items: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> = if is_wall2 {
+                vec![&show_item, &separator, &quit_item]
+            } else {
+                vec![&show_item, &fullscreen_item, &separator, &quit_item]
+            };
+            let menu = Menu::with_items(app, &items)?;
 
             let _tray = TrayIconBuilder::new()
                 .icon(app.default_window_icon().cloned().unwrap())
@@ -3812,6 +3836,20 @@ pub fn run() {
                         println!("[Startup] Monitor 2 not found, using default position");
                     }
                 }
+            }
+
+            if let Some(window) = app.get_webview_window(WALL2_LABEL) {
+                #[cfg(windows)]
+                display_watch::set_on_displays_changed(on_displays_changed);
+                wall2_window::place_at_startup(&window);
+                let _ = window.show();
+                // Second pass: settles a display scale change from the move.
+                wall2_window::place_at_startup(&window);
+                // The window was created hidden, so Resized events during placement
+                // marked it user hidden. Clear that or the WebView stays dark.
+                USER_HIDDEN.store(false, Ordering::SeqCst);
+                #[cfg(windows)]
+                apply_webview_visibility(&window);
             }
             Ok(())
         })
