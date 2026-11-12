@@ -1,0 +1,6 @@
+{
+  "identifier": "wall2",
+  "description": "Capabilities for the Wall 2 window",
+  "windows": ["wall2"],
+  "permissions": ["core:default"]
+}

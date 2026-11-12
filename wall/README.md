@@ -35,10 +35,20 @@ rejects with a clear error. Inside Tauri, `invoke` calls the real command.
 `src-tauri/tauri.wall2.conf.json` is a second Tauri config. It overrides only
 the product name ("Widget Wall 2"), identifier, version, the `build` block
 (dev URL `http://localhost:1421`, build commands, `frontendDist` at
-`wall/dist`) and one window (2560 by 720, resizable, not always on top). The window keeps its title bar (decorations on) because the inherited tray
-handler in `src-tauri/src/lib.rs` calls `set_decorations` on fullscreen toggle;
-the borderless window comes later with the window handling change. Everything
-else comes from `src-tauri/tauri.conf.json`.
+`wall/dist`) and one window (label `wall2`). Everything else comes from
+`src-tauri/tauri.conf.json`.
+
+**Window.** The window is labelled `wall2` and gets its own narrow capability,
+`src-tauri/capabilities/wall2.json` (`core:default` only; the old `default`
+capability is not loaded). This limits core and plugin permissions only; the
+app's own commands stay callable from Wall 2 until a later change adds a command
+list in `build.rs`. It is borderless, not resizable, not always on top
+and not in the taskbar; the tray icon shows it ("Show Window" or a left click)
+and quits it, and its tray menu has no "Toggle Fullscreen". At startup Rust
+sizes it to the monitor that is exactly 2560 by 720 physical pixels, else the
+monitor with the smallest height, else the primary monitor. When a monitor is
+added or removed it moves back onto an exact 2560 by 720 monitor if one is
+present, and does nothing if none is.
 
 ```bash
 npm ci                  # root install, provides the Tauri CLI

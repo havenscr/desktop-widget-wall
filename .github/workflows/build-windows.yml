@@ -85,7 +85,7 @@ jobs:
         with:
           name: widget-wall-2-windows
           path: |
-            src-tauri/target/release/*.exe
+            src-tauri/target/release/widget-wall-desktop.exe
             src-tauri/target/release/bundle/msi/Widget Wall 2_*.msi
             src-tauri/target/release/bundle/nsis/Widget Wall 2_*.exe
           if-no-files-found: error

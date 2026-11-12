@@ -14,6 +14,9 @@
   atomics, and hands each change to a callback that runs off the window
   procedure.
 
+  It also hears WM_DISPLAYCHANGE and hands it to an optional callback, which
+  Wall 2 uses to follow its monitor when it is unplugged and plugged back in.
+
   A subclass of the existing window was chosen over a hidden message-only
   window: both notifications are documented for top-level windows, and the
   subclass needs no extra thread or window class.
@@ -29,7 +32,7 @@ use windows::Win32::System::RemoteDesktop::{WTSRegisterSessionNotification, NOTI
 use windows::Win32::System::SystemServices::GUID_CONSOLE_DISPLAY_STATE;
 use windows::Win32::UI::Shell::{DefSubclassProc, SetWindowSubclass};
 use windows::Win32::UI::WindowsAndMessaging::{
-    DEVICE_NOTIFY_WINDOW_HANDLE, PBT_POWERSETTINGCHANGE, WM_POWERBROADCAST, WM_WTSSESSION_CHANGE,
+    DEVICE_NOTIFY_WINDOW_HANDLE, PBT_POWERSETTINGCHANGE, WM_DISPLAYCHANGE, WM_POWERBROADCAST, WM_WTSSESSION_CHANGE,
     WTS_CONSOLE_CONNECT, WTS_CONSOLE_DISCONNECT, WTS_REMOTE_CONNECT,
     WTS_SESSION_LOCK, WTS_SESSION_UNLOCK,
 };
@@ -85,6 +88,13 @@ fn session_change(code: u32) -> Option<(&'static AtomicBool, bool)> {
     }
 }
 
+static ON_DISPLAYS_CHANGED: OnceLock<fn()> = OnceLock::new();
+
+/// Optional callback for monitor add and remove. Must not block.
+pub fn set_on_displays_changed(f: fn()) {
+    let _ = ON_DISPLAYS_CHANGED.set(f);
+}
+
 /// Subclass `hwnd` and register for lock and display notifications.
 /// `on_change` runs on the window's thread after a state transition; it must
 /// not block. Safe to call once; later calls are ignored.
@@ -136,6 +146,11 @@ unsafe extern "system" fn subclass_proc(
                 if DISPLAY_OFF.swap(off, Ordering::SeqCst) != off {
                     notify();
                 }
+            }
+        }
+        WM_DISPLAYCHANGE => {
+            if let Some(f) = ON_DISPLAYS_CHANGED.get() {
+                f();
             }
         }
         _ => {}

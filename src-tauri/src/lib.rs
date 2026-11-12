@@ -48,6 +48,7 @@ use std::fs;
 use std::path::PathBuf;
 
 mod audio_analysis;
+mod wall2_window;
 #[cfg(windows)]
 mod display_watch;
 use audio_analysis::{AudioAnalyzer, AudioLevels};
@@ -66,6 +67,19 @@ static WEBVIEW_SHOWN: AtomicBool = AtomicBool::new(true);
 static AUDIO_PUSH_REQUESTED: AtomicBool = AtomicBool::new(true);
 /// For the display watcher callback, which has no other way to reach the app.
 static APP_HANDLE: std::sync::OnceLock<tauri::AppHandle> = std::sync::OnceLock::new();
+
+/// Window label of the old app (the config gives its window no label).
+const MAIN_LABEL: &str = "main";
+/// Window label of Wall 2 (`tauri.wall2.conf.json`).
+const WALL2_LABEL: &str = "wall2";
+
+/// The app's one window: the old app's (`MAIN_LABEL`) or Wall 2's (`WALL2_LABEL`).
+/// Behaviour only the old app has must look up `MAIN_LABEL` directly, so it
+/// finds nothing, and skips itself, in Wall 2.
+fn app_window(app: &tauri::AppHandle) -> Option<tauri::WebviewWindow> {
+    app.get_webview_window(MAIN_LABEL)
+        .or_else(|| app.get_webview_window(WALL2_LABEL))
+}
 
 /// Levels are only worth computing when someone can see them.
 fn audio_push_active() -> bool {
@@ -1978,8 +1992,12 @@ async fn open_edge_popup(url: String, width: i32, height: i32) -> Result<(), Str
 /// Temporarily disables always-on-top and opens centered on primary monitor
 #[tauri::command]
 async fn open_focus_sessions(window: tauri::Window) -> Result<(), String> {
+    // Wall 2 is never always on top, so it has nothing to restore.
+    let restore_on_top = window.label() != WALL2_LABEL;
     // Temporarily disable always-on-top so Focus Sessions appears in front
-    let _ = window.set_always_on_top(false);
+    if restore_on_top {
+        let _ = window.set_always_on_top(false);
+    }
 
     // Open Focus Sessions and move to primary monitor center using PowerShell
     let script = r#"
@@ -2044,12 +2062,14 @@ if ($hwnd -ne [IntPtr]::Zero) {
     }
 
     // Re-enable always-on-top after a delay
-    let window_clone = window.clone();
-    std::thread::spawn(move || {
-        std::thread::sleep(std::time::Duration::from_secs(3));
-        let _ = window_clone.set_always_on_top(true);
-        println!("Restored always-on-top");
-    });
+    if restore_on_top {
+        let window_clone = window.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_secs(3));
+            let _ = window_clone.set_always_on_top(true);
+            println!("Restored always-on-top");
+        });
+    }
 
     Ok(())
 }
@@ -3542,6 +3562,71 @@ fn apply_webview_visibility(window: &tauri::WebviewWindow) {
     apply_webview_visibility_locked(window);
 }
 
+#[cfg(windows)]
+static DISPLAYS_GEN: AtomicU64 = AtomicU64::new(0);
+#[cfg(windows)]
+static DISPLAYS_TX: std::sync::OnceLock<std::sync::mpsc::Sender<()>> = std::sync::OnceLock::new();
+
+/// Monitor added or removed (WM_DISPLAYCHANGE). Runs on the window procedure,
+/// so it only bumps a counter and signals the worker; nothing here can block
+/// or panic. Wall 2 only; the old app never registers it.
+#[cfg(windows)]
+fn on_displays_changed() {
+    DISPLAYS_GEN.fetch_add(1, Ordering::SeqCst);
+    if let Some(tx) = DISPLAYS_TX.get() {
+        let _ = tx.send(());
+    }
+}
+
+/// The one long-lived worker behind `on_displays_changed`: waits for one
+/// second of quiet after a signal, then moves Wall 2 onto the strip. If the
+/// strip is not listed yet it retries up to three times, 2 seconds apart,
+/// and gives up until the next display change.
+#[cfg(windows)]
+fn start_displays_worker() {
+    use std::sync::mpsc::{channel, RecvTimeoutError};
+    use std::time::Duration;
+    let (tx, rx) = channel::<()>();
+    let spawned = std::thread::Builder::new()
+        .name("wall2-displays".into())
+        .spawn(move || {
+            while rx.recv().is_ok() {
+                // Debounce: restart the wait on every further signal.
+                loop {
+                    match rx.recv_timeout(Duration::from_millis(1000)) {
+                        Ok(()) => continue,
+                        Err(RecvTimeoutError::Timeout) => break,
+                        Err(RecvTimeoutError::Disconnected) => return,
+                    }
+                }
+                let seen = DISPLAYS_GEN.load(Ordering::SeqCst);
+                for attempt in 0..4 {
+                    if attempt > 0 {
+                        std::thread::sleep(Duration::from_millis(2000));
+                        // A newer change is queued and will restart the cycle.
+                        if DISPLAYS_GEN.load(Ordering::SeqCst) != seen {
+                            break;
+                        }
+                    }
+                    let found = APP_HANDLE
+                        .get()
+                        .and_then(|app| app.get_webview_window(WALL2_LABEL))
+                        .map(|window| wall2_window::follow_strip(&window))
+                        .unwrap_or(true);
+                    if found {
+                        break;
+                    }
+                }
+            }
+        });
+    match spawned {
+        Ok(_) => {
+            let _ = DISPLAYS_TX.set(tx);
+        }
+        Err(error) => eprintln!("[Wall2] display worker not started: {error}"),
+    }
+}
+
 /// Lock / unlock / display power change, from the display watcher. Runs on the
 /// window procedure, so the work is moved off it.
 #[cfg(windows)]
@@ -3556,7 +3641,7 @@ fn on_display_state_change() {
         // also emits last.
         let _guard = DISPLAY_STATE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let reason = display_watch::os_hidden_reason();
-        if let Some(window) = app.get_webview_window("main") {
+        if let Some(window) = app_window(&app) {
             apply_webview_visibility_locked(&window);
         }
         println!("[Display] os_hidden={:?}", reason);
@@ -3655,14 +3740,14 @@ pub fn run() {
         ])
         .setup(|app| {
             #[cfg(windows)]
-            if let Some(window) = app.get_webview_window("main") {
+            if let Some(window) = app_window(app.handle()) {
                 if let Err(error) = window.with_webview(disable_webview_tracking_prevention) {
                     eprintln!("WebView2: failed to access native webview: {error}");
                 }
             }
             let _ = APP_HANDLE.set(app.handle().clone());
             #[cfg(windows)]
-            if let Some(window) = app.get_webview_window("main") {
+            if let Some(window) = app_window(app.handle()) {
                 match window.hwnd() {
                     Ok(hwnd) => {
                         if let Err(error) = display_watch::install(hwnd.0, on_display_state_change) {
@@ -3678,12 +3763,14 @@ pub fn run() {
             let separator = PredefinedMenuItem::separator(app)?;
             let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
 
-            let menu = Menu::with_items(app, &[
-                &show_item,
-                &fullscreen_item,
-                &separator,
-                &quit_item,
-            ])?;
+            // Wall 2 is borderless on a fixed strip: no fullscreen toggle.
+            let is_wall2 = app.get_webview_window(WALL2_LABEL).is_some();
+            let items: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> = if is_wall2 {
+                vec![&show_item, &separator, &quit_item]
+            } else {
+                vec![&show_item, &fullscreen_item, &separator, &quit_item]
+            };
+            let menu = Menu::with_items(app, &items)?;
 
             let _tray = TrayIconBuilder::new()
                 .icon(app.default_window_icon().cloned().unwrap())
@@ -3692,7 +3779,7 @@ pub fn run() {
                 .on_menu_event(|app, event| {
                     match event.id.as_ref() {
                         "show" => {
-                            if let Some(window) = app.get_webview_window("main") {
+                            if let Some(window) = app_window(app) {
                                 let _ = window.unminimize();
                                 let _ = window.show();
                                 USER_HIDDEN.store(false, Ordering::SeqCst);
@@ -3702,7 +3789,7 @@ pub fn run() {
                             }
                         }
                         "fullscreen" => {
-                            if let Some(window) = app.get_webview_window("main") {
+                            if let Some(window) = app.get_webview_window(MAIN_LABEL) {
                                 if let Ok(is_fullscreen) = window.is_fullscreen() {
                                     let _ = window.set_fullscreen(!is_fullscreen);
                                     let _ = window.set_decorations(is_fullscreen);
@@ -3725,7 +3812,7 @@ pub fn run() {
                     } = event
                     {
                         let app = tray.app_handle();
-                        if let Some(window) = app.get_webview_window("main") {
+                        if let Some(window) = app_window(app) {
                             let _ = window.unminimize();
                             let _ = window.show();
                             USER_HIDDEN.store(false, Ordering::SeqCst);
@@ -3743,7 +3830,7 @@ pub fn run() {
                 EnumDisplayMonitors, GetMonitorInfoW, HDC, HMONITOR, MONITORINFO,
             };
 
-            if let Some(window) = app.get_webview_window("main") {
+            if let Some(window) = app.get_webview_window(MAIN_LABEL) {
                 // Enumerate monitors
                 static mut MONITOR_LIST: Vec<HMONITOR> = Vec::new();
 
@@ -3793,6 +3880,23 @@ pub fn run() {
                         println!("[Startup] Monitor 2 not found, using default position");
                     }
                 }
+            }
+
+            if let Some(window) = app.get_webview_window(WALL2_LABEL) {
+                #[cfg(windows)]
+                {
+                    start_displays_worker();
+                    display_watch::set_on_displays_changed(on_displays_changed);
+                }
+                wall2_window::place_at_startup(&window);
+                let _ = window.show();
+                // Second pass: settles a display scale change from the move.
+                wall2_window::place_at_startup(&window);
+                // The window was created hidden, so Resized events during placement
+                // marked it user hidden. Clear that or the WebView stays dark.
+                USER_HIDDEN.store(false, Ordering::SeqCst);
+                #[cfg(windows)]
+                apply_webview_visibility(&window);
             }
             Ok(())
         })
