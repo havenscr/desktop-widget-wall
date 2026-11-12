@@ -787,7 +787,7 @@ mod tests {
     fn run(m: &mut Machine, ev: Event, now: u64, input: InputSummary) -> Vec<Action> {
         m.step(ev, now, input)
     }
-    fn left(actions: &[Action], reason: &str) -> bool {
+    fn left(actions: &[Action], reason: &'static str) -> bool {
         actions.contains(&Action::Emit { active: false, reason: Some(reason) })
             && actions.contains(&Action::DisarmWatcher)
             && actions.contains(&Action::ClearInput)
