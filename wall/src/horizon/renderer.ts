@@ -196,6 +196,12 @@ export interface HorizonEcho {
   speed?: number;
   /** Seconds of spectrum history spread across the lines (default 7). */
   span?: number;
+  /**
+   * The spectrum the lines follow, in place of the made-up `spec(u, tau)`: `u` runs 0 at `cx`
+   * to 1 at `hs` away, `tau` is the line's moment (`t` minus its share of `span`). Values in
+   * `spec`'s range, about 0 to 1.3. Absent: `spec`, as before.
+   */
+  sample?: (u: number, tau: number) => number;
 }
 
 /** Everything `draw` reads. Sizes are design pixels; `scale` maps them to device pixels. */
@@ -296,9 +302,9 @@ export function draw(ctx:CanvasRenderingContext2D,o:HorizonDrawOptions):HorizonD
   ctx.stroke()}
  line((i:Any)=>cr[i],.34,1.2);
  if(sp.alt<9&&sp.alt>-7&&sx>-R*6&&sx<W+R*6){const hg=ctx.createLinearGradient(sx-R*5.5,0,sx+R*5.5,0),a=.95*smooth((sp.alt+7)/6)*(1-hi);hg.addColorStop(0,css(SA,0));hg.addColorStop(.5,css(SA,a));hg.addColorStop(1,css(SA,0));line((i:Any)=>cr[i],1,1.8,hg)}
- if(o.echo){const E=o.echo,n=E.n,cx=E.cx===undefined?W/2:E.cx,hs=E.hs||1000,fq=((E.t||0)*(E.speed||.3))%1,span=E.span||7;
+ if(o.echo){const E=o.echo,n=E.n,cx=E.cx===undefined?W/2:E.cx,hs=E.hs||1000,fq=((E.t||0)*(E.speed||.3))%1,span=E.span||7,S=E.sample||spec;
   for(let j=0;j<n;j++){const a=(j+fq)/n,p=1-a,tau=(E.t||0)-a*span,sw=.35+.65*Math.sin(Math.PI*a),pp=Math.pow(p,1.15),r=Math.round(2+a*26);
-   const f=(i:Any)=>mix(cr[i],sm(i,r),Math.min(1,a*2.2))*pp+spec(Math.min(1,Math.abs(i*2-cx)/hs),tau)*E.amp*sw*Math.min(1,cr[i]/(cmax*.5));
+   const f=(i:Any)=>mix(cr[i],sm(i,r),Math.min(1,a*2.2))*pp+S(Math.min(1,Math.abs(i*2-cx)/hs),tau)*E.amp*sw*Math.min(1,cr[i]/(cmax*.5));
    layer(f,css(mixc(mixc(P.far,P.s[3],.12),P.mid,a)));line(f,E.a*(1-a*a*a),1.4)}}
  const md=(i:Any)=>prof(TR,TR.mid,az0+i*2/ppd)*k,nr=(i:Any)=>prof(TR,TR.near,az0+i*2/ppd)*k;
  g=ctx.createLinearGradient(0,hy-cmax*.6,0,hy);g.addColorStop(0,css(P.mid));g.addColorStop(1,css(mixc(P.mid,mixc(P.s[2],P.s[3],.4),.2)));layer(md,g);line(md,.16,1);
