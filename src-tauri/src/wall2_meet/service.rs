@@ -9,6 +9,7 @@ use super::Account;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard};
+use std::time::Instant;
 
 /// Refresh an access token that has less than this left.
 const SKEW_SECS: u64 = 120;
@@ -56,19 +57,21 @@ pub fn record(core: &mut Core, id: &str, state: &str, reason: Option<&str>, now:
 }
 
 /// Join links behind opaque keys. Its own lock, never held across network I/O, so Join
-/// answers at once even while a read is waiting on Graph.
+/// answers at once even while a read is waiting on Graph. Lock order, where both are needed:
+/// the core lock first, then this one. Nothing takes this one and then the core lock.
 #[derive(Default)]
 pub struct Links {
     pub generation: u64,
-    pub map: HashMap<String, String>,
+    /// Key to (account id, join URL). The account id lets sign-out drop that account's links.
+    pub map: HashMap<String, (String, String)>,
     /// The day view's keys (they start with `d`), swapped separately so a day read never
     /// breaks a Join key from the next-meetings read, and the other way round.
-    pub day_map: HashMap<String, String>,
+    pub day_map: HashMap<String, (String, String)>,
 }
 
 pub fn lookup_link(links: &Mutex<Links>, key: &str) -> Option<String> {
     let guard = links.lock().unwrap_or_else(|e| e.into_inner());
-    guard.map.get(key).or_else(|| guard.day_map.get(key)).cloned()
+    guard.map.get(key).or_else(|| guard.day_map.get(key)).map(|(_, url)| url.clone())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -205,6 +208,7 @@ fn obtain(
     tokens: &dyn TokenClient,
     core: &Mutex<Core>,
     now: u64,
+    began: Instant,
     generation: u64,
     rejected: Option<&str>,
 ) -> Result<String, Stop> {
@@ -215,6 +219,8 @@ fn obtain(
     let flight = lock(core).flights.entry(acct.id.clone()).or_default().clone();
     let _turn = flight.lock().unwrap_or_else(|e| e.into_inner());
     // Look again: a read ahead of this one may have refreshed while this one waited its turn.
+    // The wait may have been long, so the clock is read again.
+    let now = now + began.elapsed().as_secs();
     let refresh = match check(acct, store, &mut lock(core), now, generation, rejected)? {
         Step::Have(a) => return Ok(a),
         Step::Refresh(r) => r,
@@ -226,7 +232,10 @@ fn obtain(
         ("scope", SCOPE),
     ];
     let reply = tokens.post(&acct.tenant, &form);
-    // Apply the reply in one short step, and only if the account is unchanged.
+    // Apply the reply in one short step, and only if the account is unchanged. The credential
+    // store calls below run under the core lock on purpose: they are local and brief, and
+    // doing them here keeps them ordered with sign-out's delete and generation bump.
+    let now = now + began.elapsed().as_secs();
     let mut core = lock(core);
     if generation_of(&core, &acct.id) != generation {
         return Err(Stop::Stale);
@@ -280,20 +289,21 @@ fn read_window(
     to: u64,
 ) -> Read {
     let (start, end) = (utc_iso(from), utc_iso(to));
+    let began = Instant::now();
     let generation = generation_of(&lock(core), &acct.id);
     let done = |state, meetings, reason| Read { state, meetings, reason, generation, discarded: false };
     let stopped = |stop: Stop| match stop {
         Stop::Fail((state, reason)) => done(state, None, reason),
         Stop::Stale => Read { state: AccountState::Unavailable, meetings: None, reason: None, generation, discarded: true },
     };
-    let access = match obtain(acct, store, tokens, core, now, generation, None) {
+    let access = match obtain(acct, store, tokens, core, now, began, generation, None) {
         Ok(a) => a,
         Err(stop) => return stopped(stop),
     };
     let mut reply = graph.calendar_view(&access, &start, &end);
     if matches!(reply, GraphReply::Unauthorized) {
         // The cached token was refused: drop it, refresh once, ask once more.
-        let access = match obtain(acct, store, tokens, core, now, generation, Some(access.as_str())) {
+        let access = match obtain(acct, store, tokens, core, now, began, generation, Some(access.as_str())) {
             Ok(a) => a,
             Err(stop) => return stopped(stop),
         };
@@ -306,17 +316,76 @@ fn read_window(
     }
 }
 
-/// What to report for an account whose read was discarded because it changed under the read:
-/// signed-out when its token is gone, otherwise unavailable. Nothing is written.
-fn discarded_state(acct: &Account, store: &dyn SecretStore, core: &Mutex<Core>) -> AccountState {
-    let _held = lock(core);
-    match store.fetch(&acct.id) {
-        Fetch::Missing => AccountState::SignedOut,
-        _ => AccountState::Unavailable,
+/// The final step of a read, with the core lock held by the caller: re-check every account's
+/// generation, then apply or drop each result. An account that changed under the read
+/// contributes nothing from the read; its state is re-read once from the store only (no
+/// network): signed-out when no token is stored, otherwise ok with the last good list (if
+/// any) and the stale flag. `keep_last` is true for the next read, which keeps a last-good
+/// list per account; the day read does not.
+fn settle(
+    accounts: &[Account],
+    reads: Vec<Read>,
+    store: &dyn SecretStore,
+    core: &mut Core,
+    now: u64,
+    keep_last: bool,
+) -> (Vec<AccountOut>, Vec<Vec<Candidate>>, bool) {
+    let mut statuses = Vec::new();
+    let mut lists = Vec::new();
+    let mut stale = false;
+    for (acct, read) in accounts.iter().zip(reads) {
+        let out = |state: AccountState, reason| AccountOut { id: acct.id.clone(), label: acct.label.clone(), state: state.as_str(), reason };
+        if read.discarded || generation_of(core, &acct.id) != read.generation {
+            // The credential store read here is local and deliberate, like the other store
+            // calls under this lock.
+            match store.fetch(&acct.id) {
+                Fetch::Missing => {
+                    statuses.push(out(AccountState::SignedOut, None));
+                    lists.push(Vec::new());
+                }
+                _ => {
+                    let held = if keep_last { core.last.get(&acct.id).cloned() } else { None };
+                    stale |= keep_last;
+                    statuses.push(out(AccountState::Ok, None));
+                    lists.push(held.unwrap_or_default());
+                }
+            }
+            continue;
+        }
+        let Read { state, meetings: fresh, reason, .. } = read;
+        record(core, &acct.id, state.as_str(), reason.as_deref(), now);
+        let list = match fresh {
+            Some(l) => {
+                if keep_last {
+                    core.last.insert(acct.id.clone(), l.clone());
+                }
+                l
+            }
+            // Unavailable: keep showing what the last good read held, and say so.
+            None if keep_last && state == AccountState::Unavailable => match core.last.get(&acct.id) {
+                Some(l) => {
+                    stale = true;
+                    l.clone()
+                }
+                None => Vec::new(),
+            },
+            None => {
+                if keep_last {
+                    core.last.remove(&acct.id);
+                }
+                Vec::new()
+            }
+        };
+        statuses.push(out(state, reason.filter(|r| is_valid_reason(r))));
+        lists.push(list);
     }
+    (statuses, lists, stale)
 }
 
-/// Read every account, merge, and replace the link map. The payload carries no URL.
+/// Read every account, merge, and replace the link map. The payload carries no URL. All the
+/// network work comes first, with no lock held. Then one critical section under the core
+/// lock re-checks each account's generation and publishes the link map, so an account that
+/// signed out meanwhile is neither listed nor joinable.
 pub fn read_next(
     accounts: &[Account],
     store: &dyn SecretStore,
@@ -326,55 +395,11 @@ pub fn read_next(
     links: &Mutex<Links>,
     now: u64,
 ) -> MeetPayload {
-    let mut statuses = Vec::new();
-    let mut lists = Vec::new();
-    let mut stale = false;
-    for acct in accounts {
-        let read = read_account(acct, store, tokens, graph, core, now);
-        if read.discarded {
-            let state = discarded_state(acct, store, core);
-            statuses.push(AccountOut { id: acct.id.clone(), label: acct.label.clone(), state: state.as_str(), reason: None });
-            lists.push(Vec::new());
-            continue;
-        }
-        let Read { state, meetings: fresh, reason, generation, .. } = read;
-        // One short step: apply the result only if the account is still the one that was read.
-        let list = {
-            let mut c = lock(core);
-            if generation_of(&c, &acct.id) != generation {
-                drop(c);
-                let state = discarded_state(acct, store, core);
-                statuses.push(AccountOut { id: acct.id.clone(), label: acct.label.clone(), state: state.as_str(), reason: None });
-                lists.push(Vec::new());
-                continue;
-            }
-            record(&mut c, &acct.id, state.as_str(), reason.as_deref(), now);
-            let list = match fresh {
-                Some(l) => {
-                    c.last.insert(acct.id.clone(), l.clone());
-                    l
-                }
-                // Unavailable: keep showing what the last good read held, and say so.
-                None if state == AccountState::Unavailable => match c.last.get(&acct.id) {
-                    Some(l) => {
-                        stale = true;
-                        l.clone()
-                    }
-                    None => Vec::new(),
-                },
-                None => {
-                    c.last.remove(&acct.id);
-                    Vec::new()
-                }
-            };
-            list
-        };
-        let reason = reason.filter(|r| is_valid_reason(r));
-        statuses.push(AccountOut { id: acct.id.clone(), label: acct.label.clone(), state: state.as_str(), reason });
-        lists.push(list);
-    }
+    let reads: Vec<Read> = accounts.iter().map(|acct| read_account(acct, store, tokens, graph, core, now)).collect();
+    // Lock order: core, then links.
+    let mut c = lock(core);
+    let (statuses, lists, stale) = settle(accounts, reads, store, &mut c, now, true);
     let merged = merge(lists);
-    // The link map is swapped in one short step at the end, after all network work is done.
     let mut guard = links.lock().unwrap_or_else(|e| e.into_inner());
     guard.generation += 1;
     guard.map.clear();
@@ -382,16 +407,17 @@ pub fn read_next(
     let meetings = merged
         .into_iter()
         .enumerate()
-        .map(|(n, c)| {
+        .map(|(n, cand)| {
             let key = format!("{generation}-{n}");
-            let can_join = c.join.is_some();
-            if let Some(url) = c.join {
-                guard.map.insert(key.clone(), url);
+            let can_join = cand.join.is_some();
+            if let Some(url) = cand.join {
+                guard.map.insert(key.clone(), (cand.account_id.clone(), url));
             }
-            MeetingOut { key, account_id: c.account_id, title: c.title, start: c.start, end: c.end, can_join }
+            MeetingOut { key, account_id: cand.account_id, title: cand.title, start: cand.start, end: cand.end, can_join }
         })
         .collect();
     drop(guard);
+    drop(c);
     MeetPayload { accounts: statuses, meetings, stale }
 }
 
@@ -432,29 +458,10 @@ pub fn read_day(
     from: u64,
     to: u64,
 ) -> DayPayload {
-    let mut statuses = Vec::new();
-    let mut lists = Vec::new();
-    for acct in accounts {
-        let read = read_window(acct, store, tokens, graph, core, now, from, to);
-        let applied = !read.discarded && {
-            let mut c = lock(core);
-            let current = generation_of(&c, &acct.id) == read.generation;
-            if current {
-                record(&mut c, &acct.id, read.state.as_str(), read.reason.as_deref(), now);
-            }
-            current
-        };
-        if !applied {
-            let state = discarded_state(acct, store, core);
-            statuses.push(AccountOut { id: acct.id.clone(), label: acct.label.clone(), state: state.as_str(), reason: None });
-            lists.push(Vec::new());
-            continue;
-        }
-        let Read { state, meetings: fresh, reason, .. } = read;
-        let reason = reason.filter(|r| is_valid_reason(r));
-        statuses.push(AccountOut { id: acct.id.clone(), label: acct.label.clone(), state: state.as_str(), reason });
-        lists.push(fresh.unwrap_or_default());
-    }
+    let reads: Vec<Read> = accounts.iter().map(|acct| read_window(acct, store, tokens, graph, core, now, from, to)).collect();
+    // Lock order: core, then links.
+    let mut c = lock(core);
+    let (statuses, lists, _) = settle(accounts, reads, store, &mut c, now, false);
     let merged = merge_capped(lists, MAX_DAY_EVENTS);
     let mut guard = links.lock().unwrap_or_else(|e| e.into_inner());
     guard.generation += 1;
@@ -463,17 +470,18 @@ pub fn read_day(
     let events = merged
         .into_iter()
         .enumerate()
-        .map(|(n, c)| {
+        .map(|(n, cand)| {
             let key = format!("d{generation}-{n}");
-            let can_join = c.join.is_some();
-            if let Some(url) = c.join {
-                guard.day_map.insert(key.clone(), url);
+            let can_join = cand.join.is_some();
+            if let Some(url) = cand.join {
+                guard.day_map.insert(key.clone(), (cand.account_id.clone(), url));
             }
-            let is_live = is_live(&c.title);
-            DayEventOut { key, account_id: c.account_id, title: c.title, start: c.start, end: c.end, can_join, is_live }
+            let is_live = is_live(&cand.title);
+            DayEventOut { key, account_id: cand.account_id, title: cand.title, start: cand.start, end: cand.end, can_join, is_live }
         })
         .collect();
     drop(guard);
+    drop(c);
     DayPayload { accounts: statuses, events }
 }
 
@@ -498,7 +506,8 @@ pub fn complete_sign_in(
     match tokens.post(&acct.tenant, &form) {
         TokenReply::Ok { access, expires_in, refresh: Some(refresh) } => {
             // Store and bump the generation in one step, so a read that began earlier cannot
-            // slip its own tokens in between.
+            // slip its own tokens in between. The store write under the lock is deliberate
+            // (local, brief, keeps this ordered with sign-out).
             let mut guard = lock(core);
             if !store.set(&acct.id, &refresh) {
                 drop(guard);
@@ -528,15 +537,21 @@ fn sign_in_failed(core: &Mutex<Core>, acct: &Account, reason: &str, now: u64) ->
 }
 
 /// Delete the stored token and forget everything held for the account, then bump its
-/// generation so a read already waiting on the network cannot put any of it back. The core
-/// lock is held only for these local steps, never across a network call.
-pub fn sign_out(id: &str, store: &dyn SecretStore, core: &Mutex<Core>) {
+/// generation so a read already waiting on the network cannot put any of it back, and drop
+/// the account's published join links so they stop working at once. The core lock is held
+/// only for these local steps, never across a network call. The credential store delete runs
+/// under it on purpose (local, brief, and it keeps sign-out atomic with the generation bump).
+/// Lock order: core, then links.
+pub fn sign_out(id: &str, store: &dyn SecretStore, core: &Mutex<Core>, links: &Mutex<Links>) {
     let mut core = lock(core);
     store.delete(id);
     *core.generations.entry(id.to_string()).or_insert(0) += 1;
     core.cache.remove(id);
     core.last.remove(id);
     core.pending.remove(id);
+    let mut l = links.lock().unwrap_or_else(|e| e.into_inner());
+    l.map.retain(|_, (account, _)| account != id);
+    l.day_map.retain(|_, (account, _)| account != id);
 }
 
 #[cfg(test)]
@@ -865,7 +880,7 @@ mod tests {
         assert!(kept.can_join);
         assert!(lookup_link(&links, &kept.key).unwrap().starts_with("https://teams.microsoft.com/"));
         // Signing out drops what was kept.
-        sign_out("second", &store, &core);
+        sign_out("second", &store, &core, &links);
         let g = FakeGraph::new(vec![GraphReply::Ok(body("Work one", "w1"))]);
         let p = read_next(&accounts, &store, &t, &g, &core, &links, NOW + 20);
         assert_eq!(p.meetings.len(), 1);
@@ -946,6 +961,7 @@ mod tests {
     fn sign_in_stores_the_refresh_token_and_caches_access() {
         let store = Chunked(MemoryBlobs::default());
         let core = Mutex::new(Core::default());
+        let links = Mutex::new(Links::default());
         let t = FakeTokens::new(vec![ok_token("acc", Some("ref"))]);
         let granted = super::super::auth::Granted { code: "c".into(), verifier: "v".into(), redirect_uri: "http://localhost:1/auth-callback.html".into() };
         assert!(complete_sign_in(&acct("work"), &granted, &store, &t, &core, NOW).is_ok());
@@ -953,7 +969,7 @@ mod tests {
         assert_eq!(core.lock().unwrap().cache.get("work").unwrap().access, "acc");
         let t = FakeTokens::new(vec![ok_token("acc", None)]);
         assert_eq!(complete_sign_in(&acct("work"), &granted, &store, &t, &core, NOW), Err("token-200".to_string()));
-        sign_out("work", &store, &core);
+        sign_out("work", &store, &core, &links);
         assert_eq!(store.get("work"), None);
         assert!(core.lock().unwrap().cache.is_empty());
     }
@@ -1219,7 +1235,7 @@ mod tests {
             gate.wait_entered();
             // The read is inside Graph. Both of these must finish with the gate still shut.
             assert!(lookup_link(&links, "1-0").unwrap().starts_with("https://teams.microsoft.com/"));
-            sign_out("work", &store, &core);
+            sign_out("work", &store, &core, &links);
             gate.open();
             h.join().unwrap()
         });
@@ -1245,7 +1261,7 @@ mod tests {
         let payload = std::thread::scope(|sc| {
             let h = sc.spawn(|| read_next(&[acct("work")], &store, &no_tokens(), &blocked, &core, &links, NOW));
             gate.wait_entered();
-            sign_out("work", &store, &core);
+            sign_out("work", &store, &core, &links);
             let t = FakeTokens::new(vec![ok_token("acc-new", Some("ref-new"))]);
             assert!(complete_sign_in(&acct("work"), &granted, &store, &t, &core, NOW + 1).is_ok());
             gate.open();
@@ -1271,7 +1287,7 @@ mod tests {
         std::thread::scope(|sc| {
             let h = sc.spawn(|| read_next(&[acct("work")], &store, &t, &g, &core, &links, NOW));
             gate.wait_entered();
-            sign_out("work", &store, &core);
+            sign_out("work", &store, &core, &links);
             gate.open();
             h.join().unwrap();
         });
@@ -1280,6 +1296,20 @@ mod tests {
         let c = core.lock().unwrap();
         assert!(c.cache.is_empty() && c.pending.is_empty() && c.last.is_empty());
         assert_eq!(g.calls.load(Ordering::SeqCst), 0);
+    }
+
+    /// Wait until `n` holders have a handle on the account's turn lock (the core's own, the
+    /// read inside the token request, and a read queued behind it).
+    fn wait_for_turn_holders(core: &Mutex<Core>, id: &str, n: usize) {
+        let until = std::time::Instant::now() + Duration::from_secs(20);
+        loop {
+            let held = core.lock().unwrap().flights.get(id).map(Arc::strong_count).unwrap_or(0);
+            if held >= n {
+                return;
+            }
+            assert!(std::time::Instant::now() < until, "second read never reached the turn lock");
+            std::thread::sleep(Duration::from_millis(2));
+        }
     }
 
     #[test]
@@ -1293,8 +1323,9 @@ mod tests {
             let h1 = sc.spawn(|| read_next(&[acct("work")], &store, &t, &g, &core, &links, NOW));
             gate.wait_entered();
             let h2 = sc.spawn(|| read_next(&[acct("work")], &store, &t, &g, &core, &links, NOW));
-            // Give the second read time to reach the refresh while the first one is inside it.
-            std::thread::sleep(Duration::from_millis(100));
+            // Rendezvous: the second read has passed its own look (no cache) and holds the
+            // turn lock handle, queued behind the first, which is inside the token request.
+            wait_for_turn_holders(&core, "work", 3);
             gate.open();
             (h1.join().unwrap(), h2.join().unwrap())
         });
@@ -1302,8 +1333,28 @@ mod tests {
         assert_eq!(p1.accounts[0].state, "ok");
         assert_eq!(p2.accounts[0].state, "ok");
         assert_eq!(g.calls.load(Ordering::SeqCst), 2);
-        assert!(g.seen_access.lock().unwrap().iter().all(|a| a == "new"));
+        assert_eq!(*g.seen_access.lock().unwrap(), vec!["new".to_string(), "new".to_string()]);
         assert_eq!(store.get("work").as_deref(), Some("refresh-2"));
+    }
+
+    /// Answers 401 to every call with the stale token, but only once two such calls are in
+    /// flight at the same time; any other token gets a calendar.
+    struct StaleThenFresh {
+        both_stale: std::sync::Barrier,
+        stale_calls: AtomicUsize,
+        fresh_calls: AtomicUsize,
+    }
+    impl GraphClient for StaleThenFresh {
+        fn calendar_view(&self, access: &str, _s: &str, _e: &str) -> GraphReply {
+            if access == "stale" {
+                self.stale_calls.fetch_add(1, Ordering::SeqCst);
+                self.both_stale.wait();
+                GraphReply::Unauthorized
+            } else {
+                self.fresh_calls.fetch_add(1, Ordering::SeqCst);
+                GraphReply::Ok(body("A", "1"))
+            }
+        }
     }
 
     #[test]
@@ -1312,17 +1363,17 @@ mod tests {
         let links = Mutex::new(Links::default());
         core.lock().unwrap().cache.insert("work".into(), Cached { access: "stale".into(), expires_at: NOW + 6000 });
         let t = SyncTokens { replies: StdMutex::new(vec![ok_token("fresh", None)]), calls: AtomicUsize::new(0), gate: None };
-        let g = SyncGraph::new(
-            vec![GraphReply::Unauthorized, GraphReply::Unauthorized, GraphReply::Ok(body("A", "1")), GraphReply::Ok(body("A", "1"))],
-            None,
-        );
-        std::thread::scope(|sc| {
+        let g = StaleThenFresh { both_stale: std::sync::Barrier::new(2), stale_calls: AtomicUsize::new(0), fresh_calls: AtomicUsize::new(0) };
+        let (p1, p2) = std::thread::scope(|sc| {
             let h1 = sc.spawn(|| read_next(&[acct("work")], &store, &t, &g, &core, &links, NOW));
             let h2 = sc.spawn(|| read_next(&[acct("work")], &store, &t, &g, &core, &links, NOW));
-            h1.join().unwrap();
-            h2.join().unwrap();
+            (h1.join().unwrap(), h2.join().unwrap())
         });
-        assert_eq!(t.calls.load(Ordering::SeqCst), 1);
+        assert_eq!(p1.accounts[0].state, "ok");
+        assert_eq!(p2.accounts[0].state, "ok");
+        assert_eq!(g.stale_calls.load(Ordering::SeqCst), 2);
+        assert_eq!(t.calls.load(Ordering::SeqCst), 1, "the forced refresh ran twice");
+        assert_eq!(g.fresh_calls.load(Ordering::SeqCst), 2);
     }
 
     #[test]
@@ -1336,7 +1387,7 @@ mod tests {
         let payload = std::thread::scope(|sc| {
             let h = sc.spawn(|| read_day(&[acct("work")], &store, &no_tokens(), &g, &core, &links, NOW, from, to));
             gate.wait_entered();
-            sign_out("work", &store, &core);
+            sign_out("work", &store, &core, &links);
             gate.open();
             h.join().unwrap()
         });
@@ -1345,5 +1396,219 @@ mod tests {
         assert!(lookup_link(&links, "d1-0").is_none());
         let c = core.lock().unwrap();
         assert!(c.cache.is_empty() && c.log_lines.is_empty());
+    }
+
+    /// A secret store that can be shared across threads, with writes that can be switched off.
+    struct SyncFlaky {
+        inner: Chunked<MemoryBlobs>,
+        fail_set: std::sync::atomic::AtomicBool,
+    }
+    impl SecretStore for SyncFlaky {
+        fn fetch(&self, id: &str) -> Fetch<String> {
+            self.inner.fetch(id)
+        }
+        fn set(&self, id: &str, value: &str) -> bool {
+            !self.fail_set.load(Ordering::SeqCst) && self.inner.set(id, value)
+        }
+        fn delete(&self, id: &str) {
+            self.inner.delete(id)
+        }
+    }
+
+    fn sync_flaky(fail_set: bool) -> SyncFlaky {
+        let s = SyncFlaky { inner: Chunked(MemoryBlobs::default()), fail_set: std::sync::atomic::AtomicBool::new(false) };
+        s.set("work", "refresh-1");
+        s.fail_set.store(fail_set, Ordering::SeqCst);
+        s
+    }
+
+    /// Both accounts have a valid cached token and a first read has published their links.
+    fn two_accounts_with_links() -> (Chunked<MemoryBlobs>, Mutex<Core>, Mutex<Links>, MeetPayload) {
+        let store = Chunked(MemoryBlobs::default());
+        store.set("work", "r1");
+        store.set("second", "r2");
+        let core = Mutex::new(Core::default());
+        {
+            let mut c = core.lock().unwrap();
+            c.cache.insert("work".into(), Cached { access: "ca".into(), expires_at: NOW + 6000 });
+            c.cache.insert("second".into(), Cached { access: "cb".into(), expires_at: NOW + 6000 });
+        }
+        let links = Mutex::new(Links::default());
+        let g = ByAccess { gate: None, bodies: vec![("ca".into(), body("Work one", "w1")), ("cb".into(), body("Second one", "s1"))] };
+        let p = read_next(&[acct("work"), acct("second")], &store, &no_tokens(), &g, &core, &links, NOW);
+        assert_eq!(p.meetings.len(), 2);
+        (store, core, links, p)
+    }
+
+    /// Calendar by access token; the call for one token can be held at a gate.
+    struct ByAccess<'a> {
+        gate: Option<(&'a str, &'a Gate)>,
+        bodies: Vec<(String, Value)>,
+    }
+    impl GraphClient for ByAccess<'_> {
+        fn calendar_view(&self, access: &str, _s: &str, _e: &str) -> GraphReply {
+            if let Some((who, gate)) = self.gate {
+                if who == access {
+                    gate.pass();
+                }
+            }
+            match self.bodies.iter().find(|(a, _)| a == access) {
+                Some((_, b)) => GraphReply::Ok(b.clone()),
+                None => GraphReply::Failed("graph-400".into()),
+            }
+        }
+    }
+
+    #[test]
+    fn a_read_blocked_on_a_second_account_cannot_publish_a_signed_out_accounts_meetings() {
+        let (store, core, links, first) = two_accounts_with_links();
+        let old_work = first.meetings.iter().find(|m| m.account_id == "work").unwrap().key.clone();
+        let old_second = first.meetings.iter().find(|m| m.account_id == "second").unwrap().key.clone();
+        let gate = Gate::default();
+        // The work account's read finishes at once; the second account's is held in Graph.
+        let g = ByAccess { gate: Some(("cb", &gate)), bodies: vec![("ca".into(), body("Work one", "w1")), ("cb".into(), body("Second one", "s1"))] };
+        let payload = std::thread::scope(|sc| {
+            let h = sc.spawn(|| read_next(&[acct("work"), acct("second")], &store, &no_tokens(), &g, &core, &links, NOW + 10));
+            gate.wait_entered();
+            sign_out("work", &store, &core, &links);
+            // Links already published stop working at once, before the held read returns.
+            assert!(lookup_link(&links, &old_work).is_none());
+            gate.open();
+            h.join().unwrap()
+        });
+        assert!(payload.meetings.iter().all(|m| m.account_id != "work"), "a signed-out account was listed");
+        assert_eq!(payload.meetings.len(), 1);
+        assert_eq!(payload.accounts[0].state, "signed-out");
+        assert_eq!(payload.accounts[1].state, "ok");
+        // Neither the old key nor any key of the new map reaches the signed-out account.
+        assert!(lookup_link(&links, &old_work).is_none());
+        let guard = links.lock().unwrap();
+        assert!(guard.map.values().all(|(account, _)| account != "work"));
+        assert_eq!(guard.map.len(), 1);
+        drop(guard);
+        assert!(lookup_link(&links, &payload.meetings[0].key).is_some());
+        assert!(lookup_link(&links, &old_second).is_none(), "the old map is replaced by the new read");
+    }
+
+    #[test]
+    fn a_day_read_blocked_on_a_second_account_cannot_publish_a_signed_out_accounts_events() {
+        let (store, core, links, _) = two_accounts_with_links();
+        let (from, to) = (NOW - 3600, NOW + 7200);
+        let bodies = vec![("ca".to_string(), body("Work one", "w1")), ("cb".to_string(), body("Second one", "s1"))];
+        let first = read_day(&[acct("work"), acct("second")], &store, &no_tokens(), &ByAccess { gate: None, bodies: bodies.clone() }, &core, &links, NOW, from, to);
+        let old_work = first.events.iter().find(|e| e.account_id == "work").unwrap().key.clone();
+        assert!(lookup_link(&links, &old_work).is_some());
+        let gate = Gate::default();
+        let g = ByAccess { gate: Some(("cb", &gate)), bodies };
+        let payload = std::thread::scope(|sc| {
+            let h = sc.spawn(|| read_day(&[acct("work"), acct("second")], &store, &no_tokens(), &g, &core, &links, NOW + 10, from, to));
+            gate.wait_entered();
+            sign_out("work", &store, &core, &links);
+            assert!(lookup_link(&links, &old_work).is_none());
+            gate.open();
+            h.join().unwrap()
+        });
+        assert!(payload.events.iter().all(|e| e.account_id != "work"));
+        assert_eq!(payload.events.len(), 1);
+        assert_eq!(payload.accounts[0].state, "signed-out");
+        let guard = links.lock().unwrap();
+        assert!(guard.day_map.values().all(|(account, _)| account != "work"));
+        drop(guard);
+        assert!(lookup_link(&links, &old_work).is_none());
+        assert!(lookup_link(&links, &payload.events[0].key).is_some());
+    }
+
+    #[test]
+    fn a_discarded_read_after_a_new_sign_in_reports_ok_stale_with_the_last_good_list() {
+        let (store, core) = setup();
+        let links = Mutex::new(Links::default());
+        core.lock().unwrap().cache.insert("work".into(), Cached { access: "c".into(), expires_at: NOW + 6000 });
+        // A good read leaves a last-good list.
+        let first = SyncGraph::new(vec![GraphReply::Ok(body("Kept", "k"))], None);
+        read_next(&[acct("work")], &store, &no_tokens(), &first, &core, &links, NOW);
+        let gate = Gate::default();
+        let blocked = SyncGraph::new(vec![GraphReply::Ok(body("Late", "l"))], Some(&gate));
+        let granted = super::super::auth::Granted { code: "c".into(), verifier: "v".into(), redirect_uri: "http://localhost:1/auth-callback.html".into() };
+        let payload = std::thread::scope(|sc| {
+            let h = sc.spawn(|| read_next(&[acct("work")], &store, &no_tokens(), &blocked, &core, &links, NOW + 10));
+            gate.wait_entered();
+            // A new sign-in (no sign-out) changes the generation but leaves the last list.
+            let t = FakeTokens::new(vec![ok_token("acc-new", Some("ref-new"))]);
+            assert!(complete_sign_in(&acct("work"), &granted, &store, &t, &core, NOW + 11).is_ok());
+            gate.open();
+            h.join().unwrap()
+        });
+        assert_eq!(payload.accounts[0].state, "ok", "a discarded read must not flash unavailable");
+        assert!(payload.stale);
+        assert_eq!(payload.meetings.len(), 1);
+        assert_eq!(payload.meetings[0].title, "Kept");
+    }
+
+    #[test]
+    fn a_stale_read_never_rewrites_the_store_with_a_rotated_token() {
+        let (store, core) = setup();
+        let links = Mutex::new(Links::default());
+        let gate = Gate::default();
+        let t = SyncTokens { replies: StdMutex::new(vec![ok_token("new", Some("refresh-2"))]), calls: AtomicUsize::new(0), gate: Some(&gate) };
+        let g = SyncGraph::new(vec![], None);
+        std::thread::scope(|sc| {
+            let h = sc.spawn(|| read_next(&[acct("work")], &store, &t, &g, &core, &links, NOW));
+            gate.wait_entered();
+            sign_out("work", &store, &core, &links);
+            gate.open();
+            h.join().unwrap();
+        });
+        // The signed-out account's token stays deleted; the reply's rotated token is dropped.
+        assert_eq!(store.get("work"), None);
+        let c = core.lock().unwrap();
+        assert!(c.pending.is_empty() && c.cache.is_empty());
+    }
+
+    #[test]
+    fn a_failed_store_write_racing_sign_out_leaves_no_pending_token() {
+        let store = sync_flaky(false);
+        let core = Mutex::new(Core::default());
+        let links = Mutex::new(Links::default());
+        let gate = Gate::default();
+        let t = SyncTokens { replies: StdMutex::new(vec![ok_token("new", Some("refresh-2"))]), calls: AtomicUsize::new(0), gate: Some(&gate) };
+        let g = SyncGraph::new(vec![], None);
+        std::thread::scope(|sc| {
+            let h = sc.spawn(|| read_next(&[acct("work")], &store, &t, &g, &core, &links, NOW));
+            gate.wait_entered();
+            // Writes start failing, and the account signs out, while the request is out.
+            store.fail_set.store(true, Ordering::SeqCst);
+            sign_out("work", &store, &core, &links);
+            gate.open();
+            h.join().unwrap();
+        });
+        assert_eq!(store.inner.get("work"), None);
+        let c = core.lock().unwrap();
+        assert!(c.pending.is_empty(), "a stale read parked a rotated token");
+        assert!(c.cache.is_empty());
+    }
+
+    #[test]
+    fn a_reader_queued_on_the_turn_lock_when_sign_out_happens_neither_refreshes_nor_writes() {
+        let (store, core) = setup();
+        let links = Mutex::new(Links::default());
+        let gate = Gate::default();
+        let t = SyncTokens { replies: StdMutex::new(vec![ok_token("new", Some("refresh-2")), ok_token("newer", Some("refresh-3"))]), calls: AtomicUsize::new(0), gate: Some(&gate) };
+        let g = SyncGraph::new(vec![], None);
+        let (p1, p2) = std::thread::scope(|sc| {
+            let h1 = sc.spawn(|| read_next(&[acct("work")], &store, &t, &g, &core, &links, NOW));
+            gate.wait_entered();
+            let h2 = sc.spawn(|| read_next(&[acct("work")], &store, &t, &g, &core, &links, NOW));
+            wait_for_turn_holders(&core, "work", 3);
+            sign_out("work", &store, &core, &links);
+            gate.open();
+            (h1.join().unwrap(), h2.join().unwrap())
+        });
+        assert_eq!(t.calls.load(Ordering::SeqCst), 1, "the queued reader spent a refresh token after sign-out");
+        assert_eq!(store.get("work"), None);
+        assert_eq!(g.calls.load(Ordering::SeqCst), 0);
+        assert_eq!(p1.accounts[0].state, "signed-out");
+        assert_eq!(p2.accounts[0].state, "signed-out");
+        let c = core.lock().unwrap();
+        assert!(c.cache.is_empty() && c.pending.is_empty() && c.last.is_empty());
     }
 }

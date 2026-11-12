@@ -279,7 +279,7 @@ pub async fn wall2_meet_sign_out(window: tauri::WebviewWindow, id: String) -> Re
     // Deleting credentials takes the core lock briefly (no read holds it across the network),
     // but it is still blocking work, so not on an async worker.
     tauri::async_runtime::spawn_blocking(move || {
-        service::sign_out(&id, &secrets(), core());
+        service::sign_out(&id, &secrets(), core(), links());
     })
     .await
     .map_err(|_| "failed".to_string())
