@@ -23,6 +23,9 @@ pub struct Core {
     pub cache: HashMap<String, Cached>,
     /// Each account's last successful meetings, reused while that account is unavailable.
     pub last: HashMap<String, Vec<Candidate>>,
+    /// A rotated refresh token that could not be written to the store yet. It is the one to
+    /// use (and retry storing) while it is here; the stored one may already be spent.
+    pub pending: HashMap<String, String>,
 }
 
 /// Join links behind opaque keys. Its own lock, never held across network I/O, so Join
@@ -87,22 +90,29 @@ fn obtain(
     acct: &Account,
     store: &dyn SecretStore,
     tokens: &dyn TokenClient,
-    cache: &mut HashMap<String, Cached>,
+    core: &mut Core,
     now: u64,
     force: bool,
 ) -> Result<String, AccountState> {
+    if let Some(p) = core.pending.get(&acct.id).cloned() {
+        // An earlier rotated token never reached the store: try again before anything else.
+        if !store.set(&acct.id, &p) {
+            return Err(AccountState::Unavailable);
+        }
+        core.pending.remove(&acct.id);
+    }
     let Some(refresh) = store.get(&acct.id) else {
-        cache.remove(&acct.id);
+        core.cache.remove(&acct.id);
         return Err(AccountState::SignedOut);
     };
     if !force {
-        if let Some(c) = cache.get(&acct.id) {
+        if let Some(c) = core.cache.get(&acct.id) {
             if c.expires_at > now + SKEW_SECS {
                 return Ok(c.access.clone());
             }
         }
     }
-    cache.remove(&acct.id);
+    core.cache.remove(&acct.id);
     let form = [
         ("client_id", acct.client_id.as_str()),
         ("grant_type", "refresh_token"),
@@ -111,16 +121,20 @@ fn obtain(
     ];
     match tokens.post(&acct.tenant, &form) {
         TokenReply::Ok { access, expires_in, refresh: rotated } => {
+            core.cache.insert(acct.id.clone(), Cached { access: access.clone(), expires_at: now + expires_in });
             if let Some(new) = rotated {
-                if new != refresh {
-                    store.set(&acct.id, &new);
+                if new != refresh && !store.set(&acct.id, &new) {
+                    // The store kept the old value. Hold the new token in memory, retry next
+                    // time, and report unavailable instead of connected-then-signed-out.
+                    core.pending.insert(acct.id.clone(), new);
+                    return Err(AccountState::Unavailable);
                 }
             }
-            cache.insert(acct.id.clone(), Cached { access: access.clone(), expires_at: now + expires_in });
             Ok(access)
         }
         TokenReply::Rejected => {
             store.delete(&acct.id);
+            core.pending.remove(&acct.id);
             Err(AccountState::NeedsSignIn)
         }
         TokenReply::Transient | TokenReply::Failed => Err(AccountState::Unavailable),
@@ -132,18 +146,18 @@ fn read_account(
     store: &dyn SecretStore,
     tokens: &dyn TokenClient,
     graph: &dyn GraphClient,
-    cache: &mut HashMap<String, Cached>,
+    core: &mut Core,
     now: u64,
 ) -> (AccountState, Option<Vec<Candidate>>) {
     let (start, end) = (utc_iso(now), utc_iso(now + WINDOW_SECS));
-    let access = match obtain(acct, store, tokens, cache, now, false) {
+    let access = match obtain(acct, store, tokens, core, now, false) {
         Ok(a) => a,
         Err(state) => return (state, None),
     };
     let mut reply = graph.calendar_view(&access, &start, &end);
     if matches!(reply, GraphReply::Unauthorized) {
         // The cached token was refused: drop it, refresh once, ask once more.
-        let access = match obtain(acct, store, tokens, cache, now, true) {
+        let access = match obtain(acct, store, tokens, core, now, true) {
             Ok(a) => a,
             Err(state) => return (state, None),
         };
@@ -169,7 +183,7 @@ pub fn read_next(
     let mut lists = Vec::new();
     let mut stale = false;
     for acct in accounts {
-        let (state, fresh) = read_account(acct, store, tokens, graph, &mut core.cache, now);
+        let (state, fresh) = read_account(acct, store, tokens, graph, core, now);
         let list = match fresh {
             Some(l) => {
                 core.last.insert(acct.id.clone(), l.clone());
@@ -237,6 +251,7 @@ pub fn complete_sign_in(
                 return Err("failed");
             }
             let mut core = core.lock().unwrap_or_else(|e| e.into_inner());
+            core.pending.remove(&acct.id);
             core.cache.insert(acct.id.clone(), Cached { access, expires_at: now + expires_in });
             Ok(())
         }
@@ -248,6 +263,7 @@ pub fn sign_out(id: &str, store: &dyn SecretStore, core: &mut Core) {
     store.delete(id);
     core.cache.remove(id);
     core.last.remove(id);
+    core.pending.remove(id);
 }
 
 #[cfg(test)]
@@ -476,6 +492,47 @@ mod tests {
         let p = read_next(&accounts, &store, &t, &g, &mut core, &links, NOW + 20);
         assert_eq!(p.meetings.len(), 1);
         assert!(!p.stale);
+    }
+
+    /// A secret store whose writes can be switched off.
+    struct FlakySecrets {
+        inner: Chunked<MemoryBlobs>,
+        fail_set: Cell<bool>,
+    }
+    impl SecretStore for FlakySecrets {
+        fn get(&self, id: &str) -> Option<String> {
+            self.inner.get(id)
+        }
+        fn set(&self, id: &str, value: &str) -> bool {
+            !self.fail_set.get() && self.inner.set(id, value)
+        }
+        fn delete(&self, id: &str) {
+            self.inner.delete(id)
+        }
+    }
+
+    #[test]
+    fn a_rotated_token_that_cannot_be_stored_is_kept_in_memory_and_reported_unavailable() {
+        let store = FlakySecrets { inner: Chunked(MemoryBlobs::default()), fail_set: Cell::new(false) };
+        store.set("work", "refresh-1");
+        store.fail_set.set(true);
+        let mut core = Core::default();
+        let links = Mutex::new(Links::default());
+        let t = FakeTokens::new(vec![ok_token("new", Some("refresh-2"))]);
+        let g = FakeGraph::new(vec![GraphReply::Ok(body("A", "1"))]);
+        let p = read_next(&[acct("work")], &store, &t, &g, &mut core, &links, NOW);
+        assert_eq!(p.accounts[0].state, "unavailable");
+        assert_eq!(store.get("work").as_deref(), Some("refresh-1"));
+        assert_eq!(core.pending.get("work").map(String::as_str), Some("refresh-2"));
+        // Still failing: stays unavailable, token stays pending.
+        let p = read_next(&[acct("work")], &store, &t, &g, &mut core, &links, NOW + 5);
+        assert_eq!(p.accounts[0].state, "unavailable");
+        // Store works again: the pending token is written and the account reads normally.
+        store.fail_set.set(false);
+        let p = read_next(&[acct("work")], &store, &t, &g, &mut core, &links, NOW + 10);
+        assert_eq!(p.accounts[0].state, "ok");
+        assert_eq!(store.get("work").as_deref(), Some("refresh-2"));
+        assert!(core.pending.is_empty());
     }
 
     struct ProbeGraph<'a> {

@@ -54,9 +54,18 @@ impl<B: BlobStore> SecretStore for Chunked<B> {
             return false;
         }
         let pieces: Vec<&[u8]> = if bytes.is_empty() { vec![&bytes[..0]] } else { bytes.chunks(CHUNK).collect() };
+        // Remember the old value: a failed write must leave it as it was, not wipe it.
+        let previous: Vec<Option<Vec<u8>>> = (0..MAX_CHUNKS).map(|n| self.0.read(&target(id, n))).collect();
         for (n, piece) in pieces.iter().enumerate() {
             if !self.0.write(&target(id, n), piece) {
-                self.delete(id);
+                for (m, old) in previous.iter().enumerate() {
+                    match old {
+                        Some(b) => {
+                            self.0.write(&target(id, m), b);
+                        }
+                        None => self.0.remove(&target(id, m)),
+                    }
+                }
                 return false;
             }
         }
@@ -215,6 +224,46 @@ mod tests {
         assert_eq!(s.get("a"), None);
         assert_eq!(s.get("b"), Some("other".to_string()));
         assert_eq!(s.0.len(), 1);
+    }
+
+    /// Fails the Nth write (counting from 1) and every one after it.
+    struct FlakyBlobs {
+        inner: MemoryBlobs,
+        fail_from: std::cell::Cell<usize>,
+        writes: std::cell::Cell<usize>,
+    }
+    impl BlobStore for FlakyBlobs {
+        fn read(&self, t: &str) -> Option<Vec<u8>> {
+            self.inner.read(t)
+        }
+        fn write(&self, t: &str, d: &[u8]) -> bool {
+            self.writes.set(self.writes.get() + 1);
+            if self.fail_from.get() != 0 && self.writes.get() >= self.fail_from.get() {
+                return false;
+            }
+            self.inner.write(t, d)
+        }
+        fn remove(&self, t: &str) {
+            self.inner.remove(t)
+        }
+    }
+
+    #[test]
+    fn a_failed_write_keeps_the_previous_value() {
+        let s = Chunked(FlakyBlobs { inner: MemoryBlobs::default(), fail_from: Default::default(), writes: Default::default() });
+        assert!(s.set("a", &value(5000)));
+        // The next set writes three chunks; fail on its second write.
+        s.0.fail_from.set(s.0.writes.get() + 2);
+        assert!(!s.set("a", &value(6000)));
+        assert_eq!(s.get("a"), Some(value(5000)));
+        // A failure on the very first write also keeps it.
+        s.0.fail_from.set(s.0.writes.get() + 1);
+        assert!(!s.set("a", "other"));
+        assert_eq!(s.get("a"), Some(value(5000)));
+        // A key that never existed is left empty.
+        s.0.fail_from.set(s.0.writes.get() + 2);
+        assert!(!s.set("b", &value(6000)));
+        assert_eq!(s.get("b"), None);
     }
 
     #[test]
