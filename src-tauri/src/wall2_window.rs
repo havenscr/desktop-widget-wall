@@ -75,13 +75,14 @@ pub fn target_on_monitor(target: MonitorRect, monitors: &[MonitorRect]) -> bool 
     })
 }
 
-/// True when two rectangles are identical.
-/// The stored target after a display change with no exact strip present: kept
-/// while it still lies on a current monitor, dropped once it is off every one.
-pub fn surviving_target(current: Option<MonitorRect>, monitors: &[MonitorRect]) -> Option<MonitorRect> {
-    current.filter(|t| target_on_monitor(*t, monitors))
+/// After a display change with no exact strip present: clear the stored target
+/// only when one was actually read (`Some`) and it lies on no current monitor.
+/// `None` means nothing stored or a contended lock, and is left alone.
+pub fn should_clear_target(read: Option<MonitorRect>, monitors: &[MonitorRect]) -> bool {
+    read.is_some_and(|t| !target_on_monitor(t, monitors))
 }
 
+/// True when two rectangles are identical.
 pub fn rect_matches(a: MonitorRect, b: MonitorRect) -> bool {
     a == b
 }
@@ -431,11 +432,11 @@ mod win {
             &format!("monitors={} exact_strip={}", rects.len(), found.map(fmt_rect).unwrap_or_else(|| "none".into())),
         );
         let Some(rect) = found else {
-            let kept = surviving_target(get_target(), &rects);
-            if kept.is_none() {
+            let clear = should_clear_target(get_target(), &rects);
+            if clear {
                 set_target(None);
             }
-            log("target_kept", &format!("{}", kept.map(fmt_rect).unwrap_or_else(|| "cleared".into())));
+            log("target_kept", if clear { "cleared" } else { "kept" });
             return false;
         };
         set_target(Some(rect));
@@ -677,16 +678,18 @@ mod tests {
     }
 
     #[test]
-    fn display_change_clears_target_only_when_off_every_monitor() {
+    fn display_change_clears_target_only_when_read_and_off_every_monitor() {
         let main = r(0, 2560, 1440);
         let strip = MonitorRect { x: 0, y: 1440, width: 2560, height: 720 };
         // Still on a monitor: kept, even with no exact strip in the list.
-        assert_eq!(surviving_target(Some(main), &[main]), Some(main));
-        assert_eq!(surviving_target(Some(strip), &[main, strip]), Some(strip));
-        // Gone: cleared.
-        assert_eq!(surviving_target(Some(strip), &[main]), None);
-        assert_eq!(surviving_target(Some(strip), &[]), None);
-        assert_eq!(surviving_target(None, &[main]), None);
+        assert!(!should_clear_target(Some(main), &[main]));
+        assert!(!should_clear_target(Some(strip), &[main, strip]));
+        // Read and gone: cleared.
+        assert!(should_clear_target(Some(strip), &[main]));
+        assert!(should_clear_target(Some(strip), &[]));
+        // Nothing read (no target, or a contended lock): left alone.
+        assert!(!should_clear_target(None, &[main]));
+        assert!(!should_clear_target(None, &[]));
     }
 
     #[test]
