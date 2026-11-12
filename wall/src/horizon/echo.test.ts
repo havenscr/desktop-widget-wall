@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { CAMERAS } from './cameras';
+import { CAMERAS, HOME_MORNING, glideCamera, settled, startGlide, stepGlide } from './cameras';
 import { ECHO_FADE_S, echoOptions, stepEchoFade } from './echo';
 
 it('takes ea, en, eamp and ecx from the camera preset, with hs 900 and the animation time', () => {
@@ -46,4 +46,29 @@ it('fades in and out over about a second', () => {
 it('strength is exactly ea * fade * level, and zero loudness gives no ripple', () => {
   expect(echoOptions(CAMERAS.unwind, 0.5, 0.4, 0)!.a).toBeCloseTo(CAMERAS.unwind.ea * 0.5 * 0.4, 9);
   expect(echoOptions(CAMERAS.unwind, 1, 0, 0)).toBeNull();
+});
+
+it('draws nothing while either end of a glide has ea 0, so no hump crosses Rainier in a swing', () => {
+  const toMorning = stepGlide(startGlide(settled(CAMERAS.home), HOME_MORNING, false), 0.4);
+  const mid = glideCamera(toMorning);
+  expect(mid.ea).toBeGreaterThan(0); // the blended camera alone would still ripple
+  expect(echoOptions(mid, 1, 1, 0)).not.toBeNull();
+  expect(echoOptions(mid, 1, 1, 0, toMorning)).toBeNull();
+  const back = stepGlide(startGlide(settled(HOME_MORNING), CAMERAS.home, false), 3);
+  expect(echoOptions(glideCamera(back), 1, 1, 0, back)).toBeNull();
+  expect(echoOptions(HOME_MORNING, 1, 1, 0, settled(HOME_MORNING))).toBeNull();
+});
+
+it('ripples again once the swing back from the morning view has arrived', () => {
+  const arrived = stepGlide(startGlide(settled(HOME_MORNING), CAMERAS.home, false), 10);
+  expect(arrived.progress).toBe(1);
+  expect(arrived.from).toBe(HOME_MORNING); // a finished glide still remembers where it began
+  expect(echoOptions(glideCamera(arrived), 1, 1, 0, arrived)).not.toBeNull();
+});
+
+it('ripples as before during a glide between cameras that both have one', () => {
+  const g = stepGlide(startGlide(settled(CAMERAS.work), CAMERAS.unwind, false), 0.4);
+  const cam = glideCamera(g);
+  expect(echoOptions(cam, 1, 1, 0, g)).toEqual(echoOptions(cam, 1, 1, 0));
+  expect(echoOptions(CAMERAS.home, 1, 1, 0, settled(CAMERAS.home))).not.toBeNull();
 });

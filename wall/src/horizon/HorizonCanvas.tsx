@@ -49,8 +49,9 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
   }, [reduced]);
 
   /**
-   * Point the camera at `target`. Same terrain: the usual glide. A different terrain cannot be
-   * blended, so the old view stays on the lower layer while the new one fades in over it
+   * Point the camera at `target`. Same terrain (every shipped preset is on the panorama): a
+   * glide, or a 3.2 second swing for a turn of more than 40 degrees. A different terrain cannot
+   * be blended, so the old view stays on the lower layer while the new one fades in over it
    * (instantly when motion is reduced). Returns true when something changed on screen at once.
    */
   const retarget = (target: CameraPreset, instant: boolean) => {
@@ -135,7 +136,7 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
       };
       // The ripple never appears in the review still or under reduced motion's still frames.
       if (!still) {
-        const echo = echoOptions(camera, fade.current, loud.current, T);
+        const echo = echoOptions(camera, fade.current, loud.current, T, glide.current);
         if (echo) options.echo = echo;
       }
       // The moon shows only once the camera has arrived at Unwind (no glide in progress), and

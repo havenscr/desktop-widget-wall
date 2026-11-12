@@ -50,8 +50,10 @@ describe('helpers', () => {
     expect(v).toBeLessThan(1);
   });
 
-  it('exposes the peak lists for both terrains', () => {
-    expect(peaks.length).toBeGreaterThan(0);
-    expect(peaksOf('south').length).toBeGreaterThan(0);
+  it('exposes the panorama peak list, which runs from Rainier round to the Olympics', () => {
+    const names = (peaks as { name: string }[]).map((p) => p.name);
+    expect(names).toContain('Mount Rainier');
+    expect(names).toContain('The Brothers');
+    expect(peaksOf('pano')).toBe(peaks);
   });
 });

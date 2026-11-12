@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CAMERAS, HOME_MORNING, blendCamera, cameraFor, ease, glideCamera, homeCameraFor, settled, startGlide, stepGlide, terrainOf, GLIDE_SECONDS } from './cameras';
+import { CAMERAS, HOME_MORNING, SWING_DEGREES, SWING_SECONDS, blendCamera, cameraFor, ease, glideCamera, glideSeconds, homeCameraFor, settled, startGlide, stepGlide, terrainOf, GLIDE_SECONDS } from './cameras';
 
 const a = CAMERAS.work;
 const b = CAMERAS.unwind;
@@ -13,8 +13,10 @@ describe('blendCamera', () => {
   it('is halfway at 0.5 for every key (the ease is symmetric)', () => {
     const mid = blendCamera(a, b, 0.5);
     for (const key of Object.keys(a) as (keyof typeof a)[]) {
-      if (key === 'ter') continue;
-      expect(mid[key]).toBeCloseTo((a[key] + b[key]) / 2, 9);
+      const x = a[key];
+      const y = b[key];
+      if (typeof x !== 'number' || typeof y !== 'number') continue; // the terrain name
+      expect(mid[key]).toBeCloseTo((x + y) / 2, 9);
     }
   });
 
@@ -57,6 +59,45 @@ describe('glide', () => {
   it('jumps when instant (reduced motion)', () => {
     expect(glideCamera(startGlide(settled(a), b, true))).toEqual(b);
   });
+
+  it('swings for 3.2 seconds when the view turns more than 40 degrees', () => {
+    expect(SWING_SECONDS).toBe(3.2);
+    expect(SWING_DEGREES).toBe(40);
+    expect(glideSeconds(CAMERAS.work, HOME_MORNING)).toBe(SWING_SECONDS); // 89.5 degrees
+    expect(glideSeconds(HOME_MORNING, CAMERAS.home)).toBe(SWING_SECONDS); // 86.1 degrees
+    expect(glideSeconds(CAMERAS.work, CAMERAS.unwind)).toBe(GLIDE_SECONDS); // 24.5 degrees
+    expect(glideSeconds(CAMERAS.work, CAMERAS.home)).toBe(GLIDE_SECONDS);
+    expect(glideSeconds(CAMERAS.work, { ...CAMERAS.work, az0: CAMERAS.work.az0 - 40 })).toBe(GLIDE_SECONDS); // exactly 40 is a glide
+  });
+
+  it('a swing from Work to the morning view moves az0 monotonically from 221.5 to 132 over SWING_SECONDS', () => {
+    let g = startGlide(settled(CAMERAS.work), HOME_MORNING, false);
+    expect(g.seconds).toBe(SWING_SECONDS);
+    let prev = glideCamera(g).az0;
+    expect(prev).toBe(221.5);
+    const steps = 32;
+    for (let i = 1; i <= steps; i++) {
+      g = stepGlide(g, SWING_SECONDS / steps);
+      const az = glideCamera(g).az0;
+      expect(az).toBeLessThanOrEqual(prev);
+      prev = az;
+    }
+    expect(g.progress).toBe(1);
+    expect(glideCamera(g)).toBe(HOME_MORNING);
+    expect(prev).toBe(132);
+  });
+
+  it('an interrupted swing takes its duration from where the camera is now', () => {
+    const g = stepGlide(startGlide(settled(CAMERAS.work), HOME_MORNING, false), 1.6); // halfway round
+    expect(startGlide(g, CAMERAS.work, false).seconds).toBe(SWING_SECONDS); // 44.75 degrees back
+    const late = stepGlide(startGlide(settled(CAMERAS.work), HOME_MORNING, false), 3);
+    expect(startGlide(late, HOME_MORNING, false).seconds).toBe(GLIDE_SECONDS); // a few degrees left
+  });
+
+  it('settled glides carry the usual duration', () => {
+    expect(settled(a).seconds).toBe(GLIDE_SECONDS);
+    expect(glideCamera(startGlide(settled(a), HOME_MORNING, true))).toBe(HOME_MORNING);
+  });
 });
 
 describe('homeCameraFor (the morning rule)', () => {
@@ -82,9 +123,9 @@ describe('homeCameraFor (the morning rule)', () => {
   });
 });
 
-describe('the south preset', () => {
-  it('looks south with the approved strip values and no ripple', () => {
-    expect(HOME_MORNING).toMatchObject({ ter: 'south', az0: 132, ppd: 42, vex: 1.9, cs: 1, hy: 582 });
+describe('the morning preset', () => {
+  it('turns the panorama to the approved Rainier strip values, with no ripple', () => {
+    expect(HOME_MORNING).toMatchObject({ ter: 'pano', az0: 132, ppd: 42, vex: 1.9, cs: 1, hy: 582 });
     for (const k of ['ecx', 'eamp', 'en', 'vx'] as const) expect(HOME_MORNING[k]).toBe(CAMERAS.home[k]);
     expect(HOME_MORNING.ea).toBe(0);
   });
@@ -93,15 +134,22 @@ describe('the south preset', () => {
     expect(HOME_MORNING.hy - 168).toBeGreaterThan(300);
   });
 
-  it('west cameras name no terrain, which means west', () => {
-    expect(CAMERAS.home.ter).toBeUndefined();
-    expect(terrainOf(CAMERAS.home)).toBe('west');
-    expect(terrainOf(HOME_MORNING)).toBe('south');
+  it('every preset looks at the one panorama, so no move needs a cross-fade', () => {
+    for (const cam of [...Object.values(CAMERAS), HOME_MORNING]) {
+      expect(cam.ter).toBe('pano');
+      expect(terrainOf(cam)).toBe('pano');
+    }
+    expect(terrainOf({ ...CAMERAS.home, ter: undefined })).toBe('pano');
   });
 
-  it('a glide between south cameras keeps the terrain at every step', () => {
-    const other = { ...HOME_MORNING, az0: 140 };
-    expect(blendCamera(HOME_MORNING, other, 0.5).ter).toBe('south');
-    expect(glideCamera({ from: HOME_MORNING, to: other, progress: 0.3 }).ter).toBe('south');
+  it('carries a snow line per camera: 0.84 on the west presets, 0.86 in the morning, blended in a swing', () => {
+    for (const cam of Object.values(CAMERAS)) expect(cam.snowDeg).toBe(0.84);
+    expect(HOME_MORNING.snowDeg).toBe(0.86);
+    expect(blendCamera(CAMERAS.home, HOME_MORNING, 0.5).snowDeg).toBeCloseTo(0.85, 9);
+  });
+
+  it('a glide keeps the panorama at every step', () => {
+    expect(blendCamera(CAMERAS.home, HOME_MORNING, 0.5).ter).toBe('pano');
+    expect(glideCamera({ from: CAMERAS.home, to: HOME_MORNING, progress: 0.3, seconds: SWING_SECONDS }).ter).toBe('pano');
   });
 });

@@ -1,14 +1,19 @@
-/* One window from Kirkland on a 2D canvas: a sky that follows the real sun, mountain
-   skylines from elevation data (west: the Olympics, south: Rainier), Seattle drawn in
+/* One window from Kirkland on a 2D canvas: a sky that follows the real sun, one mountain
+   panorama from elevation data (azimuth 128 to 300: Rainier in the south round to the
+   Olympics in the west), Seattle drawn in
    metres, and the lake in front. All sizes are in design pixels; o.scale maps them to
    device pixels so lines stay sharp at any zoom. */
 
-import west from './terrain/west.json';
-import south from './terrain/south.json';
+import pano from './terrain/pano.json';
 
-/* Terrain profiles: elevation arrays sampled by compass azimuth, read by prof(). */
+/* Terrain profiles: elevation arrays sampled by compass azimuth, read by prof(). Only the
+   panorama ships; the older west and south profiles are registered by the parity test. */
 interface Terrain { az0: number; step: number; eye: number; far: number[]; mid: number[]; near: number[]; peaks: unknown[] }
-const TER: Record<string, Terrain> = { west: west as Terrain, south: south as Terrain };
+const TER: Record<string, Terrain> = { pano: pano as Terrain };
+/* Snow line in degrees before vex, per terrain, when the caller passes none. */
+const SNOW_DEG: Record<string, number> = { pano: .84, west: .84, south: .86 };
+/** Make another terrain profile drawable by name (the parity test adds `west` and `south`). */
+export function registerTerrain(name: string, data: unknown): void { TER[name] = data as Terrain; }
 // Local aliases so the hand-tuned helpers below stay in their original compact form.
 type Any = any; // the helpers take canvas contexts, colour triples and option bags; typing each would mean rewriting them
 type RGB = number[];
@@ -182,8 +187,8 @@ export interface HorizonDrawOptions {
   H?: number;
   /** Design pixels to canvas pixels: stage scale times devicePixelRatio (default 1). */
   scale?: number;
-  /** Which terrain: 'west' (default, with the city) or 'south'. */
-  ter?: 'west' | 'south';
+  /** Which terrain: 'pano' (default) or a registered profile; the city draws on 'pano' and 'west'. */
+  ter?: 'pano' | 'west' | 'south';
   /** Horizon line, design pixels from the top. */
   hy: number;
   /** Compass azimuth in degrees at the left edge of the view. */
@@ -208,11 +213,11 @@ export interface HorizonDrawOptions {
   clouds?: number;
   /** Snow strength multiplier (default 1). */
   snow?: number;
-  /** Snow line in degrees before vex (default 0.84 west, 0.86 south). */
+  /** Snow line in degrees before vex (default 0.84 pano and west, 0.86 south). */
   snowDeg?: number;
   /** Music ripple, or null for none. */
   echo?: HorizonEcho | null;
-  /** Set false to hide the city (default shown on the west terrain). */
+  /** Set false to hide the city (default shown on the pano and west terrains). */
   city?: boolean;
   /** City size multiplier (default 1). */
   cityScale?: number;
@@ -232,7 +237,7 @@ export interface HorizonDrawResult {
   P: Any;
 }
 
-export function draw(ctx:CanvasRenderingContext2D,o:HorizonDrawOptions):HorizonDrawResult{const W=o.W||2560,H=o.H||720,sc=o.scale||1,px=(w:Any)=>Math.max(w,1/sc),TR=TER[o.ter||'west'],hy=o.hy,ppd=o.ppd,az0=o.az0,k=ppd*(o.vex||1),t=o.t||0,sp=sun(o.ms),P=pal(sp.alt,sp.az>180);
+export function draw(ctx:CanvasRenderingContext2D,o:HorizonDrawOptions):HorizonDrawResult{const W=o.W||2560,H=o.H||720,sc=o.scale||1,px=(w:Any)=>Math.max(w,1/sc),TR=TER[o.ter||'pano'],hy=o.hy,ppd=o.ppd,az0=o.az0,k=ppd*(o.vex||1),t=o.t||0,sp=sun(o.ms),P=pal(sp.alt,sp.az>180);
  ctx.setTransform(sc,0,0,sc,0,0);ctx.globalAlpha=1;ctx.globalCompositeOperation='source-over';
  let g=ctx.createLinearGradient(0,0,0,hy);g.addColorStop(0,css(P.s[0]));g.addColorStop(.49,css(P.s[1]));g.addColorStop(.84,css(P.s[2]));g.addColorStop(1,css(P.s[3]));ctx.fillStyle=g;ctx.fillRect(0,0,W,hy+1);
  const rim=ctx.createLinearGradient(0,0,W,0);rim.addColorStop(0,css(P.rim[0]));rim.addColorStop(.5,css(P.rim[1]));rim.addColorStop(1,css(P.rim[0]));
@@ -258,7 +263,7 @@ export function draw(ctx:CanvasRenderingContext2D,o:HorizonDrawOptions):HorizonD
  const layer=(f:Any,fill:Any)=>{ctx.beginPath();ctx.moveTo(0,hy+1);for(let i=0;i<N;i++)ctx.lineTo(i*2,hy-f(i));ctx.lineTo(W,hy+1);ctx.closePath();ctx.fillStyle=fill;ctx.fill()};
  const line=(f:Any,a:Any,w:Any,style?:Any)=>{ctx.beginPath();for(let i=0;i<N;i++)i?ctx.lineTo(i*2,hy-f(i)):ctx.moveTo(0,hy-f(0));ctx.strokeStyle=style||rim;ctx.globalAlpha=a;ctx.lineWidth=px(w);ctx.lineJoin='round';ctx.stroke();ctx.globalAlpha=1};
  g=ctx.createLinearGradient(0,hy-cmax,0,hy);g.addColorStop(0,css(P.far));g.addColorStop(1,css(mixc(P.far,mixc(P.s[2],P.s[3],.4),.3)));layer((i:Any)=>cr[i],g);
- const sa=P.sn[1]*(o.snow===undefined?1:o.snow),sl=(o.snowDeg||(o.ter==='south'?.86:.84))*k;
+ const sa=P.sn[1]*(o.snow===undefined?1:o.snow),sl=(o.snowDeg||SNOW_DEG[o.ter||'pano'])*k;
  if(sa>.02&&cmax>sl+3){const top=hy-cmax,ys=hy-sl,cap=ys-(ys-top)*.48;
   g=ctx.createLinearGradient(0,ys+8,0,ys-14);g.addColorStop(0,css(P.sn[0],0));g.addColorStop(1,css(P.sn[0],sa*.62));layer((i:Any)=>cr[i],g);
   g=ctx.createLinearGradient(0,cap+10,0,cap-12);g.addColorStop(0,css(P.sn[0],0));g.addColorStop(1,css(P.sn[0],sa*.5));layer((i:Any)=>cr[i],g);
@@ -275,7 +280,7 @@ export function draw(ctx:CanvasRenderingContext2D,o:HorizonDrawOptions):HorizonD
  const md=(i:Any)=>prof(TR,TR.mid,az0+i*2/ppd)*k,nr=(i:Any)=>prof(TR,TR.near,az0+i*2/ppd)*k;
  g=ctx.createLinearGradient(0,hy-cmax*.6,0,hy);g.addColorStop(0,css(P.mid));g.addColorStop(1,css(mixc(P.mid,mixc(P.s[2],P.s[3],.4),.2)));layer(md,g);line(md,.16,1);
  const refl:Any[]=[];
- if(o.city!==false&&(o.ter||'west')==='west')city(ctx,o,P,rim,W,px,refl);
+ if(o.city!==false&&(o.ter||'pano')!=='south')city(ctx,o,P,rim,W,px,refl);
  layer(nr,css(mixc(P.bld,[0,0,0],.3)));
  const hb=clamp(70*k/42,40,170);g=ctx.createLinearGradient(0,hy-hb,0,hy);g.addColorStop(0,css(P.s[3],0));g.addColorStop(1,css(P.s[3],P.hz*.55));ctx.fillStyle=g;ctx.fillRect(0,hy-hb,W,hb);
  /* the lake */
@@ -294,6 +299,6 @@ export function draw(ctx:CanvasRenderingContext2D,o:HorizonDrawOptions):HorizonD
  if(o.grain!==false)grain(ctx,W*sc,H*sc);
  return{sun:sp,x:sx,y:sy,P}}
 
-const peaks = TER.west.peaks;
+const peaks = TER.pano.peaks;
 const peaksOf = (n: string) => TER[n].peaks;
 export { sun, when, pal, css, spec, hash, peaks, peaksOf };

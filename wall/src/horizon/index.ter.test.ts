@@ -9,12 +9,14 @@ afterEach(() => vi.mocked(draw).mockClear());
 
 const base = { width: 2560, height: 720, scale: 1, ms: when(2026, 11, 11, 7.2), t: 0, phase: 0 };
 
-it('passes ter south to the renderer for the morning preset, with its framing', () => {
+it('passes the panorama and the morning framing, with its 0.86 snow line, for the morning preset', () => {
   drawHorizon(stubContext(), { ...base, camera: HOME_MORNING });
-  expect(draw).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ ter: 'south', az0: 132, ppd: 42, vex: 1.9, hy: 582, cityScale: 1 }));
+  expect(draw).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ ter: 'pano', az0: 132, ppd: 42, vex: 1.9, hy: 582, cityScale: 1, snowDeg: 0.86 }));
 });
 
-it('passes no terrain for the west cameras (the renderer defaults to west)', () => {
-  drawHorizon(stubContext(), { ...base, camera: CAMERAS.home });
-  expect(vi.mocked(draw).mock.lastCall![1].ter).toBeUndefined();
+it('passes the panorama and a 0.84 snow line for the west cameras', () => {
+  for (const cam of Object.values(CAMERAS)) {
+    drawHorizon(stubContext(), { ...base, camera: cam });
+    expect(vi.mocked(draw).mock.lastCall![1]).toMatchObject({ ter: 'pano', snowDeg: 0.84, az0: cam.az0 });
+  }
 });
