@@ -18,6 +18,7 @@ export function parseReview(search: string): ReviewFrame | null {
   const place = q.get('hz');
   const at = q.get('at');
   if (!place || !at || !PLACE_IDS.includes(place)) return null;
-  const ms = Date.parse(at);
+  // URLSearchParams turns a literal `+` (as in +01:00) into a space; a space is never valid in an ISO time.
+  const ms = Date.parse(at.replace(/ /g, '+'));
   return Number.isNaN(ms) ? null : { place: place as PlaceId, ms };
 }
