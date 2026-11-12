@@ -10,6 +10,8 @@ mod graph;
 mod service;
 mod store;
 
+pub(crate) use graph::civil_from_days;
+
 use serde_json::Value;
 use std::io::Read;
 use std::sync::{Mutex, OnceLock};
@@ -173,6 +175,21 @@ pub async fn wall2_meet_next(window: tauri::WebviewWindow) -> Result<service::Me
     tauri::async_runtime::spawn_blocking(move || {
         let mut core = lock_core();
         service::read_next(&accounts, &secrets(), &auth::HttpTokens, &HttpGraph, &mut core, links(), now_secs())
+    })
+    .await
+    .map_err(|_| "failed".to_string())
+}
+
+/// Today's events from local midnight to 36 hours after it, past ones included.
+#[tauri::command]
+pub async fn wall2_meet_day(window: tauri::WebviewWindow) -> Result<service::DayPayload, String> {
+    require_wall2(window.label())?;
+    let accounts = load_config(&window).map_err(str::to_string)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let now = now_secs();
+        let midnight = crate::wall2_feeds::local_midnight(now as i64, &crate::wall2_feeds::local_offset_secs).max(0) as u64;
+        let mut core = lock_core();
+        service::read_day(&accounts, &secrets(), &auth::HttpTokens, &HttpGraph, &mut core, links(), now, midnight, midnight + 36 * 3600)
     })
     .await
     .map_err(|_| "failed".to_string())
