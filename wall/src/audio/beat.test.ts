@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BEAT_BANDS, MIN_BEAT_GAP_MS, createBeatDetector } from './beat';
+import { createSourceClock } from './sourceTime';
 
 /*
  * A port of the Rust analyser's band maths (`src-tauri/src/audio_analysis.rs`) for the low
@@ -220,6 +221,41 @@ describe('beat detector', () => {
     }
     expect(fastest).toBeGreaterThanOrEqual(MIN_BEAT_GAP_MS);
     expect(fastest).toBeLessThan(MIN_BEAT_GAP_MS + 66); // the fastest pattern really does reach the gap
+  });
+
+  it('keeps beats 340 ms apart on the arrival clock too: repeated stalls near that cadence never give four in a real second', () => {
+    const quiet = new Array(32).fill(0.3);
+    const loud = new Array(32).fill(0.65);
+    // A hit every 10 frames (330 ms of capture). Every 7 frames the web view stalls for three
+    // frames, which then arrive in one burst, and the frames after it come 50 ms apart. The source
+    // clock spreads each burst ahead of the arrival clock, so source time leads by a changing amount.
+    const n = 600;
+    const arrivals: number[] = [];
+    let a = 0;
+    for (let i = 0; i < n; i++) {
+      const ph = i % 7;
+      a += ph === 0 ? 3 * 33 : ph <= 3 ? 0 : 50;
+      arrivals.push(a);
+    }
+    const replay = (withArrival: boolean) => {
+      const d = createBeatDetector();
+      const clock = createSourceClock();
+      const confirmed: number[] = [];
+      for (let i = 0; i < n; i++) {
+        const t = clock.stamp(arrivals[i]);
+        if (t === null) continue;
+        const bands = i > 20 && i % 10 < 3 ? loud : quiet;
+        if (withArrival ? d.push(bands, t, arrivals[i]) : d.push(bands, t)) confirmed.push(arrivals[i]);
+      }
+      return confirmed;
+    };
+    const mostInASecond = (beats: number[]) => Math.max(...beats.map((b) => beats.filter((x) => x >= b && x < b + 1000).length));
+    // Spaced in source time only (the old rule), the pattern lands four beats inside one real second.
+    expect(mostInASecond(replay(false))).toBe(4);
+    const beats = replay(true);
+    expect(beats.length).toBeGreaterThan(20);
+    expect(mostInASecond(beats)).toBeLessThanOrEqual(3);
+    for (let i = 1; i < beats.length; i++) expect(beats[i] - beats[i - 1]).toBeGreaterThanOrEqual(MIN_BEAT_GAP_MS);
   });
 
   it('reports the plain low level as bass, and reset clears the count', () => {

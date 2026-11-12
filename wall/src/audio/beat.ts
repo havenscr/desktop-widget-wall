@@ -8,7 +8,11 @@
  * last second plus `ONSET_DB` (9 dB). A kick then holds up while it decays, so the onset only counts
  * once the next `CONFIRM_FRAMES` frames all stay `HOLD_DB` above that median; a lone noisy
  * frame drops straight back and is ignored. Beats are at least `MIN_BEAT_GAP_MS` (340 ms) apart,
- * so never more than three in any second.
+ * so never more than three in any second. The gap holds on both clocks a frame carries: onsets
+ * are spaced in source time (`now`, see `sourceTime.ts`), and a beat is refused when the frame
+ * that would confirm it arrives less than 340 ms after the frame that confirmed the last one.
+ * Source time can run up to 200 ms ahead of arrival after a stall, so a gap kept in source
+ * time alone let beats land closer than 340 ms apart in real time.
  * Everything is time based (milliseconds on any steady clock), never counted in events, and
  * nothing is allocated per event.
  *
@@ -45,8 +49,11 @@ const BAND_DB_RANGE = 60;
 const SLOTS = 96;
 
 export interface BeatDetector {
-  /** Feed one frame of normalised bands (0 to 1) at `now` ms. True when a beat was confirmed by this frame. */
-  push(bands: ArrayLike<number>, now: number): boolean;
+  /**
+   * Feed one frame of normalised bands (0 to 1) at source time `now` ms, which arrived at
+   * `arrival` ms on the real clock (default `now`). True when a beat was confirmed by this frame.
+   */
+  push(bands: ArrayLike<number>, now: number, arrival?: number): boolean;
   /** Forget the history (silence, a new device). The beat count and timestamps stay. */
   clear(): void;
   /** Forget everything, the count included (tests, a capture restart). */
@@ -101,6 +108,8 @@ export function createBeatDetector(tuning: Partial<BeatTuning> = {}): BeatDetect
   // An onset waiting for its confirming frames.
   let pendingAt = NaN;
   let pendingHeld = 0;
+  // Arrival time of the frame that confirmed the newest beat.
+  let lastBeatArrival = -Infinity;
   const stamps = new Float64Array(BEAT_HISTORY);
 
   const state = {
@@ -121,7 +130,7 @@ export function createBeatDetector(tuning: Partial<BeatTuning> = {}): BeatDetect
   };
 
   const detector: BeatDetector = {
-    push(bands, now) {
+    push(bands, now, arrival = now) {
       if (now - prevAt > GAP_RESET_MS) clear();
       prevAt = now;
 
@@ -149,10 +158,14 @@ export function createBeatDetector(tuning: Partial<BeatTuning> = {}): BeatDetect
       if (!Number.isNaN(pendingAt)) {
         if (above >= holdDb) {
           pendingHeld++;
-          if (pendingHeld >= confirmFrames) {
+          if (pendingHeld >= confirmFrames && arrival - lastBeatArrival < MIN_BEAT_GAP_MS) {
+            // Too soon after the last beat on the real clock (frames that queued behind a stall): refused.
+            pendingAt = NaN;
+          } else if (pendingHeld >= confirmFrames) {
             state.count++;
             state.lastBeatAt = pendingAt;
             state.lag = now - pendingAt;
+            lastBeatArrival = arrival;
             for (let i = 1; i < BEAT_HISTORY; i++) stamps[i - 1] = stamps[i];
             stamps[BEAT_HISTORY - 1] = pendingAt;
             pendingAt = NaN;
@@ -189,6 +202,7 @@ export function createBeatDetector(tuning: Partial<BeatTuning> = {}): BeatDetect
       state.count = 0;
       state.lastBeatAt = -Infinity;
       state.lag = 0;
+      lastBeatArrival = -Infinity;
       stamps.fill(0);
     },
     get count() {
