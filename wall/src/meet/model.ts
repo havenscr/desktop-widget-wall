@@ -4,6 +4,8 @@ export interface MeetAccount {
   id: string;
   label: string;
   state: AccountState;
+  /** Why the account is not connected: a short fixed-shape code such as `graph-403-ErrorAccessDenied`. */
+  reason?: string;
 }
 
 export interface Meeting {
@@ -28,6 +30,8 @@ export const NOT_CONFIGURED = 'not-configured';
 export const INVALID_CONFIG = 'invalid-config';
 
 export const REFRESH_MS = 5 * 60_000;
+/** After an unavailable read: retry after 30 s, then 60 s, then the normal cadence. */
+export const FAST_RETRY_MS: readonly number[] = [30_000, 60_000];
 export const TICK_MS = 30_000;
 
 const MIN = 60_000;
@@ -86,6 +90,29 @@ export function statusWord(state: AccountState): string {
   return 'Sign in needed';
 }
 
+const REASON_SHAPE = /^(?:graph-[0-9]{3}(?:-[A-Za-z][A-Za-z0-9_]{0,39})?|token-[0-9]{3}(?:-[0-9]{1,7})?|graph-network|graph-body|token-network|store-write|store-read)$/;
+
+/** Plain words for a reason code, or null when the code is not one of the known shapes. */
+export function reasonText(code: string | undefined | null): string | null {
+  if (!code || !REASON_SHAPE.test(code)) return null;
+  if (code.startsWith('store-')) return 'Could not save the sign-in on this PC';
+  if (code === 'graph-network' || code === 'token-network') return 'No connection to Microsoft';
+  if (code === 'graph-body') return 'Calendar sent a reply that could not be read';
+  if (code.startsWith('token-')) return 'Sign-in was not accepted';
+  const status = Number(code.slice(6, 9));
+  if (status === 403) return 'Calendar refused the request';
+  if (status === 400) return 'Calendar did not understand the request';
+  if (status === 429 || status >= 500) return 'Calendar is busy, trying again';
+  if (status === 401) return 'Calendar did not accept the sign-in';
+  return 'Calendar could not be read';
+}
+
+/** The quiet line under Unavailable: the words, then the code in brackets. Null when unknown. */
+export function reasonLine(code: string | undefined | null): string | null {
+  const words = reasonText(code);
+  return words ? `${words} (${code})` : null;
+}
+
 export function needsSignIn(state: AccountState): boolean {
   return state === 'signed-out' || state === 'needs-sign-in';
 }
@@ -104,6 +131,6 @@ export function signInMessage(error: string): string | null {
     case NOT_CONFIGURED:
       return 'Not set up';
     default:
-      return 'Sign-in did not work';
+      return reasonLine(error) ?? 'Sign-in did not work';
   }
 }

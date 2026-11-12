@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { countdownText, isSoon, laterMeetings, nextMeeting, signInMessage, statusWord, type Meeting } from './model';
+import { countdownText, isSoon, laterMeetings, nextMeeting, reasonLine, reasonText, signInMessage, statusWord, type Meeting } from './model';
 
 const NOW = Date.parse('2026-11-12T17:00:00Z');
 const at = (mins: number) => new Date(NOW + mins * 60_000).toISOString().replace('.000Z', 'Z');
@@ -73,4 +73,44 @@ it('status words and sign-in messages', () => {
   expect(signInMessage('cancelled')).toBeNull();
   expect(signInMessage('denied')).toBe('Sign-in was declined');
   expect(signInMessage('whatever')).toBe('Sign-in did not work');
+});
+
+describe('reasonText', () => {
+  it('maps each family to plain words', () => {
+    const table: [string, string][] = [
+      ['graph-403', 'Calendar refused the request'],
+      ['graph-403-ErrorAccessDenied', 'Calendar refused the request'],
+      ['graph-400', 'Calendar did not understand the request'],
+      ['graph-429', 'Calendar is busy, trying again'],
+      ['graph-500', 'Calendar is busy, trying again'],
+      ['graph-503-ServiceUnavailable', 'Calendar is busy, trying again'],
+      ['graph-network', 'No connection to Microsoft'],
+      ['token-network', 'No connection to Microsoft'],
+      ['token-400', 'Sign-in was not accepted'],
+      ['token-400-9002327', 'Sign-in was not accepted'],
+      ['store-write', 'Could not save the sign-in on this PC'],
+      ['store-read', 'Could not save the sign-in on this PC'],
+      ['graph-body', 'Calendar sent a reply that could not be read'],
+      ['graph-401', 'Calendar did not accept the sign-in'],
+      ['graph-404', 'Calendar could not be read'],
+    ];
+    for (const [code, words] of table) expect(reasonText(code), code).toBe(words);
+  });
+
+  it('puts the code in brackets', () => {
+    expect(reasonLine('graph-403-ErrorAccessDenied')).toBe('Calendar refused the request (graph-403-ErrorAccessDenied)');
+  });
+
+  it('shows nothing for a code that is not a known shape', () => {
+    for (const bad of ['', 'other', 'graph-4031', 'graph-403-a b', 'graph-403-https://example.test', 'token-400-ab', 'user@example.test']) {
+      expect(reasonText(bad), bad).toBeNull();
+    }
+    expect(reasonText(undefined)).toBeNull();
+  });
+
+  it('a sign-in that failed reads with its reason', () => {
+    expect(signInMessage('token-400-65001')).toBe('Sign-in was not accepted (token-400-65001)');
+    expect(signInMessage('store-write')).toBe('Could not save the sign-in on this PC (store-write)');
+    expect(signInMessage('failed')).toBe('Sign-in did not work');
+  });
 });
