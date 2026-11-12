@@ -120,6 +120,7 @@
   border-radius: 50%;
   background: radial-gradient(circle, rgba(154, 123, 255, 0.34), rgba(255, 61, 154, 0.12) 65%, transparent 72%);
   opacity: 0.25;
+  transform: scale(0.8);
 }
 .breath-words {
   position: relative;

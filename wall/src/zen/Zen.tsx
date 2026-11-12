@@ -109,11 +109,20 @@ export function Zen({ nowMs = Date.now }: ZenProps) {
     return () => window.clearInterval(id);
   }, [startedAt, ending, nowMs]);
 
-  // Zen covers the rail, so keep keyboard focus inside it (Start, or the Dream surface).
+  // Zen covers the rail, so keep keyboard focus inside it. Focus follows the controls: the tap target
+  // when a session starts (Start unmounts), Start when the picker returns, the first control otherwise.
   const root = useRef<HTMLElement>(null);
+  const wasRunning = useRef(false);
   useEffect(() => {
-    root.current?.querySelector<HTMLElement>('button:not(:disabled), [role="button"]')?.focus();
-  }, [dream]);
+    const r = root.current;
+    if (!r) return;
+    const running = startedAt !== null && !ending;
+    const first = () => r.querySelector<HTMLElement>('button:not(:disabled), [role="button"]');
+    if (!dream && running && !wasRunning.current) (r.querySelector<HTMLElement>('.zen-tap') ?? first())?.focus();
+    else if (!dream && !running && wasRunning.current && startedAt === null) (r.querySelector<HTMLElement>('.zbtn.go') ?? first())?.focus();
+    else if (!wasRunning.current && !running) first()?.focus();
+    wasRunning.current = running;
+  }, [dream, startedAt, ending]);
 
   return (
     <section ref={root} className={`zen${dream ? ' is-dream' : ''}`} data-place="zen" aria-label="Zen">
