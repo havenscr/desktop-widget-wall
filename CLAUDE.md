@@ -374,6 +374,7 @@ Audio levels, the horizon sound ripple, the Unwind tab and Watt the sheep are fr
 The Zen place and Dream (flames, breathing guide, `wall/src/zen`) are front end only too; the horizon is not drawn while Zen is open.
 `lib.rs` finds the window with `app_window` (labels `main` and `wall2`); behaviour
 only the old app has (fullscreen toggle, monitor 2 placement) must stay on `MAIN_LABEL`.
+Wall 2 is placed through Win32 in `src-tauri/src/wall2_window.rs` (not tao) and writes `wall2-placement.log`; see `wall/README.md`.
 
 ## Fingerprinting
 
