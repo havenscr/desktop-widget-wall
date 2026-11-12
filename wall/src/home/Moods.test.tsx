@@ -59,7 +59,9 @@ it('shows working, then a check for 2 seconds, and remembers the mood', async ()
   await flush();
   expect(container.querySelector('.mood-btn.done')).toBeTruthy();
   expect(localStorage.getItem(LAST_MOOD_KEY)).toBe('evening');
-  await flush(2100);
+  await flush(1999 - 0);
+  expect(container.querySelector('.mood-btn.done')).toBeTruthy();
+  await flush(1);
   expect(container.querySelector('.mood-btn.done')).toBeNull();
   expect(container.querySelector('.mood-btn.last')?.getAttribute('data-mood')).toBe('evening');
 });
@@ -82,7 +84,9 @@ it('shows a failure under the row for 5 seconds and does not remember it', async
   expect(screen.getByText('Moods are not set up in the home app yet')).toBeTruthy();
   expect(container.querySelector('.mood-btn.working')).toBeNull();
   expect(localStorage.getItem(LAST_MOOD_KEY)).toBeNull();
-  await flush(5100);
+  await flush(4999);
+  expect(screen.getByText('Moods are not set up in the home app yet')).toBeTruthy();
+  await flush(1);
   expect(screen.queryByText('Moods are not set up in the home app yet')).toBeNull();
 });
 
@@ -127,4 +131,46 @@ it('names the last mood "last used" and does not use aria-pressed', async () => 
   expect(screen.getByRole('button', { name: 'Evening, last used' })).toBeTruthy();
   expect(screen.getByRole('button', { name: 'Day' })).toBeTruthy();
   for (const b of screen.getAllByRole('button')) expect(b.hasAttribute('aria-pressed')).toBe(false);
+});
+
+it('still works when local storage throws', async () => {
+  vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+    throw new Error('blocked');
+  });
+  vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+    throw new Error('blocked');
+  });
+  mocks.set('wall2_moods', () => LIST);
+  mocks.set('wall2_apply_mood', () => undefined);
+  const { container } = render(<Moods />);
+  await flush();
+  expect(screen.getAllByRole('button')).toHaveLength(3);
+  fireEvent.click(screen.getByText('Day'));
+  await flush();
+  expect(container.querySelector('.mood-btn.done')).toBeTruthy();
+  vi.restoreAllMocks();
+});
+
+it('leaves no timer running when unmounted during the done or error timer', async () => {
+  const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+  mocks.set('wall2_moods', () => LIST);
+  mocks.set('wall2_apply_mood', () => undefined);
+  const a = render(<Moods />);
+  await flush();
+  fireEvent.click(screen.getByText('Day'));
+  await flush();
+  a.unmount();
+  const b = (() => {
+    mocks.set('wall2_apply_mood', () => Promise.reject(new Error('Could not set the mood')));
+    return render(<Moods />);
+  })();
+  await flush();
+  fireEvent.click(screen.getByText('Evening'));
+  await flush();
+  b.unmount();
+  // Only the 10 minute reload interval of a mounted component may remain; both are unmounted.
+  expect(vi.getTimerCount()).toBe(0);
+  await flush(10_000);
+  expect(errors).not.toHaveBeenCalled();
+  errors.mockRestore();
 });
