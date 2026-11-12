@@ -1,4 +1,4 @@
-import { CAMERAS, CINEMATIC_SECONDS, HOME_MORNING, cameraFor, glideSeconds, localDay, type CameraPreset } from '../horizon/cameras';
+import { CAMERAS, homeCameraFor, type CameraPreset } from '../horizon/cameras';
 import { rowEdges } from '../screens/frameLayout';
 import type { PlaceId } from '../state/places';
 import { SPRITES, type Pose } from './sprites';
@@ -15,25 +15,34 @@ export interface Walk {
   px: number;
   /** Highest stage y any part of Watt reaches, notes and z's included. */
   ceiling: number;
+  /** Furthest stage x any part of Watt reaches, notes and z's included. */
+  right: number;
 }
 
 /** Bottom of the top band (stage y 510): on places with a ribbon, nothing of Watt goes above it. */
 const TOP_BAND_BOTTOM = rowEdges()[0].bottom;
 
 /**
+ * Left edge of Unwind's transport and volume row in the concept (`f_unwind`, about x 620 to
+ * 1220, y 380 to 470 at 2560 by 720). Watt stays left of it with a small gap.
+ */
+export const UNWIND_ROW = { left: 620, right: 1220, top: 380, bottom: 470 } as const;
+
+/**
  * Walk range per place. Work and Meet sit around the concept's (985, 534) at 4 px a pixel, Home
- * around (1616, 528) at 5 px between the wings, Unwind keeps today's 960 to 1220 at 6 px. The
- * ground line is the camera's `hy` (see `groundFor`). `model.test.ts` checks every range against
- * the frame's panel rectangles.
+ * around (1616, 528) at 5 px between the wings, Unwind at the concept's spot in `f_unwind` (the
+ * body between about x 430 and 580, below the wind down block and left of the transport row) at
+ * 6 px. The ground line is the camera's `hy`. `model.test.ts` checks every range against the
+ * frame's panel rectangles and Unwind's transport row.
  */
 export const WALKS: Readonly<Record<WattPlace, Walk>> = {
-  work: { min: 880, max: 1090, px: 4, ceiling: TOP_BAND_BOTTOM },
-  meet: { min: 880, max: 1090, px: 4, ceiling: TOP_BAND_BOTTOM },
-  home: { min: 1506, max: 1726, px: 5, ceiling: TOP_BAND_BOTTOM },
-  unwind: { min: 960, max: 1220, px: 6, ceiling: 380 },
+  work: { min: 880, max: 1090, px: 4, ceiling: TOP_BAND_BOTTOM, right: 1820 },
+  meet: { min: 880, max: 1090, px: 4, ceiling: TOP_BAND_BOTTOM, right: 1820 },
+  home: { min: 1506, max: 1726, px: 5, ceiling: TOP_BAND_BOTTOM, right: 1930 },
+  unwind: { min: 430, max: 470, px: 6, ceiling: 420, right: UNWIND_ROW.left - 8 },
 };
 
-/** Walking speed in design pixels a second (today's Unwind pace). */
+/** Walking speed in design pixels a second. */
 export const WALK_SPEED = 14;
 
 /**
@@ -53,6 +62,50 @@ export function isNight(date: Date): boolean {
   return m >= SLEEP_FROM || m < WAKE_AT;
 }
 
+/**
+ * What the wall clock means for Watt, worked out once a minute (night, and Home's camera), so the
+ * frame loop builds no `Date`. Reused: `readClock` updates it in place.
+ */
+export interface ClockInfo {
+  /** Epoch minute it was last worked out for. */
+  minute: number;
+  night: boolean;
+  /** Home's camera at that minute (Rainier in the morning). */
+  home: CameraPreset;
+}
+
+export function createClock(): ClockInfo {
+  return { minute: Number.NaN, night: false, home: CAMERAS.home };
+}
+
+/** Bring `clock` up to `ms` (epoch milliseconds). Builds a `Date` only when the minute changes. */
+export function readClock(clock: ClockInfo, ms: number): ClockInfo {
+  const minute = Math.floor(ms / 60_000);
+  if (minute !== clock.minute) {
+    const d = new Date(ms);
+    clock.minute = minute;
+    clock.night = isNight(d);
+    clock.home = homeCameraFor(d);
+  }
+  return clock;
+}
+
+/** True when `place` is one Watt lives on. */
+export function isWattPlace(place: string): place is WattPlace {
+  return Object.prototype.hasOwnProperty.call(WALKS, place);
+}
+
+/** The place Watt should be on, or null where it does not show: Zen, places without a walk, Meet in a call. */
+export function wattPlaceFor(place: PlaceId, inCall = false): WattPlace | null {
+  if (!isWattPlace(place) || (place === 'meet' && inCall)) return null;
+  return place;
+}
+
+/** The camera a Watt place uses at the clock's minute. Only Home changes with the hour. */
+export function cameraOf(place: WattPlace, clock: ClockInfo): CameraPreset {
+  return place === 'home' ? clock.home : CAMERAS[place];
+}
+
 /** Middle of a walk range: where Watt sleeps and where the still pose stands. */
 export function middle(walk: Walk): number {
   return (walk.min + walk.max) / 2;
@@ -68,11 +121,23 @@ export function loopSeconds(walk: Walk): number {
   return total;
 }
 
+/** Where Watt is in its wander. Reused. */
+export interface WanderPoint {
+  x: number;
+  dir: 1 | -1;
+  moving: boolean;
+}
+
+export function createWander(): WanderPoint {
+  return { x: 0, dir: 1, moving: false };
+}
+
 /**
  * Where Watt is `t` seconds after arriving on a place: standing a long while at each stop, then
  * walking slowly to the next. `dir` is the way it faces (it keeps facing the way it last walked).
+ * Written into `out`.
  */
-export function wanderAt(walk: Walk, t: number): { x: number; dir: 1 | -1; moving: boolean } {
+export function wanderAt(walk: Walk, t: number, out: WanderPoint = createWander()): WanderPoint {
   const span = walk.max - walk.min;
   const n = STOPS.length;
   let left = Math.max(0, t) % loopSeconds(walk);
@@ -81,16 +146,30 @@ export function wanderAt(walk: Walk, t: number): { x: number; dir: 1 | -1; movin
     const to = STOPS[(i + 1) % n];
     const prev = STOPS[(i + n - 1) % n];
     const x0 = walk.min + from * span;
-    if (left < IDLES[i]) return { x: x0, dir: from >= prev ? 1 : -1, moving: false };
+    if (left < IDLES[i]) {
+      out.x = x0;
+      out.dir = from >= prev ? 1 : -1;
+      out.moving = false;
+      return out;
+    }
     left -= IDLES[i];
     const walkS = (Math.abs(to - from) * span) / WALK_SPEED;
     const dir = to >= from ? 1 : -1;
-    if (left < walkS) return { x: x0 + dir * left * WALK_SPEED, dir, moving: true };
+    if (left < walkS) {
+      out.x = x0 + dir * left * WALK_SPEED;
+      out.dir = dir;
+      out.moving = true;
+      return out;
+    }
     left -= walkS;
   }
-  return { x: walk.min + STOPS[0] * span, dir: 1, moving: false };
+  out.x = walk.min + STOPS[0] * span;
+  out.dir = 1;
+  out.moving = false;
+  return out;
 }
 
+/** What Watt does this frame. Reused. */
 export interface BuddyFrame {
   x: number;
   dir: 1 | -1;
@@ -101,151 +180,142 @@ export interface BuddyFrame {
   z: boolean;
 }
 
+export function createFrame(): BuddyFrame {
+  return { x: 0, dir: 1, pose: 'idle', notes: false, z: false };
+}
+
+const scratchWander = createWander();
+
 /**
- * What Watt does on `walk` at local time `date`, `t` seconds after arriving, with music `playing`.
+ * What Watt does on `walk`, at `night` or not, `t` seconds after arriving, with music `playing`.
  * Asleep in the middle at night (z's, no notes); awake otherwise, wandering, with notes while music
- * plays. With `still` (reduced motion) a fixed pose in the middle, nothing drifting.
+ * plays. With `still` (reduced motion) a fixed pose in the middle, nothing drifting. Written into `out`.
  */
-export function buddyFrame(walk: Walk, date: Date, t: number, playing: boolean, still = false): BuddyFrame {
-  const night = isNight(date);
-  const mid = middle(walk);
-  if (still) return { x: mid, dir: 1, pose: night ? 'sleep' : 'idle', notes: false, z: false };
-  if (night) return { x: mid, dir: 1, pose: 'sleep', notes: false, z: true };
-  const w = wanderAt(walk, t);
-  const pose: Pose = w.moving && Math.floor(t * 5) % 2 ? 'walk' : 'idle';
-  return { x: w.x, dir: w.dir, pose, notes: playing, z: false };
+export function buddyFrame(walk: Walk, night: boolean, t: number, playing: boolean, still = false, out: BuddyFrame = createFrame()): BuddyFrame {
+  out.notes = false;
+  out.z = false;
+  out.dir = 1;
+  out.x = middle(walk);
+  if (still) {
+    out.pose = night ? 'sleep' : 'idle';
+    return out;
+  }
+  if (night) {
+    out.pose = 'sleep';
+    out.z = true;
+    return out;
+  }
+  const w = wanderAt(walk, t, scratchWander);
+  out.x = w.x;
+  out.dir = w.dir;
+  out.pose = w.moving && Math.floor(t * 5) % 2 ? 'walk' : 'idle';
+  out.notes = playing;
+  return out;
 }
 
-/** Width and height of a pose at `px`, design pixels. */
-export function spriteSize(pose: Pose, px: number): { w: number; h: number } {
-  const map = SPRITES[pose];
-  return { w: map[0].length * px, h: map.length * px };
+/** Width of a pose at `px`, design pixels. */
+export function spriteWidth(pose: Pose, px: number): number {
+  return SPRITES[pose][0].length * px;
 }
 
-/** Note icon sizes, the larger then the smaller, design pixels. */
+/** Height of a pose at `px`, design pixels. */
+export function spriteHeight(pose: Pose, px: number): number {
+  return SPRITES[pose].length * px;
+}
+
+/** Note icon sizes, the larger then the smaller, and the larger z's width, design pixels. */
 export const NOTE_SIZES = [20, 15] as const;
+export const Z_WIDTH = 22;
+
+/** Where a drifting note or z sits. Reused. */
+export interface DriftPoint {
+  left: number;
+  top: number;
+}
+
+export function createDrift(): DriftPoint {
+  return { left: 0, top: 0 };
+}
 
 /**
  * Where a drifting note (`i` 0 or 1) or z sits at drift phase `k` (0 to 1), for a sheep with its
- * top left at (`x`, `y`) and width `w`. Offsets scale with the sprite (Unwind's 6 px is today's
- * look); the rise stops at the walk's ceiling, so on the band places the notes drift beside the
- * head as in the concept rather than up into the panels.
+ * top left at (`x`, `y`) and width `w`. Offsets scale with the sprite; the rise stops at the walk's
+ * ceiling and the sideways drift at its right limit, so the notes drift beside the head as in the
+ * concept rather than into a panel. Written into `out`.
  */
-export function driftAt(kind: 'note' | 'z', walk: Walk, x: number, y: number, w: number, i: number, k: number): { left: number; top: number } {
+export function driftAt(kind: 'note' | 'z', walk: Walk, x: number, y: number, w: number, i: number, k: number, out: DriftPoint = createDrift()): DriftPoint {
   const s = walk.px / 6;
   const start = kind === 'note' ? y - 6 * s : y - 14 * s;
   const rise = Math.max(0, Math.min((kind === 'note' ? 44 : 46) * s, start - walk.ceiling));
   const left = kind === 'note' ? x + w + 4 * s + k * 30 * s + i * 10 * s : x + w - 4 * s + k * 26 * s;
-  return { left, top: Math.max(walk.ceiling, start - k * rise) };
+  const size = kind === 'note' ? NOTE_SIZES[i === 0 ? 0 : 1] : Z_WIDTH;
+  out.left = Math.min(left, walk.right - size);
+  out.top = Math.max(walk.ceiling, start - k * rise);
+  return out;
 }
 
-/** Where Watt stands: a place and the camera the horizon is pointed at there. */
-export interface Spot {
-  place: WattPlace;
-  camera: CameraPreset;
-}
-
-/** True when `place` is one Watt lives on. */
-export function isWattPlace(place: string): place is WattPlace {
-  return Object.prototype.hasOwnProperty.call(WALKS, place);
-}
-
-/**
- * Where Watt should be on `place` at `ms`, or null where it does not show: Zen, any place without
- * a walk, and Meet while a call is on.
- */
-export function spotFor(place: PlaceId, ms: number, inCall = false): Spot | null {
-  if (!isWattPlace(place) || (place === 'meet' && inCall)) return null;
-  return { place, camera: cameraFor(place, ms) };
-}
-
-/** Ground line (stage y of Watt's feet) at a spot: the camera's horizon. */
-export function groundFor(spot: Spot): number {
-  return spot.camera.hy;
-}
-
-function sameSpot(a: Spot | null, b: Spot | null): boolean {
-  return a === b || (!!a && !!b && a.place === b.place && a.camera === b.camera);
-}
-
-/** Seconds Watt takes to fade out before a move, and to fade in at the new spot. */
+/** Seconds Watt takes to fade out before a move, and to fade in where it lands. */
 export const FADE_OUT_S = 0.6;
 export const FADE_IN_S = 0.9;
 
 /**
- * Watt's presence: where it is drawn, how visible, and where it is going. A change of place (or
- * of Home's camera with the hour) fades it out where it stands; it reappears at the new spot only
- * once the horizon's camera has settled there, so it never walks across the screen and is never
- * up during the morning turn to Rainier.
+ * Watt's presence: where it is drawn and how visible. Reused: `stepPresence` changes it in place.
+ * It is only up while the horizon's camera is settled on Watt's place; any change (place, Home's
+ * camera with the hour, night and day) fades it out where it stands, moves it while unseen, and
+ * fades it in, so it never walks across the screen and is never up during a camera move.
  */
 export interface Presence {
-  /** The spot Watt is drawn at, or null when it is away. */
-  at: Spot | null;
+  /** The place Watt is drawn on, or null when it is away. */
+  place: WattPlace | null;
+  /** The camera it is standing under. */
+  camera: CameraPreset | null;
+  /** Asleep (night) or awake. */
+  night: boolean;
   /** 0 to 1. */
   opacity: number;
-  /** The spot it is heading for. */
-  target: Spot | null;
-  /** Seconds until the camera settles on `target`. */
-  wait: number;
-  /** The camera the horizon is pointed at (the horizon keeps it while Zen is up). */
-  camera: CameraPreset | null;
-  /** Local day the cinematic morning turn was used up (the horizon's own rule, mirrored). */
-  cinematicDay: string | null;
-  /** True while the camera is playing the cinematic turn. */
-  cinematic: boolean;
-  /** Seconds since Watt arrived at `at`; the wander starts over on every arrival. */
+  /** Seconds since Watt arrived; the wander starts over on every arrival. */
   since: number;
 }
 
-/** Presence on first paint. Away (Zen), the horizon starts on the Work camera, so Watt assumes it too. */
-export function initialPresence(want: Spot | null): Presence {
-  return { at: want, opacity: want ? 1 : 0, target: want, wait: 0, camera: want?.camera ?? CAMERAS.work, cinematicDay: null, cinematic: false, since: 0 };
+/** Away and unseen; the first step puts it where it belongs. */
+export function createPresence(): Presence {
+  return { place: null, camera: null, night: false, opacity: 0, since: 0 };
 }
 
 /**
- * How long the horizon takes to move from `from` to `to`, mirroring `HorizonCanvas`: nothing for
- * the same camera, the cinematic 4.6 s for the first turn to Rainier on a local day, otherwise
- * the glide or swing length.
+ * True when Watt may be up on `place` under `camera`: the horizon is not moving and is pointed at
+ * that camera (so before the horizon has turned at 5:00 or 11:30, or while it glides, it is not).
  */
-export function settleSeconds(from: CameraPreset | null, to: CameraPreset, cinematic: boolean): number {
-  if (!from || from === to) return 0;
-  return cinematic ? CINEMATIC_SECONDS : glideSeconds(from, to);
+export function cameraReady(place: WattPlace | null, camera: CameraPreset | null, signal: { readonly to: CameraPreset | null; readonly moving: boolean }): boolean {
+  return place !== null && !signal.moving && signal.to === camera;
 }
 
 /**
- * Advance the presence by `dt` seconds toward `want` (the spot for the current place and time).
- * `ms` is the wall clock (for the cinematic day). `instant` (reduced motion) jumps straight there,
- * as the horizon does.
+ * Advance `p` by `dt` seconds toward `place` under `camera` at `night`, when `ready` (see
+ * `cameraReady`); away otherwise. `instant` (reduced motion) jumps there, as the horizon does.
+ * Changes `p` in place and returns it.
  */
-export function stepPresence(p: Presence, want: Spot | null, dt: number, ms: number, instant = false): Presence {
-  let next = p;
-  if (!sameSpot(want, p.target)) {
-    let { camera, cinematicDay } = next;
-    let wait = 0;
-    let cinematic = false;
-    if (want) {
-      cinematic = !instant && want.camera === HOME_MORNING && camera !== null && camera !== HOME_MORNING && cinematicDay !== localDay(ms);
-      wait = instant ? 0 : settleSeconds(camera, want.camera, cinematic);
-      camera = want.camera;
-    }
-    next = { ...next, target: want, wait, camera, cinematicDay, cinematic };
+export function stepPresence(p: Presence, place: WattPlace | null, camera: CameraPreset | null, night: boolean, ready: boolean, dt: number, instant = false): Presence {
+  const wantPlace = ready ? place : null;
+  const wantCamera = wantPlace ? camera : null;
+  const same = p.place === wantPlace && p.camera === wantCamera && (wantPlace === null || p.night === night);
+  if (!same) {
+    p.opacity = instant ? 0 : Math.max(0, p.opacity - dt / FADE_OUT_S);
+    if (p.opacity > 0) return p;
+    p.place = wantPlace;
+    p.camera = wantCamera;
+    p.night = night;
+    p.since = 0;
+    if (instant && wantPlace) p.opacity = 1;
+    return p;
   }
-  if (instant) {
-    const moved = !sameSpot(next.at, next.target);
-    return { ...next, at: next.target, opacity: next.target ? 1 : 0, wait: 0, since: moved ? 0 : next.since + dt };
-  }
-  if (!sameSpot(next.at, next.target)) {
-    const opacity = Math.max(0, next.opacity - dt / FADE_OUT_S);
-    const wait = Math.max(0, next.wait - dt);
-    // The horizon uses up the day's cinematic turn once it is past half-way.
-    let { cinematicDay, cinematic } = next;
-    if (cinematic && wait <= CINEMATIC_SECONDS / 2) {
-      cinematicDay = localDay(ms);
-      cinematic = false;
-    }
-    if (opacity === 0 && wait === 0) return { ...next, at: next.target, opacity: 0, wait: 0, cinematicDay, cinematic, since: 0 };
-    return { ...next, opacity, wait, cinematicDay, cinematic };
-  }
-  if (!next.at) return next;
-  return { ...next, opacity: Math.min(1, next.opacity + dt / FADE_IN_S), since: next.since + dt };
+  if (!p.place) return p;
+  p.opacity = instant ? 1 : Math.min(1, p.opacity + dt / FADE_IN_S);
+  p.since += dt;
+  return p;
+}
+
+/** True when Watt is away, unseen, and has nowhere to go: the frame loop can stop. */
+export function isIdle(p: Presence, place: WattPlace | null): boolean {
+  return place === null && p.place === null && p.opacity === 0;
 }

@@ -4,7 +4,8 @@
   position: absolute;
   inset: 0;
   pointer-events: none;
-  animation: watt-in 600ms ease 800ms backwards;
+  /* Unseen until the first paint; Watt.tsx fades it in once the horizon has settled. */
+  opacity: 0;
 }
 .watt-sheep {
   position: absolute;
@@ -32,14 +33,4 @@
 }
 .watt-z.sm {
   font-size: 16px;
-}
-@keyframes watt-in {
-  from {
-    opacity: 0;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .watt {
-    animation: none;
-  }
 }

@@ -2,14 +2,30 @@ import { IconMusic } from '@tabler/icons-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAudioStore } from '../audio/store';
 import { frameDelta, shouldDraw } from '../horizon/pacing';
+import { cameraSignal, subscribeCamera } from '../horizon/signal';
 import { usePlaceStore } from '../state/places';
-import { reviewDate } from '../ui/reviewClock';
+import { reviewNow } from '../ui/reviewClock';
 import { useReducedMotion } from '../ui/useReducedMotion';
-import { NOTE_SIZES, WALKS, buddyFrame, driftAt, groundFor, initialPresence, spotFor, spriteSize, stepPresence, type Presence } from './model';
+import {
+  NOTE_SIZES,
+  WALKS,
+  buddyFrame,
+  cameraOf,
+  cameraReady,
+  createClock,
+  createDrift,
+  createFrame,
+  createPresence,
+  driftAt,
+  isIdle,
+  readClock,
+  spriteHeight,
+  spriteWidth,
+  stepPresence,
+  wattPlaceFor,
+} from './model';
 import { SPRITES, SPRITE_PX, pixelColor, type Pose } from './sprites';
 import './watt.css';
-
-const systemNow = () => new Date();
 
 export function SheepSvg({ pose, px = SPRITE_PX }: { pose: Pose; px?: number }) {
   const map = SPRITES[pose];
@@ -34,104 +50,138 @@ export function SheepSvg({ pose, px = SPRITE_PX }: { pose: Pose; px?: number }) 
 
 /**
  * Watt the electric sheep, on the horizon band of every place that has one: Work, Home, Meet (not
- * in a call) and Unwind. Mounted once, over the horizon and under the panels. A place change fades
- * it out and back in at the new place once the camera has settled.
+ * in a call) and Unwind. Mounted once, over the horizon and under the panels. It is up only while
+ * the horizon's camera is settled on its place (`horizon/signal.ts`), so a place change or a turn
+ * fades it out and back in where it belongs.
  *
  * `inCall` hides it on Meet; nothing detects a call yet (the in-call pull request wires it).
- * `now` defaults to the review clock in a dev review still, the system clock otherwise.
+ * `now` (epoch milliseconds) defaults to the review clock in a dev review still, the system clock otherwise.
  */
-export function Watt({ now = reviewDate ?? systemNow, inCall = false }: { now?: () => Date; inCall?: boolean }) {
+export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: () => number; inCall?: boolean }) {
   // A review still (dev only) is one frozen frame: Watt stands still in the middle of its range.
-  const reduced = useReducedMotion() || reviewDate !== undefined;
+  const reduced = useReducedMotion() || reviewNow !== undefined;
   const nowRef = useRef(now);
   nowRef.current = now;
   const inCallRef = useRef(inCall);
   inCallRef.current = inCall;
   const [look, setLook] = useState<{ pose: Pose; px: number }>({ pose: 'idle', px: SPRITE_PX });
+  const lookRef = useRef(look);
+
+  // Kept across a reduced motion toggle, so Watt does not start over.
+  const presence = useRef(createPresence());
+  const wake = useRef<() => void>(() => {});
 
   const actor = useRef<HTMLDivElement>(null);
   const sheep = useRef<HTMLDivElement>(null);
   const notes = [useRef<HTMLSpanElement>(null), useRef<HTMLSpanElement>(null)];
   const zs = [useRef<HTMLSpanElement>(null), useRef<HTMLSpanElement>(null)];
-  const lookRef = useRef(look);
 
   useEffect(() => {
     let T = 0;
     let last = 0;
     let raf = 0;
     let timer = 0;
-    const want = () => {
-      const ms = nowRef.current().getTime();
-      return { ms, spot: spotFor(usePlaceStore.getState().active, ms, inCallRef.current) };
-    };
-    const first = want();
-    let presence: Presence = initialPresence(first.spot);
+    const p = presence.current;
+    const clock = createClock();
+    const f = createFrame();
+    const drift = createDrift();
 
-    const paint = (dt: number) => {
-      const w = want();
-      presence = stepPresence(presence, w.spot, dt, w.ms, reduced);
+    /** Advance the presence; returns the place Watt wants to be on (null for nowhere). */
+    const step = (dt: number) => {
+      readClock(clock, nowRef.current());
+      const place = wattPlaceFor(usePlaceStore.getState().active, inCallRef.current);
+      const camera = place ? cameraOf(place, clock) : null;
+      stepPresence(p, place, camera, clock.night, cameraReady(place, camera, cameraSignal()), dt, reduced);
+      return place;
+    };
+
+    const paint = () => {
       if (document.hidden) return;
       const el = actor.current;
-      if (el) el.style.opacity = String(presence.opacity);
-      const spot = presence.at;
-      if (!spot) return;
-      const walk = WALKS[spot.place];
-      const f = buddyFrame(walk, new Date(w.ms), presence.since, useAudioStore.getState().playing, reduced);
+      if (el) el.style.opacity = String(p.opacity);
+      if (!p.place || !p.camera) return;
+      const walk = WALKS[p.place];
+      buddyFrame(walk, p.night, p.since, useAudioStore.getState().playing, reduced, f);
       if (f.pose !== lookRef.current.pose || walk.px !== lookRef.current.px) {
         lookRef.current = { pose: f.pose, px: walk.px };
         setLook(lookRef.current);
       }
-      const { w: width, h } = spriteSize(f.pose, walk.px);
-      const y = groundFor(spot) - h;
+      const width = spriteWidth(f.pose, walk.px);
+      const y = p.camera.hy - spriteHeight(f.pose, walk.px);
       const s = sheep.current;
       if (s) s.style.transform = `translate(${f.x}px,${y}px) scaleX(${f.dir})`;
-      notes.forEach((n, i) => {
-        const e = n.current;
-        if (!e) return;
+      for (let i = 0; i < 2; i++) {
+        const e = notes[i].current;
+        if (!e) continue;
         const k = (T * 0.55 + i * 0.5) % 1;
-        const at = driftAt('note', walk, f.x, y, width, i, k);
+        driftAt('note', walk, f.x, y, width, i, k, drift);
         e.style.opacity = f.notes ? String(Math.sin(Math.PI * k) * 0.95) : '0';
-        e.style.left = `${at.left}px`;
-        e.style.top = `${at.top}px`;
-      });
-      zs.forEach((z, i) => {
-        const e = z.current;
-        if (!e) return;
+        e.style.left = `${drift.left}px`;
+        e.style.top = `${drift.top}px`;
+      }
+      for (let i = 0; i < 2; i++) {
+        const e = zs[i].current;
+        if (!e) continue;
         const k = (T * 0.3 + i * 0.5) % 1;
-        const at = driftAt('z', walk, f.x, y, width, i, k);
+        driftAt('z', walk, f.x, y, width, i, k, drift);
         e.style.opacity = f.z ? String(Math.sin(Math.PI * k) * 0.9) : '0';
-        e.style.left = `${at.left}px`;
-        e.style.top = `${at.top}px`;
-      });
+        e.style.left = `${drift.left}px`;
+        e.style.top = `${drift.top}px`;
+      }
     };
 
-    paint(0);
-    const onVisible = () => paint(0);
-    let unsubscribe = () => {};
-    if (reduced) {
-      // One still pose; notice the hour changing (and the page returning) once a minute, and a
-      // place change at once (Watt jumps there, as the horizon does).
-      timer = window.setInterval(() => paint(0), 60_000);
-      document.addEventListener('visibilitychange', onVisible);
-      unsubscribe = usePlaceStore.subscribe(() => paint(0));
-    } else {
-      const frame = (ts: number) => {
+    const frame = (ts: number) => {
+      raf = requestAnimationFrame(frame);
+      if (!shouldDraw(ts, last, document.hidden)) return;
+      const dt = frameDelta(ts, last);
+      T += dt;
+      last = ts;
+      const place = step(dt);
+      paint();
+      // Away with nowhere to go (Zen, or Meet in a call): stop until something changes.
+      if (isIdle(p, place)) {
+        cancelAnimationFrame(raf);
+        raf = 0;
+      }
+    };
+
+    const onVisible = () => paint();
+    wake.current = () => {
+      if (reduced) {
+        step(0);
+        paint();
+      } else if (!raf && !isIdle(p, step(0))) {
+        last = 0;
         raf = requestAnimationFrame(frame);
-        if (!shouldDraw(ts, last, document.hidden)) return;
-        const dt = frameDelta(ts, last);
-        T += dt;
-        last = ts;
-        paint(dt);
-      };
+      }
+    };
+
+    const first = step(0);
+    paint();
+    if (reduced) {
+      // One still pose; notice the hour changing (and the page returning) once a minute. A place,
+      // camera or call change repaints at once (Watt jumps there, as the horizon does).
+      timer = window.setInterval(() => wake.current(), 60_000);
+      document.addEventListener('visibilitychange', onVisible);
+    } else if (!isIdle(p, first)) {
       raf = requestAnimationFrame(frame);
     }
+    const offPlace = usePlaceStore.subscribe(() => wake.current());
+    const offCamera = subscribeCamera(() => wake.current());
     return () => {
       cancelAnimationFrame(raf);
       window.clearInterval(timer);
       document.removeEventListener('visibilitychange', onVisible);
-      unsubscribe();
+      offPlace();
+      offCamera();
+      wake.current = () => {};
     };
   }, [reduced]);
+
+  // A call starting or ending wakes the loop (or repaints the still pose) at once.
+  useEffect(() => {
+    wake.current();
+  }, [inCall]);
 
   return (
     <div className="watt" ref={actor} aria-hidden="true">
