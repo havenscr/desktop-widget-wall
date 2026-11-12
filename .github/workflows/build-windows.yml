@@ -11,6 +11,35 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  wall-web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: wall
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: wall/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
   build:
     runs-on: windows-latest
     timeout-minutes: 45
@@ -46,4 +75,17 @@ jobs:
             src-tauri/target/release/*.exe
             src-tauri/target/release/bundle/msi/*.msi
             src-tauri/target/release/bundle/nsis/*.exe
+          if-no-files-found: error
+
+      - name: Build Wall 2 (exe + MSI + NSIS)
+        run: npm run build:wall2
+
+      - name: Upload Wall 2 installers
+        uses: actions/upload-artifact@v7
+        with:
+          name: widget-wall-2-windows
+          path: |
+            src-tauri/target/release/*.exe
+            src-tauri/target/release/bundle/msi/Widget Wall 2_*.msi
+            src-tauri/target/release/bundle/nsis/Widget Wall 2_*.exe
           if-no-files-found: error

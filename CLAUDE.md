@@ -364,6 +364,13 @@ Settings are persisted to `localStorage`.
 
 ---
 
+## Wall 2
+
+A second front end, "Wall 2" (Vite, React, TypeScript), lives in `wall/` beside
+the existing app and builds as its own Tauri app through
+`src-tauri/tauri.wall2.conf.json`. Do not mix it with `src/`. Run, test and
+build steps: `wall/README.md`.
+
 ## Fingerprinting
 
 All HTML files should include Analytic Endeavors fingerprinting per parent project CLAUDE.md. Use code `WWD` (Widget Wall Desktop) for fingerprints.
