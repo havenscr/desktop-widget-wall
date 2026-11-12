@@ -5,7 +5,7 @@ import { useFocusStore } from '../focus/store';
 import type { WeatherState } from '../weather/useWeather';
 import { CentreSlot } from './CentreSlot';
 import { lane, summary } from './fixtures';
-import { HOLD_HINT_MS, HOLD_MS, POLL_MS } from './model';
+import { HOLD_HINT_MS, HOLD_MOVE_PX, HOLD_MS, POLL_MS } from './model';
 import { resetAgents } from './useAgents';
 
 const flush = async (ms = 0) => {
@@ -220,4 +220,77 @@ it('renders titles and lines as plain text', async () => {
   expect(r.container.querySelector('.lane .t2')!.textContent).toBe('<b>bold</b>');
   expect(r.container.querySelector('.lane b')).toBeNull();
   expect(r.container.querySelector('.lane img')).toBeNull();
+});
+
+it('Hold to merge: a move of 11 px still opens after 600 ms', async () => {
+  answer = () => summary({ lanes: [ready('a1b2c3d4-0003')] });
+  const r = render(<CentreSlot weather={weather} />);
+  await flush();
+  const btn = r.container.querySelector('.hold')!;
+  fireEvent.pointerDown(btn, { pointerId: 1, clientX: 100, clientY: 100 });
+  fireEvent.pointerMove(btn, { pointerId: 1, clientX: 100 + HOLD_MOVE_PX - 1, clientY: 100 });
+  await flush(HOLD_MS);
+  expect(opened).toEqual(['a1b2c3d4-0003']);
+});
+
+it('Hold to merge: a move of 13 px cancels the hold with no hint', async () => {
+  answer = () => summary({ lanes: [ready('a1b2c3d4-0003')] });
+  const r = render(<CentreSlot weather={weather} />);
+  await flush();
+  const btn = r.container.querySelector('.hold')!;
+  fireEvent.pointerDown(btn, { pointerId: 1, clientX: 100, clientY: 100 });
+  await flush(100);
+  fireEvent.pointerMove(btn, { pointerId: 1, clientX: 100 + 12, clientY: 100 + 5 });
+  await flush(HOLD_MS);
+  expect(opened).toEqual([]);
+  expect(btn.textContent).toBe('Hold to merge');
+  expect(btn.className).not.toContain('holding');
+  fireEvent.pointerUp(btn, { pointerId: 1 });
+  await flush();
+  expect(btn.textContent).toBe('Hold to merge');
+});
+
+it('Hold to merge: a pointer cancel stops the hold with no hint', async () => {
+  answer = () => summary({ lanes: [ready('a1b2c3d4-0003')] });
+  const r = render(<CentreSlot weather={weather} />);
+  await flush();
+  const btn = r.container.querySelector('.hold')!;
+  fireEvent.pointerDown(btn, { pointerId: 1, clientX: 100, clientY: 100 });
+  await flush(300);
+  fireEvent.pointerCancel(btn, { pointerId: 1 });
+  await flush(HOLD_MS);
+  expect(opened).toEqual([]);
+  expect(btn.textContent).toBe('Hold to merge');
+});
+
+it('Hold to merge: Enter or Space on the button opens the chat, and only once', async () => {
+  answer = () => summary({ lanes: [ready('a1b2c3d4-0003')] });
+  const r = render(<CentreSlot weather={weather} />);
+  await flush();
+  const btn = r.container.querySelector('.hold')!;
+  fireEvent.keyDown(btn, { key: 'Enter' });
+  await flush();
+  expect(opened).toEqual(['a1b2c3d4-0003']);
+  fireEvent.keyDown(btn, { key: ' ' });
+  await flush();
+  expect(opened).toEqual(['a1b2c3d4-0003', 'a1b2c3d4-0003']);
+});
+
+it('back from hidden: the kept lanes show dimmed with "updated N min ago" until the first new read returns', async () => {
+  const r = render(<CentreSlot weather={weather} />);
+  await flush();
+  Object.defineProperty(document, 'hidden', { configurable: true, value: true });
+  await act(async () => void document.dispatchEvent(new Event('visibilitychange')));
+  await flush(6 * 60_000);
+  let release: (() => void) | null = null;
+  mocks.set('wall2_omni_summary', () => new Promise((resolve) => (release = () => resolve(summary()))));
+  Object.defineProperty(document, 'hidden', { configurable: true, value: false });
+  await act(async () => void document.dispatchEvent(new Event('visibilitychange')));
+  await flush();
+  expect(r.container.querySelector('.lanes')!.className).toBe('centre lanes stale');
+  expect(r.container.querySelector('.lanes-age')!.textContent).toBe('updated 6 min ago');
+  await act(async () => release!());
+  await flush();
+  expect(r.container.querySelector('.lanes')!.className).toBe('centre lanes');
+  Object.defineProperty(document, 'hidden', { configurable: true, value: false });
 });
