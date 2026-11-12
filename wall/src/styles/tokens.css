@@ -1,0 +1,31 @@
+@font-face {
+  font-family: Oxanium;
+  src: url('../assets/fonts/oxanium-latin.woff2') format('woff2');
+  font-weight: 200 800;
+  font-display: block;
+}
+@font-face {
+  font-family: InterV;
+  src: url('../assets/fonts/inter-var.woff2') format('woff2');
+  font-weight: 100 900;
+  font-display: block;
+}
+
+:root {
+  color-scheme: dark;
+  --page: #07051a;
+  --card: #0f0b2a;
+  --edge: #241c4d;
+  --tx: #f1ecff;
+  --dim: #b7afd6;
+  --faint: #7f779f;
+  --line: rgba(255, 255, 255, 0.09);
+  --cyan: #35e6ea;
+  --mag: #ff3d9a;
+  --violet: #9a7bff;
+  --amber: #ffc24d;
+  --mint: #5df2b6;
+  --red: #ff4d6d;
+  --disp: 'Oxanium', 'Segoe UI Variable Display', 'Segoe UI', system-ui, sans-serif;
+  --body: 'InterV', 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+}
