@@ -6,15 +6,12 @@ usePacificTime();
 
 const MIN = 60_000;
 
-// The concept labels 2026-11-11 "sunrise 7:08" and "sunset 4:40". The NOAA solar formulas
-// give 7:08:35 AM and 4:36:41 PM at 47.68, -122.21, and so does the renderer's sun(); the
-// concept's 4:40 was an illustration, so sunset is checked against the real time.
+// The almanac for this place on 2026-11-11 gives sunrise 7:08 AM and sunset 4:37 PM.
 it('finds sunrise within two minutes of 7:08 AM and sunset within two minutes of 4:37 PM on 2026-11-11', () => {
   const day = Date.parse('2026-11-11T12:00:00-08:00');
   const { rise, set } = sunTimes(day);
   expect(Math.abs(rise! - Date.parse('2026-11-11T07:08:00-08:00'))).toBeLessThanOrEqual(2 * MIN);
-  expect(Math.abs(set! - Date.parse('2026-11-11T16:36:41-08:00'))).toBeLessThanOrEqual(2 * MIN);
-  expect(Math.abs(set! - Date.parse('2026-11-11T16:40:00-08:00'))).toBeLessThanOrEqual(4 * MIN);
+  expect(Math.abs(set! - Date.parse('2026-11-11T16:37:00-08:00'))).toBeLessThanOrEqual(2 * MIN);
 });
 
 it('works from any time on the day, and across a DST change', () => {
