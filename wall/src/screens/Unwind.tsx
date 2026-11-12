@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
 import { IconMusic, IconPlayerPauseFilled, IconPlayerPlayFilled, IconPlayerSkipBackFilled, IconPlayerSkipForwardFilled } from '@tabler/icons-react';
-import { formatTime, isPlaying, isQuiet, progressSeconds } from '../music/model';
+import { anchorProgress, formatTime, isPlaying, isQuiet, type ProgressAnchor } from '../music/model';
 import { useNowPlaying } from '../music/useNowPlaying';
 import { useVisible } from '../ui/useVisible';
 
 /** Position and duration, advanced locally between polls while playing. Re-renders twice a second, only while visible. */
-function useProgress(info: ReturnType<typeof useNowPlaying>['info'], at: number) {
+function useProgress(info: ReturnType<typeof useNowPlaying>['info'], anchor: ProgressAnchor | null) {
   const visible = useVisible();
   const [now, setNow] = useState(() => Date.now());
   const running = visible && isPlaying(info);
@@ -14,15 +14,15 @@ function useProgress(info: ReturnType<typeof useNowPlaying>['info'], at: number)
     if (!running) return;
     const id = window.setInterval(() => setNow(Date.now()), 500);
     return () => window.clearInterval(id);
-  }, [running, at]);
-  return progressSeconds(info, at, now);
+  }, [running, anchor]);
+  return anchorProgress(anchor, now);
 }
 
 /** The Unwind tab: a large now-playing view. The moon, ripple and Watt are drawn elsewhere (horizon, buddy). Clock is in App. */
 export function Unwind() {
-  const { info, art, at, command } = useNowPlaying();
+  const { info, art, anchor, command } = useNowPlaying();
   const quiet = isQuiet(info);
-  const progress = useProgress(quiet ? null : info, at);
+  const progress = useProgress(quiet ? null : info, quiet ? null : anchor);
   const playing = isPlaying(info);
   const pct = progress ? (progress.position / progress.duration) * 100 : 0;
   return (

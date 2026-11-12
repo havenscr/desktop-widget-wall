@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { invoke } from '../bridge/tauri';
-import { nextArt, type NowPlayingInfo } from './model';
+import { nextAnchor, nextArt, type NowPlayingInfo, type ProgressAnchor } from './model';
 
 export const POLL_MS = 2000;
 export const CALL_TIMEOUT_MS = 5000;
@@ -12,9 +12,11 @@ interface NowPlayingStoreState {
   art: string | null;
   /** `Date.now()` when `info` arrived; progress is advanced from this. */
   at: number;
+  /** Local progress clock; see `nextAnchor`. */
+  anchor: ProgressAnchor | null;
 }
 
-export const useNowPlayingStore = create<NowPlayingStoreState>(() => ({ info: null, art: null, at: 0 }));
+export const useNowPlayingStore = create<NowPlayingStoreState>(() => ({ info: null, art: null, at: 0, anchor: null }));
 
 class TimedOut extends Error {}
 
@@ -82,11 +84,12 @@ async function pollOnce(): Promise<void> {
     if (consumers === 0 || mine !== seq) return;
     if (!next) {
       art = null;
-      useNowPlayingStore.setState({ info: null, art: null, at: Date.now() });
+      useNowPlayingStore.setState({ info: null, art: null, at: Date.now(), anchor: null });
       return;
     }
     art = nextArt(next, art);
-    useNowPlayingStore.setState({ info: next, art, at: Date.now() });
+    const at = Date.now();
+    useNowPlayingStore.setState({ info: next, art, at, anchor: nextAnchor(useNowPlayingStore.getState().anchor, next, at) });
   } catch {
     /* a failed or timed-out poll keeps what is on screen */
   } finally {
@@ -165,5 +168,5 @@ export function resetNowPlaying(): void {
   seq++;
   gen++;
   art = null;
-  useNowPlayingStore.setState({ info: null, art: null, at: 0 });
+  useNowPlayingStore.setState({ info: null, art: null, at: 0, anchor: null });
 }

@@ -86,3 +86,29 @@ it('sends the media commands from large buttons', async () => {
   });
   expect([next, toggle, prev].map((f) => f.mock.calls.length)).toEqual([1, 1, 1]);
 });
+
+it('does not creep forward and snap back when the player repeats a stale position', async () => {
+  vi.setSystemTime(0);
+  mocks.set('get_now_playing', () => ({ title: 'x', playback_status: 'playing', position_seconds: 60, duration_seconds: 200 }));
+  render(<Unwind />);
+  await flush();
+  let last = 0;
+  for (let i = 0; i < 24; i++) {
+    await flush(500);
+    const v = Number(screen.getByRole('progressbar').getAttribute('aria-valuenow'));
+    expect(v).toBeGreaterThanOrEqual(last);
+    last = v;
+  }
+  expect(last).toBeGreaterThanOrEqual(71);
+});
+
+it('jumps on a real seek', async () => {
+  vi.setSystemTime(0);
+  let pos = 60;
+  mocks.set('get_now_playing', () => ({ title: 'x', playback_status: 'playing', position_seconds: pos, duration_seconds: 200 }));
+  render(<Unwind />);
+  await flush();
+  pos = 150;
+  await flush(2100);
+  expect(Number(screen.getByRole('progressbar').getAttribute('aria-valuenow'))).toBeGreaterThanOrEqual(150);
+});

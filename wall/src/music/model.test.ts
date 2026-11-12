@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { artDataUrl, formatTime, isPlaying, isQuiet, nextArt, progressSeconds } from './model';
+import { artDataUrl, anchorProgress, formatTime, isPlaying, isQuiet, nextAnchor, nextArt, progressSeconds } from './model';
 
 it('allows only image mimes and plain base64', () => {
   expect(artDataUrl('QUJD', 'image/png')).toBe('data:image/png;base64,QUJD');
@@ -56,5 +56,40 @@ describe('progress maths', () => {
     expect(formatTime(253)).toBe('4:13');
     expect(formatTime(3725)).toBe('1:02:05');
     expect(formatTime(-4)).toBe('0:00');
+  });
+});
+
+describe('progress anchor', () => {
+  const info = { title: 'T', artist: 'A', playback_status: 'playing', position_seconds: 60, duration_seconds: 200 };
+  it('starts from the first report', () => {
+    expect(nextAnchor(null, info, 1000)).toMatchObject({ position: 60, at: 1000 });
+    expect(nextAnchor(null, { ...info, duration_seconds: null }, 0)).toBeNull();
+  });
+  it('ignores a stale report that repeats the same position poll after poll', () => {
+    let a = nextAnchor(null, info, 0)!;
+    for (let t = 2000; t <= 20_000; t += 2000) a = nextAnchor(a, info, t)!;
+    expect(a.at).toBe(0);
+    expect(anchorProgress(a, 20_000)!.position).toBe(80);
+  });
+  it('accepts a real seek', () => {
+    const a = nextAnchor(null, info, 0)!;
+    const b = nextAnchor(a, { ...info, position_seconds: 150 }, 4000)!;
+    expect(anchorProgress(b, 4000)!.position).toBe(150);
+  });
+  it('keeps the local clock for a report within 2.5 seconds of it', () => {
+    const a = nextAnchor(null, info, 0)!;
+    const b = nextAnchor(a, { ...info, position_seconds: 61.5 }, 2000)!; // local says 62
+    expect(b.at).toBe(0);
+    expect(b.position).toBe(60);
+  });
+  it('takes the report on a new track, status or duration', () => {
+    const a = nextAnchor(null, info, 0)!;
+    expect(nextAnchor(a, { ...info, title: 'U' }, 2000)!.at).toBe(2000);
+    expect(nextAnchor(a, { ...info, playback_status: 'paused' }, 2000)!).toMatchObject({ at: 2000, status: 'paused' });
+    expect(nextAnchor(a, { ...info, duration_seconds: 300 }, 2000)!.at).toBe(2000);
+  });
+  it('never passes the duration', () => {
+    const a = nextAnchor(null, { ...info, position_seconds: 199 }, 0)!;
+    expect(anchorProgress(a, 60_000)!.position).toBe(200);
   });
 });
