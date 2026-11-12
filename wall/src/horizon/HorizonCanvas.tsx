@@ -44,7 +44,8 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
     reducedRef.current = reduced;
   }, [reduced]);
 
-  // Local day the cinematic turn to Rainier last played. In memory only, so a restart may play it again.
+  // Local day the cinematic turn to Rainier last played past half-way (a turn tapped away
+  // earlier does not use it up). In memory only, so a restart may play it again.
   const cinematicDay = useRef<string | null>(null);
 
   /**
@@ -57,7 +58,6 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
     const from = glideCamera(glide.current);
     const day = localDay(nowRef.current());
     const cinematic = !instant && target === HOME_MORNING && from !== HOME_MORNING && cinematicDay.current !== day;
-    if (cinematic) cinematicDay.current = day;
     glide.current = startGlide(glide.current, target, instant, cinematic);
     if (instant) repaint.current();
   };
@@ -113,6 +113,7 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
       loud.current = smoothStep(loud.current, loudness(useAudioStore.getState()), dt);
       fade.current = stepEchoFade(fade.current, useAudioStore.getState().playing, dt);
       glide.current = stepGlide(glide.current, dt);
+      if (glide.current.cinematic && glide.current.progress >= 0.5) cinematicDay.current = localDay(nowRef.current());
       paint();
     };
 

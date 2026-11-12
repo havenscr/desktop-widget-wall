@@ -140,7 +140,8 @@ skyline, the lake in front. It is drawn on one canvas by `HorizonCanvas.tsx`.
   42 px per degree, terrain exaggerated 1.9, horizon at y 582 like Home's west view,
   snow line 0.86 against 0.84 on the west presets, and no ripple). Every camera looks at
   the same panorama, so the turn is a camera move, never a fade. The first turn from a
-  west camera to Rainier each local day (kept in memory, so a restart may play it again)
+  west camera to Rainier each local day (used up once it passes half-way, so tapping away
+  sooner keeps it; kept in memory, so a restart may play it again)
   is the cinematic move (`cinematicCamera`): 4.6 s, every number on a sine ease
   `0.5 - 0.5 cos(pi k)`, plus a pull-back (`ppd - 10 sin(pi k)`) and a lower horizon
   (`hy + 14 sin(pi k)`), so it widens mid-turn and then pushes in on the mountain. It is

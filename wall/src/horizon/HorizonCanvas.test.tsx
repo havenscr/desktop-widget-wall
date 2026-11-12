@@ -486,6 +486,28 @@ describe('Home morning view', () => {
     expect(run.cams[CINEMATIC_FRAMES - 1]).toBe(HOME_MORNING);
   });
 
+  it('tapping away before the cinematic move is half-way keeps it for the next turn; after half-way it is spent', () => {
+    setReducedMotion(false);
+    render(<HorizonCanvas now={() => MORNING} />);
+    runFrame(100);
+    act(() => usePlaceStore.getState().setActive('home'));
+    let run = frames(100, 10); // 1 s of 4.6
+    expect(run.cams[9].hy).toBeGreaterThan(582);
+    act(() => usePlaceStore.getState().setActive('work'));
+    run = frames(run.ts, 32);
+    expect(run.cams[31]).toBe(CAMERAS.work);
+    act(() => usePlaceStore.getState().setActive('home'));
+    run = frames(run.ts, 23); // the move plays again from the start: half-way at 2.3 s
+    expect(run.cams[22].hy).toBeCloseTo(596, 6);
+    run = frames(run.ts, 2); // just past half-way
+    act(() => usePlaceStore.getState().setActive('work'));
+    run = frames(run.ts, 32);
+    act(() => usePlaceStore.getState().setActive('home'));
+    run = frames(run.ts, 32);
+    for (const c of run.cams) expect(c.hy).toBe(582); // spent: the plain swing
+    expect(run.cams[31]).toBe(HOME_MORNING);
+  });
+
   it('11:30 AM arriving a quarter of the way into the cinematic turn sends the camera back over the full 3.2 s', () => {
     setReducedMotion(false);
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
