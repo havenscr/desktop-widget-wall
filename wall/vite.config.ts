@@ -10,5 +10,7 @@ export default defineConfig({
     environment: 'jsdom',
     globals: false,
     setupFiles: ['./src/test-setup.ts'],
+    // frameLayout.test.ts reads frame.css as text (?raw) to hold it to the shared constants.
+    css: { include: [/frame\.css/] },
   },
 });

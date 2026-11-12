@@ -186,6 +186,10 @@ so a layout change touches only that place's files.
 - **Zones**: `.zones` holds the concept's top band columns (`470px 1290px 596px`, the
   in-call `620px 1140px 596px` as `.zones.call`, Unwind's `470px 1fr 540px` as
   `.zones.wide`). Places move into them in their own parity pull requests.
+- **Shared numbers**: `screens/frameLayout.ts` holds the shell, row and zone values;
+  `frameLayout.test.ts` reads `frame.css` as text and checks it uses the same ones. The
+  top band has no padding, so the clock sits at the main area's corner (stage x 124,
+  y 20) and the zones end exactly at its right edge (2416).
 - **Veil**: one element over the horizon (`App.tsx`), dark behind the panels and 0.3
   of that from the band down. Work and Meet 0.52, Home 0.36, Unwind 0.1. It eases
   between places (no ease when motion is reduced).

@@ -1,4 +1,5 @@
-/* The concept frame (v3.src.html global CSS): one grid for every place. Design pixels, 2560 x 720. */
+/* The concept frame (v3.src.html global CSS): one grid for every place. Design pixels, 2560 x 720.
+   The numbers are the constants in screens/frameLayout.ts; frameLayout.test.ts checks they match. */
 
 /* Rail, then main. */
 .shell {
@@ -22,16 +23,16 @@
 .main.tall {
   grid-template-rows: 1fr;
 }
-/* Holds the clock and the place's panels; panels are placed inside it. */
+/* Holds the clock and the place's panels; panels are placed inside it. No padding: the
+   clock sits at the main area's corner (stage x 124, y 20), as in the concept. */
 .top {
   position: relative;
   min-height: 0;
-  box-sizing: border-box;
-  padding: 4px 0 0 12px;
 }
 
 /* Concept zones for the top band: left wing, centre, right wing. Places move into these
-   in their own parity pull requests. */
+   in their own parity pull requests. The values are ZONES, ZONES_CALL and ZONES_WIDE in
+   screens/frameLayout.ts, held together by frameLayout.test.ts. */
 .zones {
   display: grid;
   gap: 30px;
