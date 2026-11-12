@@ -1,0 +1,83 @@
+/* The concept frame (v3.src.html global CSS): one grid for every place. Design pixels, 2560 x 720. */
+
+/* Rail, then main. */
+.shell {
+  position: absolute;
+  inset: 20px;
+  display: grid;
+  grid-template-columns: 88px 1fr;
+  gap: 16px;
+}
+
+/* Top band (content, stage y 20 to 510), the empty band where the horizon and Watt show
+   (y 526 to 580), and the ribbon over the lake (y 596 to 700). */
+.main {
+  position: relative;
+  min-width: 0;
+  display: grid;
+  grid-template-rows: 490px 54px 104px;
+  gap: 16px;
+}
+/* Unwind and Zen have no ribbon: the top band takes the full height. */
+.main.tall {
+  grid-template-rows: 1fr;
+}
+/* Holds the clock and the place's panels; panels are placed inside it. */
+.top {
+  position: relative;
+  min-height: 0;
+  box-sizing: border-box;
+  padding: 4px 0 0 12px;
+}
+
+/* Concept zones for the top band: left wing, centre, right wing. Places move into these
+   in their own parity pull requests. */
+.zones {
+  display: grid;
+  gap: 30px;
+  min-height: 0;
+  grid-template-columns: 470px 1290px 596px;
+}
+.zones.call {
+  grid-template-columns: 620px 1140px 596px;
+}
+.zones.wide {
+  grid-template-columns: 470px minmax(0, 1fr) 540px;
+}
+
+/* The veil sets the contrast over the horizon for each place: dark behind the panels,
+   lighter from the band down. */
+@property --veil {
+  syntax: '<number>';
+  inherits: false;
+  initial-value: 0.52;
+}
+.veil {
+  --veil: 0.52;
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    rgba(6, 4, 22, var(--veil)) 0,
+    rgba(6, 4, 22, var(--veil)) 64%,
+    rgba(6, 4, 22, calc(var(--veil) * 0.3)) 76%,
+    rgba(6, 4, 22, calc(var(--veil) * 0.3)) 100%
+  );
+  transition: --veil 600ms ease;
+}
+.veil[data-place='home'] {
+  --veil: 0.36;
+}
+.veil[data-place='unwind'] {
+  --veil: 0.1;
+}
+.veil[data-place='zen'] {
+  --veil: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .veil {
+    transition: none;
+  }
+}

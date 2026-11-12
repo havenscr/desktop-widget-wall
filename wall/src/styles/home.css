@@ -1,0 +1,61 @@
+/* Home tab. Design pixels, inside the top band (.top). */
+.home {
+  position: absolute;
+  inset: 0;
+}
+
+/* Network and security: right wing, sitting on the bottom of the top band, as tall as
+   its content (no empty half). */
+.network {
+  right: 0;
+  bottom: 0;
+  width: 596px;
+  gap: 10px;
+}
+.net-status {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.net-dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  flex: none;
+}
+.net-dot.ok {
+  background: var(--mint);
+  box-shadow: 0 0 14px 0 rgba(93, 242, 182, 0.6);
+}
+.net-dot.warn {
+  background: var(--amber);
+  box-shadow: 0 0 14px 0 rgba(255, 194, 77, 0.55);
+}
+.net-dot.bad {
+  background: var(--red);
+  box-shadow: 0 0 14px 0 rgba(255, 77, 109, 0.6);
+}
+
+.net-links {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.net-link {
+  min-height: 72px;
+  min-width: 72px;
+  padding: 0 20px;
+  background: none;
+  border: 0;
+  color: var(--cyan, inherit);
+  font: inherit;
+  font-size: 22px;
+  cursor: pointer;
+}
+.net-link:active {
+  opacity: 0.6;
+}
+.net-link:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}

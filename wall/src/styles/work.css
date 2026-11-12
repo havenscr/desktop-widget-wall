@@ -303,65 +303,10 @@
 }
 
 /* Network tile (Home) */
-.network {
-  right: 0;
-  top: 380px;
-  width: 596px;
-  height: 296px;
-  gap: 10px;
-}
-.net-status {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-.net-dot {
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  flex: none;
-}
-.net-dot.ok {
-  background: var(--mint);
-  box-shadow: 0 0 14px 0 rgba(93, 242, 182, 0.6);
-}
-.net-dot.warn {
-  background: var(--amber);
-  box-shadow: 0 0 14px 0 rgba(255, 194, 77, 0.55);
-}
-.net-dot.bad {
-  background: var(--red);
-  box-shadow: 0 0 14px 0 rgba(255, 77, 109, 0.6);
-}
-
-.net-links {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.net-link {
-  min-height: 72px;
-  min-width: 72px;
-  padding: 0 20px;
-  background: none;
-  border: 0;
-  color: var(--cyan, inherit);
-  font: inherit;
-  font-size: 22px;
-  cursor: pointer;
-}
-.net-link:active {
-  opacity: 0.6;
-}
-.net-link:focus-visible {
-  outline: 2px solid currentColor;
-  outline-offset: 2px;
-}
-
 /* Music */
 .music {
   right: 0;
-  top: 380px;
+  top: 378px;
   width: 596px;
   height: 112px;
   flex-direction: row;
@@ -497,7 +442,7 @@
 .meet-later,
 .meet-accounts {
   top: 4px;
-  height: 576px;
+  height: 486px;
 }
 .meet-next {
   left: 0;
