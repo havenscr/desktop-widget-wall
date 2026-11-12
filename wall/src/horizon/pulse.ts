@@ -77,8 +77,8 @@ export function clearGridPulse(s: GridPulse): void {
  * perspective spacing still makes it speed up as it nears the viewer); its opacity eases in
  * over the first 12 percent of its life and out over the last 30, times `WAVE_ALPHA * gp`. The lines
  * brighten with `gp * (0.65 * kick + 0.35 * bass)`, where the kick part eases up to 1 over 80 ms on
- * a beat and then decays, and the bass part is smoothed over about 0.6 s. With beats at least
- * 340 ms apart the lines rise at most three times a second.
+ * a beat and then decays, and the bass part is smoothed over about 0.6 s. With never more than
+ * three beats in a second (the detector's calm limit) the lines rise at most three times a second.
  */
 export function stepGridPulse(
   s: GridPulse,

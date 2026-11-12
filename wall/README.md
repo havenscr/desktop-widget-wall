@@ -483,7 +483,7 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
   brighten from 0.3 up to 0.55 opacity with `0.65 * kick + 0.35 * bass`, where the kick part
   eases up to 1 over 80 ms on a beat (never a jump) and falls away over about 0.3 s, and the
   bass part is smoothed over about 0.6 s so frame-to-frame jitter never flickers the lines.
-  With beats at least 340 ms apart the lines rise at most three times a second. Both scale by the camera's `gp`: 0.5 on Work, Home and the
+  With never more than three beats in a second the lines rise at most three times a second. Both scale by the camera's `gp`: 0.5 on Work, Home and the
   morning Rainier view (subtle, and seen through the ribbon's glass), 1 on Unwind. Four fixed
   band slots, reused every frame. No grid when silent, under reduced motion or in the review
   still; without `grid` the renderer makes exactly the canvas calls it made before (a golden
