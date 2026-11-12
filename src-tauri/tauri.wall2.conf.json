@@ -21,6 +21,19 @@
         "alwaysOnTop": false,
         "useHttpsScheme": true
       }
-    ]
+    ],
+    "security": {
+      "csp": {
+        "default-src": "'none'",
+        "script-src": "'self'",
+        "style-src": "'self'",
+        "img-src": "'self' data:",
+        "font-src": "'self'",
+        "connect-src": "'self' ipc: http://ipc.localhost https://ipc.localhost https://api.open-meteo.com",
+        "base-uri": "'none'",
+        "form-action": "'none'",
+        "object-src": "'none'"
+      }
+    }
   }
 }
