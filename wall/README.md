@@ -375,9 +375,10 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
   review still.
 - **Grid pulse** (`pulse.ts`). While `playing`, `HorizonCanvas` passes `grid` to the renderer.
   Each beat starts a soft glow band at the horizon that rolls across the lake grid to the bottom
-  edge in 1.2 s (depth `p` 0 to 1 on the grid's own `pow(p, 2.1)` spacing, drawn additively and
-  growing with depth), fading in quickly and out as it nears the viewer; it starts already as
-  old as the detector's lag, so it lines up with the kick. The grid lines brighten from 0.3 up to
+  edge in 1.2 s (depth `p` 0 to 1 on the grid's own `pow(p, 2.1)` spacing, eased out over its
+  life so it leaves the horizon briskly; drawn additively after the lake's fog, growing with
+  depth), fading in over its first 12 percent and out over its last 30; it starts already as
+  old as the detector's lag, so it lines up with the kick. Peak opacity 0.42 at full strength. The grid lines brighten from 0.3 up to
   0.55 opacity with `0.65 * kick + 0.35 * bass`, where the kick part jumps to 1 on a beat and
   falls away over about 0.3 s. Both scale by the camera's `gp`: 0.5 on Work, Home and the
   morning Rainier view (subtle, and seen through the ribbon's glass), 1 on Unwind. Four fixed

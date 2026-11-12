@@ -7,7 +7,11 @@ export const WAVE_SLOTS = 4;
 /** Peak opacity of a glow band at full strength (`gp` 1, Unwind). */
 export const WAVE_ALPHA = 0.42;
 /** Fraction of a band's life spent fading in. */
-const FADE_IN = 0.1;
+const FADE_IN = 0.12;
+/** Fraction of a band's life after which it fades out. */
+const FADE_OUT = 0.7;
+/** Depth eases out over the band's life (`p = u^0.75`), so it leaves the horizon briskly and spends more of its life on the near floor. */
+const DEPTH_EASE = 0.75;
 /** Seconds the kick part of the line brightening takes to fall to about a third. */
 export const KICK_DECAY_S = 0.28;
 /** Share of the line brightening that follows the kick; the rest follows the plain bass level. */
@@ -27,6 +31,11 @@ export interface GridPulse {
   /** The renderer option, reused every frame. */
   grid: HorizonGrid;
 }
+
+const smooth = (x: number) => {
+  const t = Math.min(1, Math.max(0, x));
+  return t * t * (3 - 2 * t);
+};
 
 export function createGridPulse(): GridPulse {
   return {
@@ -51,10 +60,10 @@ export function clearGridPulse(s: GridPulse): void {
 /**
  * Advance the pulse by `dt` seconds and return the `grid` option to draw, or null while no
  * music plays. A beat count above `seen` starts a band in a free slot (or the oldest), already
- * `lag` seconds old so it lines up with the kick's onset rather than its confirmation. A band's
- * depth runs 0 to 1 linearly over `WAVE_LIFE_S` (the renderer's perspective spacing makes it
- * speed up as it nears the viewer); its opacity fades in over the first tenth of its life and
- * out with `(1 - p)^1.5`, times `WAVE_ALPHA * gp`. The lines brighten with
+ * `lag` seconds old so it lines up with the kick's onset rather than its confirmation. Over
+ * `WAVE_LIFE_S` a band's depth runs 0 to 1 as `u^0.75` of its age fraction `u` (the renderer's
+ * perspective spacing still makes it speed up as it nears the viewer); its opacity eases in
+ * over the first 12 percent of its life and out over the last 30, times `WAVE_ALPHA * gp`. The lines brighten with
  * `gp * (0.65 * kick + 0.35 * bass)`.
  */
 export function stepGridPulse(
@@ -89,8 +98,8 @@ export function stepGridPulse(
       w.a = 0;
       continue;
     }
-    w.p = p;
-    w.a = WAVE_ALPHA * gp * Math.min(1, p / FADE_IN) * Math.pow(1 - p, 1.5);
+    w.p = Math.pow(p, DEPTH_EASE);
+    w.a = WAVE_ALPHA * gp * smooth(p / FADE_IN) * (1 - smooth((p - FADE_OUT) / (1 - FADE_OUT)));
   }
   const bass = Math.min(1, Math.max(0, input.bass));
   s.grid.bright = gp * (KICK_SHARE * s.kick + (1 - KICK_SHARE) * bass);

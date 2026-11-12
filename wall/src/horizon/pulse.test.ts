@@ -58,7 +58,7 @@ describe('grid pulse state', () => {
     stepGridPulse(s, 0.033, playing(0));
     const g = stepGridPulse(s, 0.033, playing(1, { lag: 0.066 }))!;
     const w = g.waves.find((x) => x.p > 0)!;
-    expect(w.p).toBeCloseTo(0.066 / WAVE_LIFE_S, 9);
+    expect(w.p).toBeCloseTo(Math.pow(0.066 / WAVE_LIFE_S, 0.75), 9); // depth eases out as u^0.75
   });
 
   it('scales the bands and the brightening by the camera strength', () => {
