@@ -492,9 +492,15 @@ pub async fn wall2_home_security(app: tauri::AppHandle) -> Result<SecuritySummar
 /// `portal_link`, so it is already checked; the web view never supplies a URL.
 static LAST_PORTAL: Mutex<Option<String>> = Mutex::new(None);
 
-fn remember_portal(url: Option<String>) {
+/// The stored value after a good read: replaced only by a new `Some`; a read without a
+/// portal link keeps the last good one.
+fn next_portal(current: Option<String>, read: Option<String>) -> Option<String> {
+    read.or(current)
+}
+
+fn remember_portal(read: Option<String>) {
     if let Ok(mut slot) = LAST_PORTAL.lock() {
-        *slot = url;
+        *slot = next_portal(slot.take(), read);
     }
 }
 
@@ -775,11 +781,13 @@ mod tests {
     }
 
     #[test]
-    fn portal_link_is_remembered_from_the_last_read() {
-        remember_portal(Some("https://my.firewalla.net/x".into()));
-        assert_eq!(last_portal().as_deref(), Some("https://my.firewalla.net/x"));
-        remember_portal(None);
-        assert!(last_portal().is_none());
+    fn portal_link_is_replaced_by_a_new_one_and_never_cleared() {
+        let a = Some("https://my.firewalla.net/a".to_string());
+        let b = Some("https://my.firewalla.net/b".to_string());
+        assert_eq!(next_portal(None, a.clone()), a);
+        assert_eq!(next_portal(a.clone(), b.clone()), b);
+        assert_eq!(next_portal(a.clone(), None), a);
+        assert_eq!(next_portal(None, None), None);
     }
 
     #[test]
