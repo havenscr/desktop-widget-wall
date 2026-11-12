@@ -40,6 +40,8 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
   // The grid pulse: glow bands on the beat and brighter lines with the bass, only while music plays.
   const pulse = useRef(createGridPulse());
   const grid = useRef<HorizonGrid | null>(null);
+  // The pulse's per-frame input, reused so the frame loop builds no object for it.
+  const pulseIn = useRef({ playing: false, beats: 0, lag: 0, bass: 0, gp: 0 });
   // Latest clock, read at draw time so an inline `now` prop never restarts the loop.
   const nowRef = useRef(now);
   useEffect(() => {
@@ -73,6 +75,9 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
     const canvas = ref.current;
     if (!canvas || zen) return;
     const still = reduced || review !== null;
+    // Start the pulse from nothing: after Zen or a reduced motion spell the stored bands are stale.
+    clearGridPulse(pulse.current);
+    grid.current = null;
     let T = 0;
     let last = 0;
     let raf = 0;
@@ -124,13 +129,13 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
       glide.current = stepGlide(glide.current, dt);
       gate.current = stepEchoGate(gate.current, glide.current, dt);
       const beats = audioBeats();
-      grid.current = stepGridPulse(pulse.current, dt, {
-        playing: useAudioStore.getState().playing,
-        beats: beats.count,
-        lag: beats.lag / 1000,
-        bass: beats.bass,
-        gp: glideCamera(glide.current).gp,
-      });
+      const input = pulseIn.current;
+      input.playing = useAudioStore.getState().playing;
+      input.beats = beats.count;
+      input.lag = beats.lag / 1000;
+      input.bass = beats.bass;
+      input.gp = glideCamera(glide.current).gp;
+      grid.current = stepGridPulse(pulse.current, dt, input);
       if (glide.current.cinematic && glide.current.progress >= 0.5) cinematicDay.current = localDay(nowRef.current());
       paint();
     };

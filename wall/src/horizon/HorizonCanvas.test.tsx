@@ -746,6 +746,53 @@ describe('grid pulse', () => {
     expect(peak(unwind)).toBeGreaterThan(peak(work) * 1.7);
   });
 
+  it('passes the same grid object every frame (nothing rebuilt per frame)', () => {
+    setReducedMotion(false);
+    const refs: unknown[] = [];
+    draw.mockImplementation((_ctx, o) => void (o.grid && refs.push(o.grid)));
+    render(<HorizonCanvas now={() => NOON} />);
+    for (let ts = 100; ts <= 3000; ts += 100) {
+      feed(ts - 99, ts);
+      runFrame(ts);
+    }
+    expect(refs.length).toBeGreaterThan(20);
+    for (const r of refs) expect(r).toBe(refs[0]);
+  });
+
+  it('the line brightness drawn rises at most three times in any second, even at the fastest beat cadence', () => {
+    setReducedMotion(false);
+    const snaps = record();
+    render(<HorizonCanvas now={() => NOON} />);
+    // Kicks as fast as the detector allows: two loud frames, then quiet, every 11 frames (363 ms).
+    let n = 0;
+    for (let ts = 33; ts <= 6000; ts += 33) {
+      ingestLevels({ ...LOUD, bands: n % 11 < 2 ? KICK_BANDS : QUIET_BANDS }, ts);
+      tickAudio(ts);
+      n++;
+      runFrame(ts);
+    }
+    const bright = snaps.map((x) => x.grid?.bright ?? 0);
+    const starts: number[] = [];
+    for (let i = 1; i < bright.length; i++) {
+      if (bright[i] > bright[i - 1] + 1e-9 && !(i > 1 && bright[i - 1] > bright[i - 2] + 1e-9)) starts.push(i * 33);
+    }
+    expect(starts.length).toBeGreaterThan(8); // it really pulses
+    for (const s0 of starts) expect(starts.filter((x) => x >= s0 && x < s0 + 1000).length).toBeLessThanOrEqual(3);
+  });
+
+  it('after Zen the first paint carries no stale pulse', () => {
+    setReducedMotion(false);
+    const snaps = record();
+    render(<HorizonCanvas now={() => NOON} />);
+    play(snaps, 100, 3000);
+    expect(snaps[snaps.length - 1].grid).toBeDefined();
+    act(() => usePlaceStore.getState().setActive('zen'));
+    snaps.length = 0;
+    act(() => usePlaceStore.getState().setActive('work'));
+    expect(snaps.length).toBeGreaterThan(0); // the effect paints at once on the way back
+    expect(snaps[0].grid).toBeUndefined();
+  });
+
   it('never passes a grid under reduced motion or in the review still, even with music playing', () => {
     setReducedMotion(true);
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
