@@ -49,7 +49,9 @@ and quits it, and its tray menu has no "Toggle Fullscreen". At startup Rust
 sizes it to the monitor that is exactly 2560 by 720 physical pixels, else the
 monitor with the smallest height, else the primary monitor. When a monitor is
 added or removed it moves back onto an exact 2560 by 720 monitor if one is
-present, and does nothing if none is.
+present. If none is, it stays where it is, and the stored target is cleared so
+a DPI change cannot push the window back to coordinates that are now off
+screen; it re-places itself when the strip returns.
 
 **Placement and its log.** `src-tauri/src/wall2_window.rs` lists monitors with
 Win32 and places the window with `SetWindowPos` on its handle: move onto the
