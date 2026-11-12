@@ -485,11 +485,10 @@
 }
 /* Meet: three zones, 620 + 1140 + 596 design pixels with 30px gaps across the 2416 wide work area.
    Calm by design: no motion, no red; the accent shows only in the last five minutes. */
-/* Meet sits right of the clock, from the same left edge as the Work tab's first panel (.focus, 482px),
-   and runs flush right like the rail-side panels. */
+/* Meet sits right of the clock, from the same left edge as the Work tab's first panel (.focus, 482px).
+   The left edge is MEET_LEFT_PX in Meet.tsx, set inline so a test can hold it. */
 .meet-body {
   position: absolute;
-  left: 482px;
   right: 0;
   top: 0;
   bottom: 0;
