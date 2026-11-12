@@ -111,3 +111,68 @@ it('pill: the time for a timed task due later today, else the estimate', () => {
   expect(chorePill({ due_at: '2026-11-12T19:00:00-08:00', due_is_all_day: false, est: '60plus' }, now)).toBe('1 h+');
   expect(chorePill({ due_at: '2026-11-11', due_is_all_day: true, est: null }, now)).toBeNull();
 });
+
+it('a failed refresh after a good read keeps the rows, dimmed, with a quiet sign by the heading', async () => {
+  let fail = false;
+  mocks.set('wall2_tasks_summary', () => (fail ? Promise.reject(new Error('x')) : { next: [task('1', 'Water the plants')], remaining: 4 }));
+  const { container } = render(<Chores />);
+  await flush();
+  expect(container.querySelector('.chore-rows.stale')).toBeNull();
+  expect(screen.queryByText('Task app not reachable')).toBeNull();
+  fail = true;
+  await flush(120_000);
+  expect(screen.getByText('Water the plants')).toBeTruthy();
+  expect(container.querySelector('.chores-side .warn-text')?.textContent).toBe('Task app not reachable');
+  expect(container.querySelector('.chore-rows.stale')).toBeTruthy();
+  expect(screen.getByText('4 more can wait').classList.contains('stale')).toBe(true);
+  fail = false;
+  await flush(120_000);
+  expect(container.querySelector('.chore-rows.stale')).toBeNull();
+  expect(screen.queryByText('Task app not reachable')).toBeNull();
+});
+
+it('a read that began before the save cannot bring a ticked row back, even when the trailing read fails', async () => {
+  const reads: { resolve: (v: unknown) => void; reject: (e: unknown) => void }[] = [];
+  mocks.set('wall2_tasks_summary', () => new Promise((resolve, reject) => reads.push({ resolve, reject })));
+  let saveDone: () => void = () => undefined;
+  mocks.set('wall2_task_done', () => new Promise<void>((r) => (saveDone = r)));
+  const { container } = render(<Chores />);
+  reads[0].resolve({ next: [task('1', 'Water the plants'), task('2', 'Sort the recycling')], remaining: 0 });
+  await flush();
+  fireEvent.click(screen.getByRole('button', { name: 'Done: Water the plants' }));
+  await flush();
+  // An interval read starts before the save settles and still lists the row.
+  await flush(120_000);
+  expect(reads).toHaveLength(2);
+  saveDone();
+  await flush(2000);
+  expect(screen.queryByText('Water the plants')).toBeNull();
+  // The old read lands after the save and the fade: the row stays gone.
+  reads[1].resolve({ next: [task('1', 'Water the plants'), task('2', 'Sort the recycling')], remaining: 0 });
+  await flush();
+  expect(screen.queryByText('Water the plants')).toBeNull();
+  // The trailing read (started after the save) fails: still gone, never struck and back.
+  expect(reads).toHaveLength(3);
+  reads[2].reject(new Error('x'));
+  await flush();
+  expect(screen.queryByText('Water the plants')).toBeNull();
+  expect(container.querySelector('.tk3.done')).toBeNull();
+  expect(screen.getByText('Sort the recycling')).toBeTruthy();
+});
+
+it('when every shown chore is ticked it says Loading the next ones, never Nothing waiting', async () => {
+  const reads: { resolve: (v: unknown) => void; reject: (e: unknown) => void }[] = [];
+  mocks.set('wall2_tasks_summary', () => new Promise((resolve, reject) => reads.push({ resolve, reject })));
+  mocks.set('wall2_task_done', () => undefined);
+  render(<Chores />);
+  reads[0].resolve({ next: [task('1', 'Water the plants')], remaining: 5 });
+  await flush();
+  fireEvent.click(screen.getByRole('button', { name: 'Done: Water the plants' }));
+  await flush(2000);
+  expect(screen.getByText('Loading the next ones')).toBeTruthy();
+  expect(screen.queryByText('Nothing waiting around the house')).toBeNull();
+  reads[1].reject(new Error('x'));
+  await flush();
+  expect(screen.getByText('Could not load the next ones')).toBeTruthy();
+  expect(screen.queryByText('Nothing waiting around the house')).toBeNull();
+});

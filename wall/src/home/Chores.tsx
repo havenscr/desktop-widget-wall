@@ -30,6 +30,8 @@ export function Chores() {
   const { status, tasks, remaining, marks, hidden, complete } = useChores();
   const now = reviewNow ? reviewNow() : Date.now();
   const rows = tasks.filter((t) => !hidden.has(t.id));
+  // A failed refresh after a good read keeps the rows, dimmed, with a quiet sign by the heading.
+  const stale = status === 'error' && tasks.length > 0;
   let body;
   if (status === 'unconfigured') {
     body = <div className="s">Not set up</div>;
@@ -37,6 +39,9 @@ export function Chores() {
     body = <div className="s">Loading</div>;
   } else if (status === 'error' && tasks.length === 0) {
     body = <div className="s warn-text">Task app not reachable</div>;
+  } else if (rows.length === 0 && tasks.length > 0) {
+    // Every shown chore is ticked: the next ones arrive with the refresh.
+    body = <div className="s">{stale ? 'Could not load the next ones' : 'Loading the next ones'}</div>;
   } else if (rows.length === 0) {
     body = (
       <div className="tk3 clear">
@@ -45,31 +50,40 @@ export function Chores() {
       </div>
     );
   } else {
-    body = rows.map((t) => {
-      const mark = marks[t.id];
-      const pill = chorePill(t, now);
-      return (
-        <div key={t.id} className={mark ? `tk3 ${mark}` : 'tk3'}>
-          <button
-            type="button"
-            className="ck"
-            aria-label={`Done: ${t.title}`}
-            disabled={mark === 'done'}
-            onClick={() => complete(t.id)}
-          >
-            {mark === 'done' && <IconCheck size={20} stroke={2.4} aria-hidden="true" />}
-          </button>
-          <span className="n">{t.title}</span>
-          {mark === 'failed' ? <span className="xs warn-text">not saved</span> : pill && <span className="est">{pill}</span>}
-        </div>
-      );
-    });
+    body = (
+      <div className={stale ? 'chore-rows stale' : 'chore-rows'}>
+        {rows.map((t) => {
+          const mark = marks[t.id];
+          const pill = chorePill(t, now);
+          return (
+            <div key={t.id} className={mark ? `tk3 ${mark}` : 'tk3'}>
+              <button
+                type="button"
+                className="ck"
+                aria-label={`Done: ${t.title}`}
+                disabled={mark === 'done'}
+                onClick={() => complete(t.id)}
+              >
+                <span className="ck-ring" aria-hidden="true">
+                  {mark === 'done' && <IconCheck size={20} stroke={2.4} />}
+                </span>
+              </button>
+              <span className="n">{t.title}</span>
+              {mark === 'failed' ? <span className="xs warn-text">not saved</span> : pill && <span className="est">{pill}</span>}
+            </div>
+          );
+        })}
+      </div>
+    );
   }
   return (
     <section className="chores" aria-label="Around the house">
       <div className="chores-head">
         <span className="k">Around the house</span>
-        {remaining > 0 && status !== 'unconfigured' && <span className="xs">{remaining} more can wait</span>}
+        <span className="chores-side">
+          {stale && <span className="xs warn-text">Task app not reachable</span>}
+          {remaining > 0 && status !== 'unconfigured' && <span className={stale ? 'xs stale' : 'xs'}>{remaining} more can wait</span>}
+        </span>
       </div>
       {body}
     </section>

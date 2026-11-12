@@ -23,9 +23,11 @@ interface Summary {
 
 /**
  * The next three open tasks tagged `home`, from `wall2_tasks_summary`. Read on show and
- * every two minutes while visible; a failed read keeps the last good list. Ticking a
- * row strikes it at once, saves it in the background, hides it after two seconds and
- * reads the list again; a failed save brings the row back marked "failed".
+ * every two minutes while visible; a failed read keeps the last good list (the card
+ * shows it as stale). Ticking a row strikes it at once, saves it in the background,
+ * hides it after two seconds and reads the list again; only a read that started after
+ * the save settled may bring a ticked row back. A failed save brings the row back
+ * marked "failed".
  */
 export function useChores(): ChoresState {
   const visible = useVisible();
@@ -36,8 +38,14 @@ export function useChores(): ChoresState {
   const [hidden, setHidden] = useState<ReadonlySet<string>>(new Set());
   const mounted = useRef(false);
   const inFlight = useRef(false);
-  const pending = useRef(new Set<string>());
+  const queued = useRef(false);
   const timers = useRef(new Set<ReturnType<typeof setTimeout>>());
+  // Request generations, as in tasks/useTasks.ts: each read takes the next number. A ticked
+  // row is decided again only by a read that started after its save settled and it faded.
+  const started = useRef(0);
+  const completed = useRef(new Map<string, { saved: boolean; faded: boolean; savedAfter: number }>());
+  // Ticked rows not yet decided, kept in place even when a read no longer lists them.
+  const leaving = useRef(new Map<string, TaskItem>());
 
   useEffect(() => {
     mounted.current = true;
@@ -49,19 +57,27 @@ export function useChores(): ChoresState {
     };
   }, []);
 
-  const queued = useRef(false);
-
   const read = useCallback(async () => {
+    const mine = ++started.current;
     try {
       const r = await invoke<Summary>('wall2_tasks_summary', { ...CHORES_ARGS });
       if (!mounted.current) return;
-      const next = Array.isArray(r?.next) ? r.next.slice(0, 3) : [];
+      const fresh = Array.isArray(r?.next) ? r.next.slice(0, 3) : [];
+      const settled: string[] = [];
+      for (const [id, c] of completed.current) {
+        if (c.saved && c.faded && mine > c.savedAfter) settled.push(id);
+      }
+      for (const id of settled) {
+        completed.current.delete(id);
+        leaving.current.delete(id);
+      }
+      const kept = [...leaving.current.values()].filter((t) => !fresh.some((f) => f.id === t.id));
+      const next = [...fresh, ...kept];
+      const ids = new Set(next.map((t) => t.id));
       setTasks(next);
       setRemaining(typeof r?.remaining === 'number' && r.remaining > 0 ? r.remaining : 0);
-      // A fresh list decides every row again: forget marks for rows it no longer holds.
-      const ids = new Set(next.map((t) => t.id));
-      setHidden((h) => new Set([...h].filter((id) => ids.has(id) && pending.current.has(id))));
-      setMarks((m) => Object.fromEntries(Object.entries(m).filter(([id]) => ids.has(id))));
+      setHidden((h) => new Set([...h].filter((id) => completed.current.has(id))));
+      setMarks((m) => Object.fromEntries(Object.entries(m).filter(([id]) => ids.has(id) && !settled.includes(id))));
       setStatus('ready');
     } catch (e) {
       if (!mounted.current) return;
@@ -96,19 +112,18 @@ export function useChores(): ChoresState {
 
   const complete = useCallback(
     (id: string) => {
-      if (pending.current.has(id)) return;
-      pending.current.add(id);
+      if (completed.current.has(id)) return;
+      const rec = { saved: false, faded: false, savedAfter: Infinity };
+      completed.current.set(id, rec);
+      const row = tasks.find((t) => t.id === id);
+      if (row) leaving.current.set(id, row);
       setMarks((m) => ({ ...m, [id]: 'done' }));
-      let saved = false;
-      let faded = false;
       const finish = () => {
-        if (!saved || !faded || !mounted.current) return;
-        pending.current.delete(id);
-        void refresh();
+        if (rec.saved && rec.faded && mounted.current) void refresh();
       };
       const fade = setTimeout(() => {
         timers.current.delete(fade);
-        faded = true;
+        rec.faded = true;
         if (!mounted.current) return;
         setHidden((h) => new Set(h).add(id));
         finish();
@@ -116,11 +131,13 @@ export function useChores(): ChoresState {
       timers.current.add(fade);
       invoke('wall2_task_done', { id })
         .then(() => {
-          saved = true;
+          rec.saved = true;
+          rec.savedAfter = started.current;
           finish();
         })
         .catch(() => {
-          pending.current.delete(id);
+          completed.current.delete(id);
+          leaving.current.delete(id);
           clearTimeout(fade);
           timers.current.delete(fade);
           if (!mounted.current) return;
@@ -132,7 +149,7 @@ export function useChores(): ChoresState {
           setMarks((m) => ({ ...m, [id]: 'failed' }));
         });
     },
-    [refresh],
+    [refresh, tasks],
   );
 
   return { status, tasks, remaining, marks, hidden, complete };
