@@ -2,6 +2,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { invoke, isTauri } from '../bridge/tauri';
 import type { AudioLevelsPayload } from './model';
 import { ingestLevels, resetAudio, tickAudio } from './store';
+import { createSourceClock } from './sourceTime';
 
 export const RETRY_WAIT = 30_000;
 export const WATCHDOG_MS = 5_000;
@@ -104,9 +105,14 @@ export function startAudio(): () => void {
       await invoke('start_audio_capture', { deviceId });
       if (stopped) return false;
       unlisten?.();
+      // A fresh source clock per capture start: frames that arrive in a burst get their own times.
+      const clock = createSourceClock();
       unlisten = await listen<AudioLevelsPayload>('audio-levels', (e) => {
-        lastEventAt = now();
-        if (!document.hidden) ingestLevels(e.payload, now());
+        const at = now();
+        lastEventAt = at;
+        if (document.hidden) return;
+        const source = clock.stamp(at);
+        if (source !== null) ingestLevels(e.payload, at, source);
       });
       if (stopped) {
         unlisten();

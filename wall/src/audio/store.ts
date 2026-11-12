@@ -34,15 +34,19 @@ export function audioBeats(): Readonly<BeatDetector> {
   return detector;
 }
 
-/** An `audio-levels` event arrived at `now` (milliseconds on any steady clock). */
-export function ingestLevels(payload: AudioLevelsPayload | null | undefined, now: number): void {
+/**
+ * An `audio-levels` event arrived at `now` (milliseconds on any steady clock). `source` is the
+ * frame's source time for the beat detector (see `sourceTime.ts`; default `now`); silence is
+ * still judged on the arrival clock.
+ */
+export function ingestLevels(payload: AudioLevelsPayload | null | undefined, now: number, source = now): void {
   if (hasSound(payload)) {
     lastSoundAt = now;
     target = { bass: clamp01(payload!.bass ?? 0), mid: clamp01(payload!.mid ?? 0), high: clamp01(payload!.high ?? 0) };
     const raw = payload!.bands;
     if (Array.isArray(raw) && raw.length > 0) {
       for (let i = 0; i < BAND_COUNT; i++) bands[i] = i < raw.length ? clamp01((raw[i] ?? 0) / 255) : 0;
-      detector.push(bands, now);
+      detector.push(bands, source);
     }
   }
   // An empty event changes nothing here: silence is decided by the clock in `tickAudio`.
