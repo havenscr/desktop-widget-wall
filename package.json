@@ -8,7 +8,9 @@
     "build": "vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "generate-icons": "node scripts/generate-icons.js"
+    "generate-icons": "node scripts/generate-icons.js",
+    "dev:wall2": "tauri dev --config src-tauri/tauri.wall2.conf.json",
+    "build:wall2": "tauri build --config src-tauri/tauri.wall2.conf.json"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.12.4",
