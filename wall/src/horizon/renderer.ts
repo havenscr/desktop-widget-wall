@@ -7,12 +7,12 @@
 import pano from './terrain/pano.json';
 
 /* Terrain profiles: elevation arrays sampled by compass azimuth, read by prof(). Only the
-   panorama ships; the older west and south profiles are registered by the parity test. */
+   panorama ships. */
 interface Terrain { az0: number; step: number; eye: number; far: number[]; mid: number[]; near: number[]; peaks: unknown[] }
+/** The terrains `draw` can look at: the one panorama. */
+export type TerrainName = 'pano';
 const TER: Record<string, Terrain> = { pano: pano as Terrain };
-/* Snow line in degrees before vex, per terrain, when the caller passes none. */
-const SNOW_DEG: Record<string, number> = { pano: .84, west: .84, south: .86 };
-/** Make another terrain profile drawable by name (the parity test adds `west` and `south`). */
+/** Test only: make another profile drawable under `name` (the parity test adds the older `west` and `south` views). */
 export function registerTerrain(name: string, data: unknown): void { TER[name] = data as Terrain; }
 // Local aliases so the hand-tuned helpers below stay in their original compact form.
 type Any = any; // the helpers take canvas contexts, colour triples and option bags; typing each would mean rewriting them
@@ -187,8 +187,8 @@ export interface HorizonDrawOptions {
   H?: number;
   /** Design pixels to canvas pixels: stage scale times devicePixelRatio (default 1). */
   scale?: number;
-  /** Which terrain: 'pano' (default) or a registered profile; the city draws on 'pano' and 'west'. */
-  ter?: 'pano' | 'west' | 'south';
+  /** Which terrain (default and only shipped value: 'pano'). */
+  ter?: TerrainName;
   /** Horizon line, design pixels from the top. */
   hy: number;
   /** Compass azimuth in degrees at the left edge of the view. */
@@ -213,11 +213,11 @@ export interface HorizonDrawOptions {
   clouds?: number;
   /** Snow strength multiplier (default 1). */
   snow?: number;
-  /** Snow line in degrees before vex (default 0.84 pano and west, 0.86 south). */
+  /** Snow line in degrees before vex (default 0.84; the morning camera passes 0.86). */
   snowDeg?: number;
   /** Music ripple, or null for none. */
   echo?: HorizonEcho | null;
-  /** Set false to hide the city (default shown on the pano and west terrains). */
+  /** Set false to hide the city (default shown). */
   city?: boolean;
   /** City size multiplier (default 1). */
   cityScale?: number;
@@ -263,7 +263,7 @@ export function draw(ctx:CanvasRenderingContext2D,o:HorizonDrawOptions):HorizonD
  const layer=(f:Any,fill:Any)=>{ctx.beginPath();ctx.moveTo(0,hy+1);for(let i=0;i<N;i++)ctx.lineTo(i*2,hy-f(i));ctx.lineTo(W,hy+1);ctx.closePath();ctx.fillStyle=fill;ctx.fill()};
  const line=(f:Any,a:Any,w:Any,style?:Any)=>{ctx.beginPath();for(let i=0;i<N;i++)i?ctx.lineTo(i*2,hy-f(i)):ctx.moveTo(0,hy-f(0));ctx.strokeStyle=style||rim;ctx.globalAlpha=a;ctx.lineWidth=px(w);ctx.lineJoin='round';ctx.stroke();ctx.globalAlpha=1};
  g=ctx.createLinearGradient(0,hy-cmax,0,hy);g.addColorStop(0,css(P.far));g.addColorStop(1,css(mixc(P.far,mixc(P.s[2],P.s[3],.4),.3)));layer((i:Any)=>cr[i],g);
- const sa=P.sn[1]*(o.snow===undefined?1:o.snow),sl=(o.snowDeg||SNOW_DEG[o.ter||'pano'])*k;
+ const sa=P.sn[1]*(o.snow===undefined?1:o.snow),sl=(o.snowDeg||.84)*k;
  if(sa>.02&&cmax>sl+3){const top=hy-cmax,ys=hy-sl,cap=ys-(ys-top)*.48;
   g=ctx.createLinearGradient(0,ys+8,0,ys-14);g.addColorStop(0,css(P.sn[0],0));g.addColorStop(1,css(P.sn[0],sa*.62));layer((i:Any)=>cr[i],g);
   g=ctx.createLinearGradient(0,cap+10,0,cap-12);g.addColorStop(0,css(P.sn[0],0));g.addColorStop(1,css(P.sn[0],sa*.5));layer((i:Any)=>cr[i],g);
@@ -280,7 +280,7 @@ export function draw(ctx:CanvasRenderingContext2D,o:HorizonDrawOptions):HorizonD
  const md=(i:Any)=>prof(TR,TR.mid,az0+i*2/ppd)*k,nr=(i:Any)=>prof(TR,TR.near,az0+i*2/ppd)*k;
  g=ctx.createLinearGradient(0,hy-cmax*.6,0,hy);g.addColorStop(0,css(P.mid));g.addColorStop(1,css(mixc(P.mid,mixc(P.s[2],P.s[3],.4),.2)));layer(md,g);line(md,.16,1);
  const refl:Any[]=[];
- if(o.city!==false&&(o.ter||'pano')!=='south')city(ctx,o,P,rim,W,px,refl);
+ if(o.city!==false)city(ctx,o,P,rim,W,px,refl);
  layer(nr,css(mixc(P.bld,[0,0,0],.3)));
  const hb=clamp(70*k/42,40,170);g=ctx.createLinearGradient(0,hy-hb,0,hy);g.addColorStop(0,css(P.s[3],0));g.addColorStop(1,css(P.s[3],P.hz*.55));ctx.fillStyle=g;ctx.fillRect(0,hy-hb,W,hb);
  /* the lake */

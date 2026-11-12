@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CAMERAS, HOME_MORNING, type CameraPreset } from './cameras';
-import { draw, registerTerrain, when } from './renderer';
+import { draw, registerTerrain, when, type TerrainName } from './renderer';
 import west from './terrain/west.json';
 import south from './terrain/south.json';
 import pano from './terrain/pano.json';
@@ -46,7 +46,8 @@ function recordingContext() {
  */
 function layers(ter: 'pano' | 'west' | 'south', cam: CameraPreset, ms: number): number[][] {
   const { ctx, filled } = recordingContext();
-  draw(ctx, { W, H, scale: 1, ter, hy: cam.hy, az0: cam.az0, ppd: cam.ppd, vex: cam.vex, cityScale: cam.cs, vx: cam.vx, snowDeg: cam.snowDeg, ms, t: 0, phase: 0, grain: false });
+  // `ter` is typed to the shipped terrain; the older views are registered above, for this test only.
+  draw(ctx, { W, H, scale: 1, ter: ter as TerrainName, hy: cam.hy, az0: cam.az0, ppd: cam.ppd, vex: cam.vex, cityScale: cam.cs, vx: cam.vx, snowDeg: cam.snowDeg, ms, t: 0, phase: 0, grain: false });
   return filled.filter((p) => p.length === N + 1).map((p) => p.slice(0, N).map(([, y]) => cam.hy - y));
 }
 

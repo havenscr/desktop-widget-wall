@@ -1,5 +1,6 @@
 import type { CameraPlace } from '../state/places';
 import { STAGE_WIDTH } from '../stage/fitScale';
+import type { TerrainName } from './renderer';
 
 /**
  * One camera framing of the panorama. The first six keys and `snowDeg` feed the renderer;
@@ -33,17 +34,8 @@ export interface CameraPreset {
   ter?: Terrain;
 }
 
-/**
- * Terrains the renderer can draw. Every preset uses the one panorama (azimuth 128 to 300),
- * so every move is a glide; `west` and `south` are the older single views, kept for the
- * parity test.
- */
-export type Terrain = 'pano' | 'west' | 'south';
-
-/** The terrain a camera looks at. */
-export function terrainOf(camera: CameraPreset): Terrain {
-  return camera.ter ?? 'pano';
-}
+/** The terrain a camera looks at: the one panorama (azimuth 128 to 300), so every move is a glide. */
+export type Terrain = TerrainName;
 
 /** Moon centre x, centre y and radius, design pixels. Drawn on the Unwind camera only. */
 export const MOON: readonly [number, number, number] = [1730, 112, 44];

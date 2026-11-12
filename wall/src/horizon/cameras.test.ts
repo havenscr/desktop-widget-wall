@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CAMERAS, CINEMATIC_SECONDS, HOME_MORNING, PANO_MAX_AZ, PANO_MIN_AZ, SWING_DEGREES, cinematicCamera, localDay, SWING_SECONDS, blendCamera, cameraFor, ease, glideCamera, glideSeconds, homeCameraFor, settled, startGlide, stepGlide, terrainOf, GLIDE_SECONDS } from './cameras';
+import { CAMERAS, CINEMATIC_SECONDS, HOME_MORNING, PANO_MAX_AZ, PANO_MIN_AZ, SWING_DEGREES, cinematicCamera, localDay, SWING_SECONDS, blendCamera, cameraFor, ease, glideCamera, glideSeconds, homeCameraFor, settled, startGlide, stepGlide, GLIDE_SECONDS } from './cameras';
 
 const a = CAMERAS.work;
 const b = CAMERAS.unwind;
@@ -134,12 +134,8 @@ describe('the morning preset', () => {
     expect(HOME_MORNING.hy - 168).toBeGreaterThan(300);
   });
 
-  it('every preset looks at the one panorama, so no move needs a cross-fade', () => {
-    for (const cam of [...Object.values(CAMERAS), HOME_MORNING]) {
-      expect(cam.ter).toBe('pano');
-      expect(terrainOf(cam)).toBe('pano');
-    }
-    expect(terrainOf({ ...CAMERAS.home, ter: undefined })).toBe('pano');
+  it('every preset looks at the one panorama', () => {
+    for (const cam of [...Object.values(CAMERAS), HOME_MORNING]) expect(cam.ter).toBe('pano');
   });
 
   it('carries a snow line per camera: 0.84 on the west presets, 0.86 in the morning, blended in a swing', () => {
