@@ -54,15 +54,19 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
    * (instantly when motion is reduced). Returns true when something changed on screen at once.
    */
   const retarget = (target: CameraPreset, instant: boolean) => {
-    const from = glideCamera(glide.current);
-    const moon = glide.current.progress >= 1 && glide.current.to === CAMERAS.unwind;
+    // Start from the composite on screen: during a fade, whichever layer is more visible
+    // becomes the old layer, so nothing pops when the fade is retargeted.
+    const running = fadeRef.current;
+    const oldWins = running !== null && running.progress < 0.5;
+    const from = oldWins ? running.camera : glideCamera(glide.current);
+    const moon = oldWins ? running.moon : glide.current.progress >= 1 && glide.current.to === CAMERAS.unwind;
     const fade = startFade(from, target, instant, moon);
     if (fade) {
       fadeRef.current = fade;
       glide.current = settled(target);
     } else {
       fadeRef.current = null;
-      glide.current = startGlide(glide.current, target, instant);
+      glide.current = startGlide(oldWins ? settled(from) : glide.current, target, instant);
     }
     if (instant) repaint.current();
   };
