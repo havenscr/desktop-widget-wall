@@ -22,6 +22,7 @@ beforeEach(() => {
   vi.setSystemTime(t('10:24'));
 });
 afterEach(() => {
+  Object.defineProperty(document, 'hidden', { configurable: true, value: false });
   vi.useRealTimers();
   mocks.clear();
   useFocusStore.setState({ sessions: [] });
@@ -122,4 +123,45 @@ it('draws overlapping events in two lanes and a narrow chip without its title', 
   expect(b.textContent).toBe('');
   expect(b.getAttribute('title')).toBe('Standup');
   expect(b.getAttribute('aria-label')).toBe('Standup');
+});
+
+it('stops reading the calendar and moving the needle while hidden, and catches up on return', async () => {
+  let reads = 0;
+  mocks.set('wall2_meet_day', () => {
+    reads++;
+    return day;
+  });
+  const r = render(<Ribbon kind="work" />);
+  await flush();
+  expect(reads).toBe(1);
+  Object.defineProperty(document, 'hidden', { configurable: true, value: true });
+  act(() => {
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  await flush(11 * 60_000);
+  expect(reads).toBe(1);
+  expect(r.container.querySelector('.ndl')!.textContent).toBe('10:24');
+  Object.defineProperty(document, 'hidden', { configurable: true, value: false });
+  act(() => {
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  await flush();
+  expect(reads).toBe(2);
+  expect(r.container.querySelector('.ndl')!.textContent).toBe('10:35');
+  await flush(61_000);
+  expect(r.container.querySelector('.ndl')!.textContent).toBe('10:36');
+});
+
+it('clears its timers and stops reading on unmount', async () => {
+  let reads = 0;
+  mocks.set('wall2_meet_day', () => {
+    reads++;
+    return day;
+  });
+  const r = render(<Ribbon kind="work" />);
+  await flush();
+  r.unmount();
+  expect(vi.getTimerCount()).toBe(0);
+  await flush(30 * 60_000);
+  expect(reads).toBe(1);
 });

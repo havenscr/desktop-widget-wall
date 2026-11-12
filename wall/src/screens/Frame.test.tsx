@@ -61,3 +61,22 @@ it('keeps the same clock element when the place changes', async () => {
   act(() => usePlaceStore.setState({ active: 'home' }));
   expect(r.container.querySelector('.clk')).toBe(clk);
 });
+
+it('Meet shows the ribbon with today\'s events', async () => {
+  vi.setSystemTime(new Date(2026, 10, 11, 12, 12));
+  const at = (h: number, m: number) => new Date(2026, 10, 11, h, m).toISOString();
+  mocks.set('wall2_meet_day', () => ({
+    accounts: [{ id: 'work', label: 'Work', state: 'ok' }],
+    events: [
+      { key: 'd-0', accountId: 'work', title: 'AE sync', start: at(9, 0), end: at(9, 45), canJoin: true, isLive: false },
+      { key: 'd-1', accountId: 'work', title: 'Call', start: at(12, 0), end: at(12, 25), canJoin: true, isLive: false },
+    ],
+  }));
+  const r = await show('meet');
+  const rib = r.container.querySelector('.main > .rib')!;
+  expect(rib.getAttribute('data-kind')).toBe('work');
+  expect([...rib.querySelectorAll('.ev')].map((e) => [e.textContent, e.className])).toEqual([
+    ['AE sync', 'ev past'],
+    ['Call', 'ev now'],
+  ]);
+});
