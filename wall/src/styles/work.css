@@ -302,31 +302,40 @@
   min-width: 0;
   min-height: 0;
 }
-/* Clock (116) and date line (12 + 29) end at 157; Next starts with some air, as in
-   the owner's vote A layout (Next at stage y 210). */
+/* Clock (116) and date line (12 + 29) end at 157. Below it Next, Focus, Music and
+   Machines share the rest with even air between them (about 16 px each in the normal
+   state; at least 10 when the Next block carries its "as of" line). */
 .work .wl {
-  padding-top: 184px;
+  padding-top: 172px;
+  gap: 10px;
   justify-content: space-between;
 }
 .work .wr {
   padding-top: 4px;
 }
-/* A round button keeps a 72 px touch target while drawing 56 px, so the rows stay tight. */
+/* A round button keeps a 72 px touch target while drawing 52 px, so the rows stay tight. */
 .work .wl .rd {
   position: relative;
-  width: 56px;
-  height: 56px;
+  width: 52px;
+  height: 52px;
 }
 .work .wl .rd::before {
   content: '';
   position: absolute;
-  inset: -8px 0 -8px -16px;
+  inset: -10px 0 -10px -20px;
   border-radius: 28px;
 }
 
 /* Left wing rows */
 .next {
   gap: 6px;
+}
+.next.stale .t1,
+.next.stale > .s {
+  opacity: 0.5;
+}
+.next-asof {
+  margin-top: -2px;
 }
 .next .t1 {
   max-width: 458px;
@@ -337,6 +346,7 @@
   align-items: center;
   gap: 18px;
   min-width: 0;
+  min-height: 60px;
 }
 .focus-mini-ring {
   width: 72px;
@@ -344,7 +354,7 @@
   flex: none;
   display: grid;
   place-items: center;
-  margin: -4px;
+  margin: -6px;
   border-radius: 50%;
 }
 .focus-mini-ring:focus-visible {
@@ -396,8 +406,8 @@
   opacity: 0.55;
 }
 .music-mini .art {
-  width: 56px;
-  height: 56px;
+  width: 52px;
+  height: 52px;
   border-radius: 14px;
   flex: none;
   overflow: hidden;
@@ -421,7 +431,7 @@
 .mc {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 5px;
   font: 500 17px/1 var(--disp);
   color: var(--faint);
 }
@@ -430,20 +440,20 @@
   grid-template-columns: 52px repeat(3, 104px) minmax(0, 1fr);
   align-items: center;
   column-gap: 12px;
-  height: 22px;
+  height: 20px;
   transition: opacity 600ms ease;
 }
 .mc-row.stale {
   opacity: 0.4;
 }
 .mc-hd {
-  height: 14px;
+  height: 13px;
   font-size: 13px;
   letter-spacing: 0.16em;
 }
+/* Each label starts where its bar starts. */
 .mc-hd span {
-  padding-right: 44px;
-  text-align: center;
+  text-align: left;
 }
 .mc-name {
   letter-spacing: 0.14em;
@@ -478,6 +488,10 @@
 .mc-temp {
   text-align: left;
 }
+/* No reading for this column: the empty track only, faint, so the columns stay aligned. */
+.mc-cell.none {
+  opacity: 0.6;
+}
 .mc-cell.hot .mc-bar > i {
   background: var(--amber);
 }
@@ -492,6 +506,36 @@
   grid-template-columns: 540px 1fr;
   gap: 20px;
   min-height: 0;
+}
+.centre-fill.solo {
+  grid-template-columns: 1fr;
+}
+/* One focus card across the centre while the weather has no reading: everything centred,
+   the ring larger, the weather status one quiet line at the foot. */
+.centre-fill.solo .focus {
+  align-items: center;
+}
+.centre-fill.solo .focus > .k {
+  align-self: flex-start;
+}
+.centre-fill.solo .focus .ring {
+  width: 280px;
+  height: 280px;
+}
+.centre-fill.solo .focus .ring-num {
+  font-size: 100px;
+}
+.centre-fill.solo .focus-label {
+  max-width: 420px;
+}
+.focus-note {
+  display: flex;
+}
+.wx-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--faint);
 }
 .centre-fill .panel {
   position: relative;
