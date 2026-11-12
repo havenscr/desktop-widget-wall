@@ -193,3 +193,15 @@ it('an inline now prop does not restart the loop or reset animation time', () =>
   runFrame(200);
   expect(draw.mock.lastCall![1]).toMatchObject({ ms: NOON + 5000, t: 0.2 });
 });
+
+it('review mode repaints when the page becomes visible after a hidden start', () => {
+  setReducedMotion(false);
+  window.history.replaceState(null, '', '/?hz=home&at=2026-11-11T16:00:00Z');
+  setHidden(true);
+  render(<HorizonCanvas now={() => 0} />);
+  expect(draw).not.toHaveBeenCalled();
+  setHidden(false);
+  act(() => void document.dispatchEvent(new Event('visibilitychange')));
+  expect(draw).toHaveBeenCalledTimes(1);
+  expect(draw.mock.lastCall![1]).toMatchObject({ camera: CAMERAS.home, ms: Date.UTC(2026, 10, 11, 16), t: 0, phase: 0 });
+});

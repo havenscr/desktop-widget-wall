@@ -88,10 +88,9 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
     if (still) {
       // Reduced motion shows the cameras without a glide, so snap any glide in progress.
       glide.current = settled(glide.current.to);
-      if (!review) {
-        timer = window.setInterval(paint, REDRAW_MS);
-        document.addEventListener('visibilitychange', paint);
-      }
+      if (!review) timer = window.setInterval(paint, REDRAW_MS);
+      // Also in review mode: a frame skipped while hidden is drawn when the page shows.
+      document.addEventListener('visibilitychange', paint);
     } else {
       raf = requestAnimationFrame(frame);
     }
