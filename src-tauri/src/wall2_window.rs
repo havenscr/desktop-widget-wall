@@ -47,6 +47,34 @@ pub fn startup_target(
     smallest.or(primary)
 }
 
+/// Target and reason in one place: an exact strip, else the smallest height,
+/// else the primary monitor (only when the list is empty), else nothing.
+pub fn choose_target(
+    monitors: &[MonitorRect],
+    primary: Option<MonitorRect>,
+) -> (Option<MonitorRect>, &'static str) {
+    if let Some(strip) = exact_strip(monitors) {
+        return (Some(strip), "exact strip");
+    }
+    if !monitors.is_empty() {
+        return (startup_target(monitors, primary), "smallest height");
+    }
+    match primary {
+        Some(p) => (Some(p), "primary"),
+        None => (None, "none"),
+    }
+}
+
+/// True when `target` lies entirely inside one of the monitors.
+pub fn target_on_monitor(target: MonitorRect, monitors: &[MonitorRect]) -> bool {
+    monitors.iter().any(|m| {
+        target.x >= m.x
+            && target.y >= m.y
+            && i64::from(target.x) + i64::from(target.width) <= i64::from(m.x) + i64::from(m.width)
+            && i64::from(target.y) + i64::from(target.height) <= i64::from(m.y) + i64::from(m.height)
+    })
+}
+
 /// True when two rectangles are identical.
 pub fn rect_matches(a: MonitorRect, b: MonitorRect) -> bool {
     a == b
@@ -75,46 +103,47 @@ const LOG_CAP: usize = 256 * 1024;
 const EVENT_CAP: usize = 300;
 const EVENT_WINDOW_MS: u128 = 30_000;
 
-struct LogState {
-    file: std::fs::File,
-    start: std::time::Instant,
-    bytes: usize,
-}
-
-static LOG: std::sync::Mutex<Option<LogState>> = std::sync::Mutex::new(None);
+static START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+static LOG_TX: std::sync::OnceLock<std::sync::mpsc::SyncSender<String>> = std::sync::OnceLock::new();
 static EVENTS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
-/// Create (truncate) the log in `dir`. Any failure leaves logging off.
+/// Create (truncate) the log in `dir` and start the writer thread. Any
+/// failure leaves logging off. All file writes happen on that thread, so no
+/// caller (the window procedure included) ever waits on the disk.
 pub fn start_log(dir: Option<std::path::PathBuf>) {
+    use std::io::Write;
     let Some(dir) = dir else { return };
     let _ = std::fs::create_dir_all(&dir);
-    let Ok(file) = std::fs::File::create(dir.join("wall2-placement.log")) else {
+    let Ok(mut file) = std::fs::File::create(dir.join("wall2-placement.log")) else {
         return;
     };
-    if let Ok(mut guard) = LOG.lock() {
-        *guard = Some(LogState { file, start: std::time::Instant::now(), bytes: 0 });
+    let (tx, rx) = std::sync::mpsc::sync_channel::<String>(512);
+    let spawned = std::thread::Builder::new().name("wall2-log".into()).spawn(move || {
+        let mut bytes = 0usize;
+        while let Ok(line) = rx.recv() {
+            if bytes + line.len() > LOG_CAP {
+                continue;
+            }
+            if file.write_all(line.as_bytes()).is_ok() {
+                bytes += line.len();
+            }
+        }
+    });
+    if spawned.is_ok() {
+        let _ = START.set(std::time::Instant::now());
+        let _ = LOG_TX.set(tx);
     }
 }
 
-/// Append a line. Never blocks (try_lock), never panics, never reports errors.
+/// Queue a line. Never blocks (a full queue drops the line), never panics,
+/// never reports errors.
 pub fn log(step: &str, data: &str) {
-    use std::io::Write;
-    let Ok(mut guard) = LOG.try_lock() else { return };
-    let Some(state) = guard.as_mut() else { return };
-    let line = format_line(state.start.elapsed().as_millis(), step, data);
-    if state.bytes + line.len() > LOG_CAP {
-        return;
-    }
-    if state.file.write_all(line.as_bytes()).is_ok() {
-        state.bytes += line.len();
-    }
+    let (Some(tx), Some(start)) = (LOG_TX.get(), START.get()) else { return };
+    let _ = tx.try_send(format_line(start.elapsed().as_millis(), step, data));
 }
 
 fn log_age_ms() -> u128 {
-    LOG.try_lock()
-        .ok()
-        .and_then(|g| g.as_ref().map(|s| s.start.elapsed().as_millis()))
-        .unwrap_or(u128::MAX)
+    START.get().map(|s| s.elapsed().as_millis()).unwrap_or(u128::MAX)
 }
 
 /// Log a Wall 2 window event during the first 30 seconds, capped per run.
@@ -143,10 +172,10 @@ mod win {
         GetAwarenessFromDpiAwarenessContext, GetDpiForMonitor, GetDpiForWindow,
         GetThreadDpiAwarenessContext, MDT_EFFECTIVE_DPI,
     };
-    use windows::Win32::UI::Shell::{DefSubclassProc, SetWindowSubclass};
+    use windows::Win32::UI::Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass};
     use windows::Win32::UI::WindowsAndMessaging::{
         GetClientRect, GetWindowRect, IsWindowVisible, SetWindowPos, SWP_NOACTIVATE, SWP_NOSIZE,
-        SWP_NOZORDER, WM_DPICHANGED,
+        SWP_NOZORDER, WM_DPICHANGED, WM_NCDESTROY,
     };
 
     /// Own subclass id, separate from display_watch.rs.
@@ -364,17 +393,16 @@ mod win {
         }
         let rects: Vec<MonitorRect> = list.iter().map(|d| d.rect).collect();
         let primary = list.iter().find(|d| d.primary).map(|d| d.rect);
-        let (target, why) = match exact_strip(&rects) {
-            Some(r) => (Some(r), "exact strip"),
-            None => match startup_target(&rects, primary) {
-                Some(r) if Some(r) == primary && !rects.contains(&r) => (Some(r), "primary"),
-                Some(r) => (Some(r), "smallest height"),
-                None => (None, "none"),
-            },
-        };
+        let (target, why) = choose_target(&rects, primary);
         log("target", &format!("{} reason={why}", target.map(fmt_rect).unwrap_or_else(|| "none".into())));
         log_state("before_place", window);
-        let Some(rect) = target else { return };
+        let Some(rect) = target.filter(|_| hwnd_of(window).is_some()) else {
+            // Show anyway, so Wall 2 is never left hidden.
+            log("skipped", "no target monitor or window handle, showing in place");
+            let _ = window.show();
+            log_state("after_show", window);
+            return;
+        };
         set_target(Some(rect));
         place(window, rect, "hidden");
         let _ = window.show();
@@ -382,10 +410,11 @@ mod win {
         place(window, rect, "visible");
     }
 
-    /// After a display change: move onto an exact strip if one is present and
-    /// do nothing otherwise (never jump to the main monitor on unplug).
-    /// Returns whether an exact strip was found. The move runs on the main
-    /// thread.
+    /// After a display change: move onto an exact strip if one is present;
+    /// with none, clear the stored target (its coordinates may be off screen
+    /// now) and do nothing else, never jumping to the main monitor on unplug.
+    /// Returns true only after the move ran on the main thread and the rect
+    /// was verified, so the caller keeps retrying otherwise.
     pub fn follow_strip(app: &tauri::AppHandle, label: &str) -> bool {
         let rects: Vec<MonitorRect> = displays().iter().map(|d| d.rect).collect();
         let found = exact_strip(&rects);
@@ -393,28 +422,42 @@ mod win {
             "displays_changed",
             &format!("monitors={} exact_strip={}", rects.len(), found.map(fmt_rect).unwrap_or_else(|| "none".into())),
         );
-        let Some(rect) = found else { return false };
+        let Some(rect) = found else {
+            set_target(None);
+            return false;
+        };
         set_target(Some(rect));
+        let (tx, rx) = std::sync::mpsc::channel::<bool>();
         let handle = app.clone();
         let label = label.to_string();
-        let _ = app.run_on_main_thread(move || {
-            if let Some(window) = handle.get_webview_window(&label) {
-                check_and_place(&window, "follow_strip");
-            }
+        let queued = app.run_on_main_thread(move || {
+            let ok = handle
+                .get_webview_window(&label)
+                .map(|window| check_and_place(&window, "follow_strip"))
+                .unwrap_or(false);
+            let _ = tx.send(ok);
         });
-        true
+        queued.is_ok() && rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap_or(false)
     }
 
-    /// Re-apply only when the window is not on the stored target.
-    fn check_and_place(window: &tauri::WebviewWindow, why: &str) {
-        let Some(hwnd) = hwnd_of(window) else { return };
-        let Some(rect) = get_target() else { return };
+    /// Re-apply only when the window is not on the stored target and the
+    /// target still lies on a current monitor. Returns whether the window
+    /// ends on the target.
+    fn check_and_place(window: &tauri::WebviewWindow, why: &str) -> bool {
+        let Some(hwnd) = hwnd_of(window) else { return false };
+        let Some(rect) = get_target() else { return false };
         let current = window_rect(hwnd);
         let ok = current.map(|c| rect_matches(c, rect)).unwrap_or(false);
         log(why, &format!("rect_ok={ok} {}", state(hwnd, window.scale_factor().ok())));
-        if !ok {
-            place(window, rect, why);
+        if ok {
+            return true;
         }
+        let rects: Vec<MonitorRect> = displays().iter().map(|d| d.rect).collect();
+        if !target_on_monitor(rect, &rects) {
+            log(why, "target is off every monitor, not moving");
+            return false;
+        }
+        place(window, rect, why)
     }
 
     /// Re-check at about 250 ms, 1 s and 3 s after startup.
@@ -475,30 +518,54 @@ mod win {
         _id: usize,
         _data: usize,
     ) -> LRESULT {
-        let result = DefSubclassProc(hwnd, msg, wparam, lparam);
-        if msg == WM_DPICHANGED && !IN_GUARD.with(|g| g.replace(true)) {
+        if msg == WM_DPICHANGED {
+            // Set the flag before the default handling, so a WM_DPICHANGED
+            // that tao's own SetWindowPos provokes gets default processing only.
+            if IN_GUARD.with(|g| g.replace(true)) {
+                return DefSubclassProc(hwnd, msg, wparam, lparam);
+            }
+            let new_dpi = wparam.0 & 0xFFFF;
+            let suggested = if lparam.0 != 0 {
+                Some(to_rect(*(lparam.0 as *const RECT)))
+            } else {
+                None
+            };
+            let result = DefSubclassProc(hwnd, msg, wparam, lparam);
             if let Some(rect) = get_target() {
                 let after_tao = window_rect(hwnd);
-                let _ = SetWindowPos(
-                    hwnd,
-                    HWND::default(),
-                    rect.x,
-                    rect.y,
-                    rect.width as i32,
-                    rect.height as i32,
-                    SWP_NOZORDER | SWP_NOACTIVATE,
-                );
+                // Only reassert onto a rect that is still on a current monitor.
+                let rects: Vec<MonitorRect> = displays().iter().map(|d| d.rect).collect();
+                let on_screen = target_on_monitor(rect, &rects);
+                if on_screen {
+                    let _ = SetWindowPos(
+                        hwnd,
+                        HWND::default(),
+                        rect.x,
+                        rect.y,
+                        rect.width as i32,
+                        rect.height as i32,
+                        SWP_NOZORDER | SWP_NOACTIVATE,
+                    );
+                }
                 log(
                     "dpi_changed",
                     &format!(
-                        "new_dpi={} after_tao={} after_reassert={}",
-                        wparam.0 & 0xFFFF,
+                        "new_dpi={new_dpi} suggested={} after_tao={} reasserted={on_screen} after_reassert={}",
+                        suggested.map(fmt_rect).unwrap_or_else(|| "?".into()),
                         after_tao.map(fmt_rect).unwrap_or_else(|| "?".into()),
                         window_rect(hwnd).map(fmt_rect).unwrap_or_else(|| "?".into())
                     ),
                 );
             }
             IN_GUARD.with(|g| g.set(false));
+            return result;
+        }
+        let result = DefSubclassProc(hwnd, msg, wparam, lparam);
+        if msg == WM_NCDESTROY {
+            // The window is going away: remove this subclass (same callback
+            // and id as installed) after default processing, as the
+            // subclassing contract asks.
+            let _ = RemoveWindowSubclass(hwnd, Some(guard_proc), GUARD_ID);
         }
         result
     }
@@ -582,5 +649,28 @@ mod tests {
         assert!(line.ends_with("a b c\n"));
         assert!(line.contains("apply"));
         assert!(line.trim_start().starts_with("42 "));
+    }
+
+    #[test]
+    fn choose_target_cases() {
+        let strip = r(2560, 2560, 720);
+        let main = r(0, 2560, 1440);
+        let p = r(9000, 800, 600);
+        assert_eq!(choose_target(&[main, strip], Some(main)), (Some(strip), "exact strip"));
+        let a = r(0, 2560, 1440);
+        let b = r(2560, 1920, 1080);
+        assert_eq!(choose_target(&[a, b], Some(a)), (Some(b), "smallest height"));
+        assert_eq!(choose_target(&[], Some(p)), (Some(p), "primary"));
+        assert_eq!(choose_target(&[], None), (None, "none"));
+    }
+
+    #[test]
+    fn target_must_lie_on_a_monitor() {
+        let main = r(0, 2560, 1440);
+        let strip = MonitorRect { x: 0, y: 1440, width: 2560, height: 720 };
+        assert!(target_on_monitor(strip, &[main, strip]));
+        assert!(!target_on_monitor(strip, &[main]));
+        assert!(!target_on_monitor(strip, &[]));
+        assert!(target_on_monitor(main, &[main]));
     }
 }

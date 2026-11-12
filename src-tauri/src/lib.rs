@@ -3896,6 +3896,9 @@ pub fn run() {
                     wall2_window::startup(&window);
                     wall2_window::delayed_checks(app.handle(), WALL2_LABEL);
                 }
+                // Non-Windows dev builds: no placement, but never stay hidden.
+                #[cfg(not(windows))]
+                let _ = window.show();
                 // The window was created hidden, so Resized events during placement
                 // marked it user hidden. Clear that or the WebView stays dark.
                 USER_HIDDEN.store(false, Ordering::SeqCst);
