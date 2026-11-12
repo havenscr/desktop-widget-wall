@@ -38,9 +38,13 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
   const loud = useRef(0); // smoothed loudness, so the ripple eases out when the store drops to zero
   // The camera gate (0 to 1): ramps the ripple out on a turn to Rainier and back in after the turn away.
   const gate = useRef(initialEchoGate(glide.current));
-  // Tell Watt (read only) where the camera is going and whether it is moving.
+  // Tell Watt (read only) where the camera is going and whether it is moving; cleared on unmount
+  // so the signal can never stick on moving.
   const publish = () => publishCamera(glide.current.to, glide.current.progress < 1);
-  useEffect(publish, []);
+  useEffect(() => {
+    publish();
+    return () => publishCamera(null, false);
+  }, []);
   // The grid pulse: glow bands on the beat and brighter lines with the bass, only while music plays.
   const pulse = useRef(createGridPulse());
   const grid = useRef<HorizonGrid | null>(null);
