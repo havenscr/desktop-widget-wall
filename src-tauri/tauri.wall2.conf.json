@@ -12,17 +12,23 @@
   "app": {
     "windows": [
       {
+        "label": "wall2",
         "title": "Widget Wall 2",
         "width": 2560,
         "height": 720,
-        "resizable": true,
+        "resizable": false,
         "fullscreen": false,
-        "decorations": true,
+        "decorations": false,
+        "shadow": false,
+        "skipTaskbar": true,
+        "visible": false,
         "alwaysOnTop": false,
         "useHttpsScheme": true
       }
     ],
+    "withGlobalTauri": false,
     "security": {
+      "capabilities": ["wall2"],
       "csp": {
         "default-src": "'none'",
         "script-src": "'self'",

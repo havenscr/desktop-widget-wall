@@ -67,6 +67,19 @@ static AUDIO_PUSH_REQUESTED: AtomicBool = AtomicBool::new(true);
 /// For the display watcher callback, which has no other way to reach the app.
 static APP_HANDLE: std::sync::OnceLock<tauri::AppHandle> = std::sync::OnceLock::new();
 
+/// Window label of the old app (the config gives its window no label).
+const MAIN_LABEL: &str = "main";
+/// Window label of Wall 2 (`tauri.wall2.conf.json`).
+const WALL2_LABEL: &str = "wall2";
+
+/// The app's one window: the old app's (`MAIN_LABEL`) or Wall 2's (`WALL2_LABEL`).
+/// Behaviour only the old app has must look up `MAIN_LABEL` directly, so it
+/// finds nothing, and skips itself, in Wall 2.
+fn app_window(app: &tauri::AppHandle) -> Option<tauri::WebviewWindow> {
+    app.get_webview_window(MAIN_LABEL)
+        .or_else(|| app.get_webview_window(WALL2_LABEL))
+}
+
 /// Levels are only worth computing when someone can see them.
 fn audio_push_active() -> bool {
     WEBVIEW_SHOWN.load(Ordering::SeqCst) && AUDIO_PUSH_REQUESTED.load(Ordering::SeqCst)
@@ -1978,8 +1991,12 @@ async fn open_edge_popup(url: String, width: i32, height: i32) -> Result<(), Str
 /// Temporarily disables always-on-top and opens centered on primary monitor
 #[tauri::command]
 async fn open_focus_sessions(window: tauri::Window) -> Result<(), String> {
+    // Wall 2 is never always on top, so it has nothing to restore.
+    let restore_on_top = window.label() != WALL2_LABEL;
     // Temporarily disable always-on-top so Focus Sessions appears in front
-    let _ = window.set_always_on_top(false);
+    if restore_on_top {
+        let _ = window.set_always_on_top(false);
+    }
 
     // Open Focus Sessions and move to primary monitor center using PowerShell
     let script = r#"
@@ -2044,12 +2061,14 @@ if ($hwnd -ne [IntPtr]::Zero) {
     }
 
     // Re-enable always-on-top after a delay
-    let window_clone = window.clone();
-    std::thread::spawn(move || {
-        std::thread::sleep(std::time::Duration::from_secs(3));
-        let _ = window_clone.set_always_on_top(true);
-        println!("Restored always-on-top");
-    });
+    if restore_on_top {
+        let window_clone = window.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_secs(3));
+            let _ = window_clone.set_always_on_top(true);
+            println!("Restored always-on-top");
+        });
+    }
 
     Ok(())
 }
@@ -3556,7 +3575,7 @@ fn on_display_state_change() {
         // also emits last.
         let _guard = DISPLAY_STATE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let reason = display_watch::os_hidden_reason();
-        if let Some(window) = app.get_webview_window("main") {
+        if let Some(window) = app_window(&app) {
             apply_webview_visibility_locked(&window);
         }
         println!("[Display] os_hidden={:?}", reason);
@@ -3655,14 +3674,14 @@ pub fn run() {
         ])
         .setup(|app| {
             #[cfg(windows)]
-            if let Some(window) = app.get_webview_window("main") {
+            if let Some(window) = app_window(app.handle()) {
                 if let Err(error) = window.with_webview(disable_webview_tracking_prevention) {
                     eprintln!("WebView2: failed to access native webview: {error}");
                 }
             }
             let _ = APP_HANDLE.set(app.handle().clone());
             #[cfg(windows)]
-            if let Some(window) = app.get_webview_window("main") {
+            if let Some(window) = app_window(app.handle()) {
                 match window.hwnd() {
                     Ok(hwnd) => {
                         if let Err(error) = display_watch::install(hwnd.0, on_display_state_change) {
@@ -3692,7 +3711,7 @@ pub fn run() {
                 .on_menu_event(|app, event| {
                     match event.id.as_ref() {
                         "show" => {
-                            if let Some(window) = app.get_webview_window("main") {
+                            if let Some(window) = app_window(app) {
                                 let _ = window.unminimize();
                                 let _ = window.show();
                                 USER_HIDDEN.store(false, Ordering::SeqCst);
@@ -3702,7 +3721,7 @@ pub fn run() {
                             }
                         }
                         "fullscreen" => {
-                            if let Some(window) = app.get_webview_window("main") {
+                            if let Some(window) = app.get_webview_window(MAIN_LABEL) {
                                 if let Ok(is_fullscreen) = window.is_fullscreen() {
                                     let _ = window.set_fullscreen(!is_fullscreen);
                                     let _ = window.set_decorations(is_fullscreen);
@@ -3725,7 +3744,7 @@ pub fn run() {
                     } = event
                     {
                         let app = tray.app_handle();
-                        if let Some(window) = app.get_webview_window("main") {
+                        if let Some(window) = app_window(app) {
                             let _ = window.unminimize();
                             let _ = window.show();
                             USER_HIDDEN.store(false, Ordering::SeqCst);
@@ -3743,7 +3762,7 @@ pub fn run() {
                 EnumDisplayMonitors, GetMonitorInfoW, HDC, HMONITOR, MONITORINFO,
             };
 
-            if let Some(window) = app.get_webview_window("main") {
+            if let Some(window) = app.get_webview_window(MAIN_LABEL) {
                 // Enumerate monitors
                 static mut MONITOR_LIST: Vec<HMONITOR> = Vec::new();
 
