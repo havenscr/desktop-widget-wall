@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { mocks } from '../bridge/tauri';
 import { usePlaceStore } from '../state/places';
-import { Meet } from './Meet';
+import { MEET_LEFT_PX, Meet } from './Meet';
 import type { MeetData } from './model';
 
 const NOW = Date.parse('2026-11-12T17:00:00Z');
@@ -237,4 +237,19 @@ it('a read requested during a read runs once more afterwards', async () => {
   release(data);
   await flush();
   expect(next).toHaveBeenCalledTimes(3);
+});
+
+it('keeps its panels out of the clock area: they sit in .meet-body (CSS: left 482px, first panel edge of Work)', async () => {
+  mocks.set('wall2_meet_next', () => data);
+  const { container } = render(<Meet />);
+  await flush(10);
+  const body = container.querySelector('.meet-body')!;
+  expect(body).not.toBeNull();
+  for (const label of ['Next meeting', 'Later meetings', 'Accounts']) {
+    expect(body.contains(screen.getByLabelText(label))).toBe(true);
+  }
+  expect(container.querySelectorAll('.meet > .panel')).toHaveLength(0);
+  // The body starts at the Work tab's first panel edge (482 px), clear of the clock; moving it left fails here.
+  expect(MEET_LEFT_PX).toBe(482);
+  expect((body as HTMLElement).style.left).toBe(`${MEET_LEFT_PX}px`);
 });

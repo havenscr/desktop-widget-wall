@@ -409,6 +409,17 @@ describe('Home morning view', () => {
     expect(oldLayer().style.display).toBe('none'); // opened on Home: nothing to fade from
   });
 
+  it('the south morning camera never passes an echo, even while music plays', () => {
+    setReducedMotion(false);
+    startMusic();
+    usePlaceStore.setState({ active: 'home' });
+    render(<HorizonCanvas now={() => MORNING} />);
+    for (let ts = 100; ts <= 2000; ts += 100) runFrame(ts);
+    expect(draw.mock.calls.length).toBeGreaterThan(5);
+    expect(draw.mock.lastCall![1].camera).toBe(HOME_MORNING);
+    for (const c of draw.mock.calls) expect(c[1]).not.toHaveProperty('echo');
+  });
+
   it('Work and Unwind keep their cameras in the morning', () => {
     setReducedMotion(false);
     render(<HorizonCanvas now={() => MORNING} />);
@@ -555,7 +566,7 @@ describe('Home morning view', () => {
     expect(draw.mock.calls.every((c) => c[1].camera === HOME_MORNING)).toBe(true);
   });
 
-  it('both layers carry the music ripple during a fade, each with its own camera shape', () => {
+  it('the old layer keeps its ripple during a fade into the south view, which has none', () => {
     setReducedMotion(false);
     startMusic();
     render(<HorizonCanvas now={() => MORNING} />);
@@ -568,7 +579,7 @@ describe('Home morning view', () => {
     expect(oldCall.camera).toBe(CAMERAS.work);
     expect(oldCall.echo).toMatchObject({ n: CAMERAS.work.en, cx: CAMERAS.work.ecx });
     expect(newCall.camera).toBe(HOME_MORNING);
-    expect(newCall.echo).toMatchObject({ n: HOME_MORNING.en, cx: HOME_MORNING.ecx });
+    expect(newCall).not.toHaveProperty('echo');
     expect(oldCall.echo!.a).toBeGreaterThan(0);
   });
 

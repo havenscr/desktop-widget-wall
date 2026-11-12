@@ -6,7 +6,7 @@ import { Zen } from '../zen/Zen';
 import { Unwind } from './Unwind';
 import { Work } from './Work';
 
-/** Work, Unwind and the network tile on Home are real; the rest of Home shows only the place name. */
+/** Work, Meet, Unwind, Zen and Home (moods and the network tile) are real; places with nothing else yet show only their name. */
 export function Screens() {
   const active = usePlaceStore((s) => s.active);
   if (active === 'work') return <Work />;
@@ -16,9 +16,11 @@ export function Screens() {
   const label = PLACES.find((p) => p.id === active)?.label ?? '';
   return (
     <>
-      <section className="screen" data-place={active}>
-        <h1>{label}</h1>
-      </section>
+      {active !== 'home' && (
+        <section className="screen" data-place={active}>
+          <h1>{label}</h1>
+        </section>
+      )}
       {active === 'home' && <Moods />}
       {active === 'home' && <NetworkTile />}
     </>

@@ -6,7 +6,7 @@ runs in a plain browser for development and inside Tauri as a second app,
 "Widget Wall 2". So far: a scaled stage, the live horizon, a left rail with
 three places, a clock, the Work tab basics (weather, music, focus timer), a task
 card, a network tile and mood buttons on Home, the Unwind tab with Watt the sheep, a sound ripple
-on the horizon, the Zen place with Dream, a small Tauri bridge and tests. Most of Home is still a placeholder.
+on the horizon, the Zen place with Dream, a small Tauri bridge and tests. Home has its moods and a network tile; the rest of it is still to come.
 
 ## Requirements
 
@@ -414,10 +414,18 @@ the system volume, Do Not Disturb or the focus timer.
   without a fade. The three images are in `wall/src/assets/flames/`; they were rendered
   for this project with a fractal flame renderer (see the README there).
 - **Breathing guide** (`Breath.tsx`, maths in `model.ts`). A 12 second cycle: 4 s in,
-  2 s hold, 6 s out. The circle scales from 0.8 to 1.06 with a cubic ease, with the
-  phase word and the seconds left in the phase. Pick 3, 5 or 10 minutes, then Start;
-  "N:NN left" shows while it runs, and Stop ends it. Starting restarts the cycle at
-  "Breathe in".
+  2 s hold, 6 s out. A thin cyan to pink ring scales from 0.8 to 1.06 of 370 px with a
+  cubic ease, inside a faint fixed ring at the full inhale size, with a glow (a sibling of the masked ring) that
+  brightens on the inhale. The phase word and the seconds left sit in the centre at a
+  fixed size; `minRingDiameter` checks that the longest word clears the smallest ring by
+  40 px. Starting restarts the cycle at "Breathe in".
+- **Zen layout** (`Zen.tsx`). Flames sit behind a veil that leaves about 45 percent of their
+  light. Top left: the clock. Bottom left: the length picker and Start, or while a session
+  runs "FIVE MINUTES OF ZEN" with "N:NN left.". Bottom centre while running: "Touch anywhere
+  to end early" (a tap outside Leave ends the session). Bottom right: Leave, and "After this:
+  N things are waiting." from the same task feed as the Work card (hidden when it is not set
+  up or empty; the "Neither is urgent." line shows only when every task has a quadrant and
+  none is urgent). The feed returns at most 3 tasks, so a full list reads "3 or more things are waiting." with no urgency line; under reduced motion the ring holds still and only the word and seconds change.
 - **Dream** (`Dream.tsx`). Flames dim to 35 percent, the guide is hidden, a small clock
   shows, and Watt sleeps in the corner (the `SheepSvg` sleep pose from `buddy/Watt.tsx`,
   at x 1226, ground line 688). Dream starts when a session ends (the guide fades out

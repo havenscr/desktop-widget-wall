@@ -13,6 +13,9 @@ import {
 } from './model';
 import { useMeet, type MeetState } from './useMeet';
 
+/** Left edge of the Meet body in stage pixels: the Work tab's first panel (`.focus`), right of the clock. */
+export const MEET_LEFT_PX = 482;
+
 function Join({ meeting, big, onJoin }: { meeting: Meeting; big?: boolean; onJoin: (key: string) => void }) {
   return (
     <button
@@ -115,7 +118,7 @@ function AccountsPanel({ m }: { m: MeetState }) {
   );
 }
 
-/** The Meet tab: next meeting and Join on the left, the rest of the day in the middle, accounts on the right. */
+/** The Meet tab, laid out right of the clock like Work: next meeting and Join on the left, the rest of the day in the middle, accounts on the right. */
 export function Meet() {
   const m = useMeet();
   let message: string | null = null;
@@ -135,16 +138,18 @@ export function Meet() {
   if (message) {
     return (
       <section className="work meet" data-place="meet" aria-label="Meet">
-        <section className="panel meet-next" aria-label="Next meeting">
-          <span className="k">Meet</span>
-          <div className="meet-count">{message}</div>
-          {hint && <div className="s">{hint}</div>}
-          {m.status === 'error' && (
-            <button type="button" className="btn cy meet-retry" onClick={m.refresh}>
-              Try again
-            </button>
-          )}
-        </section>
+        <div className="meet-body" style={{ left: MEET_LEFT_PX }}>
+          <section className="panel meet-next" aria-label="Next meeting">
+            <span className="k">Meet</span>
+            <div className="meet-count">{message}</div>
+            {hint && <div className="s">{hint}</div>}
+            {m.status === 'error' && (
+              <button type="button" className="btn cy meet-retry" onClick={m.refresh}>
+                Try again
+              </button>
+            )}
+          </section>
+        </div>
       </section>
     );
   }
@@ -152,9 +157,11 @@ export function Meet() {
   const labels = new Map((m.data?.accounts ?? []).map((a) => [a.id, a.label]));
   return (
     <section className="work meet" data-place="meet" aria-label="Meet">
-      <NextPanel m={m} labels={labels} />
-      <LaterPanel m={m} labels={labels} />
-      <AccountsPanel m={m} />
+      <div className="meet-body" style={{ left: MEET_LEFT_PX }}>
+        <NextPanel m={m} labels={labels} />
+        <LaterPanel m={m} labels={labels} />
+        <AccountsPanel m={m} />
+      </div>
     </section>
   );
 }
