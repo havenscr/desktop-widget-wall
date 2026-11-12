@@ -107,3 +107,14 @@ it('reloads the list every 10 minutes', async () => {
   await flush(10 * 60_000);
   expect(list).toHaveBeenCalledTimes(2);
 });
+
+it('shows Not set up when applying fails because the config is missing', async () => {
+  mocks.set('wall2_moods', () => LIST);
+  mocks.set('wall2_apply_mood', () => Promise.reject(new Error('not-configured')));
+  render(<Moods />);
+  await flush();
+  fireEvent.click(screen.getByText('Day'));
+  await flush();
+  expect(screen.getByText('Not set up')).toBeTruthy();
+  expect(screen.queryByText('Could not set the mood')).toBeNull();
+});

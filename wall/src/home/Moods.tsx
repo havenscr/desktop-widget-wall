@@ -105,7 +105,11 @@ export function Moods() {
       if (!mounted.current) return;
       setPhase(null);
       const text = e instanceof Error ? e.message : String(e);
-      setError(text && text !== NOT_CONFIGURED ? text : 'Could not set the mood');
+      if (text === NOT_CONFIGURED) {
+        setStatus('unconfigured');
+        return;
+      }
+      setError(text || 'Could not set the mood');
       errorTimer.current = setTimeout(() => setError(null), ERROR_MS);
     } finally {
       busy.current = false;
