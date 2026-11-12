@@ -1,6 +1,8 @@
 import { describeWeather, type WeatherLook } from './codes';
 
 export const REFRESH_MS = 15 * 60 * 1000;
+/** Retry interval while there is still no reading at all. */
+export const RETRY_MS = 60 * 1000;
 
 export interface HourPoint {
   /** Local hour label such as "3 PM". */
@@ -46,6 +48,11 @@ export function parseWeather(data: unknown, fetchedAt: number): WeatherReading {
   const d = data as OpenMeteo;
   const cur = d.current;
   if (typeof cur?.temperature_2m !== 'number') throw new Error('Unexpected weather response');
+  const hi = d.daily?.temperature_2m_max?.[0];
+  const lo = d.daily?.temperature_2m_min?.[0];
+  if (!Number.isFinite(hi) || !Number.isFinite(lo) || !Array.isArray(d.hourly?.time)) {
+    throw new Error('Incomplete weather response');
+  }
   // Times are local to the place (timezone=auto) and share a format, so compare as strings.
   const nowHour = cur.time.slice(0, 13);
   const first = d.hourly.time.findIndex((t) => t.slice(0, 13) > nowHour);
@@ -61,8 +68,8 @@ export function parseWeather(data: unknown, fetchedAt: number): WeatherReading {
   return {
     temp: Math.round(cur.temperature_2m),
     look: describeWeather(cur.weather_code, cur.is_day === 1),
-    high: Math.round(d.daily.temperature_2m_max[0]),
-    low: Math.round(d.daily.temperature_2m_min[0]),
+    high: Math.round(hi),
+    low: Math.round(lo),
     hours,
     fetchedAt,
   };
@@ -70,11 +77,12 @@ export function parseWeather(data: unknown, fetchedAt: number): WeatherReading {
 
 /**
  * Refresh rule: fetch when nothing has been fetched yet, or when the last
- * attempt is 15 minutes old or more. The interval and the visibility handler
+ * attempt is 15 minutes old or more (one minute while there is no reading yet). The interval and the visibility handler
  * both ask this, so a page that comes back after a long hide fetches once.
  */
-export function shouldRefresh(lastAttempt: number | null, now: number): boolean {
-  return lastAttempt === null || now - lastAttempt >= REFRESH_MS;
+export function shouldRefresh(lastAttempt: number | null, now: number, hasReading = true): boolean {
+  if (lastAttempt === null) return true;
+  return now - lastAttempt >= (hasReading ? REFRESH_MS : RETRY_MS);
 }
 
 /** Small text for a reading that is older than a normal refresh; null while fresh. */

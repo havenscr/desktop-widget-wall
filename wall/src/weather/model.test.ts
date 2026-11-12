@@ -46,3 +46,14 @@ it('words the age of an old reading', () => {
   expect(staleText(0, 60 * min)).toBe('updated 1 hour ago');
   expect(staleText(0, 190 * min)).toBe('updated 3 hours ago');
 });
+
+it('treats a missing or short daily array as a parse failure', () => {
+  expect(() => parseWeather({ ...sample, daily: { temperature_2m_max: [], temperature_2m_min: [] } }, 0)).toThrow();
+  expect(() => parseWeather({ ...sample, daily: undefined }, 0)).toThrow();
+});
+
+it('retries every minute while there is no reading', () => {
+  expect(shouldRefresh(0, 59_000, false)).toBe(false);
+  expect(shouldRefresh(0, 60_000, false)).toBe(true);
+  expect(shouldRefresh(0, 60_000, true)).toBe(false);
+});
