@@ -247,10 +247,12 @@
 }
 
 /* Tasks: top right, beside the weather card, above the music bar */
+/* .work is 2416 wide (the stage minus the rail), so the card's left edge is at 1820 and it
+   ends flush right like .music, with a 20px gap after the weather card. */
 .tasks {
-  left: 1820px;
+  right: 0;
   top: 4px;
-  width: 736px;
+  width: 596px;
   height: 366px;
   gap: 10px;
 }
@@ -293,7 +295,8 @@
   color: var(--amber);
 }
 .task-focus {
-  padding: 0 22px;
+  flex: none;
+  padding: 0 20px;
 }
 .btn:disabled {
   opacity: 0.4;

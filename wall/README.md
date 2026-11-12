@@ -152,7 +152,7 @@ pixels, glass style from the concept; clock is top left in `App.tsx`).
 
 ## Home feeds (task card and network tile)
 
-Two cards read Reid's own home services. The web view cannot call them (the task
+Two cards read your home services. The web view cannot call them (the task
 app refuses a request from another origin and the home app sends no CORS
 headers), so Rust makes the calls: `src-tauri/src/wall2_feeds.rs`, three async
 commands, one shared `ureq` agent with an 8 second timeout, answers capped at
@@ -166,16 +166,22 @@ Windows that is `%APPDATA%\com.havens-consulting.widget-wall2\feeds.json`. The
 file is read on every call, so a change applies on the next refresh.
 
 ```json
-{ "tasksBaseUrl": "https://example.invalid:8900", "homeBaseUrl": "http://192.0.2.10:5006" }
+{ "tasksBaseUrl": "https://example.invalid:8443", "homeBaseUrl": "http://192.0.2.10:8080" }
 ```
 
 - `tasksBaseUrl` must be `https`. `homeBaseUrl` may be `http` or `https`.
 - Each is a scheme, host and optional port only. A path (a trailing `/` too), a
   query, a fragment or a user name is refused.
+- Prefer a `homeBaseUrl` that is encrypted: the home box's tailnet address (encrypted
+  even over `http`) or an `https` front. Plain `http` on the LAN can be spoofed by
+  another device on the same network, which could fake a green tile.
 - A missing file or key shows "Not set up" on that card, quietly. A malformed
   address shows the card as unavailable.
 
 ### Task card (Work tab, top right)
+
+It sits flush right above the music bar (596 by 366 design pixels, same right edge as
+the music bar, a 20 pixel gap after the weather card).
 
 `wall/src/tasks/`. Shows the next three open tasks (`GET /api/tasks?status=open`,
 already sorted by due date; only rows with kind `task` and status `open`). Each row:
