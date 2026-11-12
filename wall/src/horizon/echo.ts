@@ -15,13 +15,12 @@ export function stepEchoFade(fade: number, playing: boolean, dt: number): number
 /**
  * Ripple options for the camera now, or null (nothing drawn, so pixels match a frame
  * without a ripple). Opacity is the preset's `ea` scaled by the fade and by loudness
- * (0 to 1, bass weighted), never below a third of `ea` once the fade is up so quiet
- * passages still show a ripple.
+ * (0 to 1, bass weighted): `ea * fade * level`. Zero loudness shows no ripple.
  */
 export function echoOptions(camera: CameraPreset, fade: number, loud: number, t: number): HorizonEcho | null {
   if (fade <= 0.001) return null;
   const level = Math.min(1, Math.max(0, loud));
-  const a = camera.ea * fade * (0.35 + 0.65 * level);
+  const a = camera.ea * fade * level;
   if (a <= 0.005) return null;
   return { n: Math.max(1, Math.round(camera.en)), amp: camera.eamp, a, t, cx: camera.ecx, hs: ECHO_HALF_SPAN };
 }

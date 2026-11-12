@@ -42,3 +42,8 @@ it('fades in and out over about a second', () => {
   expect(stepEchoFade(1, false, ECHO_FADE_S / 4)).toBeCloseTo(0.75, 9);
   expect(stepEchoFade(0.1, false, 5)).toBe(0);
 });
+
+it('strength is exactly ea * fade * level, and zero loudness gives no ripple', () => {
+  expect(echoOptions(CAMERAS.unwind, 0.5, 0.4, 0)!.a).toBeCloseTo(CAMERAS.unwind.ea * 0.5 * 0.4, 9);
+  expect(echoOptions(CAMERAS.unwind, 1, 0, 0)).toBeNull();
+});

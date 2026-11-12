@@ -220,8 +220,10 @@ const LOUD = { bass: 0.9, mid: 0.5, high: 0.3, bands: [1], waveform: [0.1] };
 
 /** Make the audio store say music is playing, as of a steady clock the test controls. */
 function startMusic(at = 1000) {
-  ingestLevels(LOUD, at);
-  tickAudio(at);
+  for (let t = at; t <= at + 300; t += 33) {
+    ingestLevels(LOUD, t);
+    tickAudio(t);
+  }
 }
 
 it('passes no echo and no moon when silent on Work (the draw options carry neither key)', () => {
