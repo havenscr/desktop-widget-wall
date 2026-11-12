@@ -40,7 +40,9 @@ the product name ("Widget Wall 2"), identifier, version, the `build` block
 
 **Window.** The window is labelled `wall2` and gets its own narrow capability,
 `src-tauri/capabilities/wall2.json` (`core:default` only; the old `default`
-capability is not loaded). It is borderless, not resizable, not always on top
+capability is not loaded). This limits core and plugin permissions only; the
+app's own commands stay callable from Wall 2 until a later change adds a command
+list in `build.rs`. It is borderless, not resizable, not always on top
 and not in the taskbar; the tray icon shows it ("Show Window" or a left click)
 and quits it, and its tray menu has no "Toggle Fullscreen". At startup Rust
 sizes it to the monitor that is exactly 2560 by 720 physical pixels, else the

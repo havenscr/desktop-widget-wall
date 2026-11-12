@@ -252,7 +252,7 @@ npm run tauri build
 ```
 
 Build outputs:
-- `src-tauri/target/release/Widget Wall.exe`
+- `src-tauri/target/release/widget-wall-desktop.exe`
 - `src-tauri/target/release/bundle/msi/Widget Wall_<version>_x64_en-US.msi`
 - `src-tauri/target/release/bundle/nsis/Widget Wall_<version>_x64-setup.exe`
 
