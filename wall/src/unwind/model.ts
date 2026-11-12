@@ -1,7 +1,8 @@
 import type { DayEvent } from '../ribbon/model';
 import type { WeatherReading } from '../weather/model';
 
-const WEEKDAY = new Intl.DateTimeFormat('en-US', { weekday: 'long' });
+/** Day names by `getDay()`; plain local time, so the line follows the zone the wall runs in. */
+const WEEKDAY = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 /** "morning", "afternoon", "evening" or "night" for the local hour of `d`. */
 export function dayPart(d: Date): 'morning' | 'afternoon' | 'evening' | 'night' {
@@ -19,7 +20,7 @@ export function dayPart(d: Date): 'morning' | 'afternoon' | 'evening' | 'night' 
 export function dateLine(d: Date, reading: Pick<WeatherReading, 'temp' | 'look'> | null): string {
   const day = new Date(d.getTime());
   if (d.getHours() < 5) day.setDate(day.getDate() - 1);
-  const head = `${WEEKDAY.format(day)} ${dayPart(d)}`;
+  const head = `${WEEKDAY[day.getDay()]} ${dayPart(d)}`;
   if (!reading || !Number.isFinite(reading.temp)) return head;
   return `${head}, ${Math.round(reading.temp)}° and ${reading.look.label.toLowerCase()}`;
 }
