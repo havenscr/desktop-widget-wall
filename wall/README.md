@@ -152,12 +152,9 @@ skyline, the lake in front. It is drawn on one canvas by `HorizonCanvas.tsx`.
   holds the rule and `cameraFor(place, ms)` applies it to Home only; Work and Unwind never
   change. `HorizonCanvas` looks again once a minute, so 5:00 AM and 11:30 AM take effect
   while Home is open.
-- **Cross-fade.** `blendCamera` cannot blend two terrains, so when the new camera has a
-  different `ter` the old view stays on a second canvas underneath while the main canvas
-  fades in over it for 2 seconds (`crossfade.ts`), then the second canvas is hidden
-  again. No shipped preset reaches it any more: all of them are on `pano`, so entering
-  Home in the morning and 11:30 AM passing both swing. It stays for a future terrain.
-  While a glide runs toward or away from a camera with `ea` 0, `echoOptions` draws no
+- **One canvas, no cross-fade.** Every camera is on the one panorama, so every change of
+  view, entering Home in the morning and 11:30 AM passing included, is a camera move on a
+  single canvas. While a glide runs toward or away from a camera with `ea` 0, `echoOptions` draws no
   ripple, so the filled echo never crosses Rainier. Reduced motion and the review still
   switch instantly.
 - **Real time.** The sun, sky and city lights come from `Date.now()`, passed in
@@ -168,7 +165,7 @@ skyline, the lake in front. It is drawn on one canvas by `HorizonCanvas.tsx`.
   `document.hidden` (`pacing.ts`). The backing store is stage scale times
   `devicePixelRatio`.
 - **Reduced motion.** With `prefers-reduced-motion: reduce` the horizon is drawn
-  once a minute and cameras switch without the glide or the cross-fade.
+  once a minute and cameras switch without the glide.
 - **Review hook (dev server only).** Open
   `http://localhost:1421/?hz=<place>&at=<ISO time>`. The clock freezes at that
   time, the camera jumps to the place and one still frame is drawn with

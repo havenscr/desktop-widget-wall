@@ -29,14 +29,14 @@ export interface CameraPreset {
   en: number;
   /** Snow line in degrees before vex (0.84 on the west presets, 0.86 in the morning); blended during a glide. */
   snowDeg: number;
-  /** Which terrain the camera looks at; omitted means `'pano'`. Terrains are cross-faded, never blended. */
+  /** Which terrain the camera looks at; omitted means `'pano'`. */
   ter?: Terrain;
 }
 
 /**
  * Terrains the renderer can draw. Every preset uses the one panorama (azimuth 128 to 300),
  * so every move is a glide; `west` and `south` are the older single views, kept for the
- * parity test and the cross-fade, which only runs between different terrains.
+ * parity test.
  */
 export type Terrain = 'pano' | 'west' | 'south';
 
