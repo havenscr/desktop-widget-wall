@@ -9,6 +9,7 @@ import { echoOptions, initialEchoGate, stepEchoFade, stepEchoGate } from './echo
 import { frameDelta, shouldDraw } from './pacing';
 import { clearGridPulse, createGridPulse, stepGridPulse } from './pulse';
 import { parseReview } from './review';
+import { publishCamera } from './signal';
 import { drawHorizon, type HorizonGrid, type HorizonOptions } from './index';
 
 const REDRAW_MS = 60_000;
@@ -37,6 +38,9 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
   const loud = useRef(0); // smoothed loudness, so the ripple eases out when the store drops to zero
   // The camera gate (0 to 1): ramps the ripple out on a turn to Rainier and back in after the turn away.
   const gate = useRef(initialEchoGate(glide.current));
+  // Tell Watt (read only) where the camera is going and whether it is moving.
+  const publish = () => publishCamera(glide.current.to, glide.current.progress < 1);
+  useEffect(publish, []);
   // The grid pulse: glow bands on the beat and brighter lines with the bass, only while music plays.
   const pulse = useRef(createGridPulse());
   const grid = useRef<HorizonGrid | null>(null);
@@ -67,6 +71,7 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
     const day = localDay(nowRef.current());
     const cinematic = !instant && target === HOME_MORNING && from !== HOME_MORNING && cinematicDay.current !== day;
     glide.current = startGlide(glide.current, target, instant, cinematic);
+    publish();
     if (instant) repaint.current();
   };
 
@@ -127,6 +132,7 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
       loud.current = smoothStep(loud.current, loudness(useAudioStore.getState()), dt);
       fade.current = stepEchoFade(fade.current, useAudioStore.getState().playing, dt);
       glide.current = stepGlide(glide.current, dt);
+      publish();
       gate.current = stepEchoGate(gate.current, glide.current, dt);
       const beats = audioBeats();
       const input = pulseIn.current;
@@ -143,6 +149,7 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
     // Reduced motion shows the cameras without a glide, so settle it before the first still paint;
     // a half-way camera would otherwise stay up until the next redraw.
     if (still) glide.current = settled(glide.current.to);
+    publish();
     paint();
     window.addEventListener('resize', paint);
     let timer = 0;
