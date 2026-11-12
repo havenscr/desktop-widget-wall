@@ -671,6 +671,40 @@ mod tests {
     }
 
     #[test]
+    fn an_unavailable_account_in_the_day_read_carries_its_reason_and_is_logged() {
+        let (store, mut core) = setup();
+        let links = Mutex::new(Links::default());
+        core.cache.insert("work".into(), Cached { access: "c".into(), expires_at: NOW + 6000 });
+        let t = FakeTokens::new(vec![]);
+        let g = FakeGraph::new(vec![GraphReply::Failed("graph-403-ErrorAccessDenied".into())]);
+        let (from, to) = (1_794_441_600, 1_794_441_600 + 36 * 3600);
+        let p = read_day(&[acct("work")], &store, &t, &g, &mut core, &links, NOW, from, to);
+        assert_eq!(p.accounts[0].state, "unavailable");
+        assert_eq!(p.accounts[0].reason.as_deref(), Some("graph-403-ErrorAccessDenied"));
+        assert!(p.events.is_empty());
+        assert_eq!(core.log_lines, vec!["2026-11-12T05:00:00Z work start unavailable graph-403-ErrorAccessDenied\n".to_string()]);
+        assert_eq!(store.get("work").as_deref(), Some("refresh-1"));
+    }
+
+    #[test]
+    fn a_failed_store_read_in_the_day_read_is_store_read_and_deletes_nothing() {
+        let store = FlakySecrets { inner: Chunked(MemoryBlobs::default()), fail_set: Cell::new(false), fail_get: Cell::new(false) };
+        store.set("work", "refresh-1");
+        store.fail_get.set(true);
+        let mut core = Core::default();
+        let links = Mutex::new(Links::default());
+        let t = FakeTokens::new(vec![]);
+        let g = FakeGraph::new(vec![]);
+        let (from, to) = (1_794_441_600, 1_794_441_600 + 36 * 3600);
+        let p = read_day(&[acct("work")], &store, &t, &g, &mut core, &links, NOW, from, to);
+        assert_eq!(p.accounts[0].state, "unavailable");
+        assert_eq!(p.accounts[0].reason.as_deref(), Some("store-read"));
+        assert_eq!(t.calls.get() + g.calls.get(), 0);
+        store.fail_get.set(false);
+        assert_eq!(store.get("work").as_deref(), Some("refresh-1"));
+    }
+
+    #[test]
     fn livestream_subject_rule() {
         assert!(is_live("Livestream with guest"));
         assert!(is_live("  livestream"));

@@ -226,7 +226,9 @@ pub async fn wall2_meet_day(window: tauri::WebviewWindow) -> Result<service::Day
         let now = now_secs();
         let (from, to) = day_window(now as i64, &crate::wall2_feeds::local_offset_secs);
         let mut core = lock_core();
-        service::read_day(&accounts, &secrets(), &auth::HttpTokens, &HttpGraph, &mut core, links(), now, from, to)
+        let payload = service::read_day(&accounts, &secrets(), &auth::HttpTokens, &HttpGraph, &mut core, links(), now, from, to);
+        meetlog::write_all(std::mem::take(&mut core.log_lines));
+        payload
     })
     .await
     .map_err(|_| "failed".to_string())
