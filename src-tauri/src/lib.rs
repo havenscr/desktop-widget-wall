@@ -52,6 +52,7 @@ mod wall2_window;
 #[cfg(windows)]
 mod display_watch;
 mod wall2_feeds;
+mod wall2_home;
 use audio_analysis::{AudioAnalyzer, AudioLevels};
 
 // ================================================================
@@ -3686,6 +3687,8 @@ pub fn run() {
             wall2_feeds::wall2_home_security,
             wall2_feeds::wall2_links,
             wall2_feeds::wall2_open_link,
+            wall2_home::wall2_moods,
+            wall2_home::wall2_apply_mood,
             list_audio_devices,
             start_audio_capture,
             stop_audio_capture,

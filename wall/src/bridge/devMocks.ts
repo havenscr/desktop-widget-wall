@@ -67,6 +67,14 @@ export function registerDevMocks(): void {
     firewalla: { api: 'up', boxOnline: true, checkedAt: new Date().toISOString(), alarms24h: 3 },
     portalUrl: null,
   }));
+  mocks.set('wall2_moods', () => [
+    { id: 'day', label: 'Day' },
+    { id: 'evening', label: 'Evening' },
+    { id: 'lateNight', label: 'Late Night' },
+  ]);
+  mocks.set('wall2_apply_mood', async () => {
+    await new Promise((resolve) => setTimeout(resolve, 400));
+  });
   mocks.set('get_do_not_disturb', () => dnd);
   mocks.set('enable_do_not_disturb', () => {
     dnd = true;
