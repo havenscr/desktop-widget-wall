@@ -4,7 +4,11 @@ import { mocks } from '../tauri';
 /** Meet: two accounts and a few meetings around now. Sign-in just flips the state. */
 export function registerMeetMocks(): void {
   let second = false;
-  const at = (mins: number) => new Date(Math.round((Date.now() + mins * 60_000) / 60_000) * 60_000).toISOString().replace('.000Z', 'Z');
+  // Minutes from now (the review's moment in a review still, `?hz=&at=`).
+  const at = (mins: number) => {
+    const now = reviewNow ? reviewNow() : Date.now();
+    return new Date(Math.round((now + mins * 60_000) / 60_000) * 60_000).toISOString().replace('.000Z', 'Z');
+  };
   const accounts = () => [
     { id: 'work', label: 'Work', state: 'ok' },
     { id: 'second', label: 'Second', state: second ? 'ok' : 'signed-out' },

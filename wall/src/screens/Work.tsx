@@ -1,16 +1,28 @@
-import { FocusTimer } from '../focus/FocusTimer';
-import { MusicBar } from '../music/MusicBar';
+import { useContext } from 'react';
+import { createPortal } from 'react-dom';
+import { CentreSlot } from '../agents/CentreSlot';
 import { TaskCard } from '../tasks/TaskCard';
-import { WeatherCard } from '../weather/WeatherCard';
+import { useWeather } from '../weather/useWeather';
+import { WeatherLine } from '../weather/WeatherCard';
+import { LeftWing } from '../work/LeftWing';
+import { ClockSlot } from './Frame';
 
-/** The Work tab: focus ring and weather in the middle, next three tasks top right, music bar below them. Clock is in App. */
+/**
+ * The Work tab on the concept's zones (`f_work`): the left wing under the clock, the
+ * centre slot, and the next three tasks on the right. One weather read feeds the line
+ * after the date and the centre card.
+ */
 export function Work() {
+  const weather = useWeather();
+  const slot = useContext(ClockSlot);
   return (
-    <section className="work" data-place="work" aria-label="Work">
-      <FocusTimer />
-      <WeatherCard />
-      <TaskCard />
-      <MusicBar />
+    <section className="work zones" data-place="work" aria-label="Work">
+      {slot && createPortal(<WeatherLine state={weather} />, slot)}
+      <LeftWing />
+      <CentreSlot weather={weather} />
+      <div className="wing wr">
+        <TaskCard />
+      </div>
     </section>
   );
 }
