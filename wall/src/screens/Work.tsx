@@ -20,7 +20,7 @@ export function Work() {
       {slot && createPortal(<WeatherLine state={weather} />, slot)}
       <LeftWing />
       <CentreSlot weather={weather} />
-      <div className="wing wr">
+      <div className="wing wr right-wing">
         <TaskCard />
       </div>
     </section>

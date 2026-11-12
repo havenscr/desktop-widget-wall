@@ -114,3 +114,13 @@ describe('FocusMini (the Work row)', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 });
+
+it('FocusMini closes the length sheet when a session starts elsewhere', () => {
+  render(<FocusMini />);
+  fireEvent.click(screen.getByLabelText('Choose a focus length'));
+  expect(screen.getByRole('dialog')).toBeTruthy();
+  act(() => useFocusStore.getState().startLabeled('From a task'));
+  expect(screen.queryByRole('dialog')).toBeNull();
+  act(() => useFocusStore.getState().reset());
+  expect(screen.queryByRole('dialog')).toBeNull();
+});

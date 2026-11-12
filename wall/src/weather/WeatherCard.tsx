@@ -51,10 +51,14 @@ export function WeatherCardView({ state }: { state: WeatherState }) {
   );
 }
 
-/** The weather after the date on Work: icon, temperature and a short condition ("58°, clearing"). Empty until a reading. */
+/**
+ * The weather after the date on Work: icon, temperature and a short condition ("58°,
+ * clearing"). Empty until a reading, and hidden while the reading is stale, since the
+ * line has no room to show its age (the centre card does).
+ */
 export function WeatherLine({ state }: { state: WeatherState }) {
   const r = state.reading;
-  if (!r) return null;
+  if (!r || staleText(r.fetchedAt, state.now)) return null;
   return (
     <span className="wx-line" aria-label={`Weather ${r.temp} degrees, ${r.look.label}`}>
       <WeatherIcon name={r.look.icon} size={24} />

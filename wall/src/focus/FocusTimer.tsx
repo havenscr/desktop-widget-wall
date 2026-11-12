@@ -1,5 +1,5 @@
 import { IconMinus, IconPlayerPauseFilled, IconPlayerPlayFilled, IconPlus, IconRotate, IconX } from '@tabler/icons-react';
-import { useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { adjustMinutes, minutesLeft, PRESETS, ringFraction, type FocusState } from './model';
 import { useFocus } from './useFocus';
 
@@ -38,7 +38,8 @@ function Ring({ state, now, size = 176 }: { state: FocusState; now: number; size
   );
 }
 
-export function FocusTimer() {
+/** The full focus card. `note` is one quiet line at its foot (Work puts the weather status there while it has no reading). */
+export function FocusTimer({ note }: { note?: ReactNode } = {}) {
   const f = useFocus();
   const { state } = f;
   const adjustable = state.status === 'idle' || state.status === 'finished';
@@ -94,6 +95,7 @@ export function FocusTimer() {
         </div>
       </div>
       {adjustable && <Picker minutes={state.minutes} custom={custom} setCustom={setCustom} setMinutes={f.setMinutes} />}
+      {note && <div className="s focus-note">{note}</div>}
     </section>
   );
 }
@@ -164,6 +166,11 @@ export function FocusMini() {
           ? 'Ready to focus'
           : 'Focusing';
   const sheet = open && adjustable;
+  // A session started elsewhere (a task hold) closes the sheet, so it does not come back
+  // unasked when the timer returns to idle.
+  useEffect(() => {
+    if (!adjustable) setOpen(false);
+  }, [adjustable]);
 
   return (
     <section className="focus-mini" aria-label="Focus timer">
@@ -174,7 +181,7 @@ export function FocusMini() {
         aria-expanded={adjustable ? sheet : undefined}
         onClick={() => adjustable && setOpen((o) => !o)}
       >
-        <Ring state={state} now={f.now} size={64} />
+        <Ring state={state} now={f.now} size={60} />
       </button>
       <div className="blk focus-mini-text">
         <span className="k">{state.status === 'paused' ? 'Focus, paused' : 'Focus'}</span>

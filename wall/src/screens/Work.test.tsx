@@ -55,7 +55,7 @@ it('lays Work out on the three zones: left wing, the centre fill, the next three
   await flush();
   const work = r.container.querySelector('.work.zones')!;
   const zones = [...work.children].map((c) => c.className);
-  expect(zones).toEqual(['wing wl', 'centre centre-fill', 'wing wr']);
+  expect(zones).toEqual(['wing wl left-wing', 'centre centre-fill', 'wing wr right-wing']);
   // The centre is never an empty "Agents" card: the full focus timer and weather fill it.
   const centre = work.querySelector('.centre')!;
   expect(centre.querySelector('[aria-label="Focus timer"]')).not.toBeNull();
@@ -92,4 +92,85 @@ it('shows the machines at the bottom of the left wing', async () => {
   await flush();
   const wing = r.container.querySelector('.wl')!;
   expect(wing.lastElementChild!.getAttribute('aria-label')).toBe('Machines');
+});
+
+it('dims Next with "as of" when the feed marks the list stale', async () => {
+  const good = meet;
+  let n = 0;
+  meet = () => (n++ === 0 ? good() : { ...(good() as object), stale: true });
+  const r = render(<Screens />);
+  await flush();
+  expect(r.container.querySelector('.next')!.className).toBe('blk next');
+  await flush(5 * 60_000);
+  const next = r.container.querySelector('.next')!;
+  expect(next.className).toBe('blk next stale');
+  expect(next.querySelector('.next-asof')!.textContent).toBe('as of 10:24');
+});
+
+it('says "may be out of date" for a stale first reply, with no good read to date it', async () => {
+  const good = meet;
+  meet = () => ({ ...(good() as object), stale: true });
+  const r = render(<Screens />);
+  await flush();
+  expect(r.container.querySelector('.next-asof')!.textContent).toBe('may be out of date');
+});
+
+it('keeps the last meeting dimmed with "as of" after a failed refresh, and clears it on the next good read', async () => {
+  const good = meet;
+  let fail = false;
+  meet = () => {
+    if (fail) throw new Error('failed');
+    return good();
+  };
+  const r = render(<Screens />);
+  await flush();
+  fail = true;
+  await flush(5 * 60_000);
+  const next = r.container.querySelector('.next')!;
+  expect(screen.getByText('Call with Dana')).toBeTruthy();
+  expect(next.className).toBe('blk next stale');
+  expect(next.querySelector('.next-asof')!.textContent).toBe('as of 10:24');
+  fail = false;
+  await flush(5 * 60_000);
+  expect(r.container.querySelector('.next')!.className).toBe('blk next');
+  expect(r.container.querySelector('.next-asof')).toBeNull();
+});
+
+it('hides the weather after the date once the reading is stale', async () => {
+  const r = render(<Screens />);
+  await flush();
+  expect(r.container.querySelector('.clk-date .wx-line')).not.toBeNull();
+  vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new Error('offline'))));
+  await flush(20 * 60_000);
+  expect(r.container.querySelector('.clk-date .wx-line')).toBeNull();
+});
+
+it('gives the focus card the whole centre with a weather line while weather loads', async () => {
+  vi.stubGlobal('fetch', vi.fn(() => new Promise(() => undefined)));
+  const r = render(<Screens />);
+  await flush();
+  const centre = r.container.querySelector('.centre')!;
+  expect(centre.className).toBe('centre centre-fill solo');
+  expect(centre.querySelectorAll('.panel')).toHaveLength(1);
+  expect(centre.querySelector('.focus-note')!.textContent).toBe('Loading weather');
+});
+
+it('gives the focus card the whole centre when the first weather fetch fails, and splits again once a reading arrives', async () => {
+  let fail = true;
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => {
+      if (fail) throw new Error('offline');
+      return { ok: true, json: async () => weather };
+    }),
+  );
+  const r = render(<Screens />);
+  await flush();
+  expect(r.container.querySelector('.centre')!.className).toBe('centre centre-fill solo');
+  expect(r.container.querySelector('.focus-note')!.textContent).toBe('Weather unavailable');
+  fail = false;
+  await flush(60_000);
+  const centre = r.container.querySelector('.centre')!;
+  expect(centre.className).toBe('centre centre-fill');
+  expect(centre.querySelectorAll('.panel')).toHaveLength(2);
 });

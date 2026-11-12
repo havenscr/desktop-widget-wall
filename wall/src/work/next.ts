@@ -9,26 +9,34 @@ export function shortClock(ms: number): string {
   return `${h}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
-/** 36 m, or 1 h 36 m. */
+const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+/** 36 m, 1 h, or 1 h 36 m. */
 function span(mins: number): string {
   if (mins < 60) return `${mins} m`;
-  return `${Math.floor(mins / 60)} h ${mins % 60} m`;
+  const h = Math.floor(mins / 60);
+  return mins % 60 === 0 ? `${h} h` : `${h} h ${mins % 60} m`;
 }
 
-function sameDay(a: number, b: number): boolean {
+/** Whole local days from `a` to `b` (0 on the same day). */
+function daysApart(a: number, b: number): number {
   const x = new Date(a);
   const y = new Date(b);
-  return x.getFullYear() === y.getFullYear() && x.getMonth() === y.getMonth() && x.getDate() === y.getDate();
+  const ax = new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const by = new Date(y.getFullYear(), y.getMonth(), y.getDate()).getTime();
+  return Math.round((by - ax) / 86_400_000);
 }
 
 /**
  * The line under the Next title: "12:00, in 1 h 36 m", "now, 12 m left" once it has
- * started, or "tomorrow 9:30" for a meeting on a later day.
+ * started, "tomorrow 9:30" for a meeting tomorrow, or "Friday 9:30" further out.
  */
 export function nextLine(m: Pick<Meeting, 'start' | 'end'>, now: number): string {
   const start = Date.parse(m.start);
   const end = Date.parse(m.end);
   if (start <= now) return `now, ${span(Math.max(1, Math.ceil((end - now) / MIN)))} left`;
-  if (!sameDay(start, now)) return `tomorrow ${shortClock(start)}`;
+  const days = daysApart(now, start);
+  if (days === 1) return `tomorrow ${shortClock(start)}`;
+  if (days > 1) return `${WEEKDAYS[new Date(start).getDay()]} ${shortClock(start)}`;
   return `${shortClock(start)}, in ${span(Math.max(1, Math.ceil((start - now) / MIN)))}`;
 }
