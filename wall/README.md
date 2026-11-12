@@ -157,8 +157,10 @@ skyline, the lake in front. It is drawn on one canvas by `HorizonCanvas.tsx`.
   while Home is open.
 - **One canvas, no cross-fade.** Every camera is on the one panorama, so every change of
   view, entering Home in the morning and 11:30 AM passing included, is a camera move on a
-  single canvas. While a glide runs toward or away from a camera with `ea` 0, `echoOptions` draws no
-  ripple, so the filled echo never crosses Rainier. Reduced motion and the review still
+  single canvas. The ripple has a camera gate (`stepEchoGate` in `echo.ts`): a move to a
+  camera with `ea` 0 (Rainier) ramps it out over its first 0.6 s, it stays off while Rainier is
+  the view and while the turn away runs, and it ramps back in over 0.6 s once that turn
+  settles. So the filled echo never crosses Rainier and never pops. Reduced motion and the review still
   switch instantly.
 - **Real time.** The sun, sky and city lights come from `Date.now()`, passed in
   as the `now` prop of `HorizonCanvas` (inject one in tests). The hour is never

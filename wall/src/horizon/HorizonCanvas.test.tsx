@@ -617,28 +617,37 @@ describe('Home morning view', () => {
     expect(canvases()).toHaveLength(1); // one canvas: nothing fades
   });
 
-  it('passes no ripple at any point of the turn to Rainier or the swing back, even while music plays', () => {
+  it('ramps the ripple out over the first 0.6 s of the turn to Rainier, and back in over 0.6 s after the swing back settles', () => {
     setReducedMotion(false);
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
     startMusic();
     let ms = MORNING;
     render(<HorizonCanvas now={() => ms} />);
     for (let ts = 100; ts <= 1500; ts += 100) runFrame(ts);
-    expect(draw.mock.lastCall![1].echo!.a).toBeGreaterThan(0); // Work ripples
+    const full = draw.mock.lastCall![1].echo!.a; // Work ripples at full strength
+    expect(full).toBeGreaterThan(0);
     act(() => usePlaceStore.getState().setActive('home'));
     draw.mockClear();
     for (let ts = 1600; ts <= 6200; ts += 100) runFrame(ts); // the cinematic move, 47 frames
+    const out = draw.mock.calls.map((c) => c[1].echo?.a ?? 0);
+    expect(out[0]).toBeGreaterThan(0); // no pop on the first frame
+    expect(out[0]).toBeLessThan(full);
+    for (let i = 1; i < 5; i++) expect(out[i]).toBeLessThan(out[i - 1]);
+    expect(out[4]).toBeGreaterThan(0); // still ramping at 0.5 s
+    for (const a of out.slice(5)) expect(a).toBe(0); // gone from 0.6 s, and on Rainier
     expect(draw.mock.lastCall![1].camera).toBe(HOME_MORNING);
-    for (const c of draw.mock.calls) expect(c[1]).not.toHaveProperty('echo');
     ms = AFTERNOON;
     act(() => void vi.advanceTimersByTime(60_000));
     draw.mockClear();
     for (let ts = 6300; ts <= 9300; ts += 100) runFrame(ts); // 31 of the swing's 32 frames
     expect(draw).toHaveBeenCalledTimes(31);
     for (const c of draw.mock.calls) expect(c[1]).not.toHaveProperty('echo');
-    expect(draw.mock.lastCall![1].camera).not.toBe(CAMERAS.home);
-    runFrame(9400); // arrived on the west Home view: the ripple returns
-    expect(draw.mock.lastCall![1].camera).toBe(CAMERAS.home);
-    expect(draw.mock.lastCall![1].echo!.a).toBeGreaterThan(0);
+    draw.mockClear();
+    for (let ts = 9400; ts <= 10100; ts += 100) runFrame(ts); // arrival, then 0.7 s on the west Home view
+    expect(draw.mock.calls[0][1].camera).toBe(CAMERAS.home);
+    const back = draw.mock.calls.map((c) => c[1].echo!.a);
+    expect(back[0]).toBeGreaterThan(0); // the arrival frame starts the ramp
+    for (let i = 1; i < 6; i++) expect(back[i]).toBeGreaterThan(back[i - 1]);
+    expect(back[6]).toBeCloseTo(back[5], 9); // full by 0.6 s
   });
 });

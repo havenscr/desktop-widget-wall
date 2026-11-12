@@ -5,7 +5,7 @@ import { usePlaceStore } from '../state/places';
 import { useAudioStore } from '../audio/store';
 import { loudness, smoothStep } from '../audio/model';
 import { CAMERAS, HOME_MORNING, MOON, cameraFor, glideCamera, localDay, settled, startGlide, stepGlide, type CameraPreset, type Glide } from './cameras';
-import { echoOptions, stepEchoFade } from './echo';
+import { echoOptions, initialEchoGate, stepEchoFade, stepEchoGate } from './echo';
 import { frameDelta, shouldDraw } from './pacing';
 import { parseReview } from './review';
 import { drawHorizon, type HorizonOptions } from './index';
@@ -34,6 +34,8 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
   // The ripple fade (0 to 1) follows `playing`.
   const fade = useRef(0);
   const loud = useRef(0); // smoothed loudness, so the ripple eases out when the store drops to zero
+  // The camera gate (0 to 1): ramps the ripple out on a turn to Rainier and back in after the turn away.
+  const gate = useRef(initialEchoGate(glide.current));
   // Latest clock, read at draw time so an inline `now` prop never restarts the loop.
   const nowRef = useRef(now);
   useEffect(() => {
@@ -94,7 +96,7 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
       };
       // The ripple never appears in the review still or under reduced motion's still frames.
       if (!still) {
-        const echo = echoOptions(camera, fade.current, loud.current, T, glide.current);
+        const echo = echoOptions(camera, fade.current * gate.current, loud.current, T);
         if (echo) options.echo = echo;
       }
       // The moon shows only once the camera has arrived at Unwind (no glide in progress), and
@@ -113,6 +115,7 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
       loud.current = smoothStep(loud.current, loudness(useAudioStore.getState()), dt);
       fade.current = stepEchoFade(fade.current, useAudioStore.getState().playing, dt);
       glide.current = stepGlide(glide.current, dt);
+      gate.current = stepEchoGate(gate.current, glide.current, dt);
       if (glide.current.cinematic && glide.current.progress >= 0.5) cinematicDay.current = localDay(nowRef.current());
       paint();
     };
