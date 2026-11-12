@@ -1,127 +1,354 @@
-/* Home tab. Design pixels, inside the top band (.top). */
+/* Home tab (concept f_home). Design pixels, inside the top band (.top, 2416 x 490). The
+   zones grid (frame.css .zones: 470 1290 596, gap 30) places the three columns; the clock
+   is drawn by the frame over the left wing's top. */
 .home {
   position: absolute;
   inset: 0;
 }
+.home .warn-text {
+  color: var(--amber);
+}
 
-/* Network and security: right wing, sitting on the bottom of the top band, as tall as
-   its content (no empty half). */
-.network {
-  right: 0;
-  bottom: 0;
-  width: 596px;
+/* Left wing: the sun block below the clock, where the concept puts it. */
+.home-wing {
+  min-width: 0;
+  padding: 248px 0 0 12px;
+}
+.home-blk {
+  display: flex;
+  flex-direction: column;
   gap: 10px;
 }
-.net-status {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-.net-dot {
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  flex: none;
-}
-.net-dot.ok {
-  background: var(--mint);
-  box-shadow: 0 0 14px 0 rgba(93, 242, 182, 0.6);
-}
-.net-dot.warn {
-  background: var(--amber);
-  box-shadow: 0 0 14px 0 rgba(255, 194, 77, 0.55);
-}
-.net-dot.bad {
-  background: var(--red);
-  box-shadow: 0 0 14px 0 rgba(255, 77, 109, 0.6);
+.home-blk .k.soon {
+  color: var(--amber);
 }
 
-.net-links {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.net-link {
-  min-height: 72px;
-  min-width: 72px;
-  padding: 0 20px;
-  background: none;
-  border: 0;
-  color: var(--cyan, inherit);
-  font: inherit;
-  font-size: 22px;
-  cursor: pointer;
-}
-.net-link:active {
-  opacity: 0.6;
-}
-.net-link:focus-visible {
-  outline: 2px solid currentColor;
-  outline-offset: 2px;
-}
-
-/* Moods (Home): one row of large buttons left of the network tile, never over it */
+/* Centre: the mood cards. With the Rooms row hidden they take the full height. */
 .moods {
-  position: absolute;
-  left: 516px;
-  top: 52px;
-  width: 1290px;
+  min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 14px;
 }
-.mood-row {
+.moods-head {
   display: flex;
-  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 20px;
+  min-height: 22px;
+}
+.mood-row {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-auto-rows: 1fr;
   gap: 16px;
 }
 .mood-btn {
-  flex: 1 1 120px;
-  min-width: 120px;
-  max-width: 240px;
-  min-height: 96px;
-  box-sizing: border-box;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 14px 20px;
-  color: var(--tx);
-  font: 600 28px/1 var(--disp);
-  text-align: left;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.015)), rgba(10, 7, 28, 0.72);
+  position: relative;
+  overflow: hidden;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  border-radius: 24px;
   border: 1px solid var(--line);
-  border-radius: 22px;
+  background: #07051a;
+  color: var(--tx);
+  text-align: left;
   cursor: pointer;
+  transition: box-shadow 400ms ease, transform 90ms ease-out;
+}
+.mood-art {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.mood-btn.last {
+  box-shadow: 0 0 0 2px var(--cyan), 0 0 40px -8px var(--cyan);
+}
+.mood-btn:enabled:active {
+  transform: scale(0.985);
 }
 .mood-btn:focus-visible {
   outline: 3px solid var(--cyan);
+  outline-offset: 3px;
 }
 .mood-btn:disabled {
   cursor: default;
 }
-.mood-btn.last {
-  border-color: rgba(53, 230, 234, 0.45);
+.mood-lb {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 64px 26px 22px;
+  background: linear-gradient(180deg, transparent, rgba(4, 3, 15, 0.86));
 }
-.mood-btn.done {
-  border-color: var(--mint);
+.mood-name {
+  font: 600 34px/1.1 var(--body);
+  letter-spacing: -0.01em;
+}
+.mood-sub {
+  font-size: 21px;
+  color: var(--dim);
+}
+.mood-tag {
+  position: absolute;
+  left: 18px;
+  top: 16px;
+  padding: 7px 12px;
+  border-radius: 9px;
+  background: var(--cyan);
+  color: #06041a;
+  font: 600 16px/1 var(--disp);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  text-decoration: none;
+}
+.mood-busy {
+  position: absolute;
+  right: 16px;
+  top: 14px;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(6, 4, 22, 0.72);
+  color: var(--cyan);
+}
+.mood-btn.done .mood-busy {
   color: var(--mint);
 }
-.mood-btn.working svg {
+.mood-btn.working .mood-busy svg {
   animation: mood-spin 900ms linear infinite;
-}
-.mood-error {
-  min-height: 26px;
-  color: var(--amber);
 }
 @keyframes mood-spin {
   to {
     transform: rotate(360deg);
   }
 }
+
+/* Right wing: Around the house at the top, the network card on the bottom. */
+.home-right {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 16px;
+  padding-top: 4px;
+}
+.chores {
+  display: flex;
+  flex-direction: column;
+}
+.chores-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+.home .tk3 {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  height: 44px;
+  border-bottom: 1px solid var(--line);
+  font-size: 22px;
+}
+.home .tk3 .n {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.home .tk3 .ck {
+  position: relative;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  border-radius: 50%;
+  border: 2px solid var(--faint);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #06041a;
+}
+/* The tap target is larger than the circle. */
+.home .tk3 .ck::before {
+  content: '';
+  position: absolute;
+  inset: -12px;
+}
+.home .tk3.done .ck {
+  background: var(--mint);
+  border-color: var(--mint);
+}
+.home .tk3.done .n {
+  text-decoration: line-through;
+  color: var(--faint);
+}
+.home .tk3.failed .ck {
+  border-color: var(--amber);
+}
+.home .tk3.clear {
+  color: var(--dim);
+}
+.home .tk3.clear svg {
+  color: var(--mint);
+}
+.home .est {
+  font: 500 18px/1 var(--disp);
+  color: var(--dim);
+  background: rgba(255, 255, 255, 0.07);
+  border-radius: 10px;
+  padding: 6px 10px;
+  white-space: nowrap;
+}
+
+/* Network and security: as tall as what it holds, sitting on the band's bottom. */
+.panel.network {
+  position: relative;
+  flex: none;
+  gap: 8px;
+  padding: 16px 22px;
+}
+.net-status {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+.net-line {
+  font-size: 27px;
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.net-aside {
+  white-space: nowrap;
+}
+.net-icon {
+  flex: none;
+}
+.net-icon.ok {
+  color: var(--mint);
+}
+.net-icon.warn {
+  color: var(--amber);
+}
+.net-icon.bad {
+  color: var(--red);
+}
+.net-icon.off {
+  color: var(--faint);
+}
+.net-nums {
+  display: grid;
+  gap: 20px;
+}
+.home .st3 b {
+  display: block;
+  font: 500 28px/1 var(--disp);
+}
+.home .st3 span {
+  display: block;
+  margin-top: 6px;
+  font: 600 14px/1 var(--disp);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.net-nums.stale,
+.net-alerts.stale {
+  opacity: 0.55;
+}
+.net-alerts {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.net-alert {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 28px;
+  font-size: 20px;
+}
+.net-alert-text {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sev {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--faint);
+}
+.sev.high {
+  background: var(--amber);
+  box-shadow: 0 0 10px rgba(255, 194, 77, 0.6);
+}
+.sev.medium {
+  background: var(--dim);
+}
+.net-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+/* The links as full-width buttons along the bottom. */
+.net-links {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.net-link {
+  flex: 1;
+  min-height: 52px;
+  padding: 0 20px;
+  border-radius: 18px;
+  background: rgba(53, 230, 234, 0.08);
+  border: 1px solid rgba(53, 230, 234, 0.28);
+  color: var(--cyan);
+  font: 600 22px/1 var(--body);
+  cursor: pointer;
+}
+.net-link:active {
+  background: rgba(53, 230, 234, 0.18);
+}
+.net-link:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+.net-links .s {
+  flex: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .mood-btn.working svg {
+  .mood-btn {
+    transition: none;
+  }
+  .mood-btn.working .mood-busy svg {
     animation: none;
   }
 }
