@@ -10,6 +10,8 @@ export interface BreathProps {
   startedAt: number | null;
   onStart: () => void;
   onStop: () => void;
+  /** The session just ended and the guide is fading out: keep showing it as running, Stop off. */
+  ending?: boolean;
   now?: () => number;
 }
 
@@ -18,7 +20,7 @@ export interface BreathProps {
  * left in the phase, centred; a length picker and Start or Stop below. The cycle restarts at
  * "Breathe in" whenever a session starts.
  */
-export function Breath({ minutes, onMinutes, startedAt, onStart, onStop, now = Date.now }: BreathProps) {
+export function Breath({ minutes, onMinutes, startedAt, onStart, onStop, ending = false, now = Date.now }: BreathProps) {
   const circle = useRef<HTMLDivElement>(null);
   const [origin] = useState(() => ({ ms: startedAt ?? now() }));
   const [view, setView] = useState(() => breathAt(0));
@@ -81,7 +83,7 @@ export function Breath({ minutes, onMinutes, startedAt, onStart, onStop, now = D
           </div>
         )}
         {running ? (
-          <button type="button" className="zbtn go" onClick={onStop}>
+          <button type="button" className="zbtn go" disabled={ending} onClick={onStop}>
             <IconPlayerStopFilled size={28} aria-hidden="true" />
             Stop
           </button>

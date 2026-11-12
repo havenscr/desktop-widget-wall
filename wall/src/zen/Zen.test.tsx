@@ -3,6 +3,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { usePlaceStore } from '../state/places';
 import { FLAMES, Flames } from './Flames';
 import { Zen } from './Zen';
+import { Dream } from './Dream';
 import { FLAME_ROTATE_MS } from './model';
 
 function setReducedMotion(reduce: boolean) {
@@ -119,4 +120,60 @@ it('reduced motion: flames are still and change without a cross-fade', () => {
   expect(container.querySelector('.flames')!.classList.contains('still')).toBe(true);
   act(() => void vi.advanceTimersByTime(FLAME_ROTATE_MS));
   expect(container.querySelectorAll('.fl-pair')).toHaveLength(1);
+});
+
+it('keeps the running state with Stop disabled while the guide fades after a session', () => {
+  render(<Zen nowMs={clockAt(DAY)} />);
+  fireEvent.click(screen.getByRole('radio', { name: '3 min' }));
+  fireEvent.click(screen.getByRole('button', { name: /Start/ }));
+  act(() => void vi.advanceTimersByTime(180_000 + 400));
+  expect(document.querySelector('.zen-guide.ending')).not.toBeNull();
+  expect(screen.queryByRole('radio')).toBeNull();
+  expect(screen.queryByRole('button', { name: /Start/ })).toBeNull();
+  expect((screen.getByRole('button', { name: /Stop/ }) as HTMLButtonElement).disabled).toBe(true);
+  expect(screen.getByText('0:00 left')).toBeTruthy();
+  act(() => void vi.advanceTimersByTime(1300));
+  expect(screen.getByLabelText('Wake')).toBeTruthy();
+});
+
+it('falls into Dream when the clock passes 9:30 PM while Zen is open', () => {
+  render(<Zen nowMs={clockAt(new Date(2026, 10, 11, 21, 29, 0).getTime())} />);
+  expect(screen.queryByLabelText('Wake')).toBeNull();
+  act(() => void vi.advanceTimersByTime(90_000));
+  expect(screen.getByLabelText('Wake')).toBeTruthy();
+});
+
+it('Leave goes back to the place Zen was opened from, Work if none', () => {
+  usePlaceStore.setState({ active: 'unwind', from: 'work' });
+  usePlaceStore.getState().setActive('zen');
+  const { unmount } = render(<Zen nowMs={clockAt(DAY)} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Leave Zen' }));
+  expect(usePlaceStore.getState().active).toBe('unwind');
+  unmount();
+  usePlaceStore.setState({ active: 'zen', from: 'work' });
+  render(<Zen nowMs={clockAt(DAY)} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Leave Zen' }));
+  expect(usePlaceStore.getState().active).toBe('work');
+});
+
+it('moves focus into Zen and arrow keys there do not change the place', () => {
+  render(
+    <>
+      <button type="button">rail</button>
+      <Zen nowMs={clockAt(DAY)} />
+    </>,
+  );
+  const focused = document.activeElement as HTMLElement;
+  expect(focused.closest('.zen')).not.toBeNull();
+  fireEvent.keyDown(focused, { key: 'ArrowDown' });
+  expect(usePlaceStore.getState().active).toBe('zen');
+});
+
+it('Dream: Space wakes and the key press is default-prevented', () => {
+  const onWake = vi.fn();
+  render(<Dream onWake={onWake} />);
+  const ev = new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true });
+  act(() => void screen.getByLabelText('Wake').dispatchEvent(ev));
+  expect(ev.defaultPrevented).toBe(true);
+  expect(onWake).toHaveBeenCalledTimes(1);
 });

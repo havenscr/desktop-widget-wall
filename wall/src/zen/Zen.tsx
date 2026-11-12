@@ -33,26 +33,28 @@ export function Zen({ nowMs = Date.now }: ZenProps) {
   const wake = useCallback(() => {
     woke.current = true;
     setEnding(false);
+    setStartedAt(null);
     setDream(false);
   }, []);
 
   // Session end: the guide fades out and the view goes to Dream.
   useEffect(() => {
-    if (startedAt === null) return;
+    if (startedAt === null || ending) return;
     const id = window.setInterval(() => {
       if (sessionSecondsLeft(startedAt, minutes, nowMs()) <= 0) {
-        setStartedAt(null);
+        // The running state (0:00 left, Stop disabled) stays until the guide has faded out.
         setEnding(true);
       }
     }, 250);
     return () => window.clearInterval(id);
-  }, [startedAt, minutes, nowMs]);
+  }, [startedAt, minutes, ending, nowMs]);
 
   // The fade finishes, then Dream.
   useEffect(() => {
     if (!ending) return;
     const id = window.setTimeout(() => {
       setEnding(false);
+      setStartedAt(null);
       setDream(true);
     }, GUIDE_FADE_MS);
     return () => window.clearTimeout(id);
@@ -64,21 +66,27 @@ export function Zen({ nowMs = Date.now }: ZenProps) {
       if (!woke.current && startedAt === null && !ending && isDreamTime(new Date(nowMs()))) setDream(true);
     }, NIGHT_CHECK_MS);
     return () => window.clearInterval(id);
-  }, [startedAt, nowMs]);
+  }, [startedAt, ending, nowMs]);
+
+  // Zen covers the rail, so keep keyboard focus inside it (Start, or the Dream surface).
+  const root = useRef<HTMLElement>(null);
+  useEffect(() => {
+    root.current?.querySelector<HTMLElement>('button:not(:disabled), [role="button"]')?.focus();
+  }, [dream]);
 
   return (
-    <section className={`zen${dream ? ' is-dream' : ''}`} data-place="zen" aria-label="Zen">
+    <section ref={root} className={`zen${dream ? ' is-dream' : ''}`} data-place="zen" aria-label="Zen">
       <Flames dim={dream} />
       {dream ? (
         <Dream onWake={wake} now={() => new Date(nowMs())} />
       ) : (
         <div className={`zen-guide${ending ? ' ending' : ''}`}>
-          <Breath minutes={minutes} onMinutes={setMinutes} startedAt={startedAt} onStart={start} onStop={stop} now={nowMs} />
+          <Breath minutes={minutes} onMinutes={setMinutes} startedAt={startedAt} onStart={start} onStop={stop} ending={ending} now={nowMs} />
           <button
             type="button"
             className="zbtn zleave"
             aria-label="Leave Zen"
-            onClick={() => usePlaceStore.getState().setActive('work')}
+            onClick={() => usePlaceStore.getState().setActive(usePlaceStore.getState().from)}
           >
             <IconX size={26} aria-hidden="true" />
             Leave

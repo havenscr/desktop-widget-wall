@@ -20,7 +20,12 @@ export function Dream({ onWake, now = systemNow }: { onWake: () => void; now?: (
   }, [now]);
   const h = SPRITES.sleep.length * SPRITE_PX;
   return (
-    <div className="dream" role="button" tabIndex={0} aria-label="Wake" onClick={onWake} onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onWake()}>
+    <div className="dream" role="button" tabIndex={0} aria-label="Wake" onClick={onWake} onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onWake();
+        }
+      }}>
       <div className="dream-clock">
         {parts.time}
         <small>{parts.meridiem}</small>

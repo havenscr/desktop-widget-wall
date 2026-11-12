@@ -136,6 +136,8 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
       return;
     }
     if (review || place === null) return;
+    // Back from Zen to the camera already showing: nothing to glide (the moon stays on Unwind).
+    if (glide.current.to === CAMERAS[place] && glide.current.progress >= 1) return;
     glide.current = startGlide(glide.current, CAMERAS[place], reduced);
     if (reduced) repaint.current();
   }, [place, reduced, review]);

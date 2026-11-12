@@ -13,10 +13,13 @@ export const PLACES: readonly { id: PlaceId; label: string }[] = [
 
 interface PlaceState {
   active: PlaceId;
+  /** The place Zen was opened from (Work until then); Leave goes back there. */
+  from: CameraPlace;
   setActive: (id: PlaceId) => void;
 }
 
 export const usePlaceStore = create<PlaceState>((set) => ({
   active: 'work',
-  setActive: (id) => set({ active: id }),
+  from: 'work',
+  setActive: (id) => set((s) => ({ active: id, from: id === 'zen' && s.active !== 'zen' ? (s.active as CameraPlace) : s.from })),
 }));

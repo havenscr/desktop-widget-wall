@@ -43,3 +43,20 @@ it('Zen opens the Zen place', () => {
   expect(usePlaceStore.getState().active).toBe('zen');
   expect(screen.getByRole('button', { name: 'Zen' }).getAttribute('aria-current')).toBe('page');
 });
+
+it('arrow keys go Work, Home, Unwind, Zen and wrap, skipping the disabled buttons', () => {
+  render(<Rail />);
+  const key = (name: string, k: 'ArrowDown' | 'ArrowUp') => {
+    const b = screen.getByRole('button', { name });
+    b.focus();
+    fireEvent.keyDown(b, { key: k });
+    return usePlaceStore.getState().active;
+  };
+  expect(key('Work', 'ArrowDown')).toBe('home');
+  expect(key('Home', 'ArrowDown')).toBe('unwind');
+  expect(key('Unwind', 'ArrowDown')).toBe('zen');
+  expect(key('Zen', 'ArrowDown')).toBe('work');
+  expect(key('Work', 'ArrowUp')).toBe('zen');
+  expect(key('Zen', 'ArrowUp')).toBe('unwind');
+  expect(key('Unwind', 'ArrowUp')).toBe('home');
+});
