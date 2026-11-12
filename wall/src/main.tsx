@@ -10,14 +10,14 @@ import './styles/unwind.css';
 import './styles/zen.css';
 import { App } from './App';
 import { registerDevMocks } from './bridge/devMocks';
-import { registerRibbonMocks } from './ribbon/devMock';
+import { seedReviewFocus } from './ribbon/devMock';
 import { usePlaceStore } from './state/places';
 import { installFullscreenKeys } from './ui/fullscreen';
 import { reviewFrame } from './ui/reviewClock';
 
 if (import.meta.env.DEV) {
   registerDevMocks();
-  registerRibbonMocks(reviewFrame?.ms ?? null);
+  seedReviewFocus(reviewFrame?.ms ?? null);
   // A review still opens on the place it names.
   if (reviewFrame) usePlaceStore.getState().setActive(reviewFrame.place);
 }

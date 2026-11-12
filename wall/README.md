@@ -214,11 +214,11 @@ The day ribbon (`wall/src/ribbon/`, `styles/ribbon.css`) is on Work, Home and Me
   segments come with the lanes, the house schedule with the rooms.
 - **Needle**: a white pill with the time, moved on each whole minute while visible.
   Before 6 AM it stays at the left end and still shows the real time.
-- **Dev**: `src/ribbon/devMock.ts` answers `wall2_meet_day` with the concept's day (AE
-  sync, a call, Forum and a livestream) when no other mock has. A review still
+- **Dev**: the calendar comes from `src/bridge/devMocks/meet.ts`. A review still
   (`?hz=<place>&at=<ISO time>`, dev builds only) opens on that place, freezes the clock
-  and ribbon at that time, puts the mock day on it and adds the concept's two focus
-  sessions if none are saved for that day.
+  and ribbon at that time, puts the meet and task mocks' days on the review's date, and
+  `src/ribbon/devMock.ts` adds the concept's two focus sessions if none are saved for
+  that day.
 
 ## The Work tab
 

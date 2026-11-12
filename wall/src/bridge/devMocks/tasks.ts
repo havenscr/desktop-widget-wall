@@ -1,3 +1,4 @@
+import { reviewNow } from '../../ui/reviewClock';
 import { mocks } from '../tauri';
 
 type Est = '15' | '30' | '45' | '60plus' | null;
@@ -23,7 +24,8 @@ const BUCKETS = [
 
 const pad = (n: number) => String(n).padStart(2, '0');
 const day = (n: number) => {
-  const d = new Date();
+  // Days count from the review's date in a review still (`?hz=&at=`).
+  const d = new Date(reviewNow ? reviewNow() : Date.now());
   d.setDate(d.getDate() + n);
   return d;
 };
