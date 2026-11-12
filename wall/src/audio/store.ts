@@ -29,6 +29,79 @@ export function audioBands(): Readonly<Float32Array> {
   return bands;
 }
 
+/** Rows per second in the band history. */
+export const HISTORY_HZ = 30;
+/** Seconds of band history kept (the echo spreads 7 seconds across its lines). */
+export const HISTORY_S = 7;
+/** Rows in the band history ring. */
+export const HISTORY_ROWS = HISTORY_HZ * HISTORY_S;
+const ROW_MS = 1000 / HISTORY_HZ;
+
+/**
+ * The last `HISTORY_S` seconds of the spectrum for the Unwind echo: `HISTORY_ROWS` rows of
+ * `BAND_COUNT` bands, each band smoothed with the levels' attack and release (`smoothStep`).
+ * `data` is a ring, row `head` is the newest and `rows` counts the rows written (up to the
+ * ring's size). Written in place by `tickAudio`; never allocated after start.
+ */
+export interface BandHistory {
+  readonly data: Float32Array;
+  readonly head: number;
+  readonly rows: number;
+}
+
+const history = { data: new Float32Array(HISTORY_ROWS * BAND_COUNT), head: -1, rows: 0 };
+const smoothed = new Float32Array(BAND_COUNT);
+let nextRowAt = -Infinity;
+// Rows written since sound was last heard: once a whole ring of silence is in, writing stops.
+let quietRows = 0;
+let historyPaused = false;
+
+/** The band history (a live view; see `BandHistory`). */
+export function bandHistory(): BandHistory {
+  return history;
+}
+
+function clearHistory(): void {
+  history.data.fill(0);
+  history.head = -1;
+  history.rows = 0;
+  smoothed.fill(0);
+  nextRowAt = -Infinity;
+  quietRows = HISTORY_ROWS;
+}
+
+/**
+ * Stop (true) or restart (false) the band history. While stopped nothing is written (the
+ * display is idle or off, so nobody sees it); restarting clears it, so the echo never shows
+ * a spectrum from before the pause.
+ */
+export function pauseBandHistory(paused: boolean): void {
+  if (paused === historyPaused) return;
+  historyPaused = paused;
+  if (!paused) clearHistory();
+}
+
+/**
+ * Smooth the bands toward the newest frame (zeros while silent) and write rows at
+ * `HISTORY_HZ` up to `now`. After a gap (a hidden page, a pause) it starts again at `now`
+ * rather than filling the gap. When the music stops the rows release to zero, so the lines
+ * settle outward over the history's span; then writing stops until sound returns.
+ */
+function advanceHistory(now: number, dt: number, playing: boolean): void {
+  if (historyPaused) return;
+  if (playing) quietRows = 0;
+  else if (quietRows >= HISTORY_ROWS) return;
+  for (let i = 0; i < BAND_COUNT; i++) smoothed[i] = smoothStep(smoothed[i], playing ? bands[i] : 0, dt);
+  if (now - nextRowAt > 250) nextRowAt = now;
+  while (now >= nextRowAt) {
+    history.head = (history.head + 1) % HISTORY_ROWS;
+    history.data.set(smoothed, history.head * BAND_COUNT);
+    if (history.rows < HISTORY_ROWS) history.rows++;
+    if (!playing) quietRows++;
+    nextRowAt += ROW_MS;
+  }
+}
+
 /** The beat detector fed by every `audio-levels` event: `count`, `lastBeatAt`, `lag`, `bass`, `beats()`. */
 export function audioBeats(): Readonly<BeatDetector> {
   return detector;
@@ -46,7 +119,7 @@ export function ingestLevels(payload: AudioLevelsPayload | null | undefined, now
     const raw = payload!.bands;
     if (Array.isArray(raw) && raw.length > 0) {
       for (let i = 0; i < BAND_COUNT; i++) bands[i] = i < raw.length ? clamp01((raw[i] ?? 0) / 255) : 0;
-      detector.push(bands, source);
+      detector.push(bands, source, now);
     }
   }
   // An empty event changes nothing here: silence is decided by the clock in `tickAudio`.
@@ -57,6 +130,7 @@ export function tickAudio(now: number): void {
   const dt = lastTickAt === null ? 0 : Math.min(0.25, Math.max(0, (now - lastTickAt) / 1000));
   lastTickAt = now;
   const playing = now - lastSoundAt <= SILENCE_MS;
+  advanceHistory(now, dt, playing);
   if (!playing) {
     // Past the silence deadline the levels are zero at once, as in the old visualizer.
     target = { bass: 0, mid: 0, high: 0 };
@@ -87,5 +161,7 @@ export function resetAudio(): void {
   lastTickAt = null;
   bands.fill(0);
   detector.reset();
+  historyPaused = false;
+  clearHistory();
   useAudioStore.setState({ ...QUIET });
 }
