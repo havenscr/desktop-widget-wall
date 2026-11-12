@@ -14,6 +14,7 @@ import {
   RING_PAD_PX,
   SCALE_MIN,
   WORD_FONT_PX,
+  longestWordWidth,
   minRingDiameter,
   sessionLabel,
   waitingLines,
@@ -215,8 +216,9 @@ it('Dream: Space wakes and the key press is default-prevented', () => {
   expect(onWake).toHaveBeenCalledTimes(1);
 });
 
-it('the smallest ring fits the longest word with 24 px to spare, and the words use the constant sizes', () => {
-  expect(RING_PAD_PX).toBeGreaterThanOrEqual(24);
+it('the smallest ring fits the longest word with 40 px to spare, and the words use the constant sizes', () => {
+  expect(RING_PAD_PX).toBeGreaterThanOrEqual(40);
+  expect((RING_BASE_PX * SCALE_MIN - longestWordWidth()) / 2).toBeGreaterThanOrEqual(40);
   expect(RING_BASE_PX * SCALE_MIN).toBeGreaterThanOrEqual(minRingDiameter());
   expect(LONGEST_WORD).toBe('Breathe out');
   const { container } = render(<Zen nowMs={clockAt(DAY)} />);
@@ -224,10 +226,42 @@ it('the smallest ring fits the longest word with 24 px to spare, and the words u
   expect((container.querySelector('.breath-num') as HTMLElement).style.fontSize).toBe(`${NUM_FONT_PX}px`);
 });
 
+it('the glow is a sibling of the masked ring, not inside it, and both get the same scale', () => {
+  const { container } = render(<Zen nowMs={clockAt(DAY)} />);
+  const ring = container.querySelector('.breath-circle') as HTMLElement;
+  const glow = container.querySelector('.breath-glow') as HTMLElement;
+  expect(ring.contains(glow)).toBe(false);
+  expect(glow.parentElement).toBe(ring.parentElement);
+  expect(glow.style.transform).toBe(ring.style.transform);
+});
+
+it('reduced motion: no frame loop, a steady ring, and the word still updates', () => {
+  setReducedMotion(true);
+  const raf = vi.spyOn(window, 'requestAnimationFrame');
+  const { container } = render(<Zen nowMs={clockAt(DAY)} />);
+  const ring = container.querySelector('.breath-circle') as HTMLElement;
+  const steady = ring.style.transform;
+  expect(steady).toMatch(/^scale\(/);
+  act(() => void vi.advanceTimersByTime(5000));
+  expect(ring.style.transform).toBe(steady);
+  expect(container.querySelector('.breath-word')!.textContent).toBe('Hold');
+  expect(raf).not.toHaveBeenCalled();
+  raf.mockRestore();
+});
+
+it('focus moves to the tap target when a session starts and back to Start when it ends', () => {
+  render(<Zen nowMs={clockAt(DAY)} />);
+  fireEvent.click(screen.getByRole('button', { name: /Start/ }));
+  act(() => void vi.advanceTimersByTime(100));
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: 'End session early' }));
+  fireEvent.click(screen.getByRole('button', { name: 'End session early' }));
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: /Start/ }));
+});
+
 it('the words do not scale with the ring; the ring, glow and a fixed guide ring are drawn', () => {
   const { container } = render(<Zen nowMs={clockAt(DAY)} />);
   expect(container.querySelector('.breath-guide')).not.toBeNull();
-  expect(container.querySelector('.breath-circle .breath-glow')).not.toBeNull();
+  expect(container.querySelector('.breath-ring > .breath-glow')).not.toBeNull();
   expect(container.querySelector('.breath-circle')!.contains(container.querySelector('.breath-words'))).toBe(false);
 });
 
@@ -252,15 +286,16 @@ it('Leave still works while a session runs', () => {
   expect(usePlaceStore.getState().active).toBe('work');
 });
 
-it('waitingLines: count, urgency only when the data says so, nothing when empty', () => {
+it('waitingLines: exact count and urgency below the feed limit, "or more" and no urgency at the limit', () => {
   expect(waitingLines([])).toBeNull();
   const q = (...x: (string | null)[]) => x.map((quadrant) => ({ quadrant }));
   expect(waitingLines(q(null, null))).toEqual({ count: 'After this: 2 things are waiting.', urgent: null });
   expect(waitingLines(q('feature', 'neither'))?.urgent).toBe('Neither is urgent.');
-  expect(waitingLines(q('feature', 'neither', 'feature'))?.urgent).toBe('None is urgent.');
   expect(waitingLines(q('feature', 'hotfix'))?.urgent).toBeNull();
   expect(waitingLines(q('feature', null))?.urgent).toBeNull();
   expect(waitingLines(q('feature'))).toEqual({ count: 'After this: 1 thing is waiting.', urgent: 'It is not urgent.' });
+  expect(waitingLines(q('feature', 'neither', 'feature'))).toEqual({ count: 'After this: 3 or more things are waiting.', urgent: null });
+  expect(waitingLines(q('hotfix', 'admin', 'feature'))?.urgent).toBeNull();
 });
 
 it('shows the open task count from the task feed, hides it when not set up', async () => {
@@ -273,6 +308,18 @@ it('shows the open task count from the task feed, hides it when not set up', asy
   expect(screen.getByText('After this: 2 things are waiting.')).toBeTruthy();
   expect(screen.getByText('Neither is urgent.')).toBeTruthy();
   first.unmount();
+  const t = (id: string) => ({ id, title: id, due_at: null, due_is_all_day: false, quadrant: 'feature' });
+  mocks.set('wall2_tasks_next', () => [t('a'), t('b'), t('c')]);
+  const three = render(<Zen nowMs={clockAt(DAY)} />);
+  await act(async () => void (await vi.advanceTimersByTimeAsync(10)));
+  expect(screen.getByText('After this: 3 or more things are waiting.')).toBeTruthy();
+  expect(screen.queryByText(/urgent/)).toBeNull();
+  three.unmount();
+  mocks.set('wall2_tasks_next', () => []);
+  const none = render(<Zen nowMs={clockAt(DAY)} />);
+  await act(async () => void (await vi.advanceTimersByTimeAsync(10)));
+  expect(document.querySelector('.zen-waiting')).toBeNull();
+  none.unmount();
   mocks.set('wall2_tasks_next', () => {
     throw new Error('not-configured');
   });
