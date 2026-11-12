@@ -29,13 +29,19 @@ fn clean_code(s: &str) -> Option<&str> {
     }
 }
 
-/// `graph-<status>` or `graph-<status>-<code>` from an error reply.
+/// The reason for a Graph error reply. `body` is what was read, at most the limit plus one
+/// byte: a body over the limit, or one that is not complete JSON, gives `graph-body`.
+/// Valid JSON gives `graph-<status>-<code>` when `error.code` passes the check, and
+/// `graph-<status>` when it does not.
 pub fn graph_reason(status: u16, body: &[u8]) -> String {
-    let body = &body[..body.len().min(MAX_ERROR_BODY as usize)];
-    let code = serde_json::from_slice::<Value>(body)
-        .ok()
-        .and_then(|j| j.get("error")?.get("code")?.as_str().map(str::to_string));
-    match code.as_deref().and_then(clean_code) {
+    if body.len() as u64 > MAX_ERROR_BODY {
+        return GRAPH_BODY.to_string();
+    }
+    let Ok(json) = serde_json::from_slice::<Value>(body) else {
+        return GRAPH_BODY.to_string();
+    };
+    let code = json.get("error").and_then(|e| e.get("code")).and_then(Value::as_str);
+    match code.and_then(clean_code) {
         Some(c) => format!("graph-{status}-{c}"),
         None => format!("graph-{status}"),
     }
@@ -88,8 +94,7 @@ mod tests {
     fn graph_status_and_code() {
         assert_eq!(graph_reason(403, br#"{"error":{"code":"ErrorAccessDenied","message":"x"}}"#), "graph-403-ErrorAccessDenied");
         assert_eq!(graph_reason(400, br#"{"error":{"code":"Bad_Request2"}}"#), "graph-400-Bad_Request2");
-        assert_eq!(graph_reason(503, b""), "graph-503");
-        assert_eq!(graph_reason(500, b"not json"), "graph-500");
+        assert_eq!(graph_reason(503, br#"{}"#), "graph-503");
         assert_eq!(graph_reason(404, br#"{"error":"flat"}"#), "graph-404");
     }
 
@@ -131,12 +136,33 @@ mod tests {
     }
 
     #[test]
-    fn only_the_first_16_kb_of_a_body_is_read() {
-        let mut body = br#"{"error":{"code":"Late"},"pad":""#.to_vec();
-        body.extend(std::iter::repeat(b'x').take(20_000));
-        body.extend_from_slice(b"\"}");
-        // Truncated JSON does not parse, so no code is taken.
-        assert_eq!(graph_reason(403, &body), "graph-403");
+    fn an_unreadable_body_is_graph_body() {
+        assert_eq!(graph_reason(500, b"<html><body>Bad gateway</body></html>"), "graph-body");
+        assert_eq!(graph_reason(503, b""), "graph-body");
+        assert_eq!(graph_reason(500, b"not json"), "graph-body");
+        // Truncated JSON.
+        assert_eq!(graph_reason(403, br#"{"error":{"code":"ErrorAccessDen"#), "graph-body");
+    }
+
+    #[test]
+    fn a_body_over_the_limit_is_graph_body_even_when_it_is_valid_json() {
+        let limit = MAX_ERROR_BODY as usize;
+        let pad = |n: usize| "x".repeat(n);
+        // 20 KB of valid JSON.
+        let big = format!(r#"{{"error":{{"code":"Late"}},"pad":"{}"}}"#, pad(20_000));
+        assert!(big.len() > limit + 1);
+        assert_eq!(graph_reason(403, big.as_bytes()), "graph-body");
+        // What the reader hands over for a big body: the limit plus one byte, never parseable.
+        assert_eq!(graph_reason(403, &big.as_bytes()[..limit + 1]), "graph-body");
+        // Exactly the limit, complete: parsed.
+        let prefix = r#"{"error":{"code":"AtLimit"},"pad":""#;
+        let suffix = r#""}"#;
+        let exact = format!("{prefix}{}{suffix}", pad(limit - prefix.len() - suffix.len()));
+        assert_eq!(exact.len(), limit);
+        assert_eq!(graph_reason(403, exact.as_bytes()), "graph-403-AtLimit");
+        // One byte over: graph-body.
+        let over = format!("{prefix}{}{suffix}", pad(limit - prefix.len() - suffix.len() + 1));
+        assert_eq!(graph_reason(403, over.as_bytes()), "graph-body");
     }
 
     #[test]

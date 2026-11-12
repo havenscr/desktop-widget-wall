@@ -3,7 +3,8 @@
 //! Everything that touches a token, an authorization code or a join link happens here. The
 //! web view gets account states, meeting titles and times, and opaque keys, nothing else.
 //! Refresh tokens live in Windows Credential Manager; access tokens live in memory only.
-//! This module never logs: every failure maps to a fixed string.
+//! The only log is `wall2-meet.log` (state changes and a reason code, see `meetlog.rs`); every
+//! failure maps to a fixed string or a reason code built from numbers and a checked name.
 
 mod auth;
 mod graph;
@@ -35,10 +36,11 @@ pub(crate) fn agent() -> &'static ureq::Agent {
     AGENT.get_or_init(|| ureq::AgentBuilder::new().timeout(TIMEOUT).redirects(0).build())
 }
 
-/// At most `limit` bytes of a body, for an error reply whose JSON is only read for a code.
+/// At most `limit` plus one bytes of a body, for an error reply whose JSON is only read for a
+/// code. The extra byte tells the reason builder that the body was over the limit.
 pub(crate) fn read_capped(resp: ureq::Response, limit: u64) -> Vec<u8> {
     let mut buf = Vec::new();
-    let _ = resp.into_reader().take(limit).read_to_end(&mut buf);
+    let _ = resp.into_reader().take(limit + 1).read_to_end(&mut buf);
     buf
 }
 
