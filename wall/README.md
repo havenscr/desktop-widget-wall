@@ -353,21 +353,29 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
   shows. If the first start fails it stays silent and retries once after 30 seconds; if no
   event arrives for 5 seconds while visible it restarts capture once (once per app run, by design).
   It also keeps the newest 32 `bands`, normalised 0 to 1 from the event's 0 to 255 bytes
-  (`audioBands()`, a fixed array written in place), and feeds them to the beat detector.
+  (`audioBands()`, a fixed array written in place), and feeds them to the beat detector on
+  each frame's source time (`sourceTime.ts`). The event carries no capture time, and frames
+  that queue behind a stalled web view arrive in a burst: a frame less than 16 ms after the
+  previous one is stamped 33 ms after it; otherwise it takes its arrival time (or, while still
+  ahead after a burst, the previous stamp plus the real interval, capped at 33 ms, so time never
+  runs backwards); a frame more than 200 ms ahead of the clock is dropped. Silence is still
+  judged on arrival times.
 - **Beats** (`beat.ts`, read with `audioBeats()`). The detector sums the power of bands 0 to 11
-  (about 20 to 245 Hz) into one level in dB. An onset is a rising frame at least 8 dB above the
+  (about 20 to 245 Hz) into one level in dB. An onset is a rising frame at least 9 dB above the
   median level of the last second; it counts as a beat only if the next two frames stay 4 dB
   above that median (a kick holds up while it decays, a noisy frame drops straight back). Beats
-  are at least 0.25 s apart, timestamped at the onset, and the history starts afresh after a
+  are at least 340 ms apart (never more than three in a second, the calm limit), timestamped at the onset, and the history starts afresh after a
   0.5 s gap in events. It exposes `count`, `lastBeatAt`, `lag` (onset to confirmation, about
   66 ms), `beats()` and `bass` (the mean of bands 0 to 5). Bands 0 to 5 alone are not enough: at
   48 kHz they all read the same 47 Hz FFT bin, which swings by 10 dB from frame to frame on
-  noise. Tested on a port of the Rust band maths: a 120 BPM synthetic kick gives a beat per kick
-  0.5 s apart (within 30 ms); seeded pink noise gives none. In longer simulated runs of pure pink
-  noise the detector still fires about five times an hour, so expect a rare stray glow on
-  noise-like audio.
-- **Browser dev.** Silent by default. Add `?audio=demo` to the URL for gentle fake levels,
-  including 32 bands with a kick at 105 BPM, so the grid pulse shows in a browser.
+  noise. Tested on a port of the Rust band maths at 44.1 and 48 kHz: a 120 BPM synthetic kick gives a
+  beat per kick 0.5 s apart (within 35 ms; the 9 dB margin may miss one kick under a noise
+  bed); two fixed pink noise seeds per level give none. In longer simulated runs of pure pink
+  noise (54 minutes per rate) it fired 0 times at 44.1 kHz and 3 times at 48 kHz, so expect a
+  rare stray glow on noise-like audio.
+- **Browser dev.** Silent by default. In a development build (`npm run dev`) add `?audio=demo`
+  to the URL for gentle fake levels, including 32 bands with a kick at 105 BPM, so the grid
+  pulse shows in a browser. A production bundle ignores the query.
 - **Ripple.** While `playing`, `HorizonCanvas` passes `echo` to the renderer: `n`, `amp`, `cx`
   from the camera preset (`en`, `eamp`, `ecx`), opacity `ea` scaled by a smoothed
   loudness (bass weighted), `hs` 900. It fades in and out over about a second. Nothing is
@@ -378,9 +386,11 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
   edge in 1.2 s (depth `p` 0 to 1 on the grid's own `pow(p, 2.1)` spacing, eased out over its
   life so it leaves the horizon briskly; drawn additively after the lake's fog, growing with
   depth), fading in over its first 12 percent and out over its last 30; it starts already as
-  old as the detector's lag, so it lines up with the kick. Peak opacity 0.42 at full strength. The grid lines brighten from 0.3 up to
-  0.55 opacity with `0.65 * kick + 0.35 * bass`, where the kick part jumps to 1 on a beat and
-  falls away over about 0.3 s. Both scale by the camera's `gp`: 0.5 on Work, Home and the
+  old as the detector's lag, so it lines up with the kick. Peak opacity 0.42 at full strength. The grid lines
+  brighten from 0.3 up to 0.55 opacity with `0.65 * kick + 0.35 * bass`, where the kick part
+  eases up to 1 over 80 ms on a beat (never a jump) and falls away over about 0.3 s, and the
+  bass part is smoothed over about 0.6 s so frame-to-frame jitter never flickers the lines.
+  With beats at least 340 ms apart the lines rise at most three times a second. Both scale by the camera's `gp`: 0.5 on Work, Home and the
   morning Rainier view (subtle, and seen through the ribbon's glass), 1 on Unwind. Four fixed
   band slots, reused every frame. No grid when silent, under reduced motion or in the review
   still; without `grid` the renderer makes exactly the canvas calls it made before (a golden
