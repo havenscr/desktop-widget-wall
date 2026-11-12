@@ -15,6 +15,8 @@ export const REFRESH_MS = 120_000;
 export const FADE_MS = 2000;
 /** Holding a task row this long starts focus on it. */
 export const LONG_PRESS_MS = 500;
+/** A finger that moves further than this from where it went down cancels the hold. */
+export const HOLD_SLOP_PX = 12;
 
 /** The estimate chip: "15 m", "45 m", "60+ m", or null when there is no estimate. */
 export function estText(est: TaskItem['est']): string | null {

@@ -79,7 +79,9 @@ export function useTasks(query?: TasksQuery): TasksState {
           ...(args.tag ? { tag: args.tag } : {}),
           ...(args.notTag ? { notTag: args.notTag } : {}),
         });
-        list = r?.next;
+        // A summary without a `next` list is a bad answer, not an empty one.
+        if (!Array.isArray(r?.next)) throw new Error('bad answer');
+        list = r.next;
         more = typeof r?.remaining === 'number' && r.remaining > 0 ? r.remaining : 0;
       } else {
         list = await invoke<TaskItem[]>('wall2_tasks_next');

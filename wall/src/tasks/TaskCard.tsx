@@ -1,7 +1,7 @@
 import { IconCheck } from '@tabler/icons-react';
 import { useEffect, useRef, useState } from 'react';
 import { useFocusStore } from '../focus/store';
-import { estText, LONG_PRESS_MS, updatedText, visibleRows, type TaskItem } from './model';
+import { estText, HOLD_SLOP_PX, LONG_PRESS_MS, updatedText, visibleRows, type TaskItem } from './model';
 import { useTasks, type TasksQuery } from './useTasks';
 
 /** Work's list: the tasks without the home tag. */
@@ -9,7 +9,8 @@ const WORK_QUERY: TasksQuery = { notTag: 'home' };
 
 /**
  * One task as the concept draws it (`.tk3`): a check circle, the title and the estimate.
- * Holding the row for half a second starts a focus session named after the task.
+ * Holding the row for half a second starts a focus session named after the task; lifting,
+ * cancelling or moving more than 12 px first does nothing.
  */
 function TaskRow({
   task,
@@ -24,9 +25,11 @@ function TaskRow({
 }) {
   const [holding, setHolding] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const downAt = useRef<{ x: number; y: number } | null>(null);
   const stop = () => {
     clearTimeout(timer.current);
     timer.current = undefined;
+    downAt.current = null;
     setHolding(false);
   };
   useEffect(() => () => clearTimeout(timer.current), []);
@@ -52,15 +55,23 @@ function TaskRow({
         className="tk-main"
         aria-label={`Hold to focus on: ${task.title}`}
         aria-disabled={!focusable}
-        onPointerDown={() => {
+        onPointerDown={(e) => {
           if (!focusable) return;
           stop();
+          downAt.current = { x: e.clientX, y: e.clientY };
           setHolding(true);
           timer.current = setTimeout(() => {
             timer.current = undefined;
+            downAt.current = null;
             setHolding(false);
             startFocus();
           }, LONG_PRESS_MS);
+        }}
+        // On touch the pointer is captured and pointerleave does not fire while the finger
+        // slides, so a move of more than 12 px from where it went down cancels the hold.
+        onPointerMove={(e) => {
+          const d = downAt.current;
+          if (d && Math.hypot(e.clientX - d.x, e.clientY - d.y) > HOLD_SLOP_PX) stop();
         }}
         onPointerUp={stop}
         onPointerLeave={stop}

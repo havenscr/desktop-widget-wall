@@ -137,6 +137,43 @@ it('a short tap or a press that slides off starts nothing', async () => {
   expect(useFocusStore.getState().state.status).toBe('idle');
 });
 
+it('a finger that slides more than 12 px cancels the hold, a small wobble does not', async () => {
+  setList(() => [task('a', 'Write the report')]);
+  render(<TaskCard />);
+  await flush();
+  const row = screen.getByLabelText('Hold to focus on: Write the report');
+  fireEvent.pointerDown(row, { clientX: 100, clientY: 30 });
+  fireEvent.pointerMove(row, { clientX: 110, clientY: 34 });
+  await flush(200);
+  fireEvent.pointerMove(row, { clientX: 113, clientY: 30 });
+  await flush(1000);
+  expect(useFocusStore.getState().state.status).toBe('idle');
+  fireEvent.pointerDown(row, { clientX: 100, clientY: 30 });
+  fireEvent.pointerMove(row, { clientX: 108, clientY: 36 });
+  await flush(500);
+  expect(useFocusStore.getState().state.status).toBe('running');
+});
+
+it('pointercancel cancels the hold', async () => {
+  setList(() => [task('a', 'Write the report')]);
+  render(<TaskCard />);
+  await flush();
+  const row = screen.getByLabelText('Hold to focus on: Write the report');
+  fireEvent.pointerDown(row, { clientX: 100, clientY: 30 });
+  await flush(300);
+  fireEvent.pointerCancel(row);
+  await flush(1000);
+  expect(useFocusStore.getState().state.status).toBe('idle');
+});
+
+it('treats a summary with no next list as a failed read, not as nothing due', async () => {
+  mocks.set('wall2_tasks_summary', () => ({ remaining: 0 }));
+  render(<TaskCard />);
+  await flush();
+  expect(screen.getByText('Tasks unavailable')).toBeTruthy();
+  expect(screen.queryByText('Nothing due')).toBeNull();
+});
+
 it('reads the tasks without the home tag and shows estimates and how many more can wait', async () => {
   setList(() => [task('a', 'First', '45'), task('b', 'Second', '60plus'), task('c', 'Third')], 9);
   const r = render(<TaskCard />);
