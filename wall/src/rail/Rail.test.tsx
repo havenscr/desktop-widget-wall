@@ -5,13 +5,13 @@ import { usePlaceStore } from '../state/places';
 
 beforeEach(() => usePlaceStore.setState({ active: 'work' }));
 
-it('has three enabled named buttons', () => {
+it('has four enabled named buttons and three disabled', () => {
   render(<Rail />);
-  for (const name of ['Work', 'Home', 'Unwind']) {
+  for (const name of ['Work', 'Home', 'Unwind', 'Zen']) {
     const b = screen.getByRole('button', { name }) as HTMLButtonElement;
     expect(b.disabled).toBe(false);
   }
-  for (const name of ['Meet', 'On air', 'Zen', 'Tools']) {
+  for (const name of ['Meet', 'On air', 'Tools']) {
     expect((screen.getByRole('button', { name }) as HTMLButtonElement).disabled).toBe(true);
   }
 });
@@ -35,4 +35,28 @@ it('arrow keys move between enabled places', () => {
   expect(usePlaceStore.getState().active).toBe('unwind');
   fireEvent.keyDown(screen.getByRole('button', { name: 'Unwind' }), { key: 'ArrowUp' });
   expect(usePlaceStore.getState().active).toBe('home');
+});
+
+it('Zen opens the Zen place', () => {
+  render(<Rail />);
+  fireEvent.click(screen.getByRole('button', { name: 'Zen' }));
+  expect(usePlaceStore.getState().active).toBe('zen');
+  expect(screen.getByRole('button', { name: 'Zen' }).getAttribute('aria-current')).toBe('page');
+});
+
+it('arrow keys go Work, Home, Unwind, Zen and wrap, skipping the disabled buttons', () => {
+  render(<Rail />);
+  const key = (name: string, k: 'ArrowDown' | 'ArrowUp') => {
+    const b = screen.getByRole('button', { name });
+    b.focus();
+    fireEvent.keyDown(b, { key: k });
+    return usePlaceStore.getState().active;
+  };
+  expect(key('Work', 'ArrowDown')).toBe('home');
+  expect(key('Home', 'ArrowDown')).toBe('unwind');
+  expect(key('Unwind', 'ArrowDown')).toBe('zen');
+  expect(key('Zen', 'ArrowDown')).toBe('work');
+  expect(key('Work', 'ArrowUp')).toBe('zen');
+  expect(key('Zen', 'ArrowUp')).toBe('unwind');
+  expect(key('Unwind', 'ArrowUp')).toBe('home');
 });

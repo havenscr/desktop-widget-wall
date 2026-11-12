@@ -6,7 +6,7 @@ runs in a plain browser for development and inside Tauri as a second app,
 "Widget Wall 2". So far: a scaled stage, the live horizon, a left rail with
 three places, a clock, the Work tab basics (weather, music, focus timer), a task
 card, a network tile on Home, the Unwind tab with Watt the sheep, a sound ripple
-on the horizon, a small Tauri bridge and tests. Most of Home is still a placeholder.
+on the horizon, the Zen place with Dream, a small Tauri bridge and tests. Most of Home is still a placeholder.
 
 ## Requirements
 
@@ -275,3 +275,29 @@ do not select text or flash a tap highlight, rail buttons show a pressed state o
 `.github/workflows/build-windows.yml` has a `wall-web` job (Ubuntu: install,
 type check, test, build) and, in the Windows job, a second build uploaded as
 the `widget-wall-2-windows` artifact.
+
+## Zen and Dream
+
+`wall/src/zen/`. The Zen button in the rail opens a calm full-stage view over everything
+else (the rail and clock are hidden under it). It is front end only: it does not change
+the system volume, Do Not Disturb or the focus timer.
+
+- **Flames** (`Flames.tsx`). Two stacked full-stage layers of slowly drifting fractal
+  flames: the lower layer plain, the upper one screen-blended, drifting the other way
+  and fading in and out. Every 4 minutes the pair moves to the next flames with a 30
+  second cross-fade. Under reduced motion the layers are still and the pair changes
+  without a fade. The three images are in `wall/src/assets/flames/`; they were rendered
+  for this project with a fractal flame renderer (see the README there).
+- **Breathing guide** (`Breath.tsx`, maths in `model.ts`). A 12 second cycle: 4 s in,
+  2 s hold, 6 s out. The circle scales from 0.8 to 1.06 with a cubic ease, with the
+  phase word and the seconds left in the phase. Pick 3, 5 or 10 minutes, then Start;
+  "N:NN left" shows while it runs, and Stop ends it. Starting restarts the cycle at
+  "Breathe in".
+- **Dream** (`Dream.tsx`). Flames dim to 35 percent, the guide is hidden, a small clock
+  shows, and Watt sleeps in the corner (the `SheepSvg` sleep pose from `buddy/Watt.tsx`,
+  at x 1226, ground line 688). Dream starts when a session ends (the guide fades out
+  first), or when Zen opens between 9:30 PM and 6:30 AM local time (the same window as
+  Watt's sleep). A tap anywhere wakes back to Zen; after a wake at night it stays awake
+  until Zen is left and opened again. Leave returns to Work.
+- **Horizon.** While Zen is active the horizon canvas is hidden and not drawn (no frame
+  loop, no timer redraw). Leaving resumes it, gliding from the last camera.

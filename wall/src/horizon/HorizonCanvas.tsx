@@ -18,11 +18,15 @@ const REDRAW_MS = 60_000;
  */
 export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
   const ref = useRef<HTMLCanvasElement>(null);
-  const place = usePlaceStore((s) => s.active);
+  const active = usePlaceStore((s) => s.active);
+  // Zen covers the stage with flames, so the canvas is not drawn then. It keeps the last camera
+  // and glides from there to wherever the user goes next.
+  const zen = active === 'zen';
+  const place = active === 'zen' ? null : active;
   const reduced = useReducedMotion();
   // Review hook: dev builds only, `?hz=<place>&at=<ISO time>` draws one frozen frame.
   const [review] = useState(() => (import.meta.env.DEV ? parseReview(window.location.search) : null));
-  const glide = useRef<Glide>(settled(CAMERAS[review?.place ?? place]));
+  const glide = useRef<Glide>(settled(CAMERAS[review?.place ?? place ?? 'work']));
   const repaint = useRef<() => void>(() => {});
   const first = useRef(true);
   // The ripple fade (0 to 1) follows `playing`.
@@ -37,7 +41,7 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
   // Drawing: an animated 30 fps loop, or a single frame (a still frame once a minute when motion is reduced).
   useEffect(() => {
     const canvas = ref.current;
-    if (!canvas) return;
+    if (!canvas || zen) return;
     const still = reduced || review !== null;
     let T = 0;
     let last = 0;
@@ -106,7 +110,7 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
       window.clearInterval(timer);
       cancelAnimationFrame(raf);
     };
-  }, [reduced, review]);
+  }, [reduced, review, zen]);
 
   // Hidden pages start the ripple from nothing when they return, never from stale levels.
   useEffect(() => {
@@ -131,10 +135,12 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
       first.current = false;
       return;
     }
-    if (review) return;
+    if (review || place === null) return;
+    // Back from Zen to the camera already showing: nothing to glide (the moon stays on Unwind).
+    if (glide.current.to === CAMERAS[place] && glide.current.progress >= 1) return;
     glide.current = startGlide(glide.current, CAMERAS[place], reduced);
     if (reduced) repaint.current();
   }, [place, reduced, review]);
 
-  return <canvas ref={ref} className="horizon-canvas" aria-hidden="true" />;
+  return <canvas ref={ref} className="horizon-canvas" aria-hidden="true" style={zen ? { display: 'none' } : undefined} />;
 }

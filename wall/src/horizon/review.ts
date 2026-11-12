@@ -1,8 +1,8 @@
-import type { PlaceId } from '../state/places';
+import type { CameraPlace } from '../state/places';
 
 /** A frozen review frame requested through the URL. */
 export interface ReviewFrame {
-  place: PlaceId;
+  place: CameraPlace;
   /** Epoch milliseconds the clock is frozen at. */
   ms: number;
 }
@@ -20,5 +20,5 @@ export function parseReview(search: string): ReviewFrame | null {
   if (!place || !at || !PLACE_IDS.includes(place)) return null;
   // URLSearchParams turns a literal `+` (as in +01:00) into a space; a space is never valid in an ISO time.
   const ms = Date.parse(at.replace(/ /g, '+'));
-  return Number.isNaN(ms) ? null : { place: place as PlaceId, ms };
+  return Number.isNaN(ms) ? null : { place: place as CameraPlace, ms };
 }

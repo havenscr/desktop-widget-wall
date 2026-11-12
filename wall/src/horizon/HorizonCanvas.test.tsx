@@ -344,3 +344,45 @@ it('draws no ripple in the review still, even with music playing; ?hz=unwind has
   expect(o).not.toHaveProperty('echo');
   expect(o).not.toHaveProperty('moon');
 });
+
+it('does not draw while Zen is active, and resumes (gliding from the old camera) on leaving', () => {
+  setReducedMotion(false);
+  render(<HorizonCanvas now={() => NOON} />);
+  runFrame(100);
+  act(() => usePlaceStore.getState().setActive('zen'));
+  expect(frames.size).toBe(0);
+  draw.mockClear();
+  expect(document.querySelector('canvas')!.style.display).toBe('none');
+  expect(draw).not.toHaveBeenCalled();
+  act(() => usePlaceStore.getState().setActive('home'));
+  expect(document.querySelector('canvas')!.style.display).toBe('');
+  runFrame(200);
+  expect(draw).toHaveBeenCalled();
+  const cam = draw.mock.lastCall![1].camera!;
+  // Strictly between Work and Home: a jump (or no glide) would fail.
+  expect(cam.az0).toBeLessThan(CAMERAS.work.az0);
+  expect(cam.az0).toBeGreaterThan(CAMERAS.home.az0);
+});
+
+it('leaving Zen back to the same place does not glide, so the Unwind moon stays', () => {
+  setReducedMotion(false);
+  usePlaceStore.setState({ active: 'unwind' });
+  render(<HorizonCanvas now={() => NOON} />);
+  runFrame(100);
+  act(() => usePlaceStore.getState().setActive('zen'));
+  act(() => usePlaceStore.getState().setActive('unwind'));
+  runFrame(200);
+  const o = draw.mock.lastCall![1];
+  expect(o.camera).toEqual(CAMERAS.unwind);
+  expect(o.moon).toBeDefined();
+});
+
+it('reduced motion: no timer redraw while Zen is active', () => {
+  setReducedMotion(true);
+  vi.useFakeTimers();
+  render(<HorizonCanvas now={() => NOON} />);
+  act(() => usePlaceStore.getState().setActive('zen'));
+  draw.mockClear();
+  act(() => void vi.advanceTimersByTime(180_000));
+  expect(draw).not.toHaveBeenCalled();
+});

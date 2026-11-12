@@ -9,9 +9,9 @@ import {
   IconUsers,
   type Icon,
 } from '@tabler/icons-react';
-import { PLACES, usePlaceStore, type PlaceId } from '../state/places';
+import { PLACES, usePlaceStore } from '../state/places';
 
-const PLACE_ICONS: Record<PlaceId, Icon> = {
+const PLACE_ICONS: Record<'work' | 'home' | 'unwind', Icon> = {
   work: IconBriefcase,
   home: IconHome,
   unwind: IconHeadphones,
@@ -47,7 +47,7 @@ export function Rail() {
   return (
     <nav className="rail" aria-label="Places" onKeyDown={onKeyDown}>
       {PLACES.map(({ id, label }) => {
-        const Glyph = PLACE_ICONS[id];
+        const Glyph = PLACE_ICONS[id as keyof typeof PLACE_ICONS];
         return (
           <button
             key={id}
@@ -66,7 +66,16 @@ export function Rail() {
       <Disabled label="Meet" Glyph={IconUsers} />
       <Disabled label="On air" Glyph={IconBroadcast} />
       <div className="rail-spacer" />
-      <Disabled label="Zen" Glyph={IconMoon} />
+      <button
+        type="button"
+        className="rb"
+        aria-label="Zen"
+        aria-current={active === 'zen' ? 'page' : undefined}
+        onClick={() => setActive('zen')}
+      >
+        <IconMoon size={30} stroke={1.8} aria-hidden="true" />
+        Zen
+      </button>
       <Disabled label="Tools" Glyph={IconTools} />
     </nav>
   );
