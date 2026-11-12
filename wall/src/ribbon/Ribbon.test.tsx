@@ -94,11 +94,13 @@ it('draws the focus bar from today\'s sessions up to now', async () => {
   expect(parseFloat(fo.style.width)).toBeCloseTo(RX(10.4) - RX(10));
 });
 
-it('uses the home icon for row 2 on Home', async () => {
+it('uses the home icon for row 2 on Home, with no focus bar', async () => {
   mocks.set('wall2_meet_day', () => ({ accounts: [], events: [] }));
+  useFocusStore.setState({ sessions: [{ start: t('10:00'), end: t('10:45') }] });
   const r = render(<Ribbon kind="home" />);
   await flush();
   expect(r.container.querySelector('.rib')!.getAttribute('data-kind')).toBe('home');
   expect(r.container.querySelector('.tabler-icon-home')).not.toBeNull();
   expect(r.container.querySelector('.tabler-icon-bolt')).toBeNull();
+  expect(r.container.querySelector('.fo')).toBeNull();
 });

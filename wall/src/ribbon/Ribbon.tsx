@@ -31,8 +31,9 @@ function useMinute(now: () => number): number {
 /**
  * The day ribbon along the bottom of Work, Home and Meet (concept `.rib`): hours from
  * 6 AM to 12 AM over the day's sky, sunrise and sunset, today's calendar on row 1, the
- * focus bar from today's sessions, and the needle with the time. Row 2 (agent lanes on
- * Work, the house schedule on Home) is left empty for now; only its icon shows.
+ * focus bar from today's sessions (Work and Meet; Home has none, as in the concept), and
+ * the needle with the time. Row 2 (agent lanes on Work, the house schedule on Home) is
+ * left empty for now; only its icon shows.
  */
 export function Ribbon({ kind, now = Date.now }: { kind: RibbonKind; now?: () => number }) {
   const visible = useVisible();
@@ -67,9 +68,10 @@ export function Ribbon({ kind, now = Date.now }: { kind: RibbonKind; now?: () =>
           {c.title}
         </div>
       ))}
-      {focusBars(sessions, t).map((b) => (
-        <i key={b.x} className="fo" style={{ left: b.x, width: b.width }} aria-hidden="true" />
-      ))}
+      {kind === 'work' &&
+        focusBars(sessions, t).map((b) => (
+          <i key={b.x} className="fo" style={{ left: b.x, width: b.width }} aria-hidden="true" />
+        ))}
       <div className="ndl" style={{ left: n.x }}>
         <b>{n.text}</b>
       </div>
