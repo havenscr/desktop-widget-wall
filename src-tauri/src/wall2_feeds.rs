@@ -650,6 +650,18 @@ fn first_text(obj: &serde_json::Map<String, Value>, keys: &[&str]) -> Option<Str
     })
 }
 
+/// A type slug as words: underscores and hyphens become spaces, runs of spaces collapse,
+/// and the first letter is capitalised (`abnormal_upload` reads "Abnormal upload").
+fn humanize_slug(raw: &str) -> String {
+    let spaced: String = raw.chars().map(|c| if c == '_' || c == '-' { ' ' } else { c }).collect();
+    let words = spaced.split_whitespace().collect::<Vec<_>>().join(" ");
+    let mut chars = words.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().chain(chars).collect(),
+        None => String::new(),
+    }
+}
+
 /// `high`, `medium` or `low` from the common severity words; None for anything else.
 fn alert_severity(obj: &serde_json::Map<String, Value>) -> Option<String> {
     let raw = first_text(obj, &["severity", "level", "priority"])?.to_ascii_lowercase();
@@ -693,7 +705,9 @@ fn alert_rows(alerts: &[Value], received_at: Option<&Value>) -> Vec<AlertRow> {
         .filter_map(|a| {
             let obj = a.as_object()?;
             Some(AlertRow {
-                text: first_text(obj, &["title", "message", "text", "summary", "reason", "type"])?,
+                text: first_text(obj, &["title", "message", "text", "summary", "reason"])
+                    .or_else(|| first_text(obj, &["type"]).map(|t| humanize_slug(&t)))
+                    .filter(|t| !t.is_empty())?,
                 severity: alert_severity(obj),
                 at_ms: alert_time(obj),
             })
@@ -1273,6 +1287,18 @@ mod tests {
     }
 
     #[test]
+    fn humanize_slug_reads_a_type_as_words() {
+        assert_eq!(humanize_slug("abnormal_upload"), "Abnormal upload");
+        assert_eq!(humanize_slug("new-device__joined"), "New device joined");
+        assert_eq!(humanize_slug("Already words"), "Already words");
+        assert_eq!(humanize_slug("_-_"), "");
+        assert_eq!(humanize_slug("étrange_type"), "Étrange type");
+        // A title is never rewritten, only a type.
+        let rows = alert_rows(&[json!({"id": "t", "title": "keep_this", "type": "x_y"})], None);
+        assert_eq!(rows[0].text, "keep_this");
+    }
+
+    #[test]
     fn alert_rows_read_text_severity_and_time() {
         let alerts = vec![
             json!({"id": "a", "title": "  New device\n joined  ", "severity": "High", "firstSeen": "2026-11-11T10:00:00Z"}),
@@ -1284,7 +1310,7 @@ mod tests {
         ];
         let rows = alert_rows(&alerts, None);
         assert_eq!(rows.len(), 3);
-        assert_eq!(rows[0].text, "abnormal_upload");
+        assert_eq!(rows[0].text, "Abnormal upload");
         assert_eq!(rows[0].at_ms, Some(1_794_395_000_000));
         assert_eq!((rows[1].text.as_str(), rows[1].severity.as_deref()), ("New device joined", Some("high")));
         assert_eq!(rows[1].at_ms, Some(1_794_391_200_000));

@@ -1,8 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { invoke } from '../bridge/tauri';
 import { NOT_CONFIGURED } from '../tasks/model';
+import { reviewNow } from '../ui/reviewClock';
 import { useVisible } from '../ui/useVisible';
 import { REFRESH_MS, type SecuritySummary } from './model';
+
+/** The wall clock, or the frozen review time in a dev review still (`?hz=&at=`). */
+const clock = reviewNow ?? (() => Date.now());
 
 export interface SecurityState {
   status: 'loading' | 'ready' | 'unconfigured' | 'error';
@@ -17,7 +21,7 @@ export function useSecurity(): SecurityState {
   const visible = useVisible();
   const [status, setStatus] = useState<SecurityState['status']>('loading');
   const [summary, setSummary] = useState<SecuritySummary | null>(null);
-  const [now, setNow] = useState(() => Date.now());
+  const [now, setNow] = useState(() => clock());
   const [attempts, setAttempts] = useState(0);
   const mounted = useRef(false);
   const inFlight = useRef(false);
@@ -44,7 +48,7 @@ export function useSecurity(): SecurityState {
     } finally {
       inFlight.current = false;
       if (mounted.current) {
-        setNow(Date.now());
+        setNow(clock());
         setAttempts((n) => n + 1);
       }
     }
@@ -54,7 +58,7 @@ export function useSecurity(): SecurityState {
     if (!visible) return;
     void refresh();
     const id = setInterval(() => void refresh(), REFRESH_MS);
-    const tick = setInterval(() => setNow(Date.now()), 30_000);
+    const tick = setInterval(() => setNow(clock()), 30_000);
     return () => {
       clearInterval(id);
       clearInterval(tick);
