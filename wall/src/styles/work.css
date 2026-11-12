@@ -485,6 +485,15 @@
 }
 /* Meet: three zones, 620 + 1140 + 596 design pixels with 30px gaps across the 2416 wide work area.
    Calm by design: no motion, no red; the accent shows only in the last five minutes. */
+/* Meet sits right of the clock, from the same left edge as the Work tab's first panel (.focus, 482px),
+   and runs flush right like the rail-side panels. */
+.meet-body {
+  position: absolute;
+  left: 482px;
+  right: 0;
+  top: 0;
+  bottom: 0;
+}
 .meet-next,
 .meet-later,
 .meet-accounts {
@@ -493,12 +502,12 @@
 }
 .meet-next {
   left: 0;
-  width: 620px;
+  width: 460px;
   gap: 16px;
 }
 .meet-later {
-  left: 650px;
-  width: 1140px;
+  left: 490px;
+  width: 818px;
 }
 .meet-accounts {
   right: 0;
@@ -548,7 +557,7 @@
 }
 .meet-time {
   flex: none;
-  width: 250px;
+  width: 220px;
   font: 500 24px/1 var(--body);
   color: var(--dim);
 }
@@ -558,7 +567,7 @@
 }
 .meet-acct {
   flex: none;
-  width: 120px;
+  width: 100px;
   text-align: right;
 }
 .meet-join {

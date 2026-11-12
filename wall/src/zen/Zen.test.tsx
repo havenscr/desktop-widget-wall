@@ -1,11 +1,23 @@
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { usePlaceStore } from '../state/places';
 import { FLAMES, Flames } from './Flames';
 import { Zen } from './Zen';
 import zenSource from './Zen.tsx?raw';
 import { Dream } from './Dream';
-import { FLAME_ROTATE_MS } from './model';
+import { mocks } from '../bridge/tauri';
+import {
+  FLAME_ROTATE_MS,
+  LONGEST_WORD,
+  NUM_FONT_PX,
+  RING_BASE_PX,
+  RING_PAD_PX,
+  SCALE_MIN,
+  WORD_FONT_PX,
+  minRingDiameter,
+  sessionLabel,
+  waitingLines,
+} from './model';
 
 function setReducedMotion(reduce: boolean) {
   window.matchMedia = ((query: string) => ({
@@ -53,9 +65,9 @@ it('a session counts down, then fades the guide and falls into Dream; a tap wake
   fireEvent.click(screen.getByRole('radio', { name: '3 min' }));
   fireEvent.click(screen.getByRole('button', { name: /Start/ }));
   act(() => void vi.advanceTimersByTime(100));
-  expect(screen.getByText('3:00 left')).toBeTruthy();
+  expect(screen.getByText('3:00 left.')).toBeTruthy();
   act(() => void vi.advanceTimersByTime(60_000));
-  expect(screen.getByText('2:00 left')).toBeTruthy();
+  expect(screen.getByText('2:00 left.')).toBeTruthy();
   act(() => void vi.advanceTimersByTime(120_000 + 300));
   expect(document.querySelector('.zen-guide.ending')).not.toBeNull();
   expect(screen.queryByLabelText('Wake')).toBeNull();
@@ -68,11 +80,12 @@ it('a session counts down, then fades the guide and falls into Dream; a tap wake
   expect(document.querySelector('.flames')!.getAttribute('data-dim')).toBe('false');
 });
 
-it('Stop ends the session without going to Dream', () => {
+it('a tap anywhere ends the session without going to Dream', () => {
   render(<Zen nowMs={clockAt(DAY)} />);
   fireEvent.click(screen.getByRole('button', { name: /Start/ }));
   act(() => void vi.advanceTimersByTime(100));
-  fireEvent.click(screen.getByRole('button', { name: /Stop/ }));
+  expect(screen.getByText('Touch anywhere to end early')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'End session early' }));
   expect(screen.getByRole('button', { name: /Start/ })).toBeTruthy();
   expect(screen.queryByLabelText('Wake')).toBeNull();
 });
@@ -123,7 +136,7 @@ it('reduced motion: flames are still and change without a cross-fade', () => {
   expect(container.querySelectorAll('.fl-pair')).toHaveLength(1);
 });
 
-it('keeps the running state with Stop disabled while the guide fades after a session', () => {
+it('keeps the running state with the tap target off while the guide fades after a session', () => {
   render(<Zen nowMs={clockAt(DAY)} />);
   fireEvent.click(screen.getByRole('radio', { name: '3 min' }));
   fireEvent.click(screen.getByRole('button', { name: /Start/ }));
@@ -131,8 +144,8 @@ it('keeps the running state with Stop disabled while the guide fades after a ses
   expect(document.querySelector('.zen-guide.ending')).not.toBeNull();
   expect(screen.queryByRole('radio')).toBeNull();
   expect(screen.queryByRole('button', { name: /Start/ })).toBeNull();
-  expect((screen.getByRole('button', { name: /Stop/ }) as HTMLButtonElement).disabled).toBe(true);
-  expect(screen.getByText('0:00 left')).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'End session early' })).toBeNull();
+  expect(screen.getByText('0:00 left.')).toBeTruthy();
   act(() => void vi.advanceTimersByTime(1300));
   expect(screen.getByLabelText('Wake')).toBeTruthy();
 });
@@ -200,4 +213,79 @@ it('Dream: Space wakes and the key press is default-prevented', () => {
   act(() => void screen.getByLabelText('Wake').dispatchEvent(ev));
   expect(ev.defaultPrevented).toBe(true);
   expect(onWake).toHaveBeenCalledTimes(1);
+});
+
+it('the smallest ring fits the longest word with 24 px to spare, and the words use the constant sizes', () => {
+  expect(RING_PAD_PX).toBeGreaterThanOrEqual(24);
+  expect(RING_BASE_PX * SCALE_MIN).toBeGreaterThanOrEqual(minRingDiameter());
+  expect(LONGEST_WORD).toBe('Breathe out');
+  const { container } = render(<Zen nowMs={clockAt(DAY)} />);
+  expect((container.querySelector('.breath-word') as HTMLElement).style.fontSize).toBe(`${WORD_FONT_PX}px`);
+  expect((container.querySelector('.breath-num') as HTMLElement).style.fontSize).toBe(`${NUM_FONT_PX}px`);
+});
+
+it('the words do not scale with the ring; the ring, glow and a fixed guide ring are drawn', () => {
+  const { container } = render(<Zen nowMs={clockAt(DAY)} />);
+  expect(container.querySelector('.breath-guide')).not.toBeNull();
+  expect(container.querySelector('.breath-circle .breath-glow')).not.toBeNull();
+  expect(container.querySelector('.breath-circle')!.contains(container.querySelector('.breath-words'))).toBe(false);
+});
+
+it('lays out the concept: clock, picker at bottom left before a session, label and time left during one', () => {
+  const { container } = render(<Zen nowMs={clockAt(DAY)} />);
+  expect(container.querySelector('.zen-clock .clk')).not.toBeNull();
+  expect(container.querySelector('.zen-bl .breath-picker')).not.toBeNull();
+  expect(screen.queryByText('Touch anywhere to end early')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: /Start/ }));
+  act(() => void vi.advanceTimersByTime(100));
+  expect(screen.getByText('FIVE MINUTES OF ZEN')).toBeTruthy();
+  expect(container.querySelector('.zen-bl .zen-left')!.textContent).toBe('5:00 left.');
+  expect(container.querySelector('.zen-veil')).not.toBeNull();
+  expect(sessionLabel(3)).toBe('THREE MINUTES OF ZEN');
+  expect(sessionLabel(10)).toBe('TEN MINUTES OF ZEN');
+});
+
+it('Leave still works while a session runs', () => {
+  render(<Zen nowMs={clockAt(DAY)} />);
+  fireEvent.click(screen.getByRole('button', { name: /Start/ }));
+  fireEvent.click(screen.getByRole('button', { name: 'Leave Zen' }));
+  expect(usePlaceStore.getState().active).toBe('work');
+});
+
+it('waitingLines: count, urgency only when the data says so, nothing when empty', () => {
+  expect(waitingLines([])).toBeNull();
+  const q = (...x: (string | null)[]) => x.map((quadrant) => ({ quadrant }));
+  expect(waitingLines(q(null, null))).toEqual({ count: 'After this: 2 things are waiting.', urgent: null });
+  expect(waitingLines(q('feature', 'neither'))?.urgent).toBe('Neither is urgent.');
+  expect(waitingLines(q('feature', 'neither', 'feature'))?.urgent).toBe('None is urgent.');
+  expect(waitingLines(q('feature', 'hotfix'))?.urgent).toBeNull();
+  expect(waitingLines(q('feature', null))?.urgent).toBeNull();
+  expect(waitingLines(q('feature'))).toEqual({ count: 'After this: 1 thing is waiting.', urgent: 'It is not urgent.' });
+});
+
+it('shows the open task count from the task feed, hides it when not set up', async () => {
+  mocks.set('wall2_tasks_next', () => [
+    { id: 'a', title: 'A', due_at: null, due_is_all_day: false, quadrant: 'feature' },
+    { id: 'b', title: 'B', due_at: null, due_is_all_day: false, quadrant: 'neither' },
+  ]);
+  const first = render(<Zen nowMs={clockAt(DAY)} />);
+  await act(async () => void (await vi.advanceTimersByTimeAsync(10)));
+  expect(screen.getByText('After this: 2 things are waiting.')).toBeTruthy();
+  expect(screen.getByText('Neither is urgent.')).toBeTruthy();
+  first.unmount();
+  mocks.set('wall2_tasks_next', () => {
+    throw new Error('not-configured');
+  });
+  render(<Zen nowMs={clockAt(DAY)} />);
+  await act(async () => void (await vi.advanceTimersByTimeAsync(10)));
+  expect(document.querySelector('.zen-waiting')).toBeNull();
+  mocks.clear();
+});
+
+it('the veil leaves the flames at about 45 percent of today and lifts in Dream', () => {
+  const { container } = render(<Zen nowMs={clockAt(DAY)} />);
+  expect(Number((container.querySelector('.zen-veil') as HTMLElement).style.opacity)).toBeCloseTo(0.55, 2);
+  cleanup();
+  const night = render(<Zen nowMs={clockAt(NIGHT)} />);
+  expect((night.container.querySelector('.zen-veil') as HTMLElement).style.opacity).toBe('0');
 });

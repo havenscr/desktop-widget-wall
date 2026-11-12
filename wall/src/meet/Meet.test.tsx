@@ -238,3 +238,15 @@ it('a read requested during a read runs once more afterwards', async () => {
   await flush();
   expect(next).toHaveBeenCalledTimes(3);
 });
+
+it('keeps its panels out of the clock area: they sit in .meet-body (CSS: left 482px, first panel edge of Work)', async () => {
+  mocks.set('wall2_meet_next', () => data);
+  const { container } = render(<Meet />);
+  await flush(10);
+  const body = container.querySelector('.meet-body')!;
+  expect(body).not.toBeNull();
+  for (const label of ['Next meeting', 'Later meetings', 'Accounts']) {
+    expect(body.contains(screen.getByLabelText(label))).toBe(true);
+  }
+  expect(container.querySelectorAll('.meet > .panel')).toHaveLength(0);
+});

@@ -1,36 +1,24 @@
 import { useEffect, useRef, useState } from 'react';
-import { IconPlayerPlayFilled, IconPlayerStopFilled } from '@tabler/icons-react';
-import { SESSION_MINUTES, breathAt, formatLeft, sessionSecondsLeft, type SessionMinutes } from './model';
+import { NUM_FONT_PX, RING_BASE_PX, SCALE_MIN, SCALE_SPAN, WORD_FONT_PX, WORD_NUM_GAP_PX, breathAt } from './model';
 
 export interface BreathProps {
-  /** Minutes picked for the next session. */
-  minutes: SessionMinutes;
-  onMinutes: (m: SessionMinutes) => void;
-  /** Start time (ms) of the running session, or null when none runs. */
+  /** Start time (ms) of the running session, or null when none runs. The cycle restarts at "Breathe in" on a new start. */
   startedAt: number | null;
-  onStart: () => void;
-  onStop: () => void;
-  /** The session just ended and the guide is fading out: keep showing it as running, Stop off. */
-  ending?: boolean;
   now?: () => number;
 }
 
 /**
- * The breathing guide: a large soft circle on a 12 second cycle, the phase word and the seconds
- * left in the phase, centred; a length picker and Start or Stop below. The cycle restarts at
- * "Breathe in" whenever a session starts.
+ * The breathing guide on a 12 second cycle: a thin gradient ring that grows and shrinks, a faint fixed
+ * guide ring at the full inhale size, a soft glow inside that brightens on the inhale, and the phase
+ * word with the seconds left in the centre. The words keep one fixed size, small enough to sit inside
+ * the ring at its smallest (see `minRingDiameter`).
  */
-export function Breath({ minutes, onMinutes, startedAt, onStart, onStop, ending = false, now = Date.now }: BreathProps) {
+export function Breath({ startedAt, now = Date.now }: BreathProps) {
   const circle = useRef<HTMLDivElement>(null);
+  const glow = useRef<HTMLDivElement>(null);
   const [origin] = useState(() => ({ ms: startedAt ?? now() }));
   const [view, setView] = useState(() => breathAt(0));
-  const [left, setLeft] = useState(() => (startedAt === null ? null : sessionSecondsLeft(startedAt, minutes, now())));
-  const startedRef = useRef(startedAt);
-  startedRef.current = startedAt;
-  const minutesRef = useRef(minutes);
-  minutesRef.current = minutes;
 
-  // A new session restarts the cycle at "Breathe in".
   useEffect(() => {
     if (startedAt !== null) origin.ms = startedAt;
   }, [startedAt, origin]);
@@ -38,61 +26,32 @@ export function Breath({ minutes, onMinutes, startedAt, onStart, onStop, ending 
   useEffect(() => {
     let raf = 0;
     const tick = () => {
-      const t = now();
-      const b = breathAt((t - origin.ms) / 1000);
+      const b = breathAt((now() - origin.ms) / 1000);
       if (circle.current) circle.current.style.transform = `scale(${b.scale.toFixed(3)})`;
+      if (glow.current) glow.current.style.opacity = (0.25 + 0.75 * ((b.scale - SCALE_MIN) / SCALE_SPAN)).toFixed(3);
       setView((prev) => (prev.word === b.word && prev.left === b.left ? prev : b));
-      const s = startedRef.current;
-      const l = s === null ? null : sessionSecondsLeft(s, minutesRef.current, t);
-      setLeft((prev) => (prev === l ? prev : l));
       raf = requestAnimationFrame(tick);
     };
     tick();
     return () => cancelAnimationFrame(raf);
   }, [now, origin]);
 
-  const running = startedAt !== null;
+  const size = { width: RING_BASE_PX, height: RING_BASE_PX, margin: `${-RING_BASE_PX / 2}px 0 0 ${-RING_BASE_PX / 2}px` };
   return (
     <div className="breath">
-      <div className="breath-ring">
-        <div className="breath-circle" ref={circle} aria-hidden="true" />
-        <div className="breath-words" role="status" aria-live="off">
-          <div className="breath-word">{view.word}</div>
-          <div className="breath-num">{view.left}</div>
+      <div className="breath-guide" style={{ ...size, transform: `scale(${SCALE_MIN + SCALE_SPAN})` }} aria-hidden="true" />
+      <div className="breath-ring" style={size}>
+        <div className="breath-circle" ref={circle} aria-hidden="true">
+          <div className="breath-glow" ref={glow} />
         </div>
-      </div>
-      <div className="breath-controls">
-        {running ? (
-          <div className="breath-left" aria-label="Time left in the session">
-            {formatLeft(left ?? 0)}
+        <div className="breath-words" role="status" aria-live="off">
+          <div className="breath-word" style={{ fontSize: WORD_FONT_PX }}>
+            {view.word}
           </div>
-        ) : (
-          <div className="breath-picker" role="radiogroup" aria-label="Session length">
-            {SESSION_MINUTES.map((m) => (
-              <button
-                key={m}
-                type="button"
-                role="radio"
-                aria-checked={m === minutes}
-                className="zbtn"
-                onClick={() => onMinutes(m)}
-              >
-                {m} min
-              </button>
-            ))}
+          <div className="breath-num" style={{ fontSize: NUM_FONT_PX, marginTop: WORD_NUM_GAP_PX }}>
+            {view.left}
           </div>
-        )}
-        {running ? (
-          <button type="button" className="zbtn go" disabled={ending} onClick={onStop}>
-            <IconPlayerStopFilled size={28} aria-hidden="true" />
-            Stop
-          </button>
-        ) : (
-          <button type="button" className="zbtn go" onClick={onStart}>
-            <IconPlayerPlayFilled size={28} aria-hidden="true" />
-            Start
-          </button>
-        )}
+        </div>
       </div>
     </div>
   );

@@ -6,7 +6,7 @@ runs in a plain browser for development and inside Tauri as a second app,
 "Widget Wall 2". So far: a scaled stage, the live horizon, a left rail with
 three places, a clock, the Work tab basics (weather, music, focus timer), a task
 card, a network tile and mood buttons on Home, the Unwind tab with Watt the sheep, a sound ripple
-on the horizon, the Zen place with Dream, a small Tauri bridge and tests. Most of Home is still a placeholder.
+on the horizon, the Zen place with Dream, a small Tauri bridge and tests. Home has its moods and a network tile; the rest of it is still to come.
 
 ## Requirements
 

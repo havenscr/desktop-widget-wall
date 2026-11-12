@@ -63,6 +63,15 @@
   }
 }
 
+/* Dimmed behind the guide: the flames keep about 45 percent of their light. */
+.zen-veil {
+  position: absolute;
+  inset: 0;
+  background: #04020e;
+  transition: opacity 2500ms ease;
+  pointer-events: none;
+}
+
 /* Breathing guide. */
 .zen-guide {
   position: absolute;
@@ -76,45 +85,102 @@
 .breath {
   position: absolute;
   inset: 0;
+  pointer-events: none;
 }
+.breath-guide,
 .breath-ring {
   position: absolute;
   left: 50%;
-  top: 280px;
-  width: 280px;
-  height: 280px;
-  margin: -140px 0 0 -140px;
+  top: 340px;
+}
+/* The faint guide ring sits at the full inhale size, a target for the breath. */
+.breath-guide {
+  box-sizing: border-box;
+  border-radius: 50%;
+  border: 1px solid rgba(241, 236, 255, 0.14);
+}
+.breath-ring {
   display: grid;
   place-items: center;
 }
 .breath-circle {
   position: absolute;
   inset: 0;
+  box-sizing: border-box;
   border-radius: 50%;
   border: 2px solid transparent;
-  background: radial-gradient(circle, rgba(154, 123, 255, 0.28), rgba(255, 61, 154, 0.12) 70%, transparent) padding-box,
-    linear-gradient(135deg, var(--cyan), var(--mag)) border-box;
-  box-shadow: 0 0 60px -10px rgba(154, 123, 255, 0.5);
+  background: linear-gradient(135deg, var(--cyan), var(--mag)) border-box;
+  -webkit-mask: linear-gradient(#000 0 0) padding-box exclude, linear-gradient(#000 0 0);
+  mask: linear-gradient(#000 0 0) padding-box exclude, linear-gradient(#000 0 0);
   transform: scale(0.8);
+}
+.breath-glow {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(154, 123, 255, 0.34), rgba(255, 61, 154, 0.12) 65%, transparent 72%);
+  opacity: 0.25;
 }
 .breath-words {
   position: relative;
   text-align: center;
 }
+/* Font sizes and the gap come from model.ts (inline), so the fit test and the screen agree. */
 .breath-word {
-  font: 300 42px/1 var(--disp);
+  font-family: var(--disp);
+  font-weight: 300;
+  line-height: 1;
   letter-spacing: 0.04em;
+  white-space: nowrap;
 }
 .breath-num {
-  margin-top: 12px;
-  font: 400 24px/1 var(--disp);
+  font-family: var(--disp);
+  font-weight: 400;
+  line-height: 1;
   color: var(--dim);
 }
-.breath-controls {
+.zen-tap {
   position: absolute;
-  left: 50%;
+  inset: 0;
+  cursor: pointer;
+}
+.zen-clock {
+  position: absolute;
+  left: 60px;
+  top: 48px;
+  pointer-events: none;
+}
+.zen-clock .clk {
+  font-size: 56px;
+  text-shadow: none;
+}
+.zen-clock .clk small {
+  font-size: 20px;
+  margin-left: 8px;
+}
+.zen-clock .clk-date {
+  display: none;
+}
+.zen-bl {
+  position: absolute;
+  left: 60px;
   bottom: 44px;
-  transform: translateX(-50%);
+  pointer-events: none;
+}
+.zen-bl .zen-start {
+  pointer-events: auto;
+}
+.zen-cap {
+  font: 600 18px/1 var(--disp);
+  letter-spacing: 0.2em;
+  color: var(--dim);
+}
+.zen-left {
+  margin-top: 12px;
+  font: 400 26px/1 var(--body);
+  color: var(--tx);
+}
+.zen-start {
   display: flex;
   align-items: center;
   gap: 22px;
@@ -123,11 +189,32 @@
   display: flex;
   gap: 12px;
 }
-.breath-left {
-  font: 500 32px/1 var(--disp);
-  letter-spacing: 0.04em;
-  min-width: 160px;
-  text-align: center;
+.zen-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 44px;
+  transform: translateX(-50%);
+  font: 400 20px/1 var(--body);
+  color: var(--dim);
+  pointer-events: none;
+}
+.zen-br {
+  position: absolute;
+  right: 60px;
+  bottom: 44px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 18px;
+  pointer-events: none;
+}
+.zen-br .zleave {
+  pointer-events: auto;
+}
+.zen-waiting {
+  text-align: right;
+  font: 400 20px/1.4 var(--body);
+  color: var(--dim);
 }
 .zbtn {
   min-width: 120px;
@@ -159,15 +246,16 @@
   transform: scale(0.94);
 }
 .zbtn:focus-visible,
-.dream:focus-visible {
+.dream:focus-visible,
+.zen-tap:focus-visible {
   outline: 3px solid var(--cyan);
   outline-offset: 2px;
 }
 .zleave {
-  position: absolute;
-  right: 40px;
-  bottom: 44px;
   min-width: 0;
+  height: 56px;
+  padding: 0 22px;
+  font-size: 18px;
 }
 
 /* Dream. */
@@ -244,6 +332,7 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .flames,
+  .zen-veil,
   .zen-guide,
   .zbtn {
     transition: none;
