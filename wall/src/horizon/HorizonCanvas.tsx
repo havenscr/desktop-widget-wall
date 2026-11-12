@@ -148,13 +148,16 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
       paint();
     };
 
+    // Reduced motion shows the cameras without a glide or a fade, so settle both before the first
+    // still paint; a half-faded composite would otherwise stay up until the next redraw.
+    if (still) {
+      glide.current = settled(glide.current.to);
+      fadeRef.current = null;
+    }
     paint();
     window.addEventListener('resize', paint);
     let timer = 0;
     if (still) {
-      // Reduced motion shows the cameras without a glide, so snap any glide in progress.
-      glide.current = settled(glide.current.to);
-      fadeRef.current = null;
       if (!review) timer = window.setInterval(paint, REDRAW_MS);
       // Also in review mode: a frame skipped while hidden is drawn when the page shows.
       document.addEventListener('visibilitychange', paint);
