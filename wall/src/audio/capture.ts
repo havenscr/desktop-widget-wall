@@ -38,8 +38,9 @@ export function demoPayload(ms: number): AudioLevelsPayload {
   };
 }
 
+/** True for `?audio=demo` in a development build only; a production bundle ignores the query. */
 export function wantsDemo(search: string): boolean {
-  return new URLSearchParams(search).get('audio') === 'demo';
+  return import.meta.env.DEV && new URLSearchParams(search).get('audio') === 'demo';
 }
 
 /**
