@@ -19,13 +19,21 @@ export function stubContext(): CanvasRenderingContext2D {
 /**
  * Test helper: a 2D context that accepts every call like `stubContext` and also writes each
  * method call and property set to `log`, one line each, in order. Gradients log their colour
- * stops. Two draws that make the same canvas calls produce equal logs.
+ * stops. Two draws that make the same canvas calls produce equal logs (numbers to 3 decimals).
  */
 export function recordingContext(): { ctx: CanvasRenderingContext2D; log: string[] } {
   const log: string[] = [];
   let gradients = 0;
+  // Numbers are rounded to 3 decimals, so the last-digit differences between JavaScript engines'
+  // Math functions do not change a log.
   const show = (v: unknown): string =>
-    typeof v === 'object' && v !== null && 'id' in v ? `[${String((v as { id: unknown }).id)}]` : typeof v === 'object' ? '[object]' : String(v);
+    typeof v === 'number'
+      ? String(Math.round(v * 1000) / 1000)
+      : typeof v === 'object' && v !== null && 'id' in v
+        ? `[${String((v as { id: unknown }).id)}]`
+        : typeof v === 'object'
+          ? '[object]'
+          : String(v);
   const gradient = (kind: string) => (...args: unknown[]) => {
     const id = `${kind}${gradients++}`;
     log.push(`${kind}(${args.map(show).join(',')})=${id}`);

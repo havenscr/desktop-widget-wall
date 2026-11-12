@@ -85,7 +85,7 @@ describe('grid pulse', () => {
   // Golden call logs recorded from the renderer before the grid pulse existed (main at 48c2527).
   // Without `grid` the canvas calls must match them exactly. If a later change to the art is
   // intended, record new values with the same frames and say so in that pull request.
-  const GOLDEN = { unwind: { n: 51967, hash: '81ccb9e4' }, work: { n: 21508, hash: '7d774c4e' } };
+  const GOLDEN = { unwind: { n: 51967, hash: '5f3dfbd3' }, work: { n: 21508, hash: '557ae35d' } };
 
   it('without a grid the canvas calls are unchanged from before the pulse (golden call log)', () => {
     const unwind = calls(frame(CAMERAS.unwind, 21.7));
@@ -133,8 +133,8 @@ describe('grid pulse', () => {
     expect(glows).toHaveLength(2);
     const ys = added.filter((l) => l.startsWith(`translate(${cam.vx},`)).map((l) => Number(l.split(',')[1].replace(')', '')));
     expect(ys).toHaveLength(2);
-    expect(ys[0]).toBeCloseTo(cam.hy + (720 - cam.hy) * Math.pow(0.2, 2.1), 6);
-    expect(ys[1]).toBeCloseTo(cam.hy + (720 - cam.hy) * Math.pow(0.8, 2.1), 6);
+    expect(ys[0]).toBeCloseTo(cam.hy + (720 - cam.hy) * Math.pow(0.2, 2.1), 2); // the log rounds to 3 decimals
+    expect(ys[1]).toBeCloseTo(cam.hy + (720 - cam.hy) * Math.pow(0.8, 2.1), 2);
     const radii = glows.map((l) => Number(l.split(',')[5].replace(/\).*/, '')));
     expect(radii[1]).toBeGreaterThan(radii[0]);
     // Clipped to the lake and put back to normal blending afterwards.
