@@ -182,8 +182,7 @@ Watt (`wall/src/buddy/`) is the electric sheep, shown on Unwind only, drawn as S
 above the horizon canvas. It walks slowly between x 960 and 1220 on the Unwind horizon
 line, sleeps with drifting z's between 9:30 PM and 6:30 AM local time, and shows little
 notes while music plays (awake only). It pauses while hidden. Under reduced motion it is a
-still pose with nothing drifting. The idle pixel map in `sprites.ts` is the concept's own; the sleep map is a stand-in (the
-original did not arrive) and is the one thing to swap if it turns up.
+still pose with nothing drifting. The pixel maps in `sprites.ts` are the concept's own.
 
 ## Home feeds (task card and network tile)
 

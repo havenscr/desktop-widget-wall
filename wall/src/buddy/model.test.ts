@@ -77,6 +77,18 @@ const REFERENCE_IDLE = [
   '...l..l...l..l....',
 ];
 
+/** The concept's `SH.sleep`, copied from the reference file. */
+const REFERENCE_SLEEP = [
+  '....wwwwwww.......',
+  '..wwwwwwwwwww.....',
+  '.wwwwwwwwwwwww....',
+  '.wwwwwwwwwwwwwpf..',
+  'wwwwwwwwwwwwwwffff',
+  'wwwwwwwwwwwwwwf-ff',
+  'wwwwwwwwwwwwwwwfff',
+  '.wwwwwwwwwwwwwww..',
+];
+
 describe('sprites', () => {
   it('idle equals the concept map exactly', () => {
     expect([...SPRITES.idle]).toEqual(REFERENCE_IDLE);
@@ -88,6 +100,9 @@ describe('sprites', () => {
         expect(row).toMatch(/^[.wfe\-pl]+$/);
       }
     }
+  });
+  it('sleep equals the concept map exactly', () => {
+    expect([...SPRITES.sleep]).toEqual(REFERENCE_SLEEP);
   });
   it('walk is the idle body rows plus two leg rows', () => {
     expect(SPRITES.walk.slice(0, 10)).toEqual(REFERENCE_IDLE.slice(0, 10));

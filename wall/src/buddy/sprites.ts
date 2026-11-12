@@ -3,10 +3,8 @@
  * `.` empty, `w` wool (shaded light to dark by row), `f` face, `e` eye, `-` closed eye,
  * `p` pink ear, `l` leg. Facing right; the component flips it to face left.
  *
- * `idle` is the concept's own map, copied exactly. Walk keeps the concept's rule: the
- * idle body rows plus two leg rows. The concept's `sleep` map did not reach this change
- * (the file supplied holds `idle` only), so `sleep` is a redrawn stand-in in the same
- * style; replace it with the original when it turns up.
+ * Both maps are the concept's own, copied exactly. Walk keeps the concept's rule: the
+ * idle body rows plus two leg rows.
  */
 export type Pose = 'idle' | 'walk' | 'sleep';
 
@@ -29,15 +27,14 @@ export const SPRITES: Readonly<Record<Pose, readonly string[]>> = {
   idle: IDLE,
   walk: [...IDLE.slice(0, 10), '..l...l....l..l...', '..l...l....l..l...'],
   sleep: [
-    '....wwwwwwww......',
-    '..wwwwwwwwwwww....',
-    '.wwwwwwwwwwwwwp...',
-    '.wwwwwwwwwwwwwffff',
-    '.wwwwwwwwwwwwwf--f',
-    '.wwwwwwwwwwwwwwfff',
+    '....wwwwwww.......',
+    '..wwwwwwwwwww.....',
+    '.wwwwwwwwwwwww....',
+    '.wwwwwwwwwwwwwpf..',
+    'wwwwwwwwwwwwwwffff',
+    'wwwwwwwwwwwwwwf-ff',
+    'wwwwwwwwwwwwwwwfff',
     '.wwwwwwwwwwwwwww..',
-    '..wwwwwwwwwwwwll..',
-    '...wwwwwwwwww.....',
   ],
 };
 
