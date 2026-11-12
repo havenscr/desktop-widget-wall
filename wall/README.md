@@ -461,21 +461,27 @@ Unwind. Not on Zen (Dream draws its own sleeping Watt). `App.tsx` mounts it once
 horizon canvas and the veil and under the panels; its styles are `buddy/watt.css`.
 
 - Walk table (`WALKS` in `buddy/model.ts`, left edge range and sprite pixel size): Work and
-  Meet 880 to 1090 at 4 px, Home 1506 to 1726 at 5 px, Unwind 960 to 1220 at 6 px. The feet
-  stand on the camera's `hy` (582 on Work, Home and Meet, 505 on Unwind). `model.test.ts`
-  builds the rail, zone and ribbon rectangles from `screens/frameLayout.ts` and checks that
-  no range (every pose, notes and z's included) reaches one at 2560 by 720.
+  Meet 880 to 1090 at 4 px, Home 1506 to 1726 at 5 px, Unwind 430 to 470 at 6 px (the body
+  between about x 430 and 580, the concept's spot in `f_unwind`, below the wind down block and
+  left of the transport row). The feet stand on the camera's `hy` (582 on Work, Home and Meet,
+  505 on Unwind). `model.test.ts` builds the rail, zone and ribbon rectangles from
+  `screens/frameLayout.ts` (plus Unwind's transport row, `UNWIND_ROW`) and checks that no range
+  (every pose, notes and z's included) reaches one at 2560 by 720.
 - Pace: it stands 20 to 40 seconds at each stop, then walks slowly (14 px a second) to the
   next; it starts standing in the middle of the range.
-- A place change fades it out where it stands; it fades back in at the new place once the
-  horizon's camera has settled (the glide, the 3.2 s swing, or the 4.6 s cinematic morning
-  turn to Rainier, so it is never up during that turn). The same happens when Home's camera
-  changes with the hour. It never walks across the screen.
+- It is up only while the horizon's camera is settled on its place. `horizon/signal.ts` is a
+  small read-only signal the horizon publishes (the camera it is on or heading to, and whether
+  it is moving); Watt hides whenever the camera moves or points somewhere other than the camera
+  Watt expects for its place and hour. So a place change, a quick reversal, the 5:00 AM
+  cinematic turn to Rainier and the 11:30 AM swing back all fade it out where it stands, and it
+  fades in at the new spot once the camera has settled. It never walks across the screen.
 - It sleeps in the middle of its range with drifting z's between 9:30 PM and 6:30 AM local
-  time, and shows little notes beside its head while music plays (awake only). It pauses
-  while hidden. Under reduced motion (and in a dev review still) it is a still pose in the
-  middle of the range with nothing drifting, and it jumps on a place change. The pixel maps
-  in `sprites.ts` are the concept's own.
+  time (fading out and back in at both changes), and shows little notes beside its head while
+  music plays (awake only). Night and Home's camera are worked out once a minute. The frame
+  loop reuses its records, pauses while hidden, and does not run on Zen or in a call. Under
+  reduced motion (and in a dev review still) it is a still pose in the middle of the range
+  with nothing drifting, and it jumps on a place change. The pixel maps in `sprites.ts` are
+  the concept's own.
 
 ## Home feeds (task card and network tile)
 
