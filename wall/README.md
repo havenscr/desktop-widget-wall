@@ -160,7 +160,7 @@ pixels, glass style from the concept; clock is top left in `App.tsx`).
   once it is not. Silence is decided by the clock, never by counting events. The push is
   turned off with `set_audio_push(false)` while the page is hidden and on again when it
   shows. If the first start fails it stays silent and retries once after 30 seconds; if no
-  event arrives for 5 seconds while visible it restarts capture once.
+  event arrives for 5 seconds while visible it restarts capture once (once per app run, by design).
 - **Browser dev.** Silent by default. Add `?audio=demo` to the URL for gentle fake levels.
 - **Ripple.** While `playing`, `HorizonCanvas` passes `echo` to the renderer: `n`, `amp`, `cx`
   from the camera preset (`en`, `eamp`, `ecx`), opacity `ea` scaled by a smoothed
