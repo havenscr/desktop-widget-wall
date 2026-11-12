@@ -203,8 +203,8 @@ The day ribbon (`wall/src/ribbon/`, `styles/ribbon.css`) is on Work, Home and Me
 - **Sun**: sunrise and sunset in amber, rounded to the minute, hidden within 90 px of the
   needle. `sun.ts` bisects the horizon renderer's `sun()` for an altitude of -0.833
   degrees (cached per day). For 2026-11-11 that is 7:09 AM and 4:37 PM, matching the
-  almanac (the concept's "4:40" was a rounded label). The sky gradient behind the hours puts the concept's
-  colour stops on the real sunrise and sunset.
+  almanac (the concept's "4:40" was a rounded label). The sky gradient behind the hours
+  puts the concept's colour stops on the real sunrise and sunset.
 - **Row 1**: today's calendar from `wall2_meet_day`, read when the ribbon shows and
   every 5 minutes while visible, clipped to 6 AM to 12 AM. A chip is `past` once it
   has ended, `now` while the needle is inside it, and pink when the event is a
