@@ -92,7 +92,7 @@ it('shows a failure under the row for 5 seconds and does not remember it', async
   expect(screen.queryByText('Moods are not set up in the home app yet')).toBeNull();
 });
 
-it('shows Not set up with no config and nothing for an empty list', async () => {
+it('shows Not set up with no config, and one compact card for an empty list', async () => {
   mocks.set('wall2_moods', () => Promise.reject(new Error('not-configured')));
   const first = render(<Moods />);
   await flush();
@@ -101,7 +101,8 @@ it('shows Not set up with no config and nothing for an empty list', async () => 
   mocks.set('wall2_moods', () => []);
   const second = render(<Moods />);
   await flush();
-  expect(second.container.innerHTML).toBe('');
+  expect(second.container.querySelectorAll('.mood-btn')).toHaveLength(0);
+  expect(second.container.querySelector('.mood-empty')?.textContent).toBe('No moods set up in the home app yet');
 });
 
 it('reloads the list every 10 minutes', async () => {

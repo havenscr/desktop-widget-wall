@@ -11,6 +11,7 @@
 
 /* Left wing: the sun block below the clock, where the concept puts it. */
 .home-wing {
+  grid-column: 1;
   min-width: 0;
   padding: 248px 0 0 12px;
 }
@@ -25,6 +26,7 @@
 
 /* Centre: the mood cards. With the Rooms row hidden they take the full height. */
 .moods {
+  grid-column: 2;
   min-width: 0;
   min-height: 0;
   display: flex;
@@ -37,6 +39,29 @@
   justify-content: space-between;
   gap: 20px;
   min-height: 22px;
+}
+/* No list to show (not set up, loading, or never read): the heading and its line only,
+   as tall as that, not a blank centre. */
+.moods.bare {
+  align-self: start;
+}
+/* The home app answered with no moods: one compact card says so. */
+.mood-empty {
+  align-self: flex-start;
+  box-sizing: border-box;
+  max-width: 560px;
+  padding: 24px 28px;
+  border-radius: 24px;
+  border: 1px solid var(--line);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.015)), rgba(10, 7, 28, 0.72);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  color: var(--dim);
+}
+.mood-empty svg {
+  flex: none;
+  color: var(--faint);
 }
 .mood-row {
   flex: 1;
@@ -138,6 +163,7 @@
 
 /* Right wing: Around the house at the top, the network card on the bottom. */
 .home-right {
+  grid-column: 3;
   min-width: 0;
   min-height: 0;
   display: flex;
@@ -147,6 +173,7 @@
   padding-top: 4px;
 }
 .chores {
+  flex: none;
   display: flex;
   flex-direction: column;
 }
@@ -154,12 +181,19 @@
   display: flex;
   align-items: baseline;
   justify-content: space-between;
+  gap: 16px;
   margin-bottom: 4px;
+}
+.chores-side {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  white-space: nowrap;
 }
 .home .tk3 {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
   height: 44px;
   border-bottom: 1px solid var(--line);
   font-size: 22px;
@@ -171,11 +205,20 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* The tick's tap area is the button itself: 52 wide and the row's full 44, so rows
+   never share a hit area. The 28 px ring sits at its left. */
 .home .tk3 .ck {
-  position: relative;
+  width: 52px;
+  height: 44px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+}
+.home .tk3 .ck-ring {
+  box-sizing: border-box;
   width: 28px;
   height: 28px;
-  flex: none;
   border-radius: 50%;
   border: 2px solid var(--faint);
   display: flex;
@@ -183,13 +226,7 @@
   justify-content: center;
   color: #06041a;
 }
-/* The tap target is larger than the circle. */
-.home .tk3 .ck::before {
-  content: '';
-  position: absolute;
-  inset: -12px;
-}
-.home .tk3.done .ck {
+.home .tk3.done .ck-ring {
   background: var(--mint);
   border-color: var(--mint);
 }
@@ -197,7 +234,7 @@
   text-decoration: line-through;
   color: var(--faint);
 }
-.home .tk3.failed .ck {
+.home .tk3.failed .ck-ring {
   border-color: var(--amber);
 }
 .home .tk3.clear {
@@ -221,8 +258,9 @@
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  /* The glass is restated here so Home does not depend on work.css, which the Work
-     lane changes on its own. */
+  /* The glass is restated here so the card keeps its look whatever the Work lane does to
+     .panel. Home still takes the shared text classes (.k, .t2, .s, .xs, .b6) from
+     work.css. */
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.015)), rgba(10, 7, 28, 0.72);
   border: 1px solid var(--line);
   border-radius: 26px;
@@ -279,7 +317,9 @@
   color: var(--faint);
 }
 .net-nums.stale,
-.net-alerts.stale {
+.net-alerts.stale,
+.chore-rows.stale,
+.chores-side .stale {
   opacity: 0.55;
 }
 .net-alerts {

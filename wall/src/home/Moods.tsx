@@ -1,4 +1,4 @@
-import { IconCheck, IconLoader2 } from '@tabler/icons-react';
+import { IconBulbOff, IconCheck, IconLoader2 } from '@tabler/icons-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { invoke } from '../bridge/tauri';
 import { NOT_CONFIGURED } from '../tasks/model';
@@ -144,7 +144,19 @@ export function Moods() {
     }
   }, []);
 
-  if (status === 'ready' && moods.length === 0) return null;
+  if (status === 'ready' && moods.length === 0) {
+    return (
+      <section className="moods" aria-label="Moods">
+        <div className="moods-head">
+          <span className="k">Moods</span>
+        </div>
+        <div className="mood-empty">
+          <IconBulbOff size={34} stroke={1.6} aria-hidden="true" />
+          <span>No moods set up in the home app yet</span>
+        </div>
+      </section>
+    );
+  }
   if (status === 'loading' && !visible && moods.length === 0) return null;
 
   // A list (fresh, or the last good one while the home app is away) shows as cards.
