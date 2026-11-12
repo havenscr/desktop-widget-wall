@@ -30,13 +30,19 @@ function daysApart(a: number, b: number): number {
 /**
  * The line under the Next title: "12:00, in 1 h 36 m", "now, 12 m left" once it has
  * started, "tomorrow 9:30" for a meeting tomorrow, or "Friday 9:30" further out.
+ *
+ * A `stale` list may be wrong about the meeting, so the line drops every countdown and
+ * keeps only the times: "12:00", or "10:00 to 10:36" once it has started.
  */
-export function nextLine(m: Pick<Meeting, 'start' | 'end'>, now: number): string {
+export function nextLine(m: Pick<Meeting, 'start' | 'end'>, now: number, stale = false): string {
   const start = Date.parse(m.start);
   const end = Date.parse(m.end);
-  if (start <= now) return `now, ${span(Math.max(1, Math.ceil((end - now) / MIN)))} left`;
+  if (start <= now) {
+    return stale ? `${shortClock(start)} to ${shortClock(end)}` : `now, ${span(Math.max(1, Math.ceil((end - now) / MIN)))} left`;
+  }
   const days = daysApart(now, start);
   if (days === 1) return `tomorrow ${shortClock(start)}`;
   if (days > 1) return `${WEEKDAYS[new Date(start).getDay()]} ${shortClock(start)}`;
+  if (stale) return shortClock(start);
   return `${shortClock(start)}, in ${span(Math.max(1, Math.ceil((start - now) / MIN)))}`;
 }

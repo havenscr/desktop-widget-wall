@@ -105,6 +105,9 @@ it('dims Next with "as of" when the feed marks the list stale', async () => {
   const next = r.container.querySelector('.next')!;
   expect(next.className).toBe('blk next stale');
   expect(next.querySelector('.next-asof')!.textContent).toBe('as of 10:24');
+  // A stale list may be wrong, so no countdown: only the time and the title.
+  expect(next.querySelector('.s')!.textContent).toBe('12:00');
+  expect(next.textContent).not.toMatch(/in \d/);
 });
 
 it('says "may be out of date" for a stale first reply, with no good read to date it', async () => {

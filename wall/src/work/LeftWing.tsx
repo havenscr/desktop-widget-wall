@@ -7,8 +7,8 @@ import { useNextMeeting } from './useNextMeeting';
 
 /**
  * The next meeting that has not ended: title and "12:00, in 1 h 36 m". Hidden when there is
- * none or Meet is not set up. A list that may be out of date is dimmed, with a quiet
- * "as of H:MM" (the last complete read) under it.
+ * none or Meet is not set up. A list that may be out of date is dimmed, drops the
+ * countdown, and has a quiet "as of H:MM" (the last complete read) under it.
  */
 function NextBlock() {
   const { meeting, now, stale, asOf } = useNextMeeting(reviewNow);
@@ -17,7 +17,7 @@ function NextBlock() {
     <section className={`blk next${stale ? ' stale' : ''}`} aria-label="Next meeting">
       <span className="k">Next</span>
       <div className="t1 ellipsis">{meeting.title}</div>
-      <div className="s">{nextLine(meeting, now)}</div>
+      <div className="s">{nextLine(meeting, now, stale)}</div>
       {stale && <div className="xs next-asof">{asOf === null ? 'may be out of date' : `as of ${shortClock(asOf)}`}</div>}
     </section>
   );
