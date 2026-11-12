@@ -2,6 +2,8 @@
 
 use super::auth::{TokenClient, TokenReply, SCOPE};
 use super::graph::{merge, merge_capped, shape_events, MAX_DAY_EVENTS, utc_iso, Candidate, GraphClient, GraphReply};
+use super::meetlog::format_line;
+use super::reason::{is_valid_reason, STORE_WRITE};
 use super::store::SecretStore;
 use super::Account;
 use serde::Serialize;
@@ -26,6 +28,25 @@ pub struct Core {
     /// A rotated refresh token that could not be written to the store yet. It is the one to
     /// use (and retry storing) while it is here; the stored one may already be spent.
     pub pending: HashMap<String, String>,
+    /// The last state and reason logged for each account; a line is queued only on a change.
+    pub states: HashMap<String, (String, Option<String>)>,
+    /// Log lines waiting for the caller to hand them to the log writer.
+    pub log_lines: Vec<String>,
+}
+
+/// Queue one log line when the account's state or reason differs from the last one logged.
+pub fn record(core: &mut Core, id: &str, state: &str, reason: Option<&str>, now: u64) {
+    let reason = reason.filter(|r| is_valid_reason(r)).map(str::to_string);
+    let new = (state.to_string(), reason);
+    let old = core.states.get(id).map(|(s, _)| s.as_str()).unwrap_or("start").to_string();
+    if core.states.get(id) == Some(&new) {
+        return;
+    }
+    // The queue is drained after every read; the cap only guards a caller that never drains.
+    if core.log_lines.len() < 64 {
+        core.log_lines.push(format_line(&utc_iso(now), id, &old, state, new.1.as_deref()));
+    }
+    core.states.insert(id.to_string(), new);
 }
 
 /// Join links behind opaque keys. Its own lock, never held across network I/O, so Join
@@ -68,6 +89,9 @@ pub struct AccountOut {
     pub id: String,
     pub label: String,
     pub state: &'static str,
+    /// Why the account is not connected: a fixed-shape code, never free text.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -89,6 +113,16 @@ pub struct MeetPayload {
     pub stale: bool,
 }
 
+/// Why a state is not `Ok`: the state and a reason code when there is one.
+type Fail = (AccountState, Option<String>);
+
+/// What one account's read came to.
+struct Read {
+    state: AccountState,
+    meetings: Option<Vec<Candidate>>,
+    reason: Option<String>,
+}
+
 /// A fresh access token for the account, from the cache or a refresh.
 fn obtain(
     acct: &Account,
@@ -97,17 +131,17 @@ fn obtain(
     core: &mut Core,
     now: u64,
     force: bool,
-) -> Result<String, AccountState> {
+) -> Result<String, Fail> {
     if let Some(p) = core.pending.get(&acct.id).cloned() {
         // An earlier rotated token never reached the store: try again before anything else.
         if !store.set(&acct.id, &p) {
-            return Err(AccountState::Unavailable);
+            return Err((AccountState::Unavailable, Some(STORE_WRITE.to_string())));
         }
         core.pending.remove(&acct.id);
     }
     let Some(refresh) = store.get(&acct.id) else {
         core.cache.remove(&acct.id);
-        return Err(AccountState::SignedOut);
+        return Err((AccountState::SignedOut, None));
     };
     if !force {
         if let Some(c) = core.cache.get(&acct.id) {
@@ -131,19 +165,19 @@ fn obtain(
                     // The store kept the old value. Hold the new token in memory, retry next
                     // time, and report unavailable instead of connected-then-signed-out.
                     core.pending.insert(acct.id.clone(), new);
-                    return Err(AccountState::Unavailable);
+                    return Err((AccountState::Unavailable, Some(STORE_WRITE.to_string())));
                 }
             }
             Ok(access)
         }
-        TokenReply::Rejected => {
+        TokenReply::Rejected(why) => {
             store.delete(&acct.id);
             core.pending.remove(&acct.id);
-            Err(AccountState::NeedsSignIn)
+            Err((AccountState::NeedsSignIn, Some(why)))
         }
         // Not a dead grant but nothing a retry fixes: offer Sign in, keep the stored token.
-        TokenReply::Refused => Err(AccountState::NeedsSignIn),
-        TokenReply::Transient | TokenReply::Failed => Err(AccountState::Unavailable),
+        TokenReply::Refused(why) => Err((AccountState::NeedsSignIn, Some(why))),
+        TokenReply::Transient(why) | TokenReply::Failed(why) => Err((AccountState::Unavailable, Some(why))),
     }
 }
 
@@ -154,7 +188,7 @@ fn read_account(
     graph: &dyn GraphClient,
     core: &mut Core,
     now: u64,
-) -> (AccountState, Option<Vec<Candidate>>) {
+) -> Read {
     read_window(acct, store, tokens, graph, core, now, now, now + WINDOW_SECS)
 }
 
@@ -169,24 +203,25 @@ fn read_window(
     now: u64,
     from: u64,
     to: u64,
-) -> (AccountState, Option<Vec<Candidate>>) {
+) -> Read {
     let (start, end) = (utc_iso(from), utc_iso(to));
     let access = match obtain(acct, store, tokens, core, now, false) {
         Ok(a) => a,
-        Err(state) => return (state, None),
+        Err((state, reason)) => return Read { state, meetings: None, reason },
     };
     let mut reply = graph.calendar_view(&access, &start, &end);
     if matches!(reply, GraphReply::Unauthorized) {
         // The cached token was refused: drop it, refresh once, ask once more.
         let access = match obtain(acct, store, tokens, core, now, true) {
             Ok(a) => a,
-            Err(state) => return (state, None),
+            Err((state, reason)) => return Read { state, meetings: None, reason },
         };
         reply = graph.calendar_view(&access, &start, &end);
     }
     match reply {
-        GraphReply::Ok(body) => (AccountState::Ok, Some(shape_events(&body, &acct.id))),
-        GraphReply::Unauthorized | GraphReply::Transient | GraphReply::Failed => (AccountState::Unavailable, None),
+        GraphReply::Ok(body) => Read { state: AccountState::Ok, meetings: Some(shape_events(&body, &acct.id)), reason: None },
+        GraphReply::Unauthorized => Read { state: AccountState::Unavailable, meetings: None, reason: Some("graph-401".to_string()) },
+        GraphReply::Transient(why) | GraphReply::Failed(why) => Read { state: AccountState::Unavailable, meetings: None, reason: Some(why) },
     }
 }
 
@@ -204,7 +239,8 @@ pub fn read_next(
     let mut lists = Vec::new();
     let mut stale = false;
     for acct in accounts {
-        let (state, fresh) = read_account(acct, store, tokens, graph, core, now);
+        let Read { state, meetings: fresh, reason } = read_account(acct, store, tokens, graph, core, now);
+        record(core, &acct.id, state.as_str(), reason.as_deref(), now);
         let list = match fresh {
             Some(l) => {
                 core.last.insert(acct.id.clone(), l.clone());
@@ -223,7 +259,8 @@ pub fn read_next(
                 Vec::new()
             }
         };
-        statuses.push(AccountOut { id: acct.id.clone(), label: acct.label.clone(), state: state.as_str() });
+        let reason = reason.filter(|r| is_valid_reason(r));
+        statuses.push(AccountOut { id: acct.id.clone(), label: acct.label.clone(), state: state.as_str(), reason });
         lists.push(list);
     }
     let merged = merge(lists);
@@ -288,8 +325,10 @@ pub fn read_day(
     let mut statuses = Vec::new();
     let mut lists = Vec::new();
     for acct in accounts {
-        let (state, fresh) = read_window(acct, store, tokens, graph, core, now, from, to);
-        statuses.push(AccountOut { id: acct.id.clone(), label: acct.label.clone(), state: state.as_str() });
+        let Read { state, meetings: fresh, reason } = read_window(acct, store, tokens, graph, core, now, from, to);
+        record(core, &acct.id, state.as_str(), reason.as_deref(), now);
+        let reason = reason.filter(|r| is_valid_reason(r));
+        statuses.push(AccountOut { id: acct.id.clone(), label: acct.label.clone(), state: state.as_str(), reason });
         lists.push(fresh.unwrap_or_default());
     }
     let merged = merge_capped(lists, MAX_DAY_EVENTS);
@@ -322,7 +361,7 @@ pub fn complete_sign_in(
     tokens: &dyn TokenClient,
     core: &Mutex<Core>,
     now: u64,
-) -> Result<(), &'static str> {
+) -> Result<(), String> {
     // The code is redeemed without holding the core lock; the lock is taken only to store.
     let form = [
         ("client_id", acct.client_id.as_str()),
@@ -335,15 +374,28 @@ pub fn complete_sign_in(
     match tokens.post(&acct.tenant, &form) {
         TokenReply::Ok { access, expires_in, refresh: Some(refresh) } => {
             if !store.set(&acct.id, &refresh) {
-                return Err("failed");
+                return Err(sign_in_failed(core, acct, STORE_WRITE, now));
             }
             let mut core = core.lock().unwrap_or_else(|e| e.into_inner());
             core.pending.remove(&acct.id);
             core.cache.insert(acct.id.clone(), Cached { access, expires_at: now + expires_in });
+            record(&mut core, &acct.id, "signed-in", None, now);
             Ok(())
         }
-        _ => Err("failed"),
+        // A reply without a refresh token is a 2xx that cannot be used.
+        TokenReply::Ok { refresh: None, .. } => Err(sign_in_failed(core, acct, "token-200", now)),
+        TokenReply::Rejected(why) | TokenReply::Transient(why) | TokenReply::Refused(why) | TokenReply::Failed(why) => {
+            Err(sign_in_failed(core, acct, &why, now))
+        }
     }
+}
+
+/// Log a failed first redemption and return its reason code for the web view.
+fn sign_in_failed(core: &Mutex<Core>, acct: &Account, reason: &str, now: u64) -> String {
+    let reason = if is_valid_reason(reason) { reason.to_string() } else { "token-400".to_string() };
+    let mut core = core.lock().unwrap_or_else(|e| e.into_inner());
+    record(&mut core, &acct.id, "sign-in-failed", Some(&reason), now);
+    reason
 }
 
 pub fn sign_out(id: &str, store: &dyn SecretStore, core: &mut Core) {
@@ -376,7 +428,7 @@ mod tests {
             self.forms.borrow_mut().push(form.iter().map(|(a, b)| (a.to_string(), b.to_string())).collect());
             let mut r = self.replies.borrow_mut();
             if r.is_empty() {
-                TokenReply::Transient
+                TokenReply::Transient("token-503".into())
             } else {
                 r.remove(0)
             }
@@ -402,7 +454,7 @@ mod tests {
             self.seen_window.borrow_mut().push((start.to_string(), end.to_string()));
             let mut r = self.replies.borrow_mut();
             if r.is_empty() {
-                GraphReply::Transient
+                GraphReply::Transient("graph-503".into())
             } else {
                 r.remove(0)
             }
@@ -487,7 +539,7 @@ mod tests {
     fn invalid_grant_deletes_the_token() {
         let (store, mut core) = setup();
         let links = Mutex::new(Links::default());
-        let t = FakeTokens::new(vec![TokenReply::Rejected]);
+        let t = FakeTokens::new(vec![TokenReply::Rejected("token-400-70000".into())]);
         let g = FakeGraph::new(vec![]);
         let p = read_next(&[acct("work")], &store, &t, &g, &mut core, &links, NOW);
         assert_eq!(p.accounts[0].state, "needs-sign-in");
@@ -498,7 +550,7 @@ mod tests {
     fn a_refused_token_request_offers_sign_in_and_keeps_the_token() {
         let (store, mut core) = setup();
         let links = Mutex::new(Links::default());
-        let t = FakeTokens::new(vec![TokenReply::Refused]);
+        let t = FakeTokens::new(vec![TokenReply::Refused("token-400".into())]);
         let g = FakeGraph::new(vec![]);
         let p = read_next(&[acct("work")], &store, &t, &g, &mut core, &links, NOW);
         assert_eq!(p.accounts[0].state, "needs-sign-in");
@@ -509,7 +561,7 @@ mod tests {
     fn transient_failure_keeps_the_token() {
         let (store, mut core) = setup();
         let links = Mutex::new(Links::default());
-        let t = FakeTokens::new(vec![TokenReply::Transient]);
+        let t = FakeTokens::new(vec![TokenReply::Transient("token-503".into())]);
         let g = FakeGraph::new(vec![]);
         let p = read_next(&[acct("work")], &store, &t, &g, &mut core, &links, NOW);
         assert_eq!(p.accounts[0].state, "unavailable");
@@ -635,7 +687,7 @@ mod tests {
         assert!(!p.stale);
         assert_eq!(p.meetings.len(), 2);
         // The second account now fails; the first still answers.
-        let g = FakeGraph::new(vec![GraphReply::Ok(body("Work one", "w1")), GraphReply::Transient]);
+        let g = FakeGraph::new(vec![GraphReply::Ok(body("Work one", "w1")), GraphReply::Transient("graph-503".into())]);
         let p = read_next(&accounts, &store, &t, &g, &mut core, &links, NOW + 10);
         assert!(p.stale);
         assert_eq!(p.accounts[1].state, "unavailable");
@@ -728,9 +780,135 @@ mod tests {
         assert_eq!(store.get("work").as_deref(), Some("ref"));
         assert_eq!(core.lock().unwrap().cache.get("work").unwrap().access, "acc");
         let t = FakeTokens::new(vec![ok_token("acc", None)]);
-        assert_eq!(complete_sign_in(&acct("work"), &granted, &store, &t, &core, NOW), Err("failed"));
+        assert_eq!(complete_sign_in(&acct("work"), &granted, &store, &t, &core, NOW), Err("token-200".to_string()));
         sign_out("work", &store, &mut core.lock().unwrap());
         assert_eq!(store.get("work"), None);
         assert!(core.lock().unwrap().cache.is_empty());
+    }
+
+    fn reasons(p: &MeetPayload) -> Vec<Option<&str>> {
+        p.accounts.iter().map(|a| a.reason.as_deref()).collect()
+    }
+
+    #[test]
+    fn graph_failures_carry_their_reason_into_the_payload() {
+        for (reply, want) in [
+            (GraphReply::Failed("graph-403-ErrorAccessDenied".into()), "graph-403-ErrorAccessDenied"),
+            (GraphReply::Transient("graph-429".into()), "graph-429"),
+            (GraphReply::Transient("graph-network".into()), "graph-network"),
+            (GraphReply::Failed("graph-body".into()), "graph-body"),
+        ] {
+            let (store, mut core) = setup();
+            let links = Mutex::new(Links::default());
+            core.cache.insert("work".into(), Cached { access: "c".into(), expires_at: NOW + 600 });
+            let t = FakeTokens::new(vec![]);
+            let g = FakeGraph::new(vec![reply]);
+            let p = read_next(&[acct("work")], &store, &t, &g, &mut core, &links, NOW);
+            assert_eq!(p.accounts[0].state, "unavailable");
+            assert_eq!(reasons(&p), vec![Some(want)]);
+            let text = serde_json::to_string(&p).unwrap();
+            assert!(text.contains(&format!("\"reason\":\"{want}\"")), "{text}");
+        }
+    }
+
+    #[test]
+    fn a_second_401_reports_graph_401() {
+        let (store, mut core) = setup();
+        let links = Mutex::new(Links::default());
+        let t = FakeTokens::new(vec![ok_token("a1", None), ok_token("a2", None)]);
+        let g = FakeGraph::new(vec![GraphReply::Unauthorized, GraphReply::Unauthorized]);
+        let p = read_next(&[acct("work")], &store, &t, &g, &mut core, &links, NOW);
+        assert_eq!(reasons(&p), vec![Some("graph-401")]);
+    }
+
+    #[test]
+    fn token_failures_carry_their_reason() {
+        let (store, mut core) = setup();
+        let links = Mutex::new(Links::default());
+        let t = FakeTokens::new(vec![TokenReply::Transient("token-network".into())]);
+        let g = FakeGraph::new(vec![]);
+        let p = read_next(&[acct("work")], &store, &t, &g, &mut core, &links, NOW);
+        assert_eq!(p.accounts[0].state, "unavailable");
+        assert_eq!(reasons(&p), vec![Some("token-network")]);
+    }
+
+    #[test]
+    fn a_healthy_account_has_no_reason_and_the_payload_has_no_reason_key() {
+        let (store, mut core) = setup();
+        let links = Mutex::new(Links::default());
+        let t = FakeTokens::new(vec![ok_token("a", None)]);
+        let g = FakeGraph::new(vec![GraphReply::Ok(body("A", "1"))]);
+        let p = read_next(&[acct("work")], &store, &t, &g, &mut core, &links, NOW);
+        assert_eq!(reasons(&p), vec![None]);
+        assert!(!serde_json::to_string(&p).unwrap().contains("reason"));
+    }
+
+    #[test]
+    fn an_unwritable_store_reports_store_write() {
+        let store = FlakySecrets { inner: Chunked(MemoryBlobs::default()), fail_set: Cell::new(false) };
+        store.set("work", "refresh-1");
+        store.fail_set.set(true);
+        let mut core = Core::default();
+        let links = Mutex::new(Links::default());
+        let t = FakeTokens::new(vec![ok_token("new", Some("refresh-2"))]);
+        let g = FakeGraph::new(vec![]);
+        let p = read_next(&[acct("work")], &store, &t, &g, &mut core, &links, NOW);
+        assert_eq!(reasons(&p), vec![Some("store-write")]);
+    }
+
+    #[test]
+    fn a_log_line_is_queued_only_on_a_change() {
+        let (store, mut core) = setup();
+        let links = Mutex::new(Links::default());
+        core.cache.insert("work".into(), Cached { access: "c".into(), expires_at: NOW + 6000 });
+        let t = FakeTokens::new(vec![]);
+        let g = FakeGraph::new(vec![
+            GraphReply::Ok(body("A", "1")),
+            GraphReply::Ok(body("A", "1")),
+            GraphReply::Failed("graph-403-ErrorAccessDenied".into()),
+            GraphReply::Failed("graph-403-ErrorAccessDenied".into()),
+            GraphReply::Ok(body("A", "1")),
+        ]);
+        for n in 0..5 {
+            read_next(&[acct("work")], &store, &t, &g, &mut core, &links, NOW + n);
+        }
+        assert_eq!(
+            core.log_lines,
+            vec![
+                "2026-11-12T05:00:00Z work start ok none\n".to_string(),
+                "2026-11-12T05:00:02Z work ok unavailable graph-403-ErrorAccessDenied\n".to_string(),
+                "2026-11-12T05:00:04Z work unavailable ok none\n".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_failed_redemption_reports_and_logs_its_reason() {
+        let store = Chunked(MemoryBlobs::default());
+        let core = Mutex::new(Core::default());
+        let granted = super::super::auth::Granted { code: "c".into(), verifier: "v".into(), redirect_uri: "http://localhost:1/auth-callback.html".into() };
+        let t = FakeTokens::new(vec![TokenReply::Refused("token-400-65001".into())]);
+        assert_eq!(complete_sign_in(&acct("work"), &granted, &store, &t, &core, NOW), Err("token-400-65001".to_string()));
+        let t = FakeTokens::new(vec![TokenReply::Transient("token-network".into())]);
+        assert_eq!(complete_sign_in(&acct("work"), &granted, &store, &t, &core, NOW), Err("token-network".to_string()));
+        let flaky = FlakySecrets { inner: Chunked(MemoryBlobs::default()), fail_set: Cell::new(true) };
+        let t = FakeTokens::new(vec![ok_token("acc", Some("ref"))]);
+        assert_eq!(complete_sign_in(&acct("work"), &granted, &flaky, &t, &core, NOW), Err("store-write".to_string()));
+        let lines = core.lock().unwrap().log_lines.clone();
+        assert_eq!(lines[0], "2026-11-12T05:00:00Z work start sign-in-failed token-400-65001\n");
+        assert_eq!(lines[1], "2026-11-12T05:00:00Z work sign-in-failed sign-in-failed token-network\n");
+        assert_eq!(lines[2], "2026-11-12T05:00:00Z work sign-in-failed sign-in-failed store-write\n");
+    }
+
+    #[test]
+    fn a_hostile_reason_never_reaches_the_payload_or_the_log() {
+        let (store, mut core) = setup();
+        let links = Mutex::new(Links::default());
+        core.cache.insert("work".into(), Cached { access: "c".into(), expires_at: NOW + 600 });
+        let t = FakeTokens::new(vec![]);
+        let g = FakeGraph::new(vec![GraphReply::Failed("graph-403-https://example.test/?a=b@c".into())]);
+        let p = read_next(&[acct("work")], &store, &t, &g, &mut core, &links, NOW);
+        assert_eq!(reasons(&p), vec![None]);
+        assert!(core.log_lines[0].ends_with(" none\n"));
     }
 }

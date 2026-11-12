@@ -3900,6 +3900,7 @@ pub fn run() {
 
             if let Some(window) = app.get_webview_window(WALL2_LABEL) {
                 wall2_window::start_log(app.path().app_log_dir().ok());
+                wall2_meet::start_log(app.path().app_log_dir().ok());
                 #[cfg(windows)]
                 {
                     start_displays_worker();
