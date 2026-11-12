@@ -205,6 +205,9 @@ pub enum TokenReply {
     Rejected,
     /// Network trouble, throttling or a server error: try again later, keep the token.
     Transient,
+    /// A 4xx the grant itself did not cause (`consent_required`, `invalid_client`, and so on):
+    /// the stored token stays, but only a new sign-in can fix it.
+    Refused,
     Failed,
 }
 
@@ -230,7 +233,7 @@ pub fn classify_token(status: u16, body: &[u8]) -> TokenReply {
     }
     match json.as_ref().and_then(|j| j.get("error")).and_then(Value::as_str) {
         Some("invalid_grant") | Some("interaction_required") => TokenReply::Rejected,
-        _ => TokenReply::Failed,
+        _ => TokenReply::Refused,
     }
 }
 
@@ -345,7 +348,9 @@ mod tests {
         assert_eq!(classify_token(200, b"{}"), TokenReply::Failed);
         assert_eq!(classify_token(400, br#"{"error":"invalid_grant"}"#), TokenReply::Rejected);
         assert_eq!(classify_token(400, br#"{"error":"interaction_required"}"#), TokenReply::Rejected);
-        assert_eq!(classify_token(400, br#"{"error":"invalid_request"}"#), TokenReply::Failed);
+        assert_eq!(classify_token(400, br#"{"error":"consent_required"}"#), TokenReply::Refused);
+        assert_eq!(classify_token(401, br#"{"error":"invalid_client"}"#), TokenReply::Refused);
+        assert_eq!(classify_token(400, b"not json"), TokenReply::Refused);
         assert_eq!(classify_token(429, b""), TokenReply::Transient);
         assert_eq!(classify_token(503, b""), TokenReply::Transient);
     }

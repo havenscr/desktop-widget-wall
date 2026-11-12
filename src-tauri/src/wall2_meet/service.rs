@@ -137,6 +137,8 @@ fn obtain(
             core.pending.remove(&acct.id);
             Err(AccountState::NeedsSignIn)
         }
+        // Not a dead grant but nothing a retry fixes: offer Sign in, keep the stored token.
+        TokenReply::Refused => Err(AccountState::NeedsSignIn),
         TokenReply::Transient | TokenReply::Failed => Err(AccountState::Unavailable),
     }
 }
@@ -402,6 +404,17 @@ mod tests {
         let p = read_next(&[acct("work")], &store, &t, &g, &mut core, &links, NOW);
         assert_eq!(p.accounts[0].state, "needs-sign-in");
         assert_eq!(store.get("work"), None);
+    }
+
+    #[test]
+    fn a_refused_token_request_offers_sign_in_and_keeps_the_token() {
+        let (store, mut core) = setup();
+        let links = Mutex::new(Links::default());
+        let t = FakeTokens::new(vec![TokenReply::Refused]);
+        let g = FakeGraph::new(vec![]);
+        let p = read_next(&[acct("work")], &store, &t, &g, &mut core, &links, NOW);
+        assert_eq!(p.accounts[0].state, "needs-sign-in");
+        assert_eq!(store.get("work").as_deref(), Some("refresh-1"));
     }
 
     #[test]
