@@ -89,7 +89,8 @@ export function restore(raw: string | null, now: number): FocusState {
     const minutes = typeof v.minutes === 'number' ? clampMinutes(v.minutes) : 25;
     switch (v.status) {
       case 'running':
-        if (typeof v.endAt === 'number' && Number.isFinite(v.endAt)) {
+        // An end time further out than the longest session cannot be real: treat as corrupt.
+        if (typeof v.endAt === 'number' && Number.isFinite(v.endAt) && v.endAt <= now + MAX_MINUTES * 60_000) {
           return tick({ status: 'running', minutes, endAt: v.endAt }, now);
         }
         break;

@@ -70,3 +70,10 @@ it('restores paused state and survives bad data', () => {
   expect(restore('garbage', T)).toEqual(initialFocus);
   expect(restore('{"status":"running"}', T)).toEqual({ status: 'idle', minutes: 25 });
 });
+
+it('treats a restored end time beyond the longest session as corrupt', () => {
+  const raw = JSON.stringify({ status: 'running', minutes: 25, endAt: T + 121 * MIN });
+  expect(restore(raw, T)).toEqual({ status: 'idle', minutes: 25 });
+  const ok = JSON.stringify({ status: 'running', minutes: 120, endAt: T + 120 * MIN });
+  expect(restore(ok, T).status).toBe('running');
+});
