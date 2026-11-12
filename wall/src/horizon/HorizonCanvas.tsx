@@ -3,7 +3,7 @@ import { useReducedMotion } from '../ui/useReducedMotion';
 import { STAGE_HEIGHT, STAGE_WIDTH, fitScale } from '../stage/fitScale';
 import { usePlaceStore } from '../state/places';
 import { useAudioStore } from '../audio/store';
-import { loudness } from '../audio/model';
+import { loudness, smoothStep } from '../audio/model';
 import { CAMERAS, MOON, glideCamera, settled, startGlide, stepGlide, type Glide } from './cameras';
 import { echoOptions, stepEchoFade } from './echo';
 import { frameDelta, shouldDraw } from './pacing';
@@ -29,6 +29,7 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
   const placeRef = useRef(place);
   placeRef.current = place;
   const fade = useRef(0);
+  const loud = useRef(0); // smoothed loudness, so the ripple eases out when the store drops to zero
   // Latest clock, read at draw time so an inline `now` prop never restarts the loop.
   const nowRef = useRef(now);
   useEffect(() => {
@@ -67,8 +68,7 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
       };
       // Ripple and moon never appear in the review still or under reduced motion's still frames.
       if (!still) {
-        const audio = useAudioStore.getState();
-        const echo = echoOptions(camera, fade.current, loudness(audio), T);
+        const echo = echoOptions(camera, fade.current, loud.current, T);
         if (echo) options.echo = echo;
       }
       if (!review && placeRef.current === 'unwind') options.moon = MOON;
@@ -82,6 +82,7 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
       const dt = frameDelta(ts, last);
       last = ts;
       T += dt;
+      loud.current = smoothStep(loud.current, loudness(useAudioStore.getState()), dt);
       fade.current = stepEchoFade(fade.current, useAudioStore.getState().playing, dt);
       glide.current = stepGlide(glide.current, dt);
       paint();
@@ -106,6 +107,18 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
       cancelAnimationFrame(raf);
     };
   }, [reduced, review]);
+
+  // Hidden pages start the ripple from nothing when they return, never from stale levels.
+  useEffect(() => {
+    const onHide = () => {
+      if (document.hidden) {
+        fade.current = 0;
+        loud.current = 0;
+      }
+    };
+    document.addEventListener('visibilitychange', onHide);
+    return () => document.removeEventListener('visibilitychange', onHide);
+  }, []);
 
   // Review mode: make the rail and screen match the requested place too.
   useEffect(() => {
