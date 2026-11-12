@@ -950,6 +950,84 @@ describe('the Unwind visualizer', () => {
     expect(draw.mock.lastCall![1].echo!.a).toBeCloseTo(0.9, 9);
   });
 
+  for (const music of [true, false]) {
+    it(`turning from Unwind to the morning view (${music ? 'playing' : 'silent'}): the echo only falls from the first frame, is gone within 0.6 s, and never returns before the turn back settles`, () => {
+      setReducedMotion(false);
+      usePlaceStore.setState({ active: 'unwind' });
+      let ms = localMs(7, 12);
+      if (music) feedBands(0, 2000);
+      render(<HorizonCanvas now={() => ms} />);
+      for (let ts = 100; ts <= 1300; ts += 100) {
+        if (music) act(() => feedBands(2000 + ts, 2000 + ts + 99));
+        runFrame(ts);
+      }
+      const before = draw.mock.lastCall![1].echo!.a;
+      expect(before).toBeCloseTo(music ? 0.9 : 0.9 * 0.45, 9);
+      act(() => usePlaceStore.getState().setActive('home'));
+      draw.mockClear();
+      const out: number[] = [];
+      let ts = 1400;
+      for (; ts <= 6200; ts += 100) {
+        if (music) act(() => feedBands(2000 + ts, 2000 + ts + 99));
+        runFrame(ts);
+        out.push(draw.mock.lastCall![1].echo?.a ?? 0);
+      }
+      expect(draw.mock.lastCall![1].camera).toBe(HOME_MORNING);
+      expect(out[0]).toBeGreaterThan(0); // a fade, not a cut
+      expect(out[0]).toBeLessThan(before); // falling from the first frame of the turn
+      for (let i = 1; i < out.length; i++) expect(out[i]).toBeLessThanOrEqual(out[i - 1]);
+      for (const a of out.slice(5)) expect(a).toBe(0); // gone by the sixth 0.1 s frame (0.6 s)
+      // And back to Unwind: nothing while the turn runs, the lines once it settles.
+      act(() => usePlaceStore.getState().setActive('unwind'));
+      draw.mockClear();
+      for (; draw.mock.calls.length === 0 || draw.mock.lastCall![1].camera !== CAMERAS.unwind; ts += 100) {
+        if (music) act(() => feedBands(2000 + ts, 2000 + ts + 99));
+        runFrame(ts);
+      }
+      expect(draw.mock.calls.length).toBeGreaterThan(10);
+      for (const c of draw.mock.calls.slice(0, -1)) expect(c[1]).not.toHaveProperty('echo');
+      for (let k = 0; k < 8; k++, ts += 100) {
+        if (music) act(() => feedBands(2000 + ts, 2000 + ts + 99));
+        runFrame(ts);
+      }
+      expect(draw.mock.lastCall![1].echo!.a).toBeCloseTo(music ? 0.9 : 0.9 * 0.45, 9);
+      ms = localMs(7, 13);
+    });
+  }
+
+  it('music starting as the turn to the morning view begins never lifts the echo during the turn', () => {
+    setReducedMotion(false);
+    usePlaceStore.setState({ active: 'unwind' });
+    render(<HorizonCanvas now={() => localMs(7, 12)} />);
+    for (let ts = 100; ts <= 1300; ts += 100) runFrame(ts);
+    act(() => usePlaceStore.getState().setActive('home'));
+    draw.mockClear();
+    const out: number[] = [];
+    for (let ts = 1400; ts <= 2400; ts += 100) {
+      act(() => feedBands(ts, ts + 99)); // music starts with the turn
+      runFrame(ts);
+      out.push(draw.mock.lastCall![1].echo?.a ?? 0);
+    }
+    for (let i = 1; i < out.length; i++) expect(out[i]).toBeLessThanOrEqual(out[i - 1]);
+    expect(out[out.length - 1]).toBe(0);
+  });
+
+  it('the display waking as the turn to the morning view begins never brings the echo back during the turn', () => {
+    setReducedMotion(false);
+    usePlaceStore.setState({ active: 'unwind' });
+    idleMock.mockImplementation(() => true);
+    const { rerender } = render(<HorizonCanvas now={() => localMs(7, 12)} />);
+    for (let ts = 100; ts <= 1500; ts += 100) runFrame(ts);
+    expect(draw.mock.lastCall![1]).not.toHaveProperty('echo'); // faded away while idle
+    idleMock.mockImplementation(() => false);
+    rerender(<HorizonCanvas now={() => localMs(7, 12)} />);
+    act(() => usePlaceStore.getState().setActive('home'));
+    draw.mockClear();
+    for (let ts = 1600; ts <= 6400; ts += 100) runFrame(ts);
+    expect(draw.mock.lastCall![1].camera).toBe(HOME_MORNING);
+    for (const c of draw.mock.calls) expect(c[1]).not.toHaveProperty('echo');
+  });
+
   it('hiding the page empties the band history, so old spectrum never replays on return', () => {
     setReducedMotion(false);
     usePlaceStore.setState({ active: 'unwind' });

@@ -138,38 +138,48 @@ it('strength on Work and Home is exactly ea * fade * level, and zero loudness gi
 });
 
 describe('the camera gate', () => {
-  it('ramps out over the first 0.6 s of a move to Rainier and stays shut there', () => {
+  const open = () => ({ value: 1, shut: false });
+
+  it('ramps out from the first frame of a move to Rainier, is exactly 0 by 0.6 s, and stays shut there', () => {
     let g = startGlide(settled(CAMERAS.work), HOME_MORNING, false, true);
-    let gate = initialEchoGate(settled(CAMERAS.work));
-    expect(gate).toBe(1);
+    const gate = initialEchoGate(settled(CAMERAS.work));
+    expect(gate).toEqual({ value: 1, shut: false });
     const seen: number[] = [];
     for (let i = 0; i < 6; i++) {
       g = stepGlide(g, 0.1);
-      gate = stepEchoGate(gate, g, 0.1);
-      seen.push(gate);
+      seen.push(stepEchoGate(gate, g, 0.1));
     }
     for (let i = 1; i < seen.length; i++) expect(seen[i]).toBeLessThan(seen[i - 1]);
     expect(seen[0]).toBeCloseTo(1 - 0.1 / ECHO_GATE_S, 9);
     expect(seen[4]).toBeGreaterThan(0); // still ramping at 0.5 s
-    expect(seen[5]).toBeLessThan(1e-9); // gone by 0.6 s
+    expect(seen[5]).toBe(0); // exactly 0 at 0.6 s
+    expect(gate.shut).toBe(true);
+    // Uneven frames: still exactly 0 within 0.6 s of the start.
+    let g2 = startGlide(settled(CAMERAS.unwind), HOME_MORNING, false, true);
+    const gate2 = open();
+    let t = 0;
+    for (const dt of [0.033, 0.05, 0.017, 0.1, 0.1, 0.1, 0.1, 0.1]) {
+      g2 = stepGlide(g2, dt);
+      t += dt;
+      stepEchoGate(gate2, g2, dt);
+      if (t >= ECHO_GATE_S - 1e-9) expect(gate2.value).toBe(0);
+    }
     g = stepGlide(g, 10);
-    expect(stepEchoGate(1, g, 0.1)).toBe(0); // the Rainier camera is the view: never drawn
-    expect(initialEchoGate(settled(HOME_MORNING))).toBe(0);
+    expect(stepEchoGate(open(), g, 0.1)).toBe(0); // the Rainier camera is the view: never drawn
+    expect(initialEchoGate(settled(HOME_MORNING))).toEqual({ value: 0, shut: true });
   });
 
   it('stays shut while the turn away runs, then ramps in over 0.6 s once it settles', () => {
     let g = startGlide(settled(HOME_MORNING), CAMERAS.home, false);
-    let gate = 0;
+    const gate = initialEchoGate(settled(HOME_MORNING));
     for (let i = 0; i < 31; i++) {
       g = stepGlide(g, 0.1);
-      gate = stepEchoGate(gate, g, 0.1);
-      expect(gate).toBe(0);
+      expect(stepEchoGate(gate, g, 0.1)).toBe(0);
     }
     const ramp: number[] = [];
     for (let i = 0; i < 7; i++) {
       g = stepGlide(g, 0.1);
-      gate = stepEchoGate(gate, g, 0.1);
-      ramp.push(gate);
+      ramp.push(stepEchoGate(gate, g, 0.1));
     }
     expect(g.progress).toBe(1);
     expect(ramp[0]).toBeCloseTo(0.1 / ECHO_GATE_S, 9); // the arrival frame
@@ -178,11 +188,33 @@ describe('the camera gate', () => {
     expect(ramp[6]).toBe(1);
   });
 
+  it('once shut, a turn reversed half way back toward a camera with a ripple stays shut until it settles', () => {
+    let g = startGlide(settled(CAMERAS.unwind), HOME_MORNING, false, true);
+    const gate = open();
+    for (let i = 0; i < 10; i++) {
+      g = stepGlide(g, 0.1);
+      stepEchoGate(gate, g, 0.1);
+    }
+    expect(gate.value).toBe(0);
+    expect(g.progress).toBeLessThan(1);
+    // Back to Unwind from half way: the glide starts from a blended camera whose ea is not 0.
+    g = startGlide(g, CAMERAS.unwind, false);
+    expect(g.from.ea).toBeGreaterThan(0);
+    while (g.progress < 1) {
+      g = stepGlide(g, 0.1);
+      const v = stepEchoGate(gate, g, 0.1);
+      if (g.progress < 1) expect(v).toBe(0);
+    }
+    expect(gate.shut).toBe(false);
+    expect(gate.value).toBeCloseTo(0.1 / ECHO_GATE_S, 9);
+  });
+
   it('stays open on moves between cameras that both have a ripple', () => {
     let g = startGlide(settled(CAMERAS.work), CAMERAS.unwind, false);
+    const gate = open();
     for (let i = 0; i < 20; i++) {
       g = stepGlide(g, 0.1);
-      expect(stepEchoGate(1, g, 0.1)).toBe(1);
+      expect(stepEchoGate(gate, g, 0.1)).toBe(1);
     }
   });
 

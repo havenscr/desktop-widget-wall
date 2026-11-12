@@ -422,6 +422,7 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
   levels' attack and release (0.06 s up, 0.35 s down). When the music stops the rows release to
   zero and writing stops once a whole ring of silence is in. `pauseBandHistory(true)` stops it
   (the horizon does this while the display is idle or off); resuming starts from an empty ring.
+  A hidden page empties it too (`clearBandHistory`), so old spectrum never replays on return.
   `spectrum.ts` reads it: `sampleBands(u, age)` maps `u` (0 at the echo's centre, 1 at its
   edge) to band `u * 31`, bass in the centre, interpolating between bands and between rows
   `age` seconds back; a band adds height above 0.3 (about -52 dB, `BAND_FLOOR`) and the top is
@@ -430,11 +431,12 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
   (about 20 to 245 Hz) into one level in dB. An onset is a rising frame at least 9 dB above the
   median level of the last second; it counts as a beat only if the next two frames stay 4 dB
   above that median (a kick holds up while it decays, a noisy frame drops straight back). Beats
-  are at least 340 ms apart (never more than three in a second, the calm limit) on both clocks:
-  onsets in source time, and a beat is refused when the frame that would confirm it arrives
-  less than 340 ms after the one that confirmed the last beat (source time can run up to 200 ms
-  ahead after a stall, so repeated stalls near that cadence once gave four beats in a real
-  second). Beats are timestamped at the onset, and the history starts afresh after a
+  are about 340 ms apart, with two frames of slack (274 ms: onsets sit on the 33 ms frame grid,
+  and arrival times jitter, so a steady 170 BPM kick keeps every beat), and never more than three
+  in any second (the calm limit): a beat that would be the fourth in a second is refused. Both
+  rules hold on both clocks: onsets in source time, and the frame that confirms a beat on the
+  arrival clock (source time can run up to 200 ms ahead after a stall, so rules kept in source
+  time alone once gave four beats in a real second). Beats are timestamped at the onset, and the history starts afresh after a
   0.5 s gap in events. It exposes `count`, `lastBeatAt`, `lag` (onset to confirmation, about
   66 ms), `beats()` and `bass` (the mean of bands 0 to 5). Bands 0 to 5 alone are not enough: at
   48 kHz they all read the same 47 Hz FFT bin, which swings by 10 dB from frame to frame on
@@ -464,8 +466,10 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
     sampler (`createEchoSampler`): each line reads the band history at its own age (the 7
     seconds spread across the lines), mixed with `spec()` by `1 - fade` while starting or
     stopping. Without `sample` the renderer draws exactly as before (golden call log test).
-  - Never on the morning Rainier camera, and ramped out over 0.6 s at the start of a turn to it
-    (the camera gate). Under reduced motion and in the review still, Unwind shows the idle
+  - Never on the morning Rainier camera. On a turn toward it the echo fades out within about half
+    a second of the turn starting (the camera gate: its opacity only falls from the first frame of
+    the turn and is exactly 0 by 0.6 s), and it stays off, through any turn back, until the camera
+    has settled on a place whose echo is on; then it fades in over 0.6 s. Under reduced motion and in the review still, Unwind shows the idle
     lines frozen at `t` 0; other places none.
   - When the display is idle or off (`useIdle`: no input for 4 minutes, screens off, locked)
     the echo fades out over a second and is then not drawn, and the band history stops; both

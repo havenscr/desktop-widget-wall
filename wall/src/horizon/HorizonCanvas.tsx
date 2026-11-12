@@ -52,6 +52,9 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
   const loud = useRef(0); // smoothed loudness, so the ripple eases out when the store drops to zero
   // The camera gate (0 to 1): ramps the ripple out on a turn to Rainier and back in after the turn away.
   const gate = useRef(initialEchoGate(glide.current));
+  // The opacity drawn last frame: during a move toward a camera without a ripple the drawn
+  // opacity may only fall (music starting or the display waking must not lift it there).
+  const lastEchoA = useRef(0);
   // 1 while the display is in use, easing to 0 over a second once it goes idle.
   const awake = useRef(1);
   // The echo's own clock (`echoRate`: slower for the idle lines) and the real-band sampler.
@@ -136,7 +139,13 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
       // The grid pulse never appears in the review still or under reduced motion's still frames.
       // The echo there is the visualizer's idle lines, frozen at t 0 (Unwind only; null elsewhere).
       if (!still) {
-        const echo = echoOptions(camera, fade.current, loud.current, echoT.current, gate.current * awake.current);
+        let echo = echoOptions(camera, fade.current, loud.current, echoT.current, gate.current.value * awake.current);
+        const turningOff = glide.current.to.ea === 0 && glide.current.progress < 1;
+        if (echo && turningOff && echo.a > lastEchoA.current) {
+          echo.a = lastEchoA.current;
+          if (echo.a <= 0.005) echo = null;
+        }
+        lastEchoA.current = echo ? echo.a : 0;
         if (echo) {
           if (fade.current > 0) {
             const s = sampler.current;
@@ -148,7 +157,7 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
         }
         if (grid.current) options.grid = grid.current;
       } else {
-        const echo = echoOptions(camera, 0, 0, 0, initialEchoGate(glide.current));
+        const echo = echoOptions(camera, 0, 0, 0, initialEchoGate(glide.current).value);
         if (echo) options.echo = echo;
       }
       // The moon shows only once the camera has arrived at Unwind (no glide in progress), and
@@ -169,7 +178,7 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
       awake.current = stepEchoFade(awake.current, !idleRef.current, dt);
       glide.current = stepGlide(glide.current, dt);
       publish();
-      gate.current = stepEchoGate(gate.current, glide.current, dt);
+      stepEchoGate(gate.current, glide.current, dt);
       echoT.current += dt * echoRate(glideCamera(glide.current), fade.current);
       const beats = audioBeats();
       const input = pulseIn.current;

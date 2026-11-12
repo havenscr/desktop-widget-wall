@@ -47,23 +47,51 @@ export function stepEchoFade(fade: number, playing: boolean, dt: number): number
 }
 
 /**
- * The camera gate on the ripple, 0 to 1, advanced by `dt` seconds. A move that ends on a camera
- * with `ea` 0 (Rainier in the morning) ramps it to 0 over its first `ECHO_GATE_S`, and it stays 0
- * while that camera is the view and while a move away from it runs. Once such a move settles it
- * ramps back to 1 over `ECHO_GATE_S`. Every other move leaves it at (or ramps it up to) 1.
- * Multiply it into the fade passed to `echoOptions`, so the filled echo never crosses Rainier
- * and never pops on or off.
+ * The camera gate on the ripple: `value` 0 to 1, multiplied into the ripple's opacity, and `shut`,
+ * true once the gate has closed for a camera without a ripple (`ea` 0, Rainier in the morning).
  */
-export function stepEchoGate(gate: number, glide: Glide, dt: number): number {
-  const step = Math.max(0, dt) / ECHO_GATE_S;
-  if (glide.to.ea === 0) return glide.progress >= 1 ? 0 : Math.max(0, gate - step);
-  if (glide.progress < 1 && glide.from.ea === 0) return 0;
-  return Math.min(1, gate + step);
+export interface EchoGate {
+  value: number;
+  shut: boolean;
 }
 
-/** The gate for a camera the view starts on: closed on a camera without a ripple, open otherwise. */
-export function initialEchoGate(glide: Glide): number {
-  return glide.to.ea === 0 ? 0 : 1;
+/**
+ * Advance the camera gate by `dt` seconds and return its value.
+ *
+ * - A move that ends on a camera with `ea` 0 ramps the gate down from the frame the move starts,
+ *   by `dt / ECHO_GATE_S` a frame, so it reaches exactly 0 within `ECHO_GATE_S` (0.6 s) of the
+ *   start and is shut from then on (a fade rather than a cut, so the lines never pop off).
+ * - Once shut it stays at 0 through any later move (back toward a camera with a ripple, or a turn
+ *   reversed half way) until a move settles on a camera whose ripple is on; only then does it
+ *   ramp back in over `ECHO_GATE_S`. A move that starts on a camera with `ea` 0 is shut too.
+ * - Every other move leaves it at (or ramps it up to) 1.
+ *
+ * Multiply the value into the opacity passed to `echoOptions`; the canvas also holds the drawn
+ * opacity from rising during a move toward such a camera, so it only ever falls there.
+ */
+export function stepEchoGate(g: EchoGate, glide: Glide, dt: number): number {
+  const step = Math.max(0, dt) / ECHO_GATE_S;
+  if (glide.to.ea === 0) {
+    g.value = glide.progress >= 1 ? 0 : g.value - step;
+    // A hair over zero after summing frame steps still counts as closed.
+    if (g.value <= 1e-6) {
+      g.value = 0;
+      g.shut = true;
+    }
+  } else if (glide.progress < 1 && (g.shut || glide.from.ea === 0)) {
+    g.value = 0;
+    g.shut = true;
+  } else {
+    g.shut = false;
+    g.value = Math.min(1, g.value + step);
+  }
+  return g.value;
+}
+
+/** The gate for a camera the view starts on: shut on a camera without a ripple, open otherwise. */
+export function initialEchoGate(glide: Glide): EchoGate {
+  const off = glide.to.ea === 0;
+  return { value: off ? 0 : 1, shut: off };
 }
 
 /**
