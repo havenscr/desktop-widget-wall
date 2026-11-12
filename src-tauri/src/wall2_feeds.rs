@@ -14,7 +14,7 @@ use tauri::Manager;
 use tauri_plugin_opener::OpenerExt;
 
 /// Error text the front end treats as "Not set up".
-const NOT_CONFIGURED: &str = "not-configured";
+pub(crate) const NOT_CONFIGURED: &str = "not-configured";
 const MAX_BODY: u64 = 1_000_000;
 const TIMEOUT: Duration = Duration::from_secs(8);
 const MAX_TITLE_CHARS: usize = 200;
@@ -117,7 +117,7 @@ fn base_from_config(json_text: Option<&str>, key: &str, https_only: bool) -> Res
     }
 }
 
-fn read_base(app: &tauri::AppHandle, key: &str, https_only: bool) -> Result<String, String> {
+pub(crate) fn read_base(app: &tauri::AppHandle, key: &str, https_only: bool) -> Result<String, String> {
     let dir = app.path().app_config_dir().map_err(|_| NOT_CONFIGURED.to_string())?;
     let text = std::fs::read_to_string(dir.join("feeds.json")).ok();
     base_from_config(text.as_deref(), key, https_only)
@@ -125,12 +125,12 @@ fn read_base(app: &tauri::AppHandle, key: &str, https_only: bool) -> Result<Stri
 
 // Section: http
 
-fn agent() -> &'static ureq::Agent {
+pub(crate) fn agent() -> &'static ureq::Agent {
     static AGENT: OnceLock<ureq::Agent> = OnceLock::new();
     AGENT.get_or_init(|| ureq::AgentBuilder::new().timeout(TIMEOUT).redirects(0).build())
 }
 
-fn read_body(resp: ureq::Response) -> Result<Vec<u8>, String> {
+pub(crate) fn read_body(resp: ureq::Response) -> Result<Vec<u8>, String> {
     let mut buf = Vec::new();
     resp.into_reader()
         .take(MAX_BODY + 1)
@@ -147,7 +147,7 @@ fn status_ok(code: u16) -> bool {
     (200..300).contains(&code)
 }
 
-fn require_ok(resp: ureq::Response) -> Result<ureq::Response, String> {
+pub(crate) fn require_ok(resp: ureq::Response) -> Result<ureq::Response, String> {
     let code = resp.status();
     if status_ok(code) {
         Ok(resp)
@@ -156,14 +156,14 @@ fn require_ok(resp: ureq::Response) -> Result<ureq::Response, String> {
     }
 }
 
-fn describe(err: ureq::Error) -> String {
+pub(crate) fn describe(err: ureq::Error) -> String {
     match err {
         ureq::Error::Status(code, _) => format!("The service answered {code}"),
         ureq::Error::Transport(_) => "Could not reach the service".to_string(),
     }
 }
 
-fn get_json(url: &str) -> Result<Value, String> {
+pub(crate) fn get_json(url: &str) -> Result<Value, String> {
     let resp = agent().get(url).set("Accept", "application/json").call().map_err(describe)?;
     let resp = require_ok(resp)?;
     serde_json::from_slice(&read_body(resp)?).map_err(|_| "The answer was not JSON".to_string())
