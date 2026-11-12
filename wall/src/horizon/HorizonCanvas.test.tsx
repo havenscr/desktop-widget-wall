@@ -865,7 +865,7 @@ describe('the Unwind visualizer', () => {
       runFrame(ts);
     }
     const e = draw.mock.lastCall![1].echo!;
-    expect(e.a).toBeCloseTo(0.9, 9);
+    expect(e.a).toBeCloseTo(1, 9);
     expect(e.amp).toBe(34);
     expect(typeof e.sample).toBe('function');
     const tau = e.t! - 0.5; // a line half a second back
@@ -925,7 +925,7 @@ describe('the Unwind visualizer', () => {
       act(() => feedBands(2000 + ts, 2000 + ts + 99));
       runFrame(ts);
     }
-    expect(draw.mock.lastCall![1].echo!.a).toBeCloseTo(0.9, 9);
+    expect(draw.mock.lastCall![1].echo!.a).toBeCloseTo(1, 9);
     idleMock.mockImplementation(() => true);
     rerender(<HorizonCanvas now={() => NOON} />);
     const head = bandHistory().head;
@@ -937,7 +937,7 @@ describe('the Unwind visualizer', () => {
     }
     expect(bandHistory().head).toBe(head); // nothing written while idle
     expect(out[0]).toBeGreaterThan(0); // fades, never pops
-    expect(out[0]).toBeLessThan(0.9);
+    expect(out[0]).toBeLessThan(1);
     expect(draw.mock.lastCall![1]).not.toHaveProperty('echo');
     idleMock.mockImplementation(() => false);
     rerender(<HorizonCanvas now={() => NOON} />);
@@ -947,7 +947,7 @@ describe('the Unwind visualizer', () => {
       runFrame(ts);
     }
     expect(bandHistory().rows).toBeGreaterThan(20);
-    expect(draw.mock.lastCall![1].echo!.a).toBeCloseTo(0.9, 9);
+    expect(draw.mock.lastCall![1].echo!.a).toBeCloseTo(1, 9);
   });
 
   for (const music of [true, false]) {
@@ -962,7 +962,7 @@ describe('the Unwind visualizer', () => {
         runFrame(ts);
       }
       const before = draw.mock.lastCall![1].echo!.a;
-      expect(before).toBeCloseTo(music ? 0.9 : 0.9 * 0.45, 9);
+      expect(before).toBeCloseTo(music ? 1 : 0.9 * 0.45, 9);
       act(() => usePlaceStore.getState().setActive('home'));
       draw.mockClear();
       const out: number[] = [];
@@ -990,7 +990,7 @@ describe('the Unwind visualizer', () => {
         if (music) act(() => feedBands(2000 + ts, 2000 + ts + 99));
         runFrame(ts);
       }
-      expect(draw.mock.lastCall![1].echo!.a).toBeCloseTo(music ? 0.9 : 0.9 * 0.45, 9);
+      expect(draw.mock.lastCall![1].echo!.a).toBeCloseTo(music ? 1 : 0.9 * 0.45, 9);
       ms = localMs(7, 13);
     });
   }

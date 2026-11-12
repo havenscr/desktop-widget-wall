@@ -202,6 +202,12 @@ export interface HorizonEcho {
    * `spec`'s range, about 0 to 1.3. Absent: `spec`, as before.
    */
   sample?: (u: number, tau: number) => number;
+  /**
+   * Stroke colours for the lines, as RGB triples (0 to 255): at the left edge, at `cx`, and at the
+   * right edge, blended over the palette's rim colour by `k` (0 to 1), and the line width in design
+   * pixels (default 1.4). Absent or `k` 0: the rim colour, as before.
+   */
+  tint?: { left: number[]; centre: number[]; right: number[]; k: number; width?: number };
 }
 
 /** Everything `draw` reads. Sizes are design pixels; `scale` maps them to device pixels. */
@@ -302,10 +308,12 @@ export function draw(ctx:CanvasRenderingContext2D,o:HorizonDrawOptions):HorizonD
   ctx.stroke()}
  line((i:Any)=>cr[i],.34,1.2);
  if(sp.alt<9&&sp.alt>-7&&sx>-R*6&&sx<W+R*6){const hg=ctx.createLinearGradient(sx-R*5.5,0,sx+R*5.5,0),a=.95*smooth((sp.alt+7)/6)*(1-hi);hg.addColorStop(0,css(SA,0));hg.addColorStop(.5,css(SA,a));hg.addColorStop(1,css(SA,0));line((i:Any)=>cr[i],1,1.8,hg)}
- if(o.echo){const E=o.echo,n=E.n,cx=E.cx===undefined?W/2:E.cx,hs=E.hs||1000,fq=((E.t||0)*(E.speed||.3))%1,span=E.span||7,S=E.sample||spec;
+ if(o.echo){const E=o.echo,n=E.n,cx=E.cx===undefined?W/2:E.cx,hs=E.hs||1000,fq=((E.t||0)*(E.speed||.3))%1,span=E.span||7,S=E.sample||spec,TT=E.tint,tk=TT?clamp(TT.k,0,1):0,lw=TT?mix(1.4,TT.width||1.4,tk):1.4;
+  let es:Any;if(tk>0){const c0=clamp(cx/W,.01,.99),rimAt=(q:Any)=>mixc(P.rim[0],P.rim[1],1-Math.abs(q-.5)*2);es=ctx.createLinearGradient(0,0,W,0);
+   for(const [q,c] of [[0,TT!.left],[c0,TT!.centre],[c0+(1-c0)*.6,mixc(TT!.centre,TT!.right,.5)],[1,TT!.right]] as Any)es.addColorStop(q,css(mixc(rimAt(q),c,tk)))}
   for(let j=0;j<n;j++){const a=(j+fq)/n,p=1-a,tau=(E.t||0)-a*span,sw=.35+.65*Math.sin(Math.PI*a),pp=Math.pow(p,1.15),r=Math.round(2+a*26);
    const f=(i:Any)=>mix(cr[i],sm(i,r),Math.min(1,a*2.2))*pp+S(Math.min(1,Math.abs(i*2-cx)/hs),tau)*E.amp*sw*Math.min(1,cr[i]/(cmax*.5));
-   layer(f,css(mixc(mixc(P.far,P.s[3],.12),P.mid,a)));line(f,E.a*(1-a*a*a),1.4)}}
+   layer(f,css(mixc(mixc(P.far,P.s[3],.12),P.mid,a)));line(f,E.a*(1-a*a*a),lw,es)}}
  const md=(i:Any)=>prof(TR,TR.mid,az0+i*2/ppd)*k,nr=(i:Any)=>prof(TR,TR.near,az0+i*2/ppd)*k;
  g=ctx.createLinearGradient(0,hy-cmax*.6,0,hy);g.addColorStop(0,css(P.mid));g.addColorStop(1,css(mixc(P.mid,mixc(P.s[2],P.s[3],.4),.2)));layer(md,g);line(md,.16,1);
  const refl:Any[]=[];

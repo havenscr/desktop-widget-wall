@@ -18,6 +18,14 @@ export const IDLE_AMP = 0.35;
  * drift is 0.3, so 0.4 of it is the 0.12 the program names, and `spec()` runs at 0.4 of its time.
  */
 export const IDLE_RATE = 0.4;
+/**
+ * The visualizer's playing look (Unwind while music plays), to match the concept frame: opacity
+ * raised from `ea` (0.9) by `PLAY_BOOST` to full, wider strokes, and the lines tinted bright teal
+ * through the centre shifting to pink at the far right. Eased in with the play fade, so the idle
+ * lines keep the palette's own colour.
+ */
+export const PLAY_BOOST = 1 / 0.9;
+export const PLAY_TINT = { left: [92, 196, 255], centre: [56, 236, 240], right: [255, 61, 154], width: 1.8 };
 
 const clamp01 = (v: number) => (v > 0 ? (v < 1 ? v : 1) : 0);
 
@@ -101,8 +109,9 @@ export function initialEchoGate(glide: Glide): EchoGate {
  * take the ripple away (an idle display).
  *
  * - Work and Home (3 lines): `ea * fade * loud`, so zero loudness or silence shows nothing.
- * - Unwind (11 lines) while playing: `ea * fade`, with no loudness scaling; the real bands carry
- *   the dynamics (`createEchoSampler`).
+ * - Unwind (11 lines) while playing: `ea * fade` raised to full by `PLAY_BOOST`, with no loudness
+ *   scaling (the real bands carry the dynamics, `createEchoSampler`), and the `PLAY_TINT` colours
+ *   and width eased in by the fade.
  * - Unwind while silent: the idle lines, `ea * 0.45` high `eamp * 0.35`, on the slowed clock.
  *
  * Between the two (a fade, or a glide that blends `en`) every number is blended, never switched.
@@ -113,10 +122,13 @@ export function echoOptions(camera: CameraPreset, fade: number, loud: number, t:
   const k = visualizerWeight(camera);
   const f = clamp01(fade);
   const level = clamp01(loud);
-  const a = camera.ea * g * (f * (level + (1 - level) * k) + k * (1 - f) * IDLE_ALPHA);
+  const playing = f * (level + (1 - level) * k) * (1 + k * (PLAY_BOOST - 1));
+  const a = Math.min(1, camera.ea * g * (playing + k * (1 - f) * IDLE_ALPHA));
   if (a <= 0.005) return null;
   const amp = camera.eamp * (1 + k * (IDLE_AMP + (1 - IDLE_AMP) * f - 1));
-  return { n: Math.max(1, Math.round(camera.en)), amp, a, t, cx: camera.ecx, hs: ECHO_HALF_SPAN };
+  const e: HorizonEcho = { n: Math.max(1, Math.round(camera.en)), amp, a, t, cx: camera.ecx, hs: ECHO_HALF_SPAN };
+  if (k * f > 0) e.tint = { ...PLAY_TINT, k: k * f };
+  return e;
 }
 
 /**

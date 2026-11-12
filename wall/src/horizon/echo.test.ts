@@ -6,6 +6,7 @@ import {
   IDLE_ALPHA,
   IDLE_AMP,
   IDLE_RATE,
+  PLAY_TINT,
   createEchoSampler,
   echoOptions,
   echoRate,
@@ -22,7 +23,8 @@ it('takes ea, en, eamp and ecx from the camera preset, with hs 900 and the anima
     const cam = CAMERAS[place];
     const e = echoOptions(cam, 1, 1, 2.5)!;
     expect(e).toMatchObject({ n: cam.en, amp: cam.eamp, cx: cam.ecx, hs: 900, t: 2.5 });
-    expect(e.a).toBeCloseTo(cam.ea, 9);
+    // Unwind's playing look is raised to full opacity; Work and Home stay at ea.
+    expect(e.a).toBeCloseTo(place === 'unwind' ? 1 : cam.ea, 9);
   }
 });
 
@@ -56,10 +58,11 @@ describe('the Unwind visualizer', () => {
     expect(visualizerWeight(HOME_MORNING)).toBe(0);
   });
 
-  it('while playing the lines are at ea times the fade, with no loudness scaling, at full height', () => {
+  it('while playing the lines are at full opacity (ea 0.9 raised by PLAY_BOOST), with no loudness scaling, at full height, tinted', () => {
     for (const loud of [0, 0.2, 1]) {
       const e = echoOptions(CAMERAS.unwind, 1, loud, 3)!;
-      expect(e.a).toBeCloseTo(0.9, 9);
+      expect(e.a).toBeCloseTo(1, 9);
+      expect(e.tint).toMatchObject({ centre: PLAY_TINT.centre, right: PLAY_TINT.right, k: 1, width: 1.8 });
       expect(e.amp).toBe(34);
       expect(e.n).toBe(11);
     }
@@ -78,6 +81,13 @@ describe('the Unwind visualizer', () => {
     // Work and Home stay at full speed whatever the fade.
     expect(echoRate(CAMERAS.work, 0)).toBe(1);
     expect(echoRate(CAMERAS.home, 0.5)).toBe(1);
+  });
+
+  it('the tint eases in with the fade on Unwind only: none on the idle lines, none on Work and Home', () => {
+    expect(echoOptions(CAMERAS.unwind, 0, 0, 0)!.tint).toBeUndefined();
+    expect(echoOptions(CAMERAS.unwind, 0.5, 0, 0)!.tint!.k).toBeCloseTo(0.5, 9);
+    expect(echoOptions(CAMERAS.work, 1, 1, 0)!.tint).toBeUndefined();
+    expect(echoOptions(CAMERAS.home, 1, 1, 0)!.tint).toBeUndefined();
   });
 
   it('idle to playing and back moves every number smoothly (no step larger than the fade step)', () => {
