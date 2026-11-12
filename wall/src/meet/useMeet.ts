@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { invoke } from '../bridge/tauri';
 import { usePlaceStore } from '../state/places';
 import { useVisible } from '../ui/useVisible';
-import { INVALID_CONFIG, NOT_CONFIGURED, REFRESH_MS, TICK_MS, signInMessage, type MeetData } from './model';
+import { FAST_RETRY_MS, INVALID_CONFIG, NOT_CONFIGURED, REFRESH_MS, TICK_MS, signInMessage, type MeetData } from './model';
 
 export type MeetStatus = 'loading' | 'ready' | 'unconfigured' | 'invalid' | 'error';
 
@@ -46,6 +46,10 @@ export function useMeet(): MeetState {
   const inFlight = useRef(false);
   const queued = useRef(false);
   const signingRef = useRef<string | null>(null);
+  const onRef = useRef(false);
+  const fastStep = useRef(0);
+  const fastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const refreshRef = useRef<() => Promise<void>>(async () => undefined);
 
   useEffect(() => {
     mounted.current = true;
@@ -54,10 +58,29 @@ export function useMeet(): MeetState {
     };
   }, []);
 
+  // After a read that left an account unavailable, read again after 30 s, then 60 s, then
+  // leave it to the normal 5 minute poll. A read with nothing unavailable resets the steps.
+  const planFastRetry = useCallback((unavailable: boolean) => {
+    clearTimeout(fastTimer.current);
+    fastTimer.current = undefined;
+    if (!unavailable) {
+      fastStep.current = 0;
+      return;
+    }
+    const delay = FAST_RETRY_MS[fastStep.current];
+    if (delay === undefined || !onRef.current || !mounted.current) return;
+    // Only the timer moves the step on, so a manual Try again never uses up the fast retries.
+    fastTimer.current = setTimeout(() => {
+      fastStep.current += 1;
+      void refreshRef.current();
+    }, delay);
+  }, []);
+
   const readOnce = useCallback(async () => {
     try {
       const next = await invoke<MeetData>('wall2_meet_next');
       if (!mounted.current) return;
+      planFastRetry((next?.accounts ?? []).some((a) => a.state === 'unavailable'));
       setData({ accounts: next?.accounts ?? [], meetings: next?.meetings ?? [] });
       setStatus('ready');
       const partial = next?.stale === true;
@@ -70,7 +93,7 @@ export function useMeet(): MeetState {
       else if (t === INVALID_CONFIG) setStatus('invalid');
       else setStatus('error');
     }
-  }, []);
+  }, [planFastRetry]);
 
   // One read at a time. A read requested while one runs queues a single re-run, so a
   // request made right after sign-in is never dropped.
@@ -90,15 +113,22 @@ export function useMeet(): MeetState {
       if (mounted.current) setNow(Date.now());
     }
   }, [readOnce]);
+  useEffect(() => {
+    refreshRef.current = refresh;
+  }, [refresh]);
 
   useEffect(() => {
+    onRef.current = on;
     if (!on) return;
+    fastStep.current = 0;
     void refresh();
     const poll = setInterval(() => void refresh(), REFRESH_MS);
     const tick = setInterval(() => setNow(Date.now()), TICK_MS);
     return () => {
       clearInterval(poll);
       clearInterval(tick);
+      clearTimeout(fastTimer.current);
+      fastTimer.current = undefined;
     };
   }, [on, refresh]);
 

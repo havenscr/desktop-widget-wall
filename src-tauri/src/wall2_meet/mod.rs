@@ -3,10 +3,13 @@
 //! Everything that touches a token, an authorization code or a join link happens here. The
 //! web view gets account states, meeting titles and times, and opaque keys, nothing else.
 //! Refresh tokens live in Windows Credential Manager; access tokens live in memory only.
-//! This module never logs: every failure maps to a fixed string.
+//! The only log is `wall2-meet.log` (state changes and a reason code, see `meetlog.rs`); every
+//! failure maps to a fixed string or a reason code built from numbers and a checked name.
 
 mod auth;
 mod graph;
+mod meetlog;
+mod reason;
 mod service;
 mod store;
 
@@ -31,6 +34,19 @@ const INVALID_CONFIG: &str = "invalid-config";
 pub(crate) fn agent() -> &'static ureq::Agent {
     static AGENT: OnceLock<ureq::Agent> = OnceLock::new();
     AGENT.get_or_init(|| ureq::AgentBuilder::new().timeout(TIMEOUT).redirects(0).build())
+}
+
+/// At most `limit` plus one bytes of a body, for an error reply whose JSON is only read for a
+/// code. The extra byte tells the reason builder that the body was over the limit.
+pub(crate) fn read_capped(resp: ureq::Response, limit: u64) -> Vec<u8> {
+    let mut buf = Vec::new();
+    let _ = resp.into_reader().take(limit + 1).read_to_end(&mut buf);
+    buf
+}
+
+/// Start `wall2-meet.log` in the app log directory (cleared at launch).
+pub fn start_log(dir: Option<std::path::PathBuf>) {
+    meetlog::start(dir);
 }
 
 /// The body, capped at 1 MB; None when it cannot be read or is larger.
@@ -61,14 +77,25 @@ impl graph::GraphClient for HttpGraph {
             .set("Accept", "application/json")
             .call();
         match result {
+            // A redirect is never followed, so a 3xx arrives here as a reply, not an error.
+            Ok(resp) if !(200..300).contains(&resp.status()) => {
+                let status = resp.status();
+                GraphReply::Failed(reason::graph_reason(status, &read_capped(resp, reason::MAX_ERROR_BODY)))
+            }
             Ok(resp) => match read_body(resp).and_then(|b| serde_json::from_slice::<Value>(&b).ok()) {
                 Some(v) => GraphReply::Ok(v),
-                None => GraphReply::Failed,
+                None => GraphReply::Failed(reason::GRAPH_BODY.to_string()),
             },
             Err(ureq::Error::Status(401, _)) => GraphReply::Unauthorized,
-            Err(ureq::Error::Status(code, _)) if code == 429 || code >= 500 => GraphReply::Transient,
-            Err(ureq::Error::Status(..)) => GraphReply::Failed,
-            Err(ureq::Error::Transport(_)) => GraphReply::Transient,
+            Err(ureq::Error::Status(code, resp)) => {
+                let why = reason::graph_reason(code, &read_capped(resp, reason::MAX_ERROR_BODY));
+                if code == 429 || code >= 500 {
+                    GraphReply::Transient(why)
+                } else {
+                    GraphReply::Failed(why)
+                }
+            }
+            Err(ureq::Error::Transport(_)) => GraphReply::Transient(reason::GRAPH_NETWORK.to_string()),
         }
     }
 }
@@ -174,7 +201,9 @@ pub async fn wall2_meet_next(window: tauri::WebviewWindow) -> Result<service::Me
     let accounts = load_config(&window).map_err(str::to_string)?;
     tauri::async_runtime::spawn_blocking(move || {
         let mut core = lock_core();
-        service::read_next(&accounts, &secrets(), &auth::HttpTokens, &HttpGraph, &mut core, links(), now_secs())
+        let payload = service::read_next(&accounts, &secrets(), &auth::HttpTokens, &HttpGraph, &mut core, links(), now_secs());
+        meetlog::write_all(std::mem::take(&mut core.log_lines));
+        payload
     })
     .await
     .map_err(|_| "failed".to_string())
@@ -197,7 +226,9 @@ pub async fn wall2_meet_day(window: tauri::WebviewWindow) -> Result<service::Day
         let now = now_secs();
         let (from, to) = day_window(now as i64, &crate::wall2_feeds::local_offset_secs);
         let mut core = lock_core();
-        service::read_day(&accounts, &secrets(), &auth::HttpTokens, &HttpGraph, &mut core, links(), now, from, to)
+        let payload = service::read_day(&accounts, &secrets(), &auth::HttpTokens, &HttpGraph, &mut core, links(), now, from, to);
+        meetlog::write_all(std::mem::take(&mut core.log_lines));
+        payload
     })
     .await
     .map_err(|_| "failed".to_string())
@@ -211,13 +242,14 @@ pub async fn wall2_meet_sign_in(window: tauri::WebviewWindow, id: String) -> Res
         .and_then(|list| list.into_iter().find(|a| a.id == id))
         .ok_or_else(|| NOT_CONFIGURED.to_string())?;
     let app = window.app_handle().clone();
-    tauri::async_runtime::spawn_blocking(move || -> Result<(), &'static str> {
-        let granted = auth::authorize(&app, &account)?;
-        service::complete_sign_in(&account, &granted, &secrets(), &auth::HttpTokens, core(), now_secs())
+    tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
+        let granted = auth::authorize(&app, &account).map_err(str::to_string)?;
+        let result = service::complete_sign_in(&account, &granted, &secrets(), &auth::HttpTokens, core(), now_secs());
+        meetlog::write_all(std::mem::take(&mut lock_core().log_lines));
+        result
     })
     .await
     .map_err(|_| "failed".to_string())?
-    .map_err(str::to_string)
 }
 
 #[tauri::command]

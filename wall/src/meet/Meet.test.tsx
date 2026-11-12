@@ -253,3 +253,181 @@ it('keeps its panels out of the clock area: they sit in .meet-body (CSS: left 48
   expect(MEET_LEFT_PX).toBe(482);
   expect((body as HTMLElement).style.left).toBe(`${MEET_LEFT_PX}px`);
 });
+
+const unavailable: MeetData = {
+  accounts: [
+    { id: 'work', label: 'Work', state: 'ok' },
+    { id: 'second', label: 'Second', state: 'unavailable', reason: 'graph-403-ErrorAccessDenied' },
+  ],
+  meetings: data.meetings.slice(0, 2),
+};
+
+it('an unavailable account shows the reason line and Try again, Sign in and Sign out', async () => {
+  mocks.set('wall2_meet_next', () => unavailable);
+  render(<Meet />);
+  await flush();
+  expect(screen.getByText('Unavailable')).toBeTruthy();
+  expect(screen.getByText('Calendar refused the request (graph-403-ErrorAccessDenied)')).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Try again' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Sign in' })).toBeTruthy();
+  // The connected account keeps only Sign out; the unavailable one has its own.
+  expect(screen.getAllByRole('button', { name: 'Sign out' })).toHaveLength(2);
+});
+
+it('an unavailable account with an unknown code shows no reason line', async () => {
+  mocks.set('wall2_meet_next', () => ({
+    ...unavailable,
+    accounts: [unavailable.accounts[0], { id: 'second', label: 'Second', state: 'unavailable', reason: 'user@example.test' }],
+  }));
+  const { container } = render(<Meet />);
+  await flush();
+  expect(container.querySelector('.meet-reason')).toBeNull();
+});
+
+it('Try again on an unavailable account reads once, at once', async () => {
+  const next = vi.fn(() => unavailable);
+  mocks.set('wall2_meet_next', next);
+  render(<Meet />);
+  await flush();
+  expect(next).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+  await flush();
+  expect(next).toHaveBeenCalledTimes(2);
+});
+
+it('Sign in on an unavailable account starts a sign-in for that account', async () => {
+  const signIn = vi.fn(() => new Promise<void>(() => undefined));
+  mocks.set('wall2_meet_next', () => unavailable);
+  mocks.set('wall2_meet_sign_in', signIn);
+  mocks.set('wall2_meet_cancel_sign_in', () => undefined);
+  render(<Meet />);
+  await flush();
+  fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+  expect(signIn).toHaveBeenCalledWith({ id: 'second' });
+});
+
+it('retries an unavailable read after 30 s, then 60 s, then waits for the 5 minute poll', async () => {
+  const next = vi.fn(() => unavailable);
+  mocks.set('wall2_meet_next', next);
+  render(<Meet />);
+  await flush();
+  expect(next).toHaveBeenCalledTimes(1);
+  await flush(29_000);
+  expect(next).toHaveBeenCalledTimes(1);
+  await flush(1_000);
+  expect(next).toHaveBeenCalledTimes(2);
+  await flush(59_000);
+  expect(next).toHaveBeenCalledTimes(2);
+  await flush(1_000);
+  expect(next).toHaveBeenCalledTimes(3);
+  // No third fast retry: nothing until the 5 minute poll (at 300 s).
+  await flush(200_000);
+  expect(next).toHaveBeenCalledTimes(3);
+  await flush(10_000);
+  expect(next).toHaveBeenCalledTimes(4);
+});
+
+it('stops the fast retries once the account recovers', async () => {
+  let bad = true;
+  const next = vi.fn(() => (bad ? unavailable : data));
+  mocks.set('wall2_meet_next', next);
+  render(<Meet />);
+  await flush();
+  bad = false;
+  await flush(30_000);
+  expect(next).toHaveBeenCalledTimes(2);
+  await flush(120_000);
+  expect(next).toHaveBeenCalledTimes(2);
+});
+
+it('does not retry while hidden', async () => {
+  const next = vi.fn(() => unavailable);
+  mocks.set('wall2_meet_next', next);
+  render(<Meet />);
+  await flush();
+  act(() => usePlaceStore.setState({ active: 'work' }));
+  await flush(120_000);
+  expect(next).toHaveBeenCalledTimes(1);
+});
+
+it('shows one centred message with the last read time when nothing is scheduled', async () => {
+  mocks.set('wall2_meet_next', () => ({
+    accounts: [
+      { id: 'work', label: 'Work', state: 'ok' },
+      { id: 'second', label: 'Second', state: 'ok' },
+    ],
+    meetings: [],
+  }));
+  const { container } = render(<Meet />);
+  await flush();
+  expect(screen.getByText('Nothing scheduled in the next 24 hours')).toBeTruthy();
+  expect(screen.getByText(/Last checked at \d+(:\d\d)? [AP]M/)).toBeTruthy();
+  expect(container.querySelector('.meet-empty')).toBeTruthy();
+  expect(screen.queryByLabelText('Later meetings')).toBeNull();
+  expect(screen.getByLabelText('Accounts')).toBeTruthy();
+});
+
+it('keeps the usual panels when nothing is scheduled but an account is unavailable', async () => {
+  mocks.set('wall2_meet_next', () => ({ ...unavailable, meetings: [] }));
+  const { container } = render(<Meet />);
+  await flush();
+  expect(container.querySelector('.meet-empty')).toBeNull();
+  expect(screen.getByLabelText('Later meetings')).toBeTruthy();
+});
+
+it('two quick manual Try again taps leave the 30 s retry scheduled', async () => {
+  const next = vi.fn(() => unavailable);
+  mocks.set('wall2_meet_next', next);
+  render(<Meet />);
+  await flush();
+  fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+  await flush(100);
+  fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+  await flush(100);
+  expect(next).toHaveBeenCalledTimes(3);
+  await flush(29_000);
+  expect(next).toHaveBeenCalledTimes(3);
+  await flush(1_000);
+  expect(next).toHaveBeenCalledTimes(4);
+  // The schedule continues with the 60 s step, not past it.
+  await flush(60_000);
+  expect(next).toHaveBeenCalledTimes(5);
+  await flush(100_000);
+  expect(next).toHaveBeenCalledTimes(5);
+});
+
+it('a needs-sign-in account with a reason explains itself', async () => {
+  mocks.set('wall2_meet_next', () => ({
+    ...unavailable,
+    accounts: [unavailable.accounts[0], { id: 'second', label: 'Second', state: 'needs-sign-in', reason: 'token-400-65001' }],
+  }));
+  render(<Meet />);
+  await flush();
+  expect(screen.getByText('Sign-in was not accepted (token-400-65001)')).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Sign in' })).toBeTruthy();
+});
+
+it('a signed-out account with no reason shows no reason line', async () => {
+  mocks.set('wall2_meet_next', () => data);
+  const { container } = render(<Meet />);
+  await flush();
+  expect(container.querySelector('.meet-reason')).toBeNull();
+});
+
+it('a hostile reason string never reaches the page', async () => {
+  const hostile = 'graph-403-https://example.test/join?x=1 someone@example.test Bearer abc.def';
+  for (const state of ['unavailable', 'needs-sign-in'] as const) {
+    mocks.set('wall2_meet_next', () => ({
+      ...unavailable,
+      accounts: [unavailable.accounts[0], { id: 'second', label: 'Second', state, reason: hostile }],
+    }));
+    const { container, unmount } = render(<Meet />);
+    await flush();
+    const text = container.textContent ?? '';
+    for (const bad of ['example.test', '@', 'Bearer', 'https', 'abc.def', 'graph-403']) {
+      expect(text.includes(bad), `${state}: ${bad}`).toBe(false);
+    }
+    expect(container.querySelector('.meet-reason')).toBeNull();
+    unmount();
+  }
+});

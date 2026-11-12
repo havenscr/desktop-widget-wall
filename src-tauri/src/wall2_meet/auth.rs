@@ -1,7 +1,8 @@
 //! Sign-in (PKCE in the system browser, redirect caught on a loopback listener) and the
 //! token endpoint client. Nothing here logs; every failure maps to a fixed string.
 
-use super::{agent, read_body, Account};
+use super::reason::{token_reason, MAX_ERROR_BODY, TOKEN_NETWORK};
+use super::{agent, read_body, read_capped, Account};
 use serde_json::Value;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
@@ -202,13 +203,13 @@ fn wait_for_callback(server: &tiny_http::Server, state: &str, wait: Duration) ->
 pub enum TokenReply {
     Ok { access: String, expires_in: u64, refresh: Option<String> },
     /// The grant is dead: the user has to sign in again.
-    Rejected,
+    Rejected(String),
     /// Network trouble, throttling or a server error: try again later, keep the token.
-    Transient,
+    Transient(String),
     /// A 4xx the grant itself did not cause (`consent_required`, `invalid_client`, and so on):
     /// the stored token stays, but only a new sign-in can fix it.
-    Refused,
-    Failed,
+    Refused(String),
+    Failed(String),
 }
 
 pub trait TokenClient {
@@ -218,9 +219,9 @@ pub trait TokenClient {
 pub fn classify_token(status: u16, body: &[u8]) -> TokenReply {
     let json: Option<Value> = serde_json::from_slice(body).ok();
     if (200..300).contains(&status) {
-        let Some(j) = json else { return TokenReply::Failed };
+        let Some(j) = json else { return TokenReply::Failed(format!("token-{status}")) };
         let Some(access) = j.get("access_token").and_then(Value::as_str).filter(|s| !s.is_empty()) else {
-            return TokenReply::Failed;
+            return TokenReply::Failed(format!("token-{status}"));
         };
         return TokenReply::Ok {
             access: access.to_string(),
@@ -229,11 +230,11 @@ pub fn classify_token(status: u16, body: &[u8]) -> TokenReply {
         };
     }
     if status == 429 || status >= 500 {
-        return TokenReply::Transient;
+        return TokenReply::Transient(token_reason(status, body));
     }
     match json.as_ref().and_then(|j| j.get("error")).and_then(Value::as_str) {
-        Some("invalid_grant") | Some("interaction_required") => TokenReply::Rejected,
-        _ => TokenReply::Refused,
+        Some("invalid_grant") | Some("interaction_required") => TokenReply::Rejected(token_reason(status, body)),
+        _ => TokenReply::Refused(token_reason(status, body)),
     }
 }
 
@@ -247,11 +248,11 @@ impl TokenClient for HttpTokens {
                 let status = resp.status();
                 match read_body(resp) {
                     Some(body) => classify_token(status, &body),
-                    None => TokenReply::Failed,
+                    None => TokenReply::Failed(format!("token-{status}")),
                 }
             }
-            Err(ureq::Error::Status(code, resp)) => classify_token(code, &read_body(resp).unwrap_or_default()),
-            Err(_) => TokenReply::Transient,
+            Err(ureq::Error::Status(code, resp)) => classify_token(code, &read_capped(resp, MAX_ERROR_BODY)),
+            Err(_) => TokenReply::Transient(TOKEN_NETWORK.to_string()),
         }
     }
 }
@@ -345,13 +346,17 @@ mod tests {
             classify_token(200, ok),
             TokenReply::Ok { access: "a".into(), expires_in: 3599, refresh: Some("r".into()) }
         );
-        assert_eq!(classify_token(200, b"{}"), TokenReply::Failed);
-        assert_eq!(classify_token(400, br#"{"error":"invalid_grant"}"#), TokenReply::Rejected);
-        assert_eq!(classify_token(400, br#"{"error":"interaction_required"}"#), TokenReply::Rejected);
-        assert_eq!(classify_token(400, br#"{"error":"consent_required"}"#), TokenReply::Refused);
-        assert_eq!(classify_token(401, br#"{"error":"invalid_client"}"#), TokenReply::Refused);
-        assert_eq!(classify_token(400, b"not json"), TokenReply::Refused);
-        assert_eq!(classify_token(429, b""), TokenReply::Transient);
-        assert_eq!(classify_token(503, b""), TokenReply::Transient);
+        assert_eq!(classify_token(200, b"{}"), TokenReply::Failed("token-200".into()));
+        assert_eq!(classify_token(400, br#"{"error":"invalid_grant"}"#), TokenReply::Rejected("token-400".into()));
+        assert_eq!(classify_token(400, br#"{"error":"interaction_required"}"#), TokenReply::Rejected("token-400".into()));
+        assert_eq!(classify_token(400, br#"{"error":"consent_required"}"#), TokenReply::Refused("token-400".into()));
+        assert_eq!(classify_token(401, br#"{"error":"invalid_client"}"#), TokenReply::Refused("token-401".into()));
+        assert_eq!(classify_token(400, b"not json"), TokenReply::Refused("token-400".into()));
+        assert_eq!(classify_token(429, b""), TokenReply::Transient("token-429".into()));
+        assert_eq!(classify_token(503, b""), TokenReply::Transient("token-503".into()));
+        assert_eq!(
+            classify_token(400, br#"{"error":"invalid_grant","error_codes":[9002327]}"#),
+            TokenReply::Rejected("token-400-9002327".into())
+        );
     }
 }

@@ -21,8 +21,10 @@ pub struct Candidate {
 pub enum GraphReply {
     Ok(Value),
     Unauthorized,
-    Transient,
-    Failed,
+    /// Throttling, a server error or no connection: the reason code says which.
+    Transient(String),
+    /// Any other refusal or an unreadable reply, with its reason code.
+    Failed(String),
 }
 
 pub trait GraphClient {

@@ -595,6 +595,41 @@
 .meet-notice {
   color: var(--amber);
 }
+.meet-empty {
+  top: 4px;
+  height: 576px;
+  left: 0;
+  width: 1308px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 16px;
+}
+.meet-account.unavailable {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 14px;
+}
+.meet-account.unavailable .meet-account-text {
+  flex: none;
+  width: 100%;
+}
+.meet-reason {
+  color: var(--dim);
+  overflow-wrap: anywhere;
+}
+.meet-actions {
+  display: flex;
+  gap: 12px;
+}
+.meet-act {
+  flex: none;
+  min-height: 72px;
+  padding: 0 22px;
+}
 .meet-retry {
   align-self: flex-start;
   margin-top: auto;

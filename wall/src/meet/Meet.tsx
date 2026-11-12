@@ -1,11 +1,13 @@
 import { IconVideo } from '@tabler/icons-react';
 import { updatedText } from '../tasks/model';
 import {
+  clockText,
   countdownText,
   isSoon,
   laterMeetings,
   needsSignIn,
   nextMeeting,
+  reasonLine,
   statusWord,
   timeRange,
   type MeetAccount,
@@ -77,13 +79,29 @@ function LaterPanel({ m, labels }: { m: MeetState; labels: Map<string, string> }
 
 function AccountRow({ a, m }: { a: MeetAccount; m: MeetState }) {
   const waiting = m.signingIn === a.id;
+  const unavailable = a.state === 'unavailable' && !waiting;
+  const why = (unavailable || (a.state === 'needs-sign-in' && !waiting)) ? reasonLine(a.reason) : null;
+  const busy = m.signingIn !== null;
   return (
-    <li className="meet-account">
+    <li className={unavailable ? 'meet-account unavailable' : 'meet-account'}>
       <div className="meet-account-text">
         <div className="b6 ellipsis">{a.label}</div>
         <div className="xs">{waiting ? 'Finish in your browser' : statusWord(a.state)}</div>
+        {why && <div className="xs meet-reason">{why}</div>}
       </div>
-      {waiting ? (
+      {unavailable ? (
+        <div className="meet-actions">
+          <button type="button" className="btn cy meet-act" disabled={busy} onClick={m.refresh}>
+            Try again
+          </button>
+          <button type="button" className="btn meet-act" disabled={busy} onClick={() => m.signIn(a.id)}>
+            Sign in
+          </button>
+          <button type="button" className="btn meet-out meet-act" disabled={busy} onClick={() => m.signOut(a.id)}>
+            Sign out
+          </button>
+        </div>
+      ) : waiting ? (
         <button type="button" className="btn" onClick={m.cancelSignIn}>
           Cancel
         </button>
@@ -97,6 +115,16 @@ function AccountRow({ a, m }: { a: MeetAccount; m: MeetState }) {
         </button>
       )}
     </li>
+  );
+}
+
+/** Both accounts connected and nothing in the next 24 hours: one centred message instead of two blank panels. */
+function EmptyPanel({ m }: { m: MeetState }) {
+  return (
+    <section className="panel meet-empty" aria-label="Nothing scheduled">
+      <div className="meet-count">Nothing scheduled in the next 24 hours</div>
+      {m.lastOk !== null && <div className="s">Last checked at {clockText(m.lastOk)}</div>}
+    </section>
   );
 }
 
@@ -155,11 +183,22 @@ export function Meet() {
   }
 
   const labels = new Map((m.data?.accounts ?? []).map((a) => [a.id, a.label]));
+  const accounts = m.data?.accounts ?? [];
+  const empty =
+    accounts.length > 0 &&
+    accounts.every((a) => a.state === 'ok') &&
+    !(m.data && nextMeeting(m.data.meetings, m.now));
   return (
     <section className="work meet" data-place="meet" aria-label="Meet">
       <div className="meet-body" style={{ left: MEET_LEFT_PX }}>
-        <NextPanel m={m} labels={labels} />
-        <LaterPanel m={m} labels={labels} />
+        {empty ? (
+          <EmptyPanel m={m} />
+        ) : (
+          <>
+            <NextPanel m={m} labels={labels} />
+            <LaterPanel m={m} labels={labels} />
+          </>
+        )}
         <AccountsPanel m={m} />
       </div>
     </section>
