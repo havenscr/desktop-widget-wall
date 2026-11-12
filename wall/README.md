@@ -352,12 +352,38 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
   turned off with `set_audio_push(false)` while the page is hidden and on again when it
   shows. If the first start fails it stays silent and retries once after 30 seconds; if no
   event arrives for 5 seconds while visible it restarts capture once (once per app run, by design).
-- **Browser dev.** Silent by default. Add `?audio=demo` to the URL for gentle fake levels.
+  It also keeps the newest 32 `bands`, normalised 0 to 1 from the event's 0 to 255 bytes
+  (`audioBands()`, a fixed array written in place), and feeds them to the beat detector.
+- **Beats** (`beat.ts`, read with `audioBeats()`). The detector sums the power of bands 0 to 11
+  (about 20 to 245 Hz) into one level in dB. An onset is a rising frame at least 8 dB above the
+  median level of the last second; it counts as a beat only if the next two frames stay 4 dB
+  above that median (a kick holds up while it decays, a noisy frame drops straight back). Beats
+  are at least 0.25 s apart, timestamped at the onset, and the history starts afresh after a
+  0.5 s gap in events. It exposes `count`, `lastBeatAt`, `lag` (onset to confirmation, about
+  66 ms), `beats()` and `bass` (the mean of bands 0 to 5). Bands 0 to 5 alone are not enough: at
+  48 kHz they all read the same 47 Hz FFT bin, which swings by 10 dB from frame to frame on
+  noise. Tested on a port of the Rust band maths: a 120 BPM synthetic kick gives a beat per kick
+  0.5 s apart (within 30 ms); seeded pink noise gives none. In longer simulated runs of pure pink
+  noise the detector still fires about five times an hour, so expect a rare stray glow on
+  noise-like audio.
+- **Browser dev.** Silent by default. Add `?audio=demo` to the URL for gentle fake levels,
+  including 32 bands with a kick at 105 BPM, so the grid pulse shows in a browser.
 - **Ripple.** While `playing`, `HorizonCanvas` passes `echo` to the renderer: `n`, `amp`, `cx`
   from the camera preset (`en`, `eamp`, `ecx`), opacity `ea` scaled by a smoothed
   loudness (bass weighted), `hs` 900. It fades in and out over about a second. Nothing is
   passed when silent, so pixels are unchanged. No ripple under reduced motion or in the
   review still.
+- **Grid pulse** (`pulse.ts`). While `playing`, `HorizonCanvas` passes `grid` to the renderer.
+  Each beat starts a soft glow band at the horizon that rolls across the lake grid to the bottom
+  edge in 1.2 s (depth `p` 0 to 1 on the grid's own `pow(p, 2.1)` spacing, drawn additively and
+  growing with depth), fading in quickly and out as it nears the viewer; it starts already as
+  old as the detector's lag, so it lines up with the kick. The grid lines brighten from 0.3 up to
+  0.55 opacity with `0.65 * kick + 0.35 * bass`, where the kick part jumps to 1 on a beat and
+  falls away over about 0.3 s. Both scale by the camera's `gp`: 0.5 on Work, Home and the
+  morning Rainier view (subtle, and seen through the ribbon's glass), 1 on Unwind. Four fixed
+  band slots, reused every frame. No grid when silent, under reduced motion or in the review
+  still; without `grid` the renderer makes exactly the canvas calls it made before (a golden
+  call log test).
 - **Moon.** The Unwind camera draws the moon at (1730, 112) radius 44, once the glide to
   Unwind has finished (it goes as soon as a glide away starts); no other place does. The
   review still `?hz=unwind` draws it, since that camera jumps straight there.
