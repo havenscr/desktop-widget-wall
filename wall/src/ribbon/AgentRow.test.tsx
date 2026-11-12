@@ -67,3 +67,34 @@ it('draws nothing when the helper is not set up, and nothing on Home', async () 
   await flush();
   expect(home.container.querySelector('.agent-row')).toBeNull();
 });
+
+it('after a failed read, dims the row and ends open runs at the last good answer instead of growing to now', async () => {
+  let fail = false;
+  answer = () => {
+    if (fail) throw new Error('failed');
+    return summary({ lanes: [lane({ id: 'a1b2c3d4-0001' })], day: [{ lane: 'a1b2c3d4-0001', start: iso('09:42'), end: null, kind: 'run' }] });
+  };
+  const r = render(<Ribbon kind="work" />);
+  await flush();
+  expect(r.container.querySelector('.agent-row')!.className).toBe('agent-row');
+  fail = true;
+  // Twenty minutes on: the needle is at 10:44, but the run ends at 10:24, the last good answer.
+  await flush(20 * 60_000 + 100);
+  expect(r.container.querySelector('.ndl')!.textContent).toBe('10:44');
+  expect(r.container.querySelector('.agent-row')!.className).toBe('agent-row stale');
+  const seg = r.container.querySelector('.agent-row .sg') as HTMLElement;
+  expect(seg.className).toBe('sg run');
+  expect(parseFloat(seg.style.width)).toBeCloseTo(RX(10.4) - RX(9.7), 3);
+});
+
+it('a helper-stale answer is dimmed and its open runs stop at the last fresh answer', async () => {
+  let stale = false;
+  answer = () => summary({ stale, lanes: [lane({ id: 'a1b2c3d4-0001' })], day: [{ lane: 'a1b2c3d4-0001', start: iso('09:42'), end: null, kind: 'run' }] });
+  const r = render(<Ribbon kind="work" />);
+  await flush();
+  stale = true;
+  await flush(10 * 60_000);
+  expect(r.container.querySelector('.agent-row')!.className).toBe('agent-row stale');
+  const seg = r.container.querySelector('.agent-row .sg') as HTMLElement;
+  expect(parseFloat(seg.style.width)).toBeCloseTo(RX(10.4) - RX(9.7), 3);
+});

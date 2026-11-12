@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { create } from 'zustand';
 import { invoke } from '../bridge/tauri';
 import { useVisible } from '../ui/useVisible';
-import { CALL_TIMEOUT_MS, KEEP_STALE_MS, POLL_MS, needsYouCount, statusLine, type OmniSummary } from './model';
+import { CALL_TIMEOUT_MS, KEEP_STALE_MS, needsYouCount, normalizeSummary, POLL_MS, statusLine, type OmniSummary } from './model';
 
 /**
  * `loading` before the first answer; `unconfigured` when `feeds.json` has no helper address
@@ -22,9 +22,32 @@ export interface AgentsState {
   okAt: number | null;
   /** Time of the last read attempt, so the age text moves with each poll. */
   checkedAt: number;
+  /** The page came back after a while: `summary` is kept but old until the next read returns. */
+  awaiting: boolean;
 }
 
-const initial = (): AgentsState => ({ status: 'loading', summary: null, readFailed: false, freshAt: null, okAt: null, checkedAt: Date.now() });
+const initial = (): AgentsState => ({
+  status: 'loading',
+  summary: null,
+  readFailed: false,
+  freshAt: null,
+  okAt: null,
+  checkedAt: Date.now(),
+  awaiting: false,
+});
+
+/**
+ * The answer may be out of date: the helper said so, the last read failed, or the page has
+ * just come back and the first new read has not returned. Stale data is never drawn as live.
+ */
+export function agentsStale(st: AgentsState): boolean {
+  return st.summary !== null && (st.summary.stale || st.readFailed || st.awaiting);
+}
+
+/** For a stale answer, the time the data was last known good (open runs end there); else null. */
+export function agentsUntil(st: AgentsState): number | null {
+  return agentsStale(st) ? (st.freshAt ?? st.okAt) : null;
+}
 
 export const useAgentsStore = create<AgentsState>(() => initial());
 
@@ -43,21 +66,23 @@ let busy = false;
 /** Bumped by `resetAgents`, so a read started before a reset cannot land after it. */
 let epoch = 0;
 
-/** A summary as the Rust command returns it. Anything else is a failed read. */
-function isSummary(v: unknown): v is OmniSummary {
-  const s = v as OmniSummary | null;
-  return !!s && typeof s === 'object' && Array.isArray(s.lanes) && !!s.slots && !!s.yourMove && Array.isArray(s.day);
-}
-
 async function read(): Promise<void> {
   if (busy) return;
   busy = true;
   const mine = epoch;
   try {
-    const s = await withTimeout(invoke<unknown>('wall2_omni_summary'), CALL_TIMEOUT_MS);
+    const raw = await withTimeout(invoke<unknown>('wall2_omni_summary'), CALL_TIMEOUT_MS);
     if (mine !== epoch) return;
-    if (!isSummary(s)) throw new Error('failed');
+    // Anything that is not a summary is a failed read; a malformed lane is dropped.
+    const s = normalizeSummary(raw);
+    if (!s) throw new Error('failed');
     const now = Date.now();
+    // An answer whose own time is over 30 minutes old is no better than no answer.
+    const dataAt = Date.parse(s.now);
+    if (!Number.isFinite(dataAt) || now - dataAt > KEEP_STALE_MS) {
+      useAgentsStore.setState({ ...initial(), status: 'unreachable', readFailed: true, checkedAt: now });
+      return;
+    }
     useAgentsStore.setState((st) => ({
       status: 'ready',
       summary: s,
@@ -65,6 +90,7 @@ async function read(): Promise<void> {
       freshAt: s.stale ? st.freshAt : now,
       okAt: now,
       checkedAt: now,
+      awaiting: false,
     }));
   } catch (e) {
     if (mine !== epoch) return;
@@ -77,8 +103,8 @@ async function read(): Promise<void> {
     useAgentsStore.setState((st) => {
       const keep = st.summary !== null && st.okAt !== null && now - st.okAt <= KEEP_STALE_MS;
       return keep
-        ? { readFailed: true, checkedAt: now }
-        : { status: 'unreachable', summary: null, readFailed: true, freshAt: null, okAt: null, checkedAt: now };
+        ? { readFailed: true, checkedAt: now, awaiting: false }
+        : { status: 'unreachable', summary: null, readFailed: true, freshAt: null, okAt: null, checkedAt: now, awaiting: false };
     });
   } finally {
     if (mine === epoch) busy = false;
@@ -88,6 +114,10 @@ async function read(): Promise<void> {
 function join(): void {
   users += 1;
   if (users === 1) {
+    // Back after a while (hidden, or no reader mounted): show the kept answer as old until
+    // the first new read returns.
+    const st = useAgentsStore.getState();
+    if (st.summary && Date.now() - st.checkedAt > POLL_MS) useAgentsStore.setState({ awaiting: true, checkedAt: Date.now() });
     void read();
     timer = setInterval(() => void read(), POLL_MS);
   }
@@ -117,7 +147,8 @@ export function resetAgents(): void {
  * read when the first one mounts, then every 15 seconds while the page is visible and at
  * least one is mounted. Nothing is read while hidden. One read at a time; a read that takes
  * over 10 seconds counts as failed. A failed read keeps the last answer, marked stale, for
- * up to 30 minutes.
+ * up to 30 minutes; an answer whose own time is older than that counts as not reachable.
+ * Coming back after a while marks the kept answer stale until the first new read returns.
  */
 export function useAgents(): AgentsState {
   const visible = useVisible();
@@ -130,16 +161,16 @@ export function useAgents(): AgentsState {
 }
 
 /**
- * One line for Unwind and Dream ("2 agents still working, nothing needs you"), or null when
- * the helper is not set up or has not answered.
+ * One line for Unwind and Dream ("Two agents still working, nothing needs you"), or null
+ * when the helper is not set up, has not answered, or the answer is stale.
  */
 export function useAgentStatusLine(): string | null {
-  const { summary } = useAgents();
-  return summary ? statusLine(summary) : null;
+  const st = useAgents();
+  return st.summary && !agentsStale(st) ? statusLine(st.summary) : null;
 }
 
-/** True while something waits for an answer (for the amber dot over Watt). */
+/** True while something waits for an answer (for the amber dot over Watt); false when stale. */
 export function useAgentsWaiting(): boolean {
-  const { summary } = useAgents();
-  return summary !== null && needsYouCount(summary) > 0;
+  const st = useAgents();
+  return st.summary !== null && !agentsStale(st) && needsYouCount(st.summary) > 0;
 }

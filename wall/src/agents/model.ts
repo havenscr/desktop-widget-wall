@@ -27,7 +27,7 @@ export interface Lane {
 export interface YourMove {
   total: number;
   /** `question` is always empty in this helper version, and picture options never arrive. */
-  first: { sessionId: string; title: string; kind: string; since: string; question: string } | null;
+  first: { sessionId: string; title: string; kind: string; since: string | null; question: string } | null;
 }
 
 export interface Usage {
@@ -67,8 +67,58 @@ export const KEEP_STALE_MS = 30 * 60_000;
 export const HOLD_MS = 600;
 /** How long the "Hold" hint shows after a short tap on that button. */
 export const HOLD_HINT_MS = 1500;
+/** A hold is cancelled when the finger moves further than this from where it went down. */
+export const HOLD_MOVE_PX = 12;
 
 export const STAGES: readonly Stage[] = ['plan', 'build', 'review', 'pr', 'live'];
+const STATES: readonly LaneState[] = ['working', 'blocked', 'review'];
+const CI: readonly string[] = ['passing', 'failing', 'pending', 'none'];
+const SPAN_KINDS: readonly string[] = ['run', 'wait', 'done'];
+
+/** A lane with every field the UI reads, of the right type. */
+export function validLane(v: unknown): v is Lane {
+  const l = v as Lane | null;
+  if (!l || typeof l !== 'object') return false;
+  const prOk =
+    l.pr === null ||
+    (typeof l.pr === 'object' && typeof l.pr.number === 'number' && CI.includes(l.pr.ci) && typeof l.pr.ready === 'boolean');
+  return (
+    typeof l.id === 'string' &&
+    typeof l.title === 'string' &&
+    typeof l.line === 'string' &&
+    STAGES.includes(l.stage) &&
+    STATES.includes(l.state) &&
+    typeof l.elapsedS === 'number' &&
+    Number.isFinite(l.elapsedS) &&
+    typeof l.waiting === 'boolean' &&
+    prOk
+  );
+}
+
+/** A day span with string times and a known kind. */
+export function validSpan(v: unknown): v is DaySpan {
+  const d = v as DaySpan | null;
+  return (
+    !!d &&
+    typeof d === 'object' &&
+    typeof d.lane === 'string' &&
+    typeof d.start === 'string' &&
+    (d.end === null || typeof d.end === 'string') &&
+    SPAN_KINDS.includes(d.kind)
+  );
+}
+
+/**
+ * The summary with any malformed lane or day span dropped, or null when the answer is not a
+ * summary at all (no lane list, slots, your move or day list, or no time).
+ */
+export function normalizeSummary(v: unknown): OmniSummary | null {
+  const s = v as OmniSummary | null;
+  if (!s || typeof s !== 'object' || typeof s.now !== 'string') return null;
+  if (!Array.isArray(s.lanes) || !Array.isArray(s.day) || !s.yourMove || typeof s.yourMove.total !== 'number') return null;
+  if (!s.slots || typeof s.slots.used !== 'number' || typeof s.slots.limit !== 'number') return null;
+  return { ...s, lanes: s.lanes.filter(validLane), day: s.day.filter(validSpan) };
+}
 export const STAGE_NAMES: Record<Stage, string> = { plan: 'Plan', build: 'Build', review: 'Review', pr: 'PR', live: 'Live' };
 
 /** A lane that wants an answer: the helper flags it waiting, or it is blocked. */
@@ -179,13 +229,16 @@ export interface AgentSegment {
  * Rows follow the lane order (the summary's lanes first, then any other chat in the order
  * it first ran). An open run is `run` (cyan), a wait is `wait` (amber), a finished run is
  * `past` (grey) and a span the helper marks done is `done` (grey with a mint cap).
- * `hourAt` maps a time to the ribbon's x; spans outside the ribbon are skipped.
+ * `hourAt` maps a time to the ribbon's x; spans outside the ribbon are skipped. `until`
+ * (the last good answer's time, for a stale answer) ends open spans there instead of now.
  */
 export function agentSegments(
   s: Pick<OmniSummary, 'lanes' | 'day'>,
-  now: number,
+  nowMs: number,
   hourAt: (ms: number) => number | null,
+  until: number | null = null,
 ): AgentSegment[] {
+  const now = until === null ? nowMs : Math.min(nowMs, until);
   const order: string[] = s.lanes.map((l) => l.id);
   const sorted = [...s.day].sort((a, b) => Date.parse(a.start) - Date.parse(b.start));
   for (const d of sorted) if (!order.includes(d.lane)) order.push(d.lane);

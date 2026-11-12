@@ -348,6 +348,9 @@
   inset: 0;
   pointer-events: none;
 }
+.rib .agent-row.stale {
+  opacity: 0.4;
+}
 .rib .sg {
   position: absolute;
   height: 5px;

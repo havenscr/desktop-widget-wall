@@ -58,7 +58,9 @@ export function registerOmniMocks(): void {
     const shown = (count === 1 ? [lanes[2]] : lanes.slice(0, count)).map((l) => ({ ...l, title: l.title.slice(0, 80), line: l.line.slice(0, 80) }));
     const asks = AGENTS === 'ask' ? 2 : 0;
     return {
-      now: new Date(now).toISOString(),
+      // The answer's own time is the real clock (the wall treats an answer over 30 minutes
+      // old as not reachable); the lanes' day follows the review's moment.
+      now: new Date().toISOString(),
       tz: 'America/Los_Angeles',
       stale: AGENTS === 'stale',
       slots: { used: shown.length, limit: 3 },

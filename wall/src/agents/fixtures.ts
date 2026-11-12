@@ -14,7 +14,8 @@ export const lane = (over: Partial<Lane> = {}): Lane => ({
 });
 
 export const summary = (over: Partial<OmniSummary> = {}): OmniSummary => ({
-  now: '2026-11-11T18:24:00Z',
+  // The time of the answer: now, on whatever clock the test has set.
+  now: new Date().toISOString(),
   tz: 'America/Los_Angeles',
   stale: false,
   slots: { used: 3, limit: 3 },

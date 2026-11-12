@@ -3,6 +3,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { mocks } from '../bridge/tauri';
 import { lane, summary } from './fixtures';
 import { KEEP_STALE_MS, POLL_MS, type OmniSummary } from './model';
+import { agentsStale } from './useAgents';
 import { resetAgents, useAgents, useAgentStatusLine, useAgentsWaiting } from './useAgents';
 
 const flush = async (ms = 0) => {
@@ -182,4 +183,89 @@ it('useAgentsWaiting is true while something waits for an answer', async () => {
   };
   await flush(POLL_MS);
   expect(result.current).toBe(false);
+});
+
+it('the status hooks say nothing while the answer is stale after a failed read', async () => {
+  let fail = false;
+  answer = () => {
+    if (fail) throw new Error('failed');
+    return summary({ lanes: [lane(), lane({ id: 'a1b2c3d4-0002', waiting: true })] });
+  };
+  const line = renderHook(() => useAgentStatusLine());
+  const waiting = renderHook(() => useAgentsWaiting());
+  await flush();
+  expect(line.result.current).toBe('One agent still working, one thing for you');
+  expect(waiting.result.current).toBe(true);
+  fail = true;
+  await flush(POLL_MS);
+  expect(line.result.current).toBeNull();
+  expect(waiting.result.current).toBe(false);
+  fail = false;
+  await flush(POLL_MS);
+  expect(line.result.current).toBe('One agent still working, one thing for you');
+});
+
+it('the status hooks say nothing for an answer the helper marks stale', async () => {
+  answer = () => summary({ stale: true, lanes: [lane({ waiting: true })] });
+  const line = renderHook(() => useAgentStatusLine());
+  const waiting = renderHook(() => useAgentsWaiting());
+  await flush();
+  expect(line.result.current).toBeNull();
+  expect(waiting.result.current).toBe(false);
+});
+
+it('an answer whose own time is over 30 minutes old counts as not reachable', async () => {
+  answer = () => summary({ now: new Date(Date.now() - KEEP_STALE_MS - 60_000).toISOString() });
+  const { result } = renderHook(() => useAgents());
+  await flush();
+  expect(result.current.status).toBe('unreachable');
+  expect(result.current.summary).toBeNull();
+  answer = () => summary({ now: new Date(Date.now() - KEEP_STALE_MS + 60_000).toISOString() });
+  await flush(POLL_MS);
+  expect(result.current.status).toBe('ready');
+  answer = () => summary({ now: 'not a time' });
+  await flush(POLL_MS);
+  expect(result.current.status).toBe('unreachable');
+});
+
+it('drops a malformed lane or day span and keeps the rest', async () => {
+  answer = () => ({
+    ...summary(),
+    lanes: [lane(), { ...lane({ id: 'a1b2c3d4-0002' }), title: 5 }, { ...lane({ id: 'a1b2c3d4-0003' }), stage: 'ship' }, { ...lane({ id: 'a1b2c3d4-0004' }), state: 'idle' }, null, { ...lane({ id: 'a1b2c3d4-0005' }), line: null }],
+    day: [{ lane: 'a1b2c3d4-0001', start: '2026-11-11T17:00:00Z', end: null, kind: 'run' }, { lane: 'a1b2c3d4-0001', start: 5, end: null, kind: 'run' }, { lane: 'x', start: '2026-11-11T17:00:00Z', end: null, kind: 'party' }],
+  });
+  const { result } = renderHook(() => useAgents());
+  await flush();
+  expect(result.current.summary!.lanes.map((l) => l.id)).toEqual(['a1b2c3d4-0001']);
+  expect(result.current.summary!.day).toHaveLength(1);
+});
+
+it('after coming back from hidden, the kept answer is stale until the first new read returns', async () => {
+  let release: (() => void) | null = null;
+  const { result } = renderHook(() => useAgents());
+  await flush();
+  expect(agentsStale(result.current)).toBe(false);
+  Object.defineProperty(document, 'hidden', { configurable: true, value: true });
+  await act(async () => void document.dispatchEvent(new Event('visibilitychange')));
+  await flush(5 * 60_000);
+  // The next read hangs until released.
+  mocks.set('wall2_omni_summary', () => new Promise<OmniSummary>((resolve) => (release = () => resolve(summary()))));
+  Object.defineProperty(document, 'hidden', { configurable: true, value: false });
+  await act(async () => void document.dispatchEvent(new Event('visibilitychange')));
+  await flush();
+  expect(result.current.awaiting).toBe(true);
+  expect(agentsStale(result.current)).toBe(true);
+  await act(async () => release!());
+  await flush();
+  expect(result.current.awaiting).toBe(false);
+  expect(agentsStale(result.current)).toBe(false);
+});
+
+it('a quick remount does not mark the answer stale', async () => {
+  const first = renderHook(() => useAgents());
+  await flush();
+  first.unmount();
+  await flush(2_000);
+  const again = renderHook(() => useAgents());
+  expect(again.result.current.awaiting).toBe(false);
 });
