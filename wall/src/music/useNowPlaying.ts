@@ -5,22 +5,43 @@ import { nextArt, type NowPlayingInfo } from './model';
 
 export const POLL_MS = 2000;
 
+type Command = 'media_play_pause' | 'media_next' | 'media_previous';
+
 export interface NowPlayingState {
   info: NowPlayingInfo | null;
   art: string | null;
-  command: (name: 'media_play_pause' | 'media_next' | 'media_previous') => void;
+  command: (name: Command) => void;
 }
 
-/** Polls get_now_playing every 2 seconds while the page is visible, never while hidden. */
+/**
+ * Polls get_now_playing every 2 seconds while the page is visible, never while
+ * hidden. One poll runs at a time and the next is scheduled only after it ends;
+ * a sequence number drops an answer that a newer poll has already replaced.
+ */
 export function useNowPlaying(): NowPlayingState {
   const visible = useVisible();
   const [info, setInfo] = useState<NowPlayingInfo | null>(null);
   const [art, setArt] = useState<string | null>(null);
   const artRef = useRef<string | null>(null);
+  const mounted = useRef(false);
+  const seq = useRef(0);
+  const inFlight = useRef(false);
+  const again = useRef(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const active = useRef(false);
 
-  const poll = useCallback(async () => {
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+
+  const pollOnce = useCallback(async () => {
+    const mine = ++seq.current;
     try {
       const next = await invoke<NowPlayingInfo | null>('get_now_playing');
+      if (!mounted.current || mine !== seq.current) return;
       if (!next) {
         artRef.current = null;
         setArt(null);
@@ -35,27 +56,44 @@ export function useNowPlaying(): NowPlayingState {
     }
   }, []);
 
+  const run = useCallback(async () => {
+    if (inFlight.current) {
+      again.current = true;
+      return;
+    }
+    inFlight.current = true;
+    clearTimeout(timer.current);
+    try {
+      do {
+        again.current = false;
+        await pollOnce();
+      } while (again.current && active.current && mounted.current);
+    } finally {
+      inFlight.current = false;
+    }
+    if (active.current && mounted.current) timer.current = setTimeout(() => void run(), POLL_MS);
+  }, [pollOnce]);
+
   useEffect(() => {
     if (!visible) return;
-    let alive = true;
-    const tick = () => {
-      if (alive) void poll();
-    };
-    tick();
-    const id = setInterval(tick, POLL_MS);
+    active.current = true;
+    void run();
     return () => {
-      alive = false;
-      clearInterval(id);
+      active.current = false;
+      clearTimeout(timer.current);
     };
-  }, [visible, poll]);
+  }, [visible, run]);
 
   const command = useCallback(
-    (name: 'media_play_pause' | 'media_next' | 'media_previous') => {
+    (name: Command) => {
       invoke(name)
         .catch(() => {})
-        .finally(() => void poll());
+        .finally(() => {
+          if (document.hidden || !active.current || !mounted.current) return;
+          void run();
+        });
     },
-    [poll],
+    [run],
   );
 
   return { info, art, command };
