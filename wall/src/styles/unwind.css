@@ -187,8 +187,25 @@
   outline: 3px solid var(--cyan);
   outline-offset: 2px;
 }
-.screens-off.u-off {
+.screens-off[data-pending='true'] {
+  opacity: 0.7;
+}
+.screens-off-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.screens-off-note {
+  font-size: 18px;
+  color: var(--faint);
+}
+/* Footer row in the tab's flow: centred, no fixed left offset. */
+.u-foot {
   position: absolute;
-  left: 516px;
+  left: 0;
+  right: 0;
   bottom: 24px;
+  display: flex;
+  justify-content: center;
 }

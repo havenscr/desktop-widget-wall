@@ -71,7 +71,9 @@ export function Unwind() {
           <IconPlayerSkipForwardFilled size={40} aria-hidden="true" />
         </button>
       </div>
-      <ScreensOff className="u-off" />
+      <div className="u-foot">
+        <ScreensOff />
+      </div>
     </section>
   );
 }
