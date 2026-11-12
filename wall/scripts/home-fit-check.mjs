@@ -97,19 +97,20 @@ setTimeout(() => {
   const flags = ['--headless=new', '--no-sandbox', '--disable-gpu', '--hide-scrollbars', '--window-size=2560,720', '--virtual-time-budget=6000'];
   const dom = execFileSync(chrome, [...flags, '--dump-dom', url], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 90_000, maxBuffer: 64 * 1024 * 1024 });
   const m = /<pre id="fit">([^<]*)<\/pre>/.exec(dom);
-  if (!m) {
-    console.error('fit check: the probe did not report (the page did not render Home)');
-    process.exit(1);
-  }
+  if (!m) throw new Error('the probe did not report (the page did not render Home)');
   const r = JSON.parse(m[1].replace(/&quot;/g, '"').replace(/&amp;/g, '&'));
   if (shot) execFileSync(chrome, [...flags, `--screenshot=${resolve(shot)}`, url], { stdio: 'ignore', timeout: 90_000 });
   const ticks = r.ticks.map((t) => `${t.w.toFixed(0)}x${t.h.toFixed(0)}@${t.y.toFixed(0)}`).join(', ');
   console.log(`band bottom y ${(r.band.y + r.band.h).toFixed(1)}, right wing content bottom y ${r.bottom.toFixed(1)}, slack between chores and network card ${r.slack.toFixed(1)} px, alert rows ${r.alerts}, ticks ${ticks}`);
   if (r.fail.length) {
     for (const f of r.fail) console.error(`FAIL ${f}`);
-    process.exit(1);
+    process.exitCode = 1;
+  } else {
+    console.log('fit check passed');
   }
-  console.log('fit check passed');
+} catch (e) {
+  console.error(`fit check: ${e.message}`);
+  process.exitCode = 1;
 } finally {
   rmSync(work, { recursive: true, force: true });
 }
