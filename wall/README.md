@@ -386,11 +386,40 @@ Join opens only a Teams meeting link: `https` with no user name, password or por
 
 ### Refresh
 
-The list is read when Meet opens and every 5 minutes while Meet is the active place and the window is visible. The countdown ticks every 30 seconds from the last list. A failed read keeps the last list and shows "updated N min ago". The calendar read asks for at most 50 events in the next 24 hours and ignores paging (50 is plenty for a day). It selects only the subject, times, response, join link and invite id, never the body, attendees or organizer.
+The list is read when Meet opens and every 5 minutes while Meet is the active place and the window is visible. The countdown ticks every 30 seconds from the last list. A failed read keeps the last list and shows "updated N min ago". When a read leaves an account unavailable, Meet reads again after 30 seconds, then after 60 seconds, then goes back to the 5 minute cadence; the fast retries stop when Meet is hidden, and Try again does not use them up. The calendar read asks for at most 50 events in the next 24 hours and ignores paging (50 is plenty for a day). It selects only the subject, times, response, join link and invite id, never the body, attendees or organizer.
+
+### Why an account is unavailable
+
+An unavailable account (and a "Sign in needed" account whose sign-in was refused) shows a quiet second line with a plain reading and a short code in brackets, for example "Calendar refused the request (graph-403-ErrorAccessDenied)". An unavailable row has three buttons: Try again (reads at once), Sign in and Sign out. A code has one of these fixed shapes and nothing else:
+
+| Code | Meaning | Shown as |
+| --- | --- | --- |
+| `graph-<status>` | Graph answered with that HTTP status and a JSON body with no usable error code | 403 "Calendar refused the request", 400 "Calendar did not understand the request", 429 and 5xx "Calendar is busy, trying again", 401 "Calendar did not accept the sign-in", other "Calendar could not be read" |
+| `graph-<status>-<code>` | The same, plus Graph's `error.code` when it matches `^[A-Za-z][A-Za-z0-9_]{0,39}$` | the same words as its status |
+| `graph-network` | Transport error or timeout | "No connection to Microsoft" |
+| `graph-body` | A reply that could not be read: a 2xx body too large or not JSON, or an error body over 16 KB, not JSON or cut short | "Calendar sent a reply that could not be read" |
+| `token-<status>` | HTTP status of the token endpoint, on a refresh or on the first redemption after the browser callback | "Sign-in was not accepted" |
+| `token-<status>-<n>` | The same, plus the first number of `error_codes` (digits only, at most seven), for example `token-400-9002327` | "Sign-in was not accepted" |
+| `token-network` | The token endpoint could not be reached | "No connection to Microsoft" |
+| `store-write` | Credential Manager refused to save the sign-in | "Could not save the sign-in on this PC" |
+| `store-read` | Credential Manager could not be read (anything but "not found"); nothing is deleted or overwritten | "Could not save the sign-in on this PC" |
+
+An error body is read up to 16 KB (one more byte is read to tell that it was too big), and only to find `error.code` or `error_codes`. A code that fails the check is dropped and only the status stays. A failed first redemption (the browser said "Signed in" but the token step failed) shows the same kind of code in the notice under Accounts.
+
+### The Meet log: `wall2-meet.log`
+
+Wall 2 writes `wall2-meet.log` in the app log directory (the same folder as `wall2-placement.log`). It is cleared at every launch, capped at 64 KB, and a write failure is ignored. It gets one line each time an account's state or reason changes, never one per poll:
+
+```
+2026-11-12T17:00:00Z hc start ok none
+2026-11-12T17:05:00Z hc ok unavailable graph-403-ErrorAccessDenied
+```
+
+The fields are the UTC time, the account `id` from `meet.json`, the old state, the new state and the reason code (`none` when there is none). The states are `start`, `ok`, `signed-out`, `needs-sign-in`, `unavailable`, `signed-in` and `sign-in-failed`.
 
 ### What is never logged
 
-The Meet module has no `println!`, `eprintln!` or `dbg!`. Tokens, codes, `state`, the verifier, query strings, URLs, email addresses, subjects and HTTP bodies never reach a log or an error text; every failure maps to a fixed string (`not-configured`, `invalid-config`, `busy`, `cancelled`, `timed-out`, `denied`, `failed`, `gone`, `forbidden`).
+The Meet module has no `println!`, `eprintln!` or `dbg!`, and the only file it writes is `wall2-meet.log` above. Tokens, codes, `state`, the verifier, query strings, URLs, email addresses, names, meeting subjects and HTTP bodies never reach a log, a reason code or an error text. Every failure maps to a fixed string (`not-configured`, `invalid-config`, `busy`, `cancelled`, `timed-out`, `denied`, `failed`, `gone`, `forbidden`) or to one of the reason codes above, which are built only from numbers and a checked `error.code`.
 
 ## Content security policy
 
