@@ -19,7 +19,7 @@
 // WALL_CHROME (or the first argument that is not a flag) is a Chromium or
 // chrome-headless-shell binary. `--overflow=<side>` adds a stylesheet that pushes a checked
 // box past that side (or widens the page) and must fail. `--self-test` runs every
-// `--overflow` case and exits 0 only if each one exited non-zero.
+// `--overflow` case and exits 0 only if each one failed with the FAIL line for its side.
 
 import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -35,7 +35,17 @@ if (!chrome) {
   process.exit(2);
 }
 
-/** Stylesheets that break the layout on purpose, one per side, for `--overflow`. */
+/**
+ * Stylesheets that break the layout on purpose, one per side, for `--overflow`, and the
+ * FAIL line the self-test must find for each (the side that was broken, nothing else).
+ */
+const EXPECT = {
+  left: /^ *FAIL \.work \.left-wing:.*viewport [^,]*\bleft \d+/m,
+  right: /^ *FAIL \.work \.centre \.lane \[\d\]:.*container right \d+/m,
+  top: /^ *FAIL \.work \.right-wing:.*viewport top \d+/m,
+  bottom: /^ *FAIL \.work \.centre \.shelf:.*container bottom \d+/m,
+  page: /^ *FAIL page:.*scroll (?!2560 )\d+ x \d+ <= 2560 x/m,
+};
 const OVERFLOWS = {
   left: '.work .left-wing { transform: translateX(-200px); }',
   right: '.work .centre .lane { margin-right: -160px; }',
@@ -49,10 +59,13 @@ if (flag('self-test')) {
   let missed = 0;
   for (const side of Object.keys(OVERFLOWS)) {
     const r = spawnSync(process.execPath, [script, chrome, `--overflow=${side}`], { encoding: 'utf8' });
-    const fails = (r.stdout.match(/^ *FAIL .*$/gm) ?? []).slice(0, 2).map((l) => l.trim());
-    const caught = r.status !== 0 && r.status !== 2;
+    // Caught only when the run failed and reported the side that was broken; a non-zero exit
+    // for any other reason (a crash, a page that did not render) does not count.
+    const line = EXPECT[side].exec(r.stdout ?? '');
+    const caught = r.status === 1 && line !== null;
     if (!caught) missed += 1;
-    console.log(`${caught ? 'ok  ' : 'MISS'} --overflow=${side}: exit ${r.status}${fails.length ? `; ${fails.join('; ')}` : ''}`);
+    const full = line ? r.stdout.slice(line.index).split('\n')[0].trim() : 'no FAIL line for this side';
+    console.log(`${caught ? 'ok  ' : 'MISS'} --overflow=${side}: exit ${r.status}; ${full}`);
   }
   console.log(missed === 0 ? 'self-test: every deliberate overflow failed the check' : `self-test: ${missed} overflow(s) not caught`);
   process.exit(missed === 0 ? 0 : 1);
