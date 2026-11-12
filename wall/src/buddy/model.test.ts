@@ -274,6 +274,12 @@ describe('moving between places', () => {
     expect(r.p.opacity).toBe(1);
   });
 
+  it('opened on Zen, it waits for the glide from the Work camera the horizon starts on', () => {
+    const r = run(initialPresence(null), unwind, 3, day);
+    const arrive = r.trace.findIndex((s) => s.at?.place === 'unwind');
+    expect((arrive + 1) * 0.05).toBeGreaterThanOrEqual(GLIDE_SECONDS - 1e-6);
+  });
+
   it('jumps straight there under reduced motion', () => {
     const p = stepPresence(initialPresence(work), unwind, 0, day, true);
     expect(p).toMatchObject({ at: unwind, opacity: 1, wait: 0 });

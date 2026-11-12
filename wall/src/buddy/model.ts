@@ -1,4 +1,4 @@
-import { CINEMATIC_SECONDS, HOME_MORNING, cameraFor, glideSeconds, localDay, type CameraPreset } from '../horizon/cameras';
+import { CAMERAS, CINEMATIC_SECONDS, HOME_MORNING, cameraFor, glideSeconds, localDay, type CameraPreset } from '../horizon/cameras';
 import { rowEdges } from '../screens/frameLayout';
 import type { PlaceId } from '../state/places';
 import { SPRITES, type Pose } from './sprites';
@@ -197,8 +197,9 @@ export interface Presence {
   since: number;
 }
 
+/** Presence on first paint. Away (Zen), the horizon starts on the Work camera, so Watt assumes it too. */
 export function initialPresence(want: Spot | null): Presence {
-  return { at: want, opacity: want ? 1 : 0, target: want, wait: 0, camera: want?.camera ?? null, cinematicDay: null, cinematic: false, since: 0 };
+  return { at: want, opacity: want ? 1 : 0, target: want, wait: 0, camera: want?.camera ?? CAMERAS.work, cinematicDay: null, cinematic: false, since: 0 };
 }
 
 /**
