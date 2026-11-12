@@ -455,11 +455,27 @@ position and duration (advanced locally twice a second between polls while playi
 visible, never past the duration) and previous, play or pause, next buttons (96 by 96).
 "Nothing playing" when stopped. The clock is top left as everywhere.
 
-Watt (`wall/src/buddy/`) is the electric sheep, shown on Unwind only, drawn as SVG pixels
-above the horizon canvas. It walks slowly between x 960 and 1220 on the Unwind horizon
-line, sleeps with drifting z's between 9:30 PM and 6:30 AM local time, and shows little
-notes while music plays (awake only). It pauses while hidden. Under reduced motion it is a
-still pose with nothing drifting. The pixel maps in `sprites.ts` are the concept's own.
+Watt (`wall/src/buddy/`) is the electric sheep on the horizon band of every place that has
+one: Work, Home, Meet (hidden during a call, once the in-call pull request detects one) and
+Unwind. Not on Zen (Dream draws its own sleeping Watt). `App.tsx` mounts it once, over the
+horizon canvas and the veil and under the panels; its styles are `buddy/watt.css`.
+
+- Walk table (`WALKS` in `buddy/model.ts`, left edge range and sprite pixel size): Work and
+  Meet 880 to 1090 at 4 px, Home 1506 to 1726 at 5 px, Unwind 960 to 1220 at 6 px. The feet
+  stand on the camera's `hy` (582 on Work, Home and Meet, 505 on Unwind). `model.test.ts`
+  builds the rail, zone and ribbon rectangles from `screens/frameLayout.ts` and checks that
+  no range (every pose, notes and z's included) reaches one at 2560 by 720.
+- Pace: it stands 20 to 40 seconds at each stop, then walks slowly (14 px a second) to the
+  next; it starts standing in the middle of the range.
+- A place change fades it out where it stands; it fades back in at the new place once the
+  horizon's camera has settled (the glide, the 3.2 s swing, or the 4.6 s cinematic morning
+  turn to Rainier, so it is never up during that turn). The same happens when Home's camera
+  changes with the hour. It never walks across the screen.
+- It sleeps in the middle of its range with drifting z's between 9:30 PM and 6:30 AM local
+  time, and shows little notes beside its head while music plays (awake only). It pauses
+  while hidden. Under reduced motion (and in a dev review still) it is a still pose in the
+  middle of the range with nothing drifting, and it jumps on a place change. The pixel maps
+  in `sprites.ts` are the concept's own.
 
 ## Home feeds (task card and network tile)
 
