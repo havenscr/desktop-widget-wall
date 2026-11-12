@@ -109,8 +109,8 @@ fn core() -> &'static Mutex<service::Core> {
     CORE.get_or_init(|| Mutex::new(service::Core::default()))
 }
 
-/// One lock for the access-token cache, the link map and every refresh, so two calls never
-/// race on a rotated refresh token.
+/// One lock for the access-token cache, the per-account generation and the log queue. It is
+/// held in short steps only, never across a token request or a Graph call.
 fn lock_core() -> std::sync::MutexGuard<'static, service::Core> {
     core().lock().unwrap_or_else(|e| e.into_inner())
 }
@@ -200,9 +200,9 @@ pub async fn wall2_meet_next(window: tauri::WebviewWindow) -> Result<service::Me
     require_wall2(window.label())?;
     let accounts = load_config(&window).map_err(str::to_string)?;
     tauri::async_runtime::spawn_blocking(move || {
-        let mut core = lock_core();
-        let payload = service::read_next(&accounts, &secrets(), &auth::HttpTokens, &HttpGraph, &mut core, links(), now_secs());
-        meetlog::write_all(std::mem::take(&mut core.log_lines));
+        let payload = service::read_next(&accounts, &secrets(), &auth::HttpTokens, &HttpGraph, core(), links(), now_secs());
+        let lines = std::mem::take(&mut lock_core().log_lines);
+        meetlog::write_all(lines);
         payload
     })
     .await
@@ -225,9 +225,9 @@ pub async fn wall2_meet_day(window: tauri::WebviewWindow) -> Result<service::Day
     tauri::async_runtime::spawn_blocking(move || {
         let now = now_secs();
         let (from, to) = day_window(now as i64, &crate::wall2_feeds::local_offset_secs);
-        let mut core = lock_core();
-        let payload = service::read_day(&accounts, &secrets(), &auth::HttpTokens, &HttpGraph, &mut core, links(), now, from, to);
-        meetlog::write_all(std::mem::take(&mut core.log_lines));
+        let payload = service::read_day(&accounts, &secrets(), &auth::HttpTokens, &HttpGraph, core(), links(), now, from, to);
+        let lines = std::mem::take(&mut lock_core().log_lines);
+        meetlog::write_all(lines);
         payload
     })
     .await
@@ -245,7 +245,8 @@ pub async fn wall2_meet_sign_in(window: tauri::WebviewWindow, id: String) -> Res
     tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
         let granted = auth::authorize(&app, &account).map_err(str::to_string)?;
         let result = service::complete_sign_in(&account, &granted, &secrets(), &auth::HttpTokens, core(), now_secs());
-        meetlog::write_all(std::mem::take(&mut lock_core().log_lines));
+        let lines = std::mem::take(&mut lock_core().log_lines);
+        meetlog::write_all(lines);
         result
     })
     .await
@@ -275,10 +276,10 @@ pub async fn wall2_meet_sign_out(window: tauri::WebviewWindow, id: String) -> Re
     if !valid_id(&id) {
         return Err("failed".to_string());
     }
-    // Deleting credentials and waiting for the core lock can block, so not on an async worker.
+    // Deleting credentials takes the core lock briefly (no read holds it across the network),
+    // but it is still blocking work, so not on an async worker.
     tauri::async_runtime::spawn_blocking(move || {
-        let mut core = lock_core();
-        service::sign_out(&id, &secrets(), &mut core);
+        service::sign_out(&id, &secrets(), core(), links());
     })
     .await
     .map_err(|_| "failed".to_string())

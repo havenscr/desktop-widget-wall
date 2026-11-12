@@ -2,7 +2,6 @@
 //! user); tests use a memory map. A generic credential holds at most 2560 bytes and a refresh
 //! token can come close, so a value is split into chunks `/0`, `/1`, and so on.
 
-use std::cell::RefCell;
 use std::collections::HashMap;
 
 /// `CRED_MAX_CREDENTIAL_BLOB_SIZE`.
@@ -113,28 +112,28 @@ impl<B: BlobStore> SecretStore for Chunked<B> {
 /// Test store.
 #[derive(Default)]
 pub struct MemoryBlobs {
-    map: RefCell<HashMap<String, Vec<u8>>>,
+    map: std::sync::Mutex<HashMap<String, Vec<u8>>>,
 }
 
 impl MemoryBlobs {
     pub fn len(&self) -> usize {
-        self.map.borrow().len()
+        self.map.lock().unwrap().len()
     }
 }
 
 impl BlobStore for MemoryBlobs {
     fn read(&self, target: &str) -> Fetch<Vec<u8>> {
-        match self.map.borrow().get(target) {
+        match self.map.lock().unwrap().get(target) {
             Some(b) => Fetch::Found(b.clone()),
             None => Fetch::Missing,
         }
     }
     fn write(&self, target: &str, data: &[u8]) -> bool {
-        self.map.borrow_mut().insert(target.to_string(), data.to_vec());
+        self.map.lock().unwrap().insert(target.to_string(), data.to_vec());
         true
     }
     fn remove(&self, target: &str) {
-        self.map.borrow_mut().remove(target);
+        self.map.lock().unwrap().remove(target);
     }
 }
 
