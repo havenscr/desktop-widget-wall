@@ -23,25 +23,31 @@ export interface FocusDnd {
 
 export function createFocusDnd({ invoke, storage }: DndDeps): FocusDnd {
   let queue: Promise<unknown> = Promise.resolve();
-  // Bumped by every release, so an enable still waiting on the state read
-  // knows focus was paused or reset meanwhile and backs off.
+  // Bumped synchronously by every release, so an enable that is still queued or
+  // waiting on the state read knows focus was paused or reset meanwhile.
   let generation = 0;
+  // Ownership is kept in memory as well as storage, so a storage failure never
+  // leaves an enabled Do Not Disturb with no record of who turned it on.
+  let owned = false;
 
   const flag = () => {
+    if (owned) return true;
     try {
-      return storage.getItem(DND_KEY);
+      return storage.getItem(DND_KEY) !== null;
     } catch {
-      return null;
+      return false;
     }
   };
   const setFlag = () => {
+    owned = true;
     try {
       storage.setItem(DND_KEY, '1');
     } catch {
-      /* no storage: cannot remember, still works for this run */
+      /* the in-memory marker still covers this run */
     }
   };
   const clearFlag = () => {
+    owned = false;
     try {
       storage.removeItem(DND_KEY);
     } catch {
@@ -49,37 +55,45 @@ export function createFocusDnd({ invoke, storage }: DndDeps): FocusDnd {
     }
   };
 
-  function call(command: string): Promise<{ ok: boolean; value: unknown }> {
-    const run = () =>
-      Promise.resolve()
-        .then(() => invoke(command))
-        .then((value) => ({ ok: true, value }))
-        .catch(() => ({ ok: false, value: null as unknown }));
-    const next = queue.then(run, run);
+  async function call(command: string): Promise<{ ok: boolean; value: unknown }> {
+    try {
+      return { ok: true, value: await invoke(command) };
+    } catch {
+      return { ok: false, value: null };
+    }
+  }
+
+  /** Whole operations run one at a time, so a release never lands inside an enable. */
+  function op(fn: () => Promise<void>): Promise<void> {
+    const next = queue.then(fn, fn);
     queue = next;
     return next;
   }
 
-  async function enable() {
-    if (flag()) return;
+  function enable() {
     const gen = generation;
-    const read = await call('get_do_not_disturb');
-    const alreadyOn = read.ok && typeof read.value === 'boolean' ? read.value : null;
-    if (gen !== generation) return;
-    if (flag()) return;
-    if (alreadyOn === true) return; // the user's own: not ours to undo
-    // Set the flag before the enable so a pause during it still releases.
-    setFlag();
-    const { ok } = await call('enable_do_not_disturb');
-    if (!ok) clearFlag();
+    return op(async () => {
+      if (gen !== generation) return;
+      if (flag()) return;
+      const read = await call('get_do_not_disturb');
+      const alreadyOn = read.ok && typeof read.value === 'boolean' ? read.value : null;
+      if (gen !== generation) return;
+      if (alreadyOn === true) return; // the user's own: not ours to undo
+      // Set the marker before the enable so a pause during it still releases.
+      setFlag();
+      const { ok } = await call('enable_do_not_disturb');
+      if (!ok) clearFlag();
+    });
   }
 
-  async function release() {
+  function release() {
     generation++;
-    if (!flag()) return;
-    // Clear the flag first so a failing call cannot trap us in a retry loop.
-    clearFlag();
-    await call('disable_do_not_disturb');
+    return op(async () => {
+      if (!flag()) return;
+      const { ok } = await call('disable_do_not_disturb');
+      // Keep the marker after a failed disable so the next release or app start tries again.
+      if (ok) clearFlag();
+    });
   }
 
   return { enable, release };
