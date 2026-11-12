@@ -154,3 +154,87 @@ it('keeps the list and shows the updated hint when the native side marks it stal
   expect(screen.getByText('Planning')).toBeTruthy();
   expect(screen.getByText(/updated \d+ min ago/)).toBeTruthy();
 });
+
+it('Calendar unavailable offers Try again, which reads again', async () => {
+  let fail = true;
+  const next = vi.fn(() => (fail ? Promise.reject(new Error('failed')) : data));
+  mocks.set('wall2_meet_next', next);
+  render(<Meet />);
+  await flush();
+  expect(screen.getByText('Calendar unavailable')).toBeTruthy();
+  fail = false;
+  fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+  await flush();
+  expect(next).toHaveBeenCalledTimes(2);
+  expect(screen.getByText('Design review')).toBeTruthy();
+});
+
+it('does not offer Try again when the problem is not set up', async () => {
+  mocks.set('wall2_meet_next', () => Promise.reject(new Error('not-configured')));
+  render(<Meet />);
+  await flush();
+  expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
+});
+
+it('leaving Meet during a sign-in cancels it', async () => {
+  const cancel = vi.fn();
+  mocks.set('wall2_meet_next', () => data);
+  mocks.set('wall2_meet_sign_in', () => new Promise<void>(() => undefined));
+  mocks.set('wall2_meet_cancel_sign_in', cancel);
+  const { unmount } = render(<Meet />);
+  await flush();
+  fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+  await flush();
+  expect(cancel).not.toHaveBeenCalled();
+  act(() => usePlaceStore.setState({ active: 'work' }));
+  await flush();
+  expect(cancel).toHaveBeenCalledTimes(1);
+  unmount();
+});
+
+it('unmounting during a sign-in cancels it', async () => {
+  const cancel = vi.fn();
+  mocks.set('wall2_meet_next', () => data);
+  mocks.set('wall2_meet_sign_in', () => new Promise<void>(() => undefined));
+  mocks.set('wall2_meet_cancel_sign_in', cancel);
+  const { unmount } = render(<Meet />);
+  await flush();
+  fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+  await flush();
+  unmount();
+  expect(cancel).toHaveBeenCalledTimes(1);
+});
+
+it('does not cancel when no sign-in is pending', async () => {
+  const cancel = vi.fn();
+  mocks.set('wall2_meet_next', () => data);
+  mocks.set('wall2_meet_cancel_sign_in', cancel);
+  const { unmount } = render(<Meet />);
+  await flush();
+  unmount();
+  expect(cancel).not.toHaveBeenCalled();
+});
+
+it('a read requested during a read runs once more afterwards', async () => {
+  let release: (v: MeetData) => void = () => undefined;
+  let calls = 0;
+  const next = vi.fn(() => {
+    calls += 1;
+    if (calls === 2) return new Promise<MeetData>((r) => (release = r));
+    return data;
+  });
+  mocks.set('wall2_meet_next', next);
+  mocks.set('wall2_meet_sign_in', () => undefined);
+  render(<Meet />);
+  await flush();
+  expect(next).toHaveBeenCalledTimes(1);
+  // The 5 minute poll starts a read that stays open; the sign-in finishes meanwhile.
+  await flush(5 * 60_000);
+  expect(next).toHaveBeenCalledTimes(2);
+  fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+  await flush();
+  expect(next).toHaveBeenCalledTimes(2);
+  release(data);
+  await flush();
+  expect(next).toHaveBeenCalledTimes(3);
+});

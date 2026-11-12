@@ -587,3 +587,7 @@
 .meet-notice {
   color: var(--amber);
 }
+.meet-retry {
+  align-self: flex-start;
+  margin-top: auto;
+}

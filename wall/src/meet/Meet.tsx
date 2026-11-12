@@ -139,6 +139,11 @@ export function Meet() {
           <span className="k">Meet</span>
           <div className="meet-count">{message}</div>
           {hint && <div className="s">{hint}</div>}
+          {m.status === 'error' && (
+            <button type="button" className="btn cy meet-retry" onClick={m.refresh}>
+              Try again
+            </button>
+          )}
         </section>
       </section>
     );

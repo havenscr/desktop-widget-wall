@@ -20,6 +20,7 @@ export interface MeetState {
   signIn: (id: string) => void;
   cancelSignIn: () => void;
   signOut: (id: string) => void;
+  refresh: () => void;
   join: (key: string) => void;
 }
 
@@ -43,6 +44,8 @@ export function useMeet(): MeetState {
   const [notice, setNotice] = useState<string | null>(null);
   const mounted = useRef(false);
   const inFlight = useRef(false);
+  const queued = useRef(false);
+  const signingRef = useRef<string | null>(null);
 
   useEffect(() => {
     mounted.current = true;
@@ -51,9 +54,7 @@ export function useMeet(): MeetState {
     };
   }, []);
 
-  const refresh = useCallback(async () => {
-    if (inFlight.current) return;
-    inFlight.current = true;
+  const readOnce = useCallback(async () => {
     try {
       const next = await invoke<MeetData>('wall2_meet_next');
       if (!mounted.current) return;
@@ -68,11 +69,27 @@ export function useMeet(): MeetState {
       if (t === NOT_CONFIGURED) setStatus('unconfigured');
       else if (t === INVALID_CONFIG) setStatus('invalid');
       else setStatus('error');
+    }
+  }, []);
+
+  // One read at a time. A read requested while one runs queues a single re-run, so a
+  // request made right after sign-in is never dropped.
+  const refresh = useCallback(async () => {
+    if (inFlight.current) {
+      queued.current = true;
+      return;
+    }
+    inFlight.current = true;
+    try {
+      do {
+        queued.current = false;
+        await readOnce();
+      } while (queued.current && mounted.current);
     } finally {
       inFlight.current = false;
       if (mounted.current) setNow(Date.now());
     }
-  }, []);
+  }, [readOnce]);
 
   useEffect(() => {
     if (!on) return;
@@ -85,9 +102,20 @@ export function useMeet(): MeetState {
     };
   }, [on, refresh]);
 
+  // Leaving Meet (or the window) during a sign-in ends the wait, so the native side is not
+  // left busy for five minutes.
+  useEffect(() => {
+    if (!active) return;
+    const pending = signingRef;
+    return () => {
+      if (pending.current) invoke('wall2_meet_cancel_sign_in').catch(() => undefined);
+    };
+  }, [active]);
+
   const signIn = useCallback(
     (id: string) => {
       setNotice(null);
+      signingRef.current = id;
       setSigningIn(id);
       invoke('wall2_meet_sign_in', { id })
         .then(() => {
@@ -97,6 +125,7 @@ export function useMeet(): MeetState {
           if (mounted.current) setNotice(signInMessage(text(e)));
         })
         .finally(() => {
+          signingRef.current = null;
           if (mounted.current) setSigningIn(null);
         });
     },
@@ -133,5 +162,5 @@ export function useMeet(): MeetState {
     [refresh],
   );
 
-  return { status, data, lastOk, stale, now, signingIn, notice, signIn, cancelSignIn, signOut, join };
+  return { status, data, lastOk, stale, now, signingIn, notice, signIn, cancelSignIn, signOut, refresh: () => void refresh(), join };
 }
