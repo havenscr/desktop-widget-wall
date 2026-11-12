@@ -1,3 +1,4 @@
+import { Moods } from '../home/Moods';
 import { NetworkTile } from '../home/NetworkTile';
 import { PLACES, usePlaceStore } from '../state/places';
 import { Zen } from '../zen/Zen';
@@ -16,6 +17,7 @@ export function Screens() {
       <section className="screen" data-place={active}>
         <h1>{label}</h1>
       </section>
+      {active === 'home' && <Moods />}
       {active === 'home' && <NetworkTile />}
     </>
   );

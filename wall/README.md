@@ -5,7 +5,7 @@ Wall 2 is the next front end for Widget Wall. It lives beside the existing app
 runs in a plain browser for development and inside Tauri as a second app,
 "Widget Wall 2". So far: a scaled stage, the live horizon, a left rail with
 three places, a clock, the Work tab basics (weather, music, focus timer), a task
-card, a network tile on Home, the Unwind tab with Watt the sheep, a sound ripple
+card, a network tile and mood buttons on Home, the Unwind tab with Watt the sheep, a sound ripple
 on the horizon, the Zen place with Dream, a small Tauri bridge and tests. Most of Home is still a placeholder.
 
 ## Requirements
@@ -30,6 +30,26 @@ npm --prefix wall run preview   # serve wall/dist
 In a browser there is no Tauri. `src/bridge/tauri.ts` then answers `invoke`
 from a mock table (`mocks`); fill it from tests or dev code. An unknown command
 rejects with a clear error. Inside Tauri, `invoke` calls the real command.
+
+## Home moods
+
+The Home tab shows one big button per mood the home app already defines
+(Day, Evening, Late Night and so on, in the home app's order, at most 12). Tapping
+one sets the lights through the home app. Nothing is ever applied by itself: the
+list loads when the tab opens and every 10 minutes while visible, and only a tap
+changes the lights. A tapped button shows a spinner, then a check for 2 seconds; a
+failure shows a short message under the row for 5 seconds. The last mood tapped is
+marked quietly (`wall2-last-mood` in local storage, per device).
+
+The commands are `wall2_moods` and `wall2_apply_mood` in
+`src-tauri/src/wall2_home.rs`. They read `homeBaseUrl` from `feeds.json` like the
+network tile and call two home app routes: `GET /api/moods` (the keys of `moods`
+are the ids) and `POST /api/moods/<id>/apply` with no body. Ids must match
+`^[A-Za-z][A-Za-z0-9]{0,31}$` and are checked before any request. Errors are
+short and never hold the address: 409 reads "Moods are not set up in the home app
+yet", 404 "Unknown mood", anything else "Could not set the mood". The requests
+use the same 8 second timeout, 1 MB cap and no redirects as the other feeds. With
+no `homeBaseUrl` the row says "Not set up"; with no moods it is hidden.
 
 ## Run and build inside Tauri
 
