@@ -98,3 +98,23 @@ it('a helper-stale answer is dimmed and its open runs stop at the last fresh ans
   const seg = r.container.querySelector('.agent-row .sg') as HTMLElement;
   expect(parseFloat(seg.style.width)).toBeCloseTo(RX(10.4) - RX(9.7), 3);
 });
+
+it('a helper clock 2 hours off this PC draws the agent row where it would with no skew', async () => {
+  const day = (shift: number) => [
+    { lane: 'a1b2c3d4-0001', start: new Date(t('06:00') + shift).toISOString(), end: new Date(t('07:10') + shift).toISOString(), kind: 'done' as const },
+    { lane: 'a1b2c3d4-0001', start: new Date(t('09:42') + shift).toISOString(), end: null, kind: 'run' as const },
+  ];
+  const draw = async (shift: number) => {
+    resetAgents();
+    answer = () => summary({ now: new Date(Date.now() + shift).toISOString(), lanes: [lane({ id: 'a1b2c3d4-0001' })], day: day(shift) });
+    const r = render(<Ribbon kind="work" />);
+    await flush();
+    const out = [...r.container.querySelectorAll('.agent-row i')].map((e) => [e.className, (e as HTMLElement).style.left, (e as HTMLElement).style.width]);
+    r.unmount();
+    return out;
+  };
+  const straight = await draw(0);
+  expect(straight).toHaveLength(3);
+  expect(await draw(2 * 3_600_000)).toEqual(straight);
+  expect(await draw(-2 * 3_600_000)).toEqual(straight);
+});

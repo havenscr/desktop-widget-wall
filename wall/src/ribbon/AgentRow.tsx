@@ -20,7 +20,7 @@ export function AgentRow({ now }: { now: number }) {
   const st = useAgents();
   if (!st.summary) return null;
   const stale = agentsStale(st);
-  const segs = agentSegments(st.summary, now, (ms) => ribbonX(ms, now), agentsUntil(st));
+  const segs = agentSegments(st.summary, now, (ms) => ribbonX(ms, now), agentsUntil(st), st.skewMs);
   return (
     <div className={`agent-row${stale ? ' stale' : ''}`} aria-hidden="true">
       {segs.map((s) => (

@@ -231,12 +231,15 @@ export interface AgentSegment {
  * `past` (grey) and a span the helper marks done is `done` (grey with a mint cap).
  * `hourAt` maps a time to the ribbon's x; spans outside the ribbon are skipped. `until`
  * (the last good answer's time, for a stale answer) ends open spans there instead of now.
+ * `skewMs` (the helper's clock minus this PC's) is taken off every helper time first, so
+ * the row lands where it would with both clocks agreeing.
  */
 export function agentSegments(
   s: Pick<OmniSummary, 'lanes' | 'day'>,
   nowMs: number,
   hourAt: (ms: number) => number | null,
   until: number | null = null,
+  skewMs = 0,
 ): AgentSegment[] {
   const now = until === null ? nowMs : Math.min(nowMs, until);
   const order: string[] = s.lanes.map((l) => l.id);
@@ -244,8 +247,8 @@ export function agentSegments(
   for (const d of sorted) if (!order.includes(d.lane)) order.push(d.lane);
   const out: AgentSegment[] = [];
   for (const d of sorted) {
-    const start = Date.parse(d.start);
-    const endRaw = d.end === null ? now : Date.parse(d.end);
+    const start = Date.parse(d.start) - skewMs;
+    const endRaw = d.end === null ? now : Date.parse(d.end) - skewMs;
     if (!Number.isFinite(start) || !Number.isFinite(endRaw) || start >= now) continue;
     const end = Math.min(endRaw, now);
     if (end < start) continue;
