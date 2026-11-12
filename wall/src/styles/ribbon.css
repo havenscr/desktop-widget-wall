@@ -81,6 +81,32 @@
   border-color: rgba(255, 61, 154, 0.6);
   color: #ffd3e8;
 }
+/* Task due marks, row 2: a cyan diamond on the due time, then a short title and the time
+   (the concept's publish marker, `.pub`). */
+.rib .due {
+  position: absolute;
+  top: 70px;
+  display: flex;
+  align-items: center;
+  transform: translateX(-6px);
+  font: 400 16px/20px var(--body);
+  color: var(--cyan);
+  white-space: nowrap;
+}
+.rib .due i {
+  flex: none;
+  width: 11px;
+  height: 11px;
+  margin-right: 8px;
+  border-radius: 2px;
+  background: var(--cyan);
+  transform: rotate(45deg);
+}
+.rib .due .n {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 /* Focus bar: today's sessions up to now. */
 .rib .fo {
   position: absolute;

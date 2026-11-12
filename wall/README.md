@@ -218,8 +218,13 @@ The day ribbon (`wall/src/ribbon/`, `styles/ribbon.css`) is on Work, Home and Me
   planned end, so one that ends while the app is closed is still right; pausing or
   resetting moves the end back. Each write keeps only today's sessions, and the ribbon
   only draws today's, so the bar clears at midnight.
-- **Row 2**: only its icon for now (bolt on Work and Meet, house on Home). Agent
-  segments come with the lanes, the house schedule with the rooms.
+- **Row 2**: its icon (bolt on Work and Meet, house on Home) and a cyan diamond with a
+  short title and the time ("Send the proposal, 3:00") for each of the next three tasks
+  due at a time today, at that hour. The tasks come from `wall2_tasks_summary`: Work and
+  Meet pass `notTag: "home"`, Home passes `tag: "home"`. They are read when the ribbon
+  shows and every 2 minutes while visible. All-day and undated tasks get no mark. Not set
+  up or a failed read shows no marks. Agent segments come with the lanes, the house
+  schedule with the rooms.
 - **Needle**: a white pill with the time, moved on each whole minute while visible.
   Before 6 AM it stays at the left end and still shows the real time.
 - **Dev**: the calendar comes from `src/bridge/devMocks/meet.ts`. A review still

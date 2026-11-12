@@ -6,6 +6,7 @@
  * ribbon 2416 px wide (the stage minus the shell inset, rail and gap).
  */
 import { dayKey, sessionsOn, type FocusSession } from '../focus/day';
+import type { TaskItem } from '../tasks/model';
 import type { SunTimes } from './sun';
 
 export const RIBBON_WIDTH = 2416;
@@ -177,6 +178,29 @@ export function focusBars(sessions: readonly FocusSession[], now: number): { x: 
     const eh = clampHour(wallHour(Math.min(s.end, now), now));
     if (eh <= sh) continue;
     out.push({ x: RX(sh), width: Math.max(2, RX(eh) - RX(sh)) });
+  }
+  return out;
+}
+
+export interface DueMark {
+  key: string;
+  title: string;
+  /** `3:00`, as the concept writes times on the ribbon. */
+  time: string;
+  x: number;
+}
+
+/**
+ * Due marks for row 2: one for each of the next three tasks that is due at a time today
+ * (not all day, not undated), at that hour. A time before 6 AM sits at the ribbon start.
+ */
+export function dueMarks(tasks: readonly TaskItem[], now: number): DueMark[] {
+  const out: DueMark[] = [];
+  for (const task of tasks.slice(0, 3)) {
+    if (task.due_is_all_day || !task.due_at) continue;
+    const ms = Date.parse(task.due_at);
+    if (!Number.isFinite(ms) || dayKey(ms) !== dayKey(now)) continue;
+    out.push({ key: task.id, title: task.title, time: shortTime(ms), x: RX(clampHour(wallHour(ms, now))) });
   }
   return out;
 }

@@ -2,9 +2,10 @@ import { useEffect, useState } from 'react';
 import { IconBolt, IconCalendar, IconHome } from '@tabler/icons-react';
 import { useFocusStore } from '../focus/store';
 import { useVisible } from '../ui/useVisible';
-import { chips, focusBars, hourLabels, msToNextMinute, needle, skyGradient, sunLabels, ticks } from './model';
+import { chips, dueMarks, focusBars, hourLabels, msToNextMinute, needle, skyGradient, sunLabels, ticks } from './model';
 import { sunTimes } from './sun';
 import { useDayEvents } from './useDayEvents';
+import { useDueTasks } from './useDueTasks';
 
 export type RibbonKind = 'work' | 'home';
 
@@ -32,13 +33,15 @@ function useMinute(now: () => number): number {
  * The day ribbon along the bottom of Work, Home and Meet (concept `.rib`): hours from
  * 6 AM to 12 AM over the day's sky, sunrise and sunset, today's calendar on row 1, the
  * focus bar from today's sessions (Work and Meet; Home has none, as in the concept), and
- * the needle with the time. Row 2 (agent lanes on Work, the house schedule on Home) is
- * left empty for now; only its icon shows.
+ * the needle with the time. Row 2 carries a cyan diamond for each of the next three tasks
+ * due at a time today (Work and Meet: tasks without the home tag; Home: with it); the
+ * agent lanes and the house schedule join it later.
  */
 export function Ribbon({ kind, now = Date.now }: { kind: RibbonKind; now?: () => number }) {
   const visible = useVisible();
   const t = useMinute(now);
   const events = useDayEvents(visible);
+  const tasks = useDueTasks(kind, visible);
   const sessions = useFocusStore((s) => s.sessions);
   const sun = sunTimes(t);
   const n = needle(t);
@@ -78,6 +81,13 @@ export function Ribbon({ kind, now = Date.now }: { kind: RibbonKind; now?: () =>
         focusBars(sessions, t).map((b) => (
           <i key={b.x} className="fo" style={{ left: b.x, width: b.width }} aria-hidden="true" />
         ))}
+      {dueMarks(tasks, t).map((d) => (
+        <div key={d.key} className="due" style={{ left: d.x }} title={d.title} aria-label={`Due ${d.time}: ${d.title}`}>
+          <i aria-hidden="true" />
+          <span className="n">{d.title}</span>
+          <span aria-hidden="true">, {d.time}</span>
+        </div>
+      ))}
       <div className="ndl" style={{ left: n.x }}>
         <b>{n.text}</b>
       </div>
