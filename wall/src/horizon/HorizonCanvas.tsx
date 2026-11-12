@@ -182,6 +182,11 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
     };
   }, [reduced, review, zen]);
 
+  // Zen covers the stage: hide the old layer too (paint is not running then), like the main canvas.
+  useEffect(() => {
+    if (zen && oldRef.current) oldRef.current.style.display = 'none';
+  }, [zen]);
+
   // Hidden pages start the ripple from nothing when they return, never from stale levels.
   useEffect(() => {
     const onHide = () => {
