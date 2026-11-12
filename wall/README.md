@@ -355,11 +355,14 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
   weather status as one line inside it.
 - **Fit check** (`wall/scripts/fit-check.mjs`, `npm --prefix wall run fit-check` with
   `WALL_CHROME` set to a Chromium or chrome-headless-shell binary): builds a development
-  bundle, opens Work with the longest mock strings (`?long=1`) at 2560 by 720 and fails
-  if a wing or the centre overflows or reaches below the top band. The centre is checked
-  with three lanes with long titles, one lane, no lane, and the fill (`?agents=3`, `1`,
-  `0`, `off`). jsdom has no layout, so the unit tests cannot check this; CI does not run
-  it either.
+  bundle, opens Work with the longest mock strings (`?long=1`) in a 2560 by 720 viewport
+  and fails if a wing, the centre or anything checked inside it scrolls, sticks out of its
+  container or the viewport on any side, or if the page itself scrolls. The centre is
+  checked with three lanes with long titles, one lane, no lane, and the fill
+  (`?agents=3`, `1`, `0`, `off`). `-- --overflow=left|right|top|bottom|page` breaks the
+  layout on purpose and must fail; `-- --self-test` runs every such case and passes only
+  if each one failed. jsdom has no layout, so the unit tests cannot check this; CI does
+  not run it either.
 - **Right wing**: the next three tasks (see "Task card" below). The Big screen and Keys
   rows of the concept come with their own pull requests.
 
@@ -686,7 +689,7 @@ Add one optional key to `feeds.json` (see "Setting it up: `feeds.json`"):
 
 ### Commands
 
-- `wall2_omni_summary` reads `GET /wall/v1/summary` and returns the typed summary: slots, up to three lanes, parked count, your move, Claude usage, the day's spans and the box `system` block. Titles and lines are capped at 80 characters, ids must match `^[a-f0-9-]{8,64}$` (a lane with any other id is dropped), the answer is read through a 64 KB cap and fails as soon as it is over, whole-number counts only (slot numbers kept as sent, so "5 of 4 slots" shows as it is, up to 99; elapsed time capped at 7 days, PR numbers positive), `usage.claude5hPct` may be null (the weekly figure still shows), bidirectional and zero-width characters are dropped from text, and picture `options` are never passed on. A malformed or oversized answer, or any network failure, answers `failed`.
+- `wall2_omni_summary` reads `GET /wall/v1/summary` and returns the typed summary: slots, up to three lanes, parked count, your move, Claude usage, the day's spans and the box `system` block. Titles and lines are capped at 80 characters, ids must match `^[a-f0-9-]{8,64}$` (a lane with any other id is dropped), the answer is read through a 64 KB cap and fails as soon as it is over, whole-number counts only (slot numbers kept as sent, so "5 of 4 slots" shows as it is, up to 99; elapsed time capped at 7 days, PR numbers positive), `usage.claude5hPct` may be null (the weekly figure still shows); every timestamp must be RFC 3339 with `Z` or an offset and at most 40 characters: a bad `now` fails the answer, a bad `since` or `weekResetsAt` becomes null, and a day span with a bad start or end, or an end before its start, is dropped, bidirectional and zero-width characters are dropped from text, and picture `options` are never passed on. A malformed or oversized answer, or any network failure, answers `failed`.
 - `wall2_open_session(id)` accepts only an id that matches the same pattern and appeared in the most recent successful summary, builds `omnigent://<omniLinkHost>/c/<id>` in Rust and opens it. Any other id is refused.
 - `wall2_machines` returns `{ pc: { cpuPct, gpuPct, ramPct }, box: { cpuPct, gpuPct, ramPct, tempC } | null, boxStale }`. The PC numbers come from the same function as the old `get_system_stats` (which is unchanged). The PC numbers are returned at once on every call. The box numbers come from the helper summary's `system` block, refreshed in the background (one read at a time, at most one every 15 seconds, 3 second timeout), so a slow helper never delays the PC numbers and the first call after start shows `box: null`. After a failed read the last good box numbers stay with `boxStale: true` for up to 10 minutes, then `box` is `null`. `box` is also `null` when the helper is not set up. The numbers are kept per `omniHelperUrl`, so a changed address never shows the old host's numbers.
 - All three refuse any window but `wall2` (`forbidden`).
@@ -697,11 +700,12 @@ Nothing here logs, and nothing here takes a wake lock or sets an execution state
 
 `wall/src/agents/`, as in the concept's `f_work`:
 
-- **Data** (`useAgents.ts`): one poll of `wall2_omni_summary` shared by everything that reads it, on mount and every 15 seconds while the page is visible and at least one reader is mounted. Nothing while hidden. One read at a time; a read over 10 seconds counts as failed. `not-configured` or `invalid-config` is "not set up". A failed read keeps the last answer, marked stale, for up to 30 minutes; with no earlier answer it is "not reachable".
+- **Data** (`useAgents.ts`): one poll of `wall2_omni_summary` shared by everything that reads it, on mount and every 15 seconds while the page is visible and at least one reader is mounted. Nothing while hidden. One read at a time; a read over 10 seconds counts as failed, and a lane or day span with a missing or wrongly typed field is dropped. `not-configured` or `invalid-config` is "not set up". A failed read keeps the last answer, marked stale, for up to 30 minutes; with no earlier answer, or when the answer's own `now` is over 30 minutes old, it is "not reachable". When the page comes back after more than 15 seconds away, the kept answer is stale until the first new read returns.
+- **Stale is never live**: while the answer is stale the lanes dim with "updated N min ago", the ribbon's agent row dims and its open runs end at the last good answer's time, `useAgentStatusLine()` returns null and `useAgentsWaiting()` returns false.
 - **Header**: "Agents", the real slot numbers ("3 of 3 slots", "5 of 4 slots"), and on the right "Nothing needs you" with a cyan dot, or "One thing for you" with an amber dot and "then N more" when more wait. The count is the larger of the helper's your-move total and the lanes that are blocked or waiting. A stale answer adds "updated N min ago" (from the last fresh answer; "may be out of date" if there was none) and dims the lanes.
 - **Lanes** (`Lane.tsx`, `StageTrack.tsx`, `LaneRing.tsx`): up to three. Ring by stage (bolt while moving, "?" in amber while it waits, a mint check when ready or live), title and line on one line each with an ellipsis, plain text only, then Plan, Build, Review, PR, Live with the current stage glowing (amber while waiting, mint when ready), and the elapsed time. A lane waiting for an answer has an amber edge. With fewer than three lanes the lanes grow (to 150 px) and add a third line with the PR ("PR 553, checks running, draft").
 - **Tap**: a tap anywhere on a lane calls `wall2_open_session(id)` (Rust checks the id). When the summary says `linksAvailable: false` the lanes are not buttons.
-- **Hold to merge**: drawn on a lane whose PR is ready with checks passing (or none). Until the merge path lands (PR 30), a hold of 600 ms opens the chat; a short tap does nothing but show "Hold" for a moment. The button's events never reach the lane.
+- **Hold to merge**: drawn on a lane whose PR is ready with checks passing (or none). Until the merge path lands (PR 30), a hold of 600 ms opens the chat; a short tap does nothing but show "Hold" for a moment. A move of more than 12 px, leaving the button or a pointer cancel ends the hold with no hint. Enter or Space on the button opens the chat. The button's events never reach the lane.
 - **Free slots**: with fewer than three lanes, slim quiet "Free slot" rows (58 px). With no lane at all, one slim "All three slots free" row and the focus timer with the weather, a little smaller.
 - **Shelf** (`Shelf.tsx`): "N parked, resting" (or "Nothing parked"), the Claude five hour figure when the helper has one, and "Claude this week" with a bar. The mail count waits for the mail scope (D7).
 - **Ribbon** (`ribbon/AgentRow.tsx`, Work only): the helper's day log on three thin rows under the calendar chips: running cyan, waiting amber, a finished run grey, done grey with a mint cap, up to now.
