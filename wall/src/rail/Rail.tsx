@@ -3,12 +3,16 @@ import {
   IconBriefcase,
   IconHeadphones,
   IconHome,
+  IconMaximize,
+  IconMinimize,
   IconMoon,
   IconBroadcast,
   IconTools,
   IconUsers,
   type Icon,
 } from '@tabler/icons-react';
+import { isTauri } from '../bridge/tauri';
+import { toggleFullscreen, useFullscreen } from '../ui/fullscreen';
 import { PLACES, usePlaceStore } from '../state/places';
 
 const PLACE_ICONS: Record<'work' | 'home' | 'unwind', Icon> = {
@@ -26,18 +30,37 @@ function Disabled({ label, Glyph }: { label: string; Glyph: Icon }) {
   );
 }
 
+function FullscreenButton() {
+  const full = useFullscreen();
+  const label = full ? 'Exit fullscreen' : 'Enter fullscreen';
+  const Glyph = full ? IconMinimize : IconMaximize;
+  return (
+    <button
+      type="button"
+      className="rb rb-fs"
+      aria-label={label}
+      onClick={() => {
+        toggleFullscreen().catch((e) => console.warn('[Wall2] fullscreen change failed', e));
+      }}
+    >
+      <Glyph size={30} stroke={1.8} aria-hidden="true" />
+      {full ? 'Exit' : 'Full'}
+    </button>
+  );
+}
+
 export function Rail() {
   const active = usePlaceStore((s) => s.active);
   const setActive = usePlaceStore((s) => s.setActive);
 
   const onKeyDown = (e: KeyboardEvent<HTMLElement>) => {
     if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
-    e.preventDefault();
     const buttons = Array.from(
-      e.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)'),
+      e.currentTarget.querySelectorAll<HTMLButtonElement>('button.rb:not(:disabled):not(.rb-fs)'),
     );
     const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
     if (index < 0) return;
+    e.preventDefault();
     const step = e.key === 'ArrowDown' ? 1 : -1;
     const next = buttons[(index + step + buttons.length) % buttons.length];
     next.focus();
@@ -76,6 +99,7 @@ export function Rail() {
         <IconMoon size={30} stroke={1.8} aria-hidden="true" />
         Zen
       </button>
+      {isTauri() && <FullscreenButton />}
       <Disabled label="Tools" Glyph={IconTools} />
     </nav>
   );

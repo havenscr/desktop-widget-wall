@@ -7,8 +7,10 @@ import './styles/unwind.css';
 import './styles/zen.css';
 import { App } from './App';
 import { registerDevMocks } from './bridge/devMocks';
+import { installFullscreenKeys } from './ui/fullscreen';
 
 if (import.meta.env.DEV) registerDevMocks();
+installFullscreenKeys();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

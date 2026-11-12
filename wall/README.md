@@ -264,6 +264,19 @@ new host, add it to `connect-src` (data from `fetch`), `img-src` (pictures) or
 (`http://localhost:1421`, `ws://localhost:1421`) and inline scripts and styles,
 which Vite's hot reload injects. Keep the two in step when you add a host.
 
+## Fullscreen keys
+
+F11 and Ctrl+F11 toggle true fullscreen; Esc leaves it (only while fullscreen).
+A rail button just above Tools does the same (icons `maximize` and `minimize`,
+label "Enter fullscreen" or "Exit fullscreen", follows the real state, hidden
+outside Tauri). Key repeats are ignored and nothing happens in a plain browser. The handler is
+`wall/src/ui/fullscreen.ts`, installed from `main.tsx`. Leaving fullscreen
+restores the outer position and size saved just before entering fullscreen.
+One change runs at a time (a second request while one is in flight is ignored).
+`src-tauri/capabilities/wall2.json` adds `core:window:allow-set-fullscreen`,
+`allow-set-position` and `allow-set-size` (Wall 2 only). Reading the state
+(`isFullscreen`, `outerPosition`, `outerSize`) is already in `core:default`.
+
 ## Touch
 
 The strip is touch only. The app root sets `touch-action: manipulation`, controls
