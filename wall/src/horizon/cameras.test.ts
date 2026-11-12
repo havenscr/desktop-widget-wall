@@ -83,9 +83,10 @@ describe('homeCameraFor (the morning rule)', () => {
 });
 
 describe('the south preset', () => {
-  it('looks south with the approved strip values and Home echo values', () => {
+  it('looks south with the approved strip values and no ripple', () => {
     expect(HOME_MORNING).toMatchObject({ ter: 'south', az0: 132, ppd: 42, vex: 1.9, cs: 1, hy: 582 });
-    for (const k of ['ecx', 'eamp', 'ea', 'en', 'vx'] as const) expect(HOME_MORNING[k]).toBe(CAMERAS.home[k]);
+    for (const k of ['ecx', 'eamp', 'en', 'vx'] as const) expect(HOME_MORNING[k]).toBe(CAMERAS.home[k]);
+    expect(HOME_MORNING.ea).toBe(0);
   });
 
   it('peaks clear of the top of the stage (Rainier about 168 px above the horizon)', () => {

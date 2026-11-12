@@ -58,9 +58,10 @@ export const CAMERAS: Readonly<Record<CameraPlace, CameraPreset>> = {
  * Home in the morning: the same window turned south to Mount Rainier at sunrise (the approved
  * concept's strip: azimuth 132 at the left edge, 42 px per degree, terrain exaggerated 1.9).
  * `hy` 582 is the Home horizon line, so Rainier (about 168 px tall at these values) peaks near
- * y 414, clear of the clock and the mood row. The echo values are Home's.
+ * y 414, clear of the clock and the mood row. No ripple (ea 0): in the south view the echo is a
+ * filled copy of the far ridge, which would draw a dark hump over Rainier.
  */
-export const HOME_MORNING: CameraPreset = { az0: 132, ppd: 42, hy: 582, vex: 1.9, cs: 1, vx: 1280, ecx: 2300, eamp: 6, ea: 0.22, en: 3, ter: 'south' };
+export const HOME_MORNING: CameraPreset = { az0: 132, ppd: 42, hy: 582, vex: 1.9, cs: 1, vx: 1280, ecx: 2300, eamp: 6, ea: 0, en: 3, ter: 'south' };
 
 /** Morning view runs from 5:00 AM to 11:30 AM local time, in minutes after midnight. */
 export const MORNING_START_MIN = 5 * 60;
