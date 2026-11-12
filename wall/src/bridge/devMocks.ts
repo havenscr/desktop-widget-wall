@@ -75,6 +75,30 @@ export function registerDevMocks(): void {
   mocks.set('wall2_apply_mood', async () => {
     await new Promise((resolve) => setTimeout(resolve, 400));
   });
+  // Meet: two accounts and a few meetings around now. Sign-in just flips the state.
+  let second = false;
+  const at = (mins: number) => new Date(Math.round((Date.now() + mins * 60_000) / 60_000) * 60_000).toISOString().replace('.000Z', 'Z');
+  mocks.set('wall2_meet_next', () => ({
+    accounts: [
+      { id: 'work', label: 'Work', state: 'ok' },
+      { id: 'second', label: 'Second', state: second ? 'ok' : 'signed-out' },
+    ],
+    meetings: [
+      { key: '1-0', accountId: 'work', title: 'Design review with the platform team', start: at(-10), end: at(20), canJoin: true },
+      { key: '1-1', accountId: 'work', title: 'Weekly planning', start: at(48), end: at(78), canJoin: true },
+      { key: '1-2', accountId: 'work', title: 'Lunch with Sam', start: at(150), end: at(210), canJoin: false },
+      ...(second ? [{ key: '1-3', accountId: 'second', title: 'Board prep', start: at(320), end: at(380), canJoin: true }] : []),
+    ],
+  }));
+  mocks.set('wall2_meet_sign_in', async () => {
+    await new Promise((r) => setTimeout(r, 1500));
+    second = true;
+  });
+  mocks.set('wall2_meet_cancel_sign_in', () => undefined);
+  mocks.set('wall2_meet_sign_out', () => {
+    second = false;
+  });
+  mocks.set('wall2_meet_join', () => undefined);
   mocks.set('get_do_not_disturb', () => dnd);
   mocks.set('enable_do_not_disturb', () => {
     dnd = true;

@@ -86,7 +86,16 @@ export function Rail() {
         );
       })}
       <div className="rsep" role="separator" />
-      <Disabled label="Meet" Glyph={IconUsers} />
+      <button
+        type="button"
+        className="rb"
+        aria-label="Meet"
+        aria-current={active === 'meet' ? 'page' : undefined}
+        onClick={() => setActive('meet')}
+      >
+        <IconUsers size={30} stroke={1.8} aria-hidden="true" />
+        Meet
+      </button>
       <Disabled label="On air" Glyph={IconBroadcast} />
       <div className="rail-spacer" />
       <button
