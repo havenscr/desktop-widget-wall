@@ -1,3 +1,4 @@
+import { longOr } from './long';
 import { mocks } from '../tauri';
 
 /** Placeholder art: a 32 by 32 gradient PNG. */
@@ -8,8 +9,8 @@ export function registerMediaMocks(): void {
   let playing = true;
   let dnd = false;
   mocks.set('get_now_playing', () => ({
-    title: 'Tokyo Burnout',
-    artist: 'Tokyo Rose',
+    title: longOr('Tokyo Burnout', 'An Extremely Long Song Title That Goes On And On Forever (Extended Remix)'),
+    artist: longOr('Tokyo Rose', 'A Very Long Artist Name Featuring Several Other Artists'),
     album: 'Night Drive',
     album_art_base64: ART,
     album_art_mime: 'image/png',

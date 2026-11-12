@@ -1,3 +1,4 @@
+import { longOr } from './long';
 import { reviewNow } from '../../ui/reviewClock';
 import { mocks } from '../tauri';
 
@@ -16,7 +17,7 @@ export function registerMeetMocks(): void {
   mocks.set('wall2_meet_next', () => ({
     accounts: accounts(),
     meetings: [
-      { key: '1-0', accountId: 'work', title: 'Design review with the platform team', start: at(-10), end: at(20), canJoin: true },
+      { key: '1-0', accountId: 'work', title: longOr('Design review with the platform team', 'Quarterly planning and roadmap review with the whole platform team'), start: at(-10), end: at(20), canJoin: true },
       { key: '1-1', accountId: 'work', title: 'Weekly planning', start: at(48), end: at(78), canJoin: true },
       { key: '1-2', accountId: 'work', title: 'Lunch with Sam', start: at(150), end: at(210), canJoin: false },
       ...(second ? [{ key: '1-3', accountId: 'second', title: 'Board prep', start: at(320), end: at(380), canJoin: true }] : []),
