@@ -23,6 +23,8 @@ const WALL2_LABEL: &str = "wall2";
 /// The helper caps its own answers at 64 KB; anything larger is not from the helper.
 const MAX_ANSWER: usize = 64 * 1024;
 const MAX_LANES: usize = 3;
+const MAX_SLOTS: u64 = 3;
+const MAX_ELAPSED_S: u64 = 7 * 24 * 3600;
 const MAX_DAY: usize = 200;
 const MAX_TITLE_CHARS: usize = 80;
 const MAX_LINE_CHARS: usize = 80;
@@ -170,10 +172,15 @@ fn session_url(host: &str, id: &str) -> Option<String> {
     (valid_host(host) && valid_session_id(id)).then(|| format!("omnigent://{host}/c/{id}"))
 }
 
+/// Bidirectional controls and zero-width characters, which can disguise text.
+fn is_format_char(c: char) -> bool {
+    matches!(c, '\u{200B}'..='\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2060}'..='\u{2069}' | '\u{FEFF}')
+}
+
 /// Text with control characters dropped, trimmed, cut to `max` characters.
 fn clean_text(v: Option<&Value>, max: usize) -> Option<String> {
     let s = v?.as_str()?;
-    let s: String = s.chars().filter(|c| !c.is_control()).collect();
+    let s: String = s.chars().filter(|c| !c.is_control() && !is_format_char(*c)).collect();
     let s = s.trim();
     Some(s.chars().take(max).collect())
 }
@@ -183,9 +190,9 @@ fn one_of(v: Option<&Value>, allowed: &[&str]) -> Option<String> {
     allowed.contains(&s).then(|| s.to_string())
 }
 
+/// A whole, non-negative JSON number. A fraction or a negative is None.
 fn count(v: Option<&Value>) -> Option<u64> {
-    let n = v?.as_f64()?;
-    (n.is_finite() && n >= 0.0).then(|| n.min(1.0e12) as u64)
+    v?.as_u64().map(|n| n.min(1_000_000_000_000))
 }
 
 fn percent(v: Option<&Value>) -> Option<f64> {
@@ -197,7 +204,7 @@ fn shape_lane(v: &Value) -> Option<Lane> {
     let id = v.get("id")?.as_str().filter(|s| valid_session_id(s))?.to_string();
     let pr = v.get("pr").filter(|p| p.is_object()).and_then(|p| {
         Some(LanePr {
-            number: count(p.get("number"))?,
+            number: count(p.get("number")).filter(|n| *n > 0)?,
             ci: one_of(p.get("ci"), &["passing", "failing", "pending", "none"])?,
             ready: p.get("ready")?.as_bool()?,
         })
@@ -208,7 +215,7 @@ fn shape_lane(v: &Value) -> Option<Lane> {
         stage: one_of(v.get("stage"), &["plan", "build", "review", "pr", "live"])?,
         state: one_of(v.get("state"), &["working", "blocked", "review"])?,
         line: clean_text(v.get("line"), MAX_LINE_CHARS).unwrap_or_default(),
-        elapsed_s: count(v.get("elapsedS")).unwrap_or(0),
+        elapsed_s: count(v.get("elapsedS")).map_or(0, |n| n.min(MAX_ELAPSED_S)),
         waiting: v.get("waiting").and_then(Value::as_bool).unwrap_or(false),
         pr,
     })
@@ -272,8 +279,8 @@ fn shape_summary(body: &Value) -> Option<OmniSummary> {
     let obj = body.as_object()?;
     let lanes: Vec<Lane> = obj.get("lanes")?.as_array()?.iter().filter_map(shape_lane).take(MAX_LANES).collect();
     let slots = obj.get("slots").filter(|s| s.is_object());
-    let limit = slots.and_then(|s| count(s.get("limit"))).unwrap_or(3);
-    let used = slots.and_then(|s| count(s.get("used"))).unwrap_or(lanes.len() as u64);
+    let limit = slots.and_then(|s| count(s.get("limit"))).unwrap_or(MAX_SLOTS).min(MAX_SLOTS);
+    let used = slots.and_then(|s| count(s.get("used"))).unwrap_or(lanes.len() as u64).min(MAX_SLOTS);
     Some(OmniSummary {
         now: clean_text(obj.get("now"), MAX_STAMP_CHARS)?,
         tz: clean_text(obj.get("tz"), 64).unwrap_or_default(),
@@ -573,6 +580,54 @@ mod tests {
         assert!(!s.lanes[0].title.chars().any(char::is_control));
         assert_eq!(s.lanes[0].line.chars().count(), 80);
         assert_eq!(s.your_move.first.unwrap().question.chars().count(), 200);
+    }
+
+    #[test]
+    fn format_characters_are_dropped() {
+        let mut body = full();
+        body["lanes"][0]["title"] = json!("a\u{202E}b\u{200B}c\u{2066}d\u{FEFF}e\u{200F}f\u{2060}g");
+        let s = shape_summary(&body).unwrap();
+        assert_eq!(s.lanes[0].title, "abcdefg");
+        assert!(is_format_char('\u{200B}') && is_format_char('\u{202A}') && is_format_char('\u{2069}'));
+        assert!(!is_format_char('a') && !is_format_char('\u{200A}') && !is_format_char('\u{202F}'));
+    }
+
+    #[test]
+    fn counts_must_be_whole_numbers() {
+        let mut body = full();
+        body["parked"] = json!(4.5);
+        body["lanes"][0]["elapsedS"] = json!(-5);
+        body["lanes"][1]["elapsedS"] = json!(60.5);
+        body["yourMove"]["total"] = json!(-1);
+        let s = shape_summary(&body).unwrap();
+        assert_eq!(s.parked, 0);
+        assert_eq!(s.lanes[0].elapsed_s, 0);
+        assert_eq!(s.lanes[1].elapsed_s, 0);
+        assert_eq!(s.your_move.total, 0);
+    }
+
+    #[test]
+    fn pr_number_must_be_positive_and_whole() {
+        for bad in [json!(0), json!(-3), json!(5.5), json!("7")] {
+            let mut body = full();
+            body["lanes"][0]["pr"]["number"] = bad;
+            let s = shape_summary(&body).unwrap();
+            assert_eq!(s.lanes.len(), 2);
+            assert_eq!(s.lanes[0].pr, None);
+        }
+    }
+
+    #[test]
+    fn slots_are_clamped_and_elapsed_is_capped() {
+        let mut body = full();
+        body["slots"] = json!({ "used": 9, "limit": 50 });
+        body["lanes"][0]["elapsedS"] = json!(9_000_000_000u64);
+        let s = shape_summary(&body).unwrap();
+        assert_eq!(s.slots, Slots { used: 3, limit: 3 });
+        assert_eq!(s.lanes[0].elapsed_s, 7 * 24 * 3600);
+        body["slots"] = json!({ "used": 1.5, "limit": -2 });
+        let s = shape_summary(&body).unwrap();
+        assert_eq!(s.slots, Slots { used: 2, limit: 3 });
     }
 
     #[test]
