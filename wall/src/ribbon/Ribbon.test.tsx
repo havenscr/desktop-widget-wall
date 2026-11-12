@@ -1,14 +1,15 @@
 import { act, render } from '@testing-library/react';
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, expect, it, vi } from 'vitest';
 import { mocks } from '../bridge/tauri';
 import { useFocusStore } from '../focus/store';
 import { RX } from './model';
 import { Ribbon } from './Ribbon';
-import { usePacificTime } from './testZone';
+import { useFixedClock, usePacificTime } from './testZone';
 
 usePacificTime();
 
 const t = (hm: string) => Date.parse(`2026-11-11T${hm}:00-08:00`);
+useFixedClock(t('10:24'));
 const iso = (hm: string) => new Date(t(hm)).toISOString().replace('.000Z', 'Z');
 
 const flush = async (ms = 0) => {
@@ -17,10 +18,6 @@ const flush = async (ms = 0) => {
   });
 };
 
-beforeEach(() => {
-  vi.useFakeTimers();
-  vi.setSystemTime(t('10:24'));
-});
 afterEach(() => {
   Object.defineProperty(document, 'hidden', { configurable: true, value: false });
   vi.useRealTimers();

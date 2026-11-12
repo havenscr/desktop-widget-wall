@@ -7,6 +7,8 @@ import { Screens } from './Screens';
 
 beforeEach(() => {
   vi.useFakeTimers();
+  // A fixed clock, so the ribbon these screens carry never depends on when the test runs.
+  vi.setSystemTime(new Date(2026, 10, 11, 10, 24));
   mocks.set('wall2_meet_day', () => ({ accounts: [], events: [] }));
 });
 afterEach(() => {
