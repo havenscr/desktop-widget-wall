@@ -1,11 +1,13 @@
 import { NetworkTile } from '../home/NetworkTile';
 import { PLACES, usePlaceStore } from '../state/places';
+import { Unwind } from './Unwind';
 import { Work } from './Work';
 
-/** Work is real and Home has the network tile; the rest of Home and Unwind show only the place name. */
+/** Work, Unwind and the network tile on Home are real; the rest of Home shows only the place name. */
 export function Screens() {
   const active = usePlaceStore((s) => s.active);
   if (active === 'work') return <Work />;
+  if (active === 'unwind') return <Unwind />;
   const label = PLACES.find((p) => p.id === active)?.label ?? '';
   return (
     <>

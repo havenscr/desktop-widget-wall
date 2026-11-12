@@ -1,9 +1,9 @@
 import type { PlaceId } from '../state/places';
 
 /**
- * One camera framing of the west view. The first six keys feed the renderer; `ecx`
- * and `eamp` are the centre and height of the music ripple, kept here so the later
- * audio change only has to switch the ripple on.
+ * One camera framing of the west view. The first six keys feed the renderer; `ecx`,
+ * `eamp`, `ea` and `en` shape the music ripple (centre, height, opacity at full
+ * loudness, line count) and are used only while music plays.
  */
 export interface CameraPreset {
   /** Compass azimuth in degrees at the left edge. */
@@ -22,18 +22,25 @@ export interface CameraPreset {
   ecx: number;
   /** Music ripple amplitude. */
   eamp: number;
+  /** Music ripple opacity at full loudness, 0 to 1. */
+  ea: number;
+  /** Music ripple line count (rounded when drawn; it is blended during a glide). */
+  en: number;
 }
+
+/** Moon centre x, centre y and radius, design pixels. Drawn on the Unwind camera only. */
+export const MOON: readonly [number, number, number] = [1730, 112, 44];
 
 /** Seconds a camera takes to glide to another place's framing. */
 export const GLIDE_SECONDS = 1.6;
 
-const WIDE: CameraPreset = { az0: 221.5, ppd: 34, hy: 582, vex: 1.25, cs: 1.25, vx: 1280, ecx: 1900, eamp: 8 };
+const WIDE: CameraPreset = { az0: 221.5, ppd: 34, hy: 582, vex: 1.25, cs: 1.25, vx: 1280, ecx: 1900, eamp: 8, ea: 0.3, en: 3 };
 
 /** Framing per place: Work looks wide, Home closes in on the city, Unwind swings to the Olympics. */
 export const CAMERAS: Readonly<Record<PlaceId, CameraPreset>> = {
   work: { ...WIDE },
-  home: { az0: 218.1, ppd: 54, hy: 582, vex: 1.3, cs: 1, vx: 1280, ecx: 2300, eamp: 6 },
-  unwind: { az0: 246, ppd: 49.2, hy: 505, vex: 2.5, cs: 1, vx: 1330, ecx: 1330, eamp: 34 },
+  home: { az0: 218.1, ppd: 54, hy: 582, vex: 1.3, cs: 1, vx: 1280, ecx: 2300, eamp: 6, ea: 0.22, en: 3 },
+  unwind: { az0: 246, ppd: 49.2, hy: 505, vex: 2.5, cs: 1, vx: 1330, ecx: 1330, eamp: 34, ea: 0.9, en: 11 },
 };
 
 /** Cubic ease in and out, 0 to 1. */
@@ -48,7 +55,7 @@ export function blendCamera<T extends object>(from: T, to: T, t: number): T {
   for (const key of Object.keys(to) as (keyof T & string)[]) {
     const a = from[key];
     const b = to[key];
-    if (typeof a === 'number' && typeof b === 'number') out[key] = a + (b - a) * k;
+    if (typeof a === 'number' && typeof b === 'number') out[key] = k >= 1 ? b : a + (b - a) * k; // exact at the ends, whatever the rounding
   }
   return out as T;
 }

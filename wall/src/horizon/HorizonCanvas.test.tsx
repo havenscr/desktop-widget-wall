@@ -5,6 +5,7 @@ import { CAMERAS, drawHorizon } from './index';
 import { stubContext } from './canvasStub';
 import { fitScale, STAGE_HEIGHT, STAGE_WIDTH } from '../stage/fitScale';
 import { usePlaceStore } from '../state/places';
+import { ingestLevels, resetAudio, tickAudio } from '../audio/store';
 
 vi.mock('./index', async (original) => ({
   ...(await original<typeof import('./index')>()),
@@ -48,6 +49,7 @@ function runFrame(ts: number) {
 
 beforeEach(() => {
   usePlaceStore.setState({ active: 'work' });
+  resetAudio();
   frames = new Map();
   nextId = 1;
   rafSpy = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
@@ -212,4 +214,88 @@ it('review mode sets the active place in the store so the rail and screen match'
   expect(usePlaceStore.getState().active).toBe('work');
   render(<HorizonCanvas now={() => 0} />);
   expect(usePlaceStore.getState().active).toBe('home');
+});
+
+const LOUD = { bass: 0.9, mid: 0.5, high: 0.3, bands: [1], waveform: [0.1] };
+
+/** Make the audio store say music is playing, as of a steady clock the test controls. */
+function startMusic(at = 1000) {
+  ingestLevels(LOUD, at);
+  tickAudio(at);
+}
+
+it('passes no echo and no moon when silent on Work (the draw options carry neither key)', () => {
+  setReducedMotion(false);
+  render(<HorizonCanvas now={() => NOON} />);
+  runFrame(100);
+  const o = draw.mock.lastCall![1];
+  expect(o).not.toHaveProperty('echo');
+  expect(o).not.toHaveProperty('moon');
+});
+
+it('passes the ripple from the active preset while music plays, and fades it in over about a second', () => {
+  setReducedMotion(false);
+  startMusic();
+  render(<HorizonCanvas now={() => NOON} />);
+  runFrame(100); // fade 0.1 s of 1
+  const first = draw.mock.lastCall![1].echo!;
+  expect(first).toMatchObject({ n: CAMERAS.work.en, amp: CAMERAS.work.eamp, cx: CAMERAS.work.ecx, hs: 900 });
+  for (let ts = 200; ts <= 1500; ts += 100) runFrame(ts);
+  const full = draw.mock.lastCall![1].echo!;
+  expect(full.a).toBeGreaterThan(first.a);
+  expect(full.a).toBeLessThanOrEqual(CAMERAS.work.ea);
+});
+
+it('fades the ripple out and then passes none once the music stops', () => {
+  setReducedMotion(false);
+  startMusic();
+  render(<HorizonCanvas now={() => NOON} />);
+  for (let ts = 100; ts <= 1500; ts += 100) runFrame(ts);
+  expect(draw.mock.lastCall![1].echo).toBeTruthy();
+  act(() => tickAudio(10_000)); // long silence: playing false
+  const before = draw.mock.lastCall![1].echo!.a;
+  runFrame(1600);
+  expect(draw.mock.lastCall![1].echo!.a).toBeLessThan(before);
+  for (let ts = 1700; ts <= 2900; ts += 100) runFrame(ts);
+  expect(draw.mock.lastCall![1]).not.toHaveProperty('echo');
+});
+
+it('uses the Unwind preset for the ripple on Unwind', () => {
+  setReducedMotion(false);
+  startMusic();
+  usePlaceStore.setState({ active: 'unwind' });
+  render(<HorizonCanvas now={() => NOON} />);
+  for (let ts = 100; ts <= 1300; ts += 100) runFrame(ts);
+  expect(draw.mock.lastCall![1].echo).toMatchObject({ n: 11, amp: 34, cx: 1330 });
+});
+
+it('draws the moon on Unwind only', () => {
+  setReducedMotion(false);
+  usePlaceStore.setState({ active: 'unwind' });
+  render(<HorizonCanvas now={() => NOON} />);
+  runFrame(100);
+  expect(draw.mock.lastCall![1].moon).toEqual([1730, 112, 44]);
+  act(() => usePlaceStore.getState().setActive('home'));
+  runFrame(200);
+  expect(draw.mock.lastCall![1]).not.toHaveProperty('moon');
+  act(() => usePlaceStore.getState().setActive('work'));
+  runFrame(300);
+  expect(draw.mock.lastCall![1]).not.toHaveProperty('moon');
+});
+
+it('draws no ripple under reduced motion even while music plays', () => {
+  setReducedMotion(true);
+  startMusic();
+  render(<HorizonCanvas now={() => NOON} />);
+  expect(draw.mock.lastCall![1]).not.toHaveProperty('echo');
+});
+
+it('draws no ripple and no moon in the review still, even with music playing', () => {
+  setReducedMotion(false);
+  startMusic();
+  window.history.replaceState(null, '', '/?hz=unwind&at=2026-11-11T16:00:00Z');
+  render(<HorizonCanvas now={() => 0} />);
+  const o = draw.mock.lastCall![1];
+  expect(o).not.toHaveProperty('echo');
+  expect(o).not.toHaveProperty('moon');
 });

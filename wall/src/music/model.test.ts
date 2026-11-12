@@ -1,5 +1,5 @@
-import { expect, it } from 'vitest';
-import { artDataUrl, isPlaying, isQuiet, nextArt } from './model';
+import { describe, expect, it } from 'vitest';
+import { artDataUrl, formatTime, isPlaying, isQuiet, nextArt, progressSeconds } from './model';
 
 it('allows only image mimes and plain base64', () => {
   expect(artDataUrl('QUJD', 'image/png')).toBe('data:image/png;base64,QUJD');
@@ -29,4 +29,32 @@ it('is quiet when stopped, unknown or empty', () => {
   expect(isQuiet({ playback_status: 'paused', title: 'x' })).toBe(false);
   expect(isQuiet({ playback_status: 'changing', title: 'x' })).toBe(false);
   expect(isPlaying({ playback_status: 'playing' })).toBe(true);
+});
+
+describe('progress maths', () => {
+  const playing = { playback_status: 'playing', position_seconds: 60, duration_seconds: 200 };
+  it('advances with the clock while playing', () => {
+    expect(progressSeconds(playing, 10_000, 15_000)).toEqual({ position: 65, duration: 200 });
+  });
+  it('never passes the duration', () => {
+    expect(progressSeconds(playing, 0, 10_000_000)).toEqual({ position: 200, duration: 200 });
+  });
+  it('holds while paused', () => {
+    expect(progressSeconds({ ...playing, playback_status: 'paused' }, 0, 50_000)).toEqual({ position: 60, duration: 200 });
+  });
+  it('is null without a usable duration', () => {
+    expect(progressSeconds({ ...playing, duration_seconds: 0 }, 0, 0)).toBeNull();
+    expect(progressSeconds({ ...playing, duration_seconds: null }, 0, 0)).toBeNull();
+    expect(progressSeconds(null, 0, 0)).toBeNull();
+  });
+  it('treats a missing position as 0 and a clock that went backwards as no elapsed time', () => {
+    expect(progressSeconds({ ...playing, position_seconds: null }, 5000, 4000)).toEqual({ position: 0, duration: 200 });
+  });
+  it('formats m:ss and h:mm:ss', () => {
+    expect(formatTime(0)).toBe('0:00');
+    expect(formatTime(155)).toBe('2:35');
+    expect(formatTime(253)).toBe('4:13');
+    expect(formatTime(3725)).toBe('1:02:05');
+    expect(formatTime(-4)).toBe('0:00');
+  });
 });
