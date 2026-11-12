@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { invoke } from '../bridge/tauri';
 import { useVisible } from '../ui/useVisible';
-import { nextOverSince, POLL_MS, readings, type Machines, type OverSince } from './model';
+import { CALL_TIMEOUT_MS, holdReadings, nextOverSince, POLL_MS, type Machines, type OverSince } from './model';
 
 /** Readings further apart than this do not carry a hold across. */
 const GAP_MS = 3 * POLL_MS;
@@ -15,45 +15,59 @@ export interface MachinesState {
   now: number;
 }
 
+/** `p`, or a rejection after `ms`. The timer is cleared either way. */
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  let id: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    id = setTimeout(() => reject(new Error('timed out')), ms);
+  });
+  return Promise.race([p, timeout]).finally(() => clearTimeout(id));
+}
+
 /**
  * The PC and box numbers from `wall2_machines`, every 2 seconds while the page is visible
- * and the readout is mounted (Work only). Nothing while hidden. A failed read hides the
- * readout. One read at a time: a tick that finds one running is skipped.
+ * and the readout is mounted (Work only). Nothing while hidden. A failed read, or one that
+ * takes longer than 5 seconds, hides the readout. One read at a time: a tick that finds
+ * one running is skipped, and only the read that took the busy flag clears it, so hiding
+ * and showing never stacks reads. An answer from a read that was superseded is ignored.
  */
 export function useMachines(): MachinesState {
   const visible = useVisible();
   const [state, setState] = useState<MachinesState>({ data: null, over: {}, now: Date.now() });
 
-  const busy = useRef(false);
+  /** Token of the read in flight, or null. */
+  const busy = useRef<number | null>(null);
+  const token = useRef(0);
   useEffect(() => {
     if (!visible) return;
     let live = true;
     const read = () => {
-      if (busy.current) return;
-      busy.current = true;
-      invoke<Machines>('wall2_machines')
+      if (busy.current !== null) return;
+      const mine = ++token.current;
+      busy.current = mine;
+      const current = () => live && mine === token.current;
+      withTimeout(invoke<Machines>('wall2_machines'), CALL_TIMEOUT_MS)
         .then((m) => {
-          if (!live) return;
+          if (!current()) return;
           const now = Date.now();
           const ok = m && m.pc ? m : null;
           // After a gap (hidden, or a slow read) the hold starts again: nobody saw those seconds.
           setState((s) => {
             const prev = now - s.now > GAP_MS ? {} : s.over;
-            return { data: ok, over: ok ? nextOverSince(prev, readings(ok), now) : {}, now };
+            return { data: ok, over: ok ? nextOverSince(prev, holdReadings(ok), now) : {}, now };
           });
         })
         .catch(() => {
-          if (live) setState({ data: null, over: {}, now: Date.now() });
+          if (current()) setState({ data: null, over: {}, now: Date.now() });
         })
         .finally(() => {
-          busy.current = false;
+          if (busy.current === mine) busy.current = null;
         });
     };
     read();
     const id = setInterval(read, POLL_MS);
     return () => {
       live = false;
-      busy.current = false;
       clearInterval(id);
     };
   }, [visible]);

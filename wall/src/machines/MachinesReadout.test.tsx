@@ -131,3 +131,84 @@ it('reads every 2 seconds while visible, never while hidden, and stops on unmoun
   expect(calls).toBe(5);
   expect(vi.getTimerCount()).toBe(0);
 });
+
+it('treats a read that hangs for 5 seconds as failed, then recovers on the next read', async () => {
+  let hang = true;
+  mocks.set('wall2_machines', () => {
+    calls++;
+    return hang ? new Promise<Machines>(() => undefined) : calm;
+  });
+  const r = render(<MachinesReadout />);
+  await flush();
+  expect(r.container.innerHTML).toBe('');
+  // Ticks while the first read hangs are skipped: one read at a time.
+  await flush(4_000);
+  expect(calls).toBe(1);
+  hang = false;
+  await flush(1_000);
+  // Timed out at 5 s: the busy flag is free, so the 6 s tick reads.
+  await flush(1_000);
+  expect(calls).toBe(2);
+  expect(r.container.querySelector('[data-machine="pc"]')).not.toBeNull();
+});
+
+it('never stacks reads across hide and show, and ignores the answer of a superseded read', async () => {
+  const pending: Array<(m: Machines) => void> = [];
+  let active = 0;
+  let maxActive = 0;
+  mocks.set('wall2_machines', () => {
+    calls++;
+    active++;
+    maxActive = Math.max(maxActive, active);
+    return new Promise<Machines>((resolve) =>
+      pending.push((m) => {
+        active--;
+        resolve(m);
+      }),
+    );
+  });
+  const r = render(<MachinesReadout />);
+  await flush();
+  pending.shift()!(calm);
+  await flush();
+  await flush(2_000); // a second read starts and stays pending
+  expect(calls).toBe(2);
+  setHidden(true);
+  setHidden(false);
+  await flush(2_000);
+  // The read from before the hide still owns the flag, so nothing new started.
+  expect(calls).toBe(2);
+  pending.shift()!({ ...calm, pc: { ...calm.pc, cpuPct: 11 } });
+  await flush();
+  // Its answer belongs to the hidden period and is dropped.
+  expect(r.container.querySelector('[data-machine="pc"]')!.textContent).toBe('PC347158');
+  await flush(2_000);
+  expect(calls).toBe(3);
+  pending.shift()!({ ...calm, pc: { ...calm.pc, cpuPct: 22 } });
+  await flush();
+  expect(r.container.querySelector('[data-machine="pc"]')!.textContent).toBe('PC227158');
+  expect(maxActive).toBe(1);
+});
+
+it('never turns stale box numbers amber, and starts their hold when they are fresh again', async () => {
+  answer = { ...calm, box: { ...calm.box!, tempC: 95 }, boxStale: true };
+  const r = render(<MachinesReadout />);
+  await flush();
+  await flush(40_000);
+  expect(hotCells(r.container)).toEqual([]);
+  answer = { ...calm, box: { ...calm.box!, tempC: 95 }, boxStale: false };
+  // Fresh from the read at 42 s: grey at 70 s, amber at 72 s.
+  await flush(30_000);
+  expect(hotCells(r.container)).toEqual([]);
+  await flush(2_000);
+  expect(hotCells(r.container)).toEqual(['Box 95 degrees']);
+});
+
+it('draws an empty track with no number for a column with no reading', async () => {
+  const r = render(<MachinesReadout />);
+  await flush();
+  const gpu = r.container.querySelector('[aria-label="Box GPU no reading"]')!;
+  expect(gpu.className).toBe('mc-cell none');
+  expect(gpu.querySelector('.mc-bar')).not.toBeNull();
+  expect(gpu.textContent).toBe('');
+});

@@ -2,7 +2,14 @@ import { isHot, pct, type MetricKey } from './model';
 import { useMachines } from './useMachines';
 
 function Cell({ value, hot, label }: { value: number | null; hot: boolean; label: string }) {
-  if (value === null) return <span className="mc-cell" aria-hidden="true" />;
+  // No reading: an empty track and no number, so the columns stay aligned.
+  if (value === null)
+    return (
+      <span className="mc-cell none" aria-label={`${label} no reading`}>
+        <i className="mc-bar" aria-hidden="true" />
+        <b className="mc-num" aria-hidden="true" />
+      </span>
+    );
   const n = pct(value);
   return (
     <span className={`mc-cell${hot ? ' hot' : ''}`} aria-label={`${label} ${n} percent`}>

@@ -17,6 +17,8 @@ export interface Machines {
 }
 
 export const POLL_MS = 2000;
+/** A read that takes longer than this counts as failed, as in the music store. */
+export const CALL_TIMEOUT_MS = 5000;
 /** A number turns amber only after it has stayed over its limit this long. */
 export const HOLD_MS = 30_000;
 
@@ -46,6 +48,21 @@ export function readings(m: Machines): Record<MetricKey, number | null> {
     'box.ram': b ? b.ramPct : null,
     'box.temp': b ? b.tempC : null,
   };
+}
+
+/**
+ * The numbers the amber hold counts: as `readings`, but the box's are null while they are
+ * stale, so old box numbers never turn amber.
+ */
+export function holdReadings(m: Machines): Record<MetricKey, number | null> {
+  const r = readings(m);
+  if (m.boxStale) {
+    r['box.cpu'] = null;
+    r['box.gpu'] = null;
+    r['box.ram'] = null;
+    r['box.temp'] = null;
+  }
+  return r;
 }
 
 /** When each number went over its limit and has stayed there since; absent while under. */
