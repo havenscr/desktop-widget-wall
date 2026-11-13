@@ -15,7 +15,7 @@ import { knob } from './long';
  *
  *   ?watch=mock               the poster in place of the frame; opens Watch
  *   ?wlist=none|three|many    nothing saved, three items, or the full 24 (default three)
- *   ?wlook=feather|drivein    one look for everything
+ *   ?wlook=feather|sky|sun|drivein   one look for everything
  *   ?wplay=<n>                play saved item n (0 is the first)
  *   ?wsheet=one|kind          open the settings sheet (`kind`: a look per kind)
  *   ?wtab=listen              stay on Listen (for the art's Video corner)

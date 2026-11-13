@@ -184,10 +184,13 @@ state('unwind', 'watch: listen with the Video corner', `${WM}&wlist=three&wtab=l
 state('unwind', 'watch: sparse data, three saved', `${SPARSE}&${WM}&wlist=three&wlook=feather&wplay=0`, TIMES.night);
 // Part 2a: the whole sky and the sun, at night and at noon, with 24 saved, and in the sheet.
 state('unwind', 'watch: whole sky, video playing', `${WM}&wlist=three&wlook=sky&wplay=0`, TIMES.night);
+state('unwind', 'watch: whole sky, bright test picture at noon', `${WM}&wlist=three&wlook=sky&wplay=0&wposter=bright`, TIMES.noon);
 state('unwind', 'watch: whole sky at noon', `${WM}&wlist=three&wlook=sky&wplay=1`, TIMES.noon);
 state('unwind', 'watch: whole sky, 24 saved, long label', `${WM}&wlist=many&wlook=sky&wplay=3`, TIMES.night);
 state('unwind', 'watch: sun, video playing', `${WM}&wlist=three&wlook=sun&wplay=0`, TIMES.night);
 state('unwind', 'watch: sun at noon', `${WM}&wlist=three&wlook=sun&wplay=1`, TIMES.noon);
+state('unwind', 'watch: sun at dusk', `${WM}&wlist=three&wlook=sun&wplay=0`, TIMES.dusk);
+state('unwind', 'watch: whole sky at dusk', `${WM}&wlist=three&wlook=sky&wplay=0`, TIMES.dusk);
 state('unwind', 'watch: sun, 24 saved, Twitch', `${WM}&wlist=many&wlook=sun&wplay=2`, TIMES.night);
 state('unwind', 'watch: settings, four looks, whole sky chosen', `${WM}&wlist=three&wlook=sky&wplay=0&wsheet=one`, TIMES.night);
 state('unwind', 'watch: settings, four looks per kind', `${WM}&wlist=many&wlook=sun&wplay=0&wsheet=kind`, TIMES.night);

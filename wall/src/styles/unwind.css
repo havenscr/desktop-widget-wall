@@ -1230,7 +1230,7 @@
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(90deg, rgba(6, 4, 22, 0.78) 0, rgba(6, 4, 22, 0.64) 36%, rgba(6, 4, 22, 0) 50%),
+    linear-gradient(90deg, rgba(6, 4, 22, 0.88) 0, rgba(6, 4, 22, 0.88) 40%, rgba(6, 4, 22, 0) 54%),
     linear-gradient(180deg, rgba(6, 4, 22, 0.3), rgba(6, 4, 22, 0) 24%);
 }
 .w-skyui {
@@ -1248,21 +1248,23 @@
 }
 /* Over a picture the cards and the tabs need a solid ground. */
 .unwind:has(.w-sky) .u-card {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.015)), rgba(10, 7, 28, 0.92);
+  background: rgba(10, 7, 28, 0.97);
 }
 .unwind:has(.w-sky) .u-tabs,
 .unwind:has(.w-sky) .w-gear {
   background: rgba(10, 7, 28, 0.9);
 }
 
-/* The sun (approved page, C). A 461 px disc whose foot stands 30 px over the horizon line,
+/* The sun (approved page, C). A 461 px disc whose foot stands 24 px over the horizon line,
+   centred at stage x 1600 so the horizon's moon (stage 1730, 112, radius 44) lies wholly
+   inside it at night: the picture covers the moon, so there is never a second disc,
    with the page's warm rim and glow, slats cut through its lower part, a halo behind it and a
    warm streak on the floor. Inside it the 16:9 picture is 821 by 461, so the disc shows its
    middle 56 percent of the width and the full height, the corners and slats cut away. The
    box is the halo's (563 px); the disc sits 51 px in. */
 .w-sun {
-  left: 1150px;
-  top: -57px;
+  left: 1195px;
+  top: -51px;
   width: 563px;
   height: 563px;
 }
@@ -1285,16 +1287,10 @@
   left: -39%;
   width: 178%;
 }
-.w-sun .w-moonveil {
-  left: 396px;
-  top: 89px;
-  width: 120px;
-  height: 120px;
-}
 .w-streak {
   position: absolute;
   left: 153px;
-  top: 542px;
+  top: 536px;
   width: 256px;
   height: 170px;
   filter: blur(36px);
@@ -1307,7 +1303,7 @@
   top: 120px;
 }
 .w-sun .w-under {
-  top: 554px;
+  top: 548px;
 }
 
 /* The sheet with four looks: four tiles in a row, and per kind each label over a full-width

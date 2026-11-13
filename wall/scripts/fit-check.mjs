@@ -16,7 +16,9 @@
 // while more than 60 px of it is unused, and on stage labels closer than 8 px. Home is checked
 // with its Sound block at its fullest, typical, sparse, not reachable and not set up. Exits
 // non-zero on a failure. Unwind's Watch tab is checked empty, with three and with 24 saved,
-// playing in each look, and with its settings sheet open both ways. CI does not run this; run it by hand before a layout change is handed over.
+// playing in each look, and with its settings sheet open both ways. In the whole sky and the
+// sun every named control must still take the pointer at its centre (elementFromPoint), and no
+// point of the sky may land on the whole-sky video layer. CI does not run this; run it by hand before a layout change is handed over.
 //
 //   WALL_CHROME=/path/to/chrome-or-headless-shell npm --prefix wall run fit-check
 //   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels)
@@ -98,6 +100,10 @@ const MEET = ['.meet .panel'];
 const UNWIND = ['.u-room', '.u-chips', '.u-line'];
 const WATCH_IDLE = ['.u-room', '.w-card', '.w-card .u-card-head', '.w-field', '.w-now'];
 const WATCH_PLAYING = [...WATCH_IDLE, '.w-ctl', '.w-screen', '.w-under', '.w-open'];
+// Named controls that must still take the pointer with video playing: the rail, the tabs and
+// the gear, the transport, the list's first row and its field, a Room chip, the status chips,
+// Screens off and Watt.
+const SKY_HITS = ['.rail .rb', '.u-tab', '.w-gear', '.w-ctl .u-rd', '.w-play', '.w-mini', '.w-paste', '.u-chip', '.u-line .u-act', '.screens-off', '.w-open', '.watt-hit-part'];
 const DREAM = ['.dream-clock', '.dream-date', '.dream-card', '.dream-status', '.dream-hint'];
 // With more than three sessions the card list scrolls inside the centre: the three cards in
 // view, the header and the shelf must fit; the list itself is meant to scroll.
@@ -142,6 +148,13 @@ const QUIET = [
   { name: 'Watch, three saved, feathered playing', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=feather&wplay=0', checks: [...WATCH_PLAYING, '.w-list'] },
   { name: 'Watch, 24 saved, drive-in, long label playing', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=many&wlook=drivein&wplay=3', checks: [...WATCH_PLAYING, '.w-post'] },
   { name: 'Watch, settings sheet, one look', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wplay=0&wsheet=one', checks: ['.w-sheet', '.w-tiles', '.w-tile', '.w-sfoot'] },
+  // Part 2a: the whole sky and the sun. The whole sky lies under every control: each named
+  // control gets the pointer at its centre, and no point of the sky reaches the video layer.
+  { name: 'Watch, whole sky playing, every control still takes the pointer', agents: 'ask', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=sky&wplay=0', checks: [...WATCH_IDLE, '.w-ctl', '.w-open', '.w-look'], hits: SKY_HITS, noHit: '.w-sky' },
+  { name: 'Watch, whole sky, 24 saved, long label', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=many&wlook=sky&wplay=3', checks: [...WATCH_IDLE, '.w-ctl', '.w-open', '.w-look'], hits: SKY_HITS, noHit: '.w-sky' },
+  { name: 'Watch, the sun playing', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=sun&wplay=0', checks: [...WATCH_IDLE, '.w-ctl', '.w-under', '.w-open', '.w-list'], hits: SKY_HITS },
+  { name: 'Watch, the sun, 24 saved, Twitch', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=many&wlook=sun&wplay=2', checks: [...WATCH_IDLE, '.w-ctl', '.w-under', '.w-open'], hits: SKY_HITS },
+  { name: 'Watch, settings sheet with four looks, one look', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=sky&wplay=0&wsheet=one', checks: ['.w-sheet', '.w-tiles', '.w-tile', '.w-hint', '.w-sfoot'] },
   { name: 'Watch, settings sheet, a look per kind', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=many&wplay=2&wsheet=kind', checks: ['.w-sheet', '.w-srow', '.w-srow .w-seg', '.w-sfoot'] },
 ].map((v) => ({ ...v, q: query(v) }));
 const VARIANTS = [
@@ -299,7 +312,22 @@ try {
       }
       wattCard = { heights, outside, covered, buttons: heights.length };
     }
-    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, wattCard });
+    // Hit tests: each named control must get the pointer at its own centre, and no point of the
+    // sky (a grid over the top band) may land on a layer that only draws the video.
+    const hits = (new URLSearchParams(location.search).get('hits') || '').split('|').filter(Boolean).map((sel) => {
+      const e = [...document.querySelectorAll(sel)].find((x) => { const r = x.getBoundingClientRect(); return r.width > 0 && r.height > 0; });
+      if (!e) return { sel, found: false };
+      const r = e.getBoundingClientRect();
+      const x = r.left + r.width / 2, y = r.top + r.height / 2;
+      const h = document.elementFromPoint(x, y);
+      const owner = e.closest('.watt-hit') || e;
+      const ok = !!h && (owner === h || owner.contains(h));
+      return { sel, found: true, ok, x: Math.round(x), y: Math.round(y), got: h ? (h.className && h.className.baseVal === undefined ? h.className : h.tagName) : 'nothing' };
+    });
+    const noHit = new URLSearchParams(location.search).get('nohit');
+    const grid = [];
+    if (noHit) for (let y = 30; y < 505; y += 40) for (let x = 130; x < 2560; x += 80) { const h = document.elementFromPoint(x, y); if (h && h.closest(noHit)) grid.push(x + ',' + y); }
+    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, wattCard, hits, grid });
     document.body.appendChild(pre);
   }, new URLSearchParams(location.search).get('card') ? 7000 : 3000);</script>`;
   const broken = overflow ? `<style>${OVERFLOWS[overflow]}</style>` : '';
@@ -310,7 +338,7 @@ try {
   if (overflow) console.log(`deliberate overflow: ${overflow} (${OVERFLOWS[overflow]})`);
   for (const v of overflow ? VARIANTS.slice(0, 1) : VARIANTS) {
     console.log(`${v.name} (${v.q}):`);
-    const url = `${pathToFileURL(page).href}${v.q}&checks=${encodeURIComponent(v.checks.join('|'))}${v.click ? `&click=${encodeURIComponent(v.click)}` : ''}${v.card ? '&card=1' : ''}`;
+    const url = `${pathToFileURL(page).href}${v.q}&checks=${encodeURIComponent(v.checks.join('|'))}${v.click ? `&click=${encodeURIComponent(v.click)}` : ''}${v.card ? '&card=1' : ''}${v.hits ? `&hits=${encodeURIComponent(v.hits.join('|'))}` : ''}${v.noHit ? `&nohit=${encodeURIComponent(v.noHit)}` : ''}`;
     const dom = execFileSync(
       chrome,
       // Headless Chromium keeps 87 px of the window for itself, so 807 gives a 2560 by 720 viewport.
@@ -323,7 +351,16 @@ try {
       process.exit(1);
     }
     const text = m[1].replaceAll('&quot;', '"').replaceAll('&amp;', '&');
-    const { res, page: doc, overlaps, cut, gaps, wattCard } = JSON.parse(text);
+    const { res, page: doc, overlaps, cut, gaps, wattCard, hits, grid } = JSON.parse(text);
+    for (const h of hits) {
+      const ok = h.found && h.ok;
+      if (!ok) failed = true;
+      console.log(h.found ? `  ${ok ? 'ok  ' : 'FAIL'} pointer at ${h.sel} (${h.x}, ${h.y}) reaches ${ok ? 'it' : h.got}` : `  FAIL pointer at ${h.sel}: not found`);
+    }
+    if (v.noHit) {
+      if (grid.length) failed = true;
+      console.log(`  ${grid.length ? 'FAIL' : 'ok  '} no point of the sky lands on ${v.noHit}${grid.length ? `: ${grid.slice(0, 6).join(' ')}${grid.length > 6 ? ` and ${grid.length - 6} more` : ''}` : ''}`);
+    }
     if (v.card) {
       const c = wattCard;
       const okCard = c !== null && c.buttons >= 13 && Math.min(...c.heights) >= 32 - SLACK && c.outside === 0 && c.covered.length === 0;
