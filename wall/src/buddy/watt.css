@@ -58,8 +58,15 @@
   padding: 0;
   border: 0;
   background: transparent;
-  cursor: pointer;
+  /* Hover opens nothing: the pointer shows he can be picked up. */
+  cursor: grab;
   pointer-events: none;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.watt-hit.carrying {
+  cursor: grabbing;
 }
 .watt-hit-part {
   position: absolute;
@@ -71,10 +78,23 @@
   border-radius: 6px;
 }
 
-.watt-heart {
+.watt-heart,
+.watt-spark {
   position: absolute;
   opacity: 0;
 }
+.watt-firefly {
+  position: absolute;
+  opacity: 0;
+  filter: drop-shadow(0 0 4px rgba(190, 225, 100, 0.45));
+}
+.watt-firefly svg {
+  display: block;
+}
+.watt-spark {
+  filter: drop-shadow(0 0 5px rgba(255, 194, 77, 0.7));
+}
+.watt-spark svg,
 .watt-heart svg,
 .watt-mark svg,
 .watt-clover svg {
@@ -170,17 +190,17 @@
   }
 }
 
-/* Her hover card: a strip in the band over the horizon beside her (Unwind: under the transport
+/* His card (right-click): a strip in the band over the horizon beside him (Unwind: under the transport
    row), drawn at exactly CARD_W by CARD_H (petFrame.ts), so the overlap test checks what shows. */
 .watt-card {
   position: absolute;
-  width: 660px;
-  height: 74px;
+  width: 880px;
+  height: 80px;
   box-sizing: border-box;
   display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  padding: 6px 12px;
+  gap: 18px;
+  align-items: center;
+  padding: 4px 12px;
   border-radius: 12px;
   background: rgba(16, 10, 40, 0.98);
   border: 1px solid rgba(220, 211, 251, 0.25);
@@ -189,12 +209,22 @@
   font: 500 14px/1.2 var(--body);
   pointer-events: auto;
 }
+.watt-card:focus {
+  outline: none;
+}
 .wc-head {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  width: 218px;
+  min-width: 0;
+  white-space: nowrap;
+}
+.wc-title {
   display: flex;
   align-items: baseline;
   gap: 10px;
-  min-width: 0;
-  white-space: nowrap;
 }
 .wc-name {
   font: 600 18px/1 var(--disp);
@@ -214,7 +244,6 @@
   color: var(--amber);
 }
 .wc-days {
-  margin-left: auto;
   font-size: 12px;
   opacity: 0.75;
 }
@@ -227,9 +256,18 @@
   list-style: none;
   overflow: hidden;
   text-overflow: ellipsis;
+  font-size: 13px;
 }
 .wc-rows {
+  flex: 1;
+  min-width: 0;
   display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.wc-line {
+  display: flex;
+  align-items: center;
   gap: 22px;
 }
 .wc-row {
@@ -238,6 +276,7 @@
   gap: 5px;
 }
 .wc-label {
+  min-width: 40px;
   margin-right: 2px;
   font-size: 12px;
   opacity: 0.75;
@@ -250,6 +289,7 @@
   background: transparent;
   color: inherit;
   font: 600 13px/1 var(--body);
+  white-space: nowrap;
   cursor: pointer;
 }
 .wc-row button:hover:not(:disabled) {
@@ -263,4 +303,7 @@
 .wc-row button:disabled {
   opacity: 0.4;
   cursor: default;
+}
+.wc-row button.wc-read {
+  border-color: rgba(93, 242, 182, 0.5);
 }

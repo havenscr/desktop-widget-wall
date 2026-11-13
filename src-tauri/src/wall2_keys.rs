@@ -8,12 +8,20 @@
 //! name of the program in front when it has no entry, so the owner can write one.
 //!
 //! The chord vocabulary is fixed (`parse_chord`): the modifiers Ctrl, Alt, Shift and Win, and
-//! letters, digits, F1 to F12, Enter, Tab, Esc, Space, Backspace, Delete, Insert, Home, End,
-//! PageUp, PageDown and the four arrows. A chord has at most six steps, a step has at most one
-//! ordinary key. Every decision below is a pure function with a test; the Win32 calls are in
-//! the `win` module, compiled on Windows only.
+//! letters, digits, F1 to F24, Enter, Tab, Esc, Space, Backspace, Delete, Insert, Home, End,
+//! PageUp, PageDown, the four arrows, the period, the backtick, the equals sign, and the volume
+//! and media keys (VolumeUp, VolumeDown, VolumeMute, PlayPause, NextTrack, PrevTrack) as single
+//! keys. A chord has at most six steps, a step has at most one ordinary key.
+//!
+//! A key is either a chord or a wall action (`wall2_keylib::WallAction`, a fixed list). Rust
+//! runs a chord, and the two actions that are system calls (lock, monitors to sleep); for any
+//! other action it answers with the fixed action name and the page runs the control that
+//! already does it. Keys come from `keys.json` and from the fixed library (`wall2_keylib`).
+//! Every decision below is a pure function with a test; the Win32 calls are in the `win`
+//! module, compiled on Windows only.
 #![cfg_attr(not(windows), allow(dead_code))]
 
+use crate::wall2_keylib::{self, parse_action, LibAction, WallAction};
 use crate::wall2_omni::require_wall2;
 use crate::wall2_winutil::exe_matches;
 use serde::Serialize;
@@ -26,6 +34,8 @@ use std::collections::HashSet;
 const MAX_FILE_BYTES: u64 = 32 * 1024;
 const MAX_APPS: usize = 12;
 const MAX_KEYS: usize = 8;
+/// The keys `pinned` in `keys.json` may hold.
+const MAX_PINNED: usize = wall2_keylib::MAX_PINS;
 const MAX_STEPS: usize = 6;
 const MAX_CHORD_CHARS: usize = 64;
 const MAX_LABEL_CHARS: usize = 16;
@@ -65,7 +75,7 @@ fn key_code(name: &str) -> Option<u16> {
     if let Some(num) = n.strip_prefix('f') {
         if let Ok(k) = num.parse::<u16>() {
             // No leading zero or plus sign: "f01" is not a key name.
-            if (1..=12).contains(&k) && num == k.to_string() {
+            if (1..=24).contains(&k) && num == k.to_string() {
                 return Some(0x70 + k - 1);
             }
         }
@@ -87,6 +97,17 @@ fn key_code(name: &str) -> Option<u16> {
         "up" => 0x26,
         "right" => 0x27,
         "down" => 0x28,
+        // Punctuation that Windows shortcuts use.
+        "." => 0xBE,
+        "`" => 0xC0,
+        "=" => 0xBB,
+        // Volume and media keys, sent as single keys.
+        "volumemute" => 0xAD,
+        "volumedown" => 0xAE,
+        "volumeup" => 0xAF,
+        "nexttrack" => 0xB0,
+        "prevtrack" => 0xB1,
+        "playpause" => 0xB3,
         _ => return None,
     })
 }
@@ -202,6 +223,25 @@ pub(crate) fn blocked_chord(steps: &[Step]) -> bool {
     steps.iter().any(|st| (st.mods & WIN != 0 && st.key == Some(b'L' as u16)) || (st.mods & CTRL != 0 && st.mods & ALT != 0 && st.key == Some(0x2E)))
 }
 
+/// The volume and media virtual keys: VolumeMute, VolumeDown, VolumeUp, NextTrack, PrevTrack,
+/// PlayPause.
+const GLOBAL_KEYS: [u16; 6] = [0xAD, 0xAE, 0xAF, 0xB0, 0xB1, 0xB3];
+
+/// Whether a chord is exactly one of the volume or media keys, alone (no modifier, one step).
+/// These act on the whole system, so they need no program in front and raise no window.
+pub(crate) fn is_global_chord(steps: &[Step]) -> bool {
+    matches!(steps, [Step { mods: 0, key: Some(vk) }] if GLOBAL_KEYS.contains(vk))
+}
+
+/// What a chord send must do first: Ok(true) to check the target and bring it forward, Ok(false)
+/// to send at once (a global key), or the refusal.
+pub(crate) fn plan_target(app: &AppDef, steps: &[Step], remembered: Option<&Remembered>, live: &Live) -> Result<bool, Refusal> {
+    if is_global_chord(steps) {
+        return Ok(false);
+    }
+    check_target(app, remembered, live).map(|_| true)
+}
+
 /// A chord in the fixed vocabulary that a program can send; None otherwise (see
 /// `parse_steps` for the vocabulary rules and `blocked_chord` for the refused ones).
 pub(crate) fn parse_chord(text: &str) -> Option<Vec<Step>> {
@@ -214,7 +254,14 @@ pub(crate) fn parse_chord(text: &str) -> Option<Vec<Step>> {
 pub(crate) struct KeyDef {
     pub label: String,
     pub icon: String,
-    pub chord: Vec<Step>,
+    pub action: KeyAction,
+}
+
+/// What a key does: press a chord, or run a wall action.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum KeyAction {
+    Chord(Vec<Step>),
+    Wall(WallAction),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -222,14 +269,17 @@ pub(crate) struct AppDef {
     pub id: String,
     pub name: String,
     pub matcher: Matcher,
+    /// Auto shows this set when no set of its own matches the program in front.
+    pub fallback: bool,
     pub keys: Vec<KeyDef>,
 }
 
-/// Which programs a set accepts: one executable name, or any program (the general set).
+/// Which programs a set accepts: its executable names (the file part, any case), or any
+/// program (the general set).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Matcher {
     Any,
-    Exe(String),
+    Exe(Vec<String>),
 }
 
 impl AppDef {
@@ -238,7 +288,7 @@ impl AppDef {
     pub(crate) fn accepts(&self, image_path: &str) -> bool {
         match &self.matcher {
             Matcher::Any => true,
-            Matcher::Exe(exe) => exe_matches(image_path, exe),
+            Matcher::Exe(exes) => exes.iter().any(|exe| exe_matches(image_path, exe)),
         }
     }
 
@@ -250,15 +300,18 @@ impl AppDef {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Config {
     pub apps: Vec<AppDef>,
+    /// The keys `Always here` shows by default when `keys.json` names some; empty otherwise.
+    pub pinned: Vec<KeyDef>,
 }
 
-/// The built-in default when there is no `keys.json`: Power BI Desktop with two keys. Both
-/// chords are unverified on a real machine; `keys.json` replaces them.
-pub(crate) const DEFAULT_CONFIG: &str = r#"{"apps":[{"id":"powerbi","name":"Power BI","exe":"PBIDesktop.exe","keys":[{"label":"Refresh","icon":"refresh","chord":"Alt+H, R"},{"label":"Snip","icon":"screenshot","chord":"Win+Shift+S"}]}]}"#;
+/// The built-in default when there is no `keys.json`: no sets of its own. The built-in sets
+/// (`with_builtin_sets`) and the default pins (`wall2_keylib::DEFAULT_PINS`) come from the
+/// fixed library.
+pub(crate) const DEFAULT_CONFIG: &str = r#"{"apps":[]}"#;
 
 /// The icon names a key may use. The front end draws exactly these (`keyIcons.tsx`, and a test
 /// there reads this list); anything else is a config error.
-pub(crate) const ICON_NAMES: [&str; 17] = [
+pub(crate) const ICON_NAMES: [&str; 54] = [
     "refresh",
     "screenshot",
     "camera",
@@ -276,6 +329,43 @@ pub(crate) const ICON_NAMES: [&str; 17] = [
     "play",
     "window",
     "keyboard",
+    "arrow-left",
+    "arrow-right",
+    "arrow-up",
+    "bell",
+    "bulb",
+    "calendar",
+    "chat",
+    "checklist",
+    "filter",
+    "flag",
+    "folder",
+    "hand",
+    "leaf",
+    "link",
+    "mail",
+    "monitor-off",
+    "moon",
+    "next",
+    "phone-off",
+    "plus",
+    "previous",
+    "record",
+    "screen-share",
+    "settings",
+    "shield",
+    "sliders",
+    "speaker",
+    "sum",
+    "table",
+    "terminal",
+    "timer",
+    "timer-off",
+    "tv",
+    "video",
+    "volume",
+    "volume-low",
+    "volume-off",
 ];
 
 /// A short display text: ASCII letters, digits, spaces and a few marks; no control
@@ -288,7 +378,7 @@ fn valid_label(s: &str, max: usize) -> bool {
 }
 
 /// A lower case identifier: letters, digits and dashes.
-fn valid_id(s: &str, max: usize) -> bool {
+pub(crate) fn valid_id(s: &str, max: usize) -> bool {
     !s.is_empty()
         && s.chars().count() <= max
         && s.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
@@ -302,6 +392,31 @@ fn valid_exe(s: &str) -> bool {
         && lower.ends_with(".exe")
         && s == s.trim()
         && s.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-' | ' '))
+}
+
+/// One key of `keys.json`: a label, an icon from the fixed set and either a chord or a wall
+/// action from the fixed list. `at` names the place for an error, `icon_at` the place for the
+/// icon error (which names the set). The error text never repeats the file's own words.
+fn parse_key(key: &Value, at: &str, icon_at: &str) -> Result<KeyDef, String> {
+    let kf = |k: &str| key.get(k).and_then(Value::as_str);
+    let label = kf("label").filter(|s| valid_label(s, MAX_LABEL_CHARS)).ok_or_else(|| format!("{at}: label is missing or not plain text"))?;
+    let icon = kf("icon").filter(|s| ICON_NAMES.contains(s)).ok_or_else(|| format!("{icon_at}: icon is not one of the allowed names"))?;
+    let action = match (key.get("action"), key.get("chord")) {
+        (Some(_), Some(_)) => return Err(format!("{at}: give a chord or an action, not both")),
+        (Some(a), None) => KeyAction::Wall(a.as_str().and_then(parse_action).ok_or_else(|| format!("{at}: action is not in the fixed list"))?),
+        (None, _) => match kf("chord").and_then(parse_steps) {
+            None => return Err(format!("{at}: chord is not in the allowed key list")),
+            Some(steps) if blocked_chord(&steps) => return Err(format!("{at}: Windows does not accept that chord from a program")),
+            Some(steps) => KeyAction::Chord(steps),
+        },
+    };
+    Ok(KeyDef { label: label.to_string(), icon: icon.to_string(), action })
+}
+
+/// Set ids the file may not use: the pinned row, the page's "For you" page, and the built-in
+/// sets' own prefix.
+fn reserved_id(id: &str) -> bool {
+    id == "pinned" || id == "foryou" || id.starts_with("lib-")
 }
 
 /// Read `keys.json` text. Any problem refuses the whole file with a message that names the
@@ -320,10 +435,13 @@ pub(crate) fn parse_config(text: &str) -> Result<Config, String> {
         let n = ai + 1;
         let field = |k: &str| app.get(k).and_then(Value::as_str);
         let id = field("id").filter(|s| valid_id(s, MAX_ID_CHARS)).ok_or_else(|| format!("app {n}: id must be lower case letters, digits and dashes"))?;
+        if reserved_id(id) {
+            return Err(format!("app {n}: id is reserved"));
+        }
         let name = field("name").filter(|s| valid_label(s, MAX_LABEL_CHARS)).ok_or_else(|| format!("app {n}: name is missing or not plain text"))?;
         let matcher = match (field("match"), app.get("match").is_some(), field("exe")) {
             (Some("*"), _, None) => Matcher::Any,
-            (None, false, Some(exe)) if valid_exe(exe) => Matcher::Exe(exe.to_string()),
+            (None, false, Some(exe)) if valid_exe(exe) => Matcher::Exe(vec![exe.to_string()]),
             (None, false, _) => return Err(format!("app {n}: exe must be a file name ending in .exe")),
             _ => return Err(format!("app {n}: match must be \"*\" and then exe is left out")),
         };
@@ -333,7 +451,7 @@ pub(crate) fn parse_config(text: &str) -> Result<Config, String> {
         match &matcher {
             Matcher::Any if general => return Err(format!("app {n}: only one general set is allowed")),
             Matcher::Any => general = true,
-            Matcher::Exe(exe) if !exes.insert(exe.to_ascii_lowercase()) => return Err(format!("app {n}: exe is used twice")),
+            Matcher::Exe(list) if !exes.insert(list[0].to_ascii_lowercase()) => return Err(format!("app {n}: exe is used twice")),
             Matcher::Exe(_) => {}
         }
         let keys = app.get("keys").and_then(Value::as_array).ok_or_else(|| format!("app {n}: needs a \"keys\" list"))?;
@@ -343,25 +461,71 @@ pub(crate) fn parse_config(text: &str) -> Result<Config, String> {
         let mut defs = Vec::new();
         for (ki, key) in keys.iter().enumerate() {
             let m = ki + 1;
-            let kf = |k: &str| key.get(k).and_then(Value::as_str);
-            let label = kf("label").filter(|s| valid_label(s, MAX_LABEL_CHARS)).ok_or_else(|| format!("app {n}, key {m}: label is missing or not plain text"))?;
-            let icon = kf("icon").filter(|s| ICON_NAMES.contains(s)).ok_or_else(|| format!("app {n} (set \"{id}\"), key {m}: icon is not one of the allowed names"))?;
-            let chord = match kf("chord").and_then(parse_steps) {
-                None => return Err(format!("app {n}, key {m}: chord is not in the allowed key list")),
-                Some(steps) if blocked_chord(&steps) => return Err(format!("app {n}, key {m}: Windows does not accept that chord from a program")),
-                Some(steps) => steps,
-            };
-            defs.push(KeyDef { label: label.to_string(), icon: icon.to_string(), chord });
+            defs.push(parse_key(key, &format!("app {n}, key {m}"), &format!("app {n} (set \"{id}\"), key {m}"))?);
         }
-        out.push(AppDef { id: id.to_string(), name: name.to_string(), matcher, keys: defs });
+        let fallback = matcher == Matcher::Any;
+        out.push(AppDef { id: id.to_string(), name: name.to_string(), matcher, fallback, keys: defs });
     }
-    Ok(Config { apps: out })
+    let mut pinned = Vec::new();
+    if let Some(list) = root.get("pinned") {
+        let list = list.as_array().ok_or_else(|| "pinned must be a list".to_string())?;
+        if list.len() > MAX_PINNED {
+            return Err(format!("pinned has more than {MAX_PINNED} keys"));
+        }
+        for (ki, key) in list.iter().enumerate() {
+            let m = ki + 1;
+            pinned.push(parse_key(key, &format!("pinned key {m}"), &format!("pinned key {m}"))?);
+        }
+    }
+    Ok(Config { apps: out, pinned })
 }
 
 /// The set Auto shows for the program in front: the one whose executable matches the file
-/// part of its image path, else the general set, else none.
+/// part of its image path, else the fallback set (general), else none.
 pub(crate) fn auto_set<'a>(config: &'a Config, image_path: &str) -> Option<&'a AppDef> {
-    config.apps.iter().find(|a| !a.is_general() && a.accepts(image_path)).or_else(|| config.apps.iter().find(|a| a.is_general()))
+    config.apps.iter().find(|a| !a.is_general() && a.accepts(image_path)).or_else(|| config.apps.iter().find(|a| a.fallback))
+}
+
+/// A key of a built-in set or a pin, from a library entry.
+fn lib_key_def(e: &wall2_keylib::LibEntry) -> Option<KeyDef> {
+    let action = match wall2_keylib::action_of(e)? {
+        LibAction::Wall(a) => KeyAction::Wall(a),
+        LibAction::Chord(c) => KeyAction::Chord(c),
+    };
+    Some(KeyDef { label: e.label.to_string(), icon: e.icon.to_string(), action })
+}
+
+/// The config with the built-in sets from the library added after the file's own: a General
+/// set (the fallback only when the file has none) and one set per app group, left out when the
+/// file already has a set for any of its programs, so the file always wins.
+pub(crate) fn with_builtin_sets(mut config: Config) -> Config {
+    let has_general = config.apps.iter().any(|a| a.fallback);
+    let file_exes: HashSet<String> = config
+        .apps
+        .iter()
+        .filter_map(|a| match &a.matcher {
+            Matcher::Exe(v) => Some(v.iter().map(|e| e.to_ascii_lowercase()).collect::<Vec<_>>()),
+            Matcher::Any => None,
+        })
+        .flatten()
+        .collect();
+    for (id, name, group) in wall2_keylib::builtin_sets() {
+        let (matcher, fallback) = match group {
+            None => (Matcher::Any, !has_general),
+            Some(g) => {
+                let exes = wall2_keylib::group_exes(g);
+                if exes.iter().any(|e| file_exes.contains(&e.to_ascii_lowercase())) {
+                    continue;
+                }
+                (Matcher::Exe(exes), false)
+            }
+        };
+        let keys: Vec<KeyDef> = wall2_keylib::builtin_set_ids(id).into_iter().filter_map(wall2_keylib::find).filter_map(lib_key_def).collect();
+        if !keys.is_empty() {
+            config.apps.push(AppDef { id: id.to_string(), name: name.to_string(), matcher, fallback, keys });
+        }
+    }
+    config
 }
 
 // Section: refusals
@@ -457,6 +621,19 @@ pub(crate) fn check_target(app: &AppDef, remembered: Option<&Remembered>, live: 
 pub struct KeyInfo {
     pub label: String,
     pub icon: String,
+    /// The wall action name when the key runs one (never a chord).
+    pub action: Option<String>,
+}
+
+fn key_info(k: &KeyDef) -> KeyInfo {
+    KeyInfo {
+        label: k.label.clone(),
+        icon: k.icon.clone(),
+        action: match &k.action {
+            KeyAction::Wall(a) => Some(a.name()),
+            KeyAction::Chord(_) => None,
+        },
+    }
 }
 
 /// One set as the row shows it: name and key labels and icons only, never a chord.
@@ -481,6 +658,11 @@ pub struct KeysSummary {
     pub sets: Vec<SetInfo>,
     /// `file` when `keys.json` is in use, `default` for the built-in one.
     pub source: &'static str,
+    /// What "Always here" shows until the owner picks his own: `lib:<id>` for a library key,
+    /// `file:<n>` for the n-th key of `pinned` in `keys.json`.
+    pub default_pins: Vec<String>,
+    /// The keys of `pinned` in `keys.json` (labels and icons only), for `file:<n>` pins.
+    pub file_pins: Vec<KeyInfo>,
 }
 
 /// Build the summary from the config and what was remembered. Pure.
@@ -492,11 +674,17 @@ pub(crate) fn summarise(config: &Config, source: &'static str, remembered: Optio
             id: a.id.clone(),
             name: a.name.clone(),
             general: a.is_general(),
-            keys: a.keys.iter().map(|k| KeyInfo { label: k.label.clone(), icon: k.icon.clone() }).collect(),
+            keys: a.keys.iter().map(key_info).collect(),
         })
         .collect();
+    let default_pins: Vec<String> = if config.pinned.is_empty() {
+        wall2_keylib::DEFAULT_PINS.iter().map(|id| format!("lib:{id}")).collect()
+    } else {
+        (0..config.pinned.len()).map(|i| format!("file:{i}")).collect()
+    };
+    let file_pins: Vec<KeyInfo> = config.pinned.iter().map(key_info).collect();
     let Some(rem) = remembered else {
-        return KeysSummary { front: "idle", auto_id: None, exe: None, sets, source };
+        return KeysSummary { front: "idle", auto_id: None, exe: None, sets, source, default_pins, file_pins };
     };
     let auto = auto_set(config, &rem.image);
     let own = auto.is_some_and(|a| !a.is_general());
@@ -506,6 +694,8 @@ pub(crate) fn summarise(config: &Config, source: &'static str, remembered: Optio
         exe: (!own).then(|| crate::wall2_winutil::exe_file_part(&rem.image)).filter(|e| valid_exe(e)),
         sets,
         source,
+        default_pins,
+        file_pins,
     }
 }
 
@@ -544,7 +734,45 @@ fn load_config(app: &tauri::AppHandle) -> Result<(Config, &'static str), String>
         Ok(dir) => read_keys_file(&dir.join("keys.json")),
         Err(_) => Err(std::io::ErrorKind::NotFound),
     };
-    config_from_read(read)
+    config_from_read(read).map(|(config, source)| (with_builtin_sets(config), source))
+}
+
+/// A set that accepts any program, for keys that carry no set of their own (pins).
+fn anywhere(id: &str, name: &str) -> AppDef {
+    AppDef { id: id.to_string(), name: name.to_string(), matcher: Matcher::Any, fallback: false, keys: Vec::new() }
+}
+
+/// The set and key a click names: a set id and an index, where the id `pinned` is the `pinned`
+/// list of `keys.json`. NoKey for anything else.
+pub(crate) fn resolve(config: &Config, set_id: &str, index: usize) -> Result<(AppDef, KeyDef), Refusal> {
+    if set_id == "pinned" {
+        let key = config.pinned.get(index).ok_or(Refusal::NoKey)?.clone();
+        return Ok((anywhere("pinned", "Pinned"), key));
+    }
+    let app = config.apps.iter().find(|a| a.id == set_id).ok_or(Refusal::NoKey)?;
+    let key = app.keys.get(index).ok_or(Refusal::NoKey)?.clone();
+    Ok((app.clone(), key))
+}
+
+/// The set and key of a library id. The set accepts the programs of the key's group, so a
+/// pinned key never types into an app its group does not allow. NoKey for an id outside the
+/// library, a "coming" key, or a shortcut still to be worked out.
+pub(crate) fn resolve_library(id: &str) -> Result<(AppDef, KeyDef), Refusal> {
+    let entry = wall2_keylib::find(id).ok_or(Refusal::NoKey)?;
+    let key = lib_key_def(entry).ok_or(Refusal::NoKey)?;
+    let mut set = anywhere("library", "Library");
+    set.matcher = wall2_keylib::matcher_of(entry);
+    Ok((set, key))
+}
+
+/// What a click answers on success: nothing more to do (the chord was sent, or Rust did the
+/// action), or the fixed name of a wall action for the page to run.
+pub(crate) fn outcome(action: &WallAction) -> Option<String> {
+    if action.runs_in_rust() {
+        None
+    } else {
+        Some(action.name())
+    }
 }
 
 /// The program the owner is working in, and its keys. An error (a fixed word) on a system the
@@ -567,23 +795,54 @@ pub async fn wall2_keys_summary(window: tauri::WebviewWindow, app: tauri::AppHan
     }
 }
 
-/// Send one key of the program in front. Ok when the chord was delivered; an error is one
-/// of the fixed words of `Refusal`.
+/// The fixed library, for the picker: ids, labels, icons, groups and what each does, never a
+/// chord.
 #[tauri::command]
-pub async fn wall2_keys_send(window: tauri::WebviewWindow, app: tauri::AppHandle, set_id: String, index: usize) -> Result<(), String> {
+pub async fn wall2_keys_library(window: tauri::WebviewWindow) -> Result<Vec<wall2_keylib::LibGroupInfo>, String> {
+    require_wall2(window.label())?;
+    Ok(wall2_keylib::library_info())
+}
+
+/// Run one key of a set. Ok(None) when it is done (a chord was delivered, or Rust ran the
+/// action); Ok(Some(name)) when it is a wall action the page must run; an error is one of the
+/// fixed words of `Refusal`.
+#[tauri::command]
+pub async fn wall2_keys_send(window: tauri::WebviewWindow, app: tauri::AppHandle, set_id: String, index: usize) -> Result<Option<String>, String> {
     require_wall2(window.label())?;
     #[cfg(windows)]
     {
         let (config, _) = load_config(&app).map_err(|_| Refusal::NoKey.word().to_string())?;
-        tauri::async_runtime::spawn_blocking(move || win::send(&config, &set_id, index).map_err(|r| r.word().to_string()))
-            .await
-            .map_err(|_| Refusal::Busy.word().to_string())?
+        let (set, key) = resolve(&config, &set_id, index).map_err(|r| r.word().to_string())?;
+        run_key(set, key.action).await
     }
     #[cfg(not(windows))]
     {
         let _ = (app, set_id, index);
         Err(Refusal::Unsupported.word().to_string())
     }
+}
+
+/// Run one key of the library, by its id (a pinned key). The same rules as a set's key.
+#[tauri::command]
+pub async fn wall2_keys_send_library(window: tauri::WebviewWindow, id: String) -> Result<Option<String>, String> {
+    require_wall2(window.label())?;
+    #[cfg(windows)]
+    {
+        let (set, key) = resolve_library(&id).map_err(|r| r.word().to_string())?;
+        run_key(set, key.action).await
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = id;
+        Err(Refusal::Unsupported.word().to_string())
+    }
+}
+
+#[cfg(windows)]
+async fn run_key(set: AppDef, action: KeyAction) -> Result<Option<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || win::run(&set, &action).map_err(|r| r.word().to_string()))
+        .await
+        .map_err(|_| Refusal::Busy.word().to_string())?
 }
 
 // Section: Windows
@@ -724,19 +983,74 @@ mod win {
         }
     }
 
-    pub fn send(config: &Config, set_id: &str, index: usize) -> Result<(), Refusal> {
+    /// Carry out one key. A chord goes to the program in front when `set` accepts it; a wall
+    /// action never types: Rust does the two system calls, and for every other action the
+    /// answer is the fixed name for the page to run.
+    pub fn run(set: &AppDef, action: &KeyAction) -> Result<Option<String>, Refusal> {
+        match action {
+            KeyAction::Chord(steps) => send(set, steps).map(|_| None),
+            KeyAction::Wall(WallAction::Lock) => system_call(lock).map(|_| None),
+            KeyAction::Wall(WallAction::DisplaysOff) => detach(displays_off).map(|_| None),
+            KeyAction::Wall(a) => Ok(outcome(a)),
+        }
+    }
+
+    /// One system call at a time, under the same guard as a chord.
+    fn system_call(call: fn() -> bool) -> Result<(), Refusal> {
         let _busy = try_begin(&SENDING).ok_or(Refusal::Busy)?;
-        let app = config.apps.iter().find(|a| a.id == set_id).ok_or(Refusal::NoKey)?;
-        let key = app.keys.get(index).ok_or(Refusal::NoKey)?;
+        if call() {
+            Ok(())
+        } else {
+            Err(Refusal::Failed)
+        }
+    }
+
+    /// Run a system call on its own short-lived thread and answer at once, without holding the
+    /// send guard, so no other key answers "busy" while a slow window delays the broadcast. Ok
+    /// when the thread started.
+    fn detach(call: fn() -> bool) -> Result<(), Refusal> {
+        std::thread::Builder::new().name("wall2-keys-system".into()).spawn(move || {
+            let _ = call();
+        })
+        .map(|_| ())
+        .map_err(|_| Refusal::Failed)
+    }
+
+    /// Lock the PC through the system's own call.
+    fn lock() -> bool {
+        unsafe { windows::Win32::System::Shutdown::LockWorkStation().is_ok() }
+    }
+
+    /// Ask Windows to put every monitor to sleep (SC_MONITORPOWER, 2); they wake on input. A
+    /// broadcast through `SendMessageTimeoutW`: the one second limit is per window that does not
+    /// answer, not in total, which is why it runs detached (`detach`) and never holds the guard.
+    /// It is a broadcast on purpose: a message to the wall's own window can be swallowed by the
+    /// window toolkit.
+    fn displays_off() -> bool {
+        use windows::Win32::Foundation::{LPARAM, WPARAM};
+        use windows::Win32::UI::WindowsAndMessaging::{SendMessageTimeoutW, HWND_BROADCAST, SC_MONITORPOWER, SMTO_ABORTIFHUNG, WM_SYSCOMMAND};
+        let mut result: usize = 0;
+        let sent = unsafe {
+            SendMessageTimeoutW(HWND_BROADCAST, WM_SYSCOMMAND, WPARAM(SC_MONITORPOWER as usize), LPARAM(2), SMTO_ABORTIFHUNG, 1000, Some(&mut result as *mut usize))
+        };
+        sent.0 != 0
+    }
+
+    fn send(app: &AppDef, steps: &[Step]) -> Result<(), Refusal> {
+        let _busy = try_begin(&SENDING).ok_or(Refusal::Busy)?;
         let remembered = current_for_send();
-        check_target(app, remembered.as_ref(), &remembered.as_ref().map(look).unwrap_or_default())?;
-        let target = remembered.as_ref().map(|r| r.hwnd).ok_or(Refusal::NoApp)?;
-        if !foreground_is(target) && !bring_forward(target) {
-            return Err(Refusal::NotForward);
+        let needs_target = plan_target(app, steps, remembered.as_ref(), &remembered.as_ref().map(look).unwrap_or_default())?;
+        // A global key (volume, media) has no target: it is sent at once, nothing is raised, and
+        // the front window is not compared before each step.
+        let target = if needs_target { Some(remembered.as_ref().map(|r| r.hwnd).ok_or(Refusal::NoApp)?) } else { None };
+        if let Some(t) = target {
+            if !foreground_is(t) && !bring_forward(t) {
+                return Err(Refusal::NotForward);
+            }
         }
         // One step at a time: the front window must still be the target before each step,
         // and anything held is released if a step fails.
-        let events = plan_events(&key.chord);
+        let events = plan_events(steps);
         let mut sent = 0usize;
         let mut step: Vec<Event> = Vec::new();
         for (i, e) in events.iter().enumerate() {
@@ -747,7 +1061,7 @@ mod win {
                         return Err(Refusal::Failed);
                     }
                     std::thread::sleep(Duration::from_millis(STEP_GAP_MS));
-                    if !foreground_is(target) {
+                    if target.is_some_and(|t| !foreground_is(t)) {
                         return Err(Refusal::NotForward);
                     }
                     sent += 1; // the gap itself
@@ -798,7 +1112,7 @@ mod tests {
         for d in '0'..='9' {
             assert_eq!(key_code(&d.to_string()), Some(d as u16));
         }
-        for k in 1..=12u16 {
+        for k in 1..=24u16 {
             assert_eq!(key_code(&format!("F{k}")), Some(0x70 + k - 1));
             assert_eq!(key_code(&format!("f{k}")), Some(0x70 + k - 1));
         }
@@ -822,6 +1136,10 @@ mod tests {
         for (name, code) in named {
             assert_eq!(key_code(name), Some(code), "{name}");
             assert_eq!(key_code(&name.to_uppercase()), Some(code), "{name} upper");
+        }
+        for (name, code) in [(".", 0xBE), ("`", 0xC0), ("=", 0xBB), ("VolumeUp", 0xAF), ("VolumeDown", 0xAE), ("VolumeMute", 0xAD), ("PlayPause", 0xB3), ("NextTrack", 0xB0), ("PrevTrack", 0xB1)] {
+            assert_eq!(key_code(name), Some(code), "{name}");
+            assert_eq!(key_code(&name.to_lowercase()), Some(code), "{name} lower");
         }
         for m in ["Ctrl", "Alt", "Shift", "Win", "ctrl", "WIN"] {
             assert!(modifier_bit(m).is_some(), "{m}");
@@ -853,7 +1171,7 @@ mod tests {
             "ctrl+CTRL+A",
             "A+B",
             "F0",
-            "F13",
+            "F25",
             "F01",
             "F+1",
             "Windows+A",
@@ -879,7 +1197,7 @@ mod tests {
         assert!(parse_chord(&too_many).is_none(), "seven steps");
         assert!(parse_chord(&"A, ".repeat(40)).is_none(), "over the length bound");
         // Shifted punctuation and plain text are not in the vocabulary.
-        for punct in ["Ctrl+;", "Ctrl+.", "Ctrl+-", "Ctrl+=", "Shift+/", "Ctrl+\\"] {
+        for punct in ["Ctrl+;", "Ctrl+-", "Shift+/", "Ctrl+\\", "Ctrl+,", "Ctrl+[", "Ctrl+'"] {
             assert!(parse_chord(punct).is_none(), "{punct:?}");
         }
     }
@@ -904,7 +1222,7 @@ mod tests {
             let text = config_with(&format!(r#"{{"label":"A","icon":"{name}","chord":"A"}}"#));
             assert!(parse_config(&text).is_ok(), "{name}");
         }
-        assert_eq!(ICON_NAMES.len(), 17);
+        assert_eq!(ICON_NAMES.len(), 54);
         let unique: HashSet<&str> = ICON_NAMES.iter().copied().collect();
         assert_eq!(unique.len(), ICON_NAMES.len());
         let key = r#"{"label":"A","icon":"refresh","chord":"A"}"#;
@@ -922,7 +1240,7 @@ mod tests {
     fn only_a_missing_keys_file_falls_back_to_the_built_in_keys() {
         use std::io::ErrorKind;
         let (c, source) = config_from_read(Err(ErrorKind::NotFound)).expect("missing is fine");
-        assert_eq!((source, c.apps.len()), ("default", 1));
+        assert_eq!((source, c.apps.len()), ("default", 0));
         for kind in [ErrorKind::PermissionDenied, ErrorKind::Other, ErrorKind::TimedOut, ErrorKind::WouldBlock, ErrorKind::InvalidData] {
             assert_eq!(config_from_read(Err(kind)), Err(UNREADABLE.to_string()), "{kind:?}");
         }
@@ -1041,16 +1359,16 @@ mod tests {
     }
 
     #[test]
-    fn the_default_config_is_valid_with_exactly_the_two_default_keys() {
+    fn the_default_config_names_no_sets_and_no_pins() {
         let c = parse_config(DEFAULT_CONFIG).expect("valid");
-        assert_eq!(c.apps.len(), 1);
-        let app = &c.apps[0];
-        assert_eq!((app.id.as_str(), app.name.as_str()), ("powerbi", "Power BI"));
-        assert_eq!(app.matcher, Matcher::Exe("PBIDesktop.exe".to_string()));
-        let labels: Vec<&str> = app.keys.iter().map(|k| k.label.as_str()).collect();
-        assert_eq!(labels, vec!["Refresh", "Snip"]);
-        assert_eq!(app.keys[0].chord, chord("Alt+H, R"));
-        assert_eq!(app.keys[1].chord, chord("Win+Shift+S"));
+        assert!(c.apps.is_empty() && c.pinned.is_empty());
+    }
+
+    fn chord_of(k: &KeyDef) -> Vec<Step> {
+        match &k.action {
+            KeyAction::Chord(c) => c.clone(),
+            other => panic!("{other:?}"),
+        }
     }
 
     #[test]
@@ -1103,7 +1421,7 @@ mod tests {
         // the chord still has to be valid.
         let text = config_with(r#"{"label":"X","icon":"keyboard","chord":"A","delayMs":60000,"vk":13,"text":"rm"}"#);
         let c = parse_config(&text).expect("extra fields are ignored");
-        assert_eq!(c.apps[0].keys[0].chord, chord("A"));
+        assert_eq!(chord_of(&c.apps[0].keys[0]), chord("A"));
     }
 
     #[test]
@@ -1131,14 +1449,16 @@ mod tests {
         for bad in ["", "not json", "[]", "{}", r#"{"apps":{}}"#, r#"{"apps":[1]}"#, r#"{"apps":[null]}"#, r#"{"apps":[{"keys":5}]}"#] {
             assert!(parse_config(bad).is_err(), "{bad:?}");
         }
-        assert_eq!(parse_config(r#"{"apps":[]}"#), Ok(Config { apps: vec![] }));
+        assert_eq!(parse_config(r#"{"apps":[]}"#), Ok(Config { apps: vec![], pinned: vec![] }));
         // The error text never repeats the file's own words.
         let err = parse_config(&config_with(r#"{"label":"X","icon":"keyboard","chord":"SECRETWORD"}"#)).unwrap_err();
         assert!(!err.contains("SECRETWORD"), "{err}");
     }
 
+    const PBI_CONFIG: &str = r#"{"apps":[{"id":"powerbi","name":"Power BI","exe":"PBIDesktop.exe","keys":[{"label":"Refresh","icon":"refresh","chord":"Alt+H, R"},{"label":"Snip","icon":"screenshot","chord":"Win+Shift+S"}]}]}"#;
+
     fn pbi() -> AppDef {
-        parse_config(DEFAULT_CONFIG).unwrap().apps.remove(0)
+        parse_config(PBI_CONFIG).unwrap().apps.remove(0)
     }
 
     fn rem(image: &str) -> Remembered {
@@ -1156,7 +1476,7 @@ mod tests {
 
     #[test]
     fn the_app_match_rule_compares_the_file_part_case_insensitively() {
-        let c = parse_config(DEFAULT_CONFIG).unwrap();
+        let c = parse_config(PBI_CONFIG).unwrap();
         assert!(auto_set(&c, r"C:\Program Files\Microsoft Power BI Desktop\bin\PBIDesktop.exe").is_some());
         assert!(auto_set(&c, r"c:\x\pbidesktop.EXE").is_some());
         assert!(auto_set(&c, r"C:\x\PBIDesktopSetup.exe").is_none());
@@ -1169,7 +1489,7 @@ mod tests {
         let c = with_general();
         assert_eq!(auto_set(&c, r"C:\x\PBIDesktop.exe").map(|a| a.id.as_str()), Some("powerbi"));
         assert_eq!(auto_set(&c, r"C:\x\notepad.exe").map(|a| a.id.as_str()), Some("general"));
-        assert!(auto_set(&parse_config(DEFAULT_CONFIG).unwrap(), r"C:\x\notepad.exe").is_none());
+        assert!(auto_set(&parse_config(PBI_CONFIG).unwrap(), r"C:\x\notepad.exe").is_none());
     }
 
     #[test]
@@ -1237,12 +1557,15 @@ mod tests {
 
     #[test]
     fn the_summary_lists_sets_by_name_and_never_a_chord_or_title() {
-        let c = parse_config(DEFAULT_CONFIG).unwrap();
+        let c = parse_config(PBI_CONFIG).unwrap();
         let s = summarise(&c, "default", Some(&rem(r"C:\P\PBIDesktop.exe")));
         assert_eq!((s.front, s.auto_id.as_deref(), s.exe.clone()), ("app", Some("powerbi"), None));
         assert_eq!(s.sets.len(), 1);
         assert_eq!((s.sets[0].id.as_str(), s.sets[0].name.as_str(), s.sets[0].general), ("powerbi", "Power BI", false));
-        assert_eq!(s.sets[0].keys, vec![KeyInfo { label: "Refresh".into(), icon: "refresh".into() }, KeyInfo { label: "Snip".into(), icon: "screenshot".into() }]);
+        assert_eq!(
+            s.sets[0].keys,
+            vec![KeyInfo { label: "Refresh".into(), icon: "refresh".into(), action: None }, KeyInfo { label: "Snip".into(), icon: "screenshot".into(), action: None }]
+        );
         // No set of its own and no general set: nothing picked, the file name is given.
         let other = summarise(&c, "file", Some(&rem(r"C:\x\Notepad.exe")));
         assert_eq!((other.front, other.auto_id.clone(), other.exe.as_deref(), other.source), ("app", None, Some("notepad.exe"), "file"));
@@ -1261,12 +1584,210 @@ mod tests {
     fn the_commands_are_gated_to_wall2_before_anything_else() {
         assert_eq!(require_wall2("main"), Err("forbidden".to_string()));
         let src = include_str!("wall2_keys.rs");
-        for name in ["pub async fn wall2_keys_summary(", "pub async fn wall2_keys_send("] {
+        for name in ["pub async fn wall2_keys_summary(", "pub async fn wall2_keys_send(", "pub async fn wall2_keys_library(", "pub async fn wall2_keys_send_library("] {
             let at = src.find(name).expect("command");
             let body = &src[at..];
             let open = body.find('{').expect("body");
             let first = body[open + 1..].trim_start();
             assert!(first.starts_with("require_wall2(window.label())?;"), "{name}: {}", &first[..first.len().min(60)]);
         }
+    }
+
+    // Section: wall actions, pins, the library
+
+    #[test]
+    fn a_key_may_carry_a_wall_action_instead_of_a_chord_and_never_both() {
+        let c = parse_config(&config_with(r#"{"label":"Thirds","icon":"window","action":"layout:thirds"},{"label":"Mood","icon":"keyboard","action":"mood:evening"}"#)).expect("valid");
+        assert_eq!(c.apps[0].keys[0].action, KeyAction::Wall(WallAction::LayoutThirds));
+        assert_eq!(c.apps[0].keys[1].action, KeyAction::Wall(WallAction::Mood("evening".into())));
+        let both = parse_config(&config_with(r#"{"label":"X","icon":"keyboard","chord":"A","action":"zen"}"#)).unwrap_err();
+        assert!(both.contains("not both"), "{both}");
+        for bad in ["\"lock \"", "\"Lock\"", "\"task:add\"", "\"run:calc\"", "\"mood:Bad\"", "\"\"", "5", "null", "[\"zen\"]"] {
+            let err = parse_config(&config_with(&format!(r#"{{"label":"X","icon":"keyboard","action":{bad}}}"#))).unwrap_err();
+            assert!(err.contains("app 1, key 1") && err.contains("fixed list"), "{bad}: {err}");
+            assert!(!err.contains("calc"), "the file's own words are never echoed: {err}");
+        }
+    }
+
+    #[test]
+    fn pinned_keys_in_the_file_are_checked_like_any_key_and_hold_at_most_five() {
+        let key = r#"{"label":"A","icon":"keyboard","chord":"A"}"#;
+        let five = vec![key; 5].join(",");
+        let c = parse_config(&format!(r#"{{"apps":[],"pinned":[{five}]}}"#)).expect("five is fine");
+        assert_eq!(c.pinned.len(), 5);
+        let six = vec![key; 6].join(",");
+        assert!(parse_config(&format!(r#"{{"apps":[],"pinned":[{six}]}}"#)).unwrap_err().contains("more than 5"));
+        assert!(parse_config(r#"{"apps":[],"pinned":{}}"#).is_err());
+        let bad_icon = parse_config(r#"{"apps":[],"pinned":[{"label":"A","icon":"nope","chord":"A"}]}"#).unwrap_err();
+        assert!(bad_icon.contains("pinned key 1") && !bad_icon.contains("nope"), "{bad_icon}");
+        assert!(parse_config(r#"{"apps":[],"pinned":[{"label":"A","icon":"keyboard","chord":"Win+L"}]}"#).is_err());
+        let mixed = parse_config(r#"{"apps":[],"pinned":[{"label":"A","icon":"window","action":"layout:focus"},{"label":"B","icon":"keyboard","chord":"Ctrl+B"}]}"#).expect("valid");
+        assert_eq!(mixed.pinned[0].action, KeyAction::Wall(WallAction::LayoutFocus));
+        assert_eq!(chord_of(&mixed.pinned[1]), chord("Ctrl+B"));
+    }
+
+    #[test]
+    fn the_pinned_defaults_are_the_five_library_keys_until_the_file_names_its_own() {
+        let none = summarise(&parse_config(DEFAULT_CONFIG).unwrap(), "default", None);
+        assert_eq!(none.default_pins, vec!["lib:thirds", "lib:focus", "lib:record-169", "lib:snip", "lib:strip-dark"]);
+        assert!(none.file_pins.is_empty());
+        let named = parse_config(r#"{"apps":[],"pinned":[{"label":"A","icon":"window","action":"zen"},{"label":"B","icon":"keyboard","chord":"Ctrl+B"}]}"#).unwrap();
+        let s = summarise(&named, "file", None);
+        assert_eq!(s.default_pins, vec!["file:0", "file:1"]);
+        assert_eq!(s.file_pins[0].action.as_deref(), Some("zen"));
+        assert_eq!(s.file_pins[1].action, None);
+        let text = serde_json::to_string(&s).unwrap();
+        assert!(!text.contains("Ctrl+B") && !text.to_lowercase().contains("chord"), "{text}");
+    }
+
+    #[test]
+    fn set_ids_the_file_may_not_use_are_reserved() {
+        let set = |id: &str| format!(r#"{{"apps":[{{"id":"{id}","name":"A","exe":"a.exe","keys":[{{"label":"A","icon":"keyboard","chord":"A"}}]}}]}}"#);
+        for id in ["pinned", "foryou", "lib-teams", "lib-x"] {
+            assert!(parse_config(&set(id)).unwrap_err().contains("reserved"), "{id}");
+        }
+        assert!(parse_config(&set("library")).is_ok());
+    }
+
+    #[test]
+    fn built_in_sets_are_added_after_the_files_and_the_file_wins() {
+        let merged = with_builtin_sets(parse_config(DEFAULT_CONFIG).unwrap());
+        let ids: Vec<&str> = merged.apps.iter().map(|a| a.id.as_str()).collect();
+        assert_eq!(ids, vec!["lib-general", "lib-teams", "lib-zoom", "lib-agents", "lib-vscode", "lib-browser", "lib-mail", "lib-recording", "lib-powerbi", "lib-excel"]);
+        assert!(merged.apps[0].fallback && merged.apps[0].is_general());
+        assert_eq!(auto_set(&merged, r"C:\x\notepad.exe").map(|a| a.id.as_str()), Some("lib-general"));
+        assert_eq!(auto_set(&merged, r"C:\Apps\ms-teams.exe").map(|a| a.id.as_str()), Some("lib-teams"));
+        assert_eq!(auto_set(&merged, r"C:\Apps\EXCEL.EXE").map(|a| a.id.as_str()), Some("lib-excel"));
+        assert_eq!(auto_set(&merged, r"C:\Apps\Code.exe").map(|a| a.id.as_str()), Some("lib-vscode"));
+        // A file with its own general set and its own set for Excel keeps both; the built-ins
+        // that would overlap are left out and the built-in General is not a fallback.
+        let file = with_builtin_sets(
+            parse_config(r#"{"apps":[{"id":"mine","name":"Mine","match":"*","keys":[{"label":"A","icon":"keyboard","chord":"A"}]},{"id":"xl","name":"XL","exe":"excel.exe","keys":[{"label":"B","icon":"keyboard","chord":"B"}]}]}"#).unwrap(),
+        );
+        assert_eq!(auto_set(&file, r"C:\x\notepad.exe").map(|a| a.id.as_str()), Some("mine"));
+        assert_eq!(auto_set(&file, r"C:\x\excel.exe").map(|a| a.id.as_str()), Some("xl"));
+        assert!(file.apps.iter().all(|a| a.id != "lib-excel"), "overlapping built-in set dropped");
+        assert!(file.apps.iter().any(|a| a.id == "lib-general" && !a.fallback));
+        for a in &merged.apps {
+            assert!(!a.keys.is_empty() && a.keys.len() <= MAX_KEYS, "{}", a.id);
+        }
+    }
+
+    #[test]
+    fn a_click_names_a_set_and_an_index_and_anything_else_is_no_key() {
+        let merged = with_builtin_sets(parse_config(r#"{"apps":[],"pinned":[{"label":"P","icon":"window","action":"zen"}]}"#).unwrap());
+        let (set, key) = resolve(&merged, "lib-general", 0).expect("the first general key");
+        assert!(set.is_general() && key.label == "Snip");
+        assert_eq!(resolve(&merged, "lib-general", 99).unwrap_err(), Refusal::NoKey);
+        assert_eq!(resolve(&merged, "nope", 0).unwrap_err(), Refusal::NoKey);
+        assert_eq!(resolve(&merged, "", 0).unwrap_err(), Refusal::NoKey);
+        let (pset, pkey) = resolve(&merged, "pinned", 0).expect("pinned");
+        assert!(pset.is_general() && pkey.action == KeyAction::Wall(WallAction::Zen));
+        assert_eq!(resolve(&merged, "pinned", 1).unwrap_err(), Refusal::NoKey);
+        assert_eq!(resolve(&parse_config(DEFAULT_CONFIG).unwrap(), "pinned", 0).unwrap_err(), Refusal::NoKey);
+    }
+
+    #[test]
+    fn a_library_click_names_an_id_and_only_a_runnable_one_works() {
+        assert!(resolve_library("snip").is_ok());
+        for id in ["", "nope", "SNIP", "snip ", "../snip", "new-chat", "task-add", "tv-off", "alarms-seen", "pbi-refresh", "pbi-perf", "pbi-tmdl"] {
+            assert_eq!(resolve_library(id).unwrap_err(), Refusal::NoKey, "{id:?}");
+        }
+        // A check shortcut can be sent once pinned.
+        assert!(resolve_library("rec-toggle").is_ok());
+    }
+
+    #[test]
+    fn a_pinned_app_key_is_held_to_its_groups_programs() {
+        let (set, key) = resolve_library("teams-mute").unwrap();
+        assert!(matches!(key.action, KeyAction::Chord(_)));
+        assert!(set.accepts(r"C:\Apps\ms-teams.exe") && !set.accepts(r"C:\Apps\notepad.exe"));
+        let r = rem(r"C:\Apps\notepad.exe");
+        let live = Live { image: Some(r"C:\Apps\notepad.exe".into()), ..good_live() };
+        assert_eq!(check_target(&set, Some(&r), &live), Err(Refusal::NoApp), "a Teams key never types into another app");
+        let (any, _) = resolve_library("snip").unwrap();
+        assert_eq!(check_target(&any, Some(&r), &live), Ok(()), "an anywhere key goes to the app in front");
+        let (blocked_set, _) = resolve_library("snip").unwrap();
+        assert_eq!(check_target(&blocked_set, None, &live), Err(Refusal::NoApp), "nothing in front, nothing sent");
+    }
+
+    #[test]
+    fn rust_answers_with_the_action_name_unless_it_ran_the_action_itself() {
+        assert_eq!(outcome(&WallAction::LayoutThirds), Some("layout:thirds".to_string()));
+        assert_eq!(outcome(&WallAction::Mood("evening".into())), Some("mood:evening".to_string()));
+        assert_eq!(outcome(&WallAction::SonosPlaySuggested), Some("sonos:play-suggested".to_string()));
+        assert_eq!(outcome(&WallAction::Lock), None);
+        assert_eq!(outcome(&WallAction::DisplaysOff), None);
+    }
+
+    #[test]
+    fn the_library_chords_use_the_widened_vocabulary_and_win_l_stays_refused() {
+        for good in ["Win+.", "Ctrl+`", "Alt+=", "Win+Home", "Win+Tab", "Win+1", "F24", "F13", "Esc", "Ctrl+Shift+Esc", "VolumeUp", "VolumeDown", "VolumeMute", "PlayPause", "NextTrack", "PrevTrack", "Win+Left", "Win+Ctrl+Alt+V"] {
+            assert!(parse_chord(good).is_some(), "{good}");
+        }
+        for bad in ["Win+L", "Ctrl+Alt+Delete", "Win+Shift+L", "F25", "VolumeUp+A", "Volume"] {
+            assert!(parse_chord(bad).is_none(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn the_icon_list_has_no_repeats_and_every_name_is_plain() {
+        let set: HashSet<&&str> = ICON_NAMES.iter().collect();
+        assert_eq!(set.len(), ICON_NAMES.len());
+        assert!(ICON_NAMES.iter().all(|n| valid_id(n, 24)));
+    }
+
+    // Section: global keys
+
+    #[test]
+    fn only_the_fixed_volume_and_media_keys_alone_are_global() {
+        for g in ["VolumeUp", "VolumeDown", "VolumeMute", "PlayPause", "NextTrack", "PrevTrack"] {
+            assert!(is_global_chord(&chord(g)), "{g}");
+        }
+        for not in ["Ctrl+VolumeUp", "VolumeUp, VolumeUp", "Win+D", "A", "F24", "Shift+PlayPause", "Win+Shift+S", "Alt+="] {
+            assert!(!is_global_chord(&chord(not)), "{not}");
+        }
+    }
+
+    #[test]
+    fn a_global_key_needs_no_program_and_is_not_stopped_by_an_elevated_one() {
+        let (set, _) = resolve_library("volume-up").unwrap();
+        let steps = chord("VolumeUp");
+        // Nothing remembered.
+        assert_eq!(plan_target(&set, &steps, None, &Live::default()), Ok(false));
+        // An elevated program remembered.
+        let r = rem(r"C:\x\taskmgr.exe");
+        let live = Live { elevated: true, ..good_live() };
+        assert_eq!(plan_target(&set, &steps, Some(&r), &live), Ok(false));
+        // Any other key still needs its target, and is still refused for the same reasons.
+        let snip = chord("Win+Shift+S");
+        assert_eq!(plan_target(&set, &snip, None, &Live::default()), Err(Refusal::NoApp));
+        assert_eq!(plan_target(&set, &snip, Some(&r), &live), Err(Refusal::Elevated));
+        assert_eq!(plan_target(&set, &snip, Some(&r), &Live { image: Some(r"C:\x\taskmgr.exe".into()), ..good_live() }), Ok(true));
+    }
+
+    #[test]
+    fn the_library_volume_and_media_keys_are_exactly_the_global_ones() {
+        for e in wall2_keylib::LIBRARY {
+            if let Some(LibAction::Chord(c)) = wall2_keylib::action_of(e) {
+                let named = ["volume-up", "volume-down", "mute", "play-pause", "next-track", "previous-track"].contains(&e.id);
+                assert_eq!(is_global_chord(&c), named, "{}", e.id);
+            }
+        }
+    }
+
+    // Section: check keys
+
+    #[test]
+    fn rust_accepts_any_runnable_library_id_so_the_check_gate_lives_in_the_page() {
+        let check: Vec<&str> = wall2_keylib::LIBRARY.iter().filter(|e| e.kind == wall2_keylib::LibKind::Check).map(|e| e.id).collect();
+        assert!(check.contains(&"rec-toggle") && check.contains(&"ff-private"));
+        for id in check {
+            let runnable = wall2_keylib::action_of(wall2_keylib::find(id).unwrap()).is_some();
+            assert_eq!(resolve_library(id).is_ok(), runnable, "{id}");
+        }
+        // Still held to its group's programs.
+        let (set, _) = resolve_library("ff-private").unwrap();
+        assert!(set.accepts(r"C:\Apps\firefox.exe") && !set.accepts(r"C:\Apps\chrome.exe"));
     }
 }

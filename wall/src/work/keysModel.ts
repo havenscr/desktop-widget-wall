@@ -3,6 +3,8 @@ import { errorText } from './deckModel';
 export interface KeyInfo {
   label: string;
   icon: string;
+  /** The wall action name when the key runs one instead of a chord (never a chord). */
+  action: string | null;
 }
 export interface SetInfo {
   id: string;
@@ -21,6 +23,10 @@ export interface KeysSummary {
   exe: string | null;
   sets: SetInfo[];
   source: 'file' | 'default';
+  /** What "Always here" shows until the owner picks his own: `lib:<id>` or `file:<n>`. */
+  defaultPins: string[];
+  /** The keys of `pinned` in keys.json, for `file:<n>` pins. */
+  filePins: KeyInfo[];
 }
 
 /** Auto follows the app in front; Hold keeps one set until Auto is turned on again. */
@@ -30,6 +36,8 @@ export interface Mode {
 }
 export const AUTO: Mode = { hold: false, setId: null };
 export const MODE_KEY = 'wall2-keys-mode';
+/** The page id of the "For you" page: it is not a set, and keys.json may not use it as one. */
+export const FOR_YOU = 'foryou';
 const ID_RE = /^[a-z0-9-]{1,24}$/;
 
 /** The mode kept on this display, checked on read: anything odd is Auto. */
@@ -63,8 +71,10 @@ export function saveMode(mode: Mode): void {
 }
 
 /** A held set that no longer exists in `keys.json` is Auto again. */
-export function effectiveMode(mode: Mode, sets: SetInfo[]): Mode {
-  return mode.hold && sets.some((s) => s.id === mode.setId) ? mode : AUTO;
+export function effectiveMode(mode: Mode, sets: SetInfo[], forYou = false): Mode {
+  if (!mode.hold) return AUTO;
+  if (mode.setId === FOR_YOU) return forYou ? mode : AUTO;
+  return sets.some((s) => s.id === mode.setId) ? mode : AUTO;
 }
 
 /** The set the row shows: the held one, else Auto's pick, else none. */
@@ -94,7 +104,7 @@ export function headingFor(set: SetInfo): string {
 }
 
 /** The fixed words `wall2_keys_send` answers with, as one short line. */
-export function sendReason(e: unknown, set: SetInfo, hold: boolean): string {
+export function sendReason(e: unknown, set: Pick<SetInfo, 'name' | 'general'>, hold: boolean): string {
   switch (errorText(e)) {
     case 'busy':
       return 'Still sending the last key';
@@ -113,4 +123,41 @@ export function sendReason(e: unknown, set: SetInfo, hold: boolean): string {
     default:
       return 'Could not send the key';
   }
+}
+
+/** One page of the Now row: the "For you" page, or one set of keys. */
+export type Page = { id: typeof FOR_YOU; kind: 'foryou' } | { id: string; kind: 'set'; set: SetInfo };
+
+/**
+ * The pages in stepping order: "For you" (only while something waits), the set for the app in
+ * front, the general set, then every other set.
+ */
+export function pagesFor(summary: KeysSummary, forYou: boolean): Page[] {
+  const pages: Page[] = [];
+  if (forYou) pages.push({ id: FOR_YOU, kind: 'foryou' });
+  const used = new Set<string>();
+  const add = (s: SetInfo | undefined) => {
+    if (s && !used.has(s.id)) {
+      used.add(s.id);
+      pages.push({ id: s.id, kind: 'set', set: s });
+    }
+  };
+  add(summary.sets.find((s) => s.id === summary.autoId && !s.general));
+  add(summary.sets.find((s) => s.general));
+  summary.sets.forEach(add);
+  return pages;
+}
+
+/** The page one step along (wrapping), from the one shown; the first or last when none is shown. */
+export function stepPage(pages: Page[], fromId: string | null, dir: 1 | -1): Page | null {
+  const n = pages.length;
+  if (n === 0) return null;
+  const at = fromId === null ? -1 : pages.findIndex((p) => p.id === fromId);
+  return pages[at < 0 ? (dir === 1 ? 0 : n - 1) : (at + dir + n) % n];
+}
+
+/** The page Auto shows: the set for the app in front, else the general set. */
+export function autoPage(summary: KeysSummary): Page | null {
+  const set = summary.sets.find((s) => s.id === summary.autoId);
+  return set ? { id: set.id, kind: 'set', set } : null;
 }
