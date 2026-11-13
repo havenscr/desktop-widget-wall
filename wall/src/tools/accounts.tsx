@@ -129,7 +129,7 @@ function SpotifyRow({ sp, blocked }: { sp: ReturnType<typeof useSpotifyAccount>;
     );
   }
   return (
-    <Row icon={icon} name="Spotify" line="Not connected" hover={sp.status.reason}>
+    <Row icon={icon} name="Spotify" line="Not connected" hover={sp.status.reason ?? undefined}>
       <Btn label="Sign in" cy disabled={blocked} onClick={sp.signIn} />
     </Row>
   );

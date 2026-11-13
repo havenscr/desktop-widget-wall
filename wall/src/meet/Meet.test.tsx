@@ -277,7 +277,9 @@ it('says Calendar not available when no account can be read', async () => {
   await flush();
   expect(screen.getByText('Calendar not available')).toBeTruthy();
   expect(screen.getByText(/2 calendars need attention\./)).toBeTruthy();
-  expect(screen.getAllByRole('button', { name: 'Open Tools' }).length).toBeGreaterThan(0);
+  // One link only: the Later card carries it, the other card just says what is wrong.
+  expect(screen.getAllByRole('button', { name: 'Open Tools' })).toHaveLength(1);
+  expect(screen.getByLabelText('Later meetings').textContent).toContain('Open Tools');
 });
 
 const peekOnly = (full: MeetData) => (args?: Record<string, unknown>) =>

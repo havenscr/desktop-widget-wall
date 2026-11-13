@@ -41,14 +41,19 @@ function Join({ meeting, big, now, onJoin }: { meeting: Meeting; big?: boolean; 
 }
 
 /** The one amber line when a calendar account needs attention: its click opens Tools at Accounts. */
-function TroubleLine({ text }: { text: string }) {
+function TroubleLine({ text, plain }: { text: string; plain?: boolean }) {
   const open = useToolsStore((s) => s.openDrawer);
   return (
     <div className="meet-trouble">
-      {text}{' '}
-      <button type="button" className="meet-trouble-link" onClick={() => open('accounts')}>
-        Open Tools
-      </button>
+      {text}
+      {!plain && (
+        <>
+          {' '}
+          <button type="button" className="meet-trouble-link" onClick={() => open('accounts')}>
+            Open Tools
+          </button>
+        </>
+      )}
     </div>
   );
 }
@@ -150,7 +155,8 @@ function UnavailablePanel({ m }: { m: MeetState }) {
         <div className="meet-headline">Calendar not available</div>
         <div className="xs">{m.lastOk !== null ? `Last good read at ${clockText(m.lastOk)}` : 'No good read yet'}</div>
       </div>
-      {trouble && <TroubleLine text={trouble} />}
+      {/* The Later card beside this one carries the one Open Tools link. */}
+      {trouble && <TroubleLine text={trouble} plain />}
       {m.notice && <div className="xs meet-notice">{m.notice}</div>}
     </section>
   );

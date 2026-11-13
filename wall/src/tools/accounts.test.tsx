@@ -358,3 +358,31 @@ it('a late answer after the 12 second limit corrects the row at once', async () 
   expect(screen.getByText('Sign-in expired')).toBeTruthy();
 });
 
+
+it('Spotify signed out with a null reason (as Rust sends it) shows Not connected and Sign in, no hover', async () => {
+  mocks.set('wall2_meet_next', () => ({ accounts: [], meetings: [] }));
+  mocks.set('wall2_spotify_status', () => ({ setup: true, signedIn: false, reason: null }));
+  render(
+    <>
+      <Accounts />
+      <HoverTipLayer />
+    </>,
+  );
+  await flush();
+  const row = screen.getByText('Not connected').closest('li')!;
+  expect(screen.getByRole('button', { name: 'Sign in' })).toBeTruthy();
+  expect(await hoverText(row)).toBe('');
+});
+
+it('Spotify with a reason shows it on hover', async () => {
+  mocks.set('wall2_meet_next', () => ({ accounts: [], meetings: [] }));
+  mocks.set('wall2_spotify_status', () => ({ setup: true, signedIn: false, reason: 'failed' }));
+  render(
+    <>
+      <Accounts />
+      <HoverTipLayer />
+    </>,
+  );
+  await flush();
+  expect(await hoverText(screen.getByText('Not connected').closest('li')!)).toContain('failed');
+});

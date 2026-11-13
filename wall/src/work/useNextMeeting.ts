@@ -174,6 +174,9 @@ export function useNextMeeting(now: () => number = systemNow): NextMeetingState 
   return { meeting: nextMeeting(meetings, t), now: t, stale: feedStale || failed, asOf, unavailable: noCalendar || (failed && asOf === null) };
 }
 
+/** How long `refreshMeetingFeed` waits for a read to land before it lets go. */
+export const SETTLE_CEILING_MS = 15_000;
+
 /**
  * The Tools drawer's Retry for Calendar: one read now, outside the 5 minute poll (none is started
  * while one runs). Settles when a read lands (a read that was running counts).
@@ -182,9 +185,15 @@ export function refreshMeetingFeed(): Promise<void> {
   const before = useMeetingFeed.getState().reads;
   if (!inFlight) read();
   return new Promise((resolve) => {
+    // A read that hangs releases the subscription at the same ceiling as the drawer's Retry button.
+    const timer = setTimeout(() => {
+      stop();
+      resolve();
+    }, SETTLE_CEILING_MS);
     const stop = useMeetingFeed.subscribe((s) => {
       if (s.reads === before) return;
       stop();
+      clearTimeout(timer);
       resolve();
     });
   });

@@ -8,7 +8,7 @@ import { acquireNowPlaying, refreshNowPlaying, resetNowPlaying } from '../music/
 import { useTasks } from '../tasks/useTasks';
 import { refreshWeather, resetWeatherStore } from '../weather/useWeather';
 import { loadKeys, reloadKeys, resetKeysFeed, useKeysFeedStore } from '../work/keysFeed';
-import { refreshMeetingFeed, resetMeetingFeed } from '../work/useNextMeeting';
+import { SETTLE_CEILING_MS, refreshMeetingFeed, resetMeetingFeed } from '../work/useNextMeeting';
 import { resetReports, retryFor, useReportStore } from './reports';
 
 const flush = async (ms = 0) => {
@@ -137,4 +137,14 @@ it('the machine numbers report ok, stale and failed, and register their read', a
   expect(retryFor('box')).toBeTypeOf('function');
   unmount();
   expect(retryFor('box')).toBeUndefined();
+});
+
+it('refreshMeetingFeed lets go at the ceiling when the read hangs', async () => {
+  mocks.set('wall2_meet_next', () => new Promise(() => undefined));
+  let settled = false;
+  void refreshMeetingFeed().then(() => (settled = true));
+  await flush(SETTLE_CEILING_MS - 100);
+  expect(settled).toBe(false);
+  await flush(200);
+  expect(settled).toBe(true);
 });
