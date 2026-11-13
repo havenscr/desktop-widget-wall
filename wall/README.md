@@ -710,7 +710,7 @@ temperature; today the home app sends only the alarms, and PR 24 adds the rest),
 three open alerts as one-line rows (severity dot, text, age) with "N more open" beside
 the heading, and the two links as full-width buttons along the bottom. The numbers row
 shows only when at least three numbers exist; one or two go on the status line's right
-instead ("Up, box online" and "25 alarms in 24 h"), and the scan age then moves beside
+instead ("Up, box online" and "7 alarms in 24 h"), and the scan age then moves beside
 the heading when "N more open" is not there. The card is as
 tall as what it holds, so it is never half empty. Refreshes every 5 minutes while
 visible. The open count follows the home app's own page: an alert whose

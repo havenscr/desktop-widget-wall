@@ -59,3 +59,23 @@ it('finds the audio session from the id through the alias table, by exact proces
   expect(playingSession(SESSIONS, 'App')).toBeNull();
   expect(playerProcesses('')).toEqual([]);
 });
+
+it('matches whole tokens only: a look-alike app is never named or controlled as a known player', () => {
+  expect(playerName('NotSpotify.exe')).toBe('Not Spotify');
+  expect(playerName('ChromeHelper.exe')).toBe('Chrome Helper');
+  expect(playerName('SpotifyFan.Thing_abc123!App')).toBe('Thing');
+  expect(playerName('Spotifyish')).toBe('Spotifyish');
+  const spotify = [session('Spotify.exe'), session('chrome.exe')];
+  expect(playingSession(spotify, 'NotSpotify.exe')).toBeNull();
+  expect(playingSession(spotify, 'ChromeHelper.exe')).toBeNull();
+  expect(playingSession(spotify, 'SpotifyFan.Thing_abc123!App')).toBeNull();
+  // The older labels still name and match their player.
+  expect(playerName('Groove Music')).toBe('Groove Music');
+  expect(playingSession([session('AppleMusic.exe')], 'Apple Music')?.name).toBe('AppleMusic.exe');
+});
+
+it('gives an unknown dotted process id its cleaned name and the session with exactly that process name', () => {
+  expect(playerName('Foo.Bar.Baz.exe')).toBe('Foo.Bar.Baz');
+  expect(playingSession([session('Baz.exe'), session('Foo.Bar.Baz.exe')], 'Foo.Bar.Baz.exe')?.name).toBe('Foo.Bar.Baz.exe');
+  expect(playingSession([session('Baz.exe')], 'Foo.Bar.Baz.exe')).toBeNull();
+});

@@ -64,12 +64,12 @@ it('moving from one screen to the other keeps the state and does not poll twice'
 it('asks for the art again whenever it does not hold the art for the current track', async () => {
   const sent: unknown[] = [];
   let reply: Record<string, unknown> = {
-    title: 'Sunlight',
+    title: 'Glass Harbor',
     artist: 'Band',
     playback_status: 'playing',
     album_art_base64: 'QUJD',
     album_art_mime: 'image/png',
-    art_key: 'Sunlight|Band||Spotify',
+    art_key: 'Glass Harbor|Band||Spotify',
   };
   mocks.set('get_now_playing', (args) => {
     sent.push(args?.artFor);
@@ -81,9 +81,9 @@ it('asks for the art again whenever it does not hold the art for the current tra
   expect(sent).toEqual(['']);
   expect(useNowPlayingStore.getState().art).toBe('data:image/png;base64,QUJD');
   // Then it names the track it holds the art for, and keeps it while Rust says unchanged.
-  reply = { title: 'Sunlight', artist: 'Band', playback_status: 'playing', art_unchanged: true, art_key: 'Sunlight|Band||Spotify' };
+  reply = { title: 'Glass Harbor', artist: 'Band', playback_status: 'playing', art_unchanged: true, art_key: 'Glass Harbor|Band||Spotify' };
   await flush(POLL_MS);
-  expect(sent[1]).toBe('Sunlight|Band||Spotify');
+  expect(sent[1]).toBe('Glass Harbor|Band||Spotify');
   expect(useNowPlayingStore.getState().art).toBe('data:image/png;base64,QUJD');
   release();
   // A reload forgets the art; the next poll asks for it again instead of trusting Rust's memory.

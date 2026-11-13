@@ -22,7 +22,7 @@ function Status({ t, text, aside }: { t: Tone | 'off'; text: string; aside?: str
  * the house"), then the card with the status line and its shield, the numbers the feed
  * has, up to three open alerts as one-line rows, and the Security and Firewalla links as
  * full-width buttons along the bottom. The numbers row shows only with three or more
- * numbers; one or two sit on the status line's right ("Up, box online", "25 alarms in
+ * numbers; one or two sit on the status line's right ("Up, box online", "7 alarms in
  * 24 h"), and the scan age then moves up beside the heading. The card is as tall as what
  * it holds.
  */

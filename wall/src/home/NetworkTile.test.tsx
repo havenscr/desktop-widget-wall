@@ -142,10 +142,10 @@ it('fills the card: numbers the feed has, up to three alert rows and the rest as
 });
 
 it('puts a lone alarm count on the status line, the scan age beside the heading, and the heading above the card', async () => {
-  mocks.set('wall2_home_security', () => ({ ...summary, alerts: 0, firewalla: { ...summary.firewalla, alarms24h: 25 } }));
+  mocks.set('wall2_home_security', () => ({ ...summary, alerts: 0, firewalla: { ...summary.firewalla, alarms24h: 7 } }));
   const { container } = render(<NetworkTile />);
   await flush();
-  expect(container.querySelector('.net-status')?.textContent).toBe('All quiet25 alarms in 24 h');
+  expect(container.querySelector('.net-status')?.textContent).toBe('All quiet7 alarms in 24 h');
   expect(container.querySelector('.net-nums')).toBeNull();
   expect(container.querySelector('.net-head')?.textContent).toBe('Network and securitylast scan 4 min ago');
   // The heading sits outside the card, above it.
@@ -154,10 +154,10 @@ it('puts a lone alarm count on the status line, the scan age beside the heading,
 });
 
 it('shows the numbers row once three numbers exist', async () => {
-  mocks.set('wall2_home_security', () => ({ ...summary, devices: 31, blocked: 412, firewalla: { ...summary.firewalla, alarms24h: 25 } }));
+  mocks.set('wall2_home_security', () => ({ ...summary, devices: 31, blocked: 412, firewalla: { ...summary.firewalla, alarms24h: 7 } }));
   const { container } = render(<NetworkTile />);
   await flush();
-  expect([...container.querySelectorAll('.st3')].map((n) => n.textContent)).toEqual(['31devices', '25alarms, 24h', '412blocked']);
+  expect([...container.querySelectorAll('.st3')].map((n) => n.textContent)).toEqual(['31devices', '7alarms, 24h', '412blocked']);
   expect(container.querySelector('.net-aside')?.textContent).toBe('last scan 4 min ago');
 });
 

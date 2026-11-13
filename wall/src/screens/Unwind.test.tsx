@@ -118,14 +118,14 @@ it('jumps on a real seek', async () => {
 
 it('shows the cover the store holds, and the placeholder when it has none', async () => {
   let reply: Record<string, unknown> = {
-    title: 'Sunlight',
+    title: 'Glass Harbor',
     artist: 'Band',
     playback_status: 'playing',
     source_app: 'App',
     source_app_id: 'SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify',
     album_art_base64: 'QUJD',
     album_art_mime: 'image/png',
-    art_key: 'Sunlight|Band||Spotify',
+    art_key: 'Glass Harbor|Band||Spotify',
   };
   mocks.set('get_now_playing', () => reply);
   const { container } = render(<Unwind />);
