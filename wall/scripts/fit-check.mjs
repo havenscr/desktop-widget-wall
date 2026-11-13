@@ -23,7 +23,7 @@
 // CI does not run this; run it by hand before a layout change is handed over.
 //
 //   WALL_CHROME=/path/to/chrome-or-headless-shell npm --prefix wall run fit-check
-//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, header, deck, tiles, picker, chips, heading, fy-height, key-edge, hide-pill, hide-note)
+//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, header, deck, tiles, picker, chips, heading, zenhint, fy-height, key-edge, hide-pill, hide-note)
 //   npm --prefix wall run fit-check -- --self-test
 //
 // WALL_CHROME (or the first argument that is not a flag) is a Chromium or
@@ -62,6 +62,7 @@ const EXPECT = {
   deck: /^ *FAIL deck: .* below the floor/m,
   tiles: /^ *FAIL deck: label .* outside its tile/m,
   picker: /^ *FAIL deck: the key picker reaches y \d+, over the timeline/m,
+  zenhint: /^ *FAIL \.zen-bl \.zen-dimhint:.*container right \d+/m,
   chips: /^ *FAIL overlap: chip /m,
   heading: /^ *FAIL deck: the Now heading /m,
   // keys style
@@ -82,6 +83,7 @@ const OVERFLOWS = {
   deck: '.work .right-wing section.pinned { margin-top: 80px; }',
   tiles: '.work .right-wing .key-tile .deck-lbl { flex: none; width: 160px; max-width: none !important; }',
   picker: '.work .right-wing .pk { height: 400px !important; }',
+  zenhint: '.zen-dimhint { width: 2000px; }',
   chips: '.rib .ev { width: 400px !important; }',
   heading: '.work .right-wing .keys .deck-name { max-width: 40px; overflow: hidden; }',
   // keys style
@@ -158,6 +160,8 @@ const QUIET = [
   { name: 'Meet, no account readable', agents: '3', go: 'meet', live: true, extra: '&meet=down', checks: MEET },
   // Unwind with nine moods of long names: the Room list stays within two rows.
   { name: 'Unwind, nine long moods', agents: '3', hz: 'unwind', moods: 'nine', maxRows: 2, extra: '', checks: UNWIND },
+  // Zen in the evening: the dim hint stays inside the controls' column (the box the Start row sets).
+  { name: 'Zen, evening hint under the controls', agents: '3', go: 'zen', at: '2026-11-11T20:15:00-08:00', extra: '', checks: ['.zen-bl', '.zen-bl .zen-dimhint'] },
   // Dream at night: helper answering, helper off; calendar read, unreadable, nothing tomorrow.
   { name: 'Dream, agents and calendar', agents: '3', go: 'dream', at: '2026-11-11T23:48:00-08:00', extra: '', checks: DREAM },
   { name: 'Dream, agents waiting', agents: 'ask', go: 'dream', at: '2026-11-11T23:48:00-08:00', extra: '', checks: DREAM },
@@ -370,8 +374,8 @@ try {
     const view = { left: 0, top: 0, right: innerWidth, bottom: innerHeight };
     const res = sels.map((sel) => ({ sel, items: [...document.querySelectorAll(sel)].map((e) => {
       const box = e.getBoundingClientRect();
-      // Dream covers the whole stage (its text also drifts up to 15 px each way), so it is held by itself, not the band.
-      const holder = e.closest('.dream') || e.parentElement.closest('.centre') || band || document.documentElement;
+      // The Zen controls column holds its hint. Dream covers the whole stage (its text also drifts up to 15 px each way), so it is held by itself, not the band.
+      const holder = e.closest('.dream') || e.closest('.zen-bl') || e.parentElement.closest('.centre') || band || document.documentElement;
       return { sw: e.scrollWidth, cw: e.clientWidth, sh: e.scrollHeight, ch: e.clientHeight,
         inHolder: out(box, holder.getBoundingClientRect()), inView: out(box, view) };
     }) }));
@@ -516,6 +520,7 @@ try {
   if (overflow) console.log(`deliberate overflow: ${overflow} (${OVERFLOWS[overflow]})`);
   // A deliberate break runs on the first state, or for the picker on the state that opens it.
   const BREAK_ON = {
+    zenhint: (v) => v.name.startsWith('Zen,'),
     picker: (v) => v.name.startsWith('Deck, the key picker open over'),
     // keys style
     'fy-height': (v) => v.name === 'Keys style, day: library sets held on VS Code' || v.name === 'Keys style, For you with two plates',
