@@ -4,7 +4,7 @@
 import { draw } from '../../src/horizon/renderer';
 import { CAMERAS, MOON } from '../../src/horizon/cameras';
 import { createEchoMotion, createEchoSampler, echoOptions, musicDriving, stepEchoMotion } from '../../src/horizon/echo';
-import { audioBands, ingestLevels, resetAudio, tickAudio, useAudioStore } from '../../src/audio/store';
+import { audioBands, danceKick, ingestLevels, resetAudio, tickAudio, useAudioStore } from '../../src/audio/store';
 import { loudness, smoothStep } from '../../src/audio/model';
 import { demoPayload } from '../../src/audio/capture';
 
@@ -33,6 +33,49 @@ function payload(ms, f) {
 const lin = (c) => ((c /= 255) <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
 const LIN = Float64Array.from({ length: 256 }, (_, i) => lin(i));
 
+/** A context that keeps only each stroked path's heights: the echo lines, measured as shapes (no pixels). */
+function recorder() {
+  let pts = [];
+  const strokes = [];
+  const noop = () => {};
+  const grad = () => ({ addColorStop: noop });
+  const ctx = new Proxy({}, {
+    get: (store, key) => {
+      if (key === 'beginPath') return () => void (pts = []);
+      if (key === 'moveTo' || key === 'lineTo') return (_x, y) => void pts.push(y);
+      if (key === 'stroke') return () => void strokes.push(pts);
+      if (key === 'createLinearGradient' || key === 'createRadialGradient') return grad;
+      if (key === 'createPattern') return () => ({});
+      if (key in store) return store[key];
+      return noop;
+    },
+    set: (store, key, value) => ((store[key] = value), true),
+  });
+  return { ctx, strokes };
+}
+
+/** The echo lines of a frame as heights above the horizon (the strokes of 1281 points between the rim line and the mid layer's). */
+function echoLines(o) {
+  const { ctx: rc, strokes } = recorder();
+  draw(rc, o);
+  return strokes.filter((st) => st.length === 1281).slice(1, -1).map((st) => st.map((y) => cam.hy - y));
+}
+
+/** The largest height change of any line between two frames: each line against the nearest line of the frame before (the drift carries them along). */
+function lineStep(a, b) {
+  let worst = 0;
+  for (const l of b) {
+    let best = Infinity;
+    for (const p of a) {
+      let d = 0;
+      for (let i = 0; i < l.length; i += 4) d = Math.max(d, Math.abs(l[i] - p[i]));
+      if (d < best) best = d;
+    }
+    if (best < Infinity) worst = Math.max(worst, best);
+  }
+  return worst;
+}
+
 function run(withEcho) {
   resetAudio();
   const sampler = createEchoSampler();
@@ -45,6 +88,8 @@ function run(withEcho) {
   const motion = createEchoMotion(false);
   let loud = 0;
   const lum = [];
+  const steps = [];
+  let prev = null;
   let T = 0;
   for (let f = 0; f < 600; f++) {
     clock += FRAME;
@@ -62,19 +107,24 @@ function run(withEcho) {
     if (withEcho) {
       let e;
       if (mode === 'settle') {
-        e = echoOptions(cam, loud, T, 1, motion.rest);
+        e = echoOptions(cam, loud, T, 1, motion.rest, undefined, undefined, motion.rest < 1 ? danceKick() * (1 - motion.rest) : 0);
         e.drift = motion.drift;
         if (motion.rest < 1) {
           sampler.t = T;
           e.sample = sampler.sample;
         }
       } else {
-        e = echoOptions(cam, loudness(useAudioStore.getState()), T);
+        e = echoOptions(cam, loudness(useAudioStore.getState()), T, 1, 0, undefined, undefined, danceKick());
         sampler.t = T;
         e.sample = sampler.sample;
       }
       if (q.get('tint') === '0') delete e.tint;
       o.echo = e;
+    }
+    if (withEcho) {
+      const now = echoLines(o);
+      steps.push(prev && now.length ? lineStep(prev, now) : 0);
+      prev = now;
     }
     draw(ctx, o);
     // Every pixel at full size: a downscaled copy aliases the thin lines and adds noise of its own.
@@ -83,12 +133,14 @@ function run(withEcho) {
     for (let i = 0; i < d.length; i += 4) s += 0.2126 * LIN[d[i]] + 0.7152 * LIN[d[i + 1]] + 0.0722 * LIN[d[i + 2]];
     lum.push(s / (2560 * 720));
   }
-  return lum;
+  return withEcho ? { lum, steps } : { lum };
 }
 
-const withEcho = run(true);
-const without = run(false);
+const runA = run(true);
+const withEcho = runA.lum;
+const steps = runA.steps;
+const without = run(false).lum;
 const pre = document.createElement('pre');
 pre.id = 'echo-calm';
-pre.textContent = JSON.stringify({ mode, hz, withEcho, without });
+pre.textContent = JSON.stringify({ mode, hz, withEcho, without, steps });
 document.body.appendChild(pre);

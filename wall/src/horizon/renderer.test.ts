@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { css, draw, hash, pal, peaks, peaksOf, spec, sun, when, type HorizonDrawOptions, type HorizonGrid } from './renderer';
 import { CAMERAS, type CameraPreset } from './cameras';
-import { recordingContext } from './canvasStub';
+import { echoPaths, pathContext, recordingContext } from './canvasStub';
 
 describe('sun', () => {
   // Expected values come from the original horizon.js with LAT 47.68 and LON -122.21, run in Node (see the pull request body).
@@ -236,3 +236,70 @@ describe('the resting ridgelines (parity PR 41)', () => {
   });
 });
 
+
+describe('the dance (dance and swell on the echo)', () => {
+  const cam = CAMERAS.unwind;
+  const TINT = { left: [92, 196, 255], centre: [56, 236, 240], right: [255, 61, 154], width: 1.5 };
+  const sample = (u: number, tau: number) => 0.9 * (1 - u) + 0.2 * Math.sin(tau * 3);
+  const live = (extra: Record<string, unknown> = {}) =>
+    frame(cam, 21.7, { echo: { n: cam.en, amp: cam.eamp, a: 1, t: 2.5, cx: cam.ecx, hs: 900, tint: { ...TINT, k: 1 }, sample, ...extra } });
+  const heights = (extra: Record<string, unknown>) => {
+    const { ctx, strokes } = pathContext();
+    draw(ctx, live(extra));
+    return echoPaths(strokes, cam.hy);
+  };
+
+  it('with dance and swell absent or 0 the frame is exactly as before (the golden call log)', () => {
+    const base = calls(live());
+    expect(calls(live({ dance: 0, swell: 0 }))).toEqual(base);
+    expect(calls(live({ swell: 1 }))).toEqual(base); // a swell without the dance does nothing
+    expect(calls(live({ dance: 0, swell: 0.8 }))).toEqual(base);
+    expect(fnv(calls(frame(cam, 21.7, { echo: { n: cam.en, amp: cam.eamp, a: 0.5, t: 2.5, cx: cam.ecx, hs: 900, dance: 0, swell: 0 } })).join('\n'))).toBe('5f3dfbd3');
+  });
+
+  it('the swell raises each line by up to 20 percent of its base shape (less toward the front), scaled by the dance', () => {
+    const flat = (extra: Record<string, unknown>) => heights({ sample: () => 0, ...extra });
+    const still = flat({ dance: 1, swell: 0 });
+    const kicked = flat({ dance: 1, swell: 1 });
+    const half = flat({ dance: 0.5, swell: 1 });
+    still.echo.forEach((l, j) => {
+      const peak = Math.max(...l.h);
+      const up = Math.max(...kicked.echo[j].h);
+      expect(up).toBeGreaterThan(peak * 1.05);
+      expect(up).toBeLessThanOrEqual(peak * 1.2 + 1e-6);
+      expect(Math.max(...half.echo[j].h)).toBeCloseTo(peak * (1 + (up / peak - 1) / 2), 4);
+    });
+    // The rim line itself (the range) never moves.
+    expect(kicked.rim).toEqual(still.rim);
+  });
+
+  it('the dance mask lets the ripple reach the foot of the range and fades it to a quarter at the echo\'s edge', () => {
+    const wave = (extra: Record<string, unknown>) => heights({ sample: () => 1, ...extra });
+    const off = wave({ dance: 0 });
+    const on = wave({ dance: 1 });
+    const none = heights({ sample: () => 0, dance: 0 });
+    // The far edge of the echo (2 * i - cx beyond hs): with the dance the mask is a quarter of its middle value there.
+    const iEdge = Math.ceil((cam.ecx + 900) / 2) + 20;
+    const iFoot = Math.max(0, Math.floor((cam.ecx - 900) / 2)) + 5;
+    const lineTop = on.echo[0];
+    const cmax = Math.max(...on.rim);
+    const sw = 0.35 + 0.65 * Math.sin((Math.PI * ((2.5 * 0.3) % 1)) / cam.en);
+    const expected = cam.eamp * sw * 0.25 * Math.min(1, 0.2 + on.rim[iEdge] / (cmax * 0.5));
+    expect(lineTop.h[iEdge] - none.echo[0].h[iEdge]).toBeCloseTo(expected, 6);
+    expect(off.echo[0].h[iEdge] - none.echo[0].h[iEdge]).toBeCloseTo(cam.eamp * sw * Math.min(1, on.rim[iEdge] / (cmax * 0.5)), 6);
+    // Where the range is nearly flat (cr tiny) the old mask gave nothing, the new one still moves the line by 0.2 of the swing.
+    const rim = on.rim;
+    const low = rim.findIndex((v, i) => i > iFoot && v < Math.max(...rim) * 0.05 && Math.abs(i * 2 - cam.ecx) < 560);
+    if (low >= 0) {
+      expect(off.echo[2].h[low] - none.echo[2].h[low]).toBeLessThan(on.echo[2].h[low] - none.echo[2].h[low]);
+    }
+    // Inside 62 percent of the half span the mask is whole, so a tall part of the range moves as much as before or more.
+    const mid = Math.round(cam.ecx / 2);
+    expect(on.echo[2].h[mid] - none.echo[2].h[mid]).toBeGreaterThan(0);
+  });
+
+  it('a recorded dance frame (golden call log)', () => {
+    const log = calls(live({ dance: 1, swell: 0.6 }));
+    expect({ n: log.length, hash: fnv(log.join('\n')) }).toEqual({ n: 51972, hash: 'cacd10f5' });
+  });
+});
