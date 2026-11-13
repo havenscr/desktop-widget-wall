@@ -6,25 +6,34 @@
 //! allowed, as for `homeBaseUrl`) and is never put in an error message or a log.
 //!
 //! Reads (`wall2_sonos_summary`, only when the front end asks): `GET /api/status`,
-//! `/api/speakers`, `/api/routines`, then `/api/groups`, `/api/group-presets`,
-//! `/api/scenes` and `/api/sleep-timers` (each of these four may fail on its own). The
-//! answer is cut down to a bounded, cleaned summary and kept as the last good read.
+//! `/api/speakers`, `/api/routines`, `/api/groups`, `/api/group-presets`, `/api/scenes`
+//! and `/api/sleep-timers`, side by side (the last four may fail on their own). An answer
+//! with far more entries than the caps is refused as malformed; the rest is cut down to a
+//! bounded, cleaned summary and kept as the last good read.
 //!
 //! Writes (each only on a click): every key, preset, speaker, group or timer id a write
 //! names must be in the last good read (at most two minutes old), and every request body
 //! is built here, never taken from the web view:
-//! - `wall2_sonos_play`: `POST /api/trigger/<routine key>?force=true`
+//! - `wall2_sonos_play`: `POST /api/trigger/<routine key>` (unforced, so the routine's own
+//!   skip conditions apply; the answer becomes "started" or "skipped" with a fixed
+//!   reason). `force: true` adds `?force=true` and is accepted only for the key whose
+//!   last unforced call was answered "skipped" within the last minute ("Play anyway").
 //! - `wall2_sonos_preset`: `POST /api/group-presets/<id>/apply`
-//! - `wall2_sonos_volume`: `POST /api/action/volume` `{"room", "volume"}` per speaker
+//! - `wall2_sonos_volume`: `POST /api/action/volume` `{"room", "volume"}` per speaker; a
+//!   group moves each of its music speakers by the same step from its own level, the
+//!   writes in parallel
 //! - `wall2_sonos_pause_all`: `POST /api/action/pause-all`
 //! - `wall2_sonos_sleep`: `POST /api/sleep-timer` `{"minutes", "fadeMinutes": 5}`
 //! - `wall2_sonos_sleep_cancel`: `DELETE /api/sleep-timer/<id>`
 //!
-//! A volume change that would raise any speaker above 40, a music routine that sets a
-//! volume above 40 (or none of its own), or a preset that sets a speaker above 40 (a
-//! line-in group, the PC's own sound, does not count) is refused with `needs-confirm`
-//! unless the call carries `confirm: true` (the front end asks first). Every command answers only the `wall2`
-//! window.
+//! Refused with `needs-confirm` unless the call carries `confirm: true` (the front end
+//! asks first): any volume write whose target level is above 40, whatever the last read
+//! said; a music routine whose volume is above 40 or not known (none of its own, or other
+//! volume keys); a preset or a group-all control that touches a speaker above 40 or at an
+//! unknown level, unless the preset itself sets that speaker to 40 or less (a line-in
+//! group, the PC's own sound, does not count). Writes go out on an agent that never reuses
+//! a pooled connection, so the HTTP client never re-sends one. Every command answers only
+//! the `wall2` window.
 
 use crate::wall2_feeds::{parse_iso, read_base, read_body, require_ok};
 use crate::wall2_omni::require_wall2;
@@ -42,6 +51,14 @@ const MAX_SCENES: usize = 12;
 const MAX_TIMERS: usize = 6;
 const MAX_NAME_CHARS: usize = 60;
 const MAX_TRACK_CHARS: usize = 120;
+/// A map or list with more entries than this is a malformed read, refused whole.
+const MAX_ENTRIES: usize = 500;
+/// Names collected from one list (members, rooms) at most.
+const MAX_NAMES: usize = 64;
+/// "Play anyway" is accepted this long after the unforced call was skipped.
+const SKIP_WINDOW: Duration = Duration::from_secs(60);
+/// Routine keys that set volumes their own way; a routine carrying one has no known volume.
+const OTHER_VOLUME_KEYS: [&str; 5] = ["volumes", "othersVolume", "volumeLevel", "volumeAdjust", "volumeRoom"];
 /// The highest level a single call may raise a speaker to without `confirm: true`.
 pub(crate) const SAFE_VOLUME: u8 = 40;
 /// Writes are checked against a read no older than this (the front end reads every 30 s
@@ -56,6 +73,7 @@ const CONTROL_ACTIONS: [&str; 3] = ["pauseAll", "groupAll", "ungroupAll"];
 const UNREACHABLE: &str = "Could not reach Sonos";
 const REFUSED: &str = "Sonos could not do that";
 const OUT_OF_DATE: &str = "Sonos status is out of date";
+const PARTIAL: &str = "Some speakers did not change";
 const UNFINISHED: &str = "The request did not finish";
 /// Error text the front end reads as "ask first, then call again with confirm".
 pub(crate) const NEEDS_CONFIRM: &str = "needs-confirm";
@@ -89,9 +107,28 @@ pub struct Preset {
     pub name: String,
     /// The speakers are grouped the way this preset groups them right now.
     pub active: bool,
-    /// Applying it sets a speaker above 40 (a line-in group, the PC's own sound, does not
-    /// count), so it needs a confirm.
-    pub loud: bool,
+    /// The speakers that make applying it need a confirm; empty when one click is safe.
+    pub loud: Vec<LoudSpeaker>,
+}
+
+/// A speaker an action would leave or set above 40, or whose level is not known.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LoudSpeaker {
+    pub name: String,
+    /// The level the action sets (`sets`), else the level the speaker is at now; None when
+    /// not known.
+    pub level: Option<u8>,
+    pub sets: bool,
+}
+
+/// What a play answered: started, or skipped with one of a few fixed reasons (None when
+/// the service gave none this recognises). The service's own text never passes through.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlayResult {
+    pub started: bool,
+    pub reason: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -109,6 +146,8 @@ pub struct ControlRoutine {
     pub key: String,
     pub name: String,
     pub action: String,
+    /// For a control that groups every speaker: the speakers that make it need a confirm.
+    pub loud: Vec<LoudSpeaker>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -239,14 +278,40 @@ fn id_text(v: &Value) -> Option<String> {
     }
 }
 
+/// The strings of a list, without repeats, at most `MAX_NAMES` (it stops reading there).
 fn name_list(v: Option<&Value>) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
-    for n in v.and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str) {
+    for n in v.and_then(Value::as_array).into_iter().flatten().take(MAX_ENTRIES).filter_map(Value::as_str) {
+        if out.len() >= MAX_NAMES {
+            break;
+        }
         if !out.iter().any(|o| o == n) {
             out.push(n.to_string());
         }
     }
     out
+}
+
+/// A map or list with more entries than `MAX_ENTRIES` anywhere in the top two levels is
+/// a malformed read.
+fn too_big(v: &Value) -> bool {
+    let len = |x: &Value| match x {
+        Value::Object(m) => m.len(),
+        Value::Array(a) => a.len(),
+        _ => 0,
+    };
+    if len(v) > MAX_ENTRIES {
+        return true;
+    }
+    match v {
+        Value::Object(m) => m.values().any(|x| len(x) > MAX_ENTRIES),
+        Value::Array(a) => a.iter().any(|x| len(x) > MAX_ENTRIES),
+        _ => false,
+    }
+}
+
+pub(crate) fn reads_too_big(r: &Reads) -> bool {
+    [&r.status, &r.speakers, &r.routines, &r.groups, &r.presets, &r.scenes, &r.timers].into_iter().any(too_big)
 }
 
 fn same_set(a: &[String], b: &[String]) -> bool {
@@ -268,14 +333,16 @@ pub(crate) struct Reads {
 
 fn pick_speakers(speakers: &Value, status: &Value) -> Vec<Speaker> {
     let mut names: Vec<String> = Vec::new();
-    for map in [speakers.as_object(), status.as_object()].into_iter().flatten() {
-        for k in map.keys() {
+    'maps: for map in [speakers.as_object(), status.as_object()].into_iter().flatten() {
+        for k in map.keys().take(MAX_ENTRIES) {
+            if names.len() >= MAX_SPEAKERS {
+                break 'maps;
+            }
             if valid_speaker_name(k) && !names.contains(k) {
                 names.push(k.clone());
             }
         }
     }
-    names.truncate(MAX_SPEAKERS);
     names
         .into_iter()
         .map(|name| {
@@ -294,7 +361,7 @@ fn pick_speakers(speakers: &Value, status: &Value) -> Vec<Speaker> {
 /// and each speaker told its group.
 fn pick_groups(body: &Value, speakers: &mut [Speaker]) -> Vec<Group> {
     let mut out: Vec<Group> = Vec::new();
-    for g in body.as_array().into_iter().flatten() {
+    for g in body.as_array().into_iter().flatten().take(MAX_ENTRIES) {
         if out.len() >= MAX_GROUPS {
             break;
         }
@@ -362,18 +429,71 @@ fn preset_matches(p: &Value, groups: &[Group], speakers: &[Speaker]) -> bool {
     }
 }
 
-/// Any of the preset's groups that sets a volume above 40 and is not a line-in group.
-fn preset_loud(p: &Value) -> bool {
-    p.get("groups").and_then(Value::as_array).into_iter().flatten().any(|g| {
-        let line_in = g.get("input").and_then(|i| i.get("type")).and_then(Value::as_str).is_some_and(|t| t.eq_ignore_ascii_case("lineIn"));
-        let sets = g.get("setVolume").and_then(Value::as_bool) != Some(false);
-        !line_in && sets && volume_of(g.get("volume")).is_some_and(|v| v > SAFE_VOLUME)
-    })
+/// The level a group of a preset sets, when it sets one.
+fn set_level(g: &Value) -> Option<u8> {
+    if g.get("setVolume").and_then(Value::as_bool) == Some(false) {
+        return None;
+    }
+    volume_of(g.get("volume"))
+}
+
+/// Which online speakers a list of rooms touches: an empty list means every speaker.
+fn touched_rooms(rooms: Vec<String>, speakers: &[Speaker]) -> Vec<String> {
+    let online = speakers.iter().filter(|s| s.online);
+    if rooms.is_empty() {
+        online.map(|s| s.name.clone()).collect()
+    } else {
+        online.filter(|s| rooms.contains(&s.name)).map(|s| s.name.clone()).collect()
+    }
+}
+
+/// The speakers that make an action need a confirm, from `(speaker, level the action sets,
+/// in a line-in group)`: a level it sets above 40, or, when it sets none, a level now above
+/// 40 or unknown. A line-in group carries the PC's own sound and never counts.
+fn loud_of(touched: Vec<(String, Option<u8>, bool)>, speakers: &[Speaker]) -> Vec<LoudSpeaker> {
+    touched
+        .into_iter()
+        .filter(|(_, _, line_in)| !line_in)
+        .filter_map(|(name, set, _)| match set {
+            Some(v) if v <= SAFE_VOLUME => None,
+            Some(v) => Some(LoudSpeaker { name, level: Some(v), sets: true }),
+            None => {
+                let now = speakers.iter().find(|s| s.name == name).and_then(|s| s.volume);
+                if now.is_some_and(|v| v <= SAFE_VOLUME) {
+                    None
+                } else {
+                    Some(LoudSpeaker { name, level: now, sets: false })
+                }
+            }
+        })
+        .collect()
+}
+
+/// What applying a preset would leave loud, from the last read (see `loud_of`).
+fn preset_loud(p: &Value, speakers: &[Speaker]) -> Vec<LoudSpeaker> {
+    let mut touched: Vec<(String, Option<u8>, bool)> = Vec::new();
+    let mut add = |rooms: Vec<String>, set: Option<u8>, line_in: bool| {
+        for r in touched_rooms(rooms, speakers) {
+            if !touched.iter().any(|(n, _, _)| *n == r) {
+                touched.push((r, set, line_in));
+            }
+        }
+    };
+    match p.get("groups").and_then(Value::as_array).filter(|l| !l.is_empty()) {
+        Some(list) => {
+            for g in list.iter().take(MAX_GROUPS) {
+                let line_in = g.get("input").and_then(|i| i.get("type")).and_then(Value::as_str).is_some_and(|t| t.eq_ignore_ascii_case("lineIn"));
+                add(name_list(g.get("rooms")), set_level(g), line_in);
+            }
+        }
+        None => add(name_list(p.get("rooms")), set_level(p), false),
+    }
+    loud_of(touched, speakers)
 }
 
 fn pick_presets(body: &Value, groups: &[Group], speakers: &[Speaker]) -> Vec<Preset> {
     let mut out: Vec<Preset> = Vec::new();
-    for (id, p) in body.as_object().into_iter().flatten() {
+    for (id, p) in body.as_object().into_iter().flatten().take(MAX_ENTRIES) {
         if out.len() >= MAX_PRESETS {
             break;
         }
@@ -382,15 +502,15 @@ fn pick_presets(body: &Value, groups: &[Group], speakers: &[Speaker]) -> Vec<Pre
         }
         let name = p.get("name").and_then(Value::as_str).and_then(|n| clean_text(n, MAX_NAME_CHARS)).unwrap_or_else(|| id.clone());
         let active = !out.iter().any(|o| o.active) && preset_matches(p, groups, speakers);
-        out.push(Preset { id: id.clone(), name, active, loud: preset_loud(p) });
+        out.push(Preset { id: id.clone(), name, active, loud: preset_loud(p, speakers) });
     }
     out
 }
 
-fn pick_routines(body: &Value) -> (Vec<MusicRoutine>, Vec<ControlRoutine>) {
+fn pick_routines(body: &Value, speakers: &[Speaker]) -> (Vec<MusicRoutine>, Vec<ControlRoutine>) {
     let mut music = Vec::new();
     let mut controls = Vec::new();
-    for (key, r) in body.as_object().into_iter().flatten() {
+    for (key, r) in body.as_object().into_iter().flatten().take(MAX_ENTRIES) {
         if !valid_key(key) || !r.is_object() || r.get("enabled").and_then(Value::as_bool) == Some(false) {
             continue;
         }
@@ -400,11 +520,18 @@ fn pick_routines(body: &Value) -> (Vec<MusicRoutine>, Vec<ControlRoutine>) {
                 key: key.clone(),
                 name,
                 favorite: r.get("favorite").and_then(Value::as_str).and_then(|f| clean_text(f, MAX_NAME_CHARS)),
-                volume: volume_of(r.get("volume")),
+                // Any other volume key means the routine sets levels its own way: not known.
+                volume: if OTHER_VOLUME_KEYS.iter().any(|k| r.get(*k).is_some()) { None } else { volume_of(r.get("volume")) },
             }),
             Some("control") if controls.len() < MAX_ROUTINES => {
                 if let Some(action) = r.get("action").and_then(Value::as_str).filter(|a| CONTROL_ACTIONS.contains(a)) {
-                    controls.push(ControlRoutine { key: key.clone(), name, action: action.to_string() });
+                    // Grouping every speaker pulls each one into the music group at its level.
+                    let loud = if action == "groupAll" {
+                        loud_of(touched_rooms(Vec::new(), speakers).into_iter().map(|n| (n, None, false)).collect(), speakers)
+                    } else {
+                        Vec::new()
+                    };
+                    controls.push(ControlRoutine { key: key.clone(), name, action: action.to_string(), loud });
                 }
             }
             _ => {}
@@ -417,6 +544,7 @@ fn pick_scenes(body: &Value) -> Vec<Scene> {
     body.as_object()
         .into_iter()
         .flatten()
+        .take(MAX_ENTRIES)
         .filter(|(id, s)| valid_key(id) && s.is_object())
         .take(MAX_SCENES)
         .map(|(id, s)| Scene {
@@ -426,32 +554,44 @@ fn pick_scenes(body: &Value) -> Vec<Scene> {
         .collect()
 }
 
-/// `endsAt` as epoch milliseconds: an ISO time with an offset, or a number (seconds when
-/// small, milliseconds otherwise).
+/// `endsAt` as epoch milliseconds: an ISO time with an offset, or a number, also one
+/// written as a string (seconds when small, milliseconds otherwise).
 fn ends_at(v: Option<&Value>) -> Option<i64> {
+    let from_number = |x: f64| Some(x).filter(|x| x.is_finite() && *x > 0.0).map(|x| if x < 1e11 { (x * 1000.0) as i64 } else { x as i64 });
     match v? {
-        Value::Number(n) => n.as_f64().filter(|x| x.is_finite() && *x > 0.0).map(|x| if x < 1e11 { (x * 1000.0) as i64 } else { x as i64 }),
-        Value::String(s) => parse_iso(s.trim()).map(|secs| (secs * 1000.0) as i64),
+        Value::Number(n) => n.as_f64().and_then(from_number),
+        Value::String(s) => {
+            let t = s.trim();
+            match t.parse::<f64>() {
+                Ok(x) => from_number(x),
+                Err(_) => parse_iso(t).map(|secs| (secs * 1000.0) as i64),
+            }
+        }
         _ => None,
     }
 }
 
-fn pick_timers(body: &Value) -> Vec<SleepTimer> {
+/// Running timers, the soonest first (an unknown end last); one that ended more than a
+/// minute before `now_ms` is gone.
+fn pick_timers(body: &Value, now_ms: i64) -> Vec<SleepTimer> {
     let entries: Vec<(String, &Value)> = match body {
-        Value::Object(m) => m.iter().map(|(k, v)| (k.clone(), v)).collect(),
-        Value::Array(a) => a.iter().filter_map(|v| Some((id_text(v.get("id")?)?, v))).collect(),
+        Value::Object(m) => m.iter().take(MAX_ENTRIES).map(|(k, v)| (k.clone(), v)).collect(),
+        Value::Array(a) => a.iter().take(MAX_ENTRIES).filter_map(|v| Some((id_text(v.get("id")?)?, v))).collect(),
         _ => Vec::new(),
     };
-    entries
+    let mut out: Vec<SleepTimer> = entries
         .into_iter()
         .filter(|(id, v)| valid_key(id) && v.is_object())
-        .take(MAX_TIMERS)
         .map(|(id, v)| SleepTimer {
             id,
             ends_at_ms: ends_at(v.get("endsAt")),
             fade_minutes: v.get("fadeMinutes").and_then(Value::as_u64).filter(|m| *m <= 120).map(|m| m as u32),
         })
-        .collect()
+        .filter(|t| !t.ends_at_ms.is_some_and(|end| end < now_ms - 60_000))
+        .collect();
+    out.sort_by_key(|t| t.ends_at_ms.unwrap_or(i64::MAX));
+    out.truncate(MAX_TIMERS);
+    out
 }
 
 /// The first playing speaker with a track (the current group's coordinator first), never
@@ -481,7 +621,7 @@ pub(crate) fn shape(r: &Reads, read_at_ms: i64) -> SonosSummary {
     let mut speakers = pick_speakers(&r.speakers, &r.status);
     let groups = pick_groups(&r.groups, &mut speakers);
     let presets = pick_presets(&r.presets, &groups, &speakers);
-    let (music, controls) = pick_routines(&r.routines);
+    let (music, controls) = pick_routines(&r.routines, &speakers);
     let current = current_group(&groups, &speakers);
     let now = now_playing(&r.status, &speakers, &groups, current.as_deref());
     SonosSummary {
@@ -491,7 +631,7 @@ pub(crate) fn shape(r: &Reads, read_at_ms: i64) -> SonosSummary {
         music,
         controls,
         scenes: pick_scenes(&r.scenes),
-        sleep_timers: pick_timers(&r.timers),
+        sleep_timers: pick_timers(&r.timers, read_at_ms),
         now_playing: now,
         current_group: current,
         read_at_ms,
@@ -512,62 +652,115 @@ fn post(path: String, body: Option<Value>) -> Call {
     Call { method: "POST", path, body }
 }
 
-pub(crate) fn plan_play(s: &SonosSummary, key: &str, confirm: bool) -> Result<Vec<Call>, String> {
+/// Whether "Play anyway" may force this key: its last unforced call was skipped within
+/// `SKIP_WINDOW`.
+fn force_allowed(last_skip: Option<&(String, Instant)>, key: &str) -> bool {
+    last_skip.is_some_and(|(k, at)| k == key && at.elapsed() <= SKIP_WINDOW)
+}
+
+pub(crate) fn plan_play(s: &SonosSummary, key: &str, confirm: bool, force: bool) -> Result<Vec<Call>, String> {
     if !valid_key(key) {
         return Err("Unknown routine".to_string());
     }
     if let Some(r) = s.music.iter().find(|r| r.key == key) {
-        // A routine with no volume of its own starts at whatever the service sets: ask too.
+        // A routine with no known volume starts at whatever the service sets: ask too.
         if !r.volume.is_some_and(|v| v <= SAFE_VOLUME) && !confirm {
             return Err(NEEDS_CONFIRM.to_string());
         }
-    } else if !s.controls.iter().any(|c| c.key == key) {
+    } else if let Some(c) = s.controls.iter().find(|c| c.key == key) {
+        if !c.loud.is_empty() && !confirm {
+            return Err(NEEDS_CONFIRM.to_string());
+        }
+    } else {
         return Err("Unknown routine".to_string());
     }
-    Ok(vec![post(format!("/api/trigger/{key}?force=true"), None)])
+    let path = if force { format!("/api/trigger/{key}?force=true") } else { format!("/api/trigger/{key}") };
+    Ok(vec![post(path, None)])
+}
+
+/// The answer to an unforced trigger as a fixed result. `{"skipped": true}` (or any
+/// skipped value) is a skip; its reason comes from words in a few fields, read bounded,
+/// mapped to one of three fixed phrases or none.
+pub(crate) fn play_outcome(body: &Value) -> PlayResult {
+    let skipped = match body.get("skipped") {
+        Some(Value::Bool(b)) => *b,
+        Some(Value::String(_)) | Some(Value::Object(_)) | Some(Value::Array(_)) => true,
+        _ => false,
+    };
+    if !skipped {
+        return PlayResult { started: true, reason: None };
+    }
+    let mut hint = String::new();
+    for k in ["skipped", "reason", "message", "skipReason", "condition", "conditions"] {
+        if let Some(v) = body.get(k) {
+            let text: String = v.to_string().chars().take(400).collect();
+            hint.push_str(&text.to_ascii_lowercase());
+            hint.push(' ');
+        }
+    }
+    let squashed: String = hint.chars().filter(|c| c.is_ascii_alphanumeric() || *c == ' ').collect();
+    let has_word = |w: &str| squashed.split(' ').any(|t| t == w);
+    let reason = if squashed.contains("presence") || has_word("away") || squashed.contains("nobody") || squashed.contains("nobodyhome") {
+        Some("nobody is home")
+    } else if has_word("tv") || squashed.contains("tvsound") || squashed.contains("tvinput") {
+        Some("a speaker is on TV sound")
+    } else if squashed.contains("linein") || squashed.contains("line in") {
+        Some("a speaker is on line-in")
+    } else {
+        None
+    };
+    PlayResult { started: false, reason: reason.map(str::to_string) }
 }
 
 pub(crate) fn plan_preset(s: &SonosSummary, id: &str, confirm: bool) -> Result<Vec<Call>, String> {
     let Some(p) = s.presets.iter().find(|p| p.id == id).filter(|_| valid_key(id)) else {
         return Err("Unknown speaker set".to_string());
     };
-    if p.loud && !confirm {
+    if !p.loud.is_empty() && !confirm {
         return Err(NEEDS_CONFIRM.to_string());
     }
     Ok(vec![post(format!("/api/group-presets/{id}/apply"), None)])
 }
 
-pub(crate) fn plan_volume(s: &SonosSummary, target: &VolumeTarget, level: f64, confirm: bool) -> Result<Vec<Call>, String> {
-    if !level.is_finite() {
-        return Err("Volume must be a number".to_string());
-    }
-    let level = level.round().clamp(0.0, 100.0) as u8;
-    let rooms: Vec<&Speaker> = match target.kind.as_str() {
-        "speaker" => s.speakers.iter().filter(|sp| sp.name == target.id && sp.online).collect(),
-        "group" => s
-            .groups
-            .iter()
-            .find(|g| g.id == target.id)
-            .map(|g| {
-                g.members
-                    .iter()
-                    .filter_map(|m| s.speakers.iter().find(|sp| &sp.name == m))
-                    .filter(|sp| sp.online && !on_line_in(sp))
-                    .collect()
-            })
-            .unwrap_or_default(),
+fn volume_call(name: &str, level: u8) -> Call {
+    post("/api/action/volume".to_string(), Some(json!({ "room": name, "volume": level })))
+}
+
+/// A speaker goes to `level`; a group moves each of its music speakers (online, not on
+/// line-in, level known) by `step` from its own level, clamped to 0..100. Any target above
+/// 40 needs `confirm`, whatever the read says the speaker is at now.
+pub(crate) fn plan_volume(s: &SonosSummary, target: &VolumeTarget, level: Option<f64>, step: Option<f64>, confirm: bool) -> Result<Vec<Call>, String> {
+    let targets: Vec<(&str, u8)> = match target.kind.as_str() {
+        "speaker" => {
+            let level = level.filter(|l| l.is_finite()).ok_or_else(|| "Volume must be a number".to_string())?;
+            let level = level.round().clamp(0.0, 100.0) as u8;
+            s.speakers.iter().filter(|sp| sp.name == target.id && sp.online).map(|sp| (sp.name.as_str(), level)).collect()
+        }
+        "group" => {
+            let step = step.filter(|l| l.is_finite()).ok_or_else(|| "Volume must be a number".to_string())?;
+            let step = step.round().clamp(-100.0, 100.0) as i32;
+            s.groups
+                .iter()
+                .find(|g| g.id == target.id)
+                .map(|g| {
+                    g.members
+                        .iter()
+                        .filter_map(|m| s.speakers.iter().find(|sp| &sp.name == m))
+                        .filter(|sp| sp.online && !on_line_in(sp))
+                        .filter_map(|sp| sp.volume.map(|v| (sp.name.as_str(), (i32::from(v) + step).clamp(0, 100) as u8)))
+                        .collect()
+                })
+                .unwrap_or_default()
+        }
         _ => Vec::new(),
     };
-    if rooms.is_empty() {
+    if targets.is_empty() {
         return Err(if target.kind == "group" { "Unknown group" } else { "Unknown speaker" }.to_string());
     }
-    if level > SAFE_VOLUME && !confirm && rooms.iter().any(|sp| sp.volume.unwrap_or(0) < level) {
+    if targets.iter().any(|(_, l)| *l > SAFE_VOLUME) && !confirm {
         return Err(NEEDS_CONFIRM.to_string());
     }
-    Ok(rooms
-        .iter()
-        .map(|sp| post("/api/action/volume".to_string(), Some(json!({ "room": sp.name, "volume": level }))))
-        .collect())
+    Ok(targets.into_iter().map(|(n, l)| volume_call(n, l)).collect())
 }
 
 pub(crate) fn plan_sleep(minutes: u32) -> Result<Vec<Call>, String> {
@@ -621,26 +814,51 @@ fn read_all(base: &str) -> Result<Reads, String> {
     Ok(Reads { status, speakers, routines, groups: optional(), presets: optional(), scenes: optional(), timers: optional() })
 }
 
+/// Writes never reuse a pooled connection, so a dropped connection is never retried by
+/// the client with the same request.
+fn write_agent() -> &'static ureq::Agent {
+    static AGENT: OnceLock<ureq::Agent> = OnceLock::new();
+    AGENT.get_or_init(|| ureq::AgentBuilder::new().timeout(TIMEOUT).redirects(0).max_idle_connections(0).max_idle_connections_per_host(0).build())
+}
+
+/// Sends one write; the answer's JSON (bounded), or null when it has none.
+fn send_one(base: &str, c: &Call) -> Result<Value, String> {
+    let req = write_agent().request(c.method, &format!("{base}{}", c.path)).set("Accept", "application/json");
+    let result = match &c.body {
+        Some(b) => req.set("Content-Type", "application/json").send_string(&b.to_string()),
+        None => req.call(),
+    };
+    let resp = require_ok(result.map_err(fail)?).map_err(|_| REFUSED.to_string())?;
+    Ok(read_body(resp).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or(Value::Null))
+}
+
+/// Sends every write side by side. All failed: the first error. Some failed: "Some
+/// speakers did not change".
 fn send(base: &str, calls: &[Call]) -> Result<(), String> {
-    for c in calls {
-        let req = sonos_agent().request(c.method, &format!("{base}{}", c.path)).set("Accept", "application/json");
-        let result = match &c.body {
-            Some(b) => req.set("Content-Type", "application/json").send_string(&b.to_string()),
-            None => req.call(),
-        };
-        match result {
-            Ok(resp) => {
-                require_ok(resp).map_err(|_| REFUSED.to_string())?;
-            }
-            Err(e) => return Err(fail(e)),
-        }
+    let results: Vec<Result<Value, String>> = std::thread::scope(|sc| {
+        let handles: Vec<_> = calls.iter().map(|c| sc.spawn(move || send_one(base, c))).collect();
+        handles.into_iter().map(|h| h.join().unwrap_or_else(|_| Err(REFUSED.to_string()))).collect()
+    });
+    merge_results(results)
+}
+
+fn merge_results(results: Vec<Result<Value, String>>) -> Result<(), String> {
+    let total = results.len();
+    let failed: Vec<String> = results.into_iter().filter_map(Result::err).collect();
+    if failed.is_empty() {
+        Ok(())
+    } else if failed.len() == total {
+        Err(failed[0].clone())
+    } else {
+        Err(PARTIAL.to_string())
     }
-    Ok(())
 }
 
 // Section: last good read
 
 static LAST: Mutex<Option<(Instant, SonosSummary)>> = Mutex::new(None);
+/// The key whose last unforced play was skipped, and when.
+static LAST_SKIP: Mutex<Option<(String, Instant)>> = Mutex::new(None);
 
 fn remember(s: &SonosSummary) {
     if let Ok(mut guard) = LAST.lock() {
@@ -672,6 +890,9 @@ pub async fn wall2_sonos_summary(window: tauri::WebviewWindow, app: tauri::AppHa
     let base = read_base(&app, "sonosBaseUrl", false)?;
     tauri::async_runtime::spawn_blocking(move || {
         let reads = read_all(&base)?;
+        if reads_too_big(&reads) {
+            return Err(REFUSED.to_string());
+        }
         let summary = shape(&reads, now_ms());
         remember(&summary);
         Ok(summary)
@@ -680,12 +901,34 @@ pub async fn wall2_sonos_summary(window: tauri::WebviewWindow, app: tauri::AppHa
     .map_err(|_| UNFINISHED.to_string())?
 }
 
+/// Unforced by default: the answer says started or skipped (with a fixed reason). With
+/// `force: true` (the page's "Play anyway"), only for the key whose unforced call was just
+/// skipped.
 #[tauri::command]
-pub async fn wall2_sonos_play(window: tauri::WebviewWindow, app: tauri::AppHandle, routine_key: String, confirm: Option<bool>) -> Result<(), String> {
+pub async fn wall2_sonos_play(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    routine_key: String,
+    confirm: Option<bool>,
+    force: Option<bool>,
+) -> Result<PlayResult, String> {
     require_wall2(window.label())?;
     let base = read_base(&app, "sonosBaseUrl", false)?;
-    let calls = plan_play(&last_good()?, &routine_key, confirm.unwrap_or(false))?;
-    dispatch(base, calls).await
+    let force = force.unwrap_or(false);
+    if force {
+        let guard = LAST_SKIP.lock().map_err(|_| REFUSED.to_string())?;
+        if !force_allowed(guard.as_ref(), &routine_key) {
+            return Err("Play anyway is offered only right after a skip".to_string());
+        }
+    }
+    let calls = plan_play(&last_good()?, &routine_key, confirm.unwrap_or(false), force)?;
+    let call = calls.into_iter().next().ok_or_else(|| REFUSED.to_string())?;
+    let body = tauri::async_runtime::spawn_blocking(move || send_one(&base, &call)).await.map_err(|_| UNFINISHED.to_string())??;
+    let result = if force { PlayResult { started: true, reason: None } } else { play_outcome(&body) };
+    if let Ok(mut guard) = LAST_SKIP.lock() {
+        *guard = if result.started { None } else { Some((routine_key, Instant::now())) };
+    }
+    Ok(result)
 }
 
 #[tauri::command]
@@ -701,12 +944,13 @@ pub async fn wall2_sonos_volume(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     target: VolumeTarget,
-    level: f64,
+    level: Option<f64>,
+    step: Option<f64>,
     confirm: Option<bool>,
 ) -> Result<(), String> {
     require_wall2(window.label())?;
     let base = read_base(&app, "sonosBaseUrl", false)?;
-    let calls = plan_volume(&last_good()?, &target, level, confirm.unwrap_or(false))?;
+    let calls = plan_volume(&last_good()?, &target, level, step, confirm.unwrap_or(false))?;
     dispatch(base, calls).await
 }
 
@@ -816,8 +1060,10 @@ mod tests {
         let s = summary();
         let ids: Vec<(&str, bool)> = s.presets.iter().map(|p| (p.id.as_str(), p.active)).collect();
         assert_eq!(ids, vec![("everywhere", false), ("desk_mode", true)]);
-        // The desk preset's 100 is a line-in group, so it is not loud.
-        assert!(!s.presets[1].loud);
+        // No rooms and no volume: it pulls every speaker in as it is, so the studio at 100
+        // makes it loud. The desk preset's 100 is a line-in group, so it is not.
+        assert_eq!(s.presets[0].loud, vec![LoudSpeaker { name: "Studio".into(), level: Some(100), sets: false }]);
+        assert!(s.presets[1].loud.is_empty());
     }
 
     #[test]
@@ -828,11 +1074,47 @@ mod tests {
             "quiet_set": {"name": "Quiet", "groups": [{"rooms": ["Den"], "volume": 70, "setVolume": false}]}
         });
         let s = shape(&r, 0);
-        assert!(s.presets[0].loud);
-        assert!(!s.presets[1].loud);
+        assert_eq!(s.presets[0].loud, vec![LoudSpeaker { name: "Den".into(), level: Some(70), sets: true }]);
+        // setVolume false leaves Den at its own 12: quiet.
+        assert!(s.presets[1].loud.is_empty());
         assert_eq!(plan_preset(&s, "party", false).unwrap_err(), NEEDS_CONFIRM);
         assert!(plan_preset(&s, "party", true).is_ok());
         assert!(plan_preset(&s, "quiet_set", false).is_ok());
+    }
+
+    #[test]
+    fn a_preset_with_no_rooms_and_no_volume_against_a_line_in_speaker_at_100_asks() {
+        let mut r = reads();
+        r.presets = json!({
+            "all": {"name": "All", "rooms": []},
+            "all_twenty": {"name": "All at twenty", "rooms": [], "volume": 20},
+            "unknown": {"name": "Unknown level", "rooms": ["Den"]}
+        });
+        let mut s = shape(&r, 0);
+        assert_eq!(s.presets[0].loud, vec![LoudSpeaker { name: "Studio".into(), level: Some(100), sets: false }]);
+        assert_eq!(plan_preset(&s, "all", false).unwrap_err(), NEEDS_CONFIRM);
+        // A preset that sets everything to 20 is safe in one click.
+        assert!(s.presets[1].loud.is_empty());
+        assert!(plan_preset(&s, "all_twenty", false).is_ok());
+        // A level the read does not know asks too.
+        s.speakers[0].volume = None;
+        let p = r.presets.get("unknown").unwrap().clone();
+        assert_eq!(preset_loud(&p, &s.speakers), vec![LoudSpeaker { name: "Den".into(), level: None, sets: false }]);
+    }
+
+    #[test]
+    fn a_control_that_groups_all_asks_when_a_speaker_is_loud() {
+        let mut r = reads();
+        r.routines = json!({
+            "Group_All": {"name": "Group All", "type": "control", "action": "groupAll"},
+            "Split": {"name": "Split", "type": "control", "action": "ungroupAll"}
+        });
+        let s = shape(&r, 0);
+        assert_eq!(s.controls[0].loud, vec![LoudSpeaker { name: "Studio".into(), level: Some(100), sets: false }]);
+        assert_eq!(plan_play(&s, "Group_All", false, false).unwrap_err(), NEEDS_CONFIRM);
+        assert!(plan_play(&s, "Group_All", true, false).is_ok());
+        assert!(s.controls[1].loud.is_empty());
+        assert!(plan_play(&s, "Split", false, false).is_ok());
     }
 
     #[test]
@@ -853,9 +1135,19 @@ mod tests {
         assert_eq!(ends_at(Some(&json!(1_794_520_800))), Some(1_794_520_800_000));
         assert_eq!(ends_at(Some(&json!(1_794_520_800_000_i64))), Some(1_794_520_800_000));
         assert_eq!(ends_at(Some(&json!("soon"))), None);
-        let list = pick_timers(&json!([{"id": 7, "endsAt": 1_794_520_800}, {"id": "a/b"}]));
+        let list = pick_timers(&json!([{"id": 7, "endsAt": 1_794_520_800}, {"id": "a/b"}]), 0);
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].id, "7");
+        // A number written as a string.
+        assert_eq!(ends_at(Some(&json!("1794520800000"))), Some(1_794_520_800_000));
+        // Soonest first; one that ended more than a minute ago is gone.
+        let now = 1_794_520_800_000_i64;
+        let list = pick_timers(
+            &json!({"late": {"endsAt": now + 90 * 60_000}, "soon": {"endsAt": now + 5 * 60_000}, "gone": {"endsAt": now - 2 * 60_000}, "odd": {}}),
+            now,
+        );
+        let ids: Vec<&str> = list.iter().map(|t| t.id.as_str()).collect();
+        assert_eq!(ids, vec!["soon", "late", "odd"]);
     }
 
     #[test]
@@ -899,14 +1191,86 @@ mod tests {
     #[test]
     fn play_is_checked_against_the_read() {
         let s = summary();
-        assert_eq!(plan_play(&s, "Sunrise_Mix", false).unwrap()[0].path, "/api/trigger/Sunrise_Mix?force=true");
-        assert_eq!(plan_play(&s, "Stop_All", false).unwrap().len(), 1);
-        assert_eq!(plan_play(&s, "Tv_Up", false).unwrap_err(), "Unknown routine");
-        assert_eq!(plan_play(&s, "Nope", false).unwrap_err(), "Unknown routine");
-        assert_eq!(plan_play(&s, "../x", true).unwrap_err(), "Unknown routine");
-        assert_eq!(plan_play(&s, "Loud_Party", false).unwrap_err(), NEEDS_CONFIRM);
-        assert!(plan_play(&s, "Loud_Party", true).is_ok());
-        assert_eq!(plan_play(&s, "No_Level", false).unwrap_err(), NEEDS_CONFIRM);
+        // Unforced by default; forced only when asked.
+        assert_eq!(plan_play(&s, "Sunrise_Mix", false, false).unwrap()[0].path, "/api/trigger/Sunrise_Mix");
+        assert_eq!(plan_play(&s, "Sunrise_Mix", false, true).unwrap()[0].path, "/api/trigger/Sunrise_Mix?force=true");
+        assert_eq!(plan_play(&s, "Stop_All", false, false).unwrap().len(), 1);
+        assert_eq!(plan_play(&s, "Tv_Up", false, false).unwrap_err(), "Unknown routine");
+        assert_eq!(plan_play(&s, "Nope", false, false).unwrap_err(), "Unknown routine");
+        assert_eq!(plan_play(&s, "../x", true, false).unwrap_err(), "Unknown routine");
+        assert_eq!(plan_play(&s, "Loud_Party", false, false).unwrap_err(), NEEDS_CONFIRM);
+        assert!(plan_play(&s, "Loud_Party", true, false).is_ok());
+        assert_eq!(plan_play(&s, "No_Level", false, false).unwrap_err(), NEEDS_CONFIRM);
+    }
+
+    #[test]
+    fn a_routine_with_other_volume_keys_has_no_known_volume() {
+        let mut r = reads();
+        r.routines = json!({
+            "Mixed": {"name": "Mixed", "type": "music", "volume": 10, "othersVolume": 60},
+            "Rooms": {"name": "Rooms", "type": "music", "volume": 10, "volumes": {"Den": 80}},
+            "Plain": {"name": "Plain", "type": "music", "volume": 10}
+        });
+        let s = shape(&r, 0);
+        assert_eq!(s.music.iter().map(|m| m.volume).collect::<Vec<_>>(), vec![None, None, Some(10)]);
+        assert_eq!(plan_play(&s, "Mixed", false, false).unwrap_err(), NEEDS_CONFIRM);
+        assert!(plan_play(&s, "Plain", false, false).is_ok());
+    }
+
+    #[test]
+    fn play_answers_become_fixed_results() {
+        assert_eq!(play_outcome(&json!({"ok": true})), PlayResult { started: true, reason: None });
+        assert_eq!(play_outcome(&Value::Null), PlayResult { started: true, reason: None });
+        assert_eq!(play_outcome(&json!({"skipped": false})), PlayResult { started: true, reason: None });
+        let away = play_outcome(&json!({"skipped": true, "reason": "presence is away"}));
+        assert_eq!(away, PlayResult { started: false, reason: Some("nobody is home".into()) });
+        let tv = play_outcome(&json!({"skipped": true, "condition": {"speaker": "Den", "source": "tv", "is": "on"}}));
+        assert_eq!(tv.reason.as_deref(), Some("a speaker is on TV sound"));
+        let line = play_outcome(&json!({"skipped": "Studio is on lineIn"}));
+        assert_eq!(line.reason.as_deref(), Some("a speaker is on line-in"));
+        // Text the reader does not recognise never passes through.
+        let odd = play_outcome(&json!({"skipped": true, "reason": "<b>whatever the service says</b>"}));
+        assert_eq!(odd, PlayResult { started: false, reason: None });
+        // "activity" holds "tv" but not as a word.
+        assert_eq!(play_outcome(&json!({"skipped": true, "reason": "activity"})).reason, None);
+    }
+
+    #[test]
+    fn play_anyway_only_right_after_a_skip_of_that_key() {
+        let just = ("Sunrise_Mix".to_string(), Instant::now());
+        assert!(force_allowed(Some(&just), "Sunrise_Mix"));
+        assert!(!force_allowed(Some(&just), "Loud_Party"));
+        assert!(!force_allowed(None, "Sunrise_Mix"));
+        if let Some(old) = Instant::now().checked_sub(Duration::from_secs(61)) {
+            assert!(!force_allowed(Some(&("Sunrise_Mix".to_string(), old)), "Sunrise_Mix"));
+        }
+    }
+
+    #[test]
+    fn partial_group_writes_say_so() {
+        assert!(merge_results(vec![Ok(Value::Null), Ok(Value::Null)]).is_ok());
+        assert_eq!(merge_results(vec![Ok(Value::Null), Err(UNREACHABLE.into())]).unwrap_err(), PARTIAL);
+        assert_eq!(merge_results(vec![Err(UNREACHABLE.into()), Err(REFUSED.into())]).unwrap_err(), UNREACHABLE);
+    }
+
+    #[test]
+    fn a_huge_answer_is_refused_quickly() {
+        let mut big = serde_json::Map::new();
+        for i in 0..50_000 {
+            big.insert(format!("Room {i}"), json!({"state": "playing", "volume": 5}));
+        }
+        let started = Instant::now();
+        let mut r = reads();
+        r.status = Value::Object(big.clone());
+        r.speakers = Value::Object(big);
+        assert!(reads_too_big(&r));
+        let s = shape(&r, 0);
+        assert_eq!(s.speakers.len(), MAX_SPEAKERS);
+        let rooms = json!({"p": {"rooms": vec!["x"; 50_000]}});
+        assert!(too_big(&rooms["p"]));
+        assert!(name_list(rooms["p"].get("rooms")).len() <= MAX_NAMES);
+        assert!(started.elapsed() < Duration::from_secs(2));
+        assert!(!reads_too_big(&reads()));
     }
 
     #[test]
@@ -930,37 +1294,46 @@ mod tests {
     }
 
     #[test]
-    fn group_volume_skips_line_in_and_offline_speakers() {
+    fn group_volume_moves_each_speaker_by_the_same_step_without_line_in_or_offline() {
         let s = summary();
         let t = VolumeTarget { kind: "group".into(), id: "G_TWO:2".into() };
-        let calls = plan_volume(&s, &t, 20.0, false).unwrap();
-        let rooms: Vec<&str> = calls.iter().map(|c| c.body.as_ref().unwrap()["room"].as_str().unwrap()).collect();
-        assert_eq!(rooms, vec!["Den", "Porch", "Loft"]);
-        assert_eq!(calls[0].body.as_ref().unwrap()["volume"], json!(20));
+        let calls = plan_volume(&s, &t, None, Some(5.0), false).unwrap();
+        let got: Vec<(&str, u64)> = calls.iter().map(|c| (c.body.as_ref().unwrap()["room"].as_str().unwrap(), c.body.as_ref().unwrap()["volume"].as_u64().unwrap())).collect();
+        assert_eq!(got, vec![("Den", 17), ("Porch", 15), ("Loft", 35)]);
+        // Down, clamped at 0.
+        let down: Vec<u64> = plan_volume(&s, &t, None, Some(-20.0), false).unwrap().iter().map(|c| c.body.as_ref().unwrap()["volume"].as_u64().unwrap()).collect();
+        assert_eq!(down, vec![0, 0, 10]);
+        // A step that takes any speaker above 40 asks first: Loft 30 + 11 = 41.
+        assert_eq!(plan_volume(&s, &t, None, Some(11.0), false).unwrap_err(), NEEDS_CONFIRM);
+        assert!(plan_volume(&s, &t, None, Some(11.0), true).is_ok());
+        // A group needs a step, a speaker a level.
+        assert!(plan_volume(&s, &t, Some(20.0), None, false).is_err());
         // A group of one speaker on line-in has nothing the slider may move.
         let t = VolumeTarget { kind: "group".into(), id: "G_ONE:1".into() };
-        assert_eq!(plan_volume(&s, &t, 20.0, false).unwrap_err(), "Unknown group");
+        assert_eq!(plan_volume(&s, &t, None, Some(5.0), false).unwrap_err(), "Unknown group");
     }
 
     #[test]
-    fn volume_above_forty_needs_a_confirm_only_when_it_raises() {
+    fn any_volume_above_forty_needs_a_confirm_whatever_the_read_says() {
         let s = summary();
         let den = VolumeTarget { kind: "speaker".into(), id: "Den".into() };
-        assert_eq!(plan_volume(&s, &den, 41.0, false).unwrap_err(), NEEDS_CONFIRM);
-        assert!(plan_volume(&s, &den, 40.0, false).is_ok());
-        assert!(plan_volume(&s, &den, 80.0, true).is_ok());
-        // The studio sits at 100: moving it to 60 lowers it, so no confirm.
+        assert_eq!(plan_volume(&s, &den, Some(41.0), None, false).unwrap_err(), NEEDS_CONFIRM);
+        assert!(plan_volume(&s, &den, Some(40.0), None, false).is_ok());
+        assert!(plan_volume(&s, &den, Some(80.0), None, true).is_ok());
+        // The studio reads 100, but 60 could still be a raise from where it is now: ask.
         let studio = VolumeTarget { kind: "speaker".into(), id: "Studio".into() };
-        assert!(plan_volume(&s, &studio, 60.0, false).is_ok());
+        assert_eq!(plan_volume(&s, &studio, Some(60.0), None, false).unwrap_err(), NEEDS_CONFIRM);
+        assert!(plan_volume(&s, &studio, Some(30.0), None, false).is_ok());
         // Clamped to 0..100.
-        let c = plan_volume(&s, &den, -5.0, false).unwrap();
+        let c = plan_volume(&s, &den, Some(-5.0), None, false).unwrap();
         assert_eq!(c[0].body.as_ref().unwrap()["volume"], json!(0));
-        assert_eq!(plan_volume(&s, &studio, 250.0, false).unwrap()[0].body.as_ref().unwrap()["volume"], json!(100));
-        assert!(plan_volume(&s, &den, f64::NAN, true).is_err());
+        assert_eq!(plan_volume(&s, &studio, Some(250.0), None, true).unwrap()[0].body.as_ref().unwrap()["volume"], json!(100));
+        assert!(plan_volume(&s, &den, Some(f64::NAN), None, true).is_err());
+        assert!(plan_volume(&s, &den, None, None, true).is_err());
         // Unknown and offline speakers, unknown kinds.
-        assert!(plan_volume(&s, &VolumeTarget { kind: "speaker".into(), id: "Attic".into() }, 5.0, false).is_err());
-        assert!(plan_volume(&s, &VolumeTarget { kind: "speaker".into(), id: "Shed".into() }, 5.0, false).is_err());
-        assert!(plan_volume(&s, &VolumeTarget { kind: "room".into(), id: "Den".into() }, 5.0, false).is_err());
+        assert!(plan_volume(&s, &VolumeTarget { kind: "speaker".into(), id: "Attic".into() }, Some(5.0), None, false).is_err());
+        assert!(plan_volume(&s, &VolumeTarget { kind: "speaker".into(), id: "Shed".into() }, Some(5.0), None, false).is_err());
+        assert!(plan_volume(&s, &VolumeTarget { kind: "room".into(), id: "Den".into() }, Some(5.0), None, false).is_err());
     }
 
     #[test]
