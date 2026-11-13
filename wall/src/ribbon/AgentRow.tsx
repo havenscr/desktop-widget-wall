@@ -12,22 +12,26 @@ function ribbonX(ms: number, now: number): number | null {
 /**
  * The ribbon's agent row on Work (row 2, concept `.sg`): one thin segment per span in the
  * helper's day log, up to now, on three rows by lane. Running is cyan, waiting amber, a
- * finished run grey, and a span the helper marks done is grey with a mint cap. With no
- * span to draw (the helper not set up, not answered, or idle all day) and no task due on
- * the row (`dueCount`), it says "No agent activity yet" beside the row's icon. A stale answer is dimmed and its open
+ * finished run grey, and a span the helper marks done is grey with a mint cap. When the
+ * helper answered (fresh) with no span today and the row has no task due (`dueCount` 0
+ * after a good task read), it says "No agent activity yet" beside the row's icon; not set
+ * up, not answered, stale or tasks unknown says nothing. A stale answer is dimmed and its open
  * runs end at the last good answer's time, so they never keep growing as if live.
  */
-export function AgentRow({ now, dueCount = 0 }: { now: number; dueCount?: number }) {
+export function AgentRow({ now, dueCount = null }: { now: number; dueCount?: number | null }) {
   const st = useAgents();
+  const stale = agentsStale(st);
   const segs = st.summary ? agentSegments(st.summary, now, (ms) => ribbonX(ms, now), agentsUntil(st), st.skewMs) : [];
-  // Nothing on the row at all (no agent span today and no task due at a time): say so.
-  if (segs.length === 0)
-    return dueCount === 0 ? (
+  if (segs.length === 0) {
+    // Say the row is empty only when it is known: a fresh helper answer with no span today,
+    // and a good task read with nothing due (`dueCount` 0; null while the tasks are unknown).
+    const known = st.status === 'ready' && st.summary !== null && !stale && dueCount === 0;
+    return known ? (
       <span className="li-empty" style={{ top: 70 }}>
         No agent activity yet
       </span>
     ) : null;
-  const stale = agentsStale(st);
+  }
   return (
     <div className={`agent-row${stale ? ' stale' : ''}`} aria-hidden="true">
       {segs.map((s) => (

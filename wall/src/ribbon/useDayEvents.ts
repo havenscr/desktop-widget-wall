@@ -7,6 +7,7 @@ export const DAY_REFRESH_MS = 5 * 60_000;
 /** The part of the `wall2_meet_day` answer the ribbon reads. */
 interface DayPayload {
   events?: DayEvent[];
+  accounts?: { state?: string }[];
 }
 
 const NOT_CONFIGURED = 'not-configured';
@@ -18,6 +19,20 @@ export interface DayFeed {
   at: number | null;
   /** `Date.now()` of the last failed read when it came after the last good one, else null. */
   failedAt: number | null;
+  /**
+   * What the last read says about the calendar: `ok` after a good read with at least one
+   * account that could be read (or no account list), `unavailable` after a good read in
+   * which no account could be read (signed out, failing), `unknown` before the first read,
+   * after a failed read, and when Meet is not set up.
+   */
+  calendar: 'unknown' | 'ok' | 'unavailable';
+}
+
+/** `ok` unless the answer lists accounts and none of them is `ok`. */
+function calendarState(r: DayPayload | null | undefined): 'ok' | 'unavailable' {
+  const accounts = Array.isArray(r?.accounts) ? r.accounts : null;
+  if (!accounts || accounts.length === 0) return 'ok';
+  return accounts.some((a) => a?.state === 'ok') ? 'ok' : 'unavailable';
 }
 
 /**
@@ -26,7 +41,7 @@ export interface DayFeed {
  * and records when it failed, so a reader can tell cached events from current ones.
  */
 export function useDayFeed(on: boolean): DayFeed {
-  const [feed, setFeed] = useState<DayFeed>({ events: [], at: null, failedAt: null });
+  const [feed, setFeed] = useState<DayFeed>({ events: [], at: null, failedAt: null, calendar: 'unknown' });
   const mounted = useRef(true);
   useEffect(() => {
     mounted.current = true;
@@ -38,12 +53,12 @@ export function useDayFeed(on: boolean): DayFeed {
   const read = useCallback(async () => {
     try {
       const r = await invoke<DayPayload>('wall2_meet_day');
-      if (mounted.current) setFeed({ events: Array.isArray(r?.events) ? r.events : [], at: Date.now(), failedAt: null });
+      if (mounted.current) setFeed({ events: Array.isArray(r?.events) ? r.events : [], at: Date.now(), failedAt: null, calendar: calendarState(r) });
     } catch (e) {
       if (!mounted.current) return;
       const text = e instanceof Error ? e.message : String(e);
-      if (text === NOT_CONFIGURED) setFeed({ events: [], at: Date.now(), failedAt: null });
-      else setFeed((f) => ({ ...f, failedAt: Date.now() }));
+      if (text === NOT_CONFIGURED) setFeed({ events: [], at: Date.now(), failedAt: null, calendar: 'unknown' });
+      else setFeed((f) => ({ ...f, failedAt: Date.now(), calendar: 'unknown' }));
     }
   }, []);
 

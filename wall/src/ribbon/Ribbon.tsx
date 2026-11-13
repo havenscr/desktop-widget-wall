@@ -5,8 +5,8 @@ import { AgentRow } from './AgentRow';
 import { useVisible } from '../ui/useVisible';
 import { chips, dueMarks, focusBars, hourLabels, msToNextMinute, needle, skyGradient, sunLabels, ticks } from './model';
 import { sunTimes } from './sun';
-import { useDayEvents } from './useDayEvents';
-import { useDueTasks } from './useDueTasks';
+import { useDayFeed } from './useDayEvents';
+import { useDueTaskFeed } from './useDueTasks';
 
 export type RibbonKind = 'work' | 'home';
 
@@ -43,14 +43,20 @@ function useMinute(now: () => number): number {
  * the needle with the time. Row 2 carries a cyan diamond for each of the next three tasks
  * due at a time today (Work and Meet: tasks without the home tag; Home: with it), and on
  * Work the agent lanes' day (`AgentRow`) under them; the house schedule joins it later.
- * Each row's icon has a tooltip naming the row, and an empty row says so beside its icon
- * ("No meetings today", "No agent activity yet", "Nothing scheduled at home").
+ * Each row's icon has a tooltip naming the row. A row says it is empty only when that is
+ * known: "No meetings today" after a good calendar read with nothing today ("Calendar not
+ * available" when no account could be read), "Nothing scheduled at home" after a good task
+ * read with nothing due, "No agent activity yet" when the helper answered (fresh) with an
+ * empty day and the task read was good with nothing due. Before a read, after a failed
+ * one, or when a feed is not set up, the row shows nothing.
  */
 export function Ribbon({ kind, now = Date.now }: { kind: RibbonKind; now?: () => number }) {
   const visible = useVisible();
   const t = useMinute(now);
-  const events = useDayEvents(visible);
-  const tasks = useDueTasks(kind, visible);
+  const day = useDayFeed(visible);
+  const events = day.events;
+  const due = useDueTaskFeed(kind, visible);
+  const tasks = due.tasks;
   const sessions = useFocusStore((s) => s.sessions);
   const sun = sunTimes(t);
   const n = needle(t);
@@ -78,15 +84,15 @@ export function Ribbon({ kind, now = Date.now }: { kind: RibbonKind; now?: () =>
       <span className="li" style={{ top: 38 }} title="Today's calendar" aria-label="Today's calendar" role="img">
         <IconCalendar stroke={1.8} aria-hidden="true" />
       </span>
-      {dayChips.length === 0 && (
+      {dayChips.length === 0 && day.calendar !== 'unknown' && (
         <span className="li-empty" style={{ top: 38 }}>
-          No meetings today
+          {day.calendar === 'ok' ? 'No meetings today' : 'Calendar not available'}
         </span>
       )}
       <span className="li" style={{ top: 70 }} title={ROW2_TIP[kind]} aria-label={ROW2_TIP[kind]} role="img">
         <Row2 stroke={1.8} aria-hidden="true" />
       </span>
-      {kind === 'home' && marks.length === 0 && (
+      {kind === 'home' && due.known && marks.length === 0 && (
         <span className="li-empty" style={{ top: 70 }}>
           Nothing scheduled at home
         </span>
@@ -102,7 +108,7 @@ export function Ribbon({ kind, now = Date.now }: { kind: RibbonKind; now?: () =>
           {c.narrow ? null : c.title}
         </div>
       ))}
-      {kind === 'work' && <AgentRow now={t} dueCount={marks.length} />}
+      {kind === 'work' && <AgentRow now={t} dueCount={due.known ? marks.length : null} />}
       {kind === 'work' &&
         focusBars(sessions, t).map((b) => (
           <i key={b.x} className="fo" style={{ left: b.x, width: b.width }} aria-hidden="true" />

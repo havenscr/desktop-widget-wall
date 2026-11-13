@@ -280,9 +280,13 @@ The day ribbon (`wall/src/ribbon/`, `styles/ribbon.css`) is on Work, Home and Me
   puts the concept's colour stops on the real sunrise and sunset.
 - **Row icons**: the calendar icon and the row 2 icon carry a tooltip naming their row
   ("Today's calendar"; "Agent activity and tasks due today" on Work and Meet, "Home
-  tasks due today" on Home). An empty row says so in quiet text beside its icon: "No
-  meetings today", "No agent activity yet" (no agent span today and no task due at a
-  time), "Nothing scheduled at home".
+  tasks due today" on Home). A row says it is empty, in quiet text beside its icon, only
+  when that is known: "No meetings today" after a good calendar read with nothing today
+  ("Calendar not available" when the read lists accounts and none could be read),
+  "Nothing scheduled at home" after a good task read with nothing due, and "No agent
+  activity yet" when the helper answered (fresh) with no span today and the task read was
+  good with nothing due. Before a read, after a failed read, or when Meet, the task app or
+  the helper is not set up, the row shows nothing.
 - **Row 1**: today's calendar from `wall2_meet_day`, read when the ribbon shows and
   every 5 minutes while visible, clipped to 6 AM to 12 AM. A chip is `past` once it
   has ended, `now` while the needle is inside it, and pink when the event is a

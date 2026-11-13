@@ -5,6 +5,8 @@ import { useFocusStore } from '../focus/store';
 import { RX } from './model';
 import { Ribbon } from './Ribbon';
 import { useFixedClock, usePacificTime } from './testZone';
+import { summary } from '../agents/fixtures';
+import { resetAgents } from '../agents/useAgents';
 
 usePacificTime();
 
@@ -19,6 +21,7 @@ const flush = async (ms = 0) => {
 };
 
 afterEach(() => {
+  resetAgents();
   Object.defineProperty(document, 'hidden', { configurable: true, value: false });
   vi.useRealTimers();
   mocks.clear();
@@ -163,27 +166,72 @@ it('clears its timers and stops reading on unmount', async () => {
   expect(reads).toBe(1);
 });
 
-it('names each row on its icon and says when a row is empty', async () => {
-  mocks.set('wall2_meet_day', () => ({ accounts: [], events: [] }));
-  mocks.set('wall2_tasks_summary', () => ({ next: [], remaining: 0, dueTomorrow: { count: 0, estMinutes: 0 } }));
-  mocks.set('wall2_omni_summary', () => {
-    throw new Error('not-configured');
-  });
+const emptyDay = { accounts: [], next: [], remaining: 0, dueTomorrow: { count: 0, estMinutes: 0 } };
+const labels = (c: HTMLElement) => [...c.querySelectorAll('.li-empty')].map((l) => l.textContent);
+
+it('names each row on its icon and says a row is empty only after good reads', async () => {
+  mocks.set('wall2_meet_day', () => ({ accounts: [{ id: 'work', label: 'Work', state: 'ok' }], events: [] }));
+  mocks.set('wall2_tasks_summary', () => emptyDay);
+  mocks.set('wall2_omni_summary', () => summary({ lanes: [], day: [] }));
   const work = render(<Ribbon kind="work" />);
   await flush();
   const icons = [...work.container.querySelectorAll('.li')].map((i) => i.getAttribute('title'));
   expect(icons).toEqual(["Today's calendar", 'Agent activity and tasks due today']);
-  expect([...work.container.querySelectorAll('.li-empty')].map((l) => l.textContent)).toEqual(['No meetings today', 'No agent activity yet']);
+  expect(labels(work.container)).toEqual(['No meetings today', 'No agent activity yet']);
   work.unmount();
   const home = render(<Ribbon kind="home" />);
   await flush();
   expect(home.container.querySelectorAll('.li')[1].getAttribute('title')).toBe('Home tasks due today');
-  expect([...home.container.querySelectorAll('.li-empty')].map((l) => l.textContent)).toEqual(['No meetings today', 'Nothing scheduled at home']);
+  expect(labels(home.container)).toEqual(['No meetings today', 'Nothing scheduled at home']);
+});
+
+it('says nothing about a row it does not know: before a read, after a failed read, or not set up', async () => {
+  mocks.set('wall2_meet_day', () => {
+    throw new Error('failed');
+  });
+  mocks.set('wall2_tasks_summary', () => {
+    throw new Error('failed');
+  });
+  mocks.set('wall2_omni_summary', () => {
+    throw new Error('not-configured');
+  });
+  const work = render(<Ribbon kind="work" />);
+  // Before the first answers land.
+  expect(labels(work.container)).toEqual([]);
+  await flush();
+  expect(labels(work.container)).toEqual([]);
+  work.unmount();
+  mocks.set('wall2_meet_day', () => {
+    throw new Error('not-configured');
+  });
+  const home = render(<Ribbon kind="home" />);
+  await flush();
+  expect(labels(home.container)).toEqual([]);
+});
+
+it('says the calendar is not available when no account can be read', async () => {
+  mocks.set('wall2_meet_day', () => ({ accounts: [{ id: 'work', label: 'Work', state: 'signed-out' }], events: [] }));
+  mocks.set('wall2_tasks_summary', () => emptyDay);
+  const r = render(<Ribbon kind="home" />);
+  await flush();
+  expect(labels(r.container)).toEqual(['Calendar not available', 'Nothing scheduled at home']);
+});
+
+it('says nothing about agent activity while the helper has not answered or the tasks are unknown', async () => {
+  mocks.set('wall2_meet_day', () => day);
+  mocks.set('wall2_omni_summary', () => summary({ lanes: [], day: [] }));
+  mocks.set('wall2_tasks_summary', () => {
+    throw new Error('failed');
+  });
+  const r = render(<Ribbon kind="work" />);
+  await flush();
+  expect(labels(r.container)).toEqual([]);
 });
 
 it('drops the empty label once the row has something on it', async () => {
   mocks.set('wall2_meet_day', () => day);
+  mocks.set('wall2_tasks_summary', () => emptyDay);
   const r = render(<Ribbon kind="home" />);
   await flush();
-  expect([...r.container.querySelectorAll('.li-empty')].map((l) => l.textContent)).toEqual(['Nothing scheduled at home']);
+  expect(labels(r.container)).toEqual(['Nothing scheduled at home']);
 });
