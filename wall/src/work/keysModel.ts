@@ -1,3 +1,7 @@
+import { WALKS } from '../buddy/model';
+import { CAMERAS } from '../horizon/cameras';
+import { ridgeTopY } from '../horizon/ridge';
+import { rowEdges, zoneEdges, ZONES } from '../screens/frameLayout';
 import { errorText } from './deckModel';
 
 export interface KeyInfo {
@@ -161,3 +165,53 @@ export function autoPage(summary: KeysSummary): Page | null {
   const set = summary.sets.find((s) => s.id === summary.autoId);
   return set ? { id: set.id, kind: 'set', set } : null;
 }
+
+/** Keys to a row in both deck rows; every tile is the same size. */
+export const KEYS_PER_ROW = 5;
+/** A deck tile's height (the Always here and the Now rows alike), design pixels. */
+export const DECK_TILE_H = 60;
+/** The gap between deck tiles, design pixels. */
+export const DECK_TILE_GAP = 8;
+/** How far the deck stays above the mountains (and Watt's band), design pixels. */
+export const DECK_CLEARANCE = 12;
+
+/**
+ * The lowest stage y any part of the deck may reach on Work: a fixed clearance above the
+ * highest point of the mountain ridge under the right wing (from the Work camera, as the
+ * horizon draws it), and above the band Watt walks in where his walk reaches under the wing.
+ */
+export function deckFloorY(): number {
+  const wing = zoneEdges(ZONES)[2];
+  let floor = ridgeTopY(CAMERAS.work, wing.left, wing.right) - DECK_CLEARANCE;
+  const walk = WALKS.work;
+  if (walk.right > wing.left) floor = Math.min(floor, rowEdges()[0].bottom - DECK_CLEARANCE);
+  return Math.floor(floor);
+}
+
+/**
+ * A key's label on its set's page: the group prefix drops when the page name already says it
+ * ("VS Code: command palette" on the VS Code page is "Command palette"). The full name stays in
+ * the tooltip, the accessible name and the picker.
+ */
+export function keyLabel(label: string, pageName: string): string {
+  const name = pageName.trim();
+  if (!name) return label;
+  for (const sep of [': ', ' - ']) {
+    const head = `${name}${sep}`;
+    if (label.length > head.length && label.slice(0, head.length).toLowerCase() === head.toLowerCase()) {
+      const rest = label.slice(head.length).trim();
+      if (rest) return rest[0].toUpperCase() + rest.slice(1);
+    }
+  }
+  return label;
+}
+
+/** Parts of a set's keys shown at once when a second row does not fit: five at a time. */
+export function keyChunks<T>(keys: readonly T[]): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < keys.length; i += KEYS_PER_ROW) out.push(keys.slice(i, i + KEYS_PER_ROW));
+  return out.length ? out : [[]];
+}
+
+/** At most this many page dots; past it the pages show as "8 of 12". */
+export const MAX_DOTS = 7;

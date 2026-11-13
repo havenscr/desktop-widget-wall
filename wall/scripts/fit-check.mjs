@@ -18,7 +18,7 @@
 // non-zero on a failure. CI does not run this; run it by hand before a layout change is handed over.
 //
 //   WALL_CHROME=/path/to/chrome-or-headless-shell npm --prefix wall run fit-check
-//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, header)
+//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, header, deck, tiles)
 //   npm --prefix wall run fit-check -- --self-test
 //
 // WALL_CHROME (or the first argument that is not a flag) is a Chromium or
@@ -53,6 +53,8 @@ const EXPECT = {
   agents: /^ *FAIL overlap: agent /m,
   labels: /^ *FAIL stage labels on card /m,
   header: /^ *FAIL header part wraps: /m,
+  deck: /^ *FAIL deck: .* below the floor/m,
+  tiles: /^ *FAIL deck: label .* outside its tile/m,
 };
 const OVERFLOWS = {
   left: '.work .left-wing { transform: translateX(-200px); }',
@@ -63,6 +65,8 @@ const OVERFLOWS = {
   agents: '.rib .agent-row .sg-hit { height: 20px !important; }',
   labels: '.work .centre .lane .jn em { padding: 0 14px !important; }',
   header: '.work .centre .lanes-hd .slot-meter .xs { display: inline-block; width: 60px; white-space: normal !important; }',
+  deck: '.work .right-wing section.pinned { margin-top: 80px; }',
+  tiles: '.work .right-wing .key-tile .deck-lbl { white-space: nowrap !important; display: block !important; overflow: visible !important; max-width: none !important; }',
 };
 
 if (flag('self-test')) {
@@ -152,6 +156,10 @@ const VARIANTS = [
   deck('typical: both rows, own set in front, the For you chip', 'keys=typical'),
   deck('general set in front (another app), a layout just clicked: result and Undo showing', 'keys=general', { click: '.pin-tile' }),
   deck('eight keys with long labels', 'keys=many'),
+  // The built-in sets as the app lists them: twelve pages, labels that carry their group's name, a For you count.
+  deck('library sets: twelve pages, long labels, the For you chip', 'keys=library&hold=lib-vscode'),
+  deck('library sets: a held set whose app is not in front', 'keys=library&hold=lib-excel'),
+  deck('library sets, Auto, the longest labels pinned', 'keys=library&pins=long'),
   deck('one key only', 'keys=one'),
   deck('a held set refused after a click (the app in front is not its app)', 'keys=wrong', { click: '.keys .key-tile' }),
   deck('Power BI cannot be brought forward, after a click', 'keys=refuse', { click: '.keys .key-tile' }),
@@ -302,7 +310,42 @@ try {
       const tall = e.matches('.lanes-hd-l > *, .lanes-hd > .row > *') && e.getBoundingClientRect().height > 36.5;
       return tops.size > 1 || tall ? ['header part wraps: ' + (e.textContent || '').trim().slice(0, 48) + ' (' + Math.round(e.getBoundingClientRect().height) + ' px tall)'] : [];
     });
-    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, wattCard, header });
+    // The deck (Always here and Now): nothing below its floor (a clearance above the mountain
+    // ridge, worked out from the Work camera; the Now row carries it as data-floor), every key
+    // label inside its tile, no two tiles sharing pixels, and the Now heading never cut.
+    const deck = [];
+    const floorEl = document.querySelector('.work .right-wing .keys[data-floor]');
+    const deckEl = document.querySelector('.work .right-wing .deck');
+    if (deckEl) {
+      const floor = floorEl ? Number(floorEl.dataset.floor) : Infinity;
+      if (!floorEl && document.querySelector('.work .right-wing .keys')) deck.push('deck: the Now row carries no data-floor, so its floor cannot be checked');
+      let low = null;
+      // What the deck draws: its rows and their parts (the box itself is empty room, and the key
+      // picker's list scrolls inside the picker, which is held to the floor itself).
+      for (const e of deckEl.querySelectorAll('*')) {
+        if (e.closest('.pk') && !e.matches('.pk')) continue;
+        const r = e.getBoundingClientRect();
+        if (r.width === 0 || r.height === 0 || getComputedStyle(e).visibility === 'hidden') continue;
+        if (r.bottom > floor + 0.5 && (low === null || r.bottom > low.b)) low = { b: r.bottom, t: (e.className && e.className.baseVal === undefined ? e.className : e.tagName) };
+      }
+      if (low) deck.push('deck: ' + low.t + ' reaches y ' + Math.round(low.b) + ', below the floor at ' + floor);
+      const tiles = [...deckEl.querySelectorAll('.deck-tile')].map((t) => ({ t, r: t.getBoundingClientRect() }));
+      for (const { t, r } of tiles) {
+        const l = t.querySelector('.deck-lbl');
+        if (!l) continue;
+        const q = l.getBoundingClientRect();
+        if (q.left < r.left - 0.5 || q.right > r.right + 0.5 || q.top < r.top - 0.5 || q.bottom > r.bottom + 0.5 || l.scrollWidth > l.clientWidth + 1) deck.push('deck: label "' + l.textContent + '" runs outside its tile');
+      }
+      tiles.forEach((a, i) => tiles.slice(i + 1).forEach((b) => { if (hit(a.r, b.r)) deck.push('deck: tiles "' + a.t.textContent + '" and "' + b.t.textContent + '" share pixels'); }));
+      const name = document.querySelector('.work .right-wing .keys .deck-hd .k');
+      const ctl = document.querySelector('.work .right-wing .keys .deck-hd-r');
+      if (name) {
+        const nr = name.getBoundingClientRect();
+        const cut = name.scrollWidth > name.clientWidth + 1 || (ctl && hit(nr, ctl.getBoundingClientRect())) || nr.right > deckEl.getBoundingClientRect().right + 0.5;
+        if (cut) deck.push('deck: the Now heading "' + name.textContent + '" is cut');
+      }
+    }
+    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, wattCard, header, deck });
     document.body.appendChild(pre);
   }, new URLSearchParams(location.search).get('card') ? 7000 : 3000);</script>`;
   const broken = overflow ? `<style>${OVERFLOWS[overflow]}</style>` : '';
@@ -326,7 +369,10 @@ try {
       process.exit(1);
     }
     const text = m[1].replaceAll('&quot;', '"').replaceAll('&amp;', '&');
-    const { res, page: doc, overlaps, cut, gaps, wattCard, header } = JSON.parse(text);
+    const { res, page: doc, overlaps, cut, gaps, wattCard, header, deck } = JSON.parse(text);
+    for (const d of deck) console.log(`  FAIL ${d}`);
+    if (deck.length) failed = true;
+    else if (v.q.includes('hz=work')) console.log('  ok   the deck stays above its floor, every key label inside its tile, the Now heading whole');
     for (const h of header) console.log(`  FAIL ${h}`);
     if (header.length) failed = true;
     else if (v.q.includes('hz=work')) console.log('  ok   the agents header is one line');

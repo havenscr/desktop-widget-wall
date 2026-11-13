@@ -915,18 +915,38 @@
   cursor: progress;
   opacity: 0.6;
 }
+/* A key that cannot be sent right now keeps its size and stays readable: one step less
+   contrast (the second text colour), and its tooltip says why. */
 .deck-tile.off {
-  opacity: 0.45;
+  color: var(--dim);
+  background: rgba(255, 255, 255, 0.02);
   cursor: not-allowed;
 }
-.key-tile {
-  flex-direction: column;
-  gap: 1px;
-  font-size: 14px;
-  line-height: 1;
+.deck-tile.off svg {
+  opacity: 0.75;
 }
-.keys-tiles.two .deck-tile {
-  height: 40px;
+/* Every key in both rows is the same boxed tile: the icon above a label of up to two lines. */
+.deck-tile.key-tile {
+  height: 60px;
+  flex-direction: column;
+  gap: 3px;
+  padding: 0 8px;
+  font-size: 15px;
+  line-height: 1.05;
+}
+.deck-tile.key-tile svg {
+  flex: none;
+}
+.key-tile .deck-lbl {
+  max-width: 100%;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  white-space: normal;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  text-align: center;
 }
 .bs-tile.sel {
   border-color: var(--cyan);
@@ -1030,8 +1050,6 @@
   color: var(--faint);
 }
 .pin-tile {
-  height: 52px;
-  gap: 6px;
   font-size: 15px;
 }
 .pin-tile.sel {
@@ -1089,19 +1107,47 @@
 .deck-chip:hover {
   background: rgba(245, 184, 74, 0.2);
 }
+/* A tight heading: the chip shrinks to a dot and the count. */
+.deck-chip.small {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+}
+.deck-chip-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--amber, #f5b84a);
+}
+/* The Now heading keeps the page name whole; the dots, then the chip, give way. */
+.keys .deck-name {
+  flex: none;
+  white-space: nowrap;
+}
+.deck-part {
+  margin-left: 10px;
+  color: var(--dim);
+  letter-spacing: 0.04em;
+}
+.deck-pos {
+  padding: 0 4px;
+  color: var(--dim);
+  white-space: nowrap;
+}
 
 /* The For you page: at most two lines, each an icon, a title with its reason, and one button. */
 .fy-list {
   display: grid;
-  gap: 8px;
+  gap: 4px;
 }
 .fy-li {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
-  height: 40px;
-  padding: 0 6px 0 12px;
+  height: 34px;
+  padding: 0 1px 0 12px;
   border-radius: 14px;
   border: 1px solid var(--edge);
   background: rgba(255, 255, 255, 0.04);
@@ -1155,7 +1201,8 @@
 /* The picker covers exactly the two key rows (their box), never Next three. With little in the
    rows the box grows to hold it, into the room that a short task list leaves. */
 .deck:has(.pk) {
-  min-height: 236px;
+  /* Down to the deck's floor above the mountains (keysModel deckFloorY), never past it. */
+  min-height: 226px;
 }
 .pk {
   position: absolute;
@@ -1345,4 +1392,7 @@
   .tick-bar {
     animation: none;
   }
+}
+.deck-dots[hidden] {
+  display: none;
 }

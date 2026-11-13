@@ -7,7 +7,7 @@ import {
   IconVideo,
   type Icon,
 } from '@tabler/icons-react';
-import { useCallback, useEffect, useRef, useState, type WheelEvent } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type WheelEvent } from 'react';
 import { tip } from '../ui/HoverTip';
 import { useVisible } from '../ui/useVisible';
 import { useArrangeStatus, layoutOffReason, isLayoutAction } from './arrangeStatus';
@@ -20,8 +20,15 @@ import {
   acceptsFront,
   AUTO,
   autoPage,
+  DECK_TILE_GAP,
+  DECK_TILE_H,
+  deckFloorY,
   effectiveMode,
   FOR_YOU,
+  keyChunks,
+  keyLabel,
+  KEYS_PER_ROW,
+  MAX_DOTS,
   pagesFor,
   readMode,
   saveMode,
@@ -48,8 +55,31 @@ export const NEW_AGAIN_MS = 10 * 60_000;
 /** What the take-over memory forgets after this long. */
 const FORGET_MS = 24 * 60 * 60_000;
 
-/** Columns for n keys: one row up to five, then two rows. */
-export const columnsFor = (n: number): number => (n <= 5 ? Math.max(n, 1) : n === 6 ? 3 : 4);
+/** Columns in the Now row: always five, so every tile is the size of an Always here tile. */
+export const columnsFor = (_n: number): number => KEYS_PER_ROW;
+/** The stage y of the top of the main area (the right wing's top). */
+const WING_TOP = 20;
+
+/**
+ * Whether a second row of tiles fits above the deck's floor (`deckFloorY`), measured from
+ * where the first row starts on the stage. False when the page has no layout (tests).
+ */
+function secondRowFits(tiles: HTMLElement): boolean {
+  const wing = tiles.closest<HTMLElement>('.right-wing');
+  if (!wing || wing.offsetHeight === 0) return false;
+  const w = wing.getBoundingClientRect();
+  const scale = w.height / wing.offsetHeight;
+  if (!Number.isFinite(scale) || scale <= 0) return false;
+  const top = WING_TOP + (tiles.getBoundingClientRect().top - w.top) / scale;
+  return top + 2 * DECK_TILE_H + DECK_TILE_GAP <= deckFloorY();
+}
+
+/**
+ * How far the Now heading has given way to keep the page name whole: 0 the page dots (or
+ * "8 of 12" past seven pages), 1 "8 of 12" in place of the dots, 2 the "For you" chip as a
+ * dot and a count.
+ */
+type HeadFit = 0 | 1 | 2;
 
 const KIND_ICON: Record<ForYouKind, Icon> = { meeting: IconVideo, waiting: IconMessageCircle, merge: IconGitPullRequest, alarm: IconAlertTriangle };
 const KIND_TONE: Record<ForYouKind, string> = { meeting: 'mint', waiting: 'amber', merge: 'mint', alarm: 'amber' };
@@ -109,6 +139,13 @@ export function Keys() {
   const fyGuard = useGuard();
   const modeRef = useRef(mode);
   modeRef.current = mode;
+
+  /** Which five of a set with more than five keys show, when a second row does not fit. */
+  const [chunk, setChunk] = useState<{ setId: string | null; at: number }>({ setId: null, at: 0 });
+  const [twoRows, setTwoRows] = useState(false);
+  const tilesRef = useRef<HTMLDivElement | null>(null);
+  const headRef = useRef<HTMLDivElement | null>(null);
+  const [headFit, setHeadFit] = useState<{ key: string; level: HeadFit }>({ key: '', level: 0 });
 
   const setMode = useCallback((m: Mode) => {
     setModeState(m);
@@ -178,10 +215,30 @@ export function Keys() {
     return () => clearTimeout(id);
   }, [takeUntil]);
 
+  /** What the last render drew, for the measuring below (set after the early returns). */
+  const drawn = useRef<{ many: boolean; headKey: string } | null>(null);
+  drawn.current = null;
+  // After each render: whether a long set's second row fits above the deck's floor, and how far
+  // the heading must give way so the page name shows whole. Never measured in tests (no layout).
+  useLayoutEffect(() => {
+    const m = drawn.current;
+    if (!m) return;
+    const tiles = tilesRef.current;
+    const fits = m.many && tiles !== null && secondRowFits(tiles);
+    if (fits !== twoRows) setTwoRows(fits);
+    const hd = headRef.current;
+    if (!hd) return;
+    const level = headFit.key === m.headKey ? headFit.level : 0;
+    if (level < 2 && hd.scrollWidth > hd.clientWidth + 1) setHeadFit({ key: m.headKey, level: (level + 1) as HeadFit });
+    else if (headFit.key !== m.headKey) setHeadFit({ key: m.headKey, level });
+  });
+
   if (read.status === 'loading' || read.status === 'absent') return null;
+  /** The deck's lowest allowed stage y, on the row for the fit check to read. */
+  const floor = deckFloorY();
   if (read.status === 'problem') {
     return (
-      <section className="keys deck-row" aria-label="Now">
+      <section className="keys deck-row" data-floor={floor} aria-label="Now">
         <div className="row sb deck-hd">
           <span className="k">Now</span>
         </div>
@@ -201,6 +258,12 @@ export function Keys() {
   else if (takeUntil !== 0 && forYouOn) page = pages.find((p) => p.id === FOR_YOU) ?? null;
   else page = autoPage(sum);
 
+  const pageSet = page?.kind === 'set' ? page.set : null;
+  const allKeys = pageSet ? pageSet.keys.slice(0, MAX_KEYS) : [];
+  const chunks = keyChunks(allKeys);
+  const paged = allKeys.length > KEYS_PER_ROW && !twoRows;
+  const chunkAt = paged && chunk.setId === pageSet?.id ? Math.min(chunk.at, chunks.length - 1) : 0;
+
   const runItem = (item: ForYouItem, detail: number) =>
     void fyGuard.run(`fy:${item.key}`, detail, async () => {
       try {
@@ -213,11 +276,22 @@ export function Keys() {
   const goTo = (p: Page | null) => {
     if (!p) return;
     setTakeUntil(0);
+    setChunk({ setId: p.id, at: 0 });
     setMode({ hold: true, setId: p.id });
   };
-  const stepTo = (dir: 1 | -1) => goTo(stepPage(pages, page?.id ?? null, dir));
+  /** The arrows and the wheel step through the five-key parts of a long set first, then the pages. */
+  const stepTo = (dir: 1 | -1) => {
+    const next = chunkAt + dir;
+    if (paged && pageSet && next >= 0 && next < chunks.length) {
+      setTakeUntil(0);
+      setChunk({ setId: pageSet.id, at: next });
+      setMode({ hold: true, setId: pageSet.id });
+      return;
+    }
+    goTo(stepPage(pages, page?.id ?? null, dir));
+  };
   const onWheel = (e: WheelEvent) => {
-    if (pages.length < 2 || e.deltaY === 0) return;
+    if ((pages.length < 2 && !paged) || e.deltaY === 0) return;
     const now = Date.now();
     if (now - lastWheel.current < WHEEL_GAP_MS) return;
     lastWheel.current = now;
@@ -228,6 +302,12 @@ export function Keys() {
   const more = page?.kind === 'foryou' && items.length > FOR_YOU_SHOWN ? ` · +${items.length - FOR_YOU_SHOWN} more` : '';
   const heading = page ? `Now · ${pageName}${more}` : 'Now';
   const showChip = forYouOn && page?.kind !== 'foryou';
+  const pageAt = Math.max(0, pages.findIndex((p) => p.id === page?.id));
+  const headKey = `${heading}|${pages.length}|${showChip}|${items.length}|${brief ?? ''}`;
+  const fit: HeadFit = headFit.key === headKey ? headFit.level : 0;
+  drawn.current = { many: allKeys.length > KEYS_PER_ROW, headKey };
+  const dotsShown = pages.length <= MAX_DOTS && fit < 1;
+  const partText = paged ? `${chunkAt + 1}/${chunks.length}` : null;
   const where = sum.source === 'default' ? 'You are using the built-in keys. To change them put keys.json in the app\'s config folder; the wall never writes it.' : 'Keys come from keys.json and the built-in library.';
 
   const controls = (
@@ -235,19 +315,32 @@ export function Keys() {
       {showChip && (
         <button
           type="button"
-          className="deck-chip"
+          className={`deck-chip${fit >= 2 ? ' small' : ''}`}
+          aria-label={`For you ${items.length}`}
           {...tip(`${items.length} thing${items.length === 1 ? '' : 's'} waiting on you. Click to see them.`)}
           onClick={() => goTo(pages.find((p) => p.id === FOR_YOU) ?? null)}
         >
-          For you {items.length}
+          {fit >= 2 ? (
+            <>
+              <i className="deck-chip-dot" aria-hidden="true" />
+              {items.length}
+            </>
+          ) : (
+            `For you ${items.length}`
+          )}
         </button>
       )}
-      {pages.length > 1 && (
+      {(pages.length > 1 || paged) && (
         <>
-          <button type="button" className="deck-arrow" aria-label="Previous page" {...tip('Show the previous page of keys and hold it')} onClick={() => stepTo(-1)}>
+          <button type="button" className="deck-arrow" aria-label="Previous page" {...tip(paged && chunkAt > 0 ? `Show keys ${(chunkAt - 1) * KEYS_PER_ROW + 1} to ${chunkAt * KEYS_PER_ROW} of ${pageName} and hold it` : 'Show the previous page of keys and hold it')} onClick={() => stepTo(-1)}>
             <IconChevronLeft size={20} stroke={2} aria-hidden="true" />
           </button>
-          <span className="deck-dots" role="tablist" aria-label="Pages">
+          {!dotsShown && pages.length > 1 && (
+            <span className="xs deck-pos" {...tip(`Page ${pageAt + 1} of ${pages.length}: ${pageName}. The arrows or the wheel step through them.`)}>
+              {pageAt + 1} of {pages.length}
+            </span>
+          )}
+          <span className="deck-dots" role="tablist" aria-label="Pages" hidden={!dotsShown || pages.length < 2}>
             {pages.map((p) => (
               <button
                 key={p.id}
@@ -263,7 +356,7 @@ export function Keys() {
               </button>
             ))}
           </span>
-          <button type="button" className="deck-arrow" aria-label="Next page" {...tip('Show the next page of keys and hold it')} onClick={() => stepTo(1)}>
+          <button type="button" className="deck-arrow" aria-label="Next page" {...tip(paged && chunkAt < chunks.length - 1 ? `Show the rest of ${pageName}'s keys and hold it` : 'Show the next page of keys and hold it')} onClick={() => stepTo(1)}>
             <IconChevronRight size={20} stroke={2} aria-hidden="true" />
           </button>
         </>
@@ -283,14 +376,15 @@ export function Keys() {
   );
 
   const head = (
-    <div className="row sb deck-hd">
+    <div className="row sb deck-hd" ref={headRef}>
       {brief ? (
         <span className="deck-brief-l" role="status" title={brief}>
           {brief}
         </span>
       ) : (
-        <span className="k ellipsis" {...tip(where)}>
+        <span className="k deck-name" {...tip(partText ? `${where} Keys ${chunkAt * KEYS_PER_ROW + 1} to ${Math.min(allKeys.length, (chunkAt + 1) * KEYS_PER_ROW)} of ${allKeys.length}; the arrows show the rest.` : where)}>
           {heading}
+          {partText && <span className="deck-part">{partText}</span>}
         </span>
       )}
       {controls}
@@ -299,7 +393,7 @@ export function Keys() {
 
   if (page?.kind === 'foryou') {
     return (
-      <section className="keys deck-row" aria-label={heading} onWheel={onWheel} ref={rowRef}>
+      <section className="keys deck-row" data-floor={floor} aria-label={heading} onWheel={onWheel} ref={rowRef}>
         {head}
         <ForYouList items={items} onRun={runItem} />
       </section>
@@ -310,7 +404,7 @@ export function Keys() {
   if (!page) {
     const idle = sum.front === 'idle';
     return (
-      <section className="keys deck-row" aria-label="Now" onWheel={onWheel} ref={rowRef}>
+      <section className="keys deck-row" data-floor={floor} aria-label="Now" onWheel={onWheel} ref={rowRef}>
         {head}
         <div
           className="s deck-quiet"
@@ -327,15 +421,18 @@ export function Keys() {
   }
 
   const set: SetInfo = page.set;
-  const keys = set.keys.slice(0, MAX_KEYS);
+  const base = paged ? chunkAt * KEYS_PER_ROW : 0;
+  const keys = paged ? chunks[chunkAt] : allKeys;
   const ok = acceptsFront(sum, set);
   return (
-    <section className="keys deck-row" aria-label={heading} onWheel={onWheel} ref={rowRef}>
+    <section className="keys deck-row" data-floor={floor} aria-label={heading} onWheel={onWheel} ref={rowRef}>
       {head}
-      <div className={`deck-tiles keys-tiles${keys.length > 5 ? ' two' : ''}`} style={{ gridTemplateColumns: `repeat(${columnsFor(keys.length)}, minmax(0, 1fr))` }}>
-        {keys.map((k, i) => {
+      <div ref={tilesRef} className={`deck-tiles keys-tiles${keys.length > KEYS_PER_ROW ? ' two' : ''}`} style={{ gridTemplateColumns: `repeat(${columnsFor(keys.length)}, minmax(0, 1fr))` }}>
+        {keys.map((k, j) => {
+          const i = base + j;
           const layoutOff = isLayoutAction(k.action) && arrange !== true;
           const wrongApp = k.action === null && hold && !ok;
+          const label = keyLabel(k.label, set.name);
           return (
             <button
               key={`${set.id}-${i}`}
@@ -347,7 +444,7 @@ export function Keys() {
                 layoutOff
                   ? layoutOffReason(arrange)
                   : wrongApp
-                    ? `${k.label}: the app in front is not ${set.name}, so this would send nothing`
+                    ? `${k.label}: ${set.name} is not in front, so this would send nothing. Bring ${set.name} forward, or click Auto to follow the app in front.`
                     : k.action
                       ? k.label
                       : set.general
@@ -357,8 +454,8 @@ export function Keys() {
               onKeyDown={onKeyDown(k.action)}
               onClick={(e) => !layoutOff && !keyboardOnMouseKey(k.action, e.detail) && void press(`${set.id}:${i}`, e.detail, { command: 'wall2_keys_send', args: { setId: set.id, index: i } }, k.label, k.action, set, hold)}
             >
-              <KeyIcon name={k.icon} size={keys.length > 5 ? 16 : 18} />
-              <span className="deck-lbl">{k.label}</span>
+              <KeyIcon name={k.icon} size={20} />
+              <span className="deck-lbl">{label}</span>
             </button>
           );
         })}
