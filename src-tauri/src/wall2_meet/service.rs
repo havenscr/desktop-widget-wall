@@ -1,16 +1,16 @@
 //! The silent refresh and the calendar read, behind traits so tests can fake the network.
 
 use super::auth::{TokenClient, TokenReply, SCOPE};
-use super::graph::{merge, merge_capped, shape_events, Ctx, Diag, Kind, BUDGET, MAX_DAY_EVENTS, utc_iso, Candidate, GraphClient, GraphReply};
+use super::graph::{merge, merge_capped, shape_events, Clock, Ctx, Diag, Kind, RealClock, BUDGET, MAX_DAY_EVENTS, READ_TIMEOUT, utc_iso, Candidate, GraphClient, GraphReply};
 use super::meetlog::{format_line, format_line_detail};
-use super::reason::{is_valid_reason, STORE_READ, STORE_WRITE};
+use super::reason::{is_valid_reason, GRAPH_TIMEOUT, STORE_READ, STORE_WRITE};
 use super::store::{Fetch, SecretStore};
 use super::Account;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard};
-use std::time::Instant;
+use std::sync::{Arc, Condvar, Mutex, MutexGuard};
+use std::time::Duration;
 
 /// Refresh an access token that has less than this left.
 const SKEW_SECS: u64 = 120;
@@ -63,7 +63,54 @@ pub struct Core {
     pub generations: HashMap<String, u64>,
     /// One turn-taker per account, held across the token request only (never the core lock),
     /// so two reads never both spend the same rotating refresh token.
-    pub flights: HashMap<String, Arc<Mutex<()>>>,
+    pub flights: HashMap<String, Arc<Slot>>,
+    /// The clock reads run on; the real one when None. Tests set their own.
+    pub clock: Option<Arc<dyn Clock + Send + Sync>>,
+}
+
+/// One read at a time per account. A read takes the slot for its whole run (token request,
+/// Graph attempts, forced refresh); another read for the same account waits for it, or gives
+/// up at its own deadline, so reads never pile up into more work.
+#[derive(Default)]
+pub struct Slot {
+    busy: Mutex<bool>,
+    freed: Condvar,
+}
+
+pub struct SlotGuard(Arc<Slot>);
+
+impl Drop for SlotGuard {
+    fn drop(&mut self) {
+        *self.0.busy.lock().unwrap_or_else(|e| e.into_inner()) = false;
+        self.0.freed.notify_all();
+    }
+}
+
+impl Slot {
+    /// Take the slot, or None when the read's deadline arrives first. Takes the Arc so the
+    /// guard is the holder's one reference.
+    pub fn acquire(slot: Arc<Slot>, ctx: &Ctx) -> Option<SlotGuard> {
+        {
+            let mut busy = slot.busy.lock().unwrap_or_else(|e| e.into_inner());
+            loop {
+                if !*busy {
+                    *busy = true;
+                    break;
+                }
+                let left = ctx.remaining();
+                if left.is_zero() {
+                    return None;
+                }
+                // Wake now and then to look at the read's clock again.
+                busy = slot.freed.wait_timeout(busy, left.min(Duration::from_millis(20))).unwrap_or_else(|e| e.into_inner()).0;
+            }
+        }
+        Some(SlotGuard(slot))
+    }
+}
+
+fn clock_of(core: &Mutex<Core>) -> Arc<dyn Clock + Send + Sync> {
+    lock(core).clock.clone().unwrap_or_else(|| Arc::new(RealClock))
 }
 
 /// Queue one log line when the account's state or reason differs from the last one logged.
@@ -244,42 +291,39 @@ fn check(
 }
 
 /// A fresh access token for the account, from the cache or a refresh. The core lock is held
-/// only in short steps; the token request runs with it released, and one refresh per account
-/// runs at a time so two reads never both spend the same rotating refresh token.
+/// only in short steps; the token request runs with it released, with what remains of the
+/// read's deadline as its timeout. The caller holds the account's slot, so no other read
+/// spends the same rotating refresh token meanwhile.
 fn obtain(
     acct: &Account,
     store: &dyn SecretStore,
     tokens: &dyn TokenClient,
     core: &Mutex<Core>,
     now: u64,
-    began: Instant,
+    ctx: &Ctx,
     generation: u64,
     rejected: Option<&str>,
 ) -> Result<String, Stop> {
-    match check(acct, store, &mut lock(core), now, generation, rejected)? {
-        Step::Have(a) => return Ok(a),
-        Step::Refresh(_) => {}
-    }
-    let flight = lock(core).flights.entry(acct.id.clone()).or_default().clone();
-    let _turn = flight.lock().unwrap_or_else(|e| e.into_inner());
-    // Look again: a read ahead of this one may have refreshed while this one waited its turn.
-    // The wait may have been long, so the clock is read again.
-    let now = now + began.elapsed().as_secs();
-    let refresh = match check(acct, store, &mut lock(core), now, generation, rejected)? {
+    let refresh = match check(acct, store, &mut lock(core), now + ctx.elapsed_ms() / 1000, generation, rejected)? {
         Step::Have(a) => return Ok(a),
         Step::Refresh(r) => r,
     };
+    let left = ctx.remaining();
+    if left.is_zero() {
+        // No token request starts after the deadline.
+        return Err(Stop::Fail((AccountState::Unavailable, Some(GRAPH_TIMEOUT.to_string()))));
+    }
     let form = [
         ("client_id", acct.client_id.as_str()),
         ("grant_type", "refresh_token"),
         ("refresh_token", refresh.as_str()),
         ("scope", SCOPE),
     ];
-    let reply = tokens.post(&acct.tenant, &form);
+    let reply = tokens.post_within(&acct.tenant, &form, left.min(READ_TIMEOUT));
     // Apply the reply in one short step, and only if the account is unchanged. The credential
     // store calls below run under the core lock on purpose: they are local and brief, and
     // doing them here keeps them ordered with sign-out's delete and generation bump.
-    let now = now + began.elapsed().as_secs();
+    let now = now + ctx.elapsed_ms() / 1000;
     let mut core = lock(core);
     if generation_of(&core, &acct.id) != generation {
         return Err(Stop::Stale);
@@ -334,22 +378,26 @@ fn read_window(
     kind: Kind,
 ) -> Read {
     let (start, end) = (utc_iso(from), utc_iso(to));
-    let began = Instant::now();
+    let ctx = Ctx::new(kind, clock_of(core), BUDGET);
     let generation = generation_of(&lock(core), &acct.id);
     let done = |state, meetings, reason| Read { state, meetings, reason, generation, discarded: false, diag: None, skipped: false };
     let stopped = |stop: Stop| match stop {
         Stop::Fail((state, reason)) => done(state, None, reason),
         Stop::Stale => Read { state: AccountState::Unavailable, meetings: None, reason: None, generation, discarded: true, diag: None, skipped: false },
     };
-    let access = match obtain(acct, store, tokens, core, now, began, generation, None) {
+    let slot = lock(core).flights.entry(acct.id.clone()).or_default().clone();
+    let Some(_turn) = Slot::acquire(slot, &ctx) else {
+        // The deadline came while another read of this account was still running.
+        return done(AccountState::Unavailable, None, Some(GRAPH_TIMEOUT.to_string()));
+    };
+    let access = match obtain(acct, store, tokens, core, now, &ctx, generation, None) {
         Ok(a) => a,
         Err(stop) => return stopped(stop),
     };
-    let ctx = Ctx { kind, began, budget: BUDGET };
     let (mut reply, mut diag) = graph.calendar_view_diag(&access, &start, &end, &ctx);
     if matches!(reply, GraphReply::Unauthorized) {
         // The cached token was refused: drop it, refresh once, ask once more.
-        let access = match obtain(acct, store, tokens, core, now, began, generation, Some(access.as_str())) {
+        let access = match obtain(acct, store, tokens, core, now, &ctx, generation, Some(access.as_str())) {
             Ok(a) => a,
             Err(stop) => return stopped(stop),
         };
@@ -388,6 +436,24 @@ fn settle(
     let mut lists = Vec::new();
     let mut stale = false;
     for (acct, read) in accounts.iter().zip(reads) {
+        let out = |state: AccountState, reason| AccountOut { id: acct.id.clone(), label: acct.label.clone(), state: state.as_str(), reason };
+        if read.discarded || generation_of(core, &acct.id) != read.generation {
+            // The credential store read here is local and deliberate, like the other store
+            // calls under this lock.
+            match store.fetch(&acct.id) {
+                Fetch::Missing => {
+                    statuses.push(out(AccountState::SignedOut, None));
+                    lists.push(Vec::new());
+                }
+                _ => {
+                    let held = if keep_last { core.last.get(&acct.id).cloned() } else { None };
+                    stale |= keep_last;
+                    statuses.push(out(AccountState::Ok, None));
+                    lists.push(held.unwrap_or_default());
+                }
+            }
+            continue;
+        }
         if read.skipped {
             // Answered from what is held: the last state seen and the last good list.
             let (state, reason) = match core.states.get(&acct.id) {
@@ -408,24 +474,6 @@ fn settle(
             stale |= keep_last && state == AccountState::Unavailable && !list.is_empty();
             statuses.push(AccountOut { id: acct.id.clone(), label: acct.label.clone(), state: state.as_str(), reason });
             lists.push(list);
-            continue;
-        }
-        let out = |state: AccountState, reason| AccountOut { id: acct.id.clone(), label: acct.label.clone(), state: state.as_str(), reason };
-        if read.discarded || generation_of(core, &acct.id) != read.generation {
-            // The credential store read here is local and deliberate, like the other store
-            // calls under this lock.
-            match store.fetch(&acct.id) {
-                Fetch::Missing => {
-                    statuses.push(out(AccountState::SignedOut, None));
-                    lists.push(Vec::new());
-                }
-                _ => {
-                    let held = if keep_last { core.last.get(&acct.id).cloned() } else { None };
-                    stale |= keep_last;
-                    statuses.push(out(AccountState::Ok, None));
-                    lists.push(held.unwrap_or_default());
-                }
-            }
             continue;
         }
         let Read { state, meetings: fresh, reason, diag, .. } = read;
@@ -520,6 +568,58 @@ pub fn read_next_only(
     drop(guard);
     drop(c);
     MeetPayload { accounts: statuses, meetings, stale, seq }
+}
+
+/// Every account read at once, each on its own thread; the answer is the newest payload,
+/// which has seen every account's result. One slow account delays only itself. A thread that
+/// panics loses only its own answer; when none is left the answer comes from what is held.
+#[allow(clippy::too_many_arguments)]
+pub fn read_next_parallel(
+    accounts: &[Account],
+    store: &(dyn SecretStore + Sync),
+    tokens: &(dyn TokenClient + Sync),
+    graph: &(dyn GraphClient + Sync),
+    core: &Mutex<Core>,
+    links: &Mutex<Links>,
+    now: u64,
+) -> MeetPayload {
+    let payloads: Vec<MeetPayload> = std::thread::scope(|sc| {
+        let handles: Vec<_> = accounts
+            .iter()
+            .map(|a| sc.spawn(move || read_next_only(accounts, store, tokens, graph, core, links, now, Only::One(&a.id))))
+            .collect();
+        handles.into_iter().filter_map(|h| h.join().ok()).collect()
+    });
+    payloads
+        .into_iter()
+        .max_by_key(|p| p.seq)
+        .unwrap_or_else(|| read_next_only(accounts, store, tokens, graph, core, links, now, Only::Nobody))
+}
+
+/// `read_next_parallel` for the day read.
+#[allow(clippy::too_many_arguments)]
+pub fn read_day_parallel(
+    accounts: &[Account],
+    store: &(dyn SecretStore + Sync),
+    tokens: &(dyn TokenClient + Sync),
+    graph: &(dyn GraphClient + Sync),
+    core: &Mutex<Core>,
+    links: &Mutex<Links>,
+    now: u64,
+    from: u64,
+    to: u64,
+) -> DayPayload {
+    let payloads: Vec<DayPayload> = std::thread::scope(|sc| {
+        let handles: Vec<_> = accounts
+            .iter()
+            .map(|a| sc.spawn(move || read_day_only(accounts, store, tokens, graph, core, links, now, from, to, Only::One(&a.id))))
+            .collect();
+        handles.into_iter().filter_map(|h| h.join().ok()).collect()
+    });
+    payloads
+        .into_iter()
+        .max_by_key(|p| p.seq)
+        .unwrap_or_else(|| read_day_only(accounts, store, tokens, graph, core, links, now, from, to, Only::Nobody))
 }
 
 #[derive(Debug, Serialize)]
@@ -673,6 +773,9 @@ pub fn sign_out(id: &str, store: &dyn SecretStore, core: &Mutex<Core>, links: &M
     core.last.remove(id);
     core.last_day.remove(id);
     core.pending.remove(id);
+    // Held state says signed out in the same lock hold, so no later read or peek of another
+    // account can copy out a stale "ok" for this one.
+    core.states.insert(id.to_string(), ("signed-out".to_string(), None));
     let mut l = links.lock().unwrap_or_else(|e| e.into_inner());
     l.map.retain(|_, (account, _)| account != id);
     l.day_map.retain(|_, (account, _)| account != id);
@@ -1857,5 +1960,201 @@ mod tests {
         let p = read_day_only(&both, &store, &t, &g, &core, &links, NOW + 5, NOW, NOW + 3600, Only::One("work"));
         assert_eq!(g.calls.get(), 1);
         assert_eq!(p.events.len(), 2);
+    }
+
+    // Section: one deadline, one read at a time, sign-out against held state, parallel helpers
+
+    struct TestClock {
+        ms: std::sync::atomic::AtomicU64,
+    }
+    impl Clock for TestClock {
+        fn now_ms(&self) -> u64 {
+            self.ms.load(Ordering::SeqCst)
+        }
+        fn epoch_secs(&self) -> u64 {
+            NOW
+        }
+        fn sleep(&self, d: Duration) {
+            self.ms.fetch_add(d.as_millis() as u64, Ordering::SeqCst);
+        }
+    }
+
+    #[test]
+    fn a_read_queued_behind_a_blocked_token_request_gives_up_at_its_deadline_and_makes_no_late_token_call() {
+        let (store, core) = setup();
+        let links = Mutex::new(Links::default());
+        let clock = Arc::new(TestClock { ms: 0.into() });
+        core.lock().unwrap().clock = Some(clock.clone() as Arc<dyn Clock + Send + Sync>);
+        let gate = Gate::default();
+        let t = SyncTokens { replies: StdMutex::new(vec![ok_token("new", Some("refresh-2")), ok_token("later", Some("refresh-3"))]), calls: AtomicUsize::new(0), gate: Some(&gate) };
+        let g = SyncGraph::new(vec![], None);
+        std::thread::scope(|sc| {
+            let first = sc.spawn(|| read_next(&[acct("work")], &store, &t, &g, &core, &links, NOW));
+            gate.wait_entered();
+            let second = sc.spawn(|| read_day(&[acct("work")], &store, &t, &g, &core, &links, NOW, NOW, NOW + 3600));
+            wait_for_turn_holders(&core, "work", 3);
+            // Still inside the budget: the second read is waiting, not answering.
+            assert!(!second.is_finished());
+            clock.sleep(Duration::from_secs(13));
+            let p = second.join().unwrap();
+            assert_eq!(p.accounts[0].state, "unavailable");
+            assert_eq!(p.accounts[0].reason.as_deref(), Some("graph-timeout"));
+            assert_eq!(t.calls.load(Ordering::SeqCst), 1, "a late token request was made");
+            gate.open();
+            let late = first.join().unwrap();
+            // The first read's deadline passed while its token request ran, so it came to no list.
+            assert!(late.meetings.is_empty());
+        });
+        assert_eq!(t.calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn a_read_that_arrives_at_its_deadline_starts_no_token_request() {
+        let (store, core) = setup();
+        let links = Mutex::new(Links::default());
+        let t = FakeTokens::new(vec![ok_token("a", None)]);
+        let g = FakeGraph::new(vec![]);
+        // A clock that jumps past every deadline as soon as it is asked twice.
+        struct Jumpy(std::sync::atomic::AtomicU64);
+        impl Clock for Jumpy {
+            fn now_ms(&self) -> u64 {
+                self.0.fetch_add(7_000, Ordering::SeqCst)
+            }
+            fn epoch_secs(&self) -> u64 {
+                NOW
+            }
+            fn sleep(&self, _d: Duration) {}
+        }
+        core.lock().unwrap().clock = Some(Arc::new(Jumpy(0.into())) as Arc<dyn Clock + Send + Sync>);
+        let p = read_next(&[acct("work")], &store, &t, &g, &core, &links, NOW);
+        assert_eq!(p.accounts[0].reason.as_deref(), Some("graph-timeout"));
+        assert_eq!(t.calls.get(), 0);
+        assert_eq!(g.calls.get(), 0);
+    }
+
+    fn two_accounts_ready() -> (Chunked<MemoryBlobs>, Mutex<Core>, Mutex<Links>, [Account; 2]) {
+        let store = Chunked(MemoryBlobs::default());
+        store.set("fast", "r1");
+        store.set("slow", "r2");
+        let core = Mutex::new(Core::default());
+        core.lock().unwrap().cache.insert("fast".into(), Cached { access: "f".into(), expires_at: NOW + 6000 });
+        core.lock().unwrap().cache.insert("slow".into(), Cached { access: "s".into(), expires_at: NOW + 6000 });
+        (store, core, Mutex::new(Links::default()), [acct("fast"), acct("slow")])
+    }
+
+    #[test]
+    fn sign_out_during_another_accounts_blocked_read_keeps_the_next_answer_signed_out() {
+        let (store, core, links, accounts) = two_accounts_ready();
+        let gate = Gate::default();
+        let graph = PerAccessGraph { gate: &gate, slow_access: "s" };
+        let first = read_next_only(&accounts, &store, &no_tokens(), &graph, &core, &links, NOW, Only::One("fast"));
+        assert_eq!(first.accounts[0].state, "ok");
+        std::thread::scope(|sc| {
+            let slow = sc.spawn(|| read_next_only(&accounts, &store, &no_tokens(), &graph, &core, &links, NOW, Only::One("slow")));
+            gate.wait_entered();
+            sign_out("fast", &store, &core, &links);
+            gate.open();
+            let p = slow.join().unwrap();
+            assert_eq!(p.accounts[0].state, "signed-out");
+            assert!(p.meetings.iter().all(|m| m.account_id == "slow"), "{:?}", p.meetings);
+            assert!(links.lock().unwrap().map.values().all(|(a, _)| a == "slow"));
+            let peek = read_next_only(&accounts, &store, &no_tokens(), &graph, &core, &links, NOW + 1, Only::Nobody);
+            assert_eq!(peek.accounts[0].state, "signed-out");
+            assert!(peek.meetings.iter().all(|m| m.account_id == "slow"));
+            assert!(peek.seq > p.seq);
+        });
+    }
+
+    #[test]
+    fn sign_out_during_another_accounts_blocked_read_keeps_the_day_answer_signed_out() {
+        let (store, core, links, accounts) = two_accounts_ready();
+        let gate = Gate::default();
+        let graph = PerAccessGraph { gate: &gate, slow_access: "s" };
+        let first = read_day_only(&accounts, &store, &no_tokens(), &graph, &core, &links, NOW, NOW, NOW + 3600, Only::One("fast"));
+        assert_eq!(first.accounts[0].state, "ok");
+        std::thread::scope(|sc| {
+            let slow = sc.spawn(|| read_day_only(&accounts, &store, &no_tokens(), &graph, &core, &links, NOW, NOW, NOW + 3600, Only::One("slow")));
+            gate.wait_entered();
+            sign_out("fast", &store, &core, &links);
+            gate.open();
+            let p = slow.join().unwrap();
+            assert_eq!(p.accounts[0].state, "signed-out");
+            assert!(p.events.iter().all(|e| e.account_id == "slow"), "{:?}", p.events);
+            assert!(links.lock().unwrap().day_map.values().all(|(a, _)| a == "slow"));
+            let peek = read_day_only(&accounts, &store, &no_tokens(), &graph, &core, &links, NOW + 1, NOW, NOW + 3600, Only::Nobody);
+            assert_eq!(peek.accounts[0].state, "signed-out");
+            assert!(peek.events.iter().all(|e| e.account_id == "slow"));
+        });
+    }
+
+    struct PanicGraph {
+        on: &'static str,
+        all: bool,
+    }
+    impl GraphClient for PanicGraph {
+        fn calendar_view(&self, access: &str, _s: &str, _e: &str) -> GraphReply {
+            if self.all || access == self.on {
+                panic!("fake graph panic");
+            }
+            GraphReply::Ok(body("Survivor", access))
+        }
+    }
+
+    #[test]
+    fn parallel_next_waits_for_the_blocked_account_and_returns_the_newest_answer_with_both() {
+        let (store, core, links, accounts) = two_accounts_ready();
+        let gate = Gate::default();
+        let graph = PerAccessGraph { gate: &gate, slow_access: "s" };
+        std::thread::scope(|sc| {
+            let all = sc.spawn(|| read_next_parallel(&accounts, &store, &no_tokens(), &graph, &core, &links, NOW));
+            gate.wait_entered();
+            gate.open();
+            let p = all.join().unwrap();
+            assert_eq!(p.meetings.len(), 2);
+            assert!(p.accounts.iter().all(|a| a.state == "ok"));
+            let peek = read_next_only(&accounts, &store, &no_tokens(), &graph, &core, &links, NOW, Only::Nobody);
+            // The answer returned was the newest one made by the parallel read.
+            assert!(peek.seq > p.seq);
+        });
+    }
+
+    #[test]
+    fn parallel_day_returns_both_accounts_events() {
+        let (store, core, links, accounts) = two_accounts_ready();
+        let gate = Gate::default();
+        let graph = PerAccessGraph { gate: &gate, slow_access: "s" };
+        std::thread::scope(|sc| {
+            let all = sc.spawn(|| read_day_parallel(&accounts, &store, &no_tokens(), &graph, &core, &links, NOW, NOW, NOW + 3600));
+            gate.wait_entered();
+            gate.open();
+            let p = all.join().unwrap();
+            assert_eq!(p.events.len(), 2);
+            assert!(p.accounts.iter().all(|a| a.state == "ok"));
+        });
+    }
+
+    #[test]
+    fn a_panicking_account_thread_loses_only_its_own_answer_and_frees_its_slot() {
+        let (store, core, links, accounts) = two_accounts_ready();
+        let graph = PanicGraph { on: "s", all: false };
+        let p = read_next_parallel(&accounts, &store, &no_tokens(), &graph, &core, &links, NOW);
+        assert_eq!(p.accounts[0].state, "ok");
+        assert_eq!(p.meetings.len(), 1);
+        assert_eq!(p.meetings[0].account_id, "fast");
+        // The panicked read released its slot: the account reads again at once.
+        let again = read_next_only(&accounts, &store, &no_tokens(), &PanicGraph { on: "none", all: false }, &core, &links, NOW + 1, Only::One("slow"));
+        assert_eq!(again.accounts[1].state, "ok");
+    }
+
+    #[test]
+    fn when_every_thread_panics_the_answer_comes_from_what_is_held() {
+        let (store, core, links, accounts) = two_accounts_ready();
+        let graph = PanicGraph { on: "", all: true };
+        let day = read_day_parallel(&accounts, &store, &no_tokens(), &graph, &core, &links, NOW, NOW, NOW + 3600);
+        assert!(day.events.is_empty());
+        let p = read_next_parallel(&accounts, &store, &no_tokens(), &graph, &core, &links, NOW);
+        assert!(p.meetings.is_empty());
+        assert_eq!(p.accounts.len(), 2);
+        assert!(p.accounts.iter().all(|a| a.state == "checking"));
     }
 }

@@ -86,7 +86,7 @@ fn header_of(resp: &ureq::Response, name: &str) -> Option<String> {
 
 fn raw_of(resp: ureq::Response, success_body: bool) -> graph::Raw {
     let status = resp.status();
-    let retry_after = resp.header("retry-after").and_then(|v| v.trim().parse::<u64>().ok());
+    let retry_after = header_of(&resp, "retry-after");
     let request_id = header_of(&resp, "request-id");
     let client_request_id = header_of(&resp, "client-request-id");
     let body = if success_body { read_body(resp).unwrap_or_default() } else { read_capped(resp, reason::MAX_ERROR_BODY) };
@@ -95,7 +95,7 @@ fn raw_of(resp: ureq::Response, success_body: bool) -> graph::Raw {
 
 impl graph::GraphClient for HttpGraph {
     fn calendar_view(&self, access: &str, start: &str, end: &str) -> graph::GraphReply {
-        let ctx = graph::Ctx { kind: graph::Kind::Next, began: std::time::Instant::now(), budget: graph::BUDGET };
+        let ctx = graph::Ctx::new(graph::Kind::Next, std::sync::Arc::new(graph::RealClock), graph::BUDGET);
         self.calendar_view_diag(access, start, end, &ctx).0
     }
 
@@ -121,7 +121,7 @@ impl graph::GraphClient for HttpGraph {
                 Err(ureq::Error::Transport(_)) => graph::Raw { status: 0, retry_after: None, request_id: None, client_request_id: None, body: Vec::new() },
             }
         };
-        graph::run_attempts(ctx, &mut send, &mut |d| std::thread::sleep(d))
+        graph::run_attempts(ctx, &mut send)
     }
 }
 
@@ -220,49 +220,6 @@ pub fn require_wall2(label: &str) -> Result<(), String> {
 
 // Section: commands
 
-/// Every account read at once, each on its own thread; the answer is the newest payload,
-/// which has seen every account's result. One slow account delays only itself, and every
-/// request is bounded (5 s to connect, 10 s per read, 12 s in all).
-fn next_in_parallel(accounts: &[Account], now: u64) -> service::MeetPayload {
-    let store = secrets();
-    let payloads: Vec<service::MeetPayload> = std::thread::scope(|sc| {
-        let handles: Vec<_> = accounts
-            .iter()
-            .map(|a| {
-                let store = &store;
-                sc.spawn(move || {
-                    service::read_next_only(accounts, store, &auth::HttpTokens, &HttpGraph, core(), links(), now, service::Only::One(&a.id))
-                })
-            })
-            .collect();
-        handles.into_iter().filter_map(|h| h.join().ok()).collect()
-    });
-    payloads
-        .into_iter()
-        .max_by_key(|p| p.seq)
-        .unwrap_or_else(|| service::read_next_only(accounts, &store, &auth::HttpTokens, &HttpGraph, core(), links(), now, service::Only::Nobody))
-}
-
-fn day_in_parallel(accounts: &[Account], now: u64, from: u64, to: u64) -> service::DayPayload {
-    let store = secrets();
-    let payloads: Vec<service::DayPayload> = std::thread::scope(|sc| {
-        let handles: Vec<_> = accounts
-            .iter()
-            .map(|a| {
-                let store = &store;
-                sc.spawn(move || {
-                    service::read_day_only(accounts, store, &auth::HttpTokens, &HttpGraph, core(), links(), now, from, to, service::Only::One(&a.id))
-                })
-            })
-            .collect();
-        handles.into_iter().filter_map(|h| h.join().ok()).collect()
-    });
-    payloads
-        .into_iter()
-        .max_by_key(|p| p.seq)
-        .unwrap_or_else(|| service::read_day_only(accounts, &store, &auth::HttpTokens, &HttpGraph, core(), links(), now, from, to, service::Only::Nobody))
-}
-
 /// With no arguments: every account, in parallel. With `only`: that account only, the other
 /// answered from what is held. With `peek`: nothing goes to the network; the accounts come
 /// back at once with their last known state ("checking" before the first read).
@@ -280,7 +237,7 @@ pub async fn wall2_meet_next(window: tauri::WebviewWindow, only: Option<String>,
         } else if let Some(id) = only.as_deref() {
             service::read_next_only(&accounts, &secrets(), &auth::HttpTokens, &HttpGraph, core(), links(), now, service::Only::One(id))
         } else {
-            next_in_parallel(&accounts, now)
+            service::read_next_parallel(&accounts, &secrets(), &auth::HttpTokens, &HttpGraph, core(), links(), now)
         };
         let lines = std::mem::take(&mut lock_core().log_lines);
         meetlog::write_all(lines);
@@ -306,7 +263,7 @@ pub async fn wall2_meet_day(window: tauri::WebviewWindow) -> Result<service::Day
     tauri::async_runtime::spawn_blocking(move || {
         let now = now_secs();
         let (from, to) = day_window(now as i64, &crate::wall2_feeds::local_offset_secs);
-        let payload = day_in_parallel(&accounts, now, from, to);
+        let payload = service::read_day_parallel(&accounts, &secrets(), &auth::HttpTokens, &HttpGraph, core(), links(), now, from, to);
         let lines = std::mem::take(&mut lock_core().log_lines);
         meetlog::write_all(lines);
         payload

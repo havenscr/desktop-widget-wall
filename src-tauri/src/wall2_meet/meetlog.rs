@@ -1,9 +1,13 @@
-//! `wall2-meet.log`: one line per account state change, in the app log directory.
+//! `wall2-meet.log`: one line per account state change, and one per failed Graph call, in
+//! the app log directory.
 //!
 //! Same rules as `wall2-placement.log`: cleared at launch, size capped, write failures
 //! ignored, and a writer thread so no caller ever waits on the disk. A line holds the time,
-//! the account id from `meet.json`, the old state, the new state and a reason code. Nothing
-//! else is ever written.
+//! the account id from `meet.json`, the old state, the new state and a reason code. A failed
+//! Graph call adds fixed fields (request kind, HTTP status, Graph's error code and inner
+//! code, the two request ids, the attempt and the elapsed milliseconds), each checked against
+//! a plain character set, and the line is cut at 400 characters. Nothing else is ever written:
+//! no subject, attendee, address, token or URL.
 
 use std::sync::OnceLock;
 use std::sync::mpsc::SyncSender;

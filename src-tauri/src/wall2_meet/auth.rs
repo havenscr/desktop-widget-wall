@@ -214,6 +214,12 @@ pub enum TokenReply {
 
 pub trait TokenClient {
     fn post(&self, tenant: &str, form: &[(&str, &str)]) -> TokenReply;
+
+    /// The same request with a time limit (what remains of the read's deadline). The default
+    /// ignores it; the real client uses it.
+    fn post_within(&self, tenant: &str, form: &[(&str, &str)], _limit: Duration) -> TokenReply {
+        self.post(tenant, form)
+    }
 }
 
 pub fn classify_token(status: u16, body: &[u8]) -> TokenReply {
@@ -242,8 +248,12 @@ pub struct HttpTokens;
 
 impl TokenClient for HttpTokens {
     fn post(&self, tenant: &str, form: &[(&str, &str)]) -> TokenReply {
+        self.post_within(tenant, form, super::graph::BUDGET)
+    }
+
+    fn post_within(&self, tenant: &str, form: &[(&str, &str)], limit: Duration) -> TokenReply {
         let url = format!("https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token");
-        match agent().post(&url).send_form(form) {
+        match agent().post(&url).timeout(limit).send_form(form) {
             Ok(resp) => {
                 let status = resp.status();
                 match read_body(resp) {

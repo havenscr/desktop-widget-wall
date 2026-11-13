@@ -3,6 +3,7 @@
 use super::reason::{clean_code, graph_reason, GRAPH_BODY, GRAPH_NETWORK, GRAPH_TIMEOUT, MAX_ERROR_BODY};
 use super::{MAX_BODY, MAX_TITLE_CHARS};
 use serde_json::Value;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 pub const MAX_MEETINGS: usize = 8;
@@ -45,13 +46,52 @@ impl Kind {
     }
 }
 
-/// One read's clock: when it began and how long all of it (token and Graph, retries
-/// included) may take.
-#[derive(Debug, Clone, Copy)]
+/// Time, passed in so tests control it. Milliseconds on a monotonic scale, seconds since the
+/// Unix epoch for HTTP dates, and a sleep that a test clock turns into a jump forward.
+pub trait Clock {
+    fn now_ms(&self) -> u64;
+    fn epoch_secs(&self) -> u64;
+    fn sleep(&self, d: Duration);
+}
+
+pub struct RealClock;
+
+impl Clock for RealClock {
+    fn now_ms(&self) -> u64 {
+        static START: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
+        START.get_or_init(Instant::now).elapsed().as_millis() as u64
+    }
+    fn epoch_secs(&self) -> u64 {
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+    }
+    fn sleep(&self, d: Duration) {
+        std::thread::sleep(d);
+    }
+}
+
+/// One read's clock and its single absolute deadline: when it began and the instant by which
+/// everything (the wait for the turn, the token request, the Graph attempts, the retry
+/// waits and a forced refresh) must be over.
+#[derive(Clone)]
 pub struct Ctx {
     pub kind: Kind,
-    pub began: Instant,
-    pub budget: Duration,
+    pub clock: Arc<dyn Clock + Send + Sync>,
+    pub began_ms: u64,
+    pub deadline_ms: u64,
+}
+
+impl Ctx {
+    pub fn new(kind: Kind, clock: Arc<dyn Clock + Send + Sync>, budget: Duration) -> Ctx {
+        let began_ms = clock.now_ms();
+        Ctx { kind, clock, began_ms, deadline_ms: began_ms + budget.as_millis() as u64 }
+    }
+    pub fn elapsed_ms(&self) -> u64 {
+        self.clock.now_ms().saturating_sub(self.began_ms)
+    }
+    /// What is left before the deadline; zero once it has passed.
+    pub fn remaining(&self) -> Duration {
+        Duration::from_millis(self.deadline_ms.saturating_sub(self.clock.now_ms()))
+    }
 }
 
 /// What a Graph failure leaves in the log. Ids and codes only; never a subject, an attendee,
@@ -102,7 +142,8 @@ impl Diag {
 /// One HTTP attempt as the transport saw it. `status` 0 means no reply at all.
 pub struct Raw {
     pub status: u16,
-    pub retry_after: Option<u64>,
+    /// The `Retry-After` header as sent: whole seconds or an HTTP date.
+    pub retry_after: Option<String>,
     pub request_id: Option<String>,
     pub client_request_id: Option<String>,
     pub body: Vec<u8>,
@@ -134,27 +175,64 @@ fn diag_of(ctx: &Ctx, raw: &Raw, attempt: u32) -> Diag {
         request_id: raw.request_id.clone(),
         client_request_id: raw.client_request_id.clone(),
         attempt,
-        elapsed_ms: ctx.began.elapsed().as_millis() as u64,
+        elapsed_ms: ctx.elapsed_ms(),
     }
+}
+
+/// Days since 1970-01-01 for a civil date (the inverse of `civil_from_days`).
+fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = y.div_euclid(400);
+    let yoe = y.rem_euclid(400);
+    let doy = (153 * (if m > 2 { m - 3 } else { m + 9 }) + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    era * 146_097 + doe - 719_468
+}
+
+/// `Thu, 12 Nov 2026 05:00:03 GMT` as seconds since the epoch; None for any other shape.
+pub fn parse_http_date(s: &str) -> Option<u64> {
+    let parts: Vec<&str> = s.split_whitespace().collect();
+    if parts.len() != 6 || parts[5] != "GMT" || !parts[0].ends_with(',') {
+        return None;
+    }
+    let day: i64 = parts[1].parse().ok()?;
+    let month = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"].iter().position(|m| *m == parts[2])? as i64 + 1;
+    let year: i64 = parts[3].parse().ok()?;
+    let mut hms = parts[4].split(':').map(|n| n.parse::<i64>().ok());
+    let (h, mi, sec) = (hms.next()??, hms.next()??, hms.next()??);
+    if hms.next().is_some() || !(1..=31).contains(&day) || !(0..24).contains(&h) || !(0..60).contains(&mi) || !(0..61).contains(&sec) || !(1970..=9999).contains(&year) {
+        return None;
+    }
+    let secs = days_from_civil(year, month, day) * 86_400 + h * 3600 + mi * 60 + sec;
+    u64::try_from(secs).ok()
+}
+
+/// How long `Retry-After` asks to wait: whole seconds, or an HTTP date measured from `now_epoch`.
+/// Never negative (a past date is zero) and never over five seconds. None when the value is
+/// neither form.
+pub fn retry_after_wait(value: &str, now_epoch: u64) -> Option<Duration> {
+    let v = value.trim();
+    let secs = if !v.is_empty() && v.chars().all(|c| c.is_ascii_digit()) {
+        v.parse::<u64>().unwrap_or(u64::MAX)
+    } else {
+        parse_http_date(v)?.saturating_sub(now_epoch)
+    };
+    Some(Duration::from_secs(secs.min(MAX_RETRY_AFTER_SECS)))
 }
 
 /// The retry policy, with the network and the clock passed in. A 429, 503 or 504 is tried
 /// again (up to three attempts in all) after a short wait, `Retry-After` honoured up to five
-/// seconds, and only while the wait fits in the read's budget. Nothing else is retried.
+/// seconds, and only while the wait fits before the read's deadline. Nothing else is retried.
 /// A 401 is the caller's to handle (refresh the token, ask again).
-pub fn run_attempts(
-    ctx: &Ctx,
-    send: &mut dyn FnMut(u32, Duration) -> Raw,
-    sleep: &mut dyn FnMut(Duration),
-) -> (GraphReply, Option<Diag>) {
+pub fn run_attempts(ctx: &Ctx, send: &mut dyn FnMut(u32, Duration) -> Raw) -> (GraphReply, Option<Diag>) {
     let mut attempt = 0u32;
     loop {
         attempt += 1;
-        let elapsed = ctx.began.elapsed();
-        if elapsed >= ctx.budget {
+        let remaining = ctx.remaining();
+        if remaining.is_zero() {
             return (GraphReply::Transient(GRAPH_TIMEOUT.to_string()), None);
         }
-        let raw = send(attempt, (ctx.budget - elapsed).min(READ_TIMEOUT));
+        let raw = send(attempt, remaining.min(READ_TIMEOUT));
         let status = raw.status;
         match status {
             200..=299 => {
@@ -167,9 +245,13 @@ pub fn run_attempts(
             0 => return (GraphReply::Transient(GRAPH_NETWORK.to_string()), Some(diag_of(ctx, &raw, attempt))),
             s if is_retryable(s) => {
                 if attempt < MAX_ATTEMPTS {
-                    let wait = raw.retry_after.map(|n| Duration::from_secs(n.min(MAX_RETRY_AFTER_SECS))).unwrap_or_else(|| backoff(attempt));
-                    if ctx.began.elapsed() + wait < ctx.budget {
-                        sleep(wait);
+                    let wait = raw
+                        .retry_after
+                        .as_deref()
+                        .and_then(|v| retry_after_wait(v, ctx.clock.epoch_secs()))
+                        .unwrap_or_else(|| backoff(attempt));
+                    if wait < ctx.remaining() {
+                        ctx.clock.sleep(wait);
                         continue;
                     }
                 }
@@ -374,30 +456,62 @@ mod tests {
     }
     use serde_json::json;
 
-    fn ctx_ms(budget_ms: u64) -> Ctx {
-        Ctx { kind: Kind::Next, began: Instant::now(), budget: Duration::from_millis(budget_ms) }
+    /// A clock the test controls: sleeping jumps it forward, and so does a request.
+    struct TestClock {
+        ms: std::sync::atomic::AtomicU64,
+        epoch: u64,
+        sleeps: std::sync::Mutex<Vec<Duration>>,
+    }
+    impl TestClock {
+        fn new() -> Arc<TestClock> {
+            Arc::new(TestClock { ms: 0.into(), epoch: 1_794_459_600, sleeps: Default::default() })
+        }
+        fn advance(&self, d: Duration) {
+            self.ms.fetch_add(d.as_millis() as u64, std::sync::atomic::Ordering::SeqCst);
+        }
+    }
+    impl Clock for TestClock {
+        fn now_ms(&self) -> u64 {
+            self.ms.load(std::sync::atomic::Ordering::SeqCst)
+        }
+        fn epoch_secs(&self) -> u64 {
+            self.epoch
+        }
+        fn sleep(&self, d: Duration) {
+            self.sleeps.lock().unwrap().push(d);
+            self.advance(d);
+        }
     }
 
-    fn raw(status: u16, retry_after: Option<u64>, body: &str) -> Raw {
-        Raw { status, retry_after, request_id: Some("11111111-2222-3333-4444-555555555555".into()), client_request_id: Some("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee".into()), body: body.as_bytes().to_vec() }
+    fn ctx_with(clock: &Arc<TestClock>, budget_ms: u64) -> Ctx {
+        Ctx::new(Kind::Next, clock.clone(), Duration::from_millis(budget_ms))
     }
 
-    /// Runs the policy over a script of replies; returns the outcome, how many calls were
-    /// made and the waits it asked for (none are really slept).
-    fn run(script: Vec<Raw>, budget_ms: u64) -> (GraphReply, Option<Diag>, u32, Vec<Duration>) {
-        let ctx = ctx_ms(budget_ms);
+    fn raw(status: u16, retry_after: Option<&str>, body: &str) -> Raw {
+        Raw { status, retry_after: retry_after.map(str::to_string), request_id: Some("11111111-2222-3333-4444-555555555555".into()), client_request_id: Some("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee".into()), body: body.as_bytes().to_vec() }
+    }
+
+    /// Runs the policy over a script of replies on a test clock; each request takes
+    /// `request_ms`. Returns the outcome, the calls made, the waits taken and the clock.
+    fn run_on(script: Vec<Raw>, budget_ms: u64, request_ms: u64) -> (GraphReply, Option<Diag>, u32, Vec<Duration>, u64) {
+        let clock = TestClock::new();
+        let ctx = ctx_with(&clock, budget_ms);
         let mut queue = script.into_iter();
         let mut calls = 0u32;
-        let mut sleeps: Vec<Duration> = Vec::new();
-        let (reply, diag) = run_attempts(
-            &ctx,
-            &mut |_attempt, _timeout| {
-                calls += 1;
-                queue.next().expect("more calls than scripted")
-            },
-            &mut |d| sleeps.push(d),
-        );
-        (reply, diag, calls, sleeps)
+        let c2 = clock.clone();
+        let (reply, diag) = run_attempts(&ctx, &mut |_attempt, timeout| {
+            calls += 1;
+            // A request never outlasts the timeout it was given.
+            c2.advance(Duration::from_millis(request_ms).min(timeout));
+            queue.next().expect("more calls than scripted")
+        });
+        let sleeps = clock.sleeps.lock().unwrap().clone();
+        (reply, diag, calls, sleeps, clock.now_ms())
+    }
+
+    fn run(script: Vec<Raw>, budget_ms: u64) -> (GraphReply, Option<Diag>, u32, Vec<Duration>) {
+        let (a, b, c, d, _) = run_on(script, budget_ms, 0);
+        (a, b, c, d)
     }
 
     const UNKNOWN: &str = r#"{"error":{"code":"UnknownError","message":"secret subject here","innerError":{"code":"InnerThing","request-id":"x"}}}"#;
@@ -424,13 +538,47 @@ mod tests {
 
     #[test]
     fn retry_after_is_honoured_up_to_five_seconds() {
-        let (_, _, _, sleeps) = run(vec![raw(429, Some(2), ""), raw(429, Some(30), ""), raw(200, None, "{}")], 12_000);
+        let (_, _, _, sleeps) = run(vec![raw(429, Some("2"), ""), raw(429, Some("30"), ""), raw(200, None, "{}")], 12_000);
         assert_eq!(sleeps, vec![Duration::from_secs(2), Duration::from_secs(5)]);
     }
 
     #[test]
+    fn retry_after_as_a_date_a_past_date_and_a_far_date() {
+        let now = 1_794_459_600; // Thu, 12 Nov 2026 05:00:00 GMT
+        assert_eq!(retry_after_wait("3", now), Some(Duration::from_secs(3)));
+        assert_eq!(retry_after_wait("Thu, 12 Nov 2026 05:00:03 GMT", now), Some(Duration::from_secs(3)));
+        assert_eq!(retry_after_wait("Thu, 12 Nov 2026 04:59:00 GMT", now), Some(Duration::ZERO));
+        assert_eq!(retry_after_wait("Thu, 12 Nov 2026 06:00:00 GMT", now), Some(Duration::from_secs(5)));
+        assert_eq!(retry_after_wait("99999999999999999999", now), Some(Duration::from_secs(5)));
+        assert_eq!(retry_after_wait("soon", now), None);
+        assert_eq!(retry_after_wait("", now), None);
+        assert_eq!(parse_http_date("Thu, 01 Jan 1970 00:00:00 GMT"), Some(0));
+        assert_eq!(parse_http_date("Sat, 29 Feb 2000 00:00:00 GMT"), Some(951_782_400));
+    }
+
+    #[test]
+    fn a_date_retry_after_is_slept_on_the_test_clock() {
+        let (_, _, calls, sleeps) = run(vec![raw(503, Some("Thu, 12 Nov 2026 05:00:02 GMT"), ""), raw(200, None, "{}")], 12_000);
+        assert_eq!(calls, 2);
+        assert_eq!(sleeps, vec![Duration::from_secs(2)]);
+    }
+
+    #[test]
+    fn waits_and_request_time_stay_inside_the_budget() {
+        // Three slow 503s with the longest wait: 3 s + 5 s wait + (4 s left of budget) ends at the budget.
+        let (reply, _, calls, sleeps, end) = run_on(vec![raw(503, Some("5"), ""), raw(503, Some("5"), ""), raw(503, Some("5"), "")], 12_000, 4_000);
+        assert!(end <= 12_000, "ended at {end} ms");
+        assert!(calls >= 2 && calls <= 3);
+        assert!(sleeps.iter().all(|d| *d <= Duration::from_secs(5)));
+        assert!(matches!(reply, GraphReply::Transient(_)));
+        // A request given only what is left of the budget never overshoots it.
+        let (_, _, _, _, end) = run_on(vec![raw(503, Some("1"), ""), raw(503, Some("1"), ""), raw(503, Some("1"), "")], 5_000, 10_000);
+        assert!(end <= 5_000, "ended at {end} ms");
+    }
+
+    #[test]
     fn a_wait_that_does_not_fit_in_the_budget_is_not_taken() {
-        let (reply, _, calls, sleeps) = run(vec![raw(503, Some(5), UNKNOWN)], 1_000);
+        let (reply, _, calls, sleeps) = run(vec![raw(503, Some("5"), UNKNOWN)], 1_000);
         assert_eq!(calls, 1);
         assert!(sleeps.is_empty());
         assert!(matches!(reply, GraphReply::Transient(_)));
