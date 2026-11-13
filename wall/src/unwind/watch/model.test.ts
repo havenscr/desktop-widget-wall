@@ -272,11 +272,11 @@ describe('stop rules', () => {
     resetWatch();
     usePlaceStore.setState({ active: 'unwind' });
   });
-  it('removes the frame when Zen or Dream opens or another place does, and never restarts it', () => {
+  it('removes the frame when Zen opens or another place does, and never restarts it', () => {
     const st = useWatchStore.getState();
     st.play({ kind: 'video', id: V });
     expect(useWatchStore.getState().playing?.label).toBe('Night drive');
-    usePlaceStore.getState().openDream();
+    usePlaceStore.getState().setActive('zen');
     expect(useWatchStore.getState().playing).toBeNull();
     usePlaceStore.setState({ active: 'unwind' });
     expect(useWatchStore.getState().playing).toBeNull();

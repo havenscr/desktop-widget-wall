@@ -37,7 +37,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   localStorage.clear();
   resetWatch();
-  usePlaceStore.setState({ active: 'unwind', from: 'work', zenDream: false });
+  usePlaceStore.setState({ active: 'unwind', from: 'work' });
   useSignalStore.setState({ call: null });
   mocks.set('get_now_playing', () => ({ playback_status: 'stopped' }));
 });
