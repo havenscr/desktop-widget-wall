@@ -220,6 +220,11 @@ pub trait TokenClient {
     fn post_within(&self, tenant: &str, form: &[(&str, &str)], _limit: Duration) -> TokenReply {
         self.post(tenant, form)
     }
+
+    /// `post_within`, plus the details of a network-level failure for the log. The default has none.
+    fn post_diag(&self, tenant: &str, form: &[(&str, &str)], limit: Duration, _ctx: &super::graph::Ctx) -> (TokenReply, Option<super::graph::Diag>) {
+        (self.post_within(tenant, form, limit), None)
+    }
 }
 
 pub fn classify_token(status: u16, body: &[u8]) -> TokenReply {
@@ -252,17 +257,42 @@ impl TokenClient for HttpTokens {
     }
 
     fn post_within(&self, tenant: &str, form: &[(&str, &str)], limit: Duration) -> TokenReply {
+        self.send(tenant, form, limit).0
+    }
+
+    fn post_diag(&self, tenant: &str, form: &[(&str, &str)], limit: Duration, ctx: &super::graph::Ctx) -> (TokenReply, Option<super::graph::Diag>) {
+        let (reply, net) = self.send(tenant, form, limit);
+        let diag = net.map(|net| super::graph::Diag {
+            kind: ctx.kind,
+            host: "login",
+            net: Some(net),
+            status: 0,
+            code: None,
+            inner: None,
+            request_id: None,
+            client_request_id: None,
+            attempt: 1,
+            elapsed_ms: ctx.elapsed_ms(),
+        });
+        (reply, diag)
+    }
+}
+
+impl HttpTokens {
+    /// The request, and the class of the network failure when there was one.
+    fn send(&self, tenant: &str, form: &[(&str, &str)], limit: Duration) -> (TokenReply, Option<&'static str>) {
         let url = format!("https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token");
         match agent().post(&url).timeout(limit).send_form(form) {
             Ok(resp) => {
                 let status = resp.status();
-                match read_body(resp) {
+                let reply = match read_body(resp) {
                     Some(body) => classify_token(status, &body),
                     None => TokenReply::Failed(format!("token-{status}")),
-                }
+                };
+                (reply, None)
             }
-            Err(ureq::Error::Status(code, resp)) => classify_token(code, &read_capped(resp, MAX_ERROR_BODY)),
-            Err(_) => TokenReply::Transient(TOKEN_NETWORK.to_string()),
+            Err(ureq::Error::Status(code, resp)) => (classify_token(code, &read_capped(resp, MAX_ERROR_BODY)), None),
+            Err(ureq::Error::Transport(t)) => (TokenReply::Transient(TOKEN_NETWORK.to_string()), Some(super::net_of(&t))),
         }
     }
 }

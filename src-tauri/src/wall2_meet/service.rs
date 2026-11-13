@@ -303,6 +303,7 @@ fn obtain(
     ctx: &Ctx,
     generation: u64,
     rejected: Option<&str>,
+    failure: &mut Option<Diag>,
 ) -> Result<String, Stop> {
     let refresh = match check(acct, store, &mut lock(core), now + ctx.elapsed_ms() / 1000, generation, rejected)? {
         Step::Have(a) => return Ok(a),
@@ -319,7 +320,8 @@ fn obtain(
         ("refresh_token", refresh.as_str()),
         ("scope", SCOPE),
     ];
-    let reply = tokens.post_within(&acct.tenant, &form, left.min(READ_TIMEOUT));
+    let (reply, net) = tokens.post_diag(&acct.tenant, &form, left.min(READ_TIMEOUT), ctx);
+    *failure = net;
     // Apply the reply in one short step, and only if the account is unchanged. The credential
     // store calls below run under the core lock on purpose: they are local and brief, and
     // doing them here keeps them ordered with sign-out's delete and generation bump.
@@ -390,16 +392,25 @@ fn read_window(
         // The deadline came while another read of this account was still running.
         return done(AccountState::Unavailable, None, Some(GRAPH_TIMEOUT.to_string()));
     };
-    let access = match obtain(acct, store, tokens, core, now, &ctx, generation, None) {
+    let mut token_failure: Option<Diag> = None;
+    let access = match obtain(acct, store, tokens, core, now, &ctx, generation, None, &mut token_failure) {
         Ok(a) => a,
-        Err(stop) => return stopped(stop),
+        Err(stop) => {
+            let mut r = stopped(stop);
+            r.diag = token_failure;
+            return r;
+        }
     };
     let (mut reply, mut diag) = graph.calendar_view_diag(&access, &start, &end, &ctx);
     if matches!(reply, GraphReply::Unauthorized) {
         // The cached token was refused: drop it, refresh once, ask once more.
-        let access = match obtain(acct, store, tokens, core, now, &ctx, generation, Some(access.as_str())) {
+        let access = match obtain(acct, store, tokens, core, now, &ctx, generation, Some(access.as_str()), &mut token_failure) {
             Ok(a) => a,
-            Err(stop) => return stopped(stop),
+            Err(stop) => {
+                let mut r = stopped(stop);
+                r.diag = token_failure;
+                return r;
+            }
         };
         (reply, diag) = graph.calendar_view_diag(&access, &start, &end, &ctx);
     }
@@ -1911,6 +1922,8 @@ mod tests {
         fn calendar_view_diag(&self, a: &str, s: &str, e: &str, ctx: &Ctx) -> (GraphReply, Option<Diag>) {
             let diag = Diag {
                 kind: ctx.kind,
+                host: "graph",
+                net: None,
                 status: 503,
                 code: Some("UnknownError".into()),
                 inner: None,
@@ -1937,9 +1950,9 @@ mod tests {
         assert!(first.starts_with("2026-11-12T"));
         let fields: Vec<&str> = first.split(' ').collect();
         let keys: Vec<&str> = fields[5..].iter().map(|f| f.split('=').next().unwrap()).collect();
-        assert_eq!(keys, ["req", "status", "code", "inner", "request-id", "client-request-id", "attempt", "ms"]);
+        assert_eq!(keys, ["req", "host", "status", "net", "af", "code", "inner", "request-id", "client-request-id", "attempt", "ms"]);
         assert_eq!(&fields[1..5], ["work", "start", "unavailable", "graph-503-UnknownError"]);
-        assert!(first.contains("req=next status=503 code=UnknownError inner=none"));
+        assert!(first.contains("req=next host=graph status=503 net=none af=unknown code=UnknownError inner=none"));
         assert!(first.contains("attempt=3 ms=4210"));
         assert!(lines[1].contains("req=day"));
         assert!(lines.iter().all(|l| l.len() <= 400 && l.matches('\n').count() == 1));
@@ -2156,5 +2169,40 @@ mod tests {
         assert!(p.meetings.is_empty());
         assert_eq!(p.accounts.len(), 2);
         assert!(p.accounts.iter().all(|a| a.state == "checking"));
+    }
+
+    struct NetTokens;
+    impl TokenClient for NetTokens {
+        fn post(&self, _t: &str, _f: &[(&str, &str)]) -> TokenReply {
+            TokenReply::Transient("token-network".into())
+        }
+        fn post_diag(&self, t: &str, f: &[(&str, &str)], _l: Duration, ctx: &Ctx) -> (TokenReply, Option<Diag>) {
+            let diag = Diag {
+                kind: ctx.kind,
+                host: "login",
+                net: Some("connect"),
+                status: 0,
+                code: None,
+                inner: None,
+                request_id: None,
+                client_request_id: None,
+                attempt: 1,
+                elapsed_ms: 2001,
+            };
+            (self.post(t, f), Some(diag))
+        }
+    }
+
+    #[test]
+    fn a_token_network_failure_logs_the_host_and_the_class_and_shows_the_same_reason() {
+        let (store, core) = setup();
+        let links = Mutex::new(Links::default());
+        let g = FakeGraph::new(vec![]);
+        let p = read_next(&[acct("work")], &store, &NetTokens, &g, &core, &links, NOW);
+        assert_eq!(p.accounts[0].reason.as_deref(), Some("token-network"));
+        assert_eq!(g.calls.get(), 0);
+        let lines = std::mem::take(&mut core.lock().unwrap().log_lines);
+        assert_eq!(lines.len(), 1);
+        assert!(lines[0].contains("unavailable token-network req=next host=login status=network net=connect af=unknown"), "{}", lines[0]);
     }
 }

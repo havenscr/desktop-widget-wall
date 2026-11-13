@@ -99,6 +99,10 @@ impl Ctx {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Diag {
     pub kind: Kind,
+    /// Which host the request went to: `graph` or `login`.
+    pub host: &'static str,
+    /// What kind of network failure it was (`dns`, `connect`, `tls`, `timeout`, `reset`, `other`), when no reply came.
+    pub net: Option<&'static str>,
     /// 0 when no reply arrived.
     pub status: u16,
     pub code: Option<String>,
@@ -126,9 +130,11 @@ impl Diag {
             None => "none".to_string(),
         };
         format!(
-            "req={} status={} code={} inner={} request-id={} client-request-id={} attempt={} ms={}",
+            "req={} host={} status={} net={} af=unknown code={} inner={} request-id={} client-request-id={} attempt={} ms={}",
             self.kind.as_str(),
+            self.host,
             status,
+            self.net.unwrap_or("none"),
             code(&self.code),
             code(&self.inner),
             clean_id(&self.request_id),
@@ -142,6 +148,8 @@ impl Diag {
 /// One HTTP attempt as the transport saw it. `status` 0 means no reply at all.
 pub struct Raw {
     pub status: u16,
+    /// The kind of network failure when `status` is 0.
+    pub net: Option<&'static str>,
     /// The `Retry-After` header as sent: whole seconds or an HTTP date.
     pub retry_after: Option<String>,
     pub request_id: Option<String>,
@@ -149,7 +157,9 @@ pub struct Raw {
     pub body: Vec<u8>,
 }
 
-pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+/// Per address: the client tries a host's addresses one after another, so a dead IPv6 route
+/// must not eat the budget before IPv4 is tried.
+pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
 pub const READ_TIMEOUT: Duration = Duration::from_secs(10);
 /// All of one read (token request, Graph request and retries) stays inside this.
 pub const BUDGET: Duration = Duration::from_secs(12);
@@ -169,6 +179,8 @@ fn diag_of(ctx: &Ctx, raw: &Raw, attempt: u32) -> Diag {
     let text = |path: &[&str]| json.as_ref().and_then(|j| str_at(j, path)).map(str::to_string);
     Diag {
         kind: ctx.kind,
+        host: "graph",
+        net: raw.net,
         status: raw.status,
         code: text(&["error", "code"]),
         inner: text(&["error", "innerError", "code"]),
@@ -176,6 +188,30 @@ fn diag_of(ctx: &Ctx, raw: &Raw, attempt: u32) -> Diag {
         client_request_id: raw.client_request_id.clone(),
         attempt,
         elapsed_ms: ctx.elapsed_ms(),
+    }
+}
+
+/// What the HTTP client said went wrong, before it is narrowed to a class.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum NetKind {
+    Dns,
+    Connect,
+    Io,
+    Other,
+}
+
+/// The class of a network failure, from the client's error kind and the kind of the I/O error
+/// under it. Never from error text, which could carry a host name or an address.
+pub fn classify_net(kind: NetKind, io: Option<std::io::ErrorKind>) -> &'static str {
+    use std::io::ErrorKind as K;
+    match (kind, io) {
+        (NetKind::Dns, _) => "dns",
+        (_, Some(K::TimedOut | K::WouldBlock)) => "timeout",
+        (_, Some(K::ConnectionReset | K::ConnectionAborted | K::BrokenPipe | K::UnexpectedEof)) => "reset",
+        (_, Some(K::InvalidData)) => "tls",
+        (_, Some(K::ConnectionRefused | K::AddrNotAvailable)) => "connect",
+        (NetKind::Connect, _) => "connect",
+        _ => "other",
     }
 }
 
@@ -488,7 +524,7 @@ mod tests {
     }
 
     fn raw(status: u16, retry_after: Option<&str>, body: &str) -> Raw {
-        Raw { status, retry_after: retry_after.map(str::to_string), request_id: Some("11111111-2222-3333-4444-555555555555".into()), client_request_id: Some("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee".into()), body: body.as_bytes().to_vec() }
+        Raw { status, net: if status == 0 { Some("connect") } else { None }, retry_after: retry_after.map(str::to_string), request_id: Some("11111111-2222-3333-4444-555555555555".into()), client_request_id: Some("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee".into()), body: body.as_bytes().to_vec() }
     }
 
     /// Runs the policy over a script of replies on a test clock; each request takes
@@ -613,13 +649,37 @@ mod tests {
     }
 
     #[test]
+    fn network_failures_are_classified_from_kinds_not_text() {
+        use std::io::ErrorKind as K;
+        assert_eq!(classify_net(NetKind::Dns, None), "dns");
+        assert_eq!(classify_net(NetKind::Dns, Some(K::TimedOut)), "dns");
+        assert_eq!(classify_net(NetKind::Connect, Some(K::TimedOut)), "timeout");
+        assert_eq!(classify_net(NetKind::Io, Some(K::WouldBlock)), "timeout");
+        assert_eq!(classify_net(NetKind::Io, Some(K::ConnectionReset)), "reset");
+        assert_eq!(classify_net(NetKind::Io, Some(K::UnexpectedEof)), "reset");
+        assert_eq!(classify_net(NetKind::Io, Some(K::InvalidData)), "tls");
+        assert_eq!(classify_net(NetKind::Connect, Some(K::ConnectionRefused)), "connect");
+        assert_eq!(classify_net(NetKind::Connect, None), "connect");
+        assert_eq!(classify_net(NetKind::Io, Some(K::PermissionDenied)), "other");
+        assert_eq!(classify_net(NetKind::Other, None), "other");
+    }
+
+    #[test]
+    fn a_network_failure_logs_its_class_and_host() {
+        let (reply, diag, _, _) = run(vec![raw(0, None, "")], 12_000);
+        assert!(matches!(reply, GraphReply::Transient(ref w) if w == "graph-network"));
+        let f = diag.unwrap().log_fields();
+        assert!(f.contains("host=graph status=network net=connect af=unknown"), "{f}");
+    }
+
+    #[test]
     fn log_fields_hold_the_listed_values_and_nothing_else() {
         let (_, diag, _, _) = run(vec![raw(503, None, UNKNOWN), raw(503, None, UNKNOWN), raw(503, None, UNKNOWN)], 12_000);
         let mut d = diag.unwrap();
         d.elapsed_ms = 4210;
         assert_eq!(
             d.log_fields(),
-            "req=next status=503 code=UnknownError inner=InnerThing request-id=11111111-2222-3333-4444-555555555555 client-request-id=aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee attempt=3 ms=4210"
+            "req=next host=graph status=503 net=none af=unknown code=UnknownError inner=InnerThing request-id=11111111-2222-3333-4444-555555555555 client-request-id=aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee attempt=3 ms=4210"
         );
         assert!(!d.log_fields().contains("secret"));
     }
@@ -628,6 +688,8 @@ mod tests {
     fn hostile_ids_and_codes_are_not_logged() {
         let d = Diag {
             kind: Kind::Day,
+            host: "login",
+            net: Some("dns"),
             status: 0,
             code: Some("a@b.example".into()),
             inner: Some("x y".into()),
@@ -636,7 +698,7 @@ mod tests {
             attempt: 1,
             elapsed_ms: 5,
         };
-        assert_eq!(d.log_fields(), "req=day status=network code=none inner=none request-id=none client-request-id=none attempt=1 ms=5");
+        assert_eq!(d.log_fields(), "req=day host=login status=network net=dns af=unknown code=none inner=none request-id=none client-request-id=none attempt=1 ms=5");
     }
 
     #[test]

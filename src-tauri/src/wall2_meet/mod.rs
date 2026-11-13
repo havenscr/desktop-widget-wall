@@ -80,6 +80,19 @@ fn new_client_request_id() -> String {
     format!("{}-{}-{}-{}-{}", &h[0..8], &h[8..12], &h[12..16], &h[16..20], &h[20..32])
 }
 
+/// The class of a transport error (`dns`, `connect`, `tls`, `timeout`, `reset`, `other`),
+/// from the error kinds only.
+pub(crate) fn net_of(t: &ureq::Transport) -> &'static str {
+    let kind = match t.kind() {
+        ureq::ErrorKind::Dns => graph::NetKind::Dns,
+        ureq::ErrorKind::ConnectionFailed => graph::NetKind::Connect,
+        ureq::ErrorKind::Io => graph::NetKind::Io,
+        _ => graph::NetKind::Other,
+    };
+    let io = std::error::Error::source(t).and_then(|e| e.downcast_ref::<std::io::Error>()).map(|e| e.kind());
+    graph::classify_net(kind, io)
+}
+
 fn header_of(resp: &ureq::Response, name: &str) -> Option<String> {
     resp.header(name).map(str::to_string)
 }
@@ -90,7 +103,7 @@ fn raw_of(resp: ureq::Response, success_body: bool) -> graph::Raw {
     let request_id = header_of(&resp, "request-id");
     let client_request_id = header_of(&resp, "client-request-id");
     let body = if success_body { read_body(resp).unwrap_or_default() } else { read_capped(resp, reason::MAX_ERROR_BODY) };
-    graph::Raw { status, retry_after, request_id, client_request_id, body }
+    graph::Raw { status, net: None, retry_after, request_id, client_request_id, body }
 }
 
 impl graph::GraphClient for HttpGraph {
@@ -118,7 +131,7 @@ impl graph::GraphClient for HttpGraph {
                     raw_of(resp, ok)
                 }
                 Err(ureq::Error::Status(_, resp)) => raw_of(resp, false),
-                Err(ureq::Error::Transport(_)) => graph::Raw { status: 0, retry_after: None, request_id: None, client_request_id: None, body: Vec::new() },
+                Err(ureq::Error::Transport(t)) => graph::Raw { status: 0, net: Some(net_of(&t)), retry_after: None, request_id: None, client_request_id: None, body: Vec::new() },
             }
         };
         graph::run_attempts(ctx, &mut send)
