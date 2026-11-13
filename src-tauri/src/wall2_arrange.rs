@@ -456,7 +456,7 @@ mod win {
     use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED, DWMWA_EXTENDED_FRAME_BOUNDS};
     use windows::Win32::Graphics::Gdi::{
         EnumDisplayDevicesW, EnumDisplayMonitors, GetMonitorInfoW, MonitorFromWindow, DISPLAY_DEVICEW, DISPLAY_DEVICE_ACTIVE,
-        DISPLAY_DEVICE_MIRRORING_DRIVER, EDD_GET_DEVICE_INTERFACE_NAME, HDC, HMONITOR, MONITORINFO, MONITORINFOEXW, MONITOR_DEFAULTTONEAREST,
+        DISPLAY_DEVICE_MIRRORING_DRIVER, HDC, HMONITOR, MONITORINFO, MONITORINFOEXW, MONITOR_DEFAULTTONEAREST,
     };
     use windows::Win32::UI::WindowsAndMessaging::{
         GetWindow, GetWindowLongW, GetWindowPlacement, GetWindowRect, IsHungAppWindow, IsIconic, IsWindow,
@@ -471,6 +471,8 @@ mod win {
     const POLL: Duration = Duration::from_millis(25);
     /// How long one undo restore may take before it is given up on.
     const RESTORE_CALL_WAIT: Duration = Duration::from_millis(400);
+    /// `EnumDisplayDevicesW`: return the monitor interface name in `DeviceID`.
+    const EDD_GET_DEVICE_INTERFACE_NAME: u32 = 1;
 
     /// Held while a layout or an undo runs, so clicks never overlap.
     static WORKING: AtomicBool = AtomicBool::new(false);
@@ -513,7 +515,7 @@ mod win {
     }
 
     fn active_physical(device: &DISPLAY_DEVICEW) -> bool {
-        device.StateFlags.0 & DISPLAY_DEVICE_ACTIVE.0 != 0 && device.StateFlags.0 & DISPLAY_DEVICE_MIRRORING_DRIVER.0 == 0
+        device.StateFlags & DISPLAY_DEVICE_ACTIVE != 0 && device.StateFlags & DISPLAY_DEVICE_MIRRORING_DRIVER == 0
     }
 
     /// The stable monitor model and instance fields FancyZones writes, plus the numbered
