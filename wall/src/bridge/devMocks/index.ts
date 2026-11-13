@@ -9,6 +9,7 @@ import { registerOmniMocks } from './omni';
 import { registerPowerMocks } from './power';
 import { registerSonosMocks } from './sonos';
 import { registerSignalMocks } from './signals';
+import { registerSpotifyMocks } from './spotify';
 import { registerTaskMocks } from './tasks';
 
 /**
@@ -29,4 +30,5 @@ export function registerDevMocks(): void {
   registerAudioMocks();
   registerGalleryMocks();
   registerSignalMocks();
+  registerSpotifyMocks();
 }

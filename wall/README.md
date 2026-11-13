@@ -14,6 +14,21 @@ Node 22 or newer and npm. Nothing else is needed for the web side. The Tauri
 build also needs Rust and the Windows toolchain; CI does that on a Windows
 runner, so you rarely need it locally.
 
+## Spotify
+
+Spotify support uses the Web API and a local `spotify.json` file in the same app config
+folder as `feeds.json`. Sign in at the Spotify developer dashboard, create an app with
+any name and description, add the redirect URI exactly
+`http://127.0.0.1:8898/callback`, choose the Web API, and save. Copy the Client ID into:
+
+```json
+{ "clientId": "0123456789abcdef0123456789abcdef", "redirectPort": 8898 }
+```
+
+The port is optional and defaults to 8898. Press Sign in on the wall once the Spotify
+panel exists. Starting playback from the wall needs Spotify Premium. The integration
+has not been verified against the live Spotify service.
+
 ## Run, test, build (web)
 
 All commands run from the repository root (or `cd wall` and drop `--prefix wall`).
