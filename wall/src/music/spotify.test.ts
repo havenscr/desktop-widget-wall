@@ -10,6 +10,21 @@ describe('spotify bridge', () => {
     expect((await spotify.devices())[0]).toMatchObject({ active: true, name: 'Desk speakers' });
   });
   it('signs out without drawing a component', async () => { await spotify.signOut(); expect((await spotify.status()).signedIn).toBe(false); });
+  it('passes track and contextual play arguments by bridge name', async () => {
+    let tracksArgs: unknown;
+    let playArgs: unknown;
+    mocks.set('wall2_spotify_tracks', (args) => { tracksArgs = args; return { items: [], total: 0, more: false }; });
+    mocks.set('wall2_spotify_play', (args) => { playArgs = args; });
+    await spotify.tracks('playlist', '0123456789012345678901', 3);
+    await spotify.play('track', '1234567890123456789012', { context: { kind: 'playlist', id: '0123456789012345678901' }, offsetId: '1234567890123456789012' });
+    expect(tracksArgs).toEqual({ kind: 'playlist', id: '0123456789012345678901', page: 3 });
+    expect(playArgs).toEqual({ request: { kind: 'track', id: '1234567890123456789012', context: { kind: 'playlist', id: '0123456789012345678901' }, offsetId: '1234567890123456789012' } });
+  });
+  it('returns bounded track, queue and playback mocks', async () => {
+    expect(await spotify.tracks('playlist', '0123456789012345678901')).toMatchObject({ total: 58, more: true });
+    expect((await spotify.queue()).next).toHaveLength(10);
+    expect(await spotify.playback()).toMatchObject({ playing: true, progressMs: 65_000, device: { name: 'Desk speakers' } });
+  });
   it.each([
     ['typical', true, true],
     ['heavy', true, true],

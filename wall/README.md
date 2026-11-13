@@ -33,6 +33,10 @@ Status treats a stored refresh token as signed in. If Spotify has expired that g
 the status changes only after the first library or playback call tries to refresh it.
 The panel must render every Spotify name as plain text, including playlist names from
 other people in search, and must never render those names as markup.
+Library items include bounded subtitles, counts and cover images selected near 300 and
+64 pixels. Track lists use 50 items per page and stop at page 39. Queue reads return at
+most 10 upcoming tracks. Playback reads return no value when Spotify has no active
+session. The YouTube Music action opens the fixed `https://music.youtube.com/` address.
 
 ## Run, test, build (web)
 
