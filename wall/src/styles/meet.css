@@ -162,3 +162,28 @@
   font: 300 32px/1.1 var(--disp);
   color: var(--tx);
 }
+
+/* Quiet outlined button: same size and place as the filled one, still clickable. */
+.meet .btn.meet-quiet {
+  background: transparent;
+  color: var(--dim);
+  border: 1px solid var(--line);
+}
+.meet .btn.meet-quiet:hover:not(:disabled) {
+  color: var(--tx);
+  border-color: var(--dim);
+}
+.meet-dimline,
+.meet-stale {
+  color: var(--dim);
+}
+.meet-later-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.meet-next.dimmed .meet-title,
+.meet-next.dimmed .meet-count,
+.meet-next.dimmed .s {
+  opacity: 0.55;
+}

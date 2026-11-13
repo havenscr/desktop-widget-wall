@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { IconVolume } from '@tabler/icons-react';
 import { invoke } from '../bridge/tauri';
 import { useVisible } from '../ui/useVisible';
-import { clampVolume, playingSession, volumeLevel, type AudioSession } from './model';
+import { clampVolume, playingSession, volumeLevel, volumePercent, type AudioSession } from './model';
 
 export const SESSIONS_POLL_MS = 3000;
 /** While dragging, a move is sent at most this often; the last one is always sent. */
@@ -129,10 +129,22 @@ export function useAppVolume(sourceApp: string | null | undefined) {
  */
 export function Volume({ source, label }: { source: string | null | undefined; label?: string | null }) {
   const { session, value, set } = useAppVolume(source);
+  const [drag, setDrag] = useState(false);
+  // A drag that ends anywhere (the pointer may leave the slider) ends the readout.
+  useEffect(() => {
+    if (!drag) return;
+    const end = () => setDrag(false);
+    window.addEventListener('pointerup', end);
+    window.addEventListener('pointercancel', end);
+    return () => {
+      window.removeEventListener('pointerup', end);
+      window.removeEventListener('pointercancel', end);
+    };
+  }, [drag]);
   if (!session) return null;
-  const pct = Math.round(value * 100);
+  const pct = volumePercent(value);
   return (
-    <label className="u-vol">
+    <label className={drag ? 'u-vol drag' : 'u-vol'} title={`Volume ${pct}%`}>
       <IconVolume size={30} stroke={1.8} aria-hidden="true" />
       <input
         type="range"
@@ -144,7 +156,11 @@ export function Volume({ source, label }: { source: string | null | undefined; l
         aria-valuetext={`${pct} percent`}
         style={{ ['--pct' as string]: `${pct}%` }}
         onChange={(e) => set(Number(e.currentTarget.value))}
+        onPointerDown={() => setDrag(true)}
       />
+      <span className="u-vol-n" aria-hidden="true">
+        {pct}
+      </span>
     </label>
   );
 }

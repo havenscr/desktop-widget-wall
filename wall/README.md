@@ -699,15 +699,21 @@ frame (no ribbon) in the wide zones `470px 1fr 540px`. The parts are in `wall/sr
   begun, from now), or nothing when there is none or Meet is not set up. After a failed
   refresh it adds "as of 9:40 PM" (the last good read) and hides once that read is more
   than 30 minutes old. Under it the status line (`StatusLine.tsx`, "Work is put away. 2
-  agents still running. Nothing needs you.", from the focus timer once it has loaded and
+  agents still running. No agent needs you.", from the focus timer once it has loaded and
   the helper summary `wall2_omni_summary` every minute while visible; the agent and
   needs-you sentences are left out without the helper or when it reports stale data).
   The parts that carry an action are chips with a tooltip: "N agents still running" is a
   quiet chip that switches to Work, and "N things need you" (or "One thing needs you") an
   amber chip that opens the first waiting chat with `wall2_open_session` (the summary's
-  first your-move session, else the first lane that waits; plain text when links are not
-  available). "Work is put away.", "Focus is still on." and "Nothing needs you." stay
-  plain text. Screens off is an icon alone (36 px, quiet until hovered) in the lower right
+  first your-move session, else the first lane that waits; when links are not available it
+  switches to Work instead). Each chip is 32 px tall. "Work is put away.", "Focus is still
+  on." and "No agent needs you." (the line only knows about agents) stay plain text. When
+  the calendar cannot be read (no account answers, or the cached read is over 30 minutes
+  old) the Tomorrow spot says "Calendar not available"; when weather is missing the date
+  line ends with "weather unavailable" in dim text. The Room chips mark the mood that is on
+  now (the shared last mood, for three hours), give each a tooltip (with the home feed's
+  description when it sends one), and sit in a fixed grid of three columns and two rows; past six moods the sixth cell is a "More" chip and the mood that is on takes the place of an ordinary one (never an extra chip). The volume
+  slider shows its number on hover and while dragging. Screens off is an icon alone (36 px, quiet until hovered) in the lower right
   corner of Unwind, its words as the tooltip and accessible name ("Screens off", "Turning
   off", "Cancel screens off"); "Could not watch input" shows beside it for five seconds.
   The wind down ring (PR 10) goes between the date line and Tomorrow.
@@ -1021,7 +1027,7 @@ The list is read when Meet opens and every 5 minutes while Meet is the active pl
 
 ### Why an account is unavailable
 
-An unavailable account (and a "Sign in needed" account whose sign-in was refused) shows a quiet second line with a plain reading and a short code in brackets, for example "Calendar refused the request (graph-403-ErrorAccessDenied)". An unavailable row says what is wrong in plain words ("Network problem" or "Microsoft is not answering"), is one plain sentence (with "trying again at 3:42 PM" only while a retry is really scheduled), has one button, Try again (reads at once), and shows the time of the last try with the code underneath. When no account can be read, Meet shows no separate empty card: the Accounts card carries "Calendar not available" and the time of the last good read. A code has one of these fixed shapes and nothing else:
+An account row shows one plain line ("Microsoft is not answering", "Network problem", "Signed out", "Sign-in expired") and, for a failing account, when it checks next as a relative time ("checking again in 2 min"). The code (one of the fixed shapes below, with a plain reading) and the exact time of the last try are in the row's tooltip, never on its face. A failing row keeps the filled Try again; a signed-out or expired account has a quiet outlined Sign in and the dim line "Meetings on this account will not show." When one account is read and another is not, LATER says "Nothing else on <account>" with a dim line for the other ("<account> not read since 9:40 AM", "is signed out", "is being checked" while it is still being read), and the NEXT card says "may be out of date" whenever any account is not read yet or not fresh. LATER says a bare "Nothing else" only when every account was read fresh. "checking again in N min" counts to the real next read: the earlier of the next fast retry and the next 5 minute poll. The last known meetings are kept per account and only for an account whose read failed; signing an account out (or its sign-in expiring) drops its meetings at once. When every account fails, the last known NEXT card stays, dimmed, with its clock time and "as of <time>" (no countdown) and no Join; the Accounts card carries "Calendar not available" only when there is no last known meeting. Join is filled only for a meeting that is live or starts within 15 minutes; every other Join is quiet and outlined. When Meet is not set up it says "Calendar is not connected yet." with "Setup steps are in the Wall 2 README, section Meet." under it. A code has one of these fixed shapes and nothing else:
 
 | Code | Meaning | Shown as |
 | --- | --- | --- |
@@ -1184,16 +1190,26 @@ the system volume, Do Not Disturb or the focus timer.
   40 px. Starting restarts the cycle at "Breathe in".
 - **Zen layout** (`Zen.tsx`). Flames sit behind a veil that leaves about 45 percent of their
   light. Top left: the clock. Bottom left: the length picker and Start, or while a session
-  runs "FIVE MINUTES OF ZEN" with "N:NN left.". Bottom centre while running: "Touch anywhere
-  to end early" (a tap outside Leave ends the session). Bottom right: Leave, and "After this:
+  runs "FIVE MINUTES OF ZEN" with "N:NN left.". Bottom centre while a session runs and is not ending: "Click anywhere
+  to end early" at 13 px (a click outside Leave ends the session). On entry, keyboard focus starts on the chosen length. The chosen length is the
+  one filled chip; keyboard focus is a separate offset ring. Leave is at least 36 px tall. Bottom right: Leave, and "After this:
   N things are waiting." from the same task feed as the Work card (hidden when it is not set
   up or empty; the "Neither is urgent." line shows only when every task has a quadrant and
   none is urgent). The feed returns at most 3 tasks, so a full list reads "3 or more things are waiting." with no urgency line; under reduced motion the ring holds still and only the word and seconds change.
-- **Dream** (`Dream.tsx`). Flames dim to 35 percent, the guide is hidden, a small clock
-  shows, and Watt sleeps in the corner (the `SheepSvg` sleep pose from `buddy/Watt.tsx`,
+- **Dream** (`Dream.tsx`). Flames dim to 35 percent, the guide is hidden, and the screen
+  follows the concept: a large thin clock at left centre (about half white) with the date
+  under it, a Tomorrow card at right centre (tomorrow's first meeting from the same feed and
+  rules as Unwind's Tomorrow: "as of" when cached, hidden when too old, one line when the
+  calendar cannot be read, absent on a clear day), and a quiet 13 px status line at bottom
+  left (agents still working and whether one needs the owner, only from a fresh helper
+  answer; the lights mood that is on, only when this wall set one in the last three hours).
+  The hint reads "Click anywhere to wake"; moving the mouse does not wake it (the strip sits right under the main monitor, so the pointer
+  wanders onto it). Nothing is bright. All the text (clock, date, card, status, hint) sits in one layer that drifts by transform alone along a
+  closed 30 by 20 px path, one lap in 20 minutes, so no pixel stays lit for hours; under reduced motion it holds one of four points for 7.5 minutes, then
+  jumps to the next. The status line and hint are at 40 percent, the card has no frame. Nothing else moves except Watt. Watt sleeps in the corner (the `SheepSvg` sleep pose from `buddy/Watt.tsx`,
   at x 1226, ground line 688). Dream starts when a session ends (the guide fades out
   first), or when Zen opens between 9:30 PM and 6:30 AM local time (the same window as
-  Watt's sleep). A tap anywhere wakes back to Zen; after a wake at night it stays awake
+  Watt's sleep). A click wakes back to Zen; after a wake at night it stays awake
   until Zen is left and opened again. Leave returns to Work.
 - **Horizon.** While Zen is active the horizon canvas is hidden and not drawn (no frame
   loop, no timer redraw). Leaving resumes it, gliding from the last camera.

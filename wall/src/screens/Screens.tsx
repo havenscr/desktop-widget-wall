@@ -1,5 +1,6 @@
 import { Meet } from '../meet/Meet';
 import { usePlaceStore, type PlaceId } from '../state/places';
+import { reviewNow } from '../ui/reviewClock';
 import { Zen } from '../zen/Zen';
 import { Frame } from './Frame';
 import { Home } from './Home';
@@ -17,7 +18,7 @@ function Place({ id }: { id: PlaceId }) {
     case 'unwind':
       return <Unwind />;
     case 'zen':
-      return <Zen />;
+      return <Zen nowMs={reviewNow} />;
   }
 }
 

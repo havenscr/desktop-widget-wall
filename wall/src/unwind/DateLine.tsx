@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useWeather } from '../weather/useWeather';
-import { dateLine, freshReading } from './model';
+import { dateLine, freshReading, WEATHER_UNAVAILABLE } from './model';
 
 /**
  * "Wednesday night, 49° and clear" under the clock. Re-renders each minute. The weather
@@ -8,11 +8,19 @@ import { dateLine, freshReading } from './model';
  * day part alone.
  */
 export function DateLine({ now = () => new Date(), wallNow = Date.now }: { now?: () => Date; wallNow?: () => number }) {
-  const { reading } = useWeather();
+  const { reading, failed } = useWeather();
   const [d, setD] = useState(now);
   useEffect(() => {
     const id = setInterval(() => setD(now()), 60_000);
     return () => clearInterval(id);
   }, [now]);
-  return <div className="u-date">{dateLine(d, freshReading(reading, wallNow()))}</div>;
+  const fresh = freshReading(reading, wallNow());
+  // Missing weather is said, dim, once it is known to be missing (a failed fetch, or a reading too old); not while still loading.
+  const missing = !fresh && (failed || reading !== null);
+  return (
+    <div className="u-date">
+      {dateLine(d, fresh)}
+      {missing ? <span className="u-asof">, {WEATHER_UNAVAILABLE}</span> : null}
+    </div>
+  );
 }
