@@ -1015,7 +1015,7 @@
   gap: 16px;
   padding: 24px 26px 22px;
   border-radius: 26px;
-  background: rgba(14, 9, 32, 0.96);
+  background: rgba(14, 9, 32, 0.985);
   border: 1px solid rgba(150, 130, 255, 0.3);
   box-shadow: -24px 0 70px rgba(4, 2, 12, 0.6);
 }
@@ -1163,8 +1163,7 @@
   box-shadow: 0 0 0 2px rgba(170, 150, 255, 0.22), 0 0 80px rgba(140, 170, 255, 0.12);
 }
 .w-hint {
-  grid-column: 1 / -1;
-  margin: 2px 0 0;
+  margin: 12px 0 0;
   font-size: 19px;
   line-height: 1.35;
   color: var(--dim);

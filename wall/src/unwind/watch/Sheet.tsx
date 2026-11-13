@@ -72,13 +72,15 @@ export function WatchSheet() {
         </button>
       </div>
       {looks.mode === 'one' ? (
-        <div className="w-tiles" role="radiogroup" aria-label="Look for everything">
+        <div className="w-one">
+          <div className="w-tiles" role="radiogroup" aria-label="Look for everything">
           {LOOKS.map((l) => (
             <button key={l.id} type="button" role="radio" aria-checked={looks.all === l.id} className={`w-tile${looks.all === l.id ? ' on' : ''}`} title={l.hint} onClick={() => set({ all: l.id })}>
               <LookPicture look={l.id} />
               {l.name}
             </button>
           ))}
+          </div>
           <p className="w-hint">{LOOKS.find((l) => l.id === looks.all)?.hint}</p>
         </div>
       ) : (
