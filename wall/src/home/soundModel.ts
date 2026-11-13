@@ -18,13 +18,27 @@ export interface SonosGroup {
   members: string[];
 }
 
+/** A speaker an action would leave or set above 40, or whose level is not known. */
+export interface LoudSpeaker {
+  name: string;
+  /** The level the action sets (`sets`), else the level it is at now; null when not known. */
+  level: number | null;
+  sets: boolean;
+}
+
 export interface SonosPreset {
   id: string;
   name: string;
   /** The speakers are grouped the way this preset groups them right now. */
   active: boolean;
-  /** Applying it sets a speaker above 40 (not counting line-in), so it asks first. */
-  loud: boolean;
+  /** The speakers that make applying it ask first; empty when one click is safe. */
+  loud: LoudSpeaker[];
+}
+
+/** What a play answered: started, or skipped with a fixed reason (null when none known). */
+export interface PlayResult {
+  started: boolean;
+  reason: string | null;
 }
 
 export interface MusicRoutine {
@@ -38,6 +52,8 @@ export interface ControlRoutine {
   key: string;
   name: string;
   action: string;
+  /** For a control that groups every speaker: the speakers that make it ask first. */
+  loud: LoudSpeaker[];
 }
 
 export interface SleepTimer {
@@ -74,13 +90,17 @@ export const SAFE_VOLUME = 40;
 /** Rust's answer when a call needs the confirm. */
 export const NEEDS_CONFIRM = 'needs-confirm';
 export const SONOS_REFRESH_MS = 30_000;
-/** Older than this, the block dims and writes stop (Rust's own limit is ten minutes). */
+/** Older than this, the block dims and writes stop (Rust refuses writes past the same two minutes). */
 export const STALE_MS = 2 * 60_000;
 export const SLEEP_CHOICES = [30, 60, 90] as const;
-/** The last routine started from the wall: `{"key":"...","at":<ms>}`. */
+/** The last routine started from the wall: `{"key","at","group","seen"}` (see `markAfterRead`). */
 export const LAST_PLAY_KEY = 'wall2-sonos-last-play';
-/** How long "started N min ago" stays on the routine started last. */
-export const LAST_PLAY_MS = 3 * 3_600_000;
+/** "started N min ago" never outlives this. */
+export const LAST_PLAY_MS = 60 * 60_000;
+/** A read this soon after the start may not show the music yet; it does not clear the mark. */
+export const START_GRACE_MS = 20_000;
+/** After a write settles, the same control ignores clicks this long (one action, one write). */
+export const LATCH_MS = 800;
 
 /** "Night Owl Music" reads "Night Owl" on a button; a name that is only "Music" stays. */
 export function chipLabel(name: string): string {
@@ -163,9 +183,30 @@ export function groupLabel(s: SonosSummary): string | null {
   return sps.length === 1 ? lead : `${lead} and ${sps.length - 1} more`;
 }
 
-/** Would setting these speakers to `level` raise any of them above 40? Then ask first. */
-export function needsConfirm(speakers: readonly SonosSpeaker[], level: number): boolean {
-  return level > SAFE_VOLUME && speakers.some((sp) => (sp.volume ?? 0) < level);
+/** Any target level above 40 asks first, whatever the last read said the speaker is at. */
+export function needsConfirm(levels: readonly number[]): boolean {
+  return levels.some((l) => l > SAFE_VOLUME);
+}
+
+/** Where a group step puts each music speaker with a known level (clamped 0 to 100). */
+export function groupTargets(s: SonosSummary, step: number): { name: string; level: number }[] {
+  return groupMusicSpeakers(s, s.currentGroup)
+    .filter((sp) => typeof sp.volume === 'number')
+    .map((sp) => ({ name: sp.name, level: Math.min(100, Math.max(0, (sp.volume as number) + step)) }));
+}
+
+/** "Studio is at 100. Group anyway?" from the speakers that make an action ask first. */
+export function loudText(list: readonly LoudSpeaker[], verb: string): string {
+  const parts = list.map((x) => (x.sets ? `it sets ${x.name} to ${x.level}` : x.level === null ? `${x.name}'s level is not known` : `${x.name} is at ${x.level}`));
+  const text = parts.join('; ');
+  return `${text.charAt(0).toUpperCase()}${text.slice(1)}. ${verb} anyway?`;
+}
+
+/** The running sleep timer that ends soonest; one that ended over a minute ago is gone. */
+export function soonestTimer(timers: readonly SleepTimer[], now: number): SleepTimer | null {
+  const live = timers.filter((t) => typeof t.endsAtMs !== 'number' || t.endsAtMs >= now - 60_000);
+  live.sort((a, b) => (a.endsAtMs ?? Infinity) - (b.endsAtMs ?? Infinity));
+  return live[0] ?? null;
 }
 
 const STATE_WORD: Record<SpeakerState, string> = {
@@ -226,11 +267,39 @@ export function ageWords(at: number, now: number): string {
   return `${Math.floor(mins / 60)} h ago`;
 }
 
-export function readLastPlay(): { key: string; at: number } | null {
+/**
+ * The "started N min ago" mark: which routine, when, and once a read has shown the music,
+ * which group played it (`seen`).
+ */
+export interface PlayMark {
+  key: string;
+  at: number;
+  group: string | null;
+  seen: boolean;
+}
+
+/**
+ * The mark after a read, or null to clear it for good. It stays only while what plays is
+ * evidently what the wall started: past 60 minutes it goes; a read with nothing playing
+ * clears it (except the first reads within 20 seconds of the start, before the music
+ * shows); the first read that shows music records its group, and a later read with a
+ * different group, or no group to tell by, clears it.
+ */
+export function markAfterRead(mark: PlayMark | null, s: SonosSummary, now: number): PlayMark | null {
+  if (!mark) return null;
+  if (now - mark.at > LAST_PLAY_MS || now < mark.at - 60_000) return null;
+  const playing = musicPlaying(s).length > 0;
+  if (!playing) return !mark.seen && now - mark.at < START_GRACE_MS ? mark : null;
+  if (!s.currentGroup) return null;
+  if (!mark.seen) return { ...mark, group: s.currentGroup, seen: true };
+  return mark.group === s.currentGroup ? mark : null;
+}
+
+export function readLastPlay(): PlayMark | null {
   try {
-    const raw = JSON.parse(localStorage.getItem(LAST_PLAY_KEY) ?? 'null') as unknown;
-    if (raw && typeof raw === 'object' && typeof (raw as { key?: unknown }).key === 'string' && typeof (raw as { at?: unknown }).at === 'number') {
-      return raw as { key: string; at: number };
+    const raw = JSON.parse(localStorage.getItem(LAST_PLAY_KEY) ?? 'null') as Partial<PlayMark> | null;
+    if (raw && typeof raw.key === 'string' && typeof raw.at === 'number') {
+      return { key: raw.key, at: raw.at, group: typeof raw.group === 'string' ? raw.group : null, seen: raw.seen === true };
     }
   } catch {
     /* storage can be blocked */
@@ -238,9 +307,11 @@ export function readLastPlay(): { key: string; at: number } | null {
   return null;
 }
 
-export function writeLastPlay(key: string, at: number): void {
+/** Saves the mark, or clears the stored one for null. */
+export function writeLastPlay(mark: PlayMark | null): void {
   try {
-    localStorage.setItem(LAST_PLAY_KEY, JSON.stringify({ key, at }));
+    if (mark) localStorage.setItem(LAST_PLAY_KEY, JSON.stringify(mark));
+    else localStorage.removeItem(LAST_PLAY_KEY);
   } catch {
     /* storage can be blocked; the mark is a convenience */
   }

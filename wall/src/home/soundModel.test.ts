@@ -3,8 +3,12 @@ import {
   chipLabel,
   groupLabel,
   groupVolume,
+  groupTargets,
+  loudText,
+  markAfterRead,
   needsConfirm,
   nowLine,
+  soonestTimer,
   orderPresets,
   routineSlot,
   sleepLeft,
@@ -13,6 +17,7 @@ import {
   startedText,
   suggestedKey,
   type MusicRoutine,
+  type PlayMark,
   type SonosSpeaker,
   type SonosSummary,
 } from './soundModel';
@@ -91,7 +96,7 @@ it('suggests the routine that fits the hour', () => {
 });
 
 it('puts the preset whose name starts with Office first', () => {
-  const p = (id: string, name: string) => ({ id, name, active: false, loud: false });
+  const p = (id: string, name: string) => ({ id, name, active: false, loud: [] });
   expect(orderPresets([p('a', 'Whole House'), p('b', 'Living'), p('c', 'Office Desk')]).map((x) => x.id)).toEqual(['c', 'a', 'b']);
   expect(orderPresets([p('a', 'Whole House'), p('b', 'Living')]).map((x) => x.id)).toEqual(['a', 'b']);
   expect(orderPresets([p('c', 'office'), p('a', 'Whole')]).map((x) => x.id)).toEqual(['c', 'a']);
@@ -104,12 +109,63 @@ it('the group slider leaves out line-in and offline speakers', () => {
   expect(groupLabel({ ...SUMMARY, currentGroup: null })).toBeNull();
 });
 
-it('asks first only when a change raises a speaker above 40', () => {
-  expect(needsConfirm([sp('Den', { volume: 14 })], 41)).toBe(true);
-  expect(needsConfirm([sp('Den', { volume: 14 })], 40)).toBe(false);
-  expect(needsConfirm([sp('Den', { volume: 80 })], 60)).toBe(false);
-  expect(needsConfirm([sp('Den', { volume: 80 }), sp('Porch', { volume: 10 })], 60)).toBe(true);
-  expect(needsConfirm([sp('Den', { volume: null })], 50)).toBe(true);
+it('asks first for any target above 40, whatever the read says', () => {
+  expect(needsConfirm([41])).toBe(true);
+  expect(needsConfirm([40])).toBe(false);
+  expect(needsConfirm([10, 60])).toBe(true);
+  expect(needsConfirm([])).toBe(false);
+});
+
+it('a group step moves each music speaker from its own level, clamped', () => {
+  expect(groupTargets(SUMMARY, 5)).toEqual([
+    { name: 'Den', level: 19 },
+    { name: 'Porch', level: 15 },
+  ]);
+  expect(groupTargets(SUMMARY, -50)).toEqual([
+    { name: 'Den', level: 0 },
+    { name: 'Porch', level: 0 },
+  ]);
+});
+
+it('names the speakers that make an action ask first', () => {
+  expect(loudText([{ name: 'Studio', level: 100, sets: false }], 'Group')).toBe('Studio is at 100. Group anyway?');
+  expect(loudText([{ name: 'Den', level: null, sets: false }, { name: 'Loft', level: 70, sets: true }], 'Apply')).toBe(
+    "Den's level is not known; it sets Loft to 70. Apply anyway?",
+  );
+});
+
+it('keeps "started" only while what plays is what the wall started', () => {
+  const t = 1_000_000;
+  const start: PlayMark = { key: 'k', at: t, group: null, seen: false };
+  const quiet = { ...SUMMARY, speakers: SUMMARY.speakers.map((s) => (s.input ? s : { ...s, state: 'stopped' as const })) };
+  // A first read before the music shows keeps it; a later quiet read clears it.
+  expect(markAfterRead(start, quiet, t + 5_000)).toBe(start);
+  expect(markAfterRead(start, quiet, t + 30_000)).toBeNull();
+  // The first read with music records the group.
+  const seen = markAfterRead(start, SUMMARY, t + 5_000)!;
+  expect(seen).toEqual({ key: 'k', at: t, group: 'G2', seen: true });
+  expect(markAfterRead(seen, SUMMARY, t + 10 * 60_000)).toBe(seen);
+  // Nothing playing, another group, no group to tell by, or past an hour: cleared.
+  expect(markAfterRead(seen, quiet, t + 10 * 60_000)).toBeNull();
+  expect(markAfterRead(seen, { ...SUMMARY, currentGroup: 'G1' }, t + 60_000)).toBeNull();
+  expect(markAfterRead(seen, { ...SUMMARY, currentGroup: null }, t + 60_000)).toBeNull();
+  expect(markAfterRead(seen, SUMMARY, t + 61 * 60_000)).toBeNull();
+  expect(markAfterRead(null, SUMMARY, t)).toBeNull();
+});
+
+it('shows the soonest running sleep timer, never one that ended', () => {
+  const now = 10 * 60_000;
+  expect(
+    soonestTimer(
+      [
+        { id: 'late', endsAtMs: now + 50 * 60_000, fadeMinutes: 5 },
+        { id: 'soon', endsAtMs: now + 5 * 60_000, fadeMinutes: 5 },
+        { id: 'gone', endsAtMs: now - 2 * 60_000, fadeMinutes: 5 },
+      ],
+      now,
+    )?.id,
+  ).toBe('soon');
+  expect(soonestTimer([{ id: 'gone', endsAtMs: now - 2 * 60_000, fadeMinutes: 5 }], now)).toBeNull();
 });
 
 it('says what plays and where, never claiming a track it does not know', () => {

@@ -87,22 +87,22 @@ function summary(m: Mode) {
       ? []
       : m === 'heavy'
         ? [
-            { id: 'whole', name: 'Whole House And Garden', active: false, loud: false },
-            { id: 'desk', name: 'Office Desk With The Big Speaker', active: true, loud: false },
-            { id: 'living', name: 'Living Spaces Downstairs', active: false, loud: false },
-            { id: 'upstairs', name: 'Upstairs Only', active: false, loud: false },
+            { id: 'whole', name: 'Whole House And Garden', active: false, loud: [] },
+            { id: 'desk', name: 'Office Desk With The Big Speaker', active: true, loud: [] },
+            { id: 'living', name: 'Living Spaces Downstairs', active: false, loud: [] },
+            { id: 'upstairs', name: 'Upstairs Only', active: false, loud: [] },
           ]
         : [
-            { id: 'whole', name: 'Whole House', active: false, loud: false },
-            { id: 'desk', name: 'Office Desk', active: m !== 'quiet', loud: false },
-            { id: 'living', name: 'Living Spaces', active: false, loud: false },
+            { id: 'whole', name: 'Whole House', active: false, loud: [] },
+            { id: 'desk', name: 'Office Desk', active: m !== 'quiet', loud: [] },
+            { id: 'living', name: 'Living Spaces', active: false, loud: [] },
           ];
   return {
     speakers: speakers(m),
     groups: groups(m),
     presets,
     music: m === 'sparse' ? ROUTINES.slice(2, 3) : m === 'heavy' ? LONG_ROUTINES : ROUTINES,
-    controls: m === 'sparse' ? [] : [{ key: 'Group_Everything', name: 'Group Everything', action: 'groupAll' }],
+    controls: m === 'sparse' ? [] : [{ key: 'Group_Everything', name: 'Group Everything', action: 'groupAll', loud: [{ name: 'Studio', level: 100, sets: false }] }],
     scenes: [],
     sleepTimers: m === 'heavy' ? [{ id: 't1', endsAtMs: t + 42 * 60_000, fadeMinutes: 5 }] : [],
     nowPlaying:
