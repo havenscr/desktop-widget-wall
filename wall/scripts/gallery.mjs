@@ -104,7 +104,9 @@ for (const [name, extra] of [
 }
 
 // Home: the network card's numbers, moods, chores.
+// The numbers row needs three numbers; with one or two they go on the status line instead.
 for (const n of ['1', '2', '3']) state('home', `network card, ${n} number${n === '1' ? '' : 's'}`, `net=${n}`);
+state('home', 'network card, 4 numbers', 'net=4');
 state('home', 'network card, quiet', 'home=quiet');
 state('home', 'moods six', 'moods=six');
 state('home', 'moods none', 'moods=none');
@@ -124,7 +126,18 @@ for (const [name, extra] of [
 state('home', 'morning camera', '', TIMES.morning);
 state('home', 'morning camera, sparse', SPARSE, TIMES.morning);
 
-// Unwind: now playing, calendar tomorrow, the room card.
+// Timeline rows that say they are empty (only when that is known).
+state('work', 'timeline: no meetings today', 'meet=none');
+state('work', 'timeline: calendar not available', 'meet=signedout');
+state('work', 'timeline: no agent activity yet', 'agents=0&tasks=none&meet=none&day=empty');
+state('home', 'timeline: nothing scheduled at home', 'tasks=none');
+
+// Unwind: the status chips, now playing, calendar tomorrow, the room card.
+state('unwind', 'status chips, nothing waiting', 'agents=3');
+state('unwind', 'status chips, sessions waiting', 'agents=ask');
+state('unwind', 'status chips, none running', 'agents=0');
+state('unwind', 'status chips, helper not set up', 'agents=off');
+state('unwind', 'status chips, focus on', 'focus=long');
 state('unwind', 'music paused', 'media=paused');
 state('unwind', 'long track and artist', 'media=long');
 state('unwind', 'audio demo (levels moving)', 'audio=demo');
@@ -156,9 +169,17 @@ state('dream', 'night with audio demo', 'audio=demo', TIMES.night);
 /** Text each state must show (a miss fails it): [screen, state name prefix, text, exact name only?]. First match wins. */
 const EXPECT = [
   ['work', 'sparse', 'Nothing due'],
+  ['work', 'timeline: no meetings today', 'No meetings today'],
+  ['work', 'timeline: calendar not available', 'Calendar not available'],
+  ['work', 'timeline: no agent activity yet', 'No agent activity yet'],
+  ['home', 'timeline: nothing scheduled at home', 'Nothing scheduled at home'],
+  ['unwind', 'status chips, nothing waiting', 'Nothing needs you'],
+  ['unwind', 'status chips, sessions waiting', '2 things need you'],
+  ['unwind', 'status chips, none running', 'Work is put away'],
+  ['unwind', 'status chips, focus on', 'Focus is still on'],
   ['work', 'broken: weather stale', 'updated 45 min ago'],
   ['work', 'broken: weather down', 'Weather unavailable'],
-  ['work', 'broken: helper not set up', 'Agents: not set up'],
+  ['work', 'broken: helper not set up', 'not set up'],
   ['work', 'broken: task app', 'Next three'],
   ['work', 'heavy', 'Architecture working'],
   ['work', 'typical', 'Voice: iPhone mic fix'],

@@ -2,6 +2,7 @@ import { useFocusStore } from '../../focus/store';
 import { usePlaceStore } from '../../state/places';
 import { reviewNow } from '../../ui/reviewClock';
 import { mocks, type CommandArgs, type MockHandler } from '../tauri';
+import { knob } from './long';
 
 /**
  * Dev only: the extra URL knobs the state gallery (`scripts/gallery.mjs`) uses to put each
@@ -11,7 +12,8 @@ import { mocks, type CommandArgs, type MockHandler } from '../tauri';
  *   ?screen=meet|zen|dream   open that place (Meet, Zen, Zen straight into Dream)
  *   ?tasks=none|few|heavy|off|down
  *   ?meet=none|one|heavy|off|down|signedout|partial
- *   ?home=quiet|many|off|down   (the network card; `?net=1|2|3` keeps that many numbers)
+ *   ?home=quiet|many|off|down   (the network card; `?net=1|2|3` shows that many numbers, the alarm count first)
+ *   ?day=empty                (the helper's day timeline has no runs)
  *   ?moods=six|none|down
  *   ?media=none|paused|long|off
  *   ?box=max|stale|none|down   (machine numbers; `?pc=down` for the PC side)
@@ -20,8 +22,6 @@ import { mocks, type CommandArgs, type MockHandler } from '../tauri';
  *   ?clock=review           (Date.now starts at the `?at=` moment and then runs, so screens that read it agree)
  *   ?focus=long               (a focus session running under a long title)
  */
-/** Read at call time: importing this module does nothing. */
-const knob = (name: string): string | null => (typeof window === 'undefined' ? null : new URLSearchParams(window.location.search).get(name));
 
 const now = () => (reviewNow ? reviewNow() : Date.now());
 const iso = (ms: number) => new Date(Math.round(ms / 60_000) * 60_000).toISOString().replace('.000Z', 'Z');
@@ -152,8 +152,8 @@ function home(mode: string, net: number | null): void {
       };
     }
     if (net !== null) {
-      // One, two or three numbers: keep that many of devices, blocked and box temperature.
-      const keep = ['devices', 'blocked', 'boxTemp'].slice(0, net);
+      // `net` numbers in all: the alarm count is always one, then devices, blocked, box temperature.
+      const keep = ['devices', 'blocked', 'boxTemp'].slice(0, Math.max(0, net - 1));
       out = { ...out };
       for (const k of ['devices', 'blocked', 'boxTemp']) if (!keep.includes(k)) delete out[k];
     }
@@ -207,6 +207,10 @@ function machines(box: string | null, pc: string | null): void {
     if (box === 'down') throw new Error('failed');
     return undefined;
   });
+}
+
+function emptyDay(): void {
+  wrap('wall2_omni_summary', async (_args, prev) => ({ ...((await prev?.()) as Record<string, unknown>), day: [] }));
 }
 
 function usage(mode: string): void {
@@ -298,6 +302,7 @@ export function registerGalleryMocks(): void {
   if (box || pc) machines(box, pc);
   const u = knob('usage');
   if (u) usage(u);
+  if (knob('day') === 'empty') emptyDay();
   const w = knob('weather');
   if (w) weather(w);
   if (knob('focus') === 'long') setTimeout(() => useFocusStore.getState().startLabeled(LONG_FOCUS), 400);
