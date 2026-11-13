@@ -816,13 +816,16 @@ describe('carrying him', () => {
   const eyes = (c: HTMLElement) => c.querySelectorAll('.watt-sheep > svg rect[fill="#35e6ea"]').length;
   let setCap: ReturnType<typeof vi.fn>;
   let relCap: ReturnType<typeof vi.fn>;
+  const captured = new Set<number>();
   const proto = HTMLElement.prototype as unknown as Record<string, unknown>;
   beforeEach(() => {
-    setCap = vi.fn();
-    relCap = vi.fn();
+    // Capture is tracked, as a browser does: set on press, kept until released, and nothing else says yes.
+    captured.clear();
+    setCap = vi.fn((id: number) => void captured.add(id));
+    relCap = vi.fn((id: number) => void captured.delete(id));
     proto.setPointerCapture = setCap;
     proto.releasePointerCapture = relCap;
-    proto.hasPointerCapture = () => true;
+    proto.hasPointerCapture = (id: number) => captured.has(id);
   });
   afterEach(() => {
     delete proto.setPointerCapture;
@@ -1165,45 +1168,153 @@ describe('carrying him', () => {
     });
   });
 
+  describe('a landing across a place change', () => {
+    it('he fades in already at the landing spot, with no pop', () => {
+      const { container } = start();
+      carryAway(container, 450, 80);
+      go('home');
+      horizon(CAMERAS.home, true);
+      runFor(FADE_OUT_S + 0.2);
+      publishCamera(CAMERAS.home, false);
+      let seen = 0;
+      for (let i = 0; i < 40; i++) {
+        tick();
+        const w = where(container);
+        if (w.opacity > 0) {
+          seen++;
+          expect(w.x).toBe(WALKS.home.min);
+          expect(w.feet).toBe(582);
+        }
+      }
+      expect(seen).toBeGreaterThan(5);
+    });
+    it('two quick place changes while held still land him, at the last place', () => {
+      usePlaceStore.setState({ active: 'work' });
+      publishCamera(CAMERAS.work, false);
+      const { container } = start();
+      carryAway(container, 2500, 100);
+      go('home');
+      horizon(CAMERAS.home, true);
+      runFor(0.3);
+      go('work');
+      publishCamera(CAMERAS.work, false);
+      runFor(FADE_OUT_S + FADE_IN_S + 1);
+      expect(carried(container)).toBe(false);
+      expect(where(container).x).toBe(WALKS.work.max);
+      expect(where(container).feet).toBe(582);
+    });
+    it('a landing whose place never comes back within 10 seconds is given up, and does not happen later', () => {
+      let ms = day();
+      const { container } = start(() => ms);
+      carryAway(container, 2500, 100);
+      go('zen');
+      runFor(1);
+      ms += 12_000;
+      go('unwind');
+      publishCamera(CAMERAS.unwind, false);
+      runFor(FADE_IN_S + 1);
+      // He is back on his wander (the middle, standing), not dropped in at the far end.
+      expect(where(container).x).toBe(middle(WALKS.unwind));
+      expect(rows(container)).toBe(12);
+    });
+    it('a landing is given up when night starts', () => {
+      let ms = day();
+      const { container } = start(() => ms);
+      carryAway(container, 2500, 100);
+      go('zen');
+      runFor(1);
+      ms = night();
+      runFor(1);
+      go('unwind');
+      publishCamera(CAMERAS.unwind, false);
+      runFor(FADE_IN_S + 1);
+      expect(where(container).x).toBe(middle(WALKS.unwind));
+      expect(rows(container)).not.toBe(11);
+    });
+    it('a new carry clears any landing that was waiting', () => {
+      const { container } = start();
+      carryAway(container, 2500, 100);
+      go('zen');
+      runFor(0.5);
+      go('unwind');
+      publishCamera(CAMERAS.unwind, false);
+      runFor(FADE_IN_S + 1);
+      // It has landed by now (ready); a fresh carry and release go where the pointer says.
+      carryAway(container, 450, 100);
+      drop(container, 450, 100);
+      runFor(1);
+      expect(where(container).x).toBeLessThanOrEqual(WALKS.unwind.max);
+    });
+  });
+
+  it('after the PC slept over midnight with Stay on, the first tick on waking ends the Stay', () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'setTimeout', 'clearTimeout'] });
+    let ms = local(21, 0);
+    localStorage.setItem(PET_KEY, JSON.stringify({ ...defaultPet(ms), days: 3, lastDay: dayKey(ms), stay: { place: 'unwind', x: 440, date: dayKey(ms) } }));
+    // 9 PM is before his night is over and he is awake until 9:30: the Stay is on.
+    const { container } = render(<Watt now={() => ms} />);
+    runFor(1.5);
+    expect(rows(container)).toBe(11);
+    // The page is hidden while the PC sleeps; the clock jumps to mid morning the next day; it comes back.
+    Object.defineProperty(document, 'hidden', { configurable: true, value: true });
+    document.dispatchEvent(new Event('visibilitychange'));
+    ms = local(10, 0) + 24 * 3600_000;
+    Object.defineProperty(document, 'hidden', { configurable: true, value: false });
+    document.dispatchEvent(new Event('visibilitychange'));
+    act(() => void vi.advanceTimersByTime(6000));
+    expect(stored().stay).toBeNull();
+    runFor(30);
+    expect(rows(container)).toBe(12);
+  });
+
   it('releasing him over a control, or cancelling the carry over it, does not hover or click it', () => {
     const hovers = vi.fn();
     const clicks = vi.fn();
-    const under = (
+    const { container, getByTestId } = render(
       <>
         <button type="button" data-testid="under" onMouseEnter={hovers} onMouseOver={hovers} onPointerEnter={hovers} onPointerOver={hovers} onClick={clicks}>
           Hold to merge
         </button>
         <Watt now={day} />
-      </>
+      </>,
     );
-    const { container, getByTestId } = render(under);
     runFor(1.5);
     const button = getByTestId('under');
-    // What the browser does while the hit element holds the pointer: every event goes to it.
-    const rel = vi.spyOn(button, 'dispatchEvent');
-    grab(container, 500, 400);
-    expect(setCap).toHaveBeenCalledWith(1);
-    move(container, 520, 400);
-    move(container, 1200, 300);
-    runFor(0.6);
-    // Held over the button for a while, then let go on it; the click the browser sends goes to the captured element.
-    runFor(1);
-    drop(container, 1200, 300);
-    fireEvent.click(hitOf(container), { detail: 1 });
+    const hit = hitOf(container);
+    // Route an event the way a browser does: to the element holding the pointer's capture, else to what is under it (the button).
+    // The target is chosen when the pointer is pressed or moved, so the click that follows a release goes where the release went.
+    let holder: HTMLElement = hit;
+    const route = (type: 'pointerover' | 'mouseover' | 'pointerenter' | 'mouseenter' | 'pointerup' | 'click' | 'pointercancel', id: number, x: number, y: number) => {
+      if (type !== 'click') holder = captured.has(id) ? hit : button;
+      const target = holder;
+      const init = { bubbles: type !== 'pointerenter' && type !== 'mouseenter', pointerId: id, pointerType: 'mouse', clientX: x, clientY: y, detail: type === 'click' ? 1 : 0 };
+      act(() => void target.dispatchEvent(type.startsWith('pointer') ? new PointerEvent(type, init) : new MouseEvent(type, init)));
+    };
+    const overs = (id: number, x: number, y: number) => (['pointerover', 'mouseover', 'pointerenter', 'mouseenter'] as const).forEach((t) => route(t, id, x, y));
+    // The pointer goes down on him (always his element), moves over the button, and is held there.
+    const carryOver = (id: number) => {
+      grab(container, 500, 400, id);
+      move(container, 520, 400, id);
+      for (const [x, y] of [[700, 380], [900, 340], [1200, 300]] as const) {
+        fireEvent.pointerMove(captured.has(id) ? hit : button, { ...ptr(id), clientX: x, clientY: y });
+        overs(id, x, y);
+      }
+      runFor(1.2);
+    };
+    carryOver(1);
+    route('pointerup', 1, 1200, 300);
+    route('click', 1, 1200, 300);
     runFor(1);
     expect(hovers).not.toHaveBeenCalled();
     expect(clicks).not.toHaveBeenCalled();
     expect(stored().today?.pets ?? 0).toBe(0);
+    expect(hit.classList.contains('carrying')).toBe(false);
     // The same when the carry ends by cancel.
-    grab(container, 500, 400, 2);
-    move(container, 520, 400, 2);
-    move(container, 1200, 300, 2);
-    runFor(0.6);
-    fireEvent.pointerCancel(hitOf(container), ptr(2));
+    carryOver(2);
+    route('pointercancel', 2, 1200, 300);
     runFor(1);
     expect(hovers).not.toHaveBeenCalled();
     expect(clicks).not.toHaveBeenCalled();
-    expect(rel).not.toHaveBeenCalled();
     // And the control still works for a pointer that is not carrying him.
     fireEvent.click(button);
     expect(clicks).toHaveBeenCalledTimes(1);

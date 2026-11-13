@@ -17,6 +17,7 @@ import {
   carryFrame,
   deferCarry,
   landPending,
+  pendingStale,
   createCarry,
   endStay,
   landingX,
@@ -313,7 +314,7 @@ describe('review fixes', () => {
       const c = lifted();
       run(c, 0, 0.3, () => [x + 40, 200]);
       const kept = c.x;
-      deferCarry(c);
+      deferCarry(c, 4);
       expect(c.mode).toBe(NONE);
       expect(c.pendingX).toBe(kept);
       landPending(c, 5, home, HY, home.px);
@@ -323,6 +324,30 @@ describe('review fixes', () => {
       expect(c.y + spriteHeight('land', home.px)).toBe(HY);
       expect(c.pendingX).toBeNaN();
     }
+  });
+});
+
+describe('a landing that waits for its place', () => {
+  it('is given up after 10 seconds or when night starts, and a new carry clears it', () => {
+    const c = lifted();
+    run(c, 0, 0.3, () => [900, 200]);
+    deferCarry(c, 5);
+    expect(pendingStale(c, 14.9, false)).toBe(false);
+    expect(pendingStale(c, 15.1, false)).toBe(true);
+    expect(pendingStale(c, 6, true)).toBe(true);
+    const none = createCarry();
+    expect(pendingStale(none, 99, true)).toBe(false);
+    beginCarry(c, 2, 900, 300, 900, HY, 1, SIZE, 6, false);
+    expect(c.pendingX).toBeNaN();
+  });
+  it('a second deferral keeps the first x only if nothing is held (a second place change finds mode NONE)', () => {
+    const c = lifted();
+    run(c, 0, 0.3, () => [900, 200]);
+    deferCarry(c, 1);
+    const x = c.pendingX;
+    // The component does not defer again when the mode is NONE; the kept x stands.
+    expect(c.mode).toBe(NONE);
+    expect(c.pendingX).toBe(x);
   });
 });
 

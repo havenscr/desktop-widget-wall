@@ -134,8 +134,8 @@ export const SPRITES: Readonly<Record<Pose, readonly string[]>> = {
   dizzy: [...IDLE.slice(0, 3), '.wwwwwwwwwwwwwfefe', 'wwwwwwwwwwwwwwffef', 'wwwwwwwwwwwwwwfefe', ...IDLE.slice(6)],
   // Ears up and eyes wide: he has noticed the pointer.
   alert: ['....wwwwwww...p...', '..wwwwwwwwwww.p...', ...IDLE.slice(2, 3), '.wwwwwwwwwwwwwfeff', 'wwwwwwwwwwwwwwfeef', ...IDLE.slice(5)],
-  // In the air: legs tucked, eyes squeezed shut with joy.
-  hop: [...IDLE.slice(0, 4), 'wwwwwwwwwwwwwwf-ff', ...IDLE.slice(5, 10), '..l.l.......l.l...', '..................'],
+  // In the air: body high, legs tucked close, a clear gap and a small shadow line on the ground below, eyes squeezed shut with joy.
+  hop: [...IDLE.slice(0, 4), 'wwwwwwwwwwwwwwf-ff', ...IDLE.slice(5, 9), '...ll......ll.....', '..................', '...ssssssssssss...'],
   // Turning on the spot: the wool ball seen from the front (face), then from behind (no face).
   spin1: [
     '.....wwwwwwww.....',
@@ -284,6 +284,7 @@ export const SPRITE_COLORS: Readonly<Record<string, string>> = {
   '-': '#2aa9ad',
   p: '#ff7ab8',
   l: '#8f86c9',
+  s: '#4d3f98',
 };
 
 /** Colour of a pixel, or null for empty. Wool is lighter near the top (the demo's three steps). */

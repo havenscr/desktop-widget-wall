@@ -609,7 +609,7 @@ describe('sprites', () => {
     for (const map of Object.values(SPRITES)) {
       for (const row of map) {
         expect(row).toHaveLength(map[0].length);
-        expect(row).toMatch(/^[.wfe\-pl]+$/);
+        expect(row).toMatch(/^[.wfe\-pls]+$/);
       }
     }
   });

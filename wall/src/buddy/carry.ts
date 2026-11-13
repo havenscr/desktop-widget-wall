@@ -107,6 +107,8 @@ export interface Carry {
   arrived: boolean;
   /** Held across a place change: where (left edge x) he is set down once the new place is ready, else NaN. */
   pendingX: number;
+  /** Wall clock seconds the landing started waiting (the loop's own time stops while he is away). */
+  pendingT: number;
 }
 
 export function createCarry(): Carry {
@@ -150,6 +152,7 @@ export function createCarry(): Carry {
     target: Number.NaN,
     arrived: false,
     pendingX: Number.NaN,
+    pendingT: 0,
   };
 }
 
@@ -179,6 +182,7 @@ export function cancelCarry(c: Carry): void {
  */
 export function beginCarry(c: Carry, id: number, pointerX: number, pointerY: number, x: number, bottom: number, dir: 1 | -1, size: number, T: number, mayTalk: boolean): void {
   c.mode = HELD;
+  c.pendingX = Number.NaN;
   c.pointerId = id;
   c.px = pointerX;
   c.py = pointerY;
@@ -491,10 +495,19 @@ export function endStay(c: Carry, T: number): void {
  * A place change while he is held: the pointer is let go and the carry ends, but his x is kept so
  * he can be set down on the new place's ground line (see `landPending`).
  */
-export function deferCarry(c: Carry): void {
+/** A landing that has waited this long for its place is given up, seconds. */
+export const PENDING_S = 10;
+
+export function deferCarry(c: Carry, T: number): void {
   const x = c.x;
   cancelCarry(c);
   c.pendingX = x;
+  c.pendingT = T;
+}
+
+/** True when a waiting landing is too old, or it is his night: it is forgotten instead of happening later. */
+export function pendingStale(c: Carry, T: number, night: boolean): boolean {
+  return c.pendingX === c.pendingX && (night || T - c.pendingT > PENDING_S);
 }
 
 /** The new place is ready: set him down at once at the kept x, clamped to that place's walk span. */

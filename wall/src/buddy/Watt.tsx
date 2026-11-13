@@ -18,6 +18,7 @@ import {
   RETURN,
   callCarry,
   deferCarry,
+  pendingStale,
   landPending,
   endStay,
   landingX,
@@ -704,7 +705,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
     }
     dropCapture(c.pointerId);
     // Held (or falling): he keeps his x and is set down on the new place once it is ready.
-    if (c.mode === HELD || c.mode === FALL) deferCarry(c);
+    if (c.mode === HELD || c.mode === FALL) deferCarry(c, nowRef.current() / 1000);
     else cancelCarry(c);
     mind.current.carry = false;
   }, [dropCapture, update]);
@@ -971,8 +972,10 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
           stepCarry(c, dt, tNow(), p.camera.hy, walk.px, home, reduced, f);
         }
       }
-      // Held across a place change: set down now that the new place is up.
-      if (c.mode === NONE && c.pendingX === c.pendingX && ready && p.place !== null && p.place === place && p.camera && p.opacity > 0.5) {
+      // Held across a place change: set down as soon as the new place's camera is ready (he then fades in
+      // already where he was set down); given up after 10 s or at night.
+      if (c.mode === NONE && pendingStale(c, nowRef.current() / 1000, clock.night)) c.pendingX = Number.NaN;
+      if (c.mode === NONE && c.pendingX === c.pendingX && ready && p.place !== null && p.place === place && p.camera) {
         landPending(c, tNow(), WALKS[place], p.camera.hy, WALKS[place].px);
         mind.current.carry = true;
       }
