@@ -230,6 +230,10 @@ export function allDayWidth(n: number): number {
 export const CHIP_LANES = 3;
 /** Width of a "+N" chip. */
 export const MORE_CHIP_PX = 44;
+/** The narrowest a "+N" chip gets when it must squeeze in after its group. */
+export const MORE_MIN_PX = 24;
+/** Gap between a "+N" chip and the chips beside it. */
+const MORE_GAP = 4;
 /** Gap between a narrow chip and the title written beside it, and before the next chip. */
 const BESIDE_GAP = 6;
 /** A title beside its chip needs at least this much room, else it is in the hover only. */
@@ -264,9 +268,9 @@ const ALL_DAY_KEY = '\u0000all-day';
  * Lanes for the day's chips, so no chip is ever drawn over another. Events that overlap in
  * time (an event that ends exactly when the next begins does not) form a group; a group of
  * one keeps the full row, a group needing two or three lanes stacks them at a reduced
- * height. When more than three overlap at once, the group keeps two lanes and the rest go
- * into one full-height "+N" chip at the first one's start; a chip the "+N" chip would sit
- * on joins its list. `allDay` is the width of the "N all day" chip, which takes the first
+ * height. When more than three overlap at once, the group keeps two lanes of real chips and
+ * the rest go into one full-height "+N" chip that covers no chip: at the end of the group's
+ * span (the chips there drawn shorter), else just after it. `allDay` is the width of the "N all day" chip, which takes the first
  * lane at the start of the row. A narrow chip gets its title written beside it when the
  * row has room before the next chip.
  */
@@ -310,22 +314,27 @@ export function chipLayout(all: readonly Chip[], allDay = 0): { shown: Chip[]; m
     const kept: Chip[] = [];
     const groupMore: MoreChip[] = [];
     if (over.length > 0) {
+      // Two lanes of real chips; one full-height "+N" chip holds every other meeting of the group
+      // and sits where it covers no chip: inside the group's span at its end (the chips there are
+      // drawn shorter to make room), else just after the group, narrower if it must be.
       over = place(2);
-      const pseudoEnd = pseudo && g.includes(pseudo) ? pseudo.x + pseudo.width + 4 : -Infinity;
-      for (const c of over) {
-        const last = groupMore[groupMore.length - 1];
-        const lastReach = last ? Math.max(last.x + last.width, ...last.items.map((i) => i.x + i.width)) : -Infinity;
-        if (last && c.x < lastReach) last.items.push(c);
-        else groupMore.push({ key: `more-${c.key}`, x: Math.max(c.x, pseudoEnd), width: MORE_CHIP_PX, items: [c] });
+      const end = Math.max(...g.map((c) => c.x + c.width));
+      const next = groups[groups.indexOf(g) + 1]?.[0]?.x ?? RX(END_HOUR) + 40;
+      const inGroup = g.filter((c) => !over.includes(c));
+      const nx = end - MORE_CHIP_PX;
+      const fitsInside = inGroup.every((c) => c.x + c.width <= nx - MORE_GAP || (c !== pseudo && c.x + MIN_CHIP_PX <= nx - MORE_GAP));
+      let mx: number;
+      let mw = MORE_CHIP_PX;
+      if (fitsInside) {
+        mx = nx;
+        for (const c of inGroup) if (c.x + c.width > nx - MORE_GAP) c.width = nx - MORE_GAP - c.x;
+      } else {
+        mx = end + MORE_GAP;
+        mw = Math.max(MORE_MIN_PX, Math.min(MORE_CHIP_PX, next - MORE_GAP - mx));
       }
+      groupMore.push({ key: `more-${over[0].key}`, x: mx, width: mw, items: [...over] });
     }
-    const inGroup = g.filter((c) => !over.includes(c));
-    for (const c of inGroup) {
-      // A chip under a full-height "+N" chip joins its list (never the all-day chip, which the "+N" avoids).
-      const m = c === pseudo ? undefined : groupMore.find((mm) => c.x < mm.x + mm.width && mm.x < c.x + c.width);
-      if (m) m.items.push(c);
-      else kept.push(c);
-    }
+    kept.push(...g.filter((c) => !over.includes(c)));
     if (kept.length > 0 && over.length === 0) lanes = Math.max(...kept.map((c) => c.lane)) + 1;
     for (const c of kept) {
       c.lanes = lanes;

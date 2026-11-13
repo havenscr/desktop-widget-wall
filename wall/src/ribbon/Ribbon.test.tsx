@@ -343,7 +343,7 @@ it('three meetings at once stack in three thin lanes with no title drawn', async
   expect(r.container.querySelector('.ev.more')).toBeNull();
 });
 
-it('four meetings at once fold into a "+4" chip; a click on it lists them to open in Outlook', async () => {
+it('four meetings at once: two real chips and a "+2" chip; a click on it lists the other two to open in Outlook', async () => {
   const opened: string[] = [];
   mocks.set('wall2_open_event', (args) => {
     opened.push(String(args?.key));
@@ -359,17 +359,17 @@ it('four meetings at once fold into a "+4" chip; a click on it lists them to ope
     </>,
   );
   await flush();
-  expect([...r.container.querySelectorAll('.ev:not(.more)')]).toEqual([]);
+  expect([...r.container.querySelectorAll('.ev:not(.more)')].map((c) => c.textContent)).toEqual(['Meeting a', 'Meeting b']);
   const more = r.container.querySelector('.ev.more') as HTMLElement;
-  expect(more.textContent).toBe('+4');
+  expect(more.textContent).toBe('+2');
   fireEvent.mouseEnter(more);
   await flush(TIP_DELAY_MS);
-  expect(document.querySelector('.hover-tip')!.textContent).toContain('4 more at this time');
+  expect(document.querySelector('.hover-tip')!.textContent).toContain('2 more at this time');
   fireEvent.mouseLeave(more);
   fireEvent.click(more);
   const picks = [...document.querySelectorAll('.hover-tip.pinned .tip-pick')] as HTMLElement[];
-  expect(picks.map((p) => p.textContent)).toEqual(['a', 'b', 'c', 'd'].map((k) => `Meeting ${k}, 1:00 to 2:00 PM, Work`));
-  fireEvent.click(picks[2]);
+  expect(picks.map((p) => p.textContent)).toEqual(['c', 'd'].map((k) => `Meeting ${k}, 1:00 to 2:00 PM, Work`));
+  fireEvent.click(picks[0]);
   await flush();
   expect(opened).toEqual(['d-c']);
   expect(document.querySelector('.hover-tip')).toBeNull();

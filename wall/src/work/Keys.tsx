@@ -32,6 +32,7 @@ import {
   pagesFor,
   readMode,
   saveMode,
+  sendReason,
   stepPage,
   type KeysSummary,
   type Mode,
@@ -439,7 +440,7 @@ export function Keys() {
               type="button"
               className={`deck-tile key-tile${wrongApp || layoutOff ? ' off' : ''}`}
               aria-label={k.label}
-              aria-disabled={layoutOff || undefined}
+              aria-disabled={layoutOff || wrongApp || undefined}
               {...tip(
                 layoutOff
                   ? layoutOffReason(arrange)
@@ -452,7 +453,11 @@ export function Keys() {
                         : `Send ${k.label} to ${set.name}`,
               )}
               onKeyDown={onKeyDown(k.action)}
-              onClick={(e) => !layoutOff && !keyboardOnMouseKey(k.action, e.detail) && void press(`${set.id}:${i}`, e.detail, { command: 'wall2_keys_send', args: { setId: set.id, index: i } }, k.label, k.action, set, hold)}
+              onClick={(e) => {
+                // A key that cannot be sent never reaches Rust: the heading says why, nothing is invoked.
+                if (wrongApp) return showBrief(sendReason('no app', set, hold));
+                if (!layoutOff && !keyboardOnMouseKey(k.action, e.detail)) void press(`${set.id}:${i}`, e.detail, { command: 'wall2_keys_send', args: { setId: set.id, index: i } }, k.label, k.action, set, hold);
+              }}
             >
               <KeyIcon name={k.icon} size={20} />
               <span className="deck-lbl">{label}</span>

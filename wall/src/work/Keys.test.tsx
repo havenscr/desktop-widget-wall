@@ -160,16 +160,21 @@ it('the dots show every page and a click on one holds it; the wheel steps one pa
   expect(screen.getByText('Now · Sales app')).toBeTruthy();
 });
 
-it('a held page in the wrong app is refused with fixed words and types nothing', async () => {
+it('a held page in the wrong app says why and never asks Rust, by mouse or keyboard', async () => {
   localStorage.setItem(MODE_KEY, JSON.stringify({ hold: true, setId: 'sales' }));
   answer = front('general', 'notepad.exe');
   render(<Keys />);
   await flush();
   expect(screen.getByText('Now · Sales app')).toBeTruthy();
-  fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+  const key = screen.getByRole('button', { name: 'Refresh' });
+  expect(key.getAttribute('aria-disabled')).toBe('true');
+  fireEvent.click(key, { detail: 1 });
   await flush();
   expect(screen.getByText('Wrong app in front for Sales app')).toBeTruthy();
-  expect(sent).toEqual([{ setId: 'sales', index: 0 }]);
+  fireEvent.keyDown(key, { key: 'Enter' });
+  fireEvent.click(key, { detail: 0 });
+  await flush();
+  expect(sent).toEqual([]);
 });
 
 it('a held set that left keys.json is Auto again, in storage too; bad storage reads as Auto', async () => {

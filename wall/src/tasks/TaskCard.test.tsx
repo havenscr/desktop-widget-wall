@@ -380,3 +380,38 @@ it('a failed completion says Could not complete with Retry, and Retry completes 
   expect(done).toHaveBeenCalledTimes(2);
   expect(screen.queryByText('Could not complete.')).toBeNull();
 });
+
+it('a closing window completes a waiting tick exactly once', async () => {
+  setList(() => [task('a', 'First')]);
+  const done = vi.fn();
+  mocks.set('wall2_task_done', done);
+  render(<TaskCard />);
+  await flush();
+  fireEvent.click(screen.getByLabelText('Mark done: First'));
+  await flush(1000);
+  window.dispatchEvent(new Event('pagehide'));
+  window.dispatchEvent(new Event('beforeunload'));
+  await flush(TICK_UNDO_MS * 2);
+  expect(done).toHaveBeenCalledTimes(1);
+  expect(done).toHaveBeenCalledWith({ id: 'a' });
+});
+
+it('the page going hidden completes a waiting tick once; an undone tick sends nothing', async () => {
+  setList(() => [task('a', 'First'), task('b', 'Second')]);
+  const done = vi.fn();
+  mocks.set('wall2_task_done', done);
+  render(<TaskCard />);
+  await flush();
+  fireEvent.click(screen.getByLabelText('Mark done: First'));
+  fireEvent.click(screen.getByLabelText('Mark done: Second'));
+  fireEvent.click(screen.getByRole('button', { name: 'Undo: Second' }));
+  Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
+  try {
+    document.dispatchEvent(new Event('visibilitychange'));
+    await flush(TICK_UNDO_MS * 2);
+  } finally {
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
+  }
+  expect(done).toHaveBeenCalledTimes(1);
+  expect(done).toHaveBeenCalledWith({ id: 'a' });
+});

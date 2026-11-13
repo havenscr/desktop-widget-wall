@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { allDayChips, allDayText, allDayWidth, chipLayout, chips, focusBars, isAllDay, isLate, needleTip, hourLabels, hourText, needle, RIBBON_WIDTH, RX, shortTime, skyGradient, sunLabels, ticks, wallHour } from './model';
+import { MIN_CHIP_PX, allDayChips, allDayText, allDayWidth, chipLayout, chips, focusBars, isAllDay, isLate, needleTip, hourLabels, hourText, needle, RIBBON_WIDTH, RX, shortTime, skyGradient, sunLabels, ticks, wallHour } from './model';
 import { sunTimes } from './sun';
 import { useFixedClock, usePacificTime } from './testZone';
 
@@ -221,7 +221,7 @@ it('an event that ends exactly when the next begins does not overlap it', () => 
   ]);
 });
 
-it('five events at once fold into one full-height "+N" chip, and later ones lay out normally', () => {
+it('five events at once: two lanes of real chips and one "+N" chip for the other three; later ones lay out normally', () => {
   const now = t('08:00');
   const all = chips(
     [
@@ -231,9 +231,53 @@ it('five events at once fold into one full-height "+N" chip, and later ones lay 
     now,
   );
   const { shown, more } = chipLayout(all);
-  expect(shown.map((c) => c.key)).toEqual(['f']);
+  expect(shown.map((c) => [c.key, c.lane, c.lanes])).toEqual([
+    ['a', 0, 2],
+    ['b', 1, 2],
+    ['f', 0, 1],
+  ]);
   expect(more).toHaveLength(1);
-  expect(more[0].items.map((c) => c.key)).toEqual(['a', 'b', 'c', 'd', 'e']);
+  expect(more[0].items.map((c) => c.key)).toEqual(['c', 'd', 'e']);
+  // Inside the group's span, at its end.
+  expect(more[0].x + more[0].width).toBeCloseTo(RX(15));
+  overlapFree(shown, more);
+});
+
+it('meetings that start together keep two real chips beside the "+N" (never a lone "+N")', () => {
+  const now = t('07:00');
+  const all = chips(
+    [
+      { key: 'a', title: 'One', start: iso('08:00'), end: iso('10:00') },
+      { key: 'b', title: 'Two', start: iso('08:00'), end: iso('10:00') },
+      { key: 'c', title: 'Three', start: iso('08:00'), end: iso('10:00') },
+      { key: 'd', title: 'Four', start: iso('09:54'), end: iso('10:00') },
+      { key: 'e', title: 'Next', start: iso('10:00'), end: iso('11:00') },
+    ],
+    now,
+  );
+  const { shown, more } = chipLayout(all);
+  expect(shown.map((c) => c.key)).toEqual(['a', 'b', 'e']);
+  expect(more).toHaveLength(1);
+  expect(more[0].items.map((c) => c.key)).toEqual(['c', 'd']);
+  expect(more[0].x + more[0].width).toBeLessThanOrEqual(RX(10));
+  overlapFree(shown, more);
+});
+
+it('a short group of four puts its "+N" just after it, narrower if the next meeting is close', () => {
+  const now = t('07:00');
+  const all = chips(
+    [
+      ...['a', 'b', 'c', 'd'].map((k) => ({ key: k, title: `Quick ${k}`, start: iso('09:00'), end: iso('09:10') })),
+      { key: 'e', title: 'Next', start: iso('09:30'), end: iso('10:00') },
+    ],
+    now,
+  );
+  const { shown, more } = chipLayout(all);
+  expect(shown.map((c) => c.key)).toEqual(['a', 'b', 'e']);
+  expect(more).toHaveLength(1);
+  expect(more[0].items.map((c) => c.key)).toEqual(['c', 'd']);
+  expect(more[0].x).toBeGreaterThanOrEqual(RX(9) + MIN_CHIP_PX);
+  expect(more[0].x + more[0].width).toBeLessThanOrEqual(RX(9.5));
   overlapFree(shown, more);
 });
 
