@@ -18,7 +18,10 @@ interface PlaceState {
   setActive: (id: PlaceId) => void;
   /** Set by `openDream`; Zen reads it once when it opens and starts in Dream. */
   zenDream: boolean;
-  /** Open Zen straight into Dream (Unwind's Dream tab). */
+  /**
+   * Open Zen already dimmed (Unwind's Dream tab). Dream is now Zen's dimmed state; stream E removes
+   * the Dream tab and this call.
+   */
   openDream: () => void;
   /** Zen calls this once it has read `zenDream`. */
   takeZenDream: () => boolean;
