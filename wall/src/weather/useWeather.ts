@@ -60,10 +60,10 @@ function check(): void {
 function join(f: typeof fetch): void {
   fetcher = f;
   users += 1;
-  if (users === 1) {
-    check();
-    timer = setInterval(check, CHECK_MS);
-  }
+  if (users === 1) timer = setInterval(check, CHECK_MS);
+  // Every mount checks (and refreshes the clock), throttled by the last attempt; a mount with
+  // no reading yet retries after a minute at most.
+  check();
 }
 
 function leave(): void {

@@ -40,6 +40,14 @@ let epoch = 0;
 let clock: () => number = systemNow;
 let lastRead: number | null = null;
 let inFlight = false;
+/** A screen that mounts reads again when the last read is this old or older. */
+const MOUNT_READ_MS = 60_000;
+/** After a failed read the next try is allowed this long after it. */
+const RETRY_MS = 30_000;
+
+function due(): boolean {
+  return lastRead === null || clock() - lastRead >= MOUNT_READ_MS;
+}
 
 function read(): void {
   const mine = epoch;
@@ -64,6 +72,8 @@ function read(): void {
         useMeetingFeed.setState({ meetings: [], feedStale: false, failed: false, asOf: null, noCalendar: false });
       } else {
         useMeetingFeed.setState({ failed: true });
+        // Retry soon, but at most once per RETRY_MS, so a dead network is not hammered.
+        lastRead = clock() - (MOUNT_READ_MS - RETRY_MS);
       }
     })
     .finally(() => {
@@ -77,10 +87,14 @@ function read(): void {
 function join(now: () => number): void {
   clock = now;
   users += 1;
-  if (users === 1) {
-    if (lastRead === null || clock() - lastRead >= REFRESH_MS) read();
-    timer = setInterval(read, REFRESH_MS);
-  }
+  if (users === 1) timer = setInterval(read, REFRESH_MS);
+  // Every mount reads when the last read is a minute old or more, even with other users mounted.
+  if (!inFlight && due()) read();
+}
+
+/** On each user's tick: try again after a failed read. */
+function retryIfFailed(): void {
+  if (useMeetingFeed.getState().failed && !inFlight && due()) read();
 }
 
 function leave(): void {
@@ -110,8 +124,8 @@ export function resetMeetingFeed(): void {
 
 /**
  * The first meeting that has not ended, for the Work "Next" block and Watt, from
- * `wall2_meet_next`. One shared read for every user: on the first visible mount and every 5
- * minutes while at least one is mounted and visible. Each user's time ticks every 30 seconds
+ * `wall2_meet_next`. One shared read for every user: on a visible mount when the last read is a minute old, and every 5
+ * minutes while at least one is mounted and visible; a failed read is retried on the next tick, mount or show (at most every 30 seconds). Each user's time ticks every 30 seconds
  * (and after each read) from its own `now`. Not set up, a failed first read or no meeting gives
  * undefined, so the block hides. A later failed read keeps the last list and marks it stale, as
  * does a reply the feed itself marks `stale` (an account was unavailable).
@@ -131,7 +145,12 @@ export function useNextMeeting(now: () => number = systemNow): NextMeetingState 
 
   useEffect(() => {
     if (!visible) return;
-    const tick = setInterval(() => setT(now()), TICK_MS);
+    // Shown again: the clock is current at once, not up to a tick old.
+    setT(now());
+    const tick = setInterval(() => {
+      setT(now());
+      retryIfFailed();
+    }, TICK_MS);
     return () => clearInterval(tick);
   }, [visible, now]);
 

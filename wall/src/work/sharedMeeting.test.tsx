@@ -10,9 +10,9 @@ afterEach(() => {
 });
 
 function Next({ id, now }: { id: string; now?: () => number }) {
-  const { meeting, asOf } = useNextMeeting(now);
+  const { meeting, asOf, now: t } = useNextMeeting(now);
   return (
-    <span data-testid={id} data-asof={asOf ?? ''}>
+    <span data-testid={id} data-asof={asOf ?? ''} data-now={t}>
       {meeting?.title ?? '-'}
     </span>
   );
@@ -75,4 +75,76 @@ it('hiding the page then showing it keeps the list and its time, with no extra r
   expect(getByTestId('a').textContent).toBe('Planning');
   expect(getByTestId('a').getAttribute('data-asof')).toBe('1234567');
   expect(read).toHaveBeenCalledTimes(1);
+});
+
+const meetingBody = () => {
+  const start = new Date(Date.now() + 60 * 60_000).toISOString();
+  const end = new Date(Date.now() + 90 * 60_000).toISOString();
+  return { accounts: [], meetings: [{ key: 'k', accountId: 'a', title: 'Planning', start, end, canJoin: false }] };
+};
+const wait = (ms: number) =>
+  act(async () => {
+    await vi.advanceTimersByTimeAsync(ms);
+  });
+
+it('a screen that mounts reads again when the last read is a minute old, not before', async () => {
+  vi.useFakeTimers();
+  const read = vi.fn(meetingBody);
+  mocks.set('wall2_meet_next', read);
+  render(<Next id="a" />);
+  await wait(10);
+  expect(read).toHaveBeenCalledTimes(1);
+  await wait(30_000);
+  render(<Next id="b" />);
+  await wait(10);
+  expect(read).toHaveBeenCalledTimes(1);
+  await wait(31_000);
+  render(<Next id="c" />);
+  await wait(10);
+  expect(read).toHaveBeenCalledTimes(2);
+});
+
+it('after a failed read the next tick retries, at most once every 30 seconds', async () => {
+  vi.useFakeTimers();
+  const read = vi.fn(() => {
+    throw new Error('offline');
+  });
+  mocks.set('wall2_meet_next', read);
+  render(<Next id="a" />);
+  await wait(10);
+  expect(read).toHaveBeenCalledTimes(1);
+  await wait(10_000);
+  expect(read).toHaveBeenCalledTimes(1);
+  await wait(21_000);
+  expect(read).toHaveBeenCalledTimes(2);
+  await wait(10_000);
+  expect(read).toHaveBeenCalledTimes(2);
+  await wait(21_000);
+  expect(read).toHaveBeenCalledTimes(3);
+});
+
+it('a mount inside 30 seconds of a failed read does not retry', async () => {
+  vi.useFakeTimers();
+  const read = vi.fn(() => {
+    throw new Error('offline');
+  });
+  mocks.set('wall2_meet_next', read);
+  render(<Next id="a" />);
+  await wait(10);
+  render(<Next id="b" />);
+  await wait(10);
+  expect(read).toHaveBeenCalledTimes(1);
+});
+
+it('a page shown again gives each user the current time at once', async () => {
+  vi.useFakeTimers();
+  let ms = 1_000_000;
+  const clock = () => ms;
+  mocks.set('wall2_meet_next', meetingBody);
+  const { getByTestId } = render(<Next id="a" now={clock} />);
+  await wait(10);
+  hide(true);
+  ms += 20_000;
+  hide(false);
+  expect(getByTestId('a').getAttribute('data-now')).toBe(String(ms));
 });
