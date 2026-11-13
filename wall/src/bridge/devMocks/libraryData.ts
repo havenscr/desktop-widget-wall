@@ -147,7 +147,7 @@ export const LIBRARY_DATA: LibGroup[] = [
     "label": "Hide screen",
     "icon": "monitor-off",
     "kind": "wall",
-    "how": "the wall's own Screens off",
+    "how": "the wall's own Hide screen",
     "action": "screens-off",
     "runnable": true
    }

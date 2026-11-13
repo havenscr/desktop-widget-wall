@@ -204,7 +204,7 @@ pub(crate) const LIBRARY: &[LibEntry] = &[
     LibEntry { id: "run", label: "Run", icon: "play", group: "anywhere", kind: LibKind::Key, how: "Win+R", spec: "Win+R" },
     LibEntry { id: "lock", label: "Lock the PC", icon: "lock", group: "anywhere", kind: LibKind::Wall, how: "locks at once", spec: "lock" },
     LibEntry { id: "displays-off", label: "All monitors off", icon: "monitor-off", group: "anywhere", kind: LibKind::Wall, how: "sleeps every screen until you move the mouse", spec: "displays:off" },
-    LibEntry { id: "strip-dark", label: "Hide screen", icon: "monitor-off", group: "anywhere", kind: LibKind::Wall, how: "the wall's own Screens off", spec: "screens-off" },
+    LibEntry { id: "strip-dark", label: "Hide screen", icon: "monitor-off", group: "anywhere", kind: LibKind::Wall, how: "the wall's own Hide screen", spec: "screens-off" },
     LibEntry { id: "volume-up", label: "Volume up", icon: "volume", group: "sound", kind: LibKind::Key, how: "volume key", spec: "VolumeUp" },
     LibEntry { id: "volume-down", label: "Volume down", icon: "volume-low", group: "sound", kind: LibKind::Key, how: "volume key", spec: "VolumeDown" },
     LibEntry { id: "mute", label: "Mute sound", icon: "volume-off", group: "sound", kind: LibKind::Key, how: "mute key", spec: "VolumeMute" },

@@ -70,6 +70,13 @@ const EXPECT = {
   'key-edge': /^ *FAIL deck: key ".*" edge against the sky /m,
   'hide-pill': /^ *FAIL hide screen: /m,
   'hide-note': /^ *FAIL hide screen note: /m,
+  // left wing
+  lwbuttons: /^ *FAIL left wing: music buttons leave the wing/m,
+  lwoverlap: /^ *FAIL left wing: music buttons overlap the title/m,
+  lwsquare: /^ *FAIL left wing: focus outline on Choose a focus length is square/m,
+  lwring: /^ *FAIL left wing: focus outline on Choose a focus length/m,
+  lwtemp: /^ *FAIL left wing: TEMP header /m,
+  lwround: /^ *FAIL left wing: round control /m,
 };
 const OVERFLOWS = {
   left: '.work .left-wing { transform: translateX(-200px); }',
@@ -91,6 +98,13 @@ const OVERFLOWS = {
   'key-edge': '.work .right-wing .deck-tile.key-tile { border-color: transparent !important; }',
   'hide-pill': '.screens-off:is(:hover, :focus-visible) { min-width: 900px; }',
   'hide-note': '.screens-off-note { bottom: 0 !important; }',
+  // left wing
+  lwbuttons: '.work .left-wing .music-mini-text { flex: none !important; width: 900px !important; }',
+  lwoverlap: '.work .left-wing .music-mini-btns { transform: translateX(-200px); }',
+  lwsquare: '.work .left-wing .focus-mini-ring:focus-visible { border-radius: 0 !important; }',
+  lwring: '.work .left-wing .focus-mini-ring:focus-visible { outline: none !important; }',
+  lwtemp: '.work .left-wing .mc-hd span:last-child { transform: translateX(14px); }',
+  lwround: '.work .wl .rd, .work .wl .focus-mini-ring, .work .wl .ring { border-radius: 0 !important; }',
 };
 
 if (flag('self-test')) {
@@ -509,7 +523,57 @@ try {
       const note = nr ? { overlap: hit(nr, pr), inCorner: !!ur && nr.left >= ur.left - 0.5 && nr.top >= rb - 0.5 && nr.right <= innerWidth + 0.5 && nr.bottom <= innerHeight + 0.5 } : null;
       hide = { note, inCorner, w: Math.round(pr.width), right: Math.round((box.right - pr.right) * 10) / 10, bottom: Math.round((box.bottom - pr.bottom) * 10) / 10, foot, room, grown, label: so.textContent };
     }
-    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, wattCard, header, deck, nowH, edges, hide });
+    // left wing: the three music buttons on one line, equal size, inside the wing and clear of the
+    // title; the TEMP header centred over both temperature numbers (2 px); every round control, and the
+    // focus ring, with a border-radius of at least half its size, so its outline and shadow are round.
+    const lw = [];
+    const wing = document.querySelector('.work .left-wing');
+    const mini = wing && wing.querySelector('.music-mini');
+    if (mini) {
+      const bs = [...mini.querySelectorAll('.music-mini-btns .rd')].map((b) => b.getBoundingClientRect());
+      const wr = wing.getBoundingClientRect();
+      const tr = mini.querySelector('.music-mini-text').getBoundingClientRect();
+      if (bs.length !== 3) lw.push('left wing: music buttons: ' + bs.length + ' found, 3 wanted');
+      else {
+        const sameLine = bs.every((r) => Math.abs(r.top - bs[0].top) <= 1);
+        const equal = bs.every((r) => Math.abs(r.width - bs[0].width) <= 0.5 && Math.abs(r.height - bs[0].height) <= 0.5);
+        const inside = bs.every((r) => r.left >= wr.left - 0.5 && r.right <= wr.right + 0.5);
+        const clear = bs.every((r) => r.left >= tr.right - 0.5);
+        if (!inside) lw.push('left wing: music buttons leave the wing');
+        if (!clear) lw.push('left wing: music buttons overlap the title');
+        if (!sameLine || !equal) lw.push('left wing: music buttons are not on one line and equal in size (line ' + sameLine + ', equal ' + equal + ')');
+      }
+    }
+    const hd = wing && wing.querySelector('.mc-hd span:last-child');
+    if (hd) {
+      const mid = (e) => { const r = e.getBoundingClientRect(); const g = document.createRange(); g.selectNodeContents(e); const t = g.getBoundingClientRect(); return (t.left + t.right) / 2 || (r.left + r.right) / 2; };
+      const hm = mid(hd);
+      for (const n of wing.querySelectorAll('.mc-row .mc-temp')) {
+        const d = Math.abs(mid(n) - hm);
+        if (d > 2) lw.push('left wing: TEMP header is ' + d.toFixed(1) + ' px off the centre of "' + n.textContent + '" (2 px allowed)');
+      }
+    }
+    for (const e of wing ? wing.querySelectorAll('.rd, .focus-mini-ring, .ring') : []) {
+      const r = e.getBoundingClientRect();
+      const rad = parseFloat(getComputedStyle(e).borderTopLeftRadius) || 0;
+      if (rad < Math.min(r.width, r.height) / 2 - 0.5) lw.push('left wing: round control ' + (e.getAttribute('aria-label') || e.className) + ' has a corner radius of ' + rad + ' px, under half its ' + Math.round(r.width) + ' px size');
+    }
+    // Keyboard focus: each control focused in turn must show an outline that is visible (width,
+    // style, a colour with some opacity that is not the control's own fill) and round.
+    for (const e of wing ? wing.querySelectorAll('.rd, .focus-mini-ring') : []) {
+      if (e.disabled) continue;
+      const name = e.getAttribute('aria-label') || e.className;
+      e.focus();
+      const cs = getComputedStyle(e);
+      const r = e.getBoundingClientRect();
+      const rad = parseFloat(cs.borderTopLeftRadius) || 0;
+      const alpha = (cs.outlineColor.match(/[0-9.]+/g) || []).slice(3)[0];
+      const visible = document.activeElement === e && cs.outlineStyle !== 'none' && parseFloat(cs.outlineWidth) > 0 && (alpha === undefined || parseFloat(alpha) > 0) && cs.outlineColor !== cs.backgroundColor;
+      if (!visible) lw.push('left wing: focus outline on ' + name + ' is missing or invisible when focused (' + cs.outlineStyle + ' ' + cs.outlineWidth + ' ' + cs.outlineColor + ', focused ' + (document.activeElement === e) + ')');
+      else if (rad < Math.min(r.width, r.height) / 2 - 0.5) lw.push('left wing: focus outline on ' + name + ' is square (radius ' + rad + ' px)');
+      e.blur();
+    }
+    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, wattCard, header, deck, nowH, edges, hide, lw });
     document.body.appendChild(pre);
   }, new URLSearchParams(location.search).get('card') ? 7000 : 3000);</script>`;
   const broken = overflow ? `<style>${OVERFLOWS[overflow]}</style>` : '';
@@ -546,7 +610,7 @@ try {
       process.exit(1);
     }
     const text = m[1].replaceAll('&quot;', '"').replaceAll('&amp;', '&');
-    const { res, page: doc, overlaps, cut, gaps, wattCard, header, deck, nowH, edges, hide } = JSON.parse(text);
+    const { res, page: doc, overlaps, cut, gaps, wattCard, header, deck, nowH, edges, hide, lw } = JSON.parse(text);
     // keys style
     if (v.nowH && nowH !== null) nowHeights.push({ page: v.nowH, h: nowH, name: v.name });
     if (v.edges) {
@@ -604,6 +668,9 @@ try {
           : `  ${okHide ? 'ok  ' : 'FAIL'} hide screen: ${hide.grown ? 'grown' : 'not grown'} to ${hide.w} px, right edge ${hide.right} and bottom ${hide.bottom} from its corner box (0), ${hide.inCorner ? 'inside' : 'outside'} the corner under the Room card, overlaps ${hide.foot} parts of the status line and ${hide.room} Room cards`,
       );
     }
+    for (const d of lw) console.log(`  FAIL ${d}`);
+    if (lw.length) failed = true;
+    else if (v.q.includes('hz=work')) console.log('  ok   left wing: three music buttons on one line, TEMP header centred, round controls round');
     for (const d of deck) console.log(`  FAIL ${d}`);
     if (deck.length) failed = true;
     else if (v.q.includes('hz=work')) console.log('  ok   the deck stays above its floor, every key label inside its tile, the Now heading whole');

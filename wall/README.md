@@ -494,22 +494,27 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
     minutes left, the task label (or "Ready to focus"), and one round button: start,
     pause or resume. Tapping the ring while no session runs opens a sheet with 25, 50,
     Custom and "Start N min"; a session started elsewhere closes the sheet;
-  - **Now playing** (`MusicMini` in `music/MusicBar.tsx`): art, title, artist and one
-    play or pause button, from the same app-wide poll as the music bar;
+  - **Now playing** (`MusicMini` in `music/MusicBar.tsx`): art, title, artist and
+    Previous, Play or Pause, Next (always shown, all disabled when nothing plays; a long
+    title is cut and carries its full text on hover), from the same app-wide poll as the
+    music bar;
   - **Machines** (`wall/src/machines/`, owner vote A, "whisper bars"): a header row
-    (CPU, GPU, RAM) and two thin rows, PC and BOX with the box temperature, from
+    (CPU, GPU, RAM, TEMP) and two thin rows, PC and LLM (the second machine's name is the
+    one constant `BOX_LABEL` in `machines/model.ts`), each with a temperature, from
     `wall2_machines` every 2 seconds while visible (one read at a time, nothing while
     hidden; a read that takes over 5 seconds counts as failed, only the read holding the
     busy flag clears it, and the answer of a superseded read is dropped). Grey by
     default. A number turns amber only after it stays over its limit
-    for 30 seconds (RAM over 90, CPU or GPU over 95, box temperature over 90 degrees);
+    for 30 seconds (RAM over 90, CPU or GPU over 95, either temperature over 90 degrees). The PC's temperature is the graphics card's, read
+    through NVML in Rust (no processor temperature: that needs a kernel driver, which the
+    repository forbids); no NVIDIA card or a failed read shows a dash and keeps the column;
     a dip back under starts the 30 seconds again, and a gap of more than 6 seconds
     between reads (hidden, slow) does too. Stale box numbers never count toward the
-    hold. With no box numbers (null) the BOX row stays, dimmed, and says "no reading", so
+    hold. With no box numbers (null) the LLM row stays, dimmed, and says "no reading", so
     it is clear the row exists; it fills in when the helper answers. It is dimmed when
     `boxStale`. A column with no reading (often the box's GPU) shows a faint empty track
     and no number. Nothing shows when the command fails.
-  - Round buttons in the wing draw at 52 pixels.
+  - Round buttons in the wing (Focus and the three music buttons) share one 44 pixel look, with a round focus ring and no touch padding.
   - Next, Focus and Now playing stack from the top with even air (12 px, 22 px without
     Next); the machines sit on the band's foot. With no meeting to show the rows close up
     under the date and the machines grow (larger numbers and taller rows) into the room
