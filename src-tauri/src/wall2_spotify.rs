@@ -422,7 +422,6 @@ pub fn start_log(dir: Option<std::path::PathBuf>) { crate::wall2_spotify_log::st
 mod tests {
     use super::*;
     use std::collections::VecDeque;
-    use std::sync::Arc;
     const ID: &str = "0123456789ABCDEFGHIJKL";
     const DEVICE: &str = "0123456789abcdef0123456789abcdef01234567";
     const COVER: &str = "https://i.scdn.co/image/cover";
@@ -492,7 +491,6 @@ mod tests {
         assert_eq!(token_reply(Err(())), TokenReply::Down);
     }
 
-    #[test]
     struct FakeCreds(Mutex<Option<String>>);
     impl FakeCreds { fn new(value: Option<&str>) -> Self { Self(Mutex::new(value.map(str::to_string))) } fn value(&self) -> Option<String> { self.0.lock().unwrap().clone() } }
     impl Creds for FakeCreds {
