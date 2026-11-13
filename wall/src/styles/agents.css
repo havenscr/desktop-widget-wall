@@ -181,6 +181,8 @@
   scrollbar-color: rgba(255, 255, 255, 0.28) transparent;
 }
 .lanes-list.scrolls > .lane {
+  /* Border included, so three cards and two gaps fill the list exactly (none clipped). */
+  box-sizing: border-box;
   flex: 0 0 calc((100% - 24px) / 3);
   min-height: 0;
   scroll-snap-align: start;
@@ -276,6 +278,7 @@
 }
 .lanes.stale .lane .lt,
 .lanes.stale .lane .jr,
+.lanes.stale .lane .lm,
 .lanes.stale .slot-meter,
 .lanes.stale .lanes-count,
 .lanes.stale .lanes-ask,

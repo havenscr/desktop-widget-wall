@@ -9,12 +9,15 @@
 // - each checked box stays inside the viewport on all four sides;
 // - the document itself has no scroll overflow.
 // The centre is checked in each of its states (`?agents=`): three lanes with long titles,
-// twelve sessions (the three in view), two waiting, one failed, an older helper's answer,
-// one lane, no lane, and the fill when the helper is not set up. Exits non-zero on a
+// twelve sessions (the three in view) with five meetings at once, two waiting, one failed,
+// an older helper's answer, one lane, no lane, and the fill when the helper is not set up.
+// In every state it also fails on agent hit boxes of two sessions that share pixels, on
+// calendar chips that cover each other in one lane, and on a card line that cuts its words
+// while more than 60 px of it is unused. Exits non-zero on a
 // failure. CI does not run this; run it by hand before a layout change is handed over.
 //
 //   WALL_CHROME=/path/to/chrome-or-headless-shell npm --prefix wall run fit-check
-//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page)
+//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents)
 //   npm --prefix wall run fit-check -- --self-test
 //
 // WALL_CHROME (or the first argument that is not a flag) is a Chromium or
@@ -46,6 +49,7 @@ const EXPECT = {
   top: /^ *FAIL \.work \.right-wing:.*viewport top \d+/m,
   bottom: /^ *FAIL \.work \.centre \.shelf:.*container bottom \d+/m,
   page: /^ *FAIL page:.*scroll (?!2560 )\d+ x \d+ <= 2560 x/m,
+  agents: /^ *FAIL overlap: agent /m,
 };
 const OVERFLOWS = {
   left: '.work .left-wing { transform: translateX(-200px); }',
@@ -53,6 +57,7 @@ const OVERFLOWS = {
   top: '.work .right-wing { transform: translateY(-60px); }',
   bottom: '.work .centre .shelf { transform: translateY(120px); }',
   page: 'body::after { content: ""; position: absolute; left: 3000px; top: 0; width: 10px; height: 10px; }',
+  agents: '.rib .agent-row .sg-hit { height: 20px !important; }',
 };
 
 if (flag('self-test')) {
@@ -90,7 +95,7 @@ const LANES = ['.work .centre', '.work .centre .lane', '.work .centre .shelf'];
 const SCROLLED = ['.work .centre', '.work .centre .lanes-hd', '.work .centre .lanes-list > .lane:nth-child(-n+3)', '.work .centre .shelf'];
 const VARIANTS = [
   { name: 'three lanes, long titles', agents: '3', checks: [...WINGS, ...LANES] },
-  { name: 'twelve sessions, long titles', agents: '12', checks: SCROLLED },
+  { name: 'twelve sessions, long titles, five meetings at once', agents: '12', extra: '&meet=busy', checks: SCROLLED },
   { name: 'two waiting, one off the cards', agents: 'ask2', checks: [...LANES, '.work .centre .lanes-hd', '.work .centre .ask-btn'] },
   { name: 'one failed', agents: 'failed', checks: LANES },
   { name: 'older helper answer', agents: 'old', checks: [...LANES, '.work .centre .lanes-hd'] },
@@ -98,7 +103,7 @@ const VARIANTS = [
   { name: 'no lane', agents: '0', checks: [...LANES, '.work .centre .panel'] },
   { name: 'helper not set up', agents: 'off', checks: ['.work .centre', '.work .centre .panel', '.work .centre .centre-note'] },
 ];
-const query = (agents) => `?hz=work&at=2026-11-11T10:24:00-08:00&long=1&agents=${agents}`;
+const query = (agents, extra = '') => `?hz=work&at=2026-11-11T16:10:00-08:00&long=1&agents=${agents}${extra}`;
 /** Rounding slack for fractional rectangles, in screen pixels. */
 const SLACK = 0.5;
 
@@ -143,7 +148,23 @@ try {
     }) }));
     const d = document.documentElement;
     const page = { sw: d.scrollWidth, cw: d.clientWidth, sh: d.scrollHeight, ch: d.clientHeight, vw: innerWidth, vh: innerHeight };
-    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page });
+    // Pairs of boxes that must never share pixels: agent hit boxes of different sessions (the
+    // "+N more" label counts as its own), and calendar chips in the same lane.
+    const hit = (a, b) => a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5;
+    const agentBoxes = [...document.querySelectorAll('.rib .agent-row .sg-hit, .rib .agent-row .sg-more')].map((e) => ({ id: e.dataset.lane || 'more', r: e.getBoundingClientRect() }));
+    const chipBoxes = [...document.querySelectorAll('.rib .ev')].map((e) => ({ lane: e.classList.contains('l2') ? 1 : 0, r: e.getBoundingClientRect(), t: e.textContent }));
+    const overlaps = [];
+    agentBoxes.forEach((a, i) => agentBoxes.slice(i + 1).forEach((b) => { if (a.id !== b.id && hit(a.r, b.r)) overlaps.push('agent ' + a.id + ' / ' + b.id); }));
+    chipBoxes.forEach((a, i) => chipBoxes.slice(i + 1).forEach((b) => { if (a.lane === b.lane && hit(a.r, b.r)) overlaps.push('chip ' + a.t + ' / ' + b.t); }));
+    // A card line that cuts its words while more than 60 px of it sits unused.
+    const cut = [...document.querySelectorAll('.work .centre .lane .lt2')].flatMap((line, i) => {
+      const kids = [...line.children].filter((k) => !k.hidden);
+      const truncated = kids.some((k) => k.scrollWidth > k.clientWidth + 1);
+      const right = Math.max(...kids.map((k) => k.getBoundingClientRect().right));
+      const unused = line.getBoundingClientRect().right - right;
+      return truncated && unused > 60 ? ['card ' + i + ' line cut with ' + Math.round(unused) + ' px unused'] : [];
+    });
+    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut });
     document.body.appendChild(pre);
   }, 3000);</script>`;
   const broken = overflow ? `<style>${OVERFLOWS[overflow]}</style>` : '';
@@ -154,7 +175,7 @@ try {
   if (overflow) console.log(`deliberate overflow: ${overflow} (${OVERFLOWS[overflow]})`);
   for (const v of overflow ? VARIANTS.slice(0, 1) : VARIANTS) {
     console.log(`${v.name} (agents=${v.agents}):`);
-    const url = `${pathToFileURL(page).href}${query(v.agents)}&checks=${encodeURIComponent(v.checks.join('|'))}`;
+    const url = `${pathToFileURL(page).href}${query(v.agents, v.extra)}&checks=${encodeURIComponent(v.checks.join('|'))}`;
     const dom = execFileSync(
       chrome,
       // Headless Chromium keeps 87 px of the window for itself, so 807 gives a 2560 by 720 viewport.
@@ -167,7 +188,11 @@ try {
       process.exit(1);
     }
     const text = m[1].replaceAll('&quot;', '"').replaceAll('&amp;', '&');
-    const { res, page: doc } = JSON.parse(text);
+    const { res, page: doc, overlaps, cut } = JSON.parse(text);
+    for (const o of overlaps) console.log(`  FAIL overlap: ${o}`);
+    for (const c of cut) console.log(`  FAIL ${c}`);
+    if (overlaps.length || cut.length) failed = true;
+    else console.log('  ok   no overlapping agent hit boxes or chips, no cut card line beside unused room');
     const pageOk = doc.vw === 2560 && doc.vh === 720 && doc.sw <= doc.cw && doc.sh <= doc.ch;
     if (!pageOk) failed = true;
     console.log(`  ${pageOk ? 'ok  ' : 'FAIL'} page: viewport ${doc.vw} x ${doc.vh} (must be 2560 x 720), scroll ${doc.sw} x ${doc.sh} <= ${doc.cw} x ${doc.ch}`);
