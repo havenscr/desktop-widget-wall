@@ -92,7 +92,7 @@ for (const [name, extra] of [
   ['broken: task app not set up', 'tasks=off'],
   ['broken: task app down', 'tasks=down'],
   ['broken: calendar not set up', 'meet=off'],
-  ['broken: calendar failing', 'meet=down'],
+  ['broken: calendar read fails', 'meet=failing'],
   ['broken: calendar signed out', 'meet=signedout'],
   ['broken: calendar partly stale', 'meet=partial'],
   ['broken: media unavailable', 'media=off'],
@@ -129,6 +129,8 @@ state('home', 'morning camera, sparse', SPARSE, TIMES.morning);
 // Timeline rows that say they are empty (only when that is known).
 state('work', 'timeline: no meetings today', 'meet=none');
 state('work', 'timeline: calendar not available', 'meet=signedout');
+state('work', 'timeline: both accounts failing', 'meet=down');
+state('work', 'timeline: one account failing', 'meet=mixed');
 state('work', 'timeline: no agent activity yet', 'agents=0&tasks=none&meet=none&day=empty');
 state('home', 'timeline: nothing scheduled at home', 'tasks=none');
 
@@ -144,7 +146,7 @@ state('unwind', 'audio demo (levels moving)', 'audio=demo');
 for (const [name, extra] of [
   ['broken: media unavailable', 'media=off'],
   ['broken: calendar not set up', 'meet=off'],
-  ['broken: calendar failing', 'meet=down'],
+  ['broken: calendar read fails', 'meet=failing'],
   ['broken: task app down', 'tasks=down'],
   ['broken: weather down', 'weather=down'],
 ]) {
@@ -152,11 +154,14 @@ for (const [name, extra] of [
 }
 
 // Meet: the day's meetings.
+state('meet', 'both accounts ok', 'meet=bothok');
 state('meet', 'one meeting', 'meet=one');
-state('meet', 'broken: one account unavailable', 'meet=partial');
+state('meet', 'broken: one account stale', 'meet=partial');
 for (const [name, extra] of [
+  ['broken: both accounts failing', 'meet=down'],
+  ['broken: one account failing', 'meet=mixed'],
   ['broken: calendar not set up', 'meet=off'],
-  ['broken: calendar failing', 'meet=down'],
+  ['broken: calendar read fails', 'meet=failing'],
   ['broken: calendar signed out', 'meet=signedout'],
 ]) {
   state('meet', name, extra);
@@ -192,6 +197,13 @@ const EXPECT = [
   ['unwind', 'long track', 'An Extremely Long Song Title'],
   ['unwind', 'sparse', 'Unwind'],
   ['unwind', 'typical', 'Tokyo Burnout'],
+  ['meet', 'both accounts ok', 'Connected'],
+  ['meet', 'broken: one account failing', 'Network problem'],
+  ['meet', 'broken: both accounts failing', 'Calendar not available'],
+  ['meet', 'broken: calendar signed out', 'Signed out'],
+  ['meet', 'broken: calendar not set up', 'Not set up'],
+  ['meet', 'broken: calendar read fails', 'Calendar unavailable'],
+  ['work', 'timeline: both accounts failing', 'Calendar not available'],
   ['meet', 'one meeting', 'Design review with the platform team'],
   ['meet', 'heavy', 'Architecture working session'],
   ['meet', 'typical', 'Design review with the platform team'],

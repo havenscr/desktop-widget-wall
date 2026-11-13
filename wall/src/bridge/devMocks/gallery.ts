@@ -11,7 +11,8 @@ import { knob } from './long';
  *
  *   ?screen=meet|zen|dream   open that place (Meet, Zen, Zen straight into Dream)
  *   ?tasks=none|few|heavy|off|down
- *   ?meet=none|one|heavy|off|down|signedout|partial
+ *   ?meet=none|one|heavy|off|bothok|failing|signedout|partial   (`down` and `mixed` are in meet.ts: both accounts
+ *                              failing, one failing; `failing` here makes the read itself error)
  *   ?home=quiet|many|off|down   (the network card; `?net=1|2|3` shows that many numbers, the alarm count first)
  *   ?day=empty                (the helper's day timeline has no runs)
  *   ?moods=six|none|down
@@ -105,9 +106,10 @@ function meet(mode: string): void {
   // One meeting starting about 25 minutes after the review's moment.
   const one = () => [{ key: 'one', accountId: 'work', title: 'Design review with the platform team', start: iso(now() + 25 * 60_000), end: iso(now() + 55 * 60_000), canJoin: true, isLive: false }];
   const upcoming = () => heavyDay().filter((e) => e.key !== 'allday');
-  wrap('wall2_meet_next', () => {
+  wrap('wall2_meet_next', async (_a, prev) => {
+    if (mode === 'bothok') return { ...((await prev?.()) as object), accounts: accounts('ok') };
     if (mode === 'off') throw new Error(NOT_SET_UP);
-    if (mode === 'down') throw new Error('failed');
+    if (mode === 'failing') throw new Error('failed');
     if (mode === 'none') return { accounts: accounts('ok'), meetings: [] };
     if (mode === 'signedout') return { accounts: accounts('signed-out'), meetings: [] };
     if (mode === 'heavy') return { accounts: accounts('ok'), meetings: upcoming().filter((m) => Date.parse(m.end) > now()) };
@@ -115,9 +117,10 @@ function meet(mode: string): void {
     if (mode === 'partial') return { accounts: accounts('ok'), meetings: one(), stale: true };
     return undefined;
   });
-  wrap('wall2_meet_day', () => {
+  wrap('wall2_meet_day', async (_a, prev) => {
+    if (mode === 'bothok') return { ...((await prev?.()) as object), accounts: accounts('ok') };
     if (mode === 'off') throw new Error(NOT_SET_UP);
-    if (mode === 'down') throw new Error('failed');
+    if (mode === 'failing') throw new Error('failed');
     if (mode === 'none') return { accounts: accounts('ok'), events: [] };
     if (mode === 'signedout') return { accounts: accounts('signed-out'), events: [] };
     if (mode === 'heavy') return { accounts: accounts('ok'), events: heavyDay() };
