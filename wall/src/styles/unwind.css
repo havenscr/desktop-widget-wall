@@ -1186,3 +1186,172 @@
   line-height: 1.35;
   color: var(--dim);
 }
+
+/* Whole sky (approved page, B). The picture covers the sky from the top of the strip to the
+   horizon line, edge to edge, cropped top and bottom like a cover; it fades toward the clock
+   and down into the horizon, so the ridgelines there stay in front. It lies under every
+   control: the main area becomes its own layer group (isolation) and the picture sits at
+   z-index -1 inside it, above the horizon canvas and below the clock, the tabs, the cards and
+   the left block; it takes no pointer at all. Its Look and Open in browser buttons sit apart
+   on the floor (.w-skyui). The picture is dimmed (no see-through, so the moon never shows
+   through) and a dark wash keeps the text on the left readable. */
+.main:has(.w-sky) {
+  isolation: isolate;
+}
+.w-sky {
+  z-index: -1;
+  left: 0;
+  top: -20px;
+  width: 2436px;
+  height: 505px;
+  overflow: hidden;
+  pointer-events: none;
+}
+.w-sky * {
+  pointer-events: none;
+}
+.w-sky .w-screen {
+  filter: brightness(0.9) saturate(1.1);
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 26%, #000 88%, transparent), linear-gradient(180deg, #000 40%, transparent 97%);
+  -webkit-mask-composite: source-in;
+  mask-image: linear-gradient(90deg, transparent, #000 26%, #000 88%, transparent), linear-gradient(180deg, #000 40%, transparent 97%);
+  mask-composite: intersect;
+}
+.w-sky .w-frame {
+  inset: auto;
+  left: 0;
+  top: 50%;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  transform: translateY(-50%);
+}
+.w-scrim {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(90deg, rgba(6, 4, 22, 0.78) 0, rgba(6, 4, 22, 0.64) 36%, rgba(6, 4, 22, 0) 50%),
+    linear-gradient(180deg, rgba(6, 4, 22, 0.3), rgba(6, 4, 22, 0) 24%);
+}
+.w-skyui {
+  position: absolute;
+  left: 1026px;
+  width: 810px;
+  top: 497px;
+}
+.w-skyui .w-under {
+  top: 0;
+}
+.w-skyui .w-look {
+  position: static;
+  opacity: 1;
+}
+/* Over a picture the cards and the tabs need a solid ground. */
+.unwind:has(.w-sky) .u-card {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.015)), rgba(10, 7, 28, 0.92);
+}
+.unwind:has(.w-sky) .u-tabs,
+.unwind:has(.w-sky) .w-gear {
+  background: rgba(10, 7, 28, 0.9);
+}
+
+/* The sun (approved page, C). A 461 px disc whose foot stands 30 px over the horizon line,
+   with the page's warm rim and glow, slats cut through its lower part, a halo behind it and a
+   warm streak on the floor. Inside it the 16:9 picture is 821 by 461, so the disc shows its
+   middle 56 percent of the width and the full height, the corners and slats cut away. The
+   box is the halo's (563 px); the disc sits 51 px in. */
+.w-sun {
+  left: 1150px;
+  top: -57px;
+  width: 563px;
+  height: 563px;
+}
+.w-halo {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(255, 150, 96, 0.5), rgba(255, 95, 168, 0.22) 62%, transparent);
+  pointer-events: none;
+}
+.w-sun .w-screen {
+  inset: 51px;
+  border-radius: 50%;
+  overflow: hidden;
+  box-shadow: 0 0 77px rgba(255, 150, 96, 0.45);
+  -webkit-mask-image: linear-gradient(#000 0 60%, transparent 60% 62%, #000 62% 68%, transparent 68% 71%, #000 71% 76%, transparent 76% 80%, #000 80% 84%, transparent 84% 89%, #000 89% 92%, transparent 92% 97%, #000 97%);
+  mask-image: linear-gradient(#000 0 60%, transparent 60% 62%, #000 62% 68%, transparent 68% 71%, #000 71% 76%, transparent 76% 80%, #000 80% 84%, transparent 84% 89%, #000 89% 92%, transparent 92% 97%, #000 97%);
+}
+.w-sun .w-frame {
+  left: -39%;
+  width: 178%;
+}
+.w-sun .w-moonveil {
+  left: 396px;
+  top: 89px;
+  width: 120px;
+  height: 120px;
+}
+.w-streak {
+  position: absolute;
+  left: 153px;
+  top: 542px;
+  width: 256px;
+  height: 170px;
+  filter: blur(36px);
+  opacity: 0.55;
+  background: linear-gradient(180deg, rgba(255, 170, 110, 0.8), rgba(255, 95, 168, 0.25) 60%, transparent);
+  pointer-events: none;
+}
+.w-sun .w-look {
+  right: 150px;
+  top: 120px;
+}
+.w-sun .w-under {
+  top: 554px;
+}
+
+/* The sheet with four looks: four tiles in a row, and per kind each label over a full-width
+   choice of four, so it fits the right wing at 540 px. */
+.w-tiles {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+.w-tile {
+  padding: 8px;
+  font-size: 17px;
+}
+.w-pic {
+  height: 84px;
+}
+.w-pic.sky b {
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 30%;
+  opacity: 0.55;
+}
+.w-pic.sun b {
+  left: 50%;
+  top: 14%;
+  height: 62%;
+  aspect-ratio: 1;
+  transform: translateX(-50%);
+  border-radius: 50%;
+}
+.w-srow {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  padding: 8px 0 10px;
+  font-size: 19px;
+}
+.w-srow .w-seg {
+  width: auto;
+}
+.w-srow .w-seg button {
+  padding: 0 6px;
+  font-size: 16px;
+}
+.w-sheet {
+  gap: 14px;
+}
