@@ -67,7 +67,11 @@ windows = { version = "0.58", features = [
     # Wall 2 idle signal and monitors-off mode (wall2_power.rs)
     "Win32_UI_Input",
     "Win32_UI_Input_KeyboardAndMouse",
-    "Win32_System_SystemInformation"
+    "Win32_System_SystemInformation",
+    # Wall 2 big screen and keys: cloaked windows, visible frame (wall2_arrange.rs), and
+    # whether another program runs elevated (wall2_winutil.rs)
+    "Win32_Graphics_Dwm",
+    "Win32_Security"
 ] }
 base64 = "0.22"
 
