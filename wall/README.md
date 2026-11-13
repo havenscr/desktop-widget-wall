@@ -401,6 +401,17 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
   layout on purpose and must fail; `-- --self-test` runs every such case and passes only
   if each one failed with the FAIL line for the side it broke. jsdom has no layout, so the unit tests cannot check this; CI does
   not run it either.
+- **State gallery** (`wall/scripts/gallery.mjs`, `npm --prefix wall run gallery` with
+  `WALL_CHROME` set to a Chromium binary): renders every screen (Work, Home, Unwind, Meet,
+  Zen, Dream and the morning Home camera) in sparse, typical, heavy and broken data states and
+  at four times of day, at 2560 by 720, in real time. Writes PNG stills, `index.html` (grouped
+  by screen, with each state's name and URL) and `manifest.json` into `wall/.gallery/`
+  (ignored by git). Exits non-zero if a state fails to render or throws a page error.
+  `-- --list` prints the states; `-- --only=<text>` renders the states whose screen or name
+  contains the text. States come from URL knobs in the development mocks: the older `?hz=`,
+  `?at=`, `?agents=`, `?long=1`, `?audio=demo`, and the newer ones in
+  `src/bridge/devMocks/gallery.ts` (`screen`, `tasks`, `meet`, `home`, `net`, `moods`, `media`,
+  `box`, `pc`, `usage`, `weather`, `focus`, `clock`). None of it is in a production build.
 - **Right wing**: the next three tasks (see "Task card" below). The Big screen and Keys
   rows of the concept come with their own pull requests.
 
@@ -503,39 +514,63 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
   (`?hz=unwind&at=...&audio=demo`) the camera and sky stay frozen but the frame loop runs, so
   the echo and the pulse can be captured. A production bundle ignores the query.
 - **Ripple** (`echo.ts`). The echo lines of the range, drawn by the renderer's `echo` option.
-  - Work and Home (3 lines): only while `playing`, opacity `ea` times a smoothed loudness (bass
-    weighted) and a fade of about a second, `n`, `amp`, `cx` from the camera (`en`, `eamp`,
-    `ecx`), `hs` 900. Nothing is passed when silent, so pixels are unchanged.
-  - Unwind (11 lines, the visualizer): while playing, opacity `ea` (0.9) raised to full, times the
-    fade, with no loudness scaling, and the lines follow the real bands (`sample`, below). The
-    playing look matches the concept: the lines are tinted bright teal through the centre shifting
-    to pink at the far right (the renderer's `tint` option, blended over the palette's rim colour
-    by the fade), 1.5 px wide instead of 1.4, and the newest line fades in at the front instead of
-    popping in. Work, Home and the idle lines keep the palette's colour. While silent the
-    idle lines: opacity `ea * 0.45`, height `eamp * 0.35`, drifting at 0.12 (0.4 of the playing
-    speed) to the renderer's made-up `spec()` on the same slowed clock, so they breathe gently.
-    The echo runs on its own clock (`echoRate`), so slowing it never makes the lines jump. Every
-    number is blended between idle and playing by the fade, and by the camera's `en` during a
-    glide (`visualizerWeight`: 0 at 3 lines, 1 from 8), so nothing pops.
-  - `sample`: while the fade is above 0 (on any camera), `HorizonCanvas` hands the renderer a
-    sampler (`createEchoSampler`): each line reads the band history at its own age (the 7
-    seconds spread across the lines), mixed with `spec()` by `1 - fade` while starting or
-    stopping. Without `sample` the renderer draws exactly as before (golden call log test).
+  - Work and Home (3 lines): while music drives them, opacity `ea` times a smoothed loudness (bass
+    weighted), `n`, `amp`, `cx` from the camera (`en`, `eamp`, `ecx`), `hs` 900.
+  - Unwind (11 lines, the visualizer): while music drives them, opacity `ea` (0.9) raised to full,
+    with no loudness scaling, and the lines follow the real bands (`sample`, below). The playing
+    look matches the concept: the lines are tinted bright teal through the centre shifting to pink
+    at the far right (the renderer's `tint` option, blended over the palette's rim colour), 1.5 px
+    wide instead of 1.4, and the newest line fades in at the front instead of popping in. Work and
+    Home keep the palette's colour.
+  - **Rest.** Whenever music is not driving the lines they settle into a still resting look
+    instead of vanishing. `musicDriving` decides, with hysteresis so the lines never pump on a
+    quiet intro, a gap between tracks or a single blip: a pause, stop or the volume off settles them
+    at once; while driving, every band under the floor (`BAND_FLOOR`) for 1.5 s settles them, and
+    that quiet settle then holds at least 4 s (`REST_DWELL_S`); from rest they lift only once the
+    loudest band has stayed at or over `REST_RESUME` (the floor plus 0.05, 0.35: band levels are
+    absolute, with no auto gain, so soft music or a low volume sits only a little over the floor)
+    for a third of a second. This holds on
+    every camera with a ripple. `stepEchoMotion` runs
+    `rest` from 0 to 1 over 2.5 s (and back over 1.5 s when music returns) and eases the drift
+    phase to a stop exactly on the resting phase (line j at `(j + 0.5) / n`), starting from the
+    playing speed, so the lines slow down and land rather than freeze. The renderer eases each line
+    from `rest` (ease out, the far lines a touch later), blending its shape, opacity and width;
+    at rest the spectrum is not read at all and the lines hold perfectly still. The resting look is
+    one setting, `REST_LOOK`, with the resting opacity `REST_OPACITY` (default `contours` at 0.22,
+    the owner's pick): `contours` (each line a smaller copy of the range's outline, evenly spaced
+    from the foot to the ridge), `levels` (flat, slightly bowed level lines inside the mountain,
+    the top one on the ridge), `haze` (softened outlines of farther ranges rising behind the main
+    one, each fainter; no fills) and `ridge` (one glowing line on the ridge, two faint lines under
+    it; no fills). Without `rest` (or at 0) and `drift` the renderer draws exactly as before
+    (golden call log test); the rest frame has a golden log of its own.
+  - `sample`: while any line still follows the music (`rest` under 1), `HorizonCanvas` hands the
+    renderer a sampler (`createEchoSampler`): each line reads the band history at its own age (the
+    7 seconds spread across the lines). Without `sample` the renderer uses its made-up `spec()`.
+  - **Glides.** A camera glide blends the line count (`en`, 11 on Unwind, 3 on Work and Home).
+    `HorizonCanvas` keeps a drawn count that follows it at no more than 4 counts a second
+    (`stepLineCount`; the glide's eased peak moves `en` at about 15) and lands on it exactly. The
+    renderer draws a fractional count as the two whole sets either side, crossfaded by the
+    fraction, each on its own levels, so no line appears, vanishes or jumps level during a glide,
+    at rest, mid-settle or mid-lift, and each line fades over a quarter of a second or more. Under
+    reduced motion the count switches with the place's cross-dissolve.
   - Never on the morning Rainier camera. On a turn toward it the echo fades out within about half
     a second of the turn starting (the camera gate: its opacity only falls from the first frame of
     the turn and is exactly 0 by 0.6 s), and it stays off, through any turn back, until the camera
-    has settled on a place whose echo is on; then it fades in over 0.6 s. Under reduced motion and in the review still, Unwind shows the idle
-    lines frozen at `t` 0; other places none.
+    has settled on a place whose echo is on; then it fades in over 0.6 s. Under reduced motion and
+    in the review still every place with a ripple shows its lines at rest.
   - When the display is idle or off (`useIdle`: no input for 4 minutes, screens off, locked)
     the echo fades out over a second and is then not drawn, and the band history stops; both
-    start afresh on return.
+    start afresh on return. A hidden page returns with the lines at rest.
 - **Echo calm check** (`npm run echo-calm`, by hand; CI does not run it). Builds
   `scripts/echo-calm/` (the real renderer, echo and audio store) into one HTML file and draws 600
   frames of the Unwind camera in headless Chromium with the echo and without it, for the
-  `?audio=demo` levels and for every band pumping fully on and off 6 times a second. It takes what
-  the echo adds to the picture's mean relative luminance over every pixel and fails if that moves
-  by 1 percent of the picture's mean, up or down, more than three times in any second. Set
-  `WALL_CHROME` to a Chromium binary.
+  `?audio=demo` levels, for every band pumping fully on and off 6 times a second, and for the
+  settle (`mode=settle`: the demo levels for 10 s, then silence, stepped as the canvas steps
+  them). It takes what the echo adds to the picture's mean relative luminance over every pixel
+  and fails if that moves by 1 percent of the picture's mean, up or down, more than three times in
+  any second; for the settle also if any frame after the music stops changes it by more than 2
+  percent, or any frame from 3.5 s after changes it by more than 0.05 percent. Set `WALL_CHROME`
+  to a Chromium binary.
 - **Grid pulse** (`pulse.ts`). While `playing`, `HorizonCanvas` passes `grid` to the renderer.
   Each beat starts a soft glow band at the horizon that rolls across the lake grid to the bottom
   edge in 1.2 s (depth `p` 0 to 1 on the grid's own `pow(p, 2.1)` spacing, eased out over its
@@ -653,8 +688,51 @@ horizon canvas and the veil and under the panels; its styles are `buddy/watt.css
   music plays (awake only). Night and Home's camera are worked out once a minute. The frame
   loop reuses its records, pauses while hidden, and does not run on Zen or in a call. Under
   reduced motion (and in a dev review still) it is a still pose in the middle of the range
-  with nothing drifting, and it jumps on a place change. The pixel maps in `sprites.ts` are
-  the concept's own.
+  with nothing drifting, and it jumps on a place change. The idle and sleep pixel maps in
+  `sprites.ts` are the concept's own; the other poses and the props are drawn to match.
+
+Watt is also a small pet ("she"), calm and silent (no sound at all):
+
+- **Speech bubbles** (`buddy/chatter.ts`, `buddy/lines.ts`): one short bundled line at a time,
+  no model calls and no network. At most one every six minutes by default (three when set to
+  Chatty, none when Off), never in a call or a meeting in progress, never in the first minute of
+  a focus session, never while the display is idle, never asleep, never the same line twice in a
+  row. A fresh event (focus done, an agent finished or waiting, a call soon or just ended, music
+  stopping, a clover) wins; otherwise what is true now (agents, music, weather, time of day) wins
+  over plain sheep thoughts. A showing bubble goes the moment any quiet time starts. Her lines
+  observe herself, the sky and the wall; none gives advice, nags or asks anything of the owner. The
+  bubble is her own lavender with her dark face colour for the text; its box is sized from
+  measured Oxanium widths (`petFrame.ts`), placed beside her within the band, and
+  `model.test.ts` checks every line.
+- **Reactions** (`buddy/petFrame.ts`): a small hop when a focus session completes or an agent
+  finishes; she looks up toward the agent cards and shows an amber mark while something waits
+  (click it: it opens the waiting session through `wall2_open_session` when the helper gives a
+  link; elsewhere it goes to Work, and on Work with no link it only tells, as the agent cards
+  above already show what waits); she looks at the clock five minutes before a meeting; she
+  bobs (a soft squash) on the beat at most once every 1.2 seconds.
+- **Petting and her card**: click her for hearts and a wiggle (a second click within three
+  seconds adds nothing). She answers with a line only outside every quiet time, at least 20
+  seconds after any bubble, and at most once a minute. Rest the pointer on her for 400 ms (or
+  Tab to her) for her card: name, mood in one word, two honest lines about today, days together,
+  how chatty she is, and what she wears. It is a strip in the band over the horizon beside her
+  (on Unwind, under the transport row over the empty floor), closes the moment the pointer
+  leaves it, on Escape, on a place change and when she goes away, and she stands still while it
+  is open. Her click area is her body and head, not the sprite's empty corners.
+- **A little life**: she reads a tiny book during focus, wears headphones on Unwind while music
+  plays, sunglasses at a clear midday, an umbrella in rain, a scarf when it is cold, a nightcap
+  asleep; she looks up at the moon in the evening, yawns and stretches when she wakes at 6:30,
+  and naps where she stands while the display is idle. Her mood (content, happy, sleepy,
+  curious) only changes which lines and idle poses she picks; it never goes below content. Twice
+  a day a clover grows on her walk; she eats it when she reaches it, or click it to give it to
+  her. Cosmetics (bow, star, cape) unlock with days together.
+- **Stored locally** (`localStorage` key `wall2.watt`, `buddy/pet.ts`): how chatty she is, the
+  cosmetic, days together and today's counts. Her click area, mark and clover sit above the
+  shell (`z-index: 1`) and take the pointer only while she is up.
+- What she knows comes from existing hooks (`useAgentStatusLine`, `useAgentsWaiting`, the
+  agents store, `useWeather`, `useNextMeeting`, the focus store, the audio store and beat
+  detector, now playing, `useIdle`); a missing or stale source means she does not mention it.
+  `useWeather` and `useNextMeeting` are shared stores (as the agents poll is): one request per
+  interval however many components use them.
 
 ## Home feeds (task card and network tile)
 

@@ -4,9 +4,13 @@
 // `?audio=demo` levels, and with every band pumping fully on and off 6 times a second (harsher than
 // any real track). Each run draws 600 frames (20 s) of the Unwind camera with the echo and without
 // it, and takes what the echo adds to the picture's mean relative luminance, frame by frame.
+// A third input, `settle`, plays the demo levels for 10 s and then goes silent, stepping the lines
+// as the canvas does, so they settle into their resting look and hold still.
 // A swing is a move of that added brightness of at least 1 percent of the picture's mean, from a
-// low to a high or back. The owner's calm rule: at most three swings in any one second. Exits
-// non-zero when either input breaks it. CI does not run this; run it by hand after any change to
+// low to a high or back. The owner's calm rule: at most three swings in any one second. For the
+// settle input also: from the moment the music stops no frame may change the picture by more than
+// `SETTLE_STEP` (a settle, never a step), and from 3.5 s after it the picture must hold still (no
+// frame changing it by more than `STILL`). Exits non-zero when any input breaks a rule. CI does not run this; run it by hand after any change to
 // the echo, the band history or the renderer's echo drawing.
 //
 //   WALL_CHROME=/path/to/chrome npm --prefix wall run echo-calm
@@ -29,6 +33,10 @@ const here = join(dirname(fileURLToPath(import.meta.url)), 'echo-calm');
 /** Swing size, as a share of the picture's mean brightness, and the most allowed in any second. */
 const SWING = 0.01;
 const MOST = 3;
+/** The settle input: the frame the music stops (10 s at 30 fps), the largest one-frame change allowed from then on, and the stillness bound once settled. */
+const SETTLE_AT = 300;
+const SETTLE_STEP = 0.02;
+const STILL = 0.0005;
 
 function swings(series, th) {
   const at = [];
@@ -75,7 +83,7 @@ try {
   );
   const page = join(out, 'calm.html');
   writeFileSync(page, html);
-  const inputs = process.env.ECHO_CALM_INPUTS ? process.env.ECHO_CALM_INPUTS.split(',') : ['mode=demo', 'mode=stress&hz=6'];
+  const inputs = process.env.ECHO_CALM_INPUTS ? process.env.ECHO_CALM_INPUTS.split(',') : ['mode=demo', 'mode=stress&hz=6', 'mode=settle'];
   for (const input of inputs) {
     const dom = execFileSync(chrome, ['--headless', '--no-sandbox', '--disable-gpu', '--window-size=2560,807', '--dump-dom', `${pathToFileURL(page).href}?${input}`], {
       encoding: 'utf8',
@@ -93,10 +101,18 @@ try {
     const added = withEcho.map((v, i) => v - without[i]);
     const s = swings(added, SWING * mean);
     const step = Math.max(...added.slice(1).map((v, i) => Math.abs(v - added[i]))) / mean;
-    const ok = s.most <= MOST;
+    let ok = s.most <= MOST;
+    let extra = '';
+    if (input.includes('mode=settle')) {
+      const stepFrom = (from) => Math.max(...added.slice(from).map((v, i) => Math.abs(v - added[from - 1 + i]))) / mean;
+      const settle = stepFrom(SETTLE_AT);
+      const still = stepFrom(SETTLE_AT + 105);
+      ok = ok && settle <= SETTLE_STEP && still <= STILL;
+      extra = `; after the music stops at most ${(settle * 100).toFixed(2)}% in one frame (limit ${SETTLE_STEP * 100}%), and once settled ${(still * 100).toFixed(3)}% (limit ${STILL * 100}%)`;
+    }
     if (!ok) failed = true;
     console.log(
-      `${ok ? 'ok  ' : 'FAIL'} ${input}: ${s.count} swings of ${SWING * 100}% or more in 20 s, at most ${s.most} in any second (limit ${MOST}); largest one-frame change ${(step * 100).toFixed(2)}% of the picture`,
+      `${ok ? 'ok  ' : 'FAIL'} ${input}: ${s.count} swings of ${SWING * 100}% or more in 20 s, at most ${s.most} in any second (limit ${MOST}); largest one-frame change ${(step * 100).toFixed(2)}% of the picture${extra}`,
     );
   }
 } finally {

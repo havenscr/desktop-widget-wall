@@ -11,13 +11,13 @@ import './styles/agents.css';
 import './styles/unwind.css';
 import './styles/zen.css';
 import { App } from './App';
-import { registerDevMocks } from './bridge/devMocks';
-import { seedReviewFocus } from './ribbon/devMock';
 import { usePlaceStore } from './state/places';
 import { installFullscreenKeys } from './ui/fullscreen';
 import { reviewFrame } from './ui/reviewClock';
 
 if (import.meta.env.DEV) {
+  // Imported here, in the development branch only, so a release build carries no mock code.
+  const [{ registerDevMocks }, { seedReviewFocus }] = await Promise.all([import('./bridge/devMocks'), import('./ribbon/devMock')]);
   registerDevMocks();
   seedReviewFocus(reviewFrame?.ms ?? null);
   // A review still opens on the place it names.

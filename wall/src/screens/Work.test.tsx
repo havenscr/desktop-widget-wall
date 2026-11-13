@@ -5,6 +5,8 @@ import { mocks } from '../bridge/tauri';
 import { useFocusStore } from '../focus/store';
 import { resetNowPlaying } from '../music/store';
 import { usePlaceStore } from '../state/places';
+import { resetWeatherStore } from '../weather/useWeather';
+import { resetMeetingFeed } from '../work/useNextMeeting';
 import { Screens } from './Screens';
 
 const at = (h: number, m: number) => new Date(2026, 10, 11, h, m);
@@ -48,6 +50,8 @@ beforeEach(() => {
   usePlaceStore.setState({ active: 'work' });
 });
 afterEach(() => {
+  resetWeatherStore();
+  resetMeetingFeed();
   useFocusStore.getState().dispose();
   vi.useRealTimers();
   vi.unstubAllGlobals();
@@ -87,6 +91,7 @@ it('shows Next as "12:00, in 1 h 36 m", ticking, and hides it when Meet is not s
   await flush(60_000);
   expect(screen.getByText('12:00, in 1 h 35 m')).toBeTruthy();
   r.unmount();
+  resetMeetingFeed();
   meet = () => {
     throw new Error('not-configured');
   };

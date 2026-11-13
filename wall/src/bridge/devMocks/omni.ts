@@ -9,7 +9,7 @@ import { mocks } from '../tauri';
  * (three lanes as the older helper sends them), `stale`, `off` (not set up) and `down` (set
  * up, not answering).
  */
-const AGENTS = typeof window !== 'undefined' ? (new URLSearchParams(window.location.search).get('agents') ?? '3') : '3';
+const agentsKnob = (): string => (typeof window !== 'undefined' ? (new URLSearchParams(window.location.search).get('agents') ?? '3') : '3');
 
 /** Twelve invented sessions: title, long title, stage, state, line, next, minutes open. */
 const POOL: [string, string, string, string, string, string | null, number][] = [
@@ -34,6 +34,7 @@ const POOL: [string, string, string, string, string, string | null, number][] = 
  */
 export function registerOmniMocks(): void {
   mocks.set('wall2_omni_summary', () => {
+    const AGENTS = agentsKnob();
     if (AGENTS === 'off') throw new Error('not-configured');
     if (AGENTS === 'down') throw new Error('failed');
     // Minutes from now (the review's moment in a review still, `?hz=&at=`).
