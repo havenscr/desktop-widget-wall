@@ -1675,7 +1675,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
         </div>
       )}
       {card && (
-        <div ref={menuEl} className="watt-menu-at" style={{ left: card.left, top: card.top }}>
+        <div ref={menuEl} className={`watt-menu-at${reduced ? ' still' : ''}`} style={{ left: card.left, top: card.top, ['--tail' as string]: `${card.tail}px` }}>
           <WattMenu
             tail={card.tail}
             mood={mood}

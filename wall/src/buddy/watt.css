@@ -211,7 +211,8 @@
   transform-origin: var(--tail, 30px) 100%;
   animation: wm-pop 160ms steps(4) both;
 }
-.watt-menu::after {
+/* The tail is the wrapper's, so the menu's own box is exactly its content. */
+.watt-menu-at::after {
   content: '';
   position: absolute;
   bottom: -10px;
@@ -223,6 +224,10 @@
 }
 .watt-menu:focus {
   outline: none;
+}
+/* Reduced motion and review stills: no pop. */
+.watt-menu-at.still .watt-menu {
+  animation: none;
 }
 @keyframes wm-pop {
   from {
