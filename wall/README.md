@@ -417,11 +417,30 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
   ahead after a burst, the previous stamp plus the real interval, capped at 33 ms, so time never
   runs backwards); a frame more than 200 ms ahead of the clock is dropped. Silence is still
   judged on arrival times.
+- **Band history** (`store.ts`, `bandHistory()`). The last 7 seconds of the spectrum at 30 rows
+  a second (210 rows of 32 bands, one fixed ring written in place), each band smoothed with the
+  levels' attack and release (0.06 s up, 0.35 s down), then calmed (for the history only; the
+  levels and the beat detector never see it): a second, slower smoothing (0.12 s) and a direction
+  hold, so once a band turns from rising to falling or back it may not turn again for 170 ms. That
+  keeps the echo from changing the picture's brightness more than three times a second however
+  fast the music pumps (`npm run echo-calm`, below). When the music stops the rows release to
+  zero and writing stops once a whole ring of silence is in. `pauseBandHistory(true)` stops it
+  (the horizon does this while the display is idle or off); resuming starts from an empty ring.
+  A hidden page empties it too (`clearBandHistory`), so old spectrum never replays on return.
+  `spectrum.ts` reads it: `sampleBands(u, age)` maps `u` (0 at the echo's centre, 1 at its
+  edge) to band `u * 31`, bass in the centre, interpolating between bands and between rows
+  `age` seconds back; a band adds height above 0.3 (about -52 dB, `BAND_FLOOR`) and the top is
+  scaled to 1.3, the range of the renderer's made-up `spec()`.
 - **Beats** (`beat.ts`, read with `audioBeats()`). The detector sums the power of bands 0 to 11
   (about 20 to 245 Hz) into one level in dB. An onset is a rising frame at least 9 dB above the
   median level of the last second; it counts as a beat only if the next two frames stay 4 dB
   above that median (a kick holds up while it decays, a noisy frame drops straight back). Beats
-  are at least 340 ms apart (never more than three in a second, the calm limit), timestamped at the onset, and the history starts afresh after a
+  are about 340 ms apart, with two frames of slack (274 ms: onsets sit on the 33 ms frame grid,
+  and arrival times jitter, so a steady 170 BPM kick keeps every beat), and never more than three
+  in any second (the calm limit): a beat that would be the fourth in a second is refused. Both
+  rules hold on both clocks: onsets in source time, and the frame that confirms a beat on the
+  arrival clock (source time can run up to 200 ms ahead after a stall, so rules kept in source
+  time alone once gave four beats in a real second). Beats are timestamped at the onset, and the history starts afresh after a
   0.5 s gap in events. It exposes `count`, `lastBeatAt`, `lag` (onset to confirmation, about
   66 ms), `beats()` and `bass` (the mean of bands 0 to 5). Bands 0 to 5 alone are not enough: at
   48 kHz they all read the same 47 Hz FFT bin, which swings by 10 dB from frame to frame on
@@ -431,13 +450,45 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
   noise (54 minutes per rate) it fired 0 times at 44.1 kHz and 3 times at 48 kHz, so expect a
   rare stray glow on noise-like audio.
 - **Browser dev.** Silent by default. In a development build (`npm run dev`) add `?audio=demo`
-  to the URL for gentle fake levels, including 32 bands with a kick at 105 BPM, so the grid
-  pulse shows in a browser. A production bundle ignores the query.
-- **Ripple.** While `playing`, `HorizonCanvas` passes `echo` to the renderer: `n`, `amp`, `cx`
-  from the camera preset (`en`, `eamp`, `ecx`), opacity `ea` scaled by a smoothed
-  loudness (bass weighted), `hs` 900. It fades in and out over about a second. Nothing is
-  passed when silent, so pixels are unchanged. No ripple under reduced motion or in the
-  review still.
+  to the URL for gentle fake levels: 32 bands shaped like the concept demo's spectrum (a kick
+  at 105 BPM in bands 0 to 11, three slow melody bumps in the middle bands, a hat on the
+  off-beat), so the grid pulse and the Unwind echo show in a browser. With a review URL
+  (`?hz=unwind&at=...&audio=demo`) the camera and sky stay frozen but the frame loop runs, so
+  the echo and the pulse can be captured. A production bundle ignores the query.
+- **Ripple** (`echo.ts`). The echo lines of the range, drawn by the renderer's `echo` option.
+  - Work and Home (3 lines): only while `playing`, opacity `ea` times a smoothed loudness (bass
+    weighted) and a fade of about a second, `n`, `amp`, `cx` from the camera (`en`, `eamp`,
+    `ecx`), `hs` 900. Nothing is passed when silent, so pixels are unchanged.
+  - Unwind (11 lines, the visualizer): while playing, opacity `ea` (0.9) raised to full, times the
+    fade, with no loudness scaling, and the lines follow the real bands (`sample`, below). The
+    playing look matches the concept: the lines are tinted bright teal through the centre shifting
+    to pink at the far right (the renderer's `tint` option, blended over the palette's rim colour
+    by the fade), 1.5 px wide instead of 1.4, and the newest line fades in at the front instead of
+    popping in. Work, Home and the idle lines keep the palette's colour. While silent the
+    idle lines: opacity `ea * 0.45`, height `eamp * 0.35`, drifting at 0.12 (0.4 of the playing
+    speed) to the renderer's made-up `spec()` on the same slowed clock, so they breathe gently.
+    The echo runs on its own clock (`echoRate`), so slowing it never makes the lines jump. Every
+    number is blended between idle and playing by the fade, and by the camera's `en` during a
+    glide (`visualizerWeight`: 0 at 3 lines, 1 from 8), so nothing pops.
+  - `sample`: while the fade is above 0 (on any camera), `HorizonCanvas` hands the renderer a
+    sampler (`createEchoSampler`): each line reads the band history at its own age (the 7
+    seconds spread across the lines), mixed with `spec()` by `1 - fade` while starting or
+    stopping. Without `sample` the renderer draws exactly as before (golden call log test).
+  - Never on the morning Rainier camera. On a turn toward it the echo fades out within about half
+    a second of the turn starting (the camera gate: its opacity only falls from the first frame of
+    the turn and is exactly 0 by 0.6 s), and it stays off, through any turn back, until the camera
+    has settled on a place whose echo is on; then it fades in over 0.6 s. Under reduced motion and in the review still, Unwind shows the idle
+    lines frozen at `t` 0; other places none.
+  - When the display is idle or off (`useIdle`: no input for 4 minutes, screens off, locked)
+    the echo fades out over a second and is then not drawn, and the band history stops; both
+    start afresh on return.
+- **Echo calm check** (`npm run echo-calm`, by hand; CI does not run it). Builds
+  `scripts/echo-calm/` (the real renderer, echo and audio store) into one HTML file and draws 600
+  frames of the Unwind camera in headless Chromium with the echo and without it, for the
+  `?audio=demo` levels and for every band pumping fully on and off 6 times a second. It takes what
+  the echo adds to the picture's mean relative luminance over every pixel and fails if that moves
+  by 1 percent of the picture's mean, up or down, more than three times in any second. Set
+  `WALL_CHROME` to a Chromium binary.
 - **Grid pulse** (`pulse.ts`). While `playing`, `HorizonCanvas` passes `grid` to the renderer.
   Each beat starts a soft glow band at the horizon that rolls across the lake grid to the bottom
   edge in 1.2 s (depth `p` 0 to 1 on the grid's own `pow(p, 2.1)` spacing, eased out over its
@@ -447,7 +498,7 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
   brighten from 0.3 up to 0.55 opacity with `0.65 * kick + 0.35 * bass`, where the kick part
   eases up to 1 over 80 ms on a beat (never a jump) and falls away over about 0.3 s, and the
   bass part is smoothed over about 0.6 s so frame-to-frame jitter never flickers the lines.
-  With beats at least 340 ms apart the lines rise at most three times a second. Both scale by the camera's `gp`: 0.5 on Work, Home and the
+  With never more than three beats in a second the lines rise at most three times a second. Both scale by the camera's `gp`: 0.5 on Work, Home and the
   morning Rainier view (subtle, and seen through the ribbon's glass), 1 on Unwind. Four fixed
   band slots, reused every frame. No grid when silent, under reduced motion or in the review
   still; without `grid` the renderer makes exactly the canvas calls it made before (a golden
