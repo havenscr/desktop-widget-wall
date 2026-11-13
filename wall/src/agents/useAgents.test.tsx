@@ -301,3 +301,17 @@ it('a quick remount does not mark the answer stale', async () => {
   const again = renderHook(() => useAgents());
   expect(again.result.current.awaiting).toBe(false);
 });
+
+it('a helper clock that steps back (a correction) and runs on from there is movement, never frozen', async () => {
+  // The helper runs an hour fast, then its clock is corrected back an hour and keeps going.
+  answer = () => summary({ now: new Date(Date.now() + 60 * 60_000).toISOString() });
+  const { result } = renderHook(() => useAgents());
+  await flush();
+  expect(result.current.status).toBe('ready');
+  answer = () => summary({ now: new Date(Date.now()).toISOString() });
+  // Forty minutes later its time is still behind the first answer's, but it has changed on every read.
+  await flush(40 * 60_000);
+  expect(result.current.status).toBe('ready');
+  expect(result.current.summary).not.toBeNull();
+  expect(agentsStale(result.current)).toBe(false);
+});

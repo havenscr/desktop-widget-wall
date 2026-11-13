@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { tip } from '../ui/HoverTip';
 import { FreeRow, Lane } from './Lane';
-import { ageText, allFreeText, cards, countText, freeSlots, headerAsk, slotMeter, slotsText, slotsTip, type OmniSummary } from './model';
+import { ageText, allFreeText, cards, countText, mergeReady, freeSlots, headerAsk, slotMeter, slotsText, slotsTip, type OmniSummary } from './model';
 import { focusSession } from './open';
 import { Shelf } from './Shelf';
 
@@ -53,7 +53,7 @@ export function Lanes({ summary, stale, freshAt, now, idle }: { summary: OmniSum
     const el = list.current;
     if (!el) return;
     const atEnd = el.scrollTop + el.clientHeight >= el.scrollHeight - 4;
-    el.scrollTo({ top: atEnd ? 0 : el.scrollTop + el.clientHeight + 12, behavior: 'smooth' });
+    el.scrollTo?.({ top: atEnd ? 0 : el.scrollTop + el.clientHeight + 12, behavior: 'smooth' });
   };
 
   return (
@@ -112,7 +112,7 @@ export function Lanes({ summary, stale, freshAt, now, idle }: { summary: OmniSum
           </div>
         )}
       </div>
-      <div className={`lanes-list${n > IN_VIEW ? ' scrolls' : ''}`} ref={list}>
+      <div className={`lanes-list${n > IN_VIEW ? ' scrolls' : ''}${canOpen && all.some(mergeReady) ? ' has-hold' : ''}`} ref={list}>
         {all.map((l, i) => (
           <Lane key={l.id} lane={l} num={i + 1} canOpen={canOpen} open={(id) => focusSession(id)} roomy={n < IN_VIEW} />
         ))}

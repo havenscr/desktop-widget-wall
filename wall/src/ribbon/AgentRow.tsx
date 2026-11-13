@@ -72,7 +72,7 @@ export function AgentRow({ now, dueCount = null }: { now: number; dueCount?: num
   }
   const rows = Math.max(...segs.map((g) => g.row)) + 1;
   const { pitch, bar } = agentRowSize(rows);
-  const top = (row: number) => AGENT_BAND.top + row * pitch + (pitch - bar) / 2;
+  const cap = Math.min(9, bar + 4);
   const canOpen = s.linksAvailable;
   const order = agentOrder(s);
   // The number goes on the first bar of each carded session, when the rows are tall enough to read it.
@@ -101,9 +101,9 @@ export function AgentRow({ now, dueCount = null }: { now: number; dueCount?: num
           >
             <i
               className={`sg ${g.kind}`}
-              style={{ top: top(g.row) - AGENT_BAND.top - g.row * pitch, height: bar, ['--sc' as string]: w.stage ? `var(--st-${w.stage})` : 'transparent' }}
+              style={{ top: (pitch - bar) / 2, height: bar, ['--sc' as string]: w.stage ? `var(--st-${w.stage})` : 'transparent' }}
             />
-            {g.kind === 'done' && <i className="cap2" style={{ top: top(g.row) - AGENT_BAND.top - g.row * pitch + bar / 2 - 4.5 }} />}
+            {g.kind === 'done' && <i className="cap2" style={{ top: (pitch - cap) / 2, ['--cap' as string]: `${cap}px` }} />}
             {w.num !== null && numbered.has(g.key) && pitch >= 6 && <b className="sg-num">{w.num}</b>}
           </span>
         );

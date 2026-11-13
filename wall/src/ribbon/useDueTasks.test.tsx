@@ -1,4 +1,4 @@
-import { act, render } from '@testing-library/react';
+import { act, fireEvent, render } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { mocks } from '../bridge/tauri';
 import type { TaskItem } from '../tasks/model';
@@ -63,8 +63,17 @@ it('marks only the next three tasks due at a time today, at their hour', async (
   expect(marks).toHaveLength(1);
   expect(marks[0].style.left).toBe(`${RX(15)}px`);
   expect(marks[0].textContent).toBe('Send the project proposal, 3:00');
-  expect(marks[0].getAttribute('aria-label')).toBe('Due 3:00: Send the project proposal');
+  expect(marks[0].getAttribute('aria-label')).toBe('Due 3:00: Send the project proposal. Opens the task');
   expect(calls).toEqual([{ notTag: 'home' }]);
+  // A click opens the task in the task app (Rust checks the id).
+  const opened: string[] = [];
+  mocks.set('wall2_open_task', (args) => {
+    opened.push(String(args?.id));
+  });
+  fireEvent.click(marks[0]);
+  fireEvent.keyDown(marks[0], { key: 'Enter' });
+  await flush();
+  expect(opened).toEqual(['a', 'a']);
 });
 
 it('an all-day task gets no mark', async () => {

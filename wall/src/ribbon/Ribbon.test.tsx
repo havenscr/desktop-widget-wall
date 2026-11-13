@@ -1,7 +1,8 @@
-import { act, render } from '@testing-library/react';
+import { act, fireEvent, render } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { mocks } from '../bridge/tauri';
 import { useFocusStore } from '../focus/store';
+import { HoverTipLayer, TIP_DELAY_MS } from '../ui/HoverTip';
 import { RX } from './model';
 import { Ribbon } from './Ribbon';
 import { useFixedClock, usePacificTime } from './testZone';
@@ -121,8 +122,55 @@ it('draws overlapping events in two lanes and a narrow chip without its title', 
   expect(a.textContent).toBe('Workshop');
   expect(b.className).toBe('ev next l2');
   expect(b.textContent).toBe('');
-  expect(b.getAttribute('title')).toBe('Standup');
-  expect(b.getAttribute('aria-label')).toBe('Standup');
+  expect(b.getAttribute('aria-label')).toBe('Standup, 12:00 to 12:15 PM');
+});
+
+it('a chip shows title, time and account on hover, and opens its event in Outlook on a click when Rust has a link', async () => {
+  const opened: string[] = [];
+  mocks.set('wall2_open_event', (args) => {
+    opened.push(String(args?.key));
+  });
+  mocks.set('wall2_meet_day', () => ({
+    accounts: [{ id: 'work', label: 'Work', state: 'ok' }],
+    events: [
+      { key: 'd-0', accountId: 'work', title: 'Design review', start: iso('10:00'), end: iso('11:00'), canJoin: true, canOpen: true, isLive: false },
+      { key: 'd-1', accountId: 'work', title: 'Lunch', start: iso('12:00'), end: iso('13:00'), canJoin: false, canOpen: false, isLive: false },
+    ],
+  }));
+  const r = render(
+    <>
+      <Ribbon kind="work" />
+      <HoverTipLayer />
+    </>,
+  );
+  await flush();
+  const [a, b] = [...r.container.querySelectorAll('.ev')] as HTMLElement[];
+  expect(a.className).toContain('open');
+  expect(a.getAttribute('role')).toBe('button');
+  expect(b.getAttribute('role')).toBeNull();
+  fireEvent.mouseEnter(a);
+  await flush(TIP_DELAY_MS);
+  expect(document.querySelector('.hover-tip')!.textContent).toBe('Design review10:00 to 11:00 AM, WorkClick to open it in Outlook');
+  fireEvent.mouseLeave(a);
+  fireEvent.click(a);
+  fireEvent.keyDown(a, { key: 'Enter' });
+  fireEvent.click(b);
+  await flush();
+  expect(opened).toEqual(['d-0', 'd-0']);
+});
+
+it('the needle\'s hover counts down to the next meeting', async () => {
+  mocks.set('wall2_meet_day', () => day);
+  const r = render(
+    <>
+      <Ribbon kind="work" />
+      <HoverTipLayer />
+    </>,
+  );
+  await flush();
+  fireEvent.mouseEnter(r.container.querySelector('.ndl b')!);
+  await flush(TIP_DELAY_MS);
+  expect(document.querySelector('.hover-tip')!.textContent).toBe('10:24. Next meeting in 8 h 6 m: Livestream: Fabric Apps');
 });
 
 it('stops reading the calendar and moving the needle while hidden, and catches up on return', async () => {

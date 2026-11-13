@@ -12,8 +12,23 @@ import {
   needsYouCount,
   prText,
   ringFraction,
+  slotMeter,
   slotsText,
+  slotsTip,
   statusLine,
+  waitingIds,
+  MAX_PIPS,
+  cardLine,
+  cardMeta,
+  cards,
+  countText,
+  usageMeters,
+  usageTip,
+  normalizeSummary,
+  agentRowSize,
+  sessionSpans,
+  spanWords,
+  MAX_AGENT_ROWS,
 } from './model';
 import { lane, summary } from './fixtures';
 
@@ -63,19 +78,46 @@ describe('lanes', () => {
 
 describe('header and slots', () => {
   it('shows the real slot numbers, even past the limit', () => {
-    expect(slotsText(summary())).toBe('3 of 3 slots');
-    expect(slotsText(summary({ slots: { used: 5, limit: 4 } }))).toBe('5 of 4 slots');
-    expect(slotsText(summary({ slots: { used: 1, limit: 1 } }))).toBe('1 of 1 slot');
+    expect(slotsText(summary())).toBe('3 running, 3 slots');
+    expect(slotsText(summary({ slots: { used: 9, limit: 4 } }))).toBe('9 running, 4 slots');
+    expect(slotsText(summary({ slots: { used: 1, limit: 1 } }))).toBe('1 running, 1 slot');
+    expect(slotsText(summary({ slots: { used: 8, limit: 4, sessions: 6, working: 4, helpers: 7 } }))).toBe('4 working, 6 open, 4 slots');
   });
 
-  it('says Nothing needs you, or One thing for you with how many more', () => {
-    expect(headerAsk(summary())).toEqual({ text: 'Nothing needs you', more: null, tone: 'cyan' });
-    expect(headerAsk(summary({ yourMove: { total: 1, first: null } }))).toEqual({ text: 'One thing for you', more: null, tone: 'amber' });
+  it('says Nothing needs you, or One thing for you with the title and how many more', () => {
+    expect(headerAsk(summary())).toMatchObject({ text: 'Nothing needs you', title: null, id: null, more: null, tone: 'cyan' });
+    // An older helper: the first entry names it.
+    const one = summary({ yourMove: { total: 1, first: { sessionId: 'a1b2c3d4-0009', title: 'Invoice check', kind: 'gate', since: null, question: '' } } });
+    expect(headerAsk(one)).toMatchObject({ text: 'One thing for you', title: 'Invoice check', id: 'a1b2c3d4-0009', more: null, canStep: false, tone: 'amber' });
     expect(headerAsk(summary({ yourMove: { total: 3, first: null } })).more).toBe('then 2 more');
     // A waiting lane counts even when the your-move list has not caught up.
-    const s = summary({ lanes: [lane({ waiting: true }), lane({ state: 'blocked' })] });
+    const s = summary({ lanes: [lane({ waiting: true }), lane({ id: 'a1b2c3d4-0002', title: 'Second', state: 'blocked' })] });
     expect(needsYouCount(s)).toBe(2);
-    expect(headerAsk(s)).toEqual({ text: 'One thing for you', more: 'then 1 more', tone: 'amber' });
+    expect(headerAsk(s)).toMatchObject({ text: 'One thing for you', title: 'Voice: iPhone mic fix', more: 'then 1 more', canStep: true, tone: 'amber' });
+  });
+
+  it('steps through the waiting ids, naming sessions with no card from the names map, and wraps', () => {
+    const s = summary({
+      yourMove: { total: 2, first: null, ids: ['a1b2c3d4-0002', 'a1b2c3d4-00ff'] },
+      sessions: { 'a1b2c3d4-00ff': { title: 'Not on a card', stage: 'plan', state: 'blocked' } },
+    });
+    expect(waitingIds(s)).toEqual(['a1b2c3d4-0002', 'a1b2c3d4-00ff']);
+    expect(headerAsk(s, 0)).toMatchObject({ text: 'One thing for you', title: 'Friday social card', id: 'a1b2c3d4-0002', more: 'then 1 more' });
+    expect(headerAsk(s, 1)).toMatchObject({ text: 'Also for you', title: 'Not on a card', id: 'a1b2c3d4-00ff', more: 'back to the first' });
+    expect(headerAsk(s, 2)).toMatchObject({ id: 'a1b2c3d4-0002' });
+    // An id nothing names is still a session.
+    expect(headerAsk(summary({ yourMove: { total: 1, first: null, ids: ['a1b2c3d4-0abc'] } })).title).toBe('a session');
+  });
+
+  it('draws the slot meter with a pip per slot and the overflow past the last', () => {
+    expect(slotMeter(summary({ slots: { used: 8, limit: 4, sessions: 6, working: 2, helpers: 3 } }))).toEqual({ pips: [true, true, false, false], over: 0 });
+    expect(slotMeter(summary({ slots: { used: 8, limit: 4, sessions: 9, working: 7, helpers: 3 } }))).toEqual({ pips: [true, true, true, true], over: 3 });
+    // An older helper fills by used slots.
+    expect(slotMeter(summary({ slots: { used: 9, limit: 4 } })).over).toBe(5);
+    expect(slotMeter(summary({ slots: { used: 1, limit: 20 } })).pips).toHaveLength(MAX_PIPS);
+    expect(slotsTip(summary({ slots: { used: 8, limit: 4, sessions: 6, working: 4, helpers: 7 } }))).toBe(
+      '4 working, 6 open, 7 helpers, 4 slots on the server (more may run than there are slots). Click to bring OmniGent forward.',
+    );
   });
 
   it('counts free rows up to three, inside the limit', () => {
@@ -135,5 +177,118 @@ describe('ribbon segments', () => {
     const s = summary({ lanes: [], day: [{ lane: 'a1b2c3d4-0001', start: at(1), end: at(0.5), kind: 'run' }, { lane: 'a1b2c3d4-0001', start: 'nope', end: null, kind: 'run' }] });
     expect(agentSegments(s, now, hourAt).map((g) => g.width)).toEqual([5]);
     expect(agentSegments(s, now, () => null)).toEqual([]);
+  });
+});
+
+describe('cards from a newer helper', () => {
+  it('shows the full session list when the helper sends one, else the lanes', () => {
+    const list = [lane({ id: 'a1b2c3d4-0011' }), lane({ id: 'a1b2c3d4-0012' }), lane({ id: 'a1b2c3d4-0013' }), lane({ id: 'a1b2c3d4-0014' })];
+    expect(cards(summary({ sessionsList: list })).map((l) => l.id)).toEqual(list.map((l) => l.id));
+    expect(cards(summary()).map((l) => l.id)).toEqual(summary().lanes.map((l) => l.id));
+    expect(countText(7)).toBe('3 of 7');
+    expect(countText(3)).toBeNull();
+  });
+
+  it('says the most useful thing first on the second line', () => {
+    expect(cardLine(lane({ waiting: true, waitingSinceS: 720, line: 'Waiting on a thumbnail choice' }))).toEqual({ text: 'Waiting on you for 12 min: a thumbnail choice', tone: 'amber' });
+    expect(cardLine(lane({ state: 'blocked', line: 'idle' }))).toEqual({ text: 'Waiting on you', tone: 'amber' });
+    expect(cardLine(lane({ failed: true, line: 'running' }))).toEqual({ text: 'Failed, needs a look', tone: 'red' });
+    expect(cardLine(lane({ live: 'working', line: 'Running web tests' })).text).toBe('Running web tests');
+    expect(cardLine(lane({ live: 'idle', line: 'idle', next: 'Answer two comments' })).text).toBe('Next: Answer two comments');
+    expect(cardLine(lane({ live: 'working', line: 'running' })).text).toBe('Working now');
+    expect(cardLine(lane({ live: 'idle', line: 'idle', idleS: 300 })).text).toBe('Idle for 5 min');
+    expect(cardLine(lane({ live: 'idle', line: 'idle' })).text).toBe('Idle');
+    // An older helper: the line as today.
+    expect(cardLine(lane({ line: '' })).text).toBe('Working');
+  });
+
+  it('lists helpers, the assistant and the PR quietly', () => {
+    expect(cardMeta(lane({ kids: { total: 3, working: 2 }, harness: 'codex', pr: { number: 7, ci: 'passing', ready: true } }))).toEqual([
+      '3 helpers, 2 working',
+      'Codex',
+      'PR 7, checks passing',
+    ]);
+    expect(cardMeta(lane({ kids: { total: 1, working: 0 } }))).toEqual(['1 helper, none working']);
+    expect(cardMeta(lane())).toEqual([]);
+  });
+
+  it('checks the new fields and keeps an old answer as it was', () => {
+    const raw = {
+      ...summary(),
+      slots: { used: 8, limit: 4, sessions: 'x', working: 2, helpers: -1 },
+      sessionsList: [{ ...lane({ id: 'a1b2c3d4-0021' }), kids: { total: 2, working: 5 }, harness: 'gpt', live: 'busy', failed: 'yes', next: '  ' }, { id: 5 }],
+      sessions: { 'a1b2c3d4-0022': { title: 'Named', stage: 'nope', state: 'blocked' }, bad: { stage: 'plan' } },
+      yourMove: { total: 1, first: null, ids: ['a1b2c3d4-0022', 7] },
+      usage: { claudeWeekPct: null, claude5hPct: null, weekResetsAt: null, accounts: [{ provider: 'claude', label: 'Claude 1', weekPct: 140, fiveHourPct: null, weekResetsAt: null }, { provider: 'x', label: 'Bad' }] },
+    };
+    const s = normalizeSummary(raw)!;
+    expect(s.slots).toEqual({ used: 8, limit: 4, sessions: null, working: 2, helpers: null });
+    expect(s.sessionsList).toHaveLength(1);
+    expect(s.sessionsList![0]).toMatchObject({ kids: { total: 2, working: 2 }, harness: null, live: null, failed: false, next: null });
+    expect(s.sessions).toEqual({ 'a1b2c3d4-0022': { title: 'Named', stage: null, state: 'blocked' } });
+    expect(s.yourMove.ids).toEqual(['a1b2c3d4-0022']);
+    expect(s.usage!.accounts).toEqual([{ provider: 'claude', label: 'Claude 1', weekPct: 100, fiveHourPct: null, weekResetsAt: null }]);
+    const old = normalizeSummary(summary())!;
+    expect(old.sessionsList).toBeNull();
+    expect(old.sessions).toEqual({});
+    expect(old.usage).toMatchObject({ claudeWeekPct: 62, claude5hPct: 18, accounts: [] });
+  });
+
+  it('gives one meter per subscription, the fullest above 90 in amber, or the old single meter', () => {
+    const m = usageMeters({
+      claudeWeekPct: 94,
+      claude5hPct: null,
+      weekResetsAt: null,
+      accounts: [
+        { provider: 'claude', label: 'Claude 1', weekPct: 41, fiveHourPct: 12, weekResetsAt: null },
+        { provider: 'claude', label: 'Claude 2', weekPct: 94, fiveHourPct: null, weekResetsAt: null },
+        { provider: 'codex', label: 'Codex', weekPct: null, fiveHourPct: null, weekResetsAt: null },
+      ],
+    });
+    expect(m.map((x) => [x.label, x.pct, x.warn])).toEqual([
+      ['Claude 1', 41, false],
+      ['Claude 2', 94, true],
+      ['Codex', null, false],
+    ]);
+    expect(usageTip(m[2])).toBe('Codex: no recent weekly reading');
+    expect(usageTip(m[0])).toBe('Claude 1: 41% of this week used, 12% of the five hour window');
+    expect(usageMeters({ claudeWeekPct: 62, claude5hPct: 18, weekResetsAt: null })).toEqual([{ label: 'Claude this week', pct: 62, fiveHour: 18, resets: null, warn: false }]);
+    expect(usageMeters({ claudeWeekPct: 80, claude5hPct: null, weekResetsAt: null, accounts: [{ provider: 'codex', label: 'Codex', weekPct: 80, fiveHourPct: null, weekResetsAt: null }] })[0].warn).toBe(false);
+    expect(usageMeters(null)).toEqual([]);
+  });
+});
+
+describe('agent row sub-rows', () => {
+  it('gives each session its own sub-row in the cards\' order, the rest after, past eight sharing the last', () => {
+    const t = (h: number) => new Date(2026, 10, 11, h).toISOString();
+    const ids = Array.from({ length: 10 }, (_, i) => `a1b2c3d4-00${String(i).padStart(2, '0')}`);
+    const s = summary({
+      lanes: [lane({ id: ids[1] })],
+      sessionsList: [lane({ id: ids[1] }), lane({ id: ids[0] })],
+      day: ids.map((id, i) => ({ lane: id, start: t(7 + i), end: t(8 + i), kind: 'run' as const })),
+    });
+    const segs = agentSegments(s, new Date(2026, 10, 11, 20).getTime(), (ms) => ms / 1e9);
+    const rowOf = (id: string) => segs.find((g) => g.lane === id)!.row;
+    expect(rowOf(ids[1])).toBe(0);
+    expect(rowOf(ids[0])).toBe(1);
+    expect(rowOf(ids[2])).toBe(2);
+    expect(rowOf(ids[9])).toBe(MAX_AGENT_ROWS - 1);
+    expect(rowOf(ids[8])).toBe(MAX_AGENT_ROWS - 1);
+  });
+
+  it('thins the sub-rows as more sessions share the band', () => {
+    expect(agentRowSize(3)).toEqual({ pitch: 8, bar: 5 });
+    expect(agentRowSize(4)).toEqual({ pitch: 6, bar: 4 });
+    expect(agentRowSize(8)).toEqual({ pitch: 3, bar: 2 });
+    expect(agentRowSize(20)).toEqual({ pitch: 3, bar: 2 });
+  });
+
+  it('writes spans in plain words', () => {
+    const at = (h: number, m = 0) => new Date(2026, 10, 11, h, m).getTime();
+    expect(spanWords({ kind: 'run', start: at(14, 10), end: at(15, 40), open: false })).toBe('working 2:10 to 3:40');
+    expect(spanWords({ kind: 'wait', start: at(15, 40), end: at(16), open: true })).toBe('waiting on you since 3:40');
+    expect(spanWords({ kind: 'done', start: at(9), end: at(10), open: false })).toBe('in review 9:00 to 10:00');
+    const g = (k: number) => ({ key: String(k), lane: 'x', row: 0, x: 0, width: 5, kind: 'run' as const, start: at(8 + k), end: at(8 + k, 30), open: false });
+    expect(sessionSpans([g(0), g(1), g(2), g(3), g(4)], 'x')).toBe('1 earlier, then working 9:00 to 9:30, working 10:00 to 10:30, working 11:00 to 11:30, working 12:00 to 12:30');
   });
 });

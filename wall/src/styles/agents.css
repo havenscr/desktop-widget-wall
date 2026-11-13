@@ -150,9 +150,9 @@
   max-height: 150px;
   display: grid;
   /* The title takes every free pixel; the elapsed time or the merge button only its own. */
-  grid-template-columns: 68px minmax(0, 1fr) 400px auto;
+  grid-template-columns: 68px minmax(0, 1fr) 350px var(--lm-w, 124px);
   align-items: center;
-  gap: 24px;
+  gap: 22px;
   padding: 0 28px 0 30px;
   min-width: 0;
 }
@@ -201,7 +201,12 @@
 }
 /* With fewer than three lanes they are taller: a larger ring and a third line for the PR. */
 .lanes:not([data-lanes='3']) .lane:not(.slim) {
-  grid-template-columns: 84px minmax(0, 1fr) 400px auto;
+  grid-template-columns: 84px minmax(0, 1fr) 350px var(--lm-w, 124px);
+}
+/* When any card shows "Hold to merge", every card's last column is that wide, so the
+   stage tracks stay lined up. */
+.lanes-list.has-hold {
+  --lm-w: 172px;
 }
 .lane .lt {
   display: flex;
@@ -217,8 +222,9 @@
   min-width: 0;
 }
 .lane .lt2 > .s {
+  /* The main words keep their room; the quiet facts give way first. */
   flex: 0 1 auto;
-  min-width: 0;
+  min-width: min(60%, 340px);
 }
 .lane .lt2 > .s.t-amber {
   color: var(--amber);
@@ -227,19 +233,10 @@
   color: var(--red);
 }
 .lane-meta {
-  flex: none;
+  flex: 0 1000 auto;
+  min-width: 0;
   color: var(--faint);
-  white-space: nowrap;
-}
-.lane .lt2 > .lane-meta + .lane-meta::before {
-  content: '';
-  display: inline-block;
-  width: 4px;
-  height: 4px;
-  margin: 0 14px 3px -10px;
-  border-radius: 50%;
-  background: var(--faint);
-  opacity: 0.6;
+  white-space: pre;
 }
 .lane.failed {
   border-color: rgba(255, 77, 109, 0.4);
@@ -415,10 +412,11 @@
 .btn.hold {
   position: relative;
   overflow: hidden;
-  height: 58px;
-  padding: 0 22px;
-  border-radius: 18px;
-  font-size: 22px;
+  height: 52px;
+  padding: 0 16px;
+  border-radius: 16px;
+  font-size: 20px;
+  white-space: nowrap;
   touch-action: none;
   user-select: none;
 }
@@ -579,8 +577,8 @@
 .rib .cap2 {
   position: absolute;
   right: -6px;
-  width: 9px;
-  height: 9px;
+  width: var(--cap, 9px);
+  height: var(--cap, 9px);
   border-radius: 50%;
   background: var(--mint);
 }

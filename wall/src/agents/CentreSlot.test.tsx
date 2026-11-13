@@ -25,7 +25,7 @@ beforeEach(() => {
   opened = [];
   answer = () => summary();
   mocks.set('wall2_omni_summary', () => answer());
-  mocks.set('wall2_open_session', (args) => {
+  mocks.set('wall2_focus_omnigent', (args) => {
     opened.push(String(args?.id));
   });
   mocks.set('get_do_not_disturb', () => false);
@@ -45,7 +45,7 @@ it('shows the header, three lanes and the shelf when the helper answers', async 
   const r = render(<CentreSlot weather={weather} />);
   await flush();
   const centre = r.container.querySelector('.centre.lanes')!;
-  expect(centre.querySelector('.lanes-hd')!.textContent).toBe('Agents3 of 3 slotsNothing needs you');
+  expect(centre.querySelector('.lanes-hd')!.textContent).toBe('Agents3 running, 3 slotsNothing needs you');
   expect(centre.querySelector('.calm')!.className).toContain('t-cyan');
   const lanes = [...centre.querySelectorAll('.lane:not(.slim)')];
   expect(lanes).toHaveLength(3);
@@ -54,7 +54,7 @@ it('shows the header, three lanes and the shelf when the helper answers', async 
   expect(lanes[0].querySelector('.lm')!.textContent).toBe('42 min');
   expect(lanes[0].querySelector('.jn.c em')!.textContent).toBe('Build');
   expect(lanes[2].querySelector('.lm')!.textContent).toBe('Hold to merge');
-  expect(lanes[2].querySelector('.jn.c')!.className).toBe('jn c ready');
+  expect(lanes[2].querySelector('.jn.c')!.className).toBe('jn c');
   expect(centre.querySelectorAll('.lane.slim')).toHaveLength(0);
   expect(centre.querySelector('.shelf')!.textContent).toBe('4 parked, restingClaude 5 h 18%Claude this week62%');
   // Never a third line for the PR when all three lanes show.
@@ -68,7 +68,7 @@ it('turns a waiting lane amber and says One thing for you', async () => {
   const r = render(<CentreSlot weather={weather} />);
   await flush();
   const calm = r.container.querySelector('.calm')!;
-  expect(calm.textContent).toBe('One thing for youthen 1 more');
+  expect(calm.textContent).toBe('One thing for you:Voice: iPhone mic fixthen 1 more');
   expect(calm.className).toContain('t-amber');
   const lanes = r.container.querySelectorAll('.lane:not(.slim)');
   expect(lanes[0].className).toBe('lane g');
@@ -162,7 +162,7 @@ it('shows the real numbers past the limit and hides a missing five hour figure',
   answer = () => summary({ slots: { used: 5, limit: 4 }, usage: { claudeWeekPct: 40, claude5hPct: null, weekResetsAt: null } });
   const r = render(<CentreSlot weather={weather} />);
   await flush();
-  expect(screen.getByText('5 of 4 slots')).toBeTruthy();
+  expect(screen.getByText('5 running, 4 slots')).toBeTruthy();
   expect(r.container.querySelector('.shelf')!.textContent).toBe('4 parked, restingClaude this week40%');
   answer = () => summary({ usage: null, parked: 0 });
   await flush(POLL_MS);
@@ -316,4 +316,96 @@ it('back from hidden: the kept lanes show dimmed with "updated N min ago" until 
   await flush();
   expect(r.container.querySelector('.lanes')!.className).toBe('centre lanes');
   Object.defineProperty(document, 'hidden', { configurable: true, value: false });
+});
+
+const many = (n: number) => Array.from({ length: n }, (_, i) => lane({ id: `a1b2c3d4-00${String(i).padStart(2, '0')}`, title: `Session ${i + 1}` }));
+
+it('a newer helper: every parent or standalone session gets a card, numbered, with a quiet "3 of 7" count', async () => {
+  answer = () => summary({ sessionsList: many(7), slots: { used: 9, limit: 4, sessions: 7, working: 6, helpers: 5 } });
+  const r = render(<CentreSlot weather={weather} />);
+  await flush();
+  const list = r.container.querySelector('.lanes-list')!;
+  expect(list.className).toContain('scrolls');
+  const cards = [...list.querySelectorAll('.lane:not(.slim)')];
+  expect(cards).toHaveLength(7);
+  expect(cards.map((c) => c.querySelector('.lane-num')!.textContent)).toEqual(['1', '2', '3', '4', '5', '6', '7']);
+  expect(r.container.querySelector('.lanes-count')!.textContent).toBe('3 of 7');
+  expect(r.container.querySelector('.slot-meter')!.textContent).toBe('+26 working, 7 open, 4 slots');
+  expect(r.container.querySelectorAll('.slot-meter .pips i.on')).toHaveLength(4);
+  expect(r.container.querySelectorAll('.lane.slim')).toHaveLength(0);
+});
+
+it('three or fewer sessions: no count and no scrolling', async () => {
+  answer = () => summary({ sessionsList: many(2) });
+  const r = render(<CentreSlot weather={weather} />);
+  await flush();
+  expect(r.container.querySelector('.lanes-count')).toBeNull();
+  expect(r.container.querySelector('.lanes-list')!.className).toBe('lanes-list');
+  expect(r.container.querySelectorAll('.lane.slim')).toHaveLength(1);
+});
+
+it('"One thing for you: <title>" opens the waiting session and brings OmniGent forward; "then 1 more" steps to the next', async () => {
+  answer = () =>
+    summary({
+      sessionsList: many(3).map((l, i) => (i === 1 ? { ...l, waiting: true, state: 'blocked' as const, waitingSinceS: 600 } : l)),
+      yourMove: { total: 2, first: null, ids: ['a1b2c3d4-0001', 'a1b2c3d4-00ff'] },
+      sessions: { 'a1b2c3d4-00ff': { title: 'Off the cards', stage: 'plan', state: 'blocked' } },
+    });
+  const r = render(<CentreSlot weather={weather} />);
+  await flush();
+  const ask = r.container.querySelector('.ask-btn')!;
+  expect(ask.textContent).toBe('One thing for you:Session 2');
+  fireEvent.click(ask);
+  await flush();
+  expect(opened).toEqual(['a1b2c3d4-0001']);
+  // The waiting card is amber and says so.
+  const waiting = r.container.querySelectorAll('.lane:not(.slim)')[1];
+  expect(waiting.className).toContain('wait');
+  expect(waiting.querySelector('.lt2 .s')!.textContent).toBe('Waiting on you for 10 min: Running web tests, 56 of 89');
+  fireEvent.click(r.container.querySelector('.ask-more')!);
+  await flush();
+  expect(opened).toEqual(['a1b2c3d4-0001', 'a1b2c3d4-00ff']);
+  expect(r.container.querySelector('.ask-btn')!.textContent).toBe('Also for you:Off the cards');
+  expect(r.container.querySelector('.ask-more')!.textContent).toBe('back to the first');
+});
+
+it('the slot meter and the parked count bring OmniGent forward without a session', async () => {
+  answer = () => summary();
+  const r = render(<CentreSlot weather={weather} />);
+  await flush();
+  fireEvent.click(r.container.querySelector('.slot-meter')!);
+  fireEvent.click(r.container.querySelector('.shelf-parked')!);
+  await flush();
+  expect(opened).toEqual(['null', 'null']);
+});
+
+it('shows one usage meter per subscription, the fullest above 90 in amber', async () => {
+  answer = () =>
+    summary({
+      usage: {
+        claudeWeekPct: 94,
+        claude5hPct: null,
+        weekResetsAt: null,
+        accounts: [
+          { provider: 'claude', label: 'Claude 1', weekPct: 41, fiveHourPct: 12, weekResetsAt: null },
+          { provider: 'claude', label: 'Claude 2', weekPct: 94, fiveHourPct: null, weekResetsAt: null },
+          { provider: 'codex', label: 'Codex', weekPct: null, fiveHourPct: null, weekResetsAt: null },
+        ],
+      },
+    });
+  const r = render(<CentreSlot weather={weather} />);
+  await flush();
+  const meters = [...r.container.querySelectorAll('.shelf-week')];
+  expect(meters.map((m) => m.textContent)).toEqual(['Claude 141%', 'Claude 294%', 'Codexn/a']);
+  expect(meters.map((m) => m.className.includes('t-amber'))).toEqual([false, true, false]);
+});
+
+it('a failed session says so in red', async () => {
+  answer = () => summary({ sessionsList: [lane({ failed: true, line: 'Two tests failed' })] });
+  const r = render(<CentreSlot weather={weather} />);
+  await flush();
+  const card = r.container.querySelector('.lane:not(.slim)')!;
+  expect(card.className).toContain('failed');
+  expect(card.querySelector('.lt2 .s')!.className).toContain('t-red');
+  expect(card.querySelector('.lt2 .s')!.textContent).toBe('Failed: Two tests failed');
 });

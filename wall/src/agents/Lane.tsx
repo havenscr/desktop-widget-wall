@@ -156,9 +156,9 @@ export function Lane({ lane, num, canOpen, open, roomy }: { lane: LaneData; num:
         </div>
         <div className="lt2">
           <span className={`s ellipsis${line.tone ? ` t-${line.tone}` : ''}`}>{line.text}</span>
-          {!roomy && meta.map((m) => <span key={m} className="xs lane-meta">{m}</span>)}
+          {!roomy && meta.length > 0 && <span className="xs ellipsis lane-meta">{meta.join('  \u00b7  ')}</span>}
         </div>
-        {roomy && meta.length > 0 && <div className="xs ellipsis lane-meta">{meta.join(', ')}</div>}
+        {roomy && meta.length > 0 && <div className="xs ellipsis lane-meta">{meta.join('  \u00b7  ')}</div>}
       </div>
       <StageTrack stage={lane.stage} mark={waits ? 'wait' : ''} />
       <div className="lm">

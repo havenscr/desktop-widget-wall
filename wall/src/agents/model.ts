@@ -381,7 +381,9 @@ export function freeSlots(s: OmniSummary): number {
 export function cardLine(l: Lane): { text: string; tone: '' | 'amber' | 'red' } {
   if (laneWaits(l)) {
     const t = l.waitingSinceS != null ? `Waiting on you for ${elapsedText(l.waitingSinceS)}` : 'Waiting on you';
-    return { text: l.line && !BARE.includes(l.line.toLowerCase()) ? `${t}: ${l.line}` : t, tone: 'amber' };
+    // "Waiting on a thumbnail choice" adds "a thumbnail choice"; the bare status words add nothing.
+    const what = l.line && !BARE.includes(l.line.toLowerCase()) ? l.line.replace(/^waiting (on|for)\s+/i, '') : '';
+    return { text: what ? `${t}: ${what}` : t, tone: 'amber' };
   }
   if (l.failed) return { text: l.line && !BARE.includes(l.line.toLowerCase()) ? `Failed: ${l.line}` : 'Failed, needs a look', tone: 'red' };
   const said = l.line && !BARE.includes(l.line.toLowerCase()) ? l.line : '';

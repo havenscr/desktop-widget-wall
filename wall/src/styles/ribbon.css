@@ -118,6 +118,7 @@
   transform: rotate(45deg);
 }
 .rib .due .n {
+  text-shadow: 0 0 4px rgba(6, 4, 22, 0.95), 0 0 9px rgba(6, 4, 22, 0.9);
   max-width: 180px;
   overflow: hidden;
   text-overflow: ellipsis;
