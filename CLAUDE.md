@@ -376,6 +376,7 @@ The Zen place and Dream (flames, breathing guide, `wall/src/zen`) are front end 
 only the old app has (fullscreen toggle, monitor 2 placement) must stay on `MAIN_LABEL`.
 Wall 2 is placed through Win32 in `src-tauri/src/wall2_window.rs` (not tao) and writes `wall2-placement.log`; see `wall/README.md`.
 Meet tokens and Graph calls live in `wall2_meet` (Rust); the web view never sees tokens or join URLs. See the Meet section of `wall/README.md`.
+Sonos reads and commands live in `wall2_sonos` (Rust, `sonosBaseUrl` in `feeds.json`): every write is checked against the last good read (two minutes at most), anything that could leave a speaker above 40 needs `confirm`, and plays are unforced unless "Play anyway" follows a skip. See "Sound on Home" in `wall/README.md`.
 
 ## Fingerprinting
 

@@ -722,9 +722,9 @@ describe('quiet and silent cases', () => {
 
   describe('focus half way line', () => {
     const run = (left: number, advance: number) => {
-      // No chance idle bubble: one could start the cooldown just before half way and hide the line.
-      vi.spyOn(Math, 'random').mockReturnValue(0.99);
       vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+      // No idle chatter: a chance thought spoken first would hold the gap and hide the event line.
+      vi.spyOn(Math, 'random').mockReturnValue(0.999);
       let ms = day();
       const { container } = render(<Watt now={() => ms} />);
       runFor(1.5);

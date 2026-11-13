@@ -11,10 +11,11 @@
 // The centre is checked in each of its states (`?agents=`): three lanes with long titles,
 // twelve sessions (the three in view) with five meetings at once, two waiting, one failed,
 // an older helper's answer, one lane, no lane, and the fill when the helper is not set up.
-// In every state it also fails on agent hit boxes of two sessions that share pixels, on
+// In every Work state it also fails on agent hit boxes of two sessions that share pixels, on
 // calendar chips that cover each other in one lane, and on a card line that cuts its words
-// while more than 60 px of it is unused, and on stage labels closer than 8 px. Exits non-zero on a
-// failure. CI does not run this; run it by hand before a layout change is handed over.
+// while more than 60 px of it is unused, and on stage labels closer than 8 px. Home is checked
+// with its Sound block at its fullest, typical, sparse, not reachable and not set up. Exits
+// non-zero on a failure. CI does not run this; run it by hand before a layout change is handed over.
 //
 //   WALL_CHROME=/path/to/chrome-or-headless-shell npm --prefix wall run fit-check
 //   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels)
@@ -95,18 +96,43 @@ const LANES = ['.work .centre', '.work .centre .lane', '.work .centre .shelf'];
 // With more than three sessions the card list scrolls inside the centre: the three cards in
 // view, the header and the shelf must fit; the list itself is meant to scroll.
 const SCROLLED = ['.work .centre', '.work .centre .lanes-hd', '.work .centre .lanes-list > .lane:nth-child(-n+3)', '.work .centre .shelf'];
+const work = (agents, extra = '') => `?hz=work&at=2026-11-11T16:10:00-08:00&long=1&agents=${agents}${extra}`;
+// Home with the Sound block: the centre column, its mood row and every part of the Sound
+// card must stay inside the top band in each state (the dev mocks' `sonos` and `moods` knobs).
+// With more than six moods the mood row scrolls sideways on purpose, so only its block is
+// checked there.
+const home = (knobs) => `?hz=home&at=2026-11-12T16:36:00-08:00&long=1&${knobs}`;
+const HOME_CENTRE = ['.home .home-centre', '.home .moods', '.home .mood-row', '.home .home-right'];
+const SOUND_FULL = ['.home .sound', '.home .sound-panel', '.home .sound-plays', '.home .sound-line', '.home .sound-where', '.home .sound-plays .sound-chip'];
 const VARIANTS = [
-  { name: 'three lanes, long titles', agents: '3', checks: [...WINGS, ...LANES] },
-  { name: 'twelve sessions, long titles, five meetings at once', agents: '12', extra: '&meet=busy', checks: SCROLLED },
-  { name: 'seven sessions, the fifth waiting', agents: '7ask', checks: SCROLLED },
-  { name: 'two waiting, one off the cards', agents: 'ask2', checks: [...LANES, '.work .centre .lanes-hd', '.work .centre .ask-btn'] },
-  { name: 'one failed', agents: 'failed', checks: LANES },
-  { name: 'older helper answer', agents: 'old', checks: [...LANES, '.work .centre .lanes-hd'] },
-  { name: 'one lane', agents: '1', checks: LANES },
-  { name: 'no lane', agents: '0', checks: [...LANES, '.work .centre .panel'] },
-  { name: 'helper not set up', agents: 'off', checks: ['.work .centre', '.work .centre .panel', '.work .centre .centre-note'] },
+  { name: 'three lanes, long titles', q: work('3'), checks: [...WINGS, ...LANES] },
+  { name: 'twelve sessions, long titles, five meetings at once', q: work('12', '&meet=busy'), checks: SCROLLED },
+  { name: 'seven sessions, the fifth waiting', q: work('7ask'), checks: SCROLLED },
+  { name: 'two waiting, one off the cards', q: work('ask2'), checks: [...LANES, '.work .centre .lanes-hd', '.work .centre .ask-btn'] },
+  { name: 'one failed', q: work('failed'), checks: LANES },
+  { name: 'older helper answer', q: work('old'), checks: [...LANES, '.work .centre .lanes-hd'] },
+  { name: 'one lane', q: work('1'), checks: LANES },
+  { name: 'no lane', q: work('0'), checks: [...LANES, '.work .centre .panel'] },
+  { name: 'helper not set up', q: work('off'), checks: ['.work .centre', '.work .centre .panel', '.work .centre .centre-note'] },
+  { name: 'Home, Sound at its fullest: many moods, many speakers, long names, sleep timer', q: home('sonos=heavy&moods=many'), checks: [...HOME_CENTRE.filter((c) => !c.endsWith('mood-row')), ...SOUND_FULL] },
+  { name: 'Home, typical: five moods, Sound playing', q: home('moods=five'), checks: [...HOME_CENTRE, ...SOUND_FULL] },
+  { name: 'Home, sparse: no moods, one routine, one speaker', q: home('sonos=sparse&moods=none'), checks: ['.home .home-centre', '.home .moods', ...SOUND_FULL.slice(0, 4)] },
+  { name: 'Home, Sonos not reachable, moods present', q: home('sonos=down&moods=five'), checks: ['.home .home-centre', '.home .mood-row', '.home .sound', '.home .sound-note'] },
+  { name: 'Home, Sonos not reachable and moods not set up: one status card', q: home('sonos=down&moods=off'), checks: ['.home .home-centre', '.home .centre-status'] },
+  { name: 'Home, Sonos not set up: the mood cards take the room', q: home('sonos=off&moods=five'), checks: ['.home .home-centre', '.home .mood-row', '.home .sound', '.home .sound-note'] },
+  { name: 'Home, both centre sources out: one status card', q: home('sonos=down&moods=down'), checks: ['.home .home-centre', '.home .centre-status'] },
+  // The pop-outs float over the band (More opens down over the horizon), so they are held
+  // to the viewport only.
+  {
+    name: 'Home, Speakers pop-out open with many speakers',
+    q: home('sonos=heavy&moods=many'),
+    click: '.home .sound-anchor > button[aria-expanded]:not(.sound-chip)',
+    checks: ['.home .sound-pop', '.home .sound-spk'],
+    viewportOnly: true,
+  },
+  // Its rows scroll inside it, so the pop-out itself is what must fit.
+  { name: 'Home, More pop-out open with many routines', q: home('sonos=heavy&moods=many'), click: '.home .sound-chip.more', checks: ['.home .sound-pop'], viewportOnly: true },
 ];
-const query = (agents, extra = '') => `?hz=work&at=2026-11-11T16:10:00-08:00&long=1&agents=${agents}${extra}`;
 /** Rounding slack for fractional rectangles, in screen pixels. */
 const SLACK = 0.5;
 
@@ -139,6 +165,10 @@ try {
   // For each checked box: its scroll sizes, and how far it sticks out of its container and
   // of the viewport on each side (screen pixels, 0 when inside). Plus the page's own scroll.
   const measure = `<script>setTimeout(() => {
+    const click = new URLSearchParams(location.search).get('click');
+    if (click) document.querySelector(click)?.click();
+  }, 2000);
+  setTimeout(() => {
     const sels = new URLSearchParams(location.search).get('checks').split('|');
     const band = document.querySelector('.top');
     const out = (r, c) => ({ l: c.left - r.left, r: r.right - c.right, t: c.top - r.top, b: r.bottom - c.bottom });
@@ -182,8 +212,8 @@ try {
   let failed = false;
   if (overflow) console.log(`deliberate overflow: ${overflow} (${OVERFLOWS[overflow]})`);
   for (const v of overflow ? VARIANTS.slice(0, 1) : VARIANTS) {
-    console.log(`${v.name} (agents=${v.agents}):`);
-    const url = `${pathToFileURL(page).href}${query(v.agents, v.extra)}&checks=${encodeURIComponent(v.checks.join('|'))}`;
+    console.log(`${v.name} (${v.q}):`);
+    const url = `${pathToFileURL(page).href}${v.q}&checks=${encodeURIComponent(v.checks.join('|'))}${v.click ? `&click=${encodeURIComponent(v.click)}` : ''}`;
     const dom = execFileSync(
       chrome,
       // Headless Chromium keeps 87 px of the window for itself, so 807 gives a 2560 by 720 viewport.
@@ -217,7 +247,9 @@ try {
       }
       items.forEach((r, i) => {
         const inside = (o) => Object.values(o).every((px) => px <= SLACK);
-        const ok = r.sw <= r.cw && r.sh <= r.ch && inside(r.inHolder) && inside(r.inView);
+        // A pop-out scrolls inside itself by design; its rows must not overflow.
+        const scrollOk = v.viewportOnly && sel.endsWith('.sound-pop') ? r.sw <= r.cw : r.sw <= r.cw && r.sh <= r.ch;
+        const ok = scrollOk && (v.viewportOnly || inside(r.inHolder)) && inside(r.inView);
         if (!ok) failed = true;
         console.log(
           `  ${ok ? 'ok  ' : 'FAIL'} ${sel}${items.length > 1 ? ` [${i}]` : ''}: width ${r.sw} <= ${r.cw}, height ${r.sh} <= ${r.ch}, container ${sides(r.inHolder)}, viewport ${sides(r.inView)}`,
