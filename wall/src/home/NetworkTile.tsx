@@ -6,13 +6,13 @@ import { useSecurity } from './useSecurity';
 
 const SHIELD = { ok: IconShieldCheck, warn: IconShieldExclamation, bad: IconShieldX } as const;
 
-function Status({ t, text, aside }: { t: Tone | 'off'; text: string; aside?: string | null }) {
+function Status({ t, text, aside, dimAside = false }: { t: Tone | 'off'; text: string; aside?: string | null; dimAside?: boolean }) {
   const Glyph = t === 'off' ? IconShield : SHIELD[t];
   return (
     <div className="net-status">
       <Glyph className={`net-icon ${t}`} size={30} stroke={1.8} aria-hidden="true" />
       <span className="t2 net-line">{text}</span>
-      {aside && <span className="xs net-aside">{aside}</span>}
+      {aside && <span className={dimAside ? 'xs net-aside stale' : 'xs net-aside'}>{aside}</span>}
     </div>
   );
 }
@@ -44,7 +44,7 @@ export function NetworkTile() {
       </>
     );
   } else {
-    body = <Ready summary={summary} now={now} stale={status === 'error'} aside={onLine ?? scan} />;
+    body = <Ready summary={summary} now={now} stale={status === 'error'} aside={onLine ?? scan} numbersAside={onLine !== null} />;
   }
   // Lists stop at three and the rest is a number, beside the heading to keep the card short.
   const more = ready ? summary.alerts - alertRows(summary).length : 0;
@@ -64,13 +64,26 @@ export function NetworkTile() {
   );
 }
 
-function Ready({ summary, now, stale, aside }: { summary: SecuritySummary; now: number; stale: boolean; aside: string | null }) {
+function Ready({
+  summary,
+  now,
+  stale,
+  aside,
+  numbersAside,
+}: {
+  summary: SecuritySummary;
+  now: number;
+  stale: boolean;
+  aside: string | null;
+  /** The aside holds the numbers (not the scan age), so a stale feed dims it like the row. */
+  numbersAside: boolean;
+}) {
   const t = stale ? 'warn' : tone(summary);
   const nums = netNumbers(summary);
   const rows = alertRows(summary);
   return (
     <>
-      <Status t={t} text={stale ? 'Home app not reachable' : statusLine(summary)} aside={aside} />
+      <Status t={t} text={stale ? 'Home app not reachable' : statusLine(summary)} aside={aside} dimAside={stale && numbersAside} />
       {nums.length >= 3 && (
         <div className={stale ? 'net-nums stale' : 'net-nums'} style={{ gridTemplateColumns: `repeat(${nums.length}, minmax(0, 1fr))` }}>
           {nums.map((n) => (

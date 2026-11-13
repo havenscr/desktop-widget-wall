@@ -342,9 +342,10 @@
   outline-offset: 2px;
 }
 
-/* Right wing: the Room card at the concept's place, its top 332 px down the band and its
-   foot level with the player's transport (f_unwind); Live now stacks above it later and
-   takes that space. */
+/* Right wing: the Room card at the concept's place (f_unwind), its top and height from
+   UNWIND_ROOM_TOP and UNWIND_ROOM_HEIGHT in screens/frameLayout.ts (set on .u-right by
+   Unwind.tsx), its foot level with the player's transport. Live now stacks above it later
+   and takes that space. */
 .u-right {
   display: flex;
   flex-direction: column;
@@ -352,11 +353,11 @@
   min-width: 0;
 }
 .u-right > .u-room:first-child {
-  margin-top: 332px;
+  margin-top: var(--room-top, 0);
 }
 .u-room {
   box-sizing: border-box;
-  min-height: 120px;
+  min-height: var(--room-height, 0);
   padding: 18px 26px 20px;
 }
 .u-card {

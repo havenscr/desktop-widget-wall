@@ -584,7 +584,9 @@ frame (no ribbon) in the wide zones `470px 1fr 540px`. The parts are in `wall/sr
   anything has played, "Nothing playing" with a calm line over the transport. Never a
   large empty tile.
 - **Right wing.** The Room card (`RoomCard.tsx`), at the concept's size and place: 120 px
-  tall, its top 332 px down the band so its foot sits level with the transport, "Room"
+  tall, its foot 38 px above the end of the other places' 490 px band, so its top is 332
+  px down and its foot sits level with the transport (`UNWIND_ROOM_*` in
+  `screens/frameLayout.ts`, passed to the stylesheet as `--room-top`), "Room"
   over a row of 40 px mood chips. The home moods come from `wall2_moods`; a click applies
   one with `wall2_apply_mood`, and the last mood applied (here or on Home's mood cards) is
   marked for three hours (the id is `wall2-last-mood`, shared with Home in its plain

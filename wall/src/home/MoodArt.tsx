@@ -56,7 +56,7 @@ export function MoodArt({ id }: { id: string }) {
         <>
           <circle cx="292" cy="112" r="132" fill={`url(#${u}glow)`} />
           <circle cx="292" cy="112" r="42" fill="#fff3c4" />
-          <Cloud u={`${u}c1`} x={58} y={158} s={1.25} />
+          <Cloud u={`${u}c1`} x={84} y={158} s={1.2} />
           <Cloud u={`${u}c2`} x={232} y={182} s={0.82} />
           <Cloud u={`${u}c3`} x={150} y={96} s={0.55} faint />
         </>
@@ -272,7 +272,11 @@ function Cloud({ u, x, y, s, faint = false }: { u: string; x: number; y: number;
   );
 }
 
-/** A calm, fixed starfield: many small stars of mixed brightness, a few with a soft halo. */
+/**
+ * A calm, fixed starfield: one star in each cell of an 8 by 6 grid over the sky above the
+ * ridges (y under 190), placed at random inside its cell, so the stars spread evenly and
+ * never bunch at the ridge. Mixed sizes and brightness; a few have a soft halo.
+ */
 const STARS: readonly (readonly [number, number, number, number])[] = (() => {
   const out: [number, number, number, number][] = [];
   let seed = 7;
@@ -280,12 +284,16 @@ const STARS: readonly (readonly [number, number, number, number])[] = (() => {
     seed = (seed * 16807) % 2147483647;
     return seed / 2147483647;
   };
-  for (let i = 0; i < 48; i++) {
-    const x = Math.round(rnd() * 400);
-    const y = Math.round(rnd() * 230);
-    const r = Math.round((0.5 + rnd() * 0.9) * 10) / 10;
-    const o = Math.round((0.35 + rnd() * 0.55) * 100) / 100;
-    out.push([x, y, r, o]);
+  const COLS = 8;
+  const ROWS = 6;
+  for (let row = 0; row < ROWS; row++) {
+    for (let col = 0; col < COLS; col++) {
+      const x = Math.round(((col + 0.15 + rnd() * 0.7) * 400) / COLS);
+      const y = Math.round(((row + 0.15 + rnd() * 0.7) * 190) / ROWS);
+      const r = Math.round((0.5 + rnd() * 0.9) * 10) / 10;
+      const o = Math.round((0.35 + rnd() * 0.55) * 100) / 100;
+      out.push([x, y, r, o]);
+    }
   }
   return out;
 })();

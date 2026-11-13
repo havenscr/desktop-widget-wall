@@ -158,6 +158,26 @@ it('a click on the title opens the task in the task app; a hold or a slide opens
   expect(opened).toHaveLength(1);
 });
 
+it('a hold released off the row does not swallow the next click', async () => {
+  const opened: unknown[] = [];
+  mocks.set('wall2_open_task', (args) => void opened.push(args));
+  setList(() => [task('t-1', 'Write the report')]);
+  render(<TaskCard />);
+  await flush();
+  const row = screen.getByLabelText('Open Write the report; hold to focus on it');
+  fireEvent.pointerDown(row);
+  await flush(500);
+  expect(useFocusStore.getState().state.status).toBe('running');
+  // Released somewhere else: no click reaches the row.
+  fireEvent.pointerLeave(row);
+  fireEvent.pointerUp(document.body);
+  await flush();
+  // The next click (a keyboard Space, which has no pointer down) opens the task.
+  fireEvent.click(row);
+  await flush();
+  expect(opened).toEqual([{ id: 't-1' }]);
+});
+
 it('a short tap or a press that slides off starts nothing', async () => {
   setList(() => [task('a', 'Write the report')]);
   render(<TaskCard />);

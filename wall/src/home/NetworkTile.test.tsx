@@ -153,6 +153,21 @@ it('puts a lone alarm count on the status line, the scan age beside the heading,
   expect(container.querySelector('.network-block > .net-head + .panel.network')).not.toBeNull();
 });
 
+it('dims the numbers on the status line when the feed goes stale, as it dims the rest', async () => {
+  let fail = false;
+  mocks.set('wall2_home_security', () => {
+    if (fail) throw new Error('failed');
+    return { ...summary, alerts: 0, firewalla: { ...summary.firewalla, alarms24h: 7 } };
+  });
+  const { container } = render(<NetworkTile />);
+  await flush();
+  expect(container.querySelector('.net-aside')!.className).not.toContain('stale');
+  fail = true;
+  await flush(300_000);
+  expect(container.querySelector('.net-aside')!.textContent).toBe('7 alarms in 24 h');
+  expect(container.querySelector('.net-aside')!.className).toContain('stale');
+});
+
 it('shows the numbers row once three numbers exist', async () => {
   mocks.set('wall2_home_security', () => ({ ...summary, devices: 31, blocked: 412, firewalla: { ...summary.firewalla, alarms24h: 7 } }));
   const { container } = render(<NetworkTile />);

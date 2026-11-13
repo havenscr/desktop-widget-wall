@@ -350,6 +350,7 @@
   color: var(--faint);
 }
 .net-nums.stale,
+.net-aside.stale,
 .net-alerts.stale,
 .chore-rows.stale,
 .chores-side .stale {

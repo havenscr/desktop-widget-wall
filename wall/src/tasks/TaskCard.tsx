@@ -29,6 +29,15 @@ function TaskRow({
   const downAt = useRef<{ x: number; y: number } | null>(null);
   /** The press became a hold (focus started) or was cancelled by a move: its click opens nothing. */
   const swallow = useRef(false);
+  /**
+   * Swallow the click that ends this press, and only that one: the flag clears just after
+   * the pointer is released anywhere (the click, if any, comes first), so a press released
+   * off the row cannot swallow a later click.
+   */
+  const swallowThisPress = () => {
+    swallow.current = true;
+    window.addEventListener('pointerup', () => setTimeout(() => (swallow.current = false), 0), { once: true });
+  };
   const stop = () => {
     clearTimeout(timer.current);
     timer.current = undefined;
@@ -67,7 +76,7 @@ function TaskRow({
           timer.current = setTimeout(() => {
             timer.current = undefined;
             downAt.current = null;
-            swallow.current = true;
+            swallowThisPress();
             setHolding(false);
             startFocus();
           }, LONG_PRESS_MS);
@@ -77,7 +86,7 @@ function TaskRow({
         onPointerMove={(e) => {
           const d = downAt.current;
           if (d && Math.hypot(e.clientX - d.x, e.clientY - d.y) > HOLD_SLOP_PX) {
-            swallow.current = true;
+            swallowThisPress();
             stop();
           }
         }}
