@@ -142,7 +142,7 @@ mod win {
         for index in 0..=MAX_SUBKEYS {
             let mut buf = [0u16; 1024];
             let mut len = buf.len() as u32;
-            let code = unsafe { RegEnumKeyExW(key, index as u32, PWSTR(buf.as_mut_ptr()), &mut len, None, None, None, None) };
+            let code = unsafe { RegEnumKeyExW(key, index as u32, PWSTR(buf.as_mut_ptr()), &mut len, None, PWSTR::null(), None, None) };
             if code == ERROR_NO_MORE_ITEMS { return Ok(out); }
             if code == ERROR_MORE_DATA || code != ERROR_SUCCESS { return Err(()); }
             *total += 1;
@@ -152,12 +152,12 @@ mod win {
         Err(())
     }
     fn qword(key: HKEY, name: &str) -> Result<u64, ()> {
-        let mut kind = 0u32;
+        let mut kind = REG_QWORD;
         let mut bytes = [0u8; 8];
         let mut size = bytes.len() as u32;
         let w = wide(name);
         let code = unsafe { RegQueryValueExW(key, PCWSTR(w.as_ptr()), None, Some(&mut kind), Some(bytes.as_mut_ptr()), Some(&mut size)) };
-        if code != ERROR_SUCCESS || kind != REG_QWORD.0 || size != 8 { return Err(()); }
+        if code != ERROR_SUCCESS || kind != REG_QWORD || size != 8 { return Err(()); }
         Ok(u64::from_le_bytes(bytes))
     }
     fn running() -> std::collections::HashSet<String> {
