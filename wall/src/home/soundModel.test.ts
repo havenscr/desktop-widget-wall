@@ -1,6 +1,12 @@
 import { expect, it } from 'vitest';
 import {
   chipLabel,
+  faceTiles,
+  moreControls,
+  moreRoutines,
+  tileSlot,
+  wherePlaces,
+  whereLabel,
   groupLabel,
   leftOutNote,
   groupVolume,
@@ -204,4 +210,48 @@ it('an unseen mark older than the start grace is cleared even when something pla
   expect(markAfterRead(start, SUMMARY, t + 30 * 60_000)).toBeNull();
   // Within the grace it still attaches.
   expect(markAfterRead(start, SUMMARY, t + 5_000)).toEqual({ key: 'k', at: t, group: 'G2', seen: true });
+});
+
+const rt = (key: string, name: string): MusicRoutine => ({ key, name, favorite: null, volume: 10 });
+
+it('the five tiles match by whole words: workday is never Day, Late night is two words or one, case is ignored', () => {
+  expect(tileSlot('Workday Mix')).toBe('workday');
+  expect(tileSlot('Work Day Mix')).toBe('workday');
+  expect(tileSlot('Day Mix')).toBe('day');
+  expect(tileSlot('Someday Songs')).toBeNull();
+  expect(tileSlot('LATE NIGHT')).toBe('night');
+  expect(tileSlot('latenight mix')).toBe('night');
+  expect(tileSlot('Late-Night')).toBe('night');
+  expect(tileSlot('MORNING')).toBe('morning');
+  expect(tileSlot('Evening')).toBe('evening');
+  expect(tileSlot('Rain Sounds')).toBeNull();
+});
+
+it('the face has the tiles in the fixed order, leaves out a word with no routine, and the first by name order wins a tie', () => {
+  const music = [rt('w', 'Workday Mix'), rt('e', 'Evening Mix'), rt('m2', 'Morning Two'), rt('m1', 'Morning One'), rt('x', 'Rain')];
+  const tiles = faceTiles(music);
+  expect(tiles.map((t) => [t.label, t.routine.key])).toEqual([
+    ['Morning', 'm2'],
+    ['Evening', 'e'],
+    ['Workday', 'w'],
+  ]);
+  expect(moreRoutines(music, tiles).map((r) => r.key)).toEqual(['m1', 'x']);
+  expect(faceTiles([])).toEqual([]);
+});
+
+it('More never lists Group all or Pause all', () => {
+  const c = (key: string, action: string) => ({ key, name: key, action, loud: [] });
+  expect(moreControls([c('a', 'groupAll'), c('b', 'pauseAll'), c('c', 'ungroupAll')]).map((x) => x.key)).toEqual(['c']);
+});
+
+it('Where is Office, All speakers, Common areas in that order; the label drops parentheses; other presets are hidden', () => {
+  const p = (id: string, name: string) => ({ id, name, active: false, loud: [] });
+  const places = wherePlaces([p('a', 'Common Areas'), p('b', 'Upstairs'), p('c', 'All Speakers'), p('d', 'Office (Work)')]);
+  expect(places.map((x) => [x.label, x.preset.id])).toEqual([
+    ['Office', 'd'],
+    ['All Speakers', 'c'],
+    ['Common Areas', 'a'],
+  ]);
+  expect(wherePlaces([p('b', 'Upstairs')])).toEqual([]);
+  expect(whereLabel('Office (Work)')).toBe('Office');
 });

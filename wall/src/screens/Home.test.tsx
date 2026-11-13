@@ -32,7 +32,7 @@ it('lays Home on the concept zones: sun block, mood cards over Sound, chores and
   });
   const home = container.querySelector('section.home.zones');
   expect(home).toBeTruthy();
-  expect([...home!.children].map((c) => c.className)).toEqual(['home-wing', 'home-centre', 'home-right']);
+  expect([...home!.children].map((c) => c.className)).toEqual(['home-wing', 'home-centre tall', 'home-right']);
   // The centre: moods, then Sound; the Rooms row's place renders nothing yet.
   expect([...home!.querySelector('.home-centre')!.children].map((c) => c.className)).toEqual(['moods', 'sound bare']);
   expect(screen.getByText('Add sonosBaseUrl to feeds.json to control Sonos from here.')).toBeTruthy();
@@ -62,7 +62,7 @@ it('with no moods and an empty left wing, the centre shows one compact card and 
     await vi.advanceTimersByTimeAsync(0);
   });
   const home = container.querySelector('section.home.zones')!;
-  expect([...home.children].map((c) => c.className)).toEqual(['home-centre', 'home-right']);
+  expect([...home.children].map((c) => c.className)).toEqual(['home-centre tall', 'home-right']);
   expect(screen.getByText('No moods set up in the home app yet')).toBeTruthy();
   spy.mockRestore();
 });
@@ -108,4 +108,98 @@ it('with only one source out, there is no status card', async () => {
   });
   expect(screen.queryByLabelText('Home centre status')).toBeNull();
   expect(screen.getByText('Could not reach Sonos')).toBeTruthy();
+});
+
+const SONOS = {
+  speakers: [{ name: 'Den', state: 'playing', volume: 10, input: null, group: 'G1', online: true }],
+  groups: [{ id: 'G1', coordinator: 'Den', members: ['Den'] }],
+  presets: [],
+  music: [{ key: 'm', name: 'Morning Mix', favorite: null, volume: 8 }],
+  controls: [],
+  scenes: [],
+  sleepTimers: [],
+  nowPlaying: null,
+  currentGroup: 'G1',
+  readAtMs: Date.now(),
+};
+
+function pending<T>() {
+  let resolve!: (v: T) => void;
+  let reject!: (e: Error) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+function loadingHome(sonos: Promise<unknown>) {
+  mocks.set('wall2_moods', () => [
+    { id: 'day', label: 'Day' },
+    { id: 'evening', label: 'Evening' },
+  ]);
+  mocks.set('wall2_sonos_summary', () => sonos);
+  mocks.set('wall2_tasks_summary', () => ({ next: [], remaining: 0 }));
+  mocks.set('wall2_home_security', () => Promise.reject(new Error('not-configured')));
+  return render(<Home />);
+}
+
+it('first paint holds the final layout: a Sound skeleton, no "Loading", the short mood row, and it stays so when Sound arrives', async () => {
+  const sonos = pending<unknown>();
+  const { container } = loadingHome(sonos.promise);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(0);
+  });
+  const centre = container.querySelector('.home-centre')!;
+  expect(centre.className).toBe('home-centre');
+  expect(container.querySelector('.sound-skel')).toBeTruthy();
+  expect(container.querySelector('.sound.bare')).toBeNull();
+  expect(screen.queryByText('Loading')).toBeNull();
+  expect(container.querySelector('.mood-row')).toBeTruthy();
+  sonos.resolve(SONOS);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(0);
+  });
+  expect(centre.className).toBe('home-centre');
+  expect(container.querySelector('.sound-skel')).toBeNull();
+  expect(container.querySelector('.sound-plays')).toBeTruthy();
+});
+
+it('the tall-mood layout waits for 2.5 seconds of silence, then comes once; Sound arriving late brings the short row back', async () => {
+  const sonos = pending<unknown>();
+  const { container } = loadingHome(sonos.promise);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(2400);
+  });
+  const centre = container.querySelector('.home-centre')!;
+  expect(centre.className).toBe('home-centre');
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(200);
+  });
+  expect(centre.className).toBe('home-centre tall');
+  expect(container.querySelector('.sound.bare')).toBeTruthy();
+  sonos.resolve(SONOS);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(0);
+  });
+  expect(centre.className).toBe('home-centre');
+  expect(container.querySelector('.sound-plays')).toBeTruthy();
+});
+
+it('the layout change is one slow fade (at least 400 ms) and instant under reduced motion', () => {
+  expect(/\.mood-row \{[^}]*transition: height (\d+)ms/.exec(css)?.[1]).toBeTruthy();
+  expect(Number(/\.mood-row \{[^}]*transition: height (\d+)ms/.exec(css)![1])).toBeGreaterThanOrEqual(400);
+  expect(/prefers-reduced-motion: reduce\) \{\s*\.mood-row,/.test(css)).toBe(true);
+  // No :has() layout switch: only the class Home sets chooses the tall row.
+  expect(css).not.toContain('.home-centre:has(.sound.bare)');
+});
+
+it('an immediate "not set up" answer goes straight to the tall layout with no wait', async () => {
+  const sonos = pending<unknown>();
+  const { container } = loadingHome(sonos.promise);
+  sonos.reject(new Error('not-configured'));
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(0);
+  });
+  expect(container.querySelector('.home-centre')!.className).toBe('home-centre tall');
 });

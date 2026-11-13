@@ -30,16 +30,16 @@ function summary(over: Partial<SonosSummary> = {}): SonosSummary {
       { id: 'G2', coordinator: 'Den', members: ['Den', 'Porch'] },
     ],
     presets: [
-      { id: 'whole', name: 'Whole House', active: false, loud: [] },
-      { id: 'desk', name: 'Office Desk', active: true, loud: [] },
-      { id: 'party', name: 'Party Set', active: false, loud: [{ name: 'Den', level: 70, sets: true }] },
+      { id: 'whole', name: 'All Speakers', active: false, loud: [] },
+      { id: 'desk', name: 'Office (Work)', active: true, loud: [] },
+      { id: 'party', name: 'Common Areas', active: false, loud: [{ name: 'Den', level: 70, sets: true }] },
     ],
     music: [
-      routine('Dawn_Mix', 'Dawn Music'),
-      routine('Noon_Mix', 'Noon Music'),
-      routine('Dusk_Mix', 'Dusk Music'),
-      routine('Owl_Mix', 'Night Owl Music'),
-      routine('Desk_Mix', 'Desk Focus Music'),
+      routine('Dawn_Mix', 'Morning Music'),
+      routine('Noon_Mix', 'Day Music'),
+      routine('Dusk_Mix', 'Evening Music'),
+      routine('Owl_Mix', 'Late Night Music'),
+      routine('Desk_Mix', 'Workday Music'),
       routine('Pop_Mix', 'Bright Pop'),
       routine('Book_Mix', 'Book Club'),
       routine('Loud_Mix', 'Loud Party', 55),
@@ -92,29 +92,30 @@ it('never reached says so, with no controls', async () => {
   expect(container.querySelectorAll('button')).toHaveLength(0);
 });
 
-it('shows six quick plays in the service order with More, and nothing is written without a click', async () => {
+it('shows the five quick plays in the owner\'s order with More, and nothing is written without a click', async () => {
   wire();
   const { container } = render(<Sound />);
   await flush(5 * 60_000);
   const names = [...container.querySelectorAll('.sound-plays > .sound-chip .sound-chip-name')].map((n) => n.textContent);
-  expect(names).toEqual(['Dawn', 'Noon', 'Dusk', 'Night Owl', 'Desk Focus', 'Bright Pop']);
-  expect(screen.getByText('2 more')).toBeTruthy();
+  expect(names).toEqual(['Morning', 'Day', 'Evening', 'Late night', 'Workday']);
+  expect(screen.getByText('3 more')).toBeTruthy();
   expect(writes).toEqual([]);
-  const dusk = screen.getByText('Dusk').closest('button')!;
-  expect(dusk.className).toContain('sug');
-  expect(dusk.className).toContain('has-tag');
-  expect(screen.getByText('Noon').closest('button')!.className).not.toContain('has-tag');
-  expect(within(dusk).getByText('Suggested')).toBeTruthy();
-  expect(dusk.getAttribute('title')).toContain('Suggested for this hour');
+  const evening = screen.getByText('Evening').closest('button')!;
+  expect(evening.className).toContain('sug');
+  expect(evening.className).toContain('has-tag');
+  expect(screen.getByText('Day').closest('button')!.className).not.toContain('has-tag');
+  expect(within(evening).getByText('Suggested')).toBeTruthy();
+  expect(evening.getAttribute('title')).toContain('Play Evening Music');
+  expect(evening.getAttribute('title')).toContain('Suggested for this hour');
 });
 
-it('long names put five chips on the face and the rest under More', async () => {
-  const long = (k: string) => routine(k, `A Rather Long Playlist Name ${k}`);
-  wire(() => summary({ music: ['a', 'b', 'c', 'd', 'e', 'f', 'g'].map(long) }));
+it('a word with no routine leaves its tile out, and the rest stay under More', async () => {
+  wire(() => summary({ music: [routine('a', 'Morning Mix'), routine('w', 'Workday Mix'), routine('x', 'Rain Sounds')] }));
   const { container } = render(<Sound />);
   await flush();
-  expect(container.querySelectorAll('.sound-plays > .sound-chip')).toHaveLength(5);
-  expect(screen.getByText('2 more')).toBeTruthy();
+  expect([...container.querySelectorAll('.sound-plays > .sound-chip .sound-chip-name')].slice(0, 2).map((n) => n.textContent)).toEqual(['Morning', 'Workday']);
+  expect(container.querySelectorAll('.sound-plays > .sound-chip:not(.more)')).toHaveLength(2);
+  expect(screen.getByText('1 more')).toBeTruthy();
 });
 
 it('a click plays the routine unforced, says so briefly, and marks it once the music shows', async () => {
@@ -125,14 +126,14 @@ it('a click plays the routine unforced, says so briefly, and marks it once the m
   });
   render(<Sound />);
   await flush();
-  fireEvent.click(screen.getByText('Noon').closest('button')!, { detail: 1 });
+  fireEvent.click(screen.getByText('Day').closest('button')!, { detail: 1 });
   await flush();
   expect(writes).toEqual([{ cmd: 'wall2_sonos_play', args: { routineKey: 'Noon_Mix' } }]);
-  expect(screen.getByText('Playing Noon')).toBeTruthy();
+  expect(screen.getByText('Playing Day')).toBeTruthy();
   expect(JSON.parse(localStorage.getItem(LAST_PLAY_KEY)!).key).toBe('Noon_Mix');
   expect(screen.getByText('started just now')).toBeTruthy();
   await flush(RESULT_MS + 10);
-  expect(screen.queryByText('Playing Noon')).toBeNull();
+  expect(screen.queryByText('Playing Day')).toBeNull();
   await flush(5 * 60_000);
   expect(screen.getByText('started 5 min ago')).toBeTruthy();
 });
@@ -145,10 +146,10 @@ it('a skipped play says why and offers Play anyway, which sends the forced call'
   });
   render(<Sound />);
   await flush();
-  fireEvent.click(screen.getByText('Noon').closest('button')!);
+  fireEvent.click(screen.getByText('Day').closest('button')!);
   await flush();
   expect(screen.getByText("Skipped: this routine's own conditions say not now")).toBeTruthy();
-  expect(screen.queryByText('Playing Noon')).toBeNull();
+  expect(screen.queryByText('Playing Day')).toBeNull();
   expect(localStorage.getItem(LAST_PLAY_KEY)).toBeNull();
   const anyway = screen.getByText('Play anyway').closest('button')!;
   expect(anyway.getAttribute('title')).toBe("ignores this routine's own conditions");
@@ -159,7 +160,7 @@ it('a skipped play says why and offers Play anyway, which sends the forced call'
     { cmd: 'wall2_sonos_play', args: { routineKey: 'Noon_Mix' } },
     { cmd: 'wall2_sonos_play', args: { routineKey: 'Noon_Mix', force: true } },
   ]);
-  expect(screen.getByText('Playing Noon')).toBeTruthy();
+  expect(screen.getByText('Playing Day')).toBeTruthy();
   expect(screen.queryByText(/^Skipped/)).toBeNull();
 });
 
@@ -168,7 +169,7 @@ it('the Play anyway offer goes after a minute', async () => {
   mocks.set('wall2_sonos_play', () => ({ started: false, reason: null }));
   render(<Sound />);
   await flush();
-  fireEvent.click(screen.getByText('Noon').closest('button')!);
+  fireEvent.click(screen.getByText('Day').closest('button')!);
   await flush();
   expect(screen.getByText("Skipped: this routine's own conditions say not now")).toBeTruthy();
   await flush(61_000);
@@ -179,34 +180,38 @@ it('More lists the other routines and the speaker controls; a loud one asks firs
   wire();
   render(<Sound />);
   await flush();
-  fireEvent.click(screen.getByText('2 more').closest('button')!);
+  fireEvent.click(screen.getByText('3 more').closest('button')!);
   const pop = screen.getByRole('dialog', { name: 'More routines' });
   expect(within(pop).getByText('Book Club')).toBeTruthy();
-  expect(within(pop).getByText('Group Everything')).toBeTruthy();
-  fireEvent.click(within(pop).getByText('Loud Party').closest('button')!);
+    fireEvent.click(within(pop).getByText('Loud Party').closest('button')!);
   await flush();
   expect(writes).toEqual([]);
   expect(screen.getByRole('alertdialog').textContent).toContain('above 40');
   fireEvent.click(screen.getByText('Cancel'));
   expect(writes).toEqual([]);
-  fireEvent.click(screen.getByText('2 more').closest('button')!);
+  fireEvent.click(screen.getByText('3 more').closest('button')!);
   fireEvent.click(within(screen.getByRole('dialog', { name: 'More routines' })).getByText('Loud Party').closest('button')!);
   fireEvent.click(screen.getByText('Start'));
   await flush();
   expect(writes).toEqual([{ cmd: 'wall2_sonos_play', args: { routineKey: 'Loud_Mix', confirm: true } }]);
 });
 
-it('group all names the loud speaker before it groups', async () => {
-  wire(() => summary({ controls: [{ key: 'Group_All', name: 'Group Everything', action: 'groupAll', loud: [{ name: 'Studio', level: 100, sets: false }] }] }));
-  render(<Sound />);
+it('Group all is not offered anywhere: not on the face, not under More', async () => {
+  wire(() =>
+    summary({
+      controls: [
+        { key: 'Group_All', name: 'Group Everything', action: 'groupAll', loud: [{ name: 'Studio', level: 100, sets: false }] },
+        { key: 'Ungroup_All', name: 'Ungroup Everything', action: 'ungroupAll', loud: [] },
+      ],
+    }),
+  );
+  const { container } = render(<Sound />);
   await flush();
-  fireEvent.click(screen.getByText('2 more').closest('button')!);
-  fireEvent.click(screen.getByText('Group Everything').closest('button')!);
-  expect(screen.getByRole('alertdialog').textContent).toContain('Studio is at 100. Group anyway?');
-  expect(writes).toEqual([]);
-  fireEvent.click(screen.getByText('Group'));
-  await flush();
-  expect(writes).toEqual([{ cmd: 'wall2_sonos_play', args: { routineKey: 'Group_All', confirm: true } }]);
+  fireEvent.click(screen.getByText('3 more').closest('button')!);
+  const pop = screen.getByRole('dialog', { name: 'More routines' });
+  expect(within(pop).getByText('Ungroup Everything')).toBeTruthy();
+  expect(container.textContent).not.toMatch(/\bgroup (all|everything)/i);
+  expect(within(pop).queryByText('Group Everything')).toBeNull();
 });
 
 it('the group slider moves the group by a step on release, and asks before any speaker goes above 40', async () => {
@@ -288,30 +293,30 @@ it('Rust asking for a confirm opens the same question; a failure says so', async
   });
   render(<Sound />);
   await flush();
-  fireEvent.click(screen.getByText('Dawn').closest('button')!);
+  fireEvent.click(screen.getByText('Morning').closest('button')!);
   await flush();
   expect(screen.getByRole('alertdialog')).toBeTruthy();
   fireEvent.click(screen.getByText('Start'));
   await flush();
   expect(writes).toEqual([{ cmd: 'wall2_sonos_play', args: { routineKey: 'Dawn_Mix', confirm: true } }]);
-  fireEvent.click(screen.getByRole('radio', { name: 'Whole House' }));
+  fireEvent.click(screen.getByRole('radio', { name: 'All Speakers' }));
   await flush();
   expect(screen.getByText('Could not reach Sonos').className).toContain('warn-text');
 });
 
-it('Where puts Office first, marks the grouping in use, and a loud preset names the speaker', async () => {
+it('Where shows Office, All speakers and Common areas only (the label drops the parentheses), marks the grouping in use, and a loud preset names the speaker', async () => {
   wire();
   render(<Sound />);
   await flush();
   const radios = screen.getAllByRole('radio');
-  expect(radios.map((r) => r.textContent)).toEqual(['Office Desk', 'Whole House', 'Party Set']);
+  expect(radios.map((r) => r.textContent)).toEqual(['Office', 'All Speakers', 'Common Areas']);
   expect(radios[0].getAttribute('aria-checked')).toBe('true');
   fireEvent.click(radios[1]);
   await flush();
   expect(writes).toEqual([{ cmd: 'wall2_sonos_preset', args: { presetId: 'whole' } }]);
-  expect(screen.getByText('Speakers set to Whole House')).toBeTruthy();
+  expect(screen.getByText('Speakers set to All Speakers')).toBeTruthy();
   writes = [];
-  fireEvent.click(screen.getByRole('radio', { name: 'Party Set' }));
+  fireEvent.click(screen.getByRole('radio', { name: 'Common Areas' }));
   await flush();
   expect(writes).toEqual([]);
   expect(screen.getByRole('alertdialog').textContent).toContain('It sets Den to 70. Apply anyway?');
@@ -326,7 +331,7 @@ it('applying a preset closes the Speakers pop-out first', async () => {
   await flush();
   fireEvent.click(screen.getByText(/Speakers 4/).closest('button')!);
   expect(screen.getByRole('dialog', { name: 'Speakers' })).toBeTruthy();
-  fireEvent.click(screen.getByRole('radio', { name: 'Whole House' }));
+  fireEvent.click(screen.getByRole('radio', { name: 'All Speakers' }));
   expect(screen.queryByRole('dialog', { name: 'Speakers' })).toBeNull();
 });
 
@@ -371,7 +376,7 @@ it('Sonos off pauses everything and clears the started mark; with nothing playin
   const again = render(<Sound />);
   await flush();
   expect(screen.getByText('Nothing playing')).toBeTruthy();
-  fireEvent.click(screen.getByText('Play Dusk').closest('button')!);
+  fireEvent.click(screen.getByText('Play Evening').closest('button')!);
   await flush();
   expect(writes).toEqual([{ cmd: 'wall2_sonos_play', args: { routineKey: 'Dusk_Mix' } }]);
   again.unmount();
@@ -432,7 +437,7 @@ it('a read that is not live dims the block, says how old it is, and turns writes
   await flush(3 * 60_000);
   expect(container.querySelector('.sound.stale')).toBeTruthy();
   expect(screen.getByText(/^Sonos not reachable, showing \d+ min ago$/)).toBeTruthy();
-  const play = screen.getByText('Dawn').closest('button') as HTMLButtonElement;
+  const play = screen.getByText('Morning').closest('button') as HTMLButtonElement;
   expect(play.disabled).toBe(true);
   expect((screen.getByLabelText('Volume, Den and 1 more') as HTMLInputElement).disabled).toBe(true);
   expect(writes).toEqual([]);
@@ -539,16 +544,16 @@ it('one deliberate action is one write: double clicks and held keys never send t
   };
   const count = (cmd: string) => writes.filter((w) => w.cmd === cmd).length;
 
-  await dbl(screen.getByText('Noon').closest('button')!);
+  await dbl(screen.getByText('Day').closest('button')!);
   expect(count('wall2_sonos_play')).toBe(1);
   await flush(LATCH_MS);
-  await held(screen.getByText('Dawn').closest('button')!);
+  await held(screen.getByText('Morning').closest('button')!);
   expect(count('wall2_sonos_play')).toBe(2);
   await flush(LATCH_MS);
-  await dbl(screen.getByRole('radio', { name: 'Whole House' }));
+  await dbl(screen.getByRole('radio', { name: 'All Speakers' }));
   expect(count('wall2_sonos_preset')).toBe(1);
   await flush(LATCH_MS);
-  await held(screen.getByRole('radio', { name: 'Office Desk' }));
+  await held(screen.getByRole('radio', { name: 'Office' }));
   expect(count('wall2_sonos_preset')).toBe(2);
   await flush(LATCH_MS);
   await dbl(screen.getByText('Sonos off').closest('button')!);
@@ -587,7 +592,7 @@ it('a click with detail 2 after the latch has passed is still ignored', async ()
   });
   render(<Sound />);
   await flush();
-  const noon = screen.getByText('Noon').closest('button')!;
+  const noon = screen.getByText('Day').closest('button')!;
   fireEvent.click(noon, { detail: 1 });
   await flush(LATCH_MS + 500);
   expect(writes).toHaveLength(1);
