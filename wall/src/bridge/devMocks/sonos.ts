@@ -6,17 +6,17 @@ import { knob } from './long';
  * The Sound block's Sonos service, with invented speakers, routines and presets. Review
  * knobs: `?sonos=off` (not set up), `?sonos=down` (never reached), `?sonos=sparse` (one
  * routine, one speaker, no presets), `?sonos=heavy` (many routines with long names, many
- * speakers, a sleep timer), `?sonos=quiet` (nothing playing), `?sonos=slow` (never answers, for the loading state), `?skip=1` (an unforced play is
+ * speakers, a sleep timer), `?sonos=quiet` (nothing playing), `?sonos=few` (one matching routine plus More), `?sonos=slow` (never answers, for the loading state), `?skip=1` (an unforced play is
  * skipped). The default is a typical
  * evening with music playing on a group.
  */
 const now = () => (reviewNow ? reviewNow() : Date.now());
 
-type Mode = 'typical' | 'off' | 'down' | 'sparse' | 'heavy' | 'quiet' | 'slow';
+type Mode = 'typical' | 'off' | 'down' | 'sparse' | 'heavy' | 'quiet' | 'slow' | 'few';
 
 function mode(): Mode {
   const k = knob('sonos');
-  return k === 'off' || k === 'down' || k === 'sparse' || k === 'heavy' || k === 'quiet' || k === 'slow' ? k : 'typical';
+  return k === 'off' || k === 'down' || k === 'sparse' || k === 'heavy' || k === 'quiet' || k === 'slow' || k === 'few' ? k : 'typical';
 }
 
 const ROUTINES = [
@@ -103,7 +103,7 @@ function summary(m: Mode) {
     speakers: speakers(m),
     groups: groups(m),
     presets,
-    music: m === 'sparse' ? ROUTINES.slice(2, 3) : m === 'heavy' ? LONG_ROUTINES : ROUTINES,
+    music: m === 'few' ? [ROUTINES[0], ROUTINES[7]] : m === 'sparse' ? ROUTINES.slice(2, 3) : m === 'heavy' ? LONG_ROUTINES : ROUTINES,
     controls:
       m === 'sparse'
         ? []

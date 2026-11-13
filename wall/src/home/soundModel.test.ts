@@ -4,7 +4,7 @@ import {
   faceTiles,
   moreControls,
   moreRoutines,
-  tileSlot,
+  tileMatches,
   wherePlaces,
   whereLabel,
   groupLabel,
@@ -85,10 +85,11 @@ it('reads the part of the day from a routine name', () => {
   expect(routineSlot('Someday Songs')).toBeNull();
 });
 
+// Thursday 12 November 2026, local time.
+const at = (h: number, m = 0, day = 12) => new Date(2026, 10, day, h, m);
+
 it('suggests the routine that fits the hour', () => {
-  const list = [r('a', 'Dawn Music'), r('b', 'Noon Music'), r('c', 'Dusk Music'), r('d', 'Night Owl Music'), r('e', 'Desk Focus Music'), r('f', 'Bright Pop')];
-  // Thursday 12 November 2026, local time.
-  const at = (h: number, m = 0, day = 12) => new Date(2026, 10, day, h, m);
+  const list = [r('a', 'Morning Music'), r('b', 'Day Music'), r('c', 'Evening Music'), r('d', 'Late Night Music'), r('e', 'Workday Music'), r('f', 'Bright Pop')];
   expect(suggestedKey(list, at(7))).toBe('a');
   expect(suggestedKey(list, at(10))).toBe('e');
   expect(suggestedKey(list, at(10, 0, 14))).toBe('b'); // Saturday: the day mix, not work
@@ -97,7 +98,7 @@ it('suggests the routine that fits the hour', () => {
   expect(suggestedKey(list, at(2))).toBe('d');
   expect(suggestedKey([r('f', 'Bright Pop')], at(18))).toBeNull();
   // On a weekday with no work routine, the day one stands in.
-  expect(suggestedKey([r('b', 'Noon Music')], at(11))).toBe('b');
+  expect(suggestedKey([r('b', 'Day Music')], at(11))).toBe('b');
   expect(slotsFor(at(16, 59))).toEqual(['workday', 'day']);
   expect(slotsFor(at(17))).toEqual(['evening']);
 });
@@ -214,21 +215,33 @@ it('an unseen mark older than the start grace is cleared even when something pla
 
 const rt = (key: string, name: string): MusicRoutine => ({ key, name, favorite: null, volume: 10 });
 
-it('the five tiles match by whole words: workday is never Day, Late night is two words or one, case is ignored', () => {
-  expect(tileSlot('Workday Mix')).toBe('workday');
-  expect(tileSlot('Work Day Mix')).toBe('workday');
-  expect(tileSlot('Day Mix')).toBe('day');
-  expect(tileSlot('Someday Songs')).toBeNull();
-  expect(tileSlot('LATE NIGHT')).toBe('night');
-  expect(tileSlot('latenight mix')).toBe('night');
-  expect(tileSlot('Late-Night')).toBe('night');
-  expect(tileSlot('MORNING')).toBe('morning');
-  expect(tileSlot('Evening')).toBe('evening');
-  expect(tileSlot('Rain Sounds')).toBeNull();
+it('the five tiles match by whole words: workday is never Day, Late night is two words or one, case and underscores are fine', () => {
+  expect(tileMatches('workday', 'Workday Mix')).toBe(true);
+  expect(tileMatches('day', 'Workday Mix')).toBe(false);
+  expect(tileMatches('workday', 'Work Day Mix')).toBe(true);
+  expect(tileMatches('day', 'Work Day Mix')).toBe(false);
+  expect(tileMatches('day', 'Day Mix')).toBe(true);
+  expect(tileMatches('day', 'Day_Mix')).toBe(true);
+  for (const n of ['Someday Songs', 'Sunday', 'Midday', 'Mid-day', 'Daytime', 'Day-time']) expect(tileMatches('day', n)).toBe(false);
+  for (const n of ['LATE NIGHT', 'latenight mix', 'Late-Night', 'Late_Night']) expect(tileMatches('night', n)).toBe(true);
+  expect(tileMatches('night', 'Night Owl')).toBe(false);
+  expect(tileMatches('morning', 'MORNING')).toBe(true);
+  expect(tileMatches('evening', 'Evening')).toBe(true);
+  expect(tileMatches('morning', 'Rain Sounds')).toBe(false);
 });
 
-it('the face has the tiles in the fixed order, leaves out a word with no routine, and the first by name order wins a tie', () => {
-  const music = [rt('w', 'Workday Mix'), rt('e', 'Evening Mix'), rt('m2', 'Morning Two'), rt('m1', 'Morning One'), rt('x', 'Rain')];
+it('each tile tests routines by its own word: Morning workday gives Morning and no Workday tile, and with Workday Mix both exist', () => {
+  const only = faceTiles([rt('mw', 'Morning workday')]);
+  expect(only.map((t) => [t.label, t.routine.key])).toEqual([['Morning', 'mw']]);
+  const both = faceTiles([rt('mw', 'Morning workday'), rt('w', 'Workday Mix')]);
+  expect(both.map((t) => [t.label, t.routine.key])).toEqual([
+    ['Morning', 'mw'],
+    ['Workday', 'w'],
+  ]);
+});
+
+it('the face has the tiles in the fixed order, leaves out a word with no routine, and the first by NAME wins a tie (the service order is reversed here)', () => {
+  const music = [rt('w', 'Workday Mix'), rt('e', 'Evening Mix'), rt('m1', 'Morning Two'), rt('m2', 'Morning One'), rt('x', 'Rain')];
   const tiles = faceTiles(music);
   expect(tiles.map((t) => [t.label, t.routine.key])).toEqual([
     ['Morning', 'm2'],
@@ -237,11 +250,28 @@ it('the face has the tiles in the fixed order, leaves out a word with no routine
   ]);
   expect(moreRoutines(music, tiles).map((r) => r.key)).toEqual(['m1', 'x']);
   expect(faceTiles([])).toEqual([]);
+  // Same name: by key.
+  expect(faceTiles([rt('b', 'Day Mix'), rt('a', 'day mix')])[0].routine.key).toBe('a');
+});
+
+it('the hour\'s suggestion walks the tiles: Latenight is suggested at 23:00; an Evening Workday routine is not Evening unless it is the Evening tile', () => {
+  expect(suggestedKey([rt('n', 'Latenight')], at(23))).toBe('n');
+  // Evening tile is "Evening Workday" (it carries the word), so it is suggested at 18:00.
+  expect(suggestedKey([rt('ew', 'Evening Workday')], at(18))).toBe('ew');
+  // With a plain Evening routine present the Evening tile takes the first by name ("Evening Mix" < "Evening Workday").
+  expect(suggestedKey([rt('ew', 'Evening Workday'), rt('e', 'Evening Mix')], at(18))).toBe('e');
+  // No tile for the hour: nothing is suggested, even when the old word list would have matched.
+  expect(suggestedKey([rt('s', 'Sleep Sounds')], at(23))).toBeNull();
 });
 
 it('More never lists Group all or Pause all', () => {
   const c = (key: string, action: string) => ({ key, name: key, action, loud: [] });
   expect(moreControls([c('a', 'groupAll'), c('b', 'pauseAll'), c('c', 'ungroupAll')]).map((x) => x.key)).toEqual(['c']);
+});
+
+it('two presets that start with the same word: the first by name wins', () => {
+  const p = (id: string, name: string) => ({ id, name, active: false, loud: [] });
+  expect(wherePlaces([p('z', 'Office Zed'), p('a', 'Office Alpha')]).map((x) => x.preset.id)).toEqual(['a']);
 });
 
 it('Where is Office, All speakers, Common areas in that order; the label drops parentheses; other presets are hidden', () => {

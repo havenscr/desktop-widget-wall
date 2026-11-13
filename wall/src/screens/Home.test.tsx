@@ -203,3 +203,44 @@ it('an immediate "not set up" answer goes straight to the tall layout with no wa
   });
   expect(container.querySelector('.home-centre')!.className).toBe('home-centre tall');
 });
+
+it('Sonos failing after it was up keeps the centre as it was: no layout class change', async () => {
+  let up = true;
+  mocks.set('wall2_moods', () => [{ id: 'day', label: 'Day' }]);
+  mocks.set('wall2_sonos_summary', () => (up ? SONOS : Promise.reject(new Error('Could not reach Sonos'))));
+  mocks.set('wall2_tasks_summary', () => ({ next: [], remaining: 0 }));
+  mocks.set('wall2_home_security', () => Promise.reject(new Error('not-configured')));
+  const { container } = render(<Home />);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(0);
+  });
+  const centre = container.querySelector('.home-centre')!;
+  expect(centre.className).toBe('home-centre');
+  up = false;
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(31_000);
+  });
+  expect(centre.className).toBe('home-centre');
+  expect(container.querySelector('.sound.stale')).toBeTruthy();
+});
+
+it('an answer at 2.6 s: tall chosen at 2.5 s, then back, exactly one change each way', async () => {
+  const sonos = pending<unknown>();
+  const { container } = loadingHome(sonos.promise);
+  const centre = container.querySelector('.home-centre')!;
+  const seen: string[] = [];
+  const obs = new MutationObserver(() => seen.push(centre.className));
+  obs.observe(centre, { attributes: true, attributeFilter: ['class'] });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(2600);
+  });
+  sonos.resolve(SONOS);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(0);
+  });
+  await act(async () => {
+    await Promise.resolve();
+  });
+  obs.disconnect();
+  expect(seen).toEqual(['home-centre tall', 'home-centre']);
+});

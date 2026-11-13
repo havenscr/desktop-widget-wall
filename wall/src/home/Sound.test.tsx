@@ -632,3 +632,78 @@ it('a slider that gets disabled in the middle of a drag goes back and sends noth
   await flush();
   expect(writes).toEqual([]);
 });
+
+it('the rendered face suggests a Latenight tile at 23:00, and marks Evening only on the Evening tile at 18:30', async () => {
+  vi.setSystemTime(new Date('2026-11-12T23:00:00-08:00'));
+  wire(() => summary({ music: [routine('n', 'Latenight'), routine('e', 'Evening Workday')] }));
+  const { container } = render(<Sound />);
+  await flush();
+  expect(screen.getByText('Late night').closest('button')!.className).toContain('sug');
+  expect(container.querySelectorAll('.sound-chip.sug')).toHaveLength(1);
+});
+
+it('an Evening Workday routine is the Evening tile and is suggested as Evening at 18:30, while Workday has no tile of its own', async () => {
+  wire(() => summary({ music: [routine('ew', 'Evening Workday')] }));
+  const { container } = render(<Sound />);
+  await flush();
+  const names = [...container.querySelectorAll('.sound-plays > .sound-chip:not(.more) .sound-chip-name')].map((n) => n.textContent);
+  expect(names).toEqual(['Evening']);
+  expect(screen.getByText('Evening').closest('button')!.className).toContain('sug');
+});
+
+it('one matched routine plus More: the row has two columns, no blank cell; fewer than five tiles never leave one', async () => {
+  wire(() => summary({ music: [routine('m', 'Morning Mix'), routine('x', 'Rain Sounds')] }));
+  const { container } = render(<Sound />);
+  await flush();
+  const row = container.querySelector('.sound-plays') as HTMLElement;
+  expect(row.style.gridTemplateColumns).toBe('repeat(2, minmax(0px, 1fr))');
+  expect(row.children).toHaveLength(2);
+  for (const n of [2, 3, 4]) {
+    const music = ['Morning', 'Day', 'Evening', 'Late night'].slice(0, n).map((w, i) => routine(`k${i}`, `${w} Mix`));
+    wire(() => summary({ music, controls: [] }));
+    const r = render(<Sound />);
+    await flush();
+    const el = r.container.querySelector('.sound-plays') as HTMLElement;
+    expect(el.style.gridTemplateColumns).toBe(`repeat(${n}, minmax(0px, 1fr))`);
+    expect(el.children).toHaveLength(n);
+    r.unmount();
+  }
+});
+
+it('the result line names the place by its label, not the raw preset name', async () => {
+  wire();
+  render(<Sound />);
+  await flush();
+  fireEvent.click(screen.getByRole('radio', { name: 'Office' }), { detail: 1 });
+  await flush();
+  expect(screen.getByText('Speakers set to Office')).toBeTruthy();
+  expect(screen.queryByText(/\(Work\)/)).toBeNull();
+});
+
+it('when the preset in force is one the page hides, no place shows as selected', async () => {
+  wire(() =>
+    summary({
+      presets: [
+        { id: 'whole', name: 'All Speakers', active: false, loud: [] },
+        { id: 'desk', name: 'Office (Work)', active: false, loud: [] },
+        { id: 'hidden', name: 'Upstairs Only', active: true, loud: [] },
+      ],
+    }),
+  );
+  render(<Sound />);
+  await flush();
+  expect(screen.getAllByRole('radio').map((r) => r.getAttribute('aria-checked'))).toEqual(['false', 'false']);
+});
+
+it('a read that fails after Sonos was up keeps the block, marked stale, and the face is unchanged', async () => {
+  let up = true;
+  wire(() => (up ? summary() : Promise.reject(new Error('Could not reach Sonos'))));
+  const { container } = render(<Sound />);
+  await flush();
+  const before = container.querySelector('.sound-plays')!.children.length;
+  up = false;
+  await flush(31_000);
+  expect(container.querySelector('.sound.stale')).toBeTruthy();
+  expect(container.querySelector('.sound-plays')!.children.length).toBe(before);
+  expect(container.querySelector('.sound.bare')).toBeNull();
+});

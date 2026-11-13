@@ -145,15 +145,27 @@ export const FACE_TILES = [
   { slot: 'workday', label: 'Workday' },
 ] as const satisfies readonly { slot: Slot; label: string }[];
 
-/** Which of the five a routine's name carries; "workday" never reads as Day. Null for none. */
-export function tileSlot(name: string): Slot | null {
-  const n = name.toLowerCase();
-  if (/\bwork[\s_-]?day\b/.test(n)) return 'workday';
-  if (/\blate[\s_-]?night\b/.test(n)) return 'night';
-  if (/\bmorning\b/.test(n)) return 'morning';
-  if (/\bevening\b/.test(n)) return 'evening';
-  if (/\bday\b/.test(n)) return 'day';
-  return null;
+/** A routine's name for matching: lower case, with "_" read as a space. */
+function plain(name: string): string {
+  return name.toLowerCase().replace(/_/g, ' ');
+}
+
+/**
+ * Each tile's own test of a routine name, by whole words. "Workday" never counts as Day
+ * ("Work day" neither); "Midday", "Mid-day", "Sunday", "Daytime" and "Someday" are not Day;
+ * Late night may be "late night", "late-night" or "latenight".
+ */
+const WORDS: Record<Slot, RegExp> = {
+  morning: /(?<![a-z-])morning(?![a-z-])/,
+  day: /(?<![a-z-])(?<!work )day(?![a-z-])/,
+  evening: /(?<![a-z-])evening(?![a-z-])/,
+  night: /(?<![a-z-])late[ -]?night(?![a-z-])/,
+  workday: /(?<![a-z-])work[ -]?day(?![a-z-])/,
+};
+
+/** True when the name carries the tile's word. */
+export function tileMatches(slot: Slot, name: string): boolean {
+  return WORDS[slot].test(plain(name));
 }
 
 export interface FaceTile {
@@ -162,16 +174,28 @@ export interface FaceTile {
   routine: MusicRoutine;
 }
 
+/** Routine order for ties: by name (case-insensitive), then by key. */
+function byName(a: MusicRoutine, b: MusicRoutine): number {
+  const x = a.name.toLowerCase();
+  const y = b.name.toLowerCase();
+  return x < y ? -1 : x > y ? 1 : a.key < b.key ? -1 : a.key > b.key ? 1 : 0;
+}
+
 /**
- * The face's quick plays: for each of the five words, the first routine (in the service's
- * order) whose name carries it. A word with no routine has no tile. A second routine with
- * the same word is not shown on the face; it stays under More.
+ * The face's quick plays. In tile order, each tile takes the first routine, sorted by name,
+ * that carries its own word and is not already on an earlier tile ("Morning workday" can
+ * be Morning, and Workday then looks further). A word with no routine has no tile.
  */
 export function faceTiles(music: readonly MusicRoutine[]): FaceTile[] {
+  const sorted = [...music].sort(byName);
+  const used = new Set<string>();
   const out: FaceTile[] = [];
   for (const t of FACE_TILES) {
-    const routine = music.find((r) => tileSlot(r.name) === t.slot);
-    if (routine) out.push({ label: t.label, slot: t.slot, routine });
+    const routine = sorted.find((r) => !used.has(r.key) && tileMatches(t.slot, r.name));
+    if (routine) {
+      used.add(routine.key);
+      out.push({ label: t.label, slot: t.slot, routine });
+    }
   }
   return out;
 }
@@ -204,17 +228,18 @@ export function whereLabel(name: string): string {
 export function wherePlaces(presets: readonly SonosPreset[]): WherePlace[] {
   const out: WherePlace[] = [];
   for (const re of WHERE_WORDS) {
-    const preset = presets.find((p) => re.test(p.name.trim()));
+    const preset = [...presets].sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()) || a.id.localeCompare(b.id)).find((p) => re.test(p.name.trim()));
     if (preset) out.push({ label: whereLabel(preset.name), preset });
   }
   return out;
 }
 
-/** The routine marked as the hour's suggestion: the face's first, then "More". */
+/** The routine marked as the hour's suggestion: the first of the hour's slots that has a tile. */
 export function suggestedKey(music: readonly MusicRoutine[], d: Date): string | null {
+  const tiles = faceTiles(music);
   for (const slot of slotsFor(d)) {
-    const hit = music.find((r) => routineSlot(r.name) === slot);
-    if (hit) return hit.key;
+    const hit = tiles.find((t) => t.slot === slot);
+    if (hit) return hit.routine.key;
   }
   return null;
 }

@@ -121,6 +121,7 @@ state('home', 'tasks few', 'tasks=few');
 // fallback after its 2.5 second wait.
 state('home', 'sound heavy: long names, many speakers', 'sonos=heavy&moods=many');
 state('home', 'sound sparse: one routine, one speaker', 'sonos=sparse');
+state('home', 'sound few: one matching routine plus More', 'sonos=few');
 state('home', 'sound quiet: nothing playing', 'sonos=quiet');
 state('home', 'sound down', 'sonos=down');
 state('home', 'sound not set up', 'sonos=off');
@@ -239,6 +240,7 @@ const EXPECT = [
   ['home', 'tasks few', ['Review the dashboard draft', '!Order printer paper']],
   ['home', 'sound heavy: long names, many speakers', ['Late night', 'Workday']],
   ['home', 'sound sparse: one routine, one speaker', 'Sound'],
+  ['home', 'sound few: one matching routine plus More', 'More'],
   ['home', 'sound quiet: nothing playing', 'Nothing playing'],
   ['home', 'sound down', 'The Sonos service did not answer'],
   ['home', 'sound not set up', 'Add sonosBaseUrl to feeds.json'],

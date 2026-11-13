@@ -328,10 +328,7 @@ function Live({
 
   const face = faceTiles(s.music);
   const more = moreRoutines(s.music, face);
-  const suggestion = suggestedKey(
-    face.map((t) => t.routine),
-    new Date(now),
-  );
+  const suggestion = suggestedKey(s.music, new Date(now));
   const playing = musicPlaying(s);
   const places = wherePlaces(s.presets);
   const extraControls = moreControls(s.controls);
@@ -419,11 +416,11 @@ function Live({
     else go(false);
   };
 
-  const applyPreset = (p: SonosPreset) => {
+  const applyPreset = (p: SonosPreset, label: string) => {
     setPop(null);
     const ask = loudText(p.loud, 'Apply');
     const go = (confirmed: boolean) =>
-      void run(`preset:${p.id}`, (c) => invoke('wall2_sonos_preset', c ? { presetId: p.id, confirm: true } : { presetId: p.id }), `Speakers set to ${p.name}`, {
+      void run(`preset:${p.id}`, (c) => invoke('wall2_sonos_preset', c ? { presetId: p.id, confirm: true } : { presetId: p.id }), `Speakers set to ${label}`, {
         confirmed,
         ask,
         yes: 'Apply',
@@ -453,7 +450,10 @@ function Live({
     side = { text: okAt ? `Sonos not reachable, showing ${ageWords(okAt, now)}` : 'Sonos not reachable', warn: true };
   }
 
-  const cols = Math.max(face.length + (more.length || extraControls.length ? 1 : 0), 3);
+  const hasMore = more.length > 0 || extraControls.length > 0;
+  const hint = face.length === 1 && !hasMore;
+  // One column per control, so no blank cell sits in the row; the hints take the room they name.
+  const cols = face.length === 0 ? (hasMore ? 3 : 1) : face.length + (hasMore ? 1 : 0) + (hint ? 2 : 0);
   const timer = soonestTimer(s.sleepTimers, now);
   const left = timer ? sleepLeft(timer, now) : null;
   const gVol = groupVolume(s);
@@ -485,7 +485,7 @@ function Live({
               />
             );
           })}
-          {face.length === 0 && <div className="sound-quiet s span-all">No Morning, Day, Evening, Late night or Workday routine in the Sonos service yet.</div>}
+          {face.length === 0 && <div className="sound-quiet s span-all" style={hasMore ? { gridColumn: '1 / span 2' } : undefined}>No Morning, Day, Evening, Late night or Workday routine in the Sonos service yet.</div>}
           {(more.length > 0 || extraControls.length > 0) && (
             <div className="sound-anchor">
               <button
@@ -530,7 +530,7 @@ function Live({
               )}
             </div>
           )}
-          {face.length > 0 && face.length < 2 && !more.length && !extraControls.length && (
+          {hint && (
             <div className="sound-quiet xs fill">More music routines from the Sonos service show here.</div>
           )}
         </div>
@@ -548,7 +548,7 @@ function Live({
                   className={p.active ? 'seg on' : 'seg'}
                   title={p.active ? `${p.name}: the speakers are grouped this way now` : `Group the speakers as ${p.name}`}
                   disabled={locked}
-                  {...once(() => applyPreset(p))}
+                  {...once(() => applyPreset(p, label))}
                 >
                   {label}
                 </button>
