@@ -1,6 +1,8 @@
 import { IconCheck } from '@tabler/icons-react';
 import { reviewNow } from '../ui/reviewClock';
 import { openTask, type TaskItem } from '../tasks/model';
+import { usePendingTicks } from '../tasks/pendingTick';
+import { TickWait } from '../tasks/TaskCard';
 import { clockText } from './sunLine';
 import { useChores } from './useChores';
 
@@ -27,10 +29,12 @@ export function chorePill(task: Pick<TaskItem, 'due_at' | 'due_is_all_day' | 'es
 
 /**
  * Around the house: the next three tasks tagged `home`, with "N more can wait". The tick
- * circle finishes a chore; a click on its title opens it in the task app.
+ * circle finishes a chore after a five second undo window; a click on its title opens it
+ * in the task app.
  */
 export function Chores() {
   const { status, tasks, remaining, marks, hidden, complete } = useChores();
+  const ticks = usePendingTicks(complete);
   const now = reviewNow ? reviewNow() : Date.now();
   const rows = tasks.filter((t) => !hidden.has(t.id));
   // A failed refresh after a good read keeps the rows, dimmed, with a quiet sign by the heading.
@@ -57,24 +61,42 @@ export function Chores() {
       <div className={stale ? 'chore-rows stale' : 'chore-rows'}>
         {rows.map((t) => {
           const mark = marks[t.id];
+          const pending = ticks.pending.has(t.id);
+          const ticked = mark === 'done' || pending;
           const pill = chorePill(t, now);
+          const cls = pending ? 'tk3 done pending' : mark ? `tk3 ${mark}` : 'tk3';
           return (
-            <div key={t.id} className={mark ? `tk3 ${mark}` : 'tk3'}>
+            <div key={t.id} className={cls}>
               <button
                 type="button"
                 className="ck"
                 aria-label={`Done: ${t.title}`}
-                disabled={mark === 'done'}
-                onClick={() => complete(t.id)}
+                disabled={ticked}
+                onClick={() => (mark === 'failed' ? complete(t.id) : ticks.tick(t.id))}
               >
                 <span className="ck-ring" aria-hidden="true">
-                  {mark === 'done' && <IconCheck size={20} stroke={2.4} />}
+                  {ticked && <IconCheck size={20} stroke={2.4} />}
                 </span>
               </button>
-              <button type="button" className="n chore-open" title={t.title} aria-label={`Open ${t.title}`} onClick={() => openTask(t.id)}>
-                {t.title}
-              </button>
-              {mark === 'failed' ? <span className="xs warn-text">not saved</span> : pill && <span className="est">{pill}</span>}
+              {pending ? (
+                <TickWait title={t.title} onUndo={() => ticks.undo(t.id)} />
+              ) : (
+                <>
+                  <button type="button" className="n chore-open" title={t.title} aria-label={`Open ${t.title}`} onClick={() => openTask(t.id)}>
+                    {t.title}
+                  </button>
+                  {mark === 'failed' ? (
+                    <>
+                      <span className="xs warn-text">Could not complete.</span>
+                      <button type="button" className="tick-act" onClick={() => complete(t.id)} title={`Try completing ${t.title} again`}>
+                        Retry
+                      </button>
+                    </>
+                  ) : (
+                    pill && <span className="est">{pill}</span>
+                  )}
+                </>
+              )}
             </div>
           );
         })}

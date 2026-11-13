@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { invoke } from '../bridge/tauri';
 import { useFocusStore } from '../focus/store';
+import { AlarmChip } from '../home/AlarmChip';
+import { useOpenAlarms } from '../home/useSecurity';
 import { usePlaceStore } from '../state/places';
 import { useVisible } from '../ui/useVisible';
 import { statusParts, type FocusSeen, type StatusSummary } from './model';
@@ -50,12 +52,22 @@ export function StatusLine() {
     return () => clearInterval(id);
   }, [visible]);
   const parts = statusParts(focus, summary);
-  if (parts.length === 0) return null;
+  const alarms = useOpenAlarms();
+  if (parts.length === 0 && alarms <= 0) return null;
+  // The network alarm chip goes after the agents running chip, else after the first sentence.
+  const lastRunning = parts.map((p) => p.kind).lastIndexOf('running');
+  const alarmAt = lastRunning >= 0 ? lastRunning + 1 : focus === 'unknown' ? 0 : Math.min(1, parts.length);
   return (
     <div className="u-line">
       {parts.map((p, i) => (
         <span key={p.kind + i} className="u-part">
-          {i > 0 ? ' ' : null}
+          {i === alarmAt && alarms > 0 && (
+            <>
+              {i > 0 ? ' ' : null}
+              <AlarmChip className="u-act" period />
+            </>
+          )}
+          {i > 0 || (i === alarmAt && alarms > 0) ? ' ' : null}
           {p.kind === 'running' ? (
             <button type="button" className="u-act" title="Show the agents on Work" onClick={() => usePlaceStore.getState().setActive('work')}>
               {p.text}
@@ -74,6 +86,12 @@ export function StatusLine() {
           )}
         </span>
       ))}
+      {alarmAt >= parts.length && alarms > 0 && (
+        <span className="u-part">
+          {parts.length > 0 ? ' ' : null}
+          <AlarmChip className="u-act" period />
+        </span>
+      )}
     </div>
   );
 }

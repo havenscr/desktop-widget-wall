@@ -12,7 +12,7 @@
 // twelve sessions (the three in view) with five meetings at once, two waiting, one failed,
 // an older helper's answer, one lane, no lane, and the fill when the helper is not set up.
 // In every Work state it also fails on agent hit boxes of two sessions that share pixels, on
-// calendar chips that cover each other in one lane, and on a card line that cuts its words
+// calendar chips (or a title beside one) that share pixels, and on a card line that cuts its words
 // while more than 60 px of it is unused, and on stage labels closer than 8 px. Home is checked
 // with its Sound block at its fullest, typical, sparse, not reachable and not set up. Exits
 // non-zero on a failure. Unwind's Watch tab is checked empty, with three and with 24 saved,
@@ -21,7 +21,7 @@
 // point of the sky may land on the whole-sky video layer. CI does not run this; run it by hand before a layout change is handed over.
 //
 //   WALL_CHROME=/path/to/chrome-or-headless-shell npm --prefix wall run fit-check
-//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels)
+//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, header, deck, tiles, picker, chips, heading)
 //   npm --prefix wall run fit-check -- --self-test
 //
 // WALL_CHROME (or the first argument that is not a flag) is a Chromium or
@@ -55,6 +55,12 @@ const EXPECT = {
   page: /^ *FAIL page:.*scroll (?!2560 )\d+ x \d+ <= 2560 x/m,
   agents: /^ *FAIL overlap: agent /m,
   labels: /^ *FAIL stage labels on card /m,
+  header: /^ *FAIL header part wraps: /m,
+  deck: /^ *FAIL deck: .* below the floor/m,
+  tiles: /^ *FAIL deck: label .* outside its tile/m,
+  picker: /^ *FAIL deck: the key picker reaches y \d+, over the timeline/m,
+  chips: /^ *FAIL overlap: chip /m,
+  heading: /^ *FAIL deck: the Now heading /m,
 };
 const OVERFLOWS = {
   left: '.work .left-wing { transform: translateX(-200px); }',
@@ -64,6 +70,12 @@ const OVERFLOWS = {
   page: 'body::after { content: ""; position: absolute; left: 3000px; top: 0; width: 10px; height: 10px; }',
   agents: '.rib .agent-row .sg-hit { height: 20px !important; }',
   labels: '.work .centre .lane .jn em { padding: 0 14px !important; }',
+  header: '.work .centre .lanes-hd .slot-meter .xs { display: inline-block; width: 60px; white-space: normal !important; }',
+  deck: '.work .right-wing section.pinned { margin-top: 80px; }',
+  tiles: '.work .right-wing .key-tile .deck-lbl { flex: none; width: 160px; max-width: none !important; }',
+  picker: '.work .right-wing .pk { height: 400px !important; }',
+  chips: '.rib .ev { width: 400px !important; }',
+  heading: '.work .right-wing .keys .deck-name { max-width: 40px; overflow: hidden; }',
 };
 
 if (flag('self-test')) {
@@ -123,7 +135,9 @@ const SOUND_FULL = ['.home .sound', '.home .sound-panel', '.home .sound-plays', 
 const DECK = ['.work .right-wing', '.work .right-wing .deck', '.work .right-wing section.pinned', '.work .right-wing .keys', '.work .right-wing .deck-hd', '.work .right-wing .deck-tiles'];
 const DECK_ROWS = DECK.slice(0, 5);
 const FOR_YOU = [...DECK_ROWS, '.work .right-wing .fy-list', '.work .right-wing .fy-li'];
-const PICKER = [...DECK_ROWS, '.work .right-wing .pk', '.work .right-wing .pk-top', '.work .right-wing .pk-reset'];
+// Open, the picker runs past the deck's box (over the mountains, to just above the timeline), so the wing
+// and the deck box are not held to their own size here; the rows, the picker and its parts are.
+const PICKER = ['.work .right-wing section.pinned', '.work .right-wing .keys', '.work .right-wing .deck-hd', '.work .right-wing .pk', '.work .right-wing .pk-top', '.work .right-wing .pk-reset'];
 const deck = (name, knobs, extra = {}) => ({ name: `Deck, ${name}`, q: work('3', `&${knobs}`), checks: DECK, ...extra });
 // Meet reads the real clock, so its variants run unfrozen (the mock meetings are relative to now).
 const query = (v) => `?${v.live ? '' : `hz=${v.hz ?? 'work'}&at=${v.at ?? '2026-11-11T10:24:00-08:00'}&`}long=1&agents=${v.agents}${v.go ? `&go=${v.go}` : ''}${v.moods ? `&moods=${v.moods}` : ''}${v.extra ?? ''}`;
@@ -161,6 +175,9 @@ const VARIANTS = [
   { name: 'three lanes, long titles', q: work('3'), checks: [...WINGS, ...LANES] },
   { name: 'twelve sessions, long titles, five meetings at once', q: work('12', '&meet=busy'), checks: SCROLLED },
   { name: 'seven sessions, the fifth waiting', q: work('7ask'), checks: SCROLLED },
+  // The agents header never wraps: twelve sessions, two waiting with a long title, a network alarm, fresh and stale.
+  { name: 'header: twelve sessions, two waiting, an alarm', q: work('12ask'), checks: [...SCROLLED, '.work .centre .lanes-hd .alarm-chip'] },
+  { name: 'header: twelve sessions, two waiting, an alarm, stale', q: work('12staleask'), checks: SCROLLED },
   { name: 'two waiting, one off the cards', q: work('ask2'), checks: [...LANES, '.work .centre .lanes-hd', '.work .centre .ask-btn'] },
   { name: 'one failed', q: work('failed'), checks: LANES },
   { name: 'older helper answer', q: work('old'), checks: [...LANES, '.work .centre .lanes-hd'] },
@@ -172,6 +189,10 @@ const VARIANTS = [
   deck('typical: both rows, own set in front, the For you chip', 'keys=typical'),
   deck('general set in front (another app), a layout just clicked: result and Undo showing', 'keys=general', { click: '.pin-tile' }),
   deck('eight keys with long labels', 'keys=many'),
+  // The built-in sets as the app lists them: twelve pages, labels that carry their group's name, a For you count.
+  deck('library sets: twelve pages, long labels, the For you chip', 'keys=library&hold=lib-vscode'),
+  deck('library sets: a held set whose app is not in front', 'keys=library&hold=lib-excel'),
+  deck('library sets, Auto, the longest labels pinned', 'keys=library&pins=long'),
   deck('one key only', 'keys=one'),
   deck('a held set refused after a click (the app in front is not its app)', 'keys=wrong', { click: '.keys .key-tile' }),
   deck('Power BI cannot be brought forward, after a click', 'keys=refuse', { click: '.keys .key-tile' }),
@@ -183,7 +204,9 @@ const VARIANTS = [
   { name: 'Deck, no keys for this app and no general set', q: work('0', '&keys=nogeneral&meet=none&net=calm'), checks: [...DECK_ROWS, '.work .right-wing .deck-quiet'] },
   { name: 'Deck, sparse: no big screen, nothing in front yet', q: work('0', '&keys=idle&arrange=none&meet=none&net=calm'), checks: [...DECK_ROWS, '.work .right-wing .deck-quiet'] },
   { name: 'Deck, keys.json has a problem, no windows for a layout', q: work('3', '&keys=problem&arrange=nowin'), checks: [...DECK_ROWS, '.work .right-wing .deck-quiet'], click: '.pin-tile' },
-  { name: 'Deck, the key picker open over both rows', q: work('3', '&keys=typical'), checks: PICKER, click: 'ctx:.pin-tile' },
+  // The picker runs over the mountains to just above the timeline, so it is held to the viewport and the timeline rule.
+  { name: 'Deck, the key picker open over both rows', q: work('3', '&keys=typical'), checks: PICKER, click: 'ctx:.pin-tile', viewportOnly: true },
+  { name: 'Deck, the key picker open with the library sets', q: work('3', '&keys=library'), checks: PICKER, click: 'ctx:.pin-tile', viewportOnly: true },
   { name: 'Home, Sound at its fullest: many moods, many speakers, long names, sleep timer', q: home('sonos=heavy&moods=many'), checks: [...HOME_CENTRE.filter((c) => !c.endsWith('mood-row')), ...SOUND_FULL] },
   { name: 'Home, typical: five moods, Sound playing', q: home('moods=five'), checks: [...HOME_CENTRE, ...SOUND_FULL] },
   { name: 'Home, one matching routine plus More: no blank cell in the quick-play row', q: home('sonos=few&moods=five'), checks: [...HOME_CENTRE, ...SOUND_FULL] },
@@ -274,10 +297,11 @@ try {
     // "+N more" label counts as its own), and calendar chips in the same lane.
     const hit = (a, b) => a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5;
     const agentBoxes = [...document.querySelectorAll('.rib .agent-row .sg-hit, .rib .agent-row .sg-more')].map((e) => ({ id: e.dataset.lane || 'more', r: e.getBoundingClientRect() }));
-    const chipBoxes = [...document.querySelectorAll('.rib .ev')].map((e) => ({ lane: e.classList.contains('l2') ? 1 : 0, r: e.getBoundingClientRect(), t: e.textContent }));
+    // Calendar chips (stacked lanes included), the all-day chip, "+N" chips and the titles written beside short chips.
+    const chipBoxes = [...document.querySelectorAll('.rib .ev, .rib .ev-side')].map((e) => ({ r: e.getBoundingClientRect(), t: e.textContent || e.getAttribute('aria-label') }));
     const overlaps = [];
     agentBoxes.forEach((a, i) => agentBoxes.slice(i + 1).forEach((b) => { if (a.id !== b.id && hit(a.r, b.r)) overlaps.push('agent ' + a.id + ' / ' + b.id); }));
-    chipBoxes.forEach((a, i) => chipBoxes.slice(i + 1).forEach((b) => { if (a.lane === b.lane && hit(a.r, b.r)) overlaps.push('chip ' + a.t + ' / ' + b.t); }));
+    chipBoxes.forEach((a, i) => chipBoxes.slice(i + 1).forEach((b) => { if (hit(a.r, b.r)) overlaps.push('chip ' + a.t + ' / ' + b.t); }));
     // A card line that cuts its words while more than 60 px of it sits unused.
     const cut = [...document.querySelectorAll('.work .centre .lane .lt2')].flatMap((line, i) => {
       const kids = [...line.children].filter((k) => !k.hidden);
@@ -312,6 +336,65 @@ try {
       }
       wattCard = { heights, outside, covered, buttons: heights.length };
     }
+    // Work's agents header: every part one line tall (no text in it wraps, no part taller than the 36 px row).
+    const header = [...document.querySelectorAll('.work .centre .lanes-hd *')].flatMap((e) => {
+      const own = [...e.childNodes].filter((n) => n.nodeType === 3 && n.textContent.trim());
+      const tops = new Set();
+      for (const n of own) {
+        const range = document.createRange();
+        range.selectNodeContents(n);
+        for (const q of range.getClientRects()) if (q.width > 0) tops.add(Math.round(q.top));
+      }
+      const tall = e.matches('.lanes-hd-l > *, .lanes-hd > .row > *') && e.getBoundingClientRect().height > 36.5;
+      return tops.size > 1 || tall ? ['header part wraps: ' + (e.textContent || '').trim().slice(0, 48) + ' (' + Math.round(e.getBoundingClientRect().height) + ' px tall)'] : [];
+    });
+    // The deck (Always here and Now): nothing below its floor (a clearance above the mountain
+    // ridge, worked out from the Work camera; the Now row carries it as data-floor), every key
+    // label inside its tile, no two tiles sharing pixels, and the Now heading never cut.
+    const deck = [];
+    const floorEl = document.querySelector('.work .right-wing .keys[data-floor]');
+    const deckEl = document.querySelector('.work .right-wing .deck');
+    if (deckEl) {
+      const floor = floorEl ? Number(floorEl.dataset.floor) : Infinity;
+      if (!floorEl && document.querySelector('.work .right-wing .keys')) deck.push('deck: the Now row carries no data-floor, so its floor cannot be checked');
+      let low = null;
+      // What the deck draws: its rows and their parts (the box itself is empty room). The open key
+      // picker may run past the floor over the mountains; it is held to the timeline below.
+      for (const e of deckEl.querySelectorAll('*')) {
+        if (e.closest('.pk')) continue;
+        const r = e.getBoundingClientRect();
+        if (r.width === 0 || r.height === 0 || getComputedStyle(e).visibility === 'hidden') continue;
+        if (r.bottom > floor + 0.5 && (low === null || r.bottom > low.b)) low = { b: r.bottom, t: (e.className && e.className.baseVal === undefined ? e.className : e.tagName) };
+      }
+      if (low) deck.push('deck: ' + low.t + ' reaches y ' + Math.round(low.b) + ', below the floor at ' + floor);
+      const tiles = [...deckEl.querySelectorAll('.deck-tile')].map((t) => ({ t, r: t.getBoundingClientRect() }));
+      for (const { t, r } of tiles) {
+        const l = t.querySelector('.deck-lbl');
+        if (!l) continue;
+        const q = l.getBoundingClientRect();
+        if (q.left < r.left - 0.5 || q.right > r.right + 0.5 || q.top < r.top - 0.5 || q.bottom > r.bottom + 0.5 || l.scrollWidth > l.clientWidth + 1) deck.push('deck: label "' + l.textContent + '" runs outside its tile');
+      }
+      tiles.forEach((a, i) => tiles.slice(i + 1).forEach((b) => { if (hit(a.r, b.r)) deck.push('deck: tiles "' + a.t.textContent + '" and "' + b.t.textContent + '" share pixels'); }));
+      // The open key picker runs down to just above the timeline and never covers it: its
+      // bottom at least 16 px (the gap between the main rows) above the ribbon's top.
+      const pk = deckEl.querySelector('.pk');
+      const rib = document.querySelector('.rib');
+      if (pk && rib) {
+        const pb = pk.getBoundingClientRect().bottom;
+        const rt = rib.getBoundingClientRect().top;
+        if (pb > rt - 16 + 0.5) deck.push('deck: the key picker reaches y ' + Math.round(pb) + ', over the timeline gap (the timeline starts at ' + Math.round(rt) + ')');
+        else if (pb < rt - 16 - 2) deck.push('deck: the key picker stops at y ' + Math.round(pb) + ', short of the timeline gap at ' + Math.round(rt - 16));
+        const list = pk.querySelector('.pk-list');
+        if (list && getComputedStyle(list).scrollbarWidth !== 'thin') deck.push('deck: the key picker list has the native scrollbar');
+      }
+      const name = document.querySelector('.work .right-wing .keys .deck-hd .k');
+      const ctl = document.querySelector('.work .right-wing .keys .deck-hd-r');
+      if (name) {
+        const nr = name.getBoundingClientRect();
+        const cut = name.scrollWidth > name.clientWidth + 1 || (ctl && hit(nr, ctl.getBoundingClientRect())) || nr.right > deckEl.getBoundingClientRect().right + 0.5;
+        if (cut) deck.push('deck: the Now heading "' + name.textContent + '" is cut');
+      }
+    }
     // Hit tests: each named control must get the pointer at its own centre, and no point of the
     // sky (a grid over the top band) may land on a layer that only draws the video.
     const hits = (new URLSearchParams(location.search).get('hits') || '').split('|').filter(Boolean).map((sel) => {
@@ -327,7 +410,7 @@ try {
     const noHit = new URLSearchParams(location.search).get('nohit');
     const grid = [];
     if (noHit) for (let y = 30; y < 505; y += 40) for (let x = 130; x < 2560; x += 80) { const h = document.elementFromPoint(x, y); if (h && h.closest(noHit)) grid.push(x + ',' + y); }
-    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, wattCard, hits, grid });
+    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, wattCard, header, deck, hits, grid });
     document.body.appendChild(pre);
   }, new URLSearchParams(location.search).get('card') ? 7000 : 3000);</script>`;
   const broken = overflow ? `<style>${OVERFLOWS[overflow]}</style>` : '';
@@ -336,7 +419,9 @@ try {
 
   let failed = false;
   if (overflow) console.log(`deliberate overflow: ${overflow} (${OVERFLOWS[overflow]})`);
-  for (const v of overflow ? VARIANTS.slice(0, 1) : VARIANTS) {
+  // A deliberate break runs on the first state, or for the picker on the state that opens it.
+  const breakOn = overflow === 'picker' ? VARIANTS.filter((v) => v.name.startsWith('Deck, the key picker open over')) : VARIANTS.slice(0, 1);
+  for (const v of overflow ? breakOn : VARIANTS) {
     console.log(`${v.name} (${v.q}):`);
     const url = `${pathToFileURL(page).href}${v.q}&checks=${encodeURIComponent(v.checks.join('|'))}${v.click ? `&click=${encodeURIComponent(v.click)}` : ''}${v.card ? '&card=1' : ''}${v.hits ? `&hits=${encodeURIComponent(v.hits.join('|'))}` : ''}${v.noHit ? `&nohit=${encodeURIComponent(v.noHit)}` : ''}`;
     const dom = execFileSync(
@@ -351,7 +436,13 @@ try {
       process.exit(1);
     }
     const text = m[1].replaceAll('&quot;', '"').replaceAll('&amp;', '&');
-    const { res, page: doc, overlaps, cut, gaps, wattCard, hits, grid } = JSON.parse(text);
+    const { res, page: doc, overlaps, cut, gaps, wattCard, header, deck, hits, grid } = JSON.parse(text);
+    for (const d of deck) console.log(`  FAIL ${d}`);
+    if (deck.length) failed = true;
+    else if (v.q.includes('hz=work')) console.log('  ok   the deck stays above its floor, every key label inside its tile, the Now heading whole');
+    for (const h of header) console.log(`  FAIL ${h}`);
+    if (header.length) failed = true;
+    else if (v.q.includes('hz=work')) console.log('  ok   the agents header is one line');
     for (const h of hits) {
       const ok = h.found && h.ok;
       if (!ok) failed = true;

@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { acceptsFront, AUTO, autoPage, effectiveMode, FOR_YOU, headingFor, MODE_KEY, pagesFor, parseMode, shownSet, stepPage, stepSet, sendReason, type KeysSummary, type SetInfo } from './keysModel';
+import { CAMERAS } from '../horizon/cameras';
+import { ridgeTopY } from '../horizon/ridge';
+import { rowEdges, zoneEdges, ZONES } from '../screens/frameLayout';
+import { acceptsFront, AUTO, DECK_CLEARANCE, deckFloorY, keyChunks, keyLabel, autoPage, effectiveMode, FOR_YOU, headingFor, MODE_KEY, pagesFor, parseMode, shownSet, stepPage, stepSet, sendReason, type KeysSummary, type SetInfo } from './keysModel';
 
 const general: SetInfo = { id: 'general', name: 'General', general: true, keys: [{ label: 'Snip', icon: 'screenshot', action: null }] };
 const sales: SetInfo = { id: 'sales', name: 'Sales app', general: false, keys: [{ label: 'Refresh', icon: 'refresh', action: null }] };
@@ -109,5 +112,32 @@ describe('pages of the Now row', () => {
     expect(effectiveMode(held, [general], true)).toEqual(held);
     expect(effectiveMode(held, [general], false)).toEqual(AUTO);
     expect(parseMode(JSON.stringify(held))).toEqual(held);
+  });
+});
+
+describe('the deck', () => {
+  it('drops a group prefix the page name already says, and keeps every other label', () => {
+    expect(keyLabel('VS Code: command palette', 'VS Code')).toBe('Command palette');
+    expect(keyLabel('Excel: repeat last action', 'excel')).toBe('Repeat last action');
+    expect(keyLabel('Power BI - refresh', 'Power BI')).toBe('Refresh');
+    expect(keyLabel('Sonos: pause everything', 'Sound and music')).toBe('Sonos: pause everything');
+    expect(keyLabel('VS Code:', 'VS Code')).toBe('VS Code:');
+    expect(keyLabel('Snip', '')).toBe('Snip');
+  });
+  it('splits a long set into parts of five', () => {
+    expect(keyChunks([1, 2, 3, 4, 5, 6, 7, 8]).map((c) => c.length)).toEqual([5, 3]);
+    expect(keyChunks([1, 2, 3])).toEqual([[1, 2, 3]]);
+    expect(keyChunks([])).toEqual([[]]);
+  });
+  it('puts the floor a clearance above the mountain ridge under the right wing, inside the top band', () => {
+    const wing = zoneEdges(ZONES)[2];
+    const ridge = ridgeTopY(CAMERAS.work, wing.left, wing.right);
+    expect(deckFloorY()).toBe(Math.floor(ridge - DECK_CLEARANCE));
+    // The ridge stands above the horizon line, and the floor sits inside the stage's top band.
+    expect(ridge).toBeLessThan(CAMERAS.work.hy);
+    expect(deckFloorY()).toBeLessThanOrEqual(rowEdges()[0].bottom);
+  });
+  it('reads the ridge higher where the mountains are taller', () => {
+    expect(ridgeTopY(CAMERAS.work, 1944, 1960)).toBeLessThan(ridgeTopY(CAMERAS.work, 2500, 2540));
   });
 });

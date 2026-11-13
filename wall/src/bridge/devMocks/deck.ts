@@ -13,7 +13,11 @@ import { mocks } from '../tauri';
  * `general` (another app in front, so the general set shows), `nogeneral` (another app, no
  * general set: "No keys for this app"), `idle`, `many` (eight keys), `one`, `wrong` (a held
  * set whose app is not in front, so a click is refused), `refuse` (Power BI cannot be
- * brought forward), `problem` (keys.json invalid) or `off`. `?hold=<set id>` starts held.
+ * brought forward), `problem` (keys.json invalid), `library` (twelve pages as the Rust side
+ * builds them: two sets of the file's own, General and the nine built-in sets from the key
+ * library, whose labels carry their group's name, "VS Code: command palette"; VS Code is in
+ * front) or `off`. `?hold=<set id>` starts held (`lib-excel` shows a set whose app is not in front).
+ * `?pins=long` pins the five longest library labels.
  */
 const key = (label: string, icon: string, action: string | null = null) => ({ label, icon, action });
 
@@ -77,6 +81,24 @@ export function registerDeckMocks(): void {
       sets = [one, general];
       autoId = 'one';
       break;
+    case 'library': {
+      // As `wall2_keys::with_builtin_sets` lists them: the file's own sets, then General and one per app group.
+      const lib = (group: string) => LIBRARY_DATA.find((g) => g.id === group)?.keys.filter((k) => k.runnable).slice(0, 8).map((k) => key(k.label, k.icon, k.action)) ?? [];
+      const builtIn: [string, string, string][] = [
+        ['teams', 'lib-teams', 'Teams'],
+        ['zoom', 'lib-zoom', 'Zoom'],
+        ['agents', 'lib-agents', 'OmniGent'],
+        ['vscode', 'lib-vscode', 'VS Code'],
+        ['browser', 'lib-browser', 'Browser'],
+        ['mail', 'lib-mail', 'Mail'],
+        ['recording', 'lib-recording', 'Recording'],
+        ['powerbi', 'lib-powerbi', 'Power BI'],
+        ['excel', 'lib-excel', 'Excel'],
+      ];
+      sets = [app, many, { ...general, id: 'lib-general', keys: lib('anywhere').slice(0, 5) }, ...builtIn.map(([g, id, name]) => ({ id, name, general: false, keys: lib(g) }))];
+      autoId = 'lib-vscode';
+      break;
+    }
     case 'wrong':
       autoId = 'general';
       exe = 'notepad.exe';
@@ -86,7 +108,11 @@ export function registerDeckMocks(): void {
   const hold = knob('hold');
   if (hold) saveMode({ hold: true, setId: hold });
 
-  const defaultPins = ['lib:thirds', 'lib:focus', 'lib:record-169', 'lib:snip', 'lib:strip-dark'];
+  // `?pins=long`: the five longest library labels pinned (the Always here row with long labels).
+  const defaultPins =
+    knob('pins') === 'long'
+      ? ['lib:sonos-play', 'lib:xl-repeat', 'lib:vscode-search', 'lib:pt-ocr', 'lib:rec-windows']
+      : ['lib:thirds', 'lib:focus', 'lib:record-169', 'lib:snip', 'lib:strip-dark'];
   mocks.set('wall2_keys_summary', () => {
     if (mode === 'problem') throw 'app 2, key 3: chord is not in the allowed key list';
     return { front, autoId, exe, sets, source: knob('source') === 'default' ? 'default' : 'file', defaultPins, filePins: [] };

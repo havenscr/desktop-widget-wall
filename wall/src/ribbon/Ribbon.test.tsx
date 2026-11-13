@@ -108,7 +108,7 @@ it('uses the home icon for row 2 on Home, with no focus bar', async () => {
   expect(r.container.querySelector('.fo')).toBeNull();
 });
 
-it('draws overlapping events in two lanes and a narrow chip without its title', async () => {
+it('draws overlapping events in two stacked lanes and a narrow chip with its title beside it', async () => {
   mocks.set('wall2_meet_day', () => ({
     accounts: [],
     events: [
@@ -119,11 +119,14 @@ it('draws overlapping events in two lanes and a narrow chip without its title', 
   const r = render(<Ribbon kind="work" />);
   await flush();
   const [a, b] = [...r.container.querySelectorAll('.ev')] as HTMLElement[];
-  expect(a.className).toBe('ev next');
+  expect(a.className).toBe('ev next s2');
   expect(a.textContent).toBe('Workshop');
-  expect(b.className).toBe('ev next l2');
+  expect(b.className).toBe('ev next s2');
   expect(b.textContent).toBe('');
   expect(b.getAttribute('aria-label')).toBe('Standup, 12:00 to 12:15 PM');
+  // Two lanes that never share a pixel row.
+  expect(parseFloat(a.style.top) + parseFloat(a.style.height)).toBeLessThanOrEqual(parseFloat(b.style.top));
+  expect(r.container.querySelector('.ev-side')!.textContent).toBe('Standup');
 });
 
 it('a chip shows title, time and account on hover, and opens its event in Outlook on a click when Rust has a link', async () => {
@@ -323,14 +326,31 @@ it('an older answer cannot turn an empty good day into "not available" either', 
   expect(labels(r.container)).not.toContain('Calendar not available');
 });
 
-it('three meetings at once: two chips and a "+1" chip; a click on it lists both left over to open in Outlook', async () => {
+it('three meetings at once stack in three thin lanes with no title drawn', async () => {
+  mocks.set('wall2_meet_day', () => ({
+    accounts: [],
+    events: ['a', 'b', 'c'].map((k) => ({ key: `d-${k}`, accountId: 'work', title: `Meeting ${k}`, start: iso('13:00'), end: iso('14:00'), canJoin: false, isLive: false })),
+  }));
+  const r = render(<Ribbon kind="work" />);
+  await flush();
+  const evs = [...r.container.querySelectorAll('.ev')] as HTMLElement[];
+  expect(evs.map((e) => [e.className, e.textContent])).toEqual([
+    ['ev next s3', ''],
+    ['ev next s3', ''],
+    ['ev next s3', ''],
+  ]);
+  expect(new Set(evs.map((e) => e.style.top)).size).toBe(3);
+  expect(r.container.querySelector('.ev.more')).toBeNull();
+});
+
+it('four meetings at once: two real chips and a "+2" chip; a click on it lists the other two to open in Outlook', async () => {
   const opened: string[] = [];
   mocks.set('wall2_open_event', (args) => {
     opened.push(String(args?.key));
   });
   mocks.set('wall2_meet_day', () => ({
     accounts: [{ id: 'work', label: 'Work', state: 'ok' }],
-    events: ['a', 'b', 'c'].map((k) => ({ key: `d-${k}`, accountId: 'work', title: `Meeting ${k}`, start: iso('13:00'), end: iso('14:00'), canJoin: false, canOpen: true, isLive: false })),
+    events: ['a', 'b', 'c', 'd'].map((k) => ({ key: `d-${k}`, accountId: 'work', title: `Meeting ${k}`, start: iso('13:00'), end: iso('14:00'), canJoin: false, canOpen: true, isLive: false })),
   }));
   const r = render(
     <>
@@ -339,7 +359,7 @@ it('three meetings at once: two chips and a "+1" chip; a click on it lists both 
     </>,
   );
   await flush();
-  expect([...r.container.querySelectorAll('.ev:not(.more)')].map((c) => c.textContent)).toEqual(['Meeting a']);
+  expect([...r.container.querySelectorAll('.ev:not(.more)')].map((c) => c.textContent)).toEqual(['Meeting a', 'Meeting b']);
   const more = r.container.querySelector('.ev.more') as HTMLElement;
   expect(more.textContent).toBe('+2');
   fireEvent.mouseEnter(more);
@@ -348,9 +368,46 @@ it('three meetings at once: two chips and a "+1" chip; a click on it lists both 
   fireEvent.mouseLeave(more);
   fireEvent.click(more);
   const picks = [...document.querySelectorAll('.hover-tip.pinned .tip-pick')] as HTMLElement[];
-  expect(picks.map((p) => p.textContent)).toEqual(['Meeting b, 1:00 to 2:00 PM, Work', 'Meeting c, 1:00 to 2:00 PM, Work']);
-  fireEvent.click(picks[1]);
+  expect(picks.map((p) => p.textContent)).toEqual(['c', 'd'].map((k) => `Meeting ${k}, 1:00 to 2:00 PM, Work`));
+  fireEvent.click(picks[0]);
   await flush();
   expect(opened).toEqual(['d-c']);
   expect(document.querySelector('.hover-tip')).toBeNull();
+});
+
+it('folds all-day events into one "1 all day" chip at the row start that lists them on hover', async () => {
+  mocks.set('wall2_meet_day', () => ({
+    accounts: [{ id: 'work', label: 'Work', state: 'ok' }],
+    events: [
+      { key: 'all', accountId: 'work', title: 'Company offsite', start: '2026-11-11T08:00:00Z', end: '2026-11-12T08:00:00Z', canJoin: false, isLive: false },
+      { key: 'd-1', accountId: 'work', title: 'Design review', start: iso('10:00'), end: iso('11:00'), canJoin: true, isLive: false },
+    ],
+  }));
+  const r = render(
+    <>
+      <Ribbon kind="work" />
+      <HoverTipLayer />
+    </>,
+  );
+  await flush();
+  const chip = r.container.querySelector('.ev.allday') as HTMLElement;
+  expect(chip.textContent).toBe('1 all day');
+  expect(chip.style.left).toBe(`${RX(6)}px`);
+  // The timed event keeps the full lane.
+  const review = [...r.container.querySelectorAll('.ev:not(.allday)')] as HTMLElement[];
+  expect(review.map((e) => [e.textContent, e.className])).toEqual([['Design review', 'ev now']]);
+  fireEvent.mouseEnter(chip);
+  await flush(TIP_DELAY_MS);
+  expect(document.querySelector('.hover-tip')!.textContent).toContain('Company offsite, Work');
+});
+
+it('marks the ribbon late after 9 PM, so the agent bars and focus line dim', async () => {
+  mocks.set('wall2_meet_day', () => day);
+  const early = render(<Ribbon kind="work" now={() => t('20:30')} />);
+  await flush();
+  expect(early.container.querySelector('.rib')!.className).toBe('rib');
+  early.unmount();
+  const late = render(<Ribbon kind="work" now={() => t('21:15')} />);
+  await flush();
+  expect(late.container.querySelector('.rib')!.className).toBe('rib late');
 });

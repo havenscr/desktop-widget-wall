@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { IconBolt, IconCalendar, IconHome } from '@tabler/icons-react';
 import { invoke } from '../bridge/tauri';
 import { useFocusStore } from '../focus/store';
@@ -7,7 +7,7 @@ import { hideTip, pinTip, tip } from '../ui/HoverTip';
 import { AgentRow, agentBoxes } from './AgentRow';
 import { useAgentsStore } from '../agents/useAgents';
 import { useVisible } from '../ui/useVisible';
-import { chipLayout, chips, dueLabelSpan, dueMarks, focusBars, hourLabels, msToNextMinute, needle, needleTip, overlapsAny, skyGradient, spanText, sunLabels, ticks, type Chip, type MoreChip } from './model';
+import { allDayChips, allDayText, allDayWidth, chipLayout, chips, dueLabelSpan, isLate, dueMarks, focusBars, hourLabels, msToNextMinute, needle, needleTip, overlapsAny, skyGradient, spanText, sunLabels, ticks, type Chip, type MoreChip } from './model';
 import { sunTimes } from './sun';
 import { useDayFeed } from './useDayEvents';
 import { useDueTaskFeed } from './useDueTasks';
@@ -76,6 +76,34 @@ function ChipTip({ c, account }: { c: Chip; account: string | null }) {
   );
 }
 
+/** The "N all day" chip's hover: each all-day event with its account. */
+function AllDayTip({ items, labels }: { items: Chip[]; labels: Record<string, string> }) {
+  return (
+    <>
+      <span className="tip-t">{allDayText(items.length)}</span>
+      {items.map((c) => (
+        <span key={c.key} className="tip-s">
+          {c.title}
+          {c.accountId && labels[c.accountId] ? `, ${labels[c.accountId]}` : ''}
+        </span>
+      ))}
+      {items.some((c) => c.canOpen) && <span className="tip-k">{items.length === 1 ? 'Click to open it in Outlook' : 'Click to pick one to open in Outlook'}</span>}
+    </>
+  );
+}
+
+/** The calendar row: 30 px from 33 for a single lane; stacked lanes share 31 to 65 with a 2 px gap. */
+const ROW_TOP = 31;
+const ROW_SPAN = 34;
+const LANE_GAP = 2;
+
+/** Top and height of lane `lane` of `lanes`, or null for the single full-height lane (the stylesheet's). */
+export function laneBox(lane: number, lanes: number): { top: number; height: number } | null {
+  if (lanes <= 1) return null;
+  const height = (ROW_SPAN - (lanes - 1) * LANE_GAP) / lanes;
+  return { top: ROW_TOP + lane * (height + LANE_GAP), height };
+}
+
 /** What row 2 holds, as the tooltip on its icon. */
 const ROW2_TIP: Record<RibbonKind, string> = {
   work: 'Agent activity and tasks due today',
@@ -126,7 +154,9 @@ export function Ribbon({ kind, now = Date.now }: { kind: RibbonKind; now?: () =>
   const n = needle(t);
   const Row2 = kind === 'home' ? IconHome : IconBolt;
   const dayChips = chips(events, t);
-  const lay = chipLayout(dayChips);
+  const allDay = allDayChips(events, t);
+  const lay = chipLayout(dayChips, allDay.length > 0 ? allDayWidth(allDay.length) : 0);
+  const allDayBox = lay.allDay ? laneBox(lay.allDay.lane, lay.allDay.lanes) : null;
   const marks = dueMarks(tasks, t);
   // On Work, a due label that would sit on the agent bars shows only its diamond (the label
   // moves to the hover), so neither is drawn over the other. Read from the shared store: the
@@ -134,7 +164,7 @@ export function Ribbon({ kind, now = Date.now }: { kind: RibbonKind; now?: () =>
   const agents = useAgentsStore();
   const boxes = kind === 'work' ? agentBoxes(agents, t) : [];
   return (
-    <section className="rib" data-kind={kind} aria-label="Today">
+    <section className={isLate(t) ? 'rib late' : 'rib'} data-kind={kind} aria-label="Today">
       <i className="skyb" style={{ background: skyGradient(sun, t) }} aria-hidden="true" />
       <div aria-hidden="true">
         {TICKS.map((x) => (
@@ -154,7 +184,7 @@ export function Ribbon({ kind, now = Date.now }: { kind: RibbonKind; now?: () =>
       <span className="li" style={{ top: 38 }} title="Today's calendar" aria-label="Today's calendar" role="img">
         <IconCalendar stroke={1.8} aria-hidden="true" />
       </span>
-      {dayChips.length === 0 && day.calendar !== 'unknown' && (
+      {dayChips.length === 0 && allDay.length === 0 && day.calendar !== 'unknown' && (
         <span className="li-empty" style={{ top: 38 }}>
           {day.calendar === 'ok' ? 'No meetings today' : 'Calendar not available'}
         </span>
@@ -171,7 +201,7 @@ export function Ribbon({ kind, now = Date.now }: { kind: RibbonKind; now?: () =>
         <button
           key={m.key}
           type="button"
-          className="ev more l2"
+          className="ev more"
           style={{ left: m.x, width: m.width }}
           aria-label={`${m.items.length} more at this time: ${m.items.map((c) => c.title).join(', ')}`}
           {...tip(() => <MoreTip m={m} labels={day.labels} />)}
@@ -182,31 +212,55 @@ export function Ribbon({ kind, now = Date.now }: { kind: RibbonKind; now?: () =>
           +{m.items.length}
         </button>
       ))}
+      {lay.allDay && (
+        <button
+          type="button"
+          className={`ev allday${lay.allDay.lanes > 1 ? ` s${Math.min(3, lay.allDay.lanes)}` : ''}`}
+          style={{ left: lay.allDay.x, width: lay.allDay.width, ...(allDayBox ?? {}) }}
+          aria-label={`${allDayText(allDay.length)}: ${allDay.map((c) => c.title).join(', ')}`}
+          {...tip(() => <AllDayTip items={allDay} labels={day.labels} />)}
+          onClick={(e) => {
+            const open = allDay.filter((c) => c.canOpen);
+            if (allDay.length === 1 && open.length === 1) openEvent(open[0].key);
+            else if (open.length > 0) pinTip(e.currentTarget, () => <MorePick m={{ key: 'allday', x: 0, width: 0, items: allDay }} labels={day.labels} />);
+          }}
+        >
+          {lay.allDay.lanes >= 3 ? allDay.length : allDayText(allDay.length)}
+        </button>
+      )}
       {lay.shown.map((c) => {
         const account = c.accountId ? (day.labels[c.accountId] ?? null) : null;
+        const box = laneBox(c.lane, c.lanes);
+        const cls = `${c.state}${c.live ? ' live' : ''}${c.lanes > 1 ? ` s${Math.min(3, c.lanes)}` : ''}`;
         return (
-          <div
-            key={c.key}
-            className={`ev ${c.state}${c.live ? ' live' : ''}${c.lane ? ' l2' : ''}${c.canOpen ? ' open' : ''}`}
-            style={{ left: c.x, width: c.width }}
-            role={c.canOpen ? 'button' : undefined}
-            tabIndex={c.canOpen ? 0 : undefined}
-            aria-label={`${c.title}, ${spanText(c.start, c.end)}${account ? `, ${account}` : ''}${c.canOpen ? '. Opens it in Outlook' : ''}`}
-            onClick={c.canOpen ? () => openEvent(c.key) : undefined}
-            onKeyDown={
-              c.canOpen
-                ? (e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      openEvent(c.key);
+          <Fragment key={c.key}>
+            {c.narrow && c.beside !== null && (
+              <span className={`ev-side ${cls}`} style={{ left: c.x + c.width + 6, width: c.beside, ...(box ?? {}) }} aria-hidden="true">
+                {c.title}
+              </span>
+            )}
+            <div
+              className={`ev ${cls}${c.canOpen ? ' open' : ''}`}
+              style={{ left: c.x, width: c.width, ...(box ?? {}) }}
+              role={c.canOpen ? 'button' : undefined}
+              tabIndex={c.canOpen ? 0 : undefined}
+              aria-label={`${c.title}, ${spanText(c.start, c.end)}${account ? `, ${account}` : ''}${c.canOpen ? '. Opens it in Outlook' : ''}`}
+              onClick={c.canOpen ? () => openEvent(c.key) : undefined}
+              onKeyDown={
+                c.canOpen
+                  ? (e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        openEvent(c.key);
+                      }
                     }
-                  }
-                : undefined
-            }
-            {...tip(() => <ChipTip c={c} account={account} />)}
-          >
-            {c.narrow ? null : c.title}
-          </div>
+                  : undefined
+              }
+              {...tip(() => <ChipTip c={c} account={account} />)}
+            >
+              {c.narrow ? null : c.title}
+            </div>
+          </Fragment>
         );
       })}
       {kind === 'work' && <AgentRow now={t} dueCount={due.known ? marks.length : null} />}

@@ -34,9 +34,19 @@
   justify-content: space-between;
   gap: 20px;
   padding: 0 4px;
+  /* Nothing in the header wraps: its parts give way instead (Lanes.tsx, HeaderFit). */
+  white-space: nowrap;
 }
 .lanes-hd-l {
+  flex: none;
   gap: 14px;
+  min-width: 0;
+}
+.lanes-hd-l > * {
+  flex: none;
+}
+/* The right side shrinks first: its title truncates once the left has given way. */
+.lanes-hd > .row:not(.lanes-hd-l) {
   min-width: 0;
 }
 .lanes-age {
@@ -59,6 +69,19 @@
   padding: 0 10px !important;
   margin-left: -10px;
   border-radius: 12px;
+}
+.lanes-hd button.lanes-alarm {
+  flex: none;
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 17px;
+  color: var(--dim);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--line);
+}
+.lanes-hd button.lanes-alarm:hover {
+  color: var(--tx);
+  background: rgba(255, 255, 255, 0.1);
 }
 .slot-meter:hover,
 .lanes-count:hover,

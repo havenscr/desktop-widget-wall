@@ -160,16 +160,21 @@ it('the dots show every page and a click on one holds it; the wheel steps one pa
   expect(screen.getByText('Now · Sales app')).toBeTruthy();
 });
 
-it('a held page in the wrong app is refused with fixed words and types nothing', async () => {
+it('a held page in the wrong app says why and never asks Rust, by mouse or keyboard', async () => {
   localStorage.setItem(MODE_KEY, JSON.stringify({ hold: true, setId: 'sales' }));
   answer = front('general', 'notepad.exe');
   render(<Keys />);
   await flush();
   expect(screen.getByText('Now · Sales app')).toBeTruthy();
-  fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+  const key = screen.getByRole('button', { name: 'Refresh' });
+  expect(key.getAttribute('aria-disabled')).toBe('true');
+  fireEvent.click(key, { detail: 1 });
   await flush();
   expect(screen.getByText('Wrong app in front for Sales app')).toBeTruthy();
-  expect(sent).toEqual([{ setId: 'sales', index: 0 }]);
+  fireEvent.keyDown(key, { key: 'Enter' });
+  fireEvent.click(key, { detail: 0 });
+  await flush();
+  expect(sent).toEqual([]);
 });
 
 it('a held set that left keys.json is Auto again, in storage too; bad storage reads as Auto', async () => {
@@ -221,12 +226,21 @@ it('draws nothing where the commands do not exist, and a quiet line when keys.js
   expect(screen.getByText('keys.json has a problem')).toBeTruthy();
 });
 
-it('renders up to eight keys and no more', async () => {
+it('shows up to eight keys, five at a time when a second row does not fit, the arrows stepping through them', async () => {
   const ten = { id: 'ten', name: 'Ten', general: false, keys: Array.from({ length: 10 }, (_, i) => k(`K${i}`)) };
   answer = front('ten', null, [ten]);
   render(<Keys />);
   await flush();
-  expect(screen.getAllByRole('button', { name: /^K\d$/ })).toHaveLength(8);
+  // No layout here, so a second row never fits: the first five, and "1/2" by the page name.
+  expect(screen.getAllByRole('button', { name: /^K\d$/ }).map((b) => b.getAttribute('aria-label'))).toEqual(['K0', 'K1', 'K2', 'K3', 'K4']);
+  expect(document.querySelector('.deck-part')!.textContent).toBe('1/2');
+  fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+  await flush();
+  expect(screen.getAllByRole('button', { name: /^K\d$/ }).map((b) => b.getAttribute('aria-label'))).toEqual(['K5', 'K6', 'K7']);
+  expect(document.querySelector('.deck-part')!.textContent).toBe('2/2');
+  fireEvent.click(screen.getByRole('button', { name: 'Previous page' }));
+  await flush();
+  expect(screen.getAllByRole('button', { name: /^K\d$/ })).toHaveLength(5);
 });
 
 it('a double click sends once, a repeated Enter after a completed send sends nothing, and a different key is not held off', async () => {
@@ -503,4 +517,41 @@ it('Lock and All monitors off never run from the keyboard from a set either', as
   await flush();
   expect(sent).toEqual([{ setId: 'general', index: 2 }]);
   expect(document.activeElement).not.toBe(lock);
+});
+
+it('drops the group name from a key label on its own page; the full name stays in the name and hover', async () => {
+  const code = { id: 'lib-vscode', name: 'VS Code', general: false, keys: [k('VS Code: command palette'), k('VS Code: search all files'), k('Format document')] };
+  answer = front('lib-vscode', null, [code, general]);
+  render(
+    <>
+      <Keys />
+      <HoverTipLayer />
+    </>,
+  );
+  await flush();
+  const tile = screen.getByRole('button', { name: 'VS Code: command palette' });
+  expect(tile.querySelector('.deck-lbl')!.textContent).toBe('Command palette');
+  expect(screen.getByRole('button', { name: 'VS Code: search all files' }).textContent).toBe('Search all files');
+  expect(screen.getByRole('button', { name: 'Format document' }).textContent).toBe('Format document');
+  fireEvent.mouseEnter(tile);
+  await flush(400);
+  expect(document.querySelector('.hover-tip')!.textContent).toContain('VS Code: command palette');
+});
+
+it('a held set whose app is not in front keeps its tiles, dimmed one step, and says why', async () => {
+  localStorage.setItem('wall2-keys-mode', JSON.stringify({ hold: true, setId: 'sales' }));
+  answer = front('general', 'notepad.exe');
+  render(
+    <>
+      <Keys />
+      <HoverTipLayer />
+    </>,
+  );
+  await flush();
+  const tile = screen.getByRole('button', { name: 'Refresh' });
+  expect(tile.className).toContain('off');
+  expect(tile.className).toContain('key-tile');
+  fireEvent.mouseEnter(tile);
+  await flush(400);
+  expect(document.querySelector('.hover-tip')!.textContent).toContain('Sales app is not in front, so this would send nothing');
 });

@@ -2,6 +2,7 @@ import { act, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { resetAgents } from '../agents/useAgents';
 import { mocks } from '../bridge/tauri';
+import { summary as agentSummary } from '../agents/fixtures';
 import { useFocusStore } from '../focus/store';
 import { resetNowPlaying } from '../music/store';
 import { usePlaceStore } from '../state/places';
@@ -206,4 +207,37 @@ it('hides the Next block when Meet has no meeting but its accounts are fine', as
   const r = render(<Screens />);
   await flush();
   expect(r.container.querySelector('[aria-label="Next meeting"]')).toBeNull();
+});
+
+it('shows Focus once: the left wing drops its focus row while the centre shows the Focus card', async () => {
+  meet = () => ({
+    accounts: [{ id: 'work', label: 'Work', state: 'ok' }],
+    meetings: [{ key: 'k', accountId: 'work', title: 'Design review with the platform team and the guests', start: at(12, 0).toISOString(), end: at(12, 30).toISOString(), canJoin: true }],
+  });
+  const r = render(<Screens />);
+  await flush();
+  const wing = r.container.querySelector('.left-wing')!;
+  expect(r.container.querySelector('.centre [aria-label="Focus timer"]')).not.toBeNull();
+  expect(wing.querySelector('.focus-mini')).toBeNull();
+  // The title may take a second line instead of one cut line.
+  expect(wing.querySelector('.next .t1')!.className).toBe('t1 next-two');
+});
+
+it('keeps the focus row in the left wing while the centre shows agent lanes', async () => {
+  mocks.set('wall2_omni_summary', () => agentSummary());
+  const r = render(<Screens />);
+  await flush();
+  expect(r.container.querySelector('.lane')).not.toBeNull();
+  const wing = r.container.querySelector('.left-wing')!;
+  expect(wing.querySelector('.focus-mini')).not.toBeNull();
+  expect(wing.querySelector('.next .t1')!.className).toBe('t1 ellipsis');
+});
+
+it('hides the focus row too when the helper answers with no sessions (the centre shows Focus)', async () => {
+  mocks.set('wall2_omni_summary', () => agentSummary({ lanes: [], slots: { used: 0, limit: 3 } }));
+  const r = render(<Screens />);
+  await flush();
+  expect(r.container.querySelector('.lane[data-id]')).toBeNull();
+  expect(r.container.querySelector('.centre [aria-label="Focus timer"]')).not.toBeNull();
+  expect(r.container.querySelector('.left-wing .focus-mini')).toBeNull();
 });

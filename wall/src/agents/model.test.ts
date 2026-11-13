@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  slotsShortText,
   ageText,
   agentSegments,
   allFreeText,
@@ -403,4 +404,9 @@ it('sums the day for the agent row icon', () => {
     'Today: 2 h 30 m of agent work across 3 sessions, 20 min waiting on you',
   );
   expect(dayTotals([g('a', 'done', at(8), at(9))])).toBe('Today: no time of agent work across 1 session, no waiting on you');
+});
+
+it('shortens the slot sentence for a tight header: "5 of 8 working"', () => {
+  expect(slotsShortText(summary({ slots: { used: 12, limit: 4, sessions: 8, working: 5, helpers: 4 } }))).toBe('5 of 8 working');
+  expect(slotsShortText(summary({ slots: { used: 3, limit: 4 } }))).toBe('3 of 4 running');
 });

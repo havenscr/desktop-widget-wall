@@ -14,6 +14,8 @@ import {
 import { isTauri } from '../bridge/tauri';
 import { toggleFullscreen, useFullscreen } from '../ui/fullscreen';
 import { PLACES, usePlaceStore } from '../state/places';
+import { alarmChipText, useOpenAlarms } from '../home/useSecurity';
+import { tip } from '../ui/HoverTip';
 
 const PLACE_ICONS: Record<'work' | 'home' | 'unwind', Icon> = {
   work: IconBriefcase,
@@ -52,6 +54,7 @@ function FullscreenButton() {
 export function Rail() {
   const active = usePlaceStore((s) => s.active);
   const setActive = usePlaceStore((s) => s.setActive);
+  const alarms = useOpenAlarms();
 
   const onKeyDown = (e: KeyboardEvent<HTMLElement>) => {
     if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
@@ -71,16 +74,23 @@ export function Rail() {
     <nav className="rail" aria-label="Places" onKeyDown={onKeyDown}>
       {PLACES.map(({ id, label }) => {
         const Glyph = PLACE_ICONS[id as keyof typeof PLACE_ICONS];
+        // An open network alarm puts a small amber dot on Home's icon, on every place.
+        const alarm = id === 'home' && alarms > 0;
         return (
           <button
             key={id}
             type="button"
             className="rb"
             aria-label={label}
+            aria-description={alarm ? alarmChipText(alarms) : undefined}
             aria-current={active === id ? 'page' : undefined}
             onClick={() => setActive(id)}
+            {...(alarm ? tip(`${alarmChipText(alarms)} open. Home lists them.`) : {})}
           >
-            <Glyph size={30} stroke={1.8} aria-hidden="true" />
+            <span className="rb-ico">
+              <Glyph size={30} stroke={1.8} aria-hidden="true" />
+              {alarm && <i className="rb-alarm" aria-hidden="true" />}
+            </span>
             {label}
           </button>
         );

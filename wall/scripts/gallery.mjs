@@ -49,7 +49,7 @@ const HEAVY = 'long=1&agents=ask&tasks=heavy&meet=heavy&home=many&moods=six&medi
  * clock and pick the camera; `screen=` opens Meet, Zen or Dream after that.
  */
 const STATES = [];
-const add = (screen, name, query, custom) => STATES.push({ screen, name, query, custom });
+const add = (screen, name, query, custom, click) => STATES.push({ screen, name, query, custom, click });
 const PLACES = {
   work: { hz: 'work' },
   home: { hz: 'home' },
@@ -139,6 +139,24 @@ for (const [name, extra] of [
 }
 state('home', 'morning camera', '', TIMES.morning);
 state('home', 'morning camera, sparse', SPARSE, TIMES.morning);
+
+// The network alarm outside Home: the rail dot and one chip on Work and Unwind, never from a down source.
+state('work', 'network alarm: rail dot and chip', 'net=4');
+state('unwind', 'network alarm: chip in the status line', 'net=4');
+state('work', 'network alarm: home app down, nothing shown', 'home=down');
+// A task tick waits five seconds with Undo (the still is taken just after the click).
+add('work', 'task ticked: Done with Undo', url('work', TYPICAL_AT, 'tasks=few'), true, '.tasks .task-check');
+add('home', 'chore ticked: Done with Undo', url('home', TYPICAL_AT, 'tasks=few'), true, '.chores .ck');
+// Focus shown once: the centre's Focus card, and no small Focus row in the left wing.
+state('work', 'focus shown once (no agents)', 'agents=0&focus=long');
+// The key deck: the built-in sets, twelve pages, labels without their group name, a set not in front.
+state('work', 'deck: library sets, VS Code held', 'keys=library&hold=lib-vscode');
+state('work', 'deck: library set whose app is not in front', 'keys=library&hold=lib-excel');
+state('work', 'deck: longest labels pinned', 'keys=library&pins=long');
+// The key picker open with the whole library: down to just above the timeline, over the mountains.
+add('work', 'deck: key picker open, whole library', url('work', TYPICAL_AT, 'keys=library'), true, 'ctx:.pin-tile');
+// The agents header with twelve sessions, two waiting and an alarm: one line.
+state('work', 'agents header: twelve sessions, two waiting, an alarm', 'agents=12ask');
 
 // Timeline rows that say they are empty (only when that is known).
 state('work', 'timeline: no meetings today', 'meet=none');
@@ -252,6 +270,15 @@ const EXPECT = [
   ['work', 'timeline: one account failing', ['Design review with the platform team', '!Calendar not available']],
   ['work', 'timeline: no agent activity yet', 'No agent activity yet'],
   ['work', 'typical', 'Voice: iPhone mic fix'],
+  ['work', 'network alarm: rail dot and chip', '4 network alerts'],
+  ['work', 'network alarm: home app down', '!network alert'],
+  ['work', 'task ticked', ['Done.', 'Undo']],
+  ['work', 'focus shown once', ['Draft the workshop outline', '!Focus, paused']],
+  ['work', 'deck: library sets, VS Code held', ['Command palette', '!VS Code: command palette']],
+  ['work', 'deck: library set whose app is not in front', ['Repeat last action', '!Excel: repeat']],
+  ['work', 'deck: longest labels pinned', 'Sonos: play what suits the hour'],
+  ['work', 'deck: key picker open', ['Reset to defaults', 'Anywhere on the PC']],
+  ['work', 'agents header: twelve sessions', 'One thing for you'],
   // Home
   ['home', 'sparse', ['No moods set up', 'No meetings today']],
   ['home', 'heavy', ['Away For The Weekend', '115 more can wait']],
@@ -278,7 +305,8 @@ const EXPECT = [
   ['home', 'broken: task app down', 'Task app not reachable'],
   ['home', 'timeline: nothing scheduled at home', 'Nothing scheduled at home'],
   ['home', 'morning camera, sparse', ['No moods set up', 'No meetings today']],
-  ['home', 'typical', 'Evening'],
+  ['home', 'typical', ['Evening', 'Alarms', 'Open Firewalla']],
+  ['home', 'chore ticked', ['Done.', 'Undo']],
   // Unwind
   ['unwind', 'sparse', ['Nothing playing', 'Quiet']],
   ['unwind', 'heavy', ['An Extremely Long Song Title', 'Away For The Weekend']],
@@ -295,7 +323,8 @@ const EXPECT = [
   ['unwind', 'broken: calendar read fails', '!First thing'],
   ['unwind', 'broken: task app down', 'First thing: Planning check-in at 9:30'],
   ['unwind', 'broken: weather down', ['Wednesday morning', '!58°']],
-  ['unwind', 'typical', 'Tokyo Burnout'],
+  ['unwind', 'typical', ['Tokyo Burnout', 'Lights']],
+  ['unwind', 'network alarm', '4 network alerts.'],
   ['unwind', 'watch: nothing saved', ['Nothing on', 'Paste a YouTube or Twitch link', '!saved']],
   ['unwind', 'watch: three saved, nothing on', ['Nothing on', 'Play Night drive mix', '3 saved']],
   ['unwind', 'watch: feathered', ['Look: Feathered', 'Not playing? Open in browser', 'Lofi beats radio']],
@@ -548,6 +577,16 @@ async function render(cdp, base, s, file, ctl) {
     await to('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
     await to('Page.navigate', { url: `${base}?${s.query}` });
     await new Promise((r) => setTimeout(r, SETTLE_MS));
+    if (s.click) {
+      // A state shown just after a click (a task tick's Undo window).
+      // `ctx:<selector>` right-clicks (opens the key picker), anything else clicks.
+      const ctx = s.click.startsWith('ctx:');
+      const sel = JSON.stringify(ctx ? s.click.slice(4) : s.click);
+      await to('Runtime.evaluate', {
+        expression: ctx ? `document.querySelector(${sel})?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))` : `document.querySelector(${sel})?.click()`,
+      });
+      await new Promise((r) => setTimeout(r, 900));
+    }
     const check = await to('Runtime.evaluate', {
       expression: `JSON.stringify({ root: !!document.querySelector('.shell'), emptyRoot: !document.getElementById('root')?.childElementCount, boundary: /something went wrong|error boundary/i.test(document.body.textContent || ''), text: document.body.textContent || '', w: innerWidth, h: innerHeight, sw: document.documentElement.scrollWidth, sh: document.documentElement.scrollHeight })`,
       returnByValue: true,

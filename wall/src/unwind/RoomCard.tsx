@@ -46,7 +46,7 @@ function writeMark(mark: Mark): void {
 type Status = 'loading' | 'ready' | 'unconfigured' | 'error';
 
 /**
- * The Room card as `f_unwind` draws it: "Room" over a row of mood chips, at the concept's
+ * The Room card as `f_unwind` draws it: "Lights" over a row of mood chips, at the concept's
  * size and place in the right wing (its lower half, where it ends level with the player;
  * Live now, PR 27, stacks above it). Chips apply a home mood with `wall2_apply_mood`, and
  * the last mood applied (here or on Home's mood cards; the id is shared through
@@ -166,9 +166,9 @@ export function RoomCard() {
     );
 
   return (
-    <section className="u-card u-room" aria-label="Room">
+    <section className="u-card u-room" aria-label="Lights">
       <div className="u-card-head">
-        <span className="u-k">Room</span>
+        <span className="u-k">Lights</span>
         {error ? (
           <span className="u-xs" role="alert">
             Could not set the mood
