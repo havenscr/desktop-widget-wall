@@ -86,7 +86,9 @@ state('work', 'left wing: no pc temp', 'pctemp=none&box=stale');
 state('work', 'left wing: long title', 'media=long');
 state('work', 'left wing: focus running', 'focus=run');
 state('work', 'left wing: focus done', 'focus=done');
-add('work', 'left wing: keyboard focus on ring and on a button', url('work', TYPICAL_AT, 'focus=done'), true, 'kbd:.focus-mini-ring|.music-mini-btns .rd:nth-child(3)');
+add('work', 'left wing: keyboard focus on the ring', url('work', TYPICAL_AT, 'focus=done'), true, 'kbd:.focus-mini-ring');
+add('work', 'left wing: keyboard focus on a button', url('work', TYPICAL_AT, 'focus=done'), true, 'kbd:.music-mini-btns .rd:nth-child(3)');
+state('work', 'left wing: LLM no reading', 'box=none');
 // The ridgelines rest in every other still (a review frame shows them at rest); these two have music driving them.
 state('work', 'audio demo (lines follow the music)', 'audio=demo');
 state('home', 'audio demo (lines follow the music)', 'audio=demo');
@@ -251,6 +253,7 @@ const EXPECT = [
   ['work', 'left wing: focus running', 'Review the draft'],
   ['work', 'left wing: focus done', 'Focus done'],
   ['work', 'left wing: keyboard focus', 'Focus done'],
+  ['work', 'left wing: LLM no reading', ['LLM', 'no reading']],
   ['work', 'machine numbers at the limit', '104'],
   ['work', 'box offline', 'no reading'],
   ['work', 'broken: helper not set up', 'not set up'],
@@ -578,11 +581,11 @@ async function render(cdp, base, s, file, ctl) {
       const ctx = s.click.startsWith('ctx:');
       const kbd = s.click.startsWith('kbd:');
       const sel = JSON.stringify(ctx ? s.click.slice(4) : s.click);
-      // `kbd:<a>|<b>`: Tab-style keyboard focus. The still shows <b> focused; <a> is tested by the fit check.
+      // `kbd:<selector>`: a Tab key press (so focus-visible applies), then that element focused.
       if (kbd) {
         await to('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 });
         await to('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 });
-        await to('Runtime.evaluate', { expression: `document.querySelector(${JSON.stringify(s.click.slice(4).split('|')[1])})?.focus()` });
+        await to('Runtime.evaluate', { expression: `document.querySelector(${JSON.stringify(s.click.slice(4))})?.focus()` });
       }
       else await to('Runtime.evaluate', {
         expression: ctx ? `document.querySelector(${sel})?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))` : `document.querySelector(${sel})?.click()`,

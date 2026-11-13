@@ -73,6 +73,9 @@ export function MachinesReadout() {
         <div className="mc-row none" data-machine="box" aria-label={`${BOX_LABEL} no reading`}>
           <span className="mc-name">{BOX_LABEL}</span>
           <span className="mc-none">no reading</span>
+          <b className="mc-num mc-temp none" aria-hidden="true">
+            {'\u2013'}
+          </b>
         </div>
       )}
       {b && (

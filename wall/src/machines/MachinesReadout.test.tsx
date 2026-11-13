@@ -133,7 +133,7 @@ it('keeps the LLM row, dimmed with "no reading", when the box has no numbers, an
   const r = render(<MachinesReadout />);
   await flush();
   const row = () => r.container.querySelector('[data-machine="box"]')!;
-  expect(row().textContent).toBe('LLMno reading');
+  expect(row().textContent).toBe('LLMno reading\u2013');
   expect(row().className).toContain('none');
   expect(row().getAttribute('aria-label')).toBe('LLM no reading');
   answer = calm;

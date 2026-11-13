@@ -1605,7 +1605,7 @@ mod tests {
     fn pc_numbers_are_clamped() {
         let stats = crate::SystemStatsSummary { cpu: 12.5, gpu: f32::NAN, ram: 140.0, drives: Vec::new() };
         let pc = pc_from(&stats);
-        assert_eq!(pc, PcStats { cpu_pct: 12.5, gpu_pct: 0.0, ram_pct: 100.0, temp_c: pc.temp_c });
+        assert_eq!((pc.cpu_pct, pc.gpu_pct, pc.ram_pct), (12.5, 0.0, 100.0));
     }
 
     #[test]
