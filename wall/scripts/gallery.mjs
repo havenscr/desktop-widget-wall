@@ -292,7 +292,8 @@ state('unwind', 'listen: spotify down', 'spotify=down', TIMES.night);
 state('unwind', 'listen: spotify not set up', 'spotify=off', TIMES.night);
 state('unwind', 'listen: heavy library', 'spotify=heavy', TIMES.night);
 add('unwind', 'listen: heavy playlist songs', url('unwind', TIMES.night, 'spotify=heavy'), true, '.sp-row .sp-open');
-state('unwind', 'listen: long names', 'long=1&media=long&spotify=heavy');
+state('unwind', 'listen: long names', 'long=1&media=long&spotify=long');
+add('unwind', 'listen: long names, songs of a 240 song playlist', url('unwind', TYPICAL_AT, 'long=1&media=long&spotify=long'), true, '.sp-row .sp-open');
 
 /**
  * What each state must show, so a knob that silently stops working fails the run:
@@ -464,7 +465,8 @@ const EXPECT = [
   ['unwind', 'listen: spotify not set up', ['Spotify is not set up on this wall', 'not set up', '!Up next']],
   ['unwind', 'listen: heavy library', ['Road Trip 50', 'Up next']],
   ['unwind', 'listen: heavy playlist songs', ['2,000 songs', 'Lantern Song 50']],
-  ['unwind', 'listen: long names', ['An Extremely Long Song Title', 'Road Trip 1']],
+  ['unwind', 'listen: long names, songs', ['240 songs', 'Lantern Song 9, an extremely long name']],
+  ['unwind', 'listen: long names', ['An Extremely Long Song Title', 'Road Trip 1, an extremely long name']],
   ['unwind', 'unwind: hide screen', 'Hide screen'],
 ];
 

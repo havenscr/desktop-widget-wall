@@ -221,6 +221,8 @@ const QUIET = [
   { name: 'Listen, nothing playing', agents: '3', hz: 'unwind', extra: '&media=none', checks: ['.u-listen', '.sp-card', '.u-line'], listen: true },
   { name: 'Listen, heavy library and long names', agents: 'ask', hz: 'unwind', extra: '&spotify=heavy&media=long', checks: ['.u-listen', '.sp-card', '.u-next', '.u-line'], listen: true },
   { name: 'Listen, the songs of a 2000 song playlist', agents: '3', hz: 'unwind', extra: '&spotify=heavy', click: '.sp-row .sp-open', checks: ['.sp-card', '.sp-songs', '.sp-shead'], listen: true },
+  { name: 'Listen, long names everywhere', agents: 'ask', hz: 'unwind', extra: '&spotify=long&media=long', checks: ['.u-listen', '.sp-card', '.u-next', '.u-next-row', '.u-line'], listen: true },
+  { name: 'Listen, long names, the songs of a 240 song playlist', agents: '3', hz: 'unwind', extra: '&spotify=long&media=long', click: '.sp-row .sp-open', checks: ['.sp-card', '.sp-songs', '.sp-shead'], listen: true },
   { name: 'Listen, YouTube Music chosen', agents: '3', hz: 'unwind', extra: '', click: '.sp-switch button:nth-child(2)', checks: ['.u-listen', '.sp-card', '.sp-yt'], listen: true },
   { name: 'Listen, Spotify signed out', agents: '3', hz: 'unwind', extra: '&spotify=signedout', checks: ['.u-listen', '.sp-card', '.sp-state', '.u-next'], listen: true },
   // Zen in the evening: the dim hint stays inside the controls' column (the box the Start row sets).
