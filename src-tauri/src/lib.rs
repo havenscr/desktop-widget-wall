@@ -66,6 +66,7 @@ mod wall2_omni;
 mod wall2_power;
 mod wall2_signals;
 mod wall2_sonos;
+mod wall2_watch;
 use audio_analysis::{AudioAnalyzer, AudioLevels};
 
 // ================================================================
@@ -3754,6 +3755,7 @@ pub fn run() {
             wall2_feeds::wall2_links,
             wall2_feeds::wall2_open_link,
             wall2_feeds::wall2_open_task,
+            wall2_watch::wall2_watch_open,
             wall2_home::wall2_moods,
             wall2_home::wall2_apply_mood,
             wall2_sonos::wall2_sonos_summary,
