@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HorizonCanvas } from './HorizonCanvas';
 import { CAMERAS, HOME_MORNING, drawHorizon } from './index';
 import { cloudShiftFor, type CameraPreset } from './cameras';
-import { stubContext } from './canvasStub';
+import { echoPaths, frameGap, pathContext, stubContext } from './canvasStub';
 import { fitScale, STAGE_HEIGHT, STAGE_WIDTH } from '../stage/fitScale';
 import { usePlaceStore } from '../state/places';
 import { bandHistory, ingestLevels, resetAudio, tickAudio } from '../audio/store';
@@ -267,17 +267,49 @@ it('silent on Work: the three lines at rest (no live opacity, no sample) and no 
   expect(o).not.toHaveProperty('moon');
 });
 
-it('passes the ripple from the active preset while music plays, and fades it in over about a second', () => {
+it('while music plays the ripple takes the active preset\'s numbers, and its live opacity grows with the smoothed loudness up to ea', () => {
   setReducedMotion(false);
   startMusic();
   render(<HorizonCanvas now={() => NOON} />);
-  runFrame(100); // fade 0.1 s of 1
+  runFrame(100); // not yet driving: the bands must stay over the resume level a third of a second
   const first = draw.mock.lastCall![1].echo!;
   expect(first).toMatchObject({ n: CAMERAS.work.en, amp: CAMERAS.work.eamp, cx: CAMERAS.work.ecx, hs: 900 });
   for (let ts = 200; ts <= 1500; ts += 100) runFrame(ts);
   const full = draw.mock.lastCall![1].echo!;
   expect(full.a).toBeGreaterThan(first.a);
   expect(full.a).toBeLessThanOrEqual(CAMERAS.work.ea);
+});
+
+it('when music starts the lines lift: rest falls continuously from 1 to 0 over 1.5 s, and the drawn strength never steps', () => {
+  setReducedMotion(false);
+  usePlaceStore.setState({ active: 'unwind' });
+  render(<HorizonCanvas now={() => NOON} />);
+  let ts = 0;
+  for (let k = 0; k < 5; k++) runFrame((ts += 34));
+  expect(draw.mock.lastCall![1].echo!.rest).toBe(1);
+  const rests: number[] = [];
+  const strengths: number[] = [];
+  for (let k = 0; k < 80; k++) {
+    act(() => {
+      ingestLevels(LOUD_BANDS, 10_000 + ts);
+      tickAudio(10_000 + ts);
+    });
+    runFrame((ts += 34));
+    const e = draw.mock.lastCall![1].echo!;
+    rests.push(e.rest ?? 0);
+    strengths.push(strength(e));
+  }
+  const start = rests.findIndex((r) => r < 1);
+  const end = rests.indexOf(0);
+  expect(start).toBeGreaterThan(5); // a third of a second over the resume level first
+  expect(start).toBeLessThan(12);
+  expect(((end - start + 1) * 34) / 1000).toBeCloseTo(1.5, 1);
+  for (let i = 1; i < rests.length; i++) {
+    expect(rests[i]).toBeLessThanOrEqual(rests[i - 1]);
+    expect(rests[i - 1] - rests[i]).toBeLessThanOrEqual(0.034 / 1.5 + 1e-9);
+    expect(Math.abs(strengths[i] - strengths[i - 1])).toBeLessThan(0.03);
+  }
+  expect(strengths[strengths.length - 1]).toBeCloseTo(1, 9);
 });
 
 it('once the music stops the lines settle over 2.5 s into their rest, never vanishing, then hold still', () => {
@@ -947,6 +979,75 @@ describe('the Unwind visualizer', () => {
     expect(e.n).toBe(3);
     expect(e.a).toBeLessThanOrEqual(CAMERAS.work.ea);
     expect(typeof e.sample).toBe('function');
+  });
+
+  /**
+   * Draw every frame the canvas passed (calls `from` onward) with the real renderer and measure the
+   * gap between adjacent frames' lines (`frameGap`) beyond what the range itself moved (the camera
+   * pans, so the rim moves too), and the largest opacity step.
+   */
+  async function glideGaps(from: number, popAlpha: number) {
+    const real = await vi.importActual<typeof import('./index')>('./index');
+    const frames = draw.mock.calls.slice(from).map((c) => {
+      const { ctx, strokes } = pathContext();
+      real.drawHorizon(ctx, c[1]);
+      return echoPaths(strokes, c[1].camera!.hy);
+    });
+    let beyond = 0;
+    let alpha = 0;
+    for (let k = 1; k < frames.length; k++) {
+      let rim = 0;
+      for (let i = 0; i < frames[k].rim.length; i += 4) rim = Math.max(rim, Math.abs(frames[k].rim[i] - frames[k - 1].rim[i]));
+      const g = frameGap(frames[k - 1].echo, frames[k].echo, popAlpha);
+      beyond = Math.max(beyond, g.worst - rim);
+      alpha = Math.max(alpha, g.alpha);
+    }
+    return { beyond, alpha, frames: frames.length };
+  }
+
+  it('gliding Work to Unwind and back with the lines at rest never makes a line appear, vanish or jump', async () => {
+    setReducedMotion(false);
+    render(<HorizonCanvas now={() => localMs(21, 42)} />);
+    let ts = 0;
+    for (let k = 0; k < 10; k++) runFrame((ts += 34));
+    const start = draw.mock.calls.length - 1;
+    act(() => usePlaceStore.getState().setActive('unwind'));
+    for (let k = 0; k < 60; k++) runFrame((ts += 34));
+    act(() => usePlaceStore.getState().setActive('work'));
+    for (let k = 0; k < 60; k++) runFrame((ts += 34));
+    expect(draw.mock.lastCall![1].camera).toEqual(CAMERAS.work);
+    const g = await glideGaps(start, 0.03);
+    expect(g.frames).toBeGreaterThan(100);
+    // Each line keeps its own level (it moves only as the range itself pans) ...
+    expect(g.beyond).toBeLessThan(0.5);
+    // ... and the two whole sets crossfade as the count blends, never stepping a resting line in or out
+    // (measured 0.15 at the glide's fastest; a resting line popping would step by its whole 0.12 to 0.22).
+    expect(g.alpha).toBeLessThan(0.2);
+  });
+
+  it('gliding Work to Unwind during a settle never makes a line appear, vanish or jump', async () => {
+    setReducedMotion(false);
+    feedBands(0, 2000);
+    render(<HorizonCanvas now={() => localMs(21, 42)} />);
+    let ts = 0;
+    for (let k = 0; k < 70; k++) {
+      act(() => feedBands(2000 + ts, 2000 + ts + 33));
+      runFrame((ts += 34));
+    }
+    expect(draw.mock.lastCall![1].echo!.rest).toBeUndefined();
+    act(() => tickAudio(1e7)); // the music stops
+    const start = draw.mock.calls.length - 1;
+    act(() => usePlaceStore.getState().setActive('unwind'));
+    for (let k = 0; k < 40; k++) runFrame((ts += 34));
+    act(() => usePlaceStore.getState().setActive('work'));
+    for (let k = 0; k < 60; k++) runFrame((ts += 34));
+    const rests = draw.mock.calls.slice(start).map((c) => c[1].echo?.rest ?? 0);
+    expect(rests.some((r) => r > 0.2 && r < 0.8)).toBe(true); // the glide runs mid-settle
+    const g = await glideGaps(start, 0.03);
+    // Measured: 0.39 px beyond the range's own move (the settle itself), opacity steps up to 0.31
+    // while the full-strength live lines crossfade at the glide's fastest.
+    expect(g.beyond).toBeLessThan(1.5);
+    expect(g.alpha).toBeLessThan(0.4);
   });
 
   it('reduced motion on Unwind draws the lines at rest once, even while music plays', () => {
