@@ -463,7 +463,7 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
     fade, with no loudness scaling, and the lines follow the real bands (`sample`, below). The
     playing look matches the concept: the lines are tinted bright teal through the centre shifting
     to pink at the far right (the renderer's `tint` option, blended over the palette's rim colour
-    by the fade), 1.8 px wide instead of 1.4, and the newest line fades in at the front instead of
+    by the fade), 1.5 px wide instead of 1.4, and the newest line fades in at the front instead of
     popping in. Work, Home and the idle lines keep the palette's colour. While silent the
     idle lines: opacity `ea * 0.45`, height `eamp * 0.35`, drifting at 0.12 (0.4 of the playing
     speed) to the renderer's made-up `spec()` on the same slowed clock, so they breathe gently.

@@ -62,7 +62,7 @@ describe('the Unwind visualizer', () => {
     for (const loud of [0, 0.2, 1]) {
       const e = echoOptions(CAMERAS.unwind, 1, loud, 3)!;
       expect(e.a).toBeCloseTo(1, 9);
-      expect(e.tint).toMatchObject({ centre: PLAY_TINT.centre, right: PLAY_TINT.right, k: 1, width: 1.8 });
+      expect(e.tint).toMatchObject({ centre: PLAY_TINT.centre, right: PLAY_TINT.right, k: 1, width: 1.5 });
       expect(e.amp).toBe(34);
       expect(e.n).toBe(11);
     }

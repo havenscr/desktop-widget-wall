@@ -25,7 +25,7 @@ export const IDLE_RATE = 0.4;
  * lines keep the palette's own colour.
  */
 export const PLAY_BOOST = 1 / 0.9;
-export const PLAY_TINT = { left: [92, 196, 255], centre: [56, 236, 240], right: [255, 61, 154], width: 1.8 };
+export const PLAY_TINT = { left: [92, 196, 255], centre: [56, 236, 240], right: [255, 61, 154], width: 1.5 };
 
 const clamp01 = (v: number) => (v > 0 ? (v < 1 ? v : 1) : 0);
 
