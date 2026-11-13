@@ -32,6 +32,12 @@ describe('parseRealStart', () => {
   it('uses the block local day across daylight saving change', () => {
     expect(parseRealStart('Flight (1:30 am start)', '2026-11-01T07:00:00Z', '2026-11-01T10:00:00Z', zone)).toBe(Date.parse('2026-11-01T08:30:00Z'));
   });
+  it('reads a labelled clock in a non-Pacific zone', () => {
+    expect(parseRealStart('Train (15:30 start)', '2026-11-12T14:00:00Z', '2026-11-12T16:00:00Z', 'Europe/London')).toBe(Date.parse('2026-11-12T15:30:00Z'));
+  });
+  it('refuses a far-future attacker-controlled block without scanning it', () => {
+    expect(parseRealStart('Invitation (09:59 start)', '2026-11-12T18:00:00Z', '2036-11-12T18:00:00Z', zone)).toBeNull();
+  });
   it('does no free-text guessing', () => expect(block('Doctor starts at 10:45')).toBeNull());
   it('rejects extra text inside the parentheses', () => expect(block('Doctor (room 2, 10:45 start)')).toBeNull());
 });

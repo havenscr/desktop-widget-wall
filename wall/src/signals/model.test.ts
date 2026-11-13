@@ -18,6 +18,7 @@ describe('signal rules', () => {
     expect(deriveCall(p, [], NOW, null, null).call).toBeNull();
     expect(deriveCall(p, [meeting({ start: new Date(NOW + 4 * 60_000).toISOString() })], NOW, null, null).call?.kind).toBe('browser');
     expect(deriveCall(p, [meeting({ canJoin: false })], NOW, null, null).call).toBeNull();
+    expect(deriveCall(p, [meeting({ start: new Date(NOW - 60 * 60_000).toISOString(), end: new Date(NOW - 1).toISOString() })], NOW, null, null).call).toBeNull();
   });
   it('debounces a free microphone for 20 seconds', () => {
     const live = { kind: 'teams' as const, since: NOW - 1000, camera: false };
@@ -32,7 +33,8 @@ describe('signal rules', () => {
     expect(deriveRecording(camera)).toBe(true);
   });
   it('finds only the next leave block inside three hours', () => {
-    expect(deriveLeave([meeting()], NOW, 'America/Los_Angeles')).toEqual({ key: 'opaque', leaveAt: Date.parse('2026-11-12T18:30:00Z'), startsAt: Date.parse('2026-11-12T19:00:00Z') });
+    const later = meeting({ key: 'later', title: 'Later (12:00 start)', start: '2026-11-12T19:30:00Z', end: '2026-11-12T21:00:00Z' });
+    expect(deriveLeave([later, meeting()], NOW, 'America/Los_Angeles')).toEqual({ key: 'opaque', leaveAt: Date.parse('2026-11-12T18:30:00Z'), startsAt: Date.parse('2026-11-12T19:00:00Z') });
     expect(deriveLeave([meeting({ start: new Date(NOW + 4 * 60 * 60_000).toISOString(), end: new Date(NOW + 6 * 60 * 60_000).toISOString() })], NOW, 'America/Los_Angeles')).toBeNull();
   });
   it('fails every derived value closed when native state is unknown', () => {
@@ -41,4 +43,3 @@ describe('signal rules', () => {
     expect(deriveRecording(p)).toBe(false);
   });
 });
-

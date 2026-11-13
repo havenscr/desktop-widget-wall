@@ -11,8 +11,8 @@ export function registerSignalMocks(): void {
   if (kind && q.get('camera') === '1') camera[kind] = true;
   if (q.get('rec') === '1') mic.recorder = true;
   const payload: SignalPayload = { known: true, mic, camera, ...(kind ? { mockCall: kind } : {}) };
-  const leave = Number(q.get('leave'));
-  if (Number.isFinite(leave)) {
+  const leave = q.has('leave') ? Number(q.get('leave')) : Number.NaN;
+  if (Number.isFinite(leave) && leave >= 0 && leave <= 180) {
     const now = Date.now();
     payload.mockLeave = { key: 'signal-dev', leaveAt: now + leave * 60_000, startsAt: now + (leave + 30) * 60_000 };
   }

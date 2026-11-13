@@ -44,10 +44,13 @@ export function deriveRecording(payload: SignalPayload): boolean {
 
 export function deriveLeave(meetings: readonly Meeting[], now: number, timeZone: string): LeaveSignal | null {
   const found = meetings
+    .filter((m) => {
+      const leaveAt = Date.parse(m.start);
+      return leaveAt >= now && leaveAt <= now + 3 * 60 * MIN;
+    })
     .map((m) => ({ m, startsAt: parseRealStart(m.title, m.start, m.end, timeZone, (m as Meeting & { isAllDay?: boolean }).isAllDay) }))
     .filter((x): x is { m: Meeting; startsAt: number } => x.startsAt !== null)
     .map(({ m, startsAt }) => ({ key: m.key, leaveAt: Date.parse(m.start), startsAt }))
-    .filter((x) => x.leaveAt >= now && x.leaveAt <= now + 3 * 60 * MIN)
     .sort((a, b) => a.leaveAt - b.leaveAt)[0];
   return found ?? null;
 }

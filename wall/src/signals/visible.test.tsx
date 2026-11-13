@@ -1,40 +1,59 @@
 import { act, render } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { App } from '../App';
+import { resetAgents } from '../agents/useAgents';
+import { registerDevMocks } from '../bridge/devMocks';
 import { mocks } from '../bridge/tauri';
-import { registerSignalMocks } from '../bridge/devMocks/signals';
+import { useFocusStore } from '../focus/store';
+import { resetNowPlaying } from '../music/store';
+import { usePlaceStore, type PlaceId } from '../state/places';
+import { resetWeatherStore } from '../weather/useWeather';
+import { resetMeetingFeed } from '../work/useNextMeeting';
 
-vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => {}) }));
-vi.mock('../audio/capture', () => ({ startAudio: () => () => {} }));
-vi.mock('../music/store', () => ({ acquireNowPlaying: () => () => {} }));
-vi.mock('../horizon/HorizonCanvas', () => ({ HorizonCanvas: () => null }));
-vi.mock('../buddy/Watt', () => ({ Watt: () => null }));
-vi.mock('../rail/Rail', () => ({ Rail: () => null }));
-vi.mock('../stage/Stage', () => ({ Stage: ({ children }: { children: React.ReactNode }) => <>{children}</> }));
-vi.mock('../ui/HoverTip', () => ({ HoverTipLayer: () => null }));
-vi.mock('../screens/Screens', () => ({ Screens: () => <main>Work Home Unwind Meet</main> }));
+const places: PlaceId[] = ['work', 'home', 'unwind', 'meet'];
+const normalized = (text: string | null) => (text ?? '').replace(/\s+/g, ' ').trim();
+
+const weather = {
+  current: { time: '2026-11-12T10:00', temperature_2m: 60, weather_code: 1, is_day: 1 },
+  hourly: { time: ['2026-11-12T10:00'], temperature_2m: [60], weather_code: [1] },
+  daily: { temperature_2m_max: [65], temperature_2m_min: [50] },
+};
 
 afterEach(() => {
   mocks.clear();
   history.replaceState({}, '', '/');
   vi.useRealTimers();
+  vi.unstubAllGlobals();
 });
 
-async function mountedText(search: string): Promise<string> {
+async function mountedText(search: string): Promise<Record<string, string>> {
   history.replaceState({}, '', `/${search}`);
-  registerSignalMocks();
+  registerDevMocks();
+  usePlaceStore.setState({ active: 'work', from: 'work', zenDream: false });
   const view = render(<App />);
-  await act(async () => { await Promise.resolve(); });
-  const text = view.container.textContent ?? '';
+  const text: Record<string, string> = {};
+  for (const place of places) {
+    await act(async () => {
+      usePlaceStore.getState().setActive(place);
+      await vi.advanceTimersByTimeAsync(50);
+    });
+    text[place] = normalized(view.container.textContent);
+  }
   view.unmount();
+  useFocusStore.getState().dispose();
+  resetNowPlaying();
+  resetMeetingFeed();
+  resetWeatherStore();
+  resetAgents();
+  mocks.clear();
   return text;
 }
 
-it('keeps every screen text unchanged with every signal development knob set', async () => {
+it('keeps real Work, Home, Unwind and Meet text unchanged with every signal development knob set', async () => {
   vi.useFakeTimers();
-  const none = await mountedText('');
+  vi.setSystemTime(new Date(2026, 10, 12, 10, 0));
+  vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => weather })));
+  const none = await mountedText('?call=none');
   const all = await mountedText('?call=teams&camera=1&rec=1&leave=15');
-  expect(all).toBe(none);
-  expect(all).toBe('Work Home Unwind Meet');
+  expect(all).toEqual(none);
 });
-

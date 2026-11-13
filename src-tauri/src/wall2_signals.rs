@@ -55,14 +55,25 @@ fn page_line(word: &str, value: Option<u16>) -> Option<String> {
     if word == "leave found" {
         let n = value?;
         if n > 720 { return None; }
-        Some(format!("leave found {n}"))
-    } else if value.is_none() { Some(word.to_string()) } else { None }
+        Some(format!("page leave found {n}"))
+    } else if value.is_none() { Some(format!("page {word}")) } else { None }
+}
+
+fn page_rate_ok() -> bool {
+    static LAST: OnceLock<Mutex<Option<std::time::Instant>>> = OnceLock::new();
+    let mut last = LAST.get_or_init(|| Mutex::new(None)).lock().unwrap_or_else(|e| e.into_inner());
+    let now = std::time::Instant::now();
+    if last.is_some_and(|at| now.duration_since(at) < Duration::from_millis(100)) { return false; }
+    *last = Some(now);
+    true
 }
 
 #[tauri::command]
 pub fn wall2_signals_report(window: tauri::WebviewWindow, word: String, value: Option<u16>) -> Result<(), String> {
     if window.label() != WALL2_LABEL { return Err("forbidden".into()); }
-    log::write(page_line(&word, value).ok_or_else(|| "refused".to_string())?);
+    let line = page_line(&word, value).ok_or_else(|| "refused".to_string())?;
+    if !page_rate_ok() { return Err("rate-limited".into()); }
+    log::write_page(line);
     Ok(())
 }
 
@@ -77,10 +88,10 @@ pub fn start(app: tauri::AppHandle, dir: Option<std::path::PathBuf>) {
         while !STOP.load(Ordering::SeqCst) {
             let next = win::read().unwrap_or_default();
             if before != Some(next) {
-                if let Some(old) = before { log_edges(old, next); }
+                if let Some(old) = before { for line in edge_lines(old, next) { log::write_native(line); } }
                 else {
-                    log::write(if next.known { "store ok" } else { "store unknown" }.into());
-                    log_edges(Signals { known: next.known, ..Signals::default() }, next);
+                    log::write_native(if next.known { "store ok" } else { "store unknown" }.into());
+                    for line in edge_lines(Signals { known: next.known, ..Signals::default() }, next) { log::write_native(line); }
                 }
                 *CURRENT.lock().unwrap_or_else(|e| e.into_inner()) = next;
                 let _ = app.emit("signals-changed", next);
@@ -95,35 +106,51 @@ pub fn start(app: tauri::AppHandle, dir: Option<std::path::PathBuf>) {
 
 pub fn shutdown() { STOP.store(true, Ordering::SeqCst); }
 
-fn log_edges(old: Signals, new: Signals) {
-    if old.known != new.known { log::write(if new.known { "store ok" } else { "store unknown" }.into()); }
+fn edge_lines(old: Signals, new: Signals) -> Vec<String> {
+    let mut lines = Vec::new();
+    if old.known != new.known { lines.push(if new.known { "store ok" } else { "store unknown" }.into()); }
     for (device, a, b) in [("mic", old.mic, new.mic), ("camera", old.camera, new.camera)] {
         for (kind, was, is) in [("teams", a.teams, b.teams), ("zoom", a.zoom, b.zoom), ("browser", a.browser, b.browser), ("recorder", a.recorder, b.recorder), ("other", a.other, b.other)] {
-            if was != is { log::write(format!("{device} {kind} {}", if is { "on" } else { "off" })); }
+            if was != is { lines.push(format!("{device} {kind} {}", if is { "on" } else { "off" })); }
         }
     }
+    lines
 }
 
 mod log {
     use super::*;
     use std::sync::mpsc::SyncSender;
-    static TX: OnceLock<SyncSender<String>> = OnceLock::new();
+    const NATIVE_CAP: usize = 1800;
+    const PAGE_CAP: usize = 200;
+    static NATIVE_TX: OnceLock<SyncSender<String>> = OnceLock::new();
+    static PAGE_TX: OnceLock<SyncSender<String>> = OnceLock::new();
     pub fn start(dir: Option<std::path::PathBuf>) {
         use std::io::Write;
         let Some(dir) = dir else { return };
         let _ = std::fs::create_dir_all(&dir);
         let Ok(mut file) = std::fs::File::create(dir.join("wall2-signals.log")) else { return };
-        let (tx, rx) = std::sync::mpsc::sync_channel::<String>(64);
+        let (native_tx, native_rx) = std::sync::mpsc::sync_channel::<String>(64);
+        let (page_tx, page_rx) = std::sync::mpsc::sync_channel::<String>(16);
         if std::thread::Builder::new().name("wall2-signals-log".into()).spawn(move || {
-            let mut lines = 0;
-            while let Ok(line) = rx.recv() {
-                if lines >= 2000 { continue; }
+            let mut native_lines = 0;
+            let mut page_lines = 0;
+            loop {
+                let next = native_rx.recv_timeout(Duration::from_millis(50)).ok().map(|line| (line, false))
+                    .or_else(|| page_rx.try_recv().ok().map(|line| (line, true)));
+                let Some((line, page)) = next else { continue };
+                if (page && page_lines >= PAGE_CAP) || (!page && native_lines >= NATIVE_CAP) { continue; }
                 let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
-                if writeln!(file, "{now} {line}").is_ok() { lines += 1; }
+                if writeln!(file, "{now} {line}").is_ok() {
+                    if page { page_lines += 1; } else { native_lines += 1; }
+                }
             }
-        }).is_ok() { let _ = TX.set(tx); }
+        }).is_ok() {
+            let _ = NATIVE_TX.set(native_tx);
+            let _ = PAGE_TX.set(page_tx);
+        }
     }
-    pub fn write(line: String) { if let Some(tx) = TX.get() { let _ = tx.try_send(line); } }
+    pub fn write_native(line: String) { if let Some(tx) = NATIVE_TX.get() { let _ = tx.try_send(line); } }
+    pub fn write_page(line: String) { if let Some(tx) = PAGE_TX.get() { let _ = tx.try_send(line); } }
 }
 
 #[cfg(windows)]
@@ -220,10 +247,16 @@ mod tests {
         assert_eq!(json["mic"].as_object().unwrap().len(), 5);
     }
     #[test] fn page_log_refuses_free_text_and_bad_numbers() {
-        assert_eq!(page_line("call start teams", None).as_deref(), Some("call start teams"));
-        assert_eq!(page_line("leave found", Some(45)).as_deref(), Some("leave found 45"));
+        assert_eq!(page_line("call start teams", None).as_deref(), Some("page call start teams"));
+        assert_eq!(page_line("leave found", Some(45)).as_deref(), Some("page leave found 45"));
         assert!(page_line("leave found", Some(721)).is_none());
         assert!(page_line("call start teams now", None).is_none());
         assert!(page_line("call end", Some(1)).is_none());
+    }
+    #[test] fn native_edges_use_only_fixed_words() {
+        let old = Signals { known: true, ..Signals::default() };
+        let new = Signals { known: true, mic: Uses { teams: true, ..Uses::default() }, camera: Uses { recorder: true, ..Uses::default() } };
+        assert_eq!(edge_lines(old, new), ["mic teams on", "camera recorder on"]);
+        assert_eq!(edge_lines(new, Signals::default()), ["store unknown", "mic teams off", "camera recorder off"]);
     }
 }

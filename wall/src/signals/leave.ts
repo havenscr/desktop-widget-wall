@@ -4,6 +4,9 @@ export interface CalendarBlock extends Pick<Meeting, 'key' | 'title' | 'start' |
   isAllDay?: boolean;
 }
 
+/** Travel blocks are ordinary calendar blocks. Longer spans are refused before conversion. */
+export const MAX_BLOCK_MS = 24 * 60 * 60_000;
+
 const clock = (ms: number, timeZone: string) => {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone,
@@ -29,7 +32,7 @@ export function parseRealStart(
   if (isAllDay) return null;
   const from = typeof blockStart === 'number' ? blockStart : Date.parse(blockStart);
   const to = typeof blockEnd === 'number' ? blockEnd : Date.parse(blockEnd);
-  if (!Number.isFinite(from) || !Number.isFinite(to) || from >= to) return null;
+  if (!Number.isFinite(from) || !Number.isFinite(to) || from >= to || to - from > MAX_BLOCK_MS) return null;
   const groups = title.match(/\([^()]*(?:starts?|start)[^()]*\)/gi) ?? [];
   for (const group of groups) {
     const inside = group.slice(1, -1).trim();
@@ -43,11 +46,18 @@ export function parseRealStart(
       if (hour < 1 || hour > 12) continue;
       hour = (hour % 12) + (meridiem === 'pm' ? 12 : 0);
     } else if (hour > 23) continue;
-    const localDay = clock(from, timeZone);
-    for (let at = from + 60_000; at <= to; at += 60_000) {
+    const day = clock(from, timeZone);
+    const hours = meridiem ? [hour] : [hour, ...(hour <= 12 ? [hour + 12] : [])];
+    const probes = [from, to, Date.UTC(day.year, day.month - 1, day.day, 0), Date.UTC(day.year, day.month - 1, day.day, 12)];
+    const offsets = new Set(probes.map((at) => {
       const c = clock(at, timeZone);
-      if (c.year !== localDay.year || c.month !== localDay.month || c.day !== localDay.day || c.minute !== minute) continue;
-      if (meridiem ? c.hour === hour : c.hour === hour || (hour <= 12 && c.hour === hour + 12)) return at;
+      return Date.UTC(c.year, c.month - 1, c.day, c.hour, c.minute) - at;
+    }));
+    const candidates = hours.flatMap((h) => [...offsets].map((offset) => Date.UTC(day.year, day.month - 1, day.day, h, minute) - offset)).sort((a, b) => a - b);
+    for (const at of candidates) {
+      if (at <= from || at > to) continue;
+      const c = clock(at, timeZone);
+      if (c.year === day.year && c.month === day.month && c.day === day.day && hours.includes(c.hour) && c.minute === minute) return at;
     }
   }
   return null;

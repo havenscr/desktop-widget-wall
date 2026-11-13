@@ -14,8 +14,6 @@ export function createSignalStore(deps: SignalDeps) {
   let previousRecording = false;
   let previousLeave: LeaveSignal | null = null;
   let micFreeSince: number | null = null;
-  let timer: ReturnType<typeof setInterval> | undefined;
-  let unlisten: UnlistenFn | undefined;
   let payload = UNKNOWN_PAYLOAD;
   return create<SignalState>((set) => {
     const apply = (next: SignalPayload) => {
@@ -42,10 +40,22 @@ export function createSignalStore(deps: SignalDeps) {
       recording: false,
       leave: null,
       init: () => {
-        void deps.invoke<SignalPayload>('wall2_signals').then(apply, () => apply(UNKNOWN_PAYLOAD));
-        if (isTauri()) void deps.listen<SignalPayload>('signals-changed', (e) => apply(e.payload)).then((fn) => (unlisten = fn));
-        timer = setInterval(() => apply(payload), 1000);
-        return () => { clearInterval(timer); unlisten?.(); };
+        let disposed = false;
+        let timer: ReturnType<typeof setInterval> | undefined;
+        let unlisten: UnlistenFn | undefined;
+        const start = async () => {
+          if (isTauri()) {
+            const stop = await deps.listen<SignalPayload>('signals-changed', (e) => { if (!disposed) apply(e.payload); });
+            if (disposed) { stop(); return; }
+            unlisten = stop;
+          }
+          if (disposed) return;
+          try { apply(await deps.invoke<SignalPayload>('wall2_signals')); }
+          catch { apply(UNKNOWN_PAYLOAD); }
+          if (!disposed) timer = setInterval(() => apply(payload), 1000);
+        };
+        void start();
+        return () => { disposed = true; if (timer) clearInterval(timer); unlisten?.(); };
       },
     };
   });
