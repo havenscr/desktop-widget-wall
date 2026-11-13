@@ -234,6 +234,8 @@ export const MORE_CHIP_PX = 44;
 const BESIDE_GAP = 6;
 /** A title beside its chip needs at least this much room, else it is in the hover only. */
 export const BESIDE_MIN_PX = 60;
+/** The widest a title beside its chip runs. */
+export const BESIDE_MAX_PX = 260;
 
 /** A "+N" chip: the events that did not fit, listed on hover, picked from on click. Full row height. */
 export interface MoreChip {
@@ -350,9 +352,9 @@ export function chipLayout(all: readonly Chip[], allDay = 0): { shown: Chip[]; m
       if (o.c && c.lanes > 1 && groupOf.get(o.c) === groupOf.get(c) && o.c.lane !== c.lane) continue;
       room = Math.min(room, o.x - from);
     }
-    const free = room - 2 * BESIDE_GAP;
-    const want = titleWidth(c.title, c.lanes);
-    c.beside = free >= want ? want : free >= BESIDE_MIN_PX ? Math.floor(free) : null;
+    // The title takes the room up to the next chip (cut with an ellipsis only when it is longer).
+    const free = Math.floor(room - 2 * BESIDE_GAP);
+    c.beside = free >= Math.min(titleWidth(c.title, c.lanes), BESIDE_MIN_PX) ? Math.min(free, BESIDE_MAX_PX) : null;
   }
   return { shown, more, allDay: box };
 }
