@@ -39,8 +39,10 @@ export interface Mind {
   reactDir: 1 | -1;
   /** 0 to 1: a soft squash on the beat, decaying. */
   bob: number;
-  /** Her card is open: she stands still so she does not walk under it. */
+  /** His card is open: he stands still so he does not walk under it. */
   held: boolean;
+  /** He is being carried, falling, or sitting where he was set down: the wander clock waits (`carry.ts`). */
+  carry: boolean;
 }
 
 export function createMind(): Mind {
@@ -59,12 +61,13 @@ export function createMind(): Mind {
     reactDir: 1,
     bob: 0,
     held: false,
+    carry: false,
   };
 }
 
 /** True while `m.react` is one that holds her still (the wander clock stops). */
 export function holdsStill(m: Mind): boolean {
-  return m.held || (m.react !== null && m.reactT < REACT_S[m.react]);
+  return m.held || m.carry || (m.react !== null && m.reactT < REACT_S[m.react]);
 }
 
 /** What Watt draws this frame, beyond the base frame. Reused. */
@@ -78,12 +81,14 @@ export interface PetFrame extends BuddyFrame {
   lift: number;
   /** Vertical squash, 1 is none. */
   squash: number;
+  /** Degrees he is tilted while carried (about his back), 0 otherwise. */
+  tilt: number;
   hearts: boolean;
   mark: boolean;
 }
 
 export function createPetFrame(): PetFrame {
-  return { x: 0, dir: 1, pose: 'idle', notes: false, z: false, prop: null, scarf: false, cosmetic: null, lift: 0, squash: 1, hearts: false, mark: false };
+  return { x: 0, dir: 1, pose: 'idle', notes: false, z: false, prop: null, scarf: false, cosmetic: null, lift: 0, squash: 1, tilt: 0, hearts: false, mark: false };
 }
 
 /**
@@ -125,6 +130,7 @@ export function petFrame(walk: Walk, place: WattPlace, hy: number, night: boolea
   out.cosmetic = null;
   out.lift = 0;
   out.squash = 1;
+  out.tilt = 0;
   out.hearts = false;
   out.mark = false;
   const react = m.react !== null && m.reactT < Math.max(REACT_S[m.react], m.react === 'pet' ? HEARTS_S : 0) ? m.react : null;

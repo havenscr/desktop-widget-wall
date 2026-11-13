@@ -613,10 +613,10 @@ describe('sprites', () => {
       }
     }
   });
-  it('every pose keeps the sizes: 18 wide, 12 tall (sleep 8)', () => {
+  it('every pose keeps the sizes: 18 wide, 12 tall (sleep 8, land and sit 11)', () => {
     for (const pose of POSES) {
       expect(SPRITES[pose][0]).toHaveLength(18);
-      expect(SPRITES[pose]).toHaveLength(pose === 'sleep' ? 8 : 12);
+      expect(SPRITES[pose]).toHaveLength(pose === 'sleep' ? 8 : pose === 'land' || pose === 'sit' ? 11 : 12);
     }
   });
   it('sleep equals the concept map exactly', () => {

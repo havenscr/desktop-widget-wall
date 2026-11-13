@@ -14,7 +14,10 @@ import { LINES } from './lines';
 import { PET_KEY } from './pet';
 import { resetMeetingFeed, useMeetingFeed } from '../work/useNextMeeting';
 import { resetWeatherStore } from '../weather/useWeather';
-import { CARD_DWELL_MS, CARD_GRACE_MS, PET_LINE_EVERY_MS, PET_REPLY_GAP_MS, Watt } from './Watt';
+import { PET_LINE_EVERY_MS, PET_REPLY_GAP_MS, WATT_TIP, Watt } from './Watt';
+
+const idleState = vi.hoisted(() => ({ on: false }));
+vi.mock('../ui/useIdle', () => ({ useIdle: () => idleState.on }));
 
 const defaultInvoke = vi.hoisted(() => (cmd: string) => (cmd === 'wall2_open_session' ? Promise.resolve() : new Promise(() => {})));
 const invokeMock = vi.hoisted(() => vi.fn(defaultInvoke));
@@ -83,6 +86,7 @@ function where(container: HTMLElement) {
 }
 
 beforeEach(() => {
+  idleState.on = false;
   frames = new Map();
   ts = 0;
   mqListeners = [];
@@ -381,15 +385,12 @@ describe('a pet', () => {
     expect(stored().today.pets).toBe(2);
   });
 
-  it('hover shows her card: name, mood in one word, two honest lines; chatty off means no bubble at all', () => {
+  it('right-click shows his card: name, mood in one word, two honest lines; chatty off means no bubble at all', () => {
     let ms = day();
     const { container, getByRole, queryByText } = render(<Watt now={() => ms} />);
     runFor(1.5);
     fireEvent.click(container.querySelector('.watt-hit')!);
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
-    fireEvent.mouseEnter(container.querySelector('.watt-hit')!);
-    fireEvent.mouseMove(container.querySelector('.watt-hit')!);
-    act(() => void vi.advanceTimersByTime(CARD_DWELL_MS));
+    fireEvent.contextMenu(container.querySelector('.watt-hit')!);
     const card = container.querySelector('.watt-card')!;
     expect(card.querySelector('.wc-name')!.textContent).toBe('Watt');
     expect(['Content', 'Happy', 'Sleepy', 'Curious']).toContain(card.querySelector('.wc-mood')!.textContent);
@@ -473,91 +474,105 @@ describe('a pet', () => {
     expect(container.querySelector('.watt-bubble')!.classList.contains('still')).toBe(true);
   });
 
-  describe('her card', () => {
-    const hitOf = (c: HTMLElement) => c.querySelector('.watt-hit')!;
-    beforeEach(() => {
+  describe('his card', () => {
+    const hitOf = (c: HTMLElement) => c.querySelector<HTMLElement>('.watt-hit')!;
+    const cardOf = (c: HTMLElement) => c.querySelector('.watt-card');
+    const open = (c: HTMLElement) => fireEvent.contextMenu(hitOf(c));
+
+    it('hovering opens nothing, however long; the tooltip says what the pointer can do', () => {
       vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
-    });
-    const later = (ms: number) => act(() => void vi.advanceTimersByTime(ms));
-
-    it('crossing her does not open it; resting on her does', () => {
       const { container } = render(<Watt now={day} />);
       runFor(1.5);
       fireEvent.mouseEnter(hitOf(container));
       fireEvent.mouseMove(hitOf(container));
-      later(CARD_DWELL_MS - 100);
-      fireEvent.mouseLeave(hitOf(container));
-      later(1000);
-      expect(container.querySelector('.watt-card')).toBeNull();
-      fireEvent.mouseEnter(hitOf(container));
-      fireEvent.mouseMove(hitOf(container));
-      later(CARD_DWELL_MS);
-      expect(container.querySelector('.watt-card')).not.toBeNull();
+      fireEvent.pointerEnter(hitOf(container));
+      fireEvent.pointerMove(hitOf(container), { pointerId: 1, clientX: 5, clientY: 5 });
+      act(() => void vi.advanceTimersByTime(2000));
+      expect(cardOf(container)).toBeNull();
+      expect(hitOf(container).title).toBe(WATT_TIP);
+      expect(WATT_TIP).toBe('Click to pet. Drag to carry. Right-click for his card.');
     });
 
-    it('a pointer resting still while she walks under it opens nothing until it moves', () => {
+    it('a click pets and opens nothing', () => {
       const { container } = render(<Watt now={day} />);
       runFor(1.5);
-      fireEvent.mouseEnter(hitOf(container));
-      later(CARD_DWELL_MS * 3);
-      expect(container.querySelector('.watt-card')).toBeNull();
-      fireEvent.mouseMove(hitOf(container));
-      later(CARD_DWELL_MS);
-      expect(container.querySelector('.watt-card')).not.toBeNull();
+      fireEvent.click(hitOf(container));
+      expect(stored().today.pets).toBe(1);
+      expect(cardOf(container)).toBeNull();
     });
 
-    it('moving from her to the card keeps it; leaving the card closes it at once, so the control under it gets the click', () => {
+    it('a right-click opens it and the browser menu is prevented, on him only; a second right-click on him closes it', () => {
       const { container } = render(<Watt now={day} />);
       runFor(1.5);
-      fireEvent.mouseEnter(hitOf(container));
-      fireEvent.mouseMove(hitOf(container));
-      later(CARD_DWELL_MS);
-      fireEvent.mouseLeave(hitOf(container));
-      later(CARD_GRACE_MS - 100);
-      fireEvent.mouseEnter(container.querySelector('.watt-card')!);
-      later(2000);
-      const card = container.querySelector('.watt-card')!;
-      expect(card).not.toBeNull();
-      fireEvent.mouseLeave(card);
-      expect(container.querySelector('.watt-card')).toBeNull();
-      // Leaving her without reaching the card: gone after the short grace.
-      fireEvent.mouseEnter(hitOf(container));
-      fireEvent.mouseMove(hitOf(container));
-      later(CARD_DWELL_MS);
-      fireEvent.mouseLeave(hitOf(container));
-      later(CARD_GRACE_MS);
-      expect(container.querySelector('.watt-card')).toBeNull();
+      expect(open(container)).toBe(false);
+      expect(cardOf(container)).not.toBeNull();
+      expect(open(container)).toBe(false);
+      expect(cardOf(container)).toBeNull();
+      // Elsewhere the page's own menu is untouched.
+      expect(fireEvent.contextMenu(container)).toBe(true);
+      expect(fireEvent.contextMenu(document.body)).toBe(true);
     });
 
-    it('focus coming back with the window opens nothing; Escape and a place change close it; she stands still while it is open', () => {
+    it('Escape, a click outside, a right-click outside, a place change and his going away each close it; a click inside does not', () => {
       const { container } = render(<Watt now={day} />);
       runFor(1.5);
-      act(() => (hitOf(container) as HTMLElement).focus());
-      fireEvent.focus(hitOf(container));
-      later(1000);
-      expect(container.querySelector('.watt-card')).toBeNull();
-      // Keyboard focus (Tab) does open it.
-      act(() => (hitOf(container) as HTMLElement).blur());
-      fireEvent.keyDown(window, { key: 'Tab' });
-      act(() => (hitOf(container) as HTMLElement).focus());
-      expect(container.querySelector('.watt-card')).not.toBeNull();
+      open(container);
+      fireEvent.pointerDown(cardOf(container)!.querySelector('.wc-name')!);
+      expect(cardOf(container)).not.toBeNull();
       fireEvent.keyDown(window, { key: 'Escape' });
-      expect(container.querySelector('.watt-card')).toBeNull();
-      fireEvent.mouseEnter(hitOf(container));
-      fireEvent.mouseMove(hitOf(container));
-      later(CARD_DWELL_MS);
-      expect(container.querySelector('.watt-card')).not.toBeNull();
+      expect(cardOf(container)).toBeNull();
+      open(container);
+      fireEvent.pointerDown(document.body, { button: 0 });
+      expect(cardOf(container)).toBeNull();
+      open(container);
+      fireEvent.pointerDown(document.body, { button: 2 });
+      expect(cardOf(container)).toBeNull();
+      open(container);
+      go('home');
+      expect(cardOf(container)).toBeNull();
+      go('unwind');
+      runFor(FADE_OUT_S + FADE_IN_S + 0.5);
+      open(container);
+      expect(cardOf(container)).not.toBeNull();
+      horizon(CAMERAS.home, true);
+      runFor(FADE_OUT_S + 0.5);
+      expect(cardOf(container)).toBeNull();
+    });
+
+    it('he stands still while it is open', () => {
+      const { container } = render(<Watt now={day} />);
+      runFor(1.5);
+      open(container);
       const x = where(container).x;
       runFor(60);
       expect(where(container).x).toBe(x);
-      fireEvent.keyDown(window, { key: 'Escape' });
-      expect(container.querySelector('.watt-card')).toBeNull();
-      fireEvent.mouseEnter(hitOf(container));
-      fireEvent.mouseMove(hitOf(container));
-      later(CARD_DWELL_MS);
-      expect(container.querySelector('.watt-card')).not.toBeNull();
-      go('home');
-      expect(container.querySelector('.watt-card')).toBeNull();
+    });
+
+    it('keyboard: one tab stop; Enter pets; the menu key, Shift+F10 or M opens it and moves focus in; Escape gives focus back', () => {
+      const { container } = render(<Watt now={day} />);
+      runFor(1.5);
+      expect(container.querySelectorAll('.watt-hit').length).toBe(1);
+      expect(hitOf(container).tabIndex).toBe(0);
+      act(() => hitOf(container).focus());
+      // Focus alone opens nothing.
+      expect(cardOf(container)).toBeNull();
+      // Enter on a button is a click with no pointer.
+      fireEvent.click(hitOf(container), { detail: 0 });
+      expect(stored().today.pets).toBe(1);
+      expect(cardOf(container)).toBeNull();
+      const firstButton = () => container.querySelector('.watt-card button:not(:disabled)');
+      for (const key of [{ key: 'ContextMenu' }, { key: 'F10', shiftKey: true }, { key: 'm' }, { key: 'M' }]) {
+        fireEvent.keyDown(hitOf(container), key);
+        expect(cardOf(container), JSON.stringify(key)).not.toBeNull();
+        expect(document.activeElement).toBe(firstButton());
+        fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
+        expect(cardOf(container)).toBeNull();
+        expect(document.activeElement).toBe(hitOf(container));
+      }
+      // A plain F10 or another letter does nothing.
+      fireEvent.keyDown(hitOf(container), { key: 'F10' });
+      fireEvent.keyDown(hitOf(container), { key: 'x' });
+      expect(cardOf(container)).toBeNull();
     });
   });
 
@@ -773,5 +788,505 @@ describe('the amber mark when it is only a label', () => {
     expect(mark.classList.contains('static')).toBe(true);
     expect(mark.hidden).toBe(false);
     expect(mark.style.pointerEvents).toBe('none');
+  });
+});
+
+describe('carrying him', () => {
+  const hitOf = (c: HTMLElement) => c.querySelector<HTMLElement>('.watt-hit')!;
+  const sheepOf = (c: HTMLElement) => c.querySelector<HTMLElement>('.watt-sheep')!;
+  const carried = (c: HTMLElement) => hitOf(c).classList.contains('carrying');
+  const ptr = (id = 1, type = 'mouse') => ({ pointerId: id, pointerType: type, button: 0 });
+  const grab = (c: HTMLElement, x: number, y: number, id = 1, type = 'mouse') => fireEvent.pointerDown(hitOf(c), { ...ptr(id, type), clientX: x, clientY: y });
+  const move = (c: HTMLElement, x: number, y: number, id = 1) => fireEvent.pointerMove(hitOf(c), { ...ptr(id), clientX: x, clientY: y });
+  const drop = (c: HTMLElement, x: number, y: number, id = 1) => fireEvent.pointerUp(hitOf(c), { ...ptr(id), clientX: x, clientY: y });
+  /** The sheep's drawn top left, the way it faces and its vertical squash. */
+  const look = (c: HTMLElement) => {
+    const t = sheepOf(c).style.transform;
+    const m = /translate\((-?[\d.]+)px(?:,\s*(-?[\d.]+)px)?\) scaleX\((-?1)\) scaleY\(([\d.]+)\)/.exec(t);
+    return { x: Number(m?.[1]), y: Number(m?.[2] ?? 0), dir: Number(m?.[3]), squash: Number(m?.[4]), t };
+  };
+  const rows = (c: HTMLElement) => (Number(c.querySelector('svg')!.getAttribute('height')) * 18) / Number(c.querySelector('svg')!.getAttribute('width'));
+  const flat = (c: HTMLElement) => (c.querySelector('.watt-bubble')?.textContent ?? '').replace(/\n/g, ' ');
+  const eyes = (c: HTMLElement) => c.querySelectorAll('.watt-sheep > svg rect[fill="#35e6ea"]').length;
+  let setCap: ReturnType<typeof vi.fn>;
+  let relCap: ReturnType<typeof vi.fn>;
+  const proto = HTMLElement.prototype as unknown as Record<string, unknown>;
+  beforeEach(() => {
+    setCap = vi.fn();
+    relCap = vi.fn();
+    proto.setPointerCapture = setCap;
+    proto.releasePointerCapture = relCap;
+    proto.hasPointerCapture = () => true;
+  });
+  afterEach(() => {
+    delete proto.setPointerCapture;
+    delete proto.releasePointerCapture;
+    delete proto.hasPointerCapture;
+    Object.defineProperty(document, 'hidden', { configurable: true, value: false });
+  });
+  const start = (nowFn: () => number = day, props: { inCall?: boolean } = {}) => {
+    const r = render(<Watt now={nowFn} {...props} />);
+    runFor(1.5);
+    return r;
+  };
+  const carryAway = (c: HTMLElement, x = 1200, y = 300) => {
+    grab(c, 500, 400);
+    move(c, 520, 400);
+    move(c, x, y);
+    runFor(0.6);
+  };
+
+  it('a press that moves under 6 px is a pet and lifts nothing; 6 px or more is a carry and never a pet', () => {
+    const { container } = start();
+    grab(container, 100, 100);
+    move(container, 103, 102);
+    expect(carried(container)).toBe(false);
+    drop(container, 103, 102);
+    expect(stored().today.pets).toBe(1);
+    expect(container.querySelector('.watt-card')).toBeNull();
+    // Just under 6: still a press.
+    let ms = day() + 10_000;
+    const second = render(<Watt now={() => ms} />);
+    runFor(1.5);
+    grab(second.container, 100, 100);
+    move(second.container, 105.9, 100);
+    expect(second.container.querySelectorAll('.watt-hit.carrying').length).toBe(0);
+    drop(second.container, 105.9, 100);
+    ms += 5000;
+    // Exactly 6: a carry.
+    grab(second.container, 100, 100);
+    move(second.container, 106, 100);
+    tick();
+    expect(second.container.querySelectorAll('.watt-hit.carrying').length).toBe(1);
+    drop(second.container, 106, 100);
+    expect(JSON.parse(localStorage.getItem(PET_KEY)!).today.pets).toBeLessThanOrEqual(2);
+  });
+
+  it('a carry is not a pet: no hearts, no count, no card', () => {
+    const { container } = start();
+    carryAway(container);
+    tick();
+    expect(carried(container)).toBe(true);
+    drop(container, 1200, 300);
+    runFor(2);
+    expect(stored().today?.pets ?? 0).toBe(0);
+    expect(Number(container.querySelector<HTMLElement>('.watt-heart')!.style.opacity || 0)).toBe(0);
+    expect(container.querySelector('.watt-card')).toBeNull();
+  });
+
+  it('a press held longer than half a second is not a pet', () => {
+    let ms = day();
+    const { container } = start(() => ms);
+    grab(container, 100, 100);
+    ms += 600;
+    drop(container, 100, 100);
+    expect(stored().today?.pets ?? 0).toBe(0);
+    grab(container, 100, 100);
+    ms += 400;
+    drop(container, 100, 100);
+    expect(stored().today.pets).toBe(1);
+  });
+
+  it('works for a pen and for touch as it does for a mouse', () => {
+    for (const type of ['pen', 'touch']) {
+      const { container, unmount } = start();
+      grab(container, 500, 400, 7, type);
+      move(container, 600, 400, 7);
+      tick();
+      expect(carried(container), type).toBe(true);
+      expect(setCap).toHaveBeenCalledWith(7);
+      drop(container, 600, 400, 7);
+      unmount();
+    }
+  });
+
+  it('a right-button press does not start a carry', () => {
+    const { container } = start();
+    fireEvent.pointerDown(hitOf(container), { pointerId: 1, pointerType: 'mouse', button: 2, clientX: 5, clientY: 5 });
+    move(container, 300, 300);
+    expect(carried(container)).toBe(false);
+  });
+
+  it('while held he follows the pointer by the wool on his back, above the cards, in a held pose', () => {
+    const { container } = start();
+    const standing = rows(container);
+    carryAway(container, 1200, 300);
+    const l = look(container);
+    // The grab point sits left of centre when he faces right, right of centre facing left.
+    const off = l.dir === 1 ? 0.38 * 108 : 0.62 * 108;
+    expect(l.x).toBeCloseTo(1200 - off, 0);
+    expect(l.y).toBeCloseTo(300 - 0.14 * 72, 0);
+    expect(container.querySelector<HTMLElement>('.watt')!.style.zIndex).toBe('40');
+    expect(rows(container)).toBe(standing);
+    // The legs sway: both held frames show over a second.
+    const heights = new Set<string>();
+    for (let i = 0; i < 40; i++) {
+      tick();
+      heights.add(container.querySelector('.watt-sheep > svg')!.innerHTML);
+    }
+    expect(heights.size).toBeGreaterThanOrEqual(2);
+    // It tilts with the pointer's speed, and straightens when still.
+    move(container, 1500, 300);
+    tick();
+    expect(look(container).t).toMatch(/rotate\(/);
+    runFor(2);
+    expect(look(container).t).not.toMatch(/rotate\(-?[1-9]/);
+    drop(container, 1500, 300);
+    expect(container.querySelector<HTMLElement>('.watt')!.style.zIndex).toBe('40');
+    runFor(1);
+    expect(container.querySelector<HTMLElement>('.watt')!.style.zIndex).toBe('');
+  });
+
+  it('is clamped so no part of him leaves the screen', () => {
+    const { container } = start();
+    grab(container, 500, 400);
+    move(container, 520, 400);
+    move(container, -900, -900);
+    runFor(0.8);
+    let l = look(container);
+    expect(l.x).toBeGreaterThanOrEqual(0);
+    expect(l.y).toBeGreaterThanOrEqual(0);
+    move(container, 9000, 9000);
+    runFor(0.8);
+    l = look(container);
+    expect(l.x + 108).toBeLessThanOrEqual(2560);
+    expect(l.y + 72).toBeLessThanOrEqual(720);
+    drop(container, 9000, 9000);
+  });
+
+  it('holds the pointer with capture while carried, so nothing under him sees it, and lets go on release', () => {
+    const { container } = start();
+    grab(container, 500, 400);
+    expect(setCap).toHaveBeenCalledWith(1);
+    move(container, 600, 400);
+    runFor(0.1);
+    expect(hitOf(container).style.pointerEvents).toBe('auto');
+    expect(hitOf(container).classList.contains('carrying')).toBe(true);
+    // The amber mark and the clover are hidden and take no pointer while he is held.
+    act(() => (window as unknown as { __watt: { clover(): void } }).__watt.clover());
+    runFor(0.2);
+    expect(container.querySelector<HTMLElement>('.watt-clover')!.style.visibility).toBe('hidden');
+    expect(container.querySelector<HTMLElement>('.watt-clover')!.style.pointerEvents).toBe('none');
+    drop(container, 600, 400);
+    expect(relCap).toHaveBeenCalledWith(1);
+    runFor(1);
+    expect(hitOf(container).style.pointerEvents).toBe('');
+    expect(container.querySelector<HTMLElement>('.watt-clover')!.style.visibility).toBe('');
+  });
+
+  it('is set down on the ground line under the release point, at that x kept inside his span, on each place', () => {
+    const cases: [WattPlace, number][] = [
+      ['work', 582],
+      ['home', 582],
+      ['meet', 582],
+      ['unwind', 505],
+    ];
+    for (const [place, hy] of cases) {
+      usePlaceStore.setState({ active: place });
+      publishCamera(CAMERAS[place], false);
+      const { container, unmount } = start();
+      const walk = WALKS[place];
+      carryAway(container, 2500, 100);
+      drop(container, 2500, 100);
+      runFor(1);
+      let l = look(container);
+      expect(l.x, place).toBe(walk.max);
+      expect(l.y + rows(container) * walk.px, place).toBe(hy);
+      carryAway(container, 20, 100);
+      drop(container, 20, 100);
+      runFor(1);
+      l = look(container);
+      expect(l.x, place).toBe(walk.min);
+      expect(l.y + rows(container) * walk.px, place).toBe(hy);
+      // In the middle of his span he lands where he was let go.
+      const inside = (walk.min + walk.max) / 2 + 20;
+      carryAway(container, inside + 0.5 * 108, 200);
+      drop(container, inside + 0.5 * 108, 200);
+      runFor(1);
+      l = look(container);
+      expect(l.x, place).toBeGreaterThanOrEqual(walk.min);
+      expect(l.x, place).toBeLessThanOrEqual(walk.max);
+      unmount();
+    }
+  });
+
+  it('falls gently (ease in, 300 to 500 ms by height), squashes once on landing, then sits', () => {
+    const { container } = start();
+    carryAway(container, 450, 60);
+    const high = look(container).y;
+    drop(container, 450, 60);
+    const ys: number[] = [];
+    const squash: number[] = [];
+    for (let i = 0; i < 24; i++) {
+      tick();
+      ys.push(look(container).y);
+      squash.push(look(container).squash);
+    }
+    // Ease in: the first 100 ms cover less than a quarter of the fall.
+    const fallen = 505 - 72 - high;
+    expect(ys[1] - high).toBeLessThan(fallen / 4);
+    // Down by 500 ms at the latest (tick 10), and it never goes back up.
+    expect(ys[10]).toBeGreaterThanOrEqual(505 - 66 - 1);
+    for (let i = 1; i < ys.length; i++) expect(ys[i]).toBeGreaterThanOrEqual(ys[i - 1] - 1e-9);
+    // One squash, back to 1.
+    expect(Math.min(...squash)).toBeLessThan(1);
+    expect(Math.min(...squash)).toBeGreaterThan(0.75);
+    expect(squash[squash.length - 1]).toBe(1);
+    let dips = 0;
+    for (let i = 1; i < squash.length; i++) if (squash[i] < 1 && squash[i - 1] >= 1) dips++;
+    expect(dips).toBe(1);
+    expect(rows(container)).toBe(11);
+  });
+
+  it('under reduced motion he is simply set down, with no fall and no bounce', () => {
+    reduced(true);
+    const { container } = render(<Watt now={day} />);
+    grab(container, 500, 400);
+    move(container, 520, 400);
+    move(container, 450, 60);
+    expect(carried(container)).toBe(true);
+    expect(look(container).y).toBeLessThan(100);
+    drop(container, 450, 60);
+    const l = look(container);
+    expect(l.y + 66).toBe(505);
+    expect(l.squash).toBe(1);
+    expect(frames.size).toBe(0);
+  });
+
+  it('stays near the spot for about 20 seconds, sitting and looking around, then walks back to his wander', () => {
+    const { container } = start();
+    carryAway(container, 440, 300);
+    drop(container, 440, 300);
+    runFor(1);
+    const x = look(container).x;
+    expect(rows(container)).toBe(11);
+    runFor(17);
+    expect(look(container).x).toBe(x);
+    expect(look(container).y + 66).toBe(505);
+    // Well after the sit: back on his feet and inside his walk.
+    runFor(25);
+    expect(rows(container)).toBe(12);
+    expect(look(container).x).toBeGreaterThanOrEqual(WALKS.unwind.min);
+    expect(look(container).x).toBeLessThanOrEqual(WALKS.unwind.max);
+  });
+
+  describe('anything that is not the pointer puts him down at once', () => {
+    const interruptions: [string, (c: HTMLElement, r: { rerender: (ui: React.ReactElement) => void }) => void][] = [
+      ['pointercancel', (c) => fireEvent.pointerCancel(hitOf(c), ptr())],
+      ['a lost capture', (c) => fireEvent(hitOf(c), new PointerEvent('lostpointercapture', { pointerId: 1, bubbles: true }))],
+      ['the window losing focus', () => fireEvent.blur(window)],
+      ['the page being hidden', () => {
+        Object.defineProperty(document, 'hidden', { configurable: true, value: true });
+        document.dispatchEvent(new Event('visibilitychange'));
+      }],
+      ['a call starting', (_c, r) => r.rerender(<Watt now={day} inCall />)],
+      ['the display going idle', (_c, r) => {
+        idleState.on = true;
+        r.rerender(<Watt now={day} />);
+      }],
+    ];
+    for (const [name, trigger] of interruptions) {
+      it(name, () => {
+        const r = start();
+        const { container } = r;
+        carryAway(container, 450, 80);
+        expect(carried(container)).toBe(true);
+        trigger(container, r);
+        Object.defineProperty(document, 'hidden', { configurable: true, value: false });
+        tick();
+        expect(carried(container), name).toBe(false);
+        expect(relCap).toHaveBeenCalled();
+        const l = look(container);
+        if (name === 'the page being hidden') {
+          // No fall to watch: he is already on the ground.
+          expect(l.y + rows(container) * 6, name).toBe(505);
+        } else {
+          // From where he was: still in the air a moment later, on the ground after the fall.
+          expect(l.y + 72).toBeLessThan(505);
+          runFor(0.8);
+          expect(look(container).y + rows(container) * 6, name).toBe(505);
+        }
+        // Never a pet, never stuck: the next press works.
+        expect(stored().today?.pets ?? 0).toBe(0);
+        runFor(1);
+        grab(container, 500, 400, 2);
+        move(container, 600, 400, 2);
+        tick();
+        expect(carried(container), name).toBe(true);
+        drop(container, 600, 400, 2);
+        idleState.on = false;
+      });
+    }
+    it('a place change', () => {
+      const { container } = start();
+      carryAway(container, 450, 80);
+      go('home');
+      publishCamera(CAMERAS.home, false);
+      tick();
+      expect(carried(container)).toBe(false);
+      expect(relCap).toHaveBeenCalled();
+      runFor(FADE_OUT_S + FADE_IN_S + 1);
+      expect(where(container).feet).toBe(582);
+      expect(container.querySelector<HTMLElement>('.watt')!.style.zIndex).toBe('');
+    });
+  });
+
+  it('letting go on a clover (within 24 px) feeds it to him at once; further away leaves it', () => {
+    const { container } = start();
+    // He is lifted first: a clover grows while he is in the air (he would eat it where he stood).
+    grab(container, 500, 400);
+    move(container, 520, 400);
+    act(() => (window as unknown as { __watt: { clover(): void } }).__watt.clover());
+    runFor(0.3);
+    const cl = container.querySelector<HTMLElement>('.watt-clover')!;
+    const cx = parseFloat(cl.style.left) + 12;
+    const cy = parseFloat(cl.style.top) + 12;
+    move(container, cx + 40, cy);
+    runFor(0.4);
+    drop(container, cx + 40, cy);
+    expect(container.querySelector('.watt-clover')).not.toBeNull();
+    expect(stored().today?.clovers ?? 0).toBe(0);
+    runFor(1);
+    grab(container, 500, 400, 2);
+    move(container, 520, 400, 2);
+    move(container, cx + 20, cy + 10, 2);
+    runFor(0.4);
+    drop(container, cx + 20, cy + 10, 2);
+    expect(container.querySelector('.watt-clover')).toBeNull();
+    expect(stored().today.clovers).toBe(1);
+  });
+
+  describe('shaking him', () => {
+    const shake = (c: HTMLElement, swings: number) => {
+      for (let i = 0; i < swings; i++) {
+        move(c, i % 2 ? 900 : 1000 + 100, 300);
+        tick();
+      }
+    };
+    it('three fast direction changes in a second make him dizzy for 3 seconds after landing, with a dizzy line at most once a minute', () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      let ms = day();
+      const { container } = start(() => ms);
+      grab(container, 500, 400);
+      move(container, 520, 400);
+      move(container, 1000, 300);
+      runFor(0.4);
+      shake(container, 8);
+      drop(container, 1000, 300);
+      runFor(0.9);
+      expect(eyes(container)).toBe(5);
+      expect(LINES.dizzy).toContain(flat(container));
+      runFor(3.5);
+      expect(eyes(container)).toBe(1);
+      // Shaken again within a minute: dizzy eyes, but no second dizzy line.
+      ms += 25_000;
+      act(() => void vi.advanceTimersByTime(8000));
+      runFor(8);
+      grab(container, 500, 400, 2);
+      move(container, 520, 400, 2);
+      move(container, 1000, 300, 2);
+      runFor(0.4);
+      for (let i = 0; i < 8; i++) {
+        move(container, i % 2 ? 900 : 1100, 300, 2);
+        tick();
+      }
+      drop(container, 1000, 300, 2);
+      runFor(0.9);
+      expect(eyes(container)).toBe(5);
+      expect(LINES.dizzy).not.toContain(flat(container));
+    });
+    it('a slow swing, or a single direction change, does not', () => {
+      const { container } = start();
+      grab(container, 500, 400);
+      move(container, 520, 400);
+      for (let i = 0; i < 12; i++) {
+        move(container, i % 2 ? 990 : 1010, 300);
+        tick();
+      }
+      move(container, 1500, 300);
+      tick();
+      move(container, 400, 300);
+      tick();
+      drop(container, 400, 300);
+      runFor(0.9);
+      expect(eyes(container)).toBe(1);
+    });
+  });
+
+  describe('his lines', () => {
+    const text = (c: HTMLElement) => (c.querySelector('.watt-bubble') ? flat(c) : null);
+    it('one held line a moment in, however long he is held; one on landing; both from their own groups', () => {
+      const { container } = start();
+      carryAway(container, 450, 120);
+      expect(text(container)).toBeNull();
+      runFor(1);
+      const held = text(container);
+      expect(LINES.held).toContain(held);
+      runFor(5);
+      expect(text(container)).toBe(held);
+      drop(container, 450, 120);
+      runFor(0.9);
+      expect(LINES.landed).toContain(text(container));
+    });
+    it('says nothing when chatty is off, in a call, in the first minute of focus, while idle or asleep', () => {
+      const quiet: [string, () => void, (ms: number) => number][] = [
+        ['off', () => localStorage.setItem(PET_KEY, JSON.stringify({ chatty: 'off' })), () => day()],
+        ['focus', () => useFocusStore.setState({ state: { status: 'running', minutes: 25, endAt: day() + 24.5 * 60_000 } as never }), () => day()],
+        ['idle', () => void (idleState.on = true), () => day()],
+      ];
+      for (const [name, setup, clock] of quiet) {
+        localStorage.clear();
+        idleState.on = false;
+        useFocusStore.setState({ state: { status: 'idle', minutes: 25 } });
+        setup();
+        const { container, unmount } = start(() => clock(0));
+        if (name === 'idle') {
+          // The display going idle sets him down; he cannot be picked up into a line.
+          grab(container, 500, 400);
+          move(container, 600, 400);
+        } else carryAway(container, 450, 120);
+        runFor(3);
+        drop(container, 450, 120);
+        runFor(1);
+        expect(text(container), name).toBeNull();
+        unmount();
+      }
+    });
+    it('a carry within 20 seconds of the last one says nothing more', () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      let ms = day();
+      const { container } = start(() => ms);
+      carryAway(container, 450, 120);
+      runFor(1.2);
+      drop(container, 450, 120);
+      runFor(9);
+      act(() => void vi.advanceTimersByTime(8000));
+      ms += 10_000;
+      grab(container, 500, 400, 2);
+      move(container, 520, 400, 2);
+      move(container, 450, 120, 2);
+      runFor(2);
+      expect(text(container)).toBeNull();
+      drop(container, 450, 120, 2);
+    });
+  });
+
+  it('the paint path schedules nothing per frame while he is carried', () => {
+    const { container } = start();
+    carryAway(container, 700, 250);
+    const spy = vi.spyOn(window, 'setTimeout');
+    const spyI = vi.spyOn(window, 'setInterval');
+    const raf = window.requestAnimationFrame as unknown as ReturnType<typeof vi.fn>;
+    raf.mockClear();
+    for (let i = 0; i < 40; i++) {
+      move(container, 700 + (i % 7) * 15, 250 + (i % 5) * 9);
+      spy.mockClear();
+      tick();
+      // Held lines are the one thing that may arm a timer (the bubble's own), once.
+      if (!container.querySelector('.watt-bubble')) expect(spy).not.toHaveBeenCalled();
+      expect(spyI).not.toHaveBeenCalled();
+    }
+    expect(raf).toHaveBeenCalledTimes(40);
+    drop(container, 700, 250);
   });
 });

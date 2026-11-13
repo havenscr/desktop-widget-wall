@@ -7,10 +7,10 @@
  * idle body rows plus two leg rows. The other poses are drawn the same way, at the same size; props
  * and the little things (heart, clover, amber mark) use their own colour letters (`PROP_COLORS`).
  */
-export type Pose = 'idle' | 'walk' | 'sleep' | 'read' | 'look' | 'yawn' | 'stretch' | 'eat';
+export type Pose = 'idle' | 'walk' | 'sleep' | 'read' | 'look' | 'yawn' | 'stretch' | 'eat' | 'held' | 'held2' | 'land' | 'sit' | 'dizzy';
 
 /** Every pose, for the tests and the sprite sheet. */
-export const POSES: readonly Pose[] = ['idle', 'walk', 'sleep', 'read', 'look', 'yawn', 'stretch', 'eat'];
+export const POSES: readonly Pose[] = ['idle', 'walk', 'sleep', 'read', 'look', 'yawn', 'stretch', 'eat', 'held', 'held2', 'land', 'sit', 'dizzy'];
 
 const LEGS = ['...l..l...l..l....', '...l..l...l..l....'];
 
@@ -97,6 +97,41 @@ export const SPRITES: Readonly<Record<Pose, readonly string[]>> = {
     '..wwwwwwwwwww.fff.',
     ...LEGS,
   ],
+  // Carried by the wool: eyes wide, legs dangling and leaning one way (held) or the other (held2).
+  held: [
+    ...IDLE.slice(0, 3),
+    '.wwwwwwwwwwwwwfeff',
+    'wwwwwwwwwwwwwwfeef',
+    ...IDLE.slice(5, 10),
+    '...l..l...l..l....',
+    '..l..l...l..l.....',
+  ],
+  held2: [
+    ...IDLE.slice(0, 3),
+    '.wwwwwwwwwwwwwfeff',
+    'wwwwwwwwwwwwwwfeef',
+    ...IDLE.slice(5, 10),
+    '...l..l...l..l....',
+    '....l..l...l..l...',
+  ],
+  // The moment of landing: flattened wool, legs splayed, eyes shut.
+  land: [
+    ...IDLE.slice(1, 4),
+    'wwwwwwwwwwwwwwf-ff',
+    ...IDLE.slice(5, 10),
+    '.l...l.....l...l..',
+    '.l...l.....l...l..',
+  ],
+  // Sitting: round bottom on the ground, paws tucked, no legs standing.
+  sit: [
+    ...IDLE.slice(0, 7),
+    '.wwwwwwwwwwwwww...',
+    '.wwwwwwwwwwwwwww..',
+    '..wwwwwwwwwwwww...',
+    '..ll.....ll.......',
+  ],
+  // Swirly eyes (a checker of cyan and dark) after being shaken.
+  dizzy: [...IDLE.slice(0, 3), '.wwwwwwwwwwwwwfefe', 'wwwwwwwwwwwwwwffef', 'wwwwwwwwwwwwwwfefe', ...IDLE.slice(6)],
 };
 
 /** The ear pixel (column, row) of each pose: props that sit on the head are placed from it. */
@@ -109,6 +144,11 @@ export const EAR: Readonly<Record<Pose, readonly [number, number]>> = {
   yawn: [14, 2],
   stretch: [14, 3],
   eat: [14, 4],
+  held: [14, 2],
+  held2: [14, 2],
+  land: [14, 1],
+  sit: [14, 2],
+  dizzy: [14, 2],
 };
 
 /** Things she wears or holds. `book` to `nightcap` follow the day; `bow`, `star` and `cape` are cosmetics. */

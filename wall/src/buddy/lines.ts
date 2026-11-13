@@ -17,6 +17,10 @@ export type Topic =
   | 'clover'
   | 'pet'
   | 'wake'
+  // Being carried and set down (said by `Watt.tsx` on its own rules, never picked by the scheduler).
+  | 'held'
+  | 'landed'
+  | 'dizzy'
   // What is true right now (context, picked over plain thoughts).
   | 'agentsWorking'
   | 'musicPlaying'
@@ -39,6 +43,9 @@ export type Topic =
   | 'curious';
 
 export const LINES: Readonly<Record<Topic, readonly string[]>> = {
+  held: ['Oh. We are up high.', 'The wall looks different from here.', 'My legs have opinions about this.', 'I am holding very still.', 'Excellent altitude, honestly.'],
+  landed: ['Ground. Good ground.', 'Landed. Wool intact.', 'This spot will do.', 'A fine new view.', 'Back on four feet.'],
+  dizzy: ['The horizon is spinning slightly.', 'Two walls. I see two walls.', 'Give me a moment. The sky is sloshing.', 'I am fine. The floor is not.'],
   focusStart: [
     'Reading along. Quietly.',
     'Focus mode. I will be quiet.',

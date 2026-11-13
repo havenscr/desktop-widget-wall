@@ -58,8 +58,15 @@
   padding: 0;
   border: 0;
   background: transparent;
-  cursor: pointer;
+  /* Hover opens nothing: the pointer shows he can be picked up. */
+  cursor: grab;
   pointer-events: none;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.watt-hit.carrying {
+  cursor: grabbing;
 }
 .watt-hit-part {
   position: absolute;
@@ -170,7 +177,7 @@
   }
 }
 
-/* Her hover card: a strip in the band over the horizon beside her (Unwind: under the transport
+/* His card (right-click): a strip in the band over the horizon beside her (Unwind: under the transport
    row), drawn at exactly CARD_W by CARD_H (petFrame.ts), so the overlap test checks what shows. */
 .watt-card {
   position: absolute;
@@ -188,6 +195,9 @@
   color: #dcd3fb;
   font: 500 14px/1.2 var(--body);
   pointer-events: auto;
+}
+.watt-card:focus {
+  outline: none;
 }
 .wc-head {
   display: flex;

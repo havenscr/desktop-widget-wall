@@ -13,6 +13,28 @@ import { useIdle } from '../ui/useIdle';
 import { useReducedMotion } from '../ui/useReducedMotion';
 import { useWeather } from '../weather/useWeather';
 import { useNextMeeting } from '../work/useNextMeeting';
+import {
+  FALL,
+  RETURN,
+  CARRY_LINE_GAP_MS,
+  CLOVER_FEED_PX,
+  DIZZY_LINE_GAP_MS,
+  GRAB_PX,
+  HELD,
+  NONE,
+  PET_MAX_MS,
+  SETTLE_S,
+  airborne,
+  beginCarry,
+  cancelCarry,
+  carryFrame,
+  createCarry,
+  moveCarry,
+  placeCarriedBubble,
+  releaseCarry,
+  stepCarry,
+} from './carry';
+import { STAGE_HEIGHT, STAGE_WIDTH } from '../stage/fitScale';
 import { BUBBLE_MS, CHECK_MS, createChat, lineFrom, markSpoken, nextBubble, quietNow, type Chatty, type Quiet, type Talk } from './chatter';
 import type { Topic } from './lines';
 import {
@@ -35,6 +57,7 @@ import {
 } from './model';
 import { PetCard } from './PetCard';
 import {
+  BUBBLE,
   HEARTS_S,
   REACT_S,
   atClover,
@@ -71,10 +94,9 @@ export const PET_HOLD_MS = 3000;
 /** A pet gets a spoken reply only this long after any bubble, and at most one pet line this often. */
 export const PET_REPLY_GAP_MS = 20_000;
 export const PET_LINE_EVERY_MS = 60_000;
-/** The pointer rests on her this long before her card opens; the move from her to the card has this grace. */
-export const CARD_DWELL_MS = 400;
-export const CARD_GRACE_MS = 250;
-/** A meeting this close (milliseconds) makes her look at the clock and say so. */
+/** Watt's tooltip: the three things the pointer can do on him. */
+export const WATT_TIP = 'Click to pet. Drag to carry. Right-click for his card.';
+/** A meeting this close (milliseconds) makes him look at the clock and say so. */
 export const MEETING_SOON_MS = 5 * 60_000;
 /** Music playing this long without a long break is a listening streak, milliseconds. */
 export const STREAK_MS = 45 * 60_000;
@@ -150,6 +172,9 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
   const mind = useRef(createMind());
   const wake = useRef<() => void>(() => {});
   const startReact = useRef<(kind: ReactKind, dir?: 1 | -1) => void>(() => {});
+  // Being carried: one record, reused (`carry.ts`); the loop's clock for handlers outside it.
+  const carry = useRef(createCarry());
+  const tNowRef = useRef<() => number>(() => performance.now() / 1000);
 
   const actor = useRef<HTMLDivElement>(null);
   const sheep = useRef<HTMLDivElement>(null);
@@ -476,111 +501,290 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
     else usePlaceStore.getState().setActive('work');
   }, [firstId]);
 
-  // Hover card: opens after the pointer rests on her (or on keyboard focus), stays while the
-  // pointer moves from her to it, and closes the moment it leaves the card, on Escape, on a place
-  // change and when she goes away. She stands still while it is open.
+  // His card: opens on a right-click on him (or the ContextMenu key, Shift+F10 or M), closes on
+  // Escape, a click or right-click outside it, a right-click on him again, a place change and when
+  // he goes away. He stands still while it is open. Hovering opens nothing.
   const [card, setCard] = useState<{ left: number; top: number } | null>(null);
   const cardRef = useRef(card);
   cardRef.current = card;
-  const dwellTimer = useRef(0);
-  const closeTimer = useRef(0);
-  const frameRef = useRef({ x: 0, y: 0, w: 0 });
+  const frameRef = useRef<{ x: number; y: number; w: number; dir: 1 | -1 }>({ x: 0, y: 0, w: 0, dir: 1 });
   const cardBox = useRef(createBox());
-  const openCard = useCallback(() => {
-    window.clearTimeout(dwellTimer.current);
-    dwellTimer.current = 0;
-    window.clearTimeout(closeTimer.current);
+  const focusCard = useRef(false);
+  const kbMenuAt = useRef(-Infinity);
+  const openCard = useCallback((fromKeyboard = false) => {
     const p = presence.current;
-    if (!p.place || p.opacity < 0.5) return;
+    if (!p.place || p.opacity < 0.5 || carry.current.mode === HELD) return;
     const f = frameRef.current;
     const b = placeCard(p.place, WALKS[p.place], f.x, f.w, cardBox.current);
+    focusCard.current = fromKeyboard;
     setCard({ left: b.left, top: b.top });
   }, []);
-  const closeCard = useCallback(() => {
-    window.clearTimeout(dwellTimer.current);
-    dwellTimer.current = 0;
-    window.clearTimeout(closeTimer.current);
-    setCard(null);
-  }, []);
+  const closeCard = useCallback(() => setCard(null), []);
   const closeRef = useRef(closeCard);
   closeRef.current = closeCard;
-  const onHitEnter = useCallback(() => {
-    // Only cancels a pending close. Entering is not enough to open the card: she may have walked
-    // under a pointer that is resting still. The dwell starts from a real pointer movement.
-    window.clearTimeout(closeTimer.current);
-  }, []);
-  const onHitMove = useCallback(() => {
-    if (cardRef.current || dwellTimer.current) return;
-    dwellTimer.current = window.setTimeout(() => {
-      dwellTimer.current = 0;
-      openCard();
-    }, CARD_DWELL_MS);
-  }, [openCard]);
-  const onHitLeave = useCallback(() => {
-    window.clearTimeout(dwellTimer.current);
-    dwellTimer.current = 0;
-    if (cardRef.current) closeTimer.current = window.setTimeout(closeCard, CARD_GRACE_MS);
-  }, [closeCard]);
-  const onCardEnter = useCallback(() => window.clearTimeout(closeTimer.current), []);
-  const onHitFocus = useCallback(
-    (e: React.FocusEvent<HTMLButtonElement>) => {
-      // Keyboard focus only: focus coming back with the window (after a click) opens nothing. The
-      // last input decides (as browsers do for :focus-visible); :focus-visible is checked too.
-      if (!keyboardLast.current) return;
-      let visible = false;
-      try {
-        visible = e.currentTarget.matches(':focus-visible');
-      } catch {
-        visible = false;
-      }
-      if (visible) openCard();
+  const onHitKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLButtonElement>) => {
+      const menu = e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey) || ((e.key === 'm' || e.key === 'M') && !e.ctrlKey && !e.metaKey && !e.altKey);
+      if (!menu) return;
+      e.preventDefault();
+      kbMenuAt.current = performance.now();
+      openCard(true);
     },
     [openCard],
   );
-  const onHitBlur = useCallback(
-    (e: React.FocusEvent<HTMLButtonElement>) => {
-      const to = e.relatedTarget as Node | null;
-      if (!to || !(to as Element).closest?.('.watt-card')) closeCard();
-    },
-    [closeCard],
-  );
-  const keyboardLast = useRef(false);
+  // The native menu is suppressed on him, and only on him; the card toggles. A contextmenu that
+  // follows a keyboard menu key within a moment is the same gesture and changes nothing.
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Tab') keyboardLast.current = true;
+    const el = hit.current;
+    if (!el) return;
+    const onMenu = (e: MouseEvent) => {
+      e.preventDefault();
+      if (performance.now() - kbMenuAt.current < 600) return;
+      if (cardRef.current) closeRef.current();
+      else openCard();
     };
-    const onPointer = () => {
-      keyboardLast.current = false;
-    };
-    window.addEventListener('keydown', onKey, true);
-    window.addEventListener('pointerdown', onPointer, true);
-    window.addEventListener('mousedown', onPointer, true);
-    return () => {
-      window.removeEventListener('keydown', onKey, true);
-      window.removeEventListener('pointerdown', onPointer, true);
-      window.removeEventListener('mousedown', onPointer, true);
-    };
-  }, []);
+    el.addEventListener('contextmenu', onMenu);
+    return () => el.removeEventListener('contextmenu', onMenu);
+  }, [openCard]);
   useEffect(() => {
     mind.current.held = card !== null;
     if (!card) return;
+    if (focusCard.current) {
+      focusCard.current = false;
+      actor.current?.querySelector<HTMLElement>('.watt-card button:not(:disabled)')?.focus();
+    }
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') closeRef.current();
+      if (e.key !== 'Escape') return;
+      const a = document.activeElement;
+      const inside = !!a && (a === hit.current || !!a.closest?.('.watt-card'));
+      closeRef.current();
+      if (inside) hit.current?.focus();
+    };
+    const onDown = (e: PointerEvent) => {
+      const t = e.target as Element | null;
+      if (t?.closest?.('.watt-card')) return;
+      // A right-click on him is his own contextmenu, which toggles the card.
+      if (e.button === 2 && t?.closest?.('.watt-hit')) return;
+      closeRef.current();
     };
     window.addEventListener('keydown', onKey);
-    const offPlace = usePlaceStore.subscribe(() => closeRef.current());
+    window.addEventListener('pointerdown', onDown, true);
+    const offPlace = usePlaceStore.subscribe((st, prev) => {
+      if (st.active !== prev.active) closeRef.current();
+    });
     return () => {
       window.removeEventListener('keydown', onKey);
+      window.removeEventListener('pointerdown', onDown, true);
       offPlace();
     };
   }, [card]);
-  useEffect(
-    () => () => {
-      window.clearTimeout(dwellTimer.current);
-      window.clearTimeout(closeTimer.current);
+  const onCardBlur = useCallback((e: React.FocusEvent<HTMLElement>) => {
+    // Keyboard focus moving on past the card closes it; focus going nowhere (the window) does not.
+    const to = e.relatedTarget as Node | null;
+    if (to && !e.currentTarget.contains(to) && to !== hit.current) closeRef.current();
+  }, []);
+
+  // Pick him up and set him down. A press that moves 6 px or more becomes a carry (pointer capture,
+  // so nothing under him sees the pointer); one that does not is a pet on release.
+  const press = useRef({ active: false, id: -1, x: 0, y: 0, t: 0 });
+  const pt = useRef({ x: 0, y: 0 });
+  const cloverAt = useRef({ x: 0, y: 0, on: false });
+  const lastCarryLine = useRef(-Infinity);
+  const lastDizzyLine = useRef(-Infinity);
+  const heldBubble = useRef(0);
+  const sitTimer = useRef(0);
+  useEffect(() => () => window.clearTimeout(sitTimer.current), []);
+  /** The pointer in stage pixels (the stage is scaled to the window). */
+  const toStage = useCallback((cx: number, cy: number) => {
+    const r = actor.current?.getBoundingClientRect();
+    const o = pt.current;
+    if (r && r.width > 0 && r.height > 0) {
+      o.x = ((cx - r.left) * STAGE_WIDTH) / r.width;
+      o.y = ((cy - r.top) * STAGE_HEIGHT) / r.height;
+    } else {
+      o.x = cx;
+      o.y = cy;
+    }
+    return o;
+  }, []);
+  const dropCapture = useCallback((id: number) => {
+    try {
+      const el = hit.current;
+      if (el && id >= 0 && el.hasPointerCapture?.(id)) el.releasePointerCapture(id);
+    } catch {
+      /* not captured */
+    }
+  }, []);
+  /** Something other than the pointer ended the carry: down he goes from where he is. */
+  const interruptCarry = useCallback(() => {
+    const pr = press.current;
+    pr.active = false;
+    const c = carry.current;
+    if (c.mode !== HELD) return;
+    dropCapture(c.pointerId);
+    const p = presence.current;
+    if (!p.place || !p.camera) {
+      cancelCarry(c);
+      return;
+    }
+    const walk = WALKS[p.place];
+    releaseCarry(c, tNowRef.current(), walk, p.camera.hy, walk.px, reducedRef.current || document.hidden, true);
+    wake.current();
+  }, [dropCapture]);
+  const interruptRef = useRef(interruptCarry);
+  interruptRef.current = interruptCarry;
+  /** A new place, or the camera moving off: he is just gone from where he was, nothing to set down. */
+  const dropCarry = useCallback(() => {
+    press.current.active = false;
+    const c = carry.current;
+    if (c.mode === NONE) return;
+    dropCapture(c.pointerId);
+    cancelCarry(c);
+    mind.current.carry = false;
+  }, [dropCapture]);
+  const dropRef = useRef(dropCarry);
+  dropRef.current = dropCarry;
+
+  const onHitPointerDown = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    const c = carry.current;
+    if (press.current.active || c.mode === HELD || c.mode === FALL) return;
+    const p = presence.current;
+    if (!p.place || !p.camera || p.opacity < 0.5) return;
+    press.current = { active: true, id: e.pointerId, x: e.clientX, y: e.clientY, t: nowRef.current() };
+    try {
+      e.currentTarget.setPointerCapture?.(e.pointerId);
+    } catch {
+      /* the pointer is already gone */
+    }
+  }, []);
+  const startCarry = useCallback(
+    (cx: number, cy: number) => {
+      const p = presence.current;
+      if (!p.place || !p.camera) return;
+      const walk = WALKS[p.place];
+      const at = toStage(cx, cy);
+      const f = frameRef.current;
+      const t = nowRef.current();
+      q.away = p.night || document.hidden;
+      beginCarry(carry.current, press.current.id, at.x, at.y, f.x, p.camera.hy, f.dir, walk.px, tNowRef.current(), t - lastCarryLine.current >= CARRY_LINE_GAP_MS);
+      mind.current.carry = true;
+      closeRef.current();
+      wake.current();
     },
-    [],
+    [q, toStage],
   );
+  const onHitPointerMove = useCallback(
+    (e: React.PointerEvent<HTMLButtonElement>) => {
+      const pr = press.current;
+      if (!pr.active || e.pointerId !== pr.id) return;
+      const c = carry.current;
+      if (c.mode === HELD) {
+        const at = toStage(e.clientX, e.clientY);
+        moveCarry(c, at.x, at.y);
+        if (reducedRef.current) wake.current();
+        return;
+      }
+      if (Math.hypot(e.clientX - pr.x, e.clientY - pr.y) >= GRAB_PX) startCarry(e.clientX, e.clientY);
+    },
+    [startCarry, toStage],
+  );
+  const onHitPointerUp = useCallback(
+    (e: React.PointerEvent<HTMLButtonElement>) => {
+      const pr = press.current;
+      if (!pr.active || e.pointerId !== pr.id) return;
+      pr.active = false;
+      dropCapture(pr.id);
+      const c = carry.current;
+      const p = presence.current;
+      if (c.mode === HELD) {
+        if (!p.place || !p.camera) {
+          cancelCarry(c);
+          return;
+        }
+        const walk = WALKS[p.place];
+        const at = toStage(e.clientX, e.clientY);
+        moveCarry(c, at.x, at.y);
+        // Letting go on a clover feeds it to him.
+        const cl = cloverAt.current;
+        const feed = cloverRef.current !== null && cl.on && Math.hypot(at.x - cl.x, at.y - cl.y) <= CLOVER_FEED_PX;
+        const instant = reducedRef.current || document.hidden;
+        releaseCarry(c, tNowRef.current(), walk, p.camera.hy, walk.px, instant, false);
+        if (feed) {
+          c.fed = true;
+          c.sayLanded = false;
+          eatRef.current();
+        }
+        if (reducedRef.current) {
+          window.clearTimeout(sitTimer.current);
+          sitTimer.current = window.setTimeout(() => wake.current(), SETTLE_S * 1000 + 100);
+        }
+        wake.current();
+        return;
+      }
+      if (Math.hypot(e.clientX - pr.x, e.clientY - pr.y) < GRAB_PX && nowRef.current() - pr.t < PET_MAX_MS) petHer();
+    },
+    [dropCapture, petHer, toStage],
+  );
+  const onHitPointerCancel = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
+    if (press.current.active && e.pointerId === press.current.id) interruptRef.current();
+  }, []);
+  const onHitLostCapture = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
+    if (press.current.active && e.pointerId === press.current.id) interruptRef.current();
+  }, []);
+  // The keyboard's Enter and Space arrive as a click with no pointer (detail 0): a pet.
+  const onHitClick = useCallback(
+    (e: React.MouseEvent<HTMLButtonElement>) => {
+      if (e.detail === 0) petHer();
+    },
+    [petHer],
+  );
+  // Anything else that should put him down: the window losing focus, the page hiding, a place
+  // change, a call starting, the display going idle.
+  useEffect(() => {
+    const onBlur = () => interruptRef.current();
+    const onHide = () => {
+      if (document.hidden) interruptRef.current();
+    };
+    window.addEventListener('blur', onBlur);
+    document.addEventListener('visibilitychange', onHide);
+    const offPlace = usePlaceStore.subscribe((st, prev) => {
+      if (st.active !== prev.active) dropRef.current();
+    });
+    return () => {
+      window.removeEventListener('blur', onBlur);
+      document.removeEventListener('visibilitychange', onHide);
+      offPlace();
+    };
+  }, []);
+  useEffect(() => {
+    if (inCall || idle) interruptRef.current();
+  }, [inCall, idle]);
+
+  /** A line while he is carried, set down or dizzy: outside every quiet time, and calm. */
+  const sayCarry = useCallback(
+    (topic: 'held' | 'landed' | 'dizzy') => {
+      const t = nowRef.current();
+      const p = presence.current;
+      q.away = p.place === null || p.night || document.hidden;
+      if (quietNow(q, t)) return;
+      let which = topic;
+      if (which === 'dizzy' && t - lastDizzyLine.current < DIZZY_LINE_GAP_MS) which = 'landed';
+      if (which !== 'dizzy' && !carry.current.mayTalk) return;
+      // Another bubble is showing: wait for it, except his own held line, which the landing replaces.
+      const showing = bubbleRef.current;
+      if (showing && showing.id !== heldBubble.current) return;
+      const line = lineFrom(which, chat.current.lastLine, Math.random);
+      markSpoken(chat.current, line, t);
+      lastCarryLine.current = t;
+      if (which === 'dizzy') lastDizzyLine.current = t;
+      heldBubble.current = which === 'held' ? (showing?.id ?? 0) + 1 : 0;
+      show(line);
+    },
+    [q, show],
+  );
+  const sayCarryRef = useRef(sayCarry);
+  sayCarryRef.current = sayCarry;
 
   useEffect(() => {
     let T = 0;
@@ -602,6 +806,8 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
     const body = createBox();
     const head = createBox();
     const wp = createWander();
+    const wc = createWander();
+    let originAir = false;
     let wasLive = false;
     /** One-shot: set when she reaches the clover, cleared when a new clover grows. */
     let cloverTaken = false;
@@ -616,6 +822,17 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
       const camera = place ? cameraOf(place, clock) : null;
       const ready = cameraReady(place, camera, cameraSignal());
       stepPresence(p, place, camera, clock.night, ready, dt, reduced);
+      const c = carry.current;
+      if (c.mode !== NONE) {
+        // Gone from the place he was carried on (or the camera moving off): nothing to set down.
+        if (!ready || !p.place || p.place !== place || !p.camera) dropRef.current();
+        else {
+          const walk = WALKS[p.place];
+          const home = c.mode === RETURN ? wanderAt(walk, wanderT.current, wc).x : 0;
+          stepCarry(c, dt, tNow(), p.camera.hy, walk.px, home, reduced, f);
+        }
+      }
+      mind.current.carry = c.mode !== NONE;
       if (p.since === 0) wanderT.current = 0;
       else if (!holdsStill(mind.current)) wanderT.current += dt;
       // Waking at 6:30: a yawn and a stretch.
@@ -630,20 +847,29 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
     const paint = () => {
       if (document.hidden) return;
       const el = actor.current;
-      if (el) el.style.opacity = String(p.opacity);
+      const cr = carry.current;
+      const air = airborne(cr);
+      if (el) {
+        el.style.opacity = String(p.opacity);
+        // Carried, he is drawn above the cards.
+        const z = air ? '40' : '';
+        if (el.style.zIndex !== z) el.style.zIndex = z;
+      }
       const live = p.place !== null && p.camera !== null && p.opacity > 0.5;
       // Away, waiting for the camera or fading: nothing of hers takes the pointer or the keyboard.
       const pe = live ? 'auto' : 'none';
       const vis = live ? '' : 'hidden';
+      // The amber mark and the clover are hidden while he is off the ground.
+      const visA = live && !air ? '' : 'hidden';
       const tab = live ? 0 : -1;
       for (let i = 0; i < 2; i++) {
         const e = hitParts_[i].current;
         if (e && e.style.pointerEvents !== pe) e.style.pointerEvents = pe;
       }
       switchOff(hit.current, tab, vis);
-      switchOff(markEl.current, markStaticRef.current ? -1 : tab, vis);
-      switchOff(cloverEl.current, tab, vis);
-      if (!live) {
+      switchOff(markEl.current, markStaticRef.current ? -1 : tab, visA);
+      switchOff(cloverEl.current, tab, visA);
+      if (!live || air) {
         if (markEl.current) markEl.current.style.pointerEvents = 'none';
         if (cloverEl.current) cloverEl.current.style.pointerEvents = 'none';
       }
@@ -671,6 +897,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
       }
       petFrame(walk, p.place, p.camera.hy, p.night, wanderT.current, music, reduced, mi, f);
       mi.bob = Math.max(0, mi.bob - 0.12);
+      if (cr.mode !== NONE) carryFrame(cr, tNow(), p.camera.hy, walk.px, reduced, mi, f);
       // A new look object only when something visible changed (not every frame).
       const cur = lookRef.current;
       if (cur.pose !== f.pose || cur.px !== walk.px || cur.prop !== f.prop || cur.scarf !== f.scarf || cur.cosmetic !== f.cosmetic || cur.hearts !== f.hearts || cur.mark !== f.mark) {
@@ -682,10 +909,23 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
       frameRef.current.x = f.x;
       frameRef.current.y = y;
       frameRef.current.w = width;
+      frameRef.current.dir = f.dir;
       const s = sheep.current;
-      if (s) s.style.transform = `translate(${f.x}px,${y - f.lift}px) scaleX(${f.dir}) scaleY(${f.squash})`;
+      if (s) {
+        // Carried, he tilts about his back (the pendulum); otherwise about his feet.
+        if (air !== originAir) {
+          originAir = air;
+          s.style.transformOrigin = air ? '50% 14%' : '';
+        }
+        const tilt = f.tilt !== 0 ? ` rotate(${f.tilt}deg)` : '';
+        s.style.transform = `translate(${f.x}px,${y - f.lift}px) scaleX(${f.dir}) scaleY(${f.squash})${tilt}`;
+      }
       const h = hit.current;
       if (h) {
+        const held = cr.mode === HELD;
+        const want = held ? 'auto' : '';
+        if (h.style.pointerEvents !== want) h.style.pointerEvents = want;
+        if (h.classList.contains('carrying') !== held) h.classList.toggle('carrying', held);
         h.style.left = `${f.x}px`;
         h.style.top = `${y - f.lift}px`;
         h.style.width = `${width}px`;
@@ -739,7 +979,10 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
       if (b && bub) {
         // Her card takes the band while it is open.
         b.style.visibility = cardRef.current ? 'hidden' : '';
-        placeBubble(walk, p.camera.hy, f.x, y, width, bub.width, bub.height, bp);
+        if (air) {
+          placeCarriedBubble(f.x, y - f.lift, width, bub.width, bub.height, BUBBLE.tail, bp);
+          bp.leftSide = bp.left < f.x;
+        } else placeBubble(walk, p.camera.hy, f.x, y, width, bub.width, bub.height, bp);
         b.style.left = `${bp.left}px`;
         b.style.top = `${bp.top}px`;
         b.dataset.side = bp.leftSide ? 'left' : 'right';
@@ -750,7 +993,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
         markHitBox(walk, p.camera.hy, mb, hb);
         mk.style.left = `${hb.left}px`;
         mk.style.top = `${hb.top}px`;
-        mk.style.pointerEvents = live && f.mark && !markStaticRef.current ? 'auto' : 'none';
+        mk.style.pointerEvents = live && !air && f.mark && !markStaticRef.current ? 'auto' : 'none';
       }
       const cl = cloverEl.current;
       const clv = cloverRef.current;
@@ -764,8 +1007,11 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
         cloverHitBox(walk, p.camera.hy, cb, hb);
         cl.style.left = `${hb.left}px`;
         cl.style.top = `${hb.top}px`;
-        cl.style.pointerEvents = live ? 'auto' : 'none';
-      }
+        cl.style.pointerEvents = live && !air ? 'auto' : 'none';
+        cloverAt.current.x = hb.left + hb.width / 2;
+        cloverAt.current.y = hb.top + hb.height / 2;
+        cloverAt.current.on = true;
+      } else cloverAt.current.on = false;
     };
 
     /** Outside the paint: she reaches the clover's stop and stands there, so she eats it (once). */
@@ -782,6 +1028,19 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
       }
     };
 
+    /** Outside the paint: the lines a carry asks for (held, landed, dizzy). */
+    const carryTalk = () => {
+      const c = carry.current;
+      if (c.sayHeld) {
+        c.sayHeld = false;
+        sayCarryRef.current('held');
+      }
+      if (c.sayLanded) {
+        c.sayLanded = false;
+        if (!c.fed) sayCarryRef.current(c.shaken ? 'dizzy' : 'landed');
+      }
+    };
+
     const frame = (ts: number) => {
       raf = requestAnimationFrame(frame);
       if (!shouldDraw(ts, last, document.hidden)) return;
@@ -791,6 +1050,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
       const idle = step(dt);
       paint();
       reachClover();
+      carryTalk();
       // Away with nowhere to go (Zen, Meet in a call) or waiting for the camera: stop until a
       // place, call or camera change wakes it.
       if (idle) {
@@ -804,6 +1064,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
       if (reduced) {
         step(0);
         paint();
+        carryTalk();
       } else if (!raf && !step(0)) {
         last = 0;
         raf = requestAnimationFrame(frame);
@@ -822,6 +1083,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
       }
     };
 
+    tNowRef.current = tNow;
     const idle = step(0);
     paint();
     if (reduced) {
@@ -841,6 +1103,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
       document.removeEventListener('visibilitychange', onVisible);
       offPlace();
       offCamera();
+      tNowRef.current = () => performance.now() / 1000;
       wake.current = () => {};
       startReact.current = () => {};
     };
@@ -886,13 +1149,15 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
         type="button"
         className="watt-hit"
         ref={hit}
-        aria-label="Watt, the sheep. Click to pet her."
-        onClick={petHer}
-        onMouseEnter={onHitEnter}
-        onMouseMove={onHitMove}
-        onMouseLeave={onHitLeave}
-        onFocus={onHitFocus}
-        onBlur={onHitBlur}
+        aria-label="Watt, the sheep. Press Enter to pet him, or the letter M for his card."
+        title={WATT_TIP}
+        onClick={onHitClick}
+        onKeyDown={onHitKeyDown}
+        onPointerDown={onHitPointerDown}
+        onPointerMove={onHitPointerMove}
+        onPointerUp={onHitPointerUp}
+        onPointerCancel={onHitPointerCancel}
+        onLostPointerCapture={onHitLostCapture}
       >
         <span className="watt-hit-part" ref={hitParts_[0]} />
         <span className="watt-hit-part" ref={hitParts_[1]} />
@@ -934,7 +1199,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
         </button>
       )}
       {clover && (
-        <button type="button" className="watt-clover" ref={cloverEl} aria-label="A clover. Give it to Watt." title="A clover. Click to give it to her." onClick={eatClover}>
+        <button type="button" className="watt-clover" ref={cloverEl} aria-label="A clover. Give it to Watt." title="A clover. Click to give it to him, or carry Watt here." onClick={eatClover}>
           <PixelSvg map={CLOVER} px={SMALL_PX} />
         </button>
       )}
@@ -949,8 +1214,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
           top={card.top}
           mood={mood}
           pet={pet}
-          onEnter={onCardEnter}
-          onLeave={closeCard}
+          onBlur={onCardBlur}
           onChatty={chooseChatty}
           onCosmetic={chooseCosmetic}
         />

@@ -10,17 +10,17 @@ const CHATTY_HINT: Readonly<Record<Chatty, string>> = {
 const COSMETIC_WORD: Readonly<Record<Cosmetic, string>> = { none: 'None', bow: 'Bow', star: 'Star', cape: 'Cape' };
 
 /**
- * Watt's hover card: her name and mood, two honest lines about today, the days together, how chatty
- * she is, and the cosmetics she has unlocked. A strip placed by `placeCard` (beside her in the band
- * over the horizon, or under Unwind's transport row); it stays open while the pointer is on it.
+ * Watt's card, opened by a right-click on him: his name and mood, two honest lines about today, the
+ * days together, how chatty he is, and the cosmetics he has unlocked. A strip placed by `placeCard`
+ * (beside him in the band over the horizon, or under Unwind's transport row); it stays open until
+ * Escape, a click outside it, a right-click on him, a place change or he goes away.
  */
 export function PetCard({
   left,
   top,
   mood,
   pet,
-  onEnter,
-  onLeave,
+  onBlur,
   onChatty,
   onCosmetic,
 }: {
@@ -28,14 +28,13 @@ export function PetCard({
   top: number;
   mood: Mood;
   pet: PetData;
-  onEnter: () => void;
-  onLeave: () => void;
+  onBlur: (e: React.FocusEvent<HTMLElement>) => void;
   onChatty: (c: Chatty) => void;
   onCosmetic: (c: Cosmetic) => void;
 }) {
   const days = pet.days;
   return (
-    <div className="watt-card" role="dialog" aria-label="Watt" style={{ left, top }} onMouseEnter={onEnter} onMouseLeave={onLeave}>
+    <div className="watt-card" role="dialog" aria-label="Watt" tabIndex={-1} style={{ left, top }} onBlur={onBlur}>
       <div className="wc-head">
         <span className="wc-name">Watt</span>
         <span className={`wc-mood m-${mood}`}>{MOOD_WORD[mood]}</span>
@@ -63,7 +62,7 @@ export function PetCard({
             </button>
           ))}
         </div>
-        <div className="wc-row" role="radiogroup" aria-label="What she wears">
+        <div className="wc-row" role="radiogroup" aria-label="What he wears">
           <span className="wc-label">Wear</span>
           {COSMETICS.map((c) => {
             const open = unlocked(c, days);
