@@ -209,3 +209,30 @@ describe('echo tint (the Unwind playing look)', () => {
     expect(log.filter((l) => l === `strokeStyle=[${id}]`)).toHaveLength(cam.en);
   });
 });
+
+describe('the resting ridgelines (parity PR 41)', () => {
+  const cam = CAMERAS.unwind;
+  const TINT = { left: [92, 196, 255], centre: [56, 236, 240], right: [255, 61, 154], width: 1.5 };
+  const playing = (extra: Record<string, unknown> = {}) =>
+    frame(cam, 21.7, { echo: { n: cam.en, amp: cam.eamp, a: 1, t: 2.5, cx: cam.ecx, hs: 900, tint: { ...TINT, k: 1 }, ...extra } });
+
+  it('the golden log is unchanged: without rest and drift the calls are exactly as before', () => {
+    expect(fnv(calls(frame(cam, 21.7)).join('\n'))).toBe('5f3dfbd3');
+  });
+
+  it('once fully risen (rest 0) the playing frame is unchanged, and a drift equal to t times the speed draws the same', () => {
+    const base = calls(playing());
+    expect(calls(playing({ rest: 0, restA: 0.22, look: 'contours' }))).toEqual(base);
+    expect(calls(playing({ drift: (2.5 * 0.3) % 1 }))).toEqual(base);
+    expect(calls(playing({ drift: 7 + ((2.5 * 0.3) % 1) }))).toEqual(base); // whole spacings wrap
+    expect(fnv(calls(frame(cam, 21.7, { echo: { n: cam.en, amp: cam.eamp, a: 0.5, t: 2.5, cx: cam.ecx, hs: 900, rest: 0, drift: 0.75 } })).join('\n'))).toBe('5f3dfbd3');
+  });
+
+  // The rest frame's own golden log: Unwind at night, the default look (contours) at 0.22, settled
+  // on the resting phase. Record a new value only for an intended change to the resting look.
+  it('the rest frame (golden call log)', () => {
+    const log = calls(playing({ rest: 1, restA: 0.22, look: 'contours', drift: 0.5 }));
+    expect({ n: log.length, hash: fnv(log.join('\n')) }).toEqual({ n: 51972, hash: '896fac8b' });
+  });
+});
+

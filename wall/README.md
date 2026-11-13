@@ -486,39 +486,63 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
   (`?hz=unwind&at=...&audio=demo`) the camera and sky stay frozen but the frame loop runs, so
   the echo and the pulse can be captured. A production bundle ignores the query.
 - **Ripple** (`echo.ts`). The echo lines of the range, drawn by the renderer's `echo` option.
-  - Work and Home (3 lines): only while `playing`, opacity `ea` times a smoothed loudness (bass
-    weighted) and a fade of about a second, `n`, `amp`, `cx` from the camera (`en`, `eamp`,
-    `ecx`), `hs` 900. Nothing is passed when silent, so pixels are unchanged.
-  - Unwind (11 lines, the visualizer): while playing, opacity `ea` (0.9) raised to full, times the
-    fade, with no loudness scaling, and the lines follow the real bands (`sample`, below). The
-    playing look matches the concept: the lines are tinted bright teal through the centre shifting
-    to pink at the far right (the renderer's `tint` option, blended over the palette's rim colour
-    by the fade), 1.5 px wide instead of 1.4, and the newest line fades in at the front instead of
-    popping in. Work, Home and the idle lines keep the palette's colour. While silent the
-    idle lines: opacity `ea * 0.45`, height `eamp * 0.35`, drifting at 0.12 (0.4 of the playing
-    speed) to the renderer's made-up `spec()` on the same slowed clock, so they breathe gently.
-    The echo runs on its own clock (`echoRate`), so slowing it never makes the lines jump. Every
-    number is blended between idle and playing by the fade, and by the camera's `en` during a
-    glide (`visualizerWeight`: 0 at 3 lines, 1 from 8), so nothing pops.
-  - `sample`: while the fade is above 0 (on any camera), `HorizonCanvas` hands the renderer a
-    sampler (`createEchoSampler`): each line reads the band history at its own age (the 7
-    seconds spread across the lines), mixed with `spec()` by `1 - fade` while starting or
-    stopping. Without `sample` the renderer draws exactly as before (golden call log test).
+  - Work and Home (3 lines): while music drives them, opacity `ea` times a smoothed loudness (bass
+    weighted), `n`, `amp`, `cx` from the camera (`en`, `eamp`, `ecx`), `hs` 900.
+  - Unwind (11 lines, the visualizer): while music drives them, opacity `ea` (0.9) raised to full,
+    with no loudness scaling, and the lines follow the real bands (`sample`, below). The playing
+    look matches the concept: the lines are tinted bright teal through the centre shifting to pink
+    at the far right (the renderer's `tint` option, blended over the palette's rim colour), 1.5 px
+    wide instead of 1.4, and the newest line fades in at the front instead of popping in. Work and
+    Home keep the palette's colour.
+  - **Rest.** Whenever music is not driving the lines they settle into a still resting look
+    instead of vanishing. `musicDriving` decides, with hysteresis so the lines never pump on a
+    quiet intro, a gap between tracks or a single blip: a pause, stop or the volume off settles them
+    at once; while driving, every band under the floor (`BAND_FLOOR`) for 1.5 s settles them, and
+    that quiet settle then holds at least 4 s (`REST_DWELL_S`); from rest they lift only once the
+    loudest band has stayed at or over `REST_RESUME` (the floor plus 0.05, 0.35: band levels are
+    absolute, with no auto gain, so soft music or a low volume sits only a little over the floor)
+    for a third of a second. This holds on
+    every camera with a ripple. `stepEchoMotion` runs
+    `rest` from 0 to 1 over 2.5 s (and back over 1.5 s when music returns) and eases the drift
+    phase to a stop exactly on the resting phase (line j at `(j + 0.5) / n`), starting from the
+    playing speed, so the lines slow down and land rather than freeze. The renderer eases each line
+    from `rest` (ease out, the far lines a touch later), blending its shape, opacity and width;
+    at rest the spectrum is not read at all and the lines hold perfectly still. The resting look is
+    one setting, `REST_LOOK`, with the resting opacity `REST_OPACITY` (default `contours` at 0.22,
+    the owner's pick): `contours` (each line a smaller copy of the range's outline, evenly spaced
+    from the foot to the ridge), `levels` (flat, slightly bowed level lines inside the mountain,
+    the top one on the ridge), `haze` (softened outlines of farther ranges rising behind the main
+    one, each fainter; no fills) and `ridge` (one glowing line on the ridge, two faint lines under
+    it; no fills). Without `rest` (or at 0) and `drift` the renderer draws exactly as before
+    (golden call log test); the rest frame has a golden log of its own.
+  - `sample`: while any line still follows the music (`rest` under 1), `HorizonCanvas` hands the
+    renderer a sampler (`createEchoSampler`): each line reads the band history at its own age (the
+    7 seconds spread across the lines). Without `sample` the renderer uses its made-up `spec()`.
+  - **Glides.** A camera glide blends the line count (`en`, 11 on Unwind, 3 on Work and Home).
+    `HorizonCanvas` keeps a drawn count that follows it at no more than 4 counts a second
+    (`stepLineCount`; the glide's eased peak moves `en` at about 15) and lands on it exactly. The
+    renderer draws a fractional count as the two whole sets either side, crossfaded by the
+    fraction, each on its own levels, so no line appears, vanishes or jumps level during a glide,
+    at rest, mid-settle or mid-lift, and each line fades over a quarter of a second or more. Under
+    reduced motion the count switches with the place's cross-dissolve.
   - Never on the morning Rainier camera. On a turn toward it the echo fades out within about half
     a second of the turn starting (the camera gate: its opacity only falls from the first frame of
     the turn and is exactly 0 by 0.6 s), and it stays off, through any turn back, until the camera
-    has settled on a place whose echo is on; then it fades in over 0.6 s. Under reduced motion and in the review still, Unwind shows the idle
-    lines frozen at `t` 0; other places none.
+    has settled on a place whose echo is on; then it fades in over 0.6 s. Under reduced motion and
+    in the review still every place with a ripple shows its lines at rest.
   - When the display is idle or off (`useIdle`: no input for 4 minutes, screens off, locked)
     the echo fades out over a second and is then not drawn, and the band history stops; both
-    start afresh on return.
+    start afresh on return. A hidden page returns with the lines at rest.
 - **Echo calm check** (`npm run echo-calm`, by hand; CI does not run it). Builds
   `scripts/echo-calm/` (the real renderer, echo and audio store) into one HTML file and draws 600
   frames of the Unwind camera in headless Chromium with the echo and without it, for the
-  `?audio=demo` levels and for every band pumping fully on and off 6 times a second. It takes what
-  the echo adds to the picture's mean relative luminance over every pixel and fails if that moves
-  by 1 percent of the picture's mean, up or down, more than three times in any second. Set
-  `WALL_CHROME` to a Chromium binary.
+  `?audio=demo` levels, for every band pumping fully on and off 6 times a second, and for the
+  settle (`mode=settle`: the demo levels for 10 s, then silence, stepped as the canvas steps
+  them). It takes what the echo adds to the picture's mean relative luminance over every pixel
+  and fails if that moves by 1 percent of the picture's mean, up or down, more than three times in
+  any second; for the settle also if any frame after the music stops changes it by more than 2
+  percent, or any frame from 3.5 s after changes it by more than 0.05 percent. Set `WALL_CHROME`
+  to a Chromium binary.
 - **Grid pulse** (`pulse.ts`). While `playing`, `HorizonCanvas` passes `grid` to the renderer.
   Each beat starts a soft glow band at the horizon that rolls across the lake grid to the bottom
   edge in 1.2 s (depth `p` 0 to 1 on the grid's own `pow(p, 2.1)` spacing, eased out over its
