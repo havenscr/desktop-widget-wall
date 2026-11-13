@@ -8,6 +8,7 @@ import {
 } from '@tabler/icons-react';
 import { anchorProgress, formatTime, isPlaying, isQuiet, type NowPlayingInfo, type ProgressAnchor } from '../music/model';
 import { playerName, sourceKey } from '../music/players';
+import { rejectArt } from '../music/store';
 import { useNowPlaying } from '../music/useNowPlaying';
 import { useVisible } from '../ui/useVisible';
 import { useLastPlayed } from './lastPlayed';
@@ -94,7 +95,7 @@ export function Player() {
     return (
       <div className="u-player quiet" data-state="idle">
         <div className="u-now">
-          <div className="u-art dim">{idle.art ? <img src={idle.art} alt="" /> : <IconMusic size={72} stroke={1.25} aria-hidden="true" />}</div>
+          <div className="u-art dim">{idle.art ? <img src={idle.art} alt="" onError={rejectArt} /> : <IconMusic size={72} stroke={1.25} aria-hidden="true" />}</div>
           <div className="u-meta">
             <span className="u-k">{idle.source ? `Last played on ${idle.source}` : 'Last played'}</span>
             <div className="u-np u-was u-ell">{idle.title}</div>
@@ -117,7 +118,7 @@ export function Player() {
   return (
     <div className="u-player" data-state="playing">
       <div className="u-now">
-        <div className="u-art">{art ? <img src={art} alt="" /> : <IconMusic size={72} stroke={1.25} aria-hidden="true" />}</div>
+        <div className="u-art">{art ? <img src={art} alt="" onError={rejectArt} /> : <IconMusic size={72} stroke={1.25} aria-hidden="true" />}</div>
         <div className="u-meta">
           {sourceLabel ? <span className="u-k u-src">{sourceLabel}</span> : null}
           <div className="u-np u-ell">{info?.title || 'Unknown title'}</div>

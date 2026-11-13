@@ -77,12 +77,18 @@ let art: string | null = null;
 let artKey: string | null = null;
 /** When a track came without art, the time to ask again. */
 let artRetryAt = 0;
+/**
+ * The `art_key` whose cover was refused here (a type outside the allowed list, bad base64,
+ * or an image the web view could not decode). It is never asked for again, so a refused
+ * cover does not cross the bridge every 10 seconds.
+ */
+let rejectedKey: string | null = null;
 
 async function pollOnce(): Promise<void> {
   // At most one native call at a time: while a timed-out call is still hung, wait for it.
   if (outstanding) return;
   const mine = ++seq;
-  if (art === null && artKey !== null && Date.now() >= artRetryAt) artKey = null;
+  if (art === null && artKey !== null && artKey !== rejectedKey && Date.now() >= artRetryAt) artKey = null;
   const call = invoke<NowPlayingInfo | null>('get_now_playing', { artFor: artKey ?? '' });
   outstanding = call;
   const clear = () => {
@@ -103,7 +109,11 @@ async function pollOnce(): Promise<void> {
     art = nextArt(next, art);
     if (!next.art_unchanged) {
       artKey = typeof next.art_key === 'string' && next.art_key ? next.art_key : null;
-      if (art === null) artRetryAt = Date.now() + ART_RETRY_MS;
+      if (art === null) {
+        artRetryAt = Date.now() + ART_RETRY_MS;
+        // Bytes came but were refused: remember the track so they are not asked for again.
+        if (next.album_art_base64 && artKey) rejectedKey = artKey;
+      }
     }
     const at = Date.now();
     useNowPlayingStore.setState({ info: next, art, at, anchor: nextAnchor(useNowPlayingStore.getState().anchor, next, at) });
@@ -161,6 +171,17 @@ export function acquireNowPlaying(): () => void {
   };
 }
 
+/**
+ * The cover could not be shown (the `<img>` failed to decode it): drop it and do not ask
+ * for this track's cover again.
+ */
+export function rejectArt(): void {
+  if (art === null) return;
+  rejectedKey = artKey;
+  art = null;
+  useNowPlayingStore.setState({ art: null });
+}
+
 /** Send a media command, then refresh once if the page is still visible and someone is watching. */
 export function sendMediaCommand(name: MediaCommand): void {
   invoke(name)
@@ -187,5 +208,6 @@ export function resetNowPlaying(): void {
   art = null;
   artKey = null;
   artRetryAt = 0;
+  rejectedKey = null;
   useNowPlayingStore.setState({ info: null, art: null, at: 0, anchor: null });
 }

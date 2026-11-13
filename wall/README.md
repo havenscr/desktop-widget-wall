@@ -412,7 +412,9 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
   sends `artFor`, the `art_key` of the art it holds (empty when it holds none), and Rust
   skips the art only while that key matches the track, so a cover is never lost to a
   reload or a dropped answer; a track that came without art is asked again every 10
-  seconds (players often add the cover late). Without `artFor` (the first wall) Rust
+  seconds (players often add the cover late). A cover that arrived but was refused (a
+  type outside the list, bad base64, or an image that fails to decode) is remembered by
+  its `art_key` and never asked for again. Without `artFor` (the first wall) Rust
   keeps its shared last-sent key as before.
   Previous, play or pause, next call `media_previous`, `media_play_pause`,
   `media_next`; failures are swallowed. Stopped or unknown shows a quiet
