@@ -12,6 +12,7 @@
     "fit-check": "node scripts/fit-check.mjs",
     "fit:home": "node scripts/home-fit-check.mjs",
     "gallery": "node scripts/gallery.mjs",
+    "prod-check": "node scripts/prod-bundle-check.mjs",
     "echo-calm": "node scripts/echo-calm-check.mjs"
   },
   "dependencies": {
