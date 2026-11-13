@@ -18,6 +18,8 @@ import {
   restEchoMotion,
   scaleEcho,
   stepEchoMotion,
+  stepLineCount,
+  LINE_COUNT_RATE,
   echoOptions,
   initialEchoGate,
   stepEchoFade,
@@ -312,6 +314,13 @@ describe('the rest state options', () => {
     }
   });
 
+  it('the resume level sits just over the floor: steady 0.36 for a second lifts, steady 0.34 does not', () => {
+    expect(REST_RESUME).toBeCloseTo(BAND_FLOOR + 0.05, 12);
+    const lifts36 = feed(createEchoMotion(), 0.36, 1);
+    expect(lifts36.indexOf(true)).toBe(Math.round(REST_RESUME_S * 30) - 1);
+    expect(feed(createEchoMotion(), 0.34, 1).some(Boolean)).toBe(false);
+  });
+
   it('after a quiet settle, steady music lifts once the dwell has passed; a pause and play lifts promptly', () => {
     const m = createEchoMotion(false);
     feed(m, QUIET, REST_QUIET_S + 0.1); // settles on quiet
@@ -331,3 +340,21 @@ describe('the rest state options', () => {
     expect(m).toMatchObject({ rest: 1, drift: REST_PHASE, v: 0, driving: false });
   });
 });
+
+describe('the drawn line count', () => {
+  it('follows the camera\'s count at LINE_COUNT_RATE and lands on it exactly', () => {
+    expect(LINE_COUNT_RATE).toBe(4);
+    let c = 3;
+    const seen: number[] = [];
+    for (let f = 0; f < 80; f++) {
+      c = stepLineCount(c, 11, 1 / 30);
+      seen.push(c);
+    }
+    for (let i = 1; i < seen.length; i++) expect(seen[i] - seen[i - 1]).toBeLessThanOrEqual(4 / 30 + 1e-12);
+    expect(c).toBe(11);
+    expect(seen.indexOf(11)).toBe(59); // 8 counts at 4 a second: 2 s
+    expect(stepLineCount(11, 3, 0.5)).toBe(9);
+    expect(stepLineCount(3.05, 3, 1 / 30)).toBe(3);
+  });
+});
+

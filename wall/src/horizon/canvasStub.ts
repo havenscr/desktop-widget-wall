@@ -125,12 +125,14 @@ export function echoPaths(strokes: PathStroke[], hy: number): { rim: number[]; e
 }
 
 /**
- * How far apart two frames' visible lines are: each line of either frame at `popAlpha` or more is
- * matched to the nearest line of the other (by the largest height gap, then opacity); the worst gap
- * and the worst opacity step of those matches. A line that appears, vanishes or jumps level shows
- * as a large gap.
+ * How far apart two frames' visible lines are. Each line of either frame at `popAlpha` or more is
+ * matched to the other frame's lines: `worst` is the largest gap (by the largest height difference)
+ * to its nearest line, and `alpha` the largest opacity step to the closest-in-opacity line among
+ * those within `tol` px of that nearest gap, or to nothing (its own opacity, as if fading in or
+ * out), whichever is smaller. A line that jumps level shows as a large `worst`; one that pops in or
+ * out, or blinks in place, as a large `alpha`.
  */
-export function frameGap(a: EchoLine[], b: EchoLine[], popAlpha: number): { worst: number; alpha: number } {
+export function frameGap(a: EchoLine[], b: EchoLine[], popAlpha: number, tol = 1): { worst: number; alpha: number } {
   let worst = 0;
   let alpha = 0;
   for (const [from, to] of [
@@ -139,19 +141,19 @@ export function frameGap(a: EchoLine[], b: EchoLine[], popAlpha: number): { wors
   ]) {
     for (const l of from) {
       if (l.alpha < popAlpha) continue;
-      let best = Infinity;
-      let bestAlpha = 0;
-      for (const p of to) {
+      const gaps = to.map((p) => {
         let d = 0;
         for (let i = 0; i < l.h.length; i += 4) d = Math.max(d, Math.abs(l.h[i] - p.h[i]));
-        // Nearest by height, then by opacity (crossfading sets can stack two lines on the ridge).
-        if (d + Math.abs(l.alpha - p.alpha) * 10 < best + Math.abs(l.alpha - bestAlpha) * 10) {
-          best = d;
-          bestAlpha = p.alpha;
-        }
-      }
-      worst = Math.max(worst, best);
-      alpha = Math.max(alpha, Math.abs(l.alpha - bestAlpha));
+        return d;
+      });
+      const near = Math.min(...gaps);
+      // A line may also be fading in or out (absent in the other frame): its step is then its own opacity.
+      let step = l.alpha;
+      to.forEach((p, k) => {
+        if (gaps[k] <= near + tol) step = Math.min(step, Math.abs(l.alpha - p.alpha));
+      });
+      worst = Math.max(worst, near);
+      alpha = Math.max(alpha, step);
     }
   }
   return { worst, alpha };

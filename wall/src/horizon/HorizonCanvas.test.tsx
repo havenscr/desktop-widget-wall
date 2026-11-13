@@ -998,7 +998,7 @@ describe('the Unwind visualizer', () => {
     for (let k = 1; k < frames.length; k++) {
       let rim = 0;
       for (let i = 0; i < frames[k].rim.length; i += 4) rim = Math.max(rim, Math.abs(frames[k].rim[i] - frames[k - 1].rim[i]));
-      const g = frameGap(frames[k - 1].echo, frames[k].echo, popAlpha);
+      const g = frameGap(frames[k - 1].echo, frames[k].echo, popAlpha, rim + 1);
       beyond = Math.max(beyond, g.worst - rim);
       alpha = Math.max(alpha, g.alpha);
     }
@@ -1014,15 +1014,44 @@ describe('the Unwind visualizer', () => {
     act(() => usePlaceStore.getState().setActive('unwind'));
     for (let k = 0; k < 60; k++) runFrame((ts += 34));
     act(() => usePlaceStore.getState().setActive('work'));
-    for (let k = 0; k < 60; k++) runFrame((ts += 34));
+    for (let k = 0; k < 80; k++) runFrame((ts += 34));
     expect(draw.mock.lastCall![1].camera).toEqual(CAMERAS.work);
     const g = await glideGaps(start, 0.03);
-    expect(g.frames).toBeGreaterThan(100);
+    expect(g.frames).toBeGreaterThan(120);
     // Each line keeps its own level (it moves only as the range itself pans) ...
     expect(g.beyond).toBeLessThan(0.5);
-    // ... and the two whole sets crossfade as the count blends, never stepping a resting line in or out
-    // (measured 0.15 at the glide's fastest; a resting line popping would step by its whole 0.12 to 0.22).
-    expect(g.alpha).toBeLessThan(0.2);
+    // ... and the two whole sets crossfade slowly as the drawn count follows the camera's at 4 a second.
+    // Measured 0.030 a frame (0.078 if the count followed the glide unlimited; a popping resting line
+    // would step by its whole 0.12 to 0.22).
+    expect(g.alpha).toBeLessThanOrEqual(0.1);
+    expect(g.alpha).toBeLessThan(0.05);
+    // The drawn count lands exactly on the camera's.
+    const lastCall = draw.mock.lastCall![1];
+    expect(lastCall.echo!.n).toBe(CAMERAS.work.en);
+  });
+
+  it('the drawn line count follows the camera\'s at no more than 4 a second and ends exactly on it; settled, it is the camera\'s whole count', () => {
+    setReducedMotion(false);
+    render(<HorizonCanvas now={() => localMs(21, 42)} />);
+    let ts = 0;
+    for (let k = 0; k < 5; k++) runFrame((ts += 34));
+    expect(draw.mock.lastCall![1].echo!.n).toBe(3);
+    act(() => usePlaceStore.getState().setActive('unwind'));
+    const counts: number[] = [];
+    const cams: number[] = [];
+    for (let k = 0; k < 90; k++) {
+      runFrame((ts += 34));
+      counts.push(draw.mock.lastCall![1].echo!.n);
+      cams.push(draw.mock.lastCall![1].camera!.en);
+    }
+    for (let i = 1; i < counts.length; i++) expect(Math.abs(counts[i] - counts[i - 1])).toBeLessThanOrEqual(4 * 0.034 + 1e-9);
+    expect(cams[cams.length - 1]).toBe(11);
+    expect(counts[counts.length - 1]).toBe(11);
+    // It lags the glide (which outruns it at its peak) and lands well under a second after the 1.6 s glide ends.
+    expect(counts.some((c, i) => c < cams[i] - 1)).toBe(true);
+    const landed = counts.indexOf(11);
+    expect(counts.slice(landed).every((c) => c === 11)).toBe(true);
+    expect((landed + 1) * 0.034).toBeLessThan(2.5);
   });
 
   it('gliding Work to Unwind during a settle never makes a line appear, vanish or jump', async () => {
@@ -1044,10 +1073,11 @@ describe('the Unwind visualizer', () => {
     const rests = draw.mock.calls.slice(start).map((c) => c[1].echo?.rest ?? 0);
     expect(rests.some((r) => r > 0.2 && r < 0.8)).toBe(true); // the glide runs mid-settle
     const g = await glideGaps(start, 0.03);
-    // Measured: 0.39 px beyond the range's own move (the settle itself), opacity steps up to 0.31
-    // while the full-strength live lines crossfade at the glide's fastest.
+    // Measured: 0.39 px beyond the range's own move (the settle itself), opacity steps up to 0.060
+    // (0.144 if the count followed the glide unlimited).
     expect(g.beyond).toBeLessThan(1.5);
-    expect(g.alpha).toBeLessThan(0.4);
+    expect(g.alpha).toBeLessThanOrEqual(0.15);
+    expect(g.alpha).toBeLessThan(0.1);
   });
 
   it('reduced motion on Unwind draws the lines at rest once, even while music plays', () => {
