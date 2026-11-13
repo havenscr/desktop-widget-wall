@@ -45,10 +45,12 @@ mod tests {
     use super::*;
     #[test]
     fn lines_contain_only_fixed_words_and_numbers() {
-        let hostile = "token\nquery name https://example.test";
         let got = line(Event::ApiFailed, Reason::Down, 503, 42);
         assert_eq!(got, "api-failed down 503 42\n");
-        assert!(!got.contains(hostile));
+        let fields: Vec<_> = got.trim_end().split(' ').collect();
+        assert_eq!(fields, ["api-failed", "down", "503", "42"]);
+        assert!(fields[2].bytes().all(|b| b.is_ascii_digit()));
+        assert!(fields[3].bytes().all(|b| b.is_ascii_digit()));
         for event in [Event::SignInStart, Event::SignInOk, Event::SignInFailed, Event::SignOut, Event::RefreshOk, Event::RefreshRefused, Event::ApiFailed] {
             assert!(line(event, Reason::Failed, 0, 1).bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'-' | b' ' | b'\n')));
         }

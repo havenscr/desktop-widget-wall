@@ -83,6 +83,48 @@ fn save_refresh(value: &str) -> bool {
 
 fn delete_refresh() { for n in 0..MAX_CHUNKS { CredBlobs.remove(&secret_target(n)) } }
 
+trait Creds: Send + Sync {
+    fn load(&self) -> Result<Option<String>, &'static str>;
+    fn save(&self, value: &str) -> bool;
+    fn delete(&self);
+    fn delete_if_equal(&self, expected: &str) { if self.load().ok().flatten().as_deref() == Some(expected) { self.delete(); } }
+}
+
+struct RealCreds;
+impl Creds for RealCreds {
+    fn load(&self) -> Result<Option<String>, &'static str> { load_refresh() }
+    fn save(&self, value: &str) -> bool { save_refresh(value) }
+    fn delete(&self) { delete_refresh() }
+}
+
+#[derive(Clone, Debug)]
+struct HttpReply { status: u16, retry_after: Option<u64>, body: Vec<u8> }
+trait Http: Send + Sync {
+    fn token(&self, form: &[(&str, &str)]) -> Result<HttpReply, ()>;
+    fn api(&self, method: &str, path: &str, bearer: &str, payload: Option<&Value>) -> Result<HttpReply, ()>;
+}
+
+struct RealHttp;
+impl Http for RealHttp {
+    fn token(&self, form: &[(&str, &str)]) -> Result<HttpReply, ()> {
+        http_reply(agent().post("https://accounts.spotify.com/api/token").send_form(form))
+    }
+    fn api(&self, method: &str, path: &str, bearer: &str, payload: Option<&Value>) -> Result<HttpReply, ()> {
+        let url = format!("https://api.spotify.com/v1{path}");
+        let request = match method { "GET" => agent().get(&url), "PUT" => agent().put(&url), _ => return Err(()) }.set("Authorization", &format!("Bearer {bearer}"));
+        let result = match payload { Some(value) => request.set("Content-Type", "application/json").send_string(&value.to_string()), None => request.call() };
+        http_reply(result)
+    }
+}
+
+fn http_reply(result: Result<ureq::Response, ureq::Error>) -> Result<HttpReply, ()> {
+    let response = match result { Ok(r) | Err(ureq::Error::Status(_, r)) => r, Err(_) => return Err(()) };
+    let status = response.status();
+    let retry_after = response.header("Retry-After").and_then(|v| v.parse::<u64>().ok());
+    let bytes = body(response).map_err(|_| ())?;
+    Ok(HttpReply { status, retry_after, body: bytes })
+}
+
 struct Token { access: String, expires: Instant }
 static TOKEN: OnceLock<Mutex<Option<Token>>> = OnceLock::new();
 fn token() -> &'static Mutex<Option<Token>> { TOKEN.get_or_init(|| Mutex::new(None)) }
@@ -91,8 +133,8 @@ fn refresh_lock() -> &'static Mutex<()> { REFRESH.get_or_init(|| Mutex::new(()))
 static NOT_BEFORE: OnceLock<Mutex<Option<Instant>>> = OnceLock::new();
 fn not_before() -> &'static Mutex<Option<Instant>> { NOT_BEFORE.get_or_init(|| Mutex::new(None)) }
 
-fn retry_after(resp: &ureq::Response) -> Duration {
-    Duration::from_secs(resp.header("Retry-After").and_then(|v| v.parse::<u64>().ok()).unwrap_or(5).min(60))
+fn retry_after(seconds: Option<u64>) -> Duration {
+    Duration::from_secs(seconds.unwrap_or(5).min(60))
 }
 fn back_off_for(wait: Duration) { *not_before().lock().unwrap() = Some(Instant::now() + wait); }
 fn check_backoff() -> Result<(), String> {
@@ -113,37 +155,37 @@ fn body(resp: ureq::Response) -> Result<Vec<u8>, &'static str> {
 #[derive(Debug, PartialEq)]
 enum TokenReply { Ok(String, u64, Option<String>), Refused, Busy(Duration), Down }
 
-fn token_reply(result: Result<ureq::Response, ureq::Error>) -> TokenReply {
+fn token_reply(result: Result<HttpReply, ()>) -> TokenReply {
     match result {
-        Ok(resp) if (200..300).contains(&resp.status()) => {
-            let Ok(raw) = body(resp) else { return TokenReply::Down };
-            let Ok(v) = serde_json::from_slice::<Value>(&raw) else { return TokenReply::Down };
+        Ok(resp) if (200..300).contains(&resp.status) => {
+            let Ok(v) = serde_json::from_slice::<Value>(&resp.body) else { return TokenReply::Down };
             let Some(access) = v.get("access_token").and_then(Value::as_str) else { return TokenReply::Down };
             let expiry = v.get("expires_in").and_then(Value::as_u64).unwrap_or(3600).min(86400);
             let refresh = v.get("refresh_token").and_then(Value::as_str).map(str::to_string);
             TokenReply::Ok(access.to_string(), expiry, refresh)
         }
-        Err(ureq::Error::Status(429, resp)) => TokenReply::Busy(retry_after(&resp)),
-        Err(ureq::Error::Status(code, _)) if (400..500).contains(&code) => TokenReply::Refused,
+        Ok(resp) if resp.status == 429 => TokenReply::Busy(retry_after(resp.retry_after)),
+        Ok(resp) if resp.status == 401 => TokenReply::Refused,
+        Ok(resp) if resp.status == 400 && serde_json::from_slice::<Value>(&resp.body).ok().and_then(|v| v.get("error")?.as_str().map(str::to_string)).as_deref() == Some("invalid_grant") => TokenReply::Refused,
         _ => TokenReply::Down,
     }
 }
 
-fn exchange(cfg: &Config, code: &str, verifier: &str) -> TokenReply {
+fn exchange(http: &dyn Http, cfg: &Config, code: &str, verifier: &str) -> TokenReply {
     let redirect = format!("http://127.0.0.1:{}{CALLBACK}", cfg.redirect_port);
-    token_reply(agent().post("https://accounts.spotify.com/api/token").send_form(&[
+    token_reply(http.token(&[
         ("client_id", cfg.client_id.as_str()), ("grant_type", "authorization_code"), ("code", code),
         ("redirect_uri", redirect.as_str()), ("code_verifier", verifier),
     ]))
 }
 
-fn refresh(cfg: &Config, value: &str) -> TokenReply {
-    token_reply(agent().post("https://accounts.spotify.com/api/token").send_form(&[
+fn refresh(http: &dyn Http, cfg: &Config, value: &str) -> TokenReply {
+    token_reply(http.token(&[
         ("client_id", cfg.client_id.as_str()), ("grant_type", "refresh_token"), ("refresh_token", value),
     ]))
 }
 
-fn access(cfg: &Config, force: bool) -> Result<String, String> {
+fn access_with(cfg: &Config, force: bool, http: &dyn Http, creds: &dyn Creds) -> Result<String, String> {
     check_backoff()?;
     if !force {
         if let Some(t) = token().lock().unwrap().as_ref() {
@@ -156,17 +198,17 @@ fn access(cfg: &Config, force: bool) -> Result<String, String> {
             if t.expires > Instant::now() + Duration::from_secs(60) { return Ok(t.access.clone()) }
         }
     }
-    let refresh_value = load_refresh().map_err(|_| SIGN_AGAIN.to_string())?.ok_or_else(|| SIGN_AGAIN.to_string())?;
+    let refresh_value = creds.load().map_err(|_| SIGN_AGAIN.to_string())?.ok_or_else(|| SIGN_AGAIN.to_string())?;
     let started = Instant::now();
-    match refresh(cfg, &refresh_value) {
+    match refresh(http, cfg, &refresh_value) {
         TokenReply::Ok(access, seconds, replacement) => {
-            if let Some(v) = replacement { if !save_refresh(&v) { return Err("failed".into()) } }
+            if let Some(v) = replacement { if !creds.save(&v) { return Err("failed".into()) } }
             *token().lock().unwrap() = Some(Token { access: access.clone(), expires: Instant::now() + Duration::from_secs(seconds) });
             crate::wall2_spotify_log::write(crate::wall2_spotify_log::Event::RefreshOk, crate::wall2_spotify_log::Reason::None, 200, started.elapsed().as_millis());
             Ok(access)
         }
         TokenReply::Refused => {
-            if load_refresh().ok().flatten().as_deref() == Some(refresh_value.as_str()) { delete_refresh(); }
+            creds.delete_if_equal(&refresh_value);
             *token().lock().unwrap() = None;
             crate::wall2_spotify_log::write(crate::wall2_spotify_log::Event::RefreshRefused, crate::wall2_spotify_log::Reason::SignInAgain, 400, started.elapsed().as_millis());
             Err(SIGN_AGAIN.into())
@@ -175,6 +217,8 @@ fn access(cfg: &Config, force: bool) -> Result<String, String> {
         TokenReply::Down => { crate::wall2_spotify_log::write(crate::wall2_spotify_log::Event::ApiFailed, crate::wall2_spotify_log::Reason::Down, 0, started.elapsed().as_millis()); Err("down".into()) },
     }
 }
+
+fn access(cfg: &Config, force: bool) -> Result<String, String> { access_with(cfg, force, &RealHttp, &RealCreds) }
 
 fn clean(value: Option<&Value>, max: usize) -> Option<String> {
     let s: String = value?.as_str()?.chars().filter(|c| !c.is_control() && !matches!(*c, '\u{200b}'..='\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2060}'..='\u{206f}')).collect();
@@ -207,21 +251,24 @@ fn shape_list(v: &Value, kind: &str) -> Vec<Item> {
     }).collect()
 }
 
-fn get_json(cfg: &Config, path: &str) -> Result<Value, String> {
+fn get_json_with(cfg: &Config, path: &str, http: &dyn Http, creds: &dyn Creds) -> Result<Value, String> {
     check_backoff()?;
     let started = Instant::now();
     for attempt in 0..2 {
-        let bearer = access(cfg, attempt == 1)?;
-        match agent().get(&format!("https://api.spotify.com/v1{path}")).set("Authorization", &format!("Bearer {bearer}")).call() {
-            Ok(resp) if (200..300).contains(&resp.status()) => return serde_json::from_slice(&body(resp).map_err(str::to_string)?).map_err(|_| "down".into()),
-            Err(ureq::Error::Status(401, _)) if attempt == 0 => { crate::wall2_spotify_log::write(crate::wall2_spotify_log::Event::ApiFailed, crate::wall2_spotify_log::Reason::SignInAgain, 401, started.elapsed().as_millis()); continue },
-            Err(ureq::Error::Status(429, resp)) => { back_off_for(retry_after(&resp)); crate::wall2_spotify_log::write(crate::wall2_spotify_log::Event::ApiFailed, crate::wall2_spotify_log::Reason::Busy, 429, started.elapsed().as_millis()); return Err(BUSY.into()) }
-            Err(ureq::Error::Status(code, _)) => { crate::wall2_spotify_log::write(crate::wall2_spotify_log::Event::ApiFailed, crate::wall2_spotify_log::Reason::Down, code, started.elapsed().as_millis()); return Err("down".into()) }
-            _ => { crate::wall2_spotify_log::write(crate::wall2_spotify_log::Event::ApiFailed, crate::wall2_spotify_log::Reason::Down, 0, started.elapsed().as_millis()); return Err("down".into()) },
+        let bearer = access_with(cfg, attempt == 1, http, creds)?;
+        match http.api("GET", path, &bearer, None) {
+            Ok(resp) if (200..300).contains(&resp.status) => return serde_json::from_slice(&resp.body).map_err(|_| "down".into()),
+            Ok(resp) if resp.status == 401 && attempt == 0 => { crate::wall2_spotify_log::write(crate::wall2_spotify_log::Event::ApiFailed, crate::wall2_spotify_log::Reason::SignInAgain, 401, started.elapsed().as_millis()); continue },
+            Ok(resp) if resp.status == 401 => return Err(SIGN_AGAIN.into()),
+            Ok(resp) if resp.status == 429 => { back_off_for(retry_after(resp.retry_after)); crate::wall2_spotify_log::write(crate::wall2_spotify_log::Event::ApiFailed, crate::wall2_spotify_log::Reason::Busy, 429, started.elapsed().as_millis()); return Err(BUSY.into()) }
+            Ok(resp) => { crate::wall2_spotify_log::write(crate::wall2_spotify_log::Event::ApiFailed, crate::wall2_spotify_log::Reason::Down, resp.status, started.elapsed().as_millis()); return Err("down".into()) }
+            Err(_) => { crate::wall2_spotify_log::write(crate::wall2_spotify_log::Event::ApiFailed, crate::wall2_spotify_log::Reason::Down, 0, started.elapsed().as_millis()); return Err("down".into()) },
         }
     }
     Err(SIGN_AGAIN.into())
 }
+
+fn get_json(cfg: &Config, path: &str) -> Result<Value, String> { get_json_with(cfg, path, &RealHttp, &RealCreds) }
 
 fn page_path(page: Option<u32>) -> usize { (page.unwrap_or(0).min(100) as usize) * PAGE_SIZE }
 
@@ -241,6 +288,19 @@ pub async fn wall2_spotify_status(window: WebviewWindow) -> Result<Status, Strin
 
 static SIGNING_IN: AtomicBool = AtomicBool::new(false);
 static CANCEL_SIGN_IN: AtomicBool = AtomicBool::new(false);
+fn begin_sign_in() -> Result<(), String> { if SIGNING_IN.swap(true, Ordering::SeqCst) { Err(BUSY.into()) } else { CANCEL_SIGN_IN.store(false, Ordering::SeqCst); Ok(()) } }
+fn save_sign_in(creds: &dyn Creds, refresh_value: &str, access_value: String, seconds: u64) -> Result<(), String> {
+    let _refresh_guard = refresh_lock().lock().unwrap();
+    if CANCEL_SIGN_IN.load(Ordering::SeqCst) || !creds.save(refresh_value) { return Err("cancelled".into()) }
+    *token().lock().unwrap() = Some(Token { access: access_value, expires: Instant::now() + Duration::from_secs(seconds) });
+    Ok(())
+}
+fn sign_out_with(creds: &dyn Creds) {
+    CANCEL_SIGN_IN.store(true, Ordering::SeqCst);
+    let _refresh_guard = refresh_lock().lock().unwrap();
+    creds.delete();
+    *token().lock().unwrap() = None;
+}
 struct SignInGuard { started: Instant, success: bool }
 impl Drop for SignInGuard {
     fn drop(&mut self) {
@@ -255,8 +315,7 @@ impl Drop for SignInGuard {
 pub async fn wall2_spotify_sign_in(window: WebviewWindow) -> Result<(), String> {
     require(&window)?;
     let cfg = config(window.app_handle())?;
-    if SIGNING_IN.swap(true, Ordering::SeqCst) { return Err(BUSY.into()) }
-    CANCEL_SIGN_IN.store(false, Ordering::SeqCst);
+    begin_sign_in()?;
     let app = window.app_handle().clone();
     tauri::async_runtime::spawn_blocking(move || {
         let mut guard = SignInGuard { started: Instant::now(), success: false };
@@ -268,9 +327,9 @@ pub async fn wall2_spotify_sign_in(window: WebviewWindow) -> Result<(), String> 
         app.opener().open_url(authorize_url(&cfg, &challenge, &state), None::<&str>).map_err(|_| "failed".to_string())?;
         let code = crate::wall2_oauth::wait_for_callback_cancelled(&server, CALLBACK, &state, Duration::from_secs(180), || CANCEL_SIGN_IN.load(Ordering::SeqCst)).map_err(str::to_string)?;
         if CANCEL_SIGN_IN.load(Ordering::SeqCst) { return Err("cancelled".into()) }
-        let result = match exchange(&cfg, &code, &verifier) {
-            TokenReply::Ok(access_value, seconds, Some(refresh_value)) if !CANCEL_SIGN_IN.load(Ordering::SeqCst) && save_refresh(&refresh_value) => {
-                *token().lock().unwrap() = Some(Token { access: access_value, expires: Instant::now() + Duration::from_secs(seconds) }); guard.success = true; Ok(())
+        let result = match exchange(&RealHttp, &cfg, &code, &verifier) {
+            TokenReply::Ok(access_value, seconds, Some(refresh_value)) => {
+                save_sign_in(&RealCreds, &refresh_value, access_value, seconds)?; guard.success = true; Ok(())
             }
             TokenReply::Busy(wait) => { back_off_for(wait); Err(BUSY.into()) },
             _ => Err("failed".into()),
@@ -285,7 +344,7 @@ pub async fn wall2_spotify_cancel_sign_in(window: WebviewWindow) -> Result<(), S
 #[tauri::command]
 pub async fn wall2_spotify_sign_out(window: WebviewWindow) -> Result<(), String> {
     require(&window)?; CANCEL_SIGN_IN.store(true, Ordering::SeqCst);
-    tauri::async_runtime::spawn_blocking(move || { delete_refresh(); *token().lock().unwrap() = None; crate::wall2_spotify_log::write(crate::wall2_spotify_log::Event::SignOut, crate::wall2_spotify_log::Reason::None, 0, 0); Ok(()) }).await.map_err(|_| "failed".to_string())?
+    tauri::async_runtime::spawn_blocking(move || { sign_out_with(&RealCreds); crate::wall2_spotify_log::write(crate::wall2_spotify_log::Event::SignOut, crate::wall2_spotify_log::Reason::None, 0, 0); Ok(()) }).await.map_err(|_| "failed".to_string())?
 }
 
 fn list(window: &WebviewWindow, endpoint: &str, kind: &str) -> Result<Vec<Item>, String> { let cfg = config(window.app_handle())?; Ok(shape_list(&get_json(&cfg, endpoint)?, kind)) }
@@ -332,22 +391,21 @@ static WRITE: OnceLock<Mutex<()>> = OnceLock::new();
 fn write_lock() -> &'static Mutex<()> { WRITE.get_or_init(|| Mutex::new(())) }
 fn begin_write() -> Result<std::sync::MutexGuard<'static, ()>, String> { write_lock().try_lock().map_err(|_| BUSY.to_string()) }
 
-fn put(cfg: &Config, path: &str, payload: Option<Value>) -> Result<(), String> {
+fn put_with(cfg: &Config, path: &str, payload: Option<Value>, http: &dyn Http, creds: &dyn Creds) -> Result<(), String> {
     let _guard = begin_write()?;
     check_backoff()?;
-    let bearer = access(cfg, false)?;
+    let bearer = access_with(cfg, false, http, creds)?;
     let started = Instant::now();
-    let request = agent().put(&format!("https://api.spotify.com/v1{path}")).set("Authorization", &format!("Bearer {bearer}"));
-    let result = match payload { Some(value) => request.set("Content-Type", "application/json").send_string(&value.to_string()), None => request.call() };
-    match result {
-        Ok(resp) if (200..300).contains(&resp.status()) => Ok(()),
-        Err(ureq::Error::Status(404, _)) => { crate::wall2_spotify_log::write(crate::wall2_spotify_log::Event::ApiFailed, crate::wall2_spotify_log::Reason::NoDevice, 404, started.elapsed().as_millis()); Err(NO_DEVICE.into()) },
-        Err(ureq::Error::Status(429, resp)) => { back_off_for(retry_after(&resp)); crate::wall2_spotify_log::write(crate::wall2_spotify_log::Event::ApiFailed, crate::wall2_spotify_log::Reason::Busy, 429, started.elapsed().as_millis()); Err(BUSY.into()) }
-        Err(ureq::Error::Status(401, _)) => { access(cfg, true).map(|_| ())?; Err(BUSY.into()) }
-        Err(ureq::Error::Status(code, _)) => { crate::wall2_spotify_log::write(crate::wall2_spotify_log::Event::ApiFailed, crate::wall2_spotify_log::Reason::Down, code, started.elapsed().as_millis()); Err("down".into()) }
-        _ => { crate::wall2_spotify_log::write(crate::wall2_spotify_log::Event::ApiFailed, crate::wall2_spotify_log::Reason::Down, 0, started.elapsed().as_millis()); Err("down".into()) },
+    match http.api("PUT", path, &bearer, payload.as_ref()) {
+        Ok(resp) if (200..300).contains(&resp.status) => Ok(()),
+        Ok(resp) if resp.status == 404 => { crate::wall2_spotify_log::write(crate::wall2_spotify_log::Event::ApiFailed, crate::wall2_spotify_log::Reason::NoDevice, 404, started.elapsed().as_millis()); Err(NO_DEVICE.into()) },
+        Ok(resp) if resp.status == 429 => { back_off_for(retry_after(resp.retry_after)); crate::wall2_spotify_log::write(crate::wall2_spotify_log::Event::ApiFailed, crate::wall2_spotify_log::Reason::Busy, 429, started.elapsed().as_millis()); Err(BUSY.into()) }
+        Ok(resp) if resp.status == 401 => { access_with(cfg, true, http, creds).map(|_| ())?; Err(BUSY.into()) }
+        Ok(resp) => { crate::wall2_spotify_log::write(crate::wall2_spotify_log::Event::ApiFailed, crate::wall2_spotify_log::Reason::Down, resp.status, started.elapsed().as_millis()); Err("down".into()) }
+        Err(_) => { crate::wall2_spotify_log::write(crate::wall2_spotify_log::Event::ApiFailed, crate::wall2_spotify_log::Reason::Down, 0, started.elapsed().as_millis()); Err("down".into()) },
     }
 }
+fn put(cfg: &Config, path: &str, payload: Option<Value>) -> Result<(), String> { put_with(cfg, path, payload, &RealHttp, &RealCreds) }
 
 #[tauri::command]
 pub async fn wall2_spotify_play(window: WebviewWindow, request: PlayRequest) -> Result<(), String> {
@@ -363,6 +421,8 @@ pub fn start_log(dir: Option<std::path::PathBuf>) { crate::wall2_spotify_log::st
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::VecDeque;
+    use std::sync::Arc;
     const ID: &str = "0123456789ABCDEFGHIJKL";
     const DEVICE: &str = "0123456789abcdef0123456789abcdef01234567";
     const COVER: &str = "https://i.scdn.co/image/cover";
@@ -374,7 +434,11 @@ mod tests {
         assert_eq!(parse_config(Some(&base(r#", "redirectPort":65535"#))).unwrap().redirect_port, 65535);
         for bad in [base(r#", "redirectPort":1023"#), base(r#", "redirectPort":65536"#), r#"{"clientId":"xyz"}"#.into(), r#"{"clientId":12}"#.into(), r#"{"clientId":"0123456789abcdef0123456789abcdef","redirectPort":"8898"}"#.into()] { assert!(parse_config(Some(&bad)).is_err(), "{bad}"); }
         let path = std::env::temp_dir().join("wall2-spotify-oversize-test.json");
-        std::fs::write(&path, "x".repeat(4097)).unwrap();
+        let prefix = r#"{"clientId":"0123456789abcdef0123456789abcdef","pad":""#;
+        let suffix = r#""}"#;
+        let oversized = format!("{prefix}{}{suffix}", "x".repeat(4097 - prefix.len() - suffix.len()));
+        assert_eq!(oversized.len(), 4097); assert!(serde_json::from_str::<Value>(&oversized).is_ok());
+        std::fs::write(&path, oversized).unwrap();
         assert_eq!(read_config_file(&path), Err(NOT_SETUP.into()));
         let _ = std::fs::remove_file(path);
     }
@@ -420,15 +484,67 @@ mod tests {
 
     #[test]
     fn token_replies_cover_success_refused_network_and_retry_after() {
-        let ok = ureq::Response::new(200,"ok",r#"{"access_token":"a","expires_in":90,"refresh_token":"r"}"#).unwrap();
-        assert_eq!(token_reply(Ok(ok)), TokenReply::Ok("a".into(),90,Some("r".into())));
-        assert_eq!(token_reply(Err(ureq::Error::Status(429, ureq::Response::new(429,"busy","").unwrap()))), TokenReply::Busy(Duration::from_secs(5)));
-        assert_eq!(token_reply(Err(ureq::Error::Status(400, ureq::Response::new(400,"bad","").unwrap()))), TokenReply::Refused);
-        assert_eq!(token_reply(Err(ureq::Error::Status(500, ureq::Response::new(500,"down","").unwrap()))), TokenReply::Down);
+        let reply = |status, body: &str| HttpReply { status, retry_after: None, body: body.as_bytes().to_vec() };
+        assert_eq!(token_reply(Ok(reply(200,r#"{"access_token":"a","expires_in":90,"refresh_token":"r"}"#))), TokenReply::Ok("a".into(),90,Some("r".into())));
+        assert_eq!(token_reply(Ok(HttpReply { status:429,retry_after:Some(90),body:vec![] })), TokenReply::Busy(Duration::from_secs(60)));
+        assert_eq!(token_reply(Ok(reply(400,r#"{"error":"invalid_grant"}"#))), TokenReply::Refused);
+        assert_eq!(token_reply(Ok(reply(403,r#"{"error":"forbidden"}"#))), TokenReply::Down);
+        assert_eq!(token_reply(Err(())), TokenReply::Down);
     }
 
     #[test]
-    fn concurrent_writes_fail_busy_instead_of_queueing() {
-        let first = begin_write().unwrap(); assert_eq!(begin_write().unwrap_err(), BUSY); drop(first); assert!(begin_write().is_ok());
+    struct FakeCreds(Mutex<Option<String>>);
+    impl FakeCreds { fn new(value: Option<&str>) -> Self { Self(Mutex::new(value.map(str::to_string))) } fn value(&self) -> Option<String> { self.0.lock().unwrap().clone() } }
+    impl Creds for FakeCreds {
+        fn load(&self) -> Result<Option<String>, &'static str> { Ok(self.value()) }
+        fn save(&self, value: &str) -> bool { *self.0.lock().unwrap() = Some(value.into()); true }
+        fn delete(&self) { *self.0.lock().unwrap() = None; }
+        fn delete_if_equal(&self, expected: &str) { let mut value = self.0.lock().unwrap(); if value.as_deref() == Some(expected) { *value = None; } }
+    }
+    struct FakeHttp { tokens: Mutex<VecDeque<Result<HttpReply, ()>>>, apis: Mutex<VecDeque<Result<HttpReply, ()>>>, token_calls: std::sync::atomic::AtomicUsize, api_calls: std::sync::atomic::AtomicUsize }
+    impl FakeHttp {
+        fn new(tokens: Vec<Result<HttpReply,()>>, apis: Vec<Result<HttpReply,()>>) -> Self { Self { tokens: Mutex::new(tokens.into()), apis: Mutex::new(apis.into()), token_calls: 0.into(), api_calls: 0.into() } }
+        fn counts(&self) -> (usize,usize) { (self.token_calls.load(Ordering::SeqCst), self.api_calls.load(Ordering::SeqCst)) }
+    }
+    impl Http for FakeHttp {
+        fn token(&self, _form: &[(&str,&str)]) -> Result<HttpReply,()> { self.token_calls.fetch_add(1,Ordering::SeqCst); self.tokens.lock().unwrap().pop_front().unwrap_or(Err(())) }
+        fn api(&self, _method:&str, _path:&str, _bearer:&str, _payload:Option<&Value>) -> Result<HttpReply,()> { self.api_calls.fetch_add(1,Ordering::SeqCst); self.apis.lock().unwrap().pop_front().unwrap_or(Err(())) }
+    }
+    fn hr(status:u16, body:&str) -> Result<HttpReply,()> { Ok(HttpReply{status,retry_after:None,body:body.as_bytes().to_vec()}) }
+    fn token_ok(refresh: Option<&str>) -> Result<HttpReply,()> { hr(200, &format!(r#"{{"access_token":"access","expires_in":3600{}}}"#, refresh.map(|r| format!(r#", "refresh_token":"{r}""#)).unwrap_or_default())) }
+    fn reset_state() { *token().lock().unwrap()=None; *not_before().lock().unwrap()=None; CANCEL_SIGN_IN.store(false,Ordering::SeqCst); SIGNING_IN.store(false,Ordering::SeqCst); }
+    fn cfg() -> Config { Config { client_id:"a".repeat(32),redirect_port:8898 } }
+
+    #[test]
+    fn seam_pins_refresh_throttle_retry_write_and_cancel_behaviour() {
+        reset_state();
+        let creds=FakeCreds::new(Some("old")); let refused=FakeHttp::new(vec![hr(400,r#"{"error":"invalid_grant"}"#)],vec![]);
+        assert_eq!(access_with(&cfg(),true,&refused,&creds),Err(SIGN_AGAIN.into())); assert_eq!(creds.value(),None); assert!(token().lock().unwrap().is_none());
+
+        reset_state(); let creds=FakeCreds::new(Some("old")); let down=FakeHttp::new(vec![Err(())],vec![]);
+        assert_eq!(access_with(&cfg(),true,&down,&creds),Err("down".into())); assert_eq!(creds.value().as_deref(),Some("old"));
+
+        reset_state(); let creds=FakeCreds::new(Some("old")); let rotate=FakeHttp::new(vec![token_ok(Some("new"))],vec![]);
+        assert_eq!(access_with(&cfg(),true,&rotate,&creds).unwrap(),"access"); assert_eq!(creds.value().as_deref(),Some("new"));
+
+        reset_state(); let creds=FakeCreds::new(Some("old")); let throttle=FakeHttp::new(vec![Ok(HttpReply{status:429,retry_after:Some(90),body:vec![]}),token_ok(None)],vec![]);
+        assert_eq!(access_with(&cfg(),true,&throttle,&creds),Err(BUSY.into())); assert_eq!(throttle.counts().0,1); assert!(not_before().lock().unwrap().unwrap()>Instant::now());
+        assert_eq!(access_with(&cfg(),true,&throttle,&creds),Err(BUSY.into())); assert_eq!(throttle.counts().0,1); *not_before().lock().unwrap()=Some(Instant::now()-Duration::from_secs(1)); assert!(access_with(&cfg(),true,&throttle,&creds).is_ok());
+
+        reset_state(); let creds=FakeCreds::new(Some("old")); *token().lock().unwrap()=Some(Token{access:"ok".into(),expires:Instant::now()+Duration::from_secs(3600)}); let api_throttle=FakeHttp::new(vec![],vec![Ok(HttpReply{status:429,retry_after:Some(70),body:vec![]}),hr(200,"{}")]);
+        assert_eq!(get_json_with(&cfg(),"/x",&api_throttle,&creds),Err(BUSY.into())); assert_eq!(api_throttle.counts().1,1); assert_eq!(get_json_with(&cfg(),"/x",&api_throttle,&creds),Err(BUSY.into())); assert_eq!(api_throttle.counts().1,1); *not_before().lock().unwrap()=Some(Instant::now()-Duration::from_secs(1)); assert!(get_json_with(&cfg(),"/x",&api_throttle,&creds).is_ok());
+
+        reset_state(); let creds=FakeCreds::new(Some("old")); *token().lock().unwrap()=Some(Token{access:"stale".into(),expires:Instant::now()+Duration::from_secs(3600)}); let read=FakeHttp::new(vec![token_ok(None)],vec![hr(401,""),hr(200,"{}")]);
+        assert!(get_json_with(&cfg(),"/x",&read,&creds).is_ok()); assert_eq!(read.counts(),(1,2));
+        reset_state(); let creds=FakeCreds::new(Some("old")); *token().lock().unwrap()=Some(Token{access:"stale".into(),expires:Instant::now()+Duration::from_secs(3600)}); let twice=FakeHttp::new(vec![token_ok(None)],vec![hr(401,""),hr(401,"")]);
+        assert_eq!(get_json_with(&cfg(),"/x",&twice,&creds),Err(SIGN_AGAIN.into())); assert_eq!(twice.counts(),(1,2));
+
+        reset_state(); let creds=FakeCreds::new(Some("old")); *token().lock().unwrap()=Some(Token{access:"stale".into(),expires:Instant::now()+Duration::from_secs(3600)}); let write=FakeHttp::new(vec![token_ok(None)],vec![hr(401,"")]);
+        assert_eq!(put_with(&cfg(),"/x",None,&write,&creds),Err(BUSY.into())); assert_eq!(write.counts(),(1,1));
+        for status in [404u16] { reset_state(); let creds=FakeCreds::new(Some("old")); *token().lock().unwrap()=Some(Token{access:"ok".into(),expires:Instant::now()+Duration::from_secs(3600)}); let http=FakeHttp::new(vec![],vec![hr(status,"")]); assert_eq!(put_with(&cfg(),"/x",None,&http,&creds),Err(NO_DEVICE.into())); }
+
+        reset_state(); assert!(begin_sign_in().is_ok()); assert_eq!(begin_sign_in(),Err(BUSY.into())); CANCEL_SIGN_IN.store(true,Ordering::SeqCst); let creds=FakeCreds::new(None); assert_eq!(save_sign_in(&creds,"new","access".into(),3600),Err("cancelled".into())); assert_eq!(creds.value(),None); SIGNING_IN.store(false,Ordering::SeqCst);
+
+        let creds=FakeCreds::new(Some("newer")); creds.delete_if_equal("old"); assert_eq!(creds.value().as_deref(),Some("newer"));
     }
 }
