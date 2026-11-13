@@ -1,3 +1,4 @@
+import { invoke } from '../bridge/tauri';
 export interface TaskItem {
   id: string;
   title: string;
@@ -81,4 +82,13 @@ export type RowMark = 'done' | 'failed' | undefined;
 /** Rows to show: the server list minus rows that have faded out. */
 export function visibleRows(tasks: TaskItem[], hidden: ReadonlySet<string>): TaskItem[] {
   return tasks.filter((t) => !hidden.has(t.id));
+}
+
+/**
+ * Opens a task in the owner's task app: Rust checks that the id came from the last good
+ * task read and opens the app with the system's default handler. A refusal changes
+ * nothing on the wall.
+ */
+export function openTask(id: string): void {
+  invoke('wall2_open_task', { id }).catch(() => undefined);
 }

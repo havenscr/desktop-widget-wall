@@ -47,6 +47,24 @@ it('asks for the home tag and shows three rows with "N more can wait"', async ()
   expect(screen.getByText('5 more can wait')).toBeTruthy();
 });
 
+it('a click on a chore\'s title opens it in the task app; the tick circle does not', async () => {
+  const opened: unknown[] = [];
+  const done: unknown[] = [];
+  mocks.set('wall2_tasks_summary', () => ({ next: [task('c-1', 'Water the plants')], remaining: 0 }));
+  mocks.set('wall2_open_task', (a) => void opened.push(a));
+  mocks.set('wall2_task_done', (a) => void done.push(a));
+  render(<Chores />);
+  await flush();
+  fireEvent.click(screen.getByRole('button', { name: 'Open Water the plants' }));
+  await flush();
+  expect(opened).toEqual([{ id: 'c-1' }]);
+  expect(done).toEqual([]);
+  fireEvent.click(screen.getByRole('button', { name: 'Done: Water the plants' }));
+  await flush();
+  expect(opened).toHaveLength(1);
+  expect(done).toEqual([{ id: 'c-1' }]);
+});
+
 it('ticks a chore: struck at once, saved, gone after two seconds, list read again', async () => {
   let list = [task('1', 'Water the plants'), task('2', 'Sort the recycling')];
   const done = vi.fn((a?: Record<string, unknown>) => {

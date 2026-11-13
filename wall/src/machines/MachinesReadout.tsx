@@ -25,8 +25,9 @@ function Cell({ value, hot, label }: { value: number | null; hot: boolean; label
  * The owner's vote A, "whisper bars": a header row (CPU, GPU, RAM) and two thin rows,
  * PC and BOX (with the box temperature), at the bottom of the Work left wing. Grey by
  * default; a number turns amber only after it stays over its limit for 30 seconds. The
- * BOX row is hidden when the box has no numbers and dimmed when they are stale. Nothing
- * shows when the PC numbers cannot be read.
+ * BOX row is dimmed when its numbers are stale; with no box numbers at all it stays,
+ * dimmed, and says "no reading", so the owner can tell it exists (it fills in when the
+ * helper answers). Nothing shows when the PC numbers cannot be read.
  */
 export function MachinesReadout() {
   const { data, over, now } = useMachines();
@@ -49,6 +50,12 @@ export function MachinesReadout() {
         <Cell label="PC RAM" value={data.pc.ramPct} hot={hot('pc.ram')} />
         <span />
       </div>
+      {!b && (
+        <div className="mc-row none" data-machine="box" aria-label="Box no reading">
+          <span className="mc-name">BOX</span>
+          <span className="mc-none">no reading</span>
+        </div>
+      )}
       {b && (
         <div className={`mc-row${data.boxStale ? ' stale' : ''}`} data-machine="box">
           <span className="mc-name">BOX</span>

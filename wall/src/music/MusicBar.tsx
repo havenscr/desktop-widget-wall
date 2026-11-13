@@ -1,5 +1,6 @@
 import { IconMusic, IconPlayerPauseFilled, IconPlayerPlayFilled, IconPlayerSkipBackFilled, IconPlayerSkipForwardFilled } from '@tabler/icons-react';
 import { isPlaying, isQuiet } from './model';
+import { rejectArt } from './store';
 import { useNowPlaying } from './useNowPlaying';
 
 export function MusicBar() {
@@ -8,7 +9,7 @@ export function MusicBar() {
   return (
     <section className={`panel music${quiet ? ' quiet' : ''}`} aria-label="Music">
       <div className="art">
-        {!quiet && art ? <img src={art} alt="" /> : <IconMusic size={32} stroke={1.5} aria-hidden="true" />}
+        {!quiet && art ? <img src={art} alt="" onError={rejectArt} /> : <IconMusic size={32} stroke={1.5} aria-hidden="true" />}
       </div>
       <div className="music-text">
         {quiet ? (
@@ -51,7 +52,7 @@ export function MusicMini() {
   return (
     <section className={`music-mini${quiet ? ' quiet' : ''}`} aria-label="Music">
       <div className="art">
-        {!quiet && art ? <img src={art} alt="" /> : <IconMusic size={26} stroke={1.5} aria-hidden="true" />}
+        {!quiet && art ? <img src={art} alt="" onError={rejectArt} /> : <IconMusic size={26} stroke={1.5} aria-hidden="true" />}
       </div>
       <div className="music-mini-text">
         {quiet ? (

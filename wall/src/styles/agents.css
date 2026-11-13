@@ -304,42 +304,28 @@
   flex: 1;
   min-width: 0;
 }
+/* The zero-lane fill: the same cards, tighter. The ring and the hour tiles follow the
+   height that is left. */
 .centre-fill.compact .panel {
-  padding: 18px 26px 20px;
-  gap: 10px;
+  padding: 16px 26px 18px;
+  gap: 12px;
 }
 .centre-fill.compact .focus .ring {
-  width: 168px;
-  height: 168px;
-}
-.centre-fill.compact .focus .ring-num {
-  font-size: 60px;
+  max-height: 200px;
 }
 .centre-fill.compact .wx-icon svg {
-  width: 72px;
-  height: 72px;
+  width: 64px;
+  height: 64px;
 }
 .centre-fill.compact .wx-temp {
-  font-size: 84px;
+  font-size: 76px;
 }
 .centre-fill.compact .wx-hours li {
-  padding: 8px 0;
   gap: 4px;
 }
 .centre-fill.compact .wx-hours svg {
   width: 30px;
   height: 30px;
-}
-
-/* The fill's one quiet line about the agents, under the focus timer and the weather. */
-.centre-fill:has(> .centre-note) {
-  grid-template-rows: minmax(0, 1fr) auto;
-  row-gap: 10px;
-}
-.centre-note {
-  grid-column: 1 / -1;
-  padding: 0 10px;
-  line-height: 24px;
 }
 
 /* The ribbon's agent row: three thin rows under the calendar chips. */

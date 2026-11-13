@@ -466,7 +466,7 @@ fn id_is_known(id: &str) -> bool {
     KNOWN_IDS.lock().map(|g| g.iter().any(|k| k == id)).unwrap_or(false)
 }
 
-fn require_wall2(label: &str) -> Result<(), String> {
+pub(crate) fn require_wall2(label: &str) -> Result<(), String> {
     if label == WALL2_LABEL {
         Ok(())
     } else {

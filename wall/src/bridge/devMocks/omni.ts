@@ -1,5 +1,5 @@
 import { reviewNow } from '../../ui/reviewClock';
-import { longOr } from './long';
+import { knob, longOr } from './long';
 import { mocks } from '../tauri';
 
 /**
@@ -91,7 +91,7 @@ export function registerOmniMocks(): void {
   });
   mocks.set('wall2_machines', () =>
     longOr(
-      { pc: { cpuPct: 34, gpuPct: 71, ramPct: 58 }, box: { cpuPct: 61, gpuPct: null, ramPct: 48, tempC: 52 }, boxStale: false },
+      { pc: { cpuPct: 34, gpuPct: 71, ramPct: 58 }, box: knob('box') === 'none' ? null : { cpuPct: 61, gpuPct: null, ramPct: 48, tempC: 52 }, boxStale: false },
       { pc: { cpuPct: 100, gpuPct: 100, ramPct: 100 }, box: { cpuPct: 100, gpuPct: 100, ramPct: 100, tempC: 104 }, boxStale: false },
     ),
   );

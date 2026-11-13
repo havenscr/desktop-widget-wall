@@ -440,7 +440,9 @@ pub async fn wall2_tasks_summary(
         };
         let body = get_json(&format!("{base}/api/tasks?status=open"))?;
         let f = Filters { tag: tag.as_deref(), not_tag: notTag.as_deref(), bucket_id: bucket_id.as_deref() };
-        Ok(summarize(&body, f, now_epoch(), &local_offset_secs))
+        let summary = summarize(&body, f, now_epoch(), &local_offset_secs);
+        remember_shown(&read_key(&tag, &notTag, &list), &summary.next);
+        Ok(summary)
     })
     .await
     .map_err(|_| "The request did not finish".to_string())?
@@ -451,7 +453,9 @@ pub async fn wall2_tasks_next(app: tauri::AppHandle) -> Result<Vec<TaskItem>, St
     let base = read_base(&app, "tasksBaseUrl", true)?;
     tauri::async_runtime::spawn_blocking(move || {
         let body = get_json(&format!("{base}/api/tasks?status=open"))?;
-        Ok(pick_tasks(&body))
+        let tasks = pick_tasks(&body);
+        remember_shown("next", &tasks);
+        Ok(tasks)
     })
     .await
     .map_err(|_| "The request did not finish".to_string())?
@@ -474,6 +478,73 @@ pub async fn wall2_task_done(app: tauri::AppHandle, id: String) -> Result<(), St
     })
     .await
     .map_err(|_| "The request did not finish".to_string())?
+}
+
+// Section: opening a task
+
+/// The task ids each kind of read showed in its last good answer, by read (`next`, or the
+/// summary's filters), oldest first. Only these can be opened, so the web view cannot ask
+/// the system to open an address for an id it made up. The filters come from the web view,
+/// so the list keeps at most `MAX_SHOWN_READS` kinds (the oldest goes first); each holds at
+/// most the three ids its read showed.
+static SHOWN_TASKS: Mutex<ShownReads> = Mutex::new(Vec::new());
+const MAX_SHOWN_READS: usize = 8;
+
+/// One key per kind of read, so Work's list and Home's chores do not replace each other.
+fn read_key(tag: &Option<String>, not_tag: &Option<String>, list: &Option<String>) -> String {
+    format!("summary|{}|{}|{}", tag.as_deref().unwrap_or(""), not_tag.as_deref().unwrap_or(""), list.as_deref().unwrap_or(""))
+}
+
+type ShownReads = Vec<(String, Vec<String>)>;
+
+/// Keep `tasks` as the ids `key`'s read showed: replaces that read's last ids, at most three,
+/// and drops the oldest reads past `MAX_SHOWN_READS`.
+fn remember_in(reads: &mut ShownReads, key: &str, tasks: &[TaskItem]) {
+    reads.retain(|(k, _)| k != key);
+    reads.push((key.to_string(), tasks.iter().take(TASK_LIMIT).map(|t| t.id.clone()).collect()));
+    while reads.len() > MAX_SHOWN_READS {
+        reads.remove(0);
+    }
+}
+
+fn shown_in(reads: &ShownReads, id: &str) -> bool {
+    reads.iter().any(|(_, ids)| ids.iter().any(|known| known == id))
+}
+
+fn remember_shown(key: &str, tasks: &[TaskItem]) {
+    if let Ok(mut reads) = SHOWN_TASKS.lock() {
+        remember_in(&mut reads, key, tasks);
+    }
+}
+
+/// The checks before a task is opened, in order: the calling window must be Wall 2's (the
+/// shared check), then the id must be well formed and one the last good reads showed.
+fn check_open_task(label: &str, id: &str, reads: &ShownReads) -> Result<(), String> {
+    crate::wall2_omni::require_wall2(label)?;
+    if !valid_task_id(id) || !shown_in(reads, id) {
+        return Err("Unknown task".to_string());
+    }
+    Ok(())
+}
+
+/// The address that opens a task. The task app has no address for one task (its API is
+/// `/api/tasks/{id}`, which is JSON, not a page), so this is the app's own page: the base
+/// URL with a trailing slash. The id is checked before this is called.
+fn task_link(base: &str, _id: &str) -> String {
+    format!("{base}/")
+}
+
+/// Open a task the wall showed in the task app, with the system's default handler (as
+/// `wall2_open_link`). Only the Wall 2 window may call it (`forbidden` otherwise), and only
+/// an id from the last good task reads is accepted.
+#[tauri::command]
+pub fn wall2_open_task(window: tauri::WebviewWindow, app: tauri::AppHandle, id: String) -> Result<(), String> {
+    {
+        let reads = SHOWN_TASKS.lock().map_err(|_| "Unknown task".to_string())?;
+        check_open_task(window.label(), &id, &reads)?;
+    }
+    let base = read_base(&app, "tasksBaseUrl", true)?;
+    app.opener().open_url(task_link(&base, &id), None::<&str>).map_err(|_| "Could not open the link".to_string())
 }
 
 // Section: home security
@@ -937,6 +1008,56 @@ mod tests {
     fn us_east(utc: i64) -> i64 {
         // 2026-03-08T07:00:00Z
         if utc < 1_772_953_200 { -5 * 3600 } else { -4 * 3600 }
+    }
+
+    fn shown_task(id: &str) -> TaskItem {
+        TaskItem { id: id.to_string(), title: "A".to_string(), due_at: None, due_is_all_day: false, quadrant: None, est: None }
+    }
+
+    #[test]
+    fn open_task_accepts_only_ids_from_a_good_read() {
+        let mut reads = ShownReads::new();
+        assert!(!shown_in(&reads, "open-test-1"));
+        remember_in(&mut reads, "work", &[shown_task("open-test-1"), shown_task("open-test-2")]);
+        remember_in(&mut reads, "home", &[shown_task("open-test-3")]);
+        assert!(shown_in(&reads, "open-test-1"));
+        assert!(shown_in(&reads, "open-test-3"), "a second kind of read does not replace the first");
+        // The next good read of the same kind replaces its ids.
+        remember_in(&mut reads, "work", &[shown_task("open-test-2")]);
+        assert!(!shown_in(&reads, "open-test-1"));
+        assert!(shown_in(&reads, "open-test-2"));
+        assert!(!shown_in(&reads, "open-test-9"));
+        assert!(!valid_task_id("../x"));
+        assert_eq!(task_link("https://example.invalid:8443", "open-test-2"), "https://example.invalid:8443/");
+        assert_ne!(read_key(&Some("home".into()), &None, &None), read_key(&None, &Some("home".into()), &None));
+    }
+
+    #[test]
+    fn open_task_checks_the_window_first() {
+        let mut reads = ShownReads::new();
+        remember_in(&mut reads, "work", &[shown_task("win-test-1")]);
+        assert_eq!(check_open_task("wall2", "win-test-1", &reads), Ok(()));
+        assert_eq!(check_open_task("main", "win-test-1", &reads), Err("forbidden".to_string()));
+        assert_eq!(check_open_task("main", "../x", &reads), Err("forbidden".to_string()));
+        assert_eq!(check_open_task("wall2", "win-test-9", &reads), Err("Unknown task".to_string()));
+        assert_eq!(check_open_task("wall2", "../x", &reads), Err("Unknown task".to_string()));
+    }
+
+    #[test]
+    fn shown_task_reads_are_bounded() {
+        let mut reads = ShownReads::new();
+        // Many kinds of read: only the newest MAX_SHOWN_READS are kept, the oldest go first.
+        for i in 0..(MAX_SHOWN_READS + 20) {
+            remember_in(&mut reads, &format!("kind-{i}"), &[shown_task(&format!("bound-{i}"))]);
+        }
+        assert_eq!(reads.len(), MAX_SHOWN_READS);
+        assert!(!shown_in(&reads, "bound-0"));
+        assert!(shown_in(&reads, &format!("bound-{}", MAX_SHOWN_READS + 19)));
+        // A read never keeps more than the three ids it shows.
+        let many: Vec<TaskItem> = (0..10).map(|i| shown_task(&format!("many-{i}"))).collect();
+        remember_in(&mut reads, "many", &many);
+        assert!(shown_in(&reads, "many-2"));
+        assert!(!shown_in(&reads, "many-3"));
     }
 
     #[test]
