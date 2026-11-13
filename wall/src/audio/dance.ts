@@ -37,28 +37,7 @@ export const KICK_POWER = 1.5;
 export const KICK_ATTACK_S = 0.02;
 export const KICK_RELEASE_S = 0.26;
 
-/**
- * The turn hold, per band, on the shaped output only (the hit itself is not softened): a band's
- * height runs up or down for at least this long before it may turn. A rise from still, or from a
- * fall that has run this long, is never delayed, so an ordinary hit stays instant; a turn that
- * comes sooner (every band pumping at 6 Hz) is held at the height it has until the time is up.
- * Seconds. Calm check numbers for 100 to 160 ms are in the pull request.
- */
-export const DANCE_TURN_HOLD_S = 0.12;
-/** Once a turn has been held, the band catches up to its target at no more than the whole range in this many seconds (so a hold never ends in a jump); an ordinary hit never waits and never catches up. */
-export const DANCE_CATCH_S = 0.1;
-/** A change smaller than this is not a direction (float noise). */
-const DANCE_DIR_EPS = 1e-4;
-
 export interface DanceState {
-  /** The height written last step, per band. */
-  emit: Float32Array;
-  /** Direction of the current run per band: 1 rising, -1 falling, 0 not yet moved. */
-  dir: Int8Array;
-  /** Seconds the current run has lasted, per band. */
-  runAge: Float32Array;
-  /** 1 while a band is catching up after a held turn. */
-  catching: Uint8Array;
   /** Today's smoothed level per band. */
   level: Float32Array;
   fast: Float32Array;
@@ -69,20 +48,12 @@ export interface DanceState {
   peak: number;
   /** Running peak of the largest raw kick-band transient. */
   kickPeak: number;
-  /** The kick, 0 to 1 (after the turn hold). */
+  /** The kick, 0 to 1. */
   kick: number;
-  /** Direction and age of the kick's current run (the turn hold applies to it too: the swell is the same pump). */
-  kickDir: number;
-  kickAge: number;
-  kickCatch: number;
 }
 
 export function createDance(): DanceState {
   return {
-    emit: new Float32Array(DANCE_BANDS),
-    dir: new Int8Array(DANCE_BANDS),
-    runAge: new Float32Array(DANCE_BANDS),
-    catching: new Uint8Array(DANCE_BANDS),
     level: new Float32Array(DANCE_BANDS),
     fast: new Float32Array(DANCE_BANDS),
     slow: new Float32Array(DANCE_BANDS),
@@ -90,18 +61,11 @@ export function createDance(): DanceState {
     peak: 0.1,
     kickPeak: 0.1,
     kick: 0,
-    kickDir: 0,
-    kickAge: 0,
-    kickCatch: 0,
   };
 }
 
 /** Forget everything: silence, a pause or a hidden page leaves no stale peak or follower behind. */
 export function clearDance(s: DanceState): void {
-  s.emit.fill(0);
-  s.dir.fill(0);
-  s.runAge.fill(0);
-  s.catching.fill(0);
   s.level.fill(0);
   s.fast.fill(0);
   s.slow.fill(0);
@@ -109,9 +73,6 @@ export function clearDance(s: DanceState): void {
   s.peak = 0.1;
   s.kickPeak = 0.1;
   s.kick = 0;
-  s.kickDir = 0;
-  s.kickAge = 0;
-  s.kickCatch = 0;
 }
 
 /** `limit * tanh(x / limit)`: about `x` when small, never above `limit`. */
@@ -147,50 +108,10 @@ export function stepDance(s: DanceState, raw: ArrayLike<number>, dt: number, out
   s.peak = Math.max(s.peak * decay, top, DANCE_PEAK_MIN);
   for (let b = 0; b < DANCE_BANDS; b++) {
     const base = level[b] > BAND_FLOOR ? ((level[b] - BAND_FLOOR) / (1 - BAND_FLOOR)) * SPECTRUM_SCALE : 0;
-    const v = soft(base * DANCE_BASE + (trs[b] / s.peak) * DANCE_HIT, DANCE_LIMIT);
-    const e = s.emit[b];
-    const want = v > e + DANCE_DIR_EPS ? 1 : v < e - DANCE_DIR_EPS ? -1 : 0;
-    s.runAge[b] += d;
-    let w = v;
-    if (want !== 0 && want !== s.dir[b]) {
-      if (s.dir[b] === 0 || s.runAge[b] >= DANCE_TURN_HOLD_S - 1e-9) {
-        s.dir[b] = want;
-        s.runAge[b] = 0;
-      } else {
-        w = e; // too soon to turn: hold the height
-        s.catching[b] = 1;
-      }
-    }
-    if (s.catching[b] === 1 && w !== e) {
-      const step = (DANCE_LIMIT / DANCE_CATCH_S) * d;
-      if (w > e + step) w = e + step;
-      else if (w < e - step) w = e - step;
-      else s.catching[b] = 0;
-    }
-    s.emit[b] = w;
-    out[at + b] = w;
+    out[at + b] = soft(base * DANCE_BASE + (trs[b] / s.peak) * DANCE_HIT, DANCE_LIMIT);
   }
   s.kickPeak = Math.max(s.kickPeak * decay, kickHit, DANCE_PEAK_MIN);
   const target = kickHit > KICK_GATE ? Math.pow(kickHit / s.kickPeak, KICK_POWER) : 0;
-  const k0 = s.kick;
-  let k = k0 + (target - k0) * (1 - Math.exp(-d / (target > k0 ? KICK_ATTACK_S : KICK_RELEASE_S)));
-  const kw = k > k0 + DANCE_DIR_EPS ? 1 : k < k0 - DANCE_DIR_EPS ? -1 : 0;
-  s.kickAge += d;
-  if (kw !== 0 && kw !== s.kickDir) {
-    if (s.kickDir === 0 || s.kickAge >= DANCE_TURN_HOLD_S - 1e-9) {
-      s.kickDir = kw;
-      s.kickAge = 0;
-    } else {
-      k = k0;
-      s.kickCatch = 1;
-    }
-  }
-  if (s.kickCatch === 1 && k !== k0) {
-    const step = d / DANCE_CATCH_S; // the kick spans 0 to 1
-    if (k > k0 + step) k = k0 + step;
-    else if (k < k0 - step) k = k0 - step;
-    else s.kickCatch = 0;
-  }
-  s.kick = k;
+  s.kick += (target - s.kick) * (1 - Math.exp(-d / (target > s.kick ? KICK_ATTACK_S : KICK_RELEASE_S)));
   return s.kick;
 }

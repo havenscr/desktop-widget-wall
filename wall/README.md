@@ -582,11 +582,7 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
   `soft(level * 0.32 + hit * 1.35, 1.8)` with `soft(x, L) = L * tanh(x / L)`, where `level` is the
   band lifted off `BAND_FLOOR` and scaled to 1.3 as above. The kick is the largest raw transient
   among the six lowest bands against its own running peak, raised to 1.5, zero under 0.04, then a
-  follower (0.02 s up, 0.26 s down): one number, 0 to 1. A turn hold keeps the output from buzzing
-  when every band pumps together: per band (and for the kick) a run up or down lasts at least
-  `DANCE_TURN_HOLD_S` (0.12 s) before it may turn, except a rise from still or from a fall that has
-  run that long, which is never delayed; a held turn keeps the height and then catches up over
-  0.1 s instead of jumping. An ordinary hit is unchanged (instant rise, same peak). The settle and lift rules
+  follower (0.02 s up, 0.26 s down): one number, 0 to 1. The settle and lift rules
   (`musicDriving`, `BAND_FLOOR`, `REST_RESUME`) still read the raw bands. Silence, a pause
   (`pauseDanceHistory`), a hidden page and a whole ring of silence clear the shaped state, so no
   stale peak or follower is left for the first hit after. `sampleDance(u, age)` reads it with the
@@ -697,9 +693,8 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
   number of times in any second, or if any echo line moves more than a limit's number of design
   pixels between two frames; the limits are per input (`LIMITS` in the script). They were three
   swings a second before the dance; the lines now follow every hit, so each sits a little over
-  what the chosen look measures (demo 72 swings, at most 7 in a second, 52.4 px; every band
-  pumping 164, 13, 24.1 px; settle 43, 7, 52.4 px; before the turn hold 62, 6, 52.4 px; 194, 12,
-  23.5 px; 33, 6, 52.4 px; before the dance 11, 1, 22.3 px; 12, 1, 14.1 px;
+  what the chosen look measures (demo 62 swings, at most 6 in a second, 52.4 px; every band
+  pumping 194, 12, 23.5 px; settle 33, 6, 52.4 px; before the dance 11, 1, 22.3 px; 12, 1, 14.1 px;
   7, 1, 19.8 px). For the settle also if any frame after the music stops changes it by more than
   2 percent, or any frame from 3.5 s after changes it by more than 0.05 percent (unchanged). Set
   `WALL_CHROME` to a Chromium binary.

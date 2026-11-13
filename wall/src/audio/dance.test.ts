@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   DANCE_BANDS,
-  DANCE_TURN_HOLD_S,
   DANCE_LIMIT,
   clearDance,
   createDance,
@@ -190,70 +189,22 @@ describe('no allocation in the frame loop', () => {
   });
 });
 
-describe('the turn hold', () => {
-  /** Direction changes a second (moves of at least `th`) in a series sampled at 30 a second. */
-  const turns = (a: number[], th: number) => {
-    let n = 0;
-    let dir = 0;
-    let ext = a[0];
-    for (let i = 1; i < a.length; i++) {
-      if (dir >= 0) {
-        if (a[i] > ext) ext = a[i];
-        else if (ext - a[i] >= th) {
-          n++;
-          dir = -1;
-          ext = a[i];
-        }
-      }
-      if (dir < 0) {
-        if (a[i] < ext) ext = a[i];
-        else if (a[i] - ext >= th) {
-          n++;
-          dir = 1;
-          ext = a[i];
-        }
-      }
-    }
-    return n / (a.length / 30);
-  };
-
-  it('a hit after quiet is not delayed: it rises on the very row the band jumps, as it would with no hold', () => {
+describe('the chosen shaping', () => {
+  it('matches the recorded three second 6 Hz all-band pump', () => {
     const s = createDance();
-    run(s, 180, () => flat(0.4));
-    const hit = flat(0.4);
-    hit[10] = 0.95;
-    const out = new Float32Array(DANCE_BANDS);
-    const before = out.slice();
-    stepDance(s, flat(0.4), DT, before);
-    stepDance(s, hit, DT, out);
-    expect(out[10]).toBeGreaterThan(before[10] + 0.3);
-  });
-
-  it('every band pumping on and off 6 times a second turns at most 8 times a second in the shaped output', () => {
-    const s = createDance();
-    const pump = (r: number) => flat(Math.floor((r / 30) * 12) % 2 === 0 ? 0.9 : 0.43);
-    const { heights, kicks } = run(s, 600, pump);
-    const mean = heights.slice(60).map((h) => h.reduce((a, b) => a + b, 0) / DANCE_BANDS);
-    expect(turns(mean, 0.02)).toBeLessThanOrEqual(8);
-    expect(turns(heights.slice(60).map((h) => h[10]), 0.02)).toBeLessThanOrEqual(8);
-    expect(turns(kicks.slice(60), 0.05)).toBeLessThanOrEqual(8);
-  });
-
-  it('a one-row spike holds its peak for the hold time before it may fall, and then falls', () => {
-    const s = createDance();
-    run(s, 180, () => flat(0.4));
-    const spike = flat(0.4);
-    spike[10] = 1;
-    const out: number[] = [];
-    const o = new Float32Array(DANCE_BANDS);
-    for (let r = 0; r < 14; r++) {
-      stepDance(s, r === 0 ? spike : flat(0.4), DT, o);
-      out.push(o[10]);
-    }
-    const peak = Math.max(...out);
-    const at = out.indexOf(peak);
-    const held = Math.ceil(DANCE_TURN_HOLD_S / DT - 1e-9);
-    for (let r = at; r <= at + held - 1; r++) expect(out[r]).toBe(peak);
-    expect(out[at + held + 2]).toBeLessThan(peak);
+    const { heights, kicks } = run(s, 90, (r) => flat(Math.floor((r / 30) * 12) % 2 === 0 ? 0.9 : 0.43));
+    const rows = [0, 1, 2, 14, 15, 16, 30, 45, 60, 89];
+    expect(rows.map((r) => [heights[r][10], kicks[r]])).toEqual([
+      [1.1723973751068115, 0.8111243971624381],
+      [1.244186282157898, 0.9643260066527476],
+      [1.2822597026824951, 0.9932620530009145],
+      [1.076628565788269, 0.8216504808110746],
+      [1.1908499002456665, 0.8124380613193867],
+      [1.2132842540740967, 0.8075056495937579],
+      [1.0784968137741089, 0.6093125520163165],
+      [0.9929779767990112, 0.47100907695507815],
+      [0.9348099231719971, 0.3975340476329985],
+      [0.5924757122993469, 0.34517029730743026],
+    ]);
   });
 });
