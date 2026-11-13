@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bump, dayKey, defaultPet, moodOf, parsePet, rollDay, todayLines, unlocked, emptyToday, type MoodInput } from './pet';
+import { MAX_COUNT, MAX_DAYS, MAX_RAW, bump, dayKey, defaultPet, moodOf, parsePet, rollDay, todayLines, unlocked, emptyToday, type MoodInput, type PetData } from './pet';
 
 const at = (d: number, h = 12) => new Date(2026, 10, d, h).getTime();
 
@@ -25,6 +25,41 @@ describe('her stored life', () => {
     d = rollDay(d, at(12, 8));
     expect(d.days).toBe(2);
     expect(d.today).toEqual(emptyToday(dayKey(at(12))));
+  });
+  it('a clock step back and forward again adds no days, unlocks nothing early and keeps today', () => {
+    let d = rollDay(defaultPet(at(11)), at(11, 9));
+    d = bump(bump(d, 'pets', at(11, 10)), 'songs', at(11, 10));
+    // Back two days (a wrong clock), then forward to the real date again.
+    const back = rollDay(d, at(9, 10));
+    expect(back).toBe(d);
+    const bumped = bump(back, 'pets', at(9, 11));
+    expect(bumped.days).toBe(1);
+    expect(bumped.today).toMatchObject({ date: dayKey(at(11)), pets: 2, songs: 1 });
+    expect(rollDay(bumped, at(11, 12))).toBe(bumped);
+    expect(rollDay(bumped, at(12, 8)).days).toBe(2);
+  });
+  it('a time zone change to an earlier date and back counts once', () => {
+    // 00:30 on the 12th, then a zone change shows 23:30 on the 11th, then back to the 12th.
+    let d = rollDay(defaultPet(at(11)), at(11, 20));
+    d = rollDay(d, at(12, 0));
+    expect(d.days).toBe(2);
+    d = rollDay(d, at(11, 23));
+    d = rollDay(d, at(12, 1));
+    expect(d.days).toBe(2);
+  });
+  it('rejects oversized, corrupted and out of range values; takes off a cosmetic not yet unlocked', () => {
+    const base = defaultPet(at(11));
+    expect(parsePet('x'.repeat(MAX_RAW + 1), at(11))).toEqual(base);
+    expect(parsePet('null', at(11))).toEqual(base);
+    expect(parsePet('[1,2]', at(11)).days).toBe(0);
+    const big: Partial<PetData> = { days: 1e9, cosmetic: 'cape', lastDay: 'yesterday', today: { date: '2026-11-11', pets: 1e12, songs: -4, naps: 2.7, clovers: NaN, focus: 1, agents: 0 } };
+    const p = parsePet(JSON.stringify(big), at(11));
+    expect(p.days).toBe(MAX_DAYS);
+    expect(p.cosmetic).toBe('cape');
+    expect(p.lastDay).toBeNull();
+    expect(p.today).toMatchObject({ pets: MAX_COUNT, songs: 0, naps: 2, clovers: 0 });
+    expect(parsePet(JSON.stringify({ days: 2, cosmetic: 'cape' }), at(11)).cosmetic).toBe('none');
+    expect(parsePet(JSON.stringify({ today: { date: '11/11/2026', pets: 3 } }), at(11)).today.pets).toBe(0);
   });
   it('unlocks the bow on day one, the star on day three, the cape on day seven', () => {
     expect([unlocked('bow', 1), unlocked('star', 2), unlocked('star', 3), unlocked('cape', 6), unlocked('cape', 7), unlocked('none', 0)]).toEqual([true, false, true, false, true, true]);

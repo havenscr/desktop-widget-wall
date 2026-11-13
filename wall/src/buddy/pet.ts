@@ -51,22 +51,36 @@ export function defaultPet(now: number): PetData {
   return { chatty: 'sometimes', cosmetic: 'none', days: 0, lastDay: null, today: emptyToday(dayKey(now)) };
 }
 
-const count = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? Math.floor(v) : 0);
+/** A stored value longer than this is not ours: ignored before it is parsed. */
+export const MAX_RAW = 4096;
+/** Upper bounds for the counts and the days together. */
+export const MAX_COUNT = 9999;
+export const MAX_DAYS = 36500;
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
-/** Read the stored data, falling back to the defaults for anything missing or malformed. */
+const count = (v: unknown, max = MAX_COUNT) => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? Math.min(max, Math.floor(v)) : 0);
+const date = (v: unknown): string | null => (typeof v === 'string' && DATE.test(v) ? v : null);
+
+/**
+ * Read the stored data, falling back to the defaults for anything missing, malformed, oversized
+ * or out of range. A worn cosmetic that is not unlocked yet is taken off.
+ */
 export function parsePet(raw: string | null, now: number): PetData {
   const base = defaultPet(now);
-  if (!raw) return base;
+  if (!raw || raw.length > MAX_RAW) return base;
   try {
     const v = JSON.parse(raw) as Partial<PetData> & { today?: Partial<Today> };
+    if (!v || typeof v !== 'object') return base;
     const chatty: Chatty = v.chatty === 'off' || v.chatty === 'chatty' ? v.chatty : 'sometimes';
-    const cosmetic: Cosmetic = COSMETICS.includes(v.cosmetic as Cosmetic) ? (v.cosmetic as Cosmetic) : 'none';
-    const t: Partial<Today> = v.today ?? {};
-    const today: Today =
-      typeof t.date === 'string'
-        ? { date: t.date, pets: count(t.pets), songs: count(t.songs), naps: count(t.naps), clovers: count(t.clovers), focus: count(t.focus), agents: count(t.agents) }
-        : base.today;
-    return { chatty, cosmetic, days: count(v.days), lastDay: typeof v.lastDay === 'string' ? v.lastDay : null, today };
+    const days = count(v.days, MAX_DAYS);
+    const worn = COSMETICS.includes(v.cosmetic as Cosmetic) ? (v.cosmetic as Cosmetic) : 'none';
+    const cosmetic: Cosmetic = unlocked(worn, days) ? worn : 'none';
+    const t: Partial<Today> = v.today && typeof v.today === 'object' ? v.today : {};
+    const tDate = date(t.date);
+    const today: Today = tDate
+      ? { date: tDate, pets: count(t.pets), songs: count(t.songs), naps: count(t.naps), clovers: count(t.clovers), focus: count(t.focus), agents: count(t.agents) }
+      : base.today;
+    return { chatty, cosmetic, days, lastDay: date(v.lastDay), today };
   } catch {
     return base;
   }
@@ -88,19 +102,23 @@ export function savePet(d: PetData): void {
   }
 }
 
-/** Count today (a new day starts today's counts afresh and adds one to the days together). */
+/**
+ * Count today: a local date later than any seen before adds one day together and starts today's
+ * counts afresh. A date that is not later (the clock or the time zone stepped back) changes
+ * nothing, so stepping back and forward again adds no days and wipes nothing.
+ */
 export function rollDay(d: PetData, now: number): PetData {
   const key = dayKey(now);
   let next = d;
-  if (d.lastDay !== key) next = { ...next, days: next.days + 1, lastDay: key };
-  if (next.today.date !== key) next = { ...next, today: emptyToday(key) };
+  if (d.lastDay === null || key > d.lastDay) next = { ...next, days: Math.min(MAX_DAYS, next.days + 1), lastDay: key };
+  if (key > next.today.date) next = { ...next, today: emptyToday(key) };
   return next;
 }
 
 /** Add one to a count for today. */
 export function bump(d: PetData, what: Exclude<keyof Today, 'date'>, now: number): PetData {
   const r = rollDay(d, now);
-  return { ...r, today: { ...r.today, [what]: r.today[what] + 1 } };
+  return { ...r, today: { ...r.today, [what]: Math.min(MAX_COUNT, r.today[what] + 1) } };
 }
 
 export function unlocked(c: Cosmetic, days: number): boolean {
