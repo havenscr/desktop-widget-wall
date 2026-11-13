@@ -827,3 +827,168 @@
     transition: none;
   }
 }
+
+/* Right wing under Next three: the Big screen and Keys rows (tiles sized for a mouse). */
+.deck-row {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  margin-top: 8px;
+}
+.deck-hd {
+  min-height: 32px;
+  margin-bottom: 6px;
+  gap: 12px;
+}
+.deck-hd .k {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.deck-hd-r {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 0 1 auto;
+}
+.deck-brief {
+  min-width: 0;
+  max-width: 300px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--cyan);
+}
+.deck-tiles {
+  display: grid;
+  gap: 8px;
+}
+.deck-tile {
+  min-width: 0;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 8px;
+  border-radius: 14px;
+  border: 1px solid var(--edge);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--tx);
+  font: 500 18px/1 var(--disp);
+  cursor: pointer;
+  transition: background 200ms ease, border-color 200ms ease, opacity 200ms ease;
+}
+.deck-tile:hover:not(:disabled) {
+  background: rgba(53, 230, 234, 0.1);
+  border-color: rgba(53, 230, 234, 0.5);
+}
+.deck-tile:focus-visible,
+.deck-mini:focus-visible,
+.deck-arrow:focus-visible,
+.deck-auto:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: 2px;
+}
+.deck-tile:disabled {
+  cursor: progress;
+  opacity: 0.6;
+}
+.deck-tile.off {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.keys-tiles.two .deck-tile {
+  height: 40px;
+}
+.deck-lbl {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.bs-tile {
+  height: 56px;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 17px;
+}
+.bs-frame {
+  fill: none;
+  stroke: var(--faint);
+  stroke-width: 1.5;
+}
+.bs-fill {
+  fill: rgba(53, 230, 234, 0.35);
+}
+.bs-rec {
+  fill: var(--red);
+}
+.deck-mini {
+  height: 32px;
+  padding: 0 14px;
+  border-radius: 10px;
+  border: 1px solid var(--edge);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--tx);
+  font: 500 16px/1 var(--disp);
+  cursor: pointer;
+}
+.deck-mini:hover:not(:disabled) {
+  border-color: rgba(53, 230, 234, 0.5);
+}
+.deck-arrow {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  color: var(--dim);
+  cursor: pointer;
+}
+.deck-arrow:hover {
+  color: var(--cyan);
+  background: rgba(255, 255, 255, 0.06);
+}
+.deck-auto {
+  height: 32px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  border-radius: 16px;
+  border: 1px solid var(--edge);
+  color: var(--dim);
+  font: 500 15px/1 var(--disp);
+  cursor: pointer;
+}
+.deck-auto i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--faint);
+}
+.deck-auto.on {
+  color: var(--tx);
+  border-color: rgba(93, 242, 182, 0.5);
+}
+.deck-auto.on i {
+  background: var(--mint);
+}
+.deck-quiet {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  color: var(--dim);
+  border: 1px dashed var(--edge);
+  border-radius: 14px;
+  padding: 0 14px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .deck-tile {
+    transition: none;
+  }
+}
