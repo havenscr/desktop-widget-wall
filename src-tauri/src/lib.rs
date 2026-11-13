@@ -2980,7 +2980,7 @@ const DISK_REFRESH_SECS: u64 = 60;
 /// use the PDH counter instead. Initialised once; NVML init is not cheap.
 static NVML: std::sync::OnceLock<Result<nvml_wrapper::Nvml, String>> = std::sync::OnceLock::new();
 
-fn nvml_handle() -> Option<&'static nvml_wrapper::Nvml> {
+pub(crate) fn nvml_handle() -> Option<&'static nvml_wrapper::Nvml> {
     NVML.get_or_init(|| {
         nvml_wrapper::Nvml::init().map_err(|e| {
             println!("NVML unavailable ({}); falling back to PDH GPU counter", e);
@@ -3858,7 +3858,10 @@ pub fn run() {
             validate_address,
             // Persistent config storage
             save_widget_config,
-            load_widget_config
+            load_widget_config,
+            wall2_spotify::wall2_spotify_tracks,
+            wall2_spotify::wall2_spotify_queue,
+            wall2_spotify::wall2_spotify_playback
         ])
         .setup(|app| {
             #[cfg(windows)]

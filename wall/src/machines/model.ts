@@ -3,6 +3,8 @@ export interface PcStats {
   cpuPct: number;
   gpuPct: number;
   ramPct: number;
+  /** The graphics card's temperature (NVML), or null with no NVIDIA card or a failed read. */
+  tempC: number | null;
 }
 export interface BoxStats {
   cpuPct: number;
@@ -16,6 +18,9 @@ export interface Machines {
   boxStale: boolean;
 }
 
+/** The second machine's name on the wall: the visible row label and every accessible name. */
+export const BOX_LABEL = 'LLM';
+
 export const POLL_MS = 2000;
 /** A read that takes longer than this counts as failed, as in the music store. */
 export const CALL_TIMEOUT_MS = 5000;
@@ -23,13 +28,14 @@ export const CALL_TIMEOUT_MS = 5000;
 export const HOLD_MS = 30_000;
 
 /** Every number the readout can mark, one key each. */
-export type MetricKey = 'pc.cpu' | 'pc.gpu' | 'pc.ram' | 'box.cpu' | 'box.gpu' | 'box.ram' | 'box.temp';
+export type MetricKey = 'pc.cpu' | 'pc.gpu' | 'pc.ram' | 'pc.temp' | 'box.cpu' | 'box.gpu' | 'box.ram' | 'box.temp';
 
-/** Over these, a number is hot (owner vote A): RAM over 90, CPU or GPU over 95, box over 90 degrees. */
+/** Over these, a number is hot (owner vote A): RAM over 90, CPU or GPU over 95, either temperature over 90 degrees. */
 export const LIMITS: Record<MetricKey, number> = {
   'pc.cpu': 95,
   'pc.gpu': 95,
   'pc.ram': 90,
+  'pc.temp': 90,
   'box.cpu': 95,
   'box.gpu': 95,
   'box.ram': 90,
@@ -43,6 +49,7 @@ export function readings(m: Machines): Record<MetricKey, number | null> {
     'pc.cpu': m.pc.cpuPct,
     'pc.gpu': m.pc.gpuPct,
     'pc.ram': m.pc.ramPct,
+    'pc.temp': m.pc.tempC ?? null,
     'box.cpu': b ? b.cpuPct : null,
     'box.gpu': b ? b.gpuPct : null,
     'box.ram': b ? b.ramPct : null,
