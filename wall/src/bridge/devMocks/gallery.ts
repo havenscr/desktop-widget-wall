@@ -15,7 +15,7 @@ import { knob } from './long';
  *                              failing, one failing; `failing` here makes the read itself error)
  *   ?home=quiet|many|off|down   (the network card; `?net=1|2|3` shows that many numbers, the alarm count first)
  *   ?day=empty                (the helper's day timeline has no runs)
- *   ?moods=six|none|down
+ *   ?moods=six|nine|none|down
  *   ?media=none|paused|long|off
  *   ?box=max|stale|none|down   (machine numbers; `?pc=down` for the PC side)
  *   ?usage=high|none          (the two usage meters)
@@ -168,6 +168,11 @@ function moods(mode: string): void {
   wrap('wall2_moods', () => {
     if (mode === 'none') return [];
     if (mode === 'down') throw new Error('failed');
+    if (mode === 'nine') {
+      return ['Day', 'Deep Focus', 'Evening Wind Down', 'Movie Night', 'Late Night Reading', 'Away For The Weekend', 'Morning Routine', 'Dinner With Friends', 'Everything Off Tonight'].map(
+        (label, i) => ({ id: `mood${i + 1}`, label }),
+      );
+    }
     if (mode === 'six') {
       return [
         { id: 'day', label: 'Day' },

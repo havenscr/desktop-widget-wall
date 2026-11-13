@@ -9,6 +9,7 @@ import {
   readLastPlayed,
   statusLine,
   tomorrowTime,
+  visibleMoods,
   volumeLevel,
   writeLastPlayed,
   LAST_PLAYED_KEY,
@@ -145,4 +146,15 @@ it('the status line says nothing about agents when the data is stale or missing'
   expect(statusLine('off', { stale: true, lanes: [{ state: 'blocked', waiting: true }], yourMove: { total: 0 } })).toBe('Work is put away.');
   expect(statusLine('off', { lanes: [], yourMove: {} as { total: number } })).toBe('Work is put away.');
   expect(statusLine('off', null)).toBe('Work is put away.');
+});
+
+it('visibleMoods keeps the collapsed list at five moods plus More, replacing and never appending', () => {
+  const moods = Array.from({ length: 9 }, (_, i) => ({ id: `m${i + 1}` }));
+  const ids = (on: string | null, open = false) => visibleMoods(moods, on, open).map((m) => m.id);
+  expect(ids(null)).toEqual(['m1', 'm2', 'm3', 'm4', 'm5']);
+  expect(ids('m3')).toEqual(['m1', 'm2', 'm3', 'm4', 'm5']);
+  expect(ids('m9')).toEqual(['m1', 'm2', 'm3', 'm4', 'm9']);
+  expect(ids('nope')).toEqual(['m1', 'm2', 'm3', 'm4', 'm5']);
+  expect(ids('m9', true)).toHaveLength(9);
+  expect(visibleMoods(moods.slice(0, 6), null, false)).toHaveLength(6);
 });

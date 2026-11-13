@@ -153,7 +153,7 @@ export function RoomCard() {
               onClick={() => void apply(m.id)}
             >
               {working === m.id ? <IconLoader2 className="u-spin" size={22} aria-hidden="true" /> : null}
-              {moodLabel(m)}
+              <span className="u-chip-t">{moodLabel(m)}</span>
             </button>
           );
         })}

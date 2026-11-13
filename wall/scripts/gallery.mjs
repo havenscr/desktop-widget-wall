@@ -83,6 +83,7 @@ state('work', 'music paused', 'media=paused');
 // The ridgelines rest in every other still (a review frame shows them at rest); these two have music driving them.
 state('work', 'audio demo (lines follow the music)', 'audio=demo');
 state('home', 'audio demo (lines follow the music)', 'audio=demo');
+state('unwind', 'heavy, nine moods with long labels', HEAVY.replace('moods=six', 'moods=nine'));
 state('work', 'tasks few', 'tasks=few');
 state('work', 'tasks heavy (115 more)', 'tasks=heavy');
 state('work', 'usage meters near full', 'usage=high');

@@ -483,13 +483,16 @@ it('the lights chips mark the one on now, give each a hover, and fold past six i
   );
   render(<RoomCard />);
   await flush();
-  // First six, plus the one that is on now so it never hides; the rest wait behind More.
-  expect(document.querySelectorAll('.u-chip:not(.u-more)')).toHaveLength(7);
+  // Five moods and More fill the six cells; the one that is on takes the place of the last ordinary one, never an extra cell.
+  expect(document.querySelectorAll('.u-chip:not(.u-more)')).toHaveLength(5);
+  expect(document.querySelectorAll('.u-chip')).toHaveLength(6);
+  expect([...document.querySelectorAll('.u-chip:not(.u-more)')].map((c) => c.getAttribute('data-mood'))).toEqual(['m1', 'm2', 'm3', 'm4', 'm8']);
   expect(screen.getByRole('button', { name: 'Mood 8' }).getAttribute('aria-pressed')).toBe('true');
   expect(screen.getByRole('button', { name: 'Mood 8' }).title).toContain('on now');
   expect(screen.getByRole('button', { name: 'Mood 1' }).title).toBe('Mood 1: warm and low');
   expect(screen.getByRole('button', { name: 'Mood 2' }).title).toBe('Mood 2');
   expect(screen.queryByRole('button', { name: 'Mood 9' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Mood 5' })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: 'More' }));
   expect(document.querySelectorAll('.u-chip:not(.u-more)')).toHaveLength(9);
   expect(screen.getByRole('button', { name: 'Fewer' })).toBeTruthy();

@@ -85,6 +85,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const WINGS = ['.work .left-wing', '.work .right-wing'];
 const LANES = ['.work .centre', '.work .centre .lane', '.work .centre .shelf'];
 const MEET = ['.meet .panel'];
+const UNWIND = ['.u-room', '.u-chips', '.u-line'];
 const DREAM = ['.dream-clock', '.dream-date', '.dream-card', '.dream-status', '.dream-hint'];
 const VARIANTS = [
   { name: 'three lanes, long titles', agents: '3', checks: [...WINGS, ...LANES] },
@@ -95,6 +96,8 @@ const VARIANTS = [
   { name: 'Meet, both accounts read', agents: '3', go: 'meet', live: true, extra: '', checks: MEET },
   { name: 'Meet, one account failing', agents: '3', go: 'meet', live: true, extra: '&meet=mixed', checks: MEET },
   { name: 'Meet, no account readable', agents: '3', go: 'meet', live: true, extra: '&meet=down', checks: MEET },
+  // Unwind with nine moods of long names: the Room list stays within two rows.
+  { name: 'Unwind, nine long moods', agents: '3', hz: 'unwind', moods: 'nine', maxRows: 2, extra: '', checks: UNWIND },
   // Dream at night: helper answering, helper off; calendar read, unreadable, nothing tomorrow.
   { name: 'Dream, agents and calendar', agents: '3', go: 'dream', at: '2026-11-11T23:48:00-08:00', extra: '', checks: DREAM },
   { name: 'Dream, agents waiting', agents: 'ask', go: 'dream', at: '2026-11-11T23:48:00-08:00', extra: '', checks: DREAM },
@@ -102,7 +105,7 @@ const VARIANTS = [
   { name: 'Dream, nothing tomorrow', agents: 'off', go: 'dream', at: '2026-11-11T23:48:00-08:00', extra: '&meet=none', checks: ['.dream-clock', '.dream-date', '.dream-hint'] },
 ];
 // Meet reads the real clock, so its variants run unfrozen (the mock meetings are relative to now).
-const query = (v) => `?${v.live ? '' : `hz=work&at=${v.at ?? '2026-11-11T10:24:00-08:00'}&`}long=1&agents=${v.agents}${v.go ? `&go=${v.go}` : ''}${v.extra ?? ''}`;
+const query = (v) => `?${v.live ? '' : `hz=${v.hz ?? 'work'}&at=${v.at ?? '2026-11-11T10:24:00-08:00'}&`}long=1&agents=${v.agents}${v.go ? `&go=${v.go}` : ''}${v.moods ? `&moods=${v.moods}` : ''}${v.extra ?? ''}`;
 /** Rounding slack for fractional rectangles, in screen pixels. */
 const SLACK = 0.5;
 
@@ -146,7 +149,8 @@ try {
         inHolder: out(box, holder.getBoundingClientRect()), inView: out(box, view) };
     }) }));
     const d = document.documentElement;
-    const page = { sw: d.scrollWidth, cw: d.clientWidth, sh: d.scrollHeight, ch: d.clientHeight, vw: innerWidth, vh: innerHeight };
+    const rows = new Set([...document.querySelectorAll('.u-chip')].map((e) => Math.round(e.getBoundingClientRect().top))).size;
+    const page = { rows, sw: d.scrollWidth, cw: d.clientWidth, sh: d.scrollHeight, ch: d.clientHeight, vw: innerWidth, vh: innerHeight };
     const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page });
     document.body.appendChild(pre);
   }, 3000);</script>`;
@@ -179,6 +183,11 @@ try {
       const over = Object.entries(o).filter(([, px]) => px > SLACK);
       return over.length ? over.map(([k, px]) => `${{ l: 'left', r: 'right', t: 'top', b: 'bottom' }[k]} ${Math.round(px)}`).join(', ') : 'inside';
     };
+    if (v.maxRows !== undefined) {
+      const rowsOk = doc.rows >= 1 && doc.rows <= v.maxRows;
+      if (!rowsOk) failed = true;
+      console.log(`  ${rowsOk ? 'ok  ' : 'FAIL'} .u-chip rows: ${doc.rows} (1 to ${v.maxRows})`);
+    }
     for (const { sel, items } of res) {
       if (items.length === 0) {
         console.log(`  FAIL ${sel}: not found`);

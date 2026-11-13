@@ -113,15 +113,19 @@ export function volumePercent(v: number): number {
   return Math.round(clampVolume(v) * 100);
 }
 
-/** How many mood chips show before "More" (two rows in the Room card). */
+/** Cells in the collapsed Room grid: three columns, two rows. With more moods than this, one cell is "More". */
 export const ROOM_COLLAPSED_CHIPS = 6;
 
-/** The chips to show: all when expanded or few; otherwise the first few, plus the mood that is on now so it never hides. */
+/**
+ * The chips to show. All of them when expanded or when they fit the grid. Otherwise one fewer
+ * than the grid has cells (the last cell is "More"), and the mood that is on takes the place
+ * of the last ordinary one when it would not show, so it never hides and the grid never grows.
+ */
 export function visibleMoods<T extends { id: string }>(moods: readonly T[], on: string | null, expanded: boolean): T[] {
   if (expanded || moods.length <= ROOM_COLLAPSED_CHIPS) return [...moods];
-  const first = moods.slice(0, ROOM_COLLAPSED_CHIPS);
-  const extra = on ? moods.slice(ROOM_COLLAPSED_CHIPS).find((m) => m.id === on) : undefined;
-  return extra ? [...first, extra] : first;
+  const first = moods.slice(0, ROOM_COLLAPSED_CHIPS - 1);
+  const extra = on && !first.some((m) => m.id === on) ? moods.find((m) => m.id === on) : undefined;
+  return extra ? [...first.slice(0, -1), extra] : first;
 }
 
 /**

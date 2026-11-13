@@ -408,8 +408,9 @@
   margin-top: 16px;
 }
 .u-chips {
-  display: flex;
-  flex-wrap: wrap;
+  /* Three columns, so six cells are two rows however long the labels are; long labels shorten (the hover has them whole). */
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
   margin-top: 14px;
 }
@@ -425,6 +426,13 @@
   font-size: 20px;
   color: var(--dim);
   white-space: nowrap;
+  min-width: 0;
+  justify-content: center;
+}
+.u-chip-t {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .u-chip.on {
   background: rgba(53, 230, 234, 0.14);
