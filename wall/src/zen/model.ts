@@ -1,5 +1,3 @@
-import { isNight } from '../buddy/model';
-
 /** One breath: 4 s in, 2 s hold, 6 s out. */
 export const CYCLE_SECONDS = 12;
 export const SESSION_MINUTES = [3, 5, 10] as const;
@@ -100,9 +98,35 @@ export function formatLeft(seconds: number): string {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')} left`;
 }
 
-/** Zen shows Dream by itself between 9:30 PM and 6:30 AM local time (the same window as Watt's sleep). */
-export function isDreamTime(date: Date): boolean {
-  return isNight(date);
+/** The early morning hour at which the late-night dimming ends. */
+export const DIM_END_HOUR = 6;
+
+/** True from `startHour` (local time) until 6 AM: the hours in which a quiet Zen may dim by itself. */
+export function isDimHour(date: Date, startHour: number): boolean {
+  const h = date.getHours();
+  return h >= startHour || h < DIM_END_HOUR;
+}
+
+/** True when Zen should dim by itself: a dim hour, and no input on the wall for `waitMs`. */
+export function dimDue(now: Date, lastInputMs: number, startHour: number, waitMs: number): boolean {
+  return isDimHour(now, startHour) && now.getTime() - lastInputMs >= waitMs;
+}
+
+/** "10 PM" for an hour 0 to 23. */
+export function hourLabel(hour: number): string {
+  const h12 = hour % 12 === 0 ? 12 : hour % 12;
+  return `${h12} ${hour < 12 ? 'AM' : 'PM'}`;
+}
+
+/** The quiet line on Zen in the evening, from the two settings. */
+export function dimHint(startHour: number, waitMinutes: number): string {
+  return `Dims by itself after ${hourLabel(startHour)} and ${waitMinutes} quiet minute${waitMinutes === 1 ? '' : 's'}`;
+}
+
+/** The hint shows from 6 PM, so the line is there for the hours before the dimming starts. */
+export function showDimHint(date: Date): boolean {
+  const h = date.getHours();
+  return h >= 18 || h < DIM_END_HOUR;
 }
 
 /** How long one pair of flames stays, and how long the change to the next pair takes. */
