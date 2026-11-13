@@ -6,7 +6,11 @@ import { cloudShiftFor, type CameraPreset } from './cameras';
 import { stubContext } from './canvasStub';
 import { fitScale, STAGE_HEIGHT, STAGE_WIDTH } from '../stage/fitScale';
 import { usePlaceStore } from '../state/places';
-import { ingestLevels, resetAudio, tickAudio } from '../audio/store';
+import { bandHistory, ingestLevels, resetAudio, tickAudio } from '../audio/store';
+import { useIdle } from '../ui/useIdle';
+
+vi.mock('../ui/useIdle', () => ({ useIdle: vi.fn(() => false) }));
+const idleMock = vi.mocked(useIdle);
 
 vi.mock('./index', async (original) => ({
   ...(await original<typeof import('./index')>()),
@@ -54,6 +58,7 @@ function runFrame(ts: number) {
 }
 
 beforeEach(() => {
+  idleMock.mockImplementation(() => false);
   usePlaceStore.setState({ active: 'work' });
   resetAudio();
   frames = new Map();
@@ -117,6 +122,8 @@ it('review URL draws one frozen still: requested camera and time, t 0, phase 0, 
     t: 0,
     phase: 0,
     cloudShift: cloudShiftFor(CAMERAS.unwind),
+    // Unwind's idle lines, frozen at t 0.
+    echo: { n: 11, amp: 34 * 0.35, a: 0.9 * 0.45, t: 0, cx: 1330, hs: 900 },
   });
   expect(rafSpy).not.toHaveBeenCalled();
   expect(now).not.toHaveBeenCalled();
@@ -337,13 +344,15 @@ it('draws no ripple under reduced motion even while music plays', () => {
   expect(draw.mock.lastCall![1]).not.toHaveProperty('echo');
 });
 
-it('draws no ripple in the review still, even with music playing; ?hz=unwind has the moon, others do not', () => {
+it('the review still shows only the idle lines, even with music playing, and only on Unwind; ?hz=unwind has the moon, others do not', () => {
   setReducedMotion(false);
   startMusic();
   window.history.replaceState(null, '', '/?hz=unwind&at=2026-11-11T16:00:00Z');
   const { unmount } = render(<HorizonCanvas now={() => 0} />);
   let o = draw.mock.lastCall![1];
-  expect(o).not.toHaveProperty('echo');
+  expect(o.echo).toMatchObject({ n: 11, t: 0, amp: 34 * 0.35 });
+  expect(o.echo!.a).toBeCloseTo(0.9 * 0.45, 9);
+  expect(o.echo!.sample).toBeUndefined();
   expect(o.moon).toEqual([1730, 112, 44]);
   unmount();
   window.history.replaceState(null, '', homeAt(16, 30));
@@ -810,5 +819,238 @@ describe('grid pulse', () => {
     render(<HorizonCanvas now={() => NOON} />);
     expect(snaps).toHaveLength(1);
     expect(snaps[0].grid).toBeUndefined();
+  });
+});
+
+describe('the Unwind visualizer', () => {
+  const BYTES = Array.from({ length: 32 }, (_, i) => (i < 4 ? 240 : 120));
+  /** Audio events every 33 ms with loud low bands, from `from` to `to` (steady clock ms). */
+  function feedBands(from: number, to: number) {
+    for (let t = from; t <= to; t += 33) {
+      ingestLevels({ ...LOUD, bands: BYTES }, t);
+      tickAudio(t);
+    }
+  }
+
+  it('silent on Unwind: the idle lines, with no sample, on a clock at 0.4 of real time', () => {
+    setReducedMotion(false);
+    usePlaceStore.setState({ active: 'unwind' });
+    render(<HorizonCanvas now={() => NOON} />);
+    for (let ts = 100; ts <= 1100; ts += 100) runFrame(ts);
+    const e = draw.mock.lastCall![1].echo!;
+    expect(e).toMatchObject({ n: 11, cx: 1330, hs: 900 });
+    expect(e.a).toBeCloseTo(0.9 * 0.45, 9);
+    expect(e.amp).toBeCloseTo(34 * 0.35, 9);
+    expect(e.sample).toBeUndefined();
+    expect(e.t).toBeCloseTo(1.1 * 0.4, 9); // eleven 0.1 s frames
+  });
+
+  it('silent on Work and Home: no echo at all', () => {
+    setReducedMotion(false);
+    render(<HorizonCanvas now={() => NOON} />);
+    for (let ts = 100; ts <= 600; ts += 100) runFrame(ts);
+    expect(draw.mock.lastCall![1]).not.toHaveProperty('echo');
+    act(() => usePlaceStore.getState().setActive('home'));
+    for (let ts = 700; ts <= 3000; ts += 100) runFrame(ts);
+    expect(draw.mock.lastCall![1]).not.toHaveProperty('echo');
+  });
+
+  it('playing on Unwind: prominent lines at ea, and a sample that reads the real bands, centre high and edges flat', () => {
+    setReducedMotion(false);
+    usePlaceStore.setState({ active: 'unwind' });
+    feedBands(0, 2000);
+    render(<HorizonCanvas now={() => NOON} />);
+    for (let ts = 100; ts <= 1300; ts += 100) {
+      act(() => feedBands(2000 + ts, 2000 + ts + 99));
+      runFrame(ts);
+    }
+    const e = draw.mock.lastCall![1].echo!;
+    expect(e.a).toBeCloseTo(1, 9);
+    expect(e.amp).toBe(34);
+    expect(typeof e.sample).toBe('function');
+    const tau = e.t! - 0.5; // a line half a second back
+    expect(e.sample!(0, tau)).toBeGreaterThan(1); // bass in the centre
+    expect(e.sample!(0.9, tau)).toBeLessThan(e.sample!(0, tau) / 2);
+  });
+
+  it('playing on Work: the faint 3 lines also follow the real bands', () => {
+    setReducedMotion(false);
+    feedBands(0, 2000);
+    render(<HorizonCanvas now={() => NOON} />);
+    for (let ts = 100; ts <= 1300; ts += 100) {
+      act(() => feedBands(2000 + ts, 2000 + ts + 99));
+      runFrame(ts);
+    }
+    const e = draw.mock.lastCall![1].echo!;
+    expect(e.n).toBe(3);
+    expect(e.a).toBeLessThanOrEqual(CAMERAS.work.ea);
+    expect(typeof e.sample).toBe('function');
+  });
+
+  it('reduced motion on Unwind draws the idle lines once, static at t 0, even while music plays', () => {
+    setReducedMotion(true);
+    startMusic();
+    usePlaceStore.setState({ active: 'unwind' });
+    render(<HorizonCanvas now={() => NOON} />);
+    expect(rafSpy).not.toHaveBeenCalled();
+    const e = draw.mock.lastCall![1].echo!;
+    expect(e).toMatchObject({ n: 11, t: 0 });
+    expect(e.a).toBeCloseTo(0.9 * 0.45, 9);
+    expect(e.sample).toBeUndefined();
+  });
+
+  it('no echo on the morning camera or during the swing from it to Unwind, idle lines included', () => {
+    setReducedMotion(false);
+    usePlaceStore.setState({ active: 'home' });
+    render(<HorizonCanvas now={() => localMs(7, 12)} />);
+    for (let ts = 100; ts <= 500; ts += 100) runFrame(ts);
+    expect(draw.mock.lastCall![1].camera).toBe(HOME_MORNING);
+    expect(draw.mock.lastCall![1]).not.toHaveProperty('echo');
+    act(() => usePlaceStore.getState().setActive('unwind'));
+    draw.mockClear();
+    let ts = 600;
+    for (; draw.mock.calls.length === 0 || draw.mock.lastCall![1].camera !== CAMERAS.unwind; ts += 100) runFrame(ts);
+    expect(draw.mock.calls.length).toBeGreaterThan(10);
+    for (const c of draw.mock.calls.slice(0, -1)) expect(c[1]).not.toHaveProperty('echo');
+    for (let k = 0; k < 8; k++, ts += 100) runFrame(ts);
+    expect(draw.mock.lastCall![1].echo!.a).toBeCloseTo(0.9 * 0.45, 9); // back once the swing has settled
+  });
+
+  it('display idle or off: the echo fades away and the band history stops; it all restarts on return', () => {
+    setReducedMotion(false);
+    usePlaceStore.setState({ active: 'unwind' });
+    feedBands(0, 2000);
+    const { rerender } = render(<HorizonCanvas now={() => NOON} />);
+    for (let ts = 100; ts <= 1300; ts += 100) {
+      act(() => feedBands(2000 + ts, 2000 + ts + 99));
+      runFrame(ts);
+    }
+    expect(draw.mock.lastCall![1].echo!.a).toBeCloseTo(1, 9);
+    idleMock.mockImplementation(() => true);
+    rerender(<HorizonCanvas now={() => NOON} />);
+    const head = bandHistory().head;
+    const out: number[] = [];
+    for (let ts = 1400; ts <= 2600; ts += 100) {
+      act(() => feedBands(2000 + ts, 2000 + ts + 99));
+      runFrame(ts);
+      out.push(draw.mock.lastCall![1].echo?.a ?? 0);
+    }
+    expect(bandHistory().head).toBe(head); // nothing written while idle
+    expect(out[0]).toBeGreaterThan(0); // fades, never pops
+    expect(out[0]).toBeLessThan(1);
+    expect(draw.mock.lastCall![1]).not.toHaveProperty('echo');
+    idleMock.mockImplementation(() => false);
+    rerender(<HorizonCanvas now={() => NOON} />);
+    expect(bandHistory().rows).toBe(0); // starts afresh, never from before the pause
+    for (let ts = 2700; ts <= 3900; ts += 100) {
+      act(() => feedBands(2000 + ts, 2000 + ts + 99));
+      runFrame(ts);
+    }
+    expect(bandHistory().rows).toBeGreaterThan(20);
+    expect(draw.mock.lastCall![1].echo!.a).toBeCloseTo(1, 9);
+  });
+
+  for (const music of [true, false]) {
+    it(`turning from Unwind to the morning view (${music ? 'playing' : 'silent'}): the echo only falls from the first frame, is gone within 0.6 s, and never returns before the turn back settles`, () => {
+      setReducedMotion(false);
+      usePlaceStore.setState({ active: 'unwind' });
+      let ms = localMs(7, 12);
+      if (music) feedBands(0, 2000);
+      render(<HorizonCanvas now={() => ms} />);
+      for (let ts = 100; ts <= 1300; ts += 100) {
+        if (music) act(() => feedBands(2000 + ts, 2000 + ts + 99));
+        runFrame(ts);
+      }
+      const before = draw.mock.lastCall![1].echo!.a;
+      expect(before).toBeCloseTo(music ? 1 : 0.9 * 0.45, 9);
+      act(() => usePlaceStore.getState().setActive('home'));
+      draw.mockClear();
+      const out: number[] = [];
+      let ts = 1400;
+      for (; ts <= 6200; ts += 100) {
+        if (music) act(() => feedBands(2000 + ts, 2000 + ts + 99));
+        runFrame(ts);
+        out.push(draw.mock.lastCall![1].echo?.a ?? 0);
+      }
+      expect(draw.mock.lastCall![1].camera).toBe(HOME_MORNING);
+      expect(out[0]).toBeGreaterThan(0); // a fade, not a cut
+      expect(out[0]).toBeLessThan(before); // falling from the first frame of the turn
+      for (let i = 1; i < out.length; i++) expect(out[i]).toBeLessThanOrEqual(out[i - 1]);
+      for (const a of out.slice(5)) expect(a).toBe(0); // gone by the sixth 0.1 s frame (0.6 s)
+      // And back to Unwind: nothing while the turn runs, the lines once it settles.
+      act(() => usePlaceStore.getState().setActive('unwind'));
+      draw.mockClear();
+      for (; draw.mock.calls.length === 0 || draw.mock.lastCall![1].camera !== CAMERAS.unwind; ts += 100) {
+        if (music) act(() => feedBands(2000 + ts, 2000 + ts + 99));
+        runFrame(ts);
+      }
+      expect(draw.mock.calls.length).toBeGreaterThan(10);
+      for (const c of draw.mock.calls.slice(0, -1)) expect(c[1]).not.toHaveProperty('echo');
+      for (let k = 0; k < 8; k++, ts += 100) {
+        if (music) act(() => feedBands(2000 + ts, 2000 + ts + 99));
+        runFrame(ts);
+      }
+      expect(draw.mock.lastCall![1].echo!.a).toBeCloseTo(music ? 1 : 0.9 * 0.45, 9);
+      ms = localMs(7, 13);
+    });
+  }
+
+  it('music starting as the turn to the morning view begins never lifts the echo during the turn', () => {
+    setReducedMotion(false);
+    usePlaceStore.setState({ active: 'unwind' });
+    render(<HorizonCanvas now={() => localMs(7, 12)} />);
+    for (let ts = 100; ts <= 1300; ts += 100) runFrame(ts);
+    act(() => usePlaceStore.getState().setActive('home'));
+    draw.mockClear();
+    const out: number[] = [];
+    for (let ts = 1400; ts <= 2400; ts += 100) {
+      act(() => feedBands(ts, ts + 99)); // music starts with the turn
+      runFrame(ts);
+      out.push(draw.mock.lastCall![1].echo?.a ?? 0);
+    }
+    for (let i = 1; i < out.length; i++) expect(out[i]).toBeLessThanOrEqual(out[i - 1]);
+    expect(out[out.length - 1]).toBe(0);
+  });
+
+  it('the display waking as the turn to the morning view begins never brings the echo back during the turn', () => {
+    setReducedMotion(false);
+    usePlaceStore.setState({ active: 'unwind' });
+    idleMock.mockImplementation(() => true);
+    const { rerender } = render(<HorizonCanvas now={() => localMs(7, 12)} />);
+    for (let ts = 100; ts <= 1500; ts += 100) runFrame(ts);
+    expect(draw.mock.lastCall![1]).not.toHaveProperty('echo'); // faded away while idle
+    idleMock.mockImplementation(() => false);
+    rerender(<HorizonCanvas now={() => localMs(7, 12)} />);
+    act(() => usePlaceStore.getState().setActive('home'));
+    draw.mockClear();
+    for (let ts = 1600; ts <= 6400; ts += 100) runFrame(ts);
+    expect(draw.mock.lastCall![1].camera).toBe(HOME_MORNING);
+    for (const c of draw.mock.calls) expect(c[1]).not.toHaveProperty('echo');
+  });
+
+  it('hiding the page empties the band history, so old spectrum never replays on return', () => {
+    setReducedMotion(false);
+    usePlaceStore.setState({ active: 'unwind' });
+    feedBands(0, 2000);
+    render(<HorizonCanvas now={() => NOON} />);
+    expect(bandHistory().rows).toBeGreaterThan(30);
+    setHidden(true);
+    act(() => void document.dispatchEvent(new Event('visibilitychange')));
+    setHidden(false);
+    expect(bandHistory().rows).toBe(0);
+  });
+
+  it('a review URL with ?audio=demo animates (frame loop on) at the frozen camera and sky', () => {
+    setReducedMotion(false);
+    window.history.replaceState(null, '', '/?hz=unwind&at=2026-11-11T21:42:00-08:00&audio=demo');
+    render(<HorizonCanvas now={() => 0} />);
+    expect(rafSpy).toHaveBeenCalled();
+    runFrame(100);
+    runFrame(200);
+    const o = draw.mock.lastCall![1];
+    expect(o.camera).toBe(CAMERAS.unwind);
+    expect(o.ms).toBe(Date.parse('2026-11-11T21:42:00-08:00'));
+    expect(o.t).toBeGreaterThan(0);
+    expect(o.echo).toBeTruthy();
   });
 });

@@ -262,7 +262,8 @@
   display: grid;
   place-items: center;
   flex: none;
-  background: rgba(255, 255, 255, 0.08);
+  /* A dark disc, as in the concept, so the bright playing ridgelines never show through the icon. */
+  background: linear-gradient(rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.08)), rgba(8, 6, 26, 0.9);
   border: 1px solid var(--line);
   transition: transform 90ms ease-out;
 }
@@ -294,6 +295,11 @@
   margin-left: 18px;
   height: 64px;
   color: var(--dim);
+}
+/* The speaker icon sits on the ridgelines: full brightness, with a dark halo hugging its strokes. */
+.u-vol svg {
+  color: var(--tx);
+  filter: drop-shadow(0 0 2px #06041a) drop-shadow(0 0 4px #06041a);
 }
 .u-vol input {
   --pct: 70%;
