@@ -7,6 +7,7 @@ import {
   IconPlayerSkipForwardFilled,
 } from '@tabler/icons-react';
 import { anchorProgress, formatTime, isPlaying, isQuiet, type NowPlayingInfo, type ProgressAnchor } from '../music/model';
+import { playerName, sourceKey } from '../music/players';
 import { useNowPlaying } from '../music/useNowPlaying';
 import { useVisible } from '../ui/useVisible';
 import { useLastPlayed } from './lastPlayed';
@@ -43,11 +44,13 @@ export function Player() {
   // A media session exists (stopped or paused counts); with none, play and pause do nothing.
   const hasSession = !!info && !!info.playback_status && info.playback_status !== 'unknown';
   const pct = progress ? (progress.position / progress.duration) * 100 : 0;
+  const source = sourceKey(info);
+  const sourceLabel = playerName(source);
 
   // The idle view: the session's own stopped track first, then the last one seen here.
   const idle = quiet
     ? info?.title
-      ? { title: info.title, artist: info.artist || info.album || '', source: info.source_app || '', art }
+      ? { title: info.title, artist: info.artist || info.album || '', source: sourceLabel ?? '', art }
       : lastPlayed.last
         ? { ...lastPlayed.last, art: lastPlayed.art }
         : null
@@ -70,7 +73,7 @@ export function Player() {
       <button type="button" className="u-rd" aria-label="Next" disabled={quiet} onClick={() => command('media_next')}>
         <IconPlayerSkipForwardFilled size={30} aria-hidden="true" />
       </button>
-      {!quiet && <Volume sourceApp={info?.source_app} />}
+      {!quiet && <Volume source={source} label={sourceLabel} />}
     </div>
   );
 
@@ -116,7 +119,7 @@ export function Player() {
       <div className="u-now">
         <div className="u-art">{art ? <img src={art} alt="" /> : <IconMusic size={72} stroke={1.25} aria-hidden="true" />}</div>
         <div className="u-meta">
-          {info?.source_app ? <span className="u-k u-src">{info.source_app}</span> : null}
+          {sourceLabel ? <span className="u-k u-src">{sourceLabel}</span> : null}
           <div className="u-np u-ell">{info?.title || 'Unknown title'}</div>
           <div className="u-artist u-ell">{info?.artist || info?.album || ''}</div>
           {progress && (

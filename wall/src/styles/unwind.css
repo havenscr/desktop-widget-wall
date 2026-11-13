@@ -336,12 +336,22 @@
   outline-offset: 2px;
 }
 
-/* Right wing: the Room card (Live now stacks above it later). */
+/* Right wing: the Room card at the concept's place, its top 332 px down the band and its
+   foot level with the player's transport (f_unwind); Live now stacks above it later and
+   takes that space. */
 .u-right {
   display: flex;
   flex-direction: column;
   gap: 20px;
   min-width: 0;
+}
+.u-right > .u-room:first-child {
+  margin-top: 332px;
+}
+.u-room {
+  box-sizing: border-box;
+  min-height: 120px;
+  padding: 18px 26px 20px;
 }
 .u-card {
   padding: 22px 26px;
@@ -357,7 +367,7 @@
   min-height: 24px;
 }
 .u-room .u-s {
-  margin-top: 12px;
+  margin-top: 16px;
 }
 .u-chips {
   display: flex;
@@ -365,12 +375,13 @@
   gap: 10px;
   margin-top: 14px;
 }
+/* Sized for a mouse, as the concept's small pills. */
 .u-chip {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  height: 52px;
-  padding: 0 20px;
+  height: 40px;
+  padding: 0 18px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.08);
   font-size: 20px;

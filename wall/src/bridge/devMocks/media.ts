@@ -16,6 +16,8 @@ export function registerMediaMocks(): void {
     album_art_mime: 'image/png',
     playback_status: playing ? 'playing' : 'paused',
     source_app: 'Spotify',
+    source_app_id: 'SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify',
+    art_key: 'Tokyo Burnout|Tokyo Rose|Night Drive|Spotify',
     position_seconds: 63,
     duration_seconds: 214,
     shuffle_active: false,

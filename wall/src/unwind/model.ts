@@ -1,3 +1,4 @@
+import { playerProcesses, squash } from '../music/players';
 import type { DayEvent } from '../ribbon/model';
 import type { WeatherReading } from '../weather/model';
 
@@ -122,28 +123,18 @@ export interface AudioSession {
   muted: boolean;
 }
 
-const squash = (s: string) => s.toLowerCase().replace(/\.exe$/, '').replace(/[^a-z0-9]/g, '');
-
 /**
- * Process names (normalised) for the source labels `get_now_playing` gives that are not
- * their own process name. Any other label must equal the process name exactly.
+ * The audio session of the app that is playing. `source` is the media session's app id
+ * (`source_app_id`, for example `SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify` or
+ * `Spotify.exe`) or, from an older answer, its label ("Spotify", "Edge"). The id gives the
+ * process names through the explicit table in `music/players.ts` ("Spotify" to
+ * `Spotify.exe`, "Edge" to `msedge.exe`); a session matches only by its exact normalised
+ * process name, never a part of one, so one music app is never taken for another. Null
+ * when none matches.
  */
-const PROCESSES_FOR: Record<string, readonly string[]> = {
-  edge: ['msedge'],
-  groovemusic: ['musicui'],
-  applemusic: ['applemusic', 'itunes'],
-};
-
-/**
- * The audio session of the app that is playing, by exact normalised process name
- * ("Spotify" to "Spotify.exe") or the alias table ("Edge" to "msedge.exe"); null when none
- * matches. Never a partial match, so one music app is never taken for another.
- */
-export function playingSession(sessions: readonly AudioSession[], sourceApp: string | null | undefined): AudioSession | null {
-  if (!sourceApp) return null;
-  const src = squash(sourceApp);
-  if (!src) return null;
-  const want = PROCESSES_FOR[src] ?? [src];
+export function playingSession(sessions: readonly AudioSession[], source: string | null | undefined): AudioSession | null {
+  const want = playerProcesses(source);
+  if (want.length === 0) return null;
   return sessions.find((s) => want.includes(squash(s.name))) ?? null;
 }
 

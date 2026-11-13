@@ -14,7 +14,7 @@ interface SessionsPayload {
   sessions?: AudioSession[];
 }
 
-/** A session together with the source label it was found for. */
+/** A session together with the source (app id or label) it was found for. */
 interface Found {
   source: string;
   session: AudioSession;
@@ -122,9 +122,13 @@ export function useAppVolume(sourceApp: string | null | undefined) {
   return { session, value, set };
 }
 
-/** The volume slider beside the transport. Nothing at all when the playing app's session is not found. */
-export function Volume({ sourceApp }: { sourceApp: string | null | undefined }) {
-  const { session, value, set } = useAppVolume(sourceApp);
+/**
+ * The volume slider beside the transport. `source` is the media session's app id (or its
+ * label from an older answer) and `label` the player's name. Nothing at all when the
+ * playing app's audio session is not found.
+ */
+export function Volume({ source, label }: { source: string | null | undefined; label?: string | null }) {
+  const { session, value, set } = useAppVolume(source);
   if (!session) return null;
   const pct = Math.round(value * 100);
   return (
@@ -136,7 +140,7 @@ export function Volume({ sourceApp }: { sourceApp: string | null | undefined }) 
         max={1}
         step={0.01}
         value={value}
-        aria-label={`${sourceApp} volume`}
+        aria-label={`${label ?? 'Player'} volume`}
         aria-valuetext={`${pct} percent`}
         style={{ ['--pct' as string]: `${pct}%` }}
         onChange={(e) => set(Number(e.currentTarget.value))}

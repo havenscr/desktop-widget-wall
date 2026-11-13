@@ -117,7 +117,7 @@ it('sends the volume at most every 100 ms while dragging, always ending on the l
   const sets: unknown[] = [];
   mocks.set('get_audio_sessions', () => spotify());
   mocks.set('set_audio_session_volume', (a) => void sets.push(a));
-  render(<Volume sourceApp="Spotify" />);
+  render(<Volume source="Spotify" label="Spotify" />);
   await flush();
   const slider = screen.getByLabelText('Spotify volume') as HTMLInputElement;
   expect(slider.value).toBe('0.7');
@@ -142,7 +142,7 @@ it('sends the pending move on unmount instead of dropping it', async () => {
   const sets: unknown[] = [];
   mocks.set('get_audio_sessions', () => spotify());
   mocks.set('set_audio_session_volume', (a) => void sets.push(a));
-  const r = render(<Volume sourceApp="Spotify" />);
+  const r = render(<Volume source="Spotify" label="Spotify" />);
   await flush();
   const slider = screen.getByLabelText('Spotify volume');
   fireEvent.change(slider, { target: { value: '0.5' } });
@@ -159,7 +159,7 @@ it('drops the unsent move and hides the slider when the session goes away mid-dr
   let gone = false;
   mocks.set('get_audio_sessions', () => (gone ? { master: { volume: 50, muted: false }, sessions: [] } : spotify()));
   mocks.set('set_audio_session_volume', (a) => void sets.push(a));
-  render(<Volume sourceApp="Spotify" />);
+  render(<Volume source="Spotify" label="Spotify" />);
   await flush();
   const slider = screen.getByLabelText('Spotify volume');
   fireEvent.change(slider, { target: { value: '0.5' } });
@@ -182,12 +182,12 @@ it('never moves the previous app: a source change hides the slider until the new
   let release: ((v: unknown) => void) | null = null;
   mocks.set('get_audio_sessions', () => spotify());
   mocks.set('set_audio_session_volume', (a) => void sets.push(a));
-  const r = render(<Volume sourceApp="Spotify" />);
+  const r = render(<Volume source="Spotify" label="Spotify" />);
   await flush();
   expect(screen.getByLabelText('Spotify volume')).toBeTruthy();
   // The second read, for Chrome, does not answer yet.
   mocks.set('get_audio_sessions', () => new Promise((res) => (release = res)));
-  r.rerender(<Volume sourceApp="Chrome" />);
+  r.rerender(<Volume source="Chrome" label="Chrome" />);
   await flush();
   expect(screen.queryByRole('slider')).toBeNull();
   expect(sets).toEqual([]);
@@ -202,10 +202,34 @@ it('never moves the previous app: a source change hides the slider until the new
 
 it('hides the volume slider when the playing app has no audio session', async () => {
   mocks.set('get_audio_sessions', () => ({ master: { volume: 50, muted: false }, sessions: [{ id: '1:chrome.exe', name: 'chrome.exe', volume: 70, muted: false }] }));
-  const r = render(<Volume sourceApp="Spotify" />);
+  const r = render(<Volume source="Spotify" label="Spotify" />);
   await flush();
   expect(r.container.textContent).toBe('');
   expect(screen.queryByRole('slider')).toBeNull();
+});
+
+it('shows the slider for the player the session id names (a packaged Spotify id finds Spotify.exe)', async () => {
+  mocks.set('get_audio_sessions', () => spotify());
+  render(<Volume source="SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify" label="Spotify" />);
+  await flush();
+  expect((screen.getByLabelText('Spotify volume') as HTMLInputElement).value).toBe('0.7');
+});
+
+it('marks a mood applied on Home on the room chips', async () => {
+  const { Moods } = await import('../home/Moods');
+  mocks.set('wall2_moods', () => [
+    { id: 'evening', label: 'Evening' },
+    { id: 'lateNight', label: 'Late Night' },
+  ]);
+  mocks.set('wall2_apply_mood', () => undefined);
+  const home = render(<Moods />);
+  await flush();
+  await act(async () => (home.container.querySelector('[data-mood="lateNight"]') as HTMLButtonElement).click());
+  await flush();
+  home.unmount();
+  render(<RoomCard />);
+  await flush();
+  expect(screen.getByRole('button', { name: 'Late Night' }).getAttribute('aria-pressed')).toBe('true');
 });
 
 it('marks the last applied mood on the room chips', async () => {

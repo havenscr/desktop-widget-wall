@@ -14,6 +14,11 @@ export const MOODS_REFRESH_MS = 10 * 60_000;
 export const DONE_MS = 2000;
 export const ERROR_MS = 5000;
 export const LAST_MOOD_KEY = 'wall2-last-mood';
+/**
+ * When the last mood was applied, beside `wall2-last-mood` (whose plain id format stays as
+ * it is): `{"id":"evening","at":<ms>}`. Unwind's Room card marks that mood for three hours.
+ */
+export const LAST_MOOD_AT_KEY = 'wall2-last-mood-at';
 /** The last good list, so the cards stay when the home app is briefly away. */
 export const MOODS_CACHE_KEY = 'wall2-moods-cache';
 
@@ -64,6 +69,7 @@ function readLast(): string | null {
 function writeLast(id: string): void {
   try {
     localStorage.setItem(LAST_MOOD_KEY, id);
+    localStorage.setItem(LAST_MOOD_AT_KEY, JSON.stringify({ id, at: Date.now() }));
   } catch {
     /* storage can be blocked; the mark is a convenience */
   }

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { IconLoader2 } from '@tabler/icons-react';
 import { invoke } from '../bridge/tauri';
-import { LAST_MOOD_KEY, moodLabel, type Mood } from '../home/Moods';
+import { LAST_MOOD_AT_KEY, LAST_MOOD_KEY, moodLabel, type Mood } from '../home/Moods';
 import { useVisible } from '../ui/useVisible';
 
 const NOT_CONFIGURED = 'not-configured';
@@ -11,11 +11,7 @@ export const ROOM_ERROR_MS = 5000;
 export const ROOM_RETRY_MS = 30_000;
 /** The mark on the last applied mood goes after this long. */
 export const MOOD_MARK_MS = 3 * 3_600_000;
-/**
- * When the last mood was applied from this wall, beside `wall2-last-mood` (whose plain id
- * format Home reads and which stays as it is): `{"id":"evening","at":<ms>}`.
- */
-export const LAST_MOOD_AT_KEY = 'wall2-last-mood-at';
+export { LAST_MOOD_AT_KEY };
 
 interface Mark {
   id: string;
@@ -49,10 +45,13 @@ function writeMark(mark: Mark): void {
 type Status = 'loading' | 'ready' | 'unconfigured' | 'error';
 
 /**
- * The Room card (concept: "Room", mood chips, "TV off"). Chips apply a home mood with
- * `wall2_apply_mood`, and the last one applied here is marked for three hours (the id
- * is shared with Home's mood buttons through `wall2-last-mood`, the time is kept beside it). "TV off" waits for the home app reads (PR 24) and is not shown yet. When the
- * home app is not set up or not reachable the card shrinks to one line.
+ * The Room card as `f_unwind` draws it: "Room" over a row of mood chips, at the concept's
+ * size and place in the right wing (its lower half, where it ends level with the player;
+ * Live now, PR 27, stacks above it). Chips apply a home mood with `wall2_apply_mood`, and
+ * the last mood applied (here or on Home's mood cards; the id is shared through
+ * `wall2-last-mood`, the time beside it) is marked for three hours. "TV off" waits for the
+ * home app reads (PR 24) and is not shown yet. When the home app is not set up or not
+ * reachable the card says so in one line at the same size.
  */
 export function RoomCard() {
   const visible = useVisible();
