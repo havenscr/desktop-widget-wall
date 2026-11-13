@@ -89,7 +89,7 @@ export function DayDrawer({
     const h = scrollHour ?? wallHour(now, now) - 1;
     el.scrollTop = Math.max(0, (Math.min(hi, Math.max(lo, h)) - lo) * P - 12);
     // Only when it opens, or a chip asks for another hour.
-  }, [scrollHour]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [scrollHour]);
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();

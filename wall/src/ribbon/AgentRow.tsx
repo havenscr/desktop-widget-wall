@@ -133,7 +133,7 @@ export function AgentRow({ now, dueCount = null, onOpenPanel }: { now: number; d
       {line && (
         <button
           type="button"
-          className="ag-line"
+          className={`ag-line${line.x < needle(now).x ? ' before' : ''}`}
           style={{ left: line.x }}
           disabled={!onOpenPanel}
           aria-label={`${line.text}${asOf}. Opens Agents today`}

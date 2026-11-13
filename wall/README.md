@@ -417,7 +417,8 @@ The day ribbon (`wall/src/ribbon/`, `styles/ribbon.css`) is on Work, Home and Me
   good with nothing due. Before a read, after a failed read, or when Meet, the task app or
   the helper is not set up, the row shows nothing.
 - **Row 1**: today's calendar from `wall2_meet_day`, read when the ribbon shows and
-  every 5 minutes while visible, clipped to 6 AM to 12 AM. A chip is `past` once it
+  every 5 minutes while visible, clipped to 6 AM to 12 AM. On Work and Meet the row is the
+  calm strip (below); what follows is Home's row. A chip is `past` once it
   has ended, `now` while the needle is inside it, and pink when the event is a
   livestream (`isLive`). Events that overlap in time (one that ends exactly when the next
   begins does not) form a group, and no chip is ever drawn over another: a group of one keeps
@@ -461,7 +462,70 @@ The day ribbon (`wall/src/ribbon/`, `styles/ribbon.css`) is on Work, Home and Me
   that follows a click. A shown card is redrawn every 15 seconds (the needle's countdown
   stays right) and closes when its anchor leaves the page. A pinned card (the "+N" chip's
   list) takes the pointer and closes on a click elsewhere or Escape.
-- **Dev**: the calendar comes from `src/bridge/devMocks/meet.ts`. A review still
+- **The calm strip** (Work and Meet; Home's strip is unchanged), still 104 px:
+  - *Calendar*: a meeting alone keeps its chip. A run of meetings that overlap in time
+    folds into one chip from the run's start to its end, "3 at 1:30" (how many, and the
+    latest start in the run) and then as many titles as fit; the count is never cut (the
+    chip is at least as wide as its count). Hover lists each meeting with its times; a click
+    opens the Day drawer scrolled to that hour. All-day events are a thin bar over the row
+    ("All day · Team offsite week"), with the all-day hover and click; the row's chips then
+    sit 24 px tall under it (`calmLayout` in `ribbon/model.ts`).
+  - *Agents*: a thin activity bar from 6 AM to now in 12 minute cells, each brighter the
+    more sessions had a span in it and amber where one waited on the owner; each cell's
+    hover says how many were busy then. One line after the needle: "12 sessions: 2 need
+    you, 5 working" ("need you" in amber), or with none waiting "3 sessions: 2 working, 1
+    idle" (review and idle sessions count as idle). With under 360 px right of the needle it
+    sits right-aligned before it. A click on the line or a cell opens Agents today. A stale
+    answer is dimmed, its cells end at the last good answer, and the line adds "as of" that
+    time. Task marks keep their labels off the bar and the line (diamond only, label in the
+    hover).
+  - *Handle*: a 48 by 5 bar centred on the strip's top edge (an 80 by 32 hit area) opens and
+    closes the Day drawer.
+- **Day drawer** (`ribbon/DayDrawer.tsx`): 532 px over the lower part of Work (main area y
+  148 to 680), never over the rail or the clock. Left, an agenda from 8 AM to 6 PM (wider
+  when a meeting starts earlier or ends later; it scrolls inside), overlapping meetings side
+  by side, the now line; a meeting opens in Outlook, with Join (`wall2_meet_join`) where the
+  calendar has a join link and the meeting has not ended. Right, one row per open session,
+  those waiting on the owner first, then working, then the rest: number, title, state
+  (working, waiting on you, in review, idle), its line, its day as a bar and the time worked
+  (runs, finished or not; waits and review spans not counted). A row opens the session in
+  OmniGent. "Agents today" in its header opens the panel. Escape, the handle, Close or a
+  click outside closes it.
+- **Agents today** (`ribbon/AgentsToday.tsx`, `ribbon/days.ts`): a panel over the horizon
+  (1420 px wide, its bottom just above the strip, rows scroll inside past about eight). One
+  row per session: number, title (cut, the full title on hover), stage coloured spans
+  (`--st-*`), pull request marks ("PR 552") and an end word, then the time worked; a row
+  opens its session. Today reads the live summary: waits are amber and only there, stage
+  colours come from today's saved record when the helper has one (a session it does not know
+  draws its runs cyan); the totals read "12 h 20 m of agent work across 8 sessions, 2 h 18 m
+  waiting on you". The day picker (Today, Yesterday, and arrows through the recorded days,
+  disabled at the ends, each naming its date on hover) reads the saved record: no wait spans
+  and no wait total on a past day (hidden, never zero). End words: merged
+  (`pr.state` merged), carried over (the session's last span has no end on that day),
+  pull request open or closed, finished; today also waiting on you, in review, working,
+  idle. States: skeleton rows while loading; hidden button when the helper is not set up;
+  a stale today with "As of" its time, never as live; a past read that fails keeps the last
+  good one with "As of"; an older helper with no record routes hides the picker and Today
+  still works; an empty day says so.
+- **Saved record commands** (`src-tauri/src/wall2_omni.rs`, the section at the end), both
+  gated to the wall window, https only, read through the 64 KB cap, errors `not-configured`,
+  `invalid-config`, `failed`, nothing logged:
+  - `wall2_omni_days` reads `GET /wall/v1/days` and returns `[{ date, sessions }]`, at most
+    400, any entry whose date is not a real calendar date dropped. A 404 (an older helper)
+    is `failed`.
+  - `wall2_omni_day(date)` refuses anything but a real `YYYY-MM-DD` date (`invalid-date`)
+    before any request, reads `GET /wall/v1/day?date=`, and returns `{ date, tz, sessions:
+    [{ id, title, spans: [{ stage, start, end }], pr: { number, state } | null }] }` or null
+    for a 404. Ids follow the session id rule, titles at most 60 characters, stages
+    `plan|build|review|pr|live`, stamps RFC 3339 and at most 30 characters, at most 200
+    sessions and 200 spans each, pull request states `open|closed|merged`; anything else is
+    dropped. A record of another date fails. The ids of the record on show may be opened
+    (`wall2_open_session`, `wall2_focus_omnigent`) until the next day read replaces them or a
+    read of the day list clears them; the page still never supplies a URL.
+- **Dev**: the calendar comes from `src/bridge/devMocks/meet.ts` (`?meet=overlap`: three
+  meetings overlapping at 1:30 and an all-day event); the saved record from
+  `src/bridge/devMocks/days.ts` (`?days=typical`, `empty`, `one`, `heavy`, `down`,
+  `absent`). A review still
   (`?hz=<place>&at=<ISO time>`, dev builds only) opens on that place, freezes the clock
   and ribbon at that time, puts the meet and task mocks' days on the review's date, and
   `src/ribbon/devMock.ts` adds the concept's two focus sessions if none are saved for

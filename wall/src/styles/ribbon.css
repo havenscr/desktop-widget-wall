@@ -355,11 +355,18 @@
   text-shadow: 0 0 4px rgba(6, 4, 22, 0.95);
   cursor: pointer;
 }
+/* Late in the day the line sits before the needle, over the bar: on a dark backing. */
+.rib .ag-line.before {
+  background: rgba(8, 6, 24, 0.88);
+}
 .rib .ag-line:disabled {
   cursor: default;
 }
 .rib .ag-line:not(:disabled):hover {
   background: rgba(255, 255, 255, 0.08);
+}
+.rib .ag-line.before:not(:disabled):hover {
+  background: rgba(40, 32, 80, 0.95);
 }
 .rib .ag-line .need {
   color: var(--amber);
