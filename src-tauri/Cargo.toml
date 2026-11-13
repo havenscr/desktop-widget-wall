@@ -71,7 +71,9 @@ windows = { version = "0.58", features = [
     # Wall 2 big screen and keys: cloaked windows, visible frame (wall2_arrange.rs), and
     # whether another program runs elevated (wall2_winutil.rs)
     "Win32_Graphics_Dwm",
-    "Win32_Security"
+    "Win32_Security",
+    # Wall 2 keys: the lock action (wall2_keys.rs)
+    "Win32_System_Shutdown"
 ] }
 base64 = "0.22"
 
