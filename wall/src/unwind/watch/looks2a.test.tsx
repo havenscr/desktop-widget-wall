@@ -109,10 +109,17 @@ describe('each look', () => {
     expect(screen.getAllByRole('button', { name: new RegExp(`^Look: ${LOOKS.find((l) => l.id === look)!.name}`) }).length).toBe(1);
   });
 
-  it('draws the whole sky with its wash, its buttons apart from the picture, and no moon veil', async () => {
+  it('draws the whole sky with its wash, its buttons apart from the picture, and a still floor wash outside the frame', async () => {
     setup('sky');
     render(<Unwind />);
     await flush();
+    // The floor wash is a still element beside the sky, not a second frame.
+    const spill = document.querySelector('.w-skyspill')!;
+    expect(spill).not.toBeNull();
+    expect(spill.getAttribute('aria-hidden')).toBe('true');
+    expect(spill.closest('.w-sky')).toBeNull();
+    expect(spill.querySelector('iframe')).toBeNull();
+    expect(document.querySelectorAll('iframe').length).toBe(1);
     const sky = document.querySelector('.w-sky')!;
     expect(sky.querySelector('iframe')).not.toBeNull();
     expect(sky.querySelector('.w-scrim')).not.toBeNull();
@@ -121,6 +128,35 @@ describe('each look', () => {
     const ui = document.querySelector('.w-skyui')!;
     expect(ui.querySelector('.w-open')).not.toBeNull();
     expect(ui.querySelector('.w-look')).not.toBeNull();
+  });
+
+  it('draws no floor wash in the other looks', async () => {
+    for (const look of ['feather', 'sun', 'drivein'] as LookId[]) {
+      setup(look);
+      const { unmount } = render(<Unwind />);
+      await flush();
+      expect(document.querySelector('.w-skyspill')).toBeNull();
+      unmount();
+    }
+  });
+
+  it('with the moon up, veils it for the feathered look only: the whole sky and the sun hide it themselves', async () => {
+    // 10:30 PM Pacific in November: the sun is far below the horizon, so the horizon draws its moon.
+    vi.setSystemTime(new Date('2026-11-11T22:30:00-08:00'));
+    const veil: Record<string, boolean> = {};
+    for (const look of IDS) {
+      setup(look);
+      const { unmount } = render(<Unwind />);
+      await flush();
+      veil[look] = document.querySelector('.w-moonveil') !== null;
+      unmount();
+    }
+    expect(veil).toEqual({ feather: true, sky: false, sun: false, drivein: false });
+    // At noon the moon is down and even the feathered look has no veil.
+    vi.setSystemTime(new Date('2026-11-11T12:30:00-08:00'));
+    setup('feather');
+    render(<Unwind />);
+    await flush();
     expect(document.querySelector('.w-moonveil')).toBeNull();
   });
 
@@ -132,7 +168,6 @@ describe('each look', () => {
     expect(sun.querySelector('.w-halo')).not.toBeNull();
     expect(sun.querySelector('.w-streak')).not.toBeNull();
     expect(sun.querySelector('.w-screen iframe')).not.toBeNull();
-    expect(document.querySelector('.w-moonveil')).toBeNull();
   });
 
   it.each(IDS)('%s: the frame goes when a call starts, the page hides or Unwind is left, and does not come back', async (look) => {
@@ -161,15 +196,22 @@ describe('each look', () => {
     unmount();
   });
 
-  it('steps through all four looks from the Look button', async () => {
+  it('steps through all four looks from the Look button without restarting the video (the same frame, the same address)', async () => {
     setup('feather');
     render(<Unwind />);
     await flush();
+    const frame = document.querySelector('iframe')!;
+    const src = frame.getAttribute('src');
+    expect(src).toContain(V);
     const seen: string[] = [];
     for (let i = 0; i < 4; i++) {
       await act(async () => screen.getByRole('button', { name: /^Look: / }).click());
       seen.push(document.querySelector('.w-stage')!.getAttribute('data-look')!);
       expect(document.querySelectorAll('iframe').length).toBe(1);
+      // A new frame would reload the player and start the video again: it must be the same node.
+      expect(document.querySelector('iframe')).toBe(frame);
+      expect(frame.isConnected).toBe(true);
+      expect(frame.getAttribute('src')).toBe(src);
     }
     expect(seen).toEqual(['sky', 'sun', 'drivein', 'feather']);
     expect(parseLooks(localStorage.getItem(LOOKS_KEY)).all).toBe('feather');

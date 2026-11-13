@@ -61,7 +61,9 @@ const EXPECT = {
   picker: /^ *FAIL deck: the key picker reaches y \d+, over the timeline/m,
   chips: /^ *FAIL overlap: chip /m,
   heading: /^ *FAIL deck: the Now heading /m,
-  sky: /^ *FAIL pointer at .*reaches w-/m,
+  sky: /^ *FAIL pointer at .*reaches w-scrim/m,
+  floor: /^ *FAIL pointer at \.u-tomorrow .*reaches w-skyspill/m,
+  sun: /^ *FAIL pointer at .*reaches w-stage w-sun/m,
 };
 const OVERFLOWS = {
   left: '.work .left-wing { transform: translateX(-200px); }',
@@ -79,6 +81,10 @@ const OVERFLOWS = {
   heading: '.work .right-wing .keys .deck-name { max-width: 40px; overflow: hidden; }',
   // The whole-sky video layer catching the pointer and drawn over the controls.
   sky: '.w-sky, .w-sky * { pointer-events: auto !important; } .w-sky { z-index: 30 !important; }',
+  // The floor wash catching the pointer and drawn over the Tomorrow card and the status line.
+  floor: '.w-skyspill { pointer-events: auto !important; z-index: 30 !important; left: -130px !important; width: 2440px !important; }',
+  // The sun's box spread over the whole band, over the controls.
+  sun: '.w-sun { left: -100px !important; width: 2500px !important; z-index: 30 !important; }',
 };
 
 if (flag('self-test')) {
@@ -118,6 +124,9 @@ const WATCH_PLAYING = [...WATCH_IDLE, '.w-ctl', '.w-screen', '.w-under', '.w-ope
 // Named controls that must still take the pointer with video playing: the rail, the tabs and
 // the gear, the transport, the list's first row and its field, a Room chip, the status chips,
 // Screens off and Watt.
+// Below the horizon, under the whole sky's floor wash: the Tomorrow card, the status line's
+// chips and Screens off (Unwind has no timeline strip).
+const FLOOR_HITS = ['.u-tomorrow', '.u-line .u-act', '.screens-off'];
 const SKY_HITS = ['.rail .rb', '.u-tab', '.w-gear', '.w-ctl .u-rd', '.w-play', '.w-mini', '.w-paste', '.u-chip', '.u-line .u-act', '.screens-off', '.w-open', '.watt-hit-part'];
 const DREAM = ['.dream-clock', '.dream-date', '.dream-card', '.dream-status', '.dream-hint'];
 // With more than three sessions the card list scrolls inside the centre: the three cards in
@@ -167,8 +176,8 @@ const QUIET = [
   { name: 'Watch, settings sheet, one look', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wplay=0&wsheet=one', checks: ['.w-sheet', '.w-tiles', '.w-tile', '.w-sfoot'] },
   // Part 2a: the whole sky and the sun. The whole sky lies under every control: each named
   // control gets the pointer at its centre, and no point of the sky reaches the video layer.
-  { name: 'Watch, whole sky playing, every control still takes the pointer', agents: 'ask', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=sky&wplay=0', checks: [...WATCH_IDLE, '.w-ctl', '.w-open', '.w-look'], hits: SKY_HITS, noHit: '.w-sky' },
-  { name: 'Watch, whole sky, 24 saved, long label', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=many&wlook=sky&wplay=3', checks: [...WATCH_IDLE, '.w-ctl', '.w-open', '.w-look'], hits: SKY_HITS, noHit: '.w-sky' },
+  { name: 'Watch, whole sky playing, every control still takes the pointer', agents: 'ask', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=sky&wplay=0', checks: [...WATCH_IDLE, '.w-ctl', '.w-open', '.w-look'], hits: [...SKY_HITS, ...FLOOR_HITS], noHit: '.w-sky, .w-skyspill' },
+  { name: 'Watch, whole sky, 24 saved, long label', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=many&wlook=sky&wplay=3', checks: [...WATCH_IDLE, '.w-ctl', '.w-open', '.w-look'], hits: [...SKY_HITS, ...FLOOR_HITS], noHit: '.w-sky, .w-skyspill' },
   { name: 'Watch, the sun playing', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=sun&wplay=0', checks: [...WATCH_IDLE, '.w-ctl', '.w-under', '.w-open', '.w-list'], hits: SKY_HITS },
   { name: 'Watch, the sun, 24 saved, Twitch', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=many&wlook=sun&wplay=2', checks: [...WATCH_IDLE, '.w-ctl', '.w-under', '.w-open'], hits: SKY_HITS },
   { name: 'Watch, settings sheet with four looks, one look', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=sky&wplay=0&wsheet=one', checks: ['.w-sheet', '.w-tiles', '.w-tile', '.w-hint', '.w-sfoot'] },
@@ -412,7 +421,7 @@ try {
     });
     const noHit = new URLSearchParams(location.search).get('nohit');
     const grid = [];
-    if (noHit) for (let y = 30; y < 505; y += 40) for (let x = 130; x < 2560; x += 80) { const h = document.elementFromPoint(x, y); if (h && h.closest(noHit)) grid.push(x + ',' + y); }
+    if (noHit) for (let y = 30; y < 720; y += 40) for (let x = 130; x < 2560; x += 80) { const h = document.elementFromPoint(x, y); if (h && h.closest(noHit)) grid.push(x + ',' + y); }
     const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, wattCard, header, deck, hits, grid });
     document.body.appendChild(pre);
   }, new URLSearchParams(location.search).get('card') ? 7000 : 3000);</script>`;
@@ -426,9 +435,11 @@ try {
   const breakOn =
     overflow === 'picker'
       ? VARIANTS.filter((v) => v.name.startsWith('Deck, the key picker open over'))
-      : overflow === 'sky'
+      : overflow === 'sky' || overflow === 'floor'
         ? VARIANTS.filter((v) => v.name.startsWith('Watch, whole sky playing'))
-        : VARIANTS.slice(0, 1);
+        : overflow === 'sun'
+          ? VARIANTS.filter((v) => v.name === 'Watch, the sun playing')
+          : VARIANTS.slice(0, 1);
   for (const v of overflow ? breakOn : VARIANTS) {
     console.log(`${v.name} (${v.q}):`);
     const url = `${pathToFileURL(page).href}${v.q}&checks=${encodeURIComponent(v.checks.join('|'))}${v.click ? `&click=${encodeURIComponent(v.click)}` : ''}${v.card ? '&card=1' : ''}${v.hits ? `&hits=${encodeURIComponent(v.hits.join('|'))}` : ''}${v.noHit ? `&nohit=${encodeURIComponent(v.noHit)}` : ''}`;
@@ -458,7 +469,7 @@ try {
     }
     if (v.noHit) {
       if (grid.length) failed = true;
-      console.log(`  ${grid.length ? 'FAIL' : 'ok  '} no point of the sky lands on ${v.noHit}${grid.length ? `: ${grid.slice(0, 6).join(' ')}${grid.length > 6 ? ` and ${grid.length - 6} more` : ''}` : ''}`);
+      console.log(`  ${grid.length ? 'FAIL' : 'ok  '} no point of the sky or the floor lands on ${v.noHit}${grid.length ? `: ${grid.slice(0, 6).join(' ')}${grid.length > 6 ? ` and ${grid.length - 6} more` : ''}` : ''}`);
     }
     if (v.card) {
       const c = wattCard;

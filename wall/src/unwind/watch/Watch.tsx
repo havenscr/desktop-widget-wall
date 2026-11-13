@@ -139,6 +139,9 @@ function VideoStage({ item, look }: { item: WatchRef & { label: string }; look: 
       </div>
       {/* The whole sky lies under every control and takes no pointer, so its buttons sit apart, on the floor. */}
       {sky ? <div className="w-skyui">{under}</div> : null}
+      {/* The floor picks up a faint wash of the sky's colour (approved page, B). One frame cannot be
+          mirrored, so this is a still colour wash in the page's light colours, taking no pointer. */}
+      {sky ? <div className="w-skyspill" aria-hidden="true" /> : null}
     </>
   );
 }

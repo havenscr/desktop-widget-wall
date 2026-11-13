@@ -1233,6 +1233,26 @@
     linear-gradient(90deg, rgba(6, 4, 22, 0.88) 0, rgba(6, 4, 22, 0.88) 40%, rgba(6, 4, 22, 0) 54%),
     linear-gradient(180deg, rgba(6, 4, 22, 0.3), rgba(6, 4, 22, 0) 24%);
 }
+/* The floor's wash under the whole sky, where frame B draws its blurred spill (stage x 512 to
+   2355, from the horizon down): the page's light colours (amber left, pink in the middle, cyan
+   right) strongest at the horizon line and gone well before the bottom, at the page's 0.3. Still
+   (no animation, no blend mode, no backdrop filter), under every control, taking no pointer. */
+.w-skyspill {
+  position: absolute;
+  z-index: -1;
+  left: 388px;
+  top: 485px;
+  width: 1843px;
+  height: 195px;
+  opacity: 0.3;
+  pointer-events: none;
+  background:
+    radial-gradient(30% 100% at 26% 0, rgba(255, 176, 84, 0.95), transparent 70%),
+    radial-gradient(28% 95% at 78% 0, rgba(84, 214, 255, 0.9), transparent 70%),
+    radial-gradient(24% 70% at 52% 0, rgba(255, 92, 150, 0.6), transparent 75%);
+  -webkit-mask-image: linear-gradient(180deg, #000, transparent 85%);
+  mask-image: linear-gradient(180deg, #000, transparent 85%);
+}
 .w-skyui {
   position: absolute;
   left: 1026px;
