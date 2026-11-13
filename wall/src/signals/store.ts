@@ -43,19 +43,28 @@ export function createSignalStore(deps: SignalDeps) {
         let disposed = false;
         let timer: ReturnType<typeof setInterval> | undefined;
         let unlisten: UnlistenFn | undefined;
-        const start = async () => {
+        let retry: ReturnType<typeof setTimeout> | undefined;
+        const start = async (again: boolean) => {
           if (isTauri()) {
-            const stop = await deps.listen<SignalPayload>('signals-changed', (e) => { if (!disposed) apply(e.payload); });
-            if (disposed) { stop(); return; }
-            unlisten = stop;
+            try {
+              const stop = await deps.listen<SignalPayload>('signals-changed', (e) => { if (!disposed) apply(e.payload); });
+              if (disposed) { stop(); return; }
+              unlisten = stop;
+            } catch {
+              // The listener could not be registered: unknown for now, one more try in 5 seconds.
+              if (disposed) return;
+              apply(UNKNOWN_PAYLOAD);
+              if (again) retry = setTimeout(() => void start(false), 5000);
+              return;
+            }
           }
           if (disposed) return;
           try { apply(await deps.invoke<SignalPayload>('wall2_signals')); }
           catch { apply(UNKNOWN_PAYLOAD); }
           if (!disposed) timer = setInterval(() => apply(payload), 1000);
         };
-        void start();
-        return () => { disposed = true; if (timer) clearInterval(timer); unlisten?.(); };
+        void start(true);
+        return () => { disposed = true; if (timer) clearInterval(timer); clearTimeout(retry); unlisten?.(); };
       },
     };
   });
