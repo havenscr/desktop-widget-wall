@@ -33,6 +33,7 @@ import {
   suggestedKey,
   writeLastPlay,
   type MusicRoutine,
+  type SonosPreset,
   type SonosSpeaker,
   type SonosSummary,
   type VolumeTarget,
@@ -185,6 +186,15 @@ function Live({
   );
 
   const locked = stale || busy !== null;
+  const closePop = useCallback(() => setPop(null), []);
+  // A question left open when the read goes stale is dropped (its slider goes back).
+  useEffect(() => {
+    if (!stale) return;
+    setConfirm((c) => {
+      c?.no?.();
+      return null;
+    });
+  }, [stale]);
   const { face, more } = splitRoutines(s.music);
   const suggestion = suggestedKey(s.music, new Date(now));
   const playing = musicPlaying(s);
@@ -194,7 +204,8 @@ function Live({
 
   const play = (r: MusicRoutine) => {
     const label = chipLabel(r.name);
-    const ask = `${r.name} starts at volume ${r.volume ?? '?'}, above 40. Start it?`;
+    const ask =
+      typeof r.volume === 'number' ? `${r.name} starts at volume ${r.volume}, above 40. Start it?` : `${r.name} starts at a volume the Sonos service sets. Start it?`;
     const go = (confirmed: boolean) =>
       void run(`play:${r.key}`, (c) => invoke('wall2_sonos_play', c ? { routineKey: r.key, confirm: true } : { routineKey: r.key }), `Playing ${label}`, {
         confirmed,
@@ -206,7 +217,7 @@ function Live({
         },
       });
     setPop(null);
-    if ((r.volume ?? 0) > SAFE_VOLUME) setConfirm({ text: ask, yes: 'Start', go: () => go(true) });
+    if (typeof r.volume !== 'number' || r.volume > SAFE_VOLUME) setConfirm({ text: ask, yes: 'Start', go: () => go(true) });
     else go(false);
   };
 
@@ -220,6 +231,17 @@ function Live({
         { confirmed, ask, undo },
       );
     if (needsConfirm(speakers, level)) setConfirm({ text: ask, yes: `Set ${level}`, go: () => go(true), no: undo });
+    else go(false);
+  };
+
+  const applyPreset = (p: SonosPreset) => {
+    const ask = `${p.name} sets a speaker above 40. Apply it?`;
+    const go = (confirmed: boolean) =>
+      void run(`preset:${p.id}`, (c) => invoke('wall2_sonos_preset', c ? { presetId: p.id, confirm: true } : { presetId: p.id }), `Speakers set to ${p.name}`, {
+        confirmed,
+        ask,
+      });
+    if (p.loud) setConfirm({ text: ask, yes: 'Apply', go: () => go(true) });
     else go(false);
   };
 
@@ -271,7 +293,7 @@ function Live({
                 <span className="sound-chip-sub">{more.length > 0 ? `${more.length} more` : 'controls'}</span>
               </button>
               {pop === 'more' && (
-                <Popup label="More routines" onClose={() => setPop(null)} right down wide>
+                <Popup label="More routines" onClose={closePop} right down wide>
                   {more.length > 0 && <div className="k">Music</div>}
                   <div className="sound-more-list">
                     {more.map((r) => (
@@ -321,7 +343,7 @@ function Live({
                   className={p.active ? 'seg on' : 'seg'}
                   title={p.active ? `${p.name}: the speakers are grouped this way now` : `Group the speakers as ${p.name}`}
                   disabled={locked}
-                  onClick={() => void run(`preset:${p.id}`, () => invoke('wall2_sonos_preset', { presetId: p.id }), `Speakers set to ${p.name}`)}
+                  onClick={() => applyPreset(p)}
                 >
                   {p.name}
                 </button>
@@ -354,7 +376,8 @@ function Live({
           <IconVolume className="sound-vol-icon" size={26} stroke={1.8} aria-hidden="true" />
           {gLabel && gVol !== null && s.currentGroup ? (
             <VolumeSlider
-              key={`${s.currentGroup}:${gVol}:${s.readAtMs}`}
+              key={s.currentGroup}
+              sync={s.readAtMs}
               className="sound-vol"
               label={gLabel}
               title={`Volume for ${groupMusicSpeakers(s, s.currentGroup)
@@ -379,10 +402,10 @@ function Live({
               Speakers {s.speakers.length}
             </button>
             {pop === 'speakers' && (
-              <Popup label="Speakers" onClose={() => setPop(null)} right wide>
+              <Popup label="Speakers" onClose={closePop} right wide>
                 <div className="sound-spk-list">
                   {s.speakers.map((sp) => (
-                    <SpeakerRow key={`${sp.name}:${sp.volume}:${s.readAtMs}`} sp={sp} disabled={locked} onCommit={(level, undo) => setVolume({ kind: 'speaker', id: sp.name }, [sp], level, sp.name, undo)} />
+                    <SpeakerRow key={sp.name} sync={s.readAtMs} sp={sp} disabled={locked} onCommit={(level, undo) => setVolume({ kind: 'speaker', id: sp.name }, [sp], level, sp.name, undo)} />
                   ))}
                   {s.speakers.length === 0 && <div className="s">The Sonos service lists no speakers.</div>}
                 </div>
@@ -416,7 +439,7 @@ function Live({
               </button>
             )}
             {pop === 'sleep' && !timer && (
-              <Popup label="Sleep timer" onClose={() => setPop(null)} right>
+              <Popup label="Sleep timer" onClose={closePop} right>
                 <div className="sound-sleep-opts">
                   {SLEEP_CHOICES.map((m) => (
                     <button
@@ -442,7 +465,7 @@ function Live({
         {confirm && (
           <div className="sound-confirm" role="alertdialog" aria-label="Confirm volume">
             <span className="s">{confirm.text}</span>
-            <button type="button" className="sound-btn cy" onClick={confirm.go}>
+            <button type="button" className="sound-btn cy" disabled={locked} onClick={confirm.go}>
               {confirm.yes}
             </button>
             <button
@@ -471,6 +494,7 @@ export const KEY_SETTLE_MS = 400;
  */
 function VolumeSlider({
   value,
+  sync,
   label,
   title,
   disabled,
@@ -478,6 +502,8 @@ function VolumeSlider({
   onCommit,
 }: {
   value: number;
+  /** Changes with every read; the slider takes the read's value then, unless it is held. */
+  sync: number;
   label: string;
   title: string;
   disabled: boolean;
@@ -487,8 +513,16 @@ function VolumeSlider({
   const [v, setV] = useState(value);
   const vRef = useRef(value);
   const sent = useRef(value);
+  const held = useRef(false);
   const keyTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(keyTimer.current), []);
+  // A new read moves the slider to what the speakers say, but never under a held pointer.
+  useEffect(() => {
+    if (held.current) return;
+    vRef.current = value;
+    sent.current = value;
+    setV(value);
+  }, [value, sync]);
   const commit = () => {
     clearTimeout(keyTimer.current);
     const level = vRef.current;
@@ -516,7 +550,13 @@ function VolumeSlider({
           vRef.current = Number(e.target.value);
           setV(vRef.current);
         }}
-        onPointerUp={commit}
+        onPointerDown={() => {
+          held.current = true;
+        }}
+        onPointerUp={() => {
+          held.current = false;
+          commit();
+        }}
         onKeyUp={() => {
           clearTimeout(keyTimer.current);
           keyTimer.current = setTimeout(commit, KEY_SETTLE_MS);
@@ -528,7 +568,17 @@ function VolumeSlider({
   );
 }
 
-function SpeakerRow({ sp, disabled, onCommit }: { sp: SonosSpeaker; disabled: boolean; onCommit: (level: number, undo: () => void) => void }) {
+function SpeakerRow({
+  sp,
+  sync,
+  disabled,
+  onCommit,
+}: {
+  sp: SonosSpeaker;
+  sync: number;
+  disabled: boolean;
+  onCommit: (level: number, undo: () => void) => void;
+}) {
   const input = inputWord(sp);
   const [failed, setFailed] = useState(false);
   return (
@@ -548,7 +598,7 @@ function SpeakerRow({ sp, disabled, onCommit }: { sp: SonosSpeaker; disabled: bo
           {failed ? 'Could not open' : 'PC volume'}
         </button>
       ) : sp.online && typeof sp.volume === 'number' ? (
-        <VolumeSlider value={sp.volume} label="" title={`${sp.name} volume`} disabled={disabled} onCommit={onCommit} />
+        <VolumeSlider value={sp.volume} sync={sync} label="" title={`${sp.name} volume`} disabled={disabled} onCommit={onCommit} />
       ) : (
         <span className="xs">{sp.online ? 'No volume reading' : 'Not reachable'}</span>
       )}

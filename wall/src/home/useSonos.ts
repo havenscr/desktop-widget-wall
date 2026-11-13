@@ -29,6 +29,8 @@ export function useSonos(): SonosState {
   const [now, setNow] = useState(() => clock());
   const mounted = useRef(false);
   const inFlight = useRef(false);
+  /** A refresh asked for while one runs (a write's follow-up) runs once that one ends. */
+  const again = useRef(false);
 
   useEffect(() => {
     mounted.current = true;
@@ -37,8 +39,11 @@ export function useSonos(): SonosState {
     };
   }, []);
 
-  const refresh = useCallback(async () => {
-    if (inFlight.current) return;
+  const refresh = useCallback(async (): Promise<void> => {
+    if (inFlight.current) {
+      again.current = true;
+      return;
+    }
     inFlight.current = true;
     try {
       const next = await invoke<SonosSummary>('wall2_sonos_summary');
@@ -53,6 +58,10 @@ export function useSonos(): SonosState {
     } finally {
       inFlight.current = false;
       if (mounted.current) setNow(clock());
+    }
+    if (again.current && mounted.current) {
+      again.current = false;
+      await refresh();
     }
   }, []);
 

@@ -91,7 +91,7 @@ it('suggests the routine that fits the hour', () => {
 });
 
 it('puts the preset whose name starts with Office first', () => {
-  const p = (id: string, name: string) => ({ id, name, active: false });
+  const p = (id: string, name: string) => ({ id, name, active: false, loud: false });
   expect(orderPresets([p('a', 'Whole House'), p('b', 'Living'), p('c', 'Office Desk')]).map((x) => x.id)).toEqual(['c', 'a', 'b']);
   expect(orderPresets([p('a', 'Whole House'), p('b', 'Living')]).map((x) => x.id)).toEqual(['a', 'b']);
   expect(orderPresets([p('c', 'office'), p('a', 'Whole')]).map((x) => x.id)).toEqual(['c', 'a']);

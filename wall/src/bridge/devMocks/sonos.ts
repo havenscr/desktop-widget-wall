@@ -87,15 +87,15 @@ function summary(m: Mode) {
       ? []
       : m === 'heavy'
         ? [
-            { id: 'whole', name: 'Whole House And Garden', active: false },
-            { id: 'desk', name: 'Office Desk With The Big Speaker', active: true },
-            { id: 'living', name: 'Living Spaces Downstairs', active: false },
-            { id: 'upstairs', name: 'Upstairs Only', active: false },
+            { id: 'whole', name: 'Whole House And Garden', active: false, loud: false },
+            { id: 'desk', name: 'Office Desk With The Big Speaker', active: true, loud: false },
+            { id: 'living', name: 'Living Spaces Downstairs', active: false, loud: false },
+            { id: 'upstairs', name: 'Upstairs Only', active: false, loud: false },
           ]
         : [
-            { id: 'whole', name: 'Whole House', active: false },
-            { id: 'desk', name: 'Office Desk', active: m !== 'quiet' },
-            { id: 'living', name: 'Living Spaces', active: false },
+            { id: 'whole', name: 'Whole House', active: false, loud: false },
+            { id: 'desk', name: 'Office Desk', active: m !== 'quiet', loud: false },
+            { id: 'living', name: 'Living Spaces', active: false, loud: false },
           ];
   return {
     speakers: speakers(m),

@@ -30,8 +30,9 @@ function summary(over: Partial<SonosSummary> = {}): SonosSummary {
       { id: 'G2', coordinator: 'Den', members: ['Den', 'Porch'] },
     ],
     presets: [
-      { id: 'whole', name: 'Whole House', active: false },
-      { id: 'desk', name: 'Office Desk', active: true },
+      { id: 'whole', name: 'Whole House', active: false, loud: false },
+      { id: 'desk', name: 'Office Desk', active: true, loud: false },
+      { id: 'party', name: 'Party Set', active: false, loud: true },
     ],
     music: [
       routine('Dawn_Mix', 'Dawn Music'),
@@ -199,12 +200,53 @@ it('Where puts Office first, marks the grouping in use, and applies a preset on 
   render(<Sound />);
   await flush();
   const radios = screen.getAllByRole('radio');
-  expect(radios.map((r) => r.textContent)).toEqual(['Office Desk', 'Whole House']);
+  expect(radios.map((r) => r.textContent)).toEqual(['Office Desk', 'Whole House', 'Party Set']);
   expect(radios[0].getAttribute('aria-checked')).toBe('true');
   fireEvent.click(radios[1]);
   await flush();
   expect(writes).toEqual([{ cmd: 'wall2_sonos_preset', args: { presetId: 'whole' } }]);
   expect(screen.getByText('Speakers set to Whole House')).toBeTruthy();
+  // A preset that sets a speaker above 40 asks first.
+  writes = [];
+  fireEvent.click(screen.getByRole('radio', { name: 'Party Set' }));
+  await flush();
+  expect(writes).toEqual([]);
+  expect(screen.getByRole('alertdialog').textContent).toContain('above 40');
+  fireEvent.click(screen.getByText('Apply'));
+  await flush();
+  expect(writes).toEqual([{ cmd: 'wall2_sonos_preset', args: { presetId: 'party', confirm: true } }]);
+});
+
+it('a routine with no volume of its own asks first, and a question left open goes when the read goes stale', async () => {
+  let fail = false;
+  wire(() => (fail ? Promise.reject(new Error('Could not reach Sonos')) : summary({ music: [{ key: 'Free_Mix', name: 'Free Mix', favorite: null, volume: null }] })));
+  render(<Sound />);
+  await flush();
+  fireEvent.click(screen.getByText('Free Mix').closest('button')!);
+  expect(screen.getByRole('alertdialog').textContent).toContain('a volume the Sonos service sets');
+  fail = true;
+  await flush(3 * 60_000);
+  expect(screen.queryByRole('alertdialog')).toBeNull();
+  expect(writes).toEqual([]);
+});
+
+it('a new read moves a slider to the speakers\' level, but not while it is held', async () => {
+  let level = 14;
+  wire(() => summary({ readAtMs: Date.now(), speakers: summary().speakers.map((x) => (x.name === 'Den' ? { ...x, volume: level } : x)) }));
+  render(<Sound />);
+  await flush();
+  const slider = () => screen.getByLabelText('Volume, Den and 1 more') as HTMLInputElement;
+  expect(slider().value).toBe('12');
+  fireEvent.pointerDown(slider());
+  fireEvent.change(slider(), { target: { value: '30' } });
+  level = 20;
+  await flush(30_000);
+  expect(slider().value).toBe('30');
+  fireEvent.pointerUp(slider());
+  await flush();
+  expect(writes).toEqual([{ cmd: 'wall2_sonos_volume', args: { target: { kind: 'group', id: 'G2' }, level: 30 } }]);
+  await flush(30_000);
+  expect(slider().value).toBe('15');
 });
 
 it('Speakers lists every speaker; line-in says PC audio and offers the PC volume', async () => {

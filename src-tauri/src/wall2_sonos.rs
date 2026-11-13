@@ -11,7 +11,7 @@
 //! answer is cut down to a bounded, cleaned summary and kept as the last good read.
 //!
 //! Writes (each only on a click): every key, preset, speaker, group or timer id a write
-//! names must be in the last good read (at most ten minutes old), and every request body
+//! names must be in the last good read (at most two minutes old), and every request body
 //! is built here, never taken from the web view:
 //! - `wall2_sonos_play`: `POST /api/trigger/<routine key>?force=true`
 //! - `wall2_sonos_preset`: `POST /api/group-presets/<id>/apply`
@@ -20,9 +20,10 @@
 //! - `wall2_sonos_sleep`: `POST /api/sleep-timer` `{"minutes", "fadeMinutes": 5}`
 //! - `wall2_sonos_sleep_cancel`: `DELETE /api/sleep-timer/<id>`
 //!
-//! A volume change that would raise any speaker above 40, or a music routine that sets a
-//! volume above 40, is refused with `needs-confirm` unless the call carries
-//! `confirm: true` (the front end asks first). Every command answers only the `wall2`
+//! A volume change that would raise any speaker above 40, a music routine that sets a
+//! volume above 40 (or none of its own), or a preset that sets a speaker above 40 (a
+//! line-in group, the PC's own sound, does not count) is refused with `needs-confirm`
+//! unless the call carries `confirm: true` (the front end asks first). Every command answers only the `wall2`
 //! window.
 
 use crate::wall2_feeds::{parse_iso, read_base, read_body, require_ok};
@@ -43,8 +44,9 @@ const MAX_NAME_CHARS: usize = 60;
 const MAX_TRACK_CHARS: usize = 120;
 /// The highest level a single call may raise a speaker to without `confirm: true`.
 pub(crate) const SAFE_VOLUME: u8 = 40;
-/// Writes are checked against a read no older than this.
-const SUMMARY_MAX_AGE: Duration = Duration::from_secs(10 * 60);
+/// Writes are checked against a read no older than this (the front end reads every 30 s
+/// and turns writes off after two minutes too).
+const SUMMARY_MAX_AGE: Duration = Duration::from_secs(2 * 60);
 const SLEEP_CHOICES: [u32; 3] = [30, 60, 90];
 const SLEEP_FADE_MINUTES: u32 = 5;
 /// Control routines the block may start. The others (TV volume profiles and the like) set
@@ -87,6 +89,9 @@ pub struct Preset {
     pub name: String,
     /// The speakers are grouped the way this preset groups them right now.
     pub active: bool,
+    /// Applying it sets a speaker above 40 (a line-in group, the PC's own sound, does not
+    /// count), so it needs a confirm.
+    pub loud: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -357,6 +362,15 @@ fn preset_matches(p: &Value, groups: &[Group], speakers: &[Speaker]) -> bool {
     }
 }
 
+/// Any of the preset's groups that sets a volume above 40 and is not a line-in group.
+fn preset_loud(p: &Value) -> bool {
+    p.get("groups").and_then(Value::as_array).into_iter().flatten().any(|g| {
+        let line_in = g.get("input").and_then(|i| i.get("type")).and_then(Value::as_str).is_some_and(|t| t.eq_ignore_ascii_case("lineIn"));
+        let sets = g.get("setVolume").and_then(Value::as_bool) != Some(false);
+        !line_in && sets && volume_of(g.get("volume")).is_some_and(|v| v > SAFE_VOLUME)
+    })
+}
+
 fn pick_presets(body: &Value, groups: &[Group], speakers: &[Speaker]) -> Vec<Preset> {
     let mut out: Vec<Preset> = Vec::new();
     for (id, p) in body.as_object().into_iter().flatten() {
@@ -368,7 +382,7 @@ fn pick_presets(body: &Value, groups: &[Group], speakers: &[Speaker]) -> Vec<Pre
         }
         let name = p.get("name").and_then(Value::as_str).and_then(|n| clean_text(n, MAX_NAME_CHARS)).unwrap_or_else(|| id.clone());
         let active = !out.iter().any(|o| o.active) && preset_matches(p, groups, speakers);
-        out.push(Preset { id: id.clone(), name, active });
+        out.push(Preset { id: id.clone(), name, active, loud: preset_loud(p) });
     }
     out
 }
@@ -503,7 +517,8 @@ pub(crate) fn plan_play(s: &SonosSummary, key: &str, confirm: bool) -> Result<Ve
         return Err("Unknown routine".to_string());
     }
     if let Some(r) = s.music.iter().find(|r| r.key == key) {
-        if r.volume.is_some_and(|v| v > SAFE_VOLUME) && !confirm {
+        // A routine with no volume of its own starts at whatever the service sets: ask too.
+        if !r.volume.is_some_and(|v| v <= SAFE_VOLUME) && !confirm {
             return Err(NEEDS_CONFIRM.to_string());
         }
     } else if !s.controls.iter().any(|c| c.key == key) {
@@ -512,9 +527,12 @@ pub(crate) fn plan_play(s: &SonosSummary, key: &str, confirm: bool) -> Result<Ve
     Ok(vec![post(format!("/api/trigger/{key}?force=true"), None)])
 }
 
-pub(crate) fn plan_preset(s: &SonosSummary, id: &str) -> Result<Vec<Call>, String> {
-    if !valid_key(id) || !s.presets.iter().any(|p| p.id == id) {
+pub(crate) fn plan_preset(s: &SonosSummary, id: &str, confirm: bool) -> Result<Vec<Call>, String> {
+    let Some(p) = s.presets.iter().find(|p| p.id == id).filter(|_| valid_key(id)) else {
         return Err("Unknown speaker set".to_string());
+    };
+    if p.loud && !confirm {
+        return Err(NEEDS_CONFIRM.to_string());
     }
     Ok(vec![post(format!("/api/group-presets/{id}/apply"), None)])
 }
@@ -588,20 +606,19 @@ fn get(base: &str, path: &str) -> Result<Value, String> {
     serde_json::from_slice(&body).map_err(|_| REFUSED.to_string())
 }
 
+/// The seven reads run side by side, so a slow service costs one timeout, not seven.
 fn read_all(base: &str) -> Result<Reads, String> {
-    let status = get(base, "/api/status")?;
-    let speakers = get(base, "/api/speakers")?;
-    let routines = get(base, "/api/routines")?;
-    let optional = |path: &str| get(base, path).unwrap_or(Value::Null);
-    Ok(Reads {
-        status,
-        speakers,
-        routines,
-        groups: optional("/api/groups"),
-        presets: optional("/api/group-presets"),
-        scenes: optional("/api/scenes"),
-        timers: optional("/api/sleep-timers"),
-    })
+    const PATHS: [&str; 7] = ["/api/status", "/api/speakers", "/api/routines", "/api/groups", "/api/group-presets", "/api/scenes", "/api/sleep-timers"];
+    let mut answers: Vec<Result<Value, String>> = std::thread::scope(|sc| {
+        let handles: Vec<_> = PATHS.iter().map(|path| sc.spawn(move || get(base, path))).collect();
+        handles.into_iter().map(|h| h.join().unwrap_or_else(|_| Err(REFUSED.to_string()))).collect()
+    });
+    let mut next = || answers.remove(0);
+    let status = next()?;
+    let speakers = next()?;
+    let routines = next()?;
+    let mut optional = || next().unwrap_or(Value::Null);
+    Ok(Reads { status, speakers, routines, groups: optional(), presets: optional(), scenes: optional(), timers: optional() })
 }
 
 fn send(base: &str, calls: &[Call]) -> Result<(), String> {
@@ -672,10 +689,10 @@ pub async fn wall2_sonos_play(window: tauri::WebviewWindow, app: tauri::AppHandl
 }
 
 #[tauri::command]
-pub async fn wall2_sonos_preset(window: tauri::WebviewWindow, app: tauri::AppHandle, preset_id: String) -> Result<(), String> {
+pub async fn wall2_sonos_preset(window: tauri::WebviewWindow, app: tauri::AppHandle, preset_id: String, confirm: Option<bool>) -> Result<(), String> {
     require_wall2(window.label())?;
     let base = read_base(&app, "sonosBaseUrl", false)?;
-    let calls = plan_preset(&last_good()?, &preset_id)?;
+    let calls = plan_preset(&last_good()?, &preset_id, confirm.unwrap_or(false))?;
     dispatch(base, calls).await
 }
 
@@ -754,6 +771,7 @@ mod tests {
                 "Sunrise_Mix": {"name": "Sunrise Mix", "type": "music", "favorite": "Station One", "volume": 8, "enabled": true},
                 "Loud_Party": {"name": "Loud Party", "type": "music", "favorite": "Station Two", "volume": 55},
                 "Off_Now": {"name": "All Off", "type": "music", "enabled": false},
+                "No_Level": {"name": "No Level", "type": "music", "favorite": "Station Three"},
                 "Stop_All": {"name": "Stop All", "type": "control", "action": "pauseAll"},
                 "Tv_Up": {"name": "TV Loud", "type": "control", "action": "tvVolume"},
                 "Plug": {"name": "Plug", "type": "webhook"},
@@ -798,13 +816,30 @@ mod tests {
         let s = summary();
         let ids: Vec<(&str, bool)> = s.presets.iter().map(|p| (p.id.as_str(), p.active)).collect();
         assert_eq!(ids, vec![("everywhere", false), ("desk_mode", true)]);
+        // The desk preset's 100 is a line-in group, so it is not loud.
+        assert!(!s.presets[1].loud);
+    }
+
+    #[test]
+    fn a_preset_that_sets_a_speaker_above_forty_needs_a_confirm() {
+        let mut r = reads();
+        r.presets = json!({
+            "party": {"name": "Party", "groups": [{"rooms": ["Den"], "volume": 70}]},
+            "quiet_set": {"name": "Quiet", "groups": [{"rooms": ["Den"], "volume": 70, "setVolume": false}]}
+        });
+        let s = shape(&r, 0);
+        assert!(s.presets[0].loud);
+        assert!(!s.presets[1].loud);
+        assert_eq!(plan_preset(&s, "party", false).unwrap_err(), NEEDS_CONFIRM);
+        assert!(plan_preset(&s, "party", true).is_ok());
+        assert!(plan_preset(&s, "quiet_set", false).is_ok());
     }
 
     #[test]
     fn routines_keep_enabled_music_and_safe_controls_only() {
         let s = summary();
         let keys: Vec<&str> = s.music.iter().map(|r| r.key.as_str()).collect();
-        assert_eq!(keys, vec!["Sunrise_Mix", "Loud_Party"]);
+        assert_eq!(keys, vec!["Sunrise_Mix", "Loud_Party", "No_Level"]);
         assert_eq!(s.music[0].favorite.as_deref(), Some("Station One"));
         let controls: Vec<&str> = s.controls.iter().map(|r| r.key.as_str()).collect();
         assert_eq!(controls, vec!["Stop_All"]);
@@ -871,14 +906,15 @@ mod tests {
         assert_eq!(plan_play(&s, "../x", true).unwrap_err(), "Unknown routine");
         assert_eq!(plan_play(&s, "Loud_Party", false).unwrap_err(), NEEDS_CONFIRM);
         assert!(plan_play(&s, "Loud_Party", true).is_ok());
+        assert_eq!(plan_play(&s, "No_Level", false).unwrap_err(), NEEDS_CONFIRM);
     }
 
     #[test]
     fn preset_and_timer_ids_are_checked() {
         let s = summary();
-        assert_eq!(plan_preset(&s, "desk_mode").unwrap()[0].path, "/api/group-presets/desk_mode/apply");
-        assert!(plan_preset(&s, "bad id").is_err());
-        assert!(plan_preset(&s, "elsewhere").is_err());
+        assert_eq!(plan_preset(&s, "desk_mode", false).unwrap()[0].path, "/api/group-presets/desk_mode/apply");
+        assert!(plan_preset(&s, "bad id", true).is_err());
+        assert!(plan_preset(&s, "elsewhere", true).is_err());
         let cancel = plan_sleep_cancel(&s, "t1").unwrap();
         assert_eq!((cancel[0].method, cancel[0].path.as_str()), ("DELETE", "/api/sleep-timer/t1"));
         assert!(plan_sleep_cancel(&s, "t2").is_err());

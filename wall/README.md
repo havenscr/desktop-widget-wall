@@ -100,13 +100,16 @@ visible. Nothing on the wall plays or changes volume without a click.
   three hours while music plays (`wall2-sonos-last-play` in local storage).
 - **Where**: the service's group presets as a switch, the one whose name starts with
   "Office" first. The preset whose grouping matches the speakers' groups now is marked
-  (Rust compares them); a click applies one.
+  (Rust compares them); a click applies one. A preset that sets a speaker above 40 (a
+  line-in group, the PC's own sound, does not count) asks first.
 - **Volume**: one slider for the current group (the group with the most speakers
   playing music; a speaker on line-in carries the PC's sound and is left out). It sends
   one change when the pointer or key lets go. **Speakers** opens every speaker with its
   state and its own slider; a speaker on line-in says "PC audio" and offers "PC volume"
   (the Windows volume control) instead of a Sonos slider. Any change that would raise a
-  speaker above 40, or a routine that starts above 40, asks first in a bar over the card.
+  speaker above 40, or a routine that starts above 40 (or at a volume it does not
+  name), asks first in a bar over the card. A new read moves the sliders to what the
+  speakers say, never under a held pointer.
 - **Play and pause**: "Sonos off" pauses every speaker while music plays; with nothing
   playing the button reads "Play" and starts the suggested routine. The service has no
   next or resume command, so there is no Next button. **Sleep** offers 30, 60 or 90
@@ -117,21 +120,22 @@ visible. Nothing on the wall plays or changes volume without a click.
   shows one compact card; no `sonosBaseUrl` shows one line saying what to add.
 
 Rust (`wall2_sonos`, every command answers the `wall2` window only): reads `GET
-/api/status`, `/api/speakers` and `/api/routines` (all needed), then `/api/groups`,
-`/api/group-presets`, `/api/scenes` and `/api/sleep-timers` (each may fail alone), with a
-4 second timeout, no redirects and a 1 MB cap per answer. The summary is bounded (24
+/api/status`, `/api/speakers` and `/api/routines` (all needed), `/api/groups`,
+`/api/group-presets`, `/api/scenes` and `/api/sleep-timers` (each may fail alone), side by
+side, with a 4 second timeout, no redirects and a 1 MB cap per answer. The summary is bounded (24
 speakers, 24 groups, 12 presets, 48 routines, 12 scenes, 6 timers), names are cleaned
 to one line of at most 60 characters, a speaker whose name would not survive the round
 trip is left out, and only enabled music routines and the pause, group and ungroup
 controls are kept (TV volume profiles set volumes of their own and are left out).
-Writes, each built in Rust and checked against the last good read (at most ten
+Writes, each built in Rust and checked against the last good read (at most two
 minutes old; a key, preset, speaker, group or timer id not in it is refused):
 `POST /api/trigger/<routine key>?force=true` (as the service's own Quick Play does),
 `POST /api/group-presets/<id>/apply`, `POST /api/action/volume` `{room, volume}` per
 speaker (a group is sent speaker by speaker, line-in and offline speakers left out;
 0 to 100, clamped), `POST /api/action/pause-all`, `POST /api/sleep-timer` `{minutes,
 fadeMinutes: 5}` (30, 60 or 90 only) and `DELETE /api/sleep-timer/<id>`. A raise above
-40 without `confirm: true` answers `needs-confirm`. Errors are fixed strings ("Could not
+40, a routine above 40 or with no volume, or a loud preset, without `confirm: true`,
+answers `needs-confirm`. Errors are fixed strings ("Could not
 reach Sonos", "Sonos could not do that", "Sonos status is out of date") and nothing is
 logged. Dev mocks (`bridge/devMocks/sonos.ts`) take `?sonos=off|down|sparse|heavy|quiet`;
 `?moods=five|many|none|off` sets the mood cards.

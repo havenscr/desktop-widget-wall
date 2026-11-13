@@ -23,6 +23,8 @@ export interface SonosPreset {
   name: string;
   /** The speakers are grouped the way this preset groups them right now. */
   active: boolean;
+  /** Applying it sets a speaker above 40 (not counting line-in), so it asks first. */
+  loud: boolean;
 }
 
 export interface MusicRoutine {

@@ -256,3 +256,16 @@ it('six moods share the row; more than six scroll sideways', async () => {
   expect(scroll.style.gridTemplateColumns).toBe('');
   expect(again.container.querySelectorAll('.mood-btn')).toHaveLength(7);
 });
+
+it('"In N min" counts down while the wall stays open', async () => {
+  vi.setSystemTime(new Date('2026-11-12T16:30:00-08:00'));
+  const at = Date.now() + 5 * 60_000;
+  mocks.set('wall2_moods', () => [{ id: 'evening', label: 'Evening', nextAtMs: at }]);
+  render(<Moods />);
+  await flush();
+  expect(screen.getByText('In 5 min')).toBeTruthy();
+  await flush(2 * 60_000);
+  expect(screen.getByText('In 3 min')).toBeTruthy();
+  await flush(4 * 60_000);
+  expect(screen.queryByText(/^In \d+ min$/)).toBeNull();
+});

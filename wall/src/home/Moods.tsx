@@ -100,6 +100,7 @@ export function Moods() {
   const [phase, setPhase] = useState<Phase>(null);
   const [error, setError] = useState<string | null>(null);
   const [last, setLast] = useState<string | null>(readLast);
+  const [now, setNow] = useState(() => (reviewNow ?? Date.now)());
   const mounted = useRef(false);
   const busy = useRef(false);
   const doneTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -135,6 +136,14 @@ export function Moods() {
     const id = setInterval(() => void load(), MOODS_REFRESH_MS);
     return () => clearInterval(id);
   }, [visible, load]);
+
+  // "In N min" counts down: a tick every 30 seconds while a mood carries a schedule.
+  const scheduled = moods.some((m) => typeof m.nextAtMs === 'number');
+  useEffect(() => {
+    if (!visible || !scheduled) return;
+    const id = setInterval(() => setNow((reviewNow ?? Date.now)()), 30_000);
+    return () => clearInterval(id);
+  }, [visible, scheduled]);
 
   const tap = useCallback(async (id: string) => {
     if (busy.current) return;
@@ -188,7 +197,6 @@ export function Moods() {
   else if (status === 'error') note = 'Home app not reachable';
   const scroll = moods.length > MOODS_PER_ROW;
   const rowStyle = scroll ? undefined : { gridTemplateColumns: `repeat(${Math.max(moods.length, 1)}, minmax(0, 1fr))` };
-  const now = (reviewNow ?? Date.now)();
   return (
     <section className={showCards ? 'moods' : 'moods bare'} aria-label="Moods">
       <div className="moods-head">
