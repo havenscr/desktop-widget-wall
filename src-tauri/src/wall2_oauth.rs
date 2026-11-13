@@ -10,15 +10,13 @@ pub fn b64url(bytes: &[u8]) -> String {
 pub fn random_b64(bytes: usize) -> Option<String> {
     use windows::Win32::Security::Cryptography::{BCryptGenRandom, BCRYPT_ALG_HANDLE, BCRYPT_USE_SYSTEM_PREFERRED_RNG};
     let mut buf = vec![0u8; bytes];
-    unsafe { BCryptGenRandom(BCRYPT_ALG_HANDLE::default(), &mut buf, BCRYPT_USE_SYSTEM_PREFERRED_RNG) }.ok()?;
-    Some(b64url(&buf))
+    if unsafe { BCryptGenRandom(BCRYPT_ALG_HANDLE::default(), &mut buf, BCRYPT_USE_SYSTEM_PREFERRED_RNG) }.is_ok() { Some(b64url(&buf)) } else { None }
 }
 
 pub fn challenge_for(verifier: &str) -> Option<String> {
     use windows::Win32::Security::Cryptography::{BCryptHash, BCRYPT_SHA256_ALG_HANDLE};
     let mut out = [0u8; 32];
-    unsafe { BCryptHash(BCRYPT_SHA256_ALG_HANDLE, None, verifier.as_bytes(), &mut out) }.ok()?;
-    Some(b64url(&out))
+    if unsafe { BCryptHash(BCRYPT_SHA256_ALG_HANDLE, None, verifier.as_bytes(), &mut out) }.is_ok() { Some(b64url(&out)) } else { None }
 }
 
 #[derive(Debug, PartialEq)]

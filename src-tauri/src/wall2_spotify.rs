@@ -269,7 +269,7 @@ fn write_lock() -> &'static Mutex<()> { WRITE.get_or_init(|| Mutex::new(())) }
 fn put(cfg: &Config, path: &str, payload: Value) -> Result<(), String> {
     let _guard = write_lock().lock().unwrap();
     let bearer = access(cfg, false)?;
-    match agent().put(&format!("https://api.spotify.com/v1{path}")).set("Authorization", &format!("Bearer {bearer}")).send_json(payload) {
+    match agent().put(&format!("https://api.spotify.com/v1{path}")).set("Authorization", &format!("Bearer {bearer}")).set("Content-Type", "application/json").send_string(&payload.to_string()) {
         Ok(resp) if (200..300).contains(&resp.status()) => Ok(()),
         Err(ureq::Error::Status(429, resp)) => { honor_retry(&resp); Err(BUSY.into()) }
         Err(ureq::Error::Status(401, _)) => { let _ = access(cfg, true)?; Err(SIGN_AGAIN.into()) }
