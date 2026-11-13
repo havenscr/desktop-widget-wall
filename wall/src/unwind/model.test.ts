@@ -52,7 +52,7 @@ it('finds the first event after the coming midnight, or none', () => {
 });
 
 it('builds the status line from focus and the helper summary', () => {
-  const lanes = [{ state: 'working' }, { state: 'blocked' }, { state: 'working' }];
+  const lanes = [{ state: 'working' }, { state: 'review' }, { state: 'working' }];
   expect(statusLine('off', { lanes, yourMove: { total: 0 } })).toBe('Work is put away. 2 agents still running. No agent needs you.');
   expect(statusLine('off', { lanes: [{ state: 'working' }], yourMove: { total: 1 } })).toBe('Work is put away. 1 agent still running. One thing needs you.');
   expect(statusLine('on', { lanes: [], yourMove: { total: 3 } })).toBe('Focus is still on. 3 things need you.');
@@ -132,4 +132,17 @@ it('keeps the last played track in storage and ignores junk', () => {
   expect(readLastPlayed(st)).toBeNull();
   map.set(LAST_PLAYED_KEY, JSON.stringify({ title: 5 }));
   expect(readLastPlayed(st)).toBeNull();
+});
+
+it('the status line counts a waiting lane as needing the owner, like Work, even when the helper total is lower', () => {
+  const waiting = [{ state: 'working', waiting: true }, { state: 'working' }];
+  expect(statusLine('off', { lanes: waiting, yourMove: { total: 0 } })).toBe('Work is put away. 1 agent still running. One thing needs you.');
+  expect(statusLine('off', { lanes: [{ state: 'blocked' }], yourMove: { total: 0 } })).toBe('Work is put away. One thing needs you.');
+  expect(statusLine('off', { lanes: [{ state: 'blocked' }, { state: 'blocked', waiting: true }], yourMove: { total: 1 } })).toBe('Work is put away. 2 things need you.');
+});
+
+it('the status line says nothing about agents when the data is stale or missing', () => {
+  expect(statusLine('off', { stale: true, lanes: [{ state: 'blocked', waiting: true }], yourMove: { total: 0 } })).toBe('Work is put away.');
+  expect(statusLine('off', { lanes: [], yourMove: {} as { total: number } })).toBe('Work is put away.');
+  expect(statusLine('off', null)).toBe('Work is put away.');
 });

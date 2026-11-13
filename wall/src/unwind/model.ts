@@ -1,3 +1,4 @@
+import { laneWaits, needsYouCount, type Lane, type OmniSummary } from '../agents/model';
 import { playerProcesses, procName } from '../music/players';
 import type { DayEvent } from '../ribbon/model';
 import type { WeatherReading } from '../weather/model';
@@ -137,11 +138,14 @@ export function statusParts(focus: FocusSeen, summary: StatusSummary | null): St
   if (focus === 'on') parts.push({ kind: 'text', text: 'Focus is still on.' });
   else if (focus === 'off') parts.push({ kind: 'text', text: 'Work is put away.' });
   if (summary && summary.stale !== true) {
-    const running = summary.lanes.filter((l) => l.state === 'working').length;
+    // The same rules Work and Dream use: a lane that waits on the owner is not running, and a
+    // waiting lane counts as needing the owner even when the helper's your-move total is lower.
+    const lanes = summary.lanes as unknown as Lane[];
+    const running = lanes.filter((l) => !laneWaits(l) && l.state === 'working').length;
     if (running > 0) parts.push({ kind: 'running', text: `${running} ${running === 1 ? 'agent' : 'agents'} still running.` });
     const total = summary.yourMove.total;
     if (typeof total === 'number' && Number.isFinite(total) && total >= 0) {
-      const asks = Math.floor(total);
+      const asks = Math.floor(needsYouCount({ yourMove: summary.yourMove, lanes } as unknown as OmniSummary));
       if (asks === 0) parts.push({ kind: 'text', text: 'No agent needs you.' });
       else {
         const id = summary.yourMove.first?.sessionId || summary.lanes.find((l) => l.waiting || l.state === 'blocked')?.id || null;

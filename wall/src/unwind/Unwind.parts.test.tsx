@@ -411,6 +411,35 @@ it('shows the needs-you part as a chip that switches to Work when links are not 
   expect(document.querySelector('.u-act')).toBeNull();
 });
 
+it('a read that fails after a good one drops every agent sentence, so nothing says no agent needs the owner', async () => {
+  vi.useFakeTimers();
+  try {
+    useFocusStore.setState({ loaded: true });
+    mocks.set('get_now_playing', () => ({ playback_status: 'stopped' }));
+    let fail = false;
+    mocks.set('wall2_omni_summary', () => (fail ? Promise.reject(new Error('down')) : { lanes: [], yourMove: { total: 0 } }));
+    render(<Unwind />);
+    await flush();
+    expect(document.querySelector('.u-line')!.textContent).toBe('Work is put away. No agent needs you.');
+    fail = true;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+    expect(document.querySelector('.u-line')!.textContent).toBe('Work is put away.');
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it('a waiting lane makes the line say a thing needs the owner, never No agent needs you', async () => {
+  useFocusStore.setState({ loaded: true });
+  mocks.set('get_now_playing', () => ({ playback_status: 'stopped' }));
+  mocks.set('wall2_omni_summary', () => ({ lanes: [{ id: 'a1b2c3d4-0009', state: 'working', waiting: true }], yourMove: { total: 0 } }));
+  render(<Unwind />);
+  await flush();
+  expect(document.querySelector('.u-line')!.textContent).toBe('Work is put away. One thing needs you.');
+});
+
 it('falls back to the placeholder when the remembered cover on the idle view fails to decode', async () => {
   mocks.set('get_now_playing', () => ({ playback_status: 'stopped' }));
   render(<Unwind />);

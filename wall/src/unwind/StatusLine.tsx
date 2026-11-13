@@ -33,6 +33,8 @@ export function StatusLine() {
   }, []);
   useEffect(() => {
     if (!visible) return;
+    // Back on screen: what was kept is old until the first new read returns.
+    setSummary((prev) => (prev ? { ...prev, stale: true } : prev));
     const read = async () => {
       try {
         const s = await invoke<StatusSummary>('wall2_omni_summary');
