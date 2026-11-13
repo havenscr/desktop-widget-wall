@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { acceptsFront, AUTO, effectiveMode, headingFor, MODE_KEY, parseMode, shownSet, stepSet, sendReason, type KeysSummary, type SetInfo } from './keysModel';
 
-const general: SetInfo = { id: 'general', name: 'General', general: true, keys: [{ label: 'Snip', icon: 'screenshot' }] };
-const sales: SetInfo = { id: 'sales', name: 'Sales app', general: false, keys: [{ label: 'Refresh', icon: 'refresh' }] };
-const other: SetInfo = { id: 'other', name: 'Other', general: false, keys: [{ label: 'Go', icon: 'play' }] };
-const summary = (autoId: string | null, front: 'app' | 'idle' = 'app'): KeysSummary => ({ front, autoId, exe: null, sets: [general, sales, other], source: 'file' });
+const general: SetInfo = { id: 'general', name: 'General', general: true, keys: [{ label: 'Snip', icon: 'screenshot', action: null }] };
+const sales: SetInfo = { id: 'sales', name: 'Sales app', general: false, keys: [{ label: 'Refresh', icon: 'refresh', action: null }] };
+const other: SetInfo = { id: 'other', name: 'Other', general: false, keys: [{ label: 'Go', icon: 'play', action: null }] };
+const summary = (autoId: string | null, front: 'app' | 'idle' = 'app'): KeysSummary => ({ front, autoId, exe: null, sets: [general, sales, other], source: 'file', defaultPins: [], filePins: [] });
 
 describe('mode storage', () => {
   it('reads a valid held mode', () => {

@@ -4,9 +4,9 @@ import { CentreSlot } from '../agents/CentreSlot';
 import { TaskCard } from '../tasks/TaskCard';
 import { useWeather } from '../weather/useWeather';
 import { WeatherLine } from '../weather/WeatherCard';
-import { BigScreen } from '../work/BigScreen';
 import { Keys } from '../work/Keys';
 import { LeftWing } from '../work/LeftWing';
+import { PinnedRow } from '../work/PinnedRow';
 import { ClockSlot } from './Frame';
 
 /**
@@ -24,7 +24,7 @@ export function Work() {
       <CentreSlot weather={weather} />
       <div className="wing wr right-wing">
         <TaskCard />
-        <BigScreen />
+        <PinnedRow />
         <Keys />
       </div>
     </section>

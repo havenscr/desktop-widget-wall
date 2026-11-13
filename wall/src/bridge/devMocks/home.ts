@@ -13,7 +13,7 @@ export function registerHomeMocks(): void {
       reachable: true,
       stale: false,
       lastScan: new Date(t - 4 * 60_000).toISOString(),
-      alerts: 4,
+      alerts: knob('net') === 'calm' ? 0 : 4,
       firewalla: { api: 'up', boxOnline: true, checkedAt: new Date(t).toISOString(), alarms24h: 3 },
       portalUrl: 'https://my.firewalla.net/',
       topAlerts: [
