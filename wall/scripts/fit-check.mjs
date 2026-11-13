@@ -18,7 +18,7 @@
 // non-zero on a failure. CI does not run this; run it by hand before a layout change is handed over.
 //
 //   WALL_CHROME=/path/to/chrome-or-headless-shell npm --prefix wall run fit-check
-//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, header, deck, tiles, picker)
+//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, header, deck, tiles, picker, chips, heading)
 //   npm --prefix wall run fit-check -- --self-test
 //
 // WALL_CHROME (or the first argument that is not a flag) is a Chromium or
@@ -56,6 +56,8 @@ const EXPECT = {
   deck: /^ *FAIL deck: .* below the floor/m,
   tiles: /^ *FAIL deck: label .* outside its tile/m,
   picker: /^ *FAIL deck: the key picker reaches y \d+, over the timeline/m,
+  chips: /^ *FAIL overlap: chip /m,
+  heading: /^ *FAIL deck: the Now heading /m,
 };
 const OVERFLOWS = {
   left: '.work .left-wing { transform: translateX(-200px); }',
@@ -69,6 +71,8 @@ const OVERFLOWS = {
   deck: '.work .right-wing section.pinned { margin-top: 80px; }',
   tiles: '.work .right-wing .key-tile .deck-lbl { flex: none; width: 160px; max-width: none !important; }',
   picker: '.work .right-wing .pk { height: 400px !important; }',
+  chips: '.rib .ev { width: 400px !important; }',
+  heading: '.work .right-wing .keys .deck-name { max-width: 40px; overflow: hidden; }',
 };
 
 if (flag('self-test')) {

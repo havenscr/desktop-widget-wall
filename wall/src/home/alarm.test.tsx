@@ -5,7 +5,7 @@ import { Rail } from '../rail/Rail';
 import { usePlaceStore } from '../state/places';
 import { AlarmChip } from './AlarmChip';
 import { NetworkTile } from './NetworkTile';
-import { alarmChipText, openAlarms } from './useSecurity';
+import { ALARM_MAX_AGE_MS, alarmChipText, openAlarms } from './useSecurity';
 
 const flush = async (ms = 0) => {
   await act(async () => {
@@ -128,4 +128,64 @@ it('the compact chip is a dot and a count, with the words in its name and hover'
   const chip = screen.getByRole('button', { name: '4 network alerts. Show them on Home' });
   expect(chip.textContent).toBe('4');
   expect(chip.querySelector('.alarm-dot')).not.toBeNull();
+});
+
+const hide = (hidden: boolean) => {
+  Object.defineProperty(document, 'hidden', { configurable: true, value: hidden });
+  document.dispatchEvent(new Event('visibilitychange'));
+};
+
+it('after a long hidden spell the dot waits for a new read, never showing the old one', async () => {
+  let release: (() => void) | null = null;
+  let hold = false;
+  mocks.set('wall2_home_security', () => (hold ? new Promise((r) => (release = () => r(sec({ alerts: 2 })))) : sec({ alerts: 2 })));
+  const { container } = render(<Rail />);
+  await flush();
+  expect(dot(container)).toBeTruthy();
+  try {
+    await act(async () => hide(true));
+    await act(async () => {
+      vi.setSystemTime(Date.now() + ALARM_MAX_AGE_MS + 60_000);
+    });
+    hold = true;
+    await act(async () => hide(false));
+    await flush();
+    // The kept read is too old: nothing shows while the new one is on its way.
+    expect(dot(container)).toBeNull();
+    await act(async () => release?.());
+    await flush();
+    expect(dot(container)).toBeTruthy();
+  } finally {
+    Object.defineProperty(document, 'hidden', { configurable: true, value: false });
+  }
+});
+
+it('the shared poll reads nothing while the page is hidden, and stops and restarts with its readers', async () => {
+  let calls = 0;
+  mocks.set('wall2_home_security', () => {
+    calls += 1;
+    return sec();
+  });
+  const first = render(<Rail />);
+  await flush();
+  expect(calls).toBe(1);
+  try {
+    await act(async () => hide(true));
+    await flush(300_000 * 3);
+    expect(calls).toBe(1);
+    await act(async () => hide(false));
+    await flush();
+    expect(calls).toBe(2);
+  } finally {
+    Object.defineProperty(document, 'hidden', { configurable: true, value: false });
+  }
+  first.unmount();
+  await flush(300_000 * 3);
+  expect(calls).toBe(2);
+  const again = render(<Rail />);
+  await flush();
+  expect(calls).toBe(3);
+  expect(dot(again.container)).toBeTruthy();
+  await flush(300_000);
+  expect(calls).toBe(4);
 });

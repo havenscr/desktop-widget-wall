@@ -182,6 +182,18 @@ export const DECK_CLEARANCE = 12;
  */
 export function deckFloorY(): number {
   const wing = zoneEdges(ZONES)[2];
+  const cam = CAMERAS.work;
+  // Worked out once for a camera and wing (design pixels, so the window size does not change it).
+  const key = `${cam.az0}|${cam.ppd}|${cam.hy}|${cam.vex}|${wing.left}|${wing.right}`;
+  if (floorCache?.key === key) return floorCache.y;
+  const y = floorFor(wing);
+  floorCache = { key, y };
+  return y;
+}
+
+let floorCache: { key: string; y: number } | null = null;
+
+function floorFor(wing: { left: number; right: number }): number {
   let floor = ridgeTopY(CAMERAS.work, wing.left, wing.right) - DECK_CLEARANCE;
   const walk = WALKS.work;
   if (walk.right > wing.left) floor = Math.min(floor, rowEdges()[0].bottom - DECK_CLEARANCE);

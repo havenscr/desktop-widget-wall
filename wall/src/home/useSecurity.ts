@@ -15,9 +15,14 @@ export interface SecurityState {
   now: number;
   /** Counts finished security attempts, good or failed. */
   attempts: number;
+  /** When the last good read landed (the clock above), or null before one. */
+  readAt: number | null;
 }
 
-const initial = (): SecurityState => ({ status: 'loading', summary: null, now: clock(), attempts: 0 });
+/** A good read older than this is never raised outside Home (two polls missed, and a minute). */
+export const ALARM_MAX_AGE_MS = 2 * REFRESH_MS + 60_000;
+
+const initial = (): SecurityState => ({ status: 'loading', summary: null, now: clock(), attempts: 0, readAt: null });
 
 /**
  * The one shared security read. The rail's alarm dot, Home's network card, Work's and
@@ -46,7 +51,7 @@ async function refresh(): Promise<void> {
   try {
     const next = await invoke<SecuritySummary>('wall2_home_security');
     if (mine !== epoch) return;
-    useSecurityFeed.setState({ summary: next, status: 'ready' });
+    useSecurityFeed.setState({ summary: next, status: 'ready', readAt: clock() });
   } catch (e) {
     if (mine !== epoch) return;
     const text = e instanceof Error ? e.message : String(e);
@@ -61,6 +66,9 @@ async function refresh(): Promise<void> {
 
 function watch(): void {
   watching += 1;
+  // Back on screen: the clock moves on at once, so a read kept from before the page hid is
+  // judged by its real age until the new read lands.
+  useSecurityFeed.setState({ now: clock() });
   if (watching === 1) {
     poll = setInterval(() => void refresh(), REFRESH_MS);
     tick = setInterval(() => useSecurityFeed.setState({ now: clock() }), 30_000);
@@ -114,11 +122,14 @@ export function useSecurity(): SecurityState {
 /**
  * The number of open network alerts to raise outside Home, or 0. Only from a current good
  * read: nothing while loading, not set up, after a failed read, or when the home app says
- * its scan is stale or it cannot reach the firewall data.
+ * its scan is stale or it cannot reach the firewall data, nor from a read older than
+ * `ALARM_MAX_AGE_MS` (after the page was hidden a long time, until the new read lands).
  */
-export function openAlarms(s: Pick<SecurityState, 'status' | 'summary'>): number {
+export function openAlarms(s: Pick<SecurityState, 'status' | 'summary'> & Partial<Pick<SecurityState, 'now' | 'readAt'>>): number {
   const sum = s.summary;
   if (s.status !== 'ready' || !sum || !sum.reachable || sum.stale) return 0;
+  // Never from a read older than its allowed age (the page was hidden a long time).
+  if (s.now !== undefined && s.readAt !== undefined && (s.readAt === null || s.now - s.readAt > ALARM_MAX_AGE_MS)) return 0;
   const n = sum.alerts;
   return typeof n === 'number' && Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
 }
@@ -130,6 +141,6 @@ export function alarmChipText(n: number): string {
 
 /** Open alarms from the shared read, for the rail and the chips. */
 export function useOpenAlarms(): number {
-  const { status, summary } = useSecurity();
-  return openAlarms({ status, summary });
+  const { status, summary, now, readAt } = useSecurity();
+  return openAlarms({ status, summary, now, readAt });
 }
