@@ -10,7 +10,7 @@ export const MAX_SNOOZES = 20;
 /** The stored question is cut to this many characters. */
 const QUESTION_MAX = 200;
 /** A waiting-since time that moved by more than this is a new request (the helper counts whole seconds). */
-const SINCE_SLACK_MS = 90_000;
+const SINCE_SLACK_MS = 20_000;
 const ID_SHAPE = /^[A-Za-z0-9_-]{1,64}$/;
 
 /** What a snooze remembers about the request it quietened, so a new request ends it. */

@@ -2030,6 +2030,7 @@ mod tests {
                 client_request_id: Some("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee".into()),
                 attempt: 3,
                 elapsed_ms: 4210,
+                probe: None,
             };
             (self.calendar_view(a, s, e), Some(diag))
         }
@@ -2049,10 +2050,14 @@ mod tests {
         assert!(first.starts_with("2026-11-12T"));
         let fields: Vec<&str> = first.split(' ').collect();
         let keys: Vec<&str> = fields[5..].iter().map(|f| f.split('=').next().unwrap()).collect();
-        assert_eq!(keys, ["req", "host", "status", "net", "af", "code", "inner", "request-id", "client-request-id", "attempt", "ms"]);
+        assert_eq!(keys, ["req", "host", "status", "net", "af", "code", "inner", "request-id", "client-request-id", "attempt", "ms", "phase", "resolved", "dns-ms", "v4", "v6"]);
         assert_eq!(&fields[1..5], ["work", "start", "unavailable", "graph-503-UnknownError"]);
         assert!(first.contains("req=next host=graph status=503 net=none af=unknown code=UnknownError inner=none"));
         assert!(first.contains("attempt=3 ms=4210"));
+        // The new fields hold only listed words and digit patterns.
+        let tail = fields[fields.len() - 5..].join(" ");
+        assert!(super::super::netprobe::fields_are_well_formed(&tail), "{tail}");
+        assert!(["unknown", "v4", "v6", "both"].contains(&fields.iter().find_map(|f| f.strip_prefix("af=")).unwrap()));
         assert!(lines[1].contains("req=day"));
         assert!(lines.iter().all(|l| l.len() <= 400 && l.matches('\n').count() == 1));
     }
@@ -2288,6 +2293,7 @@ mod tests {
                 client_request_id: None,
                 attempt: 1,
                 elapsed_ms: 2001,
+                probe: None,
             };
             (self.post(t, f), Some(diag))
         }

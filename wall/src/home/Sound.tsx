@@ -365,9 +365,13 @@ function Live({
   const playAnyway = (sk: Skip) =>
     void run<PlayResult>(
       `play:${sk.key}`,
-      () => invoke<PlayResult>('wall2_sonos_play', sk.confirmed ? { routineKey: sk.key, confirm: true, force: true } : { routineKey: sk.key, force: true }),
+      (c) => invoke<PlayResult>('wall2_sonos_play', c || sk.confirmed ? { routineKey: sk.key, confirm: true, force: true } : { routineKey: sk.key, force: true }),
       `Playing ${sk.name}`,
       {
+        // A forced call the service refuses for needing the loud confirm sent nothing: ask,
+        // and the Yes sends it again with the confirm, so the offer is not used up.
+        ask: `${sk.name} starts at a volume the Sonos service sets. Start it?`,
+        yes: 'Start',
         done: () => {
           setSkip(null);
           changeMark({ key: sk.key, at: clock(), group: null, seen: false });
