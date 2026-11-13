@@ -1,4 +1,4 @@
-import { playerProcesses, squash } from '../music/players';
+import { playerProcesses, procName } from '../music/players';
 import type { DayEvent } from '../ribbon/model';
 import type { WeatherReading } from '../weather/model';
 
@@ -160,7 +160,7 @@ export interface AudioSession {
 export function playingSession(sessions: readonly AudioSession[], source: string | null | undefined): AudioSession | null {
   const want = playerProcesses(source);
   if (want.length === 0) return null;
-  return sessions.find((s) => want.includes(squash(s.name))) ?? null;
+  return sessions.find((s) => want.includes(procName(s.name))) ?? null;
 }
 
 /** A slider value clamped to 0..1 (anything not a number is 0). */

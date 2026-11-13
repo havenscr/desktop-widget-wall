@@ -52,7 +52,8 @@ it('finds the audio session from the id through the alias table, by exact proces
   expect(playingSession(SESSIONS, '308046B0AF4A39CB')?.name).toBe('firefox.exe');
   expect(playingSession(SESSIONS, 'AppleInc.AppleMusicWin_nzyj5cx40ttypa!App')?.name).toBe('AppleMusic.exe');
   expect(playingSession(SESSIONS, 'Microsoft.ZuneMusic_8wekyb3d8bbwe!Microsoft.ZuneMusic')?.name).toBe('Microsoft.Media.Player.exe');
-  expect(playingSession(SESSIONS, 'ExampleVendor.NightPlayer_abc123xyz!App')?.name).toBe('NightPlayer.exe');
+  // An unknown packaged app has no file name to match, so no session (never a guessed one).
+  expect(playingSession(SESSIONS, 'ExampleVendor.NightPlayer_abc123xyz!App')).toBeNull();
   // No part matches: an unrelated app with a similar name is never taken.
   expect(playingSession([session('SpotifyHelper.exe')], 'Spotify.exe')).toBeNull();
   expect(playingSession(SESSIONS, 'AmazonMobileLLC.AmazonMusic_kc6t79cpj4tp0!App')).toBeNull();
@@ -78,4 +79,53 @@ it('gives an unknown dotted process id its cleaned name and the session with exa
   expect(playerName('Foo.Bar.Baz.exe')).toBe('Foo.Bar.Baz');
   expect(playingSession([session('Baz.exe'), session('Foo.Bar.Baz.exe')], 'Foo.Bar.Baz.exe')?.name).toBe('Foo.Bar.Baz.exe');
   expect(playingSession([session('Baz.exe')], 'Foo.Bar.Baz.exe')).toBeNull();
+});
+
+it('never takes a look-alike id for a known player: exact package families and exact process names only', () => {
+  const real = [session('Spotify.exe'), session('chrome.exe'), session('Spot.ify.exe'), session('Spot-ify.exe')];
+  const LOOKALIKES: [string, string][] = [
+    ['Evil.Spotify_x!App', 'Evil.Spotify'],
+    ['Vendor.Foo_x!Spotify', 'Vendor.Foo'],
+    ['Spot.ify.exe', 'Spot.ify.exe'],
+    ['Spot.ify.exe', 'Spot.ify.exe'],
+    ['Evil.Chrome_x!App', 'Evil.Chrome'],
+  ];
+  for (const [id, name] of LOOKALIKES) {
+    expect(playerName(id), id).toBe(name);
+    expect(playerProcesses(id), id).not.toContain('spotify');
+    expect(playerProcesses(id), id).not.toContain('chrome');
+    const s = playingSession(real, id);
+    expect(s?.name === 'Spotify.exe' || s?.name === 'chrome.exe', id).toBe(false);
+  }
+  // A process id gets only the session with exactly its own file name.
+  expect(playingSession(real, 'Spot.ify.exe')?.name).toBe('Spot.ify.exe');
+  expect(playingSession(real, 'Spot-ify.exe')?.name).toBe('Spot-ify.exe');
+  expect(playingSession(real, 'Evil.Spotify_x!App')).toBeNull();
+  expect(playingSession(real, 'Vendor.Foo_x!Spotify')).toBeNull();
+});
+
+it('keeps the real forms: desktop and store Spotify, Edge, Chrome, Firefox', () => {
+  const real = [session('Spotify.exe'), session('msedge.exe'), session('chrome.exe'), session('firefox.exe')];
+  const FORMS: [string, string, string][] = [
+    ['Spotify.exe', 'Spotify', 'Spotify.exe'],
+    ['SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify', 'Spotify', 'Spotify.exe'],
+    ['MSEdge', 'Edge', 'msedge.exe'],
+    ['Microsoft.MicrosoftEdge.Stable_8wekyb3d8bbwe!App', 'Edge', 'msedge.exe'],
+    ['Chrome', 'Chrome', 'chrome.exe'],
+    ['chrome.exe', 'Chrome', 'chrome.exe'],
+    ['308046B0AF4A39CB', 'Firefox', 'firefox.exe'],
+    [String.raw`C:\Program Files\Mozilla Firefox\firefox.exe`, 'Firefox', 'firefox.exe'],
+  ];
+  for (const [id, name, proc] of FORMS) {
+    expect(playerName(id), id).toBe(name);
+    expect(playingSession(real, id)?.name, id).toBe(proc);
+  }
+});
+
+it('takes Music.UI.exe as Groove Music on purpose, and the ZuneMusic package as Media Player', () => {
+  expect(playerName('Music.UI.exe')).toBe('Groove Music');
+  expect(playerName('Microsoft.ZuneMusic_8wekyb3d8bbwe!Microsoft.ZuneMusic')).toBe('Media Player');
+  // No punctuation is stripped: "MusicUI.exe" is its own app.
+  expect(playerName('MusicUI.exe')).toBe('Music UI');
+  expect(playingSession([session('Music.UI.exe')], 'MusicUI.exe')).toBeNull();
 });
