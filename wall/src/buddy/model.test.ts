@@ -34,7 +34,30 @@ import {
   type Presence,
   type WattPlace,
 } from './model';
-import { SPRITES, pixelColor, type Pose } from './sprites';
+import { allLines } from './lines';
+import { COSMETICS } from './pet';
+import {
+  BUBBLE,
+  REACT_S,
+  atClover,
+  bodyBox,
+  bubbleSize,
+  cloverBox,
+  cloverHitBox,
+  markHitBox,
+  placeCard,
+  createBox,
+  createBubblePlace,
+  createMind,
+  createPetFrame,
+  markBox,
+  petFrame,
+  placeBubble,
+  wrapLine,
+  type Mind,
+  type ReactKind,
+} from './petFrame';
+import { POSES, SPRITES, pixelColor, type Pose } from './sprites';
 
 const at = (h: number, m = 0) => new Date(2026, 10, 11, h, m);
 const PLACES = Object.keys(WALKS) as WattPlace[];
@@ -135,7 +158,7 @@ const camerasOf = (place: WattPlace): CameraPreset[] => (place === 'home' ? [CAM
 /** The box Watt can reach on a place: the whole walk, every pose, the notes and the z's. */
 function reach(place: WattPlace, camera: CameraPreset): Rect {
   const walk = WALKS[place];
-  const poses: Pose[] = ['idle', 'walk', 'sleep'];
+  const poses: readonly Pose[] = POSES;
   let right = 0;
   let top = Infinity;
   const d = createDrift();
@@ -155,7 +178,80 @@ function reach(place: WattPlace, camera: CameraPreset): Rect {
       }
     }
   }
-  return { left: walk.min, right, top, bottom: camera.hy };
+  // Every pet frame: each reaction, each day prop, scarf and cosmetic, at night and napping, both
+  // ways, at both ends of the walk, with the hop at its highest; the amber mark, the hearts (the
+  // notes' drift), every clover stop, and the bubble with every line at both ends.
+  let left = walk.min;
+  let bottom = camera.hy;
+  const f = createPetFrame();
+  const box = createBox();
+  const add = (b: { left: number; top: number; width: number; height: number }) => {
+    left = Math.min(left, b.left);
+    right = Math.max(right, b.left + b.width);
+    top = Math.min(top, b.top);
+    bottom = Math.max(bottom, b.top + b.height);
+  };
+  for (const m of minds()) {
+    for (const night of [false, true]) {
+      for (const t of [0, 30, 61, 200]) {
+        petFrame(walk, place, camera.hy, night, t, true, false, m, f);
+        const y = camera.hy - spriteHeight(f.pose, walk.px);
+        for (const x of [walk.min, walk.max]) {
+          for (const dir of [1, -1] as const) {
+            bodyBox(f, dir, walk.px, x, y - f.lift, box);
+            add(box);
+          }
+          if (f.mark) {
+            add(markBox(walk, x, y, spriteWidth(f.pose, walk.px), box));
+            // Its 32 px click box too.
+            add(markHitBox(walk, camera.hy, markBox(walk, x, y, spriteWidth(f.pose, walk.px)), box));
+          }
+        }
+      }
+    }
+  }
+  for (let stop = 0; stop < 8; stop++) {
+    add(cloverBox(walk, camera.hy, stop, box));
+    add(cloverHitBox(walk, camera.hy, cloverBox(walk, camera.hy, stop), box));
+  }
+  for (const line of allLines()) {
+    const lines = wrapLine(line, walk.bubbleW);
+    const size = bubbleSize(lines);
+    for (const pose of POSES) {
+      const w = spriteWidth(pose, walk.px);
+      const y = camera.hy - spriteHeight(pose, walk.px);
+      for (let x = walk.min; x <= walk.max; x += 5) {
+        const b = placeBubble(walk, camera.hy, x, y, w, size.width, size.height);
+        add({ left: b.left, top: b.top, width: b.width, height: b.height + BUBBLE.tail });
+        // The bubble never covers her.
+        expect(b.left + b.width <= x - 2 * walk.px || b.left >= x + w + 2 * walk.px, `${place} bubble over Watt at ${x}`).toBe(true);
+      }
+    }
+  }
+  return { left, right, top, bottom };
+}
+
+/** A spread of minds: every reaction part way through, every prop source, every cosmetic. */
+function minds(): Mind[] {
+  const out: Mind[] = [];
+  const base = () => createMind();
+  const reacts: (ReactKind | null)[] = [null, 'hop', 'pet', 'look', 'wake', 'eat'];
+  const looks: Partial<Mind>[] = [{}, { focus: true }, { rain: true }, { sunny: true }, { cold: true }, { rain: true, cold: true }, { nap: true }, { evening: true }, { sleepy: true }, { waiting: true }];
+  for (const r of reacts) {
+    for (const l of looks) {
+      for (const c of COSMETICS) {
+        for (const k of [0.1, 0.5, 0.9]) {
+          const m = Object.assign(base(), l, { cosmetic: c, waiting: true });
+          if (r) {
+            m.react = r;
+            m.reactT = REACT_S[r] * k;
+          }
+          out.push(m);
+        }
+      }
+    }
+  }
+  return out;
 }
 
 describe('walk ranges and the panels at 2560 x 720', () => {
@@ -172,6 +268,30 @@ describe('walk ranges and the panels at 2560 x 720', () => {
       }
     });
   }
+  it('her hover card covers no card, ribbon, rail or Unwind panel, wherever she stands', () => {
+    for (const place of PLACES) {
+      const walk = WALKS[place];
+      for (const camera of camerasOf(place)) {
+        for (let x = walk.min; x <= walk.max; x += 10) {
+          const c = placeCard(place, walk, x, spriteWidth('idle', walk.px));
+          const r = { left: c.left, right: c.left + c.width, top: c.top, bottom: c.top + c.height };
+          expect(r.left).toBeGreaterThanOrEqual(MAIN_LEFT);
+          expect(r.right).toBeLessThanOrEqual(MAIN_LEFT + MAIN_WIDTH);
+          for (const panel of panels(place)) expect(overlaps(r, panel), `${place} card over ${JSON.stringify(panel)}`).toBe(false);
+          // And never over her.
+          const me = { left: x, right: x + spriteWidth('idle', walk.px) + 2 * walk.px, top: camera.hy - spriteHeight('idle', walk.px) - 2 * walk.px, bottom: camera.hy };
+          expect(overlaps(r, me), `${place} card over Watt`).toBe(false);
+        }
+      }
+    }
+  });
+  it('the mark and clover click boxes are pointer sized', () => {
+    const walk = WALKS.unwind;
+    expect(markHitBox(walk, 505, markBox(walk, 450, 433, 108)).width).toBe(32);
+    const c = cloverHitBox(walk, 505, cloverBox(walk, 505, 3));
+    expect(c.width).toBeGreaterThanOrEqual(24);
+    expect(c.top + c.height).toBeLessThanOrEqual(505);
+  });
   it('on the ribbon places Watt stands in the band over the horizon (feet on hy 582)', () => {
     for (const place of ['work', 'home', 'meet'] as const) {
       const box = reach(place, CAMERAS[place]);
@@ -392,13 +512,18 @@ describe('moving between places', () => {
     expect(p).toMatchObject({ place: null, opacity: 0 });
   });
 
-  it('reuses its records: 400 steps change the same presence, frame, drift and clock objects', () => {
+  it('reuses its records: 400 steps change the same presence, frame, drift, clock, pet frame and box objects', () => {
     const p = createPresence();
     const f = createFrame();
     const d = createDrift();
     const w = createWander();
     const clock = createClock();
     const walk = WALKS.home;
+    const mind = createMind();
+    const pf = createPetFrame();
+    const bp = createBubblePlace();
+    const box = createBox();
+    const hit = createBox();
     for (let i = 0; i < 400; i++) {
       const ms = at(14).getTime() + i * 50;
       expect(readClock(clock, ms)).toBe(clock);
@@ -406,6 +531,16 @@ describe('moving between places', () => {
       expect(buddyFrame(walk, clock.night, p.since, true, false, f)).toBe(f);
       expect(wanderAt(walk, p.since, w)).toBe(w);
       expect(driftAt('note', walk, f.x, 522, 90, 0, (i % 20) / 20, d)).toBe(d);
+      // The pet frame and its boxes are reused the same way.
+      mind.react = i % 3 === 0 ? 'hop' : null;
+      mind.reactT = (i % 10) / 20;
+      expect(petFrame(walk, 'home', 582, clock.night, p.since, true, false, mind, pf)).toBe(pf);
+      expect(placeBubble(walk, 582, pf.x, 522, 90, 200, 29, bp)).toBe(bp);
+      expect(markBox(walk, pf.x, 522, 90, box)).toBe(box);
+      expect(cloverBox(walk, 582, i, box)).toBe(box);
+      expect(cloverHitBox(walk, 582, box, hit)).toBe(hit);
+      // The clover arrival check reuses the wander record it is given.
+      expect(typeof atClover(walk, p.since, i % 8, w)).toBe('boolean');
     }
     expect(p.opacity).toBe(1);
   });
@@ -476,6 +611,12 @@ describe('sprites', () => {
         expect(row).toHaveLength(map[0].length);
         expect(row).toMatch(/^[.wfe\-pl]+$/);
       }
+    }
+  });
+  it('every pose keeps the sizes: 18 wide, 12 tall (sleep 8)', () => {
+    for (const pose of POSES) {
+      expect(SPRITES[pose][0]).toHaveLength(18);
+      expect(SPRITES[pose]).toHaveLength(pose === 'sleep' ? 8 : 12);
     }
   });
   it('sleep equals the concept map exactly', () => {
