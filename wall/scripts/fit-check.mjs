@@ -166,6 +166,12 @@ const VARIANTS = [
   // Its rows scroll inside it, so the pop-out itself is what must fit.
   { name: 'Home, More pop-out open with many routines', q: home('sonos=heavy&moods=many'), click: '.home .sound-chip.more', checks: ['.home .sound-pop'], viewportOnly: true },
   ...QUIET,
+  // Watt's card (a right-click on him), on Work, Home and Unwind (Meet's horizon glides in real time, which this
+  // frozen check cannot wait for; the overlap test in `buddy/model.test.ts` covers Meet): inside the screen, every button
+  // 32 px tall, every part of it inside the card, and covering no text or control of the place.
+  { name: 'Watt card on Work', q: work('3', '&meet=none'), checks: ['.watt-card'], viewportOnly: true, card: true },
+  { name: 'Watt card on Home', q: home('moods=five'), checks: ['.watt-card'], viewportOnly: true, card: true },
+  { name: 'Watt card on Unwind', q: query({ hz: 'unwind', agents: '3', extra: '' }), checks: ['.watt-card'], viewportOnly: true, card: true },
 ];
 /** Rounding slack for fractional rectangles, in screen pixels. */
 const SLACK = 0.5;
@@ -201,6 +207,12 @@ try {
   const measure = `<script>setTimeout(() => {
     const click = new URLSearchParams(location.search).get('click');
     if (click) document.querySelector(click)?.click();
+    // Watt's card: asked for until it is open (Meet's horizon takes a few seconds to settle first).
+    if (new URLSearchParams(location.search).get('card')) {
+      const ask = () => { if (!document.querySelector('.watt-card')) document.querySelector('.watt-hit')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })); };
+      ask();
+      setInterval(ask, 300);
+    }
   }, 2000);
   setTimeout(() => {
     const sels = new URLSearchParams(location.search).get('checks').split('|');
@@ -238,9 +250,30 @@ try {
       const ems = [...jr.querySelectorAll('.jn em')].map((e) => e.getBoundingClientRect()).sort((a, b) => a.left - b.left);
       return ems.slice(1).flatMap((r, k) => (r.left - ems[k].right < 8 ? ['stage labels on card ' + i + ': gap ' + Math.round((r.left - ems[k].right) * 10) / 10 + ' px between label ' + k + ' and ' + (k + 1)] : []));
     });
-    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps });
+    // Watt's card: button heights, parts outside the card, and text or controls of the place it covers.
+    let wattCard = null;
+    const card = document.querySelector('.watt-card');
+    if (card) {
+      const cr = card.getBoundingClientRect();
+      const heights = [...card.querySelectorAll('button')].map((b) => b.getBoundingClientRect().height);
+      const outside = [...card.querySelectorAll('button, .wc-name, .wc-mood, .wc-today li, .wc-days')].filter((e) => {
+        const r = e.getBoundingClientRect();
+        return r.left < cr.left - 0.5 || r.right > cr.right + 0.5 || r.top < cr.top - 0.5 || r.bottom > cr.bottom + 0.5;
+      }).length;
+      const covered = [];
+      for (const e of document.querySelectorAll('.shell *')) {
+        const own = [...e.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim());
+        if (!own && !e.matches('button, a, input, select, textarea, [role=button], [tabindex]')) continue;
+        const cs = getComputedStyle(e);
+        if (cs.visibility === 'hidden' || cs.display === 'none' || Number(cs.opacity) === 0) continue;
+        const r = e.getBoundingClientRect();
+        if (r.width > 0 && r.height > 0 && hit(r, cr)) covered.push((e.className && e.className.baseVal === undefined ? e.className : e.tagName) + ': ' + (e.textContent || '').trim().slice(0, 24));
+      }
+      wattCard = { heights, outside, covered, buttons: heights.length };
+    }
+    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, wattCard });
     document.body.appendChild(pre);
-  }, 3000);</script>`;
+  }, new URLSearchParams(location.search).get('card') ? 7000 : 3000);</script>`;
   const broken = overflow ? `<style>${OVERFLOWS[overflow]}</style>` : '';
   const page = join(out, 'work.html');
   writeFileSync(page, html.replace('</body>', `${broken}${measure}</body>`));
@@ -249,7 +282,7 @@ try {
   if (overflow) console.log(`deliberate overflow: ${overflow} (${OVERFLOWS[overflow]})`);
   for (const v of overflow ? VARIANTS.slice(0, 1) : VARIANTS) {
     console.log(`${v.name} (${v.q}):`);
-    const url = `${pathToFileURL(page).href}${v.q}&checks=${encodeURIComponent(v.checks.join('|'))}${v.click ? `&click=${encodeURIComponent(v.click)}` : ''}`;
+    const url = `${pathToFileURL(page).href}${v.q}&checks=${encodeURIComponent(v.checks.join('|'))}${v.click ? `&click=${encodeURIComponent(v.click)}` : ''}${v.card ? '&card=1' : ''}`;
     const dom = execFileSync(
       chrome,
       // Headless Chromium keeps 87 px of the window for itself, so 807 gives a 2560 by 720 viewport.
@@ -262,7 +295,17 @@ try {
       process.exit(1);
     }
     const text = m[1].replaceAll('&quot;', '"').replaceAll('&amp;', '&');
-    const { res, page: doc, overlaps, cut, gaps } = JSON.parse(text);
+    const { res, page: doc, overlaps, cut, gaps, wattCard } = JSON.parse(text);
+    if (v.card) {
+      const c = wattCard;
+      const okCard = c !== null && c.buttons >= 13 && Math.min(...c.heights) >= 32 - SLACK && c.outside === 0 && c.covered.length === 0;
+      if (!okCard) failed = true;
+      console.log(
+        c === null
+          ? '  FAIL Watt card did not open'
+          : `  ${okCard ? 'ok  ' : 'FAIL'} Watt card: ${c.buttons} buttons, shortest ${Math.round(Math.min(...c.heights))} px (at least 32), ${c.outside} parts outside the card, covers ${c.covered.length ? c.covered.join('; ') : 'no text or control'}`,
+      );
+    }
     for (const o of overlaps) console.log(`  FAIL overlap: ${o}`);
     for (const c of cut) console.log(`  FAIL ${c}`);
     for (const g of gaps) console.log(`  FAIL ${g}`);

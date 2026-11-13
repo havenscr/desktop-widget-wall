@@ -100,3 +100,46 @@ describe('today on her card', () => {
     expect(todayLines(emptyToday('d'))).toEqual(['Quiet day so far.']);
   });
 });
+
+describe('his Stay, stored', () => {
+  const key = dayKey(at(11));
+  const withStay = (stay: unknown) => JSON.stringify({ ...defaultPet(at(11)), stay });
+  it('reads a whole Stay back', () => {
+    expect(parsePet(withStay({ place: 'unwind', x: 450, date: key }), at(11)).stay).toEqual({ place: 'unwind', x: 450, date: key });
+    expect(defaultPet(at(11)).stay).toBeNull();
+  });
+  it('drops anything that is not whole: wrong types, an unknown place, an x off the stage, a date that is not today, extra junk', () => {
+    for (const bad of [
+      'unwind',
+      7,
+      [],
+      { place: 'zen', x: 450, date: key },
+      { place: 'work', x: '450', date: key },
+      { place: 'work', x: Number.NaN, date: key },
+      { place: 'work', x: -1, date: key },
+      { place: 'work', x: 2561, date: key },
+      { place: 'work', x: 1e308, date: key },
+      { place: 'work', x: 450, date: '2026-11-10' },
+      { place: 'work', x: 450, date: 'x'.repeat(100) },
+      { place: 'work', x: 450 },
+      { x: 450, date: key },
+    ]) {
+      expect(parsePet(withStay(bad), at(11)).stay, JSON.stringify(bad)).toBeNull();
+    }
+    // Only the three fields are kept.
+    expect(Object.keys(parsePet(withStay({ place: 'work', x: 450, date: key, extra: 'z' }), at(11)).stay!).sort()).toEqual(['date', 'place', 'x']);
+  });
+  it('an oversized stored value is ignored whole', () => {
+    expect(parsePet(withStay({ place: 'work', x: 450, date: key, junk: 'j'.repeat(MAX_RAW) }), at(11))).toEqual(defaultPet(at(11)));
+  });
+  it('rolling into a new day clears a Stay from the day before, and keeps one from today', () => {
+    const d = parsePet(withStay({ place: 'home', x: 1600, date: key }), at(11));
+    expect(rollDay(d, at(11, 23)).stay).not.toBeNull();
+    expect(rollDay(d, at(12, 0)).stay).toBeNull();
+  });
+  it('survives counting a pet and rolling within the same day', () => {
+    let d = parsePet(withStay({ place: 'home', x: 1600, date: key }), at(11));
+    d = bump(rollDay(d, at(11, 13)), 'pets', at(11, 14));
+    expect(d.stay).toEqual({ place: 'home', x: 1600, date: key });
+  });
+});
