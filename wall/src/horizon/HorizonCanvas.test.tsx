@@ -6,7 +6,7 @@ import { cloudShiftFor, type CameraPreset } from './cameras';
 import { echoPaths, frameGap, pathContext, recordingContext, stubContext } from './canvasStub';
 import { fitScale, STAGE_HEIGHT, STAGE_WIDTH } from '../stage/fitScale';
 import { usePlaceStore } from '../state/places';
-import { bandHistory, ingestLevels, resetAudio, tickAudio } from '../audio/store';
+import { danceHistory, ingestLevels, resetAudio, tickAudio } from '../audio/store';
 import { useIdle } from '../ui/useIdle';
 import { DANCE_AMP, REST_LOOK, REST_OPACITY, REST_OPACITY_VISUALIZER, REST_PHASE, echoOptions, echoStrength } from './echo';
 import type { HorizonEcho } from './renderer';
@@ -1122,25 +1122,25 @@ describe('the Unwind visualizer', () => {
     expect(draw.mock.lastCall![1].echo!.a).toBeCloseTo(1, 9);
     idleMock.mockImplementation(() => true);
     rerender(<HorizonCanvas now={() => NOON} />);
-    const head = bandHistory().head;
+    const head = danceHistory().head;
     const out: number[] = [];
     for (let ts = 1400; ts <= 2600; ts += 100) {
       act(() => feedBands(2000 + ts, 2000 + ts + 99));
       runFrame(ts);
       out.push(draw.mock.lastCall![1].echo?.a ?? 0);
     }
-    expect(bandHistory().head).toBe(head); // nothing written while idle
+    expect(danceHistory().head).toBe(head); // nothing written while idle
     expect(out[0]).toBeGreaterThan(0); // fades, never pops
     expect(out[0]).toBeLessThan(1);
     expect(draw.mock.lastCall![1]).not.toHaveProperty('echo');
     idleMock.mockImplementation(() => false);
     rerender(<HorizonCanvas now={() => NOON} />);
-    expect(bandHistory().rows).toBe(0); // starts afresh, never from before the pause
+    expect(danceHistory().rows).toBe(0); // starts afresh, never from before the pause
     for (let ts = 2700; ts <= 3900; ts += 100) {
       act(() => feedBands(2000 + ts, 2000 + ts + 99));
       runFrame(ts);
     }
-    expect(bandHistory().rows).toBeGreaterThan(20);
+    expect(danceHistory().rows).toBeGreaterThan(20);
     expect(draw.mock.lastCall![1].echo!.a).toBeCloseTo(1, 9);
   });
 
@@ -1227,11 +1227,11 @@ describe('the Unwind visualizer', () => {
     usePlaceStore.setState({ active: 'unwind' });
     feedBands(0, 2000);
     render(<HorizonCanvas now={() => NOON} />);
-    expect(bandHistory().rows).toBeGreaterThan(30);
+    expect(danceHistory().rows).toBeGreaterThan(30);
     setHidden(true);
     act(() => void document.dispatchEvent(new Event('visibilitychange')));
     setHidden(false);
-    expect(bandHistory().rows).toBe(0);
+    expect(danceHistory().rows).toBe(0);
   });
 
   it('a review URL with ?audio=demo animates (frame loop on) at the frozen camera and sky', () => {

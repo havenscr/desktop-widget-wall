@@ -39,10 +39,10 @@ export const HISTORY_ROWS = HISTORY_HZ * HISTORY_S;
 const ROW_MS = 1000 / HISTORY_HZ;
 
 /**
- * The last `HISTORY_S` seconds of the spectrum for the Unwind echo: `HISTORY_ROWS` rows of
- * `BAND_COUNT` bands, each band smoothed with the levels' attack and release (`smoothStep`).
- * `data` is a ring, row `head` is the newest and `rows` counts the rows written (up to the
- * ring's size). Written in place by `tickAudio`; never allocated after start.
+ * The last `HISTORY_S` seconds of the shaped line heights for the Unwind echo (`stepDance`):
+ * `HISTORY_ROWS` rows of `BAND_COUNT` heights, 0 to 1.8. `data` is a ring, row `head` is the newest
+ * and `rows` counts the rows written (up to the ring's size). Written in place; never allocated
+ * after start.
  */
 export interface BandHistory {
   readonly data: Float32Array;
@@ -50,36 +50,15 @@ export interface BandHistory {
   readonly rows: number;
 }
 
-const history = { data: new Float32Array(HISTORY_ROWS * BAND_COUNT), head: -1, rows: 0 };
-// The shaped line heights (`stepDance`), a second history in step with the first: one row per row.
 const dancing = { data: new Float32Array(HISTORY_ROWS * BAND_COUNT), head: -1, rows: 0 };
 const dance = createDance();
 const danceRaw = new Float32Array(BAND_COUNT);
-const smoothed = new Float32Array(BAND_COUNT);
-/**
- * The calming stage, for the band history only (the levels and the beat detector never see it):
- * a second, slower smoothing over each band (`CALM_SMOOTH_S`), then a direction hold, so that once
- * a band turns from rising to falling or back it may not turn again for `CALM_HOLD_MS`. Together
- * they keep the echo from changing the picture's brightness more than three times a second,
- * however fast the music pumps.
- */
-export const CALM_SMOOTH_S = 0.12;
-export const CALM_HOLD_MS = 170;
-const slow = new Float32Array(BAND_COUNT);
-const calm = new Float32Array(BAND_COUNT);
-const calmDir = new Int8Array(BAND_COUNT);
-const calmTurnAt = new Float64Array(BAND_COUNT).fill(-Infinity);
 let nextRowAt = -Infinity;
 // Rows written since sound was last heard: once a whole ring of silence is in, writing stops.
 let quietRows = 0;
 let historyPaused = false;
 
-/** The band history (a live view; see `BandHistory`). */
-export function bandHistory(): BandHistory {
-  return history;
-}
-
-/** The shaped line heights history (a live view; same ring layout as `bandHistory`, heights 0 to 1.8). */
+/** The shaped line heights history (a live view; see `BandHistory`). */
 export function danceHistory(): BandHistory {
   return dancing;
 }
@@ -89,46 +68,38 @@ export function danceKick(): number {
   return dance.kick;
 }
 
-/** Empty the band history (the page was hidden: its old spectrum must not replay on return). */
-export function clearBandHistory(): void {
+/** Empty the history (the page was hidden: its old spectrum must not replay on return). */
+export function clearDanceHistory(): void {
   clearHistory();
 }
 
 function clearHistory(): void {
-  history.data.fill(0);
-  history.head = -1;
-  history.rows = 0;
   dancing.data.fill(0);
   dancing.head = -1;
   dancing.rows = 0;
   clearDance(dance);
-  smoothed.fill(0);
-  slow.fill(0);
-  calm.fill(0);
-  calmDir.fill(0);
-  calmTurnAt.fill(-Infinity);
   nextRowAt = -Infinity;
   quietRows = HISTORY_ROWS;
 }
 
 /**
- * Stop (true) or restart (false) the band history. While stopped nothing is written (the
- * display is idle or off, so nobody sees it); restarting clears it, so the echo never shows
- * a spectrum from before the pause.
+ * Stop (true) or restart (false) the history. While stopped nothing is written (the display is
+ * idle or off, so nobody sees it); restarting clears it, so the echo never shows a spectrum from
+ * before the pause.
  */
-export function pauseBandHistory(paused: boolean): void {
+export function pauseDanceHistory(paused: boolean): void {
   if (paused === historyPaused) return;
   historyPaused = paused;
   if (!paused) clearHistory();
 }
 
 /**
- * Smooth the bands toward the newest frame (zeros while silent) and write rows at
- * `HISTORY_HZ` up to `now`. After a gap (a hidden page, a pause) it starts again at `now`
- * rather than filling the gap. When the music stops the rows release to zero, so the lines
- * settle outward over the history's span; then writing stops until sound returns.
+ * Write shaped rows at `HISTORY_HZ` up to `now`, from the newest bands (zeros while silent). After
+ * a gap (a hidden page, a pause) it starts again at `now` rather than filling the gap. When the
+ * music stops the rows fall to zero, so the lines settle outward over the history's span; then
+ * writing stops until sound returns.
  */
-function advanceHistory(now: number, dt: number, playing: boolean): void {
+function advanceHistory(now: number, playing: boolean): void {
   if (historyPaused) return;
   if (playing) quietRows = 0;
   else if (quietRows >= HISTORY_ROWS) {
@@ -136,31 +107,12 @@ function advanceHistory(now: number, dt: number, playing: boolean): void {
     if (dance.peak !== 0.1 || dance.kick !== 0) clearDance(dance);
     return;
   }
-  const k = 1 - Math.exp(-Math.max(0, dt) / CALM_SMOOTH_S);
-  for (let i = 0; i < BAND_COUNT; i++) {
-    smoothed[i] = smoothStep(smoothed[i], playing ? bands[i] : 0, dt);
-    slow[i] += (smoothed[i] - slow[i]) * k;
-    if (Math.abs(slow[i] - smoothed[i]) < 0.005) slow[i] = smoothed[i];
-    const delta = slow[i] - calm[i];
-    if (delta === 0) continue;
-    const dir = delta > 0 ? 1 : -1;
-    if (dir !== calmDir[i]) {
-      // A turn: allowed only once the last turn is `CALM_HOLD_MS` old; until then the band holds still.
-      if (now - calmTurnAt[i] < CALM_HOLD_MS) continue;
-      calmDir[i] = dir;
-      calmTurnAt[i] = now;
-    }
-    calm[i] = slow[i];
-  }
   if (now - nextRowAt > 250) nextRowAt = now;
   while (now >= nextRowAt) {
-    history.head = (history.head + 1) % HISTORY_ROWS;
-    history.data.set(calm, history.head * BAND_COUNT);
-    if (history.rows < HISTORY_ROWS) history.rows++;
+    dancing.head = (dancing.head + 1) % HISTORY_ROWS;
     if (playing) for (let i = 0; i < BAND_COUNT; i++) danceRaw[i] = bands[i];
     else danceRaw.fill(0);
-    dancing.head = history.head;
-    stepDance(dance, danceRaw, 1 / HISTORY_HZ, dancing.data, history.head * BAND_COUNT);
+    stepDance(dance, danceRaw, 1 / HISTORY_HZ, dancing.data, dancing.head * BAND_COUNT);
     if (dancing.rows < HISTORY_ROWS) dancing.rows++;
     if (!playing) quietRows++;
     nextRowAt += ROW_MS;
@@ -195,7 +147,7 @@ export function tickAudio(now: number): void {
   const dt = lastTickAt === null ? 0 : Math.min(0.25, Math.max(0, (now - lastTickAt) / 1000));
   lastTickAt = now;
   const playing = now - lastSoundAt <= SILENCE_MS;
-  advanceHistory(now, dt, playing);
+  advanceHistory(now, playing);
   if (!playing) {
     // Past the silence deadline the levels are zero at once, as in the old visualizer.
     target = { bass: 0, mid: 0, high: 0 };

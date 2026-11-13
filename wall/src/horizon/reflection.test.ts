@@ -87,6 +87,7 @@ describe('drawReflection', () => {
     const sizeSets = vi.fn();
     for (let k = 0; k < 20; k++) drawReflection(r, m.ctx, 2560, 720, 396, 1, 0.8, make);
     expect(made).toHaveLength(1);
+    expect(made[0].log.filter((l) => l.startsWith('linear('))).toHaveLength(1); // the fade gradient is made once, not per frame
     const c = made[0].canvas;
     Object.defineProperty(c, 'width', { get: () => 2560, set: sizeSets });
     drawReflection(r, m.ctx, 2560, 720, 396, 1, 0.8, make);

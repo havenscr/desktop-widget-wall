@@ -40,7 +40,8 @@ const SWING = 0.01;
  */
 const LIMITS = {
   // Measured before the dance: demo 11 swings (1 a second) and 22.3 px, stress 12 (1) and 14.1 px, settle 7 (1) and 19.8 px.
-  // Measured with it: demo 62 (6) and 52.4 px, stress 194 (12) and 23.5 px, settle 33 (6) and 52.4 px.
+  // Measured with the dance and its turn hold (`DANCE_TURN_HOLD_S`): demo 72 (7) and 52.4 px, stress 164 (13) and 24.1 px, settle 43 (7) and 52.4 px.
+  // Without the hold: demo 62 (6) and 52.4 px, stress 194 (12) and 23.5 px, settle 33 (6) and 52.4 px.
   'mode=demo': { most: 7, line: 60 },
   'mode=stress': { most: 14, line: 28 },
   'mode=settle': { most: 7, line: 60 },

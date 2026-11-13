@@ -5,7 +5,7 @@ import { wantsDemo } from '../audio/capture';
 import { STAGE_HEIGHT, STAGE_WIDTH, fitScale } from '../stage/fitScale';
 import { usePlaceStore } from '../state/places';
 import { REFLECT, createReflection, drawReflection, reflectionAlpha } from './reflection';
-import { audioBands, audioBeats, clearBandHistory, danceKick, pauseBandHistory, useAudioStore } from '../audio/store';
+import { audioBands, audioBeats, clearDanceHistory, danceKick, pauseDanceHistory, useAudioStore } from '../audio/store';
 import { loudness, smoothStep } from '../audio/model';
 import { CAMERAS, HOME_MORNING, MOON, cameraFor, cloudShiftFor, glideCamera, localDay, settled, startGlide, stepGlide, type CameraPreset, type Glide } from './cameras';
 import {
@@ -57,9 +57,9 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
   const idleRef = useRef(idle);
   useEffect(() => {
     idleRef.current = idle;
-    pauseBandHistory(idle);
+    pauseDanceHistory(idle);
   }, [idle]);
-  useEffect(() => () => pauseBandHistory(false), []);
+  useEffect(() => () => pauseDanceHistory(false), []);
   const glide = useRef<Glide>(settled(cameraFor(review?.place ?? place ?? 'work', review ? review.ms : now())));
   const repaint = useRef<() => void>(() => {});
   const first = useRef(true);
@@ -263,7 +263,7 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
         clearGridPulse(pulse.current);
         grid.current = null;
         // And the echo's spectrum: 7 seconds of it would otherwise replay across the lines on return.
-        clearBandHistory();
+        clearDanceHistory();
       }
     };
     document.addEventListener('visibilitychange', onHide);

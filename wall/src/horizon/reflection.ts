@@ -19,10 +19,13 @@ export const REFLECT_ALPHA = 0.8;
 export interface Reflection {
   canvas: HTMLCanvasElement | null;
   ctx: CanvasRenderingContext2D | null;
+  /** The fade gradient, made again only when the band height changes. */
+  fade: CanvasGradient | null;
+  fadeH: number;
 }
 
 export function createReflection(): Reflection {
-  return { canvas: null, ctx: null };
+  return { canvas: null, ctx: null, fade: null, fadeH: 0 };
 }
 
 /** The reflection's opacity: `REFLECT_ALPHA` times how much the camera is the visualizer times the echo gate; 0 means draw nothing. */
@@ -38,7 +41,7 @@ export function reflectionAlpha(weight: number, gate: number): number {
  * design pixel. Returns false when nothing was drawn (no opacity or no room).
  *
  * The transform is set explicitly (`setTransform`) and restored after: a transform left set by an
- * earlier draw once put the reflection in the sky. Nothing is created per frame but one gradient.
+ * earlier draw once put the reflection in the sky. Nothing is created per frame (the gradient is cached by band height).
  */
 export function drawReflection(
   r: Reflection,
@@ -72,10 +75,14 @@ export function drawReflection(
   x.globalCompositeOperation = 'copy';
   x.drawImage(ctx.canvas, 0, y0 - h, width, h, 0, 0, width, h);
   x.globalCompositeOperation = 'destination-in';
-  const g = x.createLinearGradient(0, 0, 0, h);
-  g.addColorStop(0, 'rgba(0,0,0,0)');
-  g.addColorStop(1, 'rgba(0,0,0,1)');
-  x.fillStyle = g;
+  if (!r.fade || r.fadeH !== h) {
+    const g = x.createLinearGradient(0, 0, 0, h);
+    g.addColorStop(0, 'rgba(0,0,0,0)');
+    g.addColorStop(1, 'rgba(0,0,0,1)');
+    r.fade = g;
+    r.fadeH = h;
+  }
+  x.fillStyle = r.fade;
   x.fillRect(0, 0, width, h);
   x.globalCompositeOperation = 'source-over';
   // Flipped and squashed: the band's bottom (the horizon) lands just under the line, its top at 0.62 of its height below that.

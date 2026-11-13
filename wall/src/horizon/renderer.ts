@@ -249,6 +249,11 @@ const REST_FILL:Record<RestLook,number>={contours:1,levels:1,haze:0,ridge:0,ridg
    A line between the top two blends its level, share and glow into the ridge's by its place, so a drifting line never jumps; at rest the places are whole. */
 const REST_RL_TOP=.9;
 
+/* The dance's edge fade: 1 within 62 percent of the half span from the echo's centre, easing to 0 at the half span (numbers in, number out: no closure per frame). */
+function echoEdge(i:number,cx:number,hs:number){const u=Math.abs(i*2-cx)/hs;return u>=1?0:u<.62?1:1-smooth((u-.62)/.38)}
+/* The displacement mask for sample i (range height c, tallest cmax): the ripple is strongest where the range is tall; with the dance it also reaches the foot and fades toward the echo's edges. */
+function echoMask(c:number,cmax:number,i:number,cx:number,hs:number,dn:number){const m0=Math.min(1,c/(cmax*.5));return dn>0?mix(m0,Math.min(1,.2+c/(cmax*.5))*(.25+.75*echoEdge(i,cx,hs)),dn):m0}
+
 /** Everything `draw` reads. Sizes are design pixels; `scale` maps them to device pixels. */
 export interface HorizonDrawOptions {
   /** Design width (default 2560). */
@@ -354,9 +359,6 @@ export function draw(ctx:CanvasRenderingContext2D,o:HorizonDrawOptions):HorizonD
   const hz=(i:Any,r:Any)=>r?sm(i,r):cr[i];
   /* The dance: how much the camera is the visualizer and the kick. At 0 every number below is today's. */
   const DN=E.dance?clamp(E.dance,0,1):0,SW=E.swell?clamp(E.swell,0,1):0;
-  const edge=(i:Any)=>{const u=Math.abs(i*2-cx)/hs;return u>=1?0:u<.62?1:1-smooth((u-.62)/.38)};
-  /* the displacement mask: the ripple is strongest where the range is tall; with the dance it also reaches the foot and fades toward the echo's edges */
-  const M=(i:Any)=>{const m0=Math.min(1,cr[i]/(cmax*.5));return DN>0?mix(m0,Math.min(1,.2+cr[i]/(cmax*.5))*(.25+.75*edge(i)),DN):m0};
   /* One whole set of n lines at weight wk. A glide blends the line count, so a fractional count draws
      the two whole sets either side crossfaded by its fraction: every line keeps its own place. */
   const set=(n:number,wk:number)=>{
@@ -372,7 +374,7 @@ export function draw(ctx:CanvasRenderingContext2D,o:HorizonDrawOptions):HorizonD
   for(let j=0;j<n;j++){const a=(j+fq)/n,p=1-a,tau=(E.t||0)-a*span,sw=.35+.65*Math.sin(Math.PI*a),pp=Math.pow(p,1.15),r=Math.round(2+a*26),bs=DN>0&&SW>0?1+.2*SW*DN*(1-.45*a):1;
    if(RK>0){const x=clamp((RK-REST_LAG*a)/(1-REST_LAG),0,1),wl=1-(1-x)*(1-x),q=n>1?clamp(1-(a*n-.5)/(n-1),0,1):1,kc=q*(n-1);
     // At rest only the resting shape: the spectrum is not read.
-    const f=wl>=1?(i:Any)=>rh(i,kc,q):(i:Any)=>mix(mix(cr[i],sm(i,r),Math.min(1,a*2.2))*pp*bs+S(Math.min(1,Math.abs(i*2-cx)/hs),tau)*E.amp*sw*M(i),rh(i,kc,q),wl);
+    const f=wl>=1?(i:Any)=>rh(i,kc,q):(i:Any)=>mix(mix(cr[i],sm(i,r),Math.min(1,a*2.2))*pp*bs+S(Math.min(1,Math.abs(i*2-cx)/hs),tau)*E.amp*sw*echoMask(cr[i],cmax,i,cx,hs,DN),rh(i,kc,q),wl);
     const fa=(1-wl*(1-REST_FILL[LK]))*wk;
     if(fa>.002){const col=mixc(mixc(P.far,P.s[3],.12),P.mid,a);layer(f,fa<1?css(col,fa):css(col))}
     // Live opacity eased to the resting one; while settling, lines at either end of the drift fade so none pops.
@@ -381,7 +383,7 @@ export function draw(ctx:CanvasRenderingContext2D,o:HorizonDrawOptions):HorizonD
     if(top*wl>.01&&al>.002)line(f,al*.3*top*wl,lr+4,es);
     if(al>.002)line(f,al,lr,es);
     continue}
-   const f=(i:Any)=>mix(cr[i],sm(i,r),Math.min(1,a*2.2))*pp*bs+S(Math.min(1,Math.abs(i*2-cx)/hs),tau)*E.amp*sw*M(i);
+   const f=(i:Any)=>mix(cr[i],sm(i,r),Math.min(1,a*2.2))*pp*bs+S(Math.min(1,Math.abs(i*2-cx)/hs),tau)*E.amp*sw*echoMask(cr[i],cmax,i,cx,hs,DN);
    layer(f,wk<1?css(mixc(mixc(P.far,P.s[3],.12),P.mid,a),wk):css(mixc(mixc(P.far,P.s[3],.12),P.mid,a)));line(f,E.a*(1-a*a*a)*(tk>0?mix(1,smooth(a*n),tk):1)*wk,lw,es)}};
   set(n0,1-fn);if(fn)set(n0+1,fn)}
  const md=(i:Any)=>prof(TR,TR.mid,az0+i*2/ppd)*k,nr=(i:Any)=>prof(TR,TR.near,az0+i*2/ppd)*k;
