@@ -132,6 +132,14 @@ export const CLICK_LINE_EVERY_N = 3;
 /** A trick's line comes this long after its move has ended, milliseconds; a nap's once he is lying down. */
 export const TRICK_LINE_AFTER_MS = 200;
 export const NAP_LINE_AFTER_MS = 1200;
+/**
+ * The seam for the wall's recording quiet: true while he should sit quietly because the wall is
+ * recording. Today it reads the signal store's `recording`; the recording mode pull request will
+ * export `isQuietForRecording()`, which replaces this body (and nothing else here).
+ */
+export function quietForRecording(): boolean {
+  return useSignalStore.getState().recording;
+}
 /** His menu's height until it has been measured, design pixels. */
 const MENU_H_GUESS = 330;
 /** A meeting this close (milliseconds) makes him look at the clock and say so. */
@@ -975,7 +983,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
       const m = mind.current;
       const c = carry.current;
       if (c.mode !== NONE && c.mode !== SIT) return;
-      if (cardRef.current || m.lie || m.nap || m.focus || q.inCall || useSignalStore.getState().recording) return;
+      if (cardRef.current || m.lie || m.nap || m.focus || q.inCall || quietForRecording()) return;
       if (m.react !== null && m.reactT < reactLength(m)) return;
       const T = tNowRef.current();
       if (T - lastClick.current < CLICK_GAP_S) return;

@@ -154,8 +154,8 @@ function leave(): void {
 }
 
 /** "Try again": one read now, outside the 15 second poll (skipped while a read is running). */
-export function retryAgents(): void {
-  void read();
+export function retryAgents(): Promise<void> {
+  return read();
 }
 
 /** Tests only: forget every answer and stop polling. */

@@ -56,7 +56,7 @@ const PLACES = {
   unwind: { hz: 'unwind' },
   meet: { hz: 'work', screen: 'meet' },
   zen: { hz: 'work', screen: 'zen' },
-  dream: { hz: 'work', screen: 'dream' },
+  dimmed: { hz: 'work', screen: 'dream' },
 };
 const url = (place, at, extra = '') => {
   const p = PLACES[place];
@@ -65,7 +65,11 @@ const url = (place, at, extra = '') => {
   return `hz=${p.hz}&at=${encodeURIComponent(at)}&clock=review${wx}${p.screen ? `&screen=${p.screen}` : ''}${extra ? `&${extra}` : ''}`;
 };
 // `custom`: the state sets a knob beyond the base address (the time of day alone is not one).
-const state = (place, name, extra, at = TYPICAL_AT) => add(place, name, url(place, at, extra), extra !== '');
+// `dimmed` is Zen after it has dimmed (the old Dream screen): listed under Zen as "dimmed" and "dimmed: ...".
+const state = (place, name, extra, at = TYPICAL_AT) => {
+  const dimmed = place === 'dimmed';
+  add(dimmed ? 'zen' : place, dimmed ? (name === 'typical' && extra === '' && at === TYPICAL_AT ? 'dimmed' : `dimmed: ${name}`) : name, url(place, at, extra), extra !== '');
+};
 
 for (const place of Object.keys(PLACES)) {
   state(place, 'sparse', SPARSE);
@@ -80,6 +84,15 @@ state('work', 'one agent waiting', 'agents=ask');
 state('work', 'long strings (fit check set)', 'long=1');
 state('work', 'focus running, long title', 'focus=long');
 state('work', 'music paused', 'media=paused');
+// left wing: PC temperature, previous and next, the round focus ring, keyboard focus
+state('work', 'left wing: playing with temps', '');
+state('work', 'left wing: no pc temp', 'pctemp=none&box=stale');
+state('work', 'left wing: long title', 'media=long');
+state('work', 'left wing: focus running', 'focus=run');
+state('work', 'left wing: focus done', 'focus=done');
+add('work', 'left wing: keyboard focus on the ring', url('work', TYPICAL_AT, 'focus=done'), true, 'kbd:.focus-mini-ring');
+add('work', 'left wing: keyboard focus on a button', url('work', TYPICAL_AT, 'focus=done'), true, 'kbd:.music-mini-btns .rd:nth-child(3)');
+state('work', 'left wing: LLM no reading', 'box=none');
 // The ridgelines rest in every other still (a review frame shows them at rest); these two have music driving them.
 state('work', 'audio demo (lines follow the music)', 'audio=demo');
 state('home', 'audio demo (lines follow the music)', 'audio=demo');
@@ -174,8 +187,8 @@ state('work', 'agents header: twelve sessions, two waiting, an alarm', 'agents=1
 
 // Timeline rows that say they are empty (only when that is known).
 state('work', 'timeline: no meetings today', 'meet=none');
-state('dream', 'one agent waiting', 'agents=ask', TIMES.night);
-state('dream', 'broken: calendar not available', 'meet=down', TIMES.night);
+state('dimmed', 'one agent waiting', 'agents=ask', TIMES.night);
+state('dimmed', 'broken: calendar not available', 'meet=down', TIMES.night);
 state('work', 'timeline: calendar not available', 'meet=signedout');
 state('work', 'timeline: both accounts failing', 'meet=down');
 state('work', 'timeline: one account failing', 'meet=mixed');
@@ -214,6 +227,29 @@ state('unwind', 'watch: settings, one look', `${WM}&wlist=three&wlook=drivein&wp
 state('unwind', 'watch: settings, a look per kind', `${WM}&wlist=many&wplay=2&wsheet=kind`, TIMES.night);
 state('unwind', 'watch: listen with the Video corner', `${WM}&wlist=three&wtab=listen`, TIMES.night);
 state('unwind', 'watch: sparse data, three saved', `${SPARSE}&${WM}&wlist=three&wlook=feather&wplay=0`, TIMES.night);
+// Part 2a: the whole sky and the sun, at night and at noon, with 24 saved, and in the sheet.
+state('unwind', 'watch: whole sky, video playing', `${WM}&wlist=three&wlook=sky&wplay=0`, TIMES.night);
+state('unwind', 'watch: whole sky, bright test picture at noon', `${WM}&wlist=three&wlook=sky&wplay=0&wposter=bright`, TIMES.noon);
+state('unwind', 'watch: whole sky at noon', `${WM}&wlist=three&wlook=sky&wplay=1`, TIMES.noon);
+state('unwind', 'watch: whole sky, 24 saved, long label', `${WM}&wlist=many&wlook=sky&wplay=3`, TIMES.night);
+state('unwind', 'watch: sun, video playing', `${WM}&wlist=three&wlook=sun&wplay=0`, TIMES.night);
+state('unwind', 'watch: sun at noon', `${WM}&wlist=three&wlook=sun&wplay=1`, TIMES.noon);
+state('unwind', 'watch: sun at dusk', `${WM}&wlist=three&wlook=sun&wplay=0`, TIMES.dusk);
+state('unwind', 'watch: whole sky at dusk', `${WM}&wlist=three&wlook=sky&wplay=0`, TIMES.dusk);
+state('unwind', 'watch: sun, 24 saved, Twitch', `${WM}&wlist=many&wlook=sun&wplay=2`, TIMES.night);
+state('unwind', 'watch: settings, four looks, whole sky chosen', `${WM}&wlist=three&wlook=sky&wplay=0&wsheet=one`, TIMES.night);
+state('unwind', 'watch: settings, four looks per kind', `${WM}&wlist=many&wlook=sun&wplay=0&wsheet=kind`, TIMES.night);
+
+// The Tools drawer: opened on load (`tools=1`), over each place and in its hard states.
+state('work', 'tools: open', 'tools=1');
+state('work', 'tools: account signed out', 'meet=signedout&tools=1');
+state('work', 'tools: sources failing', 'agents=down&weather=stale&tools=1');
+state('work', 'tools: keys refused', 'keys=refused&tools=1');
+state('work', 'tools: no keys file', 'source=default&tools=1');
+state('work', 'tools: Spotify not set up', 'spotify=off&tools=1');
+state('home', 'tools: open', 'tools=1');
+state('unwind', 'tools: open', 'tools=1');
+state('meet', 'tools: open', 'tools=1');
 
 // Meet: the day's meetings.
 state('meet', 'both accounts ok', 'meet=bothok');
@@ -229,9 +265,34 @@ for (const [name, extra] of [
   state('meet', name, extra);
 }
 
-// Zen and Dream: the focus ring and the sleep view.
+// Zen: the focus ring, and the dimmed view it falls into.
 state('zen', 'focus running, long title', 'focus=long');
-state('dream', 'night with audio demo', 'audio=demo', TIMES.night);
+// Zen in the evening with the dim hint, and late at night but not yet quiet (so still bright).
+state('zen', 'evening hint', '', '2026-11-11T20:15:00-08:00');
+state('zen', 'late, not yet quiet', '', '2026-11-11T23:40:00-08:00');
+state('dimmed', 'night with audio demo', 'audio=demo', TIMES.night);
+
+// keys style: keys tinted by kind by day and night, keys that cannot be sent, For you as two
+// key-height plates, long labels, a key under the pointer and one held down, and the Hide
+// screen button grown under the pointer. `hover:` moves the pointer onto an element, `press:`
+// also holds the button down there, `focus:` gives it keyboard focus; a list of steps runs in order.
+const KS_DAY = '2026-11-11T12:10:00-08:00';
+add('work', 'keys style: day', url('work', KS_DAY, 'keys=library&hold=lib-vscode'), true);
+add('work', 'keys style: general set', url('work', KS_DAY, 'keys=general&hold=general'), true);
+add('work', 'keys style: night', url('work', TIMES.night, 'keys=library&hold=lib-vscode'), true);
+add('work', 'keys style: unavailable', url('work', KS_DAY, 'keys=library&hold=lib-excel'), true);
+add('work', 'keys style: unavailable at night', url('work', TIMES.night, 'keys=library&hold=lib-excel'), true);
+add('work', 'keys style: for you two', url('work', KS_DAY, 'agents=ask&keys=typical&hold=foryou&meet=none&net=calm'), true);
+add('work', 'keys style: for you one', url('work', KS_DAY, 'agents=3&keys=typical&hold=foryou&meet=none'), true);
+add('work', 'keys style: for you three, long titles', url('work', KS_DAY, 'long=1&agents=ask&keys=typical&hold=foryou'), true);
+add('work', 'keys style: long labels', url('work', KS_DAY, 'keys=library&hold=lib-vscode&pins=long'), true);
+add('work', 'keys style: hover and pressed', url('work', KS_DAY, 'keys=library&hold=lib-vscode'), true, ['.pin-tile[aria-label="Thirds"]', 'hover:.pin-tile[aria-label="Snip"]']);
+add('work', 'keys style: pressed', url('work', KS_DAY, 'keys=library&hold=lib-vscode'), true, ['.pin-tile[aria-label="Thirds"]', 'press:.keys .key-tile[aria-label="VS Code: terminal"]']);
+add('unwind', 'unwind: hide screen at rest', url('unwind', TYPICAL_AT), true);
+add('unwind', 'unwind: hide screen hover', url('unwind', TYPICAL_AT), true, 'hover:.screens-off');
+// The failure note ("Could not watch input", `hide=fail`) after a click, with the pointer still on the pill, and with keyboard focus.
+add('unwind', 'unwind: hide screen note while hovered', url('unwind', TYPICAL_AT, 'hide=fail'), true, ['.screens-off', 'hover:.screens-off']);
+add('unwind', 'unwind: hide screen note while focused', url('unwind', TYPICAL_AT, 'hide=fail'), true, ['.screens-off', 'focus:.screens-off']);
 
 /**
  * What each state must show, so a knob that silently stops working fails the run:
@@ -252,6 +313,13 @@ const EXPECT = [
   ['work', 'tasks few', ['Review the dashboard draft', '!Order printer paper']],
   ['work', 'tasks heavy', '115 more can wait'],
   ['work', 'usage meters near full', ['Claude 5 h 97%', '94%']],
+  ['work', 'left wing: playing with temps', ['TEMP', '61°', '52°']],
+  ['work', 'left wing: no pc temp', ['TEMP', '\u2013']],
+  ['work', 'left wing: long title', 'An Extremely Long Song Title'],
+  ['work', 'left wing: focus running', 'Review the draft'],
+  ['work', 'left wing: focus done', 'Focus done'],
+  ['work', 'left wing: keyboard focus', 'Focus done'],
+  ['work', 'left wing: LLM no reading', ['LLM', 'no reading']],
   ['work', 'machine numbers at the limit', '104'],
   ['work', 'box offline', 'no reading'],
   ['work', 'broken: helper not set up', 'not set up'],
@@ -336,27 +404,56 @@ const EXPECT = [
   ['unwind', 'watch: settings, a look per kind', ['Videos and playlists', 'Live streams', 'Saved here: 19 YouTube, 5 Twitch']],
   ['unwind', 'watch: listen with the Video corner', ['Video', 'Tokyo Burnout', '!Nothing on']],
   ['unwind', 'watch: sparse data', ['Night drive mix', 'Not playing? Open in browser']],
+  ['unwind', 'watch: whole sky, 24', ['Look: Whole sky', '24 saved', 'Saved for the weekend']],
+  ['unwind', 'watch: whole sky', ['Look: Whole sky', 'Not playing? Open in browser']],
+  ['unwind', 'watch: sun, 24 saved, Twitch', ['Look: The sun', '24 saved', 'Live on the wall']],
+  ['unwind', 'watch: sun', ['Look: The sun', 'Not playing? Open in browser']],
+  ['unwind', 'watch: settings, four looks, whole sky', ['How video is shown', 'Whole sky', 'The sun', 'Drive-in']],
+  ['unwind', 'watch: settings, four looks per kind', ['Videos and playlists', 'Live streams', 'The sun']],
   // Meet
   ['meet', 'sparse', 'Nothing scheduled in the next 24 hours'],
   ['meet', 'heavy', 'Architecture working session'],
-  ['meet', 'both accounts ok', ['Connected', '!Sign in']],
+  ['meet', 'both accounts ok', ['Design review', '!Open Tools', '!Sign in']],
   ['meet', 'one meeting', 'Design review with the platform team'],
-  ['meet', 'broken: one account stale', 'Try again'],
-  ['meet', 'broken: both accounts failing', 'Calendar not available'],
-  ['meet', 'broken: one account failing', 'Network problem'],
-  ['meet', 'broken: calendar signed out', 'Signed out'],
+  ['meet', 'broken: one account stale', ['Design review with the platform team', 'Second calendar not answering.']],
+  ['meet', 'broken: both accounts failing', ['Calendar not available', '2 calendars need attention.', 'Open Tools']],
+  ['meet', 'broken: one account failing', ['Second calendar not answering.', 'Open Tools']],
+  ['meet', 'broken: calendar signed out', ['Calendar not available', '2 calendars need attention.', 'Open Tools']],
   ['meet', 'broken: calendar not set up', 'Calendar is not connected yet'],
   ['meet', 'broken: calendar read fails', 'Calendar unavailable'],
-  ['meet', 'typical', 'Design review with the platform team'],
+  ['meet', 'typical', ['Design review with the platform team', 'Second calendar signed out.', 'Open Tools', 'Weekly planning']],
+  ['meet', 'tools: open', ['Open Tools', 'Keys file', 'Second calendar']],
+  // The Tools drawer, over each place and in each hard state
+  ['work', 'tools: open', ['Accounts', 'Sources', 'Video look', 'Keys file', 'Build 7c9f442']],
+  ['work', 'tools: account signed out', ['Work calendar', 'Second calendar', 'Signed out', 'Sign in']],
+  ['work', 'tools: sources failing', ['Sources', 'never']],
+  ['work', 'tools: keys refused', 'keys.json refused: app 3, key 7'],
+  ['work', 'tools: no keys file', 'No keys.json. Defaults in use'],
+  ['work', 'tools: Spotify not set up', ['Spotify', 'Not set up']],
+  ['home', 'tools: open', ['Accounts', 'Keys file']],
+  ['unwind', 'tools: open', ['Accounts', 'Keys file']],
   // Zen and Dream
   ['zen', 'sparse', ['Breathe in', '!things are waiting']],
   ['zen', 'heavy', 'After this: 3 or more things are waiting'],
   ['zen', 'typical', 'Start', true],
-  ['dream', 'sparse', '!Breathe in'],
-  ['dream', 'heavy', '!Breathe in'],
-  ['dream', 'night with audio demo', '!Breathe in'],
-  ['dream', 'one agent waiting', 'Click anywhere to wake'],
-  ['dream', 'broken: calendar not available', 'Calendar not available'],
+  ['zen', 'evening hint', ['Breathe in', 'Dims by itself after 10 PM and 10 quiet minutes']],
+  ['zen', 'late, not yet quiet', ['Breathe in', 'Dims by itself after 10 PM and 10 quiet minutes']],
+  ['zen', 'dimmed: sparse', '!Breathe in'],
+  ['zen', 'dimmed: heavy', '!Breathe in'],
+  ['zen', 'dimmed: night with audio demo', '!Breathe in'],
+  ['zen', 'dimmed: one agent waiting', 'Click anywhere to wake'],
+  ['zen', 'dimmed: broken: calendar not available', 'Calendar not available'],
+  // keys style
+  ['work', 'keys style: day', ['Command palette', 'Always here']],
+  ['work', 'keys style: general set', 'Now · General'],
+  ['work', 'keys style: night', 'Command palette'],
+  ['work', 'keys style: unavailable', 'Repeat last action'],
+  ['work', 'keys style: for you', 'Now · For you'],
+  ['work', 'keys style: long labels', 'Sonos: play what suits the hour'],
+  ['work', 'keys style: hover and pressed', 'windows arranged'],
+  ['work', 'keys style: pressed', 'windows arranged'],
+  ['unwind', 'unwind: hide screen note', ['Could not watch input', 'Hide screen']],
+  ['unwind', 'unwind: hide screen', 'Hide screen'],
 ];
 
 /**
@@ -573,14 +670,31 @@ async function render(cdp, base, s, file, ctl) {
     await to('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
     await to('Page.navigate', { url: `${base}?${s.query}` });
     await new Promise((r) => setTimeout(r, SETTLE_MS));
-    if (s.click) {
+    for (const step of [s.click ?? []].flat()) {
       // A state shown just after a click (a task tick's Undo window).
-      // `ctx:<selector>` right-clicks (opens the key picker), anything else clicks.
-      const ctx = s.click.startsWith('ctx:');
-      const sel = JSON.stringify(ctx ? s.click.slice(4) : s.click);
-      await to('Runtime.evaluate', {
-        expression: ctx ? `document.querySelector(${sel})?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))` : `document.querySelector(${sel})?.click()`,
-      });
+      // `ctx:<selector>` right-clicks (opens the key picker), `hover:` moves the real pointer onto
+      // the element, `press:` also holds the button down there, `focus:` focuses it, `kbd:` presses
+      // Tab (so focus-visible applies) and then focuses it, anything else clicks.
+      const pointer = /^(hover|press):/.exec(step);
+      if (step.startsWith('kbd:')) {
+        await to('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 });
+        await to('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 });
+        await to('Runtime.evaluate', { expression: `document.querySelector(${JSON.stringify(step.slice(4))})?.focus()` });
+      } else if (step.startsWith('focus:')) {
+        await to('Runtime.evaluate', { expression: `document.querySelector(${JSON.stringify(step.slice(6))})?.focus({ focusVisible: true })` });
+      } else if (pointer) {
+        const sel = JSON.stringify(step.slice(pointer[0].length));
+        const at = await to('Runtime.evaluate', { expression: `(() => { const r = document.querySelector(${sel})?.getBoundingClientRect(); return r ? [r.left + r.width - 12, r.top + r.height / 2] : null; })()`, returnByValue: true });
+        const [x, y] = at.result.value ?? [0, 0];
+        await to('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y });
+        if (pointer[1] === 'press') await to('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 });
+      } else {
+        const ctx = step.startsWith('ctx:');
+        const sel = JSON.stringify(ctx ? step.slice(4) : step);
+        await to('Runtime.evaluate', {
+          expression: ctx ? `document.querySelector(${sel})?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))` : `document.querySelector(${sel})?.click()`,
+        });
+      }
       await new Promise((r) => setTimeout(r, 900));
     }
     const check = await to('Runtime.evaluate', {

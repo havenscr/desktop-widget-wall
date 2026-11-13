@@ -361,7 +361,7 @@ it('lays out the status line, Hide screen and the tabs', async () => {
   render(<Unwind />);
   await flush();
   expect(document.querySelector('.u-line')!.textContent).toBe('Work is put away. 2 agents still running. No agent needs you.');
-  // Hide screen is an icon in the lower right corner (its words show on hover), not beside the line.
+  // Hide screen is an icon alone in the lower right corner, not beside the line.
   expect(document.querySelector('.u-corner [aria-label="Hide screen"]')).not.toBeNull();
   expect(document.querySelector('.u-foot .screens-off')).toBeNull();
   expect(screen.getByRole('tablist', { name: 'Unwind' })).toBeTruthy();

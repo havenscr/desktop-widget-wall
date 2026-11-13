@@ -960,10 +960,14 @@ pub fn wall2_open_link(app: tauri::AppHandle, kind: String) -> Result<(), String
     let url = match kind.as_str() {
         "security" => security_link(&app),
         "portal" => last_portal(),
-        _ => None,
+        fixed => fixed_link(fixed).map(str::to_string),
     }
     .ok_or_else(|| "No such link".to_string())?;
     app.opener().open_url(url, None::<&str>).map_err(|_| "Could not open the link".to_string())
+}
+
+fn fixed_link(kind: &str) -> Option<&'static str> {
+    match kind { "youtube-music" => Some("https://music.youtube.com/"), _ => None }
 }
 
 #[cfg(test)]
@@ -1360,6 +1364,12 @@ mod tests {
         assert!(security_link_from_config(Some(r#"{"homeSecurityUrl": 5}"#)).is_none());
         assert!(security_link_from_config(Some("not json")).is_none());
         assert!(security_link_from_config(None).is_none());
+    }
+
+    #[test]
+    fn youtube_music_link_is_fixed() {
+        assert_eq!(fixed_link("youtube-music"), Some("https://music.youtube.com/"));
+        assert_eq!(fixed_link("other"), None);
     }
 
     #[test]

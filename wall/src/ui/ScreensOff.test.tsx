@@ -49,9 +49,9 @@ it('taps through to the command and shows a pending state until the helper answe
   fireEvent.click(button());
   await flush();
   expect(calls).toContain('wall2_monitors_off');
-  expect(button().getAttribute('aria-label')).toBe('Turning off');
+  expect(button().getAttribute('aria-label')).toBe('Hiding');
   await emit({ active: true });
-  expect(button().getAttribute('aria-label')).toBe('Cancel screens off');
+  expect(button().getAttribute('aria-label')).toBe('Cancel hide');
   expect(button().getAttribute('aria-pressed')).toBe('true');
 });
 
@@ -77,7 +77,7 @@ it('cancels with a second tap', async () => {
   fireEvent.click(button());
   await flush();
   expect(calls.filter((c) => c === 'wall2_monitors_off').length).toBe(1);
-  expect(button().getAttribute('aria-label')).toBe('Cancel screens off'); // no pending look while cancelling
+  expect(button().getAttribute('aria-label')).toBe('Cancel hide'); // no pending look while cancelling
   await emit({ active: false, reason: 'cancelled' });
   expect(button().getAttribute('aria-label')).toBe('Hide screen');
   expect(screen.queryByRole('status')).toBeNull();
@@ -94,14 +94,26 @@ it('says it could not watch input, for 5 seconds', async () => {
   expect(screen.queryByRole('status')).toBeNull();
 });
 
-it('is an icon that shows its words on hover or focus (no tooltip); the words are its accessible name', async () => {
+it('is named Hide screen, with its name shown on hover in place of a tooltip', async () => {
   render(<ScreensOff />);
   await flush();
-  expect(button().getAttribute('title')).toBeNull();
-  expect(button().querySelector('.screens-off-label')!.textContent).toBe('Hide screen');
-  expect(button().querySelector('.screens-off-label')!.getAttribute('aria-hidden')).toBe('true');
+  expect(button().hasAttribute('title')).toBe(false);
   expect(screen.getByRole('button', { name: 'Hide screen' })).toBe(button());
+  expect(button().querySelector('.screens-off-lbl')?.textContent).toBe('Hide screen');
+  fireEvent.click(button(), { detail: 1 });
+  expect(button().querySelector('.screens-off-lbl')?.textContent).toBe('Hiding');
   await emit({ active: true });
-  expect(button().querySelector('.screens-off-label')!.textContent).toBe('Cancel screens off');
-  expect(button().getAttribute('aria-label')).toBe('Cancel screens off');
+  expect(button().hasAttribute('title')).toBe(false);
+  expect(screen.getByRole('button', { name: 'Cancel hide' })).toBe(button());
+  expect(button().querySelector('.screens-off-lbl')?.textContent).toBe('Cancel hide');
+});
+
+it('sends once for a double click', async () => {
+  render(<ScreensOff />);
+  await flush();
+  fireEvent.click(button(), { detail: 1 });
+  fireEvent.click(button(), { detail: 2 });
+  fireEvent.doubleClick(button());
+  await flush();
+  expect(calls.filter((c) => c === 'wall2_monitors_off').length).toBe(1);
 });

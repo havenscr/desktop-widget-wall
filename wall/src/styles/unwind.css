@@ -457,92 +457,86 @@
   }
 }
 
-/* Hide screen: a quiet 36 px icon in the corner that grows to the left on hover or keyboard focus,
-   showing its words in the wall's tooltip look (dark, square corners, a lavender ring). Its box in
-   the layout stays 36 px; the grown pill is drawn over the empty floor to its left. */
-.screens-off-wrap {
-  position: relative;
-  display: flex;
-  align-items: center;
-  width: 36px;
-  height: 36px;
-}
+/* Hide screen: at rest the 36 px icon circle; under the pointer or keyboard focus it grows to
+   the left into a pill with its name (in place of a tooltip). It is anchored at its right
+   edge, so the icon never moves, and the 36 px box it sits in never changes size. */
 .screens-off {
   position: absolute;
   right: 0;
   top: 0;
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  gap: 10px;
-  width: 36px;
   height: 36px;
-  padding: 0 7px;
-  overflow: hidden;
-  white-space: nowrap;
-  border-radius: 0;
+  /* 5 + 22 + 7 + the 1 px border each side: 36 px, with the icon where the grown pill keeps it. */
+  padding: 0 7px 0 5px;
+  border-radius: 18px;
   color: var(--faint);
   opacity: 0.7;
   background: transparent;
-  border: 0;
+  border: 1px solid transparent;
+  font: 500 17px/1 var(--body);
+  white-space: nowrap;
   cursor: pointer;
-  font: 600 16px/1 var(--disp);
-  transition:
-    width 180ms ease-out,
-    opacity 200ms ease,
-    background 200ms ease;
+  transition: opacity 200ms ease, background 200ms ease, border-color 200ms ease, padding 200ms ease, color 200ms ease;
 }
-.screens-off svg {
-  flex: none;
-}
-.screens-off-label {
+.screens-off-lbl {
+  max-width: 0;
+  margin-right: 0;
+  overflow: hidden;
   opacity: 0;
-  transition: opacity 120ms 60ms;
+  transition: max-width 200ms ease, margin-right 200ms ease, opacity 200ms ease;
 }
 .screens-off:hover,
 .screens-off:focus-visible {
-  width: var(--grown, 172px);
+  padding: 0 7px 0 16px;
   opacity: 1;
-  color: #f1ecff;
-  background: rgba(16, 10, 40, 0.97);
-  box-shadow: 0 0 0 2px rgba(220, 211, 251, 0.85);
-  outline: none;
+  color: var(--tx);
+  background: rgba(20, 15, 48, 0.92);
+  border-color: rgba(255, 255, 255, 0.16);
 }
-.screens-off:hover .screens-off-label,
-.screens-off:focus-visible .screens-off-label {
+.screens-off:hover .screens-off-lbl,
+.screens-off:focus-visible .screens-off-lbl {
+  max-width: 160px;
+  margin-right: 10px;
   opacity: 1;
 }
 .screens-off[aria-pressed='true'] {
   color: var(--cyan);
   opacity: 1;
-  --grown: 228px;
+}
+.screens-off:active svg {
+  transform: scale(0.95);
+}
+.screens-off:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: 2px;
 }
 .screens-off[data-pending='true'] {
   opacity: 0.5;
-  --grown: 160px;
 }
-.screens-off:active {
-  transform: scale(0.97);
+.screens-off svg {
+  flex: none;
 }
-.screens-off-wrap:hover .screens-off-note,
-.screens-off-wrap:focus-within .screens-off-note {
-  opacity: 0;
+.screens-off-wrap {
+  position: relative;
+  width: 36px;
+  height: 36px;
 }
-@media (prefers-reduced-motion: reduce) {
-  .screens-off,
-  .screens-off-label {
-    transition: none;
-  }
-}
-/* The failure note sits beside the icon, to its left, so nothing else enters the corner. */
+/* The failure note sits above the button, right-aligned with it, so the pill can grow to the
+   left under the pointer or focus without ever meeting it; nothing else enters the corner. */
 .screens-off-note {
   position: absolute;
-  right: calc(100% + 12px);
-  top: 50%;
-  transform: translateY(-50%);
+  right: 0;
+  bottom: calc(100% + 8px);
   white-space: nowrap;
   font-size: 18px;
   color: var(--faint);
+}
+@media (prefers-reduced-motion: reduce) {
+  .screens-off,
+  .screens-off-lbl {
+    transition: none;
+  }
 }
 
 /* Notes inside the left wing and the idle player. */
@@ -1223,4 +1217,189 @@
   font-size: 19px;
   line-height: 1.35;
   color: var(--dim);
+}
+
+/* Whole sky (approved page, B). The picture covers the sky from the top of the strip to the
+   horizon line, edge to edge, cropped top and bottom like a cover; it fades toward the clock
+   and down into the horizon, so the ridgelines there stay in front. It lies under every
+   control: the main area becomes its own layer group (isolation) and the picture sits at
+   z-index -1 inside it, above the horizon canvas and below the clock, the tabs, the cards and
+   the left block; it takes no pointer at all. Its Look and Open in browser buttons sit apart
+   on the floor (.w-skyui). The picture is dimmed (no see-through, so the moon never shows
+   through) and a dark wash keeps the text on the left readable. */
+.main:has(.w-sky) {
+  isolation: isolate;
+}
+.w-sky {
+  z-index: -1;
+  left: 0;
+  top: -20px;
+  width: 2436px;
+  height: 505px;
+  overflow: hidden;
+  pointer-events: none;
+}
+.w-sky * {
+  pointer-events: none;
+}
+.w-sky .w-screen {
+  filter: brightness(0.9) saturate(1.1);
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 26%, #000 88%, transparent), linear-gradient(180deg, #000 40%, transparent 97%);
+  -webkit-mask-composite: source-in;
+  mask-image: linear-gradient(90deg, transparent, #000 26%, #000 88%, transparent), linear-gradient(180deg, #000 40%, transparent 97%);
+  mask-composite: intersect;
+}
+.w-sky .w-frame {
+  inset: auto;
+  left: 0;
+  top: 50%;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  transform: translateY(-50%);
+}
+.w-scrim {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(90deg, rgba(6, 4, 22, 0.88) 0, rgba(6, 4, 22, 0.88) 40%, rgba(6, 4, 22, 0) 54%),
+    linear-gradient(180deg, rgba(6, 4, 22, 0.3), rgba(6, 4, 22, 0) 24%);
+}
+/* The floor's wash under the whole sky, where frame B draws its blurred spill (stage x 512 to
+   2355, from the horizon down): the page's light colours (amber left, pink in the middle, cyan
+   right) strongest at the horizon line and gone well before the bottom, at the page's 0.3. Still
+   (no animation, no blend mode, no backdrop filter), under every control, taking no pointer. */
+.w-skyspill {
+  position: absolute;
+  z-index: -1;
+  left: 388px;
+  top: 485px;
+  width: 1843px;
+  height: 195px;
+  opacity: 0.3;
+  pointer-events: none;
+  background:
+    radial-gradient(30% 100% at 26% 0, rgba(255, 176, 84, 0.95), transparent 70%),
+    radial-gradient(28% 95% at 78% 0, rgba(84, 214, 255, 0.9), transparent 70%),
+    radial-gradient(24% 70% at 52% 0, rgba(255, 92, 150, 0.6), transparent 75%);
+  -webkit-mask-image: linear-gradient(180deg, #000, transparent 85%);
+  mask-image: linear-gradient(180deg, #000, transparent 85%);
+}
+.w-skyui {
+  position: absolute;
+  left: 1026px;
+  width: 810px;
+  top: 497px;
+}
+.w-skyui .w-under {
+  top: 0;
+}
+.w-skyui .w-look {
+  position: static;
+  opacity: 1;
+}
+/* Over a picture the cards and the tabs need a solid ground. */
+.unwind:has(.w-sky) .u-card {
+  background: rgba(10, 7, 28, 0.97);
+}
+.unwind:has(.w-sky) .u-tabs,
+.unwind:has(.w-sky) .w-gear {
+  background: rgba(10, 7, 28, 0.9);
+}
+
+/* The sun (approved page, C). A 461 px disc whose foot stands 24 px over the horizon line,
+   centred at stage x 1600 so the horizon's moon (stage 1730, 112, radius 44) lies wholly
+   inside it at night: the picture covers the moon, so there is never a second disc,
+   with the page's warm rim and glow, slats cut through its lower part, a halo behind it and a
+   warm streak on the floor. Inside it the 16:9 picture is 821 by 461, so the disc shows its
+   middle 56 percent of the width and the full height, the corners and slats cut away. The
+   box is the halo's (563 px); the disc sits 51 px in. */
+.w-sun {
+  left: 1195px;
+  top: -51px;
+  width: 563px;
+  height: 563px;
+}
+.w-halo {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(255, 150, 96, 0.5), rgba(255, 95, 168, 0.22) 62%, transparent);
+  pointer-events: none;
+}
+.w-sun .w-screen {
+  inset: 51px;
+  border-radius: 50%;
+  overflow: hidden;
+  box-shadow: 0 0 77px rgba(255, 150, 96, 0.45);
+  -webkit-mask-image: linear-gradient(#000 0 60%, transparent 60% 62%, #000 62% 68%, transparent 68% 71%, #000 71% 76%, transparent 76% 80%, #000 80% 84%, transparent 84% 89%, #000 89% 92%, transparent 92% 97%, #000 97%);
+  mask-image: linear-gradient(#000 0 60%, transparent 60% 62%, #000 62% 68%, transparent 68% 71%, #000 71% 76%, transparent 76% 80%, #000 80% 84%, transparent 84% 89%, #000 89% 92%, transparent 92% 97%, #000 97%);
+}
+.w-sun .w-frame {
+  left: -39%;
+  width: 178%;
+}
+.w-streak {
+  position: absolute;
+  left: 153px;
+  top: 536px;
+  width: 256px;
+  height: 170px;
+  filter: blur(36px);
+  opacity: 0.55;
+  background: linear-gradient(180deg, rgba(255, 170, 110, 0.8), rgba(255, 95, 168, 0.25) 60%, transparent);
+  pointer-events: none;
+}
+.w-sun .w-look {
+  right: 150px;
+  top: 120px;
+}
+.w-sun .w-under {
+  top: 548px;
+}
+
+/* The sheet with four looks: four tiles in a row, and per kind each label over a full-width
+   choice of four, so it fits the right wing at 540 px. */
+.w-tiles {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+.w-tile {
+  padding: 8px;
+  font-size: 17px;
+}
+.w-pic {
+  height: 84px;
+}
+.w-pic.sky b {
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 30%;
+  opacity: 0.55;
+}
+.w-pic.sun b {
+  left: 50%;
+  top: 14%;
+  height: 62%;
+  aspect-ratio: 1;
+  transform: translateX(-50%);
+  border-radius: 50%;
+}
+.w-srow {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  padding: 8px 0 10px;
+  font-size: 19px;
+}
+.w-srow .w-seg {
+  width: auto;
+}
+.w-srow .w-seg button {
+  padding: 0 6px;
+  font-size: 16px;
+}
+.w-sheet {
+  gap: 14px;
 }

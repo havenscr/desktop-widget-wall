@@ -33,6 +33,19 @@ Status treats a stored refresh token as signed in. If Spotify has expired that g
 the status changes only after the first library or playback call tries to refresh it.
 The panel must render every Spotify name as plain text, including playlist names from
 other people in search, and must never render those names as markup.
+Library items include bounded subtitles, counts and cover images selected near 300 and
+64 pixels. Track lists use 50 items per page and stop at page 39. Queue reads return at
+most 10 upcoming tracks. Playback reads return no value when Spotify has no active
+session. The YouTube Music action opens the fixed `https://music.youtube.com/` address.
+Track-producing reads send `market=from_token`. A track is unplayable only when
+`is_playable` is present and false, it is restricted or local, or the item is not a
+track; a missing `is_playable` means playable. An unplayable row reaches the web view
+with `playable: false` and `id: null`. Profile, devices and playback state answers are
+capped at 64 KB. Liked, recent, search, queue, playlist and album pages, album metadata,
+and the playlists and albums lists are capped at 512 KB. The signed-in profile is cached
+in memory until sign in or sign out so search and playlist paging reuse it safely.
+When a play request includes a context, that context and its optional offset take
+precedence over the top-level kind and id; the top-level values remain validated.
 
 ## Run, test, build (web)
 
@@ -498,22 +511,27 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
     minutes left, the task label (or "Ready to focus"), and one round button: start,
     pause or resume. Tapping the ring while no session runs opens a sheet with 25, 50,
     Custom and "Start N min"; a session started elsewhere closes the sheet;
-  - **Now playing** (`MusicMini` in `music/MusicBar.tsx`): art, title, artist and one
-    play or pause button, from the same app-wide poll as the music bar;
+  - **Now playing** (`MusicMini` in `music/MusicBar.tsx`): art, title, artist and
+    Previous, Play or Pause, Next (always shown, all disabled when nothing plays; a long
+    title is cut and carries its full text on hover), from the same app-wide poll as the
+    music bar;
   - **Machines** (`wall/src/machines/`, owner vote A, "whisper bars"): a header row
-    (CPU, GPU, RAM) and two thin rows, PC and BOX with the box temperature, from
+    (CPU, GPU, RAM, TEMP) and two thin rows, PC and LLM (the second machine's name is the
+    one constant `BOX_LABEL` in `machines/model.ts`), each with a temperature, from
     `wall2_machines` every 2 seconds while visible (one read at a time, nothing while
     hidden; a read that takes over 5 seconds counts as failed, only the read holding the
     busy flag clears it, and the answer of a superseded read is dropped). Grey by
     default. A number turns amber only after it stays over its limit
-    for 30 seconds (RAM over 90, CPU or GPU over 95, box temperature over 90 degrees);
+    for 30 seconds (RAM over 90, CPU or GPU over 95, either temperature over 90 degrees). The PC's temperature is the graphics card's, read
+    through NVML in Rust (no processor temperature: that needs a kernel driver, which the
+    repository forbids); no NVIDIA card or a failed read shows a dash and keeps the column;
     a dip back under starts the 30 seconds again, and a gap of more than 6 seconds
     between reads (hidden, slow) does too. Stale box numbers never count toward the
-    hold. With no box numbers (null) the BOX row stays, dimmed, and says "no reading", so
+    hold. With no box numbers (null) the LLM row stays, dimmed, and says "no reading", so
     it is clear the row exists; it fills in when the helper answers. It is dimmed when
     `boxStale`. A column with no reading (often the box's GPU) shows a faint empty track
     and no number. Nothing shows when the command fails.
-  - Round buttons in the wing draw at 52 pixels.
+  - Round buttons in the wing (Focus and the three music buttons) share one 44 pixel look, with a round focus ring and no touch padding.
   - Next, Focus and Now playing stack from the top with even air (12 px, 22 px without
     Next); the machines sit on the band's foot. With no meeting to show the rows close up
     under the date and the machines grow (larger numbers and taller rows) into the room
@@ -589,8 +607,9 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
   `media_next`; failures are swallowed. Stopped or unknown shows a quiet
   "Nothing playing".
 - **Settings** (`wall/src/settings/`). `localStorage` key `wall2-settings`, JSON
-  with optional `latitude` and `longitude` (defaults 47.68, -122.21). No settings
-  screen yet.
+  with optional `latitude` and `longitude` (defaults 47.68, -122.21), `zenDimHour` (whole
+  hour 18 to 23, default 22) and `zenDimWaitMin` (whole minutes 1 to 60, default 10). No settings
+  screen yet; Zen shows the two Zen values as a quiet line in the evening.
 - **Browser dev.** `npm run dev` registers mocks for the commands Work calls
   (`src/bridge/devMocks/`, dev server only); in a review still (`?hz=&at=`) the
   meeting and task mocks follow the review's time. Review knobs: `?meet=none` (no
@@ -789,14 +808,13 @@ frame (no ribbon) in the wide zones `470px 1fr 540px`. The parts are in `wall/sr
   line ends with "weather unavailable" in dim text. The Room chips mark the mood that is on
   now (the shared last mood, for three hours), give each a tooltip (with the home feed's
   description when it sends one), and sit in a fixed grid of three columns and two rows; past six moods the sixth cell is a "More" chip and the mood that is on takes the place of an ordinary one (never an extra chip). The volume
-  slider shows its number on hover and while dragging. Hide screen is a quiet 36 px icon in the lower right
-  corner of Unwind that grows to the left on hover or keyboard focus to show its words (no
-  tooltip; the words are also its accessible name: "Hide screen", "Turning off", "Cancel
-  screens off"), drawn in the wall's tooltip look over the empty floor while its box in the
-  layout stays 36 px; "Could not watch input" shows beside it for five seconds.
+  slider shows its number on hover and while dragging. Hide screen is an icon alone (36 px, quiet) in the lower right
+  corner of Unwind; under the pointer or keyboard focus it grows to the left (anchored at its right edge, so the icon
+  stays put) into a pill that reads its name, in place of a tooltip ("Hide screen", "Hiding", "Cancel hide", also its
+  accessible name); a double click sends once; "Could not watch input" shows beside it for five seconds.
   The wind down ring (PR 10) goes between the date line and Tomorrow.
 - **Centre.** The tabs (`Tabs.tsx`): Listen is this view (its tab controls the player
-  panel); Watch switches the centre to video (see "Watch" below); Dream opens Zen straight into Dream (`openDream` in the place store;
+  panel); Watch switches the centre to video (see "Watch" below); Dream opens Zen already dimmed (`openDream` in the place store;
   Zen reads the flag once). Below them the player (`Player.tsx`): 224 px art, the source
   app in pink capitals (the player's name, see below), a 64 px title, the artist, a 520 px progress bar with times
   (advanced locally twice a second between polls while playing and visible, never past
@@ -1053,12 +1071,19 @@ switch sits. Leaving Watch (or Unwind) removes any video.
   `https://www.twitch.tv/<login>` itself. The page never passes an address.
 - **Looks** (`looks.ts`, `Watch.tsx`): `feather` (the video in the sky left of the list, its
   edges masked soft, the picture fully visible, its lower edge fading out before the horizon line so the ridgelines
-  there stay in front, and covering the moon) and `drivein` (a framed screen on two
+  there stay in front, and covering the moon), `sky` (the video fills the sky from the top of
+  the strip to the horizon line, cropped top and bottom, fading toward the clock and into the
+  horizon; it lies under every control and takes no pointer, a dark wash keeps the text on the
+  left at 4.5 to 1 or better, the cards turn nearly opaque, and its Look and Open in browser
+  buttons sit on the floor below it), `sun` (a 461 px disc whose foot stands 24 px over the
+  horizon, centred so it covers the moon, with slats, a warm halo and a streak on the floor; it
+  shows the middle 56 percent of a 16:9 picture's width) and `drivein` (a framed screen on two
   posts standing on the horizon, a soft colour wash on the floor under it; with nothing on, the
   empty screen stands there). The gear beside the tabs opens a sheet over the right wing:
-  one look for everything, or one each for videos and playlists, live streams and Twitch
-  (`wall2-watch-look`, checked on read). The Look button on the video (shown on hover) steps
-  to the next look. Part 2 adds "whole sky" and "the sun" as two more `LOOKS` entries.
+  one look for everything (four picture tiles), or one each for videos and playlists, live
+  streams and Twitch (four choices a row), at 540 px (`wall2-watch-look`, checked on read;
+  values stored before the two new looks still read the same). The Look button on the video
+  (shown on hover) steps through the four.
 - **When video stops** (`stops.ts`, `useStopRules.ts`): leaving Watch or Unwind (Zen and Dream
   included), the page hidden, the display off or Windows locked (`ui/useDisplayDark.ts`, the
   `display-state` half of `useIdle`; input idle never stops a video, since nobody touches the
@@ -1068,7 +1093,8 @@ switch sits. Leaving Watch (or Unwind) removes any video.
 - **Listen**: when something is saved, the album art has a small "Video" corner that
   switches to Watch. Nothing else on Listen changes.
 - **Dev**: `?watch=mock` draws a poster where the frame goes (headless Chromium shows an empty
-  frame) and opens Watch; `?wlist=none|three|many`, `?wlook=feather|drivein`, `?wplay=<n>`,
+  frame) and opens Watch; `?wlist=none|three|many`, `?wlook=feather|sky|sun|drivein`, `?wposter=bright` (a pale test picture, the worst case for
+  text over video), `?wplay=<n>`,
   `?wsheet=one|kind`, `?wtab=listen`. The gallery and the fit check have Watch states.
 
 ## Home feeds (task card and network tile)
@@ -1240,9 +1266,9 @@ Create `meet.json` next to `feeds.json` in Wall 2's app config directory (`%APPD
 
 ### Sign in and sign out
 
-Tap Meet, then "Sign in" on an account. Wall 2 opens the system browser at the Microsoft sign-in page and waits up to 5 minutes on a loopback listener (`127.0.0.1`, a random port). The sign-in uses PKCE (S256) and a random `state`; the listener answers 404 to any other path and 400 to a callback whose `state` is wrong or missing (and keeps waiting), and it closes after the first valid callback, a failed or denied answer, a cancel, or the 5 minute limit. The redirect is `http://localhost:<port>/auth-callback.html`; Microsoft ignores the port for `localhost` redirects, so the registrations the old app already uses accept it. If the browser shows AADSTS50011 (reply URL mismatch), add `http://localhost/auth-callback.html` under "Mobile and desktop applications" in that app registration.
+Open Tools (the rail button at the bottom, on any place), then "Sign in" on an account under Accounts. Wall 2 opens the system browser at the Microsoft sign-in page and waits up to 5 minutes on a loopback listener (`127.0.0.1`, a random port). The sign-in uses PKCE (S256) and a random `state`; the listener answers 404 to any other path and 400 to a callback whose `state` is wrong or missing (and keeps waiting), and it closes after the first valid callback, a failed or denied answer, a cancel, or the 5 minute limit. The redirect is `http://localhost:<port>/auth-callback.html`; Microsoft ignores the port for `localhost` redirects, so the registrations the old app already uses accept it. If the browser shows AADSTS50011 (reply URL mismatch), add `http://localhost/auth-callback.html` under "Mobile and desktop applications" in that app registration.
 
-The only scopes asked for are `offline_access` and `Calendars.Read`. After the first sign-in Wall 2 refreshes silently. "Sign out" deletes the stored token and the cached access token on this machine; it does not call Microsoft. "Cancel" ends a waiting sign-in. A sign-in that Microsoft rejects later (`invalid_grant`, or another refusal such as `consent_required`) shows "Sign in needed". Leaving Meet during a sign-in cancels it. If one account is unavailable, its last meetings and Join buttons stay (with "updated N min ago") until it answers again.
+The only scopes asked for are `offline_access` and `Calendars.Read`. After the first sign-in Wall 2 refreshes silently. "Sign out" deletes the stored token and the cached access token on this machine; it does not call Microsoft. "Cancel" ends a waiting sign-in. A sign-in that Microsoft rejects later (`invalid_grant`, or another refusal such as `consent_required`) shows "Sign in needed". Closing Tools during a sign-in cancels it. If one account is unavailable, its last meetings and Join buttons stay (with "updated N min ago") until it answers again.
 
 ### Where the token lives
 
@@ -1275,7 +1301,7 @@ The list is read when Meet opens and every 5 minutes while Meet is the active pl
 
 ### Why an account is unavailable
 
-An account row shows one plain line ("Microsoft is not answering", "Network problem", "Signed out", "Sign-in expired") and, for a failing account, when it checks next as a relative time ("checking again in 2 min"). The code (one of the fixed shapes below, with a plain reading) and the exact time of the last try are in the row's tooltip, never on its face. A failing row keeps the filled Try again; a signed-out or expired account has a quiet outlined Sign in and the dim line "Meetings on this account will not show." When one account is read and another is not, LATER says "Nothing else on <account>" with a dim line for the other ("<account> not read since 9:40 AM", "is signed out", "is being checked" while it is still being read), and the NEXT card says "may be out of date" whenever any account is not read yet or not fresh. LATER says a bare "Nothing else" only when every account was read fresh. "checking again in N min" counts to the real next read: the earlier of the next fast retry and the next 5 minute poll. The last known meetings are kept per account and only for an account whose read failed; signing an account out (or its sign-in expiring) drops its meetings at once. When every account fails, the last known NEXT card stays, dimmed, with its clock time and "as of <time>" (no countdown) and no Join; the Accounts card carries "Calendar not available" only when there is no last known meeting. Join is filled only for a meeting that is live or starts within 15 minutes; every other Join is quiet and outlined. When Meet is not set up it says "Calendar is not connected yet." with "Setup steps are in the Wall 2 README, section Meet." under it. A code has one of these fixed shapes and nothing else:
+An account row in Tools shows one plain line ("Microsoft is not answering", "Network problem", "Signed out", "Sign-in expired") and, for a failing account, when it checks next as a relative time ("checking again in 2 min"). The code (one of the fixed shapes below, with a plain reading) and the exact time of the last try are in the row's tooltip, never on its face. A failing row has Try again; a signed-out or expired account has the cyan Sign in. Meet itself shows only one amber line in the Next card ("Second calendar signed out. Open Tools"), whose link opens Tools with Accounts ringed for 2 seconds. When one account is read and another is not, LATER says "Nothing else on <account>" with a dim line for the other ("<account> not read since 9:40 AM", "is signed out", "is being checked" while it is still being read), and the NEXT card says "may be out of date" whenever any account is not read yet or not fresh. LATER says a bare "Nothing else" only when every account was read fresh. "checking again in N min" counts to the real next read: the earlier of the next fast retry and the next 5 minute poll. The last known meetings are kept per account and only for an account whose read failed; signing an account out (or its sign-in expiring) drops its meetings at once. When every account fails, the last known NEXT card stays, dimmed, with its clock time and "as of <time>" (no countdown) and no Join; a "Calendar not available" card (with the last good read and the link to Tools) shows only when there is no last known meeting. Join is filled only for a meeting that is live or starts within 15 minutes; every other Join is quiet and outlined. When Meet is not set up it says "Calendar is not connected yet." with "Setup steps are in the Wall 2 README, section Meet." under it. A code has one of these fixed shapes and nothing else:
 
 | Code | Meaning | Shown as |
 | --- | --- | --- |
@@ -1388,10 +1414,10 @@ A key is either a **chord** (keys pressed in the program in front) or a **wall a
 | Action | What it does |
 |---|---|
 | `layout:thirds`, `layout:focus`, `layout:record169`, `layout:zones`, `layout:undo` | The window layouts below, and their Undo. Off, with the reason, when there is no big screen. |
-| `screens-off` | The wall's own Screens off (same command as the Unwind button; says so if they are already off). |
+| `screens-off` | The wall's own Hide screen (same command as the Unwind button; says so if they are already off). |
 | `focus:start`, `focus:25`, `focus:50`, `focus:stop` | The focus timer at its default length, 25 or 50 minutes, and its reset. Refuses a second start. |
 | `lock` | Locks the PC with `LockWorkStation`. Win+L stays a refused chord. |
-| `displays:off` | Asks Windows to put every monitor to sleep (a `SC_MONITORPOWER` broadcast, as the old app does; the one second limit is per window that does not answer, so it runs on its own thread and never holds the send guard); they wake on input. Different from Screens off. |
+| `displays:off` | Asks Windows to put every monitor to sleep (a `SC_MONITORPOWER` broadcast, as the old app does; the one second limit is per window that does not answer, so it runs on its own thread and never holds the send guard); they wake on input. Different from Hide screen. |
 | `mixer` | The existing volume mixer command. |
 | `sonos:pause-all`, `sonos:play-suggested` | The existing Sound commands. A key never bypasses a confirm: a loud routine opens Home and says so. Stale Sound data is refused. |
 | `mood:<id>` | The existing mood command, for a mood id the home app lists. |
@@ -1404,17 +1430,21 @@ Listed in the picker as "coming" and not runnable: `task:add` (needs a write to 
 
 ### Always here
 
-The pin icon beside the heading. Up to five keys that never change by themselves: the owner's pins on this display (local storage `wall2-keys-pins`, validated on read against the library and `keys.json`, anything odd means the defaults; a pin on a `keys.json` key is stored with that key's label and action and is dropped when the file no longer has the same key there), else the keys named in `pinned` in `keys.json`, else **Thirds, Focus, Record 16:9, Snip, Screens off**. After a layout key the heading says "3 windows arranged" (or "2 of 3") with an Undo button for 60 seconds, and the layout key keeps its outline. Right-click a key, or press the ContextMenu key or Shift+F10 on it, to open the picker.
+The pin icon beside the heading. Up to five keys that never change by themselves: the owner's pins on this display (local storage `wall2-keys-pins`, validated on read against the library and `keys.json`, anything odd means the defaults; a pin on a `keys.json` key is stored with that key's label and action and is dropped when the file no longer has the same key there), else the keys named in `pinned` in `keys.json`, else **Thirds, Focus, Record 16:9, Snip, Hide screen**. After a layout key the heading says "3 windows arranged" (or "2 of 3") with an Undo button for 60 seconds, and the layout key keeps its outline. Right-click a key, or press the ContextMenu key or Shift+F10 on it, to open the picker.
 
 **The picker** opens over the two rows' box (never Next three) and runs down over the mountains to just above the day timeline, leaving the 16 px gap the main rows keep (`pickerBottomY` in `keysModel.ts`, measured again when anything above it in the wing changes size; it never covers the timeline or its chips). Search stays at the top and "Reset to defaults" at the bottom; only the list between them scrolls, with the wall's slim scrollbar and a fade at its foot so no row shows cut mid-text. It holds the whole library by group, a search box (label, group and what a key does), the current five marked ("pinned", "this slot"), a click swaps that key into the slot (a key already pinned trades places), "Reset to defaults" at the bottom. Escape (from anywhere while it is open) or a click outside closes it, and the click that closes it does nothing else; the arrow keys move through the rows; rows are 36 px tall, two to a line. Keys marked **check** are shortcuts the owner must confirm on his PC: they are never in a set Auto shows, and the page offers one only once it is pinned. Rust itself accepts any runnable library id (held to its group's programs), so the "only when pinned" rule lives in the page. "coming" rows and shortcuts still to be worked out (the three Power BI ribbon ones) are listed but cannot be pinned. `keys.json` is never written.
 
 ### Now
 
-Heading "Now · <page name>", the pages as dots (up to seven; past that "8 of 12"), previous and next arrows (the wheel over the row steps too) and the Auto switch. The page name always shows whole: when the heading is tight the dots give way to "8 of 12" first, then the For you chip shrinks to a dot and its count. Every key in both rows is the same boxed tile, five to a row (60 px tall, the icon above a label of at most two lines that ends with an ellipsis). On a set's page a key's label drops the group name the page already says ("VS Code: command palette" is "Command palette" on the VS Code page); the full name stays in the hover and the picker. A set with six to eight keys gets a second row only when it fits above the deck's floor; otherwise it shows five at a time ("1/2" by the page name) and the arrows step through them before the next page. The floor (`deckFloorY` in `keysModel.ts`) is a 12 px clearance above the highest point of the mountain ridge under the right wing, worked out from the Work camera (`horizon/ridge.ts`, the renderer's own profile), and above Watt's band where his walk reaches under the wing; no part of the deck goes below it. A key that cannot be sent right now (its set's app is not in front, or a layout with no big screen) keeps its size and stays readable, one step less contrast, and its hover says why. The pages, in stepping order: **For you** (only while something waits), the set for the app in front, the general set, then every other set.
+Heading "Now · <page name>", the pages as dots (up to seven; past that "8 of 12"), previous and next arrows (the wheel over the row steps too) and the Auto switch. The page name always shows whole: when the heading is tight the dots give way to "8 of 12" first, then the For you chip shrinks to a dot and its count. Every key in both rows is the same boxed tile, five to a row (60 px tall, the icon above a label of at most two lines that ends with an ellipsis). On a set's page a key's label drops the group name the page already says ("VS Code: command palette" is "Command palette" on the VS Code page); the full name stays in the hover and the picker. A set with six to eight keys gets a second row only when it fits above the deck's floor; otherwise it shows five at a time ("1/2" by the page name) and the arrows step through them before the next page. The floor (`deckFloorY` in `keysModel.ts`) is a 12 px clearance above the highest point of the mountain ridge under the right wing, worked out from the Work camera (`horizon/ridge.ts`, the renderer's own profile), and above Watt's band where his walk reaches under the wing; no part of the deck goes below it. A key that cannot be sent right now (its set's app is not in front, or a layout with no big screen) keeps its size and label, loses its colour, goes flat with a dashed edge, and its hover says why.
+
+Keys are tinted by kind: a soft wash, an edge and the icon in the kind's colour, a light top line and a dark 2 px foot; hover brightens and glows, pressed sinks 2 px, and the layout key just used has its own ringed look. Window layouts are cyan, capture and recording magenta (Record 16:9 included), focus, timers and tasks violet, app shortcuts and calls mint, agents and OmniGent amber, system, sound and house grey (`--dim`).
+The kind comes from data (`work/keyKind.ts`): a library key by its group (capture keys by id), a wall action by its action, a built-in set's key by its group; a key of the file's own sets by the library key with the same chord (modifier order and case ignored, once the page is given chords; the summary carries none today), else the library key with the same label (case ignored), else its set's rule (the general set grey, an app's set mint). A test holds every library group and wall action to exactly one kind.
+`npm --prefix wall run fit-check` holds every key's top and side edges at 3 to 1 or more against the sky beside them by day and by night, read from a screenshot. A key that cannot be sent carries no kind at all. The pages, in stepping order: **For you** (only while something waits), the set for the app in front, the general set, then every other set.
 
 **Auto** shows the set for the app in front, else the general set. When a NEW "For you" item arrives (never seen, or gone for 10 minutes or more; one that blinks out for a poll is the same item; items already waiting when the row mounts are not new; the swap waits for any press in flight) Auto shows that page for 45 seconds, then goes back to the keys by itself, even if the item still waits. While anything waits and the page is not showing, a small amber chip "For you 3" in the heading jumps to it. Stepping by hand (arrows, dots, wheel, the chip) turns on **Hold**: the row stays on that page until Auto is clicked, and Hold never times out. A held For you page ends when nothing waits any more. A key still goes only to an app its set allows; a held set in the wrong app is refused ("Wrong app in front for ...") and nothing is sent.
 
-**For you** is at most two lines, each an icon, a title, a short reason and one button, with "+N more" in the heading. In this order, each from a store the wall already has, each left out when its source is stale, down or not set up:
+**For you** is at most two plates side by side, each the height of a key (so the Now row is one height on every page): an icon, a title cut with an ellipsis over a short reason, and one button; the full title and reason show on hover. One item leaves the second half empty. "+N more" stays in the heading. A plate takes its item's tone (mint for a meeting or a ready pull request, amber for a waiting agent or an alarm). In this order, each from a store the wall already has, each left out when its source is stale, down or not set up:
 
 1. a meeting that starts within 10 minutes or is live: **Join** (the Meet join command);
 2. an agent waiting on the owner, not snoozed with "Later": the session title and "asks: <question>" when the helper sends one, else "waiting N min": **Open chat** (`wall2_focus_omnigent` with the id);
@@ -1540,6 +1570,20 @@ owner's clicks on the video. As a second guard, for a runtime that does not enfo
 a listener or calls a command. The Rust test `wall2_watch::tests::wall2_policies_refuse_framing`
 holds both policies to `frame-ancestors 'none'` and to exactly the two `frame-src` hosts.
 
+## Tools
+
+The rail's Tools button (pressed while open) opens a drawer over the right third of any place: 806 px wide at x 1734, top 20. Escape, its close button or a click outside close it, and it closes by itself after 2 minutes with no pointer over it. Escape is taken by the drawer (the key press is marked handled, and `fullscreen.ts` ignores an Escape another layer already took), so in fullscreen it closes the drawer and stays fullscreen. While a browser sign-in waits the idle close holds; closing the drawer on purpose during a wait cancels that sign-in (calendar or Spotify) and the next open says "Sign-in cancelled" for a few seconds. The code is in `src/tools/` and `src/styles/tools.css`.
+
+- **Accounts.** Each calendar account from `useMeet(true)` (the same hook Meet uses, reading on any place while the drawer is open) with its state line and Sign in, Sign out or Try again; Spotify from `src/music/spotify.ts` (Not set up, with a hover naming `spotify.json` in the app's config folder, and no button, when it has no `spotify.json`). While a sign-in waits, the row says "Waiting for the browser" and has Cancel. There is no Twitch row: Twitch has no sign-in yet, and a button that does nothing is never drawn. A sign-in or sign-out refreshes Meet and Work's calendar read at once.
+- **Sources.** One row each for Calendar, Tasks, Agents, Home, Sound, Music, Weather and Box: a dot (mint fresh, amber stale or failing, red down or not set up, grey nothing read yet), the last good read as a clock time or "never", the store's own reason on hover, and Retry, which runs that store's existing refresh and stays busy until that read settles (15 seconds at most); a second click while it runs starts nothing. Music's Retry says "Nothing is playing to read" when its poll is not running. The rules are in `src/tools/sources.ts` and use each store's own stale rule: the agents helper's `agentsStale`, Home's alarm age, Sound's two minutes, the weather card's "updated N min ago" age, Music's 2 second poll. Tasks, Sound and Box keep their state inside their hooks, so each hook reports every read to `src/tools/reports.ts` and registers its own refresh while mounted; when no screen has it mounted, Retry (and opening the drawer) reads the same command once. Home here is the home app's security read, which is also what the rail's alarm dot uses.
+- **Video look.** The chips are the Watch looks (`LOOKS` in `src/unwind/watch/looks.ts`) and use the Watch store's `setLooks`: picking one sets one look for everything. When Watch is set to a look per kind no chip is lit and the hint says so. There is no Off, because the Watch store has none.
+- **Keys file.** "keys.json, N keys, read 8:02 AM" counts the keys the file names (its own sets and its pinned keys, not the built-in sets). A refused file shows in amber with the whole reason on hover; no file says "No keys.json. Defaults in use". Reload forgets the shared read and asks `wall2_keys_summary` again. Open calls `wall2_open_keys_file`, which takes no argument: Rust opens `keys.json` in the app config folder with the default editor, or the folder when there is no file yet, and only answers `not-configured` or `failed`. Only the `wall2` window may call it.
+- **Build stamp.** The footer reads `wall2_build_info` as the clock's tooltip does.
+
+What Tools reads that the screens did not: opening it starts the account reads (the same reads Meet makes), reads Tasks, Sound and Box once when no screen has them mounted, and polls the keys file every 2 seconds while it is open (Work's deck already does that).
+
+Review knobs: `?tools=1` opens the drawer on load (`?tools=accounts` rings Accounts) and `?keys=refused` makes `wall2_keys_summary` refuse the file with a long reason. `fit-check` holds the drawer inside x 1700 to 2560 and y 0 to 720, clear of the rail, with no cut text that has no tooltip, and holds Meet's upper right filled in every Meet state (the Later card carries a plain line when there is no list).
+
 ## Fullscreen keys
 
 F11 and Ctrl+F11 toggle true fullscreen; Esc leaves it (only while fullscreen; an Esc pressed during a toggle is queued and applied when it finishes).
@@ -1621,9 +1665,15 @@ the system volume, Do Not Disturb or the focus timer.
   wanders onto it). Nothing is bright. All the text (clock, date, card, status, hint) sits in one layer that drifts by transform alone along a
   closed 30 by 20 px path, one lap in 20 minutes, so no pixel stays lit for hours; under reduced motion it holds one of four points for 7.5 minutes, then
   jumps to the next. The status line and hint are at 40 percent, the card has no frame. Nothing else moves except Watt. Watt sleeps in the corner (the `SheepSvg` sleep pose from `buddy/Watt.tsx`,
-  at x 1226, ground line 688). Dream starts when a session ends (the guide fades out
-  first), or when Zen opens between 9:30 PM and 6:30 AM local time (the same window as
-  Watt's sleep). A click wakes back to Zen; after a wake at night it stays awake
-  until Zen is left and opened again. Leave returns to Work.
+  at x 1226, ground line 688). The dimmed state starts when a session ends (the guide fades out
+  first), or by itself late at night: from 10 PM until 6 AM local time, once the PC has had no
+  input for ten minutes. "Input" is the PC's idle age from `wall2_idle_state` (idle seconds),
+  asked every 10 seconds while Zen is lit, after the dim hour and the page is visible, so typing in
+  another app keeps Zen bright; a click or key on the wall after the question was sent voids that
+  answer. When the command is missing or fails (a browser, dev), the wall's own pointer, wheel and
+  key input is the fallback. The hour (18 to 23) and the wait (1 to 60 minutes) are the
+  `zenDimHour` and `zenDimWaitMin` settings. From 6 PM Zen shows a quiet line under the session controls that says when it dims. A click
+  wakes back to Zen; it dims again only after another quiet wait. Leave returns to Work.
+  `openDream` (Unwind's Dream tab, removed later) opens Zen already dimmed.
 - **Horizon.** While Zen is active the horizon canvas is hidden and not drawn (no frame
   loop, no timer redraw). Leaving resumes it, gliding from the last camera.

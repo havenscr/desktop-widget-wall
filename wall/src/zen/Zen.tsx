@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { IconPlayerPlayFilled, IconX } from '@tabler/icons-react';
 import { Clock } from '../clock/Clock';
+import { invoke } from '../bridge/tauri';
+import { loadSettings } from '../settings/settings';
 import { usePlaceStore } from '../state/places';
 import { visibleRows } from '../tasks/model';
 import { useTasks } from '../tasks/useTasks';
@@ -11,14 +13,19 @@ import {
   SESSION_MINUTES,
   ZEN_VEIL,
   formatLeft,
-  isDreamTime,
+  dimDue,
+  isDimHour,
+  dimHint,
+  showDimHint,
   sessionLabel,
   sessionSecondsLeft,
   waitingLines,
   type SessionMinutes,
 } from './model';
 
-const NIGHT_CHECK_MS = 30_000;
+const DIM_CHECK_MS = 10_000;
+/** Input on the wall that counts as not quiet. */
+const WALL_INPUT_EVENTS = ['pointerdown', 'pointermove', 'wheel', 'keydown'] as const;
 /** The guide fades out over this long before Dream shows. */
 export const GUIDE_FADE_MS = 1200;
 
@@ -55,19 +62,23 @@ function Waiting() {
 
 /**
  * The Zen place: a full-stage view over everything else. Flames, a breathing guide and a short
- * timed session. When a session ends, or when Zen is open at night (9:30 PM to 6:30 AM), it falls
- * into Dream; a click wakes it. Separate from the focus timer and from Do Not Disturb.
+ * timed session. When a session ends it dims to the big thin clock (Dream's look); from 10 PM
+ * (a setting) until 6 AM it also dims by itself after ten quiet minutes (a setting) of PC idle time
+ * (the wall's own input when the system source is unavailable). A click anywhere wakes it, and it dims again only after another quiet wait. Separate
+ * from the focus timer and from Do Not Disturb.
  */
 export function Zen({ nowMs = Date.now }: ZenProps) {
-  // Unwind's Dream tab opens Zen straight into Dream; otherwise Dream only at night.
-  const [dream, setDream] = useState(() => usePlaceStore.getState().zenDream || isDreamTime(new Date(nowMs())));
+  const [{ zenDimHour: dimHour, zenDimWaitMin: dimWaitMin }] = useState(() => loadSettings());
+  const waitMs = dimWaitMin * 60_000;
+  // Unwind's Dream tab opens Zen already dimmed; otherwise Zen starts bright.
+  const [dream, setDream] = useState(() => usePlaceStore.getState().zenDream);
   useEffect(() => {
     usePlaceStore.getState().takeZenDream();
   }, []);
   const [minutes, setMinutes] = useState<SessionMinutes>(5);
   const [startedAt, setStartedAt] = useState<number | null>(null);
-  // Set when a tap woke Zen at night, so the night rule does not put it straight back to sleep.
-  const woke = useRef(false);
+  // The last input on the wall (pointer, wheel or keys); the quiet wait counts from here.
+  const lastInput = useRef(nowMs());
   const [ending, setEnding] = useState(false);
   const clockNow = useCallback(() => new Date(nowMs()), [nowMs]);
   const running = startedAt !== null;
@@ -76,11 +87,11 @@ export function Zen({ nowMs = Date.now }: ZenProps) {
   const start = useCallback(() => setStartedAt(nowMs()), [nowMs]);
   const stop = useCallback(() => setStartedAt(null), []);
   const wake = useCallback(() => {
-    woke.current = true;
+    lastInput.current = nowMs();
     setEnding(false);
     setStartedAt(null);
     setDream(false);
-  }, []);
+  }, [nowMs]);
 
   // Session end: the guide fades out and the view goes to Dream.
   useEffect(() => {
@@ -105,13 +116,47 @@ export function Zen({ nowMs = Date.now }: ZenProps) {
     return () => window.clearTimeout(id);
   }, [ending]);
 
-  // Night starting while Zen is open.
+  // Any input on the wall restarts the quiet wait.
   useEffect(() => {
+    const seen = () => {
+      lastInput.current = nowMs();
+    };
+    for (const e of WALL_INPUT_EVENTS) window.addEventListener(e, seen, { passive: true, capture: true });
+    return () => {
+      for (const e of WALL_INPUT_EVENTS) window.removeEventListener(e, seen, { capture: true });
+    };
+  }, [nowMs]);
+
+  // Late and quiet: dim by itself. Quiet is the PC's idle age (`wall2_idle_state`, in seconds), asked at most
+  // every 10 s and only while Zen is lit (not dimmed), after the dim hour, with the page visible. When that command is
+  // missing or fails, the wall's own input (the listeners above) is the fallback.
+  useEffect(() => {
+    let live = true;
+    let busy = false;
     const id = window.setInterval(() => {
-      if (!woke.current && startedAt === null && !ending && isDreamTime(new Date(nowMs()))) setDream(true);
-    }, NIGHT_CHECK_MS);
-    return () => window.clearInterval(id);
-  }, [startedAt, ending, nowMs]);
+      if (dream || startedAt !== null || ending || busy || document.hidden) return;
+      if (!isDimHour(new Date(nowMs()), dimHour)) return;
+      busy = true;
+      const asked = nowMs();
+      invoke<{ idleSecs?: number }>('wall2_idle_state')
+        .then(
+          (s) => {
+            // A click or key on the wall after the question was sent makes the answer stale.
+            if (live && lastInput.current <= asked && typeof s.idleSecs === 'number' && s.idleSecs * 1000 >= waitMs) setDream(true);
+          },
+          () => {
+            if (live && dimDue(new Date(nowMs()), lastInput.current, dimHour, waitMs)) setDream(true);
+          },
+        )
+        .finally(() => {
+          busy = false;
+        });
+    }, DIM_CHECK_MS);
+    return () => {
+      live = false;
+      window.clearInterval(id);
+    };
+  }, [dream, startedAt, ending, nowMs, dimHour, waitMs]);
 
   // Zen covers the rail, so keep keyboard focus inside it. Focus follows the controls: the tap target
   // when a session starts (Start unmounts), Start when the picker returns, the first control otherwise.
@@ -177,6 +222,7 @@ export function Zen({ nowMs = Date.now }: ZenProps) {
                 </button>
               </div>
             )}
+            {!running && showDimHint(clockNow()) && <div className="zen-dimhint">{dimHint(dimHour, dimWaitMin)}</div>}
           </div>
           {running && !ending && <div className="zen-hint">Click anywhere to end early</div>}
           <div className="zen-br">

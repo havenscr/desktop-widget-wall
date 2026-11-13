@@ -5,15 +5,13 @@ import { usePlaceStore } from '../state/places';
 
 beforeEach(() => usePlaceStore.setState({ active: 'work' }));
 
-it('has five enabled named buttons and two disabled', () => {
+it('has six enabled named buttons and one disabled', () => {
   render(<Rail />);
-  for (const name of ['Work', 'Home', 'Unwind', 'Meet', 'Zen']) {
+  for (const name of ['Work', 'Home', 'Unwind', 'Meet', 'Zen', 'Tools']) {
     const b = screen.getByRole('button', { name }) as HTMLButtonElement;
     expect(b.disabled).toBe(false);
   }
-  for (const name of ['On air', 'Tools']) {
-    expect((screen.getByRole('button', { name }) as HTMLButtonElement).disabled).toBe(true);
-  }
+  expect((screen.getByRole('button', { name: 'On air' }) as HTMLButtonElement).disabled).toBe(true);
 });
 
 it('aria-current follows the store', () => {
