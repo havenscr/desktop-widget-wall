@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HorizonCanvas } from './HorizonCanvas';
 import { CAMERAS, HOME_MORNING, drawHorizon } from './index';
 import { cloudShiftFor, type CameraPreset } from './cameras';
-import { echoPaths, frameGap, pathContext, stubContext } from './canvasStub';
+import { echoPaths, frameGap, pathContext, recordingContext, stubContext } from './canvasStub';
 import { fitScale, STAGE_HEIGHT, STAGE_WIDTH } from '../stage/fitScale';
 import { usePlaceStore } from '../state/places';
 import { bandHistory, ingestLevels, resetAudio, tickAudio } from '../audio/store';
@@ -1246,5 +1246,103 @@ describe('the Unwind visualizer', () => {
     expect(o.ms).toBe(Date.parse('2026-11-11T21:42:00-08:00'));
     expect(o.t).toBeGreaterThan(0);
     expect(o.echo).toBeTruthy();
+  });
+});
+
+describe('the lake reflection', () => {
+  /** Give every canvas its own recording context, so the frame's calls and the scratch canvas's are told apart. */
+  function recordCanvases() {
+    const logs = new Map<HTMLCanvasElement, string[]>();
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(function (this: HTMLCanvasElement) {
+      if (!logs.has(this)) {
+        const r = recordingContext();
+        logs.set(this, r.log);
+        (r.ctx as unknown as { canvas: HTMLCanvasElement }).canvas = this;
+        ctxs.set(this, r.ctx);
+      }
+      return ctxs.get(this) as never;
+    } as never);
+    const ctxs = new Map<HTMLCanvasElement, CanvasRenderingContext2D>();
+    return logs;
+  }
+  const mirrored = (log: string[]) => log.filter((l) => l.startsWith('setTransform(1,0,0,-0.62,'));
+  const playUnwind = (n: number) => {
+    setReducedMotion(false);
+    usePlaceStore.setState({ active: 'unwind' });
+    feedBandsFor(0, 2000);
+    render(<HorizonCanvas now={() => NOON} />);
+    for (let k = 1; k <= n; k++) {
+      act(() => feedBandsFor(2000 + k * 100, 2000 + k * 100 + 99));
+      runFrame(k * 100);
+    }
+  };
+  const feedBandsFor = (from: number, to: number) => {
+    for (let t = from; t <= to; t += 33) {
+      ingestLevels({ bass: 0.5, mid: 0.3, high: 0.1, waveform: [0.1], bands: new Array(32).fill(160) }, t);
+      tickAudio(t);
+    }
+  };
+
+  it('on Unwind with lines it draws once a frame: the band above the horizon copied to a scratch canvas, then drawn flipped under the line with an explicit transform, additively', () => {
+    const logs = recordCanvases();
+    playUnwind(6);
+    const { width, scale } = sizes();
+    const [main, scratch] = [...logs.keys()].sort((a, b) => b.width - a.width).map((c) => logs.get(c)!);
+    const hy = CAMERAS.unwind.hy * scale;
+    const h = Math.min(Math.ceil(190 * scale), Math.floor(hy));
+    expect(mirrored(main)).toHaveLength(draw.mock.calls.length); // once for every frame drawn, the first paint included
+    const i = main.findIndex((l) => l.startsWith('setTransform(1,0,0,-0.62,'));
+    expect(main[i]).toBe(`setTransform(1,0,0,-0.62,0,${Math.round((hy + 0.62 * h + 3 * scale) * 1000) / 1000})`);
+    expect(main.slice(i + 1, i + 4)).toEqual(['globalCompositeOperation=lighter', 'globalAlpha=0.8', 'drawImage([],0,0)']);
+    expect(main[i - 1]).toBe('save()');
+    expect(main[i + 4]).toBe('restore()');
+    // The scratch canvas got the band: the horizon row up to 190 design pixels above it.
+    expect(scratch.filter((l) => l.startsWith('drawImage('))).toHaveLength(draw.mock.calls.length);
+    expect(scratch).toContain(`drawImage([],0,${Math.round((hy - h) * 1000) / 1000},${width},${h},0,0,${width},${h})`);
+  });
+
+  it('makes one scratch canvas, ever (two canvases in all: the frame\'s and the scratch one)', () => {
+    const logs = recordCanvases();
+    playUnwind(12);
+    expect(logs.size).toBe(2);
+  });
+
+  it('never draws on Work or Home (weight 0), nor with no lines drawn (an idle display)', () => {
+    for (const place of ['work', 'home'] as const) {
+      const logs = recordCanvases();
+      setReducedMotion(false);
+      usePlaceStore.setState({ active: place });
+      render(<HorizonCanvas now={() => NOON} />);
+      for (let k = 1; k <= 5; k++) runFrame(k * 100);
+      for (const log of logs.values()) expect(mirrored(log)).toHaveLength(0);
+      expect([...logs.values()].flat().some((l) => l.startsWith('drawImage('))).toBe(false);
+      cleanup();
+      vi.restoreAllMocks();
+      frames.clear();
+      rafSpy = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
+        const id = nextId++;
+        frames.set(id, cb);
+        return id;
+      });
+    }
+    // An idle display fades the lines out; once they are gone no reflection is drawn either.
+    const logs = recordCanvases();
+    idleMock.mockImplementation(() => true);
+    playUnwind(30);
+    const main = [...logs.keys()].sort((a, b) => b.width - a.width).map((c) => logs.get(c)!)[0];
+    expect(mirrored(main).length).toBeLessThan(30);
+    const before = mirrored(main).length;
+    for (let k = 31; k <= 33; k++) runFrame(k * 100);
+    expect(mirrored(main)).toHaveLength(before);
+  });
+
+  it('is not drawn while Zen is open (the loop stops)', () => {
+    const logs = recordCanvases();
+    playUnwind(3);
+    const main = [...logs.keys()].sort((a, b) => b.width - a.width).map((c) => logs.get(c)!)[0];
+    act(() => usePlaceStore.getState().setActive('zen'));
+    const n = mirrored(main).length;
+    expect(frames.size).toBe(0);
+    expect(mirrored(main)).toHaveLength(n);
   });
 });

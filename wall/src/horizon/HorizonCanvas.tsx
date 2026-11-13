@@ -4,6 +4,7 @@ import { useIdle } from '../ui/useIdle';
 import { wantsDemo } from '../audio/capture';
 import { STAGE_HEIGHT, STAGE_WIDTH, fitScale } from '../stage/fitScale';
 import { usePlaceStore } from '../state/places';
+import { REFLECT, createReflection, drawReflection, reflectionAlpha } from './reflection';
 import { audioBands, audioBeats, clearBandHistory, danceKick, pauseBandHistory, useAudioStore } from '../audio/store';
 import { loudness, smoothStep } from '../audio/model';
 import { CAMERAS, HOME_MORNING, MOON, cameraFor, cloudShiftFor, glideCamera, localDay, settled, startGlide, stepGlide, type CameraPreset, type Glide } from './cameras';
@@ -21,6 +22,7 @@ import {
   stepEchoGate,
   stepEchoMotion,
   stepLineCount,
+  visualizerWeight,
 } from './echo';
 import { frameDelta, shouldDraw } from './pacing';
 import { clearGridPulse, createGridPulse, stepGridPulse } from './pulse';
@@ -80,6 +82,8 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
   // The echo's clock and the real-band sampler.
   const echoT = useRef(0);
   const sampler = useRef(createEchoSampler());
+  // The scratch canvas for the lake reflection, made on first use.
+  const reflection = useRef(createReflection());
   // Tell Watt (read only) where the camera is going and whether it is moving; cleared on unmount
   // so the signal can never stick on moving.
   const publish = () => publishCamera(glide.current.to, glide.current.progress < 1);
@@ -192,6 +196,11 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
       // goes the moment a glide away starts. The review still and reduced motion jump straight there.
       if (glide.current.progress >= 1 && glide.current.to === CAMERAS.unwind) options.moon = MOON;
       drawHorizon(ctx, options);
+      // The lake mirrors the finished frame on the visualizer camera, only while lines are drawn.
+      if (REFLECT && options.echo) {
+        const open = still ? initialEchoGate(glide.current).value : gate.current.value * awake.current;
+        drawReflection(reflection.current, ctx, width, height, camera.hy, scale, reflectionAlpha(visualizerWeight(camera), open));
+      }
     };
     repaint.current = paint;
 
