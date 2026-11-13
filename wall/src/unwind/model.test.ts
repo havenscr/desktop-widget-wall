@@ -53,7 +53,7 @@ it('finds the first event after the coming midnight, or none', () => {
 
 it('builds the status line from focus and the helper summary', () => {
   const lanes = [{ state: 'working' }, { state: 'blocked' }, { state: 'working' }];
-  expect(statusLine('off', { lanes, yourMove: { total: 0 } })).toBe('Work is put away. 2 agents still running. Nothing needs you.');
+  expect(statusLine('off', { lanes, yourMove: { total: 0 } })).toBe('Work is put away. 2 agents still running. No agent needs you.');
   expect(statusLine('off', { lanes: [{ state: 'working' }], yourMove: { total: 1 } })).toBe('Work is put away. 1 agent still running. One thing needs you.');
   expect(statusLine('on', { lanes: [], yourMove: { total: 3 } })).toBe('Focus is still on. 3 things need you.');
   expect(statusLine('off', null)).toBe('Work is put away.');
@@ -64,7 +64,7 @@ it('leaves out stale helper data, a count that is not a number, and focus before
   expect(statusLine('off', { stale: true, lanes, yourMove: { total: 0 } })).toBe('Work is put away.');
   expect(statusLine('off', { lanes, yourMove: { total: Number.NaN } })).toBe('Work is put away. 1 agent still running.');
   expect(statusLine('off', { lanes: [], yourMove: { total: Infinity } })).toBe('Work is put away.');
-  expect(statusLine('unknown', { lanes, yourMove: { total: 0 } })).toBe('1 agent still running. Nothing needs you.');
+  expect(statusLine('unknown', { lanes, yourMove: { total: 0 } })).toBe('1 agent still running. No agent needs you.');
   expect(statusLine('unknown', null)).toBe('');
 });
 

@@ -96,7 +96,8 @@ it('marks cached Tomorrow data "as of" after a failed refresh and hides it after
   await flush(5 * 60_000 + 10);
   expect(r.container.textContent).toContain('First thing: AE sync at 9:00 as of 9:00 PM');
   await flush(25 * 60_000);
-  expect(r.container.textContent).toBe('');
+  // Too old to show: the spot says so instead of leaving a hole.
+  expect(r.container.textContent).toBe('TomorrowCalendar not available');
   // A good read brings it back without the note.
   fail = false;
   await flush(5 * 60_000);
@@ -345,7 +346,7 @@ it('says nothing about work before the focus store has loaded', async () => {
   mocks.set('wall2_omni_summary', () => ({ lanes: [{ state: 'working' }], yourMove: { total: 0 } }));
   render(<Unwind />);
   await flush();
-  expect(document.querySelector('.u-line')!.textContent).toBe('1 agent still running. Nothing needs you.');
+  expect(document.querySelector('.u-line')!.textContent).toBe('1 agent still running. No agent needs you.');
   expect(screen.queryByText(/Work is put away/)).toBeNull();
 });
 
@@ -355,7 +356,7 @@ it('lays out the status line, Screens off and the tabs', async () => {
   mocks.set('wall2_omni_summary', () => ({ lanes: [{ state: 'working' }, { state: 'working' }, { state: 'review' }], yourMove: { total: 0 } }));
   render(<Unwind />);
   await flush();
-  expect(document.querySelector('.u-line')!.textContent).toBe('Work is put away. 2 agents still running. Nothing needs you.');
+  expect(document.querySelector('.u-line')!.textContent).toBe('Work is put away. 2 agents still running. No agent needs you.');
   // Screens off is an icon alone in the lower right corner, not beside the line.
   expect(document.querySelector('.u-corner [aria-label="Screens off"]')).not.toBeNull();
   expect(document.querySelector('.u-foot .screens-off')).toBeNull();
@@ -390,7 +391,7 @@ it('makes the action parts of the status line chips: running switches to Work, n
   expect(screen.queryByRole('button', { name: 'Work is put away.' })).toBeNull();
 });
 
-it('shows the needs-you part as plain text when links are not available, and no chips when the data is stale', async () => {
+it('shows the needs-you part as a chip that switches to Work when links are not available, and no chips when the data is stale', async () => {
   useFocusStore.setState({ loaded: true });
   mocks.set('get_now_playing', () => ({ playback_status: 'stopped' }));
   let stale = false;
@@ -398,7 +399,10 @@ it('shows the needs-you part as plain text when links are not available, and no 
   const r = render(<Unwind />);
   await flush();
   expect(document.querySelector('.u-line')!.textContent).toBe('Work is put away. One thing needs you.');
-  expect(screen.queryByRole('button', { name: 'One thing needs you.' })).toBeNull();
+  const chip = screen.getByRole('button', { name: 'One thing needs you.' });
+  expect(chip.getAttribute('title')).toBe('Show the agents on Work');
+  fireEvent.click(chip);
+  expect(usePlaceStore.getState().active).toBe('work');
   r.unmount();
   stale = true;
   render(<Unwind />);
@@ -421,4 +425,65 @@ it('falls back to the placeholder when the remembered cover on the idle view fai
   });
   expect(document.querySelector('.u-art img')).toBeNull();
   expect(document.querySelector('.u-art svg')).not.toBeNull();
+});
+
+it('Tomorrow says Calendar not available when no account can be read', async () => {
+  const now = () => Date.parse('2026-11-11T21:42:00-08:00');
+  mocks.set('wall2_meet_day', () => ({ events: [], accounts: [{ state: 'signed-out' }] }));
+  const r = render(<Tomorrow now={now} />);
+  await flush();
+  expect(r.container.textContent).toBe('TomorrowCalendar not available');
+});
+
+it('the date line ends with weather unavailable (dim) when the weather cannot be fetched', async () => {
+  vi.doMock('../weather/useWeather', () => ({ useWeather: () => ({ reading: null, failed: true, now: 0 }) }));
+  vi.resetModules();
+  const { DateLine: Fresh } = await import('./DateLine');
+  const r = render(<Fresh now={() => new Date('2026-11-11T21:42:00-08:00')} />);
+  expect(r.container.textContent).toMatch(/night, weather unavailable$/);
+  expect(r.container.querySelector('.u-asof')).not.toBeNull();
+  vi.doUnmock('../weather/useWeather');
+});
+
+it('the lights chips mark the one on now, give each a hover, and fold past six into More', async () => {
+  localStorage.setItem(LAST_MOOD_KEY, 'm8');
+  localStorage.setItem(LAST_MOOD_AT_KEY, JSON.stringify({ id: 'm8', at: Date.now() - 60_000 }));
+  mocks.set(
+    'wall2_moods',
+    () => Array.from({ length: 9 }, (_, i) => ({ id: `m${i + 1}`, label: `Mood ${i + 1}`, ...(i === 0 ? { description: 'warm and low' } : {}) })),
+  );
+  render(<RoomCard />);
+  await flush();
+  // First six, plus the one that is on now so it never hides; the rest wait behind More.
+  expect(document.querySelectorAll('.u-chip:not(.u-more)')).toHaveLength(7);
+  expect(screen.getByRole('button', { name: 'Mood 8' }).getAttribute('aria-pressed')).toBe('true');
+  expect(screen.getByRole('button', { name: 'Mood 8' }).title).toContain('on now');
+  expect(screen.getByRole('button', { name: 'Mood 1' }).title).toBe('Mood 1: warm and low');
+  expect(screen.getByRole('button', { name: 'Mood 2' }).title).toBe('Mood 2');
+  expect(screen.queryByRole('button', { name: 'Mood 9' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'More' }));
+  expect(document.querySelectorAll('.u-chip:not(.u-more)')).toHaveLength(9);
+  expect(screen.getByRole('button', { name: 'Fewer' })).toBeTruthy();
+});
+
+it('marks nothing when the home feed has no mood that is on now', async () => {
+  mocks.set('wall2_moods', () => [{ id: 'a', label: 'A' }]);
+  render(<RoomCard />);
+  await flush();
+  expect(document.querySelector('.u-chip.on')).toBeNull();
+  expect(document.querySelector('.u-more')).toBeNull();
+});
+
+it('the volume slider shows its number on hover and while dragging', async () => {
+  mocks.set('get_audio_sessions', () => spotify(42));
+  render(<Volume source="Spotify" label="Spotify" />);
+  await flush();
+  const wrap = document.querySelector('.u-vol') as HTMLElement;
+  expect(wrap.title).toBe('Volume 42%');
+  expect(document.querySelector('.u-vol-n')!.textContent).toBe('42');
+  expect(wrap.className).not.toContain('drag');
+  fireEvent.pointerDown(screen.getByLabelText('Spotify volume'));
+  expect(wrap.className).toContain('drag');
+  fireEvent.pointerUp(window);
+  expect(wrap.className).not.toContain('drag');
 });

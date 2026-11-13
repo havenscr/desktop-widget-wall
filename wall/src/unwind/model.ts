@@ -104,12 +104,31 @@ export type StatusPart =
   | { kind: 'running'; text: string }
   | { kind: 'needs'; text: string; open: string | null };
 
+/** A weather part that is missing: the date line then ends with this, in dim text. */
+export const WEATHER_UNAVAILABLE = 'weather unavailable';
+
+/** The volume as a whole percent for the hover and drag readout. */
+export function volumePercent(v: number): number {
+  return Math.round(clampVolume(v) * 100);
+}
+
+/** How many mood chips show before "More" (two rows in the Room card). */
+export const ROOM_COLLAPSED_CHIPS = 6;
+
+/** The chips to show: all when expanded or few; otherwise the first few, plus the mood that is on now so it never hides. */
+export function visibleMoods<T extends { id: string }>(moods: readonly T[], on: string | null, expanded: boolean): T[] {
+  if (expanded || moods.length <= ROOM_COLLAPSED_CHIPS) return [...moods];
+  const first = moods.slice(0, ROOM_COLLAPSED_CHIPS);
+  const extra = on ? moods.slice(ROOM_COLLAPSED_CHIPS).find((m) => m.id === on) : undefined;
+  return extra ? [...first, extra] : first;
+}
+
 /**
- * "Work is put away. 2 agents still running. Nothing needs you." as parts. The first
+ * "Work is put away. 2 agents still running. No agent needs you." as parts. The first
  * sentence needs the focus store loaded: a session running or paused says "Focus is still
  * on.", and before it has loaded nothing is said about it. The agent and needs-you parts
  * need a current helper summary: without the helper, or when it says its data is stale,
- * they are left out, and so is a needs-you count that is not a number. "Nothing needs
+ * they are left out, and so is a needs-you count that is not a number. "No agent needs
  * you." is plain text; "N things need you" opens the first waiting chat when links are
  * available (the summary's first your-move session, else the first lane that waits).
  */
@@ -123,7 +142,7 @@ export function statusParts(focus: FocusSeen, summary: StatusSummary | null): St
     const total = summary.yourMove.total;
     if (typeof total === 'number' && Number.isFinite(total) && total >= 0) {
       const asks = Math.floor(total);
-      if (asks === 0) parts.push({ kind: 'text', text: 'Nothing needs you.' });
+      if (asks === 0) parts.push({ kind: 'text', text: 'No agent needs you.' });
       else {
         const id = summary.yourMove.first?.sessionId || summary.lanes.find((l) => l.waiting || l.state === 'blocked')?.id || null;
         parts.push({ kind: 'needs', text: asks === 1 ? 'One thing needs you.' : `${asks} things need you.`, open: summary.linksAvailable === true && id ? id : null });
