@@ -223,6 +223,25 @@ pub(crate) fn blocked_chord(steps: &[Step]) -> bool {
     steps.iter().any(|st| (st.mods & WIN != 0 && st.key == Some(b'L' as u16)) || (st.mods & CTRL != 0 && st.mods & ALT != 0 && st.key == Some(0x2E)))
 }
 
+/// The volume and media virtual keys: VolumeMute, VolumeDown, VolumeUp, NextTrack, PrevTrack,
+/// PlayPause.
+const GLOBAL_KEYS: [u16; 6] = [0xAD, 0xAE, 0xAF, 0xB0, 0xB1, 0xB3];
+
+/// Whether a chord is exactly one of the volume or media keys, alone (no modifier, one step).
+/// These act on the whole system, so they need no program in front and raise no window.
+pub(crate) fn is_global_chord(steps: &[Step]) -> bool {
+    matches!(steps, [Step { mods: 0, key: Some(vk) }] if GLOBAL_KEYS.contains(vk))
+}
+
+/// What a chord send must do first: Ok(true) to check the target and bring it forward, Ok(false)
+/// to send at once (a global key), or the refusal.
+pub(crate) fn plan_target(app: &AppDef, steps: &[Step], remembered: Option<&Remembered>, live: &Live) -> Result<bool, Refusal> {
+    if is_global_chord(steps) {
+        return Ok(false);
+    }
+    check_target(app, remembered, live).map(|_| true)
+}
+
 /// A chord in the fixed vocabulary that a program can send; None otherwise (see
 /// `parse_steps` for the vocabulary rules and `blocked_chord` for the refused ones).
 pub(crate) fn parse_chord(text: &str) -> Option<Vec<Step>> {
@@ -971,7 +990,7 @@ mod win {
         match action {
             KeyAction::Chord(steps) => send(set, steps).map(|_| None),
             KeyAction::Wall(WallAction::Lock) => system_call(lock).map(|_| None),
-            KeyAction::Wall(WallAction::DisplaysOff) => system_call(displays_off).map(|_| None),
+            KeyAction::Wall(WallAction::DisplaysOff) => detach(displays_off).map(|_| None),
             KeyAction::Wall(a) => Ok(outcome(a)),
         }
     }
@@ -986,13 +1005,27 @@ mod win {
         }
     }
 
+    /// Run a system call on its own short-lived thread and answer at once, without holding the
+    /// send guard, so no other key answers "busy" while a slow window delays the broadcast. Ok
+    /// when the thread started.
+    fn detach(call: fn() -> bool) -> Result<(), Refusal> {
+        std::thread::Builder::new().name("wall2-keys-system".into()).spawn(move || {
+            let _ = call();
+        })
+        .map(|_| ())
+        .map_err(|_| Refusal::Failed)
+    }
+
     /// Lock the PC through the system's own call.
     fn lock() -> bool {
         unsafe { windows::Win32::System::Shutdown::LockWorkStation().is_ok() }
     }
 
     /// Ask Windows to put every monitor to sleep (SC_MONITORPOWER, 2); they wake on input. A
-    /// bounded broadcast, so one hung window cannot hold this thread.
+    /// broadcast through `SendMessageTimeoutW`: the one second limit is per window that does not
+    /// answer, not in total, which is why it runs detached (`detach`) and never holds the guard.
+    /// It is a broadcast on purpose: a message to the wall's own window can be swallowed by the
+    /// window toolkit.
     fn displays_off() -> bool {
         use windows::Win32::Foundation::{LPARAM, WPARAM};
         use windows::Win32::UI::WindowsAndMessaging::{SendMessageTimeoutW, HWND_BROADCAST, SC_MONITORPOWER, SMTO_ABORTIFHUNG, WM_SYSCOMMAND};
@@ -1006,10 +1039,14 @@ mod win {
     fn send(app: &AppDef, steps: &[Step]) -> Result<(), Refusal> {
         let _busy = try_begin(&SENDING).ok_or(Refusal::Busy)?;
         let remembered = current_for_send();
-        check_target(app, remembered.as_ref(), &remembered.as_ref().map(look).unwrap_or_default())?;
-        let target = remembered.as_ref().map(|r| r.hwnd).ok_or(Refusal::NoApp)?;
-        if !foreground_is(target) && !bring_forward(target) {
-            return Err(Refusal::NotForward);
+        let needs_target = plan_target(app, steps, remembered.as_ref(), &remembered.as_ref().map(look).unwrap_or_default())?;
+        // A global key (volume, media) has no target: it is sent at once, nothing is raised, and
+        // the front window is not compared before each step.
+        let target = if needs_target { Some(remembered.as_ref().map(|r| r.hwnd).ok_or(Refusal::NoApp)?) } else { None };
+        if let Some(t) = target {
+            if !foreground_is(t) && !bring_forward(t) {
+                return Err(Refusal::NotForward);
+            }
         }
         // One step at a time: the front window must still be the target before each step,
         // and anything held is released if a step fails.
@@ -1024,7 +1061,7 @@ mod win {
                         return Err(Refusal::Failed);
                     }
                     std::thread::sleep(Duration::from_millis(STEP_GAP_MS));
-                    if !foreground_is(target) {
+                    if target.is_some_and(|t| !foreground_is(t)) {
                         return Err(Refusal::NotForward);
                     }
                     sent += 1; // the gap itself
@@ -1556,7 +1593,7 @@ mod tests {
         }
     }
 
-    // ---- wall actions, pins, the library ------------------------------------------------
+    // Section: wall actions, pins, the library
 
     #[test]
     fn a_key_may_carry_a_wall_action_instead_of_a_chord_and_never_both() {
@@ -1616,12 +1653,12 @@ mod tests {
     fn built_in_sets_are_added_after_the_files_and_the_file_wins() {
         let merged = with_builtin_sets(parse_config(DEFAULT_CONFIG).unwrap());
         let ids: Vec<&str> = merged.apps.iter().map(|a| a.id.as_str()).collect();
-        assert_eq!(ids, vec!["lib-general", "lib-teams", "lib-zoom", "lib-code", "lib-browser", "lib-mail", "lib-recording", "lib-office"]);
+        assert_eq!(ids, vec!["lib-general", "lib-teams", "lib-zoom", "lib-agents", "lib-vscode", "lib-browser", "lib-mail", "lib-recording", "lib-powerbi", "lib-excel"]);
         assert!(merged.apps[0].fallback && merged.apps[0].is_general());
         assert_eq!(auto_set(&merged, r"C:\x\notepad.exe").map(|a| a.id.as_str()), Some("lib-general"));
         assert_eq!(auto_set(&merged, r"C:\Apps\ms-teams.exe").map(|a| a.id.as_str()), Some("lib-teams"));
-        assert_eq!(auto_set(&merged, r"C:\Apps\EXCEL.EXE").map(|a| a.id.as_str()), Some("lib-office"));
-        assert_eq!(auto_set(&merged, r"C:\Apps\Code.exe").map(|a| a.id.as_str()), Some("lib-code"));
+        assert_eq!(auto_set(&merged, r"C:\Apps\EXCEL.EXE").map(|a| a.id.as_str()), Some("lib-excel"));
+        assert_eq!(auto_set(&merged, r"C:\Apps\Code.exe").map(|a| a.id.as_str()), Some("lib-vscode"));
         // A file with its own general set and its own set for Excel keeps both; the built-ins
         // that would overlap are left out and the built-in General is not a fallback.
         let file = with_builtin_sets(
@@ -1629,7 +1666,7 @@ mod tests {
         );
         assert_eq!(auto_set(&file, r"C:\x\notepad.exe").map(|a| a.id.as_str()), Some("mine"));
         assert_eq!(auto_set(&file, r"C:\x\excel.exe").map(|a| a.id.as_str()), Some("xl"));
-        assert!(file.apps.iter().all(|a| a.id != "lib-office"), "overlapping built-in set dropped");
+        assert!(file.apps.iter().all(|a| a.id != "lib-excel"), "overlapping built-in set dropped");
         assert!(file.apps.iter().any(|a| a.id == "lib-general" && !a.fallback));
         for a in &merged.apps {
             assert!(!a.keys.is_empty() && a.keys.len() <= MAX_KEYS, "{}", a.id);
@@ -1698,5 +1735,59 @@ mod tests {
         let set: HashSet<&&str> = ICON_NAMES.iter().collect();
         assert_eq!(set.len(), ICON_NAMES.len());
         assert!(ICON_NAMES.iter().all(|n| valid_id(n, 24)));
+    }
+
+    // Section: global keys
+
+    #[test]
+    fn only_the_fixed_volume_and_media_keys_alone_are_global() {
+        for g in ["VolumeUp", "VolumeDown", "VolumeMute", "PlayPause", "NextTrack", "PrevTrack"] {
+            assert!(is_global_chord(&chord(g)), "{g}");
+        }
+        for not in ["Ctrl+VolumeUp", "VolumeUp, VolumeUp", "Win+D", "A", "F24", "Shift+PlayPause", "Win+Shift+S", "Alt+="] {
+            assert!(!is_global_chord(&chord(not)), "{not}");
+        }
+    }
+
+    #[test]
+    fn a_global_key_needs_no_program_and_is_not_stopped_by_an_elevated_one() {
+        let (set, _) = resolve_library("volume-up").unwrap();
+        let steps = chord("VolumeUp");
+        // Nothing remembered.
+        assert_eq!(plan_target(&set, &steps, None, &Live::default()), Ok(false));
+        // An elevated program remembered.
+        let r = rem(r"C:\x\taskmgr.exe");
+        let live = Live { elevated: true, ..good_live() };
+        assert_eq!(plan_target(&set, &steps, Some(&r), &live), Ok(false));
+        // Any other key still needs its target, and is still refused for the same reasons.
+        let snip = chord("Win+Shift+S");
+        assert_eq!(plan_target(&set, &snip, None, &Live::default()), Err(Refusal::NoApp));
+        assert_eq!(plan_target(&set, &snip, Some(&r), &live), Err(Refusal::Elevated));
+        assert_eq!(plan_target(&set, &snip, Some(&r), &Live { image: Some(r"C:\x\taskmgr.exe".into()), ..good_live() }), Ok(true));
+    }
+
+    #[test]
+    fn the_library_volume_and_media_keys_are_exactly_the_global_ones() {
+        for e in wall2_keylib::LIBRARY {
+            if let Some(LibAction::Chord(c)) = wall2_keylib::action_of(e) {
+                let named = ["volume-up", "volume-down", "mute", "play-pause", "next-track", "previous-track"].contains(&e.id);
+                assert_eq!(is_global_chord(&c), named, "{}", e.id);
+            }
+        }
+    }
+
+    // Section: check keys
+
+    #[test]
+    fn rust_accepts_any_runnable_library_id_so_the_check_gate_lives_in_the_page() {
+        let check: Vec<&str> = wall2_keylib::LIBRARY.iter().filter(|e| e.kind == wall2_keylib::LibKind::Check).map(|e| e.id).collect();
+        assert!(check.contains(&"rec-toggle") && check.contains(&"ff-private"));
+        for id in check {
+            let runnable = wall2_keylib::action_of(wall2_keylib::find(id).unwrap()).is_some();
+            assert_eq!(resolve_library(id).is_ok(), runnable, "{id}");
+        }
+        // Still held to its group's programs.
+        let (set, _) = resolve_library("ff-private").unwrap();
+        assert!(set.accepts(r"C:\Apps\firefox.exe") && !set.accepts(r"C:\Apps\chrome.exe"));
     }
 }

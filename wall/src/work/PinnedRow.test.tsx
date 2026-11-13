@@ -186,7 +186,7 @@ it('still shows the default keys when keys.json is invalid, since the library do
   expect(labels()).toEqual(['Thirds', 'Focus', 'Record 16:9', 'Snip', 'Screens off']);
 });
 
-// ---- the picker ----
+// Section: the picker
 
 const openPicker = async (name: string) => {
   fireEvent.contextMenu(screen.getByRole('button', { name }));
@@ -311,7 +311,7 @@ it('closes on Escape and on a click outside, and the arrow keys move through the
   fireEvent.keyDown(first, { key: 'Escape' });
   expect(screen.queryByRole('dialog')).toBeNull();
   dlg = await openPicker('Snip');
-  fireEvent.mouseDown(screen.getByRole('button', { name: 'outside' }));
+  fireEvent.pointerDown(screen.getByRole('button', { name: 'outside' }));
   expect(screen.queryByRole('dialog')).toBeNull();
   expect(container.querySelector('.pk')).toBeNull();
 });
@@ -327,4 +327,109 @@ it('rows are at least 32 px tall and the picker sits inside the deck, never over
   expect(/\.deck \{[^}]*position: relative/.test(css)).toBe(true);
   expect(/\.pinned[^{]*\{[^}]*position: relative/.test(css)).toBe(false);
   expect(/\.deck:has\(\.pk\) \{[^}]*min-height: 236px/.test(css)).toBe(true);
+});
+
+it('the click that closes the picker is not also delivered to what was under the pointer; the next click is', async () => {
+  const task = vi.fn();
+  const later = vi.fn();
+  render(
+    <div>
+      <button type="button" onClick={task}>
+        task row
+      </button>
+      <button type="button" onClick={later}>
+        Later
+      </button>
+      <PinnedRow />
+    </div>,
+  );
+  await flush();
+  await openPicker('Snip');
+  fireEvent.pointerDown(screen.getByRole('button', { name: 'task row' }));
+  fireEvent.click(screen.getByRole('button', { name: 'task row' }), { detail: 1 });
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(task).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'task row' }), { detail: 1 });
+  expect(task).toHaveBeenCalledTimes(1);
+  await openPicker('Snip');
+  fireEvent.pointerDown(screen.getByRole('button', { name: 'Later' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Later' }), { detail: 1 });
+  expect(later).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Later' }), { detail: 1 });
+  expect(later).toHaveBeenCalledTimes(1);
+});
+
+it('a click inside the picker on something that is not a control does not stop Escape closing it', async () => {
+  render(<PinnedRow />);
+  await flush();
+  const dlg = await openPicker('Snip');
+  fireEvent.pointerDown(within(dlg).getByText('Anywhere on the PC'));
+  (document.activeElement as HTMLElement | null)?.blur();
+  fireEvent.keyDown(document.body, { key: 'Escape' });
+  expect(screen.queryByRole('dialog')).toBeNull();
+});
+
+it('Lock and All monitors off never run from the keyboard, and the tile is blurred after a mouse click', async () => {
+  localStorage.setItem(PINS_KEY, JSON.stringify(['lib:lock', 'lib:displays-off', 'lib:snip']));
+  render(<PinnedRow />);
+  await flush();
+  const lock = screen.getByRole('button', { name: 'Lock the PC' });
+  const off = screen.getByRole('button', { name: 'All monitors off' });
+  lock.focus();
+  // Enter and Space on the focused tile: the keydown is stopped and the click it would make (detail 0) does nothing.
+  expect(fireEvent.keyDown(lock, { key: 'Enter' })).toBe(false);
+  expect(fireEvent.keyDown(off, { key: ' ' })).toBe(false);
+  fireEvent.click(lock, { detail: 0 });
+  fireEvent.click(off, { detail: 0 });
+  await flush();
+  expect(libCalls).toEqual([]);
+  // A mouse click runs it, and the tile no longer holds the focus afterwards.
+  fireEvent.click(lock, { detail: 1 });
+  await flush();
+  expect(libCalls).toEqual([{ id: 'lock' }]);
+  expect(document.activeElement).not.toBe(lock);
+  await flush(LATCH_MS + 10);
+  off.focus();
+  fireEvent.click(off, { detail: 1 });
+  await flush();
+  expect(libCalls).toEqual([{ id: 'lock' }, { id: 'displays-off' }]);
+  expect(document.activeElement).not.toBe(off);
+  // Other keys still run from the keyboard.
+  fireEvent.click(screen.getByRole('button', { name: 'Snip' }), { detail: 0 });
+  await flush();
+  expect(libCalls).toHaveLength(3);
+});
+
+it('when the library cannot be read the row says so plainly and Try again reads it again', async () => {
+  let fail = true;
+  mocks.set('wall2_keys_library', () => {
+    if (fail) throw 'boom';
+    return LIBRARY_DATA;
+  });
+  render(<PinnedRow />);
+  await flush();
+  expect(screen.getByText('Keys not available')).toBeTruthy();
+  expect(screen.queryByText('Loading keys')).toBeNull();
+  fail = false;
+  fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+  await flush();
+  expect(labels()).toEqual(['Thirds', 'Focus', 'Record 16:9', 'Snip', 'Screens off']);
+});
+
+it('a pin on a keys.json key keeps its label and action in storage and is dropped when the file changes under it', async () => {
+  summary = { ...summary, defaultPins: ['file:0', 'lib:snip'], filePins: [{ label: 'Mine', icon: 'window', action: null }] };
+  render(<PinnedRow />);
+  await flush();
+  const dlg = await openPicker('Snip');
+  fireEvent.click(within(dlg).getByRole('button', { name: 'Volume up' }));
+  await flush();
+  expect(JSON.parse(localStorage.getItem(PINS_KEY) ?? '')).toEqual([{ ref: 'file:0', label: 'Mine', action: null }, 'lib:volume-up']);
+  // The file now has a different key at index 0: that pin is dropped, the other stays.
+  summary = { ...summary, filePins: [{ label: 'Changed', icon: 'window', action: null }] };
+  resetKeysFeed();
+  const again = render(<PinnedRow />);
+  await flush(2500);
+  expect(within(again.container).queryByRole('button', { name: 'Changed' })).toBeNull();
+  expect(within(again.container).queryByRole('button', { name: 'Mine' })).toBeNull();
+  expect(within(again.container).getAllByRole('button', { name: 'Volume up' }).length).toBeGreaterThan(0);
 });

@@ -127,8 +127,10 @@ pub(crate) enum LibKind {
     Key,
     /// Something the wall already does.
     Wall,
-    /// A shortcut the owner must confirm on the PC: shown marked "check", never in a set Auto
-    /// shows, and sent only once he pins it.
+    /// A shortcut the owner must confirm on the PC: shown marked "check" and never in a set
+    /// Auto shows. The page offers it only once he pins it; Rust itself accepts any runnable
+    /// library id (still held to its group's programs), so the page is where "only when
+    /// pinned" is kept.
     Check,
     /// Listed so it can be found, but not available yet.
     Soon,
@@ -170,12 +172,15 @@ pub(crate) const GROUPS: &[LibGroup] = &[
     LibGroup { id: "windows", title: "Windows and layouts", exes: &[] },
     LibGroup { id: "teams", title: "Calls: Teams", exes: &["ms-teams.exe", "teams.exe"] },
     LibGroup { id: "zoom", title: "Calls: Zoom", exes: &["zoom.exe"] },
-    LibGroup { id: "code", title: "Agents and code", exes: &["code.exe", "omnigent.exe"] },
+    LibGroup { id: "agents", title: "Agents", exes: &["omnigent.exe"] },
+    LibGroup { id: "vscode", title: "VS Code", exes: &["code.exe"] },
     LibGroup { id: "tasks", title: "Tasks and focus", exes: &[] },
-    LibGroup { id: "browser", title: "Browser", exes: &["chrome.exe", "msedge.exe", "firefox.exe", "brave.exe"] },
+    LibGroup { id: "browser", title: "Browser", exes: &["chrome.exe", "msedge.exe", "brave.exe"] },
+    LibGroup { id: "firefox", title: "Firefox", exes: &["firefox.exe"] },
     LibGroup { id: "mail", title: "Mail and calendar", exes: &["outlook.exe", "olk.exe"] },
     LibGroup { id: "recording", title: "Recording", exes: &["obs64.exe", "camtasiastudio.exe", "camtasia.exe"] },
-    LibGroup { id: "office", title: "Power BI and Excel", exes: &["pbidesktop.exe", "excel.exe"] },
+    LibGroup { id: "powerbi", title: "Power BI", exes: &["pbidesktop.exe"] },
+    LibGroup { id: "excel", title: "Excel", exes: &["excel.exe"] },
     LibGroup { id: "house", title: "House", exes: &[] },
     LibGroup { id: "powertoys", title: "PowerToys, if you have it", exes: &[] },
 ];
@@ -232,14 +237,14 @@ pub(crate) const LIBRARY: &[LibEntry] = &[
     LibEntry { id: "zoom-share", label: "Share screen", icon: "screen-share", group: "zoom", kind: LibKind::Key, how: "Alt+S", spec: "Alt+S" },
     LibEntry { id: "zoom-hand", label: "Raise hand", icon: "hand", group: "zoom", kind: LibKind::Key, how: "Alt+Y", spec: "Alt+Y" },
     LibEntry { id: "zoom-leave", label: "Leave", icon: "phone-off", group: "zoom", kind: LibKind::Key, how: "Alt+Q", spec: "Alt+Q" },
-    LibEntry { id: "open-waiting", label: "Open what waits on me", icon: "chat", group: "code", kind: LibKind::Wall, how: "opens the waiting session", spec: "agents:open-waiting" },
-    LibEntry { id: "omnigent-front", label: "OmniGent to the front", icon: "chat", group: "code", kind: LibKind::Wall, how: "brings the app forward", spec: "omnigent:front" },
-    LibEntry { id: "new-chat", label: "New chat", icon: "chat", group: "code", kind: LibKind::Soon, how: "opens a new chat", spec: "soon" },
-    LibEntry { id: "vscode-palette", label: "VS Code: command palette", icon: "code", group: "code", kind: LibKind::Key, how: "Ctrl+Shift+P", spec: "Ctrl+Shift+P" },
-    LibEntry { id: "vscode-terminal", label: "VS Code: terminal", icon: "terminal", group: "code", kind: LibKind::Key, how: "Ctrl+`", spec: "Ctrl+`" },
-    LibEntry { id: "vscode-open", label: "VS Code: quick open", icon: "search", group: "code", kind: LibKind::Key, how: "Ctrl+P", spec: "Ctrl+P" },
-    LibEntry { id: "vscode-search", label: "VS Code: search all files", icon: "search", group: "code", kind: LibKind::Key, how: "Ctrl+Shift+F", spec: "Ctrl+Shift+F" },
-    LibEntry { id: "vscode-sidebar", label: "VS Code: side bar", icon: "window", group: "code", kind: LibKind::Key, how: "Ctrl+B", spec: "Ctrl+B" },
+    LibEntry { id: "open-waiting", label: "Open what waits on me", icon: "chat", group: "agents", kind: LibKind::Wall, how: "opens the waiting session", spec: "agents:open-waiting" },
+    LibEntry { id: "omnigent-front", label: "OmniGent to the front", icon: "chat", group: "agents", kind: LibKind::Wall, how: "brings the app forward", spec: "omnigent:front" },
+    LibEntry { id: "new-chat", label: "New chat", icon: "chat", group: "agents", kind: LibKind::Soon, how: "opens a new chat", spec: "soon" },
+    LibEntry { id: "vscode-palette", label: "VS Code: command palette", icon: "code", group: "vscode", kind: LibKind::Key, how: "Ctrl+Shift+P", spec: "Ctrl+Shift+P" },
+    LibEntry { id: "vscode-terminal", label: "VS Code: terminal", icon: "terminal", group: "vscode", kind: LibKind::Key, how: "Ctrl+`", spec: "Ctrl+`" },
+    LibEntry { id: "vscode-open", label: "VS Code: quick open", icon: "search", group: "vscode", kind: LibKind::Key, how: "Ctrl+P", spec: "Ctrl+P" },
+    LibEntry { id: "vscode-search", label: "VS Code: search all files", icon: "search", group: "vscode", kind: LibKind::Key, how: "Ctrl+Shift+F", spec: "Ctrl+Shift+F" },
+    LibEntry { id: "vscode-sidebar", label: "VS Code: side bar", icon: "window", group: "vscode", kind: LibKind::Key, how: "Ctrl+B", spec: "Ctrl+B" },
     LibEntry { id: "tasks-open", label: "Open the task app", icon: "checklist", group: "tasks", kind: LibKind::Wall, how: "opens it where the wall opens tasks today", spec: "tasks:open" },
     LibEntry { id: "task-add", label: "Add a task", icon: "plus", group: "tasks", kind: LibKind::Soon, how: "a small box on the wall, sends it to your inbox", spec: "soon" },
     LibEntry { id: "task-first", label: "Open today's first task", icon: "checklist", group: "tasks", kind: LibKind::Wall, how: "the top of Next three", spec: "task:first" },
@@ -250,10 +255,11 @@ pub(crate) const LIBRARY: &[LibEntry] = &[
     LibEntry { id: "tab-new", label: "New tab", icon: "plus", group: "browser", kind: LibKind::Key, how: "Ctrl+T", spec: "Ctrl+T" },
     LibEntry { id: "tab-reopen", label: "Reopen closed tab", icon: "undo", group: "browser", kind: LibKind::Key, how: "Ctrl+Shift+T", spec: "Ctrl+Shift+T" },
     LibEntry { id: "address-bar", label: "Address bar", icon: "link", group: "browser", kind: LibKind::Key, how: "Ctrl+L", spec: "Ctrl+L" },
-    LibEntry { id: "private-window", label: "Private window", icon: "lock", group: "browser", kind: LibKind::Key, how: "Ctrl+Shift+N (Firefox: Ctrl+Shift+P)", spec: "Ctrl+Shift+N" },
+    LibEntry { id: "private-window", label: "Private window", icon: "lock", group: "browser", kind: LibKind::Key, how: "Ctrl+Shift+N (Chrome, Edge, Brave)", spec: "Ctrl+Shift+N" },
     LibEntry { id: "dev-tools", label: "Dev tools", icon: "code", group: "browser", kind: LibKind::Key, how: "F12", spec: "F12" },
     LibEntry { id: "hard-refresh", label: "Hard refresh", icon: "refresh", group: "browser", kind: LibKind::Key, how: "Ctrl+F5", spec: "Ctrl+F5" },
     LibEntry { id: "find", label: "Find on page", icon: "search", group: "browser", kind: LibKind::Key, how: "Ctrl+F", spec: "Ctrl+F" },
+    LibEntry { id: "ff-private", label: "Firefox: private window", icon: "lock", group: "firefox", kind: LibKind::Check, how: "Ctrl+Shift+P, to check in Firefox", spec: "Ctrl+Shift+P" },
     LibEntry { id: "mail-new", label: "New mail", icon: "mail", group: "mail", kind: LibKind::Check, how: "Ctrl+Shift+M (classic Outlook)", spec: "Ctrl+Shift+M" },
     LibEntry { id: "mail-reply", label: "Reply", icon: "mail", group: "mail", kind: LibKind::Check, how: "Ctrl+R", spec: "Ctrl+R" },
     LibEntry { id: "mail-view", label: "Mail view", icon: "mail", group: "mail", kind: LibKind::Check, how: "Ctrl+1", spec: "Ctrl+1" },
@@ -265,14 +271,14 @@ pub(crate) const LIBRARY: &[LibEntry] = &[
     LibEntry { id: "rec-marker", label: "Add marker", icon: "flag", group: "recording", kind: LibKind::Check, how: "Ctrl+M", spec: "Ctrl+M" },
     LibEntry { id: "rec-layout", label: "Record 16:9 layout", icon: "camera", group: "recording", kind: LibKind::Wall, how: "front window becomes a 16:9 box", spec: "layout:record169" },
     LibEntry { id: "rec-windows", label: "Windows screen recording", icon: "camera", group: "recording", kind: LibKind::Key, how: "Win+Shift+R", spec: "Win+Shift+R" },
-    LibEntry { id: "pbi-save", label: "Power BI: save", icon: "save", group: "office", kind: LibKind::Key, how: "Ctrl+S", spec: "Ctrl+S" },
-    LibEntry { id: "pbi-refresh", label: "Power BI: refresh", icon: "refresh", group: "office", kind: LibKind::Check, how: "ribbon keys, to work out on your PC", spec: "" },
-    LibEntry { id: "pbi-perf", label: "Power BI: performance analyzer", icon: "gauge", group: "office", kind: LibKind::Check, how: "ribbon keys, to work out", spec: "" },
-    LibEntry { id: "pbi-tmdl", label: "Power BI: TMDL view", icon: "code", group: "office", kind: LibKind::Check, how: "to work out", spec: "" },
-    LibEntry { id: "xl-filter", label: "Excel: filter", icon: "filter", group: "office", kind: LibKind::Key, how: "Ctrl+Shift+L", spec: "Ctrl+Shift+L" },
-    LibEntry { id: "xl-table", label: "Excel: make a table", icon: "table", group: "office", kind: LibKind::Key, how: "Ctrl+T", spec: "Ctrl+T" },
-    LibEntry { id: "xl-sum", label: "Excel: sum", icon: "sum", group: "office", kind: LibKind::Key, how: "Alt+=", spec: "Alt+=" },
-    LibEntry { id: "xl-repeat", label: "Excel: repeat last action", icon: "undo", group: "office", kind: LibKind::Key, how: "F4", spec: "F4" },
+    LibEntry { id: "pbi-save", label: "Power BI: save", icon: "save", group: "powerbi", kind: LibKind::Key, how: "Ctrl+S", spec: "Ctrl+S" },
+    LibEntry { id: "pbi-refresh", label: "Power BI: refresh", icon: "refresh", group: "powerbi", kind: LibKind::Check, how: "ribbon keys, to work out on your PC", spec: "" },
+    LibEntry { id: "pbi-perf", label: "Power BI: performance analyzer", icon: "gauge", group: "powerbi", kind: LibKind::Check, how: "ribbon keys, to work out", spec: "" },
+    LibEntry { id: "pbi-tmdl", label: "Power BI: TMDL view", icon: "code", group: "powerbi", kind: LibKind::Check, how: "to work out", spec: "" },
+    LibEntry { id: "xl-filter", label: "Excel: filter", icon: "filter", group: "excel", kind: LibKind::Key, how: "Ctrl+Shift+L", spec: "Ctrl+Shift+L" },
+    LibEntry { id: "xl-table", label: "Excel: make a table", icon: "table", group: "excel", kind: LibKind::Key, how: "Ctrl+T", spec: "Ctrl+T" },
+    LibEntry { id: "xl-sum", label: "Excel: sum", icon: "sum", group: "excel", kind: LibKind::Key, how: "Alt+=", spec: "Alt+=" },
+    LibEntry { id: "xl-repeat", label: "Excel: repeat last action", icon: "undo", group: "excel", kind: LibKind::Key, how: "F4", spec: "F4" },
     LibEntry { id: "mood-evening", label: "Evening lights", icon: "bulb", group: "house", kind: LibKind::Wall, how: "the Evening mood", spec: "mood:evening" },
     LibEntry { id: "mood-late", label: "Late night lights", icon: "moon", group: "house", kind: LibKind::Wall, how: "the Late Night mood", spec: "mood:late-night" },
     LibEntry { id: "tv-off", label: "TV off", icon: "tv", group: "house", kind: LibKind::Soon, how: "needs the home app draft merged", spec: "soon" },
@@ -294,14 +300,16 @@ pub(crate) const MAX_PINS: usize = 5;
 const GENERAL_SET: [&str; 8] = ["snip", "clipboard-history", "task-manager", "lock", "displays-off", "mute", "play-pause", "show-desktop"];
 /// Library groups that become a built-in set Auto shows for their programs: group id, the
 /// set's id and its display name.
-const APP_SETS: [(&str, &str, &str); 7] = [
+const APP_SETS: [(&str, &str, &str); 9] = [
     ("teams", "lib-teams", "Teams"),
     ("zoom", "lib-zoom", "Zoom"),
-    ("code", "lib-code", "Agents and code"),
+    ("agents", "lib-agents", "OmniGent"),
+    ("vscode", "lib-vscode", "VS Code"),
     ("browser", "lib-browser", "Browser"),
     ("mail", "lib-mail", "Mail"),
     ("recording", "lib-recording", "Recording"),
-    ("office", "lib-office", "PBI and Excel"),
+    ("powerbi", "lib-powerbi", "Power BI"),
+    ("excel", "lib-excel", "Excel"),
 ];
 
 pub(crate) fn find(id: &str) -> Option<&'static LibEntry> {
@@ -431,9 +439,9 @@ mod tests {
         ["refresh", "screenshot", "camera", "clipboard", "desktop", "brush", "gauge", "code", "copy", "save", "undo", "search", "lock", "mic", "play", "window", "keyboard"];
 
     #[test]
-    fn the_library_has_102_keys_in_13_groups_with_unique_stable_ids() {
-        assert_eq!(LIBRARY.len(), 102);
-        assert_eq!(GROUPS.len(), 13);
+    fn the_library_has_103_keys_in_16_groups_with_unique_stable_ids() {
+        assert_eq!(LIBRARY.len(), 103);
+        assert_eq!(GROUPS.len(), 16);
         let ids: HashSet<&str> = LIBRARY.iter().map(|e| e.id).collect();
         assert_eq!(ids.len(), LIBRARY.len(), "ids are unique");
         for e in LIBRARY {
@@ -603,7 +611,7 @@ mod tests {
     #[test]
     fn the_page_catalogue_carries_no_chord() {
         let info = library_info();
-        assert_eq!(info.iter().map(|g| g.keys.len()).sum::<usize>(), 102);
+        assert_eq!(info.iter().map(|g| g.keys.len()).sum::<usize>(), 103);
         let text = serde_json::to_string(&info).unwrap();
         assert!(!text.contains("\"spec\""));
         let thirds = info.iter().flat_map(|g| &g.keys).find(|k| k.id == "thirds").unwrap();
@@ -623,8 +631,25 @@ mod tests {
             other => panic!("{other:?}"),
         }
         match matcher_of(find("xl-sum").unwrap()) {
-            Matcher::Exe(v) => assert!(v.contains(&"excel.exe".to_string()) && v.contains(&"pbidesktop.exe".to_string())),
+            Matcher::Exe(v) => assert_eq!(v, vec!["excel.exe".to_string()], "an Excel key never goes to Power BI Desktop"),
             other => panic!("{other:?}"),
         }
+    }
+
+    #[test]
+    fn a_key_is_offered_only_where_it_is_right() {
+        let exes = |id: &str| match matcher_of(find(id).unwrap()) {
+            Matcher::Exe(v) => v,
+            Matcher::Any => vec![],
+        };
+        assert_eq!(exes("vscode-palette"), vec!["code.exe".to_string()], "VS Code keys never go to OmniGent");
+        assert_eq!(exes("omnigent-front"), vec!["omnigent.exe".to_string()]);
+        assert!(!exes("private-window").contains(&"firefox.exe".to_string()), "Ctrl+Shift+N is not Firefox's private window");
+        assert_eq!(exes("ff-private"), vec!["firefox.exe".to_string()]);
+        assert_eq!(find("ff-private").unwrap().kind, LibKind::Check, "unsure shortcuts are check keys");
+        assert_eq!(exes("pbi-save"), vec!["pbidesktop.exe".to_string()]);
+        assert!(builtin_set_ids("lib-powerbi").iter().all(|id| !id.starts_with("xl-")));
+        assert!(builtin_set_ids("lib-excel").iter().all(|id| id.starts_with("xl-")));
+        assert!(builtin_set_ids("lib-vscode").iter().all(|id| id.starts_with("vscode-")));
     }
 }

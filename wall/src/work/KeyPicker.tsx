@@ -40,21 +40,39 @@ export function KeyPicker({
   const groups = useMemo(() => searchLibrary(lib, query), [lib, query]);
   useEffect(() => search.current?.focus(), []);
   useEffect(() => {
-    const away = (e: MouseEvent) => {
-      if (box.current && !box.current.contains(e.target as Node)) onClose();
+    // A press outside closes the picker and does nothing else: the click that ends it is
+    // swallowed once, so a task row or a card button under the pointer is not also activated.
+    const away = (e: Event) => {
+      if (!box.current || box.current.contains(e.target as Node)) return;
+      onClose();
+      const eat = (c: Event) => {
+        c.stopPropagation();
+        c.preventDefault();
+        stop();
+      };
+      const stop = () => {
+        document.removeEventListener('click', eat, true);
+        clearTimeout(timer);
+      };
+      const timer = setTimeout(stop, 800);
+      document.addEventListener('click', eat, true);
     };
-    document.addEventListener('mousedown', away);
-    return () => document.removeEventListener('mousedown', away);
+    // Escape closes from anywhere while the picker is open, whatever has the focus.
+    const escape = (e: globalThis.KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.preventDefault();
+      onClose();
+    };
+    document.addEventListener('pointerdown', away, true);
+    document.addEventListener('keydown', escape);
+    return () => {
+      document.removeEventListener('pointerdown', away, true);
+      document.removeEventListener('keydown', escape);
+    };
   }, [onClose]);
 
   const rows = (): HTMLButtonElement[] => [...(box.current?.querySelectorAll<HTMLButtonElement>('button.pk-row:not([aria-disabled="true"])') ?? [])];
   const onKeyDown = (e: KeyboardEvent) => {
-    if (e.key === 'Escape') {
-      e.preventDefault();
-      e.stopPropagation();
-      onClose();
-      return;
-    }
     if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
     const list = rows();
     if (list.length === 0) return;

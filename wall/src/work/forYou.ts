@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { invoke } from '../bridge/tauri';
 import { scrollToCard } from '../agents/cardScroll';
-import { focusSession } from '../agents/open';
 import { cards, mergeReady, questionFor, sessionTitle, waitingIds, type OmniSummary } from '../agents/model';
 import { useSnoozed } from '../agents/snooze';
 import { agentsStale, useAgents } from '../agents/useAgents';
@@ -9,6 +8,7 @@ import { ageText, alertRows, type SecuritySummary } from '../home/model';
 import { useSecurity } from '../home/useSecurity';
 import type { Meeting } from '../meet/model';
 import { useNextMeeting } from './useNextMeeting';
+import { viaCommand } from './wallActions';
 
 /** A meeting counts as "for you" from this long before it starts until it ends. */
 export const MEETING_LEAD_MS = 10 * 60_000;
@@ -106,33 +106,43 @@ export function alarmItem(sec: SecuritySummary | null, status: string, linkOk: b
   };
 }
 
-/** Scroll the agent cards to a session and flash its ring once (calm: one slow pulse). */
+const flashTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+/** Scroll the agent cards to a session and flash its ring once (calm: one slow pulse). A second Show restarts the flash. */
 export function showCard(id: string): void {
   scrollToCard(id);
-  const find = () => [...document.querySelectorAll<HTMLElement>('.lane[data-id]')].find((el) => el.dataset.id === id);
   setTimeout(() => {
-    const el = find();
+    const el = [...document.querySelectorAll<HTMLElement>('.lane[data-id]')].find((e) => e.dataset.id === id);
     if (!el) return;
+    clearTimeout(flashTimers.get(id));
+    el.classList.remove('deck-flash');
+    void el.offsetWidth;
     el.classList.add('deck-flash');
-    setTimeout(() => el.classList.remove('deck-flash'), FLASH_MS);
+    flashTimers.set(
+      id,
+      setTimeout(() => {
+        el.classList.remove('deck-flash');
+        flashTimers.delete(id);
+      }, FLASH_MS),
+    );
   }, 0);
 }
 
-/** Run one item's action through the command that already exists for it. */
-export function runForYou(item: ForYouItem): void {
+/**
+ * Run one item's action through the command that already exists for it, and answer with one
+ * short line. A failure throws `ActionError` with a fixed line.
+ */
+export async function runForYou(item: ForYouItem): Promise<string> {
   switch (item.kind) {
     case 'meeting':
-      if (item.ref) invoke('wall2_meet_join', { key: item.ref }).catch(() => undefined);
-      break;
+      return viaCommand('wall2_meet_join', { key: item.ref }, 'Joining the meeting', 'Could not open the meeting');
     case 'waiting':
-      focusSession(item.ref);
-      break;
+      return viaCommand('wall2_focus_omnigent', { id: item.ref }, 'Opened the chat', 'Could not open the chat');
     case 'merge':
       if (item.ref) showCard(item.ref);
-      break;
+      return 'Showing the card';
     case 'alarm':
-      invoke('wall2_open_link', { kind: 'security' }).catch(() => undefined);
-      break;
+      return viaCommand('wall2_open_link', { kind: 'security' }, 'Opened the alarms', 'Could not open the alarms');
   }
 }
 
@@ -147,6 +157,7 @@ export function useForYou(): ForYouItem[] {
   const snoozed = useSnoozed(agents.summary);
   const sec = useSecurity();
   const [linkOk, setLinkOk] = useState(false);
+  // Read again with every security poll, so a link set up later shows without a restart.
   useEffect(() => {
     let live = true;
     invoke<{ security?: boolean }>('wall2_links')
@@ -155,7 +166,7 @@ export function useForYou(): ForYouItem[] {
     return () => {
       live = false;
     };
-  }, []);
+  }, [sec.attempts]);
   const agentsOk = agents.summary !== null && !agentsStale(agents);
   const quietKey = [...snoozed.ids].sort().join(',');
   return useMemo(() => {

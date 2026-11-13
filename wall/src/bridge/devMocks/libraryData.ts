@@ -1,6 +1,6 @@
 import type { LibGroup } from '../../work/libraryModel';
 
-/** The built-in key library as the Rust side lists it (no chords). Dev mocks and tests only; a test holds it equal to `wall2_keylib.rs`. */
+/** The built-in key library as the Rust side lists it (no chords). Dev mocks and tests only; a test holds it equal, field by field, to `wall2_keylib.rs`. */
 export const LIBRARY_DATA: LibGroup[] = [
  {
   "id": "anywhere",
@@ -502,10 +502,9 @@ export const LIBRARY_DATA: LibGroup[] = [
   ]
  },
  {
-  "id": "code",
-  "title": "Agents and code",
+  "id": "agents",
+  "title": "Agents",
   "exes": [
-   "code.exe",
    "omnigent.exe"
   ],
   "keys": [
@@ -535,7 +534,16 @@ export const LIBRARY_DATA: LibGroup[] = [
     "how": "opens a new chat",
     "action": null,
     "runnable": false
-   },
+   }
+  ]
+ },
+ {
+  "id": "vscode",
+  "title": "VS Code",
+  "exes": [
+   "code.exe"
+  ],
+  "keys": [
    {
     "id": "vscode-palette",
     "label": "VS Code: command palette",
@@ -659,7 +667,6 @@ export const LIBRARY_DATA: LibGroup[] = [
   "exes": [
    "chrome.exe",
    "msedge.exe",
-   "firefox.exe",
    "brave.exe"
   ],
   "keys": [
@@ -695,7 +702,7 @@ export const LIBRARY_DATA: LibGroup[] = [
     "label": "Private window",
     "icon": "lock",
     "kind": "key",
-    "how": "Ctrl+Shift+N (Firefox: Ctrl+Shift+P)",
+    "how": "Ctrl+Shift+N (Chrome, Edge, Brave)",
     "action": null,
     "runnable": true
    },
@@ -723,6 +730,24 @@ export const LIBRARY_DATA: LibGroup[] = [
     "icon": "search",
     "kind": "key",
     "how": "Ctrl+F",
+    "action": null,
+    "runnable": true
+   }
+  ]
+ },
+ {
+  "id": "firefox",
+  "title": "Firefox",
+  "exes": [
+   "firefox.exe"
+  ],
+  "keys": [
+   {
+    "id": "ff-private",
+    "label": "Firefox: private window",
+    "icon": "lock",
+    "kind": "check",
+    "how": "Ctrl+Shift+P, to check in Firefox",
     "action": null,
     "runnable": true
    }
@@ -849,11 +874,10 @@ export const LIBRARY_DATA: LibGroup[] = [
   ]
  },
  {
-  "id": "office",
-  "title": "Power BI and Excel",
+  "id": "powerbi",
+  "title": "Power BI",
   "exes": [
-   "pbidesktop.exe",
-   "excel.exe"
+   "pbidesktop.exe"
   ],
   "keys": [
    {
@@ -891,7 +915,16 @@ export const LIBRARY_DATA: LibGroup[] = [
     "how": "to work out",
     "action": null,
     "runnable": false
-   },
+   }
+  ]
+ },
+ {
+  "id": "excel",
+  "title": "Excel",
+  "exes": [
+   "excel.exe"
+  ],
+  "keys": [
    {
     "id": "xl-filter",
     "label": "Excel: filter",

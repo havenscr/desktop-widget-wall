@@ -3,32 +3,60 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { LIBRARY_DATA } from '../bridge/devMocks/libraryData';
 import { KEY_ICONS } from './keyIcons';
-import { FALLBACK_PINS, MAX_PINS, parsePins, PINS_KEY, resolvePin, searchLibrary, swapPin } from './libraryModel';
+import { FALLBACK_PINS, MAX_PINS, parsePins, PINS_KEY, resolvePin, searchLibrary, serializePins, swapPin, type LibGroup, type LibKey } from './libraryModel';
 
 const rust: string = readFileSync('../src-tauri/src/wall2_keylib.rs', 'utf8');
 const filePins = [{ label: 'Mine', icon: 'window', action: 'zen' }];
 const lib = LIBRARY_DATA;
 
+/** The library as `library_info` returns it, worked out from the Rust text: every field. */
+function rustLibrary(): LibGroup[] {
+  const names = new Set([...rust.matchAll(/^\s+"([a-z0-9:-]+)" => WallAction::\w+,/gm)].map((m) => m[1]));
+  const groups: LibGroup[] = [...rust.matchAll(/LibGroup \{ id: "([a-z0-9-]+)", title: "([^"]*)", exes: &\[([^\]]*)\] \}/g)].map((m) => ({
+    id: m[1],
+    title: m[2],
+    exes: [...m[3].matchAll(/"([^"]+)"/g)].map((x) => x[1]),
+    keys: [],
+  }));
+  for (const m of rust.matchAll(/LibEntry \{ id: "([a-z0-9-]+)", label: "([^"]*)", icon: "([a-z0-9-]+)", group: "([a-z0-9-]+)", kind: LibKind::(\w+), how: "([^"]*)", spec: "([^"]*)" \}/g)) {
+    const kind = m[5].toLowerCase() as LibKey['kind'];
+    const spec = m[7];
+    const action = names.has(spec) || /^mood:[a-z0-9-]+$/.test(spec) ? spec : null;
+    groups.find((g) => g.id === m[4])!.keys.push({ id: m[1], label: m[2], icon: m[3], kind, how: m[6], action, runnable: kind !== 'soon' && spec !== '' });
+  }
+  return groups;
+}
+
 describe('the library the page and the mocks hold equals the Rust one', () => {
-  const entries = [...rust.matchAll(/LibEntry \{ id: "([a-z0-9-]+)", label: "([^"]*)", icon: "([a-z0-9-]+)", group: "([a-z0-9-]+)", kind: LibKind::(\w+), how: "([^"]*)", spec: "([^"]*)" \}/g)];
   const flat = lib.flatMap((g) => g.keys.map((k) => ({ ...k, group: g.id })));
 
-  it('has 102 keys with unique ids in the same order, groups, labels, icons and kinds', () => {
-    expect(entries.length).toBe(102);
-    expect(flat.length).toBe(102);
-    expect(new Set(flat.map((k) => k.id)).size).toBe(102);
-    expect(flat.map((k) => [k.id, k.label, k.icon, k.group, k.kind, k.how])).toEqual(entries.map((m) => [m[1], m[2], m[3], m[4], m[5].toLowerCase() === 'wall' ? 'wall' : m[5].toLowerCase(), m[6]]));
+  it('has 103 keys in 16 groups, equal field by field to what library_info returns: ids, labels, icons, kinds, how, action, runnable and each group exes', () => {
+    const fromRust = rustLibrary();
+    expect(fromRust.flatMap((g) => g.keys).length).toBe(103);
+    expect(fromRust.length).toBe(16);
+    expect(new Set(flat.map((k) => k.id)).size).toBe(103);
+    expect(LIBRARY_DATA).toEqual(fromRust);
+  });
+
+  it('the comparison bites: one changed action, one changed exe, one changed runnable each make it unequal', () => {
+    const fromRust = rustLibrary();
+    const swapped = structuredClone(LIBRARY_DATA);
+    const thirds = swapped.flatMap((g) => g.keys).find((k) => k.id === 'thirds')!;
+    thirds.action = 'layout:focus';
+    expect(swapped).not.toEqual(fromRust);
+    const exes = structuredClone(LIBRARY_DATA);
+    exes.find((g) => g.id === 'excel')!.exes.push('pbidesktop.exe');
+    expect(exes).not.toEqual(fromRust);
+    const runnable = structuredClone(LIBRARY_DATA);
+    runnable.flatMap((g) => g.keys).find((k) => k.id === 'new-chat')!.runnable = true;
+    expect(runnable).not.toEqual(fromRust);
   });
 
   it('every icon is one the page draws', () => {
     for (const k of flat) expect(KEY_ICONS[k.icon], `${k.id}: ${k.icon}`).toBeTruthy();
   });
 
-  it('a key that can run is listed as runnable; coming keys are not; no chord is in the page copy', () => {
-    for (const m of entries) {
-      const k = flat.find((f) => f.id === m[1])!;
-      expect(k.runnable, m[1]).toBe(m[5] !== 'Soon' && m[7] !== '');
-    }
+  it('coming keys are not runnable; no chord is in the page copy', () => {
     expect(JSON.stringify(lib)).not.toContain('"spec"');
     expect(flat.filter((k) => k.kind === 'soon').map((k) => k.id)).toEqual(['new-chat', 'task-add', 'tv-off', 'alarms-seen']);
   });
@@ -61,12 +89,20 @@ describe('pins on this display', () => {
   it('reads a saved list only when every entry is valid, at most five, without repeats', () => {
     expect(PINS_KEY).toBe('wall2-keys-pins');
     const ok = ['lib:snip', 'lib:thirds', 'file:0'];
-    expect(parsePins(JSON.stringify(ok), lib, filePins)).toEqual(ok);
-    for (const bad of [null, '', 'nope', '{}', '[]', '"lib:snip"', JSON.stringify([1]), JSON.stringify(['lib:nope']), JSON.stringify(['lib:snip', 'lib:snip']), JSON.stringify(['lib:snip', 'lib:focus', 'lib:thirds', 'lib:mute', 'lib:mixer', 'lib:zen']), JSON.stringify(['file:3'])]) {
+    const stored = JSON.stringify(['lib:snip', 'lib:thirds', { ref: 'file:0', label: 'Mine', action: 'zen' }]);
+    expect(parsePins(stored, lib, filePins)).toEqual(ok);
+    expect(serializePins(ok, filePins)).toBe(stored);
+    for (const bad of [null, '', 'nope', '{}', '[]', '"lib:snip"', JSON.stringify([1]), JSON.stringify(['lib:nope']), JSON.stringify(['lib:snip', 'lib:snip']), JSON.stringify(['lib:snip', 'lib:focus', 'lib:thirds', 'lib:mute', 'lib:mixer', 'lib:zen']), JSON.stringify([{ ref: 'file:3', label: 'x', action: null }, 'lib:nope'])]) {
       expect(parsePins(bad, lib, filePins), String(bad)).toBeNull();
     }
-    // A key.json pin that is gone from the file drops the whole saved list: the defaults apply.
-    expect(parsePins(JSON.stringify(['file:0']), lib, [])).toBeNull();
+    // A pin on a keys.json key is an index: it is dropped when the file no longer has that same key there.
+    const mine = { ref: 'file:0', label: 'Mine', action: 'zen' };
+    expect(parsePins(JSON.stringify(['lib:snip', mine]), lib, filePins)).toEqual(['lib:snip', 'file:0']);
+    expect(parsePins(JSON.stringify(['lib:snip', mine]), lib, [{ label: 'Other', icon: 'window', action: 'zen' }])).toEqual(['lib:snip']);
+    expect(parsePins(JSON.stringify(['lib:snip', mine]), lib, [{ label: 'Mine', icon: 'window', action: 'dream' }])).toEqual(['lib:snip']);
+    expect(parsePins(JSON.stringify(['lib:snip', mine]), lib, [])).toEqual(['lib:snip']);
+    expect(parsePins(JSON.stringify([mine]), lib, [])).toBeNull();
+    expect(parsePins(JSON.stringify(['file:0']), lib, filePins)).toBeNull();
   });
 
   it('swaps a key into a slot; a key already pinned elsewhere trades places', () => {
@@ -78,7 +114,7 @@ describe('pins on this display', () => {
   });
 
   it('searches label, group and what a key does; empty groups drop out', () => {
-    expect(searchLibrary(lib, '')).toHaveLength(13);
+    expect(searchLibrary(lib, '')).toHaveLength(16);
     expect(searchLibrary(lib, 'volume').flatMap((g) => g.keys.map((k) => k.id))).toEqual(expect.arrayContaining(['volume-up', 'volume-down', 'mixer']));
     expect(searchLibrary(lib, 'ZOOM').map((g) => g.id)).toEqual(['zoom']);
     expect(searchLibrary(lib, 'zzzzzz')).toEqual([]);

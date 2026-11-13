@@ -9,27 +9,33 @@ import { useDeckStore } from './deckStore';
 import { KeyIcon } from './keyIcons';
 import { joinKeys, loadKeys, useKeysFeedStore } from './keysFeed';
 import { KeyPicker } from './KeyPicker';
-import { useKeyPress } from './keyPress';
-import { FALLBACK_PINS, MAX_PINS, parsePins, readPinsRaw, resolvePin, savePins, swapPin, type LibGroup, type PinView } from './libraryModel';
+import { keyboardOnMouseKey, useKeyPress } from './keyPress';
+import { FALLBACK_PINS, MAX_PINS, parsePins, PINS_KEY, readPinsRaw, resolvePin, savePins, serializePins, swapPin, type LibGroup, type PinView } from './libraryModel';
 import { useBrief } from './useBrief';
 import { runWallAction } from './wallActions';
 
 const columns = (n: number) => Math.max(1, Math.min(n, MAX_PINS));
 
 /** The library, read once; null while it loads or when it cannot be read. */
-function useLibrary(): LibGroup[] | null {
+function useLibrary(): { lib: LibGroup[] | null; failed: boolean; retry: () => void } {
   const [lib, setLib] = useState<LibGroup[] | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [tries, setTries] = useState(0);
   useEffect(() => {
     let live = true;
     invoke<LibGroup[]>('wall2_keys_library').then(
-      (g) => live && setLib(Array.isArray(g) ? g : null),
-      () => live && setLib(null),
+      (g) => {
+        if (!live) return;
+        setLib(Array.isArray(g) ? g : null);
+        setFailed(!Array.isArray(g));
+      },
+      () => live && (setLib(null), setFailed(true)),
     );
     return () => {
       live = false;
     };
-  }, []);
-  return lib;
+  }, [tries]);
+  return { lib, failed, retry: () => (setFailed(false), setTries((n) => n + 1)) };
 }
 
 /**
@@ -43,7 +49,7 @@ export function PinnedRow() {
   const visible = useVisible();
   useEffect(() => (visible ? joinKeys() : undefined), [visible]);
   const read = useKeysFeedStore((s) => s.read);
-  const lib = useLibrary();
+  const { lib, failed: libFailed, retry: retryLib } = useLibrary();
   const arrange = useArrangeStatus();
   const [brief, showBrief] = useBrief();
   const { press, onKeyDown } = useKeyPress(showBrief, loadKeys);
@@ -74,8 +80,13 @@ export function PinnedRow() {
   const undoShown = applied !== null && applied.until > clock;
   const choose = (slot: number, ref: string) => {
     const next = swapPin(pins.map((p) => p.ref), slot, ref);
-    savePins(next);
-    setRaw(JSON.stringify(next));
+    const text = serializePins(next, filePins);
+    try {
+      localStorage.setItem(PINS_KEY, text);
+    } catch {
+      // Storage may be blocked; the choice then lasts until the page reloads.
+    }
+    setRaw(text);
     setPicker(null);
   };
   const reset = () => {
@@ -88,13 +99,13 @@ export function PinnedRow() {
     e.preventDefault();
     openPicker(slot);
   };
-  const onKey = (slot: number) => (e: KeyboardEvent) => {
+  const onKey = (slot: number, action: string | null) => (e: KeyboardEvent) => {
     if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) {
       e.preventDefault();
       openPicker(slot);
       return;
     }
-    onKeyDown(e);
+    onKeyDown(action)(e);
   };
   const undo = async () => {
     if (busy) return;
@@ -134,7 +145,7 @@ export function PinnedRow() {
               className="deck-mini"
               disabled={busy}
               {...tip('Put the windows the last layout moved back where they were (for one minute)')}
-              onKeyDown={onKeyDown}
+              onKeyDown={onKeyDown(null)}
               onClick={() => void undo()}
             >
               Undo
@@ -143,8 +154,13 @@ export function PinnedRow() {
         </span>
       </div>
       {pins.length === 0 ? (
-        <div className="s deck-quiet" {...tip('The key library could not be read. Restart the wall if this stays.')}>
-          {lib === null ? 'Loading keys' : 'No keys pinned'}
+        <div className="s deck-quiet row sb" {...tip(libFailed ? 'The key library could not be read. Try again, or restart the wall if this stays.' : 'Reading the key library')}>
+          <span>{libFailed ? 'Keys not available' : lib === null ? 'Loading keys' : 'No keys pinned'}</span>
+          {libFailed && (
+            <button type="button" className="deck-mini" onClick={retryLib}>
+              Try again
+            </button>
+          )}
         </div>
       ) : (
         <div className="deck-tiles pin-tiles" style={{ gridTemplateColumns: `repeat(${columns(pins.length)}, minmax(0, 1fr))` }}>
@@ -166,9 +182,9 @@ export function PinnedRow() {
                     : `${p.label}${p.group ? ` (${p.group})` : ''}${p.kind === 'check' ? ', a shortcut to check on your PC' : ''}. ${p.how}. Right-click to change this key.`,
                 )}
                 onContextMenu={onContext(i)}
-                onKeyDown={onKey(i)}
+                onKeyDown={onKey(i, p.action)}
                 onClick={(e) => {
-                  if (layoutOff) return;
+                  if (layoutOff || keyboardOnMouseKey(p.action, e.detail)) return;
                   const [kind, id] = [p.ref.slice(0, 4), p.ref.slice(4)];
                   const call = kind === 'lib:' ? ({ command: 'wall2_keys_send_library', args: { id } } as const) : ({ command: 'wall2_keys_send', args: { setId: 'pinned', index: Number(p.ref.slice(5)) } } as const);
                   void press(`pin:${p.ref}`, e.detail, call, p.label, p.action, where, false);

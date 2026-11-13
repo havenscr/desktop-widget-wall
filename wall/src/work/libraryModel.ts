@@ -76,13 +76,45 @@ export function parsePins(raw: string | null, lib: readonly LibGroup[], filePins
     if (!Array.isArray(v) || v.length === 0 || v.length > MAX_PINS) return null;
     const out: string[] = [];
     for (const r of v) {
+      if (isFileEntry(r)) {
+        // A pin on a keys.json key is an index, so it carries the key's label and action and is
+        // dropped when the file no longer has that same key at that place.
+        const k = filePins[Number(r.ref.slice(5))];
+        if (k && k.label === r.label && k.action === r.action && !out.includes(r.ref)) out.push(r.ref);
+        continue;
+      }
+      // A bare file index (no label to check it by) is dropped like a changed one.
+      if (typeof r === 'string' && r.startsWith('file:')) continue;
       if (typeof r !== 'string' || out.includes(r) || !resolvePin(r, lib, filePins)) return null;
       out.push(r);
     }
-    return out;
+    return out.length > 0 ? out : null;
   } catch {
     return null;
   }
+}
+
+interface FileEntry {
+  ref: string;
+  label: string;
+  action: string | null;
+}
+
+function isFileEntry(v: unknown): v is FileEntry {
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) return false;
+  const o = v as Record<string, unknown>;
+  return typeof o.ref === 'string' && /^file:[0-9]{1,2}$/.test(o.ref) && typeof o.label === 'string' && (o.action === null || typeof o.action === 'string');
+}
+
+/** The text kept in storage for these pins: library ids as they are, keys.json keys with their label and action. */
+export function serializePins(refs: readonly string[], filePins: readonly KeyInfo[]): string {
+  return JSON.stringify(
+    refs.map((r) => {
+      if (!r.startsWith('file:')) return r;
+      const k = filePins[Number(r.slice(5))];
+      return { ref: r, label: k?.label ?? '', action: k?.action ?? null };
+    }),
+  );
 }
 
 export function readPinsRaw(): string | null {

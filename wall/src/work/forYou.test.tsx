@@ -75,22 +75,49 @@ it('an alarm is an item only from a fresh, reachable read with its link availabl
   expect(alarmItem(null, 'ready', true, NOW)).toBeNull();
 });
 
-it('each action calls the command that already exists, with the right id', async () => {
+it('each action calls the command that already exists, with the right id, and answers one line', async () => {
   const calls: [string, unknown][] = [];
   for (const c of ['wall2_meet_join', 'wall2_focus_omnigent', 'wall2_open_link']) mocks.set(c, (a) => void calls.push([c, a]));
-  runForYou({ key: 'k', kind: 'meeting', title: '', reason: '', action: 'Join', actionTip: '', ref: 'm1' });
-  runForYou({ key: 'k', kind: 'waiting', title: '', reason: '', action: 'Open chat', actionTip: '', ref: 'w1' });
-  runForYou({ key: 'k', kind: 'alarm', title: '', reason: '', action: 'Open', actionTip: '', ref: null });
+  const item = (kind: 'meeting' | 'waiting' | 'merge' | 'alarm', ref: string | null) => ({ key: 'k', kind, title: '', reason: '', action: '', actionTip: '', ref });
+  expect(await runForYou(item('meeting', 'm1'))).toBe('Joining the meeting');
+  expect(await runForYou(item('waiting', 'w1'))).toBe('Opened the chat');
+  expect(await runForYou(item('alarm', null))).toBe('Opened the alarms');
   const before = useCardScroll.getState().n;
-  runForYou({ key: 'k', kind: 'merge', title: '', reason: '', action: 'Show', actionTip: '', ref: 'p1' });
-  await Promise.resolve();
+  expect(await runForYou(item('merge', 'p1'))).toBe('Showing the card');
   expect(calls).toEqual([
     ['wall2_meet_join', { key: 'm1' }],
     ['wall2_focus_omnigent', { id: 'w1' }],
     ['wall2_open_link', { kind: 'security' }],
   ]);
   expect(useCardScroll.getState()).toMatchObject({ id: 'p1', n: before + 1 });
+  mocks.set('wall2_meet_join', () => {
+    throw 'gone';
+  });
+  await expect(runForYou(item('meeting', 'm1'))).rejects.toThrow('Could not open the meeting');
+  mocks.set('wall2_open_link', () => {
+    throw 'x';
+  });
+  await expect(runForYou(item('alarm', null))).rejects.toThrow('Could not open the alarms');
   mocks.clear();
+});
+
+it('Show twice within the flash keeps the second flash whole', () => {
+  vi.useFakeTimers();
+  document.body.innerHTML = '<div class="lane" data-id="p1"></div>';
+  const el = document.querySelector('.lane')!;
+  showCard('p1');
+  vi.advanceTimersByTime(1);
+  expect(el.classList.contains('deck-flash')).toBe(true);
+  vi.advanceTimersByTime(1_000);
+  showCard('p1');
+  vi.advanceTimersByTime(1);
+  // The first flash's end (1.4 s after the first click) must not cut the second one short.
+  vi.advanceTimersByTime(FLASH_MS - 1_000);
+  expect(el.classList.contains('deck-flash')).toBe(true);
+  vi.advanceTimersByTime(1_000);
+  expect(el.classList.contains('deck-flash')).toBe(false);
+  vi.useRealTimers();
+  document.body.innerHTML = '';
 });
 
 it('Show scrolls to the card and flashes its ring once, then stops', () => {
@@ -176,4 +203,15 @@ it('hides the alarm when Home has no link for it', async () => {
   const { result } = renderHook(() => useForYou());
   await flush(50);
   expect(result.current.map((i) => i.kind)).toEqual(['meeting', 'waiting', 'merge']);
+});
+
+it('reads the link availability again with each security poll, so a link set up later shows without a restart', async () => {
+  let linked = false;
+  mocks.set('wall2_links', () => ({ security: linked, portal: false }));
+  const { result } = renderHook(() => useForYou());
+  await flush(50);
+  expect(result.current.map((i) => i.kind)).not.toContain('alarm');
+  linked = true;
+  await flush(5 * 60_000 + 100);
+  expect(result.current.map((i) => i.kind)).toContain('alarm');
 });

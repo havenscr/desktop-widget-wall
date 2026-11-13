@@ -12,6 +12,8 @@ import { tip } from '../ui/HoverTip';
 import { useVisible } from '../ui/useVisible';
 import { useArrangeStatus, layoutOffReason, isLayoutAction } from './arrangeStatus';
 import { runForYou, useForYou, type ForYouItem, type ForYouKind } from './forYou';
+import { useGuard } from './useGuard';
+import { ActionError } from './wallActions';
 import { KeyIcon } from './keyIcons';
 import { joinKeys, KEYS_POLL_MS, loadKeys, useKeysFeedStore } from './keysFeed';
 import {
@@ -29,7 +31,7 @@ import {
   type Page,
   type SetInfo,
 } from './keysModel';
-import { useKeyPress } from './keyPress';
+import { keyboardOnMouseKey, useKeyPress } from './keyPress';
 import { useBrief } from './useBrief';
 
 export { KEYS_POLL_MS };
@@ -41,6 +43,10 @@ const MAX_KEYS = 8;
 export const FOR_YOU_SHOWN = 2;
 /** A new "For you" item takes the Now row for this long when Auto is on. */
 export const TAKEOVER_MS = 45_000;
+/** An item that was gone this long counts as new again; one that blinks out for a poll does not. */
+export const NEW_AGAIN_MS = 10 * 60_000;
+/** What the take-over memory forgets after this long. */
+const FORGET_MS = 24 * 60 * 60_000;
 
 /** Columns for n keys: one row up to five, then two rows. */
 export const columnsFor = (n: number): number => (n <= 5 ? Math.max(n, 1) : n === 6 ? 3 : 4);
@@ -55,7 +61,7 @@ function useKeysRead() {
   return { read: useKeysFeedStore((s) => s.read), refresh: loadKeys };
 }
 
-function ForYouList({ items }: { items: ForYouItem[] }) {
+function ForYouList({ items, onRun }: { items: ForYouItem[]; onRun: (item: ForYouItem, detail: number) => void }) {
   return (
     <div className="fy-list">
       {items.slice(0, FOR_YOU_SHOWN).map((it) => {
@@ -67,7 +73,7 @@ function ForYouList({ items }: { items: ForYouItem[] }) {
               <b>{it.title}</b>
               <em>{it.reason}</em>
             </span>
-            <button type="button" className="deck-mini" aria-label={`${it.action}: ${it.title}`} {...tip(it.actionTip)} onClick={() => runForYou(it)}>
+            <button type="button" className="deck-mini" aria-label={`${it.action}: ${it.title}`} {...tip(it.actionTip)} onClick={(e) => onRun(it, e.detail)}>
               {it.action}
             </button>
           </div>
@@ -93,7 +99,14 @@ export function Keys() {
   const { press, onKeyDown } = useKeyPress(showBrief, refresh);
   const arrange = useArrangeStatus();
   const lastWheel = useRef(0);
-  const seen = useRef<Set<string> | null>(null);
+  const rowRef = useRef<HTMLElement | null>(null);
+  const present = useRef<Set<string> | null>(null);
+  /** When each item that has been shown last left the list. */
+  const lastGone = useRef(new Map<string, number>());
+  /** Presses in flight on this row (pointer down to up, key down to up), and a take-over held back for them. */
+  const inFlight = useRef(0);
+  const pendingTake = useRef(false);
+  const fyGuard = useGuard();
   const modeRef = useRef(mode);
   modeRef.current = mode;
 
@@ -111,13 +124,54 @@ export function Keys() {
     if (summary && mode.hold && effectiveMode(mode, summary.sets, forYouOn) === AUTO) setMode(AUTO);
   }, [summary, mode, forYouOn, setMode]);
 
-  // A NEW item takes the row for 45 seconds (Auto only); one that stays does not keep it.
+  // A NEW item takes the row for 45 seconds (Auto only). New means never seen, or gone for 10
+  // minutes or more; an item that blinks out for a poll (a source stale for a moment) is the same
+  // item. Items already waiting when the row mounts are not new. The take-over waits for any press
+  // in flight, so the key under the pointer never changes between press and release.
   useEffect(() => {
+    const now = Date.now();
     const keys = sig ? sig.split('|') : [];
-    const before = seen.current;
-    seen.current = new Set(keys);
-    if (before !== null && !modeRef.current.hold && keys.some((k) => !before.has(k))) setTakeUntil(Date.now() + TAKEOVER_MS);
+    const before = present.current;
+    const gone = lastGone.current;
+    present.current = new Set(keys);
+    for (const [k, t] of gone) if (now - t > FORGET_MS) gone.delete(k);
+    if (before === null) return;
+    for (const k of before) if (!present.current.has(k)) gone.set(k, now);
+    const fresh = keys.filter((k) => !before.has(k) && (gone.get(k) === undefined || now - (gone.get(k) as number) >= NEW_AGAIN_MS));
+    for (const k of keys) gone.delete(k);
+    if (fresh.length === 0 || modeRef.current.hold) return;
+    if (inFlight.current > 0) pendingTake.current = true;
+    else setTakeUntil(now + TAKEOVER_MS);
   }, [sig]);
+  useEffect(() => {
+    const down = (e: Event) => {
+      if (!rowRef.current?.contains(e.target as Node)) return;
+      if (e.type === 'keydown' && (e as KeyboardEvent).repeat) return;
+      inFlight.current = 1;
+    };
+    const up = () => {
+      if (inFlight.current === 0) return;
+      inFlight.current = 0;
+      // After the click that follows the release has been dispatched.
+      setTimeout(() => {
+        if (inFlight.current > 0 || !pendingTake.current) return;
+        pendingTake.current = false;
+        if (!modeRef.current.hold) setTakeUntil(Date.now() + TAKEOVER_MS);
+      }, 0);
+    };
+    document.addEventListener('pointerup', up, true);
+    document.addEventListener('pointercancel', up, true);
+    document.addEventListener('keyup', up, true);
+    document.addEventListener('pointerdown', down, true);
+    document.addEventListener('keydown', down, true);
+    return () => {
+      document.removeEventListener('pointerup', up, true);
+      document.removeEventListener('pointercancel', up, true);
+      document.removeEventListener('keyup', up, true);
+      document.removeEventListener('pointerdown', down, true);
+      document.removeEventListener('keydown', down, true);
+    };
+  }, []);
   useEffect(() => {
     if (takeUntil === 0) return;
     const id = setTimeout(() => setTakeUntil(0), Math.max(0, takeUntil - Date.now()));
@@ -146,6 +200,15 @@ export function Keys() {
   if (hold) page = pages.find((p) => p.id === m.setId) ?? null;
   else if (takeUntil !== 0 && forYouOn) page = pages.find((p) => p.id === FOR_YOU) ?? null;
   else page = autoPage(sum);
+
+  const runItem = (item: ForYouItem, detail: number) =>
+    void fyGuard.run(`fy:${item.key}`, detail, async () => {
+      try {
+        showBrief(await runForYou(item));
+      } catch (e) {
+        showBrief(e instanceof ActionError ? e.message : 'Could not do that');
+      }
+    });
 
   const goTo = (p: Page | null) => {
     if (!p) return;
@@ -236,9 +299,9 @@ export function Keys() {
 
   if (page?.kind === 'foryou') {
     return (
-      <section className="keys deck-row" aria-label={heading} onWheel={onWheel}>
+      <section className="keys deck-row" aria-label={heading} onWheel={onWheel} ref={rowRef}>
         {head}
-        <ForYouList items={items} />
+        <ForYouList items={items} onRun={runItem} />
       </section>
     );
   }
@@ -247,7 +310,7 @@ export function Keys() {
   if (!page) {
     const idle = sum.front === 'idle';
     return (
-      <section className="keys deck-row" aria-label="Now" onWheel={onWheel}>
+      <section className="keys deck-row" aria-label="Now" onWheel={onWheel} ref={rowRef}>
         {head}
         <div
           className="s deck-quiet"
@@ -267,7 +330,7 @@ export function Keys() {
   const keys = set.keys.slice(0, MAX_KEYS);
   const ok = acceptsFront(sum, set);
   return (
-    <section className="keys deck-row" aria-label={heading} onWheel={onWheel}>
+    <section className="keys deck-row" aria-label={heading} onWheel={onWheel} ref={rowRef}>
       {head}
       <div className={`deck-tiles keys-tiles${keys.length > 5 ? ' two' : ''}`} style={{ gridTemplateColumns: `repeat(${columnsFor(keys.length)}, minmax(0, 1fr))` }}>
         {keys.map((k, i) => {
@@ -291,8 +354,8 @@ export function Keys() {
                         ? `Send ${k.label} to the app in front`
                         : `Send ${k.label} to ${set.name}`,
               )}
-              onKeyDown={onKeyDown}
-              onClick={(e) => !layoutOff && void press(`${set.id}:${i}`, e.detail, { command: 'wall2_keys_send', args: { setId: set.id, index: i } }, k.label, k.action, set, hold)}
+              onKeyDown={onKeyDown(k.action)}
+              onClick={(e) => !layoutOff && !keyboardOnMouseKey(k.action, e.detail) && void press(`${set.id}:${i}`, e.detail, { command: 'wall2_keys_send', args: { setId: set.id, index: i } }, k.label, k.action, set, hold)}
             >
               <KeyIcon name={k.icon} size={keys.length > 5 ? 16 : 18} />
               <span className="deck-lbl">{k.label}</span>

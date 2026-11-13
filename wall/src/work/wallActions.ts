@@ -39,7 +39,7 @@ async function firstTaskId(): Promise<string> {
   return typeof first?.id === 'string' ? first.id : refuse('No tasks to open');
 }
 
-async function viaCommand(command: string, args: Record<string, unknown> | undefined, done: string, failed: string): Promise<string> {
+export async function viaCommand(command: string, args: Record<string, unknown> | undefined, done: string, failed: string): Promise<string> {
   try {
     await invoke(command, args);
   } catch {

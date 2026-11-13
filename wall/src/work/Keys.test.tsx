@@ -5,7 +5,7 @@ import { mocks } from '../bridge/tauri';
 import { HoverTipLayer, resetTip } from '../ui/HoverTip';
 import type { ForYouItem } from './forYou';
 import { resetKeysFeed } from './keysFeed';
-import { FOR_YOU_SHOWN, Keys, KEYS_POLL_MS, TAKEOVER_MS, WHEEL_GAP_MS } from './Keys';
+import { FOR_YOU_SHOWN, Keys, KEYS_POLL_MS, NEW_AGAIN_MS, TAKEOVER_MS, WHEEL_GAP_MS } from './Keys';
 import { MODE_KEY, type KeysSummary } from './keysModel';
 import { LATCH_MS } from './useGuard';
 
@@ -294,7 +294,7 @@ it('a layout key is off, with the reason, when there is no big screen, and a hel
   expect(screen.getByRole('button', { name: 'Lock' }).className).not.toContain('off');
 });
 
-// ---- the For you page ----
+// Section: the For you page
 
 it('the For you page is first in the pages while something waits, and is skipped when nothing does', async () => {
   render(<Keys />);
@@ -379,8 +379,128 @@ it('shows each item with its icon, title, reason and one button, and the button 
   await flush();
   await arrive(item('s1', { reason: 'asks: which thumbnail' }), item('m1', { kind: 'meeting', title: 'Design review', reason: 'starts in 4 min', action: 'Join', ref: 'mk' }));
   expect(screen.getByText('asks: which thumbnail')).toBeTruthy();
-  fireEvent.click(screen.getByRole('button', { name: 'Join: Design review' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Open chat: Session s1' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Join: Design review' }), { detail: 1 });
+  await flush();
+  fireEvent.click(screen.getByRole('button', { name: 'Open chat: Session s1' }), { detail: 1 });
   await flush();
   expect(calls).toEqual([{ key: 'mk' }, { id: 's1' }]);
+});
+
+it('an item that drops out for a poll and comes back does not take the row again; one gone for 10 minutes does', async () => {
+  render(<Keys />);
+  await flush();
+  await arrive(item('a'));
+  expect(screen.getByText('Now · For you')).toBeTruthy();
+  await flush(TAKEOVER_MS + 1_000);
+  expect(screen.getByText('Now · Sales app')).toBeTruthy();
+  // The source goes stale for one poll and recovers: the same item, no second take-over.
+  await arrive();
+  await flush(15_000);
+  await arrive(item('a'));
+  expect(screen.getByText('Now · Sales app')).toBeTruthy();
+  // Gone for 10 minutes or more: new again.
+  await arrive();
+  await flush(NEW_AGAIN_MS);
+  await arrive(item('a'));
+  expect(screen.getByText('Now · For you')).toBeTruthy();
+});
+
+it('an item gone for just under 10 minutes is still the same item, and the memory is bounded by a day', async () => {
+  render(<Keys />);
+  await flush();
+  await arrive(item('a'));
+  await flush(TAKEOVER_MS + 1_000);
+  await arrive();
+  await flush(NEW_AGAIN_MS - 5_000);
+  await arrive(item('a'));
+  expect(screen.getByText('Now · Sales app')).toBeTruthy();
+  await arrive();
+  vi.setSystemTime(Date.now() + 25 * 60 * 60_000);
+  await arrive(item('a'));
+  expect(screen.getByText('Now · For you')).toBeTruthy();
+});
+
+it('items already waiting when the row mounts do not take it over, and the chip shows', async () => {
+  fy.set([item('a'), item('b')]);
+  render(<Keys />);
+  await flush();
+  expect(screen.getByText('Now · Sales app')).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'For you 2' })).toBeTruthy();
+  await flush(TAKEOVER_MS);
+  expect(screen.getByText('Now · Sales app')).toBeTruthy();
+});
+
+it('a new item while Hold is on does not arm a take-over: Auto afterwards shows the keys, not For you', async () => {
+  render(<Keys />);
+  await flush();
+  fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+  await arrive(item('a'));
+  expect(screen.getByText('Now · General')).toBeTruthy();
+  fireEvent.click(screen.getByRole('switch', { name: /Auto/ }));
+  expect(screen.getByText('Now · Sales app')).toBeTruthy();
+});
+
+it('a take-over waits for a press in flight: the key still gets its click, and the row changes after it', async () => {
+  render(<Keys />);
+  await flush();
+  const refresh = screen.getByRole('button', { name: 'Refresh' });
+  fireEvent.pointerDown(refresh);
+  await arrive(item('a'));
+  // Still the same row, the same button, mid press.
+  expect(screen.getByText('Now · Sales app')).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Refresh' })).toBe(refresh);
+  fireEvent.pointerUp(refresh);
+  fireEvent.click(refresh, { detail: 1 });
+  await flush(0);
+  expect(sent).toEqual([{ setId: 'sales', index: 0 }]);
+  await flush(10);
+  // The result line of the press is on the heading; the page itself is For you now.
+  expect(screen.getByText('Session a')).toBeTruthy();
+});
+
+it('a take-over waits for a key held down too, and is dropped if Hold came on meanwhile', async () => {
+  render(<Keys />);
+  await flush();
+  const refresh = screen.getByRole('button', { name: 'Refresh' });
+  fireEvent.keyDown(refresh, { key: 'Enter' });
+  await arrive(item('a'));
+  expect(screen.getByText('Now · Sales app')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+  fireEvent.keyUp(refresh, { key: 'Enter' });
+  await flush(10);
+  expect(screen.getByText('Now · General')).toBeTruthy();
+});
+
+it('a failed For you action shows one fixed line, and a double click runs it once', async () => {
+  const calls: unknown[] = [];
+  mocks.set('wall2_meet_join', (a) => {
+    calls.push(a);
+    throw 'gone';
+  });
+  render(<Keys />);
+  await flush();
+  await arrive(item('m1', { kind: 'meeting', title: 'Design review', action: 'Join', ref: 'mk' }));
+  const join = screen.getByRole('button', { name: 'Join: Design review' });
+  fireEvent.click(join, { detail: 1 });
+  await flush();
+  fireEvent.click(join, { detail: 2 });
+  await flush();
+  expect(calls).toEqual([{ key: 'mk' }]);
+  expect(screen.getByText('Could not open the meeting')).toBeTruthy();
+});
+
+it('Lock and All monitors off never run from the keyboard from a set either', async () => {
+  answer = front('general', 'notepad.exe');
+  render(<Keys />);
+  await flush();
+  const lock = screen.getByRole('button', { name: 'Lock' });
+  lock.focus();
+  expect(fireEvent.keyDown(lock, { key: 'Enter' })).toBe(false);
+  fireEvent.click(lock, { detail: 0 });
+  await flush();
+  expect(sent).toEqual([]);
+  fireEvent.click(lock, { detail: 1 });
+  await flush();
+  expect(sent).toEqual([{ setId: 'general', index: 2 }]);
+  expect(document.activeElement).not.toBe(lock);
 });
