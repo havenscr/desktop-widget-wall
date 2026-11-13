@@ -6,7 +6,8 @@ import { knob } from './long';
  * The Sound block's Sonos service, with invented speakers, routines and presets. Review
  * knobs: `?sonos=off` (not set up), `?sonos=down` (never reached), `?sonos=sparse` (one
  * routine, one speaker, no presets), `?sonos=heavy` (many routines with long names, many
- * speakers, a sleep timer), `?sonos=quiet` (nothing playing). The default is a typical
+ * speakers, a sleep timer), `?sonos=quiet` (nothing playing), `?skip=1` (an unforced play is
+ * skipped). The default is a typical
  * evening with music playing on a group.
  */
 const now = () => (reviewNow ? reviewNow() : Date.now());
@@ -87,13 +88,13 @@ function summary(m: Mode) {
       ? []
       : m === 'heavy'
         ? [
-            { id: 'whole', name: 'Whole House And Garden', active: false, loud: [] },
+            { id: 'whole', name: 'Whole House And Garden', active: false, loud: [{ name: 'Studio', level: 100, sets: false }] },
             { id: 'desk', name: 'Office Desk With The Big Speaker', active: true, loud: [] },
             { id: 'living', name: 'Living Spaces Downstairs', active: false, loud: [] },
             { id: 'upstairs', name: 'Upstairs Only', active: false, loud: [] },
           ]
         : [
-            { id: 'whole', name: 'Whole House', active: false, loud: [] },
+            { id: 'whole', name: 'Whole House', active: false, loud: [{ name: 'Studio', level: 100, sets: false }] },
             { id: 'desk', name: 'Office Desk', active: m !== 'quiet', loud: [] },
             { id: 'living', name: 'Living Spaces', active: false, loud: [] },
           ];
@@ -126,7 +127,12 @@ export function registerSonosMocks(): void {
   const slow = async () => {
     await new Promise((resolve) => setTimeout(resolve, 400));
   };
-  mocks.set('wall2_sonos_play', slow);
+  // `?skip=1`: an unforced play is skipped (nobody home), so "Play anyway" shows.
+  mocks.set('wall2_sonos_play', async (args) => {
+    await slow();
+    const forced = !!(args as { force?: boolean } | undefined)?.force;
+    return knob('skip') && !forced ? { started: false, reason: 'nobody is home' } : { started: true, reason: null };
+  });
   mocks.set('wall2_sonos_preset', slow);
   mocks.set('wall2_sonos_volume', slow);
   mocks.set('wall2_sonos_pause_all', slow);
