@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { draw, when, type HorizonDrawOptions, type HorizonEcho } from './renderer';
 import { CAMERAS, type CameraPreset } from './cameras';
+import { echoPaths, frameGap, pathContext, type PathFill, type PathStroke } from './canvasStub';
 import {
   DRIFT_SPEED,
   REST_LOOK,
@@ -18,45 +19,10 @@ import {
    such stroke is the range's own rim line and the last the mid layer's, so the echo lines are the
    ones between (the review frames are at night, where no sun highlight is stroked). */
 
-interface Stroke {
-  y: number[];
-  alpha: number;
-  width: number;
-}
-interface Fill {
-  n: number;
-  style: unknown;
-}
-
 const N = 1281;
 
-function record(o: HorizonDrawOptions): { strokes: Stroke[]; fills: Fill[] } {
-  let pts: number[] = [];
-  let alpha = 1;
-  let width = 1;
-  let style: unknown = null;
-  const strokes: Stroke[] = [];
-  const fills: Fill[] = [];
-  const gradient = () => ({ addColorStop() {} });
-  const ctx = new Proxy({} as Record<string, unknown>, {
-    get: (store, key: string) => {
-      if (key === 'beginPath') return () => void (pts = []);
-      if (key === 'moveTo' || key === 'lineTo') return (_x: number, y: number) => void pts.push(y);
-      if (key === 'stroke') return () => void strokes.push({ y: pts, alpha, width });
-      if (key === 'fill') return () => void fills.push({ n: pts.length, style });
-      if (key === 'createLinearGradient' || key === 'createRadialGradient') return gradient;
-      if (key === 'createPattern') return () => ({});
-      if (key in store) return store[key];
-      return () => {};
-    },
-    set: (store, key: string, value) => {
-      store[key] = value;
-      if (key === 'globalAlpha') alpha = value as number;
-      if (key === 'lineWidth') width = value as number;
-      if (key === 'fillStyle') style = value;
-      return true;
-    },
-  }) as unknown as CanvasRenderingContext2D;
+function record(o: HorizonDrawOptions): { strokes: PathStroke[]; fills: PathFill[] } {
+  const { ctx, strokes, fills } = pathContext();
   draw(ctx, o);
   return { strokes, fills };
 }
@@ -70,10 +36,7 @@ function options(cam: CameraPreset, echo: HorizonEcho | null, t = 2.5): HorizonD
 /** The rim line's heights above the horizon (the range's outline, cr) and the echo lines'. */
 function lines(cam: CameraPreset, echo: HorizonEcho | null, t = 2.5) {
   const { strokes, fills } = record(options(cam, echo, t));
-  const full = strokes.filter((s) => s.y.length === N);
-  const toH = (s: Stroke) => s.y.map((y) => cam.hy - y);
-  const rim = toH(full[0]);
-  const echoLines = full.slice(1, -1).map((s) => ({ h: toH(s), alpha: s.alpha, width: s.width }));
+  const { rim, echo: echoLines } = echoPaths(strokes, cam.hy);
   // Fills of the echo layers: closed paths of N + 2 points (the two horizon corners), in the echo block.
   const layerFills = fills.filter((f) => f.n === N + 2);
   return { rim, echo: echoLines, layerFills };
@@ -341,3 +304,47 @@ describe('the motion stepper', () => {
     expect(m.drift).toBe(REST_PHASE);
   });
 });
+
+describe('a blended line count (a glide between cameras)', () => {
+  const cam = CAMERAS.unwind;
+  const at = (count: number, rest: number) => {
+    const e = echoOptions({ ...cam, en: count }, 1, 2.5, 1, rest)!;
+    e.drift = rest >= 1 ? REST_PHASE : 0.3;
+    return lines(cam, e).echo;
+  };
+
+  for (const rest of [1, 0.5, 0]) {
+    it(`crosses every half and whole count with no line appearing, vanishing or jumping (rest ${rest})`, () => {
+      for (let k = 3; k <= 10; k++) {
+        for (const c of [k + 0.5, k + 1]) {
+          const g = frameGap(at(c - 0.01, rest), at(c + 0.01, rest), 0.01);
+          expect(g.worst).toBeLessThan(1);
+          expect(g.alpha).toBeLessThan(0.02);
+        }
+      }
+    });
+  }
+
+  it('a whole count draws one set exactly as before; a fractional one crossfades the two whole sets either side, each on its own levels', () => {
+    const one = at(7, 1);
+    expect(one).toHaveLength(7);
+    const both = at(7.25, 1);
+    expect(both).toHaveLength(15);
+    const { rim } = lines(cam, null);
+    both.slice(0, 7).forEach((l, j) => {
+      close(l.h, rim.map((v) => (v * (7 - j)) / 7));
+      expect(l.alpha).toBeCloseTo(one[j].alpha * 0.75, 6);
+    });
+    both.slice(7).forEach((l, j) => close(l.h, rim.map((v) => (v * (8 - j)) / 8)));
+  });
+});
+
+describe('at rest nothing follows time', () => {
+  it('the rest frame draws identical lines at any time', () => {
+    const cam = CAMERAS.unwind;
+    const a = lines(cam, restAt(cam), 2.5).echo;
+    const b = lines(cam, { ...restAt(cam), t: 913.7 }, 913.7).echo;
+    expect(b).toEqual(a);
+  });
+});
+
