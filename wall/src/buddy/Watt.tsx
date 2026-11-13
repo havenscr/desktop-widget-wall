@@ -1076,8 +1076,11 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
         const mid = onGround(spans, defaultSpot(p.place));
         const f = frameRef.current;
         setSpot(p.place, Number.NaN);
-        if (Math.abs(f.x - mid) < 1) wanderT.current = 0;
-        else callCarry(carry.current, tNowRef.current(), f.x, mid >= f.x ? 1 : -1, mid, sameSpan(spans, f.x, mid) && Math.abs(f.x - mid) <= TROT_MAX_PX);
+        if (Math.abs(f.x - mid) < 1 || reducedRef.current) {
+          // Under reduced motion he is simply there.
+          if (carry.current.mode !== NONE) cancelCarry(carry.current);
+          wanderT.current = 0;
+        } else callCarry(carry.current, tNowRef.current(), f.x, mid >= f.x ? 1 : -1, mid, sameSpan(spans, f.x, mid) && Math.abs(f.x - mid) <= TROT_MAX_PX);
         wake.current();
       }
     },
@@ -1149,7 +1152,9 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
         const x = frameRef.current.x;
         if (p.opacity > 0 && (c.mode === NONE || c.mode === SIT || c.mode === RETURN) && !isOnGround(spans, x)) {
           wanderT.current = 0;
-          callCarry(c, tNow(), x, frameRef.current.dir, wanderAt(walkOf(p.place), 0, wc).x, false);
+          // Under reduced motion he is simply there (the still pose stands at the new walk's middle).
+          if (reduced) cancelCarry(c);
+          else callCarry(c, tNow(), x, frameRef.current.dir, wanderAt(walkOf(p.place), 0, wc).x, false);
         }
       }
       // The Nap trick: when he lies down, and getting up (a yawn and a stretch) when it ends.
@@ -1207,8 +1212,8 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
       if (el) {
         // A move he cannot walk fades him out and in where he goes.
         el.style.opacity = String(p.opacity * (cr.mode === MOVE ? cr.fade : 1));
-        // Carried, he is drawn above the cards.
-        const z = air ? '40' : '';
+        // Carried, or with his menu open (a pop-up over the cards above him), he is drawn above the cards.
+        const z = air || cardRef.current ? '40' : '';
         if (el.style.zIndex !== z) el.style.zIndex = z;
       }
       const live = p.place !== null && p.camera !== null && p.opacity > 0.5;
@@ -1532,7 +1537,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
   // A call starting or ending, a bubble, a clover or her look changing wakes the loop (or repaints the still pose).
   useEffect(() => {
     wake.current();
-  }, [inCall, bubble, clover, pet.cosmetic, focus.status, ws.rain, ws.cold, minute]);
+  }, [inCall, bubble, clover, pet.cosmetic, focus.status, ws.rain, ws.cold, minute, watchTab]);
 
   // Dev review stills: a handle on the window to say a line, react or grow a clover.
   useEffect(() => {
