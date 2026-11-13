@@ -23,7 +23,7 @@
 // CI does not run this; run it by hand before a layout change is handed over.
 //
 //   WALL_CHROME=/path/to/chrome-or-headless-shell npm --prefix wall run fit-check
-//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, header, deck, tiles, picker, chips, heading, zenhint, fy-height, key-edge, hide-pill, hide-note)
+//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, header, deck, tiles, picker, chips, heading, zenhint, sky, floor, sun, tools, toolsnames, meetfill, meetempty, fy-height, key-edge, hide-pill, hide-note)
 //   npm --prefix wall run fit-check -- --self-test
 //
 // WALL_CHROME (or the first argument that is not a flag) is a Chromium or
@@ -65,6 +65,13 @@ const EXPECT = {
   zenhint: /^ *FAIL \.zen-bl \.zen-dimhint:.*container right \d+/m,
   chips: /^ *FAIL overlap: chip /m,
   heading: /^ *FAIL deck: the Now heading /m,
+  sky: /^ *FAIL pointer at .*reaches w-scrim/m,
+  floor: /^ *FAIL pointer at \.u-tomorrow .*reaches w-skyspill/m,
+  sun: /^ *FAIL pointer at .*reaches w-stage w-sun/m,
+  tools: /^ *FAIL tools drawer: .*outside x 1700 to 2560/m,
+  toolsnames: /^ *FAIL tools: .* is cut with no tooltip/m,
+  meetfill: /^ *FAIL meet: nothing fills the upper right/m,
+  meetempty: /^ *FAIL meet: nothing fills the upper right/m,
   // keys style
   'fy-height': /^ *FAIL deck: the Now row is \d+ px tall on/m,
   'key-edge': /^ *FAIL deck: key ".*" edge against the sky /m,
@@ -93,6 +100,20 @@ const OVERFLOWS = {
   zenhint: '.zen-dimhint { width: 2000px; }',
   chips: '.rib .ev { width: 400px !important; }',
   heading: '.work .right-wing .keys .deck-name { max-width: 40px; overflow: hidden; }',
+  // The whole-sky video layer catching the pointer and drawn over the controls.
+  sky: '.w-sky, .w-sky * { pointer-events: auto !important; } .w-sky { z-index: 30 !important; }',
+  // The floor wash catching the pointer and drawn over the Tomorrow card and the status line.
+  floor: '.w-skyspill { pointer-events: auto !important; z-index: 30 !important; left: -130px !important; width: 2440px !important; }',
+  // The sun's box spread over the whole band, over the controls.
+  sun: '.w-sun { left: -100px !important; width: 2500px !important; z-index: 30 !important; }',
+  // The Tools drawer 1400 px wide runs past the right edge of the stage.
+  tools: '.tools-drawer { width: 1400px !important; }',
+  // A 20 px name column cuts the account and source names (they carry no tooltip of their own).
+  toolsnames: '.tools-name, .tools-srcname { width: 20px !important; max-width: 20px !important; flex: none !important; overflow: hidden; }',
+  // Meet's Later list hidden leaves the upper right empty.
+  meetfill: '.meet .meet-later { display: none !important; }',
+  // The same on a state with no meeting: the upper right is empty there too.
+  meetempty: '.meet .meet-later { display: none !important; }',
   // keys style
   'fy-height': '.work .right-wing .fy-plate { height: 80px; }',
   'key-edge': '.work .right-wing .deck-tile.key-tile { border-color: transparent !important; }',
@@ -141,6 +162,13 @@ const MEET = ['.meet .panel'];
 const UNWIND = ['.u-room', '.u-chips', '.u-line'];
 const WATCH_IDLE = ['.u-room', '.w-card', '.w-card .u-card-head', '.w-field', '.w-now'];
 const WATCH_PLAYING = [...WATCH_IDLE, '.w-ctl', '.w-screen', '.w-under', '.w-open'];
+// Named controls that must still take the pointer with video playing: the rail, the tabs and
+// the gear, the transport, the list's first row and its field, a Room chip, the status chips,
+// Screens off and Watt.
+// Below the horizon, under the whole sky's floor wash: the Tomorrow card, the status line's
+// chips and Screens off (Unwind has no timeline strip).
+const FLOOR_HITS = ['.u-tomorrow', '.u-line .u-act', '.screens-off'];
+const SKY_HITS = ['.rail .rb', '.u-tab', '.w-gear', '.w-ctl .u-rd', '.w-play', '.w-mini', '.w-paste', '.u-chip', '.u-line .u-act', '.screens-off', '.w-open', '.watt-hit-part'];
 const DREAM = ['.dream-clock', '.dream-date', '.dream-card', '.dream-status', '.dream-hint'];
 // With more than three sessions the card list scrolls inside the centre: the three cards in
 // view, the header and the shelf must fit; the list itself is meant to scroll.
@@ -170,8 +198,13 @@ const query = (v) => `?${v.live ? '' : `hz=${v.hz ?? 'work'}&at=${v.at ?? '2026-
 const QUIET = [
   // Meet: both accounts read; one account failing; no account readable; long titles throughout.
   { name: 'Meet, both accounts read', agents: '3', go: 'meet', live: true, extra: '', checks: MEET },
+  { name: 'Meet, one account signed out: the one amber line, Later fills the upper right', agents: '3', go: 'meet', live: true, extra: '', checks: MEET },
+  { name: 'Meet, heavy: Later in two columns', agents: '3', go: 'meet', live: true, extra: '&meet=heavy', checks: MEET },
   { name: 'Meet, one account failing', agents: '3', go: 'meet', live: true, extra: '&meet=mixed', checks: MEET },
   { name: 'Meet, no account readable', agents: '3', go: 'meet', live: true, extra: '&meet=down', checks: MEET },
+  { name: 'Meet, nothing scheduled', agents: '3', go: 'meet', live: true, extra: '&meet=none', checks: MEET },
+  { name: 'Meet, calendar not set up', agents: '3', go: 'meet', live: true, extra: '&meet=off', checks: MEET },
+  { name: 'Meet, first read fails', agents: '3', go: 'meet', live: true, extra: '&meet=failing', checks: MEET },
   // Unwind with nine moods of long names: the Room list stays within two rows.
   { name: 'Unwind, nine long moods', agents: '3', hz: 'unwind', moods: 'nine', maxRows: 2, extra: '', checks: UNWIND },
   // Zen in the evening: the dim hint stays inside the controls' column (the box the Start row sets).
@@ -189,8 +222,31 @@ const QUIET = [
   { name: 'Watch, three saved, feathered playing', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=feather&wplay=0', checks: [...WATCH_PLAYING, '.w-list'] },
   { name: 'Watch, 24 saved, drive-in, long label playing', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=many&wlook=drivein&wplay=3', checks: [...WATCH_PLAYING, '.w-post'] },
   { name: 'Watch, settings sheet, one look', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wplay=0&wsheet=one', checks: ['.w-sheet', '.w-tiles', '.w-tile', '.w-sfoot'] },
+  // Part 2a: the whole sky and the sun. The whole sky lies under every control: each named
+  // control gets the pointer at its centre, and no point of the sky reaches the video layer.
+  { name: 'Watch, whole sky playing, every control still takes the pointer', agents: 'ask', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=sky&wplay=0', checks: [...WATCH_IDLE, '.w-ctl', '.w-open', '.w-look'], hits: [...SKY_HITS, ...FLOOR_HITS], noHit: '.w-sky, .w-skyspill' },
+  { name: 'Watch, whole sky, 24 saved, long label', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=many&wlook=sky&wplay=3', checks: [...WATCH_IDLE, '.w-ctl', '.w-open', '.w-look'], hits: [...SKY_HITS, ...FLOOR_HITS], noHit: '.w-sky, .w-skyspill' },
+  { name: 'Watch, the sun playing', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=sun&wplay=0', checks: [...WATCH_IDLE, '.w-ctl', '.w-under', '.w-open', '.w-list'], hits: SKY_HITS },
+  { name: 'Watch, the sun, 24 saved, Twitch', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=many&wlook=sun&wplay=2', checks: [...WATCH_IDLE, '.w-ctl', '.w-under', '.w-open'], hits: SKY_HITS },
+  { name: 'Watch, settings sheet with four looks, one look', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=sky&wplay=0&wsheet=one', checks: ['.w-sheet', '.w-tiles', '.w-tile', '.w-hint', '.w-sfoot'] },
   { name: 'Watch, settings sheet, a look per kind', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=many&wplay=2&wsheet=kind', checks: ['.w-sheet', '.w-srow', '.w-srow .w-seg', '.w-sfoot'] },
 ].map((v) => ({ ...v, q: query(v) }));
+// The Tools drawer over each place, and in each hard state: the drawer, its two columns and every
+// section stay inside the stage, right of the rail and the clock, with no cut text that has no tooltip.
+const TOOLS = ['.tools-drawer', '.tools-drawer .tools-col', '.tools-drawer .tools-block', '.tools-drawer .tools-list', '.tools-drawer .tools-foot'];
+const tools = (name, q) => ({ name: `Tools, ${name}`, q, checks: TOOLS, viewportOnly: true });
+const TOOLS_VARIANTS = [
+  tools('over Work, typical', `${work('3')}&tools=1`),
+  tools('over Work, accounts ringed', `${work('3')}&tools=accounts&meet=signedout`),
+  tools('over Home', `${home('moods=five')}&tools=1`),
+  tools('over Unwind', `${query({ hz: 'unwind', agents: '3', extra: '' })}&tools=1`),
+  tools('over Meet', `${query({ live: true, agents: '3', go: 'meet', extra: '' })}&tools=1`),
+  tools('every source failing or stale', `${work('down')}&weather=stale&tasks=down&home=down&box=none&sonos=down&tools=1`),
+  tools('every source not set up', `${work('off')}&tasks=off&home=off&sonos=off&meet=off&tools=1`),
+  tools('keys refused with a long reason', `${work('3')}&keys=refused&tools=1`),
+  tools('no keys file', `${work('3')}&source=default&tools=1`),
+  tools('Spotify not set up, a sign-in waiting', `${work('3')}&spotify=off&meet=signedout&tools=1`),
+];
 const VARIANTS = [
   { name: 'three lanes, long titles', q: work('3'), checks: [...WINGS, ...LANES] },
   { name: 'twelve sessions, long titles, five meetings at once', q: work('12', '&meet=busy'), checks: SCROLLED },
@@ -273,6 +329,7 @@ const VARIANTS = [
   { name: 'Home round two, twenty alerts, twelve moods, a track on a speaker', q: home('desk=typical&alerts=20&moods=12&spotifyplay=speaker&chores=many'), checks: ['.home .home-right', '.home .network-block', '.home .mood-row', '.home .sound-panel', '.home .sound-np', '.home .sound-plays'] },
   { name: 'Home round two, the alert drawer open', q: home('desk=typical&alerts=20'), click: '.panel.network.shield', checks: ['.home .shield-drawer'], viewportOnly: true },
   // end home round two
+  ...TOOLS_VARIANTS,
 ];
 // keys style: a small PNG reader (8-bit RGB or RGBA, not interlaced, as Chromium writes them) and contrast.
 function readPng(file) {
@@ -505,6 +562,29 @@ try {
         if (cut) deck.push('deck: the Now heading "' + name.textContent + '" is cut');
       }
     }
+    // The Tools drawer: inside x 1700 to 2560 and y 0 to 720, clear of the rail, and no text cut unless a hover card carries it.
+    const toolsOut = [];
+    const drawer = document.querySelector('.tools-drawer');
+    if (drawer) {
+      const dr = drawer.getBoundingClientRect();
+      const rail = document.querySelector('.rail');
+      if (dr.left < 1700 - 0.5 || dr.right > 2560 + 0.5 || dr.top < -0.5 || dr.bottom > 720 + 0.5) toolsOut.push('tools drawer: x ' + Math.round(dr.left) + ' to ' + Math.round(dr.right) + ', y ' + Math.round(dr.top) + ' to ' + Math.round(dr.bottom) + ' is outside x 1700 to 2560, y 0 to 720');
+      if (rail && hit(dr, rail.getBoundingClientRect())) toolsOut.push('tools drawer: covers the rail');
+      for (const e of drawer.querySelectorAll('.tools-name, .tools-srcname, .tools-line, .tools-hint, .tools-note, .tools-chip, .tools-btn, .tools-faint')) {
+        if (e.scrollWidth > e.clientWidth + 1 && !e.closest('[data-tip]')) toolsOut.push('tools: "' + (e.textContent || '').trim().slice(0, 40) + '" is cut with no tooltip');
+        // The row's hover card does not excuse a cut name or a cut read time: those cells must show whole.
+        else if (e.matches('.tools-name, .tools-srcname, [data-kind="time"]') && e.scrollWidth > e.clientWidth + 1) toolsOut.push('tools: "' + (e.textContent || '').trim().slice(0, 40) + '" is cut with no tooltip of its own');
+      }
+    }
+    // Meet's upper right is never an empty gap: a card reaches the right edge of the stage.
+    const meetOut = [];
+    const meetBody = document.querySelector('.meet .meet-body');
+    if (meetBody) {
+      const rights = [...meetBody.querySelectorAll(':scope > .panel')].map((e) => e.getBoundingClientRect().right);
+      const farthest = rights.length ? Math.max(...rights) : 0;
+      // In every state (a meeting, nothing scheduled, not set up, a failed read, no calendar readable) the Later card takes the freed upper right.
+      if (farthest < 2500) meetOut.push('meet: nothing fills the upper right (the last card ends at x ' + Math.round(farthest) + ', the stage is 2560 wide)');
+    }
     // keys style: the Now row's height, each key's box, and the grown Hide screen pill.
     const nowEl = document.querySelector('.work .right-wing .keys');
     const nowH = nowEl ? Math.round(nowEl.getBoundingClientRect().height * 10) / 10 : null;
@@ -580,7 +660,22 @@ try {
       else if (rad < Math.min(r.width, r.height) / 2 - 0.5) lw.push('left wing: focus outline on ' + name + ' is square (radius ' + rad + ' px)');
       e.blur();
     }
-    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, wattCard, header, deck, nowH, edges, hide, lw });
+    // Hit tests: each named control must get the pointer at its own centre, and no point of the
+    // sky (a grid over the top band) may land on a layer that only draws the video.
+    const hits = (new URLSearchParams(location.search).get('hits') || '').split('|').filter(Boolean).map((sel) => {
+      const e = [...document.querySelectorAll(sel)].find((x) => { const r = x.getBoundingClientRect(); return r.width > 0 && r.height > 0; });
+      if (!e) return { sel, found: false };
+      const r = e.getBoundingClientRect();
+      const x = r.left + r.width / 2, y = r.top + r.height / 2;
+      const h = document.elementFromPoint(x, y);
+      const owner = e.closest('.watt-hit') || e;
+      const ok = !!h && (owner === h || owner.contains(h));
+      return { sel, found: true, ok, x: Math.round(x), y: Math.round(y), got: h ? (h.className && h.className.baseVal === undefined ? h.className : h.tagName) : 'nothing' };
+    });
+    const noHit = new URLSearchParams(location.search).get('nohit');
+    const grid = [];
+    if (noHit) for (let y = 30; y < 720; y += 40) for (let x = 130; x < 2560; x += 80) { const h = document.elementFromPoint(x, y); if (h && h.closest(noHit)) grid.push(x + ',' + y); }
+    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, wattCard, header, deck, nowH, edges, hide, hits, grid, lw, toolsOut, meetOut });
     document.body.appendChild(pre);
   }, new URLSearchParams(location.search).get('card') ? 7000 : 3000);</script>`;
   const broken = overflow ? `<style>${OVERFLOWS[overflow]}</style>` : '';
@@ -593,10 +688,18 @@ try {
   const BREAK_ON = {
     zenhint: (v) => v.name.startsWith('Zen,'),
     picker: (v) => v.name.startsWith('Deck, the key picker open over'),
+    tools: (v) => v.name === 'Tools, over Work, typical',
+    toolsnames: (v) => v.name === 'Tools, over Work, typical',
+    meetfill: (v) => v.name === 'Meet, both accounts read',
+    meetempty: (v) => v.name === 'Meet, nothing scheduled',
     // keys style
     'fy-height': (v) => v.name === 'Keys style, day: library sets held on VS Code' || v.name === 'Keys style, For you with two plates',
     'key-edge': (v) => v.name === 'Keys style, day: library sets held on VS Code',
     'hide-pill': (v) => v.name === 'Unwind, Hide screen grown',
+    // whole sky and sun
+    sky: (v) => v.name.startsWith('Watch, whole sky playing'),
+    floor: (v) => v.name.startsWith('Watch, whole sky playing'),
+    sun: (v) => v.name === 'Watch, the sun playing',
     'hide-note': (v) => v.name === 'Unwind, Hide screen grown with the failure note',
   };
   const breakOn = BREAK_ON[overflow] ? VARIANTS.filter(BREAK_ON[overflow]) : VARIANTS.slice(0, 1);
@@ -604,7 +707,7 @@ try {
   const nowHeights = [];
   for (const v of overflow ? breakOn : VARIANTS) {
     console.log(`${v.name} (${v.q}):`);
-    const url = `${pathToFileURL(page).href}${v.q}&checks=${encodeURIComponent(v.checks.join('|'))}${v.click ? `&click=${encodeURIComponent(v.click)}` : ''}${v.card ? '&card=1' : ''}`;
+    const url = `${pathToFileURL(page).href}${v.q}&checks=${encodeURIComponent(v.checks.join('|'))}${v.click ? `&click=${encodeURIComponent(v.click)}` : ''}${v.card ? '&card=1' : ''}${v.hits ? `&hits=${encodeURIComponent(v.hits.join('|'))}` : ''}${v.noHit ? `&nohit=${encodeURIComponent(v.noHit)}` : ''}`;
     const dom = execFileSync(
       chrome,
       // Headless Chromium keeps 87 px of the window for itself, so 807 gives a 2560 by 720 viewport.
@@ -617,7 +720,11 @@ try {
       process.exit(1);
     }
     const text = m[1].replaceAll('&quot;', '"').replaceAll('&amp;', '&');
-    const { res, page: doc, overlaps, cut, gaps, wattCard, header, deck, nowH, edges, hide, lw } = JSON.parse(text);
+    const { res, page: doc, overlaps, cut, gaps, wattCard, header, deck, nowH, edges, hide, hits, grid, lw, toolsOut, meetOut } = JSON.parse(text);
+    for (const t of [...toolsOut, ...meetOut]) console.log(`  FAIL ${t}`);
+    if (toolsOut.length || meetOut.length) failed = true;
+    else if (v.q.includes('tools=')) console.log('  ok   the drawer stays inside x 1700 to 2560 and y 0 to 720, clear of the rail, no cut text without a tooltip');
+    else if (v.q.includes('go=meet')) console.log('  ok   Meet: a card reaches the right edge, nothing empty in the upper right');
     // keys style
     if (v.nowH && nowH !== null) nowHeights.push({ page: v.nowH, h: nowH, name: v.name });
     if (v.edges) {
@@ -684,6 +791,15 @@ try {
     for (const h of header) console.log(`  FAIL ${h}`);
     if (header.length) failed = true;
     else if (v.q.includes('hz=work')) console.log('  ok   the agents header is one line');
+    for (const h of hits) {
+      const ok = h.found && h.ok;
+      if (!ok) failed = true;
+      console.log(h.found ? `  ${ok ? 'ok  ' : 'FAIL'} pointer at ${h.sel} (${h.x}, ${h.y}) reaches ${ok ? 'it' : h.got}` : `  FAIL pointer at ${h.sel}: not found`);
+    }
+    if (v.noHit) {
+      if (grid.length) failed = true;
+      console.log(`  ${grid.length ? 'FAIL' : 'ok  '} no point of the sky or the floor lands on ${v.noHit}${grid.length ? `: ${grid.slice(0, 6).join(' ')}${grid.length > 6 ? ` and ${grid.length - 6} more` : ''}` : ''}`);
+    }
     if (v.card) {
       const c = wattCard;
       const okCard = c !== null && c.buttons >= 13 && Math.min(...c.heights) >= 32 - SLACK && c.outside === 0 && c.covered.length === 0;

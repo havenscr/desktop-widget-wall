@@ -229,6 +229,29 @@ state('unwind', 'watch: settings, one look', `${WM}&wlist=three&wlook=drivein&wp
 state('unwind', 'watch: settings, a look per kind', `${WM}&wlist=many&wplay=2&wsheet=kind`, TIMES.night);
 state('unwind', 'watch: listen with the Video corner', `${WM}&wlist=three&wtab=listen`, TIMES.night);
 state('unwind', 'watch: sparse data, three saved', `${SPARSE}&${WM}&wlist=three&wlook=feather&wplay=0`, TIMES.night);
+// Part 2a: the whole sky and the sun, at night and at noon, with 24 saved, and in the sheet.
+state('unwind', 'watch: whole sky, video playing', `${WM}&wlist=three&wlook=sky&wplay=0`, TIMES.night);
+state('unwind', 'watch: whole sky, bright test picture at noon', `${WM}&wlist=three&wlook=sky&wplay=0&wposter=bright`, TIMES.noon);
+state('unwind', 'watch: whole sky at noon', `${WM}&wlist=three&wlook=sky&wplay=1`, TIMES.noon);
+state('unwind', 'watch: whole sky, 24 saved, long label', `${WM}&wlist=many&wlook=sky&wplay=3`, TIMES.night);
+state('unwind', 'watch: sun, video playing', `${WM}&wlist=three&wlook=sun&wplay=0`, TIMES.night);
+state('unwind', 'watch: sun at noon', `${WM}&wlist=three&wlook=sun&wplay=1`, TIMES.noon);
+state('unwind', 'watch: sun at dusk', `${WM}&wlist=three&wlook=sun&wplay=0`, TIMES.dusk);
+state('unwind', 'watch: whole sky at dusk', `${WM}&wlist=three&wlook=sky&wplay=0`, TIMES.dusk);
+state('unwind', 'watch: sun, 24 saved, Twitch', `${WM}&wlist=many&wlook=sun&wplay=2`, TIMES.night);
+state('unwind', 'watch: settings, four looks, whole sky chosen', `${WM}&wlist=three&wlook=sky&wplay=0&wsheet=one`, TIMES.night);
+state('unwind', 'watch: settings, four looks per kind', `${WM}&wlist=many&wlook=sun&wplay=0&wsheet=kind`, TIMES.night);
+
+// The Tools drawer: opened on load (`tools=1`), over each place and in its hard states.
+state('work', 'tools: open', 'tools=1');
+state('work', 'tools: account signed out', 'meet=signedout&tools=1');
+state('work', 'tools: sources failing', 'agents=down&weather=stale&tools=1');
+state('work', 'tools: keys refused', 'keys=refused&tools=1');
+state('work', 'tools: no keys file', 'source=default&tools=1');
+state('work', 'tools: Spotify not set up', 'spotify=off&tools=1');
+state('home', 'tools: open', 'tools=1');
+state('unwind', 'tools: open', 'tools=1');
+state('meet', 'tools: open', 'tools=1');
 
 // Meet: the day's meetings.
 state('meet', 'both accounts ok', 'meet=bothok');
@@ -398,18 +421,34 @@ const EXPECT = [
   ['unwind', 'watch: settings, a look per kind', ['Videos and playlists', 'Live streams', 'Saved here: 19 YouTube, 5 Twitch']],
   ['unwind', 'watch: listen with the Video corner', ['Video', 'Tokyo Burnout', '!Nothing on']],
   ['unwind', 'watch: sparse data', ['Night drive mix', 'Not playing? Open in browser']],
+  ['unwind', 'watch: whole sky, 24', ['Look: Whole sky', '24 saved', 'Saved for the weekend']],
+  ['unwind', 'watch: whole sky', ['Look: Whole sky', 'Not playing? Open in browser']],
+  ['unwind', 'watch: sun, 24 saved, Twitch', ['Look: The sun', '24 saved', 'Live on the wall']],
+  ['unwind', 'watch: sun', ['Look: The sun', 'Not playing? Open in browser']],
+  ['unwind', 'watch: settings, four looks, whole sky', ['How video is shown', 'Whole sky', 'The sun', 'Drive-in']],
+  ['unwind', 'watch: settings, four looks per kind', ['Videos and playlists', 'Live streams', 'The sun']],
   // Meet
   ['meet', 'sparse', 'Nothing scheduled in the next 24 hours'],
   ['meet', 'heavy', 'Architecture working session'],
-  ['meet', 'both accounts ok', ['Connected', '!Sign in']],
+  ['meet', 'both accounts ok', ['Design review', '!Open Tools', '!Sign in']],
   ['meet', 'one meeting', 'Design review with the platform team'],
-  ['meet', 'broken: one account stale', 'Try again'],
-  ['meet', 'broken: both accounts failing', 'Calendar not available'],
-  ['meet', 'broken: one account failing', 'Network problem'],
-  ['meet', 'broken: calendar signed out', 'Signed out'],
+  ['meet', 'broken: one account stale', ['Design review with the platform team', 'Second calendar not answering.']],
+  ['meet', 'broken: both accounts failing', ['Calendar not available', '2 calendars need attention.', 'Open Tools']],
+  ['meet', 'broken: one account failing', ['Second calendar not answering.', 'Open Tools']],
+  ['meet', 'broken: calendar signed out', ['Calendar not available', '2 calendars need attention.', 'Open Tools']],
   ['meet', 'broken: calendar not set up', 'Calendar is not connected yet'],
   ['meet', 'broken: calendar read fails', 'Calendar unavailable'],
-  ['meet', 'typical', 'Design review with the platform team'],
+  ['meet', 'typical', ['Design review with the platform team', 'Second calendar signed out.', 'Open Tools', 'Weekly planning']],
+  ['meet', 'tools: open', ['Open Tools', 'Keys file', 'Second calendar']],
+  // The Tools drawer, over each place and in each hard state
+  ['work', 'tools: open', ['Accounts', 'Sources', 'Video look', 'Keys file', 'Build 7c9f442']],
+  ['work', 'tools: account signed out', ['Work calendar', 'Second calendar', 'Signed out', 'Sign in']],
+  ['work', 'tools: sources failing', ['Sources', 'never']],
+  ['work', 'tools: keys refused', 'keys.json refused: app 3, key 7'],
+  ['work', 'tools: no keys file', 'No keys.json. Defaults in use'],
+  ['work', 'tools: Spotify not set up', ['Spotify', 'Not set up']],
+  ['home', 'tools: open', ['Accounts', 'Keys file']],
+  ['unwind', 'tools: open', ['Accounts', 'Keys file']],
   // Zen and Dream
   ['zen', 'sparse', ['Breathe in', '!things are waiting']],
   ['zen', 'heavy', 'After this: 3 or more things are waiting'],
