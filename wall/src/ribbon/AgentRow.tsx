@@ -1,133 +1,92 @@
 import { useRef } from 'react';
-import { AGENT_BAND, AGENT_BAR, AGENT_PITCH, agentLayout, cards, dayTotals, sessionSpans, STAGE_NAMES, type AgentLayout, type AgentSegment, type OmniSummary, type Stage } from '../agents/model';
-import { scrollToCard } from '../agents/cardScroll';
-import { focusSession } from '../agents/open';
+import { agentLayout, cards, dayTotals, laneWaits, type AgentSegment, type Lane, type OmniSummary } from '../agents/model';
 import { agentsStale, agentsUntil, useAgents, type AgentsState } from '../agents/useAgents';
 import { tip } from '../ui/HoverTip';
-import { END_HOUR, RX, START_HOUR, wallHour } from './model';
+import { activityCells, agentsLineParts, agentsLineWidth, agentsLineX, cellOpacity, END_HOUR, needle, RX, shortTime, START_HOUR, wallHour, type AgentCounts } from './model';
 
 /** x on the ribbon for a time today, clamped to 6 AM to 12 AM; null for another day. */
-function ribbonX(ms: number, now: number): number | null {
+export function ribbonX(ms: number, now: number): number | null {
   const h = wallHour(ms, now);
   if (h < 0 || h > 24) return null;
   return RX(Math.min(END_HOUR, Math.max(START_HOUR, h)));
 }
 
+/** Words for a session's state, as the Day drawer's pills and the panel use them. */
+export const STATE_WORDS: Record<string, string> = { working: 'working', blocked: 'waiting on you', review: 'in review', idle: 'idle' };
+
+/** A card's state word: waiting on the owner first, then idle (helper 1.1.0 on), then its state. */
+export function laneStateWord(l: Lane): string {
+  if (laneWaits(l)) return STATE_WORDS.blocked;
+  if (l.live === 'idle' && l.state === 'working') return STATE_WORDS.idle;
+  return STATE_WORDS[l.state] ?? l.state;
+}
+
+/** Open sessions by where they stand: need the owner, work, or sit idle (review counts as idle). */
+export function agentCounts(s: OmniSummary): AgentCounts {
+  const list = cards(s);
+  const need = list.filter(laneWaits).length;
+  const working = list.filter((l) => !laneWaits(l) && l.state === 'working' && l.live !== 'idle').length;
+  return { total: list.length, need, working, idle: list.length - need - working };
+}
+
+/** Every drawn span today (all sessions, none folded), with stale data cut at the last good answer. */
+export function daySegments(st: AgentsState, now: number): AgentSegment[] {
+  if (!st.summary) return [];
+  return agentLayout(st.summary, now, (ms) => ribbonX(ms, now), agentsUntil(st), st.skewMs, Number.POSITIVE_INFINITY).segs;
+}
+
+/** Where the agents line sits and how wide it is, or null when it is not drawn. */
+function lineBox(st: AgentsState, now: number): { x: number; width: number; text: string } | null {
+  if (!st.summary || cards(st.summary).length === 0) return null;
+  const p = agentsLineParts(agentCounts(st.summary));
+  const text = `${p.head}${p.need ?? ''}${p.tail}`;
+  const width = agentsLineWidth(text);
+  return { x: agentsLineX(needle(now).x, width), width, text };
+}
+
 /**
- * The x spans the agent row takes on the ribbon right now (bars and the "+N more" label), so
- * the task marks can keep their labels clear of them. Empty when nothing is drawn.
+ * The x spans the agent row takes on the ribbon right now (the activity bar and the agents
+ * line), so the task marks can keep their labels clear of them. Empty when nothing is drawn.
  */
 export function agentBoxes(st: AgentsState, now: number): { x: number; width: number }[] {
-  if (!st.summary) return [];
-  const l = agentLayout(st.summary, now, (ms) => ribbonX(ms, now), agentsUntil(st), st.skewMs);
-  const out = [...l.segs, ...l.foldedSegs].map((g) => ({ x: g.x - 16, width: g.width + 22 }));
-  if (l.moreRow !== null) out.push({ x: 78, width: 70 });
+  const out: { x: number; width: number }[] = [];
+  const segs = daySegments(st, now);
+  if (segs.length > 0) {
+    const x = Math.min(...segs.map((g) => g.x));
+    out.push({ x, width: Math.max(...segs.map((g) => g.x + g.width)) - x });
+  }
+  const line = lineBox(st, now);
+  if (line) out.push({ x: line.x, width: line.width });
   return out;
 }
 
-/** Where the "+N more" label sits, at the row's left end. */
-const MORE_LABEL_X = 78;
-const MORE_LABEL_W = 74;
-
-/**
- * The shared hit box of the "+N more" row (the label and every folded span), and how its thin
- * lines stack: 2 px each up to four sessions, 1 px each beyond (eight lines, then they share).
- */
-function moreBox(l: AgentLayout): { left: number; width: number; lineH: number; slots: number; top: number } {
-  const xs = l.foldedSegs.flatMap((g) => [g.x, g.x + g.width]);
-  const left = Math.min(MORE_LABEL_X, ...xs);
-  const right = Math.max(MORE_LABEL_X + MORE_LABEL_W, ...xs);
-  const lineH = l.hidden.length <= 4 ? 2 : 1;
-  const slots = Math.floor(AGENT_PITCH / lineH);
-  const top = (AGENT_PITCH - Math.min(l.hidden.length, slots) * lineH) / 2;
-  return { left, width: right - left, lineH, slots, top };
-}
-
-/** What the ribbon knows about one session: its card number (or none), title and stage. */
-function who(s: OmniSummary, lane: string): { num: number | null; title: string; stage: Stage | null } {
-  const list = cards(s);
-  const i = list.findIndex((l) => l.id === lane);
-  if (i >= 0) return { num: i + 1, title: list[i].title, stage: list[i].stage };
-  const n = s.sessions?.[lane];
-  return { num: null, title: n?.title ?? 'An earlier session', stage: n?.stage ?? null };
-}
-
-/** The hover card of a bar: the session's name, stage and its spans today in plain words. */
-function BarTip({ s, segs, lane, canOpen }: { s: OmniSummary; segs: AgentSegment[]; lane: string; canOpen: boolean }) {
-  const w = who(s, lane);
-  return (
-    <>
-      <span className="tip-t">
-        {w.num !== null && <span className="bar-num">{w.num}</span>}
-        {w.title}
-      </span>
-      {w.stage && (
-        <span className="tip-s">
-          <i className="bar-stage" style={{ background: `var(--st-${w.stage})` }} aria-hidden="true" />
-          {STAGE_NAMES[w.stage]} stage{w.num === null ? ', no longer open' : ''}
-        </span>
-      )}
-      <span className="tip-s">{sessionSpans(segs, lane)}</span>
-      {canOpen && <span className="tip-k">Click to open it in OmniGent</span>}
-    </>
-  );
-}
-
-const STATE_WORDS: Record<string, string> = { working: 'working', blocked: 'waiting on you', review: 'in review' };
-
-/** The "+N more" row's hover: each folded session with its stage and state. */
-function MoreTip({ s, hidden, canScroll }: { s: OmniSummary; hidden: string[]; canScroll: boolean }) {
-  return (
-    <>
-      <span className="tip-t">{hidden.length} more sessions today</span>
-      {hidden.map((id) => {
-        const w = who(s, id);
-        const card = cards(s).find((l) => l.id === id);
-        const state = card ? (card.waiting ? 'blocked' : card.state) : (s.sessions?.[id]?.state ?? null);
-        return (
-          <span key={id} className="tip-s">
-            {w.stage && <i className="bar-stage" style={{ background: `var(--st-${w.stage})` }} aria-hidden="true" />}
-            {w.num !== null ? `${w.num}. ` : ''}
-            {w.title}
-            {w.stage ? `, ${STAGE_NAMES[w.stage]}` : ''}
-            {state ? `, ${STATE_WORDS[state]}` : w.num === null ? ', no longer open' : ''}
-          </span>
-        );
-      })}
-      {canScroll && <span className="tip-k">Click to show the first of them in the cards</span>}
-    </>
-  );
+/** "10:00 to 10:12: 3 sessions busy, one waiting on you". */
+function cellWords(c: { start: number; end: number; busy: number; waits: boolean }): string {
+  return `${shortTime(c.start)} to ${shortTime(c.end)}: ${c.busy} session${c.busy === 1 ? '' : 's'} busy${c.waits ? ', one waiting on you' : ''}`;
 }
 
 /**
- * The ribbon's agent row on Work (row 2): one thin sub-row per session, in the cards'
- * order, so a bar matches its card (the card's number sits at the left end of its first
- * bar, and its stage colour is the bar's left notch). Running is cyan, waiting on you
- * amber, a finished run grey, and a span the helper marks done grey with a mint cap; thin
- * bars, unlike the rounded calendar chips with words above. Hover shows the session's
- * name, stage and spans in plain words ("working 2:10 to 3:40, waiting on you since
- * 3:40"); a session with no card is named from the helper's day names, or "An earlier
- * session". A click opens the session in OmniGent. With more sessions than rows, the last
- * row says "+N more": its hover lists them and a click shows the first in the cards. When the helper answered (fresh) with
- * no span today and the row has no task due (`dueCount` 0 after a good task read), it says
- * "No agent activity yet" beside the row's icon; not set up, not answered, stale or tasks
- * unknown says nothing. A stale answer is dimmed and its open runs end at the last good
- * answer's time, so they never keep growing as if live.
+ * The calm strip's agent row (Work and Meet, row 2): a thin activity bar from 6 AM to now in
+ * 12 minute cells, brighter the more sessions were busy, amber where one waited on the owner;
+ * and one line after the now needle, "12 sessions: 2 need you, 5 working" (with none waiting,
+ * "3 sessions: 2 working, 1 idle"), which opens the "Agents today" panel. Late in the day,
+ * with under 360 px right of the needle, the line sits right-aligned before it. Each cell's
+ * hover says how many sessions were busy then. When the helper answered (fresh) with no span
+ * today, no open session and the row has no task due, it says "No agent activity yet"; not
+ * set up or not answered says nothing. A stale answer is dimmed, its line says "as of" the
+ * last good answer, and its cells end there, so it is never drawn as live.
  */
-export function AgentRow({ now, dueCount = null }: { now: number; dueCount?: number | null }) {
+export function AgentRow({ now, dueCount = null, onOpenPanel }: { now: number; dueCount?: number | null; onOpenPanel?: () => void }) {
   const st = useAgents();
   const stale = agentsStale(st);
   const s = st.summary;
-  const all = s ? agentLayout(s, now, (ms) => ribbonX(ms, now), agentsUntil(st), st.skewMs, Number.POSITIVE_INFINITY).segs : [];
-  const layout = s ? agentLayout(s, now, (ms) => ribbonX(ms, now), agentsUntil(st), st.skewMs) : null;
-  const segs = layout?.segs ?? [];
-  // A hover card is built once, when it shows, and redrawn from the same function, so it reads
-  // the newest data through this ref instead of the data of the render that opened it.
-  const live = useRef({ s, segs, hidden: layout?.hidden ?? [], canOpen: s?.linksAvailable ?? false, canScroll: false });
-  live.current = { s, segs, hidden: layout?.hidden ?? [], canOpen: s?.linksAvailable ?? false, canScroll: s !== null && (layout?.hidden ?? []).some((id) => cards(s).some((l) => l.id === id)) };
-  if (!s || !layout || all.length === 0) {
-    // Say the row is empty only when it is known: a fresh helper answer with no span today,
-    // and a good task read with nothing due (`dueCount` 0; null while the tasks are unknown).
+  const segs = daySegments(st, now);
+  const until = agentsUntil(st) ?? now;
+  const cells = activityCells(segs, now, Math.min(now, until));
+  const live = useRef(segs);
+  live.current = segs;
+  const line = lineBox(st, now);
+  if (!s || (cells.length === 0 && !line)) {
     const known = st.status === 'ready' && s !== null && !stale && dueCount === 0;
     return known ? (
       <span className="li-empty" style={{ top: 70 }}>
@@ -135,82 +94,62 @@ export function AgentRow({ now, dueCount = null }: { now: number; dueCount?: num
       </span>
     ) : null;
   }
-  const pitch = AGENT_PITCH;
-  const more = moreBox(layout);
-  const bar = AGENT_BAR;
-  const cap = Math.min(9, bar + 4);
-  const canOpen = s.linksAvailable;
-  const firstCard = layout.hidden.find((id) => cards(s).some((l) => l.id === id)) ?? null;
-  // The number goes on the first bar of each carded session.
-  const firstOf = new Set<string>();
-  const numbered = new Set<string>();
-  for (const g of [...segs].sort((a, b) => a.start - b.start)) {
-    if (!firstOf.has(g.lane)) {
-      firstOf.add(g.lane);
-      numbered.add(g.key);
-    }
-  }
+  const counts = agentCounts(s);
+  const parts = agentsLineParts(counts);
+  const asOf = stale && (st.freshAt ?? st.okAt) !== null ? `, as of ${shortTime((st.freshAt ?? st.okAt) as number)}` : '';
   return (
-    <div className={`agent-row${stale ? ' stale' : ''}`} data-rows={layout.rows}>
-      {/* The day in one line, on the row's icon. */}
+    <div className={`agent-row${stale ? ' stale' : ''}`}>
       <span
         className="li-hit"
         style={{ top: 70 }}
-        aria-label={dayTotals(all)}
+        aria-label={dayTotals(segs)}
         {...tip(() => (
           <>
             <span className="tip-t">Agent activity and tasks due today</span>
-            <span className="tip-s">{dayTotals(all)}{stale ? ' (may be out of date)' : ''}</span>
+            <span className="tip-s">{dayTotals(live.current)}{stale ? ' (may be out of date)' : ''}</span>
           </>
         ))}
       />
-      {segs.map((g) => {
-        const w = who(s, g.lane);
-        const label = `${w.title}: ${sessionSpans(segs, g.lane)}`;
-        return (
-          <span
-            key={g.key}
-            className={`sg-hit${canOpen ? ' open' : ''}`}
-            data-lane={g.lane}
-            style={{ top: AGENT_BAND.top + g.row * pitch, left: g.x, width: g.width, height: pitch }}
-            role={canOpen ? 'button' : 'img'}
-            aria-label={label}
-            onClick={canOpen ? () => focusSession(g.lane) : undefined}
-            {...tip(() => (live.current.s ? <BarTip s={live.current.s} segs={live.current.segs} lane={g.lane} canOpen={live.current.canOpen} /> : null))}
-          >
-            <i
-              className={`sg ${g.kind}`}
-              style={{ top: (pitch - bar) / 2, height: bar, ['--sc' as string]: w.stage ? `var(--st-${w.stage})` : 'transparent' }}
-            />
-            {g.kind === 'done' && <i className="cap2" style={{ top: (pitch - cap) / 2, ['--cap' as string]: `${cap}px` }} />}
-            {w.num !== null && numbered.has(g.key) && <b className="sg-num">{w.num}</b>}
-          </span>
-        );
-      })}
-      {layout.moreRow !== null && (
+      {cells.map((c) => (
         <span
-          className={`sg-more${firstCard ? ' open' : ''}`}
-          style={{ top: AGENT_BAND.top + layout.moreRow * pitch, height: pitch, left: more.left, width: more.width }}
-          role={firstCard ? 'button' : 'img'}
-          aria-label={`${layout.hidden.length} more sessions today`}
-          onClick={firstCard ? () => scrollToCard(firstCard) : undefined}
-          {...tip(() => (live.current.s ? <MoreTip s={live.current.s} hidden={live.current.hidden} canScroll={live.current.canScroll} /> : null))}
+          key={c.start}
+          className={`sg-hit ac${onOpenPanel ? ' open' : ''}`}
+          data-lane={`c${c.start}`}
+          style={{ left: c.x, width: c.width }}
+          aria-hidden="true"
+          onClick={onOpenPanel}
+          {...tip(() => (
+            <>
+              <span className="tip-t">{cellWords(c)}</span>
+              {stale && <span className="tip-s">May be out of date</span>}
+              {onOpenPanel && <span className="tip-k">Click to open Agents today</span>}
+            </>
+          ))}
         >
-          {layout.foldedSegs.map((g) => {
-            const i = layout.hidden.indexOf(g.lane);
-            const line = more.lineH;
-            return (
-              <i
-                key={g.key}
-                className={`sg-line ${g.kind}`}
-                style={{ left: g.x - more.left, width: g.width, height: line, top: more.top + (i % more.slots) * line }}
-              />
-            );
-          })}
-          <em className="sg-more-t" style={{ left: MORE_LABEL_X - more.left }}>
-            +{layout.hidden.length} more
-          </em>
+          <i className={c.waits ? 'wait' : ''} style={{ opacity: cellOpacity(c.busy) }} />
         </span>
+      ))}
+      {line && (
+        <button
+          type="button"
+          className={`ag-line${line.x < needle(now).x ? ' before' : ''}`}
+          style={{ left: line.x }}
+          disabled={!onOpenPanel}
+          aria-label={`${line.text}${asOf}. Opens Agents today`}
+          onClick={onOpenPanel}
+          {...tip(() => (
+            <>
+              <span className="tip-t">{line.text}</span>
+              {stale && <span className="tip-s">May be out of date{asOf}</span>}
+              <span className="tip-k">Click to open Agents today</span>
+            </>
+          ))}
+        >
+          {parts.head}
+          {parts.need && <span className="need">{parts.need}</span>}
+          {parts.tail}
+          {asOf && <span className="asof">{asOf}</span>}
+        </button>
       )}
     </div>
   );
