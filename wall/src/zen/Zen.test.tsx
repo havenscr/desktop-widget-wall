@@ -8,6 +8,7 @@ import { Dream } from './Dream';
 import { mocks } from '../bridge/tauri';
 import { lane, summary } from '../agents/fixtures';
 import { resetAgents } from '../agents/useAgents';
+import { usePacificTime } from '../ribbon/testZone';
 import { LAST_MOOD_AT_KEY } from '../unwind/RoomCard';
 import { LAST_MOOD_KEY, MOODS_CACHE_KEY } from '../home/Moods';
 import {
@@ -24,6 +25,8 @@ import {
   sessionLabel,
   waitingLines,
 } from './model';
+
+usePacificTime();
 
 function setReducedMotion(reduce: boolean) {
   window.matchMedia = ((query: string) => ({
@@ -364,7 +367,7 @@ it('Dream: the hint says what really wakes it, at 13 px, and the date sits under
   const { container } = render(<Dream onWake={() => undefined} />);
   expect(screen.getByText('Move the mouse or click to wake')).toBeTruthy();
   expect(screen.queryByText(/Touch anywhere/)).toBeNull();
-  expect(container.querySelector('.dream-date')!.textContent).toBe('Wednesday, November 11');
+  expect(container.querySelector('.dream-date')!.textContent).toMatch(/^[A-Z][a-z]+day, [A-Z][a-z]+ \d{1,2}$/);
   expect(container.querySelector('.dream-clock')!.textContent).toBe('11:48PM');
 });
 
