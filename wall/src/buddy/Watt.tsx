@@ -1016,9 +1016,10 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
   const refusal = (): string | null => {
     const p = presence.current;
     if (!p.place || p.opacity < 0.5) return 'Watt is away';
+    // Asleep is the reason he would give first, whatever else is going on.
+    if (p.night) return 'Watt is asleep';
     if (q.inCall) return 'Not during a call or meeting';
     if (q.focusSince !== null && nowRef.current() - q.focusSince < FOCUS_QUIET_MS) return 'Not in the first minute of focus';
-    if (p.night) return 'Watt is asleep';
     return null;
   };
   const refusalRef = useRef(refusal);

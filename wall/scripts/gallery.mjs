@@ -302,6 +302,11 @@ add('unwind', 'unwind: hide screen note while focused', url('unwind', TYPICAL_AT
  * adjacent elements run together ("412blocked").
  */
 const EXPECT = [
+  // Watt's menu: its groups and items (at night the tricks wait and the menu says why).
+  ['work', 'Watt: menu open', ['Tricks', 'Come here', 'Read with me, 25 min']],
+  ['home', 'Watt: menu open', ['Tricks', 'Stay here', 'Talks']],
+  ['unwind', 'Watt: menu open', ['Tricks', 'Together', 'Wears']],
+  ['unwind', 'Watt: menu at night', ['Watt is asleep', 'Tricks']],
   // Work
   ['work', 'sparse', ['Nothing due', 'All slots free']],
   ['work', 'heavy', ['115 more can wait', 'Architecture working', 'Draft the workshop outline']],
@@ -469,6 +474,12 @@ const NO_TEXT = [
   ['home', 'audio demo', 'only the drawn levels move'],
   ['unwind', 'audio demo', 'only the drawn levels move'],
   ['zen', 'focus running, long title', 'Zen shows no session title'],
+  // Watt set down elsewhere: only where he stands changes (his stored spot), no text.
+  ['work', 'Watt: set down', 'only where Watt stands changes'],
+  ['home', 'Watt: set down', 'only where Watt stands changes'],
+  ['meet', 'Watt: set down', 'only where Watt stands changes'],
+  ['unwind', 'Watt: set down', 'only where Watt stands changes'],
+  ['unwind', 'Watt: on Watch', 'only where Watt stands changes'],
 ];
 
 const matches = (st, [sc, prefix, , exact]) => sc === st.screen && (exact === true ? st.name === prefix : st.name.startsWith(prefix));
