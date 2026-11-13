@@ -83,7 +83,7 @@ state('work', 'music paused', 'media=paused');
 // The ridgelines rest in every other still (a review frame shows them at rest); these two have music driving them.
 state('work', 'audio demo (lines follow the music)', 'audio=demo');
 state('home', 'audio demo (lines follow the music)', 'audio=demo');
-state('unwind', 'heavy, nine moods with long labels', HEAVY.replace('moods=six', 'moods=nine'));
+state('unwind', 'nine moods, long labels', HEAVY.replace('moods=six', 'moods=nine'));
 state('work', 'tasks few', 'tasks=few');
 state('work', 'tasks heavy (115 more)', 'tasks=heavy');
 state('work', 'usage meters near full', 'usage=high');
@@ -133,6 +133,8 @@ state('home', 'morning camera, sparse', SPARSE, TIMES.morning);
 
 // Timeline rows that say they are empty (only when that is known).
 state('work', 'timeline: no meetings today', 'meet=none');
+state('dream', 'one agent waiting', 'agents=ask', TIMES.night);
+state('dream', 'broken: calendar not available', 'meet=down', TIMES.night);
 state('work', 'timeline: calendar not available', 'meet=signedout');
 state('work', 'timeline: both accounts failing', 'meet=down');
 state('work', 'timeline: one account failing', 'meet=mixed');
@@ -238,14 +240,15 @@ const EXPECT = [
   // Unwind
   ['unwind', 'sparse', ['Nothing playing', 'Quiet']],
   ['unwind', 'heavy', ['An Extremely Long Song Title', 'Away For The Weekend']],
-  ['unwind', 'status chips, nothing waiting', ['2 agents still running', 'Nothing needs you']],
+  ['unwind', 'status chips, nothing waiting', ['2 agents still running', 'No agent needs you']],
   ['unwind', 'status chips, sessions waiting', '2 things need you'],
-  ['unwind', 'status chips, none running', ['Nothing needs you', '!still running']],
-  ['unwind', 'status chips, helper not set up', ['Work is put away', '!Nothing needs you', '!still running']],
+  ['unwind', 'status chips, none running', ['No agent needs you', '!still running']],
+  ['unwind', 'status chips, helper not set up', ['Work is put away', '!No agent needs you', '!still running']],
   ['unwind', 'status chips, focus on', 'Focus is still on'],
   ['unwind', 'music paused', '1:03'],
   ['unwind', 'long track', 'An Extremely Long Song Title'],
   ['unwind', 'broken: media unavailable', 'Nothing playing'],
+  ['unwind', 'nine moods, long labels', ['More', '!Away For The Weekend']],
   ['unwind', 'broken: calendar not set up', '!First thing'],
   ['unwind', 'broken: calendar read fails', '!First thing'],
   ['unwind', 'broken: task app down', 'First thing: Planning check-in at 9:30'],
@@ -260,7 +263,7 @@ const EXPECT = [
   ['meet', 'broken: both accounts failing', 'Calendar not available'],
   ['meet', 'broken: one account failing', 'Network problem'],
   ['meet', 'broken: calendar signed out', 'Signed out'],
-  ['meet', 'broken: calendar not set up', 'Not set up'],
+  ['meet', 'broken: calendar not set up', 'Calendar is not connected yet'],
   ['meet', 'broken: calendar read fails', 'Calendar unavailable'],
   ['meet', 'typical', 'Design review with the platform team'],
   // Zen and Dream
@@ -270,6 +273,8 @@ const EXPECT = [
   ['dream', 'sparse', '!Breathe in'],
   ['dream', 'heavy', '!Breathe in'],
   ['dream', 'night with audio demo', '!Breathe in'],
+  ['dream', 'one agent waiting', 'Click anywhere to wake'],
+  ['dream', 'broken: calendar not available', 'Calendar not available'],
 ];
 
 /**
