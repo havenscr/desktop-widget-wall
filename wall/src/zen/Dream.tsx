@@ -1,7 +1,7 @@
 import { IconCalendar } from '@tabler/icons-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { agentsStale, useAgents } from '../agents/useAgents';
-import { needsYouCount } from '../agents/model';
+import { laneWaits, needsYouCount } from '../agents/model';
 import { SheepSvg } from '../buddy/Watt';
 import { SPRITES, SPRITE_PX } from '../buddy/sprites';
 import { formatClock } from '../clock/format';
@@ -9,15 +9,10 @@ import { MOODS_CACHE_KEY, moodLabel } from '../home/Moods';
 import { tomorrowTime } from '../unwind/model';
 import { readMark } from '../unwind/RoomCard';
 import { clockTime, useTomorrow } from '../unwind/Tomorrow';
-import { dreamStatusText } from './model';
+import { dreamStatusText, driftOffset, DRIFT_TICK_MS } from './model';
 
 /** Where Watt sleeps, in stage pixels (left edge and ground line). */
 export const DREAM_SHEEP = { x: 1226, base: 688 } as const;
-
-/** The mouse must travel this far (px) after Dream appears before it counts as waking it. */
-export const WAKE_MOVE_PX = 40;
-/** Mouse movement in this long after Dream appears is ignored (the click that opened it, a settling hand). */
-export const WAKE_GRACE_MS = 1500;
 
 const systemNow = () => new Date();
 
@@ -62,18 +57,44 @@ function DreamTomorrow({ now }: { now: () => Date }) {
 function DreamStatus({ now }: { now: () => Date }) {
   const st = useAgents();
   const fresh = st.status === 'ready' && st.summary !== null && !agentsStale(st);
-  const working = fresh ? st.summary!.lanes.filter((l) => l.state === 'working').length : null;
+  // The same rule as Work: a lane that waits on the owner is not working.
+  const working = fresh ? st.summary!.lanes.filter((l) => !laneWaits(l) && l.state === 'working').length : null;
   const needs = fresh ? needsYouCount(st.summary!) : null;
   const text = dreamStatusText(working, needs, onMoodLabel(now().getTime()));
   if (!text) return null;
   return <div className="dream-status">{text}</div>;
 }
 
+/** True when the system asks for reduced motion. */
+function reducedMotion(): boolean {
+  return typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+/**
+ * One layer holding all of Dream's text. It moves by `transform` alone along a slow closed path
+ * (see `driftOffset`), so no pixel of text stays lit for hours on an OLED panel and nothing
+ * else moves. Under reduced motion it moves in a few small discrete steps many minutes apart.
+ */
+export function DreamDrift({ now, children }: { now: () => Date; children: ReactNode }) {
+  const [at, setAt] = useState(() => now().getTime());
+  useEffect(() => {
+    const id = window.setInterval(() => setAt(now().getTime()), DRIFT_TICK_MS);
+    return () => window.clearInterval(id);
+  }, [now]);
+  const reduced = reducedMotion();
+  const o = driftOffset(at, reduced);
+  return (
+    <div className={`dream-drift${reduced ? ' stepped' : ''}`} style={{ transform: `translate(${o.x}px, ${o.y}px)` }}>
+      {children}
+    </div>
+  );
+}
+
 /**
  * Dream: the breathing guide is gone, flames are dimmed (by `Flames`), a large thin clock at left centre
  * with the date under it, tomorrow's first meeting at right centre, a quiet status line along the bottom
- * left, and Watt asleep in the corner with z's drifting up. A click, or moving the mouse a little, wakes
- * back to Zen. Everything is dim and still: no element is bright (burn-in).
+ * left, and Watt asleep in the corner with z's drifting up. A click wakes back to Zen.
+ * Everything is dim, and all the text drifts slowly (burn-in).
  */
 export function Dream({ onWake, now = systemNow }: { onWake: () => void; now?: () => Date }) {
   const [parts, setParts] = useState(() => formatClock(now()));
@@ -81,9 +102,6 @@ export function Dream({ onWake, now = systemNow }: { onWake: () => void; now?: (
     const id = window.setInterval(() => setParts(formatClock(now())), 15_000);
     return () => window.clearInterval(id);
   }, [now]);
-  // Moving the mouse wakes it, but only a real move: after the grace time, and by more than a few pixels.
-  const born = useRef(Date.now());
-  const from = useRef<{ x: number; y: number } | null>(null);
   const h = SPRITES.sleep.length * SPRITE_PX;
   return (
     <div
@@ -92,15 +110,6 @@ export function Dream({ onWake, now = systemNow }: { onWake: () => void; now?: (
       tabIndex={0}
       aria-label="Wake"
       onClick={onWake}
-      onMouseMove={(e) => {
-        if (Date.now() - born.current < WAKE_GRACE_MS) return;
-        const p = { x: e.clientX, y: e.clientY };
-        if (!from.current) {
-          from.current = p;
-          return;
-        }
-        if (Math.hypot(p.x - from.current.x, p.y - from.current.y) >= WAKE_MOVE_PX) onWake();
-      }}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
@@ -108,14 +117,16 @@ export function Dream({ onWake, now = systemNow }: { onWake: () => void; now?: (
         }
       }}
     >
-      <div className="dream-clock">
-        {parts.time}
-        <small>{parts.meridiem}</small>
-      </div>
-      <div className="dream-date">{parts.date}</div>
-      <DreamTomorrow now={now} />
-      <DreamStatus now={now} />
-      <div className="dream-hint">Move the mouse or click to wake</div>
+      <DreamDrift now={now}>
+        <div className="dream-clock">
+          {parts.time}
+          <small>{parts.meridiem}</small>
+        </div>
+        <div className="dream-date">{parts.date}</div>
+        <DreamTomorrow now={now} />
+        <DreamStatus now={now} />
+        <div className="dream-hint">Click anywhere to wake</div>
+      </DreamDrift>
       <div className="dream-watt" aria-hidden="true" style={{ left: DREAM_SHEEP.x, top: DREAM_SHEEP.base - h }}>
         <div className="dream-bob">
           <SheepSvg pose="sleep" />

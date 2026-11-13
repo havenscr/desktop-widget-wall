@@ -22,6 +22,9 @@ import {
   longestWordWidth,
   minRingDiameter,
   dreamStatusText,
+  driftOffset,
+  DRIFT_PERIOD_MS,
+  DRIFT_STEP_MS,
   sessionLabel,
   waitingLines,
 } from './model';
@@ -365,25 +368,100 @@ const flushAsync = async (ms = 0) => {
 it('Dream: the hint says what really wakes it, at 13 px, and the date sits under the clock', () => {
   vi.setSystemTime(new Date(2026, 10, 11, 23, 48));
   const { container } = render(<Dream onWake={() => undefined} />);
-  expect(screen.getByText('Move the mouse or click to wake')).toBeTruthy();
-  expect(screen.queryByText(/Touch anywhere/)).toBeNull();
+  expect(screen.getByText('Click anywhere to wake')).toBeTruthy();
+  expect(screen.queryByText(/Touch anywhere|Move the mouse/)).toBeNull();
   expect(container.querySelector('.dream-date')!.textContent).toMatch(/^[A-Z][a-z]+day, [A-Z][a-z]+ \d{1,2}$/);
   expect(container.querySelector('.dream-clock')!.textContent).toBe('11:48PM');
 });
 
-it('Dream: a mouse move wakes it only after the grace time and by more than a few pixels; jitter does not', () => {
+it('Dream: moving the mouse never wakes it; a click and the keys do', () => {
   const onWake = vi.fn();
   render(<Dream onWake={onWake} />);
   const w = screen.getByLabelText('Wake');
+  act(() => void vi.advanceTimersByTime(5000));
   fireEvent.mouseMove(w, { clientX: 10, clientY: 10 });
-  fireEvent.mouseMove(w, { clientX: 400, clientY: 10 });
+  fireEvent.mouseMove(w, { clientX: 900, clientY: 300 });
+  fireEvent.mouseEnter(w);
   expect(onWake).not.toHaveBeenCalled();
-  act(() => void vi.advanceTimersByTime(2000));
-  fireEvent.mouseMove(w, { clientX: 100, clientY: 100 });
-  fireEvent.mouseMove(w, { clientX: 103, clientY: 101 });
-  expect(onWake).not.toHaveBeenCalled();
-  fireEvent.mouseMove(w, { clientX: 300, clientY: 100 });
+  fireEvent.click(w);
   expect(onWake).toHaveBeenCalledTimes(1);
+});
+
+/** The layer's offset from its inline transform. */
+const offsetOf = (el: Element | null) => {
+  const n = ((el as HTMLElement).style.transform.match(/-?\d+(?:\.\d+)?/g) ?? []).map(Number);
+  return { x: n[0] ?? Number.NaN, y: n[1] ?? 0 };
+};
+
+it('Dream: all its text sits in one drifting layer whose offset changes over time and stays within 30 px', () => {
+  vi.setSystemTime(new Date(2026, 10, 11, 23, 0));
+  const { container } = render(<Dream onWake={() => undefined} />);
+  const layer = container.querySelector('.dream-drift')!;
+  for (const sel of ['.dream-clock', '.dream-date', '.dream-hint']) expect(layer.querySelector(sel)).not.toBeNull();
+  const seen = new Set<string>();
+  for (let i = 0; i < 80; i += 1) {
+    act(() => void vi.advanceTimersByTime(30_000));
+    const o = offsetOf(layer);
+    seen.add(`${o.x},${o.y}`);
+    expect(Math.abs(o.x)).toBeLessThanOrEqual(15);
+    expect(Math.abs(o.y)).toBeLessThanOrEqual(10);
+  }
+  // Forty minutes is two laps of 40 samples each: every lap visits the same many different places.
+  expect(seen.size).toBeGreaterThanOrEqual(30);
+  // Only transform moves: no left, top or margin is set on the layer.
+  expect((layer as HTMLElement).style.left).toBe('');
+  expect((layer as HTMLElement).style.top).toBe('');
+  expect((layer as HTMLElement).style.margin).toBe('');
+});
+
+it('Dream drift: the path is closed, one lap in 20 minutes', () => {
+  expect(driftOffset(0, false)).toEqual(driftOffset(DRIFT_PERIOD_MS, false));
+  expect(driftOffset(0, false)).toEqual({ x: 15, y: 0 });
+  expect(driftOffset(DRIFT_PERIOD_MS / 4, false)).toEqual({ x: 0, y: 10 });
+  expect(DRIFT_PERIOD_MS).toBeGreaterThanOrEqual(10 * 60_000);
+});
+
+it('Dream drift under reduced motion: a few discrete steps, many minutes apart', () => {
+  setReducedMotion(true);
+  vi.setSystemTime(new Date(2026, 10, 11, 23, 0));
+  const { container } = render(<Dream onWake={() => undefined} />);
+  const layer = container.querySelector('.dream-drift')!;
+  expect(layer.classList.contains('stepped')).toBe(true);
+  const seen: string[] = [];
+  let changes = 0;
+  for (let i = 0; i < 60; i += 1) {
+    act(() => void vi.advanceTimersByTime(30_000));
+    const o = offsetOf(layer);
+    const k = `${o.x},${o.y}`;
+    if (seen.length === 0 || seen[seen.length - 1] !== k) changes += 1;
+    seen.push(k);
+    expect(Math.abs(o.x)).toBeLessThanOrEqual(15);
+    expect(Math.abs(o.y)).toBeLessThanOrEqual(10);
+  }
+  // Thirty minutes: four steps at most five changes, never a continuous slide.
+  expect(new Set(seen).size).toBeLessThanOrEqual(4);
+  expect(changes).toBeLessThanOrEqual(5);
+  expect(changes).toBeGreaterThanOrEqual(2);
+  expect(DRIFT_STEP_MS).toBeGreaterThanOrEqual(5 * 60_000);
+});
+
+it('Zen: the end-early hint shows only while a session runs and is not ending', () => {
+  render(<Zen nowMs={clockAt(DAY)} />);
+  expect(screen.queryByText('Click anywhere to end early')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: /Start/ }));
+  expect(screen.getByText('Click anywhere to end early')).toBeTruthy();
+  act(() => void vi.advanceTimersByTime(5 * 60_000 + 600));
+  // The guide is fading out: a click does nothing now, so the hint is gone.
+  expect(screen.queryByLabelText('End session early')).toBeNull();
+  expect(screen.queryByText('Click anywhere to end early')).toBeNull();
+});
+
+it('Zen: keyboard focus starts on the chosen length, not the first chip', () => {
+  render(<Zen nowMs={clockAt(DAY)} />);
+  const focused = document.activeElement as HTMLElement;
+  expect(focused.getAttribute('role')).toBe('radio');
+  expect(focused.getAttribute('aria-checked')).toBe('true');
+  expect(focused.textContent).toBe('5 min');
 });
 
 it('dreamStatusText says only what is known', () => {
@@ -445,4 +523,19 @@ it('the chosen session length is the one filled chip', () => {
   fireEvent.click(screen.getByRole('radio', { name: '10 min' }));
   const on = screen.getAllByRole('radio').filter((r) => r.getAttribute('aria-checked') === 'true');
   expect(on.map((r) => r.textContent)).toEqual(['10 min']);
+});
+
+it('Dream status: a lane that waits on the owner is not counted as working, like Work', async () => {
+  vi.setSystemTime(new Date(2026, 10, 11, 23, 48));
+  resetAgents();
+  localStorage.clear();
+  mocks.set('wall2_omni_summary', () =>
+    summary({ lanes: [lane({ id: 'a', state: 'working' }), lane({ id: 'b', state: 'working', waiting: true })] }),
+  );
+  mocks.set('wall2_meet_day', () => ({ events: [] }));
+  render(<Dream onWake={() => undefined} />);
+  await flushAsync();
+  expect(document.querySelector('.dream-status')!.textContent).toMatch(/^1 agent still working/);
+  resetAgents();
+  mocks.clear();
 });

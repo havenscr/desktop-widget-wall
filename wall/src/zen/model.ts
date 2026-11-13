@@ -133,3 +133,26 @@ export function dreamStatusText(working: number | null, needs: number | null, mo
   if (mood) parts.push(`Lights: ${mood}`);
   return parts.join(' · ');
 }
+
+/** Dream's text layer drifts along a closed ellipse 30 px wide and 20 px tall, once round in this long. */
+export const DRIFT_PERIOD_MS = 20 * 60_000;
+/** Under reduced motion it holds one of four points on that ellipse for this long, then jumps to the next. */
+export const DRIFT_STEP_MS = 7.5 * 60_000;
+/** How often the layer's offset is set again; the CSS transition fills the gap in between. */
+export const DRIFT_TICK_MS = 5_000;
+/** Half the width and height of the path, in px. */
+export const DRIFT_RX = 15;
+export const DRIFT_RY = 10;
+
+const round1 = (n: number) => Math.round(n * 10) / 10 + 0;
+
+/**
+ * Where Dream's text layer sits at `ms`, in px from its resting place (a point on the closed
+ * path, always within DRIFT_RX and DRIFT_RY). Continuous, one lap per DRIFT_PERIOD_MS; with
+ * `stepped` (reduced motion) one of four fixed points, changing every DRIFT_STEP_MS.
+ */
+export function driftOffset(ms: number, stepped: boolean): { x: number; y: number } {
+  const turn = stepped ? Math.floor(ms / DRIFT_STEP_MS) / 4 : ms / DRIFT_PERIOD_MS;
+  const a = 2 * Math.PI * (turn - Math.floor(turn));
+  return { x: round1(DRIFT_RX * Math.cos(a)), y: round1(DRIFT_RY * Math.sin(a)) };
+}

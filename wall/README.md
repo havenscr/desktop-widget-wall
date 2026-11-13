@@ -599,7 +599,7 @@ frame (no ribbon) in the wide zones `470px 1fr 540px`. The parts are in `wall/sr
   old) the Tomorrow spot says "Calendar not available"; when weather is missing the date
   line ends with "weather unavailable" in dim text. The Room chips mark the mood that is on
   now (the shared last mood, for three hours), give each a tooltip (with the home feed's
-  description when it sends one), and fold past six moods into a "More" chip. The volume
+  description when it sends one), and sit in a fixed grid of three columns and two rows; past six moods the sixth cell is a "More" chip and the mood that is on takes the place of an ordinary one (never an extra chip). The volume
   slider shows its number on hover and while dragging. Screens off is an icon alone (36 px, quiet until hovered) in the lower right
   corner of Unwind, its words as the tooltip and accessible name ("Screens off", "Turning
   off", "Cancel screens off"); "Could not watch input" shows beside it for five seconds.
@@ -907,7 +907,7 @@ The list is read when Meet opens and every 5 minutes while Meet is the active pl
 
 ### Why an account is unavailable
 
-An account row shows one plain line ("Microsoft is not answering", "Network problem", "Signed out", "Sign-in expired") and, for a failing account, when it checks next as a relative time ("checking again in 2 min"). The code (one of the fixed shapes below, with a plain reading) and the exact time of the last try are in the row's tooltip, never on its face. A failing row keeps the filled Try again; a signed-out or expired account has a quiet outlined Sign in and the dim line "Meetings on this account will not show." When one account is read and another is not, LATER says "Nothing else on <account>" with a dim line for the other ("<account> not read since 9:40 AM", "is signed out"), and the NEXT card says "may be out of date". When no account can be read, the last known NEXT card stays, dimmed, with "as of <time>" and no Join; the Accounts card carries "Calendar not available" only when there is no last known meeting. Join is filled only for a meeting that is live or starts within 15 minutes; every other Join is quiet and outlined. When Meet is not set up it says "Calendar is not connected yet." with "Setup steps are in the Wall 2 README, section Meet." under it. A code has one of these fixed shapes and nothing else:
+An account row shows one plain line ("Microsoft is not answering", "Network problem", "Signed out", "Sign-in expired") and, for a failing account, when it checks next as a relative time ("checking again in 2 min"). The code (one of the fixed shapes below, with a plain reading) and the exact time of the last try are in the row's tooltip, never on its face. A failing row keeps the filled Try again; a signed-out or expired account has a quiet outlined Sign in and the dim line "Meetings on this account will not show." When one account is read and another is not, LATER says "Nothing else on <account>" with a dim line for the other ("<account> not read since 9:40 AM", "is signed out", "is being checked" while it is still being read), and the NEXT card says "may be out of date" whenever any account is not read yet or not fresh. LATER says a bare "Nothing else" only when every account was read fresh. "checking again in N min" counts to the real next read: the earlier of the next fast retry and the next 5 minute poll. The last known meetings are kept per account and only for an account whose read failed; signing an account out (or its sign-in expiring) drops its meetings at once. When every account fails, the last known NEXT card stays, dimmed, with its clock time and "as of <time>" (no countdown) and no Join; the Accounts card carries "Calendar not available" only when there is no last known meeting. Join is filled only for a meeting that is live or starts within 15 minutes; every other Join is quiet and outlined. When Meet is not set up it says "Calendar is not connected yet." with "Setup steps are in the Wall 2 README, section Meet." under it. A code has one of these fixed shapes and nothing else:
 
 | Code | Meaning | Shown as |
 | --- | --- | --- |
@@ -1066,8 +1066,8 @@ the system volume, Do Not Disturb or the focus timer.
   40 px. Starting restarts the cycle at "Breathe in".
 - **Zen layout** (`Zen.tsx`). Flames sit behind a veil that leaves about 45 percent of their
   light. Top left: the clock. Bottom left: the length picker and Start, or while a session
-  runs "FIVE MINUTES OF ZEN" with "N:NN left.". Bottom centre while running: "Click anywhere
-  to end early" at 13 px (a click outside Leave ends the session). The chosen length is the
+  runs "FIVE MINUTES OF ZEN" with "N:NN left.". Bottom centre while a session runs and is not ending: "Click anywhere
+  to end early" at 13 px (a click outside Leave ends the session). On entry, keyboard focus starts on the chosen length. The chosen length is the
   one filled chip; keyboard focus is a separate offset ring. Leave is at least 36 px tall. Bottom right: Leave, and "After this:
   N things are waiting." from the same task feed as the Work card (hidden when it is not set
   up or empty; the "Neither is urgent." line shows only when every task has a quadrant and
@@ -1079,8 +1079,10 @@ the system volume, Do Not Disturb or the focus timer.
   calendar cannot be read, absent on a clear day), and a quiet 13 px status line at bottom
   left (agents still working and whether one needs the owner, only from a fresh helper
   answer; the lights mood that is on, only when this wall set one in the last three hours).
-  The hint reads "Move the mouse or click to wake" (a real mouse move after 1.5 s wakes it).
-  Nothing is bright and nothing moves except Watt. Watt sleeps in the corner (the `SheepSvg` sleep pose from `buddy/Watt.tsx`,
+  The hint reads "Click anywhere to wake"; moving the mouse does not wake it (the strip sits right under the main monitor, so the pointer
+  wanders onto it). Nothing is bright. All the text (clock, date, card, status, hint) sits in one layer that drifts by transform alone along a
+  closed 30 by 20 px path, one lap in 20 minutes, so no pixel stays lit for hours; under reduced motion it holds one of four points for 7.5 minutes, then
+  jumps to the next. The status line and hint are at 40 percent, the card has no frame. Nothing else moves except Watt. Watt sleeps in the corner (the `SheepSvg` sleep pose from `buddy/Watt.tsx`,
   at x 1226, ground line 688). Dream starts when a session ends (the guide fades out
   first), or when Zen opens between 9:30 PM and 6:30 AM local time (the same window as
   Watt's sleep). A click wakes back to Zen; after a wake at night it stays awake

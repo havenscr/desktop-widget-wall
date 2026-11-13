@@ -56,7 +56,7 @@ function Waiting() {
 /**
  * The Zen place: a full-stage view over everything else. Flames, a breathing guide and a short
  * timed session. When a session ends, or when Zen is open at night (9:30 PM to 6:30 AM), it falls
- * into Dream; a click or a mouse move wakes it. Separate from the focus timer and from Do Not Disturb.
+ * into Dream; a click wakes it. Separate from the focus timer and from Do Not Disturb.
  */
 export function Zen({ nowMs = Date.now }: ZenProps) {
   // Unwind's Dream tab opens Zen straight into Dream; otherwise Dream only at night.
@@ -121,7 +121,8 @@ export function Zen({ nowMs = Date.now }: ZenProps) {
     const r = root.current;
     if (!r) return;
     const running = startedAt !== null && !ending;
-    const first = () => r.querySelector<HTMLElement>('button:not(:disabled), [role="button"]');
+    // The chosen length first, so the ring and the fill sit on the same chip at rest.
+    const first = () => r.querySelector<HTMLElement>('[role="radio"][aria-checked="true"]:not(:disabled)') ?? r.querySelector<HTMLElement>('button:not(:disabled), [role="button"]');
     if (!dream && running && !wasRunning.current) (r.querySelector<HTMLElement>('.zen-tap') ?? first())?.focus();
     else if (!dream && !running && wasRunning.current && startedAt === null) (r.querySelector<HTMLElement>('.zbtn.go') ?? first())?.focus();
     else if (!wasRunning.current && !running) first()?.focus();
@@ -177,7 +178,7 @@ export function Zen({ nowMs = Date.now }: ZenProps) {
               </div>
             )}
           </div>
-          {running && <div className="zen-hint">Click anywhere to end early</div>}
+          {running && !ending && <div className="zen-hint">Click anywhere to end early</div>}
           <div className="zen-br">
             <button
               type="button"
