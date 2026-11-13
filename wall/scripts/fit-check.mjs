@@ -61,6 +61,7 @@ const EXPECT = {
   picker: /^ *FAIL deck: the key picker reaches y \d+, over the timeline/m,
   chips: /^ *FAIL overlap: chip /m,
   heading: /^ *FAIL deck: the Now heading /m,
+  sky: /^ *FAIL pointer at .*reaches w-/m,
 };
 const OVERFLOWS = {
   left: '.work .left-wing { transform: translateX(-200px); }',
@@ -76,6 +77,8 @@ const OVERFLOWS = {
   picker: '.work .right-wing .pk { height: 400px !important; }',
   chips: '.rib .ev { width: 400px !important; }',
   heading: '.work .right-wing .keys .deck-name { max-width: 40px; overflow: hidden; }',
+  // The whole-sky video layer catching the pointer and drawn over the controls.
+  sky: '.w-sky, .w-sky * { pointer-events: auto !important; } .w-sky { z-index: 30 !important; }',
 };
 
 if (flag('self-test')) {
@@ -420,7 +423,12 @@ try {
   let failed = false;
   if (overflow) console.log(`deliberate overflow: ${overflow} (${OVERFLOWS[overflow]})`);
   // A deliberate break runs on the first state, or for the picker on the state that opens it.
-  const breakOn = overflow === 'picker' ? VARIANTS.filter((v) => v.name.startsWith('Deck, the key picker open over')) : VARIANTS.slice(0, 1);
+  const breakOn =
+    overflow === 'picker'
+      ? VARIANTS.filter((v) => v.name.startsWith('Deck, the key picker open over'))
+      : overflow === 'sky'
+        ? VARIANTS.filter((v) => v.name.startsWith('Watch, whole sky playing'))
+        : VARIANTS.slice(0, 1);
   for (const v of overflow ? breakOn : VARIANTS) {
     console.log(`${v.name} (${v.q}):`);
     const url = `${pathToFileURL(page).href}${v.q}&checks=${encodeURIComponent(v.checks.join('|'))}${v.click ? `&click=${encodeURIComponent(v.click)}` : ''}${v.card ? '&card=1' : ''}${v.hits ? `&hits=${encodeURIComponent(v.hits.join('|'))}` : ''}${v.noHit ? `&nohit=${encodeURIComponent(v.noHit)}` : ''}`;
