@@ -579,8 +579,41 @@ horizon canvas and the veil and under the panels; its styles are `buddy/watt.css
   music plays (awake only). Night and Home's camera are worked out once a minute. The frame
   loop reuses its records, pauses while hidden, and does not run on Zen or in a call. Under
   reduced motion (and in a dev review still) it is a still pose in the middle of the range
-  with nothing drifting, and it jumps on a place change. The pixel maps in `sprites.ts` are
-  the concept's own.
+  with nothing drifting, and it jumps on a place change. The idle and sleep pixel maps in
+  `sprites.ts` are the concept's own; the other poses and the props are drawn to match.
+
+Watt is also a small pet ("she"), calm and silent (no sound at all):
+
+- **Speech bubbles** (`buddy/chatter.ts`, `buddy/lines.ts`): one short bundled line at a time,
+  no model calls and no network. At most one every six minutes by default (three when set to
+  Chatty, none when Off), never in a call or a meeting in progress, never in the first minute of
+  a focus session, never while the display is idle, never asleep, never the same line twice in a
+  row. A fresh event (focus done, an agent finished or waiting, a call soon or just ended, music
+  stopping, a clover) wins; otherwise what is true now (agents, music, weather, time of day) wins
+  over plain sheep thoughts. The bubble's box is sized from measured Oxanium widths
+  (`petFrame.ts`), placed beside her within the band, and `model.test.ts` checks every line.
+- **Reactions** (`buddy/petFrame.ts`): a small hop when a focus session completes or an agent
+  finishes; she looks up toward the agent cards and shows an amber mark while something waits
+  (click it: it opens the waiting session through `wall2_open_session` when the helper gives a
+  link, otherwise it goes to Work); she looks at the clock five minutes before a meeting; she
+  bobs (a soft squash) on the beat at most once every 1.2 seconds.
+- **Petting and her card**: click her for hearts, a wiggle and a pleased line (a second click
+  within three seconds adds nothing). Hover for her card: name, mood in one word, two honest
+  lines about today, days together, how chatty she is, and what she wears.
+- **A little life**: she reads a tiny book during focus, wears headphones on Unwind while music
+  plays, sunglasses at a clear midday, an umbrella in rain, a scarf when it is cold, a nightcap
+  asleep; she looks up at the moon in the evening, yawns and stretches when she wakes at 6:30,
+  and naps where she stands while the display is idle. Her mood (content, happy, sleepy,
+  curious) only changes which lines and idle poses she picks; it never goes below content. Twice
+  a day a clover grows on her walk; she eats it when she reaches it, or click it to give it to
+  her. Cosmetics (bow, star, cape) unlock with days together.
+- **Stored locally** (`localStorage` key `wall2.watt`, `buddy/pet.ts`): how chatty she is, the
+  cosmetic, days together and today's counts. Her click area, mark and clover sit above the
+  shell (`z-index: 1`) and take the pointer only while she is up.
+- What she knows comes from existing hooks (`useAgentStatusLine`, `useAgentsWaiting`, the
+  agents store, `useWeather`, `useNextMeeting`, the focus store, the audio store and beat
+  detector, now playing, `useIdle`); a missing or stale source means she does not mention it.
+  Watt mounts its own `useWeather` and `useNextMeeting`, so those two feeds are read once more.
 
 ## Home feeds (task card and network tile)
 
