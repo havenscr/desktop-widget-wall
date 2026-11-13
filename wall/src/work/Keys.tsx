@@ -16,6 +16,7 @@ import { useGuard } from './useGuard';
 import { ActionError } from './wallActions';
 import { KeyIcon } from './keyIcons';
 import { setKeyKind, type KeyKind } from './keyKind';
+import { useLibIndex } from './keyLibrary';
 import { joinKeys, KEYS_POLL_MS, loadKeys, useKeysFeedStore } from './keysFeed';
 import {
   acceptsFront,
@@ -133,6 +134,7 @@ function ForYouList({ items, onRun }: { items: ForYouItem[]; onRun: (item: ForYo
 export function Keys() {
   const { read, refresh } = useKeysRead();
   const items = useForYou();
+  const libIdx = useLibIndex();
   const [mode, setModeState] = useState<Mode>(readMode);
   const [takeUntil, setTakeUntil] = useState(0);
   const [brief, showBrief] = useBrief();
@@ -449,7 +451,7 @@ export function Keys() {
               type="button"
               className={`deck-tile key-tile${wrongApp || layoutOff ? ' off' : ''}`}
               aria-label={k.label}
-              data-kind={setKeyKind(set, k, i)}
+              data-kind={wrongApp || layoutOff ? undefined : setKeyKind(set, k, i, libIdx)}
               aria-disabled={layoutOff || wrongApp || undefined}
               {...tip(
                 layoutOff

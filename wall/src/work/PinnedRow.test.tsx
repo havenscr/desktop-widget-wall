@@ -71,7 +71,7 @@ it('shows the five default keys, with a pin beside the heading, and sends only t
   await flush();
   expect(screen.getByText('Always here')).toBeTruthy();
   expect(container.querySelector('.deck-pin')).toBeTruthy();
-  expect(labels()).toEqual(['Thirds', 'Focus', 'Record 16:9', 'Snip', 'Screens off']);
+  expect(labels()).toEqual(['Thirds', 'Focus', 'Record 16:9', 'Snip', 'Hide screen']);
   fireEvent.click(screen.getByRole('button', { name: 'Snip' }), { detail: 1 });
   await flush();
   expect(libCalls).toEqual([{ id: 'snip' }]);
@@ -197,7 +197,7 @@ it('still shows the default keys when keys.json is invalid, since the library do
   });
   render(<PinnedRow />);
   await flush();
-  expect(labels()).toEqual(['Thirds', 'Focus', 'Record 16:9', 'Snip', 'Screens off']);
+  expect(labels()).toEqual(['Thirds', 'Focus', 'Record 16:9', 'Snip', 'Hide screen']);
 });
 
 // Section: the picker
@@ -240,7 +240,7 @@ it('clicking a row swaps that key into the slot and keeps it in storage; the oth
   fireEvent.click(within(dlg).getByRole('button', { name: 'Volume up' }));
   await flush();
   expect(screen.queryByRole('dialog')).toBeNull();
-  expect(labels()).toEqual(['Thirds', 'Focus', 'Record 16:9', 'Volume up', 'Screens off']);
+  expect(labels()).toEqual(['Thirds', 'Focus', 'Record 16:9', 'Volume up', 'Hide screen']);
   expect(JSON.parse(localStorage.getItem(PINS_KEY) ?? '')).toEqual(['lib:thirds', 'lib:focus', 'lib:record-169', 'lib:volume-up', 'lib:strip-dark']);
   // The choice is kept for the next start.
   const again = render(<PinnedRow />);
@@ -254,7 +254,7 @@ it('choosing a key that is already pinned swaps the two', async () => {
   const dlg = await openPicker('Thirds');
   fireEvent.click(within(dlg).getByRole('button', { name: 'Snip, pinned' }));
   await flush();
-  expect(labels()).toEqual(['Snip', 'Focus', 'Record 16:9', 'Thirds', 'Screens off']);
+  expect(labels()).toEqual(['Snip', 'Focus', 'Record 16:9', 'Thirds', 'Hide screen']);
 });
 
 it('Reset to defaults clears the choice', async () => {
@@ -265,7 +265,7 @@ it('Reset to defaults clears the choice', async () => {
   const dlg = await openPicker('Mute sound');
   fireEvent.click(within(dlg).getByRole('button', { name: 'Reset to defaults' }));
   await flush();
-  expect(labels()).toEqual(['Thirds', 'Focus', 'Record 16:9', 'Snip', 'Screens off']);
+  expect(labels()).toEqual(['Thirds', 'Focus', 'Record 16:9', 'Snip', 'Hide screen']);
   expect(localStorage.getItem(PINS_KEY)).toBeNull();
 });
 
@@ -275,7 +275,7 @@ it('storage that is not valid against the library is ignored and the defaults sh
     resetKeysFeed();
     const { unmount } = render(<PinnedRow />);
     await flush();
-    expect(labels(), bad).toEqual(['Thirds', 'Focus', 'Record 16:9', 'Snip', 'Screens off']);
+    expect(labels(), bad).toEqual(['Thirds', 'Focus', 'Record 16:9', 'Snip', 'Hide screen']);
     unmount();
   }
 });
@@ -289,7 +289,7 @@ it('search narrows the library; coming and unfinished keys are listed but cannot
   expect(newChat.getAttribute('aria-disabled')).toBe('true');
   fireEvent.click(newChat);
   expect(screen.getByRole('dialog')).toBeTruthy();
-  expect(labels()).toEqual(['Thirds', 'Focus', 'Record 16:9', 'Snip', 'Screens off']);
+  expect(labels()).toEqual(['Thirds', 'Focus', 'Record 16:9', 'Snip', 'Hide screen']);
   fireEvent.change(within(dlg).getByRole('searchbox'), { target: { value: 'power bi: refresh' } });
   expect(within(dlg).getByRole('button', { name: 'Power BI: refresh, check' }).getAttribute('aria-disabled')).toBe('true');
   fireEvent.change(within(dlg).getByRole('searchbox'), { target: { value: 'zzzz' } });
@@ -427,7 +427,7 @@ it('when the library cannot be read the row says so plainly and Try again reads 
   fail = false;
   fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
   await flush();
-  expect(labels()).toEqual(['Thirds', 'Focus', 'Record 16:9', 'Snip', 'Screens off']);
+  expect(labels()).toEqual(['Thirds', 'Focus', 'Record 16:9', 'Snip', 'Hide screen']);
 });
 
 it('a pin on a keys.json key keeps its label and action in storage and is dropped when the file changes under it', async () => {
@@ -489,9 +489,17 @@ it('the picker list has the slim scrollbar and a fade at its foot', () => {
   expect(list).toContain('mask-image: linear-gradient');
 });
 
-it('each pin carries its kind from the library group: Record 16:9 and Snip as capture, Screens off as system', async () => {
+it('each pin carries its kind from the library group: Record 16:9 and Snip as capture, Hide screen as system', async () => {
   render(<PinnedRow />);
   await flush();
   const kinds = [...document.querySelectorAll('.pin-tile')].map((t) => t.getAttribute('data-kind'));
   expect(kinds).toEqual(['layout', 'layout', 'capture', 'capture', 'system']);
+});
+
+it('a pin saved before the rename (lib:strip-dark) still resolves, now reading Hide screen', async () => {
+  localStorage.setItem(PINS_KEY, JSON.stringify(['lib:strip-dark', 'lib:snip']));
+  render(<PinnedRow />);
+  await flush();
+  expect(labels()).toEqual(['Hide screen', 'Snip']);
+  expect(screen.getByRole('button', { name: 'Hide screen' }).getAttribute('data-kind')).toBe('system');
 });

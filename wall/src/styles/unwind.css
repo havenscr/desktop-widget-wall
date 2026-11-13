@@ -467,7 +467,8 @@
   display: flex;
   align-items: center;
   height: 36px;
-  padding: 0 6px 0 6px;
+  /* 5 + 22 + 7 + the 1 px border each side: 36 px, with the icon where the grown pill keeps it. */
+  padding: 0 7px 0 5px;
   border-radius: 18px;
   color: var(--faint);
   opacity: 0.7;
@@ -487,7 +488,7 @@
 }
 .screens-off:hover,
 .screens-off:focus-visible {
-  padding: 0 6px 0 16px;
+  padding: 0 7px 0 16px;
   opacity: 1;
   color: var(--tx);
   background: rgba(20, 15, 48, 0.92);
@@ -521,12 +522,12 @@
   width: 36px;
   height: 36px;
 }
-/* The failure note sits beside the icon, to its left, so nothing else enters the corner. */
+/* The failure note sits above the button, right-aligned with it, so the pill can grow to the
+   left under the pointer or focus without ever meeting it; nothing else enters the corner. */
 .screens-off-note {
   position: absolute;
-  right: calc(100% + 12px);
-  top: 50%;
-  transform: translateY(-50%);
+  right: 0;
+  bottom: calc(100% + 8px);
   white-space: nowrap;
   font-size: 18px;
   color: var(--faint);

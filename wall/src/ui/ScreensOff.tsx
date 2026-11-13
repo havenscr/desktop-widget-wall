@@ -27,6 +27,17 @@ export function ScreensOff({ className = '' }: { className?: string }) {
   const [failed, setFailed] = useState(false);
   const pendingTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const failTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  /** What the helper reports (the `monitors-off-mode` event). */
+  const onMode = useRef((p: ModePayload) => {
+    clearTimeout(pendingTimer.current);
+    setPending(false);
+    setActive(p.active);
+    if (!p.active && p.reason === 'input-unavailable') {
+      setFailed(true);
+      clearTimeout(failTimer.current);
+      failTimer.current = setTimeout(() => setFailed(false), FAILURE_MS);
+    }
+  });
 
   useEffect(() => {
     if (!isTauri()) return;
@@ -35,14 +46,7 @@ export function ScreensOff({ className = '' }: { className?: string }) {
     let unlisten: UnlistenFn | null = null;
     void listen<ModePayload>('monitors-off-mode', (e) => {
       eventSeen = true;
-      clearTimeout(pendingTimer.current);
-      setPending(false);
-      setActive(e.payload.active);
-      if (!e.payload.active && e.payload.reason === 'input-unavailable') {
-        setFailed(true);
-        clearTimeout(failTimer.current);
-        failTimer.current = setTimeout(() => setFailed(false), FAILURE_MS);
-      }
+      onMode.current(e.payload);
     }).then((u) => {
       if (stopped) u();
       else unlisten = u;
@@ -69,7 +73,13 @@ export function ScreensOff({ className = '' }: { className?: string }) {
       clearTimeout(pendingTimer.current);
       pendingTimer.current = setTimeout(() => setPending(false), PENDING_MS);
     }
-    void invoke('wall2_monitors_off').catch(() => setPending(false));
+    void invoke<ModePayload | undefined>('wall2_monitors_off').then(
+      (r) => {
+        // Outside Tauri (dev mocks and the gallery) there is no event: a mock may answer with the report instead.
+        if (!isTauri() && r && typeof r === 'object' && typeof r.active === 'boolean') onMode.current(r);
+      },
+      () => setPending(false),
+    );
   };
 
   // The words show only while the button is grown (hover or focus); they are also its accessible name.

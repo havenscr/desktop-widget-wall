@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { expect, it } from 'vitest';
 import { LIBRARY_DATA } from '../bridge/devMocks/libraryData';
-import { ACTION_KIND, actionKind, GENERAL_SET, GROUP_KIND, KEY_KINDS, KIND_TOKEN, libKeyKind, pinKind, setKeyKind } from './keyKind';
+import { ACTION_KIND, actionKind, GENERAL_SET, GROUP_KIND, KEY_KINDS, KIND_TOKEN, libIndex, libKeyKind, matchLibrary, normChord, pinKind, setKeyKind } from './keyKind';
 
 const rust: string = readFileSync('../src-tauri/src/wall2_keylib.rs', 'utf8');
 
@@ -50,10 +50,11 @@ it('keys in sets: built-in sets by their group, the file own sets by their rule,
 });
 
 it('pins: a library key by its group, a keys.json pin by its action, else system', () => {
-  expect(pinKind('lib:thirds', { group: 'windows', action: 'layout:thirds' }, 'layout:thirds')).toBe('layout');
-  expect(pinKind('lib:record-169', { group: 'windows', action: 'layout:record169' }, 'layout:record169')).toBe('capture');
-  expect(pinKind('file:0', null, 'zen')).toBe('focus');
-  expect(pinKind('file:1', null, null)).toBe('system');
+  expect(pinKind('lib:thirds', { group: 'windows', action: 'layout:thirds' }, { action: 'layout:thirds' })).toBe('layout');
+  expect(pinKind('lib:record-169', { group: 'windows', action: 'layout:record169' }, { action: 'layout:record169' })).toBe('capture');
+  expect(pinKind('file:0', null, { action: 'zen' })).toBe('focus');
+  expect(pinKind('file:1', null, { action: null })).toBe('system');
+  expect(pinKind('file:2', null, { action: null, label: 'snip' }, libIndex(LIBRARY_DATA))).toBe('capture');
 });
 
 it('the General set order equals Rust GENERAL_SET, and each key is in the group named', () => {
@@ -62,4 +63,38 @@ it('the General set order equals Rust GENERAL_SET, and each key is in the group 
   const ids = [...m![1].matchAll(/"([a-z0-9-]+)"/g)].map((x) => x[1]);
   expect(GENERAL_SET.map(([id]) => id)).toEqual(ids);
   for (const [id, group] of GENERAL_SET) expect(LIBRARY_DATA.find((g) => g.id === group)?.keys.some((k) => k.id === id), `${id} in ${group}`).toBe(true);
+});
+
+const lib = libIndex(LIBRARY_DATA);
+const own = { id: 'mine', general: true };
+const app = { id: 'sales', general: false };
+
+it('a chord is compared in one spelling: modifier order and case do not matter, steps keep their order', () => {
+  expect(normChord('Shift+Win+s')).toBe(normChord('Win+Shift+S'));
+  expect(normChord('control+SHIFT+esc')).toBe(normChord('Ctrl+Shift+Esc'));
+  expect(normChord('Alt+H, R')).toBe('alt+h,r');
+  expect(normChord('Alt+H, R')).not.toBe(normChord('R, Alt+H'));
+});
+
+it('a keys.json key takes the kind of the library key with its chord first', () => {
+  // Win+Shift+S is Snip in the library: capture, whatever the key is called.
+  expect(matchLibrary({ label: 'My grab', chord: 'shift+win+S' }, lib)).toBe('capture');
+  expect(setKeyKind(own, { action: null, label: 'My grab', chord: 'Shift+Win+S' }, 0, lib)).toBe('capture');
+  // The chord wins over a label that names another library key.
+  expect(setKeyKind(own, { action: null, label: 'Show desktop', chord: 'Win+Shift+S' }, 0, lib)).toBe('capture');
+});
+
+it('else the library key with its label, case-insensitive', () => {
+  expect(setKeyKind(own, { action: null, label: 'snip' }, 0, lib)).toBe('capture');
+  expect(setKeyKind(own, { action: null, label: 'SCREEN RECORDING' }, 1, lib)).toBe('capture');
+  expect(setKeyKind(app, { action: null, label: 'Clipboard history' }, 0, lib)).toBe('system');
+  // A chord that matches nothing falls through to the label.
+  expect(setKeyKind(own, { action: null, label: 'Snip', chord: 'Ctrl+Alt+F9' }, 0, lib)).toBe('capture');
+});
+
+it('else the set rule, and a key that matches nothing keeps it; no library read means the set rule', () => {
+  expect(setKeyKind(own, { action: null, label: 'Refresh the report', chord: 'Ctrl+Alt+F9' }, 0, lib)).toBe('system');
+  expect(setKeyKind(app, { action: null, label: 'Refresh the report' }, 0, lib)).toBe('app');
+  expect(setKeyKind(own, { action: null, label: 'Snip' }, 0, null)).toBe('system');
+  expect(matchLibrary({ label: '' }, lib)).toBeNull();
 });

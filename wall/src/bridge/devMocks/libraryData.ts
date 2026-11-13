@@ -144,7 +144,7 @@ export const LIBRARY_DATA: LibGroup[] = [
    },
    {
     "id": "strip-dark",
-    "label": "Screens off",
+    "label": "Hide screen",
     "icon": "monitor-off",
     "kind": "wall",
     "how": "the wall's own Screens off",

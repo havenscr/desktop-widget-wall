@@ -222,7 +222,7 @@ state('dream', 'night with audio demo', 'audio=demo', TIMES.night);
 // keys style: keys tinted by kind by day and night, keys that cannot be sent, For you as two
 // key-height plates, long labels, a key under the pointer and one held down, and the Hide
 // screen button grown under the pointer. `hover:` moves the pointer onto an element, `press:`
-// also holds the button down there; a list of steps runs in order.
+// also holds the button down there, `focus:` gives it keyboard focus; a list of steps runs in order.
 const KS_DAY = '2026-11-11T12:10:00-08:00';
 add('work', 'keys style: day', url('work', KS_DAY, 'keys=library&hold=lib-vscode'), true);
 add('work', 'keys style: general set', url('work', KS_DAY, 'keys=general&hold=general'), true);
@@ -237,6 +237,9 @@ add('work', 'keys style: hover and pressed', url('work', KS_DAY, 'keys=library&h
 add('work', 'keys style: pressed', url('work', KS_DAY, 'keys=library&hold=lib-vscode'), true, ['.pin-tile[aria-label="Thirds"]', 'press:.keys .key-tile[aria-label="VS Code: terminal"]']);
 add('unwind', 'unwind: hide screen at rest', url('unwind', TYPICAL_AT), true);
 add('unwind', 'unwind: hide screen hover', url('unwind', TYPICAL_AT), true, 'hover:.screens-off');
+// The failure note ("Could not watch input", `hide=fail`) after a click, with the pointer still on the pill, and with keyboard focus.
+add('unwind', 'unwind: hide screen note while hovered', url('unwind', TYPICAL_AT, 'hide=fail'), true, ['.screens-off', 'hover:.screens-off']);
+add('unwind', 'unwind: hide screen note while focused', url('unwind', TYPICAL_AT, 'hide=fail'), true, ['.screens-off', 'focus:.screens-off']);
 
 /**
  * What each state must show, so a knob that silently stops working fails the run:
@@ -371,6 +374,7 @@ const EXPECT = [
   ['work', 'keys style: long labels', 'Sonos: play what suits the hour'],
   ['work', 'keys style: hover and pressed', 'windows arranged'],
   ['work', 'keys style: pressed', 'windows arranged'],
+  ['unwind', 'unwind: hide screen note', ['Could not watch input', 'Hide screen']],
   ['unwind', 'unwind: hide screen', 'Hide screen'],
 ];
 
@@ -591,9 +595,11 @@ async function render(cdp, base, s, file, ctl) {
     for (const step of [s.click ?? []].flat()) {
       // A state shown just after a click (a task tick's Undo window).
       // `ctx:<selector>` right-clicks (opens the key picker), `hover:` moves the real pointer onto
-      // the element, `press:` also holds the button down there, anything else clicks.
+      // the element, `press:` also holds the button down there, `focus:` focuses it, anything else clicks.
       const pointer = /^(hover|press):/.exec(step);
-      if (pointer) {
+      if (step.startsWith('focus:')) {
+        await to('Runtime.evaluate', { expression: `document.querySelector(${JSON.stringify(step.slice(6))})?.focus({ focusVisible: true })` });
+      } else if (pointer) {
         const sel = JSON.stringify(step.slice(pointer[0].length));
         const at = await to('Runtime.evaluate', { expression: `(() => { const r = document.querySelector(${sel})?.getBoundingClientRect(); return r ? [r.left + r.width - 12, r.top + r.height / 2] : null; })()`, returnByValue: true });
         const [x, y] = at.result.value ?? [0, 0];

@@ -18,11 +18,12 @@
 // non-zero on a failure. Unwind's Watch tab is checked empty, with three and with 24 saved,
 // playing in each look, and with its settings sheet open both ways. Keys style: every key edge at
 // least 3 to 1 against the sky (read from a screenshot) by day and night, the Now row one height on
-// a key page and on For you, and the grown Hide screen pill inside the corner under the Room card.
+// a key page and on For you, and the grown Hide screen pill inside the corner under the Room card,
+// clear of the failure note.
 // CI does not run this; run it by hand before a layout change is handed over.
 //
 //   WALL_CHROME=/path/to/chrome-or-headless-shell npm --prefix wall run fit-check
-//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, header, deck, tiles, picker, chips, heading, fy-height, key-edge, hide-pill)
+//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, header, deck, tiles, picker, chips, heading, fy-height, key-edge, hide-pill, hide-note)
 //   npm --prefix wall run fit-check -- --self-test
 //
 // WALL_CHROME (or the first argument that is not a flag) is a Chromium or
@@ -67,6 +68,7 @@ const EXPECT = {
   'fy-height': /^ *FAIL deck: the Now row is \d+ px tall on/m,
   'key-edge': /^ *FAIL deck: key ".*" edge against the sky /m,
   'hide-pill': /^ *FAIL hide screen: /m,
+  'hide-note': /^ *FAIL hide screen note: /m,
 };
 const OVERFLOWS = {
   left: '.work .left-wing { transform: translateX(-200px); }',
@@ -86,6 +88,7 @@ const OVERFLOWS = {
   'fy-height': '.work .right-wing .fy-plate { height: 80px; }',
   'key-edge': '.work .right-wing .deck-tile.key-tile { border-color: transparent !important; }',
   'hide-pill': '.screens-off:is(:hover, :focus-visible) { min-width: 900px; }',
+  'hide-note': '.screens-off-note { bottom: 0 !important; }',
 };
 
 if (flag('self-test')) {
@@ -215,6 +218,8 @@ const VARIANTS = [
   { name: 'Keys style, For you with one plate', q: work('3', '&keys=typical&hold=foryou&meet=none'), checks: FOR_YOU, nowH: 'foryou' },
   // The Hide screen button grown under the pointer.
   { name: 'Unwind, Hide screen grown', q: query({ hz: 'unwind', agents: '3', extra: '' }), checks: ['.u-room', '.screens-off'], click: 'hover:.screens-off', hide: true, viewportOnly: true },
+  // The failure note ("Could not watch input") showing while the pill is grown: the two never meet.
+  { name: 'Unwind, Hide screen grown with the failure note', q: query({ hz: 'unwind', agents: '3', extra: '&hide=fail' }), checks: ['.u-room', '.screens-off', '.screens-off-note'], click: '.screens-off then hover:.screens-off', hide: true, note: true, viewportOnly: true },
   { name: 'Home, Sound at its fullest: many moods, many speakers, long names, sleep timer', q: home('sonos=heavy&moods=many'), checks: [...HOME_CENTRE.filter((c) => !c.endsWith('mood-row')), ...SOUND_FULL] },
   { name: 'Home, typical: five moods, Sound playing', q: home('moods=five'), checks: [...HOME_CENTRE, ...SOUND_FULL] },
   { name: 'Home, one matching routine plus More: no blank cell in the quick-play row', q: home('sonos=few&moods=five'), checks: [...HOME_CENTRE, ...SOUND_FULL] },
@@ -338,7 +343,7 @@ try {
   // For each checked box: its scroll sizes, and how far it sticks out of its container and
   // of the viewport on each side (screen pixels, 0 when inside). Plus the page's own scroll.
   const measure = `<script>setTimeout(() => {
-    const click = new URLSearchParams(location.search).get('click');
+    for (const click of (new URLSearchParams(location.search).get('click') || '').split(' then ').filter(Boolean)) {
     if (click && click.startsWith('ctx:')) document.querySelector(click.slice(4))?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
     else if (click && click.startsWith('hover:')) {
       // Headless --dump-dom has no pointer: every top-level :hover rule is copied for a class that stands in for it.
@@ -350,6 +355,7 @@ try {
       document.querySelector(click.slice(6))?.classList.add('fit-hover');
     }
     else if (click) document.querySelector(click)?.click();
+    }
     // Watt's card: asked for until it is open (Meet's horizon takes a few seconds to settle first).
     if (new URLSearchParams(location.search).get('card')) {
       const ask = () => { if (!document.querySelector('.watt-card')) document.querySelector('.watt-hit')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })); };
@@ -494,7 +500,10 @@ try {
       const ur = document.querySelector('.u-right')?.getBoundingClientRect();
       const rb = Math.max(0, ...[...document.querySelectorAll('.u-room')].map((e) => e.getBoundingClientRect().bottom));
       const inCorner = !!ur && pr.left >= ur.left - 0.5 && pr.top >= rb - 0.5 && pr.right <= innerWidth + 0.5 && pr.bottom <= innerHeight + 0.5;
-      hide = { inCorner, w: Math.round(pr.width), right: Math.round((box.right - pr.right) * 10) / 10, bottom: Math.round((box.bottom - pr.bottom) * 10) / 10, foot, room, grown, label: so.textContent };
+      const ne = document.querySelector('.screens-off-note');
+      const nr = ne ? ne.getBoundingClientRect() : null;
+      const note = nr ? { overlap: hit(nr, pr), inCorner: !!ur && nr.left >= ur.left - 0.5 && nr.top >= rb - 0.5 && nr.right <= innerWidth + 0.5 && nr.bottom <= innerHeight + 0.5 } : null;
+      hide = { note, inCorner, w: Math.round(pr.width), right: Math.round((box.right - pr.right) * 10) / 10, bottom: Math.round((box.bottom - pr.bottom) * 10) / 10, foot, room, grown, label: so.textContent };
     }
     const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, wattCard, header, deck, nowH, edges, hide });
     document.body.appendChild(pre);
@@ -512,6 +521,7 @@ try {
     'fy-height': (v) => v.name === 'Keys style, day: library sets held on VS Code' || v.name === 'Keys style, For you with two plates',
     'key-edge': (v) => v.name === 'Keys style, day: library sets held on VS Code',
     'hide-pill': (v) => v.name === 'Unwind, Hide screen grown',
+    'hide-note': (v) => v.name === 'Unwind, Hide screen grown with the failure note',
   };
   const breakOn = BREAK_ON[overflow] ? VARIANTS.filter(BREAK_ON[overflow]) : VARIANTS.slice(0, 1);
   /** keys style: the Now row's height on each page that has one, compared after every state ran. */
@@ -556,14 +566,29 @@ try {
         const sky = median(pixels(img, x0, top - 4, x1, top - 2));
         let best = 0;
         for (const p of pixels(img, x0, top, x1, top + 2)) best = Math.max(best, contrast(p, sky));
-        const r = Math.round(best * 100) / 100;
+        // And a side: the strip just right of the key (left of it at the screen's edge) against the key's own side edge.
+        const left = Math.round(e.x);
+        const right = Math.round(e.x + e.w);
+        const gx = right + 8 < 2552 ? right + 3 : left - 5;
+        const skySide = median(pixels(img, gx, top + 16, gx + 2, top + 44));
+        const sx = gx > left ? right - 2 : left;
+        let side = 0;
+        for (const p of pixels(img, sx, top + 16, sx + 3, top + 44)) side = Math.max(side, contrast(p, skySide));
+        const r = Math.round(Math.min(best, side) * 100) / 100;
         lowest = Math.min(lowest, r);
-        if (r < 3) low.push(`  FAIL deck: key "${e.label}" edge against the sky ${r} to 1 (at least 3 to 1; sky rgb(${sky.join(', ')}))`);
+        const which = side < best ? `side edge, sky rgb(${skySide.join(', ')})` : `top edge, sky rgb(${sky.join(', ')})`;
+        if (r < 3) low.push(`  FAIL deck: key "${e.label}" edge against the sky ${r} to 1 (at least 3 to 1; the lower is the ${which})`);
       }
       for (const l of low) console.log(l);
       if (low.length || edges.length === 0) failed = true;
       if (edges.length === 0) console.log('  FAIL deck: no key edge could be measured');
-      else if (!low.length) console.log(`  ok   every key edge against the sky at least 3 to 1 (lowest ${lowest}, ${edges.length} keys)`);
+      else if (!low.length) console.log(`  ok   every key edge against the sky at least 3 to 1, top and side (lowest ${lowest}, ${edges.length} keys)`);
+    }
+    if (v.note) {
+      const n = hide?.note ?? null;
+      const okNote = n !== null && !n.overlap && n.inCorner;
+      if (!okNote) failed = true;
+      console.log(n === null ? '  FAIL hide screen note: the failure note is not showing' : `  ${okNote ? 'ok  ' : 'FAIL'} hide screen note: ${n.overlap ? 'overlaps' : 'clear of'} the grown pill, ${n.inCorner ? 'inside' : 'outside'} the corner under the Room card`);
     }
     if (v.hide) {
       const okHide = hide !== null && hide.grown && hide.inCorner && hide.label.includes('Hide screen') && Math.abs(hide.right) <= SLACK && Math.abs(hide.bottom) <= SLACK && hide.foot === 0 && hide.room === 0 && hide.w > 36;
