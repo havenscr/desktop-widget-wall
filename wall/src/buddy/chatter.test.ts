@@ -64,16 +64,23 @@ describe('the bubble scheduler', () => {
     for (let i = 1; i < said.length; i++) expect(said[i] - said[i - 1]).toBeGreaterThanOrEqual(GAP_MS.sometimes);
   });
 
-  it('never says the same line twice in a row', () => {
+  it('never says the same line twice in a row (a roll that always picks the first line alternates)', () => {
     const st = createChat();
-    let last: string | null = null;
-    for (let i = 0; i < 300; i++) {
-      const t = T0 + i * GAP_MS.sometimes;
-      const r = nextBubble(st, calm(), talk({ thoughts: ['sleepy'] }), t, () => 0);
-      if (!r) continue;
-      expect(r.line).not.toBe(last);
-      last = r.line;
+    const said: string[] = [];
+    for (let i = 0; i < 6; i++) {
+      const r = nextBubble(st, calm(), talk({ thoughts: ['sleepy'] }), T0 + i * GAP_MS.sometimes, () => 0.05);
+      said.push(r!.line);
     }
+    const [a, b] = LINES.sleepy;
+    expect(said).toEqual([a, b, a, b, a, b]);
+  });
+
+  it('after the clock steps back it waits one gap from now, not until the clock catches up', () => {
+    const st = createChat();
+    markSpoken(st, 'Hmm.', T0 + 60 * MIN);
+    expect(maySpeak(st, calm(), T0)).toBe(false);
+    expect(st.lastAt).toBe(T0);
+    expect(maySpeak(st, calm(), T0 + GAP_MS.sometimes)).toBe(true);
   });
 
   it('says a fresh event once, and with nothing fresh speaks only now and then', () => {
@@ -104,11 +111,12 @@ describe('the line picker', () => {
   });
 
   it('context wins over plain thoughts when there is context; thoughts otherwise', () => {
-    const p = pickLine(talk({ context: ['rain'] }), T0, null, seq(0.1, 0, 0));
-    expect(p.topic).toBe('rain');
-    let ctx = 0;
-    for (let i = 0; i < 300; i++) if (pickLine(talk({ context: ['rain'] }), T0, null).topic === 'rain') ctx++;
-    expect(ctx).toBeGreaterThan(150);
+    // A roll under two thirds picks context, over it a thought.
+    expect(pickLine(talk({ context: ['rain'] }), T0, null, seq(0.1, 0, 0)).topic).toBe('rain');
+    expect(pickLine(talk({ context: ['rain'] }), T0, null, seq(0.7, 0, 0)).topic).toBe('sheep');
+    const rolls = seq(0.1, 0, 0, 0.5, 0, 0, 0.9, 0, 0);
+    const topics = [0, 1, 2].map(() => pickLine(talk({ context: ['rain', 'afternoon'] }), T0, null, rolls).topic);
+    expect(topics).toEqual(['rain', 'rain', 'sheep']);
     expect(pickLine(talk(), T0, null, () => 0.1).topic).toBe('sheep');
   });
 

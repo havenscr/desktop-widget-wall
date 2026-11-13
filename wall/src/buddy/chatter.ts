@@ -49,8 +49,13 @@ export function quietNow(q: Quiet, now: number): boolean {
   );
 }
 
-/** True when a bubble may go up at `now`: not quiet, and the level's gap has passed since the last one. */
+/**
+ * True when a bubble may go up at `now`: not quiet, and the level's gap has passed since the last
+ * one. A last bubble in the future (the clock stepped back) is brought back to now, so she waits
+ * one gap rather than until the clock catches up.
+ */
 export function maySpeak(st: ChatState, q: Quiet, now: number): boolean {
+  if (st.lastAt > now) st.lastAt = now;
   return !quietNow(q, now) && now - st.lastAt >= GAP_MS[q.chatty];
 }
 
