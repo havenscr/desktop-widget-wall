@@ -861,6 +861,14 @@
   text-overflow: ellipsis;
   color: var(--cyan);
 }
+.deck-brief-l {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--cyan);
+  font: 500 18px/1.2 var(--body);
+}
 .deck-tiles {
   display: grid;
   gap: 8px;
@@ -871,8 +879,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  padding: 0 8px;
+  gap: 6px;
+  padding: 0 6px;
   border-radius: 14px;
   border: 1px solid var(--edge);
   background: rgba(255, 255, 255, 0.04);

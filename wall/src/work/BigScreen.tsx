@@ -124,7 +124,7 @@ export function BigScreen() {
           )}
         </span>
       </div>
-      <div className="deck-tiles bs-tiles" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
+      <div className="deck-tiles bs-tiles" style={{ gridTemplateColumns: 'repeat(3, minmax(0, 1fr))' }}>
         {LAYOUTS.map((l) => (
           <button
             key={l.id}

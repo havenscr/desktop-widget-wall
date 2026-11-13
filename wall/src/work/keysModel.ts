@@ -101,11 +101,11 @@ export function sendReason(e: unknown, set: SetInfo, hold: boolean): string {
     case 'no key':
       return 'That key is not in keys.json any more';
     case 'no app':
-      return hold ? `The app in front is not ${set.name}` : `${set.name} is not the app in front any more`;
+      return hold ? `Wrong app in front for ${set.name}` : `${set.name} is not in front any more`;
     case 'gone':
       return `${set.general ? 'That window' : set.name} is not open any more`;
     case 'elevated':
-      return `${set.general ? 'That app' : set.name} runs as administrator, so the wall cannot type into it`;
+      return `Cannot type: ${set.general ? 'that app' : set.name} runs as admin`;
     case 'not forward':
       return `Could not bring ${set.general ? 'the app' : set.name} forward`;
     case 'failed':

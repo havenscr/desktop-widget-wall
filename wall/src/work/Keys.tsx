@@ -127,11 +127,6 @@ export function Keys() {
 
   const controls = (
     <span className="deck-hd-r">
-      {brief && (
-        <span className="xs deck-brief" role="status">
-          {brief}
-        </span>
-      )}
       {summary.sets.length > 1 && (
         <>
           <button type="button" className="deck-arrow" aria-label="Previous set" {...tip('Show the previous set of keys and hold it')} onClick={() => stepTo(-1)}>
@@ -184,10 +179,16 @@ export function Keys() {
   return (
     <section className="keys deck-row" aria-label={headingFor(set)} onWheel={onWheel}>
       <div className="row sb deck-hd">
-        <span className="k ellipsis">{headingFor(set)}</span>
+        {brief ? (
+          <span className="deck-brief-l" role="status" title={brief}>
+            {brief}
+          </span>
+        ) : (
+          <span className="k ellipsis">{headingFor(set)}</span>
+        )}
         {controls}
       </div>
-      <div className={`deck-tiles keys-tiles${keys.length > 5 ? ' two' : ''}`} style={{ gridTemplateColumns: `repeat(${columnsFor(keys.length)}, 1fr)` }}>
+      <div className={`deck-tiles keys-tiles${keys.length > 5 ? ' two' : ''}`} style={{ gridTemplateColumns: `repeat(${columnsFor(keys.length)}, minmax(0, 1fr))` }}>
         {keys.map((k, i) => (
           <button
             key={`${set.id}-${i}`}

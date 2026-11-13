@@ -110,7 +110,7 @@ it('a held set in the wrong app is refused with fixed words and types nothing', 
   expect(screen.getByText('Keys for Sales app')).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
   await flush();
-  expect(screen.getByText('The app in front is not Sales app')).toBeTruthy();
+  expect(screen.getByText('Wrong app in front for Sales app')).toBeTruthy();
   // The page asked; the Rust rule refused (the mock stands in for it).
   expect(sent).toEqual([{ setId: 'sales', index: 0 }]);
 });
