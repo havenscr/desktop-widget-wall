@@ -1,4 +1,4 @@
-import { act, render } from '@testing-library/react';
+import { act, fireEvent, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetAudio, ingestLevels, tickAudio } from '../audio/store';
 import { CAMERAS, CINEMATIC_SECONDS, HOME_MORNING, SWING_SECONDS, type CameraPreset } from '../horizon/cameras';
@@ -7,7 +7,18 @@ import { HorizonCanvas } from '../horizon/HorizonCanvas';
 import { publishCamera } from '../horizon/signal';
 import { usePlaceStore, type PlaceId } from '../state/places';
 import { FADE_IN_S, FADE_OUT_S, WALKS, middle, type WattPlace } from './model';
+import { resetAgents, useAgentsStore } from '../agents/useAgents';
+import type { OmniSummary } from '../agents/model';
+import { useFocusStore } from '../focus/store';
+import { LINES } from './lines';
+import { PET_KEY } from './pet';
 import { Watt } from './Watt';
+
+const invokeMock = vi.hoisted(() => vi.fn((cmd: string) => (cmd === 'wall2_open_session' ? Promise.resolve() : new Promise(() => {}))));
+vi.mock('../bridge/tauri', async (original) => ({
+  ...(await original<typeof import('../bridge/tauri')>()),
+  invoke: invokeMock,
+}));
 
 vi.mock('../horizon/index', async (original) => ({
   ...(await original<typeof import('../horizon/index')>()),
@@ -80,11 +91,18 @@ beforeEach(() => {
   publishCamera(CAMERAS.unwind, false);
   resetAudio();
   reduced(false);
+  // No network in tests: the weather read fails quietly and she does not talk about weather.
+  vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new Error('offline'))));
+  localStorage.clear();
+  invokeMock.mockClear();
 });
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   vi.useRealTimers();
   publishCamera(null, false);
+  resetAgents();
+  useFocusStore.setState({ state: { status: 'idle', minutes: 25 } });
 });
 
 it('stands on each place horizon at that place size once the camera is settled: Work, Home and Meet on 582, Unwind on 505', () => {
@@ -322,5 +340,126 @@ describe('with the real horizon on Home', () => {
     expect(cameraSignal().moving).toBe(true);
     unmount();
     expect(cameraSignal()).toMatchObject({ to: null, moving: false });
+  });
+});
+
+describe('a pet', () => {
+  const stored = () => JSON.parse(localStorage.getItem(PET_KEY) ?? '{}');
+  const heartOpacity = (c: HTMLElement) => Number(c.querySelector<HTMLElement>('.watt-heart')!.style.opacity || 0);
+
+  it('a click pets her: hearts, a wiggle, a pleased line; a second click within a few seconds adds nothing', () => {
+    let ms = day();
+    const { container } = render(<Watt now={() => ms} />);
+    runFor(1.5);
+    const sheep = container.querySelector<HTMLElement>('.watt-sheep')!;
+    fireEvent.click(container.querySelector('.watt-hit')!);
+    const dirs = new Set<string>();
+    let hearts = 0;
+    for (let i = 0; i < 30; i++) {
+      tick();
+      dirs.add(/scaleX\((-?1)\)/.exec(sheep.style.transform)![1]);
+      hearts = Math.max(hearts, heartOpacity(container));
+    }
+    expect(hearts).toBeGreaterThan(0);
+    expect(dirs.size).toBe(2);
+    const bubble = container.querySelector('.watt-bubble')!;
+    expect(LINES.pet).toContain(bubble.textContent);
+    expect(stored().today.pets).toBe(1);
+    ms += 1500;
+    fireEvent.click(container.querySelector('.watt-hit')!);
+    expect(stored().today.pets).toBe(1);
+    expect(container.querySelector('.watt-bubble')).toBe(bubble);
+    ms += 3000;
+    fireEvent.click(container.querySelector('.watt-hit')!);
+    expect(stored().today.pets).toBe(2);
+  });
+
+  it('hover shows her card: name, mood in one word, two honest lines; chatty off means no bubble at all', () => {
+    let ms = day();
+    const { container, getByRole, queryByText } = render(<Watt now={() => ms} />);
+    runFor(1.5);
+    fireEvent.click(container.querySelector('.watt-hit')!);
+    fireEvent.mouseEnter(container.querySelector('.watt-hit')!);
+    const card = container.querySelector('.watt-card')!;
+    expect(card.querySelector('.wc-name')!.textContent).toBe('Watt');
+    expect(['Content', 'Happy', 'Sleepy', 'Curious']).toContain(card.querySelector('.wc-mood')!.textContent);
+    expect([...card.querySelectorAll('.wc-today li')].map((l) => l.textContent)).toEqual(['Petted once.']);
+    expect(queryByText('First day together')).not.toBeNull();
+    fireEvent.click(getByRole('radio', { name: 'Off' }));
+    expect(stored().chatty).toBe('off');
+    expect(container.querySelector('.watt-bubble')).toBeNull();
+    ms += 5000;
+    fireEvent.click(container.querySelector('.watt-hit')!);
+    expect(container.querySelector('.watt-bubble')).toBeNull();
+    // Locked cosmetics say when they unlock; the bow is there from day one.
+    expect(getByRole('radio', { name: 'Cape' })).toHaveProperty('disabled', true);
+    fireEvent.click(getByRole('radio', { name: 'Bow' }));
+    expect(stored().cosmetic).toBe('bow');
+    runFor(0.2);
+    expect(container.querySelector('.watt-prop-bow')).not.toBeNull();
+  });
+
+  it('shows the amber mark while something waits; clicking it opens what waits', () => {
+    const summary: OmniSummary = {
+      now: new Date().toISOString(),
+      tz: 'UTC',
+      stale: false,
+      slots: { used: 1, limit: 3 },
+      lanes: [{ id: 'l1', title: 'A lane', stage: 'build', state: 'working', line: '', elapsedS: 10, waiting: true, pr: null }],
+      parked: 0,
+      yourMove: { total: 1, first: { sessionId: 's-1', title: 'A lane', kind: 'question', since: null, question: '' } },
+      usage: null,
+      day: [],
+      linksAvailable: true,
+    };
+    const { container } = render(<Watt now={day} />);
+    runFor(1.5);
+    expect(container.querySelector<HTMLElement>('.watt-mark')!.hidden).toBe(true);
+    act(() => useAgentsStore.setState({ status: 'ready', summary, readFailed: false, awaiting: false, okAt: Date.now(), freshAt: Date.now() }));
+    runFor(1);
+    const mark = container.querySelector<HTMLElement>('.watt-mark')!;
+    expect(mark.hidden).toBe(false);
+    fireEvent.click(mark);
+    expect(invokeMock).toHaveBeenCalledWith('wall2_open_session', { id: 's-1' });
+  });
+
+  it('hops when a focus session completes', () => {
+    const ms = day();
+    act(() => useFocusStore.setState({ state: { status: 'running', minutes: 25, endAt: ms + 1000 } }));
+    const { container } = render(<Watt now={() => ms} />);
+    runFor(1.5);
+    const rest = where(container).feet;
+    act(() => useFocusStore.setState({ state: { status: 'finished', minutes: 25 } }));
+    let highest = rest;
+    for (let i = 0; i < 14; i++) {
+      tick();
+      highest = Math.min(highest, where(container).feet);
+    }
+    expect(highest).toBeLessThan(rest);
+    expect(stored().today.focus).toBe(1);
+    // And says so (context first: the fresh event wins).
+    expect(LINES.focusDone).toContain(container.querySelector('.watt-bubble')!.textContent);
+  });
+
+  it('says nothing during a call, even for a fresh event or a pet', () => {
+    const ms = day();
+    act(() => useFocusStore.setState({ state: { status: 'running', minutes: 25, endAt: ms + 1000 } }));
+    const { container } = render(<Watt now={() => ms} inCall />);
+    runFor(1.5);
+    act(() => useFocusStore.setState({ state: { status: 'finished', minutes: 25 } }));
+    runFor(0.5);
+    fireEvent.click(container.querySelector('.watt-hit')!);
+    expect(container.querySelector('.watt-bubble')).toBeNull();
+    expect(stored().today.pets).toBe(1);
+  });
+
+  it('under reduced motion a pet is a still pose with a still heart and a bubble that does not animate; no frame loop', () => {
+    reduced(true);
+    const { container } = render(<Watt now={day} />);
+    expect(frames.size).toBe(0);
+    fireEvent.click(container.querySelector('.watt-hit')!);
+    expect(frames.size).toBe(0);
+    expect(heartOpacity(container)).toBeGreaterThan(0);
+    expect(container.querySelector('.watt-bubble')!.classList.contains('still')).toBe(true);
   });
 });
