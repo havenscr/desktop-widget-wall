@@ -9,13 +9,13 @@ import { focusSession } from './open';
  * fullest turns amber above 90), or Claude's week as one bar from an older one, with the
  * five hour figure when the helper has one. The mail count waits for the mail scope (D7).
  */
-export function Shelf({ summary }: { summary: OmniSummary }) {
+export function Shelf({ summary, stale = false }: { summary: OmniSummary; stale?: boolean }) {
   const u = summary.usage;
   const meters = usageMeters(u);
   const perAccount = !!u?.accounts && u.accounts.length > 0;
   const inline5h = meters.length <= 2;
   return (
-    <div className="shelf">
+    <div className={`shelf${stale ? ' stale' : ''}`}>
       <button
         type="button"
         className="shelf-parked"
@@ -37,13 +37,14 @@ export function Shelf({ summary }: { summary: OmniSummary }) {
         </span>
       )}
       {meters.map((m) => (
-        <span key={m.label} className={`shelf-week${m.warn ? ' t-amber' : ''}${perAccount ? ' acct' : ''}`} {...tip(usageTip(m))} aria-label={usageTip(m)}>
+        <span key={m.label} className={`shelf-week${m.warn ? ' t-amber' : ''}${perAccount ? ' acct' : ''}`} {...tip(stale ? `${usageTip(m)} (may be out of date)` : usageTip(m))} aria-label={usageTip(m)}>
           <span>{m.label}</span>
           <i className="bar" aria-hidden="true">
             <i style={{ width: `${Math.round(m.pct ?? 0)}%` }} />
           </i>
           <b>{m.pct === null ? 'n/a' : `${Math.round(m.pct)}%`}</b>
           {perAccount && inline5h && m.fiveHour !== null && <span className="xs">5 h {Math.round(m.fiveHour)}%</span>}
+          {m.hotHidden && <i className="hot-5h" aria-label={`Five hour window ${Math.round(m.fiveHour ?? 0)}%`} />}
         </span>
       ))}
     </div>

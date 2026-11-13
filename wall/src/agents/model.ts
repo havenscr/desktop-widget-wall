@@ -358,18 +358,16 @@ export function headerAsk(
   const n = needsYouCount(s);
   if (n === 0) return { text: 'Nothing needs you', title: null, id: null, more: null, canStep: false, tone: 'cyan' };
   const ids = waitingIds(s);
-  const k = ids.length ? step % ids.length : 0;
-  const id = ids[k] ?? null;
-  const title = id ? (sessionTitle(s, id) ?? 'a session') : null;
-  const rest = n - 1 - k;
-  return {
-    text: k === 0 ? 'One thing for you' : 'Also for you',
-    title,
-    id,
-    more: rest > 0 ? `then ${rest} more` : ids.length > 1 ? 'back to the first' : null,
-    canStep: ids.length > 1,
-    tone: 'amber',
-  };
+  // Nothing to name or open: say so plainly; the button only brings OmniGent forward.
+  if (ids.length === 0) return { text: 'Something needs you', title: null, id: null, more: n > 1 ? `${n} things in all` : null, canStep: false, tone: 'amber' };
+  const k = step % ids.length;
+  const id = ids[k];
+  const title = sessionTitle(s, id) ?? 'a session';
+  // Count only what the button can step through (at most five ids); the rest are "and more".
+  const rest = ids.length - 1 - k;
+  const beyond = n > ids.length;
+  const more = rest > 0 ? `then ${rest} more${beyond ? ', and more' : ''}` : ids.length > 1 ? 'back to the first' : beyond ? 'and more' : null;
+  return { text: k === 0 ? 'One thing for you' : 'Also for you', title, id, more, canStep: ids.length > 1, tone: 'amber' };
 }
 
 /** Empty rows under the cards: up to three rows in all, never more than the limit allows. */
@@ -382,7 +380,9 @@ export function cardLine(l: Lane): { text: string; tone: '' | 'amber' | 'red' } 
   if (laneWaits(l)) {
     const t = l.waitingSinceS != null ? `Waiting on you for ${elapsedText(l.waitingSinceS)}` : 'Waiting on you';
     // "Waiting on a thumbnail choice" adds "a thumbnail choice"; the bare status words add nothing.
-    const what = l.line && !BARE.includes(l.line.toLowerCase()) ? l.line.replace(/^waiting (on|for)\s+/i, '') : '';
+    // A line that only says it waits on the owner adds nothing.
+    const said = l.line && !BARE.includes(l.line.toLowerCase()) && !/^waiting (on|for) you\b/i.test(l.line) ? l.line : '';
+    const what = said.replace(/^waiting (on|for)\s+/i, '');
     return { text: what ? `${t}: ${what}` : t, tone: 'amber' };
   }
   if (l.failed) return { text: l.line && !BARE.includes(l.line.toLowerCase()) ? `Failed: ${l.line}` : 'Failed, needs a look', tone: 'red' };
@@ -419,23 +419,33 @@ export interface UsageMeter {
   pct: number | null;
   fiveHour: number | null;
   resets: string | null;
+  /** The figure the meter shows is the fullest and above 90 percent: amber. */
   warn: boolean;
+  /** The five hour figure is not shown inline (three or more meters) and is above 90: a small mark. */
+  hotHidden: boolean;
 }
 
-export function usageMeters(u: Usage | null): UsageMeter[] {
+/**
+ * One meter per subscription for the shelf. `showFiveHour` says whether the five hour
+ * figure is shown inline (two or fewer meters). Amber goes only to a figure the meter
+ * shows: the fullest shown figure, when above 90. A hidden five hour figure above 90 gets
+ * a small mark instead (its number is in the hover).
+ */
+export function usageMeters(u: Usage | null, showFiveHour?: boolean): UsageMeter[] {
   if (!u) return [];
   if (u.accounts && u.accounts.length > 0) {
-    const top = Math.max(...u.accounts.map((a) => Math.max(a.weekPct ?? 0, a.fiveHourPct ?? 0)));
+    const inline = showFiveHour ?? u.accounts.length <= 2;
+    const shownOf = (a: UsageAccount) => Math.max(a.weekPct ?? 0, inline ? (a.fiveHourPct ?? 0) : 0);
+    const top = Math.max(...u.accounts.map(shownOf));
     let marked = false;
     return u.accounts.map((a) => {
-      const full = Math.max(a.weekPct ?? 0, a.fiveHourPct ?? 0);
-      const warn = !marked && top > 90 && full === top;
+      const warn = !marked && top > 90 && shownOf(a) === top;
       if (warn) marked = true;
-      return { label: a.label, pct: a.weekPct, fiveHour: a.fiveHourPct, resets: a.weekResetsAt, warn };
+      return { label: a.label, pct: a.weekPct, fiveHour: a.fiveHourPct, resets: a.weekResetsAt, warn, hotHidden: !inline && (a.fiveHourPct ?? 0) > 90 };
     });
   }
   if (u.claudeWeekPct === null) return [];
-  return [{ label: 'Claude this week', pct: u.claudeWeekPct, fiveHour: u.claude5hPct, resets: u.weekResetsAt, warn: u.claudeWeekPct > 90 }];
+  return [{ label: 'Claude this week', pct: u.claudeWeekPct, fiveHour: u.claude5hPct, resets: u.weekResetsAt, warn: u.claudeWeekPct > 90, hotHidden: false }];
 }
 
 /** A short local day and time, "Tue 6:00 PM". */

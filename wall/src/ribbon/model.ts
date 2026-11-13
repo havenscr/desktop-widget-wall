@@ -225,7 +225,7 @@ export function chipLayout(all: readonly Chip[]): { shown: Chip[]; more: MoreChi
     m.items.push(c);
     return false;
   });
-  for (const m of more) m.items.sort((a, b) => a.start - b.start);
+  for (const m of more) m.items.sort((a, b) => a.start - b.start || a.key.localeCompare(b.key));
   return { shown: keep, more };
 }
 

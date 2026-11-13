@@ -90,7 +90,12 @@ describe('header and slots', () => {
     // An older helper: the first entry names it.
     const one = summary({ yourMove: { total: 1, first: { sessionId: 'a1b2c3d4-0009', title: 'Invoice check', kind: 'gate', since: null, question: '' } } });
     expect(headerAsk(one)).toMatchObject({ text: 'One thing for you', title: 'Invoice check', id: 'a1b2c3d4-0009', more: null, canStep: false, tone: 'amber' });
-    expect(headerAsk(summary({ yourMove: { total: 3, first: null } })).more).toBe('then 2 more');
+    // Nothing to name or step through: a plain line, never an empty title.
+    expect(headerAsk(summary({ yourMove: { total: 3, first: null } }))).toMatchObject({ text: 'Something needs you', title: null, id: null, more: '3 things in all', canStep: false });
+    // More waiting than the five ids it can step through: "and more".
+    const six = summary({ yourMove: { total: 8, first: null, ids: ['a1b2c3d4-00a1', 'a1b2c3d4-00a2', 'a1b2c3d4-00a3', 'a1b2c3d4-00a4', 'a1b2c3d4-00a5'] } });
+    expect(headerAsk(six).more).toBe('then 4 more, and more');
+    expect(headerAsk(six, 4).more).toBe('back to the first');
     // A waiting lane counts even when the your-move list has not caught up.
     const s = summary({ lanes: [lane({ waiting: true }), lane({ id: 'a1b2c3d4-0002', title: 'Second', state: 'blocked' })] });
     expect(needsYouCount(s)).toBe(2);
@@ -193,6 +198,8 @@ describe('cards from a newer helper', () => {
   it('says the most useful thing first on the second line', () => {
     expect(cardLine(lane({ waiting: true, waitingSinceS: 720, line: 'Waiting on a thumbnail choice' }))).toEqual({ text: 'Waiting on you for 12 min: a thumbnail choice', tone: 'amber' });
     expect(cardLine(lane({ state: 'blocked', line: 'idle' }))).toEqual({ text: 'Waiting on you', tone: 'amber' });
+    expect(cardLine(lane({ waiting: true, waitingSinceS: 300, line: 'Waiting on you' })).text).toBe('Waiting on you for 5 min');
+    expect(cardLine(lane({ waiting: true, line: 'waiting for you to pick a thumbnail' })).text).toBe('Waiting on you');
     expect(cardLine(lane({ failed: true, line: 'running' }))).toEqual({ text: 'Failed, needs a look', tone: 'red' });
     expect(cardLine(lane({ live: 'working', line: 'Running web tests' })).text).toBe('Running web tests');
     expect(cardLine(lane({ live: 'idle', line: 'idle', next: 'Answer two comments' })).text).toBe('Next: Answer two comments');
@@ -253,7 +260,22 @@ describe('cards from a newer helper', () => {
     ]);
     expect(usageTip(m[2])).toBe('Codex: no recent weekly reading');
     expect(usageTip(m[0])).toBe('Claude 1: 41% of this week used, 12% of the five hour window');
-    expect(usageMeters({ claudeWeekPct: 62, claude5hPct: 18, weekResetsAt: null })).toEqual([{ label: 'Claude this week', pct: 62, fiveHour: 18, resets: null, warn: false }]);
+    expect(usageMeters({ claudeWeekPct: 62, claude5hPct: 18, weekResetsAt: null })).toEqual([{ label: 'Claude this week', pct: 62, fiveHour: 18, resets: null, warn: false, hotHidden: false }]);
+    // Three meters hide the five hour figure: a hot one there is a small mark, never amber on a calm week figure.
+    const hot = usageMeters({
+      claudeWeekPct: 30,
+      claude5hPct: null,
+      weekResetsAt: null,
+      accounts: [
+        { provider: 'claude', label: 'Claude 1', weekPct: 30, fiveHourPct: 97, weekResetsAt: null },
+        { provider: 'claude', label: 'Claude 2', weekPct: 20, fiveHourPct: null, weekResetsAt: null },
+        { provider: 'codex', label: 'Codex', weekPct: 10, fiveHourPct: null, weekResetsAt: null },
+      ],
+    });
+    expect(hot.map((x) => [x.warn, x.hotHidden])).toEqual([[false, true], [false, false], [false, false]]);
+    // With two meters the five hour figure shows, so it may be the amber one.
+    const two = usageMeters({ claudeWeekPct: 30, claude5hPct: null, weekResetsAt: null, accounts: [{ provider: 'claude', label: 'Claude 1', weekPct: 30, fiveHourPct: 97, weekResetsAt: null }] });
+    expect(two.map((x) => [x.warn, x.hotHidden])).toEqual([[true, false]]);
     expect(usageMeters({ claudeWeekPct: 80, claude5hPct: null, weekResetsAt: null, accounts: [{ provider: 'codex', label: 'Codex', weekPct: 80, fiveHourPct: null, weekResetsAt: null }] })[0].warn).toBe(false);
     expect(usageMeters(null)).toEqual([]);
   });

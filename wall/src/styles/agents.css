@@ -150,8 +150,9 @@
   max-height: 150px;
   display: grid;
   /* The title takes every free pixel; the elapsed time or the merge button only its own. */
-  grid-template-columns: 68px minmax(0, 1fr) 350px var(--lm-w, 124px);
+  grid-template-columns: 68px minmax(0, 1fr) 350px 124px;
   align-items: center;
+  position: relative;
   gap: 22px;
   padding: 0 28px 0 30px;
   min-width: 0;
@@ -184,16 +185,11 @@
   min-height: 0;
   scroll-snap-align: start;
 }
-.lane[role='button'] {
-  cursor: pointer;
+.lane:has(.lane-open) {
   transition: transform 90ms ease-out;
 }
-.lane[role='button']:active {
+.lane:has(.lane-open):active {
   transform: scale(0.99);
-}
-.lane[role='button']:focus-visible {
-  outline: 3px solid var(--cyan);
-  outline-offset: 2px;
 }
 .lane.wait {
   border-color: rgba(255, 194, 77, 0.45);
@@ -201,12 +197,37 @@
 }
 /* With fewer than three lanes they are taller: a larger ring and a third line for the PR. */
 .lanes:not([data-lanes='3']) .lane:not(.slim) {
-  grid-template-columns: 84px minmax(0, 1fr) 350px var(--lm-w, 124px);
+  grid-template-columns: 84px minmax(0, 1fr) 350px 124px;
 }
-/* When any card shows "Hold to merge", every card's last column is that wide, so the
-   stage tracks stay lined up. */
-.lanes-list.has-hold {
-  --lm-w: 172px;
+/* Only the card with "Hold to merge" takes the extra width, from the end of its own track,
+   so every track still starts in line. */
+.lane.has-btn .jr {
+  width: calc(100% - 48px);
+}
+.lane.has-btn .lm {
+  margin-left: -48px;
+}
+/* The open action: a real button stretched under the card's content (which sits above it,
+   so its hover cards work; a click on the content opens the session too). */
+.lane-open {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  cursor: pointer;
+}
+.lane-open:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: 2px;
+}
+.lane > :not(.lane-open) {
+  position: relative;
+  z-index: 1;
+}
+.lane:has(.lane-open) {
+  cursor: pointer;
 }
 .lane .lt {
   display: flex;
@@ -222,9 +243,9 @@
   min-width: 0;
 }
 .lane .lt2 > .s {
-  /* The main words keep their room; the quiet facts give way first. */
+  /* The status keeps its room; the quiet facts that do not fit are left out whole. */
   flex: 0 1 auto;
-  min-width: min(60%, 340px);
+  min-width: 0;
 }
 .lane .lt2 > .s.t-amber {
   color: var(--amber);
@@ -233,10 +254,12 @@
   color: var(--red);
 }
 .lane-meta {
-  flex: 0 1000 auto;
-  min-width: 0;
+  flex: none;
   color: var(--faint);
   white-space: pre;
+}
+.lane-meta[hidden] {
+  display: none;
 }
 .lane.failed {
   border-color: rgba(255, 77, 109, 0.4);
@@ -252,8 +275,27 @@
   text-align: right;
 }
 .lanes.stale .lane .lt,
-.lanes.stale .lane .jr {
+.lanes.stale .lane .jr,
+.lanes.stale .slot-meter,
+.lanes.stale .lanes-count,
+.lanes.stale .lanes-ask,
+.lanes.stale .calm,
+.lanes.stale .shelf {
   opacity: 0.55;
+}
+/* While stale the call to action goes quiet: no amber, and the button does nothing. */
+.lanes .t-quiet {
+  --c: var(--faint);
+  color: var(--dim);
+}
+.lanes .t-quiet .dot {
+  box-shadow: none;
+}
+.lanes-hd button:disabled {
+  cursor: default;
+}
+.lanes-hd button:disabled:hover {
+  background: none !important;
 }
 
 /* Free slots: slim and quiet, never full lane height. */
@@ -641,8 +683,17 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .lane[role='button'],
+  .lane:has(.lane-open),
   .btn.hold.holding .hold-fill {
     transition: none;
   }
+}
+/* A five hour figure above 90 that the meter does not show inline: a small amber mark
+   (its number is in the hover). */
+.shelf .hot-5h {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--amber);
+  margin-left: -8px;
 }

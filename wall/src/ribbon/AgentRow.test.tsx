@@ -2,6 +2,7 @@ import { act, fireEvent, render } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { lane, summary } from '../agents/fixtures';
 import { resetAgents } from '../agents/useAgents';
+import { useCardScroll } from '../agents/cardScroll';
 import { mocks } from '../bridge/tauri';
 import { useFocusStore } from '../focus/store';
 import { HoverTipLayer, TIP_DELAY_MS } from '../ui/HoverTip';
@@ -167,4 +168,50 @@ it('hover names the session with its stage and spans, an ended one from the name
   fireEvent.click(mine);
   await flush();
   expect(opened).toEqual(['a1b2c3d4-0001']);
+});
+
+it('twelve sessions: two drawn rows, then "+10 more" whose hover lists the rest and whose click asks the cards to show the first', async () => {
+  const ids = Array.from({ length: 12 }, (_, i) => `a1b2c3d4-00${String(i).padStart(2, '0')}`);
+  answer = () =>
+    summary({
+      lanes: ids.slice(0, 3).map((id, i) => lane({ id, title: `Session ${i + 1}` })),
+      sessionsList: ids.map((id, i) => lane({ id, title: `Session ${i + 1}`, stage: i === 2 ? 'review' : 'build' })),
+      day: ids.map((id, i) => ({ lane: id, start: iso(`0${6 + Math.floor(i / 4)}:${String((i % 4) * 10).padStart(2, '0')}`), end: iso('09:30'), kind: 'run' as const })),
+    });
+  const r = render(
+    <>
+      <Ribbon kind="work" />
+      <HoverTipLayer />
+    </>,
+  );
+  await flush();
+  const hits = [...r.container.querySelectorAll('.agent-row .sg-hit')] as HTMLElement[];
+  expect(new Set(hits.map((h) => h.dataset.lane))).toEqual(new Set(ids.slice(0, 2)));
+  // Every row is 8 px tall, and no two sessions share a row.
+  expect(new Set(hits.map((h) => h.style.height))).toEqual(new Set(['8px']));
+  expect(new Set(hits.map((h) => `${h.style.top}|${h.dataset.lane}`)).size).toBe(2);
+  const more = r.container.querySelector('.agent-row .sg-more') as HTMLElement;
+  expect(more.textContent).toBe('+10 more');
+  expect(more.style.top).toBe('84px');
+  fireEvent.mouseEnter(more);
+  await flush(TIP_DELAY_MS);
+  const card = document.querySelector('.hover-tip')!.textContent!;
+  expect(card).toContain('10 more sessions today');
+  expect(card).toContain('3. Session 3, Review, working');
+  expect(card).toContain('12. Session 12');
+  fireEvent.click(more);
+  expect(useCardScroll.getState().id).toBe(ids[2]);
+});
+
+it('a due label that would sit on the agent bars shows only its diamond, with the label in the hover', async () => {
+  const task = (id: string, title: string, due: string) => ({ id, title, due_at: due, due_is_all_day: false, quadrant: null, est: null });
+  mocks.set('wall2_tasks_summary', () => ({ next: [task('t1', 'Send the proposal', iso('09:50')), task('t2', 'Late one', iso('20:00'))], remaining: 0, dueTomorrow: { count: 0, estMinutes: 0 } }));
+  answer = () => summary({ lanes: [lane({ id: 'a1b2c3d4-0001' })], day: [{ lane: 'a1b2c3d4-0001', start: iso('09:00'), end: null, kind: 'run' }] });
+  const r = render(<Ribbon kind="work" />);
+  await flush();
+  const marks = [...r.container.querySelectorAll('.due')] as HTMLElement[];
+  expect(marks.map((m) => m.className)).toEqual(['due bare', 'due']);
+  expect(marks[0].textContent).toBe('');
+  expect(marks[0].getAttribute('aria-label')).toBe('Due 9:50: Send the proposal. Opens the task');
+  expect(marks[1].textContent).toBe('Late one, 8:00');
 });

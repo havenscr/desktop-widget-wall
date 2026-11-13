@@ -2,7 +2,7 @@ import { act, fireEvent, render } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { mocks } from '../bridge/tauri';
 import { useFocusStore } from '../focus/store';
-import { HoverTipLayer, TIP_DELAY_MS } from '../ui/HoverTip';
+import { HoverTipLayer, resetTip, TIP_DELAY_MS } from '../ui/HoverTip';
 import { RX } from './model';
 import { Ribbon } from './Ribbon';
 import { useFixedClock, usePacificTime } from './testZone';
@@ -22,6 +22,7 @@ const flush = async (ms = 0) => {
 };
 
 afterEach(() => {
+  resetTip();
   resetAgents();
   Object.defineProperty(document, 'hidden', { configurable: true, value: false });
   vi.useRealTimers();
@@ -320,4 +321,36 @@ it('an older answer cannot turn an empty good day into "not available" either', 
   await flush();
   expect(labels(r.container)).toContain('No meetings today');
   expect(labels(r.container)).not.toContain('Calendar not available');
+});
+
+it('three meetings at once: two chips and a "+1" chip; a click on it lists both left over to open in Outlook', async () => {
+  const opened: string[] = [];
+  mocks.set('wall2_open_event', (args) => {
+    opened.push(String(args?.key));
+  });
+  mocks.set('wall2_meet_day', () => ({
+    accounts: [{ id: 'work', label: 'Work', state: 'ok' }],
+    events: ['a', 'b', 'c'].map((k) => ({ key: `d-${k}`, accountId: 'work', title: `Meeting ${k}`, start: iso('13:00'), end: iso('14:00'), canJoin: false, canOpen: true, isLive: false })),
+  }));
+  const r = render(
+    <>
+      <Ribbon kind="work" />
+      <HoverTipLayer />
+    </>,
+  );
+  await flush();
+  expect([...r.container.querySelectorAll('.ev:not(.more)')].map((c) => c.textContent)).toEqual(['Meeting a']);
+  const more = r.container.querySelector('.ev.more') as HTMLElement;
+  expect(more.textContent).toBe('+2');
+  fireEvent.mouseEnter(more);
+  await flush(TIP_DELAY_MS);
+  expect(document.querySelector('.hover-tip')!.textContent).toContain('2 more at this time');
+  fireEvent.mouseLeave(more);
+  fireEvent.click(more);
+  const picks = [...document.querySelectorAll('.hover-tip.pinned .tip-pick')] as HTMLElement[];
+  expect(picks.map((p) => p.textContent)).toEqual(['Meeting b, 1:00 to 2:00 PM, Work', 'Meeting c, 1:00 to 2:00 PM, Work']);
+  fireEvent.click(picks[1]);
+  await flush();
+  expect(opened).toEqual(['d-c']);
+  expect(document.querySelector('.hover-tip')).toBeNull();
 });

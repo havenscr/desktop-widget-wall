@@ -28,13 +28,14 @@
   --red: #ff4d6d;
   /* One colour for each agent stage, cool to warm (Plan, Build, Review, PR, Live): the
      stage track, a card's ring and the ribbon's agent bars. Amber stays "waits on you" and
-     mint stays "done or ready", so neither is a stage colour. Each clears 4.5:1 on the
-     lane glass and the ribbon. */
+     mint stays "done or ready", so neither is a stage colour; Live, the warm end, is a pale
+     rose kept well apart from the failed red and from amber. Each clears 4.5:1 on the lane
+     glass and the ribbon on every sky. */
   --st-plan: #4fc3f7;
-  --st-build: #6f8cff;
-  --st-review: #a978ff;
-  --st-pr: #e66de0;
-  --st-live: #ff7a8a;
+  --st-build: #7a80ff;
+  --st-review: #b06cff;
+  --st-pr: #f060c8;
+  --st-live: #ffb3e6;
   --disp: 'Oxanium', 'Segoe UI Variable Display', 'Segoe UI', system-ui, sans-serif;
   --body: 'InterV', 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
 }

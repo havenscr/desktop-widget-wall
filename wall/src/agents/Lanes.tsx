@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { tip } from '../ui/HoverTip';
 import { FreeRow, Lane } from './Lane';
-import { ageText, allFreeText, cards, countText, mergeReady, freeSlots, headerAsk, slotMeter, slotsText, slotsTip, type OmniSummary } from './model';
+import { ageText, allFreeText, cards, countText, freeSlots, headerAsk, slotMeter, slotsText, slotsTip, type OmniSummary } from './model';
 import { useCardScroll } from './cardScroll';
 import { focusSession } from './open';
 import { Shelf } from './Shelf';
@@ -10,10 +10,17 @@ import { Shelf } from './Shelf';
 const IN_VIEW = 3;
 
 /** The slot meter: a pip per slot, filled for each working session, "+N" past the last pip. */
-function SlotMeter({ summary }: { summary: OmniSummary }) {
+function SlotMeter({ summary, stale }: { summary: OmniSummary; stale: boolean }) {
   const m = slotMeter(summary);
   return (
-    <button type="button" className="slot-meter" aria-label={slotsTip(summary)} onClick={() => focusSession()} {...tip(slotsTip(summary))}>
+    <button
+      type="button"
+      className="slot-meter"
+      disabled={stale}
+      aria-label={slotsTip(summary)}
+      onClick={() => focusSession()}
+      {...tip(stale ? `${slotsTip(summary).replace(' Click to bring OmniGent forward.', '')} These numbers may be out of date.` : slotsTip(summary))}
+    >
       <span className="pips" aria-hidden="true">
         {m.pips.map((on, i) => (
           <i key={i} className={on ? 'on' : ''} />
@@ -56,6 +63,8 @@ export function Lanes({ summary, stale, freshAt, now, idle }: { summary: OmniSum
   }, [scrollReq]);
 
   const openAsk = (id: string | null) => focusSession(canOpen ? id : null);
+  /** "as of 4 min ago" (or "at an unknown time") for a stale answer. */
+  const asOf = freshAt === null ? 'at an unknown time' : ageText(freshAt, now).replace('updated', 'as of');
   /** The count's click: the next three cards, back to the top after the last. */
   const nextPage = () => {
     const el = list.current;
@@ -69,7 +78,7 @@ export function Lanes({ summary, stale, freshAt, now, idle }: { summary: OmniSum
       <div className="lanes-hd">
         <div className="row lanes-hd-l">
           <span className="k">Agents</span>
-          <SlotMeter summary={summary} />
+          <SlotMeter summary={summary} stale={stale} />
           {count && (
             <button
               type="button"
@@ -83,20 +92,27 @@ export function Lanes({ summary, stale, freshAt, now, idle }: { summary: OmniSum
           {stale && <span className="xs lanes-age">{ageText(freshAt, now)}</span>}
         </div>
         {ask.tone === 'amber' ? (
-          <div className="row calm t-amber lanes-ask">
+          <div className={`row calm lanes-ask ${stale ? 't-quiet' : 't-amber'}`}>
             <button
               type="button"
               className="ask-btn"
+              disabled={stale}
               onClick={() => openAsk(ask.id)}
               aria-label={`${ask.text}: ${ask.title ?? ''}. Opens it in OmniGent`}
-              {...tip(`${ask.title ?? 'A session'} waits on you. Click to open it in OmniGent.`)}
+              {...tip(
+                stale
+                  ? `${ask.title ?? 'Something'} was waiting on you ${asOf}; this may be out of date.`
+                  : ask.title
+                    ? `${ask.title} waits on you. Click to open it in OmniGent.`
+                    : 'Something waits on you. Click to bring OmniGent forward.',
+              )}
             >
               <i className="dot" aria-hidden="true" />
-              <span>{ask.text}:</span>
-              <span className="ask-title ellipsis">{ask.title}</span>
+              <span>{ask.title ? `${ask.text}:` : ask.text}</span>
+              {ask.title && <span className="ask-title ellipsis">{ask.title}</span>}
             </button>
             {ask.more &&
-              (ask.canStep ? (
+              (ask.canStep && !stale ? (
                 <button
                   type="button"
                   className="xs ask-more"
@@ -120,9 +136,9 @@ export function Lanes({ summary, stale, freshAt, now, idle }: { summary: OmniSum
           </div>
         )}
       </div>
-      <div className={`lanes-list${n > IN_VIEW ? ' scrolls' : ''}${canOpen && all.some(mergeReady) ? ' has-hold' : ''}`} ref={list}>
+      <div className={`lanes-list${n > IN_VIEW ? ' scrolls' : ''}`} ref={list}>
         {all.map((l, i) => (
-          <Lane key={l.id} lane={l} num={i + 1} canOpen={canOpen} open={(id) => focusSession(id)} roomy={n < IN_VIEW} />
+          <Lane key={l.id} lane={l} num={i + 1} canOpen={canOpen} open={(id) => focusSession(id)} roomy={n < IN_VIEW} asOf={stale ? asOf : null} />
         ))}
         {n > 0 && Array.from({ length: free }, (_, i) => <FreeRow key={i} text="Free slot" />)}
         {n === 0 && (
@@ -132,7 +148,7 @@ export function Lanes({ summary, stale, freshAt, now, idle }: { summary: OmniSum
           </>
         )}
       </div>
-      <Shelf summary={summary} />
+      <Shelf summary={summary} stale={stale} />
     </div>
   );
 }

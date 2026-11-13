@@ -7,6 +7,8 @@ import { CentreSlot } from './CentreSlot';
 import { lane, summary } from './fixtures';
 import { HOLD_HINT_MS, HOLD_MOVE_PX, HOLD_MS, POLL_MS } from './model';
 import { resetAgents } from './useAgents';
+import { fitExtras } from './Lane';
+import { HoverTipLayer, resetTip, TIP_DELAY_MS } from '../ui/HoverTip';
 
 const flush = async (ms = 0) => {
   await act(async () => {
@@ -32,6 +34,7 @@ beforeEach(() => {
   resetAgents();
 });
 afterEach(() => {
+  resetTip();
   resetAgents();
   useFocusStore.getState().dispose();
   vi.useRealTimers();
@@ -68,7 +71,7 @@ it('turns a waiting lane amber and says One thing for you', async () => {
   const r = render(<CentreSlot weather={weather} />);
   await flush();
   const calm = r.container.querySelector('.calm')!;
-  expect(calm.textContent).toBe('One thing for you:Voice: iPhone mic fixthen 1 more');
+  expect(calm.textContent).toBe('One thing for you:Voice: iPhone mic fixand more');
   expect(calm.className).toContain('t-amber');
   const lanes = r.container.querySelectorAll('.lane:not(.slim)');
   expect(lanes[0].className).toBe('lane g');
@@ -77,16 +80,36 @@ it('turns a waiting lane amber and says One thing for you', async () => {
   expect(lanes[1].querySelector('.jn.c')!.className).toBe('jn c wait');
 });
 
-it('opens the chat on a tap anywhere on the lane', async () => {
-  answer = () => summary({ lanes: [lane()] });
+it('opens the session from anywhere on the card through one real button, never from the merge button', async () => {
+  answer = () => summary({ lanes: [lane(), ready('a1b2c3d4-0003')] });
   const r = render(<CentreSlot weather={weather} />);
   await flush();
-  fireEvent.click(r.container.querySelector('.lane .t2')!);
-  await flush();
-  expect(opened).toEqual(['a1b2c3d4-0001']);
-  fireEvent.keyDown(r.container.querySelector('.lane[role="button"]')!, { key: 'Enter' });
+  const [first, second] = [...r.container.querySelectorAll('.lane:not(.slim)')] as HTMLElement[];
+  // The card is not itself a button and never wraps the merge button.
+  expect(first.getAttribute('role')).toBeNull();
+  const open = first.querySelector('button.lane-open')!;
+  expect(open.getAttribute('aria-label')).toBe('1. Voice: iPhone mic fix: Running web tests, 56 of 89. Opens the session in OmniGent');
+  expect(second.querySelector('.lane-open')!.contains(second.querySelector('.hold'))).toBe(false);
+  // A click on the content, and a click (or Enter, which a real button turns into a click) on the button, each open it once.
+  fireEvent.click(first.querySelector('.t2')!);
+  fireEvent.click(open);
   await flush();
   expect(opened).toEqual(['a1b2c3d4-0001', 'a1b2c3d4-0001']);
+  // A click on Hold to merge opens nothing (a short tap only says Hold).
+  const hold = second.querySelector('.hold')!;
+  fireEvent.pointerDown(hold, { pointerId: 1 });
+  fireEvent.pointerUp(hold, { pointerId: 1 });
+  fireEvent.click(hold);
+  await flush();
+  expect(opened).toEqual(['a1b2c3d4-0001', 'a1b2c3d4-0001']);
+  // Enter on Hold to merge opens the chat, once.
+  fireEvent.keyDown(hold, { key: 'Enter' });
+  await flush();
+  expect(opened).toEqual(['a1b2c3d4-0001', 'a1b2c3d4-0001', 'a1b2c3d4-0003']);
+  // Tab order: the card's button, then its merge button.
+  const focusables = [...second.querySelectorAll('button')];
+  expect(focusables[0].className).toBe('lane-open');
+  expect(focusables[1].className).toContain('hold');
 });
 
 it('does not offer the tap when the helper says links are not available', async () => {
@@ -94,7 +117,7 @@ it('does not offer the tap when the helper says links are not available', async 
   const r = render(<CentreSlot weather={weather} />);
   await flush();
   const l = r.container.querySelector('.lane:not(.slim)')!;
-  expect(l.getAttribute('role')).toBeNull();
+  expect(l.querySelector('.lane-open')).toBeNull();
   fireEvent.click(l);
   await flush();
   expect(opened).toEqual([]);
@@ -408,4 +431,50 @@ it('a failed session says so in red', async () => {
   expect(card.className).toContain('failed');
   expect(card.querySelector('.lt2 .s')!.className).toContain('t-red');
   expect(card.querySelector('.lt2 .s')!.textContent).toBe('Failed: Two tests failed');
+});
+
+it('a stale answer quiets the header: no amber, the One thing button and slot meter do nothing, and the cards say as of when', async () => {
+  let fail = false;
+  answer = () => {
+    if (fail) throw new Error('failed');
+    return summary({ lanes: [lane(), lane({ id: 'a1b2c3d4-0002', title: 'Friday social card', waiting: true, state: 'blocked' })], yourMove: { total: 1, first: null, ids: ['a1b2c3d4-0002'] } });
+  };
+  const r = render(
+    <>
+      <CentreSlot weather={weather} />
+      <HoverTipLayer />
+    </>,
+  );
+  await flush();
+  expect(r.container.querySelector('.lanes-ask')!.className).toContain('t-amber');
+  fail = true;
+  await flush(4 * 60_000);
+  const centre = r.container.querySelector('.centre.lanes')!;
+  expect(centre.className).toContain('stale');
+  expect(r.container.querySelector('.lanes-ask')!.className).toContain('t-quiet');
+  expect(r.container.querySelector('.lanes-ask')!.className).not.toContain('t-amber');
+  const ask = r.container.querySelector('.ask-btn') as HTMLButtonElement;
+  const meter = r.container.querySelector('.slot-meter') as HTMLButtonElement;
+  expect(ask.disabled).toBe(true);
+  expect(meter.disabled).toBe(true);
+  fireEvent.click(ask);
+  fireEvent.click(meter);
+  await flush();
+  expect(opened).toEqual([]);
+  expect(r.container.querySelector('.shelf')!.className).toContain('stale');
+  // The cards still open, and their hover says how old the answer is.
+  fireEvent.mouseEnter(r.container.querySelector('.lane .t2')!);
+  await flush(TIP_DELAY_MS);
+  expect(document.querySelector('.hover-tip')!.textContent).toMatch(/All of this is as of \d+ min ago; it may have changed\. The session still opens\./);
+  fireEvent.click(r.container.querySelector('.lane-open')!);
+  await flush();
+  expect(opened).toEqual(['a1b2c3d4-0001']);
+});
+
+it('fits whole extras beside the status, dropping from the end and never cutting a word', () => {
+  expect(fitExtras(600, 200, [120, 80, 100])).toBe(3);
+  expect(fitExtras(420, 200, [120, 80, 100])).toBe(1);
+  expect(fitExtras(450, 200, [120, 80, 100])).toBe(2);
+  expect(fitExtras(150, 200, [50])).toBe(0);
+  expect(fitExtras(600, 200, [])).toBe(0);
 });
