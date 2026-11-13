@@ -6,6 +6,10 @@ import { Zen } from './Zen';
 import zenSource from './Zen.tsx?raw';
 import { Dream } from './Dream';
 import { mocks } from '../bridge/tauri';
+import { lane, summary } from '../agents/fixtures';
+import { resetAgents } from '../agents/useAgents';
+import { LAST_MOOD_AT_KEY } from '../unwind/RoomCard';
+import { LAST_MOOD_KEY, MOODS_CACHE_KEY } from '../home/Moods';
 import {
   FLAME_ROTATE_MS,
   LONGEST_WORD,
@@ -16,6 +20,7 @@ import {
   WORD_FONT_PX,
   longestWordWidth,
   minRingDiameter,
+  dreamStatusText,
   sessionLabel,
   waitingLines,
 } from './model';
@@ -85,7 +90,7 @@ it('a tap anywhere ends the session without going to Dream', () => {
   render(<Zen nowMs={clockAt(DAY)} />);
   fireEvent.click(screen.getByRole('button', { name: /Start/ }));
   act(() => void vi.advanceTimersByTime(100));
-  expect(screen.getByText('Touch anywhere to end early')).toBeTruthy();
+  expect(screen.getByText('Click anywhere to end early')).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: 'End session early' }));
   expect(screen.getByRole('button', { name: /Start/ })).toBeTruthy();
   expect(screen.queryByLabelText('Wake')).toBeNull();
@@ -269,7 +274,7 @@ it('lays out the concept: clock, picker at bottom left before a session, label a
   const { container } = render(<Zen nowMs={clockAt(DAY)} />);
   expect(container.querySelector('.zen-clock .clk')).not.toBeNull();
   expect(container.querySelector('.zen-bl .breath-picker')).not.toBeNull();
-  expect(screen.queryByText('Touch anywhere to end early')).toBeNull();
+  expect(screen.queryByText('Click anywhere to end early')).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: /Start/ }));
   act(() => void vi.advanceTimersByTime(100));
   expect(screen.getByText('FIVE MINUTES OF ZEN')).toBeTruthy();
@@ -346,4 +351,95 @@ it("opens straight into Dream by day from Unwind's Dream tab, once", () => {
   r.unmount();
   render(<Zen nowMs={clockAt(DAY)} />);
   expect(screen.queryByLabelText('Wake')).toBeNull();
+});
+
+const flushAsync = async (ms = 0) => {
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(ms);
+  });
+};
+
+it('Dream: the hint says what really wakes it, at 13 px, and the date sits under the clock', () => {
+  vi.setSystemTime(new Date(2026, 10, 11, 23, 48));
+  const { container } = render(<Dream onWake={() => undefined} />);
+  expect(screen.getByText('Move the mouse or click to wake')).toBeTruthy();
+  expect(screen.queryByText(/Touch anywhere/)).toBeNull();
+  expect(container.querySelector('.dream-date')!.textContent).toBe('Wednesday, November 11');
+  expect(container.querySelector('.dream-clock')!.textContent).toBe('11:48PM');
+});
+
+it('Dream: a mouse move wakes it only after the grace time and by more than a few pixels; jitter does not', () => {
+  const onWake = vi.fn();
+  render(<Dream onWake={onWake} />);
+  const w = screen.getByLabelText('Wake');
+  fireEvent.mouseMove(w, { clientX: 10, clientY: 10 });
+  fireEvent.mouseMove(w, { clientX: 400, clientY: 10 });
+  expect(onWake).not.toHaveBeenCalled();
+  act(() => void vi.advanceTimersByTime(2000));
+  fireEvent.mouseMove(w, { clientX: 100, clientY: 100 });
+  fireEvent.mouseMove(w, { clientX: 103, clientY: 101 });
+  expect(onWake).not.toHaveBeenCalled();
+  fireEvent.mouseMove(w, { clientX: 300, clientY: 100 });
+  expect(onWake).toHaveBeenCalledTimes(1);
+});
+
+it('dreamStatusText says only what is known', () => {
+  expect(dreamStatusText(null, null, null)).toBe('');
+  expect(dreamStatusText(2, 0, null)).toBe('2 agents still working · No agent needs you');
+  expect(dreamStatusText(0, 1, 'Late Night')).toBe('An agent needs you · Lights: Late Night');
+  expect(dreamStatusText(1, 3, null)).toBe('1 agent still working · 3 agents need you');
+  expect(dreamStatusText(null, null, 'Evening')).toBe('Lights: Evening');
+});
+
+it('Dream status: agents from a fresh store, nothing when the store is off or stale, the mood only when this wall set one', async () => {
+  vi.setSystemTime(new Date(2026, 10, 11, 23, 48));
+  resetAgents();
+  localStorage.clear();
+  mocks.set('wall2_omni_summary', () => summary({ lanes: [lane({ id: 'a', state: 'working' }), lane({ id: 'b', state: 'working' })] }));
+  mocks.set('wall2_meet_day', () => ({ events: [] }));
+  localStorage.setItem(LAST_MOOD_KEY, 'lateNight');
+  localStorage.setItem(LAST_MOOD_AT_KEY, JSON.stringify({ id: 'lateNight', at: Date.now() - 60_000 }));
+  localStorage.setItem(MOODS_CACHE_KEY, JSON.stringify([{ id: 'lateNight', label: 'Late Night' }]));
+  const r = render(<Dream onWake={() => undefined} />);
+  await flushAsync();
+  expect(document.querySelector('.dream-status')!.textContent).toBe('2 agents still working · No agent needs you · Lights: Late Night');
+  r.unmount();
+  // The helper is not set up: no agent words; no mood mark: no lights words.
+  resetAgents();
+  localStorage.clear();
+  mocks.set('wall2_omni_summary', () => Promise.reject(new Error('not-configured')));
+  render(<Dream onWake={() => undefined} />);
+  await flushAsync();
+  expect(document.querySelector('.dream-status')).toBeNull();
+  resetAgents();
+  mocks.clear();
+});
+
+it('Dream: the Tomorrow card shows the first meeting, says so when the calendar cannot be read, and is absent on a clear day', async () => {
+  const now = () => new Date('2026-11-11T21:42:00-08:00');
+  mocks.set('wall2_omni_summary', () => Promise.reject(new Error('not-configured')));
+  mocks.set('wall2_meet_day', () => ({ events: [{ key: 'b', title: 'AE sync', start: '2026-11-12T17:00:00Z', end: '2026-11-12T17:30:00Z' }] }));
+  const a = render(<Dream onWake={() => undefined} now={now} />);
+  await flushAsync();
+  expect(document.querySelector('.dream-card')!.textContent).toBe('Tomorrow9:00, AE sync');
+  a.unmount();
+  mocks.set('wall2_meet_day', () => ({ events: [], accounts: [{ state: 'signed-out' }] }));
+  const b = render(<Dream onWake={() => undefined} now={now} />);
+  await flushAsync();
+  expect(document.querySelector('.dream-card')!.textContent).toBe('TomorrowCalendar not available');
+  b.unmount();
+  mocks.set('wall2_meet_day', () => ({ events: [] }));
+  render(<Dream onWake={() => undefined} now={now} />);
+  await flushAsync();
+  expect(document.querySelector('.dream-card')).toBeNull();
+  resetAgents();
+  mocks.clear();
+});
+
+it('the chosen session length is the one filled chip', () => {
+  render(<Zen nowMs={clockAt(DAY)} />);
+  expect(screen.getAllByRole('radio').filter((r) => r.getAttribute('aria-checked') === 'true')).toHaveLength(1);
+  fireEvent.click(screen.getByRole('radio', { name: '10 min' }));
+  const on = screen.getAllByRole('radio').filter((r) => r.getAttribute('aria-checked') === 'true');
+  expect(on.map((r) => r.textContent)).toEqual(['10 min']);
 });

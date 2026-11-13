@@ -120,3 +120,16 @@ export function flamePair(elapsedMs: number, count: number): { step: number; bas
 
 /** Flames dim to this share in Dream. */
 export const DREAM_DIM = 0.35;
+
+/**
+ * Dream's quiet status line: how many agents are still working and whether an agent needs the owner
+ * (both null when the agents store is stale or off, then neither is said), then the lights mood that
+ * is on (null when the home feed does not say). Empty string when there is nothing to say.
+ */
+export function dreamStatusText(working: number | null, needs: number | null, mood: string | null): string {
+  const parts: string[] = [];
+  if (working !== null && working > 0) parts.push(working === 1 ? '1 agent still working' : `${working} agents still working`);
+  if (needs !== null) parts.push(needs === 0 ? 'No agent needs you' : needs === 1 ? 'An agent needs you' : `${needs} agents need you`);
+  if (mood) parts.push(`Lights: ${mood}`);
+  return parts.join(' · ');
+}

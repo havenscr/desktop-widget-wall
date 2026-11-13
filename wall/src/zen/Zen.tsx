@@ -56,7 +56,7 @@ function Waiting() {
 /**
  * The Zen place: a full-stage view over everything else. Flames, a breathing guide and a short
  * timed session. When a session ends, or when Zen is open at night (9:30 PM to 6:30 AM), it falls
- * into Dream; a tap wakes it. Separate from the focus timer and from Do Not Disturb.
+ * into Dream; a click or a mouse move wakes it. Separate from the focus timer and from Do Not Disturb.
  */
 export function Zen({ nowMs = Date.now }: ZenProps) {
   // Unwind's Dream tab opens Zen straight into Dream; otherwise Dream only at night.
@@ -177,7 +177,7 @@ export function Zen({ nowMs = Date.now }: ZenProps) {
               </div>
             )}
           </div>
-          {running && <div className="zen-hint">Touch anywhere to end early</div>}
+          {running && <div className="zen-hint">Click anywhere to end early</div>}
           <div className="zen-br">
             <button
               type="button"

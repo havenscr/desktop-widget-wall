@@ -22,6 +22,12 @@ if (import.meta.env.DEV) {
   seedReviewFocus(reviewFrame?.ms ?? null);
   // A review still opens on the place it names.
   if (reviewFrame) usePlaceStore.getState().setActive(reviewFrame.place);
+  // Dev only, for stills and the fit check: `?go=meet`, `?go=zen` or `?go=dream` opens that screen.
+  const go = new URLSearchParams(window.location.search).get('go');
+  // The horizon applies the review place when it mounts, so this waits a moment and goes after it.
+  if (go === 'meet' || go === 'zen' || go === 'dream') {
+    setTimeout(() => (go === 'dream' ? usePlaceStore.getState().openDream() : usePlaceStore.getState().setActive(go)), 400);
+  }
 }
 installFullscreenKeys();
 

@@ -84,13 +84,25 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 const WINGS = ['.work .left-wing', '.work .right-wing'];
 const LANES = ['.work .centre', '.work .centre .lane', '.work .centre .shelf'];
+const MEET = ['.meet .panel'];
+const DREAM = ['.dream-clock', '.dream-date', '.dream-card', '.dream-status', '.dream-hint'];
 const VARIANTS = [
   { name: 'three lanes, long titles', agents: '3', checks: [...WINGS, ...LANES] },
   { name: 'one lane', agents: '1', checks: LANES },
   { name: 'no lane', agents: '0', checks: [...LANES, '.work .centre .panel'] },
   { name: 'helper not set up', agents: 'off', checks: ['.work .centre', '.work .centre .panel', '.work .centre .centre-note'] },
+  // Meet: both accounts read; one account failing; no account readable; long titles throughout.
+  { name: 'Meet, both accounts read', agents: '3', go: 'meet', live: true, extra: '', checks: MEET },
+  { name: 'Meet, one account failing', agents: '3', go: 'meet', live: true, extra: '&meet=mixed', checks: MEET },
+  { name: 'Meet, no account readable', agents: '3', go: 'meet', live: true, extra: '&meet=down', checks: MEET },
+  // Dream at night: helper answering, helper off; calendar read, unreadable, nothing tomorrow.
+  { name: 'Dream, agents and calendar', agents: '3', go: 'dream', at: '2026-11-11T23:48:00-08:00', extra: '', checks: DREAM },
+  { name: 'Dream, agents waiting', agents: 'ask', go: 'dream', at: '2026-11-11T23:48:00-08:00', extra: '', checks: DREAM },
+  { name: 'Dream, helper off, calendar unreadable', agents: 'off', go: 'dream', at: '2026-11-11T23:48:00-08:00', extra: '&meet=down', checks: ['.dream-clock', '.dream-date', '.dream-card', '.dream-hint'] },
+  { name: 'Dream, nothing tomorrow', agents: 'off', go: 'dream', at: '2026-11-11T23:48:00-08:00', extra: '&meet=none', checks: ['.dream-clock', '.dream-date', '.dream-hint'] },
 ];
-const query = (agents) => `?hz=work&at=2026-11-11T10:24:00-08:00&long=1&agents=${agents}`;
+// Meet reads the real clock, so its variants run unfrozen (the mock meetings are relative to now).
+const query = (v) => `?${v.live ? '' : `hz=work&at=${v.at ?? '2026-11-11T10:24:00-08:00'}&`}long=1&agents=${v.agents}${v.go ? `&go=${v.go}` : ''}${v.extra ?? ''}`;
 /** Rounding slack for fractional rectangles, in screen pixels. */
 const SLACK = 0.5;
 
@@ -129,7 +141,7 @@ try {
     const view = { left: 0, top: 0, right: innerWidth, bottom: innerHeight };
     const res = sels.map((sel) => ({ sel, items: [...document.querySelectorAll(sel)].map((e) => {
       const box = e.getBoundingClientRect();
-      const holder = e.parentElement.closest('.centre') || band;
+      const holder = e.parentElement.closest('.centre') || band || document.documentElement;
       return { sw: e.scrollWidth, cw: e.clientWidth, sh: e.scrollHeight, ch: e.clientHeight,
         inHolder: out(box, holder.getBoundingClientRect()), inView: out(box, view) };
     }) }));
@@ -146,7 +158,7 @@ try {
   if (overflow) console.log(`deliberate overflow: ${overflow} (${OVERFLOWS[overflow]})`);
   for (const v of overflow ? VARIANTS.slice(0, 1) : VARIANTS) {
     console.log(`${v.name} (agents=${v.agents}):`);
-    const url = `${pathToFileURL(page).href}${query(v.agents)}&checks=${encodeURIComponent(v.checks.join('|'))}`;
+    const url = `${pathToFileURL(page).href}${query(v)}&checks=${encodeURIComponent(v.checks.join('|'))}`;
     const dom = execFileSync(
       chrome,
       // Headless Chromium keeps 87 px of the window for itself, so 807 gives a 2560 by 720 viewport.
