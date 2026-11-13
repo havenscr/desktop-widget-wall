@@ -66,7 +66,7 @@ const OVERFLOWS = {
   labels: '.work .centre .lane .jn em { padding: 0 14px !important; }',
   header: '.work .centre .lanes-hd .slot-meter .xs { display: inline-block; width: 60px; white-space: normal !important; }',
   deck: '.work .right-wing section.pinned { margin-top: 80px; }',
-  tiles: '.work .right-wing .key-tile .deck-lbl { white-space: nowrap !important; display: block !important; overflow: visible !important; max-width: none !important; }',
+  tiles: '.work .right-wing .key-tile .deck-lbl { flex: none; width: 160px; max-width: none !important; }',
 };
 
 if (flag('self-test')) {
