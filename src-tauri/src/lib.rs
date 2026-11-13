@@ -3861,6 +3861,9 @@ pub fn run() {
             // Persistent config storage
             save_widget_config,
             load_widget_config,
+            wall2_omni::wall2_omni_days,
+            wall2_omni::wall2_omni_day,
+            wall2_omni::wall2_focus_day_session,
             wall2_spotify::wall2_spotify_tracks,
             wall2_spotify::wall2_spotify_queue,
             wall2_spotify::wall2_spotify_playback
