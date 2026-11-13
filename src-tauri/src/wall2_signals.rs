@@ -73,14 +73,18 @@ pub fn start(app: tauri::AppHandle, dir: Option<std::path::PathBuf>) {
     #[cfg(windows)]
     let _ = std::thread::Builder::new().name("wall2-signals".into()).spawn(move || {
         use tauri::Emitter;
-        let mut before = Signals::default();
+        let mut before: Option<Signals> = None;
         while !STOP.load(Ordering::SeqCst) {
             let next = win::read().unwrap_or_default();
-            if next != before {
-                log_edges(before, next);
+            if before != Some(next) {
+                if let Some(old) = before { log_edges(old, next); }
+                else {
+                    log::write(if next.known { "store ok" } else { "store unknown" }.into());
+                    log_edges(Signals { known: next.known, ..Signals::default() }, next);
+                }
                 *CURRENT.lock().unwrap_or_else(|e| e.into_inner()) = next;
                 let _ = app.emit("signals-changed", next);
-                before = next;
+                before = Some(next);
             }
             std::thread::sleep(POLL);
         }

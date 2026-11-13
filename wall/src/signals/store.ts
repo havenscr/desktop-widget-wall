@@ -21,7 +21,8 @@ export function createSignalStore(deps: SignalDeps) {
     const apply = (next: SignalPayload) => {
       payload = next;
       const now = deps.now();
-      const meetings = useMeetingFeed.getState().meetings;
+      const feed = useMeetingFeed.getState();
+      const meetings = feed.feedStale || feed.failed ? [] : feed.meetings;
       const callResult = deriveCall(next, meetings, now, previous, micFreeSince);
       if (!isTauri() && next.mockCall && !callResult.call) callResult.call = { kind: next.mockCall, since: now, camera: next.camera[next.mockCall] };
       micFreeSince = callResult.micFreeSince;

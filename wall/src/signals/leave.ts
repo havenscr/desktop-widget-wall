@@ -32,11 +32,13 @@ export function parseRealStart(
   if (!Number.isFinite(from) || !Number.isFinite(to) || from >= to) return null;
   const groups = title.match(/\([^()]*(?:starts?|start)[^()]*\)/gi) ?? [];
   for (const group of groups) {
-    const m = /(?:starts?\s+)?(\d{1,2})(?::?([0-5]\d))?\s*(am|pm)?(?:\s+starts?)?/i.exec(group);
-    if (!m || !/starts?/i.test(group)) continue;
-    let hour = Number(m[1]);
-    const minute = m[2] ? Number(m[2]) : 0;
-    const meridiem = m[3]?.toLowerCase();
+    const inside = group.slice(1, -1).trim();
+    const m = /^(?:starts?\s+(\d{1,2})(?::?([0-5]\d))?\s*(am|pm)?|(\d{1,2})(?::?([0-5]\d))?\s*(am|pm)?\s+starts?)$/i.exec(inside);
+    if (!m) continue;
+    let hour = Number(m[1] ?? m[4]);
+    const minuteText = m[2] ?? m[5];
+    const minute = minuteText ? Number(minuteText) : 0;
+    const meridiem = (m[3] ?? m[6])?.toLowerCase();
     if (meridiem) {
       if (hour < 1 || hour > 12) continue;
       hour = (hour % 12) + (meridiem === 'pm' ? 12 : 0);
@@ -50,4 +52,3 @@ export function parseRealStart(
   }
   return null;
 }
-

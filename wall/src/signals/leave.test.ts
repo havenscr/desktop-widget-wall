@@ -33,4 +33,5 @@ describe('parseRealStart', () => {
     expect(parseRealStart('Flight (1:30 am start)', '2026-11-01T07:00:00Z', '2026-11-01T10:00:00Z', zone)).toBe(Date.parse('2026-11-01T08:30:00Z'));
   });
   it('does no free-text guessing', () => expect(block('Doctor starts at 10:45')).toBeNull());
+  it('rejects extra text inside the parentheses', () => expect(block('Doctor (room 2, 10:45 start)')).toBeNull());
 });
