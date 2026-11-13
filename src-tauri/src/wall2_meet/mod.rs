@@ -12,7 +12,7 @@ mod meetlog;
 mod netprobe;
 mod reason;
 mod service;
-mod store;
+pub(crate) mod store;
 
 pub(crate) use graph::civil_from_days;
 

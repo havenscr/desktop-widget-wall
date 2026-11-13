@@ -59,6 +59,9 @@ mod display_watch;
 mod wall2_feeds;
 mod wall2_home;
 mod wall2_meet;
+mod wall2_oauth;
+mod wall2_spotify;
+mod wall2_spotify_log;
 mod wall2_omni;
 mod wall2_power;
 mod wall2_signals;
@@ -3769,6 +3772,19 @@ pub fn run() {
             wall2_meet::wall2_meet_join,
             wall2_meet::wall2_open_event,
             wall2_meet::wall2_meet_sign_out,
+            wall2_spotify::wall2_spotify_status,
+            wall2_spotify::wall2_spotify_sign_in,
+            wall2_spotify::wall2_spotify_cancel_sign_in,
+            wall2_spotify::wall2_spotify_sign_out,
+            wall2_spotify::wall2_spotify_playlists,
+            wall2_spotify::wall2_spotify_albums,
+            wall2_spotify::wall2_spotify_liked,
+            wall2_spotify::wall2_spotify_recent,
+            wall2_spotify::wall2_spotify_search,
+            wall2_spotify::wall2_spotify_devices,
+            wall2_spotify::wall2_spotify_play,
+            wall2_spotify::wall2_spotify_transfer,
+            wall2_spotify::wall2_spotify_shuffle,
             // Wall 2 helper client and machine numbers
             wall2_omni::wall2_omni_summary,
             wall2_omni::wall2_open_session,
@@ -3994,6 +4010,7 @@ pub fn run() {
             if let Some(window) = app.get_webview_window(WALL2_LABEL) {
                 wall2_window::start_log(app.path().app_log_dir().ok());
                 wall2_meet::start_log(app.path().app_log_dir().ok());
+                wall2_spotify::start_log(app.path().app_log_dir().ok());
                 wall2_signals::start(app.handle().clone(), app.path().app_log_dir().ok());
                 #[cfg(windows)]
                 {
