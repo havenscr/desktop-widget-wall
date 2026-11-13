@@ -12,6 +12,7 @@ import { LAST_MOOD_AT_KEY, ROOM_RETRY_MS, RoomCard } from './RoomCard';
 import { Tabs } from './Tabs';
 import { Tomorrow } from './Tomorrow';
 import { Volume, VOLUME_DEBOUNCE_MS } from './Volume';
+import { resetWatch, useWatchStore } from './watch/store';
 
 usePacificTime();
 
@@ -33,17 +34,20 @@ const flush = async (ms = 0) => {
   });
 };
 
-it('keeps Unwind (and so the horizon camera) on Listen and on the disabled Watch tab', async () => {
+it('keeps Unwind (and so the horizon camera) on Listen and Watch, and switches between them', async () => {
+  resetWatch();
   render(<Tabs />);
-  const watch = screen.getByRole('tab', { name: 'Watch, coming later' }) as HTMLButtonElement;
-  expect(watch.disabled).toBe(true);
+  const watch = screen.getByRole('tab', { name: 'Watch' }) as HTMLButtonElement;
+  expect(watch.disabled).toBe(false);
+  expect(screen.queryByText('Coming')).toBeNull();
   expect(screen.getByRole('tab', { name: 'Listen' }).getAttribute('aria-controls')).toBe('u-panel-listen');
-  await act(async () => {
-    screen.getByRole('tab', { name: 'Listen' }).click();
-    screen.getByRole('tab', { name: 'Watch, coming later' }).click();
-  });
+  expect(watch.getAttribute('aria-controls')).toBe('u-panel-watch');
+  await act(async () => watch.click());
+  expect(useWatchStore.getState().tab).toBe('watch');
+  expect(watch.getAttribute('aria-selected')).toBe('true');
+  await act(async () => screen.getByRole('tab', { name: 'Listen' }).click());
+  expect(useWatchStore.getState().tab).toBe('listen');
   expect(usePlaceStore.getState().active).toBe('unwind');
-  expect(screen.getByText('Coming')).toBeTruthy();
 });
 
 it('opens Zen in Dream from the Dream tab', async () => {

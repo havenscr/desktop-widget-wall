@@ -36,6 +36,7 @@
         "img-src": "'self' data:",
         "font-src": "'self'",
         "connect-src": "'self' ipc: http://ipc.localhost https://ipc.localhost https://api.open-meteo.com",
+        "frame-src": "https://www.youtube-nocookie.com https://player.twitch.tv",
         "base-uri": "'none'",
         "form-action": "'none'",
         "object-src": "'none'"
@@ -47,6 +48,7 @@
         "img-src": "'self' data:",
         "font-src": "'self'",
         "connect-src": "'self' ipc: http://ipc.localhost https://ipc.localhost https://api.open-meteo.com http://localhost:1421 ws://localhost:1421",
+        "frame-src": "https://www.youtube-nocookie.com https://player.twitch.tv",
         "base-uri": "'none'",
         "form-action": "'none'",
         "object-src": "'none'"

@@ -10,6 +10,7 @@ import { registerPowerMocks } from './power';
 import { registerSonosMocks } from './sonos';
 import { registerSignalMocks } from './signals';
 import { registerTaskMocks } from './tasks';
+import { registerWatchMocks } from './watch';
 
 /**
  * Realistic answers for the commands the Work and Home tabs call, so `npm run dev` in a
@@ -29,4 +30,5 @@ export function registerDevMocks(): void {
   registerAudioMocks();
   registerGalleryMocks();
   registerSignalMocks();
+  registerWatchMocks();
 }
