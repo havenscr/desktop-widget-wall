@@ -1190,6 +1190,38 @@
   align-items: center;
   justify-content: center;
 }
+/* Past the first page, a Back arrow sits on the first card's top left, as drawn. */
+.mood-row.paged {
+  position: relative;
+}
+.mood-back {
+  position: absolute;
+  z-index: 2;
+  left: 12px;
+  top: 12px;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid rgba(53, 230, 234, 0.45);
+  background: rgba(7, 5, 26, 0.6);
+  color: var(--cyan);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+/* The first card's tag steps right of the arrow. */
+.mood-row.has-back > .mood-btn:first-child .mood-tag {
+  left: 64px;
+}
+.mood-back:hover {
+  background: rgba(53, 230, 234, 0.18);
+}
+.mood-back:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: 2px;
+}
 .mood-more:hover .mood-arrow {
   background: rgba(53, 230, 234, 0.14);
 }
@@ -1385,6 +1417,11 @@ button.panel.network.shield:focus-visible {
   border: 1px solid rgba(53, 230, 234, 0.3);
   box-shadow: 0 18px 50px rgba(0, 0, 0, 0.6);
   animation: drawer-in 300ms ease-out;
+}
+/* A tall drawer rises over the card's heading; the heading steps aside so no letter peeks
+   past the drawer's rounded corner (the drawer's own title carries the count). */
+.network-block.drawer-open .net-head {
+  visibility: hidden;
 }
 @keyframes drawer-in {
   from {

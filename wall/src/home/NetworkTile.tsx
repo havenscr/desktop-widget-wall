@@ -119,7 +119,7 @@ export function NetworkTile() {
     </>
   );
   return (
-    <section className="network-block" aria-label="Network and security">
+    <section className={open && busy ? 'network-block drawer-open' : 'network-block'} aria-label="Network and security">
       <div className="net-head">
         <span className="k">Network and security</span>
         {side && <span className={s.stale ? 'xs stale' : 'xs'}>{side}</span>}

@@ -245,7 +245,7 @@ export function Moods() {
       {!showCards && status === 'loading' && <div className="mood-skel" aria-hidden="true" />}
       {showCards && (
         <div
-          className={paged ? 'mood-row paged' : 'mood-row'}
+          className={paged ? (start > 0 ? 'mood-row paged has-back' : 'mood-row paged') : 'mood-row'}
           style={rowStyle}
           onWheel={
             paged
@@ -290,6 +290,11 @@ export function Moods() {
               </button>
             );
           })}
+          {paged && start > 0 && (
+            <button type="button" className="mood-back" aria-label="Previous moods" onClick={() => step(-1)} {...tip('Back to the moods before these')}>
+              <IconChevronLeft size={22} stroke={2.2} aria-hidden="true" />
+            </button>
+          )}
           {paged && peek && (
             <button
               type="button"

@@ -262,6 +262,12 @@ it('three moods fill the row; more show three large and a More card that slides 
   fireEvent.click(seven.container.querySelector('.mood-more') as HTMLElement);
   expect(names()).toEqual(['Mood 3', 'Mood 4', 'Mood 5']);
   expect(screen.getByText('1 more')).toBeTruthy();
+  // Past the first page a Back arrow steps back by three.
+  fireEvent.click(seven.container.querySelector('.mood-back') as HTMLElement);
+  expect(names()).toEqual(['Mood 0', 'Mood 1', 'Mood 2']);
+  expect(seven.container.querySelector('.mood-back')).toBeNull();
+  fireEvent.click(seven.container.querySelector('.mood-more') as HTMLElement);
+  expect(names()).toEqual(['Mood 3', 'Mood 4', 'Mood 5']);
   // The last page shows the last three, and the More card turns into Back.
   fireEvent.click(seven.container.querySelector('.mood-more') as HTMLElement);
   expect(names()).toEqual(['Mood 4', 'Mood 5', 'Mood 6']);
