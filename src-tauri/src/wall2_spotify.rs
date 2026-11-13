@@ -414,7 +414,8 @@ pub async fn wall2_spotify_play(window: WebviewWindow, request: PlayRequest) -> 
 }
 
 #[tauri::command] pub async fn wall2_spotify_transfer(window: WebviewWindow, device_id: String) -> Result<(), String> { require(&window)?; if !valid_device_id(&device_id) { return Err("invalid id".into()) } tauri::async_runtime::spawn_blocking(move || { let cfg = config(window.app_handle())?; put(&cfg, "/me/player", Some(json!({"device_ids":[device_id],"play":false}))) }).await.map_err(|_| "failed".to_string())? }
-#[tauri::command] pub async fn wall2_spotify_shuffle(window: WebviewWindow, on: bool) -> Result<(), String> { require(&window)?; tauri::async_runtime::spawn_blocking(move || { let cfg = config(window.app_handle())?; let devices = shape_devices(&get_json(&cfg, "/me/player/devices")?); let computer = std::env::var("COMPUTERNAME").ok(); let device = choose_device(&devices, None, computer.as_deref()).ok_or_else(|| NO_DEVICE.to_string())?; put(&cfg, &format!("/me/player/shuffle?state={on}&device_id={device}"), None) }).await.map_err(|_| "failed".to_string())? }
+fn shuffle_with(cfg: &Config, on: bool, http: &dyn Http, creds: &dyn Creds, computer: Option<&str>) -> Result<(), String> { let devices = shape_devices(&get_json_with(cfg, "/me/player/devices", http, creds)?); let device = choose_device(&devices, None, computer).ok_or_else(|| NO_DEVICE.to_string())?; put_with(cfg, &format!("/me/player/shuffle?state={on}&device_id={device}"), None, http, creds) }
+#[tauri::command] pub async fn wall2_spotify_shuffle(window: WebviewWindow, on: bool) -> Result<(), String> { require(&window)?; tauri::async_runtime::spawn_blocking(move || { let cfg = config(window.app_handle())?; let computer = std::env::var("COMPUTERNAME").ok(); shuffle_with(&cfg, on, &RealHttp, &RealCreds, computer.as_deref()) }).await.map_err(|_| "failed".to_string())? }
 
 pub fn start_log(dir: Option<std::path::PathBuf>) { crate::wall2_spotify_log::start(dir); }
 
@@ -422,6 +423,7 @@ pub fn start_log(dir: Option<std::path::PathBuf>) { crate::wall2_spotify_log::st
 mod tests {
     use super::*;
     use std::collections::VecDeque;
+    use std::sync::{Arc, Condvar};
     const ID: &str = "0123456789ABCDEFGHIJKL";
     const DEVICE: &str = "0123456789abcdef0123456789abcdef01234567";
     const COVER: &str = "https://i.scdn.co/image/cover";
@@ -544,5 +546,20 @@ mod tests {
         reset_state(); assert!(begin_sign_in().is_ok()); assert_eq!(begin_sign_in(),Err(BUSY.into())); CANCEL_SIGN_IN.store(true,Ordering::SeqCst); let creds=FakeCreds::new(None); assert_eq!(save_sign_in(&creds,"new","access".into(),3600),Err("cancelled".into())); assert_eq!(creds.value(),None); SIGNING_IN.store(false,Ordering::SeqCst);
 
         let creds=FakeCreds::new(Some("newer")); creds.delete_if_equal("old"); assert_eq!(creds.value().as_deref(),Some("newer"));
+
+        reset_state(); let creds=FakeCreds::new(Some("old")); *token().lock().unwrap()=Some(Token{access:"ok".into(),expires:Instant::now()+Duration::from_secs(3600)}); let no_devices=FakeHttp::new(vec![],vec![hr(200,r#"{"devices":[]}"#)]); assert_eq!(shuffle_with(&cfg(),true,&no_devices,&creds,None),Err(NO_DEVICE.into())); assert_eq!(no_devices.counts().1,1);
+        reset_state(); let creds=FakeCreds::new(Some("old")); let other4xx=FakeHttp::new(vec![hr(403,r#"{"error":"forbidden"}"#)],vec![]); assert_eq!(access_with(&cfg(),true,&other4xx,&creds),Err("down".into())); assert_eq!(creds.value().as_deref(),Some("old"));
+    }
+
+    struct BlockingHttp { entered: (Mutex<bool>,Condvar), released: (Mutex<bool>,Condvar), calls: std::sync::atomic::AtomicUsize }
+    impl BlockingHttp { fn new()->Self{Self{entered:(Mutex::new(false),Condvar::new()),released:(Mutex::new(false),Condvar::new()),calls:0.into()}} fn wait_entered(&self){let(v,cv)=(&self.entered.0,&self.entered.1);let mut g=v.lock().unwrap();while !*g{g=cv.wait(g).unwrap();}} fn release(&self){*self.released.0.lock().unwrap()=true;self.released.1.notify_all();} }
+    impl Http for BlockingHttp { fn token(&self,_:&[(&str,&str)])->Result<HttpReply,()>{Err(())} fn api(&self,_:&str,_:&str,_:&str,_:Option<&Value>)->Result<HttpReply,()>{self.calls.fetch_add(1,Ordering::SeqCst);*self.entered.0.lock().unwrap()=true;self.entered.1.notify_all();let mut g=self.released.0.lock().unwrap();while !*g{g=self.released.1.wait(g).unwrap();}hr(204,"")} }
+
+    #[test]
+    fn concurrent_play_and_transfer_writes_send_once() {
+        for path in ["/me/player/play?device_id=x","/me/player"] {
+            reset_state(); *token().lock().unwrap()=Some(Token{access:"ok".into(),expires:Instant::now()+Duration::from_secs(3600)}); let http=Arc::new(BlockingHttp::new()); let creds=Arc::new(FakeCreds::new(Some("old")));
+            std::thread::scope(|scope| { let h=http.clone(); let c=creds.clone(); let first=scope.spawn(move||put_with(&cfg(),path,None,&*h,&*c)); http.wait_entered(); assert_eq!(put_with(&cfg(),path,None,&*http,&*creds),Err(BUSY.into())); assert_eq!(http.calls.load(Ordering::SeqCst),1); http.release(); assert_eq!(first.join().unwrap(),Ok(())); });
+        }
     }
 }
