@@ -13,6 +13,7 @@ const MARKERS = [
   /registerGalleryMocks|registerDevMocks|seedReviewFocus/,
   /Away For The Weekend|Company offsite|Draft the workshop outline|Quarterly planning and roadmap/,
   /Tokyo Burnout|A Very Long Artist Name|Friday social card|Admin pill polish/,
+  /registerWatchMocks|data-mock-poster|Night drive mix|PLmockPlaylist0001|get\(["']wlist["']\)/,
   /signedout|get\(["']agents["']\)|has\(["']long["']\)|get\(["']clock["']\)|get\(["']screen["']\)|get\(["']audio["']\)|get\(["']hz["']\)/,
 ];
 const files = (dir) => readdirSync(dir).flatMap((f) => (statSync(join(dir, f)).isDirectory() ? files(join(dir, f)) : [join(dir, f)]));

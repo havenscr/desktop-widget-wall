@@ -749,7 +749,7 @@ frame (no ribbon) in the wide zones `470px 1fr 540px`. The parts are in `wall/sr
   off", "Cancel screens off"); "Could not watch input" shows beside it for five seconds.
   The wind down ring (PR 10) goes between the date line and Tomorrow.
 - **Centre.** The tabs (`Tabs.tsx`): Listen is this view (its tab controls the player
-  panel); Watch is disabled (not focusable) with "Coming" and opens nothing; Dream opens Zen straight into Dream (`openDream` in the place store;
+  panel); Watch switches the centre to video (see "Watch" below); Dream opens Zen straight into Dream (`openDream` in the place store;
   Zen reads the flag once). Below them the player (`Player.tsx`): 224 px art, the source
   app in pink capitals (the player's name, see below), a 64 px title, the artist, a 520 px progress bar with times
   (advanced locally twice a second between polls while playing and visible, never past
@@ -911,6 +911,58 @@ Watt is also a small pet ("he"), calm and silent (no sound at all):
   detector, now playing, `useIdle`); a missing or stale source means he does not mention it.
   `useWeather` and `useNextMeeting` are shared stores (as the agents poll is): one request per
   interval however many components use them.
+
+### Watch (Unwind's second tab)
+
+`wall/src/unwind/watch/`. Which view Unwind shows (Listen or Watch) is one value, `tab`, in
+the Watch store (`store.ts`); the tabs set it and nothing in Watch depends on where that
+switch sits. Leaving Watch (or Unwind) removes any video.
+
+- **The list** (`WatchCard.tsx`, right wing above Room): saved items and one field, "Paste a
+  YouTube or Twitch link". `links.ts` parses strictly: `youtu.be/<id>`,
+  `youtube.com/watch?v=<id>` (a valid `list=` on it makes it that playlist),
+  `youtube.com/live/<id>`, `youtube.com/playlist?list=<id>` and `twitch.tv/<login>`, with or
+  without the scheme, `www.` or `m.`; video ids are exactly 11 of `[A-Za-z0-9_-]`, playlist ids
+  13 to 64, Twitch logins 3 to 25 of `[a-z0-9_]` (lower-cased; site pages such as
+  `directory` are refused). Anything else, a user name, a port, another scheme or a look-alike
+  host, gets one plain line. Saved items (kind, id, label, at most 24) are in local storage
+  (`wall2-watch-list`), checked whole on every read (`saved.ts`). A new item opens its name
+  field; each row plays on click and has rename and remove buttons (32 px, with tooltips).
+  Empty, the card explains itself; past five rows the list scrolls inside the card.
+- **The player** (`PlayerFrame.tsx`, `urls.ts`): one `<iframe>` whose address `embedUrl`
+  builds only from a kind and id that pass the checks again: YouTube on
+  `https://www.youtube-nocookie.com/embed/<id>` (playlists `/embed/videoseries?list=<id>`)
+  with `autoplay=1&playsinline=1&rel=0&enablejsapi=1&origin=<page origin>`, Twitch on
+  `https://player.twitch.tv/?channel=<login>&parent=<page host>`; `allow="autoplay;
+  encrypted-media; picture-in-picture"`, `referrerpolicy="strict-origin-when-cross-origin"`,
+  `sandbox="allow-scripts allow-same-origin allow-presentation"`. No third-party script loads.
+  Pause, play and mute for YouTube are `postMessage` commands sent with the embed origin as
+  target; Twitch has only Stop, which removes the frame. Messages from a frame are read only
+  from that frame's window and the exact YouTube embed origin, and only for the play state.
+- **Open in browser**: "Not playing? Open in browser" sits under every playing video, since
+  whether either player accepts the wall's origin inside WebView2 is not known. It calls
+  `wall2_watch_open` (`src-tauri/src/wall2_watch.rs`, `wall2` window only) with the kind and
+  id; Rust checks them again with the same rules and builds
+  `https://www.youtube.com/watch?v=<id>`, `https://www.youtube.com/playlist?list=<id>` or
+  `https://www.twitch.tv/<login>` itself. The page never passes an address.
+- **Looks** (`looks.ts`, `Watch.tsx`): `feather` (the video in the sky left of the list, its
+  edges masked soft, its foot on the horizon line, lightening what is behind it so the
+  ridgelines and the moon show over its dark parts) and `drivein` (a framed screen on two
+  posts standing on the horizon, a soft colour wash on the floor under it; with nothing on, the
+  empty screen stands there). The gear beside the tabs opens a sheet over the right wing:
+  one look for everything, or one each for videos and playlists, live streams and Twitch
+  (`wall2-watch-look`, checked on read). The Look button on the video (shown on hover) steps
+  to the next look. Part 2 adds "whole sky" and "the sun" as two more `LOOKS` entries.
+- **When video stops** (`stops.ts`, `useStopRules.ts`): leaving Watch or Unwind (Zen and Dream
+  included), the page hidden, the display idle signal the horizon uses (`useIdle`: four
+  minutes without input, display off, locked), Screens off mode (`monitors-off-mode`), and a
+  call (the signals store's `call`). The frame is removed, never hidden, and nothing restarts
+  it; the left block says why it stopped. Play is off during a call. No wake lock is held.
+- **Listen**: when something is saved, the album art has a small "Video" corner that
+  switches to Watch. Nothing else on Listen changes.
+- **Dev**: `?watch=mock` draws a poster where the frame goes (headless Chromium shows an empty
+  frame) and opens Watch; `?wlist=none|three|many`, `?wlook=feather|drivein`, `?wplay=<n>`,
+  `?wsheet=one|kind`, `?wtab=listen`. The gallery and the fit check have Watch states.
 
 ## Home feeds (task card and network tile)
 
@@ -1346,8 +1398,10 @@ Dev mocks for stills (`?keys=typical|general|nogeneral|idle|many|one|wrong|refus
 
 Set in `src-tauri/tauri.wall2.conf.json` under `app.security.csp` (Wall 2 only;
 the old app's config is untouched). It allows own files (`'self'`), data: images,
-own fonts, and connections to the Tauri IPC (`ipc:`, `http://ipc.localhost`,
-`https://ipc.localhost`) and `https://api.open-meteo.com`. Everything else is
+own fonts, connections to the Tauri IPC (`ipc:`, `http://ipc.localhost`,
+`https://ipc.localhost`) and `https://api.open-meteo.com`, and frames from the two
+video players only (`frame-src https://www.youtube-nocookie.com https://player.twitch.tv`,
+in `csp` and `devCsp`, for Unwind's Watch tab). Everything else is
 denied (`default-src 'none'`); no `unsafe-eval`, no `unsafe-inline`. React sets
 inline styles through the CSSOM (`element.style`), which CSP allows. To reach a
 new host, add it to `connect-src` (data from `fetch`), `img-src` (pictures) or
