@@ -455,8 +455,8 @@ mod win {
     use windows::Win32::Foundation::{BOOL, HWND, LPARAM, RECT, TRUE};
     use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED, DWMWA_EXTENDED_FRAME_BOUNDS};
     use windows::Win32::Graphics::Gdi::{
-        EnumDisplayDevicesW, EnumDisplayMonitors, GetMonitorInfoW, MonitorFromWindow, DISPLAY_DEVICEW, HDC, HMONITOR,
-        MONITORINFO, MONITORINFOEXW, MONITOR_DEFAULTTONEAREST,
+        EnumDisplayDevicesW, EnumDisplayMonitors, GetMonitorInfoW, MonitorFromWindow, DISPLAY_DEVICEW, DISPLAY_DEVICE_ACTIVE,
+        DISPLAY_DEVICE_MIRRORING_DRIVER, EDD_GET_DEVICE_INTERFACE_NAME, HDC, HMONITOR, MONITORINFO, MONITORINFOEXW, MONITOR_DEFAULTTONEAREST,
     };
     use windows::Win32::UI::WindowsAndMessaging::{
         GetWindow, GetWindowLongW, GetWindowPlacement, GetWindowRect, IsHungAppWindow, IsIconic, IsWindow,
@@ -512,6 +512,10 @@ mod win {
         String::from_utf16_lossy(&value[..len])
     }
 
+    fn active_physical(device: &DISPLAY_DEVICEW) -> bool {
+        device.StateFlags.0 & DISPLAY_DEVICE_ACTIVE.0 != 0 && device.StateFlags.0 & DISPLAY_DEVICE_MIRRORING_DRIVER.0 == 0
+    }
+
     /// The stable monitor model and instance fields FancyZones writes, plus the numbered
     /// Windows display it records. The current virtual desktop is not available through this
     /// Win32 path, so the parser rejects multiple entries for this device as ambiguous.
@@ -522,18 +526,38 @@ mod win {
             if !GetMonitorInfoW(HMONITOR(id as *mut c_void), &mut info.monitorInfo).as_bool() {
                 return None;
             }
-            let display = wide_text(&info.szDevice);
-            let monitor_number = display.strip_prefix(r"\\.\DISPLAY")?.parse().ok()?;
-            let mut device = DISPLAY_DEVICEW { cb: std::mem::size_of::<DISPLAY_DEVICEW>() as u32, ..Default::default() };
-            if !EnumDisplayDevicesW(PCWSTR(info.szDevice.as_ptr()), 0, &mut device, 0).as_bool() {
-                return None;
+            let selected_name = wide_text(&info.szDevice);
+            let monitor_number = selected_name.strip_prefix(r"\\.\DISPLAY")?.parse().ok()?;
+
+            // First identify the selected active adapter by the exact GDI name from the
+            // monitor. Then enumerate its active physical monitor interface names in the
+            // format PowerToys records. Any missing or duplicate result is uncertain.
+            let mut adapter_index = 0;
+            let mut adapter_name: Option<[u16; 32]> = None;
+            loop {
+                let mut adapter = DISPLAY_DEVICEW { cb: std::mem::size_of::<DISPLAY_DEVICEW>() as u32, ..Default::default() };
+                if !EnumDisplayDevicesW(PCWSTR::null(), adapter_index, &mut adapter, 0).as_bool() { break; }
+                if active_physical(&adapter) && wide_text(&adapter.DeviceName).eq_ignore_ascii_case(&selected_name) {
+                    if adapter_name.is_some() { return None; }
+                    adapter_name = Some(adapter.DeviceName);
+                }
+                adapter_index += 1;
             }
-            let id = wide_text(&device.DeviceID);
-            let mut parts = id.split('\\');
-            if !parts.next()?.eq_ignore_ascii_case("MONITOR") { return None; }
-            let monitor = parts.next()?.to_string();
-            let monitor_instance = parts.next()?.to_string();
-            if monitor.is_empty() || monitor_instance.is_empty() { return None; }
+            let adapter_name = adapter_name?;
+            let mut monitor_index = 0;
+            let mut found: Option<(String, String)> = None;
+            loop {
+                let mut device = DISPLAY_DEVICEW { cb: std::mem::size_of::<DISPLAY_DEVICEW>() as u32, ..Default::default() };
+                if !EnumDisplayDevicesW(PCWSTR(adapter_name.as_ptr()), monitor_index, &mut device, EDD_GET_DEVICE_INTERFACE_NAME).as_bool() { break; }
+                if active_physical(&device) {
+                    if let Some(identity) = wall2_zones::split_display_device_id(&wide_text(&device.DeviceID)) {
+                        if found.is_some() { return None; }
+                        found = Some(identity);
+                    }
+                }
+                monitor_index += 1;
+            }
+            let (monitor, monitor_instance) = found?;
             Some(MonitorIdentity { monitor, monitor_instance, monitor_number, virtual_desktop: None })
         }
     }

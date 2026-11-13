@@ -20,6 +20,23 @@ pub(crate) struct MonitorIdentity {
     pub virtual_desktop: Option<String>,
 }
 
+/// PowerToys' `SplitDisplayDeviceId`: an interface name starts with the display prefix,
+/// then carries the monitor model and instance in its first two hash-delimited fields.
+pub(crate) fn split_display_device_id(raw: &str) -> Option<(String, String)> {
+    const PREFIX: &str = r"\\?\DISPLAY#";
+    if !raw.get(..PREFIX.len()).is_some_and(|head| head.eq_ignore_ascii_case(PREFIX)) {
+        return None;
+    }
+    let mut fields = raw[PREFIX.len()..].split('#');
+    let monitor = fields.next()?;
+    let instance = fields.next()?;
+    let interface = fields.next()?;
+    if monitor.is_empty() || instance.is_empty() || interface.is_empty() || fields.next().is_some() {
+        return None;
+    }
+    Some((monitor.to_string(), instance.to_string()))
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct FractionZone {
     pub x: f64,
@@ -276,6 +293,16 @@ mod tests {
     fn w(id: isize, exe: &str) -> ZoneWindow { ZoneWindow { id, image: format!(r"C:\Apps\{exe}") } }
     fn identity() -> MonitorIdentity {
         MonitorIdentity { monitor: "MODEL1".into(), monitor_instance: "INSTANCE1".into(), monitor_number: 2, virtual_desktop: None }
+    }
+
+    #[test]
+    fn power_toys_display_interface_id_is_split_exactly() {
+        let example = r"\\?\DISPLAY#DELA026#5&10a58c63&0&UID16777488#{interface-guid}";
+        assert_eq!(split_display_device_id(example), Some(("DELA026".into(), "5&10a58c63&0&UID16777488".into())));
+        assert_eq!(split_display_device_id(r"\\?\display#dela026#AbC&0&Uid1#{GUID}"), Some(("dela026".into(), "AbC&0&Uid1".into())));
+        for bad in ["", r"MONITOR\DELA026\5&10a58c63&0&UID16777488", r"\\?\DISPLAY", r"\\?\DISPLAY##instance#{guid}", r"\\?\DISPLAY#model##{guid}", r"\\?\DISPLAY#model#instance#"] {
+            assert_eq!(split_display_device_id(bad), None, "{bad}");
+        }
     }
 
     #[test]
