@@ -652,21 +652,24 @@ describe('quiet and silent cases', () => {
     expect(stored().today.pets).toBe(3);
   });
 
-  it('reaching a clover schedules nothing from inside paint', () => {
+  it('standing on a clover, one frame step schedules no timer of its own (only the eat step does)', () => {
     const { container } = render(<Watt now={day} />);
     runFor(1.5);
-    const real = window.setTimeout.bind(window);
-    const stacks: string[] = [];
-    vi.spyOn(window, 'setTimeout').mockImplementation(((fn: TimerHandler, ms?: number, ...a: unknown[]) => {
-      stacks.push(new Error().stack ?? '');
-      return real(fn, ms, ...a);
-    }) as typeof window.setTimeout);
     act(() => (window as unknown as { __watt: { clover(): void } }).__watt.clover());
-    runFor(90);
-    expect(container.querySelector('.watt-clover')).toBeNull();
+    // Walk until she is on it; the clover goes at the moment she reaches it.
+    const spy = vi.spyOn(window, 'setTimeout');
+    let eaten = false;
+    for (let i = 0; i < 1800 && !eaten; i++) {
+      spy.mockClear();
+      tick();
+      eaten = container.querySelector('.watt-clover') === null;
+      // A step that is not the eating one schedules nothing.
+      if (!eaten) expect(spy).not.toHaveBeenCalled();
+    }
+    expect(eaten).toBe(true);
     expect(stored().today.clovers).toBe(1);
-    expect(stacks.length).toBeGreaterThan(0);
-    for (const st of stacks) expect(st).not.toMatch(/at paint\b/);
+    // The step that ate it scheduled only the eat reaction's own timers.
+    expect(spy.mock.calls.length).toBeLessThanOrEqual(3);
   });
 
   describe('meetings keep her quiet', () => {
