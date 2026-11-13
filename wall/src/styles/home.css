@@ -1233,6 +1233,7 @@
   padding-right: 8px;
 }
 .home .chore-rows .tk3 {
+  box-sizing: border-box;
   height: 40px;
   flex: none;
 }
@@ -1274,9 +1275,12 @@ button.panel.network.shield:focus-visible {
   width: 136px;
   height: 136px;
 }
+.panel.network.shield.busy {
+  min-height: 250px;
+}
 .panel.network.shield.busy .shield-art {
-  width: 156px;
-  height: 156px;
+  width: 170px;
+  height: 170px;
 }
 .shield-ring {
   display: block;
