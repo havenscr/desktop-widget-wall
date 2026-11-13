@@ -160,8 +160,9 @@ export function petFrame(walk: Walk, place: WattPlace, hy: number, night: boolea
       // A wiggle: she turns one way, then the other, then back.
       if (!still && k < 1) out.dir = (Math.floor(k * 4) % 2 === 0 ? out.dir : -out.dir) as 1 | -1;
     }
-    out.mark = m.waiting;
   }
+  // The amber mark shows whatever she is doing, asleep included: something waits for him.
+  out.mark = m.waiting;
   if (out.prop && !propFits(out.prop, out.pose)) out.prop = null;
   if (out.scarf && !propFits('scarf', out.pose)) out.scarf = false;
   if (m.cosmetic !== 'none' && propFits(m.cosmetic, out.pose)) out.cosmetic = m.cosmetic;

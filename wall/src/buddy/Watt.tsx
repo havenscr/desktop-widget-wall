@@ -49,6 +49,7 @@ import {
   petFrame,
   placeBubble,
   wrapLine,
+  type Mind,
   type ReactKind,
 } from './petFrame';
 import { PixelSvg, PropSvg, SheepSvg } from './Pixels';
@@ -97,7 +98,7 @@ interface WattDebug {
   say(text: string): void;
   react(kind: ReactKind): void;
   clover(): void;
-  set(m: Record<string, unknown>): void;
+  set(m: Partial<Mind>): void;
 }
 
 /**
@@ -156,7 +157,8 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
   const summary = useAgentsStore((s) => s.summary);
   const agentsOld = useAgentsStore(agentsStale);
   const weather = useWeather();
-  const next = useNextMeeting(now);
+  const stableNow = useCallback(() => nowRef.current(), []);
+  const next = useNextMeeting(stableNow);
   const focus = useFocusStore((s) => s.state);
   const idle = useIdle();
   const playing = useAudioStore((s) => s.playing);
@@ -193,6 +195,9 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
   m.nap = idle;
   m.waiting = waiting;
   m.cosmetic = pet.cosmetic;
+  // Dev review stills only (`window.__watt.set`): kept over the hooks' values on every render.
+  const debugMind = useRef<Partial<Mind>>({});
+  Object.assign(m, debugMind.current);
 
   // The bubble.
   const chat = useRef(createChat());
@@ -297,7 +302,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
     if (waiting && !prevWaiting.current) {
       note('agentWaiting', nowRef.current());
       // The agent cards sit above her, right of her on Work: she turns up toward them.
-      startReact.current('look', presence.current.place === 'unwind' ? 1 : 1);
+      startReact.current('look', 1);
       check();
     }
     prevWaiting.current = waiting;
@@ -332,6 +337,9 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
     const s = streak.current;
     if (playing) {
       if (s.since === null || t - s.lastSound > 10 * 60_000) s.since = t;
+      // Back within the pause's grace: no "music stopped" line.
+      const paused = talk.current.events.musicPaused;
+      if (paused !== undefined && paused > t) delete talk.current.events.musicPaused;
     } else if (s.since !== null && t - s.since > 2 * 60_000) {
       note('musicPaused', t + 20_000);
     }
@@ -400,7 +408,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
     lastPet.current = t;
     startReact.current('pet');
     update((d) => bump(d, 'pets', t));
-    if (!quietNow({ ...q, away: false, focusSince: null }, t)) {
+    if (!quietNow({ ...q, away: false }, t)) {
       const line = lineFrom('pet', chat.current.lastLine, Math.random);
       markSpoken(chat.current, line, t);
       show(line);
@@ -650,6 +658,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
       react: (kind) => startReact.current(kind),
       clover: () => setClover({ stop: 0, since: nowRef.current() }),
       set: (patch) => {
+        Object.assign(debugMind.current, patch);
         Object.assign(mind.current, patch);
         wake.current();
       },
