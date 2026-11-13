@@ -59,6 +59,7 @@ const EXPECT = {
   picker: /^ *FAIL deck: the key picker reaches y \d+, over the timeline/m,
   chips: /^ *FAIL overlap: chip /m,
   heading: /^ *FAIL deck: the Now heading /m,
+  menu: /^ *FAIL Watt menu: .*Watt himself/m,
 };
 const OVERFLOWS = {
   left: '.work .left-wing { transform: translateX(-200px); }',
@@ -74,6 +75,7 @@ const OVERFLOWS = {
   picker: '.work .right-wing .pk { height: 400px !important; }',
   chips: '.rib .ev { width: 400px !important; }',
   heading: '.work .right-wing .keys .deck-name { max-width: 40px; overflow: hidden; }',
+  menu: '.watt-menu-at { transform: translateY(300px); }',
 };
 
 if (flag('self-test')) {
@@ -216,12 +218,13 @@ const VARIANTS = [
   // Its rows scroll inside it, so the pop-out itself is what must fit.
   { name: 'Home, More pop-out open with many routines', q: home('sonos=heavy&moods=many'), click: '.home .sound-chip.more', checks: ['.home .sound-pop'], viewportOnly: true },
   ...QUIET,
-  // Watt's card (a right-click on him), on Work, Home and Unwind (Meet's horizon glides in real time, which this
-  // frozen check cannot wait for; the overlap test in `buddy/model.test.ts` covers Meet): inside the screen, every button
-  // 32 px tall, every part of it inside the card, and covering no text or control of the place.
-  { name: 'Watt card on Work', q: work('3', '&meet=none'), checks: ['.watt-card'], viewportOnly: true, card: true },
-  { name: 'Watt card on Home', q: home('moods=five'), checks: ['.watt-card'], viewportOnly: true, card: true },
-  { name: 'Watt card on Unwind', q: query({ hz: 'unwind', agents: '3', extra: '' }), checks: ['.watt-card'], viewportOnly: true, card: true },
+  // Watt's menu (a right-click on him), on Work, Home and Unwind (Meet's horizon glides in real time, which this
+  // frozen check cannot wait for; the placement test in `buddy/model.test.ts` covers Meet): a pop-up of his own above
+  // him, inside the screen, every item at least 34 px tall, every part of it inside the menu, never over him, with
+  // its tail over him. It may sit over the cards above him while it is open, as a menu does.
+  { name: 'Watt menu on Work', q: work('3', '&meet=none'), checks: ['.watt-menu'], viewportOnly: true, card: true },
+  { name: 'Watt menu on Home', q: home('moods=five'), checks: ['.watt-menu'], viewportOnly: true, card: true },
+  { name: 'Watt menu on Unwind', q: query({ hz: 'unwind', agents: '3', extra: '' }), checks: ['.watt-menu'], viewportOnly: true, card: true },
 ];
 /** Rounding slack for fractional rectangles, in screen pixels. */
 const SLACK = 0.5;
@@ -260,7 +263,7 @@ try {
     else if (click) document.querySelector(click)?.click();
     // Watt's card: asked for until it is open (Meet's horizon takes a few seconds to settle first).
     if (new URLSearchParams(location.search).get('card')) {
-      const ask = () => { if (!document.querySelector('.watt-card')) document.querySelector('.watt-hit')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })); };
+      const ask = () => { if (!document.querySelector('.watt-menu')) document.querySelector('.watt-hit')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })); };
       ask();
       setInterval(ask, 300);
     }
@@ -302,25 +305,21 @@ try {
       const ems = [...jr.querySelectorAll('.jn em')].map((e) => e.getBoundingClientRect()).sort((a, b) => a.left - b.left);
       return ems.slice(1).flatMap((r, k) => (r.left - ems[k].right < 8 ? ['stage labels on card ' + i + ': gap ' + Math.round((r.left - ems[k].right) * 10) / 10 + ' px between label ' + k + ' and ' + (k + 1)] : []));
     });
-    // Watt's card: button heights, parts outside the card, and text or controls of the place it covers.
+    // Watt's menu: item heights, parts outside the menu, whether it covers him, and where its tail points.
     let wattCard = null;
-    const card = document.querySelector('.watt-card');
+    const card = document.querySelector('.watt-menu');
     if (card) {
       const cr = card.getBoundingClientRect();
       const heights = [...card.querySelectorAll('button')].map((b) => b.getBoundingClientRect().height);
-      const outside = [...card.querySelectorAll('button, .wc-name, .wc-mood, .wc-today li, .wc-days')].filter((e) => {
+      const outside = [...card.querySelectorAll('button, .wm-name, .wm-mood, .wm-days, .wm-today, .wm-gp, .wm-fl')].filter((e) => {
         const r = e.getBoundingClientRect();
         return r.left < cr.left - 0.5 || r.right > cr.right + 0.5 || r.top < cr.top - 0.5 || r.bottom > cr.bottom + 0.5;
       }).length;
+      const me = document.querySelector('.watt-hit').getBoundingClientRect();
+      const tail = cr.left + parseFloat(card.style.getPropertyValue('--tail')) + 7;
       const covered = [];
-      for (const e of document.querySelectorAll('.shell *')) {
-        const own = [...e.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim());
-        if (!own && !e.matches('button, a, input, select, textarea, [role=button], [tabindex]')) continue;
-        const cs = getComputedStyle(e);
-        if (cs.visibility === 'hidden' || cs.display === 'none' || Number(cs.opacity) === 0) continue;
-        const r = e.getBoundingClientRect();
-        if (r.width > 0 && r.height > 0 && hit(r, cr)) covered.push((e.className && e.className.baseVal === undefined ? e.className : e.tagName) + ': ' + (e.textContent || '').trim().slice(0, 24));
-      }
+      if (hit(me, cr)) covered.push('Watt himself');
+      if (tail < me.left - 1 || tail > me.right + 1) covered.push('tail not over him (tail ' + Math.round(tail) + ', him ' + Math.round(me.left) + ' to ' + Math.round(me.right) + ')');
       wattCard = { heights, outside, covered, buttons: heights.length };
     }
     // Work's agents header: every part one line tall (no text in it wraps, no part taller than the 36 px row).
@@ -417,12 +416,12 @@ try {
     else if (v.q.includes('hz=work')) console.log('  ok   the agents header is one line');
     if (v.card) {
       const c = wattCard;
-      const okCard = c !== null && c.buttons >= 13 && Math.min(...c.heights) >= 32 - SLACK && c.outside === 0 && c.covered.length === 0;
+      const okCard = c !== null && c.buttons >= 11 && Math.min(...c.heights) >= 34 - SLACK && c.outside === 0 && c.covered.length === 0;
       if (!okCard) failed = true;
       console.log(
         c === null
-          ? '  FAIL Watt card did not open'
-          : `  ${okCard ? 'ok  ' : 'FAIL'} Watt card: ${c.buttons} buttons, shortest ${Math.round(Math.min(...c.heights))} px (at least 32), ${c.outside} parts outside the card, covers ${c.covered.length ? c.covered.join('; ') : 'no text or control'}`,
+          ? '  FAIL Watt menu did not open'
+          : `  ${okCard ? 'ok  ' : 'FAIL'} Watt menu: ${c.buttons} items, shortest ${Math.round(Math.min(...c.heights))} px (at least 34), ${c.outside} parts outside the menu, ${c.covered.length ? c.covered.join('; ') : 'not over him, its tail over him'}`,
       );
     }
     for (const o of overlaps) console.log(`  FAIL overlap: ${o}`);

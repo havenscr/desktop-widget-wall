@@ -155,6 +155,20 @@ state('work', 'deck: library set whose app is not in front', 'keys=library&hold=
 state('work', 'deck: longest labels pinned', 'keys=library&pins=long');
 // The key picker open with the whole library: down to just above the timeline, over the mountains.
 add('work', 'deck: key picker open, whole library', url('work', TYPICAL_AT, 'keys=library'), true, 'ctx:.pin-tile');
+// Watt: his menu (a right-click on him) on each place, at night (tricks wait while he sleeps), and set
+// down far from his old walk (`wattspot`, his stored spot), Unwind on both stretches and on Watch.
+add('work', 'Watt: menu open', url('work', TYPICAL_AT, 'meet=none'), true, 'ctx:.watt-hit');
+add('home', 'Watt: menu open', url('home', TYPICAL_AT, 'moods=five'), true, 'ctx:.watt-hit');
+add('unwind', 'Watt: menu open', url('unwind', TYPICAL_AT, ''), true, 'ctx:.watt-hit');
+add('unwind', 'Watt: menu at night, tricks wait', url('unwind', TIMES.night, ''), true, 'ctx:.watt-hit');
+add('work', 'Watt: menu open, agent waiting (mark beside him)', url('work', TYPICAL_AT, 'agents=ask&meet=none'), true, 'ctx:.watt-hit');
+state('work', 'Watt: set down far right', 'wattspot=2300');
+state('work', 'Watt: set down far left', 'wattspot=200');
+state('home', 'Watt: set down left of the moods', 'wattspot=400');
+state('meet', 'Watt: set down under Accounts', 'wattspot=2200');
+state('unwind', 'Watt: set down past the transport row', 'wattspot=1700');
+state('unwind', 'Watt: set down left by the clock', 'wattspot=180');
+state('unwind', 'Watt: on Watch, kept off the video', 'wattspot=1700&watch=mock&wlist=three&wlook=feather&wplay=0', TIMES.night);
 // The agents header with twelve sessions, two waiting and an alarm: one line.
 state('work', 'agents header: twelve sessions, two waiting, an alarm', 'agents=12ask');
 
