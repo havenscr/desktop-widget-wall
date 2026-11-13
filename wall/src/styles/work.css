@@ -851,7 +851,8 @@
   align-items: center;
   gap: 8px;
   min-width: 0;
-  flex: 0 1 auto;
+  /* The pages, chip and Auto keep their room; the result line on the left gives way. */
+  flex: none;
 }
 .deck-brief {
   min-width: 0;
@@ -1006,16 +1007,20 @@
 }
 
 /* Always here: a small pin beside the heading; the Now row's pages, dots and chip. */
-.pinned.deck-row,
-.keys.deck-row {
+/* The two rows share one box, so the picker can cover exactly them and never Next three. */
+.deck {
   position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
 }
 .deck-pin {
   margin-left: 8px;
   color: var(--faint);
 }
 .pin-tile {
-  height: 56px;
+  height: 52px;
   gap: 6px;
   font-size: 15px;
 }
@@ -1085,8 +1090,8 @@
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
-  height: 44px;
-  padding: 0 8px 0 12px;
+  height: 40px;
+  padding: 0 6px 0 12px;
   border-radius: 14px;
   border: 1px solid var(--edge);
   background: rgba(255, 255, 255, 0.04);
@@ -1141,10 +1146,7 @@
 .pk {
   position: absolute;
   z-index: 40;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 340px;
+  inset: 0;
   display: flex;
   flex-direction: column;
   gap: 6px;

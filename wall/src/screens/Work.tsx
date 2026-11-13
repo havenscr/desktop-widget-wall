@@ -24,8 +24,10 @@ export function Work() {
       <CentreSlot weather={weather} />
       <div className="wing wr right-wing">
         <TaskCard />
-        <PinnedRow />
-        <Keys />
+        <div className="deck">
+          <PinnedRow />
+          <Keys />
+        </div>
       </div>
     </section>
   );

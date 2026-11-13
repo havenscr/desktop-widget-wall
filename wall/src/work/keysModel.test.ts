@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { acceptsFront, AUTO, effectiveMode, headingFor, MODE_KEY, parseMode, shownSet, stepSet, sendReason, type KeysSummary, type SetInfo } from './keysModel';
+import { acceptsFront, AUTO, autoPage, effectiveMode, FOR_YOU, headingFor, MODE_KEY, pagesFor, parseMode, shownSet, stepPage, stepSet, sendReason, type KeysSummary, type SetInfo } from './keysModel';
 
 const general: SetInfo = { id: 'general', name: 'General', general: true, keys: [{ label: 'Snip', icon: 'screenshot', action: null }] };
 const sales: SetInfo = { id: 'sales', name: 'Sales app', general: false, keys: [{ label: 'Refresh', icon: 'refresh', action: null }] };
@@ -75,5 +75,39 @@ describe('words', () => {
     const lines = ['busy', 'no key', 'no app', 'gone', 'elevated', 'not forward', 'failed', 'whatever'].map((w) => sendReason(w, sales, false));
     expect(new Set(lines).size).toBe(lines.length);
     expect(sendReason('not forward', sales, false)).toBe('Could not bring Sales app forward');
+  });
+});
+
+describe('pages of the Now row', () => {
+  const sum = (autoId: string | null): KeysSummary => ({ front: 'app', autoId, exe: null, sets: [other, general, sales], source: 'file', defaultPins: [], filePins: [] });
+
+  it('puts For you first only while something waits, then the app in front, then the general set, then the rest', () => {
+    expect(pagesFor(sum('sales'), false).map((p) => p.id)).toEqual(['sales', 'general', 'other']);
+    expect(pagesFor(sum('sales'), true).map((p) => p.id)).toEqual(['foryou', 'sales', 'general', 'other']);
+    // With the general set in front it is not listed twice; with no app set the general one leads.
+    expect(pagesFor(sum('general'), false).map((p) => p.id)).toEqual(['general', 'other', 'sales']);
+    expect(pagesFor(sum(null), false).map((p) => p.id)).toEqual(['general', 'other', 'sales']);
+  });
+
+  it('steps with wrapping from any page, and from none', () => {
+    const pages = pagesFor(sum('sales'), true);
+    expect(stepPage(pages, 'foryou', -1)?.id).toBe('other');
+    expect(stepPage(pages, 'other', 1)?.id).toBe('foryou');
+    expect(stepPage(pages, null, 1)?.id).toBe('foryou');
+    expect(stepPage(pages, null, -1)?.id).toBe('other');
+    expect(stepPage(pages, 'gone', 1)?.id).toBe('foryou');
+    expect(stepPage([], null, 1)).toBeNull();
+  });
+
+  it('Auto shows the set for the app in front, else the general one, else nothing', () => {
+    expect(autoPage(sum('sales'))).toMatchObject({ id: 'sales', kind: 'set' });
+    expect(autoPage(sum(null))).toBeNull();
+  });
+
+  it('a held For you page is kept only while something waits', () => {
+    const held = { hold: true, setId: FOR_YOU };
+    expect(effectiveMode(held, [general], true)).toEqual(held);
+    expect(effectiveMode(held, [general], false)).toEqual(AUTO);
+    expect(parseMode(JSON.stringify(held))).toEqual(held);
   });
 });

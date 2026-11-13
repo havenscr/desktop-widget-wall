@@ -161,9 +161,9 @@ export function Keys() {
     stepTo(e.deltaY > 0 ? 1 : -1);
   };
 
-  const pageName = page ? (page.kind === 'foryou' ? 'For you' : page.set.name) : 'Now';
+  const pageName = page ? (page.kind === 'foryou' ? 'For you' : page.set.name) : '';
   const more = page?.kind === 'foryou' && items.length > FOR_YOU_SHOWN ? ` · +${items.length - FOR_YOU_SHOWN} more` : '';
-  const heading = `Now · ${pageName}${more}`;
+  const heading = page ? `Now · ${pageName}${more}` : 'Now';
   const showChip = forYouOn && page?.kind !== 'foryou';
   const where = sum.source === 'default' ? 'You are using the built-in keys. To change them put keys.json in the app\'s config folder; the wall never writes it.' : 'Keys come from keys.json and the built-in library.';
 

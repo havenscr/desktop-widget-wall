@@ -107,10 +107,14 @@ const work = (agents, extra = '') => `?hz=work&at=2026-11-11T16:10:00-08:00&long
 const home = (knobs) => `?hz=home&at=2026-11-12T16:36:00-08:00&long=1&${knobs}`;
 const HOME_CENTRE = ['.home .home-centre', '.home .moods', '.home .mood-row', '.home .home-right'];
 const SOUND_FULL = ['.home .sound', '.home .sound-panel', '.home .sound-plays', '.home .sound-line', '.home .sound-where', '.home .sound-plays .sound-chip'];
-// The Big screen and Keys rows under Next three (dev mocks `arrange` and `keys`): every row,
-// its header (with the result line, Undo and the Auto controls) and its tiles stay inside the
-// right wing, which stays inside the top band. Long task titles come from `long=1`.
-const DECK = ['.work .right-wing', '.work .right-wing .bigscreen', '.work .right-wing .keys', '.work .right-wing .deck-hd', '.work .right-wing .deck-tiles'];
+// The Always here and Now rows under Next three (dev mocks `arrange`, `keys`, `agents`, `meet`,
+// `net` and `hold`): the deck, both rows, their headers (result line, Undo, the pages, the chip
+// and the Auto controls) and their tiles or For you lines stay inside the right wing, which stays
+// inside the top band. Long task titles come from `long=1`. The key picker covers the deck only.
+const DECK = ['.work .right-wing', '.work .right-wing .deck', '.work .right-wing section.pinned', '.work .right-wing .keys', '.work .right-wing .deck-hd', '.work .right-wing .deck-tiles'];
+const DECK_ROWS = DECK.slice(0, 5);
+const FOR_YOU = [...DECK_ROWS, '.work .right-wing .fy-list', '.work .right-wing .fy-li'];
+const PICKER = [...DECK_ROWS, '.work .right-wing .pk', '.work .right-wing .pk-top', '.work .right-wing .pk-reset'];
 const deck = (name, knobs, extra = {}) => ({ name: `Deck, ${name}`, q: work('3', `&${knobs}`), checks: DECK, ...extra });
 // Meet reads the real clock, so its variants run unfrozen (the mock meetings are relative to now).
 const query = (v) => `?${v.live ? '' : `hz=${v.hz ?? 'work'}&at=${v.at ?? '2026-11-11T10:24:00-08:00'}&`}long=1&agents=${v.agents}${v.go ? `&go=${v.go}` : ''}${v.moods ? `&moods=${v.moods}` : ''}${v.extra ?? ''}`;
@@ -138,15 +142,23 @@ const VARIANTS = [
   { name: 'one lane', q: work('1'), checks: LANES },
   { name: 'no lane', q: work('0'), checks: [...LANES, '.work .centre .panel'] },
   { name: 'helper not set up', q: work('off'), checks: ['.work .centre', '.work .centre .panel', '.work .centre .centre-note'] },
-  deck('typical: both rows, own set in front', 'keys=typical'),
-  deck('general set in front (another app), a layout just clicked: result and Undo showing', 'keys=general', { click: '.bs-tile' }),
+  // Typical: a meeting and a network alarm wait, but the helper's three lanes ask nothing, so For you
+  // shows its two lines only when held; the row itself shows the own set with the amber chip.
+  deck('typical: both rows, own set in front, the For you chip', 'keys=typical'),
+  deck('general set in front (another app), a layout just clicked: result and Undo showing', 'keys=general', { click: '.pin-tile' }),
   deck('eight keys with long labels', 'keys=many'),
   deck('one key only', 'keys=one'),
-  deck('a held set refused after a click (the app in front is not its app)', 'keys=wrong', { click: '.key-tile' }),
-  deck('Power BI cannot be brought forward, after a click', 'keys=refuse', { click: '.key-tile' }),
-  { name: 'Deck, no keys for this app and no general set', q: work('3', '&keys=nogeneral'), checks: [...DECK.slice(0, 4), '.work .right-wing .deck-quiet'] },
-  { name: 'Deck, sparse: no big screen, nothing in front yet', q: work('0', '&keys=idle&arrange=none'), checks: [...DECK.slice(0, 4), '.work .right-wing .deck-quiet'] },
-  { name: 'Deck, keys.json has a problem, no windows for a layout', q: work('3', '&keys=problem&arrange=nowin'), checks: [...DECK.slice(0, 4), '.work .right-wing .deck-quiet'], click: '.bs-tile' },
+  deck('a held set refused after a click (the app in front is not its app)', 'keys=wrong', { click: '.keys .key-tile' }),
+  deck('Power BI cannot be brought forward, after a click', 'keys=refuse', { click: '.keys .key-tile' }),
+  deck('heavy: three things wait (a meeting, an agent asks, an alarm), For you held', 'keys=typical&hold=foryou', { checks: FOR_YOU, q: work('ask', '&keys=typical&hold=foryou') }),
+  { name: 'Deck, For you with one line', q: work('ask', '&keys=typical&hold=foryou&meet=none&net=calm'), checks: FOR_YOU },
+  { name: 'Deck, sparse For you: only the alarm', q: work('3', '&keys=typical&hold=foryou&meet=none'), checks: FOR_YOU },
+  { name: 'Deck, nothing waits: no chip, no For you page', q: work('3', '&keys=typical&meet=none&net=calm'), checks: DECK },
+  { name: 'Deck, the agents helper is off: For you says nothing about agents', q: work('off', '&keys=typical&hold=foryou'), checks: FOR_YOU },
+  { name: 'Deck, no keys for this app and no general set', q: work('0', '&keys=nogeneral&meet=none&net=calm'), checks: [...DECK_ROWS, '.work .right-wing .deck-quiet'] },
+  { name: 'Deck, sparse: no big screen, nothing in front yet', q: work('0', '&keys=idle&arrange=none&meet=none&net=calm'), checks: [...DECK_ROWS, '.work .right-wing .deck-quiet'] },
+  { name: 'Deck, keys.json has a problem, no windows for a layout', q: work('3', '&keys=problem&arrange=nowin'), checks: [...DECK_ROWS, '.work .right-wing .deck-quiet'], click: '.pin-tile' },
+  { name: 'Deck, the key picker open over both rows', q: work('3', '&keys=typical'), checks: PICKER, click: 'ctx:.pin-tile' },
   { name: 'Home, Sound at its fullest: many moods, many speakers, long names, sleep timer', q: home('sonos=heavy&moods=many'), checks: [...HOME_CENTRE.filter((c) => !c.endsWith('mood-row')), ...SOUND_FULL] },
   { name: 'Home, typical: five moods, Sound playing', q: home('moods=five'), checks: [...HOME_CENTRE, ...SOUND_FULL] },
   { name: 'Home, sparse: no moods, one routine, one speaker', q: home('sonos=sparse&moods=none'), checks: ['.home .home-centre', '.home .moods', ...SOUND_FULL.slice(0, 4)] },
@@ -200,7 +212,8 @@ try {
   // of the viewport on each side (screen pixels, 0 when inside). Plus the page's own scroll.
   const measure = `<script>setTimeout(() => {
     const click = new URLSearchParams(location.search).get('click');
-    if (click) document.querySelector(click)?.click();
+    if (click && click.startsWith('ctx:')) document.querySelector(click.slice(4))?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+    else if (click) document.querySelector(click)?.click();
   }, 2000);
   setTimeout(() => {
     const sels = new URLSearchParams(location.search).get('checks').split('|');
