@@ -296,13 +296,13 @@ fn list(window: &WebviewWindow, endpoint: &str, kind: &str) -> Result<Vec<Item>,
 #[tauri::command] pub async fn wall2_spotify_recent(window: WebviewWindow) -> Result<Vec<Item>, String> { require(&window)?; tauri::async_runtime::spawn_blocking(move || list(&window, "/me/player/recently-played?limit=50", "track")).await.map_err(|_| "failed".to_string())? }
 
 #[derive(Debug, Serialize)] pub struct Search { tracks: Vec<Item>, albums: Vec<Item>, playlists: Vec<Item> }
-#[tauri::command]
 fn valid_query(query: &str) -> Result<String, String> {
     let clean: String = query.chars().filter(|c| !c.is_control()).collect();
     let clean: String = clean.trim().chars().take(80).collect();
     if clean.is_empty() { Err("invalid query".into()) } else { Ok(clean) }
 }
 
+#[tauri::command]
 pub async fn wall2_spotify_search(window: WebviewWindow, query: String) -> Result<Search, String> {
     require(&window)?;
     let query = valid_query(&query)?;
