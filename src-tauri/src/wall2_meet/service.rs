@@ -2050,7 +2050,7 @@ mod tests {
         assert!(first.starts_with("2026-11-12T"));
         let fields: Vec<&str> = first.split(' ').collect();
         let keys: Vec<&str> = fields[5..].iter().map(|f| f.split('=').next().unwrap()).collect();
-        assert_eq!(keys, ["req", "host", "status", "net", "af", "code", "inner", "request-id", "client-request-id", "attempt", "ms"]);
+        assert_eq!(keys, ["req", "host", "status", "net", "af", "code", "inner", "request-id", "client-request-id", "attempt", "ms", "phase", "addrs", "dns-ms", "v4", "v6"]);
         assert_eq!(&fields[1..5], ["work", "start", "unavailable", "graph-503-UnknownError"]);
         assert!(first.contains("req=next host=graph status=503 net=none af=unknown code=UnknownError inner=none"));
         assert!(first.contains("attempt=3 ms=4210"));
