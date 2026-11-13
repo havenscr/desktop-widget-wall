@@ -3,8 +3,9 @@
  * `.` empty, `w` wool (shaded light to dark by row), `f` face, `e` eye, `-` closed eye,
  * `p` pink ear, `l` leg. Facing right; the component flips it to face left.
  *
- * Both maps are the concept's own, copied exactly. Walk keeps the concept's rule: the
- * idle body rows plus two leg rows.
+ * Idle and sleep are the concept's own maps, copied exactly. Walk keeps the concept's rule: the
+ * idle body rows plus two leg rows. The other poses are drawn the same way, at the same size; props
+ * and the little things (heart, clover, amber mark) use their own colour letters (`PROP_COLORS`).
  */
 export type Pose = 'idle' | 'walk' | 'sleep' | 'read' | 'look' | 'yawn' | 'stretch' | 'eat';
 
@@ -116,9 +117,9 @@ export interface PropSprite {
 
 export const PROP_SPRITES: Readonly<Record<Prop, PropSprite>> = {
   book: { map: ['bBBb', 'bBBb', 'bbbb'], dx: 2, dy: 3, anchor: 'ear' },
-  headphones: { map: ['kkkkkk', 'c....c', 'c....c'], dx: -1, dy: -1, anchor: 'ear' },
+  headphones: { map: ['.kkkk.', 'k....k', 'c....c', 'c....c'], dx: -1, dy: -2, anchor: 'ear' },
   sunglasses: { map: ['ghgg'], dx: 0, dy: 2, anchor: 'ear' },
-  umbrella: { map: ['..UUUUU..', '.uuuuuuu.', 'uuuuuuuuu', '....i....', '....i....', '....i....', '....ii...'], dx: -3, dy: -4, anchor: 'ear' },
+  umbrella: { map: ['..UUUUU..', '.uuuuuuu.', 'uuuuuuuuu', '....i....', '....i....', '....i....', '....ii...'], dx: -5, dy: -4, anchor: 'ear' },
   scarf: { map: ['rRrRr', '.r...', '.R...'], dx: -2, dy: 4, anchor: 'ear' },
   nightcap: { map: ['....nN', '..nnn.', '.nnnn.'], dx: -1, dy: -3, anchor: 'ear' },
   bow: { map: ['xx.xx', '.xxx.'], dx: -3, dy: -1, anchor: 'ear' },
@@ -147,8 +148,8 @@ export const PROP_COLORS: Readonly<Record<string, string>> = {
   B: '#f6f2ff',
   k: '#35e6ea',
   c: '#ff3d9a',
-  g: '#0b0820',
-  h: '#35e6ea',
+  g: '#ff3d9a',
+  h: '#f6f2ff',
   u: '#ff3d9a',
   U: '#ff7ab8',
   i: '#8f86c9',

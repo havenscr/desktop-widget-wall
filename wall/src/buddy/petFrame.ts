@@ -239,21 +239,53 @@ export function cloverBox(walk: Walk, hy: number, stop: number, out: Box = creat
   return out;
 }
 
-/** Speech bubble type: font size, an average character width, padding, line height and the tail. */
-export const BUBBLE = { font: 14, charW: 8.4, padX: 10, padY: 6, line: 17, tail: 6 } as const;
+/** Speech bubble type: font size, padding, line height and the tail, design pixels. */
+export const BUBBLE = { font: 14, padX: 10, padY: 6, line: 17, tail: 6 } as const;
 
 /**
- * Break `text` into lines that fit `maxW` (design pixels) at the bubble's character width, at
- * spaces. A word longer than a line is kept whole. The component draws these lines exactly
- * (`white-space: pre`), so the box size here is the box on screen.
+ * Advance widths of the printable ASCII characters (space to tilde) in the bubble's font, Oxanium
+ * 600 at 14 px, measured in Chromium. The bubble's box is sized from these, so the box on screen is
+ * the box the tests check.
+ */
+const ADVANCE: readonly number[] = [3.36,3.79,6.06,9.45,8.09,12.24,9.38,3.3,4.69,4.69,7.13,8.09,3.79,5.22,3.79,5.87,8.09,8.09,8.09,8.09,8.09,8.09,8.09,8.09,8.09,8.09,3.79,3.79,8.09,8.09,8.09,7.22,11.27,9.14,9.09,8.67,9.59,8.39,8.11,9.45,9.87,4.09,8.53,9.2,7.6,12.38,10.23,9.87,8.89,9.87,9.03,8.19,8.47,9.7,9,13.2,8.86,8.44,8.47,5.14,5.87,5.14,7.78,8.12,7,7.66,8.22,7.18,8.22,8.11,5.61,8.15,8.27,3.74,3.74,7.85,4.09,12.61,8.27,8.25,8.22,8.22,5.5,7.07,5.78,8.27,7.6,11.35,7.6,7.6,7.21,5.68,4.17,5.68,8.09];
+/** The bubble's letter spacing (0.01 em), and a little slack for kerning and rounding. */
+const SPACING = 0.14;
+const SLACK = 1.04;
+
+/** Width of `text` in the bubble's font, design pixels. */
+export function textWidth(text: string): number {
+  let w = 0;
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i) - 32;
+    w += (c >= 0 && c < ADVANCE.length ? ADVANCE[c] : 10) + SPACING;
+  }
+  return w * SLACK;
+}
+
+/**
+ * Break `text` into lines that fit a bubble `maxW` design pixels wide, at spaces. A word longer than
+ * a line is kept whole. The component draws these lines exactly (`white-space: pre`).
  */
 export function wrapLine(text: string, maxW: number): string[] {
-  const fit = Math.max(4, Math.floor((maxW - 2 * BUBBLE.padX) / BUBBLE.charW));
+  const lines = greedy(text, maxW - 2 * BUBBLE.padX);
+  if (lines.length < 2) return lines;
+  // Balance the lines: the narrowest room that still needs no more lines (no lone last word).
+  let lo = 0;
+  let hi = maxW - 2 * BUBBLE.padX;
+  for (let i = 0; i < 12; i++) {
+    const mid = (lo + hi) / 2;
+    if (greedy(text, mid).length <= lines.length) hi = mid;
+    else lo = mid;
+  }
+  return greedy(text, hi);
+}
+
+function greedy(text: string, room: number): string[] {
   const out: string[] = [];
   let cur = '';
   for (const word of text.split(' ')) {
     if (!cur) cur = word;
-    else if (cur.length + 1 + word.length <= fit) cur += ' ' + word;
+    else if (textWidth(cur + ' ' + word) <= room) cur += ' ' + word;
     else {
       out.push(cur);
       cur = word;
@@ -266,8 +298,8 @@ export function wrapLine(text: string, maxW: number): string[] {
 /** The size of a bubble holding `lines`, design pixels (the tail is below the box). */
 export function bubbleSize(lines: readonly string[]): { width: number; height: number } {
   let longest = 0;
-  for (const l of lines) longest = Math.max(longest, l.length);
-  return { width: Math.ceil(longest * BUBBLE.charW) + 2 * BUBBLE.padX, height: lines.length * BUBBLE.line + 2 * BUBBLE.padY };
+  for (const l of lines) longest = Math.max(longest, textWidth(l));
+  return { width: Math.ceil(longest) + 2 * BUBBLE.padX, height: lines.length * BUBBLE.line + 2 * BUBBLE.padY };
 }
 
 /** Where the bubble sits, and which side its tail points from. Reused. */

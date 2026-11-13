@@ -32,7 +32,7 @@ export function senseWeather(r: WeatherReading | null, now: number): WeatherSens
   return {
     rain: icon === 'rain' || icon === 'drizzle' || icon === 'storm',
     snow: icon === 'snow',
-    clear: icon === 'sun' || icon === 'moon',
+    clear: icon === 'sun',
     cloudy: icon === 'cloud' || icon === 'cloud-sun' || icon === 'cloud-moon',
     fog: icon === 'fog',
     cold: r.temp < COLD_F,

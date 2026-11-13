@@ -119,7 +119,7 @@ export const LINES: Readonly<Record<Topic, readonly string[]>> = {
     'Awake. Stretching first.',
   ],
   agentsWorking: [
-    'Two agents still at it. I supervise.',
+    'The agents are still at it. I supervise.',
     'The agents are busy. I am not.',
     'Work is happening up there.',
     'I keep an eye on the agents.',
@@ -212,9 +212,9 @@ export const LINES: Readonly<Record<Topic, readonly string[]>> = {
   ],
   evening: [
     'Evening. Nice work today.',
-    'Getting dark. The moon is up.',
+    'Evening. The light is going.',
     'Evening. Time to slow down.',
-    'Look, the moon.',
+    'Is the moon out yet?',
     'Almost done for the day?',
     'Dinner smells, probably.',
   ],
