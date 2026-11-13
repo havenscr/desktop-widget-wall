@@ -11,6 +11,7 @@ import { registerSonosMocks } from './sonos';
 import { registerSignalMocks } from './signals';
 import { registerSpotifyMocks } from './spotify';
 import { registerTaskMocks } from './tasks';
+import { registerToolsMocks } from './tools';
 import { registerWatchMocks } from './watch';
 
 /**
@@ -34,4 +35,5 @@ export function registerDevMocks(): void {
   registerSpotifyMocks();
   registerWatchMocks();
   mocks.set('wall2_build_info', () => ({ commit: 'dev', builtAt: '2026-11-13T09:05Z' }));
+  registerToolsMocks();
 }

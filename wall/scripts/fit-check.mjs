@@ -59,6 +59,9 @@ const EXPECT = {
   picker: /^ *FAIL deck: the key picker reaches y \d+, over the timeline/m,
   chips: /^ *FAIL overlap: chip /m,
   heading: /^ *FAIL deck: the Now heading /m,
+  tools: /^ *FAIL tools drawer: .*outside x 1700 to 2560/m,
+  toolsnames: /^ *FAIL tools: .* is cut with no tooltip/m,
+  meetfill: /^ *FAIL meet: nothing fills the upper right/m,
 };
 const OVERFLOWS = {
   left: '.work .left-wing { transform: translateX(-200px); }',
@@ -74,6 +77,12 @@ const OVERFLOWS = {
   picker: '.work .right-wing .pk { height: 400px !important; }',
   chips: '.rib .ev { width: 400px !important; }',
   heading: '.work .right-wing .keys .deck-name { max-width: 40px; overflow: hidden; }',
+  // The Tools drawer 1400 px wide runs past the right edge of the stage.
+  tools: '.tools-drawer { width: 1400px !important; }',
+  // A 20 px name column cuts the account and source names (they carry no tooltip of their own).
+  toolsnames: '.tools-name, .tools-srcname { width: 20px !important; max-width: 20px !important; flex: none !important; overflow: hidden; }',
+  // Meet's Later list hidden leaves the upper right empty.
+  meetfill: '.meet .meet-later { display: none !important; }',
 };
 
 if (flag('self-test')) {
@@ -139,6 +148,8 @@ const query = (v) => `?${v.live ? '' : `hz=${v.hz ?? 'work'}&at=${v.at ?? '2026-
 const QUIET = [
   // Meet: both accounts read; one account failing; no account readable; long titles throughout.
   { name: 'Meet, both accounts read', agents: '3', go: 'meet', live: true, extra: '', checks: MEET },
+  { name: 'Meet, one account signed out: the one amber line, Later fills the upper right', agents: '3', go: 'meet', live: true, extra: '', checks: MEET },
+  { name: 'Meet, heavy: Later in two columns', agents: '3', go: 'meet', live: true, extra: '&meet=heavy', checks: MEET },
   { name: 'Meet, one account failing', agents: '3', go: 'meet', live: true, extra: '&meet=mixed', checks: MEET },
   { name: 'Meet, no account readable', agents: '3', go: 'meet', live: true, extra: '&meet=down', checks: MEET },
   // Unwind with nine moods of long names: the Room list stays within two rows.
@@ -158,6 +169,22 @@ const QUIET = [
   { name: 'Watch, settings sheet, one look', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wplay=0&wsheet=one', checks: ['.w-sheet', '.w-tiles', '.w-tile', '.w-sfoot'] },
   { name: 'Watch, settings sheet, a look per kind', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=many&wplay=2&wsheet=kind', checks: ['.w-sheet', '.w-srow', '.w-srow .w-seg', '.w-sfoot'] },
 ].map((v) => ({ ...v, q: query(v) }));
+// The Tools drawer over each place, and in each hard state: the drawer, its two columns and every
+// section stay inside the stage, right of the rail and the clock, with no cut text that has no tooltip.
+const TOOLS = ['.tools-drawer', '.tools-drawer .tools-col', '.tools-drawer .tools-block', '.tools-drawer .tools-list', '.tools-drawer .tools-foot'];
+const tools = (name, q) => ({ name: `Tools, ${name}`, q, checks: TOOLS, viewportOnly: true });
+const TOOLS_VARIANTS = [
+  tools('over Work, typical', `${work('3')}&tools=1`),
+  tools('over Work, accounts ringed', `${work('3')}&tools=accounts&meet=signedout`),
+  tools('over Home', `${home('moods=five')}&tools=1`),
+  tools('over Unwind', `${query({ hz: 'unwind', agents: '3', extra: '' })}&tools=1`),
+  tools('over Meet', `${query({ live: true, agents: '3', go: 'meet', extra: '' })}&tools=1`),
+  tools('every source failing or stale', `${work('down')}&weather=stale&tasks=down&home=down&box=none&sonos=down&tools=1`),
+  tools('every source not set up', `${work('off')}&tasks=off&home=off&sonos=off&meet=off&tools=1`),
+  tools('keys refused with a long reason', `${work('3')}&keys=refused&tools=1`),
+  tools('no keys file', `${work('3')}&source=default&tools=1`),
+  tools('Spotify not set up, a sign-in waiting', `${work('3')}&spotify=off&meet=signedout&tools=1`),
+];
 const VARIANTS = [
   { name: 'three lanes, long titles', q: work('3'), checks: [...WINGS, ...LANES] },
   { name: 'twelve sessions, long titles, five meetings at once', q: work('12', '&meet=busy'), checks: SCROLLED },
@@ -222,6 +249,7 @@ const VARIANTS = [
   { name: 'Watt card on Work', q: work('3', '&meet=none'), checks: ['.watt-card'], viewportOnly: true, card: true },
   { name: 'Watt card on Home', q: home('moods=five'), checks: ['.watt-card'], viewportOnly: true, card: true },
   { name: 'Watt card on Unwind', q: query({ hz: 'unwind', agents: '3', extra: '' }), checks: ['.watt-card'], viewportOnly: true, card: true },
+  ...TOOLS_VARIANTS,
 ];
 /** Rounding slack for fractional rectangles, in screen pixels. */
 const SLACK = 0.5;
@@ -382,7 +410,29 @@ try {
         if (cut) deck.push('deck: the Now heading "' + name.textContent + '" is cut');
       }
     }
-    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, wattCard, header, deck });
+    // The Tools drawer: inside x 1700 to 2560 and y 0 to 720, clear of the rail, and no text cut unless a hover card carries it.
+    const toolsOut = [];
+    const drawer = document.querySelector('.tools-drawer');
+    if (drawer) {
+      const dr = drawer.getBoundingClientRect();
+      const rail = document.querySelector('.rail');
+      if (dr.left < 1700 - 0.5 || dr.right > 2560 + 0.5 || dr.top < -0.5 || dr.bottom > 720 + 0.5) toolsOut.push('tools drawer: x ' + Math.round(dr.left) + ' to ' + Math.round(dr.right) + ', y ' + Math.round(dr.top) + ' to ' + Math.round(dr.bottom) + ' is outside x 1700 to 2560, y 0 to 720');
+      if (rail && hit(dr, rail.getBoundingClientRect())) toolsOut.push('tools drawer: covers the rail');
+      for (const e of drawer.querySelectorAll('.tools-name, .tools-srcname, .tools-line, .tools-hint, .tools-note, .tools-chip, .tools-btn, .tools-faint')) {
+        if (e.scrollWidth > e.clientWidth + 1 && !e.closest('[data-tip]')) toolsOut.push('tools: "' + (e.textContent || '').trim().slice(0, 40) + '" is cut with no tooltip');
+        else if (e.matches('.tools-name, .tools-srcname') && e.scrollWidth > e.clientWidth + 1) toolsOut.push('tools: "' + (e.textContent || '').trim().slice(0, 40) + '" is cut with no tooltip of its own');
+      }
+    }
+    // Meet's upper right is never an empty gap: a card reaches the right edge of the stage.
+    const meetOut = [];
+    const meetBody = document.querySelector('.meet .meet-body');
+    if (meetBody) {
+      const rights = [...meetBody.querySelectorAll(':scope > .panel')].map((e) => e.getBoundingClientRect().right);
+      const farthest = rights.length ? Math.max(...rights) : 0;
+      // With a meeting to show, the Later card (or its explanation) takes the freed upper right.
+      if (meetBody.querySelector('.meet-title') && farthest < 2500) meetOut.push('meet: nothing fills the upper right (the last card ends at x ' + Math.round(farthest) + ', the stage is 2560 wide)');
+    }
+    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, wattCard, header, deck, toolsOut, meetOut });
     document.body.appendChild(pre);
   }, new URLSearchParams(location.search).get('card') ? 7000 : 3000);</script>`;
   const broken = overflow ? `<style>${OVERFLOWS[overflow]}</style>` : '';
@@ -392,7 +442,8 @@ try {
   let failed = false;
   if (overflow) console.log(`deliberate overflow: ${overflow} (${OVERFLOWS[overflow]})`);
   // A deliberate break runs on the first state, or for the picker on the state that opens it.
-  const breakOn = overflow === 'picker' ? VARIANTS.filter((v) => v.name.startsWith('Deck, the key picker open over')) : VARIANTS.slice(0, 1);
+  const BREAK_STATE = { picker: 'Deck, the key picker open over', tools: 'Tools, over Work, typical', toolsnames: 'Tools, over Work, typical', meetfill: 'Meet, both accounts read' };
+  const breakOn = overflow in BREAK_STATE ? VARIANTS.filter((v) => v.name.startsWith(BREAK_STATE[overflow])) : VARIANTS.slice(0, 1);
   for (const v of overflow ? breakOn : VARIANTS) {
     console.log(`${v.name} (${v.q}):`);
     const url = `${pathToFileURL(page).href}${v.q}&checks=${encodeURIComponent(v.checks.join('|'))}${v.click ? `&click=${encodeURIComponent(v.click)}` : ''}${v.card ? '&card=1' : ''}`;
@@ -408,7 +459,11 @@ try {
       process.exit(1);
     }
     const text = m[1].replaceAll('&quot;', '"').replaceAll('&amp;', '&');
-    const { res, page: doc, overlaps, cut, gaps, wattCard, header, deck } = JSON.parse(text);
+    const { res, page: doc, overlaps, cut, gaps, wattCard, header, deck, toolsOut, meetOut } = JSON.parse(text);
+    for (const t of [...toolsOut, ...meetOut]) console.log(`  FAIL ${t}`);
+    if (toolsOut.length || meetOut.length) failed = true;
+    else if (v.q.includes('tools=')) console.log('  ok   the drawer stays inside x 1700 to 2560 and y 0 to 720, clear of the rail, no cut text without a tooltip');
+    else if (v.q.includes('go=meet')) console.log('  ok   Meet: a card reaches the right edge, nothing empty in the upper right');
     for (const d of deck) console.log(`  FAIL ${d}`);
     if (deck.length) failed = true;
     else if (v.q.includes('hz=work')) console.log('  ok   the deck stays above its floor, every key label inside its tile, the Now heading whole');

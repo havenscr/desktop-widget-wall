@@ -1,6 +1,6 @@
 /* Meet tab. Design pixels, inside the top band (.top). */
-/* Meet: three zones, 620 + 1140 + 596 design pixels with 30px gaps across the 2416 wide work area.
-   Calm by design: no motion, no red; the accent shows only in the last five minutes. */
+/* Meet: two zones, the Next card (460 px) and the Later list across the rest of the work area. The
+   accounts moved to the Tools drawer. Calm by design: no motion, no red; the accent shows only in the last five minutes. */
 /* Meet sits right of the clock, from the same left edge as the Work tab's first panel (.focus, 482px).
    The left edge is MEET_LEFT_PX in Meet.tsx, set inline so a test can hold it. */
 .meet-body {
@@ -10,8 +10,7 @@
   bottom: 0;
 }
 .meet-next,
-.meet-later,
-.meet-accounts {
+.meet-later {
   top: 4px;
   /* Each card is as tall as what is in it (up to the band), never a tall box with a few lines. */
   height: auto;
@@ -24,11 +23,7 @@
 }
 .meet-later {
   left: 490px;
-  width: 818px;
-}
-.meet-accounts {
   right: 0;
-  width: 596px;
 }
 .meet-title {
   font: 600 46px/1.1 var(--body);
@@ -58,8 +53,7 @@
   margin-top: 4px;
   padding: 0 24px;
 }
-.meet-list,
-.meet-account-list {
+.meet-list {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -68,63 +62,59 @@
   flex: 1;
   min-height: 0;
 }
-.meet-account-list {
-  flex: none;
+.meet-list {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-auto-flow: row;
+  column-gap: 40px;
+  align-content: start;
+  overflow: hidden;
 }
 .meet-row {
-  flex: none;
   min-height: 64px;
   display: flex;
   align-items: center;
   gap: 24px;
-  min-height: 0;
+  min-width: 0;
+  padding: 8px 0;
   border-top: 1px solid var(--line);
 }
-.meet-row:first-child {
+/* The first row of each column has no rule above it. */
+.meet-row:nth-child(-n + 2) {
   border-top: 0;
 }
-.meet-time {
-  flex: none;
-  width: 270px;
-  white-space: nowrap;
-  font: 500 24px/1 var(--body);
-  color: var(--dim);
-}
-.meet-name {
+.meet-row-text {
   flex: 1;
   min-width: 0;
 }
-.meet-acct {
-  flex: none;
-  width: 100px;
-  text-align: right;
+.meet-name {
+  min-width: 0;
+}
+.meet-when {
+  font-size: 19px;
 }
 .meet-join {
   flex: none;
   height: 36px;
   padding: 0 18px;
 }
-.meet-account {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  min-height: 84px;
-  padding: 10px 0;
-  border-top: 1px solid var(--line);
-}
-.meet-account:first-child {
-  border-top: 0;
-}
-.meet-account-text {
-  flex: 1;
-  min-width: 0;
-}
-.meet-out {
-  flex: none;
-  color: var(--dim);
-}
 .meet-notice {
   color: var(--amber);
+}
+/* The one amber line when a calendar account needs attention; its link opens Tools at Accounts. */
+.meet-trouble {
+  font: 19px/1.3 var(--body);
+  color: var(--amber);
+}
+.meet-trouble-link {
+  color: var(--amber);
+  font: 600 19px/1.3 var(--body);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  padding: 4px 0;
+}
+.meet-trouble-link:hover {
+  color: var(--tx);
 }
 .meet-empty {
   top: 4px;
@@ -135,17 +125,10 @@
   flex-direction: column;
   gap: 12px;
 }
-.meet-account.unavailable .meet-account-text {
-  min-width: 0;
-}
 .meet-tried,
 .meet-reason {
   color: var(--dim);
   overflow-wrap: anywhere;
-}
-.meet-act {
-  flex: none;
-  padding: 0 22px;
 }
 .meet-retry {
   align-self: flex-start;
