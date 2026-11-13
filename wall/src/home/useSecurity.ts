@@ -144,3 +144,8 @@ export function useOpenAlarms(): number {
   const { status, summary, now, readAt } = useSecurity();
   return openAlarms({ status, summary, now, readAt });
 }
+
+/** The Tools drawer's Retry for Home: one read now, outside the 5 minute poll (skipped while one runs). */
+export function refreshSecurity(): void {
+  void refresh();
+}

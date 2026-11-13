@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { invoke } from '../bridge/tauri';
 import { NOT_CONFIGURED } from '../tasks/model';
 import { reviewNow } from '../ui/reviewClock';
+import { registerRetry, reportRead } from '../tools/reports';
 import { useVisible } from '../ui/useVisible';
 import { SONOS_REFRESH_MS, STALE_MS, type SonosSummary } from './soundModel';
 
@@ -51,10 +52,13 @@ export function useSonos(): SonosState {
       setSummary(next);
       setOkAt(clock());
       setStatus('ready');
+      reportRead('sound', 'ok');
     } catch (e) {
       if (!mounted.current) return;
       const text = e instanceof Error ? e.message : String(e);
       setStatus(text === NOT_CONFIGURED ? 'unconfigured' : 'error');
+      if (text === NOT_CONFIGURED) reportRead('sound', 'unconfigured', 'Not set up');
+      else reportRead('sound', 'failed', 'The sound service did not answer');
     } finally {
       inFlight.current = false;
       if (mounted.current) setNow(clock());
@@ -64,6 +68,8 @@ export function useSonos(): SonosState {
       await refresh();
     }
   }, []);
+
+  useEffect(() => registerRetry('sound', () => void refresh()), [refresh]);
 
   useEffect(() => {
     if (!visible) return;

@@ -211,3 +211,8 @@ export function resetNowPlaying(): void {
   rejectedKey = null;
   useNowPlayingStore.setState({ info: null, art: null, at: 0, anchor: null });
 }
+
+/** The Tools drawer's Retry for Music: one poll now while the loop runs, nothing otherwise. */
+export function refreshNowPlaying(): void {
+  if (active && consumers > 0) void run();
+}

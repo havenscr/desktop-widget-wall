@@ -173,3 +173,8 @@ export function useNextMeeting(now: () => number = systemNow): NextMeetingState 
   const { meetings, feedStale, failed, asOf, noCalendar } = feed;
   return { meeting: nextMeeting(meetings, t), now: t, stale: feedStale || failed, asOf, unavailable: noCalendar || (failed && asOf === null) };
 }
+
+/** The Tools drawer's Retry for Calendar: one read now, outside the 5 minute poll (skipped while one runs). */
+export function refreshMeetingFeed(): void {
+  if (!inFlight) read();
+}

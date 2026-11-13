@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { invoke } from '../bridge/tauri';
 import { useVisible } from '../ui/useVisible';
+import { registerRetry, reportRead } from '../tools/reports';
 import { CALL_TIMEOUT_MS, holdReadings, nextOverSince, POLL_MS, type Machines, type OverSince } from './model';
 
 /** Readings further apart than this do not carry a hold across. */
@@ -51,6 +52,10 @@ export function useMachines(): MachinesState {
           if (!current()) return;
           const now = Date.now();
           const ok = m && m.pc ? m : null;
+          if (!ok) reportRead('box', 'failed', 'The machine numbers did not come back');
+          else if (ok.boxStale) reportRead('box', 'stale', 'The box reading is out of date');
+          else if (!ok.box) reportRead('box', 'stale', 'The box sent no numbers');
+          else reportRead('box', 'ok');
           // After a gap (hidden, or a slow read) the hold starts again: nobody saw those seconds.
           setState((s) => {
             const prev = now - s.now > GAP_MS ? {} : s.over;
@@ -59,6 +64,7 @@ export function useMachines(): MachinesState {
         })
         .catch(() => {
           if (current()) setState({ data: null, over: {}, now: Date.now() });
+          if (current()) reportRead('box', 'failed', 'The machine numbers did not answer');
         })
         .finally(() => {
           if (busy.current === mine) busy.current = null;
@@ -66,9 +72,11 @@ export function useMachines(): MachinesState {
     };
     read();
     const id = setInterval(read, POLL_MS);
+    const unregister = registerRetry('box', read);
     return () => {
       live = false;
       clearInterval(id);
+      unregister();
     };
   }, [visible]);
 

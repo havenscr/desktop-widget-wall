@@ -49,3 +49,9 @@ export function resetKeysFeed(): void {
   timer = null;
   useKeysFeedStore.setState({ read: { status: 'loading' } });
 }
+
+/** The Tools drawer's Reload: forget the shared read and ask `wall2_keys_summary` again at once. */
+export function reloadKeys(): void {
+  useKeysFeedStore.setState({ read: { status: 'loading' } });
+  loadKeys();
+}
