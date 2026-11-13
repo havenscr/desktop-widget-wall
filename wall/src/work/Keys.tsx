@@ -15,6 +15,8 @@ import { runForYou, useForYou, type ForYouItem, type ForYouKind } from './forYou
 import { useGuard } from './useGuard';
 import { ActionError } from './wallActions';
 import { KeyIcon } from './keyIcons';
+import { setKeyKind, type KeyKind } from './keyKind';
+import { useLibIndex } from './keyLibrary';
 import { joinKeys, KEYS_POLL_MS, loadKeys, useKeysFeedStore } from './keysFeed';
 import {
   acceptsFront,
@@ -84,6 +86,8 @@ type HeadFit = 0 | 1 | 2;
 
 const KIND_ICON: Record<ForYouKind, Icon> = { meeting: IconVideo, waiting: IconMessageCircle, merge: IconGitPullRequest, alarm: IconAlertTriangle };
 const KIND_TONE: Record<ForYouKind, string> = { meeting: 'mint', waiting: 'amber', merge: 'mint', alarm: 'amber' };
+/** A plate takes the tone the app already gives its item: mint (ready) as an app key, amber (waits on you) as an agent key. */
+const TONE_KIND: Record<string, KeyKind> = { mint: 'app', amber: 'agent' };
 
 /** The pages and the keys feed for the Now row: shared read, started while visible. */
 function useKeysRead() {
@@ -92,13 +96,19 @@ function useKeysRead() {
   return { read: useKeysFeedStore((s) => s.read), refresh: loadKeys };
 }
 
+/**
+ * The For you page: up to two plates side by side, each the height of a key, so the Now row is
+ * one height on every page. A long title is cut; the full title and reason show on hover. One
+ * item leaves the second half empty (the plate never stretches past half the row).
+ */
 function ForYouList({ items, onRun }: { items: ForYouItem[]; onRun: (item: ForYouItem, detail: number) => void }) {
   return (
     <div className="fy-list">
       {items.slice(0, FOR_YOU_SHOWN).map((it) => {
         const I = KIND_ICON[it.kind];
+        const tone = KIND_TONE[it.kind];
         return (
-          <div key={it.key} className={`fy-li ${KIND_TONE[it.kind]}`} {...tip(`${it.title}: ${it.reason}`)}>
+          <div key={it.key} className={`fy-li fy-plate ${tone}`} data-kind={TONE_KIND[tone]} {...tip(`${it.title}: ${it.reason}`)}>
             <I size={20} stroke={1.8} aria-hidden="true" />
             <span className="fy-tx">
               <b>{it.title}</b>
@@ -124,6 +134,7 @@ function ForYouList({ items, onRun }: { items: ForYouItem[]; onRun: (item: ForYo
 export function Keys() {
   const { read, refresh } = useKeysRead();
   const items = useForYou();
+  const libIdx = useLibIndex();
   const [mode, setModeState] = useState<Mode>(readMode);
   const [takeUntil, setTakeUntil] = useState(0);
   const [brief, showBrief] = useBrief();
@@ -440,6 +451,7 @@ export function Keys() {
               type="button"
               className={`deck-tile key-tile${wrongApp || layoutOff ? ' off' : ''}`}
               aria-label={k.label}
+              data-kind={wrongApp || layoutOff ? undefined : setKeyKind(set, k, i, libIdx)}
               aria-disabled={layoutOff || wrongApp || undefined}
               {...tip(
                 layoutOff

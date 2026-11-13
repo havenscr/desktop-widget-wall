@@ -17,11 +17,13 @@ import { mocks } from '../tauri';
  * builds them: two sets of the file's own, General and the nine built-in sets from the key
  * library, whose labels carry their group's name, "VS Code: command palette"; VS Code is in
  * front) or `off`. `?hold=<set id>` starts held (`lib-excel` shows a set whose app is not in front).
- * `?pins=long` pins the five longest library labels.
+ * `?pins=long` pins the five longest library labels. `?hide=fail`: Unwind's Hide screen
+ * button answers that input cannot be watched, so its failure note shows after a click.
  */
 const key = (label: string, icon: string, action: string | null = null) => ({ label, icon, action });
 
 export function registerDeckMocks(): void {
+  if (knob('hide') === 'fail') mocks.set('wall2_monitors_off', () => ({ active: false, reason: 'input-unavailable' }));
   const arrange = knob('arrange') ?? 'ok';
   if (arrange !== 'off') {
     mocks.set('wall2_arrange_status', () => arrange !== 'none');

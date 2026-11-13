@@ -45,13 +45,13 @@ afterEach(() => vi.useRealTimers());
 it('taps through to the command and shows a pending state until the helper answers', async () => {
   render(<ScreensOff />);
   await flush();
-  expect(button().getAttribute('aria-label')).toBe('Screens off');
+  expect(button().getAttribute('aria-label')).toBe('Hide screen');
   fireEvent.click(button());
   await flush();
   expect(calls).toContain('wall2_monitors_off');
-  expect(button().getAttribute('aria-label')).toBe('Turning off');
+  expect(button().getAttribute('aria-label')).toBe('Hiding');
   await emit({ active: true });
-  expect(button().getAttribute('aria-label')).toBe('Cancel screens off');
+  expect(button().getAttribute('aria-label')).toBe('Cancel hide');
   expect(button().getAttribute('aria-pressed')).toBe('true');
 });
 
@@ -60,7 +60,7 @@ it('drops the pending look after a while if nothing answers', async () => {
   await flush();
   fireEvent.click(button());
   await flush(PENDING_MS + 10);
-  expect(button().getAttribute('aria-label')).toBe('Screens off');
+  expect(button().getAttribute('aria-label')).toBe('Hide screen');
 });
 
 it('reads the current mode on mount', async () => {
@@ -77,9 +77,9 @@ it('cancels with a second tap', async () => {
   fireEvent.click(button());
   await flush();
   expect(calls.filter((c) => c === 'wall2_monitors_off').length).toBe(1);
-  expect(button().getAttribute('aria-label')).toBe('Cancel screens off'); // no pending look while cancelling
+  expect(button().getAttribute('aria-label')).toBe('Cancel hide'); // no pending look while cancelling
   await emit({ active: false, reason: 'cancelled' });
-  expect(button().getAttribute('aria-label')).toBe('Screens off');
+  expect(button().getAttribute('aria-label')).toBe('Hide screen');
   expect(screen.queryByRole('status')).toBeNull();
 });
 
@@ -89,17 +89,31 @@ it('says it could not watch input, for 5 seconds', async () => {
   fireEvent.click(button());
   await emit({ active: false, reason: 'input-unavailable' });
   expect(screen.getByRole('status').textContent).toBe('Could not watch input');
-  expect(button().getAttribute('aria-label')).toBe('Screens off');
+  expect(button().getAttribute('aria-label')).toBe('Hide screen');
   await flush(FAILURE_MS + 10);
   expect(screen.queryByRole('status')).toBeNull();
 });
 
-it('is an icon alone, with the words as its tooltip and accessible name', async () => {
+it('is named Hide screen, with its name shown on hover in place of a tooltip', async () => {
   render(<ScreensOff />);
   await flush();
-  expect(button().textContent).toBe('');
-  expect(button().getAttribute('title')).toBe('Screens off');
-  expect(screen.getByRole('button', { name: 'Screens off' })).toBe(button());
+  expect(button().hasAttribute('title')).toBe(false);
+  expect(screen.getByRole('button', { name: 'Hide screen' })).toBe(button());
+  expect(button().querySelector('.screens-off-lbl')?.textContent).toBe('Hide screen');
+  fireEvent.click(button(), { detail: 1 });
+  expect(button().querySelector('.screens-off-lbl')?.textContent).toBe('Hiding');
   await emit({ active: true });
-  expect(button().getAttribute('title')).toBe('Cancel screens off');
+  expect(button().hasAttribute('title')).toBe(false);
+  expect(screen.getByRole('button', { name: 'Cancel hide' })).toBe(button());
+  expect(button().querySelector('.screens-off-lbl')?.textContent).toBe('Cancel hide');
+});
+
+it('sends once for a double click', async () => {
+  render(<ScreensOff />);
+  await flush();
+  fireEvent.click(button(), { detail: 1 });
+  fireEvent.click(button(), { detail: 2 });
+  fireEvent.doubleClick(button());
+  await flush();
+  expect(calls.filter((c) => c === 'wall2_monitors_off').length).toBe(1);
 });
