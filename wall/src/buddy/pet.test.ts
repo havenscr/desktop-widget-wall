@@ -132,6 +132,11 @@ describe('his Stay, stored', () => {
   it('an oversized stored value is ignored whole', () => {
     expect(parsePet(withStay({ place: 'work', x: 450, date: key, junk: 'j'.repeat(MAX_RAW) }), at(11))).toEqual(defaultPet(at(11)));
   });
+  it('rolling into a new day clears a Stay from the day before, and keeps one from today', () => {
+    const d = parsePet(withStay({ place: 'home', x: 1600, date: key }), at(11));
+    expect(rollDay(d, at(11, 23)).stay).not.toBeNull();
+    expect(rollDay(d, at(12, 0)).stay).toBeNull();
+  });
   it('survives counting a pet and rolling within the same day', () => {
     let d = parsePet(withStay({ place: 'home', x: 1600, date: key }), at(11));
     d = bump(rollDay(d, at(11, 13)), 'pets', at(11, 14));

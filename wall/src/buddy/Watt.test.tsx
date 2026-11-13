@@ -1134,7 +1134,111 @@ describe('carrying him', () => {
       runFor(FADE_OUT_S + FADE_IN_S + 1);
       expect(where(container).feet).toBe(582);
       expect(container.querySelector<HTMLElement>('.watt')!.style.zIndex).toBe('');
+      // Set down at once on Home's ground line, at his held x clamped to Home's span (he was left of it).
+      expect(where(container).x).toBe(WALKS.home.min);
+      expect(container.querySelector('svg')!.getAttribute('height')).toBe(String(11 * WALKS.home.px));
     });
+    it('a place change while held on the right edge lands him at the far end of the new span', () => {
+      usePlaceStore.setState({ active: 'work' });
+      publishCamera(CAMERAS.work, false);
+      const { container } = start();
+      carryAway(container, 2500, 100);
+      go('home');
+      publishCamera(CAMERAS.home, false);
+      runFor(FADE_OUT_S + FADE_IN_S + 1);
+      expect(where(container).x).toBe(WALKS.home.max);
+      expect(where(container).feet).toBe(582);
+      // Held, then the place changes, then he is never picked up again by the old press.
+      expect(carried(container)).toBe(false);
+    });
+    it('a place change while held on Work lands him inside the middle of the new span where he was held', () => {
+      usePlaceStore.setState({ active: 'work' });
+      publishCamera(CAMERAS.work, false);
+      const { container } = start();
+      carryAway(container, 1600, 100);
+      go('home');
+      publishCamera(CAMERAS.home, false);
+      runFor(FADE_OUT_S + FADE_IN_S + 1);
+      const x = where(container).x;
+      expect(x).toBeGreaterThan(WALKS.home.min);
+      expect(x).toBeLessThan(WALKS.home.max);
+    });
+  });
+
+  it('releasing him over a control, or cancelling the carry over it, does not hover or click it', () => {
+    const hovers = vi.fn();
+    const clicks = vi.fn();
+    const under = (
+      <>
+        <button type="button" data-testid="under" onMouseEnter={hovers} onMouseOver={hovers} onPointerEnter={hovers} onPointerOver={hovers} onClick={clicks}>
+          Hold to merge
+        </button>
+        <Watt now={day} />
+      </>
+    );
+    const { container, getByTestId } = render(under);
+    runFor(1.5);
+    const button = getByTestId('under');
+    // What the browser does while the hit element holds the pointer: every event goes to it.
+    const rel = vi.spyOn(button, 'dispatchEvent');
+    grab(container, 500, 400);
+    expect(setCap).toHaveBeenCalledWith(1);
+    move(container, 520, 400);
+    move(container, 1200, 300);
+    runFor(0.6);
+    // Held over the button for a while, then let go on it; the click the browser sends goes to the captured element.
+    runFor(1);
+    drop(container, 1200, 300);
+    fireEvent.click(hitOf(container), { detail: 1 });
+    runFor(1);
+    expect(hovers).not.toHaveBeenCalled();
+    expect(clicks).not.toHaveBeenCalled();
+    expect(stored().today?.pets ?? 0).toBe(0);
+    // The same when the carry ends by cancel.
+    grab(container, 500, 400, 2);
+    move(container, 520, 400, 2);
+    move(container, 1200, 300, 2);
+    runFor(0.6);
+    fireEvent.pointerCancel(hitOf(container), ptr(2));
+    runFor(1);
+    expect(hovers).not.toHaveBeenCalled();
+    expect(clicks).not.toHaveBeenCalled();
+    expect(rel).not.toHaveBeenCalled();
+    // And the control still works for a pointer that is not carrying him.
+    fireEvent.click(button);
+    expect(clicks).toHaveBeenCalledTimes(1);
+  });
+
+  it('picking him up ends a nap', () => {
+    const { container } = start();
+    fireEvent.contextMenu(hitOf(container));
+    fireEvent.click([...document.querySelectorAll<HTMLButtonElement>('.watt-card button')].find((b) => b.textContent === 'Nap')!);
+    runFor(0.3);
+    expect(rows(container)).toBe(8);
+    fireEvent.keyDown(window, { key: 'Escape' });
+    grab(container, 500, 400);
+    move(container, 600, 300);
+    runFor(0.3);
+    expect(rows(container)).toBe(12);
+    drop(container, 600, 300);
+    runFor(1.5);
+    // He sits after landing; he does not lie down again.
+    expect(rows(container)).toBe(11);
+  });
+
+  it('a Stay from an earlier day ends when the day rolls over while the wall keeps running', () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'setTimeout', 'clearTimeout'] });
+    let ms = day();
+    localStorage.setItem(PET_KEY, JSON.stringify({ ...defaultPet(day()), days: 3, lastDay: dayKey(day()), stay: { place: 'unwind', x: 440, date: dayKey(day()) } }));
+    const { container } = render(<Watt now={() => ms} />);
+    runFor(1.5);
+    expect(rows(container)).toBe(11);
+    // Past midnight, same mount: the minute loop rolls the day and the Stay goes with it.
+    ms += 24 * 3600_000;
+    act(() => void vi.advanceTimersByTime(6000));
+    expect(stored().stay).toBeNull();
+    runFor(30);
+    expect(rows(container)).toBe(12);
   });
 
   it('letting go on a clover (within 24 px) feeds it to him at once; further away leaves it', () => {
@@ -1277,7 +1381,10 @@ describe('carrying him', () => {
     });
   });
 
-  it('the paint path schedules nothing per frame while he is carried', () => {
+  // What this guards: no timer (setTimeout or setInterval) is made, and exactly one frame is requested, per
+  // frame while he is carried. Closures and arrays made in the paint path are not counted here; the rule
+  // is kept by the comment at the top of `paint` in Watt.tsx and by reading the diff.
+  it('the frame loop makes no timer per frame while he is carried (timers only; the rule for closures is a comment in paint)', () => {
     const { container } = start();
     carryAway(container, 700, 250);
     const spy = vi.spyOn(window, 'setTimeout');
@@ -1290,6 +1397,7 @@ describe('carrying him', () => {
       tick();
       // Held lines are the one thing that may arm a timer (the bubble's own), once.
       if (!container.querySelector('.watt-bubble')) expect(spy).not.toHaveBeenCalled();
+      else expect(spy.mock.calls.length).toBeLessThanOrEqual(1);
       expect(spyI).not.toHaveBeenCalled();
     }
     expect(raf).toHaveBeenCalledTimes(40);

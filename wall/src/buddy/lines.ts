@@ -52,7 +52,7 @@ export const LINES: Readonly<Record<Topic, readonly string[]>> = {
   stay: ['Staying right here. Good spot.', 'I will keep this spot warm.', 'Not going anywhere. Lovely.'],
   tricks: ['Ta da. Small, but proud.', 'That one took practice.', 'Wool, but make it athletic.', 'I have more of those.'],
   milestone: ['Ten pets. A good day.', 'That is ten pets today. I am counting.', 'Ten. A round number of kindness.'],
-  dizzy: ['The horizon is spinning slightly.', 'Two walls. I see two walls.', 'Give me a moment. The sky is sloshing.', 'I am fine. The floor is not.'],
+  dizzy: ['The horizon is spinning slightly.', 'Two walls. I see two walls.', 'One moment. The sky is sloshing.', 'I am fine. The floor is not.'],
   focusStart: [
     'Reading along. Quietly.',
     'Focus mode. I will be quiet.',

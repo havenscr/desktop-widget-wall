@@ -15,6 +15,8 @@ import {
   callCarry,
   cancelCarry,
   carryFrame,
+  deferCarry,
+  landPending,
   createCarry,
   endStay,
   landingX,
@@ -280,6 +282,47 @@ describe('the frame he is drawn in', () => {
       seen.add(f.pose);
     }
     expect(seen.size).toBe(1);
+  });
+});
+
+describe('review fixes', () => {
+  it('Stay switched off during the landing squash still ends the sit', () => {
+    const c = createCarry();
+    startStay(c, 0, 920, 1);
+    beginCarry(c, 1, 1000, 300, 920, HY, 1, SIZE, 1, false);
+    run(c, 1, 0.3, () => [1000, 200]);
+    releaseCarry(c, 1.3, walk, HY, SIZE, false, false);
+    let T = 1.3;
+    while (c.mode !== LAND) {
+      T += 1 / 60;
+      stepCarry(c, 1 / 60, T, HY, SIZE, 985, false, none);
+    }
+    endStay(c, T);
+    T = run(c, T, 1, undefined, 985);
+    expect([RETURN, NONE]).toContain(c.mode);
+    run(c, T, 30, undefined, 985);
+    expect(c.mode).toBe(NONE);
+  });
+  it('a held carry deferred across a place change lands at its x on the new walk, clamped, at once', () => {
+    const home = WALKS.home;
+    for (const [x, want] of [
+      [2300, home.max],
+      [100, home.min],
+      [1600, 1600],
+    ] as const) {
+      const c = lifted();
+      run(c, 0, 0.3, () => [x + 40, 200]);
+      const kept = c.x;
+      deferCarry(c);
+      expect(c.mode).toBe(NONE);
+      expect(c.pendingX).toBe(kept);
+      landPending(c, 5, home, HY, home.px);
+      expect(c.mode).toBe(SIT);
+      expect(c.x).toBe(landingX(home, kept));
+      if (want !== 1600) expect(c.x).toBe(want);
+      expect(c.y + spriteHeight('land', home.px)).toBe(HY);
+      expect(c.pendingX).toBeNaN();
+    }
   });
 });
 

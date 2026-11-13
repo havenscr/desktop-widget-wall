@@ -17,6 +17,8 @@ import {
   FALL,
   RETURN,
   callCarry,
+  deferCarry,
+  landPending,
   endStay,
   landingX,
   startStay,
@@ -686,7 +688,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
   }, [dropCapture]);
   const interruptRef = useRef(interruptCarry);
   interruptRef.current = interruptCarry;
-  /** A new place, or the camera moving off: he is just gone from where he was, nothing to set down. */
+  /** A new place, or the camera moving off: a held or falling Watt is set down later at his x; anything else just resets. */
   const dropCarry = useCallback(() => {
     press.current.active = false;
     napUntil.current = 0;
@@ -701,7 +703,9 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
       return;
     }
     dropCapture(c.pointerId);
-    cancelCarry(c);
+    // Held (or falling): he keeps his x and is set down on the new place once it is ready.
+    if (c.mode === HELD || c.mode === FALL) deferCarry(c);
+    else cancelCarry(c);
     mind.current.carry = false;
   }, [dropCapture, update]);
   const dropRef = useRef(dropCarry);
@@ -728,6 +732,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
       const at = toStage(cx, cy);
       const f = frameRef.current;
       const t = nowRef.current();
+      napUntil.current = 0;
       q.away = p.night || document.hidden;
       beginCarry(carry.current, press.current.id, at.x, at.y, f.x, p.camera.hy, f.dir, walk.px, tNowRef.current(), t - lastCarryLine.current >= CARRY_LINE_GAP_MS);
       mind.current.carry = true;
@@ -966,6 +971,11 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
           stepCarry(c, dt, tNow(), p.camera.hy, walk.px, home, reduced, f);
         }
       }
+      // Held across a place change: set down now that the new place is up.
+      if (c.mode === NONE && c.pendingX === c.pendingX && ready && p.place !== null && p.place === place && p.camera && p.opacity > 0.5) {
+        landPending(c, tNow(), WALKS[place], p.camera.hy, WALKS[place].px);
+        mind.current.carry = true;
+      }
       // Stay: kept in the stored record; applied once he stands on its place, ended when it is gone.
       const st = petRef.current.stay;
       if (p.place && p.camera && p.opacity > 0.5) {
@@ -992,6 +1002,9 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
       return isIdle(p, place, ready);
     };
 
+    // Rule for this function, held or not: nothing is allocated per frame here. No closure, array or object
+    // literal is made in the paint path; every record (`f`, `bp`, `cb`, `carry`, ...) is made once above and
+    // written into. Template strings for style values are the one allowance (as before).
     const paint = () => {
       if (document.hidden) return;
       const el = actor.current;

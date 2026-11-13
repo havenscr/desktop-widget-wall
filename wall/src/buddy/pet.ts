@@ -140,6 +140,8 @@ export function rollDay(d: PetData, now: number): PetData {
   let next = d;
   if (d.lastDay === null || key > d.lastDay) next = { ...next, days: Math.min(MAX_DAYS, next.days + 1), lastDay: key };
   if (key > next.today.date) next = { ...next, today: emptyToday(key) };
+  // A Stay is for the day it was set: when the day rolls it is gone (the loop then ends his sit).
+  if (next.stay && next.stay.date !== key) next = { ...next, stay: null };
   return next;
 }
 

@@ -126,16 +126,16 @@ export const SPRITES: Readonly<Record<Pose, readonly string[]>> = {
   sit: [
     ...IDLE.slice(0, 7),
     '.wwwwwwwwwwwwww...',
-    '.wwwwwwwwwwwwwww..',
-    '..wwwwwwwwwwwww...',
-    '..ll.....ll.......',
+    'wwwwwwwwwwwwwwwl..',
+    'wwwwwwwwwwwwwwwl..',
+    '.lll.........ll...',
   ],
   // Swirly eyes (a checker of cyan and dark) after being shaken.
   dizzy: [...IDLE.slice(0, 3), '.wwwwwwwwwwwwwfefe', 'wwwwwwwwwwwwwwffef', 'wwwwwwwwwwwwwwfefe', ...IDLE.slice(6)],
   // Ears up and eyes wide: he has noticed the pointer.
   alert: ['....wwwwwww...p...', '..wwwwwwwwwww.p...', ...IDLE.slice(2, 3), '.wwwwwwwwwwwwwfeff', 'wwwwwwwwwwwwwwfeef', ...IDLE.slice(5)],
   // In the air: legs tucked, eyes squeezed shut with joy.
-  hop: [...IDLE.slice(0, 4), 'wwwwwwwwwwwwwwf-ff', ...IDLE.slice(5, 10), '....ll....ll......', '..................'],
+  hop: [...IDLE.slice(0, 4), 'wwwwwwwwwwwwwwf-ff', ...IDLE.slice(5, 10), '..l.l.......l.l...', '..................'],
   // Turning on the spot: the wool ball seen from the front (face), then from behind (no face).
   spin1: [
     '.....wwwwwwww.....',
@@ -158,8 +158,8 @@ export const SPRITES: Readonly<Record<Pose, readonly string[]>> = {
     '..wwwwwwwwwwwwww..',
     '..wwwwwwwwwwwwww..',
     '..wwwwwwwwwwwwww..',
-    '..wwwwwwwwwwwwww..',
-    '..wwwwwwwwwwwwww..',
+    '..wwwwwwwpwwwwww..',
+    '..wwwwwwwpwwwwww..',
     '...wwwwwwwwwwww...',
     '....wwwwwwwwww....',
     '.....l......l.....',

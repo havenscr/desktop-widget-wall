@@ -105,6 +105,8 @@ export interface Carry {
   target: number;
   /** Set when a walk back arrives; the component reads and clears it. */
   arrived: boolean;
+  /** Held across a place change: where (left edge x) he is set down once the new place is ready, else NaN. */
+  pendingX: number;
 }
 
 export function createCarry(): Carry {
@@ -147,6 +149,7 @@ export function createCarry(): Carry {
     stay: false,
     target: Number.NaN,
     arrived: false,
+    pendingX: Number.NaN,
   };
 }
 
@@ -160,6 +163,7 @@ export function cancelCarry(c: Carry): void {
   c.stay = false;
   c.target = Number.NaN;
   c.arrived = false;
+  c.pendingX = Number.NaN;
   c.mode = NONE;
   c.pointerId = -1;
   c.sayHeld = false;
@@ -480,5 +484,24 @@ export function startStay(c: Carry, T: number, x: number, dir: 1 | -1): void {
 /** Switch Stay off: the sit ends now and he walks back to his wander. */
 export function endStay(c: Carry, T: number): void {
   c.stay = false;
-  if (c.mode === SIT) c.settleUntil = T;
+  if (c.mode === SIT || c.mode === LAND) c.settleUntil = T;
+}
+
+/**
+ * A place change while he is held: the pointer is let go and the carry ends, but his x is kept so
+ * he can be set down on the new place's ground line (see `landPending`).
+ */
+export function deferCarry(c: Carry): void {
+  const x = c.x;
+  cancelCarry(c);
+  c.pendingX = x;
+}
+
+/** The new place is ready: set him down at once at the kept x, clamped to that place's walk span. */
+export function landPending(c: Carry, T: number, walk: Walk, hy: number, size: number): void {
+  c.mode = HELD;
+  c.x = c.pendingX;
+  c.y = hy - spriteHeight('held', size);
+  c.pendingX = Number.NaN;
+  releaseCarry(c, T, walk, hy, size, true, true);
 }
