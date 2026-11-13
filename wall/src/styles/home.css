@@ -79,9 +79,27 @@
   grid-auto-rows: 100%;
   gap: 14px;
 }
-/* With the Sound block reduced to its one line, the cards take the room it leaves. */
-.home-centre:has(.sound.bare) .mood-row {
+/* With the Sound block reduced to its one line (Sonos not set up, down, or silent for 2.5
+   seconds), the cards take the room it leaves. The height changes in one slow fade. */
+.mood-row {
+  transition: height 600ms ease;
+}
+.home-centre.tall .mood-row {
   height: 300px;
+}
+/* The moods' own wait for a first read holds the row's place. */
+.mood-skel {
+  flex: none;
+  height: 150px;
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--line);
+}
+.home-centre.tall .mood-skel {
+  height: 300px;
+}
+.mood-skel {
+  transition: height 600ms ease;
 }
 /* More than six moods: the cards keep a sixth of the row each and the row scrolls
    sideways (the mouse wheel scrolls it too). */
@@ -461,7 +479,47 @@
   flex: none;
 }
 
+/* Sound's wait: quiet shapes at the real block's size, no spinner and no text. */
+.sound-skel-row {
+  display: grid;
+  gap: 12px;
+}
+.sound-skel-plays {
+  height: 92px;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+.sound-skel-line {
+  height: 40px;
+  grid-template-columns: 1fr 160px;
+}
+.sound-skel-row span {
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.04);
+}
+.sound-skel-line span:first-child {
+  max-width: 560px;
+}
+@keyframes sound-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.sound-panel,
+.sound-note {
+  animation: sound-in 600ms ease backwards;
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .mood-row,
+  .mood-skel,
+  .sound-panel,
+  .sound-note {
+    transition: none;
+    animation: none;
+  }
   .mood-btn,
   .sound-chip,
   .sound-panel {
