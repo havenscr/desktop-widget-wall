@@ -210,7 +210,9 @@ mod tests {
     #[test] fn subkey_cap_is_exact() { assert!(within_cap(512)); assert!(!within_cap(513)); }
     #[test] fn payload_has_only_fixed_shape() {
         let json = serde_json::to_value(Signals::default()).unwrap();
-        assert_eq!(json.as_object().unwrap().keys().cloned().collect::<Vec<_>>(), ["camera", "known", "mic"]);
+        let mut keys = json.as_object().unwrap().keys().map(String::as_str).collect::<Vec<_>>();
+        keys.sort_unstable();
+        assert_eq!(keys, ["camera", "known", "mic"]);
         assert_eq!(json["mic"].as_object().unwrap().len(), 5);
     }
     #[test] fn page_log_refuses_free_text_and_bad_numbers() {
