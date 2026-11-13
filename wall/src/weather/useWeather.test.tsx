@@ -2,7 +2,7 @@ import { act, render, renderHook, screen, waitFor } from '@testing-library/react
 import { StrictMode } from 'react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { WeatherCard } from './WeatherCard';
-import { FETCH_TIMEOUT_MS, useWeather } from './useWeather';
+import { FETCH_TIMEOUT_MS, resetWeatherStore, useWeather } from './useWeather';
 
 const body = {
   current: { time: '2026-11-11T10:15', temperature_2m: 57.6, weather_code: 3, is_day: 1 },
@@ -16,6 +16,7 @@ const body = {
 const ok = async () => ({ ok: true, json: async () => body }) as unknown as Response;
 
 afterEach(() => {
+  resetWeatherStore();
   vi.useRealTimers();
   vi.unstubAllGlobals();
 });

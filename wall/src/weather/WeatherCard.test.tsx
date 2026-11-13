@@ -1,6 +1,9 @@
 import { render, screen, waitFor } from '@testing-library/react';
-import { expect, it, vi } from 'vitest';
+import { afterEach, expect, it, vi } from 'vitest';
 import { WeatherCard } from './WeatherCard';
+import { resetWeatherStore } from './useWeather';
+
+afterEach(() => resetWeatherStore());
 
 it('shows a loading line before data, never an error banner', () => {
   vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new Error('offline'))));

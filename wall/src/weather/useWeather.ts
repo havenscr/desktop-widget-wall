@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
+import { create } from 'zustand';
 import { loadSettings } from '../settings/settings';
 import { useVisible } from '../ui/useVisible';
 import { buildUrl, parseWeather, shouldRefresh, type WeatherReading } from './model';
@@ -15,66 +16,98 @@ export interface WeatherState {
 
 const defaultFetch: typeof fetch = (...a) => fetch(...a);
 
+const initial = (): WeatherState => ({ reading: null, failed: false, now: Date.now() });
+
+/** The one shared reading every `useWeather` user sees. */
+export const useWeatherStore = create<WeatherState>(() => initial());
+
+let users = 0;
+let timer: ReturnType<typeof setInterval> | null = null;
+let lastAttempt: number | null = null;
+let inFlight = false;
+/** Bumped when the last user leaves, so a fetch started before that cannot land after it. */
+let epoch = 0;
+/** The fetcher of the most recently joined user (tests pass their own). */
+let fetcher: typeof fetch = defaultFetch;
+
+async function run(): Promise<void> {
+  if (inFlight) return;
+  inFlight = true;
+  const mine = epoch;
+  lastAttempt = Date.now();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  try {
+    const s = loadSettings();
+    const res = await fetcher(buildUrl(s.latitude, s.longitude), { signal: controller.signal });
+    if (!res.ok) throw new Error(`Weather HTTP ${res.status}`);
+    const next = parseWeather(await res.json(), Date.now());
+    if (mine === epoch) useWeatherStore.setState({ reading: next, failed: false });
+  } catch {
+    /* keep the last good reading; the card shows its age */
+    if (mine === epoch && !useWeatherStore.getState().reading) useWeatherStore.setState({ failed: true });
+  } finally {
+    clearTimeout(timeout);
+    if (mine === epoch) inFlight = false;
+  }
+}
+
+function check(): void {
+  useWeatherStore.setState({ now: Date.now() });
+  if (shouldRefresh(lastAttempt, Date.now(), useWeatherStore.getState().reading !== null)) void run();
+}
+
+function join(f: typeof fetch): void {
+  fetcher = f;
+  users += 1;
+  if (users === 1) timer = setInterval(check, CHECK_MS);
+  // Every mount checks (and refreshes the clock), throttled by the last attempt; a mount with
+  // no reading yet retries after a minute at most.
+  check();
+}
+
+function leave(): void {
+  users = Math.max(0, users - 1);
+  if (users > 0) return;
+  if (timer !== null) clearInterval(timer);
+  timer = null;
+  // Stop polling and drop any answer still on its way, but keep the reading, the failure flag
+  // and the last attempt time, so a hide then show shows the old reading with its age and
+  // does not fetch again inside the interval.
+  epoch += 1;
+  // An answer we just dropped never landed, so the next show may ask again.
+  if (inFlight) lastAttempt = null;
+  inFlight = false;
+}
+
+/** Forget everything. For tests only. */
+export function resetWeatherStore(): void {
+  if (timer !== null) clearInterval(timer);
+  timer = null;
+  users = 0;
+  epoch += 1;
+  inFlight = false;
+  lastAttempt = null;
+  useWeatherStore.setState(initial(), true);
+}
+
 /**
- * Fetches on mount and every 15 minutes while visible; fetches once when the
- * page becomes visible after 15 minutes or more. With no reading yet it retries
- * every minute. A failure keeps the last good reading. A request is aborted
- * after 15 seconds. A finished result is applied as long as the component is
- * still mounted, even if the effect that started it has been cleaned up
- * (StrictMode remount, window hidden and shown). `now` ticks each minute so the
- * stale text stays current.
+ * The weather, shared by every component that uses it (the Work card, the Unwind date line,
+ * Watt): one fetch however many are mounted. Fetches when the first visible user mounts and
+ * every 15 minutes while at least one is mounted and visible; fetches once when the page becomes
+ * visible after 15 minutes or more. With no reading yet it retries every minute. A failure keeps
+ * the last good reading. A request is aborted after 15 seconds. `now` ticks each minute so the
+ * stale text stays current. When the last user leaves (the page is hidden) polling stops but the
+ * reading and the time of the last attempt are kept.
  */
-export function useWeather(fetcher: typeof fetch = defaultFetch): WeatherState {
+export function useWeather(f: typeof fetch = defaultFetch): WeatherState {
   const visible = useVisible();
-  const [reading, setReading] = useState<WeatherReading | null>(null);
-  const [failed, setFailed] = useState(false);
-  const [now, setNow] = useState(() => Date.now());
-  const lastAttempt = useRef<number | null>(null);
-  const inFlight = useRef(false);
-  const mounted = useRef(false);
-  const hasReading = useRef(false);
-
-  useEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-    };
-  }, []);
-
+  const fRef = useRef(f);
+  fRef.current = f;
   useEffect(() => {
     if (!visible) return;
-    const run = async () => {
-      if (inFlight.current) return;
-      inFlight.current = true;
-      lastAttempt.current = Date.now();
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-      try {
-        const s = loadSettings();
-        const res = await fetcher(buildUrl(s.latitude, s.longitude), { signal: controller.signal });
-        if (!res.ok) throw new Error(`Weather HTTP ${res.status}`);
-        const next = parseWeather(await res.json(), Date.now());
-        hasReading.current = true;
-        if (mounted.current) {
-          setReading(next);
-          setFailed(false);
-        }
-      } catch {
-        /* keep the last good reading; the card shows its age */
-        if (mounted.current && !hasReading.current) setFailed(true);
-      } finally {
-        clearTimeout(timeout);
-        inFlight.current = false;
-      }
-    };
-    const check = () => {
-      setNow(Date.now());
-      if (shouldRefresh(lastAttempt.current, Date.now(), hasReading.current)) void run();
-    };
-    check();
-    const id = setInterval(check, CHECK_MS);
-    return () => clearInterval(id);
-  }, [visible, fetcher]);
-
-  return { reading, failed, now };
+    join(fRef.current);
+    return leave;
+  }, [visible]);
+  return useWeatherStore();
 }

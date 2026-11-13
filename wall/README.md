@@ -671,8 +671,51 @@ horizon canvas and the veil and under the panels; its styles are `buddy/watt.css
   music plays (awake only). Night and Home's camera are worked out once a minute. The frame
   loop reuses its records, pauses while hidden, and does not run on Zen or in a call. Under
   reduced motion (and in a dev review still) it is a still pose in the middle of the range
-  with nothing drifting, and it jumps on a place change. The pixel maps in `sprites.ts` are
-  the concept's own.
+  with nothing drifting, and it jumps on a place change. The idle and sleep pixel maps in
+  `sprites.ts` are the concept's own; the other poses and the props are drawn to match.
+
+Watt is also a small pet ("she"), calm and silent (no sound at all):
+
+- **Speech bubbles** (`buddy/chatter.ts`, `buddy/lines.ts`): one short bundled line at a time,
+  no model calls and no network. At most one every six minutes by default (three when set to
+  Chatty, none when Off), never in a call or a meeting in progress, never in the first minute of
+  a focus session, never while the display is idle, never asleep, never the same line twice in a
+  row. A fresh event (focus done, an agent finished or waiting, a call soon or just ended, music
+  stopping, a clover) wins; otherwise what is true now (agents, music, weather, time of day) wins
+  over plain sheep thoughts. A showing bubble goes the moment any quiet time starts. Her lines
+  observe herself, the sky and the wall; none gives advice, nags or asks anything of the owner. The
+  bubble is her own lavender with her dark face colour for the text; its box is sized from
+  measured Oxanium widths (`petFrame.ts`), placed beside her within the band, and
+  `model.test.ts` checks every line.
+- **Reactions** (`buddy/petFrame.ts`): a small hop when a focus session completes or an agent
+  finishes; she looks up toward the agent cards and shows an amber mark while something waits
+  (click it: it opens the waiting session through `wall2_open_session` when the helper gives a
+  link; elsewhere it goes to Work, and on Work with no link it only tells, as the agent cards
+  above already show what waits); she looks at the clock five minutes before a meeting; she
+  bobs (a soft squash) on the beat at most once every 1.2 seconds.
+- **Petting and her card**: click her for hearts and a wiggle (a second click within three
+  seconds adds nothing). She answers with a line only outside every quiet time, at least 20
+  seconds after any bubble, and at most once a minute. Rest the pointer on her for 400 ms (or
+  Tab to her) for her card: name, mood in one word, two honest lines about today, days together,
+  how chatty she is, and what she wears. It is a strip in the band over the horizon beside her
+  (on Unwind, under the transport row over the empty floor), closes the moment the pointer
+  leaves it, on Escape, on a place change and when she goes away, and she stands still while it
+  is open. Her click area is her body and head, not the sprite's empty corners.
+- **A little life**: she reads a tiny book during focus, wears headphones on Unwind while music
+  plays, sunglasses at a clear midday, an umbrella in rain, a scarf when it is cold, a nightcap
+  asleep; she looks up at the moon in the evening, yawns and stretches when she wakes at 6:30,
+  and naps where she stands while the display is idle. Her mood (content, happy, sleepy,
+  curious) only changes which lines and idle poses she picks; it never goes below content. Twice
+  a day a clover grows on her walk; she eats it when she reaches it, or click it to give it to
+  her. Cosmetics (bow, star, cape) unlock with days together.
+- **Stored locally** (`localStorage` key `wall2.watt`, `buddy/pet.ts`): how chatty she is, the
+  cosmetic, days together and today's counts. Her click area, mark and clover sit above the
+  shell (`z-index: 1`) and take the pointer only while she is up.
+- What she knows comes from existing hooks (`useAgentStatusLine`, `useAgentsWaiting`, the
+  agents store, `useWeather`, `useNextMeeting`, the focus store, the audio store and beat
+  detector, now playing, `useIdle`); a missing or stale source means she does not mention it.
+  `useWeather` and `useNextMeeting` are shared stores (as the agents poll is): one request per
+  interval however many components use them.
 
 ## Home feeds (task card and network tile)
 
