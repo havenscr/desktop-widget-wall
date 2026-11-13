@@ -693,6 +693,8 @@ try {
     floor: (v) => v.name.startsWith('Watch, whole sky playing'),
     sun: (v) => v.name === 'Watch, the sun playing',
     'hide-note': (v) => v.name === 'Unwind, Hide screen grown with the failure note',
+    // Watt's menu pushed down onto him
+    menu: (v) => v.name === 'Watt menu on Work',
   };
   const breakOn = BREAK_ON[overflow] ? VARIANTS.filter(BREAK_ON[overflow]) : VARIANTS.slice(0, 1);
   /** keys style: the Now row's height on each page that has one, compared after every state ran. */
