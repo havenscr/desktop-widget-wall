@@ -12,6 +12,8 @@ const FOCUS_AFTER_CLICK_MS = 600;
 /** The stage's design size: the card stays inside it. */
 const STAGE_W = 2560;
 const EDGE = 12;
+/** Space between a card and its control: room for the tail. */
+const GAP = 14;
 
 type Content = ReactNode | (() => ReactNode);
 
@@ -100,7 +102,10 @@ export function resetTip(): void {
 
 /**
  * The one hover card, inside the stage so it scales with it: centred above its anchor (below
- * when there is no room above), kept inside the stage's width. A hover card lets the pointer
+ * when there is no room above), kept inside the stage's width, never over its anchor, with a
+ * pixel tail pointing at it. One look for the whole wall: Watt's speech bubble shape (square
+ * corners, a 2 px ring, a pixel tail) in the wall's dark with his lavender as the ring. It shows
+ * after a short rest (at once for keyboard focus) and goes on a click or a scroll. A hover card lets the pointer
  * through; a pinned one takes it and closes on a click elsewhere or Escape. Either closes
  * when its anchor leaves the page (a card that went away on a poll), and its content is
  * redrawn every 15 seconds while it shows.
@@ -108,7 +113,7 @@ export function resetTip(): void {
 export function HoverTipLayer() {
   const { render, box, anchor, pinned } = useTipStore();
   const ref = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+  const [pos, setPos] = useState<{ left: number; top: number; below: boolean; tail: number } | null>(null);
   const [, setTick] = useState(0);
   useLayoutEffect(() => {
     if (!render || !box || !ref.current) {
@@ -118,9 +123,24 @@ export function HoverTipLayer() {
     const w = ref.current.offsetWidth;
     const h = ref.current.offsetHeight;
     const left = Math.min(STAGE_W - EDGE - w, Math.max(EDGE, box.x + box.w / 2 - w / 2));
-    const above = box.y - h - 10;
-    setPos({ left, top: above >= EDGE ? above : box.y + box.h + 10 });
+    // Above its control, with a gap for the tail; below when there is no room above. Never over it.
+    const above = box.y - h - GAP;
+    const below = above < EDGE;
+    // The tail points at the control's middle, kept off the card's corners.
+    const tail = Math.min(w - 22, Math.max(10, box.x + box.w / 2 - left - 6));
+    setPos({ left, top: below ? box.y + box.h + GAP : above, below, tail });
   }, [render, box]);
+  // Scrolling (any scroller, the wall's lists included) takes a hover card down; a pinned one stays.
+  useEffect(() => {
+    if (!render || pinned) return;
+    const onScroll = () => hideTip();
+    window.addEventListener('scroll', onScroll, { capture: true, passive: true });
+    window.addEventListener('wheel', onScroll, { capture: true, passive: true });
+    return () => {
+      window.removeEventListener('scroll', onScroll, { capture: true });
+      window.removeEventListener('wheel', onScroll, { capture: true });
+    };
+  }, [render, pinned]);
   useEffect(() => {
     if (!render) return;
     const check = setInterval(() => {
@@ -155,7 +175,8 @@ export function HoverTipLayer() {
       ref={ref}
       className={`hover-tip${pinned ? ' pinned' : ''}`}
       role={pinned ? 'dialog' : 'tooltip'}
-      style={pos ? { left: pos.left, top: pos.top } : { left: -9999, top: 0 }}
+      data-side={pos?.below ? 'below' : 'above'}
+      style={pos ? { left: pos.left, top: pos.top, ['--tail' as string]: `${pos.tail}px` } : { left: -9999, top: 0 }}
     >
       {render()}
     </div>

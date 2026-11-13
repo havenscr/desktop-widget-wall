@@ -14,9 +14,9 @@ export const PENDING_MS = 1500;
 export const FAILURE_MS = 5000;
 
 /**
- * "Screens off", an icon-only toggle (the words are its tooltip and accessible name; it
- * reads "Turning off" while pending and "Cancel screens off" while active), in the lower
- * right corner of Unwind: 500 ms after the tap the monitors go off and the helper watches
+ * "Hide screen", an icon that grows to the left on hover or keyboard focus to show its words
+ * (no tooltip; the words are also its accessible name; it reads "Turning off" while pending and
+ * "Cancel screens off" while active), in the lower right corner of Unwind: 500 ms after the tap the monitors go off and the helper watches
  * for a phantom mouse nudge, sending them off again; a second tap cancels and leaves the
  * screens as they are. A key, click, touch or real movement also ends the watch (rule R3).
  * If the helper cannot watch input it does not turn the screens off and says so briefly.
@@ -70,8 +70,8 @@ export function ScreensOff({ className = '' }: { className?: string }) {
     void invoke('wall2_monitors_off').catch(() => setPending(false));
   };
 
-  // Icon only: the words are its tooltip and its accessible name.
-  const label = pending ? 'Turning off' : active ? 'Cancel screens off' : 'Screens off';
+  // An icon that shows its words when hovered or focused: they are also its accessible name.
+  const label = pending ? 'Turning off' : active ? 'Cancel screens off' : 'Hide screen';
   return (
     <div className="screens-off-wrap">
       <button
@@ -79,10 +79,12 @@ export function ScreensOff({ className = '' }: { className?: string }) {
         className={`screens-off ${className}`.trim()}
         aria-pressed={active}
         aria-label={label}
-        title={label}
         data-pending={pending ? 'true' : undefined}
         onClick={tap}
       >
+        <span className="screens-off-label" aria-hidden="true">
+          {label}
+        </span>
         <IconDeviceDesktopOff size={22} aria-hidden="true" />
       </button>
       {failed ? (

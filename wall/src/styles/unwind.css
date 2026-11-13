@@ -457,44 +457,82 @@
   }
 }
 
-/* Screens off: a quiet pill on the bottom row, beside the status line. */
-.screens-off {
-  display: grid;
-  place-items: center;
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  color: var(--faint);
-  opacity: 0.7;
-  background: transparent;
-  border: 1px solid transparent;
-  cursor: pointer;
-  transition: opacity 200ms ease, background 200ms ease;
-}
-.screens-off:hover,
-.screens-off:focus-visible {
-  opacity: 1;
-  background: rgba(255, 255, 255, 0.08);
-  border-color: var(--line);
-}
-.screens-off[aria-pressed='true'] {
-  color: var(--cyan);
-  opacity: 1;
-}
-.screens-off:active {
-  transform: scale(0.95);
-}
-.screens-off:focus-visible {
-  outline: 3px solid var(--cyan);
-  outline-offset: 2px;
-}
-.screens-off[data-pending='true'] {
-  opacity: 0.5;
-}
+/* Hide screen: a quiet 36 px icon in the corner that grows to the left on hover or keyboard focus,
+   showing its words in the wall's tooltip look (dark, square corners, a lavender ring). Its box in
+   the layout stays 36 px; the grown pill is drawn over the empty floor to its left. */
 .screens-off-wrap {
   position: relative;
   display: flex;
   align-items: center;
+  width: 36px;
+  height: 36px;
+}
+.screens-off {
+  position: absolute;
+  right: 0;
+  top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  width: 36px;
+  height: 36px;
+  padding: 0 7px;
+  overflow: hidden;
+  white-space: nowrap;
+  border-radius: 0;
+  color: var(--faint);
+  opacity: 0.7;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  font: 600 16px/1 var(--disp);
+  transition:
+    width 180ms ease-out,
+    opacity 200ms ease,
+    background 200ms ease;
+}
+.screens-off svg {
+  flex: none;
+}
+.screens-off-label {
+  opacity: 0;
+  transition: opacity 120ms 60ms;
+}
+.screens-off:hover,
+.screens-off:focus-visible {
+  width: var(--grown, 172px);
+  opacity: 1;
+  color: #f1ecff;
+  background: rgba(16, 10, 40, 0.97);
+  box-shadow: 0 0 0 2px rgba(220, 211, 251, 0.85);
+  outline: none;
+}
+.screens-off:hover .screens-off-label,
+.screens-off:focus-visible .screens-off-label {
+  opacity: 1;
+}
+.screens-off[aria-pressed='true'] {
+  color: var(--cyan);
+  opacity: 1;
+  --grown: 228px;
+}
+.screens-off[data-pending='true'] {
+  opacity: 0.5;
+  --grown: 160px;
+}
+.screens-off:active {
+  transform: scale(0.97);
+}
+.screens-off-wrap:hover .screens-off-note,
+.screens-off-wrap:focus-within .screens-off-note {
+  opacity: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .screens-off,
+  .screens-off-label {
+    transition: none;
+  }
 }
 /* The failure note sits beside the icon, to its left, so nothing else enters the corner. */
 .screens-off-note {
