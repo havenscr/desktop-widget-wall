@@ -125,6 +125,7 @@ pub fn start_log(dir: Option<std::path::PathBuf>) {
         return;
     };
     let (tx, rx) = std::sync::mpsc::sync_channel::<String>(512);
+    let _ = tx.try_send(build_line());
     let spawned = std::thread::Builder::new().name("wall2-log".into()).spawn(move || {
         let mut bytes = 0usize;
         while let Ok(line) = rx.recv() {
@@ -140,6 +141,33 @@ pub fn start_log(dir: Option<std::path::PathBuf>) {
         let _ = START.set(std::time::Instant::now());
         let _ = LOG_TX.set(tx);
     }
+}
+
+/// The build this binary came from, stamped by `build.rs`.
+#[derive(serde::Serialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct BuildInfo {
+    pub commit: String,
+    pub built_at: String,
+}
+
+pub fn build_info() -> BuildInfo {
+    BuildInfo { commit: env!("WALL2_BUILD_COMMIT").to_string(), built_at: env!("WALL2_BUILD_TIME").to_string() }
+}
+
+/// The first line of `wall2-placement.log`, so a script can read which build wrote it.
+pub fn build_line() -> String {
+    let b = build_info();
+    format!("build {} {}\n", b.commit, b.built_at)
+}
+
+/// Only the `wall2` window may ask which build is running.
+#[tauri::command]
+pub fn wall2_build_info(window: tauri::WebviewWindow) -> Result<BuildInfo, String> {
+    if window.label() != "wall2" {
+        return Err("forbidden".into());
+    }
+    Ok(build_info())
 }
 
 /// Queue a line. Never blocks (a full queue drops the line), never panics,
@@ -653,6 +681,18 @@ mod tests {
         assert!(needs_retry(false, 1, 3));
         assert!(needs_retry(false, 2, 3));
         assert!(!needs_retry(false, 3, 3));
+    }
+
+    #[test]
+    fn build_info_has_a_short_commit_and_a_utc_minute() {
+        let b = build_info();
+        assert!(b.commit == "dev" || (b.commit.len() == 7 && b.commit.chars().all(|c| c.is_ascii_hexdigit())), "{}", b.commit);
+        let t: Vec<char> = b.built_at.chars().collect();
+        assert_eq!(t.len(), 17, "{}", b.built_at);
+        assert!(t[4] == '-' && t[7] == '-' && t[10] == 'T' && t[13] == ':' && t[16] == 'Z');
+        assert_eq!(build_line(), format!("build {} {}\n", b.commit, b.built_at));
+        let json = serde_json::to_value(&b).unwrap();
+        assert!(json.get("commit").is_some() && json.get("builtAt").is_some());
     }
 
     #[test]

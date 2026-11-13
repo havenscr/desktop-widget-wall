@@ -39,3 +39,15 @@ it('changes only after the minute boundary', () => {
   });
   expect(screen.getByRole('group', { name: '10:25 AM' })).toBeTruthy();
 });
+
+it('puts the build stamp on the last line of the tooltip', async () => {
+  const { mocks } = await import('../bridge/tauri');
+  mocks.set('wall2_build_info', () => ({ commit: 'abc1234', builtAt: '2026-11-13T09:05Z' }));
+  const { container } = render(<Clock now={() => new Date(2026, 10, 11, 10, 24, 10)} />);
+  await act(async () => {
+    await new Promise((r) => setTimeout(r, 20));
+  });
+  const lines = (container.firstElementChild as HTMLElement).title.split('\n');
+  expect(lines[0]).toBe('10:24 AM, Wednesday, November 11');
+  expect(lines[lines.length - 1]).toMatch(/^Build abc1234, /);
+});
