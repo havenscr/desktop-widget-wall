@@ -698,9 +698,10 @@ pub(crate) fn play_outcome(body: &Value) -> PlayResult {
             hint.push(' ');
         }
     }
-    let squashed: String = hint.chars().filter(|c| c.is_ascii_alphanumeric() || *c == ' ').collect();
+    // Every other character becomes a space, so `"source":"tv"` reads as the word "tv".
+    let squashed: String = hint.chars().map(|c| if c.is_ascii_alphanumeric() { c } else { ' ' }).collect();
     let has_word = |w: &str| squashed.split(' ').any(|t| t == w);
-    let reason = if squashed.contains("presence") || has_word("away") || squashed.contains("nobody") || squashed.contains("nobodyhome") {
+    let reason = if squashed.contains("presence") || has_word("away") || squashed.contains("nobody") {
         Some("nobody is home")
     } else if has_word("tv") || squashed.contains("tvsound") || squashed.contains("tvinput") {
         Some("a speaker is on TV sound")
