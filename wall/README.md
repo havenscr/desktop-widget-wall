@@ -1386,6 +1386,20 @@ their 52 by 44 rows with no shared hit area between rows.
 type check, test, build) and, in the Windows job, a second build uploaded as
 the `widget-wall-2-windows` artifact.
 
+## Hidden call and leave signals
+
+`wall/src/signals/` derives call, recording and leave state without rendering it. The
+native side reads the current user's Windows microphone and camera consent records every
+two seconds, emits only fixed program categories, and fails closed when the registry
+cannot be read. It writes fixed words to `wall2-signals.log` in the app log directory.
+Native records have 1,800 reserved lines. Page-derived records start with `page`, use a
+separate queue, are rate limited, and can use at most 200 lines, so they cannot hide native
+device edges. Calendar blocks longer than 24 hours are refused before time-zone conversion.
+
+Development query knobs are `?call=teams|zoom|browser|none`, `?camera=1`, `?rec=1` and
+`?leave=<minutes until leaving>`. They fill the hidden store only, so every screen remains
+unchanged.
+
 ## Zen and Dream
 
 `wall/src/zen/`. The Zen button in the rail opens a calm full-stage view over everything

@@ -8,6 +8,7 @@ import { registerMediaMocks } from './media';
 import { registerOmniMocks } from './omni';
 import { registerPowerMocks } from './power';
 import { registerSonosMocks } from './sonos';
+import { registerSignalMocks } from './signals';
 import { registerTaskMocks } from './tasks';
 
 /**
@@ -27,4 +28,5 @@ export function registerDevMocks(): void {
   registerDeckMocks();
   registerAudioMocks();
   registerGalleryMocks();
+  registerSignalMocks();
 }
