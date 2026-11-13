@@ -9,3 +9,12 @@ export const LONG_MOCKS = typeof window !== 'undefined' && new URLSearchParams(w
 export function longOr<T>(normal: T, long: T): T {
   return LONG_MOCKS ? long : normal;
 }
+
+/**
+ * Dev only: a review knob from the address, for stills of states the default mocks never
+ * show: `?meet=none` (no meetings today), `?box=none` (the box has no numbers),
+ * `?net=alarms` (the home app sends only the alarm count, as it does today).
+ */
+export function knob(name: string): string | null {
+  return typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get(name) : null;
+}
