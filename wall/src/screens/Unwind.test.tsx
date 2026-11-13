@@ -115,3 +115,26 @@ it('jumps on a real seek', async () => {
   await flush(2100);
   expect(Number(screen.getByRole('progressbar').getAttribute('aria-valuenow'))).toBeGreaterThanOrEqual(150);
 });
+
+it('shows the cover the store holds, and the placeholder when it has none', async () => {
+  let reply: Record<string, unknown> = {
+    title: 'Glass Harbor',
+    artist: 'Band',
+    playback_status: 'playing',
+    source_app: 'App',
+    source_app_id: 'SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify',
+    album_art_base64: 'QUJD',
+    album_art_mime: 'image/png',
+    art_key: 'Glass Harbor|Band||Spotify',
+  };
+  mocks.set('get_now_playing', () => reply);
+  const { container } = render(<Unwind />);
+  await flush();
+  expect(container.querySelector('.u-art img')?.getAttribute('src')).toBe('data:image/png;base64,QUJD');
+  // The source is the player's name, never "App".
+  expect(container.querySelector('.u-src')!.textContent).toBe('Spotify');
+  reply = { title: 'Next one', artist: 'Band', playback_status: 'playing', source_app_id: 'Spotify.exe', art_key: 'Next one|Band||Spotify' };
+  await flush(2000);
+  expect(container.querySelector('.u-art img')).toBeNull();
+  expect(container.querySelector('.u-art svg')).not.toBeNull();
+});

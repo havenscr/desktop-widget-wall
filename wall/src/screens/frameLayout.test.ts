@@ -16,6 +16,9 @@ import {
   ZONES_CALL,
   ZONES_WIDE,
   zoneEdges,
+  UNWIND_ROOM_FOOT_GAP,
+  UNWIND_ROOM_HEIGHT,
+  UNWIND_ROOM_TOP,
 } from './frameLayout';
 
 /** The declarations of the rule whose selector is exactly `selector`. */
@@ -61,4 +64,9 @@ it('the zones match the concept columns and end exactly at the main area\'s righ
   expect(zoneEdges(ZONES).at(-1)!.right).toBe(MAIN_WIDTH);
   expect(zoneEdges(ZONES_CALL).at(-1)!.right).toBe(MAIN_WIDTH);
   expect(zoneEdges(ZONES).map((z) => z.left)).toEqual([0, 500, 1820]);
+});
+
+it('places the Unwind Room card from the frame constants: 120 tall, its foot 38 above the 490 band', () => {
+  expect(UNWIND_ROOM_TOP).toBe(MAIN_ROWS[0] - UNWIND_ROOM_FOOT_GAP - UNWIND_ROOM_HEIGHT);
+  expect(UNWIND_ROOM_TOP).toBe(332);
 });

@@ -151,6 +151,11 @@ function leave(): void {
   }
 }
 
+/** "Try again": one read now, outside the 15 second poll (skipped while a read is running). */
+export function retryAgents(): void {
+  void read();
+}
+
 /** Tests only: forget every answer and stop polling. */
 export function resetAgents(): void {
   epoch += 1;

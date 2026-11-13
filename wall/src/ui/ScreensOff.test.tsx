@@ -45,13 +45,13 @@ afterEach(() => vi.useRealTimers());
 it('taps through to the command and shows a pending state until the helper answers', async () => {
   render(<ScreensOff />);
   await flush();
-  expect(button().textContent).toBe('Screens off');
+  expect(button().getAttribute('aria-label')).toBe('Screens off');
   fireEvent.click(button());
   await flush();
   expect(calls).toContain('wall2_monitors_off');
-  expect(button().textContent).toBe('Turning off');
+  expect(button().getAttribute('aria-label')).toBe('Turning off');
   await emit({ active: true });
-  expect(button().textContent).toBe('Cancel');
+  expect(button().getAttribute('aria-label')).toBe('Cancel screens off');
   expect(button().getAttribute('aria-pressed')).toBe('true');
 });
 
@@ -60,7 +60,7 @@ it('drops the pending look after a while if nothing answers', async () => {
   await flush();
   fireEvent.click(button());
   await flush(PENDING_MS + 10);
-  expect(button().textContent).toBe('Screens off');
+  expect(button().getAttribute('aria-label')).toBe('Screens off');
 });
 
 it('reads the current mode on mount', async () => {
@@ -77,9 +77,9 @@ it('cancels with a second tap', async () => {
   fireEvent.click(button());
   await flush();
   expect(calls.filter((c) => c === 'wall2_monitors_off').length).toBe(1);
-  expect(button().textContent).toBe('Cancel'); // no pending look while cancelling
+  expect(button().getAttribute('aria-label')).toBe('Cancel screens off'); // no pending look while cancelling
   await emit({ active: false, reason: 'cancelled' });
-  expect(button().textContent).toBe('Screens off');
+  expect(button().getAttribute('aria-label')).toBe('Screens off');
   expect(screen.queryByRole('status')).toBeNull();
 });
 
@@ -89,7 +89,17 @@ it('says it could not watch input, for 5 seconds', async () => {
   fireEvent.click(button());
   await emit({ active: false, reason: 'input-unavailable' });
   expect(screen.getByRole('status').textContent).toBe('Could not watch input');
-  expect(button().textContent).toBe('Screens off');
+  expect(button().getAttribute('aria-label')).toBe('Screens off');
   await flush(FAILURE_MS + 10);
   expect(screen.queryByRole('status')).toBeNull();
+});
+
+it('is an icon alone, with the words as its tooltip and accessible name', async () => {
+  render(<ScreensOff />);
+  await flush();
+  expect(button().textContent).toBe('');
+  expect(button().getAttribute('title')).toBe('Screens off');
+  expect(screen.getByRole('button', { name: 'Screens off' })).toBe(button());
+  await emit({ active: true });
+  expect(button().getAttribute('title')).toBe('Cancel screens off');
 });

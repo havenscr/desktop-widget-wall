@@ -9,6 +9,10 @@ export interface NowPlayingInfo {
   position_seconds?: number | null;
   duration_seconds?: number | null;
   art_unchanged?: boolean;
+  /** The session's app id (AppUserModelId or process name); see `players.ts`. */
+  source_app_id?: string | null;
+  /** The track the art belongs to; sent back as `artFor` on the next poll. */
+  art_key?: string | null;
 }
 
 export const ALLOWED_ART_MIMES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'] as const;
