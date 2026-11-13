@@ -29,19 +29,28 @@ export function reportRead(id: ReportId, last: Outcome, reason?: string): void {
   useReportStore.setState((s) => ({ [id]: { okAt: last === 'ok' ? clock() : (s[id]?.okAt ?? null), last, ...(reason ? { reason } : {}) } }));
 }
 
-const retries = new Map<ReportId, () => void>();
+export type Refresh = () => void | Promise<void>;
 
-/** The mounted hook's own refresh for `id`; the returned function removes it (if still the same). */
-export function registerRetry(id: ReportId, fn: () => void): () => void {
-  retries.set(id, fn);
+const retries = new Map<ReportId, Set<Refresh>>();
+
+/** A mounted hook's own refresh for `id` (several lists may be mounted); the returned function removes only this one. */
+export function registerRetry(id: ReportId, fn: Refresh): () => void {
+  const set = retries.get(id) ?? new Set<Refresh>();
+  set.add(fn);
+  retries.set(id, set);
   return () => {
-    if (retries.get(id) === fn) retries.delete(id);
+    set.delete(fn);
+    if (set.size === 0 && retries.get(id) === set) retries.delete(id);
   };
 }
 
-/** The refresh a mounted hook registered for `id`, or undefined. */
-export function retryFor(id: ReportId): (() => void) | undefined {
-  return retries.get(id);
+/** One refresh that reads every mounted hook for `id` once and settles when all have, or undefined when none is mounted. */
+export function retryFor(id: ReportId): (() => Promise<void>) | undefined {
+  const set = retries.get(id);
+  if (!set || set.size === 0) return undefined;
+  return async () => {
+    await Promise.all([...set].map((f) => f()));
+  };
 }
 
 /** Tests only. */

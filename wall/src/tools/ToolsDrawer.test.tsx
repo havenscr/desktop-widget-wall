@@ -6,9 +6,10 @@ import { usePlaceStore } from '../state/places';
 import { resetTip } from '../ui/HoverTip';
 import { DEFAULT_LOOKS } from '../unwind/watch/looks';
 import { useWatchStore } from '../unwind/watch/store';
-import { resetKeysFeed } from '../work/keysFeed';
+import { resetKeysFeed, useKeysFeedStore } from '../work/keysFeed';
 import type { KeysSummary } from '../work/keysModel';
 import { resetReports } from './reports';
+import { resetRetries } from './sources';
 import { resetTools, useToolsStore } from './store';
 import { AUTO_CLOSE_MS, RING_MS, ToolsDrawer, fileKeyCount, keysLine } from './ToolsDrawer';
 
@@ -48,6 +49,7 @@ beforeEach(() => {
   resetTools();
   resetTip();
   resetReports();
+  resetRetries();
   resetKeysFeed();
   useWatchStore.setState({ looks: { ...DEFAULT_LOOKS } });
   usePlaceStore.setState({ active: 'work' });
@@ -213,4 +215,114 @@ it('keysLine and fileKeyCount', () => {
   expect(keysLine({ status: 'loading' }, null).text).toBe('Reading keys.json');
   expect(keysLine({ status: 'problem', text: 'bad chord' }, null)).toMatchObject({ bad: true, text: 'keys.json refused: bad chord' });
   expect(keysLine({ status: 'ready', summary: summary({ source: 'default' }) }, null).text).toBe('No keys.json. Defaults in use');
+});
+
+it('Retry reads exactly once however it is clicked while the read is slow (clicks at 0.5, 1.5 and 3 seconds)', async () => {
+  let release: (v: unknown) => void = () => undefined;
+  const tasks = vi.fn(() => new Promise((r) => (release = r)));
+  mocks.set('wall2_tasks_next', tasks);
+  await openIt();
+  // Opening the drawer already started the one read (no screen has the task list mounted).
+  expect(tasks).toHaveBeenCalledTimes(1);
+  const retry = screen.getByRole('button', { name: 'Retry Tasks' }) as HTMLButtonElement;
+  await flush(500);
+  fireEvent.click(retry);
+  await flush(1000);
+  fireEvent.click(retry);
+  await flush(1500);
+  fireEvent.click(retry);
+  expect(tasks).toHaveBeenCalledTimes(1);
+  release([]);
+  await flush();
+  expect(retry.disabled).toBe(false);
+  fireEvent.click(retry);
+  await flush();
+  expect(tasks).toHaveBeenCalledTimes(2);
+});
+
+it('Escape is taken by the drawer, so fullscreen does not also leave', async () => {
+  await openIt();
+  const e = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+  act(() => {
+    document.dispatchEvent(e);
+  });
+  expect(e.defaultPrevented).toBe(true);
+  expect(useToolsStore.getState().open).toBe(false);
+  // With the drawer shut, Escape is left alone.
+  const again = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+  act(() => {
+    document.dispatchEvent(again);
+  });
+  expect(again.defaultPrevented).toBe(false);
+});
+
+it('the 2 minute close waits while a browser sign-in is waiting', async () => {
+  mocks.set('wall2_meet_sign_in', () => new Promise<void>(() => undefined));
+  mocks.set('wall2_meet_cancel_sign_in', () => undefined);
+  await openIt();
+  fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+  await flush();
+  await flush(AUTO_CLOSE_MS + 5000);
+  expect(useToolsStore.getState().open).toBe(true);
+  expect(screen.getByText('Waiting for the browser')).toBeTruthy();
+});
+
+it('closing on purpose during a calendar sign-in cancels it, and the next open says so', async () => {
+  const cancel = vi.fn();
+  mocks.set('wall2_meet_sign_in', () => new Promise<void>(() => undefined));
+  mocks.set('wall2_meet_cancel_sign_in', cancel);
+  await openIt();
+  fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+  await flush();
+  fireEvent.keyDown(document, { key: 'Escape' });
+  await flush();
+  expect(cancel).toHaveBeenCalled();
+  act(() => useToolsStore.getState().openDrawer());
+  await flush();
+  expect(screen.getByText('Sign-in cancelled')).toBeTruthy();
+  expect(screen.queryByText('Waiting for the browser')).toBeNull();
+  await flush(7000);
+  expect(screen.queryByText('Sign-in cancelled')).toBeNull();
+});
+
+it('closing on purpose during a Spotify sign-in cancels it too', async () => {
+  const cancel = vi.fn();
+  mocks.set('wall2_spotify_status', () => ({ setup: true, signedIn: false }));
+  mocks.set('wall2_spotify_sign_in', () => new Promise<void>(() => undefined));
+  mocks.set('wall2_spotify_cancel_sign_in', cancel);
+  mocks.set('wall2_meet_next', () => ({ accounts: [], meetings: [] }));
+  await openIt();
+  await flush();
+  fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+  await flush();
+  act(() => useToolsStore.getState().close());
+  await flush();
+  expect(cancel).toHaveBeenCalled();
+  expect(useToolsStore.getState().note).toBe('Sign-in cancelled');
+});
+
+it('the could not open note clears on the next success and on Reload', async () => {
+  mocks.set('wall2_open_keys_file', () => Promise.reject('failed'));
+  await openIt();
+  fireEvent.click(screen.getByRole('button', { name: 'Open' }));
+  await flush();
+  expect(screen.getByText('Could not open the file')).toBeTruthy();
+  mocks.set('wall2_open_keys_file', () => undefined);
+  fireEvent.click(screen.getByRole('button', { name: 'Open' }));
+  await flush();
+  expect(screen.queryByText('Could not open the file')).toBeNull();
+  mocks.set('wall2_open_keys_file', () => Promise.reject('failed'));
+  fireEvent.click(screen.getByRole('button', { name: 'Open' }));
+  await flush();
+  fireEvent.click(screen.getByRole('button', { name: 'Reload' }));
+  expect(screen.queryByText('Could not open the file')).toBeNull();
+});
+
+it('Reload keeps the last good read for the deck and marks only the drawer line as reading', async () => {
+  await openIt();
+  await flush();
+  keysAnswer = () => new Promise(() => undefined);
+  fireEvent.click(screen.getByRole('button', { name: 'Reload' }));
+  expect(useKeysFeedStore.getState().read.status).toBe('ready');
+  expect(screen.getByText('Reading keys.json')).toBeTruthy();
 });

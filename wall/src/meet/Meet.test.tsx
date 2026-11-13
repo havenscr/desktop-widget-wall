@@ -1,8 +1,9 @@
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { mocks } from '../bridge/tauri';
 import { usePlaceStore } from '../state/places';
 import { Accounts } from '../tools/accounts';
+import { resetTools, useToolsStore } from '../tools/store';
 import { MEET_LEFT_PX, Meet } from './Meet';
 import type { MeetData } from './model';
 
@@ -16,6 +17,7 @@ const flush = async (ms = 0) => {
 };
 
 beforeEach(() => {
+  resetTools();
   vi.useFakeTimers();
   vi.setSystemTime(NOW);
   usePlaceStore.setState({ active: 'meet' });
@@ -250,7 +252,8 @@ it('shows one centred message with the last read time when nothing is scheduled'
   expect(screen.getByText('Nothing scheduled in the next 24 hours')).toBeTruthy();
   expect(screen.getByText(/Last checked at \d+(:\d\d)? [AP]M/)).toBeTruthy();
   expect(container.querySelector('.meet-empty')).toBeTruthy();
-  expect(screen.queryByLabelText('Later meetings')).toBeNull();
+  // The Later card still fills the upper right, with its plain line.
+  expect(screen.getByLabelText('Later meetings').textContent).toContain('Nothing else');
 });
 
 it('says which account could not be read when nothing is scheduled', async () => {
@@ -274,7 +277,7 @@ it('says Calendar not available when no account can be read', async () => {
   await flush();
   expect(screen.getByText('Calendar not available')).toBeTruthy();
   expect(screen.getByText(/2 calendars need attention\./)).toBeTruthy();
-  expect(screen.getByRole('button', { name: 'Open Tools' })).toBeTruthy();
+  expect(screen.getAllByRole('button', { name: 'Open Tools' }).length).toBeGreaterThan(0);
 });
 
 const peekOnly = (full: MeetData) => (args?: Record<string, unknown>) =>
@@ -535,4 +538,26 @@ it('a LATER row has a hover with title, time range and account', async () => {
   expect(row.title).toContain('Planning');
   expect(row.title).toContain(' to ');
   expect(row.title).toContain('Work');
+});
+
+it('fills the upper right in every state without a next meeting: Later carries a plain line', async () => {
+  mocks.set('wall2_meet_next', () => Promise.reject(new Error('not-configured')));
+  const first = render(<Meet />);
+  await flush();
+  expect(screen.getByLabelText('Later meetings').textContent).toContain('No calendar can be read.');
+  first.unmount();
+  mocks.set('wall2_meet_next', () => new Promise(() => undefined));
+  render(<Meet />);
+  await flush(100);
+  expect(screen.getByLabelText('Later meetings').textContent).toContain('Calendar not read yet.');
+});
+
+it('with no calendar readable, Later says so and its link opens Tools at Accounts', async () => {
+  mocks.set('wall2_meet_next', () => ({ accounts: [{ id: 'work', label: 'Work', state: 'signed-out' }], meetings: [] }));
+  render(<Meet />);
+  await flush();
+  const later = screen.getByLabelText('Later meetings');
+  expect(later.textContent).toContain('No calendar can be read.');
+  fireEvent.click(within(later).getByRole('button', { name: 'Open Tools' }));
+  expect(useToolsStore.getState()).toMatchObject({ open: true, focus: 'accounts' });
 });

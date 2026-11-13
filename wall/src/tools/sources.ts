@@ -204,32 +204,71 @@ async function probe(id: ReportId): Promise<void> {
   }
 }
 
-/** Retry one source: that store's own refresh. A hook-held source uses its mounted hook's refresh, else one read of the same command. */
-export function retrySource(id: SourceId): Promise<void> | void {
+/** Most a Retry waits for its read before it gives up waiting (the read itself is not cancelled). */
+export const RETRY_CEILING_MS = 15_000;
+
+export interface RetryResult {
+  /** Plain words when the read did not happen or did not finish. */
+  note?: string;
+}
+
+const run = async (id: SourceId): Promise<RetryResult> => {
   switch (id) {
     case 'calendar':
-      return refreshMeetingFeed();
+      await refreshMeetingFeed();
+      return {};
     case 'agents':
-      return retryAgents();
+      await retryAgents();
+      return {};
     case 'home':
-      return refreshSecurity();
+      await refreshSecurity();
+      return {};
     case 'music':
-      return refreshNowPlaying();
+      return (await refreshNowPlaying()) ? {} : { note: 'Nothing is playing to read' };
     case 'weather':
-      return refreshWeather();
+      await refreshWeather();
+      return {};
     case 'tasks':
     case 'sound':
     case 'box': {
       const mounted = retryFor(id);
-      if (mounted) return mounted();
-      return probe(id);
+      if (mounted) await mounted();
+      else await probe(id);
+      return {};
     }
   }
+};
+
+const inflight = new Map<SourceId, Promise<RetryResult>>();
+
+/**
+ * Retry one source: that store's own refresh. A hook-held source uses its mounted hooks' refresh, else
+ * one read of the same command. One Retry per source at a time: a second call while one runs gets the
+ * same promise and starts no read. The promise settles when the read does, or after the ceiling.
+ */
+export function retrySource(id: SourceId): Promise<RetryResult> {
+  const running = inflight.get(id);
+  if (running) return running;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const ceiling = new Promise<RetryResult>((resolve) => {
+    timer = setTimeout(() => resolve({ note: 'The read did not finish' }), RETRY_CEILING_MS);
+  });
+  const p = Promise.race([run(id).catch((): RetryResult => ({ note: 'The read failed' })), ceiling]).finally(() => {
+    clearTimeout(timer);
+    inflight.delete(id);
+  });
+  inflight.set(id, p);
+  return p;
 }
 
-/** Read the hook-held sources whose screen is not open (nothing else reads them then), once. */
+/** Tests only: forget a Retry in progress. */
+export function resetRetries(): void {
+  inflight.clear();
+}
+
+/** Read the hook-held sources whose screen is not open (nothing else reads them then), once each. */
 export function readUnmountedSources(): void {
-  for (const id of ['tasks', 'sound', 'box'] as const) if (!retryFor(id)) void probe(id);
+  for (const id of ['tasks', 'sound', 'box'] as const) if (!retryFor(id)) void retrySource(id);
 }
 
 /** "10:22 AM", or "never". */

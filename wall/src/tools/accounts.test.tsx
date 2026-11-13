@@ -4,6 +4,7 @@ import { mocks } from '../bridge/tauri';
 import { usePlaceStore } from '../state/places';
 import { HoverTipLayer, resetTip } from '../ui/HoverTip';
 import { Accounts } from './accounts';
+import { resetTools, useToolsStore } from './store';
 import type { MeetData } from '../meet/model';
 
 const NOW = Date.parse('2026-11-12T17:00:00Z');
@@ -16,6 +17,7 @@ const flush = async (ms = 0) => {
 };
 
 beforeEach(() => {
+  resetTools();
   resetTip();
   vi.useFakeTimers();
   vi.setSystemTime(NOW);
@@ -118,12 +120,10 @@ it('closing the drawer during a sign-in cancels it', async () => {
   expect(cancel).toHaveBeenCalledTimes(1);
 });
 
-it('unmounting during a sign-in cancels it', async () => {
-  const cancel = vi.fn();
+it('a sign-in that is declined says so and leaves Sign in available', async () => {
   mocks.set('wall2_meet_next', () => data);
-  mocks.set('wall2_meet_sign_in', () => new Promise<void>(() => undefined));
-  mocks.set('wall2_meet_cancel_sign_in', cancel);
-  const { unmount } = render(
+  mocks.set('wall2_meet_sign_in', () => Promise.reject(new Error('denied')));
+  render(
     <>
       <Accounts />
       <HoverTipLayer />
@@ -132,8 +132,30 @@ it('unmounting during a sign-in cancels it', async () => {
   await flush();
   fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
   await flush();
-  unmount();
+  expect(screen.getByText('Sign-in was declined')).toBeTruthy();
+  expect(screen.queryByText('Waiting for the browser')).toBeNull();
+  expect(screen.getByRole('button', { name: 'Sign in' })).toBeTruthy();
+});
+
+it('Spotify: a waiting sign-in shows Cancel, which cancels it; leaving the drawer cancels it too', async () => {
+  const cancel = vi.fn();
+  mocks.set('wall2_meet_next', () => ({ accounts: [], meetings: [] }));
+  mocks.set('wall2_spotify_status', () => ({ setup: true, signedIn: false }));
+  mocks.set('wall2_spotify_sign_in', () => new Promise<void>(() => undefined));
+  mocks.set('wall2_spotify_cancel_sign_in', cancel);
+  const first = render(<Accounts />);
+  await flush();
+  fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+  await flush();
+  expect(screen.getByText('Waiting for the browser')).toBeTruthy();
+  expect(useToolsStore.getState().waiting.spotify).toBe(true);
+  fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
   expect(cancel).toHaveBeenCalledTimes(1);
+  first.unmount();
+  await flush();
+  // Unmounting with the sign-in still waiting cancels it again, so the native side is never left waiting.
+  expect(cancel).toHaveBeenCalledTimes(2);
+  expect(useToolsStore.getState().waiting.spotify).toBe(false);
 });
 
 it('a read requested during a read runs once more afterwards', async () => {

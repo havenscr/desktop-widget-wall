@@ -38,8 +38,10 @@ it('refreshMeetingFeed makes one read now, and not a second while one is running
   refreshMeetingFeed();
   refreshMeetingFeed();
   expect(next).toHaveBeenCalledTimes(1);
+  const settled = refreshMeetingFeed();
   release({ accounts: [], meetings: [] });
   await flush();
+  await expect(settled).resolves.toBeUndefined();
   refreshMeetingFeed();
   expect(next).toHaveBeenCalledTimes(2);
 });
@@ -65,26 +67,26 @@ it('refreshWeather fetches once now', async () => {
 it('refreshNowPlaying polls once more while the loop runs, and does nothing without a consumer', async () => {
   const poll = vi.fn(() => null);
   mocks.set('get_now_playing', poll);
-  refreshNowPlaying();
-  await flush();
+  await expect(refreshNowPlaying()).resolves.toBe(false);
   expect(poll).not.toHaveBeenCalled();
   const release = acquireNowPlaying();
   await flush(100);
   const before = poll.mock.calls.length;
-  refreshNowPlaying();
+  const done = refreshNowPlaying();
   await flush(100);
+  await expect(done).resolves.toBe(true);
   expect(poll.mock.calls.length).toBe(before + 1);
   release();
 });
 
-it('reloadKeys shows loading, then asks wall2_keys_summary again at once', async () => {
+it('reloadKeys asks wall2_keys_summary again at once and keeps the last good read shown meanwhile', async () => {
   const read = vi.fn(() => ({ source: 'file', sets: [], filePins: [], defaultPins: [], front: 'idle', autoId: null, exe: null }));
   mocks.set('wall2_keys_summary', read);
   loadKeys();
   await flush();
   expect(useKeysFeedStore.getState().read.status).toBe('ready');
   reloadKeys();
-  expect(useKeysFeedStore.getState().read.status).toBe('loading');
+  expect(useKeysFeedStore.getState().read.status).toBe('ready');
   await flush();
   expect(read).toHaveBeenCalledTimes(2);
   expect(useKeysFeedStore.getState().read.status).toBe('ready');

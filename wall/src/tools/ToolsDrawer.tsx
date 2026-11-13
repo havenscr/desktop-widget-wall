@@ -11,31 +11,48 @@ import { joinKeys, reloadKeys, useKeysFeedStore, type Read } from '../work/keysF
 import type { KeysSummary } from '../work/keysModel';
 import { Accounts } from './accounts';
 import { readText, readUnmountedSources, retrySource, SOURCE_NAMES, useSources, type SourceId, type SourceRow } from './sources';
-import { useToolsStore } from './store';
+import { anySignInWaiting, useToolsStore } from './store';
 
 /** The drawer closes by itself after this long with no pointer over it. */
 export const AUTO_CLOSE_MS = 120_000;
 /** How long the Accounts ring shows after the drawer opens from a link. */
 export const RING_MS = 2_000;
-/** A Retry button stays pressed this long, so a click always shows it did something. */
-const RETRY_BUSY_MS = 1_200;
 
 function SourceLine({ row }: { row: SourceRow }) {
   const [busy, setBusy] = useState(false);
-  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  useEffect(() => () => clearTimeout(timer.current), []);
+  const [note, setNote] = useState<string | null>(null);
+  const live = useRef(true);
+  const noteTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(
+    () => () => {
+      live.current = false;
+      clearTimeout(noteTimer.current);
+    },
+    [],
+  );
+  // The button stays busy until the read itself settles (or its ceiling), so a click can never start a second read.
   const retry = () => {
+    if (busy) return;
     setBusy(true);
-    clearTimeout(timer.current);
-    timer.current = setTimeout(() => setBusy(false), RETRY_BUSY_MS);
-    void retrySource(row.id);
+    setNote(null);
+    void retrySource(row.id).then((r) => {
+      if (!live.current) return;
+      setBusy(false);
+      if (r.note) {
+        setNote(r.note);
+        clearTimeout(noteTimer.current);
+        noteTimer.current = setTimeout(() => live.current && setNote(null), 5000);
+      }
+    });
   };
-  const quiet = row.tone === 'ok';
+  const quiet = row.tone === 'ok' && !note;
   return (
-    <li className="tools-row tools-src" data-tone={row.tone} data-source={row.id} {...hover(row.reason)}>
+    <li className="tools-row tools-src" data-tone={row.tone} data-source={row.id} {...hover(note ?? row.reason)}>
       <i className={`tools-dot ${row.tone}`} aria-hidden="true" />
       <span className="tools-srcname">{row.name}</span>
-      <span className={quiet ? 'tools-line' : 'tools-line bad'}>{readText(row.at)}</span>
+      <span className={quiet ? 'tools-line' : 'tools-line bad'} data-kind={note ? 'note' : 'time'}>
+        {note ?? readText(row.at)}
+      </span>
       <button type="button" className="tools-btn" disabled={busy} aria-label={`Retry ${row.name}`} onClick={retry}>
         <IconRefresh size={16} aria-hidden="true" />
         Retry
@@ -93,8 +110,8 @@ export function fileKeyCount(s: KeysSummary): number {
 }
 
 /** The keys file's one line, and whether it is a problem. */
-export function keysLine(read: Read, at: number | null): { text: string; bad: boolean; full?: string } {
-  if (read.status === 'loading') return { text: 'Reading keys.json', bad: false };
+export function keysLine(read: Read, at: number | null, reading = false): { text: string; bad: boolean; full?: string } {
+  if (reading || read.status === 'loading') return { text: 'Reading keys.json', bad: false };
   if (read.status === 'absent') return { text: 'Keys are not available in this build', bad: false };
   if (read.status === 'problem') return { text: `keys.json refused: ${read.text}`, bad: true, full: `keys.json was refused, so the defaults are in use.\n${read.text}` };
   if (read.summary.source === 'default') return { text: 'No keys.json. Defaults in use', bad: false };
@@ -106,15 +123,25 @@ function KeysFile() {
   const read = useKeysFeedStore((s) => s.read);
   const [at, setAt] = useState<number | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  const [reading, setReading] = useState(false);
   // The shared read runs while the drawer is open, so the line is current.
   useEffect(() => joinKeys(), []);
   useEffect(() => {
     if (read.status === 'ready') setAt(Date.now());
+    setReading(false);
   }, [read]);
-  const line = keysLine(read, at);
+  const line = keysLine(read, at, reading);
+  // The note clears on the next success and on Reload; closing the drawer drops it with the section.
   const open = () => {
+    invoke('wall2_open_keys_file').then(
+      () => setNote(null),
+      (e) => setNote(errorText(e) === 'not-configured' ? 'No config folder on this PC' : 'Could not open the file'),
+    );
+  };
+  const reload = () => {
     setNote(null);
-    invoke('wall2_open_keys_file').catch((e) => setNote(errorText(e) === 'not-configured' ? 'No config folder on this PC' : 'Could not open the file'));
+    setReading(true);
+    reloadKeys();
   };
   const absent = read.status === 'absent' || isAbsent(read.status === 'problem' ? read.text : '');
   return (
@@ -126,7 +153,7 @@ function KeysFile() {
             <button type="button" className="tools-btn" {...hover(read.status === 'ready' && read.summary.source === 'default' ? 'Opens the folder where keys.json goes' : 'Opens keys.json in your editor')} onClick={open}>
               Open
             </button>
-            <button type="button" className="tools-btn" {...hover('Read keys.json again now')} onClick={reloadKeys}>
+            <button type="button" className="tools-btn" {...hover('Read keys.json again now')} onClick={reload}>
               Reload
             </button>
           </span>
@@ -167,13 +194,14 @@ function Drawer() {
   const ref = useRef<HTMLElement>(null);
   const [ring, setRing] = useState(focus === 'accounts');
   const idle = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const startIdle = useMemo(
-    () => () => {
+  const startIdle = useMemo(() => {
+    const start = (): void => {
       clearTimeout(idle.current);
-      idle.current = setTimeout(close, AUTO_CLOSE_MS);
-    },
-    [close],
-  );
+      // A browser sign-in waiting holds the drawer open: the pointer is on the browser, not on the drawer.
+      idle.current = setTimeout(() => (anySignInWaiting() ? start() : close()), AUTO_CLOSE_MS);
+    };
+    return start;
+  }, [close]);
 
   // Ring the Accounts section for 2 seconds when opened from a link.
   useEffect(() => {
@@ -189,7 +217,10 @@ function Drawer() {
   // Escape or a click outside closes it (the Tools button toggles itself).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') close();
+      if (e.key !== 'Escape') return;
+      // Take the key: in fullscreen the same press must not also leave fullscreen.
+      e.preventDefault();
+      close();
     };
     const onDown = (e: PointerEvent) => {
       const t = e.target as Element | null;

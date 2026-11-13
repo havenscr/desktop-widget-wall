@@ -174,7 +174,18 @@ export function useNextMeeting(now: () => number = systemNow): NextMeetingState 
   return { meeting: nextMeeting(meetings, t), now: t, stale: feedStale || failed, asOf, unavailable: noCalendar || (failed && asOf === null) };
 }
 
-/** The Tools drawer's Retry for Calendar: one read now, outside the 5 minute poll (skipped while one runs). */
-export function refreshMeetingFeed(): void {
+/**
+ * The Tools drawer's Retry for Calendar: one read now, outside the 5 minute poll (none is started
+ * while one runs). Settles when a read lands (a read that was running counts).
+ */
+export function refreshMeetingFeed(): Promise<void> {
+  const before = useMeetingFeed.getState().reads;
   if (!inFlight) read();
+  return new Promise((resolve) => {
+    const stop = useMeetingFeed.subscribe((s) => {
+      if (s.reads === before) return;
+      stop();
+      resolve();
+    });
+  });
 }

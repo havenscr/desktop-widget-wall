@@ -42,12 +42,12 @@ export function useMachines(): MachinesState {
   useEffect(() => {
     if (!visible) return;
     let live = true;
-    const read = () => {
-      if (busy.current !== null) return;
+    const read = (): Promise<void> => {
+      if (busy.current !== null) return Promise.resolve();
       const mine = ++token.current;
       busy.current = mine;
       const current = () => live && mine === token.current;
-      withTimeout(invoke<Machines>('wall2_machines'), CALL_TIMEOUT_MS)
+      return withTimeout(invoke<Machines>('wall2_machines'), CALL_TIMEOUT_MS)
         .then((m) => {
           if (!current()) return;
           const now = Date.now();

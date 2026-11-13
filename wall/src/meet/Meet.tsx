@@ -118,6 +118,29 @@ function LaterPanel({ m, labels }: { m: MeetState; labels: Map<string, string> }
   );
 }
 
+/** A Later card that only states why the list is empty, so the upper right is filled in every state. */
+function LaterNote({ text, link }: { text: string; link?: boolean }) {
+  const open = useToolsStore((s) => s.openDrawer);
+  return (
+    <section className="panel meet-later" aria-label="Later meetings">
+      <span className="k">Later</span>
+      <div className="meet-later-empty">
+        <div className="s">
+          {text}
+          {link && (
+            <>
+              {' '}
+              <button type="button" className="meet-trouble-link" onClick={() => open('accounts')}>
+                Open Tools
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 /** No calendar can be read and there is no earlier meeting to show: the headline, the last good read and the way to Tools. */
 function UnavailablePanel({ m }: { m: MeetState }) {
   const trouble = troubleLine(m.data?.accounts ?? []);
@@ -180,6 +203,7 @@ export function Meet() {
               </button>
             )}
           </section>
+          {m.status === 'loading' ? <LaterNote text="Calendar not read yet." /> : <LaterNote text="No calendar can be read." link />}
         </div>
       </section>
     );
@@ -194,14 +218,20 @@ export function Meet() {
     <section className="work meet" data-place="meet" aria-label="Meet">
       <div className="meet-body" style={{ left: MEET_LEFT_PX }}>
         {none && empty ? (
-          <UnavailablePanel m={m} />
+          <>
+            <UnavailablePanel m={m} />
+            <LaterNote text="No calendar can be read." link />
+          </>
         ) : none && m.lastKnown ? (
           <>
             <NextPanel m={m} labels={labels} asOf={m.lastKnown} />
             <LaterPanel m={m} labels={labels} />
           </>
         ) : empty ? (
-          <EmptyPanel m={m} />
+          <>
+            <EmptyPanel m={m} />
+            <LaterPanel m={m} labels={labels} />
+          </>
         ) : (
           <>
             <NextPanel m={m} labels={labels} />

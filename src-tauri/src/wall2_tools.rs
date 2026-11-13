@@ -26,10 +26,8 @@ fn check(label: &str) -> Result<(), String> {
     crate::wall2_meet::require_wall2(label)
 }
 
-/// Open `keys.json` in the default editor, or the config folder when there is no file yet.
-#[tauri::command]
-pub fn wall2_open_keys_file(window: tauri::WebviewWindow, app: tauri::AppHandle) -> Result<(), String> {
-    check(window.label())?;
+/// The file and opener work, run off the thread that serves the web view.
+fn open_keys(app: &tauri::AppHandle) -> Result<(), String> {
     let dir = app.path().app_config_dir().map_err(|_| "not-configured".to_string())?;
     let exists = dir.join(KEYS_FILE).is_file();
     if !exists {
@@ -37,6 +35,13 @@ pub fn wall2_open_keys_file(window: tauri::WebviewWindow, app: tauri::AppHandle)
     }
     let target = target_for(&dir, exists);
     app.opener().open_path(target.to_string_lossy().to_string(), None::<&str>).map_err(|_| "failed".to_string())
+}
+
+/// Open `keys.json` in the default editor, or the config folder when there is no file yet.
+#[tauri::command]
+pub async fn wall2_open_keys_file(window: tauri::WebviewWindow, app: tauri::AppHandle) -> Result<(), String> {
+    check(window.label())?;
+    tauri::async_runtime::spawn_blocking(move || open_keys(&app)).await.map_err(|_| "failed".to_string())?
 }
 
 #[cfg(test)]
@@ -59,5 +64,15 @@ mod tests {
     fn only_the_wall_window_may_ask() {
         assert!(check("main").is_err());
         assert!(check("wall2").is_ok());
+    }
+
+    #[test]
+    fn the_window_check_is_the_first_statement_of_the_command() {
+        let src = include_str!("wall2_tools.rs");
+        let at = src.find("pub async fn wall2_open_keys_file(").expect("command");
+        let body = &src[at..];
+        let open = body.find('{').expect("body");
+        let first = body[open + 1..].trim_start();
+        assert!(first.starts_with("check(window.label())?;"), "first statement: {}", &first[..first.len().min(60)]);
     }
 }

@@ -62,6 +62,7 @@ const EXPECT = {
   tools: /^ *FAIL tools drawer: .*outside x 1700 to 2560/m,
   toolsnames: /^ *FAIL tools: .* is cut with no tooltip/m,
   meetfill: /^ *FAIL meet: nothing fills the upper right/m,
+  meetempty: /^ *FAIL meet: nothing fills the upper right/m,
 };
 const OVERFLOWS = {
   left: '.work .left-wing { transform: translateX(-200px); }',
@@ -83,6 +84,8 @@ const OVERFLOWS = {
   toolsnames: '.tools-name, .tools-srcname { width: 20px !important; max-width: 20px !important; flex: none !important; overflow: hidden; }',
   // Meet's Later list hidden leaves the upper right empty.
   meetfill: '.meet .meet-later { display: none !important; }',
+  // The same on a state with no meeting: the upper right is empty there too.
+  meetempty: '.meet .meet-later { display: none !important; }',
 };
 
 if (flag('self-test')) {
@@ -152,6 +155,9 @@ const QUIET = [
   { name: 'Meet, heavy: Later in two columns', agents: '3', go: 'meet', live: true, extra: '&meet=heavy', checks: MEET },
   { name: 'Meet, one account failing', agents: '3', go: 'meet', live: true, extra: '&meet=mixed', checks: MEET },
   { name: 'Meet, no account readable', agents: '3', go: 'meet', live: true, extra: '&meet=down', checks: MEET },
+  { name: 'Meet, nothing scheduled', agents: '3', go: 'meet', live: true, extra: '&meet=none', checks: MEET },
+  { name: 'Meet, calendar not set up', agents: '3', go: 'meet', live: true, extra: '&meet=off', checks: MEET },
+  { name: 'Meet, first read fails', agents: '3', go: 'meet', live: true, extra: '&meet=failing', checks: MEET },
   // Unwind with nine moods of long names: the Room list stays within two rows.
   { name: 'Unwind, nine long moods', agents: '3', hz: 'unwind', moods: 'nine', maxRows: 2, extra: '', checks: UNWIND },
   // Dream at night: helper answering, helper off; calendar read, unreadable, nothing tomorrow.
@@ -420,7 +426,8 @@ try {
       if (rail && hit(dr, rail.getBoundingClientRect())) toolsOut.push('tools drawer: covers the rail');
       for (const e of drawer.querySelectorAll('.tools-name, .tools-srcname, .tools-line, .tools-hint, .tools-note, .tools-chip, .tools-btn, .tools-faint')) {
         if (e.scrollWidth > e.clientWidth + 1 && !e.closest('[data-tip]')) toolsOut.push('tools: "' + (e.textContent || '').trim().slice(0, 40) + '" is cut with no tooltip');
-        else if (e.matches('.tools-name, .tools-srcname') && e.scrollWidth > e.clientWidth + 1) toolsOut.push('tools: "' + (e.textContent || '').trim().slice(0, 40) + '" is cut with no tooltip of its own');
+        // The row's hover card does not excuse a cut name or a cut read time: those cells must show whole.
+        else if (e.matches('.tools-name, .tools-srcname, [data-kind="time"]') && e.scrollWidth > e.clientWidth + 1) toolsOut.push('tools: "' + (e.textContent || '').trim().slice(0, 40) + '" is cut with no tooltip of its own');
       }
     }
     // Meet's upper right is never an empty gap: a card reaches the right edge of the stage.
@@ -429,8 +436,8 @@ try {
     if (meetBody) {
       const rights = [...meetBody.querySelectorAll(':scope > .panel')].map((e) => e.getBoundingClientRect().right);
       const farthest = rights.length ? Math.max(...rights) : 0;
-      // With a meeting to show, the Later card (or its explanation) takes the freed upper right.
-      if (meetBody.querySelector('.meet-title') && farthest < 2500) meetOut.push('meet: nothing fills the upper right (the last card ends at x ' + Math.round(farthest) + ', the stage is 2560 wide)');
+      // In every state (a meeting, nothing scheduled, not set up, a failed read, no calendar readable) the Later card takes the freed upper right.
+      if (farthest < 2500) meetOut.push('meet: nothing fills the upper right (the last card ends at x ' + Math.round(farthest) + ', the stage is 2560 wide)');
     }
     const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, wattCard, header, deck, toolsOut, meetOut });
     document.body.appendChild(pre);
@@ -442,7 +449,7 @@ try {
   let failed = false;
   if (overflow) console.log(`deliberate overflow: ${overflow} (${OVERFLOWS[overflow]})`);
   // A deliberate break runs on the first state, or for the picker on the state that opens it.
-  const BREAK_STATE = { picker: 'Deck, the key picker open over', tools: 'Tools, over Work, typical', toolsnames: 'Tools, over Work, typical', meetfill: 'Meet, both accounts read' };
+  const BREAK_STATE = { picker: 'Deck, the key picker open over', tools: 'Tools, over Work, typical', toolsnames: 'Tools, over Work, typical', meetfill: 'Meet, both accounts read', meetempty: 'Meet, nothing scheduled' };
   const breakOn = overflow in BREAK_STATE ? VARIANTS.filter((v) => v.name.startsWith(BREAK_STATE[overflow])) : VARIANTS.slice(0, 1);
   for (const v of overflow ? breakOn : VARIANTS) {
     console.log(`${v.name} (${v.q}):`);

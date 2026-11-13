@@ -4,7 +4,7 @@ import { mocks } from '../bridge/tauri';
 import { ALARM_MAX_AGE_MS } from '../home/useSecurity';
 import { REFRESH_MS as WEATHER_REFRESH_MS } from '../weather/model';
 import { registerRetry, reportRead, resetReports, useReportStore } from './reports';
-import { buildSources, readText, readUnmountedSources, retrySource, type SourceSnapshot } from './sources';
+import { RETRY_CEILING_MS, buildSources, readText, readUnmountedSources, resetRetries, retrySource, type SourceSnapshot } from './sources';
 import type { AgentsState } from '../agents/useAgents';
 
 const NOW = Date.parse('2026-11-12T17:00:00Z');
@@ -41,7 +41,10 @@ const base = (over: Partial<SourceSnapshot> = {}): SourceSnapshot => ({
 
 const row = (s: SourceSnapshot, id: string) => buildSources(s).find((r) => r.id === id)!;
 
-beforeEach(() => resetReports());
+beforeEach(() => {
+  resetReports();
+  resetRetries();
+});
 afterEach(() => {
   mocks.clear();
   vi.restoreAllMocks();
@@ -164,4 +167,53 @@ it('opening the drawer reads only the hook-held sources nobody has mounted', asy
   expect(machines).toHaveBeenCalledTimes(1);
   expect(sonos).not.toHaveBeenCalled();
   off();
+});
+
+it('one Retry at a time per source: calls while one runs share it and make one native read', async () => {
+  vi.useFakeTimers();
+  let release: (v: unknown) => void = () => undefined;
+  const command = vi.fn(() => new Promise((r) => (release = r)));
+  mocks.set('wall2_sonos_summary', command);
+  const first = retrySource('sound');
+  vi.advanceTimersByTime(500);
+  const second = retrySource('sound');
+  vi.advanceTimersByTime(1000);
+  const third = retrySource('sound');
+  expect(second).toBe(first);
+  expect(third).toBe(first);
+  expect(command).toHaveBeenCalledTimes(1);
+  release({});
+  await act(async () => {
+    await first;
+  });
+  expect(useReportStore.getState().sound?.last).toBe('ok');
+  // Settled: the next Retry reads again.
+  retrySource('sound');
+  expect(command).toHaveBeenCalledTimes(2);
+  vi.useRealTimers();
+});
+
+it('a read that never finishes releases the Retry after the ceiling, with a note', async () => {
+  vi.useFakeTimers();
+  mocks.set('wall2_machines', () => new Promise(() => undefined));
+  const p = retrySource('box');
+  await vi.advanceTimersByTimeAsync(RETRY_CEILING_MS + 10);
+  await expect(p).resolves.toEqual({ note: 'The read did not finish' });
+  vi.useRealTimers();
+});
+
+it('every mounted list of a hook-held source is read once by one Retry', async () => {
+  const a = vi.fn();
+  const b = vi.fn();
+  const offA = registerRetry('tasks', a);
+  const offB = registerRetry('tasks', b);
+  await retrySource('tasks');
+  expect(a).toHaveBeenCalledTimes(1);
+  expect(b).toHaveBeenCalledTimes(1);
+  offA();
+  resetRetries();
+  await retrySource('tasks');
+  expect(a).toHaveBeenCalledTimes(1);
+  expect(b).toHaveBeenCalledTimes(2);
+  offB();
 });

@@ -147,7 +147,7 @@ export function useTasks(query?: TasksQuery): TasksState {
   }, [fetchList]);
 
   // The Tools drawer's Retry runs this list's own refresh while it is mounted.
-  useEffect(() => registerRetry('tasks', () => void refresh()), [refresh]);
+  useEffect(() => registerRetry('tasks', () => refresh()), [refresh]);
 
   useEffect(() => {
     if (!visible) return;

@@ -146,6 +146,6 @@ export function useOpenAlarms(): number {
 }
 
 /** The Tools drawer's Retry for Home: one read now, outside the 5 minute poll (skipped while one runs). */
-export function refreshSecurity(): void {
-  void refresh();
+export function refreshSecurity(): Promise<void> {
+  return refresh();
 }

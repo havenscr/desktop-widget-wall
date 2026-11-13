@@ -4,6 +4,7 @@ import { accountWords, clockText, needsSignIn, reasonLine, type MeetAccount } fr
 import { useMeet, type MeetState } from '../meet/useMeet';
 import { spotify, type SpotifyStatus } from '../music/spotify';
 import { hover as hoverCard } from './hover';
+import { useToolsStore } from './store';
 import { calendarName } from './trouble';
 
 type Tone = 'plain' | 'bad';
@@ -60,6 +61,8 @@ function useSpotifyAccount() {
   const [waiting, setWaiting] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const mounted = useRef(false);
+  const waitingRef = useRef(false);
+  waitingRef.current = waiting;
   const read = useCallback(() => {
     spotify.status().then(
       (s) => {
@@ -75,6 +78,8 @@ function useSpotifyAccount() {
     read();
     return () => {
       mounted.current = false;
+      // Leaving with a sign-in waiting ends it, so the native side is never left waiting for a browser nobody will use.
+      if (waitingRef.current) void spotify.cancelSignIn().catch(() => undefined);
     };
   }, [read]);
   const signIn = () => {
@@ -88,7 +93,7 @@ function useSpotifyAccount() {
       })
       .finally(() => mounted.current && setWaiting(false));
   };
-  const cancel = () => void spotify.cancelSignIn().catch(() => undefined);
+  const cancel = useCallback(() => void spotify.cancelSignIn().catch(() => undefined), []);
   const signOut = () => {
     setNotice(null);
     spotify.signOut().then(read, () => mounted.current && setNotice('Could not sign out of Spotify'));
@@ -139,6 +144,25 @@ export function Accounts() {
   const sp = useSpotifyAccount();
   const accounts = m.data?.accounts ?? [];
   const blocked = m.signingIn !== null || sp.waiting;
+  const setWaiting = useToolsStore((s) => s.setWaiting);
+  const note = useToolsStore((s) => s.note);
+  const clearNote = useToolsStore((s) => s.clearNote);
+  // The drawer holds its idle close while a sign-in waits, and cancels it when closed on purpose.
+  const calendarWaiting = m.signingIn !== null;
+  useEffect(() => {
+    setWaiting('calendar', calendarWaiting, m.cancelSignIn);
+    return () => setWaiting('calendar', false);
+  }, [calendarWaiting, m.cancelSignIn, setWaiting]);
+  useEffect(() => {
+    setWaiting('spotify', sp.waiting, sp.cancel);
+    return () => setWaiting('spotify', false);
+  }, [sp.waiting, sp.cancel, setWaiting]);
+  // "Sign-in cancelled" shows for a few seconds after the drawer was closed on a waiting sign-in.
+  useEffect(() => {
+    if (!note) return;
+    const id = setTimeout(clearNote, 6000);
+    return () => clearTimeout(id);
+  }, [note, clearNote]);
   let calendars: ReactNode;
   if (accounts.length > 0) {
     calendars = accounts.map((a) => <CalendarRow key={a.id} a={a} m={m} />);
@@ -157,6 +181,7 @@ export function Accounts() {
   }
   return (
     <>
+      {note && <div className="tools-note bad">{note}</div>}
       <ul className="tools-list" aria-label="Accounts">
         {calendars}
         <SpotifyRow sp={sp} blocked={blocked} />

@@ -69,7 +69,7 @@ export function useSonos(): SonosState {
     }
   }, []);
 
-  useEffect(() => registerRetry('sound', () => void refresh()), [refresh]);
+  useEffect(() => registerRetry('sound', () => refresh()), [refresh]);
 
   useEffect(() => {
     if (!visible) return;
