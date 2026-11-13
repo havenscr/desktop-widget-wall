@@ -143,3 +143,15 @@ describe('his Stay, stored', () => {
     expect(d.stay).toEqual({ place: 'home', x: 1600, date: key });
   });
 });
+
+describe('his spots', () => {
+  const now = new Date(2026, 10, 11, 14).getTime();
+  it('keeps a spot per known place with an x on the stage, drops anything else, and keeps them across days', () => {
+    const d = parsePet(JSON.stringify({ spots: { work: 2300, home: -5, unwind: 'x', meet: 99999, zen: 400 } }), now);
+    expect(d.spots).toEqual({ work: 2300 });
+    expect(parsePet(null, now).spots).toEqual({});
+    expect(parsePet(JSON.stringify({ spots: 'nope' }), now).spots).toEqual({});
+    const later = rollDay(d, now + 3 * 86_400_000);
+    expect(later.spots).toEqual({ work: 2300 });
+  });
+});
