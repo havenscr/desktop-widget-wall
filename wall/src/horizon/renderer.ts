@@ -225,10 +225,18 @@ export interface HorizonEcho {
   restA?: number;
   /** The resting look (default 'contours'). */
   look?: RestLook;
+  /**
+   * How much the camera is the visualizer, 0 to 1 (`visualizerWeight`). Above 0 the displacement
+   * mask lets the ripple reach the foot of the range and fade toward the echo's edges, and `swell`
+   * lifts the base shape. Absent or 0: exactly as before.
+   */
+  dance?: number;
+  /** The kick, 0 to 1: the lines' base shape swells by up to 20 percent of itself (scaled by `dance`). Absent or 0: no swell. */
+  swell?: number;
 }
 
 /** The resting looks of the ridgelines; see `REST_LOOK` in echo.ts. */
-export const REST_LOOKS = ['contours', 'levels', 'haze', 'ridge'] as const;
+export const REST_LOOKS = ['contours', 'levels', 'haze', 'ridge', 'ridgelevels'] as const;
 export type RestLook = (typeof REST_LOOKS)[number];
 /* The resting looks' sizes, from the concept page (a 1280 by 300 drawing whose mountain peaks at
    0.641 of its 150 px height): vertical sizes are in units of that peak, so they keep their share
@@ -236,7 +244,10 @@ export type RestLook = (typeof REST_LOOKS)[number];
 const REST_PEAK=.641*150,REST_LEVEL_TOP=.92*150/REST_PEAK,REST_LW=1,REST_LAG=.22;
 /* Fill under each resting line, as a share of the live fill: the layered look stays for contours
    and levels; haze and ridge draw lines only (their fills would paint the sky or recolour the range). */
-const REST_FILL:Record<RestLook,number>={contours:1,levels:1,haze:0,ridge:0};
+const REST_FILL:Record<RestLook,number>={contours:1,levels:1,haze:0,ridge:0,ridgelevels:1};
+/* 'ridgelevels': the top line traces the ridge, the others are straight levels cut off by the mountain, up to this share of its height.
+   A line between the top two blends its level, share and glow into the ridge's by its place, so a drifting line never jumps; at rest the places are whole. */
+const REST_RL_TOP=.9;
 
 /** Everything `draw` reads. Sizes are design pixels; `scale` maps them to device pixels. */
 export interface HorizonDrawOptions {
@@ -341,6 +352,11 @@ export function draw(ctx:CanvasRenderingContext2D,o:HorizonDrawOptions):HorizonD
    for(const [q,c] of [[0,TT!.left],[c0,TT!.centre],[c0+(1-c0)*.6,mixc(TT!.centre,TT!.right,.5)],[1,TT!.right]] as Any)es.addColorStop(q,css(mixc(rimAt(q),c,tk)))}
   const RK=E.rest?clamp(E.rest,0,1):0,LK:RestLook=E.look||'contours',RA=E.restA||0,ek=Math.min(1,RK*8),vu=cmax/REST_PEAK,hu=W/1280;
   const hz=(i:Any,r:Any)=>r?sm(i,r):cr[i];
+  /* The dance: how much the camera is the visualizer and the kick. At 0 every number below is today's. */
+  const DN=E.dance?clamp(E.dance,0,1):0,SW=E.swell?clamp(E.swell,0,1):0;
+  const edge=(i:Any)=>{const u=Math.abs(i*2-cx)/hs;return u>=1?0:u<.62?1:1-smooth((u-.62)/.38)};
+  /* the displacement mask: the ripple is strongest where the range is tall; with the dance it also reaches the foot and fades toward the echo's edges */
+  const M=(i:Any)=>{const m0=Math.min(1,cr[i]/(cmax*.5));return DN>0?mix(m0,Math.min(1,.2+cr[i]/(cmax*.5))*(.25+.75*edge(i)),DN):m0};
   /* One whole set of n lines at weight wk. A glide blends the line count, so a fractional count draws
      the two whole sets either side crossfaded by its fraction: every line keeps its own place. */
   const set=(n:number,wk:number)=>{
@@ -349,22 +365,23 @@ export function draw(ctx:CanvasRenderingContext2D,o:HorizonDrawOptions):HorizonD
   const rh=(i:Any,kc:Any,q:Any)=>LK==='levels'?Math.min(cr[i],vu*REST_LEVEL_TOP*REST_PEAK*(kc+1)/(n+.6)+2.5*vu*Math.sin(Math.PI*i*2/W)*(kc/n))
    :LK==='haze'?hz(Math.round(clamp(((i*2-q*70*hu)*(1+q*.1)-q*.03*W)/2,0,N-1)),Math.round(q*30))*(1+q*.42)+q*26*vu
    :LK==='ridge'?Math.max(0,cr[i]-Math.max(0,2-kc)*7*vu)
+   :LK==='ridgelevels'?mix(Math.min(cr[i],cmax*REST_RL_TOP*(kc+1)/(n-1)),cr[i],clamp(kc-(n-2),0,1))
    :cr[i]*(kc+1)/n;
   /* each look's resting opacity for line q, as a share of restA */
-  const rs=(kc:Any,q:Any)=>LK==='levels'?.9-.35*q:LK==='haze'?1-.75*q:LK==='ridge'?2.4*Math.max(0,1-Math.abs(kc-(n-1)))+.45*clamp(2-kc,0,1):.55+.45*q;
-  for(let j=0;j<n;j++){const a=(j+fq)/n,p=1-a,tau=(E.t||0)-a*span,sw=.35+.65*Math.sin(Math.PI*a),pp=Math.pow(p,1.15),r=Math.round(2+a*26);
+  const rs=(kc:Any,q:Any)=>LK==='levels'?.9-.35*q:LK==='haze'?1-.75*q:LK==='ridge'?2.4*Math.max(0,1-Math.abs(kc-(n-1)))+.45*clamp(2-kc,0,1):LK==='ridgelevels'?mix(.75,2.2,clamp(kc-(n-2),0,1)):.55+.45*q;
+  for(let j=0;j<n;j++){const a=(j+fq)/n,p=1-a,tau=(E.t||0)-a*span,sw=.35+.65*Math.sin(Math.PI*a),pp=Math.pow(p,1.15),r=Math.round(2+a*26),bs=DN>0&&SW>0?1+.2*SW*DN*(1-.45*a):1;
    if(RK>0){const x=clamp((RK-REST_LAG*a)/(1-REST_LAG),0,1),wl=1-(1-x)*(1-x),q=n>1?clamp(1-(a*n-.5)/(n-1),0,1):1,kc=q*(n-1);
     // At rest only the resting shape: the spectrum is not read.
-    const f=wl>=1?(i:Any)=>rh(i,kc,q):(i:Any)=>mix(mix(cr[i],sm(i,r),Math.min(1,a*2.2))*pp+S(Math.min(1,Math.abs(i*2-cx)/hs),tau)*E.amp*sw*Math.min(1,cr[i]/(cmax*.5)),rh(i,kc,q),wl);
+    const f=wl>=1?(i:Any)=>rh(i,kc,q):(i:Any)=>mix(mix(cr[i],sm(i,r),Math.min(1,a*2.2))*pp*bs+S(Math.min(1,Math.abs(i*2-cx)/hs),tau)*E.amp*sw*M(i),rh(i,kc,q),wl);
     const fa=(1-wl*(1-REST_FILL[LK]))*wk;
     if(fa>.002){const col=mixc(mixc(P.far,P.s[3],.12),P.mid,a);layer(f,fa<1?css(col,fa):css(col))}
     // Live opacity eased to the resting one; while settling, lines at either end of the drift fade so none pops.
     const al=mix(E.a*(1-a*a*a)*(tk>0?mix(1,smooth(a*n),tk):1),Math.min(1,RA*rs(kc,q)),wl)*mix(1,smooth(a*n*2)*smooth((1-a)*n*2),ek)*wk;
-    const top=LK==='ridge'?Math.max(0,1-Math.abs(kc-(n-1))):0,lr=mix(lw,REST_LW+.8*top,wl);
+    const top=LK==='ridge'||LK==='ridgelevels'?Math.max(0,1-Math.abs(kc-(n-1))):0,lr=mix(lw,REST_LW+.8*top,wl);
     if(top*wl>.01&&al>.002)line(f,al*.3*top*wl,lr+4,es);
     if(al>.002)line(f,al,lr,es);
     continue}
-   const f=(i:Any)=>mix(cr[i],sm(i,r),Math.min(1,a*2.2))*pp+S(Math.min(1,Math.abs(i*2-cx)/hs),tau)*E.amp*sw*Math.min(1,cr[i]/(cmax*.5));
+   const f=(i:Any)=>mix(cr[i],sm(i,r),Math.min(1,a*2.2))*pp*bs+S(Math.min(1,Math.abs(i*2-cx)/hs),tau)*E.amp*sw*M(i);
    layer(f,wk<1?css(mixc(mixc(P.far,P.s[3],.12),P.mid,a),wk):css(mixc(mixc(P.far,P.s[3],.12),P.mid,a)));line(f,E.a*(1-a*a*a)*(tk>0?mix(1,smooth(a*n),tk):1)*wk,lw,es)}};
   set(n0,1-fn);if(fn)set(n0+1,fn)}
  const md=(i:Any)=>prof(TR,TR.mid,az0+i*2/ppd)*k,nr=(i:Any)=>prof(TR,TR.near,az0+i*2/ppd)*k;

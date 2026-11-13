@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { SILENCE_MS, clamp01, hasSound, smoothStep, type AudioLevelsPayload, type Levels } from './model';
 import { createBeatDetector, type BeatDetector } from './beat';
+import { clearDance, createDance, stepDance } from './dance';
 
 export interface AudioState extends Levels {
   /** True while sound arrived in the last 0.35 seconds. */
@@ -50,6 +51,10 @@ export interface BandHistory {
 }
 
 const history = { data: new Float32Array(HISTORY_ROWS * BAND_COUNT), head: -1, rows: 0 };
+// The shaped line heights (`stepDance`), a second history in step with the first: one row per row.
+const dancing = { data: new Float32Array(HISTORY_ROWS * BAND_COUNT), head: -1, rows: 0 };
+const dance = createDance();
+const danceRaw = new Float32Array(BAND_COUNT);
 const smoothed = new Float32Array(BAND_COUNT);
 /**
  * The calming stage, for the band history only (the levels and the beat detector never see it):
@@ -74,6 +79,16 @@ export function bandHistory(): BandHistory {
   return history;
 }
 
+/** The shaped line heights history (a live view; same ring layout as `bandHistory`, heights 0 to 1.8). */
+export function danceHistory(): BandHistory {
+  return dancing;
+}
+
+/** The kick, 0 to 1: how hard the lowest bands were hit just now. */
+export function danceKick(): number {
+  return dance.kick;
+}
+
 /** Empty the band history (the page was hidden: its old spectrum must not replay on return). */
 export function clearBandHistory(): void {
   clearHistory();
@@ -83,6 +98,10 @@ function clearHistory(): void {
   history.data.fill(0);
   history.head = -1;
   history.rows = 0;
+  dancing.data.fill(0);
+  dancing.head = -1;
+  dancing.rows = 0;
+  clearDance(dance);
   smoothed.fill(0);
   slow.fill(0);
   calm.fill(0);
@@ -112,7 +131,11 @@ export function pauseBandHistory(paused: boolean): void {
 function advanceHistory(now: number, dt: number, playing: boolean): void {
   if (historyPaused) return;
   if (playing) quietRows = 0;
-  else if (quietRows >= HISTORY_ROWS) return;
+  else if (quietRows >= HISTORY_ROWS) {
+    // A whole ring of silence is in: the followers and peaks start afresh with the next sound.
+    if (dance.peak !== 0.1 || dance.kick !== 0) clearDance(dance);
+    return;
+  }
   const k = 1 - Math.exp(-Math.max(0, dt) / CALM_SMOOTH_S);
   for (let i = 0; i < BAND_COUNT; i++) {
     smoothed[i] = smoothStep(smoothed[i], playing ? bands[i] : 0, dt);
@@ -134,6 +157,11 @@ function advanceHistory(now: number, dt: number, playing: boolean): void {
     history.head = (history.head + 1) % HISTORY_ROWS;
     history.data.set(calm, history.head * BAND_COUNT);
     if (history.rows < HISTORY_ROWS) history.rows++;
+    if (playing) for (let i = 0; i < BAND_COUNT; i++) danceRaw[i] = bands[i];
+    else danceRaw.fill(0);
+    dancing.head = history.head;
+    stepDance(dance, danceRaw, 1 / HISTORY_HZ, dancing.data, history.head * BAND_COUNT);
+    if (dancing.rows < HISTORY_ROWS) dancing.rows++;
     if (!playing) quietRows++;
     nextRowAt += ROW_MS;
   }

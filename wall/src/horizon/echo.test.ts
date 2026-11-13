@@ -6,6 +6,9 @@ import {
   PLAY_TINT,
   REST_LOOK,
   REST_OPACITY,
+  VISUALIZER_EN,
+  REST_OPACITY_VISUALIZER,
+  DANCE_AMP,
   REST_PHASE,
   REST_DWELL_S,
   REST_QUIET_S,
@@ -33,7 +36,7 @@ it('takes ea, en, eamp and ecx from the camera preset, with hs 900 and the anima
   for (const place of ['work', 'home', 'unwind'] as const) {
     const cam = CAMERAS[place];
     const e = echoOptions(cam, 1, 2.5)!;
-    expect(e).toMatchObject({ n: cam.en, amp: cam.eamp, cx: cam.ecx, hs: 900, t: 2.5 });
+    expect(e).toMatchObject({ n: cam.en, amp: cam.eamp * (1 + DANCE_AMP * visualizerWeight(cam)), cx: cam.ecx, hs: 900, t: 2.5 });
     // Unwind's playing look is raised to full opacity; Work and Home stay at ea.
     expect(e.a).toBeCloseTo(place === 'unwind' ? 1 : cam.ea, 9);
   }
@@ -74,7 +77,7 @@ describe('the Unwind visualizer', () => {
       const e = echoOptions(CAMERAS.unwind, loud, 3)!;
       expect(e.a).toBeCloseTo(1, 9);
       expect(e.tint).toMatchObject({ centre: PLAY_TINT.centre, right: PLAY_TINT.right, k: 1, width: 1.5 });
-      expect(e.amp).toBe(34);
+      expect(e.amp).toBe(34 * (1 + DANCE_AMP));
       expect(e.n).toBe(11);
     }
   });
@@ -228,7 +231,7 @@ describe('the rest state options', () => {
   it('rest 0 adds nothing (the playing options are unchanged); rest above 0 carries the resting opacity and look', () => {
     expect(echoOptions(CAMERAS.unwind, 0.5, 3, 1, 0)).toEqual(echoOptions(CAMERAS.unwind, 0.5, 3));
     const e = echoOptions(CAMERAS.unwind, 0.5, 3, 1, 0.4)!;
-    expect(e).toMatchObject({ rest: 0.4, restA: REST_OPACITY, look: REST_LOOK, a: 1 });
+    expect(e).toMatchObject({ rest: 0.4, restA: REST_OPACITY_VISUALIZER, look: REST_LOOK, a: 1 });
     expect(echoOptions(CAMERAS.unwind, 0.5, 3, 0.5, 1, 'ridge', 0.15)).toMatchObject({ rest: 1, restA: 0.075, look: 'ridge' });
   });
 
@@ -243,10 +246,10 @@ describe('the rest state options', () => {
 
   it('strength eases from the live opacity to the resting one; scaling scales both', () => {
     const e = echoOptions(CAMERAS.unwind, 0, 0, 1, 0.5)!;
-    expect(echoStrength(e)).toBeCloseTo(1 + (REST_OPACITY - 1) * 0.5, 9);
+    expect(echoStrength(e)).toBeCloseTo(1 + (REST_OPACITY_VISUALIZER - 1) * 0.5, 9);
     scaleEcho(e, 0.5);
     expect(e.a).toBeCloseTo(0.5, 9);
-    expect(e.restA).toBeCloseTo(REST_OPACITY / 2, 9);
+    expect(e.restA).toBeCloseTo(REST_OPACITY_VISUALIZER / 2, 9);
     expect(echoStrength(echoOptions(CAMERAS.unwind, 0, 0)!)).toBe(1);
   });
 
@@ -358,3 +361,35 @@ describe('the drawn line count', () => {
   });
 });
 
+
+describe('the dance options', () => {
+  it('dance is the visualizer weight, absent on Work and Home; swell is passed only with it and clamped', () => {
+    const u = echoOptions(CAMERAS.unwind, 1, 3, 1, 0, undefined, undefined, 0.6)!;
+    expect(u.dance).toBe(1);
+    expect(u.swell).toBe(0.6);
+    expect(echoOptions(CAMERAS.unwind, 1, 3, 1, 0, undefined, undefined, 4)!.swell).toBe(1);
+    expect(echoOptions(CAMERAS.unwind, 1, 3)!).not.toHaveProperty('swell');
+    for (const cam of [CAMERAS.work, CAMERAS.home]) {
+      const e = echoOptions(cam, 1, 3, 1, 0, undefined, undefined, 0.6)!;
+      expect(e).not.toHaveProperty('dance');
+      expect(e).not.toHaveProperty('swell');
+      expect(e.amp).toBe(cam.eamp);
+    }
+  });
+
+  it('the amplitude is raised by 0.7 times the weight, and the resting opacity blends 0.22 to 0.28 by it', () => {
+    const half = { ...CAMERAS.unwind, en: 3 + (VISUALIZER_EN - 3) / 2 };
+    const e = echoOptions(half, 1, 3, 1, 1)!;
+    expect(e.dance).toBeCloseTo(0.5, 9);
+    expect(e.amp).toBeCloseTo(CAMERAS.unwind.eamp * 1.35, 9);
+    expect(e.restA).toBeCloseTo(0.25, 9);
+    expect(echoOptions(CAMERAS.unwind, 1, 3, 1, 1)!.restA).toBeCloseTo(0.28, 9);
+    expect(echoOptions(CAMERAS.work, 0, 3, 1, 1)!.restA).toBeCloseTo(0.22, 9);
+    // An explicit opacity still wins.
+    expect(echoOptions(CAMERAS.unwind, 1, 3, 1, 1, 'levels', 0.15)!.restA).toBeCloseTo(0.15, 9);
+  });
+
+  it('the sampler reads the shaped heights by default', () => {
+    expect(createEchoSampler().sample).toBeTypeOf('function');
+  });
+});

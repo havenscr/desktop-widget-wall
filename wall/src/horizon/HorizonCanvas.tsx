@@ -4,7 +4,7 @@ import { useIdle } from '../ui/useIdle';
 import { wantsDemo } from '../audio/capture';
 import { STAGE_HEIGHT, STAGE_WIDTH, fitScale } from '../stage/fitScale';
 import { usePlaceStore } from '../state/places';
-import { audioBands, audioBeats, clearBandHistory, pauseBandHistory, useAudioStore } from '../audio/store';
+import { audioBands, audioBeats, clearBandHistory, danceKick, pauseBandHistory, useAudioStore } from '../audio/store';
 import { loudness, smoothStep } from '../audio/model';
 import { CAMERAS, HOME_MORNING, MOON, cameraFor, cloudShiftFor, glideCamera, localDay, settled, startGlide, stepGlide, type CameraPreset, type Glide } from './cameras';
 import {
@@ -161,7 +161,7 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
       // The grid pulse never appears in the review still or under reduced motion's still frames.
       if (!still) {
         const m = motion.current;
-        let echo = echoOptions(camera, loud.current, echoT.current, gate.current.value * awake.current, m.rest);
+        let echo = echoOptions(camera, loud.current, echoT.current, gate.current.value * awake.current, m.rest, undefined, undefined, m.rest < 1 ? danceKick() * (1 - m.rest) : 0);
         const turningOff = glide.current.to.ea === 0 && glide.current.progress < 1;
         if (echo && turningOff && echoStrength(echo) > lastEchoA.current) {
           scaleEcho(echo, lastEchoA.current / echoStrength(echo));
