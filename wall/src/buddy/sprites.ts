@@ -7,10 +7,10 @@
  * idle body rows plus two leg rows. The other poses are drawn the same way, at the same size; props
  * and the little things (heart, clover, amber mark) use their own colour letters (`PROP_COLORS`).
  */
-export type Pose = 'idle' | 'walk' | 'sleep' | 'read' | 'look' | 'yawn' | 'stretch' | 'eat';
+export type Pose = 'idle' | 'walk' | 'sleep' | 'read' | 'look' | 'yawn' | 'stretch' | 'eat' | 'held' | 'held2' | 'land' | 'sit' | 'dizzy' | 'alert' | 'hop' | 'spin1' | 'spin2' | 'lie';
 
 /** Every pose, for the tests and the sprite sheet. */
-export const POSES: readonly Pose[] = ['idle', 'walk', 'sleep', 'read', 'look', 'yawn', 'stretch', 'eat'];
+export const POSES: readonly Pose[] = ['idle', 'walk', 'sleep', 'read', 'look', 'yawn', 'stretch', 'eat', 'held', 'held2', 'land', 'sit', 'dizzy', 'alert', 'hop', 'spin1', 'spin2', 'lie'];
 
 const LEGS = ['...l..l...l..l....', '...l..l...l..l....'];
 
@@ -97,6 +97,85 @@ export const SPRITES: Readonly<Record<Pose, readonly string[]>> = {
     '..wwwwwwwwwww.fff.',
     ...LEGS,
   ],
+  // Carried by the wool: eyes wide, legs dangling and leaning one way (held) or the other (held2).
+  held: [
+    ...IDLE.slice(0, 3),
+    '.wwwwwwwwwwwwwfeff',
+    'wwwwwwwwwwwwwwfeef',
+    ...IDLE.slice(5, 10),
+    '...l..l...l..l....',
+    '..l..l...l..l.....',
+  ],
+  held2: [
+    ...IDLE.slice(0, 3),
+    '.wwwwwwwwwwwwwfeff',
+    'wwwwwwwwwwwwwwfeef',
+    ...IDLE.slice(5, 10),
+    '...l..l...l..l....',
+    '....l..l...l..l...',
+  ],
+  // The moment of landing: flattened wool, legs splayed, eyes shut.
+  land: [
+    ...IDLE.slice(1, 4),
+    'wwwwwwwwwwwwwwf-ff',
+    ...IDLE.slice(5, 10),
+    '.l...l.....l...l..',
+    '.l...l.....l...l..',
+  ],
+  // Sitting: round bottom on the ground, paws tucked, no legs standing.
+  sit: [
+    ...IDLE.slice(0, 7),
+    '.wwwwwwwwwwwwww...',
+    'wwwwwwwwwwwwwwwl..',
+    'wwwwwwwwwwwwwwwl..',
+    '.lll.........ll...',
+  ],
+  // Swirly eyes (a checker of cyan and dark) after being shaken.
+  dizzy: [...IDLE.slice(0, 3), '.wwwwwwwwwwwwwfefe', 'wwwwwwwwwwwwwwffef', 'wwwwwwwwwwwwwwfefe', ...IDLE.slice(6)],
+  // Ears up and eyes wide: he has noticed the pointer.
+  alert: ['....wwwwwww...p...', '..wwwwwwwwwww.p...', ...IDLE.slice(2, 3), '.wwwwwwwwwwwwwfeff', 'wwwwwwwwwwwwwwfeef', ...IDLE.slice(5)],
+  // In the air: body high, legs tucked close, a clear gap and a small shadow line on the ground below, eyes squeezed shut with joy.
+  hop: [...IDLE.slice(0, 4), 'wwwwwwwwwwwwwwf-ff', ...IDLE.slice(5, 9), '...ll......ll.....', '..................', '...ssssssssssss...'],
+  // Turning on the spot: the wool ball seen from the front (face), then from behind (no face).
+  spin1: [
+    '.....wwwwwwww.....',
+    '...wwwwwwwwwwww...',
+    '..wwwwwwwwwwwwww..',
+    '..wwwwpffffpwwww..',
+    '..wwwwwfeffefwww..',
+    '..wwwwwffffffwww..',
+    '..wwwwwwffffwwww..',
+    '..wwwwwwwwwwwwww..',
+    '...wwwwwwwwwwww...',
+    '....wwwwwwwwww....',
+    '.....l......l.....',
+    '.....l......l.....',
+  ],
+  spin2: [
+    '.....wwwwwwww.....',
+    '...wwwwwwwwwwww...',
+    '..wwwwwwwwwwwwww..',
+    '..wwwwwwwwwwwwww..',
+    '..wwwwwwwwwwwwww..',
+    '..wwwwwwwwwwwwww..',
+    '..wwwwwwwpwwwwww..',
+    '..wwwwwwwpwwwwww..',
+    '...wwwwwwwwwwww...',
+    '....wwwwwwwwww....',
+    '.....l......l.....',
+    '.....l......l.....',
+  ],
+  // Lying down asleep: head on his paws.
+  lie: [
+    '....wwwwwww.......',
+    '..wwwwwwwwwww.....',
+    '.wwwwwwwwwwwww....',
+    '.wwwwwwwwwwwwwpf..',
+    'wwwwwwwwwwwwwwffff',
+    'wwwwwwwwwwwwwwf-ff',
+    'wwwwwwwwwwwwwwwfff',
+    '.wwwwwwwwwwwwwlll.',
+  ],
 };
 
 /** The ear pixel (column, row) of each pose: props that sit on the head are placed from it. */
@@ -109,6 +188,16 @@ export const EAR: Readonly<Record<Pose, readonly [number, number]>> = {
   yawn: [14, 2],
   stretch: [14, 3],
   eat: [14, 4],
+  held: [14, 2],
+  held2: [14, 2],
+  land: [14, 1],
+  sit: [14, 2],
+  dizzy: [14, 2],
+  alert: [14, 2],
+  hop: [14, 2],
+  spin1: [8, 3],
+  spin2: [8, 3],
+  lie: [14, 3],
 };
 
 /** Things she wears or holds. `book` to `nightcap` follow the day; `bow`, `star` and `cape` are cosmetics. */
@@ -150,6 +239,8 @@ export function propOrigin(prop: Prop, pose: Pose): [number, number] {
 export const HEART: readonly string[] = ['.v.v.', 'vvvvv', '.vvv.', '..v..'];
 export const CLOVER: readonly string[] = ['.o.o.', 'ooooo', '.ooo.', '..O..', '..O..'];
 export const MARK: readonly string[] = ['aa', 'aa', 'aa', '..', 'aa'];
+/** The dusk firefly: one small sprite, softer than his wool. */
+export const FIREFLY: readonly string[] = ['.y.', 'yYy', '.y.'];
 /** Pixel size of the heart, the clover and the mark, design pixels. */
 export const SMALL_PX = 3;
 
@@ -176,6 +267,8 @@ export const PROP_COLORS: Readonly<Record<string, string>> = {
   o: '#5df2b6',
   O: '#2fb184',
   a: '#ffc24d',
+  y: '#a8c850',
+  Y: '#e4f08f',
 };
 
 /** Colour of a prop or little thing pixel, or null for empty. */
@@ -191,6 +284,7 @@ export const SPRITE_COLORS: Readonly<Record<string, string>> = {
   '-': '#2aa9ad',
   p: '#ff7ab8',
   l: '#8f86c9',
+  s: '#4d3f98',
 };
 
 /** Colour of a pixel, or null for empty. Wool is lighter near the top (the demo's three steps). */

@@ -22,6 +22,9 @@ describe('her lines', () => {
   it('gives no advice, no nagging, no asks, and names no prop she might not be wearing', () => {
     const banned = /\b(water|drink|stretch something|hair|deep breath|socks|walk might|bed is|breakfast|lunch|tea time|dinner|please|bored|tabs|morale|slump|nice work|still up|almost done|talked out|umbrella|sunglasses|scarf|book)\b/i;
     for (const l of all) expect(l, l).not.toMatch(banned);
+    // Nothing opens with an ask of the owner (an imperative: "Give me", "Let me", "Please", "Wait", ...).
+    const asks = /^(give|let|please|wait|try|take|stop|look|come|go|check|remember|keep|feel free|you should|you could|could you|would you|can you)\b/i;
+    for (const l of all) for (const sentence of l.split(/(?<=[.?]) /)) expect(sentence, l).not.toMatch(asks);
     // Questions only as musing about the world, never to him.
     for (const l of all) if (l.endsWith('?')) expect(l, l).toMatch(/hills/);
   });
