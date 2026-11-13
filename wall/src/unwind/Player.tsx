@@ -13,6 +13,7 @@ import { useNowPlaying } from '../music/useNowPlaying';
 import { useVisible } from '../ui/useVisible';
 import { useLastPlayed } from './lastPlayed';
 import { Volume } from './Volume';
+import { useWatchStore } from './watch/store';
 
 /** Position and duration, advanced locally between polls while playing. Re-renders twice a second, only while visible. */
 function useProgress(info: NowPlayingInfo | null, anchor: ProgressAnchor | null) {
@@ -36,6 +37,25 @@ function useProgress(info: NowPlayingInfo | null, anchor: ProgressAnchor | null)
 function dropIdleArt(src: string | null): void {
   rejectArt();
   if (src && useLastPlayed.getState().art === src) useLastPlayed.setState({ art: null });
+}
+
+/**
+ * The album art's small "Video" corner button: shown only when something is saved to watch,
+ * it switches Unwind to the Watch tab. Nothing else on Listen changes.
+ */
+function VideoCorner() {
+  const count = useWatchStore((s) => s.saved.length);
+  if (count === 0) return null;
+  return (
+    <button
+      type="button"
+      className="u-video"
+      title={`Watch instead: ${count} saved to watch`}
+      onClick={() => useWatchStore.getState().setTab('watch')}
+    >
+      Video
+    </button>
+  );
 }
 
 /**
@@ -105,7 +125,10 @@ export function Player() {
     return (
       <div className="u-player quiet" data-state="idle">
         <div className="u-now">
-          <div className="u-art dim">{idle.art ? <img src={idle.art} alt="" onError={() => dropIdleArt(idle.art)} /> : <IconMusic size={72} stroke={1.25} aria-hidden="true" />}</div>
+          <div className="u-art dim">
+            {idle.art ? <img src={idle.art} alt="" onError={() => dropIdleArt(idle.art)} /> : <IconMusic size={72} stroke={1.25} aria-hidden="true" />}
+            <VideoCorner />
+          </div>
           <div className="u-meta">
             <span className="u-k">{idle.source ? `Last played on ${idle.source}` : 'Last played'}</span>
             <div className="u-np u-was u-ell">{idle.title}</div>
@@ -128,7 +151,10 @@ export function Player() {
   return (
     <div className="u-player" data-state="playing">
       <div className="u-now">
-        <div className="u-art">{art ? <img src={art} alt="" onError={rejectArt} /> : <IconMusic size={72} stroke={1.25} aria-hidden="true" />}</div>
+        <div className="u-art">
+          {art ? <img src={art} alt="" onError={rejectArt} /> : <IconMusic size={72} stroke={1.25} aria-hidden="true" />}
+          <VideoCorner />
+        </div>
         <div className="u-meta">
           {sourceLabel ? <span className="u-k u-src">{sourceLabel}</span> : null}
           <div className="u-np u-ell">{info?.title || 'Unknown title'}</div>
