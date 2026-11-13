@@ -6,38 +6,38 @@ import { knob } from './long';
  * The Sound block's Sonos service, with invented speakers, routines and presets. Review
  * knobs: `?sonos=off` (not set up), `?sonos=down` (never reached), `?sonos=sparse` (one
  * routine, one speaker, no presets), `?sonos=heavy` (many routines with long names, many
- * speakers, a sleep timer), `?sonos=quiet` (nothing playing), `?skip=1` (an unforced play is
+ * speakers, a sleep timer), `?sonos=quiet` (nothing playing), `?sonos=few` (one matching routine plus More), `?sonos=slow` (never answers, for the loading state), `?skip=1` (an unforced play is
  * skipped). The default is a typical
  * evening with music playing on a group.
  */
 const now = () => (reviewNow ? reviewNow() : Date.now());
 
-type Mode = 'typical' | 'off' | 'down' | 'sparse' | 'heavy' | 'quiet';
+type Mode = 'typical' | 'off' | 'down' | 'sparse' | 'heavy' | 'quiet' | 'slow' | 'few';
 
 function mode(): Mode {
   const k = knob('sonos');
-  return k === 'off' || k === 'down' || k === 'sparse' || k === 'heavy' || k === 'quiet' ? k : 'typical';
+  return k === 'off' || k === 'down' || k === 'sparse' || k === 'heavy' || k === 'quiet' || k === 'slow' || k === 'few' ? k : 'typical';
 }
 
 const ROUTINES = [
-  { key: 'Dawn_Mix', name: 'Dawn Music', favorite: 'Quiet Radio', volume: 6 },
-  { key: 'Midday_Mix', name: 'Noon Music', favorite: 'Sunny Beats', volume: 10 },
-  { key: 'Dusk_Mix', name: 'Dusk Music', favorite: 'Lo-fi Room', volume: 12 },
-  { key: 'Night_Mix', name: 'Night Owl Music', favorite: 'Blue Hour', volume: 5 },
-  { key: 'Desk_Mix', name: 'Desk Focus Music', favorite: 'Synth Drive', volume: 10 },
+  { key: 'Morning_Mix', name: 'Morning Mix', favorite: 'Quiet Radio', volume: 6 },
+  { key: 'Day_Mix', name: 'Day Mix', favorite: 'Sunny Beats', volume: 10 },
+  { key: 'Evening_Mix', name: 'Evening Mix', favorite: 'Lo-fi Room', volume: 12 },
+  { key: 'Late_Night_Mix', name: 'Late Night Mix', favorite: 'Blue Hour', volume: 5 },
+  { key: 'Workday_Mix', name: 'Workday Mix', favorite: 'Synth Drive', volume: 10 },
   { key: 'Bright_Mix', name: 'Bright Pop', favorite: 'Pop Picks', volume: 14 },
   { key: 'Book_Mix', name: 'Book Club', favorite: 'Soft Strings', volume: 9 },
   { key: 'Rain_Mix', name: 'Rain Sounds', favorite: 'Rain on a Tin Roof', volume: 18 },
 ];
 
 const LONG_ROUTINES = [
-  { key: 'Long_1', name: 'Slow Sunday Morning With Coffee And The Paper Music', favorite: 'A Very Long Station Name For Gentle Acoustic Mornings', volume: 8 },
-  { key: 'Long_2', name: 'Noon Music For Cleaning The Whole House Top To Bottom', favorite: 'Lively Cleaning Anthems Volume Two', volume: 18 },
-  { key: 'Long_3', name: 'Dusk Music When Friends Come Over For Dinner', favorite: 'Dinner Party Classics', volume: 15 },
-  { key: 'Long_4', name: 'Night Owl Music Very Quiet So Nobody Wakes Up', favorite: 'Velvet Hours', volume: 4 },
-  { key: 'Long_5', name: 'Desk Focus Music For Long Afternoons Of Spreadsheets', favorite: 'Retro Drive', volume: 10 },
+  { key: 'Long_1', name: 'Slow Sunday Morning With Coffee And The Paper', favorite: 'A Very Long Station Name For Gentle Acoustic Mornings', volume: 8 },
+  { key: 'Long_2', name: 'Day Music For Cleaning The Whole House Top To Bottom', favorite: 'Lively Cleaning Anthems Volume Two', volume: 18 },
+  { key: 'Long_3', name: 'Evening Music When Friends Come Over For Dinner', favorite: 'Dinner Party Classics', volume: 15 },
+  { key: 'Long_4', name: 'Late Night Music Very Quiet So Nobody Wakes Up', favorite: 'Velvet Hours', volume: 4 },
+  { key: 'Long_5', name: 'Workday Music For Long Afternoons Of Spreadsheets', favorite: 'Retro Drive', volume: 10 },
   { key: 'Long_6', name: 'Party Music Loud', favorite: 'Dance Floor', volume: 55 },
-  ...ROUTINES,
+  ...ROUTINES.slice(5),
   ...Array.from({ length: 6 }, (_, i) => ({ key: `Extra_${i}`, name: `Extra Playlist Number ${i + 1}`, favorite: `Station ${i + 1}`, volume: 10 })),
 ];
 
@@ -88,22 +88,30 @@ function summary(m: Mode) {
       ? []
       : m === 'heavy'
         ? [
-            { id: 'whole', name: 'Whole House And Garden', active: false, loud: [{ name: 'Studio', level: 100, sets: false }] },
-            { id: 'desk', name: 'Office Desk With The Big Speaker', active: true, loud: [] },
-            { id: 'living', name: 'Living Spaces Downstairs', active: false, loud: [] },
+            { id: 'whole', name: 'All Speakers Including The Garden', active: false, loud: [{ name: 'Studio', level: 100, sets: false }] },
+            { id: 'desk', name: 'Office (Work) With The Big Speaker', active: true, loud: [] },
+            { id: 'living', name: 'Common Areas Downstairs', active: false, loud: [] },
             { id: 'upstairs', name: 'Upstairs Only', active: false, loud: [] },
           ]
         : [
-            { id: 'whole', name: 'Whole House', active: false, loud: [{ name: 'Studio', level: 100, sets: false }] },
-            { id: 'desk', name: 'Office Desk', active: m !== 'quiet', loud: [] },
-            { id: 'living', name: 'Living Spaces', active: false, loud: [] },
+            { id: 'whole', name: 'All Speakers', active: false, loud: [{ name: 'Studio', level: 100, sets: false }] },
+            { id: 'desk', name: 'Office (Work)', active: m !== 'quiet', loud: [] },
+            { id: 'living', name: 'Common Areas', active: false, loud: [] },
+            { id: 'upstairs', name: 'Upstairs Only', active: false, loud: [] },
           ];
   return {
     speakers: speakers(m),
     groups: groups(m),
     presets,
-    music: m === 'sparse' ? ROUTINES.slice(2, 3) : m === 'heavy' ? LONG_ROUTINES : ROUTINES,
-    controls: m === 'sparse' ? [] : [{ key: 'Group_Everything', name: 'Group Everything', action: 'groupAll', loud: [{ name: 'Studio', level: 100, sets: false }] }],
+    music: m === 'few' ? [ROUTINES[0], ROUTINES[7]] : m === 'sparse' ? ROUTINES.slice(2, 3) : m === 'heavy' ? LONG_ROUTINES : ROUTINES,
+    controls:
+      m === 'sparse'
+        ? []
+        : [
+            // The page no longer offers a group-all control; the mock still sends one to show it stays hidden.
+            { key: 'Group_Everything', name: 'Group Everything', action: 'groupAll', loud: [{ name: 'Studio', level: 100, sets: false }] },
+            { key: 'Ungroup_Everything', name: 'Ungroup Everything', action: 'ungroupAll', loud: [] },
+          ],
     scenes: [],
     sleepTimers: m === 'heavy' ? [{ id: 't1', endsAtMs: t + 42 * 60_000, fadeMinutes: 5 }] : [],
     nowPlaying:
@@ -120,6 +128,7 @@ function summary(m: Mode) {
 export function registerSonosMocks(): void {
   mocks.set('wall2_sonos_summary', () => {
     const m = mode();
+    if (m === 'slow') return new Promise(() => undefined);
     if (m === 'off') return Promise.reject(new Error('not-configured'));
     if (m === 'down') return Promise.reject(new Error('Could not reach Sonos'));
     return summary(m);
