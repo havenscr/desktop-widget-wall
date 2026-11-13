@@ -597,7 +597,7 @@ fn days_in_month(y: i64, m: i64) -> i64 {
 /// with one deliberate difference: a value with no offset (naive) or a date only is
 /// unreadable here, where the reference would read it as local time. The home app always
 /// sends an offset, and an unreadable time keeps a done request hiding, the safe side.
-fn parse_iso(s: &str) -> Option<f64> {
+pub(crate) fn parse_iso(s: &str) -> Option<f64> {
     let b = s.as_bytes();
     let num = |from: usize, to: usize| -> Option<i64> {
         let part = s.get(from..to)?;
