@@ -76,7 +76,7 @@ button,
   align-items: center;
   justify-content: center;
   gap: 7px;
-  color: var(--faint);
+  color: var(--dim);
   font: 600 12.5px/1 var(--disp);
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -88,7 +88,23 @@ button,
   box-shadow: inset 0 0 0 1px rgba(53, 230, 234, 0.45), 0 0 26px -6px rgba(53, 230, 234, 0.6);
 }
 .rb:enabled:not([aria-current='page']):hover {
-  color: var(--dim);
+  color: var(--tx);
+}
+/* The icon box, so a small dot can sit on its top right corner. */
+.rb-ico {
+  position: relative;
+  display: flex;
+}
+/* An open network alarm: a small amber dot on Home's icon, ringed in the rail's colour. */
+.rb-alarm {
+  position: absolute;
+  top: -4px;
+  right: -7px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--amber);
+  box-shadow: 0 0 0 3px #0e0a24;
 }
 .rb:enabled:active {
   transform: scale(0.93);
@@ -219,4 +235,20 @@ button,
 .hover-tip .tip-pick:disabled {
   color: var(--dim);
   cursor: default;
+}
+
+/* The network alarm chip (Work's agents header, Unwind's status line): a small amber dot,
+   then the words. */
+.alarm-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  white-space: nowrap;
+}
+.alarm-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--amber);
 }

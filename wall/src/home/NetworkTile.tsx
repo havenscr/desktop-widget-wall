@@ -1,6 +1,7 @@
 import { IconShield, IconShieldCheck, IconShieldExclamation, IconShieldX } from '@tabler/icons-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { invoke } from '../bridge/tauri';
+import { tip } from '../ui/HoverTip';
 import { ageText, alertRows, alertsLine, lastScanText, netNumbers, numbersOnLine, statusLine, tone, type SecuritySummary, type Tone } from './model';
 import { useSecurity } from './useSecurity';
 
@@ -20,7 +21,7 @@ function Status({ t, text, aside, dimAside = false }: { t: Tone | 'off'; text: s
 /**
  * Network and security, as the concept draws it: the heading above the card (like "Around
  * the house"), then the card with the status line and its shield, the numbers the feed
- * has, up to three open alerts as one-line rows, and the Security and Firewalla links as
+ * has, up to three open alerts as one-line rows, and the Alarms and Open Firewalla links as
  * full-width buttons along the bottom. The numbers row shows only with three or more
  * numbers; one or two sit on the status line's right ("Up, box online", "7 alarms in
  * 24 h"), and the scan age then moves up beside the heading. The card is as tall as what
@@ -121,7 +122,7 @@ interface LinkAvailability {
   portal: boolean;
 }
 
-/** Full-width buttons that open the home app's Security page or the Firewalla portal (Rust opens them). */
+/** Full-width buttons, Alarms and Open Firewalla, that open the home app's Security page or the Firewalla portal (Rust opens them). */
 function Links({ refresh }: { refresh: number }) {
   const [avail, setAvail] = useState<LinkAvailability>({ security: false, portal: false });
   const [failed, setFailed] = useState(false);
@@ -150,13 +151,13 @@ function Links({ refresh }: { refresh: number }) {
   return (
     <div className="net-links">
       {avail.security && (
-        <button type="button" className="net-link" onClick={() => open('security')}>
-          Security
+        <button type="button" className="net-link" onClick={() => open('security')} {...tip('Open the network alarms in the home app')}>
+          Alarms
         </button>
       )}
       {avail.portal && (
-        <button type="button" className="net-link" onClick={() => open('portal')}>
-          Firewalla
+        <button type="button" className="net-link" onClick={() => open('portal')} {...tip('Open the Firewalla portal in the browser')}>
+          Open Firewalla
         </button>
       )}
       {failed && (

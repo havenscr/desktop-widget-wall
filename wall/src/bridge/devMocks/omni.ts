@@ -5,7 +5,7 @@ import { mocks } from '../tauri';
 /**
  * Dev only: `?agents=` picks a helper state for review stills and the fit check:
  * `3` (default), `2`, `1`, `0`, `7` or `12` sessions from a helper 1.1.0 answer, `ask` (one
- * waiting, with a question), `ask2` (two waiting, one of them not on a card), `7ask` (seven sessions, the fifth waiting), `staleask` (one waiting, then the answer goes stale), `failed` (one failed), `old`
+ * waiting, with a question), `ask2` (two waiting, one of them not on a card), `7ask` (seven sessions, the fifth waiting), `12ask` (twelve sessions, two waiting) and `12staleask` (the same, stale), `staleask` (one waiting, then the answer goes stale), `failed` (one failed), `old`
  * (three lanes as the older helper sends them), `stale`, `off` (not set up) and `down` (set
  * up, not answering).
  */
@@ -42,9 +42,9 @@ export function registerOmniMocks(): void {
     const iso = (minsAgo: number) => new Date(now - minsAgo * 60_000).toISOString();
     const id = (i: number) => `a1b2c3d4-${String(i + 1).padStart(4, '0')}`;
     const old = AGENTS === 'old';
-    const count = { '0': 0, '1': 1, '2': 2, '7': 7, '7ask': 7, '12': 12 }[AGENTS] ?? 3;
-    const stale = AGENTS === 'stale' || AGENTS === 'staleask';
-    const waitOn = AGENTS === 'ask' || AGENTS === 'ask2' || AGENTS === 'staleask' || old ? [1] : AGENTS === '7ask' ? [4] : [];
+    const count = { '0': 0, '1': 1, '2': 2, '7': 7, '7ask': 7, '12': 12, '12ask': 12, '12staleask': 12 }[AGENTS] ?? 3;
+    const stale = AGENTS === 'stale' || AGENTS === 'staleask' || AGENTS === '12staleask';
+    const waitOn = AGENTS === 'ask' || AGENTS === 'ask2' || AGENTS === 'staleask' || old ? [1] : AGENTS === '7ask' ? [4] : AGENTS === '12ask' || AGENTS === '12staleask' ? [1, 4] : [];
     const all = POOL.map(([title, long, stage, state, line, next, mins], i) => {
       const waiting = waitOn.includes(i);
       const failed = AGENTS === 'failed' && i === 0;

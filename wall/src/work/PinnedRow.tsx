@@ -14,7 +14,8 @@ import { FALLBACK_PINS, MAX_PINS, parsePins, PINS_KEY, readPinsRaw, resolvePin, 
 import { useBrief } from './useBrief';
 import { runWallAction } from './wallActions';
 
-const columns = (n: number) => Math.max(1, Math.min(n, MAX_PINS));
+/** Always five columns, so a pinned tile is the size of a Now tile whatever the count. */
+const columns = (_n: number) => MAX_PINS;
 
 /** The library, read once; null while it loads or when it cannot be read. */
 function useLibrary(): { lib: LibGroup[] | null; failed: boolean; retry: () => void } {

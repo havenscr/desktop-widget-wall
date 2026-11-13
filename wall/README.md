@@ -204,9 +204,11 @@ of date", "Some speakers did not change") and nothing is logged. Dev mocks
 `home/Chores.tsx` and `home/useChores.ts`: the next three open tasks tagged `home` (a
 tag, not a list) from `wall2_tasks_summary({ tag: "home" })`, with "N more can wait"
 for the rest. The pill shows the time for a task due later today at a set time, else
-its estimate. Ticking the circle strikes the row at once, saves it with
-`wall2_task_done`, hides it after 2 seconds and reads the list again; a failed save
-brings the row back marked "not saved". Read on show and every 2 minutes while visible.
+its estimate. Ticking the circle shows "Done." with the title struck through, an Undo
+button and a thin bar for five seconds (`tasks/pendingTick.ts`); only then (or when the
+place changes) is the chore saved with `wall2_task_done`, hidden after 2 seconds and the
+list read again. Undo puts the row back and saves nothing. A failed save brings the row
+back with "Could not complete." and Retry. Read on show and every 2 minutes while visible.
 Each read takes a generation number (as in `tasks/useTasks.ts`), and only a read that
 started after a tick's save settled may bring that row back, so an older read landing
 late cannot restore a finished chore. A failed read after a good one keeps the rows,
@@ -417,18 +419,24 @@ The day ribbon (`wall/src/ribbon/`, `styles/ribbon.css`) is on Work, Home and Me
 - **Row 1**: today's calendar from `wall2_meet_day`, read when the ribbon shows and
   every 5 minutes while visible, clipped to 6 AM to 12 AM. A chip is `past` once it
   has ended, `now` while the needle is inside it, and pink when the event is a
-  livestream (`isLive`). An event that overlaps an earlier one goes in a second lane, 4 px
-  lower and a little shorter; each event takes the first lane free at its start, and when
-  more overlap than the two lanes hold the rest go into one "+N" chip in the second lane
-  (hover lists them; a click opens a small list to pick one to open in Outlook; a
-  second-lane chip under it joins the list, so no chip covers another in its lane). A chip
+  livestream (`isLive`). Events that overlap in time (one that ends exactly when the next
+  begins does not) form a group, and no chip is ever drawn over another: a group of one keeps
+  the full row; two or three overlapping stack in lanes of reduced height (two lanes keep a
+  13 px title, three are thin bars with the title in the hover); each event takes the first
+  lane free at its start. When more than three overlap at once the group keeps two lanes and
+  the rest go into one full-height "+N" chip (hover lists them; a click opens a small list to
+  pick one to open in Outlook; a chip under it joins the list). All-day events (midnight to
+  midnight, or a day or longer) fold into one "1 all day" chip at the start of the row (hover
+  lists them, a click opens one in Outlook), so timed events keep the full lane. A chip
   narrower than 44 px shows no title (it keeps its
-  hover card and an accessible name). Hover on a chip shows its title, time and account;
+  hover card and an accessible name); its title is written beside it in the chip's own type
+  when the row has room before the next chip (`chipLayout` in `ribbon/model.ts`). Hover on a chip shows its title, time and account;
   a chip whose event Rust holds a web link for (`canOpen`) is a button that opens the
   event in Outlook (`wall2_open_event`, see "Opening an event in Outlook" under Meet).
   Calendar chips are rounded and carry words; the agent bars below are thin and wordless.
   Meet "Not set up" leaves the row empty with no text; any other failed read keeps the
   last good list.
+- **After 9 PM** local time the agent bars and the focus bar draw at 40 percent (`.rib.late`).
 - **Focus bar** (Work and Meet): today's focus sessions up to now, from the focus store.
   Each start, pause, reset and finish updates `localStorage` key `wall2-focus-day`
   (`{ sessions: [{ start, end }] }`, epoch ms). A running session is saved with its
@@ -480,7 +488,9 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
     dimmed, with no countdown (only the time: "12:00", or "10:00 to 10:36" once it has
     started) and a quiet "as of H:MM" (the last complete read; "may be out of date" if
     there has been none);
-  - **Focus** (`FocusMini` in `focus/FocusTimer.tsx`): a 60 pixel ring with the
+  - **Focus** (`FocusMini` in `focus/FocusTimer.tsx`), hidden while the centre shows the
+    Focus card (no agent sessions; `useCentreShowsFocus`), when Next's title may take a
+    second line instead: a 60 pixel ring with the
     minutes left, the task label (or "Ready to focus"), and one round button: start,
     pause or resume. Tapping the ring while no session runs opens a sheet with 25, 50,
     Custom and "Start N min"; a session started elsewhere closes the sheet;
@@ -817,7 +827,7 @@ frame (no ribbon) in the wide zones `470px 1fr 540px`. The parts are in `wall/sr
 - **Right wing.** The Room card (`RoomCard.tsx`), at the concept's size and place: 120 px
   tall, its foot 38 px above the end of the other places' 490 px band, so its top is 332
   px down and its foot sits level with the transport (`UNWIND_ROOM_*` in
-  `screens/frameLayout.ts`, passed to the stylesheet as `--room-top`), "Room"
+  `screens/frameLayout.ts`, passed to the stylesheet as `--room-top`), "Lights"
   over a row of 40 px mood chips. The home moods come from `wall2_moods`; a click applies
   one with `wall2_apply_mood`, and the last mood applied (here or on Home's mood cards) is
   marked for three hours (the id is `wall2-last-mood`, shared with Home in its plain
@@ -1034,7 +1044,7 @@ file is read on every call, so a change applies on the next refresh.
 - `homeSecurityUrl` is optional: the full address of the home app's Security page,
   for example `"homeSecurityUrl": "https://example.invalid/app/#/security"`. It must
   be `https`, may have any path, query or fragment, and may not carry a user name.
-  Missing or invalid means the Security button stays hidden.
+  Missing or invalid means the Alarms button stays hidden.
 
 ### Task card (Work tab, top right)
 
@@ -1047,9 +1057,12 @@ The header says "N more can wait" when there are more. Refreshes every 2 minutes
 visible and after each completion. (`useTasks()` with no filter still reads
 `wall2_tasks_next`; Zen uses that.)
 
-- **Check**: the row is struck through at once and fades out after 2 seconds;
+- **Check**: the row shows "Done." with the title struck through, an Undo button and a
+  thin bar that runs down over five seconds (no animation with reduced motion); one tick
+  waits per row. Undo puts the row back and calls nothing. When the five seconds pass (or
+  the place changes) the row is struck through and fades out after 2 seconds;
   `wall2_task_done` sends `PATCH /api/tasks/{id}` with `{"status":"done"}`. If that
-  fails the row comes back with a small "Could not save".
+  fails the row comes back with "Could not complete." and a Retry button.
 - **Open**: a click on a task's title opens it in the task app. `wall2_open_task(id)`
   accepts only an id that one of the last good task reads showed (Work's list, Home's
   chores and the plain next three are kept apart, so one never replaces another), builds
@@ -1087,6 +1100,16 @@ visible and after each completion. (`useTasks()` with no filter still reads
 
   The existing `wall2_tasks_next` is unchanged.
 
+### Network alarm on every place
+
+The rail's Home icon carries a small amber dot, on every place, while the home security
+source reports open alerts; Work's agents header (after the slot meter) and Unwind's status
+line carry one quiet chip, "1 network alert" or "N network alerts", whose click goes to Home
+(`home/AlarmChip.tsx`). Nothing shows while the source is loading, not set up, down after a
+good read, or says its scan is stale. Everything reads one shared security poll
+(`useSecurityFeed` in `home/useSecurity.ts`): the rail, the chips, Home's network card and
+For you, so there is one read every 5 minutes however many are on screen.
+
 ### Network tile (Home tab, right)
 
 `wall/src/home/`. Reads `GET /api/security?lite=1` and shows, as the concept draws it:
@@ -1121,8 +1144,8 @@ the alerts carry no readable text, the card shows "N open alerts" instead.
 - "Not set up" when there is no address.
 
 Two buttons share the bottom of the card, each half its width and 52 design pixels
-tall (see "Pointer and touch" below), shown only when available. **Security** opens `homeSecurityUrl` from `feeds.json`.
-**Firewalla** opens the `portalUrl` from the most recent good security read, and
+tall (see "Pointer and touch" below), shown only when available. **Alarms** opens `homeSecurityUrl` from `feeds.json`.
+**Open Firewalla** opens the `portalUrl` from the most recent good security read, and
 only when it is `https` on `firewalla.net` or a subdomain. Both open in the default
 browser, and Rust does the opening (`wall2_open_link`, kinds `security` and
 `portal`); the web view only names the kind and never supplies a URL, and
@@ -1279,7 +1302,8 @@ Nothing here logs, and nothing here takes a wake lock or sets an execution state
 
 - **Data** (`useAgents.ts`): one poll of `wall2_omni_summary` shared by everything that reads it, on mount and every 15 seconds while the page is visible and at least one reader is mounted. Nothing while hidden. One read at a time; a read over 10 seconds counts as failed, and a lane or day span with a missing or wrongly typed field is dropped. `not-configured` or `invalid-config` is "not set up". A failed read keeps the last answer, marked stale, for up to 30 minutes; with no earlier answer, or when the helper's own `now` has not moved for 30 minutes of this PC's time (a frozen helper), it is "not reachable". The two machines' clocks are never compared: the first answer is always accepted, and the skew (the helper's `now` minus this PC's time when the answer arrived) is taken off every helper time before the ribbon draws it. When the page comes back after more than 15 seconds away, the kept answer is stale until the first new read returns.
 - **Stale is never live**: while the answer is stale the lanes dim with "updated N min ago", the ribbon's agent row dims and its open runs end at the last good answer's time, `useAgentStatusLine()` returns null and `useAgentsWaiting()` returns false.
-- **Header**: "Agents", the slot meter (a pip per slot up to six, filled for each working session, "+N" past the last pip) with wording that cannot read as a bug ("4 working, 6 open, 4 slots" from a newer helper, "9 running, 4 slots" from an older one), a hover with the breakdown (working, open, helpers) and a click that brings OmniGent forward; "3 of 7" when more sessions are open than fit (a click shows the next three). On the right: the button "One thing for you: <title>" in amber, which opens that session and brings OmniGent forward; "then N more" (counting only the up to five ids it can step through, "and more" beyond) opens the next and the header names it ("Also for you: <title>"), wrapping back to the first; with something waiting but no id, "Something needs you", which brings OmniGent forward. With nothing waiting, "Ready to merge: <title>" in mint when a card is ready for Hold to merge (a click shows that card), else "No agent needs you" (it only knows about agents). The waiting list is the helper's `yourMove.ids` (or its first entry) plus any waiting card, less any snoozed here; a title comes from the cards, the first entry or the names map. **Stale**: the header, slot meter, count, parked line and usage meters dim with "updated N min ago"; the amber call to action goes grey and the One thing button and slot meter do nothing; with nothing waiting it reads "Last known: no agent needed you, as of 10:02 AM" with a grey dot, never an all-clear. Cards still open, and their hover says "All of this is as of N min ago".
+- **Header**: "Agents", the slot meter (a pip per slot up to six, filled for each working session, "+N" past the last pip) with wording that cannot read as a bug ("4 working, 6 open, 4 slots" from a newer helper, "9 running, 4 slots" from an older one), a hover with the breakdown (working, open, helpers) and a click that brings OmniGent forward; "3 of 7" when more sessions are open than fit (a click shows the next three); and the network alarm chip ("4 network alerts", see "Network alarm on every place"). Nothing in the header wraps: when it is tight its parts give way in order, the meter's sentence to "5 of 8 working", then to the pips alone (the full text in the hover), then the alarm chip to a dot and its count; "3 of 8" always stays whole, and the One thing button's title truncates last with an ellipsis (`HeaderFit` in `agents/Lanes.tsx`; the fit check fails on any header part taller than one line). On the right: the button "One thing for you: <title>" in amber, which opens that session and brings OmniGent forward; "then N more" (counting only the up to five ids it can step through, "and more" beyond) opens the next and the header names it ("Also for you: <title>"), wrapping back to the first; with something waiting but no id, "Something needs you", which brings OmniGent forward. With nothing waiting, "Ready to merge: <title>" in mint when a card is ready for Hold to merge (a click shows that card), else "No agent needs you" (it only knows about agents). The waiting list is the helper's `yourMove.ids` (or its first entry) plus any waiting card, less any snoozed here; a title comes from the cards, the first entry or the names map. **Stale**: the header, slot meter, count, parked line and usage meters dim with "updated N min ago"; the amber call to action goes grey and the One thing button and slot meter do nothing; with nothing waiting it reads "Last known: no agent needed you, as of 10:02 AM" with a grey dot, never an all-clear. Cards still open, and their hover says "All of this is as of N min ago".
+- **Which session opens.** "Open chat", the "Open what waits on me" key and the For you rows always open the parent or standalone session, never a child session: the helper sends parent ids (from helper 1.2.0) and the wall opens exactly the id it is given.
 - **Cards** (`Lane.tsx`, `StageTrack.tsx`, `LaneRing.tsx`): parents and standalone sessions only (`sessionsList`, or the three lanes from an older helper), numbered 1 to N on the ring. Three are in view; more scroll with the wheel a card at a time (scroll snap), with a thin scrollbar that shows on hover; the page never moves. The title takes every free pixel; hover shows the full title with the details. The second line says the most useful thing first: waiting on you (amber: the helper's question for it when there is one, else "Waiting on you for 12 min"), failed (red), what it is doing or its next step, then "Working now" or "Idle for 5 min"; after it, quietly, as many whole facts as fit (helpers, which assistant, the PR with checks), dropped from the end and never cut inside a word, all of them in the hover. A waiting card has an amber edge, an amber ring with "?" and two buttons in place of the time: "Open chat" (opens it and brings OmniGent forward) and "Later", which quietens it for 15 minutes on this display only (kept in this display's storage, nothing sent anywhere): the card keeps a small amber dot and "Snoozed until 10:41 AM", the header and the dot over Watt stop counting it, and it comes back by itself. A failed card has a red edge and a warning sign. The time at the right says what it measures in its hover ("Working, open for 42 min, started 9:42 AM") and reads "idle 12 min" when the helper says how long it has been idle. Only the card with "Hold to merge" takes the button's extra width, from the end of its own track, so every track starts in line. With fewer than three cards they grow (to 150 px) and the quiet facts move to a third line.
 - **Stage colours**: Plan, Build, Review, PR and Live each have a colour (`--st-plan` to `--st-live` in `tokens.css`, cool to warm, Live a yellow-green kept apart from the failed red, from amber and from the pink PR colour; amber and mint are kept for "waits on you" and "done"), used on the track (done stages dimmed, the current one glowing), the card's ring and the ribbon bars' left notch. Hover on a track shows the legend. Each measures at least 4.7:1 on the lane glass and the ribbon on the morning, noon, sunset and night skies; the inactive stage labels (6:1) and the timeline row numbers are at least 11 px.
 - **Click**: each card's open action is a real button stretched under its content (Tab reaches it, then the card's own buttons); a click anywhere on the card but those buttons calls `wall2_focus_omnigent(id)`: the session opens and OmniGent comes forward. When the summary says `linksAvailable: false` there is no open button.
@@ -1321,11 +1345,11 @@ Listed in the picker as "coming" and not runnable: `task:add` (needs a write to 
 
 The pin icon beside the heading. Up to five keys that never change by themselves: the owner's pins on this display (local storage `wall2-keys-pins`, validated on read against the library and `keys.json`, anything odd means the defaults; a pin on a `keys.json` key is stored with that key's label and action and is dropped when the file no longer has the same key there), else the keys named in `pinned` in `keys.json`, else **Thirds, Focus, Record 16:9, Snip, Screens off**. After a layout key the heading says "3 windows arranged" (or "2 of 3") with an Undo button for 60 seconds, and the layout key keeps its outline. Right-click a key, or press the ContextMenu key or Shift+F10 on it, to open the picker.
 
-**The picker** covers exactly the two rows' box and nothing else (never Next three; with little in the rows the box grows to 236 px while it is open): the whole library by group, a search box (label, group and what a key does), the current five marked ("pinned", "this slot"), a click swaps that key into the slot (a key already pinned trades places), "Reset to defaults" at the bottom. Escape (from anywhere while it is open) or a click outside closes it, and the click that closes it does nothing else; the arrow keys move through the rows; rows are 36 px tall, two to a line. Keys marked **check** are shortcuts the owner must confirm on his PC: they are never in a set Auto shows, and the page offers one only once it is pinned. Rust itself accepts any runnable library id (held to its group's programs), so the "only when pinned" rule lives in the page. "coming" rows and shortcuts still to be worked out (the three Power BI ribbon ones) are listed but cannot be pinned. `keys.json` is never written.
+**The picker** opens over the two rows' box (never Next three) and runs down over the mountains to just above the day timeline, leaving the 16 px gap the main rows keep (`pickerBottomY` in `keysModel.ts`, measured again when anything above it in the wing changes size; it never covers the timeline or its chips). Search stays at the top and "Reset to defaults" at the bottom; only the list between them scrolls, with the wall's slim scrollbar and a fade at its foot so no row shows cut mid-text. It holds the whole library by group, a search box (label, group and what a key does), the current five marked ("pinned", "this slot"), a click swaps that key into the slot (a key already pinned trades places), "Reset to defaults" at the bottom. Escape (from anywhere while it is open) or a click outside closes it, and the click that closes it does nothing else; the arrow keys move through the rows; rows are 36 px tall, two to a line. Keys marked **check** are shortcuts the owner must confirm on his PC: they are never in a set Auto shows, and the page offers one only once it is pinned. Rust itself accepts any runnable library id (held to its group's programs), so the "only when pinned" rule lives in the page. "coming" rows and shortcuts still to be worked out (the three Power BI ribbon ones) are listed but cannot be pinned. `keys.json` is never written.
 
 ### Now
 
-Heading "Now · <page name>", the pages as dots, previous and next arrows (the wheel over the row steps too) and the Auto switch. The pages, in stepping order: **For you** (only while something waits), the set for the app in front, the general set, then every other set.
+Heading "Now · <page name>", the pages as dots (up to seven; past that "8 of 12"), previous and next arrows (the wheel over the row steps too) and the Auto switch. The page name always shows whole: when the heading is tight the dots give way to "8 of 12" first, then the For you chip shrinks to a dot and its count. Every key in both rows is the same boxed tile, five to a row (60 px tall, the icon above a label of at most two lines that ends with an ellipsis). On a set's page a key's label drops the group name the page already says ("VS Code: command palette" is "Command palette" on the VS Code page); the full name stays in the hover and the picker. A set with six to eight keys gets a second row only when it fits above the deck's floor; otherwise it shows five at a time ("1/2" by the page name) and the arrows step through them before the next page. The floor (`deckFloorY` in `keysModel.ts`) is a 12 px clearance above the highest point of the mountain ridge under the right wing, worked out from the Work camera (`horizon/ridge.ts`, the renderer's own profile), and above Watt's band where his walk reaches under the wing; no part of the deck goes below it. A key that cannot be sent right now (its set's app is not in front, or a layout with no big screen) keeps its size and stays readable, one step less contrast, and its hover says why. The pages, in stepping order: **For you** (only while something waits), the set for the app in front, the general set, then every other set.
 
 **Auto** shows the set for the app in front, else the general set. When a NEW "For you" item arrives (never seen, or gone for 10 minutes or more; one that blinks out for a poll is the same item; items already waiting when the row mounts are not new; the swap waits for any press in flight) Auto shows that page for 45 seconds, then goes back to the keys by itself, even if the item still waits. While anything waits and the page is not showing, a small amber chip "For you 3" in the heading jumps to it. Stepping by hand (arrows, dots, wheel, the chip) turns on **Hold**: the row stays on that page until Auto is clicked, and Hold never times out. A held For you page ends when nothing waits any more. A key still goes only to an app its set allows; a held set in the wrong app is refused ("Wrong app in front for ...") and nothing is sent.
 
@@ -1428,7 +1452,7 @@ Example `keys.json`:
 
 The Power BI chords above are placeholders, not checked against the program. Icons are checked against a fixed list in Rust (`ICON_NAMES`; an unknown name is an error naming the set and the key's position, and a test keeps the page's drawn icons equal to the Rust list).
 
-Dev mocks for stills (`?keys=typical|general|nogeneral|idle|many|one|wrong|refuse|problem|off`, `?hold=<set id or foryou>`, `?source=default`, `?arrange=ok|none|nowin|off`; what waits for For you comes from `?agents=ask`, `?meet=none` and `?net=calm`) are in `wall/src/bridge/devMocks/deck.ts`. `npm --prefix wall run fit-check` checks the deck in sparse, typical and heavy states, For you held, and the picker open.
+Dev mocks for stills (`?keys=typical|general|nogeneral|idle|many|one|wrong|refuse|problem|library|off`, `?pins=long`, `?hold=<set id or foryou>`, `?source=default`, `?arrange=ok|none|nowin|off`; what waits for For you comes from `?agents=ask`, `?meet=none` and `?net=calm`) are in `wall/src/bridge/devMocks/deck.ts`. `npm --prefix wall run fit-check` checks the deck in sparse, typical and heavy states, For you held, the picker open, and the built-in library sets (twelve pages, the longest labels, a set whose app is not in front), and fails when any part of the deck goes below its floor (the open picker aside), a key label runs outside its tile, two tiles share pixels, the Now heading is cut, or the open picker comes within 16 px of the timeline (checked with the whole library open).
 
 ## Content security policy
 

@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
+import { TICK_UNDO_MS } from '../tasks/pendingTick';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { mocks } from '../bridge/tauri';
 import { usePacificTime } from '../ribbon/testZone';
@@ -60,6 +61,8 @@ it('a click on a chore\'s title opens it in the task app; the tick circle does n
   expect(opened).toEqual([{ id: 'c-1' }]);
   expect(done).toEqual([]);
   fireEvent.click(screen.getByRole('button', { name: 'Done: Water the plants' }));
+  // Past the undo window: the tick is now really completed.
+  await flush(TICK_UNDO_MS);
   await flush();
   expect(opened).toHaveLength(1);
   expect(done).toEqual([{ id: 'c-1' }]);
@@ -75,6 +78,8 @@ it('ticks a chore: struck at once, saved, gone after two seconds, list read agai
   const { container } = render(<Chores />);
   await flush();
   fireEvent.click(screen.getByRole('button', { name: 'Done: Water the plants' }));
+  // Past the undo window: the tick is now really completed.
+  await flush(TICK_UNDO_MS);
   await flush();
   expect(done).toHaveBeenCalledWith({ id: '1' });
   expect(container.querySelector('.tk3.done')).toBeTruthy();
@@ -89,10 +94,12 @@ it('a failed save brings the row back marked not saved', async () => {
   const { container } = render(<Chores />);
   await flush();
   fireEvent.click(screen.getByRole('button', { name: 'Done: Water the plants' }));
+  // Past the undo window: the tick is now really completed.
+  await flush(TICK_UNDO_MS);
   await flush(2500);
   expect(screen.getByText('Water the plants')).toBeTruthy();
   expect(container.querySelector('.tk3.failed')).toBeTruthy();
-  expect(screen.getByText('not saved')).toBeTruthy();
+  expect(screen.getByText('Could not complete.')).toBeTruthy();
 });
 
 it('says Not set up, task app not reachable, or nothing waiting', async () => {
@@ -158,6 +165,8 @@ it('a read that began before the save cannot bring a ticked row back, even when 
   reads[0].resolve({ next: [task('1', 'Water the plants'), task('2', 'Sort the recycling')], remaining: 0 });
   await flush();
   fireEvent.click(screen.getByRole('button', { name: 'Done: Water the plants' }));
+  // Past the undo window: the tick is now really completed.
+  await flush(TICK_UNDO_MS);
   await flush();
   // An interval read starts before the save settles and still lists the row.
   await flush(120_000);
@@ -186,6 +195,8 @@ it('when every shown chore is ticked it says Loading the next ones, never Nothin
   reads[0].resolve({ next: [task('1', 'Water the plants')], remaining: 5 });
   await flush();
   fireEvent.click(screen.getByRole('button', { name: 'Done: Water the plants' }));
+  // Past the undo window: the tick is now really completed.
+  await flush(TICK_UNDO_MS);
   await flush(2000);
   expect(screen.getByText('Loading the next ones')).toBeTruthy();
   expect(screen.queryByText('Nothing waiting around the house')).toBeNull();
@@ -193,4 +204,22 @@ it('when every shown chore is ticked it says Loading the next ones, never Nothin
   await flush();
   expect(screen.getByText('Could not load the next ones')).toBeTruthy();
   expect(screen.queryByText('Nothing waiting around the house')).toBeNull();
+});
+
+it('a chore tick waits five seconds with Undo; Undo completes nothing', async () => {
+  mocks.set('wall2_tasks_summary', () => ({ next: [task('w', 'Water the plants')], remaining: 0 }));
+  const done = vi.fn();
+  mocks.set('wall2_task_done', done);
+  render(<Chores />);
+  await flush();
+  fireEvent.click(screen.getByRole('button', { name: 'Done: Water the plants' }));
+  expect(screen.getByRole('button', { name: 'Undo: Water the plants' })).toBeTruthy();
+  await flush(2000);
+  fireEvent.click(screen.getByRole('button', { name: 'Undo: Water the plants' }));
+  await flush(TICK_UNDO_MS);
+  expect(done).not.toHaveBeenCalled();
+  expect(screen.getByRole('button', { name: 'Open Water the plants' })).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Done: Water the plants' }));
+  await flush(TICK_UNDO_MS);
+  expect(done).toHaveBeenCalledWith({ id: 'w' });
 });

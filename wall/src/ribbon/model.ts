@@ -131,20 +131,58 @@ export interface Chip {
   width: number;
   state: ChipState;
   live: boolean;
-  /** 0, or 1 when it overlaps an earlier chip in lane 0 (drawn 4 px lower and shorter). */
-  lane: 0 | 1;
+  /** Its lane in its group of overlapping events, from 0 (`chipLayout`). */
+  lane: number;
+  /** How many lanes its group stacks in the row: 1, or 2 or 3 at a reduced height. */
+  lanes: number;
   /** Too narrow for its title. */
   narrow: boolean;
+  /** Width of the title written beside a narrow chip, or null when there is no room (hover only). */
+  beside: number | null;
   start: number;
   end: number;
   accountId: string | null;
   canOpen: boolean;
 }
 
+const DAY_MS = 86_400_000;
+
+/** Local midnight at the start of the day holding `ms`. */
+function midnight(ms: number): number {
+  const d = new Date(ms);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
+/** An all-day event: a day or more long, or midnight to a later midnight on the local clock. */
+export function isAllDay(start: number, end: number): boolean {
+  if (end - start >= DAY_MS - 60_000) return true;
+  return end > start && midnight(start) === start && midnight(end) === end;
+}
+
+function toChip(e: DayEvent, start: number, end: number, x: number, width: number, now: number): Chip {
+  return {
+    key: e.key,
+    title: e.title,
+    x,
+    width,
+    state: end <= now ? 'past' : start <= now ? 'now' : 'next',
+    live: e.isLive === true,
+    lane: 0,
+    lanes: 1,
+    narrow: false,
+    beside: null,
+    start,
+    end,
+    accountId: typeof e.accountId === 'string' ? e.accountId : null,
+    canOpen: e.canOpen === true,
+  };
+}
+
 /**
- * Calendar chips for row 1: today's events between 6 AM and 12 AM, clipped to that span.
- * An event that has ended is `past`; one under the needle is `now`. Lanes come from
- * `chipLayout`.
+ * Calendar chips for row 1: today's timed events between 6 AM and 12 AM, clipped to that
+ * span (all-day events fold into one chip, `allDayChips`). An event that has ended is
+ * `past`; one under the needle is `now`. Lanes come from `chipLayout`.
  */
 export function chips(events: readonly DayEvent[], now: number): Chip[] {
   const out: Chip[] = [];
@@ -152,81 +190,187 @@ export function chips(events: readonly DayEvent[], now: number): Chip[] {
     const start = Date.parse(e.start);
     const end = Date.parse(e.end);
     if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) continue;
+    if (isAllDay(start, end)) continue;
     const sh = clampHour(wallHour(start, now));
     const eh = clampHour(wallHour(end, now));
     if (eh <= sh) continue;
     const x = RX(sh);
-    out.push({
-      key: e.key,
-      title: e.title,
-      x,
-      width: Math.max(MIN_CHIP_PX, RX(eh) - x),
-      state: end <= now ? 'past' : start <= now ? 'now' : 'next',
-      live: e.isLive === true,
-      lane: 0,
-      narrow: false,
-      start,
-      end,
-      accountId: typeof e.accountId === 'string' ? e.accountId : null,
-      canOpen: e.canOpen === true,
-    });
+    out.push(toChip(e, start, end, x, Math.max(MIN_CHIP_PX, RX(eh) - x), now));
   }
   out.sort((a, b) => a.x - b.x);
   for (const c of out) c.narrow = c.width < NARROW_CHIP_PX;
   return out;
 }
 
-/** The calendar row has two lanes; a third concurrent event goes into a "+N" chip. */
-export const CHIP_LANES = 2;
+/** Today's all-day events, in start order, for the one "N all day" chip (its hover lists them). */
+export function allDayChips(events: readonly DayEvent[], now: number): Chip[] {
+  const dayStart = midnight(now);
+  const out: Chip[] = [];
+  for (const e of events) {
+    const start = Date.parse(e.start);
+    const end = Date.parse(e.end);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start || !isAllDay(start, end)) continue;
+    if (end <= dayStart || start >= dayStart + DAY_MS) continue;
+    out.push(toChip(e, start, end, RX(START_HOUR), 0, now));
+  }
+  return out.sort((a, b) => a.start - b.start || a.title.localeCompare(b.title));
+}
+
+/** "1 all day", "2 all day". */
+export function allDayText(n: number): string {
+  return `${n} all day`;
+}
+
+/** The all-day chip's width at the start of the calendar row, from its words. */
+export function allDayWidth(n: number): number {
+  return Math.round(24 + allDayText(n).length * 8.6);
+}
+
+/** Most lanes a group of overlapping events stacks in; a fourth at once goes into a "+N" chip. */
+export const CHIP_LANES = 3;
 /** Width of a "+N" chip. */
 export const MORE_CHIP_PX = 44;
+/** The narrowest a "+N" chip gets when it must squeeze in after its group. */
+export const MORE_MIN_PX = 24;
+/** Gap between a "+N" chip and the chips beside it. */
+const MORE_GAP = 4;
+/** Gap between a narrow chip and the title written beside it, and before the next chip. */
+const BESIDE_GAP = 6;
+/** A title beside its chip needs at least this much room, else it is in the hover only. */
+export const BESIDE_MIN_PX = 60;
+/** The widest a title beside its chip runs. */
+export const BESIDE_MAX_PX = 260;
 
-/** A "+N" chip: the events that did not fit a lane, listed on hover, picked from on click. */
+/** A "+N" chip: the events that did not fit, listed on hover, picked from on click. Full row height. */
 export interface MoreChip {
   key: string;
   x: number;
   width: number;
-  lane: 0 | 1;
   items: Chip[];
 }
 
+/** The "N all day" chip's place: the start of the calendar row, in lane `lane` of `lanes`. */
+export interface AllDayBox {
+  x: number;
+  width: number;
+  lane: number;
+  lanes: number;
+}
+
+/** Estimated width of a title in the chip type: 17 px in a single lane, 13 px when stacked. */
+function titleWidth(title: string, lanes: number): number {
+  return Math.ceil(title.length * (lanes > 1 ? 6.8 : 8.6)) + 4;
+}
+
+const ALL_DAY_KEY = '\u0000all-day';
+
 /**
- * Lanes for the day's chips: each event goes in the first lane free at its start. When more
- * overlap than there are lanes, the ones that fit are drawn and the rest go into one "+N"
- * chip in the second lane at the first one's start; a second-lane chip under that "+N" chip
- * joins it too, so nothing is ever drawn over another chip in the same lane.
+ * Lanes for the day's chips, so no chip is ever drawn over another. Events that overlap in
+ * time (an event that ends exactly when the next begins does not) form a group; a group of
+ * one keeps the full row, a group needing two or three lanes stacks them at a reduced
+ * height. When more than three overlap at once, the group keeps two lanes of real chips and
+ * the rest go into one full-height "+N" chip that covers no chip: at the end of the group's
+ * span (the chips there drawn shorter), else just after it. `allDay` is the width of the "N all day" chip, which takes the first
+ * lane at the start of the row. A narrow chip gets its title written beside it when the
+ * row has room before the next chip.
  */
-export function chipLayout(all: readonly Chip[]): { shown: Chip[]; more: MoreChip[] } {
-  const ends = Array.from({ length: CHIP_LANES }, () => -Infinity);
-  const shown: Chip[] = [];
-  const over: Chip[] = [];
-  for (const c0 of [...all].sort((a, b) => a.x - b.x)) {
-    const lane = ends.findIndex((e) => c0.x >= e);
-    if (lane < 0) {
-      over.push(c0);
-      continue;
+export function chipLayout(all: readonly Chip[], allDay = 0): { shown: Chip[]; more: MoreChip[]; allDay: AllDayBox | null } {
+  const items = [...all].sort((a, b) => a.x - b.x).map((c) => ({ ...c }));
+  const pseudo = allDay > 0 ? ({ key: ALL_DAY_KEY, x: RX(START_HOUR), width: allDay } as Chip) : null;
+  if (pseudo) items.unshift(pseudo);
+  // Groups of chips whose spans overlap, directly or through another.
+  const groups: Chip[][] = [];
+  let reach = -Infinity;
+  for (const c of items) {
+    if (groups.length > 0 && c.x < reach) {
+      groups[groups.length - 1].push(c);
+      reach = Math.max(reach, c.x + c.width);
+    } else {
+      groups.push([c]);
+      reach = c.x + c.width;
     }
-    const c = { ...c0, lane: lane as 0 | 1 };
-    ends[lane] = c.x + c.width;
-    shown.push(c);
   }
+  const groupOf = new Map<Chip, number>();
+  groups.forEach((g, i) => g.forEach((c) => groupOf.set(c, i)));
+  const shown: Chip[] = [];
   const more: MoreChip[] = [];
-  for (const c of over) {
-    const last = more[more.length - 1];
-    const reach = last ? Math.max(last.x + last.width, ...last.items.map((i) => i.x + i.width)) : -Infinity;
-    if (last && c.x < reach) last.items.push(c);
-    else more.push({ key: `more-${c.key}`, x: c.x, width: MORE_CHIP_PX, lane: 1, items: [c] });
+  let box: AllDayBox | null = null;
+  for (const g of groups) {
+    const place = (lanes: number) => {
+      const ends = Array.from({ length: lanes }, () => -Infinity);
+      const over: Chip[] = [];
+      for (const c of g) {
+        const lane = ends.findIndex((e) => c.x >= e);
+        if (lane < 0) over.push(c);
+        else {
+          c.lane = lane;
+          ends[lane] = c.x + c.width;
+        }
+      }
+      return over;
+    };
+    let over = place(CHIP_LANES);
+    let lanes = over.length === 0 ? Math.max(...g.map((c) => c.lane)) + 1 : 2;
+    const kept: Chip[] = [];
+    const groupMore: MoreChip[] = [];
+    if (over.length > 0) {
+      // Two lanes of real chips; one full-height "+N" chip holds every other meeting of the group
+      // and sits where it covers no chip: inside the group's span at its end (the chips there are
+      // drawn shorter to make room), else just after the group, narrower if it must be.
+      over = place(2);
+      const end = Math.max(...g.map((c) => c.x + c.width));
+      const next = groups[groups.indexOf(g) + 1]?.[0]?.x ?? RX(END_HOUR) + 40;
+      const inGroup = g.filter((c) => !over.includes(c));
+      const nx = end - MORE_CHIP_PX;
+      const fitsInside = inGroup.every((c) => c.x + c.width <= nx - MORE_GAP || (c !== pseudo && c.x + MIN_CHIP_PX <= nx - MORE_GAP));
+      let mx: number;
+      let mw = MORE_CHIP_PX;
+      if (fitsInside) {
+        mx = nx;
+        for (const c of inGroup) if (c.x + c.width > nx - MORE_GAP) c.width = nx - MORE_GAP - c.x;
+      } else {
+        mx = end + MORE_GAP;
+        mw = Math.max(MORE_MIN_PX, Math.min(MORE_CHIP_PX, next - MORE_GAP - mx));
+      }
+      groupMore.push({ key: `more-${over[0].key}`, x: mx, width: mw, items: [...over] });
+    }
+    kept.push(...g.filter((c) => !over.includes(c)));
+    if (kept.length > 0 && over.length === 0) lanes = Math.max(...kept.map((c) => c.lane)) + 1;
+    for (const c of kept) {
+      c.lanes = lanes;
+      if (c === pseudo) box = { x: c.x, width: c.width, lane: c.lane, lanes };
+      else {
+        // Three stacked lanes are too thin for a title: it is in the hover only.
+        if (lanes >= 3) c.narrow = true;
+        shown.push(c);
+      }
+    }
+    for (const m of groupMore) m.items.sort((a, b) => a.start - b.start || a.key.localeCompare(b.key));
+    more.push(...groupMore);
   }
-  // A second-lane chip the "+N" chip would sit on joins its list.
-  const keep = shown.filter((c) => {
-    if (c.lane !== 1) return true;
-    const m = more.find((mm) => c.x < mm.x + mm.width && mm.x < c.x + c.width);
-    if (!m) return true;
-    m.items.push(c);
-    return false;
-  });
-  for (const m of more) m.items.sort((a, b) => a.start - b.start || a.key.localeCompare(b.key));
-  return { shown: keep, more };
+  // Titles beside narrow chips, where the row has room before the next thing in their lane.
+  const ribbonEnd = RX(END_HOUR) + 40;
+  const others = [...shown.map((c) => ({ c, x: c.x, w: c.width })), ...more.map((m) => ({ c: null, x: m.x, w: m.width })), ...(box ? [{ c: null, x: box.x, w: box.width }] : [])];
+  for (const c of shown) {
+    if (!c.narrow || c.lanes >= 3) continue;
+    const from = c.x + c.width;
+    let room = ribbonEnd - from;
+    for (const o of others) {
+      if (o.c === c || o.x < from) continue;
+      // Within its own stacked group only the chip's own lane blocks it.
+      if (o.c && c.lanes > 1 && groupOf.get(o.c) === groupOf.get(c) && o.c.lane !== c.lane) continue;
+      room = Math.min(room, o.x - from);
+    }
+    // The title takes the room up to the next chip (cut with an ellipsis only when it is longer).
+    const free = Math.floor(room - 2 * BESIDE_GAP);
+    c.beside = free >= Math.min(titleWidth(c.title, c.lanes), BESIDE_MIN_PX) ? Math.min(free, BESIDE_MAX_PX) : null;
+  }
+  return { shown, more, allDay: box };
+}
+
+/** True after 9 PM local time: the agent bars and the focus line draw at 40 percent. */
+export function isLate(now: number): boolean {
+  return new Date(now).getHours() >= 21;
 }
 
 /** Focus bars: today's sessions up to now, inside 6 AM to 12 AM. */
