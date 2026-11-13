@@ -4,7 +4,8 @@ import { useIdle } from '../ui/useIdle';
 import { wantsDemo } from '../audio/capture';
 import { STAGE_HEIGHT, STAGE_WIDTH, fitScale } from '../stage/fitScale';
 import { usePlaceStore } from '../state/places';
-import { audioBands, audioBeats, clearBandHistory, pauseBandHistory, useAudioStore } from '../audio/store';
+import { REFLECT, createReflection, drawReflection, reflectionAlpha } from './reflection';
+import { audioBands, audioBeats, clearDanceHistory, danceKick, pauseDanceHistory, useAudioStore } from '../audio/store';
 import { loudness, smoothStep } from '../audio/model';
 import { CAMERAS, HOME_MORNING, MOON, cameraFor, cloudShiftFor, glideCamera, localDay, settled, startGlide, stepGlide, type CameraPreset, type Glide } from './cameras';
 import {
@@ -21,6 +22,7 @@ import {
   stepEchoGate,
   stepEchoMotion,
   stepLineCount,
+  visualizerWeight,
 } from './echo';
 import { frameDelta, shouldDraw } from './pacing';
 import { clearGridPulse, createGridPulse, stepGridPulse } from './pulse';
@@ -55,9 +57,9 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
   const idleRef = useRef(idle);
   useEffect(() => {
     idleRef.current = idle;
-    pauseBandHistory(idle);
+    pauseDanceHistory(idle);
   }, [idle]);
-  useEffect(() => () => pauseBandHistory(false), []);
+  useEffect(() => () => pauseDanceHistory(false), []);
   const glide = useRef<Glide>(settled(cameraFor(review?.place ?? place ?? 'work', review ? review.ms : now())));
   const repaint = useRef<() => void>(() => {});
   const first = useRef(true);
@@ -80,6 +82,8 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
   // The echo's clock and the real-band sampler.
   const echoT = useRef(0);
   const sampler = useRef(createEchoSampler());
+  // The scratch canvas for the lake reflection, made on first use.
+  const reflection = useRef(createReflection());
   // Tell Watt (read only) where the camera is going and whether it is moving; cleared on unmount
   // so the signal can never stick on moving.
   const publish = () => publishCamera(glide.current.to, glide.current.progress < 1);
@@ -161,7 +165,7 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
       // The grid pulse never appears in the review still or under reduced motion's still frames.
       if (!still) {
         const m = motion.current;
-        let echo = echoOptions(camera, loud.current, echoT.current, gate.current.value * awake.current, m.rest);
+        let echo = echoOptions(camera, loud.current, echoT.current, gate.current.value * awake.current, m.rest, undefined, undefined, m.rest < 1 ? danceKick() * (1 - m.rest) : 0);
         const turningOff = glide.current.to.ea === 0 && glide.current.progress < 1;
         if (echo && turningOff && echoStrength(echo) > lastEchoA.current) {
           scaleEcho(echo, lastEchoA.current / echoStrength(echo));
@@ -192,6 +196,11 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
       // goes the moment a glide away starts. The review still and reduced motion jump straight there.
       if (glide.current.progress >= 1 && glide.current.to === CAMERAS.unwind) options.moon = MOON;
       drawHorizon(ctx, options);
+      // The lake mirrors the finished frame on the visualizer camera, only while lines are drawn.
+      if (REFLECT && options.echo) {
+        const open = still ? initialEchoGate(glide.current).value : gate.current.value * awake.current;
+        drawReflection(reflection.current, ctx, width, height, camera.hy, scale, reflectionAlpha(visualizerWeight(camera), open));
+      }
     };
     repaint.current = paint;
 
@@ -254,7 +263,7 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
         clearGridPulse(pulse.current);
         grid.current = null;
         // And the echo's spectrum: 7 seconds of it would otherwise replay across the lines on return.
-        clearBandHistory();
+        clearDanceHistory();
       }
     };
     document.addEventListener('visibilitychange', onHide);

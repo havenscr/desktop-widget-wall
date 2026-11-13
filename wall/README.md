@@ -571,20 +571,23 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
   ahead after a burst, the previous stamp plus the real interval, capped at 33 ms, so time never
   runs backwards); a frame more than 200 ms ahead of the clock is dropped. Silence is still
   judged on arrival times.
-- **Band history** (`store.ts`, `bandHistory()`). The last 7 seconds of the spectrum at 30 rows
-  a second (210 rows of 32 bands, one fixed ring written in place), each band smoothed with the
-  levels' attack and release (0.06 s up, 0.35 s down), then calmed (for the history only; the
-  levels and the beat detector never see it): a second, slower smoothing (0.12 s) and a direction
-  hold, so once a band turns from rising to falling or back it may not turn again for 170 ms. That
-  keeps the echo from changing the picture's brightness more than three times a second however
-  fast the music pumps (`npm run echo-calm`, below). When the music stops the rows release to
-  zero and writing stops once a whole ring of silence is in. `pauseBandHistory(true)` stops it
-  (the horizon does this while the display is idle or off); resuming starts from an empty ring.
-  A hidden page empties it too (`clearBandHistory`), so old spectrum never replays on return.
-  `spectrum.ts` reads it: `sampleBands(u, age)` maps `u` (0 at the echo's centre, 1 at its
-  edge) to band `u * 31`, bass in the centre, interpolating between bands and between rows
-  `age` seconds back; a band adds height above 0.3 (about -52 dB, `BAND_FLOOR`) and the top is
-  scaled to 1.3, the range of the renderer's made-up `spec()`.
+- **The dance** (`audio/dance.ts`, `danceHistory()`, `danceKick()`). The smoothed band level stays
+  nearly flat on finished music, so the lines do not follow it alone. A second history in step
+  with the first (one row per row) holds line heights shaped from the raw bands: per band a
+  smoothed level (0.06 s up, 0.35 s down), a fast follower (0.025 s up, 0.2 s down) and a slow
+  average (1.2 s); a transient is the fast follower over the slow one by more than 0.03; half the
+  mean transient of all bands is taken off each (so a bar where everything rises adds little);
+  that is divided by a running peak of the largest such transient (falls with a 4 s time constant,
+  never under 0.07), so quiet music still reaches the top on its hits. Height is
+  `soft(level * 0.32 + hit * 1.35, 1.8)` with `soft(x, L) = L * tanh(x / L)`, where `level` is the
+  band lifted off `BAND_FLOOR` and scaled to 1.3 as above. The kick is the largest raw transient
+  among the six lowest bands against its own running peak, raised to 1.5, zero under 0.04, then a
+  follower (0.02 s up, 0.26 s down): one number, 0 to 1. The settle and lift rules
+  (`musicDriving`, `BAND_FLOOR`, `REST_RESUME`) still read the raw bands. Silence, a pause
+  (`pauseDanceHistory`), a hidden page and a whole ring of silence clear the shaped state, so no
+  stale peak or follower is left for the first hit after. `sampleDance(u, age)` reads it with the
+  same place and row mapping as `sampleBands` and a smoothstep between neighbouring bands. The
+  echo's sampler reads it on every camera, so Work and Home's small ripple follows the hits too.
 - **Beats** (`beat.ts`, read with `audioBeats()`). The detector sums the power of bands 0 to 11
   (about 20 to 245 Hz) into one level in dB. An onset is a rising frame at least 9 dB above the
   median level of the last second; it counts as a beat only if the next two frames stay 4 dB
@@ -632,16 +635,39 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
     playing speed, so the lines slow down and land rather than freeze. The renderer eases each line
     from `rest` (ease out, the far lines a touch later), blending its shape, opacity and width;
     at rest the spectrum is not read at all and the lines hold perfectly still. The resting look is
-    one setting, `REST_LOOK`, with the resting opacity `REST_OPACITY` (default `contours` at 0.22,
-    the owner's pick): `contours` (each line a smaller copy of the range's outline, evenly spaced
+    one setting, `REST_LOOK`, with the resting opacity (default `ridgelevels`, the owner's pick on
+    the demo page, at 0.28 on Unwind, `REST_OPACITY_VISUALIZER`, and 0.22 on Work and Home,
+    `REST_OPACITY`, blended by `visualizerWeight`): `ridgelevels` (the top line follows the ridge
+    with the soft glow of the `ridge` look; every other line is a straight level cut off by the
+    mountain at 0.9 of its peak times `(k + 1) / (n - 1)`; opacity shares 2.2 for the ridge line
+    and 0.75 for the levels; fills kept; a line drifting between the top two blends its level,
+    share and glow into the ridge's by its place, so it never jumps, and at rest the places are
+    whole), `contours` (each line a smaller copy of the range's outline, evenly spaced
     from the foot to the ridge), `levels` (flat, slightly bowed level lines inside the mountain,
     the top one on the ridge), `haze` (softened outlines of farther ranges rising behind the main
     one, each fainter; no fills) and `ridge` (one glowing line on the ridge, two faint lines under
     it; no fills). Without `rest` (or at 0) and `drift` the renderer draws exactly as before
     (golden call log test); the rest frame has a golden log of its own.
+  - **The dance on the camera** (`dance` and `swell` on the echo, `echoOptions`). `dance` is
+    `visualizerWeight` (0 on Work and Home, 1 on Unwind), `swell` the kick. With both absent or 0
+    the renderer draws exactly as before (golden call log test). With them: the line's base height
+    is multiplied by `1 + 0.2 * swell * dance * (1 - 0.45 * a)` (`a` is the line's place from the
+    front), and the displacement mask blends, by `dance`, from `min(1, cr / (cmax * 0.5))` to
+    `min(1, 0.2 + cr / (cmax * 0.5)) * (0.25 + 0.75 * edge)`, where `edge` is 1 within 62 percent
+    of the half span from the echo's centre and eases to 0 at the half span, so the ripple reaches
+    the foot of the range and thins toward the echo's edges. The amplitude passed is
+    `eamp * (1 + 0.7 * dance)` (`DANCE_AMP`). Opacity and colour are not touched: only the shape
+    dances.
+  - **Lake reflection** (`reflection.ts`, `REFLECT`, on). After the frame is drawn on a camera with
+    `dance` above 0 and lines on screen, the band 190 design pixels above the horizon line is
+    copied to one scratch canvas (made once, resized only when the canvas size changes), faded by a
+    vertical gradient (clear at the top, solid at the horizon) and drawn flipped under the line at
+    0.62 of its height, 3 design pixels below it, additively, at `0.8 * dance * gate` opacity, with
+    an explicit transform (`setTransform`, restored after). Not drawn on Work and Home, with no
+    lines (an idle display, Rainier in the morning) or while Zen is open.
   - `sample`: while any line still follows the music (`rest` under 1), `HorizonCanvas` hands the
-    renderer a sampler (`createEchoSampler`): each line reads the band history at its own age (the
-    7 seconds spread across the lines). Without `sample` the renderer uses its made-up `spec()`.
+    renderer a sampler (`createEchoSampler`): each line reads the shaped heights (`sampleDance`) at
+    its own age (the 7 seconds spread across the lines). Without `sample` the renderer uses its made-up `spec()`.
   - **Glides.** A camera glide blends the line count (`en`, 11 on Unwind, 3 on Work and Home).
     `HorizonCanvas` keeps a drawn count that follows it at no more than 4 counts a second
     (`stepLineCount`; the glide's eased peak moves `en` at about 15) and lands on it exactly. The
@@ -663,10 +689,15 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
   `?audio=demo` levels, for every band pumping fully on and off 6 times a second, and for the
   settle (`mode=settle`: the demo levels for 10 s, then silence, stepped as the canvas steps
   them). It takes what the echo adds to the picture's mean relative luminance over every pixel
-  and fails if that moves by 1 percent of the picture's mean, up or down, more than three times in
-  any second; for the settle also if any frame after the music stops changes it by more than 2
-  percent, or any frame from 3.5 s after changes it by more than 0.05 percent. Set `WALL_CHROME`
-  to a Chromium binary.
+  and fails if that moves by 1 percent of the picture's mean, up or down, more than a limit's
+  number of times in any second, or if any echo line moves more than a limit's number of design
+  pixels between two frames; the limits are per input (`LIMITS` in the script). They were three
+  swings a second before the dance; the lines now follow every hit, so each sits a little over
+  what the chosen look measures (demo 62 swings, at most 6 in a second, 52.4 px; every band
+  pumping 194, 12, 23.5 px; settle 33, 6, 52.4 px; before the dance 11, 1, 22.3 px; 12, 1, 14.1 px;
+  7, 1, 19.8 px). For the settle also if any frame after the music stops changes it by more than
+  2 percent, or any frame from 3.5 s after changes it by more than 0.05 percent (unchanged). Set
+  `WALL_CHROME` to a Chromium binary.
 - **Grid pulse** (`pulse.ts`). While `playing`, `HorizonCanvas` passes `grid` to the renderer.
   Each beat starts a soft glow band at the horizon that rolls across the lake grid to the bottom
   edge in 1.2 s (depth `p` 0 to 1 on the grid's own `pow(p, 2.1)` spacing, eased out over its

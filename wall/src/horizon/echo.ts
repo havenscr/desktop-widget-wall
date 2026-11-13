@@ -1,6 +1,6 @@
 import type { CameraPreset, Glide } from './cameras';
 import { REST_LOOKS, type HorizonEcho, type RestLook } from './renderer';
-import { BAND_FLOOR, sampleBands } from '../audio/spectrum';
+import { BAND_FLOOR, sampleDance } from '../audio/spectrum';
 
 /** Seconds the ripple takes to fade in or out with the display (`stepEchoFade`). */
 export const ECHO_FADE_S = 1;
@@ -25,9 +25,13 @@ export const PLAY_TINT = { left: [92, 196, 255], centre: [56, 236, 240], right: 
  * ridge), `haze` (the outlines of farther ranges behind the main one, each fainter) or `ridge`
  * (every line folded onto the ridge as one soft glowing outline, two faint lines under it).
  */
-export const REST_LOOK: RestLook = 'contours';
-/** The resting opacity of the lines (0 to 1): "very faded, but still present". */
+export const REST_LOOK: RestLook = 'ridgelevels';
+/** The resting opacity of the lines (0 to 1) on Work and Home: "very faded, but still present". */
 export const REST_OPACITY = 0.22;
+/** The resting opacity on the visualizer camera (Unwind); cameras in between blend by `visualizerWeight`. */
+export const REST_OPACITY_VISUALIZER = 0.28;
+/** How much more the lines move while the camera is the visualizer: amplitude is `eamp * (1 + DANCE_AMP * weight)`. */
+export const DANCE_AMP = 0.7;
 /** Seconds the lines take to settle into their resting look once music stops driving them. */
 export const REST_SETTLE_S = 2.5;
 /** Seconds the lines take to lift from rest into the live shape once music drives them again. */
@@ -149,7 +153,8 @@ export function echoOptions(
   gate = 1,
   rest = 0,
   look: RestLook = REST_LOOK,
-  restOpacity = REST_OPACITY,
+  restOpacity?: number,
+  swell = 0,
 ): HorizonEcho | null {
   const g = clamp01(gate);
   if (g <= 0.001) return null;
@@ -158,10 +163,15 @@ export function echoOptions(
   const r = clamp01(rest);
   const a = Math.min(1, camera.ea * g * (level + (1 - level) * k) * (1 + k * (PLAY_BOOST - 1)));
   // The resting lines show on every camera that has a ripple (`ea` above 0), at the one resting opacity.
-  const restA = camera.ea > 0 ? Math.min(1, clamp01(restOpacity) * g) : 0;
+  const ro = restOpacity ?? REST_OPACITY + (REST_OPACITY_VISUALIZER - REST_OPACITY) * k;
+  const restA = camera.ea > 0 ? Math.min(1, clamp01(ro) * g) : 0;
   if (a <= 0.005 && (r <= 0 || restA <= 0.005)) return null;
-  const e: HorizonEcho = { n: Math.max(1, camera.en), amp: camera.eamp, a, t, cx: camera.ecx, hs: ECHO_HALF_SPAN };
-  if (k > 0) e.tint = { ...PLAY_TINT, k };
+  const e: HorizonEcho = { n: Math.max(1, camera.en), amp: camera.eamp * (1 + DANCE_AMP * k), a, t, cx: camera.ecx, hs: ECHO_HALF_SPAN };
+  if (k > 0) {
+    e.tint = { ...PLAY_TINT, k };
+    e.dance = k;
+    if (swell > 0) e.swell = clamp01(swell);
+  }
   if (r > 0) {
     e.rest = r;
     e.restA = restA;
@@ -332,7 +342,7 @@ export function stepEchoMotion(m: EchoMotion, driving: boolean, dt: number): voi
 /**
  * The `sample` function handed to the renderer while any line follows the music, and the number it
  * reads, set each frame before drawing: `t`, the echo clock passed as the echo's `t`. A line at
- * `tau` reads the band history `t - tau` seconds back (`sampleBands`). Made once; nothing is
+ * `tau` reads the shaped line heights `t - tau` seconds back (`sampleDance`). Made once; nothing is
  * allocated per call.
  */
 export interface EchoSampler {
@@ -340,7 +350,7 @@ export interface EchoSampler {
   readonly sample: (u: number, tau: number) => number;
 }
 
-export function createEchoSampler(bands: (u: number, age: number) => number = sampleBands): EchoSampler {
+export function createEchoSampler(bands: (u: number, age: number) => number = sampleDance): EchoSampler {
   const s: EchoSampler = {
     t: 0,
     sample: (u, tau) => bands(u, s.t - tau),

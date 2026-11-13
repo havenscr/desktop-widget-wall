@@ -7,6 +7,7 @@ import {
   REST_LOOK,
   REST_LOOKS,
   REST_OPACITY,
+  REST_OPACITY_VISUALIZER,
   REST_PHASE,
   createEchoMotion,
   echoOptions,
@@ -60,10 +61,11 @@ describe('the resting looks (end states)', () => {
   const cam = CAMERAS.unwind;
   const n = cam.en;
 
-  it('the setting: one named look, contours by default (the owner picked A), at opacity 0.22', () => {
-    expect(REST_LOOK).toBe('contours');
+  it('the setting: one named look, ridge and levels by default (the owner picked it on the demo), at 0.22 on Work and Home and 0.28 on Unwind', () => {
+    expect(REST_LOOK).toBe('ridgelevels');
     expect(REST_OPACITY).toBe(0.22);
-    expect([...REST_LOOKS]).toEqual(['contours', 'levels', 'haze', 'ridge']);
+    expect(REST_OPACITY_VISUALIZER).toBe(0.28);
+    expect([...REST_LOOKS]).toEqual(['contours', 'levels', 'haze', 'ridge', 'ridgelevels']);
   });
 
   it('contours: each line is the range outline scaled to an evenly spaced level, the top one the ridge itself', () => {
@@ -131,6 +133,46 @@ describe('the resting looks (end states)', () => {
     expect(layerFills.length).toBe(plain.layerFills.length);
   });
 
+  it('ridge and levels: the top line traces the ridge with a soft glow, every other line is a straight level cut off by the mountain; fills kept', () => {
+    const plain = lines(cam, null);
+    const { rim, echo, layerFills } = lines(cam, restAt(cam, 'ridgelevels', REST_OPACITY_VISUALIZER));
+    // The glow, the ridge line, then the other n - 1 lines.
+    expect(echo).toHaveLength(n + 1);
+    const [glow, top, ...levels] = echo;
+    close(glow.h, rim);
+    close(top.h, rim);
+    expect(top.alpha).toBeCloseTo(REST_OPACITY_VISUALIZER * 2.2, 6);
+    expect(top.width).toBeCloseTo(1.8, 9);
+    expect(glow.alpha).toBeCloseTo(top.alpha * 0.3, 6);
+    const cmax = Math.max(...rim);
+    expect(levels).toHaveLength(n - 1);
+    levels.forEach((l, j) => {
+      const kc = n - 2 - j;
+      const level = (cmax * 0.9 * (kc + 1)) / (n - 1);
+      for (let i = 0; i < N; i++) expect(l.h[i]).toBeCloseTo(Math.min(rim[i], level), 6);
+      expect(l.alpha).toBeCloseTo(REST_OPACITY_VISUALIZER * 0.75, 6);
+      expect(l.width).toBe(1);
+    });
+    // Evenly spaced and flat where the mountain is taller than they are: the highest level is 0.9 of the peak.
+    expect(Math.max(...levels[0].h)).toBeCloseTo(cmax * 0.9, 6);
+    expect(layerFills.length).toBe(plain.layerFills.length + n);
+  });
+
+  it('ridge and levels on Work and Home: the ridge and two levels at one third and two thirds of 0.9 of the peak, at the Work and Home opacity', () => {
+    for (const c of [CAMERAS.work, CAMERAS.home]) {
+      const { rim, echo } = lines(c, restAt(c, 'ridgelevels'));
+      expect(echo).toHaveLength(4);
+      const [glow, top, l2, l1] = echo;
+      close(glow.h, rim);
+      close(top.h, rim);
+      const cmax = Math.max(...rim);
+      close(l2.h, rim.map((v) => Math.min(v, (cmax * 0.9 * 2) / 2)));
+      close(l1.h, rim.map((v) => Math.min(v, (cmax * 0.9 * 1) / 2)));
+      expect(top.alpha).toBeCloseTo(REST_OPACITY * 2.2, 6);
+      expect(l1.alpha).toBeCloseTo(REST_OPACITY * 0.75, 6);
+    }
+  });
+
   it('the resting opacity is one number: "B at 15" draws the same shapes at 0.15', () => {
     const at22 = lines(cam, restAt(cam, 'levels'));
     const at15 = lines(cam, restAt(cam, 'levels', 0.15));
@@ -151,7 +193,7 @@ const SLOW = (u: number, tau: number) => 0.6 + 0.3 * Math.sin(u * 6 + tau * 0.5)
  * Frames of the echo at 30 fps through the canvas's own steps: each phase drives or not for so many
  * seconds. `SLOW` stands in for the bands.
  */
-function run(cam: CameraPreset, startAtRest: boolean, phases: [boolean, number][]) {
+function run(cam: CameraPreset, startAtRest: boolean, phases: [boolean, number][], look: RestLook = 'contours') {
   const m = createEchoMotion(startAtRest);
   const out: { rest: number; drift: number; echo: ReturnType<typeof lines>['echo'] }[] = [];
   let T = 0;
@@ -159,7 +201,7 @@ function run(cam: CameraPreset, startAtRest: boolean, phases: [boolean, number][
     for (let f = 0; f < Math.round(seconds * 30); f++) {
       T += 1 / 30;
       stepEchoMotion(m, driving, 1 / 30);
-      const e = echoOptions(cam, 1, T, 1, m.rest)!;
+      const e = echoOptions(cam, 1, T, 1, m.rest, look)!;
       e.drift = m.drift;
       e.sample = SLOW;
       out.push({ rest: m.rest, drift: m.drift, echo: lines(cam, e, T).echo });
@@ -234,7 +276,8 @@ describe('settle and lift (Unwind)', () => {
       [true, 3],
     ]);
     const lift = largestMove(frames, 15, frames.length);
-    expect(lift.worst).toBeLessThan(2);
+    // The playing lines move 1.7 times as far as they did (the dance's amplitude), so 3 px, not 2.
+    expect(lift.worst).toBeLessThan(3);
     expect(lift.worstAlphaStep).toBeLessThan(0.06);
     expect(frames[15 + 44].rest).toBe(0);
     expect(frames[15 + 43].rest).toBeGreaterThan(0);
@@ -248,9 +291,61 @@ describe('settle and lift (Unwind)', () => {
       [false, 3],
     ]);
     const all = largestMove(frames, 30, frames.length);
-    expect(all.worst).toBeLessThan(2);
+    expect(all.worst).toBeLessThan(3);
     expect(all.worstAlphaStep).toBeLessThan(0.06);
     expect(frames[frames.length - 1].rest).toBe(1);
+  });
+});
+
+/**
+ * The largest gap between adjacent frames by `frameGap`: lines are matched to the nearest line of the
+ * frame before, and a line coinciding with another (the ridge line and its glow, or two levels cut
+ * off by the same ridge) may fade against it, so only a line that jumps or pops counts.
+ */
+function largestGap(frames: ReturnType<typeof run>, from: number, to: number) {
+  let worst = 0;
+  let alpha = 0;
+  for (let k = Math.max(1, from); k < to; k++) {
+    const g = frameGap(frames[k - 1].echo, frames[k].echo, 0.03, 1);
+    worst = Math.max(worst, g.worst);
+    alpha = Math.max(alpha, g.alpha);
+  }
+  return { worst, alpha };
+}
+
+describe('settle and lift with ridge and levels (Unwind)', () => {
+  const cam = CAMERAS.unwind;
+  const n = cam.en;
+  const look: RestLook = 'ridgelevels';
+
+  it('the settle is continuous, ends exactly on the resting lines and holds still', () => {
+    const frames = run(cam, false, [[true, 3], [false, 4]], look);
+    const settle = largestGap(frames, 90, frames.length);
+    // Measured: see the pull request. Each line eases from its live shape to its level or the ridge.
+    expect(settle.worst).toBeLessThan(3);
+    expect(settle.alpha).toBeLessThan(0.06);
+    expect(frames[90 + 74].rest).toBe(1);
+    expect(frames[90 + 73].rest).toBeLessThan(1);
+    const end = frames[frames.length - 1].echo;
+    expect(end).toHaveLength(n + 1); // the glow, the ridge, the levels
+    for (let k = 90 + 75; k < frames.length; k++) {
+      expect(frames[k].drift).toBe(REST_PHASE);
+      frames[k].echo.forEach((l, j) => {
+        expect(l.h).toEqual(end[j].h);
+        expect(l.alpha).toBe(end[j].alpha);
+      });
+    }
+  });
+
+  it('the lift is continuous and reaches the live lines in 1.5 s; an interrupted settle and lift stay continuous', () => {
+    const lifted = run(cam, true, [[false, 0.5], [true, 3]], look);
+    const lift = largestGap(lifted, 15, lifted.length);
+    expect(lift.worst).toBeLessThan(3);
+    expect(lift.alpha).toBeLessThan(0.06);
+    const mixed = run(cam, false, [[true, 2], [false, 1], [true, 0.5], [false, 3]], look);
+    const all = largestGap(mixed, 30, mixed.length);
+    expect(all.worst).toBeLessThan(3);
+    expect(all.alpha).toBeLessThan(0.06);
   });
 });
 
@@ -308,7 +403,7 @@ describe('the motion stepper', () => {
 describe('a blended line count (a glide between cameras)', () => {
   const cam = CAMERAS.unwind;
   const at = (count: number, rest: number) => {
-    const e = echoOptions({ ...cam, en: count }, 1, 2.5, 1, rest)!;
+    const e = echoOptions({ ...cam, en: count }, 1, 2.5, 1, rest, 'contours', REST_OPACITY)!;
     e.drift = rest >= 1 ? REST_PHASE : 0.3;
     return lines(cam, e).echo;
   };
