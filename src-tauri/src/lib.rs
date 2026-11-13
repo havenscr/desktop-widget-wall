@@ -931,13 +931,13 @@ fn fallback_app_name(app_id: &str) -> String {
     };
     let generic = |s: &str| s.is_empty() || s.eq_ignore_ascii_case("app");
     let entry = strip(entry);
-    if !generic(&entry) && !entry.contains('.') {
+    if !generic(entry.as_str()) && !entry.contains('.') {
         return entry;
     }
     // The package: drop the publisher hash, then the publisher prefix.
     let name = strip(package.split('_').next().unwrap_or(package));
     let name = name.rsplit('.').find(|s| !s.is_empty()).unwrap_or(name.as_str()).to_string();
-    if generic(&name) {
+    if generic(name.as_str()) {
         "Media player".to_string()
     } else {
         name
