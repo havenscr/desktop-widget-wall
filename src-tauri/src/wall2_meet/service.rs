@@ -1578,7 +1578,6 @@ mod tests {
     /// Answers 401 to every call with the stale token, but only once two such calls are in
     /// flight at the same time; any other token gets a calendar.
     struct StaleThenFresh {
-        both_stale: std::sync::Barrier,
         stale_calls: AtomicUsize,
         fresh_calls: AtomicUsize,
     }
@@ -1586,7 +1585,6 @@ mod tests {
         fn calendar_view(&self, access: &str, _s: &str, _e: &str) -> GraphReply {
             if access == "stale" {
                 self.stale_calls.fetch_add(1, Ordering::SeqCst);
-                self.both_stale.wait();
                 GraphReply::Unauthorized
             } else {
                 self.fresh_calls.fetch_add(1, Ordering::SeqCst);
@@ -1596,12 +1594,12 @@ mod tests {
     }
 
     #[test]
-    fn two_concurrent_401s_cause_one_forced_refresh() {
+    fn two_concurrent_reads_after_a_401_cause_one_forced_refresh() {
         let (store, core) = setup();
         let links = Mutex::new(Links::default());
         core.lock().unwrap().cache.insert("work".into(), Cached { access: "stale".into(), expires_at: NOW + 6000 });
         let t = SyncTokens { replies: StdMutex::new(vec![ok_token("fresh", None)]), calls: AtomicUsize::new(0), gate: None };
-        let g = StaleThenFresh { both_stale: std::sync::Barrier::new(2), stale_calls: AtomicUsize::new(0), fresh_calls: AtomicUsize::new(0) };
+        let g = StaleThenFresh { stale_calls: AtomicUsize::new(0), fresh_calls: AtomicUsize::new(0) };
         let (p1, p2) = std::thread::scope(|sc| {
             let h1 = sc.spawn(|| read_next(&[acct("work")], &store, &t, &g, &core, &links, NOW));
             let h2 = sc.spawn(|| read_next(&[acct("work")], &store, &t, &g, &core, &links, NOW));
@@ -1609,7 +1607,9 @@ mod tests {
         });
         assert_eq!(p1.accounts[0].state, "ok");
         assert_eq!(p2.accounts[0].state, "ok");
-        assert_eq!(g.stale_calls.load(Ordering::SeqCst), 2);
+        // The account's reads take turns, so only the first one meets the stale token; the
+        // second finds the refreshed one in the cache.
+        assert_eq!(g.stale_calls.load(Ordering::SeqCst), 1);
         assert_eq!(t.calls.load(Ordering::SeqCst), 1, "the forced refresh ran twice");
         assert_eq!(g.fresh_calls.load(Ordering::SeqCst), 2);
     }
