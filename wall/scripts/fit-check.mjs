@@ -173,7 +173,10 @@ const VARIANTS = [
   { name: 'Deck, the key picker open over both rows', q: work('3', '&keys=typical'), checks: PICKER, click: 'ctx:.pin-tile' },
   { name: 'Home, Sound at its fullest: many moods, many speakers, long names, sleep timer', q: home('sonos=heavy&moods=many'), checks: [...HOME_CENTRE.filter((c) => !c.endsWith('mood-row')), ...SOUND_FULL] },
   { name: 'Home, typical: five moods, Sound playing', q: home('moods=five'), checks: [...HOME_CENTRE, ...SOUND_FULL] },
+  { name: 'Home, one matching routine plus More: no blank cell in the quick-play row', q: home('sonos=few&moods=five'), checks: [...HOME_CENTRE, ...SOUND_FULL] },
   { name: 'Home, sparse: no moods, one routine, one speaker', q: home('sonos=sparse&moods=none'), checks: ['.home .home-centre', '.home .moods', ...SOUND_FULL.slice(0, 4)] },
+  // Sonos never answers: after the 2.5 second wait the centre settles on the tall-mood fallback.
+  { name: 'Home, Sonos silent: the fallback after 2.5 seconds', q: home('sonos=slow&moods=five'), checks: ['.home .home-centre', '.home .mood-row', '.home .sound', '.home .sound-note'] },
   { name: 'Home, Sonos not reachable, moods present', q: home('sonos=down&moods=five'), checks: ['.home .home-centre', '.home .mood-row', '.home .sound', '.home .sound-note'] },
   { name: 'Home, Sonos not reachable and moods not set up: one status card', q: home('sonos=down&moods=off'), checks: ['.home .home-centre', '.home .centre-status'] },
   { name: 'Home, Sonos not set up: the mood cards take the room', q: home('sonos=off&moods=five'), checks: ['.home .home-centre', '.home .mood-row', '.home .sound', '.home .sound-note'] },

@@ -90,14 +90,17 @@ visible. Nothing on the wall plays or changes volume without a click, and one de
 click is one write: the second click of a double click and the repeats of a held key are
 ignored, and each control stays latched for 800 ms after its write settles.
 
-- **Quick play**: one button per music routine the service lists, the first six in the
-  service's order on the face, five when the names are long (a trailing "Music" is
-  dropped from the label; names take up to two lines; the favourite it plays is the line
-  under a one-line name; the tooltip has the full name, favourite and volume). The rest,
-  and the group all / ungroup all controls, sit under **More**. The service has no way to
-  play a favourite directly, so More lists routines only. The routine that fits the hour
-  is tagged "Suggested" (from words in its name: morning 5 to 9 AM, a work routine on
-  weekdays to 5 PM, a day one, evening to 9 PM, night after).
+- **Quick play**: five buttons, in this order: Morning, Day, Evening, Late night, Workday.
+  Each is the music routine whose name carries that word as a whole word ("Workday" never
+  reads as Day; "late night" may be one word or two; case is ignored). The button's label
+  is exactly the word, whatever the routine is called; the tooltip has the routine's own
+  name, favourite and volume. A word with no matching routine has no button, and when two
+  routines carry the same word the first by name (case-insensitive, then by key) wins, and a routine used by an earlier tile is skipped. Every other routine
+  sits under **More**, with the ungroup all control; the group all control is not offered
+  anywhere on the page (the Rust command and its loud-volume confirm are unchanged). The
+  service has no way to play a favourite directly, so More lists routines only. The one of
+  the five that fits the hour is tagged "Suggested" (from the tiles only; morning 5 to 9 AM, Workday then Day
+  on weekdays to 5 PM, Day then Workday at weekends, evening to 9 PM, late night after).
 - **Unforced plays**: a click triggers the routine without `force`, so its own skip
   conditions apply. Only a JSON `skipped: true` answer is a skip (a list of left-alone
   speakers means the routine ran); the service gives no reason, so a skip says "Skipped:
@@ -108,9 +111,17 @@ ignored, and each control stays latched for 800 ms after its write settles.
   what plays is evidently what it started: the first read with music records its group;
   nothing playing, "Sonos off", another group, or no group to tell by clears it for
   good; it never lasts past an hour (`wall2-sonos-last-play` in local storage).
-- **Where**: the service's group presets as a switch, the one whose name starts with
-  "Office" first; the one in use shows its full name and the others shrink. The preset
-  whose grouping matches the speakers' groups now is marked (Rust compares them).
+- **Where**: three places, in this order: Office, All speakers, Common areas. They are the
+  service's group presets whose names start with those words; the label drops anything in
+  parentheses ("Office (Work)" reads "Office"), and other presets are not shown. The one in
+  use shows its full name and the others shrink. The preset whose grouping matches the
+  speakers' groups now is marked (Rust compares them).
+- **Loading**: Home's centre draws at its final sizes from the first paint: the mood row at
+  the height it has with Sound present, and a Sound skeleton of the real block's height
+  (quiet shapes, no spinner, no text). The tall-mood layout is chosen only once Sonos has
+  said "not set up", has failed, or has been silent for 2.5 seconds, and that change is
+  one slow fade (600 ms height, instant under reduced motion); Sound arriving late after
+  the fallback fades back the same way.
 - **Volume**: one slider for the current group (the group with the most speakers
   playing music; a speaker on line-in carries the PC's sound and is left out). It moves
   each speaker by the same step from its own level (clamped); a speaker with no level
@@ -123,15 +134,15 @@ ignored, and each control stays latched for 800 ms after its write settles.
   offers "PC volume" (the Windows volume control) instead of a Sonos slider.
 - **Asks first** in a bar over the card, naming what it would do: any volume above 40
   (whatever the last read said the speaker was at); a routine above 40 or at a volume it
-  does not name; a preset or group all that would leave a speaker above 40 or at an
-  unknown level ("Studio is at 100. Group anyway?"), unless the preset itself sets that
+  does not name; a preset that would leave a speaker above 40 or at an
+  unknown level ("Studio is at 100. Apply anyway?"), unless the preset itself sets that
   speaker to 40 or less (a line-in group, the PC's own sound, does not count).
 - **Play and pause**: "Sonos off" pauses every speaker while music plays; with nothing
-  playing the button names the suggestion ("Play Dusk") and is off when no routine fits
+  playing the button names the suggestion ("Play Evening") and is off when no routine fits
   the hour. The service has no next or resume command, so there is no Next button.
   **Sleep** offers 30, 60 or 90 minutes (5 minute fade); the soonest running timer shows
   its minutes left and cancels on a click.
-- Every action shows a brief result beside the heading ("Playing Dusk", "Could not
+- Every action shows a brief result beside the heading ("Playing Evening", "Could not
   reach Sonos", "Some speakers did not change", which reads again at once). A read that
   failed, or one over two minutes old, dims the card, says "Sonos not reachable, showing
   3 min ago" and turns every control off. Never reached shows one compact card; no
