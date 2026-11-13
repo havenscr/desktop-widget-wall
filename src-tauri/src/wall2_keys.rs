@@ -1926,7 +1926,8 @@ mod tests {
 
     #[test]
     fn only_the_library_command_can_grant_the_pass_and_only_after_the_window_check() {
-        let src = include_str!("wall2_keys.rs");
+        // The checkout may have Windows line ends.
+        let src = include_str!("wall2_keys.rs").replace("\r\n", "\n");
         let live = &src[..src.find("#[cfg(test)]\nmod tests").expect("tests module")];
         // The native signal is read in exactly one place, and it is the library command.
         assert_eq!(live.matches("recording_now()").count(), 1);
