@@ -1283,3 +1283,66 @@
     box-shadow: 0 0 0 4px rgba(53, 230, 234, 0.55);
   }
 }
+
+/* A ticked task inside its five second undo window (Work's next three, Home's chores):
+   "Done." and the title struck through, Undo on the right, and a thin bar that runs down. */
+.tick-wait {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.tasks .tick-wait {
+  font: 400 25px/1.2 var(--body);
+}
+.tk3.pending .n {
+  text-decoration: none;
+  color: var(--dim);
+}
+.tick-text s {
+  color: var(--faint);
+}
+.tick-act {
+  flex: none;
+  height: 36px;
+  padding: 0 10px;
+  border-radius: 10px;
+  font: 600 20px/1 var(--body);
+  color: var(--cyan);
+  cursor: pointer;
+}
+.tick-act:hover {
+  background: rgba(53, 230, 234, 0.1);
+}
+.tick-act:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: -3px;
+}
+.tick-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 6px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--cyan);
+  opacity: 0.7;
+  transform-origin: left center;
+  animation: tick-wait 5s linear forwards;
+}
+@keyframes tick-wait {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tick-bar {
+    animation: none;
+  }
+}

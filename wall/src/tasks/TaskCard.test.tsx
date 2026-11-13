@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
+import { TICK_UNDO_MS } from './pendingTick';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { mocks } from '../bridge/tauri';
 import { useFocusStore } from '../focus/store';
@@ -62,6 +63,8 @@ it('marks a row done at once, fades it after 2 seconds, then refreshes', async (
   render(<TaskCard />);
   await flush();
   fireEvent.click(screen.getByLabelText('Mark done: First'));
+  // Past the undo window: the tick is now really completed.
+  await flush(TICK_UNDO_MS);
   expect(screen.getByText('First').closest('li')?.className).toContain('done');
   await flush(1000);
   expect(screen.queryByText('First')).toBeTruthy();
@@ -71,15 +74,17 @@ it('marks a row done at once, fades it after 2 seconds, then refreshes', async (
   expect(screen.getByText('Second')).toBeTruthy();
 });
 
-it('brings the row back with "Could not save" when the save fails', async () => {
+it('brings the row back with "Could not complete." when the save fails', async () => {
   setList(() => [task('a', 'First')]);
   mocks.set('wall2_task_done', () => Promise.reject(new Error('The service answered 500')));
   render(<TaskCard />);
   await flush();
   fireEvent.click(screen.getByLabelText('Mark done: First'));
+  // Past the undo window: the tick is now really completed.
+  await flush(TICK_UNDO_MS);
   await flush(3000);
   expect(screen.getByText('First')).toBeTruthy();
-  expect(screen.getByText('Could not save')).toBeTruthy();
+  expect(screen.getByText('Could not complete.')).toBeTruthy();
   expect(screen.getByText('First').closest('li')?.className).not.toContain('done');
 });
 
@@ -89,11 +94,13 @@ it('brings the row back when the save fails after the fade', async () => {
   render(<TaskCard />);
   await flush();
   fireEvent.click(screen.getByLabelText('Mark done: First'));
+  // Past the undo window: the tick is now really completed.
+  await flush(TICK_UNDO_MS);
   await flush(2500);
   expect(screen.queryByText('First')).toBeNull();
   await flush(2000);
   expect(screen.getByText('First')).toBeTruthy();
-  expect(screen.getByText('Could not save')).toBeTruthy();
+  expect(screen.getByText('Could not complete.')).toBeTruthy();
 });
 
 it('keeps the last good list and shows its age when a refresh fails', async () => {
@@ -154,6 +161,8 @@ it('a click on the title opens the task in the task app; a hold or a slide opens
   // The tick circle never opens the task.
   mocks.set('wall2_task_done', () => undefined);
   fireEvent.click(screen.getByLabelText('Mark done: Write the report'));
+  // Past the undo window: the tick is now really completed.
+  await flush(TICK_UNDO_MS);
   await flush();
   expect(opened).toHaveLength(1);
 });
@@ -255,6 +264,8 @@ it('shows a completed task again when a later list has it open (reopened or recu
   render(<TaskCard />);
   await flush();
   fireEvent.click(screen.getByLabelText('Mark done: First'));
+  // Past the undo window: the tick is now really completed.
+  await flush(TICK_UNDO_MS);
   await flush(2100);
   expect(screen.queryByText('First')).toBeNull();
   await flush(0);
@@ -284,7 +295,11 @@ it('queues one trailing refresh when a refresh is requested during a request', a
   await flush();
   defer = true;
   fireEvent.click(screen.getByLabelText('Mark done: First'));
+  // Past the undo window: the tick is now really completed.
+  await flush(TICK_UNDO_MS);
   fireEvent.click(screen.getByLabelText('Mark done: Second'));
+  // Past the undo window: the tick is now really completed.
+  await flush(TICK_UNDO_MS);
   await flush(2100);
   // The first completion started a refresh; the second one asked while it ran.
   expect(calls).toHaveBeenCalledTimes(2);
@@ -296,4 +311,72 @@ it('queues one trailing refresh when a refresh is requested during a request', a
   expect(screen.queryByText('First')).toBeNull();
   expect(screen.queryByText('Second')).toBeNull();
   expect(screen.getByText('Nothing due')).toBeTruthy();
+});
+
+it('a tick waits five seconds with Done and Undo before completing', async () => {
+  setList(() => [task('a', 'First'), task('b', 'Second')]);
+  const done = vi.fn();
+  mocks.set('wall2_task_done', done);
+  render(<TaskCard />);
+  await flush();
+  fireEvent.click(screen.getByLabelText('Mark done: First'));
+  const row = screen.getByText('First').closest('li')!;
+  expect(row.className).toContain('pending');
+  expect(row.textContent).toContain('Done.');
+  expect(row.querySelector('.tick-bar')).not.toBeNull();
+  expect(screen.getByRole('button', { name: 'Undo: First' })).toBeTruthy();
+  // One pending tick per row: the circle is off while it waits.
+  expect((screen.getByLabelText('Mark done: First') as HTMLButtonElement).disabled).toBe(true);
+  await flush(TICK_UNDO_MS - 100);
+  expect(done).not.toHaveBeenCalled();
+  await flush(100);
+  expect(done).toHaveBeenCalledTimes(1);
+  expect(done).toHaveBeenCalledWith({ id: 'a' });
+});
+
+it('Undo puts the row back and completes nothing', async () => {
+  setList(() => [task('a', 'First')]);
+  const done = vi.fn();
+  mocks.set('wall2_task_done', done);
+  render(<TaskCard />);
+  await flush();
+  fireEvent.click(screen.getByLabelText('Mark done: First'));
+  await flush(3000);
+  fireEvent.click(screen.getByRole('button', { name: 'Undo: First' }));
+  const row = screen.getByText('First').closest('li')!;
+  expect(row.className).not.toContain('pending');
+  expect(row.textContent).not.toContain('Done.');
+  expect((screen.getByLabelText('Mark done: First') as HTMLButtonElement).disabled).toBe(false);
+  await flush(TICK_UNDO_MS * 2);
+  expect(done).not.toHaveBeenCalled();
+});
+
+it('leaving the place completes a tick still waiting', async () => {
+  setList(() => [task('a', 'First')]);
+  const done = vi.fn();
+  mocks.set('wall2_task_done', done);
+  const r = render(<TaskCard />);
+  await flush();
+  fireEvent.click(screen.getByLabelText('Mark done: First'));
+  await flush(1000);
+  r.unmount();
+  await flush();
+  expect(done).toHaveBeenCalledWith({ id: 'a' });
+});
+
+it('a failed completion says Could not complete with Retry, and Retry completes again', async () => {
+  setList(() => [task('a', 'First')]);
+  let fail = true;
+  const done = vi.fn(() => (fail ? Promise.reject(new Error('The service answered 500')) : undefined));
+  mocks.set('wall2_task_done', done);
+  render(<TaskCard />);
+  await flush();
+  fireEvent.click(screen.getByLabelText('Mark done: First'));
+  await flush(TICK_UNDO_MS);
+  expect(screen.getByText('Could not complete.')).toBeTruthy();
+  fail = false;
+  fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+  await flush();
+  expect(done).toHaveBeenCalledTimes(2);
+  expect(screen.queryByText('Could not complete.')).toBeNull();
 });
