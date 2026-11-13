@@ -45,6 +45,7 @@ import {
   NOTE_SIZES,
   WALKS,
   middle,
+  isNight,
   cameraOf,
   cameraReady,
   createClock,
@@ -87,8 +88,9 @@ import {
 } from './petFrame';
 import { PixelSvg, PropSvg, SheepSvg } from './Pixels';
 import { bump, dayKey, loadPet, moodOf, rollDay, savePet, type Cosmetic, type PetData, type StayPlace } from './pet';
+import { sunTimes } from '../ribbon/sun';
 import { CLOVER_WAIT_MS, cloverDue, dayTopic, finishedBetween, midday, moonUp, senseWeather, weatherTopics, workingIds } from './senses';
-import { CLOVER, HEART, MARK, PROP_SPRITES, SMALL_PX, SPRITE_PX, type Pose, type Prop } from './sprites';
+import { CLOVER, FIREFLY, HEART, MARK, PROP_SPRITES, SMALL_PX, SPRITE_PX, type Pose, type Prop } from './sprites';
 import './watt.css';
 
 export { SheepSvg } from './Pixels';
@@ -202,6 +204,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
   const notes = [useRef<HTMLSpanElement>(null), useRef<HTMLSpanElement>(null)];
   const zs = [useRef<HTMLSpanElement>(null), useRef<HTMLSpanElement>(null)];
   const hearts = [useRef<HTMLSpanElement>(null), useRef<HTMLSpanElement>(null)];
+  const ffEl = useRef<HTMLSpanElement>(null);
   const sparks = [useRef<HTMLSpanElement>(null), useRef<HTMLSpanElement>(null)];
 
   // Her life, stored on this PC.
@@ -228,6 +231,9 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
   const nowMs = minute * 60_000;
   const hour = new Date(nowMs).getHours();
   const ws = senseWeather(weather.reading, nowMs);
+  // Dusk: after sunset and before his bedtime a firefly drifts near him (not under reduced motion, not in a call).
+  const sunset = sunTimes(nowMs).set;
+  const dusk = sunset !== null && nowMs >= sunset && !isNight(new Date(nowMs));
   const meetingStart = next.meeting && !next.stale ? Date.parse(next.meeting.start) : NaN;
   const meetingEnd = next.meeting && !next.stale ? Date.parse(next.meeting.end) : NaN;
   // A stale or missing feed keeps the last known meeting's quiet time until its end.
@@ -261,6 +267,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
   m.nap = idle;
   m.waiting = waiting;
   m.clover = clover !== null;
+  m.firefly = dusk && !reduced && !inCall && !inMeeting;
   m.cosmetic = pet.cosmetic;
   // Dev review stills only (`window.__watt.set`): kept over the hooks' values on every render.
   const debugMind = useRef<Partial<Mind>>({});
@@ -848,7 +855,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
   const refusal = (): string | null => {
     const p = presence.current;
     if (!p.place || p.opacity < 0.5) return 'Watt is away';
-    if (q.inCall) return 'Not during a call';
+    if (q.inCall) return 'Not during a call or meeting';
     if (q.focusSince !== null && nowRef.current() - q.focusSince < FOCUS_QUIET_MS) return 'Not in the first minute of focus';
     if (p.night) return 'Watt is asleep';
     return null;
@@ -1032,6 +1039,19 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
         const at = toStage(pr.x, pr.y);
         mi.pointerX = at.x;
         mi.pointerY = at.y;
+      }
+      const ff = ffEl.current;
+      if (ff) {
+        if (mi.firefly) {
+          // One slow loop round his head, kept in the band; blinking, never brighter than his wool.
+          const cx = f.x + spriteWidth('idle', walk.px) / 2;
+          const tt = tNow();
+          mi.fireflyX = Math.min(walk.right - 12, Math.max(walk.min - 30, cx + 95 * Math.sin(tt * 0.5) + 35 * Math.sin(tt * 1.3)));
+          mi.fireflyY = Math.min(p.camera.hy - 14, Math.max(walk.ceiling + 4, p.camera.hy - spriteHeight('idle', walk.px) - 14 + 24 * Math.sin(tt * 0.8 + 1)));
+          ff.style.left = `${mi.fireflyX}px`;
+          ff.style.top = `${mi.fireflyY}px`;
+          ff.style.opacity = String(0.5 + 0.4 * (0.5 + 0.5 * Math.sin(tt * 2.1)));
+        } else if (ff.style.opacity !== '0') ff.style.opacity = '0';
       }
       mi.lie = napUntil.current > 0 && nowRef.current() < napUntil.current && !p.night;
       // The beat: a soft squash at most once every `BOB_GAP_MS`.
@@ -1332,6 +1352,9 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
       </span>
       <span className="watt-heart" ref={hearts[1]} aria-hidden="true">
         <PixelSvg map={HEART} px={SMALL_PX} />
+      </span>
+      <span className="watt-firefly" ref={ffEl} aria-hidden="true">
+        <PixelSvg map={FIREFLY} px={SMALL_PX} />
       </span>
       <span className="watt-spark" ref={sparks[0]} aria-hidden="true">
         <PixelSvg map={PROP_SPRITES.star.map} px={SMALL_PX} />

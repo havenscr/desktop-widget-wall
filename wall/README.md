@@ -843,6 +843,28 @@ Watt is also a small pet ("he"), calm and silent (no sound at all):
     at most one "held" line, one "landed" line and a "dizzy" line at most once a minute, all
     obeying every quiet time and the chattiness setting, and carry lines come at most every 20
     seconds across carries.
+  - **He notices the pointer.** Within about 260 px, and not busy (reading in focus, walking, a
+    clover on the ground, asleep, a reaction running), he turns to face a pointer that moved in the
+    last 6 seconds, with his ears up (the "alert" pose); after 6 still seconds he loses interest.
+    Not under reduced motion.
+  - **Happy hop and a milestone.** Three clicks within 4 seconds (the second and third add nothing
+    to the pet count) give one happy hop, a jump with a turn of the wool, at most once every 20
+    seconds. The tenth pet of a day gives a one-off sparkle and a "milestone" line.
+- **Tricks and commands in his card** (a row of 32 px buttons, each with a tooltip). "Hop" and
+  "Spin" are small reactions; "Nap" lies him down asleep for a minute or until he is petted;
+  "Come here" trots him to the middle of the place, where the wander picks up from; "Stay" is a
+  switch that keeps him sitting where he was last set down (or where he stands, if he never was)
+  until it is switched off, the place changes or the day ends. Stay is kept in the stored record
+  (`stay`: place, x, local date) and checked whole on read (a known place, an x on the stage,
+  today's date; anything else is dropped). The tricks are refused quietly, not hidden: in a call
+  or a meeting, in the first minute of focus, while he sleeps at night and while he is away, the
+  buttons are off and their tooltip says why. "Read with me, 25 min" starts the existing focus
+  timer through the focus store at its default length (no new timer logic) and is off, with a
+  tooltip, while a session runs. Tricks add a line from the "tricks" or "stay" group, on the same
+  quiet and chattiness rules, at most every 20 seconds.
+- **A firefly at dusk.** Between sunset (`ribbon/sun.ts`) and his bedtime (9:30 PM) one small
+  firefly drifts in a slow loop near him and blinks softly (never brighter than his wool); he
+  turns to watch it. Not under reduced motion, never in a call.
 - **A little life**: he reads a tiny book during focus, wears headphones on Unwind while music
   plays, sunglasses at a clear midday, an umbrella in rain, a scarf when it is cold, a nightcap
   asleep; he looks up at the moon in the evening, yawns and stretches when he wakes at 6:30,
@@ -851,7 +873,7 @@ Watt is also a small pet ("he"), calm and silent (no sound at all):
   a day a clover grows on his walk; he eats it when he reaches it, or click it to give it to
   him. Cosmetics (bow, star, cape) unlock with days together.
 - **Stored locally** (`localStorage` key `wall2.watt`, `buddy/pet.ts`): how chatty he is, the
-  cosmetic, days together and today's counts. His click area, mark and clover sit above the
+  cosmetic, days together, today's counts and his Stay. His click area, mark and clover sit above the
   shell (`z-index: 1`) and take the pointer only while he is up; carried, he is at `z-index: 40`.
 - What he knows comes from existing hooks (`useAgentStatusLine`, `useAgentsWaiting`, the
   agents store, `useWeather`, `useNextMeeting`, the focus store, the audio store and beat

@@ -171,3 +171,17 @@ describe('more of a pet', () => {
     for (const a of POSES) for (const b of POSES) if (a < b) expect(SPRITES[a].join('|'), `${a} and ${b}`).not.toBe(SPRITES[b].join('|'));
   });
 });
+
+describe('a firefly', () => {
+  it('turns him to watch it, head up when it is above him, and the pointer wins when both are there', () => {
+    const f = frame(mind({ firefly: true, fireflyX: 1200, fireflyY: 500 }));
+    expect(f.dir).toBe(1);
+    expect(f.pose).toBe('look');
+    expect(frame(mind({ firefly: true, fireflyX: 800, fireflyY: 570 })).dir).toBe(-1);
+    expect(frame(mind({ firefly: true, fireflyX: 800, fireflyY: 570 })).pose).toBe('idle');
+    expect(frame(mind({ firefly: true, fireflyX: 1200, fireflyY: 500, pointerOn: true, pointerX: 800, pointerY: 560 })).dir).toBe(-1);
+    expect(frame(mind({ firefly: true, fireflyX: 1200, fireflyY: 500 }), { still: true }).pose).toBe('idle');
+    expect(frame(mind({ firefly: true, fireflyX: 1200, fireflyY: 500, focus: true })).pose).toBe('read');
+    expect(frame(mind({ firefly: false, fireflyX: 1200, fireflyY: 500 })).pose).toBe('idle');
+  });
+});

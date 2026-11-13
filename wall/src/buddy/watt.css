@@ -83,6 +83,14 @@
   position: absolute;
   opacity: 0;
 }
+.watt-firefly {
+  position: absolute;
+  opacity: 0;
+  filter: drop-shadow(0 0 4px rgba(190, 225, 100, 0.45));
+}
+.watt-firefly svg {
+  display: block;
+}
 .watt-spark {
   filter: drop-shadow(0 0 5px rgba(255, 194, 77, 0.7));
 }

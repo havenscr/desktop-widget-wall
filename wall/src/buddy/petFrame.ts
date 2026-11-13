@@ -54,6 +54,10 @@ export interface Mind {
   clover: boolean;
   /** He is lying down for a nap (the Nap trick). */
   lie: boolean;
+  /** A firefly drifts near him (between sunset and bedtime), and where it is (stage pixels). */
+  firefly: boolean;
+  fireflyX: number;
+  fireflyY: number;
   /** He is being carried, falling, or sitting where he was set down: the wander clock waits (`carry.ts`). */
   carry: boolean;
 }
@@ -80,6 +84,9 @@ export function createMind(): Mind {
     pointerY: 0,
     clover: false,
     lie: false,
+    firefly: false,
+    fireflyX: 0,
+    fireflyY: 0,
   };
 }
 
@@ -188,6 +195,11 @@ export function petFrame(walk: Walk, place: WattPlace, hy: number, night: boolea
       out.pose = 'look';
     } else if (w && m.sleepy && w.stop % 3 === 0 && w.into < 3) {
       out.pose = 'yawn';
+    }
+    // A firefly: he turns to watch it, head up, when he is standing about.
+    if (!react && !still && m.firefly && !moving && !m.focus && !m.clover && out.pose === 'idle') {
+      out.dir = m.fireflyX >= out.x + spriteWidth('look', walk.px) / 2 ? 1 : -1;
+      if (m.fireflyY < hy - spriteHeight('look', walk.px)) out.pose = 'look';
     }
     // He notices the pointer: faces it, ears up, when he is standing about with nothing on his mind.
     if (!react && !still && m.pointerOn && !moving && !m.focus && !m.clover) {

@@ -239,6 +239,8 @@ export function propOrigin(prop: Prop, pose: Pose): [number, number] {
 export const HEART: readonly string[] = ['.v.v.', 'vvvvv', '.vvv.', '..v..'];
 export const CLOVER: readonly string[] = ['.o.o.', 'ooooo', '.ooo.', '..O..', '..O..'];
 export const MARK: readonly string[] = ['aa', 'aa', 'aa', '..', 'aa'];
+/** The dusk firefly: one small sprite, softer than his wool. */
+export const FIREFLY: readonly string[] = ['.y.', 'yYy', '.y.'];
 /** Pixel size of the heart, the clover and the mark, design pixels. */
 export const SMALL_PX = 3;
 
@@ -265,6 +267,8 @@ export const PROP_COLORS: Readonly<Record<string, string>> = {
   o: '#5df2b6',
   O: '#2fb184',
   a: '#ffc24d',
+  y: '#a8c850',
+  Y: '#e4f08f',
 };
 
 /** Colour of a prop or little thing pixel, or null for empty. */

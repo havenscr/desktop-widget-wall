@@ -16,6 +16,11 @@ import { resetMeetingFeed, useMeetingFeed } from '../work/useNextMeeting';
 import { resetWeatherStore } from '../weather/useWeather';
 import { PET_LINE_EVERY_MS, PET_REPLY_GAP_MS, WATT_TIP, Watt } from './Watt';
 
+const sunMock = vi.hoisted(() => ({ set: null as number | null }));
+vi.mock('../ribbon/sun', async (original) => ({
+  ...(await original<typeof import('../ribbon/sun')>()),
+  sunTimes: () => ({ rise: null, set: sunMock.set }),
+}));
 const idleState = vi.hoisted(() => ({ on: false }));
 vi.mock('../ui/useIdle', () => ({ useIdle: () => idleState.on }));
 
@@ -86,6 +91,7 @@ function where(container: HTMLElement) {
 }
 
 beforeEach(() => {
+  sunMock.set = null;
   idleState.on = false;
   frames = new Map();
   ts = 0;
@@ -1592,5 +1598,58 @@ describe('more of a pet', () => {
       runFor(2);
       expect(container.querySelector('.watt-prop-book')).not.toBeNull();
     });
+  });
+});
+
+describe('a firefly at dusk', () => {
+  const fly = (c: HTMLElement) => c.querySelector<HTMLElement>('.watt-firefly')!;
+  const dusk = () => local(18, 0);
+  it('drifts near him between sunset and bedtime, blinking softly, and he turns to watch it', () => {
+    sunMock.set = local(16, 35);
+    const { container } = render(<Watt now={dusk} />);
+    runFor(2);
+    const dirs = new Set<string>();
+    let hi = 0;
+    let lo = 1;
+    for (let i = 0; i < 400; i++) {
+      tick();
+      const o = Number(fly(container).style.opacity);
+      hi = Math.max(hi, o);
+      lo = Math.min(lo, o);
+      expect(o).toBeLessThanOrEqual(0.9);
+      const fx = parseFloat(fly(container).style.left);
+      const me = where(container).x;
+      expect(Math.abs(fx - me)).toBeLessThan(220);
+      dirs.add(/scaleX\((-?1)\)/.exec(container.querySelector<HTMLElement>('.watt-sheep')!.style.transform)![1]);
+    }
+    expect(hi).toBeGreaterThan(0.6);
+    expect(lo).toBeGreaterThan(0.4);
+    expect(dirs.size).toBe(2);
+    // One sprite, in the band.
+    expect(container.querySelectorAll('.watt-firefly').length).toBe(1);
+    expect(parseFloat(fly(container).style.top)).toBeGreaterThanOrEqual(WALKS.unwind.ceiling);
+  });
+  it('is not there before sunset, after bedtime, under reduced motion, or in a call', () => {
+    sunMock.set = local(16, 35);
+    for (const [name, clock, red, call] of [
+      ['before sunset', () => local(15, 0), false, false],
+      ['after bedtime', () => local(22, 0), false, false],
+      ['reduced motion', dusk, true, false],
+      ['in a call', dusk, false, true],
+    ] as const) {
+      reduced(red);
+      const r = render(<Watt now={clock} inCall={call} />);
+      runFor(FADE_IN_S + 1);
+      expect(Number(fly(r.container).style.opacity || 0), name).toBe(0);
+      r.unmount();
+    }
+  });
+  it('is not there on Meet while he is hidden for a call', () => {
+    sunMock.set = local(16, 35);
+    usePlaceStore.setState({ active: 'meet' });
+    publishCamera(CAMERAS.meet, false);
+    const { container } = render(<Watt now={dusk} inCall />);
+    runFor(2);
+    expect(Number(fly(container).style.opacity || 0)).toBe(0);
   });
 });
