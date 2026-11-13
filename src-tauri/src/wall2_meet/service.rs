@@ -149,11 +149,20 @@ pub struct Links {
     /// The day view's keys (they start with `d`), swapped separately so a day read never
     /// breaks a Join key from the next-meetings read, and the other way round.
     pub day_map: HashMap<String, (String, String)>,
+    /// The day view's Outlook event links, under the same day keys as `day_map`: key to
+    /// (account id, web link). Swapped together with `day_map`, never read by `lookup_link`.
+    pub web_map: HashMap<String, (String, String)>,
 }
 
 pub fn lookup_link(links: &Mutex<Links>, key: &str) -> Option<String> {
     let guard = links.lock().unwrap_or_else(|e| e.into_inner());
     guard.map.get(key).or_else(|| guard.day_map.get(key)).map(|(_, url)| url.clone())
+}
+
+/// The Outlook web link behind a day key. Reads only `web_map`, so a join key never opens here.
+pub fn lookup_web_link(links: &Mutex<Links>, key: &str) -> Option<String> {
+    let guard = links.lock().unwrap_or_else(|e| e.into_inner());
+    guard.web_map.get(key).map(|(_, url)| url.clone())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -649,6 +658,8 @@ pub struct DayEventOut {
     pub start: String,
     pub end: String,
     pub can_join: bool,
+    /// True when an allowed Outlook web link sits behind `key` for opening the event.
+    pub can_open: bool,
     pub is_live: bool,
 }
 
@@ -707,6 +718,7 @@ pub fn read_day_only(
     let mut guard = links.lock().unwrap_or_else(|e| e.into_inner());
     guard.generation += 1;
     guard.day_map.clear();
+    guard.web_map.clear();
     let generation = guard.generation;
     let events = merged
         .into_iter()
@@ -717,8 +729,12 @@ pub fn read_day_only(
             if let Some(url) = cand.join {
                 guard.day_map.insert(key.clone(), (cand.account_id.clone(), url));
             }
+            let can_open = cand.web.is_some();
+            if let Some(url) = cand.web {
+                guard.web_map.insert(key.clone(), (cand.account_id.clone(), url));
+            }
             let is_live = is_live(&cand.title);
-            DayEventOut { key, account_id: cand.account_id, title: cand.title, start: cand.start, end: cand.end, can_join, is_live }
+            DayEventOut { key, account_id: cand.account_id, title: cand.title, start: cand.start, end: cand.end, can_join, can_open, is_live }
         })
         .collect();
     drop(guard);
@@ -797,6 +813,7 @@ pub fn sign_out(id: &str, store: &dyn SecretStore, core: &Mutex<Core>, links: &M
     let mut l = links.lock().unwrap_or_else(|e| e.into_inner());
     l.map.retain(|_, (account, _)| account != id);
     l.day_map.retain(|_, (account, _)| account != id);
+    l.web_map.retain(|_, (account, _)| account != id);
 }
 
 #[cfg(test)]
@@ -1057,6 +1074,81 @@ mod tests {
         assert!(!is_live(&n.meetings[0].title));
         assert!(lookup_link(&links, &day_key).is_some());
         assert_eq!(g.seen_window.borrow()[1], (utc_iso(NOW + 10), utc_iso(NOW + 10 + WINDOW_SECS)));
+    }
+
+    const WEB: &str = "https://outlook.office.com/calendar/item/AAMkAGI1-0001";
+
+    fn day_body_with_web() -> Value {
+        let mut with_web = event_at("Weekly planning", "p1", "2026-11-12T17:00:00.0000000", "2026-11-12T18:00:00.0000000");
+        with_web["webLink"] = json!(WEB);
+        let mut bad_web = event_at("Design review", "r1", "2026-11-12T19:00:00.0000000", "2026-11-12T20:00:00.0000000");
+        bad_web["webLink"] = json!("https://evil.example/calendar/item/x");
+        let no_web = event_at("Focus time", "f1", "2026-11-12T21:00:00.0000000", "2026-11-12T22:00:00.0000000");
+        json!({ "value": [with_web, bad_web, no_web] })
+    }
+
+    #[test]
+    fn a_day_read_publishes_the_web_link_behind_the_key() {
+        let (store, core) = setup();
+        let links = Mutex::new(Links::default());
+        let t = FakeTokens::new(vec![ok_token("a", None)]);
+        let g = FakeGraph::new(vec![GraphReply::Ok(day_body_with_web())]);
+        let (from, to) = (1_794_441_600, 1_794_441_600 + 36 * 3600);
+        let p = read_day(&[acct("work")], &store, &t, &g, &core, &links, NOW, from, to);
+        assert_eq!(p.events.len(), 3);
+        assert!(p.events[0].can_open);
+        assert!(!p.events[1].can_open, "a link on another host is never published");
+        assert!(!p.events[2].can_open);
+        assert_eq!(lookup_web_link(&links, &p.events[0].key).as_deref(), Some(WEB));
+        assert!(lookup_web_link(&links, &p.events[1].key).is_none());
+        assert!(lookup_web_link(&links, &p.events[2].key).is_none());
+        // The join lookup never hands out a web link.
+        assert_ne!(lookup_link(&links, &p.events[0].key).as_deref(), Some(WEB));
+        let v = serde_json::to_value(&p).unwrap();
+        assert_eq!(v["events"][0]["canOpen"], json!(true));
+        assert_eq!(v["events"][2]["canOpen"], json!(false));
+        let text = v.to_string();
+        for bad in ["outlook", "webLink", "AAMkAGI1", "evil.example"] {
+            assert!(!text.contains(bad), "payload leaks {bad}: {text}");
+        }
+        // A new day read swaps the web links with the day keys.
+        let g = FakeGraph::new(vec![GraphReply::Ok(day_body_with_web())]);
+        let old = p.events[0].key.clone();
+        let p2 = read_day(&[acct("work")], &store, &t, &g, &core, &links, NOW + 10, from, to);
+        assert!(lookup_web_link(&links, &old).is_none());
+        assert_eq!(lookup_web_link(&links, &p2.events[0].key).as_deref(), Some(WEB));
+    }
+
+    #[test]
+    fn sign_out_drops_the_web_links() {
+        let (store, core) = setup();
+        let links = Mutex::new(Links::default());
+        let t = FakeTokens::new(vec![ok_token("a", None)]);
+        let g = FakeGraph::new(vec![GraphReply::Ok(day_body_with_web())]);
+        let (from, to) = (1_794_441_600, 1_794_441_600 + 36 * 3600);
+        let p = read_day(&[acct("work")], &store, &t, &g, &core, &links, NOW, from, to);
+        let key = p.events[0].key.clone();
+        assert!(lookup_web_link(&links, &key).is_some());
+        sign_out("work", &store, &core, &links);
+        assert!(lookup_web_link(&links, &key).is_none());
+        assert!(links.lock().unwrap().web_map.is_empty());
+    }
+
+    #[test]
+    fn a_join_key_is_not_a_web_link_key() {
+        let (store, core) = setup();
+        let links = Mutex::new(Links::default());
+        let t = FakeTokens::new(vec![ok_token("a", None)]);
+        let mut next_body = body("Weekly planning", "p1");
+        next_body["value"][0]["webLink"] = json!(WEB);
+        let g = FakeGraph::new(vec![GraphReply::Ok(next_body), GraphReply::Ok(day_body_with_web())]);
+        let n = read_next(&[acct("work")], &store, &t, &g, &core, &links, NOW);
+        let join_key = n.meetings[0].key.clone();
+        assert!(lookup_link(&links, &join_key).is_some());
+        assert!(lookup_web_link(&links, &join_key).is_none());
+        let (from, to) = (1_794_441_600, 1_794_441_600 + 36 * 3600);
+        read_day(&[acct("work")], &store, &t, &g, &core, &links, NOW + 10, from, to);
+        assert!(lookup_web_link(&links, &join_key).is_none());
     }
 
     #[test]

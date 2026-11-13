@@ -129,3 +129,13 @@ it('takes Music.UI.exe as Groove Music on purpose, and the ZuneMusic package as 
   expect(playerName('MusicUI.exe')).toBe('Music UI');
   expect(playingSession([session('Music.UI.exe')], 'MusicUI.exe')).toBeNull();
 });
+
+it('takes any sixteen hex digit bare id as Firefox from another install, and never spaces hex or capitals ids', () => {
+  expect(playerName('308046b0af4a39cb')).toBe('Firefox');
+  expect(playerName('6F193CCC56814779')).toBe('Firefox');
+  // Not sixteen hex digits: shown as it is, unspaced.
+  expect(playerName('9e3f00aB12')).toBe('9e3f00aB12');
+  expect(playerName('ABCDEF0123456789AB')).toBe('ABCDEF0123456789AB');
+  expect(playerName('MEDIAHOST_X')).toBe('MEDIAHOST_X');
+  expect(playerName('NightPlayer')).toBe('Night Player');
+});

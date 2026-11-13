@@ -59,8 +59,18 @@ export const procName = (s: string) =>
 
 const generic = (s: string) => s === '' || /^app(\.exe)?$/i.test(s);
 
-/** "PlayerName" to "Player Name"; leaves runs of capitals ("VLC") alone. */
-const spaced = (s: string) => s.replace(/([a-z0-9])([A-Z])/g, '$1 $2');
+/**
+ * "PlayerName" to "Player Name"; leaves runs of capitals ("VLC") alone, and leaves an id
+ * that is all hex digits or all capitals as it is (spacing those reads as junk).
+ */
+const spaced = (s: string) => (/^[0-9a-f]+$/i.test(s) || /^[A-Z0-9_]+$/.test(s) ? s : s.replace(/([a-z0-9])([A-Z])/g, '$1 $2'));
+
+/**
+ * Firefox registers a sixteen hex digit app id made from its install folder, so a
+ * non-default install has an id no table can list. A bare id of exactly that shape is
+ * taken as Firefox (no other common player registers one).
+ */
+const FIREFOX_INSTALL_ID = /^[0-9a-f]{16}$/i;
 
 /** True when `name` reads as a known player's name (so an unknown app must not use it). */
 const looksKnown = (name: string) => {
@@ -132,7 +142,9 @@ function known(source: string): KnownPlayer | null {
   }
   // A bare id: one of the player's ids or process names, or its own name (an older label).
   const id = p.id.toLowerCase();
-  return KNOWN.find((k) => k.ids?.includes(id) || k.processes.includes(id) || k.name.toLowerCase() === id) ?? null;
+  const hit = KNOWN.find((k) => k.ids?.includes(id) || k.processes.includes(id) || k.name.toLowerCase() === id);
+  if (hit) return hit;
+  return FIREFOX_INSTALL_ID.test(id) ? (KNOWN.find((k) => k.name === 'Firefox') ?? null) : null;
 }
 
 /** The source as the wall shows it: the id when the session gave one, else the older label. */

@@ -8,6 +8,7 @@ import { Rail } from './rail/Rail';
 import { usePlaceStore } from './state/places';
 import { Screens } from './screens/Screens';
 import { Stage } from './stage/Stage';
+import { HoverTipLayer } from './ui/HoverTip';
 
 export function App() {
   const active = usePlaceStore((s) => s.active);
@@ -30,6 +31,7 @@ export function App() {
         <Rail />
         <Screens />
       </div>
+      <HoverTipLayer />
     </Stage>
   );
 }

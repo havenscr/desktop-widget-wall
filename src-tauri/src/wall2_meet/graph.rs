@@ -19,6 +19,8 @@ pub struct Candidate {
     pub end: String,
     pub account_id: String,
     pub join: Option<String>,
+    /// The event's Outlook web link, only when `web_link_allowed` passed. Stays in Rust.
+    pub web: Option<String>,
 }
 
 pub enum GraphReply {
@@ -304,7 +306,7 @@ pub fn run_attempts(ctx: &Ctx, send: &mut dyn FnMut(u32, Duration) -> Raw) -> (G
     }
 }
 
-pub const SELECT: &str = "subject,start,end,isAllDay,isCancelled,responseStatus,onlineMeeting,onlineMeetingUrl,iCalUId";
+pub const SELECT: &str = "subject,start,end,isAllDay,isCancelled,responseStatus,onlineMeeting,onlineMeetingUrl,iCalUId,webLink";
 pub const TOP: u32 = 50;
 pub const CALENDAR_VIEW_PATH: &str = "https://graph.microsoft.com/v1.0/me/calendarView";
 pub const PREFER: &str = "outlook.timezone=\"UTC\"";
@@ -396,6 +398,27 @@ pub fn join_allowed(raw: &str) -> bool {
     host_ok && (url.path().starts_with("/l/meetup-join/") || url.path().starts_with("/meet/"))
 }
 
+/// Only an Outlook on the web event link on a fixed host may open the event: https, no user
+/// name or password, the default port, no whitespace, backslash or control characters.
+pub fn web_link_allowed(raw: &str) -> bool {
+    if raw.len() > 4096 || raw.chars().any(|c| c == '\\' || c.is_whitespace() || c.is_control()) {
+        return false;
+    }
+    let Ok(url) = tauri::Url::parse(raw) else {
+        return false;
+    };
+    if url.scheme() != "https" || !url.username().is_empty() || url.password().is_some() {
+        return false;
+    }
+    if !matches!(url.port(), None | Some(443)) {
+        return false;
+    }
+    matches!(
+        url.host_str().map(str::to_ascii_lowercase).as_deref(),
+        Some("outlook.office.com") | Some("outlook.office365.com") | Some("outlook.live.com") | Some("outlook.cloud.microsoft")
+    )
+}
+
 // Section: shaping
 
 fn cap_title(raw: &str) -> String {
@@ -440,6 +463,7 @@ pub fn shape_events(body: &Value, account_id: &str) -> Vec<Candidate> {
                 end,
                 account_id: account_id.to_string(),
                 join,
+                web: str_at(e, &["webLink"]).filter(|u| web_link_allowed(u)).map(str::to_string),
             })
         })
         .collect()
@@ -485,6 +509,7 @@ mod tests {
             end: format!("2026-11-12T{:02}:30:00Z", n),
             account_id: acct.into(),
             join: None,
+            web: None,
         };
         let a: Vec<_> = (0..12).map(|n| one(n, "a")).collect();
         let b: Vec<_> = (0..12).map(|n| one(n, "b")).collect();
@@ -707,7 +732,7 @@ mod tests {
         let url = calendar_view_url("2026-11-12T17:00:00Z", "2026-11-13T17:00:00Z");
         assert_eq!(
             url,
-            "https://graph.microsoft.com/v1.0/me/calendarView?startDateTime=2026-11-12T17%3A00%3A00Z&endDateTime=2026-11-13T17%3A00%3A00Z&$select=subject,start,end,isAllDay,isCancelled,responseStatus,onlineMeeting,onlineMeetingUrl,iCalUId&$orderby=start/dateTime&$top=50"
+            "https://graph.microsoft.com/v1.0/me/calendarView?startDateTime=2026-11-12T17%3A00%3A00Z&endDateTime=2026-11-13T17%3A00%3A00Z&$select=subject,start,end,isAllDay,isCancelled,responseStatus,onlineMeeting,onlineMeetingUrl,iCalUId,webLink&$orderby=start/dateTime&$top=50"
         );
         let names: Vec<&str> = url.split_once('?').unwrap().1.split('&').map(|p| p.split('=').next().unwrap()).collect();
         assert_eq!(names, ["startDateTime", "endDateTime", "$select", "$orderby", "$top"]);
@@ -787,6 +812,7 @@ mod tests {
             end: "2026-11-12T23:00:00Z".into(),
             account_id: account.into(),
             join: None,
+            web: None,
         }
     }
 
@@ -878,6 +904,55 @@ mod tests {
         ];
         for url in bad {
             assert!(!join_allowed(url), "should reject {url}");
+        }
+    }
+
+    #[test]
+    fn web_link_is_kept_only_when_allowed() {
+        let mut e = event("m", "2026-11-12T17:00:00.0000000", "1");
+        e["webLink"] = json!("https://outlook.office365.com/owa/?itemid=AAMkAGI1&exvsurl=1&path=/calendar/item");
+        let mut z = event("z", "2026-11-12T17:00:00.0000000", "2");
+        z["webLink"] = json!("https://evil.example/owa/?itemid=x");
+        let n = event("n", "2026-11-12T17:00:00.0000000", "3");
+        let out = shape_events(&json!({ "value": [e, z, n] }), "work");
+        assert_eq!(out[0].web.as_deref(), Some("https://outlook.office365.com/owa/?itemid=AAMkAGI1&exvsurl=1&path=/calendar/item"));
+        assert!(out[1].web.is_none());
+        assert!(out[2].web.is_none());
+    }
+
+    #[test]
+    fn web_link_allowlist_accepts_outlook_hosts() {
+        assert!(web_link_allowed("https://outlook.office.com/calendar/item/AAMkAGI1"));
+        assert!(web_link_allowed("https://outlook.office365.com/owa/?itemid=AAMkAGI1&exvsurl=1&path=/calendar/item"));
+        assert!(web_link_allowed("https://outlook.live.com/owa/?itemid=AQMkADAw&exvsurl=1&path=/calendar/item"));
+        assert!(web_link_allowed("https://outlook.cloud.microsoft/calendar/item/AAMkAGI1"));
+        assert!(web_link_allowed("https://Outlook.Office.com/calendar/item/x"));
+        assert!(web_link_allowed("https://outlook.office.com:443/calendar/item/x"));
+    }
+
+    #[test]
+    fn web_link_allowlist_rejects_everything_else() {
+        let long = format!("https://outlook.office.com/calendar/item/{}", "a".repeat(4097));
+        let bad = [
+            "http://outlook.office.com/calendar/item/x",
+            "https://evil.example/calendar/item/x",
+            "https://outlook.office.com.evil.example/calendar/item/x",
+            "https://evil.example/outlook.office.com/calendar/item/x",
+            "https://outlook.office.com@evil.example/",
+            "https://user:pw@outlook.office.com/calendar/item/x",
+            "https://user@outlook.office.com/calendar/item/x",
+            "https://outlook.office.com:8443/calendar/item/x",
+            "https://sub.outlook.office.com/calendar/item/x",
+            "https://outlook.office.com/calendar/item/x y",
+            "https://outlook.office.com/calendar/item/x\ty",
+            "https://outlook.office.com/calendar/item/x\\y",
+            "https://outlook.office.com/calendar/item/x\u{7}",
+            "javascript:alert(1)",
+            "",
+            long.as_str(),
+        ];
+        for url in bad {
+            assert!(!web_link_allowed(url), "should reject {url}");
         }
     }
 }

@@ -3758,10 +3758,12 @@ pub fn run() {
             wall2_meet::wall2_meet_sign_in,
             wall2_meet::wall2_meet_cancel_sign_in,
             wall2_meet::wall2_meet_join,
+            wall2_meet::wall2_open_event,
             wall2_meet::wall2_meet_sign_out,
             // Wall 2 helper client and machine numbers
             wall2_omni::wall2_omni_summary,
             wall2_omni::wall2_open_session,
+            wall2_omni::wall2_focus_omnigent,
             wall2_omni::wall2_machines,
             wall2_power::wall2_idle_state,
             wall2_power::wall2_monitors_off,

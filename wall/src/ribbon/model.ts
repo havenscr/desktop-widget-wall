@@ -34,6 +34,10 @@ export interface DayEvent {
   start: string;
   end: string;
   isLive?: boolean;
+  /** Which configured account the event is from (its id, never an address). */
+  accountId?: string;
+  /** Rust holds a link that opens the event in Outlook (`wall2_open_event`). */
+  canOpen?: boolean;
 }
 
 /**
@@ -131,12 +135,16 @@ export interface Chip {
   lane: 0 | 1;
   /** Too narrow for its title. */
   narrow: boolean;
+  start: number;
+  end: number;
+  accountId: string | null;
+  canOpen: boolean;
 }
 
 /**
  * Calendar chips for row 1: today's events between 6 AM and 12 AM, clipped to that span.
- * An event that has ended is `past`; one under the needle is `now`. A chip that starts
- * before the last lane 0 chip ends goes in lane 1.
+ * An event that has ended is `past`; one under the needle is `now`. Lanes come from
+ * `chipLayout`.
  */
 export function chips(events: readonly DayEvent[], now: number): Chip[] {
   const out: Chip[] = [];
@@ -157,16 +165,68 @@ export function chips(events: readonly DayEvent[], now: number): Chip[] {
       live: e.isLive === true,
       lane: 0,
       narrow: false,
+      start,
+      end,
+      accountId: typeof e.accountId === 'string' ? e.accountId : null,
+      canOpen: e.canOpen === true,
     });
   }
   out.sort((a, b) => a.x - b.x);
-  const ends = [-Infinity, -Infinity];
-  for (const c of out) {
-    c.lane = c.x >= ends[0] ? 0 : 1;
-    ends[c.lane] = Math.max(ends[c.lane], c.x + c.width);
-    c.narrow = c.width < NARROW_CHIP_PX;
-  }
+  for (const c of out) c.narrow = c.width < NARROW_CHIP_PX;
   return out;
+}
+
+/** The calendar row has two lanes; a third concurrent event goes into a "+N" chip. */
+export const CHIP_LANES = 2;
+/** Width of a "+N" chip. */
+export const MORE_CHIP_PX = 44;
+
+/** A "+N" chip: the events that did not fit a lane, listed on hover, picked from on click. */
+export interface MoreChip {
+  key: string;
+  x: number;
+  width: number;
+  lane: 0 | 1;
+  items: Chip[];
+}
+
+/**
+ * Lanes for the day's chips: each event goes in the first lane free at its start. When more
+ * overlap than there are lanes, the ones that fit are drawn and the rest go into one "+N"
+ * chip in the second lane at the first one's start; a second-lane chip under that "+N" chip
+ * joins it too, so nothing is ever drawn over another chip in the same lane.
+ */
+export function chipLayout(all: readonly Chip[]): { shown: Chip[]; more: MoreChip[] } {
+  const ends = Array.from({ length: CHIP_LANES }, () => -Infinity);
+  const shown: Chip[] = [];
+  const over: Chip[] = [];
+  for (const c0 of [...all].sort((a, b) => a.x - b.x)) {
+    const lane = ends.findIndex((e) => c0.x >= e);
+    if (lane < 0) {
+      over.push(c0);
+      continue;
+    }
+    const c = { ...c0, lane: lane as 0 | 1 };
+    ends[lane] = c.x + c.width;
+    shown.push(c);
+  }
+  const more: MoreChip[] = [];
+  for (const c of over) {
+    const last = more[more.length - 1];
+    const reach = last ? Math.max(last.x + last.width, ...last.items.map((i) => i.x + i.width)) : -Infinity;
+    if (last && c.x < reach) last.items.push(c);
+    else more.push({ key: `more-${c.key}`, x: c.x, width: MORE_CHIP_PX, lane: 1, items: [c] });
+  }
+  // A second-lane chip the "+N" chip would sit on joins its list.
+  const keep = shown.filter((c) => {
+    if (c.lane !== 1) return true;
+    const m = more.find((mm) => c.x < mm.x + mm.width && mm.x < c.x + c.width);
+    if (!m) return true;
+    m.items.push(c);
+    return false;
+  });
+  for (const m of more) m.items.sort((a, b) => a.start - b.start || a.key.localeCompare(b.key));
+  return { shown: keep, more };
 }
 
 /** Focus bars: today's sessions up to now, inside 6 AM to 12 AM. */
@@ -208,4 +268,42 @@ export function dueMarks(tasks: readonly TaskItem[], now: number): DueMark[] {
 /** Milliseconds until the next whole minute, so the needle moves on the minute. */
 export function msToNextMinute(now: number): number {
   return 60_000 - (now % 60_000) + 50;
+}
+
+/** "1 h 36 m" or "12 min" until a time (at least 1 min). */
+export function untilText(ms: number, now: number): string {
+  const mins = Math.max(1, Math.round((ms - now) / 60_000));
+  if (mins < 60) return `${mins} min`;
+  const h = Math.floor(mins / 60);
+  return mins % 60 === 0 ? `${h} h` : `${h} h ${mins % 60} m`;
+}
+
+/**
+ * The needle's tooltip: the time and the countdown to the next meeting today ("4:10. Next
+ * meeting in 1 h 36 m: Weekly planning"), "in progress" for one under the needle when no
+ * other is coming, or "No more meetings today" after a good read; just the time otherwise.
+ */
+export function needleTip(chipsToday: readonly Chip[], now: number, known: boolean): string {
+  const head = shortTime(now);
+  const next = chipsToday.filter((c) => c.start > now).sort((a, b) => a.start - b.start)[0];
+  if (next) return `${head}. Next meeting in ${untilText(next.start, now)}: ${next.title}`;
+  const current = chipsToday.find((c) => c.state === 'now');
+  if (current) return `${head}. In ${current.title} until ${shortTime(current.end)}, nothing after it today`;
+  return known ? `${head}. No more meetings today` : head;
+}
+
+/** "10:30 to 11:30" for a chip's hover card, with AM or PM on the end. */
+export function spanText(start: number, end: number): string {
+  const ampm = (ms: number) => (new Date(ms).getHours() < 12 ? 'AM' : 'PM');
+  return `${shortTime(start)} to ${shortTime(end)} ${ampm(end)}`;
+}
+
+/** A due mark's label (diamond, title, time) as an x span, from its title's length. */
+export function dueLabelSpan(m: DueMark): { x: number; width: number } {
+  return { x: m.x - 6, width: 19 + Math.min(180, m.title.length * 8.6) + 52 };
+}
+
+/** True when the span overlaps any of `boxes`. */
+export function overlapsAny(a: { x: number; width: number }, boxes: readonly { x: number; width: number }[]): boolean {
+  return boxes.some((b) => a.x < b.x + b.width && b.x < a.x + a.width);
 }
