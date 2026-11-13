@@ -59,7 +59,7 @@ function NextPanel({ m, labels }: { m: MeetState; labels: Map<string, string> })
 function LaterPanel({ m, labels }: { m: MeetState; labels: Map<string, string> }) {
   const later = m.data ? laterMeetings(m.data.meetings, m.now) : [];
   return (
-    <section className={`panel meet-later${later.length === 0 ? ' fit' : ''}`} aria-label="Later meetings">
+    <section className="panel meet-later" aria-label="Later meetings">
       <span className="k">Later</span>
       {later.length === 0 ? (
         <div className="s">Nothing else</div>
@@ -148,7 +148,7 @@ function EmptyPanel({ m }: { m: MeetState }) {
 function AccountsPanel({ m }: { m: MeetState }) {
   const stale = (m.status === 'error' || m.stale) && m.lastOk !== null ? updatedText(m.lastOk, m.now) : null;
   return (
-    <section className="panel meet-accounts fit" aria-label="Accounts">
+    <section className="panel meet-accounts" aria-label="Accounts">
       <div className="row sb">
         <span className="k">Accounts</span>
         {stale && <span className="xs">{stale}</span>}
@@ -184,7 +184,7 @@ export function Meet() {
     return (
       <section className="work meet" data-place="meet" aria-label="Meet">
         <div className="meet-body" style={{ left: MEET_LEFT_PX }}>
-          <section className="panel meet-next fit" aria-label="Next meeting">
+          <section className="panel meet-next" aria-label="Next meeting">
             <span className="k">Meet</span>
             <div className="meet-count">{message}</div>
             {hint && <div className="s">{hint}</div>}

@@ -13,7 +13,9 @@
 .meet-later,
 .meet-accounts {
   top: 4px;
-  height: 486px;
+  /* Each card is as tall as what is in it (up to the band), never a tall box with a few lines. */
+  height: auto;
+  max-height: 486px;
 }
 .meet-next {
   left: 0;
@@ -66,12 +68,6 @@
   flex: 1;
   min-height: 0;
 }
-/* A card that holds a few short rows sizes to them instead of sitting mostly blank. */
-.meet-next.fit,
-.meet-later.fit,
-.meet-accounts.fit {
-  height: auto;
-}
 .meet-account-list {
   flex: none;
 }
@@ -89,7 +85,8 @@
 }
 .meet-time {
   flex: none;
-  width: 220px;
+  width: 270px;
+  white-space: nowrap;
   font: 500 24px/1 var(--body);
   color: var(--dim);
 }
@@ -131,7 +128,8 @@
 }
 .meet-empty {
   top: 4px;
-  height: 486px;
+  height: auto;
+  min-height: 220px;
   left: 0;
   width: 1308px;
   display: flex;

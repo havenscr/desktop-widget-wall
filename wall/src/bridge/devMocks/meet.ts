@@ -10,13 +10,26 @@ export function registerMeetMocks(): void {
     const now = reviewNow ? reviewNow() : Date.now();
     return new Date(Math.round((now + mins * 60_000) / 60_000) * 60_000).toISOString().replace('.000Z', 'Z');
   };
-  const accounts = () => [
-    { id: 'work', label: 'Work', state: 'ok' },
-    { id: 'second', label: 'Second', state: second ? 'ok' : 'signed-out' },
-  ];
+  // `?meet=down`: neither account can be read. `?meet=mixed`: Work reads, Second does not answer.
+  const mode = () => (typeof location === 'undefined' ? '' : (new URLSearchParams(location.search).get('meet') ?? ''));
+  const accounts = () =>
+    mode() === 'down'
+      ? [
+          { id: 'work', label: 'Work', state: 'unavailable', reason: 'graph-503-UnknownError' },
+          { id: 'second', label: 'Second', state: 'signed-out' },
+        ]
+      : mode() === 'mixed'
+        ? [
+            { id: 'work', label: 'Work', state: 'ok' },
+            { id: 'second', label: 'Second', state: 'unavailable', reason: 'graph-network' },
+          ]
+        : [
+            { id: 'work', label: 'Work', state: 'ok' },
+            { id: 'second', label: 'Second', state: second ? 'ok' : 'signed-out' },
+          ];
   mocks.set('wall2_meet_next', () => ({
     accounts: accounts(),
-    meetings: [
+    meetings: mode() === 'down' ? [] : [
       { key: '1-0', accountId: 'work', title: longOr('Design review with the platform team', 'Quarterly planning and roadmap review with the whole platform team'), start: at(-10), end: at(20), canJoin: true },
       { key: '1-1', accountId: 'work', title: 'Weekly planning', start: at(48), end: at(78), canJoin: true },
       { key: '1-2', accountId: 'work', title: 'Lunch with Sam', start: at(150), end: at(210), canJoin: false },
@@ -31,7 +44,7 @@ export function registerMeetMocks(): void {
     const day = (hour: number, mins: number) => new Date(midnight.getTime() + (hour * 60 + mins) * 60_000).toISOString().replace('.000Z', 'Z');
     return {
       accounts: accounts(),
-      events: [
+      events: mode() === 'down' ? [] : [
         { key: 'd1-0', accountId: 'work', title: 'Standup', start: day(9, 0), end: day(9, 15), canJoin: true, isLive: false },
         { key: 'd1-1', accountId: 'work', title: 'Design review with the platform team', start: day(10, 30), end: day(11, 30), canJoin: true, isLive: false },
         { key: 'd1-2', accountId: 'work', title: 'Lunch with Sam', start: day(12, 0), end: day(13, 0), canJoin: false, isLive: false },
