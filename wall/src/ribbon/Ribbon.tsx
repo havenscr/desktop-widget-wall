@@ -3,10 +3,11 @@ import { IconBolt, IconCalendar, IconHome } from '@tabler/icons-react';
 import { invoke } from '../bridge/tauri';
 import { useFocusStore } from '../focus/store';
 import { openTask } from '../tasks/model';
-import { tip } from '../ui/HoverTip';
-import { AgentRow } from './AgentRow';
+import { hideTip, pinTip, tip } from '../ui/HoverTip';
+import { AgentRow, agentBoxes } from './AgentRow';
+import { useAgentsStore } from '../agents/useAgents';
 import { useVisible } from '../ui/useVisible';
-import { chips, dueMarks, focusBars, hourLabels, msToNextMinute, needle, needleTip, skyGradient, spanText, sunLabels, ticks, type Chip } from './model';
+import { chipLayout, chips, dueLabelSpan, dueMarks, focusBars, hourLabels, msToNextMinute, needle, needleTip, overlapsAny, skyGradient, spanText, sunLabels, ticks, type Chip, type MoreChip } from './model';
 import { sunTimes } from './sun';
 import { useDayFeed } from './useDayEvents';
 import { useDueTaskFeed } from './useDueTasks';
@@ -18,6 +19,47 @@ const TICKS = ticks();
 /** Asks Rust to open the event in Outlook; Rust holds the link behind the key. */
 function openEvent(key: string): void {
   invoke('wall2_open_event', { key }).catch(() => undefined);
+}
+
+/** The "+N" chip's hover: every event it holds, and what a click does. */
+function MoreTip({ m, labels }: { m: MoreChip; labels: Record<string, string> }) {
+  return (
+    <>
+      <span className="tip-t">{m.items.length} more at this time</span>
+      {m.items.map((c) => (
+        <span key={c.key} className="tip-s">
+          {c.title}, {spanText(c.start, c.end)}
+          {c.accountId && labels[c.accountId] ? `, ${labels[c.accountId]}` : ''}
+        </span>
+      ))}
+      {m.items.some((c) => c.canOpen) && <span className="tip-k">Click to pick one to open in Outlook</span>}
+    </>
+  );
+}
+
+/** The list a click on a "+N" chip pins: each event a button that opens it in Outlook. */
+function MorePick({ m, labels }: { m: MoreChip; labels: Record<string, string> }) {
+  return (
+    <>
+      <span className="tip-t">Open in Outlook</span>
+      {m.items.map((c) => (
+        <button
+          key={c.key}
+          type="button"
+          className="tip-pick"
+          disabled={!c.canOpen}
+          onClick={() => {
+            hideTip(true);
+            openEvent(c.key);
+          }}
+        >
+          {c.title}, {spanText(c.start, c.end)}
+          {c.accountId && labels[c.accountId] ? `, ${labels[c.accountId]}` : ''}
+          {c.canOpen ? '' : ' (no link)'}
+        </button>
+      ))}
+    </>
+  );
 }
 
 /** A chip's hover card: title, time and account, and what a click does. */
@@ -84,7 +126,13 @@ export function Ribbon({ kind, now = Date.now }: { kind: RibbonKind; now?: () =>
   const n = needle(t);
   const Row2 = kind === 'home' ? IconHome : IconBolt;
   const dayChips = chips(events, t);
+  const lay = chipLayout(dayChips);
   const marks = dueMarks(tasks, t);
+  // On Work, a due label that would sit on the agent bars shows only its diamond (the label
+  // moves to the hover), so neither is drawn over the other. Read from the shared store: the
+  // agent row owns the poll.
+  const agents = useAgentsStore();
+  const boxes = kind === 'work' ? agentBoxes(agents, t) : [];
   return (
     <section className="rib" data-kind={kind} aria-label="Today">
       <i className="skyb" style={{ background: skyGradient(sun, t) }} aria-hidden="true" />
@@ -119,7 +167,22 @@ export function Ribbon({ kind, now = Date.now }: { kind: RibbonKind; now?: () =>
           Nothing scheduled at home
         </span>
       )}
-      {dayChips.map((c) => {
+      {lay.more.map((m) => (
+        <button
+          key={m.key}
+          type="button"
+          className="ev more l2"
+          style={{ left: m.x, width: m.width }}
+          aria-label={`${m.items.length} more at this time: ${m.items.map((c) => c.title).join(', ')}`}
+          {...tip(() => <MoreTip m={m} labels={day.labels} />)}
+          onClick={(e) => {
+            if (m.items.some((c) => c.canOpen)) pinTip(e.currentTarget, () => <MorePick m={m} labels={day.labels} />);
+          }}
+        >
+          +{m.items.length}
+        </button>
+      ))}
+      {lay.shown.map((c) => {
         const account = c.accountId ? (day.labels[c.accountId] ?? null) : null;
         return (
           <div
@@ -151,10 +214,12 @@ export function Ribbon({ kind, now = Date.now }: { kind: RibbonKind; now?: () =>
         focusBars(sessions, t).map((b) => (
           <i key={b.x} className="fo" style={{ left: b.x, width: b.width }} aria-hidden="true" />
         ))}
-      {marks.map((d) => (
+      {marks.map((d) => {
+        const bare = overlapsAny(dueLabelSpan(d), boxes);
+        return (
         <div
           key={d.key}
-          className="due"
+          className={`due${bare ? ' bare' : ''}`}
           style={{ left: d.x }}
           role="button"
           tabIndex={0}
@@ -175,10 +240,15 @@ export function Ribbon({ kind, now = Date.now }: { kind: RibbonKind; now?: () =>
           ))}
         >
           <i aria-hidden="true" />
-          <span className="n">{d.title}</span>
-          <span aria-hidden="true">, {d.time}</span>
+          {!bare && (
+            <>
+              <span className="n">{d.title}</span>
+              <span aria-hidden="true">, {d.time}</span>
+            </>
+          )}
         </div>
-      ))}
+        );
+      })}
       <div className="ndl" style={{ left: n.x }}>
         <b {...tip(() => needleTip(dayChips, t, day.calendar === 'ok'))}>{n.text}</b>
       </div>

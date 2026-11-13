@@ -25,10 +25,10 @@ import {
   usageMeters,
   usageTip,
   normalizeSummary,
-  agentRowSize,
+  agentLayout,
+  AGENT_ROWS,
   sessionSpans,
   spanWords,
-  MAX_AGENT_ROWS,
   dayTotals,
 } from './model';
 import { lane, summary } from './fixtures';
@@ -260,28 +260,47 @@ describe('cards from a newer helper', () => {
 });
 
 describe('agent row sub-rows', () => {
-  it('gives each session its own sub-row in the cards\' order, the rest after, past eight sharing the last', () => {
-    const t = (h: number) => new Date(2026, 10, 11, h).toISOString();
-    const ids = Array.from({ length: 10 }, (_, i) => `a1b2c3d4-00${String(i).padStart(2, '0')}`);
+  const rowsFor = (n: number) => {
+    const t = (h: number, m: number) => new Date(2026, 10, 11, h, m).toISOString();
+    const ids = Array.from({ length: n }, (_, i) => `a1b2c3d4-00${String(i).padStart(2, '0')}`);
     const s = summary({
-      lanes: [lane({ id: ids[1] })],
-      sessionsList: [lane({ id: ids[1] }), lane({ id: ids[0] })],
-      day: ids.map((id, i) => ({ lane: id, start: t(7 + i), end: t(8 + i), kind: 'run' as const })),
+      lanes: ids.slice(0, 3).map((id) => lane({ id })),
+      sessionsList: ids.map((id) => lane({ id })),
+      day: ids.map((id, i) => ({ lane: id, start: t(7 + Math.floor(i / 2), (i % 2) * 30), end: t(8 + i, 0), kind: 'run' as const })),
     });
-    const segs = agentSegments(s, new Date(2026, 10, 11, 20).getTime(), (ms) => ms / 1e9);
-    const rowOf = (id: string) => segs.find((g) => g.lane === id)!.row;
-    expect(rowOf(ids[1])).toBe(0);
-    expect(rowOf(ids[0])).toBe(1);
-    expect(rowOf(ids[2])).toBe(2);
-    expect(rowOf(ids[9])).toBe(MAX_AGENT_ROWS - 1);
-    expect(rowOf(ids[8])).toBe(MAX_AGENT_ROWS - 1);
+    return { ids, l: agentLayout(s, new Date(2026, 10, 11, 23).getTime(), (ms) => ms / 1e9) };
+  };
+
+  it('three sessions: each its own 8 px row, nothing folded', () => {
+    const { ids, l } = rowsFor(3);
+    expect(AGENT_ROWS).toBe(3);
+    expect(l.rows).toBe(3);
+    expect(l.moreRow).toBeNull();
+    expect(l.hidden).toEqual([]);
+    expect(ids.map((id) => l.segs.find((g) => g.lane === id)!.row)).toEqual([0, 1, 2]);
   });
 
-  it('thins the sub-rows as more sessions share the band', () => {
-    expect(agentRowSize(3)).toEqual({ pitch: 8, bar: 5 });
-    expect(agentRowSize(4)).toEqual({ pitch: 6, bar: 4 });
-    expect(agentRowSize(8)).toEqual({ pitch: 3, bar: 2 });
-    expect(agentRowSize(20)).toEqual({ pitch: 3, bar: 2 });
+  it('eight and twelve sessions: two rows in card order, the rest folded into "+N more", never sharing a row', () => {
+    for (const n of [8, 12]) {
+      const { ids, l } = rowsFor(n);
+      expect(l.rows).toBe(3);
+      expect(l.moreRow).toBe(2);
+      expect(l.hidden).toEqual(ids.slice(2));
+      expect(new Set(l.segs.map((g) => g.lane))).toEqual(new Set(ids.slice(0, 2)));
+      const byRow = new Map<number, Set<string>>();
+      for (const g of l.segs) byRow.set(g.row, (byRow.get(g.row) ?? new Set<string>()).add(g.lane));
+      for (const lanes of byRow.values()) expect(lanes.size).toBe(1);
+      expect(Math.max(...l.segs.map((g) => g.row))).toBeLessThan(2);
+    }
+  });
+
+  it('a card with no span today takes no row', () => {
+    const t = (h: number) => new Date(2026, 10, 11, h).toISOString();
+    const s = summary({
+      sessionsList: [lane({ id: 'a1b2c3d4-0001' }), lane({ id: 'a1b2c3d4-0002' })],
+      day: [{ lane: 'a1b2c3d4-0002', start: t(8), end: t(9), kind: 'run' }],
+    });
+    expect(agentLayout(s, new Date(2026, 10, 11, 20).getTime(), (ms) => ms / 1e9).segs.map((g) => g.row)).toEqual([0]);
   });
 
   it('writes spans in plain words', () => {

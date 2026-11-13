@@ -499,31 +499,52 @@ export interface AgentSegment {
   open: boolean;
 }
 
-/** Most sub-rows the ribbon's agent row draws; sessions past this share the last one. */
-export const MAX_AGENT_ROWS = 8;
+/** The band row 2 gives the agent bars, in ribbon pixels (under the task marks, above the focus bar). */
+export const AGENT_BAND = { top: 68, height: 24 };
+/**
+ * Every sub-row is at least this tall, so a mouse can hit it (the bar inside is thinner).
+ * The band holds three such rows.
+ */
+export const AGENT_PITCH = 8;
+export const AGENT_BAR = 5;
+export const AGENT_ROWS = Math.floor(AGENT_BAND.height / AGENT_PITCH);
+
+/** The agent row's layout: drawn spans, and the sessions folded into the "+N more" row. */
+export interface AgentLayout {
+  segs: AgentSegment[];
+  /** Sessions with spans today that have no row of their own, in sub-row order. */
+  hidden: string[];
+  /** The row the "+N more" label takes, or null when every session has its own row. */
+  moreRow: number | null;
+  /** Rows in use, the "+N more" row included. */
+  rows: number;
+}
 
 /**
  * The ribbon's agent row: one thin segment per span from the helper's day log, up to now,
- * on one sub-row per session. Rows follow the cards' order (the helper's session list, or
- * its lanes from an older helper), then every other session in the order it first ran;
- * past eight sessions the rest share the last row. An open run is `run` (cyan), a wait is
- * `wait` (amber), a finished run is `past` (grey) and a span the helper marks done is
- * `done` (grey with a mint cap). `hourAt` maps a time to the ribbon's x; spans outside the
- * ribbon are skipped. `until` (the last good answer's time, for a stale answer) ends open
- * spans there instead of now. `skewMs` (the helper's clock minus this PC's) is taken off
- * every helper time first, so the row lands where it would with both clocks agreeing.
+ * on one sub-row per session, each sub-row 8 px tall so a mouse can hit it. Rows follow the
+ * cards' order (the helper's session list, or its lanes from an older helper), then every
+ * other session in the order it first ran; only sessions with a span today take a row. As
+ * many sessions as fit the band get a row; when there are more, the last row becomes "+N
+ * more" for the rest (their spans are not drawn), so no two sessions ever share pixels.
+ * An open run is `run` (cyan), a wait is `wait` (amber), a finished run is `past` (grey)
+ * and a span the helper marks done is `done` (grey with a mint cap). `hourAt` maps a time
+ * to the ribbon's x; spans outside the ribbon are skipped. `until` (the last good answer's
+ * time, for a stale answer) ends open spans there instead of now. `skewMs` (the helper's
+ * clock minus this PC's) is taken off every helper time first, so the row lands where it
+ * would with both clocks agreeing.
  */
-export function agentSegments(
+export function agentLayout(
   s: Pick<OmniSummary, 'lanes' | 'day'> & Partial<Pick<OmniSummary, 'sessionsList'>>,
   nowMs: number,
   hourAt: (ms: number) => number | null,
   until: number | null = null,
   skewMs = 0,
-): AgentSegment[] {
+  maxRows = AGENT_ROWS,
+): AgentLayout {
   const now = until === null ? nowMs : Math.min(nowMs, until);
-  const order = agentOrder(s);
   const sorted = [...s.day].sort((a, b) => Date.parse(a.start) - Date.parse(b.start));
-  const out: AgentSegment[] = [];
+  const raw: AgentSegment[] = [];
   for (const d of sorted) {
     const start = Date.parse(d.start) - skewMs;
     const endRaw = d.end === null ? now : Date.parse(d.end) - skewMs;
@@ -535,10 +556,26 @@ export function agentSegments(
     if (x0 === null || x1 === null || x1 < x0) continue;
     const open = d.end === null || endRaw > now;
     const kind = d.kind === 'wait' ? 'wait' : d.kind === 'done' ? 'done' : open ? 'run' : 'past';
-    const row = Math.min(order.indexOf(d.lane), MAX_AGENT_ROWS - 1);
-    out.push({ key: `${d.lane}-${d.start}`, lane: d.lane, row, x: x0, width: Math.max(5, x1 - x0), kind, start, end, open });
+    raw.push({ key: `${d.lane}-${d.start}`, lane: d.lane, row: 0, x: x0, width: Math.max(5, x1 - x0), kind, start, end, open });
   }
-  return out;
+  const withSpans = new Set(raw.map((g) => g.lane));
+  const order = agentOrder(s).filter((id) => withSpans.has(id));
+  const fold = order.length > maxRows;
+  const shown = fold ? order.slice(0, maxRows - 1) : order;
+  const hidden = fold ? order.slice(maxRows - 1) : [];
+  const segs = raw.filter((g) => shown.includes(g.lane)).map((g) => ({ ...g, row: shown.indexOf(g.lane) }));
+  return { segs, hidden, moreRow: fold ? maxRows - 1 : null, rows: fold ? maxRows : shown.length };
+}
+
+/** The drawn spans alone (see `agentLayout`). */
+export function agentSegments(
+  s: Pick<OmniSummary, 'lanes' | 'day'> & Partial<Pick<OmniSummary, 'sessionsList'>>,
+  nowMs: number,
+  hourAt: (ms: number) => number | null,
+  until: number | null = null,
+  skewMs = 0,
+): AgentSegment[] {
+  return agentLayout(s, nowMs, hourAt, until, skewMs).segs;
 }
 
 /** Session ids in sub-row order: the cards, then the rest of the day log by first start. */
@@ -547,16 +584,6 @@ export function agentOrder(s: Pick<OmniSummary, 'lanes' | 'day'> & Partial<Pick<
   const sorted = [...s.day].sort((a, b) => Date.parse(a.start) - Date.parse(b.start));
   for (const d of sorted) if (!order.includes(d.lane)) order.push(d.lane);
   return order;
-}
-
-/** The band row 2 gives the agent bars, in ribbon pixels (between the task marks and the focus bar). */
-export const AGENT_BAND = { top: 68, height: 25 };
-
-/** Sub-row pitch and bar height for `rows` sub-rows: 8 and 5 for up to three, thinner for more. */
-export function agentRowSize(rows: number): { pitch: number; bar: number } {
-  const n = Math.max(1, Math.min(MAX_AGENT_ROWS, rows));
-  const pitch = Math.max(3, Math.min(8, Math.floor(AGENT_BAND.height / n)));
-  return { pitch, bar: Math.max(2, Math.min(5, pitch - 2)) };
 }
 
 /** `h:mm` with no AM or PM. */

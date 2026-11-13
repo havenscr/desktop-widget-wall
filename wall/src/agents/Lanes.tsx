@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { tip } from '../ui/HoverTip';
 import { FreeRow, Lane } from './Lane';
 import { ageText, allFreeText, cards, countText, mergeReady, freeSlots, headerAsk, slotMeter, slotsText, slotsTip, type OmniSummary } from './model';
+import { useCardScroll } from './cardScroll';
 import { focusSession } from './open';
 import { Shelf } from './Shelf';
 
@@ -46,6 +47,13 @@ export function Lanes({ summary, stale, freshAt, now, idle }: { summary: OmniSum
   // A new waiting list starts again from its first entry.
   const waitKey = ask.tone === 'amber' ? `${summary.yourMove.ids?.join(',') ?? ''}|${summary.yourMove.first?.sessionId ?? ''}` : '';
   useEffect(() => setStep(0), [waitKey]);
+  // The ribbon's "+N more" asks for a card: bring it to the top of the list.
+  const scrollReq = useCardScroll();
+  useEffect(() => {
+    if (!scrollReq.id || !list.current) return;
+    const card = [...list.current.querySelectorAll<HTMLElement>('.lane[data-id]')].find((el) => el.dataset.id === scrollReq.id);
+    card?.scrollIntoView?.({ block: 'start', behavior: 'smooth' });
+  }, [scrollReq]);
 
   const openAsk = (id: string | null) => focusSession(canOpen ? id : null);
   /** The count's click: the next three cards, back to the top after the last. */

@@ -175,3 +175,20 @@
 .rib .ndl b {
   cursor: help;
 }
+/* "+N": events that did not fit the two lanes; hover lists them, a click picks one. */
+.rib .ev.more {
+  padding: 0;
+  text-align: center;
+  font-weight: 600;
+  cursor: pointer;
+  background: rgba(40, 30, 80, 0.95);
+  z-index: 2;
+}
+.rib .ev.more:hover {
+  border-color: rgba(200, 184, 255, 0.9);
+}
+/* A due mark whose label would sit on the agent bars: the diamond alone, with a dark ring. */
+.rib .due.bare i {
+  margin-right: 0;
+  box-shadow: 0 0 0 2px rgba(6, 4, 22, 0.9);
+}

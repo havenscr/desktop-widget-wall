@@ -555,6 +555,26 @@
   pointer-events: auto;
   cursor: help;
 }
+.rib .sg-more {
+  position: absolute;
+  left: 78px;
+  padding: 0 6px;
+  border-radius: 4px;
+  font: 600 10px/8px var(--disp);
+  letter-spacing: 0.04em;
+  color: var(--dim);
+  background: rgba(255, 255, 255, 0.08);
+  white-space: nowrap;
+  pointer-events: auto;
+  cursor: help;
+}
+.rib .sg-more.open {
+  cursor: pointer;
+}
+.rib .sg-more:hover {
+  color: var(--tx);
+  background: rgba(255, 255, 255, 0.16);
+}
 .rib .sg-hit {
   position: absolute;
   pointer-events: auto;

@@ -194,3 +194,29 @@ button,
     animation: none;
   }
 }
+/* A pinned card (a list to pick from) takes the pointer. */
+.hover-tip.pinned {
+  pointer-events: auto;
+}
+.hover-tip .tip-pick {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: var(--tx);
+  background: none;
+  border: 0;
+  border-radius: 10px;
+  padding: 6px 8px;
+  margin: 2px -8px;
+  cursor: pointer;
+  min-height: 34px;
+}
+.hover-tip .tip-pick:hover,
+.hover-tip .tip-pick:focus-visible {
+  background: rgba(255, 255, 255, 0.08);
+}
+.hover-tip .tip-pick:disabled {
+  color: var(--dim);
+  cursor: default;
+}
