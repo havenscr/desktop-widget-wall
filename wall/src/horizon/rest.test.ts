@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { draw, when, type HorizonDrawOptions, type HorizonEcho } from './renderer';
 import { CAMERAS, type CameraPreset } from './cameras';
-import { recordingContext } from './canvasStub';
 import {
   DRIFT_SPEED,
   REST_LOOK,
