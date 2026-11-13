@@ -3858,7 +3858,10 @@ pub fn run() {
             validate_address,
             // Persistent config storage
             save_widget_config,
-            load_widget_config
+            load_widget_config,
+            wall2_spotify::wall2_spotify_tracks,
+            wall2_spotify::wall2_spotify_queue,
+            wall2_spotify::wall2_spotify_playback
         ])
         .setup(|app| {
             #[cfg(windows)]
