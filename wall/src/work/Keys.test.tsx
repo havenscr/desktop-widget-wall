@@ -3,6 +3,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { mocks } from '../bridge/tauri';
 import { resetTip } from '../ui/HoverTip';
 import { Keys, KEYS_POLL_MS, WHEEL_GAP_MS } from './Keys';
+import { LATCH_MS } from './useGuard';
 import { MODE_KEY, type KeysSummary } from './keysModel';
 
 const flush = async (ms = 0) => {
@@ -137,6 +138,7 @@ it('shows each refusal as one fixed line and ignores a click while one is sendin
   fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
   await flush();
   expect(screen.getByText('Could not bring Sales app forward')).toBeTruthy();
+  await flush(LATCH_MS + 10);
   let release: () => void = () => undefined;
   mocks.set('wall2_keys_send', (args) => new Promise((resolve) => { sent.push(args); release = () => resolve(undefined); }));
   sent = [];
@@ -169,4 +171,45 @@ it('renders up to eight keys and no more', async () => {
   render(<Keys />);
   await flush();
   expect(screen.getAllByRole('button', { name: /^K\d$/ })).toHaveLength(8);
+});
+
+it('a double click sends once, even when the first send finished before the second click', async () => {
+  render(<Keys />);
+  await flush();
+  const b = screen.getByRole('button', { name: 'Refresh' });
+  fireEvent.click(b, { detail: 1 });
+  await flush();
+  fireEvent.click(b, { detail: 2 });
+  await flush();
+  expect(sent).toHaveLength(1);
+});
+
+it('a repeated Enter after a completed send sends nothing, and a held key never clicks', async () => {
+  render(<Keys />);
+  await flush();
+  const b = screen.getByRole('button', { name: 'Refresh' });
+  fireEvent.click(b, { detail: 0 });
+  await flush();
+  expect(sent).toHaveLength(1);
+  // The browser would click again for each repeat of a held Enter; the latch holds it off.
+  expect(fireEvent.keyDown(b, { key: 'Enter', repeat: true })).toBe(false);
+  fireEvent.click(b, { detail: 0 });
+  await flush();
+  expect(sent).toHaveLength(1);
+  // A deliberate press after the latch sends again.
+  await flush(LATCH_MS + 10);
+  fireEvent.click(b, { detail: 1 });
+  await flush();
+  expect(sent).toHaveLength(2);
+});
+
+it('a different key is not held off by another key latch', async () => {
+  answer = front('general', 'notepad.exe');
+  render(<Keys />);
+  await flush();
+  fireEvent.click(screen.getByRole('button', { name: 'Snip' }), { detail: 1 });
+  await flush();
+  fireEvent.click(screen.getByRole('button', { name: 'Clipboard' }), { detail: 1 });
+  await flush();
+  expect(sent).toEqual([{ setId: 'general', index: 0 }, { setId: 'general', index: 1 }]);
 });

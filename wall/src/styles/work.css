@@ -908,8 +908,18 @@
   opacity: 0.45;
   cursor: not-allowed;
 }
+.key-tile {
+  flex-direction: column;
+  gap: 1px;
+  font-size: 14px;
+  line-height: 1;
+}
 .keys-tiles.two .deck-tile {
   height: 40px;
+}
+.bs-tile.sel {
+  border-color: var(--cyan);
+  background: rgba(53, 230, 234, 0.12);
 }
 .deck-lbl {
   min-width: 0;

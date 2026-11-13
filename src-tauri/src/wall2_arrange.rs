@@ -984,7 +984,7 @@ mod tests {
         desk.now.insert(2, WinRec { pid: 4242, ..ok(2) }); // handle reused by another program
         let placed = apply(&mut desk, Layout::Thirds, w, &cands, &lefts);
         assert_eq!(placed.iter().map(|p| p.key.0).collect::<Vec<_>>(), vec![3]);
-        assert!(desk.log.iter().all(|l| !l.contains("save 1") && !l.contains("save 2") && !l.contains("place 2")), "{:?}", desk.log);
+        assert!(desk.log.iter().all(|l| !l.contains("save 1") && !l.contains("save 2") && !l.contains("place 2") && !l.contains("place 1")), "{:?}", desk.log);
     }
 
     #[test]

@@ -23,6 +23,19 @@ export function isAbsent(e: unknown): boolean {
 
 export const windowsText = (n: number, verb: string): string => `${n} window${n === 1 ? '' : 's'} ${verb}`;
 
+/** What `wall2_arrange` answers: windows asked, and windows whose frame reached its place. */
+export interface ArrangeResult {
+  moved: number;
+  asked: number;
+}
+
+/** "3 windows arranged", or "2 of 3 windows arranged" when one refused or stopped short. */
+export function arrangedText(r: ArrangeResult): string {
+  const moved = Number.isFinite(r.moved) ? r.moved : 0;
+  const asked = Number.isFinite(r.asked) ? r.asked : moved;
+  return moved >= asked ? windowsText(moved, 'arranged') : `${moved} of ${asked} windows arranged`;
+}
+
 /** The fixed words `wall2_arrange` and `wall2_arrange_undo` answer with, as one short line each. */
 export function arrangeReason(word: string): string {
   switch (word) {
@@ -32,6 +45,8 @@ export function arrangeReason(word: string): string {
       return 'No windows to arrange on the big screen';
     case 'nothing to undo':
       return 'Nothing to undo';
+    case 'none moved':
+      return 'No window could be moved';
     case 'busy':
       return 'Still arranging, try again in a moment';
     default:

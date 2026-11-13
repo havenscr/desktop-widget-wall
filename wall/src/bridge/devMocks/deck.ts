@@ -20,7 +20,7 @@ export function registerDeckMocks(): void {
     mocks.set('wall2_arrange_status', () => arrange !== 'none');
     mocks.set('wall2_arrange', () => {
       if (arrange === 'nowin') throw 'no windows';
-      return 3;
+      return { moved: 3, asked: 3 };
     });
     mocks.set('wall2_arrange_undo', () => 3);
   }

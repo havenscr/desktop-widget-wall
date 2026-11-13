@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { invoke } from '../bridge/tauri';
 import { tip } from '../ui/HoverTip';
 import { useVisible } from '../ui/useVisible';
-import { arrangeReason, errorText, isAbsent, UNDO_SHOW_MS, windowsText } from './deckModel';
+import { arrangedText, arrangeReason, errorText, isAbsent, UNDO_SHOW_MS, windowsText, type ArrangeResult } from './deckModel';
+import { useGuard } from './useGuard';
 import { useBrief } from './useBrief';
 
 type Layout = 'thirds' | 'focus' | 'record';
@@ -32,7 +33,7 @@ function Diagram({ layout }: { layout: Layout }) {
 }
 
 const LAYOUTS: { id: Layout; label: string; tip: ReactNode }[] = [
-  { id: 'thirds', label: 'Thirds', tip: 'Put the three newest windows on the big screen side by side in equal columns (two share it in halves, one takes it all)' },
+  { id: 'thirds', label: 'Thirds', tip: 'Put the three newest windows on the big screen side by side in equal columns (two share it in halves, one takes the centred third)' },
   { id: 'focus', label: 'Focus', tip: 'Put the newest window in a centred column two thirds wide and leave the others where they are' },
   { id: 'record', label: 'Record 16:9', tip: 'Size the newest window to the largest 16:9 frame that fits the big screen, centred, for recording a 16:9 video' },
 ];
@@ -47,7 +48,8 @@ export function BigScreen() {
   const visible = useVisible();
   const [available, setAvailable] = useState<boolean | 'absent' | null>(null);
   const [busy, setBusy] = useState(false);
-  const busyRef = useRef(false);
+  const guard = useGuard();
+  const [applied, setApplied] = useState<Layout | null>(null);
   const [undoUntil, setUndoUntil] = useState(0);
   const [clock, setClock] = useState(() => Date.now());
   const [brief, showBrief] = useBrief();
@@ -76,22 +78,20 @@ export function BigScreen() {
   }, [undoUntil, clock]);
 
   const run = useCallback(
-    async (command: string, args: Record<string, unknown> | undefined, done: (n: number) => string, after?: (n: number) => void) => {
-      if (busyRef.current) return;
-      busyRef.current = true;
-      setBusy(true);
-      try {
-        const n = await invoke<number>(command, args);
-        showBrief(done(typeof n === 'number' ? n : 0));
-        after?.(n);
-      } catch (e) {
-        showBrief(arrangeReason(errorText(e)));
-      } finally {
-        busyRef.current = false;
-        setBusy(false);
-      }
-    },
-    [showBrief],
+    (id: string, detail: number, command: string, args: Record<string, unknown> | undefined, done: (answer: unknown) => string, after?: () => void) =>
+      guard.run(id, detail, async () => {
+        setBusy(true);
+        try {
+          const answer = await invoke<unknown>(command, args);
+          showBrief(done(answer));
+          after?.();
+        } catch (e) {
+          showBrief(arrangeReason(errorText(e)));
+        } finally {
+          setBusy(false);
+        }
+      }),
+    [guard, showBrief],
   );
 
   if (available === null || available === 'absent') return null;
@@ -115,8 +115,12 @@ export function BigScreen() {
               className="deck-mini"
               disabled={busy}
               {...tip('Put the windows the last layout moved back where they were (for one minute)')}
-              onClick={() =>
-                void run('wall2_arrange_undo', undefined, (n) => windowsText(n, 'put back'), () => setUndoUntil(0))
+              onKeyDown={guard.onKeyDown}
+              onClick={(e) =>
+                void run('undo', e.detail, 'wall2_arrange_undo', undefined, (n) => windowsText(typeof n === 'number' ? n : 0, 'put back'), () => {
+                  setUndoUntil(0);
+                  setApplied(null);
+                })
               }
             >
               Undo
@@ -129,16 +133,18 @@ export function BigScreen() {
           <button
             key={l.id}
             type="button"
-            className={`deck-tile bs-tile${off ? ' off' : ''}`}
+            className={`deck-tile bs-tile${off ? ' off' : ''}${undoShown && applied === l.id ? ' sel' : ''}`}
             disabled={busy}
             aria-disabled={off || undefined}
             aria-label={l.label}
             {...tip(off ? offTip : l.tip)}
-            onClick={() =>
+            onKeyDown={guard.onKeyDown}
+            onClick={(e) =>
               !off &&
-              void run('wall2_arrange', { layout: l.id }, (n) => windowsText(n, 'arranged'), () => {
+              void run(l.id, e.detail, 'wall2_arrange', { layout: l.id }, (r) => arrangedText(r as ArrangeResult), () => {
                 setClock(Date.now());
                 setUndoUntil(Date.now() + UNDO_SHOW_MS);
+                setApplied(l.id);
               })
             }
           >

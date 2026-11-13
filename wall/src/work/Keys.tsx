@@ -20,6 +20,7 @@ import {
   type SetInfo,
 } from './keysModel';
 import { useBrief } from './useBrief';
+import { useGuard } from './useGuard';
 
 /** How often the row asks which app is in front. */
 export const KEYS_POLL_MS = 2_000;
@@ -67,7 +68,7 @@ export function Keys() {
   const { read, refresh } = useKeysSummary();
   const [mode, setModeState] = useState<Mode>(readMode);
   const [brief, showBrief] = useBrief();
-  const sending = useRef(false);
+  const guard = useGuard();
   const lastWheel = useRef(0);
 
   const setMode = useCallback((m: Mode) => {
@@ -111,19 +112,17 @@ export function Keys() {
     stepTo(e.deltaY > 0 ? 1 : -1);
   };
 
-  const send = async (s: SetInfo, index: number) => {
-    if (sending.current) return;
-    sending.current = true;
-    try {
-      await invoke('wall2_keys_send', { setId: s.id, index });
-      showBrief(`${s.keys[index].label} sent${s.general ? '' : ` to ${s.name}`}`);
-    } catch (e) {
-      showBrief(sendReason(e, s, hold));
-    } finally {
-      sending.current = false;
-      refresh();
-    }
-  };
+  const send = (s: SetInfo, index: number, detail: number) =>
+    guard.run(`${s.id}:${index}`, detail, async () => {
+      try {
+        await invoke('wall2_keys_send', { setId: s.id, index });
+        showBrief(`${s.keys[index].label} sent${s.general ? '' : ` to ${s.name}`}`);
+      } catch (e) {
+        showBrief(sendReason(e, s, hold));
+      } finally {
+        refresh();
+      }
+    });
 
   const controls = (
     <span className="deck-hd-r">
@@ -202,9 +201,10 @@ export function Keys() {
                   ? `Send ${k.label} to the app in front`
                   : `Send ${k.label} to ${set.name}`,
             )}
-            onClick={() => void send(set, i)}
+            onKeyDown={guard.onKeyDown}
+            onClick={(e) => void send(set, i, e.detail)}
           >
-            <KeyIcon name={k.icon} />
+            <KeyIcon name={k.icon} size={keys.length > 5 ? 16 : 18} />
             <span className="deck-lbl">{k.label}</span>
           </button>
         ))}
