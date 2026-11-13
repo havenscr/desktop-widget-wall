@@ -209,8 +209,30 @@ pub(crate) struct KeyDef {
 pub(crate) struct AppDef {
     pub id: String,
     pub name: String,
-    pub exe: String,
+    pub matcher: Matcher,
     pub keys: Vec<KeyDef>,
+}
+
+/// Which programs a set accepts: one executable name, or any program (the general set).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum Matcher {
+    Any,
+    Exe(String),
+}
+
+impl AppDef {
+    /// Whether this set's own rule accepts a program, given its image path: the file part
+    /// equals the entry's executable name, ignoring case; the general set accepts any.
+    pub(crate) fn accepts(&self, image_path: &str) -> bool {
+        match &self.matcher {
+            Matcher::Any => true,
+            Matcher::Exe(exe) => exe_matches(image_path, exe),
+        }
+    }
+
+    pub(crate) fn is_general(&self) -> bool {
+        self.matcher == Matcher::Any
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -258,18 +280,27 @@ pub(crate) fn parse_config(text: &str) -> Result<Config, String> {
     }
     let mut ids = HashSet::new();
     let mut exes = HashSet::new();
+    let mut general = false;
     let mut out = Vec::new();
     for (ai, app) in apps.iter().enumerate() {
         let n = ai + 1;
         let field = |k: &str| app.get(k).and_then(Value::as_str);
         let id = field("id").filter(|s| valid_id(s, MAX_ID_CHARS)).ok_or_else(|| format!("app {n}: id must be lower case letters, digits and dashes"))?;
         let name = field("name").filter(|s| valid_label(s, MAX_LABEL_CHARS)).ok_or_else(|| format!("app {n}: name is missing or not plain text"))?;
-        let exe = field("exe").filter(|s| valid_exe(s)).ok_or_else(|| format!("app {n}: exe must be a file name ending in .exe"))?;
+        let matcher = match (field("match"), app.get("match").is_some(), field("exe")) {
+            (Some("*"), _, None) => Matcher::Any,
+            (None, false, Some(exe)) if valid_exe(exe) => Matcher::Exe(exe.to_string()),
+            (None, false, _) => return Err(format!("app {n}: exe must be a file name ending in .exe")),
+            _ => return Err(format!("app {n}: match must be \"*\" and then exe is left out")),
+        };
         if !ids.insert(id.to_string()) {
             return Err(format!("app {n}: id is used twice"));
         }
-        if !exes.insert(exe.to_ascii_lowercase()) {
-            return Err(format!("app {n}: exe is used twice"));
+        match &matcher {
+            Matcher::Any if general => return Err(format!("app {n}: only one general set is allowed")),
+            Matcher::Any => general = true,
+            Matcher::Exe(exe) if !exes.insert(exe.to_ascii_lowercase()) => return Err(format!("app {n}: exe is used twice")),
+            Matcher::Exe(_) => {}
         }
         let keys = app.get("keys").and_then(Value::as_array).ok_or_else(|| format!("app {n}: needs a \"keys\" list"))?;
         if keys.is_empty() || keys.len() > MAX_KEYS {
@@ -284,14 +315,15 @@ pub(crate) fn parse_config(text: &str) -> Result<Config, String> {
             let chord = kf("chord").and_then(parse_chord).ok_or_else(|| format!("app {n}, key {m}: chord is not in the allowed key list"))?;
             defs.push(KeyDef { label: label.to_string(), icon: icon.to_string(), chord });
         }
-        out.push(AppDef { id: id.to_string(), name: name.to_string(), exe: exe.to_string(), keys: defs });
+        out.push(AppDef { id: id.to_string(), name: name.to_string(), matcher, keys: defs });
     }
     Ok(Config { apps: out })
 }
 
-/// The entry for the program in front, matched on the file part of its image path.
-pub(crate) fn find_app<'a>(config: &'a Config, image_path: &str) -> Option<&'a AppDef> {
-    config.apps.iter().find(|a| exe_matches(image_path, &a.exe))
+/// The set Auto shows for the program in front: the one whose executable matches the file
+/// part of its image path, else the general set, else none.
+pub(crate) fn auto_set<'a>(config: &'a Config, image_path: &str) -> Option<&'a AppDef> {
+    config.apps.iter().find(|a| !a.is_general() && a.accepts(image_path)).or_else(|| config.apps.iter().find(|a| a.is_general()))
 }
 
 // Section: refusals
@@ -361,7 +393,7 @@ pub(crate) struct Live {
 /// wall, and reachable.
 pub(crate) fn check_target(app: &AppDef, remembered: Option<&Remembered>, live: &Live) -> Result<(), Refusal> {
     let rem = remembered.ok_or(Refusal::NoApp)?;
-    if !exe_matches(&rem.image, &app.exe) {
+    if !app.accepts(&rem.image) {
         return Err(Refusal::NoApp);
     }
     if live.own {
@@ -370,8 +402,9 @@ pub(crate) fn check_target(app: &AppDef, remembered: Option<&Remembered>, live: 
     if !live.exists || !live.visible || !live.same_process {
         return Err(Refusal::Gone);
     }
-    match &live.image {
-        Some(img) if exe_matches(img, &app.exe) => {}
+    match (&app.matcher, &live.image) {
+        (Matcher::Any, _) => {}
+        (Matcher::Exe(_), Some(img)) if app.accepts(img) => {}
         _ => return Err(Refusal::Gone),
     }
     if live.elevated {
@@ -388,43 +421,53 @@ pub struct KeyInfo {
     pub icon: String,
 }
 
-/// What the row shows. `state` is `app` (an entry matches the program in front), `other` (a
-/// program with no entry is in front) or `idle` (nothing remembered yet).
+/// One set as the row shows it: name and key labels and icons only, never a chord.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct SetInfo {
+    pub id: String,
+    pub name: String,
+    pub general: bool,
+    pub keys: Vec<KeyInfo>,
+}
+
+/// What the row shows: every set (so the page can step through them), the one Auto picks for
+/// the program in front, and what is in front. `front` is `app` (a program is remembered),
+/// or `idle` (nothing remembered yet). `exe` is the file name of that program, given only
+/// when no set of its own matches it, so the owner can write one.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct KeysSummary {
-    pub state: &'static str,
-    pub app_id: Option<String>,
-    pub name: Option<String>,
-    /// The file name of the program in front, only when it has no entry.
+    pub front: &'static str,
+    pub auto_id: Option<String>,
     pub exe: Option<String>,
-    pub keys: Vec<KeyInfo>,
+    pub sets: Vec<SetInfo>,
     /// `file` when `keys.json` is in use, `default` for the built-in one.
     pub source: &'static str,
 }
 
 /// Build the summary from the config and what was remembered. Pure.
 pub(crate) fn summarise(config: &Config, source: &'static str, remembered: Option<&Remembered>) -> KeysSummary {
+    let sets = config
+        .apps
+        .iter()
+        .map(|a| SetInfo {
+            id: a.id.clone(),
+            name: a.name.clone(),
+            general: a.is_general(),
+            keys: a.keys.iter().map(|k| KeyInfo { label: k.label.clone(), icon: k.icon.clone() }).collect(),
+        })
+        .collect();
     let Some(rem) = remembered else {
-        return KeysSummary { state: "idle", app_id: None, name: None, exe: None, keys: Vec::new(), source };
+        return KeysSummary { front: "idle", auto_id: None, exe: None, sets, source };
     };
-    match find_app(config, &rem.image) {
-        Some(app) => KeysSummary {
-            state: "app",
-            app_id: Some(app.id.clone()),
-            name: Some(app.name.clone()),
-            exe: None,
-            keys: app.keys.iter().map(|k| KeyInfo { label: k.label.clone(), icon: k.icon.clone() }).collect(),
-            source,
-        },
-        None => KeysSummary {
-            state: "other",
-            app_id: None,
-            name: None,
-            exe: Some(crate::wall2_winutil::exe_file_part(&rem.image)).filter(|e| valid_exe(e)),
-            keys: Vec::new(),
-            source,
-        },
+    let auto = auto_set(config, &rem.image);
+    let own = auto.is_some_and(|a| !a.is_general());
+    KeysSummary {
+        front: "app",
+        auto_id: auto.map(|a| a.id.clone()),
+        exe: (!own).then(|| crate::wall2_winutil::exe_file_part(&rem.image)).filter(|e| valid_exe(e)),
+        sets,
+        source,
     }
 }
 
@@ -468,18 +511,18 @@ pub async fn wall2_keys_summary(window: tauri::WebviewWindow, app: tauri::AppHan
 /// Send one key of the program in front. Ok when the chord was delivered; an error is one
 /// of the fixed words of `Refusal`.
 #[tauri::command]
-pub async fn wall2_keys_send(window: tauri::WebviewWindow, app: tauri::AppHandle, app_id: String, index: usize) -> Result<(), String> {
+pub async fn wall2_keys_send(window: tauri::WebviewWindow, app: tauri::AppHandle, set_id: String, index: usize) -> Result<(), String> {
     require_wall2(window.label())?;
     #[cfg(windows)]
     {
         let (config, _) = load_config(&app).map_err(|_| Refusal::NoKey.word().to_string())?;
-        tauri::async_runtime::spawn_blocking(move || win::send(&config, &app_id, index).map_err(|r| r.word().to_string()))
+        tauri::async_runtime::spawn_blocking(move || win::send(&config, &set_id, index).map_err(|r| r.word().to_string()))
             .await
             .map_err(|_| Refusal::Busy.word().to_string())?
     }
     #[cfg(not(windows))]
     {
-        let _ = (app, app_id, index);
+        let _ = (app, set_id, index);
         Err(Refusal::Unsupported.word().to_string())
     }
 }
@@ -622,9 +665,9 @@ mod win {
         }
     }
 
-    pub fn send(config: &Config, app_id: &str, index: usize) -> Result<(), Refusal> {
+    pub fn send(config: &Config, set_id: &str, index: usize) -> Result<(), Refusal> {
         let _busy = try_begin(&SENDING).ok_or(Refusal::Busy)?;
-        let app = config.apps.iter().find(|a| a.id == app_id).ok_or(Refusal::NoKey)?;
+        let app = config.apps.iter().find(|a| a.id == set_id).ok_or(Refusal::NoKey)?;
         let key = app.keys.get(index).ok_or(Refusal::NoKey)?;
         let remembered = current_for_send();
         check_target(app, remembered.as_ref(), &remembered.as_ref().map(look).unwrap_or_default())?;
@@ -870,7 +913,8 @@ mod tests {
         let c = parse_config(DEFAULT_CONFIG).expect("valid");
         assert_eq!(c.apps.len(), 1);
         let app = &c.apps[0];
-        assert_eq!((app.id.as_str(), app.name.as_str(), app.exe.as_str()), ("powerbi", "Power BI", "PBIDesktop.exe"));
+        assert_eq!((app.id.as_str(), app.name.as_str()), ("powerbi", "Power BI"));
+        assert_eq!(app.matcher, Matcher::Exe("PBIDesktop.exe".to_string()));
         let labels: Vec<&str> = app.keys.iter().map(|k| k.label.as_str()).collect();
         assert_eq!(labels, vec!["Refresh", "Snip"]);
         assert_eq!(app.keys[0].chord, chord("Alt+H, R"));
@@ -973,14 +1017,56 @@ mod tests {
         Live { exists: true, visible: true, same_process: true, image: Some(r"C:\P\bin\PBIDesktop.exe".to_string()), own: false, elevated: false }
     }
 
+    fn with_general() -> Config {
+        let text = r#"{"apps":[{"id":"general","name":"General","match":"*","keys":[{"label":"Snip","icon":"screenshot","chord":"Win+Shift+S"}]},{"id":"powerbi","name":"Power BI","exe":"PBIDesktop.exe","keys":[{"label":"Refresh","icon":"refresh","chord":"Alt+H, R"}]}]}"#;
+        parse_config(text).expect("valid")
+    }
+
     #[test]
     fn the_app_match_rule_compares_the_file_part_case_insensitively() {
         let c = parse_config(DEFAULT_CONFIG).unwrap();
-        assert!(find_app(&c, r"C:\Program Files\Microsoft Power BI Desktop\bin\PBIDesktop.exe").is_some());
-        assert!(find_app(&c, r"c:\x\pbidesktop.EXE").is_some());
-        assert!(find_app(&c, r"C:\x\PBIDesktopSetup.exe").is_none());
-        assert!(find_app(&c, r"C:\PBIDesktop.exe\other.exe").is_none());
-        assert!(find_app(&c, "").is_none());
+        assert!(auto_set(&c, r"C:\Program Files\Microsoft Power BI Desktop\bin\PBIDesktop.exe").is_some());
+        assert!(auto_set(&c, r"c:\x\pbidesktop.EXE").is_some());
+        assert!(auto_set(&c, r"C:\x\PBIDesktopSetup.exe").is_none());
+        assert!(auto_set(&c, r"C:\PBIDesktop.exe\other.exe").is_none());
+        assert!(auto_set(&c, "").is_none());
+    }
+
+    #[test]
+    fn auto_prefers_the_apps_own_set_then_the_general_one() {
+        let c = with_general();
+        assert_eq!(auto_set(&c, r"C:\x\PBIDesktop.exe").map(|a| a.id.as_str()), Some("powerbi"));
+        assert_eq!(auto_set(&c, r"C:\x\notepad.exe").map(|a| a.id.as_str()), Some("general"));
+        assert!(auto_set(&parse_config(DEFAULT_CONFIG).unwrap(), r"C:\x\notepad.exe").is_none());
+    }
+
+    #[test]
+    fn a_general_set_accepts_any_remembered_window_and_keeps_every_other_check() {
+        let c = with_general();
+        let general = &c.apps[0];
+        assert!(general.is_general());
+        let r = rem(r"C:\x\notepad.exe");
+        let live = Live { image: Some(r"C:\x\notepad.exe".into()), ..good_live() };
+        assert_eq!(check_target(general, Some(&r), &live), Ok(()));
+        assert_eq!(check_target(general, None, &live), Err(Refusal::NoApp));
+        assert_eq!(check_target(general, Some(&r), &Live { own: true, ..live.clone() }), Err(Refusal::NoApp));
+        assert_eq!(check_target(general, Some(&r), &Live { exists: false, ..live.clone() }), Err(Refusal::Gone));
+        assert_eq!(check_target(general, Some(&r), &Live { visible: false, ..live.clone() }), Err(Refusal::Gone));
+        assert_eq!(check_target(general, Some(&r), &Live { same_process: false, ..live.clone() }), Err(Refusal::Gone));
+        assert_eq!(check_target(general, Some(&r), &Live { elevated: true, ..live }), Err(Refusal::Elevated));
+        // A specific set still refuses another app (a held set in the wrong app).
+        assert_eq!(check_target(&c.apps[1], Some(&r), &good_live()), Err(Refusal::NoApp));
+    }
+
+    #[test]
+    fn only_one_general_set_and_match_must_be_a_star() {
+        let key = r#"{"label":"A","icon":"x","chord":"A"}"#;
+        let set = |id: &str, extra: &str| format!(r#"{{"id":"{id}","name":"A",{extra},"keys":[{key}]}}"#);
+        assert!(parse_config(&format!(r#"{{"apps":[{},{}]}}"#, set("a", r#""match":"*""#), set("b", r#""match":"*""#))).unwrap_err().contains("only one general"));
+        for bad in [r#""match":"all""#, r#""match":"""#, r#""match":1"#, r#""match":"*","exe":"a.exe""#, r#""match":"*.exe""#] {
+            assert!(parse_config(&format!(r#"{{"apps":[{}]}}"#, set("a", bad))).is_err(), "{bad}");
+        }
+        assert!(parse_config(&format!(r#"{{"apps":[{}]}}"#, set("a", r#""match":"*""#))).is_ok());
     }
 
     #[test]
@@ -1018,18 +1104,25 @@ mod tests {
     }
 
     #[test]
-    fn the_summary_names_the_app_by_config_and_never_a_title() {
+    fn the_summary_lists_sets_by_name_and_never_a_chord_or_title() {
         let c = parse_config(DEFAULT_CONFIG).unwrap();
         let s = summarise(&c, "default", Some(&rem(r"C:\P\PBIDesktop.exe")));
-        assert_eq!(s.state, "app");
-        assert_eq!(s.app_id.as_deref(), Some("powerbi"));
-        assert_eq!(s.name.as_deref(), Some("Power BI"));
-        assert_eq!(s.exe, None);
-        assert_eq!(s.keys, vec![KeyInfo { label: "Refresh".into(), icon: "refresh".into() }, KeyInfo { label: "Snip".into(), icon: "screenshot".into() }]);
+        assert_eq!((s.front, s.auto_id.as_deref(), s.exe.clone()), ("app", Some("powerbi"), None));
+        assert_eq!(s.sets.len(), 1);
+        assert_eq!((s.sets[0].id.as_str(), s.sets[0].name.as_str(), s.sets[0].general), ("powerbi", "Power BI", false));
+        assert_eq!(s.sets[0].keys, vec![KeyInfo { label: "Refresh".into(), icon: "refresh".into() }, KeyInfo { label: "Snip".into(), icon: "screenshot".into() }]);
+        // No set of its own and no general set: nothing picked, the file name is given.
         let other = summarise(&c, "file", Some(&rem(r"C:\x\Notepad.exe")));
-        assert_eq!((other.state, other.exe.as_deref(), other.keys.len(), other.source), ("other", Some("notepad.exe"), 0, "file"));
+        assert_eq!((other.front, other.auto_id.clone(), other.exe.as_deref(), other.source), ("app", None, Some("notepad.exe"), "file"));
         let idle = summarise(&c, "default", None);
-        assert_eq!((idle.state, idle.keys.len()), ("idle", 0));
+        assert_eq!((idle.front, idle.auto_id.clone(), idle.sets.len()), ("idle", None, 1));
+        // With a general set the fallback is picked, and the file name is still given.
+        let g = with_general();
+        let fall = summarise(&g, "file", Some(&rem(r"C:\x\Notepad.exe")));
+        assert_eq!((fall.auto_id.as_deref(), fall.exe.as_deref()), (Some("general"), Some("notepad.exe")));
+        assert!(fall.sets[0].general && !fall.sets[1].general);
+        let own = summarise(&g, "file", Some(&rem(r"C:\x\PBIDesktop.exe")));
+        assert_eq!((own.auto_id.as_deref(), own.exe), (Some("powerbi"), None));
     }
 
     #[test]
