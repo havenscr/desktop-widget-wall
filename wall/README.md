@@ -499,7 +499,9 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
     quiet intro, a gap between tracks or a single blip: a pause, stop or the volume off settles them
     at once; while driving, every band under the floor (`BAND_FLOOR`) for 1.5 s settles them, and
     that quiet settle then holds at least 4 s (`REST_DWELL_S`); from rest they lift only once the
-    loudest band has stayed at or over `REST_RESUME` (0.4) for a third of a second. This holds on
+    loudest band has stayed at or over `REST_RESUME` (the floor plus 0.05, 0.35: band levels are
+    absolute, with no auto gain, so soft music or a low volume sits only a little over the floor)
+    for a third of a second. This holds on
     every camera with a ripple. `stepEchoMotion` runs
     `rest` from 0 to 1 over 2.5 s (and back over 1.5 s when music returns) and eases the drift
     phase to a stop exactly on the resting phase (line j at `(j + 0.5) / n`), starting from the
@@ -516,10 +518,13 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
   - `sample`: while any line still follows the music (`rest` under 1), `HorizonCanvas` hands the
     renderer a sampler (`createEchoSampler`): each line reads the band history at its own age (the
     7 seconds spread across the lines). Without `sample` the renderer uses its made-up `spec()`.
-  - **Glides.** A camera glide blends the line count (`en`, 11 on Unwind, 3 on Work and Home). The
+  - **Glides.** A camera glide blends the line count (`en`, 11 on Unwind, 3 on Work and Home).
+    `HorizonCanvas` keeps a drawn count that follows it at no more than 4 counts a second
+    (`stepLineCount`; the glide's eased peak moves `en` at about 15) and lands on it exactly. The
     renderer draws a fractional count as the two whole sets either side, crossfaded by the
     fraction, each on its own levels, so no line appears, vanishes or jumps level during a glide,
-    at rest, mid-settle or mid-lift.
+    at rest, mid-settle or mid-lift, and each line fades over a quarter of a second or more. Under
+    reduced motion the count switches with the place's cross-dissolve.
   - Never on the morning Rainier camera. On a turn toward it the echo fades out within about half
     a second of the turn starting (the camera gate: its opacity only falls from the first frame of
     the turn and is exactly 0 by 0.6 s), and it stays off, through any turn back, until the camera
