@@ -1562,10 +1562,13 @@ the system volume, Do Not Disturb or the focus timer.
   closed 30 by 20 px path, one lap in 20 minutes, so no pixel stays lit for hours; under reduced motion it holds one of four points for 7.5 minutes, then
   jumps to the next. The status line and hint are at 40 percent, the card has no frame. Nothing else moves except Watt. Watt sleeps in the corner (the `SheepSvg` sleep pose from `buddy/Watt.tsx`,
   at x 1226, ground line 688). The dimmed state starts when a session ends (the guide fades out
-  first), or by itself late at night: from 10 PM until 6 AM local time, once the wall has had no
-  input (pointer, wheel or keys on the wall) for ten minutes. The hour (18 to 23) and the wait (1 to
-  60 minutes) are the `zenDimHour` and `zenDimWaitMin` settings. Input elsewhere on the PC does not
-  count. From 6 PM Zen shows a quiet line under the session controls that says when it dims. A click
+  first), or by itself late at night: from 10 PM until 6 AM local time, once the PC has had no
+  input for ten minutes. "Input" is the PC's idle age from `wall2_idle_state` (idle seconds),
+  asked every 10 seconds while Zen is lit, after the dim hour and the page is visible, so typing in
+  another app keeps Zen bright; a click or key on the wall after the question was sent voids that
+  answer. When the command is missing or fails (a browser, dev), the wall's own pointer, wheel and
+  key input is the fallback. The hour (18 to 23) and the wait (1 to 60 minutes) are the
+  `zenDimHour` and `zenDimWaitMin` settings. From 6 PM Zen shows a quiet line under the session controls that says when it dims. A click
   wakes back to Zen; it dims again only after another quiet wait. Leave returns to Work.
   `openDream` (Unwind's Dream tab, removed later) opens Zen already dimmed.
 - **Horizon.** While Zen is active the horizon canvas is hidden and not drawn (no frame

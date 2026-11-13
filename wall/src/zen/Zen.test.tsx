@@ -104,10 +104,10 @@ it('a tap anywhere ends the session without going to Dream', () => {
   expect(screen.queryByLabelText('Wake')).toBeNull();
 });
 
-it('opens bright at night; after ten quiet minutes it dims, shows Watt asleep and a small clock; a click wakes and it stays awake', () => {
+it('opens bright at night; after ten quiet minutes it dims, shows Watt asleep and a small clock; a click wakes and it stays awake', async () => {
   render(<Zen nowMs={clockAt(NIGHT)} />);
   expect(screen.queryByLabelText('Wake')).toBeNull();
-  act(() => void vi.advanceTimersByTime(10 * 60_000 + 10_000));
+  await quiet(10.2);
   expect(screen.getByLabelText('Wake')).toBeTruthy();
   expect(screen.getByText('PM')).toBeTruthy();
   const watt = document.querySelector<HTMLElement>('.dream-watt')!;
@@ -167,79 +167,85 @@ it('keeps the running state with the tap target off while the guide fades after 
 });
 
 const at = (h: number, m = 0) => new Date(2026, 10, 11, h, m, 0).getTime();
-const quiet = (min: number) => act(() => void vi.advanceTimersByTime(min * 60_000));
+const quiet = (min: number) =>
+  act(async () => {
+    await vi.advanceTimersByTimeAsync(min * 60_000);
+  });
 
-it('9:59 PM with fifteen quiet minutes stays bright', () => {
+it('9:59 PM with fifteen quiet minutes stays bright', async () => {
   render(<Zen nowMs={clockAt(at(21, 44))} />);
-  quiet(15);
+  await quiet(15);
   expect(screen.queryByLabelText('Wake')).toBeNull();
 });
 
-it('10:05 PM after ten quiet minutes dims', () => {
+it('10:05 PM after ten quiet minutes dims', async () => {
   render(<Zen nowMs={clockAt(at(21, 55))} />);
-  quiet(9);
+  await quiet(9);
   expect(screen.queryByLabelText('Wake')).toBeNull();
-  quiet(2);
+  await quiet(2);
   expect(screen.getByLabelText('Wake')).toBeTruthy();
 });
 
-it('input at nine minutes restarts the ten minutes', () => {
+it('input at nine minutes restarts the ten minutes', async () => {
   render(<Zen nowMs={clockAt(at(22, 30))} />);
-  quiet(9);
+  await quiet(9);
   fireEvent.pointerMove(window);
-  quiet(9);
+  await quiet(9);
   expect(screen.queryByLabelText('Wake')).toBeNull();
-  quiet(2);
+  await quiet(2);
   expect(screen.getByLabelText('Wake')).toBeTruthy();
 });
 
-it('wheel and key presses on the wall count as input too', () => {
+it('wheel and key presses on the wall count as input too', async () => {
   render(<Zen nowMs={clockAt(at(22, 30))} />);
-  quiet(9);
+  await quiet(9);
   fireEvent.wheel(window);
-  quiet(9);
+  await quiet(9);
   fireEvent.keyDown(window, { key: 'a' });
-  quiet(9);
+  await quiet(9);
   expect(screen.queryByLabelText('Wake')).toBeNull();
 });
 
-it('a click wakes it and the next dim needs another ten quiet minutes', () => {
+it('a click wakes it and the next dim needs another ten quiet minutes', async () => {
   render(<Zen nowMs={clockAt(at(23, 0))} />);
-  quiet(11);
+  await quiet(11);
   fireEvent.click(screen.getByLabelText('Wake'));
   expect(screen.queryByLabelText('Wake')).toBeNull();
-  quiet(9);
+  await quiet(9);
   expect(screen.queryByLabelText('Wake')).toBeNull();
-  quiet(2);
+  await quiet(2);
   expect(screen.getByLabelText('Wake')).toBeTruthy();
 });
 
-it('6:01 AM never dims by itself', () => {
+it('6:01 AM never dims by itself', async () => {
   render(<Zen nowMs={clockAt(at(6, 1))} />);
-  quiet(60);
+  await quiet(60);
   expect(screen.queryByLabelText('Wake')).toBeNull();
 });
 
-it('the small hours dim, like the late evening', () => {
+it('the small hours dim, like the late evening', async () => {
   render(<Zen nowMs={clockAt(at(3, 0))} />);
-  quiet(11);
+  await quiet(11);
   expect(screen.getByLabelText('Wake')).toBeTruthy();
 });
 
-it('a saved hour and wait replace the defaults', () => {
+it('a saved hour and wait replace the defaults', async () => {
   localStorage.setItem(SETTINGS_KEY, JSON.stringify({ zenDimHour: 20, zenDimWaitMin: 2 }));
   render(<Zen nowMs={clockAt(at(20, 30))} />);
   expect(screen.getByText('Dims by itself after 8 PM and 2 quiet minutes')).toBeTruthy();
-  quiet(3);
+  await quiet(3);
   expect(screen.getByLabelText('Wake')).toBeTruthy();
 });
 
-it('a running session never dims by itself, even late and quiet', () => {
+it('a running session never dims by itself, even late and quiet', async () => {
+  // A one minute wait, so a five minute session runs well past the wait; with the guard gone it would dim at once.
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify({ zenDimWaitMin: 1 }));
   render(<Zen nowMs={clockAt(at(22, 30))} />);
-  fireEvent.click(screen.getByRole('radio', { name: '10 min' }));
   fireEvent.click(screen.getByRole('button', { name: /Start/ }));
-  quiet(9);
+  await quiet(3);
+  expect(document.querySelector('.zen-guide')).not.toBeNull();
   expect(screen.queryByLabelText('Wake')).toBeNull();
+  localStorage.removeItem(SETTINGS_KEY);
 });
 
 it('a session ending in the afternoon still dims', () => {
@@ -267,10 +273,86 @@ it('the quiet line shows in the evening and not by day or during a session', () 
 it('the dim check effect lists what it reads among its dependencies', () => {
   // `ending` is only ever true while a session runs, so no timing test can tell a stale read from a
   // fresh one; the dependency list is what keeps the effect honest, so pin it in the source.
-  const effect = /setDream\(true\);\s*\}, DIM_CHECK_MS\);[\s\S]*?\}, \[([^\]]*)\]\);/.exec(zenSource);
+  const effect = /DIM_CHECK_MS\);[\s\S]*?\}, \[([^\]]*)\]\);/.exec(zenSource);
   expect(effect).not.toBeNull();
   const deps = effect![1].split(',').map((d) => d.trim());
   expect(deps).toEqual(expect.arrayContaining(['startedAt', 'ending', 'nowMs', 'dimHour', 'waitMs']));
+});
+
+function systemIdle(secs: () => number) {
+  const calls = { n: 0 };
+  mocks.set('wall2_idle_state', () => {
+    calls.n += 1;
+    return { idle: false, idleSecs: secs() };
+  });
+  return calls;
+}
+
+it('system activity keeps it bright although the wall got no event for eleven minutes', async () => {
+  systemIdle(() => 3);
+  render(<Zen nowMs={clockAt(at(22, 30))} />);
+  await quiet(11);
+  expect(screen.queryByLabelText('Wake')).toBeNull();
+  mocks.clear();
+});
+
+it('a system idle of ten minutes dims it', async () => {
+  const start = Date.now();
+  systemIdle(() => Math.round((Date.now() - start) / 1000) + 300);
+  render(<Zen nowMs={clockAt(at(22, 30))} />);
+  await quiet(4);
+  expect(screen.queryByLabelText('Wake')).toBeNull();
+  await quiet(2);
+  expect(screen.getByLabelText('Wake')).toBeTruthy();
+  mocks.clear();
+});
+
+it('a click right after the system question makes its old answer count for nothing', async () => {
+  let release: (v: { idle: boolean; idleSecs: number }) => void = () => undefined;
+  mocks.set('wall2_idle_state', () => new Promise((res) => (release = res)));
+  render(<Zen nowMs={clockAt(at(22, 30))} />);
+  await quiet(0.2);
+  fireEvent.pointerDown(window);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(10);
+    release({ idle: true, idleSecs: 9999 });
+  });
+  expect(screen.queryByLabelText('Wake')).toBeNull();
+  mocks.clear();
+});
+
+it('when the system command fails the wall input is the fallback', async () => {
+  mocks.set('wall2_idle_state', () => Promise.reject(new Error('no helper')));
+  render(<Zen nowMs={clockAt(at(22, 30))} />);
+  await quiet(9);
+  expect(screen.queryByLabelText('Wake')).toBeNull();
+  await quiet(2);
+  expect(screen.getByLabelText('Wake')).toBeTruthy();
+  mocks.clear();
+});
+
+it('nothing is polled before the dim hour, while a session runs, once dimmed, or with the page hidden', async () => {
+  const calls = systemIdle(() => 0);
+  const day = render(<Zen nowMs={clockAt(at(21, 0))} />);
+  await quiet(5);
+  expect(calls.n).toBe(0);
+  day.unmount();
+  const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
+  const h = render(<Zen nowMs={clockAt(at(22, 30))} />);
+  await quiet(5);
+  expect(calls.n).toBe(0);
+  h.unmount();
+  hidden.mockRestore();
+  const run = render(<Zen nowMs={clockAt(at(22, 30))} />);
+  fireEvent.click(screen.getByRole('button', { name: /Start/ }));
+  await quiet(2);
+  expect(calls.n).toBe(0);
+  run.unmount();
+  usePlaceStore.getState().openDream();
+  render(<Zen nowMs={clockAt(at(22, 30))} />);
+  await quiet(5);
+  expect(calls.n).toBe(0);
+  mocks.clear();
 });
 
 it('Leave goes back to the place Zen was opened from, Work if none', () => {

@@ -1,4 +1,3 @@
-
 /** One breath: 4 s in, 2 s hold, 6 s out. */
 export const CYCLE_SECONDS = 12;
 export const SESSION_MINUTES = [3, 5, 10] as const;

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { IconPlayerPlayFilled, IconX } from '@tabler/icons-react';
 import { Clock } from '../clock/Clock';
+import { invoke } from '../bridge/tauri';
 import { loadSettings } from '../settings/settings';
 import { usePlaceStore } from '../state/places';
 import { visibleRows } from '../tasks/model';
@@ -13,6 +14,7 @@ import {
   ZEN_VEIL,
   formatLeft,
   dimDue,
+  isDimHour,
   dimHint,
   showDimHint,
   sessionLabel,
@@ -61,8 +63,8 @@ function Waiting() {
 /**
  * The Zen place: a full-stage view over everything else. Flames, a breathing guide and a short
  * timed session. When a session ends it dims to the big thin clock (Dream's look); from 10 PM
- * (a setting) until 6 AM it also dims by itself after ten quiet minutes (a setting) with no input on
- * the wall. A click anywhere wakes it, and it dims again only after another quiet wait. Separate
+ * (a setting) until 6 AM it also dims by itself after ten quiet minutes (a setting) of PC idle time
+ * (the wall's own input when the system source is unavailable). A click anywhere wakes it, and it dims again only after another quiet wait. Separate
  * from the focus timer and from Do Not Disturb.
  */
 export function Zen({ nowMs = Date.now }: ZenProps) {
@@ -125,13 +127,36 @@ export function Zen({ nowMs = Date.now }: ZenProps) {
     };
   }, [nowMs]);
 
-  // Late and quiet: dim by itself.
+  // Late and quiet: dim by itself. Quiet is the PC's idle age (`wall2_idle_state`, in seconds), asked at most
+  // every 10 s and only while Zen is lit (not dimmed), after the dim hour, with the page visible. When that command is
+  // missing or fails, the wall's own input (the listeners above) is the fallback.
   useEffect(() => {
+    let live = true;
+    let busy = false;
     const id = window.setInterval(() => {
-      if (startedAt === null && !ending && dimDue(new Date(nowMs()), lastInput.current, dimHour, waitMs)) setDream(true);
+      if (dream || startedAt !== null || ending || busy || document.hidden) return;
+      if (!isDimHour(new Date(nowMs()), dimHour)) return;
+      busy = true;
+      const asked = nowMs();
+      invoke<{ idleSecs?: number }>('wall2_idle_state')
+        .then(
+          (s) => {
+            // A click or key on the wall after the question was sent makes the answer stale.
+            if (live && lastInput.current <= asked && typeof s.idleSecs === 'number' && s.idleSecs * 1000 >= waitMs) setDream(true);
+          },
+          () => {
+            if (live && dimDue(new Date(nowMs()), lastInput.current, dimHour, waitMs)) setDream(true);
+          },
+        )
+        .finally(() => {
+          busy = false;
+        });
     }, DIM_CHECK_MS);
-    return () => window.clearInterval(id);
-  }, [startedAt, ending, nowMs, dimHour, waitMs]);
+    return () => {
+      live = false;
+      window.clearInterval(id);
+    };
+  }, [dream, startedAt, ending, nowMs, dimHour, waitMs]);
 
   // Zen covers the rail, so keep keyboard focus inside it. Focus follows the controls: the tap target
   // when a session starts (Start unmounts), Start when the picker returns, the first control otherwise.
