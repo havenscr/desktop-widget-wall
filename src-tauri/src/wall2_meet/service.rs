@@ -1,19 +1,42 @@
 //! The silent refresh and the calendar read, behind traits so tests can fake the network.
 
 use super::auth::{TokenClient, TokenReply, SCOPE};
-use super::graph::{merge, merge_capped, shape_events, MAX_DAY_EVENTS, utc_iso, Candidate, GraphClient, GraphReply};
-use super::meetlog::format_line;
+use super::graph::{merge, merge_capped, shape_events, Ctx, Diag, Kind, BUDGET, MAX_DAY_EVENTS, utc_iso, Candidate, GraphClient, GraphReply};
+use super::meetlog::{format_line, format_line_detail};
 use super::reason::{is_valid_reason, STORE_READ, STORE_WRITE};
 use super::store::{Fetch, SecretStore};
 use super::Account;
 use serde::Serialize;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Instant;
 
 /// Refresh an access token that has less than this left.
 const SKEW_SECS: u64 = 120;
 const WINDOW_SECS: u64 = 24 * 3600;
+
+/// Numbers every payload in the order its state was settled, so the web view can drop an
+/// answer that arrives after a newer one.
+static SEQ: AtomicU64 = AtomicU64::new(0);
+
+/// Which accounts a read goes to the network for. The others are answered from what is held.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Only<'a> {
+    All,
+    One(&'a str),
+    Nobody,
+}
+
+impl Only<'_> {
+    fn wants(self, id: &str) -> bool {
+        match self {
+            Only::All => true,
+            Only::One(one) => one == id,
+            Only::Nobody => false,
+        }
+    }
+}
 
 pub struct Cached {
     pub access: String,
@@ -26,6 +49,8 @@ pub struct Core {
     pub cache: HashMap<String, Cached>,
     /// Each account's last successful meetings, reused while that account is unavailable.
     pub last: HashMap<String, Vec<Candidate>>,
+    /// The same for the day read, used only for accounts a read did not ask.
+    pub last_day: HashMap<String, Vec<Candidate>>,
     /// A rotated refresh token that could not be written to the store yet. It is the one to
     /// use (and retry storing) while it is here; the stored one may already be spent.
     pub pending: HashMap<String, String>,
@@ -43,15 +68,25 @@ pub struct Core {
 
 /// Queue one log line when the account's state or reason differs from the last one logged.
 pub fn record(core: &mut Core, id: &str, state: &str, reason: Option<&str>, now: u64) {
+    record_detail(core, id, state, reason, now, None);
+}
+
+/// `record`, plus the Graph failure details when there are some. A line with details is
+/// written for every failure, changed state or not, so each failed call can be traced.
+pub fn record_detail(core: &mut Core, id: &str, state: &str, reason: Option<&str>, now: u64, detail: Option<&Diag>) {
     let reason = reason.filter(|r| is_valid_reason(r)).map(str::to_string);
     let new = (state.to_string(), reason);
     let old = core.states.get(id).map(|(s, _)| s.as_str()).unwrap_or("start").to_string();
-    if core.states.get(id) == Some(&new) {
+    if core.states.get(id) == Some(&new) && detail.is_none() {
         return;
     }
     // The queue is drained after every read; the cap only guards a caller that never drains.
     if core.log_lines.len() < 64 {
-        core.log_lines.push(format_line(&utc_iso(now), id, &old, state, new.1.as_deref()));
+        let line = match detail {
+            Some(d) => format_line_detail(&utc_iso(now), id, &old, state, new.1.as_deref(), &d.log_fields()),
+            None => format_line(&utc_iso(now), id, &old, state, new.1.as_deref()),
+        };
+        core.log_lines.push(line);
     }
     core.states.insert(id.to_string(), new);
 }
@@ -80,6 +115,8 @@ pub enum AccountState {
     SignedOut,
     NeedsSignIn,
     Unavailable,
+    /// Not asked yet in this run.
+    Checking,
 }
 
 impl AccountState {
@@ -89,6 +126,7 @@ impl AccountState {
             AccountState::SignedOut => "signed-out",
             AccountState::NeedsSignIn => "needs-sign-in",
             AccountState::Unavailable => "unavailable",
+            AccountState::Checking => "checking",
         }
     }
 }
@@ -120,6 +158,8 @@ pub struct MeetPayload {
     pub meetings: Vec<MeetingOut>,
     /// True when some meetings come from an earlier read because an account was unavailable.
     pub stale: bool,
+    /// Settle order: a payload with a higher number is newer.
+    pub seq: u64,
 }
 
 /// Why a state is not `Ok`: the state and a reason code when there is one.
@@ -142,6 +182,10 @@ struct Read {
     generation: u64,
     /// The account changed under the read; nothing from it may be written back.
     discarded: bool,
+    /// Why Graph failed, for the log.
+    diag: Option<Diag>,
+    /// The read was not asked to go to the network for this account.
+    skipped: bool,
 }
 
 fn lock(core: &Mutex<Core>) -> MutexGuard<'_, Core> {
@@ -272,7 +316,7 @@ fn read_account(
     core: &Mutex<Core>,
     now: u64,
 ) -> Read {
-    read_window(acct, store, tokens, graph, core, now, now, now + WINDOW_SECS)
+    read_window(acct, store, tokens, graph, core, now, now, now + WINDOW_SECS, Kind::Next)
 }
 
 /// One account's events between two instants (epoch seconds). The core lock is never held
@@ -287,33 +331,43 @@ fn read_window(
     now: u64,
     from: u64,
     to: u64,
+    kind: Kind,
 ) -> Read {
     let (start, end) = (utc_iso(from), utc_iso(to));
     let began = Instant::now();
     let generation = generation_of(&lock(core), &acct.id);
-    let done = |state, meetings, reason| Read { state, meetings, reason, generation, discarded: false };
+    let done = |state, meetings, reason| Read { state, meetings, reason, generation, discarded: false, diag: None, skipped: false };
     let stopped = |stop: Stop| match stop {
         Stop::Fail((state, reason)) => done(state, None, reason),
-        Stop::Stale => Read { state: AccountState::Unavailable, meetings: None, reason: None, generation, discarded: true },
+        Stop::Stale => Read { state: AccountState::Unavailable, meetings: None, reason: None, generation, discarded: true, diag: None, skipped: false },
     };
     let access = match obtain(acct, store, tokens, core, now, began, generation, None) {
         Ok(a) => a,
         Err(stop) => return stopped(stop),
     };
-    let mut reply = graph.calendar_view(&access, &start, &end);
+    let ctx = Ctx { kind, began, budget: BUDGET };
+    let (mut reply, mut diag) = graph.calendar_view_diag(&access, &start, &end, &ctx);
     if matches!(reply, GraphReply::Unauthorized) {
         // The cached token was refused: drop it, refresh once, ask once more.
         let access = match obtain(acct, store, tokens, core, now, began, generation, Some(access.as_str())) {
             Ok(a) => a,
             Err(stop) => return stopped(stop),
         };
-        reply = graph.calendar_view(&access, &start, &end);
+        (reply, diag) = graph.calendar_view_diag(&access, &start, &end, &ctx);
     }
-    match reply {
+    let mut read = match reply {
         GraphReply::Ok(body) => done(AccountState::Ok, Some(shape_events(&body, &acct.id)), None),
         GraphReply::Unauthorized => done(AccountState::Unavailable, None, Some("graph-401".to_string())),
         GraphReply::Transient(why) | GraphReply::Failed(why) => done(AccountState::Unavailable, None, Some(why)),
-    }
+    };
+    read.diag = diag;
+    read
+}
+
+/// A read that made no network call for the account.
+fn skipped_read(core: &Mutex<Core>, id: &str) -> Read {
+    let generation = generation_of(&lock(core), id);
+    Read { state: AccountState::Checking, meetings: None, reason: None, generation, discarded: false, diag: None, skipped: true }
 }
 
 /// The final step of a read, with the core lock held by the caller: re-check every account's
@@ -334,6 +388,28 @@ fn settle(
     let mut lists = Vec::new();
     let mut stale = false;
     for (acct, read) in accounts.iter().zip(reads) {
+        if read.skipped {
+            // Answered from what is held: the last state seen and the last good list.
+            let (state, reason) = match core.states.get(&acct.id) {
+                Some((s, r)) => (
+                    match s.as_str() {
+                        "ok" => AccountState::Ok,
+                        "signed-out" => AccountState::SignedOut,
+                        "needs-sign-in" => AccountState::NeedsSignIn,
+                        "unavailable" => AccountState::Unavailable,
+                        _ => AccountState::Checking,
+                    },
+                    r.clone(),
+                ),
+                None => (AccountState::Checking, None),
+            };
+            let held = if keep_last { core.last.get(&acct.id) } else { core.last_day.get(&acct.id) };
+            let list = if state == AccountState::SignedOut { Vec::new() } else { held.cloned().unwrap_or_default() };
+            stale |= keep_last && state == AccountState::Unavailable && !list.is_empty();
+            statuses.push(AccountOut { id: acct.id.clone(), label: acct.label.clone(), state: state.as_str(), reason });
+            lists.push(list);
+            continue;
+        }
         let out = |state: AccountState, reason| AccountOut { id: acct.id.clone(), label: acct.label.clone(), state: state.as_str(), reason };
         if read.discarded || generation_of(core, &acct.id) != read.generation {
             // The credential store read here is local and deliberate, like the other store
@@ -352,12 +428,14 @@ fn settle(
             }
             continue;
         }
-        let Read { state, meetings: fresh, reason, .. } = read;
-        record(core, &acct.id, state.as_str(), reason.as_deref(), now);
+        let Read { state, meetings: fresh, reason, diag, .. } = read;
+        record_detail(core, &acct.id, state.as_str(), reason.as_deref(), now, diag.as_ref());
         let list = match fresh {
             Some(l) => {
                 if keep_last {
                     core.last.insert(acct.id.clone(), l.clone());
+                } else {
+                    core.last_day.insert(acct.id.clone(), l.clone());
                 }
                 l
             }
@@ -372,6 +450,8 @@ fn settle(
             None => {
                 if keep_last {
                     core.last.remove(&acct.id);
+                } else {
+                    core.last_day.remove(&acct.id);
                 }
                 Vec::new()
             }
@@ -386,6 +466,7 @@ fn settle(
 /// network work comes first, with no lock held. Then one critical section under the core
 /// lock re-checks each account's generation and publishes the link map, so an account that
 /// signed out meanwhile is neither listed nor joinable.
+#[allow(dead_code)]
 pub fn read_next(
     accounts: &[Account],
     store: &dyn SecretStore,
@@ -395,11 +476,31 @@ pub fn read_next(
     links: &Mutex<Links>,
     now: u64,
 ) -> MeetPayload {
-    let reads: Vec<Read> = accounts.iter().map(|acct| read_account(acct, store, tokens, graph, core, now)).collect();
+    read_next_only(accounts, store, tokens, graph, core, links, now, Only::All)
+}
+
+/// `read_next` that goes to the network only for the chosen accounts; the rest are
+/// answered from the last state and list held (or "checking" when nothing is held yet).
+#[allow(clippy::too_many_arguments)]
+pub fn read_next_only(
+    accounts: &[Account],
+    store: &dyn SecretStore,
+    tokens: &dyn TokenClient,
+    graph: &dyn GraphClient,
+    core: &Mutex<Core>,
+    links: &Mutex<Links>,
+    now: u64,
+    only: Only,
+) -> MeetPayload {
+    let reads: Vec<Read> = accounts
+        .iter()
+        .map(|acct| if only.wants(&acct.id) { read_account(acct, store, tokens, graph, core, now) } else { skipped_read(core, &acct.id) })
+        .collect();
     // Lock order: core, then links.
     let mut c = lock(core);
     let (statuses, lists, stale) = settle(accounts, reads, store, &mut c, now, true);
     let merged = merge(lists);
+    let seq = SEQ.fetch_add(1, Ordering::SeqCst) + 1;
     let mut guard = links.lock().unwrap_or_else(|e| e.into_inner());
     guard.generation += 1;
     guard.map.clear();
@@ -418,7 +519,7 @@ pub fn read_next(
         .collect();
     drop(guard);
     drop(c);
-    MeetPayload { accounts: statuses, meetings, stale }
+    MeetPayload { accounts: statuses, meetings, stale, seq }
 }
 
 #[derive(Debug, Serialize)]
@@ -437,6 +538,7 @@ pub struct DayEventOut {
 pub struct DayPayload {
     pub accounts: Vec<AccountOut>,
     pub events: Vec<DayEventOut>,
+    pub seq: u64,
 }
 
 /// An event counts as a livestream when its subject starts with "Livestream".
@@ -446,7 +548,7 @@ pub fn is_live(title: &str) -> bool {
 
 /// Every account's events from `from` to `to`, past ones included, merged and sorted. Join
 /// links stay behind keys, as in `read_next`. An unavailable account adds nothing.
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, dead_code)]
 pub fn read_day(
     accounts: &[Account],
     store: &dyn SecretStore,
@@ -458,11 +560,32 @@ pub fn read_day(
     from: u64,
     to: u64,
 ) -> DayPayload {
-    let reads: Vec<Read> = accounts.iter().map(|acct| read_window(acct, store, tokens, graph, core, now, from, to)).collect();
+    read_day_only(accounts, store, tokens, graph, core, links, now, from, to, Only::All)
+}
+
+/// `read_day` that goes to the network only for the chosen accounts.
+#[allow(clippy::too_many_arguments)]
+pub fn read_day_only(
+    accounts: &[Account],
+    store: &dyn SecretStore,
+    tokens: &dyn TokenClient,
+    graph: &dyn GraphClient,
+    core: &Mutex<Core>,
+    links: &Mutex<Links>,
+    now: u64,
+    from: u64,
+    to: u64,
+    only: Only,
+) -> DayPayload {
+    let reads: Vec<Read> = accounts
+        .iter()
+        .map(|acct| if only.wants(&acct.id) { read_window(acct, store, tokens, graph, core, now, from, to, Kind::Day) } else { skipped_read(core, &acct.id) })
+        .collect();
     // Lock order: core, then links.
     let mut c = lock(core);
     let (statuses, lists, _) = settle(accounts, reads, store, &mut c, now, false);
     let merged = merge_capped(lists, MAX_DAY_EVENTS);
+    let seq = SEQ.fetch_add(1, Ordering::SeqCst) + 1;
     let mut guard = links.lock().unwrap_or_else(|e| e.into_inner());
     guard.generation += 1;
     guard.day_map.clear();
@@ -482,7 +605,7 @@ pub fn read_day(
         .collect();
     drop(guard);
     drop(c);
-    DayPayload { accounts: statuses, events }
+    DayPayload { accounts: statuses, events, seq }
 }
 
 /// After a sign-in: keep the refresh token, cache the access token.
@@ -548,6 +671,7 @@ pub fn sign_out(id: &str, store: &dyn SecretStore, core: &Mutex<Core>, links: &M
     *core.generations.entry(id.to_string()).or_insert(0) += 1;
     core.cache.remove(id);
     core.last.remove(id);
+    core.last_day.remove(id);
     core.pending.remove(id);
     let mut l = links.lock().unwrap_or_else(|e| e.into_inner());
     l.map.retain(|_, (account, _)| account != id);
@@ -1610,5 +1734,128 @@ mod tests {
         assert_eq!(p2.accounts[0].state, "signed-out");
         let c = core.lock().unwrap();
         assert!(c.cache.is_empty() && c.pending.is_empty() && c.last.is_empty());
+    }
+
+    // Section: bounded reads, one account at a time, and the log details
+
+    struct PerAccessGraph<'a> {
+        gate: &'a Gate,
+        slow_access: &'a str,
+    }
+    impl GraphClient for PerAccessGraph<'_> {
+        fn calendar_view(&self, access: &str, _s: &str, _e: &str) -> GraphReply {
+            if access == self.slow_access {
+                self.gate.pass();
+            }
+            GraphReply::Ok(body("Fast meeting", access))
+        }
+    }
+
+    #[test]
+    fn a_blocked_account_does_not_hold_up_the_other_ones_meetings() {
+        let store = Chunked(MemoryBlobs::default());
+        store.set("slow", "r1");
+        store.set("fast", "r2");
+        let core = Mutex::new(Core::default());
+        let links = Mutex::new(Links::default());
+        core.lock().unwrap().cache.insert("slow".into(), Cached { access: "s".into(), expires_at: NOW + 6000 });
+        core.lock().unwrap().cache.insert("fast".into(), Cached { access: "f".into(), expires_at: NOW + 6000 });
+        let accounts = [acct("slow"), acct("fast")];
+        let gate = Gate::default();
+        let graph = PerAccessGraph { gate: &gate, slow_access: "s" };
+        std::thread::scope(|sc| {
+            let slow = sc.spawn(|| read_next_only(&accounts, &store, &no_tokens(), &graph, &core, &links, NOW, Only::One("slow")));
+            gate.wait_entered();
+            // The slow account is stuck in Graph. The fast one answers anyway.
+            let p = read_next_only(&accounts, &store, &no_tokens(), &graph, &core, &links, NOW, Only::One("fast"));
+            assert_eq!(p.meetings.len(), 1);
+            assert_eq!(p.meetings[0].account_id, "fast");
+            assert_eq!(p.accounts[0].state, "checking");
+            assert_eq!(p.accounts[1].state, "ok");
+            gate.open();
+            let late = slow.join().unwrap();
+            assert!(late.seq > p.seq);
+            assert_eq!(late.accounts[0].state, "ok");
+            // The later answer still carries the fast account's meeting.
+            assert_eq!(late.meetings.len(), 2);
+        });
+    }
+
+    #[test]
+    fn peek_goes_nowhere_and_reports_checking_then_the_held_state() {
+        let (store, core) = setup();
+        let links = Mutex::new(Links::default());
+        let g = FakeGraph::new(vec![]);
+        let t = FakeTokens::new(vec![]);
+        let first = read_next_only(&[acct("work")], &store, &t, &g, &core, &links, NOW, Only::Nobody);
+        assert_eq!(first.accounts[0].state, "checking");
+        assert_eq!(g.calls.get(), 0);
+        assert_eq!(t.calls.get(), 0);
+        core.lock().unwrap().cache.insert("work".into(), Cached { access: "c".into(), expires_at: NOW + 6000 });
+        let g = FakeGraph::new(vec![GraphReply::Ok(body("Kept", "k"))]);
+        read_next(&[acct("work")], &store, &t, &g, &core, &links, NOW);
+        let peek = read_next_only(&[acct("work")], &store, &t, &g, &core, &links, NOW + 5, Only::Nobody);
+        assert_eq!(peek.accounts[0].state, "ok");
+        assert_eq!(peek.meetings.len(), 1);
+        assert_eq!(g.calls.get(), 1);
+    }
+
+    struct DiagGraph;
+    impl GraphClient for DiagGraph {
+        fn calendar_view(&self, _a: &str, _s: &str, _e: &str) -> GraphReply {
+            GraphReply::Transient("graph-503-UnknownError".into())
+        }
+        fn calendar_view_diag(&self, a: &str, s: &str, e: &str, ctx: &Ctx) -> (GraphReply, Option<Diag>) {
+            let diag = Diag {
+                kind: ctx.kind,
+                status: 503,
+                code: Some("UnknownError".into()),
+                inner: None,
+                request_id: Some("11111111-2222-3333-4444-555555555555".into()),
+                client_request_id: Some("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee".into()),
+                attempt: 3,
+                elapsed_ms: 4210,
+            };
+            (self.calendar_view(a, s, e), Some(diag))
+        }
+    }
+
+    #[test]
+    fn a_graph_failure_logs_the_details_on_every_failure_and_only_the_listed_fields() {
+        let (store, core) = setup();
+        let links = Mutex::new(Links::default());
+        core.lock().unwrap().cache.insert("work".into(), Cached { access: "c".into(), expires_at: NOW + 6000 });
+        let t = FakeTokens::new(vec![]);
+        read_next(&[acct("work")], &store, &t, &DiagGraph, &core, &links, NOW);
+        read_day(&[acct("work")], &store, &t, &DiagGraph, &core, &links, NOW + 1, NOW, NOW + 3600);
+        let lines = std::mem::take(&mut core.lock().unwrap().log_lines);
+        assert_eq!(lines.len(), 2, "{lines:?}");
+        let first = lines[0].trim_end();
+        assert!(first.starts_with("2026-11-12T"));
+        let fields: Vec<&str> = first.split(' ').collect();
+        let keys: Vec<&str> = fields[5..].iter().map(|f| f.split('=').next().unwrap()).collect();
+        assert_eq!(keys, ["req", "status", "code", "inner", "request-id", "client-request-id", "attempt", "ms"]);
+        assert_eq!(&fields[1..5], ["work", "start", "unavailable", "graph-503-UnknownError"]);
+        assert!(first.contains("req=next status=503 code=UnknownError inner=none"));
+        assert!(first.contains("attempt=3 ms=4210"));
+        assert!(lines[1].contains("req=day"));
+        assert!(lines.iter().all(|l| l.len() <= 400 && l.matches('\n').count() == 1));
+    }
+
+    #[test]
+    fn a_day_read_for_one_account_answers_the_other_from_its_held_events() {
+        let store = Chunked(MemoryBlobs::default());
+        store.set("work", "r1");
+        store.set("second", "r2");
+        let core = Mutex::new(Core::default());
+        let links = Mutex::new(Links::default());
+        let t = FakeTokens::new(vec![ok_token("a", None), ok_token("b", None)]);
+        let g = FakeGraph::new(vec![GraphReply::Ok(body("One", "1")), GraphReply::Ok(body("Two", "2"))]);
+        let both = [acct("work"), acct("second")];
+        read_day(&both, &store, &t, &g, &core, &links, NOW, NOW, NOW + 3600);
+        let g = FakeGraph::new(vec![GraphReply::Ok(body("One again", "1"))]);
+        let p = read_day_only(&both, &store, &t, &g, &core, &links, NOW + 5, NOW, NOW + 3600, Only::One("work"));
+        assert_eq!(g.calls.get(), 1);
+        assert_eq!(p.events.len(), 2);
     }
 }

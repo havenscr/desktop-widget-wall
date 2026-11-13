@@ -1,7 +1,9 @@
 //! Graph calendar read: UTC time helpers, response shaping, the join-link allowlist.
 
-use super::MAX_TITLE_CHARS;
+use super::reason::{clean_code, graph_reason, GRAPH_BODY, GRAPH_NETWORK, GRAPH_TIMEOUT, MAX_ERROR_BODY};
+use super::{MAX_BODY, MAX_TITLE_CHARS};
 use serde_json::Value;
+use std::time::{Duration, Instant};
 
 pub const MAX_MEETINGS: usize = 8;
 /// The day view keeps up to this many events.
@@ -27,8 +29,185 @@ pub enum GraphReply {
     Failed(String),
 }
 
+/// Which read a Graph call belongs to, for the log line.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Kind {
+    Next,
+    Day,
+}
+
+impl Kind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Kind::Next => "next",
+            Kind::Day => "day",
+        }
+    }
+}
+
+/// One read's clock: when it began and how long all of it (token and Graph, retries
+/// included) may take.
+#[derive(Debug, Clone, Copy)]
+pub struct Ctx {
+    pub kind: Kind,
+    pub began: Instant,
+    pub budget: Duration,
+}
+
+/// What a Graph failure leaves in the log. Ids and codes only; never a subject, an attendee,
+/// an address, a token or a query value.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Diag {
+    pub kind: Kind,
+    /// 0 when no reply arrived.
+    pub status: u16,
+    pub code: Option<String>,
+    pub inner: Option<String>,
+    pub request_id: Option<String>,
+    pub client_request_id: Option<String>,
+    pub attempt: u32,
+    pub elapsed_ms: u64,
+}
+
+/// `[A-Za-z0-9-]{1,64}`, else none: a request id is a GUID, anything else is not logged.
+fn clean_id(s: &Option<String>) -> String {
+    match s {
+        Some(v) if (1..=64).contains(&v.len()) && v.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') => v.clone(),
+        _ => "none".to_string(),
+    }
+}
+
+impl Diag {
+    /// The extra fields for the log line, fixed order, no spaces inside a value.
+    pub fn log_fields(&self) -> String {
+        let status = if self.status == 0 { "network".to_string() } else { self.status.to_string() };
+        let code = |c: &Option<String>| match c.as_deref().and_then(clean_code) {
+            Some(c) => c.to_string(),
+            None => "none".to_string(),
+        };
+        format!(
+            "req={} status={} code={} inner={} request-id={} client-request-id={} attempt={} ms={}",
+            self.kind.as_str(),
+            status,
+            code(&self.code),
+            code(&self.inner),
+            clean_id(&self.request_id),
+            clean_id(&self.client_request_id),
+            self.attempt,
+            self.elapsed_ms
+        )
+    }
+}
+
+/// One HTTP attempt as the transport saw it. `status` 0 means no reply at all.
+pub struct Raw {
+    pub status: u16,
+    pub retry_after: Option<u64>,
+    pub request_id: Option<String>,
+    pub client_request_id: Option<String>,
+    pub body: Vec<u8>,
+}
+
+pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+pub const READ_TIMEOUT: Duration = Duration::from_secs(10);
+/// All of one read (token request, Graph request and retries) stays inside this.
+pub const BUDGET: Duration = Duration::from_secs(12);
+pub const MAX_ATTEMPTS: u32 = 3;
+const MAX_RETRY_AFTER_SECS: u64 = 5;
+
+pub fn is_retryable(status: u16) -> bool {
+    matches!(status, 429 | 503 | 504)
+}
+
+fn backoff(attempt: u32) -> Duration {
+    Duration::from_millis(500 * attempt as u64)
+}
+
+fn diag_of(ctx: &Ctx, raw: &Raw, attempt: u32) -> Diag {
+    let json: Option<Value> = if raw.body.len() as u64 <= MAX_ERROR_BODY { serde_json::from_slice(&raw.body).ok() } else { None };
+    let text = |path: &[&str]| json.as_ref().and_then(|j| str_at(j, path)).map(str::to_string);
+    Diag {
+        kind: ctx.kind,
+        status: raw.status,
+        code: text(&["error", "code"]),
+        inner: text(&["error", "innerError", "code"]),
+        request_id: raw.request_id.clone(),
+        client_request_id: raw.client_request_id.clone(),
+        attempt,
+        elapsed_ms: ctx.began.elapsed().as_millis() as u64,
+    }
+}
+
+/// The retry policy, with the network and the clock passed in. A 429, 503 or 504 is tried
+/// again (up to three attempts in all) after a short wait, `Retry-After` honoured up to five
+/// seconds, and only while the wait fits in the read's budget. Nothing else is retried.
+/// A 401 is the caller's to handle (refresh the token, ask again).
+pub fn run_attempts(
+    ctx: &Ctx,
+    send: &mut dyn FnMut(u32, Duration) -> Raw,
+    sleep: &mut dyn FnMut(Duration),
+) -> (GraphReply, Option<Diag>) {
+    let mut attempt = 0u32;
+    loop {
+        attempt += 1;
+        let elapsed = ctx.began.elapsed();
+        if elapsed >= ctx.budget {
+            return (GraphReply::Transient(GRAPH_TIMEOUT.to_string()), None);
+        }
+        let raw = send(attempt, (ctx.budget - elapsed).min(READ_TIMEOUT));
+        let status = raw.status;
+        match status {
+            200..=299 => {
+                return match serde_json::from_slice::<Value>(&raw.body) {
+                    Ok(v) if raw.body.len() as u64 <= MAX_BODY => (GraphReply::Ok(v), None),
+                    _ => (GraphReply::Failed(GRAPH_BODY.to_string()), Some(diag_of(ctx, &raw, attempt))),
+                };
+            }
+            401 => return (GraphReply::Unauthorized, None),
+            0 => return (GraphReply::Transient(GRAPH_NETWORK.to_string()), Some(diag_of(ctx, &raw, attempt))),
+            s if is_retryable(s) => {
+                if attempt < MAX_ATTEMPTS {
+                    let wait = raw.retry_after.map(|n| Duration::from_secs(n.min(MAX_RETRY_AFTER_SECS))).unwrap_or_else(|| backoff(attempt));
+                    if ctx.began.elapsed() + wait < ctx.budget {
+                        sleep(wait);
+                        continue;
+                    }
+                }
+                let why = graph_reason(s, &raw.body);
+                return (GraphReply::Transient(why), Some(diag_of(ctx, &raw, attempt)));
+            }
+            s => {
+                let why = graph_reason(s, &raw.body);
+                let reply = if s >= 500 { GraphReply::Transient(why) } else { GraphReply::Failed(why) };
+                return (reply, Some(diag_of(ctx, &raw, attempt)));
+            }
+        }
+    }
+}
+
+pub const SELECT: &str = "subject,start,end,isAllDay,isCancelled,responseStatus,onlineMeeting,onlineMeetingUrl,iCalUId";
+pub const TOP: u32 = 50;
+pub const CALENDAR_VIEW_PATH: &str = "https://graph.microsoft.com/v1.0/me/calendarView";
+pub const PREFER: &str = "outlook.timezone=\"UTC\"";
+
+/// The calendarView request: the documented options only (`startDateTime`, `endDateTime`,
+/// `$select`, `$orderby` on the start time, `$top`), both date-times in UTC with a `Z`.
+pub fn calendar_view_url(start: &str, end: &str) -> String {
+    format!(
+        "{CALENDAR_VIEW_PATH}?startDateTime={}&endDateTime={}&$select={SELECT}&$orderby=start/dateTime&$top={TOP}",
+        urlencoding::encode(start),
+        urlencoding::encode(end),
+    )
+}
+
 pub trait GraphClient {
     fn calendar_view(&self, access: &str, start: &str, end: &str) -> GraphReply;
+
+    /// The same read with the budget and the failure details. The default ignores both;
+    /// the real client uses them.
+    fn calendar_view_diag(&self, access: &str, start: &str, end: &str, _ctx: &Ctx) -> (GraphReply, Option<Diag>) {
+        (self.calendar_view(access, start, end), None)
+    }
 }
 
 // Section: time
@@ -194,6 +373,136 @@ mod tests {
         assert_eq!(merge_capped(vec![a, b], 5).len(), 5);
     }
     use serde_json::json;
+
+    fn ctx_ms(budget_ms: u64) -> Ctx {
+        Ctx { kind: Kind::Next, began: Instant::now(), budget: Duration::from_millis(budget_ms) }
+    }
+
+    fn raw(status: u16, retry_after: Option<u64>, body: &str) -> Raw {
+        Raw { status, retry_after, request_id: Some("11111111-2222-3333-4444-555555555555".into()), client_request_id: Some("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee".into()), body: body.as_bytes().to_vec() }
+    }
+
+    /// Runs the policy over a script of replies; returns the outcome, how many calls were
+    /// made and the waits it asked for (none are really slept).
+    fn run(script: Vec<Raw>, budget_ms: u64) -> (GraphReply, Option<Diag>, u32, Vec<Duration>) {
+        let ctx = ctx_ms(budget_ms);
+        let mut queue = script.into_iter();
+        let mut calls = 0u32;
+        let mut sleeps: Vec<Duration> = Vec::new();
+        let (reply, diag) = run_attempts(
+            &ctx,
+            &mut |_attempt, _timeout| {
+                calls += 1;
+                queue.next().expect("more calls than scripted")
+            },
+            &mut |d| sleeps.push(d),
+        );
+        (reply, diag, calls, sleeps)
+    }
+
+    const UNKNOWN: &str = r#"{"error":{"code":"UnknownError","message":"secret subject here","innerError":{"code":"InnerThing","request-id":"x"}}}"#;
+
+    #[test]
+    fn a_503_is_tried_twice_more_then_succeeds() {
+        let (reply, diag, calls, sleeps) = run(vec![raw(503, None, UNKNOWN), raw(503, None, UNKNOWN), raw(200, None, r#"{"value":[]}"#)], 12_000);
+        assert!(matches!(reply, GraphReply::Ok(_)));
+        assert!(diag.is_none());
+        assert_eq!(calls, 3);
+        assert_eq!(sleeps.len(), 2);
+    }
+
+    #[test]
+    fn three_failures_give_up_with_the_last_attempt_in_the_details() {
+        let (reply, diag, calls, _) = run(vec![raw(503, None, UNKNOWN), raw(504, None, ""), raw(503, None, UNKNOWN)], 12_000);
+        assert_eq!(calls, 3);
+        assert!(matches!(reply, GraphReply::Transient(ref w) if w == "graph-503-UnknownError"));
+        let d = diag.unwrap();
+        assert_eq!((d.status, d.attempt, d.kind), (503, 3, Kind::Next));
+        assert_eq!(d.code.as_deref(), Some("UnknownError"));
+        assert_eq!(d.inner.as_deref(), Some("InnerThing"));
+    }
+
+    #[test]
+    fn retry_after_is_honoured_up_to_five_seconds() {
+        let (_, _, _, sleeps) = run(vec![raw(429, Some(2), ""), raw(429, Some(30), ""), raw(200, None, "{}")], 12_000);
+        assert_eq!(sleeps, vec![Duration::from_secs(2), Duration::from_secs(5)]);
+    }
+
+    #[test]
+    fn a_wait_that_does_not_fit_in_the_budget_is_not_taken() {
+        let (reply, _, calls, sleeps) = run(vec![raw(503, Some(5), UNKNOWN)], 1_000);
+        assert_eq!(calls, 1);
+        assert!(sleeps.is_empty());
+        assert!(matches!(reply, GraphReply::Transient(_)));
+    }
+
+    #[test]
+    fn a_spent_budget_makes_no_call() {
+        let (reply, diag, calls, _) = run(vec![], 0);
+        assert_eq!(calls, 0);
+        assert!(diag.is_none());
+        assert!(matches!(reply, GraphReply::Transient(ref w) if w == "graph-timeout"));
+    }
+
+    #[test]
+    fn nothing_else_is_retried() {
+        for status in [0u16, 400, 403, 404, 500, 502] {
+            let (_, diag, calls, sleeps) = run(vec![raw(status, None, "")], 12_000);
+            assert_eq!(calls, 1, "status {status}");
+            assert!(sleeps.is_empty());
+            assert_eq!(diag.unwrap().status, status);
+        }
+        let (reply, _, calls, _) = run(vec![raw(401, None, "")], 12_000);
+        assert_eq!(calls, 1);
+        assert!(matches!(reply, GraphReply::Unauthorized));
+    }
+
+    #[test]
+    fn a_network_failure_is_transient_and_a_4xx_is_not() {
+        assert!(matches!(run(vec![raw(0, None, "")], 12_000).0, GraphReply::Transient(ref w) if w == "graph-network"));
+        assert!(matches!(run(vec![raw(403, None, UNKNOWN)], 12_000).0, GraphReply::Failed(_)));
+        assert!(matches!(run(vec![raw(502, None, "")], 12_000).0, GraphReply::Transient(_)));
+    }
+
+    #[test]
+    fn log_fields_hold_the_listed_values_and_nothing_else() {
+        let (_, diag, _, _) = run(vec![raw(503, None, UNKNOWN), raw(503, None, UNKNOWN), raw(503, None, UNKNOWN)], 12_000);
+        let mut d = diag.unwrap();
+        d.elapsed_ms = 4210;
+        assert_eq!(
+            d.log_fields(),
+            "req=next status=503 code=UnknownError inner=InnerThing request-id=11111111-2222-3333-4444-555555555555 client-request-id=aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee attempt=3 ms=4210"
+        );
+        assert!(!d.log_fields().contains("secret"));
+    }
+
+    #[test]
+    fn hostile_ids_and_codes_are_not_logged() {
+        let d = Diag {
+            kind: Kind::Day,
+            status: 0,
+            code: Some("a@b.example".into()),
+            inner: Some("x y".into()),
+            request_id: Some("https://example.test/?q=1".into()),
+            client_request_id: None,
+            attempt: 1,
+            elapsed_ms: 5,
+        };
+        assert_eq!(d.log_fields(), "req=day status=network code=none inner=none request-id=none client-request-id=none attempt=1 ms=5");
+    }
+
+    #[test]
+    fn the_request_uses_only_documented_options_and_utc_times() {
+        let url = calendar_view_url("2026-11-12T17:00:00Z", "2026-11-13T17:00:00Z");
+        assert_eq!(
+            url,
+            "https://graph.microsoft.com/v1.0/me/calendarView?startDateTime=2026-11-12T17%3A00%3A00Z&endDateTime=2026-11-13T17%3A00%3A00Z&$select=subject,start,end,isAllDay,isCancelled,responseStatus,onlineMeeting,onlineMeetingUrl,iCalUId&$orderby=start/dateTime&$top=50"
+        );
+        let names: Vec<&str> = url.split_once('?').unwrap().1.split('&').map(|p| p.split('=').next().unwrap()).collect();
+        assert_eq!(names, ["startDateTime", "endDateTime", "$select", "$orderby", "$top"]);
+        assert!(!url.contains("$filter"));
+        assert_eq!(PREFER, "outlook.timezone=\"UTC\"");
+    }
 
     #[test]
     fn utc_formatter_known_dates() {
