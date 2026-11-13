@@ -147,15 +147,6 @@
   outline: 3px solid var(--cyan);
   outline-offset: 2px;
 }
-.u-soon {
-  font: 500 13px/1 var(--disp);
-  letter-spacing: 0.12em;
-  padding: 5px 8px;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.07);
-  color: var(--faint);
-}
-
 /* The listen row: the player now; a music browser can sit beside it later. */
 .u-listen {
   display: flex;
@@ -554,4 +545,644 @@
 .u-vol.drag .u-vol-n,
 .u-vol:focus-within .u-vol-n {
   opacity: 1;
+}
+
+/* ---- Watch (the Watch tab, `unwind/watch/`) ----
+   Positions are in .unwind's own pixels (stage x minus 124, y minus 20). The horizon line
+   on Unwind is at stage y 505, so 485 here. The tabs row stays above any video. */
+.u-tabrow {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  align-self: flex-start;
+}
+.w-gear {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: var(--dim);
+  background: rgba(10, 7, 28, 0.66);
+  border: 1px solid var(--line);
+}
+.w-gear:hover,
+.w-gear.on {
+  color: var(--cyan);
+  background: rgba(53, 230, 234, 0.12);
+}
+.w-gear:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: 2px;
+}
+
+/* The left block under the tabs: what is on and its controls. */
+.w-panel {
+  display: flex;
+  min-width: 0;
+}
+/* Placed on its own (not in flow under the tabs), so the Listen and Watch switch can move
+   without moving anything of Watch: the left block keeps the spot Listen's player starts at. */
+.w-now {
+  position: absolute;
+  left: 500px;
+  top: 106px;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  width: 460px;
+  min-width: 0;
+}
+.w-title {
+  max-width: 100%;
+  font: 500 48px/1.1 var(--disp);
+  letter-spacing: -0.01em;
+  text-shadow: 0 0 40px rgba(255, 61, 154, 0.35);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.w-title.w-none {
+  font-weight: 300;
+  font-size: 56px;
+  color: var(--dim);
+  text-shadow: none;
+}
+.w-sub {
+  font-size: 24px;
+  line-height: 1.3;
+  color: var(--dim);
+}
+.w-ctl {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin-top: 16px;
+}
+.w-note {
+  margin-top: 12px;
+  font-size: 18px;
+  line-height: 1.35;
+  color: var(--faint);
+}
+.w-start {
+  max-width: 100%;
+  min-width: 0;
+}
+.w-start:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* The video in the scene. Feathered: the picture whole and fully visible, its edges melting
+   into the sky through a soft mask; its lower edge fades out before the horizon line, so the
+   ridgelines there show in front of it. It sits over the moon, so the moon's disc never shows
+   through the picture. Drive-in: a screen with a frame on two posts standing on the horizon. */
+.w-stage {
+  position: absolute;
+}
+.w-screen {
+  position: absolute;
+  inset: 0;
+}
+.w-frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+  background: #05030f;
+}
+.w-noframe {
+  display: grid;
+  place-items: center;
+  padding: 40px;
+  text-align: center;
+  font-size: 22px;
+  color: var(--dim);
+}
+.w-feather {
+  left: 1026px;
+  top: 30px;
+  width: 810px;
+  height: 455px;
+}
+.w-feather .w-screen {
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 20%, #000 80%, transparent), linear-gradient(180deg, transparent, #000 17%, #000 74%, transparent);
+  -webkit-mask-composite: source-in;
+  mask-image: linear-gradient(90deg, transparent, #000 20%, #000 80%, transparent), linear-gradient(180deg, transparent, #000 17%, #000 74%, transparent);
+  mask-composite: intersect;
+}
+.w-glow {
+  position: absolute;
+  left: -110px;
+  right: -110px;
+  top: -40px;
+  bottom: 0;
+  background: radial-gradient(closest-side, rgba(255, 61, 154, 0.2), rgba(154, 123, 255, 0.1) 60%, transparent);
+  pointer-events: none;
+}
+/* Over the horizon's moon (stage 1730, 112, radius 44), under the picture. */
+.w-moonveil {
+  position: absolute;
+  left: 490px;
+  top: -28px;
+  width: 180px;
+  height: 180px;
+  border-radius: 50%;
+  -webkit-backdrop-filter: brightness(0.22) blur(6px);
+  backdrop-filter: brightness(0.22) blur(6px);
+  -webkit-mask-image: radial-gradient(closest-side, #000 62%, transparent);
+  mask-image: radial-gradient(closest-side, #000 62%, transparent);
+  pointer-events: none;
+}
+.w-drivein {
+  left: 1102px;
+  top: 59px;
+  width: 658px;
+  height: 376px;
+}
+.w-drivein .w-screen {
+  box-sizing: border-box;
+  border: 7px solid #1a1232;
+  border-radius: 9px;
+  overflow: hidden;
+  background: #0a0616;
+  box-shadow: 0 0 0 2px rgba(170, 150, 255, 0.35), 0 0 108px rgba(140, 170, 255, 0.28);
+}
+.w-post {
+  position: absolute;
+  top: 376px;
+  width: 7px;
+  height: 50px;
+  background: #1a1232;
+  box-shadow: 0 0 0 1px rgba(170, 150, 255, 0.25);
+}
+.w-post.l {
+  left: 19%;
+}
+.w-post.r {
+  left: 81%;
+}
+/* The screen's light on the grid floor: a soft colour wash, not a mirror. */
+.w-spill {
+  position: absolute;
+  left: -60px;
+  right: -60px;
+  top: 426px;
+  height: 160px;
+  background: radial-gradient(55% 100% at 50% 0, rgba(140, 170, 255, 0.22), rgba(255, 61, 154, 0.1) 55%, transparent 85%);
+  pointer-events: none;
+}
+/* Look: on the video, shown while the pointer is over it (or it has focus). */
+.w-look {
+  position: absolute;
+  z-index: 2;
+  right: 18px;
+  top: 18px;
+  height: 36px;
+  padding: 0 14px;
+  border-radius: 18px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font: 600 16px/1 var(--disp);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--tx);
+  background: rgba(8, 6, 26, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  opacity: 0;
+  transition: opacity 300ms ease;
+}
+.w-feather .w-look {
+  right: 170px;
+  top: 86px;
+}
+.w-stage:hover .w-look,
+.w-look:focus-visible {
+  opacity: 1;
+}
+.w-look:hover {
+  color: var(--cyan);
+}
+.w-look:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: 2px;
+}
+/* Under the video, on the floor just below the horizon, at all times while something plays. */
+.w-under {
+  position: absolute;
+  left: -100px;
+  right: -100px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 14px;
+}
+.w-feather .w-under {
+  top: 467px;
+}
+.w-drivein .w-under {
+  top: 438px;
+}
+.w-open {
+  height: 36px;
+  padding: 0 16px;
+  border-radius: 18px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 18px;
+  color: var(--dim);
+  background: rgba(8, 6, 26, 0.7);
+  border: 1px solid var(--line);
+}
+.w-open:hover {
+  color: var(--tx);
+  background: rgba(8, 6, 26, 0.9);
+}
+.w-open:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: 2px;
+}
+.w-open-fail {
+  font-size: 18px;
+  color: var(--amber);
+}
+
+/* The Watch list card, above Room in the right wing: its foot 20 px over the Room card. */
+.w-card {
+  box-sizing: border-box;
+  height: calc(var(--room-top, 332px) - 20px);
+  display: flex;
+  flex-direction: column;
+  padding: 14px 22px 14px;
+}
+/* Five whole 40 px rows; past five it scrolls a row at a time, with a visible scrollbar and a
+   fade along the bottom while more rows are below. */
+.w-list {
+  flex: 0 1 200px;
+  min-height: 0;
+  overflow-y: auto;
+  margin: 8px -8px 0;
+  padding: 0 8px;
+  list-style: none;
+  scroll-snap-type: y mandatory;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.42) rgba(255, 255, 255, 0.07);
+}
+.w-list > li {
+  scroll-snap-align: start;
+}
+.w-list.more {
+  -webkit-mask-image: linear-gradient(180deg, #000 calc(100% - 30px), rgba(0, 0, 0, 0.15));
+  mask-image: linear-gradient(180deg, #000 calc(100% - 30px), rgba(0, 0, 0, 0.15));
+}
+.w-card:not(.empty) .w-field {
+  margin-top: auto;
+}
+.w-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 40px;
+}
+.w-play {
+  flex: 1;
+  min-width: 0;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 10px;
+  border-radius: 12px;
+  font-size: 20px;
+  color: var(--tx);
+  text-align: left;
+}
+.w-play:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.07);
+}
+.w-play:disabled {
+  color: var(--faint);
+  cursor: default;
+}
+.w-row.on .w-play {
+  background: rgba(53, 230, 234, 0.12);
+  color: var(--cyan);
+  cursor: default;
+}
+.w-kind {
+  display: grid;
+  place-items: center;
+  flex: none;
+  color: var(--dim);
+}
+.w-row.on .w-kind {
+  color: var(--cyan);
+}
+.w-label {
+  min-width: 0;
+  flex: 1;
+}
+.w-on {
+  flex: none;
+  font: 600 13px/1 var(--disp);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  padding: 5px 8px;
+  border-radius: 8px;
+  background: rgba(53, 230, 234, 0.16);
+}
+.w-mini {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  color: var(--faint);
+}
+.w-mini:hover {
+  color: var(--tx);
+  background: rgba(255, 255, 255, 0.08);
+}
+.w-play:focus-visible,
+.w-mini:focus-visible,
+.w-add:focus-visible,
+.u-video:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: 2px;
+}
+.w-row.editing {
+  gap: 10px;
+  padding-left: 10px;
+}
+.w-name-in,
+.w-paste {
+  flex: 1;
+  min-width: 0;
+  box-sizing: border-box;
+  font: 19px/1 var(--body);
+  color: var(--tx);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 0 12px;
+}
+.w-name-in {
+  height: 36px;
+}
+.w-name-in:focus,
+.w-paste:focus {
+  outline: 2px solid rgba(53, 230, 234, 0.6);
+  outline-offset: 0;
+}
+.w-paste::placeholder {
+  color: var(--faint);
+}
+.w-field {
+  display: flex;
+  gap: 10px;
+  flex: none;
+}
+.w-paste {
+  height: 44px;
+  border-radius: 14px;
+  padding: 0 14px;
+}
+.w-add {
+  height: 44px;
+  padding: 0 20px;
+  border-radius: 14px;
+  font: 600 18px/1 var(--disp);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--cyan);
+  background: rgba(53, 230, 234, 0.1);
+  border: 1px solid rgba(53, 230, 234, 0.4);
+}
+.w-add:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.w-err {
+  flex: none;
+  margin-top: 8px;
+  font-size: 17px;
+  line-height: 1.3;
+  color: var(--amber);
+}
+.w-card.empty .w-explain {
+  margin: 14px 0 0;
+  font-size: 21px;
+  line-height: 1.35;
+  color: var(--dim);
+}
+.w-card.empty .w-forms {
+  margin: 10px 0 0;
+  font-size: 16px;
+  line-height: 1.4;
+  color: var(--faint);
+}
+.w-card.empty .w-field {
+  margin-top: auto;
+}
+
+/* Listen: the album art's Video corner, only when something is saved to watch. */
+.u-art:has(.u-video) {
+  position: relative;
+}
+.u-video {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 16px;
+  font: 600 14px/1 var(--disp);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--tx);
+  background: rgba(8, 6, 26, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+}
+.u-video:hover {
+  color: var(--cyan);
+}
+
+/* How video is shown: a sheet over the right wing, as the approved drawing places it. */
+.w-sheet {
+  position: absolute;
+  z-index: 5;
+  right: 0;
+  top: 0;
+  width: 540px;
+  height: 490px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 24px 26px 22px;
+  border-radius: 26px;
+  background: rgba(14, 9, 32, 0.985);
+  border: 1px solid rgba(150, 130, 255, 0.3);
+  box-shadow: -24px 0 70px rgba(4, 2, 12, 0.6);
+}
+.w-sheet:focus {
+  outline: none;
+}
+.w-x {
+  position: absolute;
+  right: 18px;
+  top: 14px;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: var(--dim);
+  border: 1px solid rgba(160, 140, 255, 0.3);
+}
+.w-x:hover {
+  color: var(--tx);
+}
+.w-seg {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 999px;
+  background: rgba(10, 7, 28, 0.66);
+  border: 1px solid var(--line);
+}
+.w-seg button {
+  flex: 1;
+  min-width: 0;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 999px;
+  font-size: 18px;
+  color: var(--dim);
+  white-space: nowrap;
+}
+.w-seg button:hover {
+  color: var(--tx);
+}
+.w-seg button.on {
+  background: rgba(53, 230, 234, 0.14);
+  color: var(--cyan);
+}
+.w-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+  gap: 14px;
+}
+.w-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 16px;
+  font-size: 19px;
+  color: var(--dim);
+  background: rgba(30, 20, 62, 0.7);
+  border: 1px solid rgba(160, 140, 255, 0.25);
+}
+.w-tile:hover {
+  color: var(--tx);
+}
+.w-tile.on {
+  color: var(--tx);
+  border-color: var(--cyan);
+  box-shadow: 0 0 28px rgba(53, 230, 234, 0.3);
+}
+.w-pic {
+  display: block;
+  position: relative;
+  height: 128px;
+  border-radius: 10px;
+  overflow: hidden;
+  background: linear-gradient(#120a2e, #2a1552 70%, #3a2378 70%);
+}
+.w-pic b {
+  position: absolute;
+  background: linear-gradient(120deg, #ffb454, #ff5fa8 55%, #54d6ff);
+}
+.w-pic.feather b {
+  left: 22%;
+  right: 22%;
+  top: 10%;
+  bottom: 34%;
+  filter: blur(6px);
+  opacity: 0.9;
+}
+.w-pic.drivein b {
+  left: 26%;
+  right: 26%;
+  top: 14%;
+  bottom: 38%;
+  outline: 3px solid #1a1232;
+}
+.w-kinds {
+  display: flex;
+  flex-direction: column;
+}
+.w-srow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 10px 0;
+  border-top: 1px solid rgba(150, 130, 255, 0.14);
+  font-size: 20px;
+}
+.w-srow .w-seg {
+  flex: none;
+  width: 250px;
+}
+.w-sfoot {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 17px;
+  line-height: 1.35;
+  color: var(--faint);
+}
+.w-gear,
+.w-x,
+.w-seg button,
+.w-tile {
+  cursor: pointer;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .w-look {
+    transition: none;
+  }
+}
+/* With nothing on and the drive-in look, the empty screen stands on the horizon. */
+.w-drivein.w-empty .w-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  font-size: 22px;
+  color: var(--faint);
+  box-shadow: 0 0 0 2px rgba(170, 150, 255, 0.22), 0 0 80px rgba(140, 170, 255, 0.12);
+}
+.w-hint {
+  margin: 12px 0 0;
+  font-size: 19px;
+  line-height: 1.35;
+  color: var(--dim);
 }
