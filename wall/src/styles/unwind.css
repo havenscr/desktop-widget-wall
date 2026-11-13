@@ -457,31 +457,54 @@
   }
 }
 
-/* Screens off: a quiet pill on the bottom row, beside the status line. */
+/* Hide screen: at rest the 36 px icon circle; under the pointer or keyboard focus it grows to
+   the left into a pill with its name (in place of a tooltip). It is anchored at its right
+   edge, so the icon never moves, and the 36 px box it sits in never changes size. */
 .screens-off {
-  display: grid;
-  place-items: center;
-  width: 36px;
+  position: absolute;
+  right: 0;
+  top: 0;
+  display: flex;
+  align-items: center;
   height: 36px;
-  border-radius: 50%;
+  /* 5 + 22 + 7 + the 1 px border each side: 36 px, with the icon where the grown pill keeps it. */
+  padding: 0 7px 0 5px;
+  border-radius: 18px;
   color: var(--faint);
   opacity: 0.7;
   background: transparent;
   border: 1px solid transparent;
+  font: 500 17px/1 var(--body);
+  white-space: nowrap;
   cursor: pointer;
-  transition: opacity 200ms ease, background 200ms ease;
+  transition: opacity 200ms ease, background 200ms ease, border-color 200ms ease, padding 200ms ease, color 200ms ease;
+}
+.screens-off-lbl {
+  max-width: 0;
+  margin-right: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition: max-width 200ms ease, margin-right 200ms ease, opacity 200ms ease;
 }
 .screens-off:hover,
 .screens-off:focus-visible {
+  padding: 0 7px 0 16px;
   opacity: 1;
-  background: rgba(255, 255, 255, 0.08);
-  border-color: var(--line);
+  color: var(--tx);
+  background: rgba(20, 15, 48, 0.92);
+  border-color: rgba(255, 255, 255, 0.16);
+}
+.screens-off:hover .screens-off-lbl,
+.screens-off:focus-visible .screens-off-lbl {
+  max-width: 160px;
+  margin-right: 10px;
+  opacity: 1;
 }
 .screens-off[aria-pressed='true'] {
   color: var(--cyan);
   opacity: 1;
 }
-.screens-off:active {
+.screens-off:active svg {
   transform: scale(0.95);
 }
 .screens-off:focus-visible {
@@ -491,20 +514,29 @@
 .screens-off[data-pending='true'] {
   opacity: 0.5;
 }
+.screens-off svg {
+  flex: none;
+}
 .screens-off-wrap {
   position: relative;
-  display: flex;
-  align-items: center;
+  width: 36px;
+  height: 36px;
 }
-/* The failure note sits beside the icon, to its left, so nothing else enters the corner. */
+/* The failure note sits above the button, right-aligned with it, so the pill can grow to the
+   left under the pointer or focus without ever meeting it; nothing else enters the corner. */
 .screens-off-note {
   position: absolute;
-  right: calc(100% + 12px);
-  top: 50%;
-  transform: translateY(-50%);
+  right: 0;
+  bottom: calc(100% + 8px);
   white-space: nowrap;
   font-size: 18px;
   color: var(--faint);
+}
+@media (prefers-reduced-motion: reduce) {
+  .screens-off,
+  .screens-off-lbl {
+    transition: none;
+  }
 }
 
 /* Notes inside the left wing and the idle player. */

@@ -247,6 +247,28 @@ state('zen', 'evening hint', '', '2026-11-11T20:15:00-08:00');
 state('zen', 'late, not yet quiet', '', '2026-11-11T23:40:00-08:00');
 state('dimmed', 'night with audio demo', 'audio=demo', TIMES.night);
 
+// keys style: keys tinted by kind by day and night, keys that cannot be sent, For you as two
+// key-height plates, long labels, a key under the pointer and one held down, and the Hide
+// screen button grown under the pointer. `hover:` moves the pointer onto an element, `press:`
+// also holds the button down there, `focus:` gives it keyboard focus; a list of steps runs in order.
+const KS_DAY = '2026-11-11T12:10:00-08:00';
+add('work', 'keys style: day', url('work', KS_DAY, 'keys=library&hold=lib-vscode'), true);
+add('work', 'keys style: general set', url('work', KS_DAY, 'keys=general&hold=general'), true);
+add('work', 'keys style: night', url('work', TIMES.night, 'keys=library&hold=lib-vscode'), true);
+add('work', 'keys style: unavailable', url('work', KS_DAY, 'keys=library&hold=lib-excel'), true);
+add('work', 'keys style: unavailable at night', url('work', TIMES.night, 'keys=library&hold=lib-excel'), true);
+add('work', 'keys style: for you two', url('work', KS_DAY, 'agents=ask&keys=typical&hold=foryou&meet=none&net=calm'), true);
+add('work', 'keys style: for you one', url('work', KS_DAY, 'agents=3&keys=typical&hold=foryou&meet=none'), true);
+add('work', 'keys style: for you three, long titles', url('work', KS_DAY, 'long=1&agents=ask&keys=typical&hold=foryou'), true);
+add('work', 'keys style: long labels', url('work', KS_DAY, 'keys=library&hold=lib-vscode&pins=long'), true);
+add('work', 'keys style: hover and pressed', url('work', KS_DAY, 'keys=library&hold=lib-vscode'), true, ['.pin-tile[aria-label="Thirds"]', 'hover:.pin-tile[aria-label="Snip"]']);
+add('work', 'keys style: pressed', url('work', KS_DAY, 'keys=library&hold=lib-vscode'), true, ['.pin-tile[aria-label="Thirds"]', 'press:.keys .key-tile[aria-label="VS Code: terminal"]']);
+add('unwind', 'unwind: hide screen at rest', url('unwind', TYPICAL_AT), true);
+add('unwind', 'unwind: hide screen hover', url('unwind', TYPICAL_AT), true, 'hover:.screens-off');
+// The failure note ("Could not watch input", `hide=fail`) after a click, with the pointer still on the pill, and with keyboard focus.
+add('unwind', 'unwind: hide screen note while hovered', url('unwind', TYPICAL_AT, 'hide=fail'), true, ['.screens-off', 'hover:.screens-off']);
+add('unwind', 'unwind: hide screen note while focused', url('unwind', TYPICAL_AT, 'hide=fail'), true, ['.screens-off', 'focus:.screens-off']);
+
 /**
  * What each state must show, so a knob that silently stops working fails the run:
  * [screen, state name (prefix; exact when the 4th item is true), what to find]. "What to find" is
@@ -386,6 +408,17 @@ const EXPECT = [
   ['zen', 'dimmed: night with audio demo', '!Breathe in'],
   ['zen', 'dimmed: one agent waiting', 'Click anywhere to wake'],
   ['zen', 'dimmed: broken: calendar not available', 'Calendar not available'],
+  // keys style
+  ['work', 'keys style: day', ['Command palette', 'Always here']],
+  ['work', 'keys style: general set', 'Now · General'],
+  ['work', 'keys style: night', 'Command palette'],
+  ['work', 'keys style: unavailable', 'Repeat last action'],
+  ['work', 'keys style: for you', 'Now · For you'],
+  ['work', 'keys style: long labels', 'Sonos: play what suits the hour'],
+  ['work', 'keys style: hover and pressed', 'windows arranged'],
+  ['work', 'keys style: pressed', 'windows arranged'],
+  ['unwind', 'unwind: hide screen note', ['Could not watch input', 'Hide screen']],
+  ['unwind', 'unwind: hide screen', 'Hide screen'],
 ];
 
 /**
@@ -602,21 +635,31 @@ async function render(cdp, base, s, file, ctl) {
     await to('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
     await to('Page.navigate', { url: `${base}?${s.query}` });
     await new Promise((r) => setTimeout(r, SETTLE_MS));
-    if (s.click) {
+    for (const step of [s.click ?? []].flat()) {
       // A state shown just after a click (a task tick's Undo window).
-      // `ctx:<selector>` right-clicks (opens the key picker), anything else clicks.
-      const ctx = s.click.startsWith('ctx:');
-      const kbd = s.click.startsWith('kbd:');
-      const sel = JSON.stringify(ctx ? s.click.slice(4) : s.click);
-      // `kbd:<selector>`: a Tab key press (so focus-visible applies), then that element focused.
-      if (kbd) {
+      // `ctx:<selector>` right-clicks (opens the key picker), `hover:` moves the real pointer onto
+      // the element, `press:` also holds the button down there, `focus:` focuses it, `kbd:` presses
+      // Tab (so focus-visible applies) and then focuses it, anything else clicks.
+      const pointer = /^(hover|press):/.exec(step);
+      if (step.startsWith('kbd:')) {
         await to('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 });
         await to('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 });
-        await to('Runtime.evaluate', { expression: `document.querySelector(${JSON.stringify(s.click.slice(4))})?.focus()` });
+        await to('Runtime.evaluate', { expression: `document.querySelector(${JSON.stringify(step.slice(4))})?.focus()` });
+      } else if (step.startsWith('focus:')) {
+        await to('Runtime.evaluate', { expression: `document.querySelector(${JSON.stringify(step.slice(6))})?.focus({ focusVisible: true })` });
+      } else if (pointer) {
+        const sel = JSON.stringify(step.slice(pointer[0].length));
+        const at = await to('Runtime.evaluate', { expression: `(() => { const r = document.querySelector(${sel})?.getBoundingClientRect(); return r ? [r.left + r.width - 12, r.top + r.height / 2] : null; })()`, returnByValue: true });
+        const [x, y] = at.result.value ?? [0, 0];
+        await to('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y });
+        if (pointer[1] === 'press') await to('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 });
+      } else {
+        const ctx = step.startsWith('ctx:');
+        const sel = JSON.stringify(ctx ? step.slice(4) : step);
+        await to('Runtime.evaluate', {
+          expression: ctx ? `document.querySelector(${sel})?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))` : `document.querySelector(${sel})?.click()`,
+        });
       }
-      else await to('Runtime.evaluate', {
-        expression: ctx ? `document.querySelector(${sel})?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))` : `document.querySelector(${sel})?.click()`,
-      });
       await new Promise((r) => setTimeout(r, 900));
     }
     const check = await to('Runtime.evaluate', {
