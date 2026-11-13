@@ -16,10 +16,13 @@
 // while more than 60 px of it is unused, and on stage labels closer than 8 px. Home is checked
 // with its Sound block at its fullest, typical, sparse, not reachable and not set up. Exits
 // non-zero on a failure. Unwind's Watch tab is checked empty, with three and with 24 saved,
-// playing in each look, and with its settings sheet open both ways. CI does not run this; run it by hand before a layout change is handed over.
+// playing in each look, and with its settings sheet open both ways. Keys style: every key edge at
+// least 3 to 1 against the sky (read from a screenshot) by day and night, the Now row one height on
+// a key page and on For you, and the grown Hide screen pill inside the corner under the Room card.
+// CI does not run this; run it by hand before a layout change is handed over.
 //
 //   WALL_CHROME=/path/to/chrome-or-headless-shell npm --prefix wall run fit-check
-//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, header, deck, tiles, picker, chips, heading)
+//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, header, deck, tiles, picker, chips, heading, fy-height, key-edge, hide-pill)
 //   npm --prefix wall run fit-check -- --self-test
 //
 // WALL_CHROME (or the first argument that is not a flag) is a Chromium or
@@ -30,6 +33,7 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { inflateSync } from 'node:zlib';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -59,6 +63,10 @@ const EXPECT = {
   picker: /^ *FAIL deck: the key picker reaches y \d+, over the timeline/m,
   chips: /^ *FAIL overlap: chip /m,
   heading: /^ *FAIL deck: the Now heading /m,
+  // keys style
+  'fy-height': /^ *FAIL deck: the Now row is \d+ px tall on/m,
+  'key-edge': /^ *FAIL deck: key ".*" edge against the sky /m,
+  'hide-pill': /^ *FAIL hide screen: /m,
 };
 const OVERFLOWS = {
   left: '.work .left-wing { transform: translateX(-200px); }',
@@ -74,6 +82,10 @@ const OVERFLOWS = {
   picker: '.work .right-wing .pk { height: 400px !important; }',
   chips: '.rib .ev { width: 400px !important; }',
   heading: '.work .right-wing .keys .deck-name { max-width: 40px; overflow: hidden; }',
+  // keys style
+  'fy-height': '.work .right-wing .fy-plate { height: 80px; }',
+  'key-edge': '.work .right-wing .deck-tile.key-tile { border-color: transparent !important; }',
+  'hide-pill': '.screens-off:is(:hover, :focus-visible) { min-width: 900px; }',
 };
 
 if (flag('self-test')) {
@@ -194,6 +206,15 @@ const VARIANTS = [
   // The picker runs over the mountains to just above the timeline, so it is held to the viewport and the timeline rule.
   { name: 'Deck, the key picker open over both rows', q: work('3', '&keys=typical'), checks: PICKER, click: 'ctx:.pin-tile', viewportOnly: true },
   { name: 'Deck, the key picker open with the library sets', q: work('3', '&keys=library'), checks: PICKER, click: 'ctx:.pin-tile', viewportOnly: true },
+  // keys style: the key colours by day and by night (each key's edge against the sky behind it at
+  // least 3 to 1), and the Now row one height on a key page and on the For you page (nowH).
+  { name: 'Keys style, day: library sets held on VS Code', q: `?hz=work&at=${encodeURIComponent('2026-11-11T12:10:00-08:00')}&clock=review&weather=ok&keys=library&hold=lib-vscode`, checks: DECK, edges: true, nowH: 'keys' },
+  { name: 'Keys style, night: library sets held on VS Code', q: `?hz=work&at=${encodeURIComponent('2026-11-11T22:30:00-08:00')}&clock=review&weather=ok&keys=library&hold=lib-vscode`, checks: DECK, edges: true, nowH: 'keys' },
+  { name: 'Keys style, day: held on Excel with VS Code in front (keys that cannot be sent)', q: `?hz=work&at=${encodeURIComponent('2026-11-11T12:10:00-08:00')}&clock=review&weather=ok&keys=library&hold=lib-excel`, checks: DECK, edges: true, nowH: 'keys' },
+  { name: 'Keys style, For you with two plates', q: work('ask', '&keys=typical&hold=foryou&meet=none&net=calm'), checks: FOR_YOU, nowH: 'foryou' },
+  { name: 'Keys style, For you with one plate', q: work('3', '&keys=typical&hold=foryou&meet=none'), checks: FOR_YOU, nowH: 'foryou' },
+  // The Hide screen button grown under the pointer.
+  { name: 'Unwind, Hide screen grown', q: query({ hz: 'unwind', agents: '3', extra: '' }), checks: ['.u-room', '.screens-off'], click: 'hover:.screens-off', hide: true, viewportOnly: true },
   { name: 'Home, Sound at its fullest: many moods, many speakers, long names, sleep timer', q: home('sonos=heavy&moods=many'), checks: [...HOME_CENTRE.filter((c) => !c.endsWith('mood-row')), ...SOUND_FULL] },
   { name: 'Home, typical: five moods, Sound playing', q: home('moods=five'), checks: [...HOME_CENTRE, ...SOUND_FULL] },
   { name: 'Home, one matching routine plus More: no blank cell in the quick-play row', q: home('sonos=few&moods=five'), checks: [...HOME_CENTRE, ...SOUND_FULL] },
@@ -223,6 +244,68 @@ const VARIANTS = [
   { name: 'Watt card on Home', q: home('moods=five'), checks: ['.watt-card'], viewportOnly: true, card: true },
   { name: 'Watt card on Unwind', q: query({ hz: 'unwind', agents: '3', extra: '' }), checks: ['.watt-card'], viewportOnly: true, card: true },
 ];
+// keys style: a small PNG reader (8-bit RGB or RGBA, not interlaced, as Chromium writes them) and contrast.
+function readPng(file) {
+  const buf = readFileSync(file);
+  let at = 8;
+  let w = 0;
+  let h = 0;
+  let ch = 4;
+  const idat = [];
+  while (at < buf.length) {
+    const len = buf.readUInt32BE(at);
+    const type = buf.toString('ascii', at + 4, at + 8);
+    const data = buf.subarray(at + 8, at + 8 + len);
+    if (type === 'IHDR') {
+      w = data.readUInt32BE(0);
+      h = data.readUInt32BE(4);
+      ch = data[9] === 6 ? 4 : 3;
+    } else if (type === 'IDAT') idat.push(data);
+    at += 12 + len;
+  }
+  const raw = inflateSync(Buffer.concat(idat));
+  const px = Buffer.alloc(w * h * ch);
+  const stride = w * ch;
+  for (let y = 0; y < h; y++) {
+    const f = raw[y * (stride + 1)];
+    for (let i = 0; i < stride; i++) {
+      const v = raw[y * (stride + 1) + 1 + i];
+      const a = i >= ch ? px[y * stride + i - ch] : 0;
+      const b = y > 0 ? px[(y - 1) * stride + i] : 0;
+      const c = i >= ch && y > 0 ? px[(y - 1) * stride + i - ch] : 0;
+      const p = a + b - c;
+      const pa = Math.abs(p - a);
+      const pb = Math.abs(p - b);
+      const pc = Math.abs(p - c);
+      const pred = f === 0 ? 0 : f === 1 ? a : f === 2 ? b : f === 3 ? (a + b) >> 1 : pa <= pb && pa <= pc ? a : pb <= pc ? b : c;
+      px[y * stride + i] = (v + pred) & 255;
+    }
+  }
+  return { w, h, ch, px };
+}
+function pixels(img, x0, y0, x1, y1) {
+  const out = [];
+  for (let y = Math.max(0, y0); y < Math.min(img.h, y1); y++)
+    for (let x = Math.max(0, x0); x < Math.min(img.w, x1); x++) {
+      const i = (y * img.w + x) * img.ch;
+      out.push([img.px[i], img.px[i + 1], img.px[i + 2]]);
+    }
+  return out;
+}
+const median = (list) => [0, 1, 2].map((k) => list.map((p) => p[k]).sort((a, b) => a - b)[list.length >> 1] ?? 0);
+function contrast(a, b) {
+  const lum = (c) => {
+    const f = (v) => {
+      v /= 255;
+      return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+    };
+    return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]);
+  };
+  const x = lum(a);
+  const y = lum(b);
+  return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
+}
+
 /** Rounding slack for fractional rectangles, in screen pixels. */
 const SLACK = 0.5;
 
@@ -257,6 +340,15 @@ try {
   const measure = `<script>setTimeout(() => {
     const click = new URLSearchParams(location.search).get('click');
     if (click && click.startsWith('ctx:')) document.querySelector(click.slice(4))?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+    else if (click && click.startsWith('hover:')) {
+      // Headless --dump-dom has no pointer: every top-level :hover rule is copied for a class that stands in for it.
+      const extra = [];
+      for (const sheet of document.styleSheets) for (const r of sheet.cssRules) if (r.selectorText && r.selectorText.includes(':hover')) extra.push(r.cssText.replaceAll(':hover', '.fit-hover'));
+      // Measured at the end of its transition (virtual time draws no frames for one to run).
+      extra.push('.fit-hover, .fit-hover * { transition: none !important; }');
+      const st = document.createElement('style'); st.textContent = extra.join(' '); document.head.appendChild(st);
+      document.querySelector(click.slice(6))?.classList.add('fit-hover');
+    }
     else if (click) document.querySelector(click)?.click();
     // Watt's card: asked for until it is open (Meet's horizon takes a few seconds to settle first).
     if (new URLSearchParams(location.search).get('card')) {
@@ -382,7 +474,29 @@ try {
         if (cut) deck.push('deck: the Now heading "' + name.textContent + '" is cut');
       }
     }
-    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, wattCard, header, deck });
+    // keys style: the Now row's height, each key's box, and the grown Hide screen pill.
+    const nowEl = document.querySelector('.work .right-wing .keys');
+    const nowH = nowEl ? Math.round(nowEl.getBoundingClientRect().height * 10) / 10 : null;
+    // Each key's box, for the edge contrast read from a screenshot of the same state (below).
+    const edges = [...document.querySelectorAll('.work .right-wing .deck-tile.key-tile')].map((t) => {
+      const r = t.getBoundingClientRect();
+      return { label: t.getAttribute('aria-label'), x: r.left, y: r.top, w: r.width, h: r.height };
+    });
+    let hide = null;
+    const so = document.querySelector('.screens-off');
+    if (so) {
+      const pr = so.getBoundingClientRect();
+      const box = so.parentElement.getBoundingClientRect();
+      const foot = [...document.querySelectorAll('.u-foot, .u-foot *')].filter((e) => { const q = e.getBoundingClientRect(); return q.width > 0 && q.height > 0 && hit(q, pr); }).length;
+      const room = [...document.querySelectorAll('.u-room')].filter((e) => hit(e.getBoundingClientRect(), pr)).length;
+      const grown = so.matches(':focus-visible, :hover, .fit-hover');
+      // Unwind's lower right corner: under the Room card, from the right column's left edge to the screen's edge.
+      const ur = document.querySelector('.u-right')?.getBoundingClientRect();
+      const rb = Math.max(0, ...[...document.querySelectorAll('.u-room')].map((e) => e.getBoundingClientRect().bottom));
+      const inCorner = !!ur && pr.left >= ur.left - 0.5 && pr.top >= rb - 0.5 && pr.right <= innerWidth + 0.5 && pr.bottom <= innerHeight + 0.5;
+      hide = { inCorner, w: Math.round(pr.width), right: Math.round((box.right - pr.right) * 10) / 10, bottom: Math.round((box.bottom - pr.bottom) * 10) / 10, foot, room, grown, label: so.textContent };
+    }
+    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, wattCard, header, deck, nowH, edges, hide });
     document.body.appendChild(pre);
   }, new URLSearchParams(location.search).get('card') ? 7000 : 3000);</script>`;
   const broken = overflow ? `<style>${OVERFLOWS[overflow]}</style>` : '';
@@ -392,7 +506,16 @@ try {
   let failed = false;
   if (overflow) console.log(`deliberate overflow: ${overflow} (${OVERFLOWS[overflow]})`);
   // A deliberate break runs on the first state, or for the picker on the state that opens it.
-  const breakOn = overflow === 'picker' ? VARIANTS.filter((v) => v.name.startsWith('Deck, the key picker open over')) : VARIANTS.slice(0, 1);
+  const BREAK_ON = {
+    picker: (v) => v.name.startsWith('Deck, the key picker open over'),
+    // keys style
+    'fy-height': (v) => v.name === 'Keys style, day: library sets held on VS Code' || v.name === 'Keys style, For you with two plates',
+    'key-edge': (v) => v.name === 'Keys style, day: library sets held on VS Code',
+    'hide-pill': (v) => v.name === 'Unwind, Hide screen grown',
+  };
+  const breakOn = BREAK_ON[overflow] ? VARIANTS.filter(BREAK_ON[overflow]) : VARIANTS.slice(0, 1);
+  /** keys style: the Now row's height on each page that has one, compared after every state ran. */
+  const nowHeights = [];
   for (const v of overflow ? breakOn : VARIANTS) {
     console.log(`${v.name} (${v.q}):`);
     const url = `${pathToFileURL(page).href}${v.q}&checks=${encodeURIComponent(v.checks.join('|'))}${v.click ? `&click=${encodeURIComponent(v.click)}` : ''}${v.card ? '&card=1' : ''}`;
@@ -408,7 +531,49 @@ try {
       process.exit(1);
     }
     const text = m[1].replaceAll('&quot;', '"').replaceAll('&amp;', '&');
-    const { res, page: doc, overlaps, cut, gaps, wattCard, header, deck } = JSON.parse(text);
+    const { res, page: doc, overlaps, cut, gaps, wattCard, header, deck, nowH, edges, hide } = JSON.parse(text);
+    // keys style
+    if (v.nowH && nowH !== null) nowHeights.push({ page: v.nowH, h: nowH, name: v.name });
+    if (v.edges) {
+      // As measure.py read the vote pictures: the sky is the median pixel of the strip just above
+      // the key, the edge the pixel of the key's top 2 px that stands out most from it.
+      const shot = join(out, 'edges.png');
+      // A screenshot run keeps no room of the window for itself, so its viewport is 2560 by 807 and
+      // the 2560 by 720 stage sits centred in it (scale 1): every box moves down by half the difference.
+      execFileSync(chrome, ['--headless', '--no-sandbox', '--disable-gpu', '--window-size=2560,807', '--hide-scrollbars', '--virtual-time-budget=8000', `--screenshot=${shot}`, url], { stdio: 'ignore' });
+      const img = readPng(shot);
+      if (img.w !== 2560 || img.h < 720) {
+        console.log(`  FAIL deck: the edge screenshot is ${img.w} x ${img.h}, smaller than the stage`);
+        failed = true;
+      }
+      const dy = (img.h - 720) / 2;
+      const low = [];
+      let lowest = Infinity;
+      for (const e of edges) {
+        const x0 = Math.round(e.x + 20);
+        const x1 = Math.round(e.x + e.w - 20);
+        const top = Math.round(e.y + dy);
+        const sky = median(pixels(img, x0, top - 4, x1, top - 2));
+        let best = 0;
+        for (const p of pixels(img, x0, top, x1, top + 2)) best = Math.max(best, contrast(p, sky));
+        const r = Math.round(best * 100) / 100;
+        lowest = Math.min(lowest, r);
+        if (r < 3) low.push(`  FAIL deck: key "${e.label}" edge against the sky ${r} to 1 (at least 3 to 1; sky rgb(${sky.join(', ')}))`);
+      }
+      for (const l of low) console.log(l);
+      if (low.length || edges.length === 0) failed = true;
+      if (edges.length === 0) console.log('  FAIL deck: no key edge could be measured');
+      else if (!low.length) console.log(`  ok   every key edge against the sky at least 3 to 1 (lowest ${lowest}, ${edges.length} keys)`);
+    }
+    if (v.hide) {
+      const okHide = hide !== null && hide.grown && hide.inCorner && hide.label.includes('Hide screen') && Math.abs(hide.right) <= SLACK && Math.abs(hide.bottom) <= SLACK && hide.foot === 0 && hide.room === 0 && hide.w > 36;
+      if (!okHide) failed = true;
+      console.log(
+        hide === null
+          ? '  FAIL hide screen: the button is not there'
+          : `  ${okHide ? 'ok  ' : 'FAIL'} hide screen: ${hide.grown ? 'grown' : 'not grown'} to ${hide.w} px, right edge ${hide.right} and bottom ${hide.bottom} from its corner box (0), ${hide.inCorner ? 'inside' : 'outside'} the corner under the Room card, overlaps ${hide.foot} parts of the status line and ${hide.room} Room cards`,
+      );
+    }
     for (const d of deck) console.log(`  FAIL ${d}`);
     if (deck.length) failed = true;
     else if (v.q.includes('hz=work')) console.log('  ok   the deck stays above its floor, every key label inside its tile, the Now heading whole');
@@ -459,6 +624,14 @@ try {
         );
       });
     }
+  }
+  // keys style: the Now row is one height on every page (a key page and the For you page).
+  if (nowHeights.some((n) => n.page === 'keys') && nowHeights.some((n) => n.page === 'foryou')) {
+    const hs = [...new Set(nowHeights.map((n) => n.h))];
+    if (hs.length > 1) {
+      failed = true;
+      for (const n of nowHeights) console.log(`  FAIL deck: the Now row is ${Math.round(n.h)} px tall on ${n.name} (every page must match)`);
+    } else console.log(`keys style: the Now row is ${hs[0]} px tall on every key page and on For you`);
   }
   process.exit(failed ? 1 : 0);
 } finally {
