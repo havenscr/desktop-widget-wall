@@ -321,6 +321,18 @@ pub async fn wall2_meet_join(window: tauri::WebviewWindow, key: String) -> Resul
     window.opener().open_url(url, None::<&str>).map_err(|_| "failed".to_string())
 }
 
+/// Open a day view event in Outlook on the web. The web view passes only the event's key;
+/// the link stays in Rust and is checked against the Outlook host list again before opening.
+#[tauri::command]
+pub async fn wall2_open_event(window: tauri::WebviewWindow, key: String) -> Result<(), String> {
+    require_wall2(window.label())?;
+    let url = service::lookup_web_link(links(), &key).ok_or_else(|| "gone".to_string())?;
+    if !graph::web_link_allowed(&url) {
+        return Err("gone".to_string());
+    }
+    window.opener().open_url(url, None::<&str>).map_err(|_| "failed".to_string())
+}
+
 #[tauri::command]
 pub async fn wall2_meet_sign_out(window: tauri::WebviewWindow, id: String) -> Result<(), String> {
     require_wall2(window.label())?;

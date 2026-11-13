@@ -10,6 +10,7 @@
 use crate::wall2_feeds::{agent, read_base, require_ok, NOT_CONFIGURED};
 use serde::Serialize;
 use serde_json::Value;
+use std::collections::BTreeMap;
 use std::io::Read;
 use std::sync::{Mutex, MutexGuard};
 use std::time::{Duration, Instant};
@@ -34,6 +35,18 @@ const MAX_TITLE_CHARS: usize = 80;
 const MAX_LINE_CHARS: usize = 80;
 const MAX_QUESTION_CHARS: usize = 200;
 const MAX_STAMP_CHARS: usize = 40;
+/// Cap on the extra slot counts and on a parent's child counts; this only refuses nonsense.
+const MAX_COUNT: u64 = 999;
+/// The full session list (parents and standalone sessions) the helper sends after the lanes.
+const MAX_SESSIONS_LIST: usize = 12;
+/// Session names by id.
+const MAX_NAMES: usize = 40;
+/// Session ids of the your-move list.
+const MAX_WAITING_IDS: usize = 5;
+/// Usage accounts, one per subscription.
+const MAX_ACCOUNTS: usize = 6;
+const MAX_NEXT_CHARS: usize = 60;
+const MAX_ACCOUNT_LABEL_CHARS: usize = 24;
 /// The box numbers ride on the helper summary, which is read at most this often.
 const BOX_TTL: Duration = Duration::from_secs(15);
 /// The box read has its own, shorter timeout, and runs in the background.
@@ -47,6 +60,20 @@ const BOX_STALE_LIMIT: Duration = Duration::from_secs(600);
 pub struct Slots {
     pub used: u64,
     pub limit: u64,
+    /// Parents and standalone sessions that are working, blocked or in review. Null when the
+    /// helper does not send it.
+    pub sessions: Option<u64>,
+    /// How many of those are working. Null when absent.
+    pub working: Option<u64>,
+    /// Child sessions in total. Null when absent.
+    pub helpers: Option<u64>,
+}
+
+/// A parent session's children: how many, and how many of them are working.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub struct Kids {
+    pub total: u64,
+    pub working: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -67,6 +94,20 @@ pub struct Lane {
     pub elapsed_s: u64,
     pub waiting: bool,
     pub pr: Option<LanePr>,
+    /// `working` or `idle`, when the helper knows; null otherwise.
+    pub live: Option<String>,
+    /// Seconds since the session last did something; null when absent.
+    pub idle_s: Option<u64>,
+    /// Parents only; null otherwise.
+    pub kids: Option<Kids>,
+    /// Seconds the session has waited on the owner; null when absent.
+    pub waiting_since_s: Option<u64>,
+    /// The session's own next step text; null when absent or empty.
+    pub next: Option<String>,
+    /// `claude`, `codex` or `other`; null when absent.
+    pub harness: Option<String>,
+    /// True only when the helper sends exactly `true`.
+    pub failed: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -84,15 +125,40 @@ pub struct YourMoveFirst {
 pub struct YourMove {
     pub total: u64,
     pub first: Option<YourMoveFirst>,
+    /// Up to five session ids from the your-move list, in the helper's order. Empty when absent.
+    pub ids: Vec<String>,
+}
+
+/// One subscription's usage. The label is made by the helper ("Claude 1"); no account name.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UsageAccount {
+    /// `claude`, `codex` or `other`.
+    pub provider: String,
+    pub label: String,
+    pub week_pct: Option<f64>,
+    pub five_hour_pct: Option<f64>,
+    pub week_resets_at: Option<String>,
+}
+
+/// A session's name and where it stands, for any id the wall may show.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct SessionName {
+    pub title: String,
+    pub stage: Option<String>,
+    pub state: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Usage {
-    pub claude_week_pct: f64,
+    /// None when the helper has no valid week figure but does list accounts.
+    pub claude_week_pct: Option<f64>,
     /// None when the helper has no five hour figure; the wall hides that part.
     pub claude5h_pct: Option<f64>,
     pub week_resets_at: Option<String>,
+    /// Up to six subscriptions. Empty when absent.
+    pub accounts: Vec<UsageAccount>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -121,6 +187,12 @@ pub struct OmniSummary {
     pub stale: bool,
     pub slots: Slots,
     pub lanes: Vec<Lane>,
+    /// Every parent or standalone session that is open, up to 12. None when the helper does
+    /// not send the list (an older helper), so the web view can fall back to `lanes`.
+    #[serde(rename = "sessionsList")]
+    pub sessions_list: Option<Vec<Lane>>,
+    /// Session names by id, up to 40. Empty when absent.
+    pub sessions: BTreeMap<String, SessionName>,
     pub parked: u64,
     #[serde(rename = "yourMove")]
     pub your_move: YourMove,
@@ -295,11 +367,69 @@ fn shape_lane(v: &Value) -> Option<Lane> {
         elapsed_s: count(v.get("elapsedS")).map_or(0, |n| n.min(MAX_ELAPSED_S)),
         waiting: v.get("waiting").and_then(Value::as_bool).unwrap_or(false),
         pr,
+        live: one_of(v.get("live"), &["working", "idle"]),
+        idle_s: count(v.get("idleS")).map(|n| n.min(MAX_ELAPSED_S)),
+        kids: shape_kids(v.get("kids")),
+        waiting_since_s: count(v.get("waitingSinceS")).map(|n| n.min(MAX_ELAPSED_S)),
+        next: clean_text(v.get("next"), MAX_NEXT_CHARS).filter(|s| !s.is_empty()),
+        harness: v.get("harness").and_then(Value::as_str).filter(|s| !s.is_empty()).map(provider_name),
+        failed: v.get("failed") == Some(&Value::Bool(true)),
     })
 }
 
+/// `{ total, working }`, both whole numbers, capped, with `working` never above `total`.
+fn shape_kids(v: Option<&Value>) -> Option<Kids> {
+    let v = v.filter(|k| k.is_object())?;
+    let total = count(v.get("total"))?.min(MAX_COUNT);
+    let working = count(v.get("working"))?.min(MAX_COUNT).min(total);
+    Some(Kids { total, working })
+}
+
+/// `claude` and `codex` pass; any other harness or provider name is `other`.
+fn provider_name(s: &str) -> String {
+    match s {
+        "claude" | "codex" => s.to_string(),
+        _ => "other".to_string(),
+    }
+}
+
+/// Valid lanes in order, the first of each id kept, at most `cap`.
+fn shape_lane_list(items: &[Value], cap: usize) -> Vec<Lane> {
+    let mut out: Vec<Lane> = Vec::new();
+    for lane in items.iter().filter_map(shape_lane) {
+        if out.len() >= cap {
+            break;
+        }
+        if !out.iter().any(|l| l.id == lane.id) {
+            out.push(lane);
+        }
+    }
+    out
+}
+
+/// The helper's `sessions` map: valid ids with a title, in the helper's order, at most 40.
+fn shape_names(v: Option<&Value>) -> BTreeMap<String, SessionName> {
+    let Some(obj) = v.and_then(Value::as_object) else { return BTreeMap::new() };
+    obj.iter()
+        .filter(|(id, _)| valid_session_id(id))
+        .filter_map(|(id, entry)| {
+            entry.as_object()?;
+            let title = clean_text(entry.get("title"), MAX_TITLE_CHARS).filter(|t| !t.is_empty())?;
+            Some((
+                id.clone(),
+                SessionName {
+                    title,
+                    stage: one_of(entry.get("stage"), &["plan", "build", "review", "pr", "live"]),
+                    state: one_of(entry.get("state"), &["working", "blocked", "review"]),
+                },
+            ))
+        })
+        .take(MAX_NAMES)
+        .collect()
+}
+
 fn shape_your_move(v: Option<&Value>) -> YourMove {
-    let Some(v) = v else { return YourMove { total: 0, first: None } };
+    let Some(v) = v else { return YourMove { total: 0, first: None, ids: Vec::new() } };
     let first = v.get("first").filter(|f| f.is_object()).and_then(|f| {
         Some(YourMoveFirst {
             session_id: f.get("sessionId")?.as_str().filter(|s| valid_session_id(s))?.to_string(),
@@ -309,16 +439,55 @@ fn shape_your_move(v: Option<&Value>) -> YourMove {
             question: clean_text(f.get("question"), MAX_QUESTION_CHARS).unwrap_or_default(),
         })
     });
-    YourMove { total: count(v.get("total")).unwrap_or(0), first }
+    let mut ids: Vec<String> = Vec::new();
+    for id in v.get("ids").and_then(Value::as_array).map(Vec::as_slice).unwrap_or(&[]) {
+        if ids.len() >= MAX_WAITING_IDS {
+            break;
+        }
+        if let Some(id) = id.as_str().filter(|s| valid_session_id(s)) {
+            if !ids.iter().any(|k| k == id) {
+                ids.push(id.to_string());
+            }
+        }
+    }
+    YourMove { total: count(v.get("total")).unwrap_or(0), first, ids }
 }
 
+/// None when the block is missing, or when it has neither a valid week figure nor any account.
 fn shape_usage(v: Option<&Value>) -> Option<Usage> {
     let v = v.filter(|u| u.is_object())?;
+    let claude_week_pct = percent(v.get("claudeWeekPct"));
+    let accounts = shape_accounts(v.get("accounts"));
+    if claude_week_pct.is_none() && accounts.is_empty() {
+        return None;
+    }
     Some(Usage {
-        claude_week_pct: percent(v.get("claudeWeekPct"))?,
+        claude_week_pct,
         claude5h_pct: percent(v.get("claude5hPct")),
         week_resets_at: stamp(v.get("weekResetsAt")),
+        accounts,
     })
+}
+
+/// Entries need a string provider and a non-empty label; at most six.
+fn shape_accounts(v: Option<&Value>) -> Vec<UsageAccount> {
+    let Some(items) = v.and_then(Value::as_array) else { return Vec::new() };
+    items
+        .iter()
+        .filter_map(|a| {
+            a.as_object()?;
+            let provider = provider_name(a.get("provider")?.as_str()?);
+            let label = clean_text(a.get("label"), MAX_ACCOUNT_LABEL_CHARS).filter(|s| !s.is_empty())?;
+            Some(UsageAccount {
+                provider,
+                label,
+                week_pct: percent(a.get("weekPct")),
+                five_hour_pct: percent(a.get("fiveHourPct")),
+                week_resets_at: stamp(a.get("weekResetsAt")),
+            })
+        })
+        .take(MAX_ACCOUNTS)
+        .collect()
 }
 
 fn shape_day(v: Option<&Value>) -> Vec<DaySpan> {
@@ -369,12 +538,15 @@ fn shape_summary(body: &Value) -> Option<OmniSummary> {
     let slots = obj.get("slots").filter(|s| s.is_object());
     let limit = slots.and_then(|s| count(s.get("limit"))).unwrap_or(DEFAULT_SLOTS).min(MAX_SLOTS);
     let used = slots.and_then(|s| count(s.get("used"))).unwrap_or(lanes.len() as u64).min(MAX_SLOTS);
+    let extra = |key: &str| slots.and_then(|s| count(s.get(key))).map(|n| n.min(MAX_COUNT));
     Some(OmniSummary {
         now: stamp(obj.get("now"))?,
         tz: clean_text(obj.get("tz"), 64).unwrap_or_default(),
         stale: obj.get("stale").and_then(Value::as_bool).unwrap_or(false),
-        slots: Slots { used, limit },
+        slots: Slots { used, limit, sessions: extra("sessions"), working: extra("working"), helpers: extra("helpers") },
         lanes,
+        sessions_list: obj.get("sessionsList").and_then(Value::as_array).map(|items| shape_lane_list(items, MAX_SESSIONS_LIST)),
+        sessions: shape_names(obj.get("sessions")),
         parked: count(obj.get("parked")).unwrap_or(0),
         your_move: shape_your_move(obj.get("yourMove")),
         usage: shape_usage(obj.get("usage")),
@@ -447,9 +619,14 @@ static KNOWN_IDS: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
 fn ids_of(s: &OmniSummary) -> Vec<String> {
     let mut ids: Vec<String> = s.lanes.iter().map(|l| l.id.clone()).collect();
+    if let Some(list) = &s.sessions_list {
+        ids.extend(list.iter().map(|l| l.id.clone()));
+    }
     if let Some(first) = &s.your_move.first {
         ids.push(first.session_id.clone());
     }
+    ids.extend(s.your_move.ids.iter().cloned());
+    ids.extend(s.sessions.keys().cloned());
     ids.extend(s.day.iter().map(|d| d.lane.clone()));
     ids.sort();
     ids.dedup();
@@ -486,18 +663,239 @@ pub async fn wall2_omni_summary(window: tauri::WebviewWindow, app: tauri::AppHan
     Ok(summary)
 }
 
+/// Open a session by id: the id must be well formed and in the last summary, and the link
+/// is built here from `omniLinkHost`.
+fn open_known_session(app: &tauri::AppHandle, id: &str) -> Result<(), String> {
+    if !valid_session_id(id) {
+        return Err("Unknown session".to_string());
+    }
+    if !id_is_known(id) {
+        return Err("Unknown session".to_string());
+    }
+    let host = link_host(app)?;
+    let url = session_url(&host, id).ok_or_else(|| "Unknown session".to_string())?;
+    app.opener().open_url(url, None::<&str>).map_err(|_| "Could not open the session".to_string())
+}
+
 #[tauri::command]
 pub fn wall2_open_session(window: tauri::WebviewWindow, app: tauri::AppHandle, id: String) -> Result<(), String> {
     require_wall2(window.label())?;
-    if !valid_session_id(&id) {
-        return Err("Unknown session".to_string());
+    open_known_session(&app, &id)
+}
+
+/// Open a session (when an id is given, with the same checks as `wall2_open_session`), then
+/// bring the OmniGent desktop window forward onto the primary monitor. The forward step runs
+/// on its own thread, so this returns at once; if no OmniGent window shows up within two
+/// seconds nothing more happens. On other systems the forward step does nothing.
+#[tauri::command]
+pub fn wall2_focus_omnigent(window: tauri::WebviewWindow, app: tauri::AppHandle, id: Option<String>) -> Result<(), String> {
+    require_wall2(window.label())?;
+    if let Some(id) = id {
+        open_known_session(&app, &id)?;
     }
-    if !id_is_known(&id) {
-        return Err("Unknown session".to_string());
+    std::thread::spawn(bring_omnigent_forward);
+    Ok(())
+}
+
+// Section: bringing OmniGent forward
+
+/// Executable file names of the OmniGent desktop app, compared without regard to case.
+const OMNIGENT_EXES: &[&str] = &["omnigent.exe"];
+const FOCUS_POLL: Duration = Duration::from_millis(100);
+const FOCUS_WAIT: Duration = Duration::from_secs(2);
+
+/// True when the file name of a full image path (either separator) is an OmniGent executable.
+#[cfg_attr(not(any(windows, test)), allow(dead_code))]
+fn exe_matches(image_path: &str) -> bool {
+    let name = image_path.rsplit(['\\', '/']).next().unwrap_or("");
+    OMNIGENT_EXES.iter().any(|exe| name.eq_ignore_ascii_case(exe))
+}
+
+/// A screen rectangle, edges in pixels.
+#[cfg_attr(not(any(windows, test)), allow(dead_code))]
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Rect {
+    left: i32,
+    top: i32,
+    right: i32,
+    bottom: i32,
+}
+
+/// The window moved into the work area: same size unless larger than the work area (then cut
+/// to it, per dimension), centred.
+#[cfg_attr(not(any(windows, test)), allow(dead_code))]
+fn fit_into(work: Rect, win: Rect) -> Rect {
+    let work_w = (i64::from(work.right) - i64::from(work.left)).max(0);
+    let work_h = (i64::from(work.bottom) - i64::from(work.top)).max(0);
+    let w = (i64::from(win.right) - i64::from(win.left)).clamp(0, work_w);
+    let h = (i64::from(win.bottom) - i64::from(win.top)).clamp(0, work_h);
+    let left = i64::from(work.left) + (work_w - w) / 2;
+    let top = i64::from(work.top) + (work_h - h) / 2;
+    // Every value lies inside the work area, so it fits back into i32.
+    Rect { left: left as i32, top: top as i32, right: (left + w) as i32, bottom: (top + h) as i32 }
+}
+
+/// What matters about one window of the OmniGent process when picking which to bring forward.
+#[cfg_attr(not(any(windows, test)), allow(dead_code))]
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Candidate {
+    visible: bool,
+    /// It has an owner window (a dialog or tool window), so it is not the main window.
+    owned: bool,
+    has_title: bool,
+}
+
+/// The first visible, unowned window with a title.
+#[cfg_attr(not(any(windows, test)), allow(dead_code))]
+fn pick_window(cands: &[Candidate]) -> Option<usize> {
+    cands.iter().position(|c| c.visible && !c.owned && c.has_title)
+}
+
+/// Poll every 100 ms for up to two seconds for the OmniGent window, then bring it forward.
+#[cfg(windows)]
+fn bring_omnigent_forward() {
+    let started = Instant::now();
+    loop {
+        if focus_win::focus_once() {
+            return;
+        }
+        if started.elapsed() >= FOCUS_WAIT {
+            return;
+        }
+        std::thread::sleep(FOCUS_POLL);
     }
-    let host = link_host(&app)?;
-    let url = session_url(&host, &id).ok_or_else(|| "Unknown session".to_string())?;
-    app.opener().open_url(url, None::<&str>).map_err(|_| "Could not open the session".to_string())
+}
+
+#[cfg(not(windows))]
+fn bring_omnigent_forward() {
+    let _ = (FOCUS_POLL, FOCUS_WAIT);
+}
+
+#[cfg(windows)]
+mod focus_win {
+    use super::{exe_matches, fit_into, pick_window, Candidate, Rect};
+    use std::collections::HashMap;
+    use windows::core::PWSTR;
+    use windows::Win32::Foundation::{CloseHandle, BOOL, HWND, LPARAM, POINT, RECT, TRUE};
+    use windows::Win32::Graphics::Gdi::{
+        GetMonitorInfoW, MonitorFromPoint, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST,
+        MONITOR_DEFAULTTOPRIMARY,
+    };
+    use windows::Win32::System::Threading::{
+        OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+    use windows::Win32::UI::WindowsAndMessaging::{
+        EnumWindows, GetWindow, GetWindowRect, GetWindowTextLengthW, GetWindowThreadProcessId, IsIconic,
+        IsWindowVisible, IsZoomed, SetForegroundWindow, SetWindowPos, ShowWindow, GW_OWNER, SWP_NOACTIVATE,
+        SWP_NOZORDER, SW_MAXIMIZE, SW_RESTORE,
+    };
+
+    unsafe extern "system" fn collect(hwnd: HWND, data: LPARAM) -> BOOL {
+        let list = &mut *(data.0 as *mut Vec<HWND>);
+        list.push(hwnd);
+        TRUE
+    }
+
+    fn top_level_windows() -> Vec<HWND> {
+        let mut list: Vec<HWND> = Vec::new();
+        unsafe {
+            let _ = EnumWindows(Some(collect), LPARAM(&mut list as *mut Vec<HWND> as isize));
+        }
+        list
+    }
+
+    /// The full image path of a process, or None when it cannot be read.
+    fn image_path(pid: u32) -> Option<String> {
+        if pid == 0 {
+            return None;
+        }
+        unsafe {
+            let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
+            let mut buf = [0u16; 1024];
+            let mut len = buf.len() as u32;
+            let read = QueryFullProcessImageNameW(handle, PROCESS_NAME_WIN32, PWSTR(buf.as_mut_ptr()), &mut len);
+            let _ = CloseHandle(handle);
+            let len = (len as usize).min(buf.len());
+            (read.is_ok() && len > 0).then(|| String::from_utf16_lossy(&buf[..len]))
+        }
+    }
+
+    /// Top-level windows owned by an OmniGent process, in z order.
+    fn omnigent_windows() -> Vec<HWND> {
+        let mut by_pid: HashMap<u32, bool> = HashMap::new();
+        top_level_windows()
+            .into_iter()
+            .filter(|hwnd| {
+                let mut pid = 0u32;
+                unsafe { GetWindowThreadProcessId(*hwnd, Some(&mut pid as *mut u32)) };
+                *by_pid.entry(pid).or_insert_with(|| image_path(pid).is_some_and(|p| exe_matches(&p)))
+            })
+            .collect()
+    }
+
+    fn rect_of(r: RECT) -> Rect {
+        Rect { left: r.left, top: r.top, right: r.right, bottom: r.bottom }
+    }
+
+    /// Restore it if minimised, move it onto the primary monitor if it is elsewhere (keeping
+    /// it maximised if it was), then make it the foreground window.
+    fn bring_forward(hwnd: HWND) {
+        unsafe {
+            if IsIconic(hwnd).as_bool() {
+                let _ = ShowWindow(hwnd, SW_RESTORE);
+            }
+            let primary = MonitorFromPoint(POINT { x: 0, y: 0 }, MONITOR_DEFAULTTOPRIMARY);
+            let current = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+            if current != primary {
+                let mut info = MONITORINFO { cbSize: std::mem::size_of::<MONITORINFO>() as u32, ..Default::default() };
+                if GetMonitorInfoW(primary, &mut info).as_bool() {
+                    let zoomed = IsZoomed(hwnd).as_bool();
+                    if zoomed {
+                        let _ = ShowWindow(hwnd, SW_RESTORE);
+                    }
+                    let mut r = RECT::default();
+                    if GetWindowRect(hwnd, &mut r).is_ok() {
+                        let to = fit_into(rect_of(info.rcWork), rect_of(r));
+                        let _ = SetWindowPos(
+                            hwnd,
+                            HWND::default(),
+                            to.left,
+                            to.top,
+                            to.right - to.left,
+                            to.bottom - to.top,
+                            SWP_NOZORDER | SWP_NOACTIVATE,
+                        );
+                    }
+                    if zoomed {
+                        let _ = ShowWindow(hwnd, SW_MAXIMIZE);
+                    }
+                }
+            }
+            let _ = SetForegroundWindow(hwnd);
+        }
+    }
+
+    /// One look for the OmniGent window. True when one was found and brought forward.
+    pub fn focus_once() -> bool {
+        let hwnds = omnigent_windows();
+        let cands: Vec<Candidate> = hwnds
+            .iter()
+            .map(|hwnd| unsafe {
+                Candidate {
+                    visible: IsWindowVisible(*hwnd).as_bool(),
+                    owned: GetWindow(*hwnd, GW_OWNER).is_ok(),
+                    has_title: GetWindowTextLengthW(*hwnd) > 0,
+                }
+            })
+            .collect();
+        match pick_window(&cands) {
+            Some(i) => {
+                bring_forward(hwnds[i]);
+                true
+            }
+            None => false,
+        }
+    }
 }
 
 // Section: machines
@@ -698,6 +1096,11 @@ mod tests {
         })
     }
 
+    /// Slots as an older helper sends them: no extra counts.
+    fn slots(used: u64, limit: u64) -> Slots {
+        Slots { used, limit, sessions: None, working: None, helpers: None }
+    }
+
     #[test]
     fn session_ids() {
         assert!(valid_session_id("a1b2c3d4"));
@@ -762,7 +1165,7 @@ mod tests {
     #[test]
     fn shapes_a_full_summary() {
         let s = shape_summary(&full()).expect("summary");
-        assert_eq!(s.slots, Slots { used: 3, limit: 3 });
+        assert_eq!(s.slots, slots(3, 3));
         assert_eq!(s.lanes.len(), 2);
         assert_eq!(s.lanes[0].title, "Voice: iPhone mic fix");
         assert_eq!(s.lanes[0].elapsed_s, 2520);
@@ -772,7 +1175,7 @@ mod tests {
         assert_eq!(s.parked, 4);
         assert_eq!(s.your_move.total, 1);
         assert_eq!(s.your_move.first.as_ref().unwrap().kind, "gate");
-        assert_eq!(s.usage.as_ref().unwrap().claude_week_pct, 62.0);
+        assert_eq!(s.usage.as_ref().unwrap().claude_week_pct, Some(62.0));
         assert_eq!(s.day.len(), 1);
         assert_eq!(s.day[0].end, None);
         let sys = s.system.unwrap();
@@ -791,7 +1194,7 @@ mod tests {
         let mut body = full();
         body["usage"]["claude5hPct"] = Value::Null;
         let u = shape_summary(&body).unwrap().usage.unwrap();
-        assert_eq!((u.claude_week_pct, u.claude5h_pct), (62.0, None));
+        assert_eq!((u.claude_week_pct, u.claude5h_pct), (Some(62.0), None));
         let v = serde_json::to_value(shape_summary(&body).unwrap()).unwrap();
         assert!(v["usage"]["claude5hPct"].is_null());
         body["usage"]["claudeWeekPct"] = Value::Null;
@@ -929,13 +1332,13 @@ mod tests {
         body["slots"] = json!({ "used": 5, "limit": 4 });
         body["lanes"][0]["elapsedS"] = json!(9_000_000_000u64);
         let s = shape_summary(&body).unwrap();
-        assert_eq!(s.slots, Slots { used: 5, limit: 4 });
+        assert_eq!(s.slots, slots(5, 4));
         body["slots"] = json!({ "used": 5000, "limit": 5000 });
-        assert_eq!(shape_summary(&body).unwrap().slots, Slots { used: 99, limit: 99 });
+        assert_eq!(shape_summary(&body).unwrap().slots, slots(99, 99));
         assert_eq!(s.lanes[0].elapsed_s, 7 * 24 * 3600);
         body["slots"] = json!({ "used": 1.5, "limit": -2 });
         let s = shape_summary(&body).unwrap();
-        assert_eq!(s.slots, Slots { used: 2, limit: 3 });
+        assert_eq!(s.slots, slots(2, 3));
     }
 
     #[test]
@@ -982,7 +1385,7 @@ mod tests {
         let s = shape_summary(&body).unwrap();
         assert_eq!(s.slots.limit, 3);
         assert!(s.usage.is_none() && s.system.is_none() && s.day.is_empty());
-        assert_eq!(s.your_move, YourMove { total: 0, first: None });
+        assert_eq!(s.your_move, YourMove { total: 0, first: None, ids: Vec::new() });
     }
 
     #[test]
@@ -1269,5 +1672,389 @@ mod tests {
         // Well formed, but never in a summary.
         assert!(valid_session_id("deadbeef-0000-0000"));
         assert!(!id_is_known("deadbeef-0000-0000"));
+    }
+
+    // Section: tests for the 1.1.0 fields
+
+    fn lane_json(id: &str) -> Value {
+        json!({ "id": id, "title": "Lane", "stage": "build", "state": "working", "line": "", "elapsedS": 10,
+                "waiting": false, "pr": null })
+    }
+
+    fn id(n: usize) -> String {
+        format!("a1b2c3d4-{n:04}")
+    }
+
+    #[test]
+    fn an_old_answer_has_no_new_fields() {
+        let s = shape_summary(&full()).unwrap();
+        assert_eq!(s.sessions_list, None);
+        assert!(s.sessions.is_empty());
+        assert!(s.your_move.ids.is_empty());
+        assert!(s.usage.as_ref().unwrap().accounts.is_empty());
+        assert_eq!((s.slots.sessions, s.slots.working, s.slots.helpers), (None, None, None));
+        let lane = &s.lanes[0];
+        assert_eq!((lane.live.as_deref(), lane.idle_s, lane.kids, lane.waiting_since_s), (None, None, None, None));
+        assert_eq!((lane.next.as_deref(), lane.harness.as_deref(), lane.failed), (None, None, false));
+        let v = serde_json::to_value(&s).unwrap();
+        assert!(v["sessionsList"].is_null());
+        assert_eq!(v["sessions"], json!({}));
+        assert_eq!(v["yourMove"]["ids"], json!([]));
+        assert_eq!(v["usage"]["accounts"], json!([]));
+        for key in ["sessions", "working", "helpers"] {
+            assert!(v["slots"].get(key).unwrap().is_null(), "slots.{key}");
+        }
+        for key in ["live", "idleS", "kids", "waitingSinceS", "next", "harness"] {
+            assert!(v["lanes"][0].get(key).unwrap().is_null(), "lane {key}");
+        }
+        assert_eq!(v["lanes"][0]["failed"], json!(false));
+    }
+
+    #[test]
+    fn slot_extras_are_whole_numbers_capped_at_999() {
+        let mut body = full();
+        body["slots"] = json!({ "used": 8, "limit": 4, "sessions": 5, "working": 2, "helpers": 7 });
+        let s = shape_summary(&body).unwrap();
+        assert_eq!(s.slots, Slots { used: 8, limit: 4, sessions: Some(5), working: Some(2), helpers: Some(7) });
+        body["slots"] = json!({ "used": 8, "limit": 4, "sessions": 5000, "working": -1, "helpers": "7" });
+        let s = shape_summary(&body).unwrap();
+        assert_eq!((s.slots.sessions, s.slots.working, s.slots.helpers), (Some(999), None, None));
+        body["slots"]["working"] = json!(1.5);
+        assert_eq!(shape_summary(&body).unwrap().slots.working, None);
+        let v = serde_json::to_value(shape_summary(&body).unwrap()).unwrap();
+        assert_eq!(v["slots"]["sessions"], json!(999));
+    }
+
+    #[test]
+    fn lane_extras_are_parsed() {
+        let mut body = full();
+        body["lanes"][0]["live"] = json!("working");
+        body["lanes"][0]["idleS"] = json!(120);
+        body["lanes"][0]["kids"] = json!({ "total": 5, "working": 3 });
+        body["lanes"][0]["waitingSinceS"] = json!(90);
+        body["lanes"][0]["next"] = json!("  Merge the fix\u{7}  ");
+        body["lanes"][0]["harness"] = json!("codex");
+        body["lanes"][0]["failed"] = json!(true);
+        let s = shape_summary(&body).unwrap();
+        let lane = &s.lanes[0];
+        assert_eq!(lane.live.as_deref(), Some("working"));
+        assert_eq!(lane.idle_s, Some(120));
+        assert_eq!(lane.kids, Some(Kids { total: 5, working: 3 }));
+        assert_eq!(lane.waiting_since_s, Some(90));
+        assert_eq!(lane.next.as_deref(), Some("Merge the fix"));
+        assert_eq!(lane.harness.as_deref(), Some("codex"));
+        assert!(lane.failed);
+        let v = serde_json::to_value(&s).unwrap();
+        let l = &v["lanes"][0];
+        assert_eq!(l["live"], json!("working"));
+        assert_eq!(l["idleS"], json!(120));
+        assert_eq!(l["kids"], json!({ "total": 5, "working": 3 }));
+        assert_eq!(l["waitingSinceS"], json!(90));
+        assert_eq!(l["next"], json!("Merge the fix"));
+        assert_eq!(l["harness"], json!("codex"));
+        assert_eq!(l["failed"], json!(true));
+    }
+
+    #[test]
+    fn lane_extras_junk_is_dropped() {
+        let mut body = full();
+        let lane = &mut body["lanes"][0];
+        lane["live"] = json!("running");
+        lane["idleS"] = json!(-4);
+        lane["kids"] = json!({ "total": 2 });
+        lane["waitingSinceS"] = json!("90");
+        lane["next"] = json!("   ");
+        lane["harness"] = json!(7);
+        lane["failed"] = json!("true");
+        let s = shape_summary(&body).unwrap();
+        let lane = &s.lanes[0];
+        assert_eq!((lane.live.as_deref(), lane.idle_s, lane.kids, lane.waiting_since_s), (None, None, None, None));
+        assert_eq!((lane.next.as_deref(), lane.harness.as_deref(), lane.failed), (None, None, false));
+        // The lane itself survives every junk extra.
+        assert_eq!(s.lanes.len(), 2);
+    }
+
+    #[test]
+    fn lane_extras_caps_and_clamps() {
+        let mut body = full();
+        body["lanes"][0]["idleS"] = json!(9_000_000_000u64);
+        body["lanes"][0]["waitingSinceS"] = json!(9_000_000_000u64);
+        body["lanes"][0]["kids"] = json!({ "total": 3, "working": 8 });
+        body["lanes"][0]["next"] = json!("n".repeat(200));
+        body["lanes"][1]["kids"] = json!({ "total": 5000, "working": 5000 });
+        let s = shape_summary(&body).unwrap();
+        assert_eq!(s.lanes[0].idle_s, Some(MAX_ELAPSED_S));
+        assert_eq!(s.lanes[0].waiting_since_s, Some(MAX_ELAPSED_S));
+        assert_eq!(s.lanes[0].kids, Some(Kids { total: 3, working: 3 }));
+        assert_eq!(s.lanes[0].next.as_ref().unwrap().chars().count(), 60);
+        assert_eq!(s.lanes[1].kids, Some(Kids { total: 999, working: 999 }));
+        body["lanes"][0]["kids"] = json!({ "total": 3.5, "working": 1 });
+        assert_eq!(shape_summary(&body).unwrap().lanes[0].kids, None);
+        body["lanes"][0]["kids"] = json!([3, 1]);
+        assert_eq!(shape_summary(&body).unwrap().lanes[0].kids, None);
+    }
+
+    #[test]
+    fn harness_names_map_to_three_values() {
+        for (raw, want) in [
+            (json!("claude"), Some("claude")),
+            (json!("codex"), Some("codex")),
+            (json!("gemini"), Some("other")),
+            (json!("Claude"), Some("other")),
+            (json!(""), None),
+            (json!(null), None),
+            (json!(true), None),
+            (json!(["claude"]), None),
+        ] {
+            let mut body = full();
+            body["lanes"][0]["harness"] = raw.clone();
+            assert_eq!(shape_summary(&body).unwrap().lanes[0].harness.as_deref(), want, "harness {raw}");
+        }
+    }
+
+    #[test]
+    fn failed_is_true_only_for_true() {
+        for (raw, want) in [(json!(true), true), (json!(false), false), (json!(1), false), (json!("true"), false), (json!(null), false)] {
+            let mut body = full();
+            body["lanes"][0]["failed"] = raw.clone();
+            assert_eq!(shape_summary(&body).unwrap().lanes[0].failed, want, "failed {raw}");
+        }
+    }
+
+    #[test]
+    fn sessions_list_is_checked_deduplicated_and_capped() {
+        let mut body = full();
+        let mut items: Vec<Value> = vec![lane_json(&id(1)), lane_json("not-an-id"), lane_json(&id(1))];
+        items[2]["title"] = json!("Second copy");
+        items[0]["kids"] = json!({ "total": 2, "working": 1 });
+        items.push(json!("junk"));
+        for n in 2..30 {
+            items.push(lane_json(&id(n)));
+        }
+        body["sessionsList"] = json!(items);
+        let s = shape_summary(&body).unwrap();
+        let list = s.sessions_list.as_ref().unwrap();
+        assert_eq!(list.len(), 12);
+        assert_eq!(list[0].id, id(1));
+        assert_eq!(list[0].title, "Lane", "the first copy of an id wins");
+        assert_eq!(list[0].kids, Some(Kids { total: 2, working: 1 }));
+        assert_eq!(list.iter().filter(|l| l.id == id(1)).count(), 1);
+        assert_eq!(list[11].id, id(12));
+        let v = serde_json::to_value(&s).unwrap();
+        assert_eq!(v["sessionsList"].as_array().unwrap().len(), 12);
+        assert!(v["sessionsList"][0].get("elapsedS").is_some());
+        // Lanes stay capped at three on their own.
+        assert_eq!(s.lanes.len(), 2);
+    }
+
+    #[test]
+    fn sessions_list_missing_or_not_a_list_is_none_and_empty_is_some() {
+        let mut body = full();
+        body["sessionsList"] = json!({ "a": 1 });
+        assert_eq!(shape_summary(&body).unwrap().sessions_list, None);
+        body["sessionsList"] = json!(null);
+        assert_eq!(shape_summary(&body).unwrap().sessions_list, None);
+        body["sessionsList"] = json!([]);
+        assert_eq!(shape_summary(&body).unwrap().sessions_list, Some(Vec::new()));
+        body["sessionsList"] = json!([lane_json("BAD")]);
+        assert_eq!(shape_summary(&body).unwrap().sessions_list, Some(Vec::new()));
+    }
+
+    #[test]
+    fn session_names_are_checked_and_capped_at_forty() {
+        let mut body = full();
+        let mut names = serde_json::Map::new();
+        names.insert("not-an-id".into(), json!({ "title": "Bad id" }));
+        names.insert(id(900), json!({ "stage": "build" }));
+        names.insert(id(901), json!("just text"));
+        names.insert(id(904), json!({ "title": "   " }));
+        names.insert(id(902), json!({ "title": "Odd values", "stage": "ship", "state": "asleep" }));
+        names.insert(id(903), json!({ "title": format!("{}\u{202E}", "t".repeat(200)), "stage": "pr", "state": "review" }));
+        for n in 0..60 {
+            names.insert(id(n), json!({ "title": format!("Session {n}"), "stage": "build", "state": "working" }));
+        }
+        body["sessions"] = Value::Object(names);
+        let s = shape_summary(&body).unwrap();
+        assert_eq!(s.sessions.len(), 40);
+        assert!(!s.sessions.contains_key("not-an-id"));
+        assert!(!s.sessions.contains_key(&id(900)), "no title, no entry");
+        assert!(!s.sessions.contains_key(&id(901)));
+        assert!(!s.sessions.contains_key(&id(904)), "an empty title is no title");
+        let odd = &s.sessions[&id(902)];
+        assert_eq!((odd.title.as_str(), odd.stage.as_deref(), odd.state.as_deref()), ("Odd values", None, None));
+        let long = &s.sessions[&id(903)];
+        assert_eq!(long.title.chars().count(), 80);
+        assert_eq!((long.stage.as_deref(), long.state.as_deref()), (Some("pr"), Some("review")));
+        // The first 40 valid entries in the helper's order: 902, 903 and sessions 0 to 37.
+        assert!(s.sessions.contains_key(&id(37)));
+        assert!(!s.sessions.contains_key(&id(38)));
+        let v = serde_json::to_value(&s).unwrap();
+        assert_eq!(v["sessions"][id(0)], json!({ "title": "Session 0", "stage": "build", "state": "working" }));
+        body["sessions"] = json!([1, 2]);
+        assert!(shape_summary(&body).unwrap().sessions.is_empty());
+    }
+
+    #[test]
+    fn your_move_ids_are_checked_deduplicated_and_capped() {
+        let mut body = full();
+        body["yourMove"]["ids"] = json!([id(1), "nope", 5, id(1), id(2), null, id(3), id(4), id(5), id(6)]);
+        let s = shape_summary(&body).unwrap();
+        assert_eq!(s.your_move.ids, vec![id(1), id(2), id(3), id(4), id(5)]);
+        let v = serde_json::to_value(&s).unwrap();
+        assert_eq!(v["yourMove"]["ids"], json!([id(1), id(2), id(3), id(4), id(5)]));
+        body["yourMove"]["ids"] = json!("a1b2c3d4-0001");
+        assert!(shape_summary(&body).unwrap().your_move.ids.is_empty());
+    }
+
+    fn account(provider: Value, label: Value) -> Value {
+        json!({ "provider": provider, "label": label, "weekPct": 44, "fiveHourPct": null, "weekResetsAt": "2026-11-18T02:00:00Z" })
+    }
+
+    #[test]
+    fn usage_accounts_are_parsed() {
+        let mut body = full();
+        body["usage"]["accounts"] = json!([
+            account(json!("claude"), json!("Claude 1")),
+            { "provider": "codex", "label": "Codex", "weekPct": 250, "fiveHourPct": 12.5, "weekResetsAt": "soon" },
+            account(json!("gemini"), json!("Other")),
+        ]);
+        let u = shape_summary(&body).unwrap().usage.unwrap();
+        assert_eq!(u.accounts.len(), 3);
+        assert_eq!(
+            u.accounts[0],
+            UsageAccount {
+                provider: "claude".into(),
+                label: "Claude 1".into(),
+                week_pct: Some(44.0),
+                five_hour_pct: None,
+                week_resets_at: Some("2026-11-18T02:00:00Z".into()),
+            }
+        );
+        assert_eq!((u.accounts[1].week_pct, u.accounts[1].five_hour_pct, u.accounts[1].week_resets_at.as_deref()), (Some(100.0), Some(12.5), None));
+        assert_eq!(u.accounts[2].provider, "other");
+        let v = serde_json::to_value(shape_summary(&body).unwrap()).unwrap();
+        let a = &v["usage"]["accounts"][0];
+        for key in ["provider", "label", "weekPct", "fiveHourPct", "weekResetsAt"] {
+            assert!(a.get(key).is_some(), "account {key}");
+        }
+    }
+
+    #[test]
+    fn usage_accounts_junk_is_dropped_and_capped_at_six() {
+        let mut body = full();
+        let mut items = vec![
+            account(json!(5), json!("No provider")),
+            account(json!("claude"), json!("")),
+            account(json!("claude"), json!("   ")),
+            account(json!("claude"), json!(7)),
+            json!("junk"),
+        ];
+        for n in 0..10 {
+            items.push(account(json!("claude"), json!(format!("Claude {n}"))));
+        }
+        body["usage"]["accounts"] = json!(items);
+        let u = shape_summary(&body).unwrap().usage.unwrap();
+        assert_eq!(u.accounts.len(), 6);
+        assert_eq!(u.accounts[0].label, "Claude 0");
+        body["usage"]["accounts"] = json!([account(json!("claude"), json!("x".repeat(100)))]);
+        let u = shape_summary(&body).unwrap().usage.unwrap();
+        assert_eq!(u.accounts[0].label.chars().count(), 24);
+        body["usage"]["accounts"] = json!({ "provider": "claude" });
+        assert!(shape_summary(&body).unwrap().usage.unwrap().accounts.is_empty());
+    }
+
+    #[test]
+    fn a_null_week_with_accounts_keeps_usage() {
+        let mut body = full();
+        body["usage"]["claudeWeekPct"] = Value::Null;
+        body["usage"]["accounts"] = json!([account(json!("codex"), json!("Codex"))]);
+        let u = shape_summary(&body).unwrap().usage.unwrap();
+        assert_eq!(u.claude_week_pct, None);
+        assert_eq!(u.accounts.len(), 1);
+        let v = serde_json::to_value(shape_summary(&body).unwrap()).unwrap();
+        assert!(v["usage"]["claudeWeekPct"].is_null());
+        // No valid week and no surviving account: no usage block at all.
+        body["usage"]["accounts"] = json!([account(json!(1), json!("Codex"))]);
+        assert!(shape_summary(&body).unwrap().usage.is_none());
+    }
+
+    #[test]
+    fn known_ids_include_every_new_source() {
+        let mut body = full();
+        body["sessionsList"] = json!([lane_json(&id(11))]);
+        body["yourMove"]["ids"] = json!([id(12)]);
+        body["sessions"] = json!({});
+        body["sessions"][id(13)] = json!({ "title": "Named" });
+        body["day"] = json!([{ "lane": id(14), "start": "2026-11-12T17:00:00Z", "end": null, "kind": "run" }]);
+        let ids = ids_of(&shape_summary(&body).unwrap());
+        for n in [1, 2, 11, 12, 13, 14] {
+            assert!(ids.contains(&id(n)), "missing {}", id(n));
+        }
+        assert_eq!(ids.len(), 6);
+    }
+
+    #[test]
+    fn omnigent_executable_names() {
+        assert!(exe_matches(r"C:\Program Files\OmniGent\omnigent.exe"));
+        assert!(exe_matches(r"C:\Users\someone\AppData\Local\Programs\OmniGent\OmniGent.EXE"));
+        assert!(exe_matches("C:/Apps/OmniGent/omnigent.exe"));
+        assert!(exe_matches("omnigent.exe"));
+        assert!(!exe_matches(r"C:\Program Files\OmniGent\omnigent.exe.bak"));
+        assert!(!exe_matches(r"C:\omnigent.exe\other.exe"));
+        assert!(!exe_matches(r"C:\Apps\not-omnigent.exe"));
+        assert!(!exe_matches(r"C:\Apps\omnigent"));
+        assert!(!exe_matches(r"C:\Apps\"));
+        assert!(!exe_matches(""));
+    }
+
+    fn rect(left: i32, top: i32, right: i32, bottom: i32) -> Rect {
+        Rect { left, top, right, bottom }
+    }
+
+    #[test]
+    fn a_smaller_window_is_centred_in_the_work_area() {
+        let work = rect(0, 0, 1920, 1040);
+        assert_eq!(fit_into(work, rect(3000, 200, 3800, 800)), rect(560, 220, 1360, 820));
+    }
+
+    #[test]
+    fn a_larger_window_is_shrunk_to_the_work_area() {
+        let work = rect(0, 0, 1920, 1040);
+        assert_eq!(fit_into(work, rect(-100, -50, 5000, 2000)), work);
+        // Only the dimension that is too large shrinks.
+        assert_eq!(fit_into(work, rect(2000, 0, 2800, 1400)), rect(560, 0, 1360, 1040));
+    }
+
+    #[test]
+    fn fit_into_handles_negative_coordinates() {
+        // A primary work area left of and above the origin of the virtual screen.
+        let work = rect(-2560, -200, 0, 1200);
+        assert_eq!(fit_into(work, rect(100, 100, 900, 700)), rect(-1680, 200, -880, 800));
+        // A window on a monitor to the left of the primary one.
+        let primary = rect(0, 0, 1920, 1040);
+        assert_eq!(fit_into(primary, rect(-1500, 100, -700, 700)), rect(560, 220, 1360, 820));
+        // A backwards window rectangle is treated as empty, never as negative size.
+        assert_eq!(fit_into(primary, rect(10, 10, 0, 0)), rect(960, 520, 960, 520));
+    }
+
+    #[test]
+    fn the_first_visible_unowned_titled_window_is_picked() {
+        let c = |visible, owned, has_title| Candidate { visible, owned, has_title };
+        assert_eq!(pick_window(&[]), None);
+        assert_eq!(pick_window(&[c(false, false, true), c(true, true, true), c(true, false, false)]), None);
+        assert_eq!(pick_window(&[c(false, false, true), c(true, false, true), c(true, false, true)]), Some(1));
+        assert_eq!(pick_window(&[c(true, false, true)]), Some(0));
+    }
+
+    #[test]
+    fn the_focus_command_is_gated_to_wall2() {
+        assert_eq!(require_wall2("main"), Err("forbidden".to_string()));
+        // The gate is the first thing the command does, before any id check or window search.
+        let src = include_str!("wall2_omni.rs");
+        let at = src.find("pub fn wall2_focus_omnigent(").expect("command");
+        let body = &src[at..];
+        let open = body.find('{').expect("body");
+        let first = body[open + 1..].trim_start();
+        assert!(first.starts_with("require_wall2(window.label())?;"), "first statement: {}", &first[..first.len().min(60)]);
     }
 }
