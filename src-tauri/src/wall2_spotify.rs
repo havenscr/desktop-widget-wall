@@ -121,7 +121,7 @@ fn http_reply(result: Result<ureq::Response, ureq::Error>) -> Result<HttpReply, 
     let response = match result { Ok(r) | Err(ureq::Error::Status(_, r)) => r, Err(_) => return Err(()) };
     let status = response.status();
     let retry_after = response.header("Retry-After").and_then(|v| v.parse::<u64>().ok());
-    let bytes = body(response).map_err(|_| ())?;
+    let bytes = if (200..300).contains(&status) || status == 400 { body(response).map_err(|_| ())? } else { Vec::new() };
     Ok(HttpReply { status, retry_after, body: bytes })
 }
 
@@ -424,6 +424,7 @@ mod tests {
     use super::*;
     use std::collections::VecDeque;
     use std::sync::{Arc, Condvar};
+    static TEST_LOCK: Mutex<()> = Mutex::new(());
     const ID: &str = "0123456789ABCDEFGHIJKL";
     const DEVICE: &str = "0123456789abcdef0123456789abcdef01234567";
     const COVER: &str = "https://i.scdn.co/image/cover";
@@ -517,6 +518,7 @@ mod tests {
 
     #[test]
     fn seam_pins_refresh_throttle_retry_write_and_cancel_behaviour() {
+        let _test_guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         reset_state();
         let creds=FakeCreds::new(Some("old")); let refused=FakeHttp::new(vec![hr(400,r#"{"error":"invalid_grant"}"#)],vec![]);
         assert_eq!(access_with(&cfg(),true,&refused,&creds),Err(SIGN_AGAIN.into())); assert_eq!(creds.value(),None); assert!(token().lock().unwrap().is_none());
@@ -545,10 +547,19 @@ mod tests {
 
         reset_state(); assert!(begin_sign_in().is_ok()); assert_eq!(begin_sign_in(),Err(BUSY.into())); CANCEL_SIGN_IN.store(true,Ordering::SeqCst); let creds=FakeCreds::new(None); assert_eq!(save_sign_in(&creds,"new","access".into(),3600),Err("cancelled".into())); assert_eq!(creds.value(),None); SIGNING_IN.store(false,Ordering::SeqCst);
 
-        let creds=FakeCreds::new(Some("newer")); creds.delete_if_equal("old"); assert_eq!(creds.value().as_deref(),Some("newer"));
+        reset_state(); let creds=Arc::new(FakeCreds::new(Some("old"))); let replaced=ReplacingRefusedHttp(creds.clone());
+        assert_eq!(access_with(&cfg(),true,&replaced,&*creds),Err(SIGN_AGAIN.into())); assert_eq!(creds.value().as_deref(),Some("newer"));
 
         reset_state(); let creds=FakeCreds::new(Some("old")); *token().lock().unwrap()=Some(Token{access:"ok".into(),expires:Instant::now()+Duration::from_secs(3600)}); let no_devices=FakeHttp::new(vec![],vec![hr(200,r#"{"devices":[]}"#)]); assert_eq!(shuffle_with(&cfg(),true,&no_devices,&creds,None),Err(NO_DEVICE.into())); assert_eq!(no_devices.counts().1,1);
         reset_state(); let creds=FakeCreds::new(Some("old")); let other4xx=FakeHttp::new(vec![hr(403,r#"{"error":"forbidden"}"#)],vec![]); assert_eq!(access_with(&cfg(),true,&other4xx,&creds),Err("down".into())); assert_eq!(creds.value().as_deref(),Some("old"));
+        reset_state(); let creds=FakeCreds::new(Some("old")); let refused401=FakeHttp::new(vec![hr(401,"")],vec![]); assert_eq!(access_with(&cfg(),true,&refused401,&creds),Err(SIGN_AGAIN.into())); assert_eq!(creds.value(),None);
+        reset_state(); let creds=FakeCreds::new(Some("old")); let other400=FakeHttp::new(vec![hr(400,r#"{"error":"invalid_client"}"#)],vec![]); assert_eq!(access_with(&cfg(),true,&other400,&creds),Err("down".into())); assert_eq!(creds.value().as_deref(),Some("old"));
+    }
+
+    struct ReplacingRefusedHttp(Arc<FakeCreds>);
+    impl Http for ReplacingRefusedHttp {
+        fn token(&self,_:&[(&str,&str)])->Result<HttpReply,()>{ assert!(self.0.save("newer")); hr(400,r#"{"error":"invalid_grant"}"#) }
+        fn api(&self,_:&str,_:&str,_:&str,_:Option<&Value>)->Result<HttpReply,()>{ Err(()) }
     }
 
     struct BlockingHttp { entered: (Mutex<bool>,Condvar), released: (Mutex<bool>,Condvar), calls: std::sync::atomic::AtomicUsize }
@@ -557,9 +568,44 @@ mod tests {
 
     #[test]
     fn concurrent_play_and_transfer_writes_send_once() {
+        let _test_guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         for path in ["/me/player/play?device_id=x","/me/player"] {
             reset_state(); *token().lock().unwrap()=Some(Token{access:"ok".into(),expires:Instant::now()+Duration::from_secs(3600)}); let http=Arc::new(BlockingHttp::new()); let creds=Arc::new(FakeCreds::new(Some("old")));
             std::thread::scope(|scope| { let h=http.clone(); let c=creds.clone(); let first=scope.spawn(move||put_with(&cfg(),path,None,&*h,&*c)); http.wait_entered(); assert_eq!(put_with(&cfg(),path,None,&*http,&*creds),Err(BUSY.into())); assert_eq!(http.calls.load(Ordering::SeqCst),1); http.release(); assert_eq!(first.join().unwrap(),Ok(())); });
         }
+    }
+
+    struct BlockingRefreshHttp { entered: (Mutex<bool>,Condvar), released: (Mutex<bool>,Condvar) }
+    impl BlockingRefreshHttp { fn new()->Self{Self{entered:(Mutex::new(false),Condvar::new()),released:(Mutex::new(false),Condvar::new())}} fn wait_entered(&self){let(v,cv)=(&self.entered.0,&self.entered.1);let mut g=v.lock().unwrap();while !*g{g=cv.wait(g).unwrap();}} fn release(&self){*self.released.0.lock().unwrap()=true;self.released.1.notify_all();} }
+    impl Http for BlockingRefreshHttp {
+        fn token(&self,_:&[(&str,&str)])->Result<HttpReply,()>{*self.entered.0.lock().unwrap()=true;self.entered.1.notify_all();let mut g=self.released.0.lock().unwrap();while !*g{g=self.released.1.wait(g).unwrap();}token_ok(Some("rotated"))}
+        fn api(&self,_:&str,_:&str,_:&str,_:Option<&Value>)->Result<HttpReply,()>{Err(())}
+    }
+
+    #[test]
+    fn sign_out_waits_for_refresh_then_clears_store_and_cache() {
+        let _test_guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        reset_state();
+        let http=Arc::new(BlockingRefreshHttp::new()); let creds=Arc::new(FakeCreds::new(Some("old")));
+        std::thread::scope(|scope| {
+            let h=http.clone(); let c=creds.clone(); let refreshing=scope.spawn(move||access_with(&cfg(),true,&*h,&*c));
+            http.wait_entered();
+            let (done_tx,done_rx)=std::sync::mpsc::channel(); let c=creds.clone(); let signing_out=scope.spawn(move||{sign_out_with(&*c);done_tx.send(()).unwrap();});
+            assert_eq!(done_rx.recv_timeout(Duration::from_millis(50)),Err(std::sync::mpsc::RecvTimeoutError::Timeout)); http.release(); assert_eq!(refreshing.join().unwrap(),Ok("access".into())); signing_out.join().unwrap();
+        });
+        assert_eq!(creds.value(),None); assert!(token().lock().unwrap().is_none());
+    }
+
+    #[test]
+    fn cancelling_sign_in_ends_callback_wait_promptly() {
+        let _test_guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        reset_state();
+        let server=tiny_http::Server::http("127.0.0.1:0").unwrap(); let started=Instant::now();
+        std::thread::scope(|scope| {
+            let waiting=scope.spawn(||crate::wall2_oauth::wait_for_callback_cancelled(&server,CALLBACK,"state",Duration::from_secs(5),||CANCEL_SIGN_IN.load(Ordering::SeqCst)));
+            std::thread::sleep(Duration::from_millis(25)); CANCEL_SIGN_IN.store(true,Ordering::SeqCst);
+            assert_eq!(waiting.join().unwrap(),Err("cancelled"));
+        });
+        assert!(started.elapsed()<Duration::from_secs(1));
     }
 }
