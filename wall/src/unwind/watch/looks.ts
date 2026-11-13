@@ -1,12 +1,14 @@
 import type { WatchKind } from './links';
 
 /**
- * How video sits in the scene. Part 1 draws two looks; part 2 adds "whole sky" and "the sun"
- * as two more entries here (and their drawing in `VideoStage.tsx`), and everything else (the
- * settings sheet, the Look button, storage) picks them up from this list.
+ * How video sits in the scene, in the approved page's order (A to D). The drawing of each is in
+ * `Watch.tsx` and the Watch rules of `unwind.css`; the settings sheet, the Look button's cycle
+ * and the stored-value check all read this list.
  */
 export const LOOKS = [
   { id: 'feather', name: 'Feathered', hint: 'The video melts into the night sky, its edges soft.' },
+  { id: 'sky', name: 'Whole sky', hint: 'The video fills the sky behind everything; a normal video is cropped top and bottom.' },
+  { id: 'sun', name: 'The sun', hint: 'The video plays inside the sun on the horizon; only its middle shows.' },
   { id: 'drivein', name: 'Drive-in', hint: 'A drive-in screen on the horizon; nothing is cropped.' },
 ] as const;
 export type LookId = (typeof LOOKS)[number]['id'];
@@ -28,8 +30,8 @@ export interface LookSettings {
   twitch: LookId;
 }
 
-/** The approved drawing: the drive-in for everything; per kind, videos melt and Twitch sits on the screen. */
-export const DEFAULT_LOOKS: LookSettings = { mode: 'one', all: 'drivein', video: 'feather', live: 'feather', twitch: 'drivein' };
+/** The approved drawing: the drive-in for everything; per kind, videos melt, live streams fill the sky and Twitch sits on the screen. */
+export const DEFAULT_LOOKS: LookSettings = { mode: 'one', all: 'drivein', video: 'feather', live: 'sky', twitch: 'drivein' };
 
 export const LOOKS_KEY = 'wall2-watch-look';
 
