@@ -592,8 +592,12 @@
   display: flex;
   min-width: 0;
 }
+/* Placed on its own (not in flow under the tabs), so the Listen and Watch switch can move
+   without moving anything of Watch: the left block keeps the spot Listen's player starts at. */
 .w-now {
-  position: relative;
+  position: absolute;
+  left: 500px;
+  top: 106px;
   z-index: 1;
   display: flex;
   flex-direction: column;

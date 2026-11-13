@@ -8,6 +8,7 @@ import { stopLine, type StopReason } from './stops';
 export type UnwindTab = 'listen' | 'watch';
 
 interface WatchState {
+  /** Which view Unwind shows. The one value any switch (today the tabs) sets; nothing in Watch reads where that switch is. */
   tab: UnwindTab;
   saved: SavedItem[];
   looks: LookSettings;
