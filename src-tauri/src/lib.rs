@@ -67,6 +67,7 @@ mod wall2_power;
 mod wall2_signals;
 mod wall2_sonos;
 mod wall2_watch;
+mod wall2_tools;
 use audio_analysis::{AudioAnalyzer, AudioLevels};
 
 // ================================================================
@@ -3803,6 +3804,7 @@ pub fn run() {
             wall2_keys::wall2_keys_send,
             wall2_keys::wall2_keys_library,
             wall2_keys::wall2_keys_send_library,
+            wall2_tools::wall2_open_keys_file,
             list_audio_devices,
             start_audio_capture,
             stop_audio_capture,
