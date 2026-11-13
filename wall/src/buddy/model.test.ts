@@ -137,11 +137,13 @@ const UNWIND_MEASURED: Rect[] = [
 
 /**
  * Unwind on its Watch tab, measured at 2560 by 720: the video (feathered or the drive-in screen with
- * its legs) and the "Open in browser" chip under it.
+ * its legs) and the chips under it (the look chip and "Open in browser", widest across the looks:
+ * from x 1283 on the whole-sky look). The whole-sky and sun looks paint the sky behind him; that
+ * is a backdrop, not a panel.
  */
 const WATCH_MEASURED: Rect[] = [
   { left: 1150, right: 2000, top: 20, bottom: 505 },
-  { left: 1400, right: 1712, top: 518, bottom: 548 },
+  { left: 1283, right: 1826, top: 517, bottom: 553 },
 ];
 
 /** The panel rectangles on a place, in stage pixels: the frame's layout constants, plus Unwind's transport row. */
