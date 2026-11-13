@@ -1542,7 +1542,8 @@ button.panel.network.shield:focus-visible {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding-right: 22px;
+  /* 2 px under the progress line: pinned to the foot, it otherwise rounds a pixel past it. */
+  padding: 0 22px 2px 0;
   border-right: 1px solid var(--line);
 }
 .np-top {
