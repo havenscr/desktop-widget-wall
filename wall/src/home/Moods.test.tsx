@@ -243,7 +243,7 @@ it('three moods fill the row; more show three large and a More card that slides 
   const many = Array.from({ length: 7 }, (_, i) => ({ id: `m${i}`, label: `Mood ${i}` }));
   mocks.set('wall2_moods', () => many.slice(0, MOODS_PAGE));
   const three = render(<Moods />);
-  await screen.findByText('Mood 0');
+  await flush();
   const row = three.container.querySelector('.mood-row') as HTMLElement;
   expect(row.className).toBe('mood-row');
   expect(row.style.gridTemplateColumns).toMatch(/^repeat\(3, /);
@@ -251,7 +251,7 @@ it('three moods fill the row; more show three large and a More card that slides 
   three.unmount();
   mocks.set('wall2_moods', () => many);
   const seven = render(<Moods />);
-  await screen.findByText('Mood 0');
+  await flush();
   const names = () => [...seven.container.querySelectorAll('.mood-btn .mood-name')].map((n) => n.textContent);
   expect(names()).toEqual(['Mood 0', 'Mood 1', 'Mood 2']);
   expect(screen.getByText('4 more')).toBeTruthy();

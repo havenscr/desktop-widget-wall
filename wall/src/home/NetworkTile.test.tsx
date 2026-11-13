@@ -24,163 +24,192 @@ const summary = {
   alerts: 2,
   firewalla: { api: 'up', boxOnline: true, checkedAt: null, alarms24h: 0 },
   portalUrl: null,
+  topAlerts: [
+    { text: 'Port scan blocked', severity: 'low', atMs: Date.parse('2026-11-11T07:00:00Z') },
+    { text: 'New device on the guest network', severity: 'high', atMs: Date.parse('2026-11-11T11:48:00Z') },
+  ],
+  devices: 31,
+  blocked: 412,
 };
 
-it('shows the dot, the alert count and the scan age', async () => {
+const alert = (i: number, severity = 'medium') => ({ id: `alert:${i}`, severity, text: `Alert number ${i}`, at: new Date(Date.parse('2026-11-11T12:00:00Z') - (i + 1) * 600_000).toISOString(), ageSeconds: (i + 1) * 600 });
+const desk = (n: number, over: Record<string, unknown> = {}) => ({
+  available: true,
+  stale: false,
+  observedAt: '2026-11-11T11:59:00Z',
+  devices: 27,
+  blocked: 3,
+  unseen: n,
+  alerts: Array.from({ length: n }, (_, i) => alert(i, i === 0 ? 'high' : 'medium')),
+  canClear: true,
+  ...over,
+});
+const arcs = (c: HTMLElement) => c.querySelectorAll('.shield-ring .arc').length;
+
+it('with the desk route absent, shows today\'s read: the ring, the count and the newest alert, and no Clear all', async () => {
   mocks.set('wall2_home_security', () => summary);
+  mocks.set('wall2_desk_security', () => Promise.reject(new Error('absent')));
+  mocks.set('wall2_links', () => ({ security: true, portal: false }));
   const { container } = render(<NetworkTile />);
   await flush();
   expect(screen.getByText('Up, box online')).toBeTruthy();
-  expect(screen.getByText('2 open alerts')).toBeTruthy();
-  expect(screen.getByText('last scan 4 min ago')).toBeTruthy();
-  expect(container.querySelector('.net-icon.ok')).toBeTruthy();
-});
-
-it('shows Not set up when feeds.json has no address', async () => {
-  mocks.set('wall2_home_security', () => Promise.reject(new Error('not-configured')));
-  render(<NetworkTile />);
+  expect(screen.getByText('2 alerts open, 31 devices at home')).toBeTruthy();
+  expect(arcs(container)).toBe(2);
+  expect(container.querySelector('.shield-n')?.textContent).toBe('2');
+  // Newest first, whatever the order the read gave.
+  expect(container.querySelector('.shield-new b')?.textContent).toBe('New device on the guest network');
+  expect(screen.getByText(/12m ago\. Click for all 2/)).toBeTruthy();
+  fireEvent.click(container.querySelector('.panel.network') as HTMLElement);
   await flush();
-  expect(screen.getByText('Not set up')).toBeTruthy();
+  expect(screen.getByRole('dialog', { name: 'Open alerts' })).toBeTruthy();
+  expect([...container.querySelectorAll('.sd-row b')].map((b) => b.textContent)).toEqual(['New device on the guest network', 'Port scan blocked']);
+  expect(screen.queryByText('Clear all')).toBeNull();
+  expect(screen.getAllByText('Open')).toHaveLength(2);
 });
 
-it('goes amber when the home app stops answering after a good read', async () => {
-  let fail = false;
-  mocks.set('wall2_home_security', () => (fail ? Promise.reject(new Error('Could not reach the service')) : summary));
-  const { container } = render(<NetworkTile />);
-  await flush();
-  fail = true;
-  await flush(300_000);
-  expect(container.querySelector('.net-icon.warn')).toBeTruthy();
-  expect(screen.getByText('Home app not reachable')).toBeTruthy();
-});
-
-const withLinks = (links: { security: boolean; portal: boolean }, open?: (a?: Record<string, unknown>) => unknown) => {
-  mocks.set('wall2_home_security', () => ({ ...summary, portalUrl: links.portal ? 'https://my.firewalla.net/x' : null }));
-  mocks.set('wall2_links', () => links);
-  mocks.set('wall2_open_link', open ?? (() => undefined));
-};
-
-it('shows no link buttons when none are available', async () => {
-  withLinks({ security: false, portal: false });
-  render(<NetworkTile />);
-  await flush();
-  expect(screen.queryByRole('button')).toBeNull();
-});
-
-it('shows only the available links and asks Rust to open them by kind', async () => {
+it('quiet: a whole mint ring, All quiet, the device and blocked numbers, and the two links', async () => {
   const opened: unknown[] = [];
-  withLinks({ security: true, portal: false }, (a) => void opened.push(a));
-  render(<NetworkTile />);
-  await flush();
-  expect(screen.queryByRole('button', { name: 'Open Firewalla' })).toBeNull();
-  fireEvent.click(screen.getByRole('button', { name: 'Alarms' }));
-  await flush();
-  expect(opened).toEqual([{ kind: 'security' }]);
-});
-
-it('opens the portal link by kind, and a failure shows Could not open for 3 seconds', async () => {
-  const opened: unknown[] = [];
-  withLinks({ security: true, portal: true }, (a) => {
-    opened.push(a);
-    return Promise.reject(new Error('nope'));
-  });
-  render(<NetworkTile />);
-  await flush();
-  fireEvent.click(screen.getByRole('button', { name: 'Open Firewalla' }));
-  await flush();
-  expect(opened).toEqual([{ kind: 'portal' }]);
-  expect(screen.getByText('Could not open')).toBeTruthy();
-  await flush(3100);
-  expect(screen.queryByText('Could not open')).toBeNull();
-});
-
-it('keeps the Alarms button when the security read fails or is not set up', async () => {
-  mocks.set('wall2_home_security', () => Promise.reject(new Error('not-configured')));
-  mocks.set('wall2_links', () => ({ security: true, portal: false }));
-  render(<NetworkTile />);
-  await flush();
-  expect(screen.getByText('Not set up')).toBeTruthy();
-  expect(screen.getByRole('button', { name: 'Alarms' })).toBeTruthy();
-});
-
-it('refreshes link availability after every attempt, even with the same portal', async () => {
-  let security = true;
-  mocks.set('wall2_home_security', () => ({ ...summary, portalUrl: 'https://my.firewalla.net/x' }));
-  mocks.set('wall2_links', () => ({ security, portal: true }));
-  render(<NetworkTile />);
-  await flush();
-  expect(screen.getByRole('button', { name: 'Alarms' })).toBeTruthy();
-  security = false;
-  await flush(300_000);
-  expect(screen.queryByRole('button', { name: 'Alarms' })).toBeNull();
-  expect(screen.getByRole('button', { name: 'Open Firewalla' })).toBeTruthy();
-});
-
-it('fills the card: numbers the feed has, up to three alert rows and the rest as a number', async () => {
-  mocks.set('wall2_home_security', () => ({
-    ...summary,
-    alerts: 5,
-    devices: 31,
-    firewalla: { ...summary.firewalla, alarms24h: 3 },
-    topAlerts: [
-      { text: 'New device joined', severity: 'high', atMs: Date.parse('2026-11-11T11:48:00Z') },
-      { text: 'Port scan blocked', severity: 'low', atMs: Date.parse('2026-11-11T09:00:00Z') },
-      { text: 'Odd upload', severity: null, atMs: null },
-    ],
-  }));
-  const { container } = render(<NetworkTile />);
-  await flush();
-  // Two numbers do not fill a row: they go on the status line's right.
-  expect(container.querySelector('.net-nums')).toBeNull();
-  expect(container.querySelector('.net-aside')?.textContent).toBe('31 devices, 3 alarms in 24 h');
-  const rows = [...container.querySelectorAll('.net-alert')].map((r) => r.textContent);
-  expect(rows).toEqual(['New device joined12m', 'Port scan blocked3h', 'Odd upload']);
-  expect(container.querySelector('.sev.high')).toBeTruthy();
-  expect(screen.getByText('2 more open')).toBeTruthy();
-  expect(container.querySelector('.net-head')?.textContent).toBe('Network and security2 more open');
-  expect(screen.queryByText('5 open alerts')).toBeNull();
-});
-
-it('puts a lone alarm count on the status line, the scan age beside the heading, and the heading above the card', async () => {
-  mocks.set('wall2_home_security', () => ({ ...summary, alerts: 0, firewalla: { ...summary.firewalla, alarms24h: 7 } }));
-  const { container } = render(<NetworkTile />);
-  await flush();
-  expect(container.querySelector('.net-status')?.textContent).toBe('All quiet7 alarms in 24 h');
-  expect(container.querySelector('.net-nums')).toBeNull();
-  expect(container.querySelector('.net-head')?.textContent).toBe('Network and securitylast scan 4 min ago');
-  // The heading sits outside the card, above it.
-  expect(container.querySelector('.panel.network .net-head')).toBeNull();
-  expect(container.querySelector('.network-block > .net-head + .panel.network')).not.toBeNull();
-});
-
-it('dims the numbers on the status line when the feed goes stale, as it dims the rest', async () => {
-  let fail = false;
-  mocks.set('wall2_home_security', () => {
-    if (fail) throw new Error('failed');
-    return { ...summary, alerts: 0, firewalla: { ...summary.firewalla, alarms24h: 7 } };
-  });
-  const { container } = render(<NetworkTile />);
-  await flush();
-  expect(container.querySelector('.net-aside')!.className).not.toContain('stale');
-  fail = true;
-  await flush(300_000);
-  expect(container.querySelector('.net-aside')!.textContent).toBe('7 alarms in 24 h');
-  expect(container.querySelector('.net-aside')!.className).toContain('stale');
-});
-
-it('shows the numbers row once three numbers exist', async () => {
-  mocks.set('wall2_home_security', () => ({ ...summary, devices: 31, blocked: 412, firewalla: { ...summary.firewalla, alarms24h: 7 } }));
-  const { container } = render(<NetworkTile />);
-  await flush();
-  expect([...container.querySelectorAll('.st3')].map((n) => n.textContent)).toEqual(['31devices', '7alarms, 24h', '412blocked']);
-  expect(container.querySelector('.net-aside')?.textContent).toBe('last scan 4 min ago');
-});
-
-it('says All quiet with no open alerts, and shows no numbers row when the feed has none', async () => {
-  mocks.set('wall2_home_security', () => ({ ...summary, alerts: 0, firewalla: { ...summary.firewalla, alarms24h: null } }));
+  mocks.set('wall2_home_security', () => ({ ...summary, alerts: 0, topAlerts: [] }));
+  mocks.set('wall2_desk_security', () => Promise.reject(new Error('absent')));
+  mocks.set('wall2_links', () => ({ security: true, portal: true }));
+  mocks.set('wall2_open_link', (a) => void opened.push(a));
   const { container } = render(<NetworkTile />);
   await flush();
   expect(screen.getByText('All quiet')).toBeTruthy();
-  expect(container.querySelector('.net-nums')).toBeNull();
-  expect(container.querySelector('.net-alerts')).toBeNull();
+  expect(screen.getByText('Nothing is open.')).toBeTruthy();
+  expect(screen.getByText('31 devices at home, 412 blocked.')).toBeTruthy();
+  expect(arcs(container)).toBe(0);
+  expect(container.querySelector('.shield-ring path[stroke="var(--mint)"]')).toBeTruthy();
+  fireEvent.click(screen.getByText('Firewalla'));
+  fireEvent.click(screen.getByText('Security'));
+  await flush();
+  expect(opened).toEqual([{ kind: 'portal' }, { kind: 'security' }]);
+  // A quiet card is not a button: nothing to open.
+  expect(container.querySelector('button.panel.network')).toBeNull();
+});
+
+it('a failed open says Could not open for 3 seconds', async () => {
+  mocks.set('wall2_home_security', () => ({ ...summary, alerts: 0, topAlerts: [] }));
+  mocks.set('wall2_desk_security', () => Promise.reject(new Error('absent')));
+  mocks.set('wall2_links', () => ({ security: false, portal: true }));
+  mocks.set('wall2_open_link', () => Promise.reject(new Error('no')));
+  render(<NetworkTile />);
+  await flush();
+  expect(screen.queryByText('Security')).toBeNull();
+  fireEvent.click(screen.getByText('Firewalla'));
+  await flush();
+  expect(screen.getByText('Could not open')).toBeTruthy();
+  await flush(3000);
+  expect(screen.queryByText('Could not open')).toBeNull();
+});
+
+it('the desk route: one arc per alert up to twelve, "12+" past that, and the drawer lists them all', async () => {
+  mocks.set('wall2_home_security', () => summary);
+  mocks.set('wall2_desk_security', () => desk(20));
+  mocks.set('wall2_links', () => ({ security: true, portal: true }));
+  const { container } = render(<NetworkTile />);
+  await flush();
+  expect(arcs(container)).toBe(12);
+  expect(container.querySelector('.shield-n')?.textContent).toBe('12+');
+  expect(screen.getByText('20 alerts open, 27 devices at home')).toBeTruthy();
+  fireEvent.click(container.querySelector('.panel.network') as HTMLElement);
+  await flush();
+  expect(container.querySelectorAll('.sd-row')).toHaveLength(20);
+  expect(screen.getByText('20 open alerts')).toBeTruthy();
+  // Escape closes it.
+  fireEvent.keyDown(document, { key: 'Escape' });
+  await flush();
+  expect(screen.queryByRole('dialog')).toBeNull();
+});
+
+it('Clear all calls the home app once, says how many, and the card goes quiet on the next read', async () => {
+  let cleared = false;
+  const calls: unknown[] = [];
+  mocks.set('wall2_home_security', () => summary);
+  mocks.set('wall2_desk_security', () => (cleared ? desk(0) : desk(6)));
+  mocks.set('wall2_desk_clear_alerts', (a) => {
+    calls.push(a);
+    cleared = true;
+    return 6;
+  });
+  mocks.set('wall2_links', () => ({ security: true, portal: false }));
+  const { container } = render(<NetworkTile />);
+  await flush();
+  fireEvent.click(container.querySelector('.panel.network') as HTMLElement);
+  await flush();
+  fireEvent.click(screen.getByText('Clear all'));
+  await flush();
+  expect(calls).toHaveLength(1);
+  // The drawer closes once nothing is open; the card is quiet.
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(screen.getByText('Nothing is open.')).toBeTruthy();
+});
+
+it('without a desk token, Clear all says not set up and never calls the home app', async () => {
+  const calls: unknown[] = [];
+  mocks.set('wall2_home_security', () => summary);
+  mocks.set('wall2_desk_security', () => desk(2, { canClear: false }));
+  mocks.set('wall2_desk_clear_alerts', (a) => void calls.push(a));
+  mocks.set('wall2_links', () => ({ security: true, portal: false }));
+  const { container } = render(<NetworkTile />);
+  await flush();
+  fireEvent.click(container.querySelector('.panel.network') as HTMLElement);
+  await flush();
+  expect(screen.getByText('Clear all: not set up')).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Clear all' })).toBeNull();
+  expect(calls).toEqual([]);
+});
+
+it('a refused clear says so and keeps the drawer open', async () => {
+  mocks.set('wall2_home_security', () => summary);
+  mocks.set('wall2_desk_security', () => desk(2));
+  mocks.set('wall2_desk_clear_alerts', () => Promise.reject(new Error('forbidden')));
+  mocks.set('wall2_links', () => ({ security: true, portal: false }));
+  const { container } = render(<NetworkTile />);
+  await flush();
+  fireEvent.click(container.querySelector('.panel.network') as HTMLElement);
+  await flush();
+  fireEvent.click(screen.getByText('Clear all'));
+  await flush();
+  expect(screen.getByText('The home app refused the clear')).toBeTruthy();
+  expect(screen.getByRole('dialog')).toBeTruthy();
+});
+
+it('stale data is a grey ring with "as of", never mint, and no Clear all', async () => {
+  mocks.set('wall2_home_security', () => summary);
+  mocks.set('wall2_desk_security', () => desk(0, { stale: true, observedAt: '2026-11-11T11:13:00Z' }));
+  const { container } = render(<NetworkTile />);
+  await flush();
+  expect(container.querySelector('.panel.network.stale')).toBeTruthy();
+  expect(container.querySelector('.shield-ring [stroke="var(--mint)"]')).toBeNull();
+  expect(screen.getAllByText(/as of/).length).toBeGreaterThan(0);
+});
+
+it('a failed desk refresh after a good read keeps the alerts but greys the ring', async () => {
+  let fail = false;
+  mocks.set('wall2_home_security', () => summary);
+  mocks.set('wall2_desk_security', () => (fail ? Promise.reject(new Error('failed')) : desk(3)));
+  const { container } = render(<NetworkTile />);
+  await flush();
+  expect(container.querySelector('.panel.network.stale')).toBeNull();
+  fail = true;
+  await flush(300_000);
+  expect(container.querySelector('.panel.network.stale')).toBeTruthy();
+  expect(arcs(container)).toBe(3);
+  expect(container.querySelector('.shield-ring .arc')?.getAttribute('stroke')).toBe('var(--faint)');
+});
+
+it('shows Not set up, and Home app not reachable with no read', async () => {
+  mocks.set('wall2_home_security', () => Promise.reject(new Error('not-configured')));
+  mocks.set('wall2_desk_security', () => Promise.reject(new Error('not-configured')));
+  const off = render(<NetworkTile />);
+  await flush();
+  expect(screen.getByText('Not set up')).toBeTruthy();
+  off.unmount();
+  mocks.set('wall2_home_security', () => Promise.reject(new Error('Could not reach the service')));
+  mocks.set('wall2_desk_security', () => Promise.reject(new Error('absent')));
+  render(<NetworkTile />);
+  await flush();
+  expect(screen.getByText('Home app not reachable')).toBeTruthy();
+  expect(screen.getByText('Checks again every 5 minutes.')).toBeTruthy();
 });

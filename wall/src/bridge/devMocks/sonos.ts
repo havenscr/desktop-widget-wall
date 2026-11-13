@@ -131,6 +131,9 @@ export function registerSonosMocks(): void {
     if (m === 'slow') return new Promise(() => undefined);
     if (m === 'off') return Promise.reject(new Error('not-configured'));
     if (m === 'down') return Promise.reject(new Error('Could not reach Sonos'));
+    // `?spotifyplay=speaker` pairs with the Spotify mock: Spotify plays on "Living room", so
+    // the group lead here takes that name and Home's strip shows the track.
+    if (knob('spotifyplay') === 'speaker') return JSON.parse(JSON.stringify(summary(m)).replaceAll('"Den"', '"Living room"'));
     return summary(m);
   });
   const slow = async () => {

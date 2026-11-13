@@ -109,6 +109,11 @@ export function NetworkTile() {
             <IconChevronRight size={16} stroke={2} aria-hidden="true" />
           </span>
         )}
+        {!busy && s.kind === 'ready' && (
+          <span className="shield-links">
+            <Links refresh={attempts} />
+          </span>
+        )}
       </span>
     </>
   );
@@ -123,14 +128,7 @@ export function NetworkTile() {
           {body}
         </button>
       ) : (
-        <div className={cls}>
-          {body}
-          {s.kind === 'ready' && (
-            <span className="shield-links">
-              <Links refresh={attempts} />
-            </span>
-          )}
-        </div>
+        <div className={cls}>{body}</div>
       )}
       {open && busy && <ShieldDrawer s={s} refresh={attempts} onClose={() => setOpen(false)} />}
     </section>

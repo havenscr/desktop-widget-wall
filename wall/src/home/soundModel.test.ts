@@ -1,7 +1,11 @@
-import { expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
+  PLAY_ART,
   chipLabel,
+  clockMs,
   faceTiles,
+  houseTrack,
+  playingWhere,
   moreControls,
   moreRoutines,
   tileMatches,
@@ -290,4 +294,44 @@ it('Where is Office, All speakers, Common areas in that order; the label drops p
   ]);
   expect(wherePlaces([p('b', 'Upstairs')])).toEqual([]);
   expect(whereLabel('Office (Work)')).toBe('Office');
+});
+
+describe('home round two: what the house plays', () => {
+  const base = {
+    speakers: [
+      { name: 'Den', state: 'playing', volume: 10, input: null, group: 'G2', online: true },
+      { name: 'Porch', state: 'playing', volume: 10, input: null, group: 'G2', online: true },
+      { name: 'Studio', state: 'stopped', volume: 10, input: null, group: 'G1', online: true },
+    ],
+    groups: [
+      { id: 'G1', coordinator: 'Studio', members: ['Studio'] },
+      { id: 'G2', coordinator: 'Den', members: ['Den', 'Porch'] },
+    ],
+    presets: [],
+    music: [],
+    controls: [],
+    scenes: [],
+    sleepTimers: [],
+    nowPlaying: null,
+    currentGroup: 'G2',
+    readAtMs: 0,
+  } as unknown as SonosSummary;
+  const track = { name: 'Lantern Song', artists: 'Mira Vale', durationMs: 200_000, imageUrl: 'a', thumbUrl: 'b' };
+  it('shows a Spotify track only when it plays on a house speaker the Sonos read shows playing', () => {
+    expect(houseTrack({ playing: true, device: { name: 'den', kind: 'Speaker' }, track, progressMs: 5000 }, base)).toEqual({ title: 'Lantern Song', artist: 'Mira Vale', cover: 'b', where: 'Den, 2 speakers', progressMs: 5000, durationMs: 200_000 });
+    // On this PC: never the house.
+    expect(houseTrack({ playing: true, device: { name: 'Den', kind: 'Computer' }, track, progressMs: 0 }, base)).toBeNull();
+    // A speaker the Sonos read shows quiet, or one it does not know.
+    expect(houseTrack({ playing: true, device: { name: 'Studio', kind: 'Speaker' }, track, progressMs: 0 }, base)).toBeNull();
+    expect(houseTrack({ playing: true, device: { name: 'Garden', kind: 'Speaker' }, track, progressMs: 0 }, base)).toBeNull();
+    expect(houseTrack({ playing: false, device: { name: 'Den', kind: 'Speaker' }, track, progressMs: 0 }, base)).toBeNull();
+    expect(houseTrack(null, base)).toBeNull();
+  });
+  it('words where it plays and the progress times', () => {
+    expect(playingWhere(base)).toBe('Den, 2 speakers');
+    expect(clockMs(82_000)).toBe('1:22');
+    expect(clockMs(0)).toBe('0:00');
+    expect(PLAY_ART.morning.icon).toBe('cup');
+    expect(PLAY_ART.workday.icon).toBe('laptop');
+  });
 });
