@@ -111,3 +111,8 @@ export function useWeather(f: typeof fetch = defaultFetch): WeatherState {
   }, [visible]);
   return useWeatherStore();
 }
+
+/** The Tools drawer's Retry for Weather: one fetch now, outside the 15 minute check (skipped while one runs). */
+export function refreshWeather(): Promise<void> {
+  return run();
+}

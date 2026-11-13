@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { invoke } from '../bridge/tauri';
 import { usePlaceStore } from '../state/places';
 import { useVisible } from '../ui/useVisible';
+import { refreshMeetingFeed } from '../work/useNextMeeting';
 import {
   FAST_RETRY_MS,
   INVALID_CONFIG,
@@ -68,15 +69,21 @@ function within<T>(p: Promise<T>, ms: number): Promise<T> {
   });
 }
 
+/** Fired after a sign-in or sign-out, so every other reader of the accounts reads again. */
+const CHANGED = 'wall2-meet-changed';
+
 /**
  * Reads the next meetings when Meet opens, then every 5 minutes while Meet is the active
  * place and the page is visible. The countdown ticks from the last list every 30 seconds
  * without calling the native side. A failed read keeps the last good list.
  */
-export function useMeet(): MeetState {
+export function useMeet(always = false): MeetState {
   const visible = useVisible();
-  const active = usePlaceStore((s) => s.active === 'meet');
+  const placeActive = usePlaceStore((s) => s.active === 'meet');
+  // The Tools drawer reads the accounts on any place (`always`); Meet itself only while it is open.
+  const active = placeActive || always;
   const on = visible && active;
+  const self = useRef({});
   const [status, setStatus] = useState<MeetStatus>('loading');
   const [data, setData] = useState<MeetData | null>(null);
   const [lastOk, setLastOk] = useState<number | null>(null);
@@ -268,6 +275,19 @@ export function useMeet(): MeetState {
     };
   }, [active]);
 
+  // Another reader signed an account in or out: read again.
+  useEffect(() => {
+    const again = (e: Event) => {
+      if ((e as CustomEvent).detail !== self.current && onRef.current) void refresh();
+    };
+    window.addEventListener(CHANGED, again);
+    return () => window.removeEventListener(CHANGED, again);
+  }, [refresh]);
+  const announce = useCallback(() => {
+    refreshMeetingFeed();
+    window.dispatchEvent(new CustomEvent(CHANGED, { detail: self.current }));
+  }, []);
+
   const signIn = useCallback(
     (id: string) => {
       setNotice(null);
@@ -275,6 +295,7 @@ export function useMeet(): MeetState {
       setSigningIn(id);
       invoke('wall2_meet_sign_in', { id })
         .then(() => {
+          announce();
           if (mounted.current) void refresh();
         })
         .catch((e) => {
@@ -285,7 +306,7 @@ export function useMeet(): MeetState {
           if (mounted.current) setSigningIn(null);
         });
     },
-    [refresh],
+    [refresh, announce],
   );
 
   const cancelSignIn = useCallback(() => {
@@ -297,6 +318,7 @@ export function useMeet(): MeetState {
       setNotice(null);
       invoke('wall2_meet_sign_out', { id })
         .then(() => {
+          announce();
           if (!mounted.current) return;
           setKnown((k) => {
             const { [id]: _gone, ...rest } = k;
@@ -308,7 +330,7 @@ export function useMeet(): MeetState {
           if (mounted.current) setNotice('Could not sign out');
         });
     },
-    [refresh],
+    [refresh, announce],
   );
 
   const join = useCallback(

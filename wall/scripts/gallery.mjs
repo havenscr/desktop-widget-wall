@@ -226,6 +226,17 @@ state('unwind', 'watch: sun, 24 saved, Twitch', `${WM}&wlist=many&wlook=sun&wpla
 state('unwind', 'watch: settings, four looks, whole sky chosen', `${WM}&wlist=three&wlook=sky&wplay=0&wsheet=one`, TIMES.night);
 state('unwind', 'watch: settings, four looks per kind', `${WM}&wlist=many&wlook=sun&wplay=0&wsheet=kind`, TIMES.night);
 
+// The Tools drawer: opened on load (`tools=1`), over each place and in its hard states.
+state('work', 'tools: open', 'tools=1');
+state('work', 'tools: account signed out', 'meet=signedout&tools=1');
+state('work', 'tools: sources failing', 'agents=down&weather=stale&tools=1');
+state('work', 'tools: keys refused', 'keys=refused&tools=1');
+state('work', 'tools: no keys file', 'source=default&tools=1');
+state('work', 'tools: Spotify not set up', 'spotify=off&tools=1');
+state('home', 'tools: open', 'tools=1');
+state('unwind', 'tools: open', 'tools=1');
+state('meet', 'tools: open', 'tools=1');
+
 // Meet: the day's meetings.
 state('meet', 'both accounts ok', 'meet=bothok');
 state('meet', 'one meeting', 'meet=one');
@@ -388,15 +399,25 @@ const EXPECT = [
   // Meet
   ['meet', 'sparse', 'Nothing scheduled in the next 24 hours'],
   ['meet', 'heavy', 'Architecture working session'],
-  ['meet', 'both accounts ok', ['Connected', '!Sign in']],
+  ['meet', 'both accounts ok', ['Design review', '!Open Tools', '!Sign in']],
   ['meet', 'one meeting', 'Design review with the platform team'],
-  ['meet', 'broken: one account stale', 'Try again'],
-  ['meet', 'broken: both accounts failing', 'Calendar not available'],
-  ['meet', 'broken: one account failing', 'Network problem'],
-  ['meet', 'broken: calendar signed out', 'Signed out'],
+  ['meet', 'broken: one account stale', ['Design review with the platform team', 'Second calendar not answering.']],
+  ['meet', 'broken: both accounts failing', ['Calendar not available', '2 calendars need attention.', 'Open Tools']],
+  ['meet', 'broken: one account failing', ['Second calendar not answering.', 'Open Tools']],
+  ['meet', 'broken: calendar signed out', ['Calendar not available', '2 calendars need attention.', 'Open Tools']],
   ['meet', 'broken: calendar not set up', 'Calendar is not connected yet'],
   ['meet', 'broken: calendar read fails', 'Calendar unavailable'],
-  ['meet', 'typical', 'Design review with the platform team'],
+  ['meet', 'typical', ['Design review with the platform team', 'Second calendar signed out.', 'Open Tools', 'Weekly planning']],
+  ['meet', 'tools: open', ['Open Tools', 'Keys file', 'Second calendar']],
+  // The Tools drawer, over each place and in each hard state
+  ['work', 'tools: open', ['Accounts', 'Sources', 'Video look', 'Keys file', 'Build 7c9f442']],
+  ['work', 'tools: account signed out', ['Work calendar', 'Second calendar', 'Signed out', 'Sign in']],
+  ['work', 'tools: sources failing', ['Sources', 'never']],
+  ['work', 'tools: keys refused', 'keys.json refused: app 3, key 7'],
+  ['work', 'tools: no keys file', 'No keys.json. Defaults in use'],
+  ['work', 'tools: Spotify not set up', ['Spotify', 'Not set up']],
+  ['home', 'tools: open', ['Accounts', 'Keys file']],
+  ['unwind', 'tools: open', ['Accounts', 'Keys file']],
   // Zen and Dream
   ['zen', 'sparse', ['Breathe in', '!things are waiting']],
   ['zen', 'heavy', 'After this: 3 or more things are waiting'],

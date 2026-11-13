@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { invoke } from '../bridge/tauri';
 import { useVisible } from '../ui/useVisible';
+import { registerRetry, reportRead } from '../tools/reports';
 import { FADE_MS, NOT_CONFIGURED, REFRESH_MS, type RowMark, type TaskItem } from './model';
 
 export type TasksStatus = 'loading' | 'ready' | 'unconfigured' | 'error';
@@ -116,11 +117,14 @@ export function useTasks(query?: TasksQuery): TasksState {
       }
       setStatus('ready');
       setLastOk(Date.now());
+      reportRead('tasks', 'ok');
     } catch (e) {
       if (!mounted.current) return;
       const text = e instanceof Error ? e.message : String(e);
       if (text === NOT_CONFIGURED) setStatus('unconfigured');
       else setStatus('error');
+      if (text === NOT_CONFIGURED) reportRead('tasks', 'unconfigured', 'Not set up');
+      else reportRead('tasks', 'failed', 'The task app did not answer');
     }
   }, [queryKey]);
 
@@ -141,6 +145,9 @@ export function useTasks(query?: TasksQuery): TasksState {
       if (mounted.current) setNow(Date.now());
     }
   }, [fetchList]);
+
+  // The Tools drawer's Retry runs this list's own refresh while it is mounted.
+  useEffect(() => registerRetry('tasks', () => refresh()), [refresh]);
 
   useEffect(() => {
     if (!visible) return;

@@ -91,6 +91,19 @@ it('Esc exits and prevents the default only when fullscreen', async () => {
   expect(log.slice(1, 2)).toEqual(['fs:false']);
 });
 
+it('leaves an Esc alone that another layer already took, so fullscreen stays on', async () => {
+  remove = installFullscreenKeys();
+  press({ key: 'F11' });
+  await settle();
+  const take = (e: Event) => e.preventDefault();
+  document.addEventListener('keydown', take);
+  const e = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+  document.dispatchEvent(e);
+  document.removeEventListener('keydown', take);
+  await settle();
+  expect(log).toEqual(['fs:true']);
+});
+
 it('ignores key repeats', async () => {
   remove = installFullscreenKeys();
   press({ key: 'F11', repeat: true });
