@@ -4,6 +4,7 @@ import { RoomCard } from '../unwind/RoomCard';
 import { StatusLine } from '../unwind/StatusLine';
 import { LISTEN_PANEL_ID, LISTEN_TAB_ID, Tabs } from '../unwind/Tabs';
 import { Tomorrow } from '../unwind/Tomorrow';
+import { UNWIND_ROOM_HEIGHT, UNWIND_ROOM_TOP } from './frameLayout';
 import { ScreensOff } from '../ui/ScreensOff';
 import { reviewDate, reviewNow } from '../ui/reviewClock';
 
@@ -23,10 +24,7 @@ export function Unwind() {
         <DateLine now={reviewDate} />
         <div className="u-foot">
           <Tomorrow now={reviewNow} />
-          <div className="u-footrow">
-            <StatusLine />
-            <ScreensOff />
-          </div>
+          <StatusLine />
         </div>
       </div>
       <div className="u-centre">
@@ -35,7 +33,10 @@ export function Unwind() {
           <Player />
         </div>
       </div>
-      <div className="u-right">
+      <div className="u-corner">
+        <ScreensOff />
+      </div>
+      <div className="u-right" style={{ ['--room-top' as string]: `${UNWIND_ROOM_TOP}px`, ['--room-height' as string]: `${UNWIND_ROOM_HEIGHT}px` }}>
         <RoomCard />
       </div>
     </section>

@@ -1,3 +1,4 @@
+import { playerProcesses, procName } from '../music/players';
 import type { DayEvent } from '../ribbon/model';
 import type { WeatherReading } from '../weather/model';
 
@@ -84,34 +85,59 @@ export function firstTomorrow(events: readonly DayEvent[], now: number): DayEven
 /** The part of `wall2_omni_summary` the status line reads. */
 export interface StatusSummary {
   stale?: boolean;
-  lanes: ReadonlyArray<{ state: string }>;
-  yourMove: { total: number };
+  lanes: ReadonlyArray<{ state: string; id?: string; waiting?: boolean }>;
+  yourMove: { total: number; first?: { sessionId?: string } | null };
+  /** The helper can open a chat (`wall2_open_session`). */
+  linksAvailable?: boolean;
 }
 
 /** The focus timer as the status line sees it: not loaded yet, a session on, or none. */
 export type FocusSeen = 'unknown' | 'on' | 'off';
 
 /**
- * "Work is put away. 2 agents still running. Nothing needs you." The first sentence needs
- * the focus store loaded: a session running or paused says "Focus is still on.", and
- * before it has loaded nothing is said about it. The agent and needs-you sentences need a
- * current helper summary: without the helper, or when it says its data is stale, they are
- * left out, and so is a needs-you count that is not a number.
+ * One part of the status line: plain text, the running agents (a chip that switches to
+ * Work), or the things that need the owner (an amber chip that opens the first waiting
+ * chat, `open` being its session id; null when it cannot be opened, then plain text).
  */
-export function statusLine(focus: FocusSeen, summary: StatusSummary | null): string {
-  const parts: string[] = [];
-  if (focus === 'on') parts.push('Focus is still on.');
-  else if (focus === 'off') parts.push('Work is put away.');
+export type StatusPart =
+  | { kind: 'text'; text: string }
+  | { kind: 'running'; text: string }
+  | { kind: 'needs'; text: string; open: string | null };
+
+/**
+ * "Work is put away. 2 agents still running. Nothing needs you." as parts. The first
+ * sentence needs the focus store loaded: a session running or paused says "Focus is still
+ * on.", and before it has loaded nothing is said about it. The agent and needs-you parts
+ * need a current helper summary: without the helper, or when it says its data is stale,
+ * they are left out, and so is a needs-you count that is not a number. "Nothing needs
+ * you." is plain text; "N things need you" opens the first waiting chat when links are
+ * available (the summary's first your-move session, else the first lane that waits).
+ */
+export function statusParts(focus: FocusSeen, summary: StatusSummary | null): StatusPart[] {
+  const parts: StatusPart[] = [];
+  if (focus === 'on') parts.push({ kind: 'text', text: 'Focus is still on.' });
+  else if (focus === 'off') parts.push({ kind: 'text', text: 'Work is put away.' });
   if (summary && summary.stale !== true) {
     const running = summary.lanes.filter((l) => l.state === 'working').length;
-    if (running > 0) parts.push(`${running} ${running === 1 ? 'agent' : 'agents'} still running.`);
+    if (running > 0) parts.push({ kind: 'running', text: `${running} ${running === 1 ? 'agent' : 'agents'} still running.` });
     const total = summary.yourMove.total;
     if (typeof total === 'number' && Number.isFinite(total) && total >= 0) {
       const asks = Math.floor(total);
-      parts.push(asks === 0 ? 'Nothing needs you.' : asks === 1 ? 'One thing needs you.' : `${asks} things need you.`);
+      if (asks === 0) parts.push({ kind: 'text', text: 'Nothing needs you.' });
+      else {
+        const id = summary.yourMove.first?.sessionId || summary.lanes.find((l) => l.waiting || l.state === 'blocked')?.id || null;
+        parts.push({ kind: 'needs', text: asks === 1 ? 'One thing needs you.' : `${asks} things need you.`, open: summary.linksAvailable === true && id ? id : null });
+      }
     }
   }
-  return parts.join(' ');
+  return parts;
+}
+
+/** The status line as one string (the parts' words, in order). */
+export function statusLine(focus: FocusSeen, summary: StatusSummary | null): string {
+  return statusParts(focus, summary)
+    .map((p) => p.text)
+    .join(' ');
 }
 
 /** One row of `get_audio_sessions`. */
@@ -122,29 +148,19 @@ export interface AudioSession {
   muted: boolean;
 }
 
-const squash = (s: string) => s.toLowerCase().replace(/\.exe$/, '').replace(/[^a-z0-9]/g, '');
-
 /**
- * Process names (normalised) for the source labels `get_now_playing` gives that are not
- * their own process name. Any other label must equal the process name exactly.
+ * The audio session of the app that is playing. `source` is the media session's app id
+ * (`source_app_id`, for example `SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify` or
+ * `Spotify.exe`) or, from an older answer, its label ("Spotify", "Edge"). The id gives the
+ * process names through the explicit table in `music/players.ts` ("Spotify" to
+ * `Spotify.exe`, "Edge" to `msedge.exe`); a session matches only by its exact normalised
+ * process name, never a part of one, so one music app is never taken for another. Null
+ * when none matches.
  */
-const PROCESSES_FOR: Record<string, readonly string[]> = {
-  edge: ['msedge'],
-  groovemusic: ['musicui'],
-  applemusic: ['applemusic', 'itunes'],
-};
-
-/**
- * The audio session of the app that is playing, by exact normalised process name
- * ("Spotify" to "Spotify.exe") or the alias table ("Edge" to "msedge.exe"); null when none
- * matches. Never a partial match, so one music app is never taken for another.
- */
-export function playingSession(sessions: readonly AudioSession[], sourceApp: string | null | undefined): AudioSession | null {
-  if (!sourceApp) return null;
-  const src = squash(sourceApp);
-  if (!src) return null;
-  const want = PROCESSES_FOR[src] ?? [src];
-  return sessions.find((s) => want.includes(squash(s.name))) ?? null;
+export function playingSession(sessions: readonly AudioSession[], source: string | null | undefined): AudioSession | null {
+  const want = playerProcesses(source);
+  if (want.length === 0) return null;
+  return sessions.find((s) => want.includes(procName(s.name))) ?? null;
 }
 
 /** A slider value clamped to 0..1 (anything not a number is 0). */

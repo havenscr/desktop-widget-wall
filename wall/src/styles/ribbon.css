@@ -46,6 +46,21 @@
   width: 20px;
   height: 20px;
   color: var(--faint);
+  cursor: help;
+}
+.rib .li svg {
+  display: block;
+  width: 20px;
+  height: 20px;
+}
+/* An empty row says so, quietly, beside its icon. */
+.rib .li-empty {
+  position: absolute;
+  left: 56px;
+  font: 400 16px/20px var(--body);
+  color: var(--faint);
+  white-space: nowrap;
+  pointer-events: none;
 }
 /* Calendar chips, row 1. Violet is decoration; pink marks a livestream. */
 .rib .ev {

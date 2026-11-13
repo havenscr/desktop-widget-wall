@@ -44,3 +44,12 @@ export function rowEdges(): { top: number; bottom: number }[] {
     return edge;
   });
 }
+
+/**
+ * Unwind's Room card (`f_unwind`): 120 tall, its foot 38 above the end of the 490 top
+ * band the other places use (level with the player's transport), so its top is 332 down
+ * the band. `Unwind.tsx` passes the top to its stylesheet as `--room-top`.
+ */
+export const UNWIND_ROOM_HEIGHT = 120;
+export const UNWIND_ROOM_FOOT_GAP = 38;
+export const UNWIND_ROOM_TOP = MAIN_ROWS[0] - UNWIND_ROOM_FOOT_GAP - UNWIND_ROOM_HEIGHT;

@@ -14,7 +14,9 @@ export const PENDING_MS = 1500;
 export const FAILURE_MS = 5000;
 
 /**
- * "Screens off", a toggle: 500 ms after the tap the monitors go off and the helper watches
+ * "Screens off", an icon-only toggle (the words are its tooltip and accessible name; it
+ * reads "Turning off" while pending and "Cancel screens off" while active), in the lower
+ * right corner of Unwind: 500 ms after the tap the monitors go off and the helper watches
  * for a phantom mouse nudge, sending them off again; a second tap cancels and leaves the
  * screens as they are. A key, click, touch or real movement also ends the watch (rule R3).
  * If the helper cannot watch input it does not turn the screens off and says so briefly.
@@ -68,17 +70,20 @@ export function ScreensOff({ className = '' }: { className?: string }) {
     void invoke('wall2_monitors_off').catch(() => setPending(false));
   };
 
+  // Icon only: the words are its tooltip and its accessible name.
+  const label = pending ? 'Turning off' : active ? 'Cancel screens off' : 'Screens off';
   return (
     <div className="screens-off-wrap">
       <button
         type="button"
         className={`screens-off ${className}`.trim()}
         aria-pressed={active}
+        aria-label={label}
+        title={label}
         data-pending={pending ? 'true' : undefined}
         onClick={tap}
       >
-        <IconDeviceDesktopOff size={26} aria-hidden="true" />
-        <span>{pending ? 'Turning off' : active ? 'Cancel' : 'Screens off'}</span>
+        <IconDeviceDesktopOff size={22} aria-hidden="true" />
       </button>
       {failed ? (
         <div className="screens-off-note" role="status">

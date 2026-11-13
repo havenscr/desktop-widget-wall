@@ -7,7 +7,7 @@ import { usePacificTime } from '../ribbon/testZone';
 import { Unwind } from '../screens/Unwind';
 import { usePlaceStore } from '../state/places';
 import { useFocusStore } from '../focus/store';
-import { resetLastPlayed } from './lastPlayed';
+import { resetLastPlayed, useLastPlayed } from './lastPlayed';
 import { LAST_MOOD_AT_KEY, ROOM_RETRY_MS, RoomCard } from './RoomCard';
 import { Tabs } from './Tabs';
 import { Tomorrow } from './Tomorrow';
@@ -117,7 +117,7 @@ it('sends the volume at most every 100 ms while dragging, always ending on the l
   const sets: unknown[] = [];
   mocks.set('get_audio_sessions', () => spotify());
   mocks.set('set_audio_session_volume', (a) => void sets.push(a));
-  render(<Volume sourceApp="Spotify" />);
+  render(<Volume source="Spotify" label="Spotify" />);
   await flush();
   const slider = screen.getByLabelText('Spotify volume') as HTMLInputElement;
   expect(slider.value).toBe('0.7');
@@ -142,7 +142,7 @@ it('sends the pending move on unmount instead of dropping it', async () => {
   const sets: unknown[] = [];
   mocks.set('get_audio_sessions', () => spotify());
   mocks.set('set_audio_session_volume', (a) => void sets.push(a));
-  const r = render(<Volume sourceApp="Spotify" />);
+  const r = render(<Volume source="Spotify" label="Spotify" />);
   await flush();
   const slider = screen.getByLabelText('Spotify volume');
   fireEvent.change(slider, { target: { value: '0.5' } });
@@ -159,7 +159,7 @@ it('drops the unsent move and hides the slider when the session goes away mid-dr
   let gone = false;
   mocks.set('get_audio_sessions', () => (gone ? { master: { volume: 50, muted: false }, sessions: [] } : spotify()));
   mocks.set('set_audio_session_volume', (a) => void sets.push(a));
-  render(<Volume sourceApp="Spotify" />);
+  render(<Volume source="Spotify" label="Spotify" />);
   await flush();
   const slider = screen.getByLabelText('Spotify volume');
   fireEvent.change(slider, { target: { value: '0.5' } });
@@ -182,12 +182,12 @@ it('never moves the previous app: a source change hides the slider until the new
   let release: ((v: unknown) => void) | null = null;
   mocks.set('get_audio_sessions', () => spotify());
   mocks.set('set_audio_session_volume', (a) => void sets.push(a));
-  const r = render(<Volume sourceApp="Spotify" />);
+  const r = render(<Volume source="Spotify" label="Spotify" />);
   await flush();
   expect(screen.getByLabelText('Spotify volume')).toBeTruthy();
   // The second read, for Chrome, does not answer yet.
   mocks.set('get_audio_sessions', () => new Promise((res) => (release = res)));
-  r.rerender(<Volume sourceApp="Chrome" />);
+  r.rerender(<Volume source="Chrome" label="Chrome" />);
   await flush();
   expect(screen.queryByRole('slider')).toBeNull();
   expect(sets).toEqual([]);
@@ -202,10 +202,34 @@ it('never moves the previous app: a source change hides the slider until the new
 
 it('hides the volume slider when the playing app has no audio session', async () => {
   mocks.set('get_audio_sessions', () => ({ master: { volume: 50, muted: false }, sessions: [{ id: '1:chrome.exe', name: 'chrome.exe', volume: 70, muted: false }] }));
-  const r = render(<Volume sourceApp="Spotify" />);
+  const r = render(<Volume source="Spotify" label="Spotify" />);
   await flush();
   expect(r.container.textContent).toBe('');
   expect(screen.queryByRole('slider')).toBeNull();
+});
+
+it('shows the slider for the player the session id names (a packaged Spotify id finds Spotify.exe)', async () => {
+  mocks.set('get_audio_sessions', () => spotify());
+  render(<Volume source="SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify" label="Spotify" />);
+  await flush();
+  expect((screen.getByLabelText('Spotify volume') as HTMLInputElement).value).toBe('0.7');
+});
+
+it('marks a mood applied on Home on the room chips', async () => {
+  const { Moods } = await import('../home/Moods');
+  mocks.set('wall2_moods', () => [
+    { id: 'evening', label: 'Evening' },
+    { id: 'lateNight', label: 'Late Night' },
+  ]);
+  mocks.set('wall2_apply_mood', () => undefined);
+  const home = render(<Moods />);
+  await flush();
+  await act(async () => (home.container.querySelector('[data-mood="lateNight"]') as HTMLButtonElement).click());
+  await flush();
+  home.unmount();
+  render(<RoomCard />);
+  await flush();
+  expect(screen.getByRole('button', { name: 'Late Night' }).getAttribute('aria-pressed')).toBe('true');
 });
 
 it('marks the last applied mood on the room chips', async () => {
@@ -311,8 +335,8 @@ it('drops the agent sentences when the helper says its data is stale', async () 
   mocks.set('wall2_omni_summary', () => ({ stale: true, lanes: [{ state: 'working' }], yourMove: { total: 0 } }));
   render(<Unwind />);
   await flush();
-  expect(screen.getByText('Work is put away.')).toBeTruthy();
-  expect(screen.queryByText(/agent/)).toBeNull();
+  expect(document.querySelector('.u-line')!.textContent).toBe('Work is put away.');
+  expect(document.querySelector('.u-act')).toBeNull();
 });
 
 it('says nothing about work before the focus store has loaded', async () => {
@@ -321,7 +345,7 @@ it('says nothing about work before the focus store has loaded', async () => {
   mocks.set('wall2_omni_summary', () => ({ lanes: [{ state: 'working' }], yourMove: { total: 0 } }));
   render(<Unwind />);
   await flush();
-  expect(screen.getByText('1 agent still running. Nothing needs you.')).toBeTruthy();
+  expect(document.querySelector('.u-line')!.textContent).toBe('1 agent still running. Nothing needs you.');
   expect(screen.queryByText(/Work is put away/)).toBeNull();
 });
 
@@ -331,8 +355,70 @@ it('lays out the status line, Screens off and the tabs', async () => {
   mocks.set('wall2_omni_summary', () => ({ lanes: [{ state: 'working' }, { state: 'working' }, { state: 'review' }], yourMove: { total: 0 } }));
   render(<Unwind />);
   await flush();
-  expect(screen.getByText('Work is put away. 2 agents still running. Nothing needs you.')).toBeTruthy();
-  expect(screen.getByRole('button', { name: 'Screens off' })).toBeTruthy();
+  expect(document.querySelector('.u-line')!.textContent).toBe('Work is put away. 2 agents still running. Nothing needs you.');
+  // Screens off is an icon alone in the lower right corner, not beside the line.
+  expect(document.querySelector('.u-corner [aria-label="Screens off"]')).not.toBeNull();
+  expect(document.querySelector('.u-foot .screens-off')).toBeNull();
   expect(screen.getByRole('tablist', { name: 'Unwind' })).toBeTruthy();
   expect(screen.getByText('Nothing playing')).toBeTruthy();
+});
+
+it('makes the action parts of the status line chips: running switches to Work, needs you opens the waiting chat', async () => {
+  useFocusStore.setState({ loaded: true });
+  const opened: unknown[] = [];
+  mocks.set('get_now_playing', () => ({ playback_status: 'stopped' }));
+  mocks.set('wall2_open_session', (a) => void opened.push(a));
+  mocks.set('wall2_omni_summary', () => ({
+    lanes: [{ id: 'a1b2c3d4-0001', state: 'working' }, { id: 'a1b2c3d4-0002', state: 'blocked', waiting: true }, { id: 'a1b2c3d4-0003', state: 'working' }],
+    yourMove: { total: 2, first: { sessionId: 'a1b2c3d4-0002' } },
+    linksAvailable: true,
+  }));
+  render(<Unwind />);
+  await flush();
+  expect(document.querySelector('.u-line')!.textContent).toBe('Work is put away. 2 agents still running. 2 things need you.');
+  const needs = screen.getByRole('button', { name: '2 things need you.' });
+  expect(needs.className).toContain('amber');
+  expect(needs.getAttribute('title')).toBe('Open the chat that is waiting for you');
+  fireEvent.click(needs);
+  await flush();
+  expect(opened).toEqual([{ id: 'a1b2c3d4-0002' }]);
+  const running = screen.getByRole('button', { name: '2 agents still running.' });
+  expect(running.getAttribute('title')).toBe('Show the agents on Work');
+  fireEvent.click(running);
+  expect(usePlaceStore.getState().active).toBe('work');
+  // "Work is put away." stays plain text.
+  expect(screen.queryByRole('button', { name: 'Work is put away.' })).toBeNull();
+});
+
+it('shows the needs-you part as plain text when links are not available, and no chips when the data is stale', async () => {
+  useFocusStore.setState({ loaded: true });
+  mocks.set('get_now_playing', () => ({ playback_status: 'stopped' }));
+  let stale = false;
+  mocks.set('wall2_omni_summary', () => ({ stale, lanes: [{ id: 'a1b2c3d4-0002', state: 'blocked', waiting: true }], yourMove: { total: 1, first: { sessionId: 'a1b2c3d4-0002' } }, linksAvailable: false }));
+  const r = render(<Unwind />);
+  await flush();
+  expect(document.querySelector('.u-line')!.textContent).toBe('Work is put away. One thing needs you.');
+  expect(screen.queryByRole('button', { name: 'One thing needs you.' })).toBeNull();
+  r.unmount();
+  stale = true;
+  render(<Unwind />);
+  await flush();
+  expect(document.querySelector('.u-line')!.textContent).toBe('Work is put away.');
+  expect(document.querySelector('.u-act')).toBeNull();
+});
+
+it('falls back to the placeholder when the remembered cover on the idle view fails to decode', async () => {
+  mocks.set('get_now_playing', () => ({ playback_status: 'stopped' }));
+  render(<Unwind />);
+  await flush();
+  await act(async () => {
+    useLastPlayed.setState({ last: { title: 'Glass Harbor', artist: 'Band', source: 'Spotify' }, art: 'data:image/png;base64,QUJD' });
+  });
+  const img = document.querySelector('.u-art img')!;
+  expect(img.getAttribute('src')).toBe('data:image/png;base64,QUJD');
+  await act(async () => {
+    fireEvent.error(img);
+  });
+  expect(document.querySelector('.u-art img')).toBeNull();
+  expect(document.querySelector('.u-art svg')).not.toBeNull();
 });

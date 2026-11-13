@@ -62,6 +62,7 @@ export function registerTaskMocks(): void {
     { id: 't11', title: 'Clear the shared drive', due: 20, allDay: true, hour: 0, estimate: null, tags: [], bucket: 0 },
   ];
   mocks.set('wall2_tasks_next', () => tasks.slice(0, 3).map(toItem));
+  mocks.set('wall2_open_task', () => undefined);
   mocks.set('wall2_task_done', (args) => {
     tasks = tasks.filter((t) => t.id !== args?.id);
   });
