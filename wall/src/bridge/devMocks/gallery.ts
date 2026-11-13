@@ -10,7 +10,7 @@ import { mocks, type CommandArgs, type MockHandler } from '../tauri';
  *
  *   ?screen=meet|zen|dream   open that place (Meet, Zen, Zen straight into Dream)
  *   ?tasks=none|few|heavy|off|down
- *   ?meet=none|heavy|off|down|signedout|partial
+ *   ?meet=none|one|heavy|off|down|signedout|partial
  *   ?home=quiet|many|off|down   (the network card; `?net=1|2|3` keeps that many numbers)
  *   ?moods=six|none|down
  *   ?media=none|paused|long|off
@@ -20,8 +20,8 @@ import { mocks, type CommandArgs, type MockHandler } from '../tauri';
  *   ?clock=review           (Date.now starts at the `?at=` moment and then runs, so screens that read it agree)
  *   ?focus=long               (a focus session running under a long title)
  */
-const q = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : new URLSearchParams();
-const knob = (name: string): string | null => q.get(name);
+/** Read at call time: importing this module does nothing. */
+const knob = (name: string): string | null => (typeof window === 'undefined' ? null : new URLSearchParams(window.location.search).get(name));
 
 const now = () => (reviewNow ? reviewNow() : Date.now());
 const iso = (ms: number) => new Date(Math.round(ms / 60_000) * 60_000).toISOString().replace('.000Z', 'Z');
@@ -87,19 +87,23 @@ function meet(mode: string): void {
     return d.getTime();
   };
   const hour = (h: number) => midnight() + h * 3_600_000;
-  // Back to back from 8:00 to 18:00, one hour each, long titles, plus an all-day event.
+  const startHour = Math.floor(now() / 3_600_000) * 3_600_000 - 3_600_000;
+  // Back to back, one hour each from the hour before the review's moment, long titles, plus an
+  // all-day event; the first is under way and the rest follow.
   const heavyDay = () => [
     { key: 'allday', accountId: 'work', title: 'Company offsite, travel day for the west coast team', start: iso(hour(0)), end: iso(hour(24)), canJoin: false, isLive: false },
     ...Array.from({ length: 10 }, (_, i) => ({
       key: `h${i}`,
       accountId: 'work',
       title: LONG_MEETINGS[i % LONG_MEETINGS.length],
-      start: iso(hour(8 + i)),
-      end: iso(hour(9 + i)),
+      start: iso(startHour + i * 3_600_000),
+      end: iso(startHour + (i + 1) * 3_600_000),
       canJoin: true,
       isLive: false,
     })),
   ];
+  // One meeting starting about 25 minutes after the review's moment.
+  const one = () => [{ key: 'one', accountId: 'work', title: 'Design review with the platform team', start: iso(now() + 25 * 60_000), end: iso(now() + 55 * 60_000), canJoin: true, isLive: false }];
   const upcoming = () => heavyDay().filter((e) => e.key !== 'allday');
   wrap('wall2_meet_next', () => {
     if (mode === 'off') throw new Error(NOT_SET_UP);
@@ -107,7 +111,8 @@ function meet(mode: string): void {
     if (mode === 'none') return { accounts: accounts('ok'), meetings: [] };
     if (mode === 'signedout') return { accounts: accounts('signed-out'), meetings: [] };
     if (mode === 'heavy') return { accounts: accounts('ok'), meetings: upcoming().filter((m) => Date.parse(m.end) > now()) };
-    if (mode === 'partial') return { accounts: accounts('ok'), meetings: upcoming().slice(0, 2), stale: true };
+    if (mode === 'one') return { accounts: accounts('ok'), meetings: one() };
+    if (mode === 'partial') return { accounts: accounts('ok'), meetings: one(), stale: true };
     return undefined;
   });
   wrap('wall2_meet_day', () => {
@@ -116,7 +121,8 @@ function meet(mode: string): void {
     if (mode === 'none') return { accounts: accounts('ok'), events: [] };
     if (mode === 'signedout') return { accounts: accounts('signed-out'), events: [] };
     if (mode === 'heavy') return { accounts: accounts('ok'), events: heavyDay() };
-    if (mode === 'partial') return { accounts: accounts('ok'), events: heavyDay().slice(0, 3), stale: true };
+    if (mode === 'one') return { accounts: accounts('ok'), events: one() };
+    if (mode === 'partial') return { accounts: accounts('ok'), events: one(), stale: true };
     return undefined;
   });
 }
@@ -212,7 +218,13 @@ function usage(mode: string): void {
   });
 }
 
-/** Stand in for the weather fetch (the app calls `fetch` on the forecast service). */
+/**
+ * Stand in for the weather fetch (the app calls `fetch` on the forecast service), so no
+ * state ever depends on the network. `stale`: the first answer is good; shortly after it
+ * lands the clock jumps 45 minutes, every later fetch fails, and the page is told it became
+ * visible again, which makes the hook check its age and retry, exactly as it does after the
+ * window was hidden for a while. The reading then shows its stale hint.
+ */
 function weather(mode: string): void {
   const real = window.fetch.bind(window);
   const pad = (n: number) => String(n).padStart(2, '0');
@@ -220,20 +232,29 @@ function weather(mode: string): void {
     const d = new Date(ms);
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:00`;
   };
+  let answered = false;
+  let skew = 0;
+  if (mode === 'stale') {
+    const realNow = Date.now.bind(Date);
+    Date.now = () => realNow() + skew;
+  }
+  const goStale = () => {
+    skew = 45 * 60_000;
+    let hidden = true;
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden });
+    document.dispatchEvent(new Event('visibilitychange'));
+    // Separate renders: two events in one tick would batch to "still visible" and do nothing.
+    setTimeout(() => {
+      hidden = false;
+      document.dispatchEvent(new Event('visibilitychange'));
+    }, 200);
+  };
   window.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input instanceof Request ? input.url : input);
     if (!url.includes('open-meteo')) return real(input, init);
-    if (mode === 'down') throw new TypeError('network down');
-    if (mode === 'stale') {
-      // Answer after the hook's mount-time clock reads (StrictMode runs them twice), then
-      // let the reading be stamped with the time the answer is parsed: 45 minutes ago.
-      await new Promise((r) => setTimeout(r, 300));
-      const realNow = Date.now.bind(Date);
-      Date.now = () => realNow() - 45 * 60_000;
-      setTimeout(() => {
-        Date.now = realNow;
-      }, 150);
-    }
+    if (mode === 'down' || (mode === 'stale' && answered)) throw new TypeError('network down');
+    answered = true;
+    if (mode === 'stale') setTimeout(goStale, 800);
     const t = now();
     const hours = Array.from({ length: 30 }, (_, i) => t + (i - 3) * 3_600_000);
     const temp = mode === 'cold' ? 24 : 58;
