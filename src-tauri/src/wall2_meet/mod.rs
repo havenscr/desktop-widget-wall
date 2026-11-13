@@ -9,6 +9,7 @@
 mod auth;
 mod graph;
 mod meetlog;
+mod netprobe;
 mod reason;
 mod service;
 mod store;
@@ -39,6 +40,7 @@ pub(crate) fn agent() -> &'static ureq::Agent {
             .timeout_write(graph::READ_TIMEOUT)
             .timeout(graph::BUDGET)
             .redirects(0)
+            .resolver(netprobe::TimedResolver)
             .build()
     })
 }
@@ -93,6 +95,19 @@ pub(crate) fn net_of(t: &ureq::Transport) -> &'static str {
     graph::classify_net(kind, io)
 }
 
+/// The fixed failure fields for a transport error to `host_prefix` (see `netprobe.rs`).
+pub(crate) fn probe_of(host_prefix: &str, t: &ureq::Transport) -> netprobe::NetProbe {
+    let stage = match t.kind() {
+        ureq::ErrorKind::Dns => netprobe::Stage::Dns,
+        ureq::ErrorKind::ConnectionFailed => netprobe::Stage::Connect,
+        ureq::ErrorKind::Io => netprobe::Stage::Io,
+        ureq::ErrorKind::BadStatus | ureq::ErrorKind::BadHeader => netprobe::Stage::Reply,
+        _ => netprobe::Stage::Other,
+    };
+    let io = std::error::Error::source(t).and_then(|e| e.downcast_ref::<std::io::Error>()).map(|e| e.kind());
+    netprobe::describe(host_prefix, stage, io)
+}
+
 fn header_of(resp: &ureq::Response, name: &str) -> Option<String> {
     resp.header(name).map(str::to_string)
 }
@@ -102,8 +117,16 @@ fn raw_of(resp: ureq::Response, success_body: bool) -> graph::Raw {
     let retry_after = header_of(&resp, "retry-after");
     let request_id = header_of(&resp, "request-id");
     let client_request_id = header_of(&resp, "client-request-id");
-    let body = if success_body { read_body(resp).unwrap_or_default() } else { read_capped(resp, reason::MAX_ERROR_BODY) };
-    graph::Raw { status, net: None, retry_after, request_id, client_request_id, body }
+    let mut probe = None;
+    let body = if success_body {
+        read_body(resp).unwrap_or_else(|| {
+            probe = Some(netprobe::NetProbe { phase: "body", af: "unknown", addrs: 0, dns_ms: None, v4: netprobe::Probe::None, v6: netprobe::Probe::None });
+            Vec::new()
+        })
+    } else {
+        read_capped(resp, reason::MAX_ERROR_BODY)
+    };
+    graph::Raw { status, net: None, retry_after, request_id, client_request_id, body, probe }
 }
 
 impl graph::GraphClient for HttpGraph {
@@ -131,7 +154,7 @@ impl graph::GraphClient for HttpGraph {
                     raw_of(resp, ok)
                 }
                 Err(ureq::Error::Status(_, resp)) => raw_of(resp, false),
-                Err(ureq::Error::Transport(t)) => graph::Raw { status: 0, net: Some(net_of(&t)), retry_after: None, request_id: None, client_request_id: None, body: Vec::new() },
+                Err(ureq::Error::Transport(t)) => graph::Raw { status: 0, net: Some(net_of(&t)), retry_after: None, request_id: None, client_request_id: None, body: Vec::new(), probe: Some(probe_of("graph.microsoft.com", &t)) },
             }
         };
         graph::run_attempts(ctx, &mut send)

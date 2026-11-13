@@ -2030,6 +2030,7 @@ mod tests {
                 client_request_id: Some("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee".into()),
                 attempt: 3,
                 elapsed_ms: 4210,
+                probe: None,
             };
             (self.calendar_view(a, s, e), Some(diag))
         }
@@ -2288,6 +2289,7 @@ mod tests {
                 client_request_id: None,
                 attempt: 1,
                 elapsed_ms: 2001,
+                probe: None,
             };
             (self.post(t, f), Some(diag))
         }
