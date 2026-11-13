@@ -5,7 +5,7 @@ import { mocks } from '../tauri';
 /**
  * Dev only: `?agents=` picks a helper state for review stills and the fit check:
  * `3` (default), `2`, `1`, `0`, `7` or `12` sessions from a helper 1.1.0 answer, `ask` (one
- * waiting, with a question), `ask2` (two waiting, one of them not on a card), `failed` (one failed), `old`
+ * waiting, with a question), `ask2` (two waiting, one of them not on a card), `7ask` (seven sessions, the fifth waiting), `staleask` (one waiting, then the answer goes stale), `failed` (one failed), `old`
  * (three lanes as the older helper sends them), `stale`, `off` (not set up) and `down` (set
  * up, not answering).
  */
@@ -42,8 +42,9 @@ export function registerOmniMocks(): void {
     const iso = (minsAgo: number) => new Date(now - minsAgo * 60_000).toISOString();
     const id = (i: number) => `a1b2c3d4-${String(i + 1).padStart(4, '0')}`;
     const old = AGENTS === 'old';
-    const count = { '0': 0, '1': 1, '2': 2, '7': 7, '12': 12 }[AGENTS] ?? 3;
-    const waitOn = AGENTS === 'ask' || AGENTS === 'ask2' || old ? [1] : [];
+    const count = { '0': 0, '1': 1, '2': 2, '7': 7, '7ask': 7, '12': 12 }[AGENTS] ?? 3;
+    const stale = AGENTS === 'stale' || AGENTS === 'staleask';
+    const waitOn = AGENTS === 'ask' || AGENTS === 'ask2' || AGENTS === 'staleask' || old ? [1] : AGENTS === '7ask' ? [4] : [];
     const all = POOL.map(([title, long, stage, state, line, next, mins], i) => {
       const waiting = waitOn.includes(i);
       const failed = AGENTS === 'failed' && i === 0;
@@ -87,7 +88,7 @@ export function registerOmniMocks(): void {
       { lane: id(1), start: iso(29), end: iso(12), kind: 'run' },
       { lane: id(1), start: iso(12), end: null, kind: waitOn.includes(1) ? 'wait' : 'run' },
       { lane: id(2), start: iso(8), end: iso(2), kind: 'run' },
-      ...shown.slice(3).map((l, k) => ({ lane: l.id, start: iso(150 - k * 12), end: k % 2 ? iso(60 - k * 4) : null, kind: 'run' })),
+      ...shown.slice(3).map((l, k) => ({ lane: l.id, start: iso(150 - k * 12), end: l.waiting ? null : k % 2 ? iso(60 - k * 4) : null, kind: l.waiting ? 'wait' : 'run' })),
     ].filter((d) => d.lane === ended || shown.some((l) => l.id === d.lane) || old);
     const names: Record<string, { title: string; stage: string; state: string }> = {};
     for (const l of shown) names[l.id] = { title: l.title, stage: l.stage, state: l.state };
@@ -104,7 +105,7 @@ export function registerOmniMocks(): void {
           accounts: [
             { provider: 'claude', label: 'Claude 1', weekPct: 41, fiveHourPct: 12, weekResetsAt: iso(-3000) },
             { provider: 'claude', label: 'Claude 2', weekPct: 94, fiveHourPct: null, weekResetsAt: iso(-1500) },
-            { provider: 'codex', label: 'Codex', weekPct: AGENTS === 'stale' ? null : 6, fiveHourPct: null, weekResetsAt: iso(-4000) },
+            { provider: 'codex', label: 'Codex', weekPct: stale ? null : 6, fiveHourPct: null, weekResetsAt: iso(-4000) },
           ],
         };
     const summary: Record<string, unknown> = {
@@ -112,7 +113,7 @@ export function registerOmniMocks(): void {
       // old as not reachable); the lanes' day follows the review's moment.
       now: new Date().toISOString(),
       tz: 'America/Los_Angeles',
-      stale: AGENTS === 'stale',
+      stale,
       slots: old ? { used: 9, limit: 4 } : { used: shown.length + 4, limit: 4, sessions: shown.length, working, helpers: 4 },
       lanes: shown.slice(0, 3),
       parked: 4,

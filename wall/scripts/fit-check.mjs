@@ -13,11 +13,11 @@
 // an older helper's answer, one lane, no lane, and the fill when the helper is not set up.
 // In every state it also fails on agent hit boxes of two sessions that share pixels, on
 // calendar chips that cover each other in one lane, and on a card line that cuts its words
-// while more than 60 px of it is unused. Exits non-zero on a
+// while more than 60 px of it is unused, and on stage labels closer than 8 px. Exits non-zero on a
 // failure. CI does not run this; run it by hand before a layout change is handed over.
 //
 //   WALL_CHROME=/path/to/chrome-or-headless-shell npm --prefix wall run fit-check
-//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents)
+//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels)
 //   npm --prefix wall run fit-check -- --self-test
 //
 // WALL_CHROME (or the first argument that is not a flag) is a Chromium or
@@ -50,6 +50,7 @@ const EXPECT = {
   bottom: /^ *FAIL \.work \.centre \.shelf:.*container bottom \d+/m,
   page: /^ *FAIL page:.*scroll (?!2560 )\d+ x \d+ <= 2560 x/m,
   agents: /^ *FAIL overlap: agent /m,
+  labels: /^ *FAIL stage labels on card /m,
 };
 const OVERFLOWS = {
   left: '.work .left-wing { transform: translateX(-200px); }',
@@ -58,6 +59,7 @@ const OVERFLOWS = {
   bottom: '.work .centre .shelf { transform: translateY(120px); }',
   page: 'body::after { content: ""; position: absolute; left: 3000px; top: 0; width: 10px; height: 10px; }',
   agents: '.rib .agent-row .sg-hit { height: 20px !important; }',
+  labels: '.work .centre .lane .jn em { padding: 0 14px !important; }',
 };
 
 if (flag('self-test')) {
@@ -96,6 +98,7 @@ const SCROLLED = ['.work .centre', '.work .centre .lanes-hd', '.work .centre .la
 const VARIANTS = [
   { name: 'three lanes, long titles', agents: '3', checks: [...WINGS, ...LANES] },
   { name: 'twelve sessions, long titles, five meetings at once', agents: '12', extra: '&meet=busy', checks: SCROLLED },
+  { name: 'seven sessions, the fifth waiting', agents: '7ask', checks: SCROLLED },
   { name: 'two waiting, one off the cards', agents: 'ask2', checks: [...LANES, '.work .centre .lanes-hd', '.work .centre .ask-btn'] },
   { name: 'one failed', agents: 'failed', checks: LANES },
   { name: 'older helper answer', agents: 'old', checks: [...LANES, '.work .centre .lanes-hd'] },
@@ -164,7 +167,12 @@ try {
       const unused = line.getBoundingClientRect().right - right;
       return truncated && unused > 60 ? ['card ' + i + ' line cut with ' + Math.round(unused) + ' px unused'] : [];
     });
-    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut });
+    // Stage labels on a card's track (the "Hold to merge" card has the narrowest): no two closer than 8 px.
+    const gaps = [...document.querySelectorAll('.work .centre .lane .jr')].flatMap((jr, i) => {
+      const ems = [...jr.querySelectorAll('.jn em')].map((e) => e.getBoundingClientRect()).sort((a, b) => a.left - b.left);
+      return ems.slice(1).flatMap((r, k) => (r.left - ems[k].right < 8 ? ['stage labels on card ' + i + ': gap ' + Math.round((r.left - ems[k].right) * 10) / 10 + ' px between label ' + k + ' and ' + (k + 1)] : []));
+    });
+    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps });
     document.body.appendChild(pre);
   }, 3000);</script>`;
   const broken = overflow ? `<style>${OVERFLOWS[overflow]}</style>` : '';
@@ -188,11 +196,12 @@ try {
       process.exit(1);
     }
     const text = m[1].replaceAll('&quot;', '"').replaceAll('&amp;', '&');
-    const { res, page: doc, overlaps, cut } = JSON.parse(text);
+    const { res, page: doc, overlaps, cut, gaps } = JSON.parse(text);
     for (const o of overlaps) console.log(`  FAIL overlap: ${o}`);
     for (const c of cut) console.log(`  FAIL ${c}`);
-    if (overlaps.length || cut.length) failed = true;
-    else console.log('  ok   no overlapping agent hit boxes or chips, no cut card line beside unused room');
+    for (const g of gaps) console.log(`  FAIL ${g}`);
+    if (overlaps.length || cut.length || gaps.length) failed = true;
+    else console.log('  ok   no overlapping agent hit boxes or chips, no cut card line beside unused room, stage labels at least 8 px apart');
     const pageOk = doc.vw === 2560 && doc.vh === 720 && doc.sw <= doc.cw && doc.sh <= doc.ch;
     if (!pageOk) failed = true;
     console.log(`  ${pageOk ? 'ok  ' : 'FAIL'} page: viewport ${doc.vw} x ${doc.vh} (must be 2560 x 720), scroll ${doc.sw} x ${doc.sh} <= ${doc.cw} x ${doc.ch}`);
