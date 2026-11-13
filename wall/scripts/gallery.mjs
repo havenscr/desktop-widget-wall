@@ -187,11 +187,11 @@ state('dream', 'night with audio demo', 'audio=demo', TIMES.night);
  */
 const EXPECT = [
   // Work
-  ['work', 'sparse', ['Nothing due', 'All three slots free']],
+  ['work', 'sparse', ['Nothing due', 'All slots free']],
   ['work', 'heavy', ['115 more can wait', 'Architecture working', 'Draft the workshop outline']],
   ['work', '2 agent lanes', ['Friday social card', '!Admin pill polish']],
   ['work', '1 agent lane', ['Admin pill polish', 'Free slot']],
-  ['work', 'one agent waiting', 'Waiting on a thumbnail choice'],
+  ['work', 'one agent waiting', 'Which of the four thumbnails goes on the Friday post?'],
   ['work', 'long strings', 'Voice mode: iPhone microphone permission fix'],
   ['work', 'focus running, long title', 'Draft the workshop outline'],
   ['work', 'tasks few', ['Review the dashboard draft', '!Order printer paper']],
@@ -210,7 +210,7 @@ const EXPECT = [
   ['work', 'broken: calendar partly stale', 'may be out of date'],
   ['work', 'broken: media unavailable', 'Nothing playing'],
   ['work', 'broken: weather down', 'Weather unavailable'],
-  ['work', 'broken: weather stale', 'updated 45 min ago'],
+  ['work', 'broken: weather stale', 'Weather unavailable'],
   ['work', 'timeline: no meetings today', 'No meetings today'],
   ['work', 'timeline: calendar not available', 'Calendar not available'],
   ['work', 'timeline: both accounts failing', 'Calendar not available'],
@@ -241,7 +241,7 @@ const EXPECT = [
   ['unwind', 'sparse', ['Nothing playing', 'Quiet']],
   ['unwind', 'heavy', ['An Extremely Long Song Title', 'Away For The Weekend']],
   ['unwind', 'status chips, nothing waiting', ['2 agents still running', 'No agent needs you']],
-  ['unwind', 'status chips, sessions waiting', '2 things need you'],
+  ['unwind', 'status chips, sessions waiting', 'One thing needs you.'],
   ['unwind', 'status chips, none running', ['No agent needs you', '!still running']],
   ['unwind', 'status chips, helper not set up', ['Work is put away', '!No agent needs you', '!still running']],
   ['unwind', 'status chips, focus on', 'Focus is still on'],
