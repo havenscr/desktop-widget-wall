@@ -191,7 +191,16 @@
   stroke: var(--cyan);
   stroke-width: 10;
   stroke-linecap: round;
+}
+/* The arc's glow is a drop-shadow on the whole SVG box, never on the arc itself: a filter on an
+   SVG shape is clipped to the shape's own box, which cut the glow into a square. */
+.ring svg {
+  overflow: visible;
+  border-radius: 50%;
   filter: drop-shadow(0 0 8px rgba(53, 230, 234, 0.55));
+}
+.ring.glow svg {
+  filter: drop-shadow(0 0 8px rgba(93, 242, 182, 0.55));
 }
 .ring-num {
   position: absolute;
@@ -324,17 +333,18 @@
 .work .wr {
   padding-top: 4px;
 }
-/* A round button keeps a 72 px touch target while drawing 52 px, so the rows stay tight. */
+/* The small round controls of the left wing (Focus and the three music buttons): one size
+   and one look, drawn for a mouse (no extra touch padding). The focus ring follows the circle. */
 .work .wl .rd {
-  position: relative;
-  width: 52px;
-  height: 52px;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
 }
-.work .wl .rd::before {
-  content: '';
-  position: absolute;
-  inset: -10px 0 -10px -20px;
-  border-radius: 28px;
+.work .wl .rd:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.16);
+}
+.work .wl .rd:focus-visible {
+  border-radius: 50%;
 }
 
 /* Left wing rows */
@@ -446,6 +456,11 @@
   flex: 1;
   min-width: 0;
 }
+.music-mini-btns {
+  display: flex;
+  gap: 8px;
+  flex: none;
+}
 
 /* Machines: owner vote A, whisper bars. Grey; amber only after 30 s over a limit. */
 .mc {
@@ -457,7 +472,7 @@
 }
 .mc-row {
   display: grid;
-  grid-template-columns: 52px repeat(3, 104px) minmax(0, 1fr);
+  grid-template-columns: 52px repeat(3, 104px) 56px;
   align-items: center;
   column-gap: 12px;
   height: 20px;
@@ -476,7 +491,7 @@
   font-size: 22px;
 }
 .work .wl:not(:has(> .next)) .mc-row {
-  grid-template-columns: 58px repeat(3, 106px) minmax(0, 1fr);
+  grid-template-columns: 58px repeat(3, 106px) 60px;
   height: 30px;
 }
 .work .wl:not(:has(> .next)) .mc-hd {
@@ -539,7 +554,15 @@
   color: var(--dim);
 }
 .mc-temp {
-  text-align: left;
+  min-width: 0;
+  text-align: center;
+}
+.mc-temp.none {
+  opacity: 0.5;
+}
+/* The TEMP header is centred over the temperature numbers. */
+.mc-hd span:last-child {
+  text-align: center;
 }
 /* No reading for this column: the empty track only, faint, so the columns stay aligned. */
 .mc-cell.none {

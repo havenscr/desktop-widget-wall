@@ -199,11 +199,11 @@ export function FocusMini() {
       </div>
       {state.status === 'running' ? (
         <button type="button" className="rd" aria-label="Pause" onClick={f.pause}>
-          <IconPlayerPauseFilled size={28} aria-hidden="true" />
+          <IconPlayerPauseFilled size={26} aria-hidden="true" />
         </button>
       ) : state.status === 'paused' ? (
         <button type="button" className="rd" aria-label="Resume" onClick={f.resume}>
-          <IconPlayerPlayFilled size={28} aria-hidden="true" />
+          <IconPlayerPlayFilled size={26} aria-hidden="true" />
         </button>
       ) : (
         <button
@@ -215,7 +215,7 @@ export function FocusMini() {
             f.start();
           }}
         >
-          <IconPlayerPlayFilled size={28} aria-hidden="true" />
+          <IconPlayerPlayFilled size={26} aria-hidden="true" />
         </button>
       )}
       {sheet && (

@@ -209,7 +209,7 @@ function machines(box: string | null, pc: string | null): void {
   wrap('wall2_machines', async (_args, prev) => {
     if (pc === 'down') throw new Error('failed');
     const base = (await prev?.()) as { pc: object; box: Record<string, unknown> | null; boxStale: boolean };
-    if (box === 'max') return { pc: { cpuPct: 100, gpuPct: 100, ramPct: 100 }, box: { cpuPct: 100, gpuPct: 100, ramPct: 100, tempC: 104 }, boxStale: false };
+    if (box === 'max') return { pc: { cpuPct: 100, gpuPct: 100, ramPct: 100, tempC: 96 }, box: { cpuPct: 100, gpuPct: 100, ramPct: 100, tempC: 104 }, boxStale: false };
     if (box === 'stale') return { ...base, boxStale: true };
     if (box === 'none') return { ...base, box: null };
     if (box === 'down') throw new Error('failed');
@@ -315,6 +315,8 @@ export function registerGalleryMocks(): void {
   if (knob('day') === 'empty') emptyDay();
   const w = knob('weather');
   if (w) weather(w);
+  if (knob('focus') === 'done') setTimeout(() => useFocusStore.setState({ state: { status: 'finished', minutes: 25 } }), 400);
+  if (knob('focus') === 'run') setTimeout(() => useFocusStore.getState().startLabeled('Review the draft'), 400);
   if (knob('focus') === 'long') setTimeout(() => useFocusStore.getState().startLabeled(LONG_FOCUS), 400);
   const screen = knob('screen');
   // After main.tsx and the horizon canvas have opened the place `?hz=` names (the canvas does so on mount).
