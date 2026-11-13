@@ -574,11 +574,18 @@ frame (no ribbon) in the wide zones `470px 1fr 540px`. The parts are in `wall/sr
   `SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify`, or a process name such as
   `Spotify.exe`). `music/players.ts` maps known players from that id to a display name
   ("Spotify", "Edge", "Chrome", "Firefox", "Apple Music", "Media Player" and others) and
-  to the process names of their audio sessions; an unknown player shows its cleaned app
-  name (the package name when the id ends in the bare word `App`), never "App". The
-  slider shows only when `get_audio_sessions` has a session whose normalised process name
-  is exactly one of those (never a partial match, so one app is never taken for
-  another); otherwise the row closes up. The session
+  to the process names of their audio sessions. A packaged id is a known player only when
+  its package family name is one of that player's exact family names (the store Spotify
+  is `SpotifyAB.SpotifyMusic`); a process id only when its file name, lower-cased with
+  `.exe` dropped and nothing else stripped, is one of its process names. An unknown player
+  shows its own cleaned app name (the package name when the id ends in the bare word
+  `App`; never "App", and never a name that reads as a known player's, so
+  `Evil.Spotify_x!App` shows "Evil.Spotify") and never gets a known player's process: a
+  process id gets only the session with exactly its own file name, a packaged one none.
+  The slider shows only when `get_audio_sessions` has such a session; otherwise the row
+  closes up. `Music.UI.exe` is Groove Music's own executable, so that process id names
+  Groove; the ZuneMusic package names Media Player. A remembered cover on the idle view
+  that fails to decode falls back to the placeholder tile. The session
   is tied to the source it was found for, so after a source change the slider hides until
   the new app's session is read and a move never reaches the previous app. Moves are
   clamped to 0 to 1 and sent with `set_audio_session_volume` at most every 100 ms, always

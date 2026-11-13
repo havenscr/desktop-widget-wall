@@ -29,6 +29,16 @@ function useProgress(info: NowPlayingInfo | null, anchor: ProgressAnchor | null)
 }
 
 /**
+ * The idle view's cover could not be decoded: drop it from the store (`rejectArt`, a no-op
+ * when the store holds none) and from the remembered last track, so the placeholder tile
+ * shows instead of a broken image.
+ */
+function dropIdleArt(src: string | null): void {
+  rejectArt();
+  if (src && useLastPlayed.getState().art === src) useLastPlayed.setState({ art: null });
+}
+
+/**
  * Now playing at concept size (`f_unwind` centre): 224 px art, the source app in pink
  * capitals, a 64 px title, the artist, a 520 px progress bar with times, then the
  * transport with the app's volume. When nothing plays it keeps the same footprint: the
@@ -95,7 +105,7 @@ export function Player() {
     return (
       <div className="u-player quiet" data-state="idle">
         <div className="u-now">
-          <div className="u-art dim">{idle.art ? <img src={idle.art} alt="" onError={rejectArt} /> : <IconMusic size={72} stroke={1.25} aria-hidden="true" />}</div>
+          <div className="u-art dim">{idle.art ? <img src={idle.art} alt="" onError={() => dropIdleArt(idle.art)} /> : <IconMusic size={72} stroke={1.25} aria-hidden="true" />}</div>
           <div className="u-meta">
             <span className="u-k">{idle.source ? `Last played on ${idle.source}` : 'Last played'}</span>
             <div className="u-np u-was u-ell">{idle.title}</div>

@@ -7,7 +7,7 @@ import { usePacificTime } from '../ribbon/testZone';
 import { Unwind } from '../screens/Unwind';
 import { usePlaceStore } from '../state/places';
 import { useFocusStore } from '../focus/store';
-import { resetLastPlayed } from './lastPlayed';
+import { resetLastPlayed, useLastPlayed } from './lastPlayed';
 import { LAST_MOOD_AT_KEY, ROOM_RETRY_MS, RoomCard } from './RoomCard';
 import { Tabs } from './Tabs';
 import { Tomorrow } from './Tomorrow';
@@ -405,4 +405,20 @@ it('shows the needs-you part as plain text when links are not available, and no 
   await flush();
   expect(document.querySelector('.u-line')!.textContent).toBe('Work is put away.');
   expect(document.querySelector('.u-act')).toBeNull();
+});
+
+it('falls back to the placeholder when the remembered cover on the idle view fails to decode', async () => {
+  mocks.set('get_now_playing', () => ({ playback_status: 'stopped' }));
+  render(<Unwind />);
+  await flush();
+  await act(async () => {
+    useLastPlayed.setState({ last: { title: 'Glass Harbor', artist: 'Band', source: 'Spotify' }, art: 'data:image/png;base64,QUJD' });
+  });
+  const img = document.querySelector('.u-art img')!;
+  expect(img.getAttribute('src')).toBe('data:image/png;base64,QUJD');
+  await act(async () => {
+    fireEvent.error(img);
+  });
+  expect(document.querySelector('.u-art img')).toBeNull();
+  expect(document.querySelector('.u-art svg')).not.toBeNull();
 });
