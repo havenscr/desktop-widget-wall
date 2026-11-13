@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { mocks } from '../bridge/tauri';
-import { LAST_MOOD_KEY, MOODS_CACHE_KEY, Moods, moodLabel, moodNote } from './Moods';
+import { LAST_MOOD_KEY, MOODS_CACHE_KEY, MOODS_PER_ROW, Moods, inText, moodLabel, moodNote } from './Moods';
 import { artKind } from './MoodArt';
 
 const flush = async (ms = 0) => {
@@ -218,4 +218,41 @@ it('with no list ever read, a failure is one quiet line and no cards', async () 
   expect(screen.queryByRole('button')).toBeNull();
   expect(container.querySelector('.moods.bare')).toBeTruthy();
   expect(screen.getByText('Home app not reachable')).toBeTruthy();
+});
+
+it('says "In N min" for a mood the home app schedules within the hour, and never on the one on now', async () => {
+  vi.setSystemTime(new Date('2026-11-12T16:30:00-08:00'));
+  const t = Date.now();
+  mocks.set('wall2_moods', () => [
+    { id: 'day', label: 'Day', nextAtMs: t + 90 * 60_000 },
+    { id: 'evening', label: 'Evening', nextAtMs: t + 4 * 60_000 + 1 },
+    { id: 'lateNight', label: 'Late Night', nextAtMs: t + 10 * 60_000 },
+  ]);
+  localStorage.setItem(LAST_MOOD_KEY, 'lateNight');
+  render(<Moods />);
+  await flush();
+  expect(screen.getByText('In 5 min')).toBeTruthy();
+  expect(screen.queryAllByText(/^In \d+ min$/)).toHaveLength(1);
+  expect(screen.getByText('On now')).toBeTruthy();
+  expect(inText(null, t)).toBeNull();
+  expect(inText(t - 60_000, t)).toBeNull();
+  expect(inText(t + 61 * 60_000, t)).toBeNull();
+});
+
+it('six moods share the row; more than six scroll sideways', async () => {
+  const many = ['day', 'evening', 'lateNight', 'movie', 'goodnight', 'reading', 'dinner'].map((id) => ({ id, label: id }));
+  mocks.set('wall2_moods', () => many.slice(0, MOODS_PER_ROW));
+  const { container, unmount } = render(<Moods />);
+  await flush();
+  const row = container.querySelector('.mood-row') as HTMLElement;
+  expect(row.className).toBe('mood-row');
+  expect(row.style.gridTemplateColumns).toMatch(/^repeat\(6, /);
+  unmount();
+  mocks.set('wall2_moods', () => many);
+  const again = render(<Moods />);
+  await flush();
+  const scroll = again.container.querySelector('.mood-row') as HTMLElement;
+  expect(scroll.className).toBe('mood-row scroll');
+  expect(scroll.style.gridTemplateColumns).toBe('');
+  expect(again.container.querySelectorAll('.mood-btn')).toHaveLength(7);
 });

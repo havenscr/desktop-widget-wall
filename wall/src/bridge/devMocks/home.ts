@@ -28,11 +28,24 @@ export function registerHomeMocks(): void {
   });
   mocks.set('wall2_links', () => ({ security: true, portal: true }));
   mocks.set('wall2_open_link', () => undefined);
-  mocks.set('wall2_moods', () => [
-    { id: 'day', label: 'Day' },
-    { id: 'evening', label: 'Evening' },
-    { id: 'lateNight', label: 'Late Night' },
-  ]);
+  // `?moods=five` gives the concept's five, `?moods=many` nine (the row scrolls), `?moods=none`
+  // an empty list, `?moods=off` not set up; with a review time, Evening is "In 4 min" in five.
+  mocks.set('wall2_moods', () => {
+    const k = knob('moods');
+    if (k === 'off') return Promise.reject(new Error('not-configured'));
+    if (k === 'none') return [];
+    const three = [
+      { id: 'day', label: 'Day' },
+      { id: 'evening', label: 'Evening', ...(k === 'five' ? { nextAtMs: now() + 4 * 60_000 } : {}) },
+      { id: 'lateNight', label: 'Late Night' },
+    ];
+    if (k === 'five' || k === 'many') {
+      const five = [...three, { id: 'movie', label: 'Movie' }, { id: 'goodnight', label: 'Goodnight' }];
+      if (k === 'five') return five;
+      return [...five, { id: 'reading', label: 'Reading' }, { id: 'dinner', label: 'Dinner' }, { id: 'focusTime', label: 'Focus Time' }, { id: 'partyNight', label: 'Party Night' }];
+    }
+    return three;
+  });
   mocks.set('wall2_apply_mood', async () => {
     await new Promise((resolve) => setTimeout(resolve, 400));
   });
