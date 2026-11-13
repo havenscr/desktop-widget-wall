@@ -101,7 +101,7 @@ pub struct Diag {
     pub kind: Kind,
     /// Which host the request went to: `graph` or `login`.
     pub host: &'static str,
-    /// What kind of network failure it was (`dns`, `connect`, `tls`, `timeout`, `reset`, `other`), when no reply came.
+    /// What kind of network failure it was (`dns`, `connect`, `timeout`, `reset`, `other`), when no reply came.
     pub net: Option<&'static str>,
     /// 0 when no reply arrived.
     pub status: u16,
@@ -201,14 +201,15 @@ pub enum NetKind {
 }
 
 /// The class of a network failure, from the client's error kind and the kind of the I/O error
-/// under it. Never from error text, which could carry a host name or an address.
+/// under it. Never from error text, which could carry a host name or an address. The client
+/// does not tell a TLS failure from other I/O errors, and a malformed reply is no class of its
+/// own, so those are `other` (or `reset` when the peer dropped the connection).
 pub fn classify_net(kind: NetKind, io: Option<std::io::ErrorKind>) -> &'static str {
     use std::io::ErrorKind as K;
     match (kind, io) {
         (NetKind::Dns, _) => "dns",
         (_, Some(K::TimedOut | K::WouldBlock)) => "timeout",
         (_, Some(K::ConnectionReset | K::ConnectionAborted | K::BrokenPipe | K::UnexpectedEof)) => "reset",
-        (_, Some(K::InvalidData)) => "tls",
         (_, Some(K::ConnectionRefused | K::AddrNotAvailable)) => "connect",
         (NetKind::Connect, _) => "connect",
         _ => "other",
@@ -657,7 +658,7 @@ mod tests {
         assert_eq!(classify_net(NetKind::Io, Some(K::WouldBlock)), "timeout");
         assert_eq!(classify_net(NetKind::Io, Some(K::ConnectionReset)), "reset");
         assert_eq!(classify_net(NetKind::Io, Some(K::UnexpectedEof)), "reset");
-        assert_eq!(classify_net(NetKind::Io, Some(K::InvalidData)), "tls");
+        assert_eq!(classify_net(NetKind::Io, Some(K::InvalidData)), "other");
         assert_eq!(classify_net(NetKind::Connect, Some(K::ConnectionRefused)), "connect");
         assert_eq!(classify_net(NetKind::Connect, None), "connect");
         assert_eq!(classify_net(NetKind::Io, Some(K::PermissionDenied)), "other");

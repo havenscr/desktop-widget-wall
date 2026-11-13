@@ -390,7 +390,9 @@ fn read_window(
     let slot = lock(core).flights.entry(acct.id.clone()).or_default().clone();
     let Some(_turn) = Slot::acquire(slot, &ctx) else {
         // The deadline came while another read of this account was still running.
-        return done(AccountState::Unavailable, None, Some(GRAPH_TIMEOUT.to_string()));
+        // Losing the turn at the deadline is not a failure of the account: answer from what is
+        // held and record nothing, so a healthy account is not marked unavailable.
+        return skipped_read(core, &acct.id);
     };
     let mut token_failure: Option<Diag> = None;
     let access = match obtain(acct, store, tokens, core, now, &ctx, generation, None, &mut token_failure) {
@@ -456,7 +458,12 @@ fn settle(
                     statuses.push(out(AccountState::SignedOut, None));
                     lists.push(Vec::new());
                 }
-                _ => {
+                // The store could not be read: not connected, and not signed out either.
+                Fetch::Failed => {
+                    statuses.push(out(AccountState::Unavailable, Some(STORE_READ.to_string())));
+                    lists.push(Vec::new());
+                }
+                Fetch::Found(_) => {
                     let held = if keep_last { core.last.get(&acct.id).cloned() } else { None };
                     stale |= keep_last;
                     statuses.push(out(AccountState::Ok, None));
@@ -2010,8 +2017,9 @@ mod tests {
             assert!(!second.is_finished());
             clock.sleep(Duration::from_secs(13));
             let p = second.join().unwrap();
-            assert_eq!(p.accounts[0].state, "unavailable");
-            assert_eq!(p.accounts[0].reason.as_deref(), Some("graph-timeout"));
+            // Losing the turn is not a failure: nothing held yet, so "checking", and no reason.
+            assert_eq!(p.accounts[0].state, "checking");
+            assert_eq!(p.accounts[0].reason, None);
             assert_eq!(t.calls.load(Ordering::SeqCst), 1, "a late token request was made");
             gate.open();
             let late = first.join().unwrap();
@@ -2204,5 +2212,73 @@ mod tests {
         let lines = std::mem::take(&mut core.lock().unwrap().log_lines);
         assert_eq!(lines.len(), 1);
         assert!(lines[0].contains("unavailable token-network req=next host=login status=network net=connect af=unknown"), "{}", lines[0]);
+    }
+
+    #[test]
+    fn a_read_that_loses_its_turn_at_the_deadline_leaves_the_good_state_alone() {
+        let (store, core, links, accounts) = two_accounts_ready();
+        let clock = Arc::new(TestClock { ms: 0.into() });
+        core.lock().unwrap().clock = Some(clock.clone() as Arc<dyn Clock + Send + Sync>);
+        let gate = Gate::default();
+        let graph = PerAccessGraph { gate: &gate, slow_access: "s" };
+        std::thread::scope(|sc| {
+            let first = sc.spawn(|| read_next_only(&accounts, &store, &no_tokens(), &graph, &core, &links, NOW, Only::One("slow")));
+            gate.wait_entered();
+            let second = sc.spawn(|| read_next_only(&accounts, &store, &no_tokens(), &graph, &core, &links, NOW, Only::One("slow")));
+            wait_for_turn_holders(&core, "slow", 3);
+            // Read 1 is still in Graph; read 2 gives up at its 12 s deadline.
+            clock.sleep(Duration::from_secs(12) + Duration::from_millis(500));
+            let lost = second.join().unwrap();
+            assert_ne!(lost.accounts[1].reason.as_deref(), Some("graph-timeout"));
+            gate.open();
+            let done = first.join().unwrap();
+            assert_eq!(done.accounts[1].state, "ok");
+        });
+        let peek = read_next_only(&accounts, &store, &no_tokens(), &graph, &core, &links, NOW + 1, Only::Nobody);
+        assert_eq!(peek.accounts[1].state, "ok");
+        assert_eq!(peek.accounts[1].reason, None);
+        assert!(peek.meetings.iter().any(|m| m.account_id == "slow"));
+        let lines = core.lock().unwrap().log_lines.join("");
+        assert!(!lines.contains("graph-timeout"), "{lines}");
+    }
+
+    struct GetFlaky {
+        inner: Chunked<MemoryBlobs>,
+        fail_get: std::sync::atomic::AtomicBool,
+    }
+    impl SecretStore for GetFlaky {
+        fn fetch(&self, id: &str) -> Fetch<String> {
+            if self.fail_get.load(Ordering::SeqCst) {
+                return Fetch::Failed;
+            }
+            self.inner.fetch(id)
+        }
+        fn set(&self, id: &str, value: &str) -> bool {
+            self.inner.set(id, value)
+        }
+        fn delete(&self, id: &str) {
+            self.inner.delete(id)
+        }
+    }
+
+    #[test]
+    fn a_discarded_account_whose_store_cannot_be_read_is_unavailable_with_store_read() {
+        let (inner, core, links, accounts) = two_accounts_ready();
+        let store = GetFlaky { inner, fail_get: false.into() };
+        let gate = Gate::default();
+        let graph = PerAccessGraph { gate: &gate, slow_access: "s" };
+        read_next_only(&accounts, &store, &no_tokens(), &graph, &core, &links, NOW, Only::One("fast"));
+        std::thread::scope(|sc| {
+            let slow = sc.spawn(|| read_next_only(&accounts, &store, &no_tokens(), &graph, &core, &links, NOW, Only::One("slow")));
+            gate.wait_entered();
+            // The fast account changes under the read (a new sign-in), and the store cannot be read.
+            *core.lock().unwrap().generations.entry("fast".into()).or_insert(0) += 1;
+            store.fail_get.store(true, Ordering::SeqCst);
+            gate.open();
+            let p = slow.join().unwrap();
+            assert_eq!(p.accounts[0].state, "unavailable");
+            assert_eq!(p.accounts[0].reason.as_deref(), Some("store-read"));
+            assert!(p.meetings.iter().all(|m| m.account_id != "fast"));
+        });
     }
 }

@@ -80,7 +80,7 @@ fn new_client_request_id() -> String {
     format!("{}-{}-{}-{}-{}", &h[0..8], &h[8..12], &h[12..16], &h[16..20], &h[20..32])
 }
 
-/// The class of a transport error (`dns`, `connect`, `tls`, `timeout`, `reset`, `other`),
+/// The class of a transport error (`dns`, `connect`, `timeout`, `reset`, `other`),
 /// from the error kinds only.
 pub(crate) fn net_of(t: &ureq::Transport) -> &'static str {
     let kind = match t.kind() {
