@@ -4,7 +4,7 @@ import { invoke } from '../bridge/tauri';
 import { NOT_CONFIGURED } from '../tasks/model';
 import { reviewNow } from '../ui/reviewClock';
 import { useVisible } from '../ui/useVisible';
-import { useCentreStatus } from './centreStatus';
+import { useCentreStatus } from './centreSources';
 import { MoodArt } from './MoodArt';
 
 export interface Mood {

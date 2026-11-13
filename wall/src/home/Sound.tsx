@@ -19,7 +19,7 @@ import {
   type ReactNode,
 } from 'react';
 import { invoke } from '../bridge/tauri';
-import { useCentreStatus } from './centreStatus';
+import { useCentreStatus } from './centreSources';
 import {
   FACE_MAX,
   LATCH_MS,

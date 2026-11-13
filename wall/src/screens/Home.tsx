@@ -1,4 +1,4 @@
-import { bothOut, useCentreStatus } from '../home/centreStatus';
+import { bothOut, useCentreStatus } from '../home/centreSources';
 import { CentreStatus } from '../home/CentreStatus';
 import { Chores } from '../home/Chores';
 import { LeftWing } from '../home/LeftWing';

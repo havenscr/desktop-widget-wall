@@ -133,7 +133,7 @@ ignored, and each control stays latched for 800 ms after its write settles.
   failed, or one over two minutes old, dims the card, says "Sonos not reachable, showing
   3 min ago" and turns every control off. Never reached shows one compact card; no
   `sonosBaseUrl` shows one line saying what to add. With the moods out as well, the
-  centre shows one status card instead (`home/CentreStatus.tsx`, `home/centreStatus.ts`):
+  centre shows one status card instead (`home/CentreStatus.tsx`, `home/centreSources.ts`):
   each source and its state in plain words, the age of its last good read, the key to
   add when not set up, and **Check again** for both.
 

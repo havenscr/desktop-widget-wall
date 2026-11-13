@@ -1,6 +1,6 @@
 import { IconPlugConnectedX, IconRefresh } from '@tabler/icons-react';
 import { ageWords } from './soundModel';
-import { useCentreStatus, type SourceState } from './centreStatus';
+import { useCentreStatus, type SourceState } from './centreSources';
 
 function line(what: string, state: SourceState, okAt: number | null, key: string, now: number): string {
   if (state === 'unconfigured') return `${what}: not set up. Add ${key} to feeds.json.`;
