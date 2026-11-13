@@ -136,6 +136,80 @@ export function slotsFor(d: Date): Slot[] {
   return ['evening'];
 }
 
+/** The five quick plays on the face, in this order, each with the word its tile shows. */
+export const FACE_TILES = [
+  { slot: 'morning', label: 'Morning' },
+  { slot: 'day', label: 'Day' },
+  { slot: 'evening', label: 'Evening' },
+  { slot: 'night', label: 'Late night' },
+  { slot: 'workday', label: 'Workday' },
+] as const satisfies readonly { slot: Slot; label: string }[];
+
+/** Which of the five a routine's name carries; "workday" never reads as Day. Null for none. */
+export function tileSlot(name: string): Slot | null {
+  const n = name.toLowerCase();
+  if (/\bwork[\s_-]?day\b/.test(n)) return 'workday';
+  if (/\blate[\s_-]?night\b/.test(n)) return 'night';
+  if (/\bmorning\b/.test(n)) return 'morning';
+  if (/\bevening\b/.test(n)) return 'evening';
+  if (/\bday\b/.test(n)) return 'day';
+  return null;
+}
+
+export interface FaceTile {
+  label: string;
+  slot: Slot;
+  routine: MusicRoutine;
+}
+
+/**
+ * The face's quick plays: for each of the five words, the first routine (in the service's
+ * order) whose name carries it. A word with no routine has no tile. A second routine with
+ * the same word is not shown on the face; it stays under More.
+ */
+export function faceTiles(music: readonly MusicRoutine[]): FaceTile[] {
+  const out: FaceTile[] = [];
+  for (const t of FACE_TILES) {
+    const routine = music.find((r) => tileSlot(r.name) === t.slot);
+    if (routine) out.push({ label: t.label, slot: t.slot, routine });
+  }
+  return out;
+}
+
+/** The routines left for More: every music routine that is not on the face. */
+export function moreRoutines(music: readonly MusicRoutine[], tiles: readonly FaceTile[]): MusicRoutine[] {
+  const on = new Set(tiles.map((t) => t.routine.key));
+  return music.filter((r) => !on.has(r.key));
+}
+
+/** The controls More lists: "Group all" is not offered, and Pause all has its own button. */
+export function moreControls(controls: readonly ControlRoutine[]): ControlRoutine[] {
+  return controls.filter((c) => c.action !== 'pauseAll' && c.action !== 'groupAll');
+}
+
+/** One of the three places the Where switch offers. */
+export interface WherePlace {
+  label: string;
+  preset: SonosPreset;
+}
+
+const WHERE_WORDS = [/^office\b/i, /^all\s+speakers\b/i, /^common\s+areas?\b/i];
+
+/** "Office (Work)" reads "Office". */
+export function whereLabel(name: string): string {
+  return name.replace(/\s*\([^)]*\)/g, '').replace(/\s+/g, ' ').trim() || name;
+}
+
+/** Office, All speakers, Common areas, in that order: the presets whose names start so. */
+export function wherePlaces(presets: readonly SonosPreset[]): WherePlace[] {
+  const out: WherePlace[] = [];
+  for (const re of WHERE_WORDS) {
+    const preset = presets.find((p) => re.test(p.name.trim()));
+    if (preset) out.push({ label: whereLabel(preset.name), preset });
+  }
+  return out;
+}
+
 /** The routine marked as the hour's suggestion: the face's first, then "More". */
 export function suggestedKey(music: readonly MusicRoutine[], d: Date): string | null {
   for (const slot of slotsFor(d)) {

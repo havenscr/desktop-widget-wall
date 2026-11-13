@@ -203,7 +203,6 @@ export function Moods() {
   const showCards = moods.length > 0 && status !== 'unconfigured';
   let note: string | null = null;
   if (status === 'unconfigured') note = 'Not set up';
-  else if (status === 'loading' && !showCards) note = 'Loading';
   else if (status === 'error') note = 'Home app not reachable';
   const scroll = moods.length > MOODS_PER_ROW;
   const rowStyle = scroll ? undefined : { gridTemplateColumns: `repeat(${Math.max(moods.length, 1)}, minmax(0, 1fr))` };
@@ -215,6 +214,7 @@ export function Moods() {
           {error ?? note}
         </span>
       </div>
+      {!showCards && status === 'loading' && <div className="mood-skel" aria-hidden="true" />}
       {showCards && (
         <div
           className={scroll ? 'mood-row scroll' : 'mood-row'}
