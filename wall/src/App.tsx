@@ -9,6 +9,7 @@ import { usePlaceStore } from './state/places';
 import { Screens } from './screens/Screens';
 import { Stage } from './stage/Stage';
 import { HoverTipLayer } from './ui/HoverTip';
+import { ToolsDrawer } from './tools/ToolsDrawer';
 import { useSignalStore } from './signals/store';
 
 export function App() {
@@ -33,6 +34,7 @@ export function App() {
         <Rail />
         <Screens />
       </div>
+      <ToolsDrawer />
       <HoverTipLayer />
     </Stage>
   );

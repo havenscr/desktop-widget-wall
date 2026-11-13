@@ -87,7 +87,8 @@ export function installFullscreenKeys(): () => void {
     if (e.key === 'F11') {
       e.preventDefault();
       change('toggle').catch(report);
-    } else if (e.key === 'Escape' && (full || busy)) {
+    } else if (e.key === 'Escape' && !e.defaultPrevented && (full || busy)) {
+      // A layer that already took this Escape (the Tools drawer, a pop-out) keeps fullscreen on.
       e.preventDefault();
       change('exit').catch(report);
     }

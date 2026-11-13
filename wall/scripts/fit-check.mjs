@@ -65,6 +65,10 @@ const EXPECT = {
   zenhint: /^ *FAIL \.zen-bl \.zen-dimhint:.*container right \d+/m,
   chips: /^ *FAIL overlap: chip /m,
   heading: /^ *FAIL deck: the Now heading /m,
+  tools: /^ *FAIL tools drawer: .*outside x 1700 to 2560/m,
+  toolsnames: /^ *FAIL tools: .* is cut with no tooltip/m,
+  meetfill: /^ *FAIL meet: nothing fills the upper right/m,
+  meetempty: /^ *FAIL meet: nothing fills the upper right/m,
   // keys style
   'fy-height': /^ *FAIL deck: the Now row is \d+ px tall on/m,
   'key-edge': /^ *FAIL deck: key ".*" edge against the sky /m,
@@ -93,6 +97,14 @@ const OVERFLOWS = {
   zenhint: '.zen-dimhint { width: 2000px; }',
   chips: '.rib .ev { width: 400px !important; }',
   heading: '.work .right-wing .keys .deck-name { max-width: 40px; overflow: hidden; }',
+  // The Tools drawer 1400 px wide runs past the right edge of the stage.
+  tools: '.tools-drawer { width: 1400px !important; }',
+  // A 20 px name column cuts the account and source names (they carry no tooltip of their own).
+  toolsnames: '.tools-name, .tools-srcname { width: 20px !important; max-width: 20px !important; flex: none !important; overflow: hidden; }',
+  // Meet's Later list hidden leaves the upper right empty.
+  meetfill: '.meet .meet-later { display: none !important; }',
+  // The same on a state with no meeting: the upper right is empty there too.
+  meetempty: '.meet .meet-later { display: none !important; }',
   // keys style
   'fy-height': '.work .right-wing .fy-plate { height: 80px; }',
   'key-edge': '.work .right-wing .deck-tile.key-tile { border-color: transparent !important; }',
@@ -170,8 +182,13 @@ const query = (v) => `?${v.live ? '' : `hz=${v.hz ?? 'work'}&at=${v.at ?? '2026-
 const QUIET = [
   // Meet: both accounts read; one account failing; no account readable; long titles throughout.
   { name: 'Meet, both accounts read', agents: '3', go: 'meet', live: true, extra: '', checks: MEET },
+  { name: 'Meet, one account signed out: the one amber line, Later fills the upper right', agents: '3', go: 'meet', live: true, extra: '', checks: MEET },
+  { name: 'Meet, heavy: Later in two columns', agents: '3', go: 'meet', live: true, extra: '&meet=heavy', checks: MEET },
   { name: 'Meet, one account failing', agents: '3', go: 'meet', live: true, extra: '&meet=mixed', checks: MEET },
   { name: 'Meet, no account readable', agents: '3', go: 'meet', live: true, extra: '&meet=down', checks: MEET },
+  { name: 'Meet, nothing scheduled', agents: '3', go: 'meet', live: true, extra: '&meet=none', checks: MEET },
+  { name: 'Meet, calendar not set up', agents: '3', go: 'meet', live: true, extra: '&meet=off', checks: MEET },
+  { name: 'Meet, first read fails', agents: '3', go: 'meet', live: true, extra: '&meet=failing', checks: MEET },
   // Unwind with nine moods of long names: the Room list stays within two rows.
   { name: 'Unwind, nine long moods', agents: '3', hz: 'unwind', moods: 'nine', maxRows: 2, extra: '', checks: UNWIND },
   // Zen in the evening: the dim hint stays inside the controls' column (the box the Start row sets).
@@ -191,6 +208,22 @@ const QUIET = [
   { name: 'Watch, settings sheet, one look', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wplay=0&wsheet=one', checks: ['.w-sheet', '.w-tiles', '.w-tile', '.w-sfoot'] },
   { name: 'Watch, settings sheet, a look per kind', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=many&wplay=2&wsheet=kind', checks: ['.w-sheet', '.w-srow', '.w-srow .w-seg', '.w-sfoot'] },
 ].map((v) => ({ ...v, q: query(v) }));
+// The Tools drawer over each place, and in each hard state: the drawer, its two columns and every
+// section stay inside the stage, right of the rail and the clock, with no cut text that has no tooltip.
+const TOOLS = ['.tools-drawer', '.tools-drawer .tools-col', '.tools-drawer .tools-block', '.tools-drawer .tools-list', '.tools-drawer .tools-foot'];
+const tools = (name, q) => ({ name: `Tools, ${name}`, q, checks: TOOLS, viewportOnly: true });
+const TOOLS_VARIANTS = [
+  tools('over Work, typical', `${work('3')}&tools=1`),
+  tools('over Work, accounts ringed', `${work('3')}&tools=accounts&meet=signedout`),
+  tools('over Home', `${home('moods=five')}&tools=1`),
+  tools('over Unwind', `${query({ hz: 'unwind', agents: '3', extra: '' })}&tools=1`),
+  tools('over Meet', `${query({ live: true, agents: '3', go: 'meet', extra: '' })}&tools=1`),
+  tools('every source failing or stale', `${work('down')}&weather=stale&tasks=down&home=down&box=none&sonos=down&tools=1`),
+  tools('every source not set up', `${work('off')}&tasks=off&home=off&sonos=off&meet=off&tools=1`),
+  tools('keys refused with a long reason', `${work('3')}&keys=refused&tools=1`),
+  tools('no keys file', `${work('3')}&source=default&tools=1`),
+  tools('Spotify not set up, a sign-in waiting', `${work('3')}&spotify=off&meet=signedout&tools=1`),
+];
 const VARIANTS = [
   { name: 'three lanes, long titles', q: work('3'), checks: [...WINGS, ...LANES] },
   { name: 'twelve sessions, long titles, five meetings at once', q: work('12', '&meet=busy'), checks: SCROLLED },
@@ -266,6 +299,7 @@ const VARIANTS = [
   { name: 'Watt card on Work', q: work('3', '&meet=none'), checks: ['.watt-card'], viewportOnly: true, card: true },
   { name: 'Watt card on Home', q: home('moods=five'), checks: ['.watt-card'], viewportOnly: true, card: true },
   { name: 'Watt card on Unwind', q: query({ hz: 'unwind', agents: '3', extra: '' }), checks: ['.watt-card'], viewportOnly: true, card: true },
+  ...TOOLS_VARIANTS,
 ];
 // keys style: a small PNG reader (8-bit RGB or RGBA, not interlaced, as Chromium writes them) and contrast.
 function readPng(file) {
@@ -498,6 +532,29 @@ try {
         if (cut) deck.push('deck: the Now heading "' + name.textContent + '" is cut');
       }
     }
+    // The Tools drawer: inside x 1700 to 2560 and y 0 to 720, clear of the rail, and no text cut unless a hover card carries it.
+    const toolsOut = [];
+    const drawer = document.querySelector('.tools-drawer');
+    if (drawer) {
+      const dr = drawer.getBoundingClientRect();
+      const rail = document.querySelector('.rail');
+      if (dr.left < 1700 - 0.5 || dr.right > 2560 + 0.5 || dr.top < -0.5 || dr.bottom > 720 + 0.5) toolsOut.push('tools drawer: x ' + Math.round(dr.left) + ' to ' + Math.round(dr.right) + ', y ' + Math.round(dr.top) + ' to ' + Math.round(dr.bottom) + ' is outside x 1700 to 2560, y 0 to 720');
+      if (rail && hit(dr, rail.getBoundingClientRect())) toolsOut.push('tools drawer: covers the rail');
+      for (const e of drawer.querySelectorAll('.tools-name, .tools-srcname, .tools-line, .tools-hint, .tools-note, .tools-chip, .tools-btn, .tools-faint')) {
+        if (e.scrollWidth > e.clientWidth + 1 && !e.closest('[data-tip]')) toolsOut.push('tools: "' + (e.textContent || '').trim().slice(0, 40) + '" is cut with no tooltip');
+        // The row's hover card does not excuse a cut name or a cut read time: those cells must show whole.
+        else if (e.matches('.tools-name, .tools-srcname, [data-kind="time"]') && e.scrollWidth > e.clientWidth + 1) toolsOut.push('tools: "' + (e.textContent || '').trim().slice(0, 40) + '" is cut with no tooltip of its own');
+      }
+    }
+    // Meet's upper right is never an empty gap: a card reaches the right edge of the stage.
+    const meetOut = [];
+    const meetBody = document.querySelector('.meet .meet-body');
+    if (meetBody) {
+      const rights = [...meetBody.querySelectorAll(':scope > .panel')].map((e) => e.getBoundingClientRect().right);
+      const farthest = rights.length ? Math.max(...rights) : 0;
+      // In every state (a meeting, nothing scheduled, not set up, a failed read, no calendar readable) the Later card takes the freed upper right.
+      if (farthest < 2500) meetOut.push('meet: nothing fills the upper right (the last card ends at x ' + Math.round(farthest) + ', the stage is 2560 wide)');
+    }
     // keys style: the Now row's height, each key's box, and the grown Hide screen pill.
     const nowEl = document.querySelector('.work .right-wing .keys');
     const nowH = nowEl ? Math.round(nowEl.getBoundingClientRect().height * 10) / 10 : null;
@@ -573,7 +630,7 @@ try {
       else if (rad < Math.min(r.width, r.height) / 2 - 0.5) lw.push('left wing: focus outline on ' + name + ' is square (radius ' + rad + ' px)');
       e.blur();
     }
-    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, wattCard, header, deck, nowH, edges, hide, lw });
+    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, wattCard, header, deck, nowH, edges, hide, lw, toolsOut, meetOut });
     document.body.appendChild(pre);
   }, new URLSearchParams(location.search).get('card') ? 7000 : 3000);</script>`;
   const broken = overflow ? `<style>${OVERFLOWS[overflow]}</style>` : '';
@@ -586,6 +643,10 @@ try {
   const BREAK_ON = {
     zenhint: (v) => v.name.startsWith('Zen,'),
     picker: (v) => v.name.startsWith('Deck, the key picker open over'),
+    tools: (v) => v.name === 'Tools, over Work, typical',
+    toolsnames: (v) => v.name === 'Tools, over Work, typical',
+    meetfill: (v) => v.name === 'Meet, both accounts read',
+    meetempty: (v) => v.name === 'Meet, nothing scheduled',
     // keys style
     'fy-height': (v) => v.name === 'Keys style, day: library sets held on VS Code' || v.name === 'Keys style, For you with two plates',
     'key-edge': (v) => v.name === 'Keys style, day: library sets held on VS Code',
@@ -610,7 +671,11 @@ try {
       process.exit(1);
     }
     const text = m[1].replaceAll('&quot;', '"').replaceAll('&amp;', '&');
-    const { res, page: doc, overlaps, cut, gaps, wattCard, header, deck, nowH, edges, hide, lw } = JSON.parse(text);
+    const { res, page: doc, overlaps, cut, gaps, wattCard, header, deck, nowH, edges, hide, lw, toolsOut, meetOut } = JSON.parse(text);
+    for (const t of [...toolsOut, ...meetOut]) console.log(`  FAIL ${t}`);
+    if (toolsOut.length || meetOut.length) failed = true;
+    else if (v.q.includes('tools=')) console.log('  ok   the drawer stays inside x 1700 to 2560 and y 0 to 720, clear of the rail, no cut text without a tooltip');
+    else if (v.q.includes('go=meet')) console.log('  ok   Meet: a card reaches the right edge, nothing empty in the upper right');
     // keys style
     if (v.nowH && nowH !== null) nowHeights.push({ page: v.nowH, h: nowH, name: v.name });
     if (v.edges) {
