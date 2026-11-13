@@ -47,8 +47,8 @@ export function Lanes({ summary, stale, freshAt, now, idle }: { summary: OmniSum
   const [step, setStep] = useState(0);
   const list = useRef<HTMLDivElement>(null);
   const all = cards(summary);
-  const snoozed = useSnoozed();
-  const ask = headerAsk(summary, step, snoozed.ids);
+  const snoozed = useSnoozed(summary);
+  const ask = headerAsk(summary, step, snoozed.ids, snoozed.until);
   const n = all.length;
   const free = freeSlots(summary);
   const count = countText(n, IN_VIEW);
@@ -93,7 +93,13 @@ export function Lanes({ summary, stale, freshAt, now, idle }: { summary: OmniSum
           )}
           {stale && <span className="xs lanes-age">{ageText(freshAt, now)}</span>}
         </div>
-        {ask.tone === 'amber' ? (
+        {ask.tone === 'amber' && stale ? (
+          // Old data never reads as live: grey words, not a button.
+          <div className="row calm t-quiet" {...tip(`${ask.title ?? 'Something'} was waiting on you ${asOf}; this may be out of date.`)}>
+            <i className="dot" aria-hidden="true" />
+            <span className="ellipsis">{ask.title ? `Last known: ${ask.title} was waiting on you` : 'Last known: something was waiting on you'}</span>
+          </div>
+        ) : ask.tone === 'amber' ? (
           <div className={`row calm lanes-ask ${stale ? 't-quiet' : 't-amber'}`}>
             <button
               type="button"
@@ -121,7 +127,7 @@ export function Lanes({ summary, stale, freshAt, now, idle }: { summary: OmniSum
                   onClick={() => {
                     const nextStep = step + 1;
                     setStep(nextStep);
-                    openAsk(headerAsk(summary, nextStep, snoozed.ids).id);
+                    openAsk(headerAsk(summary, nextStep, snoozed.ids, snoozed.until).id);
                   }}
                   {...tip('Open the next session that waits on you')}
                 >
@@ -135,7 +141,7 @@ export function Lanes({ summary, stale, freshAt, now, idle }: { summary: OmniSum
           // Old data never reads as an all-clear.
           <div className="row calm t-quiet" {...tip('The agents may have changed since then.')}>
             <i className="dot" aria-hidden="true" />
-            <span>Last known: no agent needed you, {freshAt === null ? 'at an unknown time' : `as of ${clockText(freshAt)}`}</span>
+            <span>{ask.text.includes('snoozed') ? `Last known: ${ask.text}` : freshAt === null ? 'Last known (time unknown): no agent needed you' : `Last known: no agent needed you, as of ${clockText(freshAt)}`}</span>
           </div>
         ) : ask.tone === 'mint' ? (
           <div className="row calm t-mint lanes-ask">
@@ -170,7 +176,7 @@ export function Lanes({ summary, stale, freshAt, now, idle }: { summary: OmniSum
             asOf={stale ? asOf : null}
             question={questionFor(summary, l.id)}
             snoozedUntil={snoozed.ids.has(l.id) ? snoozed.until[l.id] : null}
-            later={(id) => snooze(id)}
+            later={(id) => snooze(id, summary)}
           />
         ))}
         {n > 0 && Array.from({ length: free }, (_, i) => <FreeRow key={i} text="Free slot" />)}

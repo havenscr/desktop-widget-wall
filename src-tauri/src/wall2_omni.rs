@@ -856,8 +856,8 @@ mod focus_win {
         OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
     };
     use windows::Win32::UI::WindowsAndMessaging::{
-        EnumWindows, GetWindow, GetWindowPlacement, GetWindowRect, GetWindowTextLengthW, GetWindowThreadProcessId,
-        IsHungAppWindow, IsIconic, IsWindowVisible, IsZoomed, SetForegroundWindow, SetWindowPos, ShowWindowAsync,
+        EnumWindows, GetWindow, GetWindowPlacement, GetWindowRect, GetWindowThreadProcessId,
+        InternalGetWindowText, IsHungAppWindow, IsIconic, IsWindowVisible, IsZoomed, SetForegroundWindow, SetWindowPos, ShowWindowAsync,
         GW_OWNER, SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE, SWP_NOZORDER, SW_MAXIMIZE, SW_RESTORE, WINDOWPLACEMENT,
         WPF_RESTORETOMAXIMIZED,
     };
@@ -999,6 +999,14 @@ mod focus_win {
         }
     }
 
+    /// Whether a window has any title, read from the window's own record. Unlike
+    /// `GetWindowTextLengthW` it never sends a message to the window, so a window that stops
+    /// answering just after the hung check cannot block this read.
+    fn has_title(hwnd: HWND) -> bool {
+        let mut buf = [0u16; 4];
+        unsafe { InternalGetWindowText(hwnd, &mut buf) > 0 }
+    }
+
     /// One look for a window of the registered OmniGent executable. True when one was found
     /// and brought forward.
     pub fn focus_once(exe: &str) -> bool {
@@ -1009,7 +1017,7 @@ mod focus_win {
                 Candidate {
                     visible: IsWindowVisible(*hwnd).as_bool(),
                     owned: GetWindow(*hwnd, GW_OWNER).is_ok(),
-                    has_title: GetWindowTextLengthW(*hwnd) > 0,
+                    has_title: has_title(*hwnd),
                 }
             })
             .collect();

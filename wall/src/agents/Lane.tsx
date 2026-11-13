@@ -188,7 +188,7 @@ export function Lane({
   const failed = !waits && lane.failed === true;
   const glyph = waits ? 'ask' : failed ? 'failed' : tone === 'mint' ? 'check' : 'bolt';
   const asked = cardLine(lane, question);
-  const line = snoozed ? { text: `Snoozed until ${clockText(snoozedUntil as number)}`, tone: '' as const } : asked;
+  const line = snoozed ? { text: `Waiting on you, snoozed until ${clockText(snoozedUntil as number)}`, tone: '' as const } : asked;
   const elapsed = elapsedLabel(lane, Date.now());
   const meta = cardMeta(lane);
   const withButton = ready && canOpen;

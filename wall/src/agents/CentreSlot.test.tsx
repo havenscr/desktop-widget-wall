@@ -4,6 +4,7 @@ import { mocks } from '../bridge/tauri';
 import { useFocusStore } from '../focus/store';
 import type { WeatherState } from '../weather/useWeather';
 import { CentreSlot } from './CentreSlot';
+import { Lanes } from './Lanes';
 import { lane, summary } from './fixtures';
 import { HOLD_HINT_MS, HOLD_MOVE_PX, HOLD_MS, POLL_MS } from './model';
 import { resetAgents } from './useAgents';
@@ -77,7 +78,7 @@ it('turns a waiting lane amber and says One thing for you', async () => {
   const r = render(<CentreSlot weather={weather} />);
   await flush();
   const calm = r.container.querySelector('.calm')!;
-  expect(calm.textContent).toBe('One thing for you:Voice: iPhone mic fixand more');
+  expect(calm.textContent).toBe('One thing for you:Voice: iPhone mic fixplus others');
   expect(calm.className).toContain('t-amber');
   const lanes = r.container.querySelectorAll('.lane:not(.slim)');
   expect(lanes[0].className).toBe('lane g');
@@ -457,11 +458,14 @@ it('a stale answer quiets the header: no amber, the One thing button and slot me
   await flush(4 * 60_000);
   const centre = r.container.querySelector('.centre.lanes')!;
   expect(centre.className).toContain('stale');
-  expect(r.container.querySelector('.lanes-ask')!.className).toContain('t-quiet');
-  expect(r.container.querySelector('.lanes-ask')!.className).not.toContain('t-amber');
-  const ask = r.container.querySelector('.ask-btn') as HTMLButtonElement;
+  // Grey words, not a button, and never worded as if it were live.
+  const quiet = r.container.querySelector('.calm')!;
+  expect(quiet.className).toContain('t-quiet');
+  expect(quiet.className).not.toContain('t-amber');
+  expect(quiet.textContent).toBe('Last known: Friday social card was waiting on you');
+  expect(quiet.querySelector('button')).toBeNull();
+  const ask = quiet as HTMLElement;
   const meter = r.container.querySelector('.slot-meter') as HTMLButtonElement;
-  expect(ask.disabled).toBe(true);
   expect(meter.disabled).toBe(true);
   fireEvent.click(ask);
   fireEvent.click(meter);
@@ -525,12 +529,81 @@ it('a waiting card shows the helper\'s question, with Open chat and Later; Later
   expect(card().className).not.toContain('wait');
   expect(card().className).toContain('snoozed');
   expect(card().querySelector('.snooze-dot')).not.toBeNull();
-  expect(card().querySelector('.lt2 .s')!.textContent).toBe('Snoozed until 10:39 AM');
-  expect(r.container.querySelector('.calm')!.textContent).toBe('No agent needs you');
+  expect(card().querySelector('.lt2 .s')!.textContent).toBe('Waiting on you, snoozed until 10:39 AM');
+  expect(r.container.querySelector('.calm')!.textContent).toBe('1 waiting, snoozed until 10:39 AM');
   // It comes back by itself.
   await flush(SNOOZE_MS + 100);
   expect(card().className).toContain('wait');
   expect(r.container.querySelector('.ask-btn')!.textContent).toBe('One thing for you:Friday social card');
+});
+
+it('pressing Later sends nothing to any command', async () => {
+  answer = () =>
+    summary({
+      sessionsList: [lane(), lane({ id: 'a1b2c3d4-0002', title: 'Friday social card', waiting: true, state: 'blocked', waitingSinceS: 600 })],
+      yourMove: { total: 1, first: null, ids: ['a1b2c3d4-0002'] },
+    });
+  const r = render(<CentreSlot weather={weather} />);
+  await flush();
+  const seen: string[] = [];
+  const get = mocks.get.bind(mocks);
+  mocks.get = ((k: string) => {
+    seen.push(k);
+    return get(k);
+  }) as typeof mocks.get;
+  try {
+    const later = [...r.container.querySelectorAll('.lane:not(.slim)')[1].querySelectorAll('.ask-btn, .ask-acts button')].find((b) => b.textContent === 'Later') as HTMLElement;
+    fireEvent.click(later);
+    await act(async () => {});
+    expect(r.container.querySelectorAll('.lane:not(.slim)')[1].className).toContain('snoozed');
+    expect(seen).toEqual([]);
+    expect(opened).toEqual([]);
+  } finally {
+    mocks.get = get;
+  }
+});
+
+it('a new question from a snoozed session wakes its card and the header', async () => {
+  let question = 'Which thumbnail for the post?';
+  let waited = 600;
+  answer = () =>
+    summary({
+      sessionsList: [lane(), lane({ id: 'a1b2c3d4-0002', title: 'Friday social card', waiting: true, state: 'blocked', waitingSinceS: waited })],
+      yourMove: { total: 1, first: { sessionId: 'a1b2c3d4-0002', title: 'Friday social card', kind: 'gate', since: null, question }, ids: ['a1b2c3d4-0002'] },
+    });
+  const r = render(<CentreSlot weather={weather} />);
+  await flush();
+  const card = () => r.container.querySelectorAll('.lane:not(.slim)')[1] as HTMLElement;
+  fireEvent.click([...card().querySelectorAll('.ask-acts button')].find((b) => b.textContent === 'Later')!);
+  await flush();
+  expect(card().className).toContain('snoozed');
+  // Time passes, the same question stays quiet.
+  waited += POLL_MS / 1000;
+  await flush(POLL_MS);
+  expect(card().className).toContain('snoozed');
+  // A new question: the card is amber again and the header names it.
+  question = 'Merge the other one too?';
+  waited = 3;
+  await flush(POLL_MS);
+  expect(card().className).not.toContain('snoozed');
+  expect(card().className).toContain('wait');
+  expect(card().querySelector('.lt2 .s')!.textContent).toBe('Merge the other one too?');
+  expect(r.container.querySelector('.ask-btn')!.textContent).toBe('One thing for you:Friday social card');
+});
+
+it('stale with the time unknown: "Last known (time unknown): no agent needed you", in grey', () => {
+  const r = render(<Lanes summary={summary()} stale freshAt={null} now={Date.now()} idle={null} />);
+  const calm = r.container.querySelector('.calm')!;
+  expect(calm.textContent).toBe('Last known (time unknown): no agent needed you');
+  expect(calm.className).toContain('t-quiet');
+});
+
+it('a stale answer where something was waiting, time unknown: grey "Last known: <title> was waiting on you", not a button', () => {
+  const s = summary({ lanes: [lane({ id: 'a1b2c3d4-0002', title: 'Friday social card', waiting: true, state: 'blocked' })], yourMove: { total: 1, first: null, ids: ['a1b2c3d4-0002'] } });
+  const r = render(<Lanes summary={s} stale freshAt={null} now={Date.now()} idle={null} />);
+  const calm = r.container.querySelector('.calm')!;
+  expect(calm.textContent).toBe('Last known: Friday social card was waiting on you');
+  expect(calm.querySelector('button')).toBeNull();
 });
 
 it('the time on a card says what it measures, and "idle 12 min" when the helper knows', async () => {

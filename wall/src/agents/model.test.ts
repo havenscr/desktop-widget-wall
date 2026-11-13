@@ -92,14 +92,28 @@ describe('header and slots', () => {
     expect(headerAsk(one)).toMatchObject({ text: 'One thing for you', title: 'Invoice check', id: 'a1b2c3d4-0009', more: null, canStep: false, tone: 'amber' });
     // Nothing to name or step through: a plain line, never an empty title.
     expect(headerAsk(summary({ yourMove: { total: 3, first: null } }))).toMatchObject({ text: 'Something needs you', title: null, id: null, more: '3 things in all', canStep: false });
-    // More waiting than the five ids it can step through: "and more".
+    // More waiting than the five ids it can step through: "plus others".
     const six = summary({ yourMove: { total: 8, first: null, ids: ['a1b2c3d4-00a1', 'a1b2c3d4-00a2', 'a1b2c3d4-00a3', 'a1b2c3d4-00a4', 'a1b2c3d4-00a5'] } });
-    expect(headerAsk(six).more).toBe('then 4 more, and more');
+    expect(headerAsk(six).more).toBe('then 4 more, plus others');
     expect(headerAsk(six, 4).more).toBe('back to the first');
     // A waiting lane counts even when the your-move list has not caught up.
     const s = summary({ lanes: [lane({ waiting: true }), lane({ id: 'a1b2c3d4-0002', title: 'Second', state: 'blocked' })] });
     expect(needsYouCount(s)).toBe(2);
     expect(headerAsk(s)).toMatchObject({ text: 'One thing for you', title: 'Voice: iPhone mic fix', more: 'then 1 more', canStep: true, tone: 'amber' });
+  });
+
+  it('every waiting session snoozed: says how many wait and when the earliest snooze ends, never "No agent needs you"', () => {
+    const at = new Date(2026, 10, 11, 10, 39).getTime();
+    const one = summary({ lanes: [lane({ waiting: true })], yourMove: { total: 1, first: null, ids: ['a1b2c3d4-0001'] } });
+    expect(headerAsk(one, 0, new Set(['a1b2c3d4-0001']), { 'a1b2c3d4-0001': at })).toMatchObject({ text: '1 waiting, snoozed until 10:39 AM', tone: 'cyan', id: null });
+    const two = summary({ lanes: [lane({ waiting: true }), lane({ id: 'a1b2c3d4-0002', waiting: true })], yourMove: { total: 2, first: null, ids: ['a1b2c3d4-0001', 'a1b2c3d4-0002'] } });
+    const ids = new Set(['a1b2c3d4-0001', 'a1b2c3d4-0002']);
+    expect(headerAsk(two, 0, ids, { 'a1b2c3d4-0001': at + 60_000, 'a1b2c3d4-0002': at }).text).toBe('2 waiting, snoozed until 10:39 AM');
+  });
+
+  it('a bare "and more" reads "plus others"', () => {
+    const ids = ['a1b2c3d4-00a1'];
+    expect(headerAsk(summary({ yourMove: { total: 3, first: null, ids } })).more).toBe('plus others');
   });
 
   it('steps through the waiting ids, naming sessions with no card from the names map, and wraps', () => {
@@ -317,6 +331,50 @@ describe('agent row sub-rows', () => {
       for (const lanes of byRow.values()) expect(lanes.size).toBe(1);
       expect(Math.max(...l.segs.map((g) => g.row))).toBeLessThan(2);
     }
+  });
+
+  it('four, seven and twelve sessions: two rows plus "+N more", the folded spans kept for drawing', () => {
+    for (const n of [4, 7, 12]) {
+      const { ids, l } = rowsFor(n);
+      expect(l.rows).toBe(3);
+      expect(l.moreRow).toBe(2);
+      expect(l.hidden).toHaveLength(n - 2);
+      expect(new Set(l.foldedSegs.map((g) => g.lane))).toEqual(new Set(l.hidden));
+      expect(l.foldedSegs.every((g) => g.row === 2)).toBe(true);
+      expect([...l.segs.map((g) => g.lane), ...l.foldedSegs.map((g) => g.lane)].every((id) => ids.includes(id))).toBe(true);
+    }
+  });
+
+  it('with seven sessions, one waiting on the owner and one working outrank the idle ones for a row', () => {
+    const t = (h: number) => new Date(2026, 10, 11, h).toISOString();
+    const ids = Array.from({ length: 7 }, (_, i) => `a1b2c3d4-00${String(i).padStart(2, '0')}`);
+    const state = (i: number) => (i === 4 ? 'blocked' : i === 5 ? 'working' : 'review');
+    const s = summary({
+      lanes: ids.slice(0, 3).map((id) => lane({ id, state: 'review' })),
+      sessionsList: ids.map((id, i) => lane({ id, state: state(i), waiting: i === 4 })),
+      day: ids.map((id, i) => ({ lane: id, start: t(7 + i), end: t(8 + i), kind: i === 4 ? ('wait' as const) : ('run' as const) })),
+    });
+    const l = agentLayout(s, new Date(2026, 10, 11, 23).getTime(), (ms) => ms / 1e9);
+    // The fifth (waiting) and sixth (working) get rows, kept in card order.
+    expect(l.segs.map((g) => g.lane)).toEqual([ids[4], ids[5]]);
+    expect(l.segs.find((g) => g.lane === ids[4])).toMatchObject({ kind: 'wait', row: 0 });
+    expect(l.hidden).toEqual([ids[0], ids[1], ids[2], ids[3], ids[6]]);
+  });
+
+  it('a folded session that waits on the owner still shows amber in the "+N more" row', () => {
+    const t = (h: number) => new Date(2026, 10, 11, h).toISOString();
+    const ids = Array.from({ length: 6 }, (_, i) => `a1b2c3d4-00${String(i).padStart(2, '0')}`);
+    // Two sessions wait on the owner and one more waits than there are rows for: the
+    // "+N more" row draws the leftover waiting session's span in the wait kind.
+    const s = summary({
+      lanes: ids.slice(0, 3).map((id) => lane({ id, state: 'blocked', waiting: true })),
+      sessionsList: ids.map((id, i) => lane({ id, state: i < 3 ? 'blocked' : 'review', waiting: i < 3 })),
+      day: ids.map((id, i) => ({ lane: id, start: t(7 + i), end: null, kind: i < 3 ? ('wait' as const) : ('done' as const) })),
+    });
+    const l = agentLayout(s, new Date(2026, 10, 11, 23).getTime(), (ms) => ms / 1e9);
+    expect(l.segs.map((g) => g.lane)).toEqual([ids[0], ids[1]]);
+    expect(l.hidden).toContain(ids[2]);
+    expect(l.foldedSegs.find((g) => g.lane === ids[2])!.kind).toBe('wait');
   });
 
   it('a card with no span today takes no row', () => {

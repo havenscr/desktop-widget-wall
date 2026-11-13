@@ -362,9 +362,17 @@ export function headerAsk(
   s: OmniSummary,
   step = 0,
   snoozed: ReadonlySet<string> = new Set(),
+  snoozeUntil: Readonly<Record<string, number>> = {},
 ): { text: string; title: string | null; id: string | null; more: string | null; canStep: boolean; tone: 'cyan' | 'amber' | 'mint' } {
   const n = needsYouCount(s, snoozed);
   if (n === 0) {
+    // Every waiting session is snoozed here: say so, never "No agent needs you".
+    const quiet = waitingIds(s).filter((id) => snoozed.has(id));
+    if (quiet.length > 0) {
+      const ends = quiet.map((id) => snoozeUntil[id]).filter((e): e is number => typeof e === 'number');
+      const when = ends.length > 0 ? `, snoozed until ${clockText(Math.min(...ends))}` : ', snoozed';
+      return { text: `${quiet.length} waiting${when}`, title: null, id: null, more: null, canStep: false, tone: 'cyan' };
+    }
     const ready = cards(s).find(mergeReady);
     if (ready) return { text: 'Ready to merge', title: ready.title, id: ready.id, more: null, canStep: false, tone: 'mint' };
     return { text: 'No agent needs you', title: null, id: null, more: null, canStep: false, tone: 'cyan' };
@@ -375,10 +383,10 @@ export function headerAsk(
   const k = step % ids.length;
   const id = ids[k];
   const title = sessionTitle(s, id) ?? 'a session';
-  // Count only what the button can step through (at most five ids); the rest are "and more".
+  // Count only what the button can step through (at most five ids); the rest are "plus others".
   const rest = ids.length - 1 - k;
   const beyond = n > ids.length;
-  const more = rest > 0 ? `then ${rest} more${beyond ? ', and more' : ''}` : ids.length > 1 ? 'back to the first' : beyond ? 'and more' : null;
+  const more = rest > 0 ? `then ${rest} more${beyond ? ', plus others' : ''}` : ids.length > 1 ? 'back to the first' : beyond ? 'plus others' : null;
   return { text: k === 0 ? 'One thing for you' : 'Also for you', title, id, more, canStep: ids.length > 1, tone: 'amber' };
 }
 
@@ -536,6 +544,8 @@ export interface AgentLayout {
   segs: AgentSegment[];
   /** Sessions with spans today that have no row of their own, in sub-row order. */
   hidden: string[];
+  /** The spans of the folded sessions, drawn as thin stacked lines in the "+N more" row. */
+  foldedSegs: AgentSegment[];
   /** The row the "+N more" label takes, or null when every session has its own row. */
   moreRow: number | null;
   /** Rows in use, the "+N more" row included. */
@@ -547,8 +557,10 @@ export interface AgentLayout {
  * on one sub-row per session, each sub-row 8 px tall so a mouse can hit it. Rows follow the
  * cards' order (the helper's session list, or its lanes from an older helper), then every
  * other session in the order it first ran; only sessions with a span today take a row. As
- * many sessions as fit the band get a row; when there are more, the last row becomes "+N
- * more" for the rest (their spans are not drawn), so no two sessions ever share pixels.
+ * many sessions as fit the band get a row; when there are more, the rows go to the sessions
+ * that need the owner first, then the working ones, then the rest (card order inside each
+ * group), and the last row becomes "+N more": the rest draw as thin stacked lines there
+ * (`foldedSegs`), so no two sessions ever share a hit box.
  * An open run is `run` (cyan), a wait is `wait` (amber), a finished run is `past` (grey)
  * and a span the helper marks done is `done` (grey with a mint cap). `hourAt` maps a time
  * to the ribbon's x; spans outside the ribbon are skipped. `until` (the last good answer's
@@ -583,10 +595,22 @@ export function agentLayout(
   const withSpans = new Set(raw.map((g) => g.lane));
   const order = agentOrder(s).filter((id) => withSpans.has(id));
   const fold = order.length > maxRows;
-  const shown = fold ? order.slice(0, maxRows - 1) : order;
-  const hidden = fold ? order.slice(maxRows - 1) : [];
-  const segs = raw.filter((g) => shown.includes(g.lane)).map((g) => ({ ...g, row: shown.indexOf(g.lane) }));
-  return { segs, hidden, moreRow: fold ? maxRows - 1 : null, rows: fold ? maxRows : shown.length };
+  // With more sessions than rows, the rows go by need: waiting on the owner, then working,
+  // then the rest, in card order inside each group. The rows themselves stay in card order.
+  const byId = new Map(cards({ lanes: s.lanes, sessionsList: s.sessionsList ?? null }).map((l) => [l.id, l]));
+  const rank = (id: string): number => {
+    const l = byId.get(id);
+    const mine = raw.filter((g) => g.lane === id);
+    if ((l && laneWaits(l)) || mine.some((g) => g.kind === 'wait' && g.open)) return 0;
+    if ((l && l.state === 'working') || mine.some((g) => g.kind === 'run' && g.open)) return 1;
+    return 2;
+  };
+  const picked = fold ? new Set([...order].sort((a, b) => rank(a) - rank(b) || order.indexOf(a) - order.indexOf(b)).slice(0, maxRows - 1)) : new Set(order);
+  const shown = order.filter((id) => picked.has(id));
+  const hidden = order.filter((id) => !picked.has(id));
+  const segs = raw.filter((g) => picked.has(g.lane)).map((g) => ({ ...g, row: shown.indexOf(g.lane) }));
+  const foldedSegs = raw.filter((g) => !picked.has(g.lane)).map((g) => ({ ...g, row: maxRows - 1 }));
+  return { segs, hidden, foldedSegs, moreRow: fold ? maxRows - 1 : null, rows: fold ? maxRows : shown.length };
 }
 
 /** The drawn spans alone (see `agentLayout`). */

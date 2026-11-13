@@ -201,6 +201,6 @@ export function useAgentStatusLine(): string | null {
 export function useAgentsWaiting(): boolean {
   const st = useAgents();
   // A session quietened with "Later" on this display does not light the dot.
-  const snoozed = useSnoozed();
+  const snoozed = useSnoozed(st.summary);
   return st.summary !== null && !agentsStale(st) && needsYouCount(st.summary, snoozed.ids) > 0;
 }

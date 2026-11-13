@@ -606,23 +606,44 @@
 }
 .rib .sg-more {
   position: absolute;
-  left: 78px;
-  padding: 0 6px;
   border-radius: 4px;
-  font: 600 11px/8px var(--disp);
-  letter-spacing: 0.04em;
-  color: var(--dim);
-  background: rgba(255, 255, 255, 0.08);
-  white-space: nowrap;
   pointer-events: auto;
   cursor: help;
 }
 .rib .sg-more.open {
   cursor: pointer;
 }
-.rib .sg-more:hover {
+.rib .sg-more-t {
+  position: absolute;
+  top: 0;
+  padding: 0 6px;
+  border-radius: 4px;
+  font: 600 11px/8px var(--disp);
+  font-style: normal;
+  letter-spacing: 0.04em;
+  color: var(--dim);
+  background: rgba(14, 10, 32, 0.82);
+  white-space: nowrap;
+  pointer-events: none;
+}
+.rib .sg-more:hover .sg-more-t {
   color: var(--tx);
-  background: rgba(255, 255, 255, 0.16);
+}
+/* A folded session's spans: thin lines stacked in the "+N more" row. */
+.rib .sg-line {
+  position: absolute;
+  border-radius: 1px;
+  background: rgba(255, 255, 255, 0.3);
+  pointer-events: none;
+}
+.rib .sg-line.run {
+  background: var(--cyan);
+}
+.rib .sg-line.wait {
+  background: var(--amber);
+}
+.rib .sg-more:hover .sg-line {
+  filter: brightness(1.35);
 }
 .rib .sg-hit {
   position: absolute;

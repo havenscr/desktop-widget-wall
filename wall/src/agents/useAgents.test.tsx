@@ -318,11 +318,12 @@ it('a helper clock that steps back (a correction) and runs on from there is move
 });
 
 it('useAgentsWaiting goes quiet for a session snoozed with Later on this display', async () => {
-  answer = () => summary({ lanes: [lane({ waiting: true })], yourMove: { total: 1, first: null, ids: ['a1b2c3d4-0001'] } });
+  const waiting = () => summary({ lanes: [lane({ waiting: true })], yourMove: { total: 1, first: null, ids: ['a1b2c3d4-0001'] } });
+  answer = waiting;
   const { result } = renderHook(() => useAgentsWaiting());
   await flush();
   expect(result.current).toBe(true);
-  act(() => snooze('a1b2c3d4-0001'));
+  act(() => snooze('a1b2c3d4-0001', waiting()));
   expect(result.current).toBe(false);
   act(() => resetSnooze());
   expect(result.current).toBe(true);

@@ -1,4 +1,5 @@
-import { AGENT_BAND, AGENT_BAR, AGENT_PITCH, agentLayout, cards, dayTotals, sessionSpans, STAGE_NAMES, type AgentSegment, type OmniSummary, type Stage } from '../agents/model';
+import { useRef } from 'react';
+import { AGENT_BAND, AGENT_BAR, AGENT_PITCH, agentLayout, cards, dayTotals, sessionSpans, STAGE_NAMES, type AgentLayout, type AgentSegment, type OmniSummary, type Stage } from '../agents/model';
 import { scrollToCard } from '../agents/cardScroll';
 import { focusSession } from '../agents/open';
 import { agentsStale, agentsUntil, useAgents, type AgentsState } from '../agents/useAgents';
@@ -19,9 +20,27 @@ function ribbonX(ms: number, now: number): number | null {
 export function agentBoxes(st: AgentsState, now: number): { x: number; width: number }[] {
   if (!st.summary) return [];
   const l = agentLayout(st.summary, now, (ms) => ribbonX(ms, now), agentsUntil(st), st.skewMs);
-  const out = l.segs.map((g) => ({ x: g.x - 16, width: g.width + 22 }));
+  const out = [...l.segs, ...l.foldedSegs].map((g) => ({ x: g.x - 16, width: g.width + 22 }));
   if (l.moreRow !== null) out.push({ x: 78, width: 70 });
   return out;
+}
+
+/** Where the "+N more" label sits, at the row's left end. */
+const MORE_LABEL_X = 78;
+const MORE_LABEL_W = 74;
+
+/**
+ * The shared hit box of the "+N more" row (the label and every folded span), and how its thin
+ * lines stack: 2 px each up to four sessions, 1 px each beyond (eight lines, then they share).
+ */
+function moreBox(l: AgentLayout): { left: number; width: number; lineH: number; slots: number; top: number } {
+  const xs = l.foldedSegs.flatMap((g) => [g.x, g.x + g.width]);
+  const left = Math.min(MORE_LABEL_X, ...xs);
+  const right = Math.max(MORE_LABEL_X + MORE_LABEL_W, ...xs);
+  const lineH = l.hidden.length <= 4 ? 2 : 1;
+  const slots = Math.floor(AGENT_PITCH / lineH);
+  const top = (AGENT_PITCH - Math.min(l.hidden.length, slots) * lineH) / 2;
+  return { left, width: right - left, lineH, slots, top };
 }
 
 /** What the ribbon knows about one session: its card number (or none), title and stage. */
@@ -102,6 +121,10 @@ export function AgentRow({ now, dueCount = null }: { now: number; dueCount?: num
   const all = s ? agentLayout(s, now, (ms) => ribbonX(ms, now), agentsUntil(st), st.skewMs, Number.POSITIVE_INFINITY).segs : [];
   const layout = s ? agentLayout(s, now, (ms) => ribbonX(ms, now), agentsUntil(st), st.skewMs) : null;
   const segs = layout?.segs ?? [];
+  // A hover card is built once, when it shows, and redrawn from the same function, so it reads
+  // the newest data through this ref instead of the data of the render that opened it.
+  const live = useRef({ s, segs, hidden: layout?.hidden ?? [], canOpen: s?.linksAvailable ?? false, canScroll: false });
+  live.current = { s, segs, hidden: layout?.hidden ?? [], canOpen: s?.linksAvailable ?? false, canScroll: s !== null && (layout?.hidden ?? []).some((id) => cards(s).some((l) => l.id === id)) };
   if (!s || !layout || all.length === 0) {
     // Say the row is empty only when it is known: a fresh helper answer with no span today,
     // and a good task read with nothing due (`dueCount` 0; null while the tasks are unknown).
@@ -113,6 +136,7 @@ export function AgentRow({ now, dueCount = null }: { now: number; dueCount?: num
     ) : null;
   }
   const pitch = AGENT_PITCH;
+  const more = moreBox(layout);
   const bar = AGENT_BAR;
   const cap = Math.min(9, bar + 4);
   const canOpen = s.linksAvailable;
@@ -152,7 +176,7 @@ export function AgentRow({ now, dueCount = null }: { now: number; dueCount?: num
             role={canOpen ? 'button' : 'img'}
             aria-label={label}
             onClick={canOpen ? () => focusSession(g.lane) : undefined}
-            {...tip(() => <BarTip s={s} segs={segs} lane={g.lane} canOpen={canOpen} />)}
+            {...tip(() => (live.current.s ? <BarTip s={live.current.s} segs={live.current.segs} lane={g.lane} canOpen={live.current.canOpen} /> : null))}
           >
             <i
               className={`sg ${g.kind}`}
@@ -166,13 +190,26 @@ export function AgentRow({ now, dueCount = null }: { now: number; dueCount?: num
       {layout.moreRow !== null && (
         <span
           className={`sg-more${firstCard ? ' open' : ''}`}
-          style={{ top: AGENT_BAND.top + layout.moreRow * pitch, height: pitch }}
+          style={{ top: AGENT_BAND.top + layout.moreRow * pitch, height: pitch, left: more.left, width: more.width }}
           role={firstCard ? 'button' : 'img'}
           aria-label={`${layout.hidden.length} more sessions today`}
           onClick={firstCard ? () => scrollToCard(firstCard) : undefined}
-          {...tip(() => <MoreTip s={s} hidden={layout.hidden} canScroll={firstCard !== null} />)}
+          {...tip(() => (live.current.s ? <MoreTip s={live.current.s} hidden={live.current.hidden} canScroll={live.current.canScroll} /> : null))}
         >
-          +{layout.hidden.length} more
+          {layout.foldedSegs.map((g) => {
+            const i = layout.hidden.indexOf(g.lane);
+            const line = more.lineH;
+            return (
+              <i
+                key={g.key}
+                className={`sg-line ${g.kind}`}
+                style={{ left: g.x - more.left, width: g.width, height: line, top: more.top + (i % more.slots) * line }}
+              />
+            );
+          })}
+          <em className="sg-more-t" style={{ left: MORE_LABEL_X - more.left }}>
+            +{layout.hidden.length} more
+          </em>
         </span>
       )}
     </div>

@@ -5,7 +5,8 @@ import { resetAgents } from '../agents/useAgents';
 import { useCardScroll } from '../agents/cardScroll';
 import { mocks } from '../bridge/tauri';
 import { useFocusStore } from '../focus/store';
-import { HoverTipLayer, TIP_DELAY_MS } from '../ui/HoverTip';
+import { POLL_MS } from '../agents/model';
+import { HoverTipLayer, TIP_DELAY_MS, TIP_REFRESH_MS } from '../ui/HoverTip';
 import { RX } from './model';
 import { Ribbon } from './Ribbon';
 import { useFixedClock, usePacificTime } from './testZone';
@@ -192,6 +193,7 @@ it('twelve sessions: two drawn rows, then "+10 more" whose hover lists the rest 
   expect(new Set(hits.map((h) => `${h.style.top}|${h.dataset.lane}`)).size).toBe(2);
   const more = r.container.querySelector('.agent-row .sg-more') as HTMLElement;
   expect(more.textContent).toBe('+10 more');
+  expect(more.querySelectorAll('.sg-line')).toHaveLength(10);
   expect(more.style.top).toBe('84px');
   fireEvent.mouseEnter(more);
   await flush(TIP_DELAY_MS);
@@ -201,6 +203,79 @@ it('twelve sessions: two drawn rows, then "+10 more" whose hover lists the rest 
   expect(card).toContain('12. Session 12');
   fireEvent.click(more);
   expect(useCardScroll.getState().id).toBe(ids[2]);
+});
+
+const manyAnswer = (n: number, waitingIndex: number | null) => {
+  const ids = Array.from({ length: n }, (_, i) => `a1b2c3d4-00${String(i).padStart(2, '0')}`);
+  answer = () =>
+    summary({
+      lanes: ids.slice(0, 3).map((id, i) => lane({ id, title: `Session ${i + 1}`, state: 'review' })),
+      sessionsList: ids.map((id, i) => lane({ id, title: `Session ${i + 1}`, state: i === waitingIndex ? 'blocked' : 'review', waiting: i === waitingIndex })),
+      day: ids.map((id, i) => ({ lane: id, start: iso(`0${6 + Math.floor(i / 4)}:${String((i % 4) * 10).padStart(2, '0')}`), end: i === waitingIndex ? null : iso('09:30'), kind: i === waitingIndex ? ('wait' as const) : ('run' as const) })),
+    });
+  return ids;
+};
+
+it.each([3, 4, 7, 12])('%i sessions: rows never overlap, the "+N more" row is one hit box with stacked lines', async (n) => {
+  const ids = manyAnswer(n, null);
+  const r = render(<Ribbon kind="work" />);
+  await flush();
+  const hits = [...r.container.querySelectorAll('.agent-row .sg-hit')] as HTMLElement[];
+  const more = r.container.querySelector('.agent-row .sg-more') as HTMLElement | null;
+  if (n === 3) {
+    expect(more).toBeNull();
+    expect(new Set(hits.map((h) => h.dataset.lane))).toEqual(new Set(ids));
+    return;
+  }
+  expect(hits).toHaveLength(2);
+  expect(more!.querySelector('.sg-more-t')!.textContent).toBe(`+${n - 2} more`);
+  expect(r.container.querySelectorAll('.agent-row .sg-more').length).toBe(1);
+  const lines = [...more!.querySelectorAll('.sg-line')] as HTMLElement[];
+  expect(lines).toHaveLength(n - 2);
+  const h = n - 2 <= 4 ? '2px' : '1px';
+  expect(new Set(lines.map((l) => l.style.height))).toEqual(new Set([h]));
+  // Lines stay inside the 8 px row.
+  for (const l of lines) expect(parseFloat(l.style.top) + parseFloat(l.style.height)).toBeLessThanOrEqual(8);
+  // The shared box sits in its own row: no drawn hit box shares its top.
+  expect(hits.some((x) => x.style.top === more!.style.top)).toBe(false);
+});
+
+it('a waiting fifth session gets its own row and shows amber', async () => {
+  const ids = manyAnswer(7, 4);
+  const r = render(<Ribbon kind="work" />);
+  await flush();
+  const hits = [...r.container.querySelectorAll('.agent-row .sg-hit')] as HTMLElement[];
+  expect(hits.map((h) => h.dataset.lane)).toContain(ids[4]);
+  const mine = hits.find((h) => h.dataset.lane === ids[4])!;
+  expect(mine.querySelector('.sg')!.className).toBe('sg wait');
+  expect(r.container.querySelectorAll('.agent-row .sg-more .sg-line.wait')).toHaveLength(0);
+});
+
+it('an open bar hover card shows the newest data, not the data from when it opened', async () => {
+  const id = 'a1b2c3d4-0001';
+  answer = () => summary({ lanes: [lane({ id, title: 'Voice fix' })], day: [{ lane: id, start: iso('09:42'), end: null, kind: 'run' }] });
+  const r = render(
+    <>
+      <Ribbon kind="work" />
+      <HoverTipLayer />
+    </>,
+  );
+  await flush();
+  const bar = r.container.querySelector('.agent-row .sg-hit') as HTMLElement;
+  fireEvent.mouseEnter(bar);
+  await flush(TIP_DELAY_MS);
+  expect(document.querySelector('.hover-tip')!.textContent).toContain('working since 9:42');
+  expect(document.querySelector('.hover-tip')!.textContent).not.toContain('waiting on you');
+  answer = () =>
+    summary({
+      lanes: [lane({ id, title: 'Voice fix', waiting: true, state: 'blocked' })],
+      day: [
+        { lane: id, start: iso('09:42'), end: iso('10:20'), kind: 'run' },
+        { lane: id, start: iso('10:20'), end: null, kind: 'wait' },
+      ],
+    });
+  await flush(POLL_MS + TIP_REFRESH_MS);
+  expect(document.querySelector('.hover-tip')!.textContent).toContain('waiting on you since 10:20');
 });
 
 it('a due label that would sit on the agent bars shows only its diamond, with the label in the hover', async () => {
