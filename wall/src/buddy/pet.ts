@@ -78,11 +78,17 @@ export function parsePet(raw: string | null, now: number): PetData {
     const worn = COSMETICS.includes(v.cosmetic as Cosmetic) ? (v.cosmetic as Cosmetic) : 'none';
     const cosmetic: Cosmetic = unlocked(worn, days) ? worn : 'none';
     const t: Partial<Today> = v.today && typeof v.today === 'object' ? v.today : {};
-    const tDate = date(t.date);
+    // A stored date later than today means the clock was wrong when it was written: it is reset to
+    // today (the days are kept), so the count cannot stall until the calendar catches up.
+    const key = dayKey(now);
+    const tDate0 = date(t.date);
+    const tDate = tDate0 !== null && tDate0 <= key ? tDate0 : null;
+    const lastDay0 = date(v.lastDay);
+    const lastDay = lastDay0 !== null && lastDay0 > key ? key : lastDay0;
     const today: Today = tDate
       ? { date: tDate, pets: count(t.pets), songs: count(t.songs), naps: count(t.naps), clovers: count(t.clovers), focus: count(t.focus), agents: count(t.agents), grown: count(t.grown, 2) }
       : base.today;
-    return { chatty, cosmetic, days, lastDay: date(v.lastDay), today };
+    return { chatty, cosmetic, days, lastDay, today };
   } catch {
     return base;
   }

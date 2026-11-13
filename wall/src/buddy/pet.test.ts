@@ -47,6 +47,17 @@ describe('her stored life', () => {
     d = rollDay(d, at(12, 1));
     expect(d.days).toBe(2);
   });
+  it('a stored date later than today is reset to today and the days are kept', () => {
+    const later = JSON.stringify({ days: 7, lastDay: '2099-01-01', today: { date: '2099-01-01', pets: 3 } });
+    const p = parsePet(later, at(11));
+    expect(p.days).toBe(7);
+    expect(p.lastDay).toBe(p.today.date);
+    expect(p.today.date).toBe(defaultPet(at(11)).today.date);
+    expect(p.today.pets).toBe(0);
+    // The count then moves on normally the next day.
+    expect(rollDay(p, at(11) + 24 * 3600_000).days).toBe(8);
+  });
+
   it('rejects oversized, corrupted and out of range values; takes off a cosmetic not yet unlocked', () => {
     const base = defaultPet(at(11));
     expect(parsePet('x'.repeat(MAX_RAW + 1), at(11))).toEqual(base);
