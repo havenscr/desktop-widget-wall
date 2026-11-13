@@ -4,6 +4,8 @@ import { nextAnchor, nextArt, type NowPlayingInfo, type ProgressAnchor } from '.
 
 export const POLL_MS = 2000;
 export const CALL_TIMEOUT_MS = 5000;
+/** A track that came without art is asked for its art again this often (players add it late). */
+export const ART_RETRY_MS = 10_000;
 
 export type MediaCommand = 'media_play_pause' | 'media_next' | 'media_previous';
 
@@ -66,12 +68,28 @@ let timer: ReturnType<typeof setTimeout> | undefined;
 let outstanding: Promise<unknown> | null = null;
 let cancelTimer: (() => void) | null = null;
 let art: string | null = null;
+/**
+ * The `art_key` of the track `art` belongs to, sent back as `artFor` so Rust skips the art
+ * only while this copy still matches the track. Empty asks for the art: before the first
+ * answer, after a dropped or timed-out answer (this stays as it was), and after a reload,
+ * so the art is never lost while Rust thinks it was delivered.
+ */
+let artKey: string | null = null;
+/** When a track came without art, the time to ask again. */
+let artRetryAt = 0;
+/**
+ * The `art_key` whose cover was refused here (a type outside the allowed list, bad base64,
+ * or an image the web view could not decode). It is never asked for again, so a refused
+ * cover does not cross the bridge every 10 seconds.
+ */
+let rejectedKey: string | null = null;
 
 async function pollOnce(): Promise<void> {
   // At most one native call at a time: while a timed-out call is still hung, wait for it.
   if (outstanding) return;
   const mine = ++seq;
-  const call = invoke<NowPlayingInfo | null>('get_now_playing');
+  if (art === null && artKey !== null && artKey !== rejectedKey && Date.now() >= artRetryAt) artKey = null;
+  const call = invoke<NowPlayingInfo | null>('get_now_playing', { artFor: artKey ?? '' });
   outstanding = call;
   const clear = () => {
     if (outstanding === call) outstanding = null;
@@ -84,10 +102,19 @@ async function pollOnce(): Promise<void> {
     if (consumers === 0 || mine !== seq) return;
     if (!next) {
       art = null;
+      artKey = null;
       useNowPlayingStore.setState({ info: null, art: null, at: Date.now(), anchor: null });
       return;
     }
     art = nextArt(next, art);
+    if (!next.art_unchanged) {
+      artKey = typeof next.art_key === 'string' && next.art_key ? next.art_key : null;
+      if (art === null) {
+        artRetryAt = Date.now() + ART_RETRY_MS;
+        // Bytes came but were refused: remember the track so they are not asked for again.
+        if (next.album_art_base64 && artKey) rejectedKey = artKey;
+      }
+    }
     const at = Date.now();
     useNowPlayingStore.setState({ info: next, art, at, anchor: nextAnchor(useNowPlayingStore.getState().anchor, next, at) });
   } catch {
@@ -144,6 +171,17 @@ export function acquireNowPlaying(): () => void {
   };
 }
 
+/**
+ * The cover could not be shown (the `<img>` failed to decode it): drop it and do not ask
+ * for this track's cover again.
+ */
+export function rejectArt(): void {
+  if (art === null) return;
+  rejectedKey = artKey;
+  art = null;
+  useNowPlayingStore.setState({ art: null });
+}
+
 /** Send a media command, then refresh once if the page is still visible and someone is watching. */
 export function sendMediaCommand(name: MediaCommand): void {
   invoke(name)
@@ -168,5 +206,8 @@ export function resetNowPlaying(): void {
   seq++;
   gen++;
   art = null;
+  artKey = null;
+  artRetryAt = 0;
+  rejectedKey = null;
   useNowPlayingStore.setState({ info: null, art: null, at: 0, anchor: null });
 }

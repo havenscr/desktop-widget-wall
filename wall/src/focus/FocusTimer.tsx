@@ -38,7 +38,13 @@ function Ring({ state, now, size = 176 }: { state: FocusState; now: number; size
   );
 }
 
-/** The full focus card. `note` is one quiet line at its foot (Work puts the weather status there while it has no reading). */
+/**
+ * The full focus card (the Work centre's fill): the heading, then the ring beside the
+ * state, the task's name (up to two lines before an ellipsis) and the minutes, then one
+ * row of mouse-sized controls along the foot (start, pause, resume or reset, and the
+ * length picker while it can change). The ring takes the height the card has. `note` is
+ * one quiet line at its foot (Work puts the weather status there while it has no reading).
+ */
 export function FocusTimer({ note }: { note?: ReactNode } = {}) {
   const f = useFocus();
   const { state } = f;
@@ -60,41 +66,45 @@ export function FocusTimer({ note }: { note?: ReactNode } = {}) {
         <Ring state={state} now={f.now} />
         <div className="focus-side">
           <div className="t2">{caption}</div>
-          {'label' in state && state.label && <div className="b6 focus-label ellipsis">{state.label}</div>}
+          {'label' in state && state.label && (
+            <div className="b6 focus-label" title={state.label}>
+              {state.label}
+            </div>
+          )}
           <div className="s">
             {state.status === 'idle' || state.status === 'finished'
               ? `${state.minutes} min session`
               : `${minutesLeft(state, f.now)} min left`}
           </div>
-          <div className="focus-actions">
-            {(state.status === 'idle' || state.status === 'finished') && (
-              <button type="button" className="btn cy" onClick={() => f.start()}>
-                <IconPlayerPlayFilled size={26} aria-hidden="true" />
-                Start
-              </button>
-            )}
-            {state.status === 'running' && (
-              <button type="button" className="btn" onClick={f.pause}>
-                <IconPlayerPauseFilled size={26} aria-hidden="true" />
-                Pause
-              </button>
-            )}
-            {state.status === 'paused' && (
-              <button type="button" className="btn cy" onClick={f.resume}>
-                <IconPlayerPlayFilled size={26} aria-hidden="true" />
-                Resume
-              </button>
-            )}
-            {state.status !== 'idle' && (
-              <button type="button" className="btn" onClick={f.reset}>
-                <IconRotate size={26} aria-hidden="true" />
-                Reset
-              </button>
-            )}
-          </div>
         </div>
       </div>
-      {adjustable && <Picker minutes={state.minutes} custom={custom} setCustom={setCustom} setMinutes={f.setMinutes} />}
+      <div className="focus-foot">
+        {(state.status === 'idle' || state.status === 'finished') && (
+          <button type="button" className="btn cy" onClick={() => f.start()}>
+            <IconPlayerPlayFilled size={20} aria-hidden="true" />
+            Start
+          </button>
+        )}
+        {state.status === 'running' && (
+          <button type="button" className="btn" onClick={f.pause}>
+            <IconPlayerPauseFilled size={20} aria-hidden="true" />
+            Pause
+          </button>
+        )}
+        {state.status === 'paused' && (
+          <button type="button" className="btn cy" onClick={f.resume}>
+            <IconPlayerPlayFilled size={20} aria-hidden="true" />
+            Resume
+          </button>
+        )}
+        {state.status !== 'idle' && (
+          <button type="button" className="btn" onClick={f.reset}>
+            <IconRotate size={20} aria-hidden="true" />
+            Reset
+          </button>
+        )}
+        {adjustable && <Picker minutes={state.minutes} custom={custom} setCustom={setCustom} setMinutes={f.setMinutes} />}
+      </div>
       {note && <div className="s focus-note">{note}</div>}
     </section>
   );

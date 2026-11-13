@@ -61,13 +61,13 @@ it('lays Work out on the three zones: left wing, the centre fill, the next three
   await flush();
   const work = r.container.querySelector('.work.zones')!;
   const zones = [...work.children].map((c) => c.className);
-  expect(zones).toEqual(['wing wl left-wing', 'centre centre-fill', 'wing wr right-wing']);
+  expect(zones).toEqual(['wing wl left-wing', 'centre centre-fill noted', 'wing wr right-wing']);
   // Helper not set up: never an empty "Agents" card. The full focus timer and weather fill
-  // the centre, with one quiet line under them.
+  // the centre, under one quiet header row.
   const centre = work.querySelector('.centre')!;
   expect(centre.querySelector('[aria-label="Focus timer"]')).not.toBeNull();
   expect(centre.querySelector('[aria-label="Weather"]')!.textContent).toContain('High 61°');
-  expect(centre.querySelector('.centre-note')!.textContent).toBe('Agents: not set up');
+  expect(centre.querySelector('.centre-note')!.textContent).toBe('Agentsnot set up');
   expect(centre.querySelector('.lane')).toBeNull();
   expect(work.querySelector('.wr [aria-label="Tasks"]')).not.toBeNull();
 });
@@ -161,7 +161,7 @@ it('gives the focus card the whole centre with a weather line while weather load
   const r = render(<Screens />);
   await flush();
   const centre = r.container.querySelector('.centre')!;
-  expect(centre.className).toBe('centre centre-fill solo');
+  expect(centre.className).toBe('centre centre-fill solo noted');
   expect(centre.querySelectorAll('.panel')).toHaveLength(1);
   expect(centre.querySelector('.focus-note')!.textContent).toBe('Loading weather');
 });
@@ -177,11 +177,11 @@ it('gives the focus card the whole centre when the first weather fetch fails, an
   );
   const r = render(<Screens />);
   await flush();
-  expect(r.container.querySelector('.centre')!.className).toBe('centre centre-fill solo');
+  expect(r.container.querySelector('.centre')!.className).toBe('centre centre-fill solo noted');
   expect(r.container.querySelector('.focus-note')!.textContent).toBe('Weather unavailable');
   fail = false;
   await flush(60_000);
   const centre = r.container.querySelector('.centre')!;
-  expect(centre.className).toBe('centre centre-fill');
+  expect(centre.className).toBe('centre centre-fill noted');
   expect(centre.querySelectorAll('.panel')).toHaveLength(2);
 });

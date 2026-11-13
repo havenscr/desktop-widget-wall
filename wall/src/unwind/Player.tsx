@@ -7,6 +7,8 @@ import {
   IconPlayerSkipForwardFilled,
 } from '@tabler/icons-react';
 import { anchorProgress, formatTime, isPlaying, isQuiet, type NowPlayingInfo, type ProgressAnchor } from '../music/model';
+import { playerName, sourceKey } from '../music/players';
+import { rejectArt } from '../music/store';
 import { useNowPlaying } from '../music/useNowPlaying';
 import { useVisible } from '../ui/useVisible';
 import { useLastPlayed } from './lastPlayed';
@@ -27,6 +29,16 @@ function useProgress(info: NowPlayingInfo | null, anchor: ProgressAnchor | null)
 }
 
 /**
+ * The idle view's cover could not be decoded: drop it from the store (`rejectArt`, a no-op
+ * when the store holds none) and from the remembered last track, so the placeholder tile
+ * shows instead of a broken image.
+ */
+function dropIdleArt(src: string | null): void {
+  rejectArt();
+  if (src && useLastPlayed.getState().art === src) useLastPlayed.setState({ art: null });
+}
+
+/**
  * Now playing at concept size (`f_unwind` centre): 224 px art, the source app in pink
  * capitals, a 64 px title, the artist, a 520 px progress bar with times, then the
  * transport with the app's volume. When nothing plays it keeps the same footprint: the
@@ -43,11 +55,13 @@ export function Player() {
   // A media session exists (stopped or paused counts); with none, play and pause do nothing.
   const hasSession = !!info && !!info.playback_status && info.playback_status !== 'unknown';
   const pct = progress ? (progress.position / progress.duration) * 100 : 0;
+  const source = sourceKey(info);
+  const sourceLabel = playerName(source);
 
   // The idle view: the session's own stopped track first, then the last one seen here.
   const idle = quiet
     ? info?.title
-      ? { title: info.title, artist: info.artist || info.album || '', source: info.source_app || '', art }
+      ? { title: info.title, artist: info.artist || info.album || '', source: sourceLabel ?? '', art }
       : lastPlayed.last
         ? { ...lastPlayed.last, art: lastPlayed.art }
         : null
@@ -70,7 +84,7 @@ export function Player() {
       <button type="button" className="u-rd" aria-label="Next" disabled={quiet} onClick={() => command('media_next')}>
         <IconPlayerSkipForwardFilled size={30} aria-hidden="true" />
       </button>
-      {!quiet && <Volume sourceApp={info?.source_app} />}
+      {!quiet && <Volume source={source} label={sourceLabel} />}
     </div>
   );
 
@@ -91,7 +105,7 @@ export function Player() {
     return (
       <div className="u-player quiet" data-state="idle">
         <div className="u-now">
-          <div className="u-art dim">{idle.art ? <img src={idle.art} alt="" /> : <IconMusic size={72} stroke={1.25} aria-hidden="true" />}</div>
+          <div className="u-art dim">{idle.art ? <img src={idle.art} alt="" onError={() => dropIdleArt(idle.art)} /> : <IconMusic size={72} stroke={1.25} aria-hidden="true" />}</div>
           <div className="u-meta">
             <span className="u-k">{idle.source ? `Last played on ${idle.source}` : 'Last played'}</span>
             <div className="u-np u-was u-ell">{idle.title}</div>
@@ -114,9 +128,9 @@ export function Player() {
   return (
     <div className="u-player" data-state="playing">
       <div className="u-now">
-        <div className="u-art">{art ? <img src={art} alt="" /> : <IconMusic size={72} stroke={1.25} aria-hidden="true" />}</div>
+        <div className="u-art">{art ? <img src={art} alt="" onError={rejectArt} /> : <IconMusic size={72} stroke={1.25} aria-hidden="true" />}</div>
         <div className="u-meta">
-          {info?.source_app ? <span className="u-k u-src">{info.source_app}</span> : null}
+          {sourceLabel ? <span className="u-k u-src">{sourceLabel}</span> : null}
           <div className="u-np u-ell">{info?.title || 'Unknown title'}</div>
           <div className="u-artist u-ell">{info?.artist || info?.album || ''}</div>
           {progress && (

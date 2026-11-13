@@ -158,6 +158,13 @@ pub struct NowPlayingInfo {
     /// album_art_* are omitted and the frontend keeps the art it already has.
     #[serde(default)]
     pub art_unchanged: bool,
+    /// The media session's own app id (a Windows AppUserModelId, or a process name such as
+    /// `Spotify.exe`), so the front end can name the player and find its audio session.
+    pub source_app_id: Option<String>,
+    /// The track the art belongs to (title, artist, album and app). A caller that passes it
+    /// back as `art_for` is told `art_unchanged` only while it still matches, so a caller
+    /// that lost its copy (a reload, a dropped answer) gets the art again.
+    pub art_key: Option<String>,
 }
 
 impl Default for NowPlayingInfo {
@@ -175,6 +182,8 @@ impl Default for NowPlayingInfo {
             shuffle_active: None,
             repeat_mode: None,
             art_unchanged: false,
+            source_app_id: None,
+            art_key: None,
         }
     }
 }
@@ -902,14 +911,37 @@ fn extract_app_name(app_id: &str) -> String {
     if app_id.contains("iTunes") || app_id.contains("Apple") {
         return "Apple Music".to_string();
     }
-    // Fallback: extract last part of path
-    app_id
-        .split(['\\', '!'])
-        .filter(|s| !s.is_empty())
-        .last()
-        .unwrap_or(app_id)
-        .replace(".exe", "")
-        .to_string()
+    fallback_app_name(app_id)
+}
+
+/// A name for an app id no rule above knows. A packaged app's id is
+/// `Publisher.Name_hash!App`, and the part after `!` is often the bare word `App`, so the
+/// package name is used then: `Vendor.PlayerName_abc123!App` gives `PlayerName`. A path
+/// gives its file name without `.exe`. Never the word `App` on its own.
+fn fallback_app_name(app_id: &str) -> String {
+    let file = app_id.rsplit(['\\', '/']).find(|s| !s.is_empty()).unwrap_or(app_id);
+    let (package, entry) = match file.split_once('!') {
+        Some((p, e)) => (p, e),
+        None => (file, ""),
+    };
+    let strip = |s: &str| {
+        let s = s.trim();
+        let s = s.strip_suffix(".exe").or_else(|| s.strip_suffix(".EXE")).unwrap_or(s);
+        s.to_string()
+    };
+    let generic = |s: &str| s.is_empty() || s.eq_ignore_ascii_case("app");
+    let entry = strip(entry);
+    if !generic(entry.as_str()) && !entry.contains('.') {
+        return entry;
+    }
+    // The package: drop the publisher hash, then the publisher prefix.
+    let name = strip(package.split('_').next().unwrap_or(package));
+    let name = name.rsplit('.').find(|s| !s.is_empty()).unwrap_or(name.as_str()).to_string();
+    if generic(name.as_str()) {
+        "Media player".to_string()
+    } else {
+        name
+    }
 }
 
 /// Read album art thumbnail and return as base64
@@ -944,10 +976,14 @@ fn read_thumbnail_sync(
 static LAST_ART_TRACK_KEY: Mutex<Option<String>> = Mutex::new(None);
 
 /// Get current now playing information from Windows Media Session (async to avoid blocking main thread)
+///
+/// `art_for` is the `art_key` of the art the caller already holds (Wall 2 sends it). With
+/// it, the art is skipped only while it matches the current track, whatever other callers
+/// did. Without it (the first wall), the shared last-sent key decides, as before.
 #[tauri::command]
-async fn get_now_playing() -> NowPlayingInfo {
+async fn get_now_playing(art_for: Option<String>) -> NowPlayingInfo {
     // Run Windows Media Session API calls in a blocking thread pool
-    tauri::async_runtime::spawn_blocking(|| {
+    tauri::async_runtime::spawn_blocking(move || {
         // Try to get session manager
         let manager = match GlobalSystemMediaTransportControlsSessionManager::RequestAsync() {
             Ok(async_op) => match async_op.get() {
@@ -975,7 +1011,11 @@ async fn get_now_playing() -> NowPlayingInfo {
 
         // Get source app
         if let Ok(app_id) = session.SourceAppUserModelId() {
-            info.source_app = Some(extract_app_name(&app_id.to_string()));
+            let app_id = app_id.to_string();
+            info.source_app = Some(extract_app_name(&app_id));
+            if !app_id.is_empty() {
+                info.source_app_id = Some(app_id.chars().take(200).collect());
+            }
         }
 
         // Get playback info (includes shuffle and repeat)
@@ -1043,10 +1083,13 @@ async fn get_now_playing() -> NowPlayingInfo {
                     info.album.as_deref().unwrap_or(""),
                     info.source_app.as_deref().unwrap_or("")
                 );
-                let unchanged = LAST_ART_TRACK_KEY
-                    .lock()
-                    .map(|key| key.as_deref() == Some(track_key.as_str()))
-                    .unwrap_or(false);
+                let unchanged = match art_for.as_deref() {
+                    Some(held) => held == track_key,
+                    None => LAST_ART_TRACK_KEY
+                        .lock()
+                        .map(|key| key.as_deref() == Some(track_key.as_str()))
+                        .unwrap_or(false),
+                };
 
                 if unchanged {
                     info.art_unchanged = true;
@@ -1057,10 +1100,13 @@ async fn get_now_playing() -> NowPlayingInfo {
                             info.album_art_mime = Some(mime);
                         }
                     }
-                    if let Ok(mut key) = LAST_ART_TRACK_KEY.lock() {
-                        *key = Some(track_key);
+                    if art_for.is_none() {
+                        if let Ok(mut key) = LAST_ART_TRACK_KEY.lock() {
+                            *key = Some(track_key.clone());
+                        }
                     }
                 }
+                info.art_key = Some(track_key);
             }
         }
 
@@ -3696,6 +3742,7 @@ pub fn run() {
             wall2_feeds::wall2_home_security,
             wall2_feeds::wall2_links,
             wall2_feeds::wall2_open_link,
+            wall2_feeds::wall2_open_task,
             wall2_home::wall2_moods,
             wall2_home::wall2_apply_mood,
             wall2_meet::wall2_meet_next,
@@ -3976,7 +4023,20 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_dnd_mode;
+    use super::{extract_app_name, fallback_app_name, parse_dnd_mode};
+
+    #[test]
+    fn app_names_never_say_app() {
+        assert_eq!(extract_app_name("Spotify.exe"), "Spotify");
+        assert_eq!(extract_app_name("SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify"), "Spotify");
+        assert_eq!(extract_app_name("MSEdge"), "Edge");
+        assert_eq!(fallback_app_name("Vendor.PlayerName_abc123xyz!App"), "PlayerName");
+        assert_eq!(fallback_app_name("Vendor.PlayerName_abc123xyz!Player"), "Player");
+        assert_eq!(fallback_app_name(r"C:\Program Files\Tool\tool.exe"), "tool");
+        assert_eq!(fallback_app_name("foobar2000.exe"), "foobar2000");
+        assert_eq!(fallback_app_name("App"), "Media player");
+        assert_eq!(fallback_app_name("x_y!App"), "x");
+    }
 
     #[test]
     fn dnd_mode_parses_profile_number() {

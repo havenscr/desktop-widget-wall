@@ -4,19 +4,22 @@ import type { WeatherState } from '../weather/useWeather';
 import { WeatherCardView } from '../weather/WeatherCard';
 import { WeatherIcon } from '../weather/WeatherIcon';
 import { Lanes } from './Lanes';
-import { agentsStale, useAgents } from './useAgents';
+import { agentsStale, retryAgents, useAgents } from './useAgents';
 
 /**
- * The fill: the focus timer at full size and the weather with today's range and the next
- * hours. Before the first weather reading, or when the first fetch fails, the focus card
- * takes the whole width and the weather status is one line inside it. `note` is one quiet
- * line under it (the agents' state when the lanes cannot show).
+ * The fill: the focus timer and the weather with today's range and the next hours, side
+ * by side, each filling its box from the heading down. Before the first weather reading,
+ * or when the first fetch fails, the focus card takes the whole width and the weather
+ * status is one line inside it. `note` is a quiet header row above the two cards, in the
+ * place the lanes' header takes (the agents' state when the lanes cannot show).
  */
 function Fill({ weather, note, className = 'centre centre-fill' }: { weather: WeatherState; note?: ReactNode; className?: string }) {
-  const noteRow = note ? <div className="centre-note xs">{note}</div> : null;
+  const noteRow = note ? <div className="centre-note">{note}</div> : null;
+  const cls = `${className}${weather.reading ? '' : ' solo'}${note ? ' noted' : ''}`;
   if (!weather.reading) {
     return (
-      <div className={`${className} solo`}>
+      <div className={cls}>
+        {noteRow}
         <FocusTimer
           note={
             <span className="wx-status">
@@ -25,16 +28,34 @@ function Fill({ weather, note, className = 'centre centre-fill' }: { weather: We
             </span>
           }
         />
-        {noteRow}
       </div>
     );
   }
   return (
-    <div className={className}>
+    <div className={cls}>
+      {noteRow}
       <FocusTimer />
       <WeatherCardView state={weather} />
-      {noteRow}
     </div>
+  );
+}
+
+/** The header row's text for the agents' state: "Agents", then "not set up" or "not reachable" with "Try again". */
+function AgentsNote({ unreachable }: { unreachable: boolean }) {
+  return (
+    <>
+      <span className="k">Agents</span>
+      {unreachable ? (
+        <>
+          <span className="xs t-amber">not reachable</span>
+          <button type="button" className="note-link" onClick={retryAgents}>
+            Try again
+          </button>
+        </>
+      ) : (
+        <span className="xs">not set up</span>
+      )}
+    </>
   );
 }
 
@@ -43,9 +64,10 @@ function Fill({ weather, note, className = 'centre centre-fill' }: { weather: We
  * - the helper answering (fresh, or stale with an earlier answer): the agent lanes, dimmed
  *   with "updated N min ago" while stale (also just after the page comes back, until the
  *   first new read returns);
- * - the helper not set up: the fill, with one quiet line "Agents: not set up";
+ * - the helper not set up: the fill, under a quiet header row "Agents  not set up";
  * - the helper set up but not answering, with no earlier answer (or only an answer whose own
- *   time is over 30 minutes old): the fill, with one quiet amber line "Agents: not reachable";
+ *   time is over 30 minutes old): the fill, under the header row "Agents  not reachable"
+ *   (amber) with a "Try again" link that reads once at once;
  * - before the first answer: the fill alone.
  * Never a large empty "Agents" card.
  */
@@ -62,7 +84,7 @@ export function CentreSlot({ weather }: { weather: WeatherState }) {
       />
     );
   }
-  if (a.status === 'unconfigured') return <Fill weather={weather} note="Agents: not set up" />;
-  if (a.status === 'unreachable') return <Fill weather={weather} note={<span className="t-amber">Agents: not reachable</span>} />;
+  if (a.status === 'unconfigured') return <Fill weather={weather} note={<AgentsNote unreachable={false} />} />;
+  if (a.status === 'unreachable') return <Fill weather={weather} note={<AgentsNote unreachable />} />;
   return <Fill weather={weather} />;
 }

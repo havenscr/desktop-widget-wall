@@ -205,6 +205,23 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* The title opens the chore in the task app. */
+.home .chore-open {
+  line-height: 44px;
+  padding: 0;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.home .chore-open:hover {
+  color: var(--cyan);
+}
+.home .chore-open:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: -3px;
+  border-radius: 10px;
+}
 /* The tick's tap area is the button itself: 52 wide and the row's full 44, so rows
    never share a hit area. The 28 px ring sits at its left. */
 .home .tk3 .ck {
@@ -260,7 +277,15 @@
   white-space: nowrap;
 }
 
-/* Network and security: as tall as what it holds, sitting on the band's bottom. */
+/* Network and security: the heading above the card (as "Around the house"), the card as
+   tall as what it holds, the block sitting on the band's bottom. */
+.network-block {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
 .panel.network {
   position: relative;
   box-sizing: border-box;
@@ -325,6 +350,7 @@
   color: var(--faint);
 }
 .net-nums.stale,
+.net-aside.stale,
 .net-alerts.stale,
 .chore-rows.stale,
 .chores-side .stale {

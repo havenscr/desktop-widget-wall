@@ -198,8 +198,11 @@ it('not set up: the fill with one quiet line, never a Not set up card', async ()
   const r = render(<CentreSlot weather={weather} />);
   await flush();
   expect(r.container.querySelector('[aria-label="Focus timer"]')).not.toBeNull();
-  expect(r.container.querySelector('.centre-note')!.textContent).toBe('Agents: not set up');
+  // A quiet header row above the cards, in the place the lanes' header takes.
+  const note = r.container.querySelector('.centre-fill > .centre-note:first-child')!;
+  expect(note.textContent).toBe('Agentsnot set up');
   expect(r.container.querySelector('.centre-note .t-amber')).toBeNull();
+  expect(r.container.querySelector('.centre-note button')).toBeNull();
   expect(r.container.querySelector('.lanes')).toBeNull();
 });
 
@@ -210,7 +213,27 @@ it('set up but not reachable with no earlier answer: the fill with one amber lin
   const r = render(<CentreSlot weather={weather} />);
   await flush();
   expect(r.container.querySelector('[aria-label="Focus timer"]')).not.toBeNull();
-  expect(r.container.querySelector('.centre-note .t-amber')!.textContent).toBe('Agents: not reachable');
+  expect(r.container.querySelector('.centre-fill > .centre-note:first-child .k')!.textContent).toBe('Agents');
+  expect(r.container.querySelector('.centre-note .t-amber')!.textContent).toBe('not reachable');
+});
+
+it('not reachable: "Try again" forces one read at once, and the lanes come when it answers', async () => {
+  let calls = 0;
+  let up = false;
+  answer = () => {
+    calls += 1;
+    if (!up) throw new Error('failed');
+    return summary({ lanes: [lane()] });
+  };
+  const r = render(<CentreSlot weather={weather} />);
+  await flush();
+  const before = calls;
+  up = true;
+  fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+  await flush();
+  expect(calls).toBe(before + 1);
+  expect(r.container.querySelector('.lanes')).not.toBeNull();
+  expect(r.container.querySelector('.centre-note')).toBeNull();
 });
 
 it('renders titles and lines as plain text', async () => {

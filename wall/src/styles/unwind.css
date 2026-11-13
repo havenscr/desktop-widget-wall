@@ -60,17 +60,48 @@
   gap: 22px;
   width: 470px;
 }
-/* The status line and Screens off share the bottom row; the line may run past the wing. */
-.u-footrow {
-  display: flex;
-  align-items: center;
-  gap: 28px;
-  width: max-content;
-}
+/* The status line along the bottom; it may run past the wing. Its action parts are quiet
+   chips (amber for what needs the owner), the rest plain text. */
 .u-line {
+  width: max-content;
   font-size: 19px;
+  line-height: 36px;
   color: var(--faint);
   white-space: nowrap;
+}
+.u-act {
+  display: inline-block;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 17px;
+  font: inherit;
+  line-height: 32px;
+  color: var(--dim);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--line);
+  cursor: pointer;
+}
+.u-act:hover {
+  color: var(--tx);
+  background: rgba(255, 255, 255, 0.1);
+}
+.u-act.amber {
+  color: var(--amber);
+  background: rgba(255, 194, 77, 0.1);
+  border-color: rgba(255, 194, 77, 0.35);
+}
+.u-act.amber:hover {
+  background: rgba(255, 194, 77, 0.18);
+}
+.u-act:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: 2px;
+}
+/* Screens off: an icon alone in the lower right corner, quiet until hovered. */
+.u-corner {
+  position: absolute;
+  right: 0;
+  bottom: 0;
 }
 
 /* Centre: tabs, then now playing. */
@@ -342,12 +373,23 @@
   outline-offset: 2px;
 }
 
-/* Right wing: the Room card (Live now stacks above it later). */
+/* Right wing: the Room card at the concept's place (f_unwind), its top and height from
+   UNWIND_ROOM_TOP and UNWIND_ROOM_HEIGHT in screens/frameLayout.ts (set on .u-right by
+   Unwind.tsx), its foot level with the player's transport. Live now stacks above it later
+   and takes that space. */
 .u-right {
   display: flex;
   flex-direction: column;
   gap: 20px;
   min-width: 0;
+}
+.u-right > .u-room:first-child {
+  margin-top: var(--room-top, 0);
+}
+.u-room {
+  box-sizing: border-box;
+  min-height: var(--room-height, 0);
+  padding: 18px 26px 20px;
 }
 .u-card {
   padding: 22px 26px;
@@ -363,7 +405,7 @@
   min-height: 24px;
 }
 .u-room .u-s {
-  margin-top: 12px;
+  margin-top: 16px;
 }
 .u-chips {
   display: flex;
@@ -371,12 +413,13 @@
   gap: 10px;
   margin-top: 14px;
 }
+/* Sized for a mouse, as the concept's small pills. */
 .u-chip {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  height: 52px;
-  padding: 0 20px;
+  height: 40px;
+  padding: 0 18px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.08);
   font-size: 20px;
@@ -417,40 +460,49 @@
 
 /* Screens off: a quiet pill on the bottom row, beside the status line. */
 .screens-off {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  height: 52px;
-  padding: 0 22px;
-  border-radius: 26px;
-  font-size: 19px;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
   color: var(--faint);
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid var(--line);
+  opacity: 0.7;
+  background: transparent;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: opacity 200ms ease, background 200ms ease;
+}
+.screens-off:hover,
+.screens-off:focus-visible {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--line);
 }
 .screens-off[aria-pressed='true'] {
   color: var(--cyan);
+  opacity: 1;
 }
 .screens-off:active {
-  transform: scale(0.97);
+  transform: scale(0.95);
 }
 .screens-off:focus-visible {
   outline: 3px solid var(--cyan);
   outline-offset: 2px;
 }
 .screens-off[data-pending='true'] {
-  opacity: 0.7;
+  opacity: 0.5;
 }
 .screens-off-wrap {
   position: relative;
   display: flex;
   align-items: center;
 }
-/* The failure note sits above the pill so the row keeps its height. */
+/* The failure note sits beside the icon, to its left, so nothing else enters the corner. */
 .screens-off-note {
   position: absolute;
-  left: 0;
-  bottom: calc(100% + 8px);
+  right: calc(100% + 12px);
+  top: 50%;
+  transform: translateY(-50%);
   white-space: nowrap;
   font-size: 18px;
   color: var(--faint);
