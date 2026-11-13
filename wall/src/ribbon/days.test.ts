@@ -146,3 +146,22 @@ it('the drawer handle moves off the labels and the needle pill', () => {
   expect(x === centre - 80 || x === centre + 80 || Math.abs(x - centre) >= 70).toBe(true);
   expect(x + HANDLE_W <= centre + 6 || x >= centre + 74).toBe(true);
 });
+
+it("a record's zone that is missing or not a zone falls back to this PC's zone", () => {
+  const spans = [{ stage: 'build' as const, start: iso('2026-11-12', '09:00'), end: iso('2026-11-12', '10:00') }];
+  for (const tz of ['', 'Not/AZone', undefined as unknown as string]) {
+    const rows = recordRows({ date: '2026-11-12', tz, sessions: [{ id: 'a1b2c3d4-0001', title: 'Odd zone', spans, pr: null }] }, NOW);
+    expect(rows[0].spans.map((x) => [x.from, x.to])).toEqual([[9, 10]]);
+  }
+});
+
+it('an older helper with no sessionsList: the cards are its lanes, and a day log id still makes no row', () => {
+  const s = summary({
+    lanes: [lane()],
+    day: [
+      { lane: 'a1b2c3d4-0001', start: iso('2026-11-13', '08:00'), end: null, kind: 'run' },
+      { lane: 'a1b2c3d4-0c01', start: iso('2026-11-13', '09:00'), end: null, kind: 'run' },
+    ],
+  });
+  expect(todayRows(s, null, NOW).map((r) => r.id)).toEqual(['a1b2c3d4-0001']);
+});

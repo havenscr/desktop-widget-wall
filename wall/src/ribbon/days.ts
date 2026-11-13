@@ -236,7 +236,7 @@ export function recordRows(r: DayRecord, now: number): PanelRow[] {
 
 /**
  * Rows for today. A row is only ever a session from the helper's live `sessionsList` (its
- * parents and standalone sessions, in that order) or from today's saved record, which holds
+ * parents and standalone sessions, in that order; `lanes` from an older helper without one) or from today's saved record, which holds
  * only parents and standalone sessions (the helper's contract from 1.2.2 on). An id found
  * only in the live day log or the names map (a child, a side chat) never becomes a row.
  * Stage colours come from the saved record when it has the session; the waits always come
@@ -246,7 +246,8 @@ export function recordRows(r: DayRecord, now: number): PanelRow[] {
  */
 export function todayRows(s: OmniSummary, record: DayRecord | null, now: number, until: number = now, skewMs = 0): PanelRow[] {
   const midnight = dayStart(isoDay(now));
-  const cardList = s.sessionsList ?? [];
+  // An older helper sends no `sessionsList`: its `lanes` are then the cards Work shows.
+  const cardList = s.sessionsList ?? s.lanes;
   const order: string[] = cardList.map((l) => l.id);
   for (const x of record?.sessions ?? []) if (!order.includes(x.id)) order.push(x.id);
   const sorted = [...s.day].sort((a, b) => Date.parse(a.start) - Date.parse(b.start));
