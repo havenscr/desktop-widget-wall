@@ -2709,7 +2709,7 @@ mod day_record_tests {
         assert!(check < base, "the date is checked before any request");
         // The day list never clears the authorised ids.
         let at = src.find("pub async fn wall2_omni_days(").expect("command");
-        let end = src[at..].find("\n}\n").expect("end");
+        let end = src[at..].find("\n}").expect("end");
         assert!(!src[at..at + end].contains("remember_day_ids"));
         // The day open checks the date and the id before building any link.
         let at = src.find("pub fn wall2_focus_day_session(").expect("command");
