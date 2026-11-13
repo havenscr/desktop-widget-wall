@@ -157,6 +157,18 @@ state('work', 'deck: longest labels pinned', 'keys=library&pins=long');
 add('work', 'deck: key picker open, whole library', url('work', TYPICAL_AT, 'keys=library'), true, 'ctx:.pin-tile');
 // The agents header with twelve sessions, two waiting and an alarm: one line.
 state('work', 'agents header: twelve sessions, two waiting, an alarm', 'agents=12ask');
+// The calm strip (Work): overlapping meetings folded into one chip, one agents line, the Day
+// drawer from the handle, and the Agents today panel with its day picker.
+state('work', 'bottom: overlaps and twelve', 'meet=overlap&agents=12ask');
+state('work', 'bottom: normal', '');
+add('work', 'bottom: overlap hover', url('work', TYPICAL_AT, 'meet=overlap&agents=3'), true, 'hover:.rib .ev.fold');
+add('work', 'bottom: day drawer', url('work', TYPICAL_AT, 'meet=overlap&agents=12ask'), true, '.rib .rib-handle');
+add('work', 'agents today: today', url('work', TYPICAL_AT, 'agents=7ask&days=typical'), true, '.rib .ag-line');
+add('work', 'agents today: yesterday', url('work', TYPICAL_AT, 'agents=7ask&days=typical'), true, '.rib .ag-line >> .at-seg button:nth-child(2)');
+add('work', 'agents today: heavy day', url('work', TYPICAL_AT, 'agents=12&days=heavy&long=1'), true, '.rib .ag-line >> .at-seg button:nth-child(2)');
+add('work', 'agents today: empty day', url('work', TYPICAL_AT, 'agents=3&days=empty'), true, '.rib .ag-line >> .at-seg button:nth-child(2)');
+add('work', 'agents today: record absent', url('work', TYPICAL_AT, 'agents=3&days=absent'), true, '.rib .ag-line');
+add('work', 'agents today: helper down', url('work', TYPICAL_AT, 'agents=12staleask&days=down'), true, '.rib .ag-line');
 
 // Timeline rows that say they are empty (only when that is known).
 state('work', 'timeline: no meetings today', 'meet=none');
@@ -344,6 +356,18 @@ const EXPECT = [
   ['dream', 'one agent waiting', 'Click anywhere to wake'],
   ['dream', 'broken: calendar not available', 'Calendar not available'],
 ];
+// The calm strip, the Day drawer and the Agents today panel.
+EXPECT.push(
+  ['work', 'bottom: overlaps and twelve', ['3 at 1:30', '12 sessions: 2 need you']],
+  ['work', 'bottom: overlap hover', ['3 meetings overlap', 'Vendor demo1:30 to 3:30 PM']],
+  ['work', 'bottom: day drawer', ['Agents today', 'Vendor demo1:30 to 3:30', 'waiting on you']],
+  ['work', 'agents today: today', ['Click a row to open its session', 'waiting on you']],
+  ['work', 'agents today: yesterday', ['From the saved record of the day', '!m waiting on you']],
+  ['work', 'agents today: heavy day', ['From the saved record of the day', 'across 40 sessions']],
+  ['work', 'agents today: empty day', 'No sessions recorded on this day'],
+  ['work', 'agents today: record absent', ['Agents today', '!Yesterday']],
+  ['work', 'agents today: helper down', 'may be out of date'],
+);
 
 /**
  * States that set a knob but change nothing in the page text, so no text can prove them: the
@@ -559,13 +583,19 @@ async function render(cdp, base, s, file, ctl) {
     await to('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
     await to('Page.navigate', { url: `${base}?${s.query}` });
     await new Promise((r) => setTimeout(r, SETTLE_MS));
-    if (s.click) {
-      // A state shown just after a click (a task tick's Undo window).
-      // `ctx:<selector>` right-clicks (opens the key picker), anything else clicks.
-      const ctx = s.click.startsWith('ctx:');
-      const sel = JSON.stringify(ctx ? s.click.slice(4) : s.click);
+    // A state shown just after a click (a task tick's Undo window). Steps run in order,
+    // separated by ` >> `: `ctx:<selector>` right-clicks (opens the key picker), `hover:<selector>`
+    // rests the pointer on it (its hover card), anything else clicks.
+    for (const step of s.click ? s.click.split(' >> ') : []) {
+      const ctx = step.startsWith('ctx:');
+      const hover = step.startsWith('hover:');
+      const sel = JSON.stringify(ctx ? step.slice(4) : hover ? step.slice(6) : step);
       await to('Runtime.evaluate', {
-        expression: ctx ? `document.querySelector(${sel})?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))` : `document.querySelector(${sel})?.click()`,
+        expression: ctx
+          ? `document.querySelector(${sel})?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))`
+          : hover
+            ? `document.querySelector(${sel})?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, cancelable: true }))`
+            : `document.querySelector(${sel})?.click()`,
       });
       await new Promise((r) => setTimeout(r, 900));
     }

@@ -59,6 +59,10 @@ const EXPECT = {
   picker: /^ *FAIL deck: the key picker reaches y \d+, over the timeline/m,
   chips: /^ *FAIL overlap: chip /m,
   heading: /^ *FAIL deck: the Now heading /m,
+  strip: /^ *FAIL strip: the Work strip is \d+ px tall/m,
+  fold: /^ *FAIL strip: the folded chip's count is cut/m,
+  drawer: /^ *FAIL strip: \.day-drawer (reaches above the clock|sticks out of the stage)/m,
+  rows: /^ *FAIL strip: an Agents today row is \d+ px tall/m,
 };
 const OVERFLOWS = {
   left: '.work .left-wing { transform: translateX(-200px); }',
@@ -66,7 +70,7 @@ const OVERFLOWS = {
   top: '.work .right-wing { transform: translateY(-60px); }',
   bottom: '.work .centre .shelf { transform: translateY(120px); }',
   page: 'body::after { content: ""; position: absolute; left: 3000px; top: 0; width: 10px; height: 10px; }',
-  agents: '.rib .agent-row .sg-hit { height: 20px !important; }',
+  agents: '.rib .agent-row .sg-hit { width: 60px !important; }',
   labels: '.work .centre .lane .jn em { padding: 0 14px !important; }',
   header: '.work .centre .lanes-hd .slot-meter .xs { display: inline-block; width: 60px; white-space: normal !important; }',
   deck: '.work .right-wing section.pinned { margin-top: 80px; }',
@@ -74,7 +78,13 @@ const OVERFLOWS = {
   picker: '.work .right-wing .pk { height: 400px !important; }',
   chips: '.rib .ev { width: 400px !important; }',
   heading: '.work .right-wing .keys .deck-name { max-width: 40px; overflow: hidden; }',
+  strip: '.rib[data-kind="work"] { box-sizing: content-box; height: 104px; padding-bottom: 20px; }',
+  fold: '.rib .ev.fold { width: 30px !important; }',
+  drawer: '.day-drawer { translate: 0 -300px; }',
+  rows: '.agents-today .at-row { height: 20px !important; min-height: 0 !important; }',
 };
+/** The state each strip break runs on (the others run on the first state). */
+const BREAK_ON = { strip: 'Strip: overlaps, twelve sessions', fold: 'Strip: overlaps, twelve sessions', drawer: 'Strip: the Day drawer open', rows: 'Strip: Agents today, a heavy past day' };
 
 if (flag('self-test')) {
   const script = fileURLToPath(import.meta.url);
@@ -223,6 +233,15 @@ const VARIANTS = [
   { name: 'Watt card on Home', q: home('moods=five'), checks: ['.watt-card'], viewportOnly: true, card: true },
   { name: 'Watt card on Unwind', q: query({ hz: 'unwind', agents: '3', extra: '' }), checks: ['.watt-card'], viewportOnly: true, card: true },
 ];
+// The calm strip on Work: 104 px with folded overlaps, the Day drawer and the Agents today panel
+// inside the stage, below the clock and right of the rail, and the panel's rows at least 32 px.
+VARIANTS.push(
+  { name: 'Strip: overlaps, twelve sessions', q: work('12ask', '&meet=overlap'), checks: ['.rib'], strip: true, viewportOnly: true },
+  { name: 'Strip: late in the day', q: query({ at: '2026-11-11T22:50:00-08:00', agents: '12ask', extra: '&meet=overlap' }), checks: ['.rib'], strip: true, viewportOnly: true },
+  { name: 'Strip: the Day drawer open', q: work('12ask', '&meet=overlap'), click: '.rib .rib-handle', checks: ['.day-drawer', '.day-drawer .dd-agenda', '.day-drawer .dd-rows'], strip: true, viewportOnly: true },
+  { name: 'Strip: Agents today, twelve sessions', q: work('12ask', '&days=typical'), click: '.rib .ag-line', checks: ['.agents-today', '.agents-today .at-head'], strip: true, viewportOnly: true },
+  { name: 'Strip: Agents today, a heavy past day', q: work('12', '&days=heavy'), click: '.rib .ag-line >> .at-seg button:nth-child(2)', checks: ['.agents-today', '.agents-today .at-head', '.agents-today .at-foot'], strip: true, viewportOnly: true },
+);
 /** Rounding slack for fractional rectangles, in screen pixels. */
 const SLACK = 0.5;
 
@@ -255,9 +274,11 @@ try {
   // For each checked box: its scroll sizes, and how far it sticks out of its container and
   // of the viewport on each side (screen pixels, 0 when inside). Plus the page's own scroll.
   const measure = `<script>setTimeout(() => {
-    const click = new URLSearchParams(location.search).get('click');
-    if (click && click.startsWith('ctx:')) document.querySelector(click.slice(4))?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
-    else if (click) document.querySelector(click)?.click();
+    // Steps separated by " >> " run 300 ms apart.
+    (new URLSearchParams(location.search).get('click') ?? '').split(' >> ').filter(Boolean).forEach((click, i) => setTimeout(() => {
+      if (click.startsWith('ctx:')) document.querySelector(click.slice(4))?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+      else document.querySelector(click)?.click();
+    }, i * 300));
     // Watt's card: asked for until it is open (Meet's horizon takes a few seconds to settle first).
     if (new URLSearchParams(location.search).get('card')) {
       const ask = () => { if (!document.querySelector('.watt-card')) document.querySelector('.watt-hit')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })); };
@@ -382,7 +403,37 @@ try {
         if (cut) deck.push('deck: the Now heading "' + name.textContent + '" is cut');
       }
     }
-    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, wattCard, header, deck });
+    // The calm strip: its height, labels that share pixels, the folded chip's count, the
+    // overlays inside the stage below the clock and right of the rail, the panel's row heights.
+    const strip = [];
+    const ribW = document.querySelector('.rib[data-kind="work"]');
+    if (ribW) {
+      const h = ribW.getBoundingClientRect().height;
+      if (Math.abs(h - 104) > 0.5) strip.push('strip: the Work strip is ' + Math.round(h) + ' px tall (must be 104)');
+      const labels = [...ribW.querySelectorAll('.ev, .ev-side, .ag-line, .due:not(.bare), .adbar')].map((e) => ({ r: e.getBoundingClientRect(), t: (e.textContent || e.getAttribute('aria-label') || '').slice(0, 30) }));
+      labels.forEach((a, i) => labels.slice(i + 1).forEach((b) => { if (hit(a.r, b.r)) strip.push('strip: labels share pixels: ' + a.t + ' / ' + b.t); }));
+      for (const f of ribW.querySelectorAll('.ev.fold')) {
+        const n = f.querySelector('.fold-n');
+        const fr = f.getBoundingClientRect();
+        if (n && (n.scrollWidth > n.clientWidth + 1 || n.getBoundingClientRect().right > fr.right - 4)) strip.push("strip: the folded chip's count is cut: " + n.textContent);
+      }
+    }
+    const clk = document.querySelector('.clk');
+    const rail = document.querySelector('.rail');
+    for (const sel of ['.day-drawer', '.agents-today']) {
+      const el = document.querySelector(sel);
+      if (!el) continue;
+      const r = el.getBoundingClientRect();
+      if (clk && r.top < clk.getBoundingClientRect().bottom - 0.5) strip.push('strip: ' + sel + ' reaches above the clock (top ' + Math.round(r.top) + ')');
+      if (r.left < 0 || r.top < 0 || r.right > innerWidth + 0.5 || r.bottom > innerHeight + 0.5) strip.push('strip: ' + sel + ' sticks out of the stage');
+      if (rail && r.left < rail.getBoundingClientRect().right - 0.5) strip.push('strip: ' + sel + ' covers the rail');
+    }
+    for (const row of document.querySelectorAll('.agents-today .at-row:not(.skel), .day-drawer .dd-row')) {
+      const h = row.getBoundingClientRect().height;
+      if (h < 32 - 0.5) strip.push('strip: an Agents today row is ' + Math.round(h) + ' px tall (at least 32)');
+    }
+    const opened = { drawer: !!document.querySelector('.day-drawer'), panel: !!document.querySelector('.agents-today'), rows: document.querySelectorAll('.agents-today .at-row:not(.skel)').length };
+    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, wattCard, header, deck, strip, opened });
     document.body.appendChild(pre);
   }, new URLSearchParams(location.search).get('card') ? 7000 : 3000);</script>`;
   const broken = overflow ? `<style>${OVERFLOWS[overflow]}</style>` : '';
@@ -392,7 +443,7 @@ try {
   let failed = false;
   if (overflow) console.log(`deliberate overflow: ${overflow} (${OVERFLOWS[overflow]})`);
   // A deliberate break runs on the first state, or for the picker on the state that opens it.
-  const breakOn = overflow === 'picker' ? VARIANTS.filter((v) => v.name.startsWith('Deck, the key picker open over')) : VARIANTS.slice(0, 1);
+  const breakOn = overflow === 'picker' ? VARIANTS.filter((v) => v.name.startsWith('Deck, the key picker open over')) : BREAK_ON[overflow] ? VARIANTS.filter((v) => v.name === BREAK_ON[overflow]) : VARIANTS.slice(0, 1);
   for (const v of overflow ? breakOn : VARIANTS) {
     console.log(`${v.name} (${v.q}):`);
     const url = `${pathToFileURL(page).href}${v.q}&checks=${encodeURIComponent(v.checks.join('|'))}${v.click ? `&click=${encodeURIComponent(v.click)}` : ''}${v.card ? '&card=1' : ''}`;
@@ -408,7 +459,14 @@ try {
       process.exit(1);
     }
     const text = m[1].replaceAll('&quot;', '"').replaceAll('&amp;', '&');
-    const { res, page: doc, overlaps, cut, gaps, wattCard, header, deck } = JSON.parse(text);
+    const { res, page: doc, overlaps, cut, gaps, wattCard, header, deck, strip, opened } = JSON.parse(text);
+    if (v.strip) {
+      for (const f of strip) console.log(`  FAIL ${f}`);
+      const wantOpen = v.click?.includes('rib-handle') ? opened.drawer : v.click?.includes('ag-line') ? opened.panel && opened.rows > 0 : true;
+      if (!wantOpen) console.log(`  FAIL strip: the overlay did not open (${JSON.stringify(opened)})`);
+      if (strip.length || !wantOpen) failed = true;
+      else console.log('  ok   strip 104 px, no strip labels sharing pixels, folded counts whole, overlays inside the stage below the clock, rows at least 32 px');
+    }
     for (const d of deck) console.log(`  FAIL ${d}`);
     if (deck.length) failed = true;
     else if (v.q.includes('hz=work')) console.log('  ok   the deck stays above its floor, every key label inside its tile, the Now heading whole');

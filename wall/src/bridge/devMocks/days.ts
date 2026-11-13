@@ -44,7 +44,7 @@ function sessionsFor(date: string, n: number, today: boolean, now: number): Reco
       const b = m0 + (t + len) * 3_600_000;
       if (today && a >= now) break;
       const last = k === steps - 1;
-      const open = (last && i % 4 === 0) || (today && b > now);
+      const open = (last && i % 4 === 0 && startH > 15) || (today && b > now);
       spans.push({ stage: STAGES[Math.min(k, 4)], start: iso(a), end: open ? null : iso(Math.min(b, m0 + 86_399_000)) });
       if (open) break;
       t += len + 0.05;
@@ -79,7 +79,31 @@ export function registerDaysMocks(): void {
     if (mode() === 'down' || knob('agents') === 'down') throw new Error('failed');
     const back = Math.round((midnightOf(dayKey(now())) - midnightOf(date)) / 86_400_000);
     if (back < 0 || back >= 14) return null;
+    if (back === 0) return todayRecord(date);
     // The live mock sessions are a different set; today's record names its own.
     return { date, tz: 'America/Los_Angeles', sessions: Object.entries(sessionsFor(date, countFor(back, mode()), back === 0, now())).map(([id, s]) => ({ id, ...(s as object) })) };
   });
+}
+
+/** Today's record names the live mock sessions: each non-wait span of the live day in its session's stage. */
+function todayRecord(date: string): unknown {
+  type Live = { lanes?: { id: string; title: string; stage: string }[]; sessionsList?: { id: string; title: string; stage: string }[] | null; day?: { lane: string; start: string; end: string | null; kind: string }[] };
+  let answer: Live | null = null;
+  try {
+    answer = (mocks.get('wall2_omni_summary')?.() ?? null) as Live | null;
+  } catch {
+    return null;
+  }
+  if (!answer) return null;
+  const live: Live = answer;
+  const list = live.sessionsList ?? live.lanes ?? [];
+  const sessions = list
+    .map((l, i) => ({
+      id: l.id,
+      title: l.title.slice(0, 60),
+      spans: (live.day ?? []).filter((d) => d.lane === l.id && d.kind !== 'wait').map((d) => ({ stage: l.stage, start: d.start, end: d.end })),
+      ...(i === 6 ? { pr: { number: 640, state: 'merged' } } : {}),
+    }))
+    .filter((x) => x.spans.length > 0);
+  return { date, tz: 'America/Los_Angeles', sessions };
 }
