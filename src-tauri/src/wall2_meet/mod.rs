@@ -60,14 +60,23 @@ pub fn start_log(dir: Option<std::path::PathBuf>) {
 
 /// The body, capped at 1 MB; None when it cannot be read or is larger.
 pub(crate) fn read_body(resp: ureq::Response) -> Option<Vec<u8>> {
+    read_body_kind(resp).ok()
+}
+
+/// Like `read_body`, but says why it failed: `body-size` (over the cap, not a network fault)
+/// or `body` (the read broke).
+pub(crate) fn read_body_kind(resp: ureq::Response) -> Result<Vec<u8>, &'static str> {
     let mut buf = Vec::new();
-    resp.into_reader().take(MAX_BODY + 1).read_to_end(&mut buf).ok()?;
+    resp.into_reader().take(MAX_BODY + 1).read_to_end(&mut buf).map_err(|_| "body")?;
     if buf.len() as u64 > MAX_BODY {
-        None
+        Err("body-size")
     } else {
-        Some(buf)
+        Ok(buf)
     }
 }
+
+const GRAPH_HOST: &str = "graph.microsoft.com";
+const LOGIN_HOST: &str = "login.microsoftonline.com";
 
 struct HttpGraph;
 
@@ -114,13 +123,15 @@ fn header_of(resp: &ureq::Response, name: &str) -> Option<String> {
 
 fn raw_of(resp: ureq::Response, success_body: bool) -> graph::Raw {
     let status = resp.status();
+    // Any reply means the host is reachable again: the next failure may be probed.
+    netprobe::reached(GRAPH_HOST);
     let retry_after = header_of(&resp, "retry-after");
     let request_id = header_of(&resp, "request-id");
     let client_request_id = header_of(&resp, "client-request-id");
     let mut probe = None;
     let body = if success_body {
-        read_body(resp).unwrap_or_else(|| {
-            probe = Some(netprobe::NetProbe { phase: "body", af: "unknown", addrs: 0, dns_ms: None, v4: netprobe::Probe::None, v6: netprobe::Probe::None });
+        read_body_kind(resp).unwrap_or_else(|phase| {
+            probe = Some(netprobe::NetProbe { phase, af: "unknown", resolved: 0, dns_ms: None, v4: netprobe::Probe::None, v6: netprobe::Probe::None, probe_ms: 0 });
             Vec::new()
         })
     } else {
@@ -138,6 +149,8 @@ impl graph::GraphClient for HttpGraph {
     fn calendar_view_diag(&self, access: &str, start: &str, end: &str, ctx: &graph::Ctx) -> (graph::GraphReply, Option<graph::Diag>) {
         let url = graph::calendar_view_url(start, end);
         let mut send = |_attempt: u32, timeout: Duration| -> graph::Raw {
+            // Forget the last lookup of this host, so a failure never reports an old one.
+            netprobe::begin(GRAPH_HOST);
             let result = agent()
                 .get(&url)
                 .timeout(timeout)
@@ -154,7 +167,7 @@ impl graph::GraphClient for HttpGraph {
                     raw_of(resp, ok)
                 }
                 Err(ureq::Error::Status(_, resp)) => raw_of(resp, false),
-                Err(ureq::Error::Transport(t)) => graph::Raw { status: 0, net: Some(net_of(&t)), retry_after: None, request_id: None, client_request_id: None, body: Vec::new(), probe: Some(probe_of("graph.microsoft.com", &t)) },
+                Err(ureq::Error::Transport(t)) => graph::Raw { status: 0, net: Some(net_of(&t)), retry_after: None, request_id: None, client_request_id: None, body: Vec::new(), probe: Some(probe_of(GRAPH_HOST, &t)) },
             }
         };
         graph::run_attempts(ctx, &mut send)

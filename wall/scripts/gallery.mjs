@@ -210,7 +210,7 @@ const EXPECT = [
   ['work', 'broken: calendar partly stale', 'may be out of date'],
   ['work', 'broken: media unavailable', 'Nothing playing'],
   ['work', 'broken: weather down', 'Weather unavailable'],
-  ['work', 'broken: weather stale', 'Weather unavailable'],
+  ['work', 'broken: weather stale', ['updated 45 min ago', '!Weather unavailable']],
   ['work', 'timeline: no meetings today', 'No meetings today'],
   ['work', 'timeline: calendar not available', 'Calendar not available'],
   ['work', 'timeline: both accounts failing', 'Calendar not available'],

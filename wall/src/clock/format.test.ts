@@ -27,7 +27,7 @@ describe('formatBuild', () => {
     expect(line).toMatch(/^Build 7c9f442, Nov 1[23], \d{1,2}:05 (AM|PM)$/);
   });
   it('accepts the dev stamp and drops odd input', () => {
-    expect(formatBuild({ commit: 'dev', builtAt: '2026-11-13T09:05Z' })).toMatch(/^Build dev, /);
+    expect(formatBuild({ commit: 'dev', builtAt: '2026-11-13T09:05Z' })).toBe('Build dev (local)');
     expect(formatBuild({ commit: 'nope!', builtAt: 'x' })).toBeNull();
     expect(formatBuild(null)).toBeNull();
     expect(formatBuild({ commit: 'abcdef0', builtAt: 'garbage' })).toBe('Build abcdef0');

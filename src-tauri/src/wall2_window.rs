@@ -156,8 +156,13 @@ pub fn build_info() -> BuildInfo {
 }
 
 /// The first line of `wall2-placement.log`, so a script can read which build wrote it.
+/// A local build (`dev`) carries no time: only CI installers reach the owner, and a local
+/// build's time says nothing about which commit it holds.
 pub fn build_line() -> String {
     let b = build_info();
+    if b.commit == "dev" {
+        return "build dev local\n".to_string();
+    }
     format!("build {} {}\n", b.commit, b.built_at)
 }
 
@@ -690,7 +695,11 @@ mod tests {
         let t: Vec<char> = b.built_at.chars().collect();
         assert_eq!(t.len(), 17, "{}", b.built_at);
         assert!(t[4] == '-' && t[7] == '-' && t[10] == 'T' && t[13] == ':' && t[16] == 'Z');
-        assert_eq!(build_line(), format!("build {} {}\n", b.commit, b.built_at));
+        if b.commit == "dev" {
+            assert_eq!(build_line(), "build dev local\n");
+        } else {
+            assert_eq!(build_line(), format!("build {} {}\n", b.commit, b.built_at));
+        }
         let json = serde_json::to_value(&b).unwrap();
         assert!(json.get("commit").is_some() && json.get("builtAt").is_some());
     }

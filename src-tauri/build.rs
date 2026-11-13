@@ -10,6 +10,7 @@ fn main() {
     println!("cargo:rustc-env=WALL2_BUILD_COMMIT={commit}");
     println!("cargo:rustc-env=WALL2_BUILD_TIME={}", utc_minute(std::time::SystemTime::now()));
     println!("cargo:rerun-if-env-changed=GITHUB_SHA");
+    println!("cargo:rerun-if-changed=build.rs");
     tauri_build::build()
 }
 

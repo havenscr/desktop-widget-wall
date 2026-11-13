@@ -25,9 +25,10 @@ export interface BuildInfo {
   builtAt: string; // UTC, to the minute: 2026-11-13T09:05Z
 }
 
-/** The tooltip's last line: `Build 7c9f442, Nov 13, 3:05 AM` (local time). A missing or odd stamp gives null. */
+/** The tooltip's last line: `Build 7c9f442, Nov 13, 3:05 AM` (local time); a local build reads `Build dev (local)` with no time. A missing or odd stamp gives null. */
 export function formatBuild(info: BuildInfo | null | undefined): string | null {
   if (!info || !/^[0-9a-f]{7}$|^dev$/.test(info.commit)) return null;
+  if (info.commit === 'dev') return 'Build dev (local)';
   const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})Z$/.exec(info.builtAt);
   if (!m) return `Build ${info.commit}`;
   const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]));

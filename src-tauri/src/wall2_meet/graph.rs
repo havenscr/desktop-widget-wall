@@ -195,7 +195,8 @@ fn diag_of(ctx: &Ctx, raw: &Raw, attempt: u32) -> Diag {
         request_id: raw.request_id.clone(),
         client_request_id: raw.client_request_id.clone(),
         attempt,
-        elapsed_ms: ctx.elapsed_ms(),
+        // The probe's own time is not part of the call.
+        elapsed_ms: ctx.elapsed_ms().saturating_sub(raw.probe.map(|p| p.probe_ms as u64).unwrap_or(0)),
         probe: raw.probe,
     }
 }
@@ -431,14 +432,22 @@ const MAX_EVENT_ID: usize = 400;
 
 /// The address of an event in Outlook on the web, built from the event's own id instead of
 /// Graph's `webLink` (whose `/owa/?itemid=` form can fail in the new Outlook app). The id must
-/// be 1 to 400 characters of `A-Z a-z 0-9 + / = _ -` (what Graph ids are made of); every
+/// be 1 to 400 characters of `A-Z a-z 0-9 + / = _ -` (what Graph ids are made of). The host is
+/// `outlook.live.com` when the event's own `webLink` is allowed and names that host, else
+/// `outlook.office.com`; every
 /// character outside the unreserved set is percent-encoded, so an id can never add a path
 /// segment, a query or a fragment. None for any other id.
-pub fn event_link(id: &str) -> Option<String> {
+pub fn event_link(id: &str, web_link: Option<&str>) -> Option<String> {
     if id.is_empty() || id.len() > MAX_EVENT_ID || !id.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '/' | '=' | '_' | '-')) {
         return None;
     }
-    let mut out = String::from("https://outlook.office.com/calendar/item/");
+    // The host is one of two literals. A personal account's own link, when it passes the
+    // allow-list and names `outlook.live.com`, picks the second; nothing is copied from it.
+    let personal = web_link
+        .filter(|u| web_link_allowed(u))
+        .and_then(|u| tauri::Url::parse(u).ok())
+        .is_some_and(|u| u.host_str().map(str::to_ascii_lowercase).as_deref() == Some("outlook.live.com"));
+    let mut out = String::from(if personal { "https://outlook.live.com/calendar/item/" } else { "https://outlook.office.com/calendar/item/" });
     for c in id.chars() {
         if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
             out.push(c);
@@ -497,7 +506,7 @@ pub fn shape_events(body: &Value, account_id: &str) -> Vec<Candidate> {
                 web: e
                     .get("id")
                     .and_then(Value::as_str)
-                    .and_then(event_link)
+                    .and_then(|id| event_link(id, str_at(e, &["webLink"])))
                     .or_else(|| str_at(e, &["webLink"]).filter(|u| web_link_allowed(u)).map(str::to_string)),
             })
         })
@@ -740,7 +749,7 @@ mod tests {
         d.elapsed_ms = 4210;
         assert_eq!(
             d.log_fields(),
-            "req=next host=graph status=503 net=none af=unknown code=UnknownError inner=InnerThing request-id=11111111-2222-3333-4444-555555555555 client-request-id=aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee attempt=3 ms=4210 phase=none addrs=0 dns-ms=none v4=none v6=none"
+            "req=next host=graph status=503 net=none af=unknown code=UnknownError inner=InnerThing request-id=11111111-2222-3333-4444-555555555555 client-request-id=aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee attempt=3 ms=4210 phase=none resolved=0 dns-ms=none v4=none v6=none"
         );
         assert!(!d.log_fields().contains("secret"));
     }
@@ -760,7 +769,7 @@ mod tests {
             elapsed_ms: 5,
             probe: None,
         };
-        assert_eq!(d.log_fields(), "req=day host=login status=network net=dns af=unknown code=none inner=none request-id=none client-request-id=none attempt=1 ms=5 phase=none addrs=0 dns-ms=none v4=none v6=none");
+        assert_eq!(d.log_fields(), "req=day host=login status=network net=dns af=unknown code=none inner=none request-id=none client-request-id=none attempt=1 ms=5 phase=none resolved=0 dns-ms=none v4=none v6=none");
     }
 
     #[test]
@@ -958,18 +967,35 @@ mod tests {
 
     #[test]
     fn the_event_address_is_built_from_the_id_and_encoded() {
-        assert_eq!(event_link("AAMkAGI1-x_y").as_deref(), Some("https://outlook.office.com/calendar/item/AAMkAGI1-x_y"));
-        assert_eq!(event_link("a/b+c=").as_deref(), Some("https://outlook.office.com/calendar/item/a%2Fb%2Bc%3D"));
-        assert!(web_link_allowed(&event_link("AAMk/x+y==").unwrap()));
+        assert_eq!(event_link("AAMkAGI1-x_y", None).as_deref(), Some("https://outlook.office.com/calendar/item/AAMkAGI1-x_y"));
+        assert_eq!(event_link("a/b+c=", None).as_deref(), Some("https://outlook.office.com/calendar/item/a%2Fb%2Bc%3D"));
+        assert!(web_link_allowed(&event_link("AAMk/x+y==", None).unwrap()));
+    }
+
+    #[test]
+    fn a_personal_account_link_picks_the_personal_host_and_a_hostile_one_does_not() {
+        let live = Some("https://outlook.live.com/owa/?itemid=zz&exvsurl=1&path=/calendar/item");
+        assert_eq!(event_link("AAMk/1=", live).as_deref(), Some("https://outlook.live.com/calendar/item/AAMk%2F1%3D"));
+        let work = Some("https://outlook.office365.com/owa/?itemid=zz");
+        assert_eq!(event_link("AAMk", work).as_deref(), Some("https://outlook.office.com/calendar/item/AAMk"));
+        for hostile in [
+            "https://evil.example/owa/?itemid=zz",
+            "https://outlook.live.com.evil.example/owa/",
+            "https://outlook.live.com@evil.example/owa/",
+            "http://outlook.live.com/owa/",
+            "https://outlook.live.com:8443/owa/",
+        ] {
+            assert_eq!(event_link("AAMk", Some(hostile)).as_deref(), Some("https://outlook.office.com/calendar/item/AAMk"), "{hostile}");
+        }
     }
 
     #[test]
     fn an_odd_or_long_event_id_is_refused() {
-        assert!(event_link("").is_none());
-        assert!(event_link(&"a".repeat(401)).is_none());
-        assert!(event_link(&"a".repeat(400)).is_some());
+        assert!(event_link("", None).is_none());
+        assert!(event_link(&"a".repeat(401), None).is_none());
+        assert!(event_link(&"a".repeat(400), None).is_some());
         for bad in ["a b", "a?b", "a#b", "a%2Fb", "a\\b", "a\nb", "..", "a.b", "\u{e9}"] {
-            assert!(event_link(bad).is_none(), "should refuse {bad:?}");
+            assert!(event_link(bad, None).is_none(), "should refuse {bad:?}");
         }
     }
 
