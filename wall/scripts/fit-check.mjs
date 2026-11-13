@@ -101,8 +101,21 @@ const VARIANTS = [
   { name: 'Home, Sound at its fullest: many moods, many speakers, long names, sleep timer', q: home('sonos=heavy&moods=many'), checks: [...HOME_CENTRE.filter((c) => !c.endsWith('mood-row')), ...SOUND_FULL] },
   { name: 'Home, typical: five moods, Sound playing', q: home('moods=five'), checks: [...HOME_CENTRE, ...SOUND_FULL] },
   { name: 'Home, sparse: no moods, one routine, one speaker', q: home('sonos=sparse&moods=none'), checks: ['.home .home-centre', '.home .moods', ...SOUND_FULL.slice(0, 4)] },
-  { name: 'Home, Sonos not reachable and moods not set up', q: home('sonos=down&moods=off'), checks: ['.home .home-centre', '.home .sound', '.home .sound-note'] },
+  { name: 'Home, Sonos not reachable, moods present', q: home('sonos=down&moods=five'), checks: ['.home .home-centre', '.home .mood-row', '.home .sound', '.home .sound-note'] },
+  { name: 'Home, Sonos not reachable and moods not set up: one status card', q: home('sonos=down&moods=off'), checks: ['.home .home-centre', '.home .centre-status'] },
   { name: 'Home, Sonos not set up: the mood cards take the room', q: home('sonos=off&moods=five'), checks: ['.home .home-centre', '.home .mood-row', '.home .sound', '.home .sound-note'] },
+  { name: 'Home, both centre sources out: one status card', q: home('sonos=down&moods=down'), checks: ['.home .home-centre', '.home .centre-status'] },
+  // The pop-outs float over the band (More opens down over the horizon), so they are held
+  // to the viewport only.
+  {
+    name: 'Home, Speakers pop-out open with many speakers',
+    q: home('sonos=heavy&moods=many'),
+    click: '.home .sound-anchor > button[aria-expanded]:not(.sound-chip)',
+    checks: ['.home .sound-pop', '.home .sound-spk'],
+    viewportOnly: true,
+  },
+  // Its rows scroll inside it, so the pop-out itself is what must fit.
+  { name: 'Home, More pop-out open with many routines', q: home('sonos=heavy&moods=many'), click: '.home .sound-chip.more', checks: ['.home .sound-pop'], viewportOnly: true },
 ];
 /** Rounding slack for fractional rectangles, in screen pixels. */
 const SLACK = 0.5;
@@ -136,6 +149,10 @@ try {
   // For each checked box: its scroll sizes, and how far it sticks out of its container and
   // of the viewport on each side (screen pixels, 0 when inside). Plus the page's own scroll.
   const measure = `<script>setTimeout(() => {
+    const click = new URLSearchParams(location.search).get('click');
+    if (click) document.querySelector(click)?.click();
+  }, 2000);
+  setTimeout(() => {
     const sels = new URLSearchParams(location.search).get('checks').split('|');
     const band = document.querySelector('.top');
     const out = (r, c) => ({ l: c.left - r.left, r: r.right - c.right, t: c.top - r.top, b: r.bottom - c.bottom });
@@ -159,7 +176,7 @@ try {
   if (overflow) console.log(`deliberate overflow: ${overflow} (${OVERFLOWS[overflow]})`);
   for (const v of overflow ? VARIANTS.slice(0, 1) : VARIANTS) {
     console.log(`${v.name} (${v.q}):`);
-    const url = `${pathToFileURL(page).href}${v.q}&checks=${encodeURIComponent(v.checks.join('|'))}`;
+    const url = `${pathToFileURL(page).href}${v.q}&checks=${encodeURIComponent(v.checks.join('|'))}${v.click ? `&click=${encodeURIComponent(v.click)}` : ''}`;
     const dom = execFileSync(
       chrome,
       // Headless Chromium keeps 87 px of the window for itself, so 807 gives a 2560 by 720 viewport.
@@ -188,7 +205,9 @@ try {
       }
       items.forEach((r, i) => {
         const inside = (o) => Object.values(o).every((px) => px <= SLACK);
-        const ok = r.sw <= r.cw && r.sh <= r.ch && inside(r.inHolder) && inside(r.inView);
+        // A pop-out scrolls inside itself by design; its rows must not overflow.
+        const scrollOk = v.viewportOnly && sel.endsWith('.sound-pop') ? r.sw <= r.cw : r.sw <= r.cw && r.sh <= r.ch;
+        const ok = scrollOk && (v.viewportOnly || inside(r.inHolder)) && inside(r.inView);
         if (!ok) failed = true;
         console.log(
           `  ${ok ? 'ok  ' : 'FAIL'} ${sel}${items.length > 1 ? ` [${i}]` : ''}: width ${r.sw} <= ${r.cw}, height ${r.sh} <= ${r.ch}, container ${sides(r.inHolder)}, viewport ${sides(r.inView)}`,
