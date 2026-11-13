@@ -29,7 +29,8 @@ import {
   ageWords,
   chipLabel,
   groupLabel,
-  groupMusicSpeakers,
+  groupMovers,
+  leftOutNote,
   groupTargets,
   groupVolume,
   inputWord,
@@ -61,6 +62,9 @@ export const RESULT_MS = 4000;
 export const SETTLE_MS = 1500;
 /** Arrow keys settle for this long before the one change is sent. */
 export const KEY_SETTLE_MS = 400;
+/** The line for a skip that gave no reason the wall recognises. */
+const SKIP_LINE = "Skipped: this routine's own conditions say not now";
+
 /** "Play anyway" stays on offer this long after a skip (Rust's own window). */
 export const SKIP_OFFER_MS = 60_000;
 /** Names longer than this on average put five chips on the face, not six. */
@@ -382,7 +386,7 @@ function Live({
     const ask = `This sets ${loud.map((t) => `${t.name} to ${t.level}`).join(', ')}, louder than 40. Go ahead?`;
     const target = { kind: 'group', id: groupId };
     const go = (confirmed: boolean) =>
-      void run(`vol:group:${groupId}`, (c) => invoke('wall2_sonos_volume', c ? { target, step, confirm: true } : { target, step }), `${label} volume ${step > 0 ? 'up' : 'down'} ${Math.abs(step)}`, {
+      void run(`vol:group:${groupId}`, (c) => invoke('wall2_sonos_volume', c ? { target, step, confirm: true } : { target, step }), `${label} volume ${step > 0 ? 'up' : 'down'} ${Math.abs(step)}${leftOutNote(s, groupId) ? `. ${leftOutNote(s, groupId)}` : ''}`, {
         confirmed,
         ask,
         undo,
@@ -415,7 +419,7 @@ function Live({
   if (!result && offer) {
     extra = (
       <span className="sound-skip" role="status">
-        <span className="xs warn-text">Skipped: {offer.reason ?? 'the routine chose not to play'}</span>
+        <span className="xs warn-text">{offer.reason ? `Skipped: ${offer.reason}` : SKIP_LINE}</span>
         <button type="button" className="sound-btn small" title="ignores this routine's own conditions" disabled={locked} {...once(() => playAnyway(offer))}>
           Play anyway
         </button>
@@ -556,7 +560,7 @@ function Live({
               sync={s.readAtMs}
               className="sound-vol"
               label={gLabel}
-              title={`Moves each speaker in the group (${groupMusicSpeakers(s, s.currentGroup)
+              title={`Moves each speaker in the group (${groupMovers(s, s.currentGroup)
                 .map((sp) => sp.name)
                 .join(', ')}) by the same step from its own level`}
               value={gVol}

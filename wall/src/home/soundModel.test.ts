@@ -2,6 +2,7 @@ import { expect, it } from 'vitest';
 import {
   chipLabel,
   groupLabel,
+  leftOutNote,
   groupVolume,
   groupTargets,
   loudText,
@@ -182,4 +183,25 @@ it('counts sleep minutes and start ages', () => {
   expect(startedText(0, 30_000)).toBe('started just now');
   expect(startedText(0, 5 * 60_000)).toBe('started 5 min ago');
   expect(startedText(0, 125 * 60_000)).toBe('started 2 h ago');
+});
+
+it('a group step leaves out a speaker with no level and says so; the label counts only movers', () => {
+  const four: SonosSummary = {
+    ...SUMMARY,
+    speakers: [sp('Den', { volume: 14 }), sp('Porch', { volume: 10 }), sp('Loft', { volume: 20 }), sp('Attic', { volume: null })],
+    groups: [{ id: 'G2', coordinator: 'Den', members: ['Den', 'Porch', 'Loft', 'Attic'] }],
+  };
+  expect(groupTargets(four, 5).map((t) => t.name)).toEqual(['Den', 'Porch', 'Loft']);
+  expect(groupLabel(four)).toBe('Den and 2 more');
+  expect(leftOutNote(four, 'G2')).toBe('3 of 4 speakers changed');
+  expect(leftOutNote({ ...SUMMARY, speakers: SUMMARY.speakers.filter((x) => x.name !== 'Shed'), groups: [{ id: 'G2', coordinator: 'Den', members: ['Den', 'Porch'] }] }, 'G2')).toBe('');
+});
+
+it('an unseen mark older than the start grace is cleared even when something plays', () => {
+  const t = 1_000_000;
+  const start: PlayMark = { key: 'k', at: t, group: null, seen: false };
+  // A restart thirty minutes after the start: music plays, but not what the wall started.
+  expect(markAfterRead(start, SUMMARY, t + 30 * 60_000)).toBeNull();
+  // Within the grace it still attaches.
+  expect(markAfterRead(start, SUMMARY, t + 5_000)).toEqual({ key: 'k', at: t, group: 'G2', seen: true });
 });

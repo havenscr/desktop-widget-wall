@@ -141,13 +141,13 @@ it('a skipped play says why and offers Play anyway, which sends the forced call'
   wire();
   mocks.set('wall2_sonos_play', (args) => {
     writes.push({ cmd: 'wall2_sonos_play', args });
-    return (args as { force?: boolean }).force ? { started: true, reason: null } : { started: false, reason: 'nobody is home' };
+    return (args as { force?: boolean }).force ? { started: true, reason: null } : { started: false, reason: null };
   });
   render(<Sound />);
   await flush();
   fireEvent.click(screen.getByText('Noon').closest('button')!);
   await flush();
-  expect(screen.getByText('Skipped: nobody is home')).toBeTruthy();
+  expect(screen.getByText("Skipped: this routine's own conditions say not now")).toBeTruthy();
   expect(screen.queryByText('Playing Noon')).toBeNull();
   expect(localStorage.getItem(LAST_PLAY_KEY)).toBeNull();
   const anyway = screen.getByText('Play anyway').closest('button')!;
@@ -170,7 +170,7 @@ it('the Play anyway offer goes after a minute', async () => {
   await flush();
   fireEvent.click(screen.getByText('Noon').closest('button')!);
   await flush();
-  expect(screen.getByText('Skipped: the routine chose not to play')).toBeTruthy();
+  expect(screen.getByText("Skipped: this routine's own conditions say not now")).toBeTruthy();
   await flush(61_000);
   expect(screen.queryByText('Play anyway')).toBeNull();
 });
@@ -577,4 +577,53 @@ it('one deliberate action is one write: double clicks and held keys never send t
   await flush(LATCH_MS);
   await held(screen.getByText('Sleep 20 min').closest('button')!);
   expect(count('wall2_sonos_sleep_cancel')).toBe(2);
+});
+
+it('a click with detail 2 after the latch has passed is still ignored', async () => {
+  wire();
+  mocks.set('wall2_sonos_play', (args) => {
+    writes.push({ cmd: 'wall2_sonos_play', args });
+    return { started: true, reason: null };
+  });
+  render(<Sound />);
+  await flush();
+  const noon = screen.getByText('Noon').closest('button')!;
+  fireEvent.click(noon, { detail: 1 });
+  await flush(LATCH_MS + 500);
+  expect(writes).toHaveLength(1);
+  fireEvent.click(noon, { detail: 2 });
+  await flush(LATCH_MS + 500);
+  expect(writes).toHaveLength(1);
+});
+
+it('the slider finishes once on lostpointercapture alone', async () => {
+  wire();
+  render(<Sound />);
+  await flush();
+  const slider = screen.getByLabelText('Volume, Den and 1 more') as HTMLInputElement;
+  fireEvent.pointerDown(slider);
+  fireEvent.change(slider, { target: { value: '18' } });
+  fireEvent(slider, new Event('lostpointercapture', { bubbles: true }));
+  await flush();
+  expect(writes).toEqual([{ cmd: 'wall2_sonos_volume', args: { target: { kind: 'group', id: 'G2' }, step: 6 } }]);
+  fireEvent(slider, new Event('lostpointercapture', { bubbles: true }));
+  await flush();
+  expect(writes).toHaveLength(1);
+});
+
+it('a slider that gets disabled in the middle of a drag goes back and sends nothing', async () => {
+  let fail = false;
+  wire(() => (fail ? Promise.reject(new Error('Could not reach Sonos')) : summary()));
+  render(<Sound />);
+  await flush();
+  const slider = screen.getByLabelText('Volume, Den and 1 more') as HTMLInputElement;
+  fireEvent.pointerDown(slider);
+  fireEvent.change(slider, { target: { value: '40' } });
+  fail = true;
+  await flush(3 * 60_000);
+  expect(slider.disabled).toBe(true);
+  expect(slider.value).toBe('12');
+  fireEvent.pointerUp(slider);
+  await flush();
+  expect(writes).toEqual([]);
 });

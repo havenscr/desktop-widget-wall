@@ -472,10 +472,25 @@ fn loud_of(touched: Vec<(String, Option<u8>, bool)>, speakers: &[Speaker]) -> Ve
 /// What applying a preset would leave loud, from the last read (see `loud_of`).
 fn preset_loud(p: &Value, speakers: &[Speaker]) -> Vec<LoudSpeaker> {
     let mut touched: Vec<(String, Option<u8>, bool)> = Vec::new();
+    // A speaker in several groups is judged by the loudest one it is in: a group that is
+    // not line-in always counts, and a higher level (or an unknown one) replaces a lower.
     let mut add = |rooms: Vec<String>, set: Option<u8>, line_in: bool| {
         for r in touched_rooms(rooms, speakers) {
-            if !touched.iter().any(|(n, _, _)| *n == r) {
-                touched.push((r, set, line_in));
+            match touched.iter_mut().find(|e| e.0 == r) {
+                None => touched.push((r, set, line_in)),
+                Some(entry) => {
+                    if line_in {
+                        continue;
+                    }
+                    let louder = match (entry.1, set) {
+                        (Some(a), Some(b)) => b > a,
+                        (Some(_), None) => true,
+                        _ => false,
+                    };
+                    if entry.2 || louder {
+                        *entry = (r, set, false);
+                    }
+                }
             }
         }
     };
@@ -658,6 +673,15 @@ fn force_allowed(last_skip: Option<&(String, Instant)>, key: &str) -> bool {
     last_skip.is_some_and(|(k, at)| k == key && at.elapsed() <= SKIP_WINDOW)
 }
 
+/// Checks that `key` may be forced and clears the skip memory in the same step, so a forced
+/// write that failed or timed out cannot be sent again without a new unforced skip.
+fn take_force(slot: &Mutex<Option<(String, Instant)>>, key: &str) -> Result<bool, String> {
+    let mut guard = slot.lock().map_err(|_| REFUSED.to_string())?;
+    let ok = force_allowed(guard.as_ref(), key);
+    *guard = None;
+    Ok(ok)
+}
+
 pub(crate) fn plan_play(s: &SonosSummary, key: &str, confirm: bool, force: bool) -> Result<Vec<Call>, String> {
     if !valid_key(key) {
         return Err("Unknown routine".to_string());
@@ -678,20 +702,19 @@ pub(crate) fn plan_play(s: &SonosSummary, key: &str, confirm: bool, force: bool)
     Ok(vec![post(path, None)])
 }
 
-/// The answer to an unforced trigger as a fixed result. `{"skipped": true}` (or any
-/// skipped value) is a skip; its reason comes from words in a few fields, read bounded,
-/// mapped to one of three fixed phrases or none.
+/// The answer to an unforced trigger as a fixed result. Only `{"skipped": true}` is a
+/// skip (the service gives no reason; the page shows one fixed line). A reason is
+/// kept only when a recognised reason key is present, mapped to one of three fixed
+/// phrases, and never the service's own text.
 pub(crate) fn play_outcome(body: &Value) -> PlayResult {
-    let skipped = match body.get("skipped") {
-        Some(Value::Bool(b)) => *b,
-        Some(Value::String(_)) | Some(Value::Object(_)) | Some(Value::Array(_)) => true,
-        _ => false,
-    };
+    // Only the JSON boolean `true` is a skip. An array there is the list of speakers a
+    // routine that RAN left alone; a string, number, object or `false` also means it ran.
+    let skipped = body.get("skipped") == Some(&Value::Bool(true));
     if !skipped {
         return PlayResult { started: true, reason: None };
     }
     let mut hint = String::new();
-    for k in ["skipped", "reason", "message", "skipReason", "condition", "conditions"] {
+    for k in ["reason", "skipReason", "condition", "conditions"] {
         if let Some(v) = body.get(k) {
             let text: String = v.to_string().chars().take(400).collect();
             hint.push_str(&text.to_ascii_lowercase());
@@ -916,11 +939,8 @@ pub async fn wall2_sonos_play(
     require_wall2(window.label())?;
     let base = read_base(&app, "sonosBaseUrl", false)?;
     let force = force.unwrap_or(false);
-    if force {
-        let guard = LAST_SKIP.lock().map_err(|_| REFUSED.to_string())?;
-        if !force_allowed(guard.as_ref(), &routine_key) {
-            return Err("Play anyway is offered only right after a skip".to_string());
-        }
+    if force && !take_force(&LAST_SKIP, &routine_key)? {
+        return Err("Play anyway is offered only right after a skip".to_string());
     }
     let calls = plan_play(&last_good()?, &routine_key, confirm.unwrap_or(false), force)?;
     let call = calls.into_iter().next().ok_or_else(|| REFUSED.to_string())?;
@@ -1220,20 +1240,70 @@ mod tests {
 
     #[test]
     fn play_answers_become_fixed_results() {
-        assert_eq!(play_outcome(&json!({"ok": true})), PlayResult { started: true, reason: None });
-        assert_eq!(play_outcome(&Value::Null), PlayResult { started: true, reason: None });
-        assert_eq!(play_outcome(&json!({"skipped": false})), PlayResult { started: true, reason: None });
+        let started = PlayResult { started: true, reason: None };
+        assert_eq!(play_outcome(&json!({"ok": true})), started);
+        assert_eq!(play_outcome(&Value::Null), started);
+        assert_eq!(play_outcome(&json!({"ok": true, "skipped": false})), started);
+        // Only the JSON boolean true is a skip, and the service gives no reason.
+        assert_eq!(play_outcome(&json!({"ok": true, "skipped": true})), PlayResult { started: false, reason: None });
+        // A routine that ran may list the speakers it left alone: that is not a skip.
+        assert_eq!(play_outcome(&json!({"ok": true, "skipped": ["a", "b"]})), started);
+        assert_eq!(play_outcome(&json!({"ok": true, "skipped": "false"})), started);
+        assert_eq!(play_outcome(&json!({"ok": true, "skipped": "true"})), started);
+        assert_eq!(play_outcome(&json!({"ok": true, "skipped": 1})), started);
+        assert_eq!(play_outcome(&json!({"ok": true, "skipped": {"a": 1}})), started);
+        // A recognised reason key still maps to a fixed phrase.
         let away = play_outcome(&json!({"skipped": true, "reason": "presence is away"}));
         assert_eq!(away, PlayResult { started: false, reason: Some("nobody is home".into()) });
         let tv = play_outcome(&json!({"skipped": true, "condition": {"speaker": "Den", "source": "tv", "is": "on"}}));
         assert_eq!(tv.reason.as_deref(), Some("a speaker is on TV sound"));
-        let line = play_outcome(&json!({"skipped": "Studio is on lineIn"}));
-        assert_eq!(line.reason.as_deref(), Some("a speaker is on line-in"));
-        // Text the reader does not recognise never passes through.
+        // Text the reader does not recognise never passes through, and `message` is not read.
         let odd = play_outcome(&json!({"skipped": true, "reason": "<b>whatever the service says</b>"}));
         assert_eq!(odd, PlayResult { started: false, reason: None });
+        assert_eq!(play_outcome(&json!({"skipped": true, "message": "presence"})).reason, None);
         // "activity" holds "tv" but not as a word.
         assert_eq!(play_outcome(&json!({"skipped": true, "reason": "activity"})).reason, None);
+    }
+
+    #[test]
+    fn a_forced_call_clears_the_skip_memory_before_it_is_sent() {
+        let slot: Mutex<Option<(String, Instant)>> = Mutex::new(Some(("Sunrise_Mix".to_string(), Instant::now())));
+        // Another key is refused, and the memory is cleared all the same.
+        assert!(!take_force(&slot, "Loud_Party").unwrap());
+        assert!(slot.lock().unwrap().is_none());
+        *slot.lock().unwrap() = Some(("Sunrise_Mix".to_string(), Instant::now()));
+        assert!(take_force(&slot, "Sunrise_Mix").unwrap());
+        // A second "Play anyway" (the first write failed or timed out) is refused.
+        assert!(!take_force(&slot, "Sunrise_Mix").unwrap());
+    }
+
+    #[test]
+    fn a_speaker_in_several_preset_groups_is_judged_by_the_loudest() {
+        let mut r = reads();
+        r.presets = json!({
+            "line_first": {"name": "Line first", "groups": [
+                {"rooms": ["Studio"], "input": {"type": "lineIn"}},
+                {"rooms": ["Studio"], "volume": 70}
+            ]},
+            "line_last": {"name": "Line last", "groups": [
+                {"rooms": ["Studio"], "volume": 70},
+                {"rooms": ["Studio"], "input": {"type": "lineIn"}}
+            ]},
+            "loud_then_quiet": {"name": "Loud then quiet", "groups": [
+                {"rooms": ["Studio"], "volume": 70},
+                {"rooms": ["Studio"], "volume": 20}
+            ]},
+            "line_only": {"name": "Line only", "groups": [
+                {"rooms": ["Studio"], "input": {"type": "lineIn"}},
+                {"rooms": ["Studio"], "input": {"type": "lineIn"}}
+            ]}
+        });
+        let s = shape(&r, 0);
+        let loud70 = vec![LoudSpeaker { name: "Studio".into(), level: Some(70), sets: true }];
+        assert_eq!(s.presets[0].loud, loud70);
+        assert_eq!(s.presets[1].loud, loud70);
+        assert_eq!(s.presets[2].loud, loud70);
+        assert!(s.presets[3].loud.is_empty());
     }
 
     #[test]

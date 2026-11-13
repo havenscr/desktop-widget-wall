@@ -165,6 +165,18 @@ export function groupMusicSpeakers(s: SonosSummary, groupId: string | null): Son
     .filter((sp): sp is SonosSpeaker => !!sp && sp.online && sp.input !== 'lineIn');
 }
 
+/** The group speakers a step really moves: those with a level reading (see `groupTargets`). */
+export function groupMovers(s: SonosSummary, groupId: string | null): SonosSpeaker[] {
+  return groupMusicSpeakers(s, groupId).filter((sp) => typeof sp.volume === 'number');
+}
+
+/** "3 of 4 speakers changed" when a step leaves a music speaker out for want of a level; else "". */
+export function leftOutNote(s: SonosSummary, groupId: string | null): string {
+  const all = groupMusicSpeakers(s, groupId).length;
+  const moved = groupMovers(s, groupId).length;
+  return moved < all ? `${moved} of ${all} speakers changed` : '';
+}
+
 /** The group slider's value: the rounded mean of its speakers; null with none known. */
 export function groupVolume(s: SonosSummary): number | null {
   const vols = groupMusicSpeakers(s, s.currentGroup)
@@ -176,7 +188,7 @@ export function groupVolume(s: SonosSummary): number | null {
 
 /** "Den and 4 more" for a group of five, the name alone for one. */
 export function groupLabel(s: SonosSummary): string | null {
-  const sps = groupMusicSpeakers(s, s.currentGroup);
+  const sps = groupMovers(s, s.currentGroup);
   if (sps.length === 0) return null;
   const g = s.groups.find((x) => x.id === s.currentGroup)!;
   const lead = sps.some((sp) => sp.name === g.coordinator) ? g.coordinator : sps[0].name;
@@ -282,14 +294,17 @@ export interface PlayMark {
  * The mark after a read, or null to clear it for good. It stays only while what plays is
  * evidently what the wall started: past 60 minutes it goes; a read with nothing playing
  * clears it (except the first reads within 20 seconds of the start, before the music
- * shows); the first read that shows music records its group, and a later read with a
+ * shows); an unseen mark older than that grace clears whatever plays; the first read that shows music records its group, and a later read with a
  * different group, or no group to tell by, clears it.
  */
 export function markAfterRead(mark: PlayMark | null, s: SonosSummary, now: number): PlayMark | null {
   if (!mark) return null;
   if (now - mark.at > LAST_PLAY_MS || now < mark.at - 60_000) return null;
   const playing = musicPlaying(s).length > 0;
-  if (!playing) return !mark.seen && now - mark.at < START_GRACE_MS ? mark : null;
+  // A mark never seen playing and older than the grace is stale (an app restart long after
+  // the start), even when something plays now: it must not attach to that.
+  if (!mark.seen && now - mark.at >= START_GRACE_MS) return null;
+  if (!playing) return !mark.seen ? mark : null;
   if (!s.currentGroup) return null;
   if (!mark.seen) return { ...mark, group: s.currentGroup, seen: true };
   return mark.group === s.currentGroup ? mark : null;

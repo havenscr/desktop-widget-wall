@@ -127,11 +127,11 @@ export function registerSonosMocks(): void {
   const slow = async () => {
     await new Promise((resolve) => setTimeout(resolve, 400));
   };
-  // `?skip=1`: an unforced play is skipped (nobody home), so "Play anyway" shows.
+  // `?skip=1`: an unforced play is skipped (the service gives no reason), so "Play anyway" shows.
   mocks.set('wall2_sonos_play', async (args) => {
     await slow();
     const forced = !!(args as { force?: boolean } | undefined)?.force;
-    return knob('skip') && !forced ? { started: false, reason: 'nobody is home' } : { started: true, reason: null };
+    return knob('skip') && !forced ? { started: false, reason: null } : { started: true, reason: null };
   });
   mocks.set('wall2_sonos_preset', slow);
   mocks.set('wall2_sonos_volume', slow);

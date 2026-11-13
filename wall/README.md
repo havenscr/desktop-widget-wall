@@ -99,8 +99,9 @@ ignored, and each control stays latched for 800 ms after its write settles.
   is tagged "Suggested" (from words in its name: morning 5 to 9 AM, a work routine on
   weekdays to 5 PM, a day one, evening to 9 PM, night after).
 - **Unforced plays**: a click triggers the routine without `force`, so its own skip
-  conditions apply (nobody home, a speaker on TV sound). A skip says "Skipped: <reason>"
-  beside the heading with a **Play anyway** button (tooltip "ignores this routine's own
+  conditions apply. Only a JSON `skipped: true` answer is a skip (a list of left-alone
+  speakers means the routine ran); the service gives no reason, so a skip says "Skipped:
+  this routine's own conditions say not now" beside the heading with a **Play anyway** button (tooltip "ignores this routine's own
   conditions") that sends the forced call; it stays on offer for a minute.
 - **Started**: the service does not say which routine is playing, so "On now" is never
   claimed. The routine last started from this wall says "started N min ago" only while
@@ -112,7 +113,9 @@ ignored, and each control stays latched for 800 ms after its write settles.
   whose grouping matches the speakers' groups now is marked (Rust compares them).
 - **Volume**: one slider for the current group (the group with the most speakers
   playing music; a speaker on line-in carries the PC's sound and is left out). It moves
-  each speaker by the same step from its own level (clamped), and sends one change when
+  each speaker by the same step from its own level (clamped); a speaker with no level
+  reading is left out, the label and tooltip count only the ones that move, and the
+  result says "3 of 4 speakers changed". It sends one change when
   the pointer lets go or the arrow keys settle (400 ms). It holds the pointer while
   dragging, so a release outside the window still finishes it; a cancelled pointer, a
   window blur or the slider turning off mid-drag puts it back. **Speakers** opens every
