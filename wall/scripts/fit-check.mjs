@@ -151,7 +151,7 @@ const VARIANTS = [
   deck('a held set refused after a click (the app in front is not its app)', 'keys=wrong', { click: '.keys .key-tile' }),
   deck('Power BI cannot be brought forward, after a click', 'keys=refuse', { click: '.keys .key-tile' }),
   deck('heavy: three things wait (a meeting, an agent asks, an alarm), For you held', 'keys=typical&hold=foryou', { checks: FOR_YOU, q: work('ask', '&keys=typical&hold=foryou') }),
-  { name: 'Deck, For you with one line', q: work('ask', '&keys=typical&hold=foryou&meet=none&net=calm'), checks: FOR_YOU },
+  { name: 'Deck, For you with two lines (no meeting, no alarm)', q: work('ask', '&keys=typical&hold=foryou&meet=none&net=calm'), checks: FOR_YOU },
   { name: 'Deck, sparse For you: only the alarm', q: work('3', '&keys=typical&hold=foryou&meet=none'), checks: FOR_YOU },
   { name: 'Deck, nothing waits: no chip, no For you page', q: work('3', '&keys=typical&meet=none&net=calm'), checks: DECK },
   { name: 'Deck, the agents helper is off: For you says nothing about agents', q: work('off', '&keys=typical&hold=foryou'), checks: FOR_YOU },
