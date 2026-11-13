@@ -1146,7 +1146,11 @@
 .pk {
   position: absolute;
   z-index: 40;
-  inset: 0;
+  top: 0;
+  left: 0;
+  right: 0;
+  /* Starts at the top of the two rows and reaches down over the horizon, never up over Next three. */
+  height: 296px;
   display: flex;
   flex-direction: column;
   gap: 6px;

@@ -70,7 +70,7 @@ it('shows the five default keys, with a pin beside the heading, and sends only t
   await flush();
   expect(screen.getByText('Always here')).toBeTruthy();
   expect(container.querySelector('.deck-pin')).toBeTruthy();
-  expect(labels()).toEqual(['Thirds', 'Focus', 'Record 16:9', 'Snip', 'Strip dark']);
+  expect(labels()).toEqual(['Thirds', 'Focus', 'Record 16:9', 'Snip', 'Screens off']);
   fireEvent.click(screen.getByRole('button', { name: 'Snip' }), { detail: 1 });
   await flush();
   expect(libCalls).toEqual([{ id: 'snip' }]);
@@ -183,7 +183,7 @@ it('still shows the default keys when keys.json is invalid, since the library do
   });
   render(<PinnedRow />);
   await flush();
-  expect(labels()).toEqual(['Thirds', 'Focus', 'Record 16:9', 'Snip', 'Strip dark']);
+  expect(labels()).toEqual(['Thirds', 'Focus', 'Record 16:9', 'Snip', 'Screens off']);
 });
 
 // ---- the picker ----
@@ -226,7 +226,7 @@ it('clicking a row swaps that key into the slot and keeps it in storage; the oth
   fireEvent.click(within(dlg).getByRole('button', { name: 'Volume up' }));
   await flush();
   expect(screen.queryByRole('dialog')).toBeNull();
-  expect(labels()).toEqual(['Thirds', 'Focus', 'Record 16:9', 'Volume up', 'Strip dark']);
+  expect(labels()).toEqual(['Thirds', 'Focus', 'Record 16:9', 'Volume up', 'Screens off']);
   expect(JSON.parse(localStorage.getItem(PINS_KEY) ?? '')).toEqual(['lib:thirds', 'lib:focus', 'lib:record-169', 'lib:volume-up', 'lib:strip-dark']);
   // The choice is kept for the next start.
   const again = render(<PinnedRow />);
@@ -240,7 +240,7 @@ it('choosing a key that is already pinned swaps the two', async () => {
   const dlg = await openPicker('Thirds');
   fireEvent.click(within(dlg).getByRole('button', { name: 'Snip, pinned' }));
   await flush();
-  expect(labels()).toEqual(['Snip', 'Focus', 'Record 16:9', 'Thirds', 'Strip dark']);
+  expect(labels()).toEqual(['Snip', 'Focus', 'Record 16:9', 'Thirds', 'Screens off']);
 });
 
 it('Reset to defaults clears the choice', async () => {
@@ -251,7 +251,7 @@ it('Reset to defaults clears the choice', async () => {
   const dlg = await openPicker('Mute sound');
   fireEvent.click(within(dlg).getByRole('button', { name: 'Reset to defaults' }));
   await flush();
-  expect(labels()).toEqual(['Thirds', 'Focus', 'Record 16:9', 'Snip', 'Strip dark']);
+  expect(labels()).toEqual(['Thirds', 'Focus', 'Record 16:9', 'Snip', 'Screens off']);
   expect(localStorage.getItem(PINS_KEY)).toBeNull();
 });
 
@@ -261,7 +261,7 @@ it('storage that is not valid against the library is ignored and the defaults sh
     resetKeysFeed();
     const { unmount } = render(<PinnedRow />);
     await flush();
-    expect(labels(), bad).toEqual(['Thirds', 'Focus', 'Record 16:9', 'Snip', 'Strip dark']);
+    expect(labels(), bad).toEqual(['Thirds', 'Focus', 'Record 16:9', 'Snip', 'Screens off']);
     unmount();
   }
 });
@@ -275,7 +275,7 @@ it('search narrows the library; coming and unfinished keys are listed but cannot
   expect(newChat.getAttribute('aria-disabled')).toBe('true');
   fireEvent.click(newChat);
   expect(screen.getByRole('dialog')).toBeTruthy();
-  expect(labels()).toEqual(['Thirds', 'Focus', 'Record 16:9', 'Snip', 'Strip dark']);
+  expect(labels()).toEqual(['Thirds', 'Focus', 'Record 16:9', 'Snip', 'Screens off']);
   fireEvent.change(within(dlg).getByRole('searchbox'), { target: { value: 'power bi: refresh' } });
   expect(within(dlg).getByRole('button', { name: 'Power BI: refresh, check' }).getAttribute('aria-disabled')).toBe('true');
   fireEvent.change(within(dlg).getByRole('searchbox'), { target: { value: 'zzzz' } });
@@ -322,8 +322,9 @@ it('rows are at least 32 px tall and the picker sits inside the deck, never over
   expect(Number(row?.[1])).toBeGreaterThanOrEqual(32);
   const pk = /\.pk \{[^}]*\}/.exec(css)?.[0] ?? '';
   expect(pk).toContain('position: absolute');
-  expect(pk).toContain('inset: 0');
-  // Its box is the one around the two rows, which sits below Next three in the right wing.
+  expect(pk).toContain('top: 0');
+  expect(pk).not.toContain('bottom');
+  // Its box is the one around the two rows, which sits below Next three in the right wing; it reaches down from there.
   expect(/\.deck \{[^}]*position: relative/.test(css)).toBe(true);
   expect(/\.pinned[^{]*\{[^}]*position: relative/.test(css)).toBe(false);
 });
