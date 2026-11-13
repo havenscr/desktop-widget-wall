@@ -147,3 +147,32 @@ it('the keys are the library ids Rust lets through, in the order drawn, and Rust
   // The page can show only keys the library has.
   for (const r of RECORDING_KEYS) expect(LIBRARY_DATA.some((g) => g.keys.some((key) => key.id === r.id)), r.id).toBe(true);
 });
+
+it('lights no page dot while the Recording page shows, and the dot of the shown page otherwise', async () => {
+  render(<Keys />);
+  await flush();
+  expect(document.querySelectorAll('.deck-dot.on')).toHaveLength(1);
+  record(true);
+  await flush();
+  expect(screen.getByText('Now · Recording')).toBeTruthy();
+  expect(document.querySelectorAll('.deck-dot')).toHaveLength(2);
+  expect(document.querySelectorAll('.deck-dot.on')).toHaveLength(0);
+  expect(document.querySelectorAll('.deck-dot[aria-selected="true"]')).toHaveLength(0);
+  expect(document.querySelector('.deck-dots')?.classList.contains('rec')).toBe(true);
+  record(false);
+  await flush();
+  expect(document.querySelectorAll('.deck-dot.on')).toHaveLength(1);
+  expect(document.querySelector('.deck-dots')?.classList.contains('rec')).toBe(false);
+});
+
+it('writes no "1 of N" position while the Recording page shows (many pages, dots replaced by the count)', async () => {
+  const many = Array.from({ length: 9 }, (_, i) => ({ id: `s${i}`, name: `Set ${i}`, general: false, keys: [k('Refresh')] }));
+  mocks.set('wall2_keys_summary', () => ({ ...summary, autoId: 's0', sets: [...many, general] }));
+  render(<Keys />);
+  await flush();
+  expect(document.querySelector('.deck-pos')?.textContent).toBe('1 of 10');
+  record(true);
+  await flush();
+  expect(screen.getByText('Now · Recording')).toBeTruthy();
+  expect(document.querySelector('.deck-pos')).toBeNull();
+});

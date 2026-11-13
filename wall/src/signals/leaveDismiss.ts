@@ -9,13 +9,17 @@ function valid(v: unknown): v is Entry {
   return typeof v === 'object' && v !== null && typeof (v as Entry).key === 'string' && (v as Entry).key.length > 0 && (v as Entry).key.length <= 200 && Number.isFinite((v as Entry).until);
 }
 
-/** The kept entries, checked on read; anything odd is an empty list. Entries whose event is over are dropped. */
+/** The kept entries, checked on read; anything odd is an empty list. Entries whose event is over are dropped, from storage too. */
 export function readDismissed(now: number): Entry[] {
   try {
     const raw = localStorage.getItem(DISMISS_KEY);
     if (raw === null) return [];
     const v: unknown = JSON.parse(raw);
-    return Array.isArray(v) ? v.filter(valid).filter((e) => e.until > now).slice(0, 50) : [];
+    if (!Array.isArray(v)) return [];
+    const kept = v.filter(valid).filter((e) => e.until > now).slice(0, 50);
+    // An entry whose event is over does not stay in storage: write the shorter list back.
+    if (kept.length !== v.length) localStorage.setItem(DISMISS_KEY, JSON.stringify(kept));
+    return kept;
   } catch {
     return [];
   }

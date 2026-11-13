@@ -97,8 +97,33 @@ it('a dismissal kept in storage is cleared once the event is over', async () => 
   localStorage.setItem(DISMISS_KEY, JSON.stringify([{ key: 'old', until: NOW - MIN }, { key: 'doc', until: startsAt }]));
   const { readDismissed } = await import('./leaveDismiss');
   expect(readDismissed(NOW)).toEqual([{ key: 'doc', until: startsAt }]);
+  // The expired entry is gone from storage itself, not only from what was returned.
+  expect(JSON.parse(localStorage.getItem(DISMISS_KEY) ?? 'null')).toEqual([{ key: 'doc', until: startsAt }]);
   localStorage.setItem(DISMISS_KEY, 'not json');
   expect(readDismissed(NOW)).toEqual([]);
+});
+
+it('starts no timer for the banner while there is no event to show', async () => {
+  setSignals({ leave: null });
+  const before = vi.getTimerCount();
+  render(<LeaveBanner />);
+  await step(0);
+  expect(vi.getTimerCount()).toBe(before);
+});
+
+it('does not tick while the page is hidden, and refreshes at once when it shows again', async () => {
+  render(<LeaveBanner />);
+  await step(0);
+  expect(screen.getByText('Leave in 25 min.')).toBeTruthy();
+  const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
+  act(() => void document.dispatchEvent(new Event('visibilitychange')));
+  await step(3 * MIN);
+  expect(screen.getByText('Leave in 25 min.')).toBeTruthy();
+  hidden.mockReturnValue(false);
+  act(() => void document.dispatchEvent(new Event('visibilitychange')));
+  await step(0);
+  expect(screen.getByText('Leave in 22 min.')).toBeTruthy();
+  hidden.mockRestore();
 });
 
 it('reads "Leave now." from the leave time, holds it after the store lets the event go, and hides after 10 minutes', async () => {

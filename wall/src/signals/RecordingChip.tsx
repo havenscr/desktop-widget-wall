@@ -6,12 +6,24 @@ import { useChipLayout } from './layout';
 import { useSignalStore } from './store';
 import { useClock } from './useClock';
 
-/** When the wall first saw the recorder on, or null. The signal says a recorder is running, not since when. */
-const useRecordingSince = create<{ at: number | null }>(() => ({ at: null }));
+/** A recorder that comes back within this long of going off is the same recording (one missed poll). */
+export const RECORDING_GAP_MS = 10_000;
+
+/** When the wall first saw the recorder on, or null; `off` is when it last went off. The signal says a recorder is running, not since when. */
+const useRecordingSince = create<{ at: number | null; off: number | null }>(() => ({ at: null, off: null }));
 useSignalStore.subscribe((s, prev) => {
-  if (s.recording && !prev.recording) useRecordingSince.setState({ at: Date.now() });
-  else if (!s.recording && prev.recording) useRecordingSince.setState({ at: null });
+  const now = Date.now();
+  if (s.recording && !prev.recording) {
+    const { at, off } = useRecordingSince.getState();
+    // Back after a short gap: keep counting from the old start.
+    useRecordingSince.setState({ at: at !== null && off !== null && now - off <= RECORDING_GAP_MS ? at : now, off: null });
+  } else if (!s.recording && prev.recording) useRecordingSince.setState({ off: now });
 });
+
+/** Tests: forget when the last recording started. */
+export function resetRecordingSince(): void {
+  useRecordingSince.setState({ at: null, off: null });
+}
 
 /** "04:12", or "1:04:12" from the first hour. */
 export function elapsedText(ms: number): string {

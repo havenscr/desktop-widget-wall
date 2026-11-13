@@ -3,7 +3,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { usePlaceStore } from '../state/places';
 import { resetTip } from '../ui/HoverTip';
 import { useChipLayout } from './layout';
-import { CHIP_TIP, elapsedText, FloatingRecordingChip, HeaderRecordingChip } from './RecordingChip';
+import { CHIP_TIP, elapsedText, FloatingRecordingChip, HeaderRecordingChip, RECORDING_GAP_MS, resetRecordingSince } from './RecordingChip';
 import { isQuietForRecording, useSignalStore } from './store';
 
 // Fake timers step through up to a minute here; the stepped span stays short, and the limit is generous for a slow runner.
@@ -22,6 +22,7 @@ beforeEach(() => {
   usePlaceStore.setState({ active: 'work', from: 'work', zenDream: false });
   useSignalStore.setState({ known: true, call: null, recording: false, leave: null });
   useChipLayout.setState({ banner: false, header: false });
+  resetRecordingSince();
 });
 afterEach(() => {
   resetTip();
@@ -47,11 +48,41 @@ it('counts from when the recording became true and starts again for the next one
   await step(65_000);
   expect(screen.getByText('01:05')).toBeTruthy();
   set({ recording: false });
-  await step(1_000);
+  await step(RECORDING_GAP_MS + 1_000);
   expect(document.querySelector('.rec-chip')).toBeNull();
   set({ recording: true });
   await step(2_000);
   expect(screen.getByText('00:02')).toBeTruthy();
+});
+
+it('keeps counting from the old start when the recorder returns within the short gap (one missed poll)', async () => {
+  render(<FloatingRecordingChip />);
+  set({ recording: true });
+  await step(65_000);
+  expect(screen.getByText('01:05')).toBeTruthy();
+  set({ recording: false });
+  await step(5_000);
+  expect(document.querySelector('.rec-chip')).toBeNull();
+  set({ recording: true });
+  await step(1_000);
+  expect(screen.getByText('01:11')).toBeTruthy();
+});
+
+it('does not tick while the page is hidden, and shows the true time at once when it shows again', async () => {
+  render(<FloatingRecordingChip />);
+  set({ recording: true });
+  await step(3_000);
+  expect(screen.getByText('00:03')).toBeTruthy();
+  const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
+  act(() => void document.dispatchEvent(new Event('visibilitychange')));
+  expect(vi.getTimerCount()).toBe(0);
+  await step(30_000);
+  expect(screen.getByText('00:03')).toBeTruthy();
+  hidden.mockReturnValue(false);
+  act(() => void document.dispatchEvent(new Event('visibilitychange')));
+  await step(0);
+  expect(screen.getByText('00:33')).toBeTruthy();
+  hidden.mockRestore();
 });
 
 it('says what the chip means, honestly', async () => {

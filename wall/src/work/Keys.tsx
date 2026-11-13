@@ -321,7 +321,8 @@ export function Keys() {
   const heading = page || onRecording ? `Now · ${pageName}${more}` : 'Now';
   const showChip = forYouOn && (onRecording || page?.kind !== 'foryou');
   const shownId = onRecording ? null : page?.id;
-  const pageAt = Math.max(0, pages.findIndex((p) => p.id === shownId));
+  // The Recording page is none of the pages: no dot is lit and no position is written while it shows.
+  const pageAt = onRecording ? -1 : Math.max(0, pages.findIndex((p) => p.id === shownId));
   const headKey = `${heading}|${pages.length}|${showChip}|${items.length}|${brief ?? ''}`;
   const fit: HeadFit = headFit.key === headKey ? headFit.level : 0;
   drawn.current = { many: allKeys.length > KEYS_PER_ROW, headKey };
@@ -354,12 +355,12 @@ export function Keys() {
           <button type="button" className="deck-arrow" aria-label="Previous page" {...tip(paged && chunkAt > 0 ? `Show keys ${(chunkAt - 1) * KEYS_PER_ROW + 1} to ${chunkAt * KEYS_PER_ROW} of ${pageName} and hold it` : 'Show the previous page of keys and hold it')} onClick={() => stepTo(-1)}>
             <IconChevronLeft size={20} stroke={2} aria-hidden="true" />
           </button>
-          {!dotsShown && pages.length > 1 && (
+          {!dotsShown && pages.length > 1 && !onRecording && (
             <span className="xs deck-pos" {...tip(`Page ${pageAt + 1} of ${pages.length}: ${pageName}. The arrows or the wheel step through them.`)}>
               {pageAt + 1} of {pages.length}
             </span>
           )}
-          <span className="deck-dots" role="tablist" aria-label="Pages" hidden={!dotsShown || pages.length < 2}>
+          <span className={`deck-dots${onRecording ? ' rec' : ''}`} role="tablist" aria-label="Pages" hidden={!dotsShown || pages.length < 2}>
             {pages.map((p) => (
               <button
                 key={p.id}

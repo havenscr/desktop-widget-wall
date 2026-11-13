@@ -21,8 +21,9 @@ export function useLeaveBanner(): ShownLeave | null {
   const signal = useSignalStore((s) => s.leave) as TitledLeave | null;
   const feed = useMeetingFeed();
   const dismissed = useLeaveDismissed((s) => s.entries);
-  const now = useClock(BANNER_TICK_MS);
   const held = useRef<TitledLeave | null>(null);
+  // No timer at all while there is no event to show (and none held for its "Leave now" window).
+  const now = useClock(BANNER_TICK_MS, signal !== null || held.current !== null);
 
   const bad = !known || feed.feedStale || feed.failed;
   if (bad) held.current = null;
