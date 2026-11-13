@@ -641,7 +641,7 @@ fn remember_ids(ids: Vec<String>) {
 }
 
 fn id_is_known(id: &str) -> bool {
-    KNOWN_IDS.lock().map(|g| g.iter().any(|k| k == id)).unwrap_or(false)
+    KNOWN_IDS.lock().map(|g| g.iter().any(|k| k == id)).unwrap_or(false) || day_id_is_known(id)
 }
 
 pub(crate) fn require_wall2(label: &str) -> Result<(), String> {
@@ -2252,5 +2252,369 @@ mod tests {
         let open = body.find('{').expect("body");
         let first = body[open + 1..].trim_start();
         assert!(first.starts_with("require_wall2(window.label())?;"), "first statement: {}", &first[..first.len().min(60)]);
+    }
+}
+
+// Section: the saved day record
+
+/// Most entries the day list keeps (the helper sends up to 400, newest first).
+const MAX_DAYS: usize = 400;
+/// Sessions in one day record, and spans per session.
+const MAX_DAY_SESSIONS: usize = 200;
+const MAX_DAY_SPANS: usize = 200;
+const MAX_DAY_TITLE_CHARS: usize = 60;
+/// Span stamps in a day record are at most this long.
+const MAX_DAY_STAMP_CHARS: usize = 30;
+const MAX_TZ_CHARS: usize = 64;
+const MAX_PR_NUMBER: u64 = 1_000_000_000;
+const INVALID_DATE: &str = "invalid-date";
+
+/// One recorded day and how many sessions it holds.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct DayCount {
+    pub date: String,
+    pub sessions: u32,
+}
+
+/// One stage span of a recorded session. An open span has no end.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct DayStageSpan {
+    pub stage: String,
+    pub start: String,
+    pub end: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct DayPr {
+    pub number: u64,
+    pub state: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct DaySession {
+    pub id: String,
+    pub title: String,
+    pub spans: Vec<DayStageSpan>,
+    pub pr: Option<DayPr>,
+}
+
+/// The helper's saved record of one day.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct DayRecord {
+    pub date: String,
+    pub tz: String,
+    pub sessions: Vec<DaySession>,
+}
+
+/// A real calendar date written `YYYY-MM-DD` (years 2000 to 2999).
+fn valid_date(s: &str) -> bool {
+    let b = s.as_bytes();
+    if b.len() != 10 || b[4] != b'-' || b[7] != b'-' {
+        return false;
+    }
+    let num = |from: usize, len: usize| -> Option<i64> {
+        let part = &b[from..from + len];
+        part.iter().all(u8::is_ascii_digit).then(|| part.iter().fold(0i64, |n, d| n * 10 + i64::from(d - b'0')))
+    };
+    let (Some(year), Some(month), Some(day)) = (num(0, 4), num(5, 2), num(8, 2)) else { return false };
+    if !(2000..=2999).contains(&year) || !(1..=12).contains(&month) {
+        return false;
+    }
+    let leap = (year % 4 == 0 && year % 100 != 0) || year % 400 == 0;
+    let month_days = [31, if leap { 29 } else { 28 }, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    day >= 1 && day <= month_days[(month - 1) as usize]
+}
+
+/// A day record stamp: RFC 3339 and at most 30 characters.
+fn day_stamp(v: Option<&Value>) -> Option<String> {
+    let s = v?.as_str()?;
+    (s.len() <= MAX_DAY_STAMP_CHARS && stamp_millis(s).is_some()).then(|| s.to_string())
+}
+
+/// The `days` answer: entries with a real date and a whole session count, at most 400.
+fn shape_days(body: &Value) -> Option<Vec<DayCount>> {
+    let items = body.get("days")?.as_array()?;
+    Some(
+        items
+            .iter()
+            .filter_map(|d| {
+                let date = d.get("date")?.as_str().filter(|s| valid_date(s))?.to_string();
+                let sessions = u32::try_from(count(d.get("sessions"))?).ok()?;
+                Some(DayCount { date, sessions })
+            })
+            .take(MAX_DAYS)
+            .collect(),
+    )
+}
+
+fn shape_stage_span(v: &Value) -> Option<DayStageSpan> {
+    let stage = one_of(v.get("stage"), &["plan", "build", "review", "pr", "live"])?;
+    let start = day_stamp(v.get("start"))?;
+    let end = match v.get("end") {
+        None | Some(Value::Null) => None,
+        Some(e) => Some(day_stamp(Some(e))?),
+    };
+    if let Some(e) = &end {
+        if stamp_millis(e)? < stamp_millis(&start)? {
+            return None;
+        }
+    }
+    Some(DayStageSpan { stage, start, end })
+}
+
+fn shape_day_pr(v: Option<&Value>) -> Option<DayPr> {
+    let v = v?;
+    let number = count(v.get("number")).filter(|n| (1..=MAX_PR_NUMBER).contains(n))?;
+    let state = one_of(v.get("state"), &["open", "closed", "merged"])?;
+    Some(DayPr { number, state })
+}
+
+/// One session of a day record. Ids follow the session id rule; a title is required.
+fn shape_day_session(id: &str, v: &Value) -> Option<DaySession> {
+    if !valid_session_id(id) {
+        return None;
+    }
+    let title = clean_text(v.get("title"), MAX_DAY_TITLE_CHARS).filter(|t| !t.is_empty())?;
+    let spans = v
+        .get("spans")
+        .and_then(Value::as_array)
+        .map(|items| items.iter().filter_map(shape_stage_span).take(MAX_DAY_SPANS).collect())
+        .unwrap_or_default();
+    Some(DaySession { id: id.to_string(), title, spans, pr: shape_day_pr(v.get("pr")) })
+}
+
+/// The `day` answer for `date`. None when it is not a day record, or is another day's.
+fn shape_day_record(body: &Value, date: &str) -> Option<DayRecord> {
+    let got = body.get("date")?.as_str()?;
+    if got != date {
+        return None;
+    }
+    let tz = clean_text(body.get("tz"), MAX_TZ_CHARS).unwrap_or_default();
+    let sessions = body
+        .get("sessions")?
+        .as_object()?
+        .iter()
+        .filter_map(|(id, v)| shape_day_session(id, v))
+        .take(MAX_DAY_SESSIONS)
+        .collect();
+    Some(DayRecord { date: date.to_string(), tz, sessions })
+}
+
+fn parse_json(bytes: &[u8]) -> Result<Value, String> {
+    if bytes.len() > MAX_ANSWER {
+        return Err(FAILED.to_string());
+    }
+    serde_json::from_slice(bytes).map_err(|_| FAILED.to_string())
+}
+
+/// GET a helper route. `Ok(None)` for a 404; any other non-2xx or transport error is `failed`.
+fn fetch_route(base: &str, path: &str) -> Result<Option<Value>, String> {
+    let request = agent().get(&format!("{base}{path}")).set("Accept", "application/json");
+    match request.call() {
+        Ok(resp) => {
+            let resp = accept(resp)?;
+            parse_json(&read_limited(resp.into_reader())?).map(Some)
+        }
+        Err(ureq::Error::Status(404, _)) => Ok(None),
+        Err(_) => Err(FAILED.to_string()),
+    }
+}
+
+/// Session ids of the day record on show, which may be opened too. Replaced by each day
+/// read and cleared by each read of the day list.
+static DAY_IDS: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+fn remember_day_ids(ids: Vec<String>) {
+    if let Ok(mut guard) = DAY_IDS.lock() {
+        *guard = ids;
+    }
+}
+
+fn day_id_is_known(id: &str) -> bool {
+    DAY_IDS.lock().map(|g| g.iter().any(|k| k == id)).unwrap_or(false)
+}
+
+/// The days the helper has a saved record for, newest first. An older helper without the
+/// route answers 404, which is `failed` here: the day picker then stays hidden.
+#[tauri::command]
+pub async fn wall2_omni_days(window: tauri::WebviewWindow, app: tauri::AppHandle) -> Result<Vec<DayCount>, String> {
+    require_wall2(window.label())?;
+    let base = helper_base(&app)?;
+    remember_day_ids(Vec::new());
+    let body = tauri::async_runtime::spawn_blocking(move || fetch_route(&base, "/wall/v1/days"))
+        .await
+        .map_err(|_| FAILED.to_string())??
+        .ok_or_else(|| FAILED.to_string())?;
+    shape_days(&body).ok_or_else(|| FAILED.to_string())
+}
+
+/// The saved record of one day, or None when the helper has none (404). The date must be a
+/// real `YYYY-MM-DD` date before anything is asked.
+#[tauri::command]
+pub async fn wall2_omni_day(window: tauri::WebviewWindow, app: tauri::AppHandle, date: String) -> Result<Option<DayRecord>, String> {
+    require_wall2(window.label())?;
+    if !valid_date(&date) {
+        return Err(INVALID_DATE.to_string());
+    }
+    let base = helper_base(&app)?;
+    let path = format!("/wall/v1/day?date={date}");
+    let body = tauri::async_runtime::spawn_blocking(move || fetch_route(&base, &path))
+        .await
+        .map_err(|_| FAILED.to_string())??;
+    let Some(body) = body else {
+        remember_day_ids(Vec::new());
+        return Ok(None);
+    };
+    let record = shape_day_record(&body, &date).ok_or_else(|| FAILED.to_string())?;
+    remember_day_ids(record.sessions.iter().map(|s| s.id.clone()).collect());
+    Ok(Some(record))
+}
+
+#[cfg(test)]
+mod day_record_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn dates_must_be_real_calendar_dates() {
+        assert!(valid_date("2026-11-12"));
+        assert!(valid_date("2028-02-29"));
+        assert!(!valid_date("2026-02-29"));
+        assert!(!valid_date("2026-13-01"));
+        assert!(!valid_date("2026-11-31"));
+        assert!(!valid_date("2026-11-00"));
+        assert!(!valid_date("2026-1-12"));
+        assert!(!valid_date("2026/11/12"));
+        assert!(!valid_date("2026-11-12T00:00:00Z"));
+        assert!(!valid_date("../../etc"));
+        assert!(!valid_date("2026-11-1a"));
+        assert!(!valid_date(""));
+    }
+
+    #[test]
+    fn the_day_list_keeps_real_dates_and_whole_counts_only() {
+        let body = json!({ "days": [
+            { "date": "2026-11-12", "sessions": 8 },
+            { "date": "2026-11-31", "sessions": 2 },
+            { "date": "2026-11-10", "sessions": -1 },
+            { "date": "2026-11-09", "sessions": 1.5 },
+            { "date": "2026-11-08" },
+            { "date": 20261107, "sessions": 1 },
+            { "date": "2026-11-06", "sessions": 0 }
+        ]});
+        let days = shape_days(&body).expect("days");
+        assert_eq!(days, vec![DayCount { date: "2026-11-12".into(), sessions: 8 }, DayCount { date: "2026-11-06".into(), sessions: 0 }]);
+        assert!(shape_days(&json!({ "nope": [] })).is_none());
+        assert!(shape_days(&json!({ "days": {} })).is_none());
+    }
+
+    #[test]
+    fn the_day_list_keeps_at_most_400() {
+        let items: Vec<Value> = (0..500).map(|i| json!({ "date": format!("2025-{:02}-{:02}", (i % 12) + 1, (i % 28) + 1), "sessions": 1 })).collect();
+        assert_eq!(shape_days(&json!({ "days": items })).expect("days").len(), MAX_DAYS);
+    }
+
+    fn record() -> Value {
+        json!({
+            "date": "2026-11-12", "tz": "America/Los_Angeles",
+            "sessions": {
+                "a1b2c3d4-0001": { "title": "Release notes draft", "spans": [
+                    { "stage": "plan", "start": "2026-11-12T15:00:00Z", "end": "2026-11-12T15:30:00Z" },
+                    { "stage": "build", "start": "2026-11-12T15:30:00Z", "end": null }
+                ], "pr": { "number": 552, "state": "merged" } },
+                "a1b2c3d4-0002": { "title": "Docs tidy pass", "spans": [] }
+            }
+        })
+    }
+
+    #[test]
+    fn a_day_record_is_shaped() {
+        let r = shape_day_record(&record(), "2026-11-12").expect("record");
+        assert_eq!(r.date, "2026-11-12");
+        assert_eq!(r.tz, "America/Los_Angeles");
+        assert_eq!(r.sessions.len(), 2);
+        let first = &r.sessions[0];
+        assert_eq!(first.id, "a1b2c3d4-0001");
+        assert_eq!(first.spans.len(), 2);
+        assert_eq!(first.spans[1].end, None);
+        assert_eq!(first.pr, Some(DayPr { number: 552, state: "merged".into() }));
+        assert_eq!(r.sessions[1].pr, None);
+    }
+
+    #[test]
+    fn a_record_of_another_day_is_refused() {
+        assert!(shape_day_record(&record(), "2026-11-11").is_none());
+        assert!(shape_day_record(&json!({ "date": "2026-11-12" }), "2026-11-12").is_none());
+    }
+
+    #[test]
+    fn bad_sessions_and_spans_are_dropped_never_passed_through() {
+        let body = json!({ "date": "2026-11-12", "tz": "UTC", "sessions": {
+            "NOT-AN-ID": { "title": "Bad id", "spans": [] },
+            "a1b2c3d4-0003": { "spans": [] },
+            "a1b2c3d4-0004": { "title": "   ", "spans": [] },
+            "a1b2c3d4-0005": { "title": "x".repeat(90), "spans": [
+                { "stage": "deploy", "start": "2026-11-12T15:00:00Z" },
+                { "stage": "build", "start": "2026-11-12" },
+                { "stage": "build", "start": "2026-11-12T15:00:00.123456789+00:00" },
+                { "stage": "build", "start": "2026-11-12T16:00:00Z", "end": "2026-11-12T15:00:00Z" },
+                { "stage": "review", "start": "2026-11-12T16:00:00Z", "end": "soon" },
+                { "stage": "pr", "start": "2026-11-12T16:00:00Z", "end": "2026-11-12T17:00:00Z" }
+            ], "pr": { "number": 0, "state": "merged" } },
+            "a1b2c3d4-0006": { "title": "Bad pr", "spans": [], "pr": { "number": 7, "state": "draft" } }
+        }});
+        let r = shape_day_record(&body, "2026-11-12").expect("record");
+        let ids: Vec<&str> = r.sessions.iter().map(|s| s.id.as_str()).collect();
+        assert_eq!(ids, vec!["a1b2c3d4-0005", "a1b2c3d4-0006"]);
+        let s = &r.sessions[0];
+        assert_eq!(s.title.chars().count(), MAX_DAY_TITLE_CHARS);
+        assert_eq!(s.spans.len(), 1);
+        assert_eq!(s.spans[0].stage, "pr");
+        assert_eq!(s.pr, None);
+        assert_eq!(r.sessions[1].pr, None);
+    }
+
+    #[test]
+    fn a_day_record_caps_sessions_and_spans() {
+        let spans: Vec<Value> = (0..250).map(|_| json!({ "stage": "build", "start": "2026-11-12T15:00:00Z", "end": "2026-11-12T15:10:00Z" })).collect();
+        let mut sessions = serde_json::Map::new();
+        for i in 0..250 {
+            sessions.insert(format!("a1b2c3d4-{i:04}"), json!({ "title": "Session", "spans": spans.clone() }));
+        }
+        let r = shape_day_record(&json!({ "date": "2026-11-12", "tz": "UTC", "sessions": sessions }), "2026-11-12").expect("record");
+        assert_eq!(r.sessions.len(), MAX_DAY_SESSIONS);
+        assert!(r.sessions.iter().all(|s| s.spans.len() == MAX_DAY_SPANS));
+    }
+
+    #[test]
+    fn oversized_or_broken_answers_fail() {
+        assert_eq!(parse_json(&vec![b' '; MAX_ANSWER + 1]), Err("failed".to_string()));
+        assert_eq!(parse_json(b"{not json"), Err("failed".to_string()));
+        assert!(parse_json(b"{}").is_ok());
+    }
+
+    #[test]
+    fn day_record_ids_may_be_opened_until_replaced() {
+        remember_day_ids(vec!["a1b2c3d4-0e01".to_string()]);
+        assert!(id_is_known("a1b2c3d4-0e01"));
+        remember_day_ids(Vec::new());
+        assert!(!id_is_known("a1b2c3d4-0e01"));
+    }
+
+    #[test]
+    fn the_day_commands_are_gated_and_check_the_date_first() {
+        let src = include_str!("wall2_omni.rs");
+        for name in ["pub async fn wall2_omni_days(", "pub async fn wall2_omni_day("] {
+            let at = src.find(name).expect("command");
+            let body = &src[at..];
+            let open = body.find('{').expect("body");
+            let first = body[open + 1..].trim_start();
+            assert!(first.starts_with("require_wall2(window.label())?;"), "{name}");
+        }
+        let at = src.find("pub async fn wall2_omni_day(").expect("command");
+        let body = &src[at..];
+        let check = body.find("valid_date(&date)").expect("date check");
+        let base = body.find("helper_base(&app)").expect("base");
+        assert!(check < base, "the date is checked before any request");
     }
 }

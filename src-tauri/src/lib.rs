@@ -3858,7 +3858,9 @@ pub fn run() {
             validate_address,
             // Persistent config storage
             save_widget_config,
-            load_widget_config
+            load_widget_config,
+            wall2_omni::wall2_omni_days,
+            wall2_omni::wall2_omni_day
         ])
         .setup(|app| {
             #[cfg(windows)]
