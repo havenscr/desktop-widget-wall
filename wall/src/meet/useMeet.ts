@@ -26,6 +26,8 @@ export interface MeetState {
   stale: boolean;
   /** When each account last answered (or failed to), by id. */
   tried: Record<string, number>;
+  /** When the next automatic retry runs, or null when none is scheduled. */
+  retryAt: number | null;
   now: number;
   /** Account id while a sign-in is waiting for the browser. */
   signingIn: string | null;
@@ -70,6 +72,7 @@ export function useMeet(): MeetState {
   const [lastOk, setLastOk] = useState<number | null>(null);
   const [stale, setStale] = useState(false);
   const [tried, setTried] = useState<Record<string, number>>({});
+  const [retryAt, setRetryAt] = useState<number | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const [signingIn, setSigningIn] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -97,15 +100,18 @@ export function useMeet(): MeetState {
   const planFastRetry = useCallback((unavailable: boolean) => {
     clearTimeout(fastTimer.current);
     fastTimer.current = undefined;
+    setRetryAt(null);
     if (!unavailable) {
       fastStep.current = 0;
       return;
     }
     const delay = FAST_RETRY_MS[fastStep.current];
     if (delay === undefined || !onRef.current || !mounted.current) return;
+    setRetryAt(Date.now() + delay);
     // Only the timer moves the step on, so a manual Try again never uses up the fast retries.
     fastTimer.current = setTimeout(() => {
       fastStep.current += 1;
+      setRetryAt(null);
       void refreshRef.current();
     }, delay);
   }, []);
@@ -113,23 +119,33 @@ export function useMeet(): MeetState {
   // The accounts come back at once (peek), then each account is asked on its own and shown
   // the moment it answers. An answer older than one already shown is dropped. Nothing waits
   // longer than READ_LIMIT_MS: an account that has not answered by then shows as not
-  // answering, with the time of the try.
+  // answering, with the time of the try; if its answer arrives later it corrects the row at
+  // once. The stale flag and the last good time come only from answers that were applied.
   const readOnce = useCallback(async () => {
-    const cur: { shown: MeetData | null } = { shown: null };
-    const show = (next: MeetData) => {
+    const cur: { shown: MeetData | null; stale: boolean } = { shown: null, stale: false };
+    /** Apply an answer unless a newer one is already shown. `answered` is the account it answers for. */
+    const show = (next: MeetData, answered?: string): boolean => {
       if (typeof next.seq === 'number') {
-        if (next.seq <= seqRef.current) return;
+        if (next.seq <= seqRef.current) return false;
         seqRef.current = next.seq;
       }
+      if (answered) delete overrides.current[answered];
       const accounts = (next.accounts ?? []).map((a) => overrides.current[a.id] ?? a);
       cur.shown = { accounts, meetings: next.meetings ?? [] };
+      cur.stale = next.stale === true;
       setData(cur.shown);
       setStatus('ready');
-      setStale(next.stale === true);
+      setStale(cur.stale);
+      return true;
     };
-    const show2 = (base: MeetData) => {
-      cur.shown = { ...base, accounts: base.accounts.map((x) => overrides.current[x.id] ?? x) };
-      setData(cur.shown);
+    const markFailed = (a: MeetAccount, reason?: string) => {
+      overrides.current[a.id] = { id: a.id, label: a.label, state: 'unavailable', ...(reason ? { reason } : {}) };
+      setTried((t) => ({ ...t, [a.id]: Date.now() }));
+      const base = cur.shown;
+      if (base) {
+        cur.shown = { ...base, accounts: base.accounts.map((x) => overrides.current[x.id] ?? x) };
+        setData(cur.shown);
+      }
     };
     try {
       const first = await within(invoke<MeetData>('wall2_meet_next', { peek: true }), READ_LIMIT_MS);
@@ -137,31 +153,36 @@ export function useMeet(): MeetState {
       overrides.current = {};
       show(first);
       const accounts = first?.accounts ?? [];
-      let lastStale = first?.stale === true;
       await Promise.all(
         accounts.map(async (a) => {
+          const asked = invoke<MeetData>('wall2_meet_next', { only: a.id });
           try {
-            const r = await within(invoke<MeetData>('wall2_meet_next', { only: a.id }), READ_LIMIT_MS);
+            const r = await within(asked, READ_LIMIT_MS);
             if (!mounted.current) return;
-            delete overrides.current[a.id];
             setTried((t) => ({ ...t, [a.id]: Date.now() }));
-            lastStale = r?.stale === true;
-            show(r);
+            show(r, a.id);
           } catch (e) {
             if (!mounted.current) return;
             const timedOut = text(e) === 'timeout';
-            overrides.current[a.id] = { id: a.id, label: a.label, state: 'unavailable', ...(timedOut ? { reason: TIMED_OUT } : {}) };
-            setTried((t) => ({ ...t, [a.id]: Date.now() }));
-            const base = cur.shown;
-            if (base) show2(base);
+            markFailed(a, timedOut ? TIMED_OUT : undefined);
+            if (timedOut) {
+              // A late answer corrects the row at once, if nothing newer has been shown.
+              asked.then(
+                (late) => {
+                  if (!mounted.current || !show(late, a.id)) return;
+                  setTried((t) => ({ ...t, [a.id]: Date.now() }));
+                  if (!cur.stale && late.accounts?.some((x) => x.state === 'ok')) setLastOk(Date.now());
+                },
+                () => undefined,
+              );
+            }
           }
         }),
       );
       if (!mounted.current) return;
       const done = cur.shown;
       planFastRetry((done?.accounts ?? []).some((x) => x.state === 'unavailable'));
-      setStale(lastStale);
-      if (!lastStale) setLastOk(Date.now());
+      if (!cur.stale && done?.accounts.some((x) => x.state === 'ok')) setLastOk(Date.now());
     } catch (e) {
       if (!mounted.current) return;
       const t = text(e);
@@ -268,5 +289,5 @@ export function useMeet(): MeetState {
     [refresh],
   );
 
-  return { status, data, lastOk, stale, tried, now, signingIn, notice, signIn, cancelSignIn, signOut, refresh: () => void refresh(), join };
+  return { status, data, lastOk, stale, tried, retryAt, now, signingIn, notice, signIn, cancelSignIn, signOut, refresh: () => void refresh(), join };
 }

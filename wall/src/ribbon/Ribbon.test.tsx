@@ -177,3 +177,20 @@ it('has no such line when an account can be read and the day is empty', async ()
   await flush();
   expect(r.container.querySelector('.rib-na')).toBeNull();
 });
+
+it('drops an older day answer that arrives after a newer one', async () => {
+  let calls = 0;
+  let releaseOld: (v: unknown) => void = () => undefined;
+  mocks.set('wall2_meet_day', () => {
+    calls += 1;
+    if (calls === 1) return new Promise((r) => (releaseOld = r));
+    return { ...day, seq: 7 };
+  });
+  const r = render(<Ribbon kind="work" />);
+  await flush();
+  await flush(5 * 60_000);
+  expect(r.container.querySelectorAll('.ev')).toHaveLength(3);
+  releaseOld({ accounts: day.accounts, events: day.events.slice(0, 1), seq: 3 });
+  await flush();
+  expect(r.container.querySelectorAll('.ev')).toHaveLength(3);
+});

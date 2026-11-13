@@ -129,15 +129,11 @@
 .meet-empty {
   top: 4px;
   height: auto;
-  min-height: 220px;
   left: 0;
-  width: 1308px;
+  width: 560px;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  gap: 16px;
+  gap: 12px;
 }
 .meet-account.unavailable .meet-account-text {
   min-width: 0;
@@ -154,4 +150,15 @@
 .meet-retry {
   align-self: flex-start;
   margin-top: 8px;
+}
+
+.meet-headline-block {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 0 4px;
+}
+.meet-headline {
+  font: 300 32px/1.1 var(--disp);
+  color: var(--tx);
 }

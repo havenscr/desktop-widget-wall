@@ -269,8 +269,8 @@ it('an unavailable account shows plain words, the reason line and one action: Tr
   mocks.set('wall2_meet_next', () => unavailable);
   render(<Meet />);
   await flush();
-  expect(screen.getByText('Calendar could not be read')).toBeTruthy();
-  expect(screen.getByText('Calendar refused the request (graph-403-ErrorAccessDenied)')).toBeTruthy();
+  expect(screen.getByText(/^Calendar could not be read/)).toBeTruthy();
+  expect(screen.getByText('graph-403-ErrorAccessDenied')).toBeTruthy();
   expect(screen.getByRole('button', { name: 'Try again' })).toBeTruthy();
   expect(screen.queryByRole('button', { name: 'Sign in' })).toBeNull();
   // The connected account keeps Sign out; the unavailable one has only Try again.
@@ -390,7 +390,7 @@ it('says Calendar not available when no account can be read', async () => {
   render(<Meet />);
   await flush();
   expect(screen.getByText('Calendar not available')).toBeTruthy();
-  expect(screen.getByText('Microsoft is not answering')).toBeTruthy();
+  expect(screen.getByText(/^Microsoft is not answering/)).toBeTruthy();
   expect(screen.getByText('Signed out')).toBeTruthy();
 });
 
@@ -401,7 +401,7 @@ it('names a network problem and shows the time of the last try', async () => {
   }));
   render(<Meet />);
   await flush();
-  expect(screen.getByText('Network problem')).toBeTruthy();
+  expect(screen.getByText(/^Network problem/)).toBeTruthy();
   expect(screen.getByText(/^Last try \d+(:\d\d)? [AP]M$/)).toBeTruthy();
   expect(screen.getByRole('button', { name: 'Try again' })).toBeTruthy();
 });
@@ -434,7 +434,7 @@ it('an account that has not answered in 12 seconds shows as not answering, with 
   expect(screen.getByText('Checking')).toBeTruthy();
   await flush(1_500);
   expect(screen.queryByText('Checking')).toBeNull();
-  expect(screen.getByText('Microsoft is not answering')).toBeTruthy();
+  expect(screen.getByText(/^Microsoft is not answering/)).toBeTruthy();
   expect(screen.getByRole('button', { name: 'Try again' })).toBeTruthy();
   expect(screen.getByText('Design review')).toBeTruthy();
 });
@@ -516,4 +516,47 @@ it('a hostile reason string never reaches the page', async () => {
     expect(container.querySelector('.meet-reason')).toBeNull();
     unmount();
   }
+});
+
+it('says "trying again" only while a retry is scheduled', async () => {
+  mocks.set('wall2_meet_next', () => ({
+    accounts: [{ id: 'work', label: 'Work', state: 'unavailable', reason: 'graph-503-UnknownError' }],
+    meetings: [],
+  }));
+  render(<Meet />);
+  await flush();
+  expect(screen.getByText(/^Microsoft is not answering, trying again at /)).toBeTruthy();
+  // After the two fast retries none is scheduled until the 5 minute poll.
+  await flush(30_000);
+  await flush(60_000);
+  expect(screen.getByText('Microsoft is not answering')).toBeTruthy();
+});
+
+it('a late answer after the 12 second limit corrects the row at once', async () => {
+  let late: (v: MeetData) => void = () => undefined;
+  mocks.set('wall2_meet_next', (args) => {
+    if (args?.peek) return peekOnly(data)(args);
+    if (args?.only === 'work') return { ...data, accounts: [data.accounts[0], { ...data.accounts[1], state: 'checking' }], meetings: data.meetings.slice(0, 2), seq: 2 };
+    return new Promise<MeetData>((r) => (late = r));
+  });
+  render(<Meet />);
+  await flush(12_500);
+  expect(screen.getByText(/^Microsoft is not answering/)).toBeTruthy();
+  late({ ...data, seq: 9 });
+  await flush();
+  expect(screen.queryByText(/^Microsoft is not answering/)).toBeNull();
+  expect(screen.getByText('Board prep')).toBeTruthy();
+});
+
+it('says Calendar not available inside the Accounts card, with the last good read, and no wide empty card', async () => {
+  mocks.set('wall2_meet_next', () => ({
+    accounts: [{ id: 'work', label: 'Work', state: 'signed-out' }],
+    meetings: [],
+  }));
+  const { container } = render(<Meet />);
+  await flush();
+  expect(container.querySelector('.meet-empty')).toBeNull();
+  expect(screen.getByLabelText('Accounts').textContent).toContain('Calendar not available');
+  expect(screen.getByText('No good read yet')).toBeTruthy();
+  expect(screen.queryByLabelText('Next meeting')).toBeNull();
 });

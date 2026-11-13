@@ -134,9 +134,14 @@ export function reasonText(code: string | undefined | null): string | null {
   const status = Number(code.slice(6, 9));
   if (status === 403) return 'Calendar refused the request';
   if (status === 400) return 'Calendar did not understand the request';
-  if (status === 429 || status >= 500) return 'Calendar is busy, trying again';
+  if (status === 429 || status >= 500) return 'Microsoft is busy';
   if (status === 401) return 'Calendar did not accept the sign-in';
   return 'Calendar could not be read';
+}
+
+/** The code itself when it is one of the known shapes, for the quiet line under an unavailable account. */
+export function reasonCode(code: string | undefined | null): string | null {
+  return code && REASON_SHAPE.test(code) ? code : null;
 }
 
 /** The quiet line under Unavailable: the words, then the code in brackets. Null when unknown. */
