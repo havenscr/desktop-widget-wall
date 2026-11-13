@@ -12,9 +12,12 @@ import type { OmniSummary } from '../agents/model';
 import { useFocusStore } from '../focus/store';
 import { LINES } from './lines';
 import { PET_KEY } from './pet';
+import { resetMeetingFeed, useMeetingFeed } from '../work/useNextMeeting';
+import { resetWeatherStore } from '../weather/useWeather';
 import { CARD_DWELL_MS, CARD_GRACE_MS, PET_LINE_EVERY_MS, PET_REPLY_GAP_MS, Watt } from './Watt';
 
-const invokeMock = vi.hoisted(() => vi.fn((cmd: string) => (cmd === 'wall2_open_session' ? Promise.resolve() : new Promise(() => {}))));
+const defaultInvoke = vi.hoisted(() => (cmd: string) => (cmd === 'wall2_open_session' ? Promise.resolve() : new Promise(() => {})));
+const invokeMock = vi.hoisted(() => vi.fn(defaultInvoke));
 vi.mock('../bridge/tauri', async (original) => ({
   ...(await original<typeof import('../bridge/tauri')>()),
   invoke: invokeMock,
@@ -24,6 +27,8 @@ vi.mock('../horizon/index', async (original) => ({
   ...(await original<typeof import('../horizon/index')>()),
   drawHorizon: vi.fn(),
 }));
+
+const stored = () => JSON.parse(localStorage.getItem(PET_KEY) ?? '{}');
 
 let frames: Map<number, FrameRequestCallback>;
 let nextId = 1;
@@ -97,6 +102,9 @@ beforeEach(() => {
   invokeMock.mockClear();
 });
 afterEach(() => {
+  resetMeetingFeed();
+  resetWeatherStore();
+  invokeMock.mockImplementation(defaultInvoke);
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   vi.useRealTimers();
@@ -344,7 +352,6 @@ describe('with the real horizon on Home', () => {
 });
 
 describe('a pet', () => {
-  const stored = () => JSON.parse(localStorage.getItem(PET_KEY) ?? '{}');
   const heartOpacity = (c: HTMLElement) => Number(c.querySelector<HTMLElement>('.watt-heart')!.style.opacity || 0);
 
   it('a click pets her: hearts, a wiggle, a pleased line; a second click within a few seconds adds nothing', () => {
@@ -381,6 +388,7 @@ describe('a pet', () => {
     fireEvent.click(container.querySelector('.watt-hit')!);
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     fireEvent.mouseEnter(container.querySelector('.watt-hit')!);
+    fireEvent.mouseMove(container.querySelector('.watt-hit')!);
     act(() => void vi.advanceTimersByTime(CARD_DWELL_MS));
     const card = container.querySelector('.watt-card')!;
     expect(card.querySelector('.wc-name')!.textContent).toBe('Watt');
@@ -476,11 +484,24 @@ describe('a pet', () => {
       const { container } = render(<Watt now={day} />);
       runFor(1.5);
       fireEvent.mouseEnter(hitOf(container));
+      fireEvent.mouseMove(hitOf(container));
       later(CARD_DWELL_MS - 100);
       fireEvent.mouseLeave(hitOf(container));
       later(1000);
       expect(container.querySelector('.watt-card')).toBeNull();
       fireEvent.mouseEnter(hitOf(container));
+      fireEvent.mouseMove(hitOf(container));
+      later(CARD_DWELL_MS);
+      expect(container.querySelector('.watt-card')).not.toBeNull();
+    });
+
+    it('a pointer resting still while she walks under it opens nothing until it moves', () => {
+      const { container } = render(<Watt now={day} />);
+      runFor(1.5);
+      fireEvent.mouseEnter(hitOf(container));
+      later(CARD_DWELL_MS * 3);
+      expect(container.querySelector('.watt-card')).toBeNull();
+      fireEvent.mouseMove(hitOf(container));
       later(CARD_DWELL_MS);
       expect(container.querySelector('.watt-card')).not.toBeNull();
     });
@@ -489,6 +510,7 @@ describe('a pet', () => {
       const { container } = render(<Watt now={day} />);
       runFor(1.5);
       fireEvent.mouseEnter(hitOf(container));
+      fireEvent.mouseMove(hitOf(container));
       later(CARD_DWELL_MS);
       fireEvent.mouseLeave(hitOf(container));
       later(CARD_GRACE_MS - 100);
@@ -500,6 +522,7 @@ describe('a pet', () => {
       expect(container.querySelector('.watt-card')).toBeNull();
       // Leaving her without reaching the card: gone after the short grace.
       fireEvent.mouseEnter(hitOf(container));
+      fireEvent.mouseMove(hitOf(container));
       later(CARD_DWELL_MS);
       fireEvent.mouseLeave(hitOf(container));
       later(CARD_GRACE_MS);
@@ -521,6 +544,7 @@ describe('a pet', () => {
       fireEvent.keyDown(window, { key: 'Escape' });
       expect(container.querySelector('.watt-card')).toBeNull();
       fireEvent.mouseEnter(hitOf(container));
+      fireEvent.mouseMove(hitOf(container));
       later(CARD_DWELL_MS);
       expect(container.querySelector('.watt-card')).not.toBeNull();
       const x = where(container).x;
@@ -529,6 +553,7 @@ describe('a pet', () => {
       fireEvent.keyDown(window, { key: 'Escape' });
       expect(container.querySelector('.watt-card')).toBeNull();
       fireEvent.mouseEnter(hitOf(container));
+      fireEvent.mouseMove(hitOf(container));
       later(CARD_DWELL_MS);
       expect(container.querySelector('.watt-card')).not.toBeNull();
       go('home');
@@ -594,5 +619,154 @@ describe('a pet', () => {
     runFor(0.5);
     expect(container.querySelector('.watt-bubble')).toBeNull();
     expect(stored().today.focus ?? 0).toBe(0);
+  });
+});
+
+describe('quiet and silent cases', () => {
+  const setHidden = (h: boolean) => Object.defineProperty(document, 'hidden', { configurable: true, get: () => h });
+  afterEach(() => setHidden(false));
+
+  it('a pet while she is asleep or the page is hidden gives hearts but no spoken line', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    let ms = day();
+    const { container } = render(<Watt now={() => ms} />);
+    runFor(1.5);
+    const pet = () => fireEvent.click(container.querySelector('.watt-hit')!);
+    // Control: awake and visible, a pet gets a reply.
+    pet();
+    expect(container.querySelector('.watt-bubble')).not.toBeNull();
+    expect(stored().today.pets).toBe(1);
+    // Hidden: hearts and the count, but no line.
+    ms += 10 * 60_000;
+    act(() => void vi.advanceTimersByTime(30_000));
+    setHidden(true);
+    pet();
+    expect(container.querySelector('.watt-bubble')).toBeNull();
+    expect(stored().today.pets).toBe(2);
+    setHidden(false);
+    // Asleep (night): the same.
+    ms = night();
+    runFor(1.5);
+    pet();
+    expect(container.querySelector('.watt-bubble')).toBeNull();
+    expect(stored().today.pets).toBe(3);
+  });
+
+  it('reaching a clover schedules nothing from inside paint', () => {
+    const { container } = render(<Watt now={day} />);
+    runFor(1.5);
+    const real = window.setTimeout.bind(window);
+    const stacks: string[] = [];
+    vi.spyOn(window, 'setTimeout').mockImplementation(((fn: TimerHandler, ms?: number, ...a: unknown[]) => {
+      stacks.push(new Error().stack ?? '');
+      return real(fn, ms, ...a);
+    }) as typeof window.setTimeout);
+    act(() => (window as unknown as { __watt: { clover(): void } }).__watt.clover());
+    runFor(90);
+    expect(container.querySelector('.watt-clover')).toBeNull();
+    expect(stored().today.clovers).toBe(1);
+    expect(stacks.length).toBeGreaterThan(0);
+    for (const st of stacks) expect(st).not.toMatch(/at paint\b/);
+  });
+
+  describe('meetings keep her quiet', () => {
+    const meeting = (ms: number) => ({
+      key: 'k',
+      accountId: 'a',
+      title: 'Planning',
+      start: new Date(ms - 10 * 60_000).toISOString(),
+      end: new Date(ms + 30 * 60_000).toISOString(),
+      canJoin: false,
+    });
+    const withMeeting = (ms: number) =>
+      invokeMock.mockImplementation(((cmd: string) =>
+        cmd === 'wall2_meet_next' ? Promise.resolve({ accounts: [], meetings: [meeting(ms)] }) : defaultInvoke(cmd)) as never);
+    const flush = () => act(async () => void (await Promise.resolve()));
+    const pet = (c: HTMLElement) => fireEvent.click(c.querySelector('.watt-hit')!);
+
+    it('a stale feed keeps her quiet until the last known meeting ends', async () => {
+      let ms = day();
+      withMeeting(ms);
+      const { container, rerender } = render(<Watt now={() => ms} />);
+      await flush();
+      runFor(1.5);
+      pet(container);
+      expect(container.querySelector('.watt-bubble')).toBeNull();
+      act(() => useMeetingFeed.setState({ failed: true }));
+      pet(container);
+      expect(container.querySelector('.watt-bubble')).toBeNull();
+      // Past its end the quiet time is over, feed stale or not.
+      ms += 31 * 60_000;
+      rerender(<Watt now={() => ms} />);
+      pet(container);
+      expect(container.querySelector('.watt-bubble')).not.toBeNull();
+    });
+
+    it('a meeting that disappears from a fresh feed stops keeping her quiet at once', async () => {
+      let ms = day();
+      withMeeting(ms);
+      const { container } = render(<Watt now={() => ms} />);
+      await flush();
+      runFor(1.5);
+      pet(container);
+      expect(container.querySelector('.watt-bubble')).toBeNull();
+      act(() => useMeetingFeed.setState({ meetings: [], failed: false, feedStale: false }));
+      ms += 10_000;
+      pet(container);
+      expect(container.querySelector('.watt-bubble')).not.toBeNull();
+    });
+  });
+
+  describe('focus half way line', () => {
+    const run = (left: number, advance: number) => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+      let ms = day();
+      const { container } = render(<Watt now={() => ms} />);
+      runFor(1.5);
+      act(() => useFocusStore.setState({ state: { status: 'running', minutes: 40, endAt: ms + left } }));
+      const seen: string[] = [];
+      for (let t = 0; t < advance; t += 5000) {
+        ms += 5000;
+        act(() => void vi.advanceTimersByTime(5000));
+        const b = container.querySelector('.watt-bubble')?.textContent;
+        if (b) seen.push(b);
+      }
+      return seen;
+    };
+    const half = (seen: string[]) => seen.filter((l) => LINES.focusHalf.includes(l));
+
+    it('a session that begins past half way says nothing about half way', () => {
+      expect(half(run(10 * 60_000, 5 * 60_000))).toEqual([]);
+    });
+
+    it('control: a session that crosses half way says so', () => {
+      expect(half(run(21 * 60_000, 5 * 60_000)).length).toBeGreaterThan(0);
+    });
+  });
+});
+
+describe('the amber mark when it is only a label', () => {
+  it('takes no pointer events when it is not clickable (Work with no link)', () => {
+    usePlaceStore.setState({ active: 'work' });
+    publishCamera(CAMERAS.work, false);
+    const summary: OmniSummary = {
+      now: new Date().toISOString(),
+      tz: 'UTC',
+      stale: false,
+      slots: { used: 1, limit: 3 },
+      lanes: [{ id: 'l1', title: 'A lane', stage: 'build', state: 'working', line: '', elapsedS: 10, waiting: true, pr: null }],
+      parked: 0,
+      yourMove: { total: 1, first: { sessionId: 's-1', title: 'A lane', kind: 'question', since: null, question: '' } },
+      usage: null,
+      day: [],
+      linksAvailable: false,
+    };
+    const { container } = render(<Watt now={day} />);
+    act(() => useAgentsStore.setState({ status: 'ready', summary, readFailed: false, awaiting: false, okAt: Date.now(), freshAt: Date.now() }));
+    runFor(2);
+    const mark = container.querySelector<HTMLElement>('.watt-mark')!;
+    expect(mark.classList.contains('static')).toBe(true);
+    expect(mark.hidden).toBe(false);
+    expect(mark.style.pointerEvents).toBe('none');
   });
 });

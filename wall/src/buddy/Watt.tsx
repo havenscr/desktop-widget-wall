@@ -194,6 +194,8 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
   // A stale or missing feed keeps the last known meeting's quiet time until its end.
   const lastMeeting = useRef<{ start: number; end: number } | null>(null);
   if (Number.isFinite(meetingStart) && Number.isFinite(meetingEnd)) lastMeeting.current = { start: meetingStart, end: meetingEnd };
+  // A fresh feed without it (cancelled or finished) ends the quiet time at once.
+  else if (!next.stale) lastMeeting.current = null;
   const win = lastMeeting.current;
   const inMeeting = win !== null && win.start <= now() && now() < win.end;
   const meetingSoon = meetingStart - now() > 0 && meetingStart - now() <= MEETING_SOON_MS;
@@ -486,6 +488,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
   const cardBox = useRef(createBox());
   const openCard = useCallback(() => {
     window.clearTimeout(dwellTimer.current);
+    dwellTimer.current = 0;
     window.clearTimeout(closeTimer.current);
     const p = presence.current;
     if (!p.place || p.opacity < 0.5) return;
@@ -495,19 +498,27 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
   }, []);
   const closeCard = useCallback(() => {
     window.clearTimeout(dwellTimer.current);
+    dwellTimer.current = 0;
     window.clearTimeout(closeTimer.current);
     setCard(null);
   }, []);
   const closeRef = useRef(closeCard);
   closeRef.current = closeCard;
   const onHitEnter = useCallback(() => {
+    // Only cancels a pending close. Entering is not enough to open the card: she may have walked
+    // under a pointer that is resting still. The dwell starts from a real pointer movement.
     window.clearTimeout(closeTimer.current);
-    if (cardRef.current) return;
-    window.clearTimeout(dwellTimer.current);
-    dwellTimer.current = window.setTimeout(openCard, CARD_DWELL_MS);
+  }, []);
+  const onHitMove = useCallback(() => {
+    if (cardRef.current || dwellTimer.current) return;
+    dwellTimer.current = window.setTimeout(() => {
+      dwellTimer.current = 0;
+      openCard();
+    }, CARD_DWELL_MS);
   }, [openCard]);
   const onHitLeave = useCallback(() => {
     window.clearTimeout(dwellTimer.current);
+    dwellTimer.current = 0;
     if (cardRef.current) closeTimer.current = window.setTimeout(closeCard, CARD_GRACE_MS);
   }, [closeCard]);
   const onCardEnter = useCallback(() => window.clearTimeout(closeTimer.current), []);
@@ -739,7 +750,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
         markHitBox(walk, p.camera.hy, mb, hb);
         mk.style.left = `${hb.left}px`;
         mk.style.top = `${hb.top}px`;
-        mk.style.pointerEvents = live && f.mark ? 'auto' : 'none';
+        mk.style.pointerEvents = live && f.mark && !markStaticRef.current ? 'auto' : 'none';
       }
       const cl = cloverEl.current;
       const clv = cloverRef.current;
@@ -878,6 +889,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
         aria-label="Watt, the sheep. Click to pet her."
         onClick={petHer}
         onMouseEnter={onHitEnter}
+        onMouseMove={onHitMove}
         onMouseLeave={onHitLeave}
         onFocus={onHitFocus}
         onBlur={onHitBlur}
