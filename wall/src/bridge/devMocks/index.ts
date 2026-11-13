@@ -11,6 +11,7 @@ import { registerSonosMocks } from './sonos';
 import { registerSignalMocks } from './signals';
 import { registerTaskMocks } from './tasks';
 import { registerWatchMocks } from './watch';
+import { mocks } from '../tauri';
 
 /**
  * Realistic answers for the commands the Work and Home tabs call, so `npm run dev` in a
@@ -31,4 +32,5 @@ export function registerDevMocks(): void {
   registerGalleryMocks();
   registerSignalMocks();
   registerWatchMocks();
+  mocks.set('wall2_build_info', () => ({ commit: 'dev', builtAt: '2026-11-13T09:05Z' }));
 }

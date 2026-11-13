@@ -46,6 +46,26 @@ it('a new request with the same question text but a later waiting-since time end
   expect(result.current.ids.has(ID)).toBe(false);
 });
 
+it('a new request with identical text 30 seconds later ends the snooze, one 10 seconds later does not', () => {
+  const first = asking('Go ahead?', 600);
+  const { result, rerender } = renderHook(({ s }) => useSnoozed(s), { initialProps: { s: first } });
+  act(() => snooze(ID, first));
+  // Waiting 10 s longer than before at the same helper time: inside the 20 s tolerance.
+  rerender({ s: asking('Go ahead?', 590) });
+  expect(result.current.ids.has(ID)).toBe(true);
+  // Began waiting 30 s later: a new request.
+  rerender({ s: asking('Go ahead?', 570) });
+  expect(result.current.ids.has(ID)).toBe(false);
+});
+
+it('a changed question ends the snooze even when the waiting-since time is the same', () => {
+  const first = asking('Go ahead?', 600);
+  const { result, rerender } = renderHook(({ s }) => useSnoozed(s), { initialProps: { s: first } });
+  act(() => snooze(ID, first));
+  rerender({ s: asking('Delete it instead?', 600) });
+  expect(result.current.ids.has(ID)).toBe(false);
+});
+
 it('a session that stops waiting loses its snooze', () => {
   const first = asking('Which thumbnail?');
   const { result, rerender } = renderHook(({ s }) => useSnoozed(s), { initialProps: { s: first } });

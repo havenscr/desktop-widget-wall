@@ -1,7 +1,7 @@
 import { act, render } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { mocks } from '../bridge/tauri';
-import { resetMeetingFeed, useNextMeeting } from './useNextMeeting';
+import { resetMeetingFeed, retryDelay, useNextMeeting } from './useNextMeeting';
 
 afterEach(() => {
   resetMeetingFeed();
@@ -104,7 +104,7 @@ it('a screen that mounts reads again when the last read is a minute old, not bef
   expect(read).toHaveBeenCalledTimes(2);
 });
 
-it('after a failed read the next tick retries, at most once every 30 seconds', async () => {
+it('after failed reads the next tick retries after 30, then 60, then 120 seconds', async () => {
   vi.useFakeTimers();
   const read = vi.fn(() => {
     throw new Error('offline');
@@ -115,12 +115,16 @@ it('after a failed read the next tick retries, at most once every 30 seconds', a
   expect(read).toHaveBeenCalledTimes(1);
   await wait(10_000);
   expect(read).toHaveBeenCalledTimes(1);
-  await wait(21_000);
+  await wait(21_000); // about 31 s: first retry
   expect(read).toHaveBeenCalledTimes(2);
-  await wait(10_000);
+  await wait(31_000); // about 62 s: only 31 s since the retry, 60 s asked
   expect(read).toHaveBeenCalledTimes(2);
-  await wait(21_000);
+  await wait(30_000); // about 92 s: 61 s since
   expect(read).toHaveBeenCalledTimes(3);
+  await wait(90_000); // 90 s since, 120 s asked
+  expect(read).toHaveBeenCalledTimes(3);
+  await wait(31_000); // 121 s since
+  expect(read).toHaveBeenCalledTimes(4);
 });
 
 it('a mount inside 30 seconds of a failed read does not retry', async () => {
@@ -147,4 +151,8 @@ it('a page shown again gives each user the current time at once', async () => {
   ms += 20_000;
   hide(false);
   expect(getByTestId('a').getAttribute('data-now')).toBe(String(ms));
+});
+
+it('the retry delay steps 30, 60, 120 seconds and stays at 120', () => {
+  expect([1, 2, 3, 4, 9].map(retryDelay)).toEqual([30_000, 60_000, 120_000, 120_000, 120_000]);
 });
