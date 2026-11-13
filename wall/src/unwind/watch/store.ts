@@ -1,13 +1,27 @@
 import { create } from 'zustand';
 import { usePlaceStore } from '../../state/places';
 import { parseLink, refKey, type WatchRef } from './links';
-import { loadLooks, saveLooks, stepLook, type LookSettings } from './looks';
+import { DRIVE_IN_SCREEN, lookFor, loadLooks, pickLook, saveLooks, stepLook, type LookId, type LookSettings, type WallRect } from './looks';
 import { addSaved, loadSaved, removeSaved, renameSaved, saveSaved, type SavedItem } from './saved';
 import { stopLine, type StopReason } from './stops';
 
 export type UnwindTab = 'listen' | 'watch';
 
-interface WatchState {
+/** What the player has reported about the item now on (YouTube only; Twitch reports nothing). */
+export interface PlayerReport {
+  /** True once the picture has actually played. */
+  started: boolean;
+  /** Seconds played and the length, when the player has said (length 0 for a live stream). */
+  time: number | null;
+  duration: number | null;
+  /** Items in the playlist the player is on, and which is playing (0 based); 0 for a single video. */
+  count: number;
+  index: number;
+}
+
+export const NO_REPORT: PlayerReport = { started: false, time: null, duration: null, count: 0, index: 0 };
+
+export interface WatchState {
   /** Which view Unwind shows. The one value any switch (today the tabs) sets; nothing in Watch reads where that switch is. */
   tab: UnwindTab;
   saved: SavedItem[];
@@ -18,6 +32,10 @@ interface WatchState {
   paused: boolean;
   muted: boolean;
   sheet: boolean;
+  /** What the player has reported for the item now on. */
+  report: PlayerReport;
+  /** True when a play request has not started within the wait (autoplay refused): the pointer may reach the frame. */
+  needsClick: boolean;
   /** Why the last video stopped by itself, shown once in the left block until the next play. */
   stopped: string | null;
   /** The key of the row being renamed, if any. */
@@ -35,6 +53,10 @@ interface WatchState {
   setMuted: (m: boolean) => void;
   setLooks: (s: LookSettings) => void;
   stepLook: () => void;
+  /** The Look switch: set the look for what is on (or, with nothing on, for the first saved item's kind). */
+  pickLook: (look: LookId) => void;
+  setReport: (r: Partial<PlayerReport>) => void;
+  setNeedsClick: (on: boolean) => void;
   setSheet: (open: boolean) => void;
 }
 
@@ -45,6 +67,8 @@ export const useWatchStore = create<WatchState>((set, get) => ({
   playing: null,
   paused: false,
   muted: false,
+  report: NO_REPORT,
+  needsClick: false,
   sheet: false,
   stopped: null,
   editing: null,
@@ -81,11 +105,11 @@ export const useWatchStore = create<WatchState>((set, get) => ({
   play: (ref) => {
     const item = get().saved.find((i) => refKey(i) === refKey(ref));
     if (!item) return;
-    set({ playing: item, paused: false, muted: false, stopped: null, tab: 'watch' });
+    set({ playing: item, paused: false, muted: false, report: NO_REPORT, needsClick: false, stopped: null, tab: 'watch' });
   },
   stop: (why) => {
     if (!get().playing) return;
-    set({ playing: null, paused: false, stopped: why ? stopLine(why) : null });
+    set({ playing: null, paused: false, report: NO_REPORT, needsClick: false, stopped: why ? stopLine(why) : null });
   },
   setPaused: (paused) => set({ paused }),
   setMuted: (muted) => set({ muted }),
@@ -98,8 +122,34 @@ export const useWatchStore = create<WatchState>((set, get) => ({
     if (!p) return;
     get().setLooks(stepLook(get().looks, p.kind));
   },
+  pickLook: (look) => {
+    const kind = get().playing?.kind ?? get().saved[0]?.kind ?? 'video';
+    get().setLooks(pickLook(get().looks, kind, look));
+  },
+  setReport: (r) => {
+    const cur = get().report;
+    const next = { ...cur, ...r };
+    if (next.started === cur.started && next.time === cur.time && next.duration === cur.duration && next.count === cur.count && next.index === cur.index) return;
+    set({ report: next });
+  },
+  setNeedsClick: (needsClick) => {
+    if (needsClick !== get().needsClick) set({ needsClick });
+  },
   setSheet: (sheet) => set({ sheet }),
 }));
+
+/**
+ * For the buddy: while something is on in the drive-in look, the screen's rectangle in wall
+ * pixels (so the sheep can sit in front of it and watch); otherwise null. Pass the store's
+ * state (`driveInAudience(useWatchStore.getState())`) or use it as a store selector
+ * (`useWatchStore(driveInAudience)`).
+ */
+export function driveInAudience(s: Pick<WatchState, 'playing' | 'looks'>): Readonly<WallRect> | null {
+  if (!s.playing) return null;
+  if (lookFor(s.looks, s.playing.kind) !== 'drivein') return null;
+  // One frozen object, so a store selector sees the same value from call to call.
+  return DRIVE_IN_SCREEN;
+}
 
 // Leaving Unwind (another place, Zen or Dream) removes the frame at once.
 usePlaceStore.subscribe((s) => {
@@ -111,5 +161,5 @@ usePlaceStore.subscribe((s) => {
 
 /** Tests only: back to a fresh store over whatever local storage holds now. */
 export function resetWatch(): void {
-  useWatchStore.setState({ tab: 'listen', saved: loadSaved(), looks: loadLooks(), playing: null, paused: false, muted: false, sheet: false, stopped: null, editing: null });
+  useWatchStore.setState({ tab: 'listen', saved: loadSaved(), looks: loadLooks(), playing: null, paused: false, muted: false, report: NO_REPORT, needsClick: false, sheet: false, stopped: null, editing: null });
 }

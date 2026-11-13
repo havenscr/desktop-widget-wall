@@ -94,3 +94,33 @@ export function stepLook(s: LookSettings, kind: WatchKind): LookSettings {
   const next = nextLook(lookFor(s, kind));
   return s.mode === 'one' ? { ...s, all: next } : { ...s, [groupOf(kind)]: next };
 }
+
+/**
+ * The Look switch: set the look this kind plays in. With one look for everything it sets that
+ * look; with a look per kind it sets the look of this kind's group only.
+ */
+export function pickLook(s: LookSettings, kind: WatchKind, look: LookId): LookSettings {
+  return s.mode === 'one' ? { ...s, all: look } : { ...s, [groupOf(kind)]: look };
+}
+
+/** The group name the Look switch sets, for its hover tip; null with one look for everything. */
+export function lookTargetName(s: LookSettings, kind: WatchKind): string | null {
+  if (s.mode === 'one') return null;
+  return LOOK_GROUPS.find((g) => g.id === groupOf(kind))?.name ?? null;
+}
+
+/** A rectangle in wall pixels (the 2560 by 720 strip). */
+export interface WallRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/**
+ * The drive-in screen in wall pixels, frame included (the approved page's 27 by 15.2 strip
+ * units): it stands on two posts on the horizon (wall y 505) and covers the horizon's moon
+ * (wall 1730, 112, radius 44) whole, so the moon never peeks over its edge. The Watch rules in
+ * `unwind.css` place it at these numbers less Unwind's offset (124, 20); fit-check compares.
+ */
+export const DRIVE_IN_SCREEN: Readonly<WallRect> = Object.freeze({ x: 1210, y: 60, w: 691, h: 389 });

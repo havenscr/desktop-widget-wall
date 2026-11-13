@@ -995,17 +995,44 @@ switch sits. Leaving Watch (or Unwind) removes any video.
 - **The player** (`PlayerFrame.tsx`, `urls.ts`): one `<iframe>` whose address `embedUrl`
   builds only from a kind and id that pass the checks again: YouTube on
   `https://www.youtube-nocookie.com/embed/<id>` (playlists `/embed/videoseries?list=<id>`)
-  with `autoplay=1&playsinline=1&rel=0&enablejsapi=1&origin=<page origin>`, Twitch on
+  with `autoplay=1&controls=0&disablekb=1&fs=0&iv_load_policy=3&playsinline=1&rel=0&enablejsapi=1&origin=<page origin>`
+  (the player's own controls, keyboard, fullscreen button and annotations off; `modestbranding`
+  is deprecated and not used), Twitch on
   `https://player.twitch.tv/?channel=<login>&parent=<page host>`; `allow="autoplay;
   encrypted-media; picture-in-picture"`, `referrerpolicy="strict-origin-when-cross-origin"`,
   `sandbox="allow-scripts allow-same-origin"`. No third-party script loads.
-  Pause, play and mute for YouTube are `postMessage` commands sent with the embed origin as
-  target; Twitch has only Stop, which removes the frame. Messages from a frame are read only
-  from that frame's window and the exact YouTube embed origin, and only for the play state.
-  An auto-mix playlist (an id starting `RD`) passes the id check but may not play in the
-  embed; Open in browser is the way out.
-- **Open in browser**: "Not playing? Open in browser" sits under every playing video, since
-  whether either player accepts the wall's origin inside WebView2 is not known. It calls
+  The frame takes no pointer (`pointer-events: none` on the frame itself, nothing drawn over
+  it), so the players' hover overlays never show. If a play request has not started within 6
+  seconds (autoplay refused), the control row says "Click the video to start" and the pointer
+  is let through until it plays (Twitch reports nothing, so for Twitch the line reads "Not
+  started? Click the video" after the same wait).
+  The wall's own controls drive YouTube through the frame messages: the "listening" handshake
+  (once a second until the player answers, ten tries at most), then `command` messages
+  (`playVideo`, `pauseVideo`, `mute`, `unMute`, `setVolume`, `previousVideo`, `nextVideo`,
+  `seekTo`) sent only to the exact embed origin. The volume inside the player is set to 100
+  and unmuted when playback starts and on Sound on (the system volume sets the level).
+  Every message from a frame is outside input and passes `readPlayerMessage`: the exact
+  YouTube embed origin AND this frame's own window, a JSON string under 20,000 characters,
+  one of `onReady`, `initialDelivery`, `infoDelivery` or `onStateChange`, and only the play
+  state, position, length and playlist size and index read, each number finite and clamped.
+  The position is taken at most once a second and not while the page is hidden; nothing polls.
+  Twitch's frame has no message interface, so it has only Stop (which removes the frame) and
+  Open on Twitch. An auto-mix playlist (an id starting `RD`) passes the id check but may not
+  play in the embed; Open in YouTube is the way out. Video quality cannot be set from the wall:
+  an embedded player picks it from its size.
+- **The control row** (`Watch.tsx`, in the left block under the title, the left wing's small
+  round `.rd` controls): Previous and Next (on only for a playlist the player reports), Play or
+  Pause, Mute, Stop, and Open in YouTube (or Open on Twitch); under it the elapsed time, a thin
+  bar (a click or the arrow keys seek) and the length, or "Live" for a stream.
+- **The Look switch** (`LookSwitch` in `Watch.tsx`): the four looks as one segmented control
+  in a fixed place under the left block (the same box in every look, playing or not; never on
+  the video). With one look for everything it sets that look; with a look per kind it sets the
+  look of the kind on (its hover tip and name say which). Arrow keys move.
+- **For the buddy**: `driveInAudience(state)` in `store.ts` (usable as a store selector) is
+  null, or, while something is on in the drive-in look, the screen's rectangle in wall pixels
+  (`DRIVE_IN_SCREEN` in `looks.ts`), so the sheep can sit in front of it and watch. The fit
+  check compares it with the drawn screen.
+- **Open in YouTube** (or Open on Twitch): always in the control row. It calls
   `wall2_watch_open` (`src-tauri/src/wall2_watch.rs`, `wall2` window only) with the kind and
   id; Rust checks them again with the same rules and builds
   `https://www.youtube.com/watch?v=<id>`, `https://www.youtube.com/playlist?list=<id>` or
@@ -1015,16 +1042,15 @@ switch sits. Leaving Watch (or Unwind) removes any video.
   there stay in front, and covering the moon), `sky` (the video fills the sky from the top of
   the strip to the horizon line, cropped top and bottom, fading toward the clock and into the
   horizon; it lies under every control and takes no pointer, a dark wash keeps the text on the
-  left at 4.5 to 1 or better, the cards turn nearly opaque, and its Look and Open in browser
-  buttons sit on the floor below it), `sun` (a 461 px disc whose foot stands 24 px over the
-  horizon, centred so it covers the moon, with slats, a warm halo and a streak on the floor; it
-  shows the middle 56 percent of a 16:9 picture's width) and `drivein` (a framed screen on two
-  posts standing on the horizon, a soft colour wash on the floor under it; with nothing on, the
-  empty screen stands there). The gear beside the tabs opens a sheet over the right wing:
+  left at 4.5 to 1 or better and the cards turn nearly opaque), `sun` (a 461 px disc whose foot
+  stands 24 px over the horizon, centred at wall x 1660 so it covers the moon with 31 px to spare, with slats, a warm halo and a streak on the floor; it
+  shows the middle 56 percent of a 16:9 picture's width) and `drivein` (a framed screen at the
+  approved page's size, 691 by 389 at wall 1210, 60, covering the moon whole, on two posts
+  standing on the horizon, the stage light's colours washed on the floor under it; with nothing
+  on, the empty screen stands there). The gear beside the tabs opens a sheet over the right wing:
   one look for everything (four picture tiles), or one each for videos and playlists, live
   streams and Twitch (four choices a row), at 540 px (`wall2-watch-look`, checked on read;
-  values stored before the two new looks still read the same). The Look button on the video
-  (shown on hover) steps through the four.
+  values stored before the two new looks still read the same). The Look switch sets it too.
 - **When video stops** (`stops.ts`, `useStopRules.ts`): leaving Watch or Unwind (Zen and Dream
   included), the page hidden, the display off or Windows locked (`ui/useDisplayDark.ts`, the
   `display-state` half of `useIdle`; input idle never stops a video, since nobody touches the
@@ -1036,7 +1062,9 @@ switch sits. Leaving Watch (or Unwind) removes any video.
 - **Dev**: `?watch=mock` draws a poster where the frame goes (headless Chromium shows an empty
   frame) and opens Watch; `?wlist=none|three|many`, `?wlook=feather|sky|sun|drivein`, `?wposter=bright` (a pale test picture, the worst case for
   text over video), `?wplay=<n>`,
-  `?wsheet=one|kind`, `?wtab=listen`. The gallery and the fit check have Watch states.
+  `?wsheet=one|kind`, `?wtab=listen`, and a mock player with `?wstate=paused|refused|silent`
+  (default: playing at 12:34 of 45:10; a playlist reports item 4 of 24). The gallery and the
+  fit check have Watch states.
 
 ## Home feeds (task card and network tile)
 

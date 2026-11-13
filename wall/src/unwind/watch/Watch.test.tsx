@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { mocks } from '../../bridge/tauri';
 import { resetNowPlaying } from '../../music/store';
@@ -124,12 +124,12 @@ it('plays a row in one frame built from the checked id, with the fixed attribute
   expect(frames.length).toBe(1);
   const f = frames[0];
   // jsdom serves the tests from http://localhost:3000.
-  expect(f.getAttribute('src')).toBe(`https://www.youtube-nocookie.com/embed/${V}?autoplay=1&playsinline=1&rel=0&enablejsapi=1&origin=http%3A%2F%2Flocalhost%3A3000`);
+  expect(f.getAttribute('src')).toBe(`https://www.youtube-nocookie.com/embed/${V}?autoplay=1&controls=0&disablekb=1&fs=0&iv_load_policy=3&playsinline=1&rel=0&enablejsapi=1&origin=http%3A%2F%2Flocalhost%3A3000`);
   expect(f.getAttribute('allow')).toBe('autoplay; encrypted-media; picture-in-picture');
   expect(f.getAttribute('referrerpolicy')).toBe('strict-origin-when-cross-origin');
   expect(f.getAttribute('sandbox')).toBe('allow-scripts allow-same-origin');
   expect(f.getAttribute('title')).toBe('Night drive mix');
-  expect(screen.getByRole('button', { name: /Not playing\? Open in browser/ })).toBeTruthy();
+  expect(screen.getByRole('button', { name: /^Open in YouTube$/ })).toBeTruthy();
   await act(async () => screen.getByRole('button', { name: 'Stop' }).click());
   expect(document.querySelector('iframe')).toBeNull();
 });
@@ -198,11 +198,11 @@ it('opens in the browser through the Rust command with the kind and id only', as
   useWatchStore.getState().play({ kind: 'live', id: 'Lofi_Live01' });
   render(<Unwind />);
   await flush();
-  await act(async () => screen.getByRole('button', { name: /Not playing\? Open in browser/ }).click());
+  await act(async () => screen.getByRole('button', { name: /^Open in YouTube$/ }).click());
   expect(calls).toEqual([{ kind: 'live', id: 'Lofi_Live01' }]);
 });
 
-it('steps the look from the Look button and draws the drive-in screen or the feathered video', async () => {
+it('sets the look from the Look switch and draws the drive-in screen or the feathered video', async () => {
   seed();
   framePoster.render = () => <span>poster</span>;
   useWatchStore.getState().setTab('watch');
@@ -212,7 +212,7 @@ it('steps the look from the Look button and draws the drive-in screen or the fea
   expect(document.querySelector('.w-stage')?.getAttribute('data-look')).toBe('drivein');
   expect(document.querySelectorAll('.w-post').length).toBe(2);
   expect(document.querySelector('iframe')).toBeNull();
-  await act(async () => screen.getByRole('button', { name: /^Look: Drive-in/ }).click());
+  await act(async () => within(screen.getByRole('radiogroup', { name: 'Look' })).getByRole('radio', { name: 'Feathered' }).click());
   expect(document.querySelector('.w-stage')?.getAttribute('data-look')).toBe('feather');
   expect(parseLooks(localStorage.getItem(LOOKS_KEY)).all).toBe('feather');
 });
@@ -225,7 +225,7 @@ it('sets the look in the settings sheet, one for everything or one per kind, and
   await act(async () => screen.getByRole('button', { name: 'How video is shown' }).click());
   const sheet = screen.getByRole('dialog', { name: 'How video is shown' });
   expect(sheet).toBeTruthy();
-  await act(async () => screen.getByRole('radio', { name: /Feathered/ }).click());
+  await act(async () => within(sheet).getByRole('radio', { name: /Feathered/ }).click());
   expect(parseLooks(localStorage.getItem(LOOKS_KEY))).toMatchObject({ mode: 'one', all: 'feather' });
   await act(async () => screen.getByRole('radio', { name: 'A look for each kind' }).click());
   expect(screen.getByText('Videos and playlists')).toBeTruthy();

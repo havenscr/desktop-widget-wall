@@ -20,6 +20,9 @@ import { knob } from './long';
  *   ?wsheet=one|kind          open the settings sheet (`kind`: a look per kind)
  *   ?wtab=listen              stay on Listen (for the art's Video corner)
  *   ?wposter=bright           a pale bright picture, the worst case for text over video
+ *   ?wstate=paused|refused|silent   a mock player: paused; autoplay refused (the click line);
+ *                             or a player that has reported nothing yet (default: playing at
+ *                             12:34 of 45:10; a playlist reports item 4 of 24; live has no length)
  */
 const THREE = [
   { kind: 'video', id: 'Ab3dEfGh1jK', label: 'Night drive mix' },
@@ -94,6 +97,18 @@ function poster(ref: WatchRef): ReactNode {
   );
 }
 
+/** The mock player's report for the review states (no real player is loaded). */
+function mockPlayer(kind: string, state: string | null): void {
+  const st = useWatchStore.getState();
+  if (state === 'refused') {
+    st.setNeedsClick(true);
+    return;
+  }
+  if (state === 'silent' || kind === 'twitch') return;
+  st.setReport({ started: true, time: 754, duration: kind === 'live' ? 0 : 2710, count: kind === 'playlist' ? 24 : 0, index: kind === 'playlist' ? 3 : 0 });
+  if (state === 'paused') st.setPaused(true);
+}
+
 export function registerWatchMocks(): void {
   mocks.set('wall2_watch_open', () => undefined);
   if (knob('watch') !== 'mock') return;
@@ -115,7 +130,10 @@ export function registerWatchMocks(): void {
     if (knob('wtab') !== 'listen') useWatchStore.getState().setTab('watch');
     const n = Number(knob('wplay'));
     const item = useWatchStore.getState().saved[n];
-    if (knob('wplay') !== null && item) useWatchStore.getState().play(item);
+    if (knob('wplay') !== null && item) {
+      useWatchStore.getState().play(item);
+      mockPlayer(item.kind, knob('wstate'));
+    }
     if (knob('wsheet')) useWatchStore.getState().setSheet(true);
   }, 600);
 }

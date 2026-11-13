@@ -108,11 +108,11 @@ describe('the frame address', () => {
   const where = { origin: 'https://tauri.localhost', hostname: 'tauri.localhost' };
   it('builds YouTube on the no-cookie embed host with the page origin', () => {
     expect(embedUrl({ kind: 'video', id: V }, where)).toBe(
-      `https://www.youtube-nocookie.com/embed/${V}?autoplay=1&playsinline=1&rel=0&enablejsapi=1&origin=https%3A%2F%2Ftauri.localhost`,
+      `https://www.youtube-nocookie.com/embed/${V}?autoplay=1&controls=0&disablekb=1&fs=0&iv_load_policy=3&playsinline=1&rel=0&enablejsapi=1&origin=https%3A%2F%2Ftauri.localhost`,
     );
     expect(embedUrl({ kind: 'live', id: V }, where)).toContain(`https://www.youtube-nocookie.com/embed/${V}?`);
     expect(embedUrl({ kind: 'playlist', id: PL }, where)).toBe(
-      `https://www.youtube-nocookie.com/embed/videoseries?list=${PL}&autoplay=1&playsinline=1&rel=0&enablejsapi=1&origin=https%3A%2F%2Ftauri.localhost`,
+      `https://www.youtube-nocookie.com/embed/videoseries?list=${PL}&autoplay=1&controls=0&disablekb=1&fs=0&iv_load_policy=3&playsinline=1&rel=0&enablejsapi=1&origin=https%3A%2F%2Ftauri.localhost`,
     );
   });
   it('builds Twitch on the player host with the page host name as parent', () => {
