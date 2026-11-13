@@ -11,6 +11,11 @@ function loadBuildLine(): Promise<string | null> {
   return buildLine;
 }
 
+/** Tests only: ask for the build again. */
+export function resetBuildLine(): void {
+  buildLine = null;
+}
+
 /** Time as h:mm with AM or PM, date below. Updates on the minute. `children` follow the date on its line. */
 export function Clock({ now = systemNow, children }: { now?: () => Date; children?: ReactNode }) {
   const [parts, setParts] = useState(() => formatClock(now()));

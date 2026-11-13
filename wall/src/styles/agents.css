@@ -625,6 +625,8 @@
   background: rgba(14, 10, 32, 0.82);
   white-space: nowrap;
   pointer-events: none;
+  /* Under the folded sessions' lines, so the label's background never hides them. */
+  z-index: 0;
 }
 .rib .sg-more:hover .sg-more-t {
   color: var(--tx);
@@ -635,6 +637,7 @@
   border-radius: 1px;
   background: rgba(255, 255, 255, 0.3);
   pointer-events: none;
+  z-index: 1;
 }
 .rib .sg-line.run {
   background: var(--cyan);

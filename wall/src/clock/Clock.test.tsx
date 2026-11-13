@@ -1,7 +1,7 @@
 import { act, render, screen } from '@testing-library/react';
 import { Profiler } from 'react';
 import { afterEach, expect, it, vi } from 'vitest';
-import { Clock } from './Clock';
+import { Clock, resetBuildLine } from './Clock';
 
 afterEach(() => vi.useRealTimers());
 
@@ -42,6 +42,7 @@ it('changes only after the minute boundary', () => {
 
 it('puts the build stamp on the last line of the tooltip', async () => {
   const { mocks } = await import('../bridge/tauri');
+  resetBuildLine();
   mocks.set('wall2_build_info', () => ({ commit: 'abc1234', builtAt: '2026-11-13T09:05Z' }));
   const { container } = render(<Clock now={() => new Date(2026, 10, 11, 10, 24, 10)} />);
   await act(async () => {
