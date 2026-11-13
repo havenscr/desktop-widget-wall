@@ -462,7 +462,13 @@ function Live({
   );
 }
 
-/** A slider that sends one change when the pointer or key lets go, never while dragging. */
+/** Arrow keys settle for this long before the one change is sent. */
+export const KEY_SETTLE_MS = 400;
+
+/**
+ * A slider that sends one change when the pointer lets go (or the arrow keys settle),
+ * never while dragging, and never the same level twice.
+ */
 function VolumeSlider({
   value,
   label,
@@ -480,10 +486,16 @@ function VolumeSlider({
 }) {
   const [v, setV] = useState(value);
   const vRef = useRef(value);
+  const sent = useRef(value);
+  const keyTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(keyTimer.current), []);
   const commit = () => {
+    clearTimeout(keyTimer.current);
     const level = vRef.current;
-    if (level === value) return;
+    if (level === sent.current) return;
+    sent.current = level;
     onCommit(level, () => {
+      sent.current = value;
       vRef.current = value;
       setV(value);
     });
@@ -498,14 +510,17 @@ function VolumeSlider({
         step={1}
         value={v}
         disabled={disabled}
-        aria-label={`Volume, ${label}`}
+        aria-label={label ? `Volume, ${label}` : title}
         style={{ '--fill': `${v}%` } as CSSProperties}
         onChange={(e) => {
           vRef.current = Number(e.target.value);
           setV(vRef.current);
         }}
         onPointerUp={commit}
-        onKeyUp={commit}
+        onKeyUp={() => {
+          clearTimeout(keyTimer.current);
+          keyTimer.current = setTimeout(commit, KEY_SETTLE_MS);
+        }}
         onBlur={commit}
       />
       <b className={v > SAFE_VOLUME ? 'sound-slider-v loud' : 'sound-slider-v'}>{v}</b>

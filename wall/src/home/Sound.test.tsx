@@ -282,3 +282,24 @@ it('a read that is not live dims the block, says how old it is, and turns writes
   expect((screen.getByLabelText('Volume, Den and 1 more') as HTMLInputElement).disabled).toBe(true);
   expect(writes).toEqual([]);
 });
+
+it('a slider never sends the same level twice, and arrow keys settle before sending', async () => {
+  wire();
+  render(<Sound />);
+  await flush();
+  const slider = screen.getByLabelText('Volume, Den and 1 more') as HTMLInputElement;
+  fireEvent.change(slider, { target: { value: '20' } });
+  fireEvent.pointerUp(slider);
+  fireEvent.blur(slider);
+  await flush();
+  expect(writes).toHaveLength(1);
+  writes = [];
+  fireEvent.change(slider, { target: { value: '21' } });
+  fireEvent.keyUp(slider, { key: 'ArrowRight' });
+  fireEvent.change(slider, { target: { value: '22' } });
+  fireEvent.keyUp(slider, { key: 'ArrowRight' });
+  await flush(100);
+  expect(writes).toEqual([]);
+  await flush(400);
+  expect(writes).toEqual([{ cmd: 'wall2_sonos_volume', args: { target: { kind: 'group', id: 'G2' }, level: 22 } }]);
+});
