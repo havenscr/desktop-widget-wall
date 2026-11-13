@@ -92,6 +92,8 @@ With every shown chore ticked it says "Loading the next ones" until the refresh 
 ("Could not load the next ones" if it fails). "Not set up", "Task app not reachable"
 and "Nothing waiting around the house" are one line each. The tick's tap area is the
 button itself, 52 by 44, inside its own row; titles stay on one line with an ellipsis.
+Clicking a chore's title (not its tick) opens it in the task app with
+`wall2_open_task` (see "Task card").
 
 **Fit check** (not run by CI, it needs a Chromium binary):
 `node scripts/home-fit-check.mjs /path/to/chrome [shot.png]` (or `CHROME=... npm run
@@ -276,6 +278,11 @@ The day ribbon (`wall/src/ribbon/`, `styles/ribbon.css`) is on Work, Home and Me
   degrees (cached per day). For 2026-11-11 that is 7:09 AM and 4:37 PM, matching the
   almanac (the concept's "4:40" was a rounded label). The sky gradient behind the hours
   puts the concept's colour stops on the real sunrise and sunset.
+- **Row icons**: the calendar icon and the row 2 icon carry a tooltip naming their row
+  ("Today's calendar"; "Agent activity and tasks due today" on Work and Meet, "Home
+  tasks due today" on Home). An empty row says so in quiet text beside its icon: "No
+  meetings today", "No agent activity yet" (no agent span today and no task due at a
+  time), "Nothing scheduled at home".
 - **Row 1**: today's calendar from `wall2_meet_day`, read when the ribbon shows and
   every 5 minutes while visible, clipped to 6 AM to 12 AM. A chip is `past` once it
   has ended, `now` while the needle is inside it, and pink when the event is a
@@ -340,19 +347,29 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
     for 30 seconds (RAM over 90, CPU or GPU over 95, box temperature over 90 degrees);
     a dip back under starts the 30 seconds again, and a gap of more than 6 seconds
     between reads (hidden, slow) does too. Stale box numbers never count toward the
-    hold. The BOX row is hidden when the box numbers are null and dimmed when
+    hold. With no box numbers (null) the BOX row stays, dimmed, and says "no reading", so
+    it is clear the row exists; it fills in when the helper answers. It is dimmed when
     `boxStale`. A column with no reading (often the box's GPU) shows a faint empty track
     and no number. Nothing shows when the command fails.
-  - Round buttons in the wing draw at 52 pixels but keep a 72 pixel touch target.
-  - The four blocks share the space under the date with even air between them.
+  - Round buttons in the wing draw at 52 pixels.
+  - Next, Focus and Now playing stack from the top with even air (12 px, 22 px without
+    Next); the machines sit on the band's foot. With no meeting to show the rows close up
+    under the date and the machines grow (larger numbers and taller rows) into the room
+    that leaves.
 - **Centre** (`wall/src/agents/CentreSlot.tsx`, the one place that decides what it
   shows): the agent lanes while the helper answers (see "Agent lanes" under "Agents").
-  Otherwise the full focus timer and the weather card (now, today's range, the next six
-  hours) fill it, so it is never an empty card: with one quiet line under them, "Agents:
-  not set up" when `feeds.json` has no helper address, or an amber "Agents: not
-  reachable" when it has one but no answer has come yet. Before the first weather
-  reading, or when the first fetch fails, the focus card takes the whole width with the
-  weather status as one line inside it.
+  Otherwise the full focus timer (640 px) and the weather card (now, today's range, the
+  next six hours) fill it, so it is never an empty card. Each card starts right under its
+  heading and fills its box: the focus ring takes the height between the heading and one
+  row of 40 px controls at the foot (Start, Pause or Resume, Reset, and the 25, 50,
+  Custom picker), the task's name wraps to two lines before an ellipsis, and the hour
+  tiles stretch to the card's foot. When the helper cannot show, a quiet header row sits
+  above the cards where the lanes' header goes: "Agents  not set up" when `feeds.json`
+  has no helper address, or "Agents  not reachable" (amber) with a "Try again" link that
+  reads once at once, when it has one but no answer has come yet. The zero-lane state
+  shows the same cards, tighter. Before the first weather reading, or when the first
+  fetch fails, the focus card takes the whole width with the weather status as one line
+  inside it.
 - **Fit check** (`wall/scripts/fit-check.mjs`, `npm --prefix wall run fit-check` with
   `WALL_CHROME` set to a Chromium or chrome-headless-shell binary): builds a development
   bundle, opens Work with the longest mock strings (`?long=1`) in a 2560 by 720 viewport
@@ -387,7 +404,12 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
   playing row, the full music bar and the Unwind view: it polls `get_now_playing` every 2 seconds
   while visible (never while hidden); each call gives up after 5 seconds so a hung
   call cannot stall the loop, and a late answer is dropped. Art only from `album_art_base64` with an
-  allowed mime (png, jpeg, webp, gif); `art_unchanged` keeps the current art.
+  allowed mime (png, jpeg, webp, gif); `art_unchanged` keeps the current art. Each poll
+  sends `artFor`, the `art_key` of the art it holds (empty when it holds none), and Rust
+  skips the art only while that key matches the track, so a cover is never lost to a
+  reload or a dropped answer; a track that came without art is asked again every 10
+  seconds (players often add the cover late). Without `artFor` (the first wall) Rust
+  keeps its shared last-sent key as before.
   Previous, play or pause, next call `media_previous`, `media_play_pause`,
   `media_next`; failures are swallowed. Stopped or unknown shows a quiet
   "Nothing playing".
@@ -396,7 +418,9 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
   screen yet.
 - **Browser dev.** `npm run dev` registers mocks for the commands Work calls
   (`src/bridge/devMocks/`, dev server only); in a review still (`?hz=&at=`) the
-  meeting and task mocks follow the review's time. Weather needs network access to
+  meeting and task mocks follow the review's time. Review knobs: `?meet=none` (no
+  meetings), `?box=none` (no box numbers), `?net=alarms` (the network feed with only
+  its alarm count). Weather needs network access to
   Open-Meteo.
 
 ## Audio, ripple and moon
@@ -477,12 +501,19 @@ frame (no ribbon) in the wide zones `470px 1fr 540px`. The parts are in `wall/sr
 - **Centre.** The tabs (`Tabs.tsx`): Listen is this view (its tab controls the player
   panel); Watch is disabled (not focusable) with "Coming" and opens nothing; Dream opens Zen straight into Dream (`openDream` in the place store;
   Zen reads the flag once). Below them the player (`Player.tsx`): 224 px art, the source
-  app in pink capitals, a 64 px title, the artist, a 520 px progress bar with times
+  app in pink capitals (the player's name, see below), a 64 px title, the artist, a 520 px progress bar with times
   (advanced locally twice a second between polls while playing and visible, never past
   the duration), then previous, play or pause and next with the playing app's volume
-  (`Volume.tsx`). The slider shows only when `get_audio_sessions` has a session for the
-  playing app, by exact process name or a small alias table ("Spotify" is `Spotify.exe`,
-  "Edge" is `msedge.exe`; never a partial match); otherwise the row closes up. The session
+  (`Volume.tsx`). `get_now_playing` sends the media session's own app id as
+  `source_app_id` (a Windows AppUserModelId such as
+  `SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify`, or a process name such as
+  `Spotify.exe`). `music/players.ts` maps known players from that id to a display name
+  ("Spotify", "Edge", "Chrome", "Firefox", "Apple Music", "Media Player" and others) and
+  to the process names of their audio sessions; an unknown player shows its cleaned app
+  name (the package name when the id ends in the bare word `App`), never "App". The
+  slider shows only when `get_audio_sessions` has a session whose normalised process name
+  is exactly one of those (never a partial match, so one app is never taken for
+  another); otherwise the row closes up. The session
   is tied to the source it was found for, so after a source change the slider hides until
   the new app's session is read and a move never reaches the previous app. Moves are
   clamped to 0 to 1 and sent with `set_audio_session_volume` at most every 100 ms, always
@@ -495,13 +526,16 @@ frame (no ribbon) in the wide zones `470px 1fr 540px`. The parts are in `wall/sr
   session exists, or "Open Spotify to play again" as plain text when none does, or before
   anything has played, "Nothing playing" with a calm line over the transport. Never a
   large empty tile.
-- **Right wing.** The Room card (`RoomCard.tsx`): the home moods from `wall2_moods` as
-  chips; a tap applies one with `wall2_apply_mood`, and the last one applied is marked for
-  three hours (the id is `wall2-last-mood`, shared with Home in its plain format; the time
-  is beside it in `wall2-last-mood-at` as `{"id","at"}`). While loading or not reachable
-  it reads the moods again every 30 seconds. "TV off" waits for the home
-  app reads (PR 24). Not set up or not reachable shrinks the card to one line. The Live now
-  card (PR 27) will stack above it; until then nothing holds its place.
+- **Right wing.** The Room card (`RoomCard.tsx`), at the concept's size and place: 120 px
+  tall, its top 332 px down the band so its foot sits level with the transport, "Room"
+  over a row of 40 px mood chips. The home moods come from `wall2_moods`; a click applies
+  one with `wall2_apply_mood`, and the last mood applied (here or on Home's mood cards) is
+  marked for three hours (the id is `wall2-last-mood`, shared with Home in its plain
+  format; the time is beside it in `wall2-last-mood-at` as `{"id","at"}`, written by
+  both). While loading or not reachable it reads the moods again every 30 seconds. "TV
+  off" waits for the home app reads (PR 24). Not set up or not reachable says so in one
+  line at the same size. The Live now card (PR 27) will stack above it, in the space above
+  it now.
 
 Watt (`wall/src/buddy/`) is the electric sheep on the horizon band of every place that has
 one: Work, Home, Meet (hidden during a call, once the in-call pull request detects one) and
@@ -566,7 +600,7 @@ file is read on every call, so a change applies on the next refresh.
 
 ### Task card (Work tab, top right)
 
-The right wing of Work, as the concept's rows (`.tk3`), 72 pixels tall for touch.
+The right wing of Work, as the concept's rows (`.tk3`), 72 pixels tall.
 
 `wall/src/tasks/`. Work reads `wall2_tasks_summary({ notTag: "home" })`: the next three
 open tasks without the home tag, and how many more are open. Each row: a check circle,
@@ -578,10 +612,19 @@ visible and after each completion. (`useTasks()` with no filter still reads
 - **Check**: the row is struck through at once and fades out after 2 seconds;
   `wall2_task_done` sends `PATCH /api/tasks/{id}` with `{"status":"done"}`. If that
   fails the row comes back with a small "Could not save".
+- **Open**: a click on a task's title opens it in the task app. `wall2_open_task(id)`
+  accepts only an id that one of the last good task reads showed (Work's list, Home's
+  chores and the plain next three are kept apart, so one never replaces another), builds
+  the address from `tasksBaseUrl`, and opens it with the system's default handler as
+  `wall2_open_link` does. The task app has no page for a single task (only the JSON
+  `/api/tasks/{id}`), so the address is the app's own page, `tasksBaseUrl` with a
+  trailing slash; `task_link` in `wall2_feeds.rs` is the one place to change when it
+  gets one. Any other id is refused and nothing happens on the wall.
 - **Focus**: hold a row for half a second to start the focus timer with the length
-  chosen on the focus card (25 minutes unless changed), named after the task. A short
-  tap, a cancelled press or a finger that moves more than 12 pixels does nothing; with a
-  keyboard, Enter starts it. Ignored while a session is running or paused.
+  chosen on the focus card (25 minutes unless changed), named after the task; that
+  press opens nothing. A cancelled press or a finger that moves more than 12 pixels
+  does neither; with a keyboard, Enter starts focus. Ignored while a session is running
+  or paused (a click still opens the task).
 - A summary answer without a `next` list counts as a failed read. The label is saved with the session and
   cleared on reset and when the session finishes.
 - **States**: "Not set up" (no address), "Nothing due" (empty list), "Tasks
@@ -608,12 +651,16 @@ visible and after each completion. (`useTasks()` with no filter still reads
 
 ### Network tile (Home tab, right)
 
-`wall/src/home/`. Reads `GET /api/security?lite=1` and shows, as the concept's card:
-a shield and status line ("All quiet" when nothing is open) with the scan age, the
-numbers the feed has spread evenly (devices, alarms in 24 hours, blocked, box
+`wall/src/home/`. Reads `GET /api/security?lite=1` and shows, as the concept draws it:
+the heading "Network and security" above the card (like "Around the house"), then a
+shield and status line ("All quiet" when nothing is open) with the scan age on its right,
+the numbers the feed has spread evenly (devices, alarms in 24 hours, blocked, box
 temperature; today the home app sends only the alarms, and PR 24 adds the rest), up to
-three open alerts as one-line rows (severity dot, text, age) with "N more open" on the
-header line, and the two links as full-width buttons along the bottom. The card is as
+three open alerts as one-line rows (severity dot, text, age) with "N more open" beside
+the heading, and the two links as full-width buttons along the bottom. The numbers row
+shows only when at least three numbers exist; one or two go on the status line's right
+instead ("Up, box online" and "25 alarms in 24 h"), and the scan age then moves beside
+the heading when "N more open" is not there. The card is as
 tall as what it holds, so it is never half empty. Refreshes every 5 minutes while
 visible. The open count follows the home app's own page: an alert whose
 reviewed request is waiting is hidden; a done request hides it until a newer
@@ -636,7 +683,7 @@ the alerts carry no readable text, the card shows "N open alerts" instead.
 - "Not set up" when there is no address.
 
 Two buttons share the bottom of the card, each half its width and 52 design pixels
-tall (the in-card size in "Touch" below), shown only when available. **Security** opens `homeSecurityUrl` from `feeds.json`.
+tall (see "Pointer and touch" below), shown only when available. **Security** opens `homeSecurityUrl` from `feeds.json`.
 **Firewalla** opens the `portalUrl` from the most recent good security read, and
 only when it is `https` on `firewalla.net` or a subdomain. Both open in the default
 browser, and Rust does the opening (`wall2_open_link`, kinds `security` and
@@ -801,15 +848,16 @@ One change runs at a time (a second request while one is in flight is ignored).
 `allow-set-position` and `allow-set-size` (Wall 2 only). Reading the state
 (`isFullscreen`, `outerPosition`, `outerSize`) is already in `core:default`.
 
-## Touch
+## Pointer and touch
 
-The strip is touch only. The app root sets `touch-action: manipulation`, controls
-do not select text or flash a tap highlight, rail buttons show a pressed state on
-`:active`, and nothing depends on hover. Rail buttons and a place's primary buttons
-stay at least 72 by 72. Controls inside a card are at least 52 wide and 44 tall,
-because the top band is only 490 tall: the Home chore ticks are 52 by 44 with no
-shared hit area between rows, and the network card's Security and Firewalla buttons
-are 52 tall and half the card wide.
+The owner drives the strip with a mouse. The app root still sets `touch-action:
+manipulation`, controls do not select text or flash a tap highlight, and rail buttons
+show a pressed state on `:active`. Hover is a nicety (a cyan title on a task row, a
+tooltip on the ribbon's row icons); nothing depends on it. The rail buttons stay 72 by
+72. Inside cards the older touch sizes (72 px, and 52 by 44) no longer apply: controls
+are sized for a mouse, about 32 to 40 px tall (the centre fill's buttons, chips and
+stepper are 40, the Room card's mood chips 40, "Try again" 36). The Home chore ticks keep
+their 52 by 44 rows with no shared hit area between rows.
 
 ## CI
 

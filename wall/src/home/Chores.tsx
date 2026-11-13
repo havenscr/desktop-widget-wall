@@ -1,6 +1,6 @@
 import { IconCheck } from '@tabler/icons-react';
 import { reviewNow } from '../ui/reviewClock';
-import type { TaskItem } from '../tasks/model';
+import { openTask, type TaskItem } from '../tasks/model';
 import { clockText } from './sunLine';
 import { useChores } from './useChores';
 
@@ -25,7 +25,10 @@ export function chorePill(task: Pick<TaskItem, 'due_at' | 'due_is_all_day' | 'es
   return task.est ? (EST[task.est] ?? null) : null;
 }
 
-/** Around the house: the next three tasks tagged `home`, with "N more can wait". */
+/**
+ * Around the house: the next three tasks tagged `home`, with "N more can wait". The tick
+ * circle finishes a chore; a click on its title opens it in the task app.
+ */
 export function Chores() {
   const { status, tasks, remaining, marks, hidden, complete } = useChores();
   const now = reviewNow ? reviewNow() : Date.now();
@@ -68,7 +71,9 @@ export function Chores() {
                   {mark === 'done' && <IconCheck size={20} stroke={2.4} />}
                 </span>
               </button>
-              <span className="n">{t.title}</span>
+              <button type="button" className="n chore-open" title={t.title} aria-label={`Open ${t.title}`} onClick={() => openTask(t.id)}>
+                {t.title}
+              </button>
               {mark === 'failed' ? <span className="xs warn-text">not saved</span> : pill && <span className="est">{pill}</span>}
             </div>
           );

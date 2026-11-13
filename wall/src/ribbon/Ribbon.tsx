@@ -12,6 +12,12 @@ export type RibbonKind = 'work' | 'home';
 
 const TICKS = ticks();
 
+/** What row 2 holds, as the tooltip on its icon. */
+const ROW2_TIP: Record<RibbonKind, string> = {
+  work: 'Agent activity and tasks due today',
+  home: 'Home tasks due today',
+};
+
 /** The needle's clock: the time now, refreshed on each whole minute while the page is visible. */
 function useMinute(now: () => number): number {
   const visible = useVisible();
@@ -37,6 +43,8 @@ function useMinute(now: () => number): number {
  * the needle with the time. Row 2 carries a cyan diamond for each of the next three tasks
  * due at a time today (Work and Meet: tasks without the home tag; Home: with it), and on
  * Work the agent lanes' day (`AgentRow`) under them; the house schedule joins it later.
+ * Each row's icon has a tooltip naming the row, and an empty row says so beside its icon
+ * ("No meetings today", "No agent activity yet", "Nothing scheduled at home").
  */
 export function Ribbon({ kind, now = Date.now }: { kind: RibbonKind; now?: () => number }) {
   const visible = useVisible();
@@ -47,6 +55,8 @@ export function Ribbon({ kind, now = Date.now }: { kind: RibbonKind; now?: () =>
   const sun = sunTimes(t);
   const n = needle(t);
   const Row2 = kind === 'home' ? IconHome : IconBolt;
+  const dayChips = chips(events, t);
+  const marks = dueMarks(tasks, t);
   return (
     <section className="rib" data-kind={kind} aria-label="Today">
       <i className="skyb" style={{ background: skyGradient(sun, t) }} aria-hidden="true" />
@@ -64,10 +74,24 @@ export function Ribbon({ kind, now = Date.now }: { kind: RibbonKind; now?: () =>
             {l.text}
           </span>
         ))}
-        <IconCalendar className="li" style={{ top: 38 }} stroke={1.8} />
-        <Row2 className="li" style={{ top: 70 }} stroke={1.8} />
       </div>
-      {chips(events, t).map((c) => (
+      <span className="li" style={{ top: 38 }} title="Today's calendar" aria-label="Today's calendar" role="img">
+        <IconCalendar stroke={1.8} aria-hidden="true" />
+      </span>
+      {dayChips.length === 0 && (
+        <span className="li-empty" style={{ top: 38 }}>
+          No meetings today
+        </span>
+      )}
+      <span className="li" style={{ top: 70 }} title={ROW2_TIP[kind]} aria-label={ROW2_TIP[kind]} role="img">
+        <Row2 stroke={1.8} aria-hidden="true" />
+      </span>
+      {kind === 'home' && marks.length === 0 && (
+        <span className="li-empty" style={{ top: 70 }}>
+          Nothing scheduled at home
+        </span>
+      )}
+      {dayChips.map((c) => (
         <div
           key={c.key}
           className={`ev ${c.state}${c.live ? ' live' : ''}${c.lane ? ' l2' : ''}`}
@@ -78,12 +102,12 @@ export function Ribbon({ kind, now = Date.now }: { kind: RibbonKind; now?: () =>
           {c.narrow ? null : c.title}
         </div>
       ))}
-      {kind === 'work' && <AgentRow now={t} />}
+      {kind === 'work' && <AgentRow now={t} dueCount={marks.length} />}
       {kind === 'work' &&
         focusBars(sessions, t).map((b) => (
           <i key={b.x} className="fo" style={{ left: b.x, width: b.width }} aria-hidden="true" />
         ))}
-      {dueMarks(tasks, t).map((d) => (
+      {marks.map((d) => (
         <div key={d.key} className="due" style={{ left: d.x }} title={d.title} aria-label={`Due ${d.time}: ${d.title}`}>
           <i aria-hidden="true" />
           <span className="n">{d.title}</span>

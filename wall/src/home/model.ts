@@ -72,6 +72,24 @@ export function netNumbers(s: SecuritySummary): NetNumber[] {
   return out;
 }
 
+/** One number as words for the status line: "25 alarms in 24 h", "31 devices", "61° box". */
+function numberWords(n: NetNumber): string {
+  if (n.key === 'alarms') return `${n.value} ${n.value === '1' ? 'alarm' : 'alarms'} in 24 h`;
+  if (n.key === 'devices') return `${n.value} ${n.value === '1' ? 'device' : 'devices'}`;
+  if (n.key === 'blocked') return `${n.value} blocked`;
+  return `${n.value} box`;
+}
+
+/**
+ * The numbers row needs at least three numbers to fill its width. With one or two, they
+ * go on the status line's right instead ("25 alarms in 24 h"); null when the row shows
+ * them (three or more) or there are none.
+ */
+export function numbersOnLine(nums: readonly NetNumber[]): string | null {
+  if (nums.length === 0 || nums.length >= 3) return null;
+  return nums.map(numberWords).join(', ');
+}
+
 /** Alert rows to show: at most three, each with text. */
 export function alertRows(s: SecuritySummary): AlertRow[] {
   const rows = Array.isArray(s.topAlerts) ? s.topAlerts : [];

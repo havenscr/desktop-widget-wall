@@ -111,7 +111,7 @@ it('holding a row for half a second starts focus named after the task', async ()
   setList(() => [task('a', 'Write the report')]);
   render(<TaskCard />);
   await flush();
-  const row = screen.getByLabelText('Hold to focus on: Write the report');
+  const row = screen.getByLabelText('Open Write the report; hold to focus on it');
   fireEvent.pointerDown(row);
   await flush(400);
   expect(useFocusStore.getState().state.status).toBe('idle');
@@ -119,14 +119,50 @@ it('holding a row for half a second starts focus named after the task', async ()
   const s = useFocusStore.getState().state;
   expect(s.status).toBe('running');
   expect(s.status === 'running' && s.label).toBe('Write the report');
-  expect(row.getAttribute('aria-disabled')).toBe('true');
+  // While a session runs a press only opens the task.
+  expect(row.getAttribute('aria-label')).toBe('Open Write the report');
+});
+
+it('a click on the title opens the task in the task app; a hold or a slide opens nothing', async () => {
+  const opened: unknown[] = [];
+  mocks.set('wall2_open_task', (args) => void opened.push(args));
+  setList(() => [task('t-1', 'Write the report')]);
+  render(<TaskCard />);
+  await flush();
+  const row = screen.getByLabelText('Open Write the report; hold to focus on it');
+  fireEvent.pointerDown(row);
+  await flush(120);
+  fireEvent.pointerUp(row);
+  fireEvent.click(row);
+  await flush();
+  expect(opened).toEqual([{ id: 't-1' }]);
+  // A slide that cancels the hold: its click opens nothing.
+  fireEvent.pointerDown(row, { clientX: 100, clientY: 30 });
+  fireEvent.pointerMove(row, { clientX: 130, clientY: 30 });
+  fireEvent.pointerUp(row);
+  fireEvent.click(row);
+  await flush();
+  expect(opened).toHaveLength(1);
+  // A hold starts focus, and the click that ends it opens nothing.
+  fireEvent.pointerDown(row);
+  await flush(500);
+  fireEvent.pointerUp(row);
+  fireEvent.click(row);
+  await flush();
+  expect(useFocusStore.getState().state.status).toBe('running');
+  expect(opened).toHaveLength(1);
+  // The tick circle never opens the task.
+  mocks.set('wall2_task_done', () => undefined);
+  fireEvent.click(screen.getByLabelText('Mark done: Write the report'));
+  await flush();
+  expect(opened).toHaveLength(1);
 });
 
 it('a short tap or a press that slides off starts nothing', async () => {
   setList(() => [task('a', 'Write the report')]);
   render(<TaskCard />);
   await flush();
-  const row = screen.getByLabelText('Hold to focus on: Write the report');
+  const row = screen.getByLabelText('Open Write the report; hold to focus on it');
   fireEvent.pointerDown(row);
   await flush(200);
   fireEvent.pointerUp(row);
@@ -141,7 +177,7 @@ it('a finger that slides more than 12 px cancels the hold, a small wobble does n
   setList(() => [task('a', 'Write the report')]);
   render(<TaskCard />);
   await flush();
-  const row = screen.getByLabelText('Hold to focus on: Write the report');
+  const row = screen.getByLabelText('Open Write the report; hold to focus on it');
   fireEvent.pointerDown(row, { clientX: 100, clientY: 30 });
   fireEvent.pointerMove(row, { clientX: 110, clientY: 34 });
   await flush(200);
@@ -158,7 +194,7 @@ it('pointercancel cancels the hold', async () => {
   setList(() => [task('a', 'Write the report')]);
   render(<TaskCard />);
   await flush();
-  const row = screen.getByLabelText('Hold to focus on: Write the report');
+  const row = screen.getByLabelText('Open Write the report; hold to focus on it');
   fireEvent.pointerDown(row, { clientX: 100, clientY: 30 });
   await flush(300);
   fireEvent.pointerCancel(row);

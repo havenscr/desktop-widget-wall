@@ -1,7 +1,7 @@
 import { IconCheck } from '@tabler/icons-react';
 import { useEffect, useRef, useState } from 'react';
 import { useFocusStore } from '../focus/store';
-import { estText, HOLD_SLOP_PX, LONG_PRESS_MS, updatedText, visibleRows, type TaskItem } from './model';
+import { estText, HOLD_SLOP_PX, LONG_PRESS_MS, openTask, updatedText, visibleRows, type TaskItem } from './model';
 import { useTasks, type TasksQuery } from './useTasks';
 
 /** Work's list: the tasks without the home tag. */
@@ -9,8 +9,9 @@ const WORK_QUERY: TasksQuery = { notTag: 'home' };
 
 /**
  * One task as the concept draws it (`.tk3`): a check circle, the title and the estimate.
- * Holding the row for half a second starts a focus session named after the task; lifting,
- * cancelling or moving more than 12 px first does nothing.
+ * A click on the title opens the task in the task app. Holding the row for half a second
+ * starts a focus session named after the task instead (that press opens nothing); a
+ * press cancelled or moved more than 12 px does neither.
  */
 function TaskRow({
   task,
@@ -26,6 +27,8 @@ function TaskRow({
   const [holding, setHolding] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const downAt = useRef<{ x: number; y: number } | null>(null);
+  /** The press became a hold (focus started) or was cancelled by a move: its click opens nothing. */
+  const swallow = useRef(false);
   const stop = () => {
     clearTimeout(timer.current);
     timer.current = undefined;
@@ -53,9 +56,10 @@ function TaskRow({
       <button
         type="button"
         className="tk-main"
-        aria-label={`Hold to focus on: ${task.title}`}
-        aria-disabled={!focusable}
+        aria-label={focusable ? `Open ${task.title}; hold to focus on it` : `Open ${task.title}`}
+        title={task.title}
         onPointerDown={(e) => {
+          swallow.current = false;
           if (!focusable) return;
           stop();
           downAt.current = { x: e.clientX, y: e.clientY };
@@ -63,6 +67,7 @@ function TaskRow({
           timer.current = setTimeout(() => {
             timer.current = undefined;
             downAt.current = null;
+            swallow.current = true;
             setHolding(false);
             startFocus();
           }, LONG_PRESS_MS);
@@ -71,7 +76,17 @@ function TaskRow({
         // slides, so a move of more than 12 px from where it went down cancels the hold.
         onPointerMove={(e) => {
           const d = downAt.current;
-          if (d && Math.hypot(e.clientX - d.x, e.clientY - d.y) > HOLD_SLOP_PX) stop();
+          if (d && Math.hypot(e.clientX - d.x, e.clientY - d.y) > HOLD_SLOP_PX) {
+            swallow.current = true;
+            stop();
+          }
+        }}
+        onClick={() => {
+          if (swallow.current) {
+            swallow.current = false;
+            return;
+          }
+          openTask(task.id);
         }}
         onPointerUp={stop}
         onPointerLeave={stop}
@@ -92,7 +107,7 @@ function TaskRow({
   );
 }
 
-/** The next three open tasks without the home tag: tap the circle to finish one, hold a row to focus on it. */
+/** The next three open tasks without the home tag: click the circle to finish one, the title to open it, hold a row to focus on it. */
 export function TaskCard() {
   const t = useTasks(WORK_QUERY);
   const focusStatus = useFocusStore((s) => s.state.status);

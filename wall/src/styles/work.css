@@ -759,8 +759,12 @@
   border-color: var(--mint);
   color: #06041a;
 }
+.tk-main:hover .n {
+  color: var(--cyan);
+}
 .tk-main {
   position: relative;
+  cursor: pointer;
   flex: 1;
   min-width: 0;
   height: 100%;

@@ -1,7 +1,7 @@
 import { IconShield, IconShieldCheck, IconShieldExclamation, IconShieldX } from '@tabler/icons-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { invoke } from '../bridge/tauri';
-import { ageText, alertRows, alertsLine, lastScanText, netNumbers, statusLine, tone, type SecuritySummary, type Tone } from './model';
+import { ageText, alertRows, alertsLine, lastScanText, netNumbers, numbersOnLine, statusLine, tone, type SecuritySummary, type Tone } from './model';
 import { useSecurity } from './useSecurity';
 
 const SHIELD = { ok: IconShieldCheck, warn: IconShieldExclamation, bad: IconShieldX } as const;
@@ -18,13 +18,19 @@ function Status({ t, text, aside }: { t: Tone | 'off'; text: string; aside?: str
 }
 
 /**
- * Network and security, as the concept's card: the status line with its shield, the
- * numbers the feed has (devices, alarms in 24 hours, blocked, box temperature) spread
- * evenly, up to three open alerts as one-line rows, and the Security and Firewalla links
- * as full-width buttons along the bottom. The card is as tall as what it holds.
+ * Network and security, as the concept draws it: the heading above the card (like "Around
+ * the house"), then the card with the status line and its shield, the numbers the feed
+ * has, up to three open alerts as one-line rows, and the Security and Firewalla links as
+ * full-width buttons along the bottom. The numbers row shows only with three or more
+ * numbers; one or two sit on the status line's right ("Up, box online", "25 alarms in
+ * 24 h"), and the scan age then moves up beside the heading. The card is as tall as what
+ * it holds.
  */
 export function NetworkTile() {
   const { status, summary, now, attempts } = useSecurity();
+  const ready = summary && status !== 'unconfigured' && status !== 'loading';
+  const onLine = ready ? numbersOnLine(netNumbers(summary)) : null;
+  const scan = ready ? lastScanText(summary.lastScan, now) : null;
   let body;
   if (status === 'unconfigured') {
     body = <Status t="off" text="Not set up" />;
@@ -38,32 +44,34 @@ export function NetworkTile() {
       </>
     );
   } else {
-    body = <Ready summary={summary} now={now} stale={status === 'error'} />;
+    body = <Ready summary={summary} now={now} stale={status === 'error'} aside={onLine ?? scan} />;
   }
-  // Lists stop at three and the rest is a number, on the header line to keep the card short.
-  const more = summary && status !== 'unconfigured' && status !== 'loading' ? summary.alerts - alertRows(summary).length : 0;
+  // Lists stop at three and the rest is a number, beside the heading to keep the card short.
+  const more = ready ? summary.alerts - alertRows(summary).length : 0;
   const shown = summary ? alertRows(summary).length : 0;
+  const side = shown > 0 && more > 0 ? `${more} more open` : onLine ? scan : null;
   return (
-    <section className="panel network" aria-label="Network and security">
+    <section className="network-block" aria-label="Network and security">
       <div className="net-head">
         <span className="k">Network and security</span>
-        {shown > 0 && more > 0 && <span className="xs">{more} more open</span>}
+        {side && <span className="xs">{side}</span>}
       </div>
-      {body}
-      <Links refresh={attempts} />
+      <div className="panel network">
+        {body}
+        <Links refresh={attempts} />
+      </div>
     </section>
   );
 }
 
-function Ready({ summary, now, stale }: { summary: SecuritySummary; now: number; stale: boolean }) {
+function Ready({ summary, now, stale, aside }: { summary: SecuritySummary; now: number; stale: boolean; aside: string | null }) {
   const t = stale ? 'warn' : tone(summary);
-  const scan = lastScanText(summary.lastScan, now);
   const nums = netNumbers(summary);
   const rows = alertRows(summary);
   return (
     <>
-      <Status t={t} text={stale ? 'Home app not reachable' : statusLine(summary)} aside={scan} />
-      {nums.length > 0 && (
+      <Status t={t} text={stale ? 'Home app not reachable' : statusLine(summary)} aside={aside} />
+      {nums.length >= 3 && (
         <div className={stale ? 'net-nums stale' : 'net-nums'} style={{ gridTemplateColumns: `repeat(${nums.length}, minmax(0, 1fr))` }}>
           {nums.map((n) => (
             <div key={n.key} className="st3">
