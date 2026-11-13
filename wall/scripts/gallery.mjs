@@ -60,7 +60,9 @@ const PLACES = {
 };
 const url = (place, at, extra = '') => {
   const p = PLACES[place];
-  return `hz=${p.hz}&at=${encodeURIComponent(at)}&clock=review${p.screen ? `&screen=${p.screen}` : ''}${extra ? `&${extra}` : ''}`;
+  // Every state uses mocked weather (no network); a state that names its own weather keeps it.
+  const wx = extra.includes('weather=') ? '' : '&weather=ok';
+  return `hz=${p.hz}&at=${encodeURIComponent(at)}&clock=review${wx}${p.screen ? `&screen=${p.screen}` : ''}${extra ? `&${extra}` : ''}`;
 };
 const state = (place, name, extra, at = TYPICAL_AT) => add(place, name, url(place, at, extra));
 
@@ -94,9 +96,10 @@ for (const [name, extra] of [
   ['broken: calendar signed out', 'meet=signedout'],
   ['broken: calendar partly stale', 'meet=partial'],
   ['broken: media unavailable', 'media=off'],
-  ['broken: weather down', 'weather=down'],
-  ['broken: weather stale', 'weather=stale'],
+  ['broken: weather down', 'weather=down&agents=0'],
+  ['broken: weather stale', 'weather=stale&agents=0'],
 ]) {
+  // Work shows the weather card (and its status) in the centre only when no agent lane is using it.
   state('work', name, extra);
 }
 
@@ -136,7 +139,8 @@ for (const [name, extra] of [
 }
 
 // Meet: the day's meetings.
-state('meet', 'one meeting', 'meet=partial');
+state('meet', 'one meeting', 'meet=one');
+state('meet', 'broken: one account unavailable', 'meet=partial');
 for (const [name, extra] of [
   ['broken: calendar not set up', 'meet=off'],
   ['broken: calendar failing', 'meet=down'],
@@ -149,8 +153,43 @@ for (const [name, extra] of [
 state('zen', 'focus running, long title', 'focus=long');
 state('dream', 'night with audio demo', 'audio=demo', TIMES.night);
 
+/** Text each state must show (a miss fails it): [screen, state name prefix, text, exact name only?]. First match wins. */
+const EXPECT = [
+  ['work', 'sparse', 'Nothing due'],
+  ['work', 'broken: weather stale', 'updated 45 min ago'],
+  ['work', 'broken: weather down', 'Weather unavailable'],
+  ['work', 'broken: helper not set up', 'Agents: not set up'],
+  ['work', 'broken: task app', 'Next three'],
+  ['work', 'heavy', 'Architecture working'],
+  ['work', 'typical', 'Voice: iPhone mic fix'],
+  ['work', 'one agent waiting', 'Waiting on a thumbnail choice'],
+  ['home', 'sparse', 'No moods set up'],
+  ['home', 'network card, quiet', 'All quiet'],
+  ['home', 'broken: home app', 'Network and security'],
+  ['home', 'heavy', 'Away For The Weekend'],
+  ['home', 'typical', 'Evening'],
+  ['unwind', 'long track', 'An Extremely Long Song Title'],
+  ['unwind', 'sparse', 'Unwind'],
+  ['unwind', 'typical', 'Tokyo Burnout'],
+  ['meet', 'one meeting', 'Design review with the platform team'],
+  ['meet', 'heavy', 'Architecture working session'],
+  ['meet', 'typical', 'Design review with the platform team'],
+  ['meet', 'sparse', 'Nothing scheduled in the next 24 hours'],
+  ['zen', 'typical', 'Start', true],
+  ['zen', 'sparse', 'Start', true],
+];
+for (const st of STATES) {
+  const hit = EXPECT.find(([sc, prefix, , exact]) => sc === st.screen && (exact ? st.name === prefix : st.name.startsWith(prefix)));
+  if (hit) st.expect = hit[2];
+}
+
 const only = flag('only')?.split('=')[1]?.toLowerCase();
 const selected = only ? STATES.filter((s) => `${s.screen} ${s.name}`.toLowerCase().includes(only)) : STATES;
+
+if (selected.length === 0) {
+  console.error(`gallery: --only=${only} matches no state (try --list)`);
+  process.exit(2);
+}
 
 if (flag('list')) {
   for (const s of selected) console.log(`${s.screen.padEnd(7)} ${s.name.padEnd(36)} ?${s.query}`);
@@ -167,6 +206,36 @@ if (!chrome || !existsSync(chrome)) {
 const slug = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 const work = mkdtempSync(join(tmpdir(), 'wall-gallery-'));
 let chromeProc = null;
+let cdpConn = null;
+let shuttingDown = false;
+
+/** Close the connection, ask Chromium to exit, wait (forced kill after 5 s), then remove the temp folder. */
+async function shutdown() {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  try {
+    cdpConn?.close();
+  } catch {
+    /* already closed */
+  }
+  const proc = chromeProc;
+  if (proc && proc.exitCode === null && proc.signalCode === null) {
+    await new Promise((resolve) => {
+      const force = setTimeout(() => proc.kill('SIGKILL'), 5000);
+      proc.once('exit', () => {
+        clearTimeout(force);
+        resolve();
+      });
+      proc.kill('SIGTERM');
+    });
+  }
+  rmSync(work, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+}
+for (const sig of ['SIGINT', 'SIGTERM']) {
+  process.on(sig, () => {
+    shutdown().finally(() => process.exit(sig === 'SIGINT' ? 130 : 143));
+  });
+}
 
 async function buildBundle() {
   process.env.NODE_ENV = 'development';
@@ -202,14 +271,37 @@ async function buildBundle() {
 async function launch() {
   const profile = join(work, 'profile');
   mkdirSync(profile);
+  let stderr = '';
   chromeProc = spawn(
     chrome,
     ['--headless', '--no-sandbox', '--disable-gpu', '--hide-scrollbars', '--mute-audio', `--user-data-dir=${profile}`, '--remote-debugging-port=0', `--window-size=${W},${H + 87}`, 'about:blank'],
-    { stdio: 'ignore' },
+    { stdio: ['ignore', 'ignore', 'pipe'] },
   );
+  chromeProc.stderr.on('data', (d) => {
+    stderr = (stderr + d).slice(-4000);
+  });
   const portFile = join(profile, 'DevToolsActivePort');
-  for (let i = 0; i < 100 && !existsSync(portFile); i++) await new Promise((r) => setTimeout(r, 100));
-  if (!existsSync(portFile)) throw new Error('Chromium did not start');
+  // Ready when the port file appears; failed if the process errors or exits first; 60 s at most.
+  let stop = () => {};
+  const failed = new Promise((_, reject) => {
+    chromeProc.once('error', (e) => reject(new Error(`could not start Chromium: ${e.message}`)));
+    chromeProc.once('exit', (code, sig) => reject(new Error(`Chromium exited before it was ready (${sig ?? `code ${code}`})`)));
+    const t = setTimeout(() => reject(new Error('Chromium was not ready after 60 seconds')), 60_000);
+    stop = () => clearTimeout(t);
+  });
+  const ready = (async () => {
+    while (!existsSync(portFile)) await new Promise((r) => setTimeout(r, 100));
+  })();
+  try {
+    await Promise.race([ready, failed]);
+  } catch (e) {
+    console.error(`gallery: ${e.message}`);
+    if (stderr.trim()) console.error(`Chromium said:\n${stderr.trim()}`);
+    throw e;
+  } finally {
+    stop();
+    failed.catch(() => {});
+  }
   const [port, path] = readFileSync(portFile, 'utf8').trim().split('\n');
   const ws = new WebSocket(`ws://127.0.0.1:${port}${path}`);
   await new Promise((resolve, reject) => {
@@ -233,19 +325,30 @@ async function launch() {
       pending.set(n, { resolve, reject });
       ws.send(JSON.stringify({ id: n, method, params, sessionId }));
     });
+  cdpConn = { close: () => ws.close() };
   return { send, listeners, close: () => ws.close() };
 }
 
 /** Render one state in its own browser context (fresh storage). Returns { errors }. */
-async function render(cdp, base, s, file) {
+async function render(cdp, base, s, file, ctl) {
   const { browserContextId } = await cdp.send('Target.createBrowserContext');
   const errors = [];
   let sessionId;
   let targetId;
+  let on = null;
+  ctl.cleanup = async () => {
+    if (on) cdp.listeners.delete(on);
+    try {
+      if (targetId) await cdp.send('Target.closeTarget', { targetId });
+      await cdp.send('Target.disposeBrowserContext', { browserContextId });
+    } catch {
+      /* the page is gone already */
+    }
+  };
   try {
     ({ targetId } = await cdp.send('Target.createTarget', { url: 'about:blank', browserContextId }));
     ({ sessionId } = await cdp.send('Target.attachToTarget', { targetId, flatten: true }));
-    const on = (msg) => {
+    on = (msg) => {
       if (msg.sessionId !== sessionId) return;
       if (msg.method === 'Runtime.exceptionThrown') {
         const d = msg.params.exceptionDetails;
@@ -264,22 +367,20 @@ async function render(cdp, base, s, file) {
     await to('Page.navigate', { url: `${base}?${s.query}` });
     await new Promise((r) => setTimeout(r, SETTLE_MS));
     const check = await to('Runtime.evaluate', {
-      expression: `JSON.stringify({ root: !!document.querySelector('.shell'), w: innerWidth, h: innerHeight, sw: document.documentElement.scrollWidth, sh: document.documentElement.scrollHeight })`,
+      expression: `JSON.stringify({ root: !!document.querySelector('.shell'), emptyRoot: !document.getElementById('root')?.childElementCount, boundary: /something went wrong|error boundary/i.test(document.body.textContent || ''), text: document.body.textContent || '', w: innerWidth, h: innerHeight, sw: document.documentElement.scrollWidth, sh: document.documentElement.scrollHeight })`,
       returnByValue: true,
     });
     const info = JSON.parse(check.result.value);
-    if (!info.root) errors.push('the app did not render (no .shell)');
+    if (!info.root || info.emptyRoot) errors.push('the app did not render (no .shell; a render error unmounts the root)');
+    if (info.boundary) errors.push('an error fallback is showing');
+    if (s.expect && !info.text.includes(s.expect)) errors.push(`expected text not shown: "${s.expect}"`);
     if (info.w !== W || info.h !== H) errors.push(`viewport ${info.w} x ${info.h}`);
+    if (ctl.cancelled) throw new Error('cancelled');
     const shot = await to('Page.captureScreenshot', { format: 'png', clip: { x: 0, y: 0, width: W, height: H, scale: 1 } });
+    if (ctl.cancelled) throw new Error('cancelled');
     writeFileSync(file, Buffer.from(shot.data, 'base64'));
-    cdp.listeners.delete(on);
   } finally {
-    try {
-      if (targetId) await cdp.send('Target.closeTarget', { targetId });
-      await cdp.send('Target.disposeBrowserContext', { browserContextId });
-    } catch {
-      /* the page is gone already */
-    }
+    await ctl.cleanup();
   }
   return { errors };
 }
@@ -347,17 +448,26 @@ try {
       const s = selected[i];
       const file = names[i];
       let error = null;
+      const ctl = { cancelled: false, cleanup: async () => {} };
+      let timer;
       try {
         const r = await Promise.race([
-          render(cdp, base, s, join(outDir, file)),
-          new Promise((_, rej) => setTimeout(() => rej(new Error('timed out')), STATE_TIMEOUT_MS)),
+          render(cdp, base, s, join(outDir, file), ctl),
+          new Promise((_, rej) => {
+            timer = setTimeout(() => rej(new Error('timed out')), STATE_TIMEOUT_MS);
+          }),
         ]);
         if (r.errors.length) error = [...new Set(r.errors)].slice(0, 3).join(' | ');
       } catch (e) {
         error = e instanceof Error ? e.message : String(e);
+        // Stop the late work: no screenshot write, target and listeners closed.
+        ctl.cancelled = true;
+        await ctl.cleanup();
+      } finally {
+        clearTimeout(timer);
       }
       if (error) failures++;
-      manifest[i] = { screen: s.screen, state: s.name, url: s.query, file, width: W, height: H, ...(error ? { error } : {}) };
+      manifest[i] = { screen: s.screen, state: s.name, url: s.query, ...(s.expect ? { expect: s.expect } : {}), file, width: W, height: H, ...(error ? { error } : {}) };
       console.log(`${error ? 'FAIL' : 'ok  '} ${s.screen.padEnd(7)} ${s.name.padEnd(36)} ${file}${error ? `  ${error}` : ''}`);
     }
   }
@@ -369,6 +479,5 @@ try {
   console.log(`gallery: ${stills} stills, ${failures} failed. ${join(outDir, 'index.html')}`);
   process.exitCode = failures ? 1 : 0;
 } finally {
-  chromeProc?.kill();
-  rmSync(work, { recursive: true, force: true });
+  await shutdown();
 }
