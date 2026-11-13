@@ -1,4 +1,4 @@
-import { isTauri } from '../tauri';
+import { isTauri, mocks } from '../tauri';
 import { registerAudioMocks } from './audio';
 import { registerDeckMocks } from './deck';
 import { registerGalleryMocks } from './gallery';
@@ -31,4 +31,5 @@ export function registerDevMocks(): void {
   registerGalleryMocks();
   registerSignalMocks();
   registerSpotifyMocks();
+  mocks.set('wall2_build_info', () => ({ commit: 'dev', builtAt: '2026-11-13T09:05Z' }));
 }

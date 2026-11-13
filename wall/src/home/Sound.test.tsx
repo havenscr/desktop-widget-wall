@@ -3,7 +3,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { mocks } from '../bridge/tauri';
 import { usePacificTime } from '../ribbon/testZone';
 import { KEY_SETTLE_MS, RESULT_MS, Sound } from './Sound';
-import { LAST_PLAY_KEY, LATCH_MS, type SonosSummary } from './soundModel';
+import { LAST_PLAY_KEY, LATCH_MS, NEEDS_CONFIRM, type SonosSummary } from './soundModel';
 
 usePacificTime();
 
@@ -161,6 +161,30 @@ it('a skipped play says why and offers Play anyway, which sends the forced call'
   ]);
   expect(screen.getByText('Playing Noon')).toBeTruthy();
   expect(screen.queryByText(/^Skipped/)).toBeNull();
+});
+
+it('a forced play refused for needing the loud confirm asks, and Yes sends it again with the confirm', async () => {
+  wire();
+  mocks.set('wall2_sonos_play', (args) => {
+    writes.push({ cmd: 'wall2_sonos_play', args });
+    const a = args as { force?: boolean; confirm?: boolean };
+    if (!a.force) return { started: false, reason: null };
+    if (!a.confirm) throw new Error(NEEDS_CONFIRM);
+    return { started: true, reason: null };
+  });
+  render(<Sound />);
+  await flush();
+  fireEvent.click(screen.getByText('Noon').closest('button')!);
+  await flush();
+  await flush(LATCH_MS);
+  fireEvent.click(screen.getByText('Play anyway').closest('button')!);
+  await flush();
+  expect(screen.getByText('Noon starts at a volume the Sonos service sets. Start it?')).toBeTruthy();
+  expect(screen.getByText('Play anyway')).toBeTruthy();
+  fireEvent.click(screen.getByText('Start').closest('button')!);
+  await flush();
+  expect(writes[writes.length - 1]).toEqual({ cmd: 'wall2_sonos_play', args: { routineKey: 'Noon_Mix', confirm: true, force: true } });
+  expect(screen.getByText('Playing Noon')).toBeTruthy();
 });
 
 it('the Play anyway offer goes after a minute', async () => {

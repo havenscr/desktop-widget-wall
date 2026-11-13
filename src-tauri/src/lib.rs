@@ -3746,6 +3746,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .manage(audio_buffer)
         .invoke_handler(tauri::generate_handler![
+            wall2_window::wall2_build_info,
             wall2_feeds::wall2_tasks_next,
             wall2_feeds::wall2_task_done,
             wall2_feeds::wall2_tasks_summary,

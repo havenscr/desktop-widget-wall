@@ -61,4 +61,45 @@ describe('signal store lifecycle', () => {
     expect(store.getState()).toMatchObject({ known: false, call: null, recording: false, leave: null });
     dispose();
   });
+
+  it('a rejected listener registration is caught, left unknown, and tried once more after 5 seconds', async () => {
+    setTauri();
+    vi.useFakeTimers();
+    const listen = vi.fn()
+      .mockRejectedValueOnce(new Error('no events'))
+      .mockImplementation(async (): Promise<UnlistenFn> => () => {});
+    const store = createSignalStore({
+      now: () => 1,
+      zone: () => 'UTC',
+      listen: listen as unknown as typeof import('@tauri-apps/api/event').listen,
+      invoke: async <T,>() => known() as T,
+    });
+    const dispose = store.getState().init();
+    await vi.advanceTimersByTimeAsync(10);
+    expect(listen).toHaveBeenCalledTimes(1);
+    expect(store.getState().known).toBe(false);
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(listen).toHaveBeenCalledTimes(2);
+    expect(store.getState().known).toBe(true);
+    dispose();
+    vi.useRealTimers();
+  });
+
+  it('a second rejection is not retried again', async () => {
+    setTauri();
+    vi.useFakeTimers();
+    const listen = vi.fn().mockRejectedValue(new Error('no events'));
+    const store = createSignalStore({
+      now: () => 1,
+      zone: () => 'UTC',
+      listen: listen as unknown as typeof import('@tauri-apps/api/event').listen,
+      invoke: async <T,>() => known() as T,
+    });
+    const dispose = store.getState().init();
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(listen).toHaveBeenCalledTimes(2);
+    expect(store.getState().known).toBe(false);
+    dispose();
+    vi.useRealTimers();
+  });
 });

@@ -211,7 +211,7 @@ impl TokenClient for HttpTokens {
 
     fn post_diag(&self, tenant: &str, form: &[(&str, &str)], limit: Duration, ctx: &super::graph::Ctx) -> (TokenReply, Option<super::graph::Diag>) {
         let (reply, net) = self.send(tenant, form, limit);
-        let diag = net.map(|net| super::graph::Diag {
+        let diag = net.map(|(net, probe)| super::graph::Diag {
             kind: ctx.kind,
             host: "login",
             net: Some(net),
@@ -221,7 +221,9 @@ impl TokenClient for HttpTokens {
             request_id: None,
             client_request_id: None,
             attempt: 1,
-            elapsed_ms: ctx.elapsed_ms(),
+            // The probe's own time is not part of the call.
+            elapsed_ms: ctx.elapsed_ms().saturating_sub(probe.probe_ms as u64),
+            probe: Some(probe),
         });
         (reply, diag)
     }
@@ -229,10 +231,12 @@ impl TokenClient for HttpTokens {
 
 impl HttpTokens {
     /// The request, and the class of the network failure when there was one.
-    fn send(&self, tenant: &str, form: &[(&str, &str)], limit: Duration) -> (TokenReply, Option<&'static str>) {
+    fn send(&self, tenant: &str, form: &[(&str, &str)], limit: Duration) -> (TokenReply, Option<(&'static str, super::netprobe::NetProbe)>) {
         let url = format!("https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token");
+        super::netprobe::begin(super::LOGIN_HOST);
         match agent().post(&url).timeout(limit).send_form(form) {
             Ok(resp) => {
+                super::netprobe::reached(super::LOGIN_HOST);
                 let status = resp.status();
                 let reply = match read_body(resp) {
                     Some(body) => classify_token(status, &body),
@@ -240,8 +244,11 @@ impl HttpTokens {
                 };
                 (reply, None)
             }
-            Err(ureq::Error::Status(code, resp)) => (classify_token(code, &read_capped(resp, MAX_ERROR_BODY)), None),
-            Err(ureq::Error::Transport(t)) => (TokenReply::Transient(TOKEN_NETWORK.to_string()), Some(super::net_of(&t))),
+            Err(ureq::Error::Status(code, resp)) => {
+                super::netprobe::reached(super::LOGIN_HOST);
+                (classify_token(code, &read_capped(resp, MAX_ERROR_BODY)), None)
+            }
+            Err(ureq::Error::Transport(t)) => (TokenReply::Transient(TOKEN_NETWORK.to_string()), Some((super::net_of(&t), super::probe_of(super::LOGIN_HOST, &t)))),
         }
     }
 }

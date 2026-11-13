@@ -42,8 +42,15 @@ let lastRead: number | null = null;
 let inFlight = false;
 /** A screen that mounts reads again when the last read is this old or older. */
 const MOUNT_READ_MS = 60_000;
-/** After a failed read the next try is allowed this long after it. */
-const RETRY_MS = 30_000;
+/** After failed reads the next try waits 30, then 60, then 120 s; the 5 minute poll runs regardless. */
+export const RETRY_STEPS_MS: readonly number[] = [30_000, 60_000, 120_000];
+/** Failed reads in a row. */
+let failures = 0;
+
+/** How long to wait before trying again after the n-th failed read in a row (n from 1). */
+export function retryDelay(n: number): number {
+  return RETRY_STEPS_MS[Math.min(Math.max(n, 1), RETRY_STEPS_MS.length) - 1];
+}
 
 function due(): boolean {
   return lastRead === null || clock() - lastRead >= MOUNT_READ_MS;
@@ -56,6 +63,7 @@ function read(): void {
   invoke<MeetData>('wall2_meet_next')
     .then((d) => {
       if (mine !== epoch) return;
+      failures = 0;
       const partial = d?.stale === true;
       useMeetingFeed.setState((s) => ({
         meetings: Array.isArray(d?.meetings) ? d.meetings : [],
@@ -69,11 +77,13 @@ function read(): void {
       if (mine !== epoch) return;
       const text = e instanceof Error ? e.message : String(e);
       if (text === 'not-configured' || text === 'invalid-config') {
+        failures = 0;
         useMeetingFeed.setState({ meetings: [], feedStale: false, failed: false, asOf: null, noCalendar: false });
       } else {
         useMeetingFeed.setState({ failed: true });
-        // Retry soon, but at most once per RETRY_MS, so a dead network is not hammered.
-        lastRead = clock() - (MOUNT_READ_MS - RETRY_MS);
+        // Retry soon, backing off 30, 60, 120 s while reads keep failing, so a dead network is not hammered.
+        failures += 1;
+        lastRead = clock() - (MOUNT_READ_MS - retryDelay(failures));
       }
     })
     .finally(() => {
@@ -117,6 +127,7 @@ export function resetMeetingFeed(): void {
   users = 0;
   epoch += 1;
   lastRead = null;
+  failures = 0;
   inFlight = false;
   clock = systemNow;
   useMeetingFeed.setState(initial(), true);
@@ -125,7 +136,7 @@ export function resetMeetingFeed(): void {
 /**
  * The first meeting that has not ended, for the Work "Next" block and Watt, from
  * `wall2_meet_next`. One shared read for every user: on a visible mount when the last read is a minute old, and every 5
- * minutes while at least one is mounted and visible; a failed read is retried on the next tick, mount or show (at most every 30 seconds). Each user's time ticks every 30 seconds
+ * minutes while at least one is mounted and visible; a failed read is retried on the next tick, mount or show (backing off 30, 60, then 120 seconds). Each user's time ticks every 30 seconds
  * (and after each read) from its own `now`. Not set up, a failed first read or no meeting gives
  * undefined, so the block hides. A later failed read keeps the last list and marks it stale, as
  * does a reply the feed itself marks `stale` (an account was unavailable).

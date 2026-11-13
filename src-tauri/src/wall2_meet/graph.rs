@@ -113,6 +113,8 @@ pub struct Diag {
     pub client_request_id: Option<String>,
     pub attempt: u32,
     pub elapsed_ms: u64,
+    /// Phase, address family and probe results for a network failure (see `netprobe.rs`).
+    pub probe: Option<super::netprobe::NetProbe>,
 }
 
 /// `[A-Za-z0-9-]{1,64}`, else none: a request id is a GUID, anything else is not logged.
@@ -132,17 +134,19 @@ impl Diag {
             None => "none".to_string(),
         };
         format!(
-            "req={} host={} status={} net={} af=unknown code={} inner={} request-id={} client-request-id={} attempt={} ms={}",
+            "req={} host={} status={} net={} af={} code={} inner={} request-id={} client-request-id={} attempt={} ms={} {}",
             self.kind.as_str(),
             self.host,
             status,
             self.net.unwrap_or("none"),
+            self.probe.map(|p| p.af).unwrap_or("unknown"),
             code(&self.code),
             code(&self.inner),
             clean_id(&self.request_id),
             clean_id(&self.client_request_id),
             self.attempt,
-            self.elapsed_ms
+            self.elapsed_ms,
+            self.probe.map(|p| p.fields()).unwrap_or_else(|| super::netprobe::NO_PROBE_FIELDS.to_string())
         )
     }
 }
@@ -157,6 +161,8 @@ pub struct Raw {
     pub request_id: Option<String>,
     pub client_request_id: Option<String>,
     pub body: Vec<u8>,
+    /// Failure fields when no reply came (or the body could not be read).
+    pub probe: Option<super::netprobe::NetProbe>,
 }
 
 /// Per address: the client tries a host's addresses one after another, so a dead IPv6 route
@@ -189,7 +195,9 @@ fn diag_of(ctx: &Ctx, raw: &Raw, attempt: u32) -> Diag {
         request_id: raw.request_id.clone(),
         client_request_id: raw.client_request_id.clone(),
         attempt,
-        elapsed_ms: ctx.elapsed_ms(),
+        // The probe's own time is not part of the call.
+        elapsed_ms: ctx.elapsed_ms().saturating_sub(raw.probe.map(|p| p.probe_ms as u64).unwrap_or(0)),
+        probe: raw.probe,
     }
 }
 
@@ -306,7 +314,7 @@ pub fn run_attempts(ctx: &Ctx, send: &mut dyn FnMut(u32, Duration) -> Raw) -> (G
     }
 }
 
-pub const SELECT: &str = "subject,start,end,isAllDay,isCancelled,responseStatus,onlineMeeting,onlineMeetingUrl,iCalUId,webLink";
+pub const SELECT: &str = "id,subject,start,end,isAllDay,isCancelled,responseStatus,onlineMeeting,onlineMeetingUrl,iCalUId,webLink";
 pub const TOP: u32 = 50;
 pub const CALENDAR_VIEW_PATH: &str = "https://graph.microsoft.com/v1.0/me/calendarView";
 pub const PREFER: &str = "outlook.timezone=\"UTC\"";
@@ -419,6 +427,37 @@ pub fn web_link_allowed(raw: &str) -> bool {
     )
 }
 
+/// Longest event id the address builder accepts.
+const MAX_EVENT_ID: usize = 400;
+
+/// The address of an event in Outlook on the web, built from the event's own id instead of
+/// Graph's `webLink` (whose `/owa/?itemid=` form can fail in the new Outlook app). The id must
+/// be 1 to 400 characters of `A-Z a-z 0-9 + / = _ -` (what Graph ids are made of). The host is
+/// `outlook.live.com` when the event's own `webLink` is allowed and names that host, else
+/// `outlook.office.com`; every
+/// character outside the unreserved set is percent-encoded, so an id can never add a path
+/// segment, a query or a fragment. None for any other id.
+pub fn event_link(id: &str, web_link: Option<&str>) -> Option<String> {
+    if id.is_empty() || id.len() > MAX_EVENT_ID || !id.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '/' | '=' | '_' | '-')) {
+        return None;
+    }
+    // The host is one of two literals. A personal account's own link, when it passes the
+    // allow-list and names `outlook.live.com`, picks the second; nothing is copied from it.
+    let personal = web_link
+        .filter(|u| web_link_allowed(u))
+        .and_then(|u| tauri::Url::parse(u).ok())
+        .is_some_and(|u| u.host_str().map(str::to_ascii_lowercase).as_deref() == Some("outlook.live.com"));
+    let mut out = String::from(if personal { "https://outlook.live.com/calendar/item/" } else { "https://outlook.office.com/calendar/item/" });
+    for c in id.chars() {
+        if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+            out.push(c);
+        } else {
+            out.push_str(&format!("%{:02X}", c as u32));
+        }
+    }
+    Some(out)
+}
+
 // Section: shaping
 
 fn cap_title(raw: &str) -> String {
@@ -463,7 +502,12 @@ pub fn shape_events(body: &Value, account_id: &str) -> Vec<Candidate> {
                 end,
                 account_id: account_id.to_string(),
                 join,
-                web: str_at(e, &["webLink"]).filter(|u| web_link_allowed(u)).map(str::to_string),
+                // Built from the id; Graph's own link is only the fallback when the id is missing.
+                web: e
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .and_then(|id| event_link(id, str_at(e, &["webLink"])))
+                    .or_else(|| str_at(e, &["webLink"]).filter(|u| web_link_allowed(u)).map(str::to_string)),
             })
         })
         .collect()
@@ -550,7 +594,7 @@ mod tests {
     }
 
     fn raw(status: u16, retry_after: Option<&str>, body: &str) -> Raw {
-        Raw { status, net: if status == 0 { Some("connect") } else { None }, retry_after: retry_after.map(str::to_string), request_id: Some("11111111-2222-3333-4444-555555555555".into()), client_request_id: Some("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee".into()), body: body.as_bytes().to_vec() }
+        Raw { status, net: if status == 0 { Some("connect") } else { None }, retry_after: retry_after.map(str::to_string), request_id: Some("11111111-2222-3333-4444-555555555555".into()), client_request_id: Some("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee".into()), body: body.as_bytes().to_vec(), probe: None }
     }
 
     /// Runs the policy over a script of replies on a test clock; each request takes
@@ -705,7 +749,7 @@ mod tests {
         d.elapsed_ms = 4210;
         assert_eq!(
             d.log_fields(),
-            "req=next host=graph status=503 net=none af=unknown code=UnknownError inner=InnerThing request-id=11111111-2222-3333-4444-555555555555 client-request-id=aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee attempt=3 ms=4210"
+            "req=next host=graph status=503 net=none af=unknown code=UnknownError inner=InnerThing request-id=11111111-2222-3333-4444-555555555555 client-request-id=aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee attempt=3 ms=4210 phase=none resolved=0 dns-ms=none v4=none v6=none"
         );
         assert!(!d.log_fields().contains("secret"));
     }
@@ -723,8 +767,9 @@ mod tests {
             client_request_id: None,
             attempt: 1,
             elapsed_ms: 5,
+            probe: None,
         };
-        assert_eq!(d.log_fields(), "req=day host=login status=network net=dns af=unknown code=none inner=none request-id=none client-request-id=none attempt=1 ms=5");
+        assert_eq!(d.log_fields(), "req=day host=login status=network net=dns af=unknown code=none inner=none request-id=none client-request-id=none attempt=1 ms=5 phase=none resolved=0 dns-ms=none v4=none v6=none");
     }
 
     #[test]
@@ -732,7 +777,7 @@ mod tests {
         let url = calendar_view_url("2026-11-12T17:00:00Z", "2026-11-13T17:00:00Z");
         assert_eq!(
             url,
-            "https://graph.microsoft.com/v1.0/me/calendarView?startDateTime=2026-11-12T17%3A00%3A00Z&endDateTime=2026-11-13T17%3A00%3A00Z&$select=subject,start,end,isAllDay,isCancelled,responseStatus,onlineMeeting,onlineMeetingUrl,iCalUId,webLink&$orderby=start/dateTime&$top=50"
+            "https://graph.microsoft.com/v1.0/me/calendarView?startDateTime=2026-11-12T17%3A00%3A00Z&endDateTime=2026-11-13T17%3A00%3A00Z&$select=id,subject,start,end,isAllDay,isCancelled,responseStatus,onlineMeeting,onlineMeetingUrl,iCalUId,webLink&$orderby=start/dateTime&$top=50"
         );
         let names: Vec<&str> = url.split_once('?').unwrap().1.split('&').map(|p| p.split('=').next().unwrap()).collect();
         assert_eq!(names, ["startDateTime", "endDateTime", "$select", "$orderby", "$top"]);
@@ -918,6 +963,56 @@ mod tests {
         assert_eq!(out[0].web.as_deref(), Some("https://outlook.office365.com/owa/?itemid=AAMkAGI1&exvsurl=1&path=/calendar/item"));
         assert!(out[1].web.is_none());
         assert!(out[2].web.is_none());
+    }
+
+    #[test]
+    fn the_event_address_is_built_from_the_id_and_encoded() {
+        assert_eq!(event_link("AAMkAGI1-x_y", None).as_deref(), Some("https://outlook.office.com/calendar/item/AAMkAGI1-x_y"));
+        assert_eq!(event_link("a/b+c=", None).as_deref(), Some("https://outlook.office.com/calendar/item/a%2Fb%2Bc%3D"));
+        assert!(web_link_allowed(&event_link("AAMk/x+y==", None).unwrap()));
+    }
+
+    #[test]
+    fn a_personal_account_link_picks_the_personal_host_and_a_hostile_one_does_not() {
+        let live = Some("https://outlook.live.com/owa/?itemid=zz&exvsurl=1&path=/calendar/item");
+        assert_eq!(event_link("AAMk/1=", live).as_deref(), Some("https://outlook.live.com/calendar/item/AAMk%2F1%3D"));
+        let work = Some("https://outlook.office365.com/owa/?itemid=zz");
+        assert_eq!(event_link("AAMk", work).as_deref(), Some("https://outlook.office.com/calendar/item/AAMk"));
+        for hostile in [
+            "https://evil.example/owa/?itemid=zz",
+            "https://outlook.live.com.evil.example/owa/",
+            "https://outlook.live.com@evil.example/owa/",
+            "http://outlook.live.com/owa/",
+            "https://outlook.live.com:8443/owa/",
+        ] {
+            assert_eq!(event_link("AAMk", Some(hostile)).as_deref(), Some("https://outlook.office.com/calendar/item/AAMk"), "{hostile}");
+        }
+    }
+
+    #[test]
+    fn an_odd_or_long_event_id_is_refused() {
+        assert!(event_link("", None).is_none());
+        assert!(event_link(&"a".repeat(401), None).is_none());
+        assert!(event_link(&"a".repeat(400), None).is_some());
+        for bad in ["a b", "a?b", "a#b", "a%2Fb", "a\\b", "a\nb", "..", "a.b", "\u{e9}"] {
+            assert!(event_link(bad, None).is_none(), "should refuse {bad:?}");
+        }
+    }
+
+    #[test]
+    fn shaping_prefers_the_built_address_and_falls_back_to_the_web_link() {
+        let mut with_id = event("k", "2026-11-12T18:00:00.0000000", "4");
+        with_id["id"] = json!("AAMk/1=");
+        with_id["webLink"] = json!("https://outlook.office365.com/owa/?itemid=zz&exvsurl=1&path=/calendar/item");
+        let mut no_id = event("k", "2026-11-12T19:00:00.0000000", "5");
+        no_id["webLink"] = json!("https://outlook.office365.com/owa/?itemid=zz&exvsurl=1&path=/calendar/item");
+        let mut odd_id = event("k", "2026-11-12T20:00:00.0000000", "6");
+        odd_id["id"] = json!("a b");
+        odd_id["webLink"] = json!("https://evil.example/x");
+        let out = shape_events(&json!({ "value": [with_id, no_id, odd_id] }), "work");
+        assert_eq!(out[0].web.as_deref(), Some("https://outlook.office.com/calendar/item/AAMk%2F1%3D"));
+        assert_eq!(out[1].web.as_deref(), Some("https://outlook.office365.com/owa/?itemid=zz&exvsurl=1&path=/calendar/item"));
+        assert_eq!(out[2].web, None);
     }
 
     #[test]

@@ -232,8 +232,8 @@ function usage(mode: string): void {
 
 /**
  * Stand in for the weather fetch (the app calls `fetch` on the forecast service), so no
- * state ever depends on the network. `stale`: the first answer is good; shortly after it
- * lands the clock jumps 45 minutes, every later fetch fails, and the page is told it became
+ * state ever depends on the network. `stale`: answers are good until, shortly after the first
+ * one lands, the clock jumps 45 minutes, every later fetch fails, and the page is told it became
  * visible again, which makes the hook check its age and retry, exactly as it does after the
  * window was hidden for a while. The reading then shows its stale hint.
  */
@@ -264,9 +264,11 @@ function weather(mode: string): void {
   window.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input instanceof Request ? input.url : input);
     if (!url.includes('open-meteo')) return real(input, init);
-    if (mode === 'down' || (mode === 'stale' && answered)) throw new TypeError('network down');
+    // Stale: every fetch before the clock jump is answered. The dev build mounts the weather
+    // user twice (the first mount's answer is dropped), so "first fetch only" left no reading.
+    if (mode === 'down' || (mode === 'stale' && skew > 0)) throw new TypeError('network down');
+    if (mode === 'stale' && !answered) setTimeout(goStale, 800);
     answered = true;
-    if (mode === 'stale') setTimeout(goStale, 800);
     const t = now();
     const hours = Array.from({ length: 30 }, (_, i) => t + (i - 3) * 3_600_000);
     const temp = mode === 'cold' ? 24 : 58;
