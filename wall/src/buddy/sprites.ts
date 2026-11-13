@@ -42,8 +42,19 @@ export const SPRITES: Readonly<Record<Pose, readonly string[]>> = {
     'wwwwwwwwwwwwwwwfff',
     '.wwwwwwwwwwwwwww..',
   ],
-  // Eyes down, for the tiny book.
-  read: [...IDLE.slice(0, 4), 'wwwwwwwwwwwwwwffff', 'wwwwwwwwwwwwwwfeff', ...IDLE.slice(6)],
+  // Head lowered, eyes down, for the tiny book.
+  read: [
+    '....wwwwwww.......',
+    '..wwwwwwwwwww.....',
+    '.wwwwwwwwwwwww....',
+    '.wwwwwwwwwwwwwpf..',
+    'wwwwwwwwwwwwwwffff',
+    'wwwwwwwwwwwwwwffff',
+    'wwwwwwwwwwwwwwfeff',
+    '.wwwwwwwwwwwwwfff.',
+    '.wwwwwwwwwwwww....',
+    ...IDLE.slice(9),
+  ],
   // Head up: the moon, the clock, the agents.
   look: [
     '....wwwwwww...pf..',
@@ -93,7 +104,7 @@ export const EAR: Readonly<Record<Pose, readonly [number, number]>> = {
   idle: [14, 2],
   walk: [14, 2],
   sleep: [14, 3],
-  read: [14, 2],
+  read: [14, 3],
   look: [14, 0],
   yawn: [14, 2],
   stretch: [14, 3],
@@ -118,7 +129,7 @@ export interface PropSprite {
 export const PROP_SPRITES: Readonly<Record<Prop, PropSprite>> = {
   book: { map: ['bBBb', 'bBBb', 'bbbb'], dx: 2, dy: 3, anchor: 'ear' },
   headphones: { map: ['.kkkk.', 'k....k', 'c....c', 'c....c'], dx: -1, dy: -2, anchor: 'ear' },
-  sunglasses: { map: ['ghgg'], dx: 0, dy: 2, anchor: 'ear' },
+  sunglasses: { map: ['ggghg'], dx: -1, dy: 2, anchor: 'ear' },
   umbrella: { map: ['..UUUUU..', '.uuuuuuu.', 'uuuuuuuuu', '....i....', '....i....', '....i....', '....ii...'], dx: -5, dy: -4, anchor: 'ear' },
   scarf: { map: ['rRrRr', '.r...', '.R...'], dx: -2, dy: 4, anchor: 'ear' },
   nightcap: { map: ['....nN', '..nnn.', '.nnnn.'], dx: -1, dy: -3, anchor: 'ear' },
@@ -148,8 +159,8 @@ export const PROP_COLORS: Readonly<Record<string, string>> = {
   B: '#f6f2ff',
   k: '#35e6ea',
   c: '#ff3d9a',
-  g: '#ff3d9a',
-  h: '#f6f2ff',
+  g: '#05030f',
+  h: '#35e6ea',
   u: '#ff3d9a',
   U: '#ff7ab8',
   i: '#8f86c9',
