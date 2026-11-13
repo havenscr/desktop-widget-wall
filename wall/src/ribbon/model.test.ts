@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { chipLayout, chips, focusBars, needleTip, hourLabels, hourText, needle, RIBBON_WIDTH, RX, shortTime, skyGradient, sunLabels, ticks, wallHour } from './model';
+import { allDayChips, allDayText, allDayWidth, chipLayout, chips, focusBars, isAllDay, isLate, needleTip, hourLabels, hourText, needle, RIBBON_WIDTH, RX, shortTime, skyGradient, sunLabels, ticks, wallHour } from './model';
 import { sunTimes } from './sun';
 import { useFixedClock, usePacificTime } from './testZone';
 
@@ -119,7 +119,7 @@ it('draws the part of a focus session after midnight, from the ribbon start', ()
   expect(late[0].x + late[0].width).toBeCloseTo(RX(23 + 59 / 60));
 });
 
-it('puts each overlapping event in the first free lane, and a third concurrent one into a "+N" chip', () => {
+it('puts each overlapping event in the first free lane of its group, stacked', () => {
   const now = t('08:00');
   const { shown, more } = chipLayout(
     chips(
@@ -132,44 +132,96 @@ it('puts each overlapping event in the first free lane, and a third concurrent o
       now,
     ),
   );
-  expect(shown.map((c) => [c.key, c.lane])).toEqual([
-    ['a', 0],
-    ['b', 1],
-    ['e', 1],
-    ['c', 0],
+  expect(shown.map((c) => [c.key, c.lane, c.lanes])).toEqual([
+    ['a', 0, 2],
+    ['b', 1, 2],
+    ['e', 1, 2],
+    // Lunch starts exactly when the workshop ends: its own group, the full row.
+    ['c', 0, 1],
   ]);
   expect(more).toEqual([]);
 });
 
-const overlapFree = (shown: { x: number; width: number; lane: number }[], more: { x: number; width: number; lane: number }[]) => {
-  const boxes = [...shown, ...more];
+/** Lane boxes as the ribbon draws them: a "+N" chip and a single lane take the full row. */
+const rowBox = (c: { x: number; lane?: number; lanes?: number }) => {
+  const lanes = c.lanes ?? 1;
+  if (lanes <= 1) return { top: 33, bottom: 63 };
+  const h = (34 - (lanes - 1) * 2) / lanes;
+  const top = 31 + (c.lane ?? 0) * (h + 2);
+  return { top, bottom: top + h };
+};
+
+const overlapFree = (shown: { x: number; width: number; lane: number; lanes: number }[], more: { x: number; width: number }[]) => {
+  const boxes = [...shown, ...more].map((b) => ({ ...rowBox(b), x: b.x, w: b.width }));
   for (let i = 0; i < boxes.length; i++)
     for (let j = i + 1; j < boxes.length; j++) {
       const p = boxes[i];
       const q = boxes[j];
-      if (p.lane === q.lane) expect(p.x + p.width <= q.x || q.x + q.width <= p.x).toBe(true);
+      const apartX = p.x + p.w <= q.x || q.x + q.w <= p.x;
+      const apartY = p.bottom <= q.top || q.bottom <= p.top;
+      expect(apartX || apartY).toBe(true);
     }
 };
 
-it('three events at the same time: two lanes and a "+1" chip that lists the third', () => {
+it('a partial overlap stacks the two in lanes of reduced height, never one over the other', () => {
+  const now = t('08:00');
+  const { shown, more } = chipLayout(
+    chips(
+      [
+        { key: 'a', title: 'Haircut', start: iso('12:45'), end: iso('13:45') },
+        { key: 'b', title: 'Gym session', start: iso('13:30'), end: iso('15:30') },
+        { key: 'c', title: 'Reserved time', start: iso('15:30'), end: iso('17:00') },
+      ],
+      now,
+    ),
+  );
+  expect(shown.map((c) => [c.key, c.lane, c.lanes, c.narrow])).toEqual([
+    ['a', 0, 2, false],
+    ['b', 1, 2, false],
+    ['c', 0, 1, false],
+  ]);
+  expect(more).toEqual([]);
+  overlapFree(shown, more);
+});
+
+it('three at once stack in three thin lanes with the titles in the hover', () => {
   const now = t('08:00');
   const all = chips(
     [
       { key: 'a', title: 'One', start: iso('10:00'), end: iso('11:00') },
       { key: 'b', title: 'Two', start: iso('10:00'), end: iso('11:00') },
-      { key: 'c', title: 'Three', start: iso('10:00'), end: iso('11:00') },
+      { key: 'c', title: 'Three', start: iso('10:30'), end: iso('11:30') },
     ],
     now,
   );
   const { shown, more } = chipLayout(all);
-  // The "+N" chip sits in the second lane, so the second-lane chip under it joins its list.
-  expect(shown.map((c) => c.key)).toEqual(['a']);
-  expect(more).toHaveLength(1);
-  expect(more[0].items.map((c) => c.key).sort()).toEqual(['b', 'c']);
+  expect(shown.map((c) => [c.key, c.lane, c.lanes, c.narrow])).toEqual([
+    ['a', 0, 3, true],
+    ['b', 1, 3, true],
+    ['c', 2, 3, true],
+  ]);
+  expect(more).toEqual([]);
   overlapFree(shown, more);
 });
 
-it('five events at once fold into one "+N" chip, and later ones lay out normally', () => {
+it('an event that ends exactly when the next begins does not overlap it', () => {
+  const now = t('08:00');
+  const { shown } = chipLayout(
+    chips(
+      [
+        { key: 'a', title: 'First', start: iso('09:00'), end: iso('10:00') },
+        { key: 'b', title: 'Second', start: iso('10:00'), end: iso('11:00') },
+      ],
+      now,
+    ),
+  );
+  expect(shown.map((c) => [c.key, c.lane, c.lanes])).toEqual([
+    ['a', 0, 1],
+    ['b', 0, 1],
+  ]);
+});
+
+it('five events at once fold into one full-height "+N" chip, and later ones lay out normally', () => {
   const now = t('08:00');
   const all = chips(
     [
@@ -179,10 +231,87 @@ it('five events at once fold into one "+N" chip, and later ones lay out normally
     now,
   );
   const { shown, more } = chipLayout(all);
-  expect(shown.map((c) => c.key)).toEqual(['a', 'f']);
+  expect(shown.map((c) => c.key)).toEqual(['f']);
   expect(more).toHaveLength(1);
-  expect(more[0].items).toHaveLength(4);
+  expect(more[0].items.map((c) => c.key)).toEqual(['a', 'b', 'c', 'd', 'e']);
   overlapFree(shown, more);
+});
+
+it('four at once: the "+N" chip takes the ones that do not fit and any chip under it', () => {
+  const now = t('08:00');
+  const all = chips(
+    [
+      { key: 'a', title: 'Long workshop', start: iso('09:00'), end: iso('13:00') },
+      { key: 'b', title: 'Call', start: iso('10:00'), end: iso('12:00') },
+      { key: 'c', title: 'Review', start: iso('11:00'), end: iso('12:30') },
+      { key: 'd', title: 'Sync', start: iso('11:30'), end: iso('12:00') },
+    ],
+    now,
+  );
+  const { shown, more } = chipLayout(all);
+  overlapFree(shown, more);
+  const listed = [...shown.map((c) => c.key), ...more.flatMap((m) => m.items.map((c) => c.key))].sort();
+  expect(listed).toEqual(['a', 'b', 'c', 'd']);
+  expect(more.length).toBeGreaterThan(0);
+  expect(shown.every((c) => c.lanes <= 2)).toBe(true);
+});
+
+it('folds all-day events into one chip at the row start and frees the lane for timed events', () => {
+  const now = t('22:30');
+  const events = [
+    { key: 'all', title: 'Company offsite', start: new Date(2026, 10, 11, 0, 0).toISOString(), end: new Date(2026, 10, 12, 0, 0).toISOString() },
+    { key: 'a', title: 'Quarterly planning', start: iso('19:00'), end: iso('20:00') },
+  ];
+  expect(chips(events, now).map((c) => c.key)).toEqual(['a']);
+  expect(allDayChips(events, now).map((c) => c.key)).toEqual(['all']);
+  expect(allDayText(1)).toBe('1 all day');
+  const { shown, allDay } = chipLayout(chips(events, now), allDayWidth(1));
+  expect(allDay).toEqual({ x: RX(6), width: allDayWidth(1), lane: 0, lanes: 1 });
+  expect(shown.map((c) => [c.key, c.lane, c.lanes])).toEqual([['a', 0, 1]]);
+  // A multi-day event counts as all day too; yesterday's does not show.
+  expect(isAllDay(Date.parse(iso('09:00')), Date.parse(iso('09:00')) + 3 * 86_400_000)).toBe(true);
+  expect(allDayChips([{ key: 'y', title: 'Yesterday', start: new Date(2026, 10, 10).toISOString(), end: new Date(2026, 10, 11).toISOString() }], now)).toEqual([]);
+});
+
+it('a meeting at 6 AM shares the all-day chip group in a stacked lane', () => {
+  const now = t('08:00');
+  const { shown, allDay } = chipLayout(chips([{ key: 'early', title: 'Early call', start: iso('06:00'), end: iso('07:00') }], now), allDayWidth(1));
+  expect(allDay).toEqual({ x: RX(6), width: allDayWidth(1), lane: 0, lanes: 2 });
+  expect(shown.map((c) => [c.key, c.lane, c.lanes])).toEqual([['early', 1, 2]]);
+});
+
+it('writes a narrow chip title beside it when there is room, else leaves it to the hover', () => {
+  const now = t('08:00');
+  const roomy = chipLayout(
+    chips(
+      [
+        { key: 's', title: 'Standup', start: iso('09:00'), end: iso('09:15') },
+        { key: 'r', title: 'Design review', start: iso('10:00'), end: iso('11:00') },
+      ],
+      now,
+    ),
+  );
+  const s = roomy.shown.find((c) => c.key === 's')!;
+  expect(s.narrow).toBe(true);
+  expect(s.beside).toBeGreaterThan(60);
+  expect(s.x + s.width + 6 + s.beside!).toBeLessThanOrEqual(RX(10));
+  const tight = chipLayout(
+    chips(
+      [
+        { key: 's', title: 'Standup', start: iso('09:00'), end: iso('09:15') },
+        { key: 'r', title: 'Design review', start: iso('09:20'), end: iso('11:00') },
+      ],
+      now,
+    ),
+  );
+  expect(tight.shown.find((c) => c.key === 's')!.beside).toBeNull();
+});
+
+it('draws the agent bars and focus line dimmed only after 9 PM', () => {
+  expect(isLate(t('20:59'))).toBe(false);
+  expect(isLate(t('21:00'))).toBe(true);
+  expect(isLate(t('23:30'))).toBe(true);
+  expect(isLate(t('08:00'))).toBe(false);
 });
 
 it('the needle counts down to the next meeting, names one in progress, or says none are left', () => {
