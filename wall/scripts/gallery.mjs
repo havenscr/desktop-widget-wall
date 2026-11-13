@@ -280,6 +280,20 @@ add('unwind', 'unwind: hide screen hover', url('unwind', TYPICAL_AT), true, 'hov
 add('unwind', 'unwind: hide screen note while hovered', url('unwind', TYPICAL_AT, 'hide=fail'), true, ['.screens-off', 'hover:.screens-off']);
 add('unwind', 'unwind: hide screen note while focused', url('unwind', TYPICAL_AT, 'hide=fail'), true, ['.screens-off', 'focus:.screens-off']);
 
+// unwind listen: the cover on top with its controls in the sky, Up next under the toggles, the
+// Spotify card in the upper right (its switch, covers, a hover, a playlist's songs) and its hard states.
+state('unwind', 'listen: playing', 'audio=demo', TIMES.night);
+state('unwind', 'listen: nothing playing', 'media=none', TIMES.night);
+add('unwind', 'listen: youtube music', url('unwind', TIMES.night, 'audio=demo'), true, '.sp-switch button:nth-child(2)');
+add('unwind', 'listen: songs of a playlist', url('unwind', TIMES.night, 'audio=demo'), true, '.sp-row .sp-open');
+add('unwind', 'listen: hover on a playlist', url('unwind', TIMES.night, 'audio=demo'), true, 'hover:.sp-row .sp-open');
+state('unwind', 'listen: signed out', 'spotify=signedout', TIMES.night);
+state('unwind', 'listen: spotify down', 'spotify=down', TIMES.night);
+state('unwind', 'listen: spotify not set up', 'spotify=off', TIMES.night);
+state('unwind', 'listen: heavy library', 'spotify=heavy', TIMES.night);
+add('unwind', 'listen: heavy playlist songs', url('unwind', TIMES.night, 'spotify=heavy'), true, '.sp-row .sp-open');
+state('unwind', 'listen: long names', 'long=1&media=long&spotify=heavy', TIMES.night);
+
 /**
  * What each state must show, so a knob that silently stops working fails the run:
  * [screen, state name (prefix; exact when the 4th item is true), what to find]. "What to find" is
@@ -365,7 +379,7 @@ const EXPECT = [
   ['home', 'chore ticked', ['Done.', 'Undo']],
   // Unwind
   ['unwind', 'sparse', ['Nothing playing', 'Quiet']],
-  ['unwind', 'heavy', ['An Extremely Long Song Title', 'Away For The Weekend']],
+  ['unwind', 'heavy', ['An Extremely Long Song Title', '!Away For The Weekend']],
   ['unwind', 'status chips, nothing waiting', ['2 agents still running', 'No agent needs you']],
   ['unwind', 'status chips, sessions waiting', 'One thing needs you.'],
   ['unwind', 'status chips, none running', ['No agent needs you', '!still running']],
@@ -374,12 +388,12 @@ const EXPECT = [
   ['unwind', 'music paused', '1:03'],
   ['unwind', 'long track', 'An Extremely Long Song Title'],
   ['unwind', 'broken: media unavailable', 'Nothing playing'],
-  ['unwind', 'nine moods, long labels', ['More', '!Away For The Weekend']],
+  ['unwind', 'nine moods, long labels', ['Up next', '!Away For The Weekend']],
   ['unwind', 'broken: calendar not set up', '!First thing'],
   ['unwind', 'broken: calendar read fails', '!First thing'],
   ['unwind', 'broken: task app down', 'First thing: Planning check-in at 9:30'],
   ['unwind', 'broken: weather down', ['Wednesday morning', '!58°']],
-  ['unwind', 'typical', ['Tokyo Burnout', 'Lights']],
+  ['unwind', 'typical', ['Tokyo Burnout', 'Which player the wall follows', '!Lights']],
   ['unwind', 'network alarm', '4 network alerts.'],
   ['unwind', 'watch: nothing saved', ['Nothing on', 'Paste a YouTube or Twitch link', '!saved']],
   ['unwind', 'watch: three saved, nothing on', ['Nothing on', 'Play Night drive mix', '3 saved']],
@@ -439,6 +453,18 @@ const EXPECT = [
   ['work', 'keys style: hover and pressed', 'windows arranged'],
   ['work', 'keys style: pressed', 'windows arranged'],
   ['unwind', 'unwind: hide screen note', ['Could not watch input', 'Hide screen']],
+  // unwind listen
+  ['unwind', 'listen: playing', ['Tokyo Burnout', 'Up next', 'Lantern Song 2', 'Road Trip 1', 'Which player the wall follows']],
+  ['unwind', 'listen: nothing playing', ['Nothing playing', 'Road Trip 1']],
+  ['unwind', 'listen: youtube music', ['Open YouTube Music', 'Browsing happens in its own window', '!Up next']],
+  ['unwind', 'listen: songs of a playlist', ['Back', 'Play all', 'Lantern Song 9', '58 songs']],
+  ['unwind', 'listen: hover on a playlist', ['Click for its songs, or play it all', 'Road Trip 1']],
+  ['unwind', 'listen: signed out', ['Sign in to Spotify in Tools to browse here.', 'Sign in to Spotify in Tools to see what is next']],
+  ['unwind', 'listen: spotify down', ['Spotify is not answering right now.', '!Up next']],
+  ['unwind', 'listen: spotify not set up', ['Spotify is not set up on this wall', 'not set up', '!Up next']],
+  ['unwind', 'listen: heavy library', ['Road Trip 50', 'Up next']],
+  ['unwind', 'listen: heavy playlist songs', ['2,000 songs', 'Lantern Song 50']],
+  ['unwind', 'listen: long names', ['An Extremely Long Song Title', 'Road Trip 1']],
   ['unwind', 'unwind: hide screen', 'Hide screen'],
 ];
 

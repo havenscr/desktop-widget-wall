@@ -59,12 +59,13 @@ function VideoCorner() {
 }
 
 /**
- * Now playing at concept size (`f_unwind` centre): 224 px art, the source app in pink
- * capitals, a 64 px title, the artist, a 520 px progress bar with times, then the
- * transport with the app's volume. When nothing plays it keeps the same footprint: the
- * last track this wall played with "Play again" (or "Open Spotify to play again" when no
- * media session exists, since play and pause need one), or, before anything has played, a calm
- * line over the transport. Never a large empty tile.
+ * Now playing as the owner chose it (7A, "cover on top, controls in the sky"): the 224 px
+ * cover at the top of the centre, the source app in pink capitals, a 64 px title and the
+ * artist beside it, then one row right under them: previous, play, next, the position with
+ * its times, and the app's volume. Everything ends above the dancing lines. When nothing
+ * plays it keeps the same footprint: the last track this wall played with "Play again" in
+ * the row (or "Open Spotify to play again" when no media session exists, since play and
+ * pause need one), or, before anything has played, a calm line over dim buttons.
  */
 export function Player() {
   const { info, art, anchor, command } = useNowPlaying();
@@ -87,6 +88,37 @@ export function Player() {
         : null
     : null;
 
+  const progressBar = progress ? (
+    <div className="u-progress">
+      <span className="u-t">{formatTime(progress.position)}</span>
+      <div
+        className="u-bar"
+        role="progressbar"
+        aria-label="Track position"
+        aria-valuemin={0}
+        aria-valuemax={Math.round(progress.duration)}
+        aria-valuenow={Math.round(progress.position)}
+      >
+        <i style={{ width: `${pct.toFixed(2)}%` }} />
+      </div>
+      <span className="u-t">{formatTime(progress.duration)}</span>
+    </div>
+  ) : null;
+
+  // The idle row's own words beside the buttons: Play again, or why play cannot start here.
+  const again = idle ? (
+    hasSession ? (
+      <button type="button" className="u-again" onClick={() => command('media_play_pause')}>
+        <IconPlayerPlayFilled size={22} aria-hidden="true" />
+        Play again
+      </button>
+    ) : (
+      <div className="u-again-off">{idle.source ? `Open ${idle.source} to play again` : 'Open the player to play again'}</div>
+    )
+  ) : quiet ? (
+    <div className="u-again-off">Play picks up where you stopped</div>
+  ) : null;
+
   const transport = (
     <div className="u-transport">
       <button type="button" className="u-rd" aria-label="Previous" disabled={quiet} onClick={() => command('media_previous')}>
@@ -104,6 +136,8 @@ export function Player() {
       <button type="button" className="u-rd" aria-label="Next" disabled={quiet} onClick={() => command('media_next')}>
         <IconPlayerSkipForwardFilled size={30} aria-hidden="true" />
       </button>
+      {progressBar}
+      {again}
       {!quiet && <Volume source={source} label={sourceLabel} />}
     </div>
   );
@@ -133,17 +167,9 @@ export function Player() {
             <span className="u-k">{idle.source ? `Last played on ${idle.source}` : 'Last played'}</span>
             <div className="u-np u-was u-ell">{idle.title}</div>
             <div className="u-artist u-ell">{idle.artist}</div>
-            {hasSession ? (
-              <button type="button" className="u-again" onClick={() => command('media_play_pause')}>
-                <IconPlayerPlayFilled size={24} aria-hidden="true" />
-                Play again
-              </button>
-            ) : (
-              <div className="u-again-off">{idle.source ? `Open ${idle.source} to play again` : 'Open the player to play again'}</div>
-            )}
+            {transport}
           </div>
         </div>
-        {transport}
       </div>
     );
   }
@@ -159,27 +185,9 @@ export function Player() {
           {sourceLabel ? <span className="u-k u-src">{sourceLabel}</span> : null}
           <div className="u-np u-ell">{info?.title || 'Unknown title'}</div>
           <div className="u-artist u-ell">{info?.artist || info?.album || ''}</div>
-          {progress && (
-            <div className="u-progress">
-              <div
-                className="u-bar"
-                role="progressbar"
-                aria-label="Track position"
-                aria-valuemin={0}
-                aria-valuemax={Math.round(progress.duration)}
-                aria-valuenow={Math.round(progress.position)}
-              >
-                <i style={{ width: `${pct.toFixed(2)}%` }} />
-              </div>
-              <div className="u-times">
-                <span>{formatTime(progress.position)}</span>
-                <span>{formatTime(progress.duration)}</span>
-              </div>
-            </div>
-          )}
+          {transport}
         </div>
       </div>
-      {transport}
     </div>
   );
 }

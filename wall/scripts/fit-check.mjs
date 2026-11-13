@@ -23,7 +23,7 @@
 // CI does not run this; run it by hand before a layout change is handed over.
 //
 //   WALL_CHROME=/path/to/chrome-or-headless-shell npm --prefix wall run fit-check
-//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, header, deck, tiles, picker, chips, heading, zenhint, sky, floor, sun, tools, toolsnames, meetfill, meetempty, fy-height, key-edge, hide-pill, hide-note)
+//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, header, deck, tiles, picker, chips, heading, zenhint, sky, floor, sun, tools, toolsnames, meetfill, meetempty, fy-height, key-edge, hide-pill, hide-note, listen-player, listen-card, listen-slot, listen-next)
 //   npm --prefix wall run fit-check -- --self-test
 //
 // WALL_CHROME (or the first argument that is not a flag) is a Chromium or
@@ -84,6 +84,11 @@ const EXPECT = {
   lwring: /^ *FAIL left wing: focus outline on Choose a focus length/m,
   lwtemp: /^ *FAIL left wing: TEMP header /m,
   lwround: /^ *FAIL left wing: round control /m,
+  // unwind listen
+  'listen-player': /^ *FAIL listen: the player ends at y \d+/m,
+  'listen-card': /^ *FAIL listen: the Spotify card /m,
+  'listen-slot': /^ *FAIL listen: .* enters the office lights slot/m,
+  'listen-next': /^ *FAIL listen: Up next /m,
 };
 const OVERFLOWS = {
   left: '.work .left-wing { transform: translateX(-200px); }',
@@ -126,6 +131,12 @@ const OVERFLOWS = {
   lwring: '.work .left-wing .focus-mini-ring:focus-visible { outline: none !important; }',
   lwtemp: '.work .left-wing .mc-hd span:last-child { transform: translateX(14px); }',
   lwround: '.work .wl .rd, .work .wl .focus-mini-ring, .work .wl .ring { border-radius: 0 !important; }',
+  // unwind listen: the player pushed down into the lines, the card grown past the foot, the status
+  // line run into the office lights slot, Up next rows grown past the horizon.
+  'listen-player': '.u-listen { margin-top: 200px; }',
+  'listen-card': '.sp-card { height: 900px !important; }',
+  'listen-slot': '.u-line { margin-left: 1960px; width: 600px; }',
+  'listen-next': '.u-next-row { height: 80px !important; }',
 };
 
 if (flag('self-test')) {
@@ -159,8 +170,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const WINGS = ['.work .left-wing', '.work .right-wing'];
 const LANES = ['.work .centre', '.work .centre .lane', '.work .centre .shelf'];
 const MEET = ['.meet .panel'];
-const UNWIND = ['.u-room', '.u-chips', '.u-line'];
-const WATCH_IDLE = ['.u-room', '.w-card', '.w-card .u-card-head', '.w-field', '.w-now'];
+const WATCH_IDLE = ['.w-card', '.w-card .u-card-head', '.w-field', '.w-now'];
 const WATCH_PLAYING = [...WATCH_IDLE, '.w-ctl', '.w-screen', '.w-under', '.w-open'];
 // Named controls that must still take the pointer with video playing: the rail, the tabs and
 // the gear, the transport, the list's first row and its field, a Room chip, the status chips,
@@ -168,7 +178,7 @@ const WATCH_PLAYING = [...WATCH_IDLE, '.w-ctl', '.w-screen', '.w-under', '.w-ope
 // Below the horizon, under the whole sky's floor wash: the Tomorrow card, the status line's
 // chips and Screens off (Unwind has no timeline strip).
 const FLOOR_HITS = ['.u-tomorrow', '.u-line .u-act', '.screens-off'];
-const SKY_HITS = ['.rail .rb', '.u-tab', '.w-gear', '.w-ctl .u-rd', '.w-play', '.w-mini', '.w-paste', '.u-chip', '.u-line .u-act', '.screens-off', '.w-open', '.watt-hit-part'];
+const SKY_HITS = ['.rail .rb', '.u-tab', '.w-gear', '.w-ctl .u-rd', '.w-play', '.w-mini', '.w-paste', '.u-line .u-act', '.screens-off', '.w-open', '.watt-hit-part'];
 const DREAM = ['.dream-clock', '.dream-date', '.dream-card', '.dream-status', '.dream-hint'];
 // With more than three sessions the card list scrolls inside the centre: the three cards in
 // view, the header and the shelf must fit; the list itself is meant to scroll.
@@ -205,8 +215,14 @@ const QUIET = [
   { name: 'Meet, nothing scheduled', agents: '3', go: 'meet', live: true, extra: '&meet=none', checks: MEET },
   { name: 'Meet, calendar not set up', agents: '3', go: 'meet', live: true, extra: '&meet=off', checks: MEET },
   { name: 'Meet, first read fails', agents: '3', go: 'meet', live: true, extra: '&meet=failing', checks: MEET },
-  // Unwind with nine moods of long names: the Room list stays within two rows.
-  { name: 'Unwind, nine long moods', agents: '3', hz: 'unwind', moods: 'nine', maxRows: 2, extra: '', checks: UNWIND },
+  // unwind listen: the player clear of the lines, the Spotify card in the upper right, Up next in the
+  // wing above the horizon, and nothing in the office lights slot, in each Listen state.
+  { name: 'Listen, playing with the lines moving', agents: '3', hz: 'unwind', extra: '&audio=demo', checks: ['.u-listen', '.sp-card', '.u-next', '.u-line'], listen: true },
+  { name: 'Listen, nothing playing', agents: '3', hz: 'unwind', extra: '&media=none', checks: ['.u-listen', '.sp-card', '.u-line'], listen: true },
+  { name: 'Listen, heavy library and long names', agents: 'ask', hz: 'unwind', extra: '&spotify=heavy&media=long', checks: ['.u-listen', '.sp-card', '.u-next', '.u-line'], listen: true },
+  { name: 'Listen, the songs of a 2000 song playlist', agents: '3', hz: 'unwind', extra: '&spotify=heavy', click: '.sp-row .sp-open', checks: ['.sp-card', '.sp-songs', '.sp-shead'], listen: true },
+  { name: 'Listen, YouTube Music chosen', agents: '3', hz: 'unwind', extra: '', click: '.sp-switch button:nth-child(2)', checks: ['.u-listen', '.sp-card', '.sp-yt'], listen: true },
+  { name: 'Listen, Spotify signed out', agents: '3', hz: 'unwind', extra: '&spotify=signedout', checks: ['.u-listen', '.sp-card', '.sp-state', '.u-next'], listen: true },
   // Zen in the evening: the dim hint stays inside the controls' column (the box the Start row sets).
   { name: 'Zen, evening hint under the controls', agents: '3', go: 'zen', at: '2026-11-11T20:15:00-08:00', extra: '', checks: ['.zen-bl', '.zen-bl .zen-dimhint'] },
   // Dream at night: helper answering, helper off; calendar read, unreadable, nothing tomorrow.
@@ -291,9 +307,9 @@ const VARIANTS = [
   { name: 'Keys style, For you with two plates', q: work('ask', '&keys=typical&hold=foryou&meet=none&net=calm'), checks: FOR_YOU, nowH: 'foryou' },
   { name: 'Keys style, For you with one plate', q: work('3', '&keys=typical&hold=foryou&meet=none'), checks: FOR_YOU, nowH: 'foryou' },
   // The Hide screen button grown under the pointer.
-  { name: 'Unwind, Hide screen grown', q: query({ hz: 'unwind', agents: '3', extra: '' }), checks: ['.u-room', '.screens-off'], click: 'hover:.screens-off', hide: true, viewportOnly: true },
+  { name: 'Unwind, Hide screen grown', q: query({ hz: 'unwind', agents: '3', extra: '' }), checks: ['.u-line', '.screens-off'], click: 'hover:.screens-off', hide: true, viewportOnly: true },
   // The failure note ("Could not watch input") showing while the pill is grown: the two never meet.
-  { name: 'Unwind, Hide screen grown with the failure note', q: query({ hz: 'unwind', agents: '3', extra: '&hide=fail' }), checks: ['.u-room', '.screens-off', '.screens-off-note'], click: '.screens-off then hover:.screens-off', hide: true, note: true, viewportOnly: true },
+  { name: 'Unwind, Hide screen grown with the failure note', q: query({ hz: 'unwind', agents: '3', extra: '&hide=fail' }), checks: ['.u-line', '.screens-off', '.screens-off-note'], click: '.screens-off then hover:.screens-off', hide: true, note: true, viewportOnly: true },
   { name: 'Home, Sound at its fullest: many moods, many speakers, long names, sleep timer', q: home('sonos=heavy&moods=many'), checks: [...HOME_CENTRE.filter((c) => !c.endsWith('mood-row')), ...SOUND_FULL] },
   { name: 'Home, typical: five moods, Sound playing', q: home('moods=five'), checks: [...HOME_CENTRE, ...SOUND_FULL] },
   { name: 'Home, one matching routine plus More: no blank cell in the quick-play row', q: home('sonos=few&moods=five'), checks: [...HOME_CENTRE, ...SOUND_FULL] },
@@ -418,6 +434,8 @@ try {
   // For each checked box: its scroll sizes, and how far it sticks out of its container and
   // of the viewport on each side (screen pixels, 0 when inside). Plus the page's own scroll.
   const measure = `<script>setTimeout(() => {
+    // unwind listen: measured at the end of the songs view's slide (virtual time draws no frames for it to run).
+    if (new URLSearchParams(location.search).get('listen')) { const st = document.createElement('style'); st.textContent = '.sp-songs { animation: none !important; }'; document.head.appendChild(st); }
     for (const click of (new URLSearchParams(location.search).get('click') || '').split(' then ').filter(Boolean)) {
     if (click && click.startsWith('ctx:')) document.querySelector(click.slice(4))?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
     else if (click && click.startsWith('hover:')) {
@@ -668,7 +686,44 @@ try {
     const noHit = new URLSearchParams(location.search).get('nohit');
     const grid = [];
     if (noHit) for (let y = 30; y < 720; y += 40) for (let x = 130; x < 2560; x += 80) { const h = document.elementFromPoint(x, y); if (h && h.closest(noHit)) grid.push(x + ',' + y); }
-    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, wattCard, header, deck, nowH, edges, hide, hits, grid, lw, toolsOut, meetOut });
+    // unwind listen: the player ends above y 300 and left of the card; the Spotify card stays in x 1740
+    // to 2540 and above y 510; Up next stays in the wing and above the horizon (y 505); nothing that
+    // draws (text, an image, a control) enters the office lights slot.
+    const listen = [];
+    if (new URLSearchParams(location.search).get('listen')) {
+      const card = document.querySelector('.sp-card')?.getBoundingClientRect();
+      const player = document.querySelector('.u-listen .u-player')?.getBoundingClientRect();
+      if (player && player.bottom > 300.5) listen.push('listen: the player ends at y ' + Math.round(player.bottom) + ', over the lines (300 at most)');
+      if (player && card && player.right > card.left - 0.5) listen.push('listen: the player reaches x ' + Math.round(player.right) + ', into the Spotify card at ' + Math.round(card.left));
+      if (!card) listen.push('listen: the Spotify card is not there');
+      else if (card.left < 1739.5 || card.right > 2540.5 || card.bottom > 510.5 || card.top < 0) listen.push('listen: the Spotify card is at x ' + Math.round(card.left) + ' to ' + Math.round(card.right) + ', y ' + Math.round(card.top) + ' to ' + Math.round(card.bottom) + ' (x 1740 to 2540, y 0 to 510)');
+      const next = document.querySelector('.u-next')?.getBoundingClientRect();
+      const wingBox = document.querySelector('.u-wing')?.getBoundingClientRect();
+      const rows = [...document.querySelectorAll('.u-next-row')].map((e) => e.getBoundingClientRect());
+      if (next && wingBox && (next.left < wingBox.left - 0.5 || next.right > wingBox.right + 0.5 || next.bottom > 505.5 || rows.some((r) => r.bottom > next.bottom + 0.5))) listen.push('listen: Up next runs from x ' + Math.round(next.left) + ' to ' + Math.round(next.right) + ', down to y ' + Math.round(Math.max(next.bottom, ...rows.map((r) => r.bottom))) + ' (inside the wing, above the horizon at 505)');
+      const slot = document.querySelector('[data-slot="office-lights"]');
+      if (!slot) listen.push('listen: the office lights slot is not there');
+      else {
+        const sr = slot.getBoundingClientRect();
+        if (slot.childNodes.length || getComputedStyle(slot).pointerEvents !== 'none') listen.push('listen: the office lights slot is not empty or takes the pointer');
+        const draws = (e) => ['IMG', 'svg', 'BUTTON', 'INPUT', 'CANVAS'].includes(e.tagName) || [...e.childNodes].some((c) => c.nodeType === 3 && c.textContent.trim());
+        // What shows of an element: its box cut by every ancestor that clips (a scrolled list hides its far rows).
+        const shown = (e) => {
+          let q = e.getBoundingClientRect();
+          let l = q.left, t = q.top, r = q.right, b = q.bottom;
+          for (let a = e.parentElement; a; a = a.parentElement) {
+            const cs = getComputedStyle(a);
+            if (cs.overflowX === 'visible' && cs.overflowY === 'visible') continue;
+            const c = a.getBoundingClientRect();
+            l = Math.max(l, c.left); t = Math.max(t, c.top); r = Math.min(r, c.right); b = Math.min(b, c.bottom);
+          }
+          return { left: l, top: t, right: r, bottom: b, width: r - l, height: b - t };
+        };
+        const inside = [...document.querySelectorAll('.stage *')].filter((e) => e !== slot && !e.closest('.u-corner') && !e.closest('.horizon-canvas') && e.tagName !== 'CANVAS' && draws(e)).filter((e) => { const q = shown(e); return q.width > 0 && q.height > 0 && hit(q, sr); });
+        for (const e of inside.slice(0, 3)) listen.push('listen: ' + (e.className?.baseVal ?? e.className ?? e.tagName) + ' "' + (e.textContent || '').trim().slice(0, 30) + '" enters the office lights slot');
+      }
+    }
+    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, wattCard, header, deck, nowH, edges, hide, hits, grid, lw, toolsOut, meetOut, listen });
     document.body.appendChild(pre);
   }, new URLSearchParams(location.search).get('card') ? 7000 : 3000);</script>`;
   const broken = overflow ? `<style>${OVERFLOWS[overflow]}</style>` : '';
@@ -694,13 +749,18 @@ try {
     floor: (v) => v.name.startsWith('Watch, whole sky playing'),
     sun: (v) => v.name === 'Watch, the sun playing',
     'hide-note': (v) => v.name === 'Unwind, Hide screen grown with the failure note',
+    // unwind listen
+    'listen-player': (v) => v.name === 'Listen, playing with the lines moving',
+    'listen-card': (v) => v.name === 'Listen, playing with the lines moving',
+    'listen-slot': (v) => v.name === 'Listen, playing with the lines moving',
+    'listen-next': (v) => v.name === 'Listen, playing with the lines moving',
   };
   const breakOn = BREAK_ON[overflow] ? VARIANTS.filter(BREAK_ON[overflow]) : VARIANTS.slice(0, 1);
   /** keys style: the Now row's height on each page that has one, compared after every state ran. */
   const nowHeights = [];
   for (const v of overflow ? breakOn : VARIANTS) {
     console.log(`${v.name} (${v.q}):`);
-    const url = `${pathToFileURL(page).href}${v.q}&checks=${encodeURIComponent(v.checks.join('|'))}${v.click ? `&click=${encodeURIComponent(v.click)}` : ''}${v.card ? '&card=1' : ''}${v.hits ? `&hits=${encodeURIComponent(v.hits.join('|'))}` : ''}${v.noHit ? `&nohit=${encodeURIComponent(v.noHit)}` : ''}`;
+    const url = `${pathToFileURL(page).href}${v.q}&checks=${encodeURIComponent(v.checks.join('|'))}${v.click ? `&click=${encodeURIComponent(v.click)}` : ''}${v.card ? '&card=1' : ''}${v.hits ? `&hits=${encodeURIComponent(v.hits.join('|'))}` : ''}${v.noHit ? `&nohit=${encodeURIComponent(v.noHit)}` : ''}${v.listen ? '&listen=1' : ''}`;
     const dom = execFileSync(
       chrome,
       // Headless Chromium keeps 87 px of the window for itself, so 807 gives a 2560 by 720 viewport.
@@ -713,7 +773,11 @@ try {
       process.exit(1);
     }
     const text = m[1].replaceAll('&quot;', '"').replaceAll('&amp;', '&');
-    const { res, page: doc, overlaps, cut, gaps, wattCard, header, deck, nowH, edges, hide, hits, grid, lw, toolsOut, meetOut } = JSON.parse(text);
+    const { res, page: doc, overlaps, cut, gaps, wattCard, header, deck, nowH, edges, hide, hits, grid, lw, toolsOut, meetOut, listen } = JSON.parse(text);
+    // unwind listen
+    for (const l of listen) console.log(`  FAIL ${l}`);
+    if (listen.length) failed = true;
+    else if (v.listen) console.log('  ok   listen: the player ends above y 300 left of the card, the card in x 1740 to 2540 above y 510, Up next in the wing above the horizon, the office lights slot empty');
     for (const t of [...toolsOut, ...meetOut]) console.log(`  FAIL ${t}`);
     if (toolsOut.length || meetOut.length) failed = true;
     else if (v.q.includes('tools=')) console.log('  ok   the drawer stays inside x 1700 to 2560 and y 0 to 720, clear of the rail, no cut text without a tooltip');
