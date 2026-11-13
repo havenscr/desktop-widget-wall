@@ -58,6 +58,7 @@ mod wall2_keys;
 mod display_watch;
 mod wall2_feeds;
 mod wall2_home;
+mod wall2_desk;
 mod wall2_meet;
 mod wall2_oauth;
 mod wall2_spotify;
@@ -3861,7 +3862,11 @@ pub fn run() {
             load_widget_config,
             wall2_spotify::wall2_spotify_tracks,
             wall2_spotify::wall2_spotify_queue,
-            wall2_spotify::wall2_spotify_playback
+            wall2_spotify::wall2_spotify_playback,
+            wall2_desk::wall2_desk_house,
+            wall2_desk::wall2_desk_rooms,
+            wall2_desk::wall2_desk_security,
+            wall2_desk::wall2_desk_clear_alerts
         ])
         .setup(|app| {
             #[cfg(windows)]
