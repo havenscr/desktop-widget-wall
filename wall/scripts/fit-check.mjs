@@ -9,6 +9,7 @@
 // - each checked box stays inside the viewport on all four sides;
 // - the document itself has no scroll overflow.
 // The centre is checked in each of its states (`?agents=`): three lanes with long titles,
+// twelve sessions (the three in view), two waiting, one failed, an older helper's answer,
 // one lane, no lane, and the fill when the helper is not set up. Exits non-zero on a
 // failure. CI does not run this; run it by hand before a layout change is handed over.
 //
@@ -84,8 +85,15 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 const WINGS = ['.work .left-wing', '.work .right-wing'];
 const LANES = ['.work .centre', '.work .centre .lane', '.work .centre .shelf'];
+// With more than three sessions the card list scrolls inside the centre: the three cards in
+// view, the header and the shelf must fit; the list itself is meant to scroll.
+const SCROLLED = ['.work .centre', '.work .centre .lanes-hd', '.work .centre .lanes-list > .lane:nth-child(-n+3)', '.work .centre .shelf'];
 const VARIANTS = [
   { name: 'three lanes, long titles', agents: '3', checks: [...WINGS, ...LANES] },
+  { name: 'twelve sessions, long titles', agents: '12', checks: SCROLLED },
+  { name: 'two waiting, one off the cards', agents: 'ask2', checks: [...LANES, '.work .centre .lanes-hd', '.work .centre .ask-btn'] },
+  { name: 'one failed', agents: 'failed', checks: LANES },
+  { name: 'older helper answer', agents: 'old', checks: [...LANES, '.work .centre .lanes-hd'] },
   { name: 'one lane', agents: '1', checks: LANES },
   { name: 'no lane', agents: '0', checks: [...LANES, '.work .centre .panel'] },
   { name: 'helper not set up', agents: 'off', checks: ['.work .centre', '.work .centre .panel', '.work .centre .centre-note'] },

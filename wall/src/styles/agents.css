@@ -99,9 +99,9 @@
   align-items: center;
   gap: 12px;
   min-width: 0;
-  height: 40px;
+  height: 36px;
   padding: 0 12px !important;
-  border-radius: 14px;
+  border-radius: 12px;
   white-space: nowrap;
 }
 .ask-btn:hover {
@@ -545,6 +545,15 @@
 }
 .rib .agent-row.stale {
   opacity: 0.4;
+}
+.rib .li-hit {
+  position: absolute;
+  left: 20px;
+  width: 28px;
+  height: 24px;
+  margin-top: -2px;
+  pointer-events: auto;
+  cursor: help;
 }
 .rib .sg-hit {
   position: absolute;

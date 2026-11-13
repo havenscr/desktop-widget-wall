@@ -291,9 +291,13 @@ The day ribbon (`wall/src/ribbon/`, `styles/ribbon.css`) is on Work, Home and Me
   every 5 minutes while visible, clipped to 6 AM to 12 AM. A chip is `past` once it
   has ended, `now` while the needle is inside it, and pink when the event is a
   livestream (`isLive`). An event that overlaps an earlier one goes in a second lane, 4 px
-  lower and a little shorter. A chip narrower than 44 px shows no title (it keeps a
-  tooltip and an accessible name). Meet "Not set up" leaves the row empty with no text;
-  any other failed read keeps the last good list.
+  lower and a little shorter. A chip narrower than 44 px shows no title (it keeps its
+  hover card and an accessible name). Hover on a chip shows its title, time and account;
+  a chip whose event Rust holds a web link for (`canOpen`) is a button that opens the
+  event in Outlook (`wall2_open_event`, see "Opening an event in Outlook" under Meet).
+  Calendar chips are rounded and carry words; the agent bars below are thin and wordless.
+  Meet "Not set up" leaves the row empty with no text; any other failed read keeps the
+  last good list.
 - **Focus bar** (Work and Meet): today's focus sessions up to now, from the focus store.
   Each start, pause, reset and finish updates `localStorage` key `wall2-focus-day`
   (`{ sessions: [{ start, end }] }`, epoch ms). A running session is saved with its
@@ -305,10 +309,16 @@ The day ribbon (`wall/src/ribbon/`, `styles/ribbon.css`) is on Work, Home and Me
   due at a time today, at that hour. The tasks come from `wall2_tasks_summary`: Work and
   Meet pass `notTag: "home"`, Home passes `tag: "home"`. They are read when the ribbon
   shows and every 2 minutes while visible. All-day and undated tasks get no mark. Not set
-  up or a failed read shows no marks. Agent segments come with the lanes, the house
-  schedule with the rooms.
+  up or a failed read shows no marks. A mark is a button that opens its task in the task
+  app (`wall2_open_task`); hover shows the title and due time. Agent bars come with the
+  lanes (see Agents), the house schedule with the rooms.
 - **Needle**: a white pill with the time, moved on each whole minute while visible.
-  Before 6 AM it stays at the left end and still shows the real time.
+  Before 6 AM it stays at the left end and still shows the real time. Hover on it counts
+  down to the next meeting today ("Next meeting in 1 h 36 m: Weekly planning"), names the
+  one in progress when none follows, or says "No more meetings today" after a good read.
+- **Hover cards** (`ui/HoverTip.tsx`): one small card at a time, drawn inside the stage
+  above what it explains (below when there is no room), after a 250 ms rest of the
+  pointer, gone at once when it leaves; keyboard focus shows it too.
 - **Dev**: the calendar comes from `src/bridge/devMocks/meet.ts`. A review still
   (`?hz=<place>&at=<ISO time>`, dev builds only) opens on that place, freezes the clock
   and ribbon at that time, puts the meet and task mocks' days on the review's date, and
@@ -805,7 +815,7 @@ The refresh token is kept in Windows Credential Manager (Windows Credentials, Ge
 `wall2_meet_day` returns today's and tomorrow's events for the day ribbon and Unwind's
 Tomorrow: from local midnight to the local midnight that ends tomorrow (found by local
 date, so a 23 or 25 hour day on a clock change is right), past events included, up to 40
-merged across both accounts, earliest first. The ribbon draws only today's. Each event has `key`, `accountId`, `title`, `start`, `end`, `canJoin` and
+merged across both accounts, earliest first. The ribbon draws only today's. Each event has `key`, `accountId`, `title`, `start`, `end`, `canJoin`, `canOpen` and
 `isLive`, with the same rules as the next-meetings read (no body, attendees or
 organizer; cancelled, declined and all-day events left out; the same invite on both
 accounts once; join links behind keys). `isLive` is true when the subject starts with
@@ -817,9 +827,13 @@ events to the day view (there is no "updated N min ago" copy here).
 
 Join opens only a Teams meeting link: `https` with no user name, password or port other than 443, host exactly `teams.microsoft.com` or `teams.live.com`, a path starting `/l/meetup-join/` or `/meet/`, and at most 2048 characters. Anything else (Zoom, Google Meet, a Safe Links wrapper, an unknown Teams format) shows no Join button. The link stays in Rust behind a key like `3-1`; the web view passes only the key, and Rust checks the rules again before opening it in the system browser. The Wall 2 capability has no opener permission.
 
+### Opening an event in Outlook
+
+The day read also selects Graph's `webLink` for each event. It stays in Rust behind the same day key (its own map, cleared with the day keys on every day read and dropped for an account at sign-out); the web view gets only `canOpen: true`. A ribbon chip with `canOpen` is a button: `wall2_open_event(key)` looks the link up, checks it again (`https`, no user name or password, no port other than 443, at most 4096 characters, host exactly `outlook.office.com`, `outlook.office365.com`, `outlook.live.com` or `outlook.cloud.microsoft`) and opens it with the default handler; an unknown key or a link that fails the check answers `gone`. Nothing about it is logged. Honest limit: the link opens Outlook on the web, or the new Outlook app when it takes such links; classic desktop Outlook cannot be opened at one event by a link.
+
 ### Refresh
 
-The list is read when Meet opens and every 5 minutes while Meet is the active place and the window is visible. The countdown ticks every 30 seconds from the last list. A failed read keeps the last list and shows "updated N min ago". When a read leaves an account unavailable, Meet reads again after 30 seconds, then after 60 seconds, then goes back to the 5 minute cadence; the fast retries stop when Meet is hidden, and Try again does not use them up. The calendar read asks for at most 50 events in the next 24 hours and ignores paging (50 is plenty for a day). It selects only the subject, times, response, join link and invite id, never the body, attendees or organizer.
+The list is read when Meet opens and every 5 minutes while Meet is the active place and the window is visible. The countdown ticks every 30 seconds from the last list. A failed read keeps the last list and shows "updated N min ago". When a read leaves an account unavailable, Meet reads again after 30 seconds, then after 60 seconds, then goes back to the 5 minute cadence; the fast retries stop when Meet is hidden, and Try again does not use them up. The calendar read asks for at most 50 events in the next 24 hours and ignores paging (50 is plenty for a day). It selects only the subject, times, response, join link, invite id and web link, never the body, attendees or organizer.
 
 ### Why an account is unavailable
 
@@ -856,7 +870,7 @@ One request per account per read, `GET https://graph.microsoft.com/v1.0/me/calen
 | --- | --- |
 | `startDateTime` | UTC with a `Z`, for example `2026-11-12T17:00:00Z` (URL encoded) |
 | `endDateTime` | UTC with a `Z`: 24 hours later for the next-meetings read; the end of tomorrow for the day read (at most 49 hours) |
-| `$select` | `subject,start,end,isAllDay,isCancelled,responseStatus,onlineMeeting,onlineMeetingUrl,iCalUId` |
+| `$select` | `subject,start,end,isAllDay,isCancelled,responseStatus,onlineMeeting,onlineMeetingUrl,iCalUId,webLink` |
 | `$orderby` | `start/dateTime` |
 | `$top` | `50` |
 
@@ -897,11 +911,13 @@ Add one optional key to `feeds.json` (see "Setting it up: `feeds.json`"):
 ### Commands
 
 - `wall2_omni_summary` reads `GET /wall/v1/summary` and returns the typed summary: slots, up to three lanes, parked count, your move, Claude usage, the day's spans and the box `system` block. Titles and lines are capped at 80 characters, ids must match `^[a-f0-9-]{8,64}$` (a lane with any other id is dropped), the answer is read through a 64 KB cap and fails as soon as it is over, whole-number counts only (slot numbers kept as sent, so "5 of 4 slots" shows as it is, up to 99; elapsed time capped at 7 days, PR numbers positive), `usage.claude5hPct` may be null (the weekly figure still shows); every timestamp must be RFC 3339 with `Z` or an offset and at most 40 characters: a bad `now` fails the answer, a bad `since` or `weekResetsAt` becomes null, and a day span with a bad start or end, or an end before its start, is dropped, bidirectional and zero-width characters are dropped from text, and picture `options` are never passed on. A malformed or oversized answer, or any network failure, answers `failed`.
-- `wall2_open_session(id)` accepts only an id that matches the same pattern and appeared in the most recent successful summary, builds `omnigent://<omniLinkHost>/c/<id>` in Rust and opens it. Any other id is refused.
+- From helper 1.1.0 the summary also carries, all optional so an older helper's answer reads as before: `sessionsList` (every open parent or standalone session, up to 12, deduplicated, or null), per session `live` (`working` or `idle`), `idleS`, `kids` (`{ total, working }`, working never above total), `waitingSinceS`, `next` (up to 60 characters), `harness` (`claude`, `codex` or `other`; any other text is `other`) and `failed` (true only for `true`); `sessions` (a map of up to 40 ids to `{ title, stage, state }` for naming bars of sessions with no card); `yourMove.ids` (up to 5 waiting ids); `usage.accounts` (up to 6 `{ provider, label, weekPct, fiveHourPct, weekResetsAt }`, labels up to 24 characters) with `usage.claudeWeekPct` now nullable; and `slots.sessions`, `slots.working`, `slots.helpers`. The same id, text, number and time rules apply to each.
+- `wall2_open_session(id)` accepts only an id that matches the same pattern and appeared in the most recent successful summary (its lanes, session list, waiting ids, first waiting entry, names map or day log), builds `omnigent://<omniLinkHost>/c/<id>` in Rust and opens it. Any other id is refused.
+- `wall2_focus_omnigent(id?)` opens the session as `wall2_open_session` does (when an id is given), then brings the OmniGent desktop window forward on the primary monitor: it looks for a visible, unowned, titled top-level window of `omnigent.exe` every 100 ms for up to 2 seconds, restores it if minimised, moves it into the primary monitor's work area if it is on another monitor (keeping it maximised if it was), and sets it foreground. If no window turns up, nothing more happens. Windows only; elsewhere the second step does nothing.
 - `wall2_machines` returns `{ pc: { cpuPct, gpuPct, ramPct }, box: { cpuPct, gpuPct, ramPct, tempC } | null, boxStale }`. The PC numbers come from the same function as the old `get_system_stats` (which is unchanged). The PC numbers are returned at once on every call. The box numbers come from the helper summary's `system` block, refreshed in the background (one read at a time, at most one every 15 seconds, 3 second timeout), so a slow helper never delays the PC numbers and the first call after start shows `box: null`. After a failed read the last good box numbers stay with `boxStale: true` for up to 10 minutes, then `box` is `null`. `box` is also `null` when the helper is not set up. The numbers are kept per `omniHelperUrl`, so a changed address never shows the old host's numbers.
-- All three refuse any window but `wall2` (`forbidden`).
+- All of them refuse any window but `wall2` (`forbidden`).
 
-Nothing here logs, and nothing here takes a wake lock or sets an execution state. Browser dev (`npm run dev`) shows mock answers from `devMocks/omni.ts`; `?agents=3` (default), `2`, `1`, `0`, `ask`, `stale`, `off` (not set up) or `down` (not answering) picks the helper's state.
+Nothing here logs, and nothing here takes a wake lock or sets an execution state. Browser dev (`npm run dev`) shows mock answers from `devMocks/omni.ts`; `?agents=3` (default), `2`, `1`, `0`, `7`, `12` (sessions from a helper 1.1.0 answer, with three subscriptions, one near full), `ask` (one waiting), `ask2` (two waiting, one not on a card), `failed`, `old` (an older helper's answer), `stale`, `off` (not set up) or `down` (not answering) picks the helper's state.
 
 ### Agent lanes (Work centre)
 
@@ -909,13 +925,15 @@ Nothing here logs, and nothing here takes a wake lock or sets an execution state
 
 - **Data** (`useAgents.ts`): one poll of `wall2_omni_summary` shared by everything that reads it, on mount and every 15 seconds while the page is visible and at least one reader is mounted. Nothing while hidden. One read at a time; a read over 10 seconds counts as failed, and a lane or day span with a missing or wrongly typed field is dropped. `not-configured` or `invalid-config` is "not set up". A failed read keeps the last answer, marked stale, for up to 30 minutes; with no earlier answer, or when the helper's own `now` has not moved for 30 minutes of this PC's time (a frozen helper), it is "not reachable". The two machines' clocks are never compared: the first answer is always accepted, and the skew (the helper's `now` minus this PC's time when the answer arrived) is taken off every helper time before the ribbon draws it. When the page comes back after more than 15 seconds away, the kept answer is stale until the first new read returns.
 - **Stale is never live**: while the answer is stale the lanes dim with "updated N min ago", the ribbon's agent row dims and its open runs end at the last good answer's time, `useAgentStatusLine()` returns null and `useAgentsWaiting()` returns false.
-- **Header**: "Agents", the real slot numbers ("3 of 3 slots", "5 of 4 slots"), and on the right "Nothing needs you" with a cyan dot, or "One thing for you" with an amber dot and "then N more" when more wait. The count is the larger of the helper's your-move total and the lanes that are blocked or waiting. A stale answer adds "updated N min ago" (from the last fresh answer; "may be out of date" if there was none) and dims the lanes.
-- **Lanes** (`Lane.tsx`, `StageTrack.tsx`, `LaneRing.tsx`): up to three. Ring by stage (bolt while moving, "?" in amber while it waits, a mint check when ready or live), title and line on one line each with an ellipsis, plain text only, then Plan, Build, Review, PR, Live with the current stage glowing (amber while waiting, mint when ready), and the elapsed time. A lane waiting for an answer has an amber edge. With fewer than three lanes the lanes grow (to 150 px) and add a third line with the PR ("PR 553, checks running, draft").
-- **Tap**: a tap anywhere on a lane calls `wall2_open_session(id)` (Rust checks the id). When the summary says `linksAvailable: false` the lanes are not buttons.
+- **Header**: "Agents", the slot meter (a pip per slot up to six, filled for each working session, "+N" past the last pip) with wording that cannot read as a bug ("4 working, 6 open, 4 slots" from a newer helper, "9 running, 4 slots" from an older one), a hover with the breakdown (working, open, helpers) and a click that brings OmniGent forward; "3 of 7" when more sessions are open than fit (a click shows the next three); and on the right "Nothing needs you" with a cyan dot, or the button "One thing for you: <title>" in amber, which opens that session and brings OmniGent forward. "then N more" opens the next waiting session and the header names it ("Also for you: <title>"), wrapping back to the first. The waiting list is the helper's `yourMove.ids` (or its first entry) plus any waiting card; a title comes from the cards, the first entry or the names map. A stale answer adds "updated N min ago" (from the last fresh answer; "may be out of date" if there was none) and dims the cards.
+- **Cards** (`Lane.tsx`, `StageTrack.tsx`, `LaneRing.tsx`): parents and standalone sessions only (`sessionsList`, or the three lanes from an older helper), numbered 1 to N on the ring. Three are in view; more scroll with the wheel a card at a time (scroll snap), with a thin scrollbar that shows on hover; the page never moves. The title takes every free pixel (the last column is only as wide as the elapsed time, or the merge button when any card shows one, so the tracks stay lined up); hover shows the full title with the details. The second line says the most useful thing first: waiting on you (amber, "Waiting on you for 12 min: a thumbnail choice"), failed (red), what it is doing or its next step, then "Working now" or "Idle for 5 min"; after it, quietly, its helpers ("3 helpers, 2 working"), which assistant runs it and its PR with checks. A waiting card has an amber edge and an amber ring with "?"; a failed one a red edge and a warning sign. With fewer than three cards they grow (to 150 px) and the quiet facts move to a third line.
+- **Stage colours**: Plan, Build, Review, PR and Live each have a colour (`--st-plan` to `--st-live` in `tokens.css`, cool to warm; amber and mint are kept for "waits on you" and "done"), used on the track (done stages dimmed, the current one glowing), the card's ring and the ribbon bars' left notch. Hover on a track shows the legend. Each measures at least 5.3:1 on the lane glass and the ribbon on the morning, noon, sunset and night skies.
+- **Click**: a click anywhere on a card calls `wall2_focus_omnigent(id)`: the session opens and OmniGent comes forward. When the summary says `linksAvailable: false` the cards are not buttons.
 - **Hold to merge**: drawn on a lane whose PR is ready with checks passing (or none). Until the merge path lands (PR 30), a hold of 600 ms opens the chat; a short tap does nothing but show "Hold" for a moment. A move of more than 12 px, leaving the button or a pointer cancel ends the hold with no hint. Enter or Space on the button opens the chat. The button's events never reach the lane.
-- **Free slots**: with fewer than three lanes, slim quiet "Free slot" rows (58 px). With no lane at all, one slim "All three slots free" row and the focus timer with the weather, a little smaller.
-- **Shelf** (`Shelf.tsx`): "N parked, resting" (or "Nothing parked"), the Claude five hour figure when the helper has one, and "Claude this week" with a bar. The mail count waits for the mail scope (D7).
-- **Ribbon** (`ribbon/AgentRow.tsx`, Work only): the helper's day log on three thin rows under the calendar chips: running cyan, waiting amber, a finished run grey, done grey with a mint cap, up to now.
+- **Free slots**: with fewer than three cards, slim quiet "Free slot" rows (58 px). With no card at all, one slim "All three slots free" row and the focus timer with the weather, a little smaller.
+- **Shelf** (`Shelf.tsx`): "N parked, resting" (or "Nothing parked"; a click brings OmniGent forward) and usage: one small meter per subscription from a newer helper ("Claude 1", "Claude 2", "Codex"; "n/a" when the helper has no recent reading), with the five hour figure inline when there are two or fewer and the reset time on hover; the fullest turns amber above 90 percent. From an older helper, the Claude five hour figure and "Claude this week" with a bar, as before. The mail count waits for the mail scope (D7).
+- **Ribbon** (`ribbon/AgentRow.tsx`, Work only): one thin sub-row per session in the cards' order, then sessions that ended today (up to eight sub-rows, 8 px apart for three and thinner for more; past eight the rest share the last). The card's number sits at the left of each session's first bar and its stage colour is the bar's left notch. Running cyan, waiting on you amber, a finished run grey, done grey with a mint cap, up to now. Hover shows the session's name (from the names map for a session with no card, else "An earlier session"), stage and spans in plain words ("working 2:10 to 3:40, waiting on you since 3:40"); a click opens it in OmniGent. Hover on the row's icon gives the day in one line ("Today: 5 h 10 m of agent work across 4 sessions, 40 min waiting on you").
+- **Clock carry-over**: any change of the helper's `now` counts as movement, so a helper clock that is corrected backwards never reads as frozen.
 - **Hooks for other places**: `useAgentStatusLine()` gives one line ("Two agents still working, nothing needs you") or null when not set up, for Unwind and Dream; `useAgentsWaiting()` is true while something waits, for the amber dot over Watt. Both share the same poll.
 
 ## Content security policy

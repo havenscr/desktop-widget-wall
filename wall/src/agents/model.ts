@@ -579,3 +579,21 @@ export function sessionSpans(segs: readonly AgentSegment[], lane: string, max = 
   const hidden = mine.length - shown.length;
   return `${hidden > 0 ? `${hidden} earlier, then ` : ''}${shown.join(', ')}`;
 }
+
+/**
+ * The day in one line for the agent row's icon: "Today: 5 h 10 m of agent work across 4
+ * sessions, 40 min waiting on you". Work is every run (open or finished); waiting is every
+ * wait; time in review is not counted. Overlapping sessions add up.
+ */
+export function dayTotals(segs: readonly AgentSegment[]): string {
+  let work = 0;
+  let wait = 0;
+  for (const g of segs) {
+    if (g.kind === 'wait') wait += g.end - g.start;
+    else if (g.kind === 'run' || g.kind === 'past') work += g.end - g.start;
+  }
+  const sessions = new Set(segs.map((g) => g.lane)).size;
+  const parts = [`${work >= 30_000 ? elapsedText(work / 1000) : 'no time'} of agent work across ${sessions} session${sessions === 1 ? '' : 's'}`];
+  parts.push(wait >= 30_000 ? `${elapsedText(wait / 1000)} waiting on you` : 'no waiting on you');
+  return `Today: ${parts.join(', ')}`;
+}

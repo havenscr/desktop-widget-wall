@@ -29,6 +29,7 @@ import {
   sessionSpans,
   spanWords,
   MAX_AGENT_ROWS,
+  dayTotals,
 } from './model';
 import { lane, summary } from './fixtures';
 
@@ -291,4 +292,13 @@ describe('agent row sub-rows', () => {
     const g = (k: number) => ({ key: String(k), lane: 'x', row: 0, x: 0, width: 5, kind: 'run' as const, start: at(8 + k), end: at(8 + k, 30), open: false });
     expect(sessionSpans([g(0), g(1), g(2), g(3), g(4)], 'x')).toBe('1 earlier, then working 9:00 to 9:30, working 10:00 to 10:30, working 11:00 to 11:30, working 12:00 to 12:30');
   });
+});
+
+it('sums the day for the agent row icon', () => {
+  const at = (h: number, m = 0) => new Date(2026, 10, 11, h, m).getTime();
+  const g = (lane: string, kind: 'run' | 'wait' | 'past' | 'done', a: number, b: number) => ({ key: lane + a, lane, row: 0, x: 0, width: 5, kind, start: a, end: b, open: false });
+  expect(dayTotals([g('a', 'past', at(9), at(10, 30)), g('b', 'run', at(10), at(11)), g('a', 'wait', at(10, 30), at(10, 50)), g('c', 'done', at(8), at(9))])).toBe(
+    'Today: 2 h 30 m of agent work across 3 sessions, 20 min waiting on you',
+  );
+  expect(dayTotals([g('a', 'done', at(8), at(9))])).toBe('Today: no time of agent work across 1 session, no waiting on you');
 });

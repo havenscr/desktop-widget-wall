@@ -1,4 +1,4 @@
-import { agentOrder, agentRowSize, agentSegments, AGENT_BAND, cards, sessionSpans, STAGE_NAMES, type AgentSegment, type OmniSummary, type Stage } from '../agents/model';
+import { agentOrder, agentRowSize, agentSegments, AGENT_BAND, cards, dayTotals, sessionSpans, STAGE_NAMES, type AgentSegment, type OmniSummary, type Stage } from '../agents/model';
 import { focusSession } from '../agents/open';
 import { agentsStale, agentsUntil, useAgents } from '../agents/useAgents';
 import { tip } from '../ui/HoverTip';
@@ -86,6 +86,18 @@ export function AgentRow({ now, dueCount = null }: { now: number; dueCount?: num
   }
   return (
     <div className={`agent-row${stale ? ' stale' : ''}`} data-rows={rows} data-sessions={order.length}>
+      {/* The day in one line, on the row's icon. */}
+      <span
+        className="li-hit"
+        style={{ top: 70 }}
+        aria-label={dayTotals(segs)}
+        {...tip(() => (
+          <>
+            <span className="tip-t">Agent activity and tasks due today</span>
+            <span className="tip-s">{dayTotals(segs)}{stale ? ' (may be out of date)' : ''}</span>
+          </>
+        ))}
+      />
       {segs.map((g) => {
         const w = who(s, g.lane);
         const label = `${w.title}: ${sessionSpans(segs, g.lane)}`;
