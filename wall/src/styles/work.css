@@ -1142,22 +1142,22 @@
   }
 }
 
-/* The picker over the two key rows. */
+/* The picker covers exactly the two key rows (their box), never Next three. With little in the
+   rows the box grows to hold it, into the room that a short task list leaves. */
+.deck:has(.pk) {
+  min-height: 236px;
+}
 .pk {
   position: absolute;
   z-index: 40;
-  top: 0;
-  left: 0;
-  right: 0;
-  /* Starts at the top of the two rows and reaches down over the horizon, never up over Next three. */
-  height: 296px;
+  inset: 0;
   display: flex;
   flex-direction: column;
   gap: 6px;
   padding: 8px;
   border-radius: 16px;
   border: 1px solid rgba(53, 230, 234, 0.45);
-  background: rgba(14, 12, 34, 0.97);
+  background: rgb(14, 12, 34);
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
 }
 .pk-top {
@@ -1182,11 +1182,17 @@
   overflow-y: auto;
   overscroll-behavior: contain;
 }
+.pk-group {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  column-gap: 6px;
+}
 .pk-gh {
+  grid-column: 1 / -1;
   position: sticky;
   top: 0;
   padding: 6px 4px 2px;
-  background: rgba(14, 12, 34, 0.97);
+  background: rgb(14, 12, 34);
   color: var(--dim);
   font: 500 13px/1.2 var(--disp);
   letter-spacing: 0.08em;
@@ -1245,7 +1251,7 @@
 }
 .pk-reset {
   flex: none;
-  height: 36px;
+  height: 32px;
   border-radius: 10px;
   border: 1px solid var(--edge);
   color: var(--dim);

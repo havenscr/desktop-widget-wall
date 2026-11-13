@@ -322,9 +322,9 @@ it('rows are at least 32 px tall and the picker sits inside the deck, never over
   expect(Number(row?.[1])).toBeGreaterThanOrEqual(32);
   const pk = /\.pk \{[^}]*\}/.exec(css)?.[0] ?? '';
   expect(pk).toContain('position: absolute');
-  expect(pk).toContain('top: 0');
-  expect(pk).not.toContain('bottom');
-  // Its box is the one around the two rows, which sits below Next three in the right wing; it reaches down from there.
+  expect(pk).toContain('inset: 0');
+  // Its box is the one around the two rows, which sits below Next three in the right wing; the deck grows to hold it when it is short.
   expect(/\.deck \{[^}]*position: relative/.test(css)).toBe(true);
   expect(/\.pinned[^{]*\{[^}]*position: relative/.test(css)).toBe(false);
+  expect(/\.deck:has\(\.pk\) \{[^}]*min-height: 236px/.test(css)).toBe(true);
 });
