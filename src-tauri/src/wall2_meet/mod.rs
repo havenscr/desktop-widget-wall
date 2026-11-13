@@ -321,11 +321,32 @@ pub async fn wall2_meet_join(window: tauri::WebviewWindow, key: String) -> Resul
     window.opener().open_url(url, None::<&str>).map_err(|_| "failed".to_string())
 }
 
+/// True when a key has exactly the shape of a day key as `service::read_day` makes them:
+/// `d`, the generation (1 to 19 digits), `-`, the event's index (1 to 3 digits). ASCII only
+/// and at most 24 characters, so nothing long or odd ever reaches the map.
+fn valid_day_key(key: &str) -> bool {
+    if key.len() > 24 || !key.is_ascii() {
+        return false;
+    }
+    let Some(rest) = key.strip_prefix('d') else {
+        return false;
+    };
+    let Some((generation, index)) = rest.split_once('-') else {
+        return false;
+    };
+    let digits = |s: &str, max: usize| !s.is_empty() && s.len() <= max && s.bytes().all(|b| b.is_ascii_digit());
+    digits(generation, 19) && digits(index, 3)
+}
+
 /// Open a day view event in Outlook on the web. The web view passes only the event's key;
-/// the link stays in Rust and is checked against the Outlook host list again before opening.
+/// a key without the day key shape is refused before any lookup. The link stays in Rust
+/// and is checked against the Outlook host list again before opening.
 #[tauri::command]
 pub async fn wall2_open_event(window: tauri::WebviewWindow, key: String) -> Result<(), String> {
     require_wall2(window.label())?;
+    if !valid_day_key(&key) {
+        return Err("gone".to_string());
+    }
     let url = service::lookup_web_link(links(), &key).ok_or_else(|| "gone".to_string())?;
     if !graph::web_link_allowed(&url) {
         return Err("gone".to_string());
@@ -422,6 +443,38 @@ mod tests {
     fn errors_never_echo_the_file() {
         let text = "{\"accounts\":[{\"id\":\"SECRETSECRET\"}]}";
         assert!(!parse_config(Some(text)).unwrap_err().contains("SECRET"));
+    }
+
+    #[test]
+    fn day_keys_must_have_the_generated_shape() {
+        assert!(valid_day_key("d1-0"));
+        assert!(valid_day_key("d42-7"));
+        assert!(valid_day_key("d1234567890123456789-999"));
+        // Oversized: too many digits, or simply too long.
+        assert!(!valid_day_key("d12345678901234567890-1"));
+        assert!(!valid_day_key("d1-1000"));
+        assert!(!valid_day_key(&format!("d1-{}", "1".repeat(40))));
+        assert!(!valid_day_key(&"d".repeat(4096)));
+        // A join key from the next meetings read has no `d`.
+        assert!(!valid_day_key("3-1"));
+        // Malformed.
+        for key in ["", "d", "d-", "d-1", "d1-", "d1-1x", "d1--1", "dd1-1", "D1-1", " d1-1", "d1-1 ", "d1_1", "d+1-1", "d1-+1", "d1-1-2"] {
+            assert!(!valid_day_key(key), "{key:?}");
+        }
+        // Digits outside ASCII (Arabic-Indic and full width) are refused.
+        assert!(!valid_day_key("d\u{0661}-1"));
+        assert!(!valid_day_key("d1-\u{FF11}"));
+    }
+
+    #[test]
+    fn a_stale_day_key_finds_nothing() {
+        let mut links = service::Links { generation: 5, ..Default::default() };
+        links.web_map.insert("d5-0".to_string(), ("work".to_string(), "https://outlook.office.com/calendar/item/example".to_string()));
+        let links = Mutex::new(links);
+        // Well formed, but from an older generation of the day view.
+        assert!(valid_day_key("d4-0"));
+        assert!(service::lookup_web_link(&links, "d4-0").is_none());
+        assert!(service::lookup_web_link(&links, "d5-0").is_some());
     }
 
     #[test]

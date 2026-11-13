@@ -12,6 +12,7 @@ use serde::Serialize;
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::io::Read;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 use tauri::Manager;
@@ -685,30 +686,95 @@ pub fn wall2_open_session(window: tauri::WebviewWindow, app: tauri::AppHandle, i
 
 /// Open a session (when an id is given, with the same checks as `wall2_open_session`), then
 /// bring the OmniGent desktop window forward onto the primary monitor. The forward step runs
-/// on its own thread, so this returns at once; if no OmniGent window shows up within two
-/// seconds nothing more happens. On other systems the forward step does nothing.
+/// on its own thread, so this returns at once, and only one forward step runs at a time: a
+/// click while one is under way opens the session but starts no second one. The step trusts
+/// only windows whose process image is the exact executable registered for `omnigent://`
+/// links (HKCU first, then HKLM); with no handler registered, or one that cannot be read, no
+/// window is brought forward (the session link still opens). Hung windows are skipped, and
+/// the window is shown and moved with the asynchronous calls, so a stuck OmniGent can never
+/// hold the thread. If no OmniGent window shows up within two seconds nothing more happens.
+/// On other systems the forward step does nothing.
 #[tauri::command]
 pub fn wall2_focus_omnigent(window: tauri::WebviewWindow, app: tauri::AppHandle, id: Option<String>) -> Result<(), String> {
     require_wall2(window.label())?;
     if let Some(id) = id {
         open_known_session(&app, &id)?;
     }
-    std::thread::spawn(bring_omnigent_forward);
+    if let Some(guard) = try_begin(&FORWARDING) {
+        // The guard moves into the thread and is released when the thread ends, even by a
+        // panic. If the thread cannot start, the closure (and the guard) is dropped here.
+        let _ = std::thread::Builder::new().spawn(move || {
+            let _guard = guard;
+            bring_omnigent_forward();
+        });
+    }
     Ok(())
 }
 
 // Section: bringing OmniGent forward
 
-/// Executable file names of the OmniGent desktop app, compared without regard to case.
-const OMNIGENT_EXES: &[&str] = &["omnigent.exe"];
 const FOCUS_POLL: Duration = Duration::from_millis(100);
 const FOCUS_WAIT: Duration = Duration::from_secs(2);
+/// A registered command line longer than this is not trusted.
+const MAX_HANDLER_COMMAND: usize = 2048;
 
-/// True when the file name of a full image path (either separator) is an OmniGent executable.
+/// Held while a forward step runs, so clicks never pile up threads.
+static FORWARDING: AtomicBool = AtomicBool::new(false);
+
+/// Proof that this caller holds the forward flag. Dropping it releases the flag.
+struct ForwardGuard<'a> {
+    flag: &'a AtomicBool,
+}
+
+impl Drop for ForwardGuard<'_> {
+    fn drop(&mut self) {
+        self.flag.store(false, Ordering::Release);
+    }
+}
+
+/// Take the flag if it is free. None while another guard on the same flag is alive.
+fn try_begin(flag: &AtomicBool) -> Option<ForwardGuard<'_>> {
+    flag.compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed).ok().map(|_| ForwardGuard { flag })
+}
+
+/// The executable path in the command line registered for a link handler. A quoted path
+/// (`"C:\Apps\x.exe" "%1"`) gives the text inside the first pair of quotes; an unquoted one
+/// gives the text up to the first `.exe` (any case) inclusive, or else up to the first space.
+/// None when the line is empty, longer than 2048 characters, or the path does not end in
+/// `.exe`.
 #[cfg_attr(not(any(windows, test)), allow(dead_code))]
-fn exe_matches(image_path: &str) -> bool {
-    let name = image_path.rsplit(['\\', '/']).next().unwrap_or("");
-    OMNIGENT_EXES.iter().any(|exe| name.eq_ignore_ascii_case(exe))
+fn handler_exe(command_line: &str) -> Option<String> {
+    if command_line.chars().count() > MAX_HANDLER_COMMAND {
+        return None;
+    }
+    let line = command_line.trim_start();
+    if line.is_empty() {
+        return None;
+    }
+    let path = if let Some(rest) = line.strip_prefix('"') {
+        &rest[..rest.find('"')?]
+    } else {
+        // Lowering ASCII letters keeps every byte offset, so the offset fits the original.
+        match line.to_ascii_lowercase().find(".exe") {
+            Some(at) => &line[..at + 4],
+            None => line.split(' ').next().unwrap_or(""),
+        }
+    };
+    let ends_in_exe = path.len() >= 4 && path.is_char_boundary(path.len() - 4) && path[path.len() - 4..].eq_ignore_ascii_case(".exe");
+    ends_in_exe.then(|| path.to_string())
+}
+
+/// True when two executable paths name the same file: compared without regard to case,
+/// after turning `/` into `\` and removing a leading `\\?\` from either.
+#[cfg_attr(not(any(windows, test)), allow(dead_code))]
+fn same_exe(a: &str, b: &str) -> bool {
+    fn plain(p: &str) -> String {
+        let p = p.replace('/', "\\");
+        let p = p.strip_prefix(r"\\?\").unwrap_or(&p);
+        p.to_lowercase()
+    }
+    let (a, b) = (plain(a), plain(b));
+    !a.is_empty() && a == b
 }
 
 /// A screen rectangle, edges in pixels.
@@ -751,12 +817,16 @@ fn pick_window(cands: &[Candidate]) -> Option<usize> {
     cands.iter().position(|c| c.visible && !c.owned && c.has_title)
 }
 
-/// Poll every 100 ms for up to two seconds for the OmniGent window, then bring it forward.
+/// Read the registered `omnigent://` handler, then poll every 100 ms for up to two seconds
+/// for a window of exactly that executable and bring it forward. No handler, no forward step.
 #[cfg(windows)]
 fn bring_omnigent_forward() {
+    let Some(exe) = focus_win::registered_exe() else {
+        return;
+    };
     let started = Instant::now();
     loop {
-        if focus_win::focus_once() {
+        if focus_win::focus_once(&exe) {
             return;
         }
         if started.elapsed() >= FOCUS_WAIT {
@@ -773,22 +843,59 @@ fn bring_omnigent_forward() {
 
 #[cfg(windows)]
 mod focus_win {
-    use super::{exe_matches, fit_into, pick_window, Candidate, Rect};
+    use super::{fit_into, handler_exe, pick_window, same_exe, Candidate, Rect, MAX_HANDLER_COMMAND};
     use std::collections::HashMap;
-    use windows::core::PWSTR;
-    use windows::Win32::Foundation::{CloseHandle, BOOL, HWND, LPARAM, POINT, RECT, TRUE};
+    use windows::core::{w, PCWSTR, PWSTR};
+    use windows::Win32::Foundation::{CloseHandle, BOOL, ERROR_SUCCESS, HWND, LPARAM, POINT, RECT, TRUE};
     use windows::Win32::Graphics::Gdi::{
         GetMonitorInfoW, MonitorFromPoint, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST,
         MONITOR_DEFAULTTOPRIMARY,
     };
+    use windows::Win32::System::Registry::{RegGetValueW, HKEY, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, RRF_RT_REG_SZ};
     use windows::Win32::System::Threading::{
         OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
     };
     use windows::Win32::UI::WindowsAndMessaging::{
-        EnumWindows, GetWindow, GetWindowRect, GetWindowTextLengthW, GetWindowThreadProcessId, IsIconic,
-        IsWindowVisible, IsZoomed, SetForegroundWindow, SetWindowPos, ShowWindow, GW_OWNER, SWP_NOACTIVATE,
-        SWP_NOZORDER, SW_MAXIMIZE, SW_RESTORE,
+        EnumWindows, GetWindow, GetWindowPlacement, GetWindowRect, GetWindowTextLengthW, GetWindowThreadProcessId,
+        IsHungAppWindow, IsIconic, IsWindowVisible, IsZoomed, SetForegroundWindow, SetWindowPos, ShowWindowAsync,
+        GW_OWNER, SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE, SWP_NOZORDER, SW_MAXIMIZE, SW_RESTORE, WINDOWPLACEMENT,
+        WPF_RESTORETOMAXIMIZED,
     };
+
+    /// The default value of `Software\Classes\omnigent\shell\open\command` under one root, as
+    /// text. None when it is missing, not a string, or too long to be trusted.
+    fn handler_command(root: HKEY) -> Option<String> {
+        // Room for the longest accepted line plus one character (so an overlong line is seen
+        // and refused by `handler_exe`) and the terminating null.
+        let mut buf = vec![0u16; MAX_HANDLER_COMMAND + 2];
+        let mut bytes = (buf.len() * 2) as u32;
+        let status = unsafe {
+            RegGetValueW(
+                root,
+                w!("Software\\Classes\\omnigent\\shell\\open\\command"),
+                PCWSTR::null(),
+                RRF_RT_REG_SZ,
+                None,
+                Some(buf.as_mut_ptr().cast::<std::ffi::c_void>()),
+                Some(&mut bytes as *mut u32),
+            )
+        };
+        if status != ERROR_SUCCESS {
+            return None;
+        }
+        let len = ((bytes as usize) / 2).min(buf.len());
+        let text = &buf[..len];
+        let end = text.iter().position(|&c| c == 0).unwrap_or(text.len());
+        Some(String::from_utf16_lossy(&text[..end]))
+    }
+
+    /// The executable registered for `omnigent://` links: the current user's handler, else the
+    /// machine's. None when neither is registered or the registered one cannot be parsed.
+    pub fn registered_exe() -> Option<String> {
+        handler_command(HKEY_CURRENT_USER)
+            .or_else(|| handler_command(HKEY_LOCAL_MACHINE))
+            .and_then(|line| handler_exe(&line))
+    }
 
     unsafe extern "system" fn collect(hwnd: HWND, data: LPARAM) -> BOOL {
         let list = &mut *(data.0 as *mut Vec<HWND>);
@@ -820,16 +927,18 @@ mod focus_win {
         }
     }
 
-    /// Top-level windows owned by an OmniGent process, in z order.
-    fn omnigent_windows() -> Vec<HWND> {
+    /// Top-level windows, in z order, of processes whose image is exactly `exe`, leaving out
+    /// any window that is not answering.
+    fn omnigent_windows(exe: &str) -> Vec<HWND> {
         let mut by_pid: HashMap<u32, bool> = HashMap::new();
         top_level_windows()
             .into_iter()
             .filter(|hwnd| {
                 let mut pid = 0u32;
                 unsafe { GetWindowThreadProcessId(*hwnd, Some(&mut pid as *mut u32)) };
-                *by_pid.entry(pid).or_insert_with(|| image_path(pid).is_some_and(|p| exe_matches(&p)))
+                *by_pid.entry(pid).or_insert_with(|| image_path(pid).is_some_and(|p| same_exe(&p, exe)))
             })
+            .filter(|hwnd| unsafe { !IsHungAppWindow(*hwnd).as_bool() })
             .collect()
     }
 
@@ -838,23 +947,38 @@ mod focus_win {
     }
 
     /// Restore it if minimised, move it onto the primary monitor if it is elsewhere (keeping
-    /// it maximised if it was), then make it the foreground window.
+    /// it maximised if it was), then make it the foreground window. Every change is posted to
+    /// the window's own thread (`ShowWindowAsync`, `SWP_ASYNCWINDOWPOS`) and is carried out
+    /// there in the order posted, so nothing here waits on OmniGent. Because the restore has
+    /// not happened yet when the size is read, a minimised or maximised window's size comes
+    /// from its normal placement.
     fn bring_forward(hwnd: HWND) {
         unsafe {
-            if IsIconic(hwnd).as_bool() {
-                let _ = ShowWindow(hwnd, SW_RESTORE);
+            let mut placement = WINDOWPLACEMENT { length: std::mem::size_of::<WINDOWPLACEMENT>() as u32, ..Default::default() };
+            let placed = GetWindowPlacement(hwnd, &mut placement).is_ok();
+            let iconic = IsIconic(hwnd).as_bool();
+            // A minimised window that comes back maximised counts as maximised.
+            let zoomed = IsZoomed(hwnd).as_bool()
+                || (iconic && placed && (placement.flags.0 & WPF_RESTORETOMAXIMIZED.0) != 0);
+            if iconic {
+                let _ = ShowWindowAsync(hwnd, SW_RESTORE);
             }
             let primary = MonitorFromPoint(POINT { x: 0, y: 0 }, MONITOR_DEFAULTTOPRIMARY);
             let current = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
             if current != primary {
                 let mut info = MONITORINFO { cbSize: std::mem::size_of::<MONITORINFO>() as u32, ..Default::default() };
                 if GetMonitorInfoW(primary, &mut info).as_bool() {
-                    let zoomed = IsZoomed(hwnd).as_bool();
                     if zoomed {
-                        let _ = ShowWindow(hwnd, SW_RESTORE);
+                        let _ = ShowWindowAsync(hwnd, SW_RESTORE);
                     }
-                    let mut r = RECT::default();
-                    if GetWindowRect(hwnd, &mut r).is_ok() {
+                    // Only the size is used: `fit_into` places the window itself.
+                    let size = if iconic || zoomed {
+                        placed.then_some(placement.rcNormalPosition)
+                    } else {
+                        let mut r = RECT::default();
+                        GetWindowRect(hwnd, &mut r).is_ok().then_some(r)
+                    };
+                    if let Some(r) = size {
                         let to = fit_into(rect_of(info.rcWork), rect_of(r));
                         let _ = SetWindowPos(
                             hwnd,
@@ -863,11 +987,11 @@ mod focus_win {
                             to.top,
                             to.right - to.left,
                             to.bottom - to.top,
-                            SWP_NOZORDER | SWP_NOACTIVATE,
+                            SWP_NOZORDER | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS,
                         );
                     }
                     if zoomed {
-                        let _ = ShowWindow(hwnd, SW_MAXIMIZE);
+                        let _ = ShowWindowAsync(hwnd, SW_MAXIMIZE);
                     }
                 }
             }
@@ -875,9 +999,10 @@ mod focus_win {
         }
     }
 
-    /// One look for the OmniGent window. True when one was found and brought forward.
-    pub fn focus_once() -> bool {
-        let hwnds = omnigent_windows();
+    /// One look for a window of the registered OmniGent executable. True when one was found
+    /// and brought forward.
+    pub fn focus_once(exe: &str) -> bool {
+        let hwnds = omnigent_windows(exe);
         let cands: Vec<Candidate> = hwnds
             .iter()
             .map(|hwnd| unsafe {
@@ -1993,18 +2118,81 @@ mod tests {
         assert_eq!(ids.len(), 6);
     }
 
+    const EXE: &str = r"C:\Program Files\Example\omnigent.exe";
+
     #[test]
-    fn omnigent_executable_names() {
-        assert!(exe_matches(r"C:\Program Files\OmniGent\omnigent.exe"));
-        assert!(exe_matches(r"C:\Users\someone\AppData\Local\Programs\OmniGent\OmniGent.EXE"));
-        assert!(exe_matches("C:/Apps/OmniGent/omnigent.exe"));
-        assert!(exe_matches("omnigent.exe"));
-        assert!(!exe_matches(r"C:\Program Files\OmniGent\omnigent.exe.bak"));
-        assert!(!exe_matches(r"C:\omnigent.exe\other.exe"));
-        assert!(!exe_matches(r"C:\Apps\not-omnigent.exe"));
-        assert!(!exe_matches(r"C:\Apps\omnigent"));
-        assert!(!exe_matches(r"C:\Apps\"));
-        assert!(!exe_matches(""));
+    fn handler_command_lines_are_parsed() {
+        // Quoted, with and without arguments.
+        assert_eq!(handler_exe(r#""C:\Program Files\Example\omnigent.exe" "%1""#).as_deref(), Some(EXE));
+        assert_eq!(handler_exe(r#""C:\Program Files\Example\omnigent.exe""#).as_deref(), Some(EXE));
+        assert_eq!(handler_exe(r#"  "C:\Program Files\Example\omnigent.exe" open "%1""#).as_deref(), Some(EXE));
+        // Unquoted: up to the first `.exe`, spaces in the folder name included.
+        assert_eq!(handler_exe(r#"C:\Program Files\Example\omnigent.exe "%1""#).as_deref(), Some(EXE));
+        assert_eq!(handler_exe(r"C:\Apps\Example\OmniGent.EXE %1").as_deref(), Some(r"C:\Apps\Example\OmniGent.EXE"));
+        assert_eq!(handler_exe(r"C:\Apps\Example\omnigent.exe").as_deref(), Some(r"C:\Apps\Example\omnigent.exe"));
+        // Unquoted with no `.exe`: up to the first space, which then fails the `.exe` rule.
+        assert_eq!(handler_exe(r"C:\Apps\Example\omnigent %1"), None);
+        assert_eq!(handler_exe(r"rundll32 url.dll,FileProtocolHandler %1"), None);
+        // Empty and whitespace.
+        assert_eq!(handler_exe(""), None);
+        assert_eq!(handler_exe("   \t "), None);
+        assert_eq!(handler_exe(r#""""#), None);
+        // An unclosed quote, and a quoted path that is not an executable.
+        assert_eq!(handler_exe(r#""C:\Program Files\Example\omnigent.exe %1"#), None);
+        assert_eq!(handler_exe(r#""C:\Program Files\Example\omnigent.cmd" "%1""#), None);
+        assert_eq!(handler_exe(r#""C:\Program Files\Example\omnigent.exe.bak" "%1""#), None);
+        // Oversized: 2048 characters pass, 2049 do not.
+        let path = format!(r"C:\{}\omnigent.exe", "a".repeat(2048 - 16));
+        assert_eq!(path.chars().count(), 2048);
+        assert_eq!(handler_exe(&path).as_deref(), Some(path.as_str()));
+        let long = format!(r"C:\{}\omnigent.exe", "a".repeat(2048 - 15));
+        assert_eq!(handler_exe(&long), None);
+        assert_eq!(handler_exe(&format!(r#""{EXE}" {}"#, "x".repeat(4096))), None);
+    }
+
+    #[test]
+    fn only_the_registered_executable_matches() {
+        assert!(same_exe(EXE, EXE));
+        assert!(same_exe(r"C:\PROGRAM FILES\EXAMPLE\OMNIGENT.EXE", EXE));
+        assert!(same_exe(r"\\?\C:\Program Files\Example\omnigent.exe", EXE));
+        assert!(same_exe(EXE, r"\\?\c:\program files\example\omnigent.exe"));
+        assert!(same_exe("C:/Program Files/Example/omnigent.exe", EXE));
+        // The same file name in another folder is refused.
+        assert!(!same_exe(r"C:\Users\Public\Downloads\omnigent.exe", EXE));
+        assert!(!same_exe(r"C:\Program Files\Example2\omnigent.exe", EXE));
+        assert!(!same_exe("omnigent.exe", EXE));
+        assert!(!same_exe(r"C:\Program Files\Example\omnigent.exe.bak", EXE));
+        assert!(!same_exe("", ""));
+        // The two pieces together: a look-alike is refused against the parsed handler.
+        let registered = handler_exe(r#""C:\Program Files\Example\omnigent.exe" "%1""#).expect("parsed");
+        assert!(same_exe(r"C:\Program Files\Example\omnigent.exe", &registered));
+        assert!(!same_exe(r"D:\Other\omnigent.exe", &registered));
+    }
+
+    #[test]
+    fn one_forward_step_at_a_time() {
+        let flag = AtomicBool::new(false);
+        let first = try_begin(&flag).expect("free at first");
+        assert!(try_begin(&flag).is_none());
+        assert!(try_begin(&flag).is_none());
+        drop(first);
+        let again = try_begin(&flag).expect("free after the first guard is dropped");
+        assert!(try_begin(&flag).is_none());
+        drop(again);
+        assert!(!flag.load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn a_panic_releases_the_forward_flag() {
+        static FLAG: AtomicBool = AtomicBool::new(false);
+        let guard = try_begin(&FLAG).expect("free");
+        let joined = std::thread::spawn(move || {
+            let _guard = guard;
+            panic!("forward step failed");
+        })
+        .join();
+        assert!(joined.is_err());
+        assert!(try_begin(&FLAG).is_some());
     }
 
     fn rect(left: i32, top: i32, right: i32, bottom: i32) -> Rect {
