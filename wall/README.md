@@ -33,6 +33,19 @@ Status treats a stored refresh token as signed in. If Spotify has expired that g
 the status changes only after the first library or playback call tries to refresh it.
 The panel must render every Spotify name as plain text, including playlist names from
 other people in search, and must never render those names as markup.
+Library items include bounded subtitles, counts and cover images selected near 300 and
+64 pixels. Track lists use 50 items per page and stop at page 39. Queue reads return at
+most 10 upcoming tracks. Playback reads return no value when Spotify has no active
+session. The YouTube Music action opens the fixed `https://music.youtube.com/` address.
+Track-producing reads send `market=from_token`. A track is unplayable only when
+`is_playable` is present and false, it is restricted or local, or the item is not a
+track; a missing `is_playable` means playable. An unplayable row reaches the web view
+with `playable: false` and `id: null`. Profile, devices and playback state answers are
+capped at 64 KB. Liked, recent, search, queue, playlist and album pages, album metadata,
+and the playlists and albums lists are capped at 512 KB. The signed-in profile is cached
+in memory until sign in or sign out so search and playlist paging reuse it safely.
+When a play request includes a context, that context and its optional offset take
+precedence over the top-level kind and id; the top-level values remain validated.
 
 ## Run, test, build (web)
 
