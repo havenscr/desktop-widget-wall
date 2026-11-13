@@ -67,6 +67,7 @@ mod wall2_power;
 mod wall2_signals;
 mod wall2_sonos;
 mod wall2_watch;
+mod wall2_tools;
 use audio_analysis::{AudioAnalyzer, AudioLevels};
 
 // ================================================================
@@ -2980,7 +2981,7 @@ const DISK_REFRESH_SECS: u64 = 60;
 /// use the PDH counter instead. Initialised once; NVML init is not cheap.
 static NVML: std::sync::OnceLock<Result<nvml_wrapper::Nvml, String>> = std::sync::OnceLock::new();
 
-fn nvml_handle() -> Option<&'static nvml_wrapper::Nvml> {
+pub(crate) fn nvml_handle() -> Option<&'static nvml_wrapper::Nvml> {
     NVML.get_or_init(|| {
         nvml_wrapper::Nvml::init().map_err(|e| {
             println!("NVML unavailable ({}); falling back to PDH GPU counter", e);
@@ -3803,6 +3804,7 @@ pub fn run() {
             wall2_keys::wall2_keys_send,
             wall2_keys::wall2_keys_library,
             wall2_keys::wall2_keys_send_library,
+            wall2_tools::wall2_open_keys_file,
             list_audio_devices,
             start_audio_capture,
             stop_audio_capture,
@@ -3861,7 +3863,10 @@ pub fn run() {
             load_widget_config,
             wall2_omni::wall2_omni_days,
             wall2_omni::wall2_omni_day,
-            wall2_omni::wall2_focus_day_session
+            wall2_omni::wall2_focus_day_session,
+            wall2_spotify::wall2_spotify_tracks,
+            wall2_spotify::wall2_spotify_queue,
+            wall2_spotify::wall2_spotify_playback
         ])
         .setup(|app| {
             #[cfg(windows)]

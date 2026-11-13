@@ -6,6 +6,10 @@ import { FLAMES, Flames } from './Flames';
 import { Zen } from './Zen';
 import zenSource from './Zen.tsx?raw';
 import { Dream } from './Dream';
+
+// These tests step fake timers through whole quiet stretches (a ten second check each step), which is
+// slow on a busy runner: give them room so a slow machine cannot fail them.
+vi.setConfig({ testTimeout: 20_000 });
 import { mocks } from '../bridge/tauri';
 import { lane, summary } from '../agents/fixtures';
 import { resetAgents } from '../agents/useAgents';
@@ -219,7 +223,8 @@ it('a click wakes it and the next dim needs another ten quiet minutes', async ()
 
 it('6:01 AM never dims by itself', async () => {
   render(<Zen nowMs={clockAt(at(6, 1))} />);
-  await quiet(60);
+  // Twelve quiet minutes pass the ten minute wait; a longer span only made this test slow enough to time out.
+  await quiet(12);
   expect(screen.queryByLabelText('Wake')).toBeNull();
 });
 

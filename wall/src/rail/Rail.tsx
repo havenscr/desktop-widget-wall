@@ -16,6 +16,7 @@ import { toggleFullscreen, useFullscreen } from '../ui/fullscreen';
 import { PLACES, usePlaceStore } from '../state/places';
 import { alarmChipText, useOpenAlarms } from '../home/useSecurity';
 import { tip } from '../ui/HoverTip';
+import { useToolsStore } from '../tools/store';
 
 const PLACE_ICONS: Record<'work' | 'home' | 'unwind', Icon> = {
   work: IconBriefcase,
@@ -55,11 +56,13 @@ export function Rail() {
   const active = usePlaceStore((s) => s.active);
   const setActive = usePlaceStore((s) => s.setActive);
   const alarms = useOpenAlarms();
+  const toolsOpen = useToolsStore((s) => s.open);
+  const toggleTools = useToolsStore((s) => s.toggle);
 
   const onKeyDown = (e: KeyboardEvent<HTMLElement>) => {
     if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
     const buttons = Array.from(
-      e.currentTarget.querySelectorAll<HTMLButtonElement>('button.rb:not(:disabled):not(.rb-fs)'),
+      e.currentTarget.querySelectorAll<HTMLButtonElement>('button.rb:not(:disabled):not(.rb-fs):not(.rb-tools)'),
     );
     const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
     if (index < 0) return;
@@ -119,7 +122,17 @@ export function Rail() {
         Zen
       </button>
       {isTauri() && <FullscreenButton />}
-      <Disabled label="Tools" Glyph={IconTools} />
+      <button
+        type="button"
+        className="rb rb-tools"
+        aria-label="Tools"
+        aria-pressed={toolsOpen}
+        onClick={toggleTools}
+        {...tip('Accounts, sources, video look and the keys file')}
+      >
+        <IconTools size={30} stroke={1.8} aria-hidden="true" />
+        Tools
+      </button>
     </nav>
   );
 }

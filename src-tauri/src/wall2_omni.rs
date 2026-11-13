@@ -1039,6 +1039,8 @@ pub struct PcStats {
     pub cpu_pct: f64,
     pub gpu_pct: f64,
     pub ram_pct: f64,
+    /// The graphics card's temperature in whole degrees (NVML), or None.
+    pub temp_c: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -1070,9 +1072,29 @@ fn box_from_summary(s: &OmniSummary) -> (Option<BoxStats>, bool) {
     }
 }
 
+/// The widest range a graphics card temperature can sensibly have; anything else is a bad read.
+const GPU_TEMP_RANGE: std::ops::RangeInclusive<u32> = 0..=150;
+
+/// A graphics card temperature from an NVML read: Some only for a successful read in range.
+fn gpu_temp_from<E>(read: Result<u32, E>) -> Option<u32> {
+    read.ok().filter(|t| GPU_TEMP_RANGE.contains(t))
+}
+
+/// The graphics card's temperature, or None with no NVIDIA driver or a failed read.
+#[cfg(windows)]
+fn read_gpu_temp() -> Option<u32> {
+    let device = crate::nvml_handle()?.device_by_index(0).ok()?;
+    gpu_temp_from(device.temperature(nvml_wrapper::enum_wrappers::device::TemperatureSensor::Gpu))
+}
+
+#[cfg(not(windows))]
+fn read_gpu_temp() -> Option<u32> {
+    None
+}
+
 fn pc_from(stats: &crate::SystemStatsSummary) -> PcStats {
     let clamp = |n: f32| if n.is_finite() { f64::from(n).clamp(0.0, 100.0) } else { 0.0 };
-    PcStats { cpu_pct: clamp(stats.cpu), gpu_pct: clamp(stats.gpu), ram_pct: clamp(stats.ram) }
+    PcStats { cpu_pct: clamp(stats.cpu), gpu_pct: clamp(stats.gpu), ram_pct: clamp(stats.ram), temp_c: read_gpu_temp() }
 }
 
 type BoxReading = (Option<BoxStats>, bool);
@@ -1582,18 +1604,30 @@ mod tests {
     #[test]
     fn pc_numbers_are_clamped() {
         let stats = crate::SystemStatsSummary { cpu: 12.5, gpu: f32::NAN, ram: 140.0, drives: Vec::new() };
-        assert_eq!(pc_from(&stats), PcStats { cpu_pct: 12.5, gpu_pct: 0.0, ram_pct: 100.0 });
+        let pc = pc_from(&stats);
+        assert_eq!((pc.cpu_pct, pc.gpu_pct, pc.ram_pct), (12.5, 0.0, 100.0));
+    }
+
+    #[test]
+    fn gpu_temperature_is_none_on_failure_or_out_of_range() {
+        assert_eq!(gpu_temp_from::<()>(Ok(61)), Some(61));
+        assert_eq!(gpu_temp_from::<()>(Ok(0)), Some(0));
+        assert_eq!(gpu_temp_from::<()>(Ok(150)), Some(150));
+        assert_eq!(gpu_temp_from::<()>(Ok(151)), None);
+        assert_eq!(gpu_temp_from::<()>(Ok(u32::MAX)), None);
+        assert_eq!(gpu_temp_from(Err("no sensor")), None);
     }
 
     #[test]
     fn machines_serialize_with_the_agreed_names() {
         let m = Machines {
-            pc: PcStats { cpu_pct: 1.0, gpu_pct: 2.0, ram_pct: 3.0 },
+            pc: PcStats { cpu_pct: 1.0, gpu_pct: 2.0, ram_pct: 3.0, temp_c: Some(61) },
             box_stats: None,
             box_stale: false,
         };
         let v = serde_json::to_value(&m).unwrap();
         assert!(v["pc"].get("cpuPct").is_some());
+        assert_eq!(v["pc"]["tempC"], json!(61));
         assert!(v["box"].is_null());
         assert_eq!(v["boxStale"], json!(false));
     }

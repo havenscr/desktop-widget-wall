@@ -354,15 +354,15 @@ it('says nothing about work before the focus store has loaded', async () => {
   expect(screen.queryByText(/Work is put away/)).toBeNull();
 });
 
-it('lays out the status line, Screens off and the tabs', async () => {
+it('lays out the status line, Hide screen and the tabs', async () => {
   useFocusStore.setState({ loaded: true });
   mocks.set('get_now_playing', () => ({ playback_status: 'stopped' }));
   mocks.set('wall2_omni_summary', () => ({ lanes: [{ state: 'working' }, { state: 'working' }, { state: 'review' }], yourMove: { total: 0 } }));
   render(<Unwind />);
   await flush();
   expect(document.querySelector('.u-line')!.textContent).toBe('Work is put away. 2 agents still running. No agent needs you.');
-  // Screens off is an icon alone in the lower right corner, not beside the line.
-  expect(document.querySelector('.u-corner [aria-label="Screens off"]')).not.toBeNull();
+  // Hide screen is an icon alone in the lower right corner, not beside the line.
+  expect(document.querySelector('.u-corner [aria-label="Hide screen"]')).not.toBeNull();
   expect(document.querySelector('.u-foot .screens-off')).toBeNull();
   expect(screen.getByRole('tablist', { name: 'Unwind' })).toBeTruthy();
   expect(screen.getByText('Nothing playing')).toBeTruthy();

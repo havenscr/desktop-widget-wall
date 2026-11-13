@@ -68,7 +68,10 @@ function useMoonUp(): boolean {
   return up;
 }
 
-/** The video in the scene, in its look, with the Look button (on hover) and Open in browser under it. */
+/**
+ * The video in the scene, in its look, with the Look button (on hover; beside Open in browser
+ * for the whole sky, which takes no pointer) and Open in browser under it.
+ */
 function VideoStage({ item, look }: { item: WatchRef & { label: string }; look: LookId }) {
   const moonUp = useMoonUp();
   const [openFailed, setOpenFailed] = useState(false);
@@ -95,34 +98,51 @@ function VideoStage({ item, look }: { item: WatchRef & { label: string }; look: 
       Look: {lookName(look)}
     </button>
   );
-  return (
-    <div className={`w-stage w-${look}`} data-look={look}>
-      {look === 'feather' ? <div className="w-glow" aria-hidden="true" /> : null}
-      {/* The moon sits behind the feathered picture: its disc is dimmed where the soft edge would let it through. */}
-      {look === 'feather' && moonUp ? <div className="w-moonveil" aria-hidden="true" /> : null}
-      {look === 'drivein' ? <div className="w-spill" aria-hidden="true" /> : null}
-      <div className="w-screen">
-        <PlayerFrame key={refKey(item)} item={item} title={item.label} />
-      </div>
-      {lookBtn}
-      {look === 'drivein' ? (
-        <>
-          <i className="w-post l" aria-hidden="true" />
-          <i className="w-post r" aria-hidden="true" />
-        </>
+  const sky = look === 'sky';
+  const under = (
+    <div className="w-under">
+      {sky ? lookBtn : null}
+      <button type="button" className="w-open" title={`Opens this ${kindName(item.kind).toLowerCase()} in your web browser`} onClick={() => void open()}>
+        <IconExternalLink size={20} aria-hidden="true" />
+        Not playing? Open in browser
+      </button>
+      {openFailed ? (
+        <span className="w-open-fail" role="alert">
+          Could not open the browser
+        </span>
       ) : null}
-      <div className="w-under">
-        <button type="button" className="w-open" title={`Opens this ${kindName(item.kind).toLowerCase()} in your web browser`} onClick={() => void open()}>
-          <IconExternalLink size={20} aria-hidden="true" />
-          Not playing? Open in browser
-        </button>
-        {openFailed ? (
-          <span className="w-open-fail" role="alert">
-            Could not open the browser
-          </span>
-        ) : null}
-      </div>
     </div>
+  );
+  return (
+    <>
+      <div className={`w-stage w-${look}`} data-look={look}>
+        {look === 'feather' ? <div className="w-glow" aria-hidden="true" /> : null}
+        {look === 'sun' ? <div className="w-halo" aria-hidden="true" /> : null}
+        {/* The moon sits behind the feathered picture: its disc is dimmed where the soft edge would let it through.
+            The sun's disc covers the moon whole, and the whole sky is not see-through, so neither needs it. */}
+        {look === 'feather' && moonUp ? <div className="w-moonveil" aria-hidden="true" /> : null}
+        {look === 'drivein' ? <div className="w-spill" aria-hidden="true" /> : null}
+        {look === 'sun' ? <div className="w-streak" aria-hidden="true" /> : null}
+        <div className="w-screen">
+          <PlayerFrame key={refKey(item)} item={item} title={item.label} />
+        </div>
+        {/* Whole sky: a dark wash behind the text on the left, over the picture. */}
+        {sky ? <div className="w-scrim" aria-hidden="true" /> : null}
+        {sky ? null : lookBtn}
+        {look === 'drivein' ? (
+          <>
+            <i className="w-post l" aria-hidden="true" />
+            <i className="w-post r" aria-hidden="true" />
+          </>
+        ) : null}
+        {sky ? null : under}
+      </div>
+      {/* The whole sky lies under every control and takes no pointer, so its buttons sit apart, on the floor. */}
+      {sky ? <div className="w-skyui">{under}</div> : null}
+      {/* The floor picks up a faint wash of the sky's colour (approved page, B). One frame cannot be
+          mirrored, so this is a still colour wash in the page's light colours, taking no pointer. */}
+      {sky ? <div className="w-skyspill" aria-hidden="true" /> : null}
+    </>
   );
 }
 
