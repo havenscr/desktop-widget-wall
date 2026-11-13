@@ -2,12 +2,28 @@ import { IconBulbOff, IconCheck, IconLoader2 } from '@tabler/icons-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { invoke } from '../bridge/tauri';
 import { NOT_CONFIGURED } from '../tasks/model';
+import { reviewNow } from '../ui/reviewClock';
 import { useVisible } from '../ui/useVisible';
+import { useCentreStatus } from './centreSources';
 import { MoodArt } from './MoodArt';
 
 export interface Mood {
   id: string;
   label: string;
+  /** When the home app's schedule next runs this mood, epoch ms. The home app does not send
+   * it yet; when it does, the card says "In N min" within the hour ahead. */
+  nextAtMs?: number | null;
+}
+
+/** Up to this many mood cards share the row; more scroll sideways (the wheel scrolls them). */
+export const MOODS_PER_ROW = 6;
+
+/** "In 4 min" when the mood is scheduled within the next hour, otherwise null. */
+export function inText(nextAtMs: number | null | undefined, now: number): string | null {
+  if (typeof nextAtMs !== 'number' || !Number.isFinite(nextAtMs)) return null;
+  const mins = Math.ceil((nextAtMs - now) / 60_000);
+  if (mins < 1 || mins > 60) return null;
+  return `In ${mins} min`;
 }
 
 export const MOODS_REFRESH_MS = 10 * 60_000;
@@ -85,6 +101,8 @@ export function Moods() {
   const [phase, setPhase] = useState<Phase>(null);
   const [error, setError] = useState<string | null>(null);
   const [last, setLast] = useState<string | null>(readLast);
+  const [now, setNow] = useState(() => (reviewNow ?? Date.now)());
+  const [okAt, setOkAt] = useState<number | null>(null);
   const mounted = useRef(false);
   const busy = useRef(false);
   const doneTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -107,6 +125,7 @@ export function Moods() {
       setMoods(next);
       writeCache(next);
       setStatus('ready');
+      setOkAt((reviewNow ?? Date.now)());
     } catch (e) {
       if (!mounted.current) return;
       const text = e instanceof Error ? e.message : String(e);
@@ -120,6 +139,14 @@ export function Moods() {
     const id = setInterval(() => void load(), MOODS_REFRESH_MS);
     return () => clearInterval(id);
   }, [visible, load]);
+
+  // "In N min" counts down: a tick every 30 seconds while a mood carries a schedule.
+  const scheduled = moods.some((m) => typeof m.nextAtMs === 'number');
+  useEffect(() => {
+    if (!visible || !scheduled) return;
+    const id = setInterval(() => setNow((reviewNow ?? Date.now)()), 30_000);
+    return () => clearInterval(id);
+  }, [visible, scheduled]);
 
   const tap = useCallback(async (id: string) => {
     if (busy.current) return;
@@ -150,6 +177,13 @@ export function Moods() {
     }
   }, []);
 
+  // Tell the centre what this source can show, so two missing sources become one card.
+  const publish = useCentreStatus((st) => st.set);
+  const centreState = status === 'unconfigured' ? 'unconfigured' : moods.length > 0 || status === 'ready' ? 'ok' : status === 'error' ? 'down' : 'loading';
+  useEffect(() => {
+    publish('moods', { state: centreState, okAt, check: () => void load() });
+  }, [publish, centreState, okAt, load]);
+
   if (status === 'ready' && moods.length === 0) {
     return (
       <section className="moods" aria-label="Moods">
@@ -171,7 +205,8 @@ export function Moods() {
   if (status === 'unconfigured') note = 'Not set up';
   else if (status === 'loading' && !showCards) note = 'Loading';
   else if (status === 'error') note = 'Home app not reachable';
-  const cols = Math.min(Math.max(moods.length, 1), 5);
+  const scroll = moods.length > MOODS_PER_ROW;
+  const rowStyle = scroll ? undefined : { gridTemplateColumns: `repeat(${Math.max(moods.length, 1)}, minmax(0, 1fr))` };
   return (
     <section className={showCards ? 'moods' : 'moods bare'} aria-label="Moods">
       <div className="moods-head">
@@ -181,11 +216,16 @@ export function Moods() {
         </span>
       </div>
       {showCards && (
-        <div className="mood-row" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
+        <div
+          className={scroll ? 'mood-row scroll' : 'mood-row'}
+          style={rowStyle}
+          onWheel={scroll ? (e) => (e.currentTarget.scrollLeft += e.deltaY) : undefined}
+        >
           {moods.map((m) => {
             const busyHere = phase?.id === m.id ? phase.kind : null;
             const on = last === m.id;
             const sub = moodNote(m.id);
+            const soon = on ? null : inText(m.nextAtMs, now);
             const cls = ['mood-btn', busyHere ?? '', on ? 'last' : ''].filter(Boolean).join(' ');
             return (
               <button
@@ -194,14 +234,16 @@ export function Moods() {
                 className={cls}
                 data-mood={m.id}
                 disabled={phase?.kind === 'working'}
-                aria-label={on ? `${moodLabel(m)}, on now` : moodLabel(m)}
+                aria-label={on ? `${moodLabel(m)}, on now` : soon ? `${moodLabel(m)}, ${soon.toLowerCase()}` : moodLabel(m)}
+                title={`Set the ${moodLabel(m)} mood${sub ? `: ${sub}` : ''}${on ? '. Last set from this wall' : ''}`}
                 onClick={() => void tap(m.id)}
               >
                 <MoodArt id={m.id} />
                 {on && <u className="mood-tag">On now</u>}
+                {soon && <u className="mood-tag soon">{soon}</u>}
                 {busyHere && (
                   <span className="mood-busy" aria-hidden="true">
-                    {busyHere === 'working' ? <IconLoader2 size={30} stroke={2} /> : <IconCheck size={30} stroke={2.4} />}
+                    {busyHere === 'working' ? <IconLoader2 size={26} stroke={2} /> : <IconCheck size={26} stroke={2.4} />}
                   </span>
                 )}
                 <span className="mood-lb">
