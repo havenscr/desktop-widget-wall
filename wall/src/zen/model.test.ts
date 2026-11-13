@@ -5,7 +5,11 @@ import {
   ease,
   flamePair,
   formatLeft,
-  isDreamTime,
+  dimDue,
+  dimHint,
+  hourLabel,
+  isDimHour,
+  showDimHint,
   sessionSecondsLeft,
 } from './model';
 
@@ -46,15 +50,36 @@ it('session countdown', () => {
   expect(formatLeft(0)).toBe('0:00 left');
 });
 
-it('night rule: 9:30 PM to 6:30 AM local', () => {
+it('dim hours: the set hour to 6 AM local', () => {
   const t = (h: number, m: number) => new Date(2026, 10, 11, h, m);
-  expect(isDreamTime(t(21, 29))).toBe(false);
-  expect(isDreamTime(t(21, 30))).toBe(true);
-  expect(isDreamTime(t(23, 59))).toBe(true);
-  expect(isDreamTime(t(0, 0))).toBe(true);
-  expect(isDreamTime(t(6, 29))).toBe(true);
-  expect(isDreamTime(t(6, 30))).toBe(false);
-  expect(isDreamTime(t(12, 0))).toBe(false);
+  expect(isDimHour(t(21, 59), 22)).toBe(false);
+  expect(isDimHour(t(22, 0), 22)).toBe(true);
+  expect(isDimHour(t(23, 59), 22)).toBe(true);
+  expect(isDimHour(t(0, 0), 22)).toBe(true);
+  expect(isDimHour(t(5, 59), 22)).toBe(true);
+  expect(isDimHour(t(6, 0), 22)).toBe(false);
+  expect(isDimHour(t(12, 0), 22)).toBe(false);
+  expect(isDimHour(t(19, 0), 18)).toBe(true);
+});
+
+it('dimDue needs a dim hour and the full quiet wait', () => {
+  const now = new Date(2026, 10, 11, 22, 30);
+  const ms = now.getTime();
+  expect(dimDue(now, ms - 9 * 60_000, 22, 600_000)).toBe(false);
+  expect(dimDue(now, ms - 10 * 60_000, 22, 600_000)).toBe(true);
+  expect(dimDue(new Date(2026, 10, 11, 21, 30), ms - 99 * 60_000, 22, 600_000)).toBe(false);
+});
+
+it('the dim hint is written from the two values', () => {
+  expect(hourLabel(22)).toBe('10 PM');
+  expect(hourLabel(18)).toBe('6 PM');
+  expect(hourLabel(0)).toBe('12 AM');
+  expect(dimHint(22, 10)).toBe('Dims by itself after 10 PM and 10 quiet minutes');
+  expect(dimHint(23, 1)).toBe('Dims by itself after 11 PM and 1 quiet minute');
+  expect(showDimHint(new Date(2026, 10, 11, 17, 59))).toBe(false);
+  expect(showDimHint(new Date(2026, 10, 11, 18, 0))).toBe(true);
+  expect(showDimHint(new Date(2026, 10, 11, 3, 0))).toBe(true);
+  expect(showDimHint(new Date(2026, 10, 11, 6, 0))).toBe(false);
 });
 
 it('flame rotation: the pair advances every few minutes round the list', () => {

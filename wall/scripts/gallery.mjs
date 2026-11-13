@@ -56,7 +56,7 @@ const PLACES = {
   unwind: { hz: 'unwind' },
   meet: { hz: 'work', screen: 'meet' },
   zen: { hz: 'work', screen: 'zen' },
-  dream: { hz: 'work', screen: 'dream' },
+  dimmed: { hz: 'work', screen: 'dream' },
 };
 const url = (place, at, extra = '') => {
   const p = PLACES[place];
@@ -65,7 +65,11 @@ const url = (place, at, extra = '') => {
   return `hz=${p.hz}&at=${encodeURIComponent(at)}&clock=review${wx}${p.screen ? `&screen=${p.screen}` : ''}${extra ? `&${extra}` : ''}`;
 };
 // `custom`: the state sets a knob beyond the base address (the time of day alone is not one).
-const state = (place, name, extra, at = TYPICAL_AT) => add(place, name, url(place, at, extra), extra !== '');
+// `dimmed` is Zen after it has dimmed (the old Dream screen): listed under Zen as "dimmed" and "dimmed: ...".
+const state = (place, name, extra, at = TYPICAL_AT) => {
+  const dimmed = place === 'dimmed';
+  add(dimmed ? 'zen' : place, dimmed ? (name === 'typical' && extra === '' && at === TYPICAL_AT ? 'dimmed' : `dimmed: ${name}`) : name, url(place, at, extra), extra !== '');
+};
 
 for (const place of Object.keys(PLACES)) {
   state(place, 'sparse', SPARSE);
@@ -169,8 +173,8 @@ state('work', 'agents header: twelve sessions, two waiting, an alarm', 'agents=1
 
 // Timeline rows that say they are empty (only when that is known).
 state('work', 'timeline: no meetings today', 'meet=none');
-state('dream', 'one agent waiting', 'agents=ask', TIMES.night);
-state('dream', 'broken: calendar not available', 'meet=down', TIMES.night);
+state('dimmed', 'one agent waiting', 'agents=ask', TIMES.night);
+state('dimmed', 'broken: calendar not available', 'meet=down', TIMES.night);
 state('work', 'timeline: calendar not available', 'meet=signedout');
 state('work', 'timeline: both accounts failing', 'meet=down');
 state('work', 'timeline: one account failing', 'meet=mixed');
@@ -224,9 +228,12 @@ for (const [name, extra] of [
   state('meet', name, extra);
 }
 
-// Zen and Dream: the focus ring and the sleep view.
+// Zen: the focus ring, and the dimmed view it falls into.
 state('zen', 'focus running, long title', 'focus=long');
-state('dream', 'night with audio demo', 'audio=demo', TIMES.night);
+// Zen in the evening with the dim hint, and late at night but not yet quiet (so still bright).
+state('zen', 'evening hint', '', '2026-11-11T20:15:00-08:00');
+state('zen', 'late, not yet quiet', '', '2026-11-11T23:40:00-08:00');
+state('dimmed', 'night with audio demo', 'audio=demo', TIMES.night);
 
 /**
  * What each state must show, so a knob that silently stops working fails the run:
@@ -354,11 +361,13 @@ const EXPECT = [
   ['zen', 'sparse', ['Breathe in', '!things are waiting']],
   ['zen', 'heavy', 'After this: 3 or more things are waiting'],
   ['zen', 'typical', 'Start', true],
-  ['dream', 'sparse', '!Breathe in'],
-  ['dream', 'heavy', '!Breathe in'],
-  ['dream', 'night with audio demo', '!Breathe in'],
-  ['dream', 'one agent waiting', 'Click anywhere to wake'],
-  ['dream', 'broken: calendar not available', 'Calendar not available'],
+  ['zen', 'evening hint', ['Breathe in', 'Dims by itself after 10 PM and 10 quiet minutes']],
+  ['zen', 'late, not yet quiet', ['Breathe in', 'Dims by itself after 10 PM and 10 quiet minutes']],
+  ['zen', 'dimmed: sparse', '!Breathe in'],
+  ['zen', 'dimmed: heavy', '!Breathe in'],
+  ['zen', 'dimmed: night with audio demo', '!Breathe in'],
+  ['zen', 'dimmed: one agent waiting', 'Click anywhere to wake'],
+  ['zen', 'dimmed: broken: calendar not available', 'Calendar not available'],
 ];
 
 /**
