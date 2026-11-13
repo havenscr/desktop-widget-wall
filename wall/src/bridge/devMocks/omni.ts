@@ -7,7 +7,7 @@ import { mocks } from '../tauri';
  * `3` (default), `2`, `1`, `0` lanes, `ask` (one lane waiting), `stale`, `off` (not set
  * up) and `down` (set up, not answering).
  */
-const AGENTS = typeof window !== 'undefined' ? (new URLSearchParams(window.location.search).get('agents') ?? '3') : '3';
+const agentsKnob = (): string => (typeof window !== 'undefined' ? (new URLSearchParams(window.location.search).get('agents') ?? '3') : '3');
 
 /**
  * The helper summary and the machine numbers, shaped exactly like the Rust commands'
@@ -16,6 +16,7 @@ const AGENTS = typeof window !== 'undefined' ? (new URLSearchParams(window.locat
  */
 export function registerOmniMocks(): void {
   mocks.set('wall2_omni_summary', () => {
+    const AGENTS = agentsKnob();
     if (AGENTS === 'off') throw new Error('not-configured');
     if (AGENTS === 'down') throw new Error('failed');
     // Minutes from now (the review's moment in a review still, `?hz=&at=`).

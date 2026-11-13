@@ -34,3 +34,233 @@
 .watt-z.sm {
   font-size: 16px;
 }
+
+/* Her props sit over the sheep in sprite pixels (Pixels.tsx) and flip with her. */
+.watt-sheep {
+  will-change: transform;
+}
+.watt-prop {
+  position: absolute;
+}
+.watt-prop svg {
+  display: block;
+}
+
+/* Above the shell so she can be clicked; only her own boxes take the pointer, and only while she is
+   up (Watt.tsx switches it off while she is away). She never overlaps a panel (model.test.ts). */
+.watt {
+  z-index: 1;
+}
+.watt-hit {
+  position: absolute;
+  left: 0;
+  top: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  pointer-events: none;
+}
+.watt-hit-part {
+  position: absolute;
+  pointer-events: none;
+}
+.watt-hit:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 4px;
+  border-radius: 6px;
+}
+
+.watt-heart {
+  position: absolute;
+  opacity: 0;
+}
+.watt-heart svg,
+.watt-mark svg,
+.watt-clover svg {
+  display: block;
+}
+
+/* The amber mark: small to see, a 32 px box to click. */
+.watt-mark,
+.watt-clover {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.watt-mark {
+  width: 32px;
+  height: 32px;
+  filter: drop-shadow(0 0 6px rgba(255, 194, 77, 0.6));
+}
+.watt-mark[hidden] {
+  display: none;
+}
+.watt-mark:hover,
+.watt-clover:hover {
+  filter: drop-shadow(0 0 8px rgba(93, 242, 182, 0.7));
+}
+.watt-mark:hover {
+  filter: drop-shadow(0 0 9px rgba(255, 194, 77, 0.9));
+}
+/* The clover is drawn in the middle of a 24 px click box (petFrame.ts cloverHitBox). */
+.watt-clover {
+  width: 24px;
+  height: 24px;
+}
+/* On Work with no link the mark only tells: no click look. */
+.watt-mark.static,
+.watt-mark.static:hover {
+  cursor: default;
+  filter: drop-shadow(0 0 6px rgba(255, 194, 77, 0.6));
+}
+
+/* The speech bubble: one short line, pixel corners, a little tail toward her. Box size and lines
+   come from petFrame.ts (wrapLine, bubbleSize), so what is tested is what shows. */
+.watt-bubble {
+  position: absolute;
+  box-sizing: border-box;
+  padding: 6px 10px;
+  font: 600 14px/17px var(--disp);
+  letter-spacing: 0.01em;
+  white-space: pre;
+  /* Her own tones: the lavender of her wool, a little see through, with her dark face colour. */
+  color: #1a1238;
+  background: rgba(220, 211, 251, 0.9);
+  box-shadow:
+    0 0 0 2px rgba(26, 18, 56, 0.9),
+    0 0 10px rgba(53, 230, 234, 0.18);
+  pointer-events: none;
+  animation: watt-say 7000ms ease-in-out both;
+}
+.watt-bubble::after {
+  content: '';
+  position: absolute;
+  bottom: -6px;
+  left: 8px;
+  width: 8px;
+  height: 6px;
+  background: rgba(220, 211, 251, 0.9);
+  clip-path: polygon(0 0, 100% 0, 0 100%);
+}
+.watt-bubble[data-side='left']::after {
+  left: auto;
+  right: 8px;
+  clip-path: polygon(0 0, 100% 0, 100% 100%);
+}
+.watt-bubble.still {
+  animation: none;
+}
+@keyframes watt-say {
+  0% {
+    opacity: 0;
+  }
+  12% {
+    opacity: 1;
+  }
+  86% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* Her hover card: a strip in the band over the horizon beside her (Unwind: under the transport
+   row), drawn at exactly CARD_W by CARD_H (petFrame.ts), so the overlap test checks what shows. */
+.watt-card {
+  position: absolute;
+  width: 660px;
+  height: 74px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 6px 12px;
+  border-radius: 12px;
+  background: rgba(16, 10, 40, 0.98);
+  border: 1px solid rgba(220, 211, 251, 0.25);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
+  color: #dcd3fb;
+  font: 500 14px/1.2 var(--body);
+  pointer-events: auto;
+}
+.wc-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+  white-space: nowrap;
+}
+.wc-name {
+  font: 600 18px/1 var(--disp);
+  color: #f6f2ff;
+}
+.wc-mood {
+  font: 600 13px/1 var(--disp);
+  color: var(--cyan);
+}
+.wc-mood.m-happy {
+  color: var(--mint);
+}
+.wc-mood.m-sleepy {
+  color: #a99ff0;
+}
+.wc-mood.m-curious {
+  color: var(--amber);
+}
+.wc-days {
+  margin-left: auto;
+  font-size: 12px;
+  opacity: 0.75;
+}
+.wc-today {
+  display: flex;
+  gap: 10px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wc-rows {
+  display: flex;
+  gap: 22px;
+}
+.wc-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.wc-label {
+  margin-right: 2px;
+  font-size: 12px;
+  opacity: 0.75;
+}
+.wc-row button {
+  min-height: 32px;
+  padding: 0 9px;
+  border-radius: 8px;
+  border: 1px solid rgba(220, 211, 251, 0.25);
+  background: transparent;
+  color: inherit;
+  font: 600 13px/1 var(--body);
+  cursor: pointer;
+}
+.wc-row button:hover:not(:disabled) {
+  border-color: var(--cyan);
+}
+.wc-row button.on {
+  background: rgba(53, 230, 234, 0.16);
+  border-color: var(--cyan);
+  color: #f6f2ff;
+}
+.wc-row button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}

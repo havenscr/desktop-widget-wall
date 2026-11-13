@@ -65,3 +65,4 @@ certs/
 
 # Tauri v2 auto-generated schemas/ACL manifests (regenerate on every build)
 src-tauri/gen/
+wall/.gallery/

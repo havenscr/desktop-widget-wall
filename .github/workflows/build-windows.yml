@@ -40,6 +40,9 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: No mock code in the production bundle
+        run: npm run prod-check
+
   build:
     runs-on: windows-latest
     timeout-minutes: 45
