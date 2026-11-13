@@ -222,7 +222,13 @@ it('the five tiles match by whole words: workday is never Day, Late night is two
   expect(tileMatches('day', 'Work Day Mix')).toBe(false);
   expect(tileMatches('day', 'Day Mix')).toBe(true);
   expect(tileMatches('day', 'Day_Mix')).toBe(true);
-  for (const n of ['Someday Songs', 'Sunday', 'Midday', 'Mid-day', 'Daytime', 'Day-time']) expect(tileMatches('day', n)).toBe(false);
+  for (const n of ['Someday Songs', 'Sunday', 'Midday', 'Mid-day', 'Daytime', 'Day-time', 'Work  Day', 'Work-day']) expect(tileMatches('day', n)).toBe(false);
+  for (const n of ['Day-Mix', 'Day Mix', 'The Day']) expect(tileMatches('day', n)).toBe(true);
+  expect(tileMatches('workday', 'Work  Day')).toBe(true);
+  expect(tileMatches('morning', 'Morning-Mix')).toBe(true);
+  expect(tileMatches('morning', 'Morning1')).toBe(false);
+  expect(tileMatches('evening', 'Evening-wind-down')).toBe(true);
+  expect(tileMatches('evening', 'Evening2')).toBe(false);
   for (const n of ['LATE NIGHT', 'latenight mix', 'Late-Night', 'Late_Night']) expect(tileMatches('night', n)).toBe(true);
   expect(tileMatches('night', 'Night Owl')).toBe(false);
   expect(tileMatches('morning', 'MORNING')).toBe(true);

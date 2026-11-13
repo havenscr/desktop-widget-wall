@@ -145,22 +145,24 @@ export const FACE_TILES = [
   { slot: 'workday', label: 'Workday' },
 ] as const satisfies readonly { slot: Slot; label: string }[];
 
-/** A routine's name for matching: lower case, with "_" read as a space. */
+/** A routine's name for matching: lower case, "_" read as a space, runs of spaces as one. */
 function plain(name: string): string {
-  return name.toLowerCase().replace(/_/g, ' ');
+  return name.toLowerCase().replace(/_/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
 /**
- * Each tile's own test of a routine name, by whole words. "Workday" never counts as Day
- * ("Work day" neither); "Midday", "Mid-day", "Sunday", "Daytime" and "Someday" are not Day;
- * Late night may be "late night", "late-night" or "latenight".
+ * Each tile's own test of a routine name, by whole words: a letter or digit next to the
+ * word breaks the match, a hyphen or space does not ("Day-Mix" is Day, "Morning1" is not
+ * Morning). Day has explicit non-matches: "Workday" and "Work day" (those are Workday),
+ * "Mid-day", "Midday", "Daytime" and "Day-time"; "Someday" and "Sunday" fail on the letter
+ * before. Late night may be "late night", "late-night" or "latenight".
  */
 const WORDS: Record<Slot, RegExp> = {
-  morning: /(?<![a-z-])morning(?![a-z-])/,
-  day: /(?<![a-z-])(?<!work )day(?![a-z-])/,
-  evening: /(?<![a-z-])evening(?![a-z-])/,
-  night: /(?<![a-z-])late[ -]?night(?![a-z-])/,
-  workday: /(?<![a-z-])work[ -]?day(?![a-z-])/,
+  morning: /(?<![a-z0-9])morning(?![a-z0-9])/,
+  day: /(?<![a-z0-9])(?<!work[ -])(?<!mid-)day(?![a-z0-9])(?!-time)/,
+  evening: /(?<![a-z0-9])evening(?![a-z0-9])/,
+  night: /(?<![a-z0-9])late[ -]?night(?![a-z0-9])/,
+  workday: /(?<![a-z0-9])work[ -]?day(?![a-z0-9])/,
 };
 
 /** True when the name carries the tile's word. */

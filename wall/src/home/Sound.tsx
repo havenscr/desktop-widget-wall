@@ -335,7 +335,8 @@ function Live({
   const offer = skip && now - skip.at < SKIP_OFFER_MS ? skip : null;
 
   const play = (r: MusicRoutine) => {
-    const label = chipLabel(r.name);
+    // The tile's word where the routine has a tile (the ask, the skip notice and the result use it).
+    const label = face.find((t) => t.routine.key === r.key)?.label ?? chipLabel(r.name);
     const ask =
       typeof r.volume === 'number' ? `${r.name} starts at volume ${r.volume}, above 40. Start it?` : `${r.name} starts at a volume the Sonos service sets. Start it?`;
     const go = (confirmed: boolean) =>

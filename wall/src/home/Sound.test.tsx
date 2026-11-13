@@ -175,17 +175,17 @@ it('a forced play refused for needing the loud confirm asks, and Yes sends it ag
   });
   render(<Sound />);
   await flush();
-  fireEvent.click(screen.getByText('Noon').closest('button')!);
+  fireEvent.click(screen.getByText('Day').closest('button')!);
   await flush();
   await flush(LATCH_MS);
   fireEvent.click(screen.getByText('Play anyway').closest('button')!);
   await flush();
-  expect(screen.getByText('Noon starts at a volume the Sonos service sets. Start it?')).toBeTruthy();
+  expect(screen.getByText('Day starts at a volume the Sonos service sets. Start it?')).toBeTruthy();
   expect(screen.getByText('Play anyway')).toBeTruthy();
   fireEvent.click(screen.getByText('Start').closest('button')!);
   await flush();
   expect(writes[writes.length - 1]).toEqual({ cmd: 'wall2_sonos_play', args: { routineKey: 'Noon_Mix', confirm: true, force: true } });
-  expect(screen.getByText('Playing Noon')).toBeTruthy();
+  expect(screen.getByText('Playing Day')).toBeTruthy();
 });
 
 it('the Play anyway offer goes after a minute', async () => {
