@@ -84,6 +84,15 @@ state('work', 'one agent waiting', 'agents=ask');
 state('work', 'long strings (fit check set)', 'long=1');
 state('work', 'focus running, long title', 'focus=long');
 state('work', 'music paused', 'media=paused');
+// left wing: PC temperature, previous and next, the round focus ring, keyboard focus
+state('work', 'left wing: playing with temps', '');
+state('work', 'left wing: no pc temp', 'pctemp=none&box=stale');
+state('work', 'left wing: long title', 'media=long');
+state('work', 'left wing: focus running', 'focus=run');
+state('work', 'left wing: focus done', 'focus=done');
+add('work', 'left wing: keyboard focus on the ring', url('work', TYPICAL_AT, 'focus=done'), true, 'kbd:.focus-mini-ring');
+add('work', 'left wing: keyboard focus on a button', url('work', TYPICAL_AT, 'focus=done'), true, 'kbd:.music-mini-btns .rd:nth-child(3)');
+state('work', 'left wing: LLM no reading', 'box=none');
 // The ridgelines rest in every other still (a review frame shows them at rest); these two have music driving them.
 state('work', 'audio demo (lines follow the music)', 'audio=demo');
 state('home', 'audio demo (lines follow the music)', 'audio=demo');
@@ -245,6 +254,13 @@ const EXPECT = [
   ['work', 'tasks few', ['Review the dashboard draft', '!Order printer paper']],
   ['work', 'tasks heavy', '115 more can wait'],
   ['work', 'usage meters near full', ['Claude 5 h 97%', '94%']],
+  ['work', 'left wing: playing with temps', ['TEMP', '61°', '52°']],
+  ['work', 'left wing: no pc temp', ['TEMP', '\u2013']],
+  ['work', 'left wing: long title', 'An Extremely Long Song Title'],
+  ['work', 'left wing: focus running', 'Review the draft'],
+  ['work', 'left wing: focus done', 'Focus done'],
+  ['work', 'left wing: keyboard focus', 'Focus done'],
+  ['work', 'left wing: LLM no reading', ['LLM', 'no reading']],
   ['work', 'machine numbers at the limit', '104'],
   ['work', 'box offline', 'no reading'],
   ['work', 'broken: helper not set up', 'not set up'],
@@ -572,8 +588,15 @@ async function render(cdp, base, s, file, ctl) {
       // A state shown just after a click (a task tick's Undo window).
       // `ctx:<selector>` right-clicks (opens the key picker), anything else clicks.
       const ctx = s.click.startsWith('ctx:');
+      const kbd = s.click.startsWith('kbd:');
       const sel = JSON.stringify(ctx ? s.click.slice(4) : s.click);
-      await to('Runtime.evaluate', {
+      // `kbd:<selector>`: a Tab key press (so focus-visible applies), then that element focused.
+      if (kbd) {
+        await to('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 });
+        await to('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 });
+        await to('Runtime.evaluate', { expression: `document.querySelector(${JSON.stringify(s.click.slice(4))})?.focus()` });
+      }
+      else await to('Runtime.evaluate', {
         expression: ctx ? `document.querySelector(${sel})?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))` : `document.querySelector(${sel})?.click()`,
       });
       await new Promise((r) => setTimeout(r, 900));

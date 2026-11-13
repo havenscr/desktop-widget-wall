@@ -2,7 +2,7 @@ import { act, render } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { mocks } from '../bridge/tauri';
 import { MachinesReadout } from './MachinesReadout';
-import { HOLD_MS, isHot, nextOverSince, readings, type Machines } from './model';
+import { BOX_LABEL, HOLD_MS, isHot, LIMITS, nextOverSince, readings, type Machines } from './model';
 
 const flush = async (ms = 0) => {
   await act(async () => {
@@ -17,7 +17,7 @@ const setHidden = (hidden: boolean) => {
 };
 
 const calm: Machines = {
-  pc: { cpuPct: 34, gpuPct: 71, ramPct: 58 },
+  pc: { cpuPct: 34, gpuPct: 71, ramPct: 58, tempC: 61 },
   box: { cpuPct: 61, gpuPct: null, ramPct: 48, tempC: 52 },
   boxStale: false,
 };
@@ -42,12 +42,45 @@ afterEach(() => {
 
 const hotCells = (c: HTMLElement) => [...c.querySelectorAll('.hot')].map((e) => e.getAttribute('aria-label'));
 
-it('shows grey PC and BOX rows with the box temperature', async () => {
+it('shows grey PC and LLM rows, each with a temperature under a TEMP header', async () => {
   const r = render(<MachinesReadout />);
   await flush();
-  expect(r.container.querySelector('[data-machine="pc"]')!.textContent).toBe('PC347158');
-  expect(r.container.querySelector('[data-machine="box"]')!.textContent).toBe('BOX614852°');
+  expect(r.container.querySelector('[data-machine="pc"]')!.textContent).toBe('PC34715861°');
+  expect(r.container.querySelector('[data-machine="box"]')!.textContent).toBe('LLM614852°');
   expect(hotCells(r.container)).toEqual([]);
+  expect([...r.container.querySelectorAll('.mc-hd span')].map((e) => e.textContent)).toEqual(['', 'CPU', 'GPU', 'RAM', 'TEMP']);
+  expect(r.container.querySelector('[aria-label="PC graphics card 61 degrees"]')).toBeTruthy();
+  expect(r.container.querySelector('[aria-label="LLM 52 degrees"]')).toBeTruthy();
+});
+
+it('shows a dash in the TEMP column for a row with no reading, so the column stays', async () => {
+  answer = { ...calm, pc: { ...calm.pc, tempC: null }, box: { ...calm.box!, tempC: null } };
+  const r = render(<MachinesReadout />);
+  await flush();
+  expect(r.container.querySelectorAll('.mc-temp')).toHaveLength(2);
+  expect(r.container.querySelector('[aria-label="PC graphics card no reading"]')!.textContent).toBe('\u2013');
+  expect(r.container.querySelector('[aria-label="LLM no reading"]')).toBeTruthy();
+});
+
+it('takes the second row name from the one label constant', async () => {
+  const r = render(<MachinesReadout />);
+  await flush();
+  expect(BOX_LABEL).toBe('LLM');
+  expect(r.container.querySelector('[data-machine="box"] .mc-name')!.textContent).toBe(BOX_LABEL);
+  expect(r.container.querySelectorAll(`[aria-label^="${BOX_LABEL} "]`).length).toBeGreaterThanOrEqual(3);
+});
+
+it('has a pc.temp limit of 90 beside the box one, null when absent, and hot by the same rule', async () => {
+  expect(LIMITS['pc.temp']).toBe(90);
+  expect(LIMITS['pc.temp']).toBe(LIMITS['box.temp']);
+  expect(readings({ ...calm, pc: { ...calm.pc, tempC: null } })['pc.temp']).toBeNull();
+  expect(readings(calm)['pc.temp']).toBe(61);
+  answer = { ...calm, pc: { ...calm.pc, tempC: 92 } };
+  const r = render(<MachinesReadout />);
+  await flush();
+  expect(hotCells(r.container)).toEqual([]);
+  await flush(HOLD_MS);
+  expect(hotCells(r.container)).toEqual(['PC graphics card 92 degrees']);
 });
 
 it('turns RAM amber only after it stays over 90 for 30 seconds', async () => {
@@ -83,11 +116,11 @@ it('marks the box temperature over 90 degrees and GPU over 95, each on its own',
   const r = render(<MachinesReadout />);
   await flush();
   await flush(HOLD_MS);
-  expect(hotCells(r.container)).toEqual(['PC GPU 96 percent', 'Box 91 degrees']);
+  expect(hotCells(r.container)).toEqual(['PC GPU 96 percent', 'LLM 91 degrees']);
 });
 
 it('does not count a number at its limit as over', () => {
-  const at = { ...calm, pc: { cpuPct: 95, gpuPct: 95, ramPct: 90 } };
+  const at = { ...calm, pc: { cpuPct: 95, gpuPct: 95, ramPct: 90, tempC: 90 } };
   const over = nextOverSince({}, readings(at), 0);
   expect(over).toEqual({});
   const past = nextOverSince({}, readings({ ...at, pc: { ...at.pc, ramPct: 90.5 } }), 0);
@@ -95,17 +128,17 @@ it('does not count a number at its limit as over', () => {
   expect(isHot(past, 'pc.ram', HOLD_MS)).toBe(true);
 });
 
-it('keeps the BOX row, dimmed with "no reading", when the box has no numbers, and fills it in when they come', async () => {
+it('keeps the LLM row, dimmed with "no reading", when the box has no numbers, and fills it in when they come', async () => {
   answer = { ...calm, box: null };
   const r = render(<MachinesReadout />);
   await flush();
   const row = () => r.container.querySelector('[data-machine="box"]')!;
-  expect(row().textContent).toBe('BOXno reading');
+  expect(row().textContent).toBe('LLMno reading\u2013');
   expect(row().className).toContain('none');
-  expect(row().getAttribute('aria-label')).toBe('Box no reading');
+  expect(row().getAttribute('aria-label')).toBe('LLM no reading');
   answer = calm;
   await flush(2_000);
-  expect(row().textContent).toBe('BOX614852°');
+  expect(row().textContent).toBe('LLM614852°');
   expect(row().className).not.toContain('none');
   answer = { ...calm, boxStale: true };
   await flush(2_000);
@@ -188,12 +221,12 @@ it('never stacks reads across hide and show, and ignores the answer of a superse
   pending.shift()!({ ...calm, pc: { ...calm.pc, cpuPct: 11 } });
   await flush();
   // Its answer belongs to the hidden period and is dropped.
-  expect(r.container.querySelector('[data-machine="pc"]')!.textContent).toBe('PC347158');
+  expect(r.container.querySelector('[data-machine="pc"]')!.textContent).toBe('PC34715861°');
   await flush(2_000);
   expect(calls).toBe(3);
   pending.shift()!({ ...calm, pc: { ...calm.pc, cpuPct: 22 } });
   await flush();
-  expect(r.container.querySelector('[data-machine="pc"]')!.textContent).toBe('PC227158');
+  expect(r.container.querySelector('[data-machine="pc"]')!.textContent).toBe('PC22715861°');
   expect(maxActive).toBe(1);
 });
 
@@ -208,13 +241,13 @@ it('never turns stale box numbers amber, and starts their hold when they are fre
   await flush(30_000);
   expect(hotCells(r.container)).toEqual([]);
   await flush(2_000);
-  expect(hotCells(r.container)).toEqual(['Box 95 degrees']);
+  expect(hotCells(r.container)).toEqual(['LLM 95 degrees']);
 });
 
 it('draws an empty track with no number for a column with no reading', async () => {
   const r = render(<MachinesReadout />);
   await flush();
-  const gpu = r.container.querySelector('[aria-label="Box GPU no reading"]')!;
+  const gpu = r.container.querySelector('[aria-label="LLM GPU no reading"]')!;
   expect(gpu.className).toBe('mc-cell none');
   expect(gpu.querySelector('.mc-bar')).not.toBeNull();
   expect(gpu.textContent).toBe('');
