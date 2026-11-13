@@ -488,3 +488,10 @@ it('the picker list has the slim scrollbar and a fade at its foot', () => {
   expect(list).toContain('scrollbar-width: thin');
   expect(list).toContain('mask-image: linear-gradient');
 });
+
+it('each pin carries its kind from the library group: Record 16:9 and Snip as capture, Screens off as system', async () => {
+  render(<PinnedRow />);
+  await flush();
+  const kinds = [...document.querySelectorAll('.pin-tile')].map((t) => t.getAttribute('data-kind'));
+  expect(kinds).toEqual(['layout', 'layout', 'capture', 'capture', 'system']);
+});

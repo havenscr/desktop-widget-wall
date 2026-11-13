@@ -362,7 +362,7 @@ it('lays out the status line, Screens off and the tabs', async () => {
   await flush();
   expect(document.querySelector('.u-line')!.textContent).toBe('Work is put away. 2 agents still running. No agent needs you.');
   // Screens off is an icon alone in the lower right corner, not beside the line.
-  expect(document.querySelector('.u-corner [aria-label="Screens off"]')).not.toBeNull();
+  expect(document.querySelector('.u-corner [aria-label="Hide screen"]')).not.toBeNull();
   expect(document.querySelector('.u-foot .screens-off')).toBeNull();
   expect(screen.getByRole('tablist', { name: 'Unwind' })).toBeTruthy();
   expect(screen.getByText('Nothing playing')).toBeTruthy();

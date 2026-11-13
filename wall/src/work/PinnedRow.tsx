@@ -7,10 +7,11 @@ import { isLayoutAction, layoutOffReason, useArrangeStatus } from './arrangeStat
 import { errorText } from './deckModel';
 import { useDeckStore } from './deckStore';
 import { KeyIcon } from './keyIcons';
+import { pinKind } from './keyKind';
 import { joinKeys, loadKeys, useKeysFeedStore } from './keysFeed';
 import { KeyPicker } from './KeyPicker';
 import { keyboardOnMouseKey, useKeyPress } from './keyPress';
-import { FALLBACK_PINS, MAX_PINS, parsePins, PINS_KEY, readPinsRaw, resolvePin, savePins, serializePins, swapPin, type LibGroup, type PinView } from './libraryModel';
+import { allKeys, FALLBACK_PINS, MAX_PINS, parsePins, PINS_KEY, readPinsRaw, resolvePin, savePins, serializePins, swapPin, type LibGroup, type PinView } from './libraryModel';
 import { useBrief } from './useBrief';
 import { runWallAction } from './wallActions';
 
@@ -76,6 +77,11 @@ export function PinnedRow() {
   const kept = lib ? parsePins(raw, lib, filePins) : null;
   const refs = kept ?? defaults;
   const pins: PinView[] = lib ? refs.map((r) => resolvePin(r, lib, filePins)).filter((p): p is PinView => p !== null).slice(0, MAX_PINS) : [];
+  const byId = lib ? allKeys(lib) : null;
+  const kindOf = (p: PinView) => {
+    const hit = byId?.get(p.ref.slice(4));
+    return pinKind(p.ref, hit ? { group: hit.group.id, action: hit.key.action } : null, p.action);
+  };
   if (read.status === 'absent') return null;
 
   const undoShown = applied !== null && applied.until > clock;
@@ -175,6 +181,7 @@ export function PinnedRow() {
                 type="button"
                 className={`deck-tile key-tile pin-tile${layoutOff ? ' off' : ''}${sel ? ' sel' : ''}`}
                 aria-label={p.label}
+                data-kind={kindOf(p)}
                 aria-disabled={layoutOff || undefined}
                 aria-haspopup="dialog"
                 {...tip(

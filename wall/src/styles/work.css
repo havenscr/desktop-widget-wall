@@ -937,6 +937,67 @@
 .deck-tile.key-tile svg {
   flex: none;
 }
+/* Keys tinted by kind: a soft wash and an edge in the kind's colour over a dark base, the icon in
+   that colour, a light top line and a dark 2 px foot. The kind comes from data (keyKind.ts). */
+.key-tile,
+.fy-plate {
+  --g: 183, 175, 214;
+}
+.key-tile[data-kind='layout'] {
+  --g: 53, 230, 234;
+}
+.key-tile[data-kind='capture'] {
+  --g: 255, 61, 154;
+}
+.key-tile[data-kind='focus'] {
+  --g: 154, 123, 255;
+}
+.key-tile[data-kind='app'],
+.fy-plate[data-kind='app'] {
+  --g: 93, 242, 182;
+}
+.key-tile[data-kind='agent'],
+.fy-plate[data-kind='agent'] {
+  --g: 255, 194, 77;
+}
+.deck-tile.key-tile {
+  background: linear-gradient(180deg, rgba(var(--g), 0.24), rgba(var(--g), 0.1)), rgba(11, 8, 32, 0.86);
+  border: 1px solid rgba(var(--g), 0.92);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 2px 0 rgba(3, 2, 14, 0.65);
+  color: var(--tx);
+  transition: background 200ms ease, border-color 200ms ease, box-shadow 200ms ease, opacity 200ms ease;
+}
+.deck-tile.key-tile svg {
+  color: rgb(var(--g));
+}
+.deck-tile.key-tile:hover:not(:disabled):not(.off) {
+  background: linear-gradient(180deg, rgba(var(--g), 0.38), rgba(var(--g), 0.2)), rgba(11, 8, 32, 0.86);
+  border-color: rgb(var(--g));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.24), 0 2px 0 rgba(3, 2, 14, 0.65), 0 0 18px -3px rgba(var(--g), 0.75);
+}
+.deck-tile.key-tile:active:not(:disabled):not(.off) {
+  transform: translateY(2px);
+  background: linear-gradient(180deg, rgba(var(--g), 0.08), rgba(var(--g), 0.18)), rgba(6, 4, 20, 0.94);
+  border-color: rgb(var(--g));
+  box-shadow: inset 0 3px 6px rgba(0, 0, 0, 0.7);
+}
+/* The layout key just used (Undo showing): its own look, not the hover one. */
+.deck-tile.key-tile.sel {
+  background: linear-gradient(180deg, rgba(var(--g), 0.36), rgba(var(--g), 0.22)), rgba(11, 8, 32, 0.86);
+  border-color: rgb(var(--g));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), 0 0 0 2px rgba(var(--g), 0.38), 0 0 16px -2px rgba(var(--g), 0.6);
+}
+/* A key that cannot be sent now: same size and label, no colour, flat, a dashed edge. */
+.deck-tile.key-tile.off {
+  background: rgba(11, 8, 32, 0.62);
+  border: 1px dashed rgba(183, 175, 214, 0.78);
+  box-shadow: none;
+  color: var(--dim);
+}
+.deck-tile.key-tile.off svg {
+  color: var(--faint);
+  opacity: 1;
+}
 .key-tile .deck-lbl {
   max-width: 100%;
   display: -webkit-box;
@@ -1052,10 +1113,6 @@
 .pin-tile {
   font-size: 15px;
 }
-.pin-tile.sel {
-  border-color: var(--cyan);
-  background: rgba(53, 230, 234, 0.12);
-}
 .deck-dots {
   display: flex;
   align-items: center;
@@ -1136,53 +1193,69 @@
   white-space: nowrap;
 }
 
-/* The For you page: at most two lines, each an icon, a title with its reason, and one button. */
+/* The For you page: up to two plates side by side, each the height of a key (so the Now row is one
+   height on every page): an icon, a title cut with an ellipsis over its reason, and one button. */
 .fy-list {
   display: grid;
-  gap: 4px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
 }
 .fy-li {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
-  height: 34px;
-  padding: 0 1px 0 12px;
+  height: 60px;
+  box-sizing: border-box;
+  padding: 0 9px 0 12px;
   border-radius: 14px;
-  border: 1px solid var(--edge);
-  background: rgba(255, 255, 255, 0.04);
+  background: linear-gradient(180deg, rgba(var(--g), 0.16), rgba(var(--g), 0.07)), rgba(11, 8, 32, 0.86);
+  border: 1px solid rgba(var(--g), 0.72);
 }
-.fy-li.amber {
-  border-color: rgba(245, 184, 74, 0.55);
-  color: var(--amber, #f5b84a);
-}
-.fy-li.mint {
-  color: var(--mint);
+.fy-li > svg {
+  flex: none;
+  color: rgb(var(--g));
 }
 .fy-tx {
   display: flex;
-  align-items: baseline;
-  gap: 8px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
   min-width: 0;
   color: var(--tx);
 }
 .fy-tx b {
   font-weight: 500;
   font-size: 16px;
+  line-height: 1.15;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  flex: 0 1 auto;
+  flex: none;
 }
 .fy-tx em {
   font-style: normal;
   font-size: 14px;
+  line-height: 1.15;
   color: var(--dim);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  flex: 1 1 0;
+  flex: none;
   min-width: 0;
+}
+/* The small buttons of the deck (Undo, a plate's action) in the same tinted look; Undo is cyan. */
+.deck .deck-mini {
+  --g: 53, 230, 234;
+  background: linear-gradient(180deg, rgba(var(--g), 0.3), rgba(var(--g), 0.16)), rgba(11, 8, 32, 0.86);
+  border: 1px solid rgba(var(--g), 0.85);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 2px 0 rgba(3, 2, 14, 0.65);
+}
+.deck .fy-plate .deck-mini {
+  --g: inherit;
+}
+.deck .deck-mini:hover:not(:disabled) {
+  border-color: rgb(var(--g));
 }
 /* "Show" flashes a card's ring once, slowly. */
 .lane.deck-flash {
