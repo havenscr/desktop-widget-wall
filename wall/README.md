@@ -553,8 +553,16 @@ frame (no ribbon) in the wide zones `470px 1fr 540px`. The parts are in `wall/sr
   than 30 minutes old. Under it the status line (`StatusLine.tsx`, "Work is put away. 2
   agents still running. Nothing needs you.", from the focus timer once it has loaded and
   the helper summary `wall2_omni_summary` every minute while visible; the agent and
-  needs-you sentences are left out without the helper or when it reports stale data) and
-  the Screens off pill (52 px tall). The wind down ring (PR 10) goes between the date line and Tomorrow.
+  needs-you sentences are left out without the helper or when it reports stale data).
+  The parts that carry an action are chips with a tooltip: "N agents still running" is a
+  quiet chip that switches to Work, and "N things need you" (or "One thing needs you") an
+  amber chip that opens the first waiting chat with `wall2_open_session` (the summary's
+  first your-move session, else the first lane that waits; plain text when links are not
+  available). "Work is put away.", "Focus is still on." and "Nothing needs you." stay
+  plain text. Screens off is an icon alone (36 px, quiet until hovered) in the lower right
+  corner of Unwind, its words as the tooltip and accessible name ("Screens off", "Turning
+  off", "Cancel screens off"); "Could not watch input" shows beside it for five seconds.
+  The wind down ring (PR 10) goes between the date line and Tomorrow.
 - **Centre.** The tabs (`Tabs.tsx`): Listen is this view (its tab controls the player
   panel); Watch is disabled (not focusable) with "Coming" and opens nothing; Dream opens Zen straight into Dream (`openDream` in the place store;
   Zen reads the flag once). Below them the player (`Player.tsx`): 224 px art, the source

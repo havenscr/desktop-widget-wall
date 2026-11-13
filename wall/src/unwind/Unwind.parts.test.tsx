@@ -335,8 +335,8 @@ it('drops the agent sentences when the helper says its data is stale', async () 
   mocks.set('wall2_omni_summary', () => ({ stale: true, lanes: [{ state: 'working' }], yourMove: { total: 0 } }));
   render(<Unwind />);
   await flush();
-  expect(screen.getByText('Work is put away.')).toBeTruthy();
-  expect(screen.queryByText(/agent/)).toBeNull();
+  expect(document.querySelector('.u-line')!.textContent).toBe('Work is put away.');
+  expect(document.querySelector('.u-act')).toBeNull();
 });
 
 it('says nothing about work before the focus store has loaded', async () => {
@@ -345,7 +345,7 @@ it('says nothing about work before the focus store has loaded', async () => {
   mocks.set('wall2_omni_summary', () => ({ lanes: [{ state: 'working' }], yourMove: { total: 0 } }));
   render(<Unwind />);
   await flush();
-  expect(screen.getByText('1 agent still running. Nothing needs you.')).toBeTruthy();
+  expect(document.querySelector('.u-line')!.textContent).toBe('1 agent still running. Nothing needs you.');
   expect(screen.queryByText(/Work is put away/)).toBeNull();
 });
 
@@ -355,8 +355,54 @@ it('lays out the status line, Screens off and the tabs', async () => {
   mocks.set('wall2_omni_summary', () => ({ lanes: [{ state: 'working' }, { state: 'working' }, { state: 'review' }], yourMove: { total: 0 } }));
   render(<Unwind />);
   await flush();
-  expect(screen.getByText('Work is put away. 2 agents still running. Nothing needs you.')).toBeTruthy();
-  expect(screen.getByRole('button', { name: 'Screens off' })).toBeTruthy();
+  expect(document.querySelector('.u-line')!.textContent).toBe('Work is put away. 2 agents still running. Nothing needs you.');
+  // Screens off is an icon alone in the lower right corner, not beside the line.
+  expect(document.querySelector('.u-corner [aria-label="Screens off"]')).not.toBeNull();
+  expect(document.querySelector('.u-foot .screens-off')).toBeNull();
   expect(screen.getByRole('tablist', { name: 'Unwind' })).toBeTruthy();
   expect(screen.getByText('Nothing playing')).toBeTruthy();
+});
+
+it('makes the action parts of the status line chips: running switches to Work, needs you opens the waiting chat', async () => {
+  useFocusStore.setState({ loaded: true });
+  const opened: unknown[] = [];
+  mocks.set('get_now_playing', () => ({ playback_status: 'stopped' }));
+  mocks.set('wall2_open_session', (a) => void opened.push(a));
+  mocks.set('wall2_omni_summary', () => ({
+    lanes: [{ id: 'a1b2c3d4-0001', state: 'working' }, { id: 'a1b2c3d4-0002', state: 'blocked', waiting: true }, { id: 'a1b2c3d4-0003', state: 'working' }],
+    yourMove: { total: 2, first: { sessionId: 'a1b2c3d4-0002' } },
+    linksAvailable: true,
+  }));
+  render(<Unwind />);
+  await flush();
+  expect(document.querySelector('.u-line')!.textContent).toBe('Work is put away. 2 agents still running. 2 things need you.');
+  const needs = screen.getByRole('button', { name: '2 things need you.' });
+  expect(needs.className).toContain('amber');
+  expect(needs.getAttribute('title')).toBe('Open the chat that is waiting for you');
+  fireEvent.click(needs);
+  await flush();
+  expect(opened).toEqual([{ id: 'a1b2c3d4-0002' }]);
+  const running = screen.getByRole('button', { name: '2 agents still running.' });
+  expect(running.getAttribute('title')).toBe('Show the agents on Work');
+  fireEvent.click(running);
+  expect(usePlaceStore.getState().active).toBe('work');
+  // "Work is put away." stays plain text.
+  expect(screen.queryByRole('button', { name: 'Work is put away.' })).toBeNull();
+});
+
+it('shows the needs-you part as plain text when links are not available, and no chips when the data is stale', async () => {
+  useFocusStore.setState({ loaded: true });
+  mocks.set('get_now_playing', () => ({ playback_status: 'stopped' }));
+  let stale = false;
+  mocks.set('wall2_omni_summary', () => ({ stale, lanes: [{ id: 'a1b2c3d4-0002', state: 'blocked', waiting: true }], yourMove: { total: 1, first: { sessionId: 'a1b2c3d4-0002' } }, linksAvailable: false }));
+  const r = render(<Unwind />);
+  await flush();
+  expect(document.querySelector('.u-line')!.textContent).toBe('Work is put away. One thing needs you.');
+  expect(screen.queryByRole('button', { name: 'One thing needs you.' })).toBeNull();
+  r.unmount();
+  stale = true;
+  render(<Unwind />);
+  await flush();
+  expect(document.querySelector('.u-line')!.textContent).toBe('Work is put away.');
+  expect(document.querySelector('.u-act')).toBeNull();
 });

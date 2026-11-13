@@ -24,10 +24,7 @@ export function Unwind() {
         <DateLine now={reviewDate} />
         <div className="u-foot">
           <Tomorrow now={reviewNow} />
-          <div className="u-footrow">
-            <StatusLine />
-            <ScreensOff />
-          </div>
+          <StatusLine />
         </div>
       </div>
       <div className="u-centre">
@@ -35,6 +32,9 @@ export function Unwind() {
         <div className="u-listen" role="tabpanel" id={LISTEN_PANEL_ID} aria-labelledby={LISTEN_TAB_ID}>
           <Player />
         </div>
+      </div>
+      <div className="u-corner">
+        <ScreensOff />
       </div>
       <div className="u-right" style={{ ['--room-top' as string]: `${UNWIND_ROOM_TOP}px`, ['--room-height' as string]: `${UNWIND_ROOM_HEIGHT}px` }}>
         <RoomCard />
