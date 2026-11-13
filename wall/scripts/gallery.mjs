@@ -292,7 +292,7 @@ state('unwind', 'listen: spotify down', 'spotify=down', TIMES.night);
 state('unwind', 'listen: spotify not set up', 'spotify=off', TIMES.night);
 state('unwind', 'listen: heavy library', 'spotify=heavy', TIMES.night);
 add('unwind', 'listen: heavy playlist songs', url('unwind', TIMES.night, 'spotify=heavy'), true, '.sp-row .sp-open');
-state('unwind', 'listen: long names', 'long=1&media=long&spotify=heavy', TIMES.night);
+state('unwind', 'listen: long names', 'long=1&media=long&spotify=heavy');
 
 /**
  * What each state must show, so a knob that silently stops working fails the run:
