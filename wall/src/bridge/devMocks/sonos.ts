@@ -6,17 +6,17 @@ import { knob } from './long';
  * The Sound block's Sonos service, with invented speakers, routines and presets. Review
  * knobs: `?sonos=off` (not set up), `?sonos=down` (never reached), `?sonos=sparse` (one
  * routine, one speaker, no presets), `?sonos=heavy` (many routines with long names, many
- * speakers, a sleep timer), `?sonos=quiet` (nothing playing), `?skip=1` (an unforced play is
+ * speakers, a sleep timer), `?sonos=quiet` (nothing playing), `?sonos=slow` (never answers, for the loading state), `?skip=1` (an unforced play is
  * skipped). The default is a typical
  * evening with music playing on a group.
  */
 const now = () => (reviewNow ? reviewNow() : Date.now());
 
-type Mode = 'typical' | 'off' | 'down' | 'sparse' | 'heavy' | 'quiet';
+type Mode = 'typical' | 'off' | 'down' | 'sparse' | 'heavy' | 'quiet' | 'slow';
 
 function mode(): Mode {
   const k = knob('sonos');
-  return k === 'off' || k === 'down' || k === 'sparse' || k === 'heavy' || k === 'quiet' ? k : 'typical';
+  return k === 'off' || k === 'down' || k === 'sparse' || k === 'heavy' || k === 'quiet' || k === 'slow' ? k : 'typical';
 }
 
 const ROUTINES = [
@@ -128,6 +128,7 @@ function summary(m: Mode) {
 export function registerSonosMocks(): void {
   mocks.set('wall2_sonos_summary', () => {
     const m = mode();
+    if (m === 'slow') return new Promise(() => undefined);
     if (m === 'off') return Promise.reject(new Error('not-configured'));
     if (m === 'down') return Promise.reject(new Error('Could not reach Sonos'));
     return summary(m);

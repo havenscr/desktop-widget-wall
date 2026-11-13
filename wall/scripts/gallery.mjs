@@ -117,6 +117,14 @@ state('home', 'moods six', 'moods=six');
 state('home', 'moods none', 'moods=none');
 state('home', 'tasks heavy (115 more)', 'tasks=heavy');
 state('home', 'tasks few', 'tasks=few');
+// Sound: the five quick plays and three places in each data state; Sonos silent shows the
+// fallback after its 2.5 second wait.
+state('home', 'sound heavy: long names, many speakers', 'sonos=heavy&moods=many');
+state('home', 'sound sparse: one routine, one speaker', 'sonos=sparse');
+state('home', 'sound quiet: nothing playing', 'sonos=quiet');
+state('home', 'sound down', 'sonos=down');
+state('home', 'sound not set up', 'sonos=off');
+state('home', 'sound silent (fallback after 2.5 seconds)', 'sonos=slow');
 for (const [name, extra] of [
   ['broken: home app not set up', 'home=off'],
   ['broken: home app down', 'home=down'],
@@ -229,6 +237,12 @@ const EXPECT = [
   ['home', 'moods none', 'No moods set up'],
   ['home', 'tasks heavy', '115 more can wait'],
   ['home', 'tasks few', ['Review the dashboard draft', '!Order printer paper']],
+  ['home', 'sound heavy: long names, many speakers', ['Late night', 'Workday']],
+  ['home', 'sound sparse: one routine, one speaker', 'Sound'],
+  ['home', 'sound quiet: nothing playing', 'Nothing playing'],
+  ['home', 'sound down', 'The Sonos service did not answer'],
+  ['home', 'sound not set up', 'Add sonosBaseUrl to feeds.json'],
+  ['home', 'sound silent (fallback after 2.5 seconds)', 'Sound'],
   ['home', 'broken: home app not set up', 'Network and securityNot set up'],
   ['home', 'broken: home app down', 'Home app not reachable'],
   ['home', 'broken: moods failing', 'MoodsHome app not reachable'],
