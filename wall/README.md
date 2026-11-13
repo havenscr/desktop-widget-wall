@@ -384,6 +384,17 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
   layout on purpose and must fail; `-- --self-test` runs every such case and passes only
   if each one failed with the FAIL line for the side it broke. jsdom has no layout, so the unit tests cannot check this; CI does
   not run it either.
+- **State gallery** (`wall/scripts/gallery.mjs`, `npm --prefix wall run gallery` with
+  `WALL_CHROME` set to a Chromium binary): renders every screen (Work, Home, Unwind, Meet,
+  Zen, Dream and the morning Home camera) in sparse, typical, heavy and broken data states and
+  at four times of day, at 2560 by 720, in real time. Writes PNG stills, `index.html` (grouped
+  by screen, with each state's name and URL) and `manifest.json` into `wall/.gallery/`
+  (ignored by git). Exits non-zero if a state fails to render or throws a page error.
+  `-- --list` prints the states; `-- --only=<text>` renders the states whose screen or name
+  contains the text. States come from URL knobs in the development mocks: the older `?hz=`,
+  `?at=`, `?agents=`, `?long=1`, `?audio=demo`, and the newer ones in
+  `src/bridge/devMocks/gallery.ts` (`screen`, `tasks`, `meet`, `home`, `net`, `moods`, `media`,
+  `box`, `pc`, `usage`, `weather`, `focus`, `clock`). None of it is in a production build.
 - **Right wing**: the next three tasks (see "Task card" below). The Big screen and Keys
   rows of the concept come with their own pull requests.
 
