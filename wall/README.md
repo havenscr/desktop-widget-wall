@@ -1012,12 +1012,19 @@ switch sits. Leaving Watch (or Unwind) removes any video.
   `https://www.twitch.tv/<login>` itself. The page never passes an address.
 - **Looks** (`looks.ts`, `Watch.tsx`): `feather` (the video in the sky left of the list, its
   edges masked soft, the picture fully visible, its lower edge fading out before the horizon line so the ridgelines
-  there stay in front, and covering the moon) and `drivein` (a framed screen on two
+  there stay in front, and covering the moon), `sky` (the video fills the sky from the top of
+  the strip to the horizon line, cropped top and bottom, fading toward the clock and into the
+  horizon; it lies under every control and takes no pointer, a dark wash keeps the text on the
+  left at 4.5 to 1 or better, the cards turn nearly opaque, and its Look and Open in browser
+  buttons sit on the floor below it), `sun` (a 461 px disc whose foot stands 24 px over the
+  horizon, centred so it covers the moon, with slats, a warm halo and a streak on the floor; it
+  shows the middle 56 percent of a 16:9 picture's width) and `drivein` (a framed screen on two
   posts standing on the horizon, a soft colour wash on the floor under it; with nothing on, the
   empty screen stands there). The gear beside the tabs opens a sheet over the right wing:
-  one look for everything, or one each for videos and playlists, live streams and Twitch
-  (`wall2-watch-look`, checked on read). The Look button on the video (shown on hover) steps
-  to the next look. Part 2 adds "whole sky" and "the sun" as two more `LOOKS` entries.
+  one look for everything (four picture tiles), or one each for videos and playlists, live
+  streams and Twitch (four choices a row), at 540 px (`wall2-watch-look`, checked on read;
+  values stored before the two new looks still read the same). The Look button on the video
+  (shown on hover) steps through the four.
 - **When video stops** (`stops.ts`, `useStopRules.ts`): leaving Watch or Unwind (Zen and Dream
   included), the page hidden, the display off or Windows locked (`ui/useDisplayDark.ts`, the
   `display-state` half of `useIdle`; input idle never stops a video, since nobody touches the
@@ -1027,7 +1034,8 @@ switch sits. Leaving Watch (or Unwind) removes any video.
 - **Listen**: when something is saved, the album art has a small "Video" corner that
   switches to Watch. Nothing else on Listen changes.
 - **Dev**: `?watch=mock` draws a poster where the frame goes (headless Chromium shows an empty
-  frame) and opens Watch; `?wlist=none|three|many`, `?wlook=feather|drivein`, `?wplay=<n>`,
+  frame) and opens Watch; `?wlist=none|three|many`, `?wlook=feather|sky|sun|drivein`, `?wposter=bright` (a pale test picture, the worst case for
+  text over video), `?wplay=<n>`,
   `?wsheet=one|kind`, `?wtab=listen`. The gallery and the fit check have Watch states.
 
 ## Home feeds (task card and network tile)

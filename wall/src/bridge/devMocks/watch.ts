@@ -15,10 +15,11 @@ import { knob } from './long';
  *
  *   ?watch=mock               the poster in place of the frame; opens Watch
  *   ?wlist=none|three|many    nothing saved, three items, or the full 24 (default three)
- *   ?wlook=feather|drivein    one look for everything
+ *   ?wlook=feather|sky|sun|drivein   one look for everything
  *   ?wplay=<n>                play saved item n (0 is the first)
  *   ?wsheet=one|kind          open the settings sheet (`kind`: a look per kind)
  *   ?wtab=listen              stay on Listen (for the art's Video corner)
+ *   ?wposter=bright           a pale bright picture, the worst case for text over video
  */
 const THREE = [
   { kind: 'video', id: 'Ab3dEfGh1jK', label: 'Night drive mix' },
@@ -34,6 +35,18 @@ function many(): typeof THREE {
     out.push(i % 5 === 0 ? { kind: 'twitch', id: `channel_${i}`, label: `channel_${i}` } : { kind: 'video', id, label: `${WORDS[i % WORDS.length]} ${i}` });
   }
   return out;
+}
+
+/** A bright test picture (`?wposter=bright`): a pale sky and sun, the worst case for text over video. */
+function brightPoster(ref: WatchRef): ReactNode {
+  return h('div', {
+    'data-mock-poster': ref.kind,
+    style: {
+      position: 'absolute',
+      inset: 0,
+      background: 'radial-gradient(40% 60% at 50% 45%,#ffffff,#fff6c8 40%,transparent 70%),linear-gradient(#e8f4ff,#ffe9b8 60%,#ffd27a)',
+    },
+  });
 }
 
 /** The stand-in picture, drawn with plain elements so it needs no stylesheet. */
@@ -84,7 +97,7 @@ function poster(ref: WatchRef): ReactNode {
 export function registerWatchMocks(): void {
   mocks.set('wall2_watch_open', () => undefined);
   if (knob('watch') !== 'mock') return;
-  framePoster.render = poster;
+  framePoster.render = knob('wposter') === 'bright' ? brightPoster : poster;
   const list = knob('wlist') ?? 'three';
   try {
     if (list === 'none') localStorage.removeItem(SAVED_KEY);
