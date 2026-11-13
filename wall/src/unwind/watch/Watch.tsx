@@ -280,11 +280,12 @@ function VideoStage({ item, look }: { item: WatchRef & { label: string }; look: 
   return (
     <>
       <div className={`w-stage w-${look}`} data-look={look} data-audience={audience ? `${audience.x},${audience.y},${audience.w},${audience.h}` : undefined}>
+        {/* The moon sits behind the feathered picture: its disc is dimmed where the soft edge would let it through,
+            under the glow, so the glow is not darkened with it. The sun's disc and the drive-in screen cover the
+            moon whole, and the whole sky is not see-through. */}
+        {look === 'feather' && moonUp ? <div className="w-moonveil" aria-hidden="true" /> : null}
         {look === 'feather' ? <div className="w-glow" aria-hidden="true" /> : null}
         {look === 'sun' ? <div className="w-halo" aria-hidden="true" /> : null}
-        {/* The moon sits behind the feathered picture: its disc is dimmed where the soft edge would let it through.
-            The sun's disc and the drive-in screen cover the moon whole, and the whole sky is not see-through. */}
-        {look === 'feather' && moonUp ? <div className="w-moonveil" aria-hidden="true" /> : null}
         {look === 'drivein' ? <div className="w-spill" aria-hidden="true" /> : null}
         {look === 'sun' ? <div className="w-streak" aria-hidden="true" /> : null}
         <div className="w-screen">
