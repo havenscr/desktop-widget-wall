@@ -144,6 +144,42 @@ describe('grid pulse state', () => {
     }
   });
 
+  it('with real bass movement (passed from the detector, as the canvas does) the lines rise above a small threshold at most three times a second', () => {
+    const RISE = 0.02; // a rise counts once the lines have climbed this far from their last low
+    for (const seed of [3, 11, 29]) {
+      for (const period of [11, 12, 15, 20]) {
+        const r = rng(seed);
+        const d = createBeatDetector();
+        const s = createGridPulse();
+        const bright: number[] = [];
+        for (let frame = 0, t = 0; frame < 600; frame++, t += 33) {
+          // A bed whose low bands wander slowly and jitter every frame, a kick every `period` frames.
+          const wobble = 0.35 + 0.1 * Math.sin(t / 700) + 0.06 * (r() - 0.5);
+          const hit = frame > 20 && frame % period < 3;
+          const bands = Array.from({ length: 32 }, (_, i) => (i < 12 ? (hit ? 0.7 : wobble) : 0.3 + 0.05 * r()));
+          d.push(bands, t);
+          bright.push(stepGridPulse(s, 0.033, playing(d.count, { lag: d.lag / 1000, bass: d.bass }))!.bright);
+        }
+        expect(d.count).toBeGreaterThan(10); // it really beats
+        const starts: number[] = [];
+        let low = bright[0];
+        let rising = false;
+        for (let i = 1; i < bright.length; i++) {
+          if (bright[i] < bright[i - 1]) {
+            if (rising) low = bright[i];
+            rising = false;
+            low = Math.min(low, bright[i]);
+          } else if (!rising && bright[i] - low > RISE) {
+            rising = true;
+            starts.push(i * 33);
+          }
+        }
+        expect(starts.length).toBeGreaterThan(5);
+        for (const s0 of starts) expect(starts.filter((x) => x >= s0 && x < s0 + 1000).length).toBeLessThanOrEqual(3);
+      }
+    }
+  });
+
   it('reuses the same fixed slots every frame (no allocation in the wave loop); a fifth band takes the oldest slot', () => {
     const s = createGridPulse();
     const grid = s.grid;
