@@ -93,6 +93,9 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 const WINGS = ['.work .left-wing', '.work .right-wing'];
 const LANES = ['.work .centre', '.work .centre .lane', '.work .centre .shelf'];
+const MEET = ['.meet .panel'];
+const UNWIND = ['.u-room', '.u-chips', '.u-line'];
+const DREAM = ['.dream-clock', '.dream-date', '.dream-card', '.dream-status', '.dream-hint'];
 // With more than three sessions the card list scrolls inside the centre: the three cards in
 // view, the header and the shelf must fit; the list itself is meant to scroll.
 const SCROLLED = ['.work .centre', '.work .centre .lanes-hd', '.work .centre .lanes-list > .lane:nth-child(-n+3)', '.work .centre .shelf'];
@@ -109,6 +112,22 @@ const SOUND_FULL = ['.home .sound', '.home .sound-panel', '.home .sound-plays', 
 // right wing, which stays inside the top band. Long task titles come from `long=1`.
 const DECK = ['.work .right-wing', '.work .right-wing .bigscreen', '.work .right-wing .keys', '.work .right-wing .deck-hd', '.work .right-wing .deck-tiles'];
 const deck = (name, knobs, extra = {}) => ({ name: `Deck, ${name}`, q: work('3', `&${knobs}`), checks: DECK, ...extra });
+// Meet reads the real clock, so its variants run unfrozen (the mock meetings are relative to now).
+const query = (v) => `?${v.live ? '' : `hz=${v.hz ?? 'work'}&at=${v.at ?? '2026-11-11T10:24:00-08:00'}&`}long=1&agents=${v.agents}${v.go ? `&go=${v.go}` : ''}${v.moods ? `&moods=${v.moods}` : ''}${v.extra ?? ''}`;
+// Meet, Unwind and Dream states: built with `query`, then given the same `q` shape as the rest.
+const QUIET = [
+  // Meet: both accounts read; one account failing; no account readable; long titles throughout.
+  { name: 'Meet, both accounts read', agents: '3', go: 'meet', live: true, extra: '', checks: MEET },
+  { name: 'Meet, one account failing', agents: '3', go: 'meet', live: true, extra: '&meet=mixed', checks: MEET },
+  { name: 'Meet, no account readable', agents: '3', go: 'meet', live: true, extra: '&meet=down', checks: MEET },
+  // Unwind with nine moods of long names: the Room list stays within two rows.
+  { name: 'Unwind, nine long moods', agents: '3', hz: 'unwind', moods: 'nine', maxRows: 2, extra: '', checks: UNWIND },
+  // Dream at night: helper answering, helper off; calendar read, unreadable, nothing tomorrow.
+  { name: 'Dream, agents and calendar', agents: '3', go: 'dream', at: '2026-11-11T23:48:00-08:00', extra: '', checks: DREAM },
+  { name: 'Dream, agents waiting', agents: 'ask', go: 'dream', at: '2026-11-11T23:48:00-08:00', extra: '', checks: DREAM },
+  { name: 'Dream, helper off, calendar unreadable', agents: 'off', go: 'dream', at: '2026-11-11T23:48:00-08:00', extra: '&meet=down', checks: ['.dream-clock', '.dream-date', '.dream-card', '.dream-hint'] },
+  { name: 'Dream, nothing tomorrow', agents: 'off', go: 'dream', at: '2026-11-11T23:48:00-08:00', extra: '&meet=none', checks: ['.dream-clock', '.dream-date', '.dream-hint'] },
+].map((v) => ({ ...v, q: query(v) }));
 const VARIANTS = [
   { name: 'three lanes, long titles', q: work('3'), checks: [...WINGS, ...LANES] },
   { name: 'twelve sessions, long titles, five meetings at once', q: work('12', '&meet=busy'), checks: SCROLLED },
@@ -146,6 +165,7 @@ const VARIANTS = [
   },
   // Its rows scroll inside it, so the pop-out itself is what must fit.
   { name: 'Home, More pop-out open with many routines', q: home('sonos=heavy&moods=many'), click: '.home .sound-chip.more', checks: ['.home .sound-pop'], viewportOnly: true },
+  ...QUIET,
 ];
 /** Rounding slack for fractional rectangles, in screen pixels. */
 const SLACK = 0.5;
@@ -189,12 +209,14 @@ try {
     const view = { left: 0, top: 0, right: innerWidth, bottom: innerHeight };
     const res = sels.map((sel) => ({ sel, items: [...document.querySelectorAll(sel)].map((e) => {
       const box = e.getBoundingClientRect();
-      const holder = e.parentElement.closest('.centre') || band;
+      // Dream covers the whole stage (its text also drifts up to 15 px each way), so it is held by itself, not the band.
+      const holder = e.closest('.dream') || e.parentElement.closest('.centre') || band || document.documentElement;
       return { sw: e.scrollWidth, cw: e.clientWidth, sh: e.scrollHeight, ch: e.clientHeight,
         inHolder: out(box, holder.getBoundingClientRect()), inView: out(box, view) };
     }) }));
     const d = document.documentElement;
-    const page = { sw: d.scrollWidth, cw: d.clientWidth, sh: d.scrollHeight, ch: d.clientHeight, vw: innerWidth, vh: innerHeight };
+    const rows = new Set([...document.querySelectorAll('.u-chip')].map((e) => Math.round(e.getBoundingClientRect().top))).size;
+    const page = { rows, sw: d.scrollWidth, cw: d.clientWidth, sh: d.scrollHeight, ch: d.clientHeight, vw: innerWidth, vh: innerHeight };
     // Pairs of boxes that must never share pixels: agent hit boxes of different sessions (the
     // "+N more" label counts as its own), and calendar chips in the same lane.
     const hit = (a, b) => a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5;
@@ -253,6 +275,11 @@ try {
       const over = Object.entries(o).filter(([, px]) => px > SLACK);
       return over.length ? over.map(([k, px]) => `${{ l: 'left', r: 'right', t: 'top', b: 'bottom' }[k]} ${Math.round(px)}`).join(', ') : 'inside';
     };
+    if (v.maxRows !== undefined) {
+      const rowsOk = doc.rows >= 1 && doc.rows <= v.maxRows;
+      if (!rowsOk) failed = true;
+      console.log(`  ${rowsOk ? 'ok  ' : 'FAIL'} .u-chip rows: ${doc.rows} (1 to ${v.maxRows})`);
+    }
     for (const { sel, items } of res) {
       if (items.length === 0) {
         console.log(`  FAIL ${sel}: not found`);

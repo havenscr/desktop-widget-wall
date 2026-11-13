@@ -9,6 +9,7 @@ import {
   readLastPlayed,
   statusLine,
   tomorrowTime,
+  visibleMoods,
   volumeLevel,
   writeLastPlayed,
   LAST_PLAYED_KEY,
@@ -52,8 +53,8 @@ it('finds the first event after the coming midnight, or none', () => {
 });
 
 it('builds the status line from focus and the helper summary', () => {
-  const lanes = [{ state: 'working' }, { state: 'blocked' }, { state: 'working' }];
-  expect(statusLine('off', { lanes, yourMove: { total: 0 } })).toBe('Work is put away. 2 agents still running. Nothing needs you.');
+  const lanes = [{ state: 'working' }, { state: 'review' }, { state: 'working' }];
+  expect(statusLine('off', { lanes, yourMove: { total: 0 } })).toBe('Work is put away. 2 agents still running. No agent needs you.');
   expect(statusLine('off', { lanes: [{ state: 'working' }], yourMove: { total: 1 } })).toBe('Work is put away. 1 agent still running. One thing needs you.');
   expect(statusLine('on', { lanes: [], yourMove: { total: 3 } })).toBe('Focus is still on. 3 things need you.');
   expect(statusLine('off', null)).toBe('Work is put away.');
@@ -64,7 +65,7 @@ it('leaves out stale helper data, a count that is not a number, and focus before
   expect(statusLine('off', { stale: true, lanes, yourMove: { total: 0 } })).toBe('Work is put away.');
   expect(statusLine('off', { lanes, yourMove: { total: Number.NaN } })).toBe('Work is put away. 1 agent still running.');
   expect(statusLine('off', { lanes: [], yourMove: { total: Infinity } })).toBe('Work is put away.');
-  expect(statusLine('unknown', { lanes, yourMove: { total: 0 } })).toBe('1 agent still running. Nothing needs you.');
+  expect(statusLine('unknown', { lanes, yourMove: { total: 0 } })).toBe('1 agent still running. No agent needs you.');
   expect(statusLine('unknown', null)).toBe('');
 });
 
@@ -132,4 +133,29 @@ it('keeps the last played track in storage and ignores junk', () => {
   expect(readLastPlayed(st)).toBeNull();
   map.set(LAST_PLAYED_KEY, JSON.stringify({ title: 5 }));
   expect(readLastPlayed(st)).toBeNull();
+});
+
+it('the status line counts a waiting lane as needing the owner, like Work, even when the helper total is lower', () => {
+  // Real lanes always carry an id, and waiting sessions are counted by id.
+  const waiting = [{ id: 'a1', state: 'working', waiting: true }, { id: 'a2', state: 'working' }];
+  expect(statusLine('off', { lanes: waiting, yourMove: { total: 0 } })).toBe('Work is put away. 1 agent still running. One thing needs you.');
+  expect(statusLine('off', { lanes: [{ id: 'a1', state: 'blocked' }], yourMove: { total: 0 } })).toBe('Work is put away. One thing needs you.');
+  expect(statusLine('off', { lanes: [{ id: 'a1', state: 'blocked' }, { id: 'a2', state: 'blocked', waiting: true }], yourMove: { total: 1 } })).toBe('Work is put away. 2 things need you.');
+});
+
+it('the status line says nothing about agents when the data is stale or missing', () => {
+  expect(statusLine('off', { stale: true, lanes: [{ state: 'blocked', waiting: true }], yourMove: { total: 0 } })).toBe('Work is put away.');
+  expect(statusLine('off', { lanes: [], yourMove: {} as { total: number } })).toBe('Work is put away.');
+  expect(statusLine('off', null)).toBe('Work is put away.');
+});
+
+it('visibleMoods keeps the collapsed list at five moods plus More, replacing and never appending', () => {
+  const moods = Array.from({ length: 9 }, (_, i) => ({ id: `m${i + 1}` }));
+  const ids = (on: string | null, open = false) => visibleMoods(moods, on, open).map((m) => m.id);
+  expect(ids(null)).toEqual(['m1', 'm2', 'm3', 'm4', 'm5']);
+  expect(ids('m3')).toEqual(['m1', 'm2', 'm3', 'm4', 'm5']);
+  expect(ids('m9')).toEqual(['m1', 'm2', 'm3', 'm4', 'm9']);
+  expect(ids('nope')).toEqual(['m1', 'm2', 'm3', 'm4', 'm5']);
+  expect(ids('m9', true)).toHaveLength(9);
+  expect(visibleMoods(moods.slice(0, 6), null, false)).toHaveLength(6);
 });

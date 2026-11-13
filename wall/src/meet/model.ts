@@ -95,7 +95,7 @@ export function statusWord(state: AccountState): string {
   if (state === 'checking') return 'Checking';
   if (state === 'unavailable') return 'Unavailable';
   if (state === 'signed-out') return 'Signed out';
-  return 'Sign in again';
+  return 'Sign-in expired';
 }
 
 /** What is wrong with an unavailable account, in plain words. */
@@ -148,6 +148,67 @@ export function reasonCode(code: string | undefined | null): string | null {
 export function reasonLine(code: string | undefined | null): string | null {
   const words = reasonText(code);
   return words ? `${words} (${code})` : null;
+}
+
+/** True when the meeting is live or starts within 15 minutes: the only one whose Join is filled. */
+export function joinIsUrgent(m: Pick<Meeting, 'start' | 'end'>, now: number): boolean {
+  return Date.parse(m.start) - now <= 15 * MIN && Date.parse(m.end) > now;
+}
+
+/** "in 2 min" for a future moment (never "in 0 min"). */
+export function relativeIn(at: number, now: number): string {
+  const mins = Math.ceil((at - now) / MIN);
+  if (mins <= 0) return 'in under a minute';
+  if (mins < 60) return `in ${mins} min`;
+  const h = Math.floor(mins / 60);
+  const r = mins % 60;
+  return r === 0 ? `in ${h} h` : `in ${h} h ${r} min`;
+}
+
+/** When the next read really runs: the earlier of the next fast retry and the next normal poll. Null when neither is scheduled. */
+export function nextReadAt(retryAt: number | null, pollAt: number | null): number | null {
+  if (retryAt === null) return pollAt;
+  if (pollAt === null) return retryAt;
+  return Math.min(retryAt, pollAt);
+}
+
+/** "checking again in 2 min", from the real deadline of the next read. Null when nothing is scheduled. */
+export function checkAgainText(at: number | null, now: number): string | null {
+  return at === null ? null : `checking again ${relativeIn(at, now)}`;
+}
+
+/** True when this account's answer cannot be trusted as current. */
+export function notFresh(state: AccountState): boolean {
+  return state === 'unavailable' || state === 'signed-out' || state === 'needs-sign-in';
+}
+
+/** A short line about an account that was not read, for under the LATER list. */
+export function notReadLine(a: Pick<MeetAccount, 'label' | 'state'>, lastOk: number | null): string {
+  if (a.state === 'signed-out') return `${a.label} is signed out`;
+  if (a.state === 'needs-sign-in') return `${a.label} sign-in expired`;
+  return lastOk !== null ? `${a.label} not read since ${clockText(lastOk)}` : `${a.label} has not been read`;
+}
+
+/** What LATER says when nothing else is listed: a headline and one dim line per account that was not read fresh. */
+export function laterEmpty(accounts: readonly MeetAccount[], lastOk: number | null): { headline: string; notes: string[] } {
+  const good = accounts.filter((a) => a.state === 'ok');
+  const rest = accounts.filter((a) => a.state !== 'ok');
+  if (rest.length === 0) return { headline: 'Nothing else', notes: [] };
+  const notes = rest.map((a) => (a.state === 'checking' ? `${a.label} is being checked` : notReadLine(a, lastOk)));
+  if (good.length > 0) return { headline: `Nothing else on ${good.map((a) => a.label).join(' and ')}`, notes };
+  return { headline: rest.some((a) => a.state === 'checking') ? 'Checking calendars' : 'Calendar not read', notes };
+}
+
+/** True when an account other than the connected ones could still hold a sooner meeting: any account not ok, checking included. */
+export function mayBeOutOfDate(accounts: readonly { state: AccountState }[]): boolean {
+  return accounts.some((a) => a.state !== 'ok');
+}
+
+/** The meetings worth showing: never those of an account that is signed out or needs sign-in. */
+export function visibleMeetings(data: MeetData | null | undefined): Meeting[] {
+  if (!data) return [];
+  const gone = new Set(data.accounts.filter((a) => needsSignIn(a.state)).map((a) => a.id));
+  return gone.size === 0 ? data.meetings : data.meetings.filter((m) => !gone.has(m.accountId));
 }
 
 export function needsSignIn(state: AccountState): boolean {

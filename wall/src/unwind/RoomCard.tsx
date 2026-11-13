@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { IconLoader2 } from '@tabler/icons-react';
 import { invoke } from '../bridge/tauri';
 import { LAST_MOOD_AT_KEY, LAST_MOOD_KEY, moodLabel, type Mood } from '../home/Moods';
+import { ROOM_COLLAPSED_CHIPS, visibleMoods } from './model';
 import { useVisible } from '../ui/useVisible';
 
 const NOT_CONFIGURED = 'not-configured';
@@ -19,7 +20,7 @@ interface Mark {
 }
 
 /** The marked mood: the shared last mood, if it carries a time under three hours old. */
-function readMark(nowMs: number): Mark | null {
+export function readMark(nowMs: number): Mark | null {
   try {
     const id = localStorage.getItem(LAST_MOOD_KEY);
     const raw = localStorage.getItem(LAST_MOOD_AT_KEY);
@@ -61,6 +62,7 @@ export function RoomCard() {
   const last = mark?.id ?? null;
   const [working, setWorking] = useState<string | null>(null);
   const [error, setError] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const mounted = useRef(true);
   const errorTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
@@ -134,20 +136,32 @@ export function RoomCard() {
   else
     body = (
       <div className="u-chips">
-        {moods.map((m) => (
-          <button
-            key={m.id}
-            type="button"
-            className={`u-chip${last === m.id ? ' on' : ''}`}
-            data-mood={m.id}
-            aria-pressed={last === m.id}
-            disabled={working !== null}
-            onClick={() => void apply(m.id)}
-          >
-            {working === m.id ? <IconLoader2 className="u-spin" size={22} aria-hidden="true" /> : null}
-            {moodLabel(m)}
+        {visibleMoods(moods, last, expanded).map((m) => {
+          const on = last === m.id;
+          // What the mood sets, when the feed describes it; the label alone otherwise.
+          const note = (m as Mood & { description?: unknown }).description;
+          const hover = typeof note === 'string' && note ? `${moodLabel(m)}: ${note}` : moodLabel(m);
+          return (
+            <button
+              key={m.id}
+              type="button"
+              className={`u-chip${on ? ' on' : ''}`}
+              data-mood={m.id}
+              title={on ? `${hover} (on now)` : hover}
+              aria-pressed={on}
+              disabled={working !== null}
+              onClick={() => void apply(m.id)}
+            >
+              {working === m.id ? <IconLoader2 className="u-spin" size={22} aria-hidden="true" /> : null}
+              <span className="u-chip-t">{moodLabel(m)}</span>
+            </button>
+          );
+        })}
+        {moods.length > ROOM_COLLAPSED_CHIPS ? (
+          <button type="button" className="u-chip u-more" aria-expanded={expanded} onClick={() => setExpanded((v) => !v)}>
+            {expanded ? 'Fewer' : 'More'}
           </button>
-        ))}
+        ) : null}
       </div>
     );
 

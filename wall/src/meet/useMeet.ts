@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { invoke } from '../bridge/tauri';
 import { usePlaceStore } from '../state/places';
 import { useVisible } from '../ui/useVisible';
@@ -10,9 +10,11 @@ import {
   REFRESH_MS,
   TICK_MS,
   TIMED_OUT,
+  needsSignIn,
   signInMessage,
   type MeetAccount,
   type MeetData,
+  type Meeting,
 } from './model';
 
 export type MeetStatus = 'loading' | 'ready' | 'unconfigured' | 'invalid' | 'error';
@@ -24,10 +26,18 @@ export interface MeetState {
   lastOk: number | null;
   /** The list holds meetings kept from an earlier read (an account was unavailable). */
   stale: boolean;
+  /**
+   * The last known meetings of the accounts whose read FAILED (unavailable), and the oldest time
+   * any of them was read; null when no failed account has a known meeting. Never holds an
+   * account that is signed out or needs sign-in.
+   */
+  lastKnown: { meetings: Meeting[]; at: number } | null;
   /** When each account last answered (or failed to), by id. */
   tried: Record<string, number>;
-  /** When the next automatic retry runs, or null when none is scheduled. */
+  /** When the next fast retry runs, or null when none is scheduled. */
   retryAt: number | null;
+  /** When the next normal poll runs, or null while Meet is not polling. */
+  pollAt: number | null;
   now: number;
   /** Account id while a sign-in is waiting for the browser. */
   signingIn: string | null;
@@ -71,6 +81,8 @@ export function useMeet(): MeetState {
   const [data, setData] = useState<MeetData | null>(null);
   const [lastOk, setLastOk] = useState<number | null>(null);
   const [stale, setStale] = useState(false);
+  const [known, setKnown] = useState<Record<string, { meetings: Meeting[]; at: number }>>({});
+  const [pollAt, setPollAt] = useState<number | null>(null);
   const [tried, setTried] = useState<Record<string, number>>({});
   const [retryAt, setRetryAt] = useState<number | null>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -136,6 +148,16 @@ export function useMeet(): MeetState {
       setData(cur.shown);
       setStatus('ready');
       setStale(cur.stale);
+      const at = Date.now();
+      const list = cur.shown.meetings;
+      setKnown((k) => {
+        const out: Record<string, { meetings: Meeting[]; at: number }> = {};
+        for (const a of accounts) {
+          if (a.state === 'ok') out[a.id] = { meetings: list.filter((x) => x.accountId === a.id), at };
+          else if (!needsSignIn(a.state) && k[a.id]) out[a.id] = k[a.id];
+        }
+        return out;
+      });
       return true;
     };
     const markFailed = (a: MeetAccount, reason?: string) => {
@@ -219,9 +241,16 @@ export function useMeet(): MeetState {
     if (!on) return;
     fastStep.current = 0;
     void refresh();
-    const poll = setInterval(() => void refresh(), REFRESH_MS);
+    let due = Date.now() + REFRESH_MS;
+    setPollAt(due);
+    const poll = setInterval(() => {
+      due += REFRESH_MS;
+      setPollAt(due);
+      void refresh();
+    }, REFRESH_MS);
     const tick = setInterval(() => setNow(Date.now()), TICK_MS);
     return () => {
+      setPollAt(null);
       clearInterval(poll);
       clearInterval(tick);
       clearTimeout(fastTimer.current);
@@ -268,7 +297,12 @@ export function useMeet(): MeetState {
       setNotice(null);
       invoke('wall2_meet_sign_out', { id })
         .then(() => {
-          if (mounted.current) void refresh();
+          if (!mounted.current) return;
+          setKnown((k) => {
+            const { [id]: _gone, ...rest } = k;
+            return rest;
+          });
+          void refresh();
         })
         .catch(() => {
           if (mounted.current) setNotice('Could not sign out');
@@ -289,5 +323,14 @@ export function useMeet(): MeetState {
     [refresh],
   );
 
-  return { status, data, lastOk, stale, tried, retryAt, now, signingIn, notice, signIn, cancelSignIn, signOut, refresh: () => void refresh(), join };
+  const lastKnown = useMemo(() => {
+    const failed = (data?.accounts ?? []).filter((a) => a.state === 'unavailable' && known[a.id]);
+    if (failed.length === 0) return null;
+    return {
+      meetings: failed.flatMap((a) => known[a.id]!.meetings).sort((x, y) => Date.parse(x.start) - Date.parse(y.start)),
+      at: Math.min(...failed.map((a) => known[a.id]!.at)),
+    };
+  }, [data, known]);
+
+  return { status, data, lastOk, lastKnown, stale, tried, retryAt, pollAt, now, signingIn, notice, signIn, cancelSignIn, signOut, refresh: () => void refresh(), join };
 }
