@@ -59,6 +59,10 @@ const EXPECT = {
   picker: /^ *FAIL deck: the key picker reaches y \d+, over the timeline/m,
   chips: /^ *FAIL overlap: chip /m,
   heading: /^ *FAIL deck: the Now heading /m,
+  // left wing
+  lwbuttons: /^ *FAIL left wing: music buttons /m,
+  lwtemp: /^ *FAIL left wing: TEMP header /m,
+  lwround: /^ *FAIL left wing: round control /m,
 };
 const OVERFLOWS = {
   left: '.work .left-wing { transform: translateX(-200px); }',
@@ -74,6 +78,10 @@ const OVERFLOWS = {
   picker: '.work .right-wing .pk { height: 400px !important; }',
   chips: '.rib .ev { width: 400px !important; }',
   heading: '.work .right-wing .keys .deck-name { max-width: 40px; overflow: hidden; }',
+  // left wing
+  lwbuttons: '.work .left-wing .music-mini-text { flex: none !important; width: 900px !important; }',
+  lwtemp: '.work .left-wing .mc-hd span:last-child { transform: translateX(14px); }',
+  lwround: '.work .wl .rd, .work .wl .focus-mini-ring, .work .wl .ring { border-radius: 0 !important; }',
 };
 
 if (flag('self-test')) {
@@ -382,7 +390,40 @@ try {
         if (cut) deck.push('deck: the Now heading "' + name.textContent + '" is cut');
       }
     }
-    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, wattCard, header, deck });
+    // left wing: the three music buttons on one line, equal size, inside the wing and clear of the
+    // title; the TEMP header centred over both temperature numbers (2 px); every round control, and the
+    // focus ring, with a border-radius of at least half its size, so its outline and shadow are round.
+    const lw = [];
+    const wing = document.querySelector('.work .left-wing');
+    const mini = wing && wing.querySelector('.music-mini');
+    if (mini) {
+      const bs = [...mini.querySelectorAll('.music-mini-btns .rd')].map((b) => b.getBoundingClientRect());
+      const wr = wing.getBoundingClientRect();
+      const tr = mini.querySelector('.music-mini-text').getBoundingClientRect();
+      if (bs.length !== 3) lw.push('left wing: music buttons: ' + bs.length + ' found, 3 wanted');
+      else {
+        const sameLine = bs.every((r) => Math.abs(r.top - bs[0].top) <= 1);
+        const equal = bs.every((r) => Math.abs(r.width - bs[0].width) <= 0.5 && Math.abs(r.height - bs[0].height) <= 0.5);
+        const inside = bs.every((r) => r.left >= wr.left - 0.5 && r.right <= wr.right + 0.5);
+        const clear = bs.every((r) => r.left >= tr.right - 0.5);
+        if (!sameLine || !equal || !inside || !clear) lw.push('left wing: music buttons are not on one line, equal, inside the wing and clear of the title (line ' + sameLine + ', equal ' + equal + ', inside ' + inside + ', clear ' + clear + ')');
+      }
+    }
+    const hd = wing && wing.querySelector('.mc-hd span:last-child');
+    if (hd) {
+      const mid = (e) => { const r = e.getBoundingClientRect(); const g = document.createRange(); g.selectNodeContents(e); const t = g.getBoundingClientRect(); return (t.left + t.right) / 2 || (r.left + r.right) / 2; };
+      const hm = mid(hd);
+      for (const n of wing.querySelectorAll('.mc-row .mc-temp')) {
+        const d = Math.abs(mid(n) - hm);
+        if (d > 2) lw.push('left wing: TEMP header is ' + d.toFixed(1) + ' px off the centre of "' + n.textContent + '" (2 px allowed)');
+      }
+    }
+    for (const e of wing ? wing.querySelectorAll('.rd, .focus-mini-ring, .ring') : []) {
+      const r = e.getBoundingClientRect();
+      const rad = parseFloat(getComputedStyle(e).borderTopLeftRadius) || 0;
+      if (rad < Math.min(r.width, r.height) / 2 - 0.5) lw.push('left wing: round control ' + (e.getAttribute('aria-label') || e.className) + ' has a corner radius of ' + rad + ' px, under half its ' + Math.round(r.width) + ' px size');
+    }
+    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, wattCard, header, deck, lw });
     document.body.appendChild(pre);
   }, new URLSearchParams(location.search).get('card') ? 7000 : 3000);</script>`;
   const broken = overflow ? `<style>${OVERFLOWS[overflow]}</style>` : '';
@@ -408,7 +449,10 @@ try {
       process.exit(1);
     }
     const text = m[1].replaceAll('&quot;', '"').replaceAll('&amp;', '&');
-    const { res, page: doc, overlaps, cut, gaps, wattCard, header, deck } = JSON.parse(text);
+    const { res, page: doc, overlaps, cut, gaps, wattCard, header, deck, lw } = JSON.parse(text);
+    for (const d of lw) console.log(`  FAIL ${d}`);
+    if (lw.length) failed = true;
+    else if (v.q.includes('hz=work')) console.log('  ok   left wing: three music buttons on one line, TEMP header centred, round controls round');
     for (const d of deck) console.log(`  FAIL ${d}`);
     if (deck.length) failed = true;
     else if (v.q.includes('hz=work')) console.log('  ok   the deck stays above its floor, every key label inside its tile, the Now heading whole');

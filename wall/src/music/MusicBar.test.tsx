@@ -1,7 +1,8 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { mocks } from '../bridge/tauri';
 import { resetNowPlaying } from './store';
+import { HoverTipLayer, resetTip } from '../ui/HoverTip';
 import { MusicBar, MusicMini } from './MusicBar';
 
 beforeEach(() => vi.useFakeTimers());
@@ -120,26 +121,56 @@ it('skips the refresh after a command while hidden and writes nothing after unmo
   expect(get.mock.calls.length).toBe(before);
 });
 
-it('MusicMini shows the track with one play or pause button', async () => {
-  const cmd = vi.fn();
+it('MusicMini shows the track with Previous, Play or Pause and Next in that order, each calling its command once', async () => {
+  const calls: string[] = [];
   mocks.set('get_now_playing', () => ({ title: 'Tokyo Burnout', artist: 'Tokyo Rose', playback_status: 'playing' }));
-  mocks.set('media_play_pause', cmd);
+  for (const c of ['media_previous', 'media_play_pause', 'media_next']) mocks.set(c, () => void calls.push(c));
   const { container } = render(<MusicMini />);
   await flush();
   expect(screen.getByText('Tokyo Burnout')).toBeTruthy();
   expect(screen.getByText('Tokyo Rose')).toBeTruthy();
-  expect(container.querySelectorAll('button')).toHaveLength(1);
-  await act(async () => {
-    screen.getByLabelText('Pause').click();
-  });
-  expect(cmd).toHaveBeenCalled();
+  const btns = [...container.querySelectorAll('button')];
+  expect(btns.map((b) => b.getAttribute('aria-label'))).toEqual(['Previous', 'Pause', 'Next']);
+  expect(btns.every((b) => b.className === 'rd')).toBe(true);
+  for (const b of btns)
+    await act(async () => {
+      b.click();
+    });
+  expect(calls).toEqual(['media_previous', 'media_play_pause', 'media_next']);
 });
 
-it('MusicMini is quiet with a disabled button when nothing plays', async () => {
+it('MusicMini keeps the three buttons while paused, with Play', async () => {
+  mocks.set('get_now_playing', () => ({ title: 'x', playback_status: 'paused' }));
+  const { container } = render(<MusicMini />);
+  await flush();
+  expect([...container.querySelectorAll('button')].map((b) => b.getAttribute('aria-label'))).toEqual(['Previous', 'Play', 'Next']);
+});
+
+it('MusicMini carries the full title in its hover tip when the title is cut', async () => {
+  const long = 'An Extremely Long Song Title That Goes On And On Forever';
+  mocks.set('get_now_playing', () => ({ title: long, artist: 'Band', playback_status: 'playing' }));
+  render(
+    <>
+      <MusicMini />
+      <HoverTipLayer />
+    </>,
+  );
+  await flush();
+  const el = screen.getByText(long);
+  expect(el.className).toContain('ellipsis');
+  fireEvent.mouseEnter(el);
+  await flush(400);
+  expect(document.body.textContent).toContain(`${long}, Band`);
+  resetTip();
+});
+
+it('MusicMini is quiet with all three buttons disabled when nothing plays', async () => {
   mocks.set('get_now_playing', () => ({ playback_status: 'stopped' }));
   const { container } = render(<MusicMini />);
   await flush();
   expect(screen.getByText('Nothing playing')).toBeTruthy();
   expect(container.querySelector('.music-mini')!.className).toContain('quiet');
-  expect((screen.getByLabelText('Play') as HTMLButtonElement).disabled).toBe(true);
+  const btns = [...container.querySelectorAll('button')] as HTMLButtonElement[];
+  expect(btns.map((b) => b.getAttribute('aria-label'))).toEqual(['Previous', 'Play', 'Next']);
+  expect(btns.every((b) => b.disabled)).toBe(true);
 });
