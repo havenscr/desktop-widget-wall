@@ -144,7 +144,8 @@ try {
     const view = { left: 0, top: 0, right: innerWidth, bottom: innerHeight };
     const res = sels.map((sel) => ({ sel, items: [...document.querySelectorAll(sel)].map((e) => {
       const box = e.getBoundingClientRect();
-      const holder = e.parentElement.closest('.centre') || band || document.documentElement;
+      // Dream covers the whole stage (its text also drifts up to 15 px each way), so it is held by itself, not the band.
+      const holder = e.closest('.dream') || e.parentElement.closest('.centre') || band || document.documentElement;
       return { sw: e.scrollWidth, cw: e.clientWidth, sh: e.scrollHeight, ch: e.clientHeight,
         inHolder: out(box, holder.getBoundingClientRect()), inView: out(box, view) };
     }) }));
