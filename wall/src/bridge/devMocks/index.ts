@@ -1,4 +1,4 @@
-import { isTauri } from '../tauri';
+import { isTauri, mocks } from '../tauri';
 import { registerAudioMocks } from './audio';
 import { registerDeckMocks } from './deck';
 import { registerGalleryMocks } from './gallery';
@@ -9,9 +9,9 @@ import { registerOmniMocks } from './omni';
 import { registerPowerMocks } from './power';
 import { registerSonosMocks } from './sonos';
 import { registerSignalMocks } from './signals';
+import { registerSpotifyMocks } from './spotify';
 import { registerTaskMocks } from './tasks';
 import { registerWatchMocks } from './watch';
-import { mocks } from '../tauri';
 
 /**
  * Realistic answers for the commands the Work and Home tabs call, so `npm run dev` in a
@@ -31,6 +31,7 @@ export function registerDevMocks(): void {
   registerAudioMocks();
   registerGalleryMocks();
   registerSignalMocks();
+  registerSpotifyMocks();
   registerWatchMocks();
   mocks.set('wall2_build_info', () => ({ commit: 'dev', builtAt: '2026-11-13T09:05Z' }));
 }

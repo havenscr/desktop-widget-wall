@@ -39,7 +39,7 @@ pub trait SecretStore {
 }
 
 pub fn target(id: &str, n: usize) -> String {
-    format!("WidgetWall2/meet/{id}/{n}")
+    crate::wall2_oauth::credential_target("meet", id, n)
 }
 
 pub struct Chunked<B: BlobStore>(pub B);
