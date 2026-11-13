@@ -38,6 +38,7 @@ export function arrangedText(r: ArrangeResult): string {
 
 /** The fixed words `wall2_arrange` and `wall2_arrange_undo` answer with, as one short line each. */
 export function arrangeReason(word: string): string {
+  if (/^(zoneApps rule|zone) \d+:/.test(word)) return word;
   switch (word) {
     case 'no big screen':
       return 'No big screen found';

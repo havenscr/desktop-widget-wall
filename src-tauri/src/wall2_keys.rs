@@ -428,8 +428,7 @@ fn reserved_id(id: &str) -> bool {
 pub(crate) fn parse_config(text: &str) -> Result<Config, String> {
     let root: Value = serde_json::from_str(text).map_err(|_| "keys.json is not valid JSON".to_string())?;
     let zones = parse_fraction_zones(root.get("zones"))?;
-    let zone_count = if zones.is_empty() { 4 } else { zones.len() };
-    let zone_apps = parse_zone_apps(root.get("zoneApps"), zone_count, valid_exe)?;
+    let zone_apps = parse_zone_apps(root.get("zoneApps"), valid_exe)?;
     let apps = root.get("apps").and_then(Value::as_array).ok_or_else(|| "keys.json needs an \"apps\" list".to_string())?;
     if apps.len() > MAX_APPS {
         return Err(format!("keys.json has more than {MAX_APPS} apps"));
@@ -1469,7 +1468,7 @@ mod tests {
         assert_eq!(c.zone_apps, vec![ZoneApp { exe: "mail.exe".into(), zone: 2 }]);
         for bad in [
             r#"{"apps":[],"zones":[{"x":0,"y":0,"w":1.1,"h":1}]}"#,
-            r#"{"apps":[],"zoneApps":[{"exe":"mail.exe","zone":5}]}"#,
+            r#"{"apps":[],"zoneApps":[{"exe":"mail.exe","zone":17}]}"#,
             r#"{"apps":[],"zoneApps":[{"exe":"mail","zone":1}]}"#,
         ] {
             assert!(parse_config(bad).is_err(), "{bad}");

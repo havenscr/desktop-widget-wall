@@ -12,7 +12,7 @@
 
 use crate::wall2_omni::require_wall2;
 use crate::wall2_winutil::Rect;
-use crate::wall2_zones::{self, FractionZone, ZoneApp, ZoneWindow};
+use crate::wall2_zones::{self, FractionZone, MonitorIdentity, ZoneApp, ZoneWindow};
 use std::time::{Duration, Instant};
 
 /// The columns of the thirds layout never exceed this many windows.
@@ -417,7 +417,7 @@ pub async fn wall2_arrange(window: tauri::WebviewWindow, app: tauri::AppHandle, 
         } else {
             (Vec::new(), Vec::new())
         };
-        tauri::async_runtime::spawn_blocking(move || win::arrange(layout, wall, file_zones, rules).map_err(str::to_string))
+        tauri::async_runtime::spawn_blocking(move || win::arrange(layout, wall, file_zones, rules))
             .await
             .map_err(|_| BUSY.to_string())?
     }
@@ -451,10 +451,12 @@ mod win {
     use std::ffi::c_void;
     use std::sync::atomic::AtomicBool;
     use std::sync::Mutex;
+    use windows::core::PCWSTR;
     use windows::Win32::Foundation::{BOOL, HWND, LPARAM, RECT, TRUE};
     use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED, DWMWA_EXTENDED_FRAME_BOUNDS};
     use windows::Win32::Graphics::Gdi::{
-        EnumDisplayMonitors, GetMonitorInfoW, MonitorFromWindow, HDC, HMONITOR, MONITORINFO, MONITOR_DEFAULTTONEAREST,
+        EnumDisplayDevicesW, EnumDisplayMonitors, GetMonitorInfoW, MonitorFromWindow, DISPLAY_DEVICEW, HDC, HMONITOR,
+        MONITORINFO, MONITORINFOEXW, MONITOR_DEFAULTTONEAREST,
     };
     use windows::Win32::UI::WindowsAndMessaging::{
         GetWindow, GetWindowLongW, GetWindowPlacement, GetWindowRect, IsHungAppWindow, IsIconic, IsWindow,
@@ -505,12 +507,43 @@ mod win {
         unsafe { MonitorFromWindow(sys::hwnd(h), MONITOR_DEFAULTTONEAREST).0 as isize }
     }
 
+    fn wide_text(value: &[u16]) -> String {
+        let len = value.iter().position(|c| *c == 0).unwrap_or(value.len());
+        String::from_utf16_lossy(&value[..len])
+    }
+
+    /// The stable monitor model and instance fields FancyZones writes, plus the numbered
+    /// Windows display it records. The current virtual desktop is not available through this
+    /// Win32 path, so the parser rejects multiple entries for this device as ambiguous.
+    fn monitor_identity(id: isize) -> Option<MonitorIdentity> {
+        unsafe {
+            let mut info = MONITORINFOEXW::default();
+            info.monitorInfo.cbSize = std::mem::size_of::<MONITORINFOEXW>() as u32;
+            if !GetMonitorInfoW(HMONITOR(id as *mut c_void), &mut info.monitorInfo).as_bool() {
+                return None;
+            }
+            let display = wide_text(&info.szDevice);
+            let monitor_number = display.strip_prefix(r"\\.\DISPLAY")?.parse().ok()?;
+            let mut device = DISPLAY_DEVICEW { cb: std::mem::size_of::<DISPLAY_DEVICEW>() as u32, ..Default::default() };
+            if !EnumDisplayDevicesW(PCWSTR(info.szDevice.as_ptr()), 0, &mut device, 0).as_bool() {
+                return None;
+            }
+            let id = wide_text(&device.DeviceID);
+            let mut parts = id.split('\\');
+            if !parts.next()?.eq_ignore_ascii_case("MONITOR") { return None; }
+            let monitor = parts.next()?.to_string();
+            let monitor_instance = parts.next()?.to_string();
+            if monitor.is_empty() || monitor_instance.is_empty() { return None; }
+            Some(MonitorIdentity { monitor, monitor_instance, monitor_number, virtual_desktop: None })
+        }
+    }
+
     /// The big monitor, or None when the wall's own is the only one (or the wall's window
     /// is unknown, which fails closed).
-    fn big_monitor(wall: Option<isize>) -> Option<(Monitor, u32)> {
+    fn big_monitor(wall: Option<isize>) -> Option<(Monitor, Option<MonitorIdentity>)> {
         let wall = monitor_of(wall?);
         let list = monitors();
-        choose_monitor(&list, wall).map(|i| (list[i], i as u32 + 1))
+        choose_monitor(&list, wall).map(|i| (list[i], monitor_identity(list[i].id)))
     }
 
     pub fn big_screen_available(wall: Option<isize>) -> bool {
@@ -639,14 +672,14 @@ mod win {
         }
     }
 
-    pub fn arrange(layout: Layout, wall: Option<isize>, file_zones: Vec<FractionZone>, rules: Vec<ZoneApp>) -> Result<ArrangeResult, &'static str> {
-        let _busy = try_begin(&WORKING).ok_or(BUSY)?;
-        let (monitor, display_number) = big_monitor(wall).ok_or(NO_BIG_SCREEN)?;
+    pub fn arrange(layout: Layout, wall: Option<isize>, file_zones: Vec<FractionZone>, rules: Vec<ZoneApp>) -> Result<ArrangeResult, String> {
+        let _busy = try_begin(&WORKING).ok_or_else(|| BUSY.to_string())?;
+        let (monitor, identity) = big_monitor(wall).ok_or_else(|| NO_BIG_SCREEN.to_string())?;
         let self_elevated = sys::self_elevated();
         let recs: Vec<WinRec> = sys::top_level_windows().into_iter().map(|h| record(h, monitor_of(h), self_elevated)).collect();
         let picked = pick_windows(&recs, monitor.id, layout.windows());
         if picked.is_empty() {
-            return Err(NO_WINDOWS);
+            return Err(NO_WINDOWS.to_string());
         }
         let candidates: Vec<WinRec> = picked.iter().map(|&i| recs[i]).collect();
         let lefts: Vec<(isize, i32)> = candidates
@@ -659,11 +692,18 @@ mod win {
             .collect();
         let mut desk = WinDesk { self_elevated };
         let placed = if layout == Layout::Zones {
-            let fractions = std::env::var_os("LOCALAPPDATA")
-                .and_then(|p| wall2_zones::load_fancy(std::path::Path::new(&p), Some(display_number)))
-                .or_else(|| (!file_zones.is_empty()).then_some(file_zones))
-                .unwrap_or_else(wall2_zones::default_zones);
-            let zones = wall2_zones::scale_zones(&fractions, monitor.work);
+            let fancy = identity.as_ref().and_then(|identity| {
+                std::env::var_os("LOCALAPPDATA")
+                    .and_then(|p| wall2_zones::load_fancy(std::path::Path::new(&p), identity))
+                    .and_then(|z| wall2_zones::scale_zones(&z, monitor.work).ok())
+            });
+            let zones = match fancy {
+                Some(zones) => zones,
+                None if !file_zones.is_empty() => wall2_zones::scale_zones(&file_zones, monitor.work)
+                    .map_err(|n| format!("zone {n}: rectangle is empty after scaling"))?,
+                None => wall2_zones::scale_zones(&wall2_zones::default_zones(), monitor.work).map_err(|_| NO_WINDOWS.to_string())?,
+            };
+            wall2_zones::validate_zone_apps(&rules, zones.len())?;
             let windows: Vec<ZoneWindow> = candidates.iter().map(|c| ZoneWindow { id: c.id, image: sys::image_path(c.pid).unwrap_or_default() }).collect();
             let targets = wall2_zones::assign(&zones, &windows, &rules);
             apply_targets(&mut desk, &candidates, targets)
@@ -671,7 +711,7 @@ mod win {
             apply(&mut desk, layout, monitor.work, &candidates, &lefts)
         };
         if placed.is_empty() {
-            return Err(NO_WINDOWS);
+            return Err(NO_WINDOWS.to_string());
         }
         let asked = placed.len() as u32;
         let mut targets: Vec<(isize, Rect)> = Vec::new();
@@ -692,7 +732,7 @@ mod win {
         }
         let moved = targets.iter().filter(|t| arrived(t)).count() as u32;
         if moved == 0 {
-            return Err(NONE_MOVED);
+            return Err(NONE_MOVED.to_string());
         }
         Ok(ArrangeResult { moved, asked })
     }

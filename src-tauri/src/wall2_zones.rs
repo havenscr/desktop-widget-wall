@@ -9,6 +9,16 @@ use std::path::Path;
 pub(crate) const MAX_FANCY_BYTES: u64 = 256 * 1024;
 pub(crate) const MAX_FILE_ZONES: usize = 8;
 const MAX_FANCY_ZONES: usize = 16;
+const MAX_GRID_CELLS: usize = 256;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct MonitorIdentity {
+    pub monitor: String,
+    pub monitor_instance: String,
+    pub monitor_number: u32,
+    /// Present when Windows can identify the current virtual desktop.
+    pub virtual_desktop: Option<String>,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct FractionZone {
@@ -52,16 +62,23 @@ pub(crate) fn default_zones() -> Vec<FractionZone> {
     ]
 }
 
-pub(crate) fn scale_zones(zones: &[FractionZone], work: Rect) -> Vec<Rect> {
+pub(crate) fn scale_zones(zones: &[FractionZone], work: Rect) -> Result<Vec<Rect>, usize> {
+    if work.width() <= 0 || work.height() <= 0 {
+        return Err(1);
+    }
     let width = work.width() as f64;
     let height = work.height() as f64;
     zones
         .iter()
-        .map(|z| Rect {
-            left: work.left + (z.x * width).round() as i32,
-            top: work.top + (z.y * height).round() as i32,
-            right: work.left + ((z.x + z.w) * width).round() as i32,
-            bottom: work.top + ((z.y + z.h) * height).round() as i32,
+        .enumerate()
+        .map(|(i, z)| {
+            let target = Rect {
+                left: (work.left + (z.x * width).round() as i32).clamp(work.left, work.right),
+                top: (work.top + (z.y * height).round() as i32).clamp(work.top, work.bottom),
+                right: (work.left + ((z.x + z.w) * width).round() as i32).clamp(work.left, work.right),
+                bottom: (work.top + ((z.y + z.h) * height).round() as i32).clamp(work.top, work.bottom),
+            };
+            (target.left >= target.right || target.top >= target.bottom).then_some(Err(i + 1)).unwrap_or(Ok(target))
         })
         .collect()
 }
@@ -123,7 +140,7 @@ pub(crate) fn parse_fraction_zones(value: Option<&Value>) -> Result<Vec<Fraction
         .collect()
 }
 
-pub(crate) fn parse_zone_apps(value: Option<&Value>, zone_count: usize, valid_exe: impl Fn(&str) -> bool) -> Result<Vec<ZoneApp>, String> {
+pub(crate) fn parse_zone_apps(value: Option<&Value>, valid_exe: impl Fn(&str) -> bool) -> Result<Vec<ZoneApp>, String> {
     let Some(value) = value else { return Ok(Vec::new()) };
     let list = value.as_array().ok_or_else(|| "zoneApps must be a list".to_string())?;
     if list.len() > MAX_FILE_ZONES {
@@ -131,10 +148,15 @@ pub(crate) fn parse_zone_apps(value: Option<&Value>, zone_count: usize, valid_ex
     }
     list.iter().enumerate().map(|(i, v)| {
         let exe = v.get("exe").and_then(Value::as_str).filter(|s| valid_exe(s)).ok_or_else(|| format!("zoneApps rule {}: exe must be a file name ending in .exe", i + 1))?;
-        let zone = v.get("zone").and_then(Value::as_u64).and_then(|n| usize::try_from(n).ok()).filter(|n| *n > 0 && *n <= zone_count)
-            .ok_or_else(|| format!("zoneApps rule {}: zone must name an existing zone", i + 1))?;
+        let zone = v.get("zone").and_then(Value::as_u64).and_then(|n| usize::try_from(n).ok()).filter(|n| (1..=MAX_FANCY_ZONES).contains(n))
+            .ok_or_else(|| format!("zoneApps rule {}: zone must be between 1 and {MAX_FANCY_ZONES}", i + 1))?;
         Ok(ZoneApp { exe: exe.to_string(), zone })
     }).collect()
+}
+
+pub(crate) fn validate_zone_apps(rules: &[ZoneApp], zone_count: usize) -> Result<(), String> {
+    rules.iter().enumerate().find(|(_, rule)| rule.zone > zone_count)
+        .map_or(Ok(()), |(i, _)| Err(format!("zoneApps rule {}: zone must name an existing zone", i + 1)))
 }
 
 fn canvas(info: &Value) -> Option<Vec<FractionZone>> {
@@ -154,10 +176,13 @@ fn canvas(info: &Value) -> Option<Vec<FractionZone>> {
 }
 
 fn grid(info: &Value) -> Option<Vec<FractionZone>> {
+    let row_count = info.get("rows")?.as_u64().and_then(|n| usize::try_from(n).ok()).filter(|n| *n > 0)?;
+    let col_count = info.get("columns")?.as_u64().and_then(|n| usize::try_from(n).ok()).filter(|n| *n > 0)?;
+    if row_count.checked_mul(col_count)? > MAX_GRID_CELLS { return None; }
     let rows = info.get("rows-percentage").or_else(|| info.get("rowsPercentage"))?.as_array()?;
     let cols = info.get("columns-percentage").or_else(|| info.get("columnsPercentage"))?.as_array()?;
     let map = info.get("cell-child-map").or_else(|| info.get("cellChildMap"))?.as_array()?;
-    if rows.is_empty() || cols.is_empty() || map.len() != rows.len() { return None; }
+    if rows.len() != row_count || cols.len() != col_count || map.len() != row_count { return None; }
     let parts = |a: &[Value]| -> Option<Vec<f64>> {
         let out: Option<Vec<f64>> = a.iter().map(Value::as_f64).collect();
         let out = out?;
@@ -168,7 +193,7 @@ fn grid(info: &Value) -> Option<Vec<FractionZone>> {
     let mut bounds: HashMap<i64, (usize, usize, usize, usize)> = HashMap::new();
     for (r, row) in map.iter().enumerate() {
         let row = row.as_array()?;
-        if row.len() != cols.len() { return None; }
+        if row.len() != col_count { return None; }
         for (c, cell) in row.iter().enumerate() {
             let id = cell.as_i64()?;
             if id < 0 { continue; }
@@ -206,14 +231,24 @@ pub(crate) fn parse_custom(text: &[u8], uuid: &str) -> Option<Vec<FractionZone>>
 }
 
 /// Find the custom layout applied to the selected display. Built-in templates return none.
-pub(crate) fn parse_applied(text: &[u8], display_number: Option<u32>) -> Option<String> {
+pub(crate) fn parse_applied(text: &[u8], identity: &MonitorIdentity) -> Option<String> {
     if text.len() as u64 > MAX_FANCY_BYTES { return None; }
     let root: Value = serde_json::from_slice(text).ok()?;
     let list = root.get("applied-layouts")?.as_array()?;
-    let matches_display = |v: &&Value| display_number.is_none_or(|wanted| {
-        v.get("device").and_then(|d| d.get("monitor-number").or_else(|| d.get("monitorNumber"))).and_then(Value::as_u64) == Some(wanted as u64)
-    });
-    let entry = list.iter().find(matches_display).or_else(|| (list.len() == 1).then(|| &list[0]))?;
+    let matches_device = |v: &&Value| {
+        let Some(device) = v.get("device") else { return false };
+        let monitor = device.get("monitor").and_then(Value::as_str);
+        let instance = device.get("monitor-instance").or_else(|| device.get("monitorInstance")).and_then(Value::as_str);
+        let number = device.get("monitor-number").or_else(|| device.get("monitorNumber")).and_then(Value::as_u64);
+        let desktop = device.get("virtual-desktop").or_else(|| device.get("virtualDesktop")).and_then(Value::as_str);
+        monitor.is_some_and(|s| s.eq_ignore_ascii_case(&identity.monitor))
+            && instance.is_some_and(|s| s.eq_ignore_ascii_case(&identity.monitor_instance))
+            && number == Some(identity.monitor_number as u64)
+            && identity.virtual_desktop.as_ref().is_none_or(|wanted| desktop.is_some_and(|s| s.eq_ignore_ascii_case(wanted)))
+    };
+    let mut matches = list.iter().filter(matches_device);
+    let entry = matches.next()?;
+    if matches.next().is_some() { return None; }
     let applied = entry.get("applied-layout")?;
     (applied.get("type")?.as_str()? == "custom").then(|| applied.get("uuid")?.as_str().map(str::to_string)).flatten()
 }
@@ -225,10 +260,10 @@ fn read_capped(path: &Path) -> Option<Vec<u8>> {
     (out.len() as u64 <= MAX_FANCY_BYTES).then_some(out)
 }
 
-pub(crate) fn load_fancy(local_app_data: &Path, display_number: Option<u32>) -> Option<Vec<FractionZone>> {
+pub(crate) fn load_fancy(local_app_data: &Path, identity: &MonitorIdentity) -> Option<Vec<FractionZone>> {
     let dir = local_app_data.join("Microsoft").join("PowerToys").join("FancyZones");
     let applied = read_capped(&dir.join("applied-layouts.json"))?;
-    let uuid = parse_applied(&applied, display_number)?;
+    let uuid = parse_applied(&applied, identity)?;
     let custom = read_capped(&dir.join("custom-layouts.json"))?;
     parse_custom(&custom, &uuid)
 }
@@ -239,6 +274,9 @@ mod tests {
 
     fn r(left: i32, top: i32, right: i32, bottom: i32) -> Rect { Rect { left, top, right, bottom } }
     fn w(id: isize, exe: &str) -> ZoneWindow { ZoneWindow { id, image: format!(r"C:\Apps\{exe}") } }
+    fn identity() -> MonitorIdentity {
+        MonitorIdentity { monitor: "MODEL1".into(), monitor_instance: "INSTANCE1".into(), monitor_number: 2, virtual_desktop: None }
+    }
 
     #[test]
     fn corrected_default_has_four_measured_zones() {
@@ -254,9 +292,11 @@ mod tests {
     fn fractions_scale_inside_each_taskbar_edge() {
         let all = FractionZone { x: 0.0, y: 0.0, w: 1.0, h: 1.0 };
         for work in [r(40, 0, 2560, 1440), r(0, 0, 2520, 1440), r(0, 40, 2560, 1440), r(0, 0, 2560, 1400)] {
-            assert_eq!(scale_zones(&[all], work), vec![work]);
+            assert_eq!(scale_zones(&[all], work), Ok(vec![work]));
         }
-        assert_eq!(scale_zones(&default_zones(), r(0, 0, 1000, 500)), vec![r(0, 0, 310, 500), r(310, 0, 800, 500), r(800, 0, 1000, 250), r(800, 250, 1000, 500)]);
+        assert_eq!(scale_zones(&default_zones(), r(37, 19, 1037, 519)), Ok(vec![r(37, 19, 347, 519), r(347, 19, 837, 519), r(837, 19, 1037, 269), r(837, 269, 1037, 519)]));
+        let tiny = FractionZone { x: 0.99999, y: 0.0, w: 0.00001, h: 1.0 };
+        assert_eq!(scale_zones(&[tiny], r(37, 19, 5157, 739)), Err(1));
     }
 
     #[test]
@@ -283,29 +323,50 @@ mod tests {
             ZoneApp { exe: "a.exe".into(), zone: 2 },
         ];
         assert_eq!(assign(&zones, &windows, &rules), vec![(2, zones[1]), (1, zones[0])]);
-        assert_eq!(assign(&zones, &windows[..1], &[]).len(), 1);
-        assert_eq!(assign(&zones[..1], &windows, &[]).len(), 1);
+        assert_eq!(assign(&zones, &[], &[]), Vec::<(isize, Rect)>::new());
+        assert_eq!(assign(&zones, &windows[..1], &[]), vec![(1, zones[1])]);
+        assert_eq!(assign(&zones[..1], &windows, &[]), vec![(1, zones[0])]);
+        assert_eq!(validate_zone_apps(&[ZoneApp { exe: "a.exe".into(), zone: 4 }], zones.len()), Err("zoneApps rule 1: zone must name an existing zone".into()));
+        assert_eq!(validate_zone_apps(&rules, 1), Err("zoneApps rule 2: zone must name an existing zone".into()));
     }
 
     #[test]
     fn canvas_and_grid_custom_layouts_parse_defensively() {
         let canvas_json = br#"{"custom-layouts":[{"uuid":"u","type":"canvas","extra":1,"info":{"ref-width":1000,"ref-height":500,"zones":[{"X":0,"Y":0,"width":300,"height":500},{"X":300,"Y":0,"width":700,"height":500}]}}]}"#;
         assert_eq!(parse_custom(canvas_json, "U").unwrap().len(), 2);
-        let grid_json = br#"{"custom-layouts":[{"uuid":"g","type":"grid","info":{"rows-percentage":[5000,5000],"columns-percentage":[3000,7000],"cell-child-map":[[0,1],[0,2]]}}]}"#;
+        let grid_json = br#"{"custom-layouts":[{"uuid":"g","type":"grid","info":{"rows":2,"columns":2,"rows-percentage":[5000,5000],"columns-percentage":[3000,7000],"cell-child-map":[[0,1],[0,2]]}}]}"#;
         let got = parse_custom(grid_json, "g").unwrap();
         assert_eq!(got, vec![FractionZone { x: 0.0, y: 0.0, w: 0.3, h: 1.0 }, FractionZone { x: 0.3, y: 0.0, w: 0.7, h: 0.5 }, FractionZone { x: 0.3, y: 0.5, w: 0.7, h: 0.5 }]);
         for bad in [b"garbage".as_slice(), br#"{"custom-layouts":{}}"#, br#"{"custom-layouts":[{"uuid":"u","type":"canvas","info":{"ref-width":100,"ref-height":100,"zones":[{"X":90,"Y":0,"width":20,"height":20}]}}]}"#] {
             assert!(parse_custom(bad, "u").is_none());
         }
         assert!(parse_custom(&vec![b' '; MAX_FANCY_BYTES as usize + 1], "u").is_none());
+        for info in [
+            r#"{"rows":"2","columns":2,"rows-percentage":[5000,5000],"columns-percentage":[5000,5000],"cell-child-map":[[0,1],[0,1]]}"#,
+            r#"{"rows":3,"columns":2,"rows-percentage":[5000,5000],"columns-percentage":[5000,5000],"cell-child-map":[[0,1],[0,1]]}"#,
+            r#"{"rows":2,"columns":3,"rows-percentage":[5000,5000],"columns-percentage":[5000,5000],"cell-child-map":[[0,1],[0,1]]}"#,
+            r#"{"rows":2,"columns":2,"rows-percentage":[5000,5000],"columns-percentage":[5000,5000],"cell-child-map":[[0,1]]}"#,
+            r#"{"rows":1000,"columns":1000,"rows-percentage":[],"columns-percentage":[],"cell-child-map":[]}"#,
+        ] {
+            let text = format!(r#"{{"custom-layouts":[{{"uuid":"g","type":"grid","info":{info}}}]}}"#);
+            assert!(parse_custom(text.as_bytes(), "g").is_none(), "{info}");
+        }
     }
 
     #[test]
     fn applied_file_accepts_only_a_custom_layout_for_the_display() {
-        let json = br#"{"applied-layouts":[{"device":{"monitor-number":2},"applied-layout":{"uuid":"a","type":"custom"}},{"device":{"monitor-number":3},"applied-layout":{"uuid":"b","type":"grid"}}]}"#;
-        assert_eq!(parse_applied(json, Some(2)).as_deref(), Some("a"));
-        assert_eq!(parse_applied(json, Some(3)), None);
-        assert_eq!(parse_applied(b"no", Some(2)), None);
+        let json = br#"{"applied-layouts":[{"device":{"monitor":"MODEL1","monitor-instance":"INSTANCE1","monitor-number":2,"virtual-desktop":"desk-a"},"applied-layout":{"uuid":"a","type":"custom"}},{"device":{"monitor":"MODEL2","monitor-instance":"INSTANCE2","monitor-number":3},"applied-layout":{"uuid":"b","type":"custom"}}]}"#;
+        assert_eq!(parse_applied(json, &identity()).as_deref(), Some("a"));
+        let mut wrong = identity();
+        wrong.monitor_number = 3;
+        assert_eq!(parse_applied(json, &wrong), None, "a sole different device is never accepted");
+        let duplicate = br#"{"applied-layouts":[{"device":{"monitor":"MODEL1","monitor-instance":"INSTANCE1","monitor-number":2,"virtual-desktop":"a"},"applied-layout":{"uuid":"a","type":"custom"}},{"device":{"monitor":"MODEL1","monitor-instance":"INSTANCE1","monitor-number":2,"virtual-desktop":"b"},"applied-layout":{"uuid":"b","type":"custom"}}]}"#;
+        assert_eq!(parse_applied(duplicate, &identity()), None, "unknown current desktop makes two candidates ambiguous");
+        let mut desktop = identity();
+        desktop.virtual_desktop = Some("b".into());
+        assert_eq!(parse_applied(duplicate, &desktop).as_deref(), Some("b"));
+        assert_eq!(parse_applied(b"no", &identity()), None);
+        assert_eq!(parse_applied(&vec![b' '; MAX_FANCY_BYTES as usize + 1], &identity()), None);
     }
 
     #[test]
@@ -317,6 +378,30 @@ mod tests {
             assert!(parse_fraction_zones(Some(&value)).is_err());
         }
         let rules: Value = serde_json::from_str(r#"[{"exe":"MAIL.exe","zone":1}]"#).unwrap();
-        assert_eq!(parse_zone_apps(Some(&rules), 1, |s| s.ends_with(".exe")).unwrap()[0].zone, 1);
+        assert_eq!(parse_zone_apps(Some(&rules), |s| s.ends_with(".exe")).unwrap()[0].zone, 1);
+    }
+
+    #[test]
+    fn fancy_files_are_independently_capped_and_malformed_files_fall_through() {
+        let root = std::env::temp_dir().join(format!("wall2-zones-{}", std::process::id()));
+        let dir = root.join("Microsoft").join("PowerToys").join("FancyZones");
+        let _ = std::fs::remove_dir_all(&root);
+        assert_eq!(load_fancy(&root, &identity()), None, "absent files");
+        std::fs::create_dir_all(&dir).unwrap();
+        let applied = br#"{"applied-layouts":[{"device":{"monitor":"MODEL1","monitor-instance":"INSTANCE1","monitor-number":2},"applied-layout":{"uuid":"u","type":"custom"}}]}"#;
+        let custom = br#"{"custom-layouts":[{"uuid":"u","type":"canvas","info":{"ref-width":10,"ref-height":10,"zones":[{"X":0,"Y":0,"width":10,"height":10}]}}]}"#;
+        std::fs::write(dir.join("applied-layouts.json"), b"bad").unwrap();
+        std::fs::write(dir.join("custom-layouts.json"), custom).unwrap();
+        assert_eq!(load_fancy(&root, &identity()), None, "malformed applied file");
+        std::fs::write(dir.join("applied-layouts.json"), vec![b' '; MAX_FANCY_BYTES as usize + 1]).unwrap();
+        assert_eq!(load_fancy(&root, &identity()), None, "oversized applied file");
+        std::fs::write(dir.join("applied-layouts.json"), applied).unwrap();
+        std::fs::write(dir.join("custom-layouts.json"), b"bad").unwrap();
+        assert_eq!(load_fancy(&root, &identity()), None, "malformed custom file");
+        std::fs::write(dir.join("custom-layouts.json"), vec![b' '; MAX_FANCY_BYTES as usize + 1]).unwrap();
+        assert_eq!(load_fancy(&root, &identity()), None, "oversized custom file");
+        std::fs::write(dir.join("custom-layouts.json"), custom).unwrap();
+        assert_eq!(load_fancy(&root, &identity()), Some(vec![FractionZone { x: 0.0, y: 0.0, w: 1.0, h: 1.0 }]));
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

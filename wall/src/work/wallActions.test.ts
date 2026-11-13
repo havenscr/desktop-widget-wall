@@ -72,6 +72,8 @@ it('a layout refusal is one fixed line and leaves no Undo', async () => {
     expect(await refusal('layout:thirds')).toBe(line);
   }
   expect(useDeckStore.getState().applied).toBeNull();
+  fails('wall2_arrange', 'zoneApps rule 2: zone must name an existing zone');
+  expect(await refusal('layout:zones')).toBe('zoneApps rule 2: zone must name an existing zone');
   fails('wall2_arrange_undo', 'nothing to undo');
   expect(await refusal('layout:undo')).toBe('Nothing to undo');
 });
