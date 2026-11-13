@@ -9,6 +9,7 @@ export interface SpotifySearch { tracks: SpotifyItem[]; albums: SpotifyItem[]; p
 export const spotify = {
   status: () => invoke<SpotifyStatus>('wall2_spotify_status'),
   signIn: () => invoke<void>('wall2_spotify_sign_in'),
+  cancelSignIn: () => invoke<void>('wall2_spotify_cancel_sign_in'),
   signOut: () => invoke<void>('wall2_spotify_sign_out'),
   playlists: (page = 0) => invoke<SpotifyItem[]>('wall2_spotify_playlists', { page }),
   albums: (page = 0) => invoke<SpotifyItem[]>('wall2_spotify_albums', { page }),

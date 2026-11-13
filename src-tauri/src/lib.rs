@@ -61,6 +61,7 @@ mod wall2_home;
 mod wall2_meet;
 mod wall2_oauth;
 mod wall2_spotify;
+mod wall2_spotify_log;
 mod wall2_omni;
 mod wall2_power;
 mod wall2_signals;
@@ -3770,6 +3771,7 @@ pub fn run() {
             wall2_meet::wall2_meet_sign_out,
             wall2_spotify::wall2_spotify_status,
             wall2_spotify::wall2_spotify_sign_in,
+            wall2_spotify::wall2_spotify_cancel_sign_in,
             wall2_spotify::wall2_spotify_sign_out,
             wall2_spotify::wall2_spotify_playlists,
             wall2_spotify::wall2_spotify_albums,

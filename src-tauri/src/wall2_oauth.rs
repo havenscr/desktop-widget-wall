@@ -54,8 +54,14 @@ pub fn respond(request: tiny_http::Request, status: u16, body: String) {
 }
 
 pub fn wait_for_callback(server: &tiny_http::Server, path: &str, state: &str, wait: Duration) -> Result<String, &'static str> {
+    wait_for_callback_cancelled(server, path, state, wait, || false)
+}
+
+/// Meet keeps its existing waiter because its cancellation behavior predates this shared helper.
+pub fn wait_for_callback_cancelled(server: &tiny_http::Server, path: &str, state: &str, wait: Duration, cancelled: impl Fn() -> bool) -> Result<String, &'static str> {
     let started = Instant::now();
     loop {
+        if cancelled() { return Err("cancelled") }
         if started.elapsed() >= wait { return Err("timed-out") }
         let request = match server.recv_timeout(Duration::from_millis(400)) {
             Ok(Some(r)) => r,

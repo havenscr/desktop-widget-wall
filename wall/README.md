@@ -29,6 +29,11 @@ The port is optional and defaults to 8898. Press Sign in on the wall once the Sp
 panel exists. Starting playback from the wall needs Spotify Premium. The integration
 has not been verified against the live Spotify service.
 
+Status treats a stored refresh token as signed in. If Spotify has expired that grant,
+the status changes only after the first library or playback call tries to refresh it.
+The panel must render every Spotify name as plain text, including playlist names from
+other people in search, and must never render those names as markup.
+
 ## Run, test, build (web)
 
 All commands run from the repository root (or `cd wall` and drop `--prefix wall`).
