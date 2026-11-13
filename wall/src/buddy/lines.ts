@@ -142,12 +142,12 @@ export const LINES: Readonly<Record<Topic, readonly string[]>> = {
     'Still playing. Still good.',
   ],
   rain: [
-    'Rain. Good day to stay inside.',
+    'Rain. The window is all drops.',
     'Rain on the wool.',
     'Wet out there. Dry in here.',
     'The rain is doing its thing.',
     'Grey and wet. Cozy.',
-    'Rain sounds. I like them.',
+    'Rain. The puddles are filling.',
   ],
   snow: [
     'Snow. I blend right in.',
@@ -211,7 +211,7 @@ export const LINES: Readonly<Record<Topic, readonly string[]>> = {
   ],
   evening: [
     'Evening. The light is going.',
-    'Evening. Time to slow down.',
+    'Evening. Everything is turning blue.',
     'Waiting for the moon.',
     'The sky is going purple.',
     'Evening. The hills look soft.',
