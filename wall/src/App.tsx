@@ -10,6 +10,8 @@ import { Screens } from './screens/Screens';
 import { Stage } from './stage/Stage';
 import { HoverTipLayer } from './ui/HoverTip';
 import { useSignalStore } from './signals/store';
+import { LeaveBanner } from './signals/LeaveBanner';
+import { FloatingRecordingChip } from './signals/RecordingChip';
 
 export function App() {
   const active = usePlaceStore((s) => s.active);
@@ -33,6 +35,8 @@ export function App() {
         <Rail />
         <Screens />
       </div>
+      <LeaveBanner />
+      <FloatingRecordingChip />
       <HoverTipLayer />
     </Stage>
   );

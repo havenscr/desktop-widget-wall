@@ -43,6 +43,9 @@ import {
 } from './keysModel';
 import { keyboardOnMouseKey, useKeyPress } from './keyPress';
 import { useBrief } from './useBrief';
+import { RecordingKeys } from '../signals/RecordingKeys';
+import { RECORDING_PAGE } from '../signals/recordingKeys';
+import { useSignalStore } from '../signals/store';
 
 export { KEYS_POLL_MS };
 /** The wheel steps at most this often, so one turn of the wheel moves one page. */
@@ -134,6 +137,7 @@ function ForYouList({ items, onRun }: { items: ForYouItem[]; onRun: (item: ForYo
 export function Keys() {
   const { read, refresh } = useKeysRead();
   const items = useForYou();
+  const recording = useSignalStore((s) => s.recording);
   const libIdx = useLibIndex();
   const [mode, setModeState] = useState<Mode>(readMode);
   const [takeUntil, setTakeUntil] = useState(0);
@@ -266,11 +270,13 @@ export function Keys() {
   const pages = pagesFor(sum, forYouOn);
   const hold = m.hold;
   let page: Page | null;
+  // While a recorder runs, Auto shows the Recording page (Hold still wins, and stepping by hand still works).
+  const onRecording = !hold && recording;
   if (hold) page = pages.find((p) => p.id === m.setId) ?? null;
   else if (takeUntil !== 0 && forYouOn) page = pages.find((p) => p.id === FOR_YOU) ?? null;
   else page = autoPage(sum);
 
-  const pageSet = page?.kind === 'set' ? page.set : null;
+  const pageSet = !onRecording && page?.kind === 'set' ? page.set : null;
   const allKeys = pageSet ? pageSet.keys.slice(0, MAX_KEYS) : [];
   const chunks = keyChunks(allKeys);
   const paged = allKeys.length > KEYS_PER_ROW && !twoRows;
@@ -300,7 +306,7 @@ export function Keys() {
       setMode({ hold: true, setId: pageSet.id });
       return;
     }
-    goTo(stepPage(pages, page?.id ?? null, dir));
+    goTo(stepPage(pages, onRecording ? null : (page?.id ?? null), dir));
   };
   const onWheel = (e: WheelEvent) => {
     if ((pages.length < 2 && !paged) || e.deltaY === 0) return;
@@ -310,11 +316,12 @@ export function Keys() {
     stepTo(e.deltaY > 0 ? 1 : -1);
   };
 
-  const pageName = page ? (page.kind === 'foryou' ? 'For you' : page.set.name) : '';
-  const more = page?.kind === 'foryou' && items.length > FOR_YOU_SHOWN ? ` · +${items.length - FOR_YOU_SHOWN} more` : '';
-  const heading = page ? `Now · ${pageName}${more}` : 'Now';
-  const showChip = forYouOn && page?.kind !== 'foryou';
-  const pageAt = Math.max(0, pages.findIndex((p) => p.id === page?.id));
+  const pageName = onRecording ? RECORDING_PAGE : page ? (page.kind === 'foryou' ? 'For you' : page.set.name) : '';
+  const more = !onRecording && page?.kind === 'foryou' && items.length > FOR_YOU_SHOWN ? ` · +${items.length - FOR_YOU_SHOWN} more` : '';
+  const heading = page || onRecording ? `Now · ${pageName}${more}` : 'Now';
+  const showChip = forYouOn && (onRecording || page?.kind !== 'foryou');
+  const shownId = onRecording ? null : page?.id;
+  const pageAt = Math.max(0, pages.findIndex((p) => p.id === shownId));
   const headKey = `${heading}|${pages.length}|${showChip}|${items.length}|${brief ?? ''}`;
   const fit: HeadFit = headFit.key === headKey ? headFit.level : 0;
   drawn.current = { many: allKeys.length > KEYS_PER_ROW, headKey };
@@ -358,9 +365,9 @@ export function Keys() {
                 key={p.id}
                 type="button"
                 role="tab"
-                aria-selected={p.id === page?.id}
+                aria-selected={p.id === shownId}
                 aria-label={p.kind === 'foryou' ? 'For you' : p.set.name}
-                className={`deck-dot${p.id === page?.id ? ' on' : ''}${p.kind === 'foryou' ? ' am' : ''}`}
+                className={`deck-dot${p.id === shownId ? ' on' : ''}${p.kind === 'foryou' ? ' am' : ''}`}
                 {...tip(p.kind === 'foryou' ? 'For you: what waits on you' : `Keys: ${p.set.name}`)}
                 onClick={() => goTo(p)}
               >
@@ -402,6 +409,15 @@ export function Keys() {
       {controls}
     </div>
   );
+
+  if (onRecording) {
+    return (
+      <section className="keys deck-row" data-floor={floor} aria-label={heading} onWheel={onWheel} ref={rowRef}>
+        {head}
+        <RecordingKeys press={press} onKeyDown={onKeyDown} />
+      </section>
+    );
+  }
 
   if (page?.kind === 'foryou') {
     return (

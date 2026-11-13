@@ -8,6 +8,7 @@ import './styles/ribbon.css';
 import './styles/agents.css';
 import './styles/unwind.css';
 import './styles/zen.css';
+import './styles/signals.css';
 import { startIfTop } from './ui/topWindow';
 
 // The wall never runs inside a frame (content in a player frame could otherwise load it there

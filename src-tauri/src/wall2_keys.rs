@@ -17,6 +17,10 @@
 //! runs a chord, and the two actions that are system calls (lock, monitors to sleep); for any
 //! other action it answers with the fixed action name and the page runs the control that
 //! already does it. Keys come from `keys.json` and from the fixed library (`wall2_keylib`).
+//! One exception to "a library key goes only to its group's programs": the three recording keys
+//! (`RECORDING_KEYS`, whose recorder hotkeys are global) are sent whatever is in front, but only
+//! while the native signal says a recorder is running, only as their fixed chord, and only by a
+//! library id from the wall2 window (`recording_pass`).
 //! Every decision below is a pure function with a test; the Win32 calls are in the `win`
 //! module, compiled on Windows only.
 #![cfg_attr(not(windows), allow(dead_code))]
@@ -234,10 +238,39 @@ pub(crate) fn is_global_chord(steps: &[Step]) -> bool {
     matches!(steps, [Step { mods: 0, key: Some(vk) }] if GLOBAL_KEYS.contains(vk))
 }
 
+/// The three recording keys of the library and the chord each one must still be. Camtasia's
+/// recorder hotkeys are global, so these (and only these) may be sent whatever is in front, while a
+/// recorder is running (`recording_pass`).
+pub(crate) const RECORDING_KEYS: [(&str, &str); 3] = [("rec-stop", "F10"), ("rec-toggle", "F9"), ("rec-marker", "Ctrl+M")];
+
+/// Proof that one of the three recording keys may skip the "program in front" check. It cannot be
+/// built anywhere but `recording_pass`, so a send that holds one has passed every condition.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct RecordingPass(());
+
+/// The one exception to "a library key goes only to its group's programs". All of these must hold:
+/// the id is one of `RECORDING_KEYS`, its chord is exactly the one listed for it, and `recording`
+/// (the native signal, read in Rust by the command, never taken from the page) is true. Anything
+/// else gets None and is checked like any other key.
+pub(crate) fn recording_pass(id: &str, steps: &[Step], recording: bool) -> Option<RecordingPass> {
+    if !recording {
+        return None;
+    }
+    let (_, chord) = RECORDING_KEYS.iter().find(|(key, _)| *key == id)?;
+    let fixed = parse_chord(chord)?;
+    (fixed == steps).then_some(RecordingPass(()))
+}
+
 /// What a chord send must do first: Ok(true) to check the target and bring it forward, Ok(false)
 /// to send at once (a global key), or the refusal.
 pub(crate) fn plan_target(app: &AppDef, steps: &[Step], remembered: Option<&Remembered>, live: &Live) -> Result<bool, Refusal> {
-    if is_global_chord(steps) {
+    plan_target_for(app, steps, remembered, live, None)
+}
+
+/// `plan_target`, with the recording exception: a `RecordingPass` sends at once, nothing is
+/// checked or brought forward (the recorder's hotkey is global).
+pub(crate) fn plan_target_for(app: &AppDef, steps: &[Step], remembered: Option<&Remembered>, live: &Live, pass: Option<RecordingPass>) -> Result<bool, Refusal> {
+    if is_global_chord(steps) || pass.is_some() {
         return Ok(false);
     }
     check_target(app, remembered, live).map(|_| true)
@@ -819,7 +852,8 @@ pub async fn wall2_keys_send(window: tauri::WebviewWindow, app: tauri::AppHandle
     {
         let (config, _) = load_config(&app).map_err(|_| Refusal::NoKey.word().to_string())?;
         let (set, key) = resolve(&config, &set_id, index).map_err(|r| r.word().to_string())?;
-        run_key(set, key.action).await
+        // A key of a set never gets the recording exception; only a library key by its fixed id can.
+        run_key(set, key.action, None).await
     }
     #[cfg(not(windows))]
     {
@@ -835,7 +869,12 @@ pub async fn wall2_keys_send_library(window: tauri::WebviewWindow, id: String) -
     #[cfg(windows)]
     {
         let (set, key) = resolve_library(&id).map_err(|r| r.word().to_string())?;
-        run_key(set, key.action).await
+        // The recording exception: the native signal is read here, in Rust, after the window check above.
+        let pass = match &key.action {
+            KeyAction::Chord(steps) => recording_pass(&id, steps, crate::wall2_signals::recording_now()),
+            KeyAction::Wall(_) => None,
+        };
+        run_key(set, key.action, pass).await
     }
     #[cfg(not(windows))]
     {
@@ -845,8 +884,8 @@ pub async fn wall2_keys_send_library(window: tauri::WebviewWindow, id: String) -
 }
 
 #[cfg(windows)]
-async fn run_key(set: AppDef, action: KeyAction) -> Result<Option<String>, String> {
-    tauri::async_runtime::spawn_blocking(move || win::run(&set, &action).map_err(|r| r.word().to_string()))
+async fn run_key(set: AppDef, action: KeyAction, pass: Option<RecordingPass>) -> Result<Option<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || win::run(&set, &action, pass).map_err(|r| r.word().to_string()))
         .await
         .map_err(|_| Refusal::Busy.word().to_string())?
 }
@@ -992,9 +1031,9 @@ mod win {
     /// Carry out one key. A chord goes to the program in front when `set` accepts it; a wall
     /// action never types: Rust does the two system calls, and for every other action the
     /// answer is the fixed name for the page to run.
-    pub fn run(set: &AppDef, action: &KeyAction) -> Result<Option<String>, Refusal> {
+    pub fn run(set: &AppDef, action: &KeyAction, pass: Option<RecordingPass>) -> Result<Option<String>, Refusal> {
         match action {
-            KeyAction::Chord(steps) => send(set, steps).map(|_| None),
+            KeyAction::Chord(steps) => send(set, steps, pass).map(|_| None),
             KeyAction::Wall(WallAction::Lock) => system_call(lock).map(|_| None),
             KeyAction::Wall(WallAction::DisplaysOff) => detach(displays_off).map(|_| None),
             KeyAction::Wall(a) => Ok(outcome(a)),
@@ -1042,10 +1081,10 @@ mod win {
         sent.0 != 0
     }
 
-    fn send(app: &AppDef, steps: &[Step]) -> Result<(), Refusal> {
+    fn send(app: &AppDef, steps: &[Step], pass: Option<RecordingPass>) -> Result<(), Refusal> {
         let _busy = try_begin(&SENDING).ok_or(Refusal::Busy)?;
         let remembered = current_for_send();
-        let needs_target = plan_target(app, steps, remembered.as_ref(), &remembered.as_ref().map(look).unwrap_or_default())?;
+        let needs_target = plan_target_for(app, steps, remembered.as_ref(), &remembered.as_ref().map(look).unwrap_or_default(), pass)?;
         // A global key (volume, media) has no target: it is sent at once, nothing is raised, and
         // the front window is not compared before each step.
         let target = if needs_target { Some(remembered.as_ref().map(|r| r.hwnd).ok_or(Refusal::NoApp)?) } else { None };
@@ -1794,6 +1833,116 @@ mod tests {
                 assert_eq!(is_global_chord(&c), named, "{}", e.id);
             }
         }
+    }
+
+    // Section: the recording exception
+
+    fn library_steps(id: &str) -> Vec<Step> {
+        match resolve_library(id).unwrap().1.action {
+            KeyAction::Chord(steps) => steps,
+            KeyAction::Wall(_) => panic!("{id} is not a chord"),
+        }
+    }
+
+    #[test]
+    fn the_three_recording_keys_are_the_library_chords_and_none_is_a_refused_chord() {
+        assert_eq!(RECORDING_KEYS.map(|(id, _)| id), ["rec-stop", "rec-toggle", "rec-marker"]);
+        for (id, chord) in RECORDING_KEYS {
+            let fixed = parse_chord(chord).unwrap_or_else(|| panic!("{chord}"));
+            assert!(!blocked_chord(&fixed), "{id}: Win+L and Ctrl+Alt+Delete never get through");
+            assert_eq!(library_steps(id), fixed, "{id} is still the chord the exception names");
+            assert!(!is_global_chord(&fixed), "{id} is not a volume or media key");
+        }
+    }
+
+    #[test]
+    fn each_recording_key_is_refused_while_not_recording_and_allowed_while_recording() {
+        for (id, _) in RECORDING_KEYS {
+            let steps = library_steps(id);
+            assert_eq!(recording_pass(id, &steps, false), None, "{id} not recording");
+            assert!(recording_pass(id, &steps, true).is_some(), "{id} recording");
+        }
+    }
+
+    #[test]
+    fn with_another_app_in_front_a_recording_key_needs_the_pass_and_nothing_else_does() {
+        let notepad = rem(r"C:\Apps\notepad.exe");
+        let live = Live { image: Some(r"C:\Apps\notepad.exe".into()), ..good_live() };
+        for (id, _) in RECORDING_KEYS {
+            let (set, _) = resolve_library(id).unwrap();
+            let steps = library_steps(id);
+            // Not recording: checked like any key of the Recording group, so Notepad in front or nothing in front refuses.
+            assert_eq!(plan_target(&set, &steps, Some(&notepad), &live), Err(Refusal::NoApp), "{id}");
+            assert_eq!(plan_target(&set, &steps, None, &Live::default()), Err(Refusal::NoApp), "{id}");
+            assert_eq!(plan_target_for(&set, &steps, Some(&notepad), &live, recording_pass(id, &steps, false)), Err(Refusal::NoApp), "{id} not recording");
+            // Recording: sent at once, nothing checked and nothing brought forward.
+            assert_eq!(plan_target_for(&set, &steps, Some(&notepad), &live, recording_pass(id, &steps, true)), Ok(false), "{id} recording");
+            assert_eq!(plan_target_for(&set, &steps, None, &Live::default(), recording_pass(id, &steps, true)), Ok(false), "{id} recording, nothing in front");
+        }
+    }
+
+    #[test]
+    fn no_other_library_key_gets_the_pass_even_while_recording() {
+        let notepad = rem(r"C:\Apps\notepad.exe");
+        let live = Live { image: Some(r"C:\Apps\notepad.exe".into()), ..good_live() };
+        let named: Vec<&str> = RECORDING_KEYS.iter().map(|(id, _)| *id).collect();
+        let mut tried = 0;
+        for e in wall2_keylib::LIBRARY {
+            if named.contains(&e.id) {
+                continue;
+            }
+            let Ok((set, key)) = resolve_library(e.id) else { continue };
+            let KeyAction::Chord(steps) = key.action else { continue };
+            tried += 1;
+            assert_eq!(recording_pass(e.id, &steps, true), None, "{}", e.id);
+            // Those of a group with programs of its own (the others in the Recording group included) stay refused in Notepad.
+            if !set.is_general() {
+                assert_eq!(plan_target_for(&set, &steps, Some(&notepad), &live, recording_pass(e.id, &steps, true)), Err(Refusal::NoApp), "{}", e.id);
+            }
+        }
+        assert!(tried > 30, "the whole library was tried, not a few");
+        // The other keys of the Recording group in particular.
+        for id in ["rec-layout", "rec-windows"] {
+            let steps = resolve_library(id).ok().and_then(|(_, k)| if let KeyAction::Chord(s) = k.action { Some(s) } else { None }).unwrap_or_default();
+            assert_eq!(recording_pass(id, &steps, true), None, "{id}");
+        }
+    }
+
+    #[test]
+    fn a_recording_key_id_with_any_other_chord_gets_no_pass() {
+        for (id, _) in RECORDING_KEYS {
+            for bad in ["Win+Shift+S", "Alt+F4", "F11", "Ctrl+Shift+Esc", "F9, F10", "Ctrl+M, Ctrl+M", "VolumeMute"] {
+                let steps = parse_chord(bad).unwrap();
+                assert_eq!(recording_pass(id, &steps, true), None, "{id} with {bad}");
+            }
+            assert_eq!(recording_pass(id, &[], true), None, "{id} with nothing");
+        }
+        // And an id that only looks like one.
+        let f10 = parse_chord("F10").unwrap();
+        for id in ["", "rec-stop ", "REC-STOP", "rec-stop2", "rec", "snip", "pinned", "library", "../rec-stop"] {
+            assert_eq!(recording_pass(id, &f10, true), None, "{id:?}");
+        }
+    }
+
+    #[test]
+    fn only_the_library_command_can_grant_the_pass_and_only_after_the_window_check() {
+        let src = include_str!("wall2_keys.rs");
+        let live = &src[..src.find("#[cfg(test)]\nmod tests").expect("tests module")];
+        // The native signal is read in exactly one place, and it is the library command.
+        assert_eq!(live.matches("recording_now()").count(), 1);
+        assert_eq!(live.matches("then_some(RecordingPass(()))").count(), 1, "the pass can be built in one place only");
+        let at = live.find("pub async fn wall2_keys_send_library(").expect("command");
+        let body = &live[at..];
+        let end = body.find("\n}\n").expect("end");
+        let body = &body[..end];
+        let gate = body.find("require_wall2(window.label())?;").expect("gate");
+        let signal = body.find("recording_now()").expect("signal read here");
+        assert!(gate < signal, "the window is checked before the signal is read");
+        // A key of a set never gets the pass, and the id the page sends is the only input.
+        let at = live.find("pub async fn wall2_keys_send(").expect("command");
+        let body = &live[at..live[at..].find("\n}\n").unwrap() + at];
+        assert!(body.contains("run_key(set, key.action, None)") && !body.contains("recording_pass"));
+        assert!(live.contains("id: String) -> Result<Option<String>, String> {\n    require_wall2"), "the library command takes an id and nothing else from the page");
     }
 
     // Section: check keys

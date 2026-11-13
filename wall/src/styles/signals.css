@@ -1,0 +1,154 @@
+/* The leave banner and the recording chip (concept set-dynamic: `leave()` and `recording()`).
+   Stage pixels, 2560 x 720. The banner sits over the top band of every place but Zen. */
+
+.leave-banner {
+  --c: 53, 230, 234;
+  position: absolute;
+  z-index: 30;
+  left: 624px;
+  top: 12px;
+  width: 1290px;
+  height: 50px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 10px 0 20px;
+  border-radius: 16px;
+  color: rgb(var(--c));
+  background: linear-gradient(rgba(var(--c), 0.1), rgba(var(--c), 0.1)), rgba(10, 7, 30, 0.9);
+  border: 1px solid rgba(var(--c), 0.45);
+  transition: background 600ms ease, border-color 600ms ease, box-shadow 600ms ease, color 600ms ease;
+}
+.leave-banner[data-phase='amber'],
+.leave-banner[data-phase='now'] {
+  --c: 255, 194, 77;
+  background: linear-gradient(rgba(var(--c), 0.16), rgba(var(--c), 0.16)), rgba(10, 7, 30, 0.9);
+  border-color: rgba(var(--c), 0.7);
+  box-shadow: 0 0 30px -8px var(--amber);
+}
+.leave-banner > svg {
+  flex: none;
+}
+/* The text is one button: it opens the event. */
+.lb-main {
+  flex: 1;
+  min-width: 0;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 10px;
+  margin-left: -10px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.lb-main:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+.lb-main:focus-visible,
+.lb-dismiss:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: 2px;
+}
+.lb-main b {
+  flex: none;
+  font: 600 24px/1 var(--body);
+  white-space: nowrap;
+}
+.lb-rest {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 400 22px/1.2 var(--body);
+  color: var(--tx);
+}
+.lb-hint {
+  flex: none;
+  margin-right: 10px;
+  font: 400 16px/1 var(--body);
+  color: var(--dim);
+  white-space: nowrap;
+}
+.lb-dismiss {
+  flex: none;
+  height: 34px;
+  padding: 0 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 194, 77, 0.5);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--tx);
+  font: 500 18px/1 var(--body);
+  cursor: pointer;
+}
+.lb-dismiss:hover {
+  background: rgba(255, 194, 77, 0.2);
+  border-color: rgba(255, 194, 77, 0.9);
+}
+
+/* The recording chip: 32 px, red tinted. In the Agents header, in the banner, or floating. */
+.rec-chip {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  height: 32px;
+  box-sizing: border-box;
+  padding: 0 14px;
+  border-radius: 16px;
+  background: rgba(255, 77, 109, 0.14);
+  border: 1px solid rgba(255, 77, 109, 0.5);
+  color: #ffb3c0;
+  font: 600 16px/1 var(--disp);
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+.rec-chip i {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--red);
+  box-shadow: 0 0 10px var(--red);
+}
+.rec-chip .rec-time {
+  font-variant-numeric: tabular-nums;
+}
+.rec-chip.compact {
+  padding: 0 12px;
+}
+.rec-chip:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: 2px;
+}
+.rec-float {
+  position: absolute;
+  z-index: 30;
+  top: 12px;
+  left: 624px;
+}
+/* On Work with no Agents header (the helper is down), the chip sits at the right end of the centre. */
+.rec-float[data-at='end'] {
+  left: auto;
+  right: calc(2560px - 1914px);
+}
+
+/* While the banner shows it takes the Agents header's place (nothing else moves). */
+:root[data-leave-banner] :is(.lanes-hd, .centre-note) {
+  visibility: hidden;
+}
+
+/* The Recording page's Stop key: the capture key with a red edge. */
+.key-tile[data-rec='stop'] {
+  --g: 255, 77, 109;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .leave-banner {
+    transition: none;
+  }
+}
