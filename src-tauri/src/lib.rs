@@ -60,6 +60,7 @@ mod wall2_home;
 mod wall2_meet;
 mod wall2_omni;
 mod wall2_power;
+mod wall2_signals;
 mod wall2_sonos;
 use audio_analysis::{AudioAnalyzer, AudioLevels};
 
@@ -3773,6 +3774,8 @@ pub fn run() {
             wall2_power::wall2_monitors_off,
             wall2_power::wall2_monitors_mode,
             wall2_power::wall2_display_state,
+            wall2_signals::wall2_signals,
+            wall2_signals::wall2_signals_report,
             wall2_arrange::wall2_arrange_status,
             wall2_arrange::wall2_arrange,
             wall2_arrange::wall2_arrange_undo,
@@ -3900,6 +3903,7 @@ pub fn run() {
                         "quit" => {
                             #[cfg(windows)]
                             wall2_power::shutdown();
+                            wall2_signals::shutdown();
                             app.exit(0);
                         }
                         _ => {}
@@ -3986,6 +3990,7 @@ pub fn run() {
             if let Some(window) = app.get_webview_window(WALL2_LABEL) {
                 wall2_window::start_log(app.path().app_log_dir().ok());
                 wall2_meet::start_log(app.path().app_log_dir().ok());
+                wall2_signals::start(app.handle().clone(), app.path().app_log_dir().ok());
                 #[cfg(windows)]
                 {
                     start_displays_worker();
@@ -4013,6 +4018,7 @@ pub fn run() {
                 wall2_window::log_window_event(window, event);
                 if matches!(event, tauri::WindowEvent::Destroyed) {
                     wall2_power::shutdown();
+                    wall2_signals::shutdown();
                 }
             }
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {

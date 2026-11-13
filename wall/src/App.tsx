@@ -9,6 +9,7 @@ import { usePlaceStore } from './state/places';
 import { Screens } from './screens/Screens';
 import { Stage } from './stage/Stage';
 import { HoverTipLayer } from './ui/HoverTip';
+import { useSignalStore } from './signals/store';
 
 export function App() {
   const active = usePlaceStore((s) => s.active);
@@ -21,6 +22,7 @@ export function App() {
   // the Work music bar and the Unwind view all read the same single source.
   useEffect(() => startAudio(), []);
   useEffect(() => acquireNowPlaying(), []);
+  useEffect(() => useSignalStore.getState().init(), []);
 
   return (
     <Stage>
