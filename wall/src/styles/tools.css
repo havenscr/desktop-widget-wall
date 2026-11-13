@@ -1,0 +1,248 @@
+/* The Tools drawer: 806 px wide at x 1734, top 20, over the right third of any place.
+   Two columns (410 px and the rest), rows 46 and 44 px, buttons 32 px (mouse sizes). */
+.rb.rb-tools[aria-pressed='true'] {
+  color: var(--cyan);
+  background: rgba(53, 230, 234, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(53, 230, 234, 0.45), 0 0 26px -6px rgba(53, 230, 234, 0.6);
+}
+.tools-drawer {
+  position: absolute;
+  z-index: 45;
+  left: 1734px;
+  top: 20px;
+  width: 806px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px 26px 16px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.016)), rgb(11, 8, 30);
+  border: 1px solid var(--line);
+  border-radius: 26px;
+  box-shadow: 0 18px 60px -10px rgba(2, 1, 10, 0.8);
+  font: 22px/1.3 var(--body);
+  color: var(--tx);
+}
+.tools-drawer * {
+  box-sizing: border-box;
+}
+.tools-top,
+.tools-head,
+.tools-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.tools-head {
+  margin-bottom: 10px;
+}
+.tools-k {
+  font: 600 18px/1 var(--disp);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--dim);
+  white-space: nowrap;
+}
+.tools-k.sm {
+  font-size: 15px;
+}
+.tools-k.tx {
+  color: var(--tx);
+}
+.tools-block > .tools-k.sm,
+.tools-col > .tools-k.sm,
+.tools-col.left > div > .tools-k.sm {
+  margin-bottom: 10px;
+}
+.tools-head > .tools-k.sm {
+  margin-bottom: 0;
+}
+.tools-x {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: var(--dim);
+  background: linear-gradient(rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.08)), rgba(8, 6, 26, 0.9);
+  border: 1px solid var(--line);
+}
+.tools-x:hover {
+  color: var(--tx);
+}
+.tools-cols {
+  display: grid;
+  grid-template-columns: 410px 1fr;
+  gap: 28px;
+}
+.tools-col {
+  min-width: 0;
+}
+.tools-col.left {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.tools-block {
+  border-radius: 8px;
+  transition: outline-color 600ms ease, box-shadow 600ms ease;
+  outline: 1px solid transparent;
+  outline-offset: 10px;
+}
+/* The Accounts section ringed for 2 seconds when the drawer opens from the Meet link. */
+.tools-block.ring {
+  outline-color: rgba(53, 230, 234, 0.55);
+  box-shadow: 0 0 30px -8px rgba(53, 230, 234, 0.5);
+}
+.tools-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.tools-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  border-top: 1px solid var(--line);
+}
+.tools-acct {
+  height: 46px;
+}
+.tools-src {
+  height: 44px;
+}
+.tools-ico {
+  display: grid;
+  color: var(--dim);
+  flex: none;
+}
+.tools-name {
+  font: 600 19px/1 var(--body);
+  white-space: nowrap;
+  flex: none;
+}
+.tools-srcname {
+  font: 600 18px/1 var(--body);
+  width: 96px;
+  white-space: nowrap;
+  flex: none;
+}
+.tools-line {
+  flex: 1;
+  min-width: 0;
+  font: 16px/1.3 var(--body);
+  color: var(--dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tools-line.bad,
+.tools-note.bad {
+  color: var(--amber);
+}
+.tools-line.one {
+  display: block;
+}
+.tools-note {
+  font: 16px/1.3 var(--body);
+  padding-top: 6px;
+}
+.tools-faint {
+  font: 16px/1.3 var(--body);
+  color: var(--faint);
+}
+.tools-head .tools-faint {
+  font-size: 14px;
+}
+.tools-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--faint);
+}
+.tools-dot.ok {
+  background: var(--mint);
+}
+.tools-dot.warn {
+  background: var(--amber);
+}
+.tools-dot.down {
+  background: var(--red);
+}
+.tools-dot.none {
+  background: var(--faint);
+}
+.tools-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex: none;
+  height: 32px;
+  padding: 0 14px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--dim);
+  font: 600 16px/1 var(--body);
+  white-space: nowrap;
+}
+.tools-btn:hover:not(:disabled) {
+  color: var(--tx);
+  border-color: var(--dim);
+}
+.tools-btn.cy {
+  background: var(--cyan);
+  color: #06041a;
+  border-color: transparent;
+}
+.tools-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.tools-btn:focus-visible,
+.tools-chip:focus-visible,
+.tools-x:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: 2px;
+}
+.tools-pair {
+  display: flex;
+  gap: 10px;
+}
+.tools-chips {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.tools-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  font: 17px/1.3 var(--body);
+  color: var(--dim);
+  white-space: nowrap;
+}
+.tools-chip:hover {
+  color: var(--tx);
+}
+.tools-chip.on {
+  background: rgba(53, 230, 234, 0.14);
+  color: var(--cyan);
+}
+.tools-hint {
+  margin-top: 8px;
+  font: 16px/1.3 var(--body);
+  color: var(--faint);
+}
+.tools-foot {
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}

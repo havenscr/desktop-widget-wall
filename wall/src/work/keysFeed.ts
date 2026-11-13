@@ -49,3 +49,8 @@ export function resetKeysFeed(): void {
   timer = null;
   useKeysFeedStore.setState({ read: { status: 'loading' } });
 }
+
+/** The Tools drawer's Reload: ask `wall2_keys_summary` again at once. The last good read stays shown until the answer lands, so the deck does not flicker. */
+export function reloadKeys(): void {
+  loadKeys();
+}
