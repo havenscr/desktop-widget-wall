@@ -147,15 +147,6 @@
   outline: 3px solid var(--cyan);
   outline-offset: 2px;
 }
-.u-soon {
-  font: 500 13px/1 var(--disp);
-  letter-spacing: 0.12em;
-  padding: 5px 8px;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.07);
-  color: var(--faint);
-}
-
 /* The listen row: the player now; a music browser can sit beside it later. */
 .u-listen {
   display: flex;
@@ -649,9 +640,10 @@
   cursor: default;
 }
 
-/* The video in the scene. Feathered: its edges melt into the sky, its foot on the horizon
-   line, and it lightens what is behind it, so the ridgelines and the moon still show in front
-   of its dark parts. Drive-in: a screen with a frame on two posts standing on the horizon. */
+/* The video in the scene. Feathered: the picture whole and fully visible, its edges melting
+   into the sky through a soft mask; its lower edge fades out before the horizon line, so the
+   ridgelines there show in front of it. It sits over the moon, so the moon's disc never shows
+   through the picture. Drive-in: a screen with a frame on two posts standing on the horizon. */
 .w-stage {
   position: absolute;
 }
@@ -687,7 +679,6 @@
   -webkit-mask-composite: source-in;
   mask-image: linear-gradient(90deg, transparent, #000 20%, #000 80%, transparent), linear-gradient(180deg, transparent, #000 17%, #000 74%, transparent);
   mask-composite: intersect;
-  mix-blend-mode: lighten;
 }
 .w-glow {
   position: absolute;
@@ -696,6 +687,20 @@
   top: -40px;
   bottom: 0;
   background: radial-gradient(closest-side, rgba(255, 61, 154, 0.2), rgba(154, 123, 255, 0.1) 60%, transparent);
+  pointer-events: none;
+}
+/* Over the horizon's moon (stage 1730, 112, radius 44), under the picture. */
+.w-moonveil {
+  position: absolute;
+  left: 490px;
+  top: -28px;
+  width: 180px;
+  height: 180px;
+  border-radius: 50%;
+  -webkit-backdrop-filter: brightness(0.22) blur(6px);
+  backdrop-filter: brightness(0.22) blur(6px);
+  -webkit-mask-image: radial-gradient(closest-side, #000 62%, transparent);
+  mask-image: radial-gradient(closest-side, #000 62%, transparent);
   pointer-events: none;
 }
 .w-drivein {
@@ -819,17 +824,30 @@
   height: calc(var(--room-top, 332px) - 20px);
   display: flex;
   flex-direction: column;
-  padding: 18px 22px 18px;
+  padding: 14px 22px 14px;
 }
+/* Five whole 40 px rows; past five it scrolls a row at a time, with a visible scrollbar and a
+   fade along the bottom while more rows are below. */
 .w-list {
-  flex: 1;
+  flex: 0 1 200px;
   min-height: 0;
   overflow-y: auto;
-  margin: 10px -8px 12px;
+  margin: 8px -8px 0;
   padding: 0 8px;
   list-style: none;
+  scroll-snap-type: y mandatory;
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+  scrollbar-color: rgba(255, 255, 255, 0.42) rgba(255, 255, 255, 0.07);
+}
+.w-list > li {
+  scroll-snap-align: start;
+}
+.w-list.more {
+  -webkit-mask-image: linear-gradient(180deg, #000 calc(100% - 30px), rgba(0, 0, 0, 0.15));
+  mask-image: linear-gradient(180deg, #000 calc(100% - 30px), rgba(0, 0, 0, 0.15));
+}
+.w-card:not(.empty) .w-field {
+  margin-top: auto;
 }
 .w-row {
   display: flex;
@@ -980,7 +998,7 @@
 }
 
 /* Listen: the album art's Video corner, only when something is saved to watch. */
-.u-art {
+.u-art:has(.u-video) {
   position: relative;
 }
 .u-video {

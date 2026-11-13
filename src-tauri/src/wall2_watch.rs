@@ -104,4 +104,18 @@ mod tests {
         assert!(watch_link("twitch", "abc").is_ok());
         assert!(watch_link("twitch", &"a".repeat(25)).is_ok());
     }
+
+    /// Both Wall 2 policies refuse to be framed and allow frames from the two players only.
+    #[test]
+    fn wall2_policies_refuse_framing() {
+        let conf: serde_json::Value = serde_json::from_str(include_str!("../tauri.wall2.conf.json")).unwrap();
+        for key in ["csp", "devCsp"] {
+            let csp = &conf["app"]["security"][key];
+            assert_eq!(csp["frame-ancestors"], "'none'", "{key}");
+            assert_eq!(csp["default-src"], "'none'", "{key}");
+            let mut hosts: Vec<&str> = csp["frame-src"].as_str().unwrap().split_whitespace().collect();
+            hosts.sort_unstable();
+            assert_eq!(hosts, ["https://player.twitch.tv", "https://www.youtube-nocookie.com"], "{key}");
+        }
+    }
 }

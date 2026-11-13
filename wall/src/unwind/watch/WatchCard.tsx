@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { IconBrandTwitch, IconBrandYoutube, IconBroadcast, IconCheck, IconPencil, IconPlaylist, IconX } from '@tabler/icons-react';
 import { useSignalStore } from '../../signals/store';
 import { kindName, refKey, type WatchKind } from './links';
@@ -61,6 +61,28 @@ function NameField({ item }: { item: SavedItem }) {
 }
 
 /**
+ * True while the list has rows below what shows (so it can fade at the bottom); read on
+ * scroll, on resize and whenever the rows change.
+ */
+function useMoreBelow(count: number) {
+  const ref = useRef<HTMLUListElement>(null);
+  const [more, setMore] = useState(false);
+  const check = useCallback(() => {
+    const el = ref.current;
+    setMore(!!el && el.scrollHeight - el.scrollTop - el.clientHeight > 2);
+  }, []);
+  useEffect(() => {
+    check();
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(check);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [check, count]);
+  return { ref, more, check };
+}
+
+/**
  * The Watch card (right wing, above Room): the saved list and one field, "Paste a YouTube or
  * Twitch link". A row plays on click; its pencil renames it and its cross removes it (32 px
  * targets, each with a tooltip). Empty, it explains itself and the field fills the card; past
@@ -76,6 +98,7 @@ export function WatchCard() {
   const errTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(() => () => clearTimeout(errTimer.current), []);
   const playingKey = playing ? refKey(playing) : null;
+  const list = useMoreBelow(saved.length);
   const st = useWatchStore.getState();
 
   const submit = (e: FormEvent) => {
@@ -136,7 +159,7 @@ export function WatchCard() {
           {saved.length} saved
         </span>
       </div>
-      <ul className="w-list">
+      <ul className={`w-list${list.more ? ' more' : ''}`} ref={list.ref} onScroll={list.check}>
         {saved.map((item) => {
           const key = refKey(item);
           if (editing === key)

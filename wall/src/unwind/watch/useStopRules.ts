@@ -3,7 +3,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { invoke, isTauri } from '../../bridge/tauri';
 import { useSignalStore } from '../../signals/store';
 import { usePlaceStore } from '../../state/places';
-import { useIdle } from '../../ui/useIdle';
+import { useDisplayDark } from '../../ui/useDisplayDark';
 import { useVisible } from '../../ui/useVisible';
 import { useWatchStore } from './store';
 import { stopReason } from './stops';
@@ -40,14 +40,14 @@ export function useScreensOffMode(): boolean {
 }
 
 /**
- * Removes the frame when any stop rule holds: the page hidden, the display idle signal (the
- * one the horizon uses: no input for four minutes, display off, Windows locked), Screens off
- * mode, or a call. Leaving the tab or Unwind is handled by the store. Mounted with the Watch
- * panel; it only ever stops, never starts.
+ * Removes the frame when any stop rule holds: the page hidden, the display off or Windows
+ * locked (`useDisplayDark`; never input idle, since nobody touches the mouse while watching),
+ * Screens off mode, or a call. Leaving the tab or Unwind is handled by the store. Mounted with
+ * the Watch panel; it only ever stops, never starts.
  */
 export function useStopRules(): void {
   const visible = useVisible();
-  const idle = useIdle();
+  const displayDark = useDisplayDark();
   const screensOff = useScreensOffMode();
   const inCall = useSignalStore((s) => s.call !== null);
   const place = usePlaceStore((s) => s.active);
@@ -55,7 +55,7 @@ export function useStopRules(): void {
   const playing = useWatchStore((s) => s.playing !== null);
   useEffect(() => {
     if (!playing) return;
-    const why = stopReason({ place, tab, visible, idle, screensOff, inCall });
+    const why = stopReason({ place, tab, visible, displayDark, screensOff, inCall });
     if (why) useWatchStore.getState().stop(why);
-  }, [playing, place, tab, visible, idle, screensOff, inCall]);
+  }, [playing, place, tab, visible, displayDark, screensOff, inCall]);
 }

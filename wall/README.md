@@ -928,17 +928,21 @@ switch sits. Leaving Watch (or Unwind) removes any video.
   host, gets one plain line. Saved items (kind, id, label, at most 24) are in local storage
   (`wall2-watch-list`), checked whole on every read (`saved.ts`). A new item opens its name
   field; each row plays on click and has rename and remove buttons (32 px, with tooltips).
-  Empty, the card explains itself; past five rows the list scrolls inside the card.
+  Empty, the card explains itself. It shows five whole rows; past five the list scrolls a row
+  at a time inside the card, with a visible scrollbar and a fade along the bottom while more
+  rows are below.
 - **The player** (`PlayerFrame.tsx`, `urls.ts`): one `<iframe>` whose address `embedUrl`
   builds only from a kind and id that pass the checks again: YouTube on
   `https://www.youtube-nocookie.com/embed/<id>` (playlists `/embed/videoseries?list=<id>`)
   with `autoplay=1&playsinline=1&rel=0&enablejsapi=1&origin=<page origin>`, Twitch on
   `https://player.twitch.tv/?channel=<login>&parent=<page host>`; `allow="autoplay;
   encrypted-media; picture-in-picture"`, `referrerpolicy="strict-origin-when-cross-origin"`,
-  `sandbox="allow-scripts allow-same-origin allow-presentation"`. No third-party script loads.
+  `sandbox="allow-scripts allow-same-origin"`. No third-party script loads.
   Pause, play and mute for YouTube are `postMessage` commands sent with the embed origin as
   target; Twitch has only Stop, which removes the frame. Messages from a frame are read only
   from that frame's window and the exact YouTube embed origin, and only for the play state.
+  An auto-mix playlist (an id starting `RD`) passes the id check but may not play in the
+  embed; Open in browser is the way out.
 - **Open in browser**: "Not playing? Open in browser" sits under every playing video, since
   whether either player accepts the wall's origin inside WebView2 is not known. It calls
   `wall2_watch_open` (`src-tauri/src/wall2_watch.rs`, `wall2` window only) with the kind and
@@ -946,17 +950,18 @@ switch sits. Leaving Watch (or Unwind) removes any video.
   `https://www.youtube.com/watch?v=<id>`, `https://www.youtube.com/playlist?list=<id>` or
   `https://www.twitch.tv/<login>` itself. The page never passes an address.
 - **Looks** (`looks.ts`, `Watch.tsx`): `feather` (the video in the sky left of the list, its
-  edges masked soft, its foot on the horizon line, lightening what is behind it so the
-  ridgelines and the moon show over its dark parts) and `drivein` (a framed screen on two
+  edges masked soft, the picture fully visible, its lower edge fading out before the horizon line so the ridgelines
+  there stay in front, and covering the moon) and `drivein` (a framed screen on two
   posts standing on the horizon, a soft colour wash on the floor under it; with nothing on, the
   empty screen stands there). The gear beside the tabs opens a sheet over the right wing:
   one look for everything, or one each for videos and playlists, live streams and Twitch
   (`wall2-watch-look`, checked on read). The Look button on the video (shown on hover) steps
   to the next look. Part 2 adds "whole sky" and "the sun" as two more `LOOKS` entries.
 - **When video stops** (`stops.ts`, `useStopRules.ts`): leaving Watch or Unwind (Zen and Dream
-  included), the page hidden, the display idle signal the horizon uses (`useIdle`: four
-  minutes without input, display off, locked), Screens off mode (`monitors-off-mode`), and a
-  call (the signals store's `call`). The frame is removed, never hidden, and nothing restarts
+  included), the page hidden, the display off or Windows locked (`ui/useDisplayDark.ts`, the
+  `display-state` half of `useIdle`; input idle never stops a video, since nobody touches the
+  mouse while watching), Screens off mode (`monitors-off-mode`), and a call (the signals
+  store's `call`). The frame is removed, never hidden, and nothing restarts
   it; the left block says why it stopped. Play is off during a call. No wake lock is held.
 - **Listen**: when something is saved, the album art has a small "Video" corner that
   switches to Watch. Nothing else on Listen changes.
@@ -1409,6 +1414,15 @@ new host, add it to `connect-src` (data from `fetch`), `img-src` (pictures) or
 `node_modules/@tauri-apps/cli/config.schema.json`. `devCsp` is the same policy for `tauri dev`, plus the Vite origin and websocket
 (`http://localhost:1421`, `ws://localhost:1421`) and inline scripts and styles,
 which Vite's hot reload injects. Keep the two in step when you add a host.
+
+Both policies also carry `frame-ancestors 'none'`: the wall is never framed. Script inside a
+player frame (an ad, a Twitch extension) could otherwise load the wall's own page in a frame
+of its own, where it has the wall's origin and every command, and lay it unseen under the
+owner's clicks on the video. As a second guard, for a runtime that does not enforce
+`frame-ancestors` on the app's own protocol, `src/main.tsx` checks `window.top === window.self`
+(`ui/topWindow.ts`) and only then imports `src/boot.tsx`, which holds everything that installs
+a listener or calls a command. The Rust test `wall2_watch::tests::wall2_policies_refuse_framing`
+holds both policies to `frame-ancestors 'none'` and to exactly the two `frame-src` hosts.
 
 ## Fullscreen keys
 

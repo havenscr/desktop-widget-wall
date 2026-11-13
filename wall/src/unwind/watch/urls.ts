@@ -8,7 +8,7 @@ export const PLAYER_ORIGINS: readonly string[] = [YOUTUBE_EMBED_ORIGIN, TWITCH_E
 /** The frame's fixed attributes. */
 export const FRAME_ALLOW = 'autoplay; encrypted-media; picture-in-picture';
 export const FRAME_REFERRER = 'strict-origin-when-cross-origin';
-export const FRAME_SANDBOX = 'allow-scripts allow-same-origin allow-presentation';
+export const FRAME_SANDBOX = 'allow-scripts allow-same-origin';
 
 /** The page origin and host name the players are told about; http and https only. */
 export interface PageWhere {

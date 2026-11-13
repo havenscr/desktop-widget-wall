@@ -11,9 +11,12 @@ export const MAX_LABEL = 60;
 /** A stored value longer than this is not read at all. */
 const MAX_STORED = 32_000;
 
-/** A label on one line, trimmed, at most 60 characters; the kind's default when empty. */
+/**
+ * A label on one line, trimmed, at most 60 characters; the kind's default when empty. Bidi
+ * overrides and isolates and zero-width characters are dropped, control characters become spaces.
+ */
 export function cleanLabel(raw: unknown, ref: WatchRef): string {
-  const text = typeof raw === 'string' ? raw.replace(/[\u0000-\u001f\u007f\u2028\u2029]+/g, ' ').replace(/\s+/g, ' ').trim() : '';
+  const text = typeof raw === 'string' ? raw.replace(/[\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g, '').replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, ' ').replace(/\s+/g, ' ').trim() : '';
   return text ? Array.from(text).slice(0, MAX_LABEL).join('') : defaultLabel(ref);
 }
 

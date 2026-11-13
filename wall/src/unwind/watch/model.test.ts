@@ -93,6 +93,17 @@ describe('parseLink', () => {
   });
 });
 
+describe('Twitch site routes', () => {
+  const routes = ['activate', 'bits', 'broadcast', 'checkout', 'collections', 'dashboard', 'directory', 'downloads', 'drops', 'following', 'friends', 'inventory', 'jobs', 'login', 'logout', 'messages', 'moderator', 'payments', 'popout', 'prime', 'products', 'redeem', 'search', 'settings', 'signup', 'store', 'subscriptions', 'team', 'turbo', 'videos', 'wallet'];
+  it.each(routes)('refuses twitch.tv/%s as a channel', (r) => {
+    expect(parseLink(`https://www.twitch.tv/${r}`)).toEqual({ ok: false, error: LINK_ERRORS.twitch });
+    expect(parseLink(`twitch.tv/${r.toUpperCase()}/`)).toEqual({ ok: false, error: LINK_ERRORS.twitch });
+  });
+  it('still accepts a channel whose name only starts like a route', () => {
+    expect(parseLink('https://www.twitch.tv/activate_now')).toEqual({ ok: true, ref: { kind: 'twitch', id: 'activate_now' } });
+  });
+});
+
 describe('the frame address', () => {
   const where = { origin: 'https://tauri.localhost', hostname: 'tauri.localhost' };
   it('builds YouTube on the no-cookie embed host with the page origin', () => {
@@ -187,6 +198,13 @@ describe('saved items', () => {
   it('reads nothing from broken or oversized storage', () => {
     for (const raw of [null, '', 'not json', '{"kind":"video"}', '42', 'x'.repeat(40_000)]) expect(parseSaved(raw)).toEqual([]);
   });
+  it('drops bidi overrides, isolates and zero-width characters from a label', () => {
+    const ref = { kind: 'video' as const, id: V };
+    const hostile = ['Nig', '\u202e', 'ht', '\u2066', ' drive', '\u2069', '\u200b', '\u200d', '\u202a', ' mix', '\ufeff', '\u2060', '\u200f'].join('');
+    expect(cleanLabel(hostile, ref)).toBe('Night drive mix');
+    expect(cleanLabel('\u202e\u200b', ref)).toBe('YouTube video');
+    expect(cleanLabel('a\u0085b', ref)).toBe('a b');
+  });
   it('bounds a label to 60 characters on one line', () => {
     expect(cleanLabel('a'.repeat(100), { kind: 'video', id: V }).length).toBe(60);
     expect(cleanLabel('', { kind: 'twitch', id: 'abc' })).toBe('abc on Twitch');
@@ -236,14 +254,14 @@ describe('looks', () => {
 });
 
 describe('stop rules', () => {
-  const base: StopInputs = { place: 'unwind', tab: 'watch', visible: true, idle: false, screensOff: false, inCall: false };
-  it('lets a video play only on Watch on Unwind, shown, awake, screens on, no call', () => {
+  const base: StopInputs = { place: 'unwind', tab: 'watch', visible: true, displayDark: false, screensOff: false, inCall: false };
+  it('lets a video play only on Watch on Unwind, shown, display on, screens on, no call', () => {
     expect(stopReason(base)).toBeNull();
     expect(stopReason({ ...base, place: 'zen' })).toBe('place');
     expect(stopReason({ ...base, place: 'work' })).toBe('place');
     expect(stopReason({ ...base, tab: 'listen' })).toBe('tab');
     expect(stopReason({ ...base, visible: false })).toBe('hidden');
-    expect(stopReason({ ...base, idle: true })).toBe('idle');
+    expect(stopReason({ ...base, displayDark: true })).toBe('display');
     expect(stopReason({ ...base, screensOff: true })).toBe('screens-off');
     expect(stopReason({ ...base, inCall: true })).toBe('call');
   });

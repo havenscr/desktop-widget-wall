@@ -62,22 +62,37 @@ export const LINK_ERRORS = {
 
 const YOUTUBE_HOSTS = new Set(['youtube.com', 'www.youtube.com', 'm.youtube.com']);
 const TWITCH_HOSTS = new Set(['twitch.tv', 'www.twitch.tv', 'm.twitch.tv']);
-/** Twitch paths that are pages of the site, not channels. */
+/** Twitch's own top-level routes (site pages, not channels); a link to one is refused. */
 const TWITCH_PAGES = new Set([
+  'activate',
+  'bits',
+  'broadcast',
+  'checkout',
+  'collections',
+  'dashboard',
   'directory',
   'downloads',
   'drops',
+  'following',
   'friends',
   'inventory',
   'jobs',
   'login',
+  'logout',
   'messages',
+  'moderator',
   'p',
+  'payments',
+  'popout',
   'prime',
+  'products',
+  'redeem',
   'search',
   'settings',
   'signup',
+  'store',
   'subscriptions',
+  'team',
   'turbo',
   'videos',
   'wallet',

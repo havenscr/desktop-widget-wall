@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   IconExternalLink,
   IconMovie,
@@ -11,6 +11,8 @@ import {
   IconVolumeOff,
 } from '@tabler/icons-react';
 import { invoke } from '../../bridge/tauri';
+import { sun } from '../../horizon/renderer';
+import { reviewNow } from '../../ui/reviewClock';
 import { useSignalStore } from '../../signals/store';
 import { kindName, refKey, type WatchRef } from './links';
 import { lookFor, lookName, nextLook, type LookId } from './looks';
@@ -52,14 +54,33 @@ export function WatchGear() {
   );
 }
 
+/** The horizon draws its moon only with the stars out; the sun this far down is a safe stand-in. */
+export const MOON_SUN_ALT = -4;
+
+/** True while the horizon's moon is up (checked once a minute). */
+function useMoonUp(): boolean {
+  const read = () => sun(reviewNow ? reviewNow() : Date.now()).alt < MOON_SUN_ALT;
+  const [up, setUp] = useState(read);
+  useEffect(() => {
+    const id = setInterval(() => setUp(read()), 60_000);
+    return () => clearInterval(id);
+  }, []);
+  return up;
+}
+
 /** The video in the scene, in its look, with the Look button (on hover) and Open in browser under it. */
 function VideoStage({ item, look }: { item: WatchRef & { label: string }; look: LookId }) {
+  const moonUp = useMoonUp();
   const [openFailed, setOpenFailed] = useState(false);
+  const failTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => () => clearTimeout(failTimer.current), []);
   const open = async () => {
+    clearTimeout(failTimer.current);
     setOpenFailed(false);
     if (!(await openInBrowser(item))) {
       setOpenFailed(true);
-      setTimeout(() => setOpenFailed(false), OPEN_ERROR_MS);
+      clearTimeout(failTimer.current);
+      failTimer.current = setTimeout(() => setOpenFailed(false), OPEN_ERROR_MS);
     }
   };
   const lookBtn = (
@@ -77,6 +98,8 @@ function VideoStage({ item, look }: { item: WatchRef & { label: string }; look: 
   return (
     <div className={`w-stage w-${look}`} data-look={look}>
       {look === 'feather' ? <div className="w-glow" aria-hidden="true" /> : null}
+      {/* The moon sits behind the feathered picture: its disc is dimmed where the soft edge would let it through. */}
+      {look === 'feather' && moonUp ? <div className="w-moonveil" aria-hidden="true" /> : null}
       {look === 'drivein' ? <div className="w-spill" aria-hidden="true" /> : null}
       <div className="w-screen">
         <PlayerFrame key={refKey(item)} item={item} title={item.label} />
@@ -166,7 +189,7 @@ export function WatchPanel() {
         <div className="w-title" title={playing.label}>
           {playing.label}
         </div>
-        <div className="w-sub" title="It stops by itself when you leave Watch or Unwind, the screens go off, the wall sleeps or a call starts.">
+        <div className="w-sub" title="It stops by itself when you leave Watch or Unwind, the screens or the display go off, Windows locks or a call starts.">
           {youtube ? (paused ? 'Paused' : 'Playing on the wall') : 'Live on the wall'}
         </div>
         <div className="w-ctl">

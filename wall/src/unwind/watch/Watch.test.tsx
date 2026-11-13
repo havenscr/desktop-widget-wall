@@ -127,7 +127,7 @@ it('plays a row in one frame built from the checked id, with the fixed attribute
   expect(f.getAttribute('src')).toBe(`https://www.youtube-nocookie.com/embed/${V}?autoplay=1&playsinline=1&rel=0&enablejsapi=1&origin=http%3A%2F%2Flocalhost%3A3000`);
   expect(f.getAttribute('allow')).toBe('autoplay; encrypted-media; picture-in-picture');
   expect(f.getAttribute('referrerpolicy')).toBe('strict-origin-when-cross-origin');
-  expect(f.getAttribute('sandbox')).toBe('allow-scripts allow-same-origin allow-presentation');
+  expect(f.getAttribute('sandbox')).toBe('allow-scripts allow-same-origin');
   expect(f.getAttribute('title')).toBe('Night drive mix');
   expect(screen.getByRole('button', { name: /Not playing\? Open in browser/ })).toBeTruthy();
   await act(async () => screen.getByRole('button', { name: 'Stop' }).click());
