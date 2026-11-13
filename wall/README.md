@@ -214,8 +214,8 @@ of date", "Some speakers did not change") and nothing is logged. Dev mocks
 
 ### Around the house (Home, right wing)
 
-`home/Chores.tsx` and `home/useChores.ts`: the next three open tasks tagged `home` (a
-tag, not a list) from `wall2_tasks_summary({ tag: "home" })`, with "N more can wait"
+`home/Chores.tsx` and `home/useChores.ts`: the next open tasks tagged `home` (a
+tag, not a list; five rows in view, see "Home round two") from `wall2_tasks_summary({ tag: "home" })`, with "N more can wait"
 for the rest. The pill shows the time for a task due later today at a set time, else
 its estimate. Ticking the circle shows "Done." with the title struck through, an Undo
 button and a thin bar for five seconds (`tasks/pendingTick.ts`); only then (or when the
@@ -1137,6 +1137,54 @@ line carry one quiet chip, "1 network alert" or "N network alerts", whose click 
 good read, or says its scan is stale. Everything reads one shared security poll
 (`useSecurityFeed` in `home/useSecurity.ts`): the rail, the chips, Home's network card and
 For you, so there is one read every 5 minutes however many are on screen.
+
+### Home round two (shield, house line, mood pages, chores, now playing)
+
+The home app's desk routes (`src-tauri/src/wall2_desk.rs`, base `homeBaseUrl` in
+`feeds.json`, answers capped at 64 KB, nothing logged) feed four commands, all limited to
+the `wall2` window and run off the main thread: `wall2_desk_house`
+(`GET /api/desk/house`: inside temperature from -40 to 140 F, lit rooms, rooms, stale),
+`wall2_desk_rooms` (`GET /api/desk/rooms`: at most 24 rooms, ids of 1 to 16 safe
+characters, names of 40), `wall2_desk_security` (`GET /api/desk/security`: alerts with
+id, severity mapped to high, medium or low, text capped at 120, time and age; devices,
+blocked, unseen, available, stale) and `wall2_desk_clear_alerts`
+(`POST /api/desk/security/alerts/clear`, body exactly `{}`, header `X-Desk-Token`). The
+token is `homeDeskToken` in `feeds.json`, read only by Rust; it never reaches the page, a
+log or an error. Errors are fixed words: `not-configured`, `absent` (404, the route is
+not live yet), `failed`, `stale`, `not-set-up` (no token), `nothing-to-clear` (409) and
+`forbidden` (403). Every part that reads a desk route hides while it answers `absent`.
+
+- **Shield card** (`home/NetworkTile.tsx`, `home/shieldModel.ts`): a ring with one arc
+  per open alert (twelve at most, "12+" inside past that), the count inside, the newest
+  alert in one line with its shape (amber triangle high, violet diamond medium, open ring
+  low). Quiet is a whole mint ring with a check, "All quiet", the device and blocked
+  numbers and the two links. Stale is a grey ring and "as of" a time, never mint. A
+  click opens the drawer (`home/ShieldDrawer.tsx`) with every alert, Open on each and one
+  Clear all, which marks every current alert seen in the home app (it has no clear for
+  one alert). Without a desk token it reads "Clear all: not set up". While the desk route
+  is absent the card reads today's `wall2_home_security` and Clear all is hidden.
+- **House line** (`home/HouseLine.tsx`): "68° inside. Lights on in two rooms." and a dot
+  per room (lit when its lights are on; the name and state on hover), under the sun
+  block, which then moves up under the date. Hidden while the routes are absent. The
+  "Next" automation line is not built: the home app has no routine schedule yet.
+- **Moods** (`home/Moods.tsx`): three large cards; with more, a narrow More card shows
+  the next mood peeking, "N more" and dots, and a click or the wheel slides by three.
+  Later pages carry a Back arrow, and the last page's More card reads Back.
+- **Chores** (`home/Chores.tsx`): up to twenty tagged chores, five rows in view (three
+  while alerts are open, since the shield card is taller then), a slim scrollbar and the
+  wheel with the pointer over the list, and "N more can wait" under it.
+- **Sound** (`home/Sound.tsx`): the five plays carry line icons on a colour wash
+  (cup, headphones, lamp, moon, laptop). Now playing sits at the left: with a Spotify
+  track on a house speaker (its device name matches a Sonos speaker or group the Sonos
+  read shows playing) the cover, title, artist, where it plays, pause and progress; a
+  track on this PC is never shown as the house playing. Otherwise the play's name or the
+  Sonos track, where it plays and pause; with nothing playing, the hour's suggestion.
+  There is no next button: the wall has no Spotify skip.
+
+Dev mocks: `?desk=absent|typical|stale|down` (absent by default), `?alerts=0|1|6|20`,
+`?rooms=0|2|4|8`, `?moods=3|7|12`, `?desktoken=none`, and `?spotifyplay=speaker` pairs a
+Spotify track with a Sonos speaker. `npm --prefix wall run fit:home` checks the right
+column, the drawer, the house area and the mood card widths (`--self-test` breaks each).
 
 ### Network tile (Home tab, right)
 
