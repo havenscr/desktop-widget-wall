@@ -10,7 +10,7 @@ type Press = (id: string, detail: number, call: Call, label: string, action: str
  * deck's own key tiles (same classes, same height) in the capture kind, Stop with the red edge.
  * Each press sends one fixed library key by its id.
  */
-export function RecordingKeys({ press, onKeyDown }: { press: Press; onKeyDown: (action: string | null) => (e: KeyboardEvent) => void }) {
+export function RecordingKeyRow({ press, onKeyDown }: { press: Press; onKeyDown: (action: string | null) => (e: KeyboardEvent) => void }) {
   const hows = useRecordingHows();
   return (
     <div className="deck-tiles keys-tiles rec-keys" style={{ gridTemplateColumns: `repeat(${RECORDING_KEYS.length}, minmax(0, 1fr))` }}>

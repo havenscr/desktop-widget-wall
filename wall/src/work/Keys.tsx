@@ -43,7 +43,7 @@ import {
 } from './keysModel';
 import { keyboardOnMouseKey, useKeyPress } from './keyPress';
 import { useBrief } from './useBrief';
-import { RecordingKeys } from '../signals/RecordingKeys';
+import { RecordingKeyRow } from '../signals/RecordingKeyRow';
 import { RECORDING_PAGE } from '../signals/recordingKeys';
 import { useSignalStore } from '../signals/store';
 
@@ -414,7 +414,7 @@ export function Keys() {
     return (
       <section className="keys deck-row" data-floor={floor} aria-label={heading} onWheel={onWheel} ref={rowRef}>
         {head}
-        <RecordingKeys press={press} onKeyDown={onKeyDown} />
+        <RecordingKeyRow press={press} onKeyDown={onKeyDown} />
       </section>
     );
   }
