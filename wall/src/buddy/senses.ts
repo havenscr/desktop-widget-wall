@@ -47,13 +47,15 @@ export function weatherTopics(w: WeatherSense): Topic[] {
   return out;
 }
 
-/** The part of the day, as a topic: morning to 11:00, midday to 14:00, afternoon to 18:00, evening to 22:00, then late. */
+/**
+ * The part of the day, as a topic: morning to 11:00, midday to 14:00, afternoon to 18:00, then
+ * evening (she is asleep and quiet from 9:30 PM to 6:30 AM, so there is no late night topic).
+ */
 export function dayTopic(hour: number): Topic {
-  if (hour >= 5 && hour < 11) return 'morning';
-  if (hour >= 11 && hour < 14) return 'midday';
-  if (hour >= 14 && hour < 18) return 'afternoon';
-  if (hour >= 18 && hour < 22) return 'evening';
-  return 'late';
+  if (hour < 11) return 'morning';
+  if (hour < 14) return 'midday';
+  if (hour < 18) return 'afternoon';
+  return 'evening';
 }
 
 /** Evening with the moon up, before she sleeps at 9:30 PM: she looks up at it. */

@@ -17,7 +17,7 @@ describe('what she senses', () => {
     expect(weatherTopics(senseWeather(null, now))).toEqual([]);
   });
   it('names the part of the day', () => {
-    expect([7, 12, 15, 19, 23, 2].map(dayTopic)).toEqual(['morning', 'midday', 'afternoon', 'evening', 'late', 'late']);
+    expect([7, 12, 15, 19, 21].map(dayTopic)).toEqual(['morning', 'midday', 'afternoon', 'evening', 'evening']);
   });
   it('counts agents that finished: working lanes now gone or at a pull request, not ones waiting', () => {
     const before = workingIds([lane('a'), lane('b'), lane('c'), lane('d', { waiting: true })]);

@@ -16,8 +16,14 @@ describe('her lines', () => {
     }
   });
   it('has lines for every group the brief asks for', () => {
-    const want: Topic[] = ['morning', 'midday', 'afternoon', 'evening', 'late', 'rain', 'clear', 'musicPlaying', 'musicPaused', 'musicStreak', 'focusStart', 'focusHalf', 'focusDone', 'agentsWorking', 'agentFinished', 'agentWaiting', 'meetingSoon', 'meetingEnded', 'sheep'];
+    const want: Topic[] = ['morning', 'midday', 'afternoon', 'evening', 'rain', 'clear', 'musicPlaying', 'musicPaused', 'musicStreak', 'focusStart', 'focusHalf', 'focusDone', 'agentsWorking', 'agentFinished', 'agentWaiting', 'meetingSoon', 'meetingEnded', 'sheep'];
     for (const t of want) expect(LINES[t].length, t).toBeGreaterThanOrEqual(3);
+  });
+  it('gives no advice, no nagging, no asks, and names no prop she might not be wearing', () => {
+    const banned = /\b(water|drink|stretch something|hair|deep breath|socks|walk might|bed is|breakfast|lunch|tea time|dinner|please|bored|tabs|morale|slump|nice work|still up|almost done|talked out|umbrella|sunglasses|scarf|book)\b/i;
+    for (const l of all) expect(l, l).not.toMatch(banned);
+    // Questions only as musing about the world, never to him.
+    for (const l of all) if (l.endsWith('?')) expect(l, l).toMatch(/hills/);
   });
   it('event and context topics do not overlap', () => {
     for (const t of EVENT_TOPICS) expect(CONTEXT_TOPICS).not.toContain(t);
