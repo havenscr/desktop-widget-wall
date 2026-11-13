@@ -26,7 +26,7 @@ export interface AgentsState {
   awaiting: boolean;
   /** The helper's own `now` in its last answer (its clock, never compared with this PC's). */
   helperNow: number | null;
-  /** This PC's time when the helper's `now` last moved forward. */
+  /** This PC's time when the helper's `now` last changed. */
   helperMovedAt: number | null;
   /**
    * The helper's clock minus this PC's, worked out when the last answer arrived. Helper times
@@ -91,11 +91,12 @@ async function read(): Promise<void> {
     const now = Date.now();
     const helperNow = Date.parse(s.now);
     if (!Number.isFinite(helperNow)) throw new Error('failed');
-    // A helper whose own clock has not moved for 30 minutes of this PC's time is frozen: no
-    // better than no answer. The two clocks are never compared, so a skew of any size is
-    // fine; the first answer is always accepted.
+    // A helper whose own clock has not changed for 30 minutes of this PC's time is frozen: no
+    // better than no answer. Any change counts as movement, so a helper clock stepping back
+    // (a correction) never reads as frozen. The two clocks are never compared, so a skew of
+    // any size is fine; the first answer is always accepted.
     const prev = useAgentsStore.getState();
-    const moved = prev.helperNow === null || prev.helperMovedAt === null || helperNow > prev.helperNow;
+    const moved = prev.helperNow === null || prev.helperMovedAt === null || helperNow !== prev.helperNow;
     const helperMovedAt = moved ? now : (prev.helperMovedAt as number);
     const clock = { helperNow: moved ? helperNow : prev.helperNow, helperMovedAt, skewMs: helperNow - now };
     if (now - helperMovedAt > KEEP_STALE_MS) {

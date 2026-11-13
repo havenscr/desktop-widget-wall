@@ -154,3 +154,43 @@ button,
     transition: none;
   }
 }
+
+/* The one hover card (ui/HoverTip.tsx): small, quiet, above what it explains. */
+.hover-tip {
+  position: absolute;
+  z-index: 50;
+  max-width: 520px;
+  padding: 12px 16px;
+  border-radius: 14px;
+  background: rgba(14, 10, 36, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow: 0 12px 40px -10px rgba(0, 0, 0, 0.8);
+  font: 400 18px/1.4 var(--body);
+  color: var(--tx);
+  pointer-events: none;
+  animation: tip-in 160ms ease-out;
+}
+.hover-tip .tip-t {
+  font-weight: 600;
+  display: block;
+}
+.hover-tip .tip-s {
+  color: var(--dim);
+  display: block;
+}
+.hover-tip .tip-k {
+  color: var(--faint);
+  font-size: 15px;
+  display: block;
+  margin-top: 4px;
+}
+@keyframes tip-in {
+  from {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hover-tip {
+    animation: none;
+  }
+}

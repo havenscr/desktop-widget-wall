@@ -7,7 +7,7 @@ export const DAY_REFRESH_MS = 5 * 60_000;
 /** The part of the `wall2_meet_day` answer the ribbon reads. */
 interface DayPayload {
   events?: DayEvent[];
-  accounts?: { state?: string }[];
+  accounts?: { id?: string; label?: string; state?: string }[];
   /** Settle order on the native side; a lower number than one already shown is an older answer. */
   seq?: number;
 }
@@ -28,6 +28,15 @@ export interface DayFeed {
    * after a failed read, and when Meet is not set up.
    */
   calendar: 'unknown' | 'ok' | 'unavailable';
+  /** Account id to its label, for the chips' hover cards. */
+  labels: Record<string, string>;
+}
+
+/** Account id to label from a day answer. */
+function labelsOf(r: DayPayload | null | undefined): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const a of Array.isArray(r?.accounts) ? r.accounts : []) if (typeof a?.id === 'string' && typeof a.label === 'string') out[a.id] = a.label;
+  return out;
 }
 
 /** `ok` unless the answer lists accounts and none of them is `ok`. */
@@ -43,7 +52,7 @@ function calendarState(r: DayPayload | null | undefined): 'ok' | 'unavailable' {
  * and records when it failed, so a reader can tell cached events from current ones.
  */
 export function useDayFeed(on: boolean): DayFeed {
-  const [feed, setFeed] = useState<DayFeed>({ events: [], at: null, failedAt: null, calendar: 'unknown' });
+  const [feed, setFeed] = useState<DayFeed>({ events: [], at: null, failedAt: null, calendar: 'unknown', labels: {} });
   /** The highest `seq` shown so far: an answer with a lower or equal one is older and is dropped. */
   const applied = useRef(0);
 
@@ -60,11 +69,11 @@ export function useDayFeed(on: boolean): DayFeed {
           if (r.seq <= applied.current) return;
           applied.current = r.seq;
         }
-        setFeed({ events: Array.isArray(r?.events) ? r.events : [], at: Date.now(), failedAt: null, calendar: calendarState(r) });
+        setFeed({ events: Array.isArray(r?.events) ? r.events : [], at: Date.now(), failedAt: null, calendar: calendarState(r), labels: labelsOf(r) });
       } catch (e) {
         if (!live) return;
         const text = e instanceof Error ? e.message : String(e);
-        if (text === NOT_CONFIGURED) setFeed({ events: [], at: Date.now(), failedAt: null, calendar: 'unknown' });
+        if (text === NOT_CONFIGURED) setFeed({ events: [], at: Date.now(), failedAt: null, calendar: 'unknown', labels: {} });
         else setFeed((f) => ({ ...f, failedAt: Date.now(), calendar: 'unknown' }));
       }
     };

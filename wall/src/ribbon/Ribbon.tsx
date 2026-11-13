@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react';
 import { IconBolt, IconCalendar, IconHome } from '@tabler/icons-react';
+import { invoke } from '../bridge/tauri';
 import { useFocusStore } from '../focus/store';
+import { openTask } from '../tasks/model';
+import { tip } from '../ui/HoverTip';
 import { AgentRow } from './AgentRow';
 import { useVisible } from '../ui/useVisible';
-import { chips, dueMarks, focusBars, hourLabels, msToNextMinute, needle, skyGradient, sunLabels, ticks } from './model';
+import { chips, dueMarks, focusBars, hourLabels, msToNextMinute, needle, needleTip, skyGradient, spanText, sunLabels, ticks, type Chip } from './model';
 import { sunTimes } from './sun';
 import { useDayFeed } from './useDayEvents';
 import { useDueTaskFeed } from './useDueTasks';
@@ -11,6 +14,25 @@ import { useDueTaskFeed } from './useDueTasks';
 export type RibbonKind = 'work' | 'home';
 
 const TICKS = ticks();
+
+/** Asks Rust to open the event in Outlook; Rust holds the link behind the key. */
+function openEvent(key: string): void {
+  invoke('wall2_open_event', { key }).catch(() => undefined);
+}
+
+/** A chip's hover card: title, time and account, and what a click does. */
+function ChipTip({ c, account }: { c: Chip; account: string | null }) {
+  return (
+    <>
+      <span className="tip-t">{c.title}</span>
+      <span className="tip-s">
+        {spanText(c.start, c.end)}
+        {account ? `, ${account}` : ''}
+      </span>
+      {c.canOpen && <span className="tip-k">Click to open it in Outlook</span>}
+    </>
+  );
+}
 
 /** What row 2 holds, as the tooltip on its icon. */
 const ROW2_TIP: Record<RibbonKind, string> = {
@@ -97,31 +119,68 @@ export function Ribbon({ kind, now = Date.now }: { kind: RibbonKind; now?: () =>
           Nothing scheduled at home
         </span>
       )}
-      {dayChips.map((c) => (
-        <div
-          key={c.key}
-          className={`ev ${c.state}${c.live ? ' live' : ''}${c.lane ? ' l2' : ''}`}
-          style={{ left: c.x, width: c.width }}
-          title={c.title}
-          aria-label={c.narrow ? c.title : undefined}
-        >
-          {c.narrow ? null : c.title}
-        </div>
-      ))}
+      {dayChips.map((c) => {
+        const account = c.accountId ? (day.labels[c.accountId] ?? null) : null;
+        return (
+          <div
+            key={c.key}
+            className={`ev ${c.state}${c.live ? ' live' : ''}${c.lane ? ' l2' : ''}${c.canOpen ? ' open' : ''}`}
+            style={{ left: c.x, width: c.width }}
+            role={c.canOpen ? 'button' : undefined}
+            tabIndex={c.canOpen ? 0 : undefined}
+            aria-label={`${c.title}, ${spanText(c.start, c.end)}${account ? `, ${account}` : ''}${c.canOpen ? '. Opens it in Outlook' : ''}`}
+            onClick={c.canOpen ? () => openEvent(c.key) : undefined}
+            onKeyDown={
+              c.canOpen
+                ? (e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      openEvent(c.key);
+                    }
+                  }
+                : undefined
+            }
+            {...tip(() => <ChipTip c={c} account={account} />)}
+          >
+            {c.narrow ? null : c.title}
+          </div>
+        );
+      })}
       {kind === 'work' && <AgentRow now={t} dueCount={due.known ? marks.length : null} />}
       {kind === 'work' &&
         focusBars(sessions, t).map((b) => (
           <i key={b.x} className="fo" style={{ left: b.x, width: b.width }} aria-hidden="true" />
         ))}
       {marks.map((d) => (
-        <div key={d.key} className="due" style={{ left: d.x }} title={d.title} aria-label={`Due ${d.time}: ${d.title}`}>
+        <div
+          key={d.key}
+          className="due"
+          style={{ left: d.x }}
+          role="button"
+          tabIndex={0}
+          aria-label={`Due ${d.time}: ${d.title}. Opens the task`}
+          onClick={() => openTask(d.key)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              openTask(d.key);
+            }
+          }}
+          {...tip(() => (
+            <>
+              <span className="tip-t">{d.title}</span>
+              <span className="tip-s">Due at {d.time}</span>
+              <span className="tip-k">Click to open it in the task app</span>
+            </>
+          ))}
+        >
           <i aria-hidden="true" />
           <span className="n">{d.title}</span>
           <span aria-hidden="true">, {d.time}</span>
         </div>
       ))}
       <div className="ndl" style={{ left: n.x }}>
-        <b>{n.text}</b>
+        <b {...tip(() => needleTip(dayChips, t, day.calendar === 'ok'))}>{n.text}</b>
       </div>
     </section>
   );

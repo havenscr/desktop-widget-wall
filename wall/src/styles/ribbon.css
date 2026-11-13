@@ -153,3 +153,24 @@
   white-space: nowrap;
 }
 
+/* A chip that opens its event in Outlook, and a due mark that opens its task. */
+.rib .ev.open,
+.rib .due {
+  cursor: pointer;
+}
+.rib .ev.open:hover {
+  border-color: rgba(200, 184, 255, 0.9);
+  filter: brightness(1.15);
+}
+.rib .ev.open:focus-visible,
+.rib .due:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 1px;
+}
+.rib .due:hover .n {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.rib .ndl b {
+  cursor: help;
+}

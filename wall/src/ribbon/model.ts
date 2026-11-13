@@ -34,6 +34,10 @@ export interface DayEvent {
   start: string;
   end: string;
   isLive?: boolean;
+  /** Which configured account the event is from (its id, never an address). */
+  accountId?: string;
+  /** Rust holds a link that opens the event in Outlook (`wall2_open_event`). */
+  canOpen?: boolean;
 }
 
 /**
@@ -131,6 +135,10 @@ export interface Chip {
   lane: 0 | 1;
   /** Too narrow for its title. */
   narrow: boolean;
+  start: number;
+  end: number;
+  accountId: string | null;
+  canOpen: boolean;
 }
 
 /**
@@ -157,6 +165,10 @@ export function chips(events: readonly DayEvent[], now: number): Chip[] {
       live: e.isLive === true,
       lane: 0,
       narrow: false,
+      start,
+      end,
+      accountId: typeof e.accountId === 'string' ? e.accountId : null,
+      canOpen: e.canOpen === true,
     });
   }
   out.sort((a, b) => a.x - b.x);
@@ -208,4 +220,32 @@ export function dueMarks(tasks: readonly TaskItem[], now: number): DueMark[] {
 /** Milliseconds until the next whole minute, so the needle moves on the minute. */
 export function msToNextMinute(now: number): number {
   return 60_000 - (now % 60_000) + 50;
+}
+
+/** "1 h 36 m" or "12 min" until a time (at least 1 min). */
+export function untilText(ms: number, now: number): string {
+  const mins = Math.max(1, Math.round((ms - now) / 60_000));
+  if (mins < 60) return `${mins} min`;
+  const h = Math.floor(mins / 60);
+  return mins % 60 === 0 ? `${h} h` : `${h} h ${mins % 60} m`;
+}
+
+/**
+ * The needle's tooltip: the time and the countdown to the next meeting today ("4:10. Next
+ * meeting in 1 h 36 m: Weekly planning"), "in progress" for one under the needle when no
+ * other is coming, or "No more meetings today" after a good read; just the time otherwise.
+ */
+export function needleTip(chipsToday: readonly Chip[], now: number, known: boolean): string {
+  const head = shortTime(now);
+  const next = chipsToday.filter((c) => c.start > now).sort((a, b) => a.start - b.start)[0];
+  if (next) return `${head}. Next meeting in ${untilText(next.start, now)}: ${next.title}`;
+  const current = chipsToday.find((c) => c.state === 'now');
+  if (current) return `${head}. In ${current.title} until ${shortTime(current.end)}, nothing after it today`;
+  return known ? `${head}. No more meetings today` : head;
+}
+
+/** "10:30 to 11:30" for a chip's hover card, with AM or PM on the end. */
+export function spanText(start: number, end: number): string {
+  const ampm = (ms: number) => (new Date(ms).getHours() < 12 ? 'AM' : 'PM');
+  return `${shortTime(start)} to ${shortTime(end)} ${ampm(end)}`;
 }
