@@ -1,4 +1,4 @@
-export type AccountState = 'ok' | 'signed-out' | 'needs-sign-in' | 'unavailable';
+export type AccountState = 'ok' | 'signed-out' | 'needs-sign-in' | 'unavailable' | 'checking';
 
 export interface MeetAccount {
   id: string;
@@ -24,6 +24,8 @@ export interface MeetData {
   meetings: Meeting[];
   /** True when part of the list is from an earlier read because an account was unavailable. */
   stale?: boolean;
+  /** Settle order on the native side: an answer with a lower number is older. */
+  seq?: number;
 }
 
 export const NOT_CONFIGURED = 'not-configured';
@@ -33,6 +35,10 @@ export const REFRESH_MS = 5 * 60_000;
 /** After an unavailable read: retry after 30 s, then 60 s, then the normal cadence. */
 export const FAST_RETRY_MS: readonly number[] = [30_000, 60_000];
 export const TICK_MS = 30_000;
+/** Meet leaves "Loading meetings", and each account leaves "Checking", after at most this long. */
+export const READ_LIMIT_MS = 12_000;
+/** The reason the web view gives an account that did not answer in time. */
+export const TIMED_OUT = 'graph-timeout';
 
 const MIN = 60_000;
 
@@ -86,17 +92,43 @@ export function isSoon(m: Pick<Meeting, 'start'> | undefined, now: number): bool
 
 export function statusWord(state: AccountState): string {
   if (state === 'ok') return 'Connected';
+  if (state === 'checking') return 'Checking';
   if (state === 'unavailable') return 'Unavailable';
-  return 'Sign in needed';
+  if (state === 'signed-out') return 'Signed out';
+  return 'Sign in again';
 }
 
-const REASON_SHAPE = /^(?:graph-[0-9]{3}(?:-[A-Za-z][A-Za-z0-9_]{0,39})?|token-[0-9]{3}(?:-[0-9]{1,7})?|graph-network|graph-body|token-network|store-write|store-read)$/;
+/** What is wrong with an unavailable account, in plain words. */
+export function unavailableWords(reason: string | undefined | null): string {
+  if (reason === 'graph-network' || reason === 'token-network') return 'Network problem';
+  if (reason === TIMED_OUT) return 'Microsoft is not answering';
+  const m = reason ? /^(?:graph|token)-([0-9]{3})/.exec(reason) : null;
+  if (m) {
+    const status = Number(m[1]);
+    if (status === 429 || status >= 500) return 'Microsoft is not answering';
+  }
+  if (reason?.startsWith('store-')) return 'Could not use the saved sign-in on this PC';
+  return 'Calendar could not be read';
+}
+
+/** The account row's one line of state. */
+export function accountWords(state: AccountState, reason: string | undefined | null): string {
+  return state === 'unavailable' ? unavailableWords(reason) : statusWord(state);
+}
+
+/** True when no account could be read: at least one account, none connected, none still being asked. */
+export function calendarNotAvailable(accounts: readonly { state: AccountState }[]): boolean {
+  return accounts.length > 0 && accounts.every((a) => a.state !== 'ok' && a.state !== 'checking');
+}
+
+const REASON_SHAPE = /^(?:graph-[0-9]{3}(?:-[A-Za-z][A-Za-z0-9_]{0,39})?|token-[0-9]{3}(?:-[0-9]{1,7})?|graph-network|graph-timeout|graph-body|token-network|store-write|store-read)$/;
 
 /** Plain words for a reason code, or null when the code is not one of the known shapes. */
 export function reasonText(code: string | undefined | null): string | null {
   if (!code || !REASON_SHAPE.test(code)) return null;
   if (code.startsWith('store-')) return 'Could not save the sign-in on this PC';
   if (code === 'graph-network' || code === 'token-network') return 'No connection to Microsoft';
+  if (code === 'graph-timeout') return 'Microsoft did not answer in time';
   if (code === 'graph-body') return 'Calendar sent a reply that could not be read';
   if (code.startsWith('token-')) return 'Sign-in was not accepted';
   const status = Number(code.slice(6, 9));

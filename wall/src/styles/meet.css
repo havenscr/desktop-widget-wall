@@ -43,11 +43,18 @@
 .meet-count.soon {
   color: var(--cyan);
 }
+/* Mouse sizes inside cards: 32 to 40 px tall, not the 72 px touch size. */
+.meet .btn {
+  height: 40px;
+  min-width: 0;
+  padding: 0 18px;
+  border-radius: 12px;
+  font-size: 18px;
+}
 .meet-join-big {
-  margin-top: auto;
-  height: 108px;
-  font-size: 36px;
-  border-radius: 28px;
+  align-self: flex-start;
+  margin-top: 4px;
+  padding: 0 24px;
 }
 .meet-list,
 .meet-account-list {
@@ -59,8 +66,18 @@
   flex: 1;
   min-height: 0;
 }
+/* A card that holds a few short rows sizes to them instead of sitting mostly blank. */
+.meet-next.fit,
+.meet-later.fit,
+.meet-accounts.fit {
+  height: auto;
+}
+.meet-account-list {
+  flex: none;
+}
 .meet-row {
-  flex: 1;
+  flex: none;
+  min-height: 64px;
   display: flex;
   align-items: center;
   gap: 24px;
@@ -87,14 +104,15 @@
 }
 .meet-join {
   flex: none;
-  padding: 0 22px;
+  height: 36px;
+  padding: 0 18px;
 }
 .meet-account {
-  flex: 1;
   display: flex;
   align-items: center;
   gap: 16px;
-  min-height: 0;
+  min-height: 84px;
+  padding: 10px 0;
   border-top: 1px solid var(--line);
 }
 .meet-account:first-child {
@@ -123,30 +141,19 @@
   text-align: center;
   gap: 16px;
 }
-.meet-account.unavailable {
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: center;
-  gap: 14px;
-}
 .meet-account.unavailable .meet-account-text {
-  flex: none;
-  width: 100%;
+  min-width: 0;
 }
+.meet-tried,
 .meet-reason {
   color: var(--dim);
   overflow-wrap: anywhere;
 }
-.meet-actions {
-  display: flex;
-  gap: 12px;
-}
 .meet-act {
   flex: none;
-  min-height: 72px;
   padding: 0 22px;
 }
 .meet-retry {
   align-self: flex-start;
-  margin-top: auto;
+  margin-top: 8px;
 }

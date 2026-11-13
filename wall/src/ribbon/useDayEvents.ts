@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { invoke } from '../bridge/tauri';
+import { calendarNotAvailable, type MeetAccount } from '../meet/model';
 import type { DayEvent } from './model';
 
 export const DAY_REFRESH_MS = 5 * 60_000;
@@ -7,6 +8,7 @@ export const DAY_REFRESH_MS = 5 * 60_000;
 /** The part of the `wall2_meet_day` answer the ribbon reads. */
 interface DayPayload {
   events?: DayEvent[];
+  accounts?: Pick<MeetAccount, 'state'>[];
 }
 
 const NOT_CONFIGURED = 'not-configured';
@@ -18,6 +20,8 @@ export interface DayFeed {
   at: number | null;
   /** `Date.now()` of the last failed read when it came after the last good one, else null. */
   failedAt: number | null;
+  /** No account could be read, so an empty row means "cannot tell", not "nothing today". */
+  unavailable: boolean;
 }
 
 /**
@@ -26,7 +30,7 @@ export interface DayFeed {
  * and records when it failed, so a reader can tell cached events from current ones.
  */
 export function useDayFeed(on: boolean): DayFeed {
-  const [feed, setFeed] = useState<DayFeed>({ events: [], at: null, failedAt: null });
+  const [feed, setFeed] = useState<DayFeed>({ events: [], at: null, failedAt: null, unavailable: false });
   const mounted = useRef(true);
   useEffect(() => {
     mounted.current = true;
@@ -38,12 +42,12 @@ export function useDayFeed(on: boolean): DayFeed {
   const read = useCallback(async () => {
     try {
       const r = await invoke<DayPayload>('wall2_meet_day');
-      if (mounted.current) setFeed({ events: Array.isArray(r?.events) ? r.events : [], at: Date.now(), failedAt: null });
+      if (mounted.current) setFeed({ events: Array.isArray(r?.events) ? r.events : [], at: Date.now(), failedAt: null, unavailable: calendarNotAvailable(r?.accounts ?? []) });
     } catch (e) {
       if (!mounted.current) return;
       const text = e instanceof Error ? e.message : String(e);
-      if (text === NOT_CONFIGURED) setFeed({ events: [], at: Date.now(), failedAt: null });
-      else setFeed((f) => ({ ...f, failedAt: Date.now() }));
+      if (text === NOT_CONFIGURED) setFeed({ events: [], at: Date.now(), failedAt: null, unavailable: false });
+      else setFeed((f) => ({ ...f, failedAt: Date.now(), unavailable: f.events.length === 0 ? true : f.unavailable }));
     }
   }, []);
 

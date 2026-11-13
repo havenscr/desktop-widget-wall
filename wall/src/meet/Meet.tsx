@@ -1,6 +1,9 @@
 import { IconVideo } from '@tabler/icons-react';
+import type { ReactNode } from 'react';
 import { updatedText } from '../tasks/model';
 import {
+  accountWords,
+  calendarNotAvailable,
   clockText,
   countdownText,
   isSoon,
@@ -8,7 +11,6 @@ import {
   needsSignIn,
   nextMeeting,
   reasonLine,
-  statusWord,
   timeRange,
   type MeetAccount,
   type Meeting,
@@ -26,7 +28,7 @@ function Join({ meeting, big, onJoin }: { meeting: Meeting; big?: boolean; onJoi
       aria-label={`Join: ${meeting.title}`}
       onClick={() => onJoin(meeting.key)}
     >
-      <IconVideo size={big ? 40 : 28} aria-hidden="true" />
+      <IconVideo size={big ? 24 : 20} aria-hidden="true" />
       Join
     </button>
   );
@@ -57,7 +59,7 @@ function NextPanel({ m, labels }: { m: MeetState; labels: Map<string, string> })
 function LaterPanel({ m, labels }: { m: MeetState; labels: Map<string, string> }) {
   const later = m.data ? laterMeetings(m.data.meetings, m.now) : [];
   return (
-    <section className="panel meet-later" aria-label="Later meetings">
+    <section className={`panel meet-later${later.length === 0 ? ' fit' : ''}`} aria-label="Later meetings">
       <span className="k">Later</span>
       {later.length === 0 ? (
         <div className="s">Nothing else</div>
@@ -77,53 +79,68 @@ function LaterPanel({ m, labels }: { m: MeetState; labels: Map<string, string> }
   );
 }
 
+/** One account: its state in plain words and one action. */
 function AccountRow({ a, m }: { a: MeetAccount; m: MeetState }) {
   const waiting = m.signingIn === a.id;
-  const unavailable = a.state === 'unavailable' && !waiting;
-  const why = (unavailable || (a.state === 'needs-sign-in' && !waiting)) ? reasonLine(a.reason) : null;
   const busy = m.signingIn !== null;
+  const why = !waiting && (a.state === 'unavailable' || a.state === 'needs-sign-in') ? reasonLine(a.reason) : null;
+  const tried = a.state === 'unavailable' && !waiting ? m.tried[a.id] : undefined;
+  let action: ReactNode = null;
+  if (waiting) {
+    action = (
+      <button type="button" className="btn meet-act" onClick={m.cancelSignIn}>
+        Cancel
+      </button>
+    );
+  } else if (a.state === 'unavailable') {
+    action = (
+      <button type="button" className="btn cy meet-act" disabled={busy} onClick={m.refresh}>
+        Try again
+      </button>
+    );
+  } else if (needsSignIn(a.state)) {
+    action = (
+      <button type="button" className="btn cy meet-act" disabled={busy} onClick={() => m.signIn(a.id)}>
+        Sign in
+      </button>
+    );
+  } else if (a.state === 'ok') {
+    action = (
+      <button type="button" className="btn meet-out meet-act" disabled={busy} onClick={() => m.signOut(a.id)}>
+        Sign out
+      </button>
+    );
+  }
   return (
-    <li className={unavailable ? 'meet-account unavailable' : 'meet-account'}>
+    <li className={a.state === 'unavailable' && !waiting ? 'meet-account unavailable' : 'meet-account'}>
       <div className="meet-account-text">
         <div className="b6 ellipsis">{a.label}</div>
-        <div className="xs">{waiting ? 'Finish in your browser' : statusWord(a.state)}</div>
+        <div className="xs">{waiting ? 'Finish in your browser' : accountWords(a.state, a.reason)}</div>
         {why && <div className="xs meet-reason">{why}</div>}
+        {tried !== undefined && <div className="xs meet-tried">Last try {clockText(tried)}</div>}
       </div>
-      {unavailable ? (
-        <div className="meet-actions">
-          <button type="button" className="btn cy meet-act" disabled={busy} onClick={m.refresh}>
-            Try again
-          </button>
-          <button type="button" className="btn meet-act" disabled={busy} onClick={() => m.signIn(a.id)}>
-            Sign in
-          </button>
-          <button type="button" className="btn meet-out meet-act" disabled={busy} onClick={() => m.signOut(a.id)}>
-            Sign out
-          </button>
-        </div>
-      ) : waiting ? (
-        <button type="button" className="btn" onClick={m.cancelSignIn}>
-          Cancel
-        </button>
-      ) : needsSignIn(a.state) ? (
-        <button type="button" className="btn cy" disabled={m.signingIn !== null} onClick={() => m.signIn(a.id)}>
-          Sign in
-        </button>
-      ) : (
-        <button type="button" className="btn meet-out" disabled={m.signingIn !== null} onClick={() => m.signOut(a.id)}>
-          Sign out
-        </button>
-      )}
+      {action}
     </li>
   );
 }
 
-/** Both accounts connected and nothing in the next 24 hours: one centred message instead of two blank panels. */
+/** No meeting to show: one centred message instead of blank panels, and why when an account could not be read. */
 function EmptyPanel({ m }: { m: MeetState }) {
+  const accounts = m.data?.accounts ?? [];
+  const none = calendarNotAvailable(accounts);
+  const checking = accounts.some((a) => a.state === 'checking');
+  const problem = accounts.filter((a) => a.state !== 'ok' && a.state !== 'checking');
+  const headline = none ? 'Calendar not available' : checking ? 'Checking calendars' : 'Nothing scheduled in the next 24 hours';
+  const sub =
+    none || problem.length === 0
+      ? m.lastOk !== null && !none
+        ? `Last checked at ${clockText(m.lastOk)}`
+        : null
+      : `${problem.map((a) => a.label).join(' and ')} could not be read`;
   return (
-    <section className="panel meet-empty" aria-label="Nothing scheduled">
-      <div className="meet-count">Nothing scheduled in the next 24 hours</div>
-      {m.lastOk !== null && <div className="s">Last checked at {clockText(m.lastOk)}</div>}
+    <section className="panel meet-empty" aria-label={none ? 'Calendar not available' : 'Nothing scheduled'}>
+      <div className="meet-count">{headline}</div>
+      {sub && <div className="s">{sub}</div>}
     </section>
   );
 }
@@ -131,7 +148,7 @@ function EmptyPanel({ m }: { m: MeetState }) {
 function AccountsPanel({ m }: { m: MeetState }) {
   const stale = (m.status === 'error' || m.stale) && m.lastOk !== null ? updatedText(m.lastOk, m.now) : null;
   return (
-    <section className="panel meet-accounts" aria-label="Accounts">
+    <section className="panel meet-accounts fit" aria-label="Accounts">
       <div className="row sb">
         <span className="k">Accounts</span>
         {stale && <span className="xs">{stale}</span>}
@@ -167,7 +184,7 @@ export function Meet() {
     return (
       <section className="work meet" data-place="meet" aria-label="Meet">
         <div className="meet-body" style={{ left: MEET_LEFT_PX }}>
-          <section className="panel meet-next" aria-label="Next meeting">
+          <section className="panel meet-next fit" aria-label="Next meeting">
             <span className="k">Meet</span>
             <div className="meet-count">{message}</div>
             {hint && <div className="s">{hint}</div>}
@@ -183,11 +200,7 @@ export function Meet() {
   }
 
   const labels = new Map((m.data?.accounts ?? []).map((a) => [a.id, a.label]));
-  const accounts = m.data?.accounts ?? [];
-  const empty =
-    accounts.length > 0 &&
-    accounts.every((a) => a.state === 'ok') &&
-    !(m.data && nextMeeting(m.data.meetings, m.now));
+  const empty = !(m.data && nextMeeting(m.data.meetings, m.now));
   return (
     <section className="work meet" data-place="meet" aria-label="Meet">
       <div className="meet-body" style={{ left: MEET_LEFT_PX }}>

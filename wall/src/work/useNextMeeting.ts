@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { invoke } from '../bridge/tauri';
-import { nextMeeting, REFRESH_MS, TICK_MS, type Meeting, type MeetData } from '../meet/model';
+import { calendarNotAvailable, nextMeeting, REFRESH_MS, TICK_MS, type Meeting, type MeetData } from '../meet/model';
 import { useVisible } from '../ui/useVisible';
 
 const systemNow = () => Date.now();
@@ -12,6 +12,8 @@ export interface NextMeetingState {
   stale: boolean;
   /** Time of the last complete good read, or null. */
   asOf: number | null;
+  /** No account could be read (all signed out or not answering), or the first read failed. */
+  unavailable: boolean;
 }
 
 /**
@@ -27,6 +29,7 @@ export function useNextMeeting(now: () => number = systemNow): NextMeetingState 
   const [feedStale, setFeedStale] = useState(false);
   const [failed, setFailed] = useState(false);
   const [asOf, setAsOf] = useState<number | null>(null);
+  const [noCalendar, setNoCalendar] = useState(false);
   const [t, setT] = useState(now);
 
   useEffect(() => {
@@ -40,6 +43,7 @@ export function useNextMeeting(now: () => number = systemNow): NextMeetingState 
           setMeetings(Array.isArray(d?.meetings) ? d.meetings : []);
           setFeedStale(partial);
           setFailed(false);
+          setNoCalendar(calendarNotAvailable(d?.accounts ?? []));
           if (!partial) setAsOf(now());
         })
         .catch((e) => {
@@ -50,6 +54,7 @@ export function useNextMeeting(now: () => number = systemNow): NextMeetingState 
             setFeedStale(false);
             setFailed(false);
             setAsOf(null);
+            setNoCalendar(false);
           } else {
             setFailed(true);
           }
@@ -68,5 +73,5 @@ export function useNextMeeting(now: () => number = systemNow): NextMeetingState 
     };
   }, [visible, now]);
 
-  return { meeting: nextMeeting(meetings, t), now: t, stale: feedStale || failed, asOf };
+  return { meeting: nextMeeting(meetings, t), now: t, stale: feedStale || failed, asOf, unavailable: noCalendar || (failed && asOf === null) };
 }

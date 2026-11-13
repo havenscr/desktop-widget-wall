@@ -2,7 +2,18 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { invoke } from '../bridge/tauri';
 import { usePlaceStore } from '../state/places';
 import { useVisible } from '../ui/useVisible';
-import { FAST_RETRY_MS, INVALID_CONFIG, NOT_CONFIGURED, REFRESH_MS, TICK_MS, signInMessage, type MeetData } from './model';
+import {
+  FAST_RETRY_MS,
+  INVALID_CONFIG,
+  NOT_CONFIGURED,
+  READ_LIMIT_MS,
+  REFRESH_MS,
+  TICK_MS,
+  TIMED_OUT,
+  signInMessage,
+  type MeetAccount,
+  type MeetData,
+} from './model';
 
 export type MeetStatus = 'loading' | 'ready' | 'unconfigured' | 'invalid' | 'error';
 
@@ -13,6 +24,8 @@ export interface MeetState {
   lastOk: number | null;
   /** The list holds meetings kept from an earlier read (an account was unavailable). */
   stale: boolean;
+  /** When each account last answered (or failed to), by id. */
+  tried: Record<string, number>;
   now: number;
   /** Account id while a sign-in is waiting for the browser. */
   signingIn: string | null;
@@ -25,6 +38,23 @@ export interface MeetState {
 }
 
 const text = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
+/** The promise's answer, or a rejection with `timeout` after `ms`. */
+function within<T>(p: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const id = setTimeout(() => reject(new Error('timeout')), ms);
+    p.then(
+      (v) => {
+        clearTimeout(id);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(id);
+        reject(e);
+      },
+    );
+  });
+}
 
 /**
  * Reads the next meetings when Meet opens, then every 5 minutes while Meet is the active
@@ -39,6 +69,7 @@ export function useMeet(): MeetState {
   const [data, setData] = useState<MeetData | null>(null);
   const [lastOk, setLastOk] = useState<number | null>(null);
   const [stale, setStale] = useState(false);
+  const [tried, setTried] = useState<Record<string, number>>({});
   const [now, setNow] = useState(() => Date.now());
   const [signingIn, setSigningIn] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -49,6 +80,9 @@ export function useMeet(): MeetState {
   const onRef = useRef(false);
   const fastStep = useRef(0);
   const fastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const seqRef = useRef(0);
+  /** Accounts that did not answer in time or failed outright, shown instead of "checking". */
+  const overrides = useRef<Record<string, MeetAccount>>({});
   const refreshRef = useRef<() => Promise<void>>(async () => undefined);
 
   useEffect(() => {
@@ -76,16 +110,58 @@ export function useMeet(): MeetState {
     }, delay);
   }, []);
 
+  // The accounts come back at once (peek), then each account is asked on its own and shown
+  // the moment it answers. An answer older than one already shown is dropped. Nothing waits
+  // longer than READ_LIMIT_MS: an account that has not answered by then shows as not
+  // answering, with the time of the try.
   const readOnce = useCallback(async () => {
-    try {
-      const next = await invoke<MeetData>('wall2_meet_next');
-      if (!mounted.current) return;
-      planFastRetry((next?.accounts ?? []).some((a) => a.state === 'unavailable'));
-      setData({ accounts: next?.accounts ?? [], meetings: next?.meetings ?? [] });
+    const cur: { shown: MeetData | null } = { shown: null };
+    const show = (next: MeetData) => {
+      if (typeof next.seq === 'number') {
+        if (next.seq <= seqRef.current) return;
+        seqRef.current = next.seq;
+      }
+      const accounts = (next.accounts ?? []).map((a) => overrides.current[a.id] ?? a);
+      cur.shown = { accounts, meetings: next.meetings ?? [] };
+      setData(cur.shown);
       setStatus('ready');
-      const partial = next?.stale === true;
-      setStale(partial);
-      if (!partial) setLastOk(Date.now());
+      setStale(next.stale === true);
+    };
+    const show2 = (base: MeetData) => {
+      cur.shown = { ...base, accounts: base.accounts.map((x) => overrides.current[x.id] ?? x) };
+      setData(cur.shown);
+    };
+    try {
+      const first = await within(invoke<MeetData>('wall2_meet_next', { peek: true }), READ_LIMIT_MS);
+      if (!mounted.current) return;
+      overrides.current = {};
+      show(first);
+      const accounts = first?.accounts ?? [];
+      let lastStale = first?.stale === true;
+      await Promise.all(
+        accounts.map(async (a) => {
+          try {
+            const r = await within(invoke<MeetData>('wall2_meet_next', { only: a.id }), READ_LIMIT_MS);
+            if (!mounted.current) return;
+            delete overrides.current[a.id];
+            setTried((t) => ({ ...t, [a.id]: Date.now() }));
+            lastStale = r?.stale === true;
+            show(r);
+          } catch (e) {
+            if (!mounted.current) return;
+            const timedOut = text(e) === 'timeout';
+            overrides.current[a.id] = { id: a.id, label: a.label, state: 'unavailable', ...(timedOut ? { reason: TIMED_OUT } : {}) };
+            setTried((t) => ({ ...t, [a.id]: Date.now() }));
+            const base = cur.shown;
+            if (base) show2(base);
+          }
+        }),
+      );
+      if (!mounted.current) return;
+      const done = cur.shown;
+      planFastRetry((done?.accounts ?? []).some((x) => x.state === 'unavailable'));
+      setStale(lastStale);
+      if (!lastStale) setLastOk(Date.now());
     } catch (e) {
       if (!mounted.current) return;
       const t = text(e);
@@ -192,5 +268,5 @@ export function useMeet(): MeetState {
     [refresh],
   );
 
-  return { status, data, lastOk, stale, now, signingIn, notice, signIn, cancelSignIn, signOut, refresh: () => void refresh(), join };
+  return { status, data, lastOk, stale, tried, now, signingIn, notice, signIn, cancelSignIn, signOut, refresh: () => void refresh(), join };
 }

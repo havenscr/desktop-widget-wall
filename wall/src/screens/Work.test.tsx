@@ -185,3 +185,20 @@ it('gives the focus card the whole centre when the first weather fetch fails, an
   expect(centre.className).toBe('centre centre-fill');
   expect(centre.querySelectorAll('.panel')).toHaveLength(2);
 });
+
+it('says Calendar not available in the Next block when no account can be read', async () => {
+  meet = () => ({
+    accounts: [{ id: 'work', label: 'Work', state: 'unavailable', reason: 'graph-503-UnknownError' }],
+    meetings: [],
+  });
+  const r = render(<Screens />);
+  await flush();
+  expect(r.container.querySelector('[aria-label="Next meeting"]')!.textContent).toContain('Calendar not available');
+});
+
+it('hides the Next block when Meet has no meeting but its accounts are fine', async () => {
+  meet = () => ({ accounts: [{ id: 'work', label: 'Work', state: 'ok' }], meetings: [] });
+  const r = render(<Screens />);
+  await flush();
+  expect(r.container.querySelector('[aria-label="Next meeting"]')).toBeNull();
+});

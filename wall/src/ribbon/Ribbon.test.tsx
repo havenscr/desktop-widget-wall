@@ -162,3 +162,18 @@ it('clears its timers and stops reading on unmount', async () => {
   await flush(30 * 60_000);
   expect(reads).toBe(1);
 });
+
+it('says Calendar not available on row 1 when no account can be read', async () => {
+  mocks.set('wall2_meet_day', () => ({ accounts: [{ id: 'work', label: 'Work', state: 'signed-out' }], events: [] }));
+  const r = render(<Ribbon kind="work" />);
+  await flush();
+  expect(r.container.querySelector('.rib-na')!.textContent).toBe('Calendar not available');
+  expect(r.container.querySelectorAll('.ev')).toHaveLength(0);
+});
+
+it('has no such line when an account can be read and the day is empty', async () => {
+  mocks.set('wall2_meet_day', () => ({ accounts: [{ id: 'work', label: 'Work', state: 'ok' }], events: [] }));
+  const r = render(<Ribbon kind="work" />);
+  await flush();
+  expect(r.container.querySelector('.rib-na')).toBeNull();
+});

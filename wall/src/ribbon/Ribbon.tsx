@@ -5,7 +5,7 @@ import { AgentRow } from './AgentRow';
 import { useVisible } from '../ui/useVisible';
 import { chips, dueMarks, focusBars, hourLabels, msToNextMinute, needle, skyGradient, sunLabels, ticks } from './model';
 import { sunTimes } from './sun';
-import { useDayEvents } from './useDayEvents';
+import { useDayFeed } from './useDayEvents';
 import { useDueTasks } from './useDueTasks';
 
 export type RibbonKind = 'work' | 'home';
@@ -41,7 +41,7 @@ function useMinute(now: () => number): number {
 export function Ribbon({ kind, now = Date.now }: { kind: RibbonKind; now?: () => number }) {
   const visible = useVisible();
   const t = useMinute(now);
-  const events = useDayEvents(visible);
+  const { events, unavailable } = useDayFeed(visible);
   const tasks = useDueTasks(kind, visible);
   const sessions = useFocusStore((s) => s.sessions);
   const sun = sunTimes(t);
@@ -67,6 +67,7 @@ export function Ribbon({ kind, now = Date.now }: { kind: RibbonKind; now?: () =>
         <IconCalendar className="li" style={{ top: 38 }} stroke={1.8} />
         <Row2 className="li" style={{ top: 70 }} stroke={1.8} />
       </div>
+      {unavailable && events.length === 0 && <span className="rib-na">Calendar not available</span>}
       {chips(events, t).map((c) => (
         <div
           key={c.key}
