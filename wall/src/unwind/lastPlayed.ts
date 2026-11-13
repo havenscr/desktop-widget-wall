@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { isQuiet } from '../music/model';
+import { playerName, sourceKey } from '../music/players';
 import { useNowPlayingStore } from '../music/store';
 import { readLastPlayed, writeLastPlayed, type LastPlayed } from './model';
 
@@ -27,7 +28,7 @@ export const useLastPlayed = create<LastPlayedState>(() => ({ last: readLastPlay
 useNowPlayingStore.subscribe((s) => {
   const info = s.info;
   if (!info || isQuiet(info) || !info.title) return;
-  const next: LastPlayed = { title: info.title, artist: info.artist || info.album || '', source: info.source_app || '' };
+  const next: LastPlayed = { title: info.title, artist: info.artist || info.album || '', source: playerName(sourceKey(info)) ?? '' };
   const prev = useLastPlayed.getState();
   const same = prev.last?.title === next.title && prev.last?.artist === next.artist && prev.last?.source === next.source;
   if (same && prev.art === s.art) return;

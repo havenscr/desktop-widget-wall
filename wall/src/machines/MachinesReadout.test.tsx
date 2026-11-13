@@ -95,14 +95,21 @@ it('does not count a number at its limit as over', () => {
   expect(isHot(past, 'pc.ram', HOLD_MS)).toBe(true);
 });
 
-it('hides the BOX row when the box has no numbers and dims it when stale', async () => {
+it('keeps the BOX row, dimmed with "no reading", when the box has no numbers, and fills it in when they come', async () => {
   answer = { ...calm, box: null };
   const r = render(<MachinesReadout />);
   await flush();
-  expect(r.container.querySelector('[data-machine="box"]')).toBeNull();
+  const row = () => r.container.querySelector('[data-machine="box"]')!;
+  expect(row().textContent).toBe('BOXno reading');
+  expect(row().className).toContain('none');
+  expect(row().getAttribute('aria-label')).toBe('Box no reading');
+  answer = calm;
+  await flush(2_000);
+  expect(row().textContent).toBe('BOX614852°');
+  expect(row().className).not.toContain('none');
   answer = { ...calm, boxStale: true };
   await flush(2_000);
-  expect(r.container.querySelector('[data-machine="box"]')!.className).toContain('stale');
+  expect(row().className).toContain('stale');
 });
 
 it('shows nothing when the numbers cannot be read', async () => {
