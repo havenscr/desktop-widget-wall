@@ -180,7 +180,7 @@ export interface HorizonGrid {
 
 /** Echo ripple (music reaction): lines of the range that wobble to a spectrum. */
 export interface HorizonEcho {
-  /** Number of echo lines. */
+  /** Number of echo lines. A fractional count (a glide between cameras) crossfades the two whole counts either side. */
   n: number;
   /** Amplitude of the spectrum in canvas design pixels. */
   amp: number;
@@ -336,13 +336,16 @@ export function draw(ctx:CanvasRenderingContext2D,o:HorizonDrawOptions):HorizonD
   ctx.stroke()}
  line((i:Any)=>cr[i],.34,1.2);
  if(sp.alt<9&&sp.alt>-7&&sx>-R*6&&sx<W+R*6){const hg=ctx.createLinearGradient(sx-R*5.5,0,sx+R*5.5,0),a=.95*smooth((sp.alt+7)/6)*(1-hi);hg.addColorStop(0,css(SA,0));hg.addColorStop(.5,css(SA,a));hg.addColorStop(1,css(SA,0));line((i:Any)=>cr[i],1,1.8,hg)}
- if(o.echo){const E=o.echo,n=E.n,cx=E.cx===undefined?W/2:E.cx,hs=E.hs||1000,fq=E.drift===undefined?((E.t||0)*(E.speed||.3))%1:fr(E.drift),span=E.span||7,S=E.sample||spec,TT=E.tint,tk=TT?clamp(TT.k,0,1):0,lw=TT?mix(1.4,TT.width||1.4,tk):1.4;
+ if(o.echo){const E=o.echo,nE=Math.max(1,E.n),n0=Math.floor(nE),fn=nE-n0>1e-9?nE-n0:0,cx=E.cx===undefined?W/2:E.cx,hs=E.hs||1000,fq=E.drift===undefined?((E.t||0)*(E.speed||.3))%1:fr(E.drift),span=E.span||7,S=E.sample||spec,TT=E.tint,tk=TT?clamp(TT.k,0,1):0,lw=TT?mix(1.4,TT.width||1.4,tk):1.4;
   let es:Any;if(tk>0){const c0=clamp(cx/W,.01,.99),rimAt=(q:Any)=>mixc(P.rim[0],P.rim[1],1-Math.abs(q-.5)*2);es=ctx.createLinearGradient(0,0,W,0);
    for(const [q,c] of [[0,TT!.left],[c0,TT!.centre],[c0+(1-c0)*.6,mixc(TT!.centre,TT!.right,.5)],[1,TT!.right]] as Any)es.addColorStop(q,css(mixc(rimAt(q),c,tk)))}
   const RK=E.rest?clamp(E.rest,0,1):0,LK:RestLook=E.look||'contours',RA=E.restA||0,ek=Math.min(1,RK*8),vu=cmax/REST_PEAK,hu=W/1280;
+  const hz=(i:Any,r:Any)=>r?sm(i,r):cr[i];
+  /* One whole set of n lines at weight wk. A glide blends the line count, so a fractional count draws
+     the two whole sets either side crossfaded by its fraction: every line keeps its own place. */
+  const set=(n:number,wk:number)=>{
   /* a line's resting height at sample i: kc runs 0 (the lowest line) to n - 1 (the top one), q is kc / (n - 1);
      the haze ranges are softened (box smoothed) the farther back they sit */
-  const hz=(i:Any,r:Any)=>r?sm(i,r):cr[i];
   const rh=(i:Any,kc:Any,q:Any)=>LK==='levels'?Math.min(cr[i],vu*REST_LEVEL_TOP*REST_PEAK*(kc+1)/(n+.6)+2.5*vu*Math.sin(Math.PI*i*2/W)*(kc/n))
    :LK==='haze'?hz(Math.round(clamp(((i*2-q*70*hu)*(1+q*.1)-q*.03*W)/2,0,N-1)),Math.round(q*30))*(1+q*.42)+q*26*vu
    :LK==='ridge'?Math.max(0,cr[i]-Math.max(0,2-kc)*7*vu)
@@ -351,18 +354,19 @@ export function draw(ctx:CanvasRenderingContext2D,o:HorizonDrawOptions):HorizonD
   const rs=(kc:Any,q:Any)=>LK==='levels'?.9-.35*q:LK==='haze'?1-.75*q:LK==='ridge'?2.4*Math.max(0,1-Math.abs(kc-(n-1)))+.45*clamp(2-kc,0,1):.55+.45*q;
   for(let j=0;j<n;j++){const a=(j+fq)/n,p=1-a,tau=(E.t||0)-a*span,sw=.35+.65*Math.sin(Math.PI*a),pp=Math.pow(p,1.15),r=Math.round(2+a*26);
    if(RK>0){const x=clamp((RK-REST_LAG*a)/(1-REST_LAG),0,1),wl=1-(1-x)*(1-x),q=n>1?clamp(1-(a*n-.5)/(n-1),0,1):1,kc=q*(n-1);
-    const live=(i:Any)=>mix(cr[i],sm(i,r),Math.min(1,a*2.2))*pp+S(Math.min(1,Math.abs(i*2-cx)/hs),tau)*E.amp*sw*Math.min(1,cr[i]/(cmax*.5));
-    const f=wl>=1?(i:Any)=>rh(i,kc,q):(i:Any)=>mix(live(i),rh(i,kc,q),wl);
-    const fa=1-wl*(1-REST_FILL[LK]);
+    // At rest only the resting shape: the spectrum is not read.
+    const f=wl>=1?(i:Any)=>rh(i,kc,q):(i:Any)=>mix(mix(cr[i],sm(i,r),Math.min(1,a*2.2))*pp+S(Math.min(1,Math.abs(i*2-cx)/hs),tau)*E.amp*sw*Math.min(1,cr[i]/(cmax*.5)),rh(i,kc,q),wl);
+    const fa=(1-wl*(1-REST_FILL[LK]))*wk;
     if(fa>.002){const col=mixc(mixc(P.far,P.s[3],.12),P.mid,a);layer(f,fa<1?css(col,fa):css(col))}
     // Live opacity eased to the resting one; while settling, lines at either end of the drift fade so none pops.
-    const al=mix(E.a*(1-a*a*a)*(tk>0?mix(1,smooth(a*n),tk):1),Math.min(1,RA*rs(kc,q)),wl)*mix(1,smooth(a*n*2)*smooth((1-a)*n*2),ek);
+    const al=mix(E.a*(1-a*a*a)*(tk>0?mix(1,smooth(a*n),tk):1),Math.min(1,RA*rs(kc,q)),wl)*mix(1,smooth(a*n*2)*smooth((1-a)*n*2),ek)*wk;
     const top=LK==='ridge'?Math.max(0,1-Math.abs(kc-(n-1))):0,lr=mix(lw,REST_LW+.8*top,wl);
     if(top*wl>.01&&al>.002)line(f,al*.3*top*wl,lr+4,es);
     if(al>.002)line(f,al,lr,es);
     continue}
    const f=(i:Any)=>mix(cr[i],sm(i,r),Math.min(1,a*2.2))*pp+S(Math.min(1,Math.abs(i*2-cx)/hs),tau)*E.amp*sw*Math.min(1,cr[i]/(cmax*.5));
-   layer(f,css(mixc(mixc(P.far,P.s[3],.12),P.mid,a)));line(f,E.a*(1-a*a*a)*(tk>0?mix(1,smooth(a*n),tk):1),lw,es)}}
+   layer(f,wk<1?css(mixc(mixc(P.far,P.s[3],.12),P.mid,a),wk):css(mixc(mixc(P.far,P.s[3],.12),P.mid,a)));line(f,E.a*(1-a*a*a)*(tk>0?mix(1,smooth(a*n),tk):1)*wk,lw,es)}};
+  set(n0,1-fn);if(fn)set(n0+1,fn)}
  const md=(i:Any)=>prof(TR,TR.mid,az0+i*2/ppd)*k,nr=(i:Any)=>prof(TR,TR.near,az0+i*2/ppd)*k;
  g=ctx.createLinearGradient(0,hy-cmax*.6,0,hy);g.addColorStop(0,css(P.mid));g.addColorStop(1,css(mixc(P.mid,mixc(P.s[2],P.s[3],.4),.2)));layer(md,g);line(md,.16,1);
  const refl:Any[]=[];

@@ -155,7 +155,7 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
       // The grid pulse never appears in the review still or under reduced motion's still frames.
       if (!still) {
         const m = motion.current;
-        let echo = echoOptions(camera, 1, loud.current, echoT.current, gate.current.value * awake.current, m.rest);
+        let echo = echoOptions(camera, loud.current, echoT.current, gate.current.value * awake.current, m.rest);
         const turningOff = glide.current.to.ea === 0 && glide.current.progress < 1;
         if (echo && turningOff && echoStrength(echo) > lastEchoA.current) {
           scaleEcho(echo, lastEchoA.current / echoStrength(echo));
@@ -168,7 +168,6 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
           if (m.rest < 1) {
             const s = sampler.current;
             s.t = echoT.current;
-            s.w = 1;
             echo.sample = s.sample;
           }
           options.echo = echo;
@@ -176,7 +175,7 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
         if (grid.current) options.grid = grid.current;
       } else {
         // The still frame shows the lines at rest.
-        const echo = echoOptions(camera, 1, 0, 0, initialEchoGate(glide.current).value, 1);
+        const echo = echoOptions(camera, 0, 0, initialEchoGate(glide.current).value, 1);
         if (echo) {
           echo.drift = REST_PHASE;
           options.echo = echo;

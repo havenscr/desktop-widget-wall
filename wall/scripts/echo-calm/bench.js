@@ -62,17 +62,15 @@ function run(withEcho) {
     if (withEcho) {
       let e;
       if (mode === 'settle') {
-        e = echoOptions(cam, 1, loud, T, 1, motion.rest);
+        e = echoOptions(cam, loud, T, 1, motion.rest);
         e.drift = motion.drift;
         if (motion.rest < 1) {
           sampler.t = T;
-          sampler.w = 1;
           e.sample = sampler.sample;
         }
       } else {
-        e = echoOptions(cam, 1, loudness(useAudioStore.getState()), T);
+        e = echoOptions(cam, loudness(useAudioStore.getState()), T);
         sampler.t = T;
-        sampler.w = 1;
         e.sample = sampler.sample;
       }
       if (q.get('tint') === '0') delete e.tint;

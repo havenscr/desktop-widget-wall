@@ -1,9 +1,8 @@
 import type { CameraPreset, Glide } from './cameras';
-import { spec, type HorizonEcho } from './renderer';
+import { REST_LOOKS, type HorizonEcho, type RestLook } from './renderer';
 import { BAND_FLOOR, sampleBands } from '../audio/spectrum';
-import { REST_LOOKS, type RestLook } from './renderer';
 
-/** Seconds the ripple takes to fade in or out. */
+/** Seconds the ripple takes to fade in or out with the display (`stepEchoFade`). */
 export const ECHO_FADE_S = 1;
 /** Half width of the ripple in design pixels (the demo's value). */
 export const ECHO_HALF_SPAN = 900;
@@ -11,19 +10,10 @@ export const ECHO_HALF_SPAN = 900;
 export const ECHO_GATE_S = 0.6;
 /** Line count from which a camera is the full visualizer (Unwind's 11; Work and Home have 3). */
 export const VISUALIZER_EN = 8;
-/** The idle lines on the visualizer while silent: opacity and height as shares of `ea` and `eamp`. */
-export const IDLE_ALPHA = 0.45;
-export const IDLE_AMP = 0.35;
-/**
- * How fast the idle lines drift and breathe, as a share of the playing speed: the renderer's
- * drift is 0.3, so 0.4 of it is the 0.12 the program names, and `spec()` runs at 0.4 of its time.
- */
-export const IDLE_RATE = 0.4;
 /**
  * The visualizer's playing look (Unwind while music plays), to match the concept frame: opacity
  * raised from `ea` (0.9) by `PLAY_BOOST` to full, wider strokes, and the lines tinted bright teal
- * through the centre shifting to pink at the far right. Eased in with the play fade, so the idle
- * lines keep the palette's own colour.
+ * through the centre shifting to pink at the far right. Work and Home keep the palette's colour.
  */
 export const PLAY_BOOST = 1 / 0.9;
 export const PLAY_TINT = { left: [92, 196, 255], centre: [56, 236, 240], right: [255, 61, 154], width: 1.5 };
@@ -44,6 +34,11 @@ export const REST_SETTLE_S = 2.5;
 export const REST_RISE_S = 1.5;
 /** Seconds the band levels must stay under the floor (`BAND_FLOOR`) before the lines settle. */
 export const REST_QUIET_S = 1.5;
+/** From rest, the loudest band must stay at or above this level (over the floor) for `REST_RESUME_S` before the lines lift. */
+export const REST_RESUME = 0.4;
+export const REST_RESUME_S = 1 / 3;
+/** After a settle caused by quiet (not a pause) the lines stay at rest at least this long before they may lift again. */
+export const REST_DWELL_S = 4;
 /** The drift phase the lines rest at: line j at (j + 0.5) / n, so none sits on either end. */
 export const REST_PHASE = 0.5;
 /** The renderer's drift speed while playing, in line spacings a second (its default `speed`). */
@@ -54,27 +49,17 @@ const clamp01 = (v: number) => (v > 0 ? (v < 1 ? v : 1) : 0);
 
 /**
  * How much a camera is the visualizer, 0 to 1: 0 for Work and Home (3 lines), 1 from
- * `VISUALIZER_EN` lines (Unwind). Glides blend `en`, so the idle lines and the loudness rule
+ * `VISUALIZER_EN` lines (Unwind). Glides blend `en`, so the playing look and the loudness rule
  * ease in and out on the way to and from Unwind instead of switching at one frame.
  */
 export function visualizerWeight(camera: CameraPreset): number {
   return clamp01((camera.en - 3) / (VISUALIZER_EN - 3));
 }
 
-/**
- * Speed of the echo's own clock against real time: 1 while playing; on the visualizer camera
- * `IDLE_RATE` while silent, eased by the fade. The renderer's drift and its `spec()` both run on
- * this clock, so slowing it never makes the lines jump (changing `speed` would).
- */
-export function echoRate(camera: CameraPreset, fade: number): number {
-  const k = visualizerWeight(camera);
-  return 1 + k * (IDLE_RATE + (1 - IDLE_RATE) * clamp01(fade) - 1);
-}
-
-/** Move the fade toward 1 while music plays and toward 0 when it does not, over about a second. */
-export function stepEchoFade(fade: number, playing: boolean, dt: number): number {
+/** Move a fade toward 1 while `on` and toward 0 when not, over about a second (the display's wake fade). */
+export function stepEchoFade(fade: number, on: boolean, dt: number): number {
   const step = Math.max(0, dt) / ECHO_FADE_S;
-  return Math.min(1, Math.max(0, fade + (playing ? step : -step)));
+  return Math.min(1, Math.max(0, fade + (on ? step : -step)));
 }
 
 /**
@@ -127,21 +112,20 @@ export function initialEchoGate(glide: Glide): EchoGate {
 
 /**
  * Ripple options for the camera now, or null (nothing drawn, so pixels match a frame without a
- * ripple). `fade` (0 to 1) follows `playing`, `loud` is the bass weighted loudness, `t` the echo
- * clock (`echoRate`) and `gate` the camera gate (`stepEchoGate`) times anything else that should
- * take the ripple away (an idle display).
+ * ripple). `loud` is the bass weighted loudness, `t` the echo clock, `gate` the camera gate
+ * (`stepEchoGate`) times anything else that should take the ripple away (an idle display), and
+ * `rest` how far the lines have settled (`stepEchoMotion`).
  *
- * - Work and Home (3 lines): `ea * fade * loud`, so zero loudness or silence shows nothing.
- * - Unwind (11 lines) while playing: `ea * fade` raised to full by `PLAY_BOOST`, with no loudness
- *   scaling (the real bands carry the dynamics, `createEchoSampler`), and the `PLAY_TINT` colours
- *   and width eased in by the fade.
- * - Unwind while silent: the idle lines, `ea * 0.45` high `eamp * 0.35`, on the slowed clock.
+ * - Work and Home (3 lines) live: `ea * loud`, so zero loudness shows no live lines.
+ * - Unwind (11 lines) live: `ea` raised to full by `PLAY_BOOST`, with no loudness scaling (the real
+ *   bands carry the dynamics, `createEchoSampler`), and the `PLAY_TINT` colours and width.
+ * - With `rest` above 0 also the resting look and opacity, on every camera with a ripple.
  *
- * Between the two (a fade, or a glide that blends `en`) every number is blended, never switched.
+ * During a glide `n` is the blended, fractional line count: the renderer crossfades the two whole
+ * counts either side, so no line appears, vanishes or jumps level.
  */
 export function echoOptions(
   camera: CameraPreset,
-  fade: number,
   loud: number,
   t: number,
   gate = 1,
@@ -152,17 +136,14 @@ export function echoOptions(
   const g = clamp01(gate);
   if (g <= 0.001) return null;
   const k = visualizerWeight(camera);
-  const f = clamp01(fade);
   const level = clamp01(loud);
   const r = clamp01(rest);
-  const playing = f * (level + (1 - level) * k) * (1 + k * (PLAY_BOOST - 1));
-  const a = Math.min(1, camera.ea * g * (playing + k * (1 - f) * IDLE_ALPHA));
+  const a = Math.min(1, camera.ea * g * (level + (1 - level) * k) * (1 + k * (PLAY_BOOST - 1)));
   // The resting lines show on every camera that has a ripple (`ea` above 0), at the one resting opacity.
   const restA = camera.ea > 0 ? Math.min(1, clamp01(restOpacity) * g) : 0;
   if (a <= 0.005 && (r <= 0 || restA <= 0.005)) return null;
-  const amp = camera.eamp * (1 + k * (IDLE_AMP + (1 - IDLE_AMP) * f - 1));
-  const e: HorizonEcho = { n: Math.max(1, Math.round(camera.en)), amp, a, t, cx: camera.ecx, hs: ECHO_HALF_SPAN };
-  if (k * f > 0) e.tint = { ...PLAY_TINT, k: k * f };
+  const e: HorizonEcho = { n: Math.max(1, camera.en), amp: camera.eamp, a, t, cx: camera.ecx, hs: ECHO_HALF_SPAN };
+  if (k > 0) e.tint = { ...PLAY_TINT, k };
   if (r > 0) {
     e.rest = r;
     e.restA = restA;
@@ -197,8 +178,12 @@ export interface EchoMotion {
   drift: number;
   /** Drift speed now, line spacings a second. */
   v: number;
-  /** Seconds the bands have been under the floor. */
+  /** Seconds the bands have been under the floor while driving. */
   quiet: number;
+  /** Seconds the loudest band has stayed at or over `REST_RESUME` while not driving. */
+  loud: number;
+  /** Seconds since a settle caused by quiet began (Infinity when the rest was not caused by quiet). */
+  held: number;
   driving: boolean;
   /** Where the current settle or lift started: `rest`, phase and speed then, and the target phase. */
   r0: number;
@@ -210,8 +195,8 @@ export interface EchoMotion {
 /** A motion at rest (nothing has played yet), or driving at full speed. */
 export function createEchoMotion(atRest = true): EchoMotion {
   return atRest
-    ? { rest: 1, drift: REST_PHASE, v: 0, quiet: 0, driving: false, r0: 1, from: REST_PHASE, v0: 0, to: REST_PHASE }
-    : { rest: 0, drift: 0, v: DRIFT_SPEED, quiet: 0, driving: true, r0: 0, from: 0, v0: DRIFT_SPEED, to: 0 };
+    ? { rest: 1, drift: REST_PHASE, v: 0, quiet: 0, loud: 0, held: Infinity, driving: false, r0: 1, from: REST_PHASE, v0: 0, to: REST_PHASE }
+    : { rest: 0, drift: 0, v: DRIFT_SPEED, quiet: 0, loud: 0, held: Infinity, driving: true, r0: 0, from: 0, v0: DRIFT_SPEED, to: 0 };
 }
 
 /** Jump to rest at once (the page was hidden: it returns to still lines, never a settle from stale ones). */
@@ -220,6 +205,8 @@ export function restEchoMotion(m: EchoMotion): void {
   m.drift = REST_PHASE;
   m.v = 0;
   m.quiet = 0;
+  m.loud = 0;
+  m.held = Infinity;
   m.driving = false;
   m.r0 = 1;
   m.from = m.to = REST_PHASE;
@@ -227,14 +214,41 @@ export function restEchoMotion(m: EchoMotion): void {
 }
 
 /**
- * Whether music drives the lines this frame: `playing`, and the loudest band has not been under
- * `BAND_FLOOR` (where it adds no height) for `REST_QUIET_S`. Advances `m.quiet`.
+ * Whether music drives the lines this frame, with hysteresis so they never pump on a quiet intro,
+ * the gap between tracks or a single blip (`m.driving` is last frame's answer, which
+ * `stepEchoMotion` records):
+ *
+ * - Not playing (a pause, a stop, the volume off): not driving, at once. The bands are not read.
+ * - Driving: stays driving until the loudest band has been under `BAND_FLOOR` (where it adds no
+ *   height) for `REST_QUIET_S`; that quiet settle then holds for `REST_DWELL_S`.
+ * - Not driving: lifts once the loudest band has stayed at or over `REST_RESUME` for
+ *   `REST_RESUME_S`, and, after a quiet settle, the dwell has passed.
  */
 export function musicDriving(m: EchoMotion, playing: boolean, bands: ArrayLike<number>, dt: number): boolean {
+  const d = Math.max(0, dt);
+  if (!playing) {
+    m.quiet = 0;
+    m.loud = 0;
+    m.held = Infinity;
+    return false;
+  }
   let top = 0;
   for (let i = 0; i < bands.length; i++) if (bands[i] > top) top = bands[i];
-  m.quiet = playing && top < BAND_FLOOR ? m.quiet + Math.max(0, dt) : 0;
-  return playing && m.quiet < REST_QUIET_S;
+  m.held += d;
+  if (m.driving) {
+    m.quiet = top < BAND_FLOOR ? m.quiet + d : 0;
+    if (m.quiet < REST_QUIET_S) return true;
+    m.quiet = 0;
+    m.loud = 0;
+    m.held = 0;
+    return false;
+  }
+  m.loud = top >= REST_RESUME ? m.loud + d : 0;
+  if (m.loud >= REST_RESUME_S - 1e-9 && m.held >= REST_DWELL_S) {
+    m.quiet = 0;
+    return true;
+  }
+  return false;
 }
 
 const fr1 = (x: number) => x - Math.floor(x);
@@ -298,30 +312,20 @@ export function stepEchoMotion(m: EchoMotion, driving: boolean, dt: number): voi
 }
 
 /**
- * The `sample` function handed to the renderer while music plays (or fades out), and the two
- * numbers it reads, set each frame before drawing: `t`, the echo clock passed as the echo's `t`,
- * and `w`, the play fade. A line at `tau` reads the band history `t - tau` seconds back
- * (`sampleBands`); while `w` is under 1 the made-up `spec()` the idle lines use is mixed in by
- * `1 - w`, so starting and stopping music morphs the lines rather than snapping them. Made once;
- * nothing is allocated per call.
+ * The `sample` function handed to the renderer while any line follows the music, and the number it
+ * reads, set each frame before drawing: `t`, the echo clock passed as the echo's `t`. A line at
+ * `tau` reads the band history `t - tau` seconds back (`sampleBands`). Made once; nothing is
+ * allocated per call.
  */
 export interface EchoSampler {
   t: number;
-  w: number;
   readonly sample: (u: number, tau: number) => number;
 }
 
-export function createEchoSampler(
-  bands: (u: number, age: number) => number = sampleBands,
-  idle: (u: number, tau: number) => number = spec,
-): EchoSampler {
+export function createEchoSampler(bands: (u: number, age: number) => number = sampleBands): EchoSampler {
   const s: EchoSampler = {
     t: 0,
-    w: 0,
-    sample: (u, tau) => {
-      const b = bands(u, s.t - tau);
-      return s.w >= 1 ? b : s.w * b + (1 - s.w) * idle(u, tau);
-    },
+    sample: (u, tau) => bands(u, s.t - tau),
   };
   return s;
 }

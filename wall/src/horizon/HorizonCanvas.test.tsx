@@ -32,7 +32,7 @@ const homeAt = (hour: number, minute = 0) => `/?hz=home&at=${new Date(localMs(ho
 
 /** The echo a still frame passes: the lines at rest (the resting look, still, on their resting phase). */
 function restEcho(cam: CameraPreset) {
-  return { ...echoOptions(cam, 1, 0, 0, 1, 1)!, drift: REST_PHASE };
+  return { ...echoOptions(cam, 0, 0, 1, 1)!, drift: REST_PHASE };
 }
 
 function setReducedMotion(reduce: boolean) {
@@ -284,12 +284,12 @@ it('once the music stops the lines settle over 2.5 s into their rest, never vani
   setReducedMotion(false);
   startMusic();
   render(<HorizonCanvas now={() => NOON} />);
-  for (let ts = 100; ts <= 1500; ts += 100) runFrame(ts);
+  for (let ts = 100; ts <= 2000; ts += 100) runFrame(ts); // a third of a second to start, then the 1.5 s lift
   const playing = draw.mock.lastCall![1].echo!;
   expect(playing.rest).toBeUndefined();
   act(() => tickAudio(10_000)); // long silence: playing false
   const rests: number[] = [];
-  for (let ts = 1600; ts <= 4200; ts += 100) {
+  for (let ts = 2100; ts <= 4700; ts += 100) {
     runFrame(ts);
     const e = draw.mock.lastCall![1].echo!;
     expect(e).toBeTruthy();
@@ -354,18 +354,20 @@ it('hidden pages return with the lines at rest and the live opacity from nothing
   setReducedMotion(false);
   startMusic();
   render(<HorizonCanvas now={() => NOON} />);
-  for (let ts = 100; ts <= 1500; ts += 100) runFrame(ts);
+  for (let ts = 100; ts <= 2000; ts += 100) runFrame(ts);
   const before = draw.mock.lastCall![1].echo!.a;
   expect(before).toBeGreaterThan(0.1);
   expect(draw.mock.lastCall![1].echo!.rest).toBeUndefined();
   setHidden(true);
   act(() => void document.dispatchEvent(new Event('visibilitychange')));
   setHidden(false);
-  runFrame(1600);
+  runFrame(2100);
   const e = draw.mock.lastCall![1].echo!;
   expect(e.a).toBeLessThan(before); // loudness restarted from nothing
-  // Music is still playing, so they lift from rest (0.1 s of the 1.5 s lift).
-  expect(e.rest).toBeCloseTo(1 - 0.1 / 1.5, 9);
+  // Music is still playing, so they lift from rest once the bands have been over the resume level a third of a second.
+  expect(e.rest).toBe(1);
+  for (let ts = 2200; ts <= 2500; ts += 100) runFrame(ts);
+  expect(draw.mock.lastCall![1].echo!.rest).toBeLessThan(1);
 });
 
 it('reduced motion draws the lines at rest even while music plays', () => {
@@ -900,13 +902,13 @@ describe('the Unwind visualizer', () => {
     };
     feedBands(0, 2000);
     render(<HorizonCanvas now={() => NOON} />);
-    for (let ts = 100; ts <= 1600; ts += 100) {
+    for (let ts = 100; ts <= 2000; ts += 100) {
       act(() => feedBands(2000 + ts, 2000 + ts + 99));
       runFrame(ts);
     }
     expect(draw.mock.lastCall![1].echo!.rest).toBeUndefined();
     const out: number[] = [];
-    for (let ts = 1700; ts <= 6000; ts += 100) {
+    for (let ts = 2100; ts <= 6400; ts += 100) {
       act(() => feedQuiet(2000 + ts, 2000 + ts + 99));
       runFrame(ts);
       out.push(draw.mock.lastCall![1].echo!.rest ?? 0);
@@ -1016,7 +1018,7 @@ describe('the Unwind visualizer', () => {
       let ms = localMs(7, 12);
       if (music) feedBands(0, 2000);
       render(<HorizonCanvas now={() => ms} />);
-      for (let ts = 100; ts <= 1600; ts += 100) {
+      for (let ts = 100; ts <= 2000; ts += 100) {
         if (music) act(() => feedBands(2000 + ts, 2000 + ts + 99));
         runFrame(ts);
       }
@@ -1025,8 +1027,8 @@ describe('the Unwind visualizer', () => {
       act(() => usePlaceStore.getState().setActive('home'));
       draw.mockClear();
       const out: number[] = [];
-      let ts = 1700;
-      for (; ts <= 6500; ts += 100) {
+      let ts = 2100;
+      for (; ts <= 6900; ts += 100) {
         if (music) act(() => feedBands(2000 + ts, 2000 + ts + 99));
         runFrame(ts);
         out.push(strength(draw.mock.lastCall![1].echo));

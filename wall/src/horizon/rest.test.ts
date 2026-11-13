@@ -81,7 +81,7 @@ function lines(cam: CameraPreset, echo: HorizonEcho | null, t = 2.5) {
 
 /** The echo at rest for a camera and look, on the resting phase. */
 function restAt(cam: CameraPreset, look: RestLook = REST_LOOK, op = REST_OPACITY): HorizonEcho {
-  const e = echoOptions(cam, 1, 0, 2.5, 1, 1, look, op)!;
+  const e = echoOptions(cam, 0, 2.5, 1, 1, look, op)!;
   e.drift = REST_PHASE;
   return e;
 }
@@ -196,7 +196,7 @@ function run(cam: CameraPreset, startAtRest: boolean, phases: [boolean, number][
     for (let f = 0; f < Math.round(seconds * 30); f++) {
       T += 1 / 30;
       stepEchoMotion(m, driving, 1 / 30);
-      const e = echoOptions(cam, 1, 1, T, 1, m.rest)!;
+      const e = echoOptions(cam, 1, T, 1, m.rest)!;
       e.drift = m.drift;
       e.sample = SLOW;
       out.push({ rest: m.rest, drift: m.drift, echo: lines(cam, e, T).echo });
