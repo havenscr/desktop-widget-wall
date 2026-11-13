@@ -34,8 +34,12 @@ export const REST_SETTLE_S = 2.5;
 export const REST_RISE_S = 1.5;
 /** Seconds the band levels must stay under the floor (`BAND_FLOOR`) before the lines settle. */
 export const REST_QUIET_S = 1.5;
-/** From rest, the loudest band must stay at or above this level (over the floor) for `REST_RESUME_S` before the lines lift. */
-export const REST_RESUME = 0.4;
+/**
+ * From rest, the loudest band must stay at or above this level for `REST_RESUME_S` before the lines
+ * lift: just over the floor, since band levels are absolute (no auto gain) and soft music or a low
+ * volume can sit only a little above it.
+ */
+export const REST_RESUME = BAND_FLOOR + 0.05;
 export const REST_RESUME_S = 1 / 3;
 /** After a settle caused by quiet (not a pause) the lines stay at rest at least this long before they may lift again. */
 export const REST_DWELL_S = 4;
@@ -54,6 +58,20 @@ const clamp01 = (v: number) => (v > 0 ? (v < 1 ? v : 1) : 0);
  */
 export function visualizerWeight(camera: CameraPreset): number {
   return clamp01((camera.en - 3) / (VISUALIZER_EN - 3));
+}
+
+/**
+ * The fastest the drawn line count follows the camera's (`en`), in counts a second. A glide moves
+ * `en` at up to about 15 counts a second at its eased peak, which would crossfade a line in about
+ * two frames; at 4 each line fades over a quarter of a second or more (Work to Unwind's 8 counts
+ * take 2 s, landing just after the 1.6 s glide).
+ */
+export const LINE_COUNT_RATE = 4;
+
+/** Step the drawn line count toward the camera's `target` by at most `LINE_COUNT_RATE * dt`, landing on it exactly. */
+export function stepLineCount(count: number, target: number, dt: number): number {
+  const step = LINE_COUNT_RATE * Math.max(0, dt);
+  return Math.abs(target - count) <= step ? target : count + (target > count ? step : -step);
 }
 
 /** Move a fade toward 1 while `on` and toward 0 when not, over about a second (the display's wake fade). */

@@ -20,6 +20,7 @@ import {
   stepEchoFade,
   stepEchoGate,
   stepEchoMotion,
+  stepLineCount,
 } from './echo';
 import { frameDelta, shouldDraw } from './pacing';
 import { clearGridPulse, createGridPulse, stepGridPulse } from './pulse';
@@ -73,6 +74,9 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
   const lastEchoA = useRef(0);
   // 1 while the display is in use, easing to 0 over a second once it goes idle.
   const awake = useRef(1);
+  // The drawn line count: follows the camera's `en` through a glide at no more than
+  // `LINE_COUNT_RATE` counts a second, so each line crossfades slowly, and lands on it exactly.
+  const lineCount = useRef(glide.current.to.en);
   // The echo's clock and the real-band sampler.
   const echoT = useRef(0);
   const sampler = useRef(createEchoSampler());
@@ -125,6 +129,8 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
     // Start the pulse from nothing: after Zen or a reduced motion spell the stored bands are stale.
     clearGridPulse(pulse.current);
     grid.current = null;
+    // Nothing was drawn moving while the loop was off (Zen, reduced motion): start from the camera's count.
+    lineCount.current = glideCamera(glide.current).en;
     let T = 0;
     let last = 0;
     let raf = 0;
@@ -163,6 +169,7 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
         }
         lastEchoA.current = echo ? echoStrength(echo) : 0;
         if (echo) {
+          echo.n = Math.max(1, lineCount.current);
           echo.drift = m.drift;
           // The real bands, while any line still follows them (at rest none does, so none are read).
           if (m.rest < 1) {
@@ -201,6 +208,7 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
       awake.current = stepEchoFade(awake.current, !idleRef.current, dt);
       glide.current = stepGlide(glide.current, dt);
       publish();
+      lineCount.current = stepLineCount(lineCount.current, glideCamera(glide.current).en, dt);
       stepEchoGate(gate.current, glide.current, dt);
       echoT.current += dt;
       const beats = audioBeats();
