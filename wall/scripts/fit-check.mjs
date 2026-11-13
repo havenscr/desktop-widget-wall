@@ -9,8 +9,9 @@
 // - each checked box stays inside the viewport on all four sides;
 // - the document itself has no scroll overflow.
 // The centre is checked in each of its states (`?agents=`): three lanes with long titles,
-// one lane, no lane, and the fill when the helper is not set up. Exits non-zero on a
-// failure. CI does not run this; run it by hand before a layout change is handed over.
+// one lane, no lane, and the fill when the helper is not set up. Home is checked with its
+// Sound block at its fullest, typical, sparse, not reachable and not set up. Exits non-zero
+// on a failure. CI does not run this; run it by hand before a layout change is handed over.
 //
 //   WALL_CHROME=/path/to/chrome-or-headless-shell npm --prefix wall run fit-check
 //   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page)
@@ -84,13 +85,25 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 const WINGS = ['.work .left-wing', '.work .right-wing'];
 const LANES = ['.work .centre', '.work .centre .lane', '.work .centre .shelf'];
+const work = (agents) => `?hz=work&at=2026-11-11T10:24:00-08:00&long=1&agents=${agents}`;
+// Home with the Sound block: the centre column, its mood row and every part of the Sound
+// card must stay inside the top band in each state (the dev mocks' `sonos` and `moods` knobs).
+// With more than six moods the mood row scrolls sideways on purpose, so only its block is
+// checked there.
+const home = (knobs) => `?hz=home&at=2026-11-12T16:36:00-08:00&long=1&${knobs}`;
+const HOME_CENTRE = ['.home .home-centre', '.home .moods', '.home .mood-row', '.home .home-right'];
+const SOUND_FULL = ['.home .sound', '.home .sound-panel', '.home .sound-plays', '.home .sound-line', '.home .sound-where', '.home .sound-plays .sound-chip'];
 const VARIANTS = [
-  { name: 'three lanes, long titles', agents: '3', checks: [...WINGS, ...LANES] },
-  { name: 'one lane', agents: '1', checks: LANES },
-  { name: 'no lane', agents: '0', checks: [...LANES, '.work .centre .panel'] },
-  { name: 'helper not set up', agents: 'off', checks: ['.work .centre', '.work .centre .panel', '.work .centre .centre-note'] },
+  { name: 'three lanes, long titles', q: work('3'), checks: [...WINGS, ...LANES] },
+  { name: 'one lane', q: work('1'), checks: LANES },
+  { name: 'no lane', q: work('0'), checks: [...LANES, '.work .centre .panel'] },
+  { name: 'helper not set up', q: work('off'), checks: ['.work .centre', '.work .centre .panel', '.work .centre .centre-note'] },
+  { name: 'Home, Sound at its fullest: many moods, many speakers, long names, sleep timer', q: home('sonos=heavy&moods=many'), checks: [...HOME_CENTRE.filter((c) => !c.endsWith('mood-row')), ...SOUND_FULL] },
+  { name: 'Home, typical: five moods, Sound playing', q: home('moods=five'), checks: [...HOME_CENTRE, ...SOUND_FULL] },
+  { name: 'Home, sparse: no moods, one routine, one speaker', q: home('sonos=sparse&moods=none'), checks: ['.home .home-centre', '.home .moods', ...SOUND_FULL.slice(0, 4)] },
+  { name: 'Home, Sonos not reachable and moods not set up', q: home('sonos=down&moods=off'), checks: ['.home .home-centre', '.home .sound', '.home .sound-note'] },
+  { name: 'Home, Sonos not set up: the mood cards take the room', q: home('sonos=off&moods=five'), checks: ['.home .home-centre', '.home .mood-row', '.home .sound', '.home .sound-note'] },
 ];
-const query = (agents) => `?hz=work&at=2026-11-11T10:24:00-08:00&long=1&agents=${agents}`;
 /** Rounding slack for fractional rectangles, in screen pixels. */
 const SLACK = 0.5;
 
@@ -145,8 +158,8 @@ try {
   let failed = false;
   if (overflow) console.log(`deliberate overflow: ${overflow} (${OVERFLOWS[overflow]})`);
   for (const v of overflow ? VARIANTS.slice(0, 1) : VARIANTS) {
-    console.log(`${v.name} (agents=${v.agents}):`);
-    const url = `${pathToFileURL(page).href}${query(v.agents)}&checks=${encodeURIComponent(v.checks.join('|'))}`;
+    console.log(`${v.name} (${v.q}):`);
+    const url = `${pathToFileURL(page).href}${v.q}&checks=${encodeURIComponent(v.checks.join('|'))}`;
     const dom = execFileSync(
       chrome,
       // Headless Chromium keeps 87 px of the window for itself, so 807 gives a 2560 by 720 viewport.

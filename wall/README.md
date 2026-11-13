@@ -6,7 +6,7 @@ runs in a plain browser for development and inside Tauri as a second app,
 "Widget Wall 2". So far: a scaled stage, the live horizon, a left rail with
 three places, a clock, the Work tab basics (weather, music, focus timer), a task
 card, a network tile and mood buttons on Home, the Unwind tab with Watt the sheep, a sound ripple
-on the horizon, the Zen place with Dream, a small Tauri bridge and tests. Home has its moods and a network tile; the rest of it is still to come.
+on the horizon, the Zen place with Dream, a small Tauri bridge and tests. Home has its moods, Sonos controls and a network tile; the Rooms row is still to come.
 
 ## Requirements
 
@@ -34,23 +34,29 @@ rejects with a clear error. Inside Tauri, `invoke` calls the real command.
 ## Home moods
 
 Home follows the concept's `f_home` on the frame's zones (`screens/Home.tsx`,
-`styles/home.css`): the sun block under the clock in the left wing, the mood cards
-across the centre, and Around the house with the network card in the right wing. The
-Rooms row and the House line stay hidden until the home app reads them (PRs 24 and 25),
-so the mood cards take the centre's full height.
+`styles/home.css`): the sun block under the clock in the left wing; in the centre the
+concept's smaller mood cards in one row, the Rooms row's place and the Sound block (see
+"Sound on Home"); Around the house with the network card in the right wing. The Rooms
+row (`home/Rooms.tsx`) and the House line render nothing until the home app reads them
+(PRs 24 and 25): no placeholder card.
 
 - **Sun block** (`home/LeftWing.tsx`, `home/sunLine.ts`): from the horizon's own sun
   (`ribbon/sun.ts`), to the nearest minute. "Sunset in N min" in amber within 90
   minutes before sunset; earlier, the sunset time and the daylight left; before
   sunrise, the sunrise time; after sunset, tomorrow's sunrise.
-- **Columns** are fixed (`.home-wing` 1, `.moods` 2, `.home-right` 3), so a zone that
-  renders nothing never shifts the others.
+- **Columns** are fixed (`.home-wing` 1, `.home-centre` 2, `.home-right` 3), so a zone
+  that renders nothing never shifts the others.
 - **Mood cards** (`home/Moods.tsx`, `home/MoodArt.tsx`): one card per mood the home
   app defines, in its order (today Day, Evening and Late Night). Each card has painted
   art drawn as one SVG (Day a sun, Evening a striped sunset, Late Night a moon and
   stars; Movie and Goodnight are drawn too for when they exist, and any other mood gets
   a lamp glow) and the concept's line under the name where it has one. Nothing fakes a
   mood the home app lacks. The last mood tapped carries an "On now" tag and a cyan ring.
+  The cards are 150 px tall in one row; up to six share its width, and with more than
+  six each keeps a sixth and the row scrolls sideways (the mouse wheel scrolls it), so
+  the Sound block keeps its room. When the home app sends a schedule (`nextAtMs` on a
+  mood; it does not yet), a mood due within the hour says "In N min". With Sonos not
+  set up, not reachable or loading the cards grow to 300 px into the room it leaves.
 
 The Home tab shows one card per mood the home app already defines
 (at most 12). Tapping
@@ -76,6 +82,60 @@ yet", 404 "Unknown mood", anything else "Could not set the mood". The requests
 use the same 8 second timeout, 1 MB cap and no redirects as the other feeds. With
 no `homeBaseUrl` the row says "Not set up"; with no moods it shows the one compact card.
 
+### Sound on Home
+
+`home/Sound.tsx`, `home/useSonos.ts`, `home/soundModel.ts`, `src-tauri/src/wall2_sonos.rs`.
+The owner's Sonos service on the home box, read every 30 seconds while the wall is
+visible. Nothing on the wall plays or changes volume without a click.
+
+- **Quick play**: one button per music routine the service lists, the first six in the
+  service's order on the face (a trailing "Music" is dropped from the label; the
+  favourite it plays is the line under it; the tooltip has the full name and volume).
+  The rest, and the speaker controls the service offers (group all, ungroup all), sit
+  under **More**. The service has no way to play a favourite directly, so More lists
+  routines only. The routine that fits the hour is marked "Suggested" (from words in its
+  name: morning 5 to 9 AM, a work routine on weekdays to 5 PM, a day one, evening to
+  9 PM, night after). The service does not say which routine is playing, so "On now" is
+  never claimed: the routine last started from this wall says "started 5 min ago" for
+  three hours while music plays (`wall2-sonos-last-play` in local storage).
+- **Where**: the service's group presets as a switch, the one whose name starts with
+  "Office" first. The preset whose grouping matches the speakers' groups now is marked
+  (Rust compares them); a click applies one.
+- **Volume**: one slider for the current group (the group with the most speakers
+  playing music; a speaker on line-in carries the PC's sound and is left out). It sends
+  one change when the pointer or key lets go. **Speakers** opens every speaker with its
+  state and its own slider; a speaker on line-in says "PC audio" and offers "PC volume"
+  (the Windows volume control) instead of a Sonos slider. Any change that would raise a
+  speaker above 40, or a routine that starts above 40, asks first in a bar over the card.
+- **Play and pause**: "Sonos off" pauses every speaker while music plays; with nothing
+  playing the button reads "Play" and starts the suggested routine. The service has no
+  next or resume command, so there is no Next button. **Sleep** offers 30, 60 or 90
+  minutes (5 minute fade); a running timer shows its minutes left and cancels on a click.
+- Every action shows a brief result beside the heading ("Playing Dusk", "Could not
+  reach Sonos"). A read that failed, or one over two minutes old, dims the card, says
+  "Sonos not reachable, showing 3 min ago" and turns every control off. Never reached
+  shows one compact card; no `sonosBaseUrl` shows one line saying what to add.
+
+Rust (`wall2_sonos`, every command answers the `wall2` window only): reads `GET
+/api/status`, `/api/speakers` and `/api/routines` (all needed), then `/api/groups`,
+`/api/group-presets`, `/api/scenes` and `/api/sleep-timers` (each may fail alone), with a
+4 second timeout, no redirects and a 1 MB cap per answer. The summary is bounded (24
+speakers, 24 groups, 12 presets, 48 routines, 12 scenes, 6 timers), names are cleaned
+to one line of at most 60 characters, a speaker whose name would not survive the round
+trip is left out, and only enabled music routines and the pause, group and ungroup
+controls are kept (TV volume profiles set volumes of their own and are left out).
+Writes, each built in Rust and checked against the last good read (at most ten
+minutes old; a key, preset, speaker, group or timer id not in it is refused):
+`POST /api/trigger/<routine key>?force=true` (as the service's own Quick Play does),
+`POST /api/group-presets/<id>/apply`, `POST /api/action/volume` `{room, volume}` per
+speaker (a group is sent speaker by speaker, line-in and offline speakers left out;
+0 to 100, clamped), `POST /api/action/pause-all`, `POST /api/sleep-timer` `{minutes,
+fadeMinutes: 5}` (30, 60 or 90 only) and `DELETE /api/sleep-timer/<id>`. A raise above
+40 without `confirm: true` answers `needs-confirm`. Errors are fixed strings ("Could not
+reach Sonos", "Sonos could not do that", "Sonos status is out of date") and nothing is
+logged. Dev mocks (`bridge/devMocks/sonos.ts`) take `?sonos=off|down|sparse|heavy|quiet`;
+`?moods=five|many|none|off` sets the mood cards.
+
 ### Around the house (Home, right wing)
 
 `home/Chores.tsx` and `home/useChores.ts`: the next three open tasks tagged `home` (a
@@ -100,7 +160,10 @@ Clicking a chore's title (not its tick) opens it in the task app with
 fit:home`) builds a development bundle, opens Home at 16:36 in headless Chromium, gives
 every chore a long title and checks that the right wing stays inside the 490 px band,
 that titles stay on one line, that three alert rows show and that no two tick hit areas
-overlap. It prints what it measured and exits 1 on any failure.
+overlap. It prints what it measured and exits 1 on any failure. `npm run fit-check`
+checks the Home centre too: the mood row and every part of the Sound card inside the
+band with Sound at its fullest (many moods, many speakers, long names, a sleep timer),
+typical, sparse, not reachable and not set up.
 
 ## Run and build inside Tauri
 
@@ -665,6 +728,9 @@ file is read on every call, so a change applies on the next refresh.
   even over `http`) or an `https` front. Plain `http` on the LAN can be spoofed by
   another device on the same network, which could fake a green tile.
 - `omniHelperUrl` is optional and `https` only; see "Agents".
+- `sonosBaseUrl` is optional: the Sonos service on the home box, scheme, host and port
+  only, `http` or `https` (plain `http` to a private address is allowed, as for
+  `homeBaseUrl`, with the same spoofing caveat). See "Sound on Home".
 - A missing file or key shows "Not set up" on that card, quietly. A malformed
   address shows the card as unavailable.
 - `homeSecurityUrl` is optional: the full address of the home app's Security page,
