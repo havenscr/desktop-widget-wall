@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { create } from 'zustand';
 import { invoke } from '../bridge/tauri';
 import { calendarNotAvailable, nextMeeting, REFRESH_MS, TICK_MS, type Meeting, type MeetData } from '../meet/model';
@@ -36,9 +36,15 @@ let users = 0;
 let timer: ReturnType<typeof setInterval> | null = null;
 /** Bumped when the last user leaves, so a read started before that cannot land after it. */
 let epoch = 0;
+/** The injected clock of the most recently joined user (tests pass their own). */
+let clock: () => number = systemNow;
+let lastRead: number | null = null;
+let inFlight = false;
 
 function read(): void {
   const mine = epoch;
+  lastRead = clock();
+  inFlight = true;
   invoke<MeetData>('wall2_meet_next')
     .then((d) => {
       if (mine !== epoch) return;
@@ -48,7 +54,7 @@ function read(): void {
         feedStale: partial,
         failed: false,
         noCalendar: calendarNotAvailable(d?.accounts ?? []),
-        asOf: partial ? s.asOf : Date.now(),
+        asOf: partial ? s.asOf : clock(),
       }));
     })
     .catch((e) => {
@@ -61,14 +67,18 @@ function read(): void {
       }
     })
     .finally(() => {
-      if (mine === epoch) useMeetingFeed.setState((s) => ({ reads: s.reads + 1 }));
+      if (mine === epoch) {
+        inFlight = false;
+        useMeetingFeed.setState((s) => ({ reads: s.reads + 1 }));
+      }
     });
 }
 
-function join(): void {
+function join(now: () => number): void {
+  clock = now;
   users += 1;
   if (users === 1) {
-    read();
+    if (lastRead === null || clock() - lastRead >= REFRESH_MS) read();
     timer = setInterval(read, REFRESH_MS);
   }
 }
@@ -78,7 +88,23 @@ function leave(): void {
   if (users > 0) return;
   if (timer !== null) clearInterval(timer);
   timer = null;
+  // Keep the meetings, the stale flags, `asOf` and the last read time, so a hide then show
+  // still shows the old list and does not read again inside the interval.
   epoch += 1;
+  // A read we just dropped never landed, so the next show may read again.
+  if (inFlight) lastRead = null;
+  inFlight = false;
+}
+
+/** Forget everything. For tests only. */
+export function resetMeetingFeed(): void {
+  if (timer !== null) clearInterval(timer);
+  timer = null;
+  users = 0;
+  epoch += 1;
+  lastRead = null;
+  inFlight = false;
+  clock = systemNow;
   useMeetingFeed.setState(initial(), true);
 }
 
@@ -94,10 +120,12 @@ export function useNextMeeting(now: () => number = systemNow): NextMeetingState 
   const visible = useVisible();
   const feed = useMeetingFeed();
   const [t, setT] = useState(now);
+  const nowRef = useRef(now);
+  nowRef.current = now;
 
   useEffect(() => {
     if (!visible) return;
-    join();
+    join(nowRef.current);
     return leave;
   }, [visible]);
 

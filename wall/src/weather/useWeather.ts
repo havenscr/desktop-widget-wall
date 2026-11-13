@@ -71,7 +71,20 @@ function leave(): void {
   if (users > 0) return;
   if (timer !== null) clearInterval(timer);
   timer = null;
-  // Nobody reads it any more: forget it, so a later first user starts clean.
+  // Stop polling and drop any answer still on its way, but keep the reading, the failure flag
+  // and the last attempt time, so a hide then show shows the old reading with its age and
+  // does not fetch again inside the interval.
+  epoch += 1;
+  // An answer we just dropped never landed, so the next show may ask again.
+  if (inFlight) lastAttempt = null;
+  inFlight = false;
+}
+
+/** Forget everything. For tests only. */
+export function resetWeatherStore(): void {
+  if (timer !== null) clearInterval(timer);
+  timer = null;
+  users = 0;
   epoch += 1;
   inFlight = false;
   lastAttempt = null;
@@ -84,7 +97,8 @@ function leave(): void {
  * every 15 minutes while at least one is mounted and visible; fetches once when the page becomes
  * visible after 15 minutes or more. With no reading yet it retries every minute. A failure keeps
  * the last good reading. A request is aborted after 15 seconds. `now` ticks each minute so the
- * stale text stays current. When the last user unmounts the reading is forgotten.
+ * stale text stays current. When the last user leaves (the page is hidden) polling stops but the
+ * reading and the time of the last attempt are kept.
  */
 export function useWeather(f: typeof fetch = defaultFetch): WeatherState {
   const visible = useVisible();
