@@ -282,21 +282,23 @@ pub(crate) trait Desktop {
     fn look(&mut self, id: isize) -> Option<WinRec>;
     /// The window's position and state before the move.
     fn save(&mut self, id: isize) -> Option<Self::Saved>;
-    /// Restore it if maximised, then place its visible frame on `target`. True when the
-    /// request was accepted.
-    fn place(&mut self, id: isize, target: Rect) -> bool;
+    /// Restore it if maximised, then place its visible frame on `target`. `pid` is the process
+    /// the window belonged to when it was listed. True when the request was accepted.
+    fn place(&mut self, id: isize, pid: u32, target: Rect) -> bool;
+    /// Put a window back as it was saved. True when it was restored. Must not block for long.
+    fn restore(&mut self, id: isize, saved: &Self::Saved) -> bool;
 }
 
 pub(crate) struct Placed<S> {
     pub key: UndoKey,
     pub target: Rect,
-    pub saved: Option<S>,
+    pub saved: S,
 }
 
 /// Place the chosen windows. `candidates` are the enumerated records in z order, `lefts` their
 /// current left edges. Each candidate is looked at again immediately before it is saved or
-/// moved and skipped when `revalidate` fails; a window whose move was not accepted is left out
-/// (and has no undo entry).
+/// moved and skipped when `revalidate` fails; a window whose position cannot be saved is not
+/// moved at all, and a window whose move was not accepted is left out (and has no undo entry).
 pub(crate) fn apply<D: Desktop>(desk: &mut D, layout: Layout, work: Rect, candidates: &[WinRec], lefts: &[(isize, i32)]) -> Vec<Placed<D::Saved>> {
     let mut out = Vec::new();
     for (id, target) in plan(layout, work, lefts) {
@@ -305,12 +307,41 @@ pub(crate) fn apply<D: Desktop>(desk: &mut D, layout: Layout, work: Rect, candid
         if !revalidate(rec, later.as_ref()) {
             continue;
         }
-        let saved = desk.save(id);
-        if desk.place(id, target) {
+        // No saved position means no way back: the window is left where it is.
+        let Some(saved) = desk.save(id) else { continue };
+        if desk.place(id, rec.pid, target) {
             out.push(Placed { key: (id, rec.pid), target, saved });
         }
     }
     out
+}
+
+/// The rule checked before Undo touches a saved window: the same handle and process, and
+/// still an ordinary window the layout could have moved (visible, not minimised, not the
+/// wall's own, not a shell or tool window, reachable). The monitor may differ, since the owner
+/// may have moved it since. A window the owner has minimised since is left alone.
+pub(crate) fn undo_ok(key: UndoKey, later: Option<&WinRec>) -> bool {
+    later.is_some_and(|l| l.id == key.0 && l.pid == key.1 && l.eligible())
+}
+
+/// Put back the windows of an undo set that pass `undo_ok`, one fresh look each. Returns how
+/// many were restored.
+pub(crate) fn restore_all<D: Desktop>(desk: &mut D, entries: Vec<(UndoKey, D::Saved)>) -> u32 {
+    let mut restored = 0;
+    for (key, saved) in entries {
+        let later = desk.look(key.0);
+        if undo_ok(key, later.as_ref()) && desk.restore(key.0, &saved) {
+            restored += 1;
+        }
+    }
+    restored
+}
+
+/// After a maximised window was given time to restore: whether it may still be placed. It must
+/// still exist, still belong to the process it had, not be minimised, and not still be
+/// maximised.
+pub(crate) fn placeable_after_wait(pid: u32, exists: bool, now_pid: u32, minimised: bool, maximised: bool) -> bool {
+    exists && now_pid == pid && !minimised && !maximised
 }
 
 /// Pixels of slack when checking that a window reached its place.
@@ -411,7 +442,7 @@ mod win {
     use windows::Win32::UI::WindowsAndMessaging::{
         GetWindow, GetWindowLongW, GetWindowPlacement, GetWindowRect, IsHungAppWindow, IsIconic, IsWindow,
         IsWindowVisible, IsZoomed, SetWindowPlacement, SetWindowPos, ShowWindowAsync, GWL_EXSTYLE, GWL_STYLE, GW_OWNER,
-        SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE, SWP_NOZORDER, SW_RESTORE, WINDOWPLACEMENT, WS_EX_TOOLWINDOW, WS_THICKFRAME,
+        SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE, SWP_NOZORDER, SW_RESTORE, SW_SHOWMAXIMIZED, WINDOWPLACEMENT, WS_EX_TOOLWINDOW, WS_THICKFRAME,
     };
 
     /// How long a maximised window gets to restore before it is skipped.
@@ -419,6 +450,8 @@ mod win {
     /// How long, in all, the windows get to reach their places before they are counted.
     const ARRIVAL_WAIT: Duration = Duration::from_millis(250);
     const POLL: Duration = Duration::from_millis(25);
+    /// How long one undo restore may take before it is given up on.
+    const RESTORE_CALL_WAIT: Duration = Duration::from_millis(400);
 
     /// Held while a layout or an undo runs, so clicks never overlap.
     static WORKING: AtomicBool = AtomicBool::new(false);
@@ -534,9 +567,11 @@ mod win {
         }
 
         /// A maximised window is restored and given up to 200 ms to leave the maximised state;
-        /// only then are its frame measured and the move posted. One that is still maximised
-        /// is skipped, never placed from the wrong state.
-        fn place(&mut self, id: isize, target: Rect) -> bool {
+        /// only then, after looking at the handle again, are its frame measured and the move
+        /// posted. One that is still maximised at the limit is skipped, and a request to
+        /// maximise it again is posted so it is left as it was found. No call here waits on the
+        /// window's own thread.
+        fn place(&mut self, id: isize, pid: u32, target: Rect) -> bool {
             let hw = sys::hwnd(id);
             unsafe {
                 if IsZoomed(hw).as_bool() {
@@ -544,9 +579,15 @@ mod win {
                     let started = Instant::now();
                     while IsZoomed(hw).as_bool() {
                         if started.elapsed() >= RESTORE_WAIT {
+                            let _ = ShowWindowAsync(hw, SW_SHOWMAXIMIZED);
                             return false;
                         }
                         std::thread::sleep(Duration::from_millis(10));
+                    }
+                    let exists = IsWindow(hw).as_bool();
+                    let now_pid = if exists { sys::pid_of(id) } else { 0 };
+                    if !placeable_after_wait(pid, exists, now_pid, IsIconic(hw).as_bool(), IsZoomed(hw).as_bool()) {
+                        return false;
                     }
                 }
                 let outer = match frame_of(id) {
@@ -564,6 +605,20 @@ mod win {
                 )
                 .is_ok()
             }
+        }
+
+        /// `SetWindowPlacement` sends messages to the window's thread and can wait on one that
+        /// hangs, so it runs on a helper thread and is given a short time. On a timeout the
+        /// window counts as not restored and the helper is left to finish by itself; nothing
+        /// here is held meanwhile.
+        fn restore(&mut self, id: isize, saved: &Saved) -> bool {
+            let placement = saved.placement;
+            let (tx, rx) = std::sync::mpsc::channel();
+            let spawned = std::thread::Builder::new().name("wall2-undo-restore".into()).spawn(move || {
+                let ok = unsafe { SetWindowPlacement(sys::hwnd(id), &placement).is_ok() };
+                let _ = tx.send(ok);
+            });
+            spawned.is_ok() && rx.recv_timeout(RESTORE_CALL_WAIT).unwrap_or(false)
         }
     }
 
@@ -595,9 +650,7 @@ mod win {
         let mut fresh: Vec<(UndoKey, Saved)> = Vec::new();
         for p in placed {
             targets.push((p.key.0, p.target));
-            if let Some(saved) = p.saved {
-                fresh.push((p.key, saved));
-            }
+            fresh.push((p.key, p.saved));
         }
         if let Ok(mut slot) = UNDO.lock() {
             merge_undo(&mut slot, fresh, Instant::now());
@@ -622,16 +675,9 @@ mod win {
             let mut slot = UNDO.lock().map_err(|_| NOTHING_TO_UNDO)?;
             take_undo(&mut slot, Instant::now()).ok_or(NOTHING_TO_UNDO)?
         };
-        let mut restored = 0u32;
-        for ((_, pid), e) in entries {
-            let hw = sys::hwnd(e.hwnd);
-            // The window must still exist and still belong to the same process (a handle
-            // can be reused), and must be answering.
-            let same = unsafe { IsWindow(hw).as_bool() && sys::pid_of(e.hwnd) == pid && !IsHungAppWindow(hw).as_bool() };
-            if same && unsafe { SetWindowPlacement(hw, &e.placement).is_ok() } {
-                restored += 1;
-            }
-        }
+        let keyed: Vec<(UndoKey, Saved)> = entries;
+        let mut desk = WinDesk { self_elevated: sys::self_elevated() };
+        let restored = restore_all(&mut desk, keyed);
         if restored == 0 {
             return Err(NOTHING_TO_UNDO);
         }
@@ -945,6 +991,8 @@ mod tests {
         now: std::collections::HashMap<isize, WinRec>,
         stays_maximised: Vec<isize>,
         maximised: Vec<isize>,
+        no_save: Vec<isize>,
+        hangs: Vec<isize>,
         log: Vec<String>,
     }
 
@@ -954,15 +1002,26 @@ mod tests {
             self.now.get(&id).copied()
         }
         fn save(&mut self, id: isize) -> Option<String> {
+            if self.no_save.contains(&id) {
+                return None;
+            }
             self.log.push(format!("save {id}"));
             Some(if self.maximised.contains(&id) { format!("max {id}") } else { format!("normal {id}") })
         }
-        fn place(&mut self, id: isize, target: Rect) -> bool {
+        fn place(&mut self, id: isize, _pid: u32, target: Rect) -> bool {
             if self.stays_maximised.contains(&id) {
                 self.log.push(format!("refused {id}"));
                 return false;
             }
             self.log.push(format!("place {id} {}", target.left));
+            true
+        }
+        fn restore(&mut self, id: isize, saved: &String) -> bool {
+            if self.hangs.contains(&id) {
+                self.log.push(format!("hung {id}"));
+                return false;
+            }
+            self.log.push(format!("restore {id} {saved}"));
             true
         }
     }
@@ -1008,9 +1067,57 @@ mod tests {
         let placed = apply(&mut desk, Layout::Thirds, w, &cands, &lefts);
         // Window 1 was saved with its maximised state (so Undo brings it back maximised).
         assert_eq!(placed.len(), 1);
-        assert_eq!(placed[0].saved.as_deref(), Some("max 1"));
+        assert_eq!(placed[0].saved, "max 1");
         // Window 2 would not leave the maximised state: not placed, no undo entry.
         assert!(placed.iter().all(|p| p.key.0 != 2));
+    }
+
+    #[test]
+    fn a_window_whose_position_cannot_be_saved_is_not_moved() {
+        let w = work(SCREENS[0], 'b');
+        let (cands, lefts) = candidates(&[1, 2]);
+        let mut desk = fake(&[1, 2]);
+        desk.no_save = vec![1];
+        let placed = apply(&mut desk, Layout::Thirds, w, &cands, &lefts);
+        assert_eq!(placed.iter().map(|p| p.key.0).collect::<Vec<_>>(), vec![2]);
+        assert!(desk.log.iter().all(|l| !l.contains("place 1")), "{:?}", desk.log);
+    }
+
+    #[test]
+    fn undo_skips_a_window_that_is_minimised_hidden_reused_closed_or_the_walls_own() {
+        let key = (7isize, 101u32);
+        let e = WinRec { pid: 101, ..ok(7) };
+        assert!(undo_ok(key, Some(&e)));
+        assert!(undo_ok(key, Some(&WinRec { monitor: 99, ..e })), "moved to another monitor since is still restored");
+        assert!(!undo_ok(key, None));
+        assert!(!undo_ok(key, Some(&WinRec { pid: 5, ..e })));
+        assert!(!undo_ok(key, Some(&WinRec { id: 8, ..e })));
+        assert!(!undo_ok(key, Some(&WinRec { minimised: true, ..e })));
+        assert!(!undo_ok(key, Some(&WinRec { visible: false, ..e })));
+        assert!(!undo_ok(key, Some(&WinRec { own_process: true, ..e })));
+        assert!(!undo_ok(key, Some(&WinRec { out_of_reach: true, ..e })));
+    }
+
+    #[test]
+    fn restore_all_leaves_minimised_and_hung_windows_alone_and_goes_on() {
+        let mut desk = fake(&[1, 2, 3, 4]);
+        for id in [1isize, 2, 3, 4] {
+            desk.now.insert(id, WinRec { pid: 100 + id as u32, ..ok(id) });
+        }
+        desk.now.insert(2, WinRec { pid: 102, minimised: true, ..ok(2) });
+        desk.hangs = vec![3];
+        let entries: Vec<(UndoKey, String)> = (1..=4).map(|i| ((i as isize, 100 + i as u32), format!("s{i}"))).collect();
+        assert_eq!(restore_all(&mut desk, entries), 2);
+        assert_eq!(desk.log, vec!["restore 1 s1".to_string(), "hung 3".to_string(), "restore 4 s4".to_string()]);
+    }
+
+    #[test]
+    fn a_window_is_placed_after_the_restore_wait_only_if_it_is_still_the_same_plain_window() {
+        assert!(placeable_after_wait(5, true, 5, false, false));
+        assert!(!placeable_after_wait(5, false, 0, false, false), "closed during the wait");
+        assert!(!placeable_after_wait(5, true, 6, false, false), "handle reused");
+        assert!(!placeable_after_wait(5, true, 5, true, false), "minimised during the wait");
+        assert!(!placeable_after_wait(5, true, 5, false, true), "still maximised");
     }
 
     #[test]

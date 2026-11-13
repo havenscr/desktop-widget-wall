@@ -828,7 +828,7 @@
   }
 }
 
-/* Right wing under Next three: the Big screen and Keys rows (tiles sized for a mouse). */
+/* Right wing under Next three: the Always here and Now rows (tiles sized for a mouse). */
 .deck-row {
   display: flex;
   flex-direction: column;
@@ -851,7 +851,8 @@
   align-items: center;
   gap: 8px;
   min-width: 0;
-  flex: 0 1 auto;
+  /* The pages, chip and Auto keep their room; the result line on the left gives way. */
+  flex: none;
 }
 .deck-brief {
   min-width: 0;
@@ -1005,8 +1006,270 @@
   padding: 0 14px;
 }
 
+/* Always here: a small pin beside the heading; the Now row's pages, dots and chip. */
+/* The two rows share one box, so the picker can cover exactly them and never Next three. */
+.deck {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.deck-pin {
+  margin-left: 8px;
+  color: var(--faint);
+}
+.pin-tile {
+  height: 52px;
+  gap: 6px;
+  font-size: 15px;
+}
+.pin-tile.sel {
+  border-color: var(--cyan);
+  background: rgba(53, 230, 234, 0.12);
+}
+.deck-dots {
+  display: flex;
+  align-items: center;
+}
+.deck-dot {
+  width: 20px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+.deck-dot i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--faint);
+  transition: background 200ms ease, transform 200ms ease;
+}
+.deck-dot:hover i {
+  background: var(--dim);
+}
+.deck-dot.on i {
+  background: var(--cyan);
+  transform: scale(1.25);
+}
+.deck-dot.am.on i,
+.deck-dot.am i {
+  background: var(--amber, #f5b84a);
+}
+.deck-dot:focus-visible,
+.deck-chip:focus-visible,
+.pk-row:focus-visible,
+.pk-reset:focus-visible,
+.pk-search:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: 2px;
+}
+.deck-chip {
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(245, 184, 74, 0.55);
+  background: rgba(245, 184, 74, 0.1);
+  color: var(--amber, #f5b84a);
+  font: 500 15px/1 var(--disp);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.deck-chip:hover {
+  background: rgba(245, 184, 74, 0.2);
+}
+
+/* The For you page: at most two lines, each an icon, a title with its reason, and one button. */
+.fy-list {
+  display: grid;
+  gap: 8px;
+}
+.fy-li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  height: 40px;
+  padding: 0 6px 0 12px;
+  border-radius: 14px;
+  border: 1px solid var(--edge);
+  background: rgba(255, 255, 255, 0.04);
+}
+.fy-li.amber {
+  border-color: rgba(245, 184, 74, 0.55);
+  color: var(--amber, #f5b84a);
+}
+.fy-li.mint {
+  color: var(--mint);
+}
+.fy-tx {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  color: var(--tx);
+}
+.fy-tx b {
+  font-weight: 500;
+  font-size: 16px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 0 1 auto;
+}
+.fy-tx em {
+  font-style: normal;
+  font-size: 14px;
+  color: var(--dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1 1 0;
+  min-width: 0;
+}
+/* "Show" flashes a card's ring once, slowly. */
+.lane.deck-flash {
+  animation: deck-flash 1.4s ease-in-out 1;
+}
+@keyframes deck-flash {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(53, 230, 234, 0);
+  }
+  45% {
+    box-shadow: 0 0 0 4px rgba(53, 230, 234, 0.55);
+  }
+}
+
+/* The picker covers exactly the two key rows (their box), never Next three. With little in the
+   rows the box grows to hold it, into the room that a short task list leaves. */
+.deck:has(.pk) {
+  min-height: 236px;
+}
+.pk {
+  position: absolute;
+  z-index: 40;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border-radius: 16px;
+  border: 1px solid rgba(53, 230, 234, 0.45);
+  background: rgb(14, 12, 34);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+.pk-top {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.pk-search {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid var(--edge);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--tx);
+  font: 500 16px/1 var(--body);
+}
+.pk-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.pk-group {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  column-gap: 6px;
+}
+.pk-gh {
+  grid-column: 1 / -1;
+  position: sticky;
+  top: 0;
+  padding: 6px 4px 2px;
+  background: rgb(14, 12, 34);
+  color: var(--dim);
+  font: 500 13px/1.2 var(--disp);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.pk-row {
+  width: 100%;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px;
+  border-radius: 10px;
+  color: var(--tx);
+  font: 500 16px/1 var(--body);
+  text-align: left;
+  cursor: pointer;
+}
+.pk-row:hover:not(.off) {
+  background: rgba(53, 230, 234, 0.1);
+}
+.pk-row.off {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.pk-row.pinned {
+  color: var(--cyan);
+}
+.pk-lb {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pk-badge,
+.pk-mark {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--edge);
+  color: var(--dim);
+  font: 500 12px/1.2 var(--disp);
+}
+.pk-badge.check {
+  color: var(--amber, #f5b84a);
+  border-color: rgba(245, 184, 74, 0.5);
+}
+.pk-mark {
+  color: var(--cyan);
+  border-color: rgba(53, 230, 234, 0.45);
+}
+.pk-none {
+  padding: 16px 8px;
+  color: var(--dim);
+}
+.pk-reset {
+  flex: none;
+  height: 32px;
+  border-radius: 10px;
+  border: 1px solid var(--edge);
+  color: var(--dim);
+  font: 500 15px/1 var(--disp);
+  cursor: pointer;
+}
+.pk-reset:hover {
+  color: var(--tx);
+  border-color: rgba(53, 230, 234, 0.5);
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .deck-tile {
+  .deck-tile,
+  .deck-dot i {
     transition: none;
+  }
+  .lane.deck-flash {
+    animation: none;
+    box-shadow: 0 0 0 4px rgba(53, 230, 234, 0.55);
   }
 }

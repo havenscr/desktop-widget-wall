@@ -1,9 +1,12 @@
 import { saveMode } from '../../work/keysModel';
+import { LIBRARY_DATA } from './libraryData';
 import { knob, longOr } from './long';
 import { mocks } from '../tauri';
 
 /**
- * Dev only: the Big screen and Keys rows of Work's right wing, with invented sets.
+ * Dev only: the Always here and Now rows of Work's right wing, with invented sets, the key
+ * library (`wall2_keys_library`) and pins. What waits for the "For you" page comes from the
+ * agents, meeting and network mocks (`?agents=`, `?meet=none`, `?net=calm`).
  * `?arrange=` is `ok` (default), `none` (the wall is the only monitor), `nowin` (a layout
  * finds no windows) or `off` (the commands are missing, so the row is not drawn).
  * `?keys=` is `typical` (a Power BI like app in front, a general set and its own set),
@@ -12,7 +15,7 @@ import { mocks } from '../tauri';
  * set whose app is not in front, so a click is refused), `refuse` (Power BI cannot be
  * brought forward), `problem` (keys.json invalid) or `off`. `?hold=<set id>` starts held.
  */
-const key = (label: string, icon: string) => ({ label, icon });
+const key = (label: string, icon: string, action: string | null = null) => ({ label, icon, action });
 
 export function registerDeckMocks(): void {
   const arrange = knob('arrange') ?? 'ok';
@@ -31,7 +34,13 @@ export function registerDeckMocks(): void {
     id: 'general',
     name: 'General',
     general: true,
-    keys: [key('Snip', 'screenshot'), key(longOr('Clipboard', 'Clipboard history'), 'clipboard'), key(longOr('Desktop', 'Show desktop'), 'desktop')],
+    keys: [
+      key('Snip', 'screenshot'),
+      key(longOr('Clipboard', 'Clipboard history'), 'clipboard'),
+      key(longOr('Desktop', 'Show desktop'), 'desktop'),
+      key('Lock the PC', 'lock', 'lock'),
+      key('Focus 25', 'timer', 'focus:25'),
+    ],
   };
   const app = {
     id: 'sales',
@@ -77,15 +86,25 @@ export function registerDeckMocks(): void {
   const hold = knob('hold');
   if (hold) saveMode({ hold: true, setId: hold });
 
+  const defaultPins = ['lib:thirds', 'lib:focus', 'lib:record-169', 'lib:snip', 'lib:strip-dark'];
   mocks.set('wall2_keys_summary', () => {
     if (mode === 'problem') throw 'app 2, key 3: chord is not in the allowed key list';
-    return { front, autoId, exe, sets, source: 'file' };
+    return { front, autoId, exe, sets, source: knob('source') === 'default' ? 'default' : 'file', defaultPins, filePins: [] };
   });
+  mocks.set('wall2_keys_library', () => LIBRARY_DATA);
+  // Rust runs lock and monitors-to-sleep; every other action is answered by name for the page to run.
+  const answer = (action: string | null) => (action === null || action === 'lock' || action === 'displays:off' ? null : action);
   mocks.set('wall2_keys_send', (args) => {
     if (mode === 'refuse') throw 'not forward';
-    const set = sets.find((s) => s.id === args?.setId);
+    const set = args?.setId === 'pinned' ? null : sets.find((s) => s.id === args?.setId);
     if (!set) throw 'no key';
     if (!set.general && autoId !== set.id) throw 'no app';
-    return undefined;
+    return answer(set.keys[Number(args?.index)]?.action ?? null);
+  });
+  mocks.set('wall2_keys_send_library', (args) => {
+    if (mode === 'refuse') throw 'not forward';
+    const hit = LIBRARY_DATA.flatMap((g) => g.keys).find((k) => k.id === args?.id);
+    if (!hit || !hit.runnable) throw 'no key';
+    return answer(hit.action);
   });
 }

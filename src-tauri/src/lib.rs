@@ -51,6 +51,7 @@ mod audio_analysis;
 mod wall2_window;
 mod wall2_winutil;
 mod wall2_arrange;
+mod wall2_keylib;
 mod wall2_keys;
 #[cfg(windows)]
 mod display_watch;
@@ -3777,6 +3778,8 @@ pub fn run() {
             wall2_arrange::wall2_arrange_undo,
             wall2_keys::wall2_keys_summary,
             wall2_keys::wall2_keys_send,
+            wall2_keys::wall2_keys_library,
+            wall2_keys::wall2_keys_send_library,
             list_audio_devices,
             start_audio_capture,
             stop_audio_capture,

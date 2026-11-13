@@ -508,8 +508,8 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
   `?at=`, `?agents=`, `?long=1`, `?audio=demo`, and the newer ones in
   `src/bridge/devMocks/gallery.ts` (`screen`, `tasks`, `meet`, `home`, `net`, `moods`, `media`,
   `box`, `pc`, `usage`, `weather`, `focus`, `clock`). None of it is in a production build.
-- **Right wing**: the next three tasks (see "Task card" below). The Big screen and Keys
-  rows of the concept come with their own pull requests.
+- **Right wing**: the next three tasks (see "Task card" below), then the key deck: Always
+  here and Now (see "The key deck").
 
 - **Focus timer** (`wall/src/focus/`). A ring with the minutes left in the
   middle (the full card in the centre, the small row in the left wing). Choose 25, 50 or custom (5 to 120 minutes, steps of 5). Start, pause,
@@ -1171,31 +1171,98 @@ Nothing here logs, and nothing here takes a wake lock or sets an execution state
 - **Clock carry-over**: any change of the helper's `now` counts as movement, so a helper clock that is corrected backwards never reads as frozen.
 - **Hooks for other places**: `useAgentStatusLine()` gives one line ("Two agents still working, nothing needs you") or null when not set up, for Unwind and Dream; `useAgentsWaiting()` is true while something waits, for the amber dot over Watt. Both share the same poll.
 
-## Big screen and Keys (Work, right wing)
+## The key deck (Work, right wing)
 
-Two rows under "Next three". Both act on the owner's Windows PC outside the wall, only on a click on the wall, and fail closed. Neither has been run on a real Windows machine yet: CI compiles and unit-tests the decisions, the Win32 calls are unverified. The rows are not drawn on a build where the commands do not exist.
+Two rows under "Next three", in one box (`.deck`): **Always here** and **Now**. Both act on the owner's Windows PC outside the wall, only on a click on the wall, and fail closed. None of it has been run on a real Windows machine yet: CI compiles and unit-tests the decisions, the Win32 calls are unverified. The deck is not drawn on a build where the commands do not exist.
 
-### Big screen
+Files: `Keys.tsx` (Now), `PinnedRow.tsx` (Always here), `KeyPicker.tsx`, `forYou.ts`, `wallActions.ts`, `libraryModel.ts`, `keysModel.ts`, `keysFeed.ts`, `keyPress.ts`, `deckStore.ts`; Rust in `src-tauri/src/wall2_keys.rs` (config, chords, sending), `wall2_keylib.rs` (the library and the list of wall actions) and `wall2_arrange.rs` (window layouts).
 
-`src-tauri/src/wall2_arrange.rs`. The big screen is the monitor that is not the wall's own and has the widest aspect ratio, taskbar excluded (its work area). With the wall as the only monitor the buttons are disabled with a tooltip.
+### What a key can do
+
+A key is either a **chord** (keys pressed in the program in front) or a **wall action**, one of a fixed list that Rust checks (`parse_action`). The page sends only a set id and a key index (or a library id). Rust answers one of three ways: the chord was sent, Rust ran the action itself (only `lock` and `displays:off`, which are system calls), or the fixed action name, which the page then runs through the control or command the wall already has for it. Each action is only what a visible control already does, and only on a click. Opening apps, files or links is not part of this.
+
+| Action | What it does |
+|---|---|
+| `layout:thirds`, `layout:focus`, `layout:record169`, `layout:undo` | The window layouts below, and their Undo. Off, with the reason, when there is no big screen. |
+| `screens-off` | The wall's own Screens off (same command as the Unwind button; says so if they are already off). |
+| `focus:start`, `focus:25`, `focus:50`, `focus:stop` | The focus timer at its default length, 25 or 50 minutes, and its reset. Refuses a second start. |
+| `lock` | Locks the PC with `LockWorkStation`. Win+L stays a refused chord. |
+| `displays:off` | Asks Windows to put every monitor to sleep (a `SC_MONITORPOWER` broadcast, as the old app does; the one second limit is per window that does not answer, so it runs on its own thread and never holds the send guard); they wake on input. Different from Screens off. |
+| `mixer` | The existing volume mixer command. |
+| `sonos:pause-all`, `sonos:play-suggested` | The existing Sound commands. A key never bypasses a confirm: a loud routine opens Home and says so. Stale Sound data is refused. |
+| `mood:<id>` | The existing mood command, for a mood id the home app lists. |
+| `tasks:open`, `task:first` | Opens the first of "Next three" in the task app. |
+| `omnigent:front`, `agents:open-waiting` | Brings OmniGent forward, or opens the first waiting session that is not snoozed. Refused when the helper is not answering. |
+| `meet:join-next`, `event:open-next` | Joins, or opens in Outlook, the next meeting. Refused when the meeting list is old. |
+| `zen`, `dream` | Opens Zen or Dream. |
+
+Listed in the picker as "coming" and not runnable: `task:add` (needs a write to the task app), `tv:off` and `alarms:seen` (wait for the home app change), `omnigent:new-chat`.
+
+### Always here
+
+The pin icon beside the heading. Up to five keys that never change by themselves: the owner's pins on this display (local storage `wall2-keys-pins`, validated on read against the library and `keys.json`, anything odd means the defaults; a pin on a `keys.json` key is stored with that key's label and action and is dropped when the file no longer has the same key there), else the keys named in `pinned` in `keys.json`, else **Thirds, Focus, Record 16:9, Snip, Screens off**. After a layout key the heading says "3 windows arranged" (or "2 of 3") with an Undo button for 60 seconds, and the layout key keeps its outline. Right-click a key, or press the ContextMenu key or Shift+F10 on it, to open the picker.
+
+**The picker** covers exactly the two rows' box and nothing else (never Next three; with little in the rows the box grows to 236 px while it is open): the whole library by group, a search box (label, group and what a key does), the current five marked ("pinned", "this slot"), a click swaps that key into the slot (a key already pinned trades places), "Reset to defaults" at the bottom. Escape (from anywhere while it is open) or a click outside closes it, and the click that closes it does nothing else; the arrow keys move through the rows; rows are 36 px tall, two to a line. Keys marked **check** are shortcuts the owner must confirm on his PC: they are never in a set Auto shows, and the page offers one only once it is pinned. Rust itself accepts any runnable library id (held to its group's programs), so the "only when pinned" rule lives in the page. "coming" rows and shortcuts still to be worked out (the three Power BI ribbon ones) are listed but cannot be pinned. `keys.json` is never written.
+
+### Now
+
+Heading "Now · <page name>", the pages as dots, previous and next arrows (the wheel over the row steps too) and the Auto switch. The pages, in stepping order: **For you** (only while something waits), the set for the app in front, the general set, then every other set.
+
+**Auto** shows the set for the app in front, else the general set. When a NEW "For you" item arrives (never seen, or gone for 10 minutes or more; one that blinks out for a poll is the same item; items already waiting when the row mounts are not new; the swap waits for any press in flight) Auto shows that page for 45 seconds, then goes back to the keys by itself, even if the item still waits. While anything waits and the page is not showing, a small amber chip "For you 3" in the heading jumps to it. Stepping by hand (arrows, dots, wheel, the chip) turns on **Hold**: the row stays on that page until Auto is clicked, and Hold never times out. A held For you page ends when nothing waits any more. A key still goes only to an app its set allows; a held set in the wrong app is refused ("Wrong app in front for ...") and nothing is sent.
+
+**For you** is at most two lines, each an icon, a title, a short reason and one button, with "+N more" in the heading. In this order, each from a store the wall already has, each left out when its source is stale, down or not set up:
+
+1. a meeting that starts within 10 minutes or is live: **Join** (the Meet join command);
+2. an agent waiting on the owner, not snoozed with "Later": the session title and "asks: <question>" when the helper sends one, else "waiting N min": **Open chat** (`wall2_focus_omnigent` with the id);
+3. an agent whose pull request is ready to merge: **Show** (scrolls the agent cards to it and flashes its ring once; Hold to merge stays on the card only);
+4. an open network alarm: its text and age: **Open** (what Home's own button opens).
+
+With nothing waiting the page is skipped when stepping and Auto never shows it. When the agents helper is down the page shows what it still knows from other sources and says nothing about agents.
+
+**Built-in sets.** Built from the library's groups and matched by executable name (the file part of the program's path, any case); a set in `keys.json` for any of the same programs wins and the built-in one is left out. They are only as right as these names, which the owner should check on his PC and can override with his own set:
+
+| Set | Matches | Keys |
+|---|---|---|
+| General (the fallback) | any program | Snip, Clipboard history, Task Manager, Lock the PC, All monitors off, Mute sound, Play or pause, Show desktop |
+| Teams | `ms-teams.exe`, `teams.exe` | Join next meeting, Mute, Camera, Share screen, Raise hand, Leave |
+| Zoom | `zoom.exe` | Mute, Camera, Share screen, Raise hand, Leave |
+| OmniGent | `omnigent.exe` | Open what waits on me, OmniGent to the front |
+| VS Code | `code.exe` | Command palette, terminal, quick open, search all files, side bar |
+| Browser | `chrome.exe`, `msedge.exe`, `brave.exe` | New tab, Reopen closed tab, Address bar, Private window, Dev tools, Hard refresh, Find on page |
+| Mail | `outlook.exe`, `olk.exe` | Open next event |
+| Recording | `obs64.exe`, `camtasiastudio.exe`, `camtasia.exe` | Record 16:9 layout, Windows screen recording |
+| Power BI | `pbidesktop.exe` | Save |
+| Excel | `excel.exe` | Filter, make a table, sum, repeat last action |
+
+A key is offered only where it is right: Excel keys never go to Power BI Desktop, VS Code keys never go to OmniGent, and Firefox has no built-in set (its private-window shortcut, Ctrl+Shift+P, is a "check" key in the picker, held to `firefox.exe`).
+
+The other groups (Sound and music, Windows and layouts, Tasks and focus, House, PowerToys, and the rest of Anywhere on the PC) are reached through the picker.
+
+### The library
+
+`wall2_keylib.rs` holds 103 keys in 16 groups, each with a stable id, a label, an icon from the fixed set, a group and one action. `wall2_keys_library` gives the page ids, labels, icons, groups, `how` text and the action name, never a chord. A pinned library key goes only to the programs of its group (anywhere for the general groups), so a Teams key never types into another app. `wall/src/bridge/devMocks/libraryData.ts` is the same catalogue for dev mocks and tests, and a test holds it equal, field by field (ids, labels, icons, kinds, `how`, action, runnable and each group's programs), to what the Rust table returns.
+
+### Big screen layouts
+
+`src-tauri/src/wall2_arrange.rs`. The big screen is the monitor that is not the wall's own and has the widest aspect ratio, taskbar excluded (its work area). With the wall as the only monitor the layout keys are off with a tooltip.
 
 - **Thirds**: the three newest ordinary windows on that monitor in equal columns, left to right as they already stand. Two make halves; one goes to the centred third.
 - **Focus**: the newest window in a centred column two thirds wide; the others stay.
 - **Record 16:9**: the newest window at the largest 16:9 size that fits, centred.
 
-Ordinary means visible, not minimised, not cloaked, with a title, top level, not owned, not a tool window, not the taskbar or desktop shell, not the wall's own, and not a fixed-size dialog or an elevated program the wall may not move (those are skipped silently). A maximised window is restored first and given up to 200 ms to leave the maximised state; one that will not is skipped, never placed from the wrong state. Every window is looked at again immediately before it is saved or moved (same handle, same process, same monitor, still visible and ordinary, not the wall's own); a window that closed or whose handle another program reused is skipped. Nothing is closed, minimised or hidden. Each layout remembers the earlier position of what it moved; "Undo" shows for 60 seconds (restarting on each layout click) and puts those windows back if they still exist. A second layout click while Undo is offered keeps each window's earlier saved position, so Undo returns to the arrangement before the first click. The last applied layout keeps its outline while Undo is offered. The move is posted without waiting; then, within 250 ms in all, each window's frame is checked once and the answer says "3 windows arranged" or "2 of 3 windows arranged" when one refused or stopped short. A double click, or a held key, never arranges twice (clicks with `detail > 1` and key repeats are ignored, and a control stays quiet for 500 ms after its action). Commands: `wall2_arrange_status`, `wall2_arrange(layout)` and `wall2_arrange_undo()`, all gated to the `wall2` window. Answers are `{moved, asked}` or a fixed word: `no big screen`, `no windows`, `none moved`, `nothing to undo`, `busy`, `unknown layout`. No title leaves Rust and nothing is logged.
+Ordinary means visible, not minimised, not cloaked, with a title, top level, not owned, not a tool window, not the taskbar or desktop shell, not the wall's own, and not a fixed-size dialog or an elevated program the wall may not move (those are skipped silently). A maximised window is restored first and given up to 200 ms to leave the maximised state; the handle is looked at again after the wait (still the same process, not minimised) and one that is still maximised at the limit is skipped and asked to maximise again so it is left as it was found. Every window is looked at again immediately before it is saved or moved; one that closed, whose handle another program reused, or whose position cannot be saved is not moved. Nothing is closed, minimised or hidden. Each layout remembers the earlier position of what it moved; Undo shows for 60 seconds (restarting on each layout click) and looks at each saved window as strictly as a layout does (same process, visible, not minimised, not the wall's own): a window the owner has minimised since is left alone. The restore runs on a helper thread with a 400 ms bound so a window that hangs cannot hold the layout guard, which is released on every path. The move is posted without waiting; then, within 250 ms in all, each window's frame is checked once and the answer says "3 windows arranged" or "2 of 3 windows arranged". A double click, or a held key, never acts twice (clicks with `detail > 1` and key repeats are ignored, and a control stays quiet for 500 ms after its action). Commands: `wall2_arrange_status`, `wall2_arrange(layout)` and `wall2_arrange_undo()`, all gated to the `wall2` window. Answers are `{moved, asked}` or a fixed word: `no big screen`, `no windows`, `none moved`, `nothing to undo`, `busy`, `unknown layout`.
 
-### Keys
+### keys.json
 
-`src-tauri/src/wall2_keys.rs`. A key deck for the program the owner is working in: a light poll in Rust remembers the last foreground window that is not the wall's own, so clicking the wall does not replace it. Sets come from a local `keys.json` beside `feeds.json` (same folder; read, validated and bounded in Rust, never written by the app). With no file, a built-in default is used: one set for Power BI Desktop (`PBIDesktop.exe`) with **Refresh** (Alt+H, then R) and **Snip** (Win+Shift+S). **Both default chords are unverified on a real machine**; replace them in `keys.json`. Only a missing file falls back to the default. A file that exists but cannot be read shows "keys file could not be read" and offers no keys; one that is invalid is refused with a message naming the app and key number. Neither is ever silently replaced.
+`keys.json` beside `feeds.json` (same folder; read, validated and bounded in Rust, never written by the app) supplies custom sets and the default pins. With no file there are no custom sets and the built-in sets and default pins apply (the Now heading's tooltip says where the file goes). Only a missing file falls back; a file that exists but cannot be read shows "keys file could not be read" and offers no keys; an invalid one is refused with a message naming the app and key number. Neither is ever silently replaced. A key has a `label`, an `icon` and either a `chord` or an `action` (never both). `pinned` is an optional list of at most five keys of the same shape. The ids `pinned`, `foryou` and anything starting `lib-` are reserved.
 
-**Auto and Hold.** The heading shows the set's name, previous and next arrows, and an "Auto" switch (the mouse wheel over the row also steps). Auto follows the app in front: that app's own set, else the general set (a set with `"match": "*"`), else a quiet "No keys for this app". Stepping shows another set and turns Hold on: the row stays on it until Auto is clicked. The mode and held set id are kept in this display's local storage, validated on read. In Hold a key still goes only to the app the set matches (the general set accepts any); otherwise the row says "Wrong app in front for ..." and nothing is sent.
+**Chords** come from a fixed vocabulary, never free text or key codes: modifiers `Ctrl`, `Alt`, `Shift`, `Win` and at most one key per step from letters `A` to `Z`, digits `0` to `9`, `F1` to `F24`, `Enter`, `Tab`, `Esc`, `Space`, `Backspace`, `Delete`, `Insert`, `Home`, `End`, `PageUp`, `PageDown`, `Up`, `Down`, `Left`, `Right`, `.`, `` ` ``, `=`, and the single keys `VolumeUp`, `VolumeDown`, `VolumeMute`, `PlayPause`, `NextTrack`, `PrevTrack`. Steps are separated by commas (`Alt+H, R`), at most six, with a fixed 150 ms gap. Win+L and Ctrl+Alt+Delete are refused when the file is read (Windows does not accept them from a program); Alt+F4 stays allowed. Limits: file 32 KB, 12 sets, 8 keys per set, labels and names 16 plain characters, one general set, executable names unique.
 
-**Sending**, failing closed at each step with a fixed word the row turns into one short line: the page sends only a set id and a key index (`busy`, `no key`); the set must accept the remembered window's program (`no app`); the window must still exist, be visible, belong to the same process whose image file name still matches (`gone`); the program must not be elevated (`elevated`), whatever the wall's own level, so an elevated wall never types into an administrator window; **do not start the wall as administrator**; it is brought to the front and checked to be in front (`not forward`); the chord is sent with `SendInput`, one step at a time, re-checking the front window before each step and releasing every held key on failure (`failed`). One send at a time. Nothing is logged and no window title leaves Rust. The only process name that does is the file name of a program with no set, so the owner can write one.
+**Volume and media keys** (`VolumeUp`, `VolumeDown`, `VolumeMute`, `PlayPause`, `NextTrack`, `PrevTrack`, alone) are system-wide: they are sent with no program in front, nothing is raised, and an elevated program in front does not stop them. Any other chord still needs its target. **Lock and All monitors off are mouse keys**: Space and Enter never run them, and the tile is blurred afterwards so the key that wakes the screens cannot run them again.
 
-**Chords** come from a fixed vocabulary, never free text or key codes: modifiers `Ctrl`, `Alt`, `Shift`, `Win` and at most one key per step from letters `A` to `Z`, digits `0` to `9`, `F1` to `F12`, `Enter`, `Tab`, `Esc`, `Space`, `Backspace`, `Delete`, `Insert`, `Home`, `End`, `PageUp`, `PageDown`, `Up`, `Down`, `Left`, `Right`. Steps are separated by commas (`Alt+H, R`), at most six, with a fixed 150 ms gap. Win+L and Ctrl+Alt+Delete are refused when the file is read (Windows does not accept them from a program); Alt+F4 stays allowed. Each key is a tile with its icon above its label; the full label is in the tooltip. Limits: file 32 KB, 12 sets, 8 keys per set, labels and names 16 plain characters, one general set, executable names unique.
+**Sending**, failing closed at each step with a fixed word the row turns into one short line: the page sends only a set id and a key index, or a library id (`busy`, `no key`); the set must accept the remembered window's program (`no app`); the window must still exist, be visible, belong to the same process whose image file name still matches (`gone`); the program must not be elevated (`elevated`), whatever the wall's own level; **do not start the wall as administrator**; it is brought to the front and checked to be in front (`not forward`); the chord is sent with `SendInput`, one step at a time, re-checking the front window before each step and releasing every held key on failure (`failed`). One send at a time, shared with the two system calls. Nothing is logged and no window title leaves Rust. The only process name that does is the file name of a program with no set, so the owner can write one.
 
-Example `keys.json` (the general set first, Power BI as one further example; fill the chords with your own):
+Example `keys.json`:
 
 ```json
 {
@@ -1207,7 +1274,7 @@ Example `keys.json` (the general set first, Power BI as one further example; fil
       "keys": [
         { "label": "Snip", "icon": "screenshot", "chord": "Win+Shift+S" },
         { "label": "Clipboard", "icon": "clipboard", "chord": "Win+V" },
-        { "label": "Desktop", "icon": "desktop", "chord": "Win+D" }
+        { "label": "Thirds", "icon": "window", "action": "layout:thirds" }
       ]
     },
     {
@@ -1216,19 +1283,21 @@ Example `keys.json` (the general set first, Power BI as one further example; fil
       "exe": "PBIDesktop.exe",
       "keys": [
         { "label": "Format", "icon": "brush", "chord": "Alt+H, F, P" },
-        { "label": "Refresh", "icon": "refresh", "chord": "Alt+H, R" },
-        { "label": "Perf", "icon": "gauge", "chord": "Alt+V, P" },
-        { "label": "TMDL", "icon": "code", "chord": "Ctrl+Shift+M" },
-        { "label": "Snip", "icon": "screenshot", "chord": "Win+Shift+S" }
+        { "label": "Refresh", "icon": "refresh", "chord": "Alt+H, R" }
       ]
     }
+  ],
+  "pinned": [
+    { "label": "Thirds", "icon": "window", "action": "layout:thirds" },
+    { "label": "Focus 25", "icon": "timer", "action": "focus:25" },
+    { "label": "Snip", "icon": "screenshot", "chord": "Win+Shift+S" }
   ]
 }
 ```
 
-The Power BI chords above are placeholders, not checked against the program. Icons are checked against a fixed list (an unknown name is an error naming the set and the key's position, and a test keeps the page's icons equal to the Rust list): `refresh`, `screenshot`, `camera`, `clipboard`, `desktop`, `brush`, `gauge`, `code`, `copy`, `save`, `undo`, `search`, `lock`, `mic`, `play`, `window`, `keyboard` .
+The Power BI chords above are placeholders, not checked against the program. Icons are checked against a fixed list in Rust (`ICON_NAMES`; an unknown name is an error naming the set and the key's position, and a test keeps the page's drawn icons equal to the Rust list).
 
-Dev mocks for stills (`?keys=typical|general|nogeneral|idle|many|one|wrong|refuse|problem|off`, `?hold=<set id>`, `?arrange=ok|none|nowin|off`) are in `wall/src/bridge/devMocks/deck.ts`.
+Dev mocks for stills (`?keys=typical|general|nogeneral|idle|many|one|wrong|refuse|problem|off`, `?hold=<set id or foryou>`, `?source=default`, `?arrange=ok|none|nowin|off`; what waits for For you comes from `?agents=ask`, `?meet=none` and `?net=calm`) are in `wall/src/bridge/devMocks/deck.ts`. `npm --prefix wall run fit-check` checks the deck in sparse, typical and heavy states, For you held, and the picker open.
 
 ## Content security policy
 
