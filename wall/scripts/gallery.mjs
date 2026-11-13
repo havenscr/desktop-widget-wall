@@ -16,7 +16,7 @@
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const args = process.argv.slice(2);
@@ -49,7 +49,7 @@ const HEAVY = 'long=1&agents=ask&tasks=heavy&meet=heavy&home=many&moods=six&medi
  * clock and pick the camera; `screen=` opens Meet, Zen or Dream after that.
  */
 const STATES = [];
-const add = (screen, name, query) => STATES.push({ screen, name, query });
+const add = (screen, name, query, custom) => STATES.push({ screen, name, query, custom });
 const PLACES = {
   work: { hz: 'work' },
   home: { hz: 'home' },
@@ -64,7 +64,8 @@ const url = (place, at, extra = '') => {
   const wx = extra.includes('weather=') ? '' : '&weather=ok';
   return `hz=${p.hz}&at=${encodeURIComponent(at)}&clock=review${wx}${p.screen ? `&screen=${p.screen}` : ''}${extra ? `&${extra}` : ''}`;
 };
-const state = (place, name, extra, at = TYPICAL_AT) => add(place, name, url(place, at, extra));
+// `custom`: the state sets a knob beyond the base address (the time of day alone is not one).
+const state = (place, name, extra, at = TYPICAL_AT) => add(place, name, url(place, at, extra), extra !== '');
 
 for (const place of Object.keys(PLACES)) {
   state(place, 'sparse', SPARSE);
@@ -79,6 +80,9 @@ state('work', 'one agent waiting', 'agents=ask');
 state('work', 'long strings (fit check set)', 'long=1');
 state('work', 'focus running, long title', 'focus=long');
 state('work', 'music paused', 'media=paused');
+// The ridgelines rest in every other still (a review frame shows them at rest); these two have music driving them.
+state('work', 'audio demo (lines follow the music)', 'audio=demo');
+state('home', 'audio demo (lines follow the music)', 'audio=demo');
 state('work', 'tasks few', 'tasks=few');
 state('work', 'tasks heavy (115 more)', 'tasks=heavy');
 state('work', 'usage meters near full', 'usage=high');
@@ -171,49 +175,131 @@ for (const [name, extra] of [
 state('zen', 'focus running, long title', 'focus=long');
 state('dream', 'night with audio demo', 'audio=demo', TIMES.night);
 
-/** Text each state must show (a miss fails it): [screen, state name prefix, text, exact name only?]. First match wins. */
+/**
+ * What each state must show, so a knob that silently stops working fails the run:
+ * [screen, state name (prefix; exact when the 4th item is true), what to find]. "What to find" is
+ * a string or a list of strings; each must be in the page text, and one starting with "!" must
+ * not be. First match wins. Page text is `textContent`, so words keep their written case and
+ * adjacent elements run together ("412blocked").
+ */
 const EXPECT = [
-  ['work', 'sparse', 'Nothing due'],
+  // Work
+  ['work', 'sparse', ['Nothing due', 'All three slots free']],
+  ['work', 'heavy', ['115 more can wait', 'Architecture working', 'Draft the workshop outline']],
+  ['work', '2 agent lanes', ['Friday social card', '!Admin pill polish']],
+  ['work', '1 agent lane', ['Admin pill polish', 'Free slot']],
+  ['work', 'one agent waiting', 'Waiting on a thumbnail choice'],
+  ['work', 'long strings', 'Voice mode: iPhone microphone permission fix'],
+  ['work', 'focus running, long title', 'Draft the workshop outline'],
+  ['work', 'tasks few', ['Review the dashboard draft', '!Order printer paper']],
+  ['work', 'tasks heavy', '115 more can wait'],
+  ['work', 'usage meters near full', ['Claude 5 h 97%', '94%']],
+  ['work', 'machine numbers at the limit', '104'],
+  ['work', 'box offline', 'no reading'],
+  ['work', 'broken: helper not set up', 'not set up'],
+  ['work', 'broken: helper not answering', ['not reachable', 'Try again']],
+  ['work', 'broken: helper numbers stale', 'may be out of date'],
+  ['work', 'broken: task app not set up', 'Next threeNot set up'],
+  ['work', 'broken: task app down', 'Tasks unavailable'],
+  ['work', 'broken: calendar not set up', '!Design review with the platform team'],
+  ['work', 'broken: calendar read fails', 'Calendar not available'],
+  ['work', 'broken: calendar signed out', 'Calendar not available'],
+  ['work', 'broken: calendar partly stale', 'may be out of date'],
+  ['work', 'broken: media unavailable', 'Nothing playing'],
+  ['work', 'broken: weather down', 'Weather unavailable'],
+  ['work', 'broken: weather stale', 'updated 45 min ago'],
   ['work', 'timeline: no meetings today', 'No meetings today'],
   ['work', 'timeline: calendar not available', 'Calendar not available'],
+  ['work', 'timeline: both accounts failing', 'Calendar not available'],
+  ['work', 'timeline: one account failing', ['Design review with the platform team', '!Calendar not available']],
   ['work', 'timeline: no agent activity yet', 'No agent activity yet'],
-  ['home', 'timeline: nothing scheduled at home', 'Nothing scheduled at home'],
-  ['unwind', 'status chips, nothing waiting', 'Nothing needs you'],
-  ['unwind', 'status chips, sessions waiting', '2 things need you'],
-  ['unwind', 'status chips, none running', 'Work is put away'],
-  ['unwind', 'status chips, focus on', 'Focus is still on'],
-  ['work', 'broken: weather stale', 'updated 45 min ago'],
-  ['work', 'broken: weather down', 'Weather unavailable'],
-  ['work', 'broken: helper not set up', 'not set up'],
-  ['work', 'broken: task app', 'Next three'],
-  ['work', 'heavy', 'Architecture working'],
   ['work', 'typical', 'Voice: iPhone mic fix'],
-  ['work', 'one agent waiting', 'Waiting on a thumbnail choice'],
-  ['home', 'sparse', 'No moods set up'],
-  ['home', 'network card, quiet', 'All quiet'],
-  ['home', 'broken: home app', 'Network and security'],
-  ['home', 'heavy', 'Away For The Weekend'],
+  // Home
+  ['home', 'sparse', ['No moods set up', 'No meetings today']],
+  ['home', 'heavy', ['Away For The Weekend', '115 more can wait']],
+  ['home', 'network card, 1 number', ['3 alarms in 24 h', '!31 devices']],
+  ['home', 'network card, 2 numbers', '31 devices, 3 alarms in 24 h'],
+  ['home', 'network card, 3 numbers', ['412blocked', '!61°box']],
+  ['home', 'network card, 4 numbers', '61°box'],
+  ['home', 'network card, quiet', ['All quiet', '0alarms, 24h']],
+  ['home', 'moods six', ['Deep Focus', 'Movie Night']],
+  ['home', 'moods none', 'No moods set up'],
+  ['home', 'tasks heavy', '115 more can wait'],
+  ['home', 'tasks few', ['Review the dashboard draft', '!Order printer paper']],
+  ['home', 'broken: home app not set up', 'Network and securityNot set up'],
+  ['home', 'broken: home app down', 'Home app not reachable'],
+  ['home', 'broken: moods failing', 'MoodsHome app not reachable'],
+  ['home', 'broken: task app not set up', 'Around the houseNot set up'],
+  ['home', 'broken: task app down', 'Task app not reachable'],
+  ['home', 'timeline: nothing scheduled at home', 'Nothing scheduled at home'],
+  ['home', 'morning camera, sparse', ['No moods set up', 'No meetings today']],
   ['home', 'typical', 'Evening'],
+  // Unwind
+  ['unwind', 'sparse', ['Nothing playing', 'Quiet']],
+  ['unwind', 'heavy', ['An Extremely Long Song Title', 'Away For The Weekend']],
+  ['unwind', 'status chips, nothing waiting', ['2 agents still running', 'Nothing needs you']],
+  ['unwind', 'status chips, sessions waiting', '2 things need you'],
+  ['unwind', 'status chips, none running', ['Nothing needs you', '!still running']],
+  ['unwind', 'status chips, helper not set up', ['Work is put away', '!Nothing needs you', '!still running']],
+  ['unwind', 'status chips, focus on', 'Focus is still on'],
+  ['unwind', 'music paused', '1:03'],
   ['unwind', 'long track', 'An Extremely Long Song Title'],
-  ['unwind', 'sparse', 'Unwind'],
+  ['unwind', 'broken: media unavailable', 'Nothing playing'],
+  ['unwind', 'broken: calendar not set up', '!First thing'],
+  ['unwind', 'broken: calendar read fails', '!First thing'],
+  ['unwind', 'broken: task app down', 'First thing: Planning check-in at 9:30'],
+  ['unwind', 'broken: weather down', ['Wednesday morning', '!58°']],
   ['unwind', 'typical', 'Tokyo Burnout'],
-  ['meet', 'both accounts ok', 'Connected'],
-  ['meet', 'broken: one account failing', 'Network problem'],
+  // Meet
+  ['meet', 'sparse', 'Nothing scheduled in the next 24 hours'],
+  ['meet', 'heavy', 'Architecture working session'],
+  ['meet', 'both accounts ok', ['Connected', '!Sign in']],
+  ['meet', 'one meeting', 'Design review with the platform team'],
+  ['meet', 'broken: one account stale', 'Try again'],
   ['meet', 'broken: both accounts failing', 'Calendar not available'],
+  ['meet', 'broken: one account failing', 'Network problem'],
   ['meet', 'broken: calendar signed out', 'Signed out'],
   ['meet', 'broken: calendar not set up', 'Not set up'],
   ['meet', 'broken: calendar read fails', 'Calendar unavailable'],
-  ['work', 'timeline: both accounts failing', 'Calendar not available'],
-  ['meet', 'one meeting', 'Design review with the platform team'],
-  ['meet', 'heavy', 'Architecture working session'],
   ['meet', 'typical', 'Design review with the platform team'],
-  ['meet', 'sparse', 'Nothing scheduled in the next 24 hours'],
+  // Zen and Dream
+  ['zen', 'sparse', ['Breathe in', '!things are waiting']],
+  ['zen', 'heavy', 'After this: 3 or more things are waiting'],
   ['zen', 'typical', 'Start', true],
-  ['zen', 'sparse', 'Start', true],
+  ['dream', 'sparse', '!Breathe in'],
+  ['dream', 'heavy', '!Breathe in'],
+  ['dream', 'night with audio demo', '!Breathe in'],
 ];
+
+/**
+ * States that set a knob but change nothing in the page text, so no text can prove them: the
+ * reason is recorded in the manifest. Everything else that sets a knob needs an EXPECT.
+ */
+const NO_TEXT = [
+  ['work', 'music paused', 'only the play and pause icon changes'],
+  ['work', 'box numbers stale', 'the numbers keep their text and are only dimmed'],
+  ['home', 'broken: weather down', 'Home shows no weather text'],
+  ['home', 'broken: weather stale', 'Home shows no weather text'],
+  ['work', 'audio demo', 'only the drawn levels move'],
+  ['home', 'audio demo', 'only the drawn levels move'],
+  ['unwind', 'audio demo', 'only the drawn levels move'],
+  ['zen', 'focus running, long title', 'Zen shows no session title'],
+];
+
+const matches = (st, [sc, prefix, , exact]) => sc === st.screen && (exact === true ? st.name === prefix : st.name.startsWith(prefix));
+const missing = [];
 for (const st of STATES) {
-  const hit = EXPECT.find(([sc, prefix, , exact]) => sc === st.screen && (exact ? st.name === prefix : st.name.startsWith(prefix)));
+  const hit = EXPECT.find((e) => matches(st, e));
   if (hit) st.expect = hit[2];
+  else {
+    const note = NO_TEXT.find(([sc, prefix]) => sc === st.screen && st.name.startsWith(prefix));
+    if (note) st.expectNote = note[2];
+    else if (st.custom) missing.push(`${st.screen}: ${st.name}`);
+  }
+}
+if (missing.length) {
+  console.error(`gallery: ${missing.length} state(s) set a knob but have no expected text (add one to EXPECT, or a reason to NO_TEXT):\n  ${missing.join('\n  ')}`);
+  process.exit(2);
 }
 
 const only = flag('only')?.split('=')[1]?.toLowerCase();
@@ -405,8 +491,13 @@ async function render(cdp, base, s, file, ctl) {
     });
     const info = JSON.parse(check.result.value);
     if (!info.root || info.emptyRoot) errors.push('the app did not render (no .shell; a render error unmounts the root)');
+    if (process.env.WALL_GALLERY_TEXT_DIR) writeFileSync(join(process.env.WALL_GALLERY_TEXT_DIR, basename(file).replace('.png', '.txt')), info.text);
     if (info.boundary) errors.push('an error fallback is showing');
-    if (s.expect && !info.text.includes(s.expect)) errors.push(`expected text not shown: "${s.expect}"`);
+    for (const want of [s.expect ?? []].flat()) {
+      const absent = want.startsWith('!');
+      const needle = absent ? want.slice(1) : want;
+      if (info.text.includes(needle) === absent) errors.push(`${absent ? 'unexpected' : 'expected'} text ${absent ? 'shown' : 'not shown'}: "${needle}"`);
+    }
     if (info.w !== W || info.h !== H) errors.push(`viewport ${info.w} x ${info.h}`);
     if (ctl.cancelled) throw new Error('cancelled');
     const shot = await to('Page.captureScreenshot', { format: 'png', clip: { x: 0, y: 0, width: W, height: H, scale: 1 } });
@@ -500,7 +591,7 @@ try {
         clearTimeout(timer);
       }
       if (error) failures++;
-      manifest[i] = { screen: s.screen, state: s.name, url: s.query, ...(s.expect ? { expect: s.expect } : {}), file, width: W, height: H, ...(error ? { error } : {}) };
+      manifest[i] = { screen: s.screen, state: s.name, url: s.query, ...(s.expect ? { expect: s.expect } : {}), ...(s.expectNote ? { expectNote: s.expectNote } : {}), file, width: W, height: H, ...(error ? { error } : {}) };
       console.log(`${error ? 'FAIL' : 'ok  '} ${s.screen.padEnd(7)} ${s.name.padEnd(36)} ${file}${error ? `  ${error}` : ''}`);
     }
   }
