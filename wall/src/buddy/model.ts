@@ -17,6 +17,9 @@ export interface Walk {
   ceiling: number;
   /** Furthest stage x any part of Watt reaches, notes and z's included. */
   right: number;
+  /** Furthest left her speech bubble may reach, and its widest box, design pixels. */
+  bubbleLeft: number;
+  bubbleW: number;
 }
 
 /** Bottom of the top band (stage y 510): on places with a ribbon, nothing of Watt goes above it. */
@@ -38,10 +41,11 @@ export const UNWIND_ROW = { left: MAIN_LEFT + ZONES_WIDE[0] + ZONE_GAP, right: 1
  * frame's panel rectangles and Unwind's transport row.
  */
 export const WALKS: Readonly<Record<WattPlace, Walk>> = {
-  work: { min: 880, max: 1090, px: 4, ceiling: TOP_BAND_BOTTOM, right: 1820 },
-  meet: { min: 880, max: 1090, px: 4, ceiling: TOP_BAND_BOTTOM, right: 1820 },
-  home: { min: 1506, max: 1726, px: 5, ceiling: TOP_BAND_BOTTOM, right: 1930 },
-  unwind: { min: 430, max: 470, px: 6, ceiling: 420, right: UNWIND_ROW.left - 8 },
+  work: { min: 880, max: 1090, px: 4, ceiling: TOP_BAND_BOTTOM, right: 1820, bubbleLeft: 520, bubbleW: 340 },
+  meet: { min: 880, max: 1090, px: 4, ceiling: TOP_BAND_BOTTOM, right: 1820, bubbleLeft: 520, bubbleW: 340 },
+  home: { min: 1506, max: 1726, px: 5, ceiling: TOP_BAND_BOTTOM, right: 1930, bubbleLeft: 1100, bubbleW: 340 },
+  // Unwind's bubble goes left of her, in the gap of the left wing between the wind down block and Tomorrow.
+  unwind: { min: 430, max: 470, px: 6, ceiling: 420, right: UNWIND_ROW.left - 8, bubbleLeft: MAIN_LEFT + 8, bubbleW: 260 },
 };
 
 /** Walking speed in design pixels a second. */
@@ -128,10 +132,14 @@ export interface WanderPoint {
   x: number;
   dir: 1 | -1;
   moving: boolean;
+  /** The stop it stands at, or walks away from. */
+  stop: number;
+  /** Seconds into the current stand (or walk). */
+  into: number;
 }
 
 export function createWander(): WanderPoint {
-  return { x: 0, dir: 1, moving: false };
+  return { x: 0, dir: 1, moving: false, stop: 0, into: 0 };
 }
 
 /**
@@ -152,6 +160,8 @@ export function wanderAt(walk: Walk, t: number, out: WanderPoint = createWander(
       out.x = x0;
       out.dir = from >= prev ? 1 : -1;
       out.moving = false;
+      out.stop = i;
+      out.into = left;
       return out;
     }
     left -= IDLES[i];
@@ -161,6 +171,8 @@ export function wanderAt(walk: Walk, t: number, out: WanderPoint = createWander(
       out.x = x0 + dir * left * WALK_SPEED;
       out.dir = dir;
       out.moving = true;
+      out.stop = i;
+      out.into = left;
       return out;
     }
     left -= walkS;
@@ -168,6 +180,8 @@ export function wanderAt(walk: Walk, t: number, out: WanderPoint = createWander(
   out.x = walk.min + STOPS[0] * span;
   out.dir = 1;
   out.moving = false;
+  out.stop = 0;
+  out.into = 0;
   return out;
 }
 
