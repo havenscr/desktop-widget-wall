@@ -12,6 +12,7 @@
 
 use crate::wall2_omni::require_wall2;
 use crate::wall2_winutil::Rect;
+use crate::wall2_zones::{self, FractionZone, ZoneApp, ZoneWindow};
 use std::time::{Duration, Instant};
 
 /// The columns of the thirds layout never exceed this many windows.
@@ -27,6 +28,7 @@ pub(crate) enum Layout {
     Thirds,
     Focus,
     Record,
+    Zones,
 }
 
 /// The fixed list of layout names the page may send.
@@ -35,6 +37,7 @@ pub(crate) fn parse_layout(name: &str) -> Option<Layout> {
         "thirds" => Some(Layout::Thirds),
         "focus" => Some(Layout::Focus),
         "record" => Some(Layout::Record),
+        "zones" => Some(Layout::Zones),
         _ => None,
     }
 }
@@ -45,6 +48,7 @@ impl Layout {
         match self {
             Layout::Thirds => MAX_COLUMNS,
             Layout::Focus | Layout::Record => 1,
+            Layout::Zones => 16,
         }
     }
 }
@@ -115,6 +119,7 @@ fn plan(layout: Layout, work: Rect, windows: &[(isize, i32)]) -> Vec<(isize, Rec
         }
         Layout::Focus => windows.first().map(|w| (w.0, focus_column(work))).into_iter().collect(),
         Layout::Record => windows.first().map(|w| (w.0, record_frame(work))).into_iter().collect(),
+        Layout::Zones => Vec::new(),
     }
 }
 
@@ -300,8 +305,14 @@ pub(crate) struct Placed<S> {
 /// moved and skipped when `revalidate` fails; a window whose position cannot be saved is not
 /// moved at all, and a window whose move was not accepted is left out (and has no undo entry).
 pub(crate) fn apply<D: Desktop>(desk: &mut D, layout: Layout, work: Rect, candidates: &[WinRec], lefts: &[(isize, i32)]) -> Vec<Placed<D::Saved>> {
+    apply_targets(desk, candidates, plan(layout, work, lefts))
+}
+
+/// Place an already planned set through the same fresh-look, save and move checks as every
+/// built-in layout.
+pub(crate) fn apply_targets<D: Desktop>(desk: &mut D, candidates: &[WinRec], targets: Vec<(isize, Rect)>) -> Vec<Placed<D::Saved>> {
     let mut out = Vec::new();
-    for (id, target) in plan(layout, work, lefts) {
+    for (id, target) in targets {
         let Some(rec) = candidates.iter().find(|c| c.id == id) else { continue };
         let later = desk.look(id);
         if !revalidate(rec, later.as_ref()) {
@@ -394,19 +405,25 @@ pub async fn wall2_arrange_status(window: tauri::WebviewWindow) -> Result<bool, 
 /// Lay out the top windows on the big screen. Returns how many windows were asked and how many
 /// reached their place.
 #[tauri::command]
-pub async fn wall2_arrange(window: tauri::WebviewWindow, layout: String) -> Result<ArrangeResult, String> {
+pub async fn wall2_arrange(window: tauri::WebviewWindow, app: tauri::AppHandle, layout: String) -> Result<ArrangeResult, String> {
     require_wall2(window.label())?;
     let layout = parse_layout(&layout).ok_or_else(|| "unknown layout".to_string())?;
     #[cfg(windows)]
     {
         let wall = window.hwnd().ok().map(|h| h.0 as isize);
-        tauri::async_runtime::spawn_blocking(move || win::arrange(layout, wall).map_err(str::to_string))
+        let (file_zones, rules) = if layout == Layout::Zones {
+            let (config, _) = crate::wall2_keys::load_config(&app)?;
+            (config.zones, config.zone_apps)
+        } else {
+            (Vec::new(), Vec::new())
+        };
+        tauri::async_runtime::spawn_blocking(move || win::arrange(layout, wall, file_zones, rules).map_err(str::to_string))
             .await
             .map_err(|_| BUSY.to_string())?
     }
     #[cfg(not(windows))]
     {
-        let _ = layout;
+        let _ = (app, layout);
         Err(UNSUPPORTED.to_string())
     }
 }
@@ -490,10 +507,10 @@ mod win {
 
     /// The big monitor, or None when the wall's own is the only one (or the wall's window
     /// is unknown, which fails closed).
-    fn big_monitor(wall: Option<isize>) -> Option<Monitor> {
+    fn big_monitor(wall: Option<isize>) -> Option<(Monitor, u32)> {
         let wall = monitor_of(wall?);
         let list = monitors();
-        choose_monitor(&list, wall).map(|i| list[i])
+        choose_monitor(&list, wall).map(|i| (list[i], i as u32 + 1))
     }
 
     pub fn big_screen_available(wall: Option<isize>) -> bool {
@@ -622,9 +639,9 @@ mod win {
         }
     }
 
-    pub fn arrange(layout: Layout, wall: Option<isize>) -> Result<ArrangeResult, &'static str> {
+    pub fn arrange(layout: Layout, wall: Option<isize>, file_zones: Vec<FractionZone>, rules: Vec<ZoneApp>) -> Result<ArrangeResult, &'static str> {
         let _busy = try_begin(&WORKING).ok_or(BUSY)?;
-        let monitor = big_monitor(wall).ok_or(NO_BIG_SCREEN)?;
+        let (monitor, display_number) = big_monitor(wall).ok_or(NO_BIG_SCREEN)?;
         let self_elevated = sys::self_elevated();
         let recs: Vec<WinRec> = sys::top_level_windows().into_iter().map(|h| record(h, monitor_of(h), self_elevated)).collect();
         let picked = pick_windows(&recs, monitor.id, layout.windows());
@@ -641,7 +658,18 @@ mod win {
             })
             .collect();
         let mut desk = WinDesk { self_elevated };
-        let placed = apply(&mut desk, layout, monitor.work, &candidates, &lefts);
+        let placed = if layout == Layout::Zones {
+            let fractions = std::env::var_os("LOCALAPPDATA")
+                .and_then(|p| wall2_zones::load_fancy(std::path::Path::new(&p), Some(display_number)))
+                .or_else(|| (!file_zones.is_empty()).then_some(file_zones))
+                .unwrap_or_else(wall2_zones::default_zones);
+            let zones = wall2_zones::scale_zones(&fractions, monitor.work);
+            let windows: Vec<ZoneWindow> = candidates.iter().map(|c| ZoneWindow { id: c.id, image: sys::image_path(c.pid).unwrap_or_default() }).collect();
+            let targets = wall2_zones::assign(&zones, &windows, &rules);
+            apply_targets(&mut desk, &candidates, targets)
+        } else {
+            apply(&mut desk, layout, monitor.work, &candidates, &lefts)
+        };
         if placed.is_empty() {
             return Err(NO_WINDOWS);
         }
@@ -717,6 +745,7 @@ mod tests {
         assert_eq!(parse_layout("thirds"), Some(Layout::Thirds));
         assert_eq!(parse_layout("focus"), Some(Layout::Focus));
         assert_eq!(parse_layout("record"), Some(Layout::Record));
+        assert_eq!(parse_layout("zones"), Some(Layout::Zones));
         for bad in ["", "Thirds", "thirds ", "record 16:9", "halves", "../focus"] {
             assert_eq!(parse_layout(bad), None, "{bad:?}");
         }

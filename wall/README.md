@@ -1183,7 +1183,7 @@ A key is either a **chord** (keys pressed in the program in front) or a **wall a
 
 | Action | What it does |
 |---|---|
-| `layout:thirds`, `layout:focus`, `layout:record169`, `layout:undo` | The window layouts below, and their Undo. Off, with the reason, when there is no big screen. |
+| `layout:thirds`, `layout:focus`, `layout:record169`, `layout:zones`, `layout:undo` | The window layouts below, and their Undo. Off, with the reason, when there is no big screen. |
 | `screens-off` | The wall's own Screens off (same command as the Unwind button; says so if they are already off). |
 | `focus:start`, `focus:25`, `focus:50`, `focus:stop` | The focus timer at its default length, 25 or 50 minutes, and its reset. Refuses a second start. |
 | `lock` | Locks the PC with `LockWorkStation`. Win+L stays a refused chord. |
@@ -1240,7 +1240,7 @@ The other groups (Sound and music, Windows and layouts, Tasks and focus, House, 
 
 ### The library
 
-`wall2_keylib.rs` holds 103 keys in 16 groups, each with a stable id, a label, an icon from the fixed set, a group and one action. `wall2_keys_library` gives the page ids, labels, icons, groups, `how` text and the action name, never a chord. A pinned library key goes only to the programs of its group (anywhere for the general groups), so a Teams key never types into another app. `wall/src/bridge/devMocks/libraryData.ts` is the same catalogue for dev mocks and tests, and a test holds it equal, field by field (ids, labels, icons, kinds, `how`, action, runnable and each group's programs), to what the Rust table returns.
+`wall2_keylib.rs` holds 104 keys in 16 groups, each with a stable id, a label, an icon from the fixed set, a group and one action. `wall2_keys_library` gives the page ids, labels, icons, groups, `how` text and the action name, never a chord. A pinned library key goes only to the programs of its group (anywhere for the general groups), so a Teams key never types into another app. `wall/src/bridge/devMocks/libraryData.ts` is the same catalogue for dev mocks and tests, and a test holds it equal, field by field (ids, labels, icons, kinds, `how`, action, runnable and each group's programs), to what the Rust table returns.
 
 ### Big screen layouts
 
@@ -1249,12 +1249,15 @@ The other groups (Sound and music, Windows and layouts, Tasks and focus, House, 
 - **Thirds**: the three newest ordinary windows on that monitor in equal columns, left to right as they already stand. Two make halves; one goes to the centred third.
 - **Focus**: the newest window in a centred column two thirds wide; the others stay.
 - **Record 16:9**: the newest window at the largest 16:9 size that fits, centred.
+- **My zones**: rules place the most recently used eligible window of each named program first. The remaining recent windows take the free zones from largest to smallest. The windows you used last move; the rest stay where they are.
+
+My zones first reads the custom canvas or grid layout applied to the big monitor from PowerToys FancyZones. Built-in FancyZones templates, missing files, unreadable files and any unrecognised or invalid shape silently fall through. It then uses `zones` from `keys.json`, or the built-in measured layout: left 31 percent, centre 49 percent, and the right 20 percent split into top and bottom halves. FancyZones files are capped at 256 KB, custom layouts at 16 zones, and are only read when the key runs. They are never written or watched.
 
 Ordinary means visible, not minimised, not cloaked, with a title, top level, not owned, not a tool window, not the taskbar or desktop shell, not the wall's own, and not a fixed-size dialog or an elevated program the wall may not move (those are skipped silently). A maximised window is restored first and given up to 200 ms to leave the maximised state; the handle is looked at again after the wait (still the same process, not minimised) and one that is still maximised at the limit is skipped and asked to maximise again so it is left as it was found. Every window is looked at again immediately before it is saved or moved; one that closed, whose handle another program reused, or whose position cannot be saved is not moved. Nothing is closed, minimised or hidden. Each layout remembers the earlier position of what it moved; Undo shows for 60 seconds (restarting on each layout click) and looks at each saved window as strictly as a layout does (same process, visible, not minimised, not the wall's own): a window the owner has minimised since is left alone. The restore runs on a helper thread with a 400 ms bound so a window that hangs cannot hold the layout guard, which is released on every path. The move is posted without waiting; then, within 250 ms in all, each window's frame is checked once and the answer says "3 windows arranged" or "2 of 3 windows arranged". A double click, or a held key, never acts twice (clicks with `detail > 1` and key repeats are ignored, and a control stays quiet for 500 ms after its action). Commands: `wall2_arrange_status`, `wall2_arrange(layout)` and `wall2_arrange_undo()`, all gated to the `wall2` window. Answers are `{moved, asked}` or a fixed word: `no big screen`, `no windows`, `none moved`, `nothing to undo`, `busy`, `unknown layout`.
 
 ### keys.json
 
-`keys.json` beside `feeds.json` (same folder; read, validated and bounded in Rust, never written by the app) supplies custom sets and the default pins. With no file there are no custom sets and the built-in sets and default pins apply (the Now heading's tooltip says where the file goes). Only a missing file falls back; a file that exists but cannot be read shows "keys file could not be read" and offers no keys; an invalid one is refused with a message naming the app and key number. Neither is ever silently replaced. A key has a `label`, an `icon` and either a `chord` or an `action` (never both). `pinned` is an optional list of at most five keys of the same shape. The ids `pinned`, `foryou` and anything starting `lib-` are reserved.
+`keys.json` beside `feeds.json` (same folder; read, validated and bounded in Rust, never written by the app) supplies custom sets and the default pins. With no file there are no custom sets and the built-in sets and default pins apply (the Now heading's tooltip says where the file goes). Only a missing file falls back; a file that exists but cannot be read shows "keys file could not be read" and offers no keys; an invalid one is refused with a message naming the app and key number. Neither is ever silently replaced. A key has a `label`, an `icon` and either a `chord` or an `action` (never both). `pinned` is an optional list of at most five keys of the same shape. Optional `zones` holds one to eight fractional work-area rectangles. Optional `zoneApps` holds up to eight executable and reading-order zone rules, with zone numbers starting at one. A broken rectangle or rule refuses the file as a config error. The ids `pinned`, `foryou` and anything starting `lib-` are reserved.
 
 **Chords** come from a fixed vocabulary, never free text or key codes: modifiers `Ctrl`, `Alt`, `Shift`, `Win` and at most one key per step from letters `A` to `Z`, digits `0` to `9`, `F1` to `F24`, `Enter`, `Tab`, `Esc`, `Space`, `Backspace`, `Delete`, `Insert`, `Home`, `End`, `PageUp`, `PageDown`, `Up`, `Down`, `Left`, `Right`, `.`, `` ` ``, `=`, and the single keys `VolumeUp`, `VolumeDown`, `VolumeMute`, `PlayPause`, `NextTrack`, `PrevTrack`. Steps are separated by commas (`Alt+H, R`), at most six, with a fixed 150 ms gap. Win+L and Ctrl+Alt+Delete are refused when the file is read (Windows does not accept them from a program); Alt+F4 stays allowed. Limits: file 32 KB, 12 sets, 8 keys per set, labels and names 16 plain characters, one general set, executable names unique.
 
@@ -1266,6 +1269,15 @@ Example `keys.json`:
 
 ```json
 {
+  "zones": [
+    { "x": 0, "y": 0, "w": 0.31, "h": 1 },
+    { "x": 0.31, "y": 0, "w": 0.49, "h": 1 },
+    { "x": 0.80, "y": 0, "w": 0.20, "h": 0.5 },
+    { "x": 0.80, "y": 0.5, "w": 0.20, "h": 0.5 }
+  ],
+  "zoneApps": [
+    { "exe": "outlook.exe", "zone": 3 }
+  ],
   "apps": [
     {
       "id": "general",

@@ -53,8 +53,9 @@ it('layouts run through the arrange command and answer how many windows moved; u
   expect(await runWallAction('layout:thirds')).toBe('2 of 3 windows arranged');
   expect(await runWallAction('layout:focus')).toBe('2 of 3 windows arranged');
   expect(await runWallAction('layout:record169')).toBe('2 of 3 windows arranged');
-  expect(calls.map((c) => c[1])).toEqual([{ layout: 'thirds' }, { layout: 'focus' }, { layout: 'record' }]);
-  expect(useDeckStore.getState().applied).toMatchObject({ action: 'layout:record169', until: NOW + 60_000 });
+  expect(await runWallAction('layout:zones')).toBe('4 windows placed in your zones');
+  expect(calls.map((c) => c[1])).toEqual([{ layout: 'thirds' }, { layout: 'focus' }, { layout: 'record' }, { layout: 'zones' }]);
+  expect(useDeckStore.getState().applied).toMatchObject({ action: 'layout:zones', until: NOW + 60_000 });
   track('wall2_arrange_undo', 3);
   expect(await runWallAction('layout:undo')).toBe('3 windows put back');
   expect(useDeckStore.getState().applied).toBeNull();

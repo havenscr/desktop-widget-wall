@@ -24,6 +24,7 @@
 use crate::wall2_keylib::{self, parse_action, LibAction, WallAction};
 use crate::wall2_omni::require_wall2;
 use crate::wall2_winutil::exe_matches;
+use crate::wall2_zones::{parse_fraction_zones, parse_zone_apps, FractionZone, ZoneApp};
 use serde::Serialize;
 use serde_json::Value;
 use std::collections::HashSet;
@@ -297,11 +298,14 @@ impl AppDef {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Config {
     pub apps: Vec<AppDef>,
     /// The keys `Always here` shows by default when `keys.json` names some; empty otherwise.
     pub pinned: Vec<KeyDef>,
+    /// Optional placement rectangles and program rules used only by My zones.
+    pub zones: Vec<FractionZone>,
+    pub zone_apps: Vec<ZoneApp>,
 }
 
 /// The built-in default when there is no `keys.json`: no sets of its own. The built-in sets
@@ -423,6 +427,9 @@ fn reserved_id(id: &str) -> bool {
 /// place (app and key number) and never repeats the file's own text.
 pub(crate) fn parse_config(text: &str) -> Result<Config, String> {
     let root: Value = serde_json::from_str(text).map_err(|_| "keys.json is not valid JSON".to_string())?;
+    let zones = parse_fraction_zones(root.get("zones"))?;
+    let zone_count = if zones.is_empty() { 4 } else { zones.len() };
+    let zone_apps = parse_zone_apps(root.get("zoneApps"), zone_count, valid_exe)?;
     let apps = root.get("apps").and_then(Value::as_array).ok_or_else(|| "keys.json needs an \"apps\" list".to_string())?;
     if apps.len() > MAX_APPS {
         return Err(format!("keys.json has more than {MAX_APPS} apps"));
@@ -477,7 +484,7 @@ pub(crate) fn parse_config(text: &str) -> Result<Config, String> {
             pinned.push(parse_key(key, &format!("pinned key {m}"), &format!("pinned key {m}"))?);
         }
     }
-    Ok(Config { apps: out, pinned })
+    Ok(Config { apps: out, pinned, zones, zone_apps })
 }
 
 /// The set Auto shows for the program in front: the one whose executable matches the file
@@ -727,7 +734,7 @@ fn read_keys_file(path: &std::path::Path) -> Result<Vec<u8>, std::io::ErrorKind>
     Ok(buf)
 }
 
-fn load_config(app: &tauri::AppHandle) -> Result<(Config, &'static str), String> {
+pub(crate) fn load_config(app: &tauri::AppHandle) -> Result<(Config, &'static str), String> {
     use tauri::Manager;
     // No config folder at all is the same as no file: the built-in keys.
     let read = match app.path().app_config_dir() {
@@ -1449,10 +1456,24 @@ mod tests {
         for bad in ["", "not json", "[]", "{}", r#"{"apps":{}}"#, r#"{"apps":[1]}"#, r#"{"apps":[null]}"#, r#"{"apps":[{"keys":5}]}"#] {
             assert!(parse_config(bad).is_err(), "{bad:?}");
         }
-        assert_eq!(parse_config(r#"{"apps":[]}"#), Ok(Config { apps: vec![], pinned: vec![] }));
+        assert_eq!(parse_config(r#"{"apps":[]}"#), Ok(Config { apps: vec![], pinned: vec![], zones: vec![], zone_apps: vec![] }));
         // The error text never repeats the file's own words.
         let err = parse_config(&config_with(r#"{"label":"X","icon":"keyboard","chord":"SECRETWORD"}"#)).unwrap_err();
         assert!(!err.contains("SECRETWORD"), "{err}");
+    }
+
+    #[test]
+    fn zones_and_zone_apps_are_part_of_the_bounded_config() {
+        let c = parse_config(r#"{"apps":[],"zones":[{"x":0,"y":0,"w":0.4,"h":1},{"x":0.4,"y":0,"w":0.6,"h":1}],"zoneApps":[{"exe":"mail.exe","zone":2}]}"#).unwrap();
+        assert_eq!(c.zones.len(), 2);
+        assert_eq!(c.zone_apps, vec![ZoneApp { exe: "mail.exe".into(), zone: 2 }]);
+        for bad in [
+            r#"{"apps":[],"zones":[{"x":0,"y":0,"w":1.1,"h":1}]}"#,
+            r#"{"apps":[],"zoneApps":[{"exe":"mail.exe","zone":5}]}"#,
+            r#"{"apps":[],"zoneApps":[{"exe":"mail","zone":1}]}"#,
+        ] {
+            assert!(parse_config(bad).is_err(), "{bad}");
+        }
     }
 
     const PBI_CONFIG: &str = r#"{"apps":[{"id":"powerbi","name":"Power BI","exe":"PBIDesktop.exe","keys":[{"label":"Refresh","icon":"refresh","chord":"Alt+H, R"},{"label":"Snip","icon":"screenshot","chord":"Win+Shift+S"}]}]}"#;

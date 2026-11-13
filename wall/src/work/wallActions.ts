@@ -17,7 +17,7 @@ const refuse = (message: string): never => {
   throw new ActionError(message);
 };
 
-const LAYOUTS: Record<string, string> = { 'layout:thirds': 'thirds', 'layout:focus': 'focus', 'layout:record169': 'record' };
+const LAYOUTS: Record<string, string> = { 'layout:thirds': 'thirds', 'layout:focus': 'focus', 'layout:record169': 'record', 'layout:zones': 'zones' };
 
 /** The meeting the wall calls next, only when its list can be trusted. */
 function nextJoinable(now: number) {
@@ -83,7 +83,7 @@ export async function runWallAction(name: string, now: number = Date.now()): Pro
   if (layout) {
     try {
       const r = await invoke<{ moved: number; asked: number }>('wall2_arrange', { layout });
-      const text = arrangedText(r);
+      const text = name === 'layout:zones' ? '4 windows placed in your zones' : arrangedText(r);
       useDeckStore.getState().setApplied(name, text);
       return text;
     } catch (e) {
