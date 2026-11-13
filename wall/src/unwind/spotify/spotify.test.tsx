@@ -38,7 +38,7 @@ const signedIn = () => useSpotifyStatus.setState({ status: { setup: true, signed
 
 it('maps the bridge errors to problems', () => {
   expect(spotifyProblem(new Error('not set up'))).toBe('notsetup');
-  expect(spotifyProblem('sign in again')).toBe('signedout');
+  expect(spotifyProblem('sign in again')).toBe('needsSignIn');
   expect(spotifyProblem('busy')).toBe('busy');
   expect(spotifyProblem('no device')).toBe('nodevice');
   expect(spotifyProblem(new Error('down'))).toBe('down');

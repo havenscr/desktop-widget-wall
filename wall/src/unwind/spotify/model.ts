@@ -37,12 +37,12 @@ export function resetListenSource(): void {
 }
 
 /** What went wrong with a Spotify call, from the bridge's error text. */
-export type SpotifyProblem = 'notsetup' | 'signedout' | 'busy' | 'nodevice' | 'down' | 'failed';
+export type SpotifyProblem = 'notsetup' | 'needsSignIn' | 'busy' | 'nodevice' | 'down' | 'failed';
 
 export function spotifyProblem(e: unknown): SpotifyProblem {
   const text = (e instanceof Error ? e.message : typeof e === 'string' ? e : '').toLowerCase();
   if (text.includes('not set up')) return 'notsetup';
-  if (text.includes('sign in')) return 'signedout';
+  if (text.includes('sign in')) return 'needsSignIn';
   if (text.includes('busy')) return 'busy';
   if (text.includes('no device')) return 'nodevice';
   if (text.includes('down')) return 'down';
@@ -54,7 +54,7 @@ export function problemLine(p: SpotifyProblem): string {
   switch (p) {
     case 'notsetup':
       return 'Spotify is not set up on this wall.';
-    case 'signedout':
+    case 'needsSignIn':
       return 'Sign in to Spotify in Tools to browse here.';
     case 'busy':
       return 'Spotify is busy, try in a minute.';
@@ -71,7 +71,7 @@ export function problemLine(p: SpotifyProblem): string {
 export function playProblemLine(p: SpotifyProblem): string {
   if (p === 'nodevice') return 'Open Spotify on this PC first, then try again.';
   if (p === 'busy') return 'Spotify is busy, try in a minute.';
-  if (p === 'signedout') return 'Sign in to Spotify in Tools first.';
+  if (p === 'needsSignIn') return 'Sign in to Spotify in Tools first.';
   return 'Spotify did not start it.';
 }
 

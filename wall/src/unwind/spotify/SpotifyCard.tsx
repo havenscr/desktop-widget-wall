@@ -145,7 +145,7 @@ function SpotifyBrowse() {
   const { status, failed } = useSpotifyStatus();
   if (!status) return failed ? <CardLine text={problemLine('down')} action="retry" /> : <div className="sp-state" aria-busy="true" />;
   if (!status.setup) return <CardLine text="Spotify is not set up on this wall. Tools says how." action="tools" />;
-  if (!status.signedIn) return <CardLine text={problemLine('signedout')} action="tools" />;
+  if (!status.signedIn) return <CardLine text={problemLine('needsSignIn')} action="tools" />;
   return <Browser />;
 }
 
@@ -277,7 +277,7 @@ function Browser() {
             ) : cur.problem && cur.items.length === 0 ? (
               <div className="sp-empty">
                 {problemLine(cur.problem)}
-                {cur.problem === 'signedout' || cur.problem === 'notsetup' ? (
+                {cur.problem === 'needsSignIn' || cur.problem === 'notsetup' ? (
                   <button type="button" className="sp-btn" onClick={() => useToolsStore.getState().openDrawer('accounts')}>
                     Open Tools
                   </button>
