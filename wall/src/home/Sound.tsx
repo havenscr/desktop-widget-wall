@@ -28,6 +28,7 @@ import {
 } from 'react';
 import { invoke } from '../bridge/tauri';
 import { useVisible } from '../ui/useVisible';
+import { tip } from '../ui/HoverTip';
 import { useCentreStatus } from './centreSources';
 import {
   LATCH_MS,
@@ -1036,7 +1037,7 @@ function NowStrip({
   const since = track ? Math.max(0, now - base.current.at) : 0;
   const pos = track ? Math.min(track.durationMs, track.progressMs + since) : 0;
   const pause = (
-    <button type="button" className="np-rd big" aria-label="Pause" title="Pause every Sonos speaker" disabled={locked} {...once(pauseAll)}>
+    <button type="button" className="np-rd big" aria-label="Pause" disabled={locked} {...tip('Pause every Sonos speaker')} {...once(pauseAll)}>
       <IconPlayerPauseFilled size={24} aria-hidden="true" />
     </button>
   );
@@ -1047,13 +1048,13 @@ function NowStrip({
           {track.cover ? <img className="np-cover" src={track.cover} alt="" /> : <span className="np-cover blank" aria-hidden="true" />}
           <div className="np-meta">
             <span className="np-k">Now playing</span>
-            <b className="np-title" title={track.title}>
+            <b className="np-title" {...tip(track.title)}>
               {track.title}
             </b>
-            <span className="np-artist" title={track.artist}>
+            <span className="np-artist" {...tip(track.artist)}>
               {track.artist}
             </span>
-            <span className="np-where" title={`Spotify on ${track.where}`}>
+            <span className="np-where" {...tip(`Spotify on ${track.where}`)}>
               <IconDeviceSpeaker size={18} stroke={1.8} aria-hidden="true" />
               {track.where}
             </span>
@@ -1061,7 +1062,7 @@ function NowStrip({
           </div>
         </div>
         {track.durationMs > 0 && (
-          <div className="np-prog" title={`${clockMs(pos)} of ${clockMs(track.durationMs)}`}>
+          <div className="np-prog" {...tip(() => `${clockMs(pos)} of ${clockMs(track.durationMs)}`)}>
             <span>{clockMs(pos)}</span>
             <div>
               <i style={{ width: `${Math.round((pos / track.durationMs) * 100)}%` }} />
@@ -1081,7 +1082,7 @@ function NowStrip({
             <span className="np-k">Now playing</span>
             <b className="np-title">{activeName ?? (s.nowPlaying?.track ? s.nowPlaying.track : 'Music')}</b>
             {!activeName && s.nowPlaying?.artist && <span className="np-artist">{s.nowPlaying.artist}</span>}
-            <span className="np-where" title={nowLine(s)}>
+            <span className="np-where" {...tip(nowLine(s))}>
               <IconDeviceSpeaker size={18} stroke={1.8} aria-hidden="true" />
               {where}
             </span>

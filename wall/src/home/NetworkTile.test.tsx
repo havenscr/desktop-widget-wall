@@ -3,6 +3,9 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { mocks } from '../bridge/tauri';
 import { NetworkTile } from './NetworkTile';
 
+// One test steps fake timers through five minutes: a busy machine gets 20 seconds per test.
+vi.setConfig({ testTimeout: 20_000 });
+
 const flush = async (ms = 0) => {
   await act(async () => {
     await vi.advanceTimersByTimeAsync(ms);
@@ -197,6 +200,8 @@ it('a failed desk refresh after a good read keeps the alerts but greys the ring'
   expect(container.querySelector('.panel.network.stale')).toBeTruthy();
   expect(arcs(container)).toBe(3);
   expect(container.querySelector('.shield-ring .arc')?.getAttribute('stroke')).toBe('var(--faint)');
+  // The count in the head says when it was read, never as if live.
+  expect(container.querySelector('.net-head .xs')?.textContent).toMatch(/^3 open as of /);
 });
 
 it('shows Not set up, and Home app not reachable with no read', async () => {

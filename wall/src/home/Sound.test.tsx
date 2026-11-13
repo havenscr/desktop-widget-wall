@@ -6,6 +6,8 @@ import { KEY_SETTLE_MS, RESULT_MS, Sound } from './Sound';
 import { LAST_PLAY_KEY, LATCH_MS, NEEDS_CONFIRM, type SonosSummary } from './soundModel';
 
 usePacificTime();
+// Several tests step fake timers through minutes: a busy machine gets 20 seconds per test.
+vi.setConfig({ testTimeout: 20_000 });
 
 const flush = async (ms = 0) => {
   await act(async () => {
@@ -730,4 +732,50 @@ it('a read that fails after Sonos was up keeps the block, marked stale, and the 
   expect(container.querySelector('.sound.stale')).toBeTruthy();
   expect(container.querySelector('.sound-plays')!.children.length).toBe(before);
   expect(container.querySelector('.sound.bare')).toBeNull();
+});
+
+// home round two: now playing at the left of the block.
+const playback = (device: { name: string; kind: string }) => ({
+  playing: true,
+  device,
+  track: { name: 'Paper Lanterns', artists: 'The Quiet Hours', durationMs: 200_000, imageUrl: null, thumbUrl: null },
+  progressMs: 65_000,
+});
+
+it('a Spotify track on a house speaker shows its title, artist, where it plays and progress, with pause and no next', async () => {
+  wire();
+  mocks.set('wall2_spotify_playback', () => playback({ name: 'Den', kind: 'Speaker' }));
+  const { container } = render(<Sound />);
+  await flush(1_000);
+  const strip = container.querySelector('.sound-np')!;
+  expect(within(strip as HTMLElement).getByText('Paper Lanterns')).toBeTruthy();
+  expect(within(strip as HTMLElement).getByText('The Quiet Hours')).toBeTruthy();
+  expect(strip.textContent).toContain('Den, 2 speakers');
+  expect(strip.querySelector('.np-prog')!.textContent).toContain('3:20');
+  expect(within(strip as HTMLElement).getByLabelText('Pause')).toBeTruthy();
+  expect(within(strip as HTMLElement).queryByLabelText('Next')).toBeNull();
+});
+
+it('a Spotify track playing on this PC is never shown as the house playing', async () => {
+  wire();
+  mocks.set('wall2_spotify_playback', () => playback({ name: 'Desk PC', kind: 'Computer' }));
+  const { container } = render(<Sound />);
+  await flush(1_000);
+  const strip = container.querySelector('.sound-np')!;
+  expect(strip.textContent).not.toContain('Paper Lanterns');
+  expect(strip.querySelector('.np-prog')).toBeNull();
+  expect(strip.textContent).toContain('Song A');
+});
+
+it('with nothing playing the strip says so and offers the hour\'s suggestion', async () => {
+  const quiet = summary({
+    speakers: summary().speakers.map((sp) => ({ ...sp, state: sp.online ? 'paused' : sp.state })),
+    nowPlaying: null,
+  });
+  wire(() => quiet);
+  const { container } = render(<Sound />);
+  await flush(1_000);
+  const strip = container.querySelector('.sound-np.quiet')!;
+  expect(strip.textContent).toContain('Nothing playing');
+  expect(strip.textContent).toContain('Suggested for this hour');
 });

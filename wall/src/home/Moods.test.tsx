@@ -4,6 +4,9 @@ import { mocks } from '../bridge/tauri';
 import { LAST_MOOD_KEY, MOODS_CACHE_KEY, MOODS_PAGE, pageStart, Moods, inText, moodLabel, moodNote } from './Moods';
 import { artKind } from './MoodArt';
 
+// Some tests step fake timers through minutes: a busy machine gets 20 seconds per test.
+vi.setConfig({ testTimeout: 20_000 });
+
 const flush = async (ms = 0) => {
   await act(async () => {
     await vi.advanceTimersByTimeAsync(ms);

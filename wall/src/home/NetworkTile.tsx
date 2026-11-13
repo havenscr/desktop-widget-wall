@@ -84,7 +84,8 @@ export function NetworkTile() {
   const sub = shieldSub(s);
   const cls = ['panel', 'network', 'shield', busy ? 'busy' : 'calm', s.stale ? 'stale' : ''].filter(Boolean).join(' ');
   const detail = [...sub, ...s.detail].filter(Boolean).join('. ');
-  const side = busy ? `${s.open} open` : s.asOf;
+  // Not live: the count says when it was read ("6 open as of 3:12 PM"), never as if current.
+  const side = busy ? [`${s.open} open`, s.stale ? s.asOf : null].filter(Boolean).join(' ') : s.asOf;
   const body = (
     <>
       <span className="shield-art">
