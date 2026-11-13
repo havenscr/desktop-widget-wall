@@ -7,10 +7,11 @@ import { isLayoutAction, layoutOffReason, useArrangeStatus } from './arrangeStat
 import { errorText } from './deckModel';
 import { useDeckStore } from './deckStore';
 import { KeyIcon } from './keyIcons';
+import { libIndex, pinKind } from './keyKind';
 import { joinKeys, loadKeys, useKeysFeedStore } from './keysFeed';
 import { KeyPicker } from './KeyPicker';
 import { keyboardOnMouseKey, useKeyPress } from './keyPress';
-import { FALLBACK_PINS, MAX_PINS, parsePins, PINS_KEY, readPinsRaw, resolvePin, savePins, serializePins, swapPin, type LibGroup, type PinView } from './libraryModel';
+import { allKeys, FALLBACK_PINS, MAX_PINS, parsePins, PINS_KEY, readPinsRaw, resolvePin, savePins, serializePins, swapPin, type LibGroup, type PinView } from './libraryModel';
 import { useBrief } from './useBrief';
 import { runWallAction } from './wallActions';
 
@@ -42,7 +43,7 @@ function useLibrary(): { lib: LibGroup[] | null; failed: boolean; retry: () => v
 /**
  * "Always here": up to five keys that never change by themselves. They are the owner's
  * pins on this display (kept in local storage, checked against the library on read), else the
- * keys named in keys.json, else Thirds, Focus, Record 16:9, Snip and Screens off. After a
+ * keys named in keys.json, else Thirds, Focus, Record 16:9, Snip and Hide screen. After a
  * layout key the heading says how many windows moved, with Undo for a minute. Right-click a
  * key (or the ContextMenu key) to swap it for any key of the library.
  */
@@ -76,6 +77,12 @@ export function PinnedRow() {
   const kept = lib ? parsePins(raw, lib, filePins) : null;
   const refs = kept ?? defaults;
   const pins: PinView[] = lib ? refs.map((r) => resolvePin(r, lib, filePins)).filter((p): p is PinView => p !== null).slice(0, MAX_PINS) : [];
+  const byId = lib ? allKeys(lib) : null;
+  const index = lib ? libIndex(lib) : null;
+  const kindOf = (p: PinView) => {
+    const hit = p.ref.startsWith('lib:') ? byId?.get(p.ref.slice(4)) : undefined;
+    return pinKind(p.ref, hit ? { group: hit.group.id, action: hit.key.action } : null, { action: p.action, label: p.label }, index);
+  };
   if (read.status === 'absent') return null;
 
   const undoShown = applied !== null && applied.until > clock;
@@ -175,6 +182,7 @@ export function PinnedRow() {
                 type="button"
                 className={`deck-tile key-tile pin-tile${layoutOff ? ' off' : ''}${sel ? ' sel' : ''}`}
                 aria-label={p.label}
+                data-kind={layoutOff ? undefined : kindOf(p)}
                 aria-disabled={layoutOff || undefined}
                 aria-haspopup="dialog"
                 {...tip(

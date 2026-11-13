@@ -5,6 +5,8 @@ import { mocks } from '../bridge/tauri';
 import { HoverTipLayer, resetTip } from '../ui/HoverTip';
 import type { ForYouItem } from './forYou';
 import { resetKeysFeed } from './keysFeed';
+import { resetLibIndex } from './keyLibrary';
+import { LIBRARY_DATA } from '../bridge/devMocks/libraryData';
 import { FOR_YOU_SHOWN, Keys, KEYS_POLL_MS, NEW_AGAIN_MS, TAKEOVER_MS, WHEEL_GAP_MS } from './Keys';
 import { MODE_KEY, type KeysSummary } from './keysModel';
 import { LATCH_MS } from './useGuard';
@@ -554,4 +556,76 @@ it('a held set whose app is not in front keeps its tiles, dimmed one step, and s
   fireEvent.mouseEnter(tile);
   await flush(400);
   expect(document.querySelector('.hover-tip')!.textContent).toContain('Sales app is not in front, so this would send nothing');
+});
+
+// Section: keys tinted by kind, For you as two plates
+
+it('every key carries its kind from data; a key that cannot be sent keeps it but is drawn off', async () => {
+  render(<Keys />);
+  await flush();
+  expect(screen.getByRole('button', { name: 'Refresh' }).getAttribute('data-kind')).toBe('app');
+  localStorage.setItem('wall2-keys-mode', JSON.stringify({ hold: true, setId: 'general' }));
+  answer = front('general', 'notepad.exe');
+  await flush(KEYS_POLL_MS);
+  // Without the library read the file's own general set is a system set; its wall action keys go by their action.
+  expect(screen.getByRole('button', { name: 'Snip' }).getAttribute('data-kind')).toBe('system');
+  expect(screen.getByRole('button', { name: 'Lock' }).getAttribute('data-kind')).toBe('system');
+  expect(screen.getByRole('button', { name: 'Thirds' }).getAttribute('data-kind')).toBe('layout');
+});
+
+it('a key that cannot be sent is drawn off (no kind colour applies to it)', async () => {
+  localStorage.setItem('wall2-keys-mode', JSON.stringify({ hold: true, setId: 'sales' }));
+  answer = front('general', 'notepad.exe');
+  render(<Keys />);
+  await flush();
+  const tile = screen.getByRole('button', { name: 'Refresh' });
+  expect(tile.classList.contains('off')).toBe(true);
+  expect(tile.classList.contains('key-tile')).toBe(true);
+  // The colour keys on data-kind: an unavailable key has none, so no kind colour can reach it.
+  expect(tile.hasAttribute('data-kind')).toBe(false);
+});
+
+it('a key of the owner own keys.json takes the kind of the library key with its label', async () => {
+  resetLibIndex();
+  mocks.set('wall2_keys_library', () => LIBRARY_DATA);
+  localStorage.setItem('wall2-keys-mode', JSON.stringify({ hold: true, setId: 'general' }));
+  answer = front('general', 'notepad.exe');
+  render(<Keys />);
+  await flush();
+  expect(screen.getByRole('button', { name: 'Snip' }).getAttribute('data-kind')).toBe('capture');
+  expect(screen.getByRole('button', { name: 'Clipboard' }).getAttribute('data-kind')).toBe('system');
+  resetLibIndex();
+});
+
+it('For you shows two plates the height of a key, title cut with the full text in the hover, one button each', async () => {
+  render(
+    <>
+      <Keys />
+      <HoverTipLayer />
+    </>,
+  );
+  await flush();
+  const long = 'A very long meeting title that cannot fit in half the row at all';
+  await arrive(item('s1'), item('m1', { kind: 'meeting', title: long, reason: 'starts in 4 min', action: 'Join', ref: 'mk' }), item('s2'));
+  const plates = [...document.querySelectorAll('.fy-plate')] as HTMLElement[];
+  expect(plates.length).toBe(FOR_YOU_SHOWN);
+  for (const p of plates) {
+    expect(p.classList.contains('fy-li')).toBe(true);
+    expect(p.querySelectorAll('button').length).toBe(1);
+  }
+  expect(plates.map((p) => p.getAttribute('data-kind'))).toEqual(['agent', 'app']);
+  expect(screen.getByText(/\+1 more/)).toBeTruthy();
+  // The title is in one cut line; the full title and the reason show on hover.
+  expect(plates[1].querySelector('.fy-tx b')!.textContent).toBe(long);
+  fireEvent.mouseEnter(plates[1]);
+  await flush(400);
+  expect(document.querySelector('.hover-tip')!.textContent).toContain(`${long}: starts in 4 min`);
+});
+
+it('For you with one item shows one plate and keeps the second half empty', async () => {
+  render(<Keys />);
+  await flush();
+  await arrive(item('s1'));
+  expect(document.querySelectorAll('.fy-plate').length).toBe(1);
+  expect(document.querySelector('.fy-list')!.children.length).toBe(1);
 });

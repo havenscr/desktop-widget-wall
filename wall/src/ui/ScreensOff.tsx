@@ -14,10 +14,10 @@ export const PENDING_MS = 1500;
 export const FAILURE_MS = 5000;
 
 /**
- * "Screens off", an icon-only toggle (the words are its tooltip and accessible name; it
- * reads "Turning off" while pending and "Cancel screens off" while active), in the lower
- * right corner of Unwind: 500 ms after the tap the monitors go off and the helper watches
- * for a phantom mouse nudge, sending them off again; a second tap cancels and leaves the
+ * "Hide screen", a toggle in the lower right corner of Unwind: at rest the icon alone; under
+ * the pointer (or keyboard focus) it grows to the left and shows its name, which stands in for
+ * a tooltip. It reads "Hiding" while pending and "Cancel hide" while active. 500 ms after
+ * the tap the monitors go off and the helper watches for a phantom mouse nudge, sending them off again; a second tap cancels and leaves the
  * screens as they are. A key, click, touch or real movement also ends the watch (rule R3).
  * If the helper cannot watch input it does not turn the screens off and says so briefly.
  */
@@ -27,6 +27,17 @@ export function ScreensOff({ className = '' }: { className?: string }) {
   const [failed, setFailed] = useState(false);
   const pendingTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const failTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  /** What the helper reports (the `monitors-off-mode` event). */
+  const onMode = useRef((p: ModePayload) => {
+    clearTimeout(pendingTimer.current);
+    setPending(false);
+    setActive(p.active);
+    if (!p.active && p.reason === 'input-unavailable') {
+      setFailed(true);
+      clearTimeout(failTimer.current);
+      failTimer.current = setTimeout(() => setFailed(false), FAILURE_MS);
+    }
+  });
 
   useEffect(() => {
     if (!isTauri()) return;
@@ -35,14 +46,7 @@ export function ScreensOff({ className = '' }: { className?: string }) {
     let unlisten: UnlistenFn | null = null;
     void listen<ModePayload>('monitors-off-mode', (e) => {
       eventSeen = true;
-      clearTimeout(pendingTimer.current);
-      setPending(false);
-      setActive(e.payload.active);
-      if (!e.payload.active && e.payload.reason === 'input-unavailable') {
-        setFailed(true);
-        clearTimeout(failTimer.current);
-        failTimer.current = setTimeout(() => setFailed(false), FAILURE_MS);
-      }
+      onMode.current(e.payload);
     }).then((u) => {
       if (stopped) u();
       else unlisten = u;
@@ -60,18 +64,26 @@ export function ScreensOff({ className = '' }: { className?: string }) {
     };
   }, []);
 
-  const tap = () => {
+  const tap = (e: { detail: number }) => {
+    // The second click of a double click sends nothing: one double click turns them off once.
+    if (e.detail > 1) return;
     if (!active) {
       setFailed(false);
       setPending(true);
       clearTimeout(pendingTimer.current);
       pendingTimer.current = setTimeout(() => setPending(false), PENDING_MS);
     }
-    void invoke('wall2_monitors_off').catch(() => setPending(false));
+    void invoke<ModePayload | undefined>('wall2_monitors_off').then(
+      (r) => {
+        // Outside Tauri (dev mocks and the gallery) there is no event: a mock may answer with the report instead.
+        if (!isTauri() && r && typeof r === 'object' && typeof r.active === 'boolean') onMode.current(r);
+      },
+      () => setPending(false),
+    );
   };
 
-  // Icon only: the words are its tooltip and its accessible name.
-  const label = pending ? 'Turning off' : active ? 'Cancel screens off' : 'Screens off';
+  // The words show only while the button is grown (hover or focus); they are also its accessible name.
+  const label = pending ? 'Hiding' : active ? 'Cancel hide' : 'Hide screen';
   return (
     <div className="screens-off-wrap">
       <button
@@ -79,10 +91,12 @@ export function ScreensOff({ className = '' }: { className?: string }) {
         className={`screens-off ${className}`.trim()}
         aria-pressed={active}
         aria-label={label}
-        title={label}
         data-pending={pending ? 'true' : undefined}
         onClick={tap}
       >
+        <span className="screens-off-lbl" aria-hidden="true">
+          {label}
+        </span>
         <IconDeviceDesktopOff size={22} aria-hidden="true" />
       </button>
       {failed ? (
