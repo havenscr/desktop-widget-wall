@@ -260,7 +260,7 @@ export const LIBRARY_DATA: LibGroup[] = [
     "label": "Thirds",
     "icon": "window",
     "kind": "wall",
-    "how": "last three windows side by side",
+    "how": "last three windows side by side. The windows you used last move; the rest stay where they are",
     "action": "layout:thirds",
     "runnable": true
    },
@@ -269,7 +269,7 @@ export const LIBRARY_DATA: LibGroup[] = [
     "label": "Focus",
     "icon": "window",
     "kind": "wall",
-    "how": "front window takes the middle",
+    "how": "front window takes the middle. The windows you used last move; the rest stay where they are",
     "action": "layout:focus",
     "runnable": true
    },
@@ -278,8 +278,17 @@ export const LIBRARY_DATA: LibGroup[] = [
     "label": "Record 16:9",
     "icon": "camera",
     "kind": "wall",
-    "how": "front window becomes a 16:9 box",
+    "how": "front window becomes a 16:9 box. The windows you used last move; the rest stay where they are",
     "action": "layout:record169",
+    "runnable": true
+   },
+   {
+    "id": "my-zones",
+    "label": "My zones",
+    "icon": "window",
+    "kind": "wall",
+    "how": "rules first, then recent windows into the largest free zones. The windows you used last move; the rest stay where they are",
+    "action": "layout:zones",
     "runnable": true
    },
    {

@@ -22,6 +22,7 @@ pub(crate) enum WallAction {
     LayoutThirds,
     LayoutFocus,
     LayoutRecord,
+    LayoutZones,
     LayoutUndo,
     ScreensOff,
     FocusStart,
@@ -59,6 +60,7 @@ pub(crate) fn parse_action(name: &str) -> Option<WallAction> {
         "layout:thirds" => WallAction::LayoutThirds,
         "layout:focus" => WallAction::LayoutFocus,
         "layout:record169" => WallAction::LayoutRecord,
+        "layout:zones" => WallAction::LayoutZones,
         "layout:undo" => WallAction::LayoutUndo,
         "screens-off" => WallAction::ScreensOff,
         "focus:start" => WallAction::FocusStart,
@@ -89,6 +91,7 @@ impl WallAction {
             WallAction::LayoutThirds => "layout:thirds".into(),
             WallAction::LayoutFocus => "layout:focus".into(),
             WallAction::LayoutRecord => "layout:record169".into(),
+            WallAction::LayoutZones => "layout:zones".into(),
             WallAction::LayoutUndo => "layout:undo".into(),
             WallAction::ScreensOff => "screens-off".into(),
             WallAction::FocusStart => "focus:start".into(),
@@ -212,9 +215,10 @@ pub(crate) const LIBRARY: &[LibEntry] = &[
     LibEntry { id: "mixer", label: "Volume mixer", icon: "sliders", group: "sound", kind: LibKind::Wall, how: "opens the Windows mixer", spec: "mixer" },
     LibEntry { id: "sonos-pause", label: "Sonos: pause everything", icon: "speaker", group: "sound", kind: LibKind::Wall, how: "the wall's Sonos off", spec: "sonos:pause-all" },
     LibEntry { id: "sonos-play", label: "Sonos: play what suits the hour", icon: "speaker", group: "sound", kind: LibKind::Wall, how: "asks first if loud", spec: "sonos:play-suggested" },
-    LibEntry { id: "thirds", label: "Thirds", icon: "window", group: "windows", kind: LibKind::Wall, how: "last three windows side by side", spec: "layout:thirds" },
-    LibEntry { id: "focus", label: "Focus", icon: "window", group: "windows", kind: LibKind::Wall, how: "front window takes the middle", spec: "layout:focus" },
-    LibEntry { id: "record-169", label: "Record 16:9", icon: "camera", group: "windows", kind: LibKind::Wall, how: "front window becomes a 16:9 box", spec: "layout:record169" },
+    LibEntry { id: "thirds", label: "Thirds", icon: "window", group: "windows", kind: LibKind::Wall, how: "last three windows side by side. The windows you used last move; the rest stay where they are", spec: "layout:thirds" },
+    LibEntry { id: "focus", label: "Focus", icon: "window", group: "windows", kind: LibKind::Wall, how: "front window takes the middle. The windows you used last move; the rest stay where they are", spec: "layout:focus" },
+    LibEntry { id: "record-169", label: "Record 16:9", icon: "camera", group: "windows", kind: LibKind::Wall, how: "front window becomes a 16:9 box. The windows you used last move; the rest stay where they are", spec: "layout:record169" },
+    LibEntry { id: "my-zones", label: "My zones", icon: "window", group: "windows", kind: LibKind::Wall, how: "rules first, then recent windows into the largest free zones. The windows you used last move; the rest stay where they are", spec: "layout:zones" },
     LibEntry { id: "undo-layout", label: "Undo layout", icon: "undo", group: "windows", kind: LibKind::Wall, how: "puts windows back", spec: "layout:undo" },
     LibEntry { id: "snap-left", label: "Snap left", icon: "arrow-left", group: "windows", kind: LibKind::Key, how: "Win+Left", spec: "Win+Left" },
     LibEntry { id: "snap-right", label: "Snap right", icon: "arrow-right", group: "windows", kind: LibKind::Key, how: "Win+Right", spec: "Win+Right" },
@@ -439,8 +443,8 @@ mod tests {
         ["refresh", "screenshot", "camera", "clipboard", "desktop", "brush", "gauge", "code", "copy", "save", "undo", "search", "lock", "mic", "play", "window", "keyboard"];
 
     #[test]
-    fn the_library_has_103_keys_in_16_groups_with_unique_stable_ids() {
-        assert_eq!(LIBRARY.len(), 103);
+    fn the_library_has_104_keys_in_16_groups_with_unique_stable_ids() {
+        assert_eq!(LIBRARY.len(), 104);
         assert_eq!(GROUPS.len(), 16);
         let ids: HashSet<&str> = LIBRARY.iter().map(|e| e.id).collect();
         assert_eq!(ids.len(), LIBRARY.len(), "ids are unique");
@@ -538,6 +542,7 @@ mod tests {
             "layout:thirds",
             "layout:focus",
             "layout:record169",
+            "layout:zones",
             "layout:undo",
             "screens-off",
             "focus:start",
@@ -611,7 +616,7 @@ mod tests {
     #[test]
     fn the_page_catalogue_carries_no_chord() {
         let info = library_info();
-        assert_eq!(info.iter().map(|g| g.keys.len()).sum::<usize>(), 103);
+        assert_eq!(info.iter().map(|g| g.keys.len()).sum::<usize>(), 104);
         let text = serde_json::to_string(&info).unwrap();
         assert!(!text.contains("\"spec\""));
         let thirds = info.iter().flat_map(|g| &g.keys).find(|k| k.id == "thirds").unwrap();
