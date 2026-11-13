@@ -235,3 +235,41 @@ it('drops the empty label once the row has something on it', async () => {
   await flush();
   expect(labels(r.container)).toEqual(['Nothing scheduled at home']);
 });
+
+it('drops an older day answer that arrives after a newer one, and the empty-row label still follows the newer one', async () => {
+  let calls = 0;
+  let releaseOld: (v: unknown) => void = () => undefined;
+  mocks.set('wall2_tasks_summary', () => emptyDay);
+  mocks.set('wall2_meet_day', () => {
+    calls += 1;
+    if (calls === 1) return new Promise((r) => (releaseOld = r));
+    return { ...day, seq: 7 };
+  });
+  const r = render(<Ribbon kind="work" />);
+  await flush();
+  await flush(5 * 60_000);
+  expect(r.container.querySelectorAll('.ev')).toHaveLength(3);
+  releaseOld({ accounts: [{ id: 'work', label: 'Work', state: 'signed-out' }], events: [], seq: 3 });
+  await flush();
+  expect(r.container.querySelectorAll('.ev')).toHaveLength(3);
+  expect(labels(r.container)).not.toContain('Calendar not available');
+});
+
+it('an older answer cannot turn an empty good day into "not available" either', async () => {
+  let calls = 0;
+  let releaseOld: (v: unknown) => void = () => undefined;
+  mocks.set('wall2_tasks_summary', () => emptyDay);
+  mocks.set('wall2_meet_day', () => {
+    calls += 1;
+    if (calls === 1) return new Promise((r) => (releaseOld = r));
+    return { accounts: [{ id: 'work', label: 'Work', state: 'ok' }], events: [], seq: 9 };
+  });
+  const r = render(<Ribbon kind="home" />);
+  await flush();
+  await flush(5 * 60_000);
+  expect(labels(r.container)).toContain('No meetings today');
+  releaseOld({ accounts: [{ id: 'work', label: 'Work', state: 'signed-out' }], events: [], seq: 2 });
+  await flush();
+  expect(labels(r.container)).toContain('No meetings today');
+  expect(labels(r.container)).not.toContain('Calendar not available');
+});
