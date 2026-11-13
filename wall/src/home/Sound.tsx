@@ -21,13 +21,16 @@ import {
 import { invoke } from '../bridge/tauri';
 import { useCentreStatus } from './centreSources';
 import {
-  FACE_MAX,
   LATCH_MS,
   NEEDS_CONFIRM,
   SAFE_VOLUME,
   SLEEP_CHOICES,
   ageWords,
   chipLabel,
+  faceTiles,
+  moreControls,
+  moreRoutines,
+  wherePlaces,
   groupLabel,
   groupMovers,
   leftOutNote,
@@ -39,7 +42,6 @@ import {
   musicPlaying,
   needsConfirm,
   nowLine,
-  orderPresets,
   readLastPlay,
   sleepLeft,
   soonestTimer,
@@ -67,8 +69,6 @@ const SKIP_LINE = "Skipped: this routine's own conditions say not now";
 
 /** "Play anyway" stays on offer this long after a skip (Rust's own window). */
 export const SKIP_OFFER_MS = 60_000;
-/** Names longer than this on average put five chips on the face, not six. */
-const LONG_NAME_CHARS = 14;
 
 type Pop = 'more' | 'speakers' | 'sleep' | null;
 interface Result {
@@ -108,15 +108,15 @@ function once(fn: () => void) {
 }
 
 /**
- * The Sound block on Home: quick-play buttons for the Sonos service's music routines (six
- * on the face, five when names are long, the rest under More), the hour's suggestion, a
+ * The Sound block on Home: quick-play buttons for the Sonos service's music routines (the
+ * five the owner uses: Morning, Day, Evening, Late night, Workday; the rest under More), the hour's suggestion, a
  * Where switch for the group presets, one volume slider that moves the playing group by a
  * step, a Speakers list with a slider each, play or pause, and a sleep timer. Nothing plays
  * or changes volume without a click; a loud change asks first; a play the routine's own
  * conditions skip says why and offers "Play anyway". A read that is not live dims the
  * block and stops writes.
  */
-export function Sound() {
+export function Sound({ fallback = false }: { fallback?: boolean }) {
   const { status, summary, okAt, now, stale, refresh } = useSonos();
   const publish = useCentreStatus((st) => st.set);
   const state = status === 'unconfigured' ? 'unconfigured' : summary ? 'ok' : status === 'error' ? 'down' : 'loading';
@@ -134,13 +134,36 @@ export function Sound() {
       </Shell>
     );
   }
+  if (!summary && status === 'loading' && !fallback) {
+    // Until Sonos answers the block holds its final size with quiet shapes, so Home's
+    // centre does not resize when it arrives.
+    return (
+      <Shell side={null}>
+        <div className="panel sound-panel sound-skel" aria-hidden="true">
+          <div className="sound-skel-row sound-skel-plays">
+            {[0, 1, 2, 3, 4, 5].map((i) => (
+              <span key={i} />
+            ))}
+          </div>
+          <div className="sound-skel-row sound-skel-line">
+            <span />
+            <span />
+          </div>
+          <div className="sound-skel-row sound-skel-line">
+            <span />
+            <span />
+          </div>
+        </div>
+      </Shell>
+    );
+  }
   if (!summary) {
     const down = status === 'error';
     return (
       <Shell side={down ? { text: 'Could not reach Sonos', warn: true } : null} bare>
         <div className="sound-note s">
           <IconDeviceSpeaker size={30} stroke={1.6} aria-hidden="true" />
-          <span>{down ? 'The Sonos service did not answer. Checks again every 30 seconds.' : 'Loading'}</span>
+          <span>{down ? 'The Sonos service did not answer. Checks again every 30 seconds.' : 'The Sonos service has not answered yet. Checks again every 30 seconds.'}</span>
         </div>
       </Shell>
     );
@@ -303,18 +326,17 @@ function Live({
     c.no?.();
   }, [stale, setConfirm]);
 
-  const longNames = s.music.slice(0, FACE_MAX).reduce((n, r) => n + chipLabel(r.name).length, 0) / Math.max(1, Math.min(FACE_MAX, s.music.length)) > LONG_NAME_CHARS;
-  const faceMax = longNames && s.music.length > FACE_MAX - 1 ? FACE_MAX - 1 : FACE_MAX;
-  const face = s.music.slice(0, faceMax);
-  const more = s.music.slice(faceMax);
+  const face = faceTiles(s.music);
+  const more = moreRoutines(s.music, face);
   const suggestion = suggestedKey(s.music, new Date(now));
   const playing = musicPlaying(s);
-  const presets = orderPresets(s.presets);
-  const extraControls = s.controls.filter((c) => c.action !== 'pauseAll');
+  const places = wherePlaces(s.presets);
+  const extraControls = moreControls(s.controls);
   const offer = skip && now - skip.at < SKIP_OFFER_MS ? skip : null;
 
   const play = (r: MusicRoutine) => {
-    const label = chipLabel(r.name);
+    // The tile's word where the routine has a tile (the ask, the skip notice and the result use it).
+    const label = face.find((t) => t.routine.key === r.key)?.label ?? chipLabel(r.name);
     const ask =
       typeof r.volume === 'number' ? `${r.name} starts at volume ${r.volume}, above 40. Start it?` : `${r.name} starts at a volume the Sonos service sets. Start it?`;
     const go = (confirmed: boolean) =>
@@ -399,11 +421,11 @@ function Live({
     else go(false);
   };
 
-  const applyPreset = (p: SonosPreset) => {
+  const applyPreset = (p: SonosPreset, label: string) => {
     setPop(null);
     const ask = loudText(p.loud, 'Apply');
     const go = (confirmed: boolean) =>
-      void run(`preset:${p.id}`, (c) => invoke('wall2_sonos_preset', c ? { presetId: p.id, confirm: true } : { presetId: p.id }), `Speakers set to ${p.name}`, {
+      void run(`preset:${p.id}`, (c) => invoke('wall2_sonos_preset', c ? { presetId: p.id, confirm: true } : { presetId: p.id }), `Speakers set to ${label}`, {
         confirmed,
         ask,
         yes: 'Apply',
@@ -433,7 +455,10 @@ function Live({
     side = { text: okAt ? `Sonos not reachable, showing ${ageWords(okAt, now)}` : 'Sonos not reachable', warn: true };
   }
 
-  const cols = Math.max(face.length + (more.length || extraControls.length ? 1 : 0), 3);
+  const hasMore = more.length > 0 || extraControls.length > 0;
+  const hint = face.length === 1 && !hasMore;
+  // One column per control, so no blank cell sits in the row; the hints take the room they name.
+  const cols = face.length === 0 ? (hasMore ? 3 : 1) : face.length + (hasMore ? 1 : 0) + (hint ? 2 : 0);
   const timer = soonestTimer(s.sleepTimers, now);
   const left = timer ? sleepLeft(timer, now) : null;
   const gVol = groupVolume(s);
@@ -443,7 +468,8 @@ function Live({
     <Shell side={side} extra={extra} stale={stale}>
       <div className="panel sound-panel">
         <div className="sound-plays" role="group" aria-label="Quick play" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
-          {face.map((r) => {
+          {face.map((t) => {
+            const r = t.routine;
             const isStarted = mark?.key === r.key && mark.seen;
             const isSug = !isStarted && r.key === suggestion;
             const tag = isStarted ? <u className="sound-tag on">{startedText(mark.at, now)}</u> : isSug ? <u className="sound-tag sug">Suggested</u> : null;
@@ -458,13 +484,13 @@ function Live({
                 title={tip}
                 disabled={locked}
                 tag={tag}
-                name={chipLabel(r.name)}
+                name={t.label}
                 sub={r.favorite ?? (typeof r.volume === 'number' ? `volume ${r.volume}` : 'routine')}
                 action={() => play(r)}
               />
             );
           })}
-          {face.length === 0 && <div className="sound-quiet s span-all">No music routines in the Sonos service yet.</div>}
+          {face.length === 0 && <div className="sound-quiet s span-all" style={hasMore ? { gridColumn: '1 / span 2' } : undefined}>No Morning, Day, Evening, Late night or Workday routine in the Sonos service yet.</div>}
           {(more.length > 0 || extraControls.length > 0) && (
             <div className="sound-anchor">
               <button
@@ -509,16 +535,16 @@ function Live({
               )}
             </div>
           )}
-          {face.length > 0 && face.length < 2 && !more.length && !extraControls.length && (
+          {hint && (
             <div className="sound-quiet xs fill">More music routines from the Sonos service show here.</div>
           )}
         </div>
 
         <div className="sound-line">
-          {presets.length > 0 && (
+          {places.length > 0 && (
             <div className="sound-where" role="radiogroup" aria-label="Where">
               <span className="sound-lbl">Where</span>
-              {presets.map((p) => (
+              {places.map(({ label, preset: p }) => (
                 <button
                   key={p.id}
                   type="button"
@@ -527,9 +553,9 @@ function Live({
                   className={p.active ? 'seg on' : 'seg'}
                   title={p.active ? `${p.name}: the speakers are grouped this way now` : `Group the speakers as ${p.name}`}
                   disabled={locked}
-                  {...once(() => applyPreset(p))}
+                  {...once(() => applyPreset(p, label))}
                 >
-                  {p.name}
+                  {label}
                 </button>
               ))}
             </div>
@@ -551,7 +577,7 @@ function Live({
               {...once(() => suggested && play(suggested))}
             >
               <IconPlayerPlayFilled size={22} aria-hidden="true" />
-              {suggested ? `Play ${chipLabel(suggested.name)}` : 'Play'}
+              {suggested ? `Play ${face.find((t) => t.routine.key === suggested.key)?.label ?? chipLabel(suggested.name)}` : 'Play'}
             </button>
           )}
         </div>
