@@ -63,6 +63,7 @@ const EXPECT = {
   // left wing
   lwbuttons: /^ *FAIL left wing: music buttons leave the wing/m,
   lwoverlap: /^ *FAIL left wing: music buttons overlap the title/m,
+  lwsquare: /^ *FAIL left wing: focus outline on Choose a focus length is square/m,
   lwring: /^ *FAIL left wing: focus outline on Choose a focus length/m,
   lwtemp: /^ *FAIL left wing: TEMP header /m,
   lwround: /^ *FAIL left wing: round control /m,
@@ -85,6 +86,7 @@ const OVERFLOWS = {
   // left wing
   lwbuttons: '.work .left-wing .music-mini-text { flex: none !important; width: 900px !important; }',
   lwoverlap: '.work .left-wing .music-mini-btns { transform: translateX(-200px); }',
+  lwsquare: '.work .left-wing .focus-mini-ring:focus-visible { border-radius: 0 !important; }',
   lwring: '.work .left-wing .focus-mini-ring:focus-visible { outline: none !important; }',
   lwtemp: '.work .left-wing .mc-hd span:last-child { transform: translateX(14px); }',
   lwround: '.work .wl .rd, .work .wl .focus-mini-ring, .work .wl .ring { border-radius: 0 !important; }',
