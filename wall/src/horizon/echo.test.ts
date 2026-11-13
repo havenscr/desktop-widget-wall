@@ -7,7 +7,17 @@ import {
   IDLE_AMP,
   IDLE_RATE,
   PLAY_TINT,
+  REST_LOOK,
+  REST_OPACITY,
+  REST_PHASE,
+  REST_QUIET_S,
+  createEchoMotion,
   createEchoSampler,
+  echoStrength,
+  musicDriving,
+  restEchoMotion,
+  scaleEcho,
+  stepEchoMotion,
   echoOptions,
   echoRate,
   initialEchoGate,
@@ -17,6 +27,7 @@ import {
 } from './echo';
 import { blendCamera } from './cameras';
 import { spec } from './renderer';
+import { BAND_FLOOR } from '../audio/spectrum';
 
 it('takes ea, en, eamp and ecx from the camera preset, with hs 900 and the animation time', () => {
   for (const place of ['work', 'home', 'unwind'] as const) {
@@ -231,5 +242,55 @@ describe('the camera gate', () => {
   it('the gate scales the ripple through the fade argument', () => {
     expect(echoOptions(CAMERAS.home, 0.5, 1, 0)!.a).toBeCloseTo(CAMERAS.home.ea * 0.5, 9);
     expect(echoOptions(CAMERAS.home, 0, 1, 0)).toBeNull();
+  });
+});
+
+describe('the rest state options', () => {
+  it('rest 0 adds nothing (the playing options are unchanged); rest above 0 carries the resting opacity and look', () => {
+    expect(echoOptions(CAMERAS.unwind, 1, 0.5, 3, 1, 0)).toEqual(echoOptions(CAMERAS.unwind, 1, 0.5, 3));
+    const e = echoOptions(CAMERAS.unwind, 1, 0.5, 3, 1, 0.4)!;
+    expect(e).toMatchObject({ rest: 0.4, restA: REST_OPACITY, look: REST_LOOK, a: 1 });
+    expect(echoOptions(CAMERAS.unwind, 1, 0.5, 3, 0.5, 1, 'ridge', 0.15)).toMatchObject({ rest: 1, restA: 0.075, look: 'ridge' });
+  });
+
+  it('Work and Home at rest draw their lines even with no loudness; the morning camera never does', () => {
+    for (const cam of [CAMERAS.work, CAMERAS.home]) {
+      expect(echoOptions(cam, 1, 0, 0)).toBeNull();
+      expect(echoOptions(cam, 1, 0, 0, 1, 1)).toMatchObject({ n: 3, a: 0, rest: 1, restA: REST_OPACITY });
+    }
+    expect(echoOptions(HOME_MORNING, 1, 1, 0, 1, 1)).toBeNull();
+    expect(echoOptions(CAMERAS.work, 1, 0, 0, 0, 1)).toBeNull(); // the gate still takes it all away
+  });
+
+  it('strength eases from the live opacity to the resting one; scaling scales both', () => {
+    const e = echoOptions(CAMERAS.unwind, 1, 0, 0, 1, 0.5)!;
+    expect(echoStrength(e)).toBeCloseTo(1 + (REST_OPACITY - 1) * 0.5, 9);
+    scaleEcho(e, 0.5);
+    expect(e.a).toBeCloseTo(0.5, 9);
+    expect(e.restA).toBeCloseTo(REST_OPACITY / 2, 9);
+    expect(echoStrength(echoOptions(CAMERAS.unwind, 1, 0, 0)!)).toBe(1);
+  });
+
+  it('music drives the lines while playing, until every band has been under the floor for 1.5 s', () => {
+    const m = createEchoMotion();
+    const loud = new Float32Array(32).fill(0.8);
+    const quiet = new Float32Array(32).fill(BAND_FLOOR - 0.01);
+    expect(musicDriving(m, true, loud, 1 / 30)).toBe(true);
+    expect(musicDriving(m, false, loud, 1 / 30)).toBe(false);
+    let driving = true;
+    let frames = 0;
+    while (driving && frames < 100) {
+      driving = musicDriving(m, true, quiet, 1 / 30);
+      if (driving) frames++;
+    }
+    expect(frames).toBe(Math.ceil(REST_QUIET_S * 30) - 1);
+    expect(musicDriving(m, true, loud, 1 / 30)).toBe(true); // one loud frame drives again
+  });
+
+  it('a hidden page puts the motion straight at rest', () => {
+    const m = createEchoMotion(false);
+    stepEchoMotion(m, true, 0.3);
+    restEchoMotion(m);
+    expect(m).toMatchObject({ rest: 1, drift: REST_PHASE, v: 0, driving: false });
   });
 });

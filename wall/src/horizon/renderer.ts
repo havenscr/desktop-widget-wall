@@ -342,8 +342,9 @@ export function draw(ctx:CanvasRenderingContext2D,o:HorizonDrawOptions):HorizonD
   const RK=E.rest?clamp(E.rest,0,1):0,LK:RestLook=E.look||'contours',RA=E.restA||0,ek=Math.min(1,RK*8),vu=cmax/REST_PEAK,hu=W/1280;
   /* a line's resting height at sample i: kc runs 0 (the lowest line) to n - 1 (the top one), q is kc / (n - 1);
      the haze ranges are softened (box smoothed) the farther back they sit */
+  const hz=(i:Any,r:Any)=>r?sm(i,r):cr[i];
   const rh=(i:Any,kc:Any,q:Any)=>LK==='levels'?Math.min(cr[i],vu*REST_LEVEL_TOP*REST_PEAK*(kc+1)/(n+.6)+2.5*vu*Math.sin(Math.PI*i*2/W)*(kc/n))
-   :LK==='haze'?sm(Math.round(clamp(((i*2-q*70*hu)*(1+q*.1)-q*.03*W)/2,0,N-1)),Math.round(2+q*30))*(1+q*.42)+q*26*vu
+   :LK==='haze'?hz(Math.round(clamp(((i*2-q*70*hu)*(1+q*.1)-q*.03*W)/2,0,N-1)),Math.round(q*30))*(1+q*.42)+q*26*vu
    :LK==='ridge'?Math.max(0,cr[i]-Math.max(0,2-kc)*7*vu)
    :cr[i]*(kc+1)/n;
   /* each look's resting opacity for line q, as a share of restA */

@@ -171,9 +171,9 @@ export function echoOptions(
   return e;
 }
 
-/** How strongly an echo is drawn: the larger of its live and its resting opacity. */
+/** How strongly an echo is drawn: its live opacity eased toward its resting one by how far it has settled. */
 export function echoStrength(e: HorizonEcho): number {
-  return e.rest ? Math.max(e.a, e.restA ?? 0) : e.a;
+  return e.rest ? e.a + ((e.restA ?? 0) - e.a) * e.rest : e.a;
 }
 
 /** Scale an echo's live and resting opacity by `s` (0 to 1), in place. */
@@ -251,7 +251,8 @@ export function stepEchoMotion(m: EchoMotion, driving: boolean, dt: number): voi
       m.v0 = m.v;
     }
     if (m.rest > 0) {
-      m.rest = Math.max(0, m.rest - d / REST_RISE_S);
+      m.rest = m.rest - d / REST_RISE_S;
+      if (m.rest < 1e-9) m.rest = 0; // a sum of frame steps lands a hair off zero
       const s = m.r0 > 0 ? 1 - m.rest / m.r0 : 1;
       m.v = m.v0 + (DRIFT_SPEED - m.v0) * s;
     } else m.v = DRIFT_SPEED;
@@ -279,8 +280,9 @@ export function stepEchoMotion(m: EchoMotion, driving: boolean, dt: number): voi
     m.v = 0;
     return;
   }
-  m.rest = Math.min(1, m.rest + d / REST_SETTLE_S);
-  if (m.rest >= 1) {
+  m.rest = m.rest + d / REST_SETTLE_S;
+  if (m.rest >= 1 - 1e-9) {
+    m.rest = 1;
     m.drift = REST_PHASE;
     m.v = 0;
     return;
