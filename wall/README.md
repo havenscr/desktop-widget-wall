@@ -585,8 +585,9 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
   `media_next`; failures are swallowed. Stopped or unknown shows a quiet
   "Nothing playing".
 - **Settings** (`wall/src/settings/`). `localStorage` key `wall2-settings`, JSON
-  with optional `latitude` and `longitude` (defaults 47.68, -122.21). No settings
-  screen yet.
+  with optional `latitude` and `longitude` (defaults 47.68, -122.21), `zenDimHour` (whole
+  hour 18 to 23, default 22) and `zenDimWaitMin` (whole minutes 1 to 60, default 10). No settings
+  screen yet; Zen shows the two Zen values as a quiet line in the evening.
 - **Browser dev.** `npm run dev` registers mocks for the commands Work calls
   (`src/bridge/devMocks/`, dev server only); in a review still (`?hz=&at=`) the
   meeting and task mocks follow the review's time. Review knobs: `?meet=none` (no
@@ -790,7 +791,7 @@ frame (no ribbon) in the wide zones `470px 1fr 540px`. The parts are in `wall/sr
   off", "Cancel screens off"); "Could not watch input" shows beside it for five seconds.
   The wind down ring (PR 10) goes between the date line and Tomorrow.
 - **Centre.** The tabs (`Tabs.tsx`): Listen is this view (its tab controls the player
-  panel); Watch switches the centre to video (see "Watch" below); Dream opens Zen straight into Dream (`openDream` in the place store;
+  panel); Watch switches the centre to video (see "Watch" below); Dream opens Zen already dimmed (`openDream` in the place store;
   Zen reads the flag once). Below them the player (`Player.tsx`): 224 px art, the source
   app in pink capitals (the player's name, see below), a 64 px title, the artist, a 520 px progress bar with times
   (advanced locally twice a second between polls while playing and visible, never past
@@ -1568,9 +1569,15 @@ the system volume, Do Not Disturb or the focus timer.
   wanders onto it). Nothing is bright. All the text (clock, date, card, status, hint) sits in one layer that drifts by transform alone along a
   closed 30 by 20 px path, one lap in 20 minutes, so no pixel stays lit for hours; under reduced motion it holds one of four points for 7.5 minutes, then
   jumps to the next. The status line and hint are at 40 percent, the card has no frame. Nothing else moves except Watt. Watt sleeps in the corner (the `SheepSvg` sleep pose from `buddy/Watt.tsx`,
-  at x 1226, ground line 688). Dream starts when a session ends (the guide fades out
-  first), or when Zen opens between 9:30 PM and 6:30 AM local time (the same window as
-  Watt's sleep). A click wakes back to Zen; after a wake at night it stays awake
-  until Zen is left and opened again. Leave returns to Work.
+  at x 1226, ground line 688). The dimmed state starts when a session ends (the guide fades out
+  first), or by itself late at night: from 10 PM until 6 AM local time, once the PC has had no
+  input for ten minutes. "Input" is the PC's idle age from `wall2_idle_state` (idle seconds),
+  asked every 10 seconds while Zen is lit, after the dim hour and the page is visible, so typing in
+  another app keeps Zen bright; a click or key on the wall after the question was sent voids that
+  answer. When the command is missing or fails (a browser, dev), the wall's own pointer, wheel and
+  key input is the fallback. The hour (18 to 23) and the wait (1 to 60 minutes) are the
+  `zenDimHour` and `zenDimWaitMin` settings. From 6 PM Zen shows a quiet line under the session controls that says when it dims. A click
+  wakes back to Zen; it dims again only after another quiet wait. Leave returns to Work.
+  `openDream` (Unwind's Dream tab, removed later) opens Zen already dimmed.
 - **Horizon.** While Zen is active the horizon canvas is hidden and not drawn (no frame
   loop, no timer redraw). Leaving resumes it, gliding from the last camera.

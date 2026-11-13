@@ -21,7 +21,7 @@
 // point of the sky may land on the whole-sky video layer. CI does not run this; run it by hand before a layout change is handed over.
 //
 //   WALL_CHROME=/path/to/chrome-or-headless-shell npm --prefix wall run fit-check
-//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, header, deck, tiles, picker, chips, heading)
+//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, header, deck, tiles, picker, chips, heading, zenhint, sky, floor, sun)
 //   npm --prefix wall run fit-check -- --self-test
 //
 // WALL_CHROME (or the first argument that is not a flag) is a Chromium or
@@ -59,6 +59,7 @@ const EXPECT = {
   deck: /^ *FAIL deck: .* below the floor/m,
   tiles: /^ *FAIL deck: label .* outside its tile/m,
   picker: /^ *FAIL deck: the key picker reaches y \d+, over the timeline/m,
+  zenhint: /^ *FAIL \.zen-bl \.zen-dimhint:.*container right \d+/m,
   chips: /^ *FAIL overlap: chip /m,
   heading: /^ *FAIL deck: the Now heading /m,
   sky: /^ *FAIL pointer at .*reaches w-scrim/m,
@@ -77,6 +78,7 @@ const OVERFLOWS = {
   deck: '.work .right-wing section.pinned { margin-top: 80px; }',
   tiles: '.work .right-wing .key-tile .deck-lbl { flex: none; width: 160px; max-width: none !important; }',
   picker: '.work .right-wing .pk { height: 400px !important; }',
+  zenhint: '.zen-dimhint { width: 2000px; }',
   chips: '.rib .ev { width: 400px !important; }',
   heading: '.work .right-wing .keys .deck-name { max-width: 40px; overflow: hidden; }',
   // The whole-sky video layer catching the pointer and drawn over the controls.
@@ -161,6 +163,8 @@ const QUIET = [
   { name: 'Meet, no account readable', agents: '3', go: 'meet', live: true, extra: '&meet=down', checks: MEET },
   // Unwind with nine moods of long names: the Room list stays within two rows.
   { name: 'Unwind, nine long moods', agents: '3', hz: 'unwind', moods: 'nine', maxRows: 2, extra: '', checks: UNWIND },
+  // Zen in the evening: the dim hint stays inside the controls' column (the box the Start row sets).
+  { name: 'Zen, evening hint under the controls', agents: '3', go: 'zen', at: '2026-11-11T20:15:00-08:00', extra: '', checks: ['.zen-bl', '.zen-bl .zen-dimhint'] },
   // Dream at night: helper answering, helper off; calendar read, unreadable, nothing tomorrow.
   { name: 'Dream, agents and calendar', agents: '3', go: 'dream', at: '2026-11-11T23:48:00-08:00', extra: '', checks: DREAM },
   { name: 'Dream, agents waiting', agents: 'ask', go: 'dream', at: '2026-11-11T23:48:00-08:00', extra: '', checks: DREAM },
@@ -297,8 +301,8 @@ try {
     const view = { left: 0, top: 0, right: innerWidth, bottom: innerHeight };
     const res = sels.map((sel) => ({ sel, items: [...document.querySelectorAll(sel)].map((e) => {
       const box = e.getBoundingClientRect();
-      // Dream covers the whole stage (its text also drifts up to 15 px each way), so it is held by itself, not the band.
-      const holder = e.closest('.dream') || e.parentElement.closest('.centre') || band || document.documentElement;
+      // The Zen controls column holds its hint. Dream covers the whole stage (its text also drifts up to 15 px each way), so it is held by itself, not the band.
+      const holder = e.closest('.dream') || e.closest('.zen-bl') || e.parentElement.closest('.centre') || band || document.documentElement;
       return { sw: e.scrollWidth, cw: e.clientWidth, sh: e.scrollHeight, ch: e.clientHeight,
         inHolder: out(box, holder.getBoundingClientRect()), inView: out(box, view) };
     }) }));
@@ -433,13 +437,15 @@ try {
   if (overflow) console.log(`deliberate overflow: ${overflow} (${OVERFLOWS[overflow]})`);
   // A deliberate break runs on the first state, or for the picker on the state that opens it.
   const breakOn =
-    overflow === 'picker'
-      ? VARIANTS.filter((v) => v.name.startsWith('Deck, the key picker open over'))
-      : overflow === 'sky' || overflow === 'floor'
-        ? VARIANTS.filter((v) => v.name.startsWith('Watch, whole sky playing'))
-        : overflow === 'sun'
-          ? VARIANTS.filter((v) => v.name === 'Watch, the sun playing')
-          : VARIANTS.slice(0, 1);
+    overflow === 'zenhint'
+      ? VARIANTS.filter((v) => v.name.startsWith('Zen,'))
+      : overflow === 'picker'
+        ? VARIANTS.filter((v) => v.name.startsWith('Deck, the key picker open over'))
+        : overflow === 'sky' || overflow === 'floor'
+          ? VARIANTS.filter((v) => v.name.startsWith('Watch, whole sky playing'))
+          : overflow === 'sun'
+            ? VARIANTS.filter((v) => v.name === 'Watch, the sun playing')
+            : VARIANTS.slice(0, 1);
   for (const v of overflow ? breakOn : VARIANTS) {
     console.log(`${v.name} (${v.q}):`);
     const url = `${pathToFileURL(page).href}${v.q}&checks=${encodeURIComponent(v.checks.join('|'))}${v.click ? `&click=${encodeURIComponent(v.click)}` : ''}${v.card ? '&card=1' : ''}${v.hits ? `&hits=${encodeURIComponent(v.hits.join('|'))}` : ''}${v.noHit ? `&nohit=${encodeURIComponent(v.noHit)}` : ''}`;
