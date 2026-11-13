@@ -8,7 +8,7 @@ import { usePlaceStore } from '../../state/places';
 import { resetLastPlayed } from '../lastPlayed';
 import { DEFAULT_LOOKS, DRIVE_IN_SCREEN, LOOKS_KEY, lookTargetName, parseLooks, pickLook } from './looks';
 import { AUTOPLAY_WAIT_MS, framePoster } from './PlayerFrame';
-import { SAVED_KEY } from './saved';
+import { SAVED_KEY, type SavedItem } from './saved';
 import { driveInAudience, resetWatch, useWatchStore } from './store';
 import { MAX_MESSAGE, MAX_SECONDS, PLAYER_VOLUME, readPlayerMessage, TWITCH_EMBED_ORIGIN, YOUTUBE_EMBED_ORIGIN } from './urls';
 import { openInBrowser } from './Watch';
@@ -18,7 +18,7 @@ vi.setConfig({ testTimeout: 20_000 });
 
 const V = 'Ab3dEfGh1jK';
 const PL = 'PLmockPlaylist0001';
-const ITEMS = [
+const ITEMS: SavedItem[] = [
   { kind: 'video', id: V, label: 'Night drive mix' },
   { kind: 'playlist', id: PL, label: 'Weekend list' },
   { kind: 'twitch', id: 'pixel_harbor', label: 'pixel_harbor' },
