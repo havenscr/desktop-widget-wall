@@ -4,6 +4,7 @@ import { invoke } from '../bridge/tauri';
 import { NOT_CONFIGURED } from '../tasks/model';
 import { reviewNow } from '../ui/reviewClock';
 import { useVisible } from '../ui/useVisible';
+import { useCentreStatus } from './centreStatus';
 import { MoodArt } from './MoodArt';
 
 export interface Mood {
@@ -101,6 +102,7 @@ export function Moods() {
   const [error, setError] = useState<string | null>(null);
   const [last, setLast] = useState<string | null>(readLast);
   const [now, setNow] = useState(() => (reviewNow ?? Date.now)());
+  const [okAt, setOkAt] = useState<number | null>(null);
   const mounted = useRef(false);
   const busy = useRef(false);
   const doneTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -123,6 +125,7 @@ export function Moods() {
       setMoods(next);
       writeCache(next);
       setStatus('ready');
+      setOkAt((reviewNow ?? Date.now)());
     } catch (e) {
       if (!mounted.current) return;
       const text = e instanceof Error ? e.message : String(e);
@@ -173,6 +176,13 @@ export function Moods() {
       busy.current = false;
     }
   }, []);
+
+  // Tell the centre what this source can show, so two missing sources become one card.
+  const publish = useCentreStatus((st) => st.set);
+  const centreState = status === 'unconfigured' ? 'unconfigured' : moods.length > 0 || status === 'ready' ? 'ok' : status === 'error' ? 'down' : 'loading';
+  useEffect(() => {
+    publish('moods', { state: centreState, okAt, check: () => void load() });
+  }, [publish, centreState, okAt, load]);
 
   if (status === 'ready' && moods.length === 0) {
     return (

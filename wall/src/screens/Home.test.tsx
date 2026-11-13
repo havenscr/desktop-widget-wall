@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { mocks } from '../bridge/tauri';
 import { usePacificTime } from '../ribbon/testZone';
@@ -65,4 +65,47 @@ it('with no moods and an empty left wing, the centre shows one compact card and 
   expect([...home.children].map((c) => c.className)).toEqual(['home-centre', 'home-right']);
   expect(screen.getByText('No moods set up in the home app yet')).toBeTruthy();
   spy.mockRestore();
+});
+
+it('with the home app and Sonos both out, the centre shows one status card naming both, and Check again reads both', async () => {
+  let moodReads = 0;
+  let sonosReads = 0;
+  mocks.set('wall2_moods', () => {
+    moodReads += 1;
+    return Promise.reject(new Error('Could not reach the service'));
+  });
+  mocks.set('wall2_sonos_summary', () => {
+    sonosReads += 1;
+    return Promise.reject(new Error('not-configured'));
+  });
+  mocks.set('wall2_tasks_summary', () => ({ next: [], remaining: 0 }));
+  mocks.set('wall2_home_security', () => Promise.reject(new Error('not-configured')));
+  const { container } = render(<Home />);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(0);
+  });
+  const card = screen.getByLabelText('Home centre status');
+  expect(card.textContent).toContain('Moods (the home app): not reachable.');
+  expect(card.textContent).toContain('Sound (the Sonos service): not set up. Add sonosBaseUrl to feeds.json.');
+  expect(container.querySelector('.home-centre.both-out')).toBeTruthy();
+  const before = [moodReads, sonosReads];
+  fireEvent.click(screen.getByText('Check again'));
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(0);
+  });
+  expect(moodReads).toBe(before[0] + 1);
+  expect(sonosReads).toBe(before[1] + 1);
+});
+
+it('with only one source out, there is no status card', async () => {
+  mocks.set('wall2_moods', () => [{ id: 'day', label: 'Day' }]);
+  mocks.set('wall2_sonos_summary', () => Promise.reject(new Error('Could not reach Sonos')));
+  mocks.set('wall2_tasks_summary', () => ({ next: [], remaining: 0 }));
+  mocks.set('wall2_home_security', () => Promise.reject(new Error('not-configured')));
+  render(<Home />);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(0);
+  });
+  expect(screen.queryByLabelText('Home centre status')).toBeNull();
+  expect(screen.getByText('Could not reach Sonos')).toBeTruthy();
 });

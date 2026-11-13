@@ -569,7 +569,7 @@
   justify-content: flex-end;
   gap: 4px;
   overflow: hidden;
-  padding: 28px 16px 10px;
+  padding: 10px 12px;
   border-radius: 18px;
   border: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.05);
@@ -583,6 +583,10 @@
   background: rgba(53, 230, 234, 0.08);
   border-color: rgba(53, 230, 234, 0.3);
 }
+/* Only a chip with a tag reserves room for it above the name. */
+.sound-chip.has-tag {
+  padding-top: 28px;
+}
 .sound-chip.sug {
   border-color: rgba(53, 230, 234, 0.55);
 }
@@ -593,10 +597,18 @@
   background: rgba(53, 230, 234, 0.14);
 }
 .sound-chip-name {
-  display: block;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
   font: 600 22px/1.15 var(--body);
-  white-space: nowrap;
   overflow: hidden;
+  overflow-wrap: anywhere;
+}
+/* The More chip keeps one line with its dots. */
+.sound-chip.more .sound-chip-name {
+  display: block;
+  white-space: nowrap;
   text-overflow: ellipsis;
 }
 .sound-chip-sub {
@@ -608,9 +620,9 @@
 }
 .sound-tag {
   position: absolute;
-  left: 14px;
+  left: 12px;
   top: 9px;
-  max-width: calc(100% - 28px);
+  max-width: calc(100% - 24px);
   box-sizing: border-box;
   padding: 4px 8px;
   border-radius: 7px;
@@ -659,6 +671,7 @@
   color: var(--faint);
 }
 .sound-where .seg {
+  flex: 0 1 auto;
   min-width: 0;
   height: 38px;
   padding: 0 16px;
@@ -674,7 +687,10 @@
   color: var(--tx);
   background: rgba(255, 255, 255, 0.06);
 }
+/* The preset in use shows its full name; the others shrink. */
 .sound-where .seg.on {
+  flex: none;
+  max-width: 460px;
   color: var(--cyan);
   background: rgba(53, 230, 234, 0.16);
   box-shadow: inset 0 0 0 1px rgba(53, 230, 234, 0.45);
@@ -948,4 +964,44 @@
   flex: 1;
   min-width: 0;
   color: var(--tx);
+}
+
+/* Both centre sources out: one calm card in the centre band; the two blocks stay mounted
+   (they keep reading) but hidden. */
+.home-centre.both-out > .moods,
+.home-centre.both-out > .sound {
+  display: none;
+}
+.centre-status {
+  margin-top: 120px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 24px 28px;
+  border-radius: 26px;
+  border: 1px solid var(--line);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.015)), rgba(10, 7, 28, 0.72);
+}
+.centre-status-icon {
+  flex: none;
+  color: var(--amber);
+}
+.centre-status-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.centre-status-text .s {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sound-skip {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
 }

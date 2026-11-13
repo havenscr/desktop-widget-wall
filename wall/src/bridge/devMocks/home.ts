@@ -29,10 +29,11 @@ export function registerHomeMocks(): void {
   mocks.set('wall2_links', () => ({ security: true, portal: true }));
   mocks.set('wall2_open_link', () => undefined);
   // `?moods=five` gives the concept's five, `?moods=many` nine (the row scrolls), `?moods=none`
-  // an empty list, `?moods=off` not set up; with a review time, Evening is "In 4 min" in five.
+  // an empty list, `?moods=off` not set up, `?moods=down` not reachable; with a review time, Evening is "In 4 min" in five.
   mocks.set('wall2_moods', () => {
     const k = knob('moods');
     if (k === 'off') return Promise.reject(new Error('not-configured'));
+    if (k === 'down') return Promise.reject(new Error('Could not reach the service'));
     if (k === 'none') return [];
     const three = [
       { id: 'day', label: 'Day' },
