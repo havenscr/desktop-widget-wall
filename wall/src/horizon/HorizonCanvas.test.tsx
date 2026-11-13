@@ -3,11 +3,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HorizonCanvas } from './HorizonCanvas';
 import { CAMERAS, HOME_MORNING, drawHorizon } from './index';
 import { cloudShiftFor, type CameraPreset } from './cameras';
-import { stubContext } from './canvasStub';
+import { echoPaths, frameGap, pathContext, stubContext } from './canvasStub';
 import { fitScale, STAGE_HEIGHT, STAGE_WIDTH } from '../stage/fitScale';
 import { usePlaceStore } from '../state/places';
 import { bandHistory, ingestLevels, resetAudio, tickAudio } from '../audio/store';
 import { useIdle } from '../ui/useIdle';
+import { REST_LOOK, REST_OPACITY, REST_PHASE, echoOptions, echoStrength } from './echo';
+import type { HorizonEcho } from './renderer';
+
+/** How strongly the echo is drawn (0 for none). */
+const strength = (e: HorizonEcho | null | undefined) => (e ? echoStrength(e) : 0);
 
 vi.mock('../ui/useIdle', () => ({ useIdle: vi.fn(() => false) }));
 const idleMock = vi.mocked(useIdle);
@@ -24,6 +29,11 @@ const draw = vi.mocked(drawHorizon);
 const localMs = (hour: number, minute = 0) => new Date(2026, 10, 11, hour, minute).getTime();
 /** Review URL query for Home at a local time. */
 const homeAt = (hour: number, minute = 0) => `/?hz=home&at=${new Date(localMs(hour, minute)).toISOString()}`;
+
+/** The echo a still frame passes: the lines at rest (the resting look, still, on their resting phase). */
+function restEcho(cam: CameraPreset) {
+  return { ...echoOptions(cam, 0, 0, 1, 1)!, drift: REST_PHASE };
+}
 
 function setReducedMotion(reduce: boolean) {
   window.matchMedia = ((query: string) => ({
@@ -94,6 +104,8 @@ it('draws an animated frame from the injected clock and the active place camera'
     t: 0.1,
     phase: (0.1 * 0.32) % 1,
     cloudShift: 0, // the Work camera: clouds where they always were
+    // Nothing playing: Work's three faint lines at rest, on their resting phase.
+    echo: { n: 3, amp: 8, a: 0, t: 0.1, cx: 1900, hs: 900, rest: 1, restA: REST_OPACITY, look: REST_LOOK, drift: REST_PHASE },
   });
 });
 
@@ -122,8 +134,8 @@ it('review URL draws one frozen still: requested camera and time, t 0, phase 0, 
     t: 0,
     phase: 0,
     cloudShift: cloudShiftFor(CAMERAS.unwind),
-    // Unwind's idle lines, frozen at t 0.
-    echo: { n: 11, amp: 34 * 0.35, a: 0.9 * 0.45, t: 0, cx: 1330, hs: 900 },
+    // Unwind's lines at rest.
+    echo: restEcho(CAMERAS.unwind),
   });
   expect(rafSpy).not.toHaveBeenCalled();
   expect(now).not.toHaveBeenCalled();
@@ -138,7 +150,7 @@ it('reduced motion draws once, no frame loop, then once a minute', () => {
   render(<HorizonCanvas now={() => NOON} />);
   expect(rafSpy).not.toHaveBeenCalled();
   expect(draw).toHaveBeenCalledTimes(1);
-  expect(draw.mock.lastCall![1]).toEqual({ ...sizes(), camera: CAMERAS.work, ms: NOON, t: 0, phase: 0, cloudShift: 0 });
+  expect(draw.mock.lastCall![1]).toEqual({ ...sizes(), camera: CAMERAS.work, ms: NOON, t: 0, phase: 0, cloudShift: 0, echo: restEcho(CAMERAS.work) });
   act(() => void vi.advanceTimersByTime(60_000));
   expect(draw).toHaveBeenCalledTimes(2);
 });
@@ -148,7 +160,7 @@ it('reduced motion place change draws the new camera exactly, with no glide valu
   render(<HorizonCanvas now={() => NOON} />);
   act(() => usePlaceStore.getState().setActive('home'));
   expect(draw).toHaveBeenCalledTimes(2);
-  expect(draw.mock.calls[1][1]).toEqual({ ...sizes(), camera: CAMERAS.home, ms: NOON, t: 0, phase: 0, cloudShift: cloudShiftFor(CAMERAS.home) });
+  expect(draw.mock.calls[1][1]).toEqual({ ...sizes(), camera: CAMERAS.home, ms: NOON, t: 0, phase: 0, cloudShift: cloudShiftFor(CAMERAS.home), echo: restEcho(CAMERAS.home) });
   expect(draw.mock.calls[1][1].camera).toEqual(CAMERAS.home);
 });
 
@@ -235,27 +247,31 @@ it('review mode sets the active place in the store so the rail and screen match'
 const LOUD = { bass: 0.9, mid: 0.5, high: 0.3, bands: [1], waveform: [0.1] };
 
 /** Make the audio store say music is playing, as of a steady clock the test controls. */
+/** LOUD with every band well over the floor, so the lines stay driven (not settled by the quiet rule). */
+const LOUD_BANDS = { ...LOUD, bands: Array.from({ length: 32 }, () => 200) };
+
 function startMusic(at = 1000) {
   for (let t = at; t <= at + 300; t += 33) {
-    ingestLevels(LOUD, t);
+    ingestLevels(LOUD_BANDS, t);
     tickAudio(t);
   }
 }
 
-it('passes no echo and no moon when silent on Work (the draw options carry neither key)', () => {
+it('silent on Work: the three lines at rest (no live opacity, no sample) and no moon', () => {
   setReducedMotion(false);
   render(<HorizonCanvas now={() => NOON} />);
   runFrame(100);
   const o = draw.mock.lastCall![1];
-  expect(o).not.toHaveProperty('echo');
+  expect(o.echo).toMatchObject({ n: 3, a: 0, rest: 1, restA: REST_OPACITY, drift: REST_PHASE });
+  expect(o.echo!.sample).toBeUndefined();
   expect(o).not.toHaveProperty('moon');
 });
 
-it('passes the ripple from the active preset while music plays, and fades it in over about a second', () => {
+it('while music plays the ripple takes the active preset\'s numbers, and its live opacity grows with the smoothed loudness up to ea', () => {
   setReducedMotion(false);
   startMusic();
   render(<HorizonCanvas now={() => NOON} />);
-  runFrame(100); // fade 0.1 s of 1
+  runFrame(100); // not yet driving: the bands must stay over the resume level a third of a second
   const first = draw.mock.lastCall![1].echo!;
   expect(first).toMatchObject({ n: CAMERAS.work.en, amp: CAMERAS.work.eamp, cx: CAMERAS.work.ecx, hs: 900 });
   for (let ts = 200; ts <= 1500; ts += 100) runFrame(ts);
@@ -264,18 +280,60 @@ it('passes the ripple from the active preset while music plays, and fades it in 
   expect(full.a).toBeLessThanOrEqual(CAMERAS.work.ea);
 });
 
-it('fades the ripple out and then passes none once the music stops', () => {
+it('when music starts the lines lift: rest falls continuously from 1 to 0 over 1.5 s, and the drawn strength never steps', () => {
+  setReducedMotion(false);
+  usePlaceStore.setState({ active: 'unwind' });
+  render(<HorizonCanvas now={() => NOON} />);
+  let ts = 0;
+  for (let k = 0; k < 5; k++) runFrame((ts += 34));
+  expect(draw.mock.lastCall![1].echo!.rest).toBe(1);
+  const rests: number[] = [];
+  const strengths: number[] = [];
+  for (let k = 0; k < 80; k++) {
+    act(() => {
+      ingestLevels(LOUD_BANDS, 10_000 + ts);
+      tickAudio(10_000 + ts);
+    });
+    runFrame((ts += 34));
+    const e = draw.mock.lastCall![1].echo!;
+    rests.push(e.rest ?? 0);
+    strengths.push(strength(e));
+  }
+  const start = rests.findIndex((r) => r < 1);
+  const end = rests.indexOf(0);
+  expect(start).toBeGreaterThan(5); // a third of a second over the resume level first
+  expect(start).toBeLessThan(12);
+  expect(((end - start + 1) * 34) / 1000).toBeCloseTo(1.5, 1);
+  for (let i = 1; i < rests.length; i++) {
+    expect(rests[i]).toBeLessThanOrEqual(rests[i - 1]);
+    expect(rests[i - 1] - rests[i]).toBeLessThanOrEqual(0.034 / 1.5 + 1e-9);
+    expect(Math.abs(strengths[i] - strengths[i - 1])).toBeLessThan(0.03);
+  }
+  expect(strengths[strengths.length - 1]).toBeCloseTo(1, 9);
+});
+
+it('once the music stops the lines settle over 2.5 s into their rest, never vanishing, then hold still', () => {
   setReducedMotion(false);
   startMusic();
   render(<HorizonCanvas now={() => NOON} />);
-  for (let ts = 100; ts <= 1500; ts += 100) runFrame(ts);
-  expect(draw.mock.lastCall![1].echo).toBeTruthy();
+  for (let ts = 100; ts <= 2000; ts += 100) runFrame(ts); // a third of a second to start, then the 1.5 s lift
+  const playing = draw.mock.lastCall![1].echo!;
+  expect(playing.rest).toBeUndefined();
   act(() => tickAudio(10_000)); // long silence: playing false
-  const before = draw.mock.lastCall![1].echo!.a;
-  runFrame(1600);
-  expect(draw.mock.lastCall![1].echo!.a).toBeLessThan(before);
-  for (let ts = 1700; ts <= 2900; ts += 100) runFrame(ts);
-  expect(draw.mock.lastCall![1]).not.toHaveProperty('echo');
+  const rests: number[] = [];
+  for (let ts = 2100; ts <= 4700; ts += 100) {
+    runFrame(ts);
+    const e = draw.mock.lastCall![1].echo!;
+    expect(e).toBeTruthy();
+    rests.push(e.rest!);
+  }
+  for (let i = 1; i < rests.length; i++) expect(rests[i]).toBeGreaterThanOrEqual(rests[i - 1]);
+  expect(rests[0]).toBeCloseTo(0.1 / 2.5, 9); // a settle, not a jump
+  const last = draw.mock.lastCall![1].echo!;
+  expect(last).toMatchObject({ rest: 1, drift: REST_PHASE });
+  // The live opacity is held where it was (the resting look takes over line by line in the renderer).
+  expect(last.a).toBeCloseTo(playing.a, 9);
+  expect(last.sample).toBeUndefined();
 });
 
 it('uses the Unwind preset for the ripple on Unwind', () => {
@@ -324,42 +382,53 @@ it('draws the moon on Unwind under reduced motion, where there is no glide', () 
   expect(draw.mock.lastCall![1].moon).toEqual([1730, 112, 44]);
 });
 
-it('hidden pages restart the ripple from nothing', () => {
+it('hidden pages return with the lines at rest and the live opacity from nothing', () => {
   setReducedMotion(false);
   startMusic();
   render(<HorizonCanvas now={() => NOON} />);
-  for (let ts = 100; ts <= 1500; ts += 100) runFrame(ts);
-  expect(draw.mock.lastCall![1].echo!.a).toBeGreaterThan(0.1);
+  for (let ts = 100; ts <= 2000; ts += 100) runFrame(ts);
+  const before = draw.mock.lastCall![1].echo!.a;
+  expect(before).toBeGreaterThan(0.1);
+  expect(draw.mock.lastCall![1].echo!.rest).toBeUndefined();
   setHidden(true);
   act(() => void document.dispatchEvent(new Event('visibilitychange')));
   setHidden(false);
-  runFrame(1600);
-  expect(draw.mock.lastCall![1].echo!.a).toBeLessThan(0.1);
+  runFrame(2100);
+  const e = draw.mock.lastCall![1].echo!;
+  expect(e.a).toBeLessThan(before); // loudness restarted from nothing
+  // Music is still playing, so they lift from rest once the bands have been over the resume level a third of a second.
+  expect(e.rest).toBe(1);
+  for (let ts = 2200; ts <= 2500; ts += 100) runFrame(ts);
+  expect(draw.mock.lastCall![1].echo!.rest).toBeLessThan(1);
 });
 
-it('draws no ripple under reduced motion even while music plays', () => {
+it('reduced motion draws the lines at rest even while music plays', () => {
   setReducedMotion(true);
   startMusic();
   render(<HorizonCanvas now={() => NOON} />);
-  expect(draw.mock.lastCall![1]).not.toHaveProperty('echo');
+  expect(draw.mock.lastCall![1].echo).toEqual(restEcho(CAMERAS.work));
 });
 
-it('the review still shows only the idle lines, even with music playing, and only on Unwind; ?hz=unwind has the moon, others do not', () => {
+it('the review still shows the lines at rest, even with music playing, and none on the morning view; ?hz=unwind has the moon, others do not', () => {
   setReducedMotion(false);
   startMusic();
   window.history.replaceState(null, '', '/?hz=unwind&at=2026-11-11T16:00:00Z');
   const { unmount } = render(<HorizonCanvas now={() => 0} />);
   let o = draw.mock.lastCall![1];
-  expect(o.echo).toMatchObject({ n: 11, t: 0, amp: 34 * 0.35 });
-  expect(o.echo!.a).toBeCloseTo(0.9 * 0.45, 9);
+  expect(o.echo).toEqual(restEcho(CAMERAS.unwind));
+  expect(o.echo).toMatchObject({ n: 11, t: 0, rest: 1, restA: REST_OPACITY, drift: REST_PHASE });
   expect(o.echo!.sample).toBeUndefined();
   expect(o.moon).toEqual([1730, 112, 44]);
   unmount();
   window.history.replaceState(null, '', homeAt(16, 30));
-  render(<HorizonCanvas now={() => 0} />);
+  const second = render(<HorizonCanvas now={() => 0} />);
   o = draw.mock.lastCall![1];
-  expect(o).not.toHaveProperty('echo');
+  expect(o.echo).toEqual(restEcho(CAMERAS.home));
   expect(o).not.toHaveProperty('moon');
+  second.unmount();
+  window.history.replaceState(null, '', homeAt(7, 12));
+  render(<HorizonCanvas now={() => 0} />);
+  expect(draw.mock.lastCall![1]).not.toHaveProperty('echo');
 });
 
 it('does not draw while Zen is active, and resumes (gliding from the old camera) on leaving', () => {
@@ -832,27 +901,52 @@ describe('the Unwind visualizer', () => {
     }
   }
 
-  it('silent on Unwind: the idle lines, with no sample, on a clock at 0.4 of real time', () => {
+  it('silent on Unwind: the lines at rest, still on their resting phase, with no sample', () => {
     setReducedMotion(false);
     usePlaceStore.setState({ active: 'unwind' });
     render(<HorizonCanvas now={() => NOON} />);
-    for (let ts = 100; ts <= 1100; ts += 100) runFrame(ts);
-    const e = draw.mock.lastCall![1].echo!;
-    expect(e).toMatchObject({ n: 11, cx: 1330, hs: 900 });
-    expect(e.a).toBeCloseTo(0.9 * 0.45, 9);
-    expect(e.amp).toBeCloseTo(34 * 0.35, 9);
-    expect(e.sample).toBeUndefined();
-    expect(e.t).toBeCloseTo(1.1 * 0.4, 9); // eleven 0.1 s frames
+    for (let ts = 100; ts <= 1100; ts += 100) {
+      runFrame(ts);
+      expect(draw.mock.lastCall![1].echo).toMatchObject({ n: 11, cx: 1330, hs: 900, rest: 1, restA: REST_OPACITY, look: REST_LOOK, drift: REST_PHASE });
+    }
+    expect(draw.mock.lastCall![1].echo!.sample).toBeUndefined();
   });
 
-  it('silent on Work and Home: no echo at all', () => {
+  it('silent on Work and Home: their three lines at rest', () => {
     setReducedMotion(false);
     render(<HorizonCanvas now={() => NOON} />);
     for (let ts = 100; ts <= 600; ts += 100) runFrame(ts);
-    expect(draw.mock.lastCall![1]).not.toHaveProperty('echo');
+    expect(draw.mock.lastCall![1].echo).toMatchObject({ n: 3, a: 0, rest: 1, restA: REST_OPACITY, drift: REST_PHASE });
     act(() => usePlaceStore.getState().setActive('home'));
     for (let ts = 700; ts <= 3000; ts += 100) runFrame(ts);
-    expect(draw.mock.lastCall![1]).not.toHaveProperty('echo');
+    expect(draw.mock.lastCall![1].echo).toMatchObject({ n: 3, a: 0, rest: 1, restA: REST_OPACITY, drift: REST_PHASE });
+  });
+
+  it('band levels under the floor for a second and a half settle the lines even while sound plays', () => {
+    setReducedMotion(false);
+    usePlaceStore.setState({ active: 'unwind' });
+    const quiet = Array.from({ length: 32 }, () => 40); // well under the floor
+    const feedQuiet = (from: number, to: number) => {
+      for (let t = from; t <= to; t += 33) {
+        ingestLevels({ ...LOUD, bands: quiet }, t);
+        tickAudio(t);
+      }
+    };
+    feedBands(0, 2000);
+    render(<HorizonCanvas now={() => NOON} />);
+    for (let ts = 100; ts <= 2000; ts += 100) {
+      act(() => feedBands(2000 + ts, 2000 + ts + 99));
+      runFrame(ts);
+    }
+    expect(draw.mock.lastCall![1].echo!.rest).toBeUndefined();
+    const out: number[] = [];
+    for (let ts = 2100; ts <= 6400; ts += 100) {
+      act(() => feedQuiet(2000 + ts, 2000 + ts + 99));
+      runFrame(ts);
+      out.push(draw.mock.lastCall![1].echo!.rest ?? 0);
+    }
+    expect(out.slice(0, 14).every((r) => r === 0)).toBe(true); // still driving for about 1.5 s
+    expect(out[out.length - 1]).toBe(1); // then settled
   });
 
   it('playing on Unwind: prominent lines at ea, and a sample that reads the real bands, centre high and edges flat', () => {
@@ -887,19 +981,117 @@ describe('the Unwind visualizer', () => {
     expect(typeof e.sample).toBe('function');
   });
 
-  it('reduced motion on Unwind draws the idle lines once, static at t 0, even while music plays', () => {
+  /**
+   * Draw every frame the canvas passed (calls `from` onward) with the real renderer and measure the
+   * gap between adjacent frames' lines (`frameGap`) beyond what the range itself moved (the camera
+   * pans, so the rim moves too), and the largest opacity step.
+   */
+  async function glideGaps(from: number, popAlpha: number) {
+    const real = await vi.importActual<typeof import('./index')>('./index');
+    const frames = draw.mock.calls.slice(from).map((c) => {
+      const { ctx, strokes } = pathContext();
+      real.drawHorizon(ctx, c[1]);
+      return echoPaths(strokes, c[1].camera!.hy);
+    });
+    let beyond = 0;
+    let alpha = 0;
+    for (let k = 1; k < frames.length; k++) {
+      let rim = 0;
+      for (let i = 0; i < frames[k].rim.length; i += 4) rim = Math.max(rim, Math.abs(frames[k].rim[i] - frames[k - 1].rim[i]));
+      const g = frameGap(frames[k - 1].echo, frames[k].echo, popAlpha, rim + 1);
+      beyond = Math.max(beyond, g.worst - rim);
+      alpha = Math.max(alpha, g.alpha);
+    }
+    return { beyond, alpha, frames: frames.length };
+  }
+
+  it('gliding Work to Unwind and back with the lines at rest never makes a line appear, vanish or jump', async () => {
+    setReducedMotion(false);
+    render(<HorizonCanvas now={() => localMs(21, 42)} />);
+    let ts = 0;
+    for (let k = 0; k < 10; k++) runFrame((ts += 34));
+    const start = draw.mock.calls.length - 1;
+    act(() => usePlaceStore.getState().setActive('unwind'));
+    for (let k = 0; k < 60; k++) runFrame((ts += 34));
+    act(() => usePlaceStore.getState().setActive('work'));
+    for (let k = 0; k < 80; k++) runFrame((ts += 34));
+    expect(draw.mock.lastCall![1].camera).toEqual(CAMERAS.work);
+    const g = await glideGaps(start, 0.03);
+    expect(g.frames).toBeGreaterThan(120);
+    // Each line keeps its own level (it moves only as the range itself pans) ...
+    expect(g.beyond).toBeLessThan(0.5);
+    // ... and the two whole sets crossfade slowly as the drawn count follows the camera's at 4 a second.
+    // Measured 0.030 a frame (0.078 if the count followed the glide unlimited; a popping resting line
+    // would step by its whole 0.12 to 0.22).
+    expect(g.alpha).toBeLessThanOrEqual(0.1);
+    expect(g.alpha).toBeLessThan(0.05);
+    // The drawn count lands exactly on the camera's.
+    const lastCall = draw.mock.lastCall![1];
+    expect(lastCall.echo!.n).toBe(CAMERAS.work.en);
+  });
+
+  it('the drawn line count follows the camera\'s at no more than 4 a second and ends exactly on it; settled, it is the camera\'s whole count', () => {
+    setReducedMotion(false);
+    render(<HorizonCanvas now={() => localMs(21, 42)} />);
+    let ts = 0;
+    for (let k = 0; k < 5; k++) runFrame((ts += 34));
+    expect(draw.mock.lastCall![1].echo!.n).toBe(3);
+    act(() => usePlaceStore.getState().setActive('unwind'));
+    const counts: number[] = [];
+    const cams: number[] = [];
+    for (let k = 0; k < 90; k++) {
+      runFrame((ts += 34));
+      counts.push(draw.mock.lastCall![1].echo!.n);
+      cams.push(draw.mock.lastCall![1].camera!.en);
+    }
+    for (let i = 1; i < counts.length; i++) expect(Math.abs(counts[i] - counts[i - 1])).toBeLessThanOrEqual(4 * 0.034 + 1e-9);
+    expect(cams[cams.length - 1]).toBe(11);
+    expect(counts[counts.length - 1]).toBe(11);
+    // It lags the glide (which outruns it at its peak) and lands well under a second after the 1.6 s glide ends.
+    expect(counts.some((c, i) => c < cams[i] - 1)).toBe(true);
+    const landed = counts.indexOf(11);
+    expect(counts.slice(landed).every((c) => c === 11)).toBe(true);
+    expect((landed + 1) * 0.034).toBeLessThan(2.5);
+  });
+
+  it('gliding Work to Unwind during a settle never makes a line appear, vanish or jump', async () => {
+    setReducedMotion(false);
+    feedBands(0, 2000);
+    render(<HorizonCanvas now={() => localMs(21, 42)} />);
+    let ts = 0;
+    for (let k = 0; k < 70; k++) {
+      act(() => feedBands(2000 + ts, 2000 + ts + 33));
+      runFrame((ts += 34));
+    }
+    expect(draw.mock.lastCall![1].echo!.rest).toBeUndefined();
+    act(() => tickAudio(1e7)); // the music stops
+    const start = draw.mock.calls.length - 1;
+    act(() => usePlaceStore.getState().setActive('unwind'));
+    for (let k = 0; k < 40; k++) runFrame((ts += 34));
+    act(() => usePlaceStore.getState().setActive('work'));
+    for (let k = 0; k < 60; k++) runFrame((ts += 34));
+    const rests = draw.mock.calls.slice(start).map((c) => c[1].echo?.rest ?? 0);
+    expect(rests.some((r) => r > 0.2 && r < 0.8)).toBe(true); // the glide runs mid-settle
+    const g = await glideGaps(start, 0.03);
+    // Measured: 0.39 px beyond the range's own move (the settle itself), opacity steps up to 0.060
+    // (0.144 if the count followed the glide unlimited).
+    expect(g.beyond).toBeLessThan(1.5);
+    expect(g.alpha).toBeLessThanOrEqual(0.15);
+    expect(g.alpha).toBeLessThan(0.1);
+  });
+
+  it('reduced motion on Unwind draws the lines at rest once, even while music plays', () => {
     setReducedMotion(true);
     startMusic();
     usePlaceStore.setState({ active: 'unwind' });
     render(<HorizonCanvas now={() => NOON} />);
     expect(rafSpy).not.toHaveBeenCalled();
     const e = draw.mock.lastCall![1].echo!;
-    expect(e).toMatchObject({ n: 11, t: 0 });
-    expect(e.a).toBeCloseTo(0.9 * 0.45, 9);
+    expect(e).toEqual(restEcho(CAMERAS.unwind));
     expect(e.sample).toBeUndefined();
   });
 
-  it('no echo on the morning camera or during the swing from it to Unwind, idle lines included', () => {
+  it('no echo on the morning camera or during the swing from it to Unwind, resting lines included', () => {
     setReducedMotion(false);
     usePlaceStore.setState({ active: 'home' });
     render(<HorizonCanvas now={() => localMs(7, 12)} />);
@@ -913,7 +1105,7 @@ describe('the Unwind visualizer', () => {
     expect(draw.mock.calls.length).toBeGreaterThan(10);
     for (const c of draw.mock.calls.slice(0, -1)) expect(c[1]).not.toHaveProperty('echo');
     for (let k = 0; k < 8; k++, ts += 100) runFrame(ts);
-    expect(draw.mock.lastCall![1].echo!.a).toBeCloseTo(0.9 * 0.45, 9); // back once the swing has settled
+    expect(draw.mock.lastCall![1].echo!.restA).toBeCloseTo(REST_OPACITY, 9); // back once the swing has settled
   });
 
   it('display idle or off: the echo fades away and the band history stops; it all restarts on return', () => {
@@ -957,20 +1149,20 @@ describe('the Unwind visualizer', () => {
       let ms = localMs(7, 12);
       if (music) feedBands(0, 2000);
       render(<HorizonCanvas now={() => ms} />);
-      for (let ts = 100; ts <= 1300; ts += 100) {
+      for (let ts = 100; ts <= 2000; ts += 100) {
         if (music) act(() => feedBands(2000 + ts, 2000 + ts + 99));
         runFrame(ts);
       }
-      const before = draw.mock.lastCall![1].echo!.a;
-      expect(before).toBeCloseTo(music ? 1 : 0.9 * 0.45, 9);
+      const before = strength(draw.mock.lastCall![1].echo);
+      expect(before).toBeCloseTo(music ? 1 : REST_OPACITY, 9);
       act(() => usePlaceStore.getState().setActive('home'));
       draw.mockClear();
       const out: number[] = [];
-      let ts = 1400;
-      for (; ts <= 6200; ts += 100) {
+      let ts = 2100;
+      for (; ts <= 6900; ts += 100) {
         if (music) act(() => feedBands(2000 + ts, 2000 + ts + 99));
         runFrame(ts);
-        out.push(draw.mock.lastCall![1].echo?.a ?? 0);
+        out.push(strength(draw.mock.lastCall![1].echo));
       }
       expect(draw.mock.lastCall![1].camera).toBe(HOME_MORNING);
       expect(out[0]).toBeGreaterThan(0); // a fade, not a cut
@@ -990,7 +1182,7 @@ describe('the Unwind visualizer', () => {
         if (music) act(() => feedBands(2000 + ts, 2000 + ts + 99));
         runFrame(ts);
       }
-      expect(draw.mock.lastCall![1].echo!.a).toBeCloseTo(music ? 1 : 0.9 * 0.45, 9);
+      expect(strength(draw.mock.lastCall![1].echo)).toBeCloseTo(music ? 1 : REST_OPACITY, 9);
       ms = localMs(7, 13);
     });
   }
@@ -1006,7 +1198,7 @@ describe('the Unwind visualizer', () => {
     for (let ts = 1400; ts <= 2400; ts += 100) {
       act(() => feedBands(ts, ts + 99)); // music starts with the turn
       runFrame(ts);
-      out.push(draw.mock.lastCall![1].echo?.a ?? 0);
+      out.push(strength(draw.mock.lastCall![1].echo));
     }
     for (let i = 1; i < out.length; i++) expect(out[i]).toBeLessThanOrEqual(out[i - 1]);
     expect(out[out.length - 1]).toBe(0);
