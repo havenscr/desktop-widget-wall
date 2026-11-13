@@ -72,8 +72,8 @@ it('shows only the available links and asks Rust to open them by kind', async ()
   withLinks({ security: true, portal: false }, (a) => void opened.push(a));
   render(<NetworkTile />);
   await flush();
-  expect(screen.queryByRole('button', { name: 'Firewalla' })).toBeNull();
-  fireEvent.click(screen.getByRole('button', { name: 'Security' }));
+  expect(screen.queryByRole('button', { name: 'Open Firewalla' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Alarms' }));
   await flush();
   expect(opened).toEqual([{ kind: 'security' }]);
 });
@@ -86,7 +86,7 @@ it('opens the portal link by kind, and a failure shows Could not open for 3 seco
   });
   render(<NetworkTile />);
   await flush();
-  fireEvent.click(screen.getByRole('button', { name: 'Firewalla' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Open Firewalla' }));
   await flush();
   expect(opened).toEqual([{ kind: 'portal' }]);
   expect(screen.getByText('Could not open')).toBeTruthy();
@@ -94,13 +94,13 @@ it('opens the portal link by kind, and a failure shows Could not open for 3 seco
   expect(screen.queryByText('Could not open')).toBeNull();
 });
 
-it('keeps the Security button when the security read fails or is not set up', async () => {
+it('keeps the Alarms button when the security read fails or is not set up', async () => {
   mocks.set('wall2_home_security', () => Promise.reject(new Error('not-configured')));
   mocks.set('wall2_links', () => ({ security: true, portal: false }));
   render(<NetworkTile />);
   await flush();
   expect(screen.getByText('Not set up')).toBeTruthy();
-  expect(screen.getByRole('button', { name: 'Security' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Alarms' })).toBeTruthy();
 });
 
 it('refreshes link availability after every attempt, even with the same portal', async () => {
@@ -109,11 +109,11 @@ it('refreshes link availability after every attempt, even with the same portal',
   mocks.set('wall2_links', () => ({ security, portal: true }));
   render(<NetworkTile />);
   await flush();
-  expect(screen.getByRole('button', { name: 'Security' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Alarms' })).toBeTruthy();
   security = false;
   await flush(300_000);
-  expect(screen.queryByRole('button', { name: 'Security' })).toBeNull();
-  expect(screen.getByRole('button', { name: 'Firewalla' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Alarms' })).toBeNull();
+  expect(screen.getByRole('button', { name: 'Open Firewalla' })).toBeTruthy();
 });
 
 it('fills the card: numbers the feed has, up to three alert rows and the rest as a number', async () => {

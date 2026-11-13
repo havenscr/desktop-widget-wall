@@ -786,7 +786,7 @@ frame (no ribbon) in the wide zones `470px 1fr 540px`. The parts are in `wall/sr
 - **Right wing.** The Room card (`RoomCard.tsx`), at the concept's size and place: 120 px
   tall, its foot 38 px above the end of the other places' 490 px band, so its top is 332
   px down and its foot sits level with the transport (`UNWIND_ROOM_*` in
-  `screens/frameLayout.ts`, passed to the stylesheet as `--room-top`), "Room"
+  `screens/frameLayout.ts`, passed to the stylesheet as `--room-top`), "Lights"
   over a row of 40 px mood chips. The home moods come from `wall2_moods`; a click applies
   one with `wall2_apply_mood`, and the last mood applied (here or on Home's mood cards) is
   marked for three hours (the id is `wall2-last-mood`, shared with Home in its plain
@@ -946,7 +946,7 @@ file is read on every call, so a change applies on the next refresh.
 - `homeSecurityUrl` is optional: the full address of the home app's Security page,
   for example `"homeSecurityUrl": "https://example.invalid/app/#/security"`. It must
   be `https`, may have any path, query or fragment, and may not carry a user name.
-  Missing or invalid means the Security button stays hidden.
+  Missing or invalid means the Alarms button stays hidden.
 
 ### Task card (Work tab, top right)
 
@@ -1033,8 +1033,8 @@ the alerts carry no readable text, the card shows "N open alerts" instead.
 - "Not set up" when there is no address.
 
 Two buttons share the bottom of the card, each half its width and 52 design pixels
-tall (see "Pointer and touch" below), shown only when available. **Security** opens `homeSecurityUrl` from `feeds.json`.
-**Firewalla** opens the `portalUrl` from the most recent good security read, and
+tall (see "Pointer and touch" below), shown only when available. **Alarms** opens `homeSecurityUrl` from `feeds.json`.
+**Open Firewalla** opens the `portalUrl` from the most recent good security read, and
 only when it is `https` on `firewalla.net` or a subdomain. Both open in the default
 browser, and Rust does the opening (`wall2_open_link`, kinds `security` and
 `portal`); the web view only names the kind and never supplies a URL, and

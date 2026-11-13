@@ -351,6 +351,15 @@
 .next .t1 {
   max-width: 458px;
 }
+/* The Focus row is hidden (the centre shows Focus): the title may take two lines. */
+.next .t1.next-two {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
 .focus-mini {
   position: relative;
   display: flex;

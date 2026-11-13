@@ -4,6 +4,7 @@ import type { WeatherState } from '../weather/useWeather';
 import { WeatherCardView } from '../weather/WeatherCard';
 import { WeatherIcon } from '../weather/WeatherIcon';
 import { Lanes } from './Lanes';
+import { cards } from './model';
 import { agentsStale, retryAgents, useAgents } from './useAgents';
 
 /**
@@ -87,4 +88,14 @@ export function CentreSlot({ weather }: { weather: WeatherState }) {
   if (a.status === 'unconfigured') return <Fill weather={weather} note={<AgentsNote unreachable={false} />} />;
   if (a.status === 'unreachable') return <Fill weather={weather} note={<AgentsNote unreachable />} />;
   return <Fill weather={weather} />;
+}
+
+/**
+ * True when Work's centre shows the Focus card: always except when the agent lanes show at
+ * least one session (the same choice `CentreSlot` makes). The left wing then hides its
+ * small Focus row, so the timer is shown once.
+ */
+export function useCentreShowsFocus(): boolean {
+  const a = useAgents();
+  return !(a.status === 'ready' && a.summary && cards(a.summary).length > 0);
 }
