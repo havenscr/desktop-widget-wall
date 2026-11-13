@@ -110,7 +110,7 @@ fn is_extended(vk: u16) -> bool {
 /// combination of modifiers and at most one ordinary key. Returns None for anything outside
 /// the vocabulary, an empty step or chord, a repeated modifier, more than one ordinary key
 /// in a step, or more than six steps.
-pub(crate) fn parse_chord(text: &str) -> Option<Vec<Step>> {
+fn parse_steps(text: &str) -> Option<Vec<Step>> {
     if text.is_empty() || text.chars().count() > MAX_CHORD_CHARS {
         return None;
     }
@@ -196,6 +196,18 @@ pub(crate) fn still_down(events: &[Event], sent: usize) -> Vec<u16> {
     down
 }
 
+/// Chords Windows does not accept from a program, so they could only fail or mislead: Win+L
+/// (lock) and Ctrl+Alt+Delete. Alt+F4 stays allowed.
+pub(crate) fn blocked_chord(steps: &[Step]) -> bool {
+    steps.iter().any(|st| (st.mods & WIN != 0 && st.key == Some(b'L' as u16)) || (st.mods & CTRL != 0 && st.mods & ALT != 0 && st.key == Some(0x2E)))
+}
+
+/// A chord in the fixed vocabulary that a program can send; None otherwise (see
+/// `parse_steps` for the vocabulary rules and `blocked_chord` for the refused ones).
+pub(crate) fn parse_chord(text: &str) -> Option<Vec<Step>> {
+    parse_steps(text).filter(|steps| !blocked_chord(steps))
+}
+
 // Section: config
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -243,6 +255,28 @@ pub(crate) struct Config {
 /// The built-in default when there is no `keys.json`: Power BI Desktop with two keys. Both
 /// chords are unverified on a real machine; `keys.json` replaces them.
 pub(crate) const DEFAULT_CONFIG: &str = r#"{"apps":[{"id":"powerbi","name":"Power BI","exe":"PBIDesktop.exe","keys":[{"label":"Refresh","icon":"refresh","chord":"Alt+H, R"},{"label":"Snip","icon":"screenshot","chord":"Win+Shift+S"}]}]}"#;
+
+/// The icon names a key may use. The front end draws exactly these (`keyIcons.tsx`, and a test
+/// there reads this list); anything else is a config error.
+pub(crate) const ICON_NAMES: [&str; 17] = [
+    "refresh",
+    "screenshot",
+    "camera",
+    "clipboard",
+    "desktop",
+    "brush",
+    "gauge",
+    "code",
+    "copy",
+    "save",
+    "undo",
+    "search",
+    "lock",
+    "mic",
+    "play",
+    "window",
+    "keyboard",
+];
 
 /// A short display text: ASCII letters, digits, spaces and a few marks; no control
 /// characters; no leading or trailing space.
@@ -311,8 +345,12 @@ pub(crate) fn parse_config(text: &str) -> Result<Config, String> {
             let m = ki + 1;
             let kf = |k: &str| key.get(k).and_then(Value::as_str);
             let label = kf("label").filter(|s| valid_label(s, MAX_LABEL_CHARS)).ok_or_else(|| format!("app {n}, key {m}: label is missing or not plain text"))?;
-            let icon = kf("icon").filter(|s| valid_id(s, MAX_ID_CHARS)).ok_or_else(|| format!("app {n}, key {m}: icon must be lower case letters, digits and dashes"))?;
-            let chord = kf("chord").and_then(parse_chord).ok_or_else(|| format!("app {n}, key {m}: chord is not in the allowed key list"))?;
+            let icon = kf("icon").filter(|s| ICON_NAMES.contains(s)).ok_or_else(|| format!("app {n} (set \"{id}\"), key {m}: icon is not one of the allowed names"))?;
+            let chord = match kf("chord").and_then(parse_steps) {
+                None => return Err(format!("app {n}, key {m}: chord is not in the allowed key list")),
+                Some(steps) if blocked_chord(&steps) => return Err(format!("app {n}, key {m}: Windows does not accept that chord from a program")),
+                Some(steps) => steps,
+            };
             defs.push(KeyDef { label: label.to_string(), icon: icon.to_string(), chord });
         }
         out.push(AppDef { id: id.to_string(), name: name.to_string(), matcher, keys: defs });
@@ -471,21 +509,42 @@ pub(crate) fn summarise(config: &Config, source: &'static str, remembered: Optio
     }
 }
 
-/// The loaded config: the file when present (an invalid file is an error, never silently
-/// replaced), else the built-in default.
-fn load_config(app: &tauri::AppHandle) -> Result<(Config, &'static str), String> {
-    use std::io::Read;
-    use tauri::Manager;
-    let default = || parse_config(DEFAULT_CONFIG).map(|c| (c, "default"));
-    let Ok(dir) = app.path().app_config_dir() else { return default() };
-    let Ok(file) = std::fs::File::open(dir.join("keys.json")) else { return default() };
-    let mut buf = Vec::new();
-    file.take(MAX_FILE_BYTES + 1).read_to_end(&mut buf).map_err(|_| "keys.json could not be read".to_string())?;
+/// The loaded config from what reading the file gave: only a file that does not exist falls
+/// back to the built-in keys; any other failure is the fixed "could not be read" state, with no
+/// keys offered. An invalid file is an error too, never silently replaced.
+pub(crate) fn config_from_read(read: Result<Vec<u8>, std::io::ErrorKind>) -> Result<(Config, &'static str), String> {
+    let buf = match read {
+        Err(std::io::ErrorKind::NotFound) => return parse_config(DEFAULT_CONFIG).map(|c| (c, "default")),
+        Err(_) => return Err(UNREADABLE.to_string()),
+        Ok(buf) => buf,
+    };
     if buf.len() as u64 > MAX_FILE_BYTES {
         return Err("keys.json is larger than 32 KB".to_string());
     }
     let text = String::from_utf8(buf).map_err(|_| "keys.json is not text".to_string())?;
     parse_config(&text).map(|c| (c, "file"))
+}
+
+/// Shown when `keys.json` exists but cannot be read (permissions, a sharing violation).
+pub(crate) const UNREADABLE: &str = "keys file could not be read";
+
+/// Read the file, at most one byte past the limit.
+fn read_keys_file(path: &std::path::Path) -> Result<Vec<u8>, std::io::ErrorKind> {
+    use std::io::Read;
+    let file = std::fs::File::open(path).map_err(|e| e.kind())?;
+    let mut buf = Vec::new();
+    file.take(MAX_FILE_BYTES + 1).read_to_end(&mut buf).map_err(|e| e.kind())?;
+    Ok(buf)
+}
+
+fn load_config(app: &tauri::AppHandle) -> Result<(Config, &'static str), String> {
+    use tauri::Manager;
+    // No config folder at all is the same as no file: the built-in keys.
+    let read = match app.path().app_config_dir() {
+        Ok(dir) => read_keys_file(&dir.join("keys.json")),
+        Err(_) => Err(std::io::ErrorKind::NotFound),
+    };
+    config_from_read(read)
 }
 
 /// The program the owner is working in, and its keys. An error (a fixed word) on a system the
@@ -600,7 +659,7 @@ mod win {
             same_process: exists && pid == rem.pid,
             image: if exists { sys::image_path(pid) } else { None },
             own: pid == std::process::id(),
-            elevated: exists && sys::out_of_reach(pid, sys::self_elevated()),
+            elevated: exists && sys::keys_blocked(pid),
         }
     }
 
@@ -826,6 +885,65 @@ mod tests {
     }
 
     #[test]
+    fn chords_windows_will_not_accept_from_a_program_are_refused() {
+        for bad in ["Win+L", "win+l", "Win+Shift+L", "Ctrl+Alt+Delete", "Alt+Ctrl+Delete", "Ctrl+Alt+Shift+Delete", "A, Win+L", "Ctrl+Alt+Delete, A"] {
+            assert!(parse_chord(bad).is_none(), "{bad:?}");
+        }
+        // Alt+F4 and near misses stay allowed.
+        for good in ["Alt+F4", "Win+D", "Win+V", "Ctrl+Delete", "Alt+Delete", "Ctrl+Alt+L", "Win+K", "Delete"] {
+            assert!(parse_chord(good).is_some(), "{good:?}");
+        }
+        let text = config_with(r#"{"label":"Lock","icon":"lock","chord":"Win+L"}"#);
+        let err = parse_config(&text).unwrap_err();
+        assert!(err.contains("app 1, key 1") && err.contains("does not accept that chord"), "{err}");
+    }
+
+    #[test]
+    fn every_allowed_icon_name_is_accepted_and_an_unknown_one_names_the_set_and_key() {
+        for name in ICON_NAMES {
+            let text = config_with(&format!(r#"{{"label":"A","icon":"{name}","chord":"A"}}"#));
+            assert!(parse_config(&text).is_ok(), "{name}");
+        }
+        assert_eq!(ICON_NAMES.len(), 17);
+        let unique: HashSet<&str> = ICON_NAMES.iter().copied().collect();
+        assert_eq!(unique.len(), ICON_NAMES.len());
+        let key = r#"{"label":"A","icon":"refresh","chord":"A"}"#;
+        let text = config_with(&format!(r#"{key},{{"label":"B","icon":"refersh","chord":"A"}}"#));
+        let err = parse_config(&text).unwrap_err();
+        assert!(err.contains("set \"pbi\"") && err.contains("key 2") && err.contains("icon"), "{err}");
+        assert!(!err.contains("refersh"), "the file's own text is never repeated: {err}");
+        for bad in ["", "Refresh", "REFRESH", "<b>", "x", "refresh "] {
+            let text = config_with(&format!(r#"{{"label":"A","icon":"{bad}","chord":"A"}}"#));
+            assert!(parse_config(&text).is_err(), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn only_a_missing_keys_file_falls_back_to_the_built_in_keys() {
+        use std::io::ErrorKind;
+        let (c, source) = config_from_read(Err(ErrorKind::NotFound)).expect("missing is fine");
+        assert_eq!((source, c.apps.len()), ("default", 1));
+        for kind in [ErrorKind::PermissionDenied, ErrorKind::Other, ErrorKind::TimedOut, ErrorKind::WouldBlock, ErrorKind::InvalidData] {
+            assert_eq!(config_from_read(Err(kind)), Err(UNREADABLE.to_string()), "{kind:?}");
+        }
+        let good = config_with(r#"{"label":"A","icon":"keyboard","chord":"A"}"#);
+        assert_eq!(config_from_read(Ok(good.into_bytes())).map(|(_, s)| s), Ok("file"));
+        assert!(config_from_read(Ok(vec![b'x'; 40_000])).unwrap_err().contains("larger than 32 KB"));
+        assert!(config_from_read(Ok(vec![0xff, 0xfe])).is_err());
+        assert!(config_from_read(Ok(b"nope".to_vec())).is_err(), "an invalid file is never replaced by the default");
+    }
+
+    #[test]
+    fn a_real_unreadable_path_is_not_a_missing_one() {
+        let missing = std::env::temp_dir().join("wall2-keys-test-missing-folder").join("keys.json");
+        assert_eq!(read_keys_file(&missing), Err(std::io::ErrorKind::NotFound));
+        // A folder where the file should be cannot be read as a file.
+        let dir = std::env::temp_dir();
+        let got = read_keys_file(&dir);
+        assert!(got.is_err() && got != Err(std::io::ErrorKind::NotFound), "{got:?}");
+    }
+
+    #[test]
     fn spaces_and_case_do_not_matter() {
         assert_eq!(chord("  alt + h ,r "), chord("Alt+H, R"));
         assert_eq!(chord("CTRL+SHIFT+F5"), chord("Ctrl+Shift+f5"));
@@ -936,7 +1054,7 @@ mod tests {
 
     #[test]
     fn config_bounds_hold() {
-        let key = r#"{"label":"A","icon":"x","chord":"A"}"#;
+        let key = r#"{"label":"A","icon":"keyboard","chord":"A"}"#;
         let nine = vec![key; 9].join(",");
         assert!(parse_config(&config_with(&nine)).unwrap_err().contains("between 1 and 8"));
         let eight = vec![key; 8].join(",");
@@ -964,12 +1082,12 @@ mod tests {
             r#""text":"hello""#,
         ];
         for c in bad_chords {
-            let text = config_with(&format!(r#"{{"label":"X","icon":"x",{c}}}"#));
+            let text = config_with(&format!(r#"{{"label":"X","icon":"keyboard",{c}}}"#));
             assert!(parse_config(&text).is_err(), "{c}");
         }
         // Delays and key codes by number have nowhere to go: unknown fields are ignored, and
         // the chord still has to be valid.
-        let text = config_with(r#"{"label":"X","icon":"x","chord":"A","delayMs":60000,"vk":13,"text":"rm"}"#);
+        let text = config_with(r#"{"label":"X","icon":"keyboard","chord":"A","delayMs":60000,"vk":13,"text":"rm"}"#);
         let c = parse_config(&text).expect("extra fields are ignored");
         assert_eq!(c.apps[0].keys[0].chord, chord("A"));
     }
@@ -977,22 +1095,22 @@ mod tests {
     #[test]
     fn labels_ids_and_exe_names_are_plain() {
         for bad_label in ["", " A", "A ", "<b>", "A\nB", "this label is far too long", "é", "A\"B"] {
-            let text = config_with(&format!(r#"{{"label":{},"icon":"x","chord":"A"}}"#, serde_json::to_string(bad_label).unwrap()));
+            let text = config_with(&format!(r#"{{"label":{},"icon":"keyboard","chord":"A"}}"#, serde_json::to_string(bad_label).unwrap()));
             assert!(parse_config(&text).is_err(), "{bad_label:?}");
         }
         for bad_exe in ["", ".exe", "tool", "tool.dll", r"C:\x\tool.exe", "a/b.exe", "..\\tool.exe", "tool.exe ", &format!("{}.exe", "a".repeat(70))] {
-            let text = format!(r#"{{"apps":[{{"id":"a","name":"A","exe":{},"keys":[{{"label":"A","icon":"x","chord":"A"}}]}}]}}"#, serde_json::to_string(bad_exe).unwrap());
+            let text = format!(r#"{{"apps":[{{"id":"a","name":"A","exe":{},"keys":[{{"label":"A","icon":"keyboard","chord":"A"}}]}}]}}"#, serde_json::to_string(bad_exe).unwrap());
             assert!(parse_config(&text).is_err(), "{bad_exe:?}");
         }
         for bad_id in ["", "A", "a b", "a_b", "a/b", &"a".repeat(25)] {
-            let text = format!(r#"{{"apps":[{{"id":{},"name":"A","exe":"a.exe","keys":[{{"label":"A","icon":"x","chord":"A"}}]}}]}}"#, serde_json::to_string(bad_id).unwrap());
+            let text = format!(r#"{{"apps":[{{"id":{},"name":"A","exe":"a.exe","keys":[{{"label":"A","icon":"keyboard","chord":"A"}}]}}]}}"#, serde_json::to_string(bad_id).unwrap());
             assert!(parse_config(&text).is_err(), "{bad_id:?}");
         }
     }
 
     #[test]
     fn duplicates_and_shapes_are_refused() {
-        let key = r#"{"label":"A","icon":"x","chord":"A"}"#;
+        let key = r#"{"label":"A","icon":"keyboard","chord":"A"}"#;
         let app = |id: &str, exe: &str| format!(r#"{{"id":"{id}","name":"A","exe":"{exe}","keys":[{key}]}}"#);
         assert!(parse_config(&format!(r#"{{"apps":[{},{}]}}"#, app("a", "a.exe"), app("a", "b.exe"))).unwrap_err().contains("id is used twice"));
         assert!(parse_config(&format!(r#"{{"apps":[{},{}]}}"#, app("a", "A.exe"), app("b", "a.EXE"))).unwrap_err().contains("exe is used twice"));
@@ -1001,7 +1119,7 @@ mod tests {
         }
         assert_eq!(parse_config(r#"{"apps":[]}"#), Ok(Config { apps: vec![] }));
         // The error text never repeats the file's own words.
-        let err = parse_config(&config_with(r#"{"label":"X","icon":"x","chord":"SECRETWORD"}"#)).unwrap_err();
+        let err = parse_config(&config_with(r#"{"label":"X","icon":"keyboard","chord":"SECRETWORD"}"#)).unwrap_err();
         assert!(!err.contains("SECRETWORD"), "{err}");
     }
 
@@ -1060,7 +1178,7 @@ mod tests {
 
     #[test]
     fn only_one_general_set_and_match_must_be_a_star() {
-        let key = r#"{"label":"A","icon":"x","chord":"A"}"#;
+        let key = r#"{"label":"A","icon":"keyboard","chord":"A"}"#;
         let set = |id: &str, extra: &str| format!(r#"{{"id":"{id}","name":"A",{extra},"keys":[{key}]}}"#);
         assert!(parse_config(&format!(r#"{{"apps":[{},{}]}}"#, set("a", r#""match":"*""#), set("b", r#""match":"*""#))).unwrap_err().contains("only one general"));
         for bad in [r#""match":"all""#, r#""match":"""#, r#""match":1"#, r#""match":"*","exe":"a.exe""#, r#""match":"*.exe""#] {

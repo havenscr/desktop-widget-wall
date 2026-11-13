@@ -49,14 +49,18 @@ impl Layout {
     }
 }
 
-/// Equal columns across the work area for `n` windows (at most three). The last column
-/// takes the rounding remainder, so the columns always cover the width exactly.
+/// The columns for `n` windows (at most three): one window gets the centred third, two make
+/// halves, three make thirds. The columns of two and three cover the width exactly (the last
+/// takes the rounding remainder).
 fn columns(work: Rect, n: usize) -> Vec<Rect> {
     let k = n.min(MAX_COLUMNS) as i64;
     if k == 0 {
         return Vec::new();
     }
     let w = work.width() as i64;
+    if k == 1 {
+        return vec![Rect { left: work.left + (w / 3) as i32, top: work.top, right: work.left + (w * 2 / 3) as i32, bottom: work.bottom }];
+    }
     (0..k)
         .map(|i| Rect {
             left: work.left + (w * i / k) as i32,
@@ -171,6 +175,8 @@ pub(crate) fn choose_monitor(monitors: &[Monitor], wall: isize) -> Option<usize>
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct WinRec {
     pub id: isize,
+    /// The process the window belonged to when it was looked at.
+    pub pid: u32,
     pub monitor: isize,
     pub visible: bool,
     pub minimised: bool,
@@ -202,6 +208,15 @@ impl WinRec {
     }
 }
 
+/// The rule checked immediately before a window is saved or moved: the later look must show
+/// the same handle, still a window of the same process, still on the same monitor, and still
+/// eligible (visible, not minimised, not the wall's own, not a shell or tool window and so
+/// on). A closed window (no later look) or a handle another program reused fails it, and
+/// that candidate is skipped.
+pub(crate) fn revalidate(enumerated: &WinRec, later: Option<&WinRec>) -> bool {
+    later.is_some_and(|l| l.id == enumerated.id && l.pid == enumerated.pid && l.monitor == enumerated.monitor && l.eligible())
+}
+
 /// The windows a layout may place: ordinary application windows on `monitor`, in the order
 /// given (z order, topmost first), at most `max`. Returns indices into `recs`.
 pub(crate) fn pick_windows(recs: &[WinRec], monitor: isize, max: usize) -> Vec<usize> {
@@ -215,26 +230,103 @@ pub(crate) fn pick_windows(recs: &[WinRec], monitor: isize, max: usize) -> Vec<u
 
 // Section: undo
 
-/// What one layout click moved, kept for one step of undo.
+/// Who a saved position belongs to: the handle and the process it had.
+pub(crate) type UndoKey = (isize, u32);
+
+/// What layout clicks moved, kept for one step of undo.
 pub(crate) struct UndoSet<T> {
-    entries: Vec<T>,
+    entries: Vec<(UndoKey, T)>,
     at: Instant,
 }
 
 impl<T> UndoSet<T> {
-    pub fn new(entries: Vec<T>, at: Instant) -> Self {
+    pub fn new(entries: Vec<(UndoKey, T)>, at: Instant) -> Self {
         UndoSet { entries, at }
     }
 }
 
+/// Remember what a layout click moved. While an earlier set is still offered, each window
+/// already saved keeps its earlier position (so Undo returns to the arrangement before the
+/// first click) and windows not yet saved are added; a set past its window is dropped
+/// first. The time restarts on every click.
+pub(crate) fn merge_undo<T>(slot: &mut Option<UndoSet<T>>, fresh: Vec<(UndoKey, T)>, now: Instant) {
+    let mut entries = match slot.take() {
+        Some(old) if now.saturating_duration_since(old.at) <= UNDO_WINDOW => old.entries,
+        _ => Vec::new(),
+    };
+    for (key, saved) in fresh {
+        if !entries.iter().any(|(k, _)| *k == key) {
+            entries.push((key, saved));
+        }
+    }
+    *slot = Some(UndoSet { entries, at: now });
+}
+
 /// Take the remembered set out of the slot. The slot is empty afterwards either way, so a
 /// second undo finds nothing. None when there is nothing or it is older than the window.
-pub(crate) fn take_undo<T>(slot: &mut Option<UndoSet<T>>, now: Instant) -> Option<Vec<T>> {
+pub(crate) fn take_undo<T>(slot: &mut Option<UndoSet<T>>, now: Instant) -> Option<Vec<(UndoKey, T)>> {
     let set = slot.take()?;
     if now.saturating_duration_since(set.at) > UNDO_WINDOW || set.entries.is_empty() {
         return None;
     }
     Some(set.entries)
+}
+
+// Section: applying a layout
+
+/// What the Windows layer does to one window, so the rule around it can be tested with a
+/// fake desktop (a closed window, a reused handle, a maximised window that will not restore).
+pub(crate) trait Desktop {
+    type Saved;
+    /// A fresh look at one window; None when it no longer exists.
+    fn look(&mut self, id: isize) -> Option<WinRec>;
+    /// The window's position and state before the move.
+    fn save(&mut self, id: isize) -> Option<Self::Saved>;
+    /// Restore it if maximised, then place its visible frame on `target`. True when the
+    /// request was accepted.
+    fn place(&mut self, id: isize, target: Rect) -> bool;
+}
+
+pub(crate) struct Placed<S> {
+    pub key: UndoKey,
+    pub target: Rect,
+    pub saved: Option<S>,
+}
+
+/// Place the chosen windows. `candidates` are the enumerated records in z order, `lefts` their
+/// current left edges. Each candidate is looked at again immediately before it is saved or
+/// moved and skipped when `revalidate` fails; a window whose move was not accepted is left out
+/// (and has no undo entry).
+pub(crate) fn apply<D: Desktop>(desk: &mut D, layout: Layout, work: Rect, candidates: &[WinRec], lefts: &[(isize, i32)]) -> Vec<Placed<D::Saved>> {
+    let mut out = Vec::new();
+    for (id, target) in plan(layout, work, lefts) {
+        let Some(rec) = candidates.iter().find(|c| c.id == id) else { continue };
+        let later = desk.look(id);
+        if !revalidate(rec, later.as_ref()) {
+            continue;
+        }
+        let saved = desk.save(id);
+        if desk.place(id, target) {
+            out.push(Placed { key: (id, rec.pid), target, saved });
+        }
+    }
+    out
+}
+
+/// Pixels of slack when checking that a window reached its place.
+pub(crate) const ARRIVAL_SLACK: i32 = 3;
+
+/// Whether a window's visible frame sits on its target, within a few pixels.
+pub(crate) fn reached(frame: Rect, target: Rect) -> bool {
+    let near = |a: i32, b: i32| (a - b).abs() <= ARRIVAL_SLACK;
+    near(frame.left, target.left) && near(frame.top, target.top) && near(frame.right, target.right) && near(frame.bottom, target.bottom)
+}
+
+/// How many windows were asked and how many reached their place.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+pub struct ArrangeResult {
+    pub moved: u32,
+    pub asked: u32,
 }
 
 // Section: commands
@@ -243,6 +335,8 @@ pub(crate) fn take_undo<T>(slot: &mut Option<UndoSet<T>>, now: Instant) -> Optio
 const NO_BIG_SCREEN: &str = "no big screen";
 const NO_WINDOWS: &str = "no windows";
 const NOTHING_TO_UNDO: &str = "nothing to undo";
+#[cfg_attr(not(windows), allow(dead_code))]
+const NONE_MOVED: &str = "none moved";
 #[cfg_attr(not(windows), allow(dead_code))]
 const BUSY: &str = "busy";
 #[cfg_attr(windows, allow(dead_code))]
@@ -266,9 +360,10 @@ pub async fn wall2_arrange_status(window: tauri::WebviewWindow) -> Result<bool, 
     }
 }
 
-/// Lay out the top windows on the big screen. Returns how many windows moved.
+/// Lay out the top windows on the big screen. Returns how many windows were asked and how many
+/// reached their place.
 #[tauri::command]
-pub async fn wall2_arrange(window: tauri::WebviewWindow, layout: String) -> Result<u32, String> {
+pub async fn wall2_arrange(window: tauri::WebviewWindow, layout: String) -> Result<ArrangeResult, String> {
     require_wall2(window.label())?;
     let layout = parse_layout(&layout).ok_or_else(|| "unknown layout".to_string())?;
     #[cfg(windows)]
@@ -319,12 +414,17 @@ mod win {
         SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE, SWP_NOZORDER, SW_RESTORE, WINDOWPLACEMENT, WS_EX_TOOLWINDOW, WS_THICKFRAME,
     };
 
+    /// How long a maximised window gets to restore before it is skipped.
+    const RESTORE_WAIT: Duration = Duration::from_millis(200);
+    /// How long, in all, the windows get to reach their places before they are counted.
+    const ARRIVAL_WAIT: Duration = Duration::from_millis(250);
+    const POLL: Duration = Duration::from_millis(25);
+
     /// Held while a layout or an undo runs, so clicks never overlap.
     static WORKING: AtomicBool = AtomicBool::new(false);
 
     struct Saved {
         hwnd: isize,
-        pid: u32,
         placement: WINDOWPLACEMENT,
     }
 
@@ -379,6 +479,7 @@ mod win {
             let style = GetWindowLongW(hw, GWL_STYLE) as u32;
             let mut rec = WinRec {
                 id: h,
+                pid,
                 monitor,
                 visible,
                 minimised,
@@ -413,31 +514,60 @@ mod win {
         }
     }
 
-    /// Restore a maximised window, then place it. True when the move was accepted.
-    fn place(h: isize, target: Rect) -> bool {
-        let hw = sys::hwnd(h);
-        unsafe {
-            if IsZoomed(hw).as_bool() {
-                let _ = ShowWindowAsync(hw, SW_RESTORE);
+    struct WinDesk {
+        self_elevated: bool,
+    }
+
+    impl Desktop for WinDesk {
+        type Saved = Saved;
+
+        fn look(&mut self, id: isize) -> Option<WinRec> {
+            if !unsafe { IsWindow(sys::hwnd(id)).as_bool() } {
+                return None;
             }
-            let outer = match frame_of(h) {
-                Some((win, frame)) => outer_target(target, win, frame),
-                None => target,
-            };
-            SetWindowPos(
-                hw,
-                HWND::default(),
-                outer.left,
-                outer.top,
-                outer.width(),
-                outer.height(),
-                SWP_NOZORDER | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS,
-            )
-            .is_ok()
+            Some(record(id, monitor_of(id), self.self_elevated))
+        }
+
+        fn save(&mut self, id: isize) -> Option<Saved> {
+            let mut placement = WINDOWPLACEMENT { length: std::mem::size_of::<WINDOWPLACEMENT>() as u32, ..Default::default() };
+            unsafe { GetWindowPlacement(sys::hwnd(id), &mut placement).is_ok() }.then_some(Saved { hwnd: id, placement })
+        }
+
+        /// A maximised window is restored and given up to 200 ms to leave the maximised state;
+        /// only then are its frame measured and the move posted. One that is still maximised
+        /// is skipped, never placed from the wrong state.
+        fn place(&mut self, id: isize, target: Rect) -> bool {
+            let hw = sys::hwnd(id);
+            unsafe {
+                if IsZoomed(hw).as_bool() {
+                    let _ = ShowWindowAsync(hw, SW_RESTORE);
+                    let started = Instant::now();
+                    while IsZoomed(hw).as_bool() {
+                        if started.elapsed() >= RESTORE_WAIT {
+                            return false;
+                        }
+                        std::thread::sleep(Duration::from_millis(10));
+                    }
+                }
+                let outer = match frame_of(id) {
+                    Some((win, frame)) => outer_target(target, win, frame),
+                    None => target,
+                };
+                SetWindowPos(
+                    hw,
+                    HWND::default(),
+                    outer.left,
+                    outer.top,
+                    outer.width(),
+                    outer.height(),
+                    SWP_NOZORDER | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS,
+                )
+                .is_ok()
+            }
         }
     }
 
-    pub fn arrange(layout: Layout, wall: Option<isize>) -> Result<u32, &'static str> {
+    pub fn arrange(layout: Layout, wall: Option<isize>) -> Result<ArrangeResult, &'static str> {
         let _busy = try_begin(&WORKING).ok_or(BUSY)?;
         let monitor = big_monitor(wall).ok_or(NO_BIG_SCREEN)?;
         let self_elevated = sys::self_elevated();
@@ -446,34 +576,44 @@ mod win {
         if picked.is_empty() {
             return Err(NO_WINDOWS);
         }
-        let lefts: Vec<(isize, i32)> = picked
+        let candidates: Vec<WinRec> = picked.iter().map(|&i| recs[i]).collect();
+        let lefts: Vec<(isize, i32)> = candidates
             .iter()
-            .map(|&i| {
-                let id = recs[i].id;
+            .map(|c| {
                 let mut r = RECT::default();
-                let left = unsafe { GetWindowRect(sys::hwnd(id), &mut r).is_ok() }.then_some(r.left).unwrap_or(0);
-                (id, left)
+                let left = unsafe { GetWindowRect(sys::hwnd(c.id), &mut r).is_ok() }.then_some(r.left).unwrap_or(0);
+                (c.id, left)
             })
             .collect();
-        let mut saved: Vec<Saved> = Vec::new();
-        let mut moved = 0u32;
-        for (id, target) in plan(layout, monitor.work, &lefts) {
-            let mut placement = WINDOWPLACEMENT { length: std::mem::size_of::<WINDOWPLACEMENT>() as u32, ..Default::default() };
-            let have = unsafe { GetWindowPlacement(sys::hwnd(id), &mut placement).is_ok() };
-            if place(id, target) {
-                moved += 1;
-                if have {
-                    saved.push(Saved { hwnd: id, pid: sys::pid_of(id), placement });
-                }
-            }
-        }
-        if moved == 0 {
+        let mut desk = WinDesk { self_elevated };
+        let placed = apply(&mut desk, layout, monitor.work, &candidates, &lefts);
+        if placed.is_empty() {
             return Err(NO_WINDOWS);
         }
-        if let Ok(mut slot) = UNDO.lock() {
-            *slot = Some(UndoSet::new(saved, Instant::now()));
+        let asked = placed.len() as u32;
+        let mut targets: Vec<(isize, Rect)> = Vec::new();
+        let mut fresh: Vec<(UndoKey, Saved)> = Vec::new();
+        for p in placed {
+            targets.push((p.key.0, p.target));
+            if let Some(saved) = p.saved {
+                fresh.push((p.key, saved));
+            }
         }
-        Ok(moved)
+        if let Ok(mut slot) = UNDO.lock() {
+            merge_undo(&mut slot, fresh, Instant::now());
+        }
+        // The move was posted without waiting. Look once, within a short bound, at where each
+        // window's frame ended up and count the ones that arrived.
+        let started = Instant::now();
+        let arrived = |t: &(isize, Rect)| frame_of(t.0).is_some_and(|(_, frame)| reached(frame, t.1));
+        while !targets.iter().all(arrived) && started.elapsed() < ARRIVAL_WAIT {
+            std::thread::sleep(POLL);
+        }
+        let moved = targets.iter().filter(|t| arrived(t)).count() as u32;
+        if moved == 0 {
+            return Err(NONE_MOVED);
+        }
+        Ok(ArrangeResult { moved, asked })
     }
 
     pub fn undo() -> Result<u32, &'static str> {
@@ -483,11 +623,11 @@ mod win {
             take_undo(&mut slot, Instant::now()).ok_or(NOTHING_TO_UNDO)?
         };
         let mut restored = 0u32;
-        for e in entries {
+        for ((_, pid), e) in entries {
             let hw = sys::hwnd(e.hwnd);
             // The window must still exist and still belong to the same process (a handle
             // can be reused), and must be answering.
-            let same = unsafe { IsWindow(hw).as_bool() && sys::pid_of(e.hwnd) == e.pid && !IsHungAppWindow(hw).as_bool() };
+            let same = unsafe { IsWindow(hw).as_bool() && sys::pid_of(e.hwnd) == pid && !IsHungAppWindow(hw).as_bool() };
             if same && unsafe { SetWindowPlacement(hw, &e.placement).is_ok() } {
                 restored += 1;
             }
@@ -541,7 +681,7 @@ mod tests {
         for mon in SCREENS {
             for edge in ['b', 't', 'l', 'r', 'n'] {
                 let w = work(mon, edge);
-                for n in 1..=3usize {
+                for n in 2..=3usize {
                     let cols = columns(w, n);
                     assert_eq!(cols.len(), n);
                     assert_eq!(cols[0].left, w.left);
@@ -562,9 +702,9 @@ mod tests {
     fn thirds_at_5120_by_1440() {
         let cols = columns(work(SCREENS[0], 'b'), 3);
         assert_eq!(cols, vec![r(0, 0, 1706, 1400), r(1706, 0, 3413, 1400), r(3413, 0, 5120, 1400)]);
-        // Two windows are halves; one window takes the whole width (never more than three).
+        // Two windows are halves; one window gets the centred third (never more than three).
         assert_eq!(columns(work(SCREENS[0], 'b'), 2), vec![r(0, 0, 2560, 1400), r(2560, 0, 5120, 1400)]);
-        assert_eq!(columns(work(SCREENS[0], 'b'), 1), vec![r(0, 0, 5120, 1400)]);
+        assert_eq!(columns(work(SCREENS[0], 'b'), 1), vec![r(1706, 0, 3413, 1400)]);
         assert_eq!(columns(work(SCREENS[0], 'b'), 7).len(), 3);
         assert!(columns(work(SCREENS[0], 'b'), 0).is_empty());
     }
@@ -678,7 +818,7 @@ mod tests {
     }
 
     fn ok(id: isize) -> WinRec {
-        WinRec { id, monitor: 5, visible: true, has_title: true, ..Default::default() }
+        WinRec { id, pid: 100 + id as u32, monitor: 5, visible: true, has_title: true, ..Default::default() }
     }
 
     #[test]
@@ -715,23 +855,182 @@ mod tests {
     }
 
     #[test]
+    fn one_window_takes_the_centred_third_on_every_screen_and_taskbar_edge() {
+        for mon in SCREENS {
+            for edge in ['b', 't', 'l', 'r', 'n'] {
+                let w = work(mon, edge);
+                let c = columns(w, 1);
+                assert_eq!(c.len(), 1);
+                assert!(inside(c[0], w));
+                assert_eq!((c[0].top, c[0].bottom), (w.top, w.bottom));
+                assert!((c[0].width() - w.width() / 3).abs() <= 1, "a third wide");
+                assert!(((c[0].left - w.left) - (w.right - c[0].right)).abs() <= 1, "centred to a pixel");
+            }
+        }
+        let w = work(SCREENS[0], 'b');
+        assert_eq!(plan(Layout::Thirds, w, &[(1, 4000)]), vec![(1, r(1706, 0, 3413, 1400))]);
+    }
+
+    fn key(id: isize) -> UndoKey {
+        (id, 100 + id as u32)
+    }
+
+    #[test]
     fn undo_is_one_step_and_expires() {
         let t0 = Instant::now();
-        let mut slot = Some(UndoSet::new(vec![1, 2, 3], t0));
-        assert_eq!(take_undo(&mut slot, t0 + Duration::from_secs(5)), Some(vec![1, 2, 3]));
+        let mut slot = Some(UndoSet::new(vec![(key(1), 1), (key(2), 2), (key(3), 3)], t0));
+        let got = take_undo(&mut slot, t0 + Duration::from_secs(5)).map(|v| v.into_iter().map(|(_, t)| t).collect::<Vec<_>>());
+        assert_eq!(got, Some(vec![1, 2, 3]));
         assert!(slot.is_none(), "a second undo finds nothing");
-        assert_eq!(take_undo(&mut slot, t0), None);
+        assert!(take_undo(&mut slot, t0).is_none());
 
-        let mut stale = Some(UndoSet::new(vec![1], t0));
-        assert_eq!(take_undo(&mut stale, t0 + Duration::from_secs(300)), None);
+        let mut stale = Some(UndoSet::new(vec![(key(1), 1)], t0));
+        assert!(take_undo(&mut stale, t0 + Duration::from_secs(300)).is_none());
         assert!(stale.is_none(), "an expired set is dropped");
 
         let mut empty: Option<UndoSet<i32>> = Some(UndoSet::new(vec![], t0));
-        assert_eq!(take_undo(&mut empty, t0), None);
+        assert!(take_undo(&mut empty, t0).is_none());
 
         // The page shows the button for 60 seconds; the command still works at 60.
-        let mut edge = Some(UndoSet::new(vec![1], t0));
-        assert_eq!(take_undo(&mut edge, t0 + Duration::from_secs(60)), Some(vec![1]));
+        let mut edge = Some(UndoSet::new(vec![(key(1), 1)], t0));
+        assert!(take_undo(&mut edge, t0 + Duration::from_secs(60)).is_some());
+    }
+
+    #[test]
+    fn a_second_layout_keeps_each_windows_earlier_position_and_adds_new_windows() {
+        let t0 = Instant::now();
+        let mut slot: Option<UndoSet<&str>> = None;
+        merge_undo(&mut slot, vec![(key(1), "orig1"), (key(2), "orig2")], t0);
+        // Second click 20 s later: window 1 again (now holding the first layout's position), window 3 new.
+        merge_undo(&mut slot, vec![(key(1), "after-first-layout"), (key(3), "orig3")], t0 + Duration::from_secs(20));
+        // The 60 seconds restarted at the second click: still offered 70 s after the first.
+        let got = take_undo(&mut slot, t0 + Duration::from_secs(70)).expect("offered");
+        assert_eq!(got, vec![(key(1), "orig1"), (key(2), "orig2"), (key(3), "orig3")]);
+    }
+
+    #[test]
+    fn a_reused_handle_or_an_expired_set_does_not_keep_the_old_entry() {
+        let t0 = Instant::now();
+        let mut slot: Option<UndoSet<&str>> = None;
+        merge_undo(&mut slot, vec![((1, 101), "old process")], t0);
+        // Same handle, another process: a different key, so both are kept apart.
+        merge_undo(&mut slot, vec![((1, 999), "new process")], t0 + Duration::from_secs(5));
+        let got = take_undo(&mut slot, t0 + Duration::from_secs(6)).unwrap();
+        assert_eq!(got.len(), 2);
+        // A set past its window is dropped before merging.
+        let mut old: Option<UndoSet<&str>> = Some(UndoSet::new(vec![(key(1), "stale")], t0));
+        merge_undo(&mut old, vec![(key(2), "fresh")], t0 + Duration::from_secs(300));
+        assert_eq!(take_undo(&mut old, t0 + Duration::from_secs(301)).unwrap(), vec![(key(2), "fresh")]);
+    }
+
+    #[test]
+    fn revalidation_skips_a_closed_reused_moved_or_changed_window() {
+        let e = ok(7);
+        assert!(revalidate(&e, Some(&e)));
+        assert!(!revalidate(&e, None), "closed");
+        assert!(!revalidate(&e, Some(&WinRec { pid: 5, ..e })), "the handle now belongs to another process");
+        assert!(!revalidate(&e, Some(&WinRec { id: 8, ..e })));
+        assert!(!revalidate(&e, Some(&WinRec { monitor: 9, ..e })), "moved to another monitor");
+        assert!(!revalidate(&e, Some(&WinRec { visible: false, ..e })));
+        assert!(!revalidate(&e, Some(&WinRec { minimised: true, ..e })));
+        assert!(!revalidate(&e, Some(&WinRec { own_process: true, ..e })));
+        assert!(!revalidate(&e, Some(&WinRec { shell: true, ..e })));
+        assert!(!revalidate(&e, Some(&WinRec { tool_window: true, ..e })));
+        assert!(!revalidate(&e, Some(&WinRec { cloaked: true, ..e })));
+    }
+
+    /// A fake desktop: windows by handle, a log of what was done to them.
+    #[derive(Default)]
+    struct Fake {
+        now: std::collections::HashMap<isize, WinRec>,
+        stays_maximised: Vec<isize>,
+        maximised: Vec<isize>,
+        log: Vec<String>,
+    }
+
+    impl Desktop for Fake {
+        type Saved = String;
+        fn look(&mut self, id: isize) -> Option<WinRec> {
+            self.now.get(&id).copied()
+        }
+        fn save(&mut self, id: isize) -> Option<String> {
+            self.log.push(format!("save {id}"));
+            Some(if self.maximised.contains(&id) { format!("max {id}") } else { format!("normal {id}") })
+        }
+        fn place(&mut self, id: isize, target: Rect) -> bool {
+            if self.stays_maximised.contains(&id) {
+                self.log.push(format!("refused {id}"));
+                return false;
+            }
+            self.log.push(format!("place {id} {}", target.left));
+            true
+        }
+    }
+
+    fn candidates(ids: &[isize]) -> (Vec<WinRec>, Vec<(isize, i32)>) {
+        (ids.iter().map(|&i| ok(i)).collect(), ids.iter().enumerate().map(|(n, &i)| (i, n as i32 * 100)).collect())
+    }
+
+    fn fake(ids: &[isize]) -> Fake {
+        Fake { now: ids.iter().map(|&i| (i, ok(i))).collect(), ..Default::default() }
+    }
+
+    #[test]
+    fn a_closed_window_and_a_reused_handle_are_never_moved() {
+        let w = work(SCREENS[0], 'b');
+        let (cands, lefts) = candidates(&[1, 2, 3]);
+        let mut desk = fake(&[1, 2, 3]);
+        desk.now.remove(&1); // closed between listing and move
+        desk.now.insert(2, WinRec { pid: 4242, ..ok(2) }); // handle reused by another program
+        let placed = apply(&mut desk, Layout::Thirds, w, &cands, &lefts);
+        assert_eq!(placed.iter().map(|p| p.key.0).collect::<Vec<_>>(), vec![3]);
+        assert!(desk.log.iter().all(|l| !l.contains("save 1") && !l.contains("save 2") && !l.contains("place 2")), "{:?}", desk.log);
+    }
+
+    #[test]
+    fn a_window_is_saved_before_it_is_moved_and_each_candidate_is_looked_at_again() {
+        let w = work(SCREENS[0], 'b');
+        let (cands, lefts) = candidates(&[1, 2]);
+        let mut desk = fake(&[1, 2]);
+        let placed = apply(&mut desk, Layout::Thirds, w, &cands, &lefts);
+        assert_eq!(placed.len(), 2);
+        assert_eq!(desk.log[..2], ["save 1".to_string(), "place 1 0".to_string()]);
+        assert_eq!(placed[0].key, (1, 101));
+    }
+
+    #[test]
+    fn a_maximised_window_is_saved_as_maximised_and_one_that_will_not_restore_is_skipped() {
+        let w = work(SCREENS[0], 'b');
+        let (cands, lefts) = candidates(&[1, 2]);
+        let mut desk = fake(&[1, 2]);
+        desk.maximised = vec![1, 2];
+        desk.stays_maximised = vec![2];
+        let placed = apply(&mut desk, Layout::Thirds, w, &cands, &lefts);
+        // Window 1 was saved with its maximised state (so Undo brings it back maximised).
+        assert_eq!(placed.len(), 1);
+        assert_eq!(placed[0].saved.as_deref(), Some("max 1"));
+        // Window 2 would not leave the maximised state: not placed, no undo entry.
+        assert!(placed.iter().all(|p| p.key.0 != 2));
+    }
+
+    #[test]
+    fn focus_and_record_look_again_at_the_one_window_too() {
+        let w = work(SCREENS[0], 'b');
+        let (cands, lefts) = candidates(&[1]);
+        let mut desk = fake(&[1]);
+        desk.now.insert(1, WinRec { visible: false, ..ok(1) });
+        assert!(apply(&mut desk, Layout::Focus, w, &cands, &lefts).is_empty());
+        assert!(apply(&mut desk, Layout::Record, w, &cands, &lefts).is_empty());
+        assert!(desk.log.is_empty(), "nothing saved or moved");
+    }
+
+    #[test]
+    fn a_window_counts_as_arrived_within_a_few_pixels() {
+        let t = r(100, 0, 1100, 1000);
+        assert!(reached(t, t));
+        assert!(reached(r(102, -3, 1097, 1003), t));
+        assert!(!reached(r(100, 0, 1500, 1000), t), "refused to shrink");
+        assert!(!reached(r(104, 0, 1100, 1000), t));
     }
 
     #[test]

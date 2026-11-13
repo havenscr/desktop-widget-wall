@@ -38,6 +38,20 @@ pub(crate) fn exe_matches(image_path: &str, wanted: &str) -> bool {
     !want.is_empty() && exe_file_part(image_path) == want
 }
 
+/// Whether a process is one the wall may not type into: it is elevated, or it cannot be
+/// inspected (`None`: a process that refuses a token read to a non-elevated caller is an
+/// elevated one). Keys use this whatever the wall's own level, so an elevated wall never
+/// types a chord into an administrator window.
+pub(crate) fn blocks_keys(target_elevated: Option<bool>) -> bool {
+    target_elevated != Some(false)
+}
+
+/// Whether a window cannot be moved from here: only a non-elevated wall is blocked by an
+/// elevated program (an elevated wall may move anything, which gains nothing).
+pub(crate) fn blocks_move(target_elevated: Option<bool>, self_elevated: bool) -> bool {
+    !self_elevated && blocks_keys(target_elevated)
+}
+
 /// Window classes of the desktop shell: the taskbars, the desktop and its worker windows.
 /// These are never arranged and never remembered as "the app in front".
 pub(crate) fn is_shell_class(class: &str) -> bool {
@@ -161,13 +175,21 @@ pub(crate) mod sys {
         if self_elevated || pid == 0 {
             return false;
         }
+        super::blocks_move(target_token(pid), self_elevated)
+    }
+
+    /// Whether Keys must refuse this process, whatever the wall's own level.
+    pub fn keys_blocked(pid: u32) -> bool {
+        pid == 0 || super::blocks_keys(target_token(pid))
+    }
+
+    /// The target's elevation, or None when it cannot be opened or read.
+    fn target_token(pid: u32) -> Option<bool> {
         unsafe {
-            let Ok(handle) = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) else {
-                return true;
-            };
+            let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
             let elevated = token_elevated(handle);
             let _ = CloseHandle(handle);
-            elevated != Some(false)
+            elevated
         }
     }
 }
@@ -226,6 +248,23 @@ mod tests {
         .join();
         assert!(joined.is_err());
         assert!(try_begin(&FLAG).is_some());
+    }
+
+    #[test]
+    fn keys_refuse_an_elevated_or_unreadable_target_whatever_the_walls_own_level() {
+        assert!(blocks_keys(Some(true)), "elevated target");
+        assert!(blocks_keys(None), "unreadable target counts as elevated");
+        assert!(!blocks_keys(Some(false)));
+    }
+
+    #[test]
+    fn moving_is_blocked_only_for_a_non_elevated_wall() {
+        assert!(blocks_move(Some(true), false));
+        assert!(blocks_move(None, false));
+        assert!(!blocks_move(Some(false), false));
+        // An elevated wall may move anything (Big screen only), but Keys still refuse it.
+        assert!(!blocks_move(Some(true), true));
+        assert!(blocks_keys(Some(true)));
     }
 
     #[test]
