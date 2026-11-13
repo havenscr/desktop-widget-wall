@@ -25,6 +25,10 @@ describe('spotify bridge', () => {
     expect((await spotify.queue()).next).toHaveLength(10);
     expect(await spotify.playback()).toMatchObject({ playing: true, progressMs: 65_000, device: { name: 'Desk speakers' } });
   });
+  it('passes null playback through unchanged', async () => {
+    mocks.set('wall2_spotify_playback', () => null);
+    expect(await spotify.playback()).toBeNull();
+  });
   it.each([
     ['typical', true, true],
     ['heavy', true, true],

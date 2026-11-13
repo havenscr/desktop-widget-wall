@@ -3785,9 +3785,6 @@ pub fn run() {
             wall2_spotify::wall2_spotify_play,
             wall2_spotify::wall2_spotify_transfer,
             wall2_spotify::wall2_spotify_shuffle,
-            wall2_spotify::wall2_spotify_tracks,
-            wall2_spotify::wall2_spotify_queue,
-            wall2_spotify::wall2_spotify_playback,
             // Wall 2 helper client and machine numbers
             wall2_omni::wall2_omni_summary,
             wall2_omni::wall2_open_session,
@@ -3861,7 +3858,10 @@ pub fn run() {
             validate_address,
             // Persistent config storage
             save_widget_config,
-            load_widget_config
+            load_widget_config,
+            wall2_spotify::wall2_spotify_tracks,
+            wall2_spotify::wall2_spotify_queue,
+            wall2_spotify::wall2_spotify_playback
         ])
         .setup(|app| {
             #[cfg(windows)]

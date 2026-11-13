@@ -37,6 +37,12 @@ Library items include bounded subtitles, counts and cover images selected near 3
 64 pixels. Track lists use 50 items per page and stop at page 39. Queue reads return at
 most 10 upcoming tracks. Playback reads return no value when Spotify has no active
 session. The YouTube Music action opens the fixed `https://music.youtube.com/` address.
+Track-producing reads send `market=from_token`. An unavailable, restricted, local or
+non-track row reaches the web view with `playable: false` and `id: null`. Ordinary
+Spotify answers are capped at 64 KB; a 50-track page is capped at 512 KB. The signed-in
+profile is cached in memory until sign out so search and playlist paging reuse it.
+When a play request includes a context, that context and its optional offset take
+precedence over the top-level kind and id; the top-level values remain validated.
 
 ## Run, test, build (web)
 
