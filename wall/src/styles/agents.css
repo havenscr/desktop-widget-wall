@@ -60,6 +60,19 @@
   margin-left: -10px;
   border-radius: 12px;
 }
+.lanes-hd button.lanes-alarm {
+  flex: none;
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 17px;
+  color: var(--dim);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--line);
+}
+.lanes-hd button.lanes-alarm:hover {
+  color: var(--tx);
+  background: rgba(255, 255, 255, 0.1);
+}
 .slot-meter:hover,
 .lanes-count:hover,
 .ask-more:hover,

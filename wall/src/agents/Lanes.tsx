@@ -6,6 +6,7 @@ import { scrollToCard, useCardScroll } from './cardScroll';
 import { snooze, useSnoozed } from './snooze';
 import { focusSession } from './open';
 import { Shelf } from './Shelf';
+import { AlarmChip } from '../home/AlarmChip';
 
 /** Cards in view at once; the rest scroll. */
 const IN_VIEW = 3;
@@ -81,6 +82,7 @@ export function Lanes({ summary, stale, freshAt, now, idle }: { summary: OmniSum
         <div className="row lanes-hd-l">
           <span className="k">Agents</span>
           <SlotMeter summary={summary} stale={stale} />
+          <AlarmChip className="xs lanes-alarm" />
           {count && (
             <button
               type="button"

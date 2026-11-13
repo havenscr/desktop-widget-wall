@@ -1,0 +1,122 @@
+import { act, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { mocks } from '../bridge/tauri';
+import { Rail } from '../rail/Rail';
+import { usePlaceStore } from '../state/places';
+import { AlarmChip } from './AlarmChip';
+import { NetworkTile } from './NetworkTile';
+import { alarmChipText, openAlarms } from './useSecurity';
+
+const flush = async (ms = 0) => {
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(ms);
+  });
+};
+beforeEach(() => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date('2026-11-11T12:00:00Z'));
+  usePlaceStore.setState({ active: 'work' });
+});
+afterEach(() => {
+  vi.useRealTimers();
+  mocks.clear();
+});
+
+const sec = (over: Record<string, unknown> = {}) => ({
+  reachable: true,
+  stale: false,
+  lastScan: '2026-11-11T11:56:00Z',
+  alerts: 1,
+  firewalla: { api: 'up', boxOnline: true, checkedAt: null, alarms24h: 1 },
+  portalUrl: null,
+  ...over,
+});
+
+const dot = (c: HTMLElement) => c.querySelector('.rb-alarm');
+
+it('words the chip for one and for many', () => {
+  expect(alarmChipText(1)).toBe('1 network alert');
+  expect(alarmChipText(4)).toBe('4 network alerts');
+});
+
+it('counts only a current good read', () => {
+  const good = sec({ alerts: 3 }) as never;
+  expect(openAlarms({ status: 'ready', summary: good })).toBe(3);
+  expect(openAlarms({ status: 'error', summary: good })).toBe(0);
+  expect(openAlarms({ status: 'loading', summary: null })).toBe(0);
+  expect(openAlarms({ status: 'unconfigured', summary: null })).toBe(0);
+  expect(openAlarms({ status: 'ready', summary: sec({ stale: true, alerts: 3 }) as never })).toBe(0);
+  expect(openAlarms({ status: 'ready', summary: sec({ reachable: false, alerts: 3 }) as never })).toBe(0);
+  expect(openAlarms({ status: 'ready', summary: sec({ alerts: 0 }) as never })).toBe(0);
+});
+
+it('puts a dot on Home in the rail and a chip that goes to Home', async () => {
+  mocks.set('wall2_home_security', () => sec());
+  const { container } = render(
+    <>
+      <Rail />
+      <AlarmChip className="xs lanes-alarm" />
+    </>,
+  );
+  await flush();
+  expect(dot(container)).toBeTruthy();
+  const chip = screen.getByRole('button', { name: '1 network alert. Show them on Home' });
+  expect(chip.textContent).toBe('1 network alert');
+  fireEvent.click(chip);
+  expect(usePlaceStore.getState().active).toBe('home');
+});
+
+it('shows nothing when the source is not set up or down', async () => {
+  mocks.set('wall2_home_security', () => Promise.reject(new Error('not-configured')));
+  const a = render(<Rail />);
+  await flush();
+  expect(dot(a.container)).toBeNull();
+  a.unmount();
+  mocks.set('wall2_home_security', () => Promise.reject(new Error('Could not reach the service')));
+  const b = render(<Rail />);
+  await flush();
+  expect(dot(b.container)).toBeNull();
+});
+
+it('shows nothing from a stale scan', async () => {
+  mocks.set('wall2_home_security', () => sec({ stale: true, alerts: 2 }));
+  const { container } = render(
+    <>
+      <Rail />
+      <AlarmChip className="u-act" period />
+    </>,
+  );
+  await flush();
+  expect(dot(container)).toBeNull();
+  expect(screen.queryByText(/network alert/)).toBeNull();
+});
+
+it('takes the dot away when a later read fails (never from old data)', async () => {
+  let fail = false;
+  mocks.set('wall2_home_security', () => (fail ? Promise.reject(new Error('Could not reach the service')) : sec({ alerts: 2 })));
+  const { container } = render(<Rail />);
+  await flush();
+  expect(dot(container)).toBeTruthy();
+  fail = true;
+  await flush(300_000);
+  expect(dot(container)).toBeNull();
+});
+
+it('shares one poll between the rail and Home network card', async () => {
+  let calls = 0;
+  mocks.set('wall2_home_security', () => {
+    calls += 1;
+    return sec();
+  });
+  render(
+    <>
+      <Rail />
+      <NetworkTile />
+      <AlarmChip className="u-act" period />
+    </>,
+  );
+  await flush();
+  expect(calls).toBe(1);
+  await flush(300_000);
+  expect(calls).toBe(2);
+});

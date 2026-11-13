@@ -493,6 +493,7 @@
   height: 13px;
   font-size: 13px;
   letter-spacing: 0.16em;
+  color: var(--dim);
 }
 /* Each label starts where its bar starts. */
 .mc-hd span {

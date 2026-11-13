@@ -382,7 +382,7 @@
   font: 600 14px/1 var(--disp);
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--faint);
+  color: var(--dim);
 }
 .net-nums.stale,
 .net-aside.stale,
