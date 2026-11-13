@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { invoke } from '../bridge/tauri';
 import type { DayEvent } from './model';
 
@@ -8,6 +8,8 @@ export const DAY_REFRESH_MS = 5 * 60_000;
 interface DayPayload {
   events?: DayEvent[];
   accounts?: { state?: string }[];
+  /** Settle order on the native side; a lower number than one already shown is an older answer. */
+  seq?: number;
 }
 
 const NOT_CONFIGURED = 'not-configured';
@@ -42,32 +44,37 @@ function calendarState(r: DayPayload | null | undefined): 'ok' | 'unavailable' {
  */
 export function useDayFeed(on: boolean): DayFeed {
   const [feed, setFeed] = useState<DayFeed>({ events: [], at: null, failedAt: null, calendar: 'unknown' });
-  const mounted = useRef(true);
-  useEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-    };
-  }, []);
-
-  const read = useCallback(async () => {
-    try {
-      const r = await invoke<DayPayload>('wall2_meet_day');
-      if (mounted.current) setFeed({ events: Array.isArray(r?.events) ? r.events : [], at: Date.now(), failedAt: null, calendar: calendarState(r) });
-    } catch (e) {
-      if (!mounted.current) return;
-      const text = e instanceof Error ? e.message : String(e);
-      if (text === NOT_CONFIGURED) setFeed({ events: [], at: Date.now(), failedAt: null, calendar: 'unknown' });
-      else setFeed((f) => ({ ...f, failedAt: Date.now(), calendar: 'unknown' }));
-    }
-  }, []);
+  /** The highest `seq` shown so far: an answer with a lower or equal one is older and is dropped. */
+  const applied = useRef(0);
 
   useEffect(() => {
     if (!on) return;
+    // Each run of the effect has its own flag, so an answer that arrives after the effect
+    // was cleaned up (or replaced by a newer run) changes nothing.
+    let live = true;
+    const read = async () => {
+      try {
+        const r = await invoke<DayPayload>('wall2_meet_day');
+        if (!live) return;
+        if (typeof r?.seq === 'number') {
+          if (r.seq <= applied.current) return;
+          applied.current = r.seq;
+        }
+        setFeed({ events: Array.isArray(r?.events) ? r.events : [], at: Date.now(), failedAt: null, calendar: calendarState(r) });
+      } catch (e) {
+        if (!live) return;
+        const text = e instanceof Error ? e.message : String(e);
+        if (text === NOT_CONFIGURED) setFeed({ events: [], at: Date.now(), failedAt: null, calendar: 'unknown' });
+        else setFeed((f) => ({ ...f, failedAt: Date.now(), calendar: 'unknown' }));
+      }
+    };
     void read();
     const id = setInterval(() => void read(), DAY_REFRESH_MS);
-    return () => clearInterval(id);
-  }, [on, read]);
+    return () => {
+      live = false;
+      clearInterval(id);
+    };
+  }, [on]);
 
   return feed;
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { countdownText, isSoon, laterMeetings, nextMeeting, reasonLine, reasonText, signInMessage, statusWord, type Meeting } from './model';
+import { accountWords, calendarNotAvailable, countdownText, isSoon, laterMeetings, nextMeeting, reasonLine, reasonText, signInMessage, statusWord, type Meeting } from './model';
 
 const NOW = Date.parse('2026-11-12T17:00:00Z');
 const at = (mins: number) => new Date(NOW + mins * 60_000).toISOString().replace('.000Z', 'Z');
@@ -67,8 +67,8 @@ it('isSoon is true only within five minutes before the start', () => {
 
 it('status words and sign-in messages', () => {
   expect(statusWord('ok')).toBe('Connected');
-  expect(statusWord('needs-sign-in')).toBe('Sign in needed');
-  expect(statusWord('signed-out')).toBe('Sign in needed');
+  expect(statusWord('needs-sign-in')).toBe('Sign in again');
+  expect(statusWord('signed-out')).toBe('Signed out');
   expect(statusWord('unavailable')).toBe('Unavailable');
   expect(signInMessage('cancelled')).toBeNull();
   expect(signInMessage('denied')).toBe('Sign-in was declined');
@@ -81,9 +81,9 @@ describe('reasonText', () => {
       ['graph-403', 'Calendar refused the request'],
       ['graph-403-ErrorAccessDenied', 'Calendar refused the request'],
       ['graph-400', 'Calendar did not understand the request'],
-      ['graph-429', 'Calendar is busy, trying again'],
-      ['graph-500', 'Calendar is busy, trying again'],
-      ['graph-503-ServiceUnavailable', 'Calendar is busy, trying again'],
+      ['graph-429', 'Microsoft is busy'],
+      ['graph-500', 'Microsoft is busy'],
+      ['graph-503-ServiceUnavailable', 'Microsoft is busy'],
       ['graph-network', 'No connection to Microsoft'],
       ['token-network', 'No connection to Microsoft'],
       ['token-400', 'Sign-in was not accepted'],
@@ -113,4 +113,24 @@ describe('reasonText', () => {
     expect(signInMessage('store-write')).toBe('Could not save the sign-in on this PC (store-write)');
     expect(signInMessage('failed')).toBe('Sign-in did not work');
   });
+});
+
+it('puts a failed account in plain words', () => {
+  expect(accountWords('unavailable', 'graph-network')).toBe('Network problem');
+  expect(accountWords('unavailable', 'token-network')).toBe('Network problem');
+  expect(accountWords('unavailable', 'graph-503-UnknownError')).toBe('Microsoft is not answering');
+  expect(accountWords('unavailable', 'graph-429')).toBe('Microsoft is not answering');
+  expect(accountWords('unavailable', 'graph-timeout')).toBe('Microsoft is not answering');
+  expect(accountWords('unavailable', 'graph-403')).toBe('Calendar could not be read');
+  expect(accountWords('unavailable', undefined)).toBe('Calendar could not be read');
+  expect(accountWords('needs-sign-in', 'token-400')).toBe('Sign in again');
+  expect(accountWords('checking', undefined)).toBe('Checking');
+  expect(reasonLine('graph-timeout')).toBe('Microsoft did not answer in time (graph-timeout)');
+});
+
+it('knows when no calendar can be read', () => {
+  expect(calendarNotAvailable([])).toBe(false);
+  expect(calendarNotAvailable([{ state: 'signed-out' }, { state: 'unavailable' }])).toBe(true);
+  expect(calendarNotAvailable([{ state: 'signed-out' }, { state: 'ok' }])).toBe(false);
+  expect(calendarNotAvailable([{ state: 'checking' }])).toBe(false);
 });

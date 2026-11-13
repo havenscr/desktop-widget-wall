@@ -11,12 +11,13 @@ pub const MAX_ERROR_BODY: u64 = 16 * 1024;
 
 pub const GRAPH_NETWORK: &str = "graph-network";
 pub const GRAPH_BODY: &str = "graph-body";
+pub const GRAPH_TIMEOUT: &str = "graph-timeout";
 pub const TOKEN_NETWORK: &str = "token-network";
 pub const STORE_WRITE: &str = "store-write";
 pub const STORE_READ: &str = "store-read";
 
 /// `^[A-Za-z][A-Za-z0-9_]{0,39}$`
-fn clean_code(s: &str) -> Option<&str> {
+pub(crate) fn clean_code(s: &str) -> Option<&str> {
     let mut chars = s.chars();
     let first = chars.next()?;
     if !first.is_ascii_alphabetic() || s.len() > 40 {
@@ -64,7 +65,7 @@ pub fn token_reason(status: u16, body: &[u8]) -> String {
 
 /// True when `s` is one of the allowed shapes. Used by tests and as a last guard.
 pub fn is_valid_reason(s: &str) -> bool {
-    if matches!(s, "graph-network" | "graph-body" | "token-network" | "store-write" | "store-read") {
+    if matches!(s, "graph-network" | "graph-timeout" | "graph-body" | "token-network" | "store-write" | "store-read") {
         return true;
     }
     let (family, rest) = if let Some(r) = s.strip_prefix("graph-") {

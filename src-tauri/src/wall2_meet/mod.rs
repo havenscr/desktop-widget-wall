@@ -24,7 +24,6 @@ use tauri_plugin_opener::OpenerExt;
 
 pub(crate) const MAX_TITLE_CHARS: usize = 200;
 const MAX_BODY: u64 = 1_000_000;
-const TIMEOUT: Duration = Duration::from_secs(15);
 
 const NOT_CONFIGURED: &str = "not-configured";
 const INVALID_CONFIG: &str = "invalid-config";
@@ -33,7 +32,15 @@ const INVALID_CONFIG: &str = "invalid-config";
 
 pub(crate) fn agent() -> &'static ureq::Agent {
     static AGENT: OnceLock<ureq::Agent> = OnceLock::new();
-    AGENT.get_or_init(|| ureq::AgentBuilder::new().timeout(TIMEOUT).redirects(0).build())
+    AGENT.get_or_init(|| {
+        ureq::AgentBuilder::new()
+            .timeout_connect(graph::CONNECT_TIMEOUT)
+            .timeout_read(graph::READ_TIMEOUT)
+            .timeout_write(graph::READ_TIMEOUT)
+            .timeout(graph::BUDGET)
+            .redirects(0)
+            .build()
+    })
 }
 
 /// At most `limit` plus one bytes of a body, for an error reply whose JSON is only read for a
@@ -62,41 +69,72 @@ pub(crate) fn read_body(resp: ureq::Response) -> Option<Vec<u8>> {
 
 struct HttpGraph;
 
+/// A unique id sent as `client-request-id`, so a failed call can be matched to Microsoft's
+/// own record of it. Not secret and not a security token.
+fn new_client_request_id() -> String {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static N: AtomicU64 = AtomicU64::new(0);
+    let nanos = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
+    let n = N.fetch_add(1, Ordering::Relaxed) as u128;
+    let h = format!("{:032x}", nanos.wrapping_mul(0x9E37_79B9_7F4A_7C15).wrapping_add(n << 64 | n));
+    format!("{}-{}-{}-{}-{}", &h[0..8], &h[8..12], &h[12..16], &h[16..20], &h[20..32])
+}
+
+/// The class of a transport error (`dns`, `connect`, `timeout`, `reset`, `other`),
+/// from the error kinds only.
+pub(crate) fn net_of(t: &ureq::Transport) -> &'static str {
+    let kind = match t.kind() {
+        ureq::ErrorKind::Dns => graph::NetKind::Dns,
+        ureq::ErrorKind::ConnectionFailed => graph::NetKind::Connect,
+        ureq::ErrorKind::Io => graph::NetKind::Io,
+        _ => graph::NetKind::Other,
+    };
+    let io = std::error::Error::source(t).and_then(|e| e.downcast_ref::<std::io::Error>()).map(|e| e.kind());
+    graph::classify_net(kind, io)
+}
+
+fn header_of(resp: &ureq::Response, name: &str) -> Option<String> {
+    resp.header(name).map(str::to_string)
+}
+
+fn raw_of(resp: ureq::Response, success_body: bool) -> graph::Raw {
+    let status = resp.status();
+    let retry_after = header_of(&resp, "retry-after");
+    let request_id = header_of(&resp, "request-id");
+    let client_request_id = header_of(&resp, "client-request-id");
+    let body = if success_body { read_body(resp).unwrap_or_default() } else { read_capped(resp, reason::MAX_ERROR_BODY) };
+    graph::Raw { status, net: None, retry_after, request_id, client_request_id, body }
+}
+
 impl graph::GraphClient for HttpGraph {
     fn calendar_view(&self, access: &str, start: &str, end: &str) -> graph::GraphReply {
-        use graph::GraphReply;
-        let url = format!(
-            "https://graph.microsoft.com/v1.0/me/calendarView?startDateTime={}&endDateTime={}&$select=subject,start,end,isAllDay,isCancelled,responseStatus,onlineMeeting,onlineMeetingUrl,iCalUId&$orderby=start/dateTime&$top=50",
-            urlencoding::encode(start),
-            urlencoding::encode(end),
-        );
-        let result = agent()
-            .get(&url)
-            .set("Authorization", &format!("Bearer {access}"))
-            .set("Prefer", "outlook.timezone=\"UTC\"")
-            .set("Accept", "application/json")
-            .call();
-        match result {
-            // A redirect is never followed, so a 3xx arrives here as a reply, not an error.
-            Ok(resp) if !(200..300).contains(&resp.status()) => {
-                let status = resp.status();
-                GraphReply::Failed(reason::graph_reason(status, &read_capped(resp, reason::MAX_ERROR_BODY)))
-            }
-            Ok(resp) => match read_body(resp).and_then(|b| serde_json::from_slice::<Value>(&b).ok()) {
-                Some(v) => GraphReply::Ok(v),
-                None => GraphReply::Failed(reason::GRAPH_BODY.to_string()),
-            },
-            Err(ureq::Error::Status(401, _)) => GraphReply::Unauthorized,
-            Err(ureq::Error::Status(code, resp)) => {
-                let why = reason::graph_reason(code, &read_capped(resp, reason::MAX_ERROR_BODY));
-                if code == 429 || code >= 500 {
-                    GraphReply::Transient(why)
-                } else {
-                    GraphReply::Failed(why)
+        let ctx = graph::Ctx::new(graph::Kind::Next, std::sync::Arc::new(graph::RealClock), graph::BUDGET);
+        self.calendar_view_diag(access, start, end, &ctx).0
+    }
+
+    fn calendar_view_diag(&self, access: &str, start: &str, end: &str, ctx: &graph::Ctx) -> (graph::GraphReply, Option<graph::Diag>) {
+        let url = graph::calendar_view_url(start, end);
+        let mut send = |_attempt: u32, timeout: Duration| -> graph::Raw {
+            let result = agent()
+                .get(&url)
+                .timeout(timeout)
+                .set("Authorization", &format!("Bearer {access}"))
+                .set("Prefer", graph::PREFER)
+                .set("Accept", "application/json")
+                .set("client-request-id", &new_client_request_id())
+                .set("return-client-request-id", "true")
+                .call();
+            match result {
+                // A redirect is never followed, so a 3xx arrives here as a reply, not an error.
+                Ok(resp) => {
+                    let ok = (200..300).contains(&resp.status());
+                    raw_of(resp, ok)
                 }
+                Err(ureq::Error::Status(_, resp)) => raw_of(resp, false),
+                Err(ureq::Error::Transport(t)) => graph::Raw { status: 0, net: Some(net_of(&t)), retry_after: None, request_id: None, client_request_id: None, body: Vec::new() },
             }
-            Err(ureq::Error::Transport(_)) => GraphReply::Transient(reason::GRAPH_NETWORK.to_string()),
-        }
+        };
+        graph::run_attempts(ctx, &mut send)
     }
 }
 
@@ -195,12 +233,25 @@ pub fn require_wall2(label: &str) -> Result<(), String> {
 
 // Section: commands
 
+/// With no arguments: every account, in parallel. With `only`: that account only, the other
+/// answered from what is held. With `peek`: nothing goes to the network; the accounts come
+/// back at once with their last known state ("checking" before the first read).
 #[tauri::command]
-pub async fn wall2_meet_next(window: tauri::WebviewWindow) -> Result<service::MeetPayload, String> {
+pub async fn wall2_meet_next(window: tauri::WebviewWindow, only: Option<String>, peek: Option<bool>) -> Result<service::MeetPayload, String> {
     require_wall2(window.label())?;
     let accounts = load_config(&window).map_err(str::to_string)?;
+    if only.as_deref().is_some_and(|id| !valid_id(id)) {
+        return Err("failed".to_string());
+    }
     tauri::async_runtime::spawn_blocking(move || {
-        let payload = service::read_next(&accounts, &secrets(), &auth::HttpTokens, &HttpGraph, core(), links(), now_secs());
+        let now = now_secs();
+        let payload = if peek == Some(true) {
+            service::read_next_only(&accounts, &secrets(), &auth::HttpTokens, &HttpGraph, core(), links(), now, service::Only::Nobody)
+        } else if let Some(id) = only.as_deref() {
+            service::read_next_only(&accounts, &secrets(), &auth::HttpTokens, &HttpGraph, core(), links(), now, service::Only::One(id))
+        } else {
+            service::read_next_parallel(&accounts, &secrets(), &auth::HttpTokens, &HttpGraph, core(), links(), now)
+        };
         let lines = std::mem::take(&mut lock_core().log_lines);
         meetlog::write_all(lines);
         payload
@@ -209,9 +260,6 @@ pub async fn wall2_meet_next(window: tauri::WebviewWindow) -> Result<service::Me
     .map_err(|_| "failed".to_string())
 }
 
-/// The day view's window: the last local midnight at or before `now`, to the local midnight
-/// that ends tomorrow, found by local date (so a 23 or 25 hour day on a clock change is
-/// right). `offset` says how far the local clock is ahead of UTC at a given instant.
 pub(crate) fn day_window(now: i64, offset: &dyn Fn(i64) -> i64) -> (u64, u64) {
     let start = crate::wall2_feeds::local_midnight(now, offset);
     // Two local days are 46 to 50 hours long, so 50 hours after today's midnight is always
@@ -228,7 +276,7 @@ pub async fn wall2_meet_day(window: tauri::WebviewWindow) -> Result<service::Day
     tauri::async_runtime::spawn_blocking(move || {
         let now = now_secs();
         let (from, to) = day_window(now as i64, &crate::wall2_feeds::local_offset_secs);
-        let payload = service::read_day(&accounts, &secrets(), &auth::HttpTokens, &HttpGraph, core(), links(), now, from, to);
+        let payload = service::read_day_parallel(&accounts, &secrets(), &auth::HttpTokens, &HttpGraph, core(), links(), now, from, to);
         let lines = std::mem::take(&mut lock_core().log_lines);
         meetlog::write_all(lines);
         payload
