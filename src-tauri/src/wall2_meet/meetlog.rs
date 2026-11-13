@@ -1,9 +1,13 @@
-//! `wall2-meet.log`: one line per account state change, in the app log directory.
+//! `wall2-meet.log`: one line per account state change, and one per failed Graph call, in
+//! the app log directory.
 //!
 //! Same rules as `wall2-placement.log`: cleared at launch, size capped, write failures
 //! ignored, and a writer thread so no caller ever waits on the disk. A line holds the time,
-//! the account id from `meet.json`, the old state, the new state and a reason code. Nothing
-//! else is ever written.
+//! the account id from `meet.json`, the old state, the new state and a reason code. A failed
+//! Graph call adds fixed fields (request kind, HTTP status, Graph's error code and inner
+//! code, the two request ids, the attempt and the elapsed milliseconds), each checked against
+//! a plain character set, and the line is cut at 400 characters. Nothing else is ever written:
+//! no subject, attendee, address, token or URL.
 
 use std::sync::OnceLock;
 use std::sync::mpsc::SyncSender;
@@ -17,6 +21,19 @@ static TX: OnceLock<SyncSender<String>> = OnceLock::new();
 pub fn format_line(time: &str, id: &str, old: &str, new: &str, reason: Option<&str>) -> String {
     let clean = |s: &str| -> String { s.chars().map(|c| if c.is_control() || c == ' ' { '_' } else { c }).collect() };
     format!("{} {} {} {} {}\n", clean(time), clean(id), clean(old), clean(new), clean(reason.unwrap_or("none")))
+}
+
+/// Longest line the log will hold; a longer one is cut.
+const MAX_LINE: usize = 400;
+
+/// `format_line` plus the Graph failure details (`graph::Diag::log_fields`), capped at
+/// 400 characters and still one line.
+pub fn format_line_detail(time: &str, id: &str, old: &str, new: &str, reason: Option<&str>, detail: &str) -> String {
+    let base = format_line(time, id, old, new, reason);
+    let detail: String = detail.chars().map(|c| if c.is_control() { '_' } else { c }).collect();
+    let mut line: String = format!("{} {}", base.trim_end(), detail).chars().take(MAX_LINE - 1).collect();
+    line.push('\n');
+    line
 }
 
 /// Create (truncate) the log in `dir` and start the writer thread. Any failure leaves it off.
@@ -62,6 +79,15 @@ mod tests {
         assert_eq!(l, "2026-11-12T17:00:00Z hc ok unavailable graph-403-ErrorAccessDenied\n");
         let none = format_line("2026-11-12T17:00:00Z", "hc", "start", "signed-out", None);
         assert_eq!(none, "2026-11-12T17:00:00Z hc start signed-out none\n");
+    }
+
+    #[test]
+    fn a_detail_line_is_one_capped_line() {
+        let l = format_line_detail("t", "ae", "start", "unavailable", Some("graph-503"), "req=next status=503");
+        assert_eq!(l, "t ae start unavailable graph-503 req=next status=503\n");
+        let long = format_line_detail("t", "ae", "a", "b", None, &"x".repeat(1000));
+        assert!(long.len() <= 400);
+        assert_eq!(long.matches('\n').count(), 1);
     }
 
     #[test]

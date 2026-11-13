@@ -856,36 +856,59 @@ The list is read when Meet opens and every 5 minutes while Meet is the active pl
 
 ### Why an account is unavailable
 
-An unavailable account (and a "Sign in needed" account whose sign-in was refused) shows a quiet second line with a plain reading and a short code in brackets, for example "Calendar refused the request (graph-403-ErrorAccessDenied)". An unavailable row has three buttons: Try again (reads at once), Sign in and Sign out. A code has one of these fixed shapes and nothing else:
+An unavailable account (and a "Sign in needed" account whose sign-in was refused) shows a quiet second line with a plain reading and a short code in brackets, for example "Calendar refused the request (graph-403-ErrorAccessDenied)". An unavailable row says what is wrong in plain words ("Network problem" or "Microsoft is not answering"), is one plain sentence (with "trying again at 3:42 PM" only while a retry is really scheduled), has one button, Try again (reads at once), and shows the time of the last try with the code underneath. When no account can be read, Meet shows no separate empty card: the Accounts card carries "Calendar not available" and the time of the last good read. A code has one of these fixed shapes and nothing else:
 
 | Code | Meaning | Shown as |
 | --- | --- | --- |
-| `graph-<status>` | Graph answered with that HTTP status and a JSON body with no usable error code | 403 "Calendar refused the request", 400 "Calendar did not understand the request", 429 and 5xx "Calendar is busy, trying again", 401 "Calendar did not accept the sign-in", other "Calendar could not be read" |
+| `graph-<status>` | Graph answered with that HTTP status and a JSON body with no usable error code | 403 "Calendar refused the request", 400 "Calendar did not understand the request", 429 and 5xx "Microsoft is busy", 401 "Calendar did not accept the sign-in", other "Calendar could not be read" |
 | `graph-<status>-<code>` | The same, plus Graph's `error.code` when it matches `^[A-Za-z][A-Za-z0-9_]{0,39}$` | the same words as its status |
-| `graph-network` | Transport error or timeout | "No connection to Microsoft" |
+| `graph-network` | Transport error (no connection, refused, a read that timed out) | "No connection to Microsoft" |
+| `graph-timeout` | The read's 12 second budget ran out before Graph could be asked or asked again | "Microsoft did not answer in time" |
 | `graph-body` | A reply that could not be read: a 2xx body too large or not JSON, or an error body over 16 KB, not JSON or cut short | "Calendar sent a reply that could not be read" |
 | `token-<status>` | HTTP status of the token endpoint, on a refresh or on the first redemption after the browser callback | "Sign-in was not accepted" |
 | `token-<status>-<n>` | The same, plus the first number of `error_codes` (digits only, at most seven), for example `token-400-9002327` | "Sign-in was not accepted" |
-| `token-network` | The token endpoint could not be reached | "No connection to Microsoft" |
+| `token-network` | The token endpoint could not be reached (the log line says `host=login` and the class) | "No connection to Microsoft" |
 | `store-write` | Credential Manager refused to save the sign-in | "Could not save the sign-in on this PC" |
 | `store-read` | Credential Manager could not be read (anything but "not found"); nothing is deleted or overwritten | "Could not save the sign-in on this PC" |
 
 An error body is read up to 16 KB (one more byte is read to tell that it was too big), and only to find `error.code` or `error_codes`. A code that fails the check is dropped and only the status stays. A failed first redemption (the browser said "Signed in" but the token step failed) shows the same kind of code in the notice under Accounts.
 
+### Reading Meet: limits, retries, parallel accounts
+
+- **Timeouts.** Every token and Graph request connects within 2 seconds per address (the client tries a host's addresses one after another, each with the whole connect timeout, so a dead IPv6 route used to eat 5 seconds before IPv4 was tried), waits at most 10 seconds for a read and stops at 12 seconds in all. One read has one absolute 12 second deadline that covers everything in it: the wait for the account's turn, the token request (its timeout is what remains), each Graph attempt, the retry waits and the refresh after a 401. A read that reaches the deadline while waiting for its turn answers `graph-timeout` and starts no token request. Only one read per account runs at a time; a second one for the same account waits for the first or gives up at its own deadline.
+- **Retries.** A Graph 429, 503 or 504 is tried again, up to twice more (three attempts), after 0.5 s then 1 s, or after the `Retry-After` header (whole seconds or an HTTP date, never negative, at most 5 seconds), and only when the wait still fits in the budget. Nothing else is retried: not a 500, 502, 4xx, a network failure or a reply that cannot be read. A 401 refreshes the token once and asks once more, as before.
+- **Accounts do not wait for each other.** The accounts are read at the same time. The Meet screen asks `wall2_meet_next` three ways: `{ peek: true }` (no network: the accounts and their last known state, "checking" before the first read), then `{ only: "<id>" }` once per account, in parallel; each answer is shown the moment it arrives, and an answer with a lower `seq` than one already shown is dropped. With no arguments (the Work Next block) every account is read in parallel and the newest answer is returned. `wall2_meet_day` reads its accounts in parallel the same way.
+- **The screen's limit.** Meet leaves "Loading meetings" as soon as the peek answers, and an account that has not answered within 12 seconds shows "Microsoft is not answering" with Try again and the time of the try.
+- **Quiet lines.** When no account can be read (all signed out, needing sign in or not answering) the Work Next block and the day ribbon's calendar row say "Calendar not available" instead of showing nothing, and Meet says it in its main card.
+
+### The calendarView request
+
+One request per account per read, `GET https://graph.microsoft.com/v1.0/me/calendarView` with these query options and no others:
+
+| Option | Value |
+| --- | --- |
+| `startDateTime` | UTC with a `Z`, for example `2026-11-12T17:00:00Z` (URL encoded) |
+| `endDateTime` | UTC with a `Z`: 24 hours later for the next-meetings read; the end of tomorrow for the day read (at most 49 hours) |
+| `$select` | `subject,start,end,isAllDay,isCancelled,responseStatus,onlineMeeting,onlineMeetingUrl,iCalUId` |
+| `$orderby` | `start/dateTime` |
+| `$top` | `50` |
+
+Headers: `Authorization: Bearer <token>`, `Prefer: outlook.timezone="UTC"`, `Accept: application/json`, `client-request-id: <a fresh GUID per attempt>` and `return-client-request-id: true`. There is no `$filter`, no `$skip`, no `$expand`, and cancelled, declined and all-day events are dropped in Rust. A unit test pins the exact URL and the option names.
+
 ### The Meet log: `wall2-meet.log`
 
-Wall 2 writes `wall2-meet.log` in the app log directory (the same folder as `wall2-placement.log`). It is cleared at every launch, capped at 64 KB, and a write failure is ignored. It gets one line each time an account's state or reason changes, never one per poll:
+Wall 2 writes `wall2-meet.log` in the app log directory (Tauri's `app_log_dir`, `%LOCALAPPDATA%\com.havens-consulting.widget-wall2\logs\`, the same folder as `wall2-placement.log`). It is cleared at every launch and capped at 64 KB, and a write failure is ignored. A line is written each time an account's state or reason changes, and also for every failed Graph call (so a repeat failure can be traced):
 
 ```
 2026-11-12T17:00:00Z hc start ok none
-2026-11-12T17:05:00Z hc ok unavailable graph-403-ErrorAccessDenied
+2026-11-12T17:05:00Z hc ok unavailable graph-403-ErrorAccessDenied req=next host=graph status=403 net=none af=unknown code=ErrorAccessDenied inner=none request-id=<guid> client-request-id=<guid> attempt=1 ms=412
 ```
 
-The fields are the UTC time, the account `id` from `meet.json`, the old state, the new state and the reason code (`none` when there is none). The states are `start`, `ok`, `signed-out`, `needs-sign-in`, `unavailable`, `signed-in` and `sign-in-failed`.
+The first five fields are the UTC time, the account `id` from `meet.json`, the old state, the new state and the reason code (`none` when there is none). A Graph failure adds, in this order: `req` (`next` or `day`), `host` (`graph`, or `login` for the token request), `status` (the HTTP status, or `network` when no reply came), `net` (for a network failure its class: `dns`, `connect`, `timeout`, `reset` or `other`, taken from the error kinds and never from error text; `none` otherwise), `af` (the address family tried; always `unknown` today, the client does not say), `code` and `inner` (Graph's error code and inner error code, `none` when absent or not a plain name), `request-id` and `client-request-id` (Graph's response headers, `none` when absent or not a plain id), `attempt` (which try, 1 to 3) and `ms` (milliseconds since the read began). A line is cut at 400 characters. The states are `start`, `ok`, `signed-out`, `needs-sign-in`, `unavailable`, `signed-in` and `sign-in-failed`.
 
 ### What is never logged
 
-The Meet module has no `println!`, `eprintln!` or `dbg!`, and the only file it writes is `wall2-meet.log` above. Tokens, codes, `state`, the verifier, query strings, URLs, email addresses, names, meeting subjects and HTTP bodies never reach a log, a reason code or an error text. Every failure maps to a fixed string (`not-configured`, `invalid-config`, `busy`, `cancelled`, `timed-out`, `denied`, `failed`, `gone`, `forbidden`) or to one of the reason codes above, which are built only from numbers and a checked `error.code`.
+The Meet module has no `println!`, `eprintln!` or `dbg!`, and the only file it writes is `wall2-meet.log` above. Tokens, codes, `state`, the verifier, query strings, URLs, email addresses, names, meeting subjects and HTTP bodies never reach a log (a failed Graph call adds only the status, Graph's error code names, the two request ids, the attempt number and the elapsed time, each checked against a plain character set), a reason code or an error text. Every failure maps to a fixed string (`not-configured`, `invalid-config`, `busy`, `cancelled`, `timed-out`, `denied`, `failed`, `gone`, `forbidden`) or to one of the reason codes above, which are built only from numbers and a checked `error.code`.
 
 ## Agents
 
@@ -962,7 +985,7 @@ manipulation`, controls do not select text or flash a tap highlight, and rail bu
 show a pressed state on `:active`. Hover is a nicety (a cyan title on a task row, a
 tooltip on the ribbon's row icons); nothing depends on it. The rail buttons stay 72 by
 72. Inside cards the older touch sizes (72 px, and 52 by 44) no longer apply: controls
-are sized for a mouse, about 32 to 40 px tall (the centre fill's buttons, chips and
+are sized for a mouse, about 32 to 40 px tall (Meet's buttons are 40 and its Join rows 36; the centre fill's buttons, chips and
 stepper are 40, the Room card's mood chips 40, "Try again" 36). The Home chore ticks keep
 their 52 by 44 rows with no shared hit area between rows.
 
