@@ -38,6 +38,8 @@ export interface DayEvent {
   accountId?: string;
   /** Rust holds a link that opens the event in Outlook (`wall2_open_event`). */
   canOpen?: boolean;
+  /** Rust holds a join link (`wall2_meet_join`). */
+  canJoin?: boolean;
 }
 
 /**
@@ -143,6 +145,8 @@ export interface Chip {
   end: number;
   accountId: string | null;
   canOpen: boolean;
+  /** The calendar holds a join link for it. */
+  canJoin?: boolean;
 }
 
 const DAY_MS = 86_400_000;
@@ -176,6 +180,7 @@ function toChip(e: DayEvent, start: number, end: number, x: number, width: numbe
     end,
     accountId: typeof e.accountId === 'string' ? e.accountId : null,
     canOpen: e.canOpen === true,
+    canJoin: e.canJoin === true,
   };
 }
 
@@ -450,4 +455,147 @@ export function dueLabelSpan(m: DueMark): { x: number; width: number } {
 /** True when the span overlaps any of `boxes`. */
 export function overlapsAny(a: { x: number; width: number }, boxes: readonly { x: number; width: number }[]): boolean {
   return boxes.some((b) => a.x < b.x + b.width && b.x < a.x + a.width);
+}
+
+// The calm strip (Work and Meet): overlapping meetings fold into one chip, agents into one line.
+
+/** A run of overlapping timed meetings drawn as one chip: "3 at 1:30" and the titles. */
+export interface FoldChip {
+  key: string;
+  x: number;
+  width: number;
+  /** "3 at 1:30": how many, and the latest start in the run (when they all have begun). */
+  count: string;
+  items: Chip[];
+  /** The hour the run starts (local, 0 to 24), for the Day drawer to scroll to. */
+  hour: number;
+}
+
+/** Room the folded chip's count needs, so it is never cut. */
+export function foldCountWidth(count: string): number {
+  return Math.ceil(count.length * 9.6) + 20;
+}
+
+/**
+ * The calm strip's calendar row: a meeting alone keeps its chip (titles of narrow chips go
+ * beside them when there is room before the next thing); a run of meetings that overlap in
+ * time folds into one chip from the run's start to its end (at least wide enough for its
+ * count). Chips are in time order; nothing is stacked.
+ */
+export function calmLayout(all: readonly Chip[], now: number): { singles: Chip[]; folds: FoldChip[] } {
+  const items = [...all].sort((a, b) => a.start - b.start || a.x - b.x).map((c) => ({ ...c }));
+  const groups: Chip[][] = [];
+  let reach = -Infinity;
+  for (const c of items) {
+    if (groups.length > 0 && c.start < reach) {
+      groups[groups.length - 1].push(c);
+      reach = Math.max(reach, c.end);
+    } else {
+      groups.push([c]);
+      reach = c.end;
+    }
+  }
+  const singles: Chip[] = [];
+  const folds: FoldChip[] = [];
+  for (const g of groups) {
+    if (g.length === 1) {
+      singles.push(g[0]);
+      continue;
+    }
+    const x = Math.min(...g.map((c) => c.x));
+    const end = Math.max(...g.map((c) => c.x + c.width));
+    const latest = Math.max(...g.map((c) => c.start));
+    const count = `${g.length} at ${shortTime(latest)}`;
+    const start = Math.min(...g.map((c) => c.start));
+    folds.push({ key: `fold-${g[0].key}`, x, width: Math.max(end - x - 8, foldCountWidth(count)), count, items: g, hour: Math.max(0, wallHour(start, now)) });
+  }
+  // A narrow single's title goes beside it when the row has room before the next chip.
+  const next = [...singles.map((c) => c.x), ...folds.map((f) => f.x)];
+  for (const c of singles) {
+    if (!c.narrow) continue;
+    const from = c.x + c.width;
+    const room = Math.min(RX(END_HOUR) + 40, ...next.filter((x) => x >= from)) - from;
+    const free = Math.floor(room - 2 * BESIDE_GAP);
+    c.beside = free >= Math.min(titleWidth(c.title, 1), BESIDE_MIN_PX) ? Math.min(free, BESIDE_MAX_PX) : null;
+  }
+  return { singles, folds };
+}
+
+/** "All day · Team offsite week" for the thin bar over the calendar row. */
+export function allDayBarText(items: readonly Chip[]): string {
+  return `All day \u00b7 ${items.map((c) => c.title).join(', ')}`;
+}
+
+/** The activity bar's cells: 12 minutes each. */
+export const CELL_MIN = 12;
+
+/** One cell of the thin activity bar: how many sessions were busy in it, and whether one waited on the owner. */
+export interface ActivityCell {
+  x: number;
+  width: number;
+  start: number;
+  end: number;
+  busy: number;
+  waits: boolean;
+}
+
+/**
+ * The thin activity bar: 12 minute cells from 6 AM to `until` (now, or the stale cut), each
+ * with how many sessions had a span in it (any kind) and whether any of them waited on the
+ * owner. Cells with nothing in them are left out.
+ */
+export function activityCells(spans: readonly { lane: string; kind: string; start: number; end: number }[], now: number, until: number = now): ActivityCell[] {
+  const d = new Date(now);
+  d.setHours(START_HOUR, 0, 0, 0);
+  const from = d.getTime();
+  const out: ActivityCell[] = [];
+  for (let t = from; t < until; t += CELL_MIN * 60_000) {
+    const end = Math.min(until, t + CELL_MIN * 60_000);
+    const inCell = spans.filter((g) => g.start < end && g.end > t);
+    if (inCell.length === 0) continue;
+    const busy = new Set(inCell.map((g) => g.lane)).size;
+    const x = RX(clampHour(wallHour(t, now)));
+    const x1 = RX(clampHour(wallHour(end, now)));
+    out.push({ x, width: Math.max(1, x1 - x - 1), start: t, end, busy, waits: inCell.some((g) => g.kind === 'wait') });
+  }
+  return out;
+}
+
+/** A cell's opacity: brighter the more sessions were busy. */
+export function cellOpacity(busy: number): number {
+  return Math.min(1, 0.25 + busy * 0.12);
+}
+
+/** The agents line's counts: open sessions, how many need the owner, work, or sit idle. */
+export interface AgentCounts {
+  total: number;
+  need: number;
+  working: number;
+  idle: number;
+}
+
+/** "12 sessions: 2 need you, 5 working" or, with none needing him, "3 sessions: 2 working, 1 idle". */
+export function agentsLineParts(c: AgentCounts): { head: string; need: string | null; tail: string } {
+  const head = `${c.total} session${c.total === 1 ? '' : 's'}: `;
+  if (c.need > 0) return { head, need: `${c.need} need${c.need === 1 ? 's' : ''} you`, tail: `, ${c.working} working` };
+  return { head, need: null, tail: `${c.working} working, ${c.idle} idle` };
+}
+
+/** Width the agents line takes, estimated from its words (16 px type). */
+export function agentsLineWidth(text: string): number {
+  return Math.ceil(text.length * 8.2) + 4;
+}
+
+/** Fewer than this many pixels right of the needle and the agents line goes before it. */
+export const LINE_ROOM_PX = 360;
+
+/** Where the agents line sits: just after the needle, or right-aligned before it late in the day. */
+export function agentsLineX(needleX: number, width: number): number {
+  return RIBBON_WIDTH - (needleX + 14) < LINE_ROOM_PX ? needleX - 14 - width : needleX + 14;
+}
+
+/** "2 h 05 m", as the panels write durations. */
+export function hm(ms: number): string {
+  const m = Math.max(0, Math.round(ms / 60_000));
+  return `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')} m`;
 }

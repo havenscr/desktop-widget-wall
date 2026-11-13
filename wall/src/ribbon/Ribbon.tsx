@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useState } from 'react';
 import { IconBolt, IconCalendar, IconHome } from '@tabler/icons-react';
 import { invoke } from '../bridge/tauri';
 import { useFocusStore } from '../focus/store';
@@ -7,7 +7,9 @@ import { hideTip, pinTip, tip } from '../ui/HoverTip';
 import { AgentRow, agentBoxes } from './AgentRow';
 import { useAgentsStore } from '../agents/useAgents';
 import { useVisible } from '../ui/useVisible';
-import { allDayChips, allDayText, allDayWidth, chipLayout, chips, dueLabelSpan, isLate, dueMarks, focusBars, hourLabels, msToNextMinute, needle, needleTip, overlapsAny, skyGradient, spanText, sunLabels, ticks, type Chip, type MoreChip } from './model';
+import { allDayBarText, allDayChips, allDayText, allDayWidth, calmLayout, chipLayout, chips, dueLabelSpan, isLate, dueMarks, focusBars, hourLabels, msToNextMinute, needle, needleTip, overlapsAny, skyGradient, spanText, sunLabels, ticks, type Chip, type FoldChip, type MoreChip } from './model';
+import { AgentsToday } from './AgentsToday';
+import { DayDrawer } from './DayDrawer';
 import { sunTimes } from './sun';
 import { useDayFeed } from './useDayEvents';
 import { useDueTaskFeed } from './useDueTasks';
@@ -92,6 +94,25 @@ function AllDayTip({ items, labels }: { items: Chip[]; labels: Record<string, st
   );
 }
 
+/** A folded chip's hover: each meeting of the run with its times. */
+function FoldTip({ f }: { f: FoldChip }) {
+  return (
+    <>
+      <span className="tip-t">{f.items.length} meetings overlap</span>
+      {f.items.map((c) => (
+        <span key={c.key} className="tip-s tip-row">
+          <span>{c.title}</span>
+          <span className="tip-when">{spanText(c.start, c.end)}</span>
+        </span>
+      ))}
+      <span className="tip-k">Click to see them in the Day drawer</span>
+    </>
+  );
+}
+
+/** What is open over Work: nothing, the Day drawer (at an hour), or the Agents today panel. */
+type Overlay = { kind: 'drawer'; hour: number | null } | { kind: 'panel' } | null;
+
 /** The calendar row: 30 px from 33 for a single lane; stacked lanes share 31 to 65 with a 2 px gap. */
 const ROW_TOP = 31;
 const ROW_SPAN = 34;
@@ -153,159 +174,216 @@ export function Ribbon({ kind, now = Date.now }: { kind: RibbonKind; now?: () =>
   const sun = sunTimes(t);
   const n = needle(t);
   const Row2 = kind === 'home' ? IconHome : IconBolt;
+  const calm = kind === 'work';
   const dayChips = chips(events, t);
   const allDay = allDayChips(events, t);
-  const lay = chipLayout(dayChips, allDay.length > 0 ? allDayWidth(allDay.length) : 0);
+  // Home keeps its lanes; Work and Meet fold overlapping meetings into one chip.
+  const lay = calm ? { shown: [] as Chip[], more: [] as MoreChip[], allDay: null } : chipLayout(dayChips, allDay.length > 0 ? allDayWidth(allDay.length) : 0);
+  const fold = calm ? calmLayout(dayChips, t) : { singles: [] as Chip[], folds: [] as FoldChip[] };
+  const shown = calm ? fold.singles : lay.shown;
   const allDayBox = lay.allDay ? laneBox(lay.allDay.lane, lay.allDay.lanes) : null;
   const marks = dueMarks(tasks, t);
-  // On Work, a due label that would sit on the agent bars shows only its diamond (the label
-  // moves to the hover), so neither is drawn over the other. Read from the shared store: the
-  // agent row owns the poll.
+  // On Work, a due label that would sit on the activity bar or the agents line shows only its
+  // diamond (the label moves to the hover), so neither is drawn over the other. Read from the
+  // shared store: the agent row owns the poll.
   const agents = useAgentsStore();
-  const boxes = kind === 'work' ? agentBoxes(agents, t) : [];
+  const boxes = calm ? agentBoxes(agents, t) : [];
+  const [overlay, setOverlay] = useState<Overlay>(null);
+  const close = useCallback(() => setOverlay(null), []);
+  // The panel needs the helper: hidden when it is not set up.
+  const canPanel = calm && agents.status !== 'unconfigured';
+  const openPanel = useCallback(() => setOverlay({ kind: 'panel' }), []);
+  const openDrawer = useCallback((hour: number | null) => setOverlay((o) => (o?.kind === 'drawer' && hour === null ? null : { kind: 'drawer', hour })), []);
   return (
-    <section className={isLate(t) ? 'rib late' : 'rib'} data-kind={kind} aria-label="Today">
-      <i className="skyb" style={{ background: skyGradient(sun, t) }} aria-hidden="true" />
-      <div aria-hidden="true">
-        {TICKS.map((x) => (
-          <i key={x} className="tk" style={{ left: x }} />
-        ))}
-        {hourLabels(n.x).map((l) => (
-          <span key={l.x} className="hl" style={{ left: l.x }}>
-            {l.text}
-          </span>
-        ))}
-        {sunLabels(sun, t, n.x).map((l) => (
-          <span key={l.text} className="hl sun" style={{ left: l.x }}>
-            {l.text}
-          </span>
-        ))}
-      </div>
-      <span className="li" style={{ top: 38 }} title="Today's calendar" aria-label="Today's calendar" role="img">
-        <IconCalendar stroke={1.8} aria-hidden="true" />
-      </span>
-      {dayChips.length === 0 && allDay.length === 0 && day.calendar !== 'unknown' && (
-        <span className="li-empty" style={{ top: 38 }}>
-          {day.calendar === 'ok' ? 'No meetings today' : 'Calendar not available'}
-        </span>
-      )}
-      <span className="li" style={{ top: 70 }} title={ROW2_TIP[kind]} aria-label={ROW2_TIP[kind]} role="img">
-        <Row2 stroke={1.8} aria-hidden="true" />
-      </span>
-      {kind === 'home' && due.known && marks.length === 0 && (
-        <span className="li-empty" style={{ top: 70 }}>
-          Nothing scheduled at home
-        </span>
-      )}
-      {lay.more.map((m) => (
-        <button
-          key={m.key}
-          type="button"
-          className="ev more"
-          style={{ left: m.x, width: m.width }}
-          aria-label={`${m.items.length} more at this time: ${m.items.map((c) => c.title).join(', ')}`}
-          {...tip(() => <MoreTip m={m} labels={day.labels} />)}
-          onClick={(e) => {
-            if (m.items.some((c) => c.canOpen)) pinTip(e.currentTarget, () => <MorePick m={m} labels={day.labels} />);
-          }}
-        >
-          +{m.items.length}
-        </button>
-      ))}
-      {lay.allDay && (
-        <button
-          type="button"
-          className={`ev allday${lay.allDay.lanes > 1 ? ` s${Math.min(3, lay.allDay.lanes)}` : ''}`}
-          style={{ left: lay.allDay.x, width: lay.allDay.width, ...(allDayBox ?? {}) }}
-          aria-label={`${allDayText(allDay.length)}: ${allDay.map((c) => c.title).join(', ')}`}
-          {...tip(() => <AllDayTip items={allDay} labels={day.labels} />)}
-          onClick={(e) => {
-            const open = allDay.filter((c) => c.canOpen);
-            if (allDay.length === 1 && open.length === 1) openEvent(open[0].key);
-            else if (open.length > 0) pinTip(e.currentTarget, () => <MorePick m={{ key: 'allday', x: 0, width: 0, items: allDay }} labels={day.labels} />);
-          }}
-        >
-          {lay.allDay.lanes >= 3 ? allDay.length : allDayText(allDay.length)}
-        </button>
-      )}
-      {lay.shown.map((c) => {
-        const account = c.accountId ? (day.labels[c.accountId] ?? null) : null;
-        const box = laneBox(c.lane, c.lanes);
-        const cls = `${c.state}${c.live ? ' live' : ''}${c.lanes > 1 ? ` s${Math.min(3, c.lanes)}` : ''}`;
-        return (
-          <Fragment key={c.key}>
-            {c.narrow && c.beside !== null && (
-              <span className={`ev-side ${cls}`} style={{ left: c.x + c.width + 6, width: c.beside, ...(box ?? {}) }} aria-hidden="true">
-                {c.title}
-              </span>
-            )}
-            <div
-              className={`ev ${cls}${c.canOpen ? ' open' : ''}`}
-              style={{ left: c.x, width: c.width, ...(box ?? {}) }}
-              role={c.canOpen ? 'button' : undefined}
-              tabIndex={c.canOpen ? 0 : undefined}
-              aria-label={`${c.title}, ${spanText(c.start, c.end)}${account ? `, ${account}` : ''}${c.canOpen ? '. Opens it in Outlook' : ''}`}
-              onClick={c.canOpen ? () => openEvent(c.key) : undefined}
-              onKeyDown={
-                c.canOpen
-                  ? (e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        openEvent(c.key);
-                      }
-                    }
-                  : undefined
-              }
-              {...tip(() => <ChipTip c={c} account={account} />)}
-            >
-              {c.narrow ? null : c.title}
-            </div>
-          </Fragment>
-        );
-      })}
-      {kind === 'work' && <AgentRow now={t} dueCount={due.known ? marks.length : null} />}
-      {kind === 'work' &&
-        focusBars(sessions, t).map((b) => (
-          <i key={b.x} className="fo" style={{ left: b.x, width: b.width }} aria-hidden="true" />
-        ))}
-      {marks.map((d) => {
-        const bare = overlapsAny(dueLabelSpan(d), boxes);
-        return (
-        <div
-          key={d.key}
-          className={`due${bare ? ' bare' : ''}`}
-          style={{ left: d.x }}
-          role="button"
-          tabIndex={0}
-          aria-label={`Due ${d.time}: ${d.title}. Opens the task`}
-          onClick={() => openTask(d.key)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              openTask(d.key);
-            }
-          }}
-          {...tip(() => (
-            <>
-              <span className="tip-t">{d.title}</span>
-              <span className="tip-s">Due at {d.time}</span>
-              <span className="tip-k">Click to open it in the task app</span>
-            </>
+    <>
+      <section className={`${isLate(t) ? 'rib late' : 'rib'}${calm && allDay.length > 0 ? ' has-allday' : ''}`} data-kind={kind} aria-label="Today">
+        <i className="skyb" style={{ background: skyGradient(sun, t) }} aria-hidden="true" />
+        <div aria-hidden="true">
+          {TICKS.map((x) => (
+            <i key={x} className="tk" style={{ left: x }} />
           ))}
-        >
-          <i aria-hidden="true" />
-          {!bare && (
-            <>
-              <span className="n">{d.title}</span>
-              <span aria-hidden="true">, {d.time}</span>
-            </>
-          )}
+          {hourLabels(n.x).map((l) => (
+            <span key={l.x} className="hl" style={{ left: l.x }}>
+              {l.text}
+            </span>
+          ))}
+          {sunLabels(sun, t, n.x).map((l) => (
+            <span key={l.text} className="hl sun" style={{ left: l.x }}>
+              {l.text}
+            </span>
+          ))}
         </div>
-        );
-      })}
-      <div className="ndl" style={{ left: n.x }}>
-        <b {...tip(() => needleTip(dayChips, t, day.calendar === 'ok'))}>{n.text}</b>
-      </div>
-    </section>
+        <span className="li" style={{ top: 38 }} title="Today's calendar" aria-label="Today's calendar" role="img">
+          <IconCalendar stroke={1.8} aria-hidden="true" />
+        </span>
+        {dayChips.length === 0 && allDay.length === 0 && day.calendar !== 'unknown' && (
+          <span className="li-empty" style={{ top: 38 }}>
+            {day.calendar === 'ok' ? 'No meetings today' : 'Calendar not available'}
+          </span>
+        )}
+        <span className="li" style={{ top: 70 }} title={ROW2_TIP[kind]} aria-label={ROW2_TIP[kind]} role="img">
+          <Row2 stroke={1.8} aria-hidden="true" />
+        </span>
+        {kind === 'home' && due.known && marks.length === 0 && (
+          <span className="li-empty" style={{ top: 70 }}>
+            Nothing scheduled at home
+          </span>
+        )}
+        {lay.more.map((m) => (
+          <button
+            key={m.key}
+            type="button"
+            className="ev more"
+            style={{ left: m.x, width: m.width }}
+            aria-label={`${m.items.length} more at this time: ${m.items.map((c) => c.title).join(', ')}`}
+            {...tip(() => <MoreTip m={m} labels={day.labels} />)}
+            onClick={(e) => {
+              if (m.items.some((c) => c.canOpen)) pinTip(e.currentTarget, () => <MorePick m={m} labels={day.labels} />);
+            }}
+          >
+            +{m.items.length}
+          </button>
+        ))}
+        {lay.allDay && (
+          <button
+            type="button"
+            className={`ev allday${lay.allDay.lanes > 1 ? ` s${Math.min(3, lay.allDay.lanes)}` : ''}`}
+            style={{ left: lay.allDay.x, width: lay.allDay.width, ...(allDayBox ?? {}) }}
+            aria-label={`${allDayText(allDay.length)}: ${allDay.map((c) => c.title).join(', ')}`}
+            {...tip(() => <AllDayTip items={allDay} labels={day.labels} />)}
+            onClick={(e) => {
+              const open = allDay.filter((c) => c.canOpen);
+              if (allDay.length === 1 && open.length === 1) openEvent(open[0].key);
+              else if (open.length > 0) pinTip(e.currentTarget, () => <MorePick m={{ key: 'allday', x: 0, width: 0, items: allDay }} labels={day.labels} />);
+            }}
+          >
+            {lay.allDay.lanes >= 3 ? allDay.length : allDayText(allDay.length)}
+          </button>
+        )}
+        {calm && allDay.length > 0 && (
+          <button
+            type="button"
+            className="adbar"
+            aria-label={`${allDayText(allDay.length)}: ${allDay.map((c) => c.title).join(', ')}`}
+            {...tip(() => <AllDayTip items={allDay} labels={day.labels} />)}
+            onClick={(e) => {
+              const open = allDay.filter((c) => c.canOpen);
+              if (allDay.length === 1 && open.length === 1) openEvent(open[0].key);
+              else if (open.length > 0) pinTip(e.currentTarget, () => <MorePick m={{ key: 'allday', x: 0, width: 0, items: allDay }} labels={day.labels} />);
+            }}
+          >
+            {allDayBarText(allDay)}
+          </button>
+        )}
+        {fold.folds.map((f) => (
+          <button
+            key={f.key}
+            type="button"
+            className={`ev fold${f.items.every((c) => c.state === 'past') ? ' past' : ''}`}
+            style={{ left: f.x, width: f.width }}
+            aria-label={`${f.count}: ${f.items.map((c) => `${c.title}, ${spanText(c.start, c.end)}`).join('; ')}. Opens the Day drawer`}
+            onClick={() => openDrawer(f.hour)}
+            {...tip(() => <FoldTip f={f} />)}
+          >
+            <b className="fold-n">{f.count}</b>
+            <span className="fold-t">{f.items.map((c) => c.title).join(', ')}</span>
+          </button>
+        ))}
+        {shown.map((c) => {
+          const account = c.accountId ? (day.labels[c.accountId] ?? null) : null;
+          const box = laneBox(c.lane, c.lanes);
+          const cls = `${c.state}${c.live ? ' live' : ''}${c.lanes > 1 ? ` s${Math.min(3, c.lanes)}` : ''}`;
+          return (
+            <Fragment key={c.key}>
+              {c.narrow && c.beside !== null && (
+                <span className={`ev-side ${cls}`} style={{ left: c.x + c.width + 6, width: c.beside, ...(box ?? {}) }} aria-hidden="true">
+                  {c.title}
+                </span>
+              )}
+              <div
+                className={`ev ${cls}${c.canOpen ? ' open' : ''}`}
+                style={{ left: c.x, width: c.width, ...(box ?? {}) }}
+                role={c.canOpen ? 'button' : undefined}
+                tabIndex={c.canOpen ? 0 : undefined}
+                aria-label={`${c.title}, ${spanText(c.start, c.end)}${account ? `, ${account}` : ''}${c.canOpen ? '. Opens it in Outlook' : ''}`}
+                onClick={c.canOpen ? () => openEvent(c.key) : undefined}
+                onKeyDown={
+                  c.canOpen
+                    ? (e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          openEvent(c.key);
+                        }
+                      }
+                    : undefined
+                }
+                {...tip(() => <ChipTip c={c} account={account} />)}
+              >
+                {c.narrow ? null : c.title}
+              </div>
+            </Fragment>
+          );
+        })}
+        {calm && <AgentRow now={t} dueCount={due.known ? marks.length : null} onOpenPanel={canPanel ? openPanel : undefined} />}
+        {calm &&
+          focusBars(sessions, t).map((b) => (
+            <i key={b.x} className="fo" style={{ left: b.x, width: b.width }} aria-hidden="true" />
+          ))}
+        {marks.map((d) => {
+          const bare = overlapsAny(dueLabelSpan(d), boxes);
+          return (
+            <div
+              key={d.key}
+              className={`due${bare ? ' bare' : ''}`}
+              style={{ left: d.x }}
+              role="button"
+              tabIndex={0}
+              aria-label={`Due ${d.time}: ${d.title}. Opens the task`}
+              onClick={() => openTask(d.key)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  openTask(d.key);
+                }
+              }}
+              {...tip(() => (
+                <>
+                  <span className="tip-t">{d.title}</span>
+                  <span className="tip-s">Due at {d.time}</span>
+                  <span className="tip-k">Click to open it in the task app</span>
+                </>
+              ))}
+            >
+              <i aria-hidden="true" />
+              {!bare && (
+                <>
+                  <span className="n">{d.title}</span>
+                  <span aria-hidden="true">, {d.time}</span>
+                </>
+              )}
+            </div>
+          );
+        })}
+        <div className="ndl" style={{ left: n.x }}>
+          <b {...tip(() => needleTip(dayChips, t, day.calendar === 'ok'))}>{n.text}</b>
+        </div>
+        {calm && (
+          <button
+            type="button"
+            className="rib-handle"
+            aria-label={overlay?.kind === 'drawer' ? 'Close the Day drawer' : 'Open the Day drawer'}
+            aria-expanded={overlay?.kind === 'drawer'}
+            onClick={() => openDrawer(null)}
+            {...tip(overlay?.kind === 'drawer' ? 'Close the Day drawer' : 'Open the Day drawer: the agenda and every session today')}
+          >
+            <i />
+          </button>
+        )}
+      </section>
+      {calm && overlay?.kind === 'drawer' && (
+        <DayDrawer chips={dayChips} allDay={allDay} labels={day.labels} now={t} scrollHour={overlay.hour} onClose={close} onOpenPanel={canPanel ? openPanel : null} />
+      )}
+      {calm && overlay?.kind === 'panel' && <AgentsToday now={t} onClose={close} />}
+    </>
   );
 }
