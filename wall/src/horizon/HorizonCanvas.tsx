@@ -4,10 +4,23 @@ import { useIdle } from '../ui/useIdle';
 import { wantsDemo } from '../audio/capture';
 import { STAGE_HEIGHT, STAGE_WIDTH, fitScale } from '../stage/fitScale';
 import { usePlaceStore } from '../state/places';
-import { audioBeats, clearBandHistory, pauseBandHistory, useAudioStore } from '../audio/store';
+import { audioBands, audioBeats, clearBandHistory, pauseBandHistory, useAudioStore } from '../audio/store';
 import { loudness, smoothStep } from '../audio/model';
 import { CAMERAS, HOME_MORNING, MOON, cameraFor, cloudShiftFor, glideCamera, localDay, settled, startGlide, stepGlide, type CameraPreset, type Glide } from './cameras';
-import { createEchoSampler, echoOptions, echoRate, initialEchoGate, stepEchoFade, stepEchoGate } from './echo';
+import {
+  REST_PHASE,
+  createEchoMotion,
+  createEchoSampler,
+  echoOptions,
+  echoStrength,
+  initialEchoGate,
+  musicDriving,
+  restEchoMotion,
+  scaleEcho,
+  stepEchoFade,
+  stepEchoGate,
+  stepEchoMotion,
+} from './echo';
 import { frameDelta, shouldDraw } from './pacing';
 import { clearGridPulse, createGridPulse, stepGridPulse } from './pulse';
 import { parseReview } from './review';
@@ -47,9 +60,12 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
   const glide = useRef<Glide>(settled(cameraFor(review?.place ?? place ?? 'work', review ? review.ms : now())));
   const repaint = useRef<() => void>(() => {});
   const first = useRef(true);
-  // The ripple fade (0 to 1) follows `playing`.
-  const fade = useRef(0);
-  const loud = useRef(0); // smoothed loudness, so the ripple eases out when the store drops to zero
+  // The ridgelines between playing and rest (`stepEchoMotion`): they settle into their resting look
+  // over 2.5 s once music stops driving them, and lift back over 1.5 s. Starts at rest.
+  const motion = useRef(createEchoMotion());
+  // Smoothed loudness (Work and Home scale their live lines by it). Held while the lines settle, so
+  // they ease from where they were into the resting look rather than dimming first.
+  const loud = useRef(0);
   // The camera gate (0 to 1): ramps the ripple out on a turn to Rainier and back in after the turn away.
   const gate = useRef(initialEchoGate(glide.current));
   // The opacity drawn last frame: during a move toward a camera without a ripple the drawn
@@ -57,7 +73,7 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
   const lastEchoA = useRef(0);
   // 1 while the display is in use, easing to 0 over a second once it goes idle.
   const awake = useRef(1);
-  // The echo's own clock (`echoRate`: slower for the idle lines) and the real-band sampler.
+  // The echo's clock and the real-band sampler.
   const echoT = useRef(0);
   const sampler = useRef(createEchoSampler());
   // Tell Watt (read only) where the camera is going and whether it is moving; cleared on unmount
@@ -137,28 +153,34 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
         cloudShift: cloudShiftFor(camera),
       };
       // The grid pulse never appears in the review still or under reduced motion's still frames.
-      // The echo there is the visualizer's idle lines, frozen at t 0 (Unwind only; null elsewhere).
       if (!still) {
-        let echo = echoOptions(camera, fade.current, loud.current, echoT.current, gate.current.value * awake.current);
+        const m = motion.current;
+        let echo = echoOptions(camera, 1, loud.current, echoT.current, gate.current.value * awake.current, m.rest);
         const turningOff = glide.current.to.ea === 0 && glide.current.progress < 1;
-        if (echo && turningOff && echo.a > lastEchoA.current) {
-          echo.a = lastEchoA.current;
-          if (echo.a <= 0.005) echo = null;
+        if (echo && turningOff && echoStrength(echo) > lastEchoA.current) {
+          scaleEcho(echo, lastEchoA.current / echoStrength(echo));
+          if (echoStrength(echo) <= 0.005) echo = null;
         }
-        lastEchoA.current = echo ? echo.a : 0;
+        lastEchoA.current = echo ? echoStrength(echo) : 0;
         if (echo) {
-          if (fade.current > 0) {
+          echo.drift = m.drift;
+          // The real bands, while any line still follows them (at rest none does, so none are read).
+          if (m.rest < 1) {
             const s = sampler.current;
             s.t = echoT.current;
-            s.w = fade.current;
+            s.w = 1;
             echo.sample = s.sample;
           }
           options.echo = echo;
         }
         if (grid.current) options.grid = grid.current;
       } else {
-        const echo = echoOptions(camera, 0, 0, 0, initialEchoGate(glide.current).value);
-        if (echo) options.echo = echo;
+        // The still frame shows the lines at rest.
+        const echo = echoOptions(camera, 1, 0, 0, initialEchoGate(glide.current).value, 1);
+        if (echo) {
+          echo.drift = REST_PHASE;
+          options.echo = echo;
+        }
       }
       // The moon shows only once the camera has arrived at Unwind (no glide in progress), and
       // goes the moment a glide away starts. The review still and reduced motion jump straight there.
@@ -173,13 +195,15 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
       const dt = frameDelta(ts, last);
       last = ts;
       T += dt;
-      loud.current = smoothStep(loud.current, loudness(useAudioStore.getState()), dt);
-      fade.current = stepEchoFade(fade.current, useAudioStore.getState().playing, dt);
+      const audio = useAudioStore.getState();
+      const driving = musicDriving(motion.current, audio.playing, audioBands(), dt);
+      if (driving) loud.current = smoothStep(loud.current, loudness(audio), dt);
+      stepEchoMotion(motion.current, driving, dt);
       awake.current = stepEchoFade(awake.current, !idleRef.current, dt);
       glide.current = stepGlide(glide.current, dt);
       publish();
       stepEchoGate(gate.current, glide.current, dt);
-      echoT.current += dt * echoRate(glideCamera(glide.current), fade.current);
+      echoT.current += dt;
       const beats = audioBeats();
       const input = pulseIn.current;
       input.playing = useAudioStore.getState().playing;
@@ -214,11 +238,11 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
     };
   }, [reduced, review, zen, demo]);
 
-  // Hidden pages start the ripple, the grid pulse and the band history from nothing when they return, never from stale levels.
+  // Hidden pages return with the lines at rest, and the grid pulse and the band history from nothing, never from stale levels.
   useEffect(() => {
     const onHide = () => {
       if (document.hidden) {
-        fade.current = 0;
+        restEchoMotion(motion.current);
         loud.current = 0;
         clearGridPulse(pulse.current);
         grid.current = null;
