@@ -1,6 +1,7 @@
-import { STOPS, buddyFrame, createWander, spriteHeight, spriteWidth, wanderAt, type BuddyFrame, type Walk, type WattPlace } from './model';
+import { MAIN_LEFT, MAIN_WIDTH } from '../screens/frameLayout';
+import { STOPS, UNWIND_ROW, buddyFrame, createWander, spriteHeight, spriteWidth, wanderAt, type BuddyFrame, type Walk, type WanderPoint, type WattPlace } from './model';
 import type { Cosmetic } from './pet';
-import { CLOVER, MARK, PROP_SPRITES, SMALL_PX, SPRITES, propOrigin, type Pose, type Prop } from './sprites';
+import { CLOVER, EAR, MARK, PROP_SPRITES, SMALL_PX, SPRITES, propOrigin, type Pose, type Prop } from './sprites';
 
 /**
  * Watt as a pet: what she wears, what she is doing about the wall, where her bubble, her amber mark
@@ -38,6 +39,8 @@ export interface Mind {
   reactDir: 1 | -1;
   /** 0 to 1: a soft squash on the beat, decaying. */
   bob: number;
+  /** Her card is open: she stands still so she does not walk under it. */
+  held: boolean;
 }
 
 export function createMind(): Mind {
@@ -55,12 +58,13 @@ export function createMind(): Mind {
     reactT: 0,
     reactDir: 1,
     bob: 0,
+    held: false,
   };
 }
 
 /** True while `m.react` is one that holds her still (the wander clock stops). */
 export function holdsStill(m: Mind): boolean {
-  return m.react !== null && m.reactT < REACT_S[m.react];
+  return m.held || (m.react !== null && m.reactT < REACT_S[m.react]);
 }
 
 /** What Watt draws this frame, beyond the base frame. Reused. */
@@ -225,8 +229,86 @@ export function markBox(walk: Walk, x: number, y: number, w: number, out: Box = 
   return out;
 }
 
-/** The clicked area round the mark: at least 32 by 32, centred on it. */
+/** The clicked area round the mark (32 by 32) and round the clover (24 by 24). */
 export const MARK_HIT = 32;
+export const CLOVER_HIT = 24;
+
+/**
+ * A `size` square centred on `b`, kept inside the walk's band: not above the ceiling, not below
+ * the ground line, not past the walk's right limit. Written into `out`.
+ */
+function hitAround(walk: Walk, hy: number, b: Box, size: number, out: Box): Box {
+  const cx = b.left + b.width / 2;
+  const cy = b.top + b.height / 2;
+  out.width = size;
+  out.height = size;
+  out.left = Math.min(cx - size / 2, walk.right - size);
+  out.top = Math.max(walk.ceiling, Math.min(cy - size / 2, hy - size));
+  return out;
+}
+
+/** The mark's click box, from its drawn box `mark`. Written into `out`. */
+export function markHitBox(walk: Walk, hy: number, mark: Box, out: Box = createBox()): Box {
+  return hitAround(walk, hy, mark, MARK_HIT, out);
+}
+
+/** The clover's click box, from its drawn box `clover`. Written into `out`. */
+export function cloverHitBox(walk: Walk, hy: number, clover: Box, out: Box = createBox()): Box {
+  return hitAround(walk, hy, clover, CLOVER_HIT, out);
+}
+
+/**
+ * Her two click boxes (body, then head), in sprite pixels from the sheep's top left, facing
+ * `dir`: her visible shape rather than the whole sprite box with its empty corners. Written into
+ * `body` and `head` (left, top, width, height in sprite pixels).
+ */
+export function hitParts(pose: Pose, dir: 1 | -1, body: Box, head: Box): void {
+  const map = SPRITES[pose];
+  const cols = map[0].length;
+  const rows = map.length;
+  const [ex, ey] = EAR[pose];
+  body.left = 0;
+  body.top = 1;
+  body.width = ex;
+  body.height = rows - 1;
+  head.left = ex;
+  head.top = ey;
+  head.width = cols - ex;
+  head.height = Math.min(5, rows - ey);
+  if (dir === -1) {
+    body.left = cols - body.left - body.width;
+    head.left = cols - head.left - head.width;
+  }
+}
+
+/** Her hover card's box, design pixels (the card is drawn at exactly this size). */
+export const CARD_W = 660;
+export const CARD_H = 74;
+
+/**
+ * Where her card goes: in the band over the horizon beside her on Work, Home and Meet (right of
+ * her when it fits in the main area, else left), covering nothing but the horizon; on Unwind,
+ * below the transport row, right of the Tomorrow block, over the empty floor. Written into `out`.
+ */
+export function placeCard(place: WattPlace, walk: Walk, x: number, w: number, out: Box = createBox()): Box {
+  out.width = CARD_W;
+  out.height = CARD_H;
+  if (place === 'unwind') {
+    out.left = UNWIND_ROW.left - 24;
+    out.top = UNWIND_ROW.bottom + 8;
+    return out;
+  }
+  out.top = walk.ceiling + 4;
+  const right = x + w + 16;
+  out.left = right + CARD_W <= MAIN_LEFT + MAIN_WIDTH ? right : Math.max(MAIN_LEFT, x - 16 - CARD_W);
+  return out;
+}
+
+/** True when she stands at clover stop `stop` on her wander clock `t` (uses `wp`, no allocation). */
+export function atClover(walk: Walk, t: number, stop: number, wp: WanderPoint): boolean {
+  wanderAt(walk, t, wp);
+  return !wp.moving && wp.stop === stop;
+}
 
 /** Where a clover grows: on the ground at stop `stop` of the walk (or beside her middle when still). */
 export function cloverBox(walk: Walk, hy: number, stop: number, out: Box = createBox()): Box {

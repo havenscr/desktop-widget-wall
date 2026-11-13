@@ -23,6 +23,8 @@ export interface Today {
   focus: number;
   /** Agents she saw finish. */
   agents: number;
+  /** Clovers grown today (at most two; one when the wall starts after the second time). */
+  grown: number;
 }
 
 export interface PetData {
@@ -44,7 +46,7 @@ export function dayKey(ms: number): string {
 }
 
 export function emptyToday(date: string): Today {
-  return { date, pets: 0, songs: 0, naps: 0, clovers: 0, focus: 0, agents: 0 };
+  return { date, pets: 0, songs: 0, naps: 0, clovers: 0, focus: 0, agents: 0, grown: 0 };
 }
 
 export function defaultPet(now: number): PetData {
@@ -78,7 +80,7 @@ export function parsePet(raw: string | null, now: number): PetData {
     const t: Partial<Today> = v.today && typeof v.today === 'object' ? v.today : {};
     const tDate = date(t.date);
     const today: Today = tDate
-      ? { date: tDate, pets: count(t.pets), songs: count(t.songs), naps: count(t.naps), clovers: count(t.clovers), focus: count(t.focus), agents: count(t.agents) }
+      ? { date: tDate, pets: count(t.pets), songs: count(t.songs), naps: count(t.naps), clovers: count(t.clovers), focus: count(t.focus), agents: count(t.agents), grown: count(t.grown, 2) }
       : base.today;
     return { chatty, cosmetic, days, lastDay: date(v.lastDay), today };
   } catch {

@@ -1,4 +1,4 @@
-import type { Lane } from '../agents/model';
+import type { DaySpan, Lane } from '../agents/model';
 import type { WeatherReading } from '../weather/model';
 import type { Topic } from './lines';
 
@@ -76,15 +76,22 @@ export function workingIds(lanes: readonly Lane[]): Set<string> {
 }
 
 /**
- * How many agents finished between two answers: lanes that were working and are now gone, or have
- * reached a pull request or gone live, without waiting for an answer.
+ * How many agents finished between two answers, by the summary's own word: a lane that was
+ * working and has now reached a pull request or gone live (not waiting), or a lane that has left
+ * the list whose newest span in the day is `done`. A lane that left for any other reason
+ * (dismissed, past the cap) does not count.
  */
-export function finishedBetween(before: ReadonlySet<string>, lanes: readonly Lane[]): number {
+export function finishedBetween(before: ReadonlySet<string>, lanes: readonly Lane[], day: readonly DaySpan[] = []): number {
   let n = 0;
   for (const id of before) {
     const l = lanes.find((x) => x.id === id);
-    if (!l) n++;
-    else if (!l.waiting && l.state !== 'blocked' && (l.stage === 'pr' || l.stage === 'live') && l.state !== 'working') n++;
+    if (l) {
+      if (!l.waiting && l.state !== 'blocked' && l.state !== 'working' && (l.stage === 'pr' || l.stage === 'live')) n++;
+      continue;
+    }
+    let newest: DaySpan | null = null;
+    for (const sp of day) if (sp.lane === id && (!newest || sp.start > newest.start)) newest = sp;
+    if (newest?.kind === 'done') n++;
   }
   return n;
 }
@@ -94,6 +101,19 @@ export function cloverTimes(dateKey: string): [number, number] {
   let h = 7;
   for (let i = 0; i < dateKey.length; i++) h = (h * 31 + dateKey.charCodeAt(i)) >>> 0;
   return [10 * 60 + (h % 120), 15 * 60 + ((h >>> 8) % 90)];
+}
+
+/**
+ * Whether a clover grows now, and the grown count after it: the first at its time, the second at
+ * its own. A wall that starts after the second time grows just one (counted as both), so two
+ * never come back to back. Null when none is due.
+ */
+export function cloverDue(dateKey: string, minutes: number, grown: number): number | null {
+  const [a, b] = cloverTimes(dateKey);
+  if (grown >= 2) return null;
+  if (grown === 0 && minutes >= a) return minutes >= b ? 2 : 1;
+  if (grown === 1 && minutes >= b) return 2;
+  return null;
 }
 
 /** A clover waits this long before she wanders over to eat it by herself, milliseconds. */

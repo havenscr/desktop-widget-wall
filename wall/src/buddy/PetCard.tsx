@@ -11,8 +11,8 @@ const COSMETIC_WORD: Readonly<Record<Cosmetic, string>> = { none: 'None', bow: '
 
 /**
  * Watt's hover card: her name and mood, two honest lines about today, the days together, how chatty
- * she is, and the cosmetics she has unlocked. Above her (it covers the band over her while open,
- * like any hover card); it stays open while the pointer is on it.
+ * she is, and the cosmetics she has unlocked. A strip placed by `placeCard` (beside her in the band
+ * over the horizon, or under Unwind's transport row); it stays open while the pointer is on it.
  */
 export function PetCard({
   left,
@@ -39,49 +39,51 @@ export function PetCard({
       <div className="wc-head">
         <span className="wc-name">Watt</span>
         <span className={`wc-mood m-${mood}`}>{MOOD_WORD[mood]}</span>
+        <ul className="wc-today">
+          {todayLines(pet.today).map((l) => (
+            <li key={l}>{l}</li>
+          ))}
+        </ul>
         <span className="wc-days">{days === 1 ? 'First day together' : `${days} days together`}</span>
       </div>
-      <ul className="wc-today">
-        {todayLines(pet.today).map((l) => (
-          <li key={l}>{l}</li>
-        ))}
-      </ul>
-      <div className="wc-row" role="radiogroup" aria-label="How chatty">
-        <span className="wc-label">Chatty</span>
-        {CHATTY_LEVELS.map((c) => (
-          <button
-            key={c}
-            type="button"
-            role="radio"
-            aria-checked={pet.chatty === c}
-            className={pet.chatty === c ? 'on' : ''}
-            title={CHATTY_HINT[c]}
-            onClick={() => onChatty(c)}
-          >
-            {CHATTY_WORD[c]}
-          </button>
-        ))}
-      </div>
-      <div className="wc-row" role="radiogroup" aria-label="What she wears">
-        <span className="wc-label">Wear</span>
-        {COSMETICS.map((c) => {
-          const open = unlocked(c, days);
-          const left = UNLOCK_DAYS[c] - days;
-          return (
+      <div className="wc-rows">
+        <div className="wc-row" role="radiogroup" aria-label="How chatty">
+          <span className="wc-label">Chatty</span>
+          {CHATTY_LEVELS.map((c) => (
             <button
               key={c}
               type="button"
               role="radio"
-              aria-checked={pet.cosmetic === c}
-              className={pet.cosmetic === c ? 'on' : ''}
-              disabled={!open}
-              title={open ? COSMETIC_WORD[c] : `Unlocks in ${left} day${left === 1 ? '' : 's'}`}
-              onClick={() => onCosmetic(c)}
+              aria-checked={pet.chatty === c}
+              className={pet.chatty === c ? 'on' : ''}
+              title={CHATTY_HINT[c]}
+              onClick={() => onChatty(c)}
             >
-              {COSMETIC_WORD[c]}
+              {CHATTY_WORD[c]}
             </button>
-          );
-        })}
+          ))}
+        </div>
+        <div className="wc-row" role="radiogroup" aria-label="What she wears">
+          <span className="wc-label">Wear</span>
+          {COSMETICS.map((c) => {
+            const open = unlocked(c, days);
+            const left = UNLOCK_DAYS[c] - days;
+            return (
+              <button
+                key={c}
+                type="button"
+                role="radio"
+                aria-checked={pet.cosmetic === c}
+                className={pet.cosmetic === c ? 'on' : ''}
+                disabled={!open}
+                title={open ? COSMETIC_WORD[c] : `Unlocks in ${left} day${left === 1 ? '' : 's'}`}
+                onClick={() => onCosmetic(c)}
+              >
+                {COSMETIC_WORD[c]}
+              </button>
+            );
+          })}
+        </div>
       </div>
     </div>
   );

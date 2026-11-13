@@ -36,8 +36,12 @@ import {
 import { PetCard } from './PetCard';
 import {
   HEARTS_S,
-  MARK_HIT,
   REACT_S,
+  atClover,
+  cloverHitBox,
+  hitParts,
+  markHitBox,
+  placeCard,
   bubbleSize,
   cloverBox,
   createBox,
@@ -54,7 +58,7 @@ import {
 } from './petFrame';
 import { PixelSvg, PropSvg, SheepSvg } from './Pixels';
 import { bump, dayKey, loadPet, moodOf, rollDay, savePet, type Cosmetic, type PetData } from './pet';
-import { CLOVER_WAIT_MS, cloverTimes, dayTopic, finishedBetween, midday, moonUp, senseWeather, weatherTopics, workingIds } from './senses';
+import { CLOVER_WAIT_MS, cloverDue, dayTopic, finishedBetween, midday, moonUp, senseWeather, weatherTopics, workingIds } from './senses';
 import { CLOVER, HEART, MARK, SMALL_PX, SPRITE_PX, type Pose, type Prop } from './sprites';
 import './watt.css';
 
@@ -64,6 +68,12 @@ export { SheepSvg } from './Pixels';
 export const BOB_GAP_MS = 1200;
 /** A second pet within this long does nothing more, milliseconds. */
 export const PET_HOLD_MS = 3000;
+/** A pet gets a spoken reply only this long after any bubble, and at most one pet line this often. */
+export const PET_REPLY_GAP_MS = 20_000;
+export const PET_LINE_EVERY_MS = 60_000;
+/** The pointer rests on her this long before her card opens; the move from her to the card has this grace. */
+export const CARD_DWELL_MS = 400;
+export const CARD_GRACE_MS = 250;
 /** A meeting this close (milliseconds) makes her look at the clock and say so. */
 export const MEETING_SOON_MS = 5 * 60_000;
 /** Music playing this long without a long break is a listening streak, milliseconds. */
@@ -91,6 +101,13 @@ interface Bubble {
 interface Clover {
   stop: number;
   since: number;
+}
+
+/** Take an element of hers out of the tab order and out of sight while she is away (no allocation). */
+function switchOff(el: HTMLElement | null, tab: number, vis: string): void {
+  if (!el) return;
+  if (el.tabIndex !== tab) el.tabIndex = tab;
+  if (el.style.visibility !== vis) el.style.visibility = vis;
 }
 
 /** Dev builds only: a handle for review stills (say a line, start a reaction, grow a clover). */
@@ -137,8 +154,12 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
   const actor = useRef<HTMLDivElement>(null);
   const sheep = useRef<HTMLDivElement>(null);
   const hit = useRef<HTMLButtonElement>(null);
+  const hitParts_ = [useRef<HTMLSpanElement>(null), useRef<HTMLSpanElement>(null)];
   const bubbleEl = useRef<HTMLDivElement>(null);
-  const markEl = useRef<HTMLButtonElement>(null);
+  const markEl = useRef<HTMLElement | null>(null);
+  const setMark = useCallback((e: HTMLElement | null) => {
+    markEl.current = e;
+  }, []);
   const cloverEl = useRef<HTMLButtonElement>(null);
   const notes = [useRef<HTMLSpanElement>(null), useRef<HTMLSpanElement>(null)];
   const zs = [useRef<HTMLSpanElement>(null), useRef<HTMLSpanElement>(null)];
@@ -170,7 +191,11 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
   const ws = senseWeather(weather.reading, nowMs);
   const meetingStart = next.meeting && !next.stale ? Date.parse(next.meeting.start) : NaN;
   const meetingEnd = next.meeting && !next.stale ? Date.parse(next.meeting.end) : NaN;
-  const inMeeting = meetingStart <= now() && now() < meetingEnd;
+  // A stale or missing feed keeps the last known meeting's quiet time until its end.
+  const lastMeeting = useRef<{ start: number; end: number } | null>(null);
+  if (Number.isFinite(meetingStart) && Number.isFinite(meetingEnd)) lastMeeting.current = { start: meetingStart, end: meetingEnd };
+  const win = lastMeeting.current;
+  const inMeeting = win !== null && win.start <= now() && now() < win.end;
   const meetingSoon = meetingStart - now() > 0 && meetingStart - now() <= MEETING_SOON_MS;
   const [clover, setClover] = useState<Clover | null>(null);
   const cloverRef = useRef(clover);
@@ -222,10 +247,25 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
     bubbleTimer.current = window.setTimeout(() => setBubble(null), BUBBLE_MS);
   }, []);
   useEffect(() => () => window.clearTimeout(bubbleTimer.current), []);
-  // A call, the display going idle or chatter turned off takes the bubble down at once.
+  /**
+   * The one quiet state: any quiet condition (Off, a call or meeting, the first minute of focus,
+   * the display idle, the page hidden, asleep or away) takes a showing bubble down at once.
+   */
+  const quietCheck = useCallback(() => {
+    const p = presence.current;
+    q.away = p.place === null || p.night || document.hidden;
+    if (bubbleRef.current && quietNow(q, nowRef.current())) setBubble(null);
+  }, [q]);
+  const quietRef = useRef(quietCheck);
+  quietRef.current = quietCheck;
   useEffect(() => {
-    if (q.chatty === 'off' || q.inCall || q.idle) setBubble(null);
-  }, [q.chatty, q.inCall, q.idle]);
+    quietCheck();
+  }, [quietCheck, q.chatty, q.inCall, q.idle, q.focusSince]);
+  useEffect(() => {
+    const onVis = () => quietRef.current();
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+  }, []);
 
   const note = useCallback((topic: Topic, at: number) => {
     talk.current.events[topic] = at;
@@ -264,12 +304,13 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
     const t = nowRef.current();
     if (focus.status === 'running' && prev.status !== 'running') {
       const start = focus.endAt - focus.minutes * 60_000;
-      if (prev.status !== 'paused') {
-        halfSaid.current = false;
-        note('focusStart', start + 60_000);
-      }
+      // A session restored past half way says nothing about half way.
+      halfSaid.current = prev.status === 'paused' ? halfSaid.current : focus.endAt - t <= (focus.minutes * 60_000) / 2;
+      // Only a session that has just started gets its line (not one restored at start up).
+      if (prev.status !== 'paused' && t - start < 2 * 60_000) note('focusStart', start + 60_000);
     }
-    if (focus.status === 'finished' && prev.status === 'running') {
+    // Only a session seen running that ends now: one that ended while the app was closed says nothing.
+    if (focus.status === 'finished' && prev.status === 'running' && t - prev.endAt < 60_000) {
       note('focusDone', t);
       startReact.current('hop');
       update((d) => bump(d, 'focus', t));
@@ -285,7 +326,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
     const before = prevWorking.current;
     prevWorking.current = workingIds(summary.lanes);
     if (!before) return;
-    const n = finishedBetween(before, summary.lanes);
+    const n = finishedBetween(before, summary.lanes, summary.day);
     if (n > 0) {
       note('agentFinished', t);
       startReact.current('hop');
@@ -368,13 +409,14 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
         note('focusHalf', t);
       }
       const d = petRef.current;
-      const times = cloverTimes(d.today.date);
       const mins = new Date(t).getHours() * 60 + new Date(t).getMinutes();
-      const due = d.today.clovers < 2 && mins >= times[d.today.clovers];
-      if (due && !cloverRef.current && presence.current.place && !presence.current.night) {
-        const w = presence.current.place ? wanderAt(WALKS[presence.current.place], wanderT.current, createWander()) : null;
-        setClover({ stop: ((w?.stop ?? 0) + 1) % 8, since: t });
+      const grown = cloverDue(d.today.date, mins, d.today.grown);
+      if (grown !== null && !cloverRef.current && presence.current.place && !presence.current.night) {
+        const w = wanderAt(WALKS[presence.current.place], wanderT.current, createWander());
+        setClover({ stop: (w.stop + 1) % 8, since: t });
+        update((x) => ({ ...rollDay(x, t), today: { ...rollDay(x, t).today, grown } }));
       }
+      quietRef.current();
       if (cloverRef.current && (reducedRef.current || !presence.current.place) && t - cloverRef.current.since >= CLOVER_WAIT_MS) eatClover();
       n += 1;
       if (n % Math.round(CHECK_MS / MIND_MS) === 0) check();
@@ -402,14 +444,20 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
 
   // Pet her: hearts, a wiggle, a pleased line. A second click within a few seconds adds nothing.
   const lastPet = useRef(-Infinity);
+  const lastPetLine = useRef(-Infinity);
   const petHer = useCallback(() => {
     const t = nowRef.current();
     if (t - lastPet.current < PET_HOLD_MS) return;
     lastPet.current = t;
+    // Hearts and the wiggle every time she is petted.
     startReact.current('pet');
     update((d) => bump(d, 'pets', t));
-    if (!quietNow({ ...q, away: false }, t)) {
+    // A spoken reply only outside every quiet time, 20 s after any bubble, and once a minute.
+    const p = presence.current;
+    q.away = p.place === null || p.night || document.hidden;
+    if (!quietNow(q, t) && t - chat.current.lastAt >= PET_REPLY_GAP_MS && t - lastPetLine.current >= PET_LINE_EVERY_MS) {
       const line = lineFrom('pet', chat.current.lastLine, Math.random);
+      lastPetLine.current = t;
       markSpoken(chat.current, line, t);
       show(line);
     }
@@ -417,28 +465,111 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
 
   // The amber mark: open what waits when the helper gives a link, else go to Work where it shows.
   const firstId = summary?.linksAvailable ? (summary.yourMove.first?.sessionId ?? null) : null;
+  const activePlace = usePlaceStore((st) => st.active);
+  const markStatic = !firstId && activePlace === 'work';
+  const markStaticRef = useRef(markStatic);
+  markStaticRef.current = markStatic;
   const openWaiting = useCallback(() => {
     if (firstId) invoke('wall2_open_session', { id: firstId }).catch(() => undefined);
     else usePlaceStore.getState().setActive('work');
   }, [firstId]);
 
-  // Hover card.
+  // Hover card: opens after the pointer rests on her (or on keyboard focus), stays while the
+  // pointer moves from her to it, and closes the moment it leaves the card, on Escape, on a place
+  // change and when she goes away. She stands still while it is open.
   const [card, setCard] = useState<{ left: number; top: number } | null>(null);
-  const cardTimer = useRef(0);
+  const cardRef = useRef(card);
+  cardRef.current = card;
+  const dwellTimer = useRef(0);
+  const closeTimer = useRef(0);
   const frameRef = useRef({ x: 0, y: 0, w: 0 });
+  const cardBox = useRef(createBox());
   const openCard = useCallback(() => {
-    window.clearTimeout(cardTimer.current);
+    window.clearTimeout(dwellTimer.current);
+    window.clearTimeout(closeTimer.current);
     const p = presence.current;
-    if (!p.place) return;
-    const walk = WALKS[p.place];
+    if (!p.place || p.opacity < 0.5) return;
     const f = frameRef.current;
-    setCard({ left: Math.max(130, Math.min(2560 - 20 - 300, f.x + f.w / 2 - 150)), top: walk.ceiling - 8 });
+    const b = placeCard(p.place, WALKS[p.place], f.x, f.w, cardBox.current);
+    setCard({ left: b.left, top: b.top });
   }, []);
   const closeCard = useCallback(() => {
-    window.clearTimeout(cardTimer.current);
-    cardTimer.current = window.setTimeout(() => setCard(null), 300);
+    window.clearTimeout(dwellTimer.current);
+    window.clearTimeout(closeTimer.current);
+    setCard(null);
   }, []);
-  useEffect(() => () => window.clearTimeout(cardTimer.current), []);
+  const closeRef = useRef(closeCard);
+  closeRef.current = closeCard;
+  const onHitEnter = useCallback(() => {
+    window.clearTimeout(closeTimer.current);
+    if (cardRef.current) return;
+    window.clearTimeout(dwellTimer.current);
+    dwellTimer.current = window.setTimeout(openCard, CARD_DWELL_MS);
+  }, [openCard]);
+  const onHitLeave = useCallback(() => {
+    window.clearTimeout(dwellTimer.current);
+    if (cardRef.current) closeTimer.current = window.setTimeout(closeCard, CARD_GRACE_MS);
+  }, [closeCard]);
+  const onCardEnter = useCallback(() => window.clearTimeout(closeTimer.current), []);
+  const onHitFocus = useCallback(
+    (e: React.FocusEvent<HTMLButtonElement>) => {
+      // Keyboard focus only: focus coming back with the window (after a click) opens nothing. The
+      // last input decides (as browsers do for :focus-visible); :focus-visible is checked too.
+      if (!keyboardLast.current) return;
+      let visible = false;
+      try {
+        visible = e.currentTarget.matches(':focus-visible');
+      } catch {
+        visible = false;
+      }
+      if (visible) openCard();
+    },
+    [openCard],
+  );
+  const onHitBlur = useCallback(
+    (e: React.FocusEvent<HTMLButtonElement>) => {
+      const to = e.relatedTarget as Node | null;
+      if (!to || !(to as Element).closest?.('.watt-card')) closeCard();
+    },
+    [closeCard],
+  );
+  const keyboardLast = useRef(false);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Tab') keyboardLast.current = true;
+    };
+    const onPointer = () => {
+      keyboardLast.current = false;
+    };
+    window.addEventListener('keydown', onKey, true);
+    window.addEventListener('pointerdown', onPointer, true);
+    window.addEventListener('mousedown', onPointer, true);
+    return () => {
+      window.removeEventListener('keydown', onKey, true);
+      window.removeEventListener('pointerdown', onPointer, true);
+      window.removeEventListener('mousedown', onPointer, true);
+    };
+  }, []);
+  useEffect(() => {
+    mind.current.held = card !== null;
+    if (!card) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeRef.current();
+    };
+    window.addEventListener('keydown', onKey);
+    const offPlace = usePlaceStore.subscribe(() => closeRef.current());
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      offPlace();
+    };
+  }, [card]);
+  useEffect(
+    () => () => {
+      window.clearTimeout(dwellTimer.current);
+      window.clearTimeout(closeTimer.current);
+    },
+    [],
+  );
 
   useEffect(() => {
     let T = 0;
@@ -456,7 +587,14 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
     const bp = createBubblePlace();
     const mb = createBox();
     const cb = createBox();
+    const hb = createBox();
+    const body = createBox();
+    const head = createBox();
     const wp = createWander();
+    let wasLive = false;
+    /** One-shot: set when she reaches the clover, cleared when a new clover grows. */
+    let cloverTaken = false;
+    let cloverSeen: Clover | null = null;
     let reactAt = -Infinity;
     const tNow = () => (reduced ? performance.now() / 1000 : T);
 
@@ -482,8 +620,29 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
       if (document.hidden) return;
       const el = actor.current;
       if (el) el.style.opacity = String(p.opacity);
-      const live = p.place !== null && p.opacity > 0.5;
-      if (hit.current) hit.current.style.pointerEvents = live ? 'auto' : 'none';
+      const live = p.place !== null && p.camera !== null && p.opacity > 0.5;
+      // Away, waiting for the camera or fading: nothing of hers takes the pointer or the keyboard.
+      const pe = live ? 'auto' : 'none';
+      const vis = live ? '' : 'hidden';
+      const tab = live ? 0 : -1;
+      for (let i = 0; i < 2; i++) {
+        const e = hitParts_[i].current;
+        if (e && e.style.pointerEvents !== pe) e.style.pointerEvents = pe;
+      }
+      switchOff(hit.current, tab, vis);
+      switchOff(markEl.current, markStaticRef.current ? -1 : tab, vis);
+      switchOff(cloverEl.current, tab, vis);
+      if (!live) {
+        if (markEl.current) markEl.current.style.pointerEvents = 'none';
+        if (cloverEl.current) cloverEl.current.style.pointerEvents = 'none';
+      }
+      if (live !== wasLive) {
+        wasLive = live;
+        if (!live) {
+          if (cardRef.current) closeRef.current();
+          quietRef.current();
+        }
+      }
       if (!p.place || !p.camera) return;
       const walk = WALKS[p.place];
       const mi = mind.current;
@@ -517,9 +676,25 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
       const h = hit.current;
       if (h) {
         h.style.left = `${f.x}px`;
-        h.style.top = `${y}px`;
+        h.style.top = `${y - f.lift}px`;
         h.style.width = `${width}px`;
         h.style.height = `${spriteHeight(f.pose, walk.px)}px`;
+        // Her visible shape: the body and the head, not the empty corners.
+        hitParts(f.pose, f.dir, body, head);
+        const bEl = hitParts_[0].current;
+        const hEl = hitParts_[1].current;
+        if (bEl) {
+          bEl.style.left = `${body.left * walk.px}px`;
+          bEl.style.top = `${body.top * walk.px}px`;
+          bEl.style.width = `${body.width * walk.px}px`;
+          bEl.style.height = `${body.height * walk.px}px`;
+        }
+        if (hEl) {
+          hEl.style.left = `${head.left * walk.px}px`;
+          hEl.style.top = `${head.top * walk.px}px`;
+          hEl.style.width = `${head.width * walk.px}px`;
+          hEl.style.height = `${head.height * walk.px}px`;
+        }
       }
       for (let i = 0; i < 2; i++) {
         const e = notes[i].current;
@@ -551,6 +726,8 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
       const b = bubbleEl.current;
       const bub = bubbleRef.current;
       if (b && bub) {
+        // Her card takes the band while it is open.
+        b.style.visibility = cardRef.current ? 'hidden' : '';
         placeBubble(walk, p.camera.hy, f.x, y, width, bub.width, bub.height, bp);
         b.style.left = `${bp.left}px`;
         b.style.top = `${bp.top}px`;
@@ -559,8 +736,9 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
       const mk = markEl.current;
       if (mk) {
         markBox(walk, f.x, y, width, mb);
-        mk.style.left = `${mb.left + mb.width / 2 - MARK_HIT / 2}px`;
-        mk.style.top = `${mb.top + mb.height / 2 - MARK_HIT / 2}px`;
+        markHitBox(walk, p.camera.hy, mb, hb);
+        mk.style.left = `${hb.left}px`;
+        mk.style.top = `${hb.top}px`;
         mk.style.pointerEvents = live && f.mark ? 'auto' : 'none';
       }
       const cl = cloverEl.current;
@@ -570,14 +748,26 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
           cb.left = f.x + width + walk.px;
           cb.top = p.camera.hy - CLOVER.length * SMALL_PX;
         } else cloverBox(walk, p.camera.hy, clv.stop, cb);
-        cl.style.left = `${cb.left}px`;
-        cl.style.top = `${cb.top}px`;
+        cb.width = CLOVER[0].length * SMALL_PX;
+        cb.height = CLOVER.length * SMALL_PX;
+        cloverHitBox(walk, p.camera.hy, cb, hb);
+        cl.style.left = `${hb.left}px`;
+        cl.style.top = `${hb.top}px`;
         cl.style.pointerEvents = live ? 'auto' : 'none';
-        // She reaches the clover's stop and stands there: she eats it.
-        if (!reduced && !p.night && !mi.nap && !holdsStill(mi)) {
-          wanderAt(walk, wanderT.current, wp);
-          if (!wp.moving && wp.stop === clv.stop) window.setTimeout(() => eatRef.current(), 0);
-        }
+      }
+    };
+
+    /** Outside the paint: she reaches the clover's stop and stands there, so she eats it (once). */
+    const reachClover = () => {
+      const clv = cloverRef.current;
+      if (clv !== cloverSeen) {
+        cloverSeen = clv;
+        cloverTaken = false;
+      }
+      if (!clv || cloverTaken || reduced || !p.place || p.night || mind.current.nap || holdsStill(mind.current)) return;
+      if (atClover(WALKS[p.place], wanderT.current, clv.stop, wp)) {
+        cloverTaken = true;
+        eatRef.current();
       }
     };
 
@@ -589,6 +779,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
       last = ts;
       const idle = step(dt);
       paint();
+      reachClover();
       // Away with nowhere to go (Zen, Meet in a call) or waiting for the camera: stop until a
       // place, call or camera change wakes it.
       if (idle) {
@@ -686,11 +877,14 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
         ref={hit}
         aria-label="Watt, the sheep. Click to pet her."
         onClick={petHer}
-        onMouseEnter={openCard}
-        onMouseLeave={closeCard}
-        onFocus={openCard}
-        onBlur={closeCard}
-      />
+        onMouseEnter={onHitEnter}
+        onMouseLeave={onHitLeave}
+        onFocus={onHitFocus}
+        onBlur={onHitBlur}
+      >
+        <span className="watt-hit-part" ref={hitParts_[0]} />
+        <span className="watt-hit-part" ref={hitParts_[1]} />
+      </button>
       <span className="watt-note" ref={notes[0]} aria-hidden="true">
         <IconMusic size={NOTE_SIZES[0]} stroke={2} />
       </span>
@@ -709,17 +903,24 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
       <span className="watt-z sm" ref={zs[1]} aria-hidden="true">
         z
       </span>
-      <button
-        type="button"
-        className="watt-mark"
-        ref={markEl}
-        hidden={!look.mark}
-        aria-label={firstId ? 'Something waits for you. Open it.' : 'Something waits for you. Go to Work.'}
-        title={firstId ? 'Something waits for you. Click to open it.' : 'Something waits for you on Work. Click to go there.'}
-        onClick={openWaiting}
-      >
-        <PixelSvg map={MARK} px={SMALL_PX} />
-      </button>
+      {markStatic ? (
+        // On Work with no link the agent cards above already show what waits: the mark only tells.
+        <span className="watt-mark static" ref={setMark} hidden={!look.mark} role="img" aria-label="Something waits for you in the agent cards above." title="Something waits for you in the agent cards above.">
+          <PixelSvg map={MARK} px={SMALL_PX} />
+        </span>
+      ) : (
+        <button
+          type="button"
+          className="watt-mark"
+          ref={setMark}
+          hidden={!look.mark}
+          aria-label={firstId ? 'Something waits for you. Open it.' : 'Something waits for you. Go to Work.'}
+          title={firstId ? 'Something waits for you. Click to open it.' : 'Something waits for you on Work. Click to go there.'}
+          onClick={openWaiting}
+        >
+          <PixelSvg map={MARK} px={SMALL_PX} />
+        </button>
+      )}
       {clover && (
         <button type="button" className="watt-clover" ref={cloverEl} aria-label="A clover. Give it to Watt." title="A clover. Click to give it to her." onClick={eatClover}>
           <PixelSvg map={CLOVER} px={SMALL_PX} />
@@ -736,7 +937,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
           top={card.top}
           mood={mood}
           pet={pet}
-          onEnter={openCard}
+          onEnter={onCardEnter}
           onLeave={closeCard}
           onChatty={chooseChatty}
           onCosmetic={chooseCosmetic}

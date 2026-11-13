@@ -12,7 +12,7 @@ import type { OmniSummary } from '../agents/model';
 import { useFocusStore } from '../focus/store';
 import { LINES } from './lines';
 import { PET_KEY } from './pet';
-import { Watt } from './Watt';
+import { CARD_DWELL_MS, CARD_GRACE_MS, PET_LINE_EVERY_MS, PET_REPLY_GAP_MS, Watt } from './Watt';
 
 const invokeMock = vi.hoisted(() => vi.fn((cmd: string) => (cmd === 'wall2_open_session' ? Promise.resolve() : new Promise(() => {}))));
 vi.mock('../bridge/tauri', async (original) => ({
@@ -379,7 +379,9 @@ describe('a pet', () => {
     const { container, getByRole, queryByText } = render(<Watt now={() => ms} />);
     runFor(1.5);
     fireEvent.click(container.querySelector('.watt-hit')!);
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     fireEvent.mouseEnter(container.querySelector('.watt-hit')!);
+    act(() => void vi.advanceTimersByTime(CARD_DWELL_MS));
     const card = container.querySelector('.watt-card')!;
     expect(card.querySelector('.wc-name')!.textContent).toBe('Watt');
     expect(['Content', 'Happy', 'Sleepy', 'Curious']).toContain(card.querySelector('.wc-mood')!.textContent);
@@ -461,5 +463,136 @@ describe('a pet', () => {
     expect(frames.size).toBe(0);
     expect(heartOpacity(container)).toBeGreaterThan(0);
     expect(container.querySelector('.watt-bubble')!.classList.contains('still')).toBe(true);
+  });
+
+  describe('her card', () => {
+    const hitOf = (c: HTMLElement) => c.querySelector('.watt-hit')!;
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    });
+    const later = (ms: number) => act(() => void vi.advanceTimersByTime(ms));
+
+    it('crossing her does not open it; resting on her does', () => {
+      const { container } = render(<Watt now={day} />);
+      runFor(1.5);
+      fireEvent.mouseEnter(hitOf(container));
+      later(CARD_DWELL_MS - 100);
+      fireEvent.mouseLeave(hitOf(container));
+      later(1000);
+      expect(container.querySelector('.watt-card')).toBeNull();
+      fireEvent.mouseEnter(hitOf(container));
+      later(CARD_DWELL_MS);
+      expect(container.querySelector('.watt-card')).not.toBeNull();
+    });
+
+    it('moving from her to the card keeps it; leaving the card closes it at once, so the control under it gets the click', () => {
+      const { container } = render(<Watt now={day} />);
+      runFor(1.5);
+      fireEvent.mouseEnter(hitOf(container));
+      later(CARD_DWELL_MS);
+      fireEvent.mouseLeave(hitOf(container));
+      later(CARD_GRACE_MS - 100);
+      fireEvent.mouseEnter(container.querySelector('.watt-card')!);
+      later(2000);
+      const card = container.querySelector('.watt-card')!;
+      expect(card).not.toBeNull();
+      fireEvent.mouseLeave(card);
+      expect(container.querySelector('.watt-card')).toBeNull();
+      // Leaving her without reaching the card: gone after the short grace.
+      fireEvent.mouseEnter(hitOf(container));
+      later(CARD_DWELL_MS);
+      fireEvent.mouseLeave(hitOf(container));
+      later(CARD_GRACE_MS);
+      expect(container.querySelector('.watt-card')).toBeNull();
+    });
+
+    it('focus coming back with the window opens nothing; Escape and a place change close it; she stands still while it is open', () => {
+      const { container } = render(<Watt now={day} />);
+      runFor(1.5);
+      act(() => (hitOf(container) as HTMLElement).focus());
+      fireEvent.focus(hitOf(container));
+      later(1000);
+      expect(container.querySelector('.watt-card')).toBeNull();
+      // Keyboard focus (Tab) does open it.
+      act(() => (hitOf(container) as HTMLElement).blur());
+      fireEvent.keyDown(window, { key: 'Tab' });
+      act(() => (hitOf(container) as HTMLElement).focus());
+      expect(container.querySelector('.watt-card')).not.toBeNull();
+      fireEvent.keyDown(window, { key: 'Escape' });
+      expect(container.querySelector('.watt-card')).toBeNull();
+      fireEvent.mouseEnter(hitOf(container));
+      later(CARD_DWELL_MS);
+      expect(container.querySelector('.watt-card')).not.toBeNull();
+      const x = where(container).x;
+      runFor(60);
+      expect(where(container).x).toBe(x);
+      fireEvent.keyDown(window, { key: 'Escape' });
+      expect(container.querySelector('.watt-card')).toBeNull();
+      fireEvent.mouseEnter(hitOf(container));
+      later(CARD_DWELL_MS);
+      expect(container.querySelector('.watt-card')).not.toBeNull();
+      go('home');
+      expect(container.querySelector('.watt-card')).toBeNull();
+    });
+  });
+
+  it('while she is away nothing of hers takes the pointer or the keyboard (reduced motion, on Zen)', () => {
+    reduced(true);
+    const { container } = render(<Watt now={day} />);
+    act(() => (window as unknown as { __watt: { clover(): void } }).__watt.clover());
+    const clover = container.querySelector<HTMLElement>('.watt-clover')!;
+    expect(clover.style.pointerEvents).toBe('auto');
+    go('zen');
+    for (const sel of ['.watt-hit', '.watt-mark', '.watt-clover']) {
+      const e = container.querySelector<HTMLElement>(sel)!;
+      expect(e.tabIndex, sel).toBe(-1);
+      expect(e.style.visibility, sel).toBe('hidden');
+    }
+    expect(container.querySelector<HTMLElement>('.watt-mark')!.style.pointerEvents).toBe('none');
+    expect(container.querySelector<HTMLElement>('.watt-clover')!.style.pointerEvents).toBe('none');
+    for (const part of container.querySelectorAll<HTMLElement>('.watt-hit-part')) expect(part.style.pointerEvents).toBe('none');
+  });
+
+  it('a pet always gets hearts; her spoken reply waits 20 s after any bubble and comes at most once a minute', () => {
+    let ms = day();
+    const { container } = render(<Watt now={() => ms} />);
+    runFor(1.5);
+    const pet = () => fireEvent.click(container.querySelector('.watt-hit')!);
+    pet();
+    const first = container.querySelector('.watt-bubble')!.textContent;
+    expect(LINES.pet).toContain(first);
+    // 30 s later: past the reply gap but inside the minute: hearts, no new line.
+    ms += 30_000;
+    pet();
+    runFor(0.3);
+    expect(heartOpacity(container)).toBeGreaterThan(0);
+    expect(stored().today.pets).toBe(2);
+    const shown = container.querySelector('.watt-bubble');
+    expect(shown === null || shown.textContent === first).toBe(true);
+    ms += PET_LINE_EVERY_MS;
+    pet();
+    expect(container.querySelector('.watt-bubble')).not.toBeNull();
+    expect(PET_REPLY_GAP_MS).toBe(20_000);
+  });
+
+  it('a showing bubble goes the moment a quiet time starts (focus starting)', () => {
+    const ms = day();
+    const { container } = render(<Watt now={() => ms} />);
+    runFor(1.5);
+    fireEvent.click(container.querySelector('.watt-hit')!);
+    expect(container.querySelector('.watt-bubble')).not.toBeNull();
+    act(() => useFocusStore.setState({ state: { status: 'running', minutes: 25, endAt: ms + 25 * 60_000 } }));
+    expect(container.querySelector('.watt-bubble')).toBeNull();
+  });
+
+  it('a focus session that ended while the app was closed says nothing and does not hop', () => {
+    const ms = day();
+    const { container } = render(<Watt now={() => ms} />);
+    runFor(1.5);
+    act(() => useFocusStore.setState({ state: { status: 'running', minutes: 25, endAt: ms - 10 * 60_000 } }));
+    act(() => useFocusStore.setState({ state: { status: 'finished', minutes: 25 } }));
+    runFor(0.5);
+    expect(container.querySelector('.watt-bubble')).toBeNull();
+    expect(stored().today.focus ?? 0).toBe(0);
   });
 });

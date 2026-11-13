@@ -39,9 +39,13 @@ import { COSMETICS } from './pet';
 import {
   BUBBLE,
   REACT_S,
+  atClover,
   bodyBox,
   bubbleSize,
   cloverBox,
+  cloverHitBox,
+  markHitBox,
+  placeCard,
   createBox,
   createBubblePlace,
   createMind,
@@ -197,12 +201,19 @@ function reach(place: WattPlace, camera: CameraPreset): Rect {
             bodyBox(f, dir, walk.px, x, y - f.lift, box);
             add(box);
           }
-          if (f.mark) add(markBox(walk, x, y, spriteWidth(f.pose, walk.px), box));
+          if (f.mark) {
+            add(markBox(walk, x, y, spriteWidth(f.pose, walk.px), box));
+            // Its 32 px click box too.
+            add(markHitBox(walk, camera.hy, markBox(walk, x, y, spriteWidth(f.pose, walk.px)), box));
+          }
         }
       }
     }
   }
-  for (let stop = 0; stop < 8; stop++) add(cloverBox(walk, camera.hy, stop, box));
+  for (let stop = 0; stop < 8; stop++) {
+    add(cloverBox(walk, camera.hy, stop, box));
+    add(cloverHitBox(walk, camera.hy, cloverBox(walk, camera.hy, stop), box));
+  }
   for (const line of allLines()) {
     const lines = wrapLine(line, walk.bubbleW);
     const size = bubbleSize(lines);
@@ -257,6 +268,30 @@ describe('walk ranges and the panels at 2560 x 720', () => {
       }
     });
   }
+  it('her hover card covers no card, ribbon, rail or Unwind panel, wherever she stands', () => {
+    for (const place of PLACES) {
+      const walk = WALKS[place];
+      for (const camera of camerasOf(place)) {
+        for (let x = walk.min; x <= walk.max; x += 10) {
+          const c = placeCard(place, walk, x, spriteWidth('idle', walk.px));
+          const r = { left: c.left, right: c.left + c.width, top: c.top, bottom: c.top + c.height };
+          expect(r.left).toBeGreaterThanOrEqual(MAIN_LEFT);
+          expect(r.right).toBeLessThanOrEqual(MAIN_LEFT + MAIN_WIDTH);
+          for (const panel of panels(place)) expect(overlaps(r, panel), `${place} card over ${JSON.stringify(panel)}`).toBe(false);
+          // And never over her.
+          const me = { left: x, right: x + spriteWidth('idle', walk.px) + 2 * walk.px, top: camera.hy - spriteHeight('idle', walk.px) - 2 * walk.px, bottom: camera.hy };
+          expect(overlaps(r, me), `${place} card over Watt`).toBe(false);
+        }
+      }
+    }
+  });
+  it('the mark and clover click boxes are pointer sized', () => {
+    const walk = WALKS.unwind;
+    expect(markHitBox(walk, 505, markBox(walk, 450, 433, 108)).width).toBe(32);
+    const c = cloverHitBox(walk, 505, cloverBox(walk, 505, 3));
+    expect(c.width).toBeGreaterThanOrEqual(24);
+    expect(c.top + c.height).toBeLessThanOrEqual(505);
+  });
   it('on the ribbon places Watt stands in the band over the horizon (feet on hy 582)', () => {
     for (const place of ['work', 'home', 'meet'] as const) {
       const box = reach(place, CAMERAS[place]);
@@ -488,6 +523,7 @@ describe('moving between places', () => {
     const pf = createPetFrame();
     const bp = createBubblePlace();
     const box = createBox();
+    const hit = createBox();
     for (let i = 0; i < 400; i++) {
       const ms = at(14).getTime() + i * 50;
       expect(readClock(clock, ms)).toBe(clock);
@@ -502,6 +538,9 @@ describe('moving between places', () => {
       expect(placeBubble(walk, 582, pf.x, 522, 90, 200, 29, bp)).toBe(bp);
       expect(markBox(walk, pf.x, 522, 90, box)).toBe(box);
       expect(cloverBox(walk, 582, i, box)).toBe(box);
+      expect(cloverHitBox(walk, 582, box, hit)).toBe(hit);
+      // The clover arrival check reuses the wander record it is given.
+      expect(typeof atClover(walk, p.since, i % 8, w)).toBe('boolean');
     }
     expect(p.opacity).toBe(1);
   });

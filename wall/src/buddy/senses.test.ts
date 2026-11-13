@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Lane } from '../agents/model';
 import type { WeatherReading } from '../weather/model';
-import { cloverTimes, dayTopic, finishedBetween, senseWeather, weatherTopics, workingIds, WEATHER_FRESH_MS } from './senses';
+import { cloverDue, cloverTimes, dayTopic, finishedBetween, senseWeather, weatherTopics, workingIds, WEATHER_FRESH_MS } from './senses';
 
 const reading = (icon: string, temp: number, fetchedAt: number): WeatherReading =>
   ({ temp, look: { label: icon, icon }, high: temp, low: temp, hours: [], fetchedAt }) as unknown as WeatherReading;
@@ -19,10 +19,15 @@ describe('what she senses', () => {
   it('names the part of the day', () => {
     expect([7, 12, 15, 19, 21].map(dayTopic)).toEqual(['morning', 'midday', 'afternoon', 'evening', 'evening']);
   });
-  it('counts agents that finished: working lanes now gone or at a pull request, not ones waiting', () => {
+  it('counts agents that finished by the summary: at a pull request, or gone with a done span; not dismissed or waiting', () => {
     const before = workingIds([lane('a'), lane('b'), lane('c'), lane('d', { waiting: true })]);
     expect([...before]).toEqual(['a', 'b', 'c']);
-    expect(finishedBetween(before, [lane('a'), lane('b', { stage: 'pr', state: 'review' }), lane('d', { waiting: true })])).toBe(2);
+    // b reached a pull request; c left the list as done: two. c leaving with no done span: one.
+    const done = [{ lane: 'c', start: '2026-11-11T10:00:00Z', end: '2026-11-11T10:30:00Z', kind: 'done' as const }];
+    expect(finishedBetween(before, [lane('a'), lane('b', { stage: 'pr', state: 'review' }), lane('d', { waiting: true })], done)).toBe(2);
+    expect(finishedBetween(before, [lane('a'), lane('b', { stage: 'pr', state: 'review' })])).toBe(1);
+    const runLast = [...done, { lane: 'c', start: '2026-11-11T10:40:00Z', end: null, kind: 'run' as const }];
+    expect(finishedBetween(before, [lane('a'), lane('b')], runLast)).toBe(0);
     expect(finishedBetween(before, [lane('a'), lane('b'), lane('c', { waiting: true })])).toBe(0);
   });
   it('grows two clovers a day at times that change with the date', () => {
@@ -32,5 +37,12 @@ describe('what she senses', () => {
     expect(b).toBeGreaterThanOrEqual(900);
     expect(b).toBeLessThan(990);
     expect(cloverTimes('2026-11-12')).not.toEqual([a, b]);
+    expect(cloverDue('2026-11-11', a - 1, 0)).toBeNull();
+    expect(cloverDue('2026-11-11', a, 0)).toBe(1);
+    expect(cloverDue('2026-11-11', b - 1, 1)).toBeNull();
+    expect(cloverDue('2026-11-11', b, 1)).toBe(2);
+    // Starting late: one clover only.
+    expect(cloverDue('2026-11-11', b + 10, 0)).toBe(2);
+    expect(cloverDue('2026-11-11', b + 20, 2)).toBeNull();
   });
 });

@@ -52,7 +52,7 @@ describe('her stored life', () => {
     expect(parsePet('x'.repeat(MAX_RAW + 1), at(11))).toEqual(base);
     expect(parsePet('null', at(11))).toEqual(base);
     expect(parsePet('[1,2]', at(11)).days).toBe(0);
-    const big: Partial<PetData> = { days: 1e9, cosmetic: 'cape', lastDay: 'yesterday', today: { date: '2026-11-11', pets: 1e12, songs: -4, naps: 2.7, clovers: NaN, focus: 1, agents: 0 } };
+    const big: Partial<PetData> = { days: 1e9, cosmetic: 'cape', lastDay: 'yesterday', today: { date: '2026-11-11', pets: 1e12, songs: -4, naps: 2.7, clovers: NaN, focus: 1, agents: 0, grown: 0 } };
     const p = parsePet(JSON.stringify(big), at(11));
     expect(p.days).toBe(MAX_DAYS);
     expect(p.cosmetic).toBe('cape');

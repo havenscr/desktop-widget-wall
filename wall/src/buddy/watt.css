@@ -61,6 +61,10 @@
   cursor: pointer;
   pointer-events: none;
 }
+.watt-hit-part {
+  position: absolute;
+  pointer-events: none;
+}
 .watt-hit:focus-visible {
   outline: 2px solid var(--cyan);
   outline-offset: 4px;
@@ -103,11 +107,16 @@
 .watt-mark:hover {
   filter: drop-shadow(0 0 9px rgba(255, 194, 77, 0.9));
 }
-/* The clover is drawn at its box; the button keeps a pointer sized area round it. */
+/* The clover is drawn in the middle of a 24 px click box (petFrame.ts cloverHitBox). */
 .watt-clover {
-  width: 15px;
-  height: 15px;
-  outline: 8px solid transparent;
+  width: 24px;
+  height: 24px;
+}
+/* On Work with no link the mark only tells: no click look. */
+.watt-mark.static,
+.watt-mark.static:hover {
+  cursor: default;
+  filter: drop-shadow(0 0 6px rgba(255, 194, 77, 0.6));
 }
 
 /* The speech bubble: one short line, pixel corners, a little tail toward her. Box size and lines
@@ -119,12 +128,12 @@
   font: 600 14px/17px var(--disp);
   letter-spacing: 0.01em;
   white-space: pre;
+  /* Her own tones: the lavender of her wool, a little see through, with her dark face colour. */
   color: #1a1238;
-  background: #f6f2ff;
+  background: rgba(220, 211, 251, 0.9);
   box-shadow:
-    0 0 0 2px #1a1238,
-    0 0 0 4px rgba(220, 211, 251, 0.85),
-    0 0 14px 2px rgba(53, 230, 234, 0.35);
+    0 0 0 2px rgba(26, 18, 56, 0.9),
+    0 0 10px rgba(53, 230, 234, 0.18);
   pointer-events: none;
   animation: watt-say 7000ms ease-in-out both;
 }
@@ -135,7 +144,7 @@
   left: 8px;
   width: 8px;
   height: 6px;
-  background: #f6f2ff;
+  background: rgba(220, 211, 251, 0.9);
   clip-path: polygon(0 0, 100% 0, 0 100%);
 }
 .watt-bubble[data-side='left']::after {
@@ -161,25 +170,31 @@
   }
 }
 
-/* Her hover card, above her. */
+/* Her hover card: a strip in the band over the horizon beside her (Unwind: under the transport
+   row), drawn at exactly CARD_W by CARD_H (petFrame.ts), so the overlap test checks what shows. */
 .watt-card {
   position: absolute;
-  width: 300px;
+  width: 660px;
+  height: 74px;
   box-sizing: border-box;
-  transform: translateY(-100%);
-  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 6px 12px;
   border-radius: 12px;
   background: rgba(16, 10, 40, 0.98);
   border: 1px solid rgba(220, 211, 251, 0.25);
-  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
   color: #dcd3fb;
-  font: 500 14px/1.35 var(--body);
+  font: 500 14px/1.2 var(--body);
   pointer-events: auto;
 }
 .wc-head {
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: 10px;
+  min-width: 0;
+  white-space: nowrap;
 }
 .wc-name {
   font: 600 18px/1 var(--disp);
@@ -204,18 +219,26 @@
   opacity: 0.75;
 }
 .wc-today {
-  margin: 8px 0 10px;
+  display: flex;
+  gap: 10px;
+  min-width: 0;
+  margin: 0;
   padding: 0;
   list-style: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wc-rows {
+  display: flex;
+  gap: 22px;
 }
 .wc-row {
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin-top: 6px;
+  gap: 5px;
 }
 .wc-label {
-  width: 48px;
+  margin-right: 2px;
   font-size: 12px;
   opacity: 0.75;
 }
