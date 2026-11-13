@@ -4,7 +4,7 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { LIBRARY_DATA } from '../bridge/devMocks/libraryData';
 import { mocks } from '../bridge/tauri';
-import { resetTip } from '../ui/HoverTip';
+import { HoverTipLayer, resetTip, TIP_DELAY_MS } from '../ui/HoverTip';
 import { useDeckStore } from './deckStore';
 import { UNDO_SHOW_MS } from './deckModel';
 import { resetKeysFeed } from './keysFeed';
@@ -130,6 +130,19 @@ it('with no big screen the layout keys are off with the reason and do nothing; t
   fireEvent.click(screen.getByRole('button', { name: 'Snip' }), { detail: 1 });
   await flush();
   expect(libCalls).toEqual([{ id: 'snip' }]);
+});
+
+it('My zones explains the placement rule and is disabled without a big screen', async () => {
+  localStorage.setItem(PINS_KEY, JSON.stringify(['lib:my-zones']));
+  render(<><PinnedRow /><HoverTipLayer /></>);
+  await flush();
+  const zones = screen.getByRole('button', { name: 'My zones' });
+  fireEvent.mouseEnter(zones);
+  await flush(TIP_DELAY_MS);
+  expect(screen.getByRole('tooltip').textContent).toContain('The windows you used last move; the rest stay where they are');
+  arrangeOk = false;
+  await flush(60_000);
+  expect(screen.getByRole('button', { name: 'My zones' }).getAttribute('aria-disabled')).toBe('true');
 });
 
 it('a refusal is one fixed line; a double click sends once; a held Enter never repeats', async () => {

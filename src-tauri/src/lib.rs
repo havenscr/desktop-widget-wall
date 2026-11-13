@@ -51,6 +51,7 @@ mod audio_analysis;
 mod wall2_window;
 mod wall2_winutil;
 mod wall2_arrange;
+mod wall2_zones;
 mod wall2_keylib;
 mod wall2_keys;
 #[cfg(windows)]

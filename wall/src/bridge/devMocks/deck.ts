@@ -21,9 +21,9 @@ export function registerDeckMocks(): void {
   const arrange = knob('arrange') ?? 'ok';
   if (arrange !== 'off') {
     mocks.set('wall2_arrange_status', () => arrange !== 'none');
-    mocks.set('wall2_arrange', () => {
+    mocks.set('wall2_arrange', (args) => {
       if (arrange === 'nowin') throw 'no windows';
-      return { moved: 3, asked: 3 };
+      return { moved: args?.layout === 'zones' ? 4 : 3, asked: args?.layout === 'zones' ? 4 : 3 };
     });
     mocks.set('wall2_arrange_undo', () => 3);
   }

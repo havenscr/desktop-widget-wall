@@ -12,6 +12,7 @@
 
 use crate::wall2_omni::require_wall2;
 use crate::wall2_winutil::Rect;
+use crate::wall2_zones::{self, FractionZone, MonitorIdentity, ZoneApp, ZoneWindow};
 use std::time::{Duration, Instant};
 
 /// The columns of the thirds layout never exceed this many windows.
@@ -27,6 +28,7 @@ pub(crate) enum Layout {
     Thirds,
     Focus,
     Record,
+    Zones,
 }
 
 /// The fixed list of layout names the page may send.
@@ -35,6 +37,7 @@ pub(crate) fn parse_layout(name: &str) -> Option<Layout> {
         "thirds" => Some(Layout::Thirds),
         "focus" => Some(Layout::Focus),
         "record" => Some(Layout::Record),
+        "zones" => Some(Layout::Zones),
         _ => None,
     }
 }
@@ -45,6 +48,7 @@ impl Layout {
         match self {
             Layout::Thirds => MAX_COLUMNS,
             Layout::Focus | Layout::Record => 1,
+            Layout::Zones => 16,
         }
     }
 }
@@ -115,6 +119,7 @@ fn plan(layout: Layout, work: Rect, windows: &[(isize, i32)]) -> Vec<(isize, Rec
         }
         Layout::Focus => windows.first().map(|w| (w.0, focus_column(work))).into_iter().collect(),
         Layout::Record => windows.first().map(|w| (w.0, record_frame(work))).into_iter().collect(),
+        Layout::Zones => Vec::new(),
     }
 }
 
@@ -300,8 +305,14 @@ pub(crate) struct Placed<S> {
 /// moved and skipped when `revalidate` fails; a window whose position cannot be saved is not
 /// moved at all, and a window whose move was not accepted is left out (and has no undo entry).
 pub(crate) fn apply<D: Desktop>(desk: &mut D, layout: Layout, work: Rect, candidates: &[WinRec], lefts: &[(isize, i32)]) -> Vec<Placed<D::Saved>> {
+    apply_targets(desk, candidates, plan(layout, work, lefts))
+}
+
+/// Place an already planned set through the same fresh-look, save and move checks as every
+/// built-in layout.
+pub(crate) fn apply_targets<D: Desktop>(desk: &mut D, candidates: &[WinRec], targets: Vec<(isize, Rect)>) -> Vec<Placed<D::Saved>> {
     let mut out = Vec::new();
-    for (id, target) in plan(layout, work, lefts) {
+    for (id, target) in targets {
         let Some(rec) = candidates.iter().find(|c| c.id == id) else { continue };
         let later = desk.look(id);
         if !revalidate(rec, later.as_ref()) {
@@ -394,19 +405,25 @@ pub async fn wall2_arrange_status(window: tauri::WebviewWindow) -> Result<bool, 
 /// Lay out the top windows on the big screen. Returns how many windows were asked and how many
 /// reached their place.
 #[tauri::command]
-pub async fn wall2_arrange(window: tauri::WebviewWindow, layout: String) -> Result<ArrangeResult, String> {
+pub async fn wall2_arrange(window: tauri::WebviewWindow, app: tauri::AppHandle, layout: String) -> Result<ArrangeResult, String> {
     require_wall2(window.label())?;
     let layout = parse_layout(&layout).ok_or_else(|| "unknown layout".to_string())?;
     #[cfg(windows)]
     {
         let wall = window.hwnd().ok().map(|h| h.0 as isize);
-        tauri::async_runtime::spawn_blocking(move || win::arrange(layout, wall).map_err(str::to_string))
+        let (file_zones, rules) = if layout == Layout::Zones {
+            let (config, _) = crate::wall2_keys::load_config(&app)?;
+            (config.zones, config.zone_apps)
+        } else {
+            (Vec::new(), Vec::new())
+        };
+        tauri::async_runtime::spawn_blocking(move || win::arrange(layout, wall, file_zones, rules))
             .await
             .map_err(|_| BUSY.to_string())?
     }
     #[cfg(not(windows))]
     {
-        let _ = layout;
+        let _ = (app, layout);
         Err(UNSUPPORTED.to_string())
     }
 }
@@ -434,10 +451,12 @@ mod win {
     use std::ffi::c_void;
     use std::sync::atomic::AtomicBool;
     use std::sync::Mutex;
+    use windows::core::PCWSTR;
     use windows::Win32::Foundation::{BOOL, HWND, LPARAM, RECT, TRUE};
     use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED, DWMWA_EXTENDED_FRAME_BOUNDS};
     use windows::Win32::Graphics::Gdi::{
-        EnumDisplayMonitors, GetMonitorInfoW, MonitorFromWindow, HDC, HMONITOR, MONITORINFO, MONITOR_DEFAULTTONEAREST,
+        EnumDisplayDevicesW, EnumDisplayMonitors, GetMonitorInfoW, MonitorFromWindow, DISPLAY_DEVICEW, DISPLAY_DEVICE_ACTIVE,
+        DISPLAY_DEVICE_MIRRORING_DRIVER, HDC, HMONITOR, MONITORINFO, MONITORINFOEXW, MONITOR_DEFAULTTONEAREST,
     };
     use windows::Win32::UI::WindowsAndMessaging::{
         GetWindow, GetWindowLongW, GetWindowPlacement, GetWindowRect, IsHungAppWindow, IsIconic, IsWindow,
@@ -452,6 +471,8 @@ mod win {
     const POLL: Duration = Duration::from_millis(25);
     /// How long one undo restore may take before it is given up on.
     const RESTORE_CALL_WAIT: Duration = Duration::from_millis(400);
+    /// `EnumDisplayDevicesW`: return the monitor interface name in `DeviceID`.
+    const EDD_GET_DEVICE_INTERFACE_NAME: u32 = 1;
 
     /// Held while a layout or an undo runs, so clicks never overlap.
     static WORKING: AtomicBool = AtomicBool::new(false);
@@ -488,12 +509,67 @@ mod win {
         unsafe { MonitorFromWindow(sys::hwnd(h), MONITOR_DEFAULTTONEAREST).0 as isize }
     }
 
+    fn wide_text(value: &[u16]) -> String {
+        let len = value.iter().position(|c| *c == 0).unwrap_or(value.len());
+        String::from_utf16_lossy(&value[..len])
+    }
+
+    fn active_physical(device: &DISPLAY_DEVICEW) -> bool {
+        device.StateFlags & DISPLAY_DEVICE_ACTIVE != 0 && device.StateFlags & DISPLAY_DEVICE_MIRRORING_DRIVER == 0
+    }
+
+    /// The stable monitor model and instance fields FancyZones writes, plus the numbered
+    /// Windows display it records. The current virtual desktop is not available through this
+    /// Win32 path, so the parser rejects multiple entries for this device as ambiguous.
+    fn monitor_identity(id: isize) -> Option<MonitorIdentity> {
+        unsafe {
+            let mut info = MONITORINFOEXW::default();
+            info.monitorInfo.cbSize = std::mem::size_of::<MONITORINFOEXW>() as u32;
+            if !GetMonitorInfoW(HMONITOR(id as *mut c_void), &mut info.monitorInfo).as_bool() {
+                return None;
+            }
+            let selected_name = wide_text(&info.szDevice);
+            let monitor_number = selected_name.strip_prefix(r"\\.\DISPLAY")?.parse().ok()?;
+
+            // First identify the selected active adapter by the exact GDI name from the
+            // monitor. Then enumerate its active physical monitor interface names in the
+            // format PowerToys records. Any missing or duplicate result is uncertain.
+            let mut adapter_index = 0;
+            let mut adapter_name: Option<[u16; 32]> = None;
+            loop {
+                let mut adapter = DISPLAY_DEVICEW { cb: std::mem::size_of::<DISPLAY_DEVICEW>() as u32, ..Default::default() };
+                if !EnumDisplayDevicesW(PCWSTR::null(), adapter_index, &mut adapter, 0).as_bool() { break; }
+                if active_physical(&adapter) && wide_text(&adapter.DeviceName).eq_ignore_ascii_case(&selected_name) {
+                    if adapter_name.is_some() { return None; }
+                    adapter_name = Some(adapter.DeviceName);
+                }
+                adapter_index += 1;
+            }
+            let adapter_name = adapter_name?;
+            let mut monitor_index = 0;
+            let mut found: Option<(String, String)> = None;
+            loop {
+                let mut device = DISPLAY_DEVICEW { cb: std::mem::size_of::<DISPLAY_DEVICEW>() as u32, ..Default::default() };
+                if !EnumDisplayDevicesW(PCWSTR(adapter_name.as_ptr()), monitor_index, &mut device, EDD_GET_DEVICE_INTERFACE_NAME).as_bool() { break; }
+                if active_physical(&device) {
+                    if let Some(identity) = wall2_zones::split_display_device_id(&wide_text(&device.DeviceID)) {
+                        if found.is_some() { return None; }
+                        found = Some(identity);
+                    }
+                }
+                monitor_index += 1;
+            }
+            let (monitor, monitor_instance) = found?;
+            Some(MonitorIdentity { monitor, monitor_instance, monitor_number, virtual_desktop: None })
+        }
+    }
+
     /// The big monitor, or None when the wall's own is the only one (or the wall's window
     /// is unknown, which fails closed).
-    fn big_monitor(wall: Option<isize>) -> Option<Monitor> {
+    fn big_monitor(wall: Option<isize>) -> Option<(Monitor, Option<MonitorIdentity>)> {
         let wall = monitor_of(wall?);
         let list = monitors();
-        choose_monitor(&list, wall).map(|i| list[i])
+        choose_monitor(&list, wall).map(|i| (list[i], monitor_identity(list[i].id)))
     }
 
     pub fn big_screen_available(wall: Option<isize>) -> bool {
@@ -622,14 +698,14 @@ mod win {
         }
     }
 
-    pub fn arrange(layout: Layout, wall: Option<isize>) -> Result<ArrangeResult, &'static str> {
-        let _busy = try_begin(&WORKING).ok_or(BUSY)?;
-        let monitor = big_monitor(wall).ok_or(NO_BIG_SCREEN)?;
+    pub fn arrange(layout: Layout, wall: Option<isize>, file_zones: Vec<FractionZone>, rules: Vec<ZoneApp>) -> Result<ArrangeResult, String> {
+        let _busy = try_begin(&WORKING).ok_or_else(|| BUSY.to_string())?;
+        let (monitor, identity) = big_monitor(wall).ok_or_else(|| NO_BIG_SCREEN.to_string())?;
         let self_elevated = sys::self_elevated();
         let recs: Vec<WinRec> = sys::top_level_windows().into_iter().map(|h| record(h, monitor_of(h), self_elevated)).collect();
         let picked = pick_windows(&recs, monitor.id, layout.windows());
         if picked.is_empty() {
-            return Err(NO_WINDOWS);
+            return Err(NO_WINDOWS.to_string());
         }
         let candidates: Vec<WinRec> = picked.iter().map(|&i| recs[i]).collect();
         let lefts: Vec<(isize, i32)> = candidates
@@ -641,9 +717,27 @@ mod win {
             })
             .collect();
         let mut desk = WinDesk { self_elevated };
-        let placed = apply(&mut desk, layout, monitor.work, &candidates, &lefts);
+        let placed = if layout == Layout::Zones {
+            let fancy = identity.as_ref().and_then(|identity| {
+                std::env::var_os("LOCALAPPDATA")
+                    .and_then(|p| wall2_zones::load_fancy(std::path::Path::new(&p), identity))
+                    .and_then(|z| wall2_zones::scale_zones(&z, monitor.work).ok())
+            });
+            let zones = match fancy {
+                Some(zones) => zones,
+                None if !file_zones.is_empty() => wall2_zones::scale_zones(&file_zones, monitor.work)
+                    .map_err(|n| format!("zone {n}: rectangle is empty after scaling"))?,
+                None => wall2_zones::scale_zones(&wall2_zones::default_zones(), monitor.work).map_err(|_| NO_WINDOWS.to_string())?,
+            };
+            wall2_zones::validate_zone_apps(&rules, zones.len())?;
+            let windows: Vec<ZoneWindow> = candidates.iter().map(|c| ZoneWindow { id: c.id, image: sys::image_path(c.pid).unwrap_or_default() }).collect();
+            let targets = wall2_zones::assign(&zones, &windows, &rules);
+            apply_targets(&mut desk, &candidates, targets)
+        } else {
+            apply(&mut desk, layout, monitor.work, &candidates, &lefts)
+        };
         if placed.is_empty() {
-            return Err(NO_WINDOWS);
+            return Err(NO_WINDOWS.to_string());
         }
         let asked = placed.len() as u32;
         let mut targets: Vec<(isize, Rect)> = Vec::new();
@@ -664,7 +758,7 @@ mod win {
         }
         let moved = targets.iter().filter(|t| arrived(t)).count() as u32;
         if moved == 0 {
-            return Err(NONE_MOVED);
+            return Err(NONE_MOVED.to_string());
         }
         Ok(ArrangeResult { moved, asked })
     }
@@ -717,6 +811,7 @@ mod tests {
         assert_eq!(parse_layout("thirds"), Some(Layout::Thirds));
         assert_eq!(parse_layout("focus"), Some(Layout::Focus));
         assert_eq!(parse_layout("record"), Some(Layout::Record));
+        assert_eq!(parse_layout("zones"), Some(Layout::Zones));
         for bad in ["", "Thirds", "thirds ", "record 16:9", "halves", "../focus"] {
             assert_eq!(parse_layout(bad), None, "{bad:?}");
         }

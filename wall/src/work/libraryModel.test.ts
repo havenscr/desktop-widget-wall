@@ -30,11 +30,11 @@ function rustLibrary(): LibGroup[] {
 describe('the library the page and the mocks hold equals the Rust one', () => {
   const flat = lib.flatMap((g) => g.keys.map((k) => ({ ...k, group: g.id })));
 
-  it('has 103 keys in 16 groups, equal field by field to what library_info returns: ids, labels, icons, kinds, how, action, runnable and each group exes', () => {
+  it('has 104 keys in 16 groups, equal field by field to what library_info returns: ids, labels, icons, kinds, how, action, runnable and each group exes', () => {
     const fromRust = rustLibrary();
-    expect(fromRust.flatMap((g) => g.keys).length).toBe(103);
+    expect(fromRust.flatMap((g) => g.keys).length).toBe(104);
     expect(fromRust.length).toBe(16);
-    expect(new Set(flat.map((k) => k.id)).size).toBe(103);
+    expect(new Set(flat.map((k) => k.id)).size).toBe(104);
     expect(LIBRARY_DATA).toEqual(fromRust);
   });
 
@@ -63,7 +63,7 @@ describe('the library the page and the mocks hold equals the Rust one', () => {
 
   it('every action name is in the fixed list Rust parses', () => {
     const names = new Set([...rust.matchAll(/^\s+"([a-z0-9:-]+)" => WallAction::\w+,/gm)].map((m) => m[1]));
-    expect(names.size).toBe(22);
+    expect(names.size).toBe(23);
     for (const k of flat) if (k.action) expect(names.has(k.action) || /^mood:[a-z0-9-]+$/.test(k.action), `${k.id}: ${k.action}`).toBe(true);
   });
 
