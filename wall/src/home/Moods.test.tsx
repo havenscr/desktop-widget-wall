@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { mocks } from '../bridge/tauri';
-import { LAST_MOOD_KEY, MOODS_CACHE_KEY, MOODS_PER_ROW, Moods, inText, moodLabel, moodNote } from './Moods';
+import { LAST_MOOD_KEY, MOODS_CACHE_KEY, MOODS_PAGE, pageStart, Moods, inText, moodLabel, moodNote } from './Moods';
 import { artKind } from './MoodArt';
 
 const flush = async (ms = 0) => {
@@ -239,22 +239,37 @@ it('says "In N min" for a mood the home app schedules within the hour, and never
   expect(inText(t + 61 * 60_000, t)).toBeNull();
 });
 
-it('six moods share the row; more than six scroll sideways', async () => {
-  const many = ['day', 'evening', 'lateNight', 'movie', 'goodnight', 'reading', 'dinner'].map((id) => ({ id, label: id }));
-  mocks.set('wall2_moods', () => many.slice(0, MOODS_PER_ROW));
-  const { container, unmount } = render(<Moods />);
-  await flush();
-  const row = container.querySelector('.mood-row') as HTMLElement;
+it('three moods fill the row; more show three large and a More card that slides by three, then Back', async () => {
+  const many = Array.from({ length: 7 }, (_, i) => ({ id: `m${i}`, label: `Mood ${i}` }));
+  mocks.set('wall2_moods', () => many.slice(0, MOODS_PAGE));
+  const three = render(<Moods />);
+  await screen.findByText('Mood 0');
+  const row = three.container.querySelector('.mood-row') as HTMLElement;
   expect(row.className).toBe('mood-row');
-  expect(row.style.gridTemplateColumns).toMatch(/^repeat\(6, /);
-  unmount();
+  expect(row.style.gridTemplateColumns).toMatch(/^repeat\(3, /);
+  expect(three.container.querySelector('.mood-more')).toBeNull();
+  three.unmount();
   mocks.set('wall2_moods', () => many);
-  const again = render(<Moods />);
-  await flush();
-  const scroll = again.container.querySelector('.mood-row') as HTMLElement;
-  expect(scroll.className).toBe('mood-row scroll');
-  expect(scroll.style.gridTemplateColumns).toBe('');
-  expect(again.container.querySelectorAll('.mood-btn')).toHaveLength(7);
+  const seven = render(<Moods />);
+  await screen.findByText('Mood 0');
+  const names = () => [...seven.container.querySelectorAll('.mood-btn .mood-name')].map((n) => n.textContent);
+  expect(names()).toEqual(['Mood 0', 'Mood 1', 'Mood 2']);
+  expect(screen.getByText('4 more')).toBeTruthy();
+  expect(screen.getByText('7 moods')).toBeTruthy();
+  fireEvent.click(seven.container.querySelector('.mood-more') as HTMLElement);
+  expect(names()).toEqual(['Mood 3', 'Mood 4', 'Mood 5']);
+  expect(screen.getByText('1 more')).toBeTruthy();
+  // The last page shows the last three, and the More card turns into Back.
+  fireEvent.click(seven.container.querySelector('.mood-more') as HTMLElement);
+  expect(names()).toEqual(['Mood 4', 'Mood 5', 'Mood 6']);
+  expect(screen.getByText('Back')).toBeTruthy();
+  fireEvent.click(seven.container.querySelector('.mood-more') as HTMLElement);
+  expect(names()).toEqual(['Mood 0', 'Mood 1', 'Mood 2']);
+  // The wheel steps once per gesture.
+  fireEvent.wheel(seven.container.querySelector('.mood-row') as HTMLElement, { deltaY: 40 });
+  expect(names()).toEqual(['Mood 3', 'Mood 4', 'Mood 5']);
+  expect(pageStart(5, 7)).toBe(4);
+  expect(pageStart(0, 2)).toBe(0);
 });
 
 it('"In N min" counts down while the wall stays open', async () => {

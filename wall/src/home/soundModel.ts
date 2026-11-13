@@ -432,3 +432,74 @@ export function writeLastPlay(mark: PlayMark | null): void {
     /* storage can be blocked; the mark is a convenience */
   }
 }
+
+// Section: home round two (play art, now playing at the left)
+
+/** Each play's colour (as `r,g,b` for the wash) and its line icon, as drawn (art A). */
+export const PLAY_ART: Record<Slot, { rgb: string; icon: 'cup' | 'headphones' | 'lamp' | 'moon' | 'laptop' }> = {
+  morning: { rgb: '255,194,77', icon: 'cup' },
+  day: { rgb: '53,230,234', icon: 'headphones' },
+  evening: { rgb: '255,61,154', icon: 'lamp' },
+  night: { rgb: '154,123,255', icon: 'moon' },
+  workday: { rgb: '93,242,182', icon: 'laptop' },
+};
+
+/** The Spotify playback read, as `wall/src/music/spotify.ts` types it (fields this block uses). */
+export interface PlaybackRead {
+  playing: boolean;
+  device: { name: string; kind: string } | null;
+  track: { name: string; artists: string; durationMs: number; imageUrl: string | null; thumbUrl: string | null } | null;
+  progressMs: number;
+}
+
+export interface HouseTrack {
+  title: string;
+  artist: string;
+  cover: string | null;
+  /** "Den, 4 speakers": the speaker Spotify names and how many play in its group. */
+  where: string;
+  progressMs: number;
+  durationMs: number;
+}
+
+const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+
+/**
+ * What Spotify plays, only when it plays on a house speaker: its device name is a Sonos
+ * speaker (or a group's lead) that the Sonos read shows playing. A track on this PC, or on a
+ * speaker the Sonos read shows quiet, is never shown as the house playing.
+ */
+export function houseTrack(p: PlaybackRead | null, s: SonosSummary): HouseTrack | null {
+  if (!p || !p.playing || !p.device || !p.track) return null;
+  if (/^computer$/i.test(p.device.kind)) return null;
+  const name = p.device.name;
+  const group = s.groups.find((g) => same(g.coordinator, name) || g.members.some((m) => same(m, name)));
+  const members = group ? group.members.map((m) => speakerByName(s, m)).filter((sp): sp is SonosSpeaker => !!sp) : s.speakers.filter((sp) => same(sp.name, name));
+  if (members.length === 0) return null;
+  const on = members.filter((sp) => sp.online && sp.state === 'playing' && sp.input === null);
+  if (on.length === 0) return null;
+  const lead = members.find((sp) => same(sp.name, name))?.name ?? name;
+  return {
+    title: p.track.name,
+    artist: p.track.artists,
+    cover: p.track.thumbUrl ?? p.track.imageUrl,
+    where: on.length === 1 ? lead : `${lead}, ${on.length} speakers`,
+    progressMs: Math.max(0, p.progressMs),
+    durationMs: Math.max(0, p.track.durationMs),
+  };
+}
+
+/** "1:22" for a progress time. */
+export function clockMs(ms: number): string {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
+/** "Office, 4 speakers" for what plays without a track (the Sonos read alone). */
+export function playingWhere(s: SonosSummary): string | null {
+  const on = musicPlaying(s);
+  if (on.length === 0) return null;
+  const g = s.groups.find((x) => x.id === s.currentGroup);
+  const lead = g && on.some((sp) => sp.name === g.coordinator) ? g.coordinator : on[0].name;
+  return on.length === 1 ? lead : `${lead}, ${on.length} speakers`;
+}
