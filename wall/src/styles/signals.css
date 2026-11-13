@@ -91,6 +91,11 @@
   border-color: rgba(255, 194, 77, 0.9);
 }
 
+/* Off Work the banner sits in the empty band above the ribbon (stage y 526 to 580), clear of every control. */
+.leave-banner[data-band='bottom'] {
+  top: 528px;
+}
+
 /* The recording chip: 32 px, red tinted. In the Agents header, in the banner, or floating. */
 .rec-chip {
   flex: none;
@@ -130,6 +135,9 @@
   z-index: 30;
   top: 12px;
   left: 624px;
+}
+.rec-float[data-band='bottom'] {
+  top: 537px;
 }
 /* On Work with no Agents header (the helper is down), the chip sits at the right end of the centre. */
 .rec-float[data-at='end'] {

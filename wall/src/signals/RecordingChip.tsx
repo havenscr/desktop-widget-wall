@@ -54,7 +54,7 @@ export function HeaderRecordingChip({ compact }: { compact: boolean }) {
 }
 
 /**
- * The chip everywhere else, in the top band where the banner sits: on Home, Unwind and Meet, and
+ * The chip everywhere else, where the banner sits (the band above the ribbon off Work): on Home, Unwind and Meet, and
  * on Work when the Agents header is not showing. Not on Zen, which stays calm, and not while the
  * banner shows (it carries the chip itself).
  */
@@ -64,7 +64,7 @@ export function FloatingRecordingChip() {
   const { banner, header } = useChipLayout();
   if (!recording || banner || place === 'zen' || (place === 'work' && header)) return null;
   return (
-    <div className="rec-float" data-at={place === 'work' ? 'end' : 'start'}>
+    <div className="rec-float" data-at={place === 'work' ? 'end' : 'start'} data-band={place === 'work' ? 'top' : 'bottom'}>
       <RecordingChipBody place="floating" />
     </div>
   );

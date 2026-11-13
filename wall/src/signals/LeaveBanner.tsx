@@ -10,8 +10,9 @@ import { useLeaveBanner } from './useLeaveBanner';
 import { useSignalStore } from './store';
 
 /**
- * "Leave in 12 min. Doctor's appointment starts 10:45", on every place but Zen, over the top band
- * (concept `set-dynamic`). Cyan at rest, amber at 5 minutes with Dismiss, "Leave now." from the
+ * "Leave in 12 min. Doctor's appointment starts 10:45", on every place but Zen (concept `set-dynamic`):
+ * over the top band on Work, in the empty band above the ribbon on the other places, where it
+ * covers no button (Home's moods and Unwind's tabs sit in the top band). Cyan at rest, amber at 5 minutes with Dismiss, "Leave now." from the
  * leave time. The text opens the event. On Work it hides the Agents header while it shows.
  */
 export function LeaveBanner() {
@@ -31,7 +32,7 @@ export function LeaveBanner() {
   if (!shown || !visible) return null;
   const { leave, view } = shown;
   return (
-    <div className="leave-banner" data-phase={view.phase} role="status">
+    <div className="leave-banner" data-phase={view.phase} data-band={place === 'work' ? 'top' : 'bottom'} role="status">
       <IconCar size={26} stroke={1.8} aria-hidden="true" />
       <button type="button" className="lb-main" aria-label={`${view.lead} ${view.rest}. Opens the event`} {...tip(view.tip)} onClick={() => void invoke('wall2_open_event', { key: leave.key }).catch(() => undefined)}>
         <b>{view.lead}</b>
