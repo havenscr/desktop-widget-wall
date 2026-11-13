@@ -36,7 +36,7 @@ const data: MeetData = {
   meetings: [
     { key: '1-0', accountId: 'work', title: 'Design review', start: at(3), end: at(33), canJoin: true },
     { key: '1-1', accountId: 'work', title: 'Planning', start: at(60), end: at(90), canJoin: false },
-    { key: '1-2', accountId: 'second', title: 'Board prep', start: at(120), end: at(150), canJoin: true },
+    { key: '1-2', accountId: 'work', title: 'Board prep', start: at(120), end: at(150), canJoin: true },
   ],
 };
 
@@ -538,7 +538,22 @@ it('says when it checks again: the scheduled retry first, then the normal poll',
   await flush(30_000);
   await flush(60_000);
   expect(screen.getByText('Microsoft is not answering')).toBeTruthy();
-  expect(screen.getByText(/^checking again in [345] min$/)).toBeTruthy();
+  // Retries ran at 30 s and 90 s; the poll is at 300 s, so 210 s are left: 3.5 min rounds up to 4.
+  expect(screen.getByText('checking again in 4 min')).toBeTruthy();
+});
+
+it('says the real time of the next read after the fast retries: the poll, from when Meet opened', async () => {
+  mocks.set('wall2_meet_next', () => ({
+    accounts: [{ id: 'work', label: 'Work', state: 'unavailable', reason: 'graph-503-UnknownError' }],
+    meetings: [],
+  }));
+  render(<Meet />);
+  await flush();
+  await flush(30_000);
+  await flush(60_000);
+  await flush(120_000);
+  // 210 s in: 90 s left until the poll at 300 s.
+  expect(screen.getByText('checking again in 2 min')).toBeTruthy();
 });
 
 it('a late answer after the 12 second limit corrects the row at once', async () => {
@@ -625,6 +640,110 @@ it('keeps the last known meeting, dimmed with as of and no Join, when every acco
   expect(screen.getByText(/^as of \d+(:\d\d)? [AP]M$/)).toBeTruthy();
   expect(screen.queryByRole('button', { name: /^Join/ })).toBeNull();
   expect(screen.queryByText('Calendar not available')).toBeNull();
+});
+
+it('signing out clears that account\'s meeting: nothing of it stays on screen', async () => {
+  let out = false;
+  mocks.set('wall2_meet_next', () =>
+    out
+      ? { accounts: [{ id: 'work', label: 'Work', state: 'signed-out' }], meetings: [] }
+      : { accounts: [{ id: 'work', label: 'Work', state: 'ok' }], meetings: [{ key: '1-0', accountId: 'work', title: 'Design review', start: at(30), end: at(60), canJoin: true }] },
+  );
+  mocks.set('wall2_meet_sign_out', () => {
+    out = true;
+  });
+  const { container } = render(<Meet />);
+  await flush();
+  expect(screen.getByText('Design review')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+  await flush(10);
+  expect(screen.queryByText('Design review')).toBeNull();
+  expect(container.querySelector('.meet-next')).toBeNull();
+  expect(screen.getByText('Calendar not available')).toBeTruthy();
+});
+
+it('a signed-out account\'s meeting never shows even if the native side still lists it', async () => {
+  mocks.set('wall2_meet_next', () => ({
+    accounts: [
+      { id: 'work', label: 'Work', state: 'ok' },
+      { id: 'second', label: 'Second', state: 'signed-out' },
+    ],
+    meetings: [
+      { key: '1-0', accountId: 'work', title: 'Standup', start: at(10), end: at(20), canJoin: false },
+      { key: '1-1', accountId: 'second', title: 'Ghost meeting', start: at(40), end: at(50), canJoin: false },
+    ],
+  }));
+  render(<Meet />);
+  await flush();
+  expect(screen.queryByText('Ghost meeting')).toBeNull();
+});
+
+it('while the second account is still being read, NEXT says may be out of date and LATER does not call it failed', async () => {
+  mocks.set('wall2_meet_next', (args) => {
+    const accounts = [
+      { id: 'work', label: 'Work', state: 'ok' as const },
+      { id: 'second', label: 'Second', state: 'checking' as const },
+    ];
+    if (args?.peek) return { accounts, meetings: [{ key: '1-0', accountId: 'work', title: 'Standup', start: at(10), end: at(20), canJoin: false }], seq: 1 };
+    return new Promise<MeetData>(() => undefined);
+  });
+  render(<Meet />);
+  await flush(100);
+  expect(screen.getByLabelText('Next meeting').textContent).toContain('may be out of date');
+  const later = screen.getByLabelText('Later meetings').textContent ?? '';
+  expect(later).toContain('Nothing else on Work');
+  expect(later).toContain('Second is being checked');
+  expect(later).not.toContain('not read since');
+});
+
+it('LATER never says a bare Nothing else when no account is ok', async () => {
+  mocks.set('wall2_meet_next', () => ({
+    accounts: [
+      { id: 'a', label: 'First', state: 'checking' },
+      { id: 'b', label: 'Second', state: 'unavailable', reason: 'graph-503-UnknownError' },
+    ],
+    meetings: [{ key: '1-0', accountId: 'b', title: 'Standup', start: at(10), end: at(20), canJoin: false }],
+    stale: true,
+  }));
+  render(<Meet />);
+  await flush(100);
+  const later = screen.queryByLabelText('Later meetings');
+  expect(later?.textContent ?? '').not.toMatch(/Nothing else$/);
+});
+
+it('the dimmed last known card shows the clock time and as of, never a countdown', async () => {
+  let fail = false;
+  mocks.set('wall2_meet_next', () =>
+    fail
+      ? { accounts: [{ id: 'work', label: 'Work', state: 'unavailable', reason: 'graph-503-UnknownError' }], meetings: [] }
+      : { accounts: [{ id: 'work', label: 'Work', state: 'ok' }], meetings: [{ key: '1-0', accountId: 'work', title: 'Design review', start: at(300), end: at(330), canJoin: true }] },
+  );
+  const { container } = render(<Meet />);
+  await flush();
+  fail = true;
+  await flush(5 * 60_000 + 10);
+  const card = container.querySelector('.meet-next.dimmed');
+  expect(card).toBeTruthy();
+  expect(card?.textContent).not.toMatch(/\bin \d|In \d|min left/);
+  expect(card?.textContent).toMatch(/as of/);
+});
+
+it('a failed account keeps its last known meeting, but a signed-out one never does', async () => {
+  let step = 0;
+  mocks.set('wall2_meet_next', () => {
+    const meetings = [{ key: '1-0', accountId: 'a', title: 'Design review', start: at(300), end: at(330), canJoin: false }];
+    if (step === 0) return { accounts: [{ id: 'a', label: 'A', state: 'ok' }], meetings };
+    return { accounts: [{ id: 'a', label: 'A', state: step === 1 ? 'signed-out' : 'unavailable' }], meetings: [] };
+  });
+  render(<Meet />);
+  await flush();
+  step = 1;
+  await flush(5 * 60_000 + 10);
+  expect(screen.queryByText('Design review')).toBeNull();
+  step = 2;
+  await flush(5 * 60_000);
+  // The account was signed out in between, so nothing is remembered for it.
+  expect(screen.queryByText('Design review')).toBeNull();
 });
 
 it('Join is filled only for a live or within 15 minutes meeting, quiet otherwise', async () => {

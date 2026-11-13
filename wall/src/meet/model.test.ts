@@ -135,7 +135,7 @@ it('knows when no calendar can be read', () => {
   expect(calendarNotAvailable([{ state: 'checking' }])).toBe(false);
 });
 
-import { checkAgainText, joinIsUrgent, laterEmpty, notFresh, notReadLine, relativeIn } from './model';
+import { checkAgainText, joinIsUrgent, laterEmpty, mayBeOutOfDate, nextReadAt, notFresh, notReadLine, relativeIn, visibleMeetings } from './model';
 
 it('joinIsUrgent: live or within 15 minutes only', () => {
   const now = Date.parse('2026-11-12T17:00:00Z');
@@ -152,9 +152,27 @@ it('relativeIn and checkAgainText give relative times, never a clock', () => {
   expect(relativeIn(now + 10_000, now)).toBe('in 1 min');
   expect(relativeIn(now - 1, now)).toBe('in under a minute');
   expect(relativeIn(now + 65 * 60_000, now)).toBe('in 1 h 5 min');
-  expect(checkAgainText(now + 120_000, undefined, now)).toBe('checking again in 2 min');
-  expect(checkAgainText(null, now - 60_000, now)).toBe('checking again in 4 min');
-  expect(checkAgainText(null, undefined, now)).toBeNull();
+  expect(checkAgainText(now + 120_000, now)).toBe('checking again in 2 min');
+  expect(checkAgainText(null, now)).toBeNull();
+});
+
+it('nextReadAt is the earlier of the fast retry and the normal poll, with one exact text at each boundary', () => {
+  const now = 1_000_000;
+  const MIN = 60_000;
+  expect(nextReadAt(null, null)).toBeNull();
+  expect(nextReadAt(now + 30_000, null)).toBe(now + 30_000);
+  expect(nextReadAt(null, now + 4 * MIN)).toBe(now + 4 * MIN);
+  // Retry sooner than the poll: the retry.
+  expect(nextReadAt(now + 30_000, now + 4 * MIN)).toBe(now + 30_000);
+  expect(checkAgainText(nextReadAt(now + 30_000, now + 4 * MIN), now)).toBe('checking again in 1 min');
+  // Poll sooner than the retry: the poll, not last try plus five minutes.
+  expect(nextReadAt(now + 60_000, now + 20_000)).toBe(now + 20_000);
+  expect(checkAgainText(nextReadAt(now + 60_000, now + 20_000), now)).toBe('checking again in 1 min');
+  // Both at the same moment, and exactly one minute out, then one millisecond past it.
+  expect(checkAgainText(nextReadAt(now + MIN, now + MIN), now)).toBe('checking again in 1 min');
+  expect(checkAgainText(nextReadAt(now + MIN + 1, now + 9 * MIN), now)).toBe('checking again in 2 min');
+  expect(checkAgainText(nextReadAt(null, now + 3 * MIN + 30_000), now)).toBe('checking again in 4 min');
+  expect(checkAgainText(nextReadAt(null, now - 1), now)).toBe('checking again in under a minute');
 });
 
 it('laterEmpty names the account that was read and the one that was not', () => {
@@ -165,8 +183,32 @@ it('laterEmpty names the account that was read and the one that was not', () => 
   expect(laterEmpty([ok], null)).toEqual({ headline: 'Nothing else', notes: [] });
   expect(laterEmpty([ok, bad], lastOk)).toEqual({ headline: 'Nothing else on Work', notes: ['Second not read since 9:40 AM'] });
   expect(laterEmpty([ok, out], lastOk).notes).toEqual(['Second is signed out']);
-  expect(laterEmpty([bad, out], lastOk).headline).toBe('Nothing else');
+  expect(laterEmpty([bad, out], lastOk)).toEqual({ headline: 'Calendar not read', notes: ['Second not read since 9:40 AM', 'Second is signed out'] });
+  const checking = { id: 's', label: 'Second', state: 'checking' as const };
+  expect(laterEmpty([ok, checking], lastOk)).toEqual({ headline: 'Nothing else on Work', notes: ['Second is being checked'] });
+  expect(laterEmpty([checking, bad], lastOk).headline).toBe('Checking calendars');
+  expect(laterEmpty([bad, checking], lastOk).headline).not.toBe('Nothing else');
   expect(notReadLine({ label: 'Second', state: 'unavailable' }, null)).toBe('Second has not been read');
   expect(notFresh('checking')).toBe(false);
   expect(notFresh('ok')).toBe(false);
+});
+
+it('mayBeOutOfDate is true whenever any account is not ok, checking included', () => {
+  expect(mayBeOutOfDate([{ state: 'ok' }])).toBe(false);
+  expect(mayBeOutOfDate([{ state: 'ok' }, { state: 'checking' }])).toBe(true);
+  expect(mayBeOutOfDate([{ state: 'ok' }, { state: 'unavailable' }])).toBe(true);
+});
+
+it('visibleMeetings drops the meetings of an account that is signed out or needs sign-in', () => {
+  const m = (accountId: string) => ({ key: accountId, accountId, title: accountId, start: '2026-11-12T17:00:00Z', end: '2026-11-12T18:00:00Z', canJoin: false });
+  const data = {
+    accounts: [
+      { id: 'a', label: 'A', state: 'ok' as const },
+      { id: 'b', label: 'B', state: 'signed-out' as const },
+      { id: 'c', label: 'C', state: 'unavailable' as const },
+    ],
+    meetings: [m('a'), m('b'), m('c')],
+  };
+  expect(visibleMeetings(data).map((x) => x.accountId)).toEqual(['a', 'c']);
+  expect(visibleMeetings(null)).toEqual([]);
 });

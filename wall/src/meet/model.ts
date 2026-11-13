@@ -165,9 +165,15 @@ export function relativeIn(at: number, now: number): string {
   return r === 0 ? `in ${h} h` : `in ${h} h ${r} min`;
 }
 
-/** "checking again in 2 min", from the scheduled retry, else from the last try plus the normal cadence. Null when nothing is known. */
-export function checkAgainText(retryAt: number | null, tried: number | undefined, now: number): string | null {
-  const at = retryAt ?? (tried !== undefined ? tried + REFRESH_MS : null);
+/** When the next read really runs: the earlier of the next fast retry and the next normal poll. Null when neither is scheduled. */
+export function nextReadAt(retryAt: number | null, pollAt: number | null): number | null {
+  if (retryAt === null) return pollAt;
+  if (pollAt === null) return retryAt;
+  return Math.min(retryAt, pollAt);
+}
+
+/** "checking again in 2 min", from the real deadline of the next read. Null when nothing is scheduled. */
+export function checkAgainText(at: number | null, now: number): string | null {
   return at === null ? null : `checking again ${relativeIn(at, now)}`;
 }
 
@@ -183,15 +189,26 @@ export function notReadLine(a: Pick<MeetAccount, 'label' | 'state'>, lastOk: num
   return lastOk !== null ? `${a.label} not read since ${clockText(lastOk)}` : `${a.label} has not been read`;
 }
 
-/** What LATER says when nothing else is listed: a headline and one dim line per account that was not read. */
+/** What LATER says when nothing else is listed: a headline and one dim line per account that was not read fresh. */
 export function laterEmpty(accounts: readonly MeetAccount[], lastOk: number | null): { headline: string; notes: string[] } {
   const good = accounts.filter((a) => a.state === 'ok');
-  const bad = accounts.filter((a) => notFresh(a.state));
-  if (bad.length === 0 || good.length === 0) return { headline: 'Nothing else', notes: [] };
-  return {
-    headline: `Nothing else on ${good.map((a) => a.label).join(' and ')}`,
-    notes: bad.map((a) => notReadLine(a, lastOk)),
-  };
+  const rest = accounts.filter((a) => a.state !== 'ok');
+  if (rest.length === 0) return { headline: 'Nothing else', notes: [] };
+  const notes = rest.map((a) => (a.state === 'checking' ? `${a.label} is being checked` : notReadLine(a, lastOk)));
+  if (good.length > 0) return { headline: `Nothing else on ${good.map((a) => a.label).join(' and ')}`, notes };
+  return { headline: rest.some((a) => a.state === 'checking') ? 'Checking calendars' : 'Calendar not read', notes };
+}
+
+/** True when an account other than the connected ones could still hold a sooner meeting: any account not ok, checking included. */
+export function mayBeOutOfDate(accounts: readonly { state: AccountState }[]): boolean {
+  return accounts.some((a) => a.state !== 'ok');
+}
+
+/** The meetings worth showing: never those of an account that is signed out or needs sign-in. */
+export function visibleMeetings(data: MeetData | null | undefined): Meeting[] {
+  if (!data) return [];
+  const gone = new Set(data.accounts.filter((a) => needsSignIn(a.state)).map((a) => a.id));
+  return gone.size === 0 ? data.meetings : data.meetings.filter((m) => !gone.has(m.accountId));
 }
 
 export function needsSignIn(state: AccountState): boolean {

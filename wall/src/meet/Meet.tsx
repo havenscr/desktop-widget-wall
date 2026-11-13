@@ -11,12 +11,14 @@ import {
   joinIsUrgent,
   laterEmpty,
   laterMeetings,
-  notFresh,
+  mayBeOutOfDate,
   needsSignIn,
   nextMeeting,
+  nextReadAt,
   reasonCode,
   reasonLine,
   timeRange,
+  visibleMeetings,
   type MeetAccount,
   type Meeting,
 } from './model';
@@ -43,9 +45,9 @@ function Join({ meeting, big, now, onJoin }: { meeting: Meeting; big?: boolean; 
 }
 
 function NextPanel({ m, labels, asOf }: { m: MeetState; labels: Map<string, string>; asOf?: { meetings: Meeting[]; at: number } }) {
-  const next = asOf ? nextMeeting(asOf.meetings, m.now) : m.data ? nextMeeting(m.data.meetings, m.now) : undefined;
+  const next = asOf ? nextMeeting(asOf.meetings, m.now) : nextMeeting(visibleMeetings(m.data), m.now);
   const soon = !asOf && isSoon(next, m.now);
-  const outOfDate = !asOf && (m.data?.accounts ?? []).some((a) => notFresh(a.state));
+  const outOfDate = !asOf && mayBeOutOfDate(m.data?.accounts ?? []);
   return (
     <section className={asOf ? 'panel meet-next dimmed' : 'panel meet-next'} aria-label="Next meeting">
       <span className="k">Next</span>
@@ -55,7 +57,7 @@ function NextPanel({ m, labels, asOf }: { m: MeetState; labels: Map<string, stri
           <div className="s">
             {timeRange(next)} · {labels.get(next.accountId) ?? ''}
           </div>
-          <div className={`meet-count${soon ? ' soon' : ''}`}>{countdownText(next, m.now)}</div>
+          {!asOf && <div className={`meet-count${soon ? ' soon' : ''}`}>{countdownText(next, m.now)}</div>}
           {outOfDate && <div className="xs meet-stale">may be out of date</div>}
           {asOf && <div className="xs meet-stale">as of {clockText(asOf.at)}</div>}
           {!asOf && next.canJoin && <Join meeting={next} big now={m.now} onJoin={m.join} />}
@@ -68,7 +70,7 @@ function NextPanel({ m, labels, asOf }: { m: MeetState; labels: Map<string, stri
 }
 
 function LaterPanel({ m, labels }: { m: MeetState; labels: Map<string, string> }) {
-  const later = m.data ? laterMeetings(m.data.meetings, m.now) : [];
+  const later = laterMeetings(visibleMeetings(m.data), m.now);
   const empty = laterEmpty(m.data?.accounts ?? [], m.lastOk);
   return (
     <section className="panel meet-later" aria-label="Later meetings">
@@ -105,7 +107,7 @@ function AccountRow({ a, m }: { a: MeetAccount; m: MeetState }) {
   const unavailable = a.state === 'unavailable' && !waiting;
   const signedOut = needsSignIn(a.state) && !waiting;
   // The face: one plain line, then when it checks next. The code and the exact last try live in the hover.
-  const again = unavailable ? checkAgainText(m.retryAt, m.tried[a.id], m.now) : null;
+  const again = unavailable ? checkAgainText(nextReadAt(m.retryAt, m.pollAt), m.now) : null;
   const code = unavailable ? reasonCode(a.reason) : !waiting && a.state === 'needs-sign-in' ? reasonLine(a.reason) : null;
   const tried = a.state === 'unavailable' && !waiting ? m.tried[a.id] : undefined;
   const hover = [code, tried !== undefined ? `Last try ${clockText(tried)}` : null].filter(Boolean).join('\n');
@@ -228,7 +230,7 @@ export function Meet() {
   const none = calendarNotAvailable(m.data?.accounts ?? []);
   // When no account can be read, the last known meeting stays up, dimmed and marked "as of"; the headline only when there is none.
   const lastNext = none && m.lastKnown ? nextMeeting(m.lastKnown.meetings, m.now) : undefined;
-  const empty = none ? !lastNext : !(m.data && nextMeeting(m.data.meetings, m.now));
+  const empty = none ? !lastNext : !nextMeeting(visibleMeetings(m.data), m.now);
   return (
     <section className="work meet" data-place="meet" aria-label="Meet">
       <div className="meet-body" style={{ left: MEET_LEFT_PX }}>
