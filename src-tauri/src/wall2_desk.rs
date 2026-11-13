@@ -150,7 +150,8 @@ fn read_json(http: &dyn DeskHttp, url: &str) -> Result<Value, String> {
 /// Trimmed, control characters removed, spaces collapsed, at most `max` characters; None when empty.
 fn clean_text(raw: Option<&Value>, max: usize) -> Option<String> {
     let s = raw?.as_str()?;
-    let no_ctl: String = s.chars().filter(|c| !c.is_control()).collect();
+    // A control character (a line break, a tab) reads as a space, so "Two\nlines" stays two words.
+    let no_ctl: String = s.chars().map(|c| if c.is_control() { ' ' } else { c }).collect();
     let joined = no_ctl.split_whitespace().collect::<Vec<_>>().join(" ");
     if joined.is_empty() {
         return None;
