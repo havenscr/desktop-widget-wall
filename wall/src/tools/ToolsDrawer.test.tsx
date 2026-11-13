@@ -270,7 +270,7 @@ it('the 2 minute close waits while a browser sign-in is waiting', async () => {
 it('closing on purpose during a calendar sign-in cancels it, and the next open says so', async () => {
   const cancel = vi.fn();
   mocks.set('wall2_meet_sign_in', () => new Promise<void>(() => undefined));
-  mocks.set('wall2_meet_cancel_sign_in', cancel);
+  mocks.set('wall2_meet_cancel_sign_in', (a) => cancel(a));
   await openIt();
   fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
   await flush();
@@ -289,7 +289,7 @@ it('closing on purpose during a Spotify sign-in cancels it too', async () => {
   const cancel = vi.fn();
   mocks.set('wall2_spotify_status', () => ({ setup: true, signedIn: false }));
   mocks.set('wall2_spotify_sign_in', () => new Promise<void>(() => undefined));
-  mocks.set('wall2_spotify_cancel_sign_in', cancel);
+  mocks.set('wall2_spotify_cancel_sign_in', (a) => cancel(a));
   mocks.set('wall2_meet_next', () => ({ accounts: [], meetings: [] }));
   await openIt();
   await flush();
@@ -325,4 +325,94 @@ it('Reload keeps the last good read for the deck and marks only the drawer line 
   fireEvent.click(screen.getByRole('button', { name: 'Reload' }));
   expect(useKeysFeedStore.getState().read.status).toBe('ready');
   expect(screen.getByText('Reading keys.json')).toBeTruthy();
+});
+
+// A sign-in that Rust is already running cannot be read from the status commands (neither the
+// Spotify status nor the calendar accounts carry it), so the guarantee is the other way round:
+// every way of closing the drawer cancels a waiting sign-in, and the idle close holds meanwhile.
+const startWaitingCalendarSignIn = async (cancel: ReturnType<typeof vi.fn<(a?: unknown) => unknown>>) => {
+  mocks.set('wall2_meet_sign_in', () => new Promise<void>(() => undefined));
+  mocks.set('wall2_meet_cancel_sign_in', (a) => cancel(a));
+  await openIt();
+  fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+  await flush();
+  expect(screen.getByText('Waiting for the browser')).toBeTruthy();
+};
+
+it('a click outside cancels a waiting sign-in', async () => {
+  const cancel = vi.fn();
+  await startWaitingCalendarSignIn(cancel);
+  fireEvent.pointerDown(document.body);
+  await flush();
+  expect(useToolsStore.getState().open).toBe(false);
+  expect(cancel).toHaveBeenCalled();
+  expect(useToolsStore.getState().note).toBe('Sign-in cancelled');
+});
+
+it('the close button cancels a waiting sign-in', async () => {
+  const cancel = vi.fn();
+  await startWaitingCalendarSignIn(cancel);
+  fireEvent.click(screen.getByRole('button', { name: 'Close Tools' }));
+  await flush();
+  expect(cancel).toHaveBeenCalled();
+});
+
+it('the rail Tools button closing the drawer cancels a waiting sign-in', async () => {
+  const cancel = vi.fn();
+  mocks.set('wall2_meet_sign_in', () => new Promise<void>(() => undefined));
+  mocks.set('wall2_meet_cancel_sign_in', (a) => cancel(a));
+  render(
+    <>
+      <Rail />
+      <ToolsDrawer />
+    </>,
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Tools' }));
+  await flush();
+  fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+  await flush();
+  fireEvent.click(screen.getByRole('button', { name: 'Tools' }));
+  await flush();
+  expect(useToolsStore.getState().open).toBe(false);
+  expect(cancel).toHaveBeenCalled();
+});
+
+it('the Escape close cancels a waiting Spotify sign-in too', async () => {
+  const cancel = vi.fn();
+  mocks.set('wall2_meet_next', () => ({ accounts: [], meetings: [] }));
+  mocks.set('wall2_spotify_status', () => ({ setup: true, signedIn: false }));
+  mocks.set('wall2_spotify_sign_in', () => new Promise<void>(() => undefined));
+  mocks.set('wall2_spotify_cancel_sign_in', (a) => cancel(a));
+  await openIt();
+  await flush();
+  fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+  await flush();
+  fireEvent.keyDown(document, { key: 'Escape' });
+  await flush();
+  expect(cancel).toHaveBeenCalled();
+});
+
+it('a place change leaves the drawer open with the sign-in still waiting and Cancel reachable, never unseen', async () => {
+  const cancel = vi.fn();
+  await startWaitingCalendarSignIn(cancel);
+  act(() => usePlaceStore.setState({ active: 'home' }));
+  await flush();
+  expect(useToolsStore.getState().open).toBe(true);
+  expect(screen.getByText('Waiting for the browser')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+  expect(cancel).toHaveBeenCalled();
+});
+
+it('unmounting the drawer during a waiting sign-in cancels it (calendar)', async () => {
+  const cancel = vi.fn();
+  mocks.set('wall2_meet_sign_in', () => new Promise<void>(() => undefined));
+  mocks.set('wall2_meet_cancel_sign_in', (a) => cancel(a));
+  const view = render(<ToolsDrawer />);
+  act(() => useToolsStore.getState().openDrawer());
+  await flush();
+  fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+  await flush();
+  view.unmount();
+  await flush();
+  expect(cancel).toHaveBeenCalled();
 });
