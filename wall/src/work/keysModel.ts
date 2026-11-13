@@ -1,7 +1,7 @@
 import { WALKS } from '../buddy/model';
 import { CAMERAS } from '../horizon/cameras';
 import { ridgeTopY } from '../horizon/ridge';
-import { rowEdges, zoneEdges, ZONES } from '../screens/frameLayout';
+import { MAIN_GAP, MAIN_TOP, rowEdges, zoneEdges, ZONES } from '../screens/frameLayout';
 import { errorText } from './deckModel';
 
 export interface KeyInfo {
@@ -215,3 +215,25 @@ export function keyChunks<T>(keys: readonly T[]): T[][] {
 
 /** At most this many page dots; past it the pages show as "8 of 12". */
 export const MAX_DOTS = 7;
+
+/**
+ * The lowest stage y of the open key picker: just above the day timeline, leaving the gap the
+ * main rows keep between them. While the owner picks a key it may cover the mountains, never
+ * the timeline or its calendar chips.
+ */
+export function pickerBottomY(): number {
+  return rowEdges()[2].top - MAIN_GAP;
+}
+
+/**
+ * Stage y of an element's top, from its offset inside the main area's top band (the band
+ * starts at `MAIN_TOP`), or null when the page has no layout (tests).
+ */
+export function stageTopOf(el: HTMLElement): number | null {
+  const band = el.closest<HTMLElement>('.wing');
+  if (!band || band.offsetHeight === 0) return null;
+  const b = band.getBoundingClientRect();
+  const scale = b.height / band.offsetHeight;
+  if (!Number.isFinite(scale) || scale <= 0) return null;
+  return MAIN_TOP + (el.getBoundingClientRect().top - b.top) / scale;
+}

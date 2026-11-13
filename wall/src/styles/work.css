@@ -1208,6 +1208,7 @@
   position: absolute;
   z-index: 40;
   inset: 0;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -1238,6 +1239,16 @@
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
+  /* The wall's slim scrollbar, and a fade at the foot so no row is ever seen cut mid-text;
+     the padding lets the last row scroll clear of the fade. */
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.24) transparent;
+  padding-bottom: 28px;
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent);
+}
+.pk-list:hover {
+  scrollbar-color: rgba(255, 255, 255, 0.36) transparent;
 }
 .pk-group {
   display: grid;

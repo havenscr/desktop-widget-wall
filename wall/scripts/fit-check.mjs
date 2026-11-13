@@ -18,7 +18,7 @@
 // non-zero on a failure. CI does not run this; run it by hand before a layout change is handed over.
 //
 //   WALL_CHROME=/path/to/chrome-or-headless-shell npm --prefix wall run fit-check
-//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, header, deck, tiles)
+//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, header, deck, tiles, picker)
 //   npm --prefix wall run fit-check -- --self-test
 //
 // WALL_CHROME (or the first argument that is not a flag) is a Chromium or
@@ -55,6 +55,7 @@ const EXPECT = {
   header: /^ *FAIL header part wraps: /m,
   deck: /^ *FAIL deck: .* below the floor/m,
   tiles: /^ *FAIL deck: label .* outside its tile/m,
+  picker: /^ *FAIL deck: the key picker reaches y \d+, over the timeline/m,
 };
 const OVERFLOWS = {
   left: '.work .left-wing { transform: translateX(-200px); }',
@@ -67,6 +68,7 @@ const OVERFLOWS = {
   header: '.work .centre .lanes-hd .slot-meter .xs { display: inline-block; width: 60px; white-space: normal !important; }',
   deck: '.work .right-wing section.pinned { margin-top: 80px; }',
   tiles: '.work .right-wing .key-tile .deck-lbl { flex: none; width: 160px; max-width: none !important; }',
+  picker: '.work .right-wing .pk { height: 400px !important; }',
 };
 
 if (flag('self-test')) {
@@ -120,7 +122,9 @@ const SOUND_FULL = ['.home .sound', '.home .sound-panel', '.home .sound-plays', 
 const DECK = ['.work .right-wing', '.work .right-wing .deck', '.work .right-wing section.pinned', '.work .right-wing .keys', '.work .right-wing .deck-hd', '.work .right-wing .deck-tiles'];
 const DECK_ROWS = DECK.slice(0, 5);
 const FOR_YOU = [...DECK_ROWS, '.work .right-wing .fy-list', '.work .right-wing .fy-li'];
-const PICKER = [...DECK_ROWS, '.work .right-wing .pk', '.work .right-wing .pk-top', '.work .right-wing .pk-reset'];
+// Open, the picker runs past the deck's box (over the mountains, to just above the timeline), so the wing
+// and the deck box are not held to their own size here; the rows, the picker and its parts are.
+const PICKER = ['.work .right-wing section.pinned', '.work .right-wing .keys', '.work .right-wing .deck-hd', '.work .right-wing .pk', '.work .right-wing .pk-top', '.work .right-wing .pk-reset'];
 const deck = (name, knobs, extra = {}) => ({ name: `Deck, ${name}`, q: work('3', `&${knobs}`), checks: DECK, ...extra });
 // Meet reads the real clock, so its variants run unfrozen (the mock meetings are relative to now).
 const query = (v) => `?${v.live ? '' : `hz=${v.hz ?? 'work'}&at=${v.at ?? '2026-11-11T10:24:00-08:00'}&`}long=1&agents=${v.agents}${v.go ? `&go=${v.go}` : ''}${v.moods ? `&moods=${v.moods}` : ''}${v.extra ?? ''}`;
@@ -171,7 +175,9 @@ const VARIANTS = [
   { name: 'Deck, no keys for this app and no general set', q: work('0', '&keys=nogeneral&meet=none&net=calm'), checks: [...DECK_ROWS, '.work .right-wing .deck-quiet'] },
   { name: 'Deck, sparse: no big screen, nothing in front yet', q: work('0', '&keys=idle&arrange=none&meet=none&net=calm'), checks: [...DECK_ROWS, '.work .right-wing .deck-quiet'] },
   { name: 'Deck, keys.json has a problem, no windows for a layout', q: work('3', '&keys=problem&arrange=nowin'), checks: [...DECK_ROWS, '.work .right-wing .deck-quiet'], click: '.pin-tile' },
-  { name: 'Deck, the key picker open over both rows', q: work('3', '&keys=typical'), checks: PICKER, click: 'ctx:.pin-tile' },
+  // The picker runs over the mountains to just above the timeline, so it is held to the viewport and the timeline rule.
+  { name: 'Deck, the key picker open over both rows', q: work('3', '&keys=typical'), checks: PICKER, click: 'ctx:.pin-tile', viewportOnly: true },
+  { name: 'Deck, the key picker open with the library sets', q: work('3', '&keys=library'), checks: PICKER, click: 'ctx:.pin-tile', viewportOnly: true },
   { name: 'Home, Sound at its fullest: many moods, many speakers, long names, sleep timer', q: home('sonos=heavy&moods=many'), checks: [...HOME_CENTRE.filter((c) => !c.endsWith('mood-row')), ...SOUND_FULL] },
   { name: 'Home, typical: five moods, Sound playing', q: home('moods=five'), checks: [...HOME_CENTRE, ...SOUND_FULL] },
   { name: 'Home, sparse: no moods, one routine, one speaker', q: home('sonos=sparse&moods=none'), checks: ['.home .home-centre', '.home .moods', ...SOUND_FULL.slice(0, 4)] },
@@ -320,10 +326,10 @@ try {
       const floor = floorEl ? Number(floorEl.dataset.floor) : Infinity;
       if (!floorEl && document.querySelector('.work .right-wing .keys')) deck.push('deck: the Now row carries no data-floor, so its floor cannot be checked');
       let low = null;
-      // What the deck draws: its rows and their parts (the box itself is empty room, and the key
-      // picker's list scrolls inside the picker, which is held to the floor itself).
+      // What the deck draws: its rows and their parts (the box itself is empty room). The open key
+      // picker may run past the floor over the mountains; it is held to the timeline below.
       for (const e of deckEl.querySelectorAll('*')) {
-        if (e.closest('.pk') && !e.matches('.pk')) continue;
+        if (e.closest('.pk')) continue;
         const r = e.getBoundingClientRect();
         if (r.width === 0 || r.height === 0 || getComputedStyle(e).visibility === 'hidden') continue;
         if (r.bottom > floor + 0.5 && (low === null || r.bottom > low.b)) low = { b: r.bottom, t: (e.className && e.className.baseVal === undefined ? e.className : e.tagName) };
@@ -337,6 +343,18 @@ try {
         if (q.left < r.left - 0.5 || q.right > r.right + 0.5 || q.top < r.top - 0.5 || q.bottom > r.bottom + 0.5 || l.scrollWidth > l.clientWidth + 1) deck.push('deck: label "' + l.textContent + '" runs outside its tile');
       }
       tiles.forEach((a, i) => tiles.slice(i + 1).forEach((b) => { if (hit(a.r, b.r)) deck.push('deck: tiles "' + a.t.textContent + '" and "' + b.t.textContent + '" share pixels'); }));
+      // The open key picker runs down to just above the timeline and never covers it: its
+      // bottom at least 16 px (the gap between the main rows) above the ribbon's top.
+      const pk = deckEl.querySelector('.pk');
+      const rib = document.querySelector('.rib');
+      if (pk && rib) {
+        const pb = pk.getBoundingClientRect().bottom;
+        const rt = rib.getBoundingClientRect().top;
+        if (pb > rt - 16 + 0.5) deck.push('deck: the key picker reaches y ' + Math.round(pb) + ', over the timeline gap (the timeline starts at ' + Math.round(rt) + ')');
+        else if (pb < rt - 16 - 2) deck.push('deck: the key picker stops at y ' + Math.round(pb) + ', short of the timeline gap at ' + Math.round(rt - 16));
+        const list = pk.querySelector('.pk-list');
+        if (list && getComputedStyle(list).scrollbarWidth !== 'thin') deck.push('deck: the key picker list has the native scrollbar');
+      }
       const name = document.querySelector('.work .right-wing .keys .deck-hd .k');
       const ctl = document.querySelector('.work .right-wing .keys .deck-hd-r');
       if (name) {
@@ -354,7 +372,9 @@ try {
 
   let failed = false;
   if (overflow) console.log(`deliberate overflow: ${overflow} (${OVERFLOWS[overflow]})`);
-  for (const v of overflow ? VARIANTS.slice(0, 1) : VARIANTS) {
+  // A deliberate break runs on the first state, or for the picker on the state that opens it.
+  const breakOn = overflow === 'picker' ? VARIANTS.filter((v) => v.name.startsWith('Deck, the key picker open over')) : VARIANTS.slice(0, 1);
+  for (const v of overflow ? breakOn : VARIANTS) {
     console.log(`${v.name} (${v.q}):`);
     const url = `${pathToFileURL(page).href}${v.q}&checks=${encodeURIComponent(v.checks.join('|'))}${v.click ? `&click=${encodeURIComponent(v.click)}` : ''}${v.card ? '&card=1' : ''}`;
     const dom = execFileSync(

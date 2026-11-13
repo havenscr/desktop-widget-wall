@@ -8,7 +8,8 @@ import { HoverTipLayer, resetTip, TIP_DELAY_MS } from '../ui/HoverTip';
 import { useDeckStore } from './deckStore';
 import { UNDO_SHOW_MS } from './deckModel';
 import { resetKeysFeed } from './keysFeed';
-import type { KeysSummary } from './keysModel';
+import { pickerBottomY, type KeysSummary } from './keysModel';
+import { MAIN_GAP, rowEdges } from '../screens/frameLayout';
 import { PINS_KEY } from './libraryModel';
 import { PinnedRow } from './PinnedRow';
 import { LATCH_MS } from './useGuard';
@@ -445,4 +446,45 @@ it('a pin on a keys.json key keeps its label and action in storage and is droppe
   expect(within(again.container).queryByRole('button', { name: 'Changed' })).toBeNull();
   expect(within(again.container).queryByRole('button', { name: 'Mine' })).toBeNull();
   expect(within(again.container).getAllByRole('button', { name: 'Volume up' }).length).toBeGreaterThan(0);
+});
+
+it('the open picker runs down to just above the timeline, never over it', async () => {
+  // A laid-out Work at scale 1: the right wing from y 20, the deck (and the picker's top) at y 274.
+  const rect = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+    const top = this.classList.contains('wing') ? 20 : this.classList.contains('pk') ? 274 : 0;
+    return { top, bottom: top, left: 0, right: 0, width: 0, height: this.classList.contains('wing') ? 490 : 0, x: 0, y: top, toJSON: () => ({}) } as DOMRect;
+  });
+  const off = vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function (this: HTMLElement) {
+    return this.classList.contains('wing') ? 490 : 0;
+  });
+  try {
+    render(
+      <div className="wing wr right-wing">
+        <div className="deck">
+          <PinnedRow />
+        </div>
+      </div>,
+    );
+    await flush();
+    const dlg = await openPicker('Snip');
+    const height = parseFloat(dlg.style.height);
+    const bottom = 274 + height;
+    const timelineTop = rowEdges()[2].top;
+    expect(bottom).toBeLessThan(timelineTop);
+    expect(bottom).toBe(pickerBottomY());
+    expect(timelineTop - bottom).toBe(MAIN_GAP);
+    // Search at the top, Reset at the bottom, the list between them the one part that scrolls.
+    expect(dlg.firstElementChild!.className).toBe('pk-top');
+    expect(dlg.lastElementChild!.className).toBe('pk-reset');
+  } finally {
+    rect.mockRestore();
+    off.mockRestore();
+  }
+});
+
+it('the picker list has the slim scrollbar and a fade at its foot', () => {
+  const css: string = readFileSync('src/styles/work.css', 'utf8');
+  const list = /\.pk-list \{[^}]*\}/.exec(css)?.[0] ?? '';
+  expect(list).toContain('scrollbar-width: thin');
+  expect(list).toContain('mask-image: linear-gradient');
 });

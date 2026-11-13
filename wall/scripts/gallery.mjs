@@ -144,6 +144,8 @@ state('work', 'focus shown once (no agents)', 'agents=0&focus=long');
 state('work', 'deck: library sets, VS Code held', 'keys=library&hold=lib-vscode');
 state('work', 'deck: library set whose app is not in front', 'keys=library&hold=lib-excel');
 state('work', 'deck: longest labels pinned', 'keys=library&pins=long');
+// The key picker open with the whole library: down to just above the timeline, over the mountains.
+add('work', 'deck: key picker open, whole library', url('work', TYPICAL_AT, 'keys=library'), true, 'ctx:.pin-tile');
 // The agents header with twelve sessions, two waiting and an alarm: one line.
 state('work', 'agents header: twelve sessions, two waiting, an alarm', 'agents=12ask');
 
@@ -240,6 +242,7 @@ const EXPECT = [
   ['work', 'deck: library sets, VS Code held', ['Command palette', '!VS Code: command palette']],
   ['work', 'deck: library set whose app is not in front', ['Repeat last action', '!Excel: repeat']],
   ['work', 'deck: longest labels pinned', 'Sonos: play what suits the hour'],
+  ['work', 'deck: key picker open', ['Reset to defaults', 'Anywhere on the PC']],
   ['work', 'agents header: twelve sessions', 'One thing for you'],
   // Home
   ['home', 'sparse', ['No moods set up', 'No meetings today']],
@@ -519,7 +522,12 @@ async function render(cdp, base, s, file, ctl) {
     await new Promise((r) => setTimeout(r, SETTLE_MS));
     if (s.click) {
       // A state shown just after a click (a task tick's Undo window).
-      await to('Runtime.evaluate', { expression: `document.querySelector(${JSON.stringify(s.click)})?.click()` });
+      // `ctx:<selector>` right-clicks (opens the key picker), anything else clicks.
+      const ctx = s.click.startsWith('ctx:');
+      const sel = JSON.stringify(ctx ? s.click.slice(4) : s.click);
+      await to('Runtime.evaluate', {
+        expression: ctx ? `document.querySelector(${sel})?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))` : `document.querySelector(${sel})?.click()`,
+      });
       await new Promise((r) => setTimeout(r, 900));
     }
     const check = await to('Runtime.evaluate', {

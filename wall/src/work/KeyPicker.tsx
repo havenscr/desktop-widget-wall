@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { tip } from '../ui/HoverTip';
 import { KeyIcon } from './keyIcons';
 import { searchLibrary, type LibGroup, type LibKey } from './libraryModel';
-import type { KeyInfo } from './keysModel';
+import { pickerBottomY, stageTopOf, type KeyInfo } from './keysModel';
 
 /** Why a library row cannot be pinned, or null when it can. */
 export function rowBlock(k: LibKey): string | null {
@@ -82,9 +82,28 @@ export function KeyPicker({
     list[next].focus();
   };
 
+  // Open, the picker runs down to just above the timeline (over the mountains, never the
+  // timeline), so the list shows as many rows as fit. Without a layout (tests) it keeps the deck's box.
+  const [height, setHeight] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const measure = () => {
+      const top = stageTopOf(el);
+      if (top !== null) setHeight(Math.max(0, Math.floor(pickerBottomY() - top)));
+    };
+    measure();
+    // Measured again whenever something above it in the wing changes size (the deck then moves).
+    const wing = el.closest<HTMLElement>('.wing');
+    if (!wing || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(measure);
+    for (const child of wing.children) ro.observe(child);
+    return () => ro.disconnect();
+  }, []);
+
   const current = pins[slot] ?? null;
   return (
-    <div className="pk" ref={box} role="dialog" aria-label={`Choose the key for slot ${slot + 1}`} onKeyDown={onKeyDown}>
+    <div className="pk" ref={box} role="dialog" style={height !== null ? { bottom: 'auto', height } : undefined} aria-label={`Choose the key for slot ${slot + 1}`} onKeyDown={onKeyDown}>
       <div className="pk-top">
         <input
           ref={search}
