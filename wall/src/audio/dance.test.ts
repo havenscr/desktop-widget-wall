@@ -173,3 +173,18 @@ describe('the kick', () => {
     expect(Math.max(...kicks.slice(150))).toBeLessThan(0.001);
   });
 });
+
+describe('no allocation in the frame loop', () => {
+  it('stepping keeps every array of the state and the output, and writes into the ring in place', () => {
+    const s = createDance();
+    const arrays = [s.level, s.fast, s.slow, s.trs];
+    const out = new Float32Array(DANCE_BANDS * 3);
+    for (let r = 0; r < 300; r++) stepDance(s, flat(0.3 + 0.5 * ((r % 7) / 7)), DT, out, (r % 3) * DANCE_BANDS);
+    expect([s.level, s.fast, s.slow, s.trs]).toEqual(arrays);
+    arrays.forEach((a, i) => expect(a).toBe([s.level, s.fast, s.slow, s.trs][i]));
+    // Rows other than the one written stay as they were: a row is written in place at its offset.
+    const before = out.slice(DANCE_BANDS, DANCE_BANDS * 2);
+    stepDance(s, flat(0.9), DT, out, 0);
+    expect(out.slice(DANCE_BANDS, DANCE_BANDS * 2)).toEqual(before);
+  });
+});

@@ -253,3 +253,18 @@ describe('the dance history in the store', () => {
     expect(afterPause).toBeCloseTo(fresh, 6);
   });
 });
+
+describe('the history objects are fixed', () => {
+  it('danceHistory() and bandHistory() are the same objects every call, written in place', () => {
+    resetAudio();
+    const d = danceHistory();
+    const data = d.data;
+    for (let t = 0; t < 2000; t += 33) {
+      ingestLevels({ bands: new Array(32).fill(150), waveform: [0.1], bass: 0.5, mid: 0.3, high: 0.1 }, t);
+      tickAudio(t);
+    }
+    expect(danceHistory()).toBe(d);
+    expect(danceHistory().data).toBe(data);
+    expect(bandHistory()).toBe(bandHistory());
+  });
+});
