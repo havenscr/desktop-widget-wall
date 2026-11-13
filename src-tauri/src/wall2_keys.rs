@@ -394,9 +394,10 @@ fn parse_key(key: &Value, at: &str, icon_at: &str) -> Result<KeyDef, String> {
     Ok(KeyDef { label: label.to_string(), icon: icon.to_string(), action })
 }
 
-/// Set ids the file may not use: the pinned row, and the built-in sets' own prefix.
+/// Set ids the file may not use: the pinned row, the page's "For you" page, and the built-in
+/// sets' own prefix.
 fn reserved_id(id: &str) -> bool {
-    id == "pinned" || id.starts_with("lib-")
+    id == "pinned" || id == "foryou" || id.starts_with("lib-")
 }
 
 /// Read `keys.json` text. Any problem refuses the whole file with a message that names the
@@ -1184,7 +1185,7 @@ mod tests {
             let text = config_with(&format!(r#"{{"label":"A","icon":"{name}","chord":"A"}}"#));
             assert!(parse_config(&text).is_ok(), "{name}");
         }
-        assert_eq!(ICON_NAMES.len(), 17);
+        assert_eq!(ICON_NAMES.len(), 54);
         let unique: HashSet<&str> = ICON_NAMES.iter().copied().collect();
         assert_eq!(unique.len(), ICON_NAMES.len());
         let key = r#"{"label":"A","icon":"refresh","chord":"A"}"#;
@@ -1202,7 +1203,7 @@ mod tests {
     fn only_a_missing_keys_file_falls_back_to_the_built_in_keys() {
         use std::io::ErrorKind;
         let (c, source) = config_from_read(Err(ErrorKind::NotFound)).expect("missing is fine");
-        assert_eq!((source, c.apps.len()), ("default", 1));
+        assert_eq!((source, c.apps.len()), ("default", 0));
         for kind in [ErrorKind::PermissionDenied, ErrorKind::Other, ErrorKind::TimedOut, ErrorKind::WouldBlock, ErrorKind::InvalidData] {
             assert_eq!(config_from_read(Err(kind)), Err(UNREADABLE.to_string()), "{kind:?}");
         }
@@ -1605,7 +1606,7 @@ mod tests {
     #[test]
     fn set_ids_the_file_may_not_use_are_reserved() {
         let set = |id: &str| format!(r#"{{"apps":[{{"id":"{id}","name":"A","exe":"a.exe","keys":[{{"label":"A","icon":"keyboard","chord":"A"}}]}}]}}"#);
-        for id in ["pinned", "lib-teams", "lib-x"] {
+        for id in ["pinned", "foryou", "lib-teams", "lib-x"] {
             assert!(parse_config(&set(id)).unwrap_err().contains("reserved"), "{id}");
         }
         assert!(parse_config(&set("library")).is_ok());

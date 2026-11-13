@@ -3,9 +3,9 @@ import { readFileSync } from 'node:fs';
 import { expect, it } from 'vitest';
 import { KEY_ICONS } from './keyIcons';
 
-/** The allowed names live in the Rust contract (`ICON_NAMES`); the page must draw exactly those. */
+/** Vitest runs from the `wall` folder, so the Rust file is one folder up. The allowed names live in the Rust contract (`ICON_NAMES`); the page must draw exactly those. */
 it('draws exactly the icon names the Rust config accepts', () => {
-  const src: string = readFileSync(new URL('../../../src-tauri/src/wall2_keys.rs', import.meta.url), 'utf8');
+  const src: string = readFileSync('../src-tauri/src/wall2_keys.rs', 'utf8');
   const block = /pub\(crate\) const ICON_NAMES: \[&str; \d+\] = \[([^\]]*)\]/.exec(src);
   expect(block).not.toBeNull();
   const names = [...(block?.[1] ?? '').matchAll(/"([a-z0-9-]+)"/g)].map((m) => m[1]);
