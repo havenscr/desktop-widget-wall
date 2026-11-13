@@ -937,10 +937,24 @@ mod tests {
     fn a_real_unreadable_path_is_not_a_missing_one() {
         let missing = std::env::temp_dir().join("wall2-keys-test-missing-folder").join("keys.json");
         assert_eq!(read_keys_file(&missing), Err(std::io::ErrorKind::NotFound));
-        // A folder where the file should be cannot be read as a file.
-        let dir = std::env::temp_dir();
-        let got = read_keys_file(&dir);
-        assert!(got.is_err() && got != Err(std::io::ErrorKind::NotFound), "{got:?}");
+        // A file another program holds open exclusively (a sharing violation on Windows), or a
+        // folder where the file should be (elsewhere), exists but cannot be read.
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::OpenOptionsExt;
+            let path = std::env::temp_dir().join(format!("wall2-keys-test-locked-{}.json", std::process::id()));
+            std::fs::write(&path, b"{}").expect("write");
+            let held = std::fs::OpenOptions::new().read(true).share_mode(0).open(&path).expect("open exclusively");
+            let got = read_keys_file(&path);
+            drop(held);
+            let _ = std::fs::remove_file(&path);
+            assert!(got.is_err() && got != Err(std::io::ErrorKind::NotFound), "{got:?}");
+        }
+        #[cfg(not(windows))]
+        {
+            let got = read_keys_file(&std::env::temp_dir());
+            assert!(got.is_err() && got != Err(std::io::ErrorKind::NotFound), "{got:?}");
+        }
     }
 
     #[test]
