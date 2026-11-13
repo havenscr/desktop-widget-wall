@@ -7,7 +7,7 @@ import { hideTip, pinTip, tip } from '../ui/HoverTip';
 import { AgentRow, agentBoxes } from './AgentRow';
 import { useAgentsStore } from '../agents/useAgents';
 import { useVisible } from '../ui/useVisible';
-import { allDayBarText, allDayChips, allDayText, allDayWidth, calmLayout, chipLayout, chips, dueLabelSpan, isLate, dueMarks, focusBars, hourLabels, msToNextMinute, needle, needleTip, overlapsAny, skyGradient, spanText, sunLabels, ticks, type Chip, type FoldChip, type MoreChip } from './model';
+import { allDayBarText, allDayChips, handleX, labelBox, allDayText, allDayWidth, calmLayout, chipLayout, chips, dueLabelSpan, isLate, dueMarks, focusBars, hourLabels, msToNextMinute, needle, needleTip, overlapsAny, skyGradient, spanText, sunLabels, ticks, type Chip, type FoldChip, type MoreChip } from './model';
 import { AgentsToday } from './AgentsToday';
 import { DayDrawer } from './DayDrawer';
 import { sunTimes } from './sun';
@@ -193,6 +193,8 @@ export function Ribbon({ kind, now = Date.now }: { kind: RibbonKind; now?: () =>
   // The panel needs the helper: hidden when it is not set up.
   const canPanel = calm && agents.status !== 'unconfigured';
   const openPanel = useCallback(() => setOverlay({ kind: 'panel' }), []);
+  // The handle keeps off the hour and sun labels and the needle's time pill.
+  const handleLeft = handleX([...hourLabels(n.x).map((l) => labelBox(l.x, l.text)), ...sunLabels(sun, t, n.x).map((l) => labelBox(l.x, l.text, 9)), labelBox(n.x, n.text, 11)]);
   const openDrawer = useCallback((hour: number | null) => setOverlay((o) => (o?.kind === 'drawer' && hour === null ? null : { kind: 'drawer', hour })), []);
   return (
     <>
@@ -371,6 +373,7 @@ export function Ribbon({ kind, now = Date.now }: { kind: RibbonKind; now?: () =>
           <button
             type="button"
             className="rib-handle"
+            style={{ left: handleLeft }}
             aria-label={overlay?.kind === 'drawer' ? 'Close the Day drawer' : 'Open the Day drawer'}
             aria-expanded={overlay?.kind === 'drawer'}
             onClick={() => openDrawer(null)}

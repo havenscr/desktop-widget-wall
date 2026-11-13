@@ -32,8 +32,12 @@ export interface DayRecord {
   sessions: DaySession[];
 }
 
-/** `absent`: the helper has no record routes (an older helper), so the day picker hides. */
-export type DaysStatus = 'idle' | 'loading' | 'ok' | 'absent' | 'unconfigured';
+/**
+ * `absent`: the helper answered 404 for the day list (an older helper with no record), so the
+ * day picker hides. `failed`: a passing failure with no good list held yet. After a good list,
+ * a failed refresh keeps it (status stays `ok`) and stamps `listFailedAt`.
+ */
+export type DaysStatus = 'idle' | 'loading' | 'ok' | 'failed' | 'absent' | 'unconfigured';
 
 export interface RecordRead {
   /** Null when the helper has no record of that day. */
@@ -47,21 +51,32 @@ export interface RecordRead {
 interface DaysState {
   status: DaysStatus;
   days: DayCount[];
+  /** When the list was last read well (this PC's clock), or null. */
+  listAt: number | null;
+  /** Set when the latest list read failed after a good one: the list shown is as of `listAt`. */
+  listFailedAt: number | null;
   records: Record<string, RecordRead | undefined>;
   loading: Record<string, boolean>;
 }
 
-const initial = (): DaysState => ({ status: 'idle', days: [], records: {}, loading: {} });
+const initial = (): DaysState => ({ status: 'idle', days: [], listAt: null, listFailedAt: null, records: {}, loading: {} });
 export const useDaysStore = create<DaysState>(() => initial());
 
-/** Read the list of recorded days. A failure (an older helper answers 404) hides the picker. */
+/**
+ * Read the list of recorded days. With a good list held the read runs in the background (no
+ * loading state, so the picker never flickers). `absent` (the helper answered 404) hides the
+ * picker; any other failure keeps the last good list, stamped with when it failed.
+ */
 export async function loadDays(): Promise<void> {
-  useDaysStore.setState({ status: 'loading' });
+  if (useDaysStore.getState().status !== 'ok') useDaysStore.setState({ status: 'loading' });
   try {
     const days = await invoke<DayCount[]>('wall2_omni_days');
-    useDaysStore.setState({ status: 'ok', days: Array.isArray(days) ? days : [] });
+    useDaysStore.setState({ status: 'ok', days: Array.isArray(days) ? days : [], listAt: Date.now(), listFailedAt: null });
   } catch (e) {
-    useDaysStore.setState({ status: String(e).includes('not-configured') ? 'unconfigured' : 'absent', days: [] });
+    const text = String(e);
+    if (text.includes('not-configured')) useDaysStore.setState({ status: 'unconfigured', days: [], listFailedAt: null });
+    else if (text.includes('absent')) useDaysStore.setState({ status: 'absent', days: [], listFailedAt: null });
+    else useDaysStore.setState((st) => (st.days.length > 0 ? { status: 'ok', listFailedAt: Date.now() } : { status: 'failed', listFailedAt: Date.now() }));
   }
 }
 
@@ -133,6 +148,11 @@ export interface PanelRow {
   id: string;
   /** The card number on today's Work, or the row's place on a past day. */
   num: number;
+  /**
+   * The date of the saved record the row comes from, for `wall2_focus_day_session`; null for a
+   * row of an open session (`wall2_focus_omnigent`).
+   */
+  openDate: string | null;
   title: string;
   spans: PanelSpan[];
   pr: number | null;
@@ -147,6 +167,32 @@ export interface PanelRow {
 
 const hourOf = (ms: number, midnight: number) => Math.min(24, Math.max(0, (ms - midnight) / 3_600_000));
 
+/** The UTC offset of zone `tz` at `ms`, in ms (what to add to UTC to get the zone's wall clock). */
+function zoneOffset(ms: number, tz: string): number {
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone: tz, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }).formatToParts(new Date(ms));
+  const g = (t: string) => Number(parts.find((x) => x.type === t)?.value ?? 0);
+  return Date.UTC(g('year'), g('month') - 1, g('day'), g('hour') % 24, g('minute'), g('second')) - Math.floor(ms / 1000) * 1000;
+}
+
+/** `YYYY-MM-DD` one calendar day after `date`. */
+function nextDate(date: string): string {
+  const [y, m, d] = date.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10);
+}
+
+/** Midnight at the start of `date` in zone `tz` (the record's own zone); this PC's zone when it has none or an unknown one. */
+export function zoneMidnight(date: string, tz: string): number {
+  if (!tz) return dayStart(date);
+  try {
+    const [y, m, d] = date.split('-').map(Number);
+    const guess = Date.UTC(y, m - 1, d);
+    const first = guess - zoneOffset(guess, tz);
+    return guess - zoneOffset(first, tz);
+  } catch {
+    return dayStart(date);
+  }
+}
+
 /** "carried over": a session whose last span has no end at the end of a past day. */
 function carried(spans: readonly DayStageSpan[]): boolean {
   const last = [...spans].sort((a, b) => Date.parse(a.start) - Date.parse(b.start)).pop();
@@ -155,15 +201,18 @@ function carried(spans: readonly DayStageSpan[]): boolean {
 
 /** Rows for a past day from its saved record: stage spans, pull request marks, end words. */
 export function recordRows(r: DayRecord, now: number): PanelRow[] {
-  const midnight = dayStart(r.date);
-  const dayEnd = Math.min(now, midnight + 86_400_000);
+  // The day's bounds in the record's own zone (the helper names it), so a day recorded in
+  // another zone than this PC's still runs midnight to midnight.
+  const midnight = zoneMidnight(r.date, r.tz);
+  const next = zoneMidnight(nextDate(r.date), r.tz);
+  const dayEnd = Math.min(now, next);
   return r.sessions.map((s, i) => {
     let workMs = 0;
     const spans: PanelSpan[] = [];
     for (const sp of [...s.spans].sort((a, b) => Date.parse(a.start) - Date.parse(b.start))) {
       const a = Date.parse(sp.start);
       const b = sp.end === null ? dayEnd : Math.min(Date.parse(sp.end), dayEnd);
-      if (!Number.isFinite(a) || !Number.isFinite(b) || b <= a || a >= midnight + 86_400_000 || b <= midnight) continue;
+      if (!Number.isFinite(a) || !Number.isFinite(b) || b <= a || a >= next || b <= midnight) continue;
       workMs += b - Math.max(a, midnight);
       spans.push({ kind: sp.stage, from: hourOf(a, midnight), to: hourOf(b, midnight), open: sp.end === null });
     }
@@ -173,6 +222,7 @@ export function recordRows(r: DayRecord, now: number): PanelRow[] {
     return {
       id: s.id,
       num: i + 1,
+      openDate: r.date,
       title: s.title,
       spans,
       pr: s.pr?.number ?? null,
@@ -185,17 +235,21 @@ export function recordRows(r: DayRecord, now: number): PanelRow[] {
 }
 
 /**
- * Rows for today: every session with a span in the live summary's day log (cards first, in
- * card order). Stage colours come from today's saved record when the helper has one; the
- * waits always come from the live log. A session the record does not know draws its live
- * runs in cyan. `until` ends open spans (now, or the stale cut).
+ * Rows for today. A row is only ever a session from the helper's live `sessionsList` (its
+ * parents and standalone sessions, in that order) or from today's saved record, which holds
+ * only parents and standalone sessions (the helper's contract from 1.2.2 on). An id found
+ * only in the live day log or the names map (a child, a side chat) never becomes a row.
+ * Stage colours come from the saved record when it has the session; the waits always come
+ * from the live log; a session the record does not know draws its live runs in cyan. A
+ * record-only row opens through its record's date. `until` ends open spans (now, or the
+ * stale cut).
  */
 export function todayRows(s: OmniSummary, record: DayRecord | null, now: number, until: number = now, skewMs = 0): PanelRow[] {
   const midnight = dayStart(isoDay(now));
-  const cardList = s.sessionsList && s.sessionsList.length > 0 ? s.sessionsList : s.lanes;
+  const cardList = s.sessionsList ?? [];
   const order: string[] = cardList.map((l) => l.id);
+  for (const x of record?.sessions ?? []) if (!order.includes(x.id)) order.push(x.id);
   const sorted = [...s.day].sort((a, b) => Date.parse(a.start) - Date.parse(b.start));
-  for (const d of sorted) if (!order.includes(d.lane)) order.push(d.lane);
   const rec = new Map((record?.sessions ?? []).map((x) => [x.id, x]));
   const rows: PanelRow[] = [];
   for (const id of order) {
@@ -230,8 +284,9 @@ export function todayRows(s: OmniSummary, record: DayRecord | null, now: number,
     const prSpan = spans.find((x) => x.kind === 'pr');
     rows.push({
       id,
-      num: card ? cardList.indexOf(card) + 1 : order.indexOf(id) + 1,
-      title: card?.title ?? fromRec?.title ?? s.sessions?.[id]?.title ?? 'An earlier session',
+      num: order.indexOf(id) + 1,
+      openDate: card ? null : (record?.date ?? null),
+      title: card?.title ?? fromRec?.title ?? 'An earlier session',
       spans,
       pr,
       prAt: pr !== null ? (prSpan?.from ?? spans[spans.length - 1]?.to ?? null) : null,

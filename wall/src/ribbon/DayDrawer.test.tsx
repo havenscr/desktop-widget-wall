@@ -116,11 +116,15 @@ it('the drawer lists the agenda with overlaps side by side and Join, and one row
   expect(evs[3].querySelector('.dd-join')).toBeNull();
   fireEvent.click(evs[1].querySelector('.dd-join') as HTMLElement);
   fireEvent.click(evs[2]);
+  // Enter on a meeting does what a click does.
+  fireEvent.keyDown(evs[4], { key: 'Enter' });
   await flush();
   expect(opened).toEqual([
     ['join', { key: 'b' }],
     ['event', { key: 'c' }],
+    ['event', { key: 'w' }],
   ]);
+  opened.splice(2, 1);
   const rows = [...d.querySelectorAll('.dd-row')] as HTMLElement[];
   expect(rows.map((x) => x.querySelector('.dd-name')!.textContent)).toEqual(['Usage meter rework', 'Voice: iPhone mic fix', 'Docs tidy pass']);
   expect(rows.map((x) => x.querySelector('.dd-pill')!.textContent)).toEqual(['waiting on you', 'working', 'idle']);

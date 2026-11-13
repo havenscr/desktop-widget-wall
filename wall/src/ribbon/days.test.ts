@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 import { lane, summary } from '../agents/fixtures';
-import { axisRange, dayBefore, isoDay, longDate, neighbours, recordRows, todayRows, totalsText, type DayRecord } from './days';
-import { activityCells, agentsLineParts, agentsLineX, calmLayout, chips, foldCountWidth, RIBBON_WIDTH, RX } from './model';
+import { axisRange, dayBefore, isoDay, longDate, neighbours, recordRows, todayRows, totalsText, zoneMidnight, type DayRecord } from './days';
+import { activityCells, agentsLineParts, agentsLineX, calmLayout, chips, foldCountWidth, handleX, HANDLE_W, RIBBON_WIDTH, RX } from './model';
 import { usePacificTime } from './testZone';
 
 usePacificTime();
@@ -120,4 +120,29 @@ it('the agents line words and its place late in the day', () => {
   expect(agentsLineX(1000, 280)).toBe(1014);
   // Fewer than 360 px right of the needle: right-aligned before it.
   expect(agentsLineX(RIBBON_WIDTH - 300, 280)).toBe(RIBBON_WIDTH - 300 - 14 - 280);
+});
+
+it("a past day's bounds follow the record's own zone, not this PC's", () => {
+  // The PC runs on Pacific time; the record was kept in New York.
+  expect(zoneMidnight('2026-11-12', 'America/New_York')).toBe(Date.parse('2026-11-12T05:00:00Z'));
+  expect(zoneMidnight('2026-11-12', '')).toBe(t('2026-11-12', '00:00'));
+  expect(zoneMidnight('2026-11-12', 'Not/AZone')).toBe(t('2026-11-12', '00:00'));
+  const ny: DayRecord = { date: '2026-11-12', tz: 'America/New_York', sessions: [{ id: 'a1b2c3d4-0001', title: 'Early east', spans: [{ stage: 'build', start: '2026-11-12T06:00:00Z', end: '2026-11-12T07:00:00Z' }, { stage: 'pr', start: '2026-11-13T04:30:00Z', end: '2026-11-13T06:00:00Z' }], pr: null }] };
+  const rows = recordRows(ny, NOW);
+  // 06:00Z is 1 AM in New York; the second span is cut at New York midnight (05:00Z).
+  expect(rows[0].spans.map((x) => [x.from, x.to])).toEqual([
+    [1, 2],
+    [23.5, 24],
+  ]);
+  expect(rows[0].workMs).toBe(1.5 * 3_600_000);
+  expect(rows[0].openDate).toBe('2026-11-12');
+});
+
+it('the drawer handle moves off the labels and the needle pill', () => {
+  const centre = Math.round(RIBBON_WIDTH / 2 - HANDLE_W / 2);
+  expect(handleX([])).toBe(centre);
+  // The needle's pill sits right on the centre: the handle steps aside.
+  const x = handleX([{ x: centre + 10, width: 60 }]);
+  expect(x === centre - 80 || x === centre + 80 || Math.abs(x - centre) >= 70).toBe(true);
+  expect(x + HANDLE_W <= centre + 6 || x >= centre + 74).toBe(true);
 });

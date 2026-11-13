@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { IconChevronLeft, IconChevronRight, IconGitPullRequest, IconX } from '@tabler/icons-react';
 import { STAGES } from '../agents/model';
-import { focusSession } from '../agents/open';
+import { invoke } from '../bridge/tauri';
 import { agentsStale, agentsUntil, useAgentsStore } from '../agents/useAgents';
 import { tip } from '../ui/HoverTip';
 import { axisRange, dayBefore, isoDay, loadDay, loadDays, longDate, neighbours, recordRows, todayRows, totalsText, useDaysStore, type PanelRow } from './days';
@@ -51,6 +51,18 @@ export function AgentsToday({ now, onClose }: { now: number; onClose: () => void
   const ref = useRef<HTMLDivElement>(null);
   const today = isoDay(now);
   const [shown, setShown] = useState(today);
+  // A refused open says so here instead of doing nothing.
+  const [openFailed, setOpenFailed] = useState(false);
+  useEffect(() => {
+    if (!openFailed) return;
+    const id = setTimeout(() => setOpenFailed(false), 8000);
+    return () => clearTimeout(id);
+  }, [openFailed]);
+  const open = (r: PanelRow) => {
+    setOpenFailed(false);
+    const call = r.openDate ? invoke('wall2_focus_day_session', { id: r.id, date: r.openDate }) : invoke('wall2_focus_omnigent', { id: r.id });
+    call.catch(() => setOpenFailed(true));
+  };
   const st = useAgentsStore();
   const days = useDaysStore();
   const isToday = shown === today;
@@ -98,7 +110,12 @@ export function AgentsToday({ now, onClose }: { now: number; onClose: () => void
     note = 'Could not read the saved record of this day';
   }
   const loading = rows === null && !(read?.failed && !isToday) && (isToday ? st.status === 'loading' : true);
-  const picker = days.status === 'ok';
+  const picker = days.status === 'ok' && days.days.length > 0;
+  // Quiet stamps for saved data that could not be refreshed; live summary data stays live.
+  const stamps: string[] = [];
+  if (picker && days.listFailedAt !== null && days.listAt !== null) stamps.push(`saved days as of ${shortTime(days.listAt)}`);
+  if (isToday && read?.failed && read.record) stamps.push(`stage colours as of ${shortTime(read.at)}`);
+  const foot = openFailed ? 'Could not open that session' : [note, ...stamps].filter(Boolean).join('; ');
   const nb = neighbours(days.days, shown, today);
   const yesterday = dayBefore(today);
   const hasYesterday = days.days.some((d) => d.date === yesterday);
@@ -181,7 +198,7 @@ export function AgentsToday({ now, onClose }: { now: number; onClose: () => void
             key={r.id}
             type="button"
             className="at-row"
-            onClick={() => focusSession(r.id)}
+            onClick={() => open(r)}
             aria-label={`${r.num}. ${r.title}, ${r.end}. Opens it in OmniGent`}
             {...tip(() => (
               <>
@@ -216,7 +233,7 @@ export function AgentsToday({ now, onClose }: { now: number; onClose: () => void
       </div>
       <div className="at-foot">
         <span>{rows && rows.length > 0 ? totalsText(rows, isToday) : ''}</span>
-        <span className="at-note">{rows ? note : ''}</span>
+        <span className={`at-note${openFailed ? ' warn' : ''}`}>{rows || openFailed ? foot : ''}</span>
       </div>
     </div>
   );

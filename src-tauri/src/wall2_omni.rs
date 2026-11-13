@@ -641,7 +641,7 @@ fn remember_ids(ids: Vec<String>) {
 }
 
 fn id_is_known(id: &str) -> bool {
-    KNOWN_IDS.lock().map(|g| g.iter().any(|k| k == id)).unwrap_or(false) || day_id_is_known(id)
+    KNOWN_IDS.lock().map(|g| g.iter().any(|k| k == id)).unwrap_or(false)
 }
 
 pub(crate) fn require_wall2(label: &str) -> Result<(), String> {
@@ -2384,6 +2384,11 @@ fn shape_day_session(id: &str, v: &Value) -> Option<DaySession> {
 }
 
 /// The `day` answer for `date`. None when it is not a day record, or is another day's.
+///
+/// The helper's contract (version 1.2.2 on): a day record holds only parent and standalone
+/// sessions. Children and side chats are resolved to their top parent before anything is
+/// recorded, and older day files were cleaned on the helper's side. That is why the ids of a
+/// shown record may be opened (`wall2_focus_day_session`).
 fn shape_day_record(body: &Value, date: &str) -> Option<DayRecord> {
     let got = body.get("date")?.as_str()?;
     if got != date {
@@ -2420,31 +2425,44 @@ fn fetch_route(base: &str, path: &str) -> Result<Option<Value>, String> {
     }
 }
 
-/// Session ids of the day record on show, which may be opened too. Replaced by each day
-/// read and cleared by each read of the day list.
-static DAY_IDS: Mutex<Vec<String>> = Mutex::new(Vec::new());
+/// How many dates keep their authorised ids (the most recently read first).
+const MAX_DAY_ID_DATES: usize = 8;
 
-fn remember_day_ids(ids: Vec<String>) {
+/// Session ids of each recently read day record, by date, newest read last. A row of a shown
+/// record names its date when it opens, so answers that land out of order never authorise the
+/// wrong day's ids. A read of the day list never clears them.
+static DAY_IDS: Mutex<Vec<(String, Vec<String>)>> = Mutex::new(Vec::new());
+
+fn remember_day_ids(date: &str, ids: Vec<String>) {
     if let Ok(mut guard) = DAY_IDS.lock() {
-        *guard = ids;
+        guard.retain(|(d, _)| d != date);
+        guard.push((date.to_string(), ids));
+        let over = guard.len().saturating_sub(MAX_DAY_ID_DATES);
+        guard.drain(..over);
     }
 }
 
-fn day_id_is_known(id: &str) -> bool {
-    DAY_IDS.lock().map(|g| g.iter().any(|k| k == id)).unwrap_or(false)
+fn day_id_is_known(date: &str, id: &str) -> bool {
+    DAY_IDS
+        .lock()
+        .map(|g| g.iter().any(|(d, ids)| d == date && ids.iter().any(|k| k == id)))
+        .unwrap_or(false)
 }
 
+/// The `days` route answered 404: an older helper without the saved record.
+const ABSENT: &str = "absent";
+
 /// The days the helper has a saved record for, newest first. An older helper without the
-/// route answers 404, which is `failed` here: the day picker then stays hidden.
+/// route answers 404, which is `absent` here (the day picker then stays hidden); any other
+/// failure is `failed`, so the wall keeps the last good list.
 #[tauri::command]
 pub async fn wall2_omni_days(window: tauri::WebviewWindow, app: tauri::AppHandle) -> Result<Vec<DayCount>, String> {
     require_wall2(window.label())?;
     let base = helper_base(&app)?;
-    remember_day_ids(Vec::new());
     let body = tauri::async_runtime::spawn_blocking(move || fetch_route(&base, "/wall/v1/days"))
         .await
         .map_err(|_| FAILED.to_string())??
-        .ok_or_else(|| FAILED.to_string())?;
+        .ok_or_else(|| ABSENT.to_string())?;
     shape_days(&body).ok_or_else(|| FAILED.to_string())
 }
 
@@ -2462,12 +2480,36 @@ pub async fn wall2_omni_day(window: tauri::WebviewWindow, app: tauri::AppHandle,
         .await
         .map_err(|_| FAILED.to_string())??;
     let Some(body) = body else {
-        remember_day_ids(Vec::new());
+        remember_day_ids(&date, Vec::new());
         return Ok(None);
     };
     let record = shape_day_record(&body, &date).ok_or_else(|| FAILED.to_string())?;
-    remember_day_ids(record.sessions.iter().map(|s| s.id.clone()).collect());
+    remember_day_ids(&date, record.sessions.iter().map(|s| s.id.clone()).collect());
     Ok(Some(record))
+}
+
+/// Open a session from the saved record of `date`, then bring OmniGent forward as
+/// `wall2_focus_omnigent` does. The date must be a real `YYYY-MM-DD` date and the id must be
+/// in the last read of that date's record; the link is built here from `omniLinkHost`.
+#[tauri::command]
+pub fn wall2_focus_day_session(window: tauri::WebviewWindow, app: tauri::AppHandle, id: String, date: String) -> Result<(), String> {
+    require_wall2(window.label())?;
+    if !valid_date(&date) {
+        return Err(INVALID_DATE.to_string());
+    }
+    if !valid_session_id(&id) || !day_id_is_known(&date, &id) {
+        return Err("Unknown session".to_string());
+    }
+    let host = link_host(&app)?;
+    let url = session_url(&host, &id).ok_or_else(|| "Unknown session".to_string())?;
+    app.opener().open_url(url, None::<&str>).map_err(|_| "Could not open the session".to_string())?;
+    if let Some(guard) = try_begin(&FORWARDING) {
+        let _ = std::thread::Builder::new().spawn(move || {
+            let _guard = guard;
+            bring_omnigent_forward();
+        });
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -2594,17 +2636,32 @@ mod day_record_tests {
     }
 
     #[test]
-    fn day_record_ids_may_be_opened_until_replaced() {
-        remember_day_ids(vec!["a1b2c3d4-0e01".to_string()]);
-        assert!(id_is_known("a1b2c3d4-0e01"));
-        remember_day_ids(Vec::new());
+    fn day_ids_are_kept_per_date_whatever_order_the_answers_land_in() {
+        // The later day's answer lands first, the earlier day's last: both stay authorised.
+        remember_day_ids("2026-10-02", vec!["a1b2c3d4-0e02".to_string()]);
+        remember_day_ids("2026-10-01", vec!["a1b2c3d4-0e01".to_string()]);
+        assert!(day_id_is_known("2026-10-01", "a1b2c3d4-0e01"));
+        assert!(day_id_is_known("2026-10-02", "a1b2c3d4-0e02"));
+        // An id is authorised only for its own date, and never through the summary's list.
+        assert!(!day_id_is_known("2026-10-02", "a1b2c3d4-0e01"));
         assert!(!id_is_known("a1b2c3d4-0e01"));
+        // A new read of a date replaces that date's ids only.
+        remember_day_ids("2026-10-01", Vec::new());
+        assert!(!day_id_is_known("2026-10-01", "a1b2c3d4-0e01"));
+        assert!(day_id_is_known("2026-10-02", "a1b2c3d4-0e02"));
+        // Only the last eight dates read keep their ids (one test, as the map is shared).
+        for d in 1..=10 {
+            remember_day_ids(&format!("2026-09-{d:02}"), vec![format!("a1b2c3d4-09{d:02}")]);
+        }
+        assert!(!day_id_is_known("2026-09-02", "a1b2c3d4-0902"));
+        assert!(day_id_is_known("2026-09-03", "a1b2c3d4-0903"));
+        assert!(day_id_is_known("2026-09-10", "a1b2c3d4-0910"));
     }
 
     #[test]
     fn the_day_commands_are_gated_and_check_the_date_first() {
         let src = include_str!("wall2_omni.rs");
-        for name in ["pub async fn wall2_omni_days(", "pub async fn wall2_omni_day("] {
+        for name in ["pub async fn wall2_omni_days(", "pub async fn wall2_omni_day(", "pub fn wall2_focus_day_session("] {
             let at = src.find(name).expect("command");
             let body = &src[at..];
             let open = body.find('{').expect("body");
@@ -2616,5 +2673,16 @@ mod day_record_tests {
         let check = body.find("valid_date(&date)").expect("date check");
         let base = body.find("helper_base(&app)").expect("base");
         assert!(check < base, "the date is checked before any request");
+        // The day list never clears the authorised ids.
+        let at = src.find("pub async fn wall2_omni_days(").expect("command");
+        let end = src[at..].find("\n}\n").expect("end");
+        assert!(!src[at..at + end].contains("remember_day_ids"));
+        // The day open checks the date and the id before building any link.
+        let at = src.find("pub fn wall2_focus_day_session(").expect("command");
+        let body = &src[at..];
+        let date = body.find("valid_date(&date)").expect("date check");
+        let known = body.find("day_id_is_known(&date, &id)").expect("id check");
+        let link = body.find("session_url(").expect("link");
+        assert!(date < link && known < link);
     }
 }

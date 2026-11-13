@@ -378,12 +378,13 @@
   color: var(--dim);
 }
 /* The handle that pulls up the Day drawer: a 48 by 5 bar on the strip's top edge. */
+/* 80 by 26: it ends above the all-day bar (y 27); Ribbon.tsx sets its left clear of labels. */
 .rib-handle {
   position: absolute;
   left: calc(50% - 40px);
   top: 0;
   width: 80px;
-  height: 32px;
+  height: 26px;
   padding: 0;
   border: 0;
   background: none;
@@ -1077,4 +1078,7 @@ button.dd-k.link:hover {
 }
 .at-note {
   color: var(--faint);
+}
+.at-note.warn {
+  color: var(--amber);
 }

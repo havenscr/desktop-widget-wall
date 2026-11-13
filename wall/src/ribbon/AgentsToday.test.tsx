@@ -48,7 +48,7 @@ beforeEach(() => {
   ];
   mocks.set('wall2_omni_summary', () =>
     summary({
-      lanes: [lane(), lane({ id: 'a1b2c3d4-0002', title: 'Docs tidy pass', waiting: true, state: 'blocked' })],
+      sessionsList: [lane(), lane({ id: 'a1b2c3d4-0002', title: 'Docs tidy pass', waiting: true, state: 'blocked' })],
       day: [
         { lane: 'a1b2c3d4-0001', start: iso('2026-11-13', '08:00'), end: null, kind: 'run' },
         { lane: 'a1b2c3d4-0002', start: iso('2026-11-13', '09:00'), end: iso('2026-11-13', '09:30'), kind: 'run' },
@@ -59,6 +59,7 @@ beforeEach(() => {
   mocks.set('wall2_omni_days', () => daysAnswer());
   mocks.set('wall2_omni_day', (a) => (a?.date === '2026-11-12' ? yesterday : null));
   mocks.set('wall2_focus_omnigent', (a) => void opened.push(a));
+  mocks.set('wall2_focus_day_session', (a) => void opened.push(a));
 });
 afterEach(() => {
   resetTip();
@@ -106,9 +107,9 @@ it('Yesterday reads the saved record: merged, carried over, no wait, and the arr
   expect(r.container.querySelector('.at-date')!.textContent).toBe('Thursday, November 12');
 });
 
-it('an older helper with no record routes: the day picker hides and Today still works', async () => {
+it('an older helper with no record routes (404): the day picker hides and Today still works', async () => {
   daysAnswer = () => {
-    throw new Error('failed');
+    throw new Error('absent');
   };
   const r = render(<Panel />);
   await flush();
@@ -135,4 +136,76 @@ it('the helper down with no earlier answer: no rows, says so, never zero', async
   expect(r.container.querySelectorAll('.at-row:not(.skel)')).toHaveLength(0);
   expect(r.container.textContent).toContain('not answering');
   expect(r.container.textContent).not.toContain('0 h 00 m');
+});
+
+it('a past row opens through its record\'s date; a refused open says so', async () => {
+  const r = render(<Panel />);
+  await flush();
+  fireEvent.click([...r.container.querySelectorAll('.at-seg button')][1] as HTMLElement);
+  await flush();
+  fireEvent.click(r.container.querySelector('.at-row') as HTMLElement);
+  await flush();
+  expect(opened).toEqual([{ id: 'a1b2c3d4-0e01', date: '2026-11-12' }]);
+  mocks.set('wall2_focus_day_session', () => {
+    throw new Error('Unknown session');
+  });
+  fireEvent.click(r.container.querySelector('.at-row') as HTMLElement);
+  await flush();
+  expect(r.container.querySelector('.at-note')!.textContent).toBe('Could not open that session');
+});
+
+it('a passing failure of the day list keeps the last good list and says as of when; no flicker on a reopen', async () => {
+  const r = render(<Panel />);
+  await flush();
+  expect(r.container.querySelector('.at-pick')).not.toBeNull();
+  r.unmount();
+  daysAnswer = () => {
+    throw new Error('failed');
+  };
+  const again = render(<Panel />);
+  // Opened again with a good list held: the picker shows at once, before the read returns.
+  expect(again.container.querySelector('.at-pick')).not.toBeNull();
+  await flush();
+  expect(again.container.querySelector('.at-pick')).not.toBeNull();
+  expect(again.container.querySelector('.at-note')!.textContent).toContain('saved days as of 10:24');
+});
+
+it("a failed reread of today's record keeps its stage colours, stamped, with the live data live", async () => {
+  const todayRec = { date: '2026-11-13', tz: 'America/Los_Angeles', sessions: [{ id: 'a1b2c3d4-0001', title: 'Voice: iPhone mic fix', spans: [{ stage: 'build', start: iso('2026-11-13', '08:00'), end: null }], pr: null }] };
+  mocks.set('wall2_omni_day', (a) => (a?.date === '2026-11-13' ? todayRec : null));
+  const r = render(<Panel />);
+  await flush();
+  expect(r.container.querySelector('.at-row .at-sg')!.className).toBe('at-sg build');
+  r.unmount();
+  mocks.set('wall2_omni_day', () => {
+    throw new Error('failed');
+  });
+  const again = render(<Panel />);
+  await flush();
+  expect(again.container.querySelector('.at-row .at-sg')!.className).toBe('at-sg build');
+  expect(again.container.querySelector('.at-note')!.textContent).toContain('stage colours as of 10:24');
+  expect(again.container.querySelector('.at-foot')!.textContent).toContain('waiting on you');
+});
+
+it('a child id only in the live day log, or only in the names map, makes no row; a record-only id is a row that opens', async () => {
+  mocks.set('wall2_omni_summary', () =>
+    summary({
+      sessionsList: [lane()],
+      sessions: { 'a1b2c3d4-0c02': { title: 'Name map only', stage: 'build', state: 'working' } },
+      day: [
+        { lane: 'a1b2c3d4-0001', start: iso('2026-11-13', '08:00'), end: null, kind: 'run' },
+        { lane: 'a1b2c3d4-0c01', start: iso('2026-11-13', '09:00'), end: null, kind: 'run' },
+        { lane: 'a1b2c3d4-0c02', start: iso('2026-11-13', '09:10'), end: null, kind: 'run' },
+      ],
+    }),
+  );
+  const todayRec = { date: '2026-11-13', tz: 'America/Los_Angeles', sessions: [{ id: 'a1b2c3d4-0e09', title: 'Ended this morning', spans: [{ stage: 'plan', start: iso('2026-11-13', '07:00'), end: iso('2026-11-13', '07:30') }], pr: null }] };
+  mocks.set('wall2_omni_day', (a) => (a?.date === '2026-11-13' ? todayRec : null));
+  const r = render(<Panel />);
+  await flush();
+  const rows = [...r.container.querySelectorAll('.at-row')] as HTMLElement[];
+  expect(rows.map((x) => x.querySelector('.at-name')!.textContent)).toEqual(['Voice: iPhone mic fix', 'Ended this morning']);
+  fireEvent.click(rows[1]);
+  await flush();
+  expect(opened).toEqual([{ id: 'a1b2c3d4-0e09', date: '2026-11-13' }]);
 });

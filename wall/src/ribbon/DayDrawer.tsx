@@ -163,6 +163,17 @@ export function DayDrawer({
                     tabIndex={c.canOpen ? 0 : undefined}
                     aria-label={`${c.title}, ${spanText(c.start, c.end)}${c.canOpen ? '. Opens it in Outlook' : ''}`}
                     onClick={c.canOpen ? () => invoke('wall2_open_event', { key: c.key }).catch(() => undefined) : undefined}
+                    onKeyDown={
+                      c.canOpen
+                        ? (e) => {
+                            if (e.target !== e.currentTarget) return;
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              invoke('wall2_open_event', { key: c.key }).catch(() => undefined);
+                            }
+                          }
+                        : undefined
+                    }
                     {...tip(() => (
                       <>
                         <span className="tip-t">{c.title}</span>

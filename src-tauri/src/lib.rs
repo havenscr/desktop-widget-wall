@@ -3860,7 +3860,8 @@ pub fn run() {
             save_widget_config,
             load_widget_config,
             wall2_omni::wall2_omni_days,
-            wall2_omni::wall2_omni_day
+            wall2_omni::wall2_omni_day,
+            wall2_omni::wall2_focus_day_session
         ])
         .setup(|app| {
             #[cfg(windows)]

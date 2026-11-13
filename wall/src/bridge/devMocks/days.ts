@@ -6,7 +6,7 @@ import { mocks } from '../tauri';
  * Dev only: the helper's saved day record (`wall2_omni_days`, `wall2_omni_day`), shaped like
  * the Rust answers. `?days=typical` (default: 14 recorded days with 3 to 9 sessions each),
  * `empty` (yesterday recorded with no session), `one`, `heavy` (forty sessions), `down` (the
- * day reads fail), `absent` (an older helper with no record routes). Invented titles only.
+ * reads fail for a while), `absent` (an older helper: the day list answers 404). Invented titles only.
  */
 const TITLES = ['Release notes draft', 'Docs tidy pass', 'Settings helper text', 'Spend card refresh', 'Share sheet fix', 'Timeline label fix', 'Search index rebuild', 'Backup script fix', 'Photo export batch', 'Weekly report'];
 const LONG = 'Release notes draft for the next public cut with screenshots and the full upgrade section';
@@ -66,7 +66,8 @@ export function registerDaysMocks(): void {
   const now = () => (reviewNow ? reviewNow() : Date.now());
   mocks.set('wall2_omni_days', () => {
     if (knob('agents') === 'off') throw new Error('not-configured');
-    if (mode() === 'absent' || mode() === 'down' || knob('agents') === 'down') throw new Error('failed');
+    if (mode() === 'absent') throw new Error('absent');
+    if (mode() === 'down' || knob('agents') === 'down') throw new Error('failed');
     const days = [];
     for (let back = 0; back < 14; back++) days.push({ date: dayKey(now() - back * 86_400_000), sessions: countFor(back, mode()) });
     return days;

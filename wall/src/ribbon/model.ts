@@ -599,3 +599,27 @@ export function hm(ms: number): string {
   const m = Math.max(0, Math.round(ms / 60_000));
   return `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')} m`;
 }
+
+/** The Day drawer handle's hit area on the strip: 80 by 26 at the top edge, above the all-day bar (y 27). */
+export const HANDLE_W = 80;
+export const HANDLE_H = 26;
+
+/**
+ * Where the handle's hit area starts: centred on the strip, or the nearest place either side
+ * (in 40 px steps) where it covers none of `blocks` (the hour and sun labels and the needle's
+ * time pill), so it never sits on a label.
+ */
+export function handleX(blocks: readonly { x: number; width: number }[]): number {
+  const centre = Math.round(RIBBON_WIDTH / 2 - HANDLE_W / 2);
+  const free = (x: number) => !blocks.some((b) => x < b.x + b.width + 4 && b.x - 4 < x + HANDLE_W);
+  for (let k = 0; k <= 12; k++) {
+    for (const x of [centre - k * 40, centre + k * 40]) if (free(x)) return x;
+  }
+  return centre;
+}
+
+/** The x span a label centred on `x` takes in the hour row (15 px type, wide letter spacing). */
+export function labelBox(x: number, text: string, px = 10): { x: number; width: number } {
+  const width = Math.ceil(text.length * px) + 8;
+  return { x: x - width / 2, width };
+}

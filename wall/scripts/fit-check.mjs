@@ -63,6 +63,7 @@ const EXPECT = {
   fold: /^ *FAIL strip: the folded chip's count is cut/m,
   drawer: /^ *FAIL strip: \.day-drawer (reaches above the clock|sticks out of the stage)/m,
   rows: /^ *FAIL strip: an Agents today row is \d+ px tall/m,
+  handle: /^ *FAIL strip: the drawer handle covers /m,
 };
 const OVERFLOWS = {
   left: '.work .left-wing { transform: translateX(-200px); }',
@@ -82,9 +83,10 @@ const OVERFLOWS = {
   fold: '.rib .ev.fold { width: 30px !important; }',
   drawer: '.day-drawer { translate: 0 -300px; }',
   rows: '.agents-today .at-row { height: 20px !important; min-height: 0 !important; }',
+  handle: '.rib .rib-handle { top: 20px !important; }',
 };
 /** The state each strip break runs on (the others run on the first state). */
-const BREAK_ON = { strip: 'Strip: overlaps, twelve sessions', fold: 'Strip: overlaps, twelve sessions', drawer: 'Strip: the Day drawer open', rows: 'Strip: Agents today, a heavy past day' };
+const BREAK_ON = { strip: 'Strip: overlaps, twelve sessions', fold: 'Strip: overlaps, twelve sessions', drawer: 'Strip: the Day drawer open', rows: 'Strip: Agents today, a heavy past day', handle: 'Strip: overlaps, twelve sessions' };
 
 if (flag('self-test')) {
   const script = fileURLToPath(import.meta.url);
@@ -237,6 +239,7 @@ const VARIANTS = [
 // inside the stage, below the clock and right of the rail, and the panel's rows at least 32 px.
 VARIANTS.push(
   { name: 'Strip: overlaps, twelve sessions', q: work('12ask', '&meet=overlap'), checks: ['.rib'], strip: true, viewportOnly: true },
+  { name: 'Strip: the needle at the centre, under the handle', q: query({ at: '2026-11-11T14:50:00-08:00', agents: '12ask', extra: '&meet=overlap' }), checks: ['.rib'], strip: true, viewportOnly: true },
   { name: 'Strip: late in the day', q: query({ at: '2026-11-11T22:50:00-08:00', agents: '12ask', extra: '&meet=overlap' }), checks: ['.rib'], strip: true, viewportOnly: true },
   { name: 'Strip: the Day drawer open', q: work('12ask', '&meet=overlap'), click: '.rib .rib-handle', checks: ['.day-drawer', '.day-drawer .dd-agenda', '.day-drawer .dd-rows'], strip: true, viewportOnly: true },
   { name: 'Strip: Agents today, twelve sessions', q: work('12ask', '&days=typical'), click: '.rib .ag-line', checks: ['.agents-today', '.agents-today .at-head'], strip: true, viewportOnly: true },
@@ -412,6 +415,12 @@ try {
       if (Math.abs(h - 104) > 0.5) strip.push('strip: the Work strip is ' + Math.round(h) + ' px tall (must be 104)');
       const labels = [...ribW.querySelectorAll('.ev, .ev-side, .ag-line, .due:not(.bare), .adbar')].map((e) => ({ r: e.getBoundingClientRect(), t: (e.textContent || e.getAttribute('aria-label') || '').slice(0, 30) }));
       labels.forEach((a, i) => labels.slice(i + 1).forEach((b) => { if (hit(a.r, b.r)) strip.push('strip: labels share pixels: ' + a.t + ' / ' + b.t); }));
+      // The drawer handle covers no chip, bar or label.
+      const handle = ribW.querySelector('.rib-handle');
+      if (handle) {
+        const hr = handle.getBoundingClientRect();
+        for (const e of ribW.querySelectorAll('.ev, .ev-side, .adbar, .hl, .ndl b, .ag-line, .due, .agent-row .ac')) if (hit(hr, e.getBoundingClientRect())) strip.push('strip: the drawer handle covers ' + (e.textContent || e.className).trim().slice(0, 30));
+      }
       for (const f of ribW.querySelectorAll('.ev.fold')) {
         const n = f.querySelector('.fold-n');
         const fr = f.getBoundingClientRect();

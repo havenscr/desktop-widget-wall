@@ -73,7 +73,9 @@ it('draws the thin activity bar from 6 AM to now in 12 minute cells, amber where
   expect(tenOClock.className).toBe('wait');
   expect(Number(tenOClock.style.opacity)).toBeCloseTo(0.49, 2);
   expect((c[5].querySelector('i') as HTMLElement).className).toBe('');
-  expect(c[7].getAttribute('aria-label')).toBe('10:00 to 10:12: 2 sessions busy, one waiting on you');
+  // The cells are not controls (the line is the keyboard path): no role, hidden from the tree.
+  expect(c[7].getAttribute('role')).toBeNull();
+  expect(c[7].getAttribute('aria-hidden')).toBe('true');
 });
 
 it('the agents line counts the open sessions, amber for the ones that need the owner', async () => {
@@ -134,7 +136,7 @@ it('a helper clock 2 hours off this PC draws the bar where it would with no skew
 it('a click on the agents line opens Agents today; a cell hover says how many were busy', async () => {
   mocks.set('wall2_omni_days', () => [{ date: '2026-11-11', sessions: 1 }, { date: '2026-11-10', sessions: 2 }]);
   mocks.set('wall2_omni_day', () => null);
-  answer = () => summary({ lanes: [lane()], day: [{ lane: 'a1b2c3d4-0001', start: iso('09:36'), end: null, kind: 'run' }] });
+  answer = () => summary({ lanes: [lane()], sessionsList: [lane()], day: [{ lane: 'a1b2c3d4-0001', start: iso('09:36'), end: null, kind: 'run' }] });
   const r = render(
     <>
       <Ribbon kind="work" />

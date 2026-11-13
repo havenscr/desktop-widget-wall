@@ -116,8 +116,7 @@ export function AgentRow({ now, dueCount = null, onOpenPanel }: { now: number; d
           className={`sg-hit ac${onOpenPanel ? ' open' : ''}`}
           data-lane={`c${c.start}`}
           style={{ left: c.x, width: c.width }}
-          role={onOpenPanel ? 'button' : 'img'}
-          aria-label={cellWords(c)}
+          aria-hidden="true"
           onClick={onOpenPanel}
           {...tip(() => (
             <>
