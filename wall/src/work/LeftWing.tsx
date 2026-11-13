@@ -7,11 +7,19 @@ import { useNextMeeting } from './useNextMeeting';
 
 /**
  * The next meeting that has not ended: title and "12:00, in 1 h 36 m". Hidden when there is
- * none or Meet is not set up. A list that may be out of date is dimmed, drops the
+ * none or Meet is not set up. When no account can be read it says "Calendar not available" in a quiet line. A list that may be out of date is dimmed, drops the
  * countdown, and has a quiet "as of H:MM" (the last complete read) under it.
  */
 function NextBlock() {
-  const { meeting, now, stale, asOf } = useNextMeeting(reviewNow);
+  const { meeting, now, stale, asOf, unavailable } = useNextMeeting(reviewNow);
+  if (!meeting && unavailable) {
+    return (
+      <section className="blk next stale" aria-label="Next meeting">
+        <span className="k">Next</span>
+        <div className="s">Calendar not available</div>
+      </section>
+    );
+  }
   if (!meeting) return null;
   return (
     <section className={`blk next${stale ? ' stale' : ''}`} aria-label="Next meeting">

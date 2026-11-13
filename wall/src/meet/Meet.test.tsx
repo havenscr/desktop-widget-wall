@@ -25,6 +25,9 @@ afterEach(() => {
   usePlaceStore.setState({ active: 'work' });
 });
 
+/** How many reads Meet made: each one opens with one peek, then asks each account. */
+const reads = (fn: { mock: { calls: unknown[][] } }) => fn.mock.calls.filter((c) => (c[0] as { peek?: boolean } | undefined)?.peek === true).length;
+
 const data: MeetData = {
   accounts: [
     { id: 'work', label: 'Work', state: 'ok' },
@@ -62,7 +65,7 @@ it('renders the next meeting, the countdown, the list and the accounts', async (
   expect(screen.getByText('Planning')).toBeTruthy();
   expect(screen.getByText('Board prep')).toBeTruthy();
   expect(screen.getByText('Connected')).toBeTruthy();
-  expect(screen.getByText('Sign in needed')).toBeTruthy();
+  expect(screen.getByText('Sign in again')).toBeTruthy();
   expect(screen.getByRole('button', { name: 'Sign in' })).toBeTruthy();
   expect(screen.getByRole('button', { name: 'Sign out' })).toBeTruthy();
 });
@@ -114,10 +117,10 @@ it('reads again every 5 minutes and keeps the list after a failed read', async (
   mocks.set('wall2_meet_next', next);
   render(<Meet />);
   await flush();
-  expect(next).toHaveBeenCalledTimes(1);
+  expect(reads(next)).toBe(1);
   fail = true;
   await flush(5 * 60_000);
-  expect(next).toHaveBeenCalledTimes(2);
+  expect(reads(next)).toBe(2);
   expect(screen.getByText('Planning')).toBeTruthy();
   expect(screen.getByText(/updated \d+ min ago/)).toBeTruthy();
 });
@@ -128,7 +131,7 @@ it('the countdown ticks without calling the native side', async () => {
   render(<Meet />);
   await flush();
   await flush(60_000);
-  expect(next).toHaveBeenCalledTimes(1);
+  expect(reads(next)).toBe(1);
   expect(screen.getByText('In 2 min')).toBeTruthy();
 });
 
@@ -137,10 +140,10 @@ it('stops polling when another place is active', async () => {
   mocks.set('wall2_meet_next', next);
   render(<Meet />);
   await flush();
-  expect(next).toHaveBeenCalledTimes(1);
+  expect(reads(next)).toBe(1);
   act(() => usePlaceStore.setState({ active: 'work' }));
   await flush(20 * 60_000);
-  expect(next).toHaveBeenCalledTimes(1);
+  expect(reads(next)).toBe(1);
 });
 
 it('keeps the list and shows the updated hint when the native side marks it stale', async () => {
@@ -165,7 +168,7 @@ it('Calendar unavailable offers Try again, which reads again', async () => {
   fail = false;
   fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
   await flush();
-  expect(next).toHaveBeenCalledTimes(2);
+  expect(reads(next)).toBe(2);
   expect(screen.getByText('Design review')).toBeTruthy();
 });
 
@@ -220,23 +223,23 @@ it('a read requested during a read runs once more afterwards', async () => {
   let calls = 0;
   const next = vi.fn(() => {
     calls += 1;
-    if (calls === 2) return new Promise<MeetData>((r) => (release = r));
+    if (calls === 4) return new Promise<MeetData>((r) => (release = r));
     return data;
   });
   mocks.set('wall2_meet_next', next);
   mocks.set('wall2_meet_sign_in', () => undefined);
   render(<Meet />);
   await flush();
-  expect(next).toHaveBeenCalledTimes(1);
+  expect(reads(next)).toBe(1);
   // The 5 minute poll starts a read that stays open; the sign-in finishes meanwhile.
   await flush(5 * 60_000);
-  expect(next).toHaveBeenCalledTimes(2);
+  expect(reads(next)).toBe(2);
   fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
   await flush();
-  expect(next).toHaveBeenCalledTimes(2);
+  expect(reads(next)).toBe(2);
   release(data);
   await flush();
-  expect(next).toHaveBeenCalledTimes(3);
+  expect(reads(next)).toBe(3);
 });
 
 it('keeps its panels out of the clock area: they sit in .meet-body (CSS: left 482px, first panel edge of Work)', async () => {
@@ -262,16 +265,16 @@ const unavailable: MeetData = {
   meetings: data.meetings.slice(0, 2),
 };
 
-it('an unavailable account shows the reason line and Try again, Sign in and Sign out', async () => {
+it('an unavailable account shows plain words, the reason line and one action: Try again', async () => {
   mocks.set('wall2_meet_next', () => unavailable);
   render(<Meet />);
   await flush();
-  expect(screen.getByText('Unavailable')).toBeTruthy();
-  expect(screen.getByText('Calendar refused the request (graph-403-ErrorAccessDenied)')).toBeTruthy();
+  expect(screen.getByText(/^Calendar could not be read/)).toBeTruthy();
+  expect(screen.getByText('graph-403-ErrorAccessDenied')).toBeTruthy();
   expect(screen.getByRole('button', { name: 'Try again' })).toBeTruthy();
-  expect(screen.getByRole('button', { name: 'Sign in' })).toBeTruthy();
-  // The connected account keeps only Sign out; the unavailable one has its own.
-  expect(screen.getAllByRole('button', { name: 'Sign out' })).toHaveLength(2);
+  expect(screen.queryByRole('button', { name: 'Sign in' })).toBeNull();
+  // The connected account keeps Sign out; the unavailable one has only Try again.
+  expect(screen.getAllByRole('button', { name: 'Sign out' })).toHaveLength(1);
 });
 
 it('an unavailable account with an unknown code shows no reason line', async () => {
@@ -289,15 +292,15 @@ it('Try again on an unavailable account reads once, at once', async () => {
   mocks.set('wall2_meet_next', next);
   render(<Meet />);
   await flush();
-  expect(next).toHaveBeenCalledTimes(1);
+  expect(reads(next)).toBe(1);
   fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
   await flush();
-  expect(next).toHaveBeenCalledTimes(2);
+  expect(reads(next)).toBe(2);
 });
 
-it('Sign in on an unavailable account starts a sign-in for that account', async () => {
+it('Sign in on a signed-out account starts a sign-in for that account', async () => {
   const signIn = vi.fn(() => new Promise<void>(() => undefined));
-  mocks.set('wall2_meet_next', () => unavailable);
+  mocks.set('wall2_meet_next', () => data);
   mocks.set('wall2_meet_sign_in', signIn);
   mocks.set('wall2_meet_cancel_sign_in', () => undefined);
   render(<Meet />);
@@ -311,20 +314,20 @@ it('retries an unavailable read after 30 s, then 60 s, then waits for the 5 minu
   mocks.set('wall2_meet_next', next);
   render(<Meet />);
   await flush();
-  expect(next).toHaveBeenCalledTimes(1);
+  expect(reads(next)).toBe(1);
   await flush(29_000);
-  expect(next).toHaveBeenCalledTimes(1);
+  expect(reads(next)).toBe(1);
   await flush(1_000);
-  expect(next).toHaveBeenCalledTimes(2);
+  expect(reads(next)).toBe(2);
   await flush(59_000);
-  expect(next).toHaveBeenCalledTimes(2);
+  expect(reads(next)).toBe(2);
   await flush(1_000);
-  expect(next).toHaveBeenCalledTimes(3);
+  expect(reads(next)).toBe(3);
   // No third fast retry: nothing until the 5 minute poll (at 300 s).
   await flush(200_000);
-  expect(next).toHaveBeenCalledTimes(3);
+  expect(reads(next)).toBe(3);
   await flush(10_000);
-  expect(next).toHaveBeenCalledTimes(4);
+  expect(reads(next)).toBe(4);
 });
 
 it('stops the fast retries once the account recovers', async () => {
@@ -335,9 +338,9 @@ it('stops the fast retries once the account recovers', async () => {
   await flush();
   bad = false;
   await flush(30_000);
-  expect(next).toHaveBeenCalledTimes(2);
+  expect(reads(next)).toBe(2);
   await flush(120_000);
-  expect(next).toHaveBeenCalledTimes(2);
+  expect(reads(next)).toBe(2);
 });
 
 it('does not retry while hidden', async () => {
@@ -347,7 +350,7 @@ it('does not retry while hidden', async () => {
   await flush();
   act(() => usePlaceStore.setState({ active: 'work' }));
   await flush(120_000);
-  expect(next).toHaveBeenCalledTimes(1);
+  expect(reads(next)).toBe(1);
 });
 
 it('shows one centred message with the last read time when nothing is scheduled', async () => {
@@ -367,12 +370,95 @@ it('shows one centred message with the last read time when nothing is scheduled'
   expect(screen.getByLabelText('Accounts')).toBeTruthy();
 });
 
-it('keeps the usual panels when nothing is scheduled but an account is unavailable', async () => {
+it('says which account could not be read when nothing is scheduled', async () => {
   mocks.set('wall2_meet_next', () => ({ ...unavailable, meetings: [] }));
   const { container } = render(<Meet />);
   await flush();
-  expect(container.querySelector('.meet-empty')).toBeNull();
-  expect(screen.getByLabelText('Later meetings')).toBeTruthy();
+  expect(container.querySelector('.meet-empty')).toBeTruthy();
+  expect(screen.getByText('Second could not be read')).toBeTruthy();
+  expect(screen.getByLabelText('Accounts')).toBeTruthy();
+});
+
+it('says Calendar not available when no account can be read', async () => {
+  mocks.set('wall2_meet_next', () => ({
+    accounts: [
+      { id: 'work', label: 'Work', state: 'signed-out' },
+      { id: 'second', label: 'Second', state: 'unavailable', reason: 'graph-503-UnknownError' },
+    ],
+    meetings: [],
+  }));
+  render(<Meet />);
+  await flush();
+  expect(screen.getByText('Calendar not available')).toBeTruthy();
+  expect(screen.getByText(/^Microsoft is not answering/)).toBeTruthy();
+  expect(screen.getByText('Signed out')).toBeTruthy();
+});
+
+it('names a network problem and shows the time of the last try', async () => {
+  mocks.set('wall2_meet_next', () => ({
+    accounts: [{ id: 'work', label: 'Work', state: 'unavailable', reason: 'graph-network' }],
+    meetings: [],
+  }));
+  render(<Meet />);
+  await flush();
+  expect(screen.getByText(/^Network problem/)).toBeTruthy();
+  expect(screen.getByText(/^Last try \d+(:\d\d)? [AP]M$/)).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Try again' })).toBeTruthy();
+});
+
+const peekOnly = (full: MeetData) => (args?: Record<string, unknown>) =>
+  args?.peek ? { accounts: full.accounts.map((a) => ({ ...a, state: 'checking' })), meetings: [], seq: 1 } : undefined;
+
+it('shows an account as soon as it answers while the other is still being asked', async () => {
+  mocks.set('wall2_meet_next', (args) => {
+    if (args?.peek) return peekOnly(data)(args);
+    if (args?.only === 'work') return { ...data, accounts: [data.accounts[0], { ...data.accounts[1], state: 'checking' }], meetings: data.meetings.slice(0, 2), seq: 2 };
+    return new Promise(() => undefined);
+  });
+  render(<Meet />);
+  await flush();
+  expect(screen.queryByText('Loading meetings')).toBeNull();
+  expect(screen.getByText('Design review')).toBeTruthy();
+  expect(screen.getByText('Connected')).toBeTruthy();
+  expect(screen.getByText('Checking')).toBeTruthy();
+});
+
+it('an account that has not answered in 12 seconds shows as not answering, with Try again', async () => {
+  mocks.set('wall2_meet_next', (args) => {
+    if (args?.peek) return peekOnly(data)(args);
+    if (args?.only === 'work') return { ...data, accounts: [data.accounts[0], { ...data.accounts[1], state: 'checking' }], meetings: data.meetings.slice(0, 2), seq: 2 };
+    return new Promise(() => undefined);
+  });
+  render(<Meet />);
+  await flush(11_000);
+  expect(screen.getByText('Checking')).toBeTruthy();
+  await flush(1_500);
+  expect(screen.queryByText('Checking')).toBeNull();
+  expect(screen.getByText(/^Microsoft is not answering/)).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Try again' })).toBeTruthy();
+  expect(screen.getByText('Design review')).toBeTruthy();
+});
+
+it('Loading meetings ends after 12 seconds even when the native side never answers', async () => {
+  mocks.set('wall2_meet_next', () => new Promise(() => undefined));
+  render(<Meet />);
+  await flush(100);
+  expect(screen.getByText('Loading meetings')).toBeTruthy();
+  await flush(12_000);
+  expect(screen.queryByText('Loading meetings')).toBeNull();
+  expect(screen.getByText('Calendar unavailable')).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Try again' })).toBeTruthy();
+});
+
+it('drops an answer that is older than one already shown', async () => {
+  mocks.set('wall2_meet_next', (args) => {
+    if (args?.peek) return peekOnly(data)(args);
+    if (args?.only === 'work') return { ...data, meetings: data.meetings.slice(0, 1), seq: 5 };
+    return { ...data, meetings: [], seq: 3 };
+  });
+  render(<Meet />);
+  await flush();
+  expect(screen.getByText('Design review')).toBeTruthy();
 });
 
 it('two quick manual Try again taps leave the 30 s retry scheduled', async () => {
@@ -384,16 +470,16 @@ it('two quick manual Try again taps leave the 30 s retry scheduled', async () =>
   await flush(100);
   fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
   await flush(100);
-  expect(next).toHaveBeenCalledTimes(3);
+  expect(reads(next)).toBe(3);
   await flush(29_000);
-  expect(next).toHaveBeenCalledTimes(3);
+  expect(reads(next)).toBe(3);
   await flush(1_000);
-  expect(next).toHaveBeenCalledTimes(4);
+  expect(reads(next)).toBe(4);
   // The schedule continues with the 60 s step, not past it.
   await flush(60_000);
-  expect(next).toHaveBeenCalledTimes(5);
+  expect(reads(next)).toBe(5);
   await flush(100_000);
-  expect(next).toHaveBeenCalledTimes(5);
+  expect(reads(next)).toBe(5);
 });
 
 it('a needs-sign-in account with a reason explains itself', async () => {
@@ -430,4 +516,47 @@ it('a hostile reason string never reaches the page', async () => {
     expect(container.querySelector('.meet-reason')).toBeNull();
     unmount();
   }
+});
+
+it('says "trying again" only while a retry is scheduled', async () => {
+  mocks.set('wall2_meet_next', () => ({
+    accounts: [{ id: 'work', label: 'Work', state: 'unavailable', reason: 'graph-503-UnknownError' }],
+    meetings: [],
+  }));
+  render(<Meet />);
+  await flush();
+  expect(screen.getByText(/^Microsoft is not answering, trying again at /)).toBeTruthy();
+  // After the two fast retries none is scheduled until the 5 minute poll.
+  await flush(30_000);
+  await flush(60_000);
+  expect(screen.getByText('Microsoft is not answering')).toBeTruthy();
+});
+
+it('a late answer after the 12 second limit corrects the row at once', async () => {
+  let late: (v: MeetData) => void = () => undefined;
+  mocks.set('wall2_meet_next', (args) => {
+    if (args?.peek) return peekOnly(data)(args);
+    if (args?.only === 'work') return { ...data, accounts: [data.accounts[0], { ...data.accounts[1], state: 'checking' }], meetings: data.meetings.slice(0, 2), seq: 2 };
+    return new Promise<MeetData>((r) => (late = r));
+  });
+  render(<Meet />);
+  await flush(12_500);
+  expect(screen.getByText(/^Microsoft is not answering/)).toBeTruthy();
+  late({ ...data, seq: 9 });
+  await flush();
+  expect(screen.queryByText(/^Microsoft is not answering/)).toBeNull();
+  expect(screen.getByText('Board prep')).toBeTruthy();
+});
+
+it('says Calendar not available inside the Accounts card, with the last good read, and no wide empty card', async () => {
+  mocks.set('wall2_meet_next', () => ({
+    accounts: [{ id: 'work', label: 'Work', state: 'signed-out' }],
+    meetings: [],
+  }));
+  const { container } = render(<Meet />);
+  await flush();
+  expect(container.querySelector('.meet-empty')).toBeNull();
+  expect(screen.getByLabelText('Accounts').textContent).toContain('Calendar not available');
+  expect(screen.getByText('No good read yet')).toBeTruthy();
+  expect(screen.queryByLabelText('Next meeting')).toBeNull();
 });
