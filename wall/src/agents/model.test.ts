@@ -86,7 +86,7 @@ describe('header and slots', () => {
   });
 
   it('says Nothing needs you, or One thing for you with the title and how many more', () => {
-    expect(headerAsk(summary())).toMatchObject({ text: 'Nothing needs you', title: null, id: null, more: null, tone: 'cyan' });
+    expect(headerAsk(summary())).toMatchObject({ text: 'No agent needs you', title: null, id: null, more: null, tone: 'cyan' });
     // An older helper: the first entry names it.
     const one = summary({ yourMove: { total: 1, first: { sessionId: 'a1b2c3d4-0009', title: 'Invoice check', kind: 'gate', since: null, question: '' } } });
     expect(headerAsk(one)).toMatchObject({ text: 'One thing for you', title: 'Invoice check', id: 'a1b2c3d4-0009', more: null, canStep: false, tone: 'amber' });
@@ -146,10 +146,10 @@ describe('header and slots', () => {
 
 describe('status line', () => {
   it('says how many are working and whether anything needs you', () => {
-    expect(statusLine(summary())).toBe('Three agents still working, nothing needs you');
+    expect(statusLine(summary())).toBe('Three agents still working, no agent needs you');
     expect(statusLine(summary({ lanes: [lane(), lane({ waiting: true })] }))).toBe('One agent still working, one thing for you');
     expect(statusLine(summary({ lanes: [], yourMove: { total: 2, first: null } }))).toBe('No agents working, two things for you');
-    expect(statusLine(summary({ lanes: [lane({ state: 'review' })] }))).toBe('No agents working, nothing needs you');
+    expect(statusLine(summary({ lanes: [lane({ state: 'review' })] }))).toBe('No agents working, no agent needs you');
   });
 });
 
@@ -196,7 +196,10 @@ describe('cards from a newer helper', () => {
   });
 
   it('says the most useful thing first on the second line', () => {
-    expect(cardLine(lane({ waiting: true, waitingSinceS: 720, line: 'Waiting on a thumbnail choice' }))).toEqual({ text: 'Waiting on you for 12 min: a thumbnail choice', tone: 'amber' });
+    expect(cardLine(lane({ waiting: true, waitingSinceS: 720, line: 'Waiting on a thumbnail choice' }))).toEqual({ text: 'Waiting on you for 12 min', tone: 'amber' });
+    // The helper's question for the session takes the line.
+    expect(cardLine(lane({ waiting: true, waitingSinceS: 720 }), 'Which thumbnail for the post?')).toEqual({ text: 'Which thumbnail for the post?', tone: 'amber' });
+    expect(cardLine(lane({ waiting: true, waitingSinceS: 720 }), '  ')).toEqual({ text: 'Waiting on you for 12 min', tone: 'amber' });
     expect(cardLine(lane({ state: 'blocked', line: 'idle' }))).toEqual({ text: 'Waiting on you', tone: 'amber' });
     expect(cardLine(lane({ waiting: true, waitingSinceS: 300, line: 'Waiting on you' })).text).toBe('Waiting on you for 5 min');
     expect(cardLine(lane({ waiting: true, line: 'waiting for you to pick a thumbnail' })).text).toBe('Waiting on you');

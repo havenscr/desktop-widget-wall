@@ -8,6 +8,8 @@ import { lane, summary } from './fixtures';
 import { HOLD_HINT_MS, HOLD_MOVE_PX, HOLD_MS, POLL_MS } from './model';
 import { resetAgents } from './useAgents';
 import { fitExtras } from './Lane';
+import { useCardScroll } from './cardScroll';
+import { resetSnooze, SNOOZE_MS } from './snooze';
 import { HoverTipLayer, resetTip, TIP_DELAY_MS } from '../ui/HoverTip';
 
 const flush = async (ms = 0) => {
@@ -34,6 +36,7 @@ beforeEach(() => {
   resetAgents();
 });
 afterEach(() => {
+  resetSnooze();
   resetTip();
   resetAgents();
   useFocusStore.getState().dispose();
@@ -48,8 +51,11 @@ it('shows the header, three lanes and the shelf when the helper answers', async 
   const r = render(<CentreSlot weather={weather} />);
   await flush();
   const centre = r.container.querySelector('.centre.lanes')!;
-  expect(centre.querySelector('.lanes-hd')!.textContent).toBe('Agents3 running, 3 slotsNothing needs you');
-  expect(centre.querySelector('.calm')!.className).toContain('t-cyan');
+  expect(centre.querySelector('.lanes-hd')!.textContent).toBe('Agents3 running, 3 slotsReady to merge:Admin pill polish');
+  // Nothing waits, and a card is ready: the header says so in mint and shows that card on a click.
+  expect(centre.querySelector('.calm')!.className).toContain('t-mint');
+  fireEvent.click(centre.querySelector('.ask-btn')!);
+  expect(useCardScroll.getState().id).toBe('a1b2c3d4-0003');
   const lanes = [...centre.querySelectorAll('.lane:not(.slim)')];
   expect(lanes).toHaveLength(3);
   expect(lanes[0].querySelector('.t2')!.textContent).toBe('Voice: iPhone mic fix');
@@ -59,7 +65,7 @@ it('shows the header, three lanes and the shelf when the helper answers', async 
   expect(lanes[2].querySelector('.lm')!.textContent).toBe('Hold to merge');
   expect(lanes[2].querySelector('.jn.c')!.className).toBe('jn c');
   expect(centre.querySelectorAll('.lane.slim')).toHaveLength(0);
-  expect(centre.querySelector('.shelf')!.textContent).toBe('4 parked, restingClaude 5 h 18%Claude this week62%');
+  expect(centre.querySelector('.shelf')!.textContent).toBe('4 parked sessionsClaude 5 h 18%Claude this week62%');
   // Never a third line for the PR when all three lanes show.
   expect(lanes[2].querySelectorAll('.lt > *')).toHaveLength(2);
   // No fill while the lanes show.
@@ -75,7 +81,7 @@ it('turns a waiting lane amber and says One thing for you', async () => {
   expect(calm.className).toContain('t-amber');
   const lanes = r.container.querySelectorAll('.lane:not(.slim)');
   expect(lanes[0].className).toBe('lane g');
-  expect(lanes[1].className).toBe('lane g wait');
+  expect(lanes[1].className).toBe('lane g wait has-ask');
   expect(lanes[1].querySelector('.lane-ring')!.className).toContain('t-amber');
   expect(lanes[1].querySelector('.jn.c')!.className).toBe('jn c wait');
 });
@@ -186,7 +192,7 @@ it('shows the real numbers past the limit and hides a missing five hour figure',
   const r = render(<CentreSlot weather={weather} />);
   await flush();
   expect(screen.getByText('5 running, 4 slots')).toBeTruthy();
-  expect(r.container.querySelector('.shelf')!.textContent).toBe('4 parked, restingClaude this week40%');
+  expect(r.container.querySelector('.shelf')!.textContent).toBe('4 parked sessionsClaude this week40%');
   answer = () => summary({ usage: null, parked: 0 });
   await flush(POLL_MS);
   expect(r.container.querySelector('.shelf')!.textContent).toBe('Nothing parked');
@@ -384,7 +390,7 @@ it('"One thing for you: <title>" opens the waiting session and brings OmniGent f
   // The waiting card is amber and says so.
   const waiting = r.container.querySelectorAll('.lane:not(.slim)')[1];
   expect(waiting.className).toContain('wait');
-  expect(waiting.querySelector('.lt2 .s')!.textContent).toBe('Waiting on you for 10 min: Running web tests, 56 of 89');
+  expect(waiting.querySelector('.lt2 .s')!.textContent).toBe('Waiting on you for 10 min');
   fireEvent.click(r.container.querySelector('.ask-more')!);
   await flush();
   expect(opened).toEqual(['a1b2c3d4-0001', 'a1b2c3d4-00ff']);
@@ -477,4 +483,69 @@ it('fits whole extras beside the status, dropping from the end and never cutting
   expect(fitExtras(450, 200, [120, 80, 100])).toBe(2);
   expect(fitExtras(150, 200, [50])).toBe(0);
   expect(fitExtras(600, 200, [])).toBe(0);
+});
+
+it('nothing waiting and nothing ready: "No agent needs you"; stale, "Last known" in grey, never an all-clear', async () => {
+  let fail = false;
+  answer = () => {
+    if (fail) throw new Error('failed');
+    return summary();
+  };
+  const r = render(<CentreSlot weather={weather} />);
+  await flush();
+  expect(r.container.querySelector('.calm')!.textContent).toBe('No agent needs you');
+  expect(r.container.querySelector('.calm')!.className).toContain('t-cyan');
+  fail = true;
+  await flush(POLL_MS);
+  const calm = r.container.querySelector('.calm')!;
+  expect(calm.textContent).toBe('Last known: no agent needed you, as of 10:24 AM');
+  expect(calm.className).toContain('t-quiet');
+});
+
+it('a waiting card shows the helper\'s question, with Open chat and Later; Later quietens it here for 15 minutes', async () => {
+  answer = () =>
+    summary({
+      sessionsList: [lane(), lane({ id: 'a1b2c3d4-0002', title: 'Friday social card', waiting: true, state: 'blocked', waitingSinceS: 600 })],
+      yourMove: { total: 1, first: { sessionId: 'a1b2c3d4-0002', title: 'Friday social card', kind: 'gate', since: null, question: 'Which thumbnail for the post?' }, ids: ['a1b2c3d4-0002'] },
+    });
+  const r = render(<CentreSlot weather={weather} />);
+  await flush();
+  const card = () => r.container.querySelectorAll('.lane:not(.slim)')[1] as HTMLElement;
+  expect(card().querySelector('.lt2 .s')!.textContent).toBe('Which thumbnail for the post?');
+  const [openChat, later] = [...card().querySelectorAll('.ask-acts button')] as HTMLElement[];
+  expect([openChat.textContent, later.textContent]).toEqual(['Open chat', 'Later']);
+  // Open chat opens that session, once (the card's own click does not also fire).
+  fireEvent.click(openChat);
+  await flush();
+  expect(opened).toEqual(['a1b2c3d4-0002']);
+  // Later: no amber, a small dot and "Snoozed until", the header stops counting it, nothing opens.
+  fireEvent.click(later);
+  await flush();
+  expect(opened).toEqual(['a1b2c3d4-0002']);
+  expect(card().className).not.toContain('wait');
+  expect(card().className).toContain('snoozed');
+  expect(card().querySelector('.snooze-dot')).not.toBeNull();
+  expect(card().querySelector('.lt2 .s')!.textContent).toBe('Snoozed until 10:39 AM');
+  expect(r.container.querySelector('.calm')!.textContent).toBe('No agent needs you');
+  // It comes back by itself.
+  await flush(SNOOZE_MS + 100);
+  expect(card().className).toContain('wait');
+  expect(r.container.querySelector('.ask-btn')!.textContent).toBe('One thing for you:Friday social card');
+});
+
+it('the time on a card says what it measures, and "idle 12 min" when the helper knows', async () => {
+  answer = () => summary({ sessionsList: [lane({ live: 'working' }), lane({ id: 'a1b2c3d4-0002', live: 'idle', idleS: 720, line: 'idle' })] });
+  const r = render(
+    <>
+      <CentreSlot weather={weather} />
+      <HoverTipLayer />
+    </>,
+  );
+  await flush();
+  const [a, b] = [...r.container.querySelectorAll('.lane:not(.slim) .lm .s')] as HTMLElement[];
+  expect(a.textContent).toBe('42 min');
+  expect(b.textContent).toBe('idle 12 min');
+  fireEvent.mouseEnter(a);
+  await flush(TIP_DELAY_MS);
+  expect(document.querySelector('.hover-tip')!.textContent).toBe('Working, open for 42 min, started 9:42 AM');
 });

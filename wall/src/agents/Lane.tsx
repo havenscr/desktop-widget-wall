@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent } from 'react';
 import { LaneRing } from './LaneRing';
 import { tip } from '../ui/HoverTip';
-import { cardLine, cardMeta, elapsedText, HOLD_HINT_MS, HOLD_MOVE_PX, HOLD_MS, laneTone, laneWaits, mergeReady, ringFraction, STAGE_NAMES, type Lane as LaneData } from './model';
+import { cardLine, cardMeta, clockText, elapsedLabel, elapsedText, HOLD_HINT_MS, HOLD_MOVE_PX, HOLD_MS, laneTone, laneWaits, mergeReady, ringFraction, STAGE_NAMES, type Lane as LaneData } from './model';
 import { StageTrack } from './StageTrack';
 
 /**
@@ -164,6 +164,9 @@ export function Lane({
   open,
   roomy,
   asOf = null,
+  question = null,
+  snoozedUntil = null,
+  later,
 }: {
   lane: LaneData;
   num: number;
@@ -171,13 +174,22 @@ export function Lane({
   open: (id: string) => void;
   roomy: boolean;
   asOf?: string | null;
+  /** The helper's question for this session, when it waits on the owner. */
+  question?: string | null;
+  /** When "Later" quietened this waiting session on this display, the time it comes back. */
+  snoozedUntil?: number | null;
+  /** "Later": quieten this waiting session for 15 minutes. */
+  later?: (id: string) => void;
 }) {
   const tone = laneTone(lane);
-  const waits = laneWaits(lane);
+  const snoozed = laneWaits(lane) && snoozedUntil !== null;
+  const waits = laneWaits(lane) && !snoozed;
   const ready = mergeReady(lane);
   const failed = !waits && lane.failed === true;
   const glyph = waits ? 'ask' : failed ? 'failed' : tone === 'mint' ? 'check' : 'bolt';
-  const line = cardLine(lane);
+  const asked = cardLine(lane, question);
+  const line = snoozed ? { text: `Snoozed until ${clockText(snoozedUntil as number)}`, tone: '' as const } : asked;
+  const elapsed = elapsedLabel(lane, Date.now());
   const meta = cardMeta(lane);
   const withButton = ready && canOpen;
   const lineRef = useRef<HTMLDivElement>(null);
@@ -207,7 +219,7 @@ export function Lane({
   const tap = canOpen ? () => open(lane.id) : undefined;
   return (
     <div
-      className={`lane g${waits ? ' wait' : ''}${ready ? ' ready' : ''}${failed ? ' failed' : ''}${withButton ? ' has-btn' : ''}`}
+      className={`lane g${waits ? ' wait' : ''}${snoozed ? ' snoozed' : ''}${ready ? ' ready' : ''}${failed ? ' failed' : ''}${withButton && !waits ? ' has-btn' : ''}${waits ? ' has-ask' : ''}`}
       style={{ ['--c' as string]: `var(--st-${lane.stage})` }}
       data-id={lane.id}
       onClick={tap}
@@ -223,12 +235,13 @@ export function Lane({
           }}
         />
       )}
-      <LaneRing size={roomy ? 84 : 68} fraction={ringFraction(lane)} tone={waits ? 'amber' : failed ? 'red' : 'stage'} glyph={glyph} num={num} />
+      <LaneRing size={roomy ? 84 : 68} fraction={ringFraction(lane)} tone={waits ? 'amber' : failed ? 'red' : 'stage'} glyph={snoozed ? 'ask' : glyph} num={num} />
       <div className="lt">
-        <div className="t2 ellipsis" {...tip(() => <CardTip lane={lane} line={line.text} meta={meta} canOpen={canOpen} asOf={asOf} />)}>
+        <div className="t2 ellipsis" {...tip(() => <CardTip lane={lane} line={snoozed ? `${line.text}. ${asked.text}` : line.text} meta={meta} canOpen={canOpen} asOf={asOf} />)}>
           {lane.title}
         </div>
         <div className="lt2" ref={lineRef}>
+          {snoozed && <i className="snooze-dot" aria-hidden="true" />}
           <span className={`s ellipsis${line.tone ? ` t-${line.tone}` : ''}`}>{line.text}</span>
           {!roomy &&
             meta.map((m, i) => (
@@ -241,11 +254,38 @@ export function Lane({
       </div>
       <StageTrack stage={lane.stage} mark={waits ? 'wait' : ''} />
       <div className="lm">
-        {withButton ? (
+        {waits && canOpen ? (
+          <div className="ask-acts">
+            <button
+              type="button"
+              className="btn act amber"
+              onClick={(e) => {
+                e.stopPropagation();
+                open(lane.id);
+              }}
+              {...tip('Open this chat in OmniGent')}
+            >
+              Open chat
+            </button>
+            {later && (
+              <button
+                type="button"
+                className="btn act"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  later(lane.id);
+                }}
+                {...tip('Quiet this for 15 minutes on this display; it comes back by itself')}
+              >
+                Later
+              </button>
+            )}
+          </div>
+        ) : withButton ? (
           <HoldToMerge onHold={() => open(lane.id)} />
         ) : (
-          <span className="s" {...tip(`Open for ${elapsedText(lane.elapsedS)}`)}>
-            {elapsedText(lane.elapsedS)}
+          <span className="s" {...tip(elapsed.tip)}>
+            {elapsed.text}
           </span>
         )}
       </div>

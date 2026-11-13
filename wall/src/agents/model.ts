@@ -249,9 +249,14 @@ export function cards(s: Pick<OmniSummary, 'lanes' | 'sessionsList'>): Lane[] {
   return s.sessionsList ?? s.lanes;
 }
 
-/** How many things want an answer: the helper's your-move total, or the waiting cards if more. */
-export function needsYouCount(s: OmniSummary): number {
-  return Math.max(s.yourMove.total, waitingIds(s).length);
+/**
+ * How many things want an answer: the helper's your-move total, or the waiting cards if
+ * more, less any session snoozed on this display ("Later").
+ */
+export function needsYouCount(s: OmniSummary, snoozed: ReadonlySet<string> = new Set()): number {
+  const all = waitingIds(s);
+  const quiet = all.filter((id) => snoozed.has(id)).length;
+  return Math.max(s.yourMove.total - quiet, all.length - quiet, 0);
 }
 
 /**
@@ -347,17 +352,24 @@ export function slotsTip(s: OmniSummary): string {
 }
 
 /**
- * The header's right side: "Nothing needs you", or "One thing for you" with the waiting
- * session's title and "then N more". `step` picks which waiting session it names (0 is
- * the first; it wraps). `id` is the session the button opens.
+ * The header's right side: "One thing for you" with the waiting session's title and "then
+ * N more"; with nothing waiting, "Ready to merge: <title>" when a card is ready for Hold to
+ * merge, else "No agent needs you" (it only knows about agents). `step` picks which waiting
+ * session it names (0 is the first; it wraps). `id` is the session the button acts on.
+ * Sessions in `snoozed` ("Later" on this display) are left out and not counted.
  */
 export function headerAsk(
   s: OmniSummary,
   step = 0,
-): { text: string; title: string | null; id: string | null; more: string | null; canStep: boolean; tone: 'cyan' | 'amber' } {
-  const n = needsYouCount(s);
-  if (n === 0) return { text: 'Nothing needs you', title: null, id: null, more: null, canStep: false, tone: 'cyan' };
-  const ids = waitingIds(s);
+  snoozed: ReadonlySet<string> = new Set(),
+): { text: string; title: string | null; id: string | null; more: string | null; canStep: boolean; tone: 'cyan' | 'amber' | 'mint' } {
+  const n = needsYouCount(s, snoozed);
+  if (n === 0) {
+    const ready = cards(s).find(mergeReady);
+    if (ready) return { text: 'Ready to merge', title: ready.title, id: ready.id, more: null, canStep: false, tone: 'mint' };
+    return { text: 'No agent needs you', title: null, id: null, more: null, canStep: false, tone: 'cyan' };
+  }
+  const ids = waitingIds(s).filter((id) => !snoozed.has(id));
   // Nothing to name or open: say so plainly; the button only brings OmniGent forward.
   if (ids.length === 0) return { text: 'Something needs you', title: null, id: null, more: n > 1 ? `${n} things in all` : null, canStep: false, tone: 'amber' };
   const k = step % ids.length;
@@ -375,15 +387,15 @@ export function freeSlots(s: OmniSummary): number {
   return Math.max(0, Math.min(3, s.slots.limit) - cards(s).length);
 }
 
-/** The card's second line and its colour: what is most useful to know first. */
-export function cardLine(l: Lane): { text: string; tone: '' | 'amber' | 'red' } {
+/**
+ * The card's second line and its colour: what is most useful to know first. A waiting
+ * card shows the helper's question for it when there is one (`question`), else "Waiting on
+ * you for 12 min".
+ */
+export function cardLine(l: Lane, question: string | null = null): { text: string; tone: '' | 'amber' | 'red' } {
   if (laneWaits(l)) {
-    const t = l.waitingSinceS != null ? `Waiting on you for ${elapsedText(l.waitingSinceS)}` : 'Waiting on you';
-    // "Waiting on a thumbnail choice" adds "a thumbnail choice"; the bare status words add nothing.
-    // A line that only says it waits on the owner adds nothing.
-    const said = l.line && !BARE.includes(l.line.toLowerCase()) && !/^waiting (on|for) you\b/i.test(l.line) ? l.line : '';
-    const what = said.replace(/^waiting (on|for)\s+/i, '');
-    return { text: what ? `${t}: ${what}` : t, tone: 'amber' };
+    if (question && question.trim()) return { text: question.trim(), tone: 'amber' };
+    return { text: l.waitingSinceS != null ? `Waiting on you for ${elapsedText(l.waitingSinceS)}` : 'Waiting on you', tone: 'amber' };
   }
   if (l.failed) return { text: l.line && !BARE.includes(l.line.toLowerCase()) ? `Failed: ${l.line}` : 'Failed, needs a look', tone: 'red' };
   const said = l.line && !BARE.includes(l.line.toLowerCase()) ? l.line : '';
@@ -484,13 +496,13 @@ const word = (n: number) => WORDS[n] ?? String(n);
 
 /**
  * One line for the places that only glance at the agents (Unwind, Dream): "2 agents still
- * working, nothing needs you", "One agent still working, one thing for you".
+ * working, no agent needs you", "One agent still working, one thing for you".
  */
 export function statusLine(s: OmniSummary): string {
   const working = cards(s).filter((l) => !laneWaits(l) && l.state === 'working').length;
   const asks = needsYouCount(s);
   const first = working === 0 ? 'No agents working' : `${word(working)} agent${working === 1 ? '' : 's'} still working`;
-  const second = asks === 0 ? 'nothing needs you' : asks === 1 ? 'one thing for you' : `${word(asks).toLowerCase()} things for you`;
+  const second = asks === 0 ? 'no agent needs you' : asks === 1 ? 'one thing for you' : `${word(asks).toLowerCase()} things for you`;
   return `${first}, ${second}`;
 }
 
@@ -633,4 +645,28 @@ export function dayTotals(segs: readonly AgentSegment[]): string {
   const parts = [`${work >= 30_000 ? elapsedText(work / 1000) : 'no time'} of agent work across ${sessions} session${sessions === 1 ? '' : 's'}`];
   parts.push(wait >= 30_000 ? `${elapsedText(wait / 1000)} waiting on you` : 'no waiting on you');
   return `Today: ${parts.join(', ')}`;
+}
+
+/** The helper's question for a session, when its first waiting entry is that session. */
+export function questionFor(s: OmniSummary, id: string): string | null {
+  const f = s.yourMove.first;
+  return f && f.sessionId === id && f.question.trim() ? f.question.trim() : null;
+}
+
+/** `h:mm AM` for a time. */
+export function clockText(ms: number): string {
+  const d = new Date(ms);
+  const h = d.getHours();
+  return `${h % 12 || 12}:${String(d.getMinutes()).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
+}
+
+/**
+ * The card's right-hand time and its tooltip: "idle 12 min" when the helper says how long it
+ * has been idle, else how long it has been open, with when it started.
+ */
+export function elapsedLabel(l: Lane, now: number): { text: string; tip: string } {
+  const started = clockText(now - l.elapsedS * 1000);
+  if (l.live === 'idle' && l.idleS != null) return { text: `idle ${elapsedText(l.idleS)}`, tip: `Idle for ${elapsedText(l.idleS)}; open ${elapsedText(l.elapsedS)}, started ${started}` };
+  const what = l.live === 'working' ? 'Working, open' : 'Open';
+  return { text: elapsedText(l.elapsedS), tip: `${what} for ${elapsedText(l.elapsedS)}, started ${started}` };
 }

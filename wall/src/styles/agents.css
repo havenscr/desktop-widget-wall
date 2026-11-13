@@ -12,6 +12,9 @@
 .lanes .t-mint {
   --c: var(--mint);
 }
+.lanes .calm.t-mint {
+  color: var(--mint);
+}
 
 /* Header, lanes and shelf share the zone's height; the lanes take what is left (up to
    150 px each), and any height still free spreads between the rows (concept `.col.spread`). */
@@ -391,7 +394,8 @@
   font: 600 14.5px/1 var(--disp);
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--faint);
+  /* Inactive stage labels: lighter than --faint so they clear 4.5:1 on every sky. */
+  color: #a49cc6;
   font-style: normal;
   white-space: nowrap;
 }
@@ -605,7 +609,7 @@
   left: 78px;
   padding: 0 6px;
   border-radius: 4px;
-  font: 600 10px/8px var(--disp);
+  font: 600 11px/8px var(--disp);
   letter-spacing: 0.04em;
   color: var(--dim);
   background: rgba(255, 255, 255, 0.08);
@@ -699,4 +703,34 @@
   border-radius: 50%;
   background: var(--amber);
   margin-left: -8px;
+}
+
+/* A waiting card's two actions, stacked in the time column, sized for a mouse. */
+.ask-acts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: stretch;
+}
+.lane .btn.act {
+  height: 36px;
+  padding: 0 14px;
+  border-radius: 12px;
+  font-size: 17px;
+  white-space: nowrap;
+}
+.lane .btn.act.amber {
+  color: var(--amber);
+  border-color: rgba(255, 194, 77, 0.5);
+  background: rgba(255, 194, 77, 0.08);
+}
+/* A waiting session quietened with "Later": a small amber dot, no amber edge. */
+.snooze-dot {
+  flex: none;
+  align-self: center;
+  width: 8px;
+  height: 8px;
+  margin-right: -8px;
+  border-radius: 50%;
+  background: var(--amber);
 }

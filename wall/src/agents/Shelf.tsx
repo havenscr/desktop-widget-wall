@@ -3,8 +3,8 @@ import { usageMeters, usageTip, type OmniSummary } from './model';
 import { focusSession } from './open';
 
 /**
- * Under the cards (concept `.shelf`): how many chats are parked (a click brings OmniGent
- * forward), and usage: one small meter per subscription from a newer helper (the week's
+ * Under the cards (concept `.shelf`): how many sessions are parked (hover says what that
+ * means, a click brings OmniGent forward), and usage: one small meter per subscription from a newer helper (the week's
  * percent, the five hour figure inline when there is room, the reset time on hover; the
  * fullest turns amber above 90), or Claude's week as one bar from an older one, with the
  * five hour figure when the helper has one. The mail count waits for the mail scope (D7).
@@ -20,11 +20,15 @@ export function Shelf({ summary, stale = false }: { summary: OmniSummary; stale?
         type="button"
         className="shelf-parked"
         onClick={() => focusSession()}
-        {...tip(summary.parked > 0 ? 'Parked sessions rest in OmniGent. Click to bring OmniGent forward.' : 'Click to bring OmniGent forward.')}
+        {...tip(
+          summary.parked > 0
+            ? 'Parked sessions are put aside with a note; open OmniGent to resume one. Click to bring OmniGent forward.'
+            : 'No session is parked. Click to bring OmniGent forward.',
+        )}
       >
         {summary.parked > 0 ? (
           <>
-            <b>{summary.parked}</b> parked, resting
+            <b>{summary.parked}</b> parked session{summary.parked === 1 ? '' : 's'}
           </>
         ) : (
           'Nothing parked'

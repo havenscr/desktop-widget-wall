@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { create } from 'zustand';
 import { invoke } from '../bridge/tauri';
 import { useVisible } from '../ui/useVisible';
+import { useSnoozed } from './snooze';
 import { CALL_TIMEOUT_MS, KEEP_STALE_MS, needsYouCount, normalizeSummary, POLL_MS, statusLine, type OmniSummary } from './model';
 
 /**
@@ -199,5 +200,7 @@ export function useAgentStatusLine(): string | null {
 /** True while something waits for an answer (for the amber dot over Watt); false when stale. */
 export function useAgentsWaiting(): boolean {
   const st = useAgents();
-  return st.summary !== null && !agentsStale(st) && needsYouCount(st.summary) > 0;
+  // A session quietened with "Later" on this display does not light the dot.
+  const snoozed = useSnoozed();
+  return st.summary !== null && !agentsStale(st) && needsYouCount(st.summary, snoozed.ids) > 0;
 }

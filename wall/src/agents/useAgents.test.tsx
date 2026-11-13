@@ -5,6 +5,7 @@ import { lane, summary } from './fixtures';
 import { KEEP_STALE_MS, POLL_MS, type OmniSummary } from './model';
 import { agentsStale } from './useAgents';
 import { resetAgents, useAgents, useAgentStatusLine, useAgentsWaiting } from './useAgents';
+import { resetSnooze, snooze } from './snooze';
 
 const flush = async (ms = 0) => {
   await act(async () => {
@@ -160,7 +161,7 @@ it('useAgentStatusLine gives one line, or null when not set up', async () => {
   answer = () => summary({ lanes: [lane(), lane({ id: 'a1b2c3d4-0002' })] });
   const { result } = renderHook(() => useAgentStatusLine());
   await flush();
-  expect(result.current).toBe('Two agents still working, nothing needs you');
+  expect(result.current).toBe('Two agents still working, no agent needs you');
   answer = () => {
     throw new Error('not-configured');
   };
@@ -314,4 +315,15 @@ it('a helper clock that steps back (a correction) and runs on from there is move
   expect(result.current.status).toBe('ready');
   expect(result.current.summary).not.toBeNull();
   expect(agentsStale(result.current)).toBe(false);
+});
+
+it('useAgentsWaiting goes quiet for a session snoozed with Later on this display', async () => {
+  answer = () => summary({ lanes: [lane({ waiting: true })], yourMove: { total: 1, first: null, ids: ['a1b2c3d4-0001'] } });
+  const { result } = renderHook(() => useAgentsWaiting());
+  await flush();
+  expect(result.current).toBe(true);
+  act(() => snooze('a1b2c3d4-0001'));
+  expect(result.current).toBe(false);
+  act(() => resetSnooze());
+  expect(result.current).toBe(true);
 });

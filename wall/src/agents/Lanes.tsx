@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { tip } from '../ui/HoverTip';
 import { FreeRow, Lane } from './Lane';
-import { ageText, allFreeText, cards, countText, freeSlots, headerAsk, slotMeter, slotsText, slotsTip, type OmniSummary } from './model';
-import { useCardScroll } from './cardScroll';
+import { ageText, allFreeText, cards, clockText, countText, questionFor, freeSlots, headerAsk, slotMeter, slotsText, slotsTip, type OmniSummary } from './model';
+import { scrollToCard, useCardScroll } from './cardScroll';
+import { snooze, useSnoozed } from './snooze';
 import { focusSession } from './open';
 import { Shelf } from './Shelf';
 
@@ -46,7 +47,8 @@ export function Lanes({ summary, stale, freshAt, now, idle }: { summary: OmniSum
   const [step, setStep] = useState(0);
   const list = useRef<HTMLDivElement>(null);
   const all = cards(summary);
-  const ask = headerAsk(summary, step);
+  const snoozed = useSnoozed();
+  const ask = headerAsk(summary, step, snoozed.ids);
   const n = all.length;
   const free = freeSlots(summary);
   const count = countText(n, IN_VIEW);
@@ -119,7 +121,7 @@ export function Lanes({ summary, stale, freshAt, now, idle }: { summary: OmniSum
                   onClick={() => {
                     const nextStep = step + 1;
                     setStep(nextStep);
-                    openAsk(headerAsk(summary, nextStep).id);
+                    openAsk(headerAsk(summary, nextStep, snoozed.ids).id);
                   }}
                   {...tip('Open the next session that waits on you')}
                 >
@@ -128,6 +130,26 @@ export function Lanes({ summary, stale, freshAt, now, idle }: { summary: OmniSum
               ) : (
                 <span className="xs">{ask.more}</span>
               ))}
+          </div>
+        ) : stale ? (
+          // Old data never reads as an all-clear.
+          <div className="row calm t-quiet" {...tip('The agents may have changed since then.')}>
+            <i className="dot" aria-hidden="true" />
+            <span>Last known: no agent needed you, {freshAt === null ? 'at an unknown time' : `as of ${clockText(freshAt)}`}</span>
+          </div>
+        ) : ask.tone === 'mint' ? (
+          <div className="row calm t-mint lanes-ask">
+            <button
+              type="button"
+              className="ask-btn"
+              aria-label={`Ready to merge: ${ask.title}. Shows its card`}
+              onClick={() => ask.id && scrollToCard(ask.id)}
+              {...tip(`${ask.title} is ready for Hold to merge. Click to show its card.`)}
+            >
+              <i className="dot" aria-hidden="true" />
+              <span>{ask.text}:</span>
+              <span className="ask-title ellipsis">{ask.title}</span>
+            </button>
           </div>
         ) : (
           <div className="row calm t-cyan">
@@ -138,7 +160,18 @@ export function Lanes({ summary, stale, freshAt, now, idle }: { summary: OmniSum
       </div>
       <div className={`lanes-list${n > IN_VIEW ? ' scrolls' : ''}`} ref={list}>
         {all.map((l, i) => (
-          <Lane key={l.id} lane={l} num={i + 1} canOpen={canOpen} open={(id) => focusSession(id)} roomy={n < IN_VIEW} asOf={stale ? asOf : null} />
+          <Lane
+            key={l.id}
+            lane={l}
+            num={i + 1}
+            canOpen={canOpen}
+            open={(id) => focusSession(id)}
+            roomy={n < IN_VIEW}
+            asOf={stale ? asOf : null}
+            question={questionFor(summary, l.id)}
+            snoozedUntil={snoozed.ids.has(l.id) ? snoozed.until[l.id] : null}
+            later={(id) => snooze(id)}
+          />
         ))}
         {n > 0 && Array.from({ length: free }, (_, i) => <FreeRow key={i} text="Free slot" />)}
         {n === 0 && (

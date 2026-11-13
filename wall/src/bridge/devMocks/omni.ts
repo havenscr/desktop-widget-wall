@@ -5,7 +5,7 @@ import { mocks } from '../tauri';
 /**
  * Dev only: `?agents=` picks a helper state for review stills and the fit check:
  * `3` (default), `2`, `1`, `0`, `7` or `12` sessions from a helper 1.1.0 answer, `ask` (one
- * waiting), `ask2` (two waiting, one of them not on a card), `failed` (one failed), `old`
+ * waiting, with a question), `ask2` (two waiting, one of them not on a card), `failed` (one failed), `old`
  * (three lanes as the older helper sends them), `stale`, `off` (not set up) and `down` (set
  * up, not answering).
  */
@@ -117,7 +117,7 @@ export function registerOmniMocks(): void {
       parked: 4,
       yourMove: {
         total: waitIds.length,
-        first: firstWait ? { sessionId: firstWait, title: titleOf(firstWait), kind: 'gate', since: iso(12), question: '' } : null,
+        first: firstWait ? { sessionId: firstWait, title: titleOf(firstWait), kind: 'gate', since: iso(12), question: AGENTS === 'ask' ? 'Which of the four thumbnails goes on the Friday post?' : '' } : null,
         ...(old ? {} : { ids: waitIds }),
       },
       usage,
