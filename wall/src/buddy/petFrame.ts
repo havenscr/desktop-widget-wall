@@ -11,8 +11,13 @@ import { CLOVER, EAR, MARK, PROP_SPRITES, SMALL_PX, SPRITES, propOrigin, type Po
  */
 
 /** Short things she does about what happens, each with its length in seconds. */
-export type ReactKind = 'hop' | 'pet' | 'look' | 'wake' | 'eat';
-export const REACT_S: Readonly<Record<ReactKind, number>> = { hop: 0.7, pet: 1.6, look: 8, wake: 6, eat: 4 };
+export type ReactKind = 'hop' | 'pet' | 'look' | 'wake' | 'eat' | 'happy' | 'spin' | 'sparkle';
+export const REACT_S: Readonly<Record<ReactKind, number>> = { hop: 0.7, pet: 1.6, look: 8, wake: 6, eat: 4, happy: 1.4, spin: 1, sparkle: 2.4 };
+
+/** He notices the pointer when it is this close to him (design pixels). */
+export const NOTICE_PX = 260;
+/** ... and loses interest after the pointer has stayed still this long, seconds. */
+export const NOTICE_S = 6;
 
 /** A prop may stick out at most this many sprite pixels above her head row 0. */
 export const PROP_RISE_MAX = 2;
@@ -41,6 +46,14 @@ export interface Mind {
   bob: number;
   /** His card is open: he stands still so he does not walk under it. */
   held: boolean;
+  /** The pointer moved within `NOTICE_S` seconds, and where it is (stage pixels). */
+  pointerOn: boolean;
+  pointerX: number;
+  pointerY: number;
+  /** A clover is on the ground: he is busy with it and does not look at the pointer. */
+  clover: boolean;
+  /** He is lying down for a nap (the Nap trick). */
+  lie: boolean;
   /** He is being carried, falling, or sitting where he was set down: the wander clock waits (`carry.ts`). */
   carry: boolean;
 }
@@ -62,12 +75,17 @@ export function createMind(): Mind {
     bob: 0,
     held: false,
     carry: false,
+    pointerOn: false,
+    pointerX: 0,
+    pointerY: 0,
+    clover: false,
+    lie: false,
   };
 }
 
 /** True while `m.react` is one that holds her still (the wander clock stops). */
 export function holdsStill(m: Mind): boolean {
-  return m.held || m.carry || (m.react !== null && m.reactT < REACT_S[m.react]);
+  return m.held || m.carry || m.lie || (m.react !== null && m.reactT < REACT_S[m.react]);
 }
 
 /** What Watt draws this frame, beyond the base frame. Reused. */
@@ -84,11 +102,13 @@ export interface PetFrame extends BuddyFrame {
   /** Degrees he is tilted while carried (about his back), 0 otherwise. */
   tilt: number;
   hearts: boolean;
+  /** A one-off sparkle (ten pets in a day). */
+  sparkle: boolean;
   mark: boolean;
 }
 
 export function createPetFrame(): PetFrame {
-  return { x: 0, dir: 1, pose: 'idle', notes: false, z: false, prop: null, scarf: false, cosmetic: null, lift: 0, squash: 1, tilt: 0, hearts: false, mark: false };
+  return { x: 0, dir: 1, pose: 'idle', notes: false, z: false, prop: null, scarf: false, cosmetic: null, lift: 0, squash: 1, tilt: 0, hearts: false, sparkle: false, mark: false };
 }
 
 /**
@@ -132,11 +152,16 @@ export function petFrame(walk: Walk, place: WattPlace, hy: number, night: boolea
   out.squash = 1;
   out.tilt = 0;
   out.hearts = false;
+  out.sparkle = false;
   out.mark = false;
   const react = m.react !== null && m.reactT < Math.max(REACT_S[m.react], m.react === 'pet' ? HEARTS_S : 0) ? m.react : null;
   const k = react ? m.reactT / REACT_S[react] : 0;
   if (night) {
     out.prop = 'nightcap';
+  } else if (m.lie) {
+    out.pose = 'lie';
+    out.z = !still;
+    out.notes = false;
   } else if (m.nap) {
     out.pose = 'sleep';
     out.z = !still;
@@ -151,6 +176,10 @@ export function petFrame(walk: Walk, place: WattPlace, hy: number, night: boolea
       out.pose = k < 0.5 ? 'yawn' : 'stretch';
     } else if (react && k < 1 && react === 'eat') {
       out.pose = 'eat';
+    } else if (react && k < 1 && (react === 'spin' || react === 'happy')) {
+      out.pose = spinPose(k, still, react === 'happy');
+    } else if (react && k < 1 && react === 'hop' && !still && k > 0.12 && k < 0.88) {
+      out.pose = 'hop';
     } else if (moving) {
       // Walking: the base frame already alternates idle and walk.
     } else if (m.focus) {
@@ -159,6 +188,15 @@ export function petFrame(walk: Walk, place: WattPlace, hy: number, night: boolea
       out.pose = 'look';
     } else if (w && m.sleepy && w.stop % 3 === 0 && w.into < 3) {
       out.pose = 'yawn';
+    }
+    // He notices the pointer: faces it, ears up, when he is standing about with nothing on his mind.
+    if (!react && !still && m.pointerOn && !moving && !m.focus && !m.clover) {
+      const dx = m.pointerX - (out.x + spriteWidth('alert', walk.px) / 2);
+      const dy = m.pointerY - (hy - spriteHeight('alert', walk.px) / 2);
+      if (dx * dx + dy * dy <= NOTICE_PX * NOTICE_PX) {
+        out.pose = 'alert';
+        out.dir = dx >= 0 ? 1 : -1;
+      }
     }
     if (out.pose === 'read') out.prop = 'book';
     else if (m.rain) out.prop = 'umbrella';
@@ -171,18 +209,26 @@ export function petFrame(walk: Walk, place: WattPlace, hy: number, night: boolea
       if (!still && k < 1) out.dir = (Math.floor(k * 4) % 2 === 0 ? out.dir : -out.dir) as 1 | -1;
     }
   }
+  out.sparkle = !night && react === 'sparkle' && k < 1;
   // The amber mark shows whatever she is doing, asleep included: something waits for him.
   out.mark = m.waiting;
   if (out.prop && !propFits(out.prop, out.pose)) out.prop = null;
   if (out.scarf && !propFits('scarf', out.pose)) out.scarf = false;
   if (m.cosmetic !== 'none' && propFits(m.cosmetic, out.pose)) out.cosmetic = m.cosmetic;
-  if (!still && !night && react === 'hop' && k < 1) {
+  if (!still && !night && (react === 'hop' || react === 'happy') && k < 1) {
     const top = hy - spriteHeight(out.pose, walk.px) - propRise(out) * walk.px;
     const room = Math.max(0, top - walk.ceiling);
-    out.lift = Math.sin(Math.PI * k) * Math.min(walk.px * 1.5, room);
+    out.lift = Math.sin(Math.PI * k) * Math.min(walk.px * (react === 'happy' ? 2 : 1.5), room);
   }
   if (!still && !night && !m.nap) out.squash = 1 - 0.05 * Math.max(0, Math.min(1, m.bob));
   return out;
+}
+
+/** The frames of a turn on the spot: side, front, back, front, side (a happy hop turns once more). */
+function spinPose(k: number, still: boolean, happy: boolean): Pose {
+  if (still) return 'spin1';
+  if (happy) return k < 0.12 ? 'idle' : k < 0.3 ? 'spin1' : k < 0.5 ? 'spin2' : k < 0.7 ? 'spin1' : k < 0.88 ? 'spin2' : 'idle';
+  return k < 0.12 ? 'idle' : k < 0.34 ? 'spin1' : k < 0.56 ? 'spin2' : k < 0.78 ? 'spin1' : 'idle';
 }
 
 /** A box in stage pixels. */
@@ -288,8 +334,8 @@ export function hitParts(pose: Pose, dir: 1 | -1, body: Box, head: Box): void {
 }
 
 /** Her hover card's box, design pixels (the card is drawn at exactly this size). */
-export const CARD_W = 660;
-export const CARD_H = 74;
+export const CARD_W = 880;
+export const CARD_H = 80;
 
 /**
  * Where her card goes: in the band over the horizon beside her on Work, Home and Meet (right of
@@ -304,7 +350,7 @@ export function placeCard(place: WattPlace, walk: Walk, x: number, w: number, ou
     out.top = UNWIND_ROW.bottom + 8;
     return out;
   }
-  out.top = walk.ceiling + 4;
+  out.top = walk.ceiling + 2;
   const right = x + w + 16;
   out.left = right + CARD_W <= MAIN_LEFT + MAIN_WIDTH ? right : Math.max(MAIN_LEFT, x - 16 - CARD_W);
   return out;

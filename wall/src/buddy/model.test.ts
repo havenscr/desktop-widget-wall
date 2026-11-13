@@ -235,8 +235,8 @@ function reach(place: WattPlace, camera: CameraPreset): Rect {
 function minds(): Mind[] {
   const out: Mind[] = [];
   const base = () => createMind();
-  const reacts: (ReactKind | null)[] = [null, 'hop', 'pet', 'look', 'wake', 'eat'];
-  const looks: Partial<Mind>[] = [{}, { focus: true }, { rain: true }, { sunny: true }, { cold: true }, { rain: true, cold: true }, { nap: true }, { evening: true }, { sleepy: true }, { waiting: true }];
+  const reacts: (ReactKind | null)[] = [null, 'hop', 'pet', 'look', 'wake', 'eat', 'happy', 'spin', 'sparkle'];
+  const looks: Partial<Mind>[] = [{}, { focus: true }, { rain: true }, { sunny: true }, { cold: true }, { rain: true, cold: true }, { nap: true }, { lie: true }, { pointerOn: true, pointerX: 1000, pointerY: 560 }, { evening: true }, { sleepy: true }, { waiting: true }];
   for (const r of reacts) {
     for (const l of looks) {
       for (const c of COSMETICS) {
@@ -613,10 +613,10 @@ describe('sprites', () => {
       }
     }
   });
-  it('every pose keeps the sizes: 18 wide, 12 tall (sleep 8, land and sit 11)', () => {
+  it('every pose keeps the sizes: 18 wide, 12 tall (sleep and lie 8, land and sit 11)', () => {
     for (const pose of POSES) {
       expect(SPRITES[pose][0]).toHaveLength(18);
-      expect(SPRITES[pose]).toHaveLength(pose === 'sleep' ? 8 : pose === 'land' || pose === 'sit' ? 11 : 12);
+      expect(SPRITES[pose]).toHaveLength(pose === 'sleep' || pose === 'lie' ? 8 : pose === 'land' || pose === 'sit' ? 11 : 12);
     }
   });
   it('sleep equals the concept map exactly', () => {

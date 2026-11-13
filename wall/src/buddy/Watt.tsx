@@ -16,6 +16,10 @@ import { useNextMeeting } from '../work/useNextMeeting';
 import {
   FALL,
   RETURN,
+  callCarry,
+  endStay,
+  landingX,
+  startStay,
   CARRY_LINE_GAP_MS,
   CLOVER_FEED_PX,
   DIZZY_LINE_GAP_MS,
@@ -35,11 +39,12 @@ import {
   stepCarry,
 } from './carry';
 import { STAGE_HEIGHT, STAGE_WIDTH } from '../stage/fitScale';
-import { BUBBLE_MS, CHECK_MS, createChat, lineFrom, markSpoken, nextBubble, quietNow, type Chatty, type Quiet, type Talk } from './chatter';
+import { BUBBLE_MS, CHECK_MS, FOCUS_QUIET_MS, createChat, lineFrom, markSpoken, nextBubble, quietNow, type Chatty, type Quiet, type Talk } from './chatter';
 import type { Topic } from './lines';
 import {
   NOTE_SIZES,
   WALKS,
+  middle,
   cameraOf,
   cameraReady,
   createClock,
@@ -55,10 +60,11 @@ import {
   wanderAt,
   createWander,
 } from './model';
-import { PetCard } from './PetCard';
+import { PetCard, type Trick } from './PetCard';
 import {
   BUBBLE,
   HEARTS_S,
+  NOTICE_S,
   REACT_S,
   atClover,
   cloverHitBox,
@@ -80,9 +86,9 @@ import {
   type ReactKind,
 } from './petFrame';
 import { PixelSvg, PropSvg, SheepSvg } from './Pixels';
-import { bump, dayKey, loadPet, moodOf, rollDay, savePet, type Cosmetic, type PetData } from './pet';
+import { bump, dayKey, loadPet, moodOf, rollDay, savePet, type Cosmetic, type PetData, type StayPlace } from './pet';
 import { CLOVER_WAIT_MS, cloverDue, dayTopic, finishedBetween, midday, moonUp, senseWeather, weatherTopics, workingIds } from './senses';
-import { CLOVER, HEART, MARK, SMALL_PX, SPRITE_PX, type Pose, type Prop } from './sprites';
+import { CLOVER, HEART, MARK, PROP_SPRITES, SMALL_PX, SPRITE_PX, type Pose, type Prop } from './sprites';
 import './watt.css';
 
 export { SheepSvg } from './Pixels';
@@ -94,6 +100,13 @@ export const PET_HOLD_MS = 3000;
 /** A pet gets a spoken reply only this long after any bubble, and at most one pet line this often. */
 export const PET_REPLY_GAP_MS = 20_000;
 export const PET_LINE_EVERY_MS = 60_000;
+/** Three clicks within this long (milliseconds) give one happy hop, at most this often. */
+export const HAPPY_WITHIN_MS = 4000;
+export const HAPPY_EVERY_MS = 20_000;
+/** Ten pets in a day are a milestone. */
+export const MILESTONE_PETS = 10;
+/** A nap lasts this long unless he is petted, milliseconds. */
+export const NAP_MS = 60_000;
 /** Watt's tooltip: the three things the pointer can do on him. */
 export const WATT_TIP = 'Click to pet. Drag to carry. Right-click for his card.';
 /** A meeting this close (milliseconds) makes him look at the clock and say so. */
@@ -189,6 +202,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
   const notes = [useRef<HTMLSpanElement>(null), useRef<HTMLSpanElement>(null)];
   const zs = [useRef<HTMLSpanElement>(null), useRef<HTMLSpanElement>(null)];
   const hearts = [useRef<HTMLSpanElement>(null), useRef<HTMLSpanElement>(null)];
+  const sparks = [useRef<HTMLSpanElement>(null), useRef<HTMLSpanElement>(null)];
 
   // Her life, stored on this PC.
   const [pet, setPet] = useState<PetData>(() => rollDay(loadPet(now()), now()));
@@ -246,6 +260,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
   m.sleepy = mood === 'sleepy';
   m.nap = idle;
   m.waiting = waiting;
+  m.clover = clover !== null;
   m.cosmetic = pet.cosmetic;
   // Dev review stills only (`window.__watt.set`): kept over the hooks' values on every render.
   const debugMind = useRef<Partial<Mind>>({});
@@ -472,18 +487,37 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
   // Pet her: hearts, a wiggle, a pleased line. A second click within a few seconds adds nothing.
   const lastPet = useRef(-Infinity);
   const lastPetLine = useRef(-Infinity);
+  // Three clicks within 4 s (the second and third add nothing to the count) give a happy hop.
+  const clicks = useRef(new Float64Array(3).fill(-Infinity));
+  const clickAt = useRef(0);
+  const lastHappy = useRef(-Infinity);
+  const napUntil = useRef(0);
   const petHer = useCallback(() => {
     const t = nowRef.current();
+    clicks.current[clickAt.current % 3] = t;
+    clickAt.current += 1;
+    // He wakes when petted.
+    if (napUntil.current > 0) {
+      napUntil.current = 0;
+      wake.current();
+    }
+    if (clickAt.current >= 3 && t - clicks.current[clickAt.current % 3] <= HAPPY_WITHIN_MS && t - lastHappy.current >= HAPPY_EVERY_MS) {
+      lastHappy.current = t;
+      startReact.current('happy');
+    }
     if (t - lastPet.current < PET_HOLD_MS) return;
     lastPet.current = t;
-    // Hearts and the wiggle every time she is petted.
+    // Hearts and the wiggle every time he is petted.
     startReact.current('pet');
+    const before = petRef.current.today.date === dayKey(t) ? petRef.current.today.pets : 0;
+    const milestone = before + 1 === MILESTONE_PETS;
+    if (milestone) startReact.current('sparkle');
     update((d) => bump(d, 'pets', t));
     // A spoken reply only outside every quiet time, 20 s after any bubble, and once a minute.
     const p = presence.current;
     q.away = p.place === null || p.night || document.hidden;
     if (!quietNow(q, t) && t - chat.current.lastAt >= PET_REPLY_GAP_MS && t - lastPetLine.current >= PET_LINE_EVERY_MS) {
-      const line = lineFrom('pet', chat.current.lastLine, Math.random);
+      const line = lineFrom(milestone ? 'milestone' : 'pet', chat.current.lastLine, Math.random);
       lastPetLine.current = t;
       markSpoken(chat.current, line, t);
       show(line);
@@ -589,6 +623,18 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
   const press = useRef({ active: false, id: -1, x: 0, y: 0, t: 0 });
   const pt = useRef({ x: 0, y: 0 });
   const cloverAt = useRef({ x: 0, y: 0, on: false });
+  // The pointer, for the "he notices it" look: raw client position and the loop time it last moved.
+  const ptrRaw = useRef({ x: 0, y: 0, t: -Infinity });
+  useEffect(() => {
+    const onMove = (e: PointerEvent) => {
+      const r = ptrRaw.current;
+      r.x = e.clientX;
+      r.y = e.clientY;
+      r.t = tNowRef.current();
+    };
+    window.addEventListener('pointermove', onMove, { passive: true });
+    return () => window.removeEventListener('pointermove', onMove);
+  }, []);
   const lastCarryLine = useRef(-Infinity);
   const lastDizzyLine = useRef(-Infinity);
   const heldBubble = useRef(0);
@@ -636,12 +682,21 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
   /** A new place, or the camera moving off: he is just gone from where he was, nothing to set down. */
   const dropCarry = useCallback(() => {
     press.current.active = false;
+    napUntil.current = 0;
+    if (petRef.current.stay) {
+      // A place change ends Stay.
+      petRef.current = { ...petRef.current, stay: null };
+      update((d) => (d.stay ? { ...d, stay: null } : d));
+    }
     const c = carry.current;
-    if (c.mode === NONE) return;
+    if (c.mode === NONE) {
+      c.stay = false;
+      return;
+    }
     dropCapture(c.pointerId);
     cancelCarry(c);
     mind.current.carry = false;
-  }, [dropCapture]);
+  }, [dropCapture, update]);
   const dropRef = useRef(dropCarry);
   dropRef.current = dropCarry;
 
@@ -763,14 +818,16 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
 
   /** A line while he is carried, set down or dizzy: outside every quiet time, and calm. */
   const sayCarry = useCallback(
-    (topic: 'held' | 'landed' | 'dizzy') => {
+    (topic: 'held' | 'landed' | 'dizzy' | 'tricks' | 'stay') => {
       const t = nowRef.current();
       const p = presence.current;
       q.away = p.place === null || p.night || document.hidden;
       if (quietNow(q, t)) return;
       let which = topic;
       if (which === 'dizzy' && t - lastDizzyLine.current < DIZZY_LINE_GAP_MS) which = 'landed';
-      if (which !== 'dizzy' && !carry.current.mayTalk) return;
+      if (which === 'tricks' || which === 'stay') {
+        if (t - lastCarryLine.current < CARRY_LINE_GAP_MS) return;
+      } else if (which !== 'dizzy' && !carry.current.mayTalk) return;
       // Another bubble is showing: wait for it, except his own held line, which the landing replaces.
       const showing = bubbleRef.current;
       if (showing && showing.id !== heldBubble.current) return;
@@ -785,6 +842,76 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
   );
   const sayCarryRef = useRef(sayCarry);
   sayCarryRef.current = sayCarry;
+
+  // The tricks in his card. Each is refused quietly (the buttons are off, with the reason as their
+  // tooltip) in a call, in the first minute of focus, while he is asleep and while he is away.
+  const refusal = (): string | null => {
+    const p = presence.current;
+    if (!p.place || p.opacity < 0.5) return 'Watt is away';
+    if (q.inCall) return 'Not during a call';
+    if (q.focusSince !== null && nowRef.current() - q.focusSince < FOCUS_QUIET_MS) return 'Not in the first minute of focus';
+    if (p.night) return 'Watt is asleep';
+    return null;
+  };
+  const refusalRef = useRef(refusal);
+  refusalRef.current = refusal;
+  const setStay = useCallback(
+    (on: boolean) => {
+      const p = presence.current;
+      const c = carry.current;
+      const t = tNowRef.current();
+      if (!on) {
+        endStay(c, t);
+        petRef.current = { ...petRef.current, stay: null };
+        update((d) => (d.stay ? { ...d, stay: null } : d));
+        wake.current();
+        return;
+      }
+      if (!p.place || !p.camera || refusalRef.current()) return;
+      const walk = WALKS[p.place];
+      // Where he was last set down (he is sitting there now), else where he stands.
+      const x = landingX(walk, c.mode === NONE ? frameRef.current.x : c.x);
+      const dir = frameRef.current.dir;
+      startStay(c, t, x, dir);
+      const stay = { place: p.place as StayPlace, x, date: dayKey(nowRef.current()) };
+      petRef.current = { ...petRef.current, stay };
+      update((d) => ({ ...d, stay }));
+      wake.current();
+      sayCarryRef.current('stay');
+    },
+    [update],
+  );
+  const doTrick = useCallback(
+    (kind: Trick) => {
+      if (refusalRef.current()) return;
+      const p = presence.current;
+      if (!p.place || !p.camera || carry.current.mode === HELD) return;
+      if (kind === 'hop') startReact.current('hop');
+      else if (kind === 'spin') startReact.current('spin');
+      else if (kind === 'nap') {
+        napUntil.current = nowRef.current() + NAP_MS;
+        window.clearTimeout(napTimer.current);
+        napTimer.current = window.setTimeout(() => wake.current(), NAP_MS + 100);
+        wake.current();
+      } else if (kind === 'come' && !carry.current.stay) {
+        const walk = WALKS[p.place];
+        const mid = middle(walk);
+        const f = frameRef.current;
+        if (Math.abs(f.x - mid) < 1) wanderT.current = 0;
+        else callCarry(carry.current, tNowRef.current(), f.x, mid >= f.x ? 1 : -1, mid);
+        wake.current();
+      }
+      sayCarryRef.current('tricks');
+    },
+    [],
+  );
+  const napTimer = useRef(0);
+  useEffect(() => () => window.clearTimeout(napTimer.current), []);
+  const readWithMe = useCallback(() => {
+    const st = useFocusStore.getState();
+    if (st.state.status === 'running' || st.state.status === 'paused') return;
+    st.start();
+  }, []);
 
   useEffect(() => {
     let T = 0;
@@ -830,6 +957,20 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
           const walk = WALKS[p.place];
           const home = c.mode === RETURN ? wanderAt(walk, wanderT.current, wc).x : 0;
           stepCarry(c, dt, tNow(), p.camera.hy, walk.px, home, reduced, f);
+        }
+      }
+      // Stay: kept in the stored record; applied once he stands on its place, ended when it is gone.
+      const st = petRef.current.stay;
+      if (p.place && p.camera && p.opacity > 0.5) {
+        if (st && !c.stay && c.mode === NONE && p.place === st.place) startStay(c, tNow(), landingX(WALKS[p.place], st.x), 1);
+        else if (!st && c.stay) endStay(c, tNow());
+      }
+      if (c.arrived) {
+        // Called to the middle: the wander picks up from there.
+        c.arrived = false;
+        if (c.target === c.target) {
+          c.target = Number.NaN;
+          if (c.mode === NONE) wanderT.current = 0;
         }
       }
       mind.current.carry = c.mode !== NONE;
@@ -884,6 +1025,15 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
       const walk = WALKS[p.place];
       const mi = mind.current;
       mi.reactT = tNow() - reactAt;
+      // He notices a pointer that moved lately (never under reduced motion, which stands still).
+      const pr = ptrRaw.current;
+      mi.pointerOn = !reduced && tNow() - pr.t < NOTICE_S;
+      if (mi.pointerOn) {
+        const at = toStage(pr.x, pr.y);
+        mi.pointerX = at.x;
+        mi.pointerY = at.y;
+      }
+      mi.lie = napUntil.current > 0 && nowRef.current() < napUntil.current && !p.night;
       // The beat: a soft squash at most once every `BOB_GAP_MS`.
       const beats = audioBeats().count;
       const music = useAudioStore.getState().playing;
@@ -962,6 +1112,15 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
         const k = reduced ? 0.3 + i * 0.3 : Math.min(1, (mi.reactT / HEARTS_S) * 0.9 + i * 0.15);
         driftAt('note', walk, f.x, y, width, i, k, drift);
         e.style.opacity = f.hearts ? String(reduced ? 0.9 : Math.sin(Math.PI * k) * 0.95) : '0';
+        e.style.left = `${drift.left}px`;
+        e.style.top = `${drift.top}px`;
+      }
+      for (let i = 0; i < 2; i++) {
+        const e = sparks[i].current;
+        if (!e) continue;
+        const k = reduced ? 0.4 + i * 0.3 : Math.min(1, (mi.reactT / REACT_S.sparkle) * 0.9 + i * 0.1);
+        driftAt('note', walk, f.x, y, width, i, k, drift);
+        e.style.opacity = f.sparkle ? String(reduced ? 0.9 : Math.sin(Math.PI * k) * 0.95) : '0';
         e.style.left = `${drift.left}px`;
         e.style.top = `${drift.top}px`;
       }
@@ -1174,6 +1333,12 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
       <span className="watt-heart" ref={hearts[1]} aria-hidden="true">
         <PixelSvg map={HEART} px={SMALL_PX} />
       </span>
+      <span className="watt-spark" ref={sparks[0]} aria-hidden="true">
+        <PixelSvg map={PROP_SPRITES.star.map} px={SMALL_PX} />
+      </span>
+      <span className="watt-spark" ref={sparks[1]} aria-hidden="true">
+        <PixelSvg map={PROP_SPRITES.star.map} px={SMALL_PX} />
+      </span>
       <span className="watt-z" ref={zs[0]} aria-hidden="true">
         z
       </span>
@@ -1214,6 +1379,16 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
           top={card.top}
           mood={mood}
           pet={pet}
+          tricks={{
+            refused: refusal(),
+            napping: napUntil.current > 0 && now() < napUntil.current,
+            stay: pet.stay !== null,
+            focusBusy: focus.status === 'running' || focus.status === 'paused',
+            focusMinutes: focus.minutes,
+            onTrick: doTrick,
+            onStay: setStay,
+            onRead: readWithMe,
+          }}
           onBlur={onCardBlur}
           onChatty={chooseChatty}
           onCosmetic={chooseCosmetic}

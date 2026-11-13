@@ -7,10 +7,10 @@
  * idle body rows plus two leg rows. The other poses are drawn the same way, at the same size; props
  * and the little things (heart, clover, amber mark) use their own colour letters (`PROP_COLORS`).
  */
-export type Pose = 'idle' | 'walk' | 'sleep' | 'read' | 'look' | 'yawn' | 'stretch' | 'eat' | 'held' | 'held2' | 'land' | 'sit' | 'dizzy';
+export type Pose = 'idle' | 'walk' | 'sleep' | 'read' | 'look' | 'yawn' | 'stretch' | 'eat' | 'held' | 'held2' | 'land' | 'sit' | 'dizzy' | 'alert' | 'hop' | 'spin1' | 'spin2' | 'lie';
 
 /** Every pose, for the tests and the sprite sheet. */
-export const POSES: readonly Pose[] = ['idle', 'walk', 'sleep', 'read', 'look', 'yawn', 'stretch', 'eat', 'held', 'held2', 'land', 'sit', 'dizzy'];
+export const POSES: readonly Pose[] = ['idle', 'walk', 'sleep', 'read', 'look', 'yawn', 'stretch', 'eat', 'held', 'held2', 'land', 'sit', 'dizzy', 'alert', 'hop', 'spin1', 'spin2', 'lie'];
 
 const LEGS = ['...l..l...l..l....', '...l..l...l..l....'];
 
@@ -132,6 +132,50 @@ export const SPRITES: Readonly<Record<Pose, readonly string[]>> = {
   ],
   // Swirly eyes (a checker of cyan and dark) after being shaken.
   dizzy: [...IDLE.slice(0, 3), '.wwwwwwwwwwwwwfefe', 'wwwwwwwwwwwwwwffef', 'wwwwwwwwwwwwwwfefe', ...IDLE.slice(6)],
+  // Ears up and eyes wide: he has noticed the pointer.
+  alert: ['....wwwwwww...p...', '..wwwwwwwwwww.p...', ...IDLE.slice(2, 3), '.wwwwwwwwwwwwwfeff', 'wwwwwwwwwwwwwwfeef', ...IDLE.slice(5)],
+  // In the air: legs tucked, eyes squeezed shut with joy.
+  hop: [...IDLE.slice(0, 4), 'wwwwwwwwwwwwwwf-ff', ...IDLE.slice(5, 10), '....ll....ll......', '..................'],
+  // Turning on the spot: the wool ball seen from the front (face), then from behind (no face).
+  spin1: [
+    '.....wwwwwwww.....',
+    '...wwwwwwwwwwww...',
+    '..wwwwwwwwwwwwww..',
+    '..wwwwpffffpwwww..',
+    '..wwwwwfeffefwww..',
+    '..wwwwwffffffwww..',
+    '..wwwwwwffffwwww..',
+    '..wwwwwwwwwwwwww..',
+    '...wwwwwwwwwwww...',
+    '....wwwwwwwwww....',
+    '.....l......l.....',
+    '.....l......l.....',
+  ],
+  spin2: [
+    '.....wwwwwwww.....',
+    '...wwwwwwwwwwww...',
+    '..wwwwwwwwwwwwww..',
+    '..wwwwwwwwwwwwww..',
+    '..wwwwwwwwwwwwww..',
+    '..wwwwwwwwwwwwww..',
+    '..wwwwwwwwwwwwww..',
+    '..wwwwwwwwwwwwww..',
+    '...wwwwwwwwwwww...',
+    '....wwwwwwwwww....',
+    '.....l......l.....',
+    '.....l......l.....',
+  ],
+  // Lying down asleep: head on his paws.
+  lie: [
+    '....wwwwwww.......',
+    '..wwwwwwwwwww.....',
+    '.wwwwwwwwwwwww....',
+    '.wwwwwwwwwwwwwpf..',
+    'wwwwwwwwwwwwwwffff',
+    'wwwwwwwwwwwwwwf-ff',
+    'wwwwwwwwwwwwwwwfff',
+    '.wwwwwwwwwwwwwlll.',
+  ],
 };
 
 /** The ear pixel (column, row) of each pose: props that sit on the head are placed from it. */
@@ -149,6 +193,11 @@ export const EAR: Readonly<Record<Pose, readonly [number, number]>> = {
   land: [14, 1],
   sit: [14, 2],
   dizzy: [14, 2],
+  alert: [14, 2],
+  hop: [14, 2],
+  spin1: [8, 3],
+  spin2: [8, 3],
+  lie: [14, 3],
 };
 
 /** Things she wears or holds. `book` to `nightcap` follow the day; `bow`, `star` and `cape` are cosmetics. */

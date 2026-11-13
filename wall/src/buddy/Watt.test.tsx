@@ -11,7 +11,7 @@ import { resetAgents, useAgentsStore } from '../agents/useAgents';
 import type { OmniSummary } from '../agents/model';
 import { useFocusStore } from '../focus/store';
 import { LINES } from './lines';
-import { PET_KEY } from './pet';
+import { PET_KEY, dayKey, defaultPet, emptyToday } from './pet';
 import { resetMeetingFeed, useMeetingFeed } from '../work/useNextMeeting';
 import { resetWeatherStore } from '../weather/useWeather';
 import { PET_LINE_EVERY_MS, PET_REPLY_GAP_MS, WATT_TIP, Watt } from './Watt';
@@ -1288,5 +1288,309 @@ describe('carrying him', () => {
     }
     expect(raf).toHaveBeenCalledTimes(40);
     drop(container, 700, 250);
+  });
+});
+
+describe('more of a pet', () => {
+  const hitOf = (c: HTMLElement) => c.querySelector<HTMLElement>('.watt-hit')!;
+  const sheepOf = (c: HTMLElement) => c.querySelector<HTMLElement>('.watt-sheep')!;
+  const eyes = (c: HTMLElement) => c.querySelectorAll('.watt-sheep > svg rect[fill="#35e6ea"]').length;
+  const rows = (c: HTMLElement) => (Number(c.querySelector('svg')!.getAttribute('height')) * 18) / Number(c.querySelector('svg')!.getAttribute('width'));
+  const y = (c: HTMLElement) => Number(/translate\((-?[\d.]+)px(?:,\s*(-?[\d.]+)px)?\)/.exec(sheepOf(c).style.transform)?.[2] ?? 0);
+  const dirOf = (c: HTMLElement) => Number(/scaleX\((-?1)\)/.exec(sheepOf(c).style.transform)![1]);
+  const pointer = (x: number, y: number) => act(() => void window.dispatchEvent(new PointerEvent('pointermove', { clientX: x, clientY: y, pointerId: 1 })));
+  const open = (c: HTMLElement) => fireEvent.contextMenu(hitOf(c));
+  const button = (name: string) => [...document.querySelectorAll<HTMLButtonElement>('.watt-card button')].find((b) => b.textContent?.startsWith(name))!;
+  let setCap: ReturnType<typeof vi.fn>;
+  const proto = HTMLElement.prototype as unknown as Record<string, unknown>;
+  beforeEach(() => {
+    setCap = vi.fn();
+    proto.setPointerCapture = setCap;
+    proto.releasePointerCapture = vi.fn();
+    proto.hasPointerCapture = () => true;
+  });
+  afterEach(() => {
+    delete proto.setPointerCapture;
+    delete proto.releasePointerCapture;
+    delete proto.hasPointerCapture;
+  });
+  const start = (nowFn: () => number = day) => {
+    const r = render(<Watt now={nowFn} />);
+    runFor(1.5);
+    return r;
+  };
+
+  it('he notices the pointer within about 260 px: turns to face it with his ears up, and loses interest after 6 still seconds', () => {
+    const { container } = start();
+    expect(eyes(container)).toBe(1);
+    const mid = middle(WALKS.unwind) + 54;
+    // Unwind: he stands facing left at the start; a pointer to his right turns him round.
+    pointer(mid + 200, 460);
+    runFor(0.2);
+    expect(eyes(container)).toBe(3);
+    expect(dirOf(container)).toBe(1);
+    pointer(mid - 200, 460);
+    runFor(0.2);
+    expect(dirOf(container)).toBe(-1);
+    // Far away: nothing.
+    pointer(mid + 600, 460);
+    runFor(0.2);
+    expect(eyes(container)).toBe(1);
+    // Close again, then still for 6 seconds: back to what he was doing.
+    pointer(mid + 120, 460);
+    runFor(5);
+    expect(eyes(container)).toBe(3);
+    runFor(1.5);
+    expect(eyes(container)).toBe(1);
+    // Hovering opens nothing.
+    expect(container.querySelector('.watt-card')).toBeNull();
+  });
+
+  it('he does not look at it while he reads, eats, or is carried; under reduced motion he stands still', () => {
+    const { container } = start();
+    pointer(500, 460);
+    useFocusStore.setState({ state: { status: 'running', minutes: 25, endAt: day() + 20 * 60_000 } as never });
+    runFor(0.3);
+    expect(eyes(container)).not.toBe(3);
+  });
+
+  it('three clicks within 4 seconds give one happy hop, at most once in 20 seconds', () => {
+    let ms = day();
+    const { container } = start(() => ms);
+    const base = y(container);
+    const rise = () => {
+      let hi = 0;
+      for (let i = 0; i < 32; i++) {
+        tick();
+        hi = Math.max(hi, base - y(container));
+      }
+      return hi;
+    };
+    fireEvent.click(hitOf(container));
+    ms += 1200;
+    fireEvent.click(hitOf(container));
+    ms += 1200;
+    // Hearts for the first pet run out; the third click inside 4 s starts the hop.
+    runFor(0.1);
+    fireEvent.click(hitOf(container));
+    expect(rise()).toBeGreaterThan(2);
+    // Another three within 20 s: no second hop.
+    ms += 4000;
+    fireEvent.click(hitOf(container));
+    ms += 1000;
+    fireEvent.click(hitOf(container));
+    ms += 1000;
+    fireEvent.click(hitOf(container));
+    runFor(2);
+    expect(rise()).toBeLessThan(0.5);
+    // Slow clicks never do it.
+    ms += 60_000;
+    runFor(3);
+    for (let i = 0; i < 3; i++) {
+      ms += 2500;
+      fireEvent.click(hitOf(container));
+      expect(rise()).toBeLessThan(0.5);
+    }
+  });
+
+  it('the tenth pet of a day gives a sparkle and a milestone line, once', () => {
+    let ms = day();
+    localStorage.setItem(PET_KEY, JSON.stringify({ ...defaultPet(day()), days: 3, lastDay: dayKey(day()), today: { ...emptyToday(dayKey(day())), pets: 8 } }));
+    const { container } = start(() => ms);
+    const spark = () => Number(container.querySelector<HTMLElement>('.watt-spark')!.style.opacity || 0);
+    fireEvent.click(hitOf(container));
+    runFor(0.5);
+    expect(spark()).toBe(0);
+    ms += 70_000;
+    runFor(3);
+    fireEvent.click(hitOf(container));
+    let seen = 0;
+    for (let i = 0; i < 30; i++) {
+      tick();
+      seen = Math.max(seen, spark());
+    }
+    expect(seen).toBeGreaterThan(0);
+    expect(stored().today.pets).toBe(10);
+    expect(LINES.milestone).toContain((container.querySelector('.watt-bubble')?.textContent ?? '').replace(/\n/g, ' '));
+    // The eleventh: no sparkle.
+    ms += 70_000;
+    runFor(3);
+    fireEvent.click(hitOf(container));
+    seen = 0;
+    for (let i = 0; i < 30; i++) {
+      tick();
+      seen = Math.max(seen, spark());
+    }
+    expect(seen).toBe(0);
+  });
+
+  describe('tricks', () => {
+    const withCard = (nowFn: () => number = day) => {
+      const r = start(nowFn);
+      open(r.container);
+      return r;
+    };
+    it('each trick runs once; the buttons are 32 px tall, have tooltips, and say what they do', () => {
+      const { container } = withCard();
+      for (const name of ['Hop', 'Spin', 'Nap', 'Come here', 'Stay', 'Read with me']) {
+        const b = button(name);
+        expect(b, name).toBeTruthy();
+        expect(b.title.length, name).toBeGreaterThan(8);
+      }
+      expect(button('Read with me').textContent).toBe('Read with me, 25 min');
+      // Hop: lifts once.
+      const base = y(container);
+      fireEvent.click(button('Hop'));
+      let hi = 0;
+      let peaks = 0;
+      let prev = 0;
+      for (let i = 0; i < 40; i++) {
+        tick();
+        const h = base - y(container);
+        hi = Math.max(hi, h);
+        if (prev > 0.5 && h < prev - 0.5 && !(peaks > 0 && h > prev)) peaks = Math.max(peaks, 1);
+        prev = h;
+      }
+      expect(hi).toBeGreaterThan(2);
+      expect(Math.abs(base - y(container))).toBeLessThan(0.01);
+      // Spin: turns through both turned frames and ends as he was, without lifting.
+      const frames = new Set<string>();
+      fireEvent.click(button('Spin'));
+      for (let i = 0; i < 26; i++) {
+        tick();
+        frames.add(container.querySelector('.watt-sheep > svg')!.innerHTML);
+        expect(base - y(container)).toBeLessThan(0.01);
+      }
+      expect(frames.size).toBeGreaterThanOrEqual(3);
+    });
+    it('every card button is held to at least 32 px', () => {
+      withCard();
+      const all = document.querySelectorAll<HTMLButtonElement>('.watt-card button');
+      expect(all.length).toBeGreaterThanOrEqual(13);
+      for (const b of all) expect(b.style.minHeight, b.textContent ?? '').toBe('32px');
+    });
+    it('Nap lies him down for a minute, or until he is petted', () => {
+      let ms = day();
+      const { container } = withCard(() => ms);
+      fireEvent.click(button('Nap'));
+      runFor(0.3);
+      expect(rows(container)).toBe(8);
+      expect(Number(container.querySelector<HTMLElement>('.watt-z')!.style.opacity || 0)).toBeGreaterThanOrEqual(0);
+      const x = where(container).x;
+      runFor(30);
+      expect(where(container).x).toBe(x);
+      expect(rows(container)).toBe(8);
+      // Petting wakes him.
+      fireEvent.pointerDown(document.body);
+      fireEvent.click(hitOf(container));
+      runFor(0.3);
+      expect(rows(container)).toBe(12);
+      // A fresh nap ends by itself after a minute.
+      fireEvent.contextMenu(hitOf(container));
+      fireEvent.click(button('Nap'));
+      runFor(0.3);
+      expect(rows(container)).toBe(8);
+      ms += 61_000;
+      runFor(0.3);
+      expect(rows(container)).toBe(12);
+    });
+    it('Come here trots him to the middle of the place and he wanders on from there', () => {
+      const { container } = start();
+      // Set him down at the far end first.
+      fireEvent.pointerDown(hitOf(container), { pointerId: 1, pointerType: 'mouse', button: 0, clientX: 500, clientY: 400 });
+      fireEvent.pointerMove(hitOf(container), { pointerId: 1, pointerType: 'mouse', clientX: 600, clientY: 400 });
+      fireEvent.pointerMove(hitOf(container), { pointerId: 1, pointerType: 'mouse', clientX: 2500, clientY: 300 });
+      runFor(0.6);
+      fireEvent.pointerUp(hitOf(container), { pointerId: 1, pointerType: 'mouse', clientX: 2500, clientY: 300 });
+      runFor(1.5);
+      expect(where(container).x).toBe(WALKS.unwind.max);
+      open(container);
+      fireEvent.click(button('Come here'));
+      runFor(0.5);
+      expect(where(container).x).toBeLessThan(WALKS.unwind.max);
+      runFor(10);
+      expect(where(container).x).toBe(middle(WALKS.unwind));
+      // And he stands there a while (the wander's first stop) before he goes on.
+      runFor(10);
+      expect(where(container).x).toBe(middle(WALKS.unwind));
+      expect(rows(container)).toBe(12);
+    });
+    it('Stay keeps him sitting where he was set down, survives a reload, and ends on a place change', () => {
+      const { container, unmount } = withCard();
+      fireEvent.click(button('Stay'));
+      runFor(0.5);
+      expect(rows(container)).toBe(11);
+      const x = where(container).x;
+      expect(stored().stay).toMatchObject({ place: 'unwind', x });
+      expect(button('Stay').getAttribute('aria-checked')).toBe('true');
+      runFor(90);
+      expect(where(container).x).toBe(x);
+      expect(rows(container)).toBe(11);
+      unmount();
+      // Reload: still there, still sitting.
+      const again = start();
+      runFor(1);
+      expect(again.container.querySelector('svg')!.getAttribute('height')).toBe(String(11 * 6));
+      expect(where(again.container).x).toBe(x);
+      // A place change ends it for good.
+      go('home');
+      publishCamera(CAMERAS.home, false);
+      runFor(FADE_OUT_S + FADE_IN_S + 1);
+      expect(stored().stay).toBeNull();
+      go('unwind');
+      publishCamera(CAMERAS.unwind, false);
+      runFor(FADE_OUT_S + FADE_IN_S + 1);
+      expect(rows(again.container)).toBe(12);
+    });
+    it('Stay can be switched off; he walks back to his wander', () => {
+      const { container } = withCard();
+      fireEvent.click(button('Stay'));
+      runFor(1);
+      fireEvent.click(button('Stay'));
+      expect(stored().stay).toBeNull();
+      runFor(10);
+      expect(rows(container)).toBe(12);
+    });
+    it('a Stay from another day is not applied', () => {
+      localStorage.setItem(PET_KEY, JSON.stringify({ ...defaultPet(day()), stay: { place: 'unwind', x: 440, date: '2026-11-10' } }));
+      const { container } = start();
+      runFor(1);
+      expect(rows(container)).toBe(12);
+    });
+    it('is refused quietly in a call, in the first minute of focus and while he sleeps: the buttons are off, with the reason, and nothing is said', () => {
+      for (const [name, setup, clock] of [
+        ['a call', () => {}, day],
+        ['focus', () => useFocusStore.setState({ state: { status: 'running', minutes: 25, endAt: day() + 24.5 * 60_000 } as never }), day],
+        ['night', () => {}, night],
+      ] as const) {
+        useFocusStore.setState({ state: { status: 'idle', minutes: 25 } });
+        setup();
+        const r = render(<Watt now={clock} inCall={name === 'a call'} />);
+        runFor(FADE_IN_S + 0.5);
+        fireEvent.contextMenu(hitOf(r.container));
+        for (const t of ['Hop', 'Spin', 'Nap', 'Come here', 'Stay']) {
+          expect(button(t).disabled, `${name} ${t}`).toBe(true);
+          expect(button(t).title.length, `${name} ${t}`).toBeGreaterThan(8);
+        }
+        fireEvent.click(button('Hop'));
+        runFor(1);
+        expect(r.container.querySelector('.watt-bubble'), name).toBeNull();
+        r.unmount();
+      }
+    });
+    it('Read with me starts the focus timer at its default length, and is off with a tooltip while one runs', () => {
+      const { container } = withCard();
+      expect(button('Read with me').disabled).toBe(false);
+      fireEvent.click(button('Read with me'));
+      const st = useFocusStore.getState().state;
+      expect(st.status).toBe('running');
+      expect(st.minutes).toBe(25);
+      runFor(0.3);
+      expect(button('Read with me').disabled).toBe(true);
+      expect(button('Read with me').title).toMatch(/already running/);
+      // He opens his book as he already does in focus.
+      runFor(2);
+      expect(container.querySelector('.watt-prop-book')).not.toBeNull();
+    });
   });
 });

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { WALKS, spriteHeight } from './model';
 import { HEARTS_S, PROP_RISE_MAX, REACT_S, bubbleSize, createMind, createPetFrame, holdsStill, petFrame, propFits, wrapLine, type Mind } from './petFrame';
-import { POSES, PROPS } from './sprites';
+import { POSES, PROPS, SPRITES } from './sprites';
 
 const walk = WALKS.work;
 const HY = 582;
@@ -109,5 +109,65 @@ describe('the bubble box', () => {
     expect(Math.abs(lines[0].length - lines[1].length)).toBeLessThan(12);
     expect(bubbleSize(lines).width).toBeLessThanOrEqual(260);
     expect(bubbleSize(lines).height).toBe(2 * 17 + 12);
+  });
+});
+
+describe('more of a pet', () => {
+  const at = (x: number, y: number) => ({ pointerOn: true, pointerX: x, pointerY: y });
+  it('notices a pointer within 260 px: turns to it with his ears up, and not when it is further, or when he is busy', () => {
+    const near = frame(mind(at(1200, 560)));
+    expect(near.pose).toBe('alert');
+    expect(near.dir).toBe(1);
+    expect(frame(mind(at(800, 560))).dir).toBe(-1);
+    expect(frame(mind(at(800, 560))).pose).toBe('alert');
+    // Just out of range.
+    const x = frame(mind()).x + (18 * walk.px) / 2;
+    expect(frame(mind(at(x + 261, HY - 24))).pose).not.toBe('alert');
+    expect(frame(mind(at(x + 259, HY - 24))).pose).toBe('alert');
+    // Busy: reading, a clover on the ground, asleep (night or napping), a reaction running, or a still pose.
+    for (const busy of [{ focus: true }, { clover: true }, { nap: true }, { lie: true }, { react: 'eat' as const, reactT: 1 }]) {
+      expect(frame(mind({ ...at(1000, 560), ...busy })).pose, JSON.stringify(busy)).not.toBe('alert');
+    }
+    expect(frame(mind(at(1000, 560)), { night: true }).pose).toBe('sleep');
+    expect(frame(mind(at(1000, 560)), { still: true }).pose).not.toBe('alert');
+    // A pointer that has lost interest (not on) changes nothing.
+    expect(frame(mind({ pointerOn: false, pointerX: 1000, pointerY: 560 })).pose).not.toBe('alert');
+  });
+  it('a happy hop lifts and turns; a spin turns on the spot without lifting; both hold him still', () => {
+    const poses = new Set<string>();
+    let lift = 0;
+    for (let k = 0; k < 1; k += 0.05) {
+      const f = frame(mind({ react: 'happy', reactT: REACT_S.happy * k }));
+      poses.add(f.pose);
+      lift = Math.max(lift, f.lift);
+    }
+    expect(lift).toBeGreaterThan(0);
+    expect(poses.has('spin1') && poses.has('spin2')).toBe(true);
+    const spin = new Set<string>();
+    for (let k = 0; k < 1; k += 0.05) {
+      const f = frame(mind({ react: 'spin', reactT: REACT_S.spin * k }));
+      spin.add(f.pose);
+      expect(f.lift).toBe(0);
+    }
+    expect(spin.has('spin1') && spin.has('spin2')).toBe(true);
+    expect(holdsStill(mind({ react: 'spin', reactT: 0.2 }))).toBe(true);
+    // Reduced motion: one still pose, nothing lifts.
+    expect(frame(mind({ react: 'spin', reactT: 0.3 }), { still: true }).pose).toBe('spin1');
+    expect(frame(mind({ react: 'happy', reactT: 0.3 }), { still: true }).lift).toBe(0);
+  });
+  it('the sparkle shows for its 2.4 seconds only, and not at night', () => {
+    expect(frame(mind({ react: 'sparkle', reactT: 1 })).sparkle).toBe(true);
+    expect(frame(mind({ react: 'sparkle', reactT: 2.5 })).sparkle).toBe(false);
+    expect(frame(mind({ react: 'sparkle', reactT: 1 }), { night: true }).sparkle).toBe(false);
+    expect(frame(mind()).sparkle).toBe(false);
+  });
+  it('a nap lies him down with z drifting, and holds him still', () => {
+    const f = frame(mind({ lie: true }));
+    expect(f.pose).toBe('lie');
+    expect(f.z).toBe(true);
+    expect(holdsStill(mind({ lie: true }))).toBe(true);
+  });
+  it('every pose is different from every other: each reads at a glance', () => {
+    for (const a of POSES) for (const b of POSES) if (a < b) expect(SPRITES[a].join('|'), `${a} and ${b}`).not.toBe(SPRITES[b].join('|'));
   });
 });

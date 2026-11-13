@@ -27,6 +27,18 @@ export interface Today {
   grown: number;
 }
 
+/** The places Watt can be told to stay on. */
+export const STAY_PLACES = ['work', 'home', 'meet', 'unwind'] as const;
+export type StayPlace = (typeof STAY_PLACES)[number];
+/** Where he was told to stay: the place, the left edge x on the stage and the local date it was set. */
+export interface Stay {
+  place: StayPlace;
+  x: number;
+  date: string;
+}
+/** The widest stage x a stored Stay may name. */
+export const MAX_STAY_X = 2560;
+
 export interface PetData {
   chatty: Chatty;
   cosmetic: Cosmetic;
@@ -35,6 +47,8 @@ export interface PetData {
   /** The last local date counted in `days`. */
   lastDay: string | null;
   today: Today;
+  /** The Stay trick: kept until switched off, a place change or the day ends. */
+  stay: Stay | null;
 }
 
 export const PET_KEY = 'wall2.watt';
@@ -50,7 +64,7 @@ export function emptyToday(date: string): Today {
 }
 
 export function defaultPet(now: number): PetData {
-  return { chatty: 'sometimes', cosmetic: 'none', days: 0, lastDay: null, today: emptyToday(dayKey(now)) };
+  return { chatty: 'sometimes', cosmetic: 'none', days: 0, lastDay: null, today: emptyToday(dayKey(now)), stay: null };
 }
 
 /** A stored value longer than this is not ours: ignored before it is parsed. */
@@ -88,7 +102,13 @@ export function parsePet(raw: string | null, now: number): PetData {
     const today: Today = tDate
       ? { date: tDate, pets: count(t.pets), songs: count(t.songs), naps: count(t.naps), clovers: count(t.clovers), focus: count(t.focus), agents: count(t.agents), grown: count(t.grown, 2) }
       : base.today;
-    return { chatty, cosmetic, days, lastDay, today };
+    // A Stay is kept only when it is whole: a known place, an x on the stage, today's date.
+    const sv = (v as { stay?: unknown }).stay as Partial<Stay> | null | undefined;
+    const stay: Stay | null =
+      sv && typeof sv === 'object' && STAY_PLACES.includes(sv.place as StayPlace) && typeof sv.x === 'number' && Number.isFinite(sv.x) && sv.x >= 0 && sv.x <= MAX_STAY_X && date(sv.date) === key
+        ? { place: sv.place as StayPlace, x: sv.x, date: key }
+        : null;
+    return { chatty, cosmetic, days, lastDay, today, stay };
   } catch {
     return base;
   }

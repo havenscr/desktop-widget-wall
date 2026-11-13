@@ -99,6 +99,12 @@ export interface Carry {
   interrupted: boolean;
   /** Letting go fed a clover: no landing line, the clover has its own. */
   fed: boolean;
+  /** Stay: he sits where he was set down until it is switched off (the sit never ends). */
+  stay: boolean;
+  /** Where the walk back ends: NaN is his wander; a number is a place he was called to. */
+  target: number;
+  /** Set when a walk back arrives; the component reads and clears it. */
+  arrived: boolean;
 }
 
 export function createCarry(): Carry {
@@ -138,6 +144,9 @@ export function createCarry(): Carry {
     sayLanded: false,
     interrupted: false,
     fed: false,
+    stay: false,
+    target: Number.NaN,
+    arrived: false,
   };
 }
 
@@ -148,6 +157,9 @@ export function airborne(c: Carry): boolean {
 
 /** Forget a carry at once: no fall, no sit (a place change moves him anyway). */
 export function cancelCarry(c: Carry): void {
+  c.stay = false;
+  c.target = Number.NaN;
+  c.arrived = false;
   c.mode = NONE;
   c.pointerId = -1;
   c.sayHeld = false;
@@ -251,7 +263,7 @@ function land(c: Carry, T: number, hy: number, size: number): void {
   c.y = hy - spriteHeight('land', size);
   c.landT = T;
   c.mode = LAND;
-  c.settleUntil = T + SETTLE_S;
+  c.settleUntil = c.stay ? Infinity : T + SETTLE_S;
   c.dizzyUntil = c.shaken ? T + DIZZY_S : 0;
   c.tilt = 0;
 }
@@ -306,17 +318,24 @@ export function stepCarry(c: Carry, dt: number, T: number, hy: number, size: num
     case SIT: {
       c.squash = 1;
       if (T >= c.settleUntil) {
+        c.target = Number.NaN;
         c.mode = still ? NONE : RETURN;
         if (c.mode === RETURN) c.dir = homeX >= c.x ? 1 : -1;
       }
       return;
     }
     case RETURN: {
-      const d = homeX - c.x;
+      const goal = c.target === c.target ? c.target : homeX;
+      const d = goal - c.x;
       const step = WALK_SPEED * dt;
       if (Math.abs(d) <= Math.max(step, 0.5)) {
-        c.x = homeX;
-        c.mode = NONE;
+        c.x = goal;
+        c.mode = c.stay ? SIT : NONE;
+        c.arrived = true;
+        if (c.stay) {
+          c.landT = T;
+          c.settleUntil = Infinity;
+        }
       } else {
         c.x += Math.sign(d) * step;
         c.dir = d > 0 ? 1 : -1;
@@ -357,7 +376,7 @@ function watchShake(c: Carry, T: number, raw: number): void {
 }
 
 /** The squash and tilt are written into the frame by `carryFrame`; this is the pose he shows. */
-export function carryFrame(c: Carry, T: number, hy: number, size: number, still: boolean, m: Pick<Mind, 'react' | 'reactT'>, f: PetFrame): void {
+export function carryFrame(c: Carry, T: number, hy: number, size: number, still: boolean, m: Pick<Mind, 'react' | 'reactT' | 'lie'>, f: PetFrame): void {
   f.notes = false;
   f.z = false;
   f.hearts = false;
@@ -383,22 +402,23 @@ export function carryFrame(c: Carry, T: number, hy: number, size: number, still:
       break;
     case SIT:
     case RETURN: {
+      const reacting = m.react !== null && m.reactT < REACT_S[m.react];
+      if (reacting && c.mode === SIT) {
+        // A pet, a hop, a spin or the clover: the reaction's own pose, lift and facing stay (petFrame wrote them).
+        f.x = c.x;
+        return;
+      }
       f.x = c.x;
       f.lift = 0;
-      const s = T - c.landT;
+      f.dir = c.dir;
       if (c.mode === RETURN) {
-        f.dir = c.dir;
         f.pose = !still && Math.floor(T * 5) % 2 ? 'walk' : 'idle';
         break;
       }
-      const reacting = m.react !== null && m.reactT < REACT_S[m.react];
-      f.dir = c.dir;
+      const s = (T - c.landT) % 24;
       if (c.shaken && T < c.dizzyUntil) f.pose = 'dizzy';
-      else if (reacting) {
-        // A pet, a hop or the clover: the reaction's own pose and facing stay (petFrame wrote them).
-        f.x = c.x;
-        return;
-      } else if (s >= 13 && s < 16) f.pose = 'look';
+      else if (m.lie) f.pose = 'lie';
+      else if (s >= 13 && s < 16) f.pose = 'look';
       else {
         f.pose = 'sit';
         if (s >= 7 && s < 10) f.dir = (c.dir === 1 ? -1 : 1) as 1 | -1;
@@ -424,4 +444,41 @@ export function placeCarriedBubble(x: number, y: number, w: number, width: numbe
   out.left = right + width <= STAGE_WIDTH - 8 ? right : Math.max(8, x - 14 - width);
   out.top = clamp(y - height - tail, 8, STAGE_HEIGHT - height - tail - 8);
   return out;
+}
+
+/** Call him to `x` (the middle of his place): he walks there and the wander picks up from it. */
+export function callCarry(c: Carry, T: number, x: number, dir: 1 | -1, to: number): void {
+  c.mode = RETURN;
+  c.x = x;
+  c.dir = dir;
+  c.target = to;
+  c.arrived = false;
+  c.landT = T;
+  c.shaken = false;
+  c.dizzyUntil = 0;
+  c.squash = 1;
+  c.tilt = 0;
+}
+
+/** Switch Stay on at `x`: he sits there, and the sit never ends until `endStay`. */
+export function startStay(c: Carry, T: number, x: number, dir: 1 | -1): void {
+  c.stay = true;
+  if (c.mode === NONE || c.mode === RETURN) {
+    c.mode = SIT;
+    c.x = x;
+    c.dir = dir;
+    c.landT = T;
+    c.shaken = false;
+    c.dizzyUntil = 0;
+    c.squash = 1;
+    c.tilt = 0;
+    c.target = Number.NaN;
+  }
+  if (c.mode === SIT || c.mode === LAND || c.mode === FALL) c.settleUntil = Infinity;
+}
+
+/** Switch Stay off: the sit ends now and he walks back to his wander. */
+export function endStay(c: Carry, T: number): void {
+  c.stay = false;
+  if (c.mode === SIT) c.settleUntil = T;
 }

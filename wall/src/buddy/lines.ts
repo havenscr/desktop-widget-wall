@@ -21,6 +21,10 @@ export type Topic =
   | 'held'
   | 'landed'
   | 'dizzy'
+  // Stay, a trick, ten pets in a day (also said on `Watt.tsx`'s own rules).
+  | 'stay'
+  | 'tricks'
+  | 'milestone'
   // What is true right now (context, picked over plain thoughts).
   | 'agentsWorking'
   | 'musicPlaying'
@@ -45,6 +49,9 @@ export type Topic =
 export const LINES: Readonly<Record<Topic, readonly string[]>> = {
   held: ['Oh. We are up high.', 'The wall looks different from here.', 'My legs have opinions about this.', 'I am holding very still.', 'Excellent altitude, honestly.'],
   landed: ['Ground. Good ground.', 'Landed. Wool intact.', 'This spot will do.', 'A fine new view.', 'Back on four feet.'],
+  stay: ['Staying right here. Good spot.', 'I will keep this spot warm.', 'Not going anywhere. Lovely.'],
+  tricks: ['Ta da. Small, but proud.', 'That one took practice.', 'Wool, but make it athletic.', 'I have more of those.'],
+  milestone: ['Ten pets. A good day.', 'That is ten pets today. I am counting.', 'Ten. A round number of kindness.'],
   dizzy: ['The horizon is spinning slightly.', 'Two walls. I see two walls.', 'Give me a moment. The sky is sloshing.', 'I am fine. The floor is not.'],
   focusStart: [
     'Reading along. Quietly.',
