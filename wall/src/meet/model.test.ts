@@ -67,7 +67,7 @@ it('isSoon is true only within five minutes before the start', () => {
 
 it('status words and sign-in messages', () => {
   expect(statusWord('ok')).toBe('Connected');
-  expect(statusWord('needs-sign-in')).toBe('Sign in again');
+  expect(statusWord('needs-sign-in')).toBe('Sign-in expired');
   expect(statusWord('signed-out')).toBe('Signed out');
   expect(statusWord('unavailable')).toBe('Unavailable');
   expect(signInMessage('cancelled')).toBeNull();
@@ -123,7 +123,7 @@ it('puts a failed account in plain words', () => {
   expect(accountWords('unavailable', 'graph-timeout')).toBe('Microsoft is not answering');
   expect(accountWords('unavailable', 'graph-403')).toBe('Calendar could not be read');
   expect(accountWords('unavailable', undefined)).toBe('Calendar could not be read');
-  expect(accountWords('needs-sign-in', 'token-400')).toBe('Sign in again');
+  expect(accountWords('needs-sign-in', 'token-400')).toBe('Sign-in expired');
   expect(accountWords('checking', undefined)).toBe('Checking');
   expect(reasonLine('graph-timeout')).toBe('Microsoft did not answer in time (graph-timeout)');
 });
@@ -133,4 +133,40 @@ it('knows when no calendar can be read', () => {
   expect(calendarNotAvailable([{ state: 'signed-out' }, { state: 'unavailable' }])).toBe(true);
   expect(calendarNotAvailable([{ state: 'signed-out' }, { state: 'ok' }])).toBe(false);
   expect(calendarNotAvailable([{ state: 'checking' }])).toBe(false);
+});
+
+import { checkAgainText, joinIsUrgent, laterEmpty, notFresh, notReadLine, relativeIn } from './model';
+
+it('joinIsUrgent: live or within 15 minutes only', () => {
+  const now = Date.parse('2026-11-12T17:00:00Z');
+  const m = (s: number, e: number) => ({ start: new Date(now + s * 60_000).toISOString(), end: new Date(now + e * 60_000).toISOString() });
+  expect(joinIsUrgent(m(-5, 25), now)).toBe(true);
+  expect(joinIsUrgent(m(15, 45), now)).toBe(true);
+  expect(joinIsUrgent(m(16, 45), now)).toBe(false);
+  expect(joinIsUrgent(m(-40, -10), now)).toBe(false);
+});
+
+it('relativeIn and checkAgainText give relative times, never a clock', () => {
+  const now = 1_000_000;
+  expect(relativeIn(now + 100_000, now)).toBe('in 2 min');
+  expect(relativeIn(now + 10_000, now)).toBe('in 1 min');
+  expect(relativeIn(now - 1, now)).toBe('in under a minute');
+  expect(relativeIn(now + 65 * 60_000, now)).toBe('in 1 h 5 min');
+  expect(checkAgainText(now + 120_000, undefined, now)).toBe('checking again in 2 min');
+  expect(checkAgainText(null, now - 60_000, now)).toBe('checking again in 4 min');
+  expect(checkAgainText(null, undefined, now)).toBeNull();
+});
+
+it('laterEmpty names the account that was read and the one that was not', () => {
+  const ok = { id: 'w', label: 'Work', state: 'ok' as const };
+  const bad = { id: 's', label: 'Second', state: 'unavailable' as const };
+  const out = { id: 's', label: 'Second', state: 'signed-out' as const };
+  const lastOk = new Date(2026, 10, 12, 9, 40).getTime();
+  expect(laterEmpty([ok], null)).toEqual({ headline: 'Nothing else', notes: [] });
+  expect(laterEmpty([ok, bad], lastOk)).toEqual({ headline: 'Nothing else on Work', notes: ['Second not read since 9:40 AM'] });
+  expect(laterEmpty([ok, out], lastOk).notes).toEqual(['Second is signed out']);
+  expect(laterEmpty([bad, out], lastOk).headline).toBe('Nothing else');
+  expect(notReadLine({ label: 'Second', state: 'unavailable' }, null)).toBe('Second has not been read');
+  expect(notFresh('checking')).toBe(false);
+  expect(notFresh('ok')).toBe(false);
 });

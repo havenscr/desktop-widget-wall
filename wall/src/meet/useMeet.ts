@@ -13,6 +13,7 @@ import {
   signInMessage,
   type MeetAccount,
   type MeetData,
+  type Meeting,
 } from './model';
 
 export type MeetStatus = 'loading' | 'ready' | 'unconfigured' | 'invalid' | 'error';
@@ -24,6 +25,8 @@ export interface MeetState {
   lastOk: number | null;
   /** The list holds meetings kept from an earlier read (an account was unavailable). */
   stale: boolean;
+  /** The meetings from the last read that had a connected account, and when that read was shown; null before one. */
+  lastKnown: { meetings: Meeting[]; at: number } | null;
   /** When each account last answered (or failed to), by id. */
   tried: Record<string, number>;
   /** When the next automatic retry runs, or null when none is scheduled. */
@@ -71,6 +74,7 @@ export function useMeet(): MeetState {
   const [data, setData] = useState<MeetData | null>(null);
   const [lastOk, setLastOk] = useState<number | null>(null);
   const [stale, setStale] = useState(false);
+  const [lastKnown, setLastKnown] = useState<{ meetings: Meeting[]; at: number } | null>(null);
   const [tried, setTried] = useState<Record<string, number>>({});
   const [retryAt, setRetryAt] = useState<number | null>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -136,6 +140,7 @@ export function useMeet(): MeetState {
       setData(cur.shown);
       setStatus('ready');
       setStale(cur.stale);
+      if (!cur.stale && accounts.some((x) => x.state === 'ok')) setLastKnown({ meetings: cur.shown.meetings, at: Date.now() });
       return true;
     };
     const markFailed = (a: MeetAccount, reason?: string) => {
@@ -289,5 +294,5 @@ export function useMeet(): MeetState {
     [refresh],
   );
 
-  return { status, data, lastOk, stale, tried, retryAt, now, signingIn, notice, signIn, cancelSignIn, signOut, refresh: () => void refresh(), join };
+  return { status, data, lastOk, lastKnown, stale, tried, retryAt, now, signingIn, notice, signIn, cancelSignIn, signOut, refresh: () => void refresh(), join };
 }

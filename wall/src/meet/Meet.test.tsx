@@ -44,8 +44,9 @@ it('shows Not set up when meet.json is missing', async () => {
   mocks.set('wall2_meet_next', () => Promise.reject(new Error('not-configured')));
   render(<Meet />);
   await flush();
-  expect(screen.getByText('Not set up')).toBeTruthy();
-  expect(screen.getByText(/Meet section/)).toBeTruthy();
+  expect(screen.getByText('Calendar is not connected yet.')).toBeTruthy();
+  expect(screen.getByText('Setup steps are in the Wall 2 README, section Meet.')).toBeTruthy();
+  expect(screen.queryByText(/meet\.json/)).toBeNull();
 });
 
 it('shows Calendar unavailable when the first read fails', async () => {
@@ -65,7 +66,7 @@ it('renders the next meeting, the countdown, the list and the accounts', async (
   expect(screen.getByText('Planning')).toBeTruthy();
   expect(screen.getByText('Board prep')).toBeTruthy();
   expect(screen.getByText('Connected')).toBeTruthy();
-  expect(screen.getByText('Sign in again')).toBeTruthy();
+  expect(screen.getByText('Sign-in expired')).toBeTruthy();
   expect(screen.getByRole('button', { name: 'Sign in' })).toBeTruthy();
   expect(screen.getByRole('button', { name: 'Sign out' })).toBeTruthy();
 });
@@ -270,7 +271,9 @@ it('an unavailable account shows plain words, the reason line and one action: Tr
   render(<Meet />);
   await flush();
   expect(screen.getByText(/^Calendar could not be read/)).toBeTruthy();
-  expect(screen.getByText('graph-403-ErrorAccessDenied')).toBeTruthy();
+  // The code is in the row's hover, never on its face.
+  expect(screen.queryByText('graph-403-ErrorAccessDenied')).toBeNull();
+  expect(screen.getByTitle(/graph-403-ErrorAccessDenied/)).toBeTruthy();
   expect(screen.getByRole('button', { name: 'Try again' })).toBeTruthy();
   expect(screen.queryByRole('button', { name: 'Sign in' })).toBeNull();
   // The connected account keeps Sign out; the unavailable one has only Try again.
@@ -402,7 +405,9 @@ it('names a network problem and shows the time of the last try', async () => {
   render(<Meet />);
   await flush();
   expect(screen.getByText(/^Network problem/)).toBeTruthy();
-  expect(screen.getByText(/^Last try \d+(:\d\d)? [AP]M$/)).toBeTruthy();
+  expect(screen.getByTitle(/Last try \d+(:\d\d)? [AP]M/).title).toContain('graph-network');
+  expect(screen.queryByText(/Last try/)).toBeNull();
+  expect(screen.getByText('checking again in 1 min')).toBeTruthy();
   expect(screen.getByRole('button', { name: 'Try again' })).toBeTruthy();
 });
 
@@ -489,8 +494,10 @@ it('a needs-sign-in account with a reason explains itself', async () => {
   }));
   render(<Meet />);
   await flush();
-  expect(screen.getByText('Sign-in was not accepted (token-400-65001)')).toBeTruthy();
-  expect(screen.getByRole('button', { name: 'Sign in' })).toBeTruthy();
+  expect(screen.queryByText(/token-400-65001/)).toBeNull();
+  expect(screen.getByTitle(/Sign-in was not accepted \(token-400-65001\)/)).toBeTruthy();
+  expect(screen.getByText('Meetings on this account will not show.')).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Sign in' }).className).toContain('meet-quiet');
 });
 
 it('a signed-out account with no reason shows no reason line', async () => {
@@ -518,18 +525,20 @@ it('a hostile reason string never reaches the page', async () => {
   }
 });
 
-it('says "trying again" only while a retry is scheduled', async () => {
+it('says when it checks again: the scheduled retry first, then the normal poll', async () => {
   mocks.set('wall2_meet_next', () => ({
     accounts: [{ id: 'work', label: 'Work', state: 'unavailable', reason: 'graph-503-UnknownError' }],
     meetings: [],
   }));
   render(<Meet />);
   await flush();
-  expect(screen.getByText(/^Microsoft is not answering, trying again at /)).toBeTruthy();
+  expect(screen.getByText('Microsoft is not answering')).toBeTruthy();
+  expect(screen.getByText('checking again in 1 min')).toBeTruthy();
   // After the two fast retries none is scheduled until the 5 minute poll.
   await flush(30_000);
   await flush(60_000);
   expect(screen.getByText('Microsoft is not answering')).toBeTruthy();
+  expect(screen.getByText(/^checking again in [345] min$/)).toBeTruthy();
 });
 
 it('a late answer after the 12 second limit corrects the row at once', async () => {
@@ -559,4 +568,87 @@ it('says Calendar not available inside the Accounts card, with the last good rea
   expect(screen.getByLabelText('Accounts').textContent).toContain('Calendar not available');
   expect(screen.getByText('No good read yet')).toBeTruthy();
   expect(screen.queryByLabelText('Next meeting')).toBeNull();
+});
+
+it('LATER names the good account and says the other was not read', async () => {
+  mocks.set('wall2_meet_next', () => ({
+    accounts: [
+      { id: 'work', label: 'Work', state: 'ok' },
+      { id: 'second', label: 'Second', state: 'unavailable', reason: 'graph-503-UnknownError' },
+    ],
+    meetings: [{ key: '1-0', accountId: 'work', title: 'Standup', start: at(10), end: at(20), canJoin: false }],
+  }));
+  render(<Meet />);
+  await flush();
+  const later = screen.getByLabelText('Later meetings');
+  expect(later.textContent).toContain('Nothing else on Work');
+  expect(later.textContent).toMatch(/Second not read since/);
+  expect(screen.getByLabelText('Next meeting').textContent).toContain('may be out of date');
+});
+
+it('LATER says a plain Nothing else when every account is fresh, and a signed-out account is named', async () => {
+  const one = [{ key: '1-0', accountId: 'work', title: 'Standup', start: at(10), end: at(20), canJoin: false }];
+  mocks.set('wall2_meet_next', () => ({ accounts: [{ id: 'work', label: 'Work', state: 'ok' }], meetings: one }));
+  const first = render(<Meet />);
+  await flush();
+  expect(screen.getByLabelText('Later meetings').textContent).toBe('LaterNothing else');
+  expect(screen.getByLabelText('Next meeting').textContent).not.toContain('out of date');
+  first.unmount();
+  mocks.set('wall2_meet_next', () => ({
+    accounts: [
+      { id: 'work', label: 'Work', state: 'ok' },
+      { id: 'second', label: 'Second', state: 'signed-out' },
+    ],
+    meetings: one,
+  }));
+  render(<Meet />);
+  await flush();
+  expect(screen.getByLabelText('Later meetings').textContent).toContain('Second is signed out');
+});
+
+it('keeps the last known meeting, dimmed with as of and no Join, when every account then fails', async () => {
+  let fail = false;
+  mocks.set('wall2_meet_next', () =>
+    fail
+      ? { accounts: [{ id: 'work', label: 'Work', state: 'unavailable', reason: 'graph-503-UnknownError' }], meetings: [] }
+      : { accounts: [{ id: 'work', label: 'Work', state: 'ok' }], meetings: [{ key: '1-0', accountId: 'work', title: 'Design review', start: at(30), end: at(60), canJoin: true }] },
+  );
+  const { container } = render(<Meet />);
+  await flush();
+  expect(screen.getByText('Design review')).toBeTruthy();
+  fail = true;
+  fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+  await flush(10);
+  await flush(5 * 60_000);
+  expect(screen.getByText('Design review')).toBeTruthy();
+  expect(container.querySelector('.meet-next.dimmed')).toBeTruthy();
+  expect(screen.getByText(/^as of \d+(:\d\d)? [AP]M$/)).toBeTruthy();
+  expect(screen.queryByRole('button', { name: /^Join/ })).toBeNull();
+  expect(screen.queryByText('Calendar not available')).toBeNull();
+});
+
+it('Join is filled only for a live or within 15 minutes meeting, quiet otherwise', async () => {
+  mocks.set('wall2_meet_next', () => ({
+    accounts: [{ id: 'work', label: 'Work', state: 'ok' }],
+    meetings: [
+      { key: 'a', accountId: 'work', title: 'Soon one', start: at(10), end: at(30), canJoin: true },
+      { key: 'b', accountId: 'work', title: 'Far one', start: at(90), end: at(120), canJoin: true },
+    ],
+  }));
+  render(<Meet />);
+  await flush();
+  expect(screen.getByRole('button', { name: 'Join: Soon one' }).className).toContain('cy');
+  const far = screen.getByRole('button', { name: 'Join: Far one' });
+  expect(far.className).toContain('meet-quiet');
+  expect(far.className).not.toContain('cy');
+});
+
+it('a LATER row has a hover with title, time range and account', async () => {
+  mocks.set('wall2_meet_next', () => data);
+  render(<Meet />);
+  await flush();
+  const row = screen.getByText('Planning').closest('li') as HTMLElement;
+  expect(row.title).toContain('Planning');
+  expect(row.title).toContain(' to ');
+  expect(row.title).toContain('Work');
 });

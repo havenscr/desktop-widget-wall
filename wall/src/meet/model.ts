@@ -95,7 +95,7 @@ export function statusWord(state: AccountState): string {
   if (state === 'checking') return 'Checking';
   if (state === 'unavailable') return 'Unavailable';
   if (state === 'signed-out') return 'Signed out';
-  return 'Sign in again';
+  return 'Sign-in expired';
 }
 
 /** What is wrong with an unavailable account, in plain words. */
@@ -148,6 +148,50 @@ export function reasonCode(code: string | undefined | null): string | null {
 export function reasonLine(code: string | undefined | null): string | null {
   const words = reasonText(code);
   return words ? `${words} (${code})` : null;
+}
+
+/** True when the meeting is live or starts within 15 minutes: the only one whose Join is filled. */
+export function joinIsUrgent(m: Pick<Meeting, 'start' | 'end'>, now: number): boolean {
+  return Date.parse(m.start) - now <= 15 * MIN && Date.parse(m.end) > now;
+}
+
+/** "in 2 min" for a future moment (never "in 0 min"). */
+export function relativeIn(at: number, now: number): string {
+  const mins = Math.ceil((at - now) / MIN);
+  if (mins <= 0) return 'in under a minute';
+  if (mins < 60) return `in ${mins} min`;
+  const h = Math.floor(mins / 60);
+  const r = mins % 60;
+  return r === 0 ? `in ${h} h` : `in ${h} h ${r} min`;
+}
+
+/** "checking again in 2 min", from the scheduled retry, else from the last try plus the normal cadence. Null when nothing is known. */
+export function checkAgainText(retryAt: number | null, tried: number | undefined, now: number): string | null {
+  const at = retryAt ?? (tried !== undefined ? tried + REFRESH_MS : null);
+  return at === null ? null : `checking again ${relativeIn(at, now)}`;
+}
+
+/** True when this account's answer cannot be trusted as current. */
+export function notFresh(state: AccountState): boolean {
+  return state === 'unavailable' || state === 'signed-out' || state === 'needs-sign-in';
+}
+
+/** A short line about an account that was not read, for under the LATER list. */
+export function notReadLine(a: Pick<MeetAccount, 'label' | 'state'>, lastOk: number | null): string {
+  if (a.state === 'signed-out') return `${a.label} is signed out`;
+  if (a.state === 'needs-sign-in') return `${a.label} sign-in expired`;
+  return lastOk !== null ? `${a.label} not read since ${clockText(lastOk)}` : `${a.label} has not been read`;
+}
+
+/** What LATER says when nothing else is listed: a headline and one dim line per account that was not read. */
+export function laterEmpty(accounts: readonly MeetAccount[], lastOk: number | null): { headline: string; notes: string[] } {
+  const good = accounts.filter((a) => a.state === 'ok');
+  const bad = accounts.filter((a) => notFresh(a.state));
+  if (bad.length === 0 || good.length === 0) return { headline: 'Nothing else', notes: [] };
+  return {
+    headline: `Nothing else on ${good.map((a) => a.label).join(' and ')}`,
+    notes: bad.map((a) => notReadLine(a, lastOk)),
+  };
 }
 
 export function needsSignIn(state: AccountState): boolean {
