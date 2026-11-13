@@ -326,6 +326,13 @@ export function slotsText(s: OmniSummary): string {
   return `${used} running, ${plural(limit, 'slot')}`;
 }
 
+/** The slot meter's short sentence for a tight header: "5 of 8 working" (or "3 of 4 running" from an older helper). */
+export function slotsShortText(s: OmniSummary): string {
+  const { working, sessions, limit, used } = s.slots;
+  if (typeof working === 'number' && typeof sessions === 'number') return `${working} of ${sessions} working`;
+  return `${used} of ${limit} running`;
+}
+
 /** Most pips the slot meter draws; past this the limit shows as a number only. */
 export const MAX_PIPS = 6;
 

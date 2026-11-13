@@ -34,9 +34,19 @@
   justify-content: space-between;
   gap: 20px;
   padding: 0 4px;
+  /* Nothing in the header wraps: its parts give way instead (Lanes.tsx, HeaderFit). */
+  white-space: nowrap;
 }
 .lanes-hd-l {
+  flex: none;
   gap: 14px;
+  min-width: 0;
+}
+.lanes-hd-l > * {
+  flex: none;
+}
+/* The right side shrinks first: its title truncates once the left has given way. */
+.lanes-hd > .row:not(.lanes-hd-l) {
   min-width: 0;
 }
 .lanes-age {

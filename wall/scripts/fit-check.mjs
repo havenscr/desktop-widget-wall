@@ -12,13 +12,13 @@
 // twelve sessions (the three in view) with five meetings at once, two waiting, one failed,
 // an older helper's answer, one lane, no lane, and the fill when the helper is not set up.
 // In every Work state it also fails on agent hit boxes of two sessions that share pixels, on
-// calendar chips that cover each other in one lane, and on a card line that cuts its words
+// calendar chips (or a title beside one) that share pixels, and on a card line that cuts its words
 // while more than 60 px of it is unused, and on stage labels closer than 8 px. Home is checked
 // with its Sound block at its fullest, typical, sparse, not reachable and not set up. Exits
 // non-zero on a failure. CI does not run this; run it by hand before a layout change is handed over.
 //
 //   WALL_CHROME=/path/to/chrome-or-headless-shell npm --prefix wall run fit-check
-//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels)
+//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, header)
 //   npm --prefix wall run fit-check -- --self-test
 //
 // WALL_CHROME (or the first argument that is not a flag) is a Chromium or
@@ -52,6 +52,7 @@ const EXPECT = {
   page: /^ *FAIL page:.*scroll (?!2560 )\d+ x \d+ <= 2560 x/m,
   agents: /^ *FAIL overlap: agent /m,
   labels: /^ *FAIL stage labels on card /m,
+  header: /^ *FAIL header part wraps: /m,
 };
 const OVERFLOWS = {
   left: '.work .left-wing { transform: translateX(-200px); }',
@@ -61,6 +62,7 @@ const OVERFLOWS = {
   page: 'body::after { content: ""; position: absolute; left: 3000px; top: 0; width: 10px; height: 10px; }',
   agents: '.rib .agent-row .sg-hit { height: 20px !important; }',
   labels: '.work .centre .lane .jn em { padding: 0 14px !important; }',
+  header: '.work .centre .lanes-hd .slot-meter .xs { display: inline-block; width: 60px; white-space: normal !important; }',
 };
 
 if (flag('self-test')) {
@@ -136,6 +138,9 @@ const VARIANTS = [
   { name: 'three lanes, long titles', q: work('3'), checks: [...WINGS, ...LANES] },
   { name: 'twelve sessions, long titles, five meetings at once', q: work('12', '&meet=busy'), checks: SCROLLED },
   { name: 'seven sessions, the fifth waiting', q: work('7ask'), checks: SCROLLED },
+  // The agents header never wraps: twelve sessions, two waiting with a long title, a network alarm, fresh and stale.
+  { name: 'header: twelve sessions, two waiting, an alarm', q: work('12ask'), checks: [...SCROLLED, '.work .centre .lanes-hd .alarm-chip'] },
+  { name: 'header: twelve sessions, two waiting, an alarm, stale', q: work('12staleask'), checks: SCROLLED },
   { name: 'two waiting, one off the cards', q: work('ask2'), checks: [...LANES, '.work .centre .lanes-hd', '.work .centre .ask-btn'] },
   { name: 'one failed', q: work('failed'), checks: LANES },
   { name: 'older helper answer', q: work('old'), checks: [...LANES, '.work .centre .lanes-hd'] },
@@ -246,10 +251,11 @@ try {
     // "+N more" label counts as its own), and calendar chips in the same lane.
     const hit = (a, b) => a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5;
     const agentBoxes = [...document.querySelectorAll('.rib .agent-row .sg-hit, .rib .agent-row .sg-more')].map((e) => ({ id: e.dataset.lane || 'more', r: e.getBoundingClientRect() }));
-    const chipBoxes = [...document.querySelectorAll('.rib .ev')].map((e) => ({ lane: e.classList.contains('l2') ? 1 : 0, r: e.getBoundingClientRect(), t: e.textContent }));
+    // Calendar chips (stacked lanes included), the all-day chip, "+N" chips and the titles written beside short chips.
+    const chipBoxes = [...document.querySelectorAll('.rib .ev, .rib .ev-side')].map((e) => ({ r: e.getBoundingClientRect(), t: e.textContent || e.getAttribute('aria-label') }));
     const overlaps = [];
     agentBoxes.forEach((a, i) => agentBoxes.slice(i + 1).forEach((b) => { if (a.id !== b.id && hit(a.r, b.r)) overlaps.push('agent ' + a.id + ' / ' + b.id); }));
-    chipBoxes.forEach((a, i) => chipBoxes.slice(i + 1).forEach((b) => { if (a.lane === b.lane && hit(a.r, b.r)) overlaps.push('chip ' + a.t + ' / ' + b.t); }));
+    chipBoxes.forEach((a, i) => chipBoxes.slice(i + 1).forEach((b) => { if (hit(a.r, b.r)) overlaps.push('chip ' + a.t + ' / ' + b.t); }));
     // A card line that cuts its words while more than 60 px of it sits unused.
     const cut = [...document.querySelectorAll('.work .centre .lane .lt2')].flatMap((line, i) => {
       const kids = [...line.children].filter((k) => !k.hidden);
@@ -284,7 +290,19 @@ try {
       }
       wattCard = { heights, outside, covered, buttons: heights.length };
     }
-    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, wattCard });
+    // Work's agents header: every part one line tall (no text in it wraps, no part taller than the 36 px row).
+    const header = [...document.querySelectorAll('.work .centre .lanes-hd *')].flatMap((e) => {
+      const own = [...e.childNodes].filter((n) => n.nodeType === 3 && n.textContent.trim());
+      const tops = new Set();
+      for (const n of own) {
+        const range = document.createRange();
+        range.selectNodeContents(n);
+        for (const q of range.getClientRects()) if (q.width > 0) tops.add(Math.round(q.top));
+      }
+      const tall = e.matches('.lanes-hd-l > *, .lanes-hd > .row > *') && e.getBoundingClientRect().height > 36.5;
+      return tops.size > 1 || tall ? ['header part wraps: ' + (e.textContent || '').trim().slice(0, 48) + ' (' + Math.round(e.getBoundingClientRect().height) + ' px tall)'] : [];
+    });
+    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, wattCard, header });
     document.body.appendChild(pre);
   }, new URLSearchParams(location.search).get('card') ? 7000 : 3000);</script>`;
   const broken = overflow ? `<style>${OVERFLOWS[overflow]}</style>` : '';
@@ -308,7 +326,10 @@ try {
       process.exit(1);
     }
     const text = m[1].replaceAll('&quot;', '"').replaceAll('&amp;', '&');
-    const { res, page: doc, overlaps, cut, gaps, wattCard } = JSON.parse(text);
+    const { res, page: doc, overlaps, cut, gaps, wattCard, header } = JSON.parse(text);
+    for (const h of header) console.log(`  FAIL ${h}`);
+    if (header.length) failed = true;
+    else if (v.q.includes('hz=work')) console.log('  ok   the agents header is one line');
     if (v.card) {
       const c = wattCard;
       const okCard = c !== null && c.buttons >= 13 && Math.min(...c.heights) >= 32 - SLACK && c.outside === 0 && c.covered.length === 0;

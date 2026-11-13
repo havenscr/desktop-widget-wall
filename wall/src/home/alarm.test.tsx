@@ -120,3 +120,12 @@ it('shares one poll between the rail and Home network card', async () => {
   await flush(300_000);
   expect(calls).toBe(2);
 });
+
+it('the compact chip is a dot and a count, with the words in its name and hover', async () => {
+  mocks.set('wall2_home_security', () => sec({ alerts: 4 }));
+  render(<AlarmChip className="xs lanes-alarm" compact />);
+  await flush();
+  const chip = screen.getByRole('button', { name: '4 network alerts. Show them on Home' });
+  expect(chip.textContent).toBe('4');
+  expect(chip.querySelector('.alarm-dot')).not.toBeNull();
+});

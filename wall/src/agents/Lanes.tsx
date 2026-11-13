@@ -1,18 +1,40 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { tip } from '../ui/HoverTip';
 import { FreeRow, Lane } from './Lane';
-import { ageText, allFreeText, cards, clockText, countText, questionFor, freeSlots, headerAsk, slotMeter, slotsText, slotsTip, type OmniSummary } from './model';
+import { ageText, allFreeText, cards, clockText, countText, questionFor, freeSlots, headerAsk, slotMeter, slotsShortText, slotsText, slotsTip, type OmniSummary } from './model';
 import { scrollToCard, useCardScroll } from './cardScroll';
 import { snooze, useSnoozed } from './snooze';
 import { focusSession } from './open';
 import { Shelf } from './Shelf';
 import { AlarmChip } from '../home/AlarmChip';
+import { useOpenAlarms } from '../home/useSecurity';
 
 /** Cards in view at once; the rest scroll. */
 const IN_VIEW = 3;
 
+/**
+ * How far the header has given way to fit on one line: 0 everything in full, 1 the meter's
+ * short sentence ("5 of 8 working"), 2 the pips alone, 3 the alarm chip as a dot and a count.
+ * After that the ask button's title truncates with an ellipsis.
+ */
+export type HeaderFit = 0 | 1 | 2 | 3;
+
+/**
+ * True when the header cannot show everything on one line: a part runs past its box, or a
+ * title is cut before its own maximum width.
+ */
+function headerTight(hd: HTMLElement): boolean {
+  if (hd.scrollWidth > hd.clientWidth + 1) return true;
+  for (const el of hd.querySelectorAll<HTMLElement>('.lanes-hd-l, .ellipsis')) {
+    if (el.scrollWidth <= el.clientWidth + 1) continue;
+    const max = parseFloat(getComputedStyle(el).maxWidth);
+    if (!Number.isFinite(max) || el.clientWidth < max - 1) return true;
+  }
+  return false;
+}
+
 /** The slot meter: a pip per slot, filled for each working session, "+N" past the last pip. */
-function SlotMeter({ summary, stale }: { summary: OmniSummary; stale: boolean }) {
+function SlotMeter({ summary, stale, fit }: { summary: OmniSummary; stale: boolean; fit: HeaderFit }) {
   const m = slotMeter(summary);
   return (
     <button
@@ -29,7 +51,7 @@ function SlotMeter({ summary, stale }: { summary: OmniSummary; stale: boolean })
         ))}
         {m.over > 0 && <em>+{m.over}</em>}
       </span>
-      <span className="xs">{slotsText(summary)}</span>
+      {fit < 2 && <span className="xs">{fit === 0 ? slotsText(summary) : slotsShortText(summary)}</span>}
     </button>
   );
 }
@@ -65,6 +87,19 @@ export function Lanes({ summary, stale, freshAt, now, idle }: { summary: OmniSum
     card?.scrollIntoView?.({ block: 'start', behavior: 'smooth' });
   }, [scrollReq]);
 
+  // Nothing in the header wraps: when it is tight its parts give way in order (`HeaderFit`).
+  const alarms = useOpenAlarms();
+  const hd = useRef<HTMLDivElement>(null);
+  const fitKey = `${slotsText(summary)}|${count}|${ask.text}|${ask.title ?? ''}|${ask.more ?? ''}|${ask.tone}|${alarms}|${stale}|${freshAt}`;
+  const [fitState, setFitState] = useState<{ key: string; level: HeaderFit }>({ key: fitKey, level: 0 });
+  const fit: HeaderFit = fitState.key === fitKey ? fitState.level : 0;
+  useLayoutEffect(() => {
+    const el = hd.current;
+    if (!el) return;
+    if (fit < 3 && headerTight(el)) setFitState({ key: fitKey, level: (fit + 1) as HeaderFit });
+    else if (fitState.key !== fitKey) setFitState({ key: fitKey, level: fit });
+  }, [fitKey, fit, fitState.key]);
+
   const openAsk = (id: string | null) => focusSession(canOpen ? id : null);
   /** "as of 4 min ago" (or "at an unknown time") for a stale answer. */
   const asOf = freshAt === null ? 'at an unknown time' : ageText(freshAt, now).replace('updated', 'as of');
@@ -78,11 +113,11 @@ export function Lanes({ summary, stale, freshAt, now, idle }: { summary: OmniSum
 
   return (
     <div className={`centre lanes${stale ? ' stale' : ''}`} data-lanes={Math.min(n, IN_VIEW)} aria-label="Agents">
-      <div className="lanes-hd">
+      <div className="lanes-hd" ref={hd} data-fit={fit}>
         <div className="row lanes-hd-l">
           <span className="k">Agents</span>
-          <SlotMeter summary={summary} stale={stale} />
-          <AlarmChip className="xs lanes-alarm" />
+          <SlotMeter summary={summary} stale={stale} fit={fit} />
+          <AlarmChip className="xs lanes-alarm" compact={fit >= 3} />
           {count && (
             <button
               type="button"
