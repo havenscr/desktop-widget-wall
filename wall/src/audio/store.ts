@@ -51,6 +51,19 @@ export interface BandHistory {
 
 const history = { data: new Float32Array(HISTORY_ROWS * BAND_COUNT), head: -1, rows: 0 };
 const smoothed = new Float32Array(BAND_COUNT);
+/**
+ * The calming stage, for the band history only (the levels and the beat detector never see it):
+ * a second, slower smoothing over each band (`CALM_SMOOTH_S`), then a direction hold, so that once
+ * a band turns from rising to falling or back it may not turn again for `CALM_HOLD_MS`. Together
+ * they keep the echo from changing the picture's brightness more than three times a second,
+ * however fast the music pumps.
+ */
+export const CALM_SMOOTH_S = 0.12;
+export const CALM_HOLD_MS = 170;
+const slow = new Float32Array(BAND_COUNT);
+const calm = new Float32Array(BAND_COUNT);
+const calmDir = new Int8Array(BAND_COUNT);
+const calmTurnAt = new Float64Array(BAND_COUNT).fill(-Infinity);
 let nextRowAt = -Infinity;
 // Rows written since sound was last heard: once a whole ring of silence is in, writing stops.
 let quietRows = 0;
@@ -71,6 +84,10 @@ function clearHistory(): void {
   history.head = -1;
   history.rows = 0;
   smoothed.fill(0);
+  slow.fill(0);
+  calm.fill(0);
+  calmDir.fill(0);
+  calmTurnAt.fill(-Infinity);
   nextRowAt = -Infinity;
   quietRows = HISTORY_ROWS;
 }
@@ -96,11 +113,26 @@ function advanceHistory(now: number, dt: number, playing: boolean): void {
   if (historyPaused) return;
   if (playing) quietRows = 0;
   else if (quietRows >= HISTORY_ROWS) return;
-  for (let i = 0; i < BAND_COUNT; i++) smoothed[i] = smoothStep(smoothed[i], playing ? bands[i] : 0, dt);
+  const k = 1 - Math.exp(-Math.max(0, dt) / CALM_SMOOTH_S);
+  for (let i = 0; i < BAND_COUNT; i++) {
+    smoothed[i] = smoothStep(smoothed[i], playing ? bands[i] : 0, dt);
+    slow[i] += (smoothed[i] - slow[i]) * k;
+    if (Math.abs(slow[i] - smoothed[i]) < 0.005) slow[i] = smoothed[i];
+    const delta = slow[i] - calm[i];
+    if (delta === 0) continue;
+    const dir = delta > 0 ? 1 : -1;
+    if (dir !== calmDir[i]) {
+      // A turn: allowed only once the last turn is `CALM_HOLD_MS` old; until then the band holds still.
+      if (now - calmTurnAt[i] < CALM_HOLD_MS) continue;
+      calmDir[i] = dir;
+      calmTurnAt[i] = now;
+    }
+    calm[i] = slow[i];
+  }
   if (now - nextRowAt > 250) nextRowAt = now;
   while (now >= nextRowAt) {
     history.head = (history.head + 1) % HISTORY_ROWS;
-    history.data.set(smoothed, history.head * BAND_COUNT);
+    history.data.set(calm, history.head * BAND_COUNT);
     if (history.rows < HISTORY_ROWS) history.rows++;
     if (!playing) quietRows++;
     nextRowAt += ROW_MS;

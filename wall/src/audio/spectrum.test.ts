@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { BAND_COUNT, HISTORY_HZ, HISTORY_ROWS, bandHistory, ingestLevels, pauseBandHistory, resetAudio, tickAudio, type BandHistory } from './store';
+import { BAND_COUNT, CALM_HOLD_MS, HISTORY_HZ, HISTORY_ROWS, bandHistory, ingestLevels, pauseBandHistory, resetAudio, tickAudio, type BandHistory } from './store';
 import { BAND_FLOOR, SPECTRUM_SCALE, sampleBands } from './spectrum';
 
 /** A history with one row per entry of `rows` (newest last), each a full set of bands. */
@@ -93,15 +93,59 @@ describe('the band history', () => {
 
   it('after the music stops the rows release to zero, then writing stops', () => {
     feed(flat(255), 0, 2000);
-    for (let t = 2000; t < 4000; t += 33) tickAudio(t);
+    for (let t = 2000; t < 5000; t += 33) tickAudio(t);
     const h = bandHistory();
     expect(h.data[h.head * BAND_COUNT]).toBe(0);
-    for (let t = 4000; t < 12000; t += 33) tickAudio(t);
+    for (let t = 5000; t < 12000; t += 33) tickAudio(t);
     const head = bandHistory().head;
     for (let t = 12000; t < 13000; t += 33) tickAudio(t);
     expect(bandHistory().head).toBe(head); // a whole ring of silence is in: nothing written
     feed(flat(255), 13000, 13500);
     expect(bandHistory().head).not.toBe(head);
+  });
+
+  it('calming: with every band pumping on and off 6 times a second, a band turns at most once per hold, and the swing is small', () => {
+    const rows: number[] = [];
+    const h = bandHistory();
+    let head = -1;
+    for (let t = 0; t < 10_000; t += 33) {
+      const on = Math.floor((t / 1000) * 12) % 2 === 0;
+      ingestLevels({ bands: flat(on ? 230 : 110), waveform: [0.1], bass: 0.5, mid: 0.3, high: 0.1 }, t);
+      tickAudio(t);
+      if (h.head !== head) {
+        head = h.head;
+        rows.push(h.data[head * BAND_COUNT + 5]);
+      }
+    }
+    const late = rows.slice(90); // after the first three seconds
+    const turns: number[] = [];
+    let dir = 0;
+    late.forEach((v, i) => {
+      if (i === 0 || v === late[i - 1]) return;
+      const d = v > late[i - 1] ? 1 : -1;
+      if (dir !== 0 && d !== dir) turns.push(i);
+      dir = d;
+    });
+    for (let i = 1; i < turns.length; i++) expect(((turns[i] - turns[i - 1]) * 1000) / HISTORY_HZ).toBeGreaterThanOrEqual(CALM_HOLD_MS - 1000 / HISTORY_HZ);
+    // The raw input swings by 0.47 (110 to 230 of 255); calmed, a band moves by a small part of that.
+    expect(Math.max(...late) - Math.min(...late)).toBeLessThan(0.2);
+  });
+
+  it('calming keeps the demo lively: the kick still moves the bass bands well up and down every beat', async () => {
+    const { demoPayload } = await import('./capture');
+    const h = bandHistory();
+    const rows: number[] = [];
+    let head = -1;
+    for (let t = 0; t < 6000; t += 33) {
+      ingestLevels(demoPayload(t), t);
+      tickAudio(t);
+      if (h.head !== head) {
+        head = h.head;
+        rows.push(h.data[head * BAND_COUNT + 2]);
+      }
+    }
+    const late = rows.slice(60);
+    expect(Math.max(...late) - Math.min(...late)).toBeGreaterThan(0.12);
   });
 
   it('pausing stops every write, and resuming starts from an empty history', () => {

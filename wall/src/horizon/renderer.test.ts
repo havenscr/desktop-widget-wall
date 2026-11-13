@@ -173,3 +173,39 @@ describe('echo sample', () => {
     expect(calls(withSample(() => 1.3))).not.toEqual(flat);
   });
 });
+
+describe('echo tint (the Unwind playing look)', () => {
+  const cam = CAMERAS.unwind;
+  const TINT = { left: [92, 196, 255], centre: [56, 236, 240], right: [255, 61, 154], width: 1.8 };
+  const tinted = (k: number) => frame(cam, 21.7, { echo: { n: cam.en, amp: cam.eamp, a: 0.5, t: 2.5, cx: cam.ecx, hs: 900, tint: { ...TINT, k } } });
+
+  it('no tint, or a tint at k 0, makes the golden calls exactly (the golden log is unchanged)', () => {
+    const base = calls(frame(cam, 21.7));
+    expect(fnv(base.join('\n'))).toBe('5f3dfbd3');
+    expect(calls(tinted(0))).toEqual(base);
+  });
+
+  it('a full tint adds one gradient for the lines and changes only their stroke style, width and opacity', () => {
+    const base = calls(frame(cam, 21.7));
+    const log = calls(tinted(1));
+    const anon = (l: string) => l.replace(/(linear|radial)\d+/g, '$1');
+    expect(log.length).toBe(base.length + 5); // one gradient and its four stops
+    let at = 0;
+    while (log[at] === base[at]) at++;
+    expect(log[at]).toMatch(/^linear\(0,0,2560,0\)=/);
+    const added = log.slice(at, at + 5).map(anon);
+    expect(added.slice(1).every((l) => l.startsWith('linear.stop('))).toBe(true);
+    expect(added.join()).toContain('rgb(56,236,240)'); // the teal at cx
+    expect(added.join()).toContain('rgb(255,61,154)'); // the pink at the right edge
+    const changed = new Set<string>();
+    for (let k = at; k < base.length; k++) {
+      const a = anon(base[k]);
+      const b = anon(log[k + 5]);
+      if (a !== b) changed.add(`${a.split(/[=(]/)[0]}`);
+    }
+    // Gradient ids are anonymised above, so the stroke change shows as the lines using the new gradient.
+    expect([...changed].sort()).toEqual(['globalAlpha', 'lineWidth']);
+    const id = log[at].split('=')[1];
+    expect(log.filter((l) => l === `strokeStyle=[${id}]`)).toHaveLength(cam.en);
+  });
+});

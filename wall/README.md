@@ -419,7 +419,11 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
   judged on arrival times.
 - **Band history** (`store.ts`, `bandHistory()`). The last 7 seconds of the spectrum at 30 rows
   a second (210 rows of 32 bands, one fixed ring written in place), each band smoothed with the
-  levels' attack and release (0.06 s up, 0.35 s down). When the music stops the rows release to
+  levels' attack and release (0.06 s up, 0.35 s down), then calmed (for the history only; the
+  levels and the beat detector never see it): a second, slower smoothing (0.12 s) and a direction
+  hold, so once a band turns from rising to falling or back it may not turn again for 170 ms. That
+  keeps the echo from changing the picture's brightness more than three times a second however
+  fast the music pumps (`npm run echo-calm`, below). When the music stops the rows release to
   zero and writing stops once a whole ring of silence is in. `pauseBandHistory(true)` stops it
   (the horizon does this while the display is idle or off); resuming starts from an empty ring.
   A hidden page empties it too (`clearBandHistory`), so old spectrum never replays on return.
@@ -455,8 +459,12 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
   - Work and Home (3 lines): only while `playing`, opacity `ea` times a smoothed loudness (bass
     weighted) and a fade of about a second, `n`, `amp`, `cx` from the camera (`en`, `eamp`,
     `ecx`), `hs` 900. Nothing is passed when silent, so pixels are unchanged.
-  - Unwind (11 lines, the visualizer): while playing, opacity `ea` (0.9) times the fade with no
-    loudness scaling, and the lines follow the real bands (`sample`, below). While silent the
+  - Unwind (11 lines, the visualizer): while playing, opacity `ea` (0.9) raised to full, times the
+    fade, with no loudness scaling, and the lines follow the real bands (`sample`, below). The
+    playing look matches the concept: the lines are tinted bright teal through the centre shifting
+    to pink at the far right (the renderer's `tint` option, blended over the palette's rim colour
+    by the fade), 1.8 px wide instead of 1.4, and the newest line fades in at the front instead of
+    popping in. Work, Home and the idle lines keep the palette's colour. While silent the
     idle lines: opacity `ea * 0.45`, height `eamp * 0.35`, drifting at 0.12 (0.4 of the playing
     speed) to the renderer's made-up `spec()` on the same slowed clock, so they breathe gently.
     The echo runs on its own clock (`echoRate`), so slowing it never makes the lines jump. Every
@@ -474,6 +482,13 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
   - When the display is idle or off (`useIdle`: no input for 4 minutes, screens off, locked)
     the echo fades out over a second and is then not drawn, and the band history stops; both
     start afresh on return.
+- **Echo calm check** (`npm run echo-calm`, by hand; CI does not run it). Builds
+  `scripts/echo-calm/` (the real renderer, echo and audio store) into one HTML file and draws 600
+  frames of the Unwind camera in headless Chromium with the echo and without it, for the
+  `?audio=demo` levels and for every band pumping fully on and off 6 times a second. It takes what
+  the echo adds to the picture's mean relative luminance over every pixel and fails if that moves
+  by 1 percent of the picture's mean, up or down, more than three times in any second. Set
+  `WALL_CHROME` to a Chromium binary.
 - **Grid pulse** (`pulse.ts`). While `playing`, `HorizonCanvas` passes `grid` to the renderer.
   Each beat starts a soft glow band at the horizon that rolls across the lake grid to the bottom
   edge in 1.2 s (depth `p` 0 to 1 on the grid's own `pow(p, 2.1)` spacing, eased out over its

@@ -205,7 +205,8 @@ export interface HorizonEcho {
   /**
    * Stroke colours for the lines, as RGB triples (0 to 255): at the left edge, at `cx`, and at the
    * right edge, blended over the palette's rim colour by `k` (0 to 1), and the line width in design
-   * pixels (default 1.4). Absent or `k` 0: the rim colour, as before.
+   * pixels (default 1.4). With a tint the newest line also fades in over its first `1 / n` of the
+   * drift (by `k`), so a brighter line never pops in at the front. Absent or `k` 0: as before.
    */
   tint?: { left: number[]; centre: number[]; right: number[]; k: number; width?: number };
 }
@@ -313,7 +314,7 @@ export function draw(ctx:CanvasRenderingContext2D,o:HorizonDrawOptions):HorizonD
    for(const [q,c] of [[0,TT!.left],[c0,TT!.centre],[c0+(1-c0)*.6,mixc(TT!.centre,TT!.right,.5)],[1,TT!.right]] as Any)es.addColorStop(q,css(mixc(rimAt(q),c,tk)))}
   for(let j=0;j<n;j++){const a=(j+fq)/n,p=1-a,tau=(E.t||0)-a*span,sw=.35+.65*Math.sin(Math.PI*a),pp=Math.pow(p,1.15),r=Math.round(2+a*26);
    const f=(i:Any)=>mix(cr[i],sm(i,r),Math.min(1,a*2.2))*pp+S(Math.min(1,Math.abs(i*2-cx)/hs),tau)*E.amp*sw*Math.min(1,cr[i]/(cmax*.5));
-   layer(f,css(mixc(mixc(P.far,P.s[3],.12),P.mid,a)));line(f,E.a*(1-a*a*a),lw,es)}}
+   layer(f,css(mixc(mixc(P.far,P.s[3],.12),P.mid,a)));line(f,E.a*(1-a*a*a)*(tk>0?mix(1,smooth(a*n),tk):1),lw,es)}}
  const md=(i:Any)=>prof(TR,TR.mid,az0+i*2/ppd)*k,nr=(i:Any)=>prof(TR,TR.near,az0+i*2/ppd)*k;
  g=ctx.createLinearGradient(0,hy-cmax*.6,0,hy);g.addColorStop(0,css(P.mid));g.addColorStop(1,css(mixc(P.mid,mixc(P.s[2],P.s[3],.4),.2)));layer(md,g);line(md,.16,1);
  const refl:Any[]=[];
