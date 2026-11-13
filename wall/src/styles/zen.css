@@ -165,7 +165,9 @@
 .zen-bl {
   position: absolute;
   left: 60px;
-  bottom: 44px;
+  /* 26 px of padding under the controls holds the dim hint, so the controls sit at 44 px as before. */
+  bottom: 18px;
+  padding-bottom: 26px;
   pointer-events: none;
 }
 .zen-bl .zen-start {
@@ -198,6 +200,14 @@
   font: 400 13px/1 var(--body);
   color: var(--dim);
   pointer-events: none;
+}
+.zen-dimhint {
+  position: absolute;
+  left: 0;
+  bottom: 4px;
+  white-space: nowrap;
+  font: 400 13px/16px var(--body);
+  color: var(--dim);
 }
 .zen-br {
   position: absolute;
