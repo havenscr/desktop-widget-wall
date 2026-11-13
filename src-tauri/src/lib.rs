@@ -56,6 +56,7 @@ mod wall2_home;
 mod wall2_meet;
 mod wall2_omni;
 mod wall2_power;
+mod wall2_sonos;
 use audio_analysis::{AudioAnalyzer, AudioLevels};
 
 // ================================================================
@@ -3745,15 +3746,24 @@ pub fn run() {
             wall2_feeds::wall2_open_task,
             wall2_home::wall2_moods,
             wall2_home::wall2_apply_mood,
+            wall2_sonos::wall2_sonos_summary,
+            wall2_sonos::wall2_sonos_play,
+            wall2_sonos::wall2_sonos_preset,
+            wall2_sonos::wall2_sonos_volume,
+            wall2_sonos::wall2_sonos_pause_all,
+            wall2_sonos::wall2_sonos_sleep,
+            wall2_sonos::wall2_sonos_sleep_cancel,
             wall2_meet::wall2_meet_next,
             wall2_meet::wall2_meet_day,
             wall2_meet::wall2_meet_sign_in,
             wall2_meet::wall2_meet_cancel_sign_in,
             wall2_meet::wall2_meet_join,
+            wall2_meet::wall2_open_event,
             wall2_meet::wall2_meet_sign_out,
             // Wall 2 helper client and machine numbers
             wall2_omni::wall2_omni_summary,
             wall2_omni::wall2_open_session,
+            wall2_omni::wall2_focus_omnigent,
             wall2_omni::wall2_machines,
             wall2_power::wall2_idle_state,
             wall2_power::wall2_monitors_off,

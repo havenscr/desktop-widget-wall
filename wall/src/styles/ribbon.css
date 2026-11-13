@@ -118,6 +118,7 @@
   transform: rotate(45deg);
 }
 .rib .due .n {
+  text-shadow: 0 0 4px rgba(6, 4, 22, 0.95), 0 0 9px rgba(6, 4, 22, 0.9);
   max-width: 180px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -153,3 +154,41 @@
   white-space: nowrap;
 }
 
+/* A chip that opens its event in Outlook, and a due mark that opens its task. */
+.rib .ev.open,
+.rib .due {
+  cursor: pointer;
+}
+.rib .ev.open:hover {
+  border-color: rgba(200, 184, 255, 0.9);
+  filter: brightness(1.15);
+}
+.rib .ev.open:focus-visible,
+.rib .due:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 1px;
+}
+.rib .due:hover .n {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.rib .ndl b {
+  cursor: help;
+}
+/* "+N": events that did not fit the two lanes; hover lists them, a click picks one. */
+.rib .ev.more {
+  padding: 0;
+  text-align: center;
+  font-weight: 600;
+  cursor: pointer;
+  background: rgba(40, 30, 80, 0.95);
+  z-index: 2;
+}
+.rib .ev.more:hover {
+  border-color: rgba(200, 184, 255, 0.9);
+}
+/* A due mark whose label would sit on the agent bars: the diamond alone, with a dark ring. */
+.rib .due.bare i {
+  margin-right: 0;
+  box-shadow: 0 0 0 2px rgba(6, 4, 22, 0.9);
+}

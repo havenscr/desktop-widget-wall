@@ -136,10 +136,11 @@ it('keeps the last played track in storage and ignores junk', () => {
 });
 
 it('the status line counts a waiting lane as needing the owner, like Work, even when the helper total is lower', () => {
-  const waiting = [{ state: 'working', waiting: true }, { state: 'working' }];
+  // Real lanes always carry an id, and waiting sessions are counted by id.
+  const waiting = [{ id: 'a1', state: 'working', waiting: true }, { id: 'a2', state: 'working' }];
   expect(statusLine('off', { lanes: waiting, yourMove: { total: 0 } })).toBe('Work is put away. 1 agent still running. One thing needs you.');
-  expect(statusLine('off', { lanes: [{ state: 'blocked' }], yourMove: { total: 0 } })).toBe('Work is put away. One thing needs you.');
-  expect(statusLine('off', { lanes: [{ state: 'blocked' }, { state: 'blocked', waiting: true }], yourMove: { total: 1 } })).toBe('Work is put away. 2 things need you.');
+  expect(statusLine('off', { lanes: [{ id: 'a1', state: 'blocked' }], yourMove: { total: 0 } })).toBe('Work is put away. One thing needs you.');
+  expect(statusLine('off', { lanes: [{ id: 'a1', state: 'blocked' }, { id: 'a2', state: 'blocked', waiting: true }], yourMove: { total: 1 } })).toBe('Work is put away. 2 things need you.');
 });
 
 it('the status line says nothing about agents when the data is stale or missing', () => {

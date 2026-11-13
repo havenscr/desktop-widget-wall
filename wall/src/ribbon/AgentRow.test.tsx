@@ -1,9 +1,12 @@
-import { act, render } from '@testing-library/react';
+import { act, fireEvent, render } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { lane, summary } from '../agents/fixtures';
 import { resetAgents } from '../agents/useAgents';
+import { useCardScroll } from '../agents/cardScroll';
 import { mocks } from '../bridge/tauri';
 import { useFocusStore } from '../focus/store';
+import { POLL_MS } from '../agents/model';
+import { HoverTipLayer, TIP_DELAY_MS, TIP_REFRESH_MS } from '../ui/HoverTip';
 import { RX } from './model';
 import { Ribbon } from './Ribbon';
 import { useFixedClock, usePacificTime } from './testZone';
@@ -44,13 +47,21 @@ it('draws the agent lanes\' day on row 2 of the Work ribbon: run cyan, wait ambe
     });
   const r = render(<Ribbon kind="work" />);
   await flush();
-  const segs = [...r.container.querySelectorAll('.agent-row .sg')] as HTMLElement[];
-  expect(segs.map((s) => s.className)).toEqual(['sg done', 'sg run', 'sg wait']);
-  expect(segs.map((s) => s.style.top)).toEqual(['71px', '71px', '79px']);
+  const bars = [...r.container.querySelectorAll('.agent-row .sg')] as HTMLElement[];
+  expect(bars.map((s) => s.className)).toEqual(['sg done', 'sg run', 'sg wait']);
+  // One sub-row per session, in the cards' order: two sessions, 8 px apart.
+  const segs = [...r.container.querySelectorAll('.agent-row .sg-hit')] as HTMLElement[];
+  expect(segs.map((s) => s.style.top)).toEqual(['68px', '68px', '76px']);
   expect(parseFloat(segs[1].style.left)).toBeCloseTo(RX(9.7), 3);
   expect(parseFloat(segs[1].style.width)).toBeCloseTo(RX(10.4) - RX(9.7), 3);
-  const cap = r.container.querySelector('.agent-row .cap2') as HTMLElement;
-  expect(parseFloat(cap.style.left)).toBeCloseTo(RX(7 + 10 / 60), 3);
+  // The mint cap sits at the end of the done span.
+  expect(segs[0].querySelector('.cap2')).not.toBeNull();
+  expect(parseFloat(segs[0].style.left) + parseFloat(segs[0].style.width)).toBeCloseTo(RX(7 + 10 / 60), 3);
+  // The card's number at the left of each session's first bar, and the stage colour as its notch.
+  expect(segs[0].querySelector('.sg-num')!.textContent).toBe('1');
+  expect(segs[1].querySelector('.sg-num')).toBeNull();
+  expect(segs[2].querySelector('.sg-num')!.textContent).toBe('2');
+  expect(bars[0].style.getPropertyValue('--sc')).toBe('var(--st-build)');
 });
 
 it('draws nothing when the helper is not set up, and nothing on Home', async () => {
@@ -82,8 +93,8 @@ it('after a failed read, dims the row and ends open runs at the last good answer
   await flush(20 * 60_000 + 100);
   expect(r.container.querySelector('.ndl')!.textContent).toBe('10:44');
   expect(r.container.querySelector('.agent-row')!.className).toBe('agent-row stale');
-  const seg = r.container.querySelector('.agent-row .sg') as HTMLElement;
-  expect(seg.className).toBe('sg run');
+  expect(r.container.querySelector('.agent-row .sg')!.className).toBe('sg run');
+  const seg = r.container.querySelector('.agent-row .sg-hit') as HTMLElement;
   expect(parseFloat(seg.style.width)).toBeCloseTo(RX(10.4) - RX(9.7), 3);
 });
 
@@ -95,7 +106,7 @@ it('a helper-stale answer is dimmed and its open runs stop at the last fresh ans
   stale = true;
   await flush(10 * 60_000);
   expect(r.container.querySelector('.agent-row')!.className).toBe('agent-row stale');
-  const seg = r.container.querySelector('.agent-row .sg') as HTMLElement;
+  const seg = r.container.querySelector('.agent-row .sg-hit') as HTMLElement;
   expect(parseFloat(seg.style.width)).toBeCloseTo(RX(10.4) - RX(9.7), 3);
 });
 
@@ -109,12 +120,173 @@ it('a helper clock 2 hours off this PC draws the agent row where it would with n
     answer = () => summary({ now: new Date(Date.now() + shift).toISOString(), lanes: [lane({ id: 'a1b2c3d4-0001' })], day: day(shift) });
     const r = render(<Ribbon kind="work" />);
     await flush();
-    const out = [...r.container.querySelectorAll('.agent-row i')].map((e) => [e.className, (e as HTMLElement).style.left, (e as HTMLElement).style.width]);
+    const out = [...r.container.querySelectorAll('.agent-row .sg-hit')].map((e) => [e.firstElementChild!.className, (e as HTMLElement).style.left, (e as HTMLElement).style.width]);
     r.unmount();
     return out;
   };
   const straight = await draw(0);
-  expect(straight).toHaveLength(3);
+  expect(straight).toHaveLength(2);
   expect(await draw(2 * 3_600_000)).toEqual(straight);
   expect(await draw(-2 * 3_600_000)).toEqual(straight);
+});
+
+it('hover names the session with its stage and spans, an ended one from the names map, and a click opens it', async () => {
+  const opened: (string | null)[] = [];
+  mocks.set('wall2_focus_omnigent', (args) => {
+    opened.push((args?.id as string | null) ?? null);
+  });
+  answer = () =>
+    summary({
+      lanes: [lane({ id: 'a1b2c3d4-0001', title: 'Voice fix', stage: 'review' })],
+      sessions: { 'a1b2c3d4-00e1': { title: 'Morning triage', stage: 'live', state: 'review' } },
+      day: [
+        { lane: 'a1b2c3d4-00e1', start: iso('06:30'), end: iso('07:00'), kind: 'done' },
+        { lane: 'a1b2c3d4-0002', start: iso('07:10'), end: iso('07:40'), kind: 'run' },
+        { lane: 'a1b2c3d4-0001', start: iso('08:10'), end: iso('09:40'), kind: 'run' },
+        { lane: 'a1b2c3d4-0001', start: iso('09:40'), end: null, kind: 'wait' },
+      ],
+    });
+  const r = render(
+    <>
+      <Ribbon kind="work" />
+      <HoverTipLayer />
+    </>,
+  );
+  await flush();
+  const hits = [...r.container.querySelectorAll('.agent-row .sg-hit')] as HTMLElement[];
+  const mine = hits.find((h) => h.getAttribute('aria-label')!.startsWith('Voice fix'))!;
+  expect(mine.getAttribute('aria-label')).toBe('Voice fix: working 8:10 to 9:40, waiting on you since 9:40');
+  fireEvent.mouseEnter(mine);
+  await flush(TIP_DELAY_MS);
+  const card = document.querySelector('.hover-tip')!;
+  expect(card.textContent).toContain('Voice fix');
+  expect(card.textContent).toContain('Review stage');
+  expect(card.textContent).toContain('waiting on you since 9:40');
+  fireEvent.mouseLeave(mine);
+  expect(document.querySelector('.hover-tip')).toBeNull();
+  expect(hits.find((h) => h.getAttribute('aria-label')!.startsWith('Morning triage'))).toBeTruthy();
+  expect(hits.find((h) => h.getAttribute('aria-label')!.startsWith('An earlier session'))).toBeTruthy();
+  fireEvent.click(mine);
+  await flush();
+  expect(opened).toEqual(['a1b2c3d4-0001']);
+});
+
+it('twelve sessions: two drawn rows, then "+10 more" whose hover lists the rest and whose click asks the cards to show the first', async () => {
+  const ids = Array.from({ length: 12 }, (_, i) => `a1b2c3d4-00${String(i).padStart(2, '0')}`);
+  answer = () =>
+    summary({
+      lanes: ids.slice(0, 3).map((id, i) => lane({ id, title: `Session ${i + 1}` })),
+      sessionsList: ids.map((id, i) => lane({ id, title: `Session ${i + 1}`, stage: i === 2 ? 'review' : 'build' })),
+      day: ids.map((id, i) => ({ lane: id, start: iso(`0${6 + Math.floor(i / 4)}:${String((i % 4) * 10).padStart(2, '0')}`), end: iso('09:30'), kind: 'run' as const })),
+    });
+  const r = render(
+    <>
+      <Ribbon kind="work" />
+      <HoverTipLayer />
+    </>,
+  );
+  await flush();
+  const hits = [...r.container.querySelectorAll('.agent-row .sg-hit')] as HTMLElement[];
+  expect(new Set(hits.map((h) => h.dataset.lane))).toEqual(new Set(ids.slice(0, 2)));
+  // Every row is 8 px tall, and no two sessions share a row.
+  expect(new Set(hits.map((h) => h.style.height))).toEqual(new Set(['8px']));
+  expect(new Set(hits.map((h) => `${h.style.top}|${h.dataset.lane}`)).size).toBe(2);
+  const more = r.container.querySelector('.agent-row .sg-more') as HTMLElement;
+  expect(more.textContent).toBe('+10 more');
+  expect(more.querySelectorAll('.sg-line')).toHaveLength(10);
+  expect(more.style.top).toBe('84px');
+  fireEvent.mouseEnter(more);
+  await flush(TIP_DELAY_MS);
+  const card = document.querySelector('.hover-tip')!.textContent!;
+  expect(card).toContain('10 more sessions today');
+  expect(card).toContain('3. Session 3, Review, working');
+  expect(card).toContain('12. Session 12');
+  fireEvent.click(more);
+  expect(useCardScroll.getState().id).toBe(ids[2]);
+});
+
+const manyAnswer = (n: number, waitingIndex: number | null) => {
+  const ids = Array.from({ length: n }, (_, i) => `a1b2c3d4-00${String(i).padStart(2, '0')}`);
+  answer = () =>
+    summary({
+      lanes: ids.slice(0, 3).map((id, i) => lane({ id, title: `Session ${i + 1}`, state: 'review' })),
+      sessionsList: ids.map((id, i) => lane({ id, title: `Session ${i + 1}`, state: i === waitingIndex ? 'blocked' : 'review', waiting: i === waitingIndex })),
+      day: ids.map((id, i) => ({ lane: id, start: iso(`0${6 + Math.floor(i / 4)}:${String((i % 4) * 10).padStart(2, '0')}`), end: i === waitingIndex ? null : iso('09:30'), kind: i === waitingIndex ? ('wait' as const) : ('run' as const) })),
+    });
+  return ids;
+};
+
+it.each([3, 4, 7, 12])('%i sessions: rows never overlap, the "+N more" row is one hit box with stacked lines', async (n) => {
+  const ids = manyAnswer(n, null);
+  const r = render(<Ribbon kind="work" />);
+  await flush();
+  const hits = [...r.container.querySelectorAll('.agent-row .sg-hit')] as HTMLElement[];
+  const more = r.container.querySelector('.agent-row .sg-more') as HTMLElement | null;
+  if (n === 3) {
+    expect(more).toBeNull();
+    expect(new Set(hits.map((h) => h.dataset.lane))).toEqual(new Set(ids));
+    return;
+  }
+  expect(hits).toHaveLength(2);
+  expect(more!.querySelector('.sg-more-t')!.textContent).toBe(`+${n - 2} more`);
+  expect(r.container.querySelectorAll('.agent-row .sg-more').length).toBe(1);
+  const lines = [...more!.querySelectorAll('.sg-line')] as HTMLElement[];
+  expect(lines).toHaveLength(n - 2);
+  const h = n - 2 <= 4 ? '2px' : '1px';
+  expect(new Set(lines.map((l) => l.style.height))).toEqual(new Set([h]));
+  // Lines stay inside the 8 px row.
+  for (const l of lines) expect(parseFloat(l.style.top) + parseFloat(l.style.height)).toBeLessThanOrEqual(8);
+  // The shared box sits in its own row: no drawn hit box shares its top.
+  expect(hits.some((x) => x.style.top === more!.style.top)).toBe(false);
+});
+
+it('a waiting fifth session gets its own row and shows amber', async () => {
+  const ids = manyAnswer(7, 4);
+  const r = render(<Ribbon kind="work" />);
+  await flush();
+  const hits = [...r.container.querySelectorAll('.agent-row .sg-hit')] as HTMLElement[];
+  expect(hits.map((h) => h.dataset.lane)).toContain(ids[4]);
+  const mine = hits.find((h) => h.dataset.lane === ids[4])!;
+  expect(mine.querySelector('.sg')!.className).toBe('sg wait');
+  expect(r.container.querySelectorAll('.agent-row .sg-more .sg-line.wait')).toHaveLength(0);
+});
+
+it('an open bar hover card shows the newest data, not the data from when it opened', async () => {
+  const id = 'a1b2c3d4-0001';
+  answer = () => summary({ lanes: [lane({ id, title: 'Voice fix' })], day: [{ lane: id, start: iso('09:42'), end: null, kind: 'run' }] });
+  const r = render(
+    <>
+      <Ribbon kind="work" />
+      <HoverTipLayer />
+    </>,
+  );
+  await flush();
+  const bar = r.container.querySelector('.agent-row .sg-hit') as HTMLElement;
+  fireEvent.mouseEnter(bar);
+  await flush(TIP_DELAY_MS);
+  expect(document.querySelector('.hover-tip')!.textContent).toContain('working since 9:42');
+  expect(document.querySelector('.hover-tip')!.textContent).not.toContain('waiting on you');
+  answer = () =>
+    summary({
+      lanes: [lane({ id, title: 'Voice fix', waiting: true, state: 'blocked' })],
+      day: [
+        { lane: id, start: iso('09:42'), end: iso('10:20'), kind: 'run' },
+        { lane: id, start: iso('10:20'), end: null, kind: 'wait' },
+      ],
+    });
+  await flush(POLL_MS + TIP_REFRESH_MS);
+  expect(document.querySelector('.hover-tip')!.textContent).toContain('waiting on you since 10:20');
+});
+
+it('a due label that would sit on the agent bars shows only its diamond, with the label in the hover', async () => {
+  const task = (id: string, title: string, due: string) => ({ id, title, due_at: due, due_is_all_day: false, quadrant: null, est: null });
+  mocks.set('wall2_tasks_summary', () => ({ next: [task('t1', 'Send the proposal', iso('09:50')), task('t2', 'Late one', iso('20:00'))], remaining: 0, dueTomorrow: { count: 0, estMinutes: 0 } }));
+  answer = () => summary({ lanes: [lane({ id: 'a1b2c3d4-0001' })], day: [{ lane: 'a1b2c3d4-0001', start: iso('09:00'), end: null, kind: 'run' }] });
+  const r = render(<Ribbon kind="work" />);
+  await flush();
+  const marks = [...r.container.querySelectorAll('.due')] as HTMLElement[];
+  expect(marks.map((m) => m.className)).toEqual(['due bare', 'due']);
+  expect(marks[0].textContent).toBe('');
+  expect(marks[0].getAttribute('aria-label')).toBe('Due 9:50: Send the proposal. Opens the task');
+  expect(marks[1].textContent).toBe('Late one, 8:00');
 });

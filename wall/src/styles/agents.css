@@ -12,6 +12,9 @@
 .lanes .t-mint {
   --c: var(--mint);
 }
+.lanes .calm.t-mint {
+  color: var(--mint);
+}
 
 /* Header, lanes and shelf share the zone's height; the lanes take what is left (up to
    150 px each), and any height still free spreads between the rows (concept `.col.spread`). */
@@ -38,6 +41,85 @@
 }
 .lanes-age {
   color: var(--dim);
+}
+/* Header controls: plain text that acts, sized for a pointer. */
+.lanes-hd button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+.slot-meter {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 36px;
+  padding: 0 10px !important;
+  margin-left: -10px;
+  border-radius: 12px;
+}
+.slot-meter:hover,
+.lanes-count:hover,
+.ask-more:hover,
+.shelf-parked:hover {
+  background: rgba(255, 255, 255, 0.06) !important;
+}
+.slot-meter .pips {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.slot-meter .pips i {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  border: 1.5px solid rgba(255, 255, 255, 0.3);
+  box-sizing: border-box;
+}
+.slot-meter .pips i.on {
+  background: var(--cyan);
+  border-color: var(--cyan);
+}
+.slot-meter .pips em {
+  font: 600 14px/1 var(--disp);
+  font-style: normal;
+  color: var(--dim);
+  margin-left: 3px;
+}
+.lanes-count {
+  height: 36px;
+  padding: 0 10px !important;
+  border-radius: 12px;
+  color: var(--faint) !important;
+}
+.lanes-ask {
+  min-width: 0;
+}
+.ask-btn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  height: 36px;
+  padding: 0 12px !important;
+  border-radius: 12px;
+  white-space: nowrap;
+}
+.ask-btn:hover {
+  background: rgba(255, 194, 77, 0.1) !important;
+}
+.ask-title {
+  max-width: 400px;
+  min-width: 0;
+  color: var(--tx);
+}
+.ask-more {
+  height: 36px;
+  padding: 0 10px !important;
+  border-radius: 12px;
+  color: var(--dim) !important;
 }
 .lanes .calm {
   gap: 12px;
@@ -70,22 +152,49 @@
   min-height: 96px;
   max-height: 150px;
   display: grid;
-  grid-template-columns: 68px minmax(0, 1fr) 430px 200px;
+  /* The title takes every free pixel; the elapsed time or the merge button only its own. */
+  grid-template-columns: 68px minmax(0, 1fr) 350px 124px;
   align-items: center;
-  gap: 26px;
-  padding: 0 30px;
+  position: relative;
+  gap: 22px;
+  padding: 0 28px 0 30px;
   min-width: 0;
 }
-.lane[role='button'] {
-  cursor: pointer;
+/* The card list: three in view; more scroll with the wheel, a card at a time, and the
+   thin scrollbar shows only on hover. The page itself never scrolls. */
+.lanes-list {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 12px;
+}
+.lanes-list.scrolls {
+  justify-content: flex-start;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scroll-snap-type: y mandatory;
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+  padding-right: 6px;
+  transition: scrollbar-color 300ms ease;
+}
+.lanes-list.scrolls:hover {
+  scrollbar-color: rgba(255, 255, 255, 0.28) transparent;
+}
+.lanes-list.scrolls > .lane {
+  /* Border included, so three cards and two gaps fill the list exactly (none clipped). */
+  box-sizing: border-box;
+  flex: 0 0 calc((100% - 24px) / 3);
+  min-height: 0;
+  scroll-snap-align: start;
+}
+.lane:has(.lane-open) {
   transition: transform 90ms ease-out;
 }
-.lane[role='button']:active {
+.lane:has(.lane-open):active {
   transform: scale(0.99);
-}
-.lane[role='button']:focus-visible {
-  outline: 3px solid var(--cyan);
-  outline-offset: 2px;
 }
 .lane.wait {
   border-color: rgba(255, 194, 77, 0.45);
@@ -93,13 +202,76 @@
 }
 /* With fewer than three lanes they are taller: a larger ring and a third line for the PR. */
 .lanes:not([data-lanes='3']) .lane:not(.slim) {
-  grid-template-columns: 84px minmax(0, 1fr) 430px 200px;
+  grid-template-columns: 84px minmax(0, 1fr) 350px 124px;
+}
+/* Only the card with "Hold to merge" takes the extra width, from the end of its own track,
+   so every track still starts in line. */
+.lane.has-btn .jr {
+  width: calc(100% - 48px);
+}
+.lane.has-btn .lm {
+  margin-left: -48px;
+}
+/* The open action: a real button stretched under the card's content (which sits above it,
+   so its hover cards work; a click on the content opens the session too). */
+.lane-open {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  cursor: pointer;
+}
+.lane-open:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: 2px;
+}
+.lane > :not(.lane-open) {
+  position: relative;
+  z-index: 1;
+}
+.lane:has(.lane-open) {
+  cursor: pointer;
 }
 .lane .lt {
   display: flex;
   flex-direction: column;
   gap: 6px;
   min-width: 0;
+}
+/* The second line: the main words shrink with an ellipsis; the quiet facts keep their width. */
+.lane .lt2 {
+  display: flex;
+  align-items: baseline;
+  gap: 18px;
+  min-width: 0;
+}
+.lane .lt2 > .s {
+  /* The status keeps its room; the quiet facts that do not fit are left out whole. */
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.lane .lt2 > .s.t-amber {
+  color: var(--amber);
+}
+.lane .lt2 > .s.t-red {
+  color: var(--red);
+}
+.lane-meta {
+  flex: none;
+  color: var(--faint);
+  white-space: pre;
+}
+.lane-meta[hidden] {
+  display: none;
+}
+.lane.failed {
+  border-color: rgba(255, 77, 109, 0.4);
+}
+.lane .lm .s {
+  white-space: nowrap;
+  color: var(--dim);
 }
 .lane .lm {
   display: flex;
@@ -108,8 +280,28 @@
   text-align: right;
 }
 .lanes.stale .lane .lt,
-.lanes.stale .lane .jr {
+.lanes.stale .lane .jr,
+.lanes.stale .lane .lm,
+.lanes.stale .slot-meter,
+.lanes.stale .lanes-count,
+.lanes.stale .lanes-ask,
+.lanes.stale .calm,
+.lanes.stale .shelf {
   opacity: 0.55;
+}
+/* While stale the call to action goes quiet: no amber, and the button does nothing. */
+.lanes .t-quiet {
+  --c: var(--faint);
+  color: var(--dim);
+}
+.lanes .t-quiet .dot {
+  box-shadow: none;
+}
+.lanes-hd button:disabled {
+  cursor: default;
+}
+.lanes-hd button:disabled:hover {
+  background: none !important;
 }
 
 /* Free slots: slim and quiet, never full lane height. */
@@ -149,6 +341,26 @@
 .lane-arc {
   stroke: var(--c, var(--cyan));
 }
+.lane-ring.t-red {
+  --c: var(--red);
+}
+/* The card's number, repeated at the left of its bars on the ribbon. */
+.lane-num {
+  position: absolute;
+  right: -6px;
+  bottom: -4px;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 5px;
+  box-sizing: border-box;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  font: 600 14px/1 var(--disp);
+  color: var(--tx);
+  background: #120d2e;
+  border: 1.5px solid var(--c, var(--cyan));
+}
 .lane-ring > b {
   font: 600 24px/1 var(--disp);
   color: var(--amber);
@@ -182,19 +394,20 @@
   font: 600 14.5px/1 var(--disp);
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--faint);
+  /* Inactive stage labels: lighter than --faint so they clear 4.5:1 on every sky. */
+  color: #a49cc6;
   font-style: normal;
   white-space: nowrap;
 }
 .jn.d i {
-  background: var(--cyan);
-  border-color: var(--cyan);
-  opacity: 0.5;
+  background: var(--sc, var(--cyan));
+  border-color: var(--sc, var(--cyan));
+  opacity: 0.55;
 }
 .jn.c i {
-  border-color: var(--cyan);
-  background: var(--cyan);
-  box-shadow: 0 0 0 5px rgba(53, 230, 234, 0.18), 0 0 18px var(--cyan);
+  border-color: var(--sc, var(--cyan));
+  background: var(--sc, var(--cyan));
+  box-shadow: 0 0 0 5px color-mix(in srgb, var(--sc, var(--cyan)) 20%, transparent), 0 0 18px var(--sc, var(--cyan));
 }
 .jn.c em {
   color: var(--tx);
@@ -216,8 +429,27 @@
   margin-top: 7px;
 }
 .jc.d {
-  background: var(--cyan);
+  background: var(--sc, var(--cyan));
   opacity: 0.45;
+}
+.jr {
+  cursor: help;
+}
+/* The stage legend in the track's hover card. */
+.stage-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.stage-key {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.stage-key i {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
 }
 
 /* Hold to merge: the concept's mint button; a hold fills it from the left. */
@@ -229,10 +461,11 @@
 .btn.hold {
   position: relative;
   overflow: hidden;
-  height: 58px;
-  padding: 0 22px;
-  border-radius: 18px;
-  font-size: 22px;
+  height: 52px;
+  padding: 0 16px;
+  border-radius: 16px;
+  font-size: 20px;
+  white-space: nowrap;
   touch-action: none;
   user-select: none;
 }
@@ -278,6 +511,30 @@
   display: flex;
   align-items: center;
   gap: 18px;
+}
+/* One meter per subscription: smaller, so three sit side by side. */
+.shelf-week.acct {
+  gap: 12px;
+}
+.shelf-week.acct .bar {
+  width: 96px;
+}
+.shelf-week.t-amber .bar > i {
+  background: var(--amber);
+}
+.shelf-week.t-amber b {
+  color: var(--amber);
+}
+.shelf-parked {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  height: 40px;
+  padding: 0 10px;
+  margin-left: -10px;
+  border-radius: 12px;
+  cursor: pointer;
 }
 .shelf .bar {
   display: block;
@@ -328,7 +585,8 @@
   height: 30px;
 }
 
-/* The ribbon's agent row: three thin rows under the calendar chips. */
+/* The ribbon's agent row: one thin sub-row per session under the calendar chips. Each bar
+   sits in a taller hit box (the sub-row's pitch) so a mouse can find it. */
 .rib .agent-row {
   position: absolute;
   inset: 0;
@@ -337,32 +595,163 @@
 .rib .agent-row.stale {
   opacity: 0.4;
 }
+.rib .li-hit {
+  position: absolute;
+  left: 20px;
+  width: 28px;
+  height: 24px;
+  margin-top: -2px;
+  pointer-events: auto;
+  cursor: help;
+}
+.rib .sg-more {
+  position: absolute;
+  border-radius: 4px;
+  pointer-events: auto;
+  cursor: help;
+}
+.rib .sg-more.open {
+  cursor: pointer;
+}
+.rib .sg-more-t {
+  position: absolute;
+  top: 0;
+  padding: 0 6px;
+  border-radius: 4px;
+  font: 600 11px/8px var(--disp);
+  font-style: normal;
+  letter-spacing: 0.04em;
+  color: var(--dim);
+  background: rgba(14, 10, 32, 0.82);
+  white-space: nowrap;
+  pointer-events: none;
+}
+.rib .sg-more:hover .sg-more-t {
+  color: var(--tx);
+}
+/* A folded session's spans: thin lines stacked in the "+N more" row. */
+.rib .sg-line {
+  position: absolute;
+  border-radius: 1px;
+  background: rgba(255, 255, 255, 0.3);
+  pointer-events: none;
+}
+.rib .sg-line.run {
+  background: var(--cyan);
+}
+.rib .sg-line.wait {
+  background: var(--amber);
+}
+.rib .sg-more:hover .sg-line {
+  filter: brightness(1.35);
+}
+.rib .sg-hit {
+  position: absolute;
+  pointer-events: auto;
+  cursor: default;
+}
+.rib .sg-hit.open {
+  cursor: pointer;
+}
+.rib .sg-hit:hover .sg {
+  filter: brightness(1.35);
+}
 .rib .sg {
   position: absolute;
-  height: 5px;
-  border-radius: 3px;
+  left: 0;
+  right: 0;
+  border-radius: 2px;
   background: rgba(255, 255, 255, 0.3);
+  /* The stage colour as a short notch at the bar's left end. */
+  box-shadow: inset 4px 0 0 var(--sc, transparent);
 }
 .rib .sg.run {
   background: var(--cyan);
-  box-shadow: 0 0 8px var(--cyan);
+  box-shadow: inset 4px 0 0 var(--sc, transparent), 0 0 8px var(--cyan);
 }
 .rib .sg.wait {
   background: var(--amber);
-  box-shadow: 0 0 10px var(--amber);
+  box-shadow: inset 4px 0 0 var(--sc, transparent), 0 0 10px var(--amber);
 }
 .rib .cap2 {
   position: absolute;
-  width: 9px;
-  height: 9px;
+  right: -6px;
+  width: var(--cap, 9px);
+  height: var(--cap, 9px);
   border-radius: 50%;
   background: var(--mint);
-  margin: -2px 0 0 -3px;
+}
+/* The card's number, just left of the session's first bar. */
+.rib .sg-num {
+  position: absolute;
+  right: calc(100% + 4px);
+  top: 50%;
+  transform: translateY(-50%);
+  font: 600 11px/1 var(--disp);
+  color: var(--dim);
+  pointer-events: none;
+}
+.hover-tip .bar-num {
+  display: inline-grid;
+  place-items: center;
+  min-width: 22px;
+  height: 22px;
+  margin-right: 8px;
+  border-radius: 11px;
+  border: 1.5px solid var(--dim);
+  font: 600 13px/1 var(--disp);
+  vertical-align: 1px;
+}
+.hover-tip .bar-stage {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 8px;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .lane[role='button'],
+  .lane:has(.lane-open),
   .btn.hold.holding .hold-fill {
     transition: none;
   }
+}
+/* A five hour figure above 90 that the meter does not show inline: a small amber mark
+   (its number is in the hover). */
+.shelf .hot-5h {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--amber);
+  margin-left: -8px;
+}
+
+/* A waiting card's two actions, stacked in the time column, sized for a mouse. */
+.ask-acts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: stretch;
+}
+.lane .btn.act {
+  height: 36px;
+  padding: 0 14px;
+  border-radius: 12px;
+  font-size: 17px;
+  white-space: nowrap;
+}
+.lane .btn.act.amber {
+  color: var(--amber);
+  border-color: rgba(255, 194, 77, 0.5);
+  background: rgba(255, 194, 77, 0.08);
+}
+/* A waiting session quietened with "Later": a small amber dot, no amber edge. */
+.snooze-dot {
+  flex: none;
+  align-self: center;
+  width: 8px;
+  height: 8px;
+  margin-right: -8px;
+  border-radius: 50%;
+  background: var(--amber);
 }
