@@ -130,24 +130,16 @@ pub fn wall2_only(label: &str) -> Result<(), String> {
     if label == WALL2_LABEL { Ok(()) } else { Err("forbidden".to_string()) }
 }
 
-fn is_decimal(part: &str) -> bool {
-    let t = part.trim_matches(|c: char| !(c.is_ascii_digit() || c == '.' || c == '-' || c == '+'));
-    t.contains('.') && t.chars().any(|c| c.is_ascii_digit()) && t.parse::<f64>().is_ok()
-}
-
-/// The `reason` text of a failed reply, made safe for the log: printable ASCII only, every word
-/// that holds a decimal number (a coordinate, alone or in a pair or after `=`) removed, then cut to
-/// 120 characters. Empty when the reply has no `reason`.
+/// The `reason` text of a failed reply, made safe for the log. It is kept only to learn which limit
+/// was hit (minute, hour or day), so only ASCII letters and single spaces survive: every digit, sign
+/// and punctuation mark is dropped (a place can never get through as numbers, with or without a
+/// decimal point). Cut to 120 characters. Empty when the reply has no `reason`.
 pub fn scrub_reason(body: &str) -> String {
     let Some(reason) = serde_json::from_str::<serde_json::Value>(body).ok().and_then(|v| v.get("reason").and_then(|r| r.as_str().map(str::to_string))) else {
         return String::new();
     };
-    let ascii: String = reason.chars().map(|c| if c.is_ascii_graphic() || c == ' ' { c } else { ' ' }).collect();
-    let kept: Vec<&str> = ascii
-        .split_whitespace()
-        .filter(|word| !word.split(|c: char| matches!(c, ',' | ';' | '=' | ':' | '/' | '(' | ')')).any(is_decimal))
-        .collect();
-    kept.join(" ").chars().take(REASON_CHARS).collect()
+    let letters: String = reason.chars().map(|c| if c.is_ascii_alphabetic() { c } else { ' ' }).collect();
+    letters.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(REASON_CHARS).collect::<String>().trim_end().to_string()
 }
 
 /// A failed try: `<time> <source> failed <kind> <status> [<reason>]`.
@@ -362,24 +354,43 @@ mod tests {
     }
 
     #[test]
-    fn the_reason_keeps_the_words_and_drops_anything_like_a_coordinate() {
-        let body = r#"{"error":true,"reason":"Hourly API request limit exceeded. Please try again in the next hour."}"#;
-        assert_eq!(scrub_reason(body), "Hourly API request limit exceeded. Please try again in the next hour.");
-        let pair = r#"{"reason":"No data for 12.345, -67.89 today"}"#;
-        assert_eq!(scrub_reason(pair), "No data for today");
-        let glued = r#"{"reason":"Bad point 12.345,-67.89 or latitude=12.5 or (1.5)"}"#;
-        assert_eq!(scrub_reason(glued), "Bad point or or");
-        let whole_numbers = r#"{"reason":"Limit 10000 per day"}"#;
-        assert_eq!(scrub_reason(whole_numbers), "Limit 10000 per day");
+    fn the_reason_keeps_letters_only_so_no_coordinate_can_pass() {
+        // The three limit words survive.
+        for (body, kept) in [
+            (r#"{"error":true,"reason":"Minutely API request limit exceeded. Please try again in a minute."}"#, "Minutely API request limit exceeded Please try again in a minute"),
+            (r#"{"error":true,"reason":"Hourly API request limit exceeded. Please try again in the next hour."}"#, "Hourly API request limit exceeded Please try again in the next hour"),
+            (r#"{"error":true,"reason":"Daily API request limit exceeded. Please try again tomorrow."}"#, "Daily API request limit exceeded Please try again tomorrow"),
+        ] {
+            assert_eq!(scrub_reason(body), kept);
+        }
+        // Whole numbers with and without a space, mixed with decimals, signs, brackets and key=value forms.
+        let cases = [
+            (r#"{"reason":"No data for 47, -122 today"}"#, "No data for today"),
+            (r#"{"reason":"No data for 47,-122 today"}"#, "No data for today"),
+            (r#"{"reason":"No data for 47.6, -122 today"}"#, "No data for today"),
+            (r#"{"reason":"No data for 47 -122.33 today"}"#, "No data for today"),
+            (r#"{"reason":"Bad point (47,-122) or +47 or -122"}"#, "Bad point or or"),
+            (r#"{"reason":"Out of range lat=47 lon=-122"}"#, "Out of range lat lon"),
+            (r#"{"reason":"latitude=47.5&longitude=-122.5 rejected"}"#, "latitude longitude rejected"),
+            (r#"{"reason":"Limit 10000 per day"}"#, "Limit per day"),
+        ];
+        for (body, kept) in cases {
+            let got = scrub_reason(body);
+            assert_eq!(got, kept);
+            assert!(!got.chars().any(|c| c.is_ascii_digit() || matches!(c, '-' | '+' | '.' | ',' | '(' | ')' | '=')));
+        }
     }
 
     #[test]
     fn the_reason_is_cut_to_120_characters_and_plain_ascii() {
         let long = format!(r#"{{"reason":"{}"}}"#, "word ".repeat(60));
         let got = scrub_reason(&long);
-        assert_eq!(got.chars().count(), 120);
+        // 24 words of five characters fill 120 characters; the trailing space is dropped.
+        assert_eq!(got.chars().count(), 119);
+        assert!(!got.ends_with(' '));
         let odd = r#"{"reason":"café \u0007 limit"}"#;
         assert_eq!(scrub_reason(odd), "caf limit");
+        assert_eq!(scrub_reason(r#"{"reason":"12 34"}"#), "");
         assert_eq!(scrub_reason("not json"), "");
         assert_eq!(scrub_reason(r#"{"error":true}"#), "");
         assert_eq!(scrub_reason(r#"{"reason":5}"#), "");
