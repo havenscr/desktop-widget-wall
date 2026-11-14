@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { invoke } from '../bridge/tauri';
-import type { OmniSummary, Stage } from '../agents/model';
+import { helpersWork, type OmniSummary, type Stage } from '../agents/model';
 
 /**
  * The helper's saved record of past days (`wall2_omni_days`, `wall2_omni_day` in
@@ -153,7 +153,7 @@ export interface PanelSpan {
   open: boolean;
 }
 
-export type EndWord = 'merged' | 'pull request open' | 'pull request closed' | 'carried over' | 'waiting on you' | 'in review' | 'working' | 'idle' | 'finished';
+export type EndWord = 'merged' | 'pull request open' | 'pull request closed' | 'carried over' | 'waiting on you' | 'in review' | 'working' | 'helpers working' | 'idle' | 'finished';
 
 export interface PanelRow {
   id: string;
@@ -294,7 +294,21 @@ export function todayRows(s: OmniSummary, record: DayRecord | null, now: number,
     const waits = card ? card.waiting || card.state === 'blocked' : false;
     const pr = card?.pr?.number ?? fromRec?.pr?.number ?? null;
     const merged = fromRec?.pr?.state === 'merged';
-    const end: EndWord = merged ? 'merged' : waits ? 'waiting on you' : card ? (card.state === 'review' ? 'in review' : card.live === 'idle' ? 'idle' : 'working') : pr !== null ? 'pull request open' : 'finished';
+    const end: EndWord = merged
+      ? 'merged'
+      : waits
+        ? 'waiting on you'
+        : card
+          ? card.state === 'review'
+            ? 'in review'
+            : helpersWork(card)
+              ? 'helpers working'
+              : card.live === 'idle'
+                ? 'idle'
+                : 'working'
+          : pr !== null
+            ? 'pull request open'
+            : 'finished';
     const prSpan = spans.find((x) => x.kind === 'pr');
     rows.push({
       id,
@@ -331,4 +345,3 @@ export function axisRange(rows: readonly PanelRow[], today: boolean, nowHour: nu
   const hi = today ? Math.min(24, Math.max(lo + 4, Math.ceil(nowHour + 0.6))) : 24;
   return { lo, hi, step: hi - lo > 12 ? 2 : 1 };
 }
-

@@ -1,7 +1,7 @@
 import { IconCalendar } from '@tabler/icons-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { agentsStale, useAgents } from '../agents/useAgents';
-import { laneWaits, needsYouCount } from '../agents/model';
+import { laneWorks, needsYouCount } from '../agents/model';
 import { SheepSvg } from '../buddy/Watt';
 import { SPRITES, SPRITE_PX } from '../buddy/sprites';
 import { formatClock } from '../clock/format';
@@ -58,7 +58,7 @@ function DreamStatus({ now }: { now: () => Date }) {
   const st = useAgents();
   const fresh = st.status === 'ready' && st.summary !== null && !agentsStale(st);
   // The same rule as Work: a lane that waits on the owner is not working.
-  const working = fresh ? st.summary!.lanes.filter((l) => !laneWaits(l) && l.state === 'working').length : null;
+  const working = fresh ? st.summary!.lanes.filter(laneWorks).length : null;
   const needs = fresh ? needsYouCount(st.summary!) : null;
   const text = dreamStatusText(working, needs, onMoodLabel(now().getTime()));
   if (!text) return null;

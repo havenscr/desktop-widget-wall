@@ -1,4 +1,4 @@
-import { laneWaits, needsYouCount, type Lane, type OmniSummary } from '../agents/model';
+import { laneWorks, needsYouCount, type Lane, type OmniSummary } from '../agents/model';
 import { playerProcesses, procName } from '../music/players';
 import type { DayEvent } from '../ribbon/model';
 import type { WeatherReading } from '../weather/model';
@@ -145,7 +145,7 @@ export function statusParts(focus: FocusSeen, summary: StatusSummary | null): St
     // The same rules Work and Dream use: a lane that waits on the owner is not running, and a
     // waiting lane counts as needing the owner even when the helper's your-move total is lower.
     const lanes = summary.lanes as unknown as Lane[];
-    const running = lanes.filter((l) => !laneWaits(l) && l.state === 'working').length;
+    const running = lanes.filter(laneWorks).length;
     if (running > 0) parts.push({ kind: 'running', text: `${running} ${running === 1 ? 'agent' : 'agents'} still running.` });
     const total = summary.yourMove.total;
     if (typeof total === 'number' && Number.isFinite(total) && total >= 0) {

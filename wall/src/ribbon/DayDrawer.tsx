@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, type ReactNode } from 'react';
 import { IconChevronDown } from '@tabler/icons-react';
 import { invoke } from '../bridge/tauri';
-import { cards, elapsedText, laneWaits, prText, type Lane, type OmniSummary } from '../agents/model';
+import { cards, elapsedText, helpersWork, helpersWorkText, laneWaits, prText, type Lane, type OmniSummary } from '../agents/model';
 import { focusSession } from '../agents/open';
 import { agentsStale, useAgentsStore } from '../agents/useAgents';
 import { tip } from '../ui/HoverTip';
@@ -52,7 +52,7 @@ export function agendaLanes(items: readonly Chip[]): { c: Chip; lane: number; la
   return out;
 }
 
-const RANK: Record<string, number> = { 'waiting on you': 0, working: 1 };
+const RANK: Record<string, number> = { 'waiting on you': 0, working: 1, 'helpers working': 1 };
 
 /** Lines the helper sends that only repeat the state the pill already shows. */
 const BARE = new Set(['running', 'idle', 'failed', 'working', 'waiting', 'blocked', 'in review', 'waiting on you']);
@@ -65,6 +65,7 @@ const BARE = new Set(['running', 'idle', 'failed', 'working', 'waiting', 'blocke
  */
 export function quietLine(l: Lane): string {
   const parts: string[] = [];
+  if (helpersWork(l)) parts.push(helpersWorkText(l));
   const said = l.line.trim();
   if (said && !BARE.has(said.toLowerCase())) parts.push(said);
   else if (l.next && l.next.trim()) parts.push(`Next: ${l.next.trim()}`);
@@ -141,7 +142,15 @@ export function DayDrawer({
   const barHi = Math.max(barLo + 1, nowH);
   const bx = (ms: number) => ((Math.min(barHi, Math.max(barLo, wallHour(ms, now))) - barLo) / (barHi - barLo)) * 100;
   // The header counts what the pills say, so a failed session is never counted as working.
-  const counts = s ? { total: rows.length, need: rows.filter((r) => r.word === 'waiting on you').length, working: rows.filter((r) => r.word === 'working').length, failed: rows.filter((r) => r.word === 'failed').length } : null;
+  const counts = s
+    ? {
+        total: rows.length,
+        need: rows.filter((r) => r.word === 'waiting on you').length,
+        working: rows.filter((r) => r.word === 'working' || r.word === 'helpers working').length,
+        throughHelpers: rows.filter((r) => r.word === 'helpers working').length,
+        failed: rows.filter((r) => r.word === 'failed').length,
+      }
+    : null;
   const dateText = new Date(now).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
   const lanes = agendaLanes(chips);
   return (
@@ -248,7 +257,7 @@ export function DayDrawer({
                     , <span className="need">{counts.need} need you</span>
                   </>
                 )}
-                , {counts.working} working
+                , {counts.working} working{counts.throughHelpers > 0 ? ` (${counts.throughHelpers} through helpers)` : ''}
                 {counts.failed > 0 && (
                   <>
                     , <span className="failed">{counts.failed} failed</span>
@@ -274,7 +283,7 @@ export function DayDrawer({
               const mine = segs.filter((g) => g.lane === l.id);
               const work = mine.filter((g) => g.kind === 'run' || g.kind === 'past').reduce((t, g) => t + g.end - g.start, 0);
               const wait = mine.filter((g) => g.kind === 'wait').reduce((t, g) => t + g.end - g.start, 0);
-              const tone = word === 'failed' ? 'failed' : laneWaits(l) ? 'need' : word === 'working' ? 'working' : '';
+              const tone = word === 'failed' ? 'failed' : laneWaits(l) ? 'need' : word === 'working' ? 'working' : word === 'helpers working' ? 'helpers' : '';
               const quiet = quietLine(l);
               return (
                 <button
@@ -290,6 +299,7 @@ export function DayDrawer({
                       <span className="tip-s">
                         {word}, worked {hm(work)} today{wait > 0 ? `, waited on you ${hm(wait)}` : ''}
                       </span>
+                      {helpersWork(l) && <span className="tip-s">Its own turn is over; helpers it started are still at work.</span>}
                       {quiet && <span className="tip-s">{quiet}</span>}
                       {s?.linksAvailable && <span className="tip-k">Click to open it in OmniGent</span>}
                     </>

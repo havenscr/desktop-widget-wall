@@ -115,6 +115,46 @@ it('the header, a cell and the Busy at once line agree: five working at once, on
   expect(tipText).toContain('helpers count with their session');
 }, 20_000);
 
+it('helper work uses one word, one count and one open span in every live view', async () => {
+  const parent = lane({
+    id: ids[0],
+    title: 'Background verification',
+    live: 'idle',
+    line: 'idle',
+    bg: { agents: 2, shells: 1 },
+    kids: { total: 1, working: 1, running: 1 },
+  });
+  answer = () =>
+    summary({
+      slots: { used: 1, limit: 4, sessions: 1, working: 0, busy: 1, helpers: 1 },
+      sessionsList: [parent],
+      lanes: [parent],
+      day: [{ lane: ids[0], start: iso('09:00'), end: null, kind: 'run' }],
+    });
+  const r = render(
+    <>
+      <CentreSlot weather={weather} />
+      <Ribbon kind="work" />
+      <HoverTipLayer />
+    </>,
+  );
+  await flush();
+  expect(r.container.querySelector('.slot-meter .xs')!.textContent).toBe('1 of 4 working');
+  expect(r.container.querySelector('.ag-line')!.textContent).toContain('1 working (1 through helpers)');
+  expect(new Set([...r.container.querySelectorAll('.agent-row .ac i')].map((i) => i.className))).toEqual(new Set(['b1']));
+
+  fireEvent.click(r.container.querySelector('.rib-handle') as HTMLElement);
+  await flush();
+  const row = r.container.querySelector('.day-drawer .dd-row') as HTMLElement;
+  expect(row.querySelector('.dd-pill')!.textContent).toBe('helpers working');
+  expect(row.querySelector('.dd-line')!.textContent).toContain('helpers working: 2 agents, 1 command, 1 helper');
+  expect(r.container.querySelector('.dd-counts')!.textContent).toContain('1 working (1 through helpers)');
+  fireEvent.mouseEnter(row);
+  await flush(TIP_DELAY_MS + 10);
+  expect(document.querySelector('.hover-tip')!.textContent).toContain('Its own turn is over; helpers it started are still at work.');
+  r.unmount();
+}, 20_000);
+
 it('at the limit the meter says so in amber; a past day counts its recorded spans and has no quiet line', async () => {
   answer = () => {
     const s = busyDay();

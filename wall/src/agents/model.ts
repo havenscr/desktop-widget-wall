@@ -416,6 +416,7 @@ export function cardLine(l: Lane, question: string | null = null): { text: strin
     return { text: l.waitingSinceS != null ? `Waiting on you for ${elapsedText(l.waitingSinceS)}` : 'Waiting on you', tone: 'amber' };
   }
   if (l.failed) return { text: l.line && !BARE.includes(l.line.toLowerCase()) ? `Failed: ${l.line}` : 'Failed, needs a look', tone: 'red' };
+  if (helpersWork(l)) return { text: helpersWorkText(l), tone: '' };
   const said = l.line && !BARE.includes(l.line.toLowerCase()) ? l.line : '';
   if (l.live === 'working' && said) return { text: said, tone: '' };
   if (l.next) return { text: `Next: ${l.next}`, tone: '' };
@@ -517,7 +518,7 @@ const word = (n: number) => WORDS[n] ?? String(n);
  * working, no agent needs you", "One agent still working, one thing for you".
  */
 export function statusLine(s: OmniSummary): string {
-  const working = cards(s).filter((l) => !laneWaits(l) && l.state === 'working').length;
+  const working = cards(s).filter(laneWorks).length;
   const asks = needsYouCount(s);
   const first = working === 0 ? 'No agents working' : `${word(working)} agent${working === 1 ? '' : 's'} still working`;
   const second = asks === 0 ? 'no agent needs you' : asks === 1 ? 'one thing for you' : `${word(asks).toLowerCase()} things for you`;
@@ -612,7 +613,7 @@ export function agentLayout(
     const l = byId.get(id);
     const mine = raw.filter((g) => g.lane === id);
     if ((l && laneWaits(l)) || mine.some((g) => g.kind === 'wait' && g.open)) return 0;
-    if ((l && l.state === 'working') || mine.some((g) => g.kind === 'run' && g.open)) return 1;
+    if ((l && laneWorks(l)) || mine.some((g) => g.kind === 'run' && g.open)) return 1;
     return 2;
   };
   const picked = fold ? new Set([...order].sort((a, b) => rank(a) - rank(b) || order.indexOf(a) - order.indexOf(b)).slice(0, maxRows - 1)) : new Set(order);
@@ -700,6 +701,7 @@ export function clockText(ms: number): string {
  */
 export function elapsedLabel(l: Lane, now: number): { text: string; tip: string } {
   const started = clockText(now - l.elapsedS * 1000);
+  if (helpersWork(l)) return { text: 'helpers working', tip: `${helpersWorkText(l)}; its own turn is over; helpers it started are still at work.` };
   if (l.live === 'idle' && l.idleS != null) return { text: `idle ${elapsedText(l.idleS)}`, tip: `Idle for ${elapsedText(l.idleS)}; open ${elapsedText(l.elapsedS)}, started ${started}` };
   const what = l.live === 'working' ? 'Working, open' : 'Open';
   return { text: elapsedText(l.elapsedS), tip: `${what} for ${elapsedText(l.elapsedS)}, started ${started}` };

@@ -1,4 +1,4 @@
-import { cards, laneWaits, type DaySpan, type OmniSummary } from '../agents/model';
+import { cards, laneWorks, type DaySpan, type OmniSummary } from '../agents/model';
 import type { DayRecord } from './days';
 
 /**
@@ -72,7 +72,7 @@ export function logSegments(day: readonly DaySpan[], from: number, cut: number, 
 
 /** Cards that say working right now: working, not idle, not waiting on the owner, not failed. */
 export function workingIds(s: Pick<OmniSummary, 'lanes' | 'sessionsList'>): Set<string> {
-  return new Set(cards(s).filter((l) => l.state === 'working' && l.live !== 'idle' && !laneWaits(l) && !l.failed).map((l) => l.id));
+  return new Set(cards(s).filter(laneWorks).map((l) => l.id));
 }
 
 /**
@@ -117,13 +117,20 @@ export function settleOpenRuns(
   };
   const secs = (v: number | null | undefined): number | null => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : null);
   const day = s.day.map((d) => {
-    if (d.kind !== 'run' || d.end !== null || !parents.has(d.lane) || working.has(d.lane)) return d;
+    if (d.kind !== 'run' || d.end !== null || !parents.has(d.lane)) return d;
     const start = Date.parse(d.start) - skewMs;
     if (!Number.isFinite(start)) return d;
     const card = byId.get(d.lane);
+    if (working.has(d.lane) && (card?.live === 'working' || cut <= start + 12 * 60 * 60_000)) return d;
     const quiet = secs(card?.idleS) ?? secs(card?.waitingSinceS);
     const seenAt = seen.get(d.lane);
-    const raw = quiet !== null ? ref - quiet * 1000 : seenAt !== undefined ? seenAt : stamps(d.lane, start, d);
+    const raw = working.has(d.lane)
+      ? start + 12 * 60 * 60_000
+      : quiet !== null
+        ? ref - quiet * 1000
+        : seenAt !== undefined
+          ? seenAt
+          : stamps(d.lane, start, d);
     const end = Math.min(cut, Math.max(start, raw));
     ends.set(d.lane, Math.max(ends.get(d.lane) ?? -Infinity, end));
     return { ...d, end: new Date(end + skewMs).toISOString() };

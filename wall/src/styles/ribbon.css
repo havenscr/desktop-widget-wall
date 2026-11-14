@@ -936,6 +936,11 @@ button.dd-k.link:hover {
   border-color: rgba(53, 230, 234, 0.4);
   color: var(--cyan);
 }
+.dd-pill.helpers {
+  background: rgba(120, 235, 185, 0.1);
+  border-color: rgba(120, 235, 185, 0.4);
+  color: var(--mint);
+}
 .dd-line {
   flex: 1 1 346px;
   min-width: 0;
