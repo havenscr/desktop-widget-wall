@@ -14,6 +14,14 @@ const NOT_SETUP: &str = "not set up";
 const SIGN_AGAIN: &str = "sign in again";
 const BUSY: &str = "busy";
 const NO_DEVICE: &str = "no device";
+const NO_CONNECTION: &str = "no connection";
+const NOT_YOURS: &str = "not yours";
+const GONE: &str = "no longer offered";
+const STARTING: &str = "starting";
+const CHOOSE: &str = "choose";
+const RESTRICTED: &str = "restricted";
+const SPOTIFY_URI: &str = "spotify:";
+const START_WAIT: Duration = Duration::from_secs(12);
 const CALLBACK: &str = "/callback";
 const SCOPE: &str = "user-read-playback-state user-modify-playback-state user-read-currently-playing playlist-read-private playlist-read-collaborative user-library-read user-read-recently-played";
 const MAX_BODY: u64 = 1_000_000;
@@ -103,7 +111,11 @@ impl Creds for RealCreds {
 struct HttpReply { status: u16, retry_after: Option<u64>, body: Vec<u8> }
 trait Http: Send + Sync {
     fn token(&self, form: &[(&str, &str)]) -> Result<HttpReply, ()>;
+    fn token_timeout(&self, form: &[(&str, &str)], _timeout: Duration) -> Result<HttpReply, ()> { self.token(form) }
     fn api(&self, method: &str, path: &str, bearer: &str, payload: Option<&Value>, limit: u64) -> Result<HttpReply, ()>;
+    fn api_timeout(&self, method: &str, path: &str, bearer: &str, payload: Option<&Value>, limit: u64, _timeout: Duration) -> Result<HttpReply, ()> {
+        self.api(method, path, bearer, payload, limit)
+    }
 }
 
 struct RealHttp;
@@ -111,9 +123,17 @@ impl Http for RealHttp {
     fn token(&self, form: &[(&str, &str)]) -> Result<HttpReply, ()> {
         http_reply(agent().post("https://accounts.spotify.com/api/token").send_form(form))
     }
+    fn token_timeout(&self, form: &[(&str, &str)], timeout: Duration) -> Result<HttpReply, ()> {
+        let bounded=ureq::AgentBuilder::new().timeout(timeout.max(Duration::from_millis(1))).redirects(0).build();
+        http_reply(bounded.post("https://accounts.spotify.com/api/token").send_form(form))
+    }
     fn api(&self, method: &str, path: &str, bearer: &str, payload: Option<&Value>, limit: u64) -> Result<HttpReply, ()> {
+        self.api_timeout(method, path, bearer, payload, limit, Duration::from_secs(6))
+    }
+    fn api_timeout(&self, method: &str, path: &str, bearer: &str, payload: Option<&Value>, limit: u64, timeout: Duration) -> Result<HttpReply, ()> {
         let url = format!("https://api.spotify.com/v1{path}");
-        let request = match method { "GET" => agent().get(&url), "PUT" => agent().put(&url), _ => return Err(()) }.set("Authorization", &format!("Bearer {bearer}"));
+        let bounded = ureq::AgentBuilder::new().timeout(timeout.max(Duration::from_millis(1))).redirects(0).build();
+        let request = match method { "GET" => bounded.get(&url), "PUT" => bounded.put(&url), _ => return Err(()) }.set("Authorization", &format!("Bearer {bearer}"));
         let result = match payload { Some(value) => request.set("Content-Type", "application/json").send_string(&value.to_string()), None => request.call() };
         http_reply_with_limit(result, limit)
     }
@@ -126,7 +146,7 @@ fn http_reply_with_limit(result: Result<ureq::Response, ureq::Error>, limit: u64
     let response = match result { Ok(r) | Err(ureq::Error::Status(_, r)) => r, Err(_) => return Err(()) };
     let status = response.status();
     let retry_after = response.header("Retry-After").and_then(|v| v.parse::<u64>().ok());
-    let bytes = if (200..300).contains(&status) || status == 400 { body(response, limit).map_err(|_| ())? } else { Vec::new() };
+    let bytes = if (200..300).contains(&status) || status == 400 { match body(response, limit) { Ok(bytes) => bytes, Err(_) => return Ok(HttpReply { status: 598, retry_after: None, body: Vec::new() }) } } else { Vec::new() };
     Ok(HttpReply { status, retry_after, body: bytes })
 }
 
@@ -191,13 +211,17 @@ fn exchange(http: &dyn Http, cfg: &Config, code: &str, verifier: &str) -> TokenR
     ]))
 }
 
-fn refresh(http: &dyn Http, cfg: &Config, value: &str) -> TokenReply {
-    token_reply(http.token(&[
+fn refresh(http: &dyn Http, cfg: &Config, value: &str, timeout: Option<Duration>) -> TokenReply {
+    let form=[
         ("client_id", cfg.client_id.as_str()), ("grant_type", "refresh_token"), ("refresh_token", value),
-    ]))
+    ];
+    token_reply(match timeout { Some(limit)=>http.token_timeout(&form,limit), None=>http.token(&form) })
 }
 
 fn access_with(cfg: &Config, force: bool, http: &dyn Http, creds: &dyn Creds) -> Result<String, String> {
+    access_with_deadline(cfg,force,http,creds,None)
+}
+fn access_with_deadline(cfg: &Config, force: bool, http: &dyn Http, creds: &dyn Creds, deadline: Option<Instant>) -> Result<String, String> {
     check_backoff()?;
     if !force {
         if let Some(t) = token().lock().unwrap().as_ref() {
@@ -212,7 +236,9 @@ fn access_with(cfg: &Config, force: bool, http: &dyn Http, creds: &dyn Creds) ->
     }
     let refresh_value = creds.load().map_err(|_| SIGN_AGAIN.to_string())?.ok_or_else(|| SIGN_AGAIN.to_string())?;
     let started = Instant::now();
-    match refresh(http, cfg, &refresh_value) {
+    let timeout=deadline.map(|at| at.saturating_duration_since(Instant::now()));
+    if timeout.is_some_and(|left| left.is_zero()) { return Err(NO_DEVICE.into()) }
+    match refresh(http, cfg, &refresh_value, timeout) {
         TokenReply::Ok(access, seconds, replacement) => {
             if let Some(v) = replacement { if !creds.save(&v) { return Err("failed".into()) } }
             *token().lock().unwrap() = Some(Token { access: access.clone(), expires: Instant::now() + Duration::from_secs(seconds) });
@@ -274,7 +300,7 @@ fn shape_item(v: &Value, kind: &str, current_user: Option<&Profile>) -> Option<I
         "track" => artists(v.get("artists").unwrap_or(&Value::Null)),
         _ => None,
     }.and_then(|s| clean(Some(&Value::String(s)), 80));
-    let count = match kind { "playlist" => v.pointer("/tracks/total"), "album" => v.get("total_tracks"), _ => None }.and_then(Value::as_u64).and_then(|n| u32::try_from(n).ok());
+    let count = match kind { "playlist" => v.pointer("/items/total").or_else(|| v.pointer("/tracks/total")), "album" => v.get("total_tracks"), _ => None }.and_then(Value::as_u64).and_then(|n| u32::try_from(n).ok());
     Some(Item { id: id.into(), name: clean(v.get("name"), 160)?, kind: kind.into(), image_url: image_near(images, 300), thumb_url: image_near(images, 64), subtitle, count })
 }
 
@@ -286,6 +312,17 @@ fn shape_list(v: &Value, kind: &str, current_user: Option<&Profile>) -> Vec<Item
 }
 
 #[derive(Debug, PartialEq)] enum ReadAnswer { Empty, Json(Value) }
+fn status_answer(status: u16, playlist_items: bool) -> String {
+    match status {
+        403 if playlist_items => NOT_YOURS.into(),
+        403 => "refused".into(),
+        404 | 410 => GONE.into(),
+        429 => BUSY.into(),
+        500..=599 if status != 598 => format!("server-{status}"),
+        598 => "down".into(),
+        _ => format!("status-{status}"),
+    }
+}
 fn read_with(cfg: &Config, path: &str, limit: u64, http: &dyn Http, creds: &dyn Creds) -> Result<ReadAnswer, String> {
     check_backoff()?;
     let started = Instant::now();
@@ -297,8 +334,8 @@ fn read_with(cfg: &Config, path: &str, limit: u64, http: &dyn Http, creds: &dyn 
             Ok(resp) if resp.status == 401 && attempt == 0 => { crate::wall2_spotify_log::write(crate::wall2_spotify_log::Event::ApiFailed, crate::wall2_spotify_log::Reason::SignInAgain, 401, started.elapsed().as_millis()); continue },
             Ok(resp) if resp.status == 401 => return Err(SIGN_AGAIN.into()),
             Ok(resp) if resp.status == 429 => { back_off_for(retry_after(resp.retry_after)); crate::wall2_spotify_log::write(crate::wall2_spotify_log::Event::ApiFailed, crate::wall2_spotify_log::Reason::Busy, 429, started.elapsed().as_millis()); return Err(BUSY.into()) }
-            Ok(resp) => { crate::wall2_spotify_log::write(crate::wall2_spotify_log::Event::ApiFailed, crate::wall2_spotify_log::Reason::Down, resp.status, started.elapsed().as_millis()); return Err("down".into()) }
-            Err(_) => { crate::wall2_spotify_log::write(crate::wall2_spotify_log::Event::ApiFailed, crate::wall2_spotify_log::Reason::Down, 0, started.elapsed().as_millis()); return Err("down".into()) },
+            Ok(resp) => { crate::wall2_spotify_log::write(crate::wall2_spotify_log::Event::ApiFailed, crate::wall2_spotify_log::Reason::Down, resp.status, started.elapsed().as_millis()); return Err(status_answer(resp.status, path.contains("/playlists/") && path.contains("/items?"))) }
+            Err(_) => { crate::wall2_spotify_log::write(crate::wall2_spotify_log::Event::ApiFailed, crate::wall2_spotify_log::Reason::Down, 0, started.elapsed().as_millis()); return Err(NO_CONNECTION.into()) },
         }
     }
     Err(SIGN_AGAIN.into())
@@ -418,7 +455,12 @@ fn valid_query(query: &str) -> Result<String, String> {
 pub async fn wall2_spotify_search(window: WebviewWindow, query: String) -> Result<Search, String> {
     require(&window)?;
     let query = valid_query(&query)?;
-    tauri::async_runtime::spawn_blocking(move || { let cfg = config(window.app_handle())?; let current_user = profile(&cfg)?; let v = get_track_json(&cfg, &format!("/search?market=from_token&type=track,album,playlist&limit=20&q={}", urlencoding::encode(&query)))?; Ok(Search { tracks: shape_list(v.get("tracks").unwrap_or(&Value::Null), "track", None), albums: shape_list(v.get("albums").unwrap_or(&Value::Null), "album", None), playlists: shape_list(v.get("playlists").unwrap_or(&Value::Null), "playlist", Some(&current_user)) }) }).await.map_err(|_| "failed".to_string())?
+    tauri::async_runtime::spawn_blocking(move || { let cfg = config(window.app_handle())?; let current_user = profile(&cfg)?; search_with(&cfg, &query, &current_user, &RealHttp, &RealCreds) }).await.map_err(|_| "failed".to_string())?
+}
+fn search_path(query: &str) -> String { format!("/search?market=from_token&type=track,album,playlist&limit=10&q={}", urlencoding::encode(query)) }
+fn search_with(cfg: &Config, query: &str, current_user: &Profile, http: &dyn Http, creds: &dyn Creds) -> Result<Search, String> {
+    let v=get_json_with_limit(cfg,&search_path(query),TRACK_BODY,http,creds)?;
+    Ok(Search { tracks: shape_list(v.get("tracks").unwrap_or(&Value::Null), "track", None), albums: shape_list(v.get("albums").unwrap_or(&Value::Null), "album", None), playlists: shape_list(v.get("playlists").unwrap_or(&Value::Null), "playlist", Some(current_user)) })
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -435,7 +477,10 @@ fn shape_track(v: &Value) -> Option<Track> {
     Some(Track { id, name: clean(v.get("name"), 80)?, artists: artists(v.get("artists").unwrap_or(&Value::Null)).unwrap_or_default(), album: clean(v.pointer("/album/name"), 80).unwrap_or_default(), duration_ms: v.get("duration_ms").and_then(Value::as_u64).and_then(|n| u32::try_from(n).ok()).unwrap_or(0), image_url: image_near(images, 300), thumb_url: image_near(images, 64), playable })
 }
 fn shape_track_page(v: &Value, kind: &str) -> TrackPage {
-    let items = v.get("items").and_then(Value::as_array).into_iter().flatten().take(PAGE_SIZE).filter_map(|item| shape_track(if kind == "playlist" { item.get("track").unwrap_or(item) } else { item })).collect::<Vec<_>>();
+    let items = v.get("items").and_then(Value::as_array).into_iter().flatten().take(PAGE_SIZE).filter_map(|entry| {
+        let item = if kind == "playlist" { entry.get("item").or_else(|| entry.get("track")).unwrap_or(entry) } else { entry };
+        shape_track(item)
+    }).collect::<Vec<_>>();
     let total = v.get("total").and_then(Value::as_u64).and_then(|n| u32::try_from(n).ok()).unwrap_or(items.len() as u32);
     TrackPage { more: v.get("next").is_some_and(|n| !n.is_null()), items, total }
 }
@@ -444,8 +489,10 @@ fn add_album_to_tracks(page: &mut Value, album: &Value) {
     if let Some(items) = page.get_mut("items").and_then(Value::as_array_mut) { for item in items { if let Some(object) = item.as_object_mut() { object.insert("album".into(), summary.clone()); } } }
 }
 fn validate_tracks(kind: &str, id: &str, page: Option<u32>) -> Result<u32, String> { let page = page.unwrap_or(0); if !matches!(kind, "playlist" | "album") || !valid_id(id) || page > 39 { Err("invalid id".into()) } else { Ok(page) } }
+fn tracks_path(kind: &str, id: &str, page: u32) -> String { if kind == "playlist" { format!("/playlists/{id}/items?market=from_token&limit=50&offset={}&additional_types=track&fields=items(item(id,name,type,is_local,is_playable,restrictions,artists(name),album(name,images),duration_ms)),next,total", page as usize * PAGE_SIZE) } else { format!("/albums/{id}/tracks?market=from_token&limit=50&offset={}", page as usize * PAGE_SIZE) } }
+fn tracks_with(cfg:&Config,kind:&str,id:&str,page:u32,http:&dyn Http,creds:&dyn Creds)->Result<TrackPage,String>{ let value=get_json_with_limit(cfg,&tracks_path(kind,id,page),TRACK_BODY,http,creds)?; Ok(shape_track_page(&value,kind)) }
 #[tauri::command]
-pub async fn wall2_spotify_tracks(window: WebviewWindow, kind: String, id: String, page: Option<u32>) -> Result<TrackPage, String> { require(&window)?; let page = validate_tracks(&kind, &id, page)?; tauri::async_runtime::spawn_blocking(move || { let cfg = config(window.app_handle())?; let path = if kind == "playlist" { format!("/playlists/{id}/tracks?market=from_token&limit=50&offset={}", page as usize * PAGE_SIZE) } else { format!("/albums/{id}/tracks?market=from_token&limit=50&offset={}", page as usize * PAGE_SIZE) }; let mut value = get_track_json(&cfg, &path)?; if kind == "album" { let album = get_track_json(&cfg, &format!("/albums/{id}?market=from_token"))?; add_album_to_tracks(&mut value, &album); } Ok(shape_track_page(&value, &kind)) }).await.map_err(|_| "failed".to_string())? }
+pub async fn wall2_spotify_tracks(window: WebviewWindow, kind: String, id: String, page: Option<u32>) -> Result<TrackPage, String> { require(&window)?; let page = validate_tracks(&kind, &id, page)?; tauri::async_runtime::spawn_blocking(move || { let cfg = config(window.app_handle())?; if kind=="playlist" { return tracks_with(&cfg,&kind,&id,page,&RealHttp,&RealCreds) } let path = tracks_path(&kind, &id, page); let mut value = get_track_json(&cfg, &path)?; let album = get_track_json(&cfg, &format!("/albums/{id}?market=from_token"))?; add_album_to_tracks(&mut value, &album); Ok(shape_track_page(&value, &kind)) }).await.map_err(|_| "failed".to_string())? }
 
 #[derive(Debug, Serialize, PartialEq)] pub struct Queue { current: Option<Track>, next: Vec<Track> }
 fn shape_queue(v: &Value) -> Queue { Queue { current: v.get("currently_playing").and_then(shape_track), next: v.get("queue").and_then(Value::as_array).into_iter().flatten().filter_map(shape_track).take(10).collect() } }
@@ -462,18 +509,24 @@ fn get_playback_with(cfg: &Config, http: &dyn Http, creds: &dyn Creds) -> Result
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub struct Device { id: String, name: String, kind: String, active: bool, volume: Option<u8> }
+pub struct Device { id: String, name: String, kind: String, active: bool, restricted: bool, volume: Option<u8> }
 fn shape_devices(v: &Value) -> Vec<Device> {
     v.get("devices").and_then(Value::as_array).into_iter().flatten().take(50).filter_map(|d| {
         let id = d.get("id")?.as_str()?; if !valid_device_id(id) { return None }
-        Some(Device { id: id.into(), name: clean(d.get("name"), 100)?, kind: clean(d.get("type"), 40).unwrap_or_else(|| "unknown".into()), active: d.get("is_active").and_then(Value::as_bool).unwrap_or(false), volume: d.get("volume_percent").and_then(Value::as_u64).filter(|n| *n <= 100).map(|n| n as u8) })
+        Some(Device { id: id.into(), name: clean(d.get("name"), 100)?, kind: clean(d.get("type"), 40).unwrap_or_else(|| "unknown".into()), active: d.get("is_active").and_then(Value::as_bool).unwrap_or(false), restricted: d.get("is_restricted").and_then(Value::as_bool).unwrap_or(false), volume: d.get("volume_percent").and_then(Value::as_u64).filter(|n| *n <= 100).map(|n| n as u8) })
     }).collect()
 }
 #[tauri::command] pub async fn wall2_spotify_devices(window: WebviewWindow) -> Result<Vec<Device>, String> { require(&window)?; tauri::async_runtime::spawn_blocking(move || { let cfg = config(window.app_handle())?; Ok(shape_devices(&get_json(&cfg, "/me/player/devices")?)) }).await.map_err(|_| "failed".to_string())? }
 
-fn choose_device(devices: &[Device], requested: Option<&str>, computer: Option<&str>) -> Option<String> {
-    if let Some(id) = requested { return devices.iter().find(|d| d.id == id).map(|d| d.id.clone()) }
-    devices.iter().find(|d| d.active).or_else(|| computer.and_then(|n| devices.iter().find(|d| d.name.eq_ignore_ascii_case(n)))).map(|d| d.id.clone())
+#[derive(Debug, PartialEq)]
+enum DeviceChoice { Ready(String), Start, Choose, Restricted }
+fn choose_device(devices: &[Device], requested: Option<&str>, computer: Option<&str>) -> DeviceChoice {
+    let any_computer=devices.iter().any(|d| d.kind.eq_ignore_ascii_case("computer"));
+    let computers = devices.iter().filter(|d| !d.restricted && d.kind.eq_ignore_ascii_case("computer")).collect::<Vec<_>>();
+    if let Some(found) = requested.and_then(|id| computers.iter().find(|d| d.id == id)) { return DeviceChoice::Ready(found.id.clone()) }
+    if let Some(found) = computers.iter().find(|d| d.active) { return DeviceChoice::Ready(found.id.clone()) }
+    if let Some(found) = computer.and_then(|name| computers.iter().find(|d| d.name.eq_ignore_ascii_case(name))) { return DeviceChoice::Ready(found.id.clone()) }
+    match computers.as_slice() { [] if any_computer => DeviceChoice::Restricted, [] => DeviceChoice::Start, [only] => DeviceChoice::Ready(only.id.clone()), _ => DeviceChoice::Choose }
 }
 
 #[derive(Debug, Deserialize)]
@@ -481,8 +534,22 @@ fn choose_device(devices: &[Device], requested: Option<&str>, computer: Option<&
 pub struct PlayContext { kind: String, id: String }
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct PlayRequest { kind: String, id: String, device_id: Option<String>, context: Option<PlayContext>, offset_id: Option<String> }
+pub struct PlayRequest { kind: String, id: String, device_id: Option<String>, context: Option<PlayContext>, offset_id: Option<String>, #[serde(default)] shuffle: bool }
 static WRITE: OnceLock<Mutex<()>> = OnceLock::new();
+static STARTING_PLAYER: AtomicBool = AtomicBool::new(false);
+static CANCEL_PLAYER: AtomicBool = AtomicBool::new(false);
+static START_RESULT: OnceLock<Mutex<Option<String>>> = OnceLock::new();
+fn start_result() -> &'static Mutex<Option<String>> { START_RESULT.get_or_init(|| Mutex::new(None)) }
+struct StartingGuard;
+impl StartingGuard {
+    fn take() -> Result<Self, String> {
+        STARTING_PLAYER.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).map_err(|_| STARTING.to_string())?;
+        CANCEL_PLAYER.store(false, Ordering::SeqCst);
+        *start_result().lock().unwrap() = None;
+        Ok(Self)
+    }
+}
+impl Drop for StartingGuard { fn drop(&mut self) { STARTING_PLAYER.store(false, Ordering::SeqCst); } }
 fn write_lock() -> &'static Mutex<()> { WRITE.get_or_init(|| Mutex::new(())) }
 fn begin_write() -> Result<std::sync::MutexGuard<'static, ()>, String> { write_lock().try_lock().map_err(|_| BUSY.to_string()) }
 
@@ -496,8 +563,8 @@ fn put_with(cfg: &Config, path: &str, payload: Option<Value>, http: &dyn Http, c
         Ok(resp) if resp.status == 404 => { crate::wall2_spotify_log::write(crate::wall2_spotify_log::Event::ApiFailed, crate::wall2_spotify_log::Reason::NoDevice, 404, started.elapsed().as_millis()); Err(NO_DEVICE.into()) },
         Ok(resp) if resp.status == 429 => { back_off_for(retry_after(resp.retry_after)); crate::wall2_spotify_log::write(crate::wall2_spotify_log::Event::ApiFailed, crate::wall2_spotify_log::Reason::Busy, 429, started.elapsed().as_millis()); Err(BUSY.into()) }
         Ok(resp) if resp.status == 401 => { access_with(cfg, true, http, creds).map(|_| ())?; Err(BUSY.into()) }
-        Ok(resp) => { crate::wall2_spotify_log::write(crate::wall2_spotify_log::Event::ApiFailed, crate::wall2_spotify_log::Reason::Down, resp.status, started.elapsed().as_millis()); Err("down".into()) }
-        Err(_) => { crate::wall2_spotify_log::write(crate::wall2_spotify_log::Event::ApiFailed, crate::wall2_spotify_log::Reason::Down, 0, started.elapsed().as_millis()); Err("down".into()) },
+        Ok(resp) => { crate::wall2_spotify_log::write(crate::wall2_spotify_log::Event::ApiFailed, crate::wall2_spotify_log::Reason::Down, resp.status, started.elapsed().as_millis()); Err(status_answer(resp.status, false)) }
+        Err(_) => { crate::wall2_spotify_log::write(crate::wall2_spotify_log::Event::ApiFailed, crate::wall2_spotify_log::Reason::Down, 0, started.elapsed().as_millis()); Err(NO_CONNECTION.into()) },
     }
 }
 fn put(cfg: &Config, path: &str, payload: Option<Value>) -> Result<(), String> { put_with(cfg, path, payload, &RealHttp, &RealCreds) }
@@ -510,14 +577,76 @@ fn play_payload(request: &PlayRequest) -> Value {
     match (&request.context, &request.offset_id) { (Some(context), Some(offset)) => json!({"context_uri":format!("spotify:{}:{}", context.kind, context.id),"offset":{"uri":format!("spotify:track:{offset}")}}), (Some(context), None) => json!({"context_uri":format!("spotify:{}:{}", context.kind, context.id)}), _ if request.kind == "track" => json!({"uris":[uri]}), _ => json!({"context_uri":uri}) }
 }
 
-#[tauri::command]
-pub async fn wall2_spotify_play(window: WebviewWindow, request: PlayRequest) -> Result<(), String> {
-    require(&window)?; validate_play(&request)?;
-    tauri::async_runtime::spawn_blocking(move || { let cfg = config(window.app_handle())?; let devices = shape_devices(&get_json(&cfg, "/me/player/devices")?); let computer = std::env::var("COMPUTERNAME").ok(); let device = choose_device(&devices, request.device_id.as_deref(), computer.as_deref()).ok_or_else(|| NO_DEVICE.to_string())?; let payload = play_payload(&request); put(&cfg, &format!("/me/player/play?device_id={device}"), Some(payload)) }).await.map_err(|_| "failed".to_string())?
+fn device_counts(devices: &[Device]) -> (usize, usize, usize, usize) {
+    let computers = devices.iter().filter(|d| d.kind.eq_ignore_ascii_case("computer")).count();
+    let phones = devices.iter().filter(|d| d.kind.eq_ignore_ascii_case("smartphone")).count();
+    (devices.len(), computers, phones, devices.len().saturating_sub(computers + phones))
+}
+fn devices_before(cfg: &Config, deadline: Instant) -> Result<Vec<Device>, String> {
+    let left = deadline.saturating_duration_since(Instant::now());
+    if left.is_zero() { return Err(NO_DEVICE.into()) }
+    let bearer = access_with_deadline(cfg,false,&RealHttp,&RealCreds,Some(deadline))?;
+    let reply = RealHttp.api_timeout("GET", "/me/player/devices", &bearer, None, ANSWER_BODY, left.min(Duration::from_secs(1))).map_err(|_| NO_CONNECTION.to_string())?;
+    if !(200..300).contains(&reply.status) { return Err(status_answer(reply.status, false)) }
+    let value: Value = serde_json::from_slice(&reply.body).map_err(|_| "unreadable reply".to_string())?;
+    Ok(shape_devices(&value))
+}
+fn wait_for_computer<N, S, C, D>(mut devices: Vec<Device>, requested: Option<&str>, computer: Option<&str>, limit: Duration, mut now: N, mut sleep: S, mut cancelled: C, mut source: D) -> Result<String, String>
+where N: FnMut() -> Duration, S: FnMut(Duration), C: FnMut() -> bool, D: FnMut(Duration) -> Result<Vec<Device>, String> {
+    loop {
+        if cancelled() { return Err("cancelled".into()) }
+        let elapsed = now();
+        if elapsed >= limit { return Err(NO_DEVICE.into()) }
+        if let DeviceChoice::Ready(device) = choose_device(&devices, requested, computer) { return Ok(device) }
+        if matches!(choose_device(&devices,requested,computer),DeviceChoice::Restricted) { return Err(RESTRICTED.into()) }
+        sleep(Duration::from_secs(1).min(limit.saturating_sub(elapsed)));
+        let left = limit.saturating_sub(now());
+        if left.is_zero() { return Err(NO_DEVICE.into()) }
+        devices = source(left)?;
+    }
+}
+fn play_on_device(cfg: &Config, request: &PlayRequest, device: &str) -> Result<(), String> {
+    if request.shuffle { let _ = put(cfg, &format!("/me/player/shuffle?state=true&device_id={device}"), None); }
+    put(cfg, &format!("/me/player/play?device_id={device}"), Some(play_payload(request)))
+}
+fn finish_start(cfg: &Config, request: &PlayRequest, began: Instant, devices: Vec<Device>) -> Result<(), String> {
+    let computer = std::env::var("COMPUTERNAME").ok();
+    let device = wait_for_computer(devices, request.device_id.as_deref(), computer.as_deref(), START_WAIT, || began.elapsed(), std::thread::sleep, || CANCEL_PLAYER.load(Ordering::SeqCst), |left| devices_before(cfg, Instant::now() + left))?;
+    play_on_device(cfg, request, &device)
 }
 
+#[tauri::command]
+pub async fn wall2_spotify_play(window: WebviewWindow, request: PlayRequest) -> Result<String, String> {
+    require(&window)?; validate_play(&request)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let guard = StartingGuard::take()?;
+        let cfg = config(window.app_handle())?;
+        let devices = shape_devices(&get_json(&cfg, "/me/player/devices")?);
+        match choose_device(&devices, request.device_id.as_deref(), std::env::var("COMPUTERNAME").ok().as_deref()) {
+            DeviceChoice::Ready(device) => { play_on_device(&cfg, &request, &device)?; Ok("played".into()) }
+            DeviceChoice::Choose => Err(CHOOSE.into()),
+            DeviceChoice::Restricted => Err(RESTRICTED.into()),
+            DeviceChoice::Start => {
+                let counts = device_counts(&devices);
+                crate::wall2_spotify_log::write_devices(counts.0, counts.1, counts.2, counts.3);
+                window.app_handle().opener().open_url(SPOTIFY_URI, None::<&str>).map_err(|_| "failed".to_string())?;
+                std::thread::spawn(move || {
+                    let result = finish_start(&cfg, &request, Instant::now(), devices).err();
+                    *start_result().lock().unwrap() = Some(result.unwrap_or_else(|| "played".into()));
+                    drop(guard);
+                });
+                Ok(STARTING.into())
+            }
+        }
+    }).await.map_err(|_| "failed".to_string())?
+}
+
+#[derive(Serialize)] #[serde(rename_all = "camelCase")] pub struct StartStatus { starting: bool, result: Option<String> }
+#[tauri::command] pub async fn wall2_spotify_start_status(window: WebviewWindow) -> Result<StartStatus, String> { require(&window)?; Ok(StartStatus { starting: STARTING_PLAYER.load(Ordering::SeqCst), result: start_result().lock().unwrap().clone() }) }
+#[tauri::command] pub async fn wall2_spotify_cancel_start(window: WebviewWindow) -> Result<(), String> { require(&window)?; CANCEL_PLAYER.store(true, Ordering::SeqCst); Ok(()) }
+
 #[tauri::command] pub async fn wall2_spotify_transfer(window: WebviewWindow, device_id: String) -> Result<(), String> { require(&window)?; if !valid_device_id(&device_id) { return Err("invalid id".into()) } tauri::async_runtime::spawn_blocking(move || { let cfg = config(window.app_handle())?; put(&cfg, "/me/player", Some(json!({"device_ids":[device_id],"play":false}))) }).await.map_err(|_| "failed".to_string())? }
-fn shuffle_with(cfg: &Config, on: bool, http: &dyn Http, creds: &dyn Creds, computer: Option<&str>) -> Result<(), String> { let devices = shape_devices(&get_json_with(cfg, "/me/player/devices", http, creds)?); let device = choose_device(&devices, None, computer).ok_or_else(|| NO_DEVICE.to_string())?; put_with(cfg, &format!("/me/player/shuffle?state={on}&device_id={device}"), None, http, creds) }
+fn shuffle_with(cfg: &Config, on: bool, http: &dyn Http, creds: &dyn Creds, computer: Option<&str>) -> Result<(), String> { let devices = shape_devices(&get_json_with(cfg, "/me/player/devices", http, creds)?); let DeviceChoice::Ready(device) = choose_device(&devices, None, computer) else { return Err(NO_DEVICE.into()) }; put_with(cfg, &format!("/me/player/shuffle?state={on}&device_id={device}"), None, http, creds) }
 #[tauri::command] pub async fn wall2_spotify_shuffle(window: WebviewWindow, on: bool) -> Result<(), String> { require(&window)?; tauri::async_runtime::spawn_blocking(move || { let cfg = config(window.app_handle())?; let computer = std::env::var("COMPUTERNAME").ok(); shuffle_with(&cfg, on, &RealHttp, &RealCreds, computer.as_deref()) }).await.map_err(|_| "failed".to_string())? }
 
 pub fn start_log(dir: Option<std::path::PathBuf>) { crate::wall2_spotify_log::start(dir); }
@@ -595,11 +724,25 @@ mod tests {
     }
 
     #[test]
+    fn playlist_pages_accept_current_and_legacy_entries_and_ignore_nulls() {
+        let track = json!({"id":ID,"name":"Song","type":"track","artists":[],"album":{"name":"Album","images":[]}});
+        let current = shape_track_page(&json!({"total":3,"items":[{"item":track.clone()},{"item":null},{"item":{"id":ID,"name":"Talk","type":"episode","artists":[],"album":{}}}]}), "playlist");
+        assert_eq!(current.items.len(), 2);
+        assert!(current.items[0].playable);
+        assert!(!current.items[1].playable);
+        let legacy = shape_track_page(&json!({"items":[{"track":track}]}), "playlist");
+        assert_eq!(legacy.items.len(), 1);
+        let me = Profile { id:"me".into(), display_name:None };
+        let item = shape_item(&json!({"id":ID,"name":"List","items":{"total":7},"owner":{"id":"me"}}), "playlist", Some(&me)).unwrap();
+        assert_eq!(item.count, Some(7));
+    }
+
+    #[test]
     fn contextual_play_validation_and_payload_are_exact() {
         let other = "ABCDEFGHIJKL0123456789";
-        let request = PlayRequest { kind:"album".into(), id:other.into(), device_id:None, context:Some(PlayContext { kind:"playlist".into(), id:ID.into() }), offset_id:Some(ID.into()) };
+        let request = PlayRequest { kind:"album".into(), id:other.into(), device_id:None, context:Some(PlayContext { kind:"playlist".into(), id:ID.into() }), offset_id:Some(ID.into()), shuffle:false };
         assert!(validate_play(&request).is_ok()); assert_eq!(play_payload(&request), json!({"context_uri":format!("spotify:playlist:{ID}"),"offset":{"uri":format!("spotify:track:{ID}")}}));
-        let make = |context:Option<PlayContext>, offset:&str| PlayRequest { kind:"track".into(), id:ID.into(), device_id:None, context, offset_id:Some(offset.into()) };
+        let make = |context:Option<PlayContext>, offset:&str| PlayRequest { kind:"track".into(), id:ID.into(), device_id:None, context, offset_id:Some(offset.into()), shuffle:false };
         assert_eq!(validate_play(&make(None, ID)), Err("invalid id".into()));
         assert_eq!(validate_play(&make(Some(PlayContext { kind:"track".into(), id:ID.into() }), ID)), Err("invalid id".into()));
         assert_eq!(validate_play(&make(Some(PlayContext { kind:"playlist".into(), id:"bad".into() }), ID)), Err("invalid id".into()));
@@ -638,12 +781,56 @@ mod tests {
         let shaped = shape_devices(&json!({"devices":[{"id":DEVICE,"name":"Desk","type":"Computer","is_active":false,"volume_percent":44}, null, {"id":"bad id","name":"Bad"}]}));
         assert_eq!(shaped.len(), 1); assert_eq!(shaped[0].volume, Some(44));
         let other = "abcdef0123456789abcdef0123456789abcdef01";
-        let d = |id:&str,name:&str,active| Device{id:id.into(),name:name.into(),kind:"computer".into(),active,volume:None};
+        let d = |id:&str,name:&str,active| Device{id:id.into(),name:name.into(),kind:"computer".into(),active,restricted:false,volume:None};
         let active = vec![d(DEVICE,"Desk",false),d(other,"Other",true)];
-        assert_eq!(choose_device(&active,None,Some("Desk")).as_deref(),Some(other));
-        assert_eq!(choose_device(&active,Some(DEVICE),None).as_deref(),Some(DEVICE));
-        let named = vec![d(DEVICE,"Desk",false)]; assert_eq!(choose_device(&named,None,Some("desk")).as_deref(),Some(DEVICE));
-        assert_eq!(choose_device(&named,None,Some("Missing")),None); assert_eq!(choose_device(&[],None,None),None);
+        assert_eq!(choose_device(&active,None,Some("Desk")),DeviceChoice::Ready(other.into()));
+        assert_eq!(choose_device(&active,Some(DEVICE),None),DeviceChoice::Ready(DEVICE.into()));
+        let named = vec![d(DEVICE,"Desk",false)]; assert_eq!(choose_device(&named,None,Some("desk")),DeviceChoice::Ready(DEVICE.into()));
+        assert_eq!(choose_device(&named,None,Some("Missing")),DeviceChoice::Ready(DEVICE.into()));
+        let restricted = vec![Device { restricted:true, ..d(DEVICE,"Desk",false) }]; assert_eq!(choose_device(&restricted,None,None),DeviceChoice::Restricted);
+        let two = vec![d(DEVICE,"Desk",false),d(other,"Other",false)]; assert_eq!(choose_device(&two,None,None),DeviceChoice::Choose);
+        assert_eq!(choose_device(&two,Some("gone"),None),DeviceChoice::Choose);
+        assert_eq!(choose_device(&[],None,None),DeviceChoice::Start);
+    }
+
+    #[test]
+    fn startup_wait_is_bounded_cancellable_and_never_plays_a_late_device() {
+        let device = Device { id:DEVICE.into(), name:"Desk".into(), kind:"Computer".into(), active:false, restricted:false, volume:None };
+        let elapsed = std::cell::Cell::new(Duration::ZERO); let mut reads = VecDeque::from([Ok(Vec::new()), Ok(vec![device.clone()])]);
+        let got = wait_for_computer(Vec::new(),None,None,START_WAIT,||elapsed.get(),|d|elapsed.set(elapsed.get()+d),||false,|left|{assert!(left<=START_WAIT);reads.pop_front().unwrap()});
+        assert_eq!(got,Ok(DEVICE.into())); assert_eq!(elapsed.get(),Duration::from_secs(2));
+
+        elapsed.set(Duration::ZERO);
+        let never = wait_for_computer(Vec::new(),None,None,START_WAIT,||elapsed.get(),|d|elapsed.set(elapsed.get()+d),||false,|_|Ok(Vec::new()));
+        assert_eq!(never,Err(NO_DEVICE.into())); assert_eq!(elapsed.get(),START_WAIT);
+
+        elapsed.set(Duration::ZERO);
+        let cancelled = wait_for_computer(Vec::new(),None,None,START_WAIT,||elapsed.get(),|d|elapsed.set(elapsed.get()+d),||elapsed.get()>=Duration::from_secs(3),|_|Ok(Vec::new()));
+        assert_eq!(cancelled,Err("cancelled".into())); assert_eq!(elapsed.get(),Duration::from_secs(3));
+
+        elapsed.set(Duration::ZERO);
+        let late = wait_for_computer(Vec::new(),None,None,START_WAIT,||elapsed.get(),|d|elapsed.set(elapsed.get()+d),||false,|_|{elapsed.set(START_WAIT+Duration::from_secs(1));Ok(vec![device.clone()])});
+        assert_eq!(late,Err(NO_DEVICE.into()));
+    }
+
+    #[test]
+    fn startup_guard_has_one_owner_and_clears_after_a_panic() {
+        STARTING_PLAYER.store(false,Ordering::SeqCst);
+        let guard=StartingGuard::take().unwrap();
+        assert_eq!(StartingGuard::take().err().as_deref(),Some(STARTING));
+        drop(guard); assert!(!STARTING_PLAYER.load(Ordering::SeqCst));
+        let _=std::panic::catch_unwind(||{let _guard=StartingGuard::take().unwrap();panic!("test panic")});
+        assert!(!STARTING_PLAYER.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn status_answers_and_2026_paths_are_exact() {
+        let cases=[(403,false,"refused"),(403,true,NOT_YOURS),(404,false,GONE),(410,false,GONE),(429,false,BUSY),(503,false,"server-503"),(400,false,"status-400"),(598,false,"down")];
+        for (status,items,want) in cases { assert_eq!(status_answer(status,items),want); }
+        let path=tracks_path("playlist",ID,2);
+        assert!(path.starts_with(&format!("/playlists/{ID}/items?")));
+        for part in ["limit=50","offset=100","additional_types=track","fields=items(item("] { assert!(path.contains(part),"{part}"); }
+        assert!(search_path("two words").contains("limit=10"));
     }
 
     #[test]
@@ -664,20 +851,56 @@ mod tests {
         fn delete(&self) { *self.0.lock().unwrap() = None; }
         fn delete_if_equal(&self, expected: &str) { let mut value = self.0.lock().unwrap(); if value.as_deref() == Some(expected) { *value = None; } }
     }
-    struct FakeHttp { tokens: Mutex<VecDeque<Result<HttpReply, ()>>>, apis: Mutex<VecDeque<Result<HttpReply, ()>>>, limits: Mutex<Vec<u64>>, token_calls: std::sync::atomic::AtomicUsize, api_calls: std::sync::atomic::AtomicUsize }
+    struct FakeHttp { tokens: Mutex<VecDeque<Result<HttpReply, ()>>>, apis: Mutex<VecDeque<Result<HttpReply, ()>>>, limits: Mutex<Vec<u64>>, paths: Mutex<Vec<String>>, token_calls: std::sync::atomic::AtomicUsize, api_calls: std::sync::atomic::AtomicUsize }
     impl FakeHttp {
-        fn new(tokens: Vec<Result<HttpReply,()>>, apis: Vec<Result<HttpReply,()>>) -> Self { Self { tokens: Mutex::new(tokens.into()), apis: Mutex::new(apis.into()), limits: Mutex::new(Vec::new()), token_calls: 0.into(), api_calls: 0.into() } }
+        fn new(tokens: Vec<Result<HttpReply,()>>, apis: Vec<Result<HttpReply,()>>) -> Self { Self { tokens: Mutex::new(tokens.into()), apis: Mutex::new(apis.into()), limits: Mutex::new(Vec::new()), paths: Mutex::new(Vec::new()), token_calls: 0.into(), api_calls: 0.into() } }
         fn counts(&self) -> (usize,usize) { (self.token_calls.load(Ordering::SeqCst), self.api_calls.load(Ordering::SeqCst)) }
         fn limits(&self) -> Vec<u64> { self.limits.lock().unwrap().clone() }
+        fn paths(&self) -> Vec<String> { self.paths.lock().unwrap().clone() }
     }
     impl Http for FakeHttp {
         fn token(&self, _form: &[(&str,&str)]) -> Result<HttpReply,()> { self.token_calls.fetch_add(1,Ordering::SeqCst); self.tokens.lock().unwrap().pop_front().unwrap_or(Err(())) }
-        fn api(&self, _method:&str, _path:&str, _bearer:&str, _payload:Option<&Value>, limit:u64) -> Result<HttpReply,()> { self.api_calls.fetch_add(1,Ordering::SeqCst); self.limits.lock().unwrap().push(limit); match self.apis.lock().unwrap().pop_front().unwrap_or(Err(())) { Ok(reply) if reply.body.len() as u64 > limit => Err(()), answer => answer } }
+        fn api(&self, _method:&str, path:&str, _bearer:&str, _payload:Option<&Value>, limit:u64) -> Result<HttpReply,()> { self.api_calls.fetch_add(1,Ordering::SeqCst); self.limits.lock().unwrap().push(limit); self.paths.lock().unwrap().push(path.into()); match self.apis.lock().unwrap().pop_front().unwrap_or(Err(())) { Ok(reply) if reply.body.len() as u64 > limit => Ok(HttpReply { status:598, retry_after:None, body:Vec::new() }), answer => answer } }
     }
     fn hr(status:u16, body:&str) -> Result<HttpReply,()> { Ok(HttpReply{status,retry_after:None,body:body.as_bytes().to_vec()}) }
     fn token_ok(refresh: Option<&str>) -> Result<HttpReply,()> { hr(200, &format!(r#"{{"access_token":"access","expires_in":3600{}}}"#, refresh.map(|r| format!(r#", "refresh_token":"{r}""#)).unwrap_or_default())) }
     fn reset_state() { *token().lock().unwrap()=None; *not_before().lock().unwrap()=None; *profile_cache().lock().unwrap()=None; CANCEL_SIGN_IN.store(false,Ordering::SeqCst); SIGNING_IN.store(false,Ordering::SeqCst); }
     fn cfg() -> Config { Config { client_id:"a".repeat(32),redirect_port:8898 } }
+
+    #[test]
+    fn search_and_playlist_track_reads_send_the_2026_request_paths() {
+        let _test_guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        reset_state();
+        *token().lock().unwrap()=Some(Token{access:"ok".into(),expires:Instant::now()+Duration::from_secs(3600)});
+        let http=FakeHttp::new(vec![],vec![hr(200,r#"{"items":[],"total":0,"next":null}"#),hr(200,r#"{"tracks":{"items":[]},"albums":{"items":[]},"playlists":{"items":[]}}"#)]);
+        let creds=FakeCreds::new(Some("old"));
+        tracks_with(&cfg(),"playlist",ID,2,&http,&creds).unwrap();
+        search_with(&cfg(),"two words",&Profile{id:"me".into(),display_name:None},&http,&creds).unwrap();
+        let paths=http.paths();
+        assert!(paths[0].starts_with(&format!("/playlists/{ID}/items?")));
+        for part in ["limit=50","offset=100","additional_types=track","fields=items(item("] { assert!(paths[0].contains(part),"{part}"); }
+        assert!(paths[1].starts_with("/search?"));
+        assert!(paths[1].contains("limit=10"));
+    }
+
+    #[test]
+    fn shuffled_play_sets_shuffle_before_play_and_ignores_only_shuffle_failure() {
+        let _test_guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        reset_state();
+        *token().lock().unwrap()=Some(Token{access:"ok".into(),expires:Instant::now()+Duration::from_secs(3600)});
+        let http=FakeHttp::new(vec![],vec![hr(500,""),hr(204,"")]);
+        let request=PlayRequest{kind:"playlist".into(),id:ID.into(),device_id:None,context:None,offset_id:None,shuffle:true};
+        let device="desktop";
+        let shuffle=format!("/me/player/shuffle?state=true&device_id={device}");
+        let play=format!("/me/player/play?device_id={device}");
+        let result = {
+            let cfg=cfg();
+            if request.shuffle { let _=put_with(&cfg,&shuffle,None,&http,&FakeCreds::new(Some("old"))); }
+            put_with(&cfg,&play,Some(play_payload(&request)),&http,&FakeCreds::new(Some("old")))
+        };
+        assert_eq!(result,Ok(()));
+        assert_eq!(http.paths(),vec![shuffle,play]);
+    }
 
     #[test]
     fn seam_pins_refresh_throttle_retry_write_and_cancel_behaviour() {

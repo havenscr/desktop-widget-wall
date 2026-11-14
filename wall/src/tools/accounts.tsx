@@ -79,7 +79,7 @@ function CalendarRow({ a, m }: { a: MeetAccount; m: MeetState }) {
 }
 
 /** Spotify's own state: not set up, signed out, connected, or waiting on the browser. */
-function useSpotifyAccount() {
+function useSpotifyAccount(opened: number) {
   const [status, setStatus] = useState<SpotifyStatus | null>(null);
   const [failed, setFailed] = useState(false);
   const [waiting, setWaiting] = useState(false);
@@ -99,12 +99,19 @@ function useSpotifyAccount() {
   }, []);
   useEffect(() => {
     mounted.current = true;
-    read();
     return () => {
       mounted.current = false;
       // Leaving with a sign-in waiting ends it, so the native side is never left waiting for a browser nobody will use.
       if (waitingRef.current) void spotify.cancelSignIn().catch(() => undefined);
     };
+  }, [read]);
+  useEffect(() => {
+    read();
+  }, [opened, read]);
+  useEffect(() => {
+    const focused = () => read();
+    window.addEventListener('focus', focused);
+    return () => window.removeEventListener('focus', focused);
   }, [read]);
   const signIn = () => {
     setNotice(null);
@@ -152,6 +159,13 @@ function SpotifyRow({ sp, blocked }: { sp: ReturnType<typeof useSpotifyAccount>;
       </Row>
     );
   }
+  if (sp.status.reason === 'failed') {
+    return (
+      <Row icon={icon} name="Spotify" line="Could not read the saved sign-in" tone="bad">
+        <Btn label="Retry" onClick={sp.read} />
+      </Row>
+    );
+  }
   return (
     <Row icon={icon} name="Spotify" line="Not connected" hover={sp.status.reason ?? undefined}>
       <Btn label="Sign in" cy disabled={blocked} onClick={sp.signIn} />
@@ -165,9 +179,9 @@ function SpotifyRow({ sp, blocked }: { sp: ReturnType<typeof useSpotifyAccount>;
  */
 export function Accounts() {
   const m = useMeet(true);
-  const sp = useSpotifyAccount();
-  const accounts = m.data?.accounts ?? [];
   const opened = useToolsStore((s) => s.opened);
+  const sp = useSpotifyAccount(opened);
+  const accounts = m.data?.accounts ?? [];
   const openStatus = useOpenStatus(opened);
   const openLine = openStatus === 'failed' ? 'Could not check' : openStatus ? openWords[openStatus].line : 'Checking';
   const openHint = openStatus === 'failed'

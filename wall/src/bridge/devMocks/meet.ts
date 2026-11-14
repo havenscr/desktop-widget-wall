@@ -15,7 +15,12 @@ export function registerMeetMocks(): void {
   // `?meet=none`: both read, nothing scheduled. `?meet=busy`: five meetings at once at 1 PM.
   const mode = () => knob('meet') ?? '';
   const accounts = () =>
-    mode() === 'down'
+    mode() === 'signin-fault'
+      ? [
+          { id: 'work', label: 'Work', state: 'ok' },
+          { id: 'second', label: 'Second', state: 'signed-out' },
+        ]
+      : mode() === 'down'
       ? [
           { id: 'work', label: 'Work', state: 'unavailable', reason: 'graph-503-UnknownError' },
           { id: 'second', label: 'Second', state: 'signed-out' },
@@ -85,6 +90,7 @@ export function registerMeetMocks(): void {
     };
   });
   mocks.set('wall2_meet_sign_in', async () => {
+    if (mode() === 'signin-fault') throw new Error('token-network-dns');
     await new Promise((r) => setTimeout(r, 1500));
     second = true;
   });
