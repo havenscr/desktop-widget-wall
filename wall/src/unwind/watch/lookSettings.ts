@@ -143,13 +143,13 @@ function sunUpMax(size: number): number {
   return Math.min(60, DRIVE_IN_GROUND - SUN_TOP_CLEAR - size);
 }
 
-const pct = (v: number) => `${v} percent`;
+const pct = (v: number) => `${v}%`;
 
 export const CONTROLS: Readonly<Record<LookId, readonly Control[]>> = Object.freeze({
   sky: [
-    { kind: 'range', key: 'size', label: 'Size', note: 'How big the picture stands behind the mountains. 100 is as tall as the sky allows; smaller shrinks it toward the horizon', min: SKY_SIZE_MIN, max: () => 100, hardMax: 100, step: 1, usual: 100, show: (v) => `${v} percent`, more: 'larger', less: 'smaller' },
+    { kind: 'range', key: 'size', label: 'Size', note: 'How big the picture stands behind the mountains. 100 is as tall as the sky allows; smaller shrinks it toward the horizon', min: SKY_SIZE_MIN, max: () => 100, hardMax: 100, step: 1, usual: 100, show: (v) => `${v}%`, more: 'larger', less: 'smaller' },
     { kind: 'range', key: 'soft', label: 'Soft edge', note: 'How far the top, left and right edges fade into the sky. 0 is a plain edge; the most is 40 percent of the smaller side', min: 0, max: skySoftMax, hardMax: 200, step: 5, usual: 120, show: (v) => `${v} px`, more: 'wider', less: 'narrower' },
-    { kind: 'range', key: 'bright', label: 'Brightness', note: 'How bright the picture is over the sky', min: 50, max: () => 100, hardMax: 100, step: 1, usual: 90, show: (v) => `${v} percent`, more: 'brighter', less: 'dimmer' },
+    { kind: 'range', key: 'bright', label: 'Brightness', note: 'How bright the picture is over the sky', min: 50, max: () => 100, hardMax: 100, step: 1, usual: 90, show: (v) => `${v}%`, more: 'brighter', less: 'dimmer' },
     { kind: 'switch', key: 'floor', label: 'Floor light', note: 'The faint wash of the picture’s colours on the floor', usual: true },
   ],
   sun: [
@@ -184,7 +184,7 @@ export const CONTROLS: Readonly<Record<LookId, readonly Control[]>> = Object.fre
     { kind: 'switch', key: 'light', label: 'Travelling light', note: 'A soft light that travels slowly round the neon line while the video plays. It stops when paused and under reduced motion', usual: true, needs: { key: 'neon', reason: 'Needs the neon line on' } },
   ],
   holo: [
-    { kind: 'range', key: 'tilt', label: 'Tilt', note: 'How far the pane turns. 0 faces you', min: 0, max: () => 12, hardMax: 12, step: 1, usual: 7, show: (v) => `${v} degrees`, more: 'steeper', less: 'flatter' },
+    { kind: 'range', key: 'tilt', label: 'Tilt', note: 'How far the pane turns. 0 faces you', min: 0, max: () => 12, hardMax: 12, step: 1, usual: 7, show: (v) => `${v}\u00b0`, more: 'steeper', less: 'flatter' },
     { kind: 'range', key: 'plate', label: 'Plate darkness', note: 'How dark the glass plate behind the picture is. Lower lets more of the sky through', min: 40, max: () => 90, hardMax: 90, step: 1, usual: 74, show: (v) => `${v}`, more: 'darker', less: 'lighter' },
     { kind: 'switch', key: 'beam', label: 'Beam', note: 'The fan of light from the emitter to the pane', usual: true },
   ],

@@ -5,7 +5,7 @@ import { HINTS, CONTROLS, controlWords, isUsual, resolveTune, type RangeControl,
 import { lookName, type LookId } from './looks';
 import { useWatchStore } from './store';
 
-/** The foot of the section, and its hint while no control is in use. */
+/** The foot of the section: its one line says this until a control is hovered or focused, then that control's hint. */
 export const TUNE_FOOT = 'Each look keeps its own settings. Changes show at once.';
 
 function RangeRow({ look, c, hint }: { look: LookId; c: RangeControl; hint: (k: string | null) => void }) {
@@ -53,7 +53,7 @@ function SwitchRow({ look, c, hint }: { look: LookId; c: SwitchControl; hint: (k
   const id = `wk-${look}-${c.key}-label`;
   return (
     <div className="ln-row" onPointerEnter={() => hint(k)} onPointerLeave={() => hint(null)}>
-      <span className="ln-label" id={id}>
+      <span className="ln-label wk-sw" id={id}>
         {c.label}
       </span>
       <button
@@ -83,7 +83,7 @@ function SwitchRow({ look, c, hint }: { look: LookId; c: SwitchControl; hint: (k
  * usual", the one-line hint of the control in use, and "Reset to my usual" for this look only.
  * Every change reaches the stage at once (`setTune`).
  */
-export function LookTunePanel({ look }: { look: LookId }) {
+export function LookTunePanel({ look, foot = TUNE_FOOT }: { look: LookId; foot?: string }) {
   const tune = useWatchStore((s) => s.tune);
   const [hinted, setHinted] = useState<string | null>(null);
   const usual = isUsual(look, tune);
@@ -105,8 +105,7 @@ export function LookTunePanel({ look }: { look: LookId }) {
         </button>
       </div>
       {CONTROLS[look].map((c) => (c.kind === 'range' ? <RangeRow key={c.key} look={look} c={c} hint={setHinted} /> : <SwitchRow key={c.key} look={look} c={c} hint={setHinted} />))}
-      <p className="ln-hint wk-hint">{hinted ? HINTS[hinted] : 'The mark on a slider is your usual.'}</p>
-      <p className="ln-foot">{TUNE_FOOT}</p>
+      <p className="ln-foot wk-foot">{hinted ? HINTS[hinted] : foot}</p>
     </div>
   );
 }

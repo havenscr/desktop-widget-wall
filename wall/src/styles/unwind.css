@@ -2003,7 +2003,42 @@
    sheet's height follows its content, and the foot line about saved items makes room for it. ---- */
 .w-sheet.w-tune {
   height: auto;
-  gap: 12px;
+  gap: 6px;
+  padding: 16px 26px 12px;
+}
+.w-sheet.w-tune .w-srow {
+  gap: 2px;
+  padding: 2px 0 4px;
+  font-size: 17px;
+}
+.w-sheet.w-tune .w-seg {
+  padding: 2px;
+}
+.w-sheet.w-tune .w-seg button {
+  height: 32px;
+}
+.wk-foot {
+  white-space: normal;
+  text-overflow: clip;
+  min-height: 22px;
+}
+.w-sheet.w-tune .w-hint {
+  margin-top: 4px;
+}
+.wk-set .ln-row {
+  min-height: 34px;
+}
+.wk-set .ln-label {
+  width: 112px;
+}
+.wk-set .ln-label.wk-sw {
+  width: 190px;
+}
+.wk-set .ln-value {
+  width: 206px;
+}
+.wk-set .ln-value.ln-fill {
+  width: auto;
 }
 .w-sheet.w-tune .w-sfoot {
   display: none;
@@ -2011,7 +2046,7 @@
 .wk-set {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 2px;
   min-height: 0;
   font-size: 16px;
   padding-top: 8px;
@@ -2044,9 +2079,6 @@
 .wk-pick .w-seg {
   flex: 1;
   min-width: 0;
-}
-.w-sheet.w-tune .w-hint {
-  margin-top: 8px;
 }
 /* ---- end of the look settings ---- */
 

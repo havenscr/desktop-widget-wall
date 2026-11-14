@@ -503,7 +503,7 @@ describe('the sheet\'s section for the look', () => {
     const sheet = await open('sky');
     await act(async () => screen.getByRole('radio', { name: 'A look for each kind' }).click());
     const pick = within(sheet).getByRole('radiogroup', { name: 'Look to adjust' });
-    expect(within(sheet).getByText('A look keeps its own settings, whatever kind of video plays in it.')).toBeTruthy();
+    expect(within(sheet).getByText('A look keeps its own settings, whatever kind of video plays in it. Changes show at once.')).toBeTruthy();
     await act(async () => within(pick).getByRole('radio', { name: 'The sun' }).click());
     expect(within(sheet).getByRole('group', { name: 'The sun settings' })).toBeTruthy();
     fireEvent.change(within(sheet).getByRole('slider', { name: 'Glow' }), { target: { value: '80' } });

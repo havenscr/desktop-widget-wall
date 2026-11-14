@@ -15,6 +15,9 @@ function LookPicture({ look }: { look: LookId }) {
   );
 }
 
+/** With a look per kind the foot says whose settings these are (the look's, never the kind's). */
+const KIND_FOOT = 'A look keeps its own settings, whatever kind of video plays in it. Changes show at once.';
+
 function Choice({ value, onPick, label }: { value: LookId; onPick: (l: LookId) => void; label: string }) {
   return (
     <div className="w-seg" role="radiogroup" aria-label={label}>
@@ -114,10 +117,9 @@ export function WatchSheet({ initial = 'looks' }: { initial?: 'looks' | 'lines' 
             <span>Settings for</span>
             <Choice value={tuneLook} label="Look to adjust" onPick={setTuned} />
           </div>
-          <p className="w-hint">A look keeps its own settings, whatever kind of video plays in it.</p>
         </div>
       )}
-      <LookTunePanel look={tuneLook} />
+      <LookTunePanel look={tuneLook} foot={looks.mode === 'kind' ? KIND_FOOT : undefined} />
       <div className="w-sfoot">
         <span>The Look switch on Watch sets the look too.</span>
         <span className="w-count">

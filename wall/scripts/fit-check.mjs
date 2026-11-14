@@ -30,8 +30,9 @@
 // CI does not run this; run it by hand before a layout change is handed over.
 //
 //   WALL_CHROME=/path/to/chrome-or-headless-shell npm --prefix wall run fit-check
-//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, header, deck, tiles, picker, chips, heading, zenhint, strip, fold, drawer, rows, handle, sky, floor, sun, tools, toolsnames, meetfill, meetempty, fy-height, key-edge, hide-pill, hide-note, leave-band, rec-chip, rec-height, tile-height, tile-icon, tile-iconbox, drawer-scrim, lwbuttons, lwoverlap, lwsquare, lwring, lwtemp, lwround, sky-front, sky-moon, sky-always, sky-crop, sky-seam, sky-soft, sky-foot, tower-over, tower-wide, tower-box, tower-switch, holo-big, holo-noblend, holo-beam, holo-take, tile-text, listen-player, listen-card, listen-slot, listen-next, lines-size, lines-control, lines-text, lines-clip, watch-rest, watch-title, watch-away, watch-mark, lip-cover, lip-band, lip-scrim, row-parts, over-hatch, row-type, onair-box, onair-notes, onair-keys, onair-watt, watt-seat, watt-spot, watt-tower, watt-ground)
+//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, header, deck, tiles, picker, chips, heading, zenhint, strip, fold, drawer, rows, handle, sky, floor, sun, tools, toolsnames, meetfill, meetempty, fy-height, key-edge, hide-pill, hide-note, leave-band, rec-chip, rec-height, tile-height, tile-icon, tile-iconbox, drawer-scrim, lwbuttons, lwoverlap, lwsquare, lwring, lwtemp, lwround, sky-front, sky-moon, sky-always, sky-crop, sky-seam, sky-soft, sky-foot, tower-over, tower-wide, tower-box, tower-switch, holo-big, holo-noblend, holo-beam, holo-take, tile-text, listen-player, listen-card, listen-slot, listen-next, lines-size, lines-control, lines-text, lines-clip, watch-rest, watch-title, watch-away, watch-mark, lip-cover, lip-band, lip-scrim, row-parts, over-hatch, row-type, onair-box, onair-notes, onair-keys, onair-watt, watt-seat, watt-spot, watt-tower, watt-ground, tune-box, tune-clear, tune-tower, tune-sign, tune-light, tune-sheet, tune-control, tune-text, tune-cut)
 //   npm --prefix wall run fit-check -- --self-test
+//   npm --prefix wall run fit-check -- --only=look settings    (only the states whose name contains that text)
 //
 // WALL_CHROME (or the first argument that is not a flag) is a Chromium or
 // chrome-headless-shell binary. `--overflow=<side>` adds a stylesheet that pushes a checked
@@ -166,6 +167,16 @@ const EXPECT = {
   'sky-always': /^ *FAIL sky layers: 1 front canvas with no look behind the land/m,
   'sky-crop': /^ *FAIL sky layers: the whole sky picture is at -?\d+,-?\d+,\d+, not inside the stage near its top/m,
   'sky-seam': /^ *FAIL sky layers: the pixel proof at \w+: \d+ pixels differ by more than 2 levels/m,
+  // look settings
+  'tune-box': /^ *FAIL look settings: the picture is at /m,
+  'tune-clear': /^ *FAIL look settings: the picture's box .* overlaps /m,
+  'tune-tower': /^ *FAIL look settings: the tower /m,
+  'tune-sign': /^ *FAIL look settings: hiding the sign moved something else/m,
+  'tune-light': /^ *FAIL look settings: the travelling light/m,
+  'tune-sheet': /^ *FAIL look settings: the sheet is \d+ px tall/m,
+  'tune-control': /^ *FAIL look settings: control ".*" is [\d.]+ px tall/m,
+  'tune-text': /^ *FAIL look settings: text under 16 px/m,
+  'tune-cut': /^ *FAIL look settings: ".*" is cut /m,
   'sky-soft': /^ *FAIL whole sky soft edge: /m,
   'sky-foot': /^ *FAIL whole sky soft edge: /m,
   // on air
@@ -302,6 +313,18 @@ const OVERFLOWS = {
   'sky-seam': '.horizon-front { filter: brightness(1.04) !important; }',
   // The whole sky's soft edge: the mask removed (a plain edge again), and a mask that also fades the foot.
   'sky-soft': '.w-sky .w-screen { -webkit-mask-image: none !important; mask-image: none !important; }',
+  // look settings: the sky moved off the box the code uses; the left block run under the picture; the tower
+  // scaled out past the cards; the picture shifted when the sign is hidden; a long sheet, a 20 px switch, 12 px labels,
+  // a value squeezed to 60 px; the travelling light shrunk into the picture.
+  'tune-box': '.w-sky { left: 700px !important; }',
+  'tune-clear': '.w-now { min-width: 1500px !important; }',
+  'tune-tower': '.w-tower { transform: scale(1.5) !important; }',
+  'tune-sign': ".w-stage[style*='--w-sign'] .w-screen { left: 30px !important; }",
+  'tune-light': '.w-light path { transform: scale(0.75); transform-box: fill-box; transform-origin: center; }',
+  'tune-sheet': '.wk-set .ln-row { min-height: 110px !important; }',
+  'tune-control': '.wk-set .ln-switch { height: 20px !important; }',
+  'tune-text': '.wk-set .ln-label { font-size: 12px !important; }',
+  'tune-cut': '.wk-set .ln-value { width: 60px !important; }',
   // Keeps the production side ramp exactly and replaces only the top ramp with one that also fades the foot (an extra stop near 100 percent).
   'sky-foot': `.w-sky .w-screen { -webkit-mask-image: ${SKY_SIDE_RAMP}, ${SKY_TOP_RAMP_FOOT} !important; mask-image: ${SKY_SIDE_RAMP}, ${SKY_TOP_RAMP_FOOT} !important; }`,
   // on air: the notes card 1400 px wide; every note shown at 40 px (none behind "+N more"); 20 px key tiles.
@@ -439,6 +462,25 @@ const QUIET = [
   { name: 'Watch, the sun, 24 saved, Twitch', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=many&wlook=sun&wplay=2', checks: [...WATCH_IDLE, '.w-ctl', '.w-time', '.w-open'], hits: SKY_HITS },
   { name: 'Watch, settings sheet with four looks, one look', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=sky&wplay=0&wsheet=one', checks: ['.w-sheet', '.w-tiles', '.w-tile', '.w-hint', '.w-sfoot'] },
   { name: 'Watch, settings sheet, a look per kind', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=many&wplay=2&wsheet=kind', checks: ['.w-sheet', '.w-srow', '.w-srow .w-seg', '.w-sfoot'] },
+  // look settings (one block): the Looks sheet with the longest section, and every look at both ends of each
+  // setting that moves or sizes it (the picture the box the code uses, clear of its neighbours, nothing on it).
+  { name: 'Look settings, sheet, the sun', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wplay=0&wlook=sun&wsheet=one&wtune=sun.size=380', checks: ['.w-sheet', '.wk-set'], tune: 'sheet' },
+  { name: 'Look settings, sheet, whole sky', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wplay=0&wlook=sky&wsheet=one&wtune=sky.soft=200', checks: ['.w-sheet', '.wk-set'], tune: 'sheet' },
+  { name: 'Look settings, sheet, the drive-in (five settings)', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wplay=0&wlook=drivein&wsheet=one&wtune=drivein.size=90,drivein.sign=0,drivein.neon=0', checks: ['.w-sheet', '.wk-set'], tune: 'sheet' },
+  { name: 'Look settings, sheet, a look per kind, the drive-in', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=many&wplay=2&wsheet=kind&wtune=drivein.size=90', checks: ['.w-sheet', '.wk-set'], tune: 'sheet' },
+  { name: 'Look settings, whole sky, smallest', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wplay=0&wlook=sky&wtune=sky.size=60,sky.soft=200,sky.bright=50,sky.floor=0', checks: ['.w-now', '.w-lookbar'], tune: 'look' },
+  { name: 'Look settings, whole sky, plain edge', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wplay=0&wlook=sky&wtune=sky.soft=0,sky.bright=100', checks: ['.w-now', '.w-lookbar'], tune: 'look' },
+  { name: 'Look settings, sun, smallest and highest', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wplay=0&wlook=sun&wtune=sun.size=280,sun.up=60', checks: ['.w-now', '.w-lookbar'], tune: 'look' },
+  { name: 'Look settings, sun, largest and sunk', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wplay=0&wlook=sun&wtune=sun.up=-100', checks: ['.w-now', '.w-lookbar'], tune: 'look' },
+  { name: 'Look settings, sun, largest and highest', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wplay=0&wlook=sun&wtune=sun.up=60,sun.glow=100', checks: ['.w-now', '.w-lookbar'], tune: 'look' },
+  { name: 'Look settings, feathered, smallest', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wplay=0&wlook=feather&wtune=feather.size=60,feather.soft=10,feather.glow=0', checks: ['.w-now', '.w-lookbar'], tune: 'look' },
+  { name: 'Look settings, feathered, largest', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wplay=0&wlook=feather&wtune=feather.size=108,feather.soft=30,feather.glow=100', checks: ['.w-now', '.w-lookbar'], tune: 'look' },
+  { name: 'Look settings, drive-in, smallest, sign hidden', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wplay=0&wlook=drivein&wtune=drivein.size=80,drivein.sign=0,drivein.floor=100', checks: ['.w-now', '.w-lookbar'], tune: 'look' },
+  { name: 'Look settings, drive-in, largest', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wplay=0&wlook=drivein&wtune=drivein.size=105,drivein.neon=0', checks: ['.w-now', '.w-lookbar'], tune: 'look' },
+  { name: 'Look settings, drive-in, travelling light', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wplay=0&wlook=drivein&wtune=drivein.light=1', checks: ['.w-now', '.w-lookbar'], tune: 'look' },
+  { name: 'Look settings, drive-in, sign hidden', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wplay=0&wlook=drivein&wtune=drivein.sign=0', checks: ['.w-now', '.w-lookbar'], tune: 'look' },
+  { name: 'Look settings, hologram, flat', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wplay=0&wlook=holo&wtune=holo.tilt=0,holo.beam=0,holo.plate=40', checks: ['.w-now', '.w-lookbar'], tune: 'look' },
+  { name: 'Look settings, hologram, steepest', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wplay=0&wlook=holo&wtune=holo.tilt=12,holo.plate=90', checks: ['.w-now', '.w-lookbar'], tune: 'look' },
   // watch polish: the control row and the Look switch in every look. The switch's box must be the
   // same in every state below (compared after the run), the row one line clear of the list, and
   // nothing of the wall's over the video's box; the drive-in's driveInAudience must be its screen.
@@ -1537,6 +1579,111 @@ try {
       }
       return { fails, mode, quad };
     })();
+    // look settings ("tunecheck=look or sheet"): the picture the look draws is the box the code uses (data-sky-box),
+    // uncropped 16:9, clear of the left block, the clock, the tabs and the list card and inside the strip; for the
+    // drive-in the whole tower stays clear and nothing of it (or of the travelling light) paints on the picture, and
+    // hiding the sign moves nothing else. For sheet: the Looks sheet inside the stage and clear of the office slot, every
+    // control 32 px at least, no text under 16 px, no value cut.
+    const tuneCheck = (() => {
+      const mode = new URLSearchParams(location.search).get('tunecheck');
+      if (!mode) return null;
+      try { return tuneMeasure(mode); } catch (e) { return { fails: ['look settings: the check broke: ' + e.message], mode }; }
+    })();
+    function tuneMeasure(mode) {
+      const fails = [];
+      const R = (e) => { const r = e.getBoundingClientRect(); return { l: r.left, t: r.top, r: r.right, b: r.bottom, w: r.width, h: r.height }; };
+      const rnd = (r) => [r.l, r.t, r.w, r.h].map(Math.round).join(',');
+      const meet = (a, b) => a.l < b.r && b.l < a.r && a.t < b.b && b.t < a.b;
+      if (mode === 'sheet') {
+        const sheet = document.querySelector('.w-sheet.w-tune');
+        const set = sheet && sheet.querySelector('.wk-set');
+        if (!sheet || !set) return { fails: ['look settings: the Looks sheet has no settings section'], mode };
+        const s = R(sheet);
+        if (s.t < -0.5 || s.b > 658.5 || s.r > 2560.5) fails.push('look settings: the sheet is ' + Math.round(s.h) + ' px tall, y ' + Math.round(s.t) + ' to ' + Math.round(s.b) + ' (inside the stage and clear of the office slot at y 662)');
+        for (const el of set.querySelectorAll('button, input')) {
+          const r = R(el);
+          const name = el.getAttribute('aria-label') || el.textContent.trim() || el.id;
+          if (r.l < s.l - 0.5 || r.r > s.r + 0.5 || r.t < s.t - 0.5 || r.b > s.b + 0.5) fails.push('look settings: control "' + name + '" is cut by the sheet');
+          if (r.h < 31.5) fails.push('look settings: control "' + name + '" is ' + Math.round(r.h * 10) / 10 + ' px tall (32 at least)');
+        }
+        for (const el of [set, ...set.querySelectorAll('*')]) {
+          if (![...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim())) continue;
+          const fs = parseFloat(getComputedStyle(el).fontSize);
+          if (fs < 15.5) fails.push('look settings: text under 16 px in "' + el.textContent.trim().slice(0, 30) + '" (' + fs + ' px)');
+          if (el.scrollWidth > el.clientWidth + 0.5) fails.push('look settings: "' + el.textContent.trim().slice(0, 30) + '" is cut (' + el.scrollWidth + ' px in ' + el.clientWidth + ')');
+        }
+        if (set.querySelectorAll('.ln-row').length < 4) fails.push('look settings: the section has fewer than three controls');
+        return { fails, mode };
+      }
+      const stage = document.querySelector('.w-stage');
+      const scr = stage && stage.querySelector('.w-screen');
+      const frame = scr && scr.querySelector('.w-frame');
+      if (!stage || !scr || !frame) return { fails: ['look settings: no stage, screen or frame'], mode };
+      const look = stage.getAttribute('data-look');
+      const sb = (stage.getAttribute('data-sky-box') || '').split(',').map(Number);
+      const box = { l: sb[0], t: sb[1], w: sb[2], h: sb[3], r: sb[0] + sb[2], b: sb[1] + sb[3] };
+      const pic = R(scr);
+      if (look === 'holo') {
+        if (pic.l < box.l - 1 || pic.t < box.t - 1 || pic.r > box.r + 1 || pic.b > box.b + 1 || box.w - pic.w > 30 || box.h - pic.h > 12) fails.push('look settings: the tilted picture is at ' + rnd(pic) + ', not inside the box the code uses ' + [box.l, box.t, box.w, box.h].map(Math.round).join(','));
+      } else if (!(Math.abs(pic.l - box.l) <= 1 && Math.abs(pic.t - box.t) <= 1 && Math.abs(pic.w - box.w) <= 1 && Math.abs(pic.h - box.h) <= 1)) {
+        fails.push('look settings: the picture is at ' + rnd(pic) + ', not the box the code uses ' + [box.l, box.t, box.w, box.h].map(Math.round).join(','));
+      }
+      const ratio = frame.offsetWidth / frame.offsetHeight;
+      if (Math.abs(ratio - 16 / 9) > 0.02) fails.push('look settings: the frame is ' + frame.offsetWidth + ' by ' + frame.offsetHeight + ', not 16:9 (cropped or stretched)');
+      const top = look === 'sun' ? 8 : 0;
+      if (box.l < 1090 || box.r > 2000 || box.t < top - 0.5 || box.b > 720) fails.push('look settings: the picture box ' + [box.l, box.t, box.w, box.h].map(Math.round).join(',') + ' is outside x 1090 to 2000, y ' + top + ' to 720');
+      const keep = ['.w-now', '.w-lookbar', '.w-card', '.u-tabs'].map((sel) => [sel, document.querySelector(sel)]).filter((k) => k[1]);
+      const clk = document.querySelector('.clk');
+      const clockBox = (() => { if (!clk) return null; const rg = document.createRange(); rg.selectNodeContents(clk); const r = rg.getBoundingClientRect(); return { l: r.left, t: r.top, r: r.right, b: r.bottom, w: r.width, h: r.height }; })();
+      const clash = keep.find((k) => meet(box, R(k[1]))) || (clockBox && meet(box, clockBox) ? ['the clock'] : null);
+      if (clash) fails.push("look settings: the picture's box " + [box.l, box.t, box.w, box.h].map(Math.round).join(',') + ' overlaps ' + clash[0]);
+      const svg = stage.querySelector('.w-tower');
+      if (svg) {
+        const inv = svg.getScreenCTM().inverse();
+        const shapes = [...svg.querySelectorAll('path, rect')].filter((e) => !e.closest('defs') && !e.closest('g[mask]'));
+        let l = 1e9, r = -1e9, t = 1e9;
+        for (const e of shapes) { const b = R(e); if (!b.w && !b.h) continue; l = Math.min(l, b.l); r = Math.max(r, b.r); t = Math.min(t, b.t); }
+        if (l < 1090 || r > 1996 || t < 0) fails.push('look settings: the tower reaches x ' + Math.round(l) + ' to ' + Math.round(r) + ', top ' + Math.round(t) + ' (inside x 1090 to 1996 and the strip)');
+        const tower = shapes.map(R);
+        const bad = keep.find((k) => tower.some((b) => meet({ l: b.l - 8, t: b.t - 8, r: b.r + 8, b: b.b + 8 }, R(k[1]))));
+        if (bad) fails.push('look settings: the tower is within 8 px of ' + bad[0]);
+        // Nothing of the frame paints on the picture: points of its box, in the svg's own pixels, against every shape's fill and stroke.
+        const pts = [];
+        for (let i = 0; i <= 12; i++) for (let j = 0; j <= 7; j++) pts.push(new DOMPoint(pic.l + 0.5 + (pic.w - 1) * i / 12, pic.t + 0.5 + (pic.h - 1) * j / 7).matrixTransform(inv));
+        for (const e of svg.querySelectorAll('path, rect, ellipse, circle, line')) {
+          if (e.closest('defs') || e.closest('g[mask]') || e.getAttribute('clip-path')) continue;
+          const cs = getComputedStyle(e);
+          if (cs.display === 'none') continue;
+          const fill = cs.fill !== 'none' && Number(cs.fillOpacity) > 0, stroke = cs.stroke !== 'none' && parseFloat(cs.strokeWidth) > 0;
+          const hit = pts.find((pt) => (fill && e.isPointInFill(pt)) || (stroke && e.isPointInStroke(pt)));
+          if (hit) { fails.push('look settings: the tower ' + e.tagName + ' paints over the picture'); break; }
+        }
+        // Hiding the sign moves nothing else: the same measures with the property taken off and put back.
+        if (stage.style.getPropertyValue('--w-sign') === 'none') {
+          const measure = () => [...svg.querySelectorAll('path, rect, ellipse, text')].filter((e) => !e.closest('.w-sign') && !e.closest('defs')).map((e) => rnd(R(e))).join('|') + '#' + rnd(R(scr));
+          const hidden = measure();
+          stage.style.removeProperty('--w-sign');
+          const shown = measure();
+          stage.style.setProperty('--w-sign', 'none');
+          if (hidden !== shown) fails.push('look settings: hiding the sign moved something else');
+          if ([...svg.querySelectorAll('.w-sign')].some((e) => getComputedStyle(e).display !== 'none')) fails.push('look settings: the sign is still drawn with it hidden');
+        }
+        // The travelling light follows the line outside the picture: its path encloses the box and no point of the box lies on its stroke.
+        const lightSvg = stage.querySelector('.w-light');
+        if (lightSvg) {
+          const linv = lightSvg.getScreenCTM().inverse();
+          const lp = linv && [...lightSvg.querySelectorAll('path')];
+          for (const e of lp) {
+            const b = R(e);
+            if (!(b.l < pic.l - 3 && b.t < pic.t - 3 && b.r > pic.r + 3 && b.b > pic.b + 3 && b.l > pic.l - 30)) { fails.push('look settings: the travelling light path ' + rnd(b) + ' is not a line round the picture ' + rnd(pic)); break; }
+            const lpts = [];
+            for (let i = 0; i <= 12; i++) for (let j = 0; j <= 7; j++) lpts.push(new DOMPoint(pic.l + 0.5 + (pic.w - 1) * i / 12, pic.t + 0.5 + (pic.h - 1) * j / 7).matrixTransform(linv));
+            if (lpts.some((pt) => e.isPointInStroke(pt))) { fails.push('look settings: the travelling light paints on the picture'); break; }
+          }
+        }
+      }
+      return { fails, mode, look };
+    }
     // look tiles: the labels in the settings sheet keep 16 px at least (the wall's smallest text).
     const tileText = [...document.querySelectorAll('.w-tile')].filter((t) => parseFloat(getComputedStyle(t).fontSize) < 16).map((t) => 'watch polish: look tile "' + (t.textContent || '').trim() + '" has ' + getComputedStyle(t).fontSize + ' text (16 px at least)');
     // lines controls: the Lines side of the sheet stays inside the stage and 680 px with every control inside
@@ -1678,7 +1825,7 @@ try {
       }
       return fails;
     })();
-    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, meetOut, strip, opened, watchPolish, skyLayers, thCheck, tileText, listen, lines, watchBehaviour, onair, wattDriveIn });
+    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, meetOut, strip, opened, watchPolish, skyLayers, thCheck, tileText, listen, lines, watchBehaviour, onair, wattDriveIn, tuneCheck });
     document.body.appendChild(pre);
   }, new URLSearchParams(location.search).get('card') ? 7000 : 3000);</script>`;
   const broken = overflow ? `<style>${OVERFLOWS[overflow]}</style>` : '';
@@ -1780,6 +1927,16 @@ try {
     'lines-control': (v) => v.name === 'Lines settings sheet',
     'lines-text': (v) => v.name === 'Lines settings sheet',
     'lines-clip': (v) => v.name === 'Lines, bars under the drive-in',
+    // look settings
+    'tune-box': (v) => v.name === 'Look settings, whole sky, smallest',
+    'tune-clear': (v) => v.name === 'Look settings, drive-in, largest',
+    'tune-tower': (v) => v.name === 'Look settings, drive-in, largest',
+    'tune-sign': (v) => v.name === 'Look settings, drive-in, sign hidden',
+    'tune-light': (v) => v.name === 'Look settings, drive-in, travelling light',
+    'tune-sheet': (v) => v.name === 'Look settings, sheet, the drive-in (five settings)',
+    'tune-control': (v) => v.name === 'Look settings, sheet, the drive-in (five settings)',
+    'tune-text': (v) => v.name === 'Look settings, sheet, the drive-in (five settings)',
+    'tune-cut': (v) => v.name === 'Look settings, sheet, the sun',
   };
   const breakOn = BREAK_ON[overflow] ? VARIANTS.filter(BREAK_ON[overflow]) : VARIANTS.slice(0, 1);
   /** keys style: the Now row's height on each page that has one, compared after every state ran. */
@@ -1788,9 +1945,10 @@ try {
   const switchBoxes = [];
   /** sky layers: the moon drawn in each moon state, compared after the run (one place on Listen and on Watch). */
   const skyMoons = [];
-  for (const v of overflow ? breakOn : VARIANTS) {
+  const onlyText = flag('only')?.split('=')[1]?.toLowerCase();
+  for (const v of (overflow ? breakOn : VARIANTS).filter((x) => !onlyText || x.name.toLowerCase().includes(onlyText))) {
     console.log(`${v.name} (${v.q}):`);
-    const url = `${pathToFileURL(page).href}${v.q}${v.sky ? `&skycheck=${v.sky}` : ''}${overflow && SKY_BREAK_Q[overflow] ? SKY_BREAK_Q[overflow] : ''}${overflow && LINES_BREAK_Q[overflow] ? LINES_BREAK_Q[overflow] : ''}&checks=${encodeURIComponent(v.checks.join('|'))}${v.click ? `&click=${encodeURIComponent(v.click)}` : ''}${v.card ? '&card=1' : ''}${v.hits ? `&hits=${encodeURIComponent(v.hits.join('|'))}` : ''}${v.noHit ? `&nohit=${encodeURIComponent(v.noHit)}` : ''}${v.listen ? '&listen=1' : ''}${v.linesSheet ? '&linescheck=1' : ''}${v.th ? `&th=${v.th}` : ''}${v.wb ? `&wbcheck=${v.wb}` : ''}`;
+    const url = `${pathToFileURL(page).href}${v.q}${v.sky ? `&skycheck=${v.sky}` : ''}${overflow && SKY_BREAK_Q[overflow] ? SKY_BREAK_Q[overflow] : ''}${overflow && LINES_BREAK_Q[overflow] ? LINES_BREAK_Q[overflow] : ''}&checks=${encodeURIComponent(v.checks.join('|'))}${v.click ? `&click=${encodeURIComponent(v.click)}` : ''}${v.card ? '&card=1' : ''}${v.hits ? `&hits=${encodeURIComponent(v.hits.join('|'))}` : ''}${v.noHit ? `&nohit=${encodeURIComponent(v.noHit)}` : ''}${v.listen ? '&listen=1' : ''}${v.linesSheet ? '&linescheck=1' : ''}${v.th ? `&th=${v.th}` : ''}${v.wb ? `&wbcheck=${v.wb}` : ''}${v.tune ? `&tunecheck=${v.tune}` : ''}`;
     const dom = await runChrome(
       chrome,
       // Headless Chromium keeps 87 px of the window for itself, so 807 gives a 2560 by 720 viewport.
@@ -1803,7 +1961,7 @@ try {
       process.exit(1);
     }
     const text = m[1].replaceAll('&quot;', '"').replaceAll('&amp;', '&');
-    const { res, page: doc, overlaps, cut, gaps, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, meetOut, strip, opened, watchPolish, skyLayers, thCheck, tileText, listen, lines, watchBehaviour, onair, wattDriveIn } = JSON.parse(text);
+    const { res, page: doc, overlaps, cut, gaps, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, meetOut, strip, opened, watchPolish, skyLayers, thCheck, tileText, listen, lines, watchBehaviour, onair, wattDriveIn, tuneCheck } = JSON.parse(text);
     // watt drive-in
     if (wattDriveIn) {
       for (const f of wattDriveIn.fails) console.log(`  FAIL ${f}`);
@@ -1839,6 +1997,13 @@ try {
       if (watchPolish.fails.length) failed = true;
       else console.log('  ok   watch polish: the control row is one line clear of the list, nothing over the video\'s box');
       if (v.name.startsWith('Watch polish')) switchBoxes.push({ name: v.name, box: watchPolish.sw });
+    }
+    // look settings
+    if (tuneCheck) {
+      for (const f of tuneCheck.fails) console.log(`  FAIL ${f}`);
+      if (tuneCheck.fails.length) failed = true;
+      else if (tuneCheck.mode === 'sheet') console.log('  ok   look settings: the Looks sheet is inside the stage and clear of the office slot, every control 32 px at least, no text under 16 px, no value cut');
+      else console.log('  ok   look settings: the picture is the box the code uses, 16:9, clear of the left block, the clock, the tabs and the list card, and nothing paints on it');
     }
     // look tiles
     for (const f of tileText) console.log(`  FAIL ${f}`);
