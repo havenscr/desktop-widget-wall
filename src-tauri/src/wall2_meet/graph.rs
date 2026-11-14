@@ -185,7 +185,7 @@ pub struct Raw {
 
 /// Per address: the client tries a host's addresses one after another, so a dead IPv6 route
 /// must not eat the budget before IPv4 is tried.
-pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
+pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 pub const READ_TIMEOUT: Duration = Duration::from_secs(10);
 /// All of one read (token request, Graph request and retries) stays inside this.
 pub const BUDGET: Duration = Duration::from_secs(12);

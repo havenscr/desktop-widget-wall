@@ -148,10 +148,28 @@ pub fn reached(host: &str) {
 #[derive(Debug)]
 pub struct TimedResolver;
 
+pub fn ipv4_first(addrs: Vec<SocketAddr>) -> Vec<SocketAddr> {
+    let mut v4 = addrs.iter().copied().filter(SocketAddr::is_ipv4);
+    let mut v6 = addrs.iter().copied().filter(SocketAddr::is_ipv6);
+    let mut ordered = Vec::with_capacity(4);
+    while ordered.len() < 4 {
+        let before = ordered.len();
+        if let Some(addr) = v4.next() { ordered.push(addr); }
+        if ordered.len() < 4 { if let Some(addr) = v6.next() { ordered.push(addr); } }
+        if ordered.len() == before { break }
+    }
+    ordered
+}
+
+pub fn first_connect_share(connect: Duration, lookup: Duration, addresses: usize) -> Duration {
+    let left = connect.saturating_sub(lookup);
+    if addresses > 1 { left / 2 } else { left }
+}
+
 impl ureq::Resolver for TimedResolver {
     fn resolve(&self, netloc: &str) -> std::io::Result<Vec<SocketAddr>> {
         let began = Instant::now();
-        let result = netloc.to_socket_addrs().map(|i| i.collect::<Vec<_>>());
+        let result = netloc.to_socket_addrs().map(|i| ipv4_first(i.collect::<Vec<_>>()));
         let ms = began.elapsed().as_millis().min(u32::MAX as u128) as u32;
         record(netloc, ms, result.as_ref().map(|v| v.clone()).unwrap_or_default());
         result
@@ -230,6 +248,18 @@ mod tests {
 
     fn a(s: &str) -> SocketAddr {
         s.parse().unwrap()
+    }
+
+    #[test]
+    fn resolver_order_gives_ipv4_the_first_bounded_connect_attempt() {
+        let ordered = ipv4_first(vec![a("[2001:db8::1]:443"), a("192.0.2.1:443"), a("[2001:db8::2]:443"), a("192.0.2.2:443"), a("192.0.2.3:443")]);
+        assert!(ordered[0].is_ipv4());
+        assert_eq!(ordered.len(), 4);
+        assert!(ordered.windows(2).all(|pair| pair[0].is_ipv4() != pair[1].is_ipv4()));
+        for addresses in 1..=4 {
+            let share=first_connect_share(crate::wall2_meet::graph::CONNECT_TIMEOUT,Duration::from_secs(1),addresses);
+            assert_eq!(share,if addresses==1 { Duration::from_secs(4) } else { Duration::from_secs(2) });
+        }
     }
 
     fn np(phase: &'static str, af: &'static str, resolved: u8, dns_ms: Option<u32>, v4: Probe, v6: Probe) -> NetProbe {
