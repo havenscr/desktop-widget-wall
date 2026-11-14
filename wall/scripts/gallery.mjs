@@ -167,6 +167,8 @@ state('home', 'chores five', 'desk=typical&alerts=0&chores=many');
 state('home', 'chores with alerts', 'desk=typical&alerts=6&chores=many');
 state('home', 'sound playing on a speaker', 'spotifyplay=speaker');
 state('home', 'sound nothing playing', 'sonos=quiet');
+add('home', 'shield drawer, stale read', url('home', TYPICAL_AT, 'desk=stale&alerts=6'), true, '.panel.network.shield');
+add('home', 'shield drawer, plain http address', url('home', TYPICAL_AT, 'desk=typical&alerts=6&desktoken=lan'), true, '.panel.network.shield');
 // end home round two
 
 // The network alarm outside Home: the rail dot and one chip on Work and Unwind, never from a down source.
@@ -402,7 +404,9 @@ const EXPECT = [
   ['home', 'moods slid', ['Movie', '1 more']],
   ['home', 'chores five', ['Sort the recycling', '8 more can wait']],
   ['home', 'chores with alerts', ['10 more can wait', 'Click for all 6']],
-  ['home', 'sound playing on a speaker', ['Now playing', 'Lantern Song 1', 'Living room, 4 speakers']],
+  ['home', 'sound playing on a speaker', ['Now playing', 'Lantern Song 1', 'Living room, 4 speakers', 'All speakers', 'Common areas']],
+  ['home', 'shield drawer, stale read', ['open alerts as of', 'Clear all waits for a fresh read']],
+  ['home', 'shield drawer, plain http address', ['Clear all needs a private or https address']],
   ['home', 'sound nothing playing', ['Nothing playing', 'Play']],
   // end home round two
   ['home', 'chore ticked', ['Done.', 'Undo']],
