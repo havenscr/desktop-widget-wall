@@ -9,7 +9,9 @@
 //! `/api/speakers`, `/api/routines`, `/api/groups`, `/api/group-presets`, `/api/scenes`
 //! and `/api/sleep-timers`, side by side (the last four may fail on their own). An answer
 //! with far more entries than the caps is refused as malformed; the rest is cut down to a
-//! bounded, cleaned summary and kept as the last good read.
+//! bounded, cleaned summary and kept as the last good read. A failed read answers one fixed
+//! word, `timed-out`, `no-answer` or `bad-answer` (`wall2_sonos_read`), and failed or slow
+//! reads are written, as fixed words and numbers, to `wall2-sonos.log` (`wall2_sonos_log`).
 //!
 //! Writes (each only on a click): every key, preset, speaker, group or timer id a write
 //! names must be in the last good read (at most two minutes old), and every request body
@@ -37,6 +39,8 @@
 
 use crate::wall2_feeds::{parse_iso, read_base, read_body, require_ok};
 use crate::wall2_omni::require_wall2;
+use crate::wall2_sonos_log::{self, Event, Kind, Read};
+use crate::wall2_sonos_read::read_seven;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::sync::{Mutex, OnceLock};
@@ -816,26 +820,14 @@ fn fail(e: ureq::Error) -> String {
     text.to_string()
 }
 
-fn get(base: &str, path: &str) -> Result<Value, String> {
-    let resp = sonos_agent().get(&format!("{base}{path}")).set("Accept", "application/json").call().map_err(fail)?;
-    let resp = require_ok(resp).map_err(|_| REFUSED.to_string())?;
-    let body = read_body(resp).map_err(|_| REFUSED.to_string())?;
-    serde_json::from_slice(&body).map_err(|_| REFUSED.to_string())
-}
-
-/// The seven reads run side by side, so a slow service costs one timeout, not seven.
+/// The seven reads run side by side, so a slow service costs one timeout, not seven. A
+/// failed read answers one fixed word for its kind (`timed-out`, `no-answer` or
+/// `bad-answer`, see `wall2_sonos_read`); failed and slow reads are also written to
+/// `wall2-sonos.log`.
 fn read_all(base: &str) -> Result<Reads, String> {
-    const PATHS: [&str; 7] = ["/api/status", "/api/speakers", "/api/routines", "/api/groups", "/api/group-presets", "/api/scenes", "/api/sleep-timers"];
-    let mut answers: Vec<Result<Value, String>> = std::thread::scope(|sc| {
-        let handles: Vec<_> = PATHS.iter().map(|path| sc.spawn(move || get(base, path))).collect();
-        handles.into_iter().map(|h| h.join().unwrap_or_else(|_| Err(REFUSED.to_string()))).collect()
-    });
-    let mut next = || answers.remove(0);
-    let status = next()?;
-    let speakers = next()?;
-    let routines = next()?;
-    let mut optional = || next().unwrap_or(Value::Null);
-    Ok(Reads { status, speakers, routines, groups: optional(), presets: optional(), scenes: optional(), timers: optional() })
+    let mut answers = read_seven(sonos_agent(), base).map_err(|k| k.word().to_string())?.into_iter();
+    let mut next = || answers.next().unwrap_or(Value::Null);
+    Ok(Reads { status: next(), speakers: next(), routines: next(), groups: next(), presets: next(), scenes: next(), timers: next() })
 }
 
 /// Writes never reuse a pooled connection, so a dropped connection is never retried by
@@ -915,14 +907,15 @@ pub async fn wall2_sonos_summary(window: tauri::WebviewWindow, app: tauri::AppHa
     tauri::async_runtime::spawn_blocking(move || {
         let reads = read_all(&base)?;
         if reads_too_big(&reads) {
-            return Err(REFUSED.to_string());
+            wall2_sonos_log::write_line(wall2_sonos_log::line(Event::Failed, Read::Lists, Kind::BadAnswer, 200, 0));
+            return Err(Kind::BadAnswer.word().to_string());
         }
         let summary = shape(&reads, now_ms());
         remember(&summary);
         Ok(summary)
     })
     .await
-    .map_err(|_| UNFINISHED.to_string())?
+    .map_err(|_| Kind::BadAnswer.word().to_string())?
 }
 
 /// Unforced by default: the answer says started or skipped (with a fixed reason). With
