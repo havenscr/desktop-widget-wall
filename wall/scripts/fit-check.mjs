@@ -110,6 +110,7 @@ const EXPECT = {
   'tile-equal': /^ *FAIL deck: tiles in one row do not share one width and height/m,
   'icon-wide': /^ *FAIL deck: the icon of key tile "Add a key" sits [\d.]+ px below its tile top, its row first one sits [\d.]+ px/m,
   'key-menu': /^ *FAIL deck: the key menu leaves the stage/m,
+  'key-corner': /^ *FAIL deck: nothing is drawn on a key at hover/m,
   // left wing
   lwbuttons: /^ *FAIL left wing: music buttons leave the wing/m,
   lwoverlap: /^ *FAIL left wing: music buttons overlap the title/m,
@@ -223,6 +224,8 @@ const OVERFLOWS = {
   'tile-equal': '.work .right-wing .pinned .deck-tiles > .key-tile-wrap:nth-child(2) > .deck-tile.key-tile { height: 90px !important; }',
   'icon-wide': '.work .right-wing .pinned .deck-tiles > .add-key svg { margin-top: 8px !important; }',
   'key-menu': '.key-menu { transform: translateX(-3000px) !important; }',
+  // A corner button drawn on a hovered key (a stand-in for the removed three-dot button).
+  'key-corner': '.key-tile-wrap.fit-hover::after, .key-tile-wrap:hover::after { content: ""; position: absolute; top: 2px; right: 2px; width: 32px; height: 32px; background: #fff; z-index: 3; }',
   // left wing
   lwbuttons: '.work .left-wing .music-mini-text { flex: none !important; width: 900px !important; }',
   lwoverlap: '.work .left-wing .music-mini-btns { transform: translateX(-200px); }',
@@ -518,6 +521,9 @@ const VARIANTS = [
   deck('three pins plus Add, two Now keys', 'keys=two&hold=two&pins=three'),
   deck('three pins plus Add, three Now keys', 'keys=three&hold=three&pins=three'),
   // A key menu open on the leftmost key of each row: a popover (held to the stage and off the bottom strip's handle by the deck rules, not to its row's box).
+  // Nothing is drawn on a key at hover: the menu opens by right-click, so a hovered key shows only its own look.
+  deck('hovered pinned key draws nothing on it', 'keys=three&hold=three&pins=three', { click: 'hover:.pinned .key-tile-wrap', checks: ['.work .right-wing .deck-hd'], viewportOnly: true }),
+  deck('hovered Now key draws nothing on it', 'keys=three&hold=three&pins=three', { click: 'hover:.keys .key-tile-wrap', checks: ['.work .right-wing .deck-hd'], viewportOnly: true }),
   deck('key menu open on the leftmost Now key', 'keys=three&hold=three&pins=three', { click: 'ctx:.keys .key-tile', checks: ['.work .right-wing .deck-hd'], viewportOnly: true }),
   deck('key menu open on the leftmost pinned key', 'keys=three&hold=three&pins=three', { click: 'ctx:.pinned .key-tile', checks: ['.work .right-wing .deck-hd'], viewportOnly: true }),
   deck('a held set refused after a click (the app in front is not its app)', 'keys=wrong', { click: '.keys .key-tile' }),
@@ -872,6 +878,12 @@ try {
         if (!rowTiles.length) continue;
         if (rowTiles.some((r) => Math.abs(r.width - rowTiles[0].width) > 0.5 || Math.abs(r.height - rowTiles[0].height) > 0.5)) deck.push('deck: tiles in one row do not share one width and height');
         if (Math.abs(rowTiles[0].left - rr.left) > 0.5 || Math.abs(rowTiles[rowTiles.length - 1].right - rr.right) > 0.5) deck.push('deck: a tile row does not fill its width');
+      }
+      // Nothing is drawn on a hovered key: no child of its wrap but the key and an open menu, and no generated content on the wrap or the key.
+      for (const wrap of deckEl.querySelectorAll('.key-tile-wrap.fit-hover, .key-tile-wrap:hover')) {
+        const extra = [...wrap.children].filter((c) => !c.matches('.key-tile, .key-menu'));
+        const generated = [wrap, wrap.querySelector('.key-tile')].some((el) => el && ['::before', '::after'].some((pe) => getComputedStyle(el, pe).content !== 'none' && getComputedStyle(el, pe).content !== 'normal'));
+        if (extra.length || generated) deck.push('deck: nothing is drawn on a key at hover, but key "' + (wrap.querySelector('.key-tile')?.getAttribute('aria-label') ?? '') + '" has an extra part');
       }
       const menu = deckEl.querySelector('.key-menu');
       if (menu) {
@@ -1590,6 +1602,7 @@ try {
     'tile-equal': (v) => v.name === 'Deck, three pins plus Add, three Now keys',
     'icon-wide': (v) => v.name === 'Deck, one pin plus Add, one Now key',
     'key-menu': (v) => v.name.startsWith('Deck, key menu open on the leftmost'),
+    'key-corner': (v) => v.name === 'Deck, hovered pinned key draws nothing on it',
     'hide-pill': (v) => v.name === 'Unwind, Hide screen grown',
     // whole sky and sun
     sky: (v) => v.name.startsWith('Watch, whole sky playing'),

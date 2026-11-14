@@ -1,39 +1,16 @@
-import { IconArrowsExchange, IconDots, IconFileCode, IconPin, IconPinnedOff } from '@tabler/icons-react';
+import { IconArrowsExchange, IconFileCode, IconPin, IconPinnedOff, IconPlus } from '@tabler/icons-react';
 import { useEffect, useRef, type KeyboardEvent } from 'react';
 import { invoke } from '../bridge/tauri';
 import { overlayOwnsPointer } from '../ribbon/DrawerScrim';
-import { tip } from '../ui/HoverTip';
 
 export interface KeyMenuAction {
-  id: 'pin' | 'replace' | 'remove' | 'file';
+  id: 'pin' | 'replace' | 'add' | 'remove' | 'file';
   label: string;
   note?: string;
   disabled?: boolean;
 }
 
-/** The corner button: a press opens the menu, and a press while it is open closes it (a toggle). */
-export function KeyMenuButton({ label, open, onOpen, onClose }: { label: string; open: boolean; onOpen: (byKeyboard: boolean) => void; onClose: () => void }) {
-  return (
-    <button
-      type="button"
-      className={`key-more${open ? ' on' : ''}`}
-      aria-label={`More options for ${label}`}
-      aria-haspopup="menu"
-      aria-expanded={open}
-      {...tip(`More options for ${label}`)}
-      onClick={(event) => {
-        event.stopPropagation();
-        if (overlayOwnsPointer()) return;
-        if (open) onClose();
-        else onOpen(event.detail === 0);
-      }}
-    >
-      <IconDots size={18} aria-hidden="true" />
-    </button>
-  );
-}
-
-const icons = { pin: IconPin, replace: IconArrowsExchange, remove: IconPinnedOff, file: IconFileCode };
+const icons = { pin: IconPin, replace: IconArrowsExchange, add: IconPlus, remove: IconPinnedOff, file: IconFileCode };
 
 /** How long a menu stays once the pointer rests elsewhere (and focus is not being used by keyboard). */
 export const MENU_CLOSE_MS = 5_000;
@@ -42,7 +19,7 @@ export const MENU_CLOSE_MS = 5_000;
  * The menu of one key. It closes on Escape, on a press anywhere else, on a choice, and after
  * `MENU_CLOSE_MS` with the pointer away from it; the countdown never runs while the pointer is
  * over the menu, nor while keyboard focus is inside it after a key press (or when it was opened
- * from the keyboard). A press on the corner button that opened it closes it (a toggle). When it
+ * from the keyboard). When it
  * closes by Escape or after a choice, focus goes back to the key.
  */
 export function KeyMenu({ title, actions, onChoose, onClose, byKeyboard = false }: { title: string; actions: KeyMenuAction[]; onChoose: (id: KeyMenuAction['id']) => void; onClose: () => void; byKeyboard?: boolean }) {
@@ -55,7 +32,6 @@ export function KeyMenu({ title, actions, onChoose, onClose, byKeyboard = false 
     const el = menu.current;
     if (!el) return;
     const wrap = el.closest('.key-tile-wrap');
-    const trigger = wrap?.querySelector('.key-more') ?? null;
     let pointerIn = false;
     let focusIn = false;
     let keyboard = byKeyboardRef.current;
@@ -95,7 +71,7 @@ export function KeyMenu({ title, actions, onChoose, onClose, byKeyboard = false 
     };
     const away = (event: Event) => {
       const target = event.target as Node;
-      if (overlayOwnsPointer() || el.contains(target) || trigger?.contains(target)) return;
+      if (overlayOwnsPointer() || el.contains(target)) return;
       close(false);
     };
     const escape = (event: globalThis.KeyboardEvent) => {
