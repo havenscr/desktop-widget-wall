@@ -737,10 +737,10 @@ try {
       if (lipIn.tagName !== 'BUTTON') strip.push('strip: the Close the day lip is not a button');
       const z = (e) => parseInt(getComputedStyle(e).zIndex, 10) || 0;
       const others = Math.max(0, ...[...document.querySelector('.day-drawer').children].filter((c) => c !== lipIn).map(z));
-      if (z(lipIn) <= others) strip.push('strip: the Close the day lip has z-index ' + z(lipIn) + ', not above the drawer\'s other layers (' + others + ')');
+      if (z(lipIn) <= others) strip.push('strip: the Close the day lip has z-index ' + z(lipIn) + ', not above the other layers of the drawer (' + others + ')');
       const scrim = document.createElement('div');
       scrim.style.cssText = 'position:fixed;inset:0;z-index:44';
-      document.body.appendChild(scrim);
+      lipIn.closest('.day-drawer').before(scrim);
       const lr = lipIn.querySelector('.lip-pill').getBoundingClientRect();
       const topEl = document.elementFromPoint(lr.left + lr.width / 2, lr.top + lr.height / 2);
       scrim.remove();
