@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { mocks } from '../../bridge/tauri';
 import { resetNowPlaying } from '../../music/store';
-import { Unwind } from '../../screens/Unwind';
+import { UnwindView } from './testView';
 import { useSignalStore } from '../../signals/store';
 import { usePlaceStore } from '../../state/places';
 import { resetLastPlayed } from '../lastPlayed';
@@ -58,19 +58,33 @@ afterEach(() => {
 });
 
 it('renders the Listen tab with the same text as before when nothing is saved, and no Video corner', async () => {
-  render(<Unwind />);
+  render(<UnwindView />);
   await flush();
   const panel = document.getElementById('u-panel-listen')!;
   // The text main showed for this track before Watch existed.
   expect(panel.textContent).toBe('Tokyo BurnoutTokyo Rose2:354:13');
   expect(screen.queryByRole('button', { name: 'Video' })).toBeNull();
   expect(screen.queryByLabelText('How video is shown')).toBeNull();
+  // The lines' gear (asked for on Listen) is there by its own name, and no sheet is open.
+  expect(screen.getByRole('button', { name: 'How the lines move' }).getAttribute('aria-expanded')).toBe('false');
+  expect(screen.queryByRole('dialog')).toBeNull();
   expect(document.querySelector('.w-card')).toBeNull();
+});
+
+it('the gear on Listen opens the sheet on its Lines side; Watch opens it on Looks', async () => {
+  render(<UnwindView />);
+  await flush();
+  await act(async () => screen.getByRole('button', { name: 'How the lines move' }).click());
+  const sheet = screen.getByRole('dialog', { name: 'How the lines move' });
+  expect(sheet.querySelector('.ln-panel')).not.toBeNull();
+  expect(screen.getByRole('tab', { name: 'Lines' }).getAttribute('aria-selected')).toBe('true');
+  await act(async () => screen.getByRole('tab', { name: 'Looks' }).click());
+  expect(screen.getByRole('dialog', { name: 'How video is shown' }).querySelector('.ln-panel')).toBeNull();
 });
 
 it('gives the album art a Video corner when something is saved, which switches to Watch', async () => {
   seed();
-  render(<Unwind />);
+  render(<UnwindView />);
   await flush();
   const corner = screen.getByRole('button', { name: 'Video' });
   expect(corner.closest('.u-art')).not.toBeNull();
@@ -84,7 +98,7 @@ it('gives the album art a Video corner when something is saved, which switches t
 
 it('explains itself with nothing saved, refuses a bad link in one line and saves a good one', async () => {
   useWatchStore.getState().setTab('watch');
-  render(<Unwind />);
+  render(<UnwindView />);
   await flush();
   expect(screen.getByText(/Save the videos, playlists, live streams and Twitch channels/)).toBeTruthy();
   const field = screen.getByLabelText('Paste a YouTube or Twitch link');
@@ -108,7 +122,7 @@ it('explains itself with nothing saved, refuses a bad link in one line and saves
 it('lists 24 items in a list that scrolls inside the card', async () => {
   seed(Array.from({ length: 30 }, (_, i) => ({ kind: 'twitch', id: `chan_${i}`, label: `Channel ${i}` })));
   useWatchStore.getState().setTab('watch');
-  render(<Unwind />);
+  render(<UnwindView />);
   await flush();
   expect(document.querySelectorAll('.w-list li').length).toBe(24);
   expect(screen.getByText('24 saved')).toBeTruthy();
@@ -117,7 +131,7 @@ it('lists 24 items in a list that scrolls inside the card', async () => {
 it('plays a row in one frame built from the checked id, with the fixed attributes, and stops on Stop', async () => {
   seed();
   useWatchStore.getState().setTab('watch');
-  render(<Unwind />);
+  render(<UnwindView />);
   await flush();
   await act(async () => screen.getByRole('button', { name: 'Night drive mix' }).click());
   const frames = document.querySelectorAll('iframe');
@@ -138,7 +152,7 @@ it('reads play state only from its own frame on the YouTube origin, and sends co
   seed();
   useWatchStore.getState().setTab('watch');
   useWatchStore.getState().play({ kind: 'video', id: V });
-  render(<Unwind />);
+  render(<UnwindView />);
   await flush();
   const f = document.querySelector('iframe')!;
   const win = f.contentWindow!;
@@ -165,7 +179,7 @@ it('stops when a call starts, and does not start again when it ends', async () =
   seed();
   useWatchStore.getState().setTab('watch');
   useWatchStore.getState().play({ kind: 'twitch', id: 'pixel_harbor' });
-  render(<Unwind />);
+  render(<UnwindView />);
   await flush();
   expect(document.querySelector('iframe')?.getAttribute('src')).toBe('https://player.twitch.tv/?channel=pixel_harbor&parent=localhost');
   act(() => useSignalStore.setState({ call: { kind: 'teams', since: 0, camera: false } as never }));
@@ -180,7 +194,7 @@ it('stops when the page is hidden', async () => {
   seed();
   useWatchStore.getState().setTab('watch');
   useWatchStore.getState().play({ kind: 'video', id: V });
-  render(<Unwind />);
+  render(<UnwindView />);
   await flush();
   expect(document.querySelector('iframe')).not.toBeNull();
   const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
@@ -197,7 +211,7 @@ it('opens in the browser through the Rust command with the kind and id only', as
   });
   useWatchStore.getState().setTab('watch');
   useWatchStore.getState().play({ kind: 'live', id: 'Lofi_Live01' });
-  render(<Unwind />);
+  render(<UnwindView />);
   await flush();
   await act(async () => screen.getByRole('button', { name: /^Open in YouTube$/ }).click());
   expect(calls).toEqual([{ kind: 'live', id: 'Lofi_Live01' }]);
@@ -208,10 +222,11 @@ it('sets the look from the Look switch and draws the drive-in screen or the feat
   framePoster.render = () => <span>poster</span>;
   useWatchStore.getState().setTab('watch');
   useWatchStore.getState().play({ kind: 'video', id: V });
-  render(<Unwind />);
+  render(<UnwindView />);
   await flush();
   expect(document.querySelector('.w-stage')?.getAttribute('data-look')).toBe('drivein');
-  expect(document.querySelectorAll('.w-post').length).toBe(2);
+  expect(document.querySelectorAll('.w-tower').length).toBe(1);
+  expect(document.querySelector('.w-post')).toBeNull();
   expect(document.querySelector('iframe')).toBeNull();
   await act(async () => within(screen.getByRole('radiogroup', { name: 'Look' })).getByRole('radio', { name: 'Feathered' }).click());
   expect(document.querySelector('.w-stage')?.getAttribute('data-look')).toBe('feather');
@@ -221,7 +236,7 @@ it('sets the look from the Look switch and draws the drive-in screen or the feat
 it('sets the look in the settings sheet, one for everything or one per kind, and closes on Escape', async () => {
   seed();
   useWatchStore.getState().setTab('watch');
-  render(<Unwind />);
+  render(<UnwindView />);
   await flush();
   await act(async () => screen.getByRole('button', { name: 'How video is shown' }).click());
   const sheet = screen.getByRole('dialog', { name: 'How video is shown' });

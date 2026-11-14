@@ -31,6 +31,38 @@ export const DANCE_PEAK_MIN = 0.07;
 export const DANCE_BASE = 0.32;
 export const DANCE_HIT = 1.35;
 export const DANCE_LIMIT = 1.8;
+/** The five numbers the Lines controls move (`stepDance`'s parameters); `APP_DANCE_PARAMS` is the wall as it was. */
+export interface DanceParams {
+  levelRelease: number;
+  fastRelease: number;
+  base: number;
+  hit: number;
+  limit: number;
+}
+export const APP_DANCE_PARAMS: Readonly<DanceParams> = {
+  levelRelease: DANCE_LEVEL_RELEASE_S,
+  fastRelease: DANCE_FAST_RELEASE_S,
+  base: DANCE_BASE,
+  hit: DANCE_HIT,
+  limit: DANCE_LIMIT,
+};
+
+/**
+ * Write the dance numbers for How lively and Smoothness (0 to 100, 50 is the usual) into `out`, as
+ * the lines playground maps them: with x = (lively - 50) / 50 and y = (smooth - 50) / 50, the hit
+ * is `DANCE_HIT` times 2^x, the limit `DANCE_LIMIT` times 2^(0.75x), both releases times 4^y; the
+ * base and the attack times do not change. At 50 and 50 every number is the app's own.
+ */
+export function setDanceParams(out: DanceParams, lively: number, smooth: number): void {
+  const x = (lively - 50) / 50;
+  const y = (smooth - 50) / 50;
+  const release = Math.pow(4, y);
+  out.levelRelease = DANCE_LEVEL_RELEASE_S * release;
+  out.fastRelease = DANCE_FAST_RELEASE_S * release;
+  out.base = DANCE_BASE;
+  out.hit = DANCE_HIT * Math.pow(2, x);
+  out.limit = DANCE_LIMIT * Math.pow(2, 0.75 * x);
+}
 /** The kick: transients under this are zero, the rest are raised to this power, then followed. */
 export const KICK_GATE = 0.04;
 export const KICK_POWER = 1.5;
@@ -82,15 +114,15 @@ export const soft = (x: number, limit: number): number => limit * Math.tanh(x / 
  * One step of `dt` seconds: follow `raw` (`DANCE_BANDS` levels, 0 to 1) and write each band's line
  * height into `out` from index `at` (0 to `DANCE_LIMIT`). Returns the kick.
  */
-export function stepDance(s: DanceState, raw: ArrayLike<number>, dt: number, out: Float32Array, at = 0): number {
+export function stepDance(s: DanceState, raw: ArrayLike<number>, dt: number, out: Float32Array, at = 0, params: DanceParams = APP_DANCE_PARAMS): number {
   const d = dt > 0 ? dt : 0;
   let kickHit = 0;
   let mean = 0;
   const { level, fast, slow, trs } = s;
   for (let b = 0; b < DANCE_BANDS; b++) {
     const x = raw[b] > 0 ? raw[b] : 0;
-    level[b] += (x - level[b]) * (1 - Math.exp(-d / (x > level[b] ? DANCE_LEVEL_ATTACK_S : DANCE_LEVEL_RELEASE_S)));
-    fast[b] += (x - fast[b]) * (1 - Math.exp(-d / (x > fast[b] ? DANCE_FAST_ATTACK_S : DANCE_FAST_RELEASE_S)));
+    level[b] += (x - level[b]) * (1 - Math.exp(-d / (x > level[b] ? DANCE_LEVEL_ATTACK_S : params.levelRelease)));
+    fast[b] += (x - fast[b]) * (1 - Math.exp(-d / (x > fast[b] ? DANCE_FAST_ATTACK_S : params.fastRelease)));
     slow[b] += (x - slow[b]) * (1 - Math.exp(-d / DANCE_SLOW_S));
     const t = fast[b] - slow[b] - DANCE_HIT_MARGIN;
     trs[b] = t > 0 ? t : 0;
@@ -108,7 +140,7 @@ export function stepDance(s: DanceState, raw: ArrayLike<number>, dt: number, out
   s.peak = Math.max(s.peak * decay, top, DANCE_PEAK_MIN);
   for (let b = 0; b < DANCE_BANDS; b++) {
     const base = level[b] > BAND_FLOOR ? ((level[b] - BAND_FLOOR) / (1 - BAND_FLOOR)) * SPECTRUM_SCALE : 0;
-    out[at + b] = soft(base * DANCE_BASE + (trs[b] / s.peak) * DANCE_HIT, DANCE_LIMIT);
+    out[at + b] = soft(base * params.base + (trs[b] / s.peak) * params.hit, params.limit);
   }
   s.kickPeak = Math.max(s.kickPeak * decay, kickHit, DANCE_PEAK_MIN);
   const target = kickHit > KICK_GATE ? Math.pow(kickHit / s.kickPeak, KICK_POWER) : 0;

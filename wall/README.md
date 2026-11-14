@@ -365,6 +365,35 @@ skyline, the lake in front. It is drawn on one canvas by `HorizonCanvas.tsx`.
 - **Frame loop.** About 30 frames a second on `requestAnimationFrame`, none while
   `document.hidden` (`pacing.ts`). The backing store is stage scale times
   `devicePixelRatio`.
+- **Sky layers** (`sky.ts`). A screen that puts a picture in the sky (Watch) holds a claim
+  with `useSkyClaim(id, claim)`: `front` (an element), `boxes` (stage rectangles its picture
+  covers), `clear` (stage rectangles of cards the moon keeps clear of) and `noMoon`. A card
+  claims its own drawn box with `useSkyKeepClear(id, element)` (read again when its size
+  changes). An element no longer in the page is no host: the main canvas then draws the whole
+  picture that frame, and `useSkyClaim` replaces the claim without it as soon as it leaves the
+  page. While a claim gives an element, `HorizonCanvas` mounts a second canvas
+  in it (`.horizon-front`, fixed to the stage so it covers it whatever the element's box, taking
+  no pointer) and each frame draws the sky on the main canvas (`draw` with `part: 'sky'`: the
+  sky, stars, moon, sun and clouds) and the ground on the front one (`part: 'ground'`: the
+  ranges and their lines, the ripple, the city, the shore, the haze at the horizon, the lake
+  with its lights and reflection, the grid and the grain, on transparency). The two parts make
+  exactly the whole picture's canvas calls (a test), so outside the picture nothing changes.
+  Two page layers sit between the canvases: the place veil (`.veil`), which the front canvas
+  lays on its own pixels (`veil.ts`, 'source-atop', stops checked against frame.css), and the
+  rail, which the front canvas would cover: it is cut at the main area's left edge
+  (`MAIN_LEFT`) and the main canvas takes the ground left of it, copied from the front one.
+  The front canvas follows the same frame loop, resize and camera glide, rests with the main
+  one and draws nothing while the page is hidden. With no claim there is one canvas and the
+  calls are the golden ones (a test, and gallery stills of Work, Home, Meet and Unwind compared
+  pixel for pixel). The pixel proof in `npm run fit-check` draws Unwind at night, at dusk and at
+  noon on one canvas and with the front layer claimed by an empty host in the main area, nothing
+  between the two, and compares the screenshots pixel for pixel over the whole stage: 0 pixels
+  may differ. Per frame with the layer on nothing is allocated for it (one options object, its
+  `part` set before each draw; the sky part makes no rim gradient or glitter) and the veil's
+  strength is read only when the front canvas comes and through a place change's transition.
+  Dev builds only: `?sky=front` mounts the front canvas everywhere, `?sky=flat` never,
+  `?sky=empty` claims it with an empty host (the pixel proof), `?skymoon=x,y,r` puts the moon
+  at one place only (fit-check breaks and cost measurement).
 - **Reduced motion.** With `prefers-reduced-motion: reduce` the horizon is drawn
   once a minute and cameras switch without the glide.
 - **Review hook (dev server only).** Open
@@ -489,29 +518,54 @@ The day ribbon (`wall/src/ribbon/`, `styles/ribbon.css`) is on Work, Home and Me
     opens the Day drawer scrolled to that hour. All-day events are a thin bar over the row
     ("All day · Team offsite week"), with the all-day hover and click; the row's chips then
     sit 24 px tall under it (`calmLayout` in `ribbon/model.ts`).
-  - *Agents*: a thin activity bar from 6 AM to now in 12 minute cells, each brighter the
-    more sessions had a span in it and amber where one waited on the owner; each cell's
-    hover says how many were busy then. One line after the needle: "12 sessions: 2 need
+  - *Agents*: a thin activity bar from 6 AM to now in 12 minute cells, each coloured by the
+    most sessions working at once in it against the limit (mint 1, cyan 2, violet 3, amber at
+    the limit, red over it; over the limit the cell is also 10 px tall instead of 6 and
+    hatched, so it never rests on colour alone), with an amber underline where one waited on
+    the owner; a cell where nobody worked (only a wait or a review span) is grey. With no known
+    limit (an older helper sends none, or a zero) the cells keep their plain cyan look and say
+    nothing about a limit. Each cell's hover says how many worked at once then and the limit;
+    the row's own hover (the icon) carries a one line key to the colours and the amber
+    underline. See "How many work at once" below. One line after the needle: "12 sessions: 2 need
     you, 5 working" ("need you" in amber), or with none waiting "3 sessions: 2 working, 1
     idle" (review and idle sessions count as idle). With under 360 px right of the needle it
     sits right-aligned before it. A click on the line or a cell opens Agents today. A stale
     answer is dimmed, its cells end at the last good answer, and the line adds "as of" that
     time. Task marks keep their labels off the bar and the line (diamond only, label in the
     hover). The cells are not controls (no role); the line is the keyboard path.
-  - *Handle*: a 48 by 5 bar on the strip's top edge (an 80 by 26 hit area, ending above the
-    all-day bar) opens and closes the Day drawer. It sits at the centre, or steps aside in
-    40 px steps so it never covers an hour or sun label or the needle's time pill.
+  - *Handle* (`ribbon/DayLip.tsx`): the strip's whole top edge. One button, 26 px tall and
+    the strip's width less 24 px at each end, from 17 px above the strip (the empty gap over
+    it) to 9 px inside it, so it ends above the hour and sun labels and the all-day bar; the
+    needle's time pill draws over it. At rest: a hairline along the edge and one chevron (at
+    the centre, or stepped aside in 40 px steps clear of the labels and the needle's pill).
+    Once the pointer has rested in the band for 180 ms a full-width lip lights with the
+    chevron and "Open the day" (crossing the edge on the way to a card never flashes it;
+    leaving cancels at once; keyboard focus and the open state need no wait); a click anywhere
+    on it opens the Day drawer. At rest the band never takes the pointer from anything that
+    acts on a click (an agent card, a folded chip, a key, the buddy standing on the edge):
+    while the pointer is over such a thing in the band the lip lets it through (`data-pass`)
+    and does not light; only the chevron stays a target there. With the drawer open the same
+    handle sits on the drawer's top edge (above the scrim, inside the drawer's layer) and
+    reads "Close the day". Named "Open the day" or "Close the day"; Enter and Space work.
+    Keyboard focus follows the drawer's own rule: into the drawer on open, back to the
+    strip's handle on close (the drawer's lip carries `in-drawer`, the strip's does not).
 - **Day drawer** (`ribbon/DayDrawer.tsx`): 532 px over the lower part of Work (main area y
   148 to 680), never over the rail or the clock. Left, an agenda from 8 AM to 6 PM (wider
   when a meeting starts earlier or ends later; it scrolls inside), overlapping meetings side
   by side, the now line; a meeting opens in Outlook, with Join (`wall2_meet_join`) where the
   calendar has a join link and the meeting has not ended (Enter or Space on a meeting opens it
   too). Right, one row per open session,
-  those waiting on the owner first, then working, then the rest: number, title, state
-  (working, waiting on you, in review, idle), its line, its day as a bar and the time worked
-  (runs, finished or not; waits and review spans not counted). A row opens the session in
-  OmniGent. "Agents today" in its header opens the panel. Escape, the handle, Close or a
-  click outside closes it.
+  those waiting on the owner first, then working, then the rest: number, title (372 px, one
+  line, the full title in the hover), the state once as a pill (working, waiting on you,
+  failed in rose, in review, idle), one quiet line, its day as a bar (420 px) and the time
+  worked (runs, finished or not; waits and review spans not counted). The quiet line is built
+  only from what the helper sends for an open session, joined with a middle dot: its line
+  (unless that is only a state word such as "running"), else "Next: " and its next step; how
+  long it has waited on the owner; its helpers ("3 helpers, 2 working"); its pull request
+  ("PR 553, checks passing"). With none of these it is blank. The header counts what the
+  pills say ("10 sessions, 1 need you, 4 working, 1 failed, 4 idle"). A row opens the session
+  in OmniGent. "Agents today" in its header opens the panel. Escape, the handle on its top
+  edge, Close or a click outside closes it.
   Behind the open drawer (`ribbon/DrawerScrim.tsx`) the page is dimmed (20 percent) and blurred
   slightly (4 px) by one stage-wide shield, and made `inert` (no hover, click or keyboard focus),
   also anything that mounts while it is open. A press anywhere outside closes it (any button) and
@@ -545,7 +599,43 @@ The day ribbon (`wall/src/ribbon/`, `styles/ribbon.css`) is on Work, Home and Me
   a quiet "saved days as of" or "stage colours as of" (the live summary stays live); with a
   good list held a reopen refreshes it in the background; an older helper whose day list
   answers 404 hides the picker and Today still works; an empty day says so. A refused open
-  says "Could not open that session".
+  says "Could not open that session". Under the heading, **Busy at once**: the time at 1, at
+  2, at 3, at 4 and over 4 sessions working at once, each with its colour swatch, and "Over
+  your limit of 4 for 1 h 48 m today" (or "Never over your limit of 4"); the first row,
+  "Sessions busy at once", draws the same as stepped bars on the panel's hour axis with a
+  dashed line at the limit. With no known limit neither is drawn. On a past day the saved
+  record cannot tell running from waiting, so the line reads "Open at once" ("Up to 2 open at
+  once, from the saved record"): it counts every session with a recorded span and never says
+  "over your limit", and the limit line is left out; its bars and swatches use plain steps
+  (never the amber at-the-limit or the red hatched over-the-limit look). A past day's rows have no quiet line (the
+  record has none of those fields): the title takes the room (520 px) and the track is 514 px.
+- **How many work at once** (`ribbon/busy.ts`; one rule for the header's slot meter, the
+  strip's cells and the panel's Busy at once line): a session counts while it is working, a
+  `run` span in the helper's live day log (waits and review spans do not count), clipped to
+  the day (a span that began before midnight counts from midnight; the spans are built
+  straight from the log, not from the strip's layout), and only when it is a parent or
+  standalone session the wall knows today (a card, or a session in today's saved record, read
+  at once when the day log first shows a run of a session that is not on a card, and once per
+  such id after that, never on a timer). A finished run counts for the time it ran; an open
+  run is open only while its session's card says working (not idle, not waiting, not failed).
+  When the card stops working with the run still open (or the session closes), the run is
+  kept and ENDED where the session stopped, never dropped, so past work stays in the strip's
+  cells, the Busy at once sums, the header's Today line and the panel and drawer rows, while
+  the count for now stays the cards that say working. The end is, in order: the helper's own
+  idle or waiting seconds counted back from its answer; else the last time this wall saw the
+  card working (kept per session id for the day in local storage, ids and times only, so a
+  reload keeps it); else the latest stamp the day log gives for that session; else the run's
+  own start (a session the wall never saw working counts no time, not invented time). A child or a side chat never counts on its own, so a
+  session and its helpers count once; two spans of one session at the same time count once. A
+  cell takes the most at once inside its 12 minutes. The meter shows the count now: the
+  server's own `working` count when the helper sends one (by construction it equals the log's
+  open runs of working cards), else the log's count, else `used`. The limit is the helper's
+  `slots.limit`; a missing, zero or negative one is unknown: the meter shows the honest count
+  ("N working"), and no pips, steps, limit line, "over" tag or count colours are drawn. A
+  saved past day has stage spans only, no runs and no waits, so there a session counts while
+  it has a recorded stage span, and the panel says so. Colours by step: 1 mint, 2 cyan, 3
+  violet (any count from 3 up to one under the limit), at the limit amber, over it red and
+  hatched (`--busy-*` in `styles/ribbon.css`).
 - **Saved record commands** (`src-tauri/src/wall2_omni.rs`, the section at the end), both
   gated to the wall window, https only, read through the 64 KB cap, errors `not-configured`,
   `invalid-config`, `failed`, nothing logged:
@@ -770,6 +860,35 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
   (`?hz=unwind&at=...&audio=demo`) the camera and sky stay frozen but the frame loop runs, so
   the echo and the pulse can be captured. A production bundle ignores the query.
 - **Ripple** (`echo.ts`). The echo lines of the range, drawn by the renderer's `echo` option.
+  - **Line settings** (`linesSettings.ts`, local storage key `wall2-lines`, validated on read; a
+    broken or unknown field falls back to its default). One setting for the lines everywhere music
+    plays, read by the frame with `lineSettings()` (no render per frame). With every value at its
+    default the wall draws exactly what it drew before.
+    - Type: Mountains (default), Bars, Ribbon, Sparks or Skyline.
+    - How lively, 0 to 100 (usual 50), x = (v - 50) / 50: the line amplitude times 2^(0.8x), the
+      dance hit times 2^x, the dance limit times 2^(0.75x) (`setDanceParams` in `audio/dance.ts`).
+    - Smoothness, 0 to 100 (usual 50), y = (v - 50) / 50: both dance releases times 4^y; the new
+      types' fall gravity 520 / (2^y)^2 px/s2.
+    - Height, 20 to 220 px (usual 104): a soft cap `H * tanh(v / H)` on how far a hit throws a
+      line. The new types always go through it; on Mountains it caps the sampled height at
+      `H / amp` and is off while that is within 0.02 of the dance limit (the usual setting).
+    - Colours: From the look (the playing cover's tint, default), Floor light, Sunset, Ice or Mint,
+      for every type.
+    - Reflection on (default) or off. At rest: Ridge and levels (default) or Flat (resting opacity
+      0.6; the new types lie down to one calm line on the horizon).
+    - Presets: Calm 22, 72, 60 px; Dancing 50, 50, 104 px (the usual); Wild 88, 28, 180 px.
+  - **New line types** (`lineTypes.ts`, a port of the lines playground the owner chose). They read
+    the dance history by age (0 is now) with a short hold (the largest of now, 0.8 times 0.1 s ago
+    and 0.6 times 0.2 s ago) and a gain of 1.7, are drawn after the picture above the horizon only,
+    with every claimed picture box clipped out, on the front canvas when there is one (with the
+    land), at the live opacity the camera gives the lines (calm on Work and Home). While one plays
+    the ridgelines are not drawn; when the music stops the resting look fades in. Bars: 64 columns
+    18 px wide with a floating marker. Ribbon: one line, two trails, a faint fill and a glow wider
+    on the kick. Sparks: 64 dots thrown up and falling under gravity, two trail dots along the
+    throw. Skyline: 32 blocks of 12 px floors. State and colour gradients are made once (again only
+    when the palette, the centre or the canvas changes). Dev knobs (`bridge/devMocks/lines.ts`):
+    `lines=<type>`, `lively`, `smooth`, `lheight`, `lcol`, `lrest`, `lrefl=0`, `ltab=listen`;
+    `lineprobe=1` (with `lclip=0` for the break) is the fit check's count of pixels inside a box.
   - Work and Home (3 lines): while music drives them, opacity `ea` times a smoothed loudness (bass
     weighted), `n`, `amp`, `cx` from the camera (`en`, `eamp`, `ecx`), `hs` 900.
   - Unwind (11 lines, the visualizer): while music drives them, opacity `ea` (0.9) raised to full,
@@ -869,9 +988,21 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
   band slots, reused every frame. No grid when silent, under reduced motion or in the review
   still; without `grid` the renderer makes exactly the canvas calls it made before (a golden
   call log test).
-- **Moon.** The Unwind camera draws the moon at (1730, 112) radius 44, once the glide to
-  Unwind has finished (it goes as soon as a glide away starts); no other place does. The
-  review still `?hz=unwind` draws it, since that camera jumps straight there.
+- **Moon.** The Unwind camera draws the moon, radius 44, at the first of three places
+  (`MOON_PLACES`) whose disc is 40 px or more from every picture box and every card's keep-clear
+  box that a screen claims (`moonFor` in `sky.ts`): (1890, 260) right of Listen's player, the
+  place it always had; (760, 352) low under the player's left half, right of Up next, for a
+  layout whose right side a wide card takes (43 px under the player at its tallest, with nothing
+  playing, and just above the ranges, where they are lowest); (1450, 150) high in the middle of the sky. Each is
+  wholly above the Unwind ridgeline and clear of the clock (a test). With none clear, or a claim
+  that says `noMoon`, there is no moon, and its light on the lake goes with it. On Listen the
+  Spotify card (`SpotifyCard.tsx`) and the player (`Player.tsx`) claim their drawn boxes, so the
+  moon sits at (760, 352) there, whatever the player shows; on Watch the list card, the left block and the Look switch do. The same claims
+  always give the same place, so it changes only when a box does, and it is simply drawn at its
+  new place on the next frame (a resting still frame is drawn again once for each change; a claim
+  made again with the same boxes changes nothing). It shows once the glide to Unwind has finished (it goes as
+  soon as a glide away starts); no other place does. The review still `?hz=unwind` draws it, since that camera jumps straight there. The drawn
+  moon is published on the canvas as `data-moon` for the fit check.
 
 ## Unwind and Watt
 
@@ -1184,7 +1315,8 @@ Watt is also a small pet ("he"), calm and silent (no sound at all):
 
 `wall/src/unwind/watch/`. Which view Unwind shows (Listen or Watch) is one value, `tab`, in
 the Watch store (`store.ts`); the tabs set it and nothing in Watch depends on where that
-switch sits. Leaving Watch (or Unwind) removes any video.
+switch sits. Leaving Watch (or Unwind) does not stop a video: it plays on out of sight and is
+there, still playing, when the owner comes back (see "The stage layer" below).
 
 - **The list** (`WatchCard.tsx`, right wing above Room): saved items and one field, "Paste a
   YouTube or Twitch link". `links.ts` parses strictly: `youtu.be/<id>`,
@@ -1239,9 +1371,9 @@ switch sits. Leaving Watch (or Unwind) removes any video.
   round `.rd` controls): Previous and Next (on only for a playlist the player reports), Play or
   Pause, Mute, Stop, and Open in YouTube (or Open on Twitch); under it the elapsed time, a thin
   bar (a click or the arrow keys seek) and the length, or "Live" for a stream.
-- **The Look switch** (`LookSwitch` in `Watch.tsx`): the four looks as one segmented control
-  in a fixed place under the left block (the same box in every look, playing or not; never on
-  the video). With one look for everything it sets that look; with a look per kind it sets the
+- **The Look switch** (`LookSwitch` in `Watch.tsx`): the five looks as one segmented control
+  in a fixed place under the left block (one box, 500 by 46 at wall 624, 444, ending at x 1084, the same in every look,
+  playing or not; never on the video; its segments take their own width and share the rest). With one look for everything it sets that look; with a look per kind it sets the
   look of the kind on (its hover tip and name say which). Arrow keys move.
 - **For the buddy**: `driveInAudience(state)` in `store.ts` (usable as a store selector) is
   null, or, while something is on in the drive-in look, the screen's rectangle in wall pixels
@@ -1253,34 +1385,105 @@ switch sits. Leaving Watch (or Unwind) removes any video.
   `https://www.youtube.com/watch?v=<id>`, `https://www.youtube.com/playlist?list=<id>` or
   `https://www.twitch.tv/<login>` itself. The page never passes an address.
 - **Looks** (`looks.ts`, `Watch.tsx`): `feather` (the video in the sky left of the list, its
-  edges masked soft, the picture fully visible, its lower edge fading out before the horizon line so the ridgelines
-  there stay in front, and covering the moon), `sky` (the video fills the sky from the top of
-  the strip to the horizon line, cropped top and bottom, fading toward the clock and into the
-  horizon, see-through on the clock's side; it lies under every control and takes no pointer;
-  nothing of the wall's is drawn on it: the left block carries its own dark ground behind its
-  text and the cards turn nearly opaque), `sun` (a 461 px disc whose foot
-  stands 24 px over the horizon, centred at wall x 1660 so it covers the moon with 31 px to spare, with slats, a warm halo and a streak on the floor; it
-  shows the middle 56 percent of a 16:9 picture's width) and `drivein` (a framed screen at the
-  approved page's size, 691 by 389 at wall 1210, 60, covering the moon whole, on two posts
-  standing on the horizon, the stage light's colours washed on the floor under it; with nothing
-  on, the empty screen stands there). The gear beside the tabs opens a sheet over the right wing:
-  one look for everything (four picture tiles), or one each for videos and playlists, live
-  streams and Twitch (four choices a row), at 540 px (`wall2-watch-look`, checked on read;
-  values stored before the two new looks still read the same). The Look switch sets it too.
-- **When video stops** (`stops.ts`, `useStopRules.ts`): leaving Watch or Unwind (Zen and Dream
-  included), the page hidden, the display off or Windows locked (`ui/useDisplayDark.ts`, the
+  edges masked soft, the picture fully visible, in front of the mountains (the owner's choice),
+  its lower edge fading out before the horizon line so the ridgelines there show), `sky` (the whole 16:9 picture, never cropped,
+  889 by 500 at wall 1106, 16: its top 16 px under the top of the strip, its foot under the
+  horizon line BEHIND the ranges and the land, so only the land hides its lower edge, between the
+  left block and the cards; plain edges with a faint line and glow, no feather (the owner's
+  later words replace the approved page's crop); the embedded player cannot report its video's
+  shape, so the frame is fitted as 16:9; it lies under every control and takes no pointer;
+  nothing of the wall's is drawn on it: the left block stands beside it on the sky with no plate,
+  and the cards turn nearly opaque), `sun` (a 461 px disc at the approved page's place,
+  centred at wall x 1331 with its foot 29 px over the horizon, the ranges in front of its lower part,
+  a clean circle with no bands across the video (the owner's later words replace the approved
+  page's bands), a warm halo and a streak on the floor; it
+  shows the middle 56 percent of a 16:9 picture's width) and `drivein` (the Screen tower: the
+  video's box is exactly 16:9, 672 by 378 at wall 1244, 54 (`DRIVE_IN_SCREEN`), with no border of its own;
+  the frame is one SVG over the whole scene, `DriveInFrame.tsx` with its drawing in `towerFrame.ts`, the first
+  child of the stage under the floor light and the screen, taking no pointer: a steel surround with a
+  coping and one neon edge line, a Warren truss, two lattice towers and raking stays on footings on the horizon,
+  a marquee board, a ground shadow and the legs mirrored in the floor. Every fill round the picture is a
+  ring with the box cut out (even-odd) and the neon's glow is clipped to the same ring, so nothing of
+  it can cover the picture; a test checks that from the component's own geometry and the fit check
+  checks it in the browser. The marquee reads WATT'S DRIVE-IN, NOW SHOWING while playing and
+  INTERMISSION while paused (a cross-fade of about a second, at once under reduced motion); with nothing
+  on, the empty screen is dark and the marquee reads the name only; the stage light's colours are washed
+  on the floor under it, re-centred under the new box and still starting on the horizon) and `holo` (the
+  Hologram: the whole 16:9 picture, 736 by 414 at wall 1210, 42, on a pane tilted in 3D
+  (`perspective(2400px) rotateY(-7deg) rotateX(1.2deg)`) with `mix-blend-mode: screen` over a dark glass
+  plate in the same box and tilt (`HologramPlate`, before the stage), two cyan hairlines and four corner
+  ticks outside the picture, and a small emitter on the floor with its beam fan and floor glow
+  (`HologramEmitter`, after the stage). It stands in front of the land, claims no front layer, and the
+  moon keeps clear of its box; the pointer never reaches the player, but a refused autoplay's click lands
+  on the tilted frame's real area. The blend needs the stage and the sky in one layer group: where the
+  layering cannot blend (no `mix-blend-mode`, or the main area isolated by a look behind the land) the
+  blend is dropped and the plate and the tilt stay). Sky layers: each look claims the horizon's sky
+  (`useWatchSky`, `horizon/sky.ts`) with its picture's box (`LOOK_BOXES`, so the moon keeps 40 px
+  clear of it: another of its places, or none); the sun and the drive-in own that sky (no moon at
+  all); the whole sky and the sun (`behindTheLand`) also give `.w-front`, after the picture, where the
+  horizon mounts its front canvas, and their stage sits at z-index -1 in the main area's own
+  layer group (`.w-layered`), under every control and line of text. While the player waits for a
+  click, the sun comes forward (`layeredNow`). The left block, the Look switch and the Watch list
+  card claim their own boxes as keep-clear (`useSkyKeepClear`). The look's claim is held only while
+  the stage is in sight; the keep-clear claims go with the Watch panel (Listen, nothing on, another
+  place, Zen). The gear on Watch opens a sheet over the right wing on its Looks side; the gear on
+  Listen (`LinesGear`, "How the lines move") opens it on its Lines side. A "Looks | Lines" switch
+  in its heading row changes the side, and the heading follows it. The Lines side
+  (`LinesPanel.tsx`) has one control per 40 px row with its value read back in words, and sizes
+  the sheet to its content. The Looks side:
+  one look for everything (five picture tiles), or one each for videos and playlists, live
+  streams and Twitch (five choices a row), at 540 px (`wall2-watch-look`, checked on read;
+  values stored before the newer looks still read the same). The Look switch sets it too.
+- **The stage layer** (`StageLayer.tsx`, watch behaviour): the video's stage (the frame in its
+  look, with the player's message bridge) is not part of Unwind. The screens frame
+  (`screens/Frame.tsx`) mounts `WatchStageLayer` once in `.top`, Unwind's own box, for every
+  place, so the frame element is created once per video and never removed or moved to another
+  parent while it lives (an embedded player reloads when it is). On Unwind's Watch tab the stage
+  shows in its look exactly as before. Anywhere else (Listen, Work, Home, Meet, Zen) the stage
+  is parked: its look's markup goes (a plain 16:9 box, `w-parked`), the layer is `opacity: 0`
+  with no pointer (never `display: none` or `visibility: hidden`, which a browser may treat as
+  a reason to pause or throttle the frame), and it claims nothing from the sky. The look markup
+  lives in `VideoStage` in `StageLayer.tsx`, one block per look before and after the picture;
+  every child keeps its slot (null where a look has none), so a look change never re-creates the
+  frame either. On the Watch tab Unwind's own boxes let the pointer through to the layer (only
+  the wall's blocks take it), so the click to start a refused autoplay and the band over the
+  video's lower edge still work; the frame itself takes the pointer only in that click case and
+  never while parked. While a video plays out of sight, the rail's Unwind button carries a small
+  cyan play mark; its tooltip says "<title> is playing. Click to go to it." and a click goes to
+  Unwind's Watch tab. A video that is paused, or waiting for a click, shows a dimmer pause mark
+  and "<title> is paused. Click to go to it."; an ended video shows no mark. When the stage is
+  parked, focus inside the player frame is dropped, so no key reaches the invisible player. The
+  Tools drawer is a drawer over the same place: the video stays where it is under it, and the
+  drawer stacks above the layer and its pointer band. Music from Listen and a video can play together; nothing mixes or ducks.
+- **The controls fade** (5A, `useControlsFade` in `Watch.tsx`): while a video plays, 3 seconds
+  (`CTL_REST_MS`) after the pointer leaves the left block, the Look row and a 72 px band over the
+  video's lower edge (`EdgeBand`, the wall's own transparent box beside the frame, never over
+  it), and keyboard focus leaves the controls (a click leaves the clicked button without focus once the pointer is gone), the kind line, the "Playing on the wall" line, the play
+  row, the time bar and the Look switch fade to nothing (250 ms; at once under reduced motion)
+  and take no pointer; the title stays at half strength with no glow. Pointer, focus or Tab
+  brings them back at once. They never fade while paused or ended, with nothing on, or while a
+  notice shows ("Click the video to start", "Not started? Click the video", "Could not open the
+  browser"). One timer, only while they may fade, cleared on unmount.
+  Keys on the Watch tab: Tab shows them and moves through them; Space plays or pauses when the
+  focus is on the page, the stage or the left block outside a button (a focused button keeps
+  its own Space press; never in a field); Escape stops the video (and that press does not also
+  leave fullscreen; a second one does) unless the focus is in a field, a button or a link, or the
+  sheet, the tools drawer, a dialog or a menu is open. Elsewhere neither key touches it.
+- **When video stops** (`stops.ts`, `useStopRules.ts`, run by the stage layer on every place):
+  the page hidden, the display off or Windows locked (`ui/useDisplayDark.ts`, the
   `display-state` half of `useIdle`; input idle never stops a video, since nobody touches the
   mouse while watching), Screens off mode (`monitors-off-mode`), and a call (the signals
-  store's `call`). The frame is removed, never hidden, and nothing restarts
+  store's `call`), wherever the owner is. The frame is removed, never hidden, and nothing restarts
   it; the left block says why it stopped. Play is off during a call. No wake lock is held.
 - **Listen**: when something is saved, the album art has a small "Video" corner that
   switches to Watch. Nothing else on Listen changes.
 - **Dev**: `?watch=mock` draws a poster where the frame goes (headless Chromium shows an empty
-  frame) and opens Watch; `?wlist=none|three|many`, `?wlook=feather|sky|sun|drivein`, `?wposter=bright` (a pale test picture, the worst case for
+  frame) and opens Watch; `?wlist=none|three|many`, `?wlook=feather|sky|sun|drivein|holo`, `?wposter=bright` (a pale test picture, the worst case for
   text over video), `?wplay=<n>`,
   `?wsheet=one|kind`, `?wtab=listen`, and a mock player with `?wstate=paused|refused|silent`
-  (default: playing at 12:34 of 45:10; a playlist reports item 4 of 24). The gallery and the
-  fit check have Watch states.
+  (default: playing at 12:34 of 45:10; a playlist reports item 4 of 24). The stills hold the
+  controls shown unless `?wctl=rest` (they fade after 200 ms); `?wplace=work|home|meet` goes
+  to that place once the video starts. The gallery and the fit check have Watch states.
 
 ## Home feeds (task card and network tile)
 
@@ -1502,6 +1705,7 @@ Create `meet.json` next to `feeds.json` in Wall 2's app config directory (`%APPD
 
 ```json
 {
+  "openIn": "desktop",
   "accounts": [
     { "id": "work", "label": "Work", "clientId": "00000000-0000-0000-0000-000000000000" },
     { "id": "second", "label": "Second", "clientId": "00000000-0000-0000-0000-000000000000", "tenant": "common" }
@@ -1510,6 +1714,7 @@ Create `meet.json` next to `feeds.json` in Wall 2's app config directory (`%APPD
 ```
 
 - At most two accounts. `id` is 1 to 16 characters of `a-z` and `0-9`, unique. `label` is 1 to 16 printable characters. `clientId` is the application (client) ID of an app registration. `tenant` is optional: `common` (default), `organizations`, `consumers` or a tenant GUID.
+- `openIn` is optional. `desktop` is the default and uses classic Outlook when it is usable. `browser` always uses the event's web link. An unknown value keeps the desktop default and is reported in the Tools drawer.
 - A missing file shows "Not set up". A file that fails these rules also shows "Not set up" with a note; the native side reports `invalid-config` and never echoes the file.
 
 ### Sign in and sign out
@@ -1541,11 +1746,15 @@ Join opens only a Teams meeting link: `https` with no user name, password or por
 
 ### Opening an event in Outlook
 
-The day read also selects Graph's `webLink` for each event. It stays in Rust behind the same day key (its own map, cleared with the day keys on every day read and dropped for an account at sign-out); the web view gets only `canOpen: true`. A ribbon chip with `canOpen` is a button: `wall2_open_event(key)` looks the link up, checks it again (`https`, no user name or password, no port other than 443, at most 4096 characters, host exactly `outlook.office.com`, `outlook.office365.com`, `outlook.live.com` or `outlook.cloud.microsoft`) and opens it with the default handler; a key that is not exactly the generated shape (`d`, the generation, `-`, the index; ASCII, at most 24 characters) is refused before any lookup, and an unknown key or a link that fails the check answers `gone`. Nothing about it is logged. Honest limit: the link opens Outlook on the web, or the new Outlook app when it takes such links; classic desktop Outlook cannot be opened at one event by a link.
+The day read selects Graph's `webLink` and asks for the `Binary 0x0FFF` legacy extended property for each event. That property is decoded only when it is standard base64 containing 20 to 512 bytes, then kept as uppercase hex in Rust. Both values stay behind the same day key, are cleared with the day keys on every day read, and are dropped for an account at sign-out. The web view gets only `canOpen: true`. If Graph refuses the extended property request with status 400 or 501, Wall 2 retries once without it so the calendar still works.
+
+With `openIn` set to `desktop` or omitted, `wall2_open_event(key)` first looks for classic Outlook in its registered Windows application path. The path must be absolute, no longer than 260 characters, name `OUTLOOK.EXE`, contain no quote or control character, and exist as a file. When Windows says the new Outlook is selected, classic Outlook is not used. An event with a valid entry id starts that fixed executable directly with the two arguments `/select` and `outlook:<HEX>`. An event without an entry id starts it with `/select` and `outlook:calendar`. No shell or joined command line is used. If Outlook is unavailable, process start fails, or `openIn` is `browser`, Wall 2 checks the stored web link again (`https`, no user name or password, no port other than 443, at most 4096 characters, and an exact allowed Outlook host) and opens it with the default handler. The page supplies only the opaque day key, and nothing about the entry id is sent to the page or logged.
+
+New Outlook has no documented way to open one existing meeting. The Tools drawer reports whether clicks use classic Outlook or the browser. These behaviors have not been verified against live Graph and Outlook: whether the calendar read returns the item id, what item id it returns for one occurrence of a recurring meeting, whether a second account's mailbox opens from the same Outlook profile, whether current classic Outlook builds honor `/select outlook:<HEX>`, registry discovery across 64-bit and 32-bit views, new Outlook detection, process launch, and fallback behavior. Outlook shows its own error box when it cannot find an item, and Wall 2 cannot detect that result. Use `"openIn": "browser"` to opt out.
 
 ### Refresh
 
-The list is read when Meet opens and every 5 minutes while Meet is the active place and the window is visible. The countdown ticks every 30 seconds from the last list. A failed read keeps the last list and shows "updated N min ago". When a read leaves an account unavailable, Meet reads again after 30 seconds, then after 60 seconds, then goes back to the 5 minute cadence; the fast retries stop when Meet is hidden, and Try again does not use them up. The calendar read asks for at most 50 events in the next 24 hours and ignores paging (50 is plenty for a day). It selects only the subject, times, response, join link, invite id and web link, never the body, attendees or organizer.
+The list is read when Meet opens and every 5 minutes while Meet is the active place and the window is visible. The countdown ticks every 30 seconds from the last list. A failed read keeps the last list and shows "updated N min ago". When a read leaves an account unavailable, Meet reads again after 30 seconds, then after 60 seconds, then goes back to the 5 minute cadence; the fast retries stop when Meet is hidden, and Try again does not use them up. The calendar read asks for at most 50 events in the next 24 hours and ignores paging (50 is plenty for a day). It selects only the subject, times, response, join link, invite id, web link and the `Binary 0x0FFF` extended property, never the body, attendees or organizer.
 
 ### Why an account is unavailable
 
@@ -1629,7 +1838,7 @@ Add one optional key to `feeds.json` (see "Setting it up: `feeds.json`"):
 - `wall2_machines` returns `{ pc: { cpuPct, gpuPct, ramPct }, box: { cpuPct, gpuPct, ramPct, tempC } | null, boxStale }`. The PC numbers come from the same function as the old `get_system_stats` (which is unchanged). The PC numbers are returned at once on every call. The box numbers come from the helper summary's `system` block, refreshed in the background (one read at a time, at most one every 15 seconds, 3 second timeout), so a slow helper never delays the PC numbers and the first call after start shows `box: null`. After a failed read the last good box numbers stay with `boxStale: true` for up to 10 minutes, then `box` is `null`. `box` is also `null` when the helper is not set up. The numbers are kept per `omniHelperUrl`, so a changed address never shows the old host's numbers.
 - All of them refuse any window but `wall2` (`forbidden`).
 
-Nothing here logs, and nothing here takes a wake lock or sets an execution state. Browser dev (`npm run dev`) shows mock answers from `devMocks/omni.ts`; `?agents=3` (default), `2`, `1`, `0`, `7`, `12` (sessions from a helper 1.1.0 answer, with three subscriptions, one near full), `ask` (one waiting), `ask2` (two waiting, one not on a card), `failed`, `old` (an older helper's answer), `stale`, `off` (not set up) or `down` (not answering) picks the helper's state.
+Nothing here logs, and nothing here takes a wake lock or sets an execution state. Browser dev (`npm run dev`) shows mock answers from `devMocks/omni.ts`; `?agents=3` (default), `2`, `1`, `0`, `7`, `12` (sessions from a helper 1.1.0 answer, with three subscriptions, one near full), `ask` (one waiting), `ask2` (two waiting, one not on a card), `failed`, `12busy` (twelve open, nine working at once, over the limit of 4 since mid morning, one waiting, one failed, one idle, and a helper's run that is never counted; add `&limit=0` for a helper that sends no limit), `old` (an older helper's answer), `stale`, `off` (not set up) or `down` (not answering) picks the helper's state.
 
 ### Saved records
 
@@ -1645,7 +1854,7 @@ were cleaned on the helper's side. That is why a row from a saved record may ope
 
 - **Data** (`useAgents.ts`): one poll of `wall2_omni_summary` shared by everything that reads it, on mount and every 15 seconds while the page is visible and at least one reader is mounted. Nothing while hidden. One read at a time; a read over 10 seconds counts as failed, and a lane or day span with a missing or wrongly typed field is dropped. `not-configured` or `invalid-config` is "not set up". A failed read keeps the last answer, marked stale, for up to 30 minutes; with no earlier answer, or when the helper's own `now` has not moved for 30 minutes of this PC's time (a frozen helper), it is "not reachable". The two machines' clocks are never compared: the first answer is always accepted, and the skew (the helper's `now` minus this PC's time when the answer arrived) is taken off every helper time before the ribbon draws it. When the page comes back after more than 15 seconds away, the kept answer is stale until the first new read returns.
 - **Stale is never live**: while the answer is stale the lanes dim with "updated N min ago", the ribbon's agent row dims and its open runs end at the last good answer's time, `useAgentStatusLine()` returns null and `useAgentsWaiting()` returns false.
-- **Header**: "Agents", the slot meter (a pip per slot up to six, filled for each working session, "+N" past the last pip) with wording that cannot read as a bug ("4 working, 6 open, 4 slots" from a newer helper, "9 running, 4 slots" from an older one), a hover with the breakdown (working, open, helpers) and a click that brings OmniGent forward; "3 of 7" when more sessions are open than fit (a click shows the next three); and the network alarm chip ("4 network alerts", see "Network alarm on every place"). Nothing in the header wraps: when it is tight its parts give way in order, the meter's sentence to "5 of 8 working", then to the pips alone (the full text in the hover), then the alarm chip to a dot and its count; "3 of 8" always stays whole, and the One thing button's title truncates last with an ellipsis (`HeaderFit` in `agents/Lanes.tsx`; the fit check fails on any header part taller than one line). On the right: the button "One thing for you: <title>" in amber, which opens that session and brings OmniGent forward; "then N more" (counting only the up to five ids it can step through, "and more" beyond) opens the next and the header names it ("Also for you: <title>"), wrapping back to the first; with something waiting but no id, "Something needs you", which brings OmniGent forward. With nothing waiting, "Ready to merge: <title>" in mint when a card is ready for Hold to merge (a click shows that card), else "No agent needs you" (it only knows about agents). The waiting list is the helper's `yourMove.ids` (or its first entry) plus any waiting card, less any snoozed here; a title comes from the cards, the first entry or the names map. **Stale**: the header, slot meter, count, parked line and usage meters dim with "updated N min ago"; the amber call to action goes grey and the One thing button and slot meter do nothing; with nothing waiting it reads "Last known: no agent needed you, as of 10:02 AM" with a grey dot, never an all-clear. Cards still open, and their hover says "All of this is as of N min ago".
+- **Header**: "Agents", the slot meter (a pip per slot up to six, the lit ones in the colour of how many work now against the limit: mint 1, cyan 2, violet 3, amber at the limit, red and hatched over it; "9 of 4 working", "at the limit" at it, and over it a tag with a warning mark, "5 over"; the count is the one rule in "How many work at once" under the frame and the day ribbon), a hover with the count, open sessions and the limit, today's time over and at the limit ("Today: over 4 for 1 h 48 m, at 4 for 12 m."), what is counted, and a click that brings OmniGent forward; "3 of 7" when more sessions are open than fit (a click shows the next three); and the network alarm chip ("4 network alerts", see "Network alarm on every place"). Nothing in the header wraps: when it is tight its parts give way in order, the meter's sentence to "5 of 4" (the over tag stays), then to the pips and the tag alone (the full text in the hover), then the alarm chip to a dot and its count; "3 of 8" always stays whole, and the One thing button's title truncates last with an ellipsis (`HeaderFit` in `agents/Lanes.tsx`; the fit check fails on any header part taller than one line). On the right: the button "One thing for you: <title>" in amber, which opens that session and brings OmniGent forward; "then N more" (counting only the up to five ids it can step through, "and more" beyond) opens the next and the header names it ("Also for you: <title>"), wrapping back to the first; with something waiting but no id, "Something needs you", which brings OmniGent forward. With nothing waiting, "Ready to merge: <title>" in mint when a card is ready for Hold to merge (a click shows that card), else "No agent needs you" (it only knows about agents). The waiting list is the helper's `yourMove.ids` (or its first entry) plus any waiting card, less any snoozed here; a title comes from the cards, the first entry or the names map. **Stale**: the header, slot meter, count, parked line and usage meters dim with "updated N min ago"; the amber call to action goes grey and the One thing button and slot meter do nothing; with nothing waiting it reads "Last known: no agent needed you, as of 10:02 AM" with a grey dot, never an all-clear. Cards still open, and their hover says "All of this is as of N min ago".
 - **Which session opens.** "Open chat", the "Open what waits on me" key and the For you rows always open the parent or standalone session, never a child session: the helper sends parent ids (from helper 1.2.0) and the wall opens exactly the id it is given.
 - **Cards** (`Lane.tsx`, `StageTrack.tsx`, `LaneRing.tsx`): parents and standalone sessions only (`sessionsList`, or the three lanes from an older helper), numbered 1 to N on the ring. Three are in view; more scroll with the wheel a card at a time (scroll snap), with a thin scrollbar that shows on hover; the page never moves. The title takes every free pixel; hover shows the full title with the details. The second line says the most useful thing first: waiting on you (amber: the helper's question for it when there is one, else "Waiting on you for 12 min"), failed (red), what it is doing or its next step, then "Working now" or "Idle for 5 min"; after it, quietly, as many whole facts as fit (helpers, which assistant, the PR with checks), dropped from the end and never cut inside a word, all of them in the hover. A waiting card has an amber edge, an amber ring with "?" and two buttons in place of the time: "Open chat" (opens it and brings OmniGent forward) and "Later", which quietens it for 15 minutes on this display only (kept in this display's storage, nothing sent anywhere): the card keeps a small amber dot and "Snoozed until 10:41 AM", the header and the dot over Watt stop counting it, and it comes back by itself. A failed card has a red edge and a warning sign. The time at the right says what it measures in its hover ("Working, open for 42 min, started 9:42 AM") and reads "idle 12 min" when the helper says how long it has been idle. Only the card with "Hold to merge" takes the button's extra width, from the end of its own track, so every track starts in line. With fewer than three cards they grow (to 150 px) and the quiet facts move to a third line.
 - **Stage colours**: Plan, Build, Review, PR and Live each have a colour (`--st-plan` to `--st-live` in `tokens.css`, cool to warm, Live a yellow-green kept apart from the failed red, from amber and from the pink PR colour; amber and mint are kept for "waits on you" and "done"), used on the track (done stages dimmed, the current one glowing), the card's ring and the ribbon bars' left notch. Hover on a track shows the legend. Each measures at least 4.7:1 on the lane glass and the ribbon on the morning, noon, sunset and night skies; the inactive stage labels (6:1) and the timeline row numbers are at least 11 px.
@@ -1661,7 +1870,7 @@ were cleaned on the helper's side. That is why a row from a saved record may ope
 
 Two rows under "Next three", in one box (`.deck`): **Always here** and **Now**. Both act on the owner's Windows PC outside the wall, only on a click on the wall, and fail closed. None of it has been run on a real Windows machine yet: CI compiles and unit-tests the decisions, the Win32 calls are unverified. The deck is not drawn on a build where the commands do not exist.
 
-Files: `Keys.tsx` (Now), `PinnedRow.tsx` (Always here), `KeyPicker.tsx`, `forYou.ts`, `wallActions.ts`, `libraryModel.ts`, `keysModel.ts`, `keysFeed.ts`, `keyPress.ts`, `deckStore.ts`; Rust in `src-tauri/src/wall2_keys.rs` (config, chords, sending), `wall2_keylib.rs` (the library and the list of wall actions) and `wall2_arrange.rs` (window layouts).
+Files: `Keys.tsx` (Now), `PinnedRow.tsx` (Always here), `KeyMenu.tsx`, `KeyPicker.tsx`, `forYou.ts`, `wallActions.ts`, `libraryModel.ts`, `keysModel.ts`, `keysFeed.ts`, `keyPress.ts`, `deckStore.ts`; Rust in `src-tauri/src/wall2_keys.rs` (config, chords, sending), `wall2_keylib.rs` (the library and the list of wall actions) and `wall2_arrange.rs` (window layouts).
 
 ### What a key can do
 
@@ -1686,13 +1895,15 @@ Listed in the picker as "coming" and not runnable: `task:add` (needs a write to 
 
 ### Always here
 
-The pin icon beside the heading. Up to five keys that never change by themselves: the owner's pins on this display (local storage `wall2-keys-pins`, validated on read against the library and `keys.json`, anything odd means the defaults; a pin on a `keys.json` key is stored with that key's label and action and is dropped when the file no longer has the same key there), else the keys named in `pinned` in `keys.json`, else **Thirds, Focus, Record 16:9, Snip, Hide screen**. After a layout key the heading says "3 windows arranged" (or "2 of 3") with an Undo button for 60 seconds, and the layout key keeps its outline. Right-click a key, or press the ContextMenu key or Shift+F10 on it, to open the picker.
+The pin icon beside the heading. Up to five keys that never change by themselves: the owner's pins on this display (local storage `wall2-keys-pins`, validated on read against the library and `keys.json`: a stored value that is malformed means the defaults, while a well formed reference that no longer resolves is simply dropped, down to an empty row with only the Add tile; a pin on a `keys.json` key is stored with that key's label and action and is dropped when the file no longer has the same key there), else the keys named in `pinned` in `keys.json`, else **Thirds, Focus, Record 16:9, Snip, Hide screen**. After the first Add, Remove or Replace on the wall, this display keeps its own pin list, and later edits to `pinned` in `keys.json` no longer change it (the choice made on the wall wins; Reset to defaults in the picker clears it). A free slot appears as a dashed **Add a key** tile and opens the picker for the next place. The last key can be removed, leaving only Add. After a layout key the heading says "3 windows arranged" (or "2 of 3") with an Undo button for 60 seconds, and the layout key keeps its outline.
+
+Every pinned key and every key on a Now set page has a corner menu button while hovered or focused. Right-click, ContextMenu and Shift+F10 open the same menu. Pinned keys can be replaced or removed. A Now key can be pinned only when it matches one durable library id; keys that exist only in `keys.json` say so instead of storing a position that could point at a different key after an edit. Every menu can open `keys.json`. Escape, a click outside, a choice, a change of page or of the set shown (Auto following another app) closes it, and so does five seconds with the pointer resting elsewhere: the countdown does not run while the pointer is over the menu or while keyboard focus is inside it. The corner button toggles it, and Escape or a choice returns focus to the key. Every Now key's hover mentions the menu. The deck ignores these controls while the Day drawer or Agents panel owns the pointer.
 
 **The picker** opens over the two rows' box (never Next three) and runs down over the mountains to just above the day timeline, leaving the 16 px gap the main rows keep (`pickerBottomY` in `keysModel.ts`, measured again when anything above it in the wing changes size; it never covers the timeline or its chips). Search stays at the top and "Reset to defaults" at the bottom; only the list between them scrolls, with the wall's slim scrollbar and a fade at its foot so no row shows cut mid-text. It holds the whole library by group, a search box (label, group and what a key does), the current five marked ("pinned", "this slot"), a click swaps that key into the slot (a key already pinned trades places), "Reset to defaults" at the bottom. Escape (from anywhere while it is open) or a click outside closes it, and the click that closes it does nothing else; the arrow keys move through the rows; rows are 36 px tall, two to a line. Keys marked **check** are shortcuts the owner must confirm on his PC: they are never in a set Auto shows, and the page offers one only once it is pinned. Rust itself accepts any runnable library id (held to its group's programs), so the "only when pinned" rule lives in the page. "coming" rows and shortcuts still to be worked out (the three Power BI ribbon ones) are listed but cannot be pinned. `keys.json` is never written.
 
 ### Now
 
-Heading "Now · <page name>", the pages as dots (up to seven; past that "8 of 12"), previous and next arrows (the wheel over the row steps too) and the Auto switch. The page name always shows whole: when the heading is tight the dots give way to "8 of 12" first, then the For you chip shrinks to a dot and its count. Every key in both rows is the same boxed tile, five to a row, one height of 70 px (6 padding, a 20 px icon box, a 4 px gap, a 32 px label area of two lines, 6 padding, a 1 px edge each side), so the icon sits at the same place in every tile: a one-line label is centred in its two-line area and a longer one ends with an ellipsis after two lines (the hover has the full name). The For you plates are 70 px too, and the Now row is 108 px on every page (the next three give 2 px per row to the taller tiles). On a set's page a key's label drops the group name the page already says ("VS Code: command palette" is "Command palette" on the VS Code page); the full name stays in the hover and the picker. A set with six to eight keys gets a second row only when it fits above the deck's floor; otherwise it shows five at a time ("1/2" by the page name) and the arrows step through them before the next page. The floor (`deckFloorY` in `keysModel.ts`) is a 12 px clearance above the highest point of the mountain ridge under the right wing, worked out from the Work camera (`horizon/ridge.ts`, the renderer's own profile), and above Watt's band where his walk reaches under the wing; no part of the deck goes below it. With the 70 px tiles the deck has about 4 px of room above that floor in the right wing; a change that needs more height must take it from the wing, and the fit rule's message says so. A key that cannot be sent right now (its set's app is not in front, or a layout with no big screen) keeps its size and label, loses its colour, goes flat with a dashed edge, and its hover says why.
+Heading "Now · <page name>", the pages as dots (up to seven; past that "8 of 12"), previous and next arrows (the wheel over the row steps too) and the Auto switch. The page name always shows whole: when the heading is tight the dots give way to "8 of 12" first, then the For you chip shrinks to a dot and its count. Tiles share the full row width. One or two use a 28 px icon beside a one-line 21 px label, three use a 24 px icon over an 18 px label, and four or five keep the standard structure. Every tile stays 70 px high. The Add tile counts when the Always here row chooses its columns. The For you plates are 70 px too, and the Now row is 108 px on every page. On a set's page a key's label drops the group name the page already says ("VS Code: command palette" is "Command palette" on the VS Code page); the full name stays in the hover and the picker. A set with six to eight keys gets a second row only when it fits above the deck's floor; otherwise it shows five at a time ("1/2" by the page name) and the arrows step through them before the next page. The floor (`deckFloorY` in `keysModel.ts`) is a 12 px clearance above the highest point of the mountain ridge under the right wing, worked out from the Work camera (`horizon/ridge.ts`, the renderer's own profile), and above Watt's band where his walk reaches under the wing; no part of the deck goes below it. With the 70 px tiles the deck has about 4 px of room above that floor. That is not enough for a second Always here row, so the pin limit stays five until another part gives up room. A key that cannot be sent right now (its set's app is not in front, or a layout with no big screen) keeps its size and label, loses its colour, goes flat with a dashed edge, and its hover says why.
 
 Keys are tinted by kind: a soft wash, an edge and the icon in the kind's colour, a light top line and a dark 2 px foot; hover brightens and glows, pressed sinks 2 px, and the layout key just used has its own ringed look. Window layouts are cyan, capture and recording magenta (Record 16:9 included), focus, timers and tasks violet, app shortcuts and calls mint, agents and OmniGent amber, system, sound and house grey (`--dim`).
 The kind comes from data (`work/keyKind.ts`): a library key by its group (capture keys by id), a wall action by its action, a built-in set's key by its group; a key of the file's own sets by the library key with the same chord (modifier order and case ignored, once the page is given chords; the summary carries none today), else the library key with the same label (case ignored), else its set's rule (the general set grey, an app's set mint). A test holds every library group and wall action to exactly one kind.

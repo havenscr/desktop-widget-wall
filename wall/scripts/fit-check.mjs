@@ -22,10 +22,13 @@
 // clear of the failure note. Leave and recording: the leave banner inside x 600 to 1940 and its band (y 0 to 70 on
 // Work, y 510 to 600 off Work) covering no text or control, the recording chip one 32 px line at most 200 px wide in the
 // Agents header (and inside the banner, or in the band off Work), and the Recording page the same height as a key page.
+// Sky layers: a front canvas only while a Watch look sits behind the land, covering the stage over the video
+// (opaque on the lake, clear at the top of the sky), the whole sky's picture uncropped inside the stage, and the moon at night 40 px clear of every card,
+// the player and the clock, in one place on Listen and on Watch with nothing on.
 // CI does not run this; run it by hand before a layout change is handed over.
 //
 //   WALL_CHROME=/path/to/chrome-or-headless-shell npm --prefix wall run fit-check
-//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, header, deck, tiles, picker, chips, heading, zenhint, strip, fold, drawer, rows, handle, sky, floor, sun, tools, toolsnames, meetfill, meetempty, fy-height, key-edge, hide-pill, hide-note, leave-band, rec-chip, rec-height, tile-height, tile-icon, tile-iconbox, drawer-scrim, lwbuttons, lwoverlap, lwsquare, lwring, lwtemp, lwround, listen-player, listen-card, listen-slot, listen-next)
+//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, header, deck, tiles, picker, chips, heading, zenhint, strip, fold, drawer, rows, handle, sky, floor, sun, tools, toolsnames, meetfill, meetempty, fy-height, key-edge, hide-pill, hide-note, leave-band, rec-chip, rec-height, tile-height, tile-icon, tile-iconbox, drawer-scrim, lwbuttons, lwoverlap, lwsquare, lwring, lwtemp, lwround, sky-front, sky-moon, sky-always, sky-crop, sky-seam, tower-over, tower-wide, tower-box, tower-switch, holo-big, holo-noblend, holo-beam, holo-take, tile-text, listen-player, listen-card, listen-slot, listen-next, lines-size, lines-control, lines-text, lines-clip, watch-rest, watch-title, watch-away, watch-mark, lip-cover, lip-band, lip-scrim, row-parts, over-hatch, row-type)
 //   npm --prefix wall run fit-check -- --self-test
 //
 // WALL_CHROME (or the first argument that is not a flag) is a Chromium or
@@ -74,6 +77,13 @@ const EXPECT = {
   drawer: /^ *FAIL strip: \.day-drawer (reaches above the clock|sticks out of the stage)/m,
   rows: /^ *FAIL strip: an Agents today row is \d+ px tall/m,
   handle: /^ *FAIL strip: the drawer handle covers /m,
+  // day handle, rows, colours
+  'lip-cover': /^ *FAIL strip: the drawer handle covers /m,
+  'lip-band': /^ *FAIL strip: the drawer handle band covers /m,
+  'lip-scrim': /^ *FAIL strip: the Close the day lip /m,
+  'row-parts': /^ *FAIL strip: drawer row .* (parts overlap|runs out of its row|quiet line is squeezed|wraps)/m,
+  'over-hatch': /^ *FAIL strip: an over-the-limit cell is not (taller|hatched)/m,
+  'row-type': /^ *FAIL strip: text under 16 px in /m,
   sky: /^ *FAIL no point of the sky or the floor lands on \.w-sky/m,
   floor: /^ *FAIL pointer at \.u-tomorrow .*reaches w-skyspill/m,
   sun: /^ *FAIL pointer at .*reaches w-stage w-sun/m,
@@ -95,6 +105,11 @@ const EXPECT = {
   'tile-icon': /^ *FAIL deck: the icon of key tile ".*" sits /m,
   'tile-iconbox': /^ *FAIL deck: the icon of key tile ".*" is not inside its icon box/m,
   'drawer-scrim': /^ *FAIL strip: with the drawer open, /m,
+  // deck pins and stretch
+  'sparse-width': /^ *FAIL deck: a tile row does not fill its width/m,
+  'tile-equal': /^ *FAIL deck: tiles in one row do not share one width and height/m,
+  'icon-wide': /^ *FAIL deck: the icon of key tile "Add a key" sits [\d.]+ px below its tile top, its row first one sits [\d.]+ px/m,
+  'key-menu': /^ *FAIL deck: the key menu leaves the stage/m,
   // left wing
   lwbuttons: /^ *FAIL left wing: music buttons leave the wing/m,
   lwoverlap: /^ *FAIL left wing: music buttons overlap the title/m,
@@ -115,6 +130,32 @@ const EXPECT = {
   // watt drive-in
   'watt-seat': /^ *FAIL watt drive-in: Watt .* is not 60 px clear of the screen/m,
   'watt-ground': /^ *FAIL watt drive-in: Watt .* is not on his ground/m,
+  // tower and hologram
+  'tower-over': /^ *FAIL tower and hologram: .* paints over the picture/m,
+  'tower-wide': /^ *FAIL tower and hologram: the tower .* overlaps /m,
+  'tower-box': /^ *FAIL tower and hologram: the video box is at /m,
+  'tower-switch': /^ *FAIL watch polish: the Look switch is at /m,
+  'holo-big': /^ *FAIL tower and hologram: the Hologram .* (overlaps|leaves) /m,
+  'holo-noblend': /^ *FAIL tower and hologram: pixel proof: the picture does not mix with the plate/m,
+  'holo-beam': /^ *FAIL tower and hologram: pixel proof: something paints over the Hologram picture/m,
+  'holo-take': /^ *FAIL pointer at \.w-holo \.w-frame /m,
+  'tile-text': /^ *FAIL watch polish: look tile ".*" has [\d.]+px text \(16 px at least\)/m,
+  // watch behaviour
+  'watch-rest': /^ *FAIL watch behaviour: .* takes the pointer while the controls are hidden/m,
+  'watch-title': /^ *FAIL watch behaviour: the dimmed title overlaps the video's box/m,
+  'watch-away': /^ *FAIL watch behaviour: the stage (shows|takes the pointer) on another place/m,
+  'watch-mark': /^ *FAIL watch behaviour: the rail's playing mark sticks out of its button/m,
+  // sky layers
+  'sky-front': /^ *FAIL sky layers: the front canvas is hidden/m,
+  'sky-moon': /^ *FAIL sky layers: the moon at 300,200,44 is \d+ px from /m,
+  'sky-always': /^ *FAIL sky layers: 1 front canvas with no look behind the land/m,
+  'sky-crop': /^ *FAIL sky layers: the whole sky picture is at -?\d+,-?\d+,\d+, not inside the stage near its top/m,
+  'sky-seam': /^ *FAIL sky layers: the pixel proof at \w+: \d+ pixels differ by more than 2 levels/m,
+  // lines controls
+  'lines-size': /^ *FAIL lines: the sheet is \d+ px tall/m,
+  'lines-control': /^ *FAIL lines: control ".*" is [\d.]+ px tall/m,
+  'lines-text': /^ *FAIL lines: text under 16 px /m,
+  'lines-clip': /^ *FAIL lines: a new type draws \d+ pixels inside the video's box/m,
 };
 const OVERFLOWS = {
   left: '.work .left-wing { transform: translateX(-200px); }',
@@ -136,13 +177,23 @@ const OVERFLOWS = {
   fold: '.rib .ev.fold { width: 30px !important; }',
   drawer: '.day-drawer { translate: 0 -300px; }',
   rows: '.agents-today .at-row { height: 20px !important; min-height: 0 !important; }',
-  handle: '.rib .rib-handle { top: 20px !important; }',
+  handle: '.rib-handle.day-lip { bottom: 75px !important; }',
+  // day handle, rows, colours: a 60 px lip, a 600 px title, the hatch removed, 12 px text.
+  'lip-cover': '.rib-handle.day-lip { bottom: 61px !important; height: 60px !important; }',
+  // The band keeping the pointer even where the buddy or a card lies under it.
+  'lip-band': '.rib-handle.day-lip[data-pass] { pointer-events: auto !important; }',
+  'lip-scrim': '.day-drawer .rib-handle.day-lip { z-index: 0 !important; pointer-events: none !important; }',
+  'row-parts': '.day-drawer .dd-name { width: 600px !important; }',
+  'over-hatch': '.rib .agent-row .ac i.b5 { background: var(--busy-5) !important; top: 7px !important; height: 6px !important; }',
+  'row-type': '.day-drawer .dd-line { font-size: 12px !important; }',
   // The whole-sky video layer catching the pointer and drawn over the controls.
-  sky: '.w-sky, .w-sky * { pointer-events: auto !important; } .w-sky { z-index: 30 !important; }',
+  // sky layers: the whole sky's picture no longer spans the strip, so the break also widens it over the controls.
+  sky: '.w-sky, .w-sky * { pointer-events: auto !important; } .w-sky { z-index: 30 !important; left: 0 !important; width: 2436px !important; }',
   // The floor wash catching the pointer and drawn over the Tomorrow card and the status line.
   floor: '.w-skyspill { pointer-events: auto !important; z-index: 30 !important; left: -130px !important; width: 2440px !important; }',
   // The sun's box spread over the whole band, over the controls.
-  sun: '.w-sun { left: -100px !important; width: 2500px !important; z-index: 30 !important; }',
+  // The stage sits in the video's layer, which takes no pointer: the break makes the sun take it too.
+  sun: '.w-sun { left: -100px !important; width: 2500px !important; z-index: 30 !important; pointer-events: auto !important; }',
   // The Tools drawer 1400 px wide runs past the right edge of the stage.
   tools: '.tools-drawer { width: 1400px !important; }',
   // A 20 px name column cuts the account and source names (they carry no tooltip of their own).
@@ -161,10 +212,15 @@ const OVERFLOWS = {
   'rec-chip': '.rec-chip { min-width: 400px !important; }',
   'rec-height': '.rec-keys .key-tile { height: 92px !important; }',
   // deck and drawer fixes: one tile 20 px taller; one icon 8 px lower; a 40 px icon; a scrim that takes no clicks.
-  'tile-height': '.work .right-wing .keys .deck-tiles > .deck-tile.key-tile:nth-child(2) { height: 90px !important; }',
-  'tile-icon': '.work .right-wing .pinned .deck-tile.key-tile:first-child svg { margin-top: 8px !important; }',
+  'tile-height': '.work .right-wing .keys .deck-tiles > .key-tile-wrap:nth-child(2) > .deck-tile.key-tile { height: 90px !important; }',
+  'tile-icon': '.work .right-wing .pinned .key-tile-wrap:nth-child(2) > .deck-tile.key-tile svg { margin-top: 8px !important; }',
   'tile-iconbox': '.work .right-wing .keys .deck-tile.key-tile:first-child svg { width: 40px !important; height: 40px !important; }',
   'drawer-scrim': '.drawer-scrim { pointer-events: none !important; }',
+  // deck pins and stretch: a fixed 113 px tile in a one-tile row; the second pinned tile 20 px taller; the Add tile's icon 8 px lower in a wide row; a key menu pushed out of the stage.
+  'sparse-width': '.work .right-wing .keys .deck-tiles > .key-tile-wrap { width: 113px !important; }',
+  'tile-equal': '.work .right-wing .pinned .deck-tiles > .key-tile-wrap:nth-child(2) > .deck-tile.key-tile { height: 90px !important; }',
+  'icon-wide': '.work .right-wing .pinned .deck-tiles > .add-key svg { margin-top: 8px !important; }',
+  'key-menu': '.key-menu { transform: translateX(-3000px) !important; }',
   // left wing
   lwbuttons: '.work .left-wing .music-mini-text { flex: none !important; width: 900px !important; }',
   lwoverlap: '.work .left-wing .music-mini-btns { transform: translateX(-200px); }',
@@ -179,7 +235,7 @@ const OVERFLOWS = {
   'listen-slot': '.u-line { margin-left: 1960px; width: 600px; }',
   'listen-next': '.u-next-row { height: 80px !important; }',
   // watch polish: the Look switch moved 40 px in one look; a 600 px control in the row; the switch back on the video.
-  'watch-switch': '.w-panel:has(.w-sun) .w-lookbar { left: 540px !important; }',
+  'watch-switch': '.top:has(.w-sun) .w-lookbar { left: 540px !important; }',
   'watch-row': '.w-ctl .w-open { min-width: 600px !important; }',
   'watch-over': '.w-lookbar { left: 1200px !important; top: 200px !important; }',
   // A refused autoplay that never lets the pointer reach the whole-sky picture.
@@ -187,7 +243,46 @@ const OVERFLOWS = {
   // watt drive-in: his seat moved to the screen's centre; his seat lifted 100 px off the ground.
   'watt-seat': '.watt-sheep { translate: 1000px 0 !important; }',
   'watt-ground': '.watt-sheep { translate: 0 -100px !important; }',
+  // tower and hologram: the frame's rings filled over the picture; the tower widened 120 px (to 1.16 times, about its centre);
+  // the video's box back at the old place; the Look switch moved under the Hologram only; the Hologram's pane scaled 1.3 times;
+  // its blend dropped; a refused autoplay's click that never reaches the tilted frame.
+  'tower-over': '.w-tower path[fill-rule="evenodd"] { fill-rule: nonzero !important; }',
+  'tower-wide': '.w-tower { transform: scaleX(1.16); transform-origin: 1580px 0; }',
+  'tower-box': '.w-drivein { left: 1000px !important; top: 40px !important; }',
+  'tower-switch': '.top:has(.w-holo) .w-lookbar { left: 540px !important; }',
+  'holo-big': '.w-holo { scale: 1.3; }',
+  'holo-noblend': '.w-holo { mix-blend-mode: normal !important; }',
+  // the beam moved 46 px up, over the picture (and a blurred stand-in for any other glow lying on it)
+  'holo-beam': '.w-holo-emit { translate: 0 -46px; }',
+  'holo-take': '.w-frame.w-take { pointer-events: none !important; }',
+  // the sheet's look tiles back at 14 px text
+  'tile-text': '.w-tile { font-size: 14px !important; }',
+  // watch behaviour: the faded controls still clickable; the dimmed title moved onto the video; the
+  // stage left visible and clickable on another place; the rail's playing mark pushed out of its button.
+  'watch-rest': ".w-now[data-ctl='rest'] > .w-ctl, .w-panel[data-ctl='rest'] > .w-lookbar button { pointer-events: auto !important; }",
+  'watch-title': ".w-now[data-ctl='rest'] > .w-title { transform: translateX(560px); }",
+  'watch-away': ".w-layer[data-shown='false'] { opacity: 1 !important; } .w-layer[data-shown='false'] * { pointer-events: auto !important; }",
+  'watch-mark': '.rb-play { right: -70px !important; }',
+  // sky layers: the front canvas hidden (the whole sky's video no longer behind the land), the moon
+  // forced under the clock and the tabs (a URL knob, SKY_BREAK_Q; the player and the cards claim their
+  // boxes, so a moon forced beside them is not drawn at all), the front canvas mounted on a place that never asked.
+  'sky-front': '.horizon-front { display: none !important; }',
+  'sky-moon': '',
+  'sky-always': '',
+  // The whole sky's picture scaled 1.4 times (it would run off the top of the stage).
+  'sky-crop': '.w-sky .w-screen { transform: scale(1.4); }',
+  // The pixel proof: the front canvas a shade brighter than the main one (a seam between the two).
+  'sky-seam': '.horizon-front { filter: brightness(1.04) !important; }',
+  // lines controls: a 900 px panel, a 24 px chip, a 12 px label, the clip removed (a URL knob, LINES_BREAK_Q).
+  'lines-size': '.ln-panel { height: 900px !important; }',
+  'lines-control': '.ln-chips button { height: 24px !important; }',
+  'lines-text': '.ln-label { font-size: 12px !important; }',
+  'lines-clip': '',
 };
+// sky layers: breaks that need the horizon's development knobs in the URL, not a stylesheet.
+const SKY_BREAK_Q = { 'sky-moon': '&skymoon=300,200,44', 'sky-always': '&sky=front' };
+// lines controls: the clip around the picture boxes left out (a development knob of the horizon).
+const LINES_BREAK_Q = { 'lines-clip': '&lclip=0' };
 if (flag('self-test')) {
   const script = fileURLToPath(import.meta.url);
   let missed = 0;
@@ -270,6 +365,11 @@ const QUIET = [
   // unwind listen: the player clear of the lines, the Spotify card in the upper right, Up next in the
   // wing above the horizon, and nothing in the office lights slot, in each Listen state.
   { name: 'Listen, playing with the lines moving', agents: '3', hz: 'unwind', extra: '&audio=demo', checks: ['.u-listen', '.sp-card', '.u-next', '.u-line'], listen: true },
+  // lines controls: the sheet's Lines side from Listen (its size, every control inside it, 32 px controls,
+  // 16 px text), and two new types under the drive-in with a video showing (nothing inside its box).
+  { name: 'Lines settings sheet', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=none&wtab=listen&wsheet=one&lines=bars&audio=demo', checks: ['.w-sheet', '.ln-panel', '.ln-types', '.ln-swatches', '.ln-reset', '.ln-foot'], linesSheet: true },
+  { name: 'Lines, bars under the drive-in', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=drivein&wplay=0&audio=demo&lines=bars&lineprobe=1', checks: ['.w-screen'], linesProbe: true },
+  { name: 'Lines, skyline under the drive-in', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=drivein&wplay=0&audio=demo&lines=skyline&lineprobe=1', checks: ['.w-screen'], linesProbe: true },
   { name: 'Listen, nothing playing', agents: '3', hz: 'unwind', extra: '&media=none', checks: ['.u-listen', '.sp-card', '.u-line'], listen: true },
   { name: 'Listen, heavy library and long names', agents: 'ask', hz: 'unwind', extra: '&spotify=heavy&media=long', checks: ['.u-listen', '.sp-card', '.u-next', '.u-line'], listen: true },
   { name: 'Listen, the songs of a 2000 song playlist', agents: '3', hz: 'unwind', extra: '&spotify=heavy', click: '.sp-tile', checks: ['.sp-card', '.sp-songs', '.sp-shead'], listen: true },
@@ -292,7 +392,7 @@ const QUIET = [
   { name: 'Watch, nothing saved', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=none', checks: WATCH_IDLE },
   { name: 'Watch, three saved, nothing on', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three', checks: [...WATCH_IDLE, '.w-list', '.w-row'] },
   { name: 'Watch, three saved, feathered playing', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=feather&wplay=0', checks: [...WATCH_PLAYING, '.w-list'] },
-  { name: 'Watch, 24 saved, drive-in, long label playing', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=many&wlook=drivein&wplay=3', checks: [...WATCH_PLAYING, '.w-post'] },
+  { name: 'Watch, 24 saved, drive-in, long label playing', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=many&wlook=drivein&wplay=3', checks: WATCH_PLAYING },
   { name: 'Watch, settings sheet, one look', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wplay=0&wsheet=one', checks: ['.w-sheet', '.w-tiles', '.w-tile', '.w-sfoot'] },
   // Part 2a: the whole sky and the sun. The whole sky lies under every control: each named
   // control gets the pointer at its centre, and no point of the sky reaches the video layer.
@@ -321,6 +421,53 @@ const QUIET = [
   { name: 'Watt drive-in, paused', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=drivein&wplay=0&wstate=paused', checks: WATCH_POLISH, hits: ['.watt-hit-part'] },
   { name: 'Watt drive-in, 24 saved, long label', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=many&wlook=drivein&wplay=3', checks: WATCH_POLISH, hits: ['.watt-hit-part'] },
   { name: 'Watt drive-in, leave banner', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=drivein&wplay=0&leave=12', checks: [...WATCH_POLISH, '.leave-banner'], hits: ['.watt-hit-part'] },
+  // tower and hologram: the drive-in's Screen tower frame (playing, paused, nothing on, a long label) and the
+  // Hologram look. The Look switch's box must be the same in all of them (compared after the run, with the
+  // other Watch polish states, so five looks and nothing on are all covered); in the page: nothing of the frame over
+  // the video's box (every painted shape tested at points of the box), the box exactly wall 1244, 54, 672 by 378,
+  // the frame clear of the left block, the Look switch and the list card, the marquee's words for the state, the
+  // Hologram's tilted pane inside the stage and clear of the card, blended, with its plate under it.
+  { name: 'Watch polish, tower playing', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=drivein&wplay=0', checks: WATCH_POLISH, hits: WATCH_POLISH_HITS, th: 'tower' },
+  { name: 'Watch polish, tower paused', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=drivein&wplay=0&wstate=paused', checks: WATCH_POLISH, hits: WATCH_POLISH_HITS, th: 'tower' },
+  // A refused autoplay under the tower: nothing shows yet, so the marquee says the name alone (never NOW SHOWING).
+  { name: 'Watch polish, tower, autoplay refused', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=drivein&wplay=0&wstate=refused', checks: WATCH_POLISH, hits: [...WATCH_POLISH_HITS, '.w-clickline', '.w-drivein .w-frame'], th: 'tower' },
+  { name: 'Watch polish, tower, nothing on', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=drivein', checks: ['.w-now', '.w-lookbar'], hits: ['.w-lookbar button'], th: 'tower' },
+  { name: 'Watch polish, tower, 24 saved, long label', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=many&wlook=drivein&wplay=3', checks: WATCH_POLISH, hits: WATCH_POLISH_HITS, th: 'tower' },
+  { name: 'Watch polish, hologram, single video', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=holo&wplay=0', checks: WATCH_POLISH, hits: WATCH_POLISH_HITS, th: 'holo', px: true },
+  { name: 'Watch polish, hologram, playlist, long label', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=many&wlook=holo&wplay=3', checks: WATCH_POLISH, hits: WATCH_POLISH_HITS, th: 'holo' },
+  // A refused autoplay under the Hologram: the hint shows, and a click lands on the tilted frame's real area.
+  { name: 'Watch polish, hologram, autoplay refused', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=holo&wplay=0&wstate=refused', checks: WATCH_POLISH, hits: [...WATCH_POLISH_HITS, '.w-clickline', '.w-holo .w-frame'], th: 'holo' },
+  { name: 'Watch polish, nothing on, hologram', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=holo', checks: ['.w-now', '.w-lookbar'], hits: ['.w-lookbar button'] },
+  // watch behaviour: the controls faded in each look (nothing of them takes the pointer, the dimmed
+  // title clear of the video's box), and a video playing while he is on Work, Home or Meet (the stage
+  // fully transparent and taking no pointer there, the rail's playing mark inside Unwind's button).
+  { name: 'Watch behaviour, feathered, controls at rest', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=feather&wplay=0&wctl=rest', checks: ['.w-now', '.w-card'], wb: 'rest' },
+  { name: 'Watch behaviour, whole sky, controls at rest', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=many&wlook=sky&wplay=3&wctl=rest', checks: ['.w-now', '.w-card'], wb: 'rest' },
+  { name: 'Watch behaviour, the sun, Twitch, controls at rest', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=sun&wplay=2&wctl=rest', checks: ['.w-now', '.w-card'], wb: 'rest' },
+  { name: 'Watch behaviour, drive-in, long label, controls at rest', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=many&wlook=drivein&wplay=3&wctl=rest', checks: ['.w-now', '.w-card'], wb: 'rest' },
+  { name: 'Watch behaviour, Work with a video playing elsewhere', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=drivein&wplay=0&wplace=work', checks: ['.work .centre'], wb: 'away' },
+  { name: 'Watch behaviour, Home with the whole sky playing elsewhere', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=sky&wplay=0&wplace=home', checks: ['.home .home-centre'], wb: 'away' },
+  { name: 'Watch behaviour, Meet with the sun playing elsewhere', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=sun&wplay=0&wplace=meet', checks: ['.meet .panel'], wb: 'away' },
+  // sky layers: the video behind the land (the horizon's front canvas over the video's box) in the
+  // three looks that sit in the sky, the drive-in in front of it with no front canvas, and the moon
+  // in open sky at night and at dusk, 40 px clear of every card, the player and the clock, on Listen
+  // (short names, long names, nothing playing, the songs view open) and on Watch with nothing on, at
+  // the place the rule gives (`moonAt`, the first clear one of its places, cameras.ts MOON_PLACES).
+  // Every other state has no front canvas. The feathered picture stands in front of the land.
+  { name: 'Sky layers, whole sky at night', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=sky&wplay=0', checks: ['.w-now', '.w-lookbar'], sky: 'front' },
+  { name: 'Sky layers, whole sky at noon', agents: '3', hz: 'unwind', at: '2026-11-11T12:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=sky&wplay=1', checks: ['.w-now', '.w-lookbar'], sky: 'front' },
+  { name: 'Sky layers, the sun at night', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=sun&wplay=0', checks: ['.w-now', '.w-lookbar'], sky: 'front' },
+  { name: 'Sky layers, feathered at night, in front of the land', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=feather&wplay=0', checks: ['.w-now', '.w-lookbar'], sky: 'flat' },
+  { name: 'Sky layers, drive-in at night, in front of the land', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=drivein&wplay=2', checks: ['.w-now', '.w-lookbar'], sky: 'flat' },
+  { name: 'Sky layers, Listen at night, the moon in open sky', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '', checks: ['.u-listen'], sky: 'moon', moonAt: '760,352,44' },
+  { name: 'Sky layers, Listen at night, long names, the moon in open sky', agents: 'ask', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&spotify=long&media=long', checks: ['.u-listen'], sky: 'moon', moonAt: '760,352,44' },
+  { name: 'Sky layers, Listen at night, nothing playing, the moon in open sky', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&media=none', checks: ['.u-listen'], sky: 'moon', moonAt: '760,352,44' },
+  { name: 'Sky layers, Watch with nothing on at night, the moon in open sky', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=feather', checks: ['.w-now'], sky: 'moon', moonAt: '1890,260,44' },
+  { name: 'Sky layers, Listen at night, the songs view open, the moon in open sky', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&spotify=long&media=long', click: '.sp-tile', checks: ['.sp-card', '.sp-songs'], listen: true, sky: 'moon', moonAt: '760,352,44' },
+  { name: 'Sky layers, Listen at dusk, the moon in open sky', agents: '3', hz: 'unwind', at: '2026-11-11T17:30:00-08:00', extra: '', checks: ['.u-listen'], sky: 'moon', moonAt: '760,352,44' },
+  { name: 'Sky layers, Listen at dusk, long names, the moon in open sky', agents: 'ask', hz: 'unwind', at: '2026-11-11T17:30:00-08:00', extra: '&spotify=long&media=long', checks: ['.u-listen'], sky: 'moon', moonAt: '760,352,44' },
+  { name: 'Sky layers, Listen at dusk, long names, the songs view open, the moon in open sky', agents: 'ask', hz: 'unwind', at: '2026-11-11T17:30:00-08:00', extra: '&spotify=long&media=long', click: '.sp-tile', checks: ['.sp-card', '.sp-songs'], listen: true, sky: 'moon', moonAt: '760,352,44' },
+  { name: 'Sky layers, Watch with nothing on at dusk, the moon in open sky', agents: '3', hz: 'unwind', at: '2026-11-11T17:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=feather', checks: ['.w-now'], sky: 'moon', moonAt: '1890,260,44' },
 ].map((v) => ({ ...v, q: query(v) }));
 // The Tools drawer over each place, and in each hard state: the drawer, its two columns and every
 // section stay inside the stage, right of the rail and the clock, with no cut text that has no tooltip.
@@ -361,6 +508,13 @@ const VARIANTS = [
   deck('library sets: a held set whose app is not in front', 'keys=library&hold=lib-excel'),
   deck('library sets, Auto, the longest labels pinned', 'keys=library&pins=long'),
   deck('one key only', 'keys=one'),
+  // deck pins and stretch: Add counts as a tile and sparse rows fill their width.
+  deck('one pin plus Add, one Now key', 'keys=one&hold=one&pins=one'),
+  deck('three pins plus Add, two Now keys', 'keys=two&hold=two&pins=three'),
+  deck('three pins plus Add, three Now keys', 'keys=three&hold=three&pins=three'),
+  // A key menu open on the leftmost key of each row: a popover (held to the stage and off the bottom strip's handle by the deck rules, not to its row's box).
+  deck('key menu open on the leftmost Now key', 'keys=three&hold=three&pins=three', { click: 'ctx:.keys .key-tile', checks: ['.work .right-wing .deck-hd'], viewportOnly: true }),
+  deck('key menu open on the leftmost pinned key', 'keys=three&hold=three&pins=three', { click: 'ctx:.pinned .key-tile', checks: ['.work .right-wing .deck-hd'], viewportOnly: true }),
   deck('a held set refused after a click (the app in front is not its app)', 'keys=wrong', { click: '.keys .key-tile' }),
   deck('Power BI cannot be brought forward, after a click', 'keys=refuse', { click: '.keys .key-tile' }),
   deck('heavy: three things wait (a meeting, an agent asks, an alarm), For you held', 'keys=typical&hold=foryou', { checks: FOR_YOU, q: work('ask', '&keys=typical&hold=foryou') }),
@@ -372,8 +526,8 @@ const VARIANTS = [
   { name: 'Deck, sparse: no big screen, nothing in front yet', q: work('0', '&keys=idle&arrange=none&meet=none&net=calm'), checks: [...DECK_ROWS, '.work .right-wing .deck-quiet'] },
   { name: 'Deck, keys.json has a problem, no windows for a layout', q: work('3', '&keys=problem&arrange=nowin'), checks: [...DECK_ROWS, '.work .right-wing .deck-quiet'], click: '.pin-tile' },
   // The picker runs over the mountains to just above the timeline, so it is held to the viewport and the timeline rule.
-  { name: 'Deck, the key picker open over both rows', q: work('3', '&keys=typical'), checks: PICKER, click: 'ctx:.pin-tile', viewportOnly: true },
-  { name: 'Deck, the key picker open with the library sets', q: work('3', '&keys=library'), checks: PICKER, click: 'ctx:.pin-tile', viewportOnly: true },
+  { name: 'Deck, the key picker open over both rows', q: work('3', '&keys=typical&pins=three'), checks: PICKER, click: '.add-key', viewportOnly: true },
+  { name: 'Deck, the key picker open with the library sets', q: work('3', '&keys=library&pins=three'), checks: PICKER, click: '.add-key', viewportOnly: true },
   // keys style: the key colours by day and by night (each key's edge against the sky behind it at
   // least 3 to 1), and the Now row one height on a key page and on the For you page (nowH).
   { name: 'Keys style, day: library sets held on VS Code', q: `?hz=work&at=${encodeURIComponent('2026-11-11T12:10:00-08:00')}&clock=review&weather=ok&keys=library&hold=lib-vscode`, checks: DECK, edges: true, nowH: 'keys' },
@@ -386,7 +540,7 @@ const VARIANTS = [
   // Recording page one height with a key page and For you (nowH).
   { name: 'Leave banner on Work, 12 minutes, long title', q: work('3', '&leave=12'), checks: ['.leave-banner'], viewportOnly: true },
   { name: 'Leave banner on Work, amber, helper not set up', q: work('off', '&leave=4'), checks: ['.leave-banner'], viewportOnly: true },
-  { name: 'Leave banner on Work with the Day drawer open', q: work('12ask', '&leave=12&rec=1&meet=overlap'), click: '.rib .rib-handle', checks: ['.leave-banner', '.day-drawer', '.day-drawer .dd-agenda'], strip: true, viewportOnly: true },
+  { name: 'Leave banner on Work with the Day drawer open', q: work('12ask', '&leave=12&rec=1&meet=overlap'), click: '.rib-handle:not(.in-drawer)', checks: ['.leave-banner', '.day-drawer', '.day-drawer .dd-agenda'], strip: true, viewportOnly: true },
   { name: 'Leave banner on Work, leave now with the recording chip', q: work('12ask', '&leave=0&rec=1'), checks: ['.leave-banner', '.leave-banner .rec-chip'], viewportOnly: true },
   { name: 'Leave banner on Home', q: home('moods=five&leave=12'), checks: ['.leave-banner'], viewportOnly: true },
   { name: 'Leave banner on Unwind, amber', q: query({ hz: 'unwind', agents: '3', extra: '&leave=4' }), checks: ['.leave-banner'], viewportOnly: true },
@@ -446,9 +600,16 @@ VARIANTS.push(
   { name: 'Strip: overlaps, twelve sessions', q: work('12ask', '&meet=overlap'), checks: ['.rib'], strip: true, viewportOnly: true },
   { name: 'Strip: the needle at the centre, under the handle', q: query({ at: '2026-11-11T14:50:00-08:00', agents: '12ask', extra: '&meet=overlap' }), checks: ['.rib'], strip: true, viewportOnly: true },
   { name: 'Strip: late in the day', q: query({ at: '2026-11-11T22:50:00-08:00', agents: '12ask', extra: '&meet=overlap' }), checks: ['.rib'], strip: true, viewportOnly: true },
-  { name: 'Strip: the Day drawer open', q: work('12ask', '&meet=overlap'), click: '.rib .rib-handle', checks: ['.day-drawer', '.day-drawer .dd-agenda', '.day-drawer .dd-rows'], strip: true, viewportOnly: true },
+  { name: 'Strip: the Day drawer open', q: work('12ask', '&meet=overlap'), click: '.rib-handle', checks: ['.day-drawer', '.day-drawer .dd-agenda', '.day-drawer .dd-rows'], strip: true, viewportOnly: true },
   { name: 'Strip: Agents today, twelve sessions', q: work('12ask', '&days=typical'), click: '.rib .ag-line', checks: ['.agents-today', '.agents-today .at-head'], strip: true, viewportOnly: true },
   { name: 'Strip: Agents today, a heavy past day', q: work('12', '&days=heavy'), click: '.rib .ag-line >> .at-seg button:nth-child(2)', checks: ['.agents-today', '.agents-today .at-head', '.agents-today .at-foot'], strip: true, viewportOnly: true },
+);
+// day handle, rows, colours: twelve open with nine working (over the limit since mid morning, one
+// failed, one waiting) on the strip, in the Day drawer with long titles, and in the Agents panel.
+VARIANTS.push(
+  { name: 'Strip: twelve open, nine working, over the limit', q: work('12busy'), checks: ['.rib'], strip: true, viewportOnly: true },
+  { name: 'Strip: the Day drawer, twelve busy, long titles', q: work('12busy', '&meet=overlap'), click: '.rib-handle', checks: ['.day-drawer', '.day-drawer .dd-rows'], strip: true, viewportOnly: true },
+  { name: 'Strip: Agents today over the limit', q: work('12busy', '&days=typical'), click: '.rib .ag-line', checks: ['.agents-today', '.agents-today .at-head', '.agents-today .at-busy'], strip: true, viewportOnly: true },
 );
 // keys style: a small PNG reader (8-bit RGB or RGBA, not interlaced, as Chromium writes them) and contrast.
 function readPng(file) {
@@ -544,7 +705,10 @@ try {
   html = html.replace(/<link rel="stylesheet" crossorigin href="\.\/([^"]+)">/g, (_, href) => `<style>${readFileSync(join(dist, href), 'utf8')}</style>`);
   // For each checked box: its scroll sizes, and how far it sticks out of its container and
   // of the viewport on each side (screen pixels, 0 when inside). Plus the page's own scroll.
-  const measure = `<script>setTimeout(() => {
+  // Pixel proofs of the Hologram (thpx): `bare` hides everything of the video's layer and of the Watch panel but the plate and the stage (so the
+  // difference to the page as drawn is whatever else paints over the picture), `noplate` hides the plate only (so the
+  // difference is what the picture mixes with).
+  const measure = `<script>{ const m = new URLSearchParams(location.search).get('thpx'); const css = { bare: '.w-layer > :not(.w-stage):not(.w-holo-plate), .w-panel > * { visibility: hidden !important; }', noplate: '.w-holo-plate { visibility: hidden !important; }' }[m]; if (css) { const st = document.createElement('style'); st.textContent = css; document.head.appendChild(st); } }</script><script>setTimeout(() => {
     // unwind listen: measured at the end of the songs view's slide (virtual time draws no frames for it to run).
     if (new URLSearchParams(location.search).get('listen')) { const st = document.createElement('style'); st.textContent = '.sp-songs { animation: none !important; }'; document.head.appendChild(st); }
     // Steps separated by " >> " run 300 ms apart; within a step, " then " runs them at once.
@@ -636,7 +800,10 @@ try {
         for (const q of range.getClientRects()) if (q.width > 0) tops.add(Math.round(q.top));
       }
       const tall = e.matches('.lanes-hd-l > *, .lanes-hd > .row > *') && e.getBoundingClientRect().height > 36.5;
-      return tops.size > 1 || tall ? ['header part wraps: ' + (e.textContent || '').trim().slice(0, 48) + ' (' + Math.round(e.getBoundingClientRect().height) + ' px tall)'] : [];
+      // day handle, rows, colours: the meter's sentence is a coloured count and a word in two
+      // nodes, each one line even when the sentence breaks between them; its box says it wrapped.
+      const box = e.matches('.slot-meter .xs') && e.getBoundingClientRect().height > parseFloat(getComputedStyle(e).fontSize) * 1.7;
+      return tops.size > 1 || tall || box ? ['header part wraps: ' + (e.textContent || '').trim().slice(0, 48) + ' (' + Math.round(e.getBoundingClientRect().height) + ' px tall)'] : [];
     });
     // The deck (Always here and Now): nothing below its floor (a clearance above the mountain
     // ridge, worked out from the Work camera; the Now row carries it as data-floor), every key
@@ -654,7 +821,8 @@ try {
       // What the deck draws: its rows and their parts (the box itself is empty room). The open key
       // picker may run past the floor over the mountains; it is held to the timeline below.
       for (const e of deckEl.querySelectorAll('*')) {
-        if (e.closest('.pk')) continue;
+        // The open key menu is a popover held to the stage and off the strip's handle by its own rule below.
+        if (e.closest('.pk, .key-menu')) continue;
         const r = e.getBoundingClientRect();
         if (r.width === 0 || r.height === 0 || getComputedStyle(e).visibility === 'hidden') continue;
         lowest = Math.max(lowest, r.bottom);
@@ -683,8 +851,30 @@ try {
         const ic = t.querySelector('svg');
         if (!ic) continue;
         const q = ic.getBoundingClientRect();
-        if (Math.abs(iconAt(t) - iconAt(keyTiles[0])) > 0.5) deck.push('deck: the icon of key tile "' + name + '" sits ' + iconAt(t) + ' px below its tile top, the first one sits ' + iconAt(keyTiles[0]) + ' px');
-        if (q.top < r.top + 7 - 0.5 || q.bottom > r.top + 27 + 0.5 || q.left < r.left + 1 - 0.5 || q.right > r.right - 1 + 0.5) deck.push('deck: the icon of key tile "' + name + '" is not inside its icon box (icon y ' + Math.round(q.top - r.top) + ' to ' + Math.round(q.bottom - r.top) + ' in a tile that gives 7 to 27)');
+        const row = t.closest('.deck-tiles');
+        const peer = row?.querySelector('.deck-tile.key-tile');
+        if (peer && Math.abs(iconAt(t) - iconAt(peer)) > 0.5) deck.push('deck: the icon of key tile "' + name + '" sits ' + iconAt(t) + ' px below its tile top, its row first one sits ' + iconAt(peer) + ' px');
+        const wide = row?.classList.contains('wide');
+        const up1 = row?.classList.contains('up1');
+        const minY = wide ? 20 : up1 ? 7 : 7;
+        const maxY = wide ? 50 : up1 ? 32 : 27;
+        if (q.top < r.top + minY - 0.5 || q.bottom > r.top + maxY + 0.5 || q.left < r.left + 1 - 0.5 || q.right > r.right - 1 + 0.5) deck.push('deck: the icon of key tile "' + name + '" is not inside its icon box');
+      }
+      // deck pins and stretch: each row has equal tiles and fills its available width exactly.
+      for (const row of deckEl.querySelectorAll('.deck-tiles')) {
+        const rr = row.getBoundingClientRect();
+        const rowTiles = [...row.children].map((child) => child.matches('.key-tile-wrap') ? child.querySelector('.key-tile') : child).filter((child) => child?.matches?.('.key-tile')).map((child) => child.getBoundingClientRect());
+        if (!rowTiles.length) continue;
+        if (rowTiles.some((r) => Math.abs(r.width - rowTiles[0].width) > 0.5 || Math.abs(r.height - rowTiles[0].height) > 0.5)) deck.push('deck: tiles in one row do not share one width and height');
+        if (Math.abs(rowTiles[0].left - rr.left) > 0.5 || Math.abs(rowTiles[rowTiles.length - 1].right - rr.right) > 0.5) deck.push('deck: a tile row does not fill its width');
+      }
+      const menu = deckEl.querySelector('.key-menu');
+      if (menu) {
+        const mr = menu.getBoundingClientRect();
+        const sr = document.querySelector('.stage')?.getBoundingClientRect();
+        const handle = document.querySelector('.rib-handle')?.getBoundingClientRect();
+        if (sr && (mr.left < sr.left || mr.right > sr.right || mr.top < sr.top || mr.bottom > sr.bottom)) deck.push('deck: the key menu leaves the stage');
+        if (handle && hit(mr, handle)) deck.push('deck: the key menu covers the bottom strip handle');
       }
       // The open key picker runs down to just above the timeline and never covers it: its
       // bottom at least 16 px (the gap between the main rows) above the ribbon's top.
@@ -715,11 +905,48 @@ try {
       if (Math.abs(h - 104) > 0.5) strip.push('strip: the Work strip is ' + Math.round(h) + ' px tall (must be 104)');
       const labels = [...ribW.querySelectorAll('.ev, .ev-side, .ag-line, .due:not(.bare), .adbar')].map((e) => ({ r: e.getBoundingClientRect(), t: (e.textContent || e.getAttribute('aria-label') || '').slice(0, 30) }));
       labels.forEach((a, i) => labels.slice(i + 1).forEach((b) => { if (hit(a.r, b.r)) strip.push('strip: labels share pixels: ' + a.t + ' / ' + b.t); }));
-      // The drawer handle covers no chip, bar or label.
-      const handle = ribW.querySelector('.rib-handle');
+      // day handle, rows, colours: the handle (the strip's top edge, outside the strip's box) at rest
+      // covers no chip, bar or label: where they share pixels the label must be the one on top (the
+      // needle's pill draws over it). It is at least 26 px tall and runs the strip's width, 24 px in.
+      const handle = document.querySelector('.rib-handle.day-lip:not(.open)');
       if (handle) {
         const hr = handle.getBoundingClientRect();
-        for (const e of ribW.querySelectorAll('.ev, .ev-side, .adbar, .hl, .ndl b, .ag-line, .due, .agent-row .ac')) if (hit(hr, e.getBoundingClientRect())) strip.push('strip: the drawer handle covers ' + (e.textContent || e.className).trim().slice(0, 30));
+        const rr = ribW.getBoundingClientRect();
+        if (hr.height < 26 - 0.5 || hr.left > rr.left + 24.5 || hr.right < rr.right - 24.5) strip.push('strip: the drawer handle is ' + Math.round(hr.width) + ' by ' + Math.round(hr.height) + ' (at least the strip less 48 by 26)');
+        for (const e of ribW.querySelectorAll('.ev, .ev-side, .adbar, .hl, .ndl b, .ag-line, .due, .agent-row .ac')) {
+          const er = e.getBoundingClientRect();
+          if (!hit(hr, er)) continue;
+          const x = (Math.max(hr.left, er.left) + Math.min(hr.right, er.right)) / 2;
+          const y = (Math.max(hr.top, er.top) + Math.min(hr.bottom, er.bottom)) / 2;
+          const top = document.elementFromPoint(x, y);
+          if (top && handle.contains(top)) strip.push('strip: the drawer handle covers ' + (e.textContent || e.className).trim().slice(0, 30));
+        }
+        // The band covers nothing clickable at rest: wherever something that acts on a click (an agent
+        // card, a folded chip, a pinned key, the buddy, a button) lies under the band, the pointer moved
+        // there makes the lip pass it through (data-pass), so the lip is no longer the topmost thing.
+        const clickable = 'button, a[href], [role="button"], [tabindex]:not([tabindex="-1"]), .lane[data-id], .ev, .key-tile, .watt-hit, .tk3, .sg-hit';
+        const seenUnder = new Set();
+        for (let x = Math.ceil(hr.left) + 2; x < hr.right; x += 6) {
+          for (let y = Math.ceil(hr.top) + 1; y < Math.min(hr.bottom, rr.top + 9); y += 3) {
+            const under = (stack) => stack.slice(1).map((e) => e.closest(clickable)).find((c) => c && !handle.contains(c));
+            let stack = document.elementsFromPoint(x, y);
+            if (stack.length === 0 || !handle.contains(stack[0]) || !under(stack)) continue;
+            window.dispatchEvent(new PointerEvent('pointermove', { clientX: x, clientY: y }));
+            stack = document.elementsFromPoint(x, y);
+            const c = handle.contains(stack[0]) && !stack[0].closest('.lip-pill') ? under(stack) : null;
+            if (c && !seenUnder.has(c)) {
+              seenUnder.add(c);
+              strip.push('strip: the drawer handle band covers ' + (c.getAttribute('aria-label') || c.textContent || c.className).trim().slice(0, 30) + ' at (' + x + ', ' + y + ')');
+            }
+          }
+        }
+        window.dispatchEvent(new PointerEvent('pointermove', { clientX: -50, clientY: -50 }));
+      }
+      // Over the limit is never colour alone: such a cell is taller than the others and hatched.
+      for (const i of ribW.querySelectorAll('.agent-row .ac i.b5')) {
+        const cs = getComputedStyle(i);
+        if (i.getBoundingClientRect().height < 10 - 0.5) strip.push('strip: an over-the-limit cell is not taller (' + Math.round(i.getBoundingClientRect().height) + ' px)');
+        if (!cs.backgroundImage.includes('repeating-linear-gradient')) strip.push('strip: an over-the-limit cell is not hatched');
       }
       for (const f of ribW.querySelectorAll('.ev.fold')) {
         const n = f.querySelector('.fold-n');
@@ -763,9 +990,41 @@ try {
         for (const keep of document.querySelectorAll('.leave-banner, .rec-float')) if (!(z(keep) > z(scrim))) strip.push('strip: with the drawer open, ' + keep.className + ' is not above the scrim, so its words would be dimmed');
       }
     }
+    // day handle, rows, colours: the "Close the day" lip is a real button inside the drawer's own
+    // subtree, with a z-index above the drawer's other layers, and the REAL scrim (above) never
+    // covers it: the element at the lip's centre is the lip.
+    const lipIn = document.querySelector('.day-drawer .rib-handle.day-lip');
+    if (lipIn) {
+      if (lipIn.tagName !== 'BUTTON') strip.push('strip: the Close the day lip is not a button');
+      if (!lipIn.classList.contains('in-drawer')) strip.push('strip: the Close the day lip lacks the in-drawer class');
+      const z = (e) => parseInt(getComputedStyle(e).zIndex, 10) || 0;
+      const others = Math.max(0, ...[...document.querySelector('.day-drawer').children].filter((c) => c !== lipIn).map(z));
+      if (z(lipIn) <= others) strip.push('strip: the Close the day lip has z-index ' + z(lipIn) + ', not above the other layers of the drawer (' + others + ')');
+      if (!document.querySelector('.drawer-scrim')) strip.push('strip: the Close the day lip is checked with no real scrim up');
+      const lr = lipIn.querySelector('.lip-pill').getBoundingClientRect();
+      const topEl = document.elementFromPoint(lr.left + lr.width / 2, lr.top + lr.height / 2);
+      if (!topEl || !lipIn.contains(topEl)) strip.push('strip: the Close the day lip is under the scrim (found ' + (topEl ? topEl.className || topEl.tagName : 'nothing') + ')');
+    }
     for (const row of document.querySelectorAll('.agents-today .at-row:not(.skel), .day-drawer .dd-row')) {
       const h = row.getBoundingClientRect().height;
       if (h < 32 - 0.5) strip.push('strip: an Agents today row is ' + Math.round(h) + ' px tall (at least 32)');
+    }
+    // day handle, rows, colours: a drawer row's number, title, pill, quiet line, track and time
+    // never share pixels or leave the row, the row is one line, and the quiet line keeps its room.
+    for (const row of document.querySelectorAll('.day-drawer .dd-row')) {
+      const rr = row.getBoundingClientRect();
+      const name = row.querySelector('.dd-name')?.textContent?.slice(0, 24) ?? '';
+      const parts = [...row.children].map((e) => ({ c: e.className, r: e.getBoundingClientRect() }));
+      parts.forEach((a, i) => parts.slice(i + 1).forEach((b) => { if (hit(a.r, b.r)) strip.push('strip: drawer row "' + name + '" parts overlap: ' + a.c + ' / ' + b.c); }));
+      for (const p of parts) if (p.r.right > rr.right + 0.5 || p.r.left < rr.left - 0.5) strip.push('strip: drawer row "' + name + '" ' + p.c + ' runs out of its row');
+      for (const e of row.querySelectorAll('.dd-name, .dd-pill, .dd-line, .dd-time')) if (e.scrollHeight > e.clientHeight + 1 || e.getBoundingClientRect().height > rr.height) strip.push('strip: drawer row "' + name + '" wraps in ' + e.className);
+      const line = row.querySelector('.dd-line');
+      if (line && line.getBoundingClientRect().width < 300) strip.push('strip: drawer row "' + name + '" quiet line is squeezed to ' + Math.round(line.getBoundingClientRect().width) + ' px');
+    }
+    // No text under 16 px in the drawer rows, their header and the Busy at once line and band.
+    for (const e of document.querySelectorAll('.day-drawer :is(.dd-name, .dd-pill, .dd-line, .dd-time, .dd-counts, .dd-axis span), .agents-today :is(.at-busy-k, .at-busy-s .w, .at-busy-s b, .at-busy-sum, .at-band-k, .at-band-note)')) {
+      const px = parseFloat(getComputedStyle(e).fontSize);
+      if (px < 16 - 0.01 && (e.textContent || '').trim()) strip.push('strip: text under 16 px in ' + e.className + ' (' + px + ' px)');
     }
     const opened = { drawer: !!document.querySelector('.day-drawer'), panel: !!document.querySelector('.agents-today'), rows: document.querySelectorAll('.agents-today .at-row:not(.skel)').length };
     // The Tools drawer: inside x 1700 to 2560 and y 0 to 720, clear of the rail, and no text cut unless a hover card carries it.
@@ -990,7 +1249,8 @@ try {
       const ctl = document.querySelector('.w-ctl');
       if (ctl && ctl.children.length) { const kids = [...ctl.children].map(box); const mid = (k) => k.t + k.h / 2; if (kids.some((k) => Math.abs(mid(k) - mid(kids[0])) > 2)) fails.push('watch polish: the control row wraps'); }
       const skyStage = document.querySelector('.w-sky');
-      if (skyStage) for (const c of skyStage.children) if (!c.classList.contains('w-screen')) fails.push('watch polish: ' + c.className + " is drawn over the video's box (whole sky)");
+      // sky layers: .w-front holds the horizon's front canvas (the land in front of the video; no pointer, no text).
+      if (skyStage) for (const c of skyStage.children) if (!c.classList.contains('w-screen') && !c.classList.contains('w-front')) fails.push('watch polish: ' + c.className + " is drawn over the video's box (whole sky)");
       const scr = document.querySelector('.w-stage:not(.w-sky):not(.w-empty) .w-screen');
       if (scr) {
         const v = box(scr);
@@ -1024,7 +1284,240 @@ try {
       if (Math.abs(me.bottom - 505) > 1 || me.left < 139 || me.left > 1021) fails.push('watt drive-in: Watt at ' + at + ' is not on his ground');
       return { at, fails };
     })();
-    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, meetOut, strip, opened, watchPolish, listen, wattDriveIn });
+        // sky layers: a front canvas exactly when a look sits behind the land; with one, it is shown,
+    // covers the stage, comes after the video in the same stage, is opaque on the lake under the
+    // video and clear (but for the grain) at the top of the sky; with \`skycheck=moon\` the moon is drawn and its disc is
+    // 40 px clear of every card, the player, Up next, the tabs, the left block and the clock's text.
+    const skyLayers = (() => {
+      const fails = [];
+      const check = new URLSearchParams(location.search).get('skycheck');
+      const fronts = [...document.querySelectorAll('canvas.horizon-front')];
+      const layered = document.querySelector('.w-stage.w-layered');
+      if (fronts.length !== (layered ? 1 : 0)) fails.push('sky layers: ' + fronts.length + ' front canvas with ' + (layered ? 'a look' : 'no look') + ' behind the land');
+      if (check === 'front') {
+        const f = fronts[0];
+        const scr = layered && layered.querySelector('.w-screen');
+        if (!f || !scr) fails.push('sky layers: no front canvas or no video behind the land');
+        else {
+          const cs = getComputedStyle(f);
+          if (cs.display === 'none' || cs.visibility !== 'visible' || Number(cs.opacity) < 1) fails.push('sky layers: the front canvas is hidden (' + cs.display + ', ' + cs.visibility + ', ' + cs.opacity + ')');
+          const r = f.getBoundingClientRect();
+          if (Math.abs(r.left) > 1 || Math.abs(r.top) > 1 || Math.abs(r.width - 2560) > 1 || Math.abs(r.height - 720) > 1) fails.push('sky layers: the front canvas is at ' + [r.left, r.top, r.width, r.height].map(Math.round).join(',') + ', not the stage');
+          if (f.closest('.w-stage') !== layered || !(scr.compareDocumentPosition(f) & Node.DOCUMENT_POSITION_FOLLOWING)) fails.push('sky layers: the front canvas is not after the video in its stage');
+          const v = scr.getBoundingClientRect();
+          const box = (layered.getAttribute('data-sky-box') || '').split(',').map(Number);
+          if (box.length !== 4 || Math.abs(box[0] - v.left) > 1 || Math.abs(box[1] - v.top) > 1 || Math.abs(box[2] - v.width) > 1 || Math.abs(box[3] - v.height) > 1) fails.push('sky layers: the look box ' + box.join(',') + ' is not the drawn video ' + [v.left, v.top, v.width, v.height].map(Math.round).join(','));
+          // The whole sky: the whole picture, never cropped: inside the stage at the top, left and
+          // right, its top at most 24 px down, and the frame exactly the picture's box.
+          if (layered.classList.contains('w-sky')) {
+            if (v.top < 0 || v.left < 0 || v.right > 2560 || v.top > 24) fails.push('sky layers: the whole sky picture is at ' + [v.left, v.top, v.right].map(Math.round).join(',') + ', not inside the stage near its top');
+            const fr = scr.querySelector('.w-frame');
+            const r2 = fr && fr.getBoundingClientRect();
+            if (!r2 || Math.abs(r2.left - v.left) > 1 || Math.abs(r2.top - v.top) > 1 || Math.abs(r2.width - v.width) > 1 || Math.abs(r2.height - v.height) > 1) fails.push('sky layers: the whole sky frame is cropped');
+          }
+          const x = f.getContext('2d');
+          const sx = f.width / 2560;
+          const at = (px, py) => x.getImageData(Math.round(px * sx), Math.round(py * sx), 1, 1).data[3];
+          const cx = v.left + v.width / 2;
+          if (at(cx, 680) < 255) fails.push('sky layers: the front canvas is not opaque on the lake under the video');
+          // Only the film grain (at most 10 of 255) lies over the top of the sky.
+          if (at(cx, 4) > 12) fails.push('sky layers: the front canvas paints the top of the sky over the video');
+        }
+      }
+      if (check === 'moon') {
+        const c = document.querySelector('canvas.horizon-canvas:not(.horizon-front)');
+        const m = (c && c.dataset.moon || '').split(',').map(Number);
+        if (m.length !== 3) fails.push('sky layers: no moon drawn at night');
+        else {
+          const [mx, my, mr] = m;
+          const boxes = [...document.querySelectorAll('.u-card, .sp-card, .u-player, .u-next, .u-tabs, .w-now, .w-lookbar, .w-gear, .w-stage, .rail')].map((e) => [e.className.baseVal ?? e.className, e.getBoundingClientRect()]);
+          const clk = document.querySelector('.clk');
+          if (clk) { const rg = document.createRange(); rg.selectNodeContents(clk); boxes.push(['the clock', rg.getBoundingClientRect()]); }
+          for (const [name, r] of boxes) {
+            if (!r.width || !r.height) continue;
+            const dx = Math.max(r.left - mx, 0, mx - r.right);
+            const dy = Math.max(r.top - my, 0, my - r.bottom);
+            const gap = Math.hypot(dx, dy) - mr;
+            if (gap < 40) fails.push('sky layers: the moon at ' + m.join(',') + ' is ' + Math.max(0, Math.round(gap)) + ' px from ' + String(name).split(' ')[0] + ' (40 at least)');
+          }
+        }
+      }
+      return { fails, moon: (document.querySelector('canvas.horizon-canvas:not(.horizon-front)') || {}).dataset?.moon ?? '' };
+    })();
+    // tower and hologram: with th=tower, nothing of the drive-in's frame paints over the video's box
+    // (every drawn shape tested with the browser's own fill and stroke tests at points of the box), the box
+    // is exactly wall 1244, 54, 672 by 378, the frame is clear of the left block, the Look switch and the
+    // list card, and the marquee says what the state says; with th=holo, the tilted pane is inside the stage
+    // and clear of the card, drawn whole, blended, its plate under it, the emitter taking no pointer.
+    const thCheck = (() => {
+      const mode = new URLSearchParams(location.search).get('th');
+      if (!mode) return null;
+      const fails = [];
+      const R = (e) => { const r = e.getBoundingClientRect(); return { l: r.left, t: r.top, w: r.width, h: r.height }; };
+      const meet = (a, b) => a.l < b.l + b.w && b.l < a.l + a.w && a.t < b.t + b.h && b.t < a.t + a.h;
+      const keep = ['.w-now', '.w-lookbar', '.w-card'].map((sel) => [sel, document.querySelector(sel)]).filter((k) => k[1]);
+      const stage = document.querySelector('.w-stage');
+      const scr = stage && stage.querySelector('.w-screen');
+      let quad = null;
+      if (!stage || !scr) { fails.push('tower and hologram: no stage or no screen'); return { fails }; }
+      if (mode === 'tower') {
+        const svg = stage.querySelector('.w-tower');
+        if (!svg) { fails.push('tower and hologram: the drive-in has no tower frame'); return { fails }; }
+        if (stage.firstElementChild !== svg || !(svg.compareDocumentPosition(scr) & Node.DOCUMENT_POSITION_FOLLOWING)) fails.push('tower and hologram: the frame is not the first child of the stage under the screen');
+        if (getComputedStyle(svg).pointerEvents !== 'none') fails.push('tower and hologram: the frame takes the pointer');
+        const v = R(scr);
+        if (Math.abs(v.l - 1244) > 0.5 || Math.abs(v.t - 54) > 0.5 || Math.abs(v.w - 672) > 0.5 || Math.abs(v.h - 378) > 0.5) fails.push('tower and hologram: the video box is at ' + [v.l, v.t, v.w, v.h].map(Math.round).join(',') + ', not 1244,54,672,378');
+        const pts = [];
+        for (let i = 0; i <= 12; i++) for (let j = 0; j <= 7; j++) pts.push(new DOMPoint(1244.5 + 671 * i / 12, 54.5 + 377 * j / 7));
+        let shapes = 0;
+        for (const el of svg.querySelectorAll('path, rect, ellipse, circle, line')) {
+          if (el.closest('defs') || el.closest('g[mask]') || el.getAttribute('clip-path')) continue;
+          shapes++;
+          const cs = getComputedStyle(el);
+          const fill = cs.fill !== 'none' && Number(cs.fillOpacity) > 0, stroke = cs.stroke !== 'none' && parseFloat(cs.strokeWidth) > 0;
+          const hit = pts.find((pt) => (fill && el.isPointInFill(pt)) || (stroke && el.isPointInStroke(pt)));
+          if (hit) { fails.push('tower and hologram: ' + el.tagName + ' ' + (el.getAttribute('d') || '').slice(0, 40) + ' paints over the picture at ' + Math.round(hit.x) + ',' + Math.round(hit.y)); break; }
+        }
+        if (shapes < 30) fails.push('tower and hologram: only ' + shapes + ' shapes tested in the frame');
+        for (const el of svg.querySelectorAll('path, rect')) {
+          if (el.closest('defs') || el.closest('g[mask]')) continue;
+          const b = R(el);
+          const clash = keep.find((k) => { const q = R(k[1]); return meet(b, { l: q.l - 12, t: q.t - 12, w: q.w + 24, h: q.h + 24 }); });
+          if (clash) { fails.push('tower and hologram: the tower ' + el.tagName + ' at ' + [b.l, b.t, b.w, b.h].map(Math.round).join(',') + ' overlaps (or is within 12 px of) ' + clash[0]); break; }
+        }
+        const mode2 = svg.getAttribute('data-marquee');
+        const sub = (document.querySelector('.w-sub') || {}).textContent || '';
+        // NOW SHOWING only while the player reports it playing; the name alone while it waits for a click or has ended.
+        const want = stage.classList.contains('w-empty') ? 'empty' : /Waiting for a click|Ended/.test(sub) ? 'waiting' : /Paused/.test(sub) ? 'paused' : 'playing';
+        if (mode2 !== want) fails.push('tower and hologram: the marquee mode is ' + mode2 + ', the state is ' + want);
+        const on = [...svg.querySelectorAll('text.w-mq')].filter((t) => t.getAttribute('data-on') === '1');
+        const words = on.map((t) => t.textContent).join('|');
+        const exp = { playing: 'NOW SHOWING', paused: 'INTERMISSION', waiting: '', empty: '' }[want];
+        if (on.length !== 1 || (exp === '' ? / · /.test(words) || !/DRIVE-IN$/.test(words) : !words.endsWith(exp))) fails.push('tower and hologram: the marquee says "' + words + '" for ' + want);
+        if (on[0]) { const bb = on[0].getBBox(); if (bb.width > 384) fails.push('tower and hologram: the marquee words are ' + Math.round(bb.width) + ' px wide on a 384 px board'); }
+      } else {
+        const plate = document.querySelector('.w-holo-plate');
+        if (!stage.classList.contains('w-holo') || !plate) { fails.push('tower and hologram: no Hologram stage or plate'); return { fails }; }
+        if (!(plate.compareDocumentPosition(stage) & Node.DOCUMENT_POSITION_FOLLOWING)) fails.push('tower and hologram: the plate is not under the stage');
+        const ts = getComputedStyle(stage), tp = getComputedStyle(plate);
+        if (ts.transform === 'none' || ts.transform !== tp.transform) fails.push('tower and hologram: the plate and the stage do not share the tilt (' + tp.transform + ' / ' + ts.transform + ')');
+        if (ts.mixBlendMode !== 'screen') fails.push('tower and hologram: the Hologram is not blended (' + ts.mixBlendMode + ')');
+        if (scr.offsetWidth !== 736 || scr.offsetHeight !== 414) fails.push('tower and hologram: the Hologram picture is ' + scr.offsetWidth + ' by ' + scr.offsetHeight + ', not the whole 736 by 414');
+        if ([...stage.children].some((c) => c !== scr)) fails.push('tower and hologram: something lies on the Hologram picture beside the screen');
+        if (document.querySelector('canvas.horizon-front') || document.querySelector('.w-layered')) fails.push('tower and hologram: the Hologram claims a front layer');
+        const emit = document.querySelector('.w-holo-emit');
+        if (!emit || getComputedStyle(emit).pointerEvents !== 'none') fails.push('tower and hologram: the emitter is missing or takes the pointer');
+        const v = R(scr);
+        // The tilted pane's four corners (the browser's own matrix, about the stage's transform origin), for the pixel proofs.
+        try {
+          const T = new DOMMatrix(ts.transform);
+          const keepTf = stage.style.transform;
+          stage.style.transform = 'none';
+          const u = R(scr);
+          stage.style.transform = keepTf;
+          const ox = u.l + u.w * 0.5, oy = u.t + u.h * 0.6;
+          const P = (x, y) => { const q = T.transformPoint(new DOMPoint(x - ox, y - oy, 0, 1)); return [ox + q.x / q.w, oy + q.y / q.w]; };
+          quad = [P(u.l, u.t), P(u.l + u.w, u.t), P(u.l + u.w, u.t + u.h), P(u.l, u.t + u.h)];
+        } catch (e) { fails.push('tower and hologram: the tilted pane could not be measured (' + e.message + ')'); }
+        if (v.l < 0 || v.t < 0 || v.l + v.w > 2560 || v.t + v.h > 720) fails.push('tower and hologram: the Hologram pane leaves the stage at ' + [v.l, v.t, v.w, v.h].map(Math.round).join(','));
+        for (const part of [scr, ...plate.querySelectorAll('i')]) {
+          const b = R(part);
+          if (b.l < 0 || b.l + b.w > 2560 || b.t < 0) { fails.push('tower and hologram: the Hologram ' + part.className + ' leaves the stage'); break; }
+          const clash = keep.find((k) => meet(b, R(k[1])));
+          if (clash) { fails.push('tower and hologram: the Hologram ' + (part.className || 'pane') + ' at ' + [b.l, b.t, b.w, b.h].map(Math.round).join(',') + ' overlaps ' + clash[0]); break; }
+        }
+      }
+      return { fails, mode, quad };
+    })();
+    // look tiles: the labels in the settings sheet keep 16 px at least (the wall's smallest text).
+    const tileText = [...document.querySelectorAll('.w-tile')].filter((t) => parseFloat(getComputedStyle(t).fontSize) < 16).map((t) => 'watch polish: look tile "' + (t.textContent || '').trim() + '" has ' + getComputedStyle(t).fontSize + ' text (16 px at least)');
+    // lines controls: the Lines side of the sheet stays inside the stage and 680 px with every control inside
+    // it, no control under 32 px tall and no text under 16 px; a new type draws nothing inside a picture box.
+    const lines = [];
+    if (new URLSearchParams(location.search).get('linescheck')) {
+      const sheet = document.querySelector('.w-sheet.ln-sheet');
+      if (!sheet) lines.push('lines: the sheet is not open on its Lines side');
+      else {
+        const s = sheet.getBoundingClientRect();
+        if (s.height > 680.5 || s.top < -0.5 || s.bottom > 720.5) lines.push('lines: the sheet is ' + Math.round(s.height) + ' px tall, y ' + Math.round(s.top) + ' to ' + Math.round(s.bottom) + ' (680 at most, inside the stage)');
+        for (const el of sheet.querySelectorAll('.ln-panel button, .ln-panel input, .ln-pages button')) {
+          const r = el.getBoundingClientRect();
+          const name = el.getAttribute('aria-label') || el.textContent.trim() || el.id;
+          if (r.left < s.left - 0.5 || r.right > s.right + 0.5 || r.top < s.top - 0.5 || r.bottom > s.bottom + 0.5) lines.push('lines: control "' + name + '" is cut by the sheet');
+          if (r.height < 31.5) lines.push('lines: control "' + name + '" is ' + Math.round(r.height * 10) / 10 + ' px tall (32 at least)');
+        }
+        for (const el of [sheet.querySelector('.ln-pages'), sheet.querySelector('.ln-panel'), ...sheet.querySelectorAll('.ln-pages *, .ln-panel *')]) {
+          if (!el || ![...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim())) continue;
+          const fs = parseFloat(getComputedStyle(el).fontSize);
+          if (fs < 15.5) lines.push('lines: text under 16 px in "' + el.textContent.trim().slice(0, 30) + '" (' + fs + ' px)');
+        }
+      }
+    }
+    if (new URLSearchParams(location.search).get('lineprobe')) {
+      const probe = document.querySelector('canvas.horizon-canvas:not(.horizon-front)')?.dataset.lineProbe;
+      const [inside, drawn, boxes] = (probe || '0,0,0').split(',').map(Number);
+      if (!probe) lines.push('lines: the probe reported nothing (no new type was drawn)');
+      else if (!boxes) lines.push('lines: no picture box was claimed');
+      else if (!drawn) lines.push('lines: the new type drew nothing');
+      else if (inside > 0) lines.push("lines: a new type draws " + inside + " pixels inside the video's box");
+    }
+    // watch behaviour: \`wbcheck=rest\`: the controls are faded, none of them takes the pointer at its
+    // centre, and the dimmed title stays clear of the video's box. \`wbcheck=away\`: on another place
+    // the frame is still there, its layer fully transparent or off the stage, no point of its box
+    // reaches it, and Unwind's button carries the playing mark inside its own box.
+    const watchBehaviour = (() => {
+      const mode = new URLSearchParams(location.search).get('wbcheck');
+      if (!mode) return [];
+      const fails = [];
+      const cls = (e) => (typeof e.className === 'string' ? e.className : e.tagName).split(' ').slice(0, 2).join('.');
+      const meet = (a, b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+      if (mode === 'rest') {
+        // Headless virtual time hardly runs CSS transitions: read where the 250 ms fade ends.
+        for (const e of document.querySelectorAll('.w-now > *, .w-lookbar')) e.style.transition = 'none';
+        void document.body.offsetWidth;
+        const now = document.querySelector('.w-now');
+        if (!now || now.getAttribute('data-ctl') !== 'rest') fails.push('watch behaviour: the controls are not at rest');
+        for (const e of document.querySelectorAll('.w-now .u-src, .w-ctl button, .w-ctl .w-open, .w-bar, .w-hintbtn, .w-lookbar button')) {
+          const r = e.getBoundingClientRect();
+          if (!(r.width > 0 && r.height > 0)) continue;
+          const h = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+          if (h && (h === e || e.contains(h))) fails.push('watch behaviour: ' + cls(e) + ' takes the pointer while the controls are hidden');
+          if (Number(getComputedStyle(e.closest('.w-ctl, .w-time, .w-lookbar, .u-src') || e).opacity) > 0.01) fails.push('watch behaviour: ' + cls(e) + ' shows while the controls are hidden');
+        }
+        const title = document.querySelector('.w-now .w-title');
+        const scr = document.querySelector('.w-stage .w-screen');
+        if (title && scr) {
+          const range = document.createRange();
+          range.selectNodeContents(title);
+          for (const t of range.getClientRects()) if (t.width > 0 && meet(t, scr.getBoundingClientRect())) { fails.push("watch behaviour: the dimmed title overlaps the video's box"); break; }
+          if (Math.abs(Number(getComputedStyle(title).opacity) - 0.5) > 0.01) fails.push('watch behaviour: the dimmed title is at ' + getComputedStyle(title).opacity + ', not half strength');
+        }
+      }
+      if (mode === 'away') {
+        const frame = document.querySelector('.w-layer .w-frame');
+        if (!frame) fails.push('watch behaviour: no frame while the video plays elsewhere');
+        else {
+          const r = frame.getBoundingClientRect();
+          let op = 1;
+          for (let a = frame; a; a = a.parentElement) op *= Number(getComputedStyle(a).opacity);
+          const onStage = r.right > 0 && r.left < 2560 && r.bottom > 0 && r.top < 720;
+          if (onStage && op > 0.001) fails.push('watch behaviour: the stage shows on another place (opacity ' + op.toFixed(2) + ')');
+          const st = frame.closest('.w-stage').getBoundingClientRect();
+          let took = 0;
+          for (let y = st.top + 10; y < st.bottom; y += 40) for (let x = st.left + 10; x < st.right; x += 40) { const h = document.elementFromPoint(x, y); if (h && h.closest('.w-layer')) took += 1; }
+          if (took) fails.push('watch behaviour: the stage takes the pointer on another place (' + took + ' points)');
+        }
+        const mark = document.querySelector('.rail .rb-play');
+        if (!mark) fails.push("watch behaviour: no playing mark on the rail's Unwind button");
+        else {
+          const m = mark.getBoundingClientRect();
+          const b = mark.closest('.rb').getBoundingClientRect();
+          if (m.left < b.left - 0.5 || m.right > b.right + 0.5 || m.top < b.top - 0.5 || m.bottom > b.bottom + 0.5) fails.push("watch behaviour: the rail's playing mark sticks out of its button");
+        }
+      }
+      return fails;
+    })();
+    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, meetOut, strip, opened, watchPolish, skyLayers, thCheck, tileText, listen, lines, watchBehaviour, wattDriveIn });
     document.body.appendChild(pre);
   }, new URLSearchParams(location.search).get('card') ? 7000 : 3000);</script>`;
   const broken = overflow ? `<style>${OVERFLOWS[overflow]}</style>` : '';
@@ -1049,6 +1542,11 @@ try {
     'tile-icon': (v) => v.name === 'Keys style, day: library sets held on VS Code',
     'tile-iconbox': (v) => v.name === 'Keys style, day: library sets held on VS Code',
     'drawer-scrim': (v) => v.name === 'Strip: the Day drawer open',
+    // deck pins and stretch
+    'sparse-width': (v) => v.name === 'Deck, one pin plus Add, one Now key',
+    'tile-equal': (v) => v.name === 'Deck, three pins plus Add, three Now keys',
+    'icon-wide': (v) => v.name === 'Deck, one pin plus Add, one Now key',
+    'key-menu': (v) => v.name.startsWith('Deck, key menu open on the leftmost'),
     'hide-pill': (v) => v.name === 'Unwind, Hide screen grown',
     // whole sky and sun
     sky: (v) => v.name.startsWith('Watch, whole sky playing'),
@@ -1057,6 +1555,13 @@ try {
     strip: (v) => v.name === 'Strip: overlaps, twelve sessions',
     fold: (v) => v.name === 'Strip: overlaps, twelve sessions',
     handle: (v) => v.name === 'Strip: overlaps, twelve sessions',
+    // day handle, rows, colours
+    'lip-cover': (v) => v.name === 'Strip: overlaps, twelve sessions',
+    'lip-band': (v) => v.name === 'Strip: overlaps, twelve sessions',
+    'lip-scrim': (v) => v.name === 'Strip: the Day drawer open',
+    'row-parts': (v) => v.name === 'Strip: the Day drawer, twelve busy, long titles',
+    'over-hatch': (v) => v.name === 'Strip: twelve open, nine working, over the limit',
+    'row-type': (v) => v.name === 'Strip: the Day drawer, twelve busy, long titles',
     drawer: (v) => v.name === 'Strip: the Day drawer open',
     rows: (v) => v.name === 'Strip: Agents today, a heavy past day',
     'hide-note': (v) => v.name === 'Unwind, Hide screen grown with the failure note',
@@ -1079,15 +1584,42 @@ try {
     // watt drive-in
     'watt-seat': (v) => v.name === 'Watt drive-in, seated at night',
     'watt-ground': (v) => v.name === 'Watt drive-in, seated at night',
+    // tower and hologram
+    'tower-over': (v) => v.name === 'Watch polish, tower playing',
+    'tower-wide': (v) => v.name === 'Watch polish, tower playing',
+    'tower-box': (v) => v.name === 'Watch polish, tower playing',
+    'tower-switch': (v) => v.name.startsWith('Watch polish'),
+    'holo-big': (v) => v.name === 'Watch polish, hologram, single video',
+    'holo-noblend': (v) => v.name === 'Watch polish, hologram, single video',
+    'holo-beam': (v) => v.name === 'Watch polish, hologram, single video',
+    'holo-take': (v) => v.name === 'Watch polish, hologram, autoplay refused',
+    'tile-text': (v) => v.name === 'Watch, settings sheet, one look',
+    // watch behaviour
+    'watch-rest': (v) => v.name === 'Watch behaviour, feathered, controls at rest',
+    'watch-title': (v) => v.name === 'Watch behaviour, drive-in, long label, controls at rest',
+    'watch-away': (v) => v.name === 'Watch behaviour, Work with a video playing elsewhere',
+    'watch-mark': (v) => v.name === 'Watch behaviour, Work with a video playing elsewhere',
+    // sky layers
+    'sky-front': (v) => v.name === 'Sky layers, whole sky at night',
+    'sky-moon': (v) => v.name === 'Sky layers, Listen at night, the moon in open sky',
+    'sky-always': (v) => v.name === 'Sky layers, Listen at night, the moon in open sky',
+    'sky-crop': (v) => v.name === 'Sky layers, whole sky at night',
+    // lines controls
+    'lines-size': (v) => v.name === 'Lines settings sheet',
+    'lines-control': (v) => v.name === 'Lines settings sheet',
+    'lines-text': (v) => v.name === 'Lines settings sheet',
+    'lines-clip': (v) => v.name === 'Lines, bars under the drive-in',
   };
   const breakOn = BREAK_ON[overflow] ? VARIANTS.filter(BREAK_ON[overflow]) : VARIANTS.slice(0, 1);
   /** keys style: the Now row's height on each page that has one, compared after every state ran. */
   const nowHeights = [];
   /** watch polish: the Look switch's box in each Watch polish state, compared after the run. */
   const switchBoxes = [];
+  /** sky layers: the moon drawn in each moon state, compared after the run (one place on Listen and on Watch). */
+  const skyMoons = [];
   for (const v of overflow ? breakOn : VARIANTS) {
     console.log(`${v.name} (${v.q}):`);
-    const url = `${pathToFileURL(page).href}${v.q}&checks=${encodeURIComponent(v.checks.join('|'))}${v.click ? `&click=${encodeURIComponent(v.click)}` : ''}${v.card ? '&card=1' : ''}${v.hits ? `&hits=${encodeURIComponent(v.hits.join('|'))}` : ''}${v.noHit ? `&nohit=${encodeURIComponent(v.noHit)}` : ''}${v.listen ? '&listen=1' : ''}`;
+    const url = `${pathToFileURL(page).href}${v.q}${v.sky ? `&skycheck=${v.sky}` : ''}${overflow && SKY_BREAK_Q[overflow] ? SKY_BREAK_Q[overflow] : ''}${overflow && LINES_BREAK_Q[overflow] ? LINES_BREAK_Q[overflow] : ''}&checks=${encodeURIComponent(v.checks.join('|'))}${v.click ? `&click=${encodeURIComponent(v.click)}` : ''}${v.card ? '&card=1' : ''}${v.hits ? `&hits=${encodeURIComponent(v.hits.join('|'))}` : ''}${v.noHit ? `&nohit=${encodeURIComponent(v.noHit)}` : ''}${v.listen ? '&listen=1' : ''}${v.linesSheet ? '&linescheck=1' : ''}${v.th ? `&th=${v.th}` : ''}${v.wb ? `&wbcheck=${v.wb}` : ''}`;
     const dom = await runChrome(
       chrome,
       // Headless Chromium keeps 87 px of the window for itself, so 807 gives a 2560 by 720 viewport.
@@ -1100,13 +1632,31 @@ try {
       process.exit(1);
     }
     const text = m[1].replaceAll('&quot;', '"').replaceAll('&amp;', '&');
-    const { res, page: doc, overlaps, cut, gaps, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, meetOut, strip, opened, watchPolish, listen, wattDriveIn } = JSON.parse(text);
+    const { res, page: doc, overlaps, cut, gaps, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, meetOut, strip, opened, watchPolish, skyLayers, thCheck, tileText, listen, lines, watchBehaviour, wattDriveIn } = JSON.parse(text);
     // watt drive-in
     if (wattDriveIn) {
       for (const f of wattDriveIn.fails) console.log(`  FAIL ${f}`);
       if (wattDriveIn.fails.length) failed = true;
       else console.log(`  ok   watt drive-in: seated at ${wattDriveIn.at}, on his ground, 60 px or more left of the screen, clear of the control row, the Look switch, the list and the banner`);
     }
+    // watch behaviour
+    for (const f of watchBehaviour) console.log(`  FAIL ${f}`);
+    if (watchBehaviour.length) failed = true;
+    else if (v.wb === 'rest') console.log("  ok   watch behaviour: the controls are faded and take no pointer, the dimmed title clear of the video's box");
+    else if (v.wb === 'away') console.log("  ok   watch behaviour: out of sight the stage is transparent and takes no pointer; the rail's mark sits in its button");
+    // sky layers
+    for (const f of skyLayers.fails) console.log(`  FAIL ${f}`);
+    if (skyLayers.fails.length) failed = true;
+    else if (v.sky === 'front') console.log('  ok   sky layers: the front canvas covers the stage over the video, the land opaque, the sky clear');
+    else if (v.sky === 'moon') console.log(`  ok   sky layers: the moon at ${skyLayers.moon} is 40 px clear of every card, the player and the clock`);
+    // The moon the rule gives for this layout (the first clear one of cameras.ts MOON_PLACES): on Listen in
+    // every player state the low place under the player, on Watch with nothing on its first place. Not with a
+    // break that moves the moon on purpose (that one must fail on its distance alone).
+    if (v.moonAt && !(overflow && SKY_BREAK_Q[overflow]) && skyLayers.moon !== v.moonAt) {
+      failed = true;
+      console.log(`  FAIL sky layers: the moon is at ${skyLayers.moon || 'no place'}, expected ${v.moonAt} (the first place clear of this layout)`);
+    }
+    if (v.sky === 'moon') skyMoons.push({ name: v.name, moon: skyLayers.moon });
     // watch polish
     if (watchPolish) {
       for (const f of watchPolish.fails) console.log(`  FAIL ${f}`);
@@ -1114,10 +1664,77 @@ try {
       else console.log('  ok   watch polish: the control row is one line clear of the list, nothing over the video\'s box');
       if (v.name.startsWith('Watch polish')) switchBoxes.push({ name: v.name, box: watchPolish.sw });
     }
+    // look tiles
+    for (const f of tileText) console.log(`  FAIL ${f}`);
+    if (tileText.length) failed = true;
+    else if (v.checks.includes('.w-tile')) console.log('  ok   watch polish: every look tile keeps 16 px text');
+    // tower and hologram
+    if (thCheck) {
+      for (const f of thCheck.fails) console.log(`  FAIL ${f}`);
+      if (thCheck.fails.length) failed = true;
+      else if (thCheck.mode === 'tower') console.log('  ok   tower and hologram: nothing of the frame paints over the video box 1244,54,672,378; the frame is clear of the left block, the Look switch and the list card; the marquee says the state');
+      else console.log('  ok   tower and hologram: the tilted pane is whole, inside the stage, clear of the card, blended over its plate, with no front layer');
+    }
+    // tower and hologram, the pixel proofs: inside the tilted pane (the browser's own corners, inset 2 px) the page as
+    // drawn must equal the page with everything of the panel but the plate and the stage hidden (nothing else paints
+    // over the picture, the beam and its blur included), and must differ from the page with the plate hidden (the
+    // picture mixes with the plate: the blend is on).
+    if (v.px && thCheck && thCheck.quad) {
+      const shoot = async (mode) => {
+        const shot = join(out, `th-${mode || 'as-drawn'}.png`);
+        await runChrome(chrome, ['--headless', '--no-sandbox', '--disable-gpu', '--window-size=2560,807', '--hide-scrollbars', '--virtual-time-budget=8000', `--screenshot=${shot}`, url + (mode ? `&thpx=${mode}` : '')], { label: `${v.name}, pixel proof ${mode || 'as drawn'}` });
+        return readPng(shot);
+      };
+      const [asDrawn, bare, noPlate] = [await shoot(''), await shoot('bare'), await shoot('noplate')];
+      const dy = (asDrawn.h - 720) / 2;
+      const q = thCheck.quad;
+      const inside = (x, y) => {
+        // Inside the convex quad, 2 px in from every edge.
+        for (let i = 0; i < 4; i++) {
+          const [ax, ay] = q[i], [bx, by] = q[(i + 1) % 4];
+          const len = Math.hypot(bx - ax, by - ay);
+          if (((bx - ax) * (y - ay) - (by - ay) * (x - ax)) / len < 2) return false;
+        }
+        return true;
+      };
+      const x0 = Math.floor(Math.min(...q.map((p) => p[0]))), x1 = Math.ceil(Math.max(...q.map((p) => p[0])));
+      const y0 = Math.floor(Math.min(...q.map((p) => p[1]))), y1 = Math.ceil(Math.max(...q.map((p) => p[1])));
+      const compare = (a, b) => {
+        let n = 0, over = 0, sum = 0, worst = 0, box = null;
+        if (a.w !== b.w || a.h !== b.h) return { n: -1, over: 0, mean: 0, worst: 0, box };
+        for (let y = y0; y <= y1; y++)
+          for (let x = x0; x <= x1; x++) {
+            if (!inside(x + 0.5, y + 0.5)) continue;
+            const i = ((Math.round(y + dy)) * a.w + x) * a.ch;
+            const d = Math.max(Math.abs(a.px[i] - b.px[i]), Math.abs(a.px[i + 1] - b.px[i + 1]), Math.abs(a.px[i + 2] - b.px[i + 2]));
+            n += 1;
+            sum += d;
+            if (d > 1) { over += 1; box = box ? [Math.min(box[0], x), Math.min(box[1], y), Math.max(box[2], x), Math.max(box[3], y)] : [x, y, x, y]; }
+            if (d > worst) worst = d;
+          }
+        return { n, over, mean: n ? sum / n : 0, worst, box };
+      };
+      const beam = compare(asDrawn, bare);
+      const mix = compare(asDrawn, noPlate);
+      if (beam.n <= 0 || beam.over > 0) {
+        failed = true;
+        console.log(`  FAIL tower and hologram: pixel proof: something paints over the Hologram picture (${beam.n <= 0 ? 'the screenshots differ in size' : `${beam.over} of ${beam.n} pixels inside the tilted pane change by more than 1 level when everything but the plate and the stage is hidden, within ${beam.box.join(',')}, the most ${beam.worst}`})`);
+      } else console.log(`  ok   tower and hologram: pixel proof: nothing paints over the picture (${beam.n} pixels inside the tilted pane are the same with only the plate and the stage drawn)`);
+      if (mix.n <= 0 || mix.over < mix.n / 20) {
+        failed = true;
+        console.log(`  FAIL tower and hologram: pixel proof: the picture does not mix with the plate (${mix.over} of ${mix.n} pixels inside the tilted pane change by more than 1 level when the plate is hidden, the mean ${mix.mean.toFixed(2)})`);
+      } else console.log(`  ok   tower and hologram: pixel proof: the picture mixes with the plate (${mix.over} of ${mix.n} pixels change when the plate is hidden, the mean ${mix.mean.toFixed(1)} levels)`);
+      if (process.env.WALL_PROOF_LOG) console.log(`  proof numbers: beam ${JSON.stringify(beam)} mix ${JSON.stringify(mix)} quad ${JSON.stringify(q)} dy ${dy}`);
+    }
     // unwind listen
     for (const l of listen) console.log(`  FAIL ${l}`);
     if (listen.length) failed = true;
     else if (v.listen) console.log('  ok   listen: the player ends above y 300 left of the card, the card in x 1740 to 2540 above y 510, Up next in the wing above the horizon, the office lights slot empty');
+    // lines controls
+    for (const l of lines) console.log(`  FAIL ${l}`);
+    if (lines.length) failed = true;
+    else if (v.linesSheet) console.log('  ok   lines: the sheet fits the stage, every control inside it and 32 px tall, no text under 16 px');
+    else if (v.linesProbe) console.log("  ok   lines: the new type drew and nothing inside the video's box");
     for (const t of [...toolsOut, ...meetOut]) console.log(`  FAIL ${t}`);
     if (toolsOut.length || meetOut.length) failed = true;
     else if (v.q.includes('tools=')) console.log('  ok   the drawer stays inside x 1700 to 2560 and y 0 to 720, clear of the rail, no cut text without a tooltip');
@@ -1265,6 +1882,57 @@ try {
     } else console.log(`keys style: the Now row is ${hs[0]} px tall on every key page, on For you and on Recording`);
   }
   // watch polish: the Look switch sits in one place, one size, in every look and with nothing on.
+  // sky layers
+  // The moon takes the first clear one of its places (cameras.ts MOON_PLACES), so each layout may
+  // put it elsewhere; each state's place was checked 40 px clear of every card above.
+  if (skyMoons.length) console.log(`sky layers: the moon in ${skyMoons.length} moon states: ${skyMoons.map((s) => `${s.moon} (${s.name.replace('Sky layers, ', '')})`).join('; ')}`);
+  // sky layers, the pixel proof: Unwind drawn at night, at dusk and at noon on one canvas
+  // (`sky=flat`) and with the front layer claimed by an empty host in the main area (`sky=empty`),
+  // nothing between the two canvases, compared pixel for pixel over the whole stage. The two are
+  // the same picture by their sums; what is left is the browser's 8-bit rounding of blending two
+  // layers and the veil in a different order (1 or 2 levels a channel), and a few levels at the
+  // page's own glows, which the main area's layer group blends on their own. So: no pixel may be
+  // more than 8 levels off, and at most 1 in 1000 more than 2 (a missing veil, a seam at the
+  // horizon line or the rail's column, a wrong reflection or grid moves far more pixels further).
+  if (!overflow || overflow === 'sky-seam') {
+    const proof = join(out, 'proof.html');
+    writeFileSync(proof, html.replace('</body>', `${broken}</body>`));
+    for (const [when, at] of [['night', '2026-11-11T22:30:00-08:00'], ['dusk', '2026-11-11T16:54:00-08:00'], ['noon', '2026-11-11T12:30:00-08:00']]) {
+      const shots = [];
+      for (const mode of ['flat', 'empty']) {
+        const shot = join(out, `proof-${when}-${mode}.png`);
+        const url = `${pathToFileURL(proof).href}?hz=unwind&at=${encodeURIComponent(at)}&agents=3&weather=ok&sky=${mode}`;
+        await runChrome(chrome, ['--headless', '--no-sandbox', '--disable-gpu', '--window-size=2560,807', '--hide-scrollbars', '--virtual-time-budget=8000', `--screenshot=${shot}`, url], { label: `sky layers pixel proof, ${when}, ${mode}` });
+        shots.push(readPng(shot));
+      }
+      const [a, b] = shots;
+      let diff = 0;
+      let over2 = 0;
+      let worst = 0;
+      let box = null;
+      if (a.w !== b.w || a.h !== b.h || a.w !== 2560 || a.h < 720) diff = -1;
+      else {
+        for (let y = 0; y < a.h; y++)
+          for (let x = 0; x < a.w; x++) {
+            const i = (y * a.w + x) * a.ch;
+            const j = (y * b.w + x) * b.ch;
+            const d = Math.max(Math.abs(a.px[i] - b.px[j]), Math.abs(a.px[i + 1] - b.px[j + 1]), Math.abs(a.px[i + 2] - b.px[j + 2]));
+            if (d > 0) diff += 1;
+            if (d > 2) {
+              over2 += 1;
+              box = box ? [Math.min(box[0], x), Math.min(box[1], y), Math.max(box[2], x), Math.max(box[3], y)] : [x, y, x, y];
+            }
+            if (d > worst) worst = d;
+          }
+      }
+      const all = a.w * a.h;
+      const summary = `${diff} of ${all} pixels differ at all, ${over2} by more than 2 levels${box ? ` (within ${box.join(',')})` : ''}, the most ${worst}`;
+      if (diff < 0 || worst > 8 || over2 > all / 1000) {
+        failed = true;
+        console.log(`  FAIL sky layers: the pixel proof at ${when}: ${diff < 0 ? 'the two screenshots differ in size' : `${over2} pixels differ by more than 2 levels: ${summary}`}, one canvas against the front layer with nothing between`);
+      } else console.log(`sky layers: the pixel proof at ${when}: ${summary}; one canvas against the front layer with nothing between`);
+    }
+  }
   if (switchBoxes.length > 1) {
     const key = (b) => `${b.l},${b.t} ${b.w}x${b.h}`;
     const first = key(switchBoxes[0].box);

@@ -1,7 +1,9 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { IconX } from '@tabler/icons-react';
 import { LOOK_GROUPS, LOOKS, type LookId, type LookSettings } from './looks';
 import { useWatchStore } from './store';
+import { tip } from '../../ui/HoverTip';
+import { LINES_TITLE, LinesPanel } from './LinesPanel';
 
 /** A small drawing of each look for its tile, as the approved settings sheet draws them. */
 function LookPicture({ look }: { look: LookId }) {
@@ -30,7 +32,10 @@ function Choice({ value, onPick, label }: { value: LookId; onPick: (l: LookId) =
  * it, and closes on its cross, Escape, a click outside it or the gear. The choice is kept in
  * local storage (`wall2-watch-look`) and checked on read.
  */
-export function WatchSheet() {
+export function WatchSheet({ initial = 'looks' }: { initial?: 'looks' | 'lines' }) {
+  // lines controls: a "Looks | Lines" switch at the top; Listen opens the sheet on Lines.
+  const [page, setPage] = useState<'looks' | 'lines'>(initial);
+  const title = page === 'lines' ? LINES_TITLE : 'How video is shown';
   const looks = useWatchStore((s) => s.looks);
   const saved = useWatchStore((s) => s.saved);
   const ref = useRef<HTMLDivElement>(null);
@@ -58,11 +63,20 @@ export function WatchSheet() {
   const yt = saved.filter((i) => i.kind !== 'twitch').length;
   const tw = saved.length - yt;
   return (
-    <div className="w-sheet" role="dialog" aria-label="How video is shown" ref={ref} tabIndex={-1}>
+    <div className={`w-sheet${page === 'lines' ? ' ln-sheet' : ''}`} role="dialog" aria-label={title} ref={ref} tabIndex={-1}>
       <button type="button" className="w-x" aria-label="Close" title="Close" onClick={close}>
         <IconX size={22} aria-hidden="true" />
       </button>
-      <div className="u-k">How video is shown</div>
+      <div className="u-k">{title}</div>
+      <div className="w-seg ln-pages" role="tablist" aria-label="Looks or lines">
+        <button type="button" role="tab" aria-selected={page === 'looks'} className={page === 'looks' ? 'on' : ''} {...tip('How a video is shown on the wall')} onClick={() => setPage('looks')}>
+          Looks
+        </button>
+        <button type="button" role="tab" aria-selected={page === 'lines'} className={page === 'lines' ? 'on' : ''} {...tip('How the music lines along the horizon move')} onClick={() => setPage('lines')}>
+          Lines
+        </button>
+      </div>
+      {page === 'lines' ? <LinesPanel /> : <>
       <div className="w-seg w-mode" role="radiogroup" aria-label="One look or one per kind">
         <button type="button" role="radio" aria-checked={looks.mode === 'one'} className={looks.mode === 'one' ? 'on' : ''} title="Every video plays in the same look" onClick={() => set({ mode: 'one' })}>
           One look for everything
@@ -99,6 +113,7 @@ export function WatchSheet() {
           Saved here: {yt} YouTube, {tw} Twitch
         </span>
       </div>
+      </>}
     </div>
   );
 }

@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mocks } from '../../bridge/tauri';
 import { resetNowPlaying } from '../../music/store';
-import { Unwind } from '../../screens/Unwind';
+import { UnwindView } from './testView';
 import { useSignalStore } from '../../signals/store';
 import { usePlaceStore } from '../../state/places';
 import { resetLastPlayed } from '../lastPlayed';
@@ -40,7 +40,7 @@ async function playing(kind: 'video' | 'playlist' | 'twitch', looks?: object, lo
   seed(looks);
   useWatchStore.getState().setTab('watch');
   useWatchStore.getState().play(ITEMS.find((i) => i.kind === kind)!);
-  render(<Unwind />);
+  render(<UnwindView />);
   await flush();
   const frame = document.querySelector('iframe')!;
   const win = frame.contentWindow!;
@@ -357,7 +357,7 @@ describe('the buddy seam and the opener', () => {
     seed({ mode: 'one', all: 'drivein' });
     expect(driveInAudience(useWatchStore.getState())).toBeNull();
     useWatchStore.getState().play(ITEMS[0]);
-    expect(driveInAudience(useWatchStore.getState())).toEqual({ x: 1210, y: 60, w: 691, h: 389 });
+    expect(driveInAudience(useWatchStore.getState())).toEqual({ x: 1244, y: 54, w: 672, h: 378 });
     expect(driveInAudience(useWatchStore.getState())).toBe(DRIVE_IN_SCREEN);
     useWatchStore.getState().pickLook('feather');
     expect(driveInAudience(useWatchStore.getState())).toBeNull();

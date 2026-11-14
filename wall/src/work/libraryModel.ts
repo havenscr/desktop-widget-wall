@@ -20,6 +20,7 @@ export interface LibGroup {
 }
 
 export const PINS_KEY = 'wall2-keys-pins';
+export const PINS_CHANGED_EVENT = 'wall2-pins-changed';
 /** "Always here" holds at most this many keys. */
 export const MAX_PINS = 5;
 /**
@@ -65,15 +66,18 @@ export function resolvePin(ref: string, lib: readonly LibGroup[], filePins: read
 }
 
 /**
- * The pins kept on this display, checked on read against the library and keys.json: anything
- * odd (not a list, too long, an unknown id, a key that cannot run, a repeat) gives null and
- * the defaults apply. Nothing in storage is ever sent as it is.
+ * The pins kept on this display, checked on read against the library and keys.json. A stored
+ * value that is malformed (not a list, too long, an entry that is not a key reference, a repeat)
+ * gives null and the defaults apply. A well formed list whose references have merely stopped
+ * resolving (a key the library dropped, a keys.json key that changed or went) keeps the ones that
+ * still resolve, down to an empty row: the owner's choice is not undone by a library change.
+ * Nothing in storage is ever sent as it is.
  */
 export function parsePins(raw: string | null, lib: readonly LibGroup[], filePins: readonly KeyInfo[]): string[] | null {
   if (raw === null) return null;
   try {
     const v: unknown = JSON.parse(raw);
-    if (!Array.isArray(v) || v.length === 0 || v.length > MAX_PINS) return null;
+    if (!Array.isArray(v) || v.length > MAX_PINS) return null;
     const out: string[] = [];
     for (const r of v) {
       if (isFileEntry(r)) {
@@ -85,10 +89,10 @@ export function parsePins(raw: string | null, lib: readonly LibGroup[], filePins
       }
       // A bare file index (no label to check it by) is dropped like a changed one.
       if (typeof r === 'string' && r.startsWith('file:')) continue;
-      if (typeof r !== 'string' || out.includes(r) || !resolvePin(r, lib, filePins)) return null;
-      out.push(r);
+      if (typeof r !== 'string' || !REF_RE.test(r) || out.includes(r)) return null;
+      if (resolvePin(r, lib, filePins)) out.push(r);
     }
-    return out.length > 0 ? out : null;
+    return out;
   } catch {
     return null;
   }
@@ -147,6 +151,11 @@ export function swapPin(pins: readonly string[], slot: number, ref: string): str
   return out;
 }
 
+/** Remove one pin without changing the order of the others. The last pin may be removed. */
+export function removePin(pins: readonly string[], slot: number): string[] {
+  return pins.filter((_ref, index) => index !== slot);
+}
+
 /** Library groups narrowed by a search, matching label, group title and what the key does. Empty groups drop out. */
 export function searchLibrary(lib: readonly LibGroup[], query: string): LibGroup[] {
   const q = query.trim().toLowerCase();
@@ -155,4 +164,3 @@ export function searchLibrary(lib: readonly LibGroup[], query: string): LibGroup
     .map((g) => ({ ...g, keys: g.keys.filter((k) => `${k.label} ${g.title} ${k.how}`.toLowerCase().includes(q)) }))
     .filter((g) => g.keys.length > 0);
 }
-

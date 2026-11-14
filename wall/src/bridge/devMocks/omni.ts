@@ -5,9 +5,10 @@ import { mocks } from '../tauri';
 /**
  * Dev only: `?agents=` picks a helper state for review stills and the fit check:
  * `3` (default), `2`, `1`, `0`, `7` or `12` sessions from a helper 1.1.0 answer, `ask` (one
- * waiting, with a question), `ask2` (two waiting, one of them not on a card), `7ask` (seven sessions, the fifth waiting), `12ask` (twelve sessions, two waiting) and `12staleask` (the same, stale), `staleask` (one waiting, then the answer goes stale), `failed` (one failed), `old`
+ * waiting, with a question), `ask2` (two waiting, one of them not on a card), `7ask` (seven sessions, the fifth waiting), `12busy` (twelve open, nine working at once, over the limit of 4 since mid morning, one waiting, one failed, one idle, and a helper's run that never counts), `12ask` (twelve sessions, two waiting) and `12staleask` (the same, stale), `staleask` (one waiting, then the answer goes stale), `failed` (one failed), `old`
  * (three lanes as the older helper sends them), `stale`, `off` (not set up) and `down` (set
- * up, not answering).
+ * up, not answering). `&limit=0` sends a zero limit (an older helper with none to give): the
+ * wall then draws no pips, steps or limit line, only the honest count.
  */
 const agentsKnob = (): string => (typeof window !== 'undefined' ? (new URLSearchParams(window.location.search).get('agents') ?? '3') : '3');
 
@@ -42,25 +43,29 @@ export function registerOmniMocks(): void {
     const iso = (minsAgo: number) => new Date(now - minsAgo * 60_000).toISOString();
     const id = (i: number) => `a1b2c3d4-${String(i + 1).padStart(4, '0')}`;
     const old = AGENTS === 'old';
-    const count = { '0': 0, '1': 1, '2': 2, '7': 7, '7ask': 7, '12': 12, '12ask': 12, '12staleask': 12 }[AGENTS] ?? 3;
+    const noLimit = knob('limit') === '0';
+    const count = { '0': 0, '1': 1, '2': 2, '7': 7, '7ask': 7, '12': 12, '12ask': 12, '12staleask': 12, '12busy': 12 }[AGENTS] ?? 3;
+    const busy12 = AGENTS === '12busy';
     const stale = AGENTS === 'stale' || AGENTS === 'staleask' || AGENTS === '12staleask';
-    const waitOn = AGENTS === 'ask' || AGENTS === 'ask2' || AGENTS === 'staleask' || old ? [1] : AGENTS === '7ask' ? [4] : AGENTS === '12ask' || AGENTS === '12staleask' ? [1, 4] : [];
+    const waitOn = busy12 ? [4] : AGENTS === 'ask' || AGENTS === 'ask2' || AGENTS === 'staleask' || old ? [1] : AGENTS === '7ask' ? [4] : AGENTS === '12ask' || AGENTS === '12staleask' ? [1, 4] : [];
     const all = POOL.map(([title, long, stage, state, line, next, mins], i) => {
       const waiting = waitOn.includes(i);
-      const failed = AGENTS === 'failed' && i === 0;
+      const failed = (AGENTS === 'failed' && i === 0) || (busy12 && i === 7);
+      // `12busy`: everyone works but the waiting one, the failed one and the last (idle).
+      const busyIdle = busy12 && (i === 11 || failed);
       const base = {
         id: id(i),
         // Rust caps titles and lines at 80 characters.
         title: longOr(title, long).slice(0, 80),
         stage,
-        state: waiting ? 'blocked' : state,
-        line: (waiting ? 'Waiting on a thumbnail choice' : failed ? 'Two web tests failed' : line).slice(0, 80),
+        state: waiting ? 'blocked' : busy12 ? (i === 11 ? 'review' : 'working') : state,
+        line: (waiting ? 'Waiting on a thumbnail choice' : failed ? 'Two web tests failed' : busy12 && line === 'idle' && !busyIdle ? 'running' : line).slice(0, 80),
         elapsedS: mins * 60,
         waiting,
         pr: i === 0 ? { number: 553, ci: failed ? 'failing' : 'pending', ready: false } : i === 2 ? { number: 561, ci: 'passing', ready: true } : i === 8 ? { number: 570, ci: 'pending', ready: true } : null,
       };
       if (old) return base;
-      const idle = line === 'idle' || waiting;
+      const idle = busy12 ? busyIdle || waiting : line === 'idle' || waiting;
       return {
         ...base,
         live: idle ? 'idle' : 'working',
@@ -79,7 +84,16 @@ export function registerOmniMocks(): void {
     const extraWait = 'a1b2c3d4-0e0f';
     const waitIds = AGENTS === 'ask2' ? [id(1), extraWait] : waitOn.map(id);
     const firstWait = waitIds[0] ?? null;
-    const day = [
+    // `12busy`: nine runs started eight minutes apart, so the count climbs past the limit of 4.
+    const busyDay = all.flatMap((l, i) => {
+      if (waitOn.includes(i)) return [{ lane: l.id, start: iso(130), end: iso(40), kind: 'run' }, { lane: l.id, start: iso(40), end: null, kind: 'wait' }];
+      if (i === 7) return [{ lane: l.id, start: iso(200), end: iso(115), kind: 'run' }];
+      if (i === 11) return [{ lane: l.id, start: iso(260), end: iso(190), kind: 'run' }];
+      return [{ lane: l.id, start: iso(150 - i * 8), end: null, kind: 'run' }];
+    });
+    // A helper of the first session: in the day log, never a row, never counted.
+    busyDay.push({ lane: 'a1b2c3d4-0c01', start: iso(60), end: null, kind: 'run' });
+    const day = busy12 ? busyDay : [
       { lane: ended, start: iso(330), end: iso(280), kind: 'done' },
       { lane: id(0), start: iso(264), end: iso(194), kind: 'done' },
       { lane: id(1), start: iso(245), end: iso(140), kind: 'done' },
@@ -95,7 +109,7 @@ export function registerOmniMocks(): void {
     names[ended] = { title: 'Morning inbox triage', stage: 'live', state: 'review' };
     if (AGENTS === 'ask2') names[extraWait] = { title: 'Invoice wording check', stage: 'plan', state: 'blocked' };
     const titleOf = (x: string | null) => (x ? (names[x]?.title ?? '') : '');
-    const working = shown.filter((l) => l.state === 'working').length;
+    const working = busy12 ? 9 : shown.filter((l) => l.state === 'working').length;
     const usage = old
       ? { claudeWeekPct: 62, claude5hPct: 18, weekResetsAt: iso(-3000) }
       : {
@@ -115,7 +129,7 @@ export function registerOmniMocks(): void {
       now: new Date(Date.now()).toISOString(),
       tz: 'America/Los_Angeles',
       stale,
-      slots: old ? { used: 9, limit: 4 } : { used: shown.length + 4, limit: 4, sessions: shown.length, working, helpers: 4 },
+      slots: old ? { used: 9, limit: noLimit ? 0 : 4 } : { used: shown.length + 4, limit: noLimit ? 0 : 4, sessions: shown.length, working, helpers: 4 },
       lanes: shown.slice(0, 3),
       parked: 4,
       yourMove: {

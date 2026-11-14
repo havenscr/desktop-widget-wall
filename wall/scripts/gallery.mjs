@@ -189,7 +189,15 @@ state('work', 'deck: library sets, VS Code held', 'keys=library&hold=lib-vscode'
 state('work', 'deck: library set whose app is not in front', 'keys=library&hold=lib-excel');
 state('work', 'deck: longest labels pinned', 'keys=library&pins=long');
 // The key picker open with the whole library: down to just above the timeline, over the mountains.
-add('work', 'deck: key picker open, whole library', url('work', TYPICAL_AT, 'keys=library'), true, 'ctx:.pin-tile');
+add('work', 'deck: key picker open, whole library', url('work', TYPICAL_AT, 'keys=library&pins=three'), true, '.add-key');
+// deck pins and stretch: sparse pin rows, sparse Now rows, Add, picker and both key menus.
+state('work', 'deck pins: one pin and Add', 'keys=one&hold=one&pins=one');
+state('work', 'deck pins: three pins and Add', 'keys=three&hold=three&pins=three');
+state('work', 'deck stretch: two Now keys', 'keys=two&hold=two&pins=three');
+add('work', 'deck pins: Add hovered', url('work', TYPICAL_AT, 'keys=three&hold=three&pins=three'), true, 'hover:.add-key');
+add('work', 'deck pins: picker opened by Add', url('work', TYPICAL_AT, 'keys=three&hold=three&pins=three'), true, '.add-key');
+add('work', 'deck pins: pinned key menu', url('work', TYPICAL_AT, 'keys=three&hold=three&pins=three'), true, '.pinned .key-more');
+add('work', 'deck pins: Now key menu', url('work', TYPICAL_AT, 'keys=library&hold=lib-vscode&pins=three'), true, '.keys .key-more');
 // Watt: his menu (a right-click on him) on each place, at night (tricks wait while he sleeps), and set
 // down far from his old walk (`wattspot`, his stored spot), Unwind on both stretches and on Watch.
 add('work', 'Watt: menu open', url('work', TYPICAL_AT, 'meet=none'), true, 'ctx:.watt-hit');
@@ -215,7 +223,7 @@ state('work', 'agents header: twelve sessions, two waiting, an alarm', 'agents=1
 state('work', 'bottom: overlaps and twelve', 'meet=overlap&agents=12ask');
 state('work', 'bottom: normal', '');
 add('work', 'bottom: overlap hover', url('work', TYPICAL_AT, 'meet=overlap&agents=3'), true, 'hover:.rib .ev.fold');
-add('work', 'bottom: day drawer', url('work', TYPICAL_AT, 'meet=overlap&agents=12ask'), true, '.rib .rib-handle');
+add('work', 'bottom: day drawer', url('work', TYPICAL_AT, 'meet=overlap&agents=12ask'), true, '.rib-handle');
 add('work', 'agents today: today', url('work', TYPICAL_AT, 'agents=7ask&days=typical'), true, '.rib .ag-line');
 add('work', 'agents today: yesterday', url('work', TYPICAL_AT, 'agents=7ask&days=typical'), true, '.rib .ag-line >> .at-seg button:nth-child(2)');
 add('work', 'agents today: heavy day', url('work', TYPICAL_AT, 'agents=12&days=heavy&long=1'), true, '.rib .ag-line >> .at-seg button:nth-child(2)');
@@ -242,6 +250,23 @@ state('unwind', 'status chips, focus on', 'focus=long');
 state('unwind', 'music paused', 'media=paused');
 state('unwind', 'long track and artist', 'media=long');
 state('unwind', 'audio demo (levels moving)', 'audio=demo');
+// lines controls: every type on Listen (chosen by the state, not left to the default tab) and under
+// the drive-in look with a video showing, calm and wild for the mountains and for a new type, both
+// rest looks, the sheet's Lines side, and Work and Home keeping a new type calm.
+for (const type of ['mountains', 'bars', 'ribbon', 'sparks', 'skyline']) {
+  state('unwind', `lines: ${type} on Listen`, `ltab=listen&audio=demo&lines=${type}`, TIMES.night);
+  state('unwind', `lines: ${type} under the drive-in`, `watch=mock&wlist=three&wlook=drivein&wplay=0&audio=demo&lines=${type}`, TIMES.night);
+}
+state('unwind', 'lines: calm', 'ltab=listen&audio=demo&lines=mountains&lively=22&smooth=72&lheight=60', TIMES.night);
+state('unwind', 'lines: wild', 'ltab=listen&audio=demo&lines=mountains&lively=88&smooth=28&lheight=180', TIMES.night);
+state('unwind', 'lines: bars calm', 'ltab=listen&audio=demo&lines=bars&lively=22&smooth=72&lheight=60', TIMES.night);
+state('unwind', 'lines: bars wild', 'ltab=listen&audio=demo&lines=bars&lively=88&smooth=28&lheight=180', TIMES.night);
+state('unwind', 'lines: flat at rest', 'ltab=listen&lines=ribbon&lrest=flat', TIMES.night);
+state('unwind', 'lines: mountains flat at rest', 'ltab=listen&lines=mountains&lrest=flat', TIMES.night);
+state('unwind', 'lines: ridge and levels at rest', 'ltab=listen&lines=ribbon&lrest=ridgelevels', TIMES.night);
+state('unwind', 'lines sheet: the Lines side from Listen', 'watch=mock&wlist=none&wtab=listen&wsheet=one&lines=bars&audio=demo', TIMES.night);
+state('work', 'lines: bars stay calm', 'audio=demo&lines=bars');
+state('home', 'lines: skyline stays calm', 'audio=demo&lines=skyline');
 for (const [name, extra] of [
   ['broken: media unavailable', 'media=off'],
   ['broken: calendar not set up', 'meet=off'],
@@ -302,6 +327,50 @@ state('unwind', 'Watt: drive-in, paused', `${DI}&wstate=paused`, TIMES.night);
 state('unwind', 'Watt: drive-in, 24 saved, long label', `${WM}&wlist=many&wlook=drivein&wplay=3`, TIMES.night);
 add('unwind', 'Watt: drive-in, set down during the show', url('unwind', TIMES.night, DI), true, 'drag:.watt-hit-part@240,380');
 // end watt drive-in
+// watch behaviour: the controls faded (5A) in each look, shown, paused, with a notice; and Work with a
+// video playing out of sight (the rail's playing mark on Unwind).
+state('unwind', 'watch behaviour: feathered, controls hidden', `${WM}&wlist=three&wlook=feather&wplay=0&wctl=rest`, TIMES.night);
+state('unwind', 'watch behaviour: whole sky, controls hidden', `${WM}&wlist=three&wlook=sky&wplay=0&wctl=rest`, TIMES.night);
+state('unwind', 'watch behaviour: sun, controls hidden', `${WM}&wlist=three&wlook=sun&wplay=0&wctl=rest`, TIMES.night);
+state('unwind', 'watch behaviour: drive-in, controls hidden', `${WM}&wlist=three&wlook=drivein&wplay=0&wctl=rest`, TIMES.night);
+state('unwind', 'watch behaviour: drive-in, controls shown', `${WM}&wlist=three&wlook=drivein&wplay=0`, TIMES.night);
+state('unwind', 'watch behaviour: drive-in, paused, controls stay', `${WM}&wlist=three&wlook=drivein&wplay=0&wstate=paused&wctl=rest`, TIMES.night);
+state('unwind', 'watch behaviour: feathered, click notice, controls stay', `${WM}&wlist=three&wlook=feather&wplay=0&wstate=refused&wctl=rest`, TIMES.night);
+state('work', 'watch behaviour: a video playing elsewhere', `${WM}&wlist=three&wlook=drivein&wplay=0&wplace=work`, TIMES.night);
+// sky layers: the video behind the land (the horizon's front canvas) in the whole sky and the sun at
+// night and at noon, the drive-in and feathered looks at night with no moon behind them, and the
+// moon in its open-sky place on Listen (playing and with nothing playing) and on Watch with nothing on.
+state('unwind', 'sky layers: whole sky at night', `${WM}&wlist=three&wlook=sky&wplay=0`, TIMES.night);
+state('unwind', 'sky layers: whole sky at noon', `${WM}&wlist=three&wlook=sky&wplay=1`, TIMES.noon);
+state('unwind', 'sky layers: the sun at night', `${WM}&wlist=three&wlook=sun&wplay=0`, TIMES.night);
+state('unwind', 'sky layers: the sun at noon', `${WM}&wlist=three&wlook=sun&wplay=1`, TIMES.noon);
+state('unwind', 'sky layers: drive-in at night, no moon', `${WM}&wlist=three&wlook=drivein&wplay=2`, TIMES.night);
+state('unwind', 'sky layers: feathered at night, no moon', `${WM}&wlist=three&wlook=feather&wplay=0`, TIMES.night);
+state('unwind', 'sky layers: Listen at night, the moon in open sky', 'weather=ok', TIMES.night);
+state('unwind', 'sky layers: Listen at night, nothing playing, the moon in open sky', 'weather=ok&media=none', TIMES.night);
+state('unwind', 'sky layers: Watch, nothing on, at night, the moon in open sky', `${WM}&wlist=three&wlook=feather`, TIMES.night);
+
+// tower and hologram: the drive-in's Screen tower frame (playing, paused, nothing on, night and noon),
+// the Hologram look (night and noon, playing and paused), the Look switch on each of the five looks,
+// and the settings sheet with five tiles in both of its modes (mock poster only, never a real video).
+const TH = 'tower and hologram:';
+state('unwind', `${TH} tower at night, playing`, `${WM}&wlist=three&wlook=drivein&wplay=0`, TIMES.night);
+state('unwind', `${TH} tower at noon, playing`, `${WM}&wlist=three&wlook=drivein&wplay=0`, TIMES.noon);
+state('unwind', `${TH} tower at night, paused`, `${WM}&wlist=three&wlook=drivein&wplay=0&wstate=paused`, TIMES.night);
+state('unwind', `${TH} tower at noon, paused`, `${WM}&wlist=three&wlook=drivein&wplay=0&wstate=paused`, TIMES.noon);
+state('unwind', `${TH} tower at night, autoplay refused`, `${WM}&wlist=three&wlook=drivein&wplay=0&wstate=refused`, TIMES.night);
+state('unwind', `${TH} tower at night, nothing on`, `${WM}&wlist=three&wlook=drivein`, TIMES.night);
+state('unwind', `${TH} tower at noon, nothing on`, `${WM}&wlist=three&wlook=drivein`, TIMES.noon);
+state('unwind', `${TH} tower at night, 24 saved, long label`, `${WM}&wlist=many&wlook=drivein&wplay=3`, TIMES.night);
+state('unwind', `${TH} hologram at night, playing`, `${WM}&wlist=three&wlook=holo&wplay=0`, TIMES.night);
+state('unwind', `${TH} hologram at noon, playing`, `${WM}&wlist=three&wlook=holo&wplay=0`, TIMES.noon);
+state('unwind', `${TH} hologram at night, paused`, `${WM}&wlist=three&wlook=holo&wplay=0&wstate=paused`, TIMES.night);
+state('unwind', `${TH} hologram at noon, paused`, `${WM}&wlist=three&wlook=holo&wplay=0&wstate=paused`, TIMES.noon);
+state('unwind', `${TH} hologram at night, 24 saved, long label`, `${WM}&wlist=many&wlook=holo&wplay=3`, TIMES.night);
+state('unwind', `${TH} hologram, autoplay refused`, `${WM}&wlist=three&wlook=holo&wplay=0&wstate=refused`, TIMES.night);
+for (const id of ['feather', 'sky', 'sun', 'drivein', 'holo']) state('unwind', `${TH} Look switch on ${id}`, `${WM}&wlist=three&wlook=${id}&wplay=0`, TIMES.night);
+state('unwind', `${TH} settings, five tiles, Hologram chosen`, `${WM}&wlist=three&wlook=holo&wplay=0&wsheet=one`, TIMES.night);
+state('unwind', `${TH} settings, five looks per kind`, `${WM}&wlist=many&wlook=holo&wplay=0&wsheet=kind`, TIMES.night);
 
 // The Tools drawer: opened on load (`tools=1`), over each place and in its hard states.
 state('work', 'tools: open', 'tools=1');
@@ -358,7 +427,7 @@ add('work', 'leave: amber', url('work', TYPICAL_AT, 'leave=4'), true);
 add('work', 'leave: now', url('work', TYPICAL_AT, 'leave=0'), true);
 add('work', 'leave: long title', url('work', TYPICAL_AT, 'leave=12&long=1'), true);
 add('work', 'leave: heavy data', url('work', TYPICAL_AT, `${HEAVY}&leave=4`), true);
-add('work', 'leave: Day drawer open', url('work', TYPICAL_AT, 'meet=overlap&agents=12ask&leave=12&rec=1'), true, '.rib .rib-handle');
+add('work', 'leave: Day drawer open', url('work', TYPICAL_AT, 'meet=overlap&agents=12ask&leave=12&rec=1'), true, '.rib-handle');
 add('work', 'leave: feed stale, nothing shown', url('work', TYPICAL_AT, 'leave=4&meet=partial'), true);
 add('home', 'leave: on home', url('home', TYPICAL_AT, 'leave=12'), true);
 add('unwind', 'leave: on unwind', url('unwind', TYPICAL_AT, 'leave=4'), true);
@@ -381,16 +450,35 @@ add('work', 'deck fixes: mixed one and two line labels, night', url('work', TIME
 add('work', 'deck fixes: general set, day', url('work', KS_DAY, 'keys=general&hold=general'), true);
 add('work', 'deck fixes: For you page', url('work', KS_DAY, 'agents=ask&keys=typical&hold=foryou&meet=none&net=calm'), true);
 add('work', 'deck fixes: Recording page', url('work', KS_DAY, 'rec=1&keys=library&meet=none'), true);
-add('work', 'deck fixes: key picker open', url('work', KS_DAY, 'keys=library'), true, 'ctx:.pin-tile');
-add('work', 'deck fixes: Day drawer open, typical', url('work', TYPICAL_AT, 'meet=overlap&agents=12ask'), true, '.rib .rib-handle');
-add('work', 'deck fixes: Day drawer open, heavy', url('work', TYPICAL_AT, `${HEAVY}`), true, '.rib .rib-handle');
-add('work', 'deck fixes: Day drawer open, leave banner showing', url('work', TYPICAL_AT, 'meet=overlap&agents=12ask&leave=12&rec=1'), true, '.rib .rib-handle');
+add('work', 'deck fixes: key picker open', url('work', KS_DAY, 'keys=library&pins=three'), true, '.add-key');
+add('work', 'deck fixes: Day drawer open, typical', url('work', TYPICAL_AT, 'meet=overlap&agents=12ask'), true, '.rib-handle:not(.in-drawer)');
+add('work', 'deck fixes: Day drawer open, heavy', url('work', TYPICAL_AT, `${HEAVY}`), true, '.rib-handle:not(.in-drawer)');
+add('work', 'deck fixes: Day drawer open, leave banner showing', url('work', TYPICAL_AT, 'meet=overlap&agents=12ask&leave=12&rec=1'), true, '.rib-handle:not(.in-drawer)');
 add('unwind', 'unwind: hide screen at rest', url('unwind', TYPICAL_AT), true);
 add('unwind', 'unwind: hide screen hover', url('unwind', TYPICAL_AT), true, 'hover:.screens-off');
 // The failure note ("Could not watch input", `hide=fail`) after a click, with the pointer still on the pill, and with keyboard focus.
 add('unwind', 'unwind: hide screen note while hovered', url('unwind', TYPICAL_AT, 'hide=fail'), true, ['.screens-off', 'hover:.screens-off']);
 add('unwind', 'unwind: hide screen note while focused', url('unwind', TYPICAL_AT, 'hide=fail'), true, ['.screens-off', 'focus:.screens-off']);
 
+// day handle, rows, colours: the Day drawer's handle (the strip's top edge) at rest, under the
+// pointer and open, by night and at noon; the Agents today rows typical, heavy with long titles and
+// on a past day; the Agents header's meter at 2, 4 and 9 of 4; the strip and the panel over the limit.
+add('work', 'day handle: at rest', url('work', TYPICAL_AT, 'agents=7ask&days=typical'), true);
+add('work', 'day handle: hovered', url('work', TYPICAL_AT, 'agents=7ask&days=typical'), true, 'hover:.rib-handle');
+add('work', 'day handle: open', url('work', TYPICAL_AT, 'agents=7ask&days=typical'), true, '.rib-handle');
+add('work', 'day handle: at night', url('work', TIMES.night, 'agents=7ask'), true);
+add('work', 'day handle: at noon, hovered', url('work', TIMES.noon, 'agents=7ask'), true, 'hover:.rib-handle');
+add('work', 'day rows: typical', url('work', TYPICAL_AT, 'agents=12ask'), true, '.rib-handle');
+add('work', 'day rows: heavy, long titles', url('work', TYPICAL_AT, 'agents=12busy&long=1&meet=overlap'), true, '.rib-handle');
+add('work', 'day rows: a past day', url('work', TYPICAL_AT, 'agents=12&days=heavy&long=1'), true, '.rib .ag-line >> .at-seg button:nth-child(2)');
+add('work', 'colours: header at 2 of 4', url('work', TYPICAL_AT, 'agents=3'), true);
+add('work', 'colours: header at 4 of 4', url('work', TYPICAL_AT, 'agents=7ask'), true);
+add('work', 'colours: header at 9 of 4', url('work', TYPICAL_AT, 'agents=12busy'), true, 'hover:.slot-meter');
+add('work', 'colours: the strip over the limit', url('work', TYPICAL_AT, 'agents=12busy&meet=overlap'), true);
+add('work', 'colours: the panel over the limit', url('work', TYPICAL_AT, 'agents=12busy&days=typical'), true, '.rib .ag-line');
+// A limit the helper does not send (a zero): the honest count only, no pips, steps or limit line.
+add('work', 'colours: no limit, header and strip', url('work', TYPICAL_AT, 'agents=12busy&limit=0&meet=overlap'), true);
+add('work', 'colours: no limit, the panel', url('work', TYPICAL_AT, 'agents=12busy&limit=0&days=typical'), true, '.rib .ag-line');
 // unwind listen: the cover on top with its controls in the sky, Up next under the toggles, the
 // Spotify card in the upper right (its switch, covers, a hover, a playlist's songs) and its hard states.
 state('unwind', 'listen: playing', 'audio=demo', TIMES.night);
@@ -468,6 +556,14 @@ const EXPECT = [
   ['work', 'deck: library set whose app is not in front', ['Repeat last action', '!Excel: repeat']],
   ['work', 'deck: longest labels pinned', 'Sonos: play what suits the hour'],
   ['work', 'deck: key picker open', ['Reset to defaults', 'Anywhere on the PC']],
+  // deck pins and stretch
+  ['work', 'deck pins: one pin and Add', ['Add a key', 'Now · One key']],
+  ['work', 'deck pins: three pins and Add', ['Add a key', 'Now · Three keys']],
+  ['work', 'deck stretch: two Now keys', ['Now · Two keys', 'Format']],
+  ['work', 'deck pins: Add hovered', 'Add a key'],
+  ['work', 'deck pins: picker opened by Add', ['Add a key to Always here', 'Reset to defaults']],
+  ['work', 'deck pins: pinned key menu', ['Replace with another key', 'Remove from Always here']],
+  ['work', 'deck pins: Now key menu', ['Pin to Always here', 'Edit keys file']],
   ['work', 'agents header: twelve sessions', 'One thing for you'],
   // Home
   ['home', 'sparse', ['No moods set up', 'No meetings today']],
@@ -547,6 +643,21 @@ const EXPECT = [
   ['unwind', 'watch: sun', ['The sun', 'Open in YouTube']],
   ['unwind', 'watch: settings, four looks, whole sky', ['How video is shown', 'Whole sky', 'The sun', 'Drive-in']],
   ['unwind', 'watch: settings, four looks per kind', ['Videos and playlists', 'Live streams', 'The sun']],
+  // tower and hologram
+  ['unwind', 'tower and hologram: tower at night, playing', ['Playing on the wall', "WATT\u2019S DRIVE-IN \u00b7 NOW SHOWING", 'Drive-in']],
+  ['unwind', 'tower and hologram: tower at noon, playing', ['Playing on the wall', "WATT\u2019S DRIVE-IN \u00b7 NOW SHOWING"]],
+  ['unwind', 'tower and hologram: tower at night, paused', ['Paused', "WATT\u2019S DRIVE-IN \u00b7 INTERMISSION"]],
+  ['unwind', 'tower and hologram: tower at noon, paused', ['Paused', "WATT\u2019S DRIVE-IN \u00b7 INTERMISSION"]],
+  ['unwind', 'tower and hologram: tower at night, autoplay refused', ['Click the video to start', "WATT\u2019S DRIVE-IN"]],
+  ['unwind', 'tower and hologram: tower at night, nothing on', ['Nothing on', 'Nothing on the screen', "WATT\u2019S DRIVE-IN"]],
+  ['unwind', 'tower and hologram: tower at noon, nothing on', ['Nothing on', 'Nothing on the screen']],
+  ['unwind', 'tower and hologram: tower at night, 24', ['24 saved', 'Saved for the weekend, a very long playlist name', 'YouTube playlist']],
+  ['unwind', 'tower and hologram: hologram at night, 24', ['24 saved', 'Saved for the weekend, a very long playlist name', 'Hologram']],
+  ['unwind', 'tower and hologram: hologram, autoplay refused', ['Hologram', 'Click the video to start', '!12:34']],
+  ['unwind', 'tower and hologram: hologram at', ['Hologram', 'Open in YouTube', '12:34']],
+  ['unwind', 'tower and hologram: Look switch on', ['Feathered', 'Whole sky', 'The sun', 'Drive-in', 'Hologram']],
+  ['unwind', 'tower and hologram: settings, five tiles', ['How video is shown', 'One look for everything', 'Hologram', 'The whole picture floats']],
+  ['unwind', 'tower and hologram: settings, five looks per kind', ['Videos and playlists', 'Live streams', 'Hologram']],
   // watch polish
   ['unwind', 'watch polish: drive-in, paused', ['Paused', '12:34', '45:10', 'Open in YouTube']],
   ['unwind', 'watch polish: drive-in', ['Playing on the wall', '12:34', '45:10', 'Open in YouTube', '!Not playing? Open in browser']],
@@ -559,7 +670,19 @@ const EXPECT = [
   ['unwind', 'watch polish: leave banner', ['Open in YouTube', 'Drive-in']],
   ['unwind', 'watch polish: nothing on', ['Nothing on', 'Whole sky', 'Drive-in']],
   ['unwind', 'watch polish: whole sky, autoplay refused', ['Click the video to start', 'Waiting for a click on the video']],
+  // watch behaviour (the faded parts are still in the page, only transparent)
+  ['unwind', 'watch behaviour: drive-in, paused', ['Paused', 'Night drive mix']],
+  ['unwind', 'watch behaviour: feathered, click notice', ['Click the video to start', 'Night drive mix']],
+  ['unwind', 'watch behaviour:', ['Night drive mix', 'Playing on the wall']],
   ['unwind', 'watch polish: Twitch not started hint, drive-in', ['Not started? Click the video', 'Live on the wall', 'Open on Twitch']],
+  // sky layers
+  ['unwind', 'sky layers: whole sky', ['Whole sky', 'Playing on the wall']],
+  ['unwind', 'sky layers: the sun', ['The sun', 'Playing on the wall']],
+  ['unwind', 'sky layers: drive-in', ['Drive-in', 'Open on Twitch']],
+  ['unwind', 'sky layers: feathered', ['Feathered', 'Playing on the wall']],
+  ['unwind', 'sky layers: Listen at night, nothing playing', ['Nothing playing', '!Tokyo Burnout']],
+  ['unwind', 'sky layers: Listen', ['Tokyo Burnout', '!Nothing on']],
+  ['unwind', 'sky layers: Watch, nothing on', ['Nothing on', 'Feathered']],
   // Meet
   ['meet', 'sparse', 'Nothing scheduled in the next 24 hours'],
   ['meet', 'heavy', 'Architecture working session'],
@@ -651,6 +774,22 @@ EXPECT.push(
   ['work', 'agents today: empty day', 'No sessions recorded on this day'],
   ['work', 'agents today: record absent', ['Agents today', '!Yesterday']],
   ['work', 'agents today: helper down', 'may be out of date'],
+  // day handle, rows, colours
+  ['work', 'day handle: at rest', ['Open the day', '!Close the day']],
+  ['work', 'day handle: hovered', ['Open the day', '!Close the day']],
+  ['work', 'day handle: open', ['Close the day', 'Agents today']],
+  ['work', 'day handle: at night', 'Open the day'],
+  ['work', 'day handle: at noon', 'Open the day'],
+  ['work', 'day rows: typical', ['Agents today', 'waiting on you', '3 helpers, 2 working']],
+  ['work', 'day rows: heavy', ['9 working, 1 failed', 'Waiting on a thumbnail choice']],
+  ['work', 'day rows: a past day', ['From the saved record of the day', 'open at once, from the saved record', '!Over your limit']],
+  ['work', 'colours: header at 2 of 4', '2 of 4 working'],
+  ['work', 'colours: header at 4 of 4', ['4 of 4 working', 'at the limit']],
+  ['work', 'colours: header at 9 of 4', ['9 of 4 working', '5 over']],
+  ['work', 'colours: the strip over the limit', ['12 sessions: 1 needs you, 9 working', '5 over']],
+  ['work', 'colours: the panel over the limit', ['Busy at once', 'Over your limit of 4 for']],
+  ['work', 'colours: no limit, header and strip', ['9 working', '!5 over', '!of 4']],
+  ['work', 'colours: no limit, the panel', ['Click a row to open its session', '!Busy at once', '!Over your limit']],
   // deck and drawer fixes
   ['work', 'deck fixes: mixed', ['Always here', 'Sonos: play what suits the hour']],
   ['work', 'deck fixes: general set', ['Always here', 'Now \u00b7 General']],
@@ -660,6 +799,7 @@ EXPECT.push(
   ['work', 'deck fixes: Day drawer open, typical', ['Agents today', 'Vendor demo1:30 to 3:30', 'waiting on you']],
   ['work', 'deck fixes: Day drawer open, heavy', ['Agents today', 'waiting on you']],
   ['work', 'deck fixes: Day drawer open, leave banner', ['Leave in 12 min.', 'Agents today', 'Recording00:']],
+  ['unwind', 'lines sheet: the Lines side from Listen', ['How the lines move', 'Bars', '50, your usual', 'One setting for the lines everywhere music plays.']],
 );
 
 // watt drive-in: the drive-in look is on with something playing (Watt himself has no text).
@@ -670,6 +810,7 @@ EXPECT.push(['unwind', 'Watt: drive-in', ['Drive-in', 'Open in YouTube']]);
  * reason is recorded in the manifest. Everything else that sets a knob needs an EXPECT.
  */
 const NO_TEXT = [
+  ['work', 'watch behaviour: a video playing elsewhere', 'the rail mark is drawn, not text; fit-check checks it and the stage'],
   ['work', 'music paused', 'only the play and pause icon changes'],
   ['work', 'box numbers stale', 'the numbers keep their text and are only dimmed'],
   ['home', 'broken: weather down', 'Home shows no weather text'],
@@ -677,6 +818,9 @@ const NO_TEXT = [
   ['work', 'audio demo', 'only the drawn levels move'],
   ['home', 'audio demo', 'only the drawn levels move'],
   ['unwind', 'audio demo', 'only the drawn levels move'],
+  ['unwind', 'lines:', 'the knobs change the canvas or the settings sheet layout'],
+  ['work', 'lines:', 'only the drawn levels move'],
+  ['home', 'lines:', 'only the drawn levels move'],
   ['zen', 'focus running, long title', 'Zen shows no session title'],
   // Watt set down elsewhere: only where he stands changes (his stored spot), no text.
   ['work', 'Watt: set down', 'only where Watt stands changes'],

@@ -236,7 +236,7 @@ export interface HorizonEcho {
 }
 
 /** The resting looks of the ridgelines; see `REST_LOOK` in echo.ts. */
-export const REST_LOOKS = ['contours', 'levels', 'haze', 'ridge', 'ridgelevels'] as const;
+export const REST_LOOKS = ['contours', 'levels', 'haze', 'ridge', 'ridgelevels', 'flat'] as const;
 export type RestLook = (typeof REST_LOOKS)[number];
 /* The resting looks' sizes, from the concept page (a 1280 by 300 drawing whose mountain peaks at
    0.641 of its 150 px height): vertical sizes are in units of that peak, so they keep their share
@@ -244,7 +244,7 @@ export type RestLook = (typeof REST_LOOKS)[number];
 const REST_PEAK=.641*150,REST_LEVEL_TOP=.92*150/REST_PEAK,REST_LW=1,REST_LAG=.22;
 /* Fill under each resting line, as a share of the live fill: the layered look stays for contours
    and levels; haze and ridge draw lines only (their fills would paint the sky or recolour the range). */
-const REST_FILL:Record<RestLook,number>={contours:1,levels:1,haze:0,ridge:0,ridgelevels:1};
+const REST_FILL:Record<RestLook,number>={contours:1,levels:1,haze:0,ridge:0,ridgelevels:1,flat:1};
 /* 'ridgelevels': the top line traces the ridge, the others are straight levels cut off by the mountain, up to this share of its height.
    A line between the top two blends its level, share and glow into the ridge's by its place, so a drifting line never jumps; at rest the places are whole. */
 const REST_RL_TOP=.9;
@@ -306,7 +306,18 @@ export interface HorizonDrawOptions {
   phase?: number;
   /** Set false to skip the film grain (default on). */
   grain?: boolean;
+  /**
+   * Draw only one part of the picture (default: all of it). 'sky' draws the sky, the stars, the
+   * moon, the sun and the clouds and stops. 'ground' clears the canvas and draws everything in
+   * front of the sky (the ranges and their lines, the ripple, the city, the shore, the haze at
+   * the horizon, the lake with its lights, the grid and the grain) on transparency, with exactly
+   * the pixels the whole picture puts there; 'sky' under 'ground' is the whole picture.
+   */
+  part?: HorizonPart;
 }
+
+/** A part of the picture `draw` can be asked for; see `HorizonDrawOptions.part`. */
+export type HorizonPart = 'sky' | 'ground';
 
 /** What `draw` returns: the sun's sky position and the palette used. */
 export interface HorizonDrawResult {
@@ -317,25 +328,30 @@ export interface HorizonDrawResult {
 }
 
 export function draw(ctx:CanvasRenderingContext2D,o:HorizonDrawOptions):HorizonDrawResult{const W=o.W||2560,H=o.H||720,sc=o.scale||1,px=(w:Any)=>Math.max(w,1/sc),TR=TER[o.ter||'pano'],hy=o.hy,ppd=o.ppd,az0=o.az0,k=ppd*(o.vex||1),t=o.t||0,sp=sun(o.ms),P=pal(sp.alt,sp.az>180);
+ /* SK: draw the sky, GD: the ground (both unless a part is asked for) */
+ const SK=o.part!=='ground',GD=o.part!=='sky';
  ctx.setTransform(sc,0,0,sc,0,0);ctx.globalAlpha=1;ctx.globalCompositeOperation='source-over';
- let g=ctx.createLinearGradient(0,0,0,hy);g.addColorStop(0,css(P.s[0]));g.addColorStop(.49,css(P.s[1]));g.addColorStop(.84,css(P.s[2]));g.addColorStop(1,css(P.s[3]));ctx.fillStyle=g;ctx.fillRect(0,0,W,hy+1);
- const rim=ctx.createLinearGradient(0,0,W,0);rim.addColorStop(0,css(P.rim[0]));rim.addColorStop(.5,css(P.rim[1]));rim.addColorStop(1,css(P.rim[0]));
- if(P.star>.02){const n=o.stars||190;for(let i=0;i<n;i++){const s=STARS[i],c=s[4]<.12?'255,214,232':s[4]<.3?'206,226,255':'255,255,255';ctx.fillStyle=`rgba(${c},${(P.star*(.2+.7*hash(i,9))*(.7+.3*Math.sin(t*1.3+s[3]))).toFixed(3)})`;ctx.beginPath();ctx.arc(s[0]*W,s[1]*(hy-30),s[2],0,7);ctx.fill()}}
- if(o.moon&&P.star>.3){const [mx,my,mr]=o.moon;g=ctx.createRadialGradient(mx,my,mr*.6,mx,my,mr*4);g.addColorStop(0,`rgba(196,214,255,${.3*P.star})`);g.addColorStop(1,'rgba(196,214,255,0)');ctx.fillStyle=g;ctx.fillRect(mx-mr*4,my-mr*4,mr*8,mr*8);
+ let g:Any;if(SK){g=ctx.createLinearGradient(0,0,0,hy);g.addColorStop(0,css(P.s[0]));g.addColorStop(.49,css(P.s[1]));g.addColorStop(.84,css(P.s[2]));g.addColorStop(1,css(P.s[3]));ctx.fillStyle=g;ctx.fillRect(0,0,W,hy+1)}else ctx.clearRect(0,0,W+1,H+1);
+ /* the rim gradient and the sun's glitter on the lake are the ground's: the sky part makes neither */
+ let rim:Any=null;if(GD){rim=ctx.createLinearGradient(0,0,W,0);rim.addColorStop(0,css(P.rim[0]));rim.addColorStop(.5,css(P.rim[1]));rim.addColorStop(1,css(P.rim[0]))}
+ if(SK&&P.star>.02){const n=o.stars||190;for(let i=0;i<n;i++){const s=STARS[i],c=s[4]<.12?'255,214,232':s[4]<.3?'206,226,255':'255,255,255';ctx.fillStyle=`rgba(${c},${(P.star*(.2+.7*hash(i,9))*(.7+.3*Math.sin(t*1.3+s[3]))).toFixed(3)})`;ctx.beginPath();ctx.arc(s[0]*W,s[1]*(hy-30),s[2],0,7);ctx.fill()}}
+ if(SK&&o.moon&&P.star>.3){const [mx,my,mr]=o.moon;g=ctx.createRadialGradient(mx,my,mr*.6,mx,my,mr*4);g.addColorStop(0,`rgba(196,214,255,${.3*P.star})`);g.addColorStop(1,'rgba(196,214,255,0)');ctx.fillStyle=g;ctx.fillRect(mx-mr*4,my-mr*4,mr*8,mr*8);
   g=ctx.createLinearGradient(mx-mr,my-mr,mx+mr,my+mr);g.addColorStop(0,'#ffffff');g.addColorStop(.6,'#d6e4ff');g.addColorStop(1,'#a79bf0');ctx.globalAlpha=P.star;ctx.fillStyle=g;ctx.beginPath();ctx.arc(mx,my,mr,0,7);ctx.fill();
   ctx.fillStyle='rgba(120,110,200,.16)';[[-.3,-.2,.26],[.25,.3,.18],[.1,-.42,.12]].forEach(([a,b,r]:Any)=>{ctx.beginPath();ctx.arc(mx+a*mr,my+b*mr,r*mr,0,7);ctx.fill()});ctx.globalAlpha=1}
  /* sun */
  const hi=smooth((sp.alt-7)/7),R=mix(o.sunR||ppd*2.05,ppd*.85,hi),sx=(sp.az-az0)*ppd,sy=hy-sp.alt*ppd*(o.sunV||o.vex||1),SA=mixc(hx('#ffe27a'),hx('#fff6d2'),hi),SB=mixc(hx('#ff8a4c'),hx('#ffdc9a'),hi),SC=mixc(hx('#ff2d87'),hx('#ffb0c8'),hi);
  let glit=null;
- if(sy-R<hy&&sx>-R*5&&sx<W+R*5){const gy=Math.min(sy,hy);g=ctx.createRadialGradient(sx,gy,R*.3,sx,gy,R*4.2);g.addColorStop(0,css(SB,.55));g.addColorStop(.4,css(SC,.16));g.addColorStop(1,css(SC,0));ctx.fillStyle=g;ctx.fillRect(sx-R*4.3,gy-R*4.3,R*8.6,Math.min(R*8.6,hy-gy+R*4.3));
-  const yt=sy-R,yb=Math.min(sy+R,hy),hv=yb-yt,st=1-hi;ctx.save();ctx.beginPath();let y=yt-1;
+ if(sy-R<hy&&sx>-R*5&&sx<W+R*5){const yt=sy-R,yb=Math.min(sy+R,hy),hv=yb-yt,st=1-hi;
+  if(SK){const gy=Math.min(sy,hy);g=ctx.createRadialGradient(sx,gy,R*.3,sx,gy,R*4.2);g.addColorStop(0,css(SB,.55));g.addColorStop(.4,css(SC,.16));g.addColorStop(1,css(SC,0));ctx.fillStyle=g;ctx.fillRect(sx-R*4.3,gy-R*4.3,R*8.6,Math.min(R*8.6,hy-gy+R*4.3));
+  ctx.save();ctx.beginPath();let y=yt-1;
   [.5,.62,.72,.8,.87,.93,.975].forEach((f:Any,i:Any)=>{const gy0=yt+hv*f,th=hv*(.014+.011*i)*st;ctx.rect(sx-R-2,y,R*2+4,gy0-y);y=gy0+th});ctx.rect(sx-R-2,y,R*2+4,Math.max(0,yb-y));ctx.clip();
-  g=ctx.createLinearGradient(0,sy-R,0,sy+R);g.addColorStop(0,css(SA));g.addColorStop(.55,css(SB));g.addColorStop(1,css(SC));ctx.fillStyle=g;ctx.beginPath();ctx.arc(sx,sy,R,0,7);ctx.fill();ctx.restore();
-  if(sp.alt<8)glit={x:sx,R:R*Math.min(1,hv/R),c:SB,a:smooth(hv/(R*.7))*(1-hi)}}
+  g=ctx.createLinearGradient(0,sy-R,0,sy+R);g.addColorStop(0,css(SA));g.addColorStop(.55,css(SB));g.addColorStop(1,css(SC));ctx.fillStyle=g;ctx.beginPath();ctx.arc(sx,sy,R,0,7);ctx.fill();ctx.restore()}
+  if(GD&&sp.alt<8)glit={x:sx,R:R*Math.min(1,hv/R),c:SB,a:smooth(hv/(R*.7))*(1-hi)}}
  /* clouds: soft bands, lit from below when the sun is low */
  const ca=P.cl[2]*(o.clouds===undefined?1:o.clouds),cs=(o.cloudShift||0)/(1.3*W);
- if(ca>.02)for(let i=0;i<CLOUDS.length;i++){const c=CLOUDS[i],cx=(fr(c.u+t*c.d*.0016+cs)*1.3-.15)*W,cy=hy*c.v,th=c.h*(1.3-c.v);
+ if(SK&&ca>.02)for(let i=0;i<CLOUDS.length;i++){const c=CLOUDS[i],cx=(fr(c.u+t*c.d*.0016+cs)*1.3-.15)*W,cy=hy*c.v,th=c.h*(1.3-c.v);
   for(let j=0;j<4;j++){const ox=(hash(i,j,81)-.5)*c.w*.8,oy=(hash(i,j,82)-.5)*th*1.1,rx=c.w*(.22+.3*hash(i,j,83)),ry=th*(.5+.5*hash(i,j,84));wisp(ctx,cx+ox,cy+oy+ry*.5,rx*.92,ry*.7,P.cl[1],ca*.5);wisp(ctx,cx+ox,cy+oy,rx,ry,P.cl[0],ca)}}
+ if(!GD)return{sun:sp,x:sx,y:sy,P};
  /* the mountains */
  const N=Math.ceil(W/2)+1,cr=new Float32Array(N),ps=new Float32Array(N+1);let cmax=1;for(let i=0;i<N;i++){cr[i]=prof(TR,TR.far,az0+i*2/ppd)*k;if(cr[i]>cmax)cmax=cr[i];ps[i+1]=ps[i]+cr[i]}
  const sm=(i:Any,r:Any)=>{const a=Math.max(0,i-r),b=Math.min(N,i+r+1);return(ps[b]-ps[a])/(b-a)};
@@ -364,7 +380,7 @@ export function draw(ctx:CanvasRenderingContext2D,o:HorizonDrawOptions):HorizonD
   const set=(n:number,wk:number)=>{
   /* a line's resting height at sample i: kc runs 0 (the lowest line) to n - 1 (the top one), q is kc / (n - 1);
      the haze ranges are softened (box smoothed) the farther back they sit */
-  const rh=(i:Any,kc:Any,q:Any)=>LK==='levels'?Math.min(cr[i],vu*REST_LEVEL_TOP*REST_PEAK*(kc+1)/(n+.6)+2.5*vu*Math.sin(Math.PI*i*2/W)*(kc/n))
+  const rh=(i:Any,kc:Any,q:Any)=>LK==='flat'?0:LK==='levels'?Math.min(cr[i],vu*REST_LEVEL_TOP*REST_PEAK*(kc+1)/(n+.6)+2.5*vu*Math.sin(Math.PI*i*2/W)*(kc/n))
    :LK==='haze'?hz(Math.round(clamp(((i*2-q*70*hu)*(1+q*.1)-q*.03*W)/2,0,N-1)),Math.round(q*30))*(1+q*.42)+q*26*vu
    :LK==='ridge'?Math.max(0,cr[i]-Math.max(0,2-kc)*7*vu)
    :LK==='ridgelevels'?mix(Math.min(cr[i],cmax*REST_RL_TOP*(kc+1)/(n-1)),cr[i],clamp(kc-(n-2),0,1))

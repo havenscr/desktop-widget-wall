@@ -3,11 +3,35 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { accountWords, clockText, needsSignIn, reasonLine, type MeetAccount } from '../meet/model';
 import { useMeet, type MeetState } from '../meet/useMeet';
 import { spotify, type SpotifyStatus } from '../music/spotify';
+import { invoke } from '../bridge/tauri';
 import { hover as hoverCard } from './hover';
 import { useToolsStore } from './store';
 import { calendarName } from './trouble';
 
 type Tone = 'plain' | 'bad';
+type OpenStatus = 'desktop' | 'browser-new-outlook' | 'browser-not-found' | 'browser-config' | 'desktop-config-typo';
+type OpenStatusState = OpenStatus | 'failed' | null;
+
+const openWords: Record<OpenStatus, { line: string; hint: string }> = {
+  desktop: { line: 'Outlook on this PC', hint: 'Meetings open in classic Outlook when it is available.' },
+  'browser-new-outlook': { line: 'the browser', hint: 'New Outlook has no way to open one meeting.' },
+  'browser-not-found': { line: 'the browser', hint: 'Outlook was not found on this PC.' },
+  'browser-config': { line: 'the browser', hint: 'This is set in meet.json.' },
+  'desktop-config-typo': { line: 'Outlook on this PC', hint: 'meet.json has an unknown openIn value, so the desktop default is used.' },
+};
+
+function useOpenStatus(opened: number): OpenStatusState {
+  const [status, setStatus] = useState<OpenStatusState>(null);
+  useEffect(() => {
+    let live = true;
+    setStatus(null);
+    void invoke<OpenStatus>('wall2_meet_open_status').then((value) => live && setStatus(value), () => live && setStatus('failed'));
+    return () => {
+      live = false;
+    };
+  }, [opened]);
+  return status;
+}
 
 /** One account: an icon, its name, one line of state (amber when it needs attention) and at most one button. */
 function Row({ icon, name, line, tone = 'plain', hover, children }: { icon: ReactNode; name: string; line: string; tone?: Tone; hover?: string; children?: ReactNode }) {
@@ -143,6 +167,12 @@ export function Accounts() {
   const m = useMeet(true);
   const sp = useSpotifyAccount();
   const accounts = m.data?.accounts ?? [];
+  const opened = useToolsStore((s) => s.opened);
+  const openStatus = useOpenStatus(opened);
+  const openLine = openStatus === 'failed' ? 'Could not check' : openStatus ? openWords[openStatus].line : 'Checking';
+  const openHint = openStatus === 'failed'
+    ? 'The wall could not ask Windows how meetings open. It will ask again when Tools opens.'
+    : openStatus ? openWords[openStatus].hint : 'Checking how meetings open.';
   const blocked = m.signingIn !== null || sp.waiting;
   const setWaiting = useToolsStore((s) => s.setWaiting);
   const note = useToolsStore((s) => s.note);
@@ -184,6 +214,7 @@ export function Accounts() {
       {note && <div className="tools-note bad">{note}</div>}
       <ul className="tools-list" aria-label="Accounts">
         {calendars}
+        <Row icon={<IconCalendar size={22} aria-hidden="true" />} name="Meetings open in:" line={openLine} hover={openHint} />
         <SpotifyRow sp={sp} blocked={blocked} />
       </ul>
       {(m.notice || sp.notice) && <div className="tools-note bad">{m.notice ?? sp.notice}</div>}

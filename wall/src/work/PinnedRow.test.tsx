@@ -204,11 +204,13 @@ it('still shows the default keys when keys.json is invalid, since the library do
 
 const openPicker = async (name: string) => {
   fireEvent.contextMenu(screen.getByRole('button', { name }));
+  await flush(801);
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Replace with another key' }));
   await flush();
   return screen.getByRole('dialog');
 };
 
-it('right-click opens the picker over the deck with the library by group, a search box and the five marked', async () => {
+it('right-click opens the key menu and Replace opens the picker with the library by group', async () => {
   render(<PinnedRow />);
   await flush();
   const dlg = await openPicker('Snip');
@@ -220,17 +222,40 @@ it('right-click opens the picker over the deck with the library by group, a sear
   expect(within(dlg).getByRole('button', { name: 'Reset to defaults' })).toBeTruthy();
 });
 
-it('the ContextMenu key and Shift+F10 open it too', async () => {
+it('the ContextMenu key and Shift+F10 open the key menu too', async () => {
   render(<PinnedRow />);
   await flush();
   fireEvent.keyDown(screen.getByRole('button', { name: 'Focus' }), { key: 'ContextMenu' });
   await flush();
-  expect(screen.getByRole('dialog')).toBeTruthy();
-  fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
-  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(screen.getByRole('menu')).toBeTruthy();
+  fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' });
+  expect(screen.queryByRole('menu')).toBeNull();
   fireEvent.keyDown(screen.getByRole('button', { name: 'Snip' }), { key: 'F10', shiftKey: true });
   await flush();
-  expect(screen.getByRole('dialog')).toBeTruthy();
+  expect(screen.getByRole('menu')).toBeTruthy();
+});
+
+it('Add a key appends into the next free slot and Remove can leave only the Add tile', async () => {
+  localStorage.setItem(PINS_KEY, JSON.stringify(['lib:thirds']));
+  render(<PinnedRow />);
+  await flush();
+  fireEvent.click(screen.getByRole('button', { name: 'Add a key' }));
+  await flush();
+  expect(screen.getByRole('dialog', { name: 'Add a key to Always here' })).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Snip' }));
+  await flush();
+  expect(labels()).toEqual(['Thirds', 'Snip']);
+  fireEvent.click(screen.getByRole('button', { name: 'More options for Thirds' }));
+  await flush();
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Remove from Always here' }));
+  await flush();
+  fireEvent.click(screen.getByRole('button', { name: 'More options for Snip' }));
+  await flush();
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Remove from Always here' }));
+  await flush();
+  expect(labels()).toEqual([]);
+  expect(screen.getByRole('button', { name: 'Add a key' })).toBeTruthy();
+  expect(localStorage.getItem(PINS_KEY)).toBe('[]');
 });
 
 it('clicking a row swaps that key into the slot and keeps it in storage; the others stay', async () => {
@@ -270,7 +295,7 @@ it('Reset to defaults clears the choice', async () => {
 });
 
 it('storage that is not valid against the library is ignored and the defaults show', async () => {
-  for (const bad of ['nope', '[]', JSON.stringify(['lib:nope']), JSON.stringify(['lib:snip', 'lib:snip']), JSON.stringify(['lib:new-chat']), JSON.stringify(['lib:snip', 'lib:focus', 'lib:thirds', 'lib:mute', 'lib:mixer', 'lib:zen'])]) {
+  for (const bad of ['nope', JSON.stringify(['lib:snip', 'lib:snip']), JSON.stringify([7]), JSON.stringify(['lib:snip', 'lib:focus', 'lib:thirds', 'lib:mute', 'lib:mixer', 'lib:zen'])]) {
     localStorage.setItem(PINS_KEY, bad);
     resetKeysFeed();
     const { unmount } = render(<PinnedRow />);
@@ -278,6 +303,20 @@ it('storage that is not valid against the library is ignored and the defaults sh
     expect(labels(), bad).toEqual(['Thirds', 'Focus', 'Record 16:9', 'Snip', 'Hide screen']);
     unmount();
   }
+});
+
+it('a stored key that no longer resolves is dropped without bringing the defaults back', async () => {
+  localStorage.setItem(PINS_KEY, JSON.stringify(['lib:snip', 'lib:nope']));
+  const first = render(<PinnedRow />);
+  await flush();
+  expect(labels()).toEqual(['Snip']);
+  first.unmount();
+  localStorage.setItem(PINS_KEY, JSON.stringify(['file:0']));
+  resetKeysFeed();
+  render(<PinnedRow />);
+  await flush();
+  expect(labels()).toEqual([]);
+  expect(screen.getByRole('button', { name: 'Add a key' })).toBeTruthy();
 });
 
 it('search narrows the library; coming and unfinished keys are listed but cannot be pinned', async () => {
@@ -358,14 +397,24 @@ it('the click that closes the picker is not also delivered to what was under the
     </div>,
   );
   await flush();
-  await openPicker('Snip');
+  fireEvent.click(screen.getByRole('button', { name: 'More options for Snip' }));
+  await flush();
+  if (!screen.queryByRole('menu')) fireEvent.click(screen.getByRole('button', { name: 'More options for Snip' }));
+  await flush();
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Replace with another key' }));
+  await flush();
   fireEvent.pointerDown(screen.getByRole('button', { name: 'task row' }));
   fireEvent.click(screen.getByRole('button', { name: 'task row' }), { detail: 1 });
   expect(screen.queryByRole('dialog')).toBeNull();
   expect(task).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: 'task row' }), { detail: 1 });
   expect(task).toHaveBeenCalledTimes(1);
-  await openPicker('Snip');
+  fireEvent.click(screen.getByRole('button', { name: 'More options for Snip' }));
+  await flush();
+  if (!screen.queryByRole('menu')) fireEvent.click(screen.getByRole('button', { name: 'More options for Snip' }));
+  await flush();
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Replace with another key' }));
+  await flush();
   fireEvent.pointerDown(screen.getByRole('button', { name: 'Later' }));
   fireEvent.click(screen.getByRole('button', { name: 'Later' }), { detail: 1 });
   expect(later).not.toHaveBeenCalled();
@@ -502,4 +551,86 @@ it('a pin saved before the rename (lib:strip-dark) still resolves, now reading H
   await flush();
   expect(labels()).toEqual(['Hide screen', 'Snip']);
   expect(screen.getByRole('button', { name: 'Hide screen' }).getAttribute('data-kind')).toBe('system');
+});
+
+// Guards, closing and sizes of the Always here row.
+
+const OPEN_ATTR = 'data-drawer-open';
+afterEach(() => {
+  document.documentElement.removeAttribute(OPEN_ATTR);
+});
+
+it('opens no menu and no picker while an overlay owns the pointer', async () => {
+  localStorage.setItem(PINS_KEY, JSON.stringify(['lib:thirds', 'lib:snip']));
+  render(<PinnedRow />);
+  await flush();
+  document.documentElement.setAttribute(OPEN_ATTR, '');
+  const snip = screen.getByRole('button', { name: 'Snip' });
+  fireEvent.contextMenu(snip);
+  fireEvent.click(screen.getByRole('button', { name: 'More options for Snip' }));
+  fireEvent.keyDown(snip, { key: 'ContextMenu' });
+  fireEvent.keyDown(snip, { key: 'F10', shiftKey: true });
+  fireEvent.click(screen.getByRole('button', { name: 'Add a key' }));
+  await flush();
+  expect(screen.queryByRole('menu')).toBeNull();
+  expect(screen.queryByRole('dialog')).toBeNull();
+  // Once the overlay is gone the Add tile and the menu work again.
+  document.documentElement.removeAttribute(OPEN_ATTR);
+  fireEvent.click(screen.getByRole('button', { name: 'Add a key' }));
+  await flush();
+  expect(screen.getByRole('dialog')).toBeTruthy();
+});
+
+it('the menu closes on a press elsewhere, and its corner button toggles it', async () => {
+  render(<PinnedRow />);
+  await flush();
+  fireEvent.contextMenu(screen.getByRole('button', { name: 'Snip' }));
+  await flush();
+  expect(screen.getByRole('menu')).toBeTruthy();
+  fireEvent.pointerDown(document.body);
+  expect(screen.queryByRole('menu')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'More options for Snip' }));
+  expect(screen.getByRole('menu')).toBeTruthy();
+  // The corner button that opened it closes it.
+  fireEvent.pointerDown(screen.getByRole('button', { name: 'More options for Snip' }));
+  fireEvent.click(screen.getByRole('button', { name: 'More options for Snip' }));
+  expect(screen.queryByRole('menu')).toBeNull();
+});
+
+it('a menu opened by the keyboard returns focus to its key on Escape', async () => {
+  render(<PinnedRow />);
+  await flush();
+  const focus = screen.getByRole('button', { name: 'Focus' });
+  focus.focus();
+  fireEvent.keyDown(focus, { key: 'ContextMenu' });
+  await flush();
+  expect(screen.getByRole('menu')).toBeTruthy();
+  fireEvent.keyDown(document.body, { key: 'Escape' });
+  expect(screen.queryByRole('menu')).toBeNull();
+  expect(document.activeElement).toBe(focus);
+});
+
+it('draws the row at the size and column count for 1 to 5 tiles, the Add tile counted', async () => {
+  // With n pins the row has n tiles plus the Add tile, up to five.
+  const cases: [string[], number, string][] = [
+    [[], 1, 'wide'],
+    [['lib:thirds'], 2, 'wide'],
+    [['lib:thirds', 'lib:focus'], 3, 'up1'],
+    [['lib:thirds', 'lib:focus', 'lib:snip'], 4, ''],
+    [['lib:thirds', 'lib:focus', 'lib:snip', 'lib:mute'], 5, ''],
+    [['lib:thirds', 'lib:focus', 'lib:snip', 'lib:mute', 'lib:mixer'], 5, ''],
+  ];
+  for (const [pins, tilesDrawn, cls] of cases) {
+    localStorage.setItem(PINS_KEY, JSON.stringify(pins));
+    resetKeysFeed();
+    const { container, unmount } = render(<PinnedRow />);
+    await flush();
+    const row = container.querySelector('.pin-tiles') as HTMLElement;
+    expect(row.querySelectorAll('.key-tile').length, `${pins.length} pins`).toBe(tilesDrawn);
+    expect(!!row.querySelector('.add-key'), `${pins.length} pins add`).toBe(pins.length < 5);
+    expect(row.classList.contains('wide'), `${pins.length} pins wide`).toBe(cls === 'wide');
+    expect(row.classList.contains('up1'), `${pins.length} pins up1`).toBe(cls === 'up1');
+    expect(row.style.gridTemplateColumns).toBe(`repeat(${tilesDrawn}, minmax(0px, 1fr))`);
+    unmount();
+  }
 });

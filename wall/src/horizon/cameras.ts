@@ -39,8 +39,28 @@ export interface CameraPreset {
 /** The terrain a camera looks at: the one panorama (azimuth 128 to 300), so every move is a glide. */
 export type Terrain = TerrainName;
 
-/** Moon centre x, centre y and radius, design pixels. Drawn on the Unwind camera only. */
-export const MOON: readonly [number, number, number] = [1730, 112, 44];
+/**
+ * The moon's candidate places, in order (centre x, centre y and radius, design pixels). Drawn on
+ * the Unwind camera only, at the first place whose disc is at least 40 px clear of every picture
+ * and every card a screen claims (`moonFor` in `sky.ts`); with none clear, no moon. Every place is
+ * in open sky, wholly above the Unwind ridgeline (the drawn ranges' top under the disc, `ridgeTopY`)
+ * and clear of the clock:
+ * - 1890, 260: right of Listen's player, the place it has always had (ridge top 334 under it).
+ * - 760, 352: low in the sky under the player's left half, right of Up next, for a layout whose
+ *   right side is taken by a wide card. It sits 40 px or more under the player in every state
+ *   (playing ends at y 251, nothing playing or the last track at y 265: 43 px) and rises just
+ *   clear of the ranges (ridge top 401.5 under it, the disc's foot at 396). Between the player
+ *   and the ridge there is no room for more: the ranges are lowest here (about x 720 to 800).
+ * - 1450, 150: high in the middle of the sky, for a layout that takes both of those.
+ */
+export const MOON_PLACES: readonly (readonly [number, number, number])[] = [
+  [1890, 260, 44],
+  [760, 352, 44],
+  [1450, 150, 44],
+];
+
+/** The moon's first place (see `MOON_PLACES`): where it sits when nothing on screen is in its way. */
+export const MOON: readonly [number, number, number] = MOON_PLACES[0];
 
 /** Seconds a camera takes to glide to another place's framing. */
 export const GLIDE_SECONDS = 1.6;

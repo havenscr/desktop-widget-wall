@@ -44,6 +44,8 @@ export interface WatchState {
   stopped: string | null;
   /** The key of the row being renamed, if any. */
   editing: string | null;
+  /** watch behaviour: true while the pointer is over the band on the video's lower edge, which wakes the faded controls. */
+  peek: boolean;
   load: () => void;
   setTab: (t: UnwindTab) => void;
   /** Read and save a pasted link; returns the refusal line, or null when it was added. */
@@ -62,6 +64,7 @@ export interface WatchState {
   setNeedsClick: (on: boolean) => void;
   setClickHint: (on: boolean) => void;
   setSheet: (open: boolean) => void;
+  setPeek: (on: boolean) => void;
 }
 
 export const useWatchStore = create<WatchState>((set, get) => ({
@@ -77,11 +80,12 @@ export const useWatchStore = create<WatchState>((set, get) => ({
   sheet: false,
   stopped: null,
   editing: null,
+  peek: false,
   load: () => set({ saved: loadSaved(), looks: loadLooks() }),
   setTab: (tab) => {
     if (tab === get().tab) return;
-    if (tab !== 'watch') get().stop('tab');
-    set({ tab, sheet: false, editing: null });
+    // Leaving Watch never stops the video: it plays on out of sight (`StageLayer.tsx`).
+    set({ tab, sheet: false, editing: null, peek: false });
   },
   addLink: (text) => {
     const parsed = parseLink(text);
@@ -139,6 +143,9 @@ export const useWatchStore = create<WatchState>((set, get) => ({
     if (clickHint !== get().clickHint) set({ clickHint });
   },
   setSheet: (sheet) => set({ sheet }),
+  setPeek: (peek) => {
+    if (peek !== get().peek) set({ peek });
+  },
 }));
 
 /**
@@ -154,15 +161,15 @@ export function driveInAudience(s: Pick<WatchState, 'playing' | 'looks'>): Reado
   return DRIVE_IN_SCREEN;
 }
 
-// Leaving Unwind (another place, Zen or Dream) removes the frame at once.
+// Leaving Unwind (another place, Zen or Dream) closes the sheet; the video plays on out of sight.
 usePlaceStore.subscribe((s) => {
   if (s.active !== 'unwind') {
-    useWatchStore.getState().stop('place');
-    if (useWatchStore.getState().sheet) useWatchStore.setState({ sheet: false });
+    const st = useWatchStore.getState();
+    if (st.sheet || st.peek) useWatchStore.setState({ sheet: false, peek: false });
   }
 });
 
 /** Tests only: back to a fresh store over whatever local storage holds now. */
 export function resetWatch(): void {
-  useWatchStore.setState({ tab: 'listen', saved: loadSaved(), looks: loadLooks(), playing: null, paused: false, muted: false, report: NO_REPORT, needsClick: false, clickHint: false, sheet: false, stopped: null, editing: null });
+  useWatchStore.setState({ tab: 'listen', saved: loadSaved(), looks: loadLooks(), playing: null, paused: false, muted: false, report: NO_REPORT, needsClick: false, clickHint: false, sheet: false, stopped: null, editing: null, peek: false });
 }

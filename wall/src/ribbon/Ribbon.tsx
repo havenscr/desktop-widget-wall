@@ -7,9 +7,10 @@ import { hideTip, pinTip, tip } from '../ui/HoverTip';
 import { AgentRow, agentBoxes } from './AgentRow';
 import { useAgentsStore } from '../agents/useAgents';
 import { useVisible } from '../ui/useVisible';
-import { allDayBarText, allDayChips, handleX, labelBox, allDayText, allDayWidth, calmLayout, chipLayout, chips, dueLabelSpan, isLate, dueMarks, focusBars, hourLabels, msToNextMinute, needle, needleTip, overlapsAny, skyGradient, spanText, sunLabels, ticks, type Chip, type FoldChip, type MoreChip } from './model';
+import { allDayBarText, allDayChips, HANDLE_W, handleX, labelBox, allDayText, allDayWidth, calmLayout, chipLayout, chips, dueLabelSpan, isLate, dueMarks, focusBars, hourLabels, msToNextMinute, needle, needleTip, overlapsAny, skyGradient, spanText, sunLabels, ticks, type Chip, type FoldChip, type MoreChip } from './model';
 import { AgentsToday } from './AgentsToday';
 import { DayDrawer } from './DayDrawer';
+import { DayLip } from './DayLip';
 import { sunTimes } from './sun';
 import { useDayFeed } from './useDayEvents';
 import { useDueTaskFeed } from './useDueTasks';
@@ -125,6 +126,9 @@ export function laneBox(lane: number, lanes: number): { top: number; height: num
   return { top: ROW_TOP + lane * (height + LANE_GAP), height };
 }
 
+/** The lip starts this far into the strip (inside its rounded corners). */
+const LIP_INSET = 24;
+
 /** What row 2 holds, as the tooltip on its icon. */
 const ROW2_TIP: Record<RibbonKind, string> = {
   work: 'Agent activity and tasks due today',
@@ -196,6 +200,9 @@ export function Ribbon({ kind, now = Date.now }: { kind: RibbonKind; now?: () =>
   // The handle keeps off the hour and sun labels and the needle's time pill.
   const handleLeft = handleX([...hourLabels(n.x).map((l) => labelBox(l.x, l.text)), ...sunLabels(sun, t, n.x).map((l) => labelBox(l.x, l.text, 9)), labelBox(n.x, n.text, 11)]);
   const openDrawer = useCallback((hour: number | null) => setOverlay((o) => (o?.kind === 'drawer' && hour === null ? null : { kind: 'drawer', hour })), []);
+  // The handle moves between the strip and the drawer's top edge. Focus follows the drawer's own
+  // rule (it takes focus on open and the strip's handle gets it back on close), so nothing here.
+  const toggleByLip = useCallback(() => openDrawer(null), [openDrawer]);
   return (
     <>
       <section className={`${isLate(t) ? 'rib late' : 'rib'}${calm && allDay.length > 0 ? ' has-allday' : ''}`} data-kind={kind} aria-label="Today">
@@ -369,22 +376,19 @@ export function Ribbon({ kind, now = Date.now }: { kind: RibbonKind; now?: () =>
         <div className="ndl" style={{ left: n.x }}>
           <b {...tip(() => needleTip(dayChips, t, day.calendar === 'ok'))}>{n.text}</b>
         </div>
-        {calm && (
-          <button
-            type="button"
-            className="rib-handle"
-            style={{ left: handleLeft }}
-            aria-label={overlay?.kind === 'drawer' ? 'Close the Day drawer' : 'Open the Day drawer'}
-            aria-expanded={overlay?.kind === 'drawer'}
-            onClick={() => openDrawer(null)}
-            {...tip(overlay?.kind === 'drawer' ? 'Close the Day drawer' : 'Open the Day drawer: the agenda and every session today')}
-          >
-            <i />
-          </button>
-        )}
       </section>
+      {calm && overlay?.kind !== 'drawer' && <DayLip open={false} x={handleLeft + HANDLE_W / 2 - LIP_INSET} onToggle={toggleByLip} />}
       {calm && overlay?.kind === 'drawer' && (
-        <DayDrawer chips={dayChips} allDay={allDay} labels={day.labels} now={t} scrollHour={overlay.hour} onClose={close} onOpenPanel={canPanel ? openPanel : null} />
+        <DayDrawer
+          chips={dayChips}
+          allDay={allDay}
+          labels={day.labels}
+          now={t}
+          scrollHour={overlay.hour}
+          onClose={close}
+          onOpenPanel={canPanel ? openPanel : null}
+          lip={<DayLip open x={null} onToggle={toggleByLip} />}
+        />
       )}
       {calm && overlay?.kind === 'panel' && <AgentsToday now={t} onClose={close} />}
     </>

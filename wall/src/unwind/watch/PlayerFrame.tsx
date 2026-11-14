@@ -52,14 +52,17 @@ function pageHidden(): boolean {
  * `postMessage` to its exact embed origin, only once the frame has loaded, and read only
  * through `readPlayerMessage` (this frame's window, that origin, known shapes). A change the
  * player reports (playing, paused, ended) is never echoed back as a command. Twitch has no
- * message interface for a frame and is stopped by removing it.
+ * message interface for a frame and is stopped by removing it. While the stage is out of sight
+ * (`shown` false) the pointer never reaches it, whatever the player asked for; the element itself
+ * is the same one either way (only its class changes), so the player never reloads.
  */
-export function PlayerFrame({ item, title }: { item: WatchRef; title: string }) {
+export function PlayerFrame({ item, title, shown = true }: { item: WatchRef; title: string; shown?: boolean }) {
   const ref = useRef<HTMLIFrameElement>(null);
   const paused = useWatchStore((s) => s.paused);
   const muted = useWatchStore((s) => s.muted);
   const started = useWatchStore((s) => s.report.started);
   const needsClick = useWatchStore((s) => s.needsClick);
+  const take = needsClick && shown;
   const src = useMemo(() => embedUrl(item, pageWhere()), [item.kind, item.id]);
   const youtube = item.kind !== 'twitch';
   const target = playerOrigin(item);
@@ -232,18 +235,18 @@ export function PlayerFrame({ item, title }: { item: WatchRef; title: string }) 
     };
   }, [youtube, poster, needsClick]);
 
-  if (poster) return <div className={`w-frame w-poster${needsClick ? ' w-take' : ''}`}>{poster(item)}</div>;
+  if (poster) return <div className={`w-frame w-poster${take ? ' w-take' : ''}`}>{poster(item)}</div>;
   if (!src) return <div className="w-frame w-noframe">This page cannot hold a player. Use the Open button beside the controls.</div>;
   return (
     <iframe
       ref={ref}
-      className={`w-frame${needsClick ? ' w-take' : ''}`}
+      className={`w-frame${take ? ' w-take' : ''}`}
       src={src}
       title={title}
       allow={FRAME_ALLOW}
       referrerPolicy={FRAME_REFERRER}
       sandbox={FRAME_SANDBOX}
-      tabIndex={needsClick ? 0 : -1}
+      tabIndex={take ? 0 : -1}
       onLoad={() => {
         loadedRef.current = true;
         setLoaded(true);

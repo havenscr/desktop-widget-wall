@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { LIBRARY_DATA } from '../bridge/devMocks/libraryData';
 import { KEY_ICONS } from './keyIcons';
-import { FALLBACK_PINS, MAX_PINS, parsePins, PINS_KEY, resolvePin, searchLibrary, serializePins, swapPin, type LibGroup, type LibKey } from './libraryModel';
+import { FALLBACK_PINS, MAX_PINS, parsePins, PINS_KEY, removePin, resolvePin, searchLibrary, serializePins, swapPin, type LibGroup, type LibKey } from './libraryModel';
 
 const rust: string = readFileSync('../src-tauri/src/wall2_keylib.rs', 'utf8');
 const filePins = [{ label: 'Mine', icon: 'window', action: 'zen' }];
@@ -92,7 +92,8 @@ describe('pins on this display', () => {
     const stored = JSON.stringify(['lib:snip', 'lib:thirds', { ref: 'file:0', label: 'Mine', action: 'zen' }]);
     expect(parsePins(stored, lib, filePins)).toEqual(ok);
     expect(serializePins(ok, filePins)).toBe(stored);
-    for (const bad of [null, '', 'nope', '{}', '[]', '"lib:snip"', JSON.stringify([1]), JSON.stringify(['lib:nope']), JSON.stringify(['lib:snip', 'lib:snip']), JSON.stringify(['lib:snip', 'lib:focus', 'lib:thirds', 'lib:mute', 'lib:mixer', 'lib:zen']), JSON.stringify([{ ref: 'file:3', label: 'x', action: null }, 'lib:nope'])]) {
+    expect(parsePins('[]', lib, filePins)).toEqual([]);
+    for (const bad of [null, '', 'nope', '{}', '"lib:snip"', JSON.stringify([1]), JSON.stringify(['lib:snip', 'lib:snip']), JSON.stringify(['Lib:Snip']), JSON.stringify([null]), JSON.stringify(['lib:snip', 'lib:focus', 'lib:thirds', 'lib:mute', 'lib:mixer', 'lib:zen']), JSON.stringify([{ ref: 'file:3', label: 'x', action: null }, 'lib:../x'])]) {
       expect(parsePins(bad, lib, filePins), String(bad)).toBeNull();
     }
     // A pin on a keys.json key is an index: it is dropped when the file no longer has that same key there.
@@ -101,8 +102,22 @@ describe('pins on this display', () => {
     expect(parsePins(JSON.stringify(['lib:snip', mine]), lib, [{ label: 'Other', icon: 'window', action: 'zen' }])).toEqual(['lib:snip']);
     expect(parsePins(JSON.stringify(['lib:snip', mine]), lib, [{ label: 'Mine', icon: 'window', action: 'dream' }])).toEqual(['lib:snip']);
     expect(parsePins(JSON.stringify(['lib:snip', mine]), lib, [])).toEqual(['lib:snip']);
-    expect(parsePins(JSON.stringify([mine]), lib, [])).toBeNull();
-    expect(parsePins(JSON.stringify(['file:0']), lib, filePins)).toBeNull();
+    expect(parsePins(JSON.stringify([mine]), lib, [])).toEqual([]);
+    expect(parsePins(JSON.stringify(['file:0']), lib, filePins)).toEqual([]);
+  });
+
+  it('keeps what still resolves when a well formed reference stops resolving, and never falls back to the defaults for it', () => {
+    // One stale reference among two: the one that resolves stays.
+    expect(parsePins(JSON.stringify(['lib:snip', 'lib:nope']), lib, filePins)).toEqual(['lib:snip']);
+    expect(parsePins(JSON.stringify(['lib:nope', { ref: 'file:0', label: 'Mine', action: 'zen' }]), lib, filePins)).toEqual(['file:0']);
+    // A lone stale reference (a library id that is gone, a key that cannot run, a keys.json index) is an empty row, not null.
+    expect(parsePins(JSON.stringify(['lib:nope']), lib, filePins)).toEqual([]);
+    expect(parsePins(JSON.stringify(['lib:new-chat']), lib, filePins)).toEqual([]);
+    expect(parsePins(JSON.stringify(['file:0']), lib, [])).toEqual([]);
+    // A malformed value is still null; a list stored before this change (bare library ids) still loads.
+    expect(parsePins('nope', lib, filePins)).toBeNull();
+    expect(parsePins(JSON.stringify([7]), lib, filePins)).toBeNull();
+    expect(parsePins(JSON.stringify(['lib:snip', 'lib:thirds']), lib, filePins)).toEqual(['lib:snip', 'lib:thirds']);
   });
 
   it('swaps a key into a slot; a key already pinned elsewhere trades places', () => {
@@ -111,6 +126,12 @@ describe('pins on this display', () => {
     expect(swapPin(['lib:a', 'lib:b'], 1, 'lib:b')).toEqual(['lib:a', 'lib:b']);
     expect(swapPin(['lib:a'], 3, 'lib:x')).toEqual(['lib:a', 'lib:x']);
     expect(swapPin(['lib:a', 'lib:b', 'lib:c', 'lib:d', 'lib:e'], 9, 'lib:x')).toHaveLength(5);
+  });
+
+  it('keeps an intentionally empty pin row and removes any slot', () => {
+    expect(parsePins('[]', lib, [])).toEqual([]);
+    expect(removePin(['lib:a', 'lib:b', 'lib:c'], 1)).toEqual(['lib:a', 'lib:c']);
+    expect(removePin(['lib:a'], 0)).toEqual([]);
   });
 
   it('searches label, group and what a key does; empty groups drop out', () => {

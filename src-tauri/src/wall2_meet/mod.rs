@@ -7,6 +7,7 @@
 //! failure maps to a fixed string or a reason code built from numbers and a checked name.
 
 mod auth;
+mod desktop;
 mod graph;
 mod meetlog;
 mod netprobe;
@@ -80,6 +81,32 @@ const LOGIN_HOST: &str = "login.microsoftonline.com";
 
 struct HttpGraph;
 
+impl HttpGraph {
+    fn calendar_request(&self, access: &str, url: String, ctx: &graph::Ctx) -> (graph::GraphReply, Option<graph::Diag>) {
+        let mut send = |_attempt: u32, timeout: Duration| -> graph::Raw {
+            netprobe::begin(GRAPH_HOST);
+            let result = agent()
+                .get(&url)
+                .timeout(timeout)
+                .set("Authorization", &format!("Bearer {access}"))
+                .set("Prefer", graph::PREFER)
+                .set("Accept", "application/json")
+                .set("client-request-id", &new_client_request_id())
+                .set("return-client-request-id", "true")
+                .call();
+            match result {
+                Ok(resp) => {
+                    let ok = (200..300).contains(&resp.status());
+                    raw_of(resp, ok)
+                }
+                Err(ureq::Error::Status(_, resp)) => raw_of(resp, false),
+                Err(ureq::Error::Transport(t)) => graph::Raw { status: 0, net: Some(net_of(&t)), retry_after: None, request_id: None, client_request_id: None, body: Vec::new(), probe: Some(probe_of(GRAPH_HOST, &t)) },
+            }
+        };
+        graph::run_attempts(ctx, &mut send)
+    }
+}
+
 /// A unique id sent as `client-request-id`, so a failed call can be matched to Microsoft's
 /// own record of it. Not secret and not a security token.
 fn new_client_request_id() -> String {
@@ -147,30 +174,11 @@ impl graph::GraphClient for HttpGraph {
     }
 
     fn calendar_view_diag(&self, access: &str, start: &str, end: &str, ctx: &graph::Ctx) -> (graph::GraphReply, Option<graph::Diag>) {
-        let url = graph::calendar_view_url(start, end);
-        let mut send = |_attempt: u32, timeout: Duration| -> graph::Raw {
-            // Forget the last lookup of this host, so a failure never reports an old one.
-            netprobe::begin(GRAPH_HOST);
-            let result = agent()
-                .get(&url)
-                .timeout(timeout)
-                .set("Authorization", &format!("Bearer {access}"))
-                .set("Prefer", graph::PREFER)
-                .set("Accept", "application/json")
-                .set("client-request-id", &new_client_request_id())
-                .set("return-client-request-id", "true")
-                .call();
-            match result {
-                // A redirect is never followed, so a 3xx arrives here as a reply, not an error.
-                Ok(resp) => {
-                    let ok = (200..300).contains(&resp.status());
-                    raw_of(resp, ok)
-                }
-                Err(ureq::Error::Status(_, resp)) => raw_of(resp, false),
-                Err(ureq::Error::Transport(t)) => graph::Raw { status: 0, net: Some(net_of(&t)), retry_after: None, request_id: None, client_request_id: None, body: Vec::new(), probe: Some(probe_of(GRAPH_HOST, &t)) },
-            }
-        };
-        graph::run_attempts(ctx, &mut send)
+        self.calendar_request(access, graph::calendar_view_url(start, end), ctx)
+    }
+
+    fn calendar_view_without_expand_diag(&self, access: &str, start: &str, end: &str, ctx: &graph::Ctx) -> (graph::GraphReply, Option<graph::Diag>) {
+        self.calendar_request(access, graph::calendar_view_url_without_expand(start, end), ctx)
     }
 }
 
@@ -208,6 +216,18 @@ pub struct Account {
     pub tenant: String,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum OpenPreference { Desktop, Browser, Typo }
+
+fn open_preference(value: &Value) -> OpenPreference {
+    match value.get("openIn") {
+        None => OpenPreference::Desktop,
+        Some(Value::String(choice)) if choice == "desktop" => OpenPreference::Desktop,
+        Some(Value::String(choice)) if choice == "browser" => OpenPreference::Browser,
+        Some(_) => OpenPreference::Typo,
+    }
+}
+
 fn is_guid(s: &str) -> bool {
     let parts: Vec<&str> = s.split('-').collect();
     let lens = [8usize, 4, 4, 4, 12];
@@ -222,6 +242,7 @@ fn valid_id(s: &str) -> bool {
 pub fn parse_config(text: Option<&str>) -> Result<Vec<Account>, &'static str> {
     let text = text.ok_or(NOT_CONFIGURED)?;
     let value: Value = serde_json::from_str(text).map_err(|_| INVALID_CONFIG)?;
+    let _ = open_preference(&value);
     let rows = value.get("accounts").and_then(Value::as_array).ok_or(INVALID_CONFIG)?;
     if rows.is_empty() {
         return Err(NOT_CONFIGURED);
@@ -254,6 +275,13 @@ fn load_config(window: &tauri::WebviewWindow) -> Result<Vec<Account>, &'static s
     let dir = window.path().app_config_dir().map_err(|_| NOT_CONFIGURED)?;
     let text = std::fs::read_to_string(dir.join("meet.json")).ok();
     parse_config(text.as_deref())
+}
+
+fn load_open_preference(window: &tauri::WebviewWindow) -> Result<OpenPreference, &'static str> {
+    let dir = window.path().app_config_dir().map_err(|_| NOT_CONFIGURED)?;
+    let text = std::fs::read_to_string(dir.join("meet.json")).map_err(|_| NOT_CONFIGURED)?;
+    let value: Value = serde_json::from_str(&text).map_err(|_| INVALID_CONFIG)?;
+    Ok(open_preference(&value))
 }
 
 // Section: window guard
@@ -309,7 +337,9 @@ pub(crate) fn day_window(now: i64, offset: &dyn Fn(i64) -> i64) -> (u64, u64) {
 pub async fn wall2_meet_day(window: tauri::WebviewWindow) -> Result<service::DayPayload, String> {
     require_wall2(window.label())?;
     let accounts = load_config(&window).map_err(str::to_string)?;
+    let preference = load_open_preference(&window).unwrap_or(OpenPreference::Browser);
     tauri::async_runtime::spawn_blocking(move || {
+        links().lock().unwrap_or_else(|e| e.into_inner()).desktop_usable = preference != OpenPreference::Browser && desktop::classic_outlook_exe().is_some();
         let now = now_secs();
         let (from, to) = day_window(now as i64, &crate::wall2_feeds::local_offset_secs);
         let payload = service::read_day_parallel(&accounts, &secrets(), &auth::HttpTokens, &HttpGraph, core(), links(), now, from, to);
@@ -374,20 +404,34 @@ fn valid_day_key(key: &str) -> bool {
     digits(generation, 19) && digits(index, 3)
 }
 
-/// Open a day view event in Outlook on the web. The web view passes only the event's key;
-/// a key without the day key shape is refused before any lookup. The link stays in Rust
-/// and is checked against the Outlook host list again before opening.
+/// Open a day view event in classic Outlook when configured and usable, otherwise on the web.
 #[tauri::command]
 pub async fn wall2_open_event(window: tauri::WebviewWindow, key: String) -> Result<(), String> {
     require_wall2(window.label())?;
     if !valid_day_key(&key) {
         return Err("gone".to_string());
     }
-    let url = service::lookup_web_link(links(), &key).ok_or_else(|| "gone".to_string())?;
-    if !graph::web_link_allowed(&url) {
-        return Err("gone".to_string());
-    }
-    window.opener().open_url(url, None::<&str>).map_err(|_| "failed".to_string())
+    let target = service::lookup_open_target(links(), &key).ok_or_else(|| "gone".to_string())?;
+    let desktop_enabled = matches!(load_open_preference(&window), Ok(OpenPreference::Desktop | OpenPreference::Typo));
+    if target.web.as_deref().is_some_and(|url| !graph::web_link_allowed(url)) { return Err("gone".to_string()); }
+    let result = tauri::async_runtime::spawn_blocking(move || desktop::open_with(
+        desktop_enabled, target.entry.as_deref(), target.web.as_deref(), desktop::classic_outlook_exe,
+        |exe, arg| std::process::Command::new(exe).args(["/select", arg]).spawn().is_ok(),
+        |url| window.opener().open_url(url, None::<&str>).is_ok(),
+    )).await.map_err(|_| "failed".to_string())?;
+    result.map_err(|e| match e { desktop::OpenError::Gone => "gone", desktop::OpenError::Failed => "failed" }.to_string())
+}
+
+#[tauri::command]
+pub async fn wall2_meet_open_status(window: tauri::WebviewWindow) -> Result<&'static str, String> {
+    require_wall2(window.label())?;
+    tauri::async_runtime::spawn_blocking(move || match load_open_preference(&window)? {
+        OpenPreference::Browser => Ok("browser-config"),
+        OpenPreference::Typo => Ok("desktop-config-typo"),
+        OpenPreference::Desktop if desktop::classic_outlook_exe().is_some() => Ok("desktop"),
+        OpenPreference::Desktop if desktop::use_new_outlook() || desktop::new_outlook_present() => Ok("browser-new-outlook"),
+        OpenPreference::Desktop => Ok("browser-not-found"),
+    }).await.map_err(|_| "failed".to_string())?.map_err(str::to_string)
 }
 
 #[tauri::command]
@@ -436,6 +480,23 @@ mod tests {
     fn tenant_may_be_a_guid() {
         let ok = one(&format!(",\"tenant\":\"{GUID}\""));
         assert!(parse_config(Some(&ok)).is_ok());
+    }
+
+    #[test]
+    fn opening_preference_defaults_to_desktop_and_keeps_typos_nonfatal() {
+        let base = one("");
+        let value: Value = serde_json::from_str(&base).unwrap();
+        assert_eq!(open_preference(&value), OpenPreference::Desktop);
+        for (choice, expected) in [("desktop", OpenPreference::Desktop), ("browser", OpenPreference::Browser)] {
+            let text = format!("{{\"openIn\":\"{choice}\",\"accounts\":[{{\"id\":\"work\",\"label\":\"Work\",\"clientId\":\"{GUID}\"}}]}}");
+            assert_eq!(parse_config(Some(&text)).is_ok(), true);
+            assert_eq!(open_preference(&serde_json::from_str(&text).unwrap()), expected);
+        }
+        for bad in ["other", "", "Desktop"] {
+            let text = format!("{{\"openIn\":\"{bad}\",\"accounts\":[{{\"id\":\"work\",\"label\":\"Work\",\"clientId\":\"{GUID}\"}}]}}");
+            assert!(parse_config(Some(&text)).is_ok());
+            assert_eq!(open_preference(&serde_json::from_str(&text).unwrap()), OpenPreference::Typo);
+        }
     }
 
     #[test]
@@ -505,7 +566,14 @@ mod tests {
     #[test]
     fn a_stale_day_key_finds_nothing() {
         let mut links = service::Links { generation: 5, ..Default::default() };
-        links.web_map.insert("d5-0".to_string(), ("work".to_string(), "https://outlook.office.com/calendar/item/example".to_string()));
+        links.web_map.insert(
+            "d5-0".to_string(),
+            service::OpenTarget {
+                account_id: "work".to_string(),
+                web: Some("https://outlook.office.com/calendar/item/example".to_string()),
+                entry: None,
+            },
+        );
         let links = Mutex::new(links);
         // Well formed, but from an older generation of the day view.
         assert!(valid_day_key("d4-0"));

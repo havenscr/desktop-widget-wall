@@ -2,7 +2,7 @@ import { act, within, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mocks } from '../../bridge/tauri';
 import { resetNowPlaying } from '../../music/store';
-import { Unwind } from '../../screens/Unwind';
+import { UnwindView } from './testView';
 import { useSignalStore } from '../../signals/store';
 import { usePlaceStore } from '../../state/places';
 import { resetLastPlayed } from '../lastPlayed';
@@ -17,7 +17,7 @@ const THREE = [
   { kind: 'live', id: 'Lofi_Live01', label: 'Lofi radio' },
   { kind: 'twitch', id: 'pixel_harbor', label: 'pixel_harbor' },
 ];
-const IDS: LookId[] = ['feather', 'sky', 'sun', 'drivein'];
+const IDS: LookId[] = ['feather', 'sky', 'sun', 'drivein', 'holo'];
 
 const flush = async (ms = 0) => {
   await act(async () => {
@@ -50,9 +50,9 @@ afterEach(() => {
 });
 
 describe('the look list', () => {
-  it('has the four looks of the approved page, in its order, each with a name and a one-line hint', () => {
+  it('has the five looks of the approved page, in its order, each with a name and a one-line hint', () => {
     expect(LOOKS.map((l) => l.id)).toEqual(IDS);
-    expect(LOOKS.map((l) => l.name)).toEqual(['Feathered', 'Whole sky', 'The sun', 'Drive-in']);
+    expect(LOOKS.map((l) => l.name)).toEqual(['Feathered', 'Whole sky', 'The sun', 'Drive-in', 'Hologram']);
     for (const l of LOOKS) expect(l.hint).toMatch(/^[A-Z].+\.$/);
     for (const id of IDS) expect(isLook(id)).toBe(true);
     for (const bad of ['whole', 'Sky', 'SUN', '', null, 3]) expect(isLook(bad)).toBe(false);
@@ -85,7 +85,7 @@ describe('the look list', () => {
 describe('each look', () => {
   it.each(IDS)('%s plays in the same single frame with the same attributes, and Open in browser shows', async (look) => {
     setup(look);
-    render(<Unwind />);
+    render(<UnwindView />);
     await flush();
     expect(document.querySelector('.w-stage')?.getAttribute('data-look')).toBe(look);
     const frames = document.querySelectorAll('iframe');
@@ -104,7 +104,7 @@ describe('each look', () => {
 
   it('draws the whole sky with its wash, its buttons apart from the picture, and a still floor wash outside the frame', async () => {
     setup('sky');
-    render(<Unwind />);
+    render(<UnwindView />);
     await flush();
     // The floor wash is a still element beside the sky, not a second frame.
     const spill = document.querySelector('.w-skyspill')!;
@@ -115,8 +115,9 @@ describe('each look', () => {
     expect(document.querySelectorAll('iframe').length).toBe(1);
     const sky = document.querySelector('.w-sky')!;
     expect(sky.querySelector('iframe')).not.toBeNull();
-    // Nothing of the wall's lies on the picture: the stage holds the picture only.
-    expect([...sky.children].map((c) => c.className)).toEqual(['w-screen']);
+    // Nothing of the wall's lies on the picture: the stage holds the picture and, after it, the
+    // element the horizon mounts its front canvas in (the land in front of the picture).
+    expect([...sky.children].map((c) => c.className)).toEqual(['w-screen', 'w-front']);
     // The Look switch and Open in YouTube are outside the layer that takes no pointer.
     expect(sky.querySelector('button')).toBeNull();
     expect(document.querySelector('.w-now .w-open')).not.toBeNull();
@@ -126,36 +127,16 @@ describe('each look', () => {
   it('draws no floor wash in the other looks', async () => {
     for (const look of ['feather', 'sun', 'drivein'] as LookId[]) {
       setup(look);
-      const { unmount } = render(<Unwind />);
+      const { unmount } = render(<UnwindView />);
       await flush();
       expect(document.querySelector('.w-skyspill')).toBeNull();
       unmount();
     }
   });
 
-  it('with the moon up, veils it for the feathered look only: the whole sky and the sun hide it themselves', async () => {
-    // 10:30 PM Pacific in November: the sun is far below the horizon, so the horizon draws its moon.
-    vi.setSystemTime(new Date('2026-11-11T22:30:00-08:00'));
-    const veil: Record<string, boolean> = {};
-    for (const look of IDS) {
-      setup(look);
-      const { unmount } = render(<Unwind />);
-      await flush();
-      veil[look] = document.querySelector('.w-moonveil') !== null;
-      unmount();
-    }
-    expect(veil).toEqual({ feather: true, sky: false, sun: false, drivein: false });
-    // At noon the moon is down and even the feathered look has no veil.
-    vi.setSystemTime(new Date('2026-11-11T12:30:00-08:00'));
-    setup('feather');
-    render(<Unwind />);
-    await flush();
-    expect(document.querySelector('.w-moonveil')).toBeNull();
-  });
-
-  it('draws the sun with its halo and floor streak, and no moon veil (the disc covers the moon)', async () => {
+  it('draws the sun with its halo and floor streak', async () => {
     setup('sun');
-    render(<Unwind />);
+    render(<UnwindView />);
     await flush();
     const sun = document.querySelector('.w-sun')!;
     expect(sun.querySelector('.w-halo')).not.toBeNull();
@@ -163,9 +144,9 @@ describe('each look', () => {
     expect(sun.querySelector('.w-screen iframe')).not.toBeNull();
   });
 
-  it.each(IDS)('%s: the frame goes when a call starts, the page hides or Unwind is left, and does not come back', async (look) => {
+  it.each(IDS)('%s: the frame goes when a call starts or the page hides and does not come back; leaving Unwind keeps it', async (look) => {
     setup(look);
-    const { unmount } = render(<Unwind />);
+    const { unmount } = render(<UnwindView />);
     await flush();
     expect(document.querySelector('iframe')).not.toBeNull();
     act(() => useSignalStore.setState({ call: { kind: 'teams', since: 0, camera: false } as never }));
@@ -183,21 +164,29 @@ describe('each look', () => {
     act(() => document.dispatchEvent(new Event('visibilitychange')));
 
     act(() => useWatchStore.getState().play({ kind: 'video', id: V }));
-    expect(document.querySelector('iframe')).not.toBeNull();
+    const frame = document.querySelector('iframe')!;
+    const parent = frame.parentElement;
     act(() => usePlaceStore.getState().setActive('work'));
-    expect(useWatchStore.getState().playing).toBeNull();
+    expect(useWatchStore.getState().playing).not.toBeNull();
+    expect(document.querySelector('iframe')).toBe(frame);
+    expect(frame.parentElement).toBe(parent);
+    expect(document.querySelector('.w-stage')!.getAttribute('data-look')).toBeNull();
+    act(() => usePlaceStore.getState().setActive('unwind'));
+    expect(document.querySelector('iframe')).toBe(frame);
+    expect(frame.parentElement).toBe(parent);
+    expect(document.querySelector('.w-stage')!.getAttribute('data-look')).toBe(look);
     unmount();
   });
 
-  it('switches through all four looks from the Look switch without restarting the video (the same frame, the same address)', async () => {
+  it('switches through all five looks from the Look switch without restarting the video (the same frame, the same address)', async () => {
     setup('feather');
-    render(<Unwind />);
+    render(<UnwindView />);
     await flush();
     const frame = document.querySelector('iframe')!;
     const src = frame.getAttribute('src');
     expect(src).toContain(V);
     const seen: string[] = [];
-    for (const name of ['Whole sky', 'The sun', 'Drive-in', 'Feathered']) {
+    for (const name of ['Whole sky', 'The sun', 'Drive-in', 'Hologram', 'Feathered']) {
       await act(async () => within(screen.getByRole('radiogroup', { name: 'Look' })).getByRole('radio', { name }).click());
       seen.push(document.querySelector('.w-stage')!.getAttribute('data-look')!);
       expect(document.querySelectorAll('iframe').length).toBe(1);
@@ -206,20 +195,20 @@ describe('each look', () => {
       expect(frame.isConnected).toBe(true);
       expect(frame.getAttribute('src')).toBe(src);
     }
-    expect(seen).toEqual(['sky', 'sun', 'drivein', 'feather']);
+    expect(seen).toEqual(['sky', 'sun', 'drivein', 'holo', 'feather']);
     expect(parseLooks(localStorage.getItem(LOOKS_KEY)).all).toBe('feather');
   });
 });
 
-describe('the settings sheet with four looks', () => {
-  it('offers four tiles in one-look mode and four choices on each row per kind', async () => {
+describe('the settings sheet with five looks', () => {
+  it('offers five tiles in one-look mode and five choices on each row per kind', async () => {
     setup('drivein');
-    render(<Unwind />);
+    render(<UnwindView />);
     await flush();
     await act(async () => screen.getByRole('button', { name: 'How video is shown' }).click());
     const all = screen.getByRole('radiogroup', { name: 'Look for everything' });
     const tiles = all.querySelectorAll('[role=radio]');
-    expect([...tiles].map((t) => t.textContent)).toEqual(['Feathered', 'Whole sky', 'The sun', 'Drive-in']);
+    expect([...tiles].map((t) => t.textContent)).toEqual(['Feathered', 'Whole sky', 'The sun', 'Drive-in', 'Hologram']);
     await act(async () => within(all).getByRole('radio', { name: /The sun/ }).click());
     expect(parseLooks(localStorage.getItem(LOOKS_KEY))).toMatchObject({ mode: 'one', all: 'sun' });
     expect(document.querySelector('.w-stage')?.getAttribute('data-look')).toBe('sun');
@@ -228,7 +217,7 @@ describe('the settings sheet with four looks', () => {
     await act(async () => screen.getByRole('radio', { name: 'A look for each kind' }).click());
     for (const name of ['Look for videos and playlists', 'Look for live streams', 'Look for twitch']) {
       const row = screen.getByRole('radiogroup', { name });
-      expect([...row.querySelectorAll('[role=radio]')].map((b) => b.textContent)).toEqual(['Feathered', 'Whole sky', 'The sun', 'Drive-in']);
+      expect([...row.querySelectorAll('[role=radio]')].map((b) => b.textContent)).toEqual(['Feathered', 'Whole sky', 'The sun', 'Drive-in', 'Hologram']);
     }
     const videos = screen.getByRole('radiogroup', { name: 'Look for videos and playlists' });
     await act(async () => ([...videos.querySelectorAll('[role=radio]')].find((b) => b.textContent === 'Whole sky') as HTMLElement).click());

@@ -24,6 +24,7 @@ import { usePlaceStore } from '../../state/places';
 import { useSignalStore } from '../../signals/store';
 import { SAVED_KEY } from './saved';
 import { resetWatch, useWatchStore } from './store';
+import { WatchStageLayer } from './StageLayer';
 import { WatchPanel } from './Watch';
 
 const V = 'Ab3dEfGh1jK';
@@ -37,7 +38,12 @@ const frame = () => document.querySelector('iframe');
 // Only Watch's own panel: leaving Watch goes through the stores (the Listen switch sets the Watch
 // store's tab; Zen is a place), so the test does not depend on how Unwind draws its switch.
 function View() {
-  return <WatchPanel />;
+  return (
+    <>
+      <WatchStageLayer />
+      <WatchPanel />
+    </>
+  );
 }
 
 async function playing(expectFrame = true) {
@@ -95,22 +101,33 @@ it('stops when the display read at start says it is off', async () => {
   expect(useWatchStore.getState().playing).toBeNull();
 });
 
-it('removes the frame when Watch is left for Listen, and does not bring it back', async () => {
+it('keeps the same frame when Watch is left for Listen and when Zen opens, and the stop rules still hold there', async () => {
   await playing();
+  const el = frame()!;
+  const parent = el.parentElement;
   await act(async () => useWatchStore.getState().setTab('listen'));
+  expect(frame()).toBe(el);
+  expect(el.parentElement).toBe(parent);
+  await act(async () => usePlaceStore.getState().setActive('zen'));
+  expect(frame()).toBe(el);
+  expect(el.parentElement).toBe(parent);
+  // Out of sight, a call still removes it.
+  await act(async () => useSignalStore.setState({ call: { kind: 'teams', since: 0, camera: false } as never }));
   expect(frame()).toBeNull();
+  expect(useWatchStore.getState().stopped).toBe('Stopped for your call.');
+  await act(async () => useSignalStore.setState({ call: null }));
+  usePlaceStore.setState({ active: 'unwind' });
   await act(async () => useWatchStore.getState().setTab('watch'));
   expect(frame()).toBeNull();
-  expect(useWatchStore.getState().playing).toBeNull();
 });
 
-it('removes the frame when Zen opens, and does not bring it back', async () => {
+it('out of sight, the display going off still removes the frame', async () => {
   await playing();
-  await act(async () => usePlaceStore.getState().setActive('zen'));
+  await act(async () => usePlaceStore.getState().setActive('work'));
+  expect(frame()).not.toBeNull();
+  await emit('display-state', { visible: false, reason: 'display-off' });
   expect(frame()).toBeNull();
-  usePlaceStore.setState({ active: 'unwind' });
-  await act(async () => {});
-  expect(frame()).toBeNull();
+  expect(useWatchStore.getState().stopped).toBe('Stopped when the display went off or Windows locked.');
 });
 
 it('a play click in the same tick as a stop ends stopped', async () => {
