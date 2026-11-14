@@ -1206,7 +1206,8 @@ Watt is also a small pet ("he"), calm and silent (no sound at all):
 
 `wall/src/unwind/watch/`. Which view Unwind shows (Listen or Watch) is one value, `tab`, in
 the Watch store (`store.ts`); the tabs set it and nothing in Watch depends on where that
-switch sits. Leaving Watch (or Unwind) removes any video.
+switch sits. Leaving Watch (or Unwind) does not stop a video: it plays on out of sight and is
+there, still playing, when the owner comes back (see "The stage layer" below).
 
 - **The list** (`WatchCard.tsx`, right wing above Room): saved items and one field, "Paste a
   YouTube or Twitch link". `links.ts` parses strictly: `youtu.be/<id>`,
@@ -1298,16 +1299,47 @@ switch sits. Leaving Watch (or Unwind) removes any video.
   horizon mounts its front canvas, and their stage sits at z-index -1 in the main area's own
   layer group (`.w-layered`), under every control and line of text. While the player waits for a
   click, the sun comes forward (`layeredNow`). The left block, the Look switch and the Watch list
-  card claim their own boxes as keep-clear (`useSkyKeepClear`). The claim goes with the
-  Watch panel (Listen, nothing on, another place, Zen). The gear beside the tabs opens a sheet over the right wing:
+  card claim their own boxes as keep-clear (`useSkyKeepClear`). The look's claim is held only while
+  the stage is in sight; the keep-clear claims go with the Watch panel (Listen, nothing on, another
+  place, Zen). The gear beside the tabs opens a sheet over the right wing:
   one look for everything (four picture tiles), or one each for videos and playlists, live
   streams and Twitch (four choices a row), at 540 px (`wall2-watch-look`, checked on read;
   values stored before the two new looks still read the same). The Look switch sets it too.
-- **When video stops** (`stops.ts`, `useStopRules.ts`): leaving Watch or Unwind (Zen and Dream
-  included), the page hidden, the display off or Windows locked (`ui/useDisplayDark.ts`, the
+- **The stage layer** (`StageLayer.tsx`, watch behaviour): the video's stage (the frame in its
+  look, with the player's message bridge) is not part of Unwind. The screens frame
+  (`screens/Frame.tsx`) mounts `WatchStageLayer` once in `.top`, Unwind's own box, for every
+  place, so the frame element is created once per video and never removed or moved to another
+  parent while it lives (an embedded player reloads when it is). On Unwind's Watch tab the stage
+  shows in its look exactly as before. Anywhere else (Listen, Work, Home, Meet, Zen) the stage
+  is parked: its look's markup goes (a plain 16:9 box, `w-parked`), the layer is `opacity: 0`
+  with no pointer (never `display: none` or `visibility: hidden`, which a browser may treat as
+  a reason to pause or throttle the frame), and it claims nothing from the sky. The look markup
+  lives in `VideoStage` in `StageLayer.tsx`, one block per look before and after the picture;
+  every child keeps its slot (null where a look has none), so a look change never re-creates the
+  frame either. On the Watch tab Unwind's own boxes let the pointer through to the layer (only
+  the wall's blocks take it), so the click to start a refused autoplay and the band over the
+  video's lower edge still work; the frame itself takes the pointer only in that click case and
+  never while parked. While a video plays out of sight, the rail's Unwind button carries a small
+  cyan play mark; its tooltip says "<title> is playing. Click to go to it." and a click goes to
+  Unwind's Watch tab. Music from Listen and a video can play together; nothing mixes or ducks.
+- **The controls fade** (5A, `useControlsFade` in `Watch.tsx`): while a video plays, 3 seconds
+  (`CTL_REST_MS`) after the pointer leaves the left block, the Look row and a 72 px band over the
+  video's lower edge (`EdgeBand`, the wall's own transparent box beside the frame, never over
+  it), and focus leaves the controls, the kind line, the "Playing on the wall" line, the play
+  row, the time bar and the Look switch fade to nothing (250 ms; at once under reduced motion)
+  and take no pointer; the title stays at half strength with no glow. Pointer, focus or Tab
+  brings them back at once. They never fade while paused or ended, with nothing on, or while a
+  notice shows ("Click the video to start", "Not started? Click the video", "Could not open the
+  browser"). One timer, only while they may fade, cleared on unmount.
+  Keys on the Watch tab: Tab shows them and moves through them; Space plays or pauses when the
+  focus is on the page, the stage or the left block outside a button (a focused button keeps
+  its own Space press; never in a field); Escape stops the video unless the focus is in a field
+  or the sheet, the tools drawer, a dialog or a menu is open. Elsewhere neither key touches it.
+- **When video stops** (`stops.ts`, `useStopRules.ts`, run by the stage layer on every place):
+  the page hidden, the display off or Windows locked (`ui/useDisplayDark.ts`, the
   `display-state` half of `useIdle`; input idle never stops a video, since nobody touches the
   mouse while watching), Screens off mode (`monitors-off-mode`), and a call (the signals
-  store's `call`). The frame is removed, never hidden, and nothing restarts
+  store's `call`), wherever the owner is. The frame is removed, never hidden, and nothing restarts
   it; the left block says why it stopped. Play is off during a call. No wake lock is held.
 - **Listen**: when something is saved, the album art has a small "Video" corner that
   switches to Watch. Nothing else on Listen changes.
@@ -1315,8 +1347,9 @@ switch sits. Leaving Watch (or Unwind) removes any video.
   frame) and opens Watch; `?wlist=none|three|many`, `?wlook=feather|sky|sun|drivein`, `?wposter=bright` (a pale test picture, the worst case for
   text over video), `?wplay=<n>`,
   `?wsheet=one|kind`, `?wtab=listen`, and a mock player with `?wstate=paused|refused|silent`
-  (default: playing at 12:34 of 45:10; a playlist reports item 4 of 24). The gallery and the
-  fit check have Watch states.
+  (default: playing at 12:34 of 45:10; a playlist reports item 4 of 24). The stills hold the
+  controls shown unless `?wctl=rest` (they fade after 200 ms); `?wplace=work|home|meet` goes
+  to that place once the video starts. The gallery and the fit check have Watch states.
 
 ## Home feeds (task card and network tile)
 
