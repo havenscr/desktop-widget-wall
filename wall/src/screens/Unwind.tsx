@@ -57,9 +57,12 @@ export function Unwind() {
             <WatchPanel />
           </>
         ) : (
-          <div className="u-listen" role="tabpanel" id={LISTEN_PANEL_ID} aria-labelledby={LISTEN_TAB_ID}>
-            <Player />
-          </div>
+          <>
+            <div className="u-tabrow u-listen-gear"><WatchGear /></div>
+            <div className="u-listen" role="tabpanel" id={LISTEN_PANEL_ID} aria-labelledby={LISTEN_TAB_ID}>
+              <Player />
+            </div>
+          </>
         )}
       </div>
       {watch ? null : (
@@ -77,7 +80,7 @@ export function Unwind() {
       <div className="u-right" style={{ ['--room-top' as string]: `${UNWIND_ROOM_TOP}px`, ['--room-height' as string]: `${UNWIND_ROOM_HEIGHT}px` }}>
         {watch ? <WatchCard /> : null}
       </div>
-      {watch && sheet ? <WatchSheet /> : null}
+      {sheet ? <WatchSheet /> : null}
     </section>
   );
 }

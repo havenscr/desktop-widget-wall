@@ -1,7 +1,8 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { IconX } from '@tabler/icons-react';
 import { LOOK_GROUPS, LOOKS, type LookId, type LookSettings } from './looks';
 import { useWatchStore } from './store';
+import { LinesPanel } from './LinesPanel';
 
 /** A small drawing of each look for its tile, as the approved settings sheet draws them. */
 function LookPicture({ look }: { look: LookId }) {
@@ -31,6 +32,7 @@ function Choice({ value, onPick, label }: { value: LookId; onPick: (l: LookId) =
  * local storage (`wall2-watch-look`) and checked on read.
  */
 export function WatchSheet() {
+  const [page, setPage] = useState<'looks' | 'lines'>('looks');
   const looks = useWatchStore((s) => s.looks);
   const saved = useWatchStore((s) => s.saved);
   const ref = useRef<HTMLDivElement>(null);
@@ -63,6 +65,11 @@ export function WatchSheet() {
         <IconX size={22} aria-hidden="true" />
       </button>
       <div className="u-k">How video is shown</div>
+      <div className="w-seg ln-pages" role="tablist" aria-label="Settings section">
+        <button type="button" role="tab" aria-selected={page === 'looks'} className={page === 'looks' ? 'on' : ''} onClick={() => setPage('looks')}>Looks</button>
+        <button type="button" role="tab" aria-selected={page === 'lines'} className={page === 'lines' ? 'on' : ''} onClick={() => setPage('lines')}>Lines</button>
+      </div>
+      {page === 'lines' ? <LinesPanel /> : <>
       <div className="w-seg w-mode" role="radiogroup" aria-label="One look or one per kind">
         <button type="button" role="radio" aria-checked={looks.mode === 'one'} className={looks.mode === 'one' ? 'on' : ''} title="Every video plays in the same look" onClick={() => set({ mode: 'one' })}>
           One look for everything
@@ -99,6 +106,7 @@ export function WatchSheet() {
           Saved here: {yt} YouTube, {tw} Twitch
         </span>
       </div>
+      </>}
     </div>
   );
 }
