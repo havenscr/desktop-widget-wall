@@ -64,7 +64,7 @@ function playUnwind(): number {
 
 /** The fillRects drawn by a new type (after its clip), as [x, y, w, h]. */
 function rects(log: string[]): number[][] {
-  const from = log.indexOf('clip(evenodd)');
+  const from = log.indexOf('clip()');
   if (from < 0) return [];
   return log.slice(from, log.indexOf('restore()', from)).filter((l) => l.startsWith('fillRect(')).map((l) => l.slice(9, -1).split(',').map(Number));
 }
@@ -106,7 +106,7 @@ describe('the Lines setting in the frame', () => {
     expect({ ...e, sample: undefined, drift: undefined, n: undefined, swell: undefined }).toEqual({ ...old, sample: undefined, drift: undefined, n: undefined, swell: undefined });
     for (const u of [0, 0.3, 0.7, 1]) for (const tau of [0, 0.4, 1.5]) expect(e.sample!(u, tau)).toBe(sampleDance(u, e.t! - tau));
     // After the picture only the reflection's own calls follow: no new type, no rest line.
-    expect(rec.log.some((l) => l === 'clip(evenodd)')).toBe(false);
+    expect(rec.log.some((l) => l === 'clip()')).toBe(false);
     expect(rec.log.some((l) => l.startsWith('quadraticCurveTo('))).toBe(false);
   });
 

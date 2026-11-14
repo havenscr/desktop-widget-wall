@@ -1048,15 +1048,28 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
   - **New line types** (`lineTypes.ts`, a port of the lines playground the owner chose). They read
     the dance history by age (0 is now) with a short hold (the largest of now, 0.8 times 0.1 s ago
     and 0.6 times 0.2 s ago) and a gain of 1.7, are drawn after the picture above the horizon only,
-    with every claimed picture box clipped out, on the front canvas when there is one (with the
-    land), at the live opacity the camera gives the lines (calm on Work and Home). While one plays
+    across the full width in every look (no picture box is cut out), at the live opacity the camera
+    gives the lines (calm on Work and Home). Where they are drawn: with a video behind the mountains
+    (Whole sky, and The sun once it plays) the type is drawn on the front canvas
+    with the land, in front of the picture's lower part, with the same weight and reflection as
+    elsewhere; with a video in front (Feathered, Drive-in, Hologram, and The sun while it waits for a click) it is
+    drawn on the main canvas, and the screen, its frame and the hologram's pane stand above that
+    canvas, so the part that passes behind them is hidden; on Listen and everywhere else with no
+    picture it is drawn on the main canvas as before. A plain above-the-horizon clip is the only clip. While one plays
     the ridgelines are not drawn; when the music stops the resting look fades in. Bars: 64 columns
     18 px wide with a floating marker. Ribbon: one line, two trails, a faint fill and a glow wider
     on the kick. Sparks: 64 dots thrown up and falling under gravity, two trail dots along the
     throw. Skyline: 32 blocks of 12 px floors. State and colour gradients are made once (again only
     when the palette, the centre or the canvas changes). Dev knobs (`bridge/devMocks/lines.ts`):
     `lines=<type>`, `lively`, `smooth`, `lheight`, `lcol`, `lrest`, `lrefl=0`, `ltab=listen`;
-    `lineprobe=1` (with `lclip=0` for the break) is the fit check's count of pixels inside a box.
+    `lineprobe=front|behind` (with `lover=1` or `ltarget=main` for the two breaks) is the fit check's
+    stacking probe: of the type's pixels inside the picture's box, none may have its canvas above a
+    picture in front of the land, and for a picture behind the land all must (across 24 of 32
+    columns of its width), and nothing may rise past the Height setting plus 48 px.
+    The probe reads which layer is above which; it cannot see a mask or a blend. In Feathered (its
+    edges and lower part are masked) and Hologram (the pane is blended over a dark plate) lines that
+    pass behind the picture can show faintly through it, as the Mountains type already does there;
+    the rule still reports them as covered.
   - Work and Home (3 lines): while music drives them, opacity `ea` times a smoothed loudness (bass
     weighted), `n`, `amp`, `cx` from the camera (`en`, `eamp`, `ecx`), `hs` 900.
   - Unwind (11 lines, the visualizer): while music drives them, opacity `ea` (0.9) raised to full,

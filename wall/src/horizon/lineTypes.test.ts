@@ -220,16 +220,17 @@ describe('the geometry, as the playground draws it', () => {
 
 describe('where they are drawn', () => {
   for (const type of NEW_TYPES) {
-    it(`${type}: above the horizon only, with the picture box cut out`, () => {
+    it(`${type}: above the horizon only, across the full width, no picture box cut out`, () => {
       const { ctx, log } = recordingContext();
       const s = createLineTypes();
-      const f = frame(type, (u) => Math.max(0, 1.2 - u), { boxes: [[1244, 110, 672, 378]] });
+      const f = frame(type, (u) => Math.max(0, 1.2 - u));
       for (let i = 0; i < 4; i++) stepLineTypes(s, f);
       drawLineType(ctx, s, f);
-      expect(log).toContain(`rect(0,0,2560,${HY + 1})`);
-      expect(log).toContain('rect(1242,108,676,382)');
-      expect(log).toContain('clip(evenodd)');
-      expect(log.indexOf('clip(evenodd)')).toBeLessThan(log.findIndex((l) => l.startsWith('fill') || l.startsWith('stroke(')));
+      // One rectangle, the stage's width down to the horizon, and a plain clip: no even-odd ring.
+      expect(log.filter((l) => l.startsWith('rect('))).toEqual([`rect(0,0,2560,${HY + 1})`]);
+      expect(log).toContain('clip()');
+      expect(log).not.toContain('clip(evenodd)');
+      expect(log.indexOf('clip()')).toBeLessThan(log.findIndex((l) => l.startsWith('fill') || l.startsWith('stroke(')));
       for (const r of rects(log)) expect(r[1]).toBeLessThanOrEqual(HY);
     });
   }

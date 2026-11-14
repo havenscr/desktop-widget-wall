@@ -3,7 +3,7 @@
  * calm resting line, ported from the lines playground the owner chose (`drawBars`, `drawRibbon`,
  * `drawSparks`, `drawSkyline`, `drawRestLine`, `px` and `typesStep`). Every constant below names the
  * playground constant it is. The types read the same shaped heights (`sampleDance`) and kick as the
- * mountains, are drawn above the horizon only and never inside a claimed picture box.
+ * mountains, are drawn above the horizon only, across the full width in every look.
  *
  * Nothing here allocates on the frame path: the per type state is made once (`createLineTypes`),
  * and the colour gradients are made again only when the palette, the centre or the canvas changes.
@@ -12,7 +12,6 @@ import { sampleDance } from '../audio/spectrum';
 import { DANCE_LIMIT } from '../audio/dance';
 import { PLAY_TINT } from './echo';
 import type { LineColours, LineType } from './linesSettings';
-import type { SkyBox } from './sky';
 
 /** The stage width in design pixels (playground `2560`). */
 const W = 2560;
@@ -198,7 +197,6 @@ export interface LineTypeFrame {
   restLine: number;
   kick: number;
   dt: number;
-  boxes: readonly SkyBox[];
   stops: LineStops;
   bands: (u: number, age: number) => number;
 }
@@ -217,7 +215,6 @@ export function createLineFrame(): LineTypeFrame {
     restLine: 0,
     kick: 0,
     dt: 1 / 30,
-    boxes: [],
     stops: PLAY_TINT,
     bands: sampleDance,
   };
@@ -539,8 +536,10 @@ function drawRestLine(ctx: CanvasRenderingContext2D, s: LineTypesState, f: LineT
 
 /**
  * Draw a new type (and the Flat resting line) on `ctx` in design pixels, clipped to above the
- * horizon with every claimed picture box cut out, added to what is there (playground `frame`).
- * Draws nothing for Mountains or when nothing is visible. Call `stepLineTypes` first.
+ * horizon only, added to what is there (playground `frame`). The full width is drawn in every
+ * look: no picture box is cut out. The caller chooses the canvas (the front one, above a picture
+ * behind the land, or the main one, below a picture in front of it) and the page's stacking does
+ * the rest. Draws nothing for Mountains or when nothing is visible. Call `stepLineTypes` first.
  */
 export function drawLineType(ctx: CanvasRenderingContext2D, s: LineTypesState, f: LineTypeFrame): void {
   if (f.type === 'mountains') return;
@@ -549,11 +548,7 @@ export function drawLineType(ctx: CanvasRenderingContext2D, s: LineTypesState, f
   ctx.setTransform(f.scale, 0, 0, f.scale, 0, 0);
   ctx.beginPath();
   ctx.rect(0, 0, W, f.hy + 1);
-  for (let i = 0; i < f.boxes.length; i++) {
-    const b = f.boxes[i];
-    ctx.rect(b[0] - 2, b[1] - 2, b[2] + 4, b[3] + 4);
-  }
-  ctx.clip('evenodd');
+  ctx.clip();
   ctx.globalCompositeOperation = 'lighter';
   if (f.restLine > 0.001) drawRestLine(ctx, s, f, f.restLine);
   if (f.live > 0.001) {

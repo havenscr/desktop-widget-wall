@@ -68,8 +68,6 @@ const VEIL_SETTLE_MS = 800;
 const FRONT_STYLE = { position: 'fixed', left: 0, top: 0, pointerEvents: 'none', clipPath: `inset(0 0 0 ${MAIN_LEFT}px)` } as const;
 /** Home's morning rule is re-checked this often. */
 const MORNING_CHECK_MS = 60_000;
-/** No picture boxes (the fit check's deliberate break only). */
-const NO_BOXES: readonly SkyBox[] = [];
 
 /**
  * Canvas filling the stage. Backing store = stage scale x devicePixelRatio.
@@ -100,12 +98,16 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
   // The sky layers (`sky.ts`): while a screen gives an element for it, the ground is drawn on a
   // second canvas mounted there, in front of whatever the screen puts into the sky.
   const claims = useSkyStore((s) => s.claims);
+  // Dev builds only: `?lineprobe=front|behind` reads where a new type is drawn against the picture (the fit check).
+  const [lineProbe] = useState(() => (import.meta.env.DEV ? parseLineProbe(window.location.search) : null));
+  // The picture boxes, kept only for the probe, the one reader of them: production keeps none.
   const lineBoxes = useRef<SkyBox[]>([]);
   useEffect(() => {
+    if (!lineProbe) return;
     const boxes = lineBoxes.current;
     boxes.length = 0;
     for (const id in claims) if (claims[id].boxes) boxes.push(...claims[id].boxes!);
-  }, [claims]);
+  }, [claims, lineProbe]);
   // Dev builds only: `?sky=front` mounts the front canvas everywhere, `?sky=flat` never, `?skymoon=x,y,r` moves the moon (fit-check breaks, cost measurement).
   const [skyReview] = useState(() => (import.meta.env.DEV ? parseSkyReview(window.location.search) : null));
   const alwaysFront = !zen && skyReview?.front === 'always';
@@ -154,8 +156,6 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
   // The new line types (Bars, Ribbon, Sparks, Skyline): their state and one frame input, made once.
   const types = useRef(createLineTypes());
   const typeFrame = useRef(createLineFrame());
-  // Dev builds only: `?lineprobe=1` counts a new type's pixels inside the picture boxes (the fit check).
-  const [lineProbe] = useState(() => (import.meta.env.DEV ? parseLineProbe(window.location.search) : null));
   // The scratch canvas for the lake reflection, made on first use.
   const reflection = useRef(createReflection());
   // Tell Watt (read only) where the camera is going and whether it is moving; cleared on unmount
@@ -278,7 +278,6 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
           tf.restLine = flat ? sstep(m.rest) * Math.min(1, gate.current.value * awake.current) : 0;
           tf.kick = danceKick();
           tf.dt = drawDt;
-          tf.boxes = lineProbe?.noClip ? NO_BOXES : lineBoxes.current;
           tf.stops = stops;
           typeShown = true;
           const k = visualizerWeight(camera);
@@ -311,7 +310,6 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
           tf.live = typeLiveShare(lines.type, 1, flat) * open;
           tf.restLine = flat ? open : 0;
           tf.dt = 0;
-          tf.boxes = lineBoxes.current;
           tf.stops = lineStops(lines.colours);
           typeShown = true;
         }
@@ -350,12 +348,18 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
       } else {
         drawHorizon(ctx, options);
       }
-      // A new type belongs to the land: on the front canvas when there is one, in front of a video
-      // behind the mountains as the ridgelines are, and never inside a claimed picture box.
+      // A new type belongs to the land, across the full width: on the front canvas when there is
+      // one (a video behind the mountains, so the lines stand in front of its lower part as the
+      // ridgelines do), otherwise on this canvas, where a picture in front of the land (the drive-in
+      // screen, the hologram's pane) stands over it and hides the part that passes behind.
       if (typeShown) {
         stepLineTypes(types.current, tf);
-        drawLineType(fctx ?? ctx, types.current, tf);
-        if (lineProbe) lineProbe.run(types.current, tf, lineBoxes.current, canvas);
+        const onFront = !lineProbe?.mainOnly && fctx;
+        drawLineType(onFront || ctx, types.current, tf);
+        if (lineProbe) {
+          canvas.style.zIndex = lineProbe.lift ? '60' : '';
+          lineProbe.run(types.current, tf, lineBoxes.current, canvas, onFront && fc ? fc : canvas);
+        }
       }
       // The lake mirrors the finished frame on the visualizer camera, only while lines are drawn.
       if (REFLECT && lines.reflection && (options.echo || typeShown)) {
