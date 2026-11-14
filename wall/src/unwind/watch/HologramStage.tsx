@@ -16,8 +16,11 @@ import { HOLO_PANE } from './looks';
 /** The emitter's lens on the floor, in wall pixels. */
 export const EMITTER = Object.freeze({ x: 1578, y: 572 });
 
-/** Where the beam starts on the plate's lower hairline: 22 px past each side of the pane, 6 px under it (after the tilt, measured from the pictures). */
-const BEAM = Object.freeze({ left: [1226, 464] as const, right: [1962, 450] as const });
+/**
+ * Where the beam's fan ends: the two ends of the pane's lower edge after the tilt (its left and
+ * right corners, 6 px above the lower hairline), in wall pixels.
+ */
+const BEAM = Object.freeze({ left: [1219.4, 454.4] as const, right: [1951.1, 454.4] as const });
 
 export function HologramPlate() {
   const p = HOLO_PANE;

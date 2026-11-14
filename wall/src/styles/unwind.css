@@ -754,16 +754,19 @@
    whether or not something plays; never on the video. */
 .w-lookbar {
   position: absolute;
-  left: 500px;
+  left: 460px;
   top: 424px;
   z-index: 1;
   box-sizing: border-box;
-  width: 460px;
+  width: 500px;
   height: 46px;
   background: rgba(10, 7, 28, 0.8);
 }
-.w-lookbar button {
-  padding: 0 6px;
+/* Five looks: the box grew once, to the left (its right end stays at wall x 1084), to 500 px, and the
+   segments take their own width and share what is left, so no label is ever squeezed. */
+.w-lookbar.w-seg button {
+  flex: 1 1 auto;
+  padding: 0 4px;
   font-size: 16px;
 }
 .w-lookbar button:focus-visible {
@@ -1557,11 +1560,12 @@
    choice of five, so it fits the right wing at 540 px. */
 .w-tiles {
   grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 8px;
+  gap: 6px;
 }
 .w-tile {
-  padding: 6px;
-  font-size: 15px;
+  padding: 5px;
+  font-size: 14px;
+  white-space: nowrap;
 }
 .w-pic {
   height: 84px;
@@ -1592,7 +1596,8 @@
   width: auto;
 }
 .w-srow .w-seg button {
-  padding: 0 6px;
+  flex: 1 1 auto;
+  padding: 0 3px;
   font-size: 16px;
 }
 .w-sheet {
