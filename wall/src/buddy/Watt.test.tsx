@@ -1874,6 +1874,34 @@ describe('more of a pet', () => {
     expect(where(container).x).toBeGreaterThanOrEqual(GROUNDS.unwind[1].min);
   });
 
+  it('Unwind keeps a spot per tab: a drop on Watch leaves his Listen spot alone, and each tab returns him to its own', () => {
+    const drop = (c: HTMLElement, x: number) => {
+      fireEvent.pointerDown(hitOf(c), { pointerId: 1, pointerType: 'mouse', button: 0, clientX: 500, clientY: 400 });
+      fireEvent.pointerMove(hitOf(c), { pointerId: 1, pointerType: 'mouse', clientX: 600, clientY: 400 });
+      fireEvent.pointerMove(hitOf(c), { pointerId: 1, pointerType: 'mouse', clientX: x, clientY: 300 });
+      runFor(0.6);
+      fireEvent.pointerUp(hitOf(c), { pointerId: 1, pointerType: 'mouse', clientX: x, clientY: 300 });
+      runFor(5);
+    };
+    const { container } = start();
+    drop(container, 1650);
+    const listen = stored().spots.unwind;
+    expect(listen).toBeGreaterThan(GROUNDS.unwind[1].min);
+    act(() => useWatchStore.getState().setTab('watch'));
+    runFor(2);
+    drop(container, 320);
+    const watch = stored().spots.unwindWatch;
+    expect(watch).toBeLessThan(400);
+    expect(stored().spots.unwind).toBe(listen);
+    act(() => useWatchStore.getState().setTab('listen'));
+    runFor(2);
+    expect(Math.abs(where(container).x - listen)).toBeLessThanOrEqual(60 + 1e-9);
+    act(() => useWatchStore.getState().setTab('watch'));
+    runFor(2);
+    expect(Math.abs(where(container).x - watch)).toBeLessThanOrEqual(60 + 1e-9);
+    expect(stored().spots).toMatchObject({ unwind: listen, unwindWatch: watch });
+  });
+
   it('he does not look at it while he reads, eats, or is carried; under reduced motion he stands still', () => {
     const { container } = start();
     pointer(500, 460);

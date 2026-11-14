@@ -53,8 +53,18 @@ export interface PetData {
   spots: Spots;
 }
 
-/** His spot per place, kept until he is set down elsewhere or called to the middle. */
-export type Spots = Partial<Record<StayPlace, number>>;
+/**
+ * His spot per place, kept until he is set down elsewhere or called to the middle. Unwind has one
+ * per tab: `unwind` is Listen (so a spot stored before tabs had their own is Listen's), and
+ * `unwindWatch` is Watch.
+ */
+export const SPOT_KEYS = [...STAY_PLACES, 'unwindWatch'] as const;
+export type SpotKey = (typeof SPOT_KEYS)[number];
+export type Spots = Partial<Record<SpotKey, number>>;
+/** The key of a place's spot (Unwind's by its tab). */
+export function spotKey(place: StayPlace, watch: boolean): SpotKey {
+  return place === 'unwind' && watch ? 'unwindWatch' : place;
+}
 
 export const PET_KEY = 'wall2.watt';
 
@@ -117,7 +127,7 @@ export function parsePet(raw: string | null, now: number): PetData {
     const spots: Spots = {};
     const sp = (v as { spots?: unknown }).spots;
     if (sp && typeof sp === 'object') {
-      for (const place of STAY_PLACES) {
+      for (const place of SPOT_KEYS) {
         const x = (sp as Record<string, unknown>)[place];
         if (typeof x === 'number' && Number.isFinite(x) && x >= 0 && x <= MAX_STAY_X) spots[place] = x;
       }

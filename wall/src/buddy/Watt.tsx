@@ -107,7 +107,7 @@ import {
   type ReactKind,
 } from './petFrame';
 import { PixelSvg, PropSvg, SheepSvg } from './Pixels';
-import { bump, dayKey, loadPet, moodOf, rollDay, savePet, type Cosmetic, type PetData, type StayPlace } from './pet';
+import { bump, dayKey, loadPet, spotKey, moodOf, rollDay, savePet, type Cosmetic, type PetData, type StayPlace } from './pet';
 import { sunTimes } from '../ribbon/sun';
 import { CLOVER_WAIT_MS, cloverDue, dayTopic, finishedBetween, midday, moonUp, senseWeather, weatherTopics, workingIds } from './senses';
 import { CLOVER, DUST, FIREFLY, HEART, MARK, PROP_SPRITES, SHADOW, SMALL_PX, SPRITE_PX, TUFT, TUFT_AT, type Pose, type Prop } from './sprites';
@@ -294,7 +294,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
   watchRef.current = watchTab;
   const walkObj = useRef<Walk>({ ...WALKS.work });
   const walkFor = useRef<{ place: WattPlace | null; watch: boolean; spot: number }>({ place: null, watch: false, spot: Number.NaN });
-  const spotOf = useCallback((place: WattPlace) => onGround(groundOf(place, watchRef.current), petRef.current.spots[place] ?? defaultSpot(place)), []);
+  const spotOf = useCallback((place: WattPlace) => onGround(groundOf(place, watchRef.current), petRef.current.spots[spotKey(place, watchRef.current)] ?? defaultSpot(place)), []);
   const walkOf = useCallback(
     (place: WattPlace): Walk => {
       const spot = spotOf(place);
@@ -312,9 +312,11 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
   /** Remember (or forget, with NaN) his spot on a place. */
   const setSpot = useCallback(
     (place: WattPlace, x: number) => {
+      // Unwind keeps one spot per tab: a drop on Watch never moves his Listen spot.
+      const key = spotKey(place, watchRef.current);
       const spots = { ...petRef.current.spots };
-      if (x === x) spots[place] = Math.round(x);
-      else delete spots[place];
+      if (x === x) spots[key] = Math.round(x);
+      else delete spots[key];
       petRef.current = { ...petRef.current, spots };
       update((d) => ({ ...d, spots }));
     },
@@ -1221,7 +1223,9 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
         watchSeen = watchRef.current;
         const spans = groundOf(p.place, watchSeen);
         const x = frameRef.current.x;
-        if (p.opacity > 0 && (c.mode === NONE || c.mode === SIT || c.mode === RETURN) && !isOnGround(spans, x)) {
+        const wk = walkOf(p.place);
+        // To the new tab's own spot: unless he already stands on its ground inside that walk.
+        if (p.opacity > 0 && (c.mode === NONE || c.mode === SIT || c.mode === RETURN) && (!isOnGround(spans, x) || x < wk.min - 1 || x > wk.max + 1)) {
           wanderT.current = 0;
           // Under reduced motion he is simply there (the still pose stands at the new walk's middle).
           if (reduced) cancelCarry(c);
