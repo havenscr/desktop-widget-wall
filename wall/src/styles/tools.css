@@ -11,6 +11,8 @@
   left: 1734px;
   top: 20px;
   width: 806px;
+  max-height: 588px;
+  overflow-y: auto;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
