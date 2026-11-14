@@ -1,6 +1,7 @@
-import { expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
+import type { DaySpan } from '../agents/model';
 import { lane, summary } from '../agents/fixtures';
-import { busyAt, busyLevels, busyPeak, busyStep, busyTime, parentIds, stepsFor, stepWords, timeBySteps, todayLimitText, workingSpans } from './busy';
+import { busyAt, busyLevels, busyPeak, busyStep, busyTime, parentIds, settleOpenRuns, stepsFor, stepWords, timeBySteps, todayLimitText, workingSpans } from './busy';
 import { activityCells } from './model';
 import { usePacificTime } from './testZone';
 
@@ -80,4 +81,36 @@ it('the time at each step adds up to the time anyone worked, and the meter tip s
   expect(todayLimitText(by, 4)).toBe('Today: over 4 for 6 m, at 4 for 4 m.');
   expect(todayLimitText([0, 0, 0, 0, 12 * MIN, 108 * MIN], 4)).toBe('Today: over 4 for 1 h 48 m, at 4 for 12 m.');
   expect(todayLimitText([0, 5 * MIN, 0, 0, 0, 0], 4)).toBe('Today: never at your limit of 4.');
+});
+
+describe('settleOpenRuns', () => {
+  const at = (hm: string) => Date.parse(`2026-11-11T${hm}:00Z`);
+  const iso = (hm: string) => new Date(at(hm)).toISOString();
+  const open = { lane: 'a', start: iso('09:00'), end: null, kind: 'run' as const };
+  const card = (over: object = {}) => ({ id: 'a', title: 'A', stage: 'build', state: 'working', line: '', elapsedS: 0, waiting: false, pr: null, ...over }) as never;
+  const none = new Set<string>();
+  const parents = new Set(['a']);
+  const settle = (day: DaySpan[], lanes: unknown[], seen: Map<string, number>, working = none) =>
+    settleOpenRuns({ lanes: lanes as never, sessionsList: null, day }, parents, working, seen, at('11:30'), at('11:30'));
+
+  it('(a) the helper\'s idle seconds come first, then its waiting seconds', () => {
+    expect(settle([open], [card({ live: 'idle', idleS: 1800, waitingSinceS: 600 })], new Map([['a', at('10:00')]])).ends.get('a')).toBe(at('11:00'));
+    expect(settle([open], [card({ state: 'blocked', waitingSinceS: 600 })], new Map()).ends.get('a')).toBe(at('11:20'));
+  });
+  it('(b) else the last time it was seen working', () => {
+    const r = settle([open], [card({ live: 'idle' })], new Map([['a', at('10:45')]]));
+    expect(r.day[0].end).toBe(iso('10:45'));
+  });
+  it('(c) else the latest stamp the log gives, else the run\'s own start', () => {
+    const wait = { lane: 'a', start: iso('09:20'), end: iso('09:30'), kind: 'wait' as const };
+    expect(settle([open, wait], [card({ live: 'idle' })], new Map()).ends.get('a')).toBe(at('09:30'));
+    expect(settle([open], [card({ live: 'idle' })], new Map()).ends.get('a')).toBe(at('09:00'));
+  });
+  it('never ends before the run began or after the cut; a working card and a non-parent stay open', () => {
+    expect(settle([open], [card({ live: 'idle' })], new Map([['a', at('08:00')]])).ends.get('a')).toBe(at('09:00'));
+    expect(settle([open], [card({ live: 'idle', idleS: 0 })], new Map()).ends.get('a')).toBe(at('11:30'));
+    expect(settle([open], [card()], new Map(), new Set(['a'])).day[0].end).toBeNull();
+    const kid = { lane: 'kid', start: iso('09:00'), end: null, kind: 'run' as const };
+    expect(settle([kid], [], new Map()).day[0].end).toBeNull();
+  });
 });

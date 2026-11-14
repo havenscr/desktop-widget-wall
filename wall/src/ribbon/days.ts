@@ -253,9 +253,11 @@ export function recordRows(r: DayRecord, now: number): PanelRow[] {
  * Stage colours come from the saved record when it has the session; the waits always come
  * from the live log; a session the record does not know draws its live runs in cyan. A
  * record-only row opens through its record's date. `until` ends open spans (now, or the
- * stale cut).
+ * stale cut). `ends` says where a session whose card stopped working with a run still open
+ * stopped (`settleOpenRuns`); the record's open stage span of that session ends there too, so
+ * the row, the strip and the sums read one span.
  */
-export function todayRows(s: OmniSummary, record: DayRecord | null, now: number, until: number = now, skewMs = 0): PanelRow[] {
+export function todayRows(s: OmniSummary, record: DayRecord | null, now: number, until: number = now, skewMs = 0, ends: ReadonlyMap<string, number> = new Map()): PanelRow[] {
   const midnight = dayStart(isoDay(now));
   // An older helper sends no `sessionsList`: its `lanes` are then the cards Work shows.
   const cardList = s.sessionsList ?? s.lanes;
@@ -281,7 +283,7 @@ export function todayRows(s: OmniSummary, record: DayRecord | null, now: number,
     }
     if (fromRec) {
       for (const sp of fromRec.spans) {
-        const [a, b] = clip(Date.parse(sp.start), sp.end === null ? until : Date.parse(sp.end));
+        const [a, b] = clip(Date.parse(sp.start), sp.end === null ? Math.min(until, ends.get(id) ?? until) : Date.parse(sp.end));
         if (!Number.isFinite(a) || !Number.isFinite(b) || b <= a) continue;
         workMs += b - a;
         spans.push({ kind: sp.stage, from: hourOf(a, midnight), to: hourOf(b, midnight), open: sp.end === null });

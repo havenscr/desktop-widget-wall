@@ -79,7 +79,7 @@ function BusyLine({ spans, limit, today }: { spans: BusySpan[]; limit: number; t
       <span className="at-busy-k">{today ? 'Busy at once' : 'Open at once'}</span>
       {stepsFor(limit).map((st) => (
         <span key={st} className="at-busy-s">
-          <i className={`sw b${st}`} aria-hidden="true" />
+          <i className={`sw b${today ? st : Math.min(3, st)}`} aria-hidden="true" />
           <span className="w">{today ? stepWords(st, limit) : stepWords(st, limit).replace('over', 'more than')}</span>
           <b className={by[st] >= 60_000 ? (today && st === 5 ? 'over' : '') : 'none'}>{shortSpan(by[st])}</b>
         </span>
@@ -143,12 +143,13 @@ export function AgentsToday({ now, onClose }: { now: number; onClose: () => void
   useBehindDrawer(ref, onClose, 'opener');
 
   const read = days.records[shown];
+  const busyT = useBusyToday(now);
   const stale = agentsStale(st);
   const until = agentsUntil(st) ?? now;
   let rows: PanelRow[] | null = null;
   let note = '';
   if (isToday) {
-    if (st.summary) rows = todayRows(st.summary, read?.record ?? null, now, Math.min(now, until), st.skewMs);
+    if (st.summary) rows = todayRows(busyT?.summary ?? st.summary, read?.record ?? null, now, Math.min(now, until), st.skewMs, busyT?.ends);
     note = !st.summary
       ? st.status === 'loading'
         ? ''
@@ -181,7 +182,6 @@ export function AgentsToday({ now, onClose }: { now: number; onClose: () => void
   // Busy at once: today from the live working spans (one rule with the meter and the strip),
   // a past day from its record's spans (hours from that day's midnight). The limit is the
   // helper's, as the meter reads it; with no live answer there is no limit to measure against.
-  const busyT = useBusyToday(now);
   const limit = knownLimit(st.summary?.slots.limit);
   const base = isToday ? dayStart(today) : 0;
   const busySpans: BusySpan[] = isToday ? (busyT?.spans ?? []) : (rows ?? []).flatMap((r) => r.spans.map((x) => ({ id: r.id, start: x.from * HOUR_MS, end: x.to * HOUR_MS })));
@@ -192,7 +192,9 @@ export function AgentsToday({ now, onClose }: { now: number; onClose: () => void
   for (const l of showBusy ? busyLevels(busySpans) : []) {
     const from = (l.start - base) / HOUR_MS;
     const to = (l.end - base) / HOUR_MS;
-    const step = busyStep(l.count, lim);
+    // A past day's record cannot tell working from waiting, so it never draws against the limit:
+    // plain steps only (no amber at the limit, no red or hatch over it).
+    const step = isToday ? busyStep(l.count, lim) : Math.min(3, busyStep(l.count, lim));
     const last = band[band.length - 1];
     if (last && last.step === step && Math.abs(last.to - from) < 1e-9) {
       last.to = to;

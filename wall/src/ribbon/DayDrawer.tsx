@@ -6,6 +6,7 @@ import { focusSession } from '../agents/open';
 import { agentsStale, useAgentsStore } from '../agents/useAgents';
 import { tip } from '../ui/HoverTip';
 import { daySegments, laneStateWord } from './AgentRow';
+import { isoDay, useDaysStore } from './days';
 import { useBehindDrawer } from './DrawerScrim';
 import { allDayBarText, hm, hourText, shortTime, spanText, wallHour, type Chip } from './model';
 
@@ -128,7 +129,8 @@ export function DayDrawer({
   useBehindDrawer(ref, onClose);
   const s: OmniSummary | null = st.summary;
   const stale = agentsStale(st);
-  const segs = daySegments(st, now);
+  const todayRecord = useDaysStore((d) => d.records[isoDay(now)]);
+  const segs = daySegments(st, now, todayRecord?.record ?? null);
   const list = s ? cards(s) : [];
   const rows = list
     .map((l, i) => ({ l, num: i + 1, word: laneStateWord(l) }))

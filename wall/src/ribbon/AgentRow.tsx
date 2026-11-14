@@ -2,8 +2,9 @@ import { useEffect, useRef } from 'react';
 import { agentLayout, cards, dayTotals, laneWaits, type AgentSegment, type Lane, type OmniSummary } from '../agents/model';
 import { agentsStale, agentsUntil, useAgents, useAgentsStore, type AgentsState } from '../agents/useAgents';
 import { tip } from '../ui/HoverTip';
-import { busyAt, busyStep, countedSegments, knownLimit, logSegments, parentIds, workingIds, workingSpans, type BusySpan, type LogSeg } from './busy';
+import { busyAt, busyStep, countedSegments, knownLimit, logSegments, parentIds, settleOpenRuns, workingIds, workingSpans, type BusySpan, type LogSeg } from './busy';
 import { dayStart, isoDay, reloadDay, useDaysStore, type DayRecord } from './days';
+import { noteWorking, seenWorking } from './workSeen';
 import { activityCells, agentsLineParts, agentsLineWidth, agentsLineX, END_HOUR, needle, RX, shortTime, START_HOUR, wallHour, type AgentCounts } from './model';
 
 /** x on the ribbon for a time today, clamped to 6 AM to 12 AM; null for another day. */
@@ -36,10 +37,43 @@ export function agentCounts(s: OmniSummary): AgentCounts {
   return { total: list.length, need, working, idle: list.length - need - working };
 }
 
+/**
+ * The last moment each session was seen working is kept for the day (`workSeen.ts`): every
+ * answer the helper gives is noted as it arrives, before any view reads it.
+ */
+let watching = false;
+function watchWorking(): void {
+  if (watching) return;
+  watching = true;
+  useAgentsStore.subscribe((st) => {
+    const s = st.summary;
+    if (!s || agentsStale(st)) return;
+    const at = Date.parse(s.now) - st.skewMs;
+    if (Number.isFinite(at)) noteWorking(workingIds(s), at);
+  });
+}
+watchWorking();
+
+/**
+ * Today's summary with every open run of a parent whose card is not working ended where the
+ * session stopped (`settleOpenRuns`), so each view reads the same span. `ends` names those ends.
+ */
+export function settledToday(st: AgentsState, now: number, record: DayRecord | null = null): { summary: OmniSummary; ends: Map<string, number>; parents: Set<string>; until: number } | null {
+  const s = st.summary;
+  if (!s) return null;
+  const until = Math.min(now, agentsUntil(st) ?? now);
+  const parents = parentIds(s, record);
+  const answered = Date.parse(s.now) - st.skewMs;
+  const ref = Number.isFinite(answered) ? Math.min(answered, until) : until;
+  const settled = settleOpenRuns(s, parents, workingIds(s), seenWorking(now), ref, until, st.skewMs);
+  return { summary: { ...s, day: settled.day }, ends: settled.ends, parents, until };
+}
+
 /** Every drawn span today (all sessions, none folded), with stale data cut at the last good answer. */
-export function daySegments(st: AgentsState, now: number): AgentSegment[] {
-  if (!st.summary) return [];
-  return agentLayout(st.summary, now, (ms) => ribbonX(ms, now), agentsUntil(st), st.skewMs, Number.POSITIVE_INFINITY).segs;
+export function daySegments(st: AgentsState, now: number, record: DayRecord | null = null): AgentSegment[] {
+  const t = settledToday(st, now, record);
+  if (!t) return [];
+  return agentLayout(t.summary, now, (ms) => ribbonX(ms, now), agentsUntil(st), st.skewMs, Number.POSITIVE_INFINITY).segs;
 }
 
 /** Where the agents line sits and how wide it is, or null when it is not drawn. */
@@ -70,8 +104,10 @@ export function agentBoxes(st: AgentsState, now: number): { x: number; width: nu
 /**
  * Today's counted spans, as the header's meter, the strip's cells and the panel's "Busy at once"
  * line all count them (`busy.ts`): the day log's spans of parent and standalone sessions only,
- * clipped to today (a span from before midnight counts from midnight), with no open run of a
- * session whose card does not say working. `until` is now, or the last good answer for a stale
+ * clipped to today (a span from before midnight counts from midnight), where an open run of a
+ * session whose card does not say working is ended where the session stopped (`settleOpenRuns`).
+ * `summary` is the summary with those ends applied and `ends` says where each stopped, for the
+ * panel's rows. `until` is now, or the last good answer for a stale
  * one; `fromLog` is false when the helper sent no day log at all. `limit` is null when the
  * helper sent none (or a zero): nothing is then measured against a limit.
  */
@@ -81,15 +117,16 @@ export interface BusyToday {
   limit: number | null;
   until: number;
   fromLog: boolean;
+  summary: OmniSummary;
+  ends: Map<string, number>;
 }
 
 export function busyToday(st: AgentsState, now: number, record: DayRecord | null = null): BusyToday | null {
-  const s = st.summary;
-  if (!s) return null;
-  const until = Math.min(now, agentsUntil(st) ?? now);
-  const parents = parentIds(s, record);
-  const segs = countedSegments(logSegments(s.day, dayStart(isoDay(now)), until, st.skewMs), parents, workingIds(s));
-  return { segs, spans: workingSpans(segs, parents), limit: knownLimit(s.slots.limit), until, fromLog: s.day.length > 0 };
+  const t = settledToday(st, now, record);
+  if (!t) return null;
+  const s = t.summary;
+  const segs = countedSegments(logSegments(s.day, dayStart(isoDay(now)), t.until, st.skewMs), t.parents);
+  return { segs, spans: workingSpans(segs, t.parents), limit: knownLimit(s.slots.limit), until: t.until, fromLog: s.day.length > 0, summary: s, ends: t.ends };
 }
 
 /** Today's counted spans from the shared stores (today's saved record names the sessions that closed). */
@@ -138,10 +175,10 @@ export function AgentRow({ now, dueCount = null, onOpenPanel }: { now: number; d
   const st = useAgents();
   const stale = agentsStale(st);
   const s = st.summary;
-  const segs = daySegments(st, now);
   const until = agentsUntil(st) ?? now;
   const today = isoDay(now);
   const read = useDaysStore((d) => d.records[today]);
+  const segs = daySegments(st, now, read?.record ?? null);
   const busy = busyToday(st, now, read?.record ?? null);
   // Only parent and standalone sessions draw and count (a child or a side chat never does).
   const cells = busy ? activityCells(busy.segs, now, Math.min(now, until)) : [];

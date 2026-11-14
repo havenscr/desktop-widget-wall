@@ -8,9 +8,11 @@ import type { DayRecord } from './days';
  * A session counts while it is WORKING: a run span in the helper's live day log (waits and
  * review spans do not count), and only when it is a parent or standalone session the wall knows
  * today (a card, or a session in today's saved record). A finished run counts for the time it
- * ran; an OPEN run counts only while its session's card says working (an idle, waiting or failed
- * card with a run still open does not count, so the count agrees with the pills). A child or a
- * side chat is never counted on its own, so a family counts once, as the meter always did.
+ * ran; an OPEN run is open only while its session's card says working. When the card goes idle,
+ * waiting or failed (or the session closes) with the run still open, the run is kept and ENDED
+ * where the session stopped (`settleOpenRuns`), so past work stays in every view and the count
+ * for now still equals the cards that say working. A child or a side chat is never counted on
+ * its own, so a family counts once, as the meter always did.
  * Two spans of the same session never count it twice. A span that crosses midnight counts for
  * the part inside the day.
  *
@@ -74,11 +76,64 @@ export function workingIds(s: Pick<OmniSummary, 'lanes' | 'sessionsList'>): Set<
 }
 
 /**
- * The spans that count: parents and standalone sessions only, and no open run of a session whose
- * card does not say working (so an idle card with a run still open adds nothing).
+ * The day log with every open run of a parent session whose card does not say working ENDED, so
+ * past work is never dropped and a stopped session never counts as working now. The end is the
+ * last moment the wall can honestly name, in this order:
+ * (a) the helper's own word: seconds idle (`idleS`), else seconds waiting (`waitingSinceS`),
+ *     counted back from the time of its answer (`ref`);
+ * (b) the last time this wall saw the card working (`seen`, kept per session id);
+ * (c) the latest stamp the day log itself gives for that session at or after the run's start
+ *     (another span's start or end); with none, the run's own start, so a session the wall never
+ *     saw working today (a fresh start with an idle card) counts for no time rather than for
+ *     invented time.
+ * The end never falls before the run's start nor after `cut`. An open run of a working card is
+ * left open. `ends` names where each ended session stopped, for the views that read the saved
+ * record's open stage spans. Times are this PC's clock; `skewMs` maps them back to the helper's
+ * for the rewritten spans.
  */
-export function countedSegments(segs: readonly LogSeg[], parents: ReadonlySet<string>, working: ReadonlySet<string>): LogSeg[] {
-  return segs.filter((g) => parents.has(g.lane) && !(g.kind === 'run' && !working.has(g.lane)));
+export interface Settled {
+  day: DaySpan[];
+  ends: Map<string, number>;
+}
+
+export function settleOpenRuns(
+  s: Pick<OmniSummary, 'lanes' | 'sessionsList' | 'day'>,
+  parents: ReadonlySet<string>,
+  working: ReadonlySet<string>,
+  seen: ReadonlyMap<string, number>,
+  ref: number,
+  cut: number,
+  skewMs = 0,
+): Settled {
+  const ends = new Map<string, number>();
+  const byId = new Map(cards(s).map((l) => [l.id, l]));
+  const stamps = (id: string, from: number, self: DaySpan): number => {
+    let latest = from;
+    for (const d of s.day) {
+      if (d === self || d.lane !== id) continue;
+      for (const t of [Date.parse(d.start) - skewMs, d.end === null ? NaN : Date.parse(d.end) - skewMs]) if (Number.isFinite(t) && t >= from && t <= cut) latest = Math.max(latest, t);
+    }
+    return latest;
+  };
+  const secs = (v: number | null | undefined): number | null => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : null);
+  const day = s.day.map((d) => {
+    if (d.kind !== 'run' || d.end !== null || !parents.has(d.lane) || working.has(d.lane)) return d;
+    const start = Date.parse(d.start) - skewMs;
+    if (!Number.isFinite(start)) return d;
+    const card = byId.get(d.lane);
+    const quiet = secs(card?.idleS) ?? secs(card?.waitingSinceS);
+    const seenAt = seen.get(d.lane);
+    const raw = quiet !== null ? ref - quiet * 1000 : seenAt !== undefined ? seenAt : stamps(d.lane, start, d);
+    const end = Math.min(cut, Math.max(start, raw));
+    ends.set(d.lane, Math.max(ends.get(d.lane) ?? -Infinity, end));
+    return { ...d, end: new Date(end + skewMs).toISOString() };
+  });
+  return { day, ends };
+}
+
+/** The spans that count: parents and standalone sessions only (open runs were ended by `settleOpenRuns`). */
+export function countedSegments(segs: readonly LogSeg[], parents: ReadonlySet<string>): LogSeg[] {
+  return segs.filter((g) => parents.has(g.lane));
 }
 
 /** The working spans of the known parents, from the drawn day log (`run` open, `past` finished). */
