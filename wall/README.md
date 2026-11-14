@@ -857,6 +857,11 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
   layout on purpose and must fail; `-- --self-test` runs every such case and passes only
   if each one failed with the FAIL line for the side it broke. jsdom has no layout, so the unit tests cannot check this; CI does
   not run it either.
+- **Review script areas** (`wall/scripts/areas/`): new gallery states and fit-check
+  variants, measurements, rules and deliberate breaks live in one area file. Both scripts
+  discover the files in sorted order and reject duplicate state names, measurement keys,
+  rule keys and break names. Use `-- --area=<name>` with either script to run only one area.
+  See `wall/scripts/areas/README.md` for the complete interface and examples.
 - **Browser time limit** (`wall/scripts/lib/chrome-run.mjs`): the one-shot browser runs of the fit check, `fit:home`
   and `echo-calm` stop after 45 s (90 s for `fit:home`, 240 s for `echo-calm`), kill only the browser they started (its own process group while it runs; afterwards, on Linux, any child left in that group, by its own pid), remove its temporary folder and try again, three tries in all; `WALL_CHROME_LIMIT_MS` replaces the limit of every one of them, those two included. The
   gallery restarts its browser once for a state that timed out and retries the states that were waiting on it. `npm --prefix wall run chrome-run-test` proves it (Linux; set `WALL_CHROME` to add a real page).
@@ -1600,7 +1605,7 @@ there, still playing, when the owner comes back (see "The stage layer" below).
   | | See-through | 10 to 60 | 26 | how much of the wall shows through the glass plate: 100 less the plate's alpha, so 26 is today's 0.74; more shows more |
   | | Beam | on or off | on | the emitter's fan and rays |
 
-  Fit-check (`--only=look settings`) measures every look at both ends of each range (the picture
+  Fit-check (`--area=watchlooks`, the area file `scripts/areas/watchlooks.mjs`) measures every look at both ends of each range (the picture
   is the box the code uses, uncropped 16:9, clear of the left block, clock, tabs and list card,
   nothing painted on it, the whole tower and the travelling light clear of it, hiding the sign
   moves nothing else) and the Looks sheet with its longest section (inside the stage, clear of the

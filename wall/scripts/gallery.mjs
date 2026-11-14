@@ -19,6 +19,7 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { killTree, reapGroup, sweepGroup, trackGroup } from './lib/chrome-run.mjs';
+import { loadAreasOrExit, validateRegistrations } from './areas/load.mjs';
 
 const args = process.argv.slice(2);
 const flag = (name) => args.find((a) => a === `--${name}` || a.startsWith(`--${name}=`));
@@ -306,27 +307,6 @@ state('unwind', 'watch: whole sky at dusk', `${WM}&wlist=three&wlook=sky&wplay=0
 state('unwind', 'watch: sun, 24 saved, Twitch', `${WM}&wlist=many&wlook=sun&wplay=2`, TIMES.night);
 state('unwind', 'watch: settings, four looks, whole sky chosen', `${WM}&wlist=three&wlook=sky&wplay=0&wsheet=one`, TIMES.night);
 state('unwind', 'watch: settings, four looks per kind', `${WM}&wlist=many&wlook=sun&wplay=0&wsheet=kind`, TIMES.night);
-// look settings: the sheet's section for a look (words, tick, Reset), the sun small and large, the
-// whole sky's soft edge at 0, 120 and 200 px, and one non-default state for each other look.
-state('unwind', 'look settings: sheet, the sun at 380 px', `${WM}&wlist=three&wlook=sun&wplay=0&wsheet=one&wtune=sun.size=380`, TIMES.night);
-state('unwind', 'look settings: sheet, whole sky at its usual', `${WM}&wlist=three&wlook=sky&wplay=0&wsheet=one&wtune=sky.floor=1`, TIMES.night);
-state('unwind', 'look settings: sheet, a look per kind, the drive-in tuned', `${WM}&wlist=many&wplay=2&wsheet=kind&wtune=drivein.size=90,drivein.sign=0`, TIMES.night);
-state('unwind', 'look settings: sheet, the hologram, see-through at 40', `${WM}&wlist=three&wlook=holo&wplay=0&wsheet=one&wtune=holo.see=40`, TIMES.night);
-state('unwind', 'look settings: the sun small', `${WM}&wlist=three&wlook=sun&wplay=0&wtune=sun.size=280,sun.up=60,sun.glow=100`, TIMES.night);
-state('unwind', 'look settings: the sun large and low', `${WM}&wlist=three&wlook=sun&wplay=0&wtune=sun.up=-60,sun.glow=20,sun.streak=0`, TIMES.dusk);
-for (const soft of [0, 120, 200]) state('unwind', `look settings: whole sky, soft edge ${soft}`, `${WM}&wlist=three&wlook=sky&wplay=0&wposter=bright&wtune=sky.soft=${soft}`, TIMES.noon);
-state('unwind', 'look settings: whole sky, smallest and dim, no floor light', `${WM}&wlist=three&wlook=sky&wplay=0&wtune=sky.size=60,sky.bright=60,sky.floor=0`, TIMES.night);
-state('unwind', 'look settings: feathered, largest, wide soft edge', `${WM}&wlist=three&wlook=feather&wplay=0&wtune=feather.size=108,feather.soft=30,feather.glow=100`, TIMES.night);
-state('unwind', 'look settings: feathered, small, sharp edge', `${WM}&wlist=three&wlook=feather&wplay=0&wtune=feather.size=60,feather.soft=10,feather.glow=0`, TIMES.night);
-state('unwind', 'look settings: drive-in, smallest, no sign', `${WM}&wlist=three&wlook=drivein&wplay=0&wtune=drivein.size=80,drivein.sign=0,drivein.floor=100`, TIMES.night);
-state('unwind', 'look settings: drive-in, largest', `${WM}&wlist=three&wlook=drivein&wplay=0&wtune=drivein.size=105,drivein.floor=0`, TIMES.night);
-state('unwind', 'look settings: drive-in, usual: no light, sign shown, neon lit', `${WM}&wlist=three&wlook=drivein&wplay=0`, TIMES.night);
-state('unwind', 'look settings: drive-in, sign hidden', `${WM}&wlist=three&wlook=drivein&wplay=0&wtune=drivein.sign=0`, TIMES.night);
-state('unwind', 'look settings: drive-in, neon line off', `${WM}&wlist=three&wlook=drivein&wplay=0&wtune=drivein.neon=0`, TIMES.night);
-state('unwind', 'look settings: drive-in, travelling light on, playing', `${WM}&wlist=three&wlook=drivein&wplay=0&wtune=drivein.light=1`, TIMES.night);
-state('unwind', 'look settings: drive-in, travelling light switched on, paused so it is not drawn', `${WM}&wlist=three&wlook=drivein&wplay=0&wstate=paused&wtune=drivein.light=1`, TIMES.night);
-state('unwind', 'look settings: hologram, flat, no beam, light plate', `${WM}&wlist=three&wlook=holo&wplay=0&wtune=holo.tilt=0,holo.beam=0,holo.see=60`, TIMES.night);
-state('unwind', 'look settings: hologram, steepest, dark plate', `${WM}&wlist=three&wlook=holo&wplay=0&wtune=holo.tilt=12,holo.see=10`, TIMES.night);
 // watch polish: the wall's own control row (the gear its last button) in every look, with a mock
 // player (`wstate`): a single video, a playlist, paused, autoplay refused, Twitch, nothing reported.
 state('unwind', 'watch polish: drive-in, single video', `${WM}&wlist=three&wlook=drivein&wplay=0`, TIMES.night);
@@ -908,12 +888,6 @@ EXPECT.push(
   ['unwind', 'lines sheet: the Lines side from Listen', ['How the lines move', 'Bars', '50, your usual', 'One setting for the lines everywhere music plays.']],
 );
 
-EXPECT.push(
-  ['unwind', 'look settings: sheet, the sun at 380 px', ['The sun', 'Floor streak', '380 px, smaller than usual', 'Reset to my usual', 'Each look keeps its own settings. Changes show at once.']],
-  ['unwind', 'look settings: sheet, the hologram', ['Hologram', 'See-through', '40, clearer than usual', 'Beam', 'Reset to my usual']],
-  ['unwind', 'look settings: sheet, whole sky at its usual', ['Whole sky', 'Soft edge', '120 px, your usual', 'Saved here:', 'Each look keeps its own settings. Changes show at once.']],
-  ['unwind', 'look settings: sheet, a look per kind', ['Settings for', 'A look keeps its own settings, whatever kind of video plays in it. Changes show at once.', '90%, smaller than usual', 'Off']],
-);
 // watt drive-in: the drive-in look is on with something playing (Watt himself has no text).
 EXPECT.push(['unwind', 'Watt: drive-in', ['Open in YouTube']]);
 
@@ -922,7 +896,6 @@ EXPECT.push(['unwind', 'Watt: drive-in', ['Open in YouTube']]);
  * reason is recorded in the manifest. Everything else that sets a knob needs an EXPECT.
  */
 const NO_TEXT = [
-  ['unwind', 'look settings: ', 'the settings change the drawing only; fit-check measures the picture box, the clearances and the sheet'],
   ['work', 'watch behaviour: a video playing elsewhere', 'the rail mark is drawn, not text; fit-check checks it and the stage'],
   ['work', 'music paused', 'only the play and pause icon changes'],
   ['work', 'box numbers stale', 'the numbers keep their text and are only dimmed'],
@@ -943,44 +916,26 @@ const NO_TEXT = [
   ['unwind', 'Watt: on Watch', 'only where Watt stands changes'],
 ];
 
-// On Air: the show timer, the run of show from run-of-show.txt (`show=`), the notes, Mark a moment
-// (`marks=`) and the recording keys, with the stored timer (`oatimer=`) running, stopped or idle.
-// hz=onair: the horizon's camera is On Air's own from the first frame, so Watt (who waits for his place's camera) stands in the still.
-const onAir = (extra) => url('work', TYPICAL_AT, `screen=onair&${extra}`).replace('hz=work', 'hz=onair');
-add('onair', 'on air: typical (running at 42:13)', onAir('show=typical&marks=2&oatimer=run'), true);
-add('onair', 'on air: stopped', onAir('show=typical&marks=2&oatimer=stopped'), true);
-add('onair', 'on air: no file', onAir('show=missing&marks=0&oatimer=idle'), true);
-add('onair', 'on air: refused file', onAir('show=refused&marks=0&oatimer=idle'), true);
-add('onair', 'on air: forty parts', onAir('show=forty&marks=2&oatimer=run'), true);
-add('onair', 'on air: long notes', onAir('show=long&marks=2&oatimer=run'), true);
-add('onair', 'on air: marks full', onAir('show=typical&marks=full&oatimer=run'), true, '.oa-mark-btn');
-add('onair', 'on air: one part', onAir('show=one&marks=0&oatimer=run'), true);
-add('onair', 'on air: read fails', onAir('show=down&marks=0&oatimer=idle'), true);
-add('onair', 'on air: recording, Stop lit', onAir('show=typical&marks=2&oatimer=run&rec=1'), true);
-add('onair', 'on air: Watt standing', onAir('show=typical&marks=2&oatimer=run&wattspot=1000'), true);
-add('onair', 'on air: timer stopped at 24 hours', onAir('show=typical&marks=2&oatimer=limit'), true);
-add('onair', 'on air: Open file failed, marks line unchanged', onAir('show=missing&marks=2&oatimer=idle&openfail=show'), true, '.oa-empty-btn');
-add('onair', 'on air: reset asks again', onAir('show=typical&marks=2&oatimer=stopped'), true, '.oa-reset');
-EXPECT.push(
-  ['onair', 'on air: typical', ['42:1', 'Product demo', '7 min left', 'Point it at the real model first', 'Next: Audience questions, 15 min', '2 marked: 03:12, 09:40. Saved to marks.txt', 'Record 16:9', 'Hide screen', '!+1 more']],
-  ['onair', 'on air: stopped', ['42:13', 'stopped at', 'Start', 'Reset']],
-  ['onair', 'on air: no file', ['No run-of-show.txt yet', 'Open file', '## Part name | 10', 'None yet today']],
-  ['onair', 'on air: refused file', ['run-of-show.txt is over 32 KB', 'Fix the file']],
-  ['onair', 'on air: forty parts', ['Segment 40: Questions', 'Marathon stream', '4 lines skipped']],
-  ['onair', 'on air: long notes', ['An extremely long part name', 'Note 12: walk through', ' more']],
-  ['onair', 'on air: marks full', 'marks.txt is full; move it aside'],
-  ['onair', 'on air: one part', ['This is the last part', 'Product demo']],
-  ['onair', 'on air: read fails', 'Could not read run-of-show.txt'],
-  ['onair', 'on air: recording', ['Recording00:', 'Mark a moment']],
-  ['onair', 'on air: Watt standing', ['Product demo', '42:1']],
-  ['onair', 'on air: timer stopped at 24 hours', ['24:00:00', 'Stopped at 24 hours', 'Start']],
-  ['onair', 'on air: Open file failed, marks line unchanged', ['Could not open run-of-show.txt', '2 marked: 03:12, 09:40. Saved to marks.txt']],
-  ['onair', 'on air: reset asks again', 'Reset? Click again'],
-);
+const areaFlag = flag('area');
+const areaName = areaFlag === undefined ? undefined : areaFlag.includes('=') ? areaFlag.slice(areaFlag.indexOf('=') + 1) : '';
+const areas = await loadAreasOrExit(areaName);
+const activeAreas = areaName ? areas.filter((area) => area.name === areaName) : areas;
+try {
+  validateRegistrations(areas, { 'state name': STATES.map((stateEntry) => `${stateEntry.screen}\0${stateEntry.name}`) });
+} catch (error) {
+  console.error(`areas: ${error.message}`);
+  process.exit(2);
+}
+const areaStates = [];
+for (const area of activeAreas) {
+  for (const entry of area.gallery?.states ?? []) areaStates.push({ ...entry, click: entry.actions });
+}
+STATES.push(...areaStates);
 
 const matches = (st, [sc, prefix, , exact]) => sc === st.screen && (exact === true ? st.name === prefix : st.name.startsWith(prefix));
 const missing = [];
 for (const st of STATES) {
+  if (st.expect !== undefined || st.expectNote !== undefined) continue;
   const hit = EXPECT.find((e) => matches(st, e));
   if (hit) st.expect = hit[2];
   else {
@@ -995,7 +950,8 @@ if (missing.length) {
 }
 
 const only = flag('only')?.split('=')[1]?.toLowerCase();
-const selected = only ? STATES.filter((s) => `${s.screen} ${s.name}`.toLowerCase().includes(only)) : STATES;
+const availableStates = areaName ? areaStates : STATES;
+const selected = only ? availableStates.filter((s) => `${s.screen} ${s.name}`.toLowerCase().includes(only)) : availableStates;
 
 if (selected.length === 0) {
   console.error(`gallery: --only=${only} matches no state (try --list)`);

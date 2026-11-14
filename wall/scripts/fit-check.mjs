@@ -31,9 +31,9 @@
 // CI does not run this; run it by hand before a layout change is handed over.
 //
 //   WALL_CHROME=/path/to/chrome-or-headless-shell npm --prefix wall run fit-check
-//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, card-end, header, deck, tiles, picker, chips, heading, zenhint, strip, fold, drawer, rows, handle, sky, floor, sun, tools, toolsnames, yt-clip, yt-text, yt-control, yt-row, yt-actions, meetfill, meetempty, fy-height, key-edge, hide-pill, hide-note, leave-band, rec-chip, rec-height, tile-height, tile-icon, tile-iconbox, drawer-scrim, lwbuttons, lwoverlap, lwsquare, lwring, lwtemp, lwround, sky-front, sky-moon, sky-always, sky-crop, sky-seam, sky-soft, sky-foot, tower-over, tower-wide, tower-box, tower-switch, holo-big, holo-noblend, holo-beam, holo-take, tile-text, listen-player, listen-card, listen-slot, listen-next, lines-size, lines-control, lines-text, lines-clip, watch-rest, watch-title, watch-away, watch-mark, lip-cover, lip-band, lip-scrim, row-parts, over-hatch, row-type, onair-box, onair-notes, onair-keys, onair-watt, watt-seat, watt-spot, watt-tower, watt-ground, tune-box, tune-clear, tune-tower, tune-sign, tune-light, tune-sheet, tune-control, tune-text, tune-cut, tune-clip, tune-row, tune-foot, tune-fade, tune-remnant, tune-gap)
+//   npm --prefix wall run fit-check -- --overflow=right
+//   npm --prefix wall run fit-check -- --list-breaks
 //   npm --prefix wall run fit-check -- --self-test
-//   npm --prefix wall run fit-check -- --only=look settings    (only the states whose name contains that text)
 //
 // WALL_CHROME (or the first argument that is not a flag) is a Chromium or
 // chrome-headless-shell binary. `--overflow=<side>` adds a stylesheet that pushes a checked
@@ -47,12 +47,26 @@ import { inflateSync } from 'node:zlib';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { ChromeRunError, onCleanup, runChrome } from './lib/chrome-run.mjs';
+import { loadAreasOrExit, validateFitReferences, validateRegistrations } from './areas/load.mjs';
 
 // The whole sky's picture box in wall pixels (LOOK_BOXES.sky in looks.ts, which fit-check compares with the drawn one).
 const LOOK_BOX_SKY = { x: 1106, y: 16, w: 889, h: 500 };
 
 const args = process.argv.slice(2);
 const flag = (name) => args.find((a) => a === `--${name}` || a.startsWith(`--${name}=`));
+const areaFlag = flag('area');
+const areaName = areaFlag === undefined ? undefined : areaFlag.includes('=') ? areaFlag.slice(areaFlag.indexOf('=') + 1) : '';
+const areas = await loadAreasOrExit(areaName);
+const activeAreas = areaName ? areas.filter((area) => area.name === areaName) : areas;
+if (flag('area')) {
+  const selectedArea = areas.find((area) => area.name === areaName);
+  for (const [kind, count] of [['variants', selectedArea?.fit?.variants?.length ?? 0], ['rules', Object.keys(selectedArea?.fit?.rules ?? {}).length], ['breaks', Object.keys(selectedArea?.fit?.breaks ?? {}).length]]) {
+    if (count === 0) {
+      console.error(`fit-check: area "${areaName}" has zero ${kind}`);
+      process.exit(2);
+    }
+  }
+}
 const chrome = args.find((a) => !a.startsWith('--')) || process.env.WALL_CHROME;
 if (!chrome) {
   console.error('fit-check: set WALL_CHROME (or pass the path) to a Chromium or chrome-headless-shell binary.');
@@ -179,29 +193,8 @@ const EXPECT = {
   'sky-always': /^ *FAIL sky layers: 1 front canvas with no look behind the land/m,
   'sky-crop': /^ *FAIL sky layers: the whole sky picture is at -?\d+,-?\d+,\d+, not inside the stage near its top/m,
   'sky-seam': /^ *FAIL sky layers: the pixel proof at \w+: \d+ pixels differ by more than 2 levels/m,
-  // look settings
-  'tune-box': /^ *FAIL look settings: the picture is at /m,
-  'tune-clear': /^ *FAIL look settings: the picture's box .* overlaps /m,
-  'tune-tower': /^ *FAIL look settings: the tower /m,
-  'tune-sign': /^ *FAIL look settings: hiding the sign moved something else/m,
-  'tune-light': /^ *FAIL look settings: the travelling light/m,
-  'tune-sheet': /^ *FAIL look settings: the sheet is \d+ px tall/m,
-  'tune-control': /^ *FAIL look settings: control ".*" is [\d.]+ px tall/m,
-  'tune-text': /^ *FAIL look settings: text under 16 px/m,
-  'tune-cut': /^ *FAIL look settings: ".*" is cut /m,
-  'tune-clip': /^ *FAIL look settings: \d+ control\(s\) are cut off by the sheet with no scrolling/m,
-  'tune-foot': /^ *FAIL look settings: ".*" is cut \(\d+ px high/m,
-  'tune-fade': /^ *FAIL look settings: the scrolling rows end with no fade/m,
-  'tune-remnant': /^ *FAIL look settings: a fade is drawn on the rows with nothing more to scroll/m,
-  'tune-gap': /^ *FAIL look settings: the "Settings for" buttons are [\d.]+ px apart/m,
-  'tune-row': /^ *FAIL look settings: row ".*" is [\d.]+ px tall \(40 at least\)/m,
   'sky-soft': /^ *FAIL whole sky soft edge: /m,
   'sky-foot': /^ *FAIL whole sky soft edge: /m,
-  // on air
-  'onair-box': /^ *FAIL on air: \.oa-card .*outside its planned box/m,
-  'onair-notes': /^ *FAIL on air: the notes are cut /m,
-  'onair-keys': /^ *FAIL on air: key tile ".*" is \d+ x \d+ px/m,
-  'onair-watt': /^ *FAIL on air: Watt .* overlaps /m,
   // lines controls
   'lines-size': /^ *FAIL lines: the sheet is \d+ px tall/m,
   'lines-control': /^ *FAIL lines: control ".*" is [\d.]+ px tall/m,
@@ -355,33 +348,8 @@ const OVERFLOWS = {
   'sky-seam': '.horizon-front { filter: brightness(1.04) !important; }',
   // The whole sky's soft edge: the mask removed (a plain edge again), and a mask that also fades the foot.
   'sky-soft': '.w-sky .w-screen { -webkit-mask-image: none !important; mask-image: none !important; }',
-  // look settings: the sky moved off the box the code uses; the left block run under the picture; the tower
-  // scaled out past the cards; the picture shifted when the sign is hidden; a long sheet, a 20 px switch, 12 px labels,
-  // a value squeezed to 60 px; the travelling light shrunk into the picture.
-  'tune-box': '.w-sky { left: 700px !important; }',
-  'tune-clear': '.w-now { min-width: 1500px !important; }',
-  'tune-tower': '.w-tower { transform: scale(1.5) !important; }',
-  'tune-sign': ".w-stage[style*='--w-sign'] .w-screen { left: 30px !important; }",
-  'tune-light': '.w-light path { transform: scale(0.75); transform-box: fill-box; transform-origin: center; }',
-  'tune-sheet': '.w-sheet.w-tune { max-height: none !important; } .wk-set .ln-row { min-height: 110px !important; }',
-  'tune-control': '.wk-set .ln-switch { height: 20px !important; }',
-  'tune-text': '.wk-set .ln-label { font-size: 12px !important; }',
-  'tune-cut': '.wk-set .ln-value { width: 60px !important; }',
-  // the scrolling section clipped with no scrolling; 30 px rows
-  'tune-clip': '.wk-set .wk-rows { overflow: hidden !important; }',
-  'tune-foot': '.wk-set > .wk-foot { max-height: 22px !important; overflow: hidden !important; }',
-  'tune-fade': '.wk-set .wk-rows { -webkit-mask-image: none !important; mask-image: none !important; }',
-  'tune-remnant': '.wk-set .wk-rows { -webkit-mask-image: linear-gradient(180deg, #000, transparent) !important; mask-image: linear-gradient(180deg, #000, transparent) !important; }',
-  'tune-gap': '.wk-pick .w-seg { gap: 0 !important; }',
-  'tune-row': '.wk-set .ln-row { min-height: 30px !important; height: 30px !important; }',
   // Keeps the production side ramp exactly and replaces only the top ramp with one that also fades the foot (an extra stop near 100 percent).
   'sky-foot': `.w-sky .w-screen { -webkit-mask-image: ${SKY_SIDE_RAMP}, ${SKY_TOP_RAMP_FOOT} !important; mask-image: ${SKY_SIDE_RAMP}, ${SKY_TOP_RAMP_FOOT} !important; }`,
-  // on air: the notes card 1400 px wide; every note shown at 40 px (none behind "+N more"); 20 px key tiles.
-  'onair-box': '.onair .oa-card { width: 1400px !important; }',
-  'onair-notes': '.onair .oa-note { font-size: 40px !important; } .onair .oa-note[hidden] { display: flex !important; }',
-  'onair-keys': '.onair .oa-keys .deck-tile.key-tile { height: 20px !important; min-height: 0 !important; padding: 0 !important; }',
-  // on air: Watt lifted onto the notes card
-  'onair-watt': '.watt-sheep, .watt-hit { margin-top: -300px !important; }',
   // lines controls: a 900 px panel, a 24 px chip, a 12 px label, the clip removed (a URL knob, LINES_BREAK_Q).
   'lines-size': '.ln-panel { height: 900px !important; }',
   'lines-control': '.ln-chips button { height: 24px !important; }',
@@ -390,30 +358,32 @@ const OVERFLOWS = {
   'spotify-copy': '.sp-note { width: 80px !important; overflow: hidden !important; white-space: nowrap !important; }',
   'account-copy': '.tools-note { width: 80px !important; overflow: hidden !important; white-space: nowrap !important; }',
 };
-// sky layers: breaks that need the horizon's development knobs in the URL, not a stylesheet.
-const SKY_BREAK_Q = { 'sky-moon': '&skymoon=300,200,44', 'sky-always': '&sky=front' };
-// lines controls: the clip around the picture boxes left out (a development knob of the horizon).
-const LINES_BREAK_Q = { 'lines-clip': '&lclip=0' };
-if (flag('self-test')) {
-  const script = fileURLToPath(import.meta.url);
-  let missed = 0;
-  for (const side of Object.keys(OVERFLOWS)) {
-    const r = spawnSync(process.execPath, [script, chrome, `--overflow=${side}`], { encoding: 'utf8' });
-    // Caught only when the run failed and reported the side that was broken; a non-zero exit
-    // for any other reason (a crash, a page that did not render) does not count.
-    const line = EXPECT[side].exec(r.stdout ?? '');
-    const caught = r.status === 1 && line !== null;
-    if (!caught) missed += 1;
-    const full = line ? r.stdout.slice(line.index).split('\n')[0].trim() : 'no FAIL line for this side';
-    console.log(`${caught ? 'ok  ' : 'MISS'} --overflow=${side}: exit ${r.status}; ${full}`);
-  }
-  console.log(missed === 0 ? 'self-test: every deliberate overflow failed the check' : `self-test: ${missed} overflow(s) not caught`);
-  process.exit(missed === 0 ? 0 : 1);
+const AREA_BREAKS = Object.assign({}, ...activeAreas.map((area) => area.fit?.breaks ?? {}));
+try {
+  validateRegistrations(areas, {
+    'measurement key': ['res', 'page', 'overlaps', 'cut', 'gaps', 'wattCard', 'header', 'deck', 'deckRoom', 'nowH', 'edges', 'hide', 'hits', 'grid', 'lw', 'sig', 'toolsOut', 'copyOut', 'meetOut', 'strip', 'opened', 'watchPolish', 'skyLayers', 'thCheck', 'tileText', 'listen', 'lines', 'watchBehaviour', 'wattDriveIn'],
+    'rule key': ['wattDriveIn', 'watchBehaviour', 'skyLayers', 'watchPolish', 'thCheck', 'tileText', 'listen', 'lines', 'toolsOut', 'copyOut', 'meetOut', 'strip', 'deck', 'header', 'res', 'page'],
+    'break name': Object.keys(EXPECT),
+  });
+} catch (error) {
+  console.error(`areas: ${error.message}`);
+  process.exit(2);
 }
+for (const [name, entry] of Object.entries(AREA_BREAKS)) {
+  EXPECT[name] = entry.expect;
+  if (entry.css !== undefined) OVERFLOWS[name] = entry.css;
+}
+// Breaks may change the page query instead of, or as well as, injecting CSS.
+const BREAK_QUERIES = {
+  'sky-moon': '&skymoon=300,200,44',
+  'sky-always': '&sky=front',
+  'lines-clip': '&lclip=0',
+  ...Object.fromEntries(Object.entries(AREA_BREAKS).filter(([, entry]) => entry.query !== undefined).map(([name, entry]) => [name, entry.query])),
+};
 
 const overflow = flag('overflow')?.split('=')[1];
-if (overflow !== undefined && !(overflow in OVERFLOWS)) {
-  console.error(`fit-check: --overflow takes one of ${Object.keys(OVERFLOWS).join(', ')}`);
+if (overflow !== undefined && !(overflow in EXPECT)) {
+  console.error(`fit-check: --overflow takes one of ${Object.keys(EXPECT).join(', ')}`);
   process.exit(2);
 }
 
@@ -522,26 +492,6 @@ const QUIET = [
   { name: 'Watch, the sun, 24 saved, Twitch', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=many&wlook=sun&wplay=2', checks: [...WATCH_IDLE, '.w-ctl', '.w-time', '.w-open'], hits: SKY_HITS },
   { name: 'Watch, settings sheet with four looks, one look', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=sky&wplay=0&wsheet=one', checks: ['.w-sheet', '.w-tiles', '.w-tile', '.w-hint', '.w-sfoot'] },
   { name: 'Watch, settings sheet, a look per kind', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=many&wplay=2&wsheet=kind', checks: ['.w-sheet', '.w-srow', '.w-srow .w-seg', '.w-sfoot'] },
-  // look settings (one block): the Looks sheet with the longest section, and every look at both ends of each
-  // setting that moves or sizes it (the picture the box the code uses, clear of its neighbours, nothing on it).
-  { name: 'Look settings, sheet, the sun', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wplay=0&wlook=sun&wsheet=one&wtune=sun.size=380', checks: ['.w-sheet', '.wk-set'], tune: 'sheet' },
-  { name: 'Look settings, sheet, whole sky', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wplay=0&wlook=sky&wsheet=one&wtune=sky.soft=200', checks: ['.w-sheet', '.wk-set'], tune: 'sheet' },
-  { name: 'Look settings, sheet, the drive-in (five settings)', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wplay=0&wlook=drivein&wsheet=one&wtune=drivein.size=90,drivein.sign=0,drivein.neon=0', checks: ['.w-sheet', '.wk-set'], tune: 'sheet' },
-  { name: 'Look settings, sheet, a look per kind, the drive-in', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=many&wplay=2&wsheet=kind&wtune=drivein.size=90', checks: ['.w-sheet', '.wk-set'], tune: 'sheet' },
-  { name: 'Look settings, whole sky, smallest', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wplay=0&wlook=sky&wtune=sky.size=60,sky.soft=200,sky.bright=50,sky.floor=0', checks: ['.w-now'], tune: 'look' },
-  { name: 'Look settings, whole sky, largest (the usual size)', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wplay=0&wlook=sky&wtune=sky.size=100', checks: ['.w-now'], tune: 'look' },
-  { name: 'Look settings, whole sky, plain edge', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wplay=0&wlook=sky&wtune=sky.soft=0,sky.bright=100', checks: ['.w-now'], tune: 'look' },
-  { name: 'Look settings, sun, smallest and highest', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wplay=0&wlook=sun&wtune=sun.size=280,sun.up=60', checks: ['.w-now'], tune: 'look' },
-  { name: 'Look settings, sun, largest and sunk', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wplay=0&wlook=sun&wtune=sun.up=-100', checks: ['.w-now'], tune: 'look' },
-  { name: 'Look settings, sun, largest and highest', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wplay=0&wlook=sun&wtune=sun.up=60,sun.glow=100', checks: ['.w-now'], tune: 'look' },
-  { name: 'Look settings, feathered, smallest', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wplay=0&wlook=feather&wtune=feather.size=60,feather.soft=10,feather.glow=0', checks: ['.w-now'], tune: 'look' },
-  { name: 'Look settings, feathered, largest', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wplay=0&wlook=feather&wtune=feather.size=108,feather.soft=30,feather.glow=100', checks: ['.w-now'], tune: 'look' },
-  { name: 'Look settings, drive-in, smallest, sign hidden', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wplay=0&wlook=drivein&wtune=drivein.size=80,drivein.sign=0,drivein.floor=100', checks: ['.w-now'], tune: 'look' },
-  { name: 'Look settings, drive-in, largest', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wplay=0&wlook=drivein&wtune=drivein.size=105,drivein.neon=0', checks: ['.w-now'], tune: 'look' },
-  { name: 'Look settings, drive-in, travelling light', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wplay=0&wlook=drivein&wtune=drivein.light=1', checks: ['.w-now'], tune: 'look' },
-  { name: 'Look settings, drive-in, sign hidden', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wplay=0&wlook=drivein&wtune=drivein.sign=0', checks: ['.w-now'], tune: 'look' },
-  { name: 'Look settings, hologram, flat', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wplay=0&wlook=holo&wtune=holo.tilt=0,holo.beam=0,holo.see=60', checks: ['.w-now'], tune: 'look' },
-  { name: 'Look settings, hologram, steepest', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wplay=0&wlook=holo&wtune=holo.tilt=12,holo.see=10', checks: ['.w-now'], tune: 'look' },
   // watch polish: the control row (the gear its last button) in every look. The left block's box must be the
   // same in every state below (compared after the run), the row one line clear of the list, and
   // nothing of the wall's over the video's box; the drive-in's driveInAudience must be its screen.
@@ -778,22 +728,42 @@ VARIANTS.push(
   { name: 'Strip: the Day drawer, twelve busy, long titles', q: work('12busy', '&meet=overlap'), click: '.rib-handle', checks: ['.day-drawer', '.day-drawer .dd-rows'], strip: true, viewportOnly: true },
   { name: 'Strip: Agents today over the limit', q: work('12busy', '&days=typical'), click: '.rib .ag-line', checks: ['.agents-today', '.agents-today .at-head', '.agents-today .at-busy'], strip: true, viewportOnly: true },
 );
-// On Air: the three columns in their planned boxes above the strip in every state, the notes
-// card with long notes (the rest behind "+N more"), forty parts, no file, a refused file and a full marks file.
-const onAirQ = (knobs) => `?hz=onair&at=${encodeURIComponent('2026-11-11T10:24:00-08:00')}&clock=review&weather=ok&screen=onair&${knobs}`;
-const ONAIR = ['.onair .oa-left', '.onair .oa-card', '.onair .oa-right', '.onair .oa-card-foot', '.onair .oa-mark'];
-VARIANTS.push(
-  { name: 'On Air, typical: running at 42:13', q: onAirQ('show=typical&marks=2&oatimer=run'), checks: ONAIR, onair: true },
-  { name: 'On Air, long names and twelve long notes', q: onAirQ('show=long&marks=2&oatimer=run'), checks: ONAIR, onair: true },
-  { name: 'On Air, forty parts', q: onAirQ('show=forty&marks=2&oatimer=run'), checks: ONAIR, onair: true },
-  { name: 'On Air, no run-of-show.txt yet', q: onAirQ('show=missing&marks=0&oatimer=idle'), checks: ONAIR, onair: true },
-  { name: 'On Air, a refused file', q: onAirQ('show=refused&marks=0&oatimer=idle'), checks: ONAIR, onair: true },
-  { name: 'On Air, Watt standing under the notes card', q: onAirQ('show=typical&marks=2&oatimer=run&wattspot=1000'), checks: ONAIR, onair: true },
-  { name: 'On Air, Watt set down at the far left', q: onAirQ('show=typical&marks=2&oatimer=run&wattspot=200'), checks: ONAIR, onair: true },
-  { name: 'On Air, Watt set down at the far right', q: onAirQ('show=typical&marks=2&oatimer=run&wattspot=2300'), checks: ONAIR, onair: true },
-  { name: 'On Air, the timer stopped itself at 24 hours', q: onAirQ('show=typical&marks=2&oatimer=limit'), checks: ONAIR, onair: true },
-  { name: 'On Air, marks.txt full after a click, recording', q: onAirQ('show=typical&marks=full&oatimer=run&rec=1'), checks: ONAIR, onair: true, click: '.oa-mark-btn' },
-);
+const allAreaVariants = areas.flatMap((area) => area.fit?.variants ?? []);
+const validationVariants = [...VARIANTS, ...allAreaVariants];
+const areaVariants = activeAreas.flatMap((area) => area.fit?.variants ?? []);
+const builtInVariantNames = VARIANTS.map((variant) => variant.name);
+if (flag('area')) VARIANTS.splice(0, VARIANTS.length, ...areaVariants);
+else VARIANTS.push(...areaVariants);
+try {
+  validateRegistrations(areas, { 'variant name': builtInVariantNames });
+  validateFitReferences(areas, validationVariants);
+} catch (error) {
+  console.error(`areas: ${error.message}`);
+  process.exit(2);
+}
+if (flag('list-breaks')) {
+  console.log(Object.keys(EXPECT).join('\n'));
+  process.exit(0);
+}
+if (flag('self-test')) {
+  const script = fileURLToPath(import.meta.url);
+  let missed = 0;
+  const breakNames = flag('area') ? Object.keys(AREA_BREAKS) : Object.keys(EXPECT);
+  for (const side of breakNames) {
+    const childArgs = [script, chrome, `--overflow=${side}`];
+    if (flag('area')) childArgs.push(flag('area'));
+    const r = spawnSync(process.execPath, childArgs, { encoding: 'utf8' });
+    // Caught only when the run failed and reported the side that was broken; a non-zero exit
+    // for any other reason (a crash, a page that did not render) does not count.
+    const line = EXPECT[side].exec(r.stdout ?? '');
+    const caught = r.status === 1 && line !== null;
+    if (!caught) missed += 1;
+    const full = line ? r.stdout.slice(line.index).split('\n')[0].trim() : 'no FAIL line for this side';
+    console.log(`${caught ? 'ok  ' : 'MISS'} --overflow=${side}: exit ${r.status}; ${full}`);
+  }
+  console.log(missed === 0 ? 'self-test: every deliberate overflow failed the check' : `self-test: ${missed} overflow(s) not caught`);
+  process.exit(missed === 0 ? 0 : 1);
+}
 // keys style: a small PNG reader (8-bit RGB or RGBA, not interlaced, as Chromium writes them) and contrast.
 function readPng(file) {
   const buf = readFileSync(file);
@@ -1792,164 +1762,6 @@ try {
       }
       return { fails, mode, quad };
     })();
-    // look settings ("tunecheck=look or sheet"): the picture the look draws is the box the code uses (data-sky-box),
-    // uncropped 16:9, clear of the left block, the clock, the tabs and the list card and inside the strip; for the
-    // drive-in the whole tower stays clear and nothing of it (or of the travelling light) paints on the picture, and
-    // hiding the sign moves nothing else. For sheet: the Looks sheet inside the stage and clear of the office slot, every
-    // control 32 px at least, no text under 16 px, no value cut.
-    const tuneCheck = (() => {
-      const mode = new URLSearchParams(location.search).get('tunecheck');
-      if (!mode) return null;
-      try { return tuneMeasure(mode); } catch (e) { return { fails: ['look settings: the check broke: ' + e.message], mode }; }
-    })();
-    function tuneMeasure(mode) {
-      const fails = [];
-      const R = (e) => { const r = e.getBoundingClientRect(); return { l: r.left, t: r.top, r: r.right, b: r.bottom, w: r.width, h: r.height }; };
-      const rnd = (r) => [r.l, r.t, r.w, r.h].map(Math.round).join(',');
-      const meet = (a, b) => a.l < b.r && b.l < a.r && a.t < b.b && b.t < a.b;
-      if (mode === 'sheet') {
-        const sheet = document.querySelector('.w-sheet.w-tune');
-        const set = sheet && sheet.querySelector('.wk-set');
-        if (!sheet || !set) return { fails: ['look settings: the Looks sheet has no settings section'], mode };
-        const s = R(sheet);
-        if (s.t < -0.5 || s.b > 658.5 || s.r > 2560.5) fails.push('look settings: the sheet is ' + Math.round(s.h) + ' px tall, y ' + Math.round(s.t) + ' to ' + Math.round(s.b) + ' (inside the stage and clear of the office slot at y 662)');
-        const rowsBox = set.querySelector('.wk-rows');
-        const rb = R(rowsBox);
-        const scrolls = rowsBox.scrollHeight > rowsBox.clientHeight + 1;
-        for (const row of set.querySelectorAll('.ln-row')) {
-          const r = R(row);
-          if (r.h < 39.5) fails.push('look settings: row "' + row.textContent.trim().slice(0, 24) + '" is ' + Math.round(r.h * 10) / 10 + ' px tall (40 at least)');
-        }
-        // Rows may overflow only into a scroll with a cue; the last control must be reachable.
-        const inRows = [...rowsBox.querySelectorAll('button, input')];
-        const cut = inRows.filter((el) => { const r = R(el); return r.t < rb.t - 0.5 || r.b > rb.b + 0.5; });
-        if (cut.length) {
-          const cs = getComputedStyle(rowsBox);
-          if (!scrolls || !(cs.overflowY === 'auto' || cs.overflowY === 'scroll')) fails.push('look settings: ' + cut.length + ' control(s) are cut off by the sheet with no scrolling');
-          else {
-            rowsBox.scrollTop = rowsBox.scrollHeight;
-            const lb = R(inRows[inRows.length - 1]);
-            if (lb.b > R(rowsBox).b + 0.5) fails.push('look settings: the last control cannot be scrolled to');
-            rowsBox.scrollTop = 0;
-          }
-        }
-        // At rest (scrolled to the top): a fade on the edge that has more, 12 px of padding, a row cut by the edge showing only what lies in the fade; nothing faded when all fits.
-        const cs0 = getComputedStyle(rowsBox);
-        const masked = (cs0.maskImage || cs0.webkitMaskImage || 'none') !== 'none';
-        if (!scrolls && masked) fails.push('look settings: a fade is drawn on the rows with nothing more to scroll');
-        if (scrolls) {
-          const rb1 = R(rowsBox);
-          if (!masked) fails.push('look settings: the scrolling rows end with no fade');
-          const rowEls = [...rowsBox.querySelectorAll('.ln-row')];
-          const first = R(rowEls[0]);
-          if (first.t < rb1.t + 11.5) fails.push('look settings: the first row starts ' + Math.round((first.t - rb1.t) * 10) / 10 + ' px under the top of the rows (12 at least, clear of the fade)');
-          for (const row of rowEls) {
-            const r = R(row);
-            if (r.t < rb1.b && r.b > rb1.b + 0.5 && rb1.b - r.t > 28.5) fails.push('look settings: row "' + row.textContent.trim().slice(0, 24) + '" shows ' + Math.round(rb1.b - r.t) + ' px at the bottom edge, more than the 28 px fade covers');
-          }
-        }
-        // The chooser of the look to adjust: its buttons as tall and as big in type as the kind rows' buttons, 8 px apart, nothing clipped.
-        const pick = [...sheet.querySelectorAll('.wk-pick .w-seg button')];
-        if (pick.length) {
-          const ref = sheet.querySelector('.w-kinds .w-srow:not(.wk-pick) .w-seg button');
-          const refH = ref ? R(ref).h : 0;
-          const refFs = ref ? getComputedStyle(ref).fontSize : '';
-          pick.forEach((b, i) => {
-            const r = R(b);
-            if (ref && (Math.abs(r.h - refH) > 0.5 || getComputedStyle(b).fontSize !== refFs)) fails.push('look settings: the "' + b.textContent.trim() + '" button is ' + Math.round(r.h) + ' px tall at ' + getComputedStyle(b).fontSize + ', not like the rows above (' + refH + ' px, ' + refFs + ')');
-            if (b.scrollWidth > b.clientWidth + 0.5) fails.push('look settings: the "' + b.textContent.trim() + '" button is clipped');
-            if (i > 0) { const gap = r.l - R(pick[i - 1]).r; if (gap < 7.5) fails.push('look settings: the "Settings for" buttons are ' + Math.round(gap * 10) / 10 + ' px apart (8 at least)'); }
-          });
-        }
-        for (const el of set.querySelectorAll('button, input')) {
-          const r = R(el);
-          const name = el.getAttribute('aria-label') || el.textContent.trim() || (document.getElementById(el.getAttribute('aria-labelledby') || '') || {}).textContent || el.id;
-          if (!(scrolls && rowsBox.contains(el)) && (r.l < s.l - 0.5 || r.r > s.r + 0.5 || r.t < s.t - 0.5 || r.b > s.b + 0.5)) fails.push('look settings: control "' + name + '" is cut by the sheet');
-          if (r.h < 31.5) fails.push('look settings: control "' + name + '" is ' + Math.round(r.h * 10) / 10 + ' px tall (32 at least)');
-        }
-        for (const el of [set, ...set.querySelectorAll('*')]) {
-          if (![...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim())) continue;
-          const fs = parseFloat(getComputedStyle(el).fontSize);
-          if (fs < 15.5) fails.push('look settings: text under 16 px in "' + el.textContent.trim().slice(0, 30) + '" (' + fs + ' px)');
-          if (el.scrollWidth > el.clientWidth + 0.5) fails.push('look settings: "' + el.textContent.trim().slice(0, 30) + '" is cut (' + el.scrollWidth + ' px in ' + el.clientWidth + ')');
-          if (el.scrollHeight > el.clientHeight + 1.5) fails.push('look settings: "' + el.textContent.trim().slice(0, 30) + '" is cut (' + el.scrollHeight + ' px high in ' + el.clientHeight + ')');
-        }
-        const foot = set.querySelector('.wk-foot');
-        const sfoot = sheet.querySelector('.w-sfoot');
-        if (foot && sfoot && meet(R(foot), R(sfoot))) fails.push('look settings: the foot line "' + foot.textContent.trim().slice(0, 30) + '" overlaps the saved-items line');
-        if (!sfoot || !R(sfoot).h) fails.push('look settings: the saved-items foot is not shown');
-        if (set.querySelectorAll('.ln-row').length < 4) fails.push('look settings: the section has fewer than three controls');
-        return { fails, mode };
-      }
-      const stage = document.querySelector('.w-stage');
-      const scr = stage && stage.querySelector('.w-screen');
-      const frame = scr && scr.querySelector('.w-frame');
-      if (!stage || !scr || !frame) return { fails: ['look settings: no stage, screen or frame'], mode };
-      const look = stage.getAttribute('data-look');
-      const sb = (stage.getAttribute('data-sky-box') || '').split(',').map(Number);
-      const box = { l: sb[0], t: sb[1], w: sb[2], h: sb[3], r: sb[0] + sb[2], b: sb[1] + sb[3] };
-      const pic = R(scr);
-      if (look === 'holo') {
-        if (pic.l < box.l - 1 || pic.t < box.t - 1 || pic.r > box.r + 1 || pic.b > box.b + 1 || box.w - pic.w > 30 || box.h - pic.h > 12) fails.push('look settings: the tilted picture is at ' + rnd(pic) + ', not inside the box the code uses ' + [box.l, box.t, box.w, box.h].map(Math.round).join(','));
-      } else if (!(Math.abs(pic.l - box.l) <= 1 && Math.abs(pic.t - box.t) <= 1 && Math.abs(pic.w - box.w) <= 1 && Math.abs(pic.h - box.h) <= 1)) {
-        fails.push('look settings: the picture is at ' + rnd(pic) + ', not the box the code uses ' + [box.l, box.t, box.w, box.h].map(Math.round).join(','));
-      }
-      const ratio = frame.offsetWidth / frame.offsetHeight;
-      if (Math.abs(ratio - 16 / 9) > 0.02) fails.push('look settings: the frame is ' + frame.offsetWidth + ' by ' + frame.offsetHeight + ', not 16:9 (cropped or stretched)');
-      const top = look === 'sun' ? 8 : 0;
-      if (box.l < 1090 || box.r > 2000 || box.t < top - 0.5 || box.b > 720) fails.push('look settings: the picture box ' + [box.l, box.t, box.w, box.h].map(Math.round).join(',') + ' is outside x 1090 to 2000, y ' + top + ' to 720');
-      const keep = ['.w-now', '.w-lookbar', '.w-card', '.u-tabs'].map((sel) => [sel, document.querySelector(sel)]).filter((k) => k[1]);
-      const clk = document.querySelector('.clk');
-      const clockBox = (() => { if (!clk) return null; const rg = document.createRange(); rg.selectNodeContents(clk); const r = rg.getBoundingClientRect(); return { l: r.left, t: r.top, r: r.right, b: r.bottom, w: r.width, h: r.height }; })();
-      const clash = keep.find((k) => meet(box, R(k[1]))) || (clockBox && meet(box, clockBox) ? ['the clock'] : null);
-      if (clash) fails.push("look settings: the picture's box " + [box.l, box.t, box.w, box.h].map(Math.round).join(',') + ' overlaps ' + clash[0]);
-      const svg = stage.querySelector('.w-tower');
-      if (svg) {
-        const inv = svg.getScreenCTM().inverse();
-        const shapes = [...svg.querySelectorAll('path, rect')].filter((e) => !e.closest('defs') && !e.closest('g[mask]'));
-        let l = 1e9, r = -1e9, t = 1e9;
-        for (const e of shapes) { const b = R(e); if (!b.w && !b.h) continue; l = Math.min(l, b.l); r = Math.max(r, b.r); t = Math.min(t, b.t); }
-        if (l < 1090 || r > 1996 || t < 0) fails.push('look settings: the tower reaches x ' + Math.round(l) + ' to ' + Math.round(r) + ', top ' + Math.round(t) + ' (inside x 1090 to 1996 and the strip)');
-        const tower = shapes.map(R);
-        const bad = keep.find((k) => tower.some((b) => meet({ l: b.l - 8, t: b.t - 8, r: b.r + 8, b: b.b + 8 }, R(k[1]))));
-        if (bad) fails.push('look settings: the tower is within 8 px of ' + bad[0]);
-        // Nothing of the frame paints on the picture: points of its box, in the svg's own pixels, against every shape's fill and stroke.
-        const pts = [];
-        for (let i = 0; i <= 12; i++) for (let j = 0; j <= 7; j++) pts.push(new DOMPoint(pic.l + 0.5 + (pic.w - 1) * i / 12, pic.t + 0.5 + (pic.h - 1) * j / 7).matrixTransform(inv));
-        for (const e of svg.querySelectorAll('path, rect, ellipse, circle, line')) {
-          if (e.closest('defs') || e.closest('g[mask]') || e.getAttribute('clip-path')) continue;
-          const cs = getComputedStyle(e);
-          if (cs.display === 'none') continue;
-          const fill = cs.fill !== 'none' && Number(cs.fillOpacity) > 0, stroke = cs.stroke !== 'none' && parseFloat(cs.strokeWidth) > 0;
-          const hit = pts.find((pt) => (fill && e.isPointInFill(pt)) || (stroke && e.isPointInStroke(pt)));
-          if (hit) { fails.push('look settings: the tower ' + e.tagName + ' paints over the picture'); break; }
-        }
-        // Hiding the sign moves nothing else: the same measures with the property taken off and put back.
-        if (stage.style.getPropertyValue('--w-sign') === 'none') {
-          const measure = () => [...svg.querySelectorAll('path, rect, ellipse, text')].filter((e) => !e.closest('.w-sign') && !e.closest('defs')).map((e) => rnd(R(e))).join('|') + '#' + rnd(R(scr));
-          const hidden = measure();
-          stage.style.removeProperty('--w-sign');
-          const shown = measure();
-          stage.style.setProperty('--w-sign', 'none');
-          if (hidden !== shown) fails.push('look settings: hiding the sign moved something else');
-          if ([...svg.querySelectorAll('.w-sign')].some((e) => getComputedStyle(e).display !== 'none')) fails.push('look settings: the sign is still drawn with it hidden');
-        }
-        // The travelling light follows the line outside the picture: its path encloses the box and no point of the box lies on its stroke.
-        const lightSvg = stage.querySelector('.w-light');
-        if (lightSvg) {
-          const linv = lightSvg.getScreenCTM().inverse();
-          const lp = linv && [...lightSvg.querySelectorAll('path')];
-          for (const e of lp) {
-            const b = R(e);
-            if (!(b.l < pic.l - 3 && b.t < pic.t - 3 && b.r > pic.r + 3 && b.b > pic.b + 3 && b.l > pic.l - 30)) { fails.push('look settings: the travelling light path ' + rnd(b) + ' is not a line round the picture ' + rnd(pic)); break; }
-            const lpts = [];
-            for (let i = 0; i <= 12; i++) for (let j = 0; j <= 7; j++) lpts.push(new DOMPoint(pic.l + 0.5 + (pic.w - 1) * i / 12, pic.t + 0.5 + (pic.h - 1) * j / 7).matrixTransform(linv));
-            if (lpts.some((pt) => e.isPointInStroke(pt))) { fails.push('look settings: the travelling light paints on the picture'); break; }
-          }
-        }
-      }
-      return { fails, mode, look };
-    }
     // look tiles: the labels in the settings sheet keep 16 px at least (the wall's smallest text).
     const tileText = [...document.querySelectorAll('.w-tile')].filter((t) => parseFloat(getComputedStyle(t).fontSize) < 16).map((t) => 'watch polish: look tile "' + (t.textContent || '').trim() + '" has ' + getComputedStyle(t).fontSize + ' text (16 px at least)');
     // lines controls: the Lines side of the sheet stays inside the stage and 680 px with every control inside
@@ -2038,68 +1850,18 @@ try {
       }
       return fails;
     })();
-    // On Air: each column inside its planned box (stage x) between the top of the band and the strip,
-    // no note of the notes card cut without a "+N more" line that counts the hidden ones, key tiles at least 40 px.
-    const onair = (() => {
-      const fails = [];
-      const want = new URLSearchParams(location.search).get('screen') === 'onair';
-      if (!document.querySelector('.onair')) return want ? ['on air: the place did not open'] : [];
-      const rib = document.querySelector('.rib');
-      const floor = Math.min(510, rib ? rib.getBoundingClientRect().top : 720);
-      const r1 = (n) => Math.round(n * 10) / 10;
-      for (const [sel, l, r, parts] of [['.oa-left', 124, 764, '.oa-timer, .oa-runbox, .oa-run, .oa-file, .oa-empty'], ['.oa-card', 800, 1880, '.oa-k, .oa-notes, .oa-help, .oa-nonotes, .oa-card-foot, .oa-card-foot > *'], ['.oa-right', 1920, 2540, '.oa-mark, .oa-keys, .oa-keys > *, .oa-foot, .oa-k, .oa-k-brief']]) {
-        const col = document.querySelector('.onair ' + sel);
-        if (!col) { fails.push('on air: ' + sel + ' is missing'); continue; }
-        for (const e of [col, ...col.querySelectorAll(parts)]) {
-          const b = e.getBoundingClientRect();
-          if (b.width === 0 && b.height === 0) continue;
-          if (b.left < l - 0.5 || b.right > r + 0.5 || b.top < 20 - 0.5 || b.bottom > floor + 0.5) {
-            fails.push('on air: ' + sel + (e === col ? '' : ' ' + (e.className || e.tagName)) + ' at x ' + r1(b.left) + ' to ' + r1(b.right) + ', y ' + r1(b.top) + ' to ' + r1(b.bottom) + ' is outside its planned box (x ' + l + ' to ' + r + ', y 20 to ' + r1(floor) + ')');
-            break;
-          }
-        }
-      }
-      const list = document.querySelector('.onair .oa-notes');
-      if (list) {
-        const lb = list.getBoundingClientRect();
-        const notes = [...list.querySelectorAll(':scope > .oa-note')];
-        const hidden = notes.filter((n) => getComputedStyle(n).display === 'none').length;
-        const cutNote = notes.findIndex((n) => getComputedStyle(n).display !== 'none' && n.getBoundingClientRect().bottom > lb.bottom + 0.5);
-        const more = list.querySelector(':scope > .oa-more');
-        const moreShown = more && getComputedStyle(more).display !== 'none' ? (more.textContent || '').trim() : '';
-        if (list.scrollHeight > list.clientHeight + 0.5 || cutNote >= 0) fails.push('on air: the notes are cut (' + (cutNote >= 0 ? 'note ' + (cutNote + 1) + ' of ' + notes.length + ' ends below the card' : 'the list is ' + list.scrollHeight + ' px for ' + list.clientHeight) + ', ' + hidden + ' behind "+N more")');
-        else if (hidden > 0 && moreShown !== '+' + hidden + ' more') fails.push('on air: the notes are cut: ' + hidden + ' hidden but the more line reads "' + moreShown + '"');
-        else if (hidden === 0 && moreShown !== '') fails.push('on air: the more line reads "' + moreShown + '" with no note hidden');
-      }
-      // Watt stands on the ground line below the columns: his box (and his click box) overlaps none of them.
-      const wattBoxes = [['Watt', '.watt-sheep'], ['Watt click box', '.watt-hit']];
-      for (const [label, sel] of wattBoxes) {
-        const w = document.querySelector(sel);
-        if (!w) { if (sel === '.watt-hit' && want) fails.push('on air: Watt is not on the page'); continue; }
-        const wb = w.getBoundingClientRect();
-        if (wb.width === 0 && wb.height === 0) continue;
-        for (const csel of ['.oa-left', '.oa-card', '.oa-right']) {
-          const cb = document.querySelector('.onair ' + csel)?.getBoundingClientRect();
-          if (cb && wb.left < cb.right && cb.left < wb.right && wb.top < cb.bottom && cb.top < wb.bottom) fails.push('on air: ' + label + ' at x ' + r1(wb.left) + ' to ' + r1(wb.right) + ', y ' + r1(wb.top) + ' to ' + r1(wb.bottom) + ' overlaps ' + csel + ' (y ' + r1(cb.top) + ' to ' + r1(cb.bottom) + ')');
-        }
-      }
-      const tiles = [...document.querySelectorAll('.onair .oa-keys .key-tile')];
-      if (tiles.length !== 4) fails.push('on air: ' + tiles.length + ' recording keys, expected 4');
-      for (const t of tiles) {
-        const b = t.getBoundingClientRect();
-        if (b.height < 40 - 0.5 || b.width < 40 - 0.5) fails.push('on air: key tile "' + t.getAttribute('aria-label') + '" is ' + Math.round(b.width) + ' x ' + Math.round(b.height) + ' px (at least 40 by 40)');
-      }
-      return fails;
-    })();
-    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, cardEnds, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, copyOut, meetOut, strip, opened, watchPolish, skyLayers, thCheck, tileText, listen, lines, watchBehaviour, onair, wattDriveIn, tuneCheck });
+    const areaResults = Object.fromEntries(Object.entries(globalThis.__areaMeasurements ?? {}).map(([key, fn]) => [key, fn()]));
+    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, cardEnds, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, copyOut, meetOut, strip, opened, watchPolish, skyLayers, thCheck, tileText, listen, lines, watchBehaviour, wattDriveIn, areaResults });
     document.body.appendChild(pre);
   }, new URLSearchParams(location.search).get('card') ? 7000 : 3000);</script>`;
-  const broken = overflow ? `<style>${OVERFLOWS[overflow]}</style>` : '';
+  const areaMeasurements = Object.assign({}, ...activeAreas.map((area) => area.fit?.measurements ?? {}));
+  const areaMeasurementScript = `<script>globalThis.__areaMeasurements = {${Object.entries(areaMeasurements).map(([key, fn]) => `${JSON.stringify(key)}: ${fn.toString()}`).join(',')}};</script>`;
+  const broken = overflow && OVERFLOWS[overflow] ? `<style>${OVERFLOWS[overflow]}</style>` : '';
   const page = join(out, 'work.html');
-  writeFileSync(page, html.replace('</body>', `${broken}${measure}</body>`));
+  writeFileSync(page, html.replace('</body>', `${broken}${areaMeasurementScript}${measure}</body>`));
 
   let failed = false;
-  if (overflow) console.log(`deliberate overflow: ${overflow} (${OVERFLOWS[overflow]})`);
+  if (overflow) console.log(`deliberate overflow: ${overflow} (${OVERFLOWS[overflow] || BREAK_QUERIES[overflow]})`);
   // A deliberate break runs on the first state, or for the picker on the state that opens it.
   const BREAK_ON = {
     'card-end': (v) => v.name === 'Card ends: helpers working',
@@ -2197,33 +1959,13 @@ try {
     'sky-crop': (v) => v.name === 'Sky layers, whole sky at night',
     'sky-soft': (v) => v.name === 'Sky layers, whole sky at night',
     'sky-foot': (v) => v.name === 'Sky layers, whole sky at night',
-    // on air
-    'onair-box': (v) => v.name === 'On Air, typical: running at 42:13',
-    'onair-notes': (v) => v.name === 'On Air, long names and twelve long notes',
-    'onair-keys': (v) => v.name === 'On Air, typical: running at 42:13',
-    'onair-watt': (v) => v.name === 'On Air, Watt standing under the notes card',
     // lines controls
     'lines-size': (v) => v.name === 'Lines settings sheet',
     'lines-control': (v) => v.name === 'Lines settings sheet',
     'lines-text': (v) => v.name === 'Lines settings sheet',
     'lines-clip': (v) => v.name === 'Lines, bars under the drive-in',
-    // look settings
-    'tune-box': (v) => v.name === 'Look settings, whole sky, smallest',
-    'tune-clear': (v) => v.name === 'Look settings, drive-in, largest',
-    'tune-tower': (v) => v.name === 'Look settings, drive-in, largest',
-    'tune-sign': (v) => v.name === 'Look settings, drive-in, sign hidden',
-    'tune-light': (v) => v.name === 'Look settings, drive-in, travelling light',
-    'tune-sheet': (v) => v.name === 'Look settings, sheet, the drive-in (five settings)',
-    'tune-control': (v) => v.name === 'Look settings, sheet, the drive-in (five settings)',
-    'tune-text': (v) => v.name === 'Look settings, sheet, the drive-in (five settings)',
-    'tune-cut': (v) => v.name === 'Look settings, sheet, the sun',
-    'tune-clip': (v) => v.name === 'Look settings, sheet, a look per kind, the drive-in',
-    'tune-foot': (v) => v.name === 'Look settings, sheet, a look per kind, the drive-in',
-    'tune-fade': (v) => v.name === 'Look settings, sheet, a look per kind, the drive-in',
-    'tune-remnant': (v) => v.name === 'Look settings, sheet, the sun',
-    'tune-gap': (v) => v.name === 'Look settings, sheet, a look per kind, the drive-in',
-    'tune-row': (v) => v.name === 'Look settings, sheet, the sun',
   };
+  for (const [name, entry] of Object.entries(AREA_BREAKS)) BREAK_ON[name] = entry.appliesTo;
   const breakOn = BREAK_ON[overflow] ? VARIANTS.filter(BREAK_ON[overflow]) : VARIANTS.slice(0, 1);
   /** keys style: the Now row's height on each page that has one, compared after every state ran. */
   const nowHeights = [];
@@ -2231,10 +1973,10 @@ try {
   const switchBoxes = [];
   /** sky layers: the moon drawn in each moon state, compared after the run (one place on Listen and on Watch). */
   const skyMoons = [];
-  const onlyText = flag('only')?.split('=')[1]?.toLowerCase();
-  for (const v of (overflow ? breakOn : VARIANTS).filter((x) => !onlyText || x.name.toLowerCase().includes(onlyText))) {
+  for (const v of overflow ? breakOn : VARIANTS) {
     console.log(`${v.name} (${v.q}):`);
-    const url = `${pathToFileURL(page).href}${v.q}${v.sky ? `&skycheck=${v.sky}` : ''}${overflow && SKY_BREAK_Q[overflow] ? SKY_BREAK_Q[overflow] : ''}${overflow && LINES_BREAK_Q[overflow] ? LINES_BREAK_Q[overflow] : ''}&checks=${encodeURIComponent(v.checks.join('|'))}${v.click ? `&click=${encodeURIComponent(v.click)}` : ''}${v.card ? '&card=1' : ''}${v.hits ? `&hits=${encodeURIComponent(v.hits.join('|'))}` : ''}${v.noHit ? `&nohit=${encodeURIComponent(v.noHit)}` : ''}${v.listen ? '&listen=1' : ''}${v.linesSheet ? '&linescheck=1' : ''}${v.th ? `&th=${v.th}` : ''}${v.wb ? `&wbcheck=${v.wb}` : ''}${v.tune ? `&tunecheck=${v.tune}` : ''}`;
+    const breakQuery = overflow && BREAK_QUERIES[overflow] ? (typeof BREAK_QUERIES[overflow] === 'function' ? BREAK_QUERIES[overflow](v) : BREAK_QUERIES[overflow]) : '';
+    const url = `${pathToFileURL(page).href}${v.q}${v.sky ? `&skycheck=${v.sky}` : ''}${breakQuery}&checks=${encodeURIComponent(v.checks.join('|'))}${v.click ? `&click=${encodeURIComponent(v.click)}` : ''}${v.card ? '&card=1' : ''}${v.hits ? `&hits=${encodeURIComponent(v.hits.join('|'))}` : ''}${v.noHit ? `&nohit=${encodeURIComponent(v.noHit)}` : ''}${v.listen ? '&listen=1' : ''}${v.linesSheet ? '&linescheck=1' : ''}${v.th ? `&th=${v.th}` : ''}${v.wb ? `&wbcheck=${v.wb}` : ''}`;
     const dom = await runChrome(
       chrome,
       // Headless Chromium keeps 87 px of the window for itself, so 807 gives a 2560 by 720 viewport.
@@ -2247,7 +1989,7 @@ try {
       process.exit(1);
     }
     const text = m[1].replaceAll('&quot;', '"').replaceAll('&amp;', '&');
-    const { res, page: doc, overlaps, cut, gaps, cardEnds, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, copyOut, meetOut, strip, opened, watchPolish, skyLayers, thCheck, tileText, listen, lines, watchBehaviour, onair, wattDriveIn, tuneCheck } = JSON.parse(text);
+    const { res, page: doc, overlaps, cut, gaps, cardEnds, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, copyOut, meetOut, strip, opened, watchPolish, skyLayers, thCheck, tileText, listen, lines, watchBehaviour, wattDriveIn, areaResults } = JSON.parse(text);
     // watt drive-in
     if (wattDriveIn) {
       for (const f of wattDriveIn.fails) console.log(`  FAIL ${f}`);
@@ -2255,10 +1997,11 @@ try {
       else if (wattDriveIn.waiting) console.log('  ok   watt drive-in: the marquee is waiting, Watt is not at the show');
       else console.log(`  ok   watt drive-in: seated at ${wattDriveIn.at}, on his ground, 30 px or more left of the screen, 22 px or more from every control at his height, near his seat, 24 px or less into the tower`);
     }
-    // on air
-    for (const f of onair) console.log(`  FAIL ${f}`);
-    if (onair.length) failed = true;
-    else if (v.onair) console.log('  ok   on air: three columns inside their planned boxes above the strip, no note cut without "+N more", key tiles at least 40 px');
+    for (const area of activeAreas) {
+      for (const rule of Object.values(area.fit?.rules ?? {})) {
+        if (rule(v, areaResults, console.log)) failed = true;
+      }
+    }
     // watch behaviour
     for (const f of watchBehaviour) console.log(`  FAIL ${f}`);
     if (watchBehaviour.length) failed = true;
@@ -2273,7 +2016,7 @@ try {
     // The moon the rule gives for this layout (the first clear one of cameras.ts MOON_PLACES): on Listen in
     // every player state the low place under the player, on Watch with nothing on its first place. Not with a
     // break that moves the moon on purpose (that one must fail on its distance alone).
-    if (v.moonAt && !(overflow && SKY_BREAK_Q[overflow]) && skyLayers.moon !== v.moonAt) {
+    if (v.moonAt && !(overflow && BREAK_QUERIES[overflow]) && skyLayers.moon !== v.moonAt) {
       failed = true;
       console.log(`  FAIL sky layers: the moon is at ${skyLayers.moon || 'no place'}, expected ${v.moonAt} (the first place clear of this layout)`);
     }
@@ -2284,13 +2027,6 @@ try {
       if (watchPolish.fails.length) failed = true;
       else console.log('  ok   watch polish: the control row is one line clear of the list, nothing over the video\'s box');
       if (v.name.startsWith('Watch polish') || v.name.startsWith('Watch matrix')) switchBoxes.push({ name: v.name, box: watchPolish.sw });
-    }
-    // look settings
-    if (tuneCheck) {
-      for (const f of tuneCheck.fails) console.log(`  FAIL ${f}`);
-      if (tuneCheck.fails.length) failed = true;
-      else if (tuneCheck.mode === 'sheet') console.log('  ok   look settings: the Looks sheet is inside the stage and clear of the office slot, every control 32 px at least, no text under 16 px, no value cut');
-      else console.log('  ok   look settings: the picture is the box the code uses, 16:9, clear of the left block, the clock, the tabs and the list card, and nothing paints on it');
     }
     // look tiles
     for (const f of tileText) console.log(`  FAIL ${f}`);
