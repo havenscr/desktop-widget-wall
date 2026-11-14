@@ -140,7 +140,7 @@ const EXPECT = {
   'watch-gear': /^ *FAIL watch polish: the gear /m,
   'watch-row': /^ *FAIL \.w-ctl: width \d+ <= \d+/m,
   'watch-over': /^ *FAIL watch polish: .*w-(now|ctl).* is drawn over the video's box/m,
-  'watch-seat1106': /^ *FAIL watt drive-in: Watt's left edge is /m,
+  'watt-seat1106': /^ *FAIL watt drive-in: Watt's left edge is /m,
   'watch-take': /^ *FAIL pointer at \.w-sky \.w-frame /m,
   // watt drive-in
   'watt-seat': /^ *FAIL watt drive-in: Watt .* is not 30 px clear of the screen/m,
