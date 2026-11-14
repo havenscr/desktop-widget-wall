@@ -146,11 +146,14 @@ it('opened from a link it rings Accounts for 2 seconds', async () => {
 it('Tools class lists do not reuse bare shared work classes', async () => {
   const mod = 'node:fs';
   const fs = await import(/* @vite-ignore */ mod);
-  const source = fs.readFileSync(['src', 'tools', 'ToolsDrawer.tsx'].join('/'), 'utf8');
-  const work = fs.readFileSync(['src', 'styles', 'work.css'].join('/'), 'utf8');
+  const pathMod = 'node:path';
+  const path = await import(/* @vite-ignore */ pathMod);
+  const tools = path.resolve(process.cwd(), new URL('.', import.meta.url).pathname.replace(/^\/+/, ''));
+  const sources: string[] = (fs.readdirSync(tools) as string[]).filter((name: string) => /\.(?:tsx?|jsx?)$/.test(name)).map((name: string) => fs.readFileSync(path.join(tools, name), 'utf8'));
+  const work = fs.readFileSync(path.resolve(tools, '../styles/work.css'), 'utf8');
   const shared = new Set([...work.matchAll(/^\.([a-z][a-z0-9-]*)\s*\{/gm)].map((m) => m[1]));
-  const toolLists = [...source.matchAll(/['"]([^'"]*tools-[^'"]*)['"]/g)].flatMap((m) => m[1].split(/\s+/));
-  expect(toolLists.filter((name) => shared.has(name))).toEqual([]);
+  const toolLists = sources.flatMap((source: string) => [...source.matchAll(/['"]([^'"]*tools-[^'"]*)['"]/g)].flatMap((m) => m[1].split(/\s+/)));
+  expect(toolLists.filter((name: string) => shared.has(name))).toEqual([]);
 });
 
 it('Accounts: the signed-out calendar has Sign in, Spotify not set up has no button, and there is no Twitch row', async () => {
