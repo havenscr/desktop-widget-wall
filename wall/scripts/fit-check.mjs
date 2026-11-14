@@ -787,6 +787,14 @@ try {
           const rects = words.flatMap((n) => { const g = document.createRange(); g.selectNodeContents(n); return [...g.getClientRects()]; }).filter((x) => x.width > 0);
           q = rects.find((x) => hit(x, r)) || { width: 0, height: 0 };
         }
+        // Only what shows counts: a box cut by every ancestor that clips (a scrolled list hides its far rows).
+        if (q.width > 0) for (let a = e.parentElement; a; a = a.parentElement) {
+          const ac = getComputedStyle(a);
+          if (ac.overflowX === 'visible' && ac.overflowY === 'visible') continue;
+          const c = a.getBoundingClientRect();
+          const l = Math.max(q.left, c.left), t = Math.max(q.top, c.top), rr = Math.min(q.right, c.right), bb = Math.min(q.bottom, c.bottom);
+          q = { left: l, top: t, right: rr, bottom: bb, width: Math.max(0, rr - l), height: Math.max(0, bb - t) };
+        }
         if (q.width > 0 && q.height > 0 && hit(q, r)) sig.push(name + ': covers ' + (e.textContent || '').trim().slice(0, 30) + ' (' + e.tagName.toLowerCase() + '.' + (typeof e.className === 'string' ? e.className : '') + ')');
       }
     }
