@@ -1447,6 +1447,16 @@ button.panel.network.shield:focus-visible {
   min-width: 0;
   font: 600 22px/26px var(--body);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Why Clear all is not offered: one quiet line under the title. */
+.sd-why {
+  flex: none;
+  display: flex;
+  justify-content: flex-end;
+  padding: 4px 0 2px;
+  border-bottom: 1px solid var(--line);
 }
 .sd-note {
   white-space: nowrap;

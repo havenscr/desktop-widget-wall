@@ -113,16 +113,6 @@ export function ShieldDrawer({ s, refresh, onClose }: { s: Shield; refresh: numb
             {busy ? 'Clearing' : 'Clear all'}
           </button>
         )}
-        {s.clearWaits && (
-          <span className="sd-txt off" {...tip('The last read is not live, so Clear all would clear alerts this list may not show. It comes back with the next good read.')}>
-            Clear all waits for a fresh read
-          </span>
-        )}
-        {s.clearInsecure && (
-          <span className="sd-txt off" {...tip('The home app address in feeds.json is plain http on the local network, so the wall does not send its desk token there. Use https, a loopback or a tailnet address.')}>
-            Clear all needs a private or https address
-          </span>
-        )}
         {s.clearNotSetUp && (
           <span className="sd-txt off" {...tip('Clear all needs homeDeskToken in feeds.json on this PC (and the same token in the home app).')}>
             Clear all: not set up
@@ -132,6 +122,21 @@ export function ShieldDrawer({ s, refresh, onClose }: { s: Shield; refresh: numb
           <IconX size={16} stroke={2.2} aria-hidden="true" />
         </button>
       </div>
+      {/* Why Clear all is not offered, on its own line under the title (too long to share it). */}
+      {(s.clearWaits || s.clearInsecure) && (
+        <div className="sd-why">
+          {s.clearWaits && (
+            <span className="sd-txt off" {...tip('The last read is not live, so Clear all would clear alerts this list may not show. It comes back with the next good read.')}>
+              Clear all waits for a fresh read
+            </span>
+          )}
+          {s.clearInsecure && (
+            <span className="sd-txt off" {...tip('The home app address in feeds.json is plain http on the local network, so the wall does not send its desk token there. Use https, a loopback or a tailnet address.')}>
+              Clear all needs a private or https address
+            </span>
+          )}
+        </div>
+      )}
       <div className="sd-list">
         {s.alerts.map((a) => (
           <div key={a.key} className="sd-row">
