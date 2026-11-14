@@ -140,7 +140,8 @@ export function initialEchoGate(glide: Glide): EchoGate {
  *
  * - Work and Home (3 lines) live: `ea * loud`, so zero loudness shows no live lines.
  * - Unwind (11 lines) live: `ea` raised to full by `PLAY_BOOST`, with no loudness scaling (the real
- *   bands carry the dynamics, `createEchoSampler`), and the `PLAY_TINT` colours and width.
+ *   bands carry the dynamics, `createEchoSampler`), and `colours` (the cover's, from
+ *   `music/coverTint.ts`; `PLAY_TINT` when no cover is known) at the `PLAY_TINT` width.
  * - With `rest` above 0 also the resting look and opacity, on every camera with a ripple.
  *
  * During a glide `n` is the blended, fractional line count: the renderer crossfades the two whole
@@ -155,6 +156,7 @@ export function echoOptions(
   look: RestLook = REST_LOOK,
   restOpacity?: number,
   swell = 0,
+  colours: { left: number[]; centre: number[]; right: number[] } = PLAY_TINT,
 ): HorizonEcho | null {
   const g = clamp01(gate);
   if (g <= 0.001) return null;
@@ -168,7 +170,7 @@ export function echoOptions(
   if (a <= 0.005 && (r <= 0 || restA <= 0.005)) return null;
   const e: HorizonEcho = { n: Math.max(1, camera.en), amp: camera.eamp * (1 + DANCE_AMP * k), a, t, cx: camera.ecx, hs: ECHO_HALF_SPAN };
   if (k > 0) {
-    e.tint = { ...PLAY_TINT, k };
+    e.tint = { left: colours.left, centre: colours.centre, right: colours.right, width: PLAY_TINT.width, k };
     e.dance = k;
     if (swell > 0) e.swell = clamp01(swell);
   }
