@@ -215,7 +215,7 @@ state('work', 'agents header: twelve sessions, two waiting, an alarm', 'agents=1
 state('work', 'bottom: overlaps and twelve', 'meet=overlap&agents=12ask');
 state('work', 'bottom: normal', '');
 add('work', 'bottom: overlap hover', url('work', TYPICAL_AT, 'meet=overlap&agents=3'), true, 'hover:.rib .ev.fold');
-add('work', 'bottom: day drawer', url('work', TYPICAL_AT, 'meet=overlap&agents=12ask'), true, '.rib .rib-handle');
+add('work', 'bottom: day drawer', url('work', TYPICAL_AT, 'meet=overlap&agents=12ask'), true, '.rib-handle');
 add('work', 'agents today: today', url('work', TYPICAL_AT, 'agents=7ask&days=typical'), true, '.rib .ag-line');
 add('work', 'agents today: yesterday', url('work', TYPICAL_AT, 'agents=7ask&days=typical'), true, '.rib .ag-line >> .at-seg button:nth-child(2)');
 add('work', 'agents today: heavy day', url('work', TYPICAL_AT, 'agents=12&days=heavy&long=1'), true, '.rib .ag-line >> .at-seg button:nth-child(2)');
@@ -369,7 +369,7 @@ add('work', 'leave: amber', url('work', TYPICAL_AT, 'leave=4'), true);
 add('work', 'leave: now', url('work', TYPICAL_AT, 'leave=0'), true);
 add('work', 'leave: long title', url('work', TYPICAL_AT, 'leave=12&long=1'), true);
 add('work', 'leave: heavy data', url('work', TYPICAL_AT, `${HEAVY}&leave=4`), true);
-add('work', 'leave: Day drawer open', url('work', TYPICAL_AT, 'meet=overlap&agents=12ask&leave=12&rec=1'), true, '.rib .rib-handle');
+add('work', 'leave: Day drawer open', url('work', TYPICAL_AT, 'meet=overlap&agents=12ask&leave=12&rec=1'), true, '.rib-handle');
 add('work', 'leave: feed stale, nothing shown', url('work', TYPICAL_AT, 'leave=4&meet=partial'), true);
 add('home', 'leave: on home', url('home', TYPICAL_AT, 'leave=12'), true);
 add('unwind', 'leave: on unwind', url('unwind', TYPICAL_AT, 'leave=4'), true);
@@ -393,15 +393,34 @@ add('work', 'deck fixes: general set, day', url('work', KS_DAY, 'keys=general&ho
 add('work', 'deck fixes: For you page', url('work', KS_DAY, 'agents=ask&keys=typical&hold=foryou&meet=none&net=calm'), true);
 add('work', 'deck fixes: Recording page', url('work', KS_DAY, 'rec=1&keys=library&meet=none'), true);
 add('work', 'deck fixes: key picker open', url('work', KS_DAY, 'keys=library'), true, 'ctx:.pin-tile');
-add('work', 'deck fixes: Day drawer open, typical', url('work', TYPICAL_AT, 'meet=overlap&agents=12ask'), true, '.rib .rib-handle');
-add('work', 'deck fixes: Day drawer open, heavy', url('work', TYPICAL_AT, `${HEAVY}`), true, '.rib .rib-handle');
-add('work', 'deck fixes: Day drawer open, leave banner showing', url('work', TYPICAL_AT, 'meet=overlap&agents=12ask&leave=12&rec=1'), true, '.rib .rib-handle');
+add('work', 'deck fixes: Day drawer open, typical', url('work', TYPICAL_AT, 'meet=overlap&agents=12ask'), true, '.rib-handle:not(.in-drawer)');
+add('work', 'deck fixes: Day drawer open, heavy', url('work', TYPICAL_AT, `${HEAVY}`), true, '.rib-handle:not(.in-drawer)');
+add('work', 'deck fixes: Day drawer open, leave banner showing', url('work', TYPICAL_AT, 'meet=overlap&agents=12ask&leave=12&rec=1'), true, '.rib-handle:not(.in-drawer)');
 add('unwind', 'unwind: hide screen at rest', url('unwind', TYPICAL_AT), true);
 add('unwind', 'unwind: hide screen hover', url('unwind', TYPICAL_AT), true, 'hover:.screens-off');
 // The failure note ("Could not watch input", `hide=fail`) after a click, with the pointer still on the pill, and with keyboard focus.
 add('unwind', 'unwind: hide screen note while hovered', url('unwind', TYPICAL_AT, 'hide=fail'), true, ['.screens-off', 'hover:.screens-off']);
 add('unwind', 'unwind: hide screen note while focused', url('unwind', TYPICAL_AT, 'hide=fail'), true, ['.screens-off', 'focus:.screens-off']);
 
+// day handle, rows, colours: the Day drawer's handle (the strip's top edge) at rest, under the
+// pointer and open, by night and at noon; the Agents today rows typical, heavy with long titles and
+// on a past day; the Agents header's meter at 2, 4 and 9 of 4; the strip and the panel over the limit.
+add('work', 'day handle: at rest', url('work', TYPICAL_AT, 'agents=7ask&days=typical'), true);
+add('work', 'day handle: hovered', url('work', TYPICAL_AT, 'agents=7ask&days=typical'), true, 'hover:.rib-handle');
+add('work', 'day handle: open', url('work', TYPICAL_AT, 'agents=7ask&days=typical'), true, '.rib-handle');
+add('work', 'day handle: at night', url('work', TIMES.night, 'agents=7ask'), true);
+add('work', 'day handle: at noon, hovered', url('work', TIMES.noon, 'agents=7ask'), true, 'hover:.rib-handle');
+add('work', 'day rows: typical', url('work', TYPICAL_AT, 'agents=12ask'), true, '.rib-handle');
+add('work', 'day rows: heavy, long titles', url('work', TYPICAL_AT, 'agents=12busy&long=1&meet=overlap'), true, '.rib-handle');
+add('work', 'day rows: a past day', url('work', TYPICAL_AT, 'agents=12&days=heavy&long=1'), true, '.rib .ag-line >> .at-seg button:nth-child(2)');
+add('work', 'colours: header at 2 of 4', url('work', TYPICAL_AT, 'agents=3'), true);
+add('work', 'colours: header at 4 of 4', url('work', TYPICAL_AT, 'agents=7ask'), true);
+add('work', 'colours: header at 9 of 4', url('work', TYPICAL_AT, 'agents=12busy'), true, 'hover:.slot-meter');
+add('work', 'colours: the strip over the limit', url('work', TYPICAL_AT, 'agents=12busy&meet=overlap'), true);
+add('work', 'colours: the panel over the limit', url('work', TYPICAL_AT, 'agents=12busy&days=typical'), true, '.rib .ag-line');
+// A limit the helper does not send (a zero): the honest count only, no pips, steps or limit line.
+add('work', 'colours: no limit, header and strip', url('work', TYPICAL_AT, 'agents=12busy&limit=0&meet=overlap'), true);
+add('work', 'colours: no limit, the panel', url('work', TYPICAL_AT, 'agents=12busy&limit=0&days=typical'), true, '.rib .ag-line');
 // unwind listen: the cover on top with its controls in the sky, Up next under the toggles, the
 // Spotify card in the upper right (its switch, covers, a hover, a playlist's songs) and its hard states.
 state('unwind', 'listen: playing', 'audio=demo', TIMES.night);
@@ -670,6 +689,22 @@ EXPECT.push(
   ['work', 'agents today: empty day', 'No sessions recorded on this day'],
   ['work', 'agents today: record absent', ['Agents today', '!Yesterday']],
   ['work', 'agents today: helper down', 'may be out of date'],
+  // day handle, rows, colours
+  ['work', 'day handle: at rest', ['Open the day', '!Close the day']],
+  ['work', 'day handle: hovered', ['Open the day', '!Close the day']],
+  ['work', 'day handle: open', ['Close the day', 'Agents today']],
+  ['work', 'day handle: at night', 'Open the day'],
+  ['work', 'day handle: at noon', 'Open the day'],
+  ['work', 'day rows: typical', ['Agents today', 'waiting on you', '3 helpers, 2 working']],
+  ['work', 'day rows: heavy', ['9 working, 1 failed', 'Waiting on a thumbnail choice']],
+  ['work', 'day rows: a past day', ['From the saved record of the day', 'open at once, from the saved record', '!Over your limit']],
+  ['work', 'colours: header at 2 of 4', '2 of 4 working'],
+  ['work', 'colours: header at 4 of 4', ['4 of 4 working', 'at the limit']],
+  ['work', 'colours: header at 9 of 4', ['9 of 4 working', '5 over']],
+  ['work', 'colours: the strip over the limit', ['12 sessions: 1 needs you, 9 working', '5 over']],
+  ['work', 'colours: the panel over the limit', ['Busy at once', 'Over your limit of 4 for']],
+  ['work', 'colours: no limit, header and strip', ['9 working', '!5 over', '!of 4']],
+  ['work', 'colours: no limit, the panel', ['Click a row to open its session', '!Busy at once', '!Over your limit']],
   // deck and drawer fixes
   ['work', 'deck fixes: mixed', ['Always here', 'Sonos: play what suits the hour']],
   ['work', 'deck fixes: general set', ['Always here', 'Now \u00b7 General']],

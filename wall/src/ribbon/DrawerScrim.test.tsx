@@ -101,7 +101,7 @@ function Wall({ late = false }: { late?: boolean }) {
   );
 }
 
-const handle = (r: ReturnType<typeof render>) => r.container.querySelector('.rib .rib-handle:not(.in-drawer)') as HTMLElement;
+const handle = (r: ReturnType<typeof render>) => r.container.querySelector('.rib-handle:not(.in-drawer)') as HTMLElement;
 const inertOf = (el: Element | null) => el?.closest('[inert]') ?? null;
 
 it('with the drawer open a click outside only closes it: the agent card, the tasks and the rail are not reached', async () => {
@@ -121,7 +121,9 @@ it('with the drawer open a click outside only closes it: the agent card, the tas
   expect(inertOf(r.container.querySelector('.wr [aria-label="Tasks"]'))).not.toBeNull();
   expect(inertOf(r.container.querySelector('.rail .rb'))).not.toBeNull();
   expect(inertOf(r.container.querySelector('.leave-banner button'))).not.toBeNull();
-  expect(inertOf(handle(r))).not.toBeNull();
+  // The strip's own handle is replaced by the lip on the drawer's top edge, which stays live above the scrim.
+  expect(handle(r)).toBeNull();
+  expect(inertOf(r.container.querySelector('.day-drawer .rib-handle'))).toBeNull();
   // The drawer, its own rows and the hover card layer stay live.
   expect(inertOf(r.container.querySelector('.day-drawer'))).toBeNull();
   expect(inertOf(r.container.querySelector('.dd-row'))).toBeNull();
@@ -307,6 +309,33 @@ it('a banner and a chip that mount while the drawer is open are inert and take n
   } finally {
     style.remove();
   }
+});
+
+it('with the Agents today panel open behind the Wall, the strip handle is inert with the rest of the page and a click on the lip does nothing', async () => {
+  const r = render(<Wall />);
+  await flush(50);
+  fireEvent.click(handle(r));
+  fireEvent.click(r.container.querySelector('.dd-k.link') as HTMLElement);
+  expect(r.container.querySelector('.day-drawer')).toBeNull();
+  expect(r.container.querySelector('.agents-today')).not.toBeNull();
+  expect(handle(r)).not.toBeNull();
+  expect(inertOf(handle(r))).not.toBeNull();
+  expect(inertOf(r.container.querySelector('.agents-today'))).toBeNull();
+  await flush(LATCH_MS + 10);
+});
+
+it('with the drawer open, a click on its Close the day lip closes it (the lip is above the scrim, inside the live drawer)', async () => {
+  const r = render(<Wall />);
+  await flush(50);
+  fireEvent.click(handle(r));
+  const lip = r.container.querySelector('.day-drawer .rib-handle.day-lip.in-drawer') as HTMLElement;
+  expect(lip.getAttribute('aria-label')).toBe('Close the day');
+  expect(inertOf(lip)).toBeNull();
+  expect(r.container.querySelector('.drawer-scrim')).not.toBeNull();
+  fireEvent.click(lip);
+  expect(r.container.querySelector('.day-drawer')).toBeNull();
+  expect(opened).toEqual([]);
+  await flush(LATCH_MS + 10);
 });
 
 it('a click outside the open Agents today panel closes it and opens nothing; the page is inert meanwhile and live after', async () => {
