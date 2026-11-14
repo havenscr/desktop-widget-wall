@@ -1367,6 +1367,17 @@ Watt is also a small pet ("he"), calm and silent (no sound at all):
   curious) only changes which lines and idle poses he picks; it never goes below content. Twice
   a day a clover grows on his walk; he eats it when he reaches it, or click it to give it to
   him. Cosmetics (bow, star, cape) unlock with days together.
+- **What he wears and where** (`buddy/sprites.ts`, drawn by `PropSvg` over the sheep, so every
+  piece flips with him). The headphones are one big cup on his ear with the band over the top of
+  his head, placed from his ear pixel (`EAR`); they are worn on every pose seen from the side, and
+  not on the spin and the front view (`NO_HEADPHONES`), where a cup on one ear cannot be drawn.
+  The star is a five-point patch on his wool, drawn on every pose and never dropped (it does not
+  rise above him, so the rise limit `PROP_RISE_MAX` never applies to it, and it is on him while his
+  menu is open and he looks up). Its place is a table, `STAR_AT`, one entry per pose: (5, 3) when
+  he stands, one row higher on the shorter bodies (sleeping, lying, landing, hopping), and left of
+  the face on the front and back views, which show no flank. A unit test checks, for every pose,
+  that all 14 of its pixels are on wool and not under the headphones, scarf, sunglasses, nightcap
+  or book. The little plus that glitters after a happy click (`SPARKLE`) is a separate sprite.
 - **Stored locally** (`localStorage` key `wall2.watt`, `buddy/pet.ts`): how chatty he is, the
   cosmetic, days together, today's counts, his Stay and his spot on each place (each spot is
   kept only when it is a known place and an x on the stage). His click area, mark and clover sit above the
