@@ -735,7 +735,7 @@
   font-size: 27px;
 }
 
-/* Right wing: the next three, as the concept's .tk3 rows (72 px tall for touch). */
+/* Right wing: the next three, as the concept's .tk3 rows (70 px tall: 2 px each, 6 in all, go to the deck's taller keys). */
 .tasks {
   display: flex;
   flex-direction: column;
@@ -754,7 +754,7 @@
 .tk3 {
   display: flex;
   align-items: center;
-  height: 72px;
+  height: 70px;
   border-bottom: 1px solid var(--line);
   transition: opacity 600ms ease;
 }
@@ -948,16 +948,26 @@
 .deck-tile.off svg {
   opacity: 0.75;
 }
-/* Every key in both rows is the same boxed tile: the icon above a label of up to two lines. */
+/* Every key in both rows is the same boxed tile, one height, built from fixed parts: 6 px of
+   padding, the icon's 20 px box, a 4 px gap, a 32 px label area (two lines of 16 px) and 6 px of
+   padding, inside a 1 px edge: 6 + 20 + 4 + 32 + 6 + 2 = 70. The icon sits at the same place in
+   every tile; a one-line label is centred in its two-line area and a longer one is cut with an
+   ellipsis after two lines (the tooltip carries the full name). */
 .deck-tile.key-tile {
-  height: 60px;
-  flex-direction: column;
-  gap: 3px;
-  padding: 0 8px;
+  height: 70px;
+  box-sizing: border-box;
+  display: grid;
+  grid-template-rows: 20px 32px;
+  row-gap: 4px;
+  justify-items: center;
+  align-content: start;
+  padding: 6px 8px;
   font-size: 15px;
-  line-height: 1.05;
+  line-height: 16px;
 }
 .deck-tile.key-tile svg {
+  width: 20px;
+  height: 20px;
   flex: none;
 }
 /* Keys tinted by kind: a soft wash and an edge in the kind's colour over a dark base, the icon in
@@ -1023,6 +1033,8 @@
 }
 .key-tile .deck-lbl {
   max-width: 100%;
+  max-height: 32px;
+  align-self: center;
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
@@ -1231,7 +1243,7 @@
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
-  height: 60px;
+  height: 70px;
   box-sizing: border-box;
   padding: 0 9px 0 12px;
   border-radius: 14px;
@@ -1301,7 +1313,7 @@
    rows the box grows to hold it, into the room that a short task list leaves. */
 .deck:has(.pk) {
   /* Down to the deck's floor above the mountains (keysModel deckFloorY), never past it. */
-  min-height: 226px;
+  min-height: 232px;
 }
 .pk {
   position: absolute;

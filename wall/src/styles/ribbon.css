@@ -404,6 +404,61 @@
   background: rgba(255, 255, 255, 0.7);
 }
 
+/* Behind the open Day drawer or the Agents today panel: one stage-wide shield, above every other
+   part of the wall (the Tools drawer is 45) and below the overlay (47). It dims the page and blurs
+   it slightly, and it takes every press, so a click outside only closes the overlay; after a press
+   it stays up (`closing`, invisible) for about a double click so the rest of that click lands on it
+   too. The leave banner and the recording chip rise above it (48) so their time-critical words
+   stay undimmed and unblurred, but they take no pointer and no focus until the overlay closes
+   (the page's `inert`, and the root attribute rule below for anything that mounts later).
+   The blur is 4 px with a 20 percent dim. It is off where the system asks for reduced
+   transparency, and where `backdrop-filter` is not supported the dim alone is 30 percent. It was
+   measured only in software rendering, not on a graphics card; if it is slow on the strip, the
+   blur is the one line `backdrop-filter: blur(4px)` below. */
+.drawer-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 46;
+  background: rgba(6, 4, 22, 0.3);
+  cursor: default;
+}
+@supports (backdrop-filter: blur(4px)) or (-webkit-backdrop-filter: blur(4px)) {
+  .drawer-scrim {
+    background: rgba(6, 4, 22, 0.2);
+    -webkit-backdrop-filter: blur(4px);
+    backdrop-filter: blur(4px);
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .drawer-scrim {
+    background: rgba(6, 4, 22, 0.3);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+.drawer-scrim.closing {
+  animation: scrim-out 160ms ease-out forwards;
+}
+@keyframes scrim-out {
+  to {
+    background: transparent;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+.drawer-scrim ~ .leave-banner,
+.drawer-scrim ~ .rec-float {
+  z-index: 48;
+}
+:root[data-drawer-open] .leave-banner,
+:root[data-drawer-open] .rec-float {
+  pointer-events: none;
+}
+.day-drawer:focus,
+.agents-today:focus {
+  outline: none;
+}
+
 /* The Day drawer: 532 px over the lower part of Work (main area y 148 to 680). */
 .day-drawer {
   position: absolute;
@@ -412,7 +467,7 @@
   width: 2416px;
   height: 532px;
   box-sizing: border-box;
-  z-index: 45;
+  z-index: 47;
   display: flex;
   flex-direction: column;
   padding: 14px 28px 16px;
@@ -780,7 +835,7 @@ button.dd-k.link:hover {
   width: 1420px;
   max-height: 420px;
   box-sizing: border-box;
-  z-index: 45;
+  z-index: 47;
   display: flex;
   flex-direction: column;
   padding: 16px 26px 12px;

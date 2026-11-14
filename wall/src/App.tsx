@@ -13,6 +13,7 @@ import { ToolsDrawer } from './tools/ToolsDrawer';
 import { useSignalStore } from './signals/store';
 import { LeaveBanner } from './signals/LeaveBanner';
 import { FloatingRecordingChip } from './signals/RecordingChip';
+import { DrawerScrim } from './ribbon/DrawerScrim';
 
 export function App() {
   const active = usePlaceStore((s) => s.active);
@@ -36,6 +37,7 @@ export function App() {
         <Rail />
         <Screens />
       </div>
+      <DrawerScrim />
       <LeaveBanner />
       <FloatingRecordingChip />
       <ToolsDrawer />
