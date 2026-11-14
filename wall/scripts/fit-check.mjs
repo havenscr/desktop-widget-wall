@@ -290,7 +290,7 @@ const OVERFLOWS = {
   'watt-spot': '.watt-sheep { translate: -80px 0 !important; }',
   // his left edge 12 px off the chosen 1106 (30 px from the screen at 1244 with his 108 px width), still within the 40 px of his seat.
   'watt-seat1106': '.watt-sheep { translate: -12px 0 !important; }',
-  'watt-tower': '.watt-sheep { translate: 14px 0 !important; }',
+  'watt-tower': '.watt-sheep { translate: 20px 0 !important; }',
   // tower and hologram: the frame's rings filled over the picture; the tower widened 120 px (to 1.16 times, about its centre);
   // the video's box back at the old place; the left block moved under the Hologram only; the Hologram's pane scaled 1.3 times;
   // its blend dropped; a refused autoplay's click that never reaches the tilted frame.
