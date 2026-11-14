@@ -66,9 +66,12 @@ export function resolvePin(ref: string, lib: readonly LibGroup[], filePins: read
 }
 
 /**
- * The pins kept on this display, checked on read against the library and keys.json: anything
- * odd (not a list, too long, an unknown id, a key that cannot run, a repeat) gives null and
- * the defaults apply. Nothing in storage is ever sent as it is.
+ * The pins kept on this display, checked on read against the library and keys.json. A stored
+ * value that is malformed (not a list, too long, an entry that is not a key reference, a repeat)
+ * gives null and the defaults apply. A well formed list whose references have merely stopped
+ * resolving (a key the library dropped, a keys.json key that changed or went) keeps the ones that
+ * still resolve, down to an empty row: the owner's choice is not undone by a library change.
+ * Nothing in storage is ever sent as it is.
  */
 export function parsePins(raw: string | null, lib: readonly LibGroup[], filePins: readonly KeyInfo[]): string[] | null {
   if (raw === null) return null;
@@ -86,10 +89,10 @@ export function parsePins(raw: string | null, lib: readonly LibGroup[], filePins
       }
       // A bare file index (no label to check it by) is dropped like a changed one.
       if (typeof r === 'string' && r.startsWith('file:')) continue;
-      if (typeof r !== 'string' || out.includes(r) || !resolvePin(r, lib, filePins)) return null;
-      out.push(r);
+      if (typeof r !== 'string' || !REF_RE.test(r) || out.includes(r)) return null;
+      if (resolvePin(r, lib, filePins)) out.push(r);
     }
-    return v.length === 0 ? [] : out.length > 0 ? out : null;
+    return out;
   } catch {
     return null;
   }

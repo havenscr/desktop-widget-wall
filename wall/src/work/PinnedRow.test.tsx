@@ -295,7 +295,7 @@ it('Reset to defaults clears the choice', async () => {
 });
 
 it('storage that is not valid against the library is ignored and the defaults show', async () => {
-  for (const bad of ['nope', JSON.stringify(['lib:nope']), JSON.stringify(['lib:snip', 'lib:snip']), JSON.stringify(['lib:new-chat']), JSON.stringify(['lib:snip', 'lib:focus', 'lib:thirds', 'lib:mute', 'lib:mixer', 'lib:zen'])]) {
+  for (const bad of ['nope', JSON.stringify(['lib:snip', 'lib:snip']), JSON.stringify([7]), JSON.stringify(['lib:snip', 'lib:focus', 'lib:thirds', 'lib:mute', 'lib:mixer', 'lib:zen'])]) {
     localStorage.setItem(PINS_KEY, bad);
     resetKeysFeed();
     const { unmount } = render(<PinnedRow />);
@@ -303,6 +303,20 @@ it('storage that is not valid against the library is ignored and the defaults sh
     expect(labels(), bad).toEqual(['Thirds', 'Focus', 'Record 16:9', 'Snip', 'Hide screen']);
     unmount();
   }
+});
+
+it('a stored key that no longer resolves is dropped without bringing the defaults back', async () => {
+  localStorage.setItem(PINS_KEY, JSON.stringify(['lib:snip', 'lib:nope']));
+  const first = render(<PinnedRow />);
+  await flush();
+  expect(labels()).toEqual(['Snip']);
+  first.unmount();
+  localStorage.setItem(PINS_KEY, JSON.stringify(['file:0']));
+  resetKeysFeed();
+  render(<PinnedRow />);
+  await flush();
+  expect(labels()).toEqual([]);
+  expect(screen.getByRole('button', { name: 'Add a key' })).toBeTruthy();
 });
 
 it('search narrows the library; coming and unfinished keys are listed but cannot be pinned', async () => {
