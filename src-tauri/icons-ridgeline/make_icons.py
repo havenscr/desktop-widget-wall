@@ -8,7 +8,7 @@ Frame order in icon.ico: 32 first, then 16, 24, 48, 64, 256. Tauri's own icon co
 first (16 first), but the app's window icon and tray icon are the FIRST frame, taken as one bitmap and
 scaled by Windows for both the small (16 px) and big (32 px and up) uses; a 16 px first frame would be
 stretched and blurry. Windows picks the best frame by size for everything else (Explorer, Start menu),
-so the order does not matter there.
+so the order does not matter there. Re-running the script gives byte-identical files.
 """
 import io
 import os
