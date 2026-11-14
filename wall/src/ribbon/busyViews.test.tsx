@@ -154,7 +154,7 @@ it('helper work uses one word, one count and one open span in every live view', 
   await flush();
   const row = r.container.querySelector('.day-drawer .dd-row') as HTMLElement;
   expect(row.querySelector('.dd-pill')!.textContent).toBe('helpers working');
-  expect(row.querySelector('.dd-line')!.textContent).toContain('helpers working: 2 agents, 1 command, 1 helper');
+  expect(row.querySelector('.dd-line')!.textContent).toContain('helpers working: 2 agents, 1 command, 1 helper, 1 at work');
   expect(r.container.querySelector('.dd-counts')!.textContent).toContain('1 working (1 through helpers)');
   expect(r.container.innerHTML).not.toContain('child-must-not-render');
   expect(r.container.querySelectorAll('.day-drawer .dd-row')).toHaveLength(1);

@@ -233,6 +233,7 @@ it('a row\'s quiet line: the line, else the next step; then the wait, the helper
   expect(quietLine(lane({ line: 'running', waitingSinceS: 720, pr: null }))).toBe('');
   expect(quietLine(lane({ line: 'running', kids: { total: 3, working: 2 }, pr: null }))).toBe('3 helpers, 2 working');
   expect(quietLine(lane({ line: 'running', kids: { total: 1, working: 0 }, pr: null }))).toBe('1 helper, none working');
+  expect(quietLine(lane({ live: 'idle', line: 'running', kids: { total: 3, working: 2, running: 1 }, pr: null }))).toBe('helpers working: 3 helpers, 1 at work');
   expect(quietLine(lane({ line: 'failed', failed: true, pr: { number: 571, ci: 'failing', ready: true } }))).toBe('PR 571, checks failing');
   expect(quietLine(lane({ line: 'Drawing options', next: 'x', waiting: true, waitingSinceS: 60, kids: { total: 2, working: 1 }, pr: { number: 5, ci: 'passing', ready: true } }))).toBe(
     'Drawing options \u00b7 1 min \u00b7 2 helpers, 1 working \u00b7 PR 5, checks passing',
