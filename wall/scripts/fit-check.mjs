@@ -547,7 +547,8 @@ const TOOLS_VARIANTS = [
   tools('no keys file', `${work('3')}&source=default&tools=1`),
   tools('Spotify not set up, a sign-in waiting', `${work('3')}&spotify=off&meet=signedout&tools=1`),
   // The YouTube row in each state it can show, and the Set up form open from Set up and from Change setup.
-  ...[['not set up', 'off'], ['signed out', 'out'], ['signed in', 'in'], ['setup broken, said in the note', 'broken'], ['sign in again', 'again'], ['could not check', 'down'], ['signed in, setup missing', 'missing'], ['setup unreadable', 'unreadable'], ['waiting after a reload', 'reloaded']].map(([n, k]) => tools(`YouTube ${n}`, `${work('3')}&youtube=${k}&tools=1`)),
+  // A state that shows the Accounts note is held to the drawer and the note, as the other note states are.
+  ...[['not set up', 'off'], ['signed out', 'out'], ['signed in', 'in'], ['setup broken, said in the note', 'broken'], ['sign in again', 'again'], ['could not check', 'down'], ['signed in, setup missing', 'missing'], ['setup unreadable', 'unreadable'], ['waiting after a reload', 'reloaded']].map(([n, k]) => (['broken', 'unreadable'].includes(k) ? { ...tools(`YouTube ${n}`, `${work('3')}&youtube=${k}&tools=1`), checks: ['.tools-drawer', '.tools-note'] } : tools(`YouTube ${n}`, `${work('3')}&youtube=${k}&tools=1`))),
   { name: 'Tools, YouTube waiting for the browser', q: `${work('3')}&youtube=waiting&tools=1`, click: YT_ROW + ' .tools-btn.cy', checks: TOOLS, viewportOnly: true },
   { name: 'Tools, YouTube setup form open', q: `${work('3')}&youtube=off&tools=1`, click: YT_ROW + ' .tools-btn', checks: TOOLS, viewportOnly: true },
   { name: 'Tools, YouTube refused setup, form open', q: `${work('3')}&youtube=brokenout&tools=1`, click: YT_ROW + ' .tools-btn', checks: TOOLS, viewportOnly: true },
