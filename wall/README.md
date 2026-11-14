@@ -1,9 +1,11 @@
-# Wall 2
+# Ridgeline
 
-Wall 2 is the next front end for Widget Wall. It lives beside the existing app
-(`src/`, untouched) and is built with Vite, React and TypeScript (strict). It
-runs in a plain browser for development and inside Tauri as a second app,
-"Widget Wall 2". So far: a scaled stage, the live horizon, a left rail with
+Ridgeline is the next front end for Widget Wall. It was called "Wall 2" while it
+was built, and some file, folder and code names (`wall/`, `wall2_*.rs`, the window
+label `wall2`, the app identifier) keep that name on purpose. It lives beside the
+existing app (`src/`, untouched) and is built with Vite, React and TypeScript
+(strict). It runs in a plain browser for development and inside Tauri as a second
+app, "Ridgeline". So far: a scaled stage, the live horizon, a left rail with
 three places, a clock, the Work tab basics (weather, music, focus timer), a task
 card, a network tile and mood buttons on Home, the Unwind tab with Watt the sheep, a sound ripple
 on the horizon, the Zen place with Dream, a small Tauri bridge and tests. Home has its moods, Sonos controls and a network tile; the Rooms row is still to come.
@@ -247,10 +249,10 @@ out, and the Speakers and More pop-outs open.
 ## Run and build inside Tauri
 
 `src-tauri/tauri.wall2.conf.json` is a second Tauri config. It overrides only
-the product name ("Widget Wall 2"), identifier, version, the `build` block
+the product name ("Ridgeline"), identifier, version, the `build` block
 (dev URL `http://localhost:1421`, build commands, `frontendDist` at
-`wall/dist`) and one window (label `wall2`). Everything else comes from
-`src-tauri/tauri.conf.json`.
+`wall/dist`), one window (label `wall2`) and the `bundle` icons and installer
+settings described below. Everything else comes from `src-tauri/tauri.conf.json`.
 
 **Window.** The window is labelled `wall2` and gets its own narrow capability,
 `src-tauri/capabilities/wall2.json` (`core:default` only; the old `default`
@@ -293,6 +295,44 @@ npm run build:wall2     # tauri build with the second config (installers)
 
 `build:wall2` runs `npm --prefix wall ci && npm --prefix wall run build` first.
 The old app is unchanged: `npm run tauri build` still builds "Widget Wall".
+
+**Installer files.** `build:wall2` writes `Ridgeline_<version>_x64-setup.exe` (NSIS)
+and `Ridgeline_<version>_x64_en-US.msi` under `src-tauri/target/release/bundle/nsis/`
+and `.../msi/`, next to `widget-wall-desktop.exe` (the executable keeps the crate's
+name). CI uploads all three as the artifact `widget-wall-2-windows`; the artifact
+name did not change with the product name.
+
+**Icon.** The icon set is in `src-tauri/icons-ridgeline/` (`icon.svg` is the
+source; `make_icons.py` redraws the PNGs and `icon.ico` from it, see its header).
+`tauri.wall2.conf.json` points `bundle.icon` at it. The window icon and the tray
+icon are the first `.ico` in that list, and the executable's own icon is the
+same file. The old app's `src-tauri/icons/` is not used by this build.
+
+**Name, identifier and your data.** Renaming changes the name only. The app
+identifier (`com.havens-consulting.widget-wall2`) is unchanged, and Tauri keys the
+config folder (`feeds.json`, `meet.json`, the keys file), the local data folder
+(web view storage, so saved settings and local storage), the cache and the logs
+folder by the identifier, not by the product name. The Credential Manager entries
+for Spotify and Microsoft sign-ins are named `WidgetWall2/<service>/...` by the
+code, not by the product name. None of them move.
+
+**Installing over an existing "Widget Wall 2".** The bundler derives the install
+folder, the Installed apps entry, the Start menu and desktop shortcuts and the NSIS
+sign-in Run value from the product name, and the default MSI upgrade code from
+`<productName>.exe.app.x64`. So a plain rename would install a second app beside
+the first. Two settings prevent that:
+
+- `bundle.windows.wix.upgradeCode` is set to the code the old name produced
+  (`45c8f91e-8224-55fe-92ae-75e0e555cffa`), so the MSI upgrades the old product.
+- `bundle.windows.nsis.installerHooks` loads `src-tauri/ridgeline-installer-hooks.nsh`.
+  Before installing, it finds the old install through the old name's own registry
+  keys, and runs only that install's `uninstall.exe` silently in update mode
+  (which skips deleting app data). Nothing is done if the old install is not there.
+  A Run entry that pointed exactly at the old exe moves to the new name and folder.
+
+After the first install, Installed apps should show one entry, "Ridgeline". If it
+also shows "Widget Wall 2", uninstall that entry and leave the "delete the
+application data" box unticked.
 
 ## Where things are
 
