@@ -135,6 +135,7 @@ function validate(areas) {
     seen.set(id, file);
   };
   for (const area of areas) {
+    unique('area name', area.name, area.file);
     for (const state of area.gallery?.states ?? []) unique('state name', state.name, area.file);
     for (const key of Object.keys(area.fit?.measurements ?? {})) unique('measurement key', key, area.file);
     for (const key of Object.keys(area.fit?.rules ?? {})) unique('rule key', key, area.file);

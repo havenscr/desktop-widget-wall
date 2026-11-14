@@ -344,10 +344,6 @@ for (const [name, entry] of Object.entries(AREA_BREAKS)) {
   EXPECT[name] = entry.expect;
   if (entry.css !== undefined) OVERFLOWS[name] = entry.css;
 }
-if (flag('list-breaks')) {
-  console.log(Object.keys(EXPECT).join('\n'));
-  process.exit(0);
-}
 // Breaks may change the page query instead of, or as well as, injecting CSS.
 const BREAK_QUERIES = {
   'sky-moon': '&skymoon=300,200,44',
@@ -686,6 +682,10 @@ try {
 } catch (error) {
   console.error(`areas: ${error.message}`);
   process.exit(2);
+}
+if (flag('list-breaks')) {
+  console.log(Object.keys(EXPECT).join('\n'));
+  process.exit(0);
 }
 if (flag('self-test')) {
   const script = fileURLToPath(import.meta.url);

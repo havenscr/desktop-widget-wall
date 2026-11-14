@@ -68,6 +68,6 @@ npm --prefix wall run gallery -- --area=example
 npm --prefix wall run fit-check -- --area=example
 ```
 
-Both commands validate every discovered area first, then run only the selected area's gallery states or fit variants, measurements, rules, and breaks. Built-in entries and entries from other areas do not run in focused mode.
+Both commands validate every discovered area first, then run only the selected area's gallery states or fit variants, measurements, rules, and breaks. Built-in entries and entries from other areas do not run in focused mode. A focused fit-check area must contain at least one variant, one rule, and one break. Otherwise it exits with `fit-check: area "<name>" has zero <kind>`.
 
 Validation is strict. Unknown top-level, `gallery`, `fit`, state, variant, and break keys fail with the file name, bad key, and allowed keys. Missing required fields, wrong types, empty contributions, unmatched break predicates, and duplicate state names, variant names, measurement keys, rule keys, or break names also fail immediately. Duplicate messages name both origins, including `built-in` where applicable, in every mode.
