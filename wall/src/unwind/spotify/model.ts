@@ -37,7 +37,7 @@ export function resetListenSource(): void {
 }
 
 /** What went wrong with a Spotify call, from the bridge's error text. */
-export type SpotifyProblem = 'notsetup' | 'needsSignIn' | 'busy' | 'starting' | 'choose' | 'nodevice' | 'notYours' | 'gone' | 'connection' | 'refused' | 'down' | `server:${number}` | `status:${number}` | 'failed';
+export type SpotifyProblem = 'notsetup' | 'needsSignIn' | 'busy' | 'starting' | 'choose' | 'restricted' | 'nodevice' | 'notYours' | 'gone' | 'connection' | 'refused' | 'down' | `server:${number}` | `status:${number}` | 'failed';
 
 export function spotifyProblem(e: unknown): SpotifyProblem {
   const text = (e instanceof Error ? e.message : typeof e === 'string' ? e : '').toLowerCase();
@@ -46,6 +46,7 @@ export function spotifyProblem(e: unknown): SpotifyProblem {
   if (text.includes('busy')) return 'busy';
   if (text.includes('starting')) return 'starting';
   if (text.includes('choose')) return 'choose';
+  if (text.includes('restricted')) return 'restricted';
   if (text.includes('no device')) return 'nodevice';
   if (text.includes('not yours')) return 'notYours';
   if (text.includes('no longer offered')) return 'gone';
@@ -72,6 +73,8 @@ export function problemLine(p: SpotifyProblem): string {
       return 'Spotify is still starting.';
     case 'choose':
       return 'More than one computer is signed in to Spotify. Pick this PC in Spotify once, then press Play.';
+    case 'restricted':
+      return 'Spotify on this PC does not allow remote control right now. Press Play in Spotify.';
     case 'nodevice':
       return 'Open Spotify on this PC first.';
     case 'notYours':
@@ -96,6 +99,7 @@ export function playProblemLine(p: SpotifyProblem): string {
   if (p === 'nodevice') return 'Spotify opened but did not show up as a player. Press Play in Spotify once, then try again.';
   if (p === 'starting') return 'Spotify is still starting.';
   if (p === 'choose') return 'More than one computer is signed in to Spotify. Pick this PC in Spotify once, then press Play.';
+  if (p === 'restricted') return 'Spotify on this PC does not allow remote control right now. Press Play in Spotify.';
   if (p === 'busy') return 'Spotify is busy, try in a minute.';
   if (p === 'needsSignIn') return 'Sign in to Spotify in Tools first.';
   return problemLine(p);

@@ -52,6 +52,7 @@ it('maps the bridge errors to problems', () => {
   expect(spotifyProblem('busy')).toBe('busy');
   expect(spotifyProblem('starting')).toBe('starting');
   expect(spotifyProblem('choose')).toBe('choose');
+  expect(spotifyProblem('restricted')).toBe('restricted');
   expect(spotifyProblem('no device')).toBe('nodevice');
   expect(spotifyProblem(new Error('down'))).toBe('down');
   expect(spotifyProblem('server-503')).toBe('server:503');

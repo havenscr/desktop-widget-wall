@@ -19,6 +19,7 @@ const NOT_YOURS: &str = "not yours";
 const GONE: &str = "no longer offered";
 const STARTING: &str = "starting";
 const CHOOSE: &str = "choose";
+const RESTRICTED: &str = "restricted";
 const SPOTIFY_URI: &str = "spotify:";
 const START_WAIT: Duration = Duration::from_secs(12);
 const CALLBACK: &str = "/callback";
@@ -110,6 +111,7 @@ impl Creds for RealCreds {
 struct HttpReply { status: u16, retry_after: Option<u64>, body: Vec<u8> }
 trait Http: Send + Sync {
     fn token(&self, form: &[(&str, &str)]) -> Result<HttpReply, ()>;
+    fn token_timeout(&self, form: &[(&str, &str)], _timeout: Duration) -> Result<HttpReply, ()> { self.token(form) }
     fn api(&self, method: &str, path: &str, bearer: &str, payload: Option<&Value>, limit: u64) -> Result<HttpReply, ()>;
     fn api_timeout(&self, method: &str, path: &str, bearer: &str, payload: Option<&Value>, limit: u64, _timeout: Duration) -> Result<HttpReply, ()> {
         self.api(method, path, bearer, payload, limit)
@@ -120,6 +122,10 @@ struct RealHttp;
 impl Http for RealHttp {
     fn token(&self, form: &[(&str, &str)]) -> Result<HttpReply, ()> {
         http_reply(agent().post("https://accounts.spotify.com/api/token").send_form(form))
+    }
+    fn token_timeout(&self, form: &[(&str, &str)], timeout: Duration) -> Result<HttpReply, ()> {
+        let bounded=ureq::AgentBuilder::new().timeout(timeout.max(Duration::from_millis(1))).redirects(0).build();
+        http_reply(bounded.post("https://accounts.spotify.com/api/token").send_form(form))
     }
     fn api(&self, method: &str, path: &str, bearer: &str, payload: Option<&Value>, limit: u64) -> Result<HttpReply, ()> {
         self.api_timeout(method, path, bearer, payload, limit, Duration::from_secs(6))
@@ -205,13 +211,17 @@ fn exchange(http: &dyn Http, cfg: &Config, code: &str, verifier: &str) -> TokenR
     ]))
 }
 
-fn refresh(http: &dyn Http, cfg: &Config, value: &str) -> TokenReply {
-    token_reply(http.token(&[
+fn refresh(http: &dyn Http, cfg: &Config, value: &str, timeout: Option<Duration>) -> TokenReply {
+    let form=[
         ("client_id", cfg.client_id.as_str()), ("grant_type", "refresh_token"), ("refresh_token", value),
-    ]))
+    ];
+    token_reply(match timeout { Some(limit)=>http.token_timeout(&form,limit), None=>http.token(&form) })
 }
 
 fn access_with(cfg: &Config, force: bool, http: &dyn Http, creds: &dyn Creds) -> Result<String, String> {
+    access_with_deadline(cfg,force,http,creds,None)
+}
+fn access_with_deadline(cfg: &Config, force: bool, http: &dyn Http, creds: &dyn Creds, deadline: Option<Instant>) -> Result<String, String> {
     check_backoff()?;
     if !force {
         if let Some(t) = token().lock().unwrap().as_ref() {
@@ -226,7 +236,9 @@ fn access_with(cfg: &Config, force: bool, http: &dyn Http, creds: &dyn Creds) ->
     }
     let refresh_value = creds.load().map_err(|_| SIGN_AGAIN.to_string())?.ok_or_else(|| SIGN_AGAIN.to_string())?;
     let started = Instant::now();
-    match refresh(http, cfg, &refresh_value) {
+    let timeout=deadline.map(|at| at.saturating_duration_since(Instant::now()));
+    if timeout.is_some_and(|left| left.is_zero()) { return Err(NO_DEVICE.into()) }
+    match refresh(http, cfg, &refresh_value, timeout) {
         TokenReply::Ok(access, seconds, replacement) => {
             if let Some(v) = replacement { if !creds.save(&v) { return Err("failed".into()) } }
             *token().lock().unwrap() = Some(Token { access: access.clone(), expires: Instant::now() + Duration::from_secs(seconds) });
@@ -507,13 +519,14 @@ fn shape_devices(v: &Value) -> Vec<Device> {
 #[tauri::command] pub async fn wall2_spotify_devices(window: WebviewWindow) -> Result<Vec<Device>, String> { require(&window)?; tauri::async_runtime::spawn_blocking(move || { let cfg = config(window.app_handle())?; Ok(shape_devices(&get_json(&cfg, "/me/player/devices")?)) }).await.map_err(|_| "failed".to_string())? }
 
 #[derive(Debug, PartialEq)]
-enum DeviceChoice { Ready(String), Start, Choose }
+enum DeviceChoice { Ready(String), Start, Choose, Restricted }
 fn choose_device(devices: &[Device], requested: Option<&str>, computer: Option<&str>) -> DeviceChoice {
+    let any_computer=devices.iter().any(|d| d.kind.eq_ignore_ascii_case("computer"));
     let computers = devices.iter().filter(|d| !d.restricted && d.kind.eq_ignore_ascii_case("computer")).collect::<Vec<_>>();
     if let Some(found) = requested.and_then(|id| computers.iter().find(|d| d.id == id)) { return DeviceChoice::Ready(found.id.clone()) }
     if let Some(found) = computers.iter().find(|d| d.active) { return DeviceChoice::Ready(found.id.clone()) }
     if let Some(found) = computer.and_then(|name| computers.iter().find(|d| d.name.eq_ignore_ascii_case(name))) { return DeviceChoice::Ready(found.id.clone()) }
-    match computers.as_slice() { [] => DeviceChoice::Start, [only] => DeviceChoice::Ready(only.id.clone()), _ => DeviceChoice::Choose }
+    match computers.as_slice() { [] if any_computer => DeviceChoice::Restricted, [] => DeviceChoice::Start, [only] => DeviceChoice::Ready(only.id.clone()), _ => DeviceChoice::Choose }
 }
 
 #[derive(Debug, Deserialize)]
@@ -572,7 +585,7 @@ fn device_counts(devices: &[Device]) -> (usize, usize, usize, usize) {
 fn devices_before(cfg: &Config, deadline: Instant) -> Result<Vec<Device>, String> {
     let left = deadline.saturating_duration_since(Instant::now());
     if left.is_zero() { return Err(NO_DEVICE.into()) }
-    let bearer = access(cfg, false)?;
+    let bearer = access_with_deadline(cfg,false,&RealHttp,&RealCreds,Some(deadline))?;
     let reply = RealHttp.api_timeout("GET", "/me/player/devices", &bearer, None, ANSWER_BODY, left.min(Duration::from_secs(1))).map_err(|_| NO_CONNECTION.to_string())?;
     if !(200..300).contains(&reply.status) { return Err(status_answer(reply.status, false)) }
     let value: Value = serde_json::from_slice(&reply.body).map_err(|_| "unreadable reply".to_string())?;
@@ -585,6 +598,7 @@ where N: FnMut() -> Duration, S: FnMut(Duration), C: FnMut() -> bool, D: FnMut(D
         let elapsed = now();
         if elapsed >= limit { return Err(NO_DEVICE.into()) }
         if let DeviceChoice::Ready(device) = choose_device(&devices, requested, computer) { return Ok(device) }
+        if matches!(choose_device(&devices,requested,computer),DeviceChoice::Restricted) { return Err(RESTRICTED.into()) }
         sleep(Duration::from_secs(1).min(limit.saturating_sub(elapsed)));
         let left = limit.saturating_sub(now());
         if left.is_zero() { return Err(NO_DEVICE.into()) }
@@ -611,6 +625,7 @@ pub async fn wall2_spotify_play(window: WebviewWindow, request: PlayRequest) -> 
         match choose_device(&devices, request.device_id.as_deref(), std::env::var("COMPUTERNAME").ok().as_deref()) {
             DeviceChoice::Ready(device) => { play_on_device(&cfg, &request, &device)?; Ok("played".into()) }
             DeviceChoice::Choose => Err(CHOOSE.into()),
+            DeviceChoice::Restricted => Err(RESTRICTED.into()),
             DeviceChoice::Start => {
                 let counts = device_counts(&devices);
                 crate::wall2_spotify_log::write_devices(counts.0, counts.1, counts.2, counts.3);
@@ -772,7 +787,7 @@ mod tests {
         assert_eq!(choose_device(&active,Some(DEVICE),None),DeviceChoice::Ready(DEVICE.into()));
         let named = vec![d(DEVICE,"Desk",false)]; assert_eq!(choose_device(&named,None,Some("desk")),DeviceChoice::Ready(DEVICE.into()));
         assert_eq!(choose_device(&named,None,Some("Missing")),DeviceChoice::Ready(DEVICE.into()));
-        let restricted = vec![Device { restricted:true, ..d(DEVICE,"Desk",false) }]; assert_eq!(choose_device(&restricted,None,None),DeviceChoice::Start);
+        let restricted = vec![Device { restricted:true, ..d(DEVICE,"Desk",false) }]; assert_eq!(choose_device(&restricted,None,None),DeviceChoice::Restricted);
         let two = vec![d(DEVICE,"Desk",false),d(other,"Other",false)]; assert_eq!(choose_device(&two,None,None),DeviceChoice::Choose);
         assert_eq!(choose_device(&two,Some("gone"),None),DeviceChoice::Choose);
         assert_eq!(choose_device(&[],None,None),DeviceChoice::Start);
