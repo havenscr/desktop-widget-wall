@@ -2005,6 +2005,10 @@ mod tests {
         assert_eq!((lane.next.as_deref(), lane.harness.as_deref(), lane.failed), (None, None, false));
         // The lane itself survives every junk extra.
         assert_eq!(s.lanes.len(), 2);
+        body["lanes"][0]["bg"] = json!([1, 0]);
+        assert_eq!(shape_summary(&body).unwrap().lanes[0].bg, None);
+        body["lanes"][0]["bg"] = json!({ "agents": -1, "shells": 0 });
+        assert_eq!(shape_summary(&body).unwrap().lanes[0].bg, None);
     }
 
     #[test]
