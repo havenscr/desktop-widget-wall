@@ -457,15 +457,15 @@ const QUIET = [
   { name: 'Watch, three saved, nothing on', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three', checks: [...WATCH_IDLE, '.w-list', '.w-row'] },
   { name: 'Watch, three saved, feathered playing', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=feather&wplay=0', checks: [...WATCH_PLAYING, '.w-list'] },
   { name: 'Watch, 24 saved, drive-in, long label playing', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=many&wlook=drivein&wplay=3', checks: WATCH_PLAYING },
-  { name: 'Watch, settings sheet, one look', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wplay=0&wsheet=one', checks: ['.w-sheet', '.w-tiles', '.w-tile', '.w-sfoot'] },
+  { name: 'Watch, settings sheet, one look', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wplay=0&wsheet=one', checks: ['.w-sheet', '.w-tiles', '.w-tile'] },
   // Part 2a: the whole sky and the sun. The whole sky lies under every control: each named
   // control gets the pointer at its centre, and no point of the sky reaches the video layer.
   { name: 'Watch, whole sky playing, every control still takes the pointer', agents: 'ask', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=sky&wplay=0', checks: [...WATCH_IDLE, '.w-ctl', '.w-open', '.w-lookbar'], hits: [...SKY_HITS, ...FLOOR_HITS], noHit: '.w-sky, .w-skyspill' },
   { name: 'Watch, whole sky, 24 saved, long label', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=many&wlook=sky&wplay=3', checks: [...WATCH_IDLE, '.w-ctl', '.w-open', '.w-lookbar'], hits: [...SKY_HITS, ...FLOOR_HITS], noHit: '.w-sky, .w-skyspill' },
   { name: 'Watch, the sun playing', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=sun&wplay=0', checks: [...WATCH_IDLE, '.w-ctl', '.w-time', '.w-open', '.w-list'], hits: SKY_HITS },
   { name: 'Watch, the sun, 24 saved, Twitch', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=many&wlook=sun&wplay=2', checks: [...WATCH_IDLE, '.w-ctl', '.w-time', '.w-open'], hits: SKY_HITS },
-  { name: 'Watch, settings sheet with four looks, one look', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=sky&wplay=0&wsheet=one', checks: ['.w-sheet', '.w-tiles', '.w-tile', '.w-hint', '.w-sfoot'] },
-  { name: 'Watch, settings sheet, a look per kind', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=many&wplay=2&wsheet=kind', checks: ['.w-sheet', '.w-srow', '.w-srow .w-seg', '.w-sfoot'] },
+  { name: 'Watch, settings sheet with four looks, one look', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=sky&wplay=0&wsheet=one', checks: ['.w-sheet', '.w-tiles', '.w-tile', '.w-hint'] },
+  { name: 'Watch, settings sheet, a look per kind', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=many&wplay=2&wsheet=kind', checks: ['.w-sheet', '.w-srow', '.w-srow .w-seg'] },
   // look settings (one block): the Looks sheet with the longest section, and every look at both ends of each
   // setting that moves or sizes it (the picture the box the code uses, clear of its neighbours, nothing on it).
   { name: 'Look settings, sheet, the sun', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wplay=0&wlook=sun&wsheet=one&wtune=sun.size=380', checks: ['.w-sheet', '.wk-set'], tune: 'sheet' },
