@@ -397,6 +397,19 @@ fn due_tomorrow(t: &TaskItem, tomorrow: i64, after: i64, tomorrow_date: &str) ->
 
 /// The three next tasks, how many more are open, and what is due tomorrow (local day).
 fn summarize(body: &Value, f: Filters, now: i64, off: &dyn Fn(i64) -> i64) -> TasksSummary {
+    summarize_n(body, f, now, off, TASK_LIMIT)
+}
+
+/// Home's chores ask for more rows than three (a list that scrolls): at most this many.
+const MAX_TASK_LIMIT: usize = 20;
+
+/// The `limit` a caller asked for, 1 to `MAX_TASK_LIMIT`; three when it names none.
+fn task_limit(limit: Option<u32>) -> usize {
+    limit.map_or(TASK_LIMIT, |n| (n as usize).clamp(1, MAX_TASK_LIMIT))
+}
+
+/// As `summarize`, with the first `limit` tasks as `next`.
+fn summarize_n(body: &Value, f: Filters, now: i64, off: &dyn Fn(i64) -> i64, limit: usize) -> TasksSummary {
     let all = open_tasks(body, f);
     let today = local_midnight(now, off);
     let tomorrow = local_midnight(today + 36 * 3600, off);
@@ -409,8 +422,8 @@ fn summarize(body: &Value, f: Filters, now: i64, off: &dyn Fn(i64) -> i64) -> Ta
         count += 1;
         est_total += est_minutes(t.est.as_deref());
     }
-    let remaining = all.len().saturating_sub(TASK_LIMIT) as u64;
-    let next = all.into_iter().take(TASK_LIMIT).collect();
+    let remaining = all.len().saturating_sub(limit) as u64;
+    let next = all.into_iter().take(limit).collect();
     TasksSummary { next, remaining, due_tomorrow: DueTomorrow { count, est_minutes: est_total } }
 }
 
@@ -424,8 +437,10 @@ pub async fn wall2_tasks_summary(
     tag: Option<String>,
     notTag: Option<String>,
     list: Option<String>,
+    limit: Option<u32>,
 ) -> Result<TasksSummary, String> {
     let (tag, notTag, list) = check_filters(tag, notTag, list)?;
+    let limit = task_limit(limit);
     let base = read_base(&app, "tasksBaseUrl", true)?;
     tauri::async_runtime::spawn_blocking(move || {
         let bucket_id = match list.as_deref() {
@@ -440,8 +455,8 @@ pub async fn wall2_tasks_summary(
         };
         let body = get_json(&format!("{base}/api/tasks?status=open"))?;
         let f = Filters { tag: tag.as_deref(), not_tag: notTag.as_deref(), bucket_id: bucket_id.as_deref() };
-        let summary = summarize(&body, f, now_epoch(), &local_offset_secs);
-        remember_shown(&read_key(&tag, &notTag, &list), &summary.next);
+        let summary = summarize_n(&body, f, now_epoch(), &local_offset_secs, limit);
+        remember_shown_n(&read_key(&tag, &notTag, &list), &summary.next, limit);
         Ok(summary)
     })
     .await
@@ -499,9 +514,15 @@ type ShownReads = Vec<(String, Vec<String>)>;
 
 /// Keep `tasks` as the ids `key`'s read showed: replaces that read's last ids, at most three,
 /// and drops the oldest reads past `MAX_SHOWN_READS`.
+#[cfg(test)]
 fn remember_in(reads: &mut ShownReads, key: &str, tasks: &[TaskItem]) {
+    remember_in_n(reads, key, tasks, TASK_LIMIT);
+}
+
+/// As `remember_in`, keeping at most `limit` ids (the rows that read asked for).
+fn remember_in_n(reads: &mut ShownReads, key: &str, tasks: &[TaskItem], limit: usize) {
     reads.retain(|(k, _)| k != key);
-    reads.push((key.to_string(), tasks.iter().take(TASK_LIMIT).map(|t| t.id.clone()).collect()));
+    reads.push((key.to_string(), tasks.iter().take(limit.min(MAX_TASK_LIMIT)).map(|t| t.id.clone()).collect()));
     while reads.len() > MAX_SHOWN_READS {
         reads.remove(0);
     }
@@ -512,8 +533,12 @@ fn shown_in(reads: &ShownReads, id: &str) -> bool {
 }
 
 fn remember_shown(key: &str, tasks: &[TaskItem]) {
+    remember_shown_n(key, tasks, TASK_LIMIT);
+}
+
+fn remember_shown_n(key: &str, tasks: &[TaskItem], limit: usize) {
     if let Ok(mut reads) = SHOWN_TASKS.lock() {
-        remember_in(&mut reads, key, tasks);
+        remember_in_n(&mut reads, key, tasks, limit);
     }
 }
 
@@ -1158,6 +1183,24 @@ mod tests {
         // Task 1 (16:00Z), task 2 (all-day 03-09), task 4 (2026-03-10T03:30Z = 23:30 local on 03-09).
         // Task 3 (03:00Z on 03-09 = 23:00 local on 03-08) is today, so it does not count.
         assert_eq!(got.due_tomorrow, DueTomorrow { count: 3, est_minutes: 15 + 60 + 45 });
+    }
+
+    #[test]
+    fn summary_limit_asks_for_more_rows_and_remembers_them() {
+        assert_eq!(task_limit(None), 3);
+        assert_eq!(task_limit(Some(0)), 1);
+        assert_eq!(task_limit(Some(5)), 5);
+        assert_eq!(task_limit(Some(500)), MAX_TASK_LIMIT);
+        let got = summarize_n(&summary_body(), Filters::default(), NOW, &us_east, 20);
+        assert_eq!(ids(&got), ["1", "2", "3", "4", "5"]);
+        assert_eq!(got.remaining, 0);
+        let two = summarize_n(&summary_body(), Filters::default(), NOW, &us_east, 2);
+        assert_eq!((ids(&two), two.remaining), (vec!["1", "2"], 3));
+        let mut reads = ShownReads::new();
+        let many: Vec<TaskItem> = (0..30).map(|i| shown_task(&format!("lim-{i}"))).collect();
+        remember_in_n(&mut reads, "home", &many, 20);
+        assert!(shown_in(&reads, "lim-19"));
+        assert!(!shown_in(&reads, "lim-20"));
     }
 
     #[test]

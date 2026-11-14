@@ -213,6 +213,39 @@ describe('the sky layers under each look', () => {
   });
 });
 
+describe('the cards Unwind stands in the sky keep the moon clear of them', () => {
+  const rect = (x: number, y: number, w: number, h: number) => ({ left: x, top: y, right: x + w, bottom: y + h, width: w, height: h, x, y, toJSON() {} }) as DOMRect;
+  /** Each card drawn where the layout puts it (jsdom lays nothing out). */
+  const lay = (boxes: Record<string, [number, number, number, number]>) =>
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+      for (const sel in boxes) if (this.matches(sel)) return rect(...boxes[sel]);
+      return rect(0, 0, 0, 0);
+    });
+
+  it('Listen: the wide card claims its own drawn box, so the moon moves to the next clear place, and back when Listen goes', async () => {
+    lay({ '.sp-card': [1740, 24, 800, 462] });
+    useWatchStore.getState().setTab('listen');
+    const { unmount } = render(<Unwind />);
+    await flush();
+    expect(claims()['listen-card']).toEqual({ clear: [[1740, 24, 800, 462]] });
+    expect(moonFor(MOON_PLACES, claims())).toBe(MOON_PLACES[1]);
+    unmount();
+    expect(claims()).toEqual({});
+    expect(moonFor(MOON_PLACES, claims())).toBe(MOON);
+  });
+
+  it('Watch with nothing on: the list card, the left block and the Look switch claim their boxes; the moon stays at its first place, clear of them', async () => {
+    lay({ '.w-card': [2030, 20, 510, 330], '.w-now': [620, 120, 520, 260], '.w-lookbar': [620, 400, 458, 44] });
+    setup('feather', false);
+    render(<Unwind />);
+    await flush();
+    expect(claims()['watch-card']).toEqual({ clear: [[2030, 20, 510, 330]] });
+    expect(claims()['watch-now']).toEqual({ clear: [[620, 120, 520, 260]] });
+    expect(claims()['watch-look']).toEqual({ clear: [[620, 400, 458, 44]] });
+    expect(moonFor(MOON_PLACES, claims())).toBe(MOON);
+  });
+});
+
 describe('the feathered look stands in front of the mountains', () => {
   it('never asks for the front layer, playing or waiting for a click: its glow and picture are drawn over the one horizon canvas, and no moon veil is needed', async () => {
     setup('feather');

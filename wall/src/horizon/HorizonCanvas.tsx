@@ -26,6 +26,7 @@ import {
   stepLineCount,
   visualizerWeight,
 } from './echo';
+import { liveTint } from '../music/coverTint';
 import { frameDelta, shouldDraw } from './pacing';
 import { clearGridPulse, createGridPulse, stepGridPulse } from './pulse';
 import { parseReview, parseSkyReview } from './review';
@@ -205,7 +206,8 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
       // The grid pulse never appears in the review still or under reduced motion's still frames.
       if (!still) {
         const m = motion.current;
-        let echo = echoOptions(camera, loud.current, echoT.current, gate.current.value * awake.current, m.rest, undefined, undefined, m.rest < 1 ? danceKick() * (1 - m.rest) : 0);
+        // The lines take the playing cover's colours (cross-faded between tracks; teal with no cover).
+        let echo = echoOptions(camera, loud.current, echoT.current, gate.current.value * awake.current, m.rest, undefined, undefined, m.rest < 1 ? danceKick() * (1 - m.rest) : 0, liveTint(performance.now()));
         const turningOff = glide.current.to.ea === 0 && glide.current.progress < 1;
         if (echo && turningOff && echoStrength(echo) > lastEchoA.current) {
           scaleEcho(echo, lastEchoA.current / echoStrength(echo));

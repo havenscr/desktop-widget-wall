@@ -27,6 +27,8 @@ const W = 2560;
 const H = 720;
 const SETTLE_MS = 2500;
 const STATE_TIMEOUT_MS = 30_000;
+/** How long a state may take past SETTLE_MS for its expected text to appear (a busy machine). Never applies to text that must not be shown. */
+const EXPECT_GRACE_MS = 8000;
 const PARALLEL = 3;
 const TZ = 'America/Los_Angeles';
 
@@ -152,6 +154,24 @@ for (const [name, extra] of [
 }
 state('home', 'morning camera', '', TIMES.morning);
 state('home', 'morning camera, sparse', SPARSE, TIMES.morning);
+// home round two: the shield card and its drawer, the house line, mood pages, five chores,
+// Sound's now playing. `desk=absent` is today's Home (the home app's desk routes not live).
+state('home', 'quiet', 'desk=typical&alerts=0&chores=many');
+state('home', 'six alerts', 'desk=typical&alerts=6');
+add('home', 'shield drawer', url('home', TYPICAL_AT, 'desk=typical&alerts=6'), true, '.panel.network.shield');
+state('home', 'twenty alerts', 'desk=typical&alerts=20');
+state('home', 'desk absent', 'desk=absent');
+state('home', 'desk stale', 'desk=stale&alerts=1');
+state('home', 'house line', 'desk=typical&rooms=8');
+state('home', 'seven moods', 'moods=7');
+add('home', 'moods slid', url('home', TYPICAL_AT, 'moods=7'), true, '.mood-more');
+state('home', 'chores five', 'desk=typical&alerts=0&chores=many');
+state('home', 'chores with alerts', 'desk=typical&alerts=6&chores=many');
+state('home', 'sound playing on a speaker', 'spotifyplay=speaker');
+state('home', 'sound nothing playing', 'sonos=quiet');
+add('home', 'shield drawer, stale read', url('home', TYPICAL_AT, 'desk=stale&alerts=6'), true, '.panel.network.shield');
+add('home', 'shield drawer, plain http address', url('home', TYPICAL_AT, 'desk=typical&alerts=6&desktoken=lan'), true, '.panel.network.shield');
+// end home round two
 
 // The network alarm outside Home: the rail dot and one chip on Work and Unwind, never from a down source.
 state('work', 'network alarm: rail dot and chip', 'net=4');
@@ -358,6 +378,22 @@ add('unwind', 'unwind: hide screen hover', url('unwind', TYPICAL_AT), true, 'hov
 add('unwind', 'unwind: hide screen note while hovered', url('unwind', TYPICAL_AT, 'hide=fail'), true, ['.screens-off', 'hover:.screens-off']);
 add('unwind', 'unwind: hide screen note while focused', url('unwind', TYPICAL_AT, 'hide=fail'), true, ['.screens-off', 'focus:.screens-off']);
 
+// unwind listen: the cover on top with its controls in the sky, Up next under the toggles, the
+// Spotify card in the upper right (its switch, covers, a hover, a playlist's songs) and its hard states.
+state('unwind', 'listen: playing', 'audio=demo', TIMES.night);
+state('unwind', 'listen: nothing playing', 'media=none', TIMES.night);
+add('unwind', 'listen: youtube music', url('unwind', TIMES.night, 'audio=demo'), true, '.sp-switch button:nth-child(2)');
+add('unwind', 'listen: songs of a playlist', url('unwind', TIMES.night, 'audio=demo'), true, '.sp-tile');
+add('unwind', 'listen: hover on a playlist', url('unwind', TIMES.night, 'audio=demo'), true, 'hover:.sp-tile');
+add('unwind', 'listen: songs, hover on a song', url('unwind', TIMES.night, 'audio=demo'), true, '.sp-tile >> hover:.sp-tracks li:nth-child(5) .sp-track');
+state('unwind', 'listen: signed out', 'spotify=signedout', TIMES.night);
+state('unwind', 'listen: spotify down', 'spotify=down', TIMES.night);
+state('unwind', 'listen: spotify not set up', 'spotify=off', TIMES.night);
+state('unwind', 'listen: heavy library', 'spotify=heavy', TIMES.night);
+add('unwind', 'listen: heavy playlist songs', url('unwind', TIMES.night, 'spotify=heavy'), true, '.sp-tile');
+state('unwind', 'listen: long names', 'long=1&media=long&spotify=long');
+add('unwind', 'listen: long names, songs of a 240 song playlist', url('unwind', TYPICAL_AT, 'long=1&media=long&spotify=long'), true, '.sp-tile');
+
 /**
  * What each state must show, so a knob that silently stops working fails the run:
  * [screen, state name (prefix; exact when the 4th item is true), what to find]. "What to find" is
@@ -422,13 +458,13 @@ const EXPECT = [
   ['work', 'agents header: twelve sessions', 'One thing for you'],
   // Home
   ['home', 'sparse', ['No moods set up', 'No meetings today']],
-  ['home', 'heavy', ['Away For The Weekend', '115 more can wait']],
-  ['home', 'network card, 1 number', ['3 alarms in 24 h', '!31 devices']],
-  ['home', 'network card, 2 numbers', '31 devices, 3 alarms in 24 h'],
-  ['home', 'network card, 3 numbers', ['412blocked', '!61°box']],
-  ['home', 'network card, 4 numbers', '61°box'],
-  ['home', 'network card, quiet', ['All quiet', '0alarms, 24h']],
-  ['home', 'moods six', ['Deep Focus', 'Movie Night']],
+  ['home', 'heavy', ['Deep Focus', '115 more can wait']],
+  ['home', 'network card, 1 number', ['4 alerts open', '!31 devices']],
+  ['home', 'network card, 2 numbers', '4 alerts open, 31 devices at home'],
+  ['home', 'network card, 3 numbers', ['4 alerts open, 31 devices at home', '!61°']],
+  ['home', 'network card, 4 numbers', '4 alerts open, 31 devices at home'],
+  ['home', 'network card, quiet', ['All quiet', 'Nothing is open.']],
+  ['home', 'moods six', ['Deep Focus', '3 more']],
   ['home', 'moods none', 'No moods set up'],
   ['home', 'tasks heavy', '115 more can wait'],
   ['home', 'tasks few', ['Review the dashboard draft', '!Order printer paper']],
@@ -446,11 +482,28 @@ const EXPECT = [
   ['home', 'broken: task app down', 'Task app not reachable'],
   ['home', 'timeline: nothing scheduled at home', 'Nothing scheduled at home'],
   ['home', 'morning camera, sparse', ['No moods set up', 'No meetings today']],
-  ['home', 'typical', ['Evening', 'Alarms', 'Open Firewalla']],
+  ['home', 'typical', ['Evening', 'Click for all 4']],
+  // home round two
+  ['home', 'quiet', ['All quiet', 'Security', 'Firewalla', '8 more can wait', '68° inside. Lights on in two rooms.']],
+  ['home', 'six alerts', ['6 alerts open, 31 devices at home', 'Click for all 6', '!Clear all']],
+  ['home', 'shield drawer', ['6 open alerts', 'Clear all', 'Printer asked for an update']],
+  ['home', 'twenty alerts', ['12+', '20 alerts open']],
+  ['home', 'desk absent', ['Click for all 4', '!inside.']],
+  ['home', 'desk stale', ['as of', 'Lights on in two rooms']],
+  ['home', 'house line', ['Lights on in three rooms', 'Guest room']],
+  ['home', 'seven moods', ['7 moods', '4 more']],
+  ['home', 'moods slid', ['Movie', '1 more']],
+  ['home', 'chores five', ['Sort the recycling', '8 more can wait']],
+  ['home', 'chores with alerts', ['10 more can wait', 'Click for all 6']],
+  ['home', 'sound playing on a speaker', ['Now playing', 'Lantern Song 1', 'Living room, 4 speakers', 'All speakers', 'Common areas']],
+  ['home', 'shield drawer, stale read', ['open alerts as of', 'Clear all waits for a fresh read']],
+  ['home', 'shield drawer, plain http address', ['Clear all needs a private or https address']],
+  ['home', 'sound nothing playing', ['Nothing playing', 'Play']],
+  // end home round two
   ['home', 'chore ticked', ['Done.', 'Undo']],
   // Unwind
   ['unwind', 'sparse', ['Nothing playing', 'Quiet']],
-  ['unwind', 'heavy', ['An Extremely Long Song Title', 'Away For The Weekend']],
+  ['unwind', 'heavy', ['An Extremely Long Song Title', '!Away For The Weekend']],
   ['unwind', 'status chips, nothing waiting', ['2 agents still running', 'No agent needs you']],
   ['unwind', 'status chips, sessions waiting', 'One thing needs you.'],
   ['unwind', 'status chips, none running', ['No agent needs you', '!still running']],
@@ -459,12 +512,12 @@ const EXPECT = [
   ['unwind', 'music paused', '1:03'],
   ['unwind', 'long track', 'An Extremely Long Song Title'],
   ['unwind', 'broken: media unavailable', 'Nothing playing'],
-  ['unwind', 'nine moods, long labels', ['More', '!Away For The Weekend']],
+  ['unwind', 'nine moods, long labels', ['Up next', '!Away For The Weekend']],
   ['unwind', 'broken: calendar not set up', '!First thing'],
   ['unwind', 'broken: calendar read fails', '!First thing'],
   ['unwind', 'broken: task app down', 'First thing: Planning check-in at 9:30'],
   ['unwind', 'broken: weather down', ['Wednesday morning', '!58°']],
-  ['unwind', 'typical', ['Tokyo Burnout', 'Lights']],
+  ['unwind', 'typical', ['Tokyo Burnout', 'Which player the wall follows', '!Lights']],
   ['unwind', 'network alarm', '4 network alerts.'],
   ['unwind', 'watch: nothing saved', ['Nothing on', 'Paste a YouTube or Twitch link', '!saved']],
   ['unwind', 'watch: three saved, nothing on', ['Nothing on', 'Play Night drive mix', '3 saved']],
@@ -565,6 +618,20 @@ const EXPECT = [
   ['meet', 'recording: meet', ['Recording00:', 'Design review with the platform team']],
   ['zen', 'recording: none on zen', ['Breathe in', '!Recording00']],
   ['unwind', 'unwind: hide screen note', ['Could not watch input', 'Hide screen']],
+  // unwind listen
+  ['unwind', 'listen: playing', ['Tokyo Burnout', 'Up next', 'Lantern Song 2', 'Road Trip 1', 'Which player the wall follows']],
+  ['unwind', 'listen: nothing playing', ['Nothing playing', 'Road Trip 1']],
+  ['unwind', 'listen: youtube music', ['Open YouTube Music', 'Browsing happens in its own window', '!Up next']],
+  ['unwind', 'listen: songs of a playlist', ['Shuffle', 'Lantern Song 9', '58 songs', 'Playlist']],
+  ['unwind', 'listen: hover on a playlist', ['Shuffle', 'Songs', 'Road Trip 1', '!Playlist / Playlist']],
+  ['unwind', 'listen: songs, hover on a song', ['Lantern Song 5', 'Quiet Geometry']],
+  ['unwind', 'listen: signed out', ['Sign in to Spotify in Tools to browse here.', 'Sign in to Spotify in Tools to see what is next']],
+  ['unwind', 'listen: spotify down', ['Spotify is not answering right now.', '!Up next']],
+  ['unwind', 'listen: spotify not set up', ['Spotify is not set up on this wall', 'not set up', '!Up next']],
+  ['unwind', 'listen: heavy library', ['Road Trip 50', 'Up next']],
+  ['unwind', 'listen: heavy playlist songs', ['2,000 songs', 'Lantern Song 50']],
+  ['unwind', 'listen: long names, songs', ['240 songs', 'Lantern Song 9, an extremely long name']],
+  ['unwind', 'listen: long names', ['An Extremely Long Song Title', 'Road Trip 1, an extremely long name']],
   ['unwind', 'unwind: hide screen', 'Hide screen'],
 ];
 // The calm strip, the Day drawer and the Agents today panel.
@@ -827,19 +894,31 @@ async function render(cdp, base, s, file, ctl) {
       }
       await new Promise((r) => setTimeout(r, 900));
     }
-    const check = await to('Runtime.evaluate', {
-      expression: `JSON.stringify({ root: !!document.querySelector('.shell'), emptyRoot: !document.getElementById('root')?.childElementCount, boundary: /something went wrong|error boundary/i.test(document.body.textContent || ''), text: document.body.textContent || '', w: innerWidth, h: innerHeight, sw: document.documentElement.scrollWidth, sh: document.documentElement.scrollHeight })`,
-      returnByValue: true,
-    });
-    const info = JSON.parse(check.result.value);
+    const read = async () => {
+      const check = await to('Runtime.evaluate', {
+        expression: `JSON.stringify({ root: !!document.querySelector('.shell'), emptyRoot: !document.getElementById('root')?.childElementCount, boundary: /something went wrong|error boundary/i.test(document.body.textContent || ''), text: document.body.textContent || '', w: innerWidth, h: innerHeight, sw: document.documentElement.scrollWidth, sh: document.documentElement.scrollHeight })`,
+        returnByValue: true,
+      });
+      return JSON.parse(check.result.value);
+    };
+    const wants = [s.expect ?? []].flat().map((want) => (want.startsWith('!') ? { needle: want.slice(1), absent: true } : { needle: want, absent: false }));
+    const missed = (text, absentToo = true) => wants.filter(({ needle, absent }) => text.includes(needle) === absent && (absentToo || !absent));
+    // On a loaded machine the first data can land after the settle time: read again for up to
+    // EXPECT_GRACE_MS before calling text that must appear missing (a wrong text still fails, only
+    // later). The grace is only for text that must appear. Text that must NOT be shown is judged
+    // on the first read, as before the grace: waiting would let an unwanted text pass by
+    // disappearing within the wait, and a state that shows it for a moment is wrong.
+    let info = await read();
+    const firstText = info.text;
+    for (const until = Date.now() + EXPECT_GRACE_MS; missed(info.text, false).length && Date.now() < until && !ctl.cancelled; ) {
+      await new Promise((r) => setTimeout(r, 500));
+      info = await read();
+    }
     if (!info.root || info.emptyRoot) errors.push('the app did not render (no .shell; a render error unmounts the root)');
     if (process.env.WALL_GALLERY_TEXT_DIR) writeFileSync(join(process.env.WALL_GALLERY_TEXT_DIR, basename(file).replace('.png', '.txt')), info.text);
     if (info.boundary) errors.push('an error fallback is showing');
-    for (const want of [s.expect ?? []].flat()) {
-      const absent = want.startsWith('!');
-      const needle = absent ? want.slice(1) : want;
-      if (info.text.includes(needle) === absent) errors.push(`${absent ? 'unexpected' : 'expected'} text ${absent ? 'shown' : 'not shown'}: "${needle}"`);
-    }
+    const failed = [...missed(info.text, false), ...missed(firstText).filter((w) => w.absent)];
+    for (const { needle, absent } of failed) errors.push(`${absent ? 'unexpected' : 'expected'} text ${absent ? 'shown' : 'not shown'}: "${needle}"`);
     if (info.w !== W || info.h !== H) errors.push(`viewport ${info.w} x ${info.h}`);
     if (ctl.cancelled) throw new Error('cancelled');
     const shot = await to('Page.captureScreenshot', { format: 'png', clip: { x: 0, y: 0, width: W, height: H, scale: 1 } });
