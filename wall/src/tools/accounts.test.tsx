@@ -88,6 +88,28 @@ it('reserves the opening row while checking and checks again on every drawer ope
   expect(status).toHaveBeenCalledTimes(2);
   expect(screen.getByText('Meetings open in:').closest('li')?.textContent).toContain('Checking');
 });
+
+it('shows a failed opening check and retries when the drawer opens again', async () => {
+  mocks.set('wall2_meet_next', () => data);
+  mocks.set('wall2_meet_open_status', () => Promise.reject(new Error('unavailable')));
+  render(
+    <>
+      <Accounts />
+      <HoverTipLayer />
+    </>,
+  );
+  await flush();
+  const row = screen.getByText('Meetings open in:').closest('li')!;
+  expect(row.textContent).toContain('Could not check');
+  expect(row.textContent).not.toContain('Checking');
+  expect(await hoverText(row)).toBe('The wall could not ask Windows how meetings open. It will ask again when Tools opens.');
+
+  mocks.set('wall2_meet_open_status', () => 'desktop');
+  useToolsStore.getState().openDrawer();
+  await flush();
+  expect(row.textContent).toContain('Outlook on this PC');
+  expect(row.textContent).not.toContain('Could not check');
+});
 const peekOnly = (full: MeetData) => (args?: Record<string, unknown>) =>
   args?.peek ? { accounts: full.accounts.map((a) => ({ ...a, state: 'checking' as const })), meetings: [], seq: 1 } : undefined;
 
