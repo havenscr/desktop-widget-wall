@@ -335,10 +335,11 @@ describe('the whole sky is fitted whole', () => {
 
   it('the stage is the box (less Unwind\'s offset, 124 by 20) and the frame fills it: no cover crop', () => {
     const sky = rule('.w-sky')!;
-    expect(sky).toContain(`left:${b.x - 124}px;`);
-    expect(sky).toContain(`top:${b.y - 20}px;`);
-    expect(sky).toContain(`width:${b.w}px;`);
-    expect(sky).toContain(`height:${b.h}px;`);
+    // The box is today's numbers as the fallbacks of the Size setting's properties.
+    expect(sky).toContain(`left:var(--w-l,${b.x - 124}px);`);
+    expect(sky).toContain(`top:var(--w-t,${b.y - 20}px);`);
+    expect(sky).toContain(`width:var(--w-w,${b.w}px);`);
+    expect(sky).toContain(`height:var(--w-h,${b.h}px);`);
     expect(sky).not.toContain('overflow:hidden');
     // No rule sizes or moves the whole sky's frame: it keeps .w-frame's inset 0 and 100 percent.
     expect(rule('.w-sky .w-frame')).toBeNull();

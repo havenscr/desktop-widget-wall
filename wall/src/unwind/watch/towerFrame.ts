@@ -49,6 +49,15 @@ function rr(x: number, y: number, w: number, h: number, r = 0): string {
 }
 /** The video box grown by d on every side. */
 const grow = (d: number, r = 0) => rr(L - d, T - d, V.w + 2 * d, V.h + 2 * d, r);
+
+/**
+ * The neon line: the video box grown by 9.5 px, corner radius 2. One path for the static line, its glow
+ * and the Travelling light (`DriveInFrame.tsx`); `NEON_BOUNDS` is the box the light's own svg covers (the
+ * coping's width and a little more: the neon, its glow's edge and the light all lie inside it). The group
+ * of the two static strokes carries the class `w-neon`, the hook of the Neon line setting.
+ */
+export const NEON_PATH: string = grow(9.5, 2);
+export const NEON_BOUNDS = Object.freeze({ x: L - 20, y: T - 20, w: V.w + 40, h: V.h + 40 });
 /** A ring: the outer shape with the video box cut out (even-odd), so nothing can cover the picture. */
 const ring = (outer: string, fill: string) => `<path d="${outer}${rr(L, T, V.w, V.h)}" fill="${fill}" fill-rule="evenodd"/>`;
 
@@ -199,18 +208,20 @@ function build(): string {
   const feet = FOOTINGS.map(foot).join('');
   // The marquee board hangs from the truss between the towers (its words are drawn by the component).
   const m = MARQUEE;
-  const board = `<rect x="${m.x}" y="${m.y}" width="${m.w}" height="${m.h}" rx="4" fill="#100a24" stroke="${LACE}" stroke-width="1.5"/>
-    <rect x="${m.x + 4}" y="${m.y + 4}" width="${m.w - 8}" height="${m.h - 8}" rx="2" fill="none" stroke="rgba(255,176,84,.42)" stroke-width="1"/>`;
+  // `w-sign` is the one handle the Sign setting hides (the board and, in `DriveInFrame.tsx`, its words).
+  const board = `<g class="w-sign"><rect x="${m.x}" y="${m.y}" width="${m.w}" height="${m.h}" rx="4" fill="#100a24" stroke="${LACE}" stroke-width="1.5"/>
+    <rect x="${m.x + 4}" y="${m.y + 4}" width="${m.w - 8}" height="${m.h - 8}" rx="2" fill="none" stroke="rgba(255,176,84,.42)" stroke-width="1"/></g>`;
   // The screen's surround: a steel fascia, a coping on top, black masking next to the picture, one neon edge line.
   const fascia = `${ring(grow(14, 4), `url(#${ID}steel)`)}
     ${ring(grow(4), '#06040f')}
     <path d="${grow(4.5)}" fill="none" stroke="${RIM2}" stroke-width="1"/>
     <rect x="${L - 20}" y="${T - 20}" width="${V.w + 40}" height="7" rx="2" fill="#2d2352"/><path d="M${L - 19} ${T - 19.5}H${R + 19}" stroke="${RIM}" stroke-width="1"/>
-    <path d="${grow(9.5, 2)}" fill="none" stroke="url(#${ID}neon)" stroke-width="5" opacity=".5" filter="url(#${ID}glow)" clip-path="url(#${ID}clip)"/>
-    <path d="${grow(9.5, 2)}" fill="none" stroke="url(#${ID}neon)" stroke-width="1.6"/>`;
+    <g class="w-neon"><path d="${NEON_PATH}" fill="none" stroke="url(#${ID}neon)" stroke-width="5" opacity=".5" filter="url(#${ID}glow)" clip-path="url(#${ID}clip)"/>
+    <path d="${NEON_PATH}" fill="none" stroke="url(#${ID}neon)" stroke-width="1.6"/></g>`;
   const shadow = `<ellipse cx="${n(CX)}" cy="${G + 1}" rx="430" ry="9" fill="url(#${ID}shadow)"/>`;
   return `${DEFS}${shadow}${mirror(structure)}${structure}${feet}${board}${fascia}`;
 }
 
 /** The frame's markup, made once. */
 export const TOWER_SVG: string = build();
+
