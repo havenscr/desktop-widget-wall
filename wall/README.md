@@ -1393,8 +1393,13 @@ there, still playing, when the owner comes back (see "The stage layer" below).
   its lower edge fading out before the horizon line so the ridgelines there show), `sky` (the whole 16:9 picture, never cropped,
   889 by 500 at wall 1106, 16: its top 16 px under the top of the strip, its foot under the
   horizon line BEHIND the ranges and the land, so only the land hides its lower edge, between the
-  left block and the cards; plain edges with a faint line and glow, no feather (the owner's
-  later words replace the approved page's crop); the embedded player cannot report its video's
+  left block and the cards; its top, left and right edges fade softly into the sky over 120 px
+  (`SKY_SOFT_EDGE` in `looks.ts`, carried by the stage as the custom property `--w-sky-soft`; one
+  still CSS mask on `.w-sky .w-screen` with smoothstep stops, no filter or blur; the foot is not
+  faded, the land hides it; no setting yet). The fade is taken from the picture's own edge and the
+  picture keeps its box, size and place, so something very close to an edge fades with it: nothing is
+  cut off, a point d px from an edge shows at smoothstep(d / 120), half strength at 60 px, and the
+  middle 649 by 380 of the picture is untouched; the embedded player cannot report its video's
   shape, so the frame is fitted as 16:9; it lies under every control and takes no pointer;
   nothing of the wall's is drawn on it: the left block stands beside it on the sky with no plate,
   and the cards turn nearly opaque), `sun` (a 461 px disc at the approved page's place,

@@ -13,7 +13,7 @@ import { useSignalStore } from '../../signals/store';
 import { usePlaceStore } from '../../state/places';
 import { resetLastPlayed } from '../lastPlayed';
 import { CAMERAS } from '../../horizon/cameras';
-import { LOOKS_KEY, LOOK_BOXES, type LookId } from './looks';
+import { LOOKS_KEY, LOOK_BOXES, SKY_SOFT_EDGE, skySoftEdge, type LookId } from './looks';
 import { SAVED_KEY } from './saved';
 import { resetWatch, useWatchStore } from './store';
 
@@ -332,10 +332,47 @@ describe('the whole sky is fitted whole', () => {
     expect(sky).not.toContain('overflow:hidden');
     // No rule sizes or moves the whole sky's frame: it keeps .w-frame's inset 0 and 100 percent.
     expect(rule('.w-sky .w-frame')).toBeNull();
-    // Plain edges: no mask fades or crops any of it (the owner asked for no feather on this look).
+    // The soft edge: one mask, no filter blur, no crop, no move; the box is unchanged.
     const screen = rule('.w-sky .w-screen')!;
-    expect(screen).not.toContain('mask');
+    expect(screen).toContain('mask-image:');
+    expect(screen).toContain('mask-composite:intersect');
+    expect(screen).not.toContain('box-shadow');
+    expect(screen).not.toMatch(/blur|transform|backdrop|animation|overflow/);
   });
+
+  it('the soft edge fades the top, left and right over one named width, and not the foot', () => {
+    expect(SKY_SOFT_EDGE).toBe(120);
+    const m = rule('.w-sky .w-screen')!.match(/(?<!-webkit-)mask-image:(.*?);/)![1];
+    const grads = m.match(/linear-gradient\((90|180)deg,/g)!;
+    expect(grads).toEqual(['linear-gradient(90deg,', 'linear-gradient(180deg,']);
+    // Every distance is a share of the one custom property; no bare pixel width hides in the mask.
+    expect(m).not.toMatch(/(?<![\d.])[1-9]\d*\s*px/);
+    expect(m).toContain('var(--w-sky-soft)');
+    // The 180deg ramp is the top only: no stop counts from the foot.
+    const vertical = m.slice(m.indexOf('linear-gradient(180deg'));
+    expect(vertical).not.toContain('100%');
+    // The horizontal ramp has both a left and a right half.
+    const horizontal = m.slice(0, m.indexOf('linear-gradient(180deg'));
+    expect(horizontal).toContain('calc(100%-var(--w-sky-soft)');
+  });
+
+  it('the carried soft edge width is clamped to 40 percent of the picture\'s smaller side', () => {
+    expect(skySoftEdge(120)).toBe(120);
+    expect(skySoftEdge(-30)).toBe(0);
+    expect(skySoftEdge(5000)).toBe(200);
+  });
+
+  it('the stage carries the width from the constant, on the whole sky only', async () => {
+    for (const look of ['feather', 'sun', 'drivein', 'holo', 'sky'] as LookId[]) {
+      setup(look);
+      const r = render(<UnwindView />);
+      await flush();
+      const stage = document.querySelector('.w-stage') as HTMLElement;
+      expect(stage.style.getPropertyValue('--w-sky-soft')).toBe(look === 'sky' ? `${SKY_SOFT_EDGE}px` : '');
+      r.unmount();
+    }
+  });
+
 
   it('the left block has no dark plate beside the whole sky (no picture lies under it; its text reads on the sky)', () => {
     expect(rule('.unwind:has(.w-sky) .w-now')).toBeNull();
