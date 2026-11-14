@@ -476,7 +476,9 @@ The day ribbon (`wall/src/ribbon/`, `styles/ribbon.css`) is on Work, Home and Me
   too, but not the focus that follows a click. Its look is Watt's speech bubble shape (square
   corners, a 2 px ring, the pixel tail) in the wall's dark with his lavender as the ring:
   titles 18 px Oxanium, detail 16 px, hints 14 px in cyan, so it reads on the strip at 100
-  percent. Reduced motion drops its fade. Lavender filled bubbles stay Watt's own voice. A shown card is redrawn every 15 seconds (the needle's countdown
+  percent (nothing in a tooltip or in Watt's menu is under 16 px). A card goes when its anchor moves
+  more than 4 px, and the focus a menu gives back after a choice opens none. Reduced motion drops
+  its fade. Lavender filled bubbles stay Watt's own voice. A shown card is redrawn every 15 seconds (the needle's countdown
   stays right) and closes when its anchor leaves the page. A pinned card (the "+N" chip's
   list) takes the pointer and closes on a click elsewhere or Escape.
 - **The calm strip** (Work and Meet; Home's strip is unchanged), still 104 px:
@@ -1055,8 +1057,8 @@ Watt is also a small pet ("he"), calm and silent (no sound at all):
     sideways over a quarter second only when the spot below is not free), stretched as he
     falls; he lands with a deep squash and dust, a rebound, and a shake of his wool, stands a
     moment, sits, and after a few seconds wanders around his new spot. The spot is kept per
-    place (`spots` in his stored record) until he is set down elsewhere or called to the
-    middle. Under reduced motion he is simply there. A carry is never a pet. Pointer cancel, a
+    place (`spots` in his stored record; Unwind keeps one per tab, `unwind` for Listen and
+    `unwindWatch` for Watch) until he is set down elsewhere or called to the middle. Under reduced motion he is simply there. A carry is never a pet. Pointer cancel, a
     lost capture, the window losing focus, the page hiding, a call starting or the display going
     idle put him down from where he is (no fall when the page is hidden, and no landing line); a
     place change sets him down at once on the new place's ground at his x. Letting go within 24
@@ -1065,11 +1067,16 @@ Watt is also a small pet ("he"), calm and silent (no sound at all):
     clover are hidden. He says at most one "held" line (a "fast" one when he is carried quickly,
     none once shaken), one "landed" line only once he is down and his wool is shaken out, and a
     "dizzy" line at most once a minute, all obeying every quiet time and the chattiness setting;
-    carry lines come at most every 20 seconds across carries.
+    carry lines come at most every 20 seconds across carries. His held line shows only over open
+    ground: carried over a control, a line of text or a card of the wall it is hidden, so it never
+    covers information (his body stays above everything, to show where he will land).
   - **He notices the pointer.** Within about 260 px, and not busy (reading in focus, walking, a
     clover on the ground, asleep, a reaction running, his menu open), he turns to face a pointer
     that moved in the last 6 seconds, with his ears up (the "alert" pose); after 6 still seconds
     he loses interest. Not under reduced motion.
+  - **While the wall records** (`isQuietForRecording()` in `signals/store.ts`) he sits quietly where
+    he is: no wander and no idle life, no line of his own, no click noticing, no hop or look he
+    starts himself, no notes or beat; the owner can still pet him, open his menu and carry him.
   - **He notices clicks.** One passive `pointerdown` listener on the window (capture, so it sees
     clicks a control stops; it never prevents or stops anything, and does a few comparisons and
     starts a reaction; no polling, no timer while idle). A click anywhere on the wall that is not
@@ -1080,7 +1087,8 @@ Watt is also a small pet ("he"), calm and silent (no sound at all):
     reaction in three may get a line ("Ooh. A click."), at most once every three minutes and only
     through the usual quiet and chattiness rules, never over another bubble. Never while he is
     carried, falling or walking back, in a trick or a nap, reading, with his menu open, asleep,
-    away, in a call or a meeting, or while the wall records. Under reduced motion he only turns.
+    away, in a call or a meeting, while the wall records or while the page is hidden
+    (`noticeBlocked` in `Watt.tsx` holds the list). Under reduced motion he only turns.
   - **Happy hop and a milestone.** Three clicks within 4 seconds (the second and third add nothing
     to the pet count) give one happy hop, at most once every 20 seconds. The tenth pet of a day
     gives a one-off sparkle and a "milestone" line.

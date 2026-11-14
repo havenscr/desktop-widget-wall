@@ -181,6 +181,8 @@ state('home', 'Watt: set down left of the moods', 'wattspot=400');
 state('meet', 'Watt: set down under Accounts', 'wattspot=2200');
 state('unwind', 'Watt: set down past the transport row', 'wattspot=1700');
 state('unwind', 'Watt: set down left by the clock', 'wattspot=180');
+// While the wall records he sits quietly where he is (the recording chip says why).
+add('work', 'Watt: recording, he sits quietly', url('work', TYPICAL_AT, 'rec=1&meet=none'), true);
 state('unwind', 'Watt: on Watch, kept off the video', 'wattspot=1700&watch=mock&wlist=three&wlook=feather&wplay=0', TIMES.night);
 // The agents header with twelve sessions, two waiting and an alarm: one line.
 state('work', 'agents header: twelve sessions, two waiting, an alarm', 'agents=12ask');
@@ -341,6 +343,7 @@ const EXPECT = [
   ['home', 'Watt: menu open', ['Tricks', 'Stay here', 'Talks']],
   ['unwind', 'Watt: menu open', ['Tricks', 'Together', 'Wears']],
   ['unwind', 'Watt: menu at night', ['Watt is asleep', 'Tricks']],
+  ['work', 'Watt: recording, he sits quietly', ['Now \u00b7 Recording', 'Recording00:']],
   // Work
   ['work', 'sparse', ['Nothing due', 'All slots free']],
   ['work', 'heavy', ['115 more can wait', 'Architecture working', 'Draft the workshop outline']],

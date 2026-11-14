@@ -66,7 +66,7 @@ export function nextBlink(T: number): number {
  * `playing` is music on (notes drift).
  */
 export function restFor(walk: Walk, t: number, T: number, night: boolean, playing: boolean, m: Mind): number {
-  if (night || m.lie || m.nap || m.firefly || playing || m.bob > 0) return 0;
+  if (night || m.lie || m.nap || (!m.quiet && (m.firefly || playing || m.bob > 0))) return 0;
   if (m.react !== null && m.reactT < reactLength(m)) return 0;
   let next = Infinity;
   const at = (s: number) => {
@@ -88,7 +88,7 @@ export function restFor(walk: Walk, t: number, T: number, night: boolean, playin
       else if (w.into < GRAZE_FROM_S + GRAZE_S) at(Math.min(GRAZE_FROM_S + GRAZE_S, (Math.floor(w.into * NIBBLE_HZ) + 1) / NIBBLE_HZ) - w.into);
     }
   }
-  if (m.idleLife) at(nextBlink(T));
+  if (m.idleLife && !m.quiet) at(nextBlink(T));
   return next;
 }
 
@@ -165,6 +165,8 @@ export interface Mind {
   clickUp: boolean;
   /** The idle behaviours he does (blink, graze, settle): off in tests that hold his pose still. */
   idleLife: boolean;
+  /** The wall is recording: he sits quietly (no wander, no idle life, nothing he starts himself). */
+  quiet: boolean;
 }
 
 export function createMind(): Mind {
@@ -198,12 +200,13 @@ export function createMind(): Mind {
     clickKind: 'near',
     clickUp: false,
     idleLife: true,
+    quiet: false,
   };
 }
 
 /** True while `m.react` is one that holds her still (the wander clock stops). */
 export function holdsStill(m: Mind): boolean {
-  return m.held || m.carry || m.lie || (m.react !== null && m.reactT < reactSpan(m));
+  return m.held || m.carry || m.lie || m.quiet || (m.react !== null && m.reactT < reactSpan(m));
 }
 
 /** What Watt draws this frame, beyond the base frame. Reused. */
@@ -349,6 +352,10 @@ export function petFrame(walk: Walk, place: WattPlace, hy: number, night: boolea
     } else if (react && k < 1 && react === 'click') {
       out.dir = m.reactDir;
       if (!still) noticeClick(m.clickKind, m.clickUp, m.reactT, out);
+    } else if (m.quiet && !react) {
+      // Recording: he sits quietly where he is.
+      out.pose = 'sit';
+      out.notes = false;
     } else if (moving) {
       // Walking: the base frame already alternates idle and walk.
     } else if (m.focus) {
@@ -367,12 +374,12 @@ export function petFrame(walk: Walk, place: WattPlace, hy: number, night: boolea
       else if (GRAZE_STOPS.includes(w.stop) && w.into >= GRAZE_FROM_S && w.into < GRAZE_FROM_S + GRAZE_S) out.pose = Math.floor(w.into * NIBBLE_HZ) % 3 === 0 ? 'idle' : 'eat';
     }
     // A firefly: he turns to watch it, head up, when he is standing about.
-    if (!react && !still && m.firefly && !moving && !m.focus && !m.clover && !m.held && out.pose === 'idle') {
+    if (!react && !still && m.firefly && !m.quiet && !moving && !m.focus && !m.clover && !m.held && out.pose === 'idle') {
       out.dir = m.fireflyX >= out.x + spriteWidth('look', walk.px) / 2 ? 1 : -1;
       if (m.fireflyY < hy - spriteHeight('look', walk.px)) out.pose = 'look';
     }
     // He notices the pointer: faces it, ears up, when he is standing about with nothing on his mind.
-    if (!react && !still && m.pointerOn && !moving && !m.focus && !m.clover && !m.held) {
+    if (!react && !still && m.pointerOn && !m.quiet && !moving && !m.focus && !m.clover && !m.held) {
       const dx = m.pointerX - (out.x + spriteWidth('alert', walk.px) / 2);
       const dy = m.pointerY - (hy - spriteHeight('alert', walk.px) / 2);
       if (dx * dx + dy * dy <= NOTICE_PX * NOTICE_PX) {
@@ -392,7 +399,7 @@ export function petFrame(walk: Walk, place: WattPlace, hy: number, night: boolea
     }
     // Hearts land with the happy hop.
     if (react === 'happy' && m.reactT >= 1.1) out.hearts = true;
-    if (!still && m.idleLife && canBlink(out.pose) && blinking(m.clock)) out.blink = true;
+    if (!still && m.idleLife && !m.quiet && canBlink(out.pose) && blinking(m.clock)) out.blink = true;
   }
   out.sparkle = !night && react === 'sparkle' && k < 1;
   // The amber mark shows whatever he is doing, asleep included: something waits for him.
@@ -406,7 +413,7 @@ export function petFrame(walk: Walk, place: WattPlace, hy: number, night: boolea
     const room = Math.max(0, top - walk.ceiling);
     out.lift = Math.min(out.lift * walk.px, room);
   } else out.lift = 0;
-  if (!still && !night && !m.nap && !shaped && out.squash === 1) out.squash = 1 - 0.05 * Math.max(0, Math.min(1, m.bob));
+  if (!still && !night && !m.nap && !m.quiet && !shaped && out.squash === 1) out.squash = 1 - 0.05 * Math.max(0, Math.min(1, m.bob));
   return out;
 }
 

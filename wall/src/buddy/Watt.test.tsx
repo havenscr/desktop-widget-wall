@@ -18,7 +18,8 @@ import { LINES } from './lines';
 import { PET_KEY, dayKey, defaultPet, emptyToday } from './pet';
 import { resetMeetingFeed, useMeetingFeed } from '../work/useNextMeeting';
 import { resetWeatherStore } from '../weather/useWeather';
-import { PET_LINE_EVERY_MS, PET_REPLY_GAP_MS, WATT_TIP, Watt, restClock } from './Watt';
+import { PET_LINE_EVERY_MS, PET_REPLY_GAP_MS, WATT_TIP, Watt, noticeBlocked, restClock, type NoticeState } from './Watt';
+import { FALL, HELD, LAND, MOVE, NONE, RETURN, SIT } from './carry';
 import { HoverTipLayer, resetTip } from '../ui/HoverTip';
 
 const sunMock = vi.hoisted(() => ({ set: null as number | null }));
@@ -864,6 +865,49 @@ describe('the amber mark when it is only a label', () => {
     expect(mark.classList.contains('static')).toBe(true);
     expect(mark.hidden).toBe(false);
     expect(mark.style.pointerEvents).toBe('none');
+  });
+});
+
+describe('while the wall records', () => {
+  afterEach(() => useSignalStore.setState({ known: false, recording: false }));
+  const rec = (on: boolean) => act(() => useSignalStore.setState({ known: on, recording: on }));
+  it('he sits quietly: no wander, no line of his own, no hop or look he starts himself; the owner can still open his menu and carry him', () => {
+    let ms = day();
+    const { container } = render(<Watt now={() => ms} />);
+    runFor(FADE_IN_S + 0.5);
+    rec(true);
+    runFor(0.5);
+    const rows = () => Number(container.querySelector('.watt-sheep svg')!.getAttribute('height')) / 6;
+    expect(rows()).toBe(11);
+    const x = where(container).x;
+    // Five minutes: no walk, no line.
+    for (let i = 0; i < 30; i++) {
+      ms += 10_000;
+      runFor(10);
+    }
+    expect(where(container).x).toBe(x);
+    expect(container.querySelector('.watt-bubble')).toBeNull();
+    // A focus session finishing does not make him hop.
+    const y0 = where(container).feet;
+    act(() => useFocusStore.setState({ state: { status: 'running', minutes: 25, endAt: ms + 20_000 } as never }));
+    act(() => useFocusStore.setState({ state: { status: 'finished', minutes: 25 } }));
+    let lifted = false;
+    for (let i = 0; i < 20; i++) {
+      tick();
+      if (where(container).feet < y0 - 0.5) lifted = true;
+    }
+    expect(lifted).toBe(false);
+    // His menu still opens, and he can still be carried.
+    fireEvent.contextMenu(container.querySelector('.watt-hit')!);
+    expect(container.querySelector('.watt-menu')).not.toBeNull();
+    fireEvent.keyDown(window, { key: 'Escape' });
+    // Recording ends: he wanders on.
+    rec(false);
+    for (let i = 0; i < 8; i++) {
+      ms += 10_000;
+      runFor(10);
+    }
+    expect(where(container).x).not.toBe(x);
   });
 });
 
@@ -1766,7 +1810,7 @@ describe('more of a pet', () => {
     const click = (x: number, y: number, target: EventTarget = document.body) =>
       act(() => void target.dispatchEvent(new PointerEvent('pointerdown', { clientX: x, clientY: y, button: 0, bubbles: true })));
     const tuftOn = (c: HTMLElement) => c.querySelector<HTMLElement>('.watt-tuft')!.style.display !== 'none';
-    afterEach(() => useSignalStore.setState({ recording: false }));
+    afterEach(() => useSignalStore.setState({ known: false, recording: false }));
     it('near him: he turns to it, ears up, his wool flicks and he holds the look; far away only a glance', () => {
       const { container } = start();
       const mid = middle(WALKS.unwind) + 54;
@@ -1816,13 +1860,36 @@ describe('more of a pet', () => {
       tick();
       expect(dirOf(container)).toBe(-1);
     });
-    it('never while carried, with his menu open, in a call, reading, or while the wall records', () => {
+    it('the guard: noticed only when nothing else holds him, never in any of the quiet states', () => {
+      const base: NoticeState = { shown: true, hidden: false, night: false, carryMode: NONE, menuOpen: false, lie: false, nap: false, reading: false, inCall: false, recording: false, reacting: false };
+      expect(noticeBlocked(base)).toBeNull();
+      // Sitting where he was set down is not a quiet state.
+      expect(noticeBlocked({ ...base, carryMode: SIT })).toBeNull();
+      const never: [string, Partial<NoticeState>][] = [
+        ['carried', { carryMode: HELD }],
+        ['menu open', { menuOpen: true }],
+        ['in a call', { inCall: true }],
+        ['reading', { reading: true }],
+        ['recording', { recording: true }],
+        ['falling', { carryMode: FALL }],
+        ['falling', { carryMode: LAND }],
+        ['napping', { lie: true }],
+        ['napping', { nap: true }],
+        ['asleep', { night: true }],
+        ['walking back', { carryMode: RETURN }],
+        ['walking back', { carryMode: MOVE }],
+        ['hidden', { hidden: true }],
+        ['away', { shown: false }],
+        ['busy', { reacting: true }],
+      ];
+      for (const [why, over] of never) expect(noticeBlocked({ ...base, ...over }), why).toBe(why);
+    });
+    it('the listener uses that guard: with his menu open, in a call or while the wall records a click turns nothing', () => {
       const mid = middle(WALKS.unwind) + 54;
       const quiet: [string, (c: HTMLElement) => void, { inCall?: boolean }][] = [
         ['his menu open', (c) => fireEvent.contextMenu(hitOf(c)), {}],
         ['a call', () => {}, { inCall: true }],
-        ['reading', () => act(() => useFocusStore.setState({ state: { status: 'running', minutes: 25, endAt: day() + 20 * 60_000 } as never })), {}],
-        ['recording', () => act(() => useSignalStore.setState({ recording: true })), {}],
+        ['recording', () => act(() => useSignalStore.setState({ known: true, recording: true })), {}],
       ];
       for (const [name, setup, props] of quiet) {
         const r = render(<Watt now={day} {...props} />);
@@ -1830,14 +1897,26 @@ describe('more of a pet', () => {
         setup(r.container);
         runFor(0.3);
         const before = r.container.querySelector<HTMLElement>('.watt-sheep')!.style.transform;
-        // Clicks inside his menu are his own; one outside would close it, so the menu case clicks inside it.
         click(mid + 150, 440, name === 'his menu open' ? r.container.querySelector('.watt-menu')! : document.body);
+        tick();
         tick();
         expect(r.container.querySelector<HTMLElement>('.watt-sheep')!.style.transform, name).toBe(before);
         r.unmount();
-        useFocusStore.setState({ state: { status: 'idle', minutes: 25 } });
-        useSignalStore.setState({ recording: false });
+        useSignalStore.setState({ known: false, recording: false });
       }
+    });
+    it('one passive capture pointerdown listener on the window, removed on unmount', () => {
+      const add = vi.spyOn(window, 'addEventListener');
+      const remove = vi.spyOn(window, 'removeEventListener');
+      const r = render(<Watt now={day} />);
+      const downs = add.mock.calls.filter(([type]) => type === 'pointerdown');
+      expect(downs.length).toBe(1);
+      expect(downs[0][2]).toEqual({ capture: true, passive: true });
+      r.unmount();
+      const off = remove.mock.calls.filter(([type]) => type === 'pointerdown');
+      expect(off.length).toBe(1);
+      expect(off[0][1]).toBe(downs[0][1]);
+      expect(off[0][2]).toEqual({ capture: true });
     });
     it('now and then a line, for a near click only, at most once in three minutes', () => {
       let ms = day();

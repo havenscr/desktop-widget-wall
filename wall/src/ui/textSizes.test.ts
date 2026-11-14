@@ -1,3 +1,4 @@
+// @ts-ignore node's own file calls; this test reads the stylesheets as text.
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 

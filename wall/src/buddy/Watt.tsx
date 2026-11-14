@@ -10,7 +10,7 @@ import { useNowPlayingStore } from '../music/store';
 import { usePlaceStore } from '../state/places';
 import { reviewNow } from '../ui/reviewClock';
 import { hideTip, quietFocus, tip } from '../ui/HoverTip';
-import { useSignalStore } from '../signals/store';
+import { isQuietForRecording, useSignalStore } from '../signals/store';
 import { useWatchStore } from '../unwind/watch/store';
 import { useIdle } from '../ui/useIdle';
 import { useReducedMotion } from '../ui/useReducedMotion';
@@ -19,6 +19,7 @@ import { useNextMeeting } from '../work/useNextMeeting';
 import {
   carryRestFor,
   FALL,
+  LAND,
   MOVE,
   RETURN,
   SIT,
@@ -137,14 +138,6 @@ export const CLICK_LINE_EVERY_N = 3;
 /** A trick's line comes this long after its move has ended, milliseconds; a nap's once he is lying down. */
 export const TRICK_LINE_AFTER_MS = 200;
 export const NAP_LINE_AFTER_MS = 1200;
-/**
- * The seam for the wall's recording quiet: true while he should sit quietly because the wall is
- * recording. Today it reads the signal store's `recording`; the recording mode pull request will
- * export `isQuietForRecording()`, which replaces this body (and nothing else here).
- */
-export function quietForRecording(): boolean {
-  return useSignalStore.getState().recording;
-}
 /** His menu's height until it has been measured, design pixels. */
 const MENU_H_GUESS = 330;
 /** A meeting this close (milliseconds) makes him look at the clock and say so. */
@@ -208,6 +201,44 @@ export function infoBoxes(toStage: (x: number, y: number) => { x: number; y: num
     out.push({ left, top, width: b.x - left, height: b.y - top });
   }
   return out;
+}
+
+/** What decides whether he notices a click (see `noticeBlocked`). */
+export interface NoticeState {
+  /** On show at a place (not away or fading out). */
+  shown: boolean;
+  hidden: boolean;
+  night: boolean;
+  carryMode: number;
+  menuOpen: boolean;
+  lie: boolean;
+  nap: boolean;
+  reading: boolean;
+  inCall: boolean;
+  recording: boolean;
+  reacting: boolean;
+}
+
+/**
+ * Why a click goes unnoticed, or null when he notices it: never while he is away or the page is
+ * hidden, asleep, carried, falling, landing or walking back (a carry that is not over), with his
+ * menu open, napping (the trick or the display idle), reading, in a call or a meeting, while the
+ * wall records, or while another reaction runs.
+ */
+export function noticeBlocked(s: NoticeState): string | null {
+  if (!s.shown) return 'away';
+  if (s.hidden) return 'hidden';
+  if (s.night) return 'asleep';
+  if (s.carryMode === HELD) return 'carried';
+  if (s.carryMode === FALL || s.carryMode === LAND) return 'falling';
+  if (s.carryMode === RETURN || s.carryMode === MOVE) return 'walking back';
+  if (s.menuOpen) return 'menu open';
+  if (s.lie || s.nap) return 'napping';
+  if (s.reading) return 'reading';
+  if (s.inCall) return 'in a call';
+  if (s.recording) return 'recording';
+  if (s.reacting) return 'busy';
+  return null;
 }
 
 /** Take an element of hers out of the tab order and out of sight while she is away (no allocation). */
@@ -376,7 +407,11 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
   m.nap = idle;
   m.waiting = waiting;
   m.clover = clover !== null;
-  m.firefly = dusk && !reduced && !inCall && !inMeeting;
+  // The wall is recording: he sits quietly (no wander, no speech, nothing he starts himself; the
+  // owner can still pet him, open his menu and carry him).
+  const recordingQuiet = useSignalStore((st) => isQuietForRecording(st));
+  m.quiet = recordingQuiet;
+  m.firefly = dusk && !reduced && !inCall && !inMeeting && !recordingQuiet;
   m.cosmetic = pet.cosmetic;
   // Dev review stills only (`window.__watt.set`): kept over the hooks' values on every render.
   const debugMind = useRef<Partial<Mind>>({});
@@ -395,6 +430,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
   q.inCall = inCall || inMeeting;
   q.idle = idle;
   q.focusSince = focus.status === 'running' ? focus.endAt - focus.minutes * 60_000 : null;
+  q.recording = recordingQuiet;
 
   const show = useCallback((line: string) => {
     const walk = presence.current.place ? walkOf(presence.current.place) : WALKS.work;
@@ -418,7 +454,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
   quietRef.current = quietCheck;
   useEffect(() => {
     quietCheck();
-  }, [quietCheck, q.chatty, q.inCall, q.idle, q.focusSince]);
+  }, [quietCheck, q.chatty, q.inCall, q.idle, q.focusSince, q.recording]);
   useEffect(() => {
     const onVis = () => quietRef.current();
     document.addEventListener('visibilitychange', onVis);
@@ -470,7 +506,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
     // Only a session seen running that ends now: one that ended while the app was closed says nothing.
     if (focus.status === 'finished' && prev.status === 'running' && t - prev.endAt < 60_000) {
       note('focusDone', t);
-      startReact.current('hop');
+      if (!mind.current.quiet) startReact.current('hop');
       update((d) => bump(d, 'focus', t));
       check();
     }
@@ -487,7 +523,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
     const n = finishedBetween(before, summary.lanes, summary.day);
     if (n > 0) {
       note('agentFinished', t);
-      startReact.current('hop');
+      if (!mind.current.quiet) startReact.current('hop');
       update((d) => {
         let r = d;
         for (let i = 0; i < n; i++) r = bump(r, 'agents', t);
@@ -501,7 +537,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
     if (waiting && !prevWaiting.current) {
       note('agentWaiting', nowRef.current());
       // The agent cards sit above her, right of her on Work: she turns up toward them.
-      startReact.current('look', 1);
+      if (!mind.current.quiet) startReact.current('look', 1);
       check();
     }
     prevWaiting.current = waiting;
@@ -520,7 +556,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
     if (mtg && meetingSoon && lookedAt.current !== mtg.key) {
       lookedAt.current = mtg.key;
       note('meetingSoon', t);
-      startReact.current('look', -1);
+      if (!mind.current.quiet) startReact.current('look', -1);
       check();
     }
   }, [next.meeting, next.stale, meetingSoon, note, check]);
@@ -1040,12 +1076,21 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
       const t = e.target as Element | null;
       if (t?.closest?.('.watt')) return;
       const p = presence.current;
-      if (!p.place || !p.camera || p.night || p.opacity < 0.5 || document.hidden) return;
       const m = mind.current;
-      const c = carry.current;
-      if (c.mode !== NONE && c.mode !== SIT) return;
-      if (cardRef.current || m.lie || m.nap || m.focus || q.inCall || quietForRecording()) return;
-      if (m.react !== null && m.reactT < reactLength(m)) return;
+      const blocked = noticeBlocked({
+        shown: !!p.place && !!p.camera && p.opacity >= 0.5,
+        hidden: document.hidden,
+        night: p.night,
+        carryMode: carry.current.mode,
+        menuOpen: cardRef.current !== null,
+        lie: m.lie,
+        nap: m.nap,
+        reading: m.focus,
+        inCall: q.inCall,
+        recording: m.quiet,
+        reacting: m.react !== null && m.reactT < reactLength(m),
+      });
+      if (blocked) return;
       const T = tNowRef.current();
       if (T - lastClick.current < CLICK_GAP_S) return;
       lastClick.current = T;
@@ -1276,7 +1321,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
       else if (!holdsStill(mind.current)) wanderT.current += dt;
       // Waking at 6:30: a yawn and a stretch.
       if (p.place && prevNight === true && !p.night) {
-        startReact.current('wake');
+        if (!mind.current.quiet) startReact.current('wake');
         talk.current.events.wake = nowRef.current();
       }
       if (p.place) prevNight = p.night;
@@ -1647,7 +1692,8 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
         carryTalk();
       } else if (!raf && !busy) {
         // Resting (or stopped): step by the time rested so far, paint, and choose again.
-        if (restTimer) restPlanned = 0;
+        // A wake is never the planned end of a rest: count only the time that really passed.
+        restPlanned = 0;
         last = -1;
         tick();
       }
@@ -1697,7 +1743,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
   // A call starting or ending, a bubble, a clover or her look changing wakes the loop (or repaints the still pose).
   useEffect(() => {
     wake.current();
-  }, [inCall, bubble, clover, pet.cosmetic, focus.status, ws.rain, ws.cold, minute, watchTab]);
+  }, [inCall, bubble, clover, pet.cosmetic, focus.status, ws.rain, ws.cold, minute, watchTab, recordingQuiet]);
 
   // Dev review stills: a handle on the window to say a line, react or grow a clover.
   useEffect(() => {
