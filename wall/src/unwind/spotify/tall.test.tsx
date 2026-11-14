@@ -5,7 +5,7 @@ import type { SpotifyDevice, SpotifyItem, SpotifyTrack } from '../../music/spoti
 import { resetNowPlaying } from '../../music/store';
 import { resetTools } from '../../tools/store';
 import { hideTip, resetTip } from '../../ui/HoverTip';
-import { deviceKindWord, GONE_LINE, LOCKED_LINE, playDeviceId, resetSpotifyTarget, resetListenSource, seekPosition, SEARCH_WAIT_MS, TALL_CLOSE_MS, useListenSource, useSpotifyDevices, useSpotifyNow, useSpotifyStart, useSpotifyTarget } from './model';
+import { deviceKindWord, GONE_LINE, LOCKED_LINE, NOT_YOURS_LINE, playDeviceId, resetSpotifyTarget, resetListenSource, seekPosition, SEARCH_WAIT_MS, TALL_CLOSE_MS, useListenSource, useSpotifyDevices, useSpotifyNow, useSpotifyStart, useSpotifyTarget } from './model';
 import { deviceRows, DEVICES_FOOT, STALE_NOTE } from './PlayOn';
 import { PLAYBACK_POLL_MS, SEEK_KEY_GAP_MS, SEEK_STEP_MS } from './PlayerRow';
 import { SpotifyCard } from './SpotifyCard';
@@ -996,17 +996,31 @@ describe('a chosen player that is gone, locked or unreachable', () => {
     expect(chip().textContent).not.toContain('Phone');
   });
 
-  it('a computer that is gone is started again by Play (this PC), not refused', async () => {
-    await setup({ playing: false, devices: [device(1, 'Desk speakers', 'Computer'), device(2, 'Phone', 'Smartphone')] });
+  it('a chosen computer that is gone is refused like any other player, even with a phone active', async () => {
+    await setup({ playing: false, devices: [device(1, 'Desk speakers', 'Computer'), device(2, 'Phone', 'Smartphone', true)] });
     await act(async () => chip().click());
     await flush();
     await act(async () => (document.querySelectorAll('.sp-device')[0] as HTMLButtonElement).click());
     await flush();
     expect(chip().textContent).toContain('Desk speakers');
-    mocks.set('wall2_spotify_devices', () => [device(2, 'Phone', 'Smartphone')]);
+    mocks.set('wall2_spotify_devices', () => [device(2, 'Phone', 'Smartphone', true)]);
+    await playOpened();
+    expect(plays()).toHaveLength(0);
+    expect(screen.getByText(GONE_LINE)).toBeTruthy();
+    expect(useSpotifyTarget.getState().target).toBeNull();
+  });
+
+  it('the chosen "This PC" that is not awake is started by Play, even with a phone active (built on purpose)', async () => {
+    await setup({ playing: false, devices: [device(2, 'Phone', 'Smartphone', true)] });
+    await act(async () => chip().click());
+    await flush();
+    await act(async () => (document.querySelectorAll('.sp-device')[0] as HTMLButtonElement).click());
+    await flush();
+    expect(useSpotifyTarget.getState().target).toMatchObject({ id: '', name: 'This PC' });
     await playOpened();
     expect(plays()).toHaveLength(1);
     expect((plays()[0][1] as { request: Record<string, unknown> }).request.deviceId).toBeUndefined();
+    expect(screen.queryByText(GONE_LINE)).toBeNull();
   });
 
   it('a failed refresh before Play lets it go, since Rust checks the same list', async () => {
@@ -1321,5 +1335,149 @@ describe('closing by itself follows the keyboard focus too', () => {
     fireEvent.pointerLeave(c);
     await flush(TALL_CLOSE_MS);
     expect(isTall()).toBe(false);
+  });
+});
+
+describe('a saved playlist that is not his (Spotify shows its songs only to its maker)', () => {
+  const words = 'Spotify shows the songs only for playlists you made. To see these, copy it into a playlist of your own in Spotify. Play and Shuffle still work.';
+  const notYours = () =>
+    mocks.set('wall2_spotify_tracks', () => {
+      throw new Error('not yours');
+    });
+  const openIt = async () => {
+    await act(async () => (document.querySelector('.sp-tile') as HTMLButtonElement).click());
+    await flush();
+  };
+
+  it('at rest: the new words, Play and Shuffle, no Retry and no Up next line', async () => {
+    await setup();
+    notYours();
+    await openIt();
+    expect(NOT_YOURS_LINE).toBe(words);
+    expect(screen.getByText(words)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Play' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Shuffle' })).toBeTruthy();
+    expect(screen.queryByText(/While it plays/)).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Up next' })).toBeNull();
+  });
+
+  it('in the tall view: the same words, no Retry, and a dim second line whose "Up next" is a button', async () => {
+    await setup();
+    notYours();
+    await open();
+    await openIt();
+    expect(screen.getByText(words)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
+    const line = document.querySelector('.sp-hintline') as HTMLElement;
+    expect(line.textContent).toBe('While it plays, Up next shows what is coming.');
+    expect(line.querySelector('button')?.textContent).toBe('Up next');
+  });
+
+  it('the Up next button switches to that tab and leaves the list', async () => {
+    await setup();
+    notYours();
+    await open();
+    await openIt();
+    await act(async () => (document.querySelector('.sp-hintline button') as HTMLButtonElement).click());
+    await flush();
+    expect(document.querySelector('.sp-songs')).toBeNull();
+    expect(document.querySelector('.sp-tabs [aria-selected="true"]')?.textContent).toBe('Up next');
+    expect(screen.getByText('Playing now')).toBeTruthy();
+  });
+
+  it('every other failure keeps its Retry', async () => {
+    await setup();
+    mocks.set('wall2_spotify_tracks', () => {
+      throw new Error('down');
+    });
+    await openIt();
+    expect(screen.getByText('Spotify is not answering right now.')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeTruthy();
+    expect(screen.queryByText(/While it plays/)).toBeNull();
+  });
+});
+
+describe('a swallowed outside press that never gets its click lets go of its listeners', () => {
+  const spyDocument = () => {
+    const added: string[] = [];
+    const removed: string[] = [];
+    const add = vi.spyOn(document, 'addEventListener').mockImplementation(function (this: Document, type: string, ...rest: unknown[]) {
+      added.push(type);
+      return EventTarget.prototype.addEventListener.call(this, type, ...(rest as [EventListenerOrEventListenerObject]));
+    } as never);
+    const remove = vi.spyOn(document, 'removeEventListener').mockImplementation(function (this: Document, type: string, ...rest: unknown[]) {
+      removed.push(type);
+      return EventTarget.prototype.removeEventListener.call(this, type, ...(rest as [EventListenerOrEventListenerObject]));
+    } as never);
+    const net = (t: string) => added.filter((x) => x === t).length - removed.filter((x) => x === t).length;
+    return { net, restore: () => { add.mockRestore(); remove.mockRestore(); } };
+  };
+  // Listeners other parts of the card hold while it is open (the page-visibility one) are the baseline.
+  const baseline = (spy: ReturnType<typeof spyDocument>) => Object.fromEntries(TYPES.map((t) => [t, spy.net(t)])) as Record<string, number>;
+  const TYPES = ['mousedown', 'mouseup', 'click', 'pointerup', 'pointercancel', 'auxclick', 'contextmenu', 'dragend'];
+
+  it('on the pointer going up outside, with no click after it', async () => {
+    const spy = spyDocument();
+    await setup();
+    await open();
+    const base = baseline(spy);
+    const target = screen.getByText('Behind');
+    await act(async () => fireEvent.pointerDown(target));
+    // The follow-up listeners are waiting for the press's click.
+    expect(spy.net('click') - base.click).toBe(1);
+    await act(async () => fireEvent.pointerUp(target));
+    await flush(1);
+    for (const t of TYPES) expect(spy.net(t), t).toBe(base[t]);
+    // The next click is the owner's own and reaches what it hits.
+    await act(async () => fireEvent.click(target));
+    expect(behind).toHaveBeenCalledTimes(1);
+    spy.restore();
+  });
+
+  it('on the card being taken away (a place or tab change) before the click', async () => {
+    const spy = spyDocument();
+    const view = await setup();
+    await open();
+    await act(async () => fireEvent.pointerDown(screen.getByText('Behind')));
+    expect(spy.net('click')).toBe(1);
+    view.unmount();
+    for (const t of TYPES) expect(spy.net(t), t).toBe(0);
+    spy.restore();
+  });
+
+  it('on the page being hidden mid-press', async () => {
+    const spy = spyDocument();
+    await setup();
+    await open();
+    const base = baseline(spy);
+    await act(async () => fireEvent.pointerDown(screen.getByText('Behind')));
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    for (const t of TYPES) expect(spy.net(t), t).toBe(base[t]);
+    // Nothing is left to swallow: the next click reaches what it hits.
+    await act(async () => fireEvent.click(screen.getByText('Behind')));
+    expect(behind).toHaveBeenCalledTimes(1);
+    spy.restore();
+  });
+
+  it('the usual press, released by its own click, still leaves nothing behind', async () => {
+    const spy = spyDocument();
+    await setup();
+    await open();
+    const base = baseline(spy);
+    const target = screen.getByText('Behind');
+    await act(async () => {
+      fireEvent.pointerDown(target);
+      fireEvent.mouseDown(target);
+      fireEvent.pointerUp(target);
+      fireEvent.mouseUp(target);
+      fireEvent.click(target);
+    });
+    await flush(1);
+    expect(behind).not.toHaveBeenCalled();
+    for (const t of TYPES) expect(spy.net(t), t).toBe(base[t]);
+    spy.restore();
   });
 });

@@ -108,6 +108,8 @@ export default {
     state('tall music pictures: Play on open', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo&spotify=picture', ['Kitchen speaker', 'Phone'], '.sp-grow >> .sp-dev'),
     state('tall music: Spotify not answering', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&spotify=down', 'Spotify is not answering right now.', '.sp-grow'),
     state('tall music: nothing playing', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&media=none&spotifyplay=none', ['Nothing playing', 'Road Trip 1'], '.sp-grow'),
+    state('tall music: a playlist that is not his, tall', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo&spotify=notyours', ['Spotify shows the songs only for playlists you made. To see these, copy it into a playlist of your own in Spotify. Play and Shuffle still work.', 'While it plays, ', 'Up next', 'Shuffle', '!Retry'], '.sp-grow >> .sp-tile'),
+    state('tall music: a playlist that is not his, at rest', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo&spotify=notyours', ['Spotify shows the songs only for playlists you made. To see these, copy it into a playlist of your own in Spotify. Play and Shuffle still work.', 'Shuffle', '!Retry', '!While it plays'], '.sp-tile'),
     ],
   },
   fit: {
@@ -128,6 +130,8 @@ export default {
     tallVariant('Spotify not answering', '&spotify=down', '.sp-grow'),
     tallVariant('signed out', '&spotify=signedout', '.sp-grow'),
     { name: REST, q: fitQuery('&audio=demo'), checks: ['.sp-card'], listen: true },
+    { name: 'Listen, the tall view, a playlist that is not his', q: fitQuery('&audio=demo&spotify=notyours'), checks: ['.sp-card'], click: '.sp-grow >> .sp-tile' },
+    { name: 'Listen, the resting card, a playlist that is not his', q: fitQuery('&audio=demo&spotify=notyours'), checks: ['.sp-card'], click: '.sp-tile', listen: true },
     { name: 'Sky layers, Listen at night, the tall view open, the moon in open sky', q: fitQuery('&audio=demo', night), checks: ['.sp-card'], click: '.sp-grow', sky: 'moon', moonAt: '760,352,44' },
     ],
     measurements: { tallMusic: measureTallMusic },

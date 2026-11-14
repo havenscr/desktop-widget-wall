@@ -29,6 +29,7 @@ import { PlayingBars, Tile } from './Tile';
 import { QueueView, SearchGroups } from './TallViews';
 import {
   isNowPlaying,
+  NOT_YOURS_UP_NEXT,
   kindLine,
   confirmPlayer,
   playDeviceId,
@@ -240,10 +241,18 @@ export function SpotifyCard() {
         setTimeout(off, 0);
       };
       const cancels = ['pointercancel', 'auxclick', 'contextmenu', 'dragend'] as const;
+      // The pointer going up ends the press: its click, when there is one, follows in the same turn, so the listeners
+      // are let go just after it (a press that never gets a click does not leave them waiting for the next one).
+      const upLater = () => void setTimeout(off, 0);
+      let released = false;
       function off() {
+        if (released) return;
+        released = true;
         document.removeEventListener('mousedown', stop, true);
         document.removeEventListener('mouseup', stop, true);
         document.removeEventListener('click', stopClick, true);
+        document.removeEventListener('pointerup', upLater, true);
+        document.removeEventListener('visibilitychange', off);
         cancels.forEach((k) => document.removeEventListener(k, off, true));
         window.removeEventListener('blur', off);
         if (swallowOff.current === off) swallowOff.current = null;
@@ -251,6 +260,8 @@ export function SpotifyCard() {
       document.addEventListener('mousedown', stop, true);
       document.addEventListener('mouseup', stop, true);
       document.addEventListener('click', stopClick, true);
+      document.addEventListener('pointerup', upLater, true);
+      document.addEventListener('visibilitychange', off);
       cancels.forEach((k) => document.addEventListener(k, off, true));
       window.addEventListener('blur', off);
       swallowOff.current = off;
@@ -651,7 +662,7 @@ function Browser({ tall }: { tall: boolean }) {
         )}
       </div>
     );
-  const songsView = open ? <SongsView item={open} tall={tall} backLabel={tabs.find((t) => t.id === tab)?.label ?? 'Back'} onBack={() => setOpen(null)} onNote={setNote} /> : null;
+  const songsView = open ? <SongsView item={open} tall={tall} backLabel={tabs.find((t) => t.id === tab)?.label ?? 'Back'} onBack={() => setOpen(null)} onNote={setNote} onUpNext={tall ? () => { setOpen(null); setTab('queue'); } : undefined} /> : null;
   return (
     <div className="sp-body">
       {tall ? (
@@ -745,7 +756,7 @@ interface SongsState {
  * inside the card and never grows it). A click plays from that song on, in its list; the song
  * now playing is marked; a song that cannot be played (a local file) is dimmed and says why.
  */
-function SongsView({ item, tall, backLabel, onBack, onNote }: { item: SpotifyItem; tall: boolean; backLabel: string; onBack: () => void; onNote: (n: string | null) => void }) {
+function SongsView({ item, tall, backLabel, onBack, onNote, onUpNext }: { item: SpotifyItem; tall: boolean; backLabel: string; onBack: () => void; onNote: (n: string | null) => void; onUpNext?: () => void }) {
   const kind = item.kind === 'album' ? 'album' : 'playlist';
   const [st, setSt] = useState<SongsState>({ items: [], total: item.count ?? 0, page: 0, more: false, loading: true, problem: null });
   const isNow = useIsNow();
@@ -852,9 +863,21 @@ function SongsView({ item, tall, backLabel, onBack, onNote }: { item: SpotifyIte
         {st.problem && st.items.length === 0 ? (
           <li className="sp-empty">
             {problemLine(st.problem)}
-            <button type="button" className="sp-btn" onClick={() => load(0)}>
-              Retry
-            </button>
+            {/* A playlist that is not his: Spotify will never list it, so Retry cannot help and is not offered. */}
+            {st.problem === 'notYours' ? null : (
+              <button type="button" className="sp-btn" onClick={() => load(0)}>
+                Retry
+              </button>
+            )}
+            {st.problem === 'notYours' && onUpNext ? (
+              <span className="sp-hintline">
+                {NOT_YOURS_UP_NEXT[0]}
+                <button type="button" className="sp-linkbtn" onClick={onUpNext}>
+                  {NOT_YOURS_UP_NEXT[1]}
+                </button>
+                {NOT_YOURS_UP_NEXT[2]}
+              </span>
+            ) : null}
           </li>
         ) : st.loading && st.items.length === 0 ? (
           <li className="sp-empty" aria-busy="true">

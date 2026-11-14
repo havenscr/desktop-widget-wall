@@ -61,6 +61,11 @@ export function spotifyProblem(e: unknown): SpotifyProblem {
   return 'failed';
 }
 
+/** Spotify shows a playlist's songs only to the person who made or co-edits it: what to do instead (Retry never helps here). */
+export const NOT_YOURS_LINE = 'Spotify shows the songs only for playlists you made. To see these, copy it into a playlist of your own in Spotify. Play and Shuffle still work.';
+/** The dim second line of the tall view, where there is room; "Up next" in it is a button. */
+export const NOT_YOURS_UP_NEXT = ['While it plays, ', 'Up next', ' shows what is coming.'] as const;
+
 /** The one line the card shows for a problem with a list read. */
 export function problemLine(p: SpotifyProblem): string {
   switch (p) {
@@ -81,7 +86,7 @@ export function problemLine(p: SpotifyProblem): string {
     case 'nodevice':
       return 'Open Spotify on this PC first.';
     case 'notYours':
-      return 'Spotify only lists the songs of playlists you own. Play it whole.';
+      return NOT_YOURS_LINE;
     case 'gone':
       return 'Spotify no longer offers this to the wall.';
     case 'connection':
@@ -284,7 +289,7 @@ export async function readDevices(): Promise<SpotifyDevice[] | null> {
 
 /**
  * Before a Play that names a player (the owner's pick, or the active one): read the list again. A picked player that is gone
- * (a computer: Play starts Spotify there as before; anything else) or does not allow control stops the Play with a fixed word,
+ * (a computer included; only the pick "This PC", which has no id, is started by Play as before) or does not allow control stops the Play with a fixed word,
  * clears the pick and plays nothing, so music never lands on another player while the chip names this one. A failed read lets
  * the play go on: Rust checks the same thing against Spotify's own list.
  */
@@ -295,8 +300,10 @@ export async function confirmPlayer(): Promise<{ deviceId?: string }> {
   if (before && before.id && list) {
     const found = list.find((d) => d.id === before.id);
     if (!found) {
+      // Any listed player that is gone is refused, a computer too (with a phone active, Play would land on the phone). The pick
+      // "This PC" (no id) is not in this branch: Play starts Spotify there, built on purpose.
       useSpotifyTarget.getState().setTarget(null);
-      if (before.kind.toLowerCase() !== 'computer') throw new Error('device gone');
+      throw new Error('device gone');
     } else if (found.restricted) {
       useSpotifyTarget.getState().setTarget(null);
       throw new Error('restricted');

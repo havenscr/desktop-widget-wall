@@ -3269,6 +3269,27 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.sp-hintline {
+  flex-basis: 100%;
+  font: 400 16px/22px var(--body);
+  color: var(--dim);
+}
+.sp-linkbtn {
+  min-height: 32px;
+  padding: 0 4px;
+  display: inline-flex;
+  align-items: center;
+  font: 600 16px/1 var(--body);
+  color: var(--cyan);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  border-radius: 8px;
+}
+.sp-linkbtn:hover,
+.sp-linkbtn:focus-visible {
+  background: rgba(53, 230, 234, 0.12);
+  outline: none;
+}
 .sp-li-len {
   flex: none;
   margin-left: auto;

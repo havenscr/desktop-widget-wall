@@ -1245,8 +1245,9 @@ frame (no ribbon) in the wide zones `470px 1fr 540px`. The parts are in `wall/sr
   under reduced motion); the state is not stored, so the wall starts closed. It closes on the
   same button, on Escape (the "Play on" list first, then a playlist's Back, then the view; focus
   returns to the button), on a press anywhere outside it (that press is swallowed together with the
-  mouse events that follow it, until its own click has gone by or the press is cancelled, however
-  long it is held, so it does not also press what lies under it; a tile's details card counts as
+  mouse events that follow it, until its own click has gone by or the press is cancelled or ends
+  (the pointer going up lets go just after the click would have come; so do the card being taken away and
+  the page being hidden), however long it is held, so it does not also press what lies under it; a tile's details card counts as
   inside), and by itself 15 seconds after the pointer has left it and the keyboard focus is outside
   it too (opened by keyboard it stays while the focus is inside; opened with neither there, the 15
   seconds start at once), never while the pointer or the focus, the search field included, is on it. Inside: the tab row
@@ -1267,7 +1268,11 @@ frame (no ribbon) in the wide zones `470px 1fr 540px`. The parts are in `wall/sr
   keys (a held key sends at most one seek per 300 ms and the final position on release), and seeks through
   `wall2_spotify_seek`; the local clock reads the state again when the song's length is reached.
   There is no Save to Liked: the sign-in's scopes do not include `user-library-modify` and this
-  change adds none. Every list shows loading words (never blank) on its first read, and keeps what is on screen while it reads again, then its empty or error words. A song in a search answer shows its length at the row's right edge (`durationMs`, sent only for search songs). On the YouTube Music side
+  change adds none. Every list shows loading words (never blank) on its first read, and keeps what is on screen while it reads again, then its empty or error words. A playlist the owner does not make or co-edit cannot have its songs listed (Spotify's rule), so
+  opening one says "Spotify shows the songs only for playlists you made. To see these, copy it into a playlist
+  of your own in Spotify. Play and Shuffle still work." with no Retry (it could never help); in the tall view a
+  dim second line adds "While it plays, Up next shows what is coming." where "Up next" is a button that opens
+  that tab. A song in a search answer shows its length at the row's right edge (`durationMs`, sent only for search songs). On the YouTube Music side
   the tall view holds today's content in the larger box.
   "Play on" is a chip showing where the music plays (the owner's pick, else the active Spotify
   player, else "This PC"; "This PC" also while the wall starts Spotify), and a click opens the
@@ -1280,7 +1285,7 @@ frame (no ribbon) in the wide zones `470px 1fr 540px`. The parts are in `wall/sr
   control is never swapped for another: Rust answers `device gone` or `restricted` and plays nothing, the
   card says "That player is not awake. Choose where to play." (or that it does not allow control) and
   clears the pick; the list is read again when the chooser opens and before a Play that names a player
-  (a computer that is gone is started again by Play as before); after a failed read the old rows stay
+  (a computer in the list that is gone is refused like any other player; only the pick "This PC", which has no player id, is started by Play); after a failed read the old rows stay
   marked "Could not refresh, these may be out of date." and not as live. Music on a player that does not
   allow control shows that player's name with a lock on the chip, and the words in its tip. Device names
   are shown as text only. While Spotify
