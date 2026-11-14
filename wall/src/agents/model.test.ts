@@ -191,6 +191,7 @@ describe('ribbon segments', () => {
     });
     const segs = agentSegments(s, now, hourAt);
     expect(segs.map((g) => [g.row, g.kind, g.x, g.width])).toEqual([
+      [2, 'past', 300, 100],
       [1, 'done', 500, 60],
       [0, 'run', 570, 30],
       [1, 'wait', 580, 20],

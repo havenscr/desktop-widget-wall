@@ -65,9 +65,10 @@ export function settledToday(st: AgentsState, now: number, record: DayRecord | n
   if (!s) return null;
   const until = Math.min(now, agentsUntil(st) ?? now);
   const parents = parentIds(s, record);
+  const parentDay = s.day.filter((span) => parents.has(span.lane));
   const answered = Date.parse(s.now) - st.skewMs;
   const ref = Number.isFinite(answered) ? Math.min(answered, until) : until;
-  const settled = settleOpenRuns(s, parents, workingIds(s), seenWorking(now), ref, until, st.skewMs);
+  const settled = settleOpenRuns({ ...s, day: parentDay }, parents, workingIds(s), seenWorking(now), ref, until, st.skewMs);
   return { summary: { ...s, day: settled.day }, ends: settled.ends, parents, until };
 }
 

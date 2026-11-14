@@ -4,13 +4,13 @@ import { lane, summary } from '../agents/fixtures';
 import { agentLayout, dayTotals, laneWorks, statusLine as workStatusLine } from '../agents/model';
 import { workingIds as wattWorkingIds } from '../buddy/senses';
 import { CentreSlot } from '../agents/CentreSlot';
-import { resetAgents } from '../agents/useAgents';
+import { resetAgents, useAgentsStore } from '../agents/useAgents';
 import { mocks } from '../bridge/tauri';
 import { useFocusStore } from '../focus/store';
 import { HoverTipLayer, resetTip, TIP_DELAY_MS } from '../ui/HoverTip';
 import type { WeatherState } from '../weather/useWeather';
 import { resetDays, todayRows } from './days';
-import { agentCounts, laneStateWord } from './AgentRow';
+import { agentCounts, laneStateWord, settledToday } from './AgentRow';
 import { workingIds } from './busy';
 import { agentsLineParts } from './model';
 import { statusLine as unwindStatusLine } from '../unwind/model';
@@ -240,7 +240,11 @@ it('a helper or side chat gets no row, no count and no click target: the drawer 
   const withChild = busyDay();
   const clean = { ...withChild, day: withChild.day.filter((d) => d.lane !== 'c0ffee00-0001') };
   const polluted = { ...withChild, day: [...withChild.day, { lane: 'c0ffee00-side', start: iso('09:45'), end: null, kind: 'run' as const }] };
-  const layout = (value: typeof polluted) => agentLayout(value, t('10:24'), (ms) => (ms - t('09:00')) / 60_000, null, 0, Number.POSITIVE_INFINITY);
+  const layout = (value: typeof polluted) => {
+    useAgentsStore.setState({ status: 'ready', summary: value, freshAt: t('10:24'), okAt: t('10:24'), checkedAt: t('10:24'), skewMs: 0 });
+    const settled = settledToday(useAgentsStore.getState(), t('10:24'))!;
+    return agentLayout(settled.summary, t('10:24'), (ms) => (ms - t('09:00')) / 60_000, null, 0, Number.POSITIVE_INFINITY);
+  };
   const cleanLayout = layout(clean);
   const pollutedLayout = layout(polluted);
   expect(dayTotals(pollutedLayout.segs)).toBe(dayTotals(cleanLayout.segs));
