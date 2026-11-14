@@ -40,12 +40,24 @@ export interface CameraPreset {
 export type Terrain = TerrainName;
 
 /**
- * Moon centre x, centre y and radius, design pixels. Drawn on the Unwind camera only. It sits in
- * open sky right of Listen's player and above the Lights card, at least 40 px clear of every card,
- * the player (its widest, with long names) and the clock, the same place on Watch with nothing on
- * (left of the list card). A screen that puts a picture there withholds it through `sky.ts` (`moonFor`).
+ * The moon's candidate places, in order (centre x, centre y and radius, design pixels). Drawn on
+ * the Unwind camera only, at the first place whose disc is at least 40 px clear of every picture
+ * and every card a screen claims (`moonFor` in `sky.ts`); with none clear, no moon. Every place is
+ * in open sky, wholly above the Unwind ridgeline (the drawn ranges' top under the disc, `ridgeTopY`,
+ * with 17 px or more to spare) and clear of the clock:
+ * - 1890, 260: right of Listen's player, the place it has always had (ridge top 334 under it).
+ * - 760, 340: low in the sky under the player's left half, right of Up next, for a layout whose
+ *   right side is taken by a wide card (ridge top 402 under it).
+ * - 1450, 150: high in the middle of the sky, for a layout that takes both of those.
  */
-export const MOON: readonly [number, number, number] = [1890, 260, 44];
+export const MOON_PLACES: readonly (readonly [number, number, number])[] = [
+  [1890, 260, 44],
+  [760, 340, 44],
+  [1450, 150, 44],
+];
+
+/** The moon's first place (see `MOON_PLACES`): where it sits when nothing on screen is in its way. */
+export const MOON: readonly [number, number, number] = MOON_PLACES[0];
 
 /** Seconds a camera takes to glide to another place's framing. */
 export const GLIDE_SECONDS = 1.6;

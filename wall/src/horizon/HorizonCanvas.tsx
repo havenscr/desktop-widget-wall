@@ -9,7 +9,7 @@ import { usePlaceStore } from '../state/places';
 import { REFLECT, createReflection, drawReflection, reflectionAlpha } from './reflection';
 import { audioBands, audioBeats, clearDanceHistory, danceKick, pauseDanceHistory, useAudioStore } from '../audio/store';
 import { loudness, smoothStep } from '../audio/model';
-import { CAMERAS, HOME_MORNING, MOON, cameraFor, cloudShiftFor, glideCamera, localDay, settled, startGlide, stepGlide, type CameraPreset, type Glide } from './cameras';
+import { CAMERAS, HOME_MORNING, MOON_PLACES, cameraFor, cloudShiftFor, glideCamera, localDay, settled, startGlide, stepGlide, type CameraPreset, type Glide } from './cameras';
 import {
   REST_PHASE,
   createEchoMotion,
@@ -35,6 +35,11 @@ import { drawVeil, veilStrength } from './veil';
 import { drawHorizon, type HorizonGrid, type HorizonOptions } from './index';
 
 const REDRAW_MS = 60_000;
+/**
+ * After a place change the veil's strength is read each frame for this long (its CSS transition is
+ * 600 ms); otherwise it is read once, when the front canvas comes, and kept.
+ */
+const VEIL_SETTLE_MS = 800;
 /**
  * The front canvas's place: the whole stage, whatever element it is mounted in, cut at the main
  * area's left edge (`MAIN_LEFT`). The rail is painted before the main area, so the front canvas
@@ -77,7 +82,8 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
   const [skyReview] = useState(() => (import.meta.env.DEV ? parseSkyReview(window.location.search) : null));
   const alwaysFront = !zen && skyReview?.front === 'always';
   const host = zen || skyReview?.front ? null : frontHost(claims);
-  const moonAt = skyReview?.moon ?? MOON;
+  // The moon's candidate places (`MOON_PLACES`), or the one review place.
+  const [moonPlaces] = useState(() => (skyReview?.moon ? [skyReview.moon] : MOON_PLACES));
   // The moon last drawn, published on the canvas as `data-moon` ("x,y,r", or empty) for the fit check.
   const shownMoon = useRef<readonly number[] | null | undefined>(undefined);
   const frontRef = useRef<HTMLCanvasElement | null>(null);
@@ -86,6 +92,9 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
     frontRef.current = el;
     setFront(el);
   }, []);
+  // The place veil the front canvas repeats (`veil.ts`): its element, its strength as last read,
+  // and until when (performance.now) it is read again each frame; -1 once it has settled.
+  const veil = useRef<{ el: Element | null; a: number; until: number }>({ el: null, a: 0, until: -1 });
   // True while the drawing is a still (reduced motion, or a frozen review frame).
   const stillRef = useRef(false);
   const glide = useRef<Glide>(settled(cameraFor(review?.place ?? place ?? 'work', review ? review.ms : now())));
@@ -225,17 +234,18 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
       // goes the moment a glide away starts. The review still and reduced motion jump straight there.
       // A screen with a picture over its place, or a look that owns that sky, withholds it (`sky.ts`).
       if (glide.current.progress >= 1 && glide.current.to === CAMERAS.unwind) {
-        const moon = moonFor(moonAt, useSkyStore.getState().claims);
+        const moon = moonFor(moonPlaces, useSkyStore.getState().claims);
         if (moon) options.moon = moon;
       }
       if (shownMoon.current !== (options.moon ?? null)) {
         shownMoon.current = options.moon ?? null;
         canvas.dataset.moon = options.moon ? options.moon.join(',') : '';
       }
-      // With the front canvas mounted: the sky here, the ground there, on the same frame.
+      // With the front canvas mounted: the sky here, the ground there, on the same frame. A front
+      // canvas no longer in the page (its host was taken out) is none: this canvas draws it all.
       const fc = frontRef.current;
       let fctx: CanvasRenderingContext2D | null = null;
-      if (fc) {
+      if (fc && fc.isConnected) {
         if (fc.width !== width || fc.height !== height) {
           fc.width = width;
           fc.height = height;
@@ -243,8 +253,10 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
         fctx = fc.getContext('2d');
       }
       if (fctx) {
-        drawHorizon(ctx, { ...options, part: 'sky' });
-        drawHorizon(fctx, { ...options, part: 'ground' });
+        options.part = 'sky';
+        drawHorizon(ctx, options);
+        options.part = 'ground';
+        drawHorizon(fctx, options);
       } else {
         drawHorizon(ctx, options);
       }
@@ -267,7 +279,12 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
         ctx.restore();
         // The place veil lies over the main canvas as a page layer; the front canvas is above it,
         // so it lays the same veil on its own pixels (`veil.ts`).
-        drawVeil(fctx, width, height, veilStrength(canvas.parentElement?.querySelector(':scope > .veil') ?? null));
+        const v = veil.current;
+        if (v.until >= 0) {
+          v.a = veilStrength(v.el);
+          if (performance.now() > v.until) v.until = -1;
+        }
+        drawVeil(fctx, width, height, v.a);
       }
     };
     repaint.current = paint;
@@ -321,6 +338,16 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
       cancelAnimationFrame(raf);
     };
   }, [reduced, review, zen, demo]);
+
+  // The veil is looked up and read when the front canvas comes and on a place change (then each
+  // frame through its transition), never otherwise: a style read each frame forces a style flush.
+  // Before the repaint below, so a still frame drawn for the new layer has its veil.
+  useEffect(() => {
+    if (!front) return;
+    const v = veil.current;
+    v.el = ref.current?.parentElement?.querySelector(':scope > .veil') ?? null;
+    v.until = performance.now() + VEIL_SETTLE_MS;
+  }, [front, active]);
 
   // A still frame is drawn again when the sky layers change (the front canvas comes or goes, a
   // claim moves the moon); the animated loop picks the change up on its next frame.

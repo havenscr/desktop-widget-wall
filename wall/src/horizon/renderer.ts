@@ -332,7 +332,8 @@ export function draw(ctx:CanvasRenderingContext2D,o:HorizonDrawOptions):HorizonD
  const SK=o.part!=='ground',GD=o.part!=='sky';
  ctx.setTransform(sc,0,0,sc,0,0);ctx.globalAlpha=1;ctx.globalCompositeOperation='source-over';
  let g:Any;if(SK){g=ctx.createLinearGradient(0,0,0,hy);g.addColorStop(0,css(P.s[0]));g.addColorStop(.49,css(P.s[1]));g.addColorStop(.84,css(P.s[2]));g.addColorStop(1,css(P.s[3]));ctx.fillStyle=g;ctx.fillRect(0,0,W,hy+1)}else ctx.clearRect(0,0,W+1,H+1);
- const rim=ctx.createLinearGradient(0,0,W,0);rim.addColorStop(0,css(P.rim[0]));rim.addColorStop(.5,css(P.rim[1]));rim.addColorStop(1,css(P.rim[0]));
+ /* the rim gradient and the sun's glitter on the lake are the ground's: the sky part makes neither */
+ let rim:Any=null;if(GD){rim=ctx.createLinearGradient(0,0,W,0);rim.addColorStop(0,css(P.rim[0]));rim.addColorStop(.5,css(P.rim[1]));rim.addColorStop(1,css(P.rim[0]))}
  if(SK&&P.star>.02){const n=o.stars||190;for(let i=0;i<n;i++){const s=STARS[i],c=s[4]<.12?'255,214,232':s[4]<.3?'206,226,255':'255,255,255';ctx.fillStyle=`rgba(${c},${(P.star*(.2+.7*hash(i,9))*(.7+.3*Math.sin(t*1.3+s[3]))).toFixed(3)})`;ctx.beginPath();ctx.arc(s[0]*W,s[1]*(hy-30),s[2],0,7);ctx.fill()}}
  if(SK&&o.moon&&P.star>.3){const [mx,my,mr]=o.moon;g=ctx.createRadialGradient(mx,my,mr*.6,mx,my,mr*4);g.addColorStop(0,`rgba(196,214,255,${.3*P.star})`);g.addColorStop(1,'rgba(196,214,255,0)');ctx.fillStyle=g;ctx.fillRect(mx-mr*4,my-mr*4,mr*8,mr*8);
   g=ctx.createLinearGradient(mx-mr,my-mr,mx+mr,my+mr);g.addColorStop(0,'#ffffff');g.addColorStop(.6,'#d6e4ff');g.addColorStop(1,'#a79bf0');ctx.globalAlpha=P.star;ctx.fillStyle=g;ctx.beginPath();ctx.arc(mx,my,mr,0,7);ctx.fill();
@@ -345,7 +346,7 @@ export function draw(ctx:CanvasRenderingContext2D,o:HorizonDrawOptions):HorizonD
   ctx.save();ctx.beginPath();let y=yt-1;
   [.5,.62,.72,.8,.87,.93,.975].forEach((f:Any,i:Any)=>{const gy0=yt+hv*f,th=hv*(.014+.011*i)*st;ctx.rect(sx-R-2,y,R*2+4,gy0-y);y=gy0+th});ctx.rect(sx-R-2,y,R*2+4,Math.max(0,yb-y));ctx.clip();
   g=ctx.createLinearGradient(0,sy-R,0,sy+R);g.addColorStop(0,css(SA));g.addColorStop(.55,css(SB));g.addColorStop(1,css(SC));ctx.fillStyle=g;ctx.beginPath();ctx.arc(sx,sy,R,0,7);ctx.fill();ctx.restore()}
-  if(sp.alt<8)glit={x:sx,R:R*Math.min(1,hv/R),c:SB,a:smooth(hv/(R*.7))*(1-hi)}}
+  if(GD&&sp.alt<8)glit={x:sx,R:R*Math.min(1,hv/R),c:SB,a:smooth(hv/(R*.7))*(1-hi)}}
  /* clouds: soft bands, lit from below when the sun is low */
  const ca=P.cl[2]*(o.clouds===undefined?1:o.clouds),cs=(o.cloudShift||0)/(1.3*W);
  if(SK&&ca>.02)for(let i=0;i<CLOUDS.length;i++){const c=CLOUDS[i],cx=(fr(c.u+t*c.d*.0016+cs)*1.3-.15)*W,cy=hy*c.v,th=c.h*(1.3-c.v);

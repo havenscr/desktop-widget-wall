@@ -2,7 +2,7 @@ import { act, cleanup, render } from '@testing-library/react';
 import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HorizonCanvas } from './HorizonCanvas';
-import { MOON, drawHorizon } from './index';
+import { MOON, MOON_PLACES, type HorizonOptions } from './index';
 import { recordingContext, stubContext } from './canvasStub';
 import { MAIN_LEFT } from '../screens/frameLayout';
 import { useSkyClaim, useSkyStore, type SkyClaim } from './sky';
@@ -13,12 +13,17 @@ import { resetAudio } from '../audio/store';
 vi.setConfig({ testTimeout: 20_000 });
 
 vi.mock('../ui/useIdle', () => ({ useIdle: vi.fn(() => false) }));
+// The canvas reuses one options object for both parts of a frame (setting `part` between the two
+// draws), so the mock keeps a copy of what each call was given, and the objects themselves in `given`.
+const { draw, given } = vi.hoisted(() => ({ draw: vi.fn(), given: [] as object[] }));
 vi.mock('./index', async (original) => ({
   ...(await original<typeof import('./index')>()),
-  drawHorizon: vi.fn(),
+  drawHorizon: (ctx: CanvasRenderingContext2D, o: HorizonOptions) => {
+    given.push(o);
+    draw(ctx, { ...o });
+  },
 }));
 
-const draw = vi.mocked(drawHorizon);
 const NIGHT = new Date(2026, 10, 11, 22, 30).getTime();
 
 let frames: Map<number, FrameRequestCallback>;
@@ -65,6 +70,7 @@ beforeEach(() => {
   } as never);
   window.history.replaceState(null, '', '/');
   draw.mockClear();
+  given.length = 0;
   setHidden(false);
   setReducedMotion(false);
 });
@@ -203,6 +209,65 @@ describe('the front layer', () => {
     expect(frontCanvas()).toBeNull();
   });
 
+  it('a host taken out of the page while its claimant stays: the next frame is the one-canvas whole picture, and the claim drops the host so no canvas is left behind', async () => {
+    const { container } = render(
+      <>
+        <HorizonCanvas now={() => NIGHT} />
+        <Asker claim={{ boxes: [[600, 50, 300, 150]] }} />
+      </>,
+    );
+    runFrame(100);
+    expect(frontCanvas()).not.toBeNull();
+    const hostEl = document.querySelector('.asker-host')!;
+    const parent = hostEl.parentElement!;
+    hostEl.remove(); // the claimant (Asker) is still mounted
+    draw.mockClear();
+    runFrame(200); // before the page's change is even reported
+    expect(draw.mock.calls).toHaveLength(1);
+    expect(draw.mock.calls[0][0]).toBe(ctxOf.get(mainCanvas(container)));
+    expect(draw.mock.calls[0][1]).not.toHaveProperty('part');
+    expect(draw.mock.calls[0][1].moon).toEqual(MOON);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(useSkyStore.getState().claims.test).toEqual({ boxes: [[600, 50, 300, 150]] });
+    expect(document.querySelectorAll('canvas')).toHaveLength(1);
+    expect(frontCanvas()).toBeNull();
+    draw.mockClear();
+    runFrame(300);
+    expect(draw.mock.calls.map(([c, o]) => [c === ctxOf.get(mainCanvas(container)), o.part])).toEqual([[true, undefined]]);
+    parent.appendChild(hostEl); // back, so the page can be taken down as React built it
+  });
+
+  it('nothing avoidable per frame: one options object for both parts, and the veil read only while it can change', () => {
+    let clock = 1000;
+    vi.spyOn(performance, 'now').mockImplementation(() => clock);
+    const style = vi.spyOn(window, 'getComputedStyle');
+    render(
+      <>
+        <div className="veil" style={{ ['--veil' as string]: '0.1' }} />
+        <HorizonCanvas now={() => NIGHT} />
+        <Asker claim={{}} />
+      </>,
+    );
+    given.length = 0;
+    runFrame(100);
+    // The sky and the ground are drawn from the very same object (only its part changes).
+    expect(given).toHaveLength(2);
+    expect(given[0]).toBe(given[1]);
+    // Read while the place's veil may still be moving (it has a 600 ms transition), then never.
+    clock += 900;
+    runFrame(200);
+    style.mockClear();
+    for (let k = 3; k <= 12; k++) runFrame(k * 100);
+    expect(style).not.toHaveBeenCalled();
+    // A place change reads it again through its transition.
+    act(() => usePlaceStore.getState().setActive('work'));
+    act(() => usePlaceStore.getState().setActive('unwind'));
+    runFrame(1300);
+    expect(style).toHaveBeenCalled();
+  });
+
   it('rests with the main canvas: a hidden page draws neither, and both resume together', () => {
     render(
       <>
@@ -269,6 +334,7 @@ describe('the moon under the sky claims', () => {
     runFrame(100);
     expect(draw.mock.lastCall![1].moon).toEqual(MOON);
     expect(MOON).toEqual([1890, 260, 44]);
+    expect(MOON_PLACES[0]).toBe(MOON);
     const show = (claim: Omit<SkyClaim, 'front'> | null) => {
       rerender(
         <>
@@ -280,8 +346,12 @@ describe('the moon under the sky claims', () => {
       return draw.mock.lastCall![1];
     };
     expect(show({ noMoon: true })).not.toHaveProperty('moon');
-    expect(show({ boxes: [[1150, 50, 810, 455]] })).not.toHaveProperty('moon');
+    // A picture over its place moves it to the next clear place; so does a card's keep-clear box.
+    expect(show({ boxes: [[1150, 50, 810, 455]] }).moon).toEqual(MOON_PLACES[1]);
+    expect(show({ clear: [[1740, 24, 800, 462]] }).moon).toEqual(MOON_PLACES[1]);
     expect(show({ boxes: [[600, 50, 300, 150]] }).moon).toEqual(MOON); // a picture well clear of it
+    // Boxes over every place: no moon.
+    expect(show({ clear: MOON_PLACES.map(([x, y]) => [x - 1, y - 1, 2, 2] as const) })).not.toHaveProperty('moon');
     expect(show(null).moon).toEqual(MOON);
   });
 });

@@ -1,10 +1,10 @@
 import { STAGE_HEIGHT, STAGE_WIDTH } from '../stage/fitScale';
 import { CAMERAS, type CameraPreset } from './cameras';
-import { draw, type HorizonEcho, type HorizonGrid, type HorizonPart } from './renderer';
+import { draw, type HorizonDrawOptions, type HorizonEcho, type HorizonGrid, type HorizonPart } from './renderer';
 
 export { sun, when } from './renderer';
 export type { HorizonDrawOptions, HorizonEcho, HorizonGrid, HorizonPart } from './renderer';
-export { CAMERAS, GLIDE_SECONDS, HOME_MORNING, SWING_SECONDS, MOON, blendCamera, homeCameraFor, type CameraPreset } from './cameras';
+export { CAMERAS, GLIDE_SECONDS, HOME_MORNING, SWING_SECONDS, MOON, MOON_PLACES, blendCamera, homeCameraFor, type CameraPreset } from './cameras';
 
 export interface HorizonOptions {
   /** Backing store width in canvas pixels. The renderer covers the whole stage, so this is informational. */
@@ -40,7 +40,7 @@ export const HORIZON_Y = CAMERAS.work.hy;
 /** Draw the panorama for the given camera and time. The music ripple, the grid pulse and the moon are off unless passed. */
 export function drawHorizon(ctx: CanvasRenderingContext2D, options: HorizonOptions): void {
   const cam = options.camera ?? CAMERAS.work;
-  draw(ctx, {
+  const o: HorizonDrawOptions = {
     W: STAGE_WIDTH,
     H: STAGE_HEIGHT,
     scale: options.scale,
@@ -59,6 +59,8 @@ export function drawHorizon(ctx: CanvasRenderingContext2D, options: HorizonOptio
     echo: options.echo ?? null,
     grid: options.grid ?? null,
     moon: options.moon ? [options.moon[0], options.moon[1], options.moon[2]] : null,
-    ...(options.part ? { part: options.part } : null),
-  });
+  };
+  // Only when a part is asked for, so the whole picture's options are exactly as they always were.
+  if (options.part) o.part = options.part;
+  draw(ctx, o);
 }

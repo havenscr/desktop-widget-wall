@@ -66,3 +66,13 @@ describe('the frame path allocates nothing', () => {
     expect(allocations(`const g = x.createLinearGradient(0, 0, 0, h);\n${body}`, true)).toContain('gradient');
   });
 });
+
+describe('the sky part makes nothing the ground uses', () => {
+  it('the rim gradient and the sun\'s glitter on the lake are made only when the ground is drawn', () => {
+    const code = rendererSrc.replace(/\/\*[\s\S]*?\*\//g, '');
+    expect(code).toMatch(/let rim:Any=null;if\(GD\)\{rim=ctx\.createLinearGradient\(0,0,W,0\)/);
+    expect(code.match(/\brim=ctx\.create/g)).toHaveLength(1);
+    expect(code).toMatch(/if\(GD&&sp\.alt<8\)glit=/);
+    expect(code.match(/glit=\{/g)).toHaveLength(1);
+  });
+});

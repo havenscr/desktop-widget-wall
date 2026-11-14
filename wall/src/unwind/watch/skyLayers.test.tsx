@@ -4,7 +4,7 @@ import { act, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mocks } from '../../bridge/tauri';
 import { HorizonCanvas } from '../../horizon/HorizonCanvas';
-import { MOON } from '../../horizon/cameras';
+import { MOON, MOON_PLACES } from '../../horizon/cameras';
 import { stubContext } from '../../horizon/canvasStub';
 import { moonFor, useSkyStore } from '../../horizon/sky';
 import { resetNowPlaying } from '../../music/store';
@@ -26,7 +26,8 @@ const THREE = [
   { kind: 'twitch', id: 'pixel_harbor', label: 'pixel_harbor' },
 ];
 const IDS: LookId[] = ['feather', 'sky', 'sun', 'drivein'];
-const BEHIND: Record<LookId, boolean> = { feather: true, sky: true, sun: true, drivein: false };
+// The feathered picture stands in front of the mountains (the owner's choice), as the drive-in does.
+const BEHIND: Record<LookId, boolean> = { feather: false, sky: true, sun: true, drivein: false };
 
 const flush = async (ms = 0) => {
   await act(async () => {
@@ -82,7 +83,17 @@ describe('the sky layers under each look', () => {
     const c = claims().watch;
     expect(c.boxes).toEqual(box(look));
     expect(c.noMoon === true).toBe(look === 'sun' || look === 'drivein');
-    expect(moonFor(MOON, claims())).toBeNull(); // no look leaves the moon showing behind or beside its picture
+    // No look leaves the moon behind or beside its picture: it is gone, or at another place 40 px clear of the box.
+    const m = moonFor(MOON_PLACES, claims());
+    if (look === 'sun' || look === 'drivein') expect(m).toBeNull();
+    else {
+      expect(m).not.toBe(MOON);
+      if (m) {
+        const [bx, by, bw, bh] = box(look)[0];
+        const gap = Math.hypot(Math.max(bx - m[0], 0, m[0] - bx - bw), Math.max(by - m[1], 0, m[1] - by - bh)) - m[2];
+        expect(gap).toBeGreaterThanOrEqual(40);
+      }
+    }
     expect(!!c.front).toBe(BEHIND[look]);
     const stage = document.querySelector('.w-stage')!;
     expect(stage.getAttribute('data-sky-box')).toBe(box(look)[0].join(','));
@@ -129,7 +140,7 @@ describe('the sky layers under each look', () => {
     await flush();
     expect(claims()).toEqual({});
     expect(front()).toBeNull();
-    expect(moonFor(MOON, claims())).toBe(MOON);
+    expect(moonFor(MOON_PLACES, claims())).toBe(MOON);
     // Leaving Watch stopped the video; back on Watch and playing, it comes back. Stopping the video releases it (the whole sky has no empty screen).
     act(() => useWatchStore.getState().setTab('watch'));
     await flush();
@@ -156,15 +167,15 @@ describe('the sky layers under each look', () => {
       setup(look, false);
       const { unmount } = render(<Unwind />);
       await flush();
-      expect(moonFor(MOON, claims())).toBe(look === 'drivein' ? null : MOON);
+      expect(moonFor(MOON_PLACES, claims())).toBe(look === 'drivein' ? null : MOON);
       if (look === 'drivein') expect(claims().watch).toEqual({ boxes: box('drivein'), noMoon: true });
       unmount();
       expect(claims()).toEqual({});
     }
   });
 
-  it('while the player waits for a click to start, the picture is not put behind the land (the click reaches it), and its box still keeps the moon out', async () => {
-    setup('feather');
+  it('while the player waits for a click to start, the sun is not put behind the land (the click reaches it), and it still keeps the moon out', async () => {
+    setup('sun');
     render(
       <>
         <HorizonCanvas />
@@ -177,8 +188,8 @@ describe('the sky layers under each look', () => {
     await flush();
     expect(front()).toBeNull();
     expect(document.querySelector('.w-stage')!.classList.contains('w-layered')).toBe(false);
-    expect(claims().watch.boxes).toEqual(box('feather'));
-    expect(moonFor(MOON, claims())).toBeNull();
+    expect(claims().watch.boxes).toEqual(box('sun'));
+    expect(moonFor(MOON_PLACES, claims())).toBeNull();
     act(() => useWatchStore.setState({ needsClick: false }));
     await flush();
     expect(front()).not.toBeNull();
@@ -199,6 +210,33 @@ describe('the sky layers under each look', () => {
     expect(f).not.toBeNull();
     expect(f!.style.pointerEvents).toBe('none');
     expect(document.querySelector('.w-stage')!.classList.contains('w-layered')).toBe(true);
+  });
+});
+
+describe('the feathered look stands in front of the mountains', () => {
+  it('never asks for the front layer, playing or waiting for a click: its glow and picture are drawn over the one horizon canvas, and no moon veil is needed', async () => {
+    setup('feather');
+    render(
+      <>
+        <HorizonCanvas />
+        <Unwind />
+      </>,
+    );
+    await flush();
+    for (const needsClick of [false, true, false]) {
+      act(() => useWatchStore.setState({ needsClick }));
+      await flush();
+      const stage = document.querySelector('.w-stage.w-feather')!;
+      expect(stage.classList.contains('w-layered')).toBe(false);
+      expect(stage.querySelector('.w-front')).toBeNull();
+      expect(stage.querySelector('.w-glow')).not.toBeNull();
+      expect(front()).toBeNull();
+      expect(claims().watch.front).toBeUndefined();
+      expect(document.querySelectorAll('canvas').length).toBe(1);
+    }
+    // Its box still keeps the moon off it: the first place is within 40 px of the picture.
+    expect(moonFor(MOON_PLACES, claims())).not.toBe(MOON);
+    expect(document.querySelector('.w-moonveil')).toBeNull();
   });
 });
 

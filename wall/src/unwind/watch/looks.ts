@@ -117,7 +117,7 @@ export const DRIVE_IN_SCREEN: Readonly<WallRect> = Object.freeze({ x: 1124, y: 6
 /**
  * sky layers: the picture's box in wall pixels for each look (the drawn picture, its frame or
  * disc, not its glow), as the Watch rules in `unwind.css` place it; fit-check compares. The
- * horizon's moon is not drawn when its disc comes within 40 px of it (`horizon/sky.ts`).
+ * horizon's moon keeps 40 px clear of it: it takes another of its places, or none (`horizon/sky.ts`).
  * - feather: the feathered picture, its soft edges included.
  * - sky: the whole 16:9 picture, never cropped: as tall as the sky allows (its top 16 px under the
  *   top of the strip, its foot 11 px under the horizon line, so only the land hides its lower edge),
@@ -134,18 +134,20 @@ export const LOOK_BOXES: Readonly<Record<LookId, Readonly<WallRect>>> = Object.f
 
 /**
  * sky layers: the looks whose picture sits in the sky behind the land, so the horizon draws the
- * ranges, the land and the grid on its front canvas in front of it (approved A, B and C). The
- * drive-in screen stands in front of the ranges (approved D), so it asks for no front layer.
+ * ranges, the land and the grid on its front canvas in front of it (approved B and C). The
+ * feathered picture stays in front of the mountains (the owner's choice), its lower edge fading
+ * out before the horizon line, and the drive-in screen stands in front of the ranges (approved
+ * D), so neither asks for a front layer.
  */
 export function behindTheLand(look: LookId): boolean {
-  return look !== 'drivein';
+  return look === 'sky' || look === 'sun';
 }
 
 /**
  * sky layers: whether the picture is behind the land right now. While the player waits for a
- * click to start, the feathered picture and the sun come forward so the click reaches them; the
- * whole sky stays behind (the wall lets the pointer through to it, see the whole sky's rules in
- * `unwind.css`, and the front canvas takes no pointer).
+ * click to start, the sun comes forward so the click reaches it; the whole sky stays behind (the
+ * wall lets the pointer through to it, see the whole sky's rules in `unwind.css`, and the front
+ * canvas takes no pointer).
  */
 export function layeredNow(look: LookId, needsClick: boolean): boolean {
   return behindTheLand(look) && (look === 'sky' || !needsClick);

@@ -12,7 +12,7 @@ import {
   IconVolumeOff,
 } from '@tabler/icons-react';
 import { invoke } from '../../bridge/tauri';
-import { useSkyClaim } from '../../horizon/sky';
+import { useSkyClaim, useSkyKeepClear } from '../../horizon/sky';
 import { useSignalStore } from '../../signals/store';
 import { tip } from '../../ui/HoverTip';
 import { kindName, refKey, validRef, type WatchKind, type WatchRef } from './links';
@@ -68,10 +68,10 @@ export function WatchGear() {
 
 /**
  * sky layers: what the look on screen asks of the horizon (`horizon/sky.ts`): its picture's box,
- * so the moon is not drawn behind it; no moon at all for a look that owns that sky (the sun, the
- * drive-in); and, for a picture that sits behind the land, the element the horizon mounts its
- * front canvas in (`layeredNow`: the feathered picture and the sun come forward while the player
- * waits for a click). Released when the look goes (Watch left, nothing on, Zen).
+ * so the moon keeps clear of it (another of its places, or none); no moon at all for a look that
+ * owns that sky (the sun, the drive-in); and, for a picture that sits behind the land (the whole
+ * sky, the sun), the element the horizon mounts its front canvas in (`layeredNow`: the sun comes
+ * forward while the player waits for a click). Released when the look goes (Watch left, nothing on, Zen).
  */
 function useWatchSky(look: LookId, front: HTMLElement | null, needsClick: boolean) {
   const b = LOOK_BOXES[look];
@@ -117,6 +117,9 @@ export function LookSwitch({ kind }: { kind: WatchKind }) {
   const current = lookFor(looks, kind);
   const group = lookTargetName(looks, kind);
   const refs = useRef<(HTMLButtonElement | null)[]>([]);
+  // sky layers: the moon keeps clear of the switch.
+  const [bar, setBar] = useState<HTMLDivElement | null>(null);
+  useSkyKeepClear('watch-look', bar);
   const pick = (id: LookId) => useWatchStore.getState().pickLook(id);
   const onKey = (e: KeyboardEvent<HTMLDivElement>) => {
     const step = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 0;
@@ -129,7 +132,7 @@ export function LookSwitch({ kind }: { kind: WatchKind }) {
   };
   const where = group ? `Sets the look for ${group.toLowerCase()} (a look per kind is on in the settings).` : 'Sets the look for every video.';
   return (
-    <div className="w-lookbar w-seg" role="radiogroup" aria-label={group ? `Look, for ${group.toLowerCase()}` : 'Look'} onKeyDown={onKey}>
+    <div ref={setBar} className="w-lookbar w-seg" role="radiogroup" aria-label={group ? `Look, for ${group.toLowerCase()}` : 'Look'} onKeyDown={onKey}>
       {LOOKS.map((l, i) => {
         const on = l.id === current;
         return (
@@ -319,7 +322,7 @@ function VideoStage({ item, look }: { item: WatchRef & { label: string }; look: 
         data-audience={audience ? `${audience.x},${audience.y},${audience.w},${audience.h}` : undefined}
         data-sky-box={`${b.x},${b.y},${b.w},${b.h}`}
       >
-        {/* Behind the land (the horizon's front canvas): the feathered glow and the sun's halo. */}
+        {/* The feathered glow (in front of the land, with its picture) and the sun's halo (behind it). */}
         {look === 'feather' ? <div className="w-glow" aria-hidden="true" /> : null}
         {look === 'sun' ? <div className="w-halo" aria-hidden="true" /> : null}
         {look === 'drivein' ? <div className="w-spill" aria-hidden="true" /> : null}
@@ -362,13 +365,16 @@ export function WatchPanel() {
   const stopped = useWatchStore((s) => s.stopped);
   const inCall = useSignalStore((s) => s.call !== null);
   const st = useWatchStore.getState();
+  // sky layers: the moon keeps clear of the left block, playing or not.
+  const [nowEl, setNowEl] = useState<HTMLDivElement | null>(null);
+  useSkyKeepClear('watch-now', nowEl);
 
   if (!playing) {
     const first = saved[0];
     const kind = first?.kind ?? 'video';
     return (
       <div className="w-panel" role="tabpanel" id={WATCH_PANEL_ID} aria-labelledby={WATCH_TAB_ID} data-state="idle">
-        <div className="w-now">
+        <div className="w-now" ref={setNowEl}>
           <span className="u-k">Watch</span>
           <div className="w-title w-none">Nothing on</div>
           <div className="w-sub">
@@ -398,7 +404,7 @@ export function WatchPanel() {
   const youtube = playing.kind !== 'twitch';
   return (
     <div className="w-panel" role="tabpanel" id={WATCH_PANEL_ID} aria-labelledby={WATCH_TAB_ID} data-state="playing">
-      <div className="w-now">
+      <div className="w-now" ref={setNowEl}>
         <span className="u-k u-src">{kindName(playing.kind)}</span>
         <div className="w-title" title={playing.label}>
           {playing.label}
