@@ -90,7 +90,7 @@ it('a good read after a failure clears it, and a failed second try does not wait
   await flush();
   await flush(SONOS_REFRESH_MS + SONOS_RETRY_MS);
   expect(result.current.status).toBe('error');
-  // While failed, the regular read goes on every 30 seconds without a second try of its own.
+  // While failed, the regular read goes on every 30 seconds.
   await flush(SONOS_REFRESH_MS);
   expect(reads).toBe(4);
   expect(result.current.status).toBe('ready');
@@ -160,4 +160,110 @@ it('while the read is not live the card stays locked exactly as before: stale af
   mocks.set('wall2_sonos_summary', () => new Promise(() => undefined));
   await flush(3 * 60_000);
   expect(result.current.stale).toBe(true);
+});
+
+it('a dimmed card recovers as soon as the second try works: dimmed, fail, good at 5 seconds', async () => {
+  script('ok', 'timed-out', 'timed-out', 'timed-out', 'ok');
+  const { result } = renderHook(() => useSonos());
+  await flush();
+  await flush(SONOS_REFRESH_MS + SONOS_RETRY_MS);
+  expect(result.current.status).toBe('error');
+  await flush(SONOS_REFRESH_MS - SONOS_RETRY_MS);
+  // The 60 second read failed; its second try is waiting. The card keeps its line and kind.
+  expect(reads).toBe(4);
+  expect(result.current.status).toBe('error');
+  expect(result.current.failure).toBe('timed-out');
+  await flush(SONOS_RETRY_MS - 1);
+  expect(result.current.status).toBe('error');
+  await flush(1);
+  expect(reads).toBe(5);
+  expect(result.current.status).toBe('ready');
+  expect(result.current.failure).toBeNull();
+  expect(result.current.stale).toBe(false);
+  expect(useReportStore.getState().sound?.last).toBe('ok');
+});
+
+it('a dimmed card keeps its kind until the second try fails, and then shows that try\'s kind', async () => {
+  script('ok', 'timed-out', 'timed-out', 'bad-answer', 'bad-answer');
+  const { result } = renderHook(() => useSonos());
+  await flush();
+  await flush(SONOS_REFRESH_MS + SONOS_RETRY_MS);
+  expect(result.current.failure).toBe('timed-out');
+  await flush(SONOS_REFRESH_MS - SONOS_RETRY_MS);
+  expect(reads).toBe(4);
+  expect(result.current.failure).toBe('timed-out');
+  expect(useReportStore.getState().sound?.reason).toBe('Sonos did not answer in time.');
+  await flush(SONOS_RETRY_MS);
+  expect(reads).toBe(5);
+  expect(result.current.failure).toBe('bad-answer');
+  expect(useReportStore.getState().sound?.reason).toBe('Sonos sent an answer the wall could not read.');
+});
+
+it('two different kinds in a row: the second one is shown', async () => {
+  script('ok', 'bad-answer', 'timed-out');
+  const { result } = renderHook(() => useSonos());
+  await flush();
+  await flush(SONOS_REFRESH_MS + SONOS_RETRY_MS);
+  expect(result.current.failure).toBe('timed-out');
+});
+
+it('timers never stack: three while a second try waits, none after the page is hidden or the card closed', async () => {
+  script('ok', 'timed-out');
+  const { result, unmount } = renderHook(() => useSonos());
+  await flush();
+  const base = vi.getTimerCount();
+  expect(base).toBe(2);
+  await flush(SONOS_REFRESH_MS);
+  expect(result.current.status).toBe('ready');
+  expect(vi.getTimerCount()).toBe(base + 1);
+  // Manual reads while the second try waits arm nothing more.
+  await act(async () => {
+    await result.current.refresh();
+    await result.current.refresh();
+  });
+  expect(vi.getTimerCount()).toBe(base + 1);
+  act(() => setHidden(true));
+  expect(vi.getTimerCount()).toBe(0);
+  act(() => setHidden(false));
+  await flush();
+  expect(vi.getTimerCount()).toBe(base + 1);
+  unmount();
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it('after a failure and a second failure no timer is left but the two cadence timers', async () => {
+  script('ok', 'timed-out');
+  const { result } = renderHook(() => useSonos());
+  await flush();
+  await flush(SONOS_REFRESH_MS + SONOS_RETRY_MS);
+  expect(result.current.status).toBe('error');
+  expect(vi.getTimerCount()).toBe(2);
+});
+
+it('a second try that comes due while another read is running goes right after it', async () => {
+  let reads2 = 0;
+  let release: (() => void) | null = null;
+  mocks.set('wall2_sonos_summary', () => {
+    reads2 += 1;
+    if (reads2 === 1) return {};
+    if (reads2 === 2) return Promise.reject(new Error('timed-out'));
+    if (reads2 === 3) return new Promise((_, reject) => { release = () => reject(new Error('timed-out')); });
+    return Promise.reject(new Error('timed-out'));
+  });
+  const { result } = renderHook(() => useSonos());
+  await flush();
+  await flush(SONOS_REFRESH_MS);
+  expect(reads2).toBe(2);
+  // A manual read starts just before the second try is due and runs past it.
+  await flush(SONOS_RETRY_MS - 1000);
+  act(() => void result.current.refresh());
+  await flush(1000);
+  expect(reads2).toBe(3);
+  expect(result.current.status).toBe('ready');
+  await act(async () => release?.());
+  await flush();
+  // The slow read failed; the second try ran right after it and failed too.
+  expect(reads2).toBe(4);
+  expect(result.current.status).toBe('error');
+  expect(vi.getTimerCount()).toBe(2);
 });

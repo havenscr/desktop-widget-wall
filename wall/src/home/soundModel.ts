@@ -94,6 +94,8 @@ export const SONOS_REFRESH_MS = 30_000;
 export const STALE_MS = 2 * 60_000;
 /** After one failed read the wall reads once more this long after; only a second failure shows. */
 export const SONOS_RETRY_MS = 5_000;
+/** The same wait in a dev review frame (`?hz=&at=`), so review stills show the failed phase at once. */
+export const SONOS_REVIEW_RETRY_MS = 250;
 export const SLEEP_CHOICES = [30, 60, 90] as const;
 /** The last routine started from the wall: `{"key","at","group","seen"}` (see `markAfterRead`). */
 export const LAST_PLAY_KEY = 'wall2-sonos-last-play';
@@ -396,9 +398,10 @@ export function failureSentence(kind: FailureKind): string {
   return 'Sonos cannot be reached';
 }
 
-/** The card's amber line: what happened, then how old the last good read is (when there was one). */
-export function failureLine(kind: FailureKind, okAt: number | null, now: number): string {
-  const first = failureSentence(kind);
+/** The card's amber line: what happened (or, with no failed read, that Sonos is being checked), then how old the last good read is (when there was one). */
+export function failureLine(kind: FailureKind | null, okAt: number | null, now: number): string {
+  // No kind until a read has failed: a card that is only old (the wall was hidden for hours) is being checked.
+  const first = kind === null ? 'Checking Sonos' : failureSentence(kind);
   return okAt === null ? first : `${first}. Last good read ${ageWords(okAt, now)}`;
 }
 

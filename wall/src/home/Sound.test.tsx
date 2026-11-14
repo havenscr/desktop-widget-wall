@@ -94,6 +94,8 @@ it('never reached says so, with no controls', async () => {
   expect(screen.queryByText('Sonos cannot be reached')).toBeNull();
   await flush(5_000);
   expect(screen.getByText('Sonos cannot be reached')).toBeTruthy();
+  // One voice: the body says the same first sentence, then when it looks again.
+  expect(screen.getByText('Sonos cannot be reached. Checks again every 30 seconds.')).toBeTruthy();
   expect(container.querySelectorAll('button')).toHaveLength(0);
 });
 
@@ -508,6 +510,26 @@ it.each([
   expect(screen.getByText(`${sentence}. Last good read 1 min ago`)).toBeTruthy();
   expect((screen.getByText('Morning').closest('button') as HTMLButtonElement).disabled).toBe(true);
   expect(writes).toEqual([]);
+});
+
+it('a card that is only old, with no failed read, says it is being checked and names no kind', async () => {
+  let hang = false;
+  wire(() => (hang ? new Promise(() => undefined) : summary()));
+  const { container } = render(<Sound />);
+  await flush();
+  hang = true;
+  await flush(3 * 60_000);
+  expect(container.querySelector('.sound.stale')).toBeTruthy();
+  expect(screen.getByText('Checking Sonos. Last good read 3 min ago').className).toContain('warn-text');
+  expect(screen.queryByText(/cannot be reached|did not answer|could not read/)).toBeNull();
+});
+
+it('with nothing read yet, a bad answer is named in the line and the body alike', async () => {
+  mocks.set('wall2_sonos_summary', () => Promise.reject(new Error('bad-answer')));
+  render(<Sound />);
+  await flush(5_000);
+  expect(screen.getByText('Sonos sent an answer the wall could not read')).toBeTruthy();
+  expect(screen.getByText('Sonos sent an answer the wall could not read. Checks again every 30 seconds.')).toBeTruthy();
 });
 
 it('a slider never sends the same level twice, and arrow keys settle before sending', async () => {

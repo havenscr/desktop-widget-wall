@@ -36,6 +36,7 @@ import {
   SAFE_VOLUME,
   SLEEP_CHOICES,
   failureLine,
+  failureSentence,
   PLAY_ART,
   chipLabel,
   clockMs,
@@ -177,10 +178,10 @@ export function Sound({ fallback = false }: { fallback?: boolean }) {
   if (!summary) {
     const down = status === 'error';
     return (
-      <Shell side={down ? { text: failureLine(failure ?? 'no-answer', null, now), warn: true } : null} bare>
+      <Shell side={down ? { text: failureLine(failure, null, now), warn: true } : null} bare>
         <div className="sound-note s">
           <IconDeviceSpeaker size={30} stroke={1.6} aria-hidden="true" />
-          <span>{down ? 'The Sonos service did not answer. Checks again every 30 seconds.' : 'The Sonos service has not answered yet. Checks again every 30 seconds.'}</span>
+          <span>{down ? `${failureSentence(failure ?? 'no-answer')}. Checks again every 30 seconds.` : 'The Sonos service has not answered yet. Checks again every 30 seconds.'}</span>
         </div>
       </Shell>
     );
@@ -477,7 +478,7 @@ function Live({
       </span>
     );
   } else if (!result && stale) {
-    side = { text: failureLine(failure ?? 'no-answer', okAt, now), warn: true };
+    side = { text: failureLine(failure, okAt, now), warn: true };
   }
 
   const hasMore = more.length > 0 || extraControls.length > 0;
