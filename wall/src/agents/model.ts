@@ -701,8 +701,12 @@ export function clockText(ms: number): string {
  * has been idle, else how long it has been open, with when it started.
  */
 export function elapsedLabel(l: Lane, now: number): { text: string; tip: string } {
-  const started = clockText(now - l.elapsedS * 1000);
-  if (helpersWork(l)) return { text: 'helpers working', tip: `${helpersWorkText(l)}; its own turn is over; helpers it started are still at work.` };
+  const known = Number.isFinite(l.elapsedS);
+  const started = known ? clockText(now - l.elapsedS * 1000) : '';
+  if (helpersWork(l)) return {
+    text: known ? elapsedText(l.elapsedS) : '',
+    tip: `${helpersWorkText(l)}; its own turn is over; helpers it started are still at work.${known ? ` Open for ${elapsedText(l.elapsedS)}, started ${started}.` : ''}`,
+  };
   if (l.live === 'idle' && l.idleS != null) return { text: `idle ${elapsedText(l.idleS)}`, tip: `Idle for ${elapsedText(l.idleS)}; open ${elapsedText(l.elapsedS)}, started ${started}` };
   const what = l.live === 'working' ? 'Working, open' : 'Open';
   return { text: elapsedText(l.elapsedS), tip: `${what} for ${elapsedText(l.elapsedS)}, started ${started}` };
