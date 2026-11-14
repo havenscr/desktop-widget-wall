@@ -63,6 +63,8 @@ mod wall2_meet;
 mod wall2_oauth;
 mod wall2_spotify;
 mod wall2_spotify_log;
+mod wall2_youtube;
+mod wall2_youtube_log;
 mod wall2_omni;
 mod wall2_power;
 mod wall2_signals;
@@ -3827,6 +3829,12 @@ pub fn run() {
             wall2_spotify::wall2_spotify_sign_in,
             wall2_spotify::wall2_spotify_cancel_sign_in,
             wall2_spotify::wall2_spotify_sign_out,
+            wall2_youtube::wall2_youtube_status,
+            wall2_youtube::wall2_youtube_set_client,
+            wall2_youtube::wall2_youtube_forget_client,
+            wall2_youtube::wall2_youtube_sign_in,
+            wall2_youtube::wall2_youtube_cancel_sign_in,
+            wall2_youtube::wall2_youtube_sign_out,
             wall2_spotify::wall2_spotify_playlists,
             wall2_spotify::wall2_spotify_albums,
             wall2_spotify::wall2_spotify_liked,
@@ -4079,6 +4087,7 @@ pub fn run() {
                 wall2_window::start_log(app.path().app_log_dir().ok());
                 wall2_meet::start_log(app.path().app_log_dir().ok());
                 wall2_spotify::start_log(app.path().app_log_dir().ok());
+                wall2_youtube::start_log(app.path().app_log_dir().ok());
                 wall2_signals::start(app.handle().clone(), app.path().app_log_dir().ok());
                 #[cfg(windows)]
                 {
