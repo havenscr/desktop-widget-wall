@@ -46,14 +46,24 @@ import { inflateSync } from 'node:zlib';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { ChromeRunError, onCleanup, runChrome } from './lib/chrome-run.mjs';
-import { loadAreas } from './areas/load.mjs';
+import { loadAreasOrExit, validateFitReferences } from './areas/load.mjs';
 
 // The whole sky's picture box in wall pixels (LOOK_BOXES.sky in looks.ts, which fit-check compares with the drawn one).
 const LOOK_BOX_SKY = { x: 1106, y: 16, w: 889, h: 500 };
 
 const args = process.argv.slice(2);
 const flag = (name) => args.find((a) => a === `--${name}` || a.startsWith(`--${name}=`));
-const areas = await loadAreas(flag('area')?.split('=')[1]);
+const areaName = flag('area')?.split('=')[1];
+const areas = await loadAreasOrExit(areaName);
+if (flag('area')) {
+  const selectedArea = areas.find((area) => area.name === areaName);
+  for (const [kind, count] of [['variants', selectedArea?.fit?.variants?.length ?? 0], ['rules', Object.keys(selectedArea?.fit?.rules ?? {}).length], ['breaks', Object.keys(selectedArea?.fit?.breaks ?? {}).length]]) {
+    if (count === 0) {
+      console.error(`fit-check: area "${areaName}" has zero ${kind}`);
+      process.exit(2);
+    }
+  }
+}
 const chrome = args.find((a) => !a.startsWith('--')) || process.env.WALL_CHROME;
 if (!chrome) {
   console.error('fit-check: set WALL_CHROME (or pass the path) to a Chromium or chrome-headless-shell binary.');
@@ -325,25 +335,6 @@ if (flag('list-breaks')) {
 const SKY_BREAK_Q = { 'sky-moon': '&skymoon=300,200,44', 'sky-always': '&sky=front' };
 // lines controls: the clip around the picture boxes left out (a development knob of the horizon).
 const LINES_BREAK_Q = { 'lines-clip': '&lclip=0' };
-if (flag('self-test')) {
-  const script = fileURLToPath(import.meta.url);
-  let missed = 0;
-  const breakNames = flag('area') ? Object.keys(AREA_BREAKS) : Object.keys(OVERFLOWS);
-  for (const side of breakNames) {
-    const childArgs = [script, chrome, `--overflow=${side}`];
-    if (flag('area')) childArgs.push(flag('area'));
-    const r = spawnSync(process.execPath, childArgs, { encoding: 'utf8' });
-    // Caught only when the run failed and reported the side that was broken; a non-zero exit
-    // for any other reason (a crash, a page that did not render) does not count.
-    const line = EXPECT[side].exec(r.stdout ?? '');
-    const caught = r.status === 1 && line !== null;
-    if (!caught) missed += 1;
-    const full = line ? r.stdout.slice(line.index).split('\n')[0].trim() : 'no FAIL line for this side';
-    console.log(`${caught ? 'ok  ' : 'MISS'} --overflow=${side}: exit ${r.status}; ${full}`);
-  }
-  console.log(missed === 0 ? 'self-test: every deliberate overflow failed the check' : `self-test: ${missed} overflow(s) not caught`);
-  process.exit(missed === 0 ? 0 : 1);
-}
 
 const overflow = flag('overflow')?.split('=')[1];
 if (overflow !== undefined && !(overflow in OVERFLOWS)) {
@@ -664,6 +655,31 @@ VARIANTS.push(
 const areaVariants = areas.flatMap((area) => area.fit?.variants ?? []);
 if (flag('area')) VARIANTS.splice(0, VARIANTS.length, ...areaVariants);
 else VARIANTS.push(...areaVariants);
+try {
+  validateFitReferences(areas, VARIANTS);
+} catch (error) {
+  console.error(`areas: ${error.message}`);
+  process.exit(2);
+}
+if (flag('self-test')) {
+  const script = fileURLToPath(import.meta.url);
+  let missed = 0;
+  const breakNames = flag('area') ? Object.keys(AREA_BREAKS) : Object.keys(OVERFLOWS);
+  for (const side of breakNames) {
+    const childArgs = [script, chrome, `--overflow=${side}`];
+    if (flag('area')) childArgs.push(flag('area'));
+    const r = spawnSync(process.execPath, childArgs, { encoding: 'utf8' });
+    // Caught only when the run failed and reported the side that was broken; a non-zero exit
+    // for any other reason (a crash, a page that did not render) does not count.
+    const line = EXPECT[side].exec(r.stdout ?? '');
+    const caught = r.status === 1 && line !== null;
+    if (!caught) missed += 1;
+    const full = line ? r.stdout.slice(line.index).split('\n')[0].trim() : 'no FAIL line for this side';
+    console.log(`${caught ? 'ok  ' : 'MISS'} --overflow=${side}: exit ${r.status}; ${full}`);
+  }
+  console.log(missed === 0 ? 'self-test: every deliberate overflow failed the check' : `self-test: ${missed} overflow(s) not caught`);
+  process.exit(missed === 0 ? 0 : 1);
+}
 // keys style: a small PNG reader (8-bit RGB or RGBA, not interlaced, as Chromium writes them) and contrast.
 function readPng(file) {
   const buf = readFileSync(file);

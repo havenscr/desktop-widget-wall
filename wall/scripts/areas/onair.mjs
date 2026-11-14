@@ -3,7 +3,7 @@ const galleryQuery = (knobs) => `hz=onair&at=${at}&clock=review&weather=ok&scree
 const fitQuery = (knobs) => `?hz=onair&at=${at}&clock=review&weather=ok&screen=onair&${knobs}`;
 const checks = ['.onair .oa-left', '.onair .oa-card', '.onair .oa-right', '.onair .oa-card-foot', '.onair .oa-mark'];
 const state = (name, knobs, expect, actions) => ({ screen: 'onair', name, query: galleryQuery(knobs), custom: true, expect, actions });
-const variant = (name, knobs, extra = {}) => ({ name, q: fitQuery(knobs), checks, onair: true, ...extra });
+const variant = (name, knobs, extra = {}) => ({ name, q: fitQuery(knobs), checks, ...extra });
 
 function measureOnAir() {
   const fails = [];
@@ -91,7 +91,7 @@ export default {
       onair: (variantEntry, results, emit) => {
         for (const failure of results.onair) emit(`  FAIL ${failure}`);
         if (results.onair.length) return true;
-        if (variantEntry.onair) emit('  ok   on air: three columns inside their planned boxes above the strip, no note cut without "+N more", key tiles at least 40 px');
+        if (variantEntry.name.startsWith('On Air,')) emit('  ok   on air: three columns inside their planned boxes above the strip, no note cut without "+N more", key tiles at least 40 px');
         return false;
       },
     },
