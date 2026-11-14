@@ -1020,7 +1020,11 @@ try {
       for (const p of parts) if (p.r.right > rr.right + 0.5 || p.r.left < rr.left - 0.5) strip.push('strip: drawer row "' + name + '" ' + p.c + ' runs out of its row');
       for (const e of row.querySelectorAll('.dd-name, .dd-pill, .dd-line, .dd-time')) if (e.scrollHeight > e.clientHeight + 1 || e.getBoundingClientRect().height > rr.height) strip.push('strip: drawer row "' + name + '" wraps in ' + e.className);
       const pill = row.querySelector('.dd-pill.helpers');
-      if (pill && pill.scrollWidth > pill.clientWidth + 1) strip.push('strip: drawer row "' + name + '" pill text is cut');
+      if (pill) {
+        const range = document.createRange();
+        range.selectNodeContents(pill);
+        if (range.getBoundingClientRect().width > pill.clientWidth - 8) strip.push('strip: drawer row "' + name + '" pill text is cut');
+      }
       const line = row.querySelector('.dd-line');
       if (line && line.getBoundingClientRect().width < 300) strip.push('strip: drawer row "' + name + '" quiet line is squeezed to ' + Math.round(line.getBoundingClientRect().width) + ' px');
     }
