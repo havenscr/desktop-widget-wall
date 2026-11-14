@@ -3,7 +3,7 @@ import { describeWeather, type WeatherLook } from './codes';
 export type WeatherFailure = 'network' | 'timeout' | `http ${number}` | 'parse';
 
 export function weatherFailureText(failure: WeatherFailure | null | undefined): string {
-  if (failure === 'network') return 'Could not reach api.open-meteo.com.';
+  if (failure === 'network') return 'Could not reach Open-Meteo.';
   if (failure === 'timeout') return 'Open-Meteo did not answer in time.';
   if (failure === 'parse') return 'The weather reply could not be read.';
   if (failure?.startsWith('http ')) return `Open-Meteo answered ${failure.slice(5)}.`;

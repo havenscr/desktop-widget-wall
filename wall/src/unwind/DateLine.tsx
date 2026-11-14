@@ -21,7 +21,7 @@ export function DateLine({ now = () => new Date(), wallNow = Date.now }: { now?:
   const missing = !fresh && (failed || reading !== null);
   const minutes = attemptedAt ? Math.max(0, Math.floor((wallNow() - attemptedAt) / 60_000)) : 0;
   const tried = minutes < 1 ? 'less than a minute ago' : `${minutes} min ago`;
-  const failedTip = failed && reading ? `Last try failed ${tried}: ${weatherFailureText(failure).replace(/\.$/, '').toLowerCase()}. Showing the reading from ${new Date(reading.fetchedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.` : null;
+  const failedTip = failed && reading ? `Last try failed ${tried}: ${weatherFailureText(failure)} Showing the reading from ${new Date(reading.fetchedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.` : null;
   return (
     <div className="u-date" {...(failedTip ? tip(failedTip) : {})}>
       {dateLine(d, fresh)}

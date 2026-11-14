@@ -511,7 +511,7 @@ it('the date hover keeps a failed weather try visible over an older reading', as
   const r = render(<><Fresh now={() => new Date(wallNow)} wallNow={() => wallNow} /><FreshLayer /></>);
   fireEvent.mouseEnter(r.container.querySelector('.u-date')!);
   await flush(TIP_DELAY_MS);
-  expect(document.querySelector('.hover-tip')?.textContent).toContain('Last try failed 2 min ago: could not reach api.open-meteo.com. Showing the reading from');
+  expect(document.querySelector('.hover-tip')?.textContent).toContain('Last try failed 2 min ago: Could not reach Open-Meteo. Showing the reading from');
   vi.doUnmock('../weather/useWeather');
 });
 

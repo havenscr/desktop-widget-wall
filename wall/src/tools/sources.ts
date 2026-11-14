@@ -139,7 +139,7 @@ export function buildSources(s: SourceSnapshot): SourceRow[] {
     if (!w) rows.push(s.weather.failed ? { id, name, tone: 'down', at: s.weather.attemptedAt ?? null, reason: weatherFailureText(s.weather.failure) } : { id, name, tone: 'none', at: null, reason: 'Not read yet.' });
     else if (s.weather.failed) {
       const attempted = s.weather.attemptedAt ?? now;
-      rows.push({ id, name, tone: 'warn', at: w.fetchedAt, reason: `Last try failed ${ago(attempted, now)}: ${weatherFailureText(s.weather.failure).replace(/\.$/, '').toLowerCase()}. Showing the reading from ${new Date(w.fetchedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.` });
+      rows.push({ id, name, tone: 'warn', at: w.fetchedAt, reason: `Last try failed ${ago(attempted, now)}: ${weatherFailureText(s.weather.failure)} Showing the reading from ${new Date(w.fetchedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.` });
     } else {
       const old = staleText(w.fetchedAt, now);
       if (old) rows.push({ id, name, tone: 'warn', at: w.fetchedAt, reason: `The reading is old (${old}). It refreshes every ${WEATHER_REFRESH_MS / 60_000} min.` });
