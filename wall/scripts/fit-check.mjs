@@ -306,7 +306,7 @@ const OVERFLOWS = {
   'tall-out': '.sp-card.tall .sp-hx { margin-right: -60px !important; }',
   'tall-rest': '.sp-card { width: 760px !important; }',
   'tall-pop': '.sp-devices { right: -700px !important; }',
-  'tall-btns': '.sp-shbtns .sp-btn { padding: 0 34px !important; }',
+  'tall-btns': '.sp-shbtns .sp-btn { flex: none !important; padding: 0 34px !important; }',
   'tall-moon': '',
   // watch polish: the left block back at its old line (y 126) in one look; the gear off the row's end; a 600 px control in
   // the row; the block moved onto the video.
