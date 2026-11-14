@@ -8,6 +8,8 @@ import { focusSession } from './open';
 import { Shelf } from './Shelf';
 import { AlarmChip } from '../home/AlarmChip';
 import { useOpenAlarms } from '../home/useSecurity';
+import { HeaderRecordingChip } from '../signals/RecordingChip';
+import { useSignalStore } from '../signals/store';
 
 /** Cards in view at once; the rest scroll. */
 const IN_VIEW = 3;
@@ -89,8 +91,9 @@ export function Lanes({ summary, stale, freshAt, now, idle }: { summary: OmniSum
 
   // Nothing in the header wraps: when it is tight its parts give way in order (`HeaderFit`).
   const alarms = useOpenAlarms();
+  const recording = useSignalStore((s) => s.recording);
   const hd = useRef<HTMLDivElement>(null);
-  const fitKey = `${slotsText(summary)}|${count}|${ask.text}|${ask.title ?? ''}|${ask.more ?? ''}|${ask.tone}|${alarms}|${stale}|${freshAt}`;
+  const fitKey = `${slotsText(summary)}|${count}|${ask.text}|${ask.title ?? ''}|${ask.more ?? ''}|${ask.tone}|${alarms}|${stale}|${freshAt}|${recording}`;
   const [fitState, setFitState] = useState<{ key: string; level: HeaderFit }>({ key: fitKey, level: 0 });
   const fit: HeaderFit = fitState.key === fitKey ? fitState.level : 0;
   useLayoutEffect(() => {
@@ -129,6 +132,7 @@ export function Lanes({ summary, stale, freshAt, now, idle }: { summary: OmniSum
             </button>
           )}
           {stale && <span className="xs lanes-age">{ageText(freshAt, now)}</span>}
+          <HeaderRecordingChip compact={fit >= 3} />
         </div>
         {ask.tone === 'amber' && stale ? (
           // Old data never reads as live: grey words, not a button.

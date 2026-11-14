@@ -19,11 +19,13 @@
 // playing in each look, and with its settings sheet open both ways. Keys style: every key edge at
 // least 3 to 1 against the sky (read from a screenshot) by day and night, the Now row one height on
 // a key page and on For you, and the grown Hide screen pill inside the corner under the Room card,
-// clear of the failure note.
+// clear of the failure note. Leave and recording: the leave banner inside x 600 to 1940 and its band (y 0 to 70 on
+// Work, y 510 to 600 off Work) covering no text or control, the recording chip one 32 px line at most 200 px wide in the
+// Agents header (and inside the banner, or in the band off Work), and the Recording page the same height as a key page.
 // CI does not run this; run it by hand before a layout change is handed over.
 //
 //   WALL_CHROME=/path/to/chrome-or-headless-shell npm --prefix wall run fit-check
-//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, header, deck, tiles, picker, chips, heading, zenhint, strip, fold, drawer, rows, handle, sky, floor, sun, tools, toolsnames, meetfill, meetempty, fy-height, key-edge, hide-pill, hide-note, lwbuttons, lwoverlap, lwsquare, lwring, lwtemp, lwround, listen-player, listen-card, listen-slot, listen-next)
+//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, header, deck, tiles, picker, chips, heading, zenhint, strip, fold, drawer, rows, handle, sky, floor, sun, tools, toolsnames, meetfill, meetempty, fy-height, key-edge, hide-pill, hide-note, leave-band, rec-chip, rec-height, lwbuttons, lwoverlap, lwsquare, lwring, lwtemp, lwround, listen-player, listen-card, listen-slot, listen-next)
 //   npm --prefix wall run fit-check -- --self-test
 //
 // WALL_CHROME (or the first argument that is not a flag) is a Chromium or
@@ -82,6 +84,10 @@ const EXPECT = {
   'key-edge': /^ *FAIL deck: key ".*" edge against the sky /m,
   'hide-pill': /^ *FAIL hide screen: /m,
   'hide-note': /^ *FAIL hide screen note: /m,
+  // leave and recording
+  'leave-band': /^ *FAIL leave banner: /m,
+  'rec-chip': /^ *FAIL recording chip: /m,
+  'rec-height': /^ *FAIL deck: the Now row is \d+ px tall on Recording/m,
   // left wing
   lwbuttons: /^ *FAIL left wing: music buttons leave the wing/m,
   lwoverlap: /^ *FAIL left wing: music buttons overlap the title/m,
@@ -134,6 +140,10 @@ const OVERFLOWS = {
   'key-edge': '.work .right-wing .deck-tile.key-tile { border-color: transparent !important; }',
   'hide-pill': '.screens-off:is(:hover, :focus-visible) { min-width: 900px; }',
   'hide-note': '.screens-off-note { bottom: 0 !important; }',
+  // leave and recording
+  'leave-band': '.leave-banner { top: 200px !important; }',
+  'rec-chip': '.rec-chip { min-width: 400px !important; }',
+  'rec-height': '.rec-keys .key-tile { height: 92px !important; }',
   // left wing
   lwbuttons: '.work .left-wing .music-mini-text { flex: none !important; width: 900px !important; }',
   lwoverlap: '.work .left-wing .music-mini-btns { transform: translateX(-200px); }',
@@ -317,6 +327,23 @@ const VARIANTS = [
   { name: 'Keys style, day: held on Excel with VS Code in front (keys that cannot be sent)', q: `?hz=work&at=${encodeURIComponent('2026-11-11T12:10:00-08:00')}&clock=review&weather=ok&keys=library&hold=lib-excel`, checks: DECK, edges: true, nowH: 'keys' },
   { name: 'Keys style, For you with two plates', q: work('ask', '&keys=typical&hold=foryou&meet=none&net=calm'), checks: FOR_YOU, nowH: 'foryou' },
   { name: 'Keys style, For you with one plate', q: work('3', '&keys=typical&hold=foryou&meet=none'), checks: FOR_YOU, nowH: 'foryou' },
+  // leave and recording: the banner in its band covering no text or control (over the hidden Agents header on Work),
+  // the chip one short line in the header (also with twelve sessions, two waiting, an alarm: its tightest), and the
+  // Recording page one height with a key page and For you (nowH).
+  { name: 'Leave banner on Work, 12 minutes, long title', q: work('3', '&leave=12'), checks: ['.leave-banner'], viewportOnly: true },
+  { name: 'Leave banner on Work, amber, helper not set up', q: work('off', '&leave=4'), checks: ['.leave-banner'], viewportOnly: true },
+  { name: 'Leave banner on Work with the Day drawer open', q: work('12ask', '&leave=12&rec=1&meet=overlap'), click: '.rib .rib-handle', checks: ['.leave-banner', '.day-drawer', '.day-drawer .dd-agenda'], viewportOnly: true },
+  { name: 'Leave banner on Work, leave now with the recording chip', q: work('12ask', '&leave=0&rec=1'), checks: ['.leave-banner', '.leave-banner .rec-chip'], viewportOnly: true },
+  { name: 'Leave banner on Home', q: home('moods=five&leave=12'), checks: ['.leave-banner'], viewportOnly: true },
+  { name: 'Leave banner on Unwind, amber', q: query({ hz: 'unwind', agents: '3', extra: '&leave=4' }), checks: ['.leave-banner'], viewportOnly: true },
+  { name: 'Leave banner on Meet', q: query({ agents: '3', go: 'meet', live: true, extra: '&leave=12' }), checks: ['.leave-banner'], viewportOnly: true },
+  { name: 'Recording chip in the Agents header, twelve sessions, two waiting, an alarm', q: work('12ask', '&rec=1'), checks: [...SCROLLED, '.work .centre .lanes-hd .rec-chip'] },
+  { name: 'Recording chip in the Agents header, stale helper', q: work('12staleask', '&rec=1'), checks: [...SCROLLED, '.work .centre .lanes-hd .rec-chip'] },
+  { name: 'Recording chip on Work with the helper down', q: work('down', '&rec=1'), checks: ['.rec-float'], viewportOnly: true },
+  { name: 'Recording chip on Home', q: home('moods=five&rec=1'), checks: ['.rec-float'], viewportOnly: true },
+  { name: 'Recording chip on Unwind', q: query({ hz: 'unwind', agents: '3', extra: '&rec=1' }), checks: ['.rec-float'], viewportOnly: true },
+  { name: 'Recording page: the Now row, library sets', q: work('3', '&keys=library&rec=1'), checks: DECK, nowH: 'recording' },
+  { name: 'Recording page with long titles waiting (For you chip)', q: work('ask', '&keys=typical&rec=1'), checks: DECK, nowH: 'recording' },
   // The Hide screen button grown under the pointer.
   { name: 'Unwind, Hide screen grown', q: query({ hz: 'unwind', agents: '3', extra: '' }), checks: ['.u-line', '.screens-off'], click: 'hover:.screens-off', hide: true, viewportOnly: true },
   // The failure note ("Could not watch input") showing while the pill is grown: the two never meet.
@@ -731,6 +758,48 @@ try {
       else if (rad < Math.min(r.width, r.height) / 2 - 0.5) lw.push('left wing: focus outline on ' + name + ' is square (radius ' + rad + ' px)');
       e.blur();
     }
+    // leave and recording: the banner inside x 600 to 1940 and its band (Work: the top band, y 0 to 70; elsewhere the
+    // empty band above the ribbon, y 510 to 600), carrying its parts inside it and covering no text or control; the chip
+    // one line (32 px) and at most 200 px wide, in the Agents header, in the banner, or in the band.
+    const sig = [];
+    for (const b of document.querySelectorAll('.leave-banner, .rec-float')) {
+      const [bandTop, bandBottom] = b.dataset.band === 'top' ? [0, 70] : [510, 600];
+      const name = b.matches('.leave-banner') ? 'leave banner' : 'recording chip';
+      const r = b.getBoundingClientRect();
+      if (r.left < 600 - 0.5 || r.right > 1940 + 0.5 || r.top < bandTop - 0.5 || r.bottom > bandBottom + 0.5) sig.push(name + ': at x ' + Math.round(r.left) + ' to ' + Math.round(r.right) + ', y ' + Math.round(r.top) + ' to ' + Math.round(r.bottom) + ' (must be inside x 600 to 1940 and y ' + bandTop + ' to ' + bandBottom + ')');
+      for (const k of b.querySelectorAll('*')) {
+        const q = k.getBoundingClientRect();
+        if (q.width > 0 && (q.left < r.left - 0.5 || q.right > r.right + 0.5 || q.top < r.top - 0.5 || q.bottom > r.bottom + 0.5)) sig.push(name + ': ' + (k.textContent || k.className).toString().trim().slice(0, 30) + ' leaves the banner');
+      }
+      for (const e of document.querySelectorAll('.shell *')) {
+        const own = [...e.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim());
+        if (!own && !e.matches('button, a, input, select, textarea, [role=button], [tabindex]')) continue;
+        const cs = getComputedStyle(e);
+        if (cs.visibility === 'hidden' || cs.display === 'none' || Number(cs.opacity) === 0) continue;
+        // A control by its box; plain text by the box of its words (a wide label box holds empty room).
+        let q = e.getBoundingClientRect();
+        if (!e.matches('button, a, input, select, textarea, [role=button], [tabindex]')) {
+          const range = document.createRange();
+          range.selectNodeContents(e);
+          const words = [...e.childNodes].filter((n) => n.nodeType === 3 && n.textContent.trim());
+          const rects = words.flatMap((n) => { const g = document.createRange(); g.selectNodeContents(n); return [...g.getClientRects()]; }).filter((x) => x.width > 0);
+          q = rects.find((x) => hit(x, r)) || { width: 0, height: 0 };
+        }
+        if (q.width > 0 && q.height > 0 && hit(q, r)) sig.push(name + ': covers ' + (e.textContent || '').trim().slice(0, 30) + ' (' + e.tagName.toLowerCase() + '.' + (typeof e.className === 'string' ? e.className : '') + ')');
+      }
+    }
+    for (const c of document.querySelectorAll('.rec-chip')) {
+      const q = c.getBoundingClientRect();
+      const hd = c.closest('.lanes-hd');
+      const tops = new Set();
+      const walk = document.createTreeWalker(c, NodeFilter.SHOW_TEXT);
+      for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+        const g = document.createRange();
+        g.selectNodeContents(n);
+        for (const t of g.getClientRects()) if (t.width > 0) tops.add(Math.round(t.top / 4));
+      }
+      if (q.height > 32.5 || q.width > 200.5 || tops.size > 1 || (hd && (hd.scrollWidth > hd.clientWidth + 1 || q.right > hd.getBoundingClientRect().right + 0.5))) sig.push('recording chip: ' + Math.round(q.width) + ' x ' + Math.round(q.height) + ' px, ' + tops.size + ' lines' + (hd ? ', header scroll ' + hd.scrollWidth + ' of ' + hd.clientWidth : '') + ' (one 32 px line, at most 200 px wide, inside its header)');
+    }
     // Hit tests: each named control must get the pointer at its own centre, and no point of the
     // sky (a grid over the top band) may land on a layer that only draws the video.
     const hits = (new URLSearchParams(location.search).get('hits') || '').split('|').filter(Boolean).map((sel) => {
@@ -783,7 +852,7 @@ try {
         for (const e of inside.slice(0, 3)) listen.push('listen: ' + (e.className?.baseVal ?? e.className ?? e.tagName) + ' "' + (e.textContent || '').trim().slice(0, 30) + '" enters the office lights slot');
       }
     }
-    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, wattCard, header, deck, nowH, edges, hide, hits, grid, lw, toolsOut, meetOut, strip, opened, listen });
+    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, wattCard, header, deck, nowH, edges, hide, hits, grid, lw, sig, toolsOut, meetOut, strip, opened, listen });
     document.body.appendChild(pre);
   }, new URLSearchParams(location.search).get('card') ? 7000 : 3000);</script>`;
   const broken = overflow ? `<style>${OVERFLOWS[overflow]}</style>` : '';
@@ -814,6 +883,10 @@ try {
     drawer: (v) => v.name === 'Strip: the Day drawer open',
     rows: (v) => v.name === 'Strip: Agents today, a heavy past day',
     'hide-note': (v) => v.name === 'Unwind, Hide screen grown with the failure note',
+    // leave and recording
+    'leave-band': (v) => v.name === 'Leave banner on Work, 12 minutes, long title' || v.name === 'Leave banner on Home',
+    'rec-chip': (v) => v.name === 'Recording chip in the Agents header, twelve sessions, two waiting, an alarm',
+    'rec-height': (v) => v.name === 'Recording page: the Now row, library sets' || v.name === 'Keys style, day: library sets held on VS Code',
     // unwind listen
     'listen-player': (v) => v.name === 'Listen, playing with the lines moving',
     'listen-card': (v) => v.name === 'Listen, playing with the lines moving',
@@ -838,7 +911,7 @@ try {
       process.exit(1);
     }
     const text = m[1].replaceAll('&quot;', '"').replaceAll('&amp;', '&');
-    const { res, page: doc, overlaps, cut, gaps, wattCard, header, deck, nowH, edges, hide, hits, grid, lw, toolsOut, meetOut, strip, opened, listen } = JSON.parse(text);
+    const { res, page: doc, overlaps, cut, gaps, wattCard, header, deck, nowH, edges, hide, hits, grid, lw, sig, toolsOut, meetOut, strip, opened, listen } = JSON.parse(text);
     // unwind listen
     for (const l of listen) console.log(`  FAIL ${l}`);
     if (listen.length) failed = true;
@@ -904,6 +977,9 @@ try {
           : `  ${okHide ? 'ok  ' : 'FAIL'} hide screen: ${hide.grown ? 'grown' : 'not grown'} to ${hide.w} px, right edge ${hide.right} and bottom ${hide.bottom} from its corner box (0), ${hide.inCorner ? 'inside' : 'outside'} the corner under the Room card, overlaps ${hide.foot} parts of the status line and ${hide.room} Room cards`,
       );
     }
+    for (const d of sig) console.log(`  FAIL ${d}`);
+    if (sig.length) failed = true;
+    else if (/[?&](leave|rec)=/.test(v.q)) console.log('  ok   leave banner and recording chip: inside their band, one line, covering no text or control');
     for (const d of lw) console.log(`  FAIL ${d}`);
     if (lw.length) failed = true;
     else if (v.q.includes('hz=work')) console.log('  ok   left wing: three music buttons on one line, TEMP header centred, round controls round');
@@ -975,12 +1051,12 @@ try {
     }
   }
   // keys style: the Now row is one height on every page (a key page and the For you page).
-  if (nowHeights.some((n) => n.page === 'keys') && nowHeights.some((n) => n.page === 'foryou')) {
+  if (nowHeights.some((n) => n.page === 'keys') && (nowHeights.some((n) => n.page === 'foryou') || nowHeights.some((n) => n.page === 'recording'))) {
     const hs = [...new Set(nowHeights.map((n) => n.h))];
     if (hs.length > 1) {
       failed = true;
-      for (const n of nowHeights) console.log(`  FAIL deck: the Now row is ${Math.round(n.h)} px tall on ${n.name} (every page must match)`);
-    } else console.log(`keys style: the Now row is ${hs[0]} px tall on every key page and on For you`);
+      for (const n of nowHeights) console.log(`  FAIL deck: the Now row is ${Math.round(n.h)} px tall on ${n.page === 'recording' ? 'Recording' : n.name} (every page must match)`);
+    } else console.log(`keys style: the Now row is ${hs[0]} px tall on every key page, on For you and on Recording`);
   }
   process.exit(failed ? 1 : 0);
 } finally {
