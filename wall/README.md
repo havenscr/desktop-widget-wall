@@ -895,10 +895,9 @@ frame (no ribbon) in the wide zones `470px 1fr 540px`. The parts are in `wall/sr
   stays put) into a pill that reads its name, in place of a tooltip ("Hide screen", "Hiding", "Cancel hide", also its
   accessible name); a double click sends once; "Could not watch input" shows beside it for five seconds.
   The wind down ring (PR 10) goes between the date line and Tomorrow.
-- **Centre.** The tabs (`Tabs.tsx`): Listen is this view (its tab controls the player
-  panel); Watch switches the centre to video (see "Watch" below); Dream opens Zen already dimmed (`openDream` in the place store;
-  Zen reads the flag once). Below them the player (`Player.tsx`): 224 px art, the source
-  app in pink capitals (the player's name, see below), a 64 px title, the artist, a 520 px progress bar with times
+- **Centre.** The toggles (`Tabs.tsx`, under the date line): Listen is this view (its toggle controls the player
+  panel); Watch switches the centre to video (see "Watch" below). There is no Dream toggle: Zen dims by itself. The player (`Player.tsx`): 224 px art, the source
+  app in pink capitals (the player's name, see below), a 64 px title, the artist, and under them one row of the buttons, a 360 px position with times
   (advanced locally twice a second between polls while playing and visible, never past
   the duration), then previous, play or pause and next with the playing app's volume
   (`Volume.tsx`). `get_now_playing` sends the media session's own app id as
@@ -922,26 +921,61 @@ frame (no ribbon) in the wide zones `470px 1fr 540px`. The parts are in `wall/sr
   the new app's session is read and a move never reaches the previous app. Moves are
   clamped to 0 to 1 and sent with `set_audio_session_volume` at most every 100 ms, always
   ending on the last value (also on unmount); a move pending when the session goes away is
-  dropped. The player sits in a `.u-listen` row so a music browser can join it
-  later.
+  dropped.
 - **Nothing playing.** The player keeps its footprint: the last track this wall saw
   playing (`lastPlayed.ts` follows the shared now playing store; title, artist and source
   are kept in `wall2-last-played`, the art in memory only) with "Play again" when a media
   session exists, or "Open Spotify to play again" as plain text when none does, or before
   anything has played, "Nothing playing" with a calm line over the transport. Never a
   large empty tile.
-- **Right wing.** The Room card (`RoomCard.tsx`), at the concept's size and place: 120 px
-  tall, its foot 38 px above the end of the other places' 490 px band, so its top is 332
-  px down and its foot sits level with the transport (`UNWIND_ROOM_*` in
-  `screens/frameLayout.ts`, passed to the stylesheet as `--room-top`), "Lights"
-  over a row of 40 px mood chips. The home moods come from `wall2_moods`; a click applies
-  one with `wall2_apply_mood`, and the last mood applied (here or on Home's mood cards) is
-  marked for three hours (the id is `wall2-last-mood`, shared with Home in its plain
-  format; the time is beside it in `wall2-last-mood-at` as `{"id","at"}`, written by
-  both). While loading or not reachable it reads the moods again every 30 seconds. "TV
-  off" waits for the home app reads (PR 24). Not set up or not reachable says so in one
-  line at the same size. The Live now card (PR 27) will stack above it, in the space above
-  it now.
+- **Listen, as the owner chose it (7A, 8B, 6A, 9A, 10B).** Unwind is music on this computer
+  and never controls the house: the house-wide lights row is gone, and **Unwind never
+  controls any room other than the office**. Listen and Watch are
+  toggles under the date line, not a pill over the centre. The cover (the real art from
+  now playing; a neutral tile only when there is none) and the title sit at the top of the
+  centre, and previous, play, next, the position with its times and the volume sit in one
+  row right under the title, so everything ends above y 300 and the dancing lines stay
+  clear. The lines take the cover's colours (`music/coverTint.ts`: three colours, left,
+  centre and right, read once per cover on a 24 px canvas, held between 55 and 80 percent
+  lightness so a black or white cover still shows; `useCoverTintFollow.ts` hands them to
+  the horizon's `tint` through `echoOptions`, cross-fading over 2 seconds, at once with
+  reduced motion; the default teal and pink when no cover is known).
+- **Up next** (`unwind/spotify/UpNext.tsx`), in the left wing under the toggles: the next
+  three tracks of the Spotify queue (`wall2_spotify_queue`, every 20 seconds while shown and
+  on every track change) with 48 px covers, the title and the artist; hover gives the album
+  and length. A click only skips: the n-th row sends n skips with the media keys (never more than the queue
+  holds), and only when Spotify is the current Windows player, else it sends nothing and says
+  "Open its list to play it". It never plays a list, so it never replaces the queue. Hidden with YouTube
+  Music chosen, with Spotify not set up, and when nothing is queued; signed out it reads
+  "Sign in to Spotify in Tools to see what is next" (a click opens Tools).
+- **The Spotify card** (`unwind/spotify/SpotifyCard.tsx`), the upper right (stage x 1740 to
+  2540, y 24 to 486). On top, the switch Spotify or YouTube Music ("Which player the wall
+  follows", kept per display in `wall2-unwind-source`). Spotify: a search field (on Enter,
+  or 400 ms after the last key, two characters at least; only the newest search may change the
+  list, and a failed one keeps the last good results under a note with Retry), then the tabs
+  Search, Playlists, Albums, Liked and Recent in a pill. Playlists and Albums are a grid of large
+  cover tiles, five across, the name and the song count under each (`imageUrl`; a neutral tile
+  with a music note when there is none or it fails to load, never a colour gradient). Resting on
+  a tile rings it and opens its details card (the shared tip, pinned): the kind with its owner
+  or artist said once, the song count when the bridge gives it, and Play, Shuffle and Songs.
+  Liked and Recent are songs, as rows. A click on a tile opens its songs
+  (`wall2_spotify_tracks`, 50 at a time as the list scrolls; Back or Escape returns, Play and
+  Shuffle play it whole, the song now playing is marked by track id or by title and artist, a
+  song that cannot be played is dimmed with the reason in its tooltip, and the total length
+  shows once every song is read); a click on a song plays from it in its list. A click on a song
+  in Liked, Recent or Search plays it. Lists scroll inside the card with the wheel and
+  never grow it. States: not set up, signed out (both point to Tools, where Spotify signs
+  in), not answering (with Retry), busy (the list stays, "Spotify is busy, try in a
+  minute"), no device after a play ("Open Spotify on this PC first, then try again"), an
+  empty library. YouTube Music chosen: what Windows says is playing, previous, play and
+  next through Windows, and "Open YouTube Music" (`wall2_open_link`). No YouTube browsing.
+- **The office lights slot.** Where 7A drew the quiet row at the foot (right edge 70 px
+  from the stage's right edge, top 662, 34 px tall, 420 px wide at most) Unwind keeps one
+  empty box, `data-slot="office-lights"`, with no content, border or pointer, for an
+  office-only lights control the owner is still choosing. The fit check fails when
+  anything that draws enters it. The Room card (`RoomCard.tsx`) is no longer on Unwind;
+  the file stays because Zen reads its mood mark.
+- **Right wing on Watch.** The Watch list card (see "Watch" below).
 
 Watt (`wall/src/buddy/`) is the electric sheep on the horizon band of every place that has
 one: Work, Home, Meet (hidden during a call, once the in-call pull request detects one) and
