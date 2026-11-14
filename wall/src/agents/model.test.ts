@@ -26,10 +26,29 @@ import {
   sessionSpans,
   spanWords,
   dayTotals,
+  helpersWork,
+  helpersWorkText,
+  laneWorks,
 } from './model';
 import { lane, summary } from './fixtures';
 
 describe('lanes', () => {
+  it('uses one rule for own-turn and helper work', () => {
+    const idle = lane({ live: 'idle', line: 'idle' });
+    expect(helpersWork(idle)).toBe(false);
+    expect(laneWorks(idle)).toBe(false);
+    expect(helpersWork(lane({ ...idle, bg: { agents: 2, shells: 1 } }))).toBe(true);
+    expect(helpersWorkText(lane({ ...idle, bg: { agents: 2, shells: 1 } }))).toBe('helpers working: 2 agents, 1 command');
+    expect(helpersWork(lane({ ...idle, kids: { total: 1, working: 1, running: 1 } }))).toBe(true);
+    expect(helpersWorkText(lane({ ...idle, kids: { total: 1, working: 1, running: 1 } }))).toBe('helpers working: 1 helper');
+    expect(helpersWork(lane({ ...idle, waiting: true, bg: { agents: 1, shells: 0 } }))).toBe(false);
+    expect(helpersWork(lane({ ...idle, failed: true, bg: { agents: 1, shells: 0 } }))).toBe(false);
+    expect(helpersWork(lane({ ...idle, state: 'blocked', bg: { agents: 1, shells: 0 } }))).toBe(false);
+    expect(helpersWork(lane({ live: 'working', bg: { agents: 1, shells: 0 } }))).toBe(false);
+    expect(laneWorks(lane({ live: 'working' }))).toBe(true);
+    expect(laneWorks(lane())).toBe(true);
+  });
+
   it('amber when blocked or waiting, mint when ready to merge or live, cyan otherwise', () => {
     expect(laneTone(lane())).toBe('cyan');
     expect(laneTone(lane({ state: 'blocked' }))).toBe('amber');
@@ -218,16 +237,34 @@ describe('cards from a newer helper', () => {
   it('checks the new fields and keeps an old answer as it was', () => {
     const raw = {
       ...summary(),
-      slots: { used: 8, limit: 4, sessions: 'x', working: 2, helpers: -1 },
-      sessionsList: [{ ...lane({ id: 'a1b2c3d4-0021' }), kids: { total: 2, working: 5 }, harness: 'gpt', live: 'busy', failed: 'yes', next: '  ' }, { id: 5 }],
+      slots: { used: 8, limit: 4, sessions: 'x', working: 2, helpers: -1, busy: 3 },
+      sessionsList: [
+        {
+          ...lane({ id: 'a1b2c3d4-0021' }),
+          kids: { total: 2, working: 5, running: 7 },
+          bg: { agents: 1000, shells: 2 },
+          harness: 'gpt',
+          live: 'busy',
+          failed: 'yes',
+          next: '  ',
+        },
+        { id: 5 },
+      ],
       sessions: { 'a1b2c3d4-0022': { title: 'Named', stage: 'nope', state: 'blocked' }, bad: { stage: 'plan' } },
       yourMove: { total: 1, first: null, ids: ['a1b2c3d4-0022', 7] },
       usage: { claudeWeekPct: null, claude5hPct: null, weekResetsAt: null, accounts: [{ provider: 'claude', label: 'Claude 1', weekPct: 140, fiveHourPct: null, weekResetsAt: null }, { provider: 'x', label: 'Bad' }] },
     };
     const s = normalizeSummary(raw)!;
-    expect(s.slots).toEqual({ used: 8, limit: 4, sessions: null, working: 2, helpers: null });
+    expect(s.slots).toEqual({ used: 8, limit: 4, sessions: null, working: 2, helpers: null, busy: 3 });
     expect(s.sessionsList).toHaveLength(1);
-    expect(s.sessionsList![0]).toMatchObject({ kids: { total: 2, working: 2 }, harness: null, live: null, failed: false, next: null });
+    expect(s.sessionsList![0]).toMatchObject({
+      kids: { total: 2, working: 2, running: 2 },
+      bg: { agents: 99, shells: 2 },
+      harness: null,
+      live: null,
+      failed: false,
+      next: null,
+    });
     expect(s.sessions).toEqual({ 'a1b2c3d4-0022': { title: 'Named', stage: null, state: 'blocked' } });
     expect(s.yourMove.ids).toEqual(['a1b2c3d4-0022']);
     expect(s.usage!.accounts).toEqual([{ provider: 'claude', label: 'Claude 1', weekPct: 100, fiveHourPct: null, weekResetsAt: null }]);
@@ -235,6 +272,8 @@ describe('cards from a newer helper', () => {
     expect(old.sessionsList).toBeNull();
     expect(old.sessions).toEqual({});
     expect(old.usage).toMatchObject({ claudeWeekPct: 62, claude5hPct: 18, accounts: [] });
+    expect(old.lanes[0].bg).toBeNull();
+    expect(old.slots.busy).toBeNull();
   });
 
   it('gives one meter per subscription, the fullest above 90 in amber, or the old single meter', () => {
@@ -382,4 +421,3 @@ it('sums the day for the agent row icon', () => {
   );
   expect(dayTotals([g('a', 'done', at(8), at(9))])).toBe('Today: no time of agent work across 1 session, no waiting on you');
 });
-
