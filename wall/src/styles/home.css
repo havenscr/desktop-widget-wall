@@ -334,6 +334,17 @@
   padding: 6px 10px;
   white-space: nowrap;
 }
+/* The pill column is a fixed 62 px on a chore row (a row with no pill keeps the room), so the tags line up. */
+.home .chore-rows .est {
+  box-sizing: border-box;
+  width: 62px;
+  flex: none;
+  text-align: center;
+}
+.home .chore-rows .pill-ph {
+  width: 62px;
+  flex: none;
+}
 
 /* Network and security: the heading above the card (as "Around the house"), the card as
    tall as what it holds, the block sitting on the band's bottom. */

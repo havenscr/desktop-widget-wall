@@ -3,6 +3,7 @@ import { tip } from '../ui/HoverTip';
 import { reviewNow } from '../ui/reviewClock';
 import { openTask, type TaskItem } from '../tasks/model';
 import { usePendingTicks } from '../tasks/pendingTick';
+import { TaskTags } from '../tasks/TaskTags';
 import { TickWait } from '../tasks/TaskCard';
 import { clockText } from './sunLine';
 import { useShield } from './NetworkTile';
@@ -12,6 +13,11 @@ import { useChores } from './useChores';
 /** Rows in view: five, or three while the network card is tall with open alerts. */
 export const ROWS_QUIET = 5;
 export const ROWS_ALERTS = 3;
+
+/** Width a chore row leaves for the title and its tags together: the 580 px row, less the 52 px tick, the 62 px pill column and two 12 px gaps (the third gap before the tags is counted by the tag layout). */
+export const CHORE_ROOM = 442;
+/** The fixed pill column: every row keeps it, with a pill or without one, so the tags line up down the list. */
+export const PILL_COLUMN_PX = 62;
 
 const EST: Record<string, string> = { '15': '15 m', '30': '30 m', '45': '45 m', '60plus': '1 h+' };
 
@@ -39,7 +45,8 @@ export function chorePill(task: Pick<TaskItem, 'due_at' | 'due_is_all_day' | 'es
  * alerts are open and the shield card is tall), the rest a scroll away (a slim scrollbar
  * and the wheel, with the pointer over the list), and "N more can wait" under them. The
  * tick circle finishes a chore after a five second undo window; a click on its title opens
- * it in the task app.
+ * it in the task app. Each row shows its tags after the title (the first as a named chip, the
+ * rest as icon dots) and keeps a fixed 62 px column at the right for its pill.
  */
 export function Chores() {
   const { status, tasks, remaining, marks, hidden, complete } = useChores();
@@ -105,7 +112,10 @@ export function Chores() {
                       </button>
                     </>
                   ) : (
-                    pill && <span className="est">{pill}</span>
+                    <>
+                      <TaskTags tags={t.tags} room={CHORE_ROOM} />
+                      {pill ? <span className="est">{pill}</span> : <span className="pill-ph" aria-hidden="true" />}
+                    </>
                   )}
                 </>
               )}

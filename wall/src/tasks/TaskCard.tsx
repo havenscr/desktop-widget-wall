@@ -1,12 +1,22 @@
 import { IconCheck } from '@tabler/icons-react';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { useFocusStore } from '../focus/store';
-import { estText, HOLD_SLOP_PX, LONG_PRESS_MS, openTask, updatedText, visibleRows, type TaskItem } from './model';
+import { dueLine, estText, HOLD_SLOP_PX, LONG_PRESS_MS, openTask, updatedText, visibleRows, type TaskItem } from './model';
 import { usePendingTicks } from './pendingTick';
+import { TaskTags } from './TaskTags';
 import { useTasks, type TasksQuery } from './useTasks';
 
-/** Work's list: the tasks without the home tag. */
-const WORK_QUERY: TasksQuery = { notTag: 'home' };
+/** Work's list: the tasks without the home tag that are due today or overdue (the next three when none is). */
+const WORK_QUERY: TasksQuery = { notTag: 'home', due: 'today' };
+
+/** Rows in view in the block, and a row's pitch: 70 px and its 1 px rule (the block keeps the height three rows gave it). */
+export const WORK_ROWS = 3;
+export const WORK_ROW_PX = 71;
+/**
+ * Width a Work row leaves for the title and its tags together: the 596 px wing, less the tick
+ * (50), the fixed 78 px time column, two 16 px gaps and the 6 px scroll gutter.
+ */
+const WORK_ROOM = 430;
 
 /**
  * One task as the concept draws it (`.tk3`): a check circle, the title and the estimate.
@@ -17,6 +27,7 @@ const WORK_QUERY: TasksQuery = { notTag: 'home' };
  */
 function TaskRow({
   task,
+  now,
   mark,
   pending,
   canFocus,
@@ -24,6 +35,7 @@ function TaskRow({
   onUndo,
 }: {
   task: TaskItem;
+  now: number;
   mark: 'done' | 'failed' | undefined;
   pending: boolean;
   canFocus: boolean;
@@ -54,10 +66,11 @@ function TaskRow({
   const focusable = canFocus && mark !== 'done';
   const startFocus = () => useFocusStore.getState().startLabeled(task.title);
   const est = estText(task.est);
+  const due = dueLine(task, new Date(now));
 
   const ticked = mark === 'done' || pending;
   return (
-    <li className={`tk3 task-row${mark === 'done' ? ' done' : ''}${pending ? ' pending' : ''}${holding ? ' holding' : ''}`}>
+    <li data-task={task.id} className={`tk3 task-row${mark === 'done' ? ' done' : ''}${pending ? ' pending' : ''}${holding ? ' holding' : ''}`}>
       <button
         type="button"
         className={`task-check${ticked ? ' on' : ''}`}
@@ -121,7 +134,12 @@ function TaskRow({
             }}
           >
             <span className="n task-title">{task.title}</span>
-            {mark === 'failed' ? <span className="xs task-err">Could not complete.</span> : est && <span className="est">{est}</span>}
+            {mark !== 'failed' && <TaskTags tags={task.tags} room={WORK_ROOM} />}
+            {mark === 'failed' ? (
+              <span className="xs task-err">Could not complete.</span>
+            ) : (
+              <span className="chip-col">{est && <span className="est" title={due ? `Estimate. Due: ${due}` : 'Estimate'}>{est}</span>}</span>
+            )}
           </button>
           {mark === 'failed' && (
             <button type="button" className="tick-act" onClick={onDone} title={`Try completing ${task.title} again`}>
@@ -152,7 +170,71 @@ export function TickWait({ title, onUndo }: { title: string; onUndo: () => void 
   );
 }
 
-/** The next three open tasks without the home tag: click the circle to finish one, the title to open it, hold a row to focus on it. */
+/**
+ * The block's list: three rows in view, the rest a scroll away (the wheel with the pointer
+ * over it, a 6 px bar, arrow keys and Page Up and Down with a row focused). A soft fade marks
+ * each edge while more rows wait beyond it. A refresh or a removed row never moves the rows in
+ * view: the first row in view is found again by its id and put back where it was.
+ */
+function TaskList({ children, rows }: { children: ReactNode; rows: number }) {
+  const ref = useRef<HTMLUListElement>(null);
+  const [edge, setEdge] = useState({ top: false, bottom: false });
+  const anchor = useRef<{ id: string; top: number } | null>(null);
+
+  const measure = useCallback(() => {
+    const el = ref.current;
+    if (!el) return;
+    const next = { top: el.scrollTop > 1, bottom: el.scrollTop + el.clientHeight < el.scrollHeight - 1 };
+    setEdge((prev) => (prev.top === next.top && prev.bottom === next.bottom ? prev : next));
+    anchor.current = null;
+    if (el.scrollTop > 0) {
+      for (const li of Array.from(el.children) as HTMLElement[]) {
+        if (li.offsetTop + li.offsetHeight > el.scrollTop + 1 && li.dataset.task) {
+          anchor.current = { id: li.dataset.task, top: li.offsetTop - el.scrollTop };
+          break;
+        }
+      }
+    }
+  }, []);
+
+  // After every change of rows: keep the first row in view where it was, then redraw the edges.
+  useLayoutEffect(() => {
+    const el = ref.current;
+    const a = anchor.current;
+    if (el && a) {
+      const li = (Array.from(el.children) as HTMLElement[]).find((c) => c.dataset.task === a.id);
+      if (li) {
+        const drift = li.offsetTop - el.scrollTop - a.top;
+        if (drift !== 0) el.scrollTop += drift;
+      }
+    }
+    measure();
+  }, [children, rows, measure]);
+
+  const key = (e: KeyboardEvent<HTMLUListElement>) => {
+    const el = ref.current;
+    if (!el) return;
+    const step = e.key === 'ArrowDown' ? WORK_ROW_PX : e.key === 'ArrowUp' ? -WORK_ROW_PX : e.key === 'PageDown' ? el.clientHeight : e.key === 'PageUp' ? -el.clientHeight : 0;
+    if (!step) return;
+    e.preventDefault();
+    el.scrollTop += step;
+  };
+
+  const more = rows > WORK_ROWS;
+  const cls = ['tasks-list', more ? 'scrolls' : '', edge.top ? 'fade-top' : '', edge.bottom ? 'fade-bottom' : ''].filter(Boolean).join(' ');
+  return (
+    <ul ref={ref} className={cls} onScroll={measure} onKeyDown={key}>
+      {children}
+    </ul>
+  );
+}
+
+/**
+ * "Due today": every open task due today or overdue (without the home tag), overdue first, as
+ * a small scrolling list with each task's tags. When nothing is due the block reads "Next up"
+ * and shows the next three tasks. Click the circle to finish one, the title to open it, hold
+ * a row to focus on it.
+ */
 export function TaskCard() {
   const t = useTasks(WORK_QUERY);
   const ticks = usePendingTicks(t.complete);
@@ -160,7 +242,10 @@ export function TaskCard() {
   const canFocus = focusStatus === 'idle' || focusStatus === 'finished';
   const rows = visibleRows(t.tasks, t.hidden);
   const stale = t.status === 'error' && t.lastOk !== null ? updatedText(t.lastOk, t.now) : null;
-  const more = t.remaining ? `${t.remaining} more can wait` : null;
+  const nextUp = t.nextUp && rows.length > 0;
+  const overdue = nextUp ? 0 : rows.filter((r) => dueLine(r, new Date(t.now)) === 'overdue').length;
+  const count = rows.length + (t.remaining ?? 0);
+  const side = stale ?? (nextUp ? 'Nothing due today' : rows.length > 0 ? (overdue > 0 ? `${count}, ${overdue} overdue` : `${count}`) : null);
 
   let body;
   if (t.status === 'unconfigured') {
@@ -173,11 +258,12 @@ export function TaskCard() {
     body = <div className="s">Nothing due</div>;
   } else {
     body = (
-      <ul className="tasks-list">
+      <TaskList rows={rows.length}>
         {rows.map((task) => (
           <TaskRow
             key={task.id}
             task={task}
+            now={t.now}
             mark={t.marks[task.id]}
             pending={ticks.pending.has(task.id)}
             canFocus={canFocus}
@@ -185,15 +271,15 @@ export function TaskCard() {
             onUndo={() => ticks.undo(task.id)}
           />
         ))}
-      </ul>
+      </TaskList>
     );
   }
 
   return (
     <section className="tasks" aria-label="Tasks">
       <div className="row sb tasks-hd">
-        <span className="k">Next three</span>
-        {(stale || more) && <span className="xs">{stale ?? more}</span>}
+        <span className="k">{nextUp ? 'Next up' : 'Due today'}</span>
+        {side && <span className="xs">{side}</span>}
       </div>
       {body}
     </section>

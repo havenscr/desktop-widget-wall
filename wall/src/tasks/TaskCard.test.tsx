@@ -239,20 +239,139 @@ it('treats a summary with no next list as a failed read, not as nothing due', as
   expect(screen.queryByText('Nothing due')).toBeNull();
 });
 
-it('reads the tasks without the home tag and shows estimates and how many more can wait', async () => {
+it('reads the due-today tasks without the home tag, shows estimates, and has no "more can wait" line', async () => {
   setList(() => [task('a', 'First', '45'), task('b', 'Second', '60plus'), task('c', 'Third')], 9);
   const r = render(<TaskCard />);
   await flush();
-  expect(summaryArgs[0]).toEqual({ notTag: 'home' });
+  expect(summaryArgs[0]).toEqual({ notTag: 'home', due: 'today', limit: 60 });
   expect([...r.container.querySelectorAll('.est')].map((e) => e.textContent)).toEqual(['45 m', '60+ m']);
-  expect(screen.getByText('9 more can wait')).toBeTruthy();
+  expect(screen.queryByText(/more can wait/)).toBeNull();
+  // The heading counts every row the read reported: the three shown and nine beyond them.
+  expect(screen.getByText('Due today')).toBeTruthy();
+  expect(screen.getByText('12')).toBeTruthy();
 });
 
-it('says nothing about more when there are none', async () => {
-  setList(() => [task('a', 'First')], 0);
+it('says how many of the due tasks are overdue, and puts the count where "more can wait" was', async () => {
+  const overdue = { ...task('o', 'Late one'), due_at: '2026-11-09', due_is_all_day: true };
+  setList(() => [overdue, task('b', 'Today one'), { ...overdue, id: 'p', title: 'Late two' }]);
   render(<TaskCard />);
   await flush();
+  expect(screen.getByText('3, 2 overdue')).toBeTruthy();
+});
+
+it('with nothing due today the block reads Next up, with the next three and a dim line', async () => {
+  mocks.set('wall2_tasks_summary', async (args) => {
+    summaryArgs.push(args);
+    return args?.due
+      ? { next: [], remaining: 0, dueTomorrow: { count: 0, estMinutes: 0 }, dueToday: 0 }
+      : { next: [task('n1', 'Later one'), task('n2', 'Later two')], remaining: 40, dueTomorrow: { count: 0, estMinutes: 0 } };
+  });
+  render(<TaskCard />);
+  await flush();
+  expect(summaryArgs).toEqual([{ notTag: 'home', due: 'today', limit: 60 }, { notTag: 'home' }]);
+  expect(screen.getByText('Next up')).toBeTruthy();
+  expect(screen.queryByText('Due today')).toBeNull();
+  expect(screen.getByText('Nothing due today')).toBeTruthy();
+  expect(screen.getByText('Later one')).toBeTruthy();
   expect(screen.queryByText(/more can wait/)).toBeNull();
+});
+
+it('Next up with no tasks at all reads Due today with Nothing due', async () => {
+  mocks.set('wall2_tasks_summary', async () => ({ next: [], remaining: 0, dueTomorrow: { count: 0, estMinutes: 0 } }));
+  render(<TaskCard />);
+  await flush();
+  expect(screen.getByText('Due today')).toBeTruthy();
+  expect(screen.getByText('Nothing due')).toBeTruthy();
+});
+
+it('the list scrolls only with more than three rows, and the arrow keys and Page keys move it by rows', async () => {
+  const many = Array.from({ length: 12 }, (_, i) => task(`r${i}`, `Row ${i}`));
+  setList(() => many);
+  mocks.set('wall2_tasks_summary', async () => ({ next: many, remaining: 0, dueTomorrow: { count: 0, estMinutes: 0 }, dueToday: 12 }));
+  const r = render(<TaskCard />);
+  await flush();
+  const list = r.container.querySelector('.tasks-list') as HTMLUListElement;
+  expect(list.classList.contains('scrolls')).toBe(true);
+  expect(r.container.querySelectorAll('.tk3').length).toBe(12);
+  Object.defineProperty(list, 'clientHeight', { value: 213, configurable: true });
+  fireEvent.keyDown(list, { key: 'ArrowDown' });
+  expect(list.scrollTop).toBe(71);
+  fireEvent.keyDown(list, { key: 'PageDown' });
+  expect(list.scrollTop).toBe(71 + 213);
+  fireEvent.keyDown(list, { key: 'ArrowUp' });
+  expect(list.scrollTop).toBe(71 + 213 - 71);
+  fireEvent.keyDown(list, { key: 'a' });
+  expect(list.scrollTop).toBe(71 + 213 - 71);
+});
+
+it('three rows or fewer do not scroll', async () => {
+  setList(() => [task('a', 'One'), task('b', 'Two'), task('c', 'Three')]);
+  const r = render(<TaskCard />);
+  await flush();
+  expect(r.container.querySelector('.tasks-list')?.classList.contains('scrolls')).toBe(false);
+});
+
+it('a ticked row does not move the rows in view when the list is scrolled', async () => {
+  const many = Array.from({ length: 10 }, (_, i) => task(`r${i}`, `Row ${i}`));
+  let list = many;
+  mocks.set('wall2_tasks_summary', async () => ({ next: list, remaining: 0, dueTomorrow: { count: 0, estMinutes: 0 }, dueToday: list.length }));
+  mocks.set('wall2_task_done', (args) => {
+    list = list.filter((t) => t.id !== args?.id);
+  });
+  const r = render(<TaskCard />);
+  await flush();
+  const el = r.container.querySelector('.tasks-list') as HTMLUListElement;
+  // jsdom has no layout: a row's box is its place in the list times 71 px.
+  const pos = (li: Element) => [...(li.parentElement?.children ?? [])].indexOf(li);
+  vi.spyOn(HTMLElement.prototype, 'offsetTop', 'get').mockImplementation(function (this: HTMLElement) {
+    return this.classList.contains('tk3') ? pos(this) * 71 : 0;
+  });
+  vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function (this: HTMLElement) {
+    return this.classList.contains('tk3') ? 71 : 0;
+  });
+  el.scrollTop = 142;
+  fireEvent.scroll(el);
+  // Row 0 above the view is ticked, saved and faded out; the rows in view keep their place.
+  fireEvent.click(screen.getByLabelText('Mark done: Row 0'));
+  await flush(TICK_UNDO_MS);
+  await flush(2100);
+  const first = [...el.children].find((li) => (li as HTMLElement).dataset.task === 'r2') as HTMLElement;
+  expect(first.offsetTop - el.scrollTop).toBe(0);
+});
+
+it('shows each row\'s tags: the first as a named chip, the rest as dots, with the tag name on hover', async () => {
+  const tagged = {
+    ...task('a', 'Fix the garage door'),
+    tags: [
+      { label: 'Repairs', icon: 'tool', color: 'pink' },
+      { label: 'Phone Call', icon: 'phone', color: 'blue' },
+      { label: 'Misc', icon: null, color: null },
+    ],
+  };
+  setList(() => [tagged, task('b', 'No tags here')]);
+  const r = render(<TaskCard />);
+  await flush();
+  const rows = r.container.querySelectorAll('.tk3');
+  expect(rows[0]!.querySelectorAll('.t-chip').length).toBe(1);
+  expect(rows[0]!.querySelector('.t-chip')?.textContent).toBe('Repairs');
+  expect(rows[0]!.querySelectorAll('.t-dot').length).toBe(2);
+  expect(rows[0]!.querySelectorAll('.t-dot')[0]!.getAttribute('aria-label')).toBe('Phone Call');
+  expect((rows[0]!.querySelector('.t-chip') as HTMLElement).style.getPropertyValue('--c')).toBe('240,138,192');
+  // A tag with no colour carries no colour variable (the dim default draws it).
+  expect((rows[0]!.querySelectorAll('.t-dot')[1] as HTMLElement).style.getPropertyValue('--c')).toBe('');
+  // A row with no tags has nothing extra: just the title and its time column.
+  expect(rows[1]!.querySelector('.t-tags')).toBeNull();
+  expect(rows[1]!.querySelectorAll('.chip-col').length).toBe(1);
+});
+
+it('a tag text is plain text, never markup', async () => {
+  const hostile = { label: '<img src=x onerror=alert(1)>', icon: '"><script>x</script>', color: '<b>' };
+  setList(() => [{ ...task('a', 'Odd tag'), tags: [hostile] }]);
+  const r = render(<TaskCard />);
+  await flush();
+  expect(r.container.querySelector('img')).toBeNull();
+  expect(r.container.querySelector('script')).toBeNull();
+  expect(r.container.querySelector('.t-chip')?.textContent).toBe('<img src=x onerror=alert(1)>');
 });
 
 it('shows a completed task again when a later list has it open (reopened or recurring)', async () => {

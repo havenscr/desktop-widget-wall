@@ -1,4 +1,11 @@
 import { invoke } from '../bridge/tauri';
+/** One tag on a task row, as Rust shapes it: a display label, and the task app's icon and colour names when it has them. */
+export interface TaskTag {
+  label: string;
+  icon?: string | null;
+  color?: string | null;
+}
+
 export interface TaskItem {
   id: string;
   title: string;
@@ -7,6 +14,8 @@ export interface TaskItem {
   quadrant: string | null;
   /** Effort estimate in minutes: '15', '30', '45' or '60plus'. */
   est?: '15' | '30' | '45' | '60plus' | null;
+  /** Up to three tags (never the one the read filtered by). Absent on reads that predate tags. */
+  tags?: TaskTag[];
 }
 
 /** The error text the native side sends when `feeds.json` has no address for the service. */
