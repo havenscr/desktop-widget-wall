@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { usePlaceStore } from '../../state/places';
 import { defaultLabel, LINK_ERRORS, MAX_LINK_LENGTH, parseLink, validRef } from './links';
-import { DEFAULT_LOOKS, LOOKS, lookFor, nextLook, parseLooks, stepLook } from './looks';
+import { DEFAULT_LOOKS, lookFor, parseLooks, pickLook } from './looks';
 import { addSaved, ADD_ERRORS, cleanLabel, MAX_SAVED, parseSaved, removeSaved, renameSaved, SAVED_KEY } from './saved';
 import { resetWatch, useWatchStore } from './store';
 import { stopReason, type StopInputs } from './stops';
-import { commandMessage, embedUrl, isPlayerOrigin, pageWhere, readPlayState, TWITCH_EMBED_ORIGIN, YOUTUBE_EMBED_ORIGIN } from './urls';
+import { commandMessage, embedUrl, isPlayerOrigin, pageWhere, TWITCH_EMBED_ORIGIN, YOUTUBE_EMBED_ORIGIN } from './urls';
 
 const V = 'Ab3dEfGh1jK';
 const PL = 'PLmockPlaylist0001';
@@ -160,18 +160,6 @@ describe('messages from a player', () => {
       expect(isPlayerOrigin(o)).toBe(false);
     }
   });
-  it('reads only the play state, only from the YouTube embed', () => {
-    const msg = (o: unknown) => JSON.stringify(o);
-    expect(readPlayState(YOUTUBE_EMBED_ORIGIN, msg({ event: 'onStateChange', info: 1 }))).toBe('playing');
-    expect(readPlayState(YOUTUBE_EMBED_ORIGIN, msg({ event: 'onStateChange', info: 2 }))).toBe('paused');
-    expect(readPlayState(YOUTUBE_EMBED_ORIGIN, msg({ event: 'infoDelivery', info: { playerState: 0 } }))).toBe('ended');
-    expect(readPlayState('https://evil.example', msg({ event: 'onStateChange', info: 1 }))).toBeNull();
-    expect(readPlayState(TWITCH_EMBED_ORIGIN, msg({ event: 'onStateChange', info: 1 }))).toBeNull();
-    expect(readPlayState(YOUTUBE_EMBED_ORIGIN, { event: 'onStateChange', info: 1 })).toBeNull();
-    expect(readPlayState(YOUTUBE_EMBED_ORIGIN, 'not json')).toBeNull();
-    expect(readPlayState(YOUTUBE_EMBED_ORIGIN, msg({ event: 'onStateChange', info: 'https://evil.example' }))).toBeNull();
-    expect(readPlayState(YOUTUBE_EMBED_ORIGIN, 'x'.repeat(20_001))).toBeNull();
-  });
 });
 
 describe('saved items', () => {
@@ -240,16 +228,16 @@ describe('looks', () => {
     });
     expect(parseLooks(JSON.stringify({ mode: 'other' })).mode).toBe('one');
   });
-  it('picks the look per kind and steps through every look', () => {
+  it('picks the look per kind, and the Look switch sets one kind or every kind', () => {
     const kind = { ...DEFAULT_LOOKS, mode: 'kind' as const };
     expect(lookFor(kind, 'playlist')).toBe(kind.video);
     expect(lookFor(kind, 'twitch')).toBe(kind.twitch);
     expect(lookFor(DEFAULT_LOOKS, 'twitch')).toBe(DEFAULT_LOOKS.all);
-    expect(nextLook(LOOKS[LOOKS.length - 1].id)).toBe(LOOKS[0].id);
-    expect(stepLook(DEFAULT_LOOKS, 'video').all).toBe(nextLook(DEFAULT_LOOKS.all));
-    const stepped = stepLook(kind, 'live');
-    expect(stepped.live).toBe(nextLook(kind.live));
-    expect(stepped.video).toBe(kind.video);
+    expect(pickLook(DEFAULT_LOOKS, 'video', 'sun').all).toBe('sun');
+    const picked = pickLook(kind, 'live', 'sun');
+    expect(picked.live).toBe('sun');
+    expect(picked.video).toBe(kind.video);
+    expect(picked.all).toBe(kind.all);
   });
 });
 

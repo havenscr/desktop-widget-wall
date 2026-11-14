@@ -83,18 +83,6 @@ export function lookFor(s: LookSettings, kind: WatchKind): LookId {
   return s.mode === 'one' ? s.all : s[groupOf(kind)];
 }
 
-/** The look after `id`, wrapping round. */
-export function nextLook(id: LookId): LookId {
-  const i = LOOKS.findIndex((l) => l.id === id);
-  return LOOKS[(i + 1) % LOOKS.length].id;
-}
-
-/** The Look button: step the look this kind plays in (all of them in one look mode). */
-export function stepLook(s: LookSettings, kind: WatchKind): LookSettings {
-  const next = nextLook(lookFor(s, kind));
-  return s.mode === 'one' ? { ...s, all: next } : { ...s, [groupOf(kind)]: next };
-}
-
 /**
  * The Look switch: set the look this kind plays in. With one look for everything it sets that
  * look; with a look per kind it sets the look of this kind's group only.

@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { usePlaceStore } from '../../state/places';
 import { parseLink, refKey, type WatchRef } from './links';
-import { DRIVE_IN_SCREEN, lookFor, loadLooks, pickLook, saveLooks, stepLook, type LookId, type LookSettings, type WallRect } from './looks';
+import { DRIVE_IN_SCREEN, lookFor, loadLooks, pickLook, saveLooks, type LookId, type LookSettings, type WallRect } from './looks';
 import { addSaved, loadSaved, removeSaved, renameSaved, saveSaved, type SavedItem } from './saved';
 import { stopLine, type StopReason } from './stops';
 
@@ -17,9 +17,11 @@ export interface PlayerReport {
   /** Items in the playlist the player is on, and which is playing (0 based); 0 for a single video. */
   count: number;
   index: number;
+  /** True once a single video, a live stream or a playlist's last item has ended (no command is sent for it). */
+  ended: boolean;
 }
 
-export const NO_REPORT: PlayerReport = { started: false, time: null, duration: null, count: 0, index: 0 };
+export const NO_REPORT: PlayerReport = { started: false, time: null, duration: null, count: 0, index: 0, ended: false };
 
 export interface WatchState {
   /** Which view Unwind shows. The one value any switch (today the tabs) sets; nothing in Watch reads where that switch is. */
@@ -34,8 +36,10 @@ export interface WatchState {
   sheet: boolean;
   /** What the player has reported for the item now on. */
   report: PlayerReport;
-  /** True when a play request has not started within the wait (autoplay refused): the pointer may reach the frame. */
+  /** True while the pointer may reach the frame: YouTube until a refused autoplay plays; Twitch for one click or `TWITCH_CLICK_MS`. */
   needsClick: boolean;
+  /** Twitch only: true once the start wait has passed, so the control row offers "Not started? Click the video". */
+  clickHint: boolean;
   /** Why the last video stopped by itself, shown once in the left block until the next play. */
   stopped: string | null;
   /** The key of the row being renamed, if any. */
@@ -52,11 +56,11 @@ export interface WatchState {
   setPaused: (p: boolean) => void;
   setMuted: (m: boolean) => void;
   setLooks: (s: LookSettings) => void;
-  stepLook: () => void;
   /** The Look switch: set the look for what is on (or, with nothing on, for the first saved item's kind). */
   pickLook: (look: LookId) => void;
   setReport: (r: Partial<PlayerReport>) => void;
   setNeedsClick: (on: boolean) => void;
+  setClickHint: (on: boolean) => void;
   setSheet: (open: boolean) => void;
 }
 
@@ -69,6 +73,7 @@ export const useWatchStore = create<WatchState>((set, get) => ({
   muted: false,
   report: NO_REPORT,
   needsClick: false,
+  clickHint: false,
   sheet: false,
   stopped: null,
   editing: null,
@@ -105,22 +110,17 @@ export const useWatchStore = create<WatchState>((set, get) => ({
   play: (ref) => {
     const item = get().saved.find((i) => refKey(i) === refKey(ref));
     if (!item) return;
-    set({ playing: item, paused: false, muted: false, report: NO_REPORT, needsClick: false, stopped: null, tab: 'watch' });
+    set({ playing: item, paused: false, muted: false, report: NO_REPORT, needsClick: false, clickHint: false, stopped: null, tab: 'watch' });
   },
   stop: (why) => {
     if (!get().playing) return;
-    set({ playing: null, paused: false, report: NO_REPORT, needsClick: false, stopped: why ? stopLine(why) : null });
+    set({ playing: null, paused: false, report: NO_REPORT, needsClick: false, clickHint: false, stopped: why ? stopLine(why) : null });
   },
   setPaused: (paused) => set({ paused }),
   setMuted: (muted) => set({ muted }),
   setLooks: (looks) => {
     saveLooks(looks);
     set({ looks });
-  },
-  stepLook: () => {
-    const p = get().playing;
-    if (!p) return;
-    get().setLooks(stepLook(get().looks, p.kind));
   },
   pickLook: (look) => {
     const kind = get().playing?.kind ?? get().saved[0]?.kind ?? 'video';
@@ -129,11 +129,14 @@ export const useWatchStore = create<WatchState>((set, get) => ({
   setReport: (r) => {
     const cur = get().report;
     const next = { ...cur, ...r };
-    if (next.started === cur.started && next.time === cur.time && next.duration === cur.duration && next.count === cur.count && next.index === cur.index) return;
+    if (next.started === cur.started && next.time === cur.time && next.duration === cur.duration && next.count === cur.count && next.index === cur.index && next.ended === cur.ended) return;
     set({ report: next });
   },
   setNeedsClick: (needsClick) => {
     if (needsClick !== get().needsClick) set({ needsClick });
+  },
+  setClickHint: (clickHint) => {
+    if (clickHint !== get().clickHint) set({ clickHint });
   },
   setSheet: (sheet) => set({ sheet }),
 }));
@@ -161,5 +164,5 @@ usePlaceStore.subscribe((s) => {
 
 /** Tests only: back to a fresh store over whatever local storage holds now. */
 export function resetWatch(): void {
-  useWatchStore.setState({ tab: 'listen', saved: loadSaved(), looks: loadLooks(), playing: null, paused: false, muted: false, report: NO_REPORT, needsClick: false, sheet: false, stopped: null, editing: null });
+  useWatchStore.setState({ tab: 'listen', saved: loadSaved(), looks: loadLooks(), playing: null, paused: false, muted: false, report: NO_REPORT, needsClick: false, clickHint: false, sheet: false, stopped: null, editing: null });
 }

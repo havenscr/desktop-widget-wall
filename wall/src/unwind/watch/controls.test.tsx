@@ -1,4 +1,4 @@
-import { act, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mocks } from '../../bridge/tauri';
 import { resetNowPlaying } from '../../music/store';
@@ -7,10 +7,10 @@ import { useSignalStore } from '../../signals/store';
 import { usePlaceStore } from '../../state/places';
 import { resetLastPlayed } from '../lastPlayed';
 import { DEFAULT_LOOKS, DRIVE_IN_SCREEN, LOOKS_KEY, lookTargetName, parseLooks, pickLook } from './looks';
-import { AUTOPLAY_WAIT_MS, framePoster } from './PlayerFrame';
+import { AUTOPLAY_WAIT_MS, framePoster, HANDSHAKE_EVERY_MS, PlayerFrame, TWITCH_CLICK_MS } from './PlayerFrame';
 import { SAVED_KEY, type SavedItem } from './saved';
 import { driveInAudience, resetWatch, useWatchStore } from './store';
-import { MAX_MESSAGE, MAX_SECONDS, PLAYER_VOLUME, readPlayerMessage, TWITCH_EMBED_ORIGIN, YOUTUBE_EMBED_ORIGIN } from './urls';
+import { LISTENING_MESSAGE, MAX_MESSAGE, MAX_SECONDS, PLAYER_VOLUME, readPlayerMessage, TWITCH_EMBED_ORIGIN, YOUTUBE_EMBED_ORIGIN } from './urls';
 import { openInBrowser } from './Watch';
 
 // Steps fake timers through several seconds at most; the limit keeps a stuck step from hanging CI.
@@ -36,7 +36,7 @@ function seed(looks?: object) {
   resetWatch();
 }
 
-async function playing(kind: 'video' | 'playlist' | 'twitch', looks?: object) {
+async function playing(kind: 'video' | 'playlist' | 'twitch', looks?: object, load = true) {
   seed(looks);
   useWatchStore.getState().setTab('watch');
   useWatchStore.getState().play(ITEMS.find((i) => i.kind === kind)!);
@@ -45,6 +45,7 @@ async function playing(kind: 'video' | 'playlist' | 'twitch', looks?: object) {
   const frame = document.querySelector('iframe')!;
   const win = frame.contentWindow!;
   const post = vi.spyOn(win, 'postMessage').mockImplementation(() => {});
+  if (load) act(() => fireEvent.load(frame));
   return { frame, win, post };
 }
 
@@ -125,11 +126,68 @@ describe('the wall drives the player', () => {
     expect(post.mock.calls.map((c) => c[0])).toEqual([unmute, volume]);
   });
 
-  it('keeps Previous and Next off for a single video and turns them on for a playlist the player reports', async () => {
+  it('keeps Previous and Next off for a single video even when the player reports a list', async () => {
     const { win } = await playing('video');
-    send(win, { event: 'infoDelivery', info: { playlist: null, currentTime: 3, duration: 200 } });
-    expect((screen.getByRole('button', { name: 'Previous' }) as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByRole('button', { name: 'Next' }) as HTMLButtonElement).disabled).toBe(true);
+    const off = () => ['Previous', 'Next'].map((name) => (screen.getByRole('button', { name }) as HTMLButtonElement).disabled);
+    send(win, { event: 'infoDelivery', info: { playlist: ['a', 'b', 'c'], playlistIndex: 1 } });
+    expect(useWatchStore.getState().report.count).toBe(3);
+    expect(off()).toEqual([true, true]);
+  });
+
+  it('turns Previous and Next on and off with the playlist the player reports', async () => {
+    const { win } = await playing('playlist');
+    const off = () => ['Previous', 'Next'].map((name) => (screen.getByRole('button', { name }) as HTMLButtonElement).disabled);
+    expect(off()).toEqual([true, true]);
+    send(win, { event: 'infoDelivery', info: { playlist: ['a', 'b', 'c', 'd'], playlistIndex: 0 } });
+    expect(off()).toEqual([false, false]);
+    send(win, { event: 'infoDelivery', info: { playlist: null } });
+    expect(off()).toEqual([true, true]);
+  });
+
+  it('ignores messages through the real listener from the wrong origin or another window', async () => {
+    const { win } = await playing('video');
+    const msg = { event: 'infoDelivery', info: { playerState: 1, currentTime: 61, duration: 300, playlist: ['a', 'b'] } };
+    send(win, msg, 'https://evil.example');
+    send(win, msg, TWITCH_EMBED_ORIGIN);
+    send(window, msg);
+    send(null, msg);
+    expect(useWatchStore.getState().report).toMatchObject({ started: false, time: null, duration: null, count: 0 });
+    expect(screen.queryByText('1:01')).toBeNull();
+    // Nothing started, so the refused-autoplay line still comes.
+    await flush(AUTOPLAY_WAIT_MS);
+    expect(screen.getByText('Click the video to start')).toBeTruthy();
+  });
+
+  it('lets a playlist move on after an item ends without sending a pause', async () => {
+    const { win, post } = await playing('playlist');
+    send(win, { event: 'onStateChange', info: 1 });
+    send(win, { event: 'infoDelivery', info: { playlist: ['a', 'b', 'c', 'd'], playlistIndex: 1 } });
+    post.mockClear();
+    send(win, { event: 'onStateChange', info: 0 });
+    await flush();
+    expect(post).not.toHaveBeenCalled();
+    expect(useWatchStore.getState().paused).toBe(false);
+    expect(screen.getByText('Playing on the wall')).toBeTruthy();
+    // The last item's end shows as ended, still without a command.
+    send(win, { event: 'infoDelivery', info: { playlist: ['a', 'b', 'c', 'd'], playlistIndex: 3 } });
+    send(win, { event: 'onStateChange', info: 0 });
+    await flush();
+    expect(post).not.toHaveBeenCalled();
+    expect(screen.getByText('Ended')).toBeTruthy();
+  });
+
+  it('ends a single video cleanly: Ended, no command sent, and Play starts it again', async () => {
+    const { win, post } = await playing('video');
+    send(win, { event: 'onStateChange', info: 1 });
+    post.mockClear();
+    send(win, { event: 'onStateChange', info: 0 });
+    await flush();
+    expect(post).not.toHaveBeenCalled();
+    expect(useWatchStore.getState().paused).toBe(true);
+    expect(screen.getByText('Ended')).toBeTruthy();
+    await act(async () => screen.getByRole('button', { name: 'Play' }).click());
+    expect(post).toHaveBeenCalledWith(JSON.stringify({ event: 'command', func: 'playVideo', args: [] }), YOUTUBE_EMBED_ORIGIN);
+    expect(useWatchStore.getState().report.ended).toBe(false);
   });
 
   it('enables Previous and Next for a playlist and sends nextVideo', async () => {
@@ -172,6 +230,94 @@ describe('the wall drives the player', () => {
     expect(screen.queryByRole('button', { name: 'Pause' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Stop' })).toBeTruthy();
     expect(screen.getByRole('button', { name: /^Open on Twitch$/ })).toBeTruthy();
+  });
+});
+
+describe('Twitch, which never says it started', () => {
+  it('keeps the status line, offers one quiet hint, and lets the pointer through for a short while only', async () => {
+    const { frame } = await playing('twitch');
+    await flush(AUTOPLAY_WAIT_MS);
+    expect(screen.getByText('Live on the wall')).toBeTruthy();
+    expect(screen.queryByText('Waiting for a click on the video')).toBeNull();
+    expect(screen.getByText('Not started? Click the video')).toBeTruthy();
+    expect(frame.classList.contains('w-take')).toBe(true);
+    await flush(TWITCH_CLICK_MS);
+    expect(frame.classList.contains('w-take')).toBe(false);
+    expect(screen.queryByText('Not started? Click the video')).toBeNull();
+    // It can be asked for again from the control row.
+    await act(async () => screen.getByRole('button', { name: 'Not started?' }).click());
+    expect(frame.classList.contains('w-take')).toBe(true);
+    expect(screen.getByText('Not started? Click the video')).toBeTruthy();
+  });
+
+  it('closes the pointer again after one click into the video', async () => {
+    const { frame } = await playing('twitch');
+    await flush(AUTOPLAY_WAIT_MS);
+    expect(frame.classList.contains('w-take')).toBe(true);
+    act(() => {
+      frame.focus();
+      window.dispatchEvent(new Event('blur'));
+    });
+    await flush(0);
+    expect(frame.classList.contains('w-take')).toBe(false);
+    expect(screen.getByRole('button', { name: 'Not started?' })).toBeTruthy();
+  });
+});
+
+describe('the frame wiring on its own', () => {
+  function bare() {
+    seed();
+    useWatchStore.getState().setTab('watch');
+    useWatchStore.getState().play(ITEMS[0]);
+    const view = render(<PlayerFrame item={ITEMS[0]} title="Night drive mix" />);
+    const frame = document.querySelector('iframe')!;
+    const win = frame.contentWindow!;
+    const post = vi.spyOn(win, 'postMessage').mockImplementation(() => {});
+    return { view, frame, win, post };
+  }
+  const listening = (post: { mock: { calls: unknown[][] } }) => post.mock.calls.filter((c) => c[0] === LISTENING_MESSAGE).length;
+
+  it('posts nothing to the frame before it has loaded', async () => {
+    const { frame, post } = bare();
+    act(() => useWatchStore.getState().setPaused(true));
+    act(() => useWatchStore.getState().setMuted(true));
+    await flush(3000);
+    expect(post).not.toHaveBeenCalled();
+    act(() => fireEvent.load(frame));
+    expect(listening(post)).toBe(1);
+  });
+
+  it('does not post the handshake while the page is hidden, and resumes when it shows', async () => {
+    const hidden = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+    const { frame, post } = bare();
+    act(() => fireEvent.load(frame));
+    await flush(3000);
+    expect(listening(post)).toBe(0);
+    hidden.mockReturnValue('visible');
+    act(() => document.dispatchEvent(new Event('visibilitychange')));
+    expect(listening(post)).toBe(1);
+    await flush(HANDSHAKE_EVERY_MS);
+    expect(listening(post)).toBe(2);
+    hidden.mockRestore();
+  });
+
+  it('leaves no listener and no timer behind after unmount', async () => {
+    // Spies that still call through, so the listeners really attach and detach.
+    const add = vi.spyOn(window, 'addEventListener');
+    const rem = vi.spyOn(window, 'removeEventListener');
+    const ofType = (spy: typeof add, type: string) => spy.mock.calls.filter((c) => c[0] === type).map((c) => c[1]);
+    const { view, frame, post } = bare();
+    act(() => fireEvent.load(frame));
+    expect(listening(post)).toBe(1);
+    expect(vi.getTimerCount()).toBeGreaterThan(0);
+    view.unmount();
+    expect(ofType(add, 'message').length).toBeGreaterThan(0);
+    expect(ofType(rem, 'message')).toEqual(ofType(add, 'message'));
+    expect(vi.getTimerCount()).toBe(0);
+    await flush(HANDSHAKE_EVERY_MS * 3);
+    expect(listening(post)).toBe(1);
+    add.mockRestore();
+    rem.mockRestore();
   });
 });
 

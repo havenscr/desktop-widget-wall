@@ -730,6 +730,26 @@
 .w-clickline {
   color: var(--amber);
 }
+/* Twitch: one quiet line while the pointer may reach the frame, then a small button to ask again. */
+.w-hintline {
+  color: var(--faint);
+}
+.w-hintbtn {
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 14px;
+  font-size: 15px;
+  color: var(--faint);
+  border: 1px solid var(--line);
+  background: rgba(8, 6, 26, 0.6);
+}
+.w-hintbtn:hover {
+  color: var(--tx);
+}
+.w-hintbtn:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: 2px;
+}
 /* The Look switch: one fixed place under the left block, the same box in every look and
    whether or not something plays; never on the video. */
 .w-lookbar {
@@ -1294,7 +1314,7 @@
    z-index -1 inside it, above the horizon canvas and below the clock, the tabs, the cards and
    the left block; it takes no pointer at all (until a refused autoplay asks for a click). The
    picture is dimmed (no see-through, so the moon never shows
-   through) and a dark wash keeps the text on the left readable. */
+   through) and the left block has its own dark ground. */
 .main:has(.w-sky) {
   isolation: isolate;
 }
@@ -1315,9 +1335,9 @@
 }
 .w-sky .w-screen {
   filter: brightness(0.9) saturate(1.1);
-  -webkit-mask-image: linear-gradient(90deg, transparent, #000 26%, #000 88%, transparent), linear-gradient(180deg, #000 40%, transparent 97%);
+  -webkit-mask-image: linear-gradient(90deg, transparent 18%, #000 40%, #000 88%, transparent), linear-gradient(180deg, #000 40%, transparent 97%);
   -webkit-mask-composite: source-in;
-  mask-image: linear-gradient(90deg, transparent, #000 26%, #000 88%, transparent), linear-gradient(180deg, #000 40%, transparent 97%);
+  mask-image: linear-gradient(90deg, transparent 18%, #000 40%, #000 88%, transparent), linear-gradient(180deg, #000 40%, transparent 97%);
   mask-composite: intersect;
 }
 .w-sky .w-frame {
@@ -1329,12 +1349,16 @@
   aspect-ratio: 16 / 9;
   transform: translateY(-50%);
 }
-.w-scrim {
+/* Nothing of the wall's lies on the whole-sky picture: its mask keeps the clock's side clear
+   (fully see-through to 18 percent, whole from 40), and the left block carries its own dark
+   ground behind its text, as the cards do. */
+.unwind:has(.w-sky) .w-now::before {
+  content: '';
   position: absolute;
-  inset: 0;
-  background:
-    linear-gradient(90deg, rgba(6, 4, 22, 0.88) 0, rgba(6, 4, 22, 0.88) 40%, rgba(6, 4, 22, 0) 54%),
-    linear-gradient(180deg, rgba(6, 4, 22, 0.3), rgba(6, 4, 22, 0) 24%);
+  z-index: -1;
+  inset: -18px -22px;
+  border-radius: 22px;
+  background: rgba(6, 4, 22, 0.86);
 }
 /* The floor's wash under the whole sky, where frame B draws its blurred spill (stage x 512 to
    2355, from the horizon down): the page's light colours (amber left, pink in the middle, cyan

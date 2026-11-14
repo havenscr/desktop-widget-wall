@@ -199,6 +199,7 @@ function Controls({ item }: { item: WatchRef & { label: string } }) {
   const count = useWatchStore((s) => s.report.count);
   const index = useWatchStore((s) => s.report.index);
   const needsClick = useWatchStore((s) => s.needsClick);
+  const clickHint = useWatchStore((s) => s.clickHint);
   const st = useWatchStore.getState();
   const youtube = item.kind !== 'twitch';
   const list = item.kind === 'playlist' && count > 1;
@@ -222,13 +223,26 @@ function Controls({ item }: { item: WatchRef & { label: string } }) {
         Could not open the browser
       </span>
     );
-  else if (needsClick)
+  else if (youtube && needsClick)
     line = (
       <span className="w-clickline" role="status">
-        {youtube ? 'Click the video to start' : 'Not started? Click the video'}
+        Click the video to start
       </span>
     );
   else if (youtube) line = <Position live={item.kind === 'live'} />;
+  else if (clickHint && needsClick)
+    // Twitch never says whether it started: one quiet line while the pointer may reach it.
+    line = (
+      <span className="w-hintline" role="status">
+        Not started? Click the video
+      </span>
+    );
+  else if (clickHint)
+    line = (
+      <button type="button" className="w-hintbtn" {...tip('Lets the pointer reach the video for one click (or 10 seconds)')} onClick={() => st.setNeedsClick(true)}>
+        Not started?
+      </button>
+    );
   return (
     <>
       <div className="w-ctl">
@@ -291,8 +305,6 @@ function VideoStage({ item, look }: { item: WatchRef & { label: string }; look: 
         <div className="w-screen">
           <PlayerFrame key={refKey(item)} item={item} title={item.label} />
         </div>
-        {/* Whole sky: a dark wash behind the text on the left, over the picture. */}
-        {sky ? <div className="w-scrim" aria-hidden="true" /> : null}
         {look === 'drivein' ? (
           <>
             <i className="w-post l" aria-hidden="true" />
@@ -320,6 +332,7 @@ export function WatchPanel() {
   const looks = useWatchStore((s) => s.looks);
   const paused = useWatchStore((s) => s.paused);
   const needsClick = useWatchStore((s) => s.needsClick);
+  const ended = useWatchStore((s) => s.report.ended);
   const stopped = useWatchStore((s) => s.stopped);
   const inCall = useSignalStore((s) => s.call !== null);
   const st = useWatchStore.getState();
@@ -374,7 +387,7 @@ export function WatchPanel() {
           {playing.label}
         </div>
         <div className="w-sub" title="It stops by itself when you leave Watch or Unwind, the screens or the display go off, Windows locks or a call starts.">
-          {needsClick ? 'Waiting for a click on the video' : youtube ? (paused ? 'Paused' : 'Playing on the wall') : 'Live on the wall'}
+          {!youtube ? 'Live on the wall' : needsClick ? 'Waiting for a click on the video' : ended ? 'Ended' : paused ? 'Paused' : 'Playing on the wall'}
         </div>
         <Controls item={playing} />
       </div>

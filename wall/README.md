@@ -1118,8 +1118,9 @@ switch sits. Leaving Watch (or Unwind) removes any video.
   edges masked soft, the picture fully visible, its lower edge fading out before the horizon line so the ridgelines
   there stay in front, and covering the moon), `sky` (the video fills the sky from the top of
   the strip to the horizon line, cropped top and bottom, fading toward the clock and into the
-  horizon; it lies under every control and takes no pointer, a dark wash keeps the text on the
-  left at 4.5 to 1 or better and the cards turn nearly opaque), `sun` (a 461 px disc whose foot
+  horizon, see-through on the clock's side; it lies under every control and takes no pointer;
+  nothing of the wall's is drawn on it: the left block carries its own dark ground behind its
+  text and the cards turn nearly opaque), `sun` (a 461 px disc whose foot
   stands 24 px over the horizon, centred at wall x 1660 so it covers the moon with 31 px to spare, with slats, a warm halo and a streak on the floor; it
   shows the middle 56 percent of a 16:9 picture's width) and `drivein` (a framed screen at the
   approved page's size, 691 by 389 at wall 1210, 60, covering the moon whole, on two posts

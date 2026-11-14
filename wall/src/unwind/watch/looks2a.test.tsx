@@ -6,7 +6,7 @@ import { Unwind } from '../../screens/Unwind';
 import { useSignalStore } from '../../signals/store';
 import { usePlaceStore } from '../../state/places';
 import { resetLastPlayed } from '../lastPlayed';
-import { DEFAULT_LOOKS, LOOKS, LOOKS_KEY, isLook, nextLook, parseLooks, stepLook, type LookId } from './looks';
+import { DEFAULT_LOOKS, LOOKS, LOOKS_KEY, isLook, parseLooks, type LookId } from './looks';
 import { SAVED_KEY } from './saved';
 import { resetWatch, useWatchStore } from './store';
 
@@ -80,16 +80,6 @@ describe('the look list', () => {
     expect(DEFAULT_LOOKS.live).toBe('sky');
   });
 
-  it('cycles feathered, whole sky, the sun, drive-in and back', () => {
-    expect(IDS.map(nextLook)).toEqual(['sky', 'sun', 'drivein', 'feather']);
-    let s = { ...DEFAULT_LOOKS, all: 'feather' as LookId };
-    const seen: LookId[] = [];
-    for (let i = 0; i < 4; i++) {
-      s = stepLook(s, 'video');
-      seen.push(s.all);
-    }
-    expect(seen).toEqual(['sky', 'sun', 'drivein', 'feather']);
-  });
 });
 
 describe('each look', () => {
@@ -125,7 +115,8 @@ describe('each look', () => {
     expect(document.querySelectorAll('iframe').length).toBe(1);
     const sky = document.querySelector('.w-sky')!;
     expect(sky.querySelector('iframe')).not.toBeNull();
-    expect(sky.querySelector('.w-scrim')).not.toBeNull();
+    // Nothing of the wall's lies on the picture: the stage holds the picture only.
+    expect([...sky.children].map((c) => c.className)).toEqual(['w-screen']);
     // The Look switch and Open in YouTube are outside the layer that takes no pointer.
     expect(sky.querySelector('button')).toBeNull();
     expect(document.querySelector('.w-now .w-open')).not.toBeNull();

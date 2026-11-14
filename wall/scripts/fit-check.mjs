@@ -70,7 +70,7 @@ const EXPECT = {
   drawer: /^ *FAIL strip: \.day-drawer (reaches above the clock|sticks out of the stage)/m,
   rows: /^ *FAIL strip: an Agents today row is \d+ px tall/m,
   handle: /^ *FAIL strip: the drawer handle covers /m,
-  sky: /^ *FAIL pointer at .*reaches w-scrim/m,
+  sky: /^ *FAIL no point of the sky or the floor lands on \.w-sky/m,
   floor: /^ *FAIL pointer at \.u-tomorrow .*reaches w-skyspill/m,
   sun: /^ *FAIL pointer at .*reaches w-stage w-sun/m,
   tools: /^ *FAIL tools drawer: .*outside x 1700 to 2560/m,
@@ -93,6 +93,7 @@ const EXPECT = {
   'watch-switch': /^ *FAIL watch polish: the Look switch is at /m,
   'watch-row': /^ *FAIL \.w-ctl: width \d+ <= \d+/m,
   'watch-over': /^ *FAIL watch polish: .*w-lookbar.* is drawn over the video's box/m,
+  'watch-take': /^ *FAIL pointer at \.w-sky \.w-frame /m,
 };
 const OVERFLOWS = {
   left: '.work .left-wing { transform: translateX(-200px); }',
@@ -144,6 +145,8 @@ const OVERFLOWS = {
   'watch-switch': '.w-panel:has(.w-sun) .w-lookbar { left: 540px !important; }',
   'watch-row': '.w-ctl .w-open { min-width: 600px !important; }',
   'watch-over': '.w-lookbar { left: 1200px !important; top: 200px !important; }',
+  // A refused autoplay that never lets the pointer reach the whole-sky picture.
+  'watch-take': '.w-frame.w-take { pointer-events: none !important; }',
 };
 if (flag('self-test')) {
   const script = fileURLToPath(import.meta.url);
@@ -258,6 +261,8 @@ const QUIET = [
   { name: 'Watch polish, the sun, Twitch', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=sun&wplay=2', checks: WATCH_POLISH, hits: WATCH_POLISH_HITS },
   { name: 'Watch polish, drive-in, playlist, long label', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=many&wlook=drivein&wplay=3', checks: WATCH_POLISH, hits: WATCH_POLISH_HITS },
   { name: 'Watch polish, drive-in, autoplay refused', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=drivein&wplay=0&wstate=refused', checks: WATCH_POLISH, hits: WATCH_POLISH_HITS },
+  // A refused autoplay over the whole sky: the hint shows, and a click lands on the picture where the wall draws nothing.
+  { name: 'Watch polish, whole sky, autoplay refused', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=sky&wplay=0&wstate=refused', checks: WATCH_POLISH, hits: [...WATCH_POLISH_HITS, '.w-clickline', '.w-sky .w-frame'] },
   { name: 'Watch polish, nothing on, drive-in', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=drivein', checks: ['.w-now', '.w-lookbar'], hits: ['.w-lookbar button'] },
 ].map((v) => ({ ...v, q: query(v) }));
 // The Tools drawer over each place, and in each hard state: the drawer, its two columns and every
@@ -747,8 +752,10 @@ try {
     const grid = [];
     if (noHit) for (let y = 30; y < 720; y += 40) for (let x = 130; x < 2560; x += 80) { const h = document.elementFromPoint(x, y); if (h && h.closest(noHit)) grid.push(x + ',' + y); }
     // watch polish: the Look switch's box; the control row on one line and clear of the list; nothing
-    // of the wall's over the video's box (the whole sky lies under everything by design); and the
-    // drive-in's driveInAudience equal to its drawn screen.
+    // of the wall's over the video's box; and the drive-in's driveInAudience equal to its drawn
+    // screen. The one exemption: the whole sky's picture lies under the whole band, so the left
+    // block, the Look switch, the tabs and the cards sit above it by design; even there nothing
+    // of the wall's may lie inside the picture's own layer (no wash, no button).
     const watchPolish = (() => {
       const sw = document.querySelector('.w-lookbar');
       if (!sw) return null;
@@ -759,6 +766,8 @@ try {
       for (const sel of ['.w-ctl', '.w-time', '.w-lookbar']) { const e = document.querySelector(sel); if (e && card && meet(box(e), box(card))) fails.push('watch polish: ' + sel + ' overlaps the list'); }
       const ctl = document.querySelector('.w-ctl');
       if (ctl && ctl.children.length) { const kids = [...ctl.children].map(box); const mid = (k) => k.t + k.h / 2; if (kids.some((k) => Math.abs(mid(k) - mid(kids[0])) > 2)) fails.push('watch polish: the control row wraps'); }
+      const skyStage = document.querySelector('.w-sky');
+      if (skyStage) for (const c of skyStage.children) if (!c.classList.contains('w-screen')) fails.push('watch polish: ' + c.className + " is drawn over the video's box (whole sky)");
       const scr = document.querySelector('.w-stage:not(.w-sky):not(.w-empty) .w-screen');
       if (scr) {
         const v = box(scr);
@@ -807,6 +816,7 @@ try {
     'watch-switch': (v) => v.name.startsWith('Watch polish'),
     'watch-row': (v) => v.name === 'Watch polish, feathered, single video',
     'watch-over': (v) => v.name === 'Watch polish, drive-in, playlist, long label',
+    'watch-take': (v) => v.name === 'Watch polish, whole sky, autoplay refused',
   };
   const breakOn = BREAK_ON[overflow] ? VARIANTS.filter(BREAK_ON[overflow]) : VARIANTS.slice(0, 1);
   /** keys style: the Now row's height on each page that has one, compared after every state ran. */

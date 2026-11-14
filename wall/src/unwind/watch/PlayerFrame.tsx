@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { WatchRef } from './links';
 import { useWatchStore } from './store';
 import {
@@ -24,6 +24,8 @@ export const framePoster: { render: ((ref: WatchRef) => ReactNode) | null } = { 
 
 /** How long a play request may go without the picture starting before the pointer is let through. */
 export const AUTOPLAY_WAIT_MS = 6000;
+/** Twitch: how long the pointer may reach the frame after the hint opens it (or until one click). */
+export const TWITCH_CLICK_MS = 10_000;
 /** The "listening" handshake is sent at most once a second until the player answers, this many times. */
 export const HANDSHAKE_EVERY_MS = 1000;
 export const HANDSHAKE_TRIES = 10;
@@ -32,7 +34,7 @@ export const REPORT_EVERY_MS = 1000;
 
 /**
  * The wall's controls send their commands here; the frame on screen fills it in while it is
- * mounted. Returns false when there is no YouTube frame to talk to.
+ * mounted. Returns false when there is no loaded YouTube frame to talk to.
  */
 export const playerLink: { send: (func: YouTubeCommand, args?: readonly (number | boolean)[]) => boolean } = {
   send: () => false,
@@ -45,10 +47,12 @@ function pageHidden(): boolean {
 /**
  * The one player frame, built only by `embedUrl` from a checked kind and id. It takes no
  * pointer (`pointer-events: none` on the frame itself), so the player's hover overlays never
- * show; only when a play request has not started within `AUTOPLAY_WAIT_MS` is the pointer let
- * through so the video can be clicked. YouTube is driven by `postMessage` to its exact embed
- * origin and read only through `readPlayerMessage` (this frame's window, that origin, known
- * shapes). Twitch has no message interface for a frame and is stopped by removing it.
+ * show; the pointer is let through only after a refused autoplay (YouTube, until it plays) or,
+ * for Twitch, for one click or `TWITCH_CLICK_MS` after the hint opens it. YouTube is driven by
+ * `postMessage` to its exact embed origin, only once the frame has loaded, and read only
+ * through `readPlayerMessage` (this frame's window, that origin, known shapes). A change the
+ * player reports (playing, paused, ended) is never echoed back as a command. Twitch has no
+ * message interface for a frame and is stopped by removing it.
  */
 export function PlayerFrame({ item, title }: { item: WatchRef; title: string }) {
   const ref = useRef<HTMLIFrameElement>(null);
@@ -60,11 +64,16 @@ export function PlayerFrame({ item, title }: { item: WatchRef; title: string }) 
   const youtube = item.kind !== 'twitch';
   const target = playerOrigin(item);
   const poster = framePoster.render;
+  const [loaded, setLoaded] = useState(false);
+  const loadedRef = useRef(false);
   const heard = useRef(false);
   const lastReport = useRef(0);
+  // Set while the store follows the player, so the paused effect does not send it back.
+  const fromPlayer = useRef(false);
 
-  // Posts go only to the frame's own window and only to the exact embed origin, never `*`.
+  // Posts go only to the loaded frame's own window and only to the exact embed origin, never `*`.
   const post = (msg: string): boolean => {
+    if (!loadedRef.current) return false;
     const win = ref.current?.contentWindow;
     if (!win) return false;
     try {
@@ -81,6 +90,13 @@ export function PlayerFrame({ item, title }: { item: WatchRef; title: string }) 
       post(commandMessage('unMute'));
       post(commandMessage('setVolume', [PLAYER_VOLUME]));
     }
+  };
+
+  const followPlayer = (paused: boolean) => {
+    const st = useWatchStore.getState();
+    if (st.paused === paused) return;
+    fromPlayer.current = true;
+    st.setPaused(paused);
   };
 
   useEffect(() => {
@@ -100,20 +116,29 @@ export function PlayerFrame({ item, title }: { item: WatchRef; title: string }) 
       heard.current = true;
       const st = useWatchStore.getState();
       if (info.ready) fullVolume();
-      if (info.state === 'playing') {
-        if (st.paused) st.setPaused(false);
-        if (!st.report.started) {
-          st.setReport({ started: true });
-          fullVolume();
-        }
-        st.setNeedsClick(false);
-      } else if (info.state === 'paused' || info.state === 'ended') {
-        if (!st.paused) st.setPaused(true);
-      }
       const list: { count?: number; index?: number } = {};
       if (info.count !== undefined) list.count = info.count;
       if (info.index !== undefined) list.index = info.index;
       if (Object.keys(list).length) st.setReport(list);
+      if (info.state === 'playing') {
+        followPlayer(false);
+        if (!st.report.started) {
+          st.setReport({ started: true, ended: false });
+          fullVolume();
+        } else if (st.report.ended) st.setReport({ ended: false });
+        st.setNeedsClick(false);
+      } else if (info.state === 'paused') {
+        followPlayer(true);
+      } else if (info.state === 'ended') {
+        // A playlist moves on by itself after each item: only the end of its last item (or of a
+        // single video or stream) shows as ended, and no command is ever sent for it.
+        const r = useWatchStore.getState().report;
+        const more = item.kind === 'playlist' && r.count > 1 && r.index < r.count - 1;
+        if (!more) {
+          st.setReport({ ended: true });
+          followPlayer(true);
+        }
+      }
       if (info.time === undefined && info.duration === undefined) return;
       // The player reports its position several times a second; the wall takes it once a second and not while hidden.
       const now = Date.now();
@@ -128,8 +153,38 @@ export function PlayerFrame({ item, title }: { item: WatchRef; title: string }) 
     return () => window.removeEventListener('message', on);
   }, [youtube, poster]);
 
+  // The handshake: once the frame has loaded, "listening" once a second until the player answers
+  // (ten tries at most), never while the page is hidden (it resumes when the page shows again).
   useEffect(() => {
-    if (youtube && !poster) post(commandMessage(paused ? 'pauseVideo' : 'playVideo'));
+    if (!youtube || poster || !loaded) return;
+    let tries = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const hello = () => {
+      timer = undefined;
+      if (heard.current || tries >= HANDSHAKE_TRIES || pageHidden()) return;
+      tries += 1;
+      post(LISTENING_MESSAGE);
+      timer = setTimeout(hello, HANDSHAKE_EVERY_MS);
+    };
+    const onShow = () => {
+      if (!pageHidden() && timer === undefined) hello();
+    };
+    document.addEventListener('visibilitychange', onShow);
+    hello();
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('visibilitychange', onShow);
+    };
+  }, [youtube, poster, loaded]);
+
+  useEffect(() => {
+    if (fromPlayer.current) {
+      fromPlayer.current = false;
+      return;
+    }
+    if (!youtube || poster) return;
+    if (!paused && useWatchStore.getState().report.ended) useWatchStore.getState().setReport({ ended: false });
+    post(commandMessage(paused ? 'pauseVideo' : 'playVideo'));
   }, [paused, youtube, poster]);
   useEffect(() => {
     if (!youtube || poster) return;
@@ -140,14 +195,44 @@ export function PlayerFrame({ item, title }: { item: WatchRef; title: string }) 
     }
   }, [muted, youtube, poster]);
 
-  // Autoplay refused: a play request that has not started within the wait lets the pointer through.
+  // Autoplay refused (YouTube): a play request that has not started within the wait lets the
+  // pointer through until it plays. Twitch never says it started: after the same wait the
+  // control row offers the hint, which opens the pointer for one click or a short while.
   useEffect(() => {
     if (poster || paused || started) return;
-    const id = setTimeout(() => useWatchStore.getState().setNeedsClick(true), AUTOPLAY_WAIT_MS);
+    const id = setTimeout(() => {
+      const st = useWatchStore.getState();
+      if (youtube) st.setNeedsClick(true);
+      else {
+        st.setClickHint(true);
+        st.setNeedsClick(true);
+      }
+    }, AUTOPLAY_WAIT_MS);
     return () => clearTimeout(id);
-  }, [poster, paused, started, item.kind, item.id]);
+  }, [poster, paused, started, youtube, item.kind, item.id]);
 
-  if (poster) return <div className="w-frame w-poster">{poster(item)}</div>;
+  // Twitch: the pointer reaches the frame for one click (the frame takes focus) or `TWITCH_CLICK_MS`.
+  useEffect(() => {
+    if (youtube || poster || !needsClick) return;
+    const close = () => useWatchStore.getState().setNeedsClick(false);
+    const id = setTimeout(close, TWITCH_CLICK_MS);
+    let check: ReturnType<typeof setTimeout> | undefined;
+    const onBlur = () => {
+      // A click into the frame moves the focus into it, which blurs this window.
+      clearTimeout(check);
+      check = setTimeout(() => {
+        if (ref.current && document.activeElement === ref.current) close();
+      }, 0);
+    };
+    window.addEventListener('blur', onBlur);
+    return () => {
+      clearTimeout(id);
+      clearTimeout(check);
+      window.removeEventListener('blur', onBlur);
+    };
+  }, [youtube, poster, needsClick]);
+
+  if (poster) return <div className={`w-frame w-poster${needsClick ? ' w-take' : ''}`}>{poster(item)}</div>;
   if (!src) return <div className="w-frame w-noframe">This page cannot hold a player. Use the Open button beside the controls.</div>;
   return (
     <iframe
@@ -160,16 +245,8 @@ export function PlayerFrame({ item, title }: { item: WatchRef; title: string }) 
       sandbox={FRAME_SANDBOX}
       tabIndex={needsClick ? 0 : -1}
       onLoad={() => {
-        if (!youtube) return;
-        // The handshake asks the player to report; repeated once a second until it answers.
-        let tries = 0;
-        const hello = () => {
-          if (heard.current || tries >= HANDSHAKE_TRIES || !ref.current) return;
-          tries += 1;
-          post(LISTENING_MESSAGE);
-          setTimeout(hello, HANDSHAKE_EVERY_MS);
-        };
-        hello();
+        loadedRef.current = true;
+        setLoaded(true);
       }}
     />
   );

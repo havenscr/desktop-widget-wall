@@ -143,6 +143,7 @@ it('reads play state only from its own frame on the YouTube origin, and sends co
   const f = document.querySelector('iframe')!;
   const win = f.contentWindow!;
   const post = vi.spyOn(win, 'postMessage').mockImplementation(() => {});
+  act(() => fireEvent.load(f));
   const paused = JSON.stringify({ event: 'onStateChange', info: 2 });
   act(() => {
     window.dispatchEvent(new MessageEvent('message', { origin: 'https://evil.example', data: paused, source: win }));

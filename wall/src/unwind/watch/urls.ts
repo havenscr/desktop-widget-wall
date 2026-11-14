@@ -72,40 +72,6 @@ export const LISTENING_MESSAGE = JSON.stringify({ event: 'listening', id: 1, cha
 
 export type PlayState = 'playing' | 'paused' | 'ended' | 'buffering';
 
-/**
- * The play state in a message from a player frame, or null. The message is trusted for
- * nothing else: only an exact player origin, a string under 20 kB of JSON, and a YouTube
- * `onStateChange` or `infoDelivery.playerState` number are read.
- */
-export function readPlayState(origin: unknown, data: unknown): PlayState | null {
-  // Twitch's player is never asked for its state, so only the YouTube embed is read.
-  if (origin !== YOUTUBE_EMBED_ORIGIN) return null;
-  if (typeof data !== 'string' || data.length > 20_000) return null;
-  let msg: unknown;
-  try {
-    msg = JSON.parse(data);
-  } catch {
-    return null;
-  }
-  if (!msg || typeof msg !== 'object') return null;
-  const m = msg as { event?: unknown; info?: unknown };
-  let state: unknown = null;
-  if (m.event === 'onStateChange') state = m.info;
-  else if (m.event === 'infoDelivery' && m.info && typeof m.info === 'object') state = (m.info as { playerState?: unknown }).playerState;
-  switch (state) {
-    case 1:
-      return 'playing';
-    case 2:
-      return 'paused';
-    case 0:
-      return 'ended';
-    case 3:
-      return 'buffering';
-    default:
-      return null;
-  }
-}
-
 /** What a player frame may tell the wall; every field optional, every number finite and clamped. */
 export interface PlayerInfo {
   state?: PlayState;
