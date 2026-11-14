@@ -5,7 +5,7 @@ import { HorizonCanvas } from './HorizonCanvas';
 import { MOON, MOON_PLACES, type HorizonOptions } from './index';
 import { recordingContext, stubContext } from './canvasStub';
 import { MAIN_LEFT } from '../screens/frameLayout';
-import { useSkyClaim, useSkyStore, type SkyClaim } from './sky';
+import { claimSky, releaseSky, useSkyClaim, useSkyStore, type SkyClaim } from './sky';
 import { usePlaceStore } from '../state/places';
 import { resetAudio } from '../audio/store';
 
@@ -357,5 +357,35 @@ describe('the moon under the sky claims', () => {
     // Boxes over every place: no moon.
     expect(show({ clear: MOON_PLACES.map(([x, y]) => [x - 1, y - 1, 2, 2] as const) })).not.toHaveProperty('moon');
     expect(show(null).moon).toEqual(MOON);
+  });
+
+  it('a resting canvas draws exactly one new frame when a claim comes, changes or goes, with no other trigger, and none when a claim is made again with the same boxes', () => {
+    vi.useFakeTimers();
+    setReducedMotion(true);
+    render(<HorizonCanvas now={() => NIGHT} />);
+    // At rest: one still frame, no animation loop, the moon at its first place.
+    expect(frames.size).toBe(0);
+    expect(draw).toHaveBeenCalledTimes(1);
+    expect(draw.mock.lastCall![1].moon).toEqual(MOON);
+    draw.mockClear();
+    // A card claims a box over the moon: the next frame comes at once, the moon moved.
+    act(() => claimSky('card', { clear: [[1740, 24, 800, 462]] }));
+    expect(draw).toHaveBeenCalledTimes(1);
+    expect(draw.mock.lastCall![1].moon).toEqual(MOON_PLACES[1]);
+    expect(mainCanvas(document.body).dataset.moon).toBe(MOON_PLACES[1].join(','));
+    // The same box made again (new arrays, same values): no frame, so no loop of claims and frames.
+    draw.mockClear();
+    act(() => claimSky('card', { clear: [[1740, 24, 800, 462]] }));
+    expect(draw).not.toHaveBeenCalled();
+    // The box changes to cover the second place too: one frame, the moon moves on.
+    act(() => claimSky('card', { clear: [[1740, 24, 800, 462], [700, 280, 120, 40]] }));
+    expect(draw).toHaveBeenCalledTimes(1);
+    expect(draw.mock.lastCall![1].moon).toEqual(MOON_PLACES[2]);
+    // Released: one frame, the moon back at its first place.
+    draw.mockClear();
+    act(() => releaseSky('card'));
+    expect(draw).toHaveBeenCalledTimes(1);
+    expect(draw.mock.lastCall![1].moon).toEqual(MOON);
+    expect(mainCanvas(document.body).dataset.moon).toBe(MOON.join(','));
   });
 });

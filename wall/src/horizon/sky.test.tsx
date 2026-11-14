@@ -162,8 +162,14 @@ describe('the moon rule', () => {
     expect(m).toBe(MOON_PLACES[1]);
     const gap = (b: SkyBox) => Math.hypot(Math.max(b[0] - m[0], 0, m[0] - b[0] - b[2]), Math.max(b[1] - m[1], 0, m[1] - b[1] - b[3])) - m[2];
     expect(gap(card)).toBeGreaterThanOrEqual(40);
-    expect(gap([624, 26, 1086, 225])).toBeGreaterThanOrEqual(40); // the player at its widest
+    expect(gap([624, 26, 1086, 225])).toBeGreaterThanOrEqual(40); // the player at its widest (playing, y 26 to 251)
+    expect(gap([624, 26, 957, 239])).toBeGreaterThanOrEqual(40); // the player at its tallest (nothing playing or the last track, y 26 to 265)
+    expect(gap([624, 26, 1086, 239])).toBeGreaterThanOrEqual(40); // both at once
     expect(gap([124, 266, 470, 173])).toBeGreaterThanOrEqual(40); // Up next
+    expect(gap([124, 200, 314, 58])).toBeGreaterThanOrEqual(40); // the tabs
+    // The same place under either player claim: the moon on Listen does not wait for the player's state.
+    expect(moonFor(MOON_PLACES, { listen: { clear: [card] }, player: { clear: [[624, 26, 957, 239]] } })).toBe(MOON_PLACES[1]);
+    expect(moonFor(MOON_PLACES, { listen: { clear: [card] }, player: { clear: [[624, 26, 1086, 225]] } })).toBe(MOON_PLACES[1]);
     // A box over the second place too: the third.
     expect(moonFor(MOON_PLACES, { listen: { clear: [card] }, other: { clear: [[700, 300, 120, 80]] } })).toBe(MOON_PLACES[2]);
   });

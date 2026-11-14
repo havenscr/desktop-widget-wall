@@ -304,7 +304,7 @@ state('unwind', 'watch behaviour: feathered, click notice, controls stay', `${WM
 state('work', 'watch behaviour: a video playing elsewhere', `${WM}&wlist=three&wlook=drivein&wplay=0&wplace=work`, TIMES.night);
 // sky layers: the video behind the land (the horizon's front canvas) in the whole sky and the sun at
 // night and at noon, the drive-in and feathered looks at night with no moon behind them, and the
-// moon in its open-sky place on Listen and on Watch with nothing on.
+// moon in its open-sky place on Listen (playing and with nothing playing) and on Watch with nothing on.
 state('unwind', 'sky layers: whole sky at night', `${WM}&wlist=three&wlook=sky&wplay=0`, TIMES.night);
 state('unwind', 'sky layers: whole sky at noon', `${WM}&wlist=three&wlook=sky&wplay=1`, TIMES.noon);
 state('unwind', 'sky layers: the sun at night', `${WM}&wlist=three&wlook=sun&wplay=0`, TIMES.night);
@@ -312,6 +312,7 @@ state('unwind', 'sky layers: the sun at noon', `${WM}&wlist=three&wlook=sun&wpla
 state('unwind', 'sky layers: drive-in at night, no moon', `${WM}&wlist=three&wlook=drivein&wplay=2`, TIMES.night);
 state('unwind', 'sky layers: feathered at night, no moon', `${WM}&wlist=three&wlook=feather&wplay=0`, TIMES.night);
 state('unwind', 'sky layers: Listen at night, the moon in open sky', 'weather=ok', TIMES.night);
+state('unwind', 'sky layers: Listen at night, nothing playing, the moon in open sky', 'weather=ok&media=none', TIMES.night);
 state('unwind', 'sky layers: Watch, nothing on, at night, the moon in open sky', `${WM}&wlist=three&wlook=feather`, TIMES.night);
 
 // The Tools drawer: opened on load (`tools=1`), over each place and in its hard states.
@@ -580,6 +581,7 @@ const EXPECT = [
   ['unwind', 'sky layers: the sun', ['The sun', 'Playing on the wall']],
   ['unwind', 'sky layers: drive-in', ['Drive-in', 'Open on Twitch']],
   ['unwind', 'sky layers: feathered', ['Feathered', 'Playing on the wall']],
+  ['unwind', 'sky layers: Listen at night, nothing playing', ['Nothing playing', '!Tokyo Burnout']],
   ['unwind', 'sky layers: Listen', ['Tokyo Burnout', '!Nothing on']],
   ['unwind', 'sky layers: Watch, nothing on', ['Nothing on', 'Feathered']],
   // Meet

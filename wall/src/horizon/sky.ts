@@ -39,8 +39,26 @@ export const useSkyStore = create<SkyState>(() => ({ claims: {} }));
 /** Design pixels the moon's disc keeps from a picture's box and from every keep-clear box. */
 export const MOON_CLEAR = 40;
 
-/** Make or replace the claim `id`. */
+/** True when the two box lists hold the same boxes in the same order (an absent list is an empty one). */
+function sameBoxes(a: readonly SkyBox[] | undefined, b: readonly SkyBox[] | undefined): boolean {
+  const n = a ? a.length : 0;
+  if (n !== (b ? b.length : 0)) return false;
+  for (let i = 0; i < n; i++) for (let k = 0; k < 4; k++) if (a![i][k] !== b![i][k]) return false;
+  return true;
+}
+
+/** True when the two claims are equal in value: the same host element, the same boxes, the same no moon. */
+function sameClaim(a: SkyClaim, b: SkyClaim): boolean {
+  return (a.front ?? null) === (b.front ?? null) && (a.noMoon === true) === (b.noMoon === true) && sameBoxes(a.boxes, b.boxes) && sameBoxes(a.clear, b.clear);
+}
+
+/**
+ * Make or replace the claim `id`. A claim equal in value to the one standing changes nothing, so
+ * the claims (and the frame each change of them asks of a resting horizon) change only when a box does.
+ */
 export function claimSky(id: string, claim: SkyClaim): void {
+  const was = useSkyStore.getState().claims[id];
+  if (was && sameClaim(was, claim)) return;
   useSkyStore.setState((s) => ({ claims: { ...s.claims, [id]: claim } }));
 }
 
