@@ -1719,15 +1719,23 @@ button.panel.network.shield:focus-visible {
 }
 .np-mid {
   flex: none;
-  margin-top: 16px;
+  /* The row between the top group and the foot: all the free height goes above it (16 px at the default box), 10 px under. */
+  margin: auto 0 10px;
   min-height: 18px;
   display: flex;
   align-items: center;
   min-width: 0;
 }
 .np-mid.note {
-  font: 400 18px/22px var(--body);
+  font: 400 18px/20px var(--body);
   color: var(--dim);
+}
+.np-mid .np-where {
+  line-height: 20px;
+}
+.np-mid + .np-foot,
+.np-prog + .np-foot {
+  margin-top: 0;
 }
 .np-foot {
   margin-top: auto;
@@ -1807,7 +1815,7 @@ button.panel.network.shield:focus-visible {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-top: 16px;
+  margin: auto 0 10px;
   height: 18px;
   font: 400 17px/1 var(--body);
   color: #a39bc6;
@@ -1835,8 +1843,9 @@ button.panel.network.shield:focus-visible {
 }
 .np-half {
   position: relative;
-  flex: none;
-  height: 104px;
+  flex: 1 1 0;
+  min-height: 96px;
+  max-height: 104px;
 }
 .np-half .np-cover,
 .np-half .np-tile,
