@@ -15,7 +15,12 @@ export function registerMeetMocks(): void {
   // `?meet=none`: both read, nothing scheduled. `?meet=busy`: five meetings at once at 1 PM.
   const mode = () => knob('meet') ?? '';
   const accounts = () =>
-    mode() === 'down'
+    mode() === 'signin-fault'
+      ? [
+          { id: 'work', label: 'Work', state: 'ok' },
+          { id: 'second', label: 'Second', state: 'unavailable', reason: 'token-network-dns' },
+        ]
+      : mode() === 'down'
       ? [
           { id: 'work', label: 'Work', state: 'unavailable', reason: 'graph-503-UnknownError' },
           { id: 'second', label: 'Second', state: 'signed-out' },

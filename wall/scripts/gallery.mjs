@@ -348,6 +348,8 @@ state('work', 'tools: sources failing', 'agents=down&weather=stale&tools=1');
 state('work', 'tools: keys refused', 'keys=refused&tools=1');
 state('work', 'tools: no keys file', 'source=default&tools=1');
 state('work', 'tools: Spotify not set up', 'spotify=off&tools=1');
+state('work', 'tools: calendar sign-in fault', 'meet=signin-fault&tools=1');
+state('work', 'tools: Spotify saved sign-in unreadable', 'spotify=statusfail&tools=1');
 state('home', 'tools: open', 'tools=1');
 state('unwind', 'tools: open', 'tools=1');
 state('meet', 'tools: open', 'tools=1');
@@ -459,6 +461,11 @@ add('unwind', 'listen: songs, hover on a song', url('unwind', TIMES.night, 'audi
 state('unwind', 'listen: signed out', 'spotify=signedout', TIMES.night);
 state('unwind', 'listen: spotify down', 'spotify=down', TIMES.night);
 state('unwind', 'listen: spotify not set up', 'spotify=off', TIMES.night);
+add('unwind', 'listen: Starting Spotify', url('unwind', TIMES.night, 'spotify=starting'), true, '.sp-tile >> .sp-shead .sp-btn.fill');
+add('unwind', 'listen: Spotify did not show up', url('unwind', TIMES.night, 'spotify=nodevice'), true, '.sp-tile >> .sp-shead .sp-btn.fill');
+add('unwind', 'listen: followed playlist songs unavailable', url('unwind', TIMES.night, 'spotify=notyours'), true, '.sp-tile');
+state('unwind', 'listen: Playing in Watch', 'watch=mock&wlist=three&wtab=listen&media=watchown', TIMES.night);
+state('unwind', 'listen: another WebView app', 'watch=mock&wlist=three&wtab=listen&media=webview', TIMES.night);
 state('unwind', 'listen: heavy library', 'spotify=heavy', TIMES.night);
 add('unwind', 'listen: heavy playlist songs', url('unwind', TIMES.night, 'spotify=heavy'), true, '.sp-tile');
 state('unwind', 'listen: long names', 'long=1&media=long&spotify=long');
@@ -658,6 +665,8 @@ const EXPECT = [
   ['work', 'tools: keys refused', 'keys.json refused: app 3, key 7'],
   ['work', 'tools: no keys file', 'No keys.json. Defaults in use'],
   ['work', 'tools: Spotify not set up', ['Spotify', 'Not set up']],
+  ['work', 'tools: calendar sign-in fault', ['Second calendar', 'Network problem']],
+  ['work', 'tools: Spotify saved sign-in unreadable', ['Spotify', 'Could not read the saved sign-in']],
   ['home', 'tools: open', ['Accounts', 'Keys file']],
   ['unwind', 'tools: open', ['Accounts', 'Keys file']],
   // Zen and Dream
@@ -712,6 +721,11 @@ const EXPECT = [
   ['unwind', 'listen: signed out', ['Sign in to Spotify in Tools to browse here.', 'Sign in to Spotify in Tools to see what is next']],
   ['unwind', 'listen: spotify down', ['Spotify is not answering right now.', '!Up next']],
   ['unwind', 'listen: spotify not set up', ['Spotify is not set up on this wall', 'not set up', '!Up next']],
+  ['unwind', 'listen: Starting Spotify', 'Starting Spotify'],
+  ['unwind', 'listen: Spotify did not show up', 'Spotify opened but did not show up as a player'],
+  ['unwind', 'listen: followed playlist songs unavailable', ['Spotify only lists the songs of playlists you own. Play it whole.', 'Play']],
+  ['unwind', 'listen: Playing in Watch', ['Playing in Watch', 'Back to Watch']],
+  ['unwind', 'listen: another WebView app', ['Last played on an app on this PC', '!msedgewebview2']],
   ['unwind', 'listen: heavy library', ['Road Trip 50', 'Up next']],
   ['unwind', 'listen: heavy playlist songs', ['2,000 songs', 'Lantern Song 50']],
   ['unwind', 'listen: long names, songs', ['240 songs', 'Lantern Song 9, an extremely long name']],

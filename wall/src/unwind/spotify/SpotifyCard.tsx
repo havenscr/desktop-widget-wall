@@ -288,7 +288,10 @@ function Browser() {
   }, [query, runSearch]);
 
   const fail = (e: unknown) => mounted.current && setNote(playProblemLine(spotifyProblem(e)));
-  const playItem = (item: SpotifyItem) => void playWhole(item, false).catch(fail);
+  const playItem = (item: SpotifyItem) => {
+    setNote('Starting Spotify');
+    void playWhole(item, false).then(() => mounted.current && setNote(null), fail);
+  };
   const shuffleItem = (item: SpotifyItem) => void playWhole(item, true).catch(fail);
 
   const cur = lists[tab];
@@ -656,6 +659,10 @@ function SongsView({ item, onBack, onNote }: { item: SpotifyItem; onBack: () => 
   }, [onBack]);
 
   const fail = (e: unknown) => mounted.current && onNote(playProblemLine(spotifyProblem(e)));
+  const playAll = (shuffled: boolean) => {
+    onNote('Starting Spotify');
+    void playWhole(item, shuffled).catch(fail);
+  };
   const playFrom = (t: SpotifyTrack) => {
     if (!t.id || !t.playable) return;
     spotify.play('track', t.id, { context: { kind, id: item.id }, offsetId: t.id }).then(() => void refreshNowPlaying(), fail);
@@ -677,11 +684,11 @@ function SongsView({ item, onBack, onNote }: { item: SpotifyItem; onBack: () => 
           <span className="sp-name">{item.name}</span>
           <span className="sp-line">{facts}</span>
         </span>
-        <button type="button" className="sp-btn fill big" onClick={() => void playWhole(item, false).catch(fail)}>
+        <button type="button" className="sp-btn fill big" onClick={() => playAll(false)}>
           <IconPlayerPlayFilled size={18} aria-hidden="true" />
           Play
         </button>
-        <button type="button" className="sp-btn plain big" onClick={() => void playWhole(item, true).catch(fail)}>
+        <button type="button" className="sp-btn plain big" onClick={() => playAll(true)}>
           <IconArrowsShuffle size={18} aria-hidden="true" />
           Shuffle
         </button>
