@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { useSkyClaim } from '../../horizon/sky';
 import { usePlaceStore } from '../../state/places';
 import { DriveInFrame, driveInMode } from './DriveInFrame';
 import { HologramEmitter, HologramPlate } from './HologramStage';
 import { refKey, type WatchRef } from './links';
-import { LOOK_BOXES, layeredNow, lookFor, ownsTheMoonSky, type LookId } from './looks';
+import { LOOK_BOXES, SKY_SOFT_EDGE, layeredNow, lookFor, ownsTheMoonSky, type LookId } from './looks';
 import { PlayerFrame } from './PlayerFrame';
 import { driveInAudience, useWatchStore } from './store';
 import { useStopRules } from './useStopRules';
@@ -79,6 +79,7 @@ function VideoStage({ item, look, shown }: { item: WatchRef & { label: string };
         data-look={dress ?? undefined}
         data-audience={dress && audience ? `${audience.x},${audience.y},${audience.w},${audience.h}` : undefined}
         data-sky-box={dress ? `${b.x},${b.y},${b.w},${b.h}` : undefined}
+        style={dress === 'sky' ? ({ '--w-sky-soft': `${SKY_SOFT_EDGE}px` } as CSSProperties) : undefined}
       >
         {/* ---- look markup (feathered, sun, drive-in): before the picture ---- */}
         {/* The feathered glow (in front of the land, with its picture) and the sun's halo (behind it). */}

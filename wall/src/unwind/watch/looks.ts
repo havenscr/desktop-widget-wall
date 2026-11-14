@@ -7,7 +7,7 @@ import type { WatchKind } from './links';
  */
 export const LOOKS = [
   { id: 'feather', name: 'Feathered', hint: 'The video melts into the night sky, its edges soft.' },
-  { id: 'sky', name: 'Whole sky', hint: 'The video fills the sky behind everything; a normal video is cropped top and bottom.' },
+  { id: 'sky', name: 'Whole sky', hint: 'The whole video stands behind the mountains; its edges fade into the sky.' },
   { id: 'sun', name: 'The sun', hint: 'The video plays inside the sun on the horizon; only its middle shows.' },
   { id: 'drivein', name: 'Drive-in', hint: 'A drive-in screen on a steel tower; its marquee says when it is paused. Nothing is cropped.' },
   { id: 'holo', name: 'Hologram', hint: 'The whole picture floats on a tilted pane of light over a small emitter; nothing is cropped.' },
@@ -145,6 +145,14 @@ export const LOOK_BOXES: Readonly<Record<LookId, Readonly<WallRect>>> = Object.f
   drivein: DRIVE_IN_SCREEN,
   holo: Object.freeze({ x: 1210, y: 38, w: 740, h: 421 }),
 });
+
+/**
+ * The whole sky's soft edge: how far, in px, the picture's top, left and right edges fade into the
+ * sky (the stage carries it as `--w-sky-soft`; the mask is in `unwind.css`). The fade is taken from
+ * the picture's own edge, so the box never changes; the middle 649 by 380 is untouched at 120.
+ * A later change will make it a setting of this look.
+ */
+export const SKY_SOFT_EDGE = 120;
 
 /**
  * sky layers: the looks whose picture sits in the sky behind the land, so the horizon draws the

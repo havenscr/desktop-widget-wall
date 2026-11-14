@@ -1349,7 +1349,86 @@
 }
 .w-sky .w-screen {
   filter: brightness(0.9) saturate(1.1);
-  box-shadow: 0 0 0 1px rgba(214, 204, 255, 0.08), 0 0 36px rgba(150, 130, 255, 0.16);
+  /* The soft edge: the top, left and right edges fade into the sky over --w-sky-soft (set from
+     SKY_SOFT_EDGE in looks.ts, 120 px). One still mask (smoothstep stops, so no faint line where
+     a ramp ends), taken from the picture's own edge: the box never changes and nothing is cut
+     off. Two ramps meet by intersection; the foot is not faded (the land hides it). */
+  -webkit-mask-image: linear-gradient(90deg,
+    rgba(0, 0, 0, 0) 0px,
+    rgba(0, 0, 0, 0.028) calc(var(--w-sky-soft) * 0.1),
+    rgba(0, 0, 0, 0.104) calc(var(--w-sky-soft) * 0.2),
+    rgba(0, 0, 0, 0.216) calc(var(--w-sky-soft) * 0.3),
+    rgba(0, 0, 0, 0.352) calc(var(--w-sky-soft) * 0.4),
+    rgba(0, 0, 0, 0.5) calc(var(--w-sky-soft) * 0.5),
+    rgba(0, 0, 0, 0.648) calc(var(--w-sky-soft) * 0.6),
+    rgba(0, 0, 0, 0.784) calc(var(--w-sky-soft) * 0.7),
+    rgba(0, 0, 0, 0.896) calc(var(--w-sky-soft) * 0.8),
+    rgba(0, 0, 0, 0.972) calc(var(--w-sky-soft) * 0.9),
+    rgba(0, 0, 0, 1) calc(var(--w-sky-soft) * 1),
+    rgba(0, 0, 0, 1) calc(100% - var(--w-sky-soft) * 1),
+    rgba(0, 0, 0, 0.972) calc(100% - var(--w-sky-soft) * 0.9),
+    rgba(0, 0, 0, 0.896) calc(100% - var(--w-sky-soft) * 0.8),
+    rgba(0, 0, 0, 0.784) calc(100% - var(--w-sky-soft) * 0.7),
+    rgba(0, 0, 0, 0.648) calc(100% - var(--w-sky-soft) * 0.6),
+    rgba(0, 0, 0, 0.5) calc(100% - var(--w-sky-soft) * 0.5),
+    rgba(0, 0, 0, 0.352) calc(100% - var(--w-sky-soft) * 0.4),
+    rgba(0, 0, 0, 0.216) calc(100% - var(--w-sky-soft) * 0.3),
+    rgba(0, 0, 0, 0.104) calc(100% - var(--w-sky-soft) * 0.2),
+    rgba(0, 0, 0, 0.028) calc(100% - var(--w-sky-soft) * 0.1),
+    rgba(0, 0, 0, 0) 100%
+  ),
+  linear-gradient(180deg,
+    rgba(0, 0, 0, 0) 0px,
+    rgba(0, 0, 0, 0.028) calc(var(--w-sky-soft) * 0.1),
+    rgba(0, 0, 0, 0.104) calc(var(--w-sky-soft) * 0.2),
+    rgba(0, 0, 0, 0.216) calc(var(--w-sky-soft) * 0.3),
+    rgba(0, 0, 0, 0.352) calc(var(--w-sky-soft) * 0.4),
+    rgba(0, 0, 0, 0.5) calc(var(--w-sky-soft) * 0.5),
+    rgba(0, 0, 0, 0.648) calc(var(--w-sky-soft) * 0.6),
+    rgba(0, 0, 0, 0.784) calc(var(--w-sky-soft) * 0.7),
+    rgba(0, 0, 0, 0.896) calc(var(--w-sky-soft) * 0.8),
+    rgba(0, 0, 0, 0.972) calc(var(--w-sky-soft) * 0.9),
+    rgba(0, 0, 0, 1) calc(var(--w-sky-soft) * 1)
+  );
+  mask-image: linear-gradient(90deg,
+    rgba(0, 0, 0, 0) 0px,
+    rgba(0, 0, 0, 0.028) calc(var(--w-sky-soft) * 0.1),
+    rgba(0, 0, 0, 0.104) calc(var(--w-sky-soft) * 0.2),
+    rgba(0, 0, 0, 0.216) calc(var(--w-sky-soft) * 0.3),
+    rgba(0, 0, 0, 0.352) calc(var(--w-sky-soft) * 0.4),
+    rgba(0, 0, 0, 0.5) calc(var(--w-sky-soft) * 0.5),
+    rgba(0, 0, 0, 0.648) calc(var(--w-sky-soft) * 0.6),
+    rgba(0, 0, 0, 0.784) calc(var(--w-sky-soft) * 0.7),
+    rgba(0, 0, 0, 0.896) calc(var(--w-sky-soft) * 0.8),
+    rgba(0, 0, 0, 0.972) calc(var(--w-sky-soft) * 0.9),
+    rgba(0, 0, 0, 1) calc(var(--w-sky-soft) * 1),
+    rgba(0, 0, 0, 1) calc(100% - var(--w-sky-soft) * 1),
+    rgba(0, 0, 0, 0.972) calc(100% - var(--w-sky-soft) * 0.9),
+    rgba(0, 0, 0, 0.896) calc(100% - var(--w-sky-soft) * 0.8),
+    rgba(0, 0, 0, 0.784) calc(100% - var(--w-sky-soft) * 0.7),
+    rgba(0, 0, 0, 0.648) calc(100% - var(--w-sky-soft) * 0.6),
+    rgba(0, 0, 0, 0.5) calc(100% - var(--w-sky-soft) * 0.5),
+    rgba(0, 0, 0, 0.352) calc(100% - var(--w-sky-soft) * 0.4),
+    rgba(0, 0, 0, 0.216) calc(100% - var(--w-sky-soft) * 0.3),
+    rgba(0, 0, 0, 0.104) calc(100% - var(--w-sky-soft) * 0.2),
+    rgba(0, 0, 0, 0.028) calc(100% - var(--w-sky-soft) * 0.1),
+    rgba(0, 0, 0, 0) 100%
+  ),
+  linear-gradient(180deg,
+    rgba(0, 0, 0, 0) 0px,
+    rgba(0, 0, 0, 0.028) calc(var(--w-sky-soft) * 0.1),
+    rgba(0, 0, 0, 0.104) calc(var(--w-sky-soft) * 0.2),
+    rgba(0, 0, 0, 0.216) calc(var(--w-sky-soft) * 0.3),
+    rgba(0, 0, 0, 0.352) calc(var(--w-sky-soft) * 0.4),
+    rgba(0, 0, 0, 0.5) calc(var(--w-sky-soft) * 0.5),
+    rgba(0, 0, 0, 0.648) calc(var(--w-sky-soft) * 0.6),
+    rgba(0, 0, 0, 0.784) calc(var(--w-sky-soft) * 0.7),
+    rgba(0, 0, 0, 0.896) calc(var(--w-sky-soft) * 0.8),
+    rgba(0, 0, 0, 0.972) calc(var(--w-sky-soft) * 0.9),
+    rgba(0, 0, 0, 1) calc(var(--w-sky-soft) * 1)
+  );
+  -webkit-mask-composite: source-in;
+  mask-composite: intersect;
 }
 /* No dark plate behind the left block: no picture lies under it, and its text reads on the sky at night and at noon. */
 /* A refused autoplay over the whole sky: the picture lies under the frame's and Unwind's own
