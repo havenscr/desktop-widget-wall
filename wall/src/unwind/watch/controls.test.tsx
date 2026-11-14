@@ -372,6 +372,69 @@ describe('the looks are chosen in the gear sheet, with no Look switch on the pag
     expect(sw.closest('.w-stage')).toBeNull();
   });
 
+  it('walks the look tiles with the arrow keys: Right and Down forward, Left and Up back, wrapping, Home and End, focus follows, the look is selected, only the chosen tile is tabbable', async () => {
+    await playing('video', { mode: 'one', all: 'feather' });
+    await act(async () => screen.getByRole('button', { name: 'How video is shown' }).click());
+    const group = () => screen.getByRole('radiogroup', { name: 'Look for everything' });
+    const radios = () => [...group().querySelectorAll<HTMLElement>('[role=radio]')];
+    const chosen = () => radios().filter((r) => r.getAttribute('aria-checked') === 'true').map((r) => r.textContent);
+    const tabbable = () => radios().filter((r) => r.tabIndex === 0).map((r) => r.textContent);
+    expect(chosen()).toEqual(['Feathered']);
+    expect(tabbable()).toEqual(['Feathered']);
+    act(() => radios()[0].focus());
+    const press = (key: string) => act(() => void fireEvent.keyDown(document.activeElement!, { key }));
+    const names = ['Whole sky', 'The sun', 'Drive-in', 'Hologram', 'Feathered'];
+    for (const name of names) {
+      press('ArrowRight');
+      expect(chosen()).toEqual([name]);
+      expect(tabbable()).toEqual([name]);
+      expect(document.activeElement?.textContent).toBe(name);
+    }
+    expect(parseLooks(localStorage.getItem(LOOKS_KEY)).all).toBe('feather');
+    press('ArrowLeft');
+    expect(chosen()).toEqual(['Hologram']);
+    expect(document.activeElement?.textContent).toBe('Hologram');
+    expect(document.querySelector('.w-stage')?.getAttribute('data-look')).toBe('holo');
+    press('ArrowUp');
+    expect(chosen()).toEqual(['Drive-in']);
+    press('ArrowDown');
+    expect(chosen()).toEqual(['Hologram']);
+    press('Home');
+    expect(chosen()).toEqual(['Feathered']);
+    press('ArrowLeft');
+    expect(chosen()).toEqual(['Hologram']);
+    press('End');
+    expect(chosen()).toEqual(['Hologram']);
+    press('Home');
+    press('End');
+    expect(chosen()).toEqual(['Hologram']);
+    // A key that is not an arrow changes nothing.
+    press('a');
+    expect(chosen()).toEqual(['Hologram']);
+  });
+
+  it('walks each per-kind row on its own with the arrow keys', async () => {
+    await playing('video', { mode: 'kind', all: 'drivein', video: 'feather', live: 'sky', twitch: 'drivein' });
+    await act(async () => screen.getByRole('button', { name: 'How video is shown' }).click());
+    const row = (name: string) => screen.getByRole('radiogroup', { name });
+    const lit = (name: string) => [...row(name).querySelectorAll<HTMLElement>('[role=radio]')].filter((r) => r.getAttribute('aria-checked') === 'true').map((r) => r.textContent);
+    const tabbable = (name: string) => [...row(name).querySelectorAll<HTMLElement>('[role=radio]')].filter((r) => r.tabIndex === 0).map((r) => r.textContent);
+    expect(tabbable('Look for live streams')).toEqual(['Whole sky']);
+    act(() => (row('Look for live streams').querySelectorAll('[role=radio]')[1] as HTMLElement).focus());
+    act(() => void fireEvent.keyDown(document.activeElement!, { key: 'ArrowRight' }));
+    expect(lit('Look for live streams')).toEqual(['The sun']);
+    expect(document.activeElement?.textContent).toBe('The sun');
+    expect(tabbable('Look for live streams')).toEqual(['The sun']);
+    // The other rows are untouched.
+    expect(lit('Look for videos and playlists')).toEqual(['Feathered']);
+    expect(lit('Look for twitch')).toEqual(['Drive-in']);
+    expect(parseLooks(localStorage.getItem(LOOKS_KEY))).toMatchObject({ mode: 'kind', video: 'feather', live: 'sun', twitch: 'drivein' });
+    act(() => void fireEvent.keyDown(document.activeElement!, { key: 'End' }));
+    expect(lit('Look for live streams')).toEqual(['Hologram']);
+    act(() => void fireEvent.keyDown(document.activeElement!, { key: 'ArrowRight' }));
+    expect(lit('Look for live streams')).toEqual(['Feathered']);
+  });
+
   it('with a look per kind the sheet sets the kind it picks, and names the group', async () => {
     await playing('video', { mode: 'kind', all: 'drivein', video: 'feather', live: 'sky', twitch: 'drivein' });
     await act(async () => screen.getByRole('button', { name: 'How video is shown' }).click());
