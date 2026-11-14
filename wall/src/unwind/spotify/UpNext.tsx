@@ -8,12 +8,30 @@ import { useToolsStore } from '../../tools/store';
 import { tip } from '../../ui/HoverTip';
 import { useVisible } from '../../ui/useVisible';
 import { Cover } from './Cover';
-import { playProblemLine, spotifyProblem, trackLength, upNextPlan, useListenSource, useSpotifyNow } from './model';
+import { playProblemLine, spotifyProblem, trackLength, upNextPlan, useListenSource, useSpotifyNow, type UpNextPlan } from './model';
 import { useSpotifyStatus } from './status';
 
 /** How often the queue is read while Up next shows (and again when the track changes). */
 export const QUEUE_POLL_MS = 20_000;
 export const UP_NEXT_ROWS = 3;
+
+/** What a click on a queued row does (see `upNextPlan`): skips only while Spotify is the player Windows has in front. */
+export function skipPlan(index: number, queued: number): UpNextPlan {
+  const info = useNowPlayingStore.getState().info;
+  const spotifyIsCurrent = !isQuiet(info) && playerName(sourceKey(info)) === 'Spotify';
+  return upNextPlan(index, queued, spotifyIsCurrent);
+}
+
+/** Send the skips through Windows; the line to show when one failed, else null. */
+export async function runSkips(skips: number): Promise<string | null> {
+  try {
+    for (let i = 0; i < skips; i++) await invoke('media_next');
+    void refreshNowPlaying();
+    return null;
+  } catch (e) {
+    return playProblemLine(spotifyProblem(e));
+  }
+}
 
 /**
  * Up next (8B), in the left wing under the toggles: the next three tracks with their covers,
@@ -73,22 +91,14 @@ export function UpNext() {
   if (next.length === 0) return null;
 
   const play = (index: number) => {
-    // Skips go to the player in front: only Spotify, and never more than the queue holds.
-    const info = useNowPlayingStore.getState().info;
-    const spotifyIsCurrent = !isQuiet(info) && playerName(sourceKey(info)) === 'Spotify';
-    const plan = upNextPlan(index, next.length, spotifyIsCurrent);
+    const plan = skipPlan(index, next.length);
     if (plan.kind === 'none') {
       setNote(plan.line);
       return;
     }
-    void (async () => {
-      try {
-        for (let i = 0; i < plan.skips; i++) await invoke('media_next');
-        void refreshNowPlaying();
-      } catch (e) {
-        if (mounted.current) setNote(playProblemLine(spotifyProblem(e)));
-      }
-    })();
+    void runSkips(plan.skips).then((line) => {
+      if (line && mounted.current) setNote(line);
+    });
   };
 
   return (
