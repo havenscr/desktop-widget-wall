@@ -637,6 +637,14 @@ export function hitParts(pose: Pose, dir: 1 | -1, body: Box, head: Box): void {
   }
 }
 
+/** True when `b` (padded by `pad` on every side) overlaps any of `rects`, stage pixels. */
+export function overlapsAny(b: Box, rects: readonly Box[], pad = 4): boolean {
+  for (const r of rects) {
+    if (b.left - pad < r.left + r.width && r.left < b.left + b.width + pad && b.top - pad < r.top + r.height && r.top < b.top + b.height + pad) return true;
+  }
+  return false;
+}
+
 /** His menu's width, design pixels (its height follows its content). */
 export const MENU_W = 392;
 /** Gap between the menu's tail and the top of his sprite, design pixels. */

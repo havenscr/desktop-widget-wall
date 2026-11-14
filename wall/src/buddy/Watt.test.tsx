@@ -1199,6 +1199,32 @@ describe('carrying him', () => {
     expect(look(container).x).toBeLessThan(WALKS.unwind.min);
   });
 
+  it('carried over the wall\'s information his held line is hidden, and it shows again over open ground', () => {
+    // A card across the top band (jsdom has no layout, so its box is given).
+    const shell = document.createElement('div');
+    shell.className = 'shell';
+    const card = document.createElement('button');
+    card.textContent = 'A control';
+    card.getBoundingClientRect = () => ({ left: 0, top: 0, right: 2560, bottom: 330, width: 2560, height: 330, x: 0, y: 0, toJSON() {} }) as DOMRect;
+    shell.appendChild(card);
+    document.body.appendChild(shell);
+    try {
+      const { container } = start();
+      carryAway(container, 1200, 160);
+      runFor(1.2);
+      const bubble = () => container.querySelector<HTMLElement>('.watt-bubble');
+      expect(LINES.held.concat(LINES.heldFast)).toContain(bubble()!.textContent!.replace(/\n/g, ' '));
+      expect(bubble()!.style.visibility).toBe('hidden');
+      // His body still shows above everything while he is carried.
+      expect(container.querySelector<HTMLElement>('.watt')!.style.zIndex).toBe('40');
+      move(container, 1200, 600);
+      runFor(0.5);
+      expect(bubble()!.style.visibility).toBe('');
+    } finally {
+      shell.remove();
+    }
+  });
+
   describe('anything that is not the pointer puts him down at once', () => {
     const interruptions: [string, (c: HTMLElement, r: { rerender: (ui: React.ReactElement) => void }) => void][] = [
       ['pointercancel', (c) => fireEvent.pointerCancel(hitOf(c), ptr())],

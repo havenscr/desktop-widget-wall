@@ -85,6 +85,8 @@ import {
   hitParts,
   markHitBox,
   placeMenu,
+  overlapsAny,
+  type Box,
   MENU_W,
   CLICK_GAP_S,
   clickKind,
@@ -183,6 +185,30 @@ export const restClock = {
   set: (fn: () => void, ms: number): number => window.setTimeout(fn, ms),
   clear: (id: number): void => window.clearTimeout(id),
 };
+
+/**
+ * What his held bubble must not cover while he is carried: every control, every element with text
+ * of its own and every card of the wall (the rule fit-check uses), as boxes in stage pixels.
+ * Collected once when he is picked up.
+ */
+const INFO = 'button, a[href], input, select, textarea, [role=button], [role=slider], [role=tab], [tabindex]:not([tabindex="-1"]), .card, .u-card, .panel, .lane, .deck-tile, .key-tile';
+export function infoBoxes(toStage: (x: number, y: number) => { x: number; y: number }): Box[] {
+  const out: Box[] = [];
+  const shell = document.querySelector('.shell');
+  if (!shell) return out;
+  for (const e of shell.querySelectorAll<HTMLElement>('*')) {
+    const own = [...e.childNodes].some((n) => n.nodeType === 3 && (n.textContent ?? '').trim() !== '');
+    if (!own && !e.matches(INFO)) continue;
+    const r = e.getBoundingClientRect();
+    if (r.width <= 0 || r.height <= 0) continue;
+    const a = toStage(r.left, r.top);
+    const left = a.x;
+    const top = a.y;
+    const b = toStage(r.right, r.bottom);
+    out.push({ left, top, width: b.x - left, height: b.y - top });
+  }
+  return out;
+}
 
 /** Take an element of hers out of the tab order and out of sight while she is away (no allocation). */
 function switchOff(el: HTMLElement | null, tab: number, vis: string): void {
@@ -742,6 +768,8 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
   const lastCarryLine = useRef(-Infinity);
   const lastDizzyLine = useRef(-Infinity);
   const heldBubble = useRef(0);
+  /** The wall's controls, text and cards while he is carried (see `infoBoxes`). */
+  const heldInfo = useRef<Box[]>([]);
   const sitTimer = useRef(0);
   useEffect(() => () => window.clearTimeout(sitTimer.current), []);
   /** The pointer in stage pixels (the stage is scaled to the window). */
@@ -853,7 +881,14 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
       const t = nowRef.current();
       napUntil.current = 0;
       q.away = p.night || document.hidden;
-      beginCarry(carry.current, press.current.id, at.x, at.y, f.x, p.camera.hy, f.dir, walk.px, tNowRef.current(), t - lastCarryLine.current >= CARRY_LINE_GAP_MS);
+      const ax = at.x;
+      const ay = at.y;
+      // What his held bubble must not cover (the pointer conversion reuses one record, so copy first).
+      heldInfo.current = infoBoxes((x, y) => {
+        const s = toStage(x, y);
+        return { x: s.x, y: s.y };
+      });
+      beginCarry(carry.current, press.current.id, ax, ay, f.x, p.camera.hy, f.dir, walk.px, tNowRef.current(), t - lastCarryLine.current >= CARRY_LINE_GAP_MS);
       mind.current.carry = true;
       closeRef.current();
       hideTip(true);
@@ -1440,7 +1475,10 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
         if (air) {
           placeCarriedBubble(f.x, y - f.lift, width, bub.width, bub.height, BUBBLE.tail, bp);
           bp.leftSide = bp.left < f.x;
-          bp.fits = true;
+          // Over a control, text or a card it would hide information: it shows only over open ground.
+          bp.height += BUBBLE.tail;
+          bp.fits = !overlapsAny(bp, heldInfo.current);
+          bp.height -= BUBBLE.tail;
         } else placeBubble(walk, p.camera.hy, f.x, y, width, bub.width, bub.height, bp);
         // His menu speaks for him while it is open; a line that fits on neither side of him waits unseen.
         b.style.visibility = cardRef.current || !bp.fits ? 'hidden' : '';
