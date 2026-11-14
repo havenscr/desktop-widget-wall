@@ -105,6 +105,11 @@ const EXPECT = {
   'tile-icon': /^ *FAIL deck: the icon of key tile ".*" sits /m,
   'tile-iconbox': /^ *FAIL deck: the icon of key tile ".*" is not inside its icon box/m,
   'drawer-scrim': /^ *FAIL strip: with the drawer open, /m,
+  // deck pins and stretch
+  'sparse-width': /^ *FAIL deck: a tile row does not fill its width/m,
+  'tile-equal': /^ *FAIL deck: tiles in one row do not share one width and height/m,
+  'icon-wide': /^ *FAIL deck: the icon of key tile "Add a key" sits [\d.]+ px below its tile top, its row first one sits [\d.]+ px/m,
+  'key-menu': /^ *FAIL deck: the key menu leaves the stage/m,
   // left wing
   lwbuttons: /^ *FAIL left wing: music buttons leave the wing/m,
   lwoverlap: /^ *FAIL left wing: music buttons overlap the title/m,
@@ -187,6 +192,11 @@ const OVERFLOWS = {
   'tile-icon': '.work .right-wing .pinned .key-tile-wrap:nth-child(2) > .deck-tile.key-tile svg { margin-top: 8px !important; }',
   'tile-iconbox': '.work .right-wing .keys .deck-tile.key-tile:first-child svg { width: 40px !important; height: 40px !important; }',
   'drawer-scrim': '.drawer-scrim { pointer-events: none !important; }',
+  // deck pins and stretch: a fixed 113 px tile in a one-tile row; the second pinned tile 20 px taller; the Add tile's icon 8 px lower in a wide row; a key menu pushed out of the stage.
+  'sparse-width': '.work .right-wing .keys .deck-tiles > .key-tile-wrap { width: 113px !important; }',
+  'tile-equal': '.work .right-wing .pinned .deck-tiles > .key-tile-wrap:nth-child(2) > .deck-tile.key-tile { height: 90px !important; }',
+  'icon-wide': '.work .right-wing .pinned .deck-tiles > .add-key svg { margin-top: 8px !important; }',
+  'key-menu': '.key-menu { transform: translateX(-3000px) !important; }',
   // left wing
   lwbuttons: '.work .left-wing .music-mini-text { flex: none !important; width: 900px !important; }',
   lwoverlap: '.work .left-wing .music-mini-btns { transform: translateX(-200px); }',
@@ -408,6 +418,9 @@ const VARIANTS = [
   deck('one pin plus Add, one Now key', 'keys=one&hold=one&pins=one'),
   deck('three pins plus Add, two Now keys', 'keys=two&hold=two&pins=three'),
   deck('three pins plus Add, three Now keys', 'keys=three&hold=three&pins=three'),
+  // A key menu open on the leftmost key of each row: inside the stage, off the bottom strip's handle.
+  deck('key menu open on the leftmost Now key', 'keys=three&hold=three&pins=three', { click: 'ctx:.keys .key-tile' }),
+  deck('key menu open on the leftmost pinned key', 'keys=three&hold=three&pins=three', { click: 'ctx:.pinned .key-tile' }),
   deck('a held set refused after a click (the app in front is not its app)', 'keys=wrong', { click: '.keys .key-tile' }),
   deck('Power BI cannot be brought forward, after a click', 'keys=refuse', { click: '.keys .key-tile' }),
   deck('heavy: three things wait (a meeting, an agent asks, an alarm), For you held', 'keys=typical&hold=foryou', { checks: FOR_YOU, q: work('ask', '&keys=typical&hold=foryou') }),
@@ -1238,6 +1251,11 @@ try {
     'tile-icon': (v) => v.name === 'Keys style, day: library sets held on VS Code',
     'tile-iconbox': (v) => v.name === 'Keys style, day: library sets held on VS Code',
     'drawer-scrim': (v) => v.name === 'Strip: the Day drawer open',
+    // deck pins and stretch
+    'sparse-width': (v) => v.name === 'Deck, one pin plus Add, one Now key',
+    'tile-equal': (v) => v.name === 'Deck, three pins plus Add, three Now keys',
+    'icon-wide': (v) => v.name === 'Deck, one pin plus Add, one Now key',
+    'key-menu': (v) => v.name.startsWith('Deck, key menu open on the leftmost'),
     'hide-pill': (v) => v.name === 'Unwind, Hide screen grown',
     // whole sky and sun
     sky: (v) => v.name.startsWith('Watch, whole sky playing'),
