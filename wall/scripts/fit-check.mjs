@@ -333,20 +333,23 @@ const QUIET = [
   // sky layers: the video behind the land (the horizon's front canvas over the video's box) in the
   // three looks that sit in the sky, the drive-in in front of it with no front canvas, and the moon
   // in open sky at night and at dusk, 40 px clear of every card, the player and the clock, on Listen
-  // and on Watch with nothing on (the first clear one of its places, cameras.ts MOON_PLACES).
+  // (short names, long names, nothing playing, the songs view open) and on Watch with nothing on, at
+  // the place the rule gives (`moonAt`, the first clear one of its places, cameras.ts MOON_PLACES).
   // Every other state has no front canvas. The feathered picture stands in front of the land.
   { name: 'Sky layers, whole sky at night', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=sky&wplay=0', checks: ['.w-now', '.w-lookbar'], sky: 'front' },
   { name: 'Sky layers, whole sky at noon', agents: '3', hz: 'unwind', at: '2026-11-11T12:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=sky&wplay=1', checks: ['.w-now', '.w-lookbar'], sky: 'front' },
   { name: 'Sky layers, the sun at night', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=sun&wplay=0', checks: ['.w-now', '.w-lookbar'], sky: 'front' },
   { name: 'Sky layers, feathered at night, in front of the land', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=feather&wplay=0', checks: ['.w-now', '.w-lookbar'], sky: 'flat' },
   { name: 'Sky layers, drive-in at night, in front of the land', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=drivein&wplay=2', checks: ['.w-now', '.w-lookbar'], sky: 'flat' },
-  { name: 'Sky layers, Listen at night, the moon in open sky', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '', checks: ['.u-listen'], sky: 'moon' },
-  { name: 'Sky layers, Listen at night, long names, the moon in open sky', agents: 'ask', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&spotify=long&media=long', checks: ['.u-listen'], sky: 'moon' },
-  { name: 'Sky layers, Watch with nothing on at night, the moon in open sky', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=feather', checks: ['.w-now'], sky: 'moon' },
-  { name: 'Sky layers, Listen at night, the songs view open, the moon in open sky', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&spotify=long&media=long', click: '.sp-tile', checks: ['.sp-card', '.sp-songs'], listen: true, sky: 'moon' },
-  { name: 'Sky layers, Listen at dusk, the moon in open sky', agents: '3', hz: 'unwind', at: '2026-11-11T17:30:00-08:00', extra: '', checks: ['.u-listen'], sky: 'moon' },
-  { name: 'Sky layers, Listen at dusk, long names, the songs view open, the moon in open sky', agents: 'ask', hz: 'unwind', at: '2026-11-11T17:30:00-08:00', extra: '&spotify=long&media=long', click: '.sp-tile', checks: ['.sp-card', '.sp-songs'], listen: true, sky: 'moon' },
-  { name: 'Sky layers, Watch with nothing on at dusk, the moon in open sky', agents: '3', hz: 'unwind', at: '2026-11-11T17:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=feather', checks: ['.w-now'], sky: 'moon' },
+  { name: 'Sky layers, Listen at night, the moon in open sky', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '', checks: ['.u-listen'], sky: 'moon', moonAt: '760,352,44' },
+  { name: 'Sky layers, Listen at night, long names, the moon in open sky', agents: 'ask', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&spotify=long&media=long', checks: ['.u-listen'], sky: 'moon', moonAt: '760,352,44' },
+  { name: 'Sky layers, Listen at night, nothing playing, the moon in open sky', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&media=none', checks: ['.u-listen'], sky: 'moon', moonAt: '760,352,44' },
+  { name: 'Sky layers, Watch with nothing on at night, the moon in open sky', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=feather', checks: ['.w-now'], sky: 'moon', moonAt: '1890,260,44' },
+  { name: 'Sky layers, Listen at night, the songs view open, the moon in open sky', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&spotify=long&media=long', click: '.sp-tile', checks: ['.sp-card', '.sp-songs'], listen: true, sky: 'moon', moonAt: '760,352,44' },
+  { name: 'Sky layers, Listen at dusk, the moon in open sky', agents: '3', hz: 'unwind', at: '2026-11-11T17:30:00-08:00', extra: '', checks: ['.u-listen'], sky: 'moon', moonAt: '760,352,44' },
+  { name: 'Sky layers, Listen at dusk, long names, the moon in open sky', agents: 'ask', hz: 'unwind', at: '2026-11-11T17:30:00-08:00', extra: '&spotify=long&media=long', checks: ['.u-listen'], sky: 'moon', moonAt: '760,352,44' },
+  { name: 'Sky layers, Listen at dusk, long names, the songs view open, the moon in open sky', agents: 'ask', hz: 'unwind', at: '2026-11-11T17:30:00-08:00', extra: '&spotify=long&media=long', click: '.sp-tile', checks: ['.sp-card', '.sp-songs'], listen: true, sky: 'moon', moonAt: '760,352,44' },
+  { name: 'Sky layers, Watch with nothing on at dusk, the moon in open sky', agents: '3', hz: 'unwind', at: '2026-11-11T17:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=feather', checks: ['.w-now'], sky: 'moon', moonAt: '1890,260,44' },
 ].map((v) => ({ ...v, q: query(v) }));
 // The Tools drawer over each place, and in each hard state: the drawer, its two columns and every
 // section stay inside the stage, right of the rail and the clock, with no cut text that has no tooltip.
@@ -1177,6 +1180,13 @@ try {
     if (skyLayers.fails.length) failed = true;
     else if (v.sky === 'front') console.log('  ok   sky layers: the front canvas covers the stage over the video, the land opaque, the sky clear');
     else if (v.sky === 'moon') console.log(`  ok   sky layers: the moon at ${skyLayers.moon} is 40 px clear of every card, the player and the clock`);
+    // The moon the rule gives for this layout (the first clear one of cameras.ts MOON_PLACES): on Listen in
+    // every player state the low place under the player, on Watch with nothing on its first place. Not with a
+    // break that moves the moon on purpose (that one must fail on its distance alone).
+    if (v.moonAt && !(overflow && SKY_BREAK_Q[overflow]) && skyLayers.moon !== v.moonAt) {
+      failed = true;
+      console.log(`  FAIL sky layers: the moon is at ${skyLayers.moon || 'no place'}, expected ${v.moonAt} (the first place clear of this layout)`);
+    }
     if (v.sky === 'moon') skyMoons.push({ name: v.name, moon: skyLayers.moon });
     // watch polish
     if (watchPolish) {
@@ -1352,12 +1362,13 @@ try {
     const proof = join(out, 'proof.html');
     writeFileSync(proof, html.replace('</body>', `${broken}</body>`));
     for (const [when, at] of [['night', '2026-11-11T22:30:00-08:00'], ['dusk', '2026-11-11T16:54:00-08:00'], ['noon', '2026-11-11T12:30:00-08:00']]) {
-      const shots = ['flat', 'empty'].map((mode) => {
+      const shots = [];
+      for (const mode of ['flat', 'empty']) {
         const shot = join(out, `proof-${when}-${mode}.png`);
         const url = `${pathToFileURL(proof).href}?hz=unwind&at=${encodeURIComponent(at)}&agents=3&weather=ok&sky=${mode}`;
-        execFileSync(chrome, ['--headless', '--no-sandbox', '--disable-gpu', '--window-size=2560,807', '--hide-scrollbars', '--virtual-time-budget=8000', `--screenshot=${shot}`, url], { stdio: 'ignore' });
-        return readPng(shot);
-      });
+        await runChrome(chrome, ['--headless', '--no-sandbox', '--disable-gpu', '--window-size=2560,807', '--hide-scrollbars', '--virtual-time-budget=8000', `--screenshot=${shot}`, url], { label: `sky layers pixel proof, ${when}, ${mode}` });
+        shots.push(readPng(shot));
+      }
       const [a, b] = shots;
       let diff = 0;
       let over2 = 0;
