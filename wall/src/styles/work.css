@@ -1133,6 +1133,11 @@
   background: rgb(14, 12, 34);
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.55);
 }
+/* A Now key's menu opens upward: below it the menu would run over the bottom strip's handle. */
+.keys .key-menu {
+  top: auto;
+  bottom: calc(100% + 4px);
+}
 .key-menu-title {
   padding: 8px 10px;
   color: var(--dim);

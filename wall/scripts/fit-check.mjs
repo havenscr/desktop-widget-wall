@@ -418,9 +418,9 @@ const VARIANTS = [
   deck('one pin plus Add, one Now key', 'keys=one&hold=one&pins=one'),
   deck('three pins plus Add, two Now keys', 'keys=two&hold=two&pins=three'),
   deck('three pins plus Add, three Now keys', 'keys=three&hold=three&pins=three'),
-  // A key menu open on the leftmost key of each row: inside the stage, off the bottom strip's handle.
-  deck('key menu open on the leftmost Now key', 'keys=three&hold=three&pins=three', { click: 'ctx:.keys .key-tile' }),
-  deck('key menu open on the leftmost pinned key', 'keys=three&hold=three&pins=three', { click: 'ctx:.pinned .key-tile' }),
+  // A key menu open on the leftmost key of each row: a popover (held to the stage and off the bottom strip's handle by the deck rules, not to its row's box).
+  deck('key menu open on the leftmost Now key', 'keys=three&hold=three&pins=three', { click: 'ctx:.keys .key-tile', checks: ['.work .right-wing .deck-hd'], viewportOnly: true }),
+  deck('key menu open on the leftmost pinned key', 'keys=three&hold=three&pins=three', { click: 'ctx:.pinned .key-tile', checks: ['.work .right-wing .deck-hd'], viewportOnly: true }),
   deck('a held set refused after a click (the app in front is not its app)', 'keys=wrong', { click: '.keys .key-tile' }),
   deck('Power BI cannot be brought forward, after a click', 'keys=refuse', { click: '.keys .key-tile' }),
   deck('heavy: three things wait (a meeting, an agent asks, an alarm), For you held', 'keys=typical&hold=foryou', { checks: FOR_YOU, q: work('ask', '&keys=typical&hold=foryou') }),
@@ -724,7 +724,8 @@ try {
       // What the deck draws: its rows and their parts (the box itself is empty room). The open key
       // picker may run past the floor over the mountains; it is held to the timeline below.
       for (const e of deckEl.querySelectorAll('*')) {
-        if (e.closest('.pk')) continue;
+        // The open key menu is a popover held to the stage and off the strip's handle by its own rule below.
+        if (e.closest('.pk, .key-menu')) continue;
         const r = e.getBoundingClientRect();
         if (r.width === 0 || r.height === 0 || getComputedStyle(e).visibility === 'hidden') continue;
         lowest = Math.max(lowest, r.bottom);
