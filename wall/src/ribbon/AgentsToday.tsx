@@ -187,7 +187,19 @@ export function AgentsToday({ now, onClose }: { now: number; onClose: () => void
   const busySpans: BusySpan[] = isToday ? (busyT?.spans ?? []) : (rows ?? []).flatMap((r) => r.spans.map((x) => ({ id: r.id, start: x.from * HOUR_MS, end: x.to * HOUR_MS })));
   const showBusy = limit !== null && rows !== null && rows.length > 0;
   const lim = limit ?? 0;
-  const band = showBusy ? busyLevels(busySpans).map((l) => ({ from: (l.start - base) / HOUR_MS, to: (l.end - base) / HOUR_MS, step: busyStep(l.count, lim), count: l.count })) : [];
+  // One bar per stretch at the same step (over the limit is one hatched stretch, whatever the count).
+  const band: { from: number; to: number; step: number; lo: number; hi: number }[] = [];
+  for (const l of showBusy ? busyLevels(busySpans) : []) {
+    const from = (l.start - base) / HOUR_MS;
+    const to = (l.end - base) / HOUR_MS;
+    const step = busyStep(l.count, lim);
+    const last = band[band.length - 1];
+    if (last && last.step === step && Math.abs(last.to - from) < 1e-9) {
+      last.to = to;
+      last.lo = Math.min(last.lo, l.count);
+      last.hi = Math.max(last.hi, l.count);
+    } else band.push({ from, to, step, lo: l.count, hi: l.count });
+  }
   return (
     <div className={`agents-today${isToday && stale ? ' stale' : ''}${isToday ? '' : ' past'}`} ref={ref} role="dialog" aria-label="Agents today">
       <div className="at-head">
@@ -263,7 +275,7 @@ export function AgentsToday({ now, onClose }: { now: number; onClose: () => void
                   key={b.from}
                   className={`b${b.step}`}
                   style={{ left: `${tx(b.from)}%`, width: `max(2px, calc(${tx(b.to) - tx(b.from)}% - 1px))`, height: BAND_H[b.step] }}
-                  {...tip(`${clockAt(b.from)} to ${clockAt(b.to)}: ${b.count} working at once${b.count > lim ? `, over your limit of ${lim}` : ''}`)}
+                  {...tip(`${clockAt(b.from)} to ${clockAt(b.to)}: ${b.lo === b.hi ? b.hi : `${b.lo} to ${b.hi}`} working at once${b.hi > lim ? `, over your limit of ${lim}` : ''}`)}
                 />
               ))}
               <i className="at-limit" style={{ bottom: 3 + BAND_H[4] }} aria-hidden="true" />

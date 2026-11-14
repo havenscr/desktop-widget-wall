@@ -53,7 +53,7 @@ function SlotMeter({ summary, stale, fit, busy }: { summary: OmniSummary; stale:
   const over = Math.max(0, n - limit);
   const open = typeof summary.slots.sessions === 'number' ? `, ${summary.slots.sessions} open` : '';
   const head = `${n} working${open}, limit ${limit}`;
-  const rule = 'Counts sessions working at once; a session and its helpers count once.';
+  const rule = 'Sessions working at once; helpers count with their session.';
   return (
     <button
       type="button"

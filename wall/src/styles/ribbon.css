@@ -421,7 +421,8 @@
 /* The Day drawer's handle (DayLip.tsx): the strip's whole top edge. A 26 px hit band from 17 px
    above the strip (the empty gap over it) to 9 px inside it, above the hour labels (y 9) and the
    all-day bar (y 27), from 24 px in at each end. At rest: a hairline on the edge and a chevron;
-   under the pointer (or keyboard focus) a full-width lip lights with "Open the day". The needle's
+   under the pointer a full-width lip lights with "Open the day" (keyboard focus shows the words
+   in a cyan ringed pill). The needle's
    time pill draws over it. In the drawer the same lip sits on its top edge: "Close the day". */
 .rib .ndl {
   z-index: 4;
@@ -509,12 +510,10 @@
 .day-lip:focus-visible .lip-t {
   display: inline;
 }
-.day-lip:hover::before,
-.day-lip:focus-visible::before {
+.day-lip:hover::before {
   opacity: 1;
 }
-.day-lip:hover .lip-line,
-.day-lip:focus-visible .lip-line {
+.day-lip:hover .lip-line {
   opacity: 0;
 }
 .day-lip:hover .lip-pill,

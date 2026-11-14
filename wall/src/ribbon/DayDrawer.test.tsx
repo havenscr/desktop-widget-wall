@@ -5,7 +5,8 @@ import { resetAgents } from '../agents/useAgents';
 import { mocks } from '../bridge/tauri';
 import { useFocusStore } from '../focus/store';
 import { HoverTipLayer, resetTip, TIP_DELAY_MS } from '../ui/HoverTip';
-import { agendaLanes, agendaRange } from './DayDrawer';
+import { agendaLanes, agendaRange, quietLine } from './DayDrawer';
+import { laneStateWord } from './AgentRow';
 import { chips, RX } from './model';
 import { Ribbon } from './Ribbon';
 import { resetDays } from './days';
@@ -153,4 +154,85 @@ it('the agenda covers 8 AM to 6 PM, wider for a meeting outside it', () => {
     ['Vendor demo', 2, 3],
     ['Weekly planning', 0, 1],
   ]);
+});
+
+it('the handle is one button on the strip\'s top edge: click, Enter and Space open and close, and its name says which', async () => {
+  const r = render(<Ribbon kind="work" />);
+  await flush();
+  const lip = () => [...r.container.querySelectorAll('.rib-handle')] as HTMLButtonElement[];
+  // Outside the strip's clipped box (it reaches above the edge), one button at a time.
+  expect(lip()).toHaveLength(1);
+  expect(r.container.querySelector('.rib .rib-handle')).toBeNull();
+  expect(lip()[0].getAttribute('aria-label')).toBe('Open the day');
+  expect(lip()[0].getAttribute('aria-expanded')).toBe('false');
+  fireEvent.click(lip()[0]);
+  expect(r.container.querySelector('.day-drawer')).not.toBeNull();
+  // Open: the same handle sits on the drawer's top edge.
+  expect(lip()).toHaveLength(1);
+  expect(lip()[0].closest('.day-drawer')).not.toBeNull();
+  expect(lip()[0].getAttribute('aria-label')).toBe('Close the day');
+  expect(lip()[0].textContent).toBe('Close the day');
+  fireEvent.click(lip()[0]);
+  expect(r.container.querySelector('.day-drawer')).toBeNull();
+  // Enter opens, and keyboard focus moves with the handle.
+  lip()[0].focus();
+  fireEvent.keyDown(lip()[0], { key: 'Enter' });
+  expect(r.container.querySelector('.day-drawer')).not.toBeNull();
+  expect(document.activeElement).toBe(lip()[0]);
+  expect(lip()[0].getAttribute('aria-label')).toBe('Close the day');
+  // Space closes.
+  fireEvent.keyDown(lip()[0], { key: ' ' });
+  expect(r.container.querySelector('.day-drawer')).toBeNull();
+  expect(lip()[0].getAttribute('aria-label')).toBe('Open the day');
+  expect(document.activeElement).toBe(lip()[0]);
+  fireEvent.keyDown(lip()[0], { key: ' ' });
+  expect(r.container.querySelector('.day-drawer')).not.toBeNull();
+  // Escape still closes.
+  fireEvent.keyDown(window, { key: 'Escape' });
+  expect(r.container.querySelector('.day-drawer')).toBeNull();
+});
+
+it('a row\'s quiet line: the line, else the next step; then the wait, the helpers, the pull request; blank when nothing is known', () => {
+  const base = lane({ line: '', next: null, pr: null });
+  expect(quietLine(base)).toBe('');
+  // A bare state word is not news: the pill already says it.
+  for (const w of ['running', 'idle', 'failed', 'working']) expect(quietLine(lane({ line: w, pr: null }))).toBe('');
+  expect(quietLine(lane({ line: 'Running web tests, 56 of 89', next: 'merge it', pr: null }))).toBe('Running web tests, 56 of 89');
+  expect(quietLine(lane({ line: 'idle', next: 'merge after the review', pr: null }))).toBe('Next: merge after the review');
+  expect(quietLine(lane({ line: 'Waiting on a thumbnail choice', waiting: true, state: 'blocked', waitingSinceS: 720, pr: null }))).toBe('Waiting on a thumbnail choice \u00b7 12 min');
+  expect(quietLine(lane({ line: 'blocked', waiting: true, state: 'blocked', waitingSinceS: 720, pr: null }))).toBe('Waiting 12 min');
+  // The wait only on a row that waits on the owner.
+  expect(quietLine(lane({ line: 'running', waitingSinceS: 720, pr: null }))).toBe('');
+  expect(quietLine(lane({ line: 'running', kids: { total: 3, working: 2 }, pr: null }))).toBe('3 helpers, 2 working');
+  expect(quietLine(lane({ line: 'running', kids: { total: 1, working: 0 }, pr: null }))).toBe('1 helper, none working');
+  expect(quietLine(lane({ line: 'failed', failed: true, pr: { number: 571, ci: 'failing', ready: true } }))).toBe('PR 571, checks failing');
+  expect(quietLine(lane({ line: 'Drawing options', next: 'x', waiting: true, waitingSinceS: 60, kids: { total: 2, working: 1 }, pr: { number: 5, ci: 'passing', ready: true } }))).toBe(
+    'Drawing options \u00b7 1 min \u00b7 2 helpers, 1 working \u00b7 PR 5, checks passing',
+  );
+});
+
+it('the drawer rows show the state once as the pill, a failed session in rose, and the quiet line; the header counts the failed one', async () => {
+  mocks.set('wall2_omni_summary', () =>
+    summary({
+      sessionsList: [
+        lane({ line: 'running', kids: { total: 3, working: 2 } }),
+        lane({ id: 'a1b2c3d4-0002', title: 'Review 4 items: docs repo', line: 'failed', failed: true, pr: { number: 571, ci: 'failing', ready: false } }),
+        lane({ id: 'a1b2c3d4-0003', title: 'Theme contrast audit', line: 'idle', live: 'idle' }),
+      ],
+      day: [],
+    }),
+  );
+  const r = render(<Ribbon kind="work" />);
+  await flush();
+  fireEvent.click(r.container.querySelector('.rib-handle') as HTMLElement);
+  const d = r.container.querySelector('.day-drawer') as HTMLElement;
+  const rows = [...d.querySelectorAll('.dd-row')] as HTMLElement[];
+  expect(rows.map((x) => x.querySelector('.dd-pill')!.textContent)).toEqual(['working', 'failed', 'idle']);
+  expect(rows[1].querySelector('.dd-pill')!.className).toBe('dd-pill failed');
+  expect(rows.map((x) => x.querySelector('.dd-line')!.textContent)).toEqual(['3 helpers, 2 working', 'PR 571, checks failing, draft', '']);
+  // The state never shows twice: the bare "running", "failed" and "idle" lines are not repeated.
+  for (const x of rows) expect(x.querySelector('.dd-line')!.textContent).not.toBe(x.querySelector('.dd-pill')!.textContent!);
+  expect(d.querySelector('.dd-counts')!.textContent).toBe('3 sessions, 1 working, 1 failed, 1 idle');
+  expect(laneStateWord(lane({ failed: true }))).toBe('failed');
+  expect(laneStateWord(lane({ failed: true, waiting: true }))).toBe('waiting on you');
 });
