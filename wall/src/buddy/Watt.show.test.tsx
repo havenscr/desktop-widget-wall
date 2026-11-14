@@ -6,7 +6,7 @@ import { publishCamera } from '../horizon/signal';
 import { usePlaceStore } from '../state/places';
 import { useSignalStore } from '../signals/store';
 import { useChipLayout } from '../signals/layout';
-import { NO_REPORT, driveInAudience, useWatchStore } from '../unwind/watch/store';
+import { NO_REPORT, driveInAudience, driveInMarquee, useWatchStore } from '../unwind/watch/store';
 import { resetAgents } from '../agents/useAgents';
 import { useFocusStore } from '../focus/store';
 import { resetMeetingFeed } from '../work/useNextMeeting';
@@ -438,5 +438,257 @@ describe('cost while he watches', () => {
     expect(Number(container.querySelector<HTMLElement>('.watt-note')!.style.opacity || 0)).toBe(0);
     // A sign of life (an ear, a dip of his head or a blink) came on the timer alone.
     expect(poses.size).toBeGreaterThan(1);
+  });
+});
+
+describe('the owner\'s hand, his menu and a nap, one show at a time', () => {
+  const proto = HTMLElement.prototype as unknown as Record<string, unknown>;
+  beforeEach(() => {
+    proto.setPointerCapture = () => {};
+    proto.releasePointerCapture = () => {};
+    proto.hasPointerCapture = () => false;
+  });
+  afterEach(() => {
+    delete proto.setPointerCapture;
+    delete proto.releasePointerCapture;
+    delete proto.hasPointerCapture;
+  });
+  const hitOf = (c: HTMLElement) => c.querySelector<HTMLElement>('.watt-hit')!;
+  /** Pick him up from his seat and carry him to x 400 (still held). */
+  const pickUp = (c: HTMLElement) => {
+    const hit = hitOf(c);
+    fireEvent.pointerDown(hit, { pointerId: 1, pointerType: 'mouse', button: 0, clientX: 1050, clientY: 470 });
+    fireEvent.pointerMove(hit, { pointerId: 1, pointerType: 'mouse', clientX: 1060, clientY: 470 });
+    fireEvent.pointerMove(hit, { pointerId: 1, pointerType: 'mouse', clientX: 400, clientY: 380 });
+    runFor(0.6);
+  };
+  const letGo = (c: HTMLElement) => fireEvent.pointerUp(hitOf(c), { pointerId: 1, pointerType: 'mouse', clientX: 400, clientY: 380 });
+  const dropDuringShow = (c: HTMLElement) => {
+    play(A);
+    untilSeated(c);
+    pickUp(c);
+    letGo(c);
+  };
+  const seat = () => seatFor(A, [], W)!;
+  /** Run until he sits in the seat itself (a sit where he landed is only a stop on the way). */
+  const untilAtSeat = (c: HTMLElement, limit = 90) => {
+    for (let t = 0; t < limit && !(showOf(c) === 'seated' && xOf(c) === seat()); t += 0.5) runFor(0.5);
+  };
+
+  it('a drop holds for its own show only: after the show ends he walks to the next show\'s seat', () => {
+    const { container } = start();
+    dropDuringShow(container);
+    runFor(3);
+    const landed = xOf(container);
+    expect(landed).toBeLessThan(500);
+    stopShow();
+    runFor(3);
+    play(A);
+    runFor(2);
+    expect(showOf(container)).toBe('going');
+    untilAtSeat(container);
+    expect(xOf(container)).toBe(seat());
+  });
+
+  it('the show ends while he falls after a drop and the next one starts before he lands: he still walks to its seat', () => {
+    const { container } = start();
+    dropDuringShow(container);
+    runFor(0.1);
+    stopShow();
+    play(A);
+    untilAtSeat(container);
+    expect(xOf(container)).toBe(seat());
+  });
+
+  it('the show ends and the next begins at once (two stores updates, no frame between): the drop does not carry over', () => {
+    const { container } = start();
+    dropDuringShow(container);
+    runFor(3);
+    act(() => useWatchStore.setState({ playing: null, report: NO_REPORT }));
+    act(() => useWatchStore.setState({ playing: FILM, report: { ...NO_REPORT, started: true } }));
+    untilAtSeat(container);
+    expect(xOf(container)).toBe(seat());
+  });
+
+  it('the show ends while he is held: setting him down then is no override for the next show', () => {
+    const { container } = start();
+    play(A);
+    untilSeated(container);
+    pickUp(container);
+    stopShow();
+    runFor(1);
+    letGo(container);
+    runFor(3);
+    expect(xOf(container)).toBeLessThan(500);
+    play(A);
+    untilAtSeat(container);
+    expect(xOf(container)).toBe(seat());
+  });
+
+  it('held across the end of one show and set down in the next: that drop is the next show\'s own, and he stays', () => {
+    const { container } = start();
+    play(A);
+    untilSeated(container);
+    pickUp(container);
+    stopShow();
+    play(A);
+    letGo(container);
+    runFor(3);
+    const landed = xOf(container);
+    expect(landed).toBeLessThan(500);
+    runFor(60);
+    expect(xOf(container)).toBe(landed);
+    expect(showOf(container)).toBe('seated');
+  });
+
+  it('the show ends with his menu open: closed again, the next show takes him to its seat', () => {
+    const { container } = start();
+    dropDuringShow(container);
+    runFor(3);
+    fireEvent.contextMenu(hitOf(container));
+    expect(container.querySelector('.watt-menu')).not.toBeNull();
+    stopShow();
+    runFor(3);
+    fireEvent.keyDown(window, { key: 'Escape' });
+    runFor(1);
+    play(A);
+    untilAtSeat(container);
+    expect(xOf(container)).toBe(seat());
+  });
+
+  it('the show ends while he sleeps at night after a drop: the next show wakes him and takes him to its seat', () => {
+    const { container } = start(late);
+    play(A);
+    untilSeated(container, 80);
+    pickUp(container);
+    letGo(container);
+    runFor(3);
+    stopShow();
+    runFor(6);
+    expect(poseOf(container)).toBe('sleep');
+    play(A);
+    untilAtSeat(container);
+    expect(xOf(container)).toBe(seat());
+  });
+
+  it('a call in the middle of a show does not undo a drop: after it he is where the owner put him', () => {
+    const { container, rerender } = start();
+    dropDuringShow(container);
+    runFor(3);
+    const landed = xOf(container);
+    rerender(<Watt now={day} inCall />);
+    runFor(8);
+    rerender(<Watt now={day} />);
+    runFor(20);
+    expect(Math.abs(xOf(container) - landed)).toBeLessThan(2);
+    expect(showOf(container)).toBe('seated');
+  });
+
+  it('his menu open when a show starts: he stays put while it is open, then goes to the seat', () => {
+    const { container } = start();
+    const home = xOf(container);
+    fireEvent.contextMenu(hitOf(container));
+    expect(container.querySelector('.watt-menu')).not.toBeNull();
+    play(A);
+    runFor(10);
+    expect(Math.abs(xOf(container) - home)).toBeLessThan(1);
+    expect(showOf(container)).toBe('');
+    fireEvent.keyDown(window, { key: 'Escape' });
+    untilAtSeat(container);
+    expect(xOf(container)).toBe(seat());
+  });
+
+  it('a nap he was sent to finishes first, lying where he is; then he goes to the show if it is still on', () => {
+    const clock = { t: day() };
+    const { container } = start(() => clock.t);
+    const home = xOf(container);
+    fireEvent.contextMenu(hitOf(container));
+    const nap = [...container.querySelectorAll<HTMLElement>('.watt-menu [data-item]')].find((b) => b.textContent === 'Nap')!;
+    fireEvent.click(nap, { detail: 0 });
+    runFor(2);
+    expect(poseOf(container)).toContain('lie');
+    play(A);
+    runFor(10);
+    expect(poseOf(container)).toContain('lie');
+    expect(Math.abs(xOf(container) - home)).toBeLessThan(1);
+    expect(showOf(container)).toBe('');
+    clock.t += 61_000;
+    untilAtSeat(container);
+    expect(xOf(container)).toBe(seat());
+    expect(poseOf(container)).toBe('watch');
+  });
+
+  it('a nap that ends after the show ended: he does not go to a show that is over', () => {
+    const clock = { t: day() };
+    const { container } = start(() => clock.t);
+    fireEvent.contextMenu(hitOf(container));
+    const nap = [...container.querySelectorAll<HTMLElement>('.watt-menu [data-item]')].find((b) => b.textContent === 'Nap')!;
+    fireEvent.click(nap, { detail: 0 });
+    play(A);
+    runFor(5);
+    stopShow();
+    clock.t += 61_000;
+    runFor(20);
+    expect(showOf(container)).toBe('');
+  });
+
+  it('a parked video is not a show: playing out of sight on another place he stays where he is', () => {
+    const { container } = start();
+    const home = xOf(container);
+    play(A);
+    act(() => usePlaceStore.setState({ active: 'home' }));
+    runFor(3);
+    act(() => usePlaceStore.setState({ active: 'unwind' }));
+    act(() => useWatchStore.getState().setTab('listen'));
+    runFor(10);
+    expect(showOf(container)).toBe('');
+    expect(Math.abs(xOf(container) - home)).toBeLessThan(200);
+  });
+
+  it('the marquee waiting (a refused autoplay) is not a show; once the click comes he goes to his seat', () => {
+    const { container } = start();
+    const home = xOf(container);
+    act(() => {
+      screen.rect = A;
+      useWatchStore.setState({ tab: 'watch', playing: FILM, paused: false, report: NO_REPORT, needsClick: true });
+    });
+    expect(driveInMarquee(useWatchStore.getState())).toBe('waiting');
+    runFor(10);
+    expect(showOf(container)).toBe('');
+    expect(Math.abs(xOf(container) - home)).toBeLessThan(1);
+    act(() => useWatchStore.setState({ needsClick: false, report: { ...NO_REPORT, started: true } }));
+    untilAtSeat(container);
+    expect(xOf(container)).toBe(seat());
+  });
+});
+
+describe('nothing runs while the page is hidden', () => {
+  it('under reduced motion the minute timer stops while hidden and starts again on show', () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    reduced(true);
+    let hidden = false;
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden });
+    try {
+      const made = vi.spyOn(window, 'setInterval');
+      const cleared = vi.spyOn(window, 'clearInterval');
+      const minute = () => made.mock.calls.map((c, i) => ({ ms: c[1], id: made.mock.results[i].value as number })).filter((m) => m.ms === 60_000);
+      const { unmount } = render(<Watt now={day} />);
+      const before = minute().length;
+      hidden = true;
+      act(() => void document.dispatchEvent(new Event('visibilitychange')));
+      // His own minute timer is among those cleared.
+      const dropped = minute().filter((m) => cleared.mock.calls.some((c) => c[0] === m.id));
+      expect(dropped.length).toBeGreaterThan(0);
+      // Hidden for ten minutes: no new minute timer, so no wake.
+      act(() => void vi.advanceTimersByTime(10 * 60_000));
+      expect(minute()).toHaveLength(before);
+      hidden = false;
+      act(() => void document.dispatchEvent(new Event('visibilitychange')));
+      expect(minute().length).toBeGreaterThan(before);
+      unmount();
+      for (const m of minute().slice(before)) expect(cleared).toHaveBeenCalledWith(m.id);
+    } finally {
+      delete (document as unknown as Record<string, unknown>).hidden;
+    }
   });
 });

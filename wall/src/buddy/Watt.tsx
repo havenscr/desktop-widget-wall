@@ -1356,6 +1356,9 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
       const marquee = driveInShow(ws, usePlaceStore.getState().active);
       const screen = marquee === 'none' ? null : driveInAudience(ws);
       const cc = carry.current;
+      const showMenu = cardRef.current !== null;
+      const showNap = napUntil.current > 0 && nowRef.current() < napUntil.current;
+      const showPinned = cc.stay || ownerPinned(showTrack.current);
       const role = showRole({
         screen,
         marquee,
@@ -1363,10 +1366,10 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
         inCall: inCallRef.current,
         reading: mind.current.focus,
         recording: mind.current.quiet,
-        menuOpen: cardRef.current !== null,
-        napping: napUntil.current > 0 && nowRef.current() < napUntil.current,
+        menuOpen: showMenu,
+        napping: showNap,
         engaged: showOn,
-        pinned: cc.stay || ownerPinned(showTrack.current),
+        pinned: showPinned,
       });
       // A show keeps him up past his bedtime: the drive-in is a night out.
       const night = clock.night && role === 'off';
@@ -1399,6 +1402,10 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
           c.mode = SIT;
           c.landT = sitAt(T0);
           sitToWatch(c, T0, facing(screen, c.x, w));
+        }
+        // Where the owner put him and a call or a place change cleared his sit: he sits down there again.
+        if (role === 'hold' && c.mode === NONE && showPinned && !mind.current.quiet && !showMenu && !showNap && marquee !== 'waiting') {
+          seatNow(c, T0, frameRef.current.x, facing(screen, frameRef.current.x, w));
         }
         if (role === 'watch') {
           // The seat is measured once for this screen and layout (faded controls still hold their
