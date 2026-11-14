@@ -43,6 +43,14 @@ static CURRENT: Mutex<Signals> = Mutex::new(Signals { known: false, mic: Uses { 
 static STOP: AtomicBool = AtomicBool::new(false);
 static STARTED: AtomicBool = AtomicBool::new(false);
 
+/// Whether a recorder holds the microphone or the camera in this reading. The same rule as the
+/// page's `deriveRecording`.
+pub(crate) fn recording_of(s: &Signals) -> bool { s.known && (s.mic.recorder || s.camera.recorder) }
+
+/// Whether a recorder is running now, from the native poll. Only Rust asks this (the recording
+/// keys in `wall2_keys`); the page's own idea of it is never trusted for a key press.
+pub(crate) fn recording_now() -> bool { recording_of(&CURRENT.lock().unwrap_or_else(|e| e.into_inner())) }
+
 #[tauri::command]
 pub fn wall2_signals(window: tauri::WebviewWindow) -> Result<Signals, String> {
     if window.label() != WALL2_LABEL { return Err("forbidden".into()); }
@@ -230,6 +238,14 @@ mod tests {
         assert_eq!(kind_of(r"C:#Apps#Chrome.exe"), Kind::Browser);
         assert_eq!(kind_of(r"C:#Apps#CamtasiaStudio.exe"), Kind::Recorder);
         assert_eq!(kind_of("odd_package"), Kind::Other);
+    }
+    #[test] fn recording_needs_a_known_reading_and_a_recorder_on_the_mic_or_camera() {
+        let on = Uses { recorder: true, ..Uses::default() };
+        assert!(recording_of(&Signals { known: true, mic: on, camera: Uses::default() }));
+        assert!(recording_of(&Signals { known: true, mic: Uses::default(), camera: on }));
+        assert!(!recording_of(&Signals { known: false, mic: on, camera: on }), "an unknown reading is never a recording");
+        assert!(!recording_of(&Signals { known: true, mic: Uses { teams: true, browser: true, other: true, ..Uses::default() }, camera: Uses { zoom: true, ..Uses::default() } }), "a call is not a recording");
+        assert!(!recording_of(&Signals::default()));
     }
     #[test] fn active_value_rule() { assert!(active(1, 0)); assert!(!active(0, 0)); assert!(!active(1, 2)); }
     #[test] fn stale_desktop_needs_a_process() {

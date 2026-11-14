@@ -286,6 +286,28 @@ add('work', 'keys style: for you three, long titles', url('work', KS_DAY, 'long=
 add('work', 'keys style: long labels', url('work', KS_DAY, 'keys=library&hold=lib-vscode&pins=long'), true);
 add('work', 'keys style: hover and pressed', url('work', KS_DAY, 'keys=library&hold=lib-vscode'), true, ['.pin-tile[aria-label="Thirds"]', 'hover:.pin-tile[aria-label="Snip"]']);
 add('work', 'keys style: pressed', url('work', KS_DAY, 'keys=library&hold=lib-vscode'), true, ['.pin-tile[aria-label="Thirds"]', 'press:.keys .key-tile[aria-label="VS Code: terminal"]']);
+// leave and recording: the leave-soon banner over every place (cyan at rest, amber at 5 minutes, "Leave now"),
+// and recording mode (the chip in the Agents header or the top band, the Recording keys in the Now row).
+add('work', 'leave: 12 min', url('work', TYPICAL_AT, 'leave=12'), true);
+add('work', 'leave: amber', url('work', TYPICAL_AT, 'leave=4'), true);
+add('work', 'leave: now', url('work', TYPICAL_AT, 'leave=0'), true);
+add('work', 'leave: long title', url('work', TYPICAL_AT, 'leave=12&long=1'), true);
+add('work', 'leave: heavy data', url('work', TYPICAL_AT, `${HEAVY}&leave=4`), true);
+add('work', 'leave: Day drawer open', url('work', TYPICAL_AT, 'meet=overlap&agents=12ask&leave=12&rec=1'), true, '.rib .rib-handle');
+add('work', 'leave: feed stale, nothing shown', url('work', TYPICAL_AT, 'leave=4&meet=partial'), true);
+add('home', 'leave: on home', url('home', TYPICAL_AT, 'leave=12'), true);
+add('unwind', 'leave: on unwind', url('unwind', TYPICAL_AT, 'leave=4'), true);
+add('meet', 'leave: on meet', url('meet', TYPICAL_AT, 'leave=12'), true);
+add('zen', 'leave: none on zen', url('zen', TYPICAL_AT, 'leave=4'), true);
+add('work', 'recording: work', url('work', TYPICAL_AT, 'rec=1'), true);
+add('work', 'recording: with leave', url('work', TYPICAL_AT, 'rec=1&leave=4'), true);
+add('work', 'recording: agents header, heavy data', url('work', TYPICAL_AT, `${HEAVY}&rec=1`), true);
+add('work', 'recording: helper down', url('work', TYPICAL_AT, 'rec=1&agents=down'), true);
+add('work', 'recording: Hold on another set', url('work', TYPICAL_AT, 'rec=1&keys=library&hold=lib-vscode'), true);
+add('home', 'recording: home', url('home', TYPICAL_AT, 'rec=1'), true);
+add('unwind', 'recording: unwind', url('unwind', TYPICAL_AT, 'rec=1'), true);
+add('meet', 'recording: meet', url('meet', TYPICAL_AT, 'rec=1'), true);
+add('zen', 'recording: none on zen', url('zen', TYPICAL_AT, 'rec=1'), true);
 add('unwind', 'unwind: hide screen at rest', url('unwind', TYPICAL_AT), true);
 add('unwind', 'unwind: hide screen hover', url('unwind', TYPICAL_AT), true, 'hover:.screens-off');
 // The failure note ("Could not watch input", `hide=fail`) after a click, with the pointer still on the pill, and with keyboard focus.
@@ -450,6 +472,27 @@ const EXPECT = [
   ['work', 'keys style: long labels', 'Sonos: play what suits the hour'],
   ['work', 'keys style: hover and pressed', 'windows arranged'],
   ['work', 'keys style: pressed', 'windows arranged'],
+  // leave and recording
+  ['work', 'leave: 12 min', ['Leave in 12 min.', "Doctor's appointment starts", 'turns amber at 5 minutes', '!Dismiss']],
+  ['work', 'leave: amber', ['Leave in 4 min.', 'Dismiss', '!turns amber']],
+  ['work', 'leave: now', ['Leave now.', 'Dismiss']],
+  ['work', 'leave: long title', ['Leave in 12 min.', 'Long appointment with a very long name']],
+  ['work', 'leave: heavy data', ['Leave in 4 min.', 'Dismiss', 'Architecture working']],
+  ['work', 'leave: Day drawer open', ['Leave in 12 min.', 'Agents today', 'Recording00:']],
+  ['work', 'leave: feed stale', ['may be out of date', '!Leave in']],
+  ['home', 'leave: on home', ['Leave in 12 min.', 'Moods']],
+  ['unwind', 'leave: on unwind', ['Leave in 4 min.', 'Dismiss', 'Hide screen']],
+  ['meet', 'leave: on meet', ['Leave in 12 min.', 'Design review with the platform team']],
+  ['zen', 'leave: none on zen', ['Breathe in', '!Leave in']],
+  ['work', 'recording: work', ['Now \u00b7 Recording', 'Stop recording', 'Mark moment', 'Recording00:']],
+  ['work', 'recording: with leave', ['Leave in 4 min.', 'Now \u00b7 Recording', 'Recording00:']],
+  ['work', 'recording: agents header', ['Now \u00b7 Recording', '00:0', '!Recording00:', 'Architecture working']],
+  ['work', 'recording: helper down', ['not reachable', 'Recording00:', 'Now \u00b7 Recording']],
+  ['work', 'recording: Hold', ['Recording00:', 'Command palette', '!Now \u00b7 Recording']],
+  ['home', 'recording: home', ['Recording00:', 'Moods']],
+  ['unwind', 'recording: unwind', ['Recording00:', 'Hide screen']],
+  ['meet', 'recording: meet', ['Recording00:', 'Design review with the platform team']],
+  ['zen', 'recording: none on zen', ['Breathe in', '!Recording00']],
   ['unwind', 'unwind: hide screen note', ['Could not watch input', 'Hide screen']],
   ['unwind', 'unwind: hide screen', 'Hide screen'],
 ];
