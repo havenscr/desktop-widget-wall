@@ -245,11 +245,11 @@ it('Add a key appends into the next free slot and Remove can leave only the Add 
   fireEvent.click(screen.getByRole('button', { name: 'Snip' }));
   await flush();
   expect(labels()).toEqual(['Thirds', 'Snip']);
-  fireEvent.click(screen.getByRole('button', { name: 'More options for Thirds' }));
+  fireEvent.contextMenu(screen.getByRole('button', { name: 'Thirds' }));
   await flush();
   fireEvent.click(screen.getByRole('menuitem', { name: 'Remove from Always here' }));
   await flush();
-  fireEvent.click(screen.getByRole('button', { name: 'More options for Snip' }));
+  fireEvent.contextMenu(screen.getByRole('button', { name: 'Snip' }));
   await flush();
   fireEvent.click(screen.getByRole('menuitem', { name: 'Remove from Always here' }));
   await flush();
@@ -397,21 +397,20 @@ it('the click that closes the picker is not also delivered to what was under the
     </div>,
   );
   await flush();
-  fireEvent.click(screen.getByRole('button', { name: 'More options for Snip' }));
-  await flush();
-  if (!screen.queryByRole('menu')) fireEvent.click(screen.getByRole('button', { name: 'More options for Snip' }));
+  // The previous test closed a picker by an outside press, which leaves its one-click swallow on the document; spend it.
+  fireEvent.click(document.body);
+  fireEvent.contextMenu(screen.getByRole('button', { name: 'Snip' }));
   await flush();
   fireEvent.click(screen.getByRole('menuitem', { name: 'Replace with another key' }));
   await flush();
+  expect(screen.getByRole('dialog')).toBeTruthy();
   fireEvent.pointerDown(screen.getByRole('button', { name: 'task row' }));
   fireEvent.click(screen.getByRole('button', { name: 'task row' }), { detail: 1 });
   expect(screen.queryByRole('dialog')).toBeNull();
   expect(task).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: 'task row' }), { detail: 1 });
   expect(task).toHaveBeenCalledTimes(1);
-  fireEvent.click(screen.getByRole('button', { name: 'More options for Snip' }));
-  await flush();
-  if (!screen.queryByRole('menu')) fireEvent.click(screen.getByRole('button', { name: 'More options for Snip' }));
+  fireEvent.contextMenu(screen.getByRole('button', { name: 'Snip' }));
   await flush();
   fireEvent.click(screen.getByRole('menuitem', { name: 'Replace with another key' }));
   await flush();
@@ -567,7 +566,6 @@ it('opens no menu and no picker while an overlay owns the pointer', async () => 
   document.documentElement.setAttribute(OPEN_ATTR, '');
   const snip = screen.getByRole('button', { name: 'Snip' });
   fireEvent.contextMenu(snip);
-  fireEvent.click(screen.getByRole('button', { name: 'More options for Snip' }));
   fireEvent.keyDown(snip, { key: 'ContextMenu' });
   fireEvent.keyDown(snip, { key: 'F10', shiftKey: true });
   fireEvent.click(screen.getByRole('button', { name: 'Add a key' }));
@@ -581,20 +579,75 @@ it('opens no menu and no picker while an overlay owns the pointer', async () => 
   expect(screen.getByRole('dialog')).toBeTruthy();
 });
 
-it('the menu closes on a press elsewhere, and its corner button toggles it', async () => {
+it('the menu closes on a press elsewhere, and a second right-click on the same key closes it and opens it again', async () => {
   render(<PinnedRow />);
   await flush();
-  fireEvent.contextMenu(screen.getByRole('button', { name: 'Snip' }));
+  const snip = screen.getByRole('button', { name: 'Snip' });
+  fireEvent.contextMenu(snip);
   await flush();
   expect(screen.getByRole('menu')).toBeTruthy();
   fireEvent.pointerDown(document.body);
   expect(screen.queryByRole('menu')).toBeNull();
-  fireEvent.click(screen.getByRole('button', { name: 'More options for Snip' }));
+  fireEvent.contextMenu(snip);
   expect(screen.getByRole('menu')).toBeTruthy();
-  // The corner button that opened it closes it.
-  fireEvent.pointerDown(screen.getByRole('button', { name: 'More options for Snip' }));
-  fireEvent.click(screen.getByRole('button', { name: 'More options for Snip' }));
+  fireEvent.pointerDown(snip, { button: 2 });
   expect(screen.queryByRole('menu')).toBeNull();
+  fireEvent.contextMenu(snip);
+  expect(screen.getAllByRole('menu')).toHaveLength(1);
+});
+
+it('no key has a corner button: not at rest, hovered or focused', async () => {
+  const { container } = render(<PinnedRow />);
+  await flush();
+  const snip = screen.getByRole('button', { name: 'Snip' });
+  const none = () => {
+    expect(container.querySelector('.key-more')).toBeNull();
+    expect(screen.queryByRole('button', { name: /More options for/ })).toBeNull();
+    expect(container.querySelectorAll('.key-tile-wrap > *').length).toBe(container.querySelectorAll('.key-tile-wrap').length);
+  };
+  none();
+  fireEvent.pointerEnter(snip);
+  fireEvent.mouseOver(snip);
+  none();
+  snip.focus();
+  none();
+});
+
+it('a pinned key menu lists Replace, Add a key and Remove in that order', async () => {
+  localStorage.setItem(PINS_KEY, JSON.stringify(['lib:thirds', 'lib:snip']));
+  render(<PinnedRow />);
+  await flush();
+  fireEvent.contextMenu(screen.getByRole('button', { name: 'Snip' }));
+  await flush();
+  expect(screen.getAllByRole('menuitem').map((m) => m.querySelector('span')?.textContent)).toEqual(['Replace with another key', 'Add a key', 'Remove from Always here', 'Edit keys file']);
+  fireEvent.click(screen.getByRole('menuitem', { name: /Add a key/ }));
+  await flush();
+  const dialog = screen.getByRole('dialog', { name: 'Add a key to Always here' });
+  expect(dialog).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Focus' }));
+  await flush();
+  expect(labels()).toEqual(['Thirds', 'Snip', 'Focus']);
+});
+
+it('Add a key in the menu is disabled with its reason when all five places are taken', async () => {
+  localStorage.setItem(PINS_KEY, JSON.stringify(['lib:thirds', 'lib:focus', 'lib:snip', 'lib:mute', 'lib:mixer']));
+  render(<PinnedRow />);
+  await flush();
+  fireEvent.contextMenu(screen.getByRole('button', { name: 'Snip' }));
+  await flush();
+  const item = screen.getByRole('menuitem', { name: /Always here is full/ }) as HTMLButtonElement;
+  expect(item.disabled).toBe(true);
+  expect(item.textContent).toContain('5 of 5');
+  expect(screen.queryByRole('menuitem', { name: /^Add a key/ })).toBeNull();
+});
+
+it('every pinned key tooltip ends with the right-click line', async () => {
+  render(<><PinnedRow /><HoverTipLayer /></>);
+  await flush();
+  fireEvent.mouseEnter(screen.getByRole('button', { name: 'Snip' }));
+  await flush(TIP_DELAY_MS);
+  expect(screen.getByRole('tooltip').textContent).toMatch(/\. Right-click for more\.$/);
+  expect(screen.getByRole('tooltip').textContent).not.toContain('corner');
 });
 
 it('a menu opened by the keyboard returns focus to its key on Escape', async () => {

@@ -196,8 +196,9 @@ state('work', 'deck pins: three pins and Add', 'keys=three&hold=three&pins=three
 state('work', 'deck stretch: two Now keys', 'keys=two&hold=two&pins=three');
 add('work', 'deck pins: Add hovered', url('work', TYPICAL_AT, 'keys=three&hold=three&pins=three'), true, 'hover:.add-key');
 add('work', 'deck pins: picker opened by Add', url('work', TYPICAL_AT, 'keys=three&hold=three&pins=three'), true, '.add-key');
-add('work', 'deck pins: pinned key menu', url('work', TYPICAL_AT, 'keys=three&hold=three&pins=three'), true, '.pinned .key-more');
-add('work', 'deck pins: Now key menu', url('work', TYPICAL_AT, 'keys=library&hold=lib-vscode&pins=three'), true, '.keys .key-more');
+add('work', 'deck pins: pinned key hovered, nothing on it', url('work', TYPICAL_AT, 'keys=three&hold=three&pins=three'), true, 'hover:.pinned .key-tile');
+add('work', 'deck pins: pinned key menu', url('work', TYPICAL_AT, 'keys=three&hold=three&pins=three'), true, 'ctx:.pinned .key-tile');
+add('work', 'deck pins: Now key menu', url('work', TYPICAL_AT, 'keys=library&hold=lib-vscode&pins=three'), true, 'ctx:.keys .key-tile');
 // Watt: his menu (a right-click on him) on each place, at night (tricks wait while he sleeps), and set
 // down far from his old walk (`wattspot`, his stored spot), Unwind on both stretches and on Watch.
 add('work', 'Watt: menu open', url('work', TYPICAL_AT, 'meet=none'), true, 'ctx:.watt-hit');
@@ -552,7 +553,8 @@ const EXPECT = [
   ['work', 'deck stretch: two Now keys', ['Now · Two keys', 'Format']],
   ['work', 'deck pins: Add hovered', 'Add a key'],
   ['work', 'deck pins: picker opened by Add', ['Add a key to Always here', 'Reset to defaults']],
-  ['work', 'deck pins: pinned key menu', ['Replace with another key', 'Remove from Always here']],
+  ['work', 'deck pins: pinned key hovered, nothing on it', 'Add a key'],
+  ['work', 'deck pins: pinned key menu', ['Replace with another key', 'Add a key', 'Remove from Always here']],
   ['work', 'deck pins: Now key menu', ['Pin to Always here', 'Edit keys file']],
   ['work', 'agents header: twelve sessions', 'One thing for you'],
   // Home

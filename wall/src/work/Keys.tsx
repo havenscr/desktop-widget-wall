@@ -17,7 +17,7 @@ import { runForYou, useForYou, type ForYouItem, type ForYouKind } from './forYou
 import { useGuard } from './useGuard';
 import { ActionError } from './wallActions';
 import { KeyIcon } from './keyIcons';
-import { KeyMenu, KeyMenuButton, type KeyMenuAction } from './KeyMenu';
+import { KeyMenu, type KeyMenuAction } from './KeyMenu';
 import { setKeyKind, type KeyKind } from './keyKind';
 import { useLibIndex } from './keyLibrary';
 import { joinKeys, KEYS_POLL_MS, loadKeys, useKeysFeedStore } from './keysFeed';
@@ -538,7 +538,7 @@ export function Keys() {
                   ? layoutOffReason(arrange)
                   : wrongApp
                     ? `${k.label}: ${set.name} is not in front, so this would send nothing. Bring ${set.name} forward, or click Auto to follow the app in front.`
-                    : `${k.action ? k.label : set.general ? `Send ${k.label} to the app in front` : `Send ${k.label} to ${set.name}`}. Right-click, or the button in its corner, for more.`,
+                    : `${k.action ? k.label : set.general ? `Send ${k.label} to the app in front` : `Send ${k.label} to ${set.name}`}. Right-click for more.`,
               )}
               onKeyDown={onMenuKey}
               onContextMenu={onContext}
@@ -551,7 +551,6 @@ export function Keys() {
               <KeyIcon name={k.icon} size={20} />
               <span className="deck-lbl">{label}</span>
             </button>
-            <KeyMenuButton label={k.label} open={menu?.at === i && menu.shown === shown} onOpen={openMenu} onClose={() => setMenu(null)} />
             {menu?.at === i && menu.shown === shown && (
               <KeyMenu
                 title={`${k.label}, in ${set.name}`}
