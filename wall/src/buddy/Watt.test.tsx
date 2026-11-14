@@ -450,6 +450,23 @@ describe('a pet', () => {
     expect(container.querySelector('.watt-prop-bow')).not.toBeNull();
   });
 
+  it('the star he wears is there while his menu is open and he looks up at it', () => {
+    const ms = day();
+    localStorage.setItem(PET_KEY, JSON.stringify({ ...defaultPet(ms), days: 3, lastDay: dayKey(ms), cosmetic: 'star' }));
+    const { container } = render(<Watt now={() => ms} />);
+    runFor(1.5);
+    const star = () => container.querySelector<HTMLElement>('.watt-prop-star');
+    expect(star()).not.toBeNull();
+    fireEvent.contextMenu(container.querySelector('.watt-hit')!);
+    runFor(0.5);
+    expect(container.querySelector('.watt-menu')).not.toBeNull();
+    // The look pose: the pink ear pixel is on the sprite's top row (x 14, y 0), and the star is still drawn, on his side.
+    expect(container.querySelector('.watt-sheep > svg rect[x="84"][y="0"]')).not.toBeNull();
+    expect(star()).not.toBeNull();
+    expect(star()!.style.left).toBe('30px');
+    expect(star()!.style.top).toBe('18px');
+  });
+
   it('shows the amber mark while something waits; clicking it opens what waits', () => {
     const summary: OmniSummary = {
       now: new Date().toISOString(),
