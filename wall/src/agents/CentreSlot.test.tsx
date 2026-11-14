@@ -6,7 +6,7 @@ import type { WeatherState } from '../weather/useWeather';
 import { CentreSlot } from './CentreSlot';
 import { Lanes } from './Lanes';
 import { lane, summary } from './fixtures';
-import { HOLD_HINT_MS, HOLD_MOVE_PX, HOLD_MS, POLL_MS } from './model';
+import { elapsedLabel, HOLD_HINT_MS, HOLD_MOVE_PX, HOLD_MS, POLL_MS } from './model';
 import { resetAgents } from './useAgents';
 import { fitExtras } from './Lane';
 import { useCardScroll } from './cardScroll';
@@ -608,8 +608,12 @@ it('a stale answer where something was waiting, time unknown: grey "Last known: 
   expect(calm.querySelector('button')).toBeNull();
 });
 
-it('the time on a card says what it measures, and "idle 12 min" when the helper knows', async () => {
-  answer = () => summary({ sessionsList: [lane({ live: 'working' }), lane({ id: 'a1b2c3d4-0002', live: 'idle', idleS: 720, line: 'idle' })] });
+it('the time on a card says what it measures, including while helpers work', async () => {
+  answer = () => summary({ sessionsList: [
+    lane({ live: 'working' }),
+    lane({ id: 'a1b2c3d4-0002', live: 'idle', idleS: 720, line: 'idle' }),
+    lane({ id: 'a1b2c3d4-0003', live: 'idle', bg: { agents: 2, shells: 0 }, line: 'helpers working' }),
+  ] });
   const r = render(
     <>
       <CentreSlot weather={weather} />
@@ -617,10 +621,15 @@ it('the time on a card says what it measures, and "idle 12 min" when the helper 
     </>,
   );
   await flush();
-  const [a, b] = [...r.container.querySelectorAll('.lane:not(.slim) .lm .s')] as HTMLElement[];
+  const [a, b, c] = [...r.container.querySelectorAll('.lane:not(.slim) .lm .s')] as HTMLElement[];
   expect(a.textContent).toBe('42 min');
   expect(b.textContent).toBe('idle 12 min');
+  expect(c.textContent).toBe('42 min');
   fireEvent.mouseEnter(a);
   await flush(TIP_DELAY_MS);
   expect(document.querySelector('.hover-tip')!.textContent).toBe('Working, open for 42 min, started 9:42 AM');
+});
+
+it('leaves the card end empty when helper work has no known elapsed time', () => {
+  expect(elapsedLabel(lane({ live: 'idle', elapsedS: Number.NaN, bg: { agents: 1, shells: 0 } }), Date.now()).text).toBe('');
 });
