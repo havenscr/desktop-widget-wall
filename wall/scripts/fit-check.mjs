@@ -335,20 +335,23 @@ try {
 }
 for (const [name, entry] of Object.entries(AREA_BREAKS)) {
   EXPECT[name] = entry.expect;
-  OVERFLOWS[name] = entry.css;
+  if (entry.css !== undefined) OVERFLOWS[name] = entry.css;
 }
 if (flag('list-breaks')) {
-  console.log(Object.keys(OVERFLOWS).join('\n'));
+  console.log(Object.keys(EXPECT).join('\n'));
   process.exit(0);
 }
-// sky layers: breaks that need the horizon's development knobs in the URL, not a stylesheet.
-const SKY_BREAK_Q = { 'sky-moon': '&skymoon=300,200,44', 'sky-always': '&sky=front' };
-// lines controls: the clip around the picture boxes left out (a development knob of the horizon).
-const LINES_BREAK_Q = { 'lines-clip': '&lclip=0' };
+// Breaks may change the page query instead of, or as well as, injecting CSS.
+const BREAK_QUERIES = {
+  'sky-moon': '&skymoon=300,200,44',
+  'sky-always': '&sky=front',
+  'lines-clip': '&lclip=0',
+  ...Object.fromEntries(Object.entries(AREA_BREAKS).filter(([, entry]) => entry.query !== undefined).map(([name, entry]) => [name, entry.query])),
+};
 
 const overflow = flag('overflow')?.split('=')[1];
-if (overflow !== undefined && !(overflow in OVERFLOWS)) {
-  console.error(`fit-check: --overflow takes one of ${Object.keys(OVERFLOWS).join(', ')}`);
+if (overflow !== undefined && !(overflow in EXPECT)) {
+  console.error(`fit-check: --overflow takes one of ${Object.keys(EXPECT).join(', ')}`);
   process.exit(2);
 }
 
@@ -675,7 +678,7 @@ try {
 if (flag('self-test')) {
   const script = fileURLToPath(import.meta.url);
   let missed = 0;
-  const breakNames = flag('area') ? Object.keys(AREA_BREAKS) : Object.keys(OVERFLOWS);
+  const breakNames = flag('area') ? Object.keys(AREA_BREAKS) : Object.keys(EXPECT);
   for (const side of breakNames) {
     const childArgs = [script, chrome, `--overflow=${side}`];
     if (flag('area')) childArgs.push(flag('area'));
@@ -1660,12 +1663,12 @@ try {
   }, new URLSearchParams(location.search).get('card') ? 7000 : 3000);</script>`;
   const areaMeasurements = Object.assign({}, ...areas.map((area) => area.fit?.measurements ?? {}));
   const areaMeasurementScript = `<script>globalThis.__areaMeasurements = {${Object.entries(areaMeasurements).map(([key, fn]) => `${JSON.stringify(key)}: ${fn.toString()}`).join(',')}};</script>`;
-  const broken = overflow ? `<style>${OVERFLOWS[overflow]}</style>` : '';
+  const broken = overflow && OVERFLOWS[overflow] ? `<style>${OVERFLOWS[overflow]}</style>` : '';
   const page = join(out, 'work.html');
   writeFileSync(page, html.replace('</body>', `${broken}${areaMeasurementScript}${measure}</body>`));
 
   let failed = false;
-  if (overflow) console.log(`deliberate overflow: ${overflow} (${OVERFLOWS[overflow]})`);
+  if (overflow) console.log(`deliberate overflow: ${overflow} (${OVERFLOWS[overflow] || BREAK_QUERIES[overflow]})`);
   // A deliberate break runs on the first state, or for the picker on the state that opens it.
   const BREAK_ON = {
     zenhint: (v) => v.name.startsWith('Zen,'),
@@ -1767,7 +1770,8 @@ try {
   const skyMoons = [];
   for (const v of overflow ? breakOn : VARIANTS) {
     console.log(`${v.name} (${v.q}):`);
-    const url = `${pathToFileURL(page).href}${v.q}${v.sky ? `&skycheck=${v.sky}` : ''}${overflow && SKY_BREAK_Q[overflow] ? SKY_BREAK_Q[overflow] : ''}${overflow && LINES_BREAK_Q[overflow] ? LINES_BREAK_Q[overflow] : ''}&checks=${encodeURIComponent(v.checks.join('|'))}${v.click ? `&click=${encodeURIComponent(v.click)}` : ''}${v.card ? '&card=1' : ''}${v.hits ? `&hits=${encodeURIComponent(v.hits.join('|'))}` : ''}${v.noHit ? `&nohit=${encodeURIComponent(v.noHit)}` : ''}${v.listen ? '&listen=1' : ''}${v.linesSheet ? '&linescheck=1' : ''}${v.th ? `&th=${v.th}` : ''}${v.wb ? `&wbcheck=${v.wb}` : ''}`;
+    const breakQuery = overflow && BREAK_QUERIES[overflow] ? (typeof BREAK_QUERIES[overflow] === 'function' ? BREAK_QUERIES[overflow](v) : BREAK_QUERIES[overflow]) : '';
+    const url = `${pathToFileURL(page).href}${v.q}${v.sky ? `&skycheck=${v.sky}` : ''}${breakQuery}&checks=${encodeURIComponent(v.checks.join('|'))}${v.click ? `&click=${encodeURIComponent(v.click)}` : ''}${v.card ? '&card=1' : ''}${v.hits ? `&hits=${encodeURIComponent(v.hits.join('|'))}` : ''}${v.noHit ? `&nohit=${encodeURIComponent(v.noHit)}` : ''}${v.listen ? '&listen=1' : ''}${v.linesSheet ? '&linescheck=1' : ''}${v.th ? `&th=${v.th}` : ''}${v.wb ? `&wbcheck=${v.wb}` : ''}`;
     const dom = await runChrome(
       chrome,
       // Headless Chromium keeps 87 px of the window for itself, so 807 gives a 2560 by 720 viewport.
@@ -1806,7 +1810,7 @@ try {
     // The moon the rule gives for this layout (the first clear one of cameras.ts MOON_PLACES): on Listen in
     // every player state the low place under the player, on Watch with nothing on its first place. Not with a
     // break that moves the moon on purpose (that one must fail on its distance alone).
-    if (v.moonAt && !(overflow && SKY_BREAK_Q[overflow]) && skyLayers.moon !== v.moonAt) {
+    if (v.moonAt && !(overflow && BREAK_QUERIES[overflow]) && skyLayers.moon !== v.moonAt) {
       failed = true;
       console.log(`  FAIL sky layers: the moon is at ${skyLayers.moon || 'no place'}, expected ${v.moonAt} (the first place clear of this layout)`);
     }
