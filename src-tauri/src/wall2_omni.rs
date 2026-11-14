@@ -541,8 +541,8 @@ fn shape_day(v: Option<&Value>) -> Vec<DaySpan> {
         })
         .collect::<Vec<_>>();
     while day.len() > MAX_DAY {
-        let Some(oldest_closed) = day.iter().position(|span| span.end.is_some()) else { break };
-        day.remove(oldest_closed);
+        let oldest = day.iter().position(|span| span.end.is_some()).unwrap_or(0);
+        day.remove(oldest);
     }
     day
 }
@@ -1613,6 +1613,17 @@ mod tests {
         assert_eq!(day.len(), 400);
         assert!(day.iter().any(|span| span.start == "2026-11-01T00:00:00Z" && span.end.is_none()));
         assert_eq!(day.last().unwrap().start, "2026-11-19T17:00:00Z");
+
+        body["day"] = json!((0..450).map(|n| json!({
+            "lane": "a1b2c3d4-0001",
+            "start": format!("2026-12-{:02}T{:02}:00:00Z", 1 + n / 24, n % 24),
+            "end": null,
+            "kind": "run"
+        })).collect::<Vec<_>>());
+        let day = shape_summary(&body).unwrap().day;
+        assert_eq!(day.len(), 400);
+        assert_eq!(day.first().unwrap().start, "2026-12-03T02:00:00Z");
+        assert_eq!(day.last().unwrap().start, "2026-12-19T17:00:00Z");
     }
 
     #[test]
