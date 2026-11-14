@@ -1476,34 +1476,244 @@
 }
 .w-sheet {
   gap: 14px;
-  height: 550px;
 }
 
-/* lines controls */
-.u-listen-gear { position: absolute; left: 430px; top: 180px; }
-.w-sheet:has(.ln-panel) { width: 720px; height: 680px; }
-.ln-pages { width: 220px; flex: none; }
-.ln-panel { display: flex; flex-direction: column; gap: 11px; min-height: 0; font-size: 16px; }
-.ln-panel section h3 { margin: 0 0 6px; font: 600 17px/1.2 var(--disp); }
-.ln-panel section p, .ln-foot { margin: 5px 0 0; color: var(--faint); font-size: 16px; }
-.ln-types, .ln-colours, .ln-actions { display: flex; gap: 7px; align-items: center; }
-.ln-types button { flex: 1; height: 36px; border-radius: 18px; color: var(--dim); border: 1px solid var(--line); }
-.ln-types button.on, .ln-row button.on { color: var(--cyan); border-color: rgba(83,230,235,.65); background: rgba(53,230,234,.12); }
-.ln-sliders { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; }
-.ln-slider span { display: flex; justify-content: space-between; gap: 8px; color: var(--dim); }
-.ln-slider b { color: var(--tx); font-weight: 500; }
-.ln-slider input { width: 100%; height: 26px; margin: 3px 0 0; accent-color: var(--cyan); }
-.ln-slider input::-webkit-slider-runnable-track { height: 6px; border-radius: 3px; background: linear-gradient(90deg, rgba(83,230,235,.8), rgba(255,61,154,.8)); }
-.ln-slider input::-webkit-slider-thumb { width: 20px; height: 20px; margin-top: -7px; }
-.ln-colours button { min-width: 90px; height: 60px; color: var(--dim); font-size: 16px; }
-.ln-colours button i { display: block; width: 32px; height: 32px; margin: 0 auto 3px; border-radius: 50%; border: 2px solid transparent; }
-.ln-colours button.on i { border-color: white; box-shadow: 0 0 0 2px var(--cyan); }
-.ln-colours .look i { background: linear-gradient(90deg,#5cc4ff,#38ecf0,#ff3d9a); }.ln-colours .floor i { background: linear-gradient(90deg,#ffb054,#ff5c96,#54d6ff); }.ln-colours .sunset i { background: linear-gradient(90deg,#ffc460,#ff8460,#ff4896); }.ln-colours .ice i { background: linear-gradient(90deg,#78aaff,#e0f0ff,#96c8ff); }.ln-colours .mint i { background: linear-gradient(90deg,#6ef0aa,#54ecd6,#40c8ff); }
-.ln-row { display: flex; align-items: center; justify-content: space-between; gap: 15px; }
-.ln-row > label { display: flex; align-items: center; gap: 8px; min-height: 36px; }.ln-row input { width: 22px; height: 22px; }
-.ln-row > div { display: flex; align-items: center; gap: 7px; }.ln-row button, .ln-actions button { height: 36px; padding: 0 12px; border: 1px solid var(--line); border-radius: 18px; color: var(--dim); }
-.ln-actions .reset { margin-left: auto; color: var(--cyan); }.ln-actions > span { color: var(--faint); }
-.ln-foot { text-align: center; }
+/* lines controls: the Lines side of the sheet (rows 40 px: label, control, value read back),
+   the "Looks | Lines" switch at its top and the gear on Listen. The Looks side is untouched. */
+.u-listen-gear {
+  position: absolute;
+  left: 430px;
+  top: 180px;
+}
+/* The switch sits in the heading row, left of the close cross, so the Looks side keeps main's layout. */
+.w-seg.ln-pages {
+  position: absolute;
+  top: 14px;
+  right: 70px;
+  width: 184px;
+  padding: 3px;
+}
+.w-seg.ln-pages button {
+  height: 32px;
+  padding: 0 8px;
+  font-size: 16px;
+}
+.w-sheet.ln-sheet {
+  height: auto;
+  gap: 12px;
+}
+.ln-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+  font-size: 16px;
+}
+.ln-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 40px;
+}
+.ln-label {
+  flex: none;
+  width: 104px;
+  color: var(--tx);
+  font: 500 17px/1.2 var(--body);
+  white-space: nowrap;
+}
+.ln-sub {
+  width: auto;
+  margin-left: 14px;
+}
+.ln-value {
+  flex: none;
+  width: 196px;
+  margin-left: auto;
+  text-align: right;
+  color: var(--dim);
+  font-size: 16px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ln-head .ln-value {
+  width: auto;
+}
+.ln-hint,
+.ln-foot {
+  margin: 0;
+  color: var(--faint);
+  font-size: 16px;
+  line-height: 22px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ln-foot {
+  margin-top: 4px;
+}
+.ln-chips {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+}
+.ln-types {
+  justify-content: space-between;
+}
+.ln-chips button,
+.ln-reset {
+  height: 36px;
+  padding: 0 14px;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: rgba(10, 7, 28, 0.5);
+  color: var(--dim);
+  font: 500 16px/1 var(--body);
+  white-space: nowrap;
+}
+.ln-types button {
+  flex: 1;
+  padding: 0 6px;
+}
+.ln-chips button:hover,
+.ln-reset:hover,
+.ln-sw:hover i {
+  color: var(--tx);
+  border-color: rgba(83, 230, 235, 0.45);
+}
+.ln-chips button.on {
+  color: var(--cyan);
+  border-color: rgba(83, 230, 235, 0.65);
+  background: rgba(53, 230, 234, 0.12);
+}
+.ln-reset {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  color: var(--tx);
+}
+.ln-panel button:focus-visible,
+.ln-track input:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: 2px;
+}
+/* A slider: a 6 px track filled to the value, a 20 px thumb and a 2 px tick at "your usual". */
+.ln-track {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  display: flex;
+  align-items: center;
+}
+.ln-track input {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: 32px;
+  margin: 0;
+  background: transparent;
+  appearance: none;
+  cursor: pointer;
+}
+.ln-track input::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--cyan) 0 var(--at), rgba(170, 160, 230, 0.28) var(--at) 100%);
+}
+.ln-track input::-webkit-slider-thumb {
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  margin-top: -7px;
+  border-radius: 50%;
+  background: #ece8ff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+}
+.ln-usual {
+  position: absolute;
+  z-index: 2;
+  left: calc(10px + (100% - 20px) * var(--usual) / 100%);
+  top: 6px;
+  width: 2px;
+  height: 20px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: rgba(255, 233, 196, 0.85);
+  pointer-events: none;
+}
+.ln-swatches {
+  display: flex;
+  gap: 12px;
+}
+.ln-sw {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+}
+.ln-sw i {
+  width: 32px;
+  height: 32px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.12);
+}
+.ln-sw.on i {
+  border-color: #fff;
+  box-shadow: 0 0 0 2px var(--cyan);
+}
+.ln-sw.look i {
+  background: linear-gradient(90deg, #5cc4ff, #38ecf0, #ff3d9a);
+}
+.ln-sw.floor i {
+  background: linear-gradient(90deg, #ffb054, #ff5c96, #54d6ff);
+}
+.ln-sw.sunset i {
+  background: linear-gradient(90deg, #ffc460, #ff8460, #ff4896);
+}
+.ln-sw.ice i {
+  background: linear-gradient(90deg, #78aaff, #e0f0ff, #96c8ff);
+}
+.ln-sw.mint i {
+  background: linear-gradient(90deg, #6ef0aa, #54ecd6, #40c8ff);
+}
+/* The switch: 52 by 32, its knob to the right when on. */
+.ln-switch {
+  flex: none;
+  position: relative;
+  width: 52px;
+  height: 32px;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: rgba(10, 7, 28, 0.6);
+}
+.ln-switch i {
+  position: absolute;
+  left: 4px;
+  top: 4px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--dim);
+  transition: left 0.15s;
+}
+.ln-switch.on {
+  border-color: rgba(83, 230, 235, 0.65);
+  background: rgba(53, 230, 234, 0.3);
+}
+.ln-switch.on i {
+  left: 24px;
+  background: #ece8ff;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ln-switch i {
+    transition: none;
+  }
+}
 
 /* ---- Listen: 7A (cover on top, controls in the sky), 8B (Up next), 6A with 9A (the Spotify
    card in the upper right, its switch on top). Positions are in .unwind's own pixels (stage x

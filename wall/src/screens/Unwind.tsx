@@ -10,6 +10,7 @@ import { useCoverTintFollow } from '../unwind/useCoverTintFollow';
 import { WatchSheet } from '../unwind/watch/Sheet';
 import { useWatchStore } from '../unwind/watch/store';
 import { WatchGear, WatchPanel } from '../unwind/watch/Watch';
+import { LinesGear } from '../unwind/watch/LinesPanel';
 import { WatchCard } from '../unwind/watch/WatchCard';
 import { UNWIND_ROOM_HEIGHT, UNWIND_ROOM_TOP } from './frameLayout';
 import { ScreensOff } from '../ui/ScreensOff';
@@ -58,7 +59,10 @@ export function Unwind() {
           </>
         ) : (
           <>
-            <div className="u-tabrow u-listen-gear"><WatchGear /></div>
+            {/* lines controls: the gear on Listen opens the sheet on its Lines side. */}
+            <div className="u-tabrow u-listen-gear">
+              <LinesGear />
+            </div>
             <div className="u-listen" role="tabpanel" id={LISTEN_PANEL_ID} aria-labelledby={LISTEN_TAB_ID}>
               <Player />
             </div>
@@ -80,7 +84,7 @@ export function Unwind() {
       <div className="u-right" style={{ ['--room-top' as string]: `${UNWIND_ROOM_TOP}px`, ['--room-height' as string]: `${UNWIND_ROOM_HEIGHT}px` }}>
         {watch ? <WatchCard /> : null}
       </div>
-      {sheet ? <WatchSheet /> : null}
+      {sheet ? <WatchSheet initial={watch ? 'looks' : 'lines'} /> : null}
     </section>
   );
 }

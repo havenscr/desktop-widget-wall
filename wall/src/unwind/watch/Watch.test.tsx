@@ -64,8 +64,22 @@ it('renders the Listen tab with the same text as before when nothing is saved, a
   // The text main showed for this track before Watch existed.
   expect(panel.textContent).toBe('Tokyo BurnoutTokyo Rose2:354:13');
   expect(screen.queryByRole('button', { name: 'Video' })).toBeNull();
-  expect(screen.getByLabelText('How video is shown')).not.toBeNull();
+  expect(screen.queryByLabelText('How video is shown')).toBeNull();
+  // The lines' gear (asked for on Listen) is there by its own name, and no sheet is open.
+  expect(screen.getByRole('button', { name: 'How the lines move' }).getAttribute('aria-expanded')).toBe('false');
+  expect(screen.queryByRole('dialog')).toBeNull();
   expect(document.querySelector('.w-card')).toBeNull();
+});
+
+it('the gear on Listen opens the sheet on its Lines side; Watch opens it on Looks', async () => {
+  render(<Unwind />);
+  await flush();
+  await act(async () => screen.getByRole('button', { name: 'How the lines move' }).click());
+  const sheet = screen.getByRole('dialog', { name: 'How the lines move' });
+  expect(sheet.querySelector('.ln-panel')).not.toBeNull();
+  expect(screen.getByRole('tab', { name: 'Lines' }).getAttribute('aria-selected')).toBe('true');
+  await act(async () => screen.getByRole('tab', { name: 'Looks' }).click());
+  expect(screen.getByRole('dialog', { name: 'How video is shown' }).querySelector('.ln-panel')).toBeNull();
 });
 
 it('gives the album art a Video corner when something is saved, which switches to Watch', async () => {
