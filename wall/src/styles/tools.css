@@ -24,9 +24,9 @@
   color: var(--tx);
 }
 .tools-drawer:has(.tools-note) {
-  gap: 4px;
-  padding-top: 9px;
-  padding-bottom: 5px;
+  gap: 0;
+  padding-top: 6px;
+  padding-bottom: 2px;
 }
 .tools-drawer * {
   box-sizing: border-box;
