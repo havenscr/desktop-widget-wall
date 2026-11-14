@@ -19,8 +19,9 @@ export function DateLine({ now = () => new Date(), wallNow = Date.now }: { now?:
   const fresh = freshReading(reading, wallNow());
   // Missing weather is said, dim, once it is known to be missing (a failed fetch, or a reading too old); not while still loading.
   const missing = !fresh && (failed || reading !== null);
+  const failedTip = failed && reading ? `Last try failed: ${weatherFailureText(failure)} Showing the reading from ${new Date(reading.fetchedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.` : null;
   return (
-    <div className="u-date">
+    <div className="u-date" {...(failedTip ? tip(failedTip) : {})}>
       {dateLine(d, fresh)}
       {missing ? <span className="u-asof" {...tip(`${weatherFailureText(failure)} Last tried ${attemptedAt ? new Date(attemptedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : 'recently'}.`)}>, {WEATHER_UNAVAILABLE}</span> : null}
     </div>

@@ -53,7 +53,7 @@ async function run(): Promise<void> {
     /* keep the last good reading; the card shows its age */
     const message = error instanceof Error ? error.message : '';
     const failure: WeatherFailure = controller.signal.aborted ? 'timeout' : message.startsWith('weather-http:') ? `http ${Number(message.slice(13))}` : message === 'weather-parse' ? 'parse' : 'network';
-    if (mine === epoch) useWeatherStore.setState({ failed: !useWeatherStore.getState().reading, failure });
+    if (mine === epoch) useWeatherStore.setState({ failed: true, failure });
   } finally {
     clearTimeout(timeout);
     if (mine === epoch) inFlight = false;
