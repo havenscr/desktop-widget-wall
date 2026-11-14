@@ -55,6 +55,7 @@ export default {
     { screen: 'unwind', name: 'player: Listen with an ended session', query: unwindQuery('weather=ok&media=ended'), custom: true, expect: ['Last played on Video App', 'Evening Radio Mix', 'Play again'] },
     { screen: 'work', name: 'weather: refused (429), the reason and the next try on the Work card', query: workQuery('weather=refused&agents=0'), custom: true, expect: ['Weather unavailable', 'Open-Meteo is refusing this address for now (too many requests). Next try at'] },
     { screen: 'work', name: 'weather: this PC could not look up the address', query: workQuery('weather=dns&agents=0'), custom: true, expect: ['Weather unavailable', "This PC could not look up Open-Meteo's address."] },
+    { screen: 'unwind', name: 'weather: the date line hover names the National Weather Service', query: unwindQuery('weather=second&media=none'), custom: true, actions: 'hover:.u-date', expect: 'Weather from the National Weather Service' },
     { screen: 'work', name: 'weather: Open-Meteo refuses, the National Weather Service answers', query: workQuery('weather=second&agents=0'), custom: true, expect: ['Overcast', '!Weather unavailable'] },
   ] },
   fit: {
