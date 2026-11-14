@@ -22,7 +22,6 @@ vi.mock('@tauri-apps/api/event', () => ({
 
 import { usePlaceStore } from '../../state/places';
 import { useSignalStore } from '../../signals/store';
-import { Tabs } from '../Tabs';
 import { SAVED_KEY } from './saved';
 import { resetWatch, useWatchStore } from './store';
 import { WatchPanel } from './Watch';
@@ -35,19 +34,16 @@ const emit = async (name: string, payload: unknown) => {
 };
 const frame = () => document.querySelector('iframe');
 
+// Only Watch's own panel: leaving Watch goes through the stores (the Listen switch sets the Watch
+// store's tab; Zen is a place), so the test does not depend on how Unwind draws its switch.
 function View() {
-  return (
-    <>
-      <Tabs />
-      <WatchPanel />
-    </>
-  );
+  return <WatchPanel />;
 }
 
 async function playing(expectFrame = true) {
   localStorage.setItem(SAVED_KEY, JSON.stringify([{ kind: 'video', id: V, label: 'Night drive mix' }]));
   resetWatch();
-  usePlaceStore.setState({ active: 'unwind', from: 'work', zenDream: false });
+  usePlaceStore.setState({ active: 'unwind', from: 'work' });
   useWatchStore.getState().setTab('watch');
   useWatchStore.getState().play({ kind: 'video', id: V });
   render(<View />);
@@ -99,10 +95,18 @@ it('stops when the display read at start says it is off', async () => {
   expect(useWatchStore.getState().playing).toBeNull();
 });
 
-it('removes the frame on a click on the Dream tab (Zen opens)', async () => {
+it('removes the frame when Watch is left for Listen, and does not bring it back', async () => {
   await playing();
-  await act(async () => screen.getByRole('tab', { name: 'Dream' }).click());
-  expect(usePlaceStore.getState().active).toBe('zen');
+  await act(async () => useWatchStore.getState().setTab('listen'));
+  expect(frame()).toBeNull();
+  await act(async () => useWatchStore.getState().setTab('watch'));
+  expect(frame()).toBeNull();
+  expect(useWatchStore.getState().playing).toBeNull();
+});
+
+it('removes the frame when Zen opens, and does not bring it back', async () => {
+  await playing();
+  await act(async () => usePlaceStore.getState().setActive('zen'));
   expect(frame()).toBeNull();
   usePlaceStore.setState({ active: 'unwind' });
   await act(async () => {});
