@@ -189,6 +189,10 @@ pub struct NowPlayingInfo {
     /// its end), so it is reported as paused and the wall shows "last played".
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub ended: bool,
+    /// Wall 2 only: the shown session's key (`wall2_media::session_keys`), sent back with every media
+    /// command so the command lands on that session even when two sessions share an app id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_key: Option<String>,
 }
 
 impl Default for NowPlayingInfo {
@@ -209,6 +213,7 @@ impl Default for NowPlayingInfo {
             source_app_id: None,
             art_key: None,
             ended: false,
+            session_key: None,
         }
     }
 }
@@ -987,23 +992,71 @@ fn session_app_id(session: &GlobalSystemMediaTransportControlsSession) -> String
     session.SourceAppUserModelId().map(|h| h.to_string()).unwrap_or_default().chars().take(200).collect()
 }
 
+/// A session's facts for telling it from another session of the same app (see `wall2_media::match_current`).
+fn session_fingerprint(session: &GlobalSystemMediaTransportControlsSession) -> wall2_media::Fingerprint {
+    let status = session
+        .GetPlaybackInfo()
+        .ok()
+        .and_then(|p| p.PlaybackStatus().ok())
+        .map(status_word)
+        .unwrap_or("unknown");
+    let (position_s, end_s) = match session.GetTimelineProperties() {
+        Ok(t) => (
+            t.Position().map(|d| d.Duration as f64 / 10_000_000.0).unwrap_or(0.0),
+            t.EndTime().map(|d| d.Duration as f64 / 10_000_000.0).unwrap_or(0.0),
+        ),
+        Err(_) => (0.0, 0.0),
+    };
+    let title = session
+        .TryGetMediaPropertiesAsync()
+        .ok()
+        .and_then(|op| op.get().ok())
+        .and_then(|props| props.Title().ok())
+        .map(|t| t.to_string())
+        .unwrap_or_default();
+    wall2_media::Fingerprint { source: session_app_id(session), title, end_s, position_s, status }
+}
+
+/// Which listed session Windows calls current. Session objects compare by COM identity in the pinned
+/// `windows` crate (`IUnknown` equality: the same pointer, else the same `IUnknown` after a query), so
+/// the object `GetCurrentSession` returns is looked up in the list directly. When the manager hands out
+/// a different wrapper for the same session, the app id is used, and with several sessions of one app
+/// their title, timeline and status decide (`wall2_media::match_current`).
+fn current_index(
+    list: &[GlobalSystemMediaTransportControlsSession],
+    current: &GlobalSystemMediaTransportControlsSession,
+) -> Option<usize> {
+    if let Some(i) = list.iter().position(|s| s == current) {
+        return Some(i);
+    }
+    let id = session_app_id(current);
+    let same: Vec<usize> = (0..list.len()).filter(|&i| session_app_id(&list[i]) == id).collect();
+    match same.len() {
+        0 => None,
+        1 => Some(same[0]),
+        _ => {
+            let facts: Vec<wall2_media::Fingerprint> = same.iter().map(|&i| session_fingerprint(&list[i])).collect();
+            wall2_media::match_current(&facts, &session_fingerprint(current)).map(|j| same[j])
+        }
+    }
+}
+
 /// Wall 2: reads every media session and lets `wall2_media::choose` pick the one to show. Returns
-/// the session and whether it plays but has ended (to be reported as paused). None when there
-/// is no session to show.
+/// the session, its key, and whether it plays but has ended (to be reported as paused). None when
+/// there is no session to show.
 fn choose_session(
     manager: &GlobalSystemMediaTransportControlsSessionManager,
-) -> Option<(GlobalSystemMediaTransportControlsSession, bool)> {
-    let list = manager.GetSessions().ok()?;
-    let current_id = manager.GetCurrentSession().ok().map(|s| session_app_id(&s));
+) -> Option<(GlobalSystemMediaTransportControlsSession, String, bool)> {
+    let sessions: Vec<GlobalSystemMediaTransportControlsSession> = manager.GetSessions().ok()?.into_iter().collect();
+    let current = manager.GetCurrentSession().ok().and_then(|c| current_index(&sessions, &c));
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs_f64())
         .unwrap_or(0.0);
-    let mut sessions = Vec::new();
+    let sources: Vec<String> = sessions.iter().map(session_app_id).collect();
+    let keys = wall2_media::session_keys(&sources);
     let mut cands = Vec::new();
-    let mut current_taken = false;
-    for session in &list {
-        let source = session_app_id(&session);
+    for (i, session) in sessions.iter().enumerate() {
         let status = session
             .GetPlaybackInfo()
             .ok()
@@ -1020,30 +1073,38 @@ fn choose_session(
             ),
             Err(_) => (0.0, 0.0, 0.0),
         };
-        // Windows' current session is found by its app id; a second session with the same id
-        // is never marked current.
-        let current = !current_taken && current_id.as_deref() == Some(source.as_str());
-        current_taken |= current;
-        cands.push(wall2_media::Candidate { source, status, position_s, end_s, since_update_s: since, current });
-        sessions.push(session);
+        cands.push(wall2_media::Candidate {
+            source: sources[i].clone(),
+            key: keys[i].clone(),
+            status,
+            position_s,
+            end_s,
+            since_update_s: since,
+            current: current == Some(i),
+        });
     }
     let (picked, _) = wall2_media::choose(&cands);
     let picked = picked?;
-    sessions.into_iter().nth(picked.index).map(|s| (s, picked.ended))
+    let key = keys[picked.index].clone();
+    sessions.into_iter().nth(picked.index).map(|s| (s, key, picked.ended))
 }
 
-/// The session a media command acts on: the one with this app id when one is given and still
-/// exists, else Windows' current session.
+/// The session a media command acts on. From Wall 2 the session with this key, else the first with
+/// this app id, when one is given and still exists (`wall2_media::resolve`); from any other window,
+/// and when nothing is found, Windows' current session.
 fn session_for(
     manager: &GlobalSystemMediaTransportControlsSessionManager,
+    window_label: &str,
+    session_key: Option<&str>,
     source_id: Option<&str>,
 ) -> Result<GlobalSystemMediaTransportControlsSession, String> {
-    if let Some(id) = source_id.map(str::trim).filter(|s| !s.is_empty()) {
+    if wall2_media::honour_keys(window_label) {
         if let Ok(list) = manager.GetSessions() {
-            for session in &list {
-                if session_app_id(&session) == id {
-                    return Ok(session);
-                }
+            let sessions: Vec<GlobalSystemMediaTransportControlsSession> = list.into_iter().collect();
+            let sources: Vec<String> = sessions.iter().map(session_app_id).collect();
+            let keys = wall2_media::session_keys(&sources);
+            if let Some(i) = wall2_media::resolve(&keys, &sources, session_key, source_id) {
+                return Ok(sessions[i].clone());
             }
         }
     }
@@ -1104,9 +1165,11 @@ async fn get_now_playing(window: tauri::WebviewWindow, art_for: Option<String>) 
 
         // Get the session to show: the one that really plays on Wall 2, else the current one.
         let mut ended = false;
+        let mut session_key = None;
         let chosen = if wall2 {
-            choose_session(&manager).map(|(s, e)| {
+            choose_session(&manager).map(|(s, k, e)| {
                 ended = e;
+                session_key = Some(k);
                 s
             })
         } else {
@@ -1128,6 +1191,7 @@ async fn get_now_playing(window: tauri::WebviewWindow, art_for: Option<String>) 
         let mut info = NowPlayingInfo::default();
 
         info.ended = ended;
+        info.session_key = session_key;
         // Get source app
         if let Ok(app_id) = session.SourceAppUserModelId() {
             let app_id = app_id.to_string();
@@ -1243,14 +1307,15 @@ async fn get_now_playing(window: tauri::WebviewWindow, art_for: Option<String>) 
 
 /// Toggle play/pause (async to avoid blocking main thread)
 #[tauri::command]
-async fn media_play_pause(source_id: Option<String>) -> Result<(), String> {
+async fn media_play_pause(window: tauri::WebviewWindow, session_key: Option<String>, source_id: Option<String>) -> Result<(), String> {
+    let label = window.label().to_string();
     tauri::async_runtime::spawn_blocking(move || {
         let manager = GlobalSystemMediaTransportControlsSessionManager::RequestAsync()
             .map_err(|e| e.to_string())?
             .get()
             .map_err(|e| e.to_string())?;
 
-        let session = session_for(&manager, source_id.as_deref())?;
+        let session = session_for(&manager, &label, session_key.as_deref(), source_id.as_deref())?;
         session
             .TryTogglePlayPauseAsync()
             .map_err(|e| e.to_string())?
@@ -1265,14 +1330,15 @@ async fn media_play_pause(source_id: Option<String>) -> Result<(), String> {
 
 /// Skip to next track (async to avoid blocking main thread)
 #[tauri::command]
-async fn media_next(source_id: Option<String>) -> Result<(), String> {
+async fn media_next(window: tauri::WebviewWindow, session_key: Option<String>, source_id: Option<String>) -> Result<(), String> {
+    let label = window.label().to_string();
     tauri::async_runtime::spawn_blocking(move || {
         let manager = GlobalSystemMediaTransportControlsSessionManager::RequestAsync()
             .map_err(|e| e.to_string())?
             .get()
             .map_err(|e| e.to_string())?;
 
-        let session = session_for(&manager, source_id.as_deref())?;
+        let session = session_for(&manager, &label, session_key.as_deref(), source_id.as_deref())?;
         session
             .TrySkipNextAsync()
             .map_err(|e| e.to_string())?
@@ -1287,14 +1353,15 @@ async fn media_next(source_id: Option<String>) -> Result<(), String> {
 
 /// Skip to previous track (async to avoid blocking main thread)
 #[tauri::command]
-async fn media_previous(source_id: Option<String>) -> Result<(), String> {
+async fn media_previous(window: tauri::WebviewWindow, session_key: Option<String>, source_id: Option<String>) -> Result<(), String> {
+    let label = window.label().to_string();
     tauri::async_runtime::spawn_blocking(move || {
         let manager = GlobalSystemMediaTransportControlsSessionManager::RequestAsync()
             .map_err(|e| e.to_string())?
             .get()
             .map_err(|e| e.to_string())?;
 
-        let session = session_for(&manager, source_id.as_deref())?;
+        let session = session_for(&manager, &label, session_key.as_deref(), source_id.as_deref())?;
         session
             .TrySkipPreviousAsync()
             .map_err(|e| e.to_string())?
@@ -1309,14 +1376,15 @@ async fn media_previous(source_id: Option<String>) -> Result<(), String> {
 
 /// Seek to a specific position in seconds (async to avoid blocking main thread)
 #[tauri::command]
-async fn media_seek(position_seconds: f64, source_id: Option<String>) -> Result<(), String> {
+async fn media_seek(window: tauri::WebviewWindow, position_seconds: f64, session_key: Option<String>, source_id: Option<String>) -> Result<(), String> {
+    let label = window.label().to_string();
     tauri::async_runtime::spawn_blocking(move || {
         let manager = GlobalSystemMediaTransportControlsSessionManager::RequestAsync()
             .map_err(|e| e.to_string())?
             .get()
             .map_err(|e| e.to_string())?;
 
-        let session = session_for(&manager, source_id.as_deref())?;
+        let session = session_for(&manager, &label, session_key.as_deref(), source_id.as_deref())?;
 
         // Convert seconds to 100-nanosecond intervals (TimeSpan duration)
         let ticks = (position_seconds * 10_000_000.0) as i64;
@@ -1336,14 +1404,15 @@ async fn media_seek(position_seconds: f64, source_id: Option<String>) -> Result<
 
 /// Toggle shuffle mode (async to avoid blocking main thread)
 #[tauri::command]
-async fn media_toggle_shuffle(source_id: Option<String>) -> Result<bool, String> {
+async fn media_toggle_shuffle(window: tauri::WebviewWindow, session_key: Option<String>, source_id: Option<String>) -> Result<bool, String> {
+    let label = window.label().to_string();
     tauri::async_runtime::spawn_blocking(move || {
         let manager = GlobalSystemMediaTransportControlsSessionManager::RequestAsync()
             .map_err(|e| e.to_string())?
             .get()
             .map_err(|e| e.to_string())?;
 
-        let session = session_for(&manager, source_id.as_deref())?;
+        let session = session_for(&manager, &label, session_key.as_deref(), source_id.as_deref())?;
 
         // Get current shuffle state
         let playback_info = session.GetPlaybackInfo().map_err(|e| e.to_string())?;
@@ -1370,14 +1439,15 @@ async fn media_toggle_shuffle(source_id: Option<String>) -> Result<bool, String>
 /// Set repeat mode (async to avoid blocking main thread)
 /// mode: "none", "track", or "list"
 #[tauri::command]
-async fn media_set_repeat_mode(mode: String, source_id: Option<String>) -> Result<(), String> {
+async fn media_set_repeat_mode(window: tauri::WebviewWindow, mode: String, session_key: Option<String>, source_id: Option<String>) -> Result<(), String> {
+    let label = window.label().to_string();
     tauri::async_runtime::spawn_blocking(move || {
         let manager = GlobalSystemMediaTransportControlsSessionManager::RequestAsync()
             .map_err(|e| e.to_string())?
             .get()
             .map_err(|e| e.to_string())?;
 
-        let session = session_for(&manager, source_id.as_deref())?;
+        let session = session_for(&manager, &label, session_key.as_deref(), source_id.as_deref())?;
 
         let repeat_mode = match mode.to_lowercase().as_str() {
             "track" => MediaPlaybackAutoRepeatMode::Track,
@@ -1399,14 +1469,15 @@ async fn media_set_repeat_mode(mode: String, source_id: Option<String>) -> Resul
 
 /// Cycle through repeat modes: none -> list -> track -> none
 #[tauri::command]
-async fn media_cycle_repeat(source_id: Option<String>) -> Result<String, String> {
+async fn media_cycle_repeat(window: tauri::WebviewWindow, session_key: Option<String>, source_id: Option<String>) -> Result<String, String> {
+    let label = window.label().to_string();
     tauri::async_runtime::spawn_blocking(move || {
         let manager = GlobalSystemMediaTransportControlsSessionManager::RequestAsync()
             .map_err(|e| e.to_string())?
             .get()
             .map_err(|e| e.to_string())?;
 
-        let session = session_for(&manager, source_id.as_deref())?;
+        let session = session_for(&manager, &label, session_key.as_deref(), source_id.as_deref())?;
 
         // Get current repeat mode
         let playback_info = session.GetPlaybackInfo().map_err(|e| e.to_string())?;

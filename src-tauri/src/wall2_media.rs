@@ -31,6 +31,9 @@ static TX: OnceLock<SyncSender<String>> = OnceLock::new();
 pub struct Candidate {
     /// The session's app id (`SourceAppUserModelId`).
     pub source: String,
+    /// The session's key (`session_keys`): its app id and its place among the sessions with that id.
+    /// Two sessions of one app (two browser tabs) have two keys.
+    pub key: String,
     /// Lower case status word: playing, paused, stopped, changing, opened, closed.
     pub status: &'static str,
     pub position_s: f64,
@@ -57,26 +60,36 @@ pub fn past_end(c: &Candidate) -> bool {
     c.playing() && c.has_end() && c.position_s + c.since_update_s.max(0.0) > c.end_s + END_SLACK_S
 }
 
-/// Rule (b): the state kept per source id between reads. A session that keeps refreshing its
+/// How old (seconds) a near-end observation may be and still count: after a gap in reading (the
+/// page hidden) the first read starts the two-reads clock again.
+pub const NEAR_END_FORGET_S: f64 = 10.0;
+
+/// Rule (b): the state kept per session key between reads. A session that keeps refreshing its
 /// timeline at the end (so rule (a) never fires) is caught by its position staying within one
-/// second of its end on two reads at least three seconds apart.
+/// second of its end on two reads at least three seconds apart. The key, not the app id, so two
+/// sessions of one app keep two clocks.
 #[derive(Default, Debug)]
 pub struct EndTracker {
-    near: HashMap<String, f64>,
+    /// Per key: when it was first seen near its end, and when it was last observed.
+    near: HashMap<String, (f64, f64)>,
 }
 
 impl EndTracker {
     /// Feeds one read of every session at `now_s` (any steady clock, in seconds) and returns,
-    /// per session, whether it has been stuck at its end. A source that is not near its end,
-    /// or is gone, forgets its state.
+    /// per session, whether it has been stuck at its end. A session that is not near its end,
+    /// is gone, or was last observed more than ten seconds ago forgets its state.
     pub fn observe(&mut self, now_s: f64, cands: &[Candidate]) -> Vec<bool> {
-        let mut next: HashMap<String, f64> = HashMap::new();
+        let mut next: HashMap<String, (f64, f64)> = HashMap::new();
         let mut out = Vec::with_capacity(cands.len());
         for c in cands {
             let near = c.playing() && c.has_end() && (c.end_s - c.position_s).abs() <= NEAR_END_S;
             if near {
-                let since = next.get(&c.source).or_else(|| self.near.get(&c.source)).copied().unwrap_or(now_s);
-                next.insert(c.source.clone(), since);
+                let known = next.get(&c.key).or_else(|| self.near.get(&c.key)).copied();
+                let since = match known {
+                    Some((since, last)) if now_s - last <= NEAR_END_FORGET_S => since,
+                    _ => now_s,
+                };
+                next.insert(c.key.clone(), (since, now_s));
                 out.push(now_s - since >= STUCK_AFTER_S);
             } else {
                 out.push(false);
@@ -84,6 +97,72 @@ impl EndTracker {
         }
         self.near = next;
         out
+    }
+}
+
+/// A key for each listed session that stays the same across reads while the same sessions exist:
+/// the app id and the session's place (from zero, in list order) among those with that id, such as
+/// `Example.App#0` and `Example.App#1`.
+pub fn session_keys(sources: &[String]) -> Vec<String> {
+    let mut seen: HashMap<&str, usize> = HashMap::new();
+    sources
+        .iter()
+        .map(|id| {
+            let n = seen.entry(id.as_str()).or_insert(0);
+            let key = format!("{id}#{n}");
+            *n += 1;
+            key
+        })
+        .collect()
+}
+
+/// Which listed session a media command acts on: the one with this key, else the first with this app
+/// id, else None (the caller then uses Windows' current session). `keys` and `sources` are the
+/// listed sessions' keys and app ids in list order.
+pub fn resolve(keys: &[String], sources: &[String], key: Option<&str>, id: Option<&str>) -> Option<usize> {
+    let key = key.map(str::trim).filter(|k| !k.is_empty());
+    let id = id.map(str::trim).filter(|i| !i.is_empty());
+    if let Some(k) = key {
+        if let Some(i) = keys.iter().position(|x| x == k) {
+            return Some(i);
+        }
+    }
+    id.and_then(|id| sources.iter().position(|s| s == id))
+}
+
+/// A session key counts only from the second window; any other window acts on the current session.
+pub fn honour_keys(window_label: &str) -> bool {
+    window_label == "wall2"
+}
+
+/// What identifies a listed session when the session objects themselves cannot be compared: its app
+/// id, its title (never logged), the end of its timeline, its position and its status.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Fingerprint {
+    pub source: String,
+    pub title: String,
+    pub end_s: f64,
+    pub position_s: f64,
+    pub status: &'static str,
+}
+
+/// Which listed session Windows' current one is, when its object is not found in the list: the
+/// sessions with the same app id; with one, that one; with several, the one with the same title,
+/// end and status and a position within two seconds (reads a moment apart); with several of those
+/// (they cannot be told apart), the first of them; with none of those, the first with the same id.
+pub fn match_current(list: &[Fingerprint], current: &Fingerprint) -> Option<usize> {
+    let same: Vec<usize> = (0..list.len()).filter(|&i| list[i].source == current.source).collect();
+    match same.len() {
+        0 => None,
+        1 => Some(same[0]),
+        _ => same
+            .iter()
+            .copied()
+            .find(|&i| {
+                let f = &list[i];
+                f.title == current.title && (f.end_s - current.end_s).abs() < 0.5 && f.status == current.status && (f.position_s - current.position_s).abs() <= 2.0
+            })
+            .or(Some(same[0])),
     }
 }
 
@@ -166,17 +245,17 @@ fn log_id(source: &str) -> String {
     source.chars().take(LOG_ID_CHARS).map(|c| if c.is_ascii_graphic() { c } else { '_' }).collect()
 }
 
-/// The log line without its time stamp: the chosen session and rule, then every session with its
+/// The log line without its time stamp: the chosen session (by key) and rule, then every session with its
 /// status (`ended` replaces `playing` for one that plays but has ended). Ids and fixed words only.
 pub fn choice_body(cands: &[Candidate], ended: &[bool], chosen: Option<Pick>) -> String {
-    let chosen_id = chosen.map(|p| log_id(&cands[p.index].source)).unwrap_or_else(|| "none".to_string());
+    let chosen_id = chosen.map(|p| log_id(&cands[p.index].key)).unwrap_or_else(|| "none".to_string());
     let rule = chosen.map_or(Rule::NoSession, |p| p.rule).word();
     let sessions: Vec<String> = cands
         .iter()
         .enumerate()
         .map(|(i, c)| {
             let word = if c.playing() && ended.get(i).copied().unwrap_or(false) { "ended" } else { c.status };
-            let id = if c.source.is_empty() { "_".to_string() } else { log_id(&c.source) };
+            let id = if c.key.is_empty() { "_".to_string() } else { log_id(&c.key) };
             format!("{id}:{word}{}", if c.current { ":current" } else { "" })
         })
         .collect();
@@ -230,7 +309,12 @@ mod tests {
     use super::*;
 
     fn c(source: &str, status: &'static str, position_s: f64, end_s: f64, since_update_s: f64, current: bool) -> Candidate {
-        Candidate { source: source.to_string(), status, position_s, end_s, since_update_s, current }
+        Candidate { source: source.to_string(), key: format!("{source}#0"), status, position_s, end_s, since_update_s, current }
+    }
+
+    /// A session with an explicit key (a second session of one app).
+    fn ck(source: &str, key: &str, status: &'static str, position_s: f64, end_s: f64, since_update_s: f64, current: bool) -> Candidate {
+        Candidate { key: key.to_string(), ..c(source, status, position_s, end_s, since_update_s, current) }
     }
 
     fn picked(cands: &[Candidate]) -> Option<(usize, Rule, bool)> {
@@ -377,7 +461,106 @@ mod tests {
         let ended: Vec<bool> = s.iter().map(past_end).collect();
         let p = pick(&s, &ended);
         let body = choice_body(&s, &ended, p);
-        assert_eq!(body, format!("rule=other-playing chosen=Music.exe sessions={}:ended:current;Music.exe:playing;_:paused;a_b_:paused", "x".repeat(80)));
+        assert_eq!(body, format!("rule=other-playing chosen=Music.exe#0 sessions={}:ended:current;Music.exe#0:playing;#0:paused;a_b_#0:paused", "x".repeat(80)));
         assert_eq!(choice_body(&[], &[], None), "rule=none chosen=none sessions=none");
+    }
+
+    fn strings(v: &[&str]) -> Vec<String> {
+        v.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn keys_are_the_app_id_and_its_place_among_sessions_with_that_id_in_list_order() {
+        assert_eq!(session_keys(&strings(&["a", "b", "a", "a"])), strings(&["a#0", "b#0", "a#1", "a#2"]));
+        // Two tabs of one app: two keys, in the order Windows lists them, the same on every read.
+        let two = strings(&["Example.Browser", "Example.Browser"]);
+        assert_eq!(session_keys(&two), strings(&["Example.Browser#0", "Example.Browser#1"]));
+        assert_eq!(session_keys(&two), session_keys(&two));
+        assert_eq!(session_keys(&[]), Vec::<String>::new());
+        // A session that is not the first of its id keeps its own ordinal whichever is current.
+        let sources = strings(&["x", "x"]);
+        let keys = session_keys(&sources);
+        let cands = [ck("x", &keys[0], "paused", 1.0, 100.0, 5.0, false), ck("x", &keys[1], "playing", 1.0, 100.0, 1.0, true)];
+        assert_eq!(cands.iter().position(|c| c.current), Some(1));
+        assert_eq!(cands[1].key, "x#1");
+    }
+
+    #[test]
+    fn a_command_resolves_by_key_then_by_app_id_then_not_at_all() {
+        let sources = strings(&["a", "b", "a"]);
+        let keys = session_keys(&sources);
+        // The key wins, even for the second session of an id.
+        assert_eq!(resolve(&keys, &sources, Some("a#1"), Some("a")), Some(2));
+        assert_eq!(resolve(&keys, &sources, Some("b#0"), Some("a")), Some(1));
+        // A key that is gone falls back to the first session with the id.
+        assert_eq!(resolve(&keys, &sources, Some("a#7"), Some("a")), Some(0));
+        assert_eq!(resolve(&keys, &sources, None, Some("b")), Some(1));
+        // Nothing found: the caller uses Windows' current session.
+        assert_eq!(resolve(&keys, &sources, Some("zzz#0"), Some("zzz")), None);
+        assert_eq!(resolve(&keys, &sources, None, None), None);
+        assert_eq!(resolve(&keys, &sources, Some("  "), Some("")), None);
+        assert_eq!(resolve(&[], &[], Some("a#0"), Some("a")), None);
+    }
+
+    #[test]
+    fn a_key_counts_only_from_the_second_window() {
+        assert!(honour_keys("wall2"));
+        assert!(!honour_keys("main"));
+        assert!(!honour_keys(""));
+    }
+
+    #[test]
+    fn two_sessions_of_one_app_keep_two_end_clocks() {
+        // Tab 0 sits at its end; tab 1 plays mid-song. Same app id, so only the key tells them apart.
+        let mk = || [ck("tab", "tab#0", "playing", 100.0, 100.0, 0.0, false), ck("tab", "tab#1", "playing", 30.0, 200.0, 0.5, true)];
+        let mut t = EndTracker::default();
+        assert_eq!(classify(&mut t, 0.0, &mk()), vec![false, false]);
+        assert_eq!(classify(&mut t, 4.0, &mk()), vec![true, false]);
+        // Windows' current is tab 1 and it plays: it is shown.
+        let ended = classify(&mut t, 6.0, &mk());
+        let p = pick(&mk(), &ended).unwrap();
+        assert_eq!((p.index, p.rule), (1, Rule::CurrentPlaying));
+        // The other way round: the current one is the stuck tab, the other tab plays: rule two picks it.
+        let swapped = [ck("tab", "tab#0", "playing", 100.0, 100.0, 0.0, true), ck("tab", "tab#1", "playing", 30.0, 200.0, 0.5, false)];
+        let ended = classify(&mut t, 8.0, &swapped);
+        assert_eq!(ended, vec![true, false]);
+        let p = pick(&swapped, &ended).unwrap();
+        assert_eq!((p.index, p.rule, p.ended), (1, Rule::OtherPlaying, false));
+    }
+
+    #[test]
+    fn an_old_near_end_observation_is_forgotten_after_a_gap_in_reading() {
+        let mut t = EndTracker::default();
+        let at_end = [c("a", "playing", 100.0, 100.0, 0.0, true)];
+        assert_eq!(t.observe(0.0, &at_end), vec![false]);
+        // The page was hidden for 20 seconds: the first read after it starts the clock again.
+        assert_eq!(t.observe(20.0, &at_end), vec![false]);
+        assert_eq!(t.observe(22.0, &at_end), vec![false]);
+        assert_eq!(t.observe(23.0, &at_end), vec![true]);
+        // A gap of exactly ten seconds is still the same observation.
+        assert_eq!(t.observe(33.0, &at_end), vec![true]);
+        assert_eq!(t.observe(33.0 + 10.5, &at_end), vec![false]);
+    }
+
+    fn fp(source: &str, title: &str, end_s: f64, position_s: f64, status: &'static str) -> Fingerprint {
+        Fingerprint { source: source.to_string(), title: title.to_string(), end_s, position_s, status }
+    }
+
+    #[test]
+    fn the_current_session_is_found_by_its_facts_when_the_objects_cannot_be_compared() {
+        let list = [fp("tab", "One", 200.0, 50.0, "playing"), fp("other", "Z", 10.0, 1.0, "paused"), fp("tab", "Two", 300.0, 120.0, "playing"), fp("tab", "Two", 300.0, 20.0, "playing")];
+        // One session with the id: that one, whatever its facts.
+        assert_eq!(match_current(&list, &fp("other", "anything", 1.0, 1.0, "playing")), Some(1));
+        // Several: the title, end, status and a close position decide, not the first of the id.
+        assert_eq!(match_current(&list, &fp("tab", "Two", 300.0, 121.0, "playing")), Some(2));
+        assert_eq!(match_current(&list, &fp("tab", "Two", 300.0, 21.5, "playing")), Some(3));
+        assert_eq!(match_current(&list, &fp("tab", "One", 200.0, 51.0, "playing")), Some(0));
+        // Several that fit equally: the first of them. None fit: the first with the id.
+        let twins = [fp("tab", "Same", 100.0, 10.0, "playing"), fp("tab", "Same", 100.0, 10.5, "playing")];
+        assert_eq!(match_current(&twins, &fp("tab", "Same", 100.0, 10.2, "playing")), Some(0));
+        assert_eq!(match_current(&list, &fp("tab", "Nothing alike", 9.0, 9.0, "paused")), Some(0));
+        // No session with the id.
+        assert_eq!(match_current(&list, &fp("gone", "Two", 300.0, 120.0, "playing")), None);
+        assert_eq!(match_current(&[], &fp("tab", "Two", 300.0, 120.0, "playing")), None);
     }
 }

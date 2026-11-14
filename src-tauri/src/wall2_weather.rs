@@ -117,12 +117,27 @@ pub fn nws_points_url(latitude: f64, longitude: f64) -> String {
     format!("{NWS_HOST_PREFIX}points/{latitude:.4},{longitude:.4}")
 }
 
-/// The hourly forecast address from a point lookup's reply, only when it is on the Weather
-/// Service's own host over https (the reply is outside text and is never followed elsewhere).
-pub fn hourly_url_from_points(body: &str) -> Option<String> {
+fn nws_address_ok(url: &str) -> bool {
+    url.starts_with(NWS_HOST_PREFIX) && url.len() <= 300 && url.chars().all(|c| c.is_ascii_graphic())
+}
+
+/// The hourly and the 12 hour forecast addresses from a point lookup's reply. Each is used only when
+/// it is on the Weather Service's own host over https (the reply is outside text and is never
+/// followed elsewhere). The hourly one is required; a missing or foreign 12 hour address is None.
+pub fn nws_urls_from_points(body: &str) -> Option<(String, Option<String>)> {
     let v: serde_json::Value = serde_json::from_str(body).ok()?;
-    let url = v.get("properties")?.get("forecastHourly")?.as_str()?;
-    (url.starts_with(NWS_HOST_PREFIX) && url.len() <= 300 && url.chars().all(|c| c.is_ascii_graphic())).then(|| url.to_string())
+    let props = v.get("properties")?;
+    let hourly = props.get("forecastHourly")?.as_str().filter(|u| nws_address_ok(u))?.to_string();
+    let forecast = props.get("forecast").and_then(|u| u.as_str()).filter(|u| nws_address_ok(u)).map(str::to_string);
+    Some((hourly, forecast))
+}
+
+/// What the page receives for the second source: `{"hourly": ..., "forecast": ...}` with the 12 hour
+/// forecast null when it could not be read. None when the hourly reply is not JSON.
+pub fn combine_nws(hourly: &str, forecast: Option<&str>) -> Option<String> {
+    let hourly: serde_json::Value = serde_json::from_str(hourly).ok()?;
+    let forecast = forecast.and_then(|f| serde_json::from_str::<serde_json::Value>(f).ok()).unwrap_or(serde_json::Value::Null);
+    serde_json::to_string(&serde_json::json!({ "hourly": hourly, "forecast": forecast })).ok()
 }
 
 /// True when this window may use the weather command.
@@ -231,27 +246,30 @@ fn get(url: &str, accept: &str) -> Result<String, (Failure, String)> {
     String::from_utf8(bytes).map_err(|_| (Failure::Read, String::new()))
 }
 
-/// The point lookup, remembered for the last place asked (kept in memory only).
-static POINT: Mutex<Option<(String, String)>> = Mutex::new(None);
+/// The point lookup's two addresses, remembered for the last place asked (kept in memory only).
+static POINT: Mutex<Option<(String, String, Option<String>)>> = Mutex::new(None);
 
 fn read_nws(latitude: f64, longitude: f64) -> Result<String, (Failure, String)> {
     let key = format!("{latitude:.4},{longitude:.4}");
-    let cached = POINT.lock().unwrap_or_else(|e| e.into_inner()).as_ref().filter(|(k, _)| *k == key).map(|(_, u)| u.clone());
-    let url = match cached {
+    let cached = POINT.lock().unwrap_or_else(|e| e.into_inner()).as_ref().filter(|(k, _, _)| *k == key).map(|(_, h, f)| (h.clone(), f.clone()));
+    let (hourly_url, forecast_url) = match cached {
         Some(u) => u,
         None => {
             let points = get(&nws_points_url(latitude, longitude), "application/geo+json")?;
-            let u = hourly_url_from_points(&points).ok_or((Failure::Read, String::new()))?;
-            *POINT.lock().unwrap_or_else(|e| e.into_inner()) = Some((key, u.clone()));
+            let u = nws_urls_from_points(&points).ok_or((Failure::Read, String::new()))?;
+            *POINT.lock().unwrap_or_else(|e| e.into_inner()) = Some((key, u.0.clone(), u.1.clone()));
             u
         }
     };
-    let result = get(&url, "application/geo+json");
-    if matches!(result, Err((Failure::Http(404 | 410), _))) {
+    let hourly = get(&hourly_url, "application/geo+json");
+    if matches!(hourly, Err((Failure::Http(404 | 410), _))) {
         // The remembered address is gone: ask for the point again next time.
         *POINT.lock().unwrap_or_else(|e| e.into_inner()) = None;
     }
-    result
+    let hourly = hourly?;
+    // The 12 hour forecast gives the day's high and low; without it the page falls back to the hours still ahead.
+    let forecast = forecast_url.and_then(|u| get(&u, "application/geo+json").ok());
+    combine_nws(&hourly, forecast.as_deref()).ok_or((Failure::Read, String::new()))
 }
 
 /// Reads the forecast from `source` (`open-meteo` or `nws`) and returns the reply text for the
@@ -330,20 +348,44 @@ mod tests {
     }
 
     #[test]
-    fn only_the_weather_services_own_hourly_address_is_followed() {
-        let good = r#"{"properties":{"forecastHourly":"https://api.weather.gov/gridpoints/AAA/1,2/forecast/hourly"}}"#;
-        assert_eq!(hourly_url_from_points(good).as_deref(), Some("https://api.weather.gov/gridpoints/AAA/1,2/forecast/hourly"));
+    fn only_the_weather_services_own_addresses_are_followed() {
+        let good = r#"{"properties":{"forecastHourly":"https://api.weather.gov/gridpoints/AAA/1,2/forecast/hourly","forecast":"https://api.weather.gov/gridpoints/AAA/1,2/forecast"}}"#;
+        assert_eq!(
+            nws_urls_from_points(good),
+            Some(("https://api.weather.gov/gridpoints/AAA/1,2/forecast/hourly".to_string(), Some("https://api.weather.gov/gridpoints/AAA/1,2/forecast".to_string())))
+        );
+        // A foreign 12 hour address is dropped, the hourly one stays; a foreign hourly one drops both.
+        let foreign_forecast = r#"{"properties":{"forecastHourly":"https://api.weather.gov/g/h","forecast":"https://example.org/f"}}"#;
+        assert_eq!(nws_urls_from_points(foreign_forecast), Some(("https://api.weather.gov/g/h".to_string(), None)));
+        let no_forecast = r#"{"properties":{"forecastHourly":"https://api.weather.gov/g/h"}}"#;
+        assert_eq!(nws_urls_from_points(no_forecast), Some(("https://api.weather.gov/g/h".to_string(), None)));
         for bad in [
-            r#"{"properties":{"forecastHourly":"https://example.org/x"}}"#,
+            r#"{"properties":{"forecastHourly":"https://example.org/x","forecast":"https://api.weather.gov/f"}}"#,
             r#"{"properties":{"forecastHourly":"http://api.weather.gov/x"}}"#,
             r#"{"properties":{"forecastHourly":"https://api.weather.gov.example.org/x"}}"#,
             r#"{"properties":{"forecastHourly":"https://api.weather.gov/x y"}}"#,
+            r#"{"properties":{"forecast":"https://api.weather.gov/f"}}"#,
             r#"{"properties":{}}"#,
             r#"{"properties":{"forecastHourly":5}}"#,
             "not json",
         ] {
-            assert_eq!(hourly_url_from_points(bad), None, "{bad}");
+            assert_eq!(nws_urls_from_points(bad), None, "{bad}");
         }
+    }
+
+    #[test]
+    fn the_second_source_reply_holds_both_forecasts_or_a_null_forecast() {
+        let both = combine_nws(r#"{"properties":{"periods":[]}}"#, Some(r#"{"properties":{"periods":[1]}}"#)).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&both).unwrap();
+        assert_eq!(v["hourly"]["properties"]["periods"], serde_json::json!([]));
+        assert_eq!(v["forecast"]["properties"]["periods"], serde_json::json!([1]));
+        let only_hourly = combine_nws(r#"{"a":1}"#, None).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&only_hourly).unwrap();
+        assert_eq!(v["hourly"]["a"], 1);
+        assert!(v["forecast"].is_null());
+        // A 12 hour reply that is not JSON is the same as none; an hourly reply that is not JSON is a failure.
+        assert!(combine_nws(r#"{"a":1}"#, Some("oops")).unwrap().contains(r#""forecast":null"#));
+        assert_eq!(combine_nws("oops", Some("{}")), None);
     }
 
     #[test]
