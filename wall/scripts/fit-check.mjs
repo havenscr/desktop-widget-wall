@@ -228,7 +228,7 @@ const OVERFLOWS = {
   'tower-over': '.w-tower path[fill-rule="evenodd"] { fill-rule: nonzero !important; }',
   'tower-wide': '.w-tower { transform: scaleX(1.16); transform-origin: 1580px 0; }',
   'tower-box': '.w-drivein { left: 1000px !important; top: 40px !important; }',
-  'tower-switch': '.w-panel:has(.w-holo) .w-lookbar { left: 540px !important; }',
+  'tower-switch': '.top:has(.w-holo) .w-lookbar { left: 540px !important; }',
   'holo-big': '.w-holo { scale: 1.3; }',
   'holo-noblend': '.w-holo { mix-blend-mode: normal !important; }',
   // the beam moved 46 px up, over the picture (and a blurred stand-in for any other glow lying on it)
