@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState, type UIEvent } from 'react';
 import {
   IconArrowLeft,
+  IconArrowsShuffle,
   IconBrandSpotify,
+  IconChevronRight,
   IconBrandYoutube,
   IconExternalLink,
   IconPlayerPauseFilled,
@@ -17,19 +19,22 @@ import { spotify, type SpotifyItem, type SpotifyTrack } from '../../music/spotif
 import { refreshNowPlaying, useNowPlayingStore } from '../../music/store';
 import { useNowPlaying } from '../../music/useNowPlaying';
 import { useToolsStore } from '../../tools/store';
-import { tip } from '../../ui/HoverTip';
+import { hideTip, pinTip, tip, TIP_DELAY_MS } from '../../ui/HoverTip';
 import { Cover } from './Cover';
 import {
-  itemLine,
+  isNowPlaying,
+  kindLine,
   playProblemLine,
   problemLine,
   SEARCH_MIN,
   SEARCH_WAIT_MS,
   songs,
   spotifyProblem,
+  tileLine,
   trackLength,
   useLastContext,
   useListenSource,
+  useSpotifyNow,
   type ListenSource,
   type SpotifyProblem,
 } from './model';
@@ -75,7 +80,6 @@ function readTab(tab: Exclude<BrowseTab, 'search'>, page: number): Promise<Spoti
   return spotify.recent();
 }
 
-const KIND_WORD: Record<SpotifyItem['kind'], string> = { track: 'Song', album: 'Album', playlist: 'Playlist' };
 
 /** Close to the end of a scrolled list. */
 const nearEnd = (e: UIEvent<HTMLElement>) => {
@@ -149,6 +153,34 @@ function SpotifyBrowse() {
   return <Browser />;
 }
 
+/** Ask Spotify once which song plays, so the playing mark goes by track id (a failure keeps what is known). */
+function useSpotifyNowRead(title: string): void {
+  useEffect(() => {
+    let live = true;
+    spotify.playback().then(
+      (p) => live && useSpotifyNow.setState({ id: p?.track?.id ?? null }),
+      () => undefined,
+    );
+    return () => {
+      live = false;
+    };
+  }, [title]);
+}
+
+/** The mark for a row: by track id when known, else title and artist (see `isNowPlaying`). */
+function useIsNow(): (t: { id: string | null; name: string; artists?: string | null }) => boolean {
+  const nowId = useSpotifyNow((s) => s.id);
+  const title = useNowPlayingStore((s) => s.info?.title ?? '');
+  const artist = useNowPlayingStore((s) => s.info?.artist ?? '');
+  return (t) => isNowPlaying(t, nowId, title, artist);
+}
+
+/** Play an item whole, or shuffled (the shuffle switch first, then the play). */
+function playWhole(item: SpotifyItem, shuffled: boolean): Promise<void> {
+  const go = () => spotify.play(item.kind, item.id);
+  return (shuffled ? spotify.shuffle(true).then(go) : go()).then(() => void refreshNowPlaying());
+}
+
 function Browser() {
   const [tab, setTab] = useState<BrowseTab>('playlists');
   const [lists, setLists] = useState<Record<BrowseTab, ListState>>(() => ({ search: EMPTY_LIST, playlists: EMPTY_LIST, albums: EMPTY_LIST, liked: EMPTY_LIST, recent: EMPTY_LIST }));
@@ -157,9 +189,13 @@ function Browser() {
   const [open, setOpen] = useState<SpotifyItem | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const nowTitle = useNowPlayingStore((s) => s.info?.title ?? '');
+  useSpotifyNowRead(nowTitle);
+  const isNow = useIsNow();
   const mounted = useRef(true);
   const listsRef = useRef(lists);
   listsRef.current = lists;
+  // Only the newest search may change the list: an older answer (or failure) that lands late is dropped.
+  const searchSeq = useRef(0);
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -203,22 +239,34 @@ function Browser() {
     if (tab !== 'search' && !lists[tab].loaded && !lists[tab].loading) load(tab, 0);
   }, [tab, lists, load]);
 
-  // Search: on Enter, or after 400 ms without typing, with at least two characters.
+  // Search: on Enter, or after 400 ms without typing, with at least two characters. `again` asks
+  // the same words once more (Retry after a failure).
   const runSearch = useCallback(
-    (q: string) => {
+    (q: string, again = false) => {
       const text = q.trim();
-      if (text.length < SEARCH_MIN || text === asked) return;
+      if (text.length < SEARCH_MIN || (text === asked && !again)) return;
+      const mine = ++searchSeq.current;
       setAsked(text);
       setTab('search');
       setOpen(null);
       patch('search', { loading: true, problem: null });
       spotify.search(text).then(
         (r) => {
-          if (!mounted.current) return;
+          if (!mounted.current || mine !== searchSeq.current) return;
           const items = [...(r?.tracks ?? []), ...(r?.playlists ?? []), ...(r?.albums ?? [])];
           patch('search', { items, loading: false, loaded: true, more: false, page: 0 });
         },
-        (e) => mounted.current && patch('search', { items: [], loading: false, loaded: true, problem: spotifyProblem(e) }),
+        (e) => {
+          if (!mounted.current || mine !== searchSeq.current) return;
+          const problem = spotifyProblem(e);
+          // The same words may be asked again (Retry, or typing them once more).
+          setAsked('');
+          // A failure keeps the last good results under a note; with none, the line and Retry show.
+          if (listsRef.current.search.items.length > 0) {
+            patch('search', { loading: false, problem });
+            setNote(`${problemLine(problem)} These are the last results.`);
+          } else patch('search', { items: [], loading: false, loaded: true, problem });
+        },
       );
     },
     [asked, patch],
@@ -229,50 +277,44 @@ function Browser() {
     return () => clearTimeout(id);
   }, [query, runSearch]);
 
-  const playItem = (item: SpotifyItem) => {
-    spotify.play(item.kind, item.id).then(
-      () => void refreshNowPlaying(),
-      (e) => mounted.current && setNote(playProblemLine(spotifyProblem(e))),
-    );
-  };
+  const fail = (e: unknown) => mounted.current && setNote(playProblemLine(spotifyProblem(e)));
+  const playItem = (item: SpotifyItem) => void playWhole(item, false).catch(fail);
+  const shuffleItem = (item: SpotifyItem) => void playWhole(item, true).catch(fail);
 
   const cur = lists[tab];
+  const songsIn = cur.items.filter((i) => i.kind === 'track');
+  const lists2 = cur.items.filter((i) => i.kind !== 'track');
+  const scrolled = (e: UIEvent<HTMLElement>) => {
+    if (tab !== 'search' && tab !== 'recent' && cur.more && !cur.loading && nearEnd(e)) load(tab, cur.page + 1);
+  };
   return (
     <div className="sp-body">
       {open ? (
-        <SongsView item={open} nowTitle={nowTitle} onBack={() => setOpen(null)} onNote={setNote} />
+        <SongsView item={open} onBack={() => setOpen(null)} onNote={setNote} />
       ) : (
         <>
-          <div className="sp-bar">
-            <label className="sp-search">
-              <IconSearch size={20} stroke={1.8} aria-hidden="true" />
-              <input
-                type="search"
-                value={query}
-                placeholder="Search Spotify"
-                aria-label="Search Spotify"
-                onChange={(e) => setQuery(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') runSearch(query);
-                }}
-              />
-            </label>
-            <div className="sp-tabs" role="tablist" aria-label="Spotify library">
-              {BROWSE_TABS.map((t) => (
-                <button key={t.id} type="button" role="tab" aria-selected={tab === t.id} className={tab === t.id ? 'on' : ''} onClick={() => setTab(t.id)}>
-                  {t.label}
-                </button>
-              ))}
-            </div>
+          <label className="sp-search">
+            <IconSearch size={20} stroke={1.8} aria-hidden="true" />
+            <input
+              type="search"
+              value={query}
+              placeholder="Search Spotify"
+              aria-label="Search Spotify"
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') runSearch(query, true);
+              }}
+            />
+          </label>
+          <div className="sp-tabs" role="tablist" aria-label="Spotify library">
+            {BROWSE_TABS.map((t) => (
+              <button key={t.id} type="button" role="tab" aria-selected={tab === t.id} className={tab === t.id ? 'on' : ''} onClick={() => setTab(t.id)}>
+                {t.label}
+              </button>
+            ))}
           </div>
-          <div
-            className="sp-list"
-            role="list"
-            onScroll={(e) => {
-              if (tab !== 'search' && tab !== 'recent' && cur.more && !cur.loading && nearEnd(e)) load(tab, cur.page + 1);
-            }}
-          >
-            {tab === 'search' && !asked ? (
+          <div className="sp-scroll" onScroll={scrolled}>
+            {tab === 'search' && !asked && cur.items.length === 0 && !cur.problem ? (
               <div className="sp-empty">Type at least two letters, then wait a moment or press Enter.</div>
             ) : cur.problem && cur.items.length === 0 ? (
               <div className="sp-empty">
@@ -281,18 +323,39 @@ function Browser() {
                   <button type="button" className="sp-btn" onClick={() => useToolsStore.getState().openDrawer('accounts')}>
                     Open Tools
                   </button>
-                ) : tab !== 'search' ? (
-                  <button type="button" className="sp-btn" onClick={() => load(tab, 0)}>
+                ) : (
+                  <button type="button" className="sp-btn" onClick={() => (tab === 'search' ? runSearch(query, true) : load(tab, 0))}>
                     Retry
                   </button>
-                ) : null}
+                )}
               </div>
             ) : cur.loaded && cur.items.length === 0 ? (
               <div className="sp-empty">{EMPTY_LINE[tab]}</div>
             ) : (
-              cur.items.map((item, i) => (
-                <Row key={`${item.kind}-${item.id}-${i}`} item={item} kindWord={tab === 'search'} playing={item.kind === 'track' && !!nowTitle && item.name === nowTitle} onOpen={() => (item.kind === 'track' ? playItem(item) : setOpen(item))} onPlay={() => playItem(item)} />
-              ))
+              <>
+                {tab === 'search' && cur.problem ? (
+                  <div className="sp-empty sp-stale">
+                    {problemLine(cur.problem)}
+                    <button type="button" className="sp-btn" onClick={() => runSearch(query, true)}>
+                      Retry
+                    </button>
+                  </div>
+                ) : null}
+                {songsIn.length > 0 ? (
+                  <div className="sp-list" role="list">
+                    {songsIn.map((item, i) => (
+                      <Row key={`${item.id}-${i}`} item={item} playing={isNow({ id: item.id, name: item.name, artists: item.subtitle })} onPlay={() => playItem(item)} />
+                    ))}
+                  </div>
+                ) : null}
+                {lists2.length > 0 ? (
+                  <div className="sp-grid" role="list">
+                    {lists2.map((item, i) => (
+                      <Tile key={`${item.kind}-${item.id}-${i}`} item={item} kindWord={tab === 'search'} onOpen={() => setOpen(item)} onPlay={() => playItem(item)} onShuffle={() => shuffleItem(item)} />
+                    ))}
+                  </div>
+                ) : null}
+              </>
             )}
           </div>
         </>
@@ -306,38 +369,117 @@ function Browser() {
   );
 }
 
-/** The hover card for a row: the larger cover, the name, its line and what a click does. */
-function ItemTip({ item }: { item: SpotifyItem }) {
+/** After the pointer leaves a tile, its details card stays this long so the pointer can reach it. */
+export const DETAILS_LINGER_MS = 300;
+
+/**
+ * The details card for a tile (R2): the name, the kind with its owner or artist said once, the
+ * song count when the bridge gives one (nothing is shown that it does not give), and Play,
+ * Shuffle and Songs. It is the shared tip in its pinned form, so its buttons take the pointer.
+ */
+function TileDetails({ item, onOpen, onPlay, onShuffle }: { item: SpotifyItem; onOpen: () => void; onPlay: () => void; onShuffle: () => void }) {
+  const act = (f: () => void) => () => {
+    hideTip(true);
+    f();
+  };
   return (
-    <div className="sp-tip">
-      <Cover src={item.imageUrl ?? item.thumbUrl} size={120} />
-      <div className="sp-tip-text">
-        <b>{item.name}</b>
-        <span>{KIND_WORD[item.kind]}</span>
-        {item.subtitle ? <span>{item.subtitle}</span> : null}
-        {item.count !== null && item.kind !== 'track' ? <span>{songs(item.count)}</span> : null}
-        <em>{item.kind === 'track' ? 'Click to play' : 'Click for its songs, or play it all'}</em>
+    <div className="sp-details">
+      <div className="sp-dname">{item.name}</div>
+      <div className="sp-dline">{kindLine(item)}</div>
+      {item.count !== null ? (
+        <dl className="sp-dfacts">
+          <dt>Songs</dt>
+          <dd>{item.count.toLocaleString('en-US')}</dd>
+        </dl>
+      ) : null}
+      <div className="sp-dbtns">
+        <button type="button" className="sp-btn fill" onClick={act(onPlay)}>
+          <IconPlayerPlayFilled size={16} aria-hidden="true" />
+          Play
+        </button>
+        <button type="button" className="sp-btn plain" onClick={act(onShuffle)}>
+          <IconArrowsShuffle size={16} aria-hidden="true" />
+          Shuffle
+        </button>
+        <button type="button" className="sp-btn plain" onClick={act(onOpen)}>
+          Songs
+          <IconChevronRight size={16} aria-hidden="true" />
+        </button>
       </div>
     </div>
   );
 }
 
-function Row({ item, kindWord, playing, onOpen, onPlay }: { item: SpotifyItem; kindWord: boolean; playing: boolean; onOpen: () => void; onPlay: () => void }) {
-  const line = kindWord ? [KIND_WORD[item.kind], itemLine(item)].filter(Boolean).join(' · ') : itemLine(item);
+/**
+ * A playlist or album as a large cover tile (R1): the cover fills the tile, the name and the song
+ * count under it (both shortened with an ellipsis). A click (or Enter) opens its songs; resting on
+ * it rings it and opens its details card; leaving it closes the card unless the pointer went onto it.
+ */
+function Tile({ item, kindWord, onOpen, onPlay, onShuffle }: { item: SpotifyItem; kindWord: boolean; onOpen: () => void; onPlay: () => void; onShuffle: () => void }) {
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clear = () => {
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = null;
+  };
+  useEffect(() => clear, []);
+  const show = (el: HTMLElement) => {
+    clear();
+    timer.current = setTimeout(() => pinTip(el, () => <TileDetails item={item} onOpen={onOpen} onPlay={onPlay} onShuffle={onShuffle} />), TIP_DELAY_MS);
+  };
+  const leave = () => {
+    clear();
+    timer.current = setTimeout(() => {
+      if (!document.querySelector('.hover-tip:hover, .sp-tile:hover')) hideTip(true);
+    }, DETAILS_LINGER_MS);
+  };
+  return (
+    <div className="sp-tilebox" role="listitem">
+      <button
+        type="button"
+        className="sp-tile"
+        aria-label={`${item.name}, ${kindLine(item)}${item.count !== null ? `, ${songs(item.count)}` : ''}. Open its songs`}
+        onMouseEnter={(e) => show(e.currentTarget)}
+        onMouseLeave={leave}
+        onClick={() => {
+          clear();
+          hideTip(true);
+          onOpen();
+        }}
+      >
+        <Cover src={item.imageUrl ?? item.thumbUrl} size={0} className="sp-tilecover" />
+        <span className="sp-tname2">{item.name}</span>
+        <span className="sp-tline">{kindWord ? `${item.kind === 'album' ? 'Album' : 'Playlist'} · ${tileLine(item)}` : tileLine(item)}</span>
+      </button>
+    </div>
+  );
+}
+
+/** A song in Liked, Recent or Search: a row that plays it, with its details on hover. */
+function Row({ item, playing, onPlay }: { item: SpotifyItem; playing: boolean; onPlay: () => void }) {
   return (
     <div className={`sp-row${playing ? ' on' : ''}`} role="listitem">
-      <button type="button" className="sp-open" aria-label={item.kind === 'track' ? `Play ${item.name}` : `Open ${item.name}`} {...tip(() => <ItemTip item={item} />)} onClick={onOpen}>
+      <button
+        type="button"
+        className="sp-open"
+        aria-label={`Play ${item.name}`}
+        {...tip(() => (
+          <div className="sp-tip">
+            <Cover src={item.imageUrl ?? item.thumbUrl} size={120} />
+            <div className="sp-tip-text">
+              <b>{item.name}</b>
+              <span>{kindLine(item)}</span>
+              <em>Click to play</em>
+            </div>
+          </div>
+        ))}
+        onClick={onPlay}
+      >
         <Cover src={item.thumbUrl ?? item.imageUrl} size={44} />
         <span className="sp-text">
           <span className="sp-name">{item.name}</span>
-          <span className="sp-line">{playing ? 'Playing now' : line}</span>
+          <span className="sp-line">{playing ? 'Playing now' : item.subtitle ?? ''}</span>
         </span>
       </button>
-      {item.kind !== 'track' ? (
-        <button type="button" className="sp-play" aria-label={`Play all of ${item.name}`} title={`Play all of ${item.name}`} onClick={onPlay}>
-          <IconPlayerPlayFilled size={18} aria-hidden="true" />
-        </button>
-      ) : null}
     </div>
   );
 }
@@ -352,14 +494,16 @@ interface SongsState {
 }
 
 /**
- * A playlist's or album's songs, slid in over the list: Back (or Escape), the cover and
- * name, Play all, then every song (read 50 at a time as the list scrolls; it scrolls inside
- * the card and never grows it). A click plays from that song on, in its list; the song now
- * playing is marked; a song that cannot be played (a local file) is dimmed and says why.
+ * A playlist's or album's songs (R3), slid in over the grid: Back (or Escape), the cover, the
+ * kind, the name with its song count (the total length only once every song is read, never
+ * guessed), Play and Shuffle, then every song (read 50 at a time as the list scrolls; it scrolls
+ * inside the card and never grows it). A click plays from that song on, in its list; the song
+ * now playing is marked; a song that cannot be played (a local file) is dimmed and says why.
  */
-function SongsView({ item, nowTitle, onBack, onNote }: { item: SpotifyItem; nowTitle: string; onBack: () => void; onNote: (n: string) => void }) {
+function SongsView({ item, onBack, onNote }: { item: SpotifyItem; onBack: () => void; onNote: (n: string) => void }) {
   const kind = item.kind === 'album' ? 'album' : 'playlist';
   const [st, setSt] = useState<SongsState>({ items: [], total: item.count ?? 0, page: 0, more: false, loading: true, problem: null });
+  const isNow = useIsNow();
   const mounted = useRef(true);
   const loading = useRef(false);
   useEffect(() => {
@@ -401,28 +545,35 @@ function SongsView({ item, nowTitle, onBack, onNote }: { item: SpotifyItem; nowT
   }, [onBack]);
 
   const fail = (e: unknown) => mounted.current && onNote(playProblemLine(spotifyProblem(e)));
-  const playAll = () => spotify.play(kind, item.id).then(() => void refreshNowPlaying(), fail);
   const playFrom = (t: SpotifyTrack) => {
     if (!t.id || !t.playable) return;
     useLastContext.getState().remember({ kind, id: item.id }, st.items);
     spotify.play('track', t.id, { context: { kind, id: item.id }, offsetId: t.id }).then(() => void refreshNowPlaying(), fail);
   };
+  const owner = kindLine(item).replace(/^(Playlist|Album)( by )?/, '');
+  const all = !st.more && st.items.length > 0 && st.items.length >= st.total;
+  const length = all ? totalLength(st.items.reduce((a, t) => a + (Number.isFinite(t.durationMs) ? t.durationMs : 0), 0)) : null;
+  const facts = [st.total > 0 ? songs(st.total) : null, length, owner ? `by ${owner}` : null].filter(Boolean).join(' · ');
 
   return (
     <div className="sp-songs">
       <div className="sp-shead">
-        <button type="button" className="sp-back" title="Back to the list (Escape)" onClick={onBack}>
+        <button type="button" className="sp-back" aria-label="Back to the list" title="Back to the list (Escape)" onClick={onBack}>
           <IconArrowLeft size={20} stroke={2} aria-hidden="true" />
-          Back
         </button>
-        <Cover src={item.thumbUrl ?? item.imageUrl} size={48} />
+        <Cover src={item.imageUrl ?? item.thumbUrl} size={64} />
         <span className="sp-text">
+          <span className="sp-kick">{kind === 'album' ? 'Album' : 'Playlist'}</span>
           <span className="sp-name">{item.name}</span>
-          <span className="sp-line">{[item.subtitle, st.total > 0 ? songs(st.total) : null].filter(Boolean).join(' · ')}</span>
+          <span className="sp-line">{facts}</span>
         </span>
-        <button type="button" className="sp-btn fill" onClick={playAll}>
+        <button type="button" className="sp-btn fill big" onClick={() => void playWhole(item, false).catch(fail)}>
           <IconPlayerPlayFilled size={18} aria-hidden="true" />
-          Play all
+          Play
+        </button>
+        <button type="button" className="sp-btn plain big" onClick={() => void playWhole(item, true).catch(fail)}>
+          <IconArrowsShuffle size={18} aria-hidden="true" />
+          Shuffle
         </button>
       </div>
       <ol
@@ -442,7 +593,7 @@ function SongsView({ item, nowTitle, onBack, onNote }: { item: SpotifyItem; nowT
           <li className="sp-empty">No songs in this {kind}.</li>
         ) : (
           st.items.map((t, i) => {
-            const on = !!nowTitle && t.name === nowTitle;
+            const on = isNow(t);
             const ok = t.playable && !!t.id;
             return (
               <li key={`${t.id ?? 'local'}-${i}`}>
@@ -471,6 +622,13 @@ function SongsView({ item, nowTitle, onBack, onNote }: { item: SpotifyItem; nowT
       </ol>
     </div>
   );
+}
+
+/** "2 h 48 min", "48 min" for a list's total length. */
+function totalLength(ms: number): string {
+  const min = Math.round(ms / 60_000);
+  const h = Math.floor(min / 60);
+  return h > 0 ? `${h} h ${min % 60} min` : `${min} min`;
 }
 
 /**

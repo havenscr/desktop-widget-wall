@@ -103,10 +103,7 @@ export function trackLength(ms: number): string {
 export const SEARCH_WAIT_MS = 400;
 export const SEARCH_MIN = 2;
 
-/**
- * The list the wall last started a song from: Up next plays a later track in it (with its
- * context) only when that track was in the songs read from it; otherwise it skips forward.
- */
+/** The list the wall last started a song from, and the ids of the songs read from it. */
 interface ContextState {
   context: { kind: 'playlist' | 'album'; id: string } | null;
   ids: ReadonlySet<string>;
@@ -119,8 +116,60 @@ export const useLastContext = create<ContextState>((set) => ({
   remember: (context, tracks) => set({ context, ids: new Set(tracks.map((t) => t.id).filter((id): id is string => !!id)) }),
 }));
 
-/** How Up next reaches a queued track: in the list it came from, or by skipping forward `skips` times. */
-export function upNextPlan(id: string | null, index: number, last: Pick<ContextState, 'context' | 'ids'>): { kind: 'context'; context: { kind: 'playlist' | 'album'; id: string }; offsetId: string } | { kind: 'skip'; skips: number } {
-  if (id && last.context && last.ids.has(id)) return { kind: 'context', context: last.context, offsetId: id };
-  return { kind: 'skip', skips: index + 1 };
+export type UpNextPlan =
+  | { kind: 'context'; context: { kind: 'playlist' | 'album'; id: string }; offsetId: string }
+  | { kind: 'skip'; skips: number }
+  | { kind: 'none'; line: string };
+
+/** The quiet line when Up next cannot reach a track without replacing the queue. */
+export const UP_NEXT_NONE_LINE = 'Open its list to play it';
+
+/**
+ * How Up next reaches a queued track without ever replacing the queue. In its list (context and
+ * offset) only when the wall started that list, read this track from it, and the song Spotify is
+ * playing now is in it too (so that list is what plays). Otherwise by skipping forward through
+ * Windows, but only when Spotify is the player Windows reports as current (a skip could reach
+ * another player). Otherwise nothing is sent and one quiet line says why.
+ */
+export function upNextPlan(id: string | null, index: number, last: Pick<ContextState, 'context' | 'ids'>, playingId: string | null, spotifyIsCurrent: boolean): UpNextPlan {
+  if (id && playingId && last.context && last.ids.has(id) && last.ids.has(playingId)) return { kind: 'context', context: last.context, offsetId: id };
+  if (spotifyIsCurrent) return { kind: 'skip', skips: index + 1 };
+  return { kind: 'none', line: UP_NEXT_NONE_LINE };
+}
+
+/** The song Spotify is playing, by id, from the last playback or queue read (null when unknown). */
+export const useSpotifyNow = create<{ id: string | null }>(() => ({ id: null }));
+
+/**
+ * Whether a row is the song playing now: by track id when a Spotify read gave one, else by the
+ * title and the artist Windows reports (never the title alone, so two songs of one name are not
+ * both marked).
+ */
+export function isNowPlaying(t: { id: string | null; name: string; artists?: string | null }, nowId: string | null, title: string, artist: string): boolean {
+  if (nowId) return !!t.id && t.id === nowId;
+  if (!title || !artist || !t.artists) return false;
+  return t.name === title && t.artists.toLowerCase().includes(artist.toLowerCase());
+}
+
+/**
+ * The kind and owner or artist said once: "Playlist by Robin Vale", "Playlist", "Album by
+ * Aurora Set", "Song by Mira Vale". The bridge's playlist subtitle is "Playlist" or
+ * "Playlist, <owner>", so the kind word is never repeated.
+ */
+export function kindLine(item: SpotifyItem): string {
+  const word = item.kind === 'track' ? 'Song' : item.kind === 'album' ? 'Album' : 'Playlist';
+  const sub = (item.subtitle ?? '').trim();
+  if (!sub) return word;
+  if (item.kind === 'playlist') {
+    if (/^playlist$/i.test(sub)) return word;
+    const owner = sub.replace(/^playlist,\s*/i, '');
+    return `${word} by ${owner}`;
+  }
+  return `${word} by ${sub}`;
+}
+
+/** The second line under a tile: the song count when known, else the owner or artist. */
+export function tileLine(item: SpotifyItem): string {
+  if (item.count !== null && item.kind !== 'track') return songs(item.count);
+  return kindLine(item);
 }

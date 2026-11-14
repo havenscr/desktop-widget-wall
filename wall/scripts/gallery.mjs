@@ -319,15 +319,15 @@ add('unwind', 'unwind: hide screen note while focused', url('unwind', TYPICAL_AT
 state('unwind', 'listen: playing', 'audio=demo', TIMES.night);
 state('unwind', 'listen: nothing playing', 'media=none', TIMES.night);
 add('unwind', 'listen: youtube music', url('unwind', TIMES.night, 'audio=demo'), true, '.sp-switch button:nth-child(2)');
-add('unwind', 'listen: songs of a playlist', url('unwind', TIMES.night, 'audio=demo'), true, '.sp-row .sp-open');
-add('unwind', 'listen: hover on a playlist', url('unwind', TIMES.night, 'audio=demo'), true, 'hover:.sp-row .sp-open');
+add('unwind', 'listen: songs of a playlist', url('unwind', TIMES.night, 'audio=demo'), true, '.sp-tile');
+add('unwind', 'listen: hover on a playlist', url('unwind', TIMES.night, 'audio=demo'), true, 'hover:.sp-tile');
 state('unwind', 'listen: signed out', 'spotify=signedout', TIMES.night);
 state('unwind', 'listen: spotify down', 'spotify=down', TIMES.night);
 state('unwind', 'listen: spotify not set up', 'spotify=off', TIMES.night);
 state('unwind', 'listen: heavy library', 'spotify=heavy', TIMES.night);
-add('unwind', 'listen: heavy playlist songs', url('unwind', TIMES.night, 'spotify=heavy'), true, '.sp-row .sp-open');
+add('unwind', 'listen: heavy playlist songs', url('unwind', TIMES.night, 'spotify=heavy'), true, '.sp-tile');
 state('unwind', 'listen: long names', 'long=1&media=long&spotify=long');
-add('unwind', 'listen: long names, songs of a 240 song playlist', url('unwind', TYPICAL_AT, 'long=1&media=long&spotify=long'), true, '.sp-row .sp-open');
+add('unwind', 'listen: long names, songs of a 240 song playlist', url('unwind', TYPICAL_AT, 'long=1&media=long&spotify=long'), true, '.sp-tile');
 
 /**
  * What each state must show, so a knob that silently stops working fails the run:
@@ -513,8 +513,8 @@ const EXPECT = [
   ['unwind', 'listen: playing', ['Tokyo Burnout', 'Up next', 'Lantern Song 2', 'Road Trip 1', 'Which player the wall follows']],
   ['unwind', 'listen: nothing playing', ['Nothing playing', 'Road Trip 1']],
   ['unwind', 'listen: youtube music', ['Open YouTube Music', 'Browsing happens in its own window', '!Up next']],
-  ['unwind', 'listen: songs of a playlist', ['Back', 'Play all', 'Lantern Song 9', '58 songs']],
-  ['unwind', 'listen: hover on a playlist', ['Click for its songs, or play it all', 'Road Trip 1']],
+  ['unwind', 'listen: songs of a playlist', ['Shuffle', 'Lantern Song 9', '58 songs', 'Playlist']],
+  ['unwind', 'listen: hover on a playlist', ['Shuffle', 'Songs', 'Road Trip 1', '!Playlist / Playlist']],
   ['unwind', 'listen: signed out', ['Sign in to Spotify in Tools to browse here.', 'Sign in to Spotify in Tools to see what is next']],
   ['unwind', 'listen: spotify down', ['Spotify is not answering right now.', '!Up next']],
   ['unwind', 'listen: spotify not set up', ['Spotify is not set up on this wall', 'not set up', '!Up next']],

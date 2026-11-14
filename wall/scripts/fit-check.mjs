@@ -239,9 +239,11 @@ const QUIET = [
   { name: 'Listen, playing with the lines moving', agents: '3', hz: 'unwind', extra: '&audio=demo', checks: ['.u-listen', '.sp-card', '.u-next', '.u-line'], listen: true },
   { name: 'Listen, nothing playing', agents: '3', hz: 'unwind', extra: '&media=none', checks: ['.u-listen', '.sp-card', '.u-line'], listen: true },
   { name: 'Listen, heavy library and long names', agents: 'ask', hz: 'unwind', extra: '&spotify=heavy&media=long', checks: ['.u-listen', '.sp-card', '.u-next', '.u-line'], listen: true },
-  { name: 'Listen, the songs of a 2000 song playlist', agents: '3', hz: 'unwind', extra: '&spotify=heavy', click: '.sp-row .sp-open', checks: ['.sp-card', '.sp-songs', '.sp-shead'], listen: true },
+  { name: 'Listen, the songs of a 2000 song playlist', agents: '3', hz: 'unwind', extra: '&spotify=heavy', click: '.sp-tile', checks: ['.sp-card', '.sp-songs', '.sp-shead'], listen: true },
   { name: 'Listen, long names everywhere', agents: 'ask', hz: 'unwind', extra: '&spotify=long&media=long', checks: ['.u-listen', '.sp-card', '.u-next', '.u-next-row', '.u-line'], listen: true },
-  { name: 'Listen, long names, the songs of a 240 song playlist', agents: '3', hz: 'unwind', extra: '&spotify=long&media=long', click: '.sp-row .sp-open', checks: ['.sp-card', '.sp-songs', '.sp-shead'], listen: true },
+  { name: 'Listen, long names, the songs of a 240 song playlist', agents: '3', hz: 'unwind', extra: '&spotify=long&media=long', click: '.sp-tile', checks: ['.sp-card', '.sp-songs', '.sp-shead'], listen: true },
+  // The leave-soon banner over Unwind: it must not cover the status line or reach the office slot.
+  { name: 'Listen, with the leave banner', agents: '3', hz: 'unwind', extra: '&leave=12&long=1', checks: ['.u-listen', '.sp-card', '.u-line', '.leave-banner'], listen: true },
   { name: 'Listen, YouTube Music chosen', agents: '3', hz: 'unwind', extra: '', click: '.sp-switch button:nth-child(2)', checks: ['.u-listen', '.sp-card', '.sp-yt'], listen: true },
   { name: 'Listen, Spotify signed out', agents: '3', hz: 'unwind', extra: '&spotify=signedout', checks: ['.u-listen', '.sp-card', '.sp-state', '.u-next'], listen: true },
   // Zen in the evening: the dim hint stays inside the controls' column (the box the Start row sets).
@@ -834,6 +836,11 @@ try {
       if (!slot) listen.push('listen: the office lights slot is not there');
       else {
         const sr = slot.getBoundingClientRect();
+        // Its stage box (7A's foot row): right edge 70 px from the stage's right edge, top 662, 34 tall.
+        if (Math.abs(sr.right - 2490) > 1 || Math.abs(sr.top - 662) > 1 || Math.abs(sr.height - 34) > 1 || sr.width > 420.5) listen.push('listen: the office lights slot is at x ' + Math.round(sr.left) + ' to ' + Math.round(sr.right) + ', y ' + Math.round(sr.top) + ' to ' + Math.round(sr.bottom) + ' (right edge 2490, top 662, 34 tall, 420 wide at most)');
+        const bn = document.querySelector('.leave-banner')?.getBoundingClientRect();
+        const ln = document.querySelector('.u-line')?.getBoundingClientRect();
+        if (bn && ln && hit(bn, ln)) listen.push('listen: the leave banner covers the status line');
         if (slot.childNodes.length || getComputedStyle(slot).pointerEvents !== 'none') listen.push('listen: the office lights slot is not empty or takes the pointer');
         const draws = (e) => ['IMG', 'svg', 'BUTTON', 'INPUT', 'CANVAS'].includes(e.tagName) || [...e.childNodes].some((c) => c.nodeType === 3 && c.textContent.trim());
         // What shows of an element: its box cut by every ancestor that clips (a scrolled list hides its far rows).
