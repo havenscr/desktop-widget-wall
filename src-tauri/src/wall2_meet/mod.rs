@@ -216,12 +216,15 @@ pub struct Account {
     pub tenant: String,
 }
 
-fn desktop_enabled(value: &Value) -> Result<bool, &'static str> {
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum OpenPreference { Desktop, Browser, Typo }
+
+fn open_preference(value: &Value) -> OpenPreference {
     match value.get("openIn") {
-        None => Ok(true),
-        Some(Value::String(choice)) if choice == "desktop" => Ok(true),
-        Some(Value::String(choice)) if choice == "browser" => Ok(false),
-        Some(_) => Err(INVALID_CONFIG),
+        None => OpenPreference::Desktop,
+        Some(Value::String(choice)) if choice == "desktop" => OpenPreference::Desktop,
+        Some(Value::String(choice)) if choice == "browser" => OpenPreference::Browser,
+        Some(_) => OpenPreference::Typo,
     }
 }
 
@@ -239,7 +242,7 @@ fn valid_id(s: &str) -> bool {
 pub fn parse_config(text: Option<&str>) -> Result<Vec<Account>, &'static str> {
     let text = text.ok_or(NOT_CONFIGURED)?;
     let value: Value = serde_json::from_str(text).map_err(|_| INVALID_CONFIG)?;
-    desktop_enabled(&value)?;
+    let _ = open_preference(&value);
     let rows = value.get("accounts").and_then(Value::as_array).ok_or(INVALID_CONFIG)?;
     if rows.is_empty() {
         return Err(NOT_CONFIGURED);
@@ -274,11 +277,11 @@ fn load_config(window: &tauri::WebviewWindow) -> Result<Vec<Account>, &'static s
     parse_config(text.as_deref())
 }
 
-fn load_desktop_enabled(window: &tauri::WebviewWindow) -> Result<bool, &'static str> {
+fn load_open_preference(window: &tauri::WebviewWindow) -> Result<OpenPreference, &'static str> {
     let dir = window.path().app_config_dir().map_err(|_| NOT_CONFIGURED)?;
     let text = std::fs::read_to_string(dir.join("meet.json")).map_err(|_| NOT_CONFIGURED)?;
     let value: Value = serde_json::from_str(&text).map_err(|_| INVALID_CONFIG)?;
-    desktop_enabled(&value)
+    Ok(open_preference(&value))
 }
 
 // Section: window guard
@@ -334,7 +337,9 @@ pub(crate) fn day_window(now: i64, offset: &dyn Fn(i64) -> i64) -> (u64, u64) {
 pub async fn wall2_meet_day(window: tauri::WebviewWindow) -> Result<service::DayPayload, String> {
     require_wall2(window.label())?;
     let accounts = load_config(&window).map_err(str::to_string)?;
+    let preference = load_open_preference(&window).unwrap_or(OpenPreference::Browser);
     tauri::async_runtime::spawn_blocking(move || {
+        links().lock().unwrap_or_else(|e| e.into_inner()).desktop_usable = preference != OpenPreference::Browser && desktop::classic_outlook_exe().is_some();
         let now = now_secs();
         let (from, to) = day_window(now as i64, &crate::wall2_feeds::local_offset_secs);
         let payload = service::read_day_parallel(&accounts, &secrets(), &auth::HttpTokens, &HttpGraph, core(), links(), now, from, to);
@@ -407,45 +412,26 @@ pub async fn wall2_open_event(window: tauri::WebviewWindow, key: String) -> Resu
         return Err("gone".to_string());
     }
     let target = service::lookup_open_target(links(), &key).ok_or_else(|| "gone".to_string())?;
-    let enabled = load_desktop_enabled(&window).map_err(str::to_string)?;
-    let entry = target.entry.clone();
-    let started = tauri::async_runtime::spawn_blocking(move || {
-        let Some(exe) = desktop::classic_outlook_exe() else {
-            return false;
-        };
-        let decision = desktop::open_decision(true, entry.is_some(), enabled);
-        let arg = match decision {
-            desktop::OpenDecision::DesktopItem => entry.as_deref().and_then(desktop::select_arg),
-            desktop::OpenDecision::DesktopCalendar => Some("outlook:calendar".to_string()),
-            desktop::OpenDecision::Web => None,
-        };
-        arg.is_some_and(|arg| std::process::Command::new(exe).args(["/select", &arg]).spawn().is_ok())
-    })
-    .await
-    .unwrap_or(false);
-    if started {
-        return Ok(());
-    }
-    let url = target.web.ok_or_else(|| "gone".to_string())?;
-    if !graph::web_link_allowed(&url) {
-        return Err("gone".to_string());
-    }
-    window.opener().open_url(url, None::<&str>).map_err(|_| "failed".to_string())
+    let desktop_enabled = matches!(load_open_preference(&window), Ok(OpenPreference::Desktop | OpenPreference::Typo));
+    if target.web.as_deref().is_some_and(|url| !graph::web_link_allowed(url)) { return Err("gone".to_string()); }
+    let result = tauri::async_runtime::spawn_blocking(move || desktop::open_with(
+        desktop_enabled, target.entry.as_deref(), target.web.as_deref(), desktop::classic_outlook_exe,
+        |exe, arg| std::process::Command::new(exe).args(["/select", arg]).spawn().is_ok(),
+        |url| window.opener().open_url(url, None::<&str>).is_ok(),
+    )).await.map_err(|_| "failed".to_string())?;
+    result.map_err(|e| match e { desktop::OpenError::Gone => "gone", desktop::OpenError::Failed => "failed" }.to_string())
 }
 
 #[tauri::command]
-pub fn wall2_meet_open_status(window: tauri::WebviewWindow) -> Result<&'static str, String> {
+pub async fn wall2_meet_open_status(window: tauri::WebviewWindow) -> Result<&'static str, String> {
     require_wall2(window.label())?;
-    if !load_desktop_enabled(&window).map_err(str::to_string)? {
-        return Ok("browser-config");
-    }
-    if desktop::classic_outlook_exe().is_some() {
-        return Ok("desktop");
-    }
-    if desktop::use_new_outlook() || desktop::new_outlook_present() {
-        return Ok("browser-new-outlook");
-    }
-    Ok("browser-not-found")
+    tauri::async_runtime::spawn_blocking(move || match load_open_preference(&window)? {
+        OpenPreference::Browser => Ok("browser-config"),
+        OpenPreference::Typo => Ok("desktop-config-typo"),
+        OpenPreference::Desktop if desktop::classic_outlook_exe().is_some() => Ok("desktop"),
+        OpenPreference::Desktop if desktop::use_new_outlook() || desktop::new_outlook_present() => Ok("browser-new-outlook"),
+        OpenPreference::Desktop => Ok("browser-not-found"),
+    }).await.map_err(|_| "failed".to_string())?.map_err(str::to_string)
 }
 
 #[tauri::command]
@@ -497,18 +483,19 @@ mod tests {
     }
 
     #[test]
-    fn opening_preference_defaults_to_desktop_and_rejects_other_values() {
+    fn opening_preference_defaults_to_desktop_and_keeps_typos_nonfatal() {
         let base = one("");
         let value: Value = serde_json::from_str(&base).unwrap();
-        assert_eq!(desktop_enabled(&value), Ok(true));
-        for (choice, expected) in [("desktop", Ok(true)), ("browser", Ok(false))] {
+        assert_eq!(open_preference(&value), OpenPreference::Desktop);
+        for (choice, expected) in [("desktop", OpenPreference::Desktop), ("browser", OpenPreference::Browser)] {
             let text = format!("{{\"openIn\":\"{choice}\",\"accounts\":[{{\"id\":\"work\",\"label\":\"Work\",\"clientId\":\"{GUID}\"}}]}}");
             assert_eq!(parse_config(Some(&text)).is_ok(), true);
-            assert_eq!(desktop_enabled(&serde_json::from_str(&text).unwrap()), expected);
+            assert_eq!(open_preference(&serde_json::from_str(&text).unwrap()), expected);
         }
         for bad in ["other", "", "Desktop"] {
             let text = format!("{{\"openIn\":\"{bad}\",\"accounts\":[{{\"id\":\"work\",\"label\":\"Work\",\"clientId\":\"{GUID}\"}}]}}");
-            assert_eq!(parse_config(Some(&text)), Err("invalid-config"));
+            assert!(parse_config(Some(&text)).is_ok());
+            assert_eq!(open_preference(&serde_json::from_str(&text).unwrap()), OpenPreference::Typo);
         }
     }
 

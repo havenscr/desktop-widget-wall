@@ -12,7 +12,7 @@ pub const MAX_MEETINGS: usize = 8;
 pub const MAX_DAY_EVENTS: usize = 40;
 
 /// One meeting as read from one account. `join` stays in Rust.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct Candidate {
     pub ical: Option<String>,
     pub title: String,
@@ -24,6 +24,21 @@ pub struct Candidate {
     pub web: Option<String>,
     /// Classic Outlook EntryID as validated uppercase hex. Stays in Rust.
     pub entry: Option<String>,
+}
+
+impl std::fmt::Debug for Candidate {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Candidate")
+            .field("ical", &self.ical)
+            .field("title", &self.title)
+            .field("start", &self.start)
+            .field("end", &self.end)
+            .field("account_id", &self.account_id)
+            .field("join", &self.join)
+            .field("web", &self.web)
+            .field("entry", &self.entry.as_ref().map(|_| "<redacted>"))
+            .finish()
+    }
 }
 
 pub enum GraphReply {
@@ -503,6 +518,14 @@ pub fn entry_hex(value: &str) -> Option<String> {
     Some(bytes.iter().map(|byte| format!("{byte:02X}")).collect())
 }
 
+pub fn is_entry_property_id(value: &str) -> bool {
+    let Some((kind, tag)) = value.split_once(' ') else {
+        return false;
+    };
+    kind.eq_ignore_ascii_case("Binary")
+        && tag.strip_prefix("0x").or_else(|| tag.strip_prefix("0X")).and_then(|hex| u32::from_str_radix(hex, 16).ok()) == Some(0x0fff)
+}
+
 /// Events of one account: not cancelled, not declined, not all-day, with a valid start and end.
 pub fn shape_events(body: &Value, account_id: &str) -> Vec<Candidate> {
     let Some(rows) = body.get("value").and_then(Value::as_array) else {
@@ -536,7 +559,7 @@ pub fn shape_events(body: &Value, account_id: &str) -> Vec<Candidate> {
                 entry: e
                     .get("singleValueExtendedProperties")
                     .and_then(Value::as_array)
-                    .and_then(|rows| rows.iter().find(|row| str_at(row, &["id"]).is_some_and(|id| id.eq_ignore_ascii_case("Binary 0x0FFF"))))
+                    .and_then(|rows| rows.iter().find(|row| str_at(row, &["id"]).is_some_and(is_entry_property_id)))
                     .and_then(|row| str_at(row, &["value"]))
                     .and_then(entry_hex),
             })
@@ -1063,14 +1086,34 @@ mod tests {
     #[test]
     fn shaping_reads_only_the_entry_id_property() {
         use base64::Engine;
+        let unrelated = base64::engine::general_purpose::STANDARD.encode([0xCD; 20]);
         let value = base64::engine::general_purpose::STANDARD.encode([0xAB; 20]);
         let mut row = event("k", "2026-11-12T18:00:00.0000000", "4");
         row["singleValueExtendedProperties"] = json!([
-            { "id": "String 0x1234", "value": value },
+            { "id": "Binary 0x1234", "value": unrelated },
             { "id": "binary 0x0fff", "value": value }
         ]);
         let out = shape_events(&json!({ "value": [row] }), "work");
         assert_eq!(out[0].entry.as_deref(), Some("ABABABABABABABABABABABABABABABABABABABAB"));
+    }
+
+    #[test]
+    fn entry_property_id_matches_the_numeric_tag() {
+        for good in ["Binary 0x0FFF", "binary 0xfff", "BINARY 0x00000FFF"] {
+            assert!(is_entry_property_id(good), "refused {good}");
+        }
+        for bad in ["Binary 0x0FFE", "String 0x0FFF", "Binary", "junk", "Binary 0xZZZZ"] {
+            assert!(!is_entry_property_id(bad), "accepted {bad}");
+        }
+    }
+
+    #[test]
+    fn candidate_debug_redacts_the_entry_id() {
+        let mut row = event("k", "2026-11-12T18:00:00.0000000", "4");
+        row["singleValueExtendedProperties"] = json!([{ "id": "Binary 0x0FFF", "value": "q6urq6urq6urq6urq6urq6urq6s=" }]);
+        let text = format!("{:?}", shape_events(&json!({ "value": [row] }), "work")[0]);
+        assert!(!text.contains("ABABAB"));
+        assert!(text.contains("<redacted>"));
     }
 
     #[test]

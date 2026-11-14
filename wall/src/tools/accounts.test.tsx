@@ -57,6 +57,7 @@ it.each([
   ['browser-new-outlook', 'the browser', 'New Outlook has no way to open one meeting.'],
   ['browser-not-found', 'the browser', 'Outlook was not found on this PC.'],
   ['browser-config', 'the browser', 'This is set in meet.json.'],
+  ['desktop-config-typo', 'Outlook on this PC', 'meet.json has an unknown openIn value, so the desktop default is used.'],
 ])('shows the meeting opening state %s', async (status, line, hint) => {
   mocks.set('wall2_meet_next', () => data);
   mocks.set('wall2_meet_open_status', () => status);
@@ -70,6 +71,22 @@ it.each([
   const row = screen.getByText('Meetings open in:').closest('li')!;
   expect(row.textContent).toContain(line);
   expect(await hoverText(row)).toBe(hint);
+});
+
+it('reserves the opening row while checking and checks again on every drawer open', async () => {
+  let resolve: (value: string) => void = () => undefined;
+  const status = vi.fn(() => new Promise<string>((done) => { resolve = done; }));
+  mocks.set('wall2_meet_next', () => data);
+  mocks.set('wall2_meet_open_status', status);
+  render(<Accounts />);
+  expect(screen.getByText('Meetings open in:').closest('li')?.textContent).toContain('Checking');
+  resolve('desktop');
+  await flush();
+  expect(screen.getByText('Meetings open in:').closest('li')?.textContent).toContain('Outlook on this PC');
+  useToolsStore.getState().openDrawer();
+  await flush();
+  expect(status).toHaveBeenCalledTimes(2);
+  expect(screen.getByText('Meetings open in:').closest('li')?.textContent).toContain('Checking');
 });
 const peekOnly = (full: MeetData) => (args?: Record<string, unknown>) =>
   args?.peek ? { accounts: full.accounts.map((a) => ({ ...a, state: 'checking' as const })), meetings: [], seq: 1 } : undefined;
@@ -291,7 +308,7 @@ it('shows an account as soon as it answers while the other is still being asked'
   await flush();
   expect(screen.queryByText('Loading meetings')).toBeNull();
   expect(screen.getByText('Connected')).toBeTruthy();
-  expect(screen.getByText('Checking')).toBeTruthy();
+  expect(screen.getByText('Second calendar').closest('li')?.textContent).toContain('Checking');
 });
 
 it('an account that has not answered in 12 seconds shows as not answering, with Try again', async () => {
@@ -307,9 +324,9 @@ it('an account that has not answered in 12 seconds shows as not answering, with 
     </>,
   );
   await flush(11_000);
-  expect(screen.getByText('Checking')).toBeTruthy();
+  expect(screen.getByText('Second calendar').closest('li')?.textContent).toContain('Checking');
   await flush(1_500);
-  expect(screen.queryByText('Checking')).toBeNull();
+  expect(screen.getByText('Second calendar').closest('li')?.textContent).not.toContain('Checking');
   expect(screen.getByText(/^Microsoft is not answering/)).toBeTruthy();
   expect(screen.getByRole('button', { name: 'Try again' })).toBeTruthy();
 });

@@ -1397,7 +1397,7 @@ Create `meet.json` next to `feeds.json` in Wall 2's app config directory (`%APPD
 ```
 
 - At most two accounts. `id` is 1 to 16 characters of `a-z` and `0-9`, unique. `label` is 1 to 16 printable characters. `clientId` is the application (client) ID of an app registration. `tenant` is optional: `common` (default), `organizations`, `consumers` or a tenant GUID.
-- `openIn` is optional. `desktop` is the default and uses classic Outlook when it is usable. `browser` always uses the event's web link. Any other value makes the file invalid.
+- `openIn` is optional. `desktop` is the default and uses classic Outlook when it is usable. `browser` always uses the event's web link. An unknown value keeps the desktop default and is reported in the Tools drawer.
 - A missing file shows "Not set up". A file that fails these rules also shows "Not set up" with a note; the native side reports `invalid-config` and never echoes the file.
 
 ### Sign in and sign out
@@ -1433,7 +1433,7 @@ The day read selects Graph's `webLink` and asks for the `Binary 0x0FFF` legacy e
 
 With `openIn` set to `desktop` or omitted, `wall2_open_event(key)` first looks for classic Outlook in its registered Windows application path. The path must be absolute, no longer than 260 characters, name `OUTLOOK.EXE`, contain no quote or control character, and exist as a file. When Windows says the new Outlook is selected, classic Outlook is not used. An event with a valid entry id starts that fixed executable directly with the two arguments `/select` and `outlook:<HEX>`. An event without an entry id starts it with `/select` and `outlook:calendar`. No shell or joined command line is used. If Outlook is unavailable, process start fails, or `openIn` is `browser`, Wall 2 checks the stored web link again (`https`, no user name or password, no port other than 443, at most 4096 characters, and an exact allowed Outlook host) and opens it with the default handler. The page supplies only the opaque day key, and nothing about the entry id is sent to the page or logged.
 
-New Outlook has no documented way to open one existing meeting. The Tools drawer reports whether clicks use classic Outlook or the browser. Opening an exact item with `/select outlook:<HEX>` still needs confirmation on current classic Outlook builds; use `"openIn": "browser"` if that installation does not resolve the item reliably.
+New Outlook has no documented way to open one existing meeting. The Tools drawer reports whether clicks use classic Outlook or the browser. These behaviors have not been verified against live Graph and Outlook: whether the calendar read returns the item id, what item id it returns for one occurrence of a recurring meeting, whether a second account's mailbox opens from the same Outlook profile, whether current classic Outlook builds honor `/select outlook:<HEX>`, registry discovery across 64-bit and 32-bit views, new Outlook detection, process launch, and fallback behavior. Outlook shows its own error box when it cannot find an item, and Wall 2 cannot detect that result. Use `"openIn": "browser"` to opt out.
 
 ### Refresh
 

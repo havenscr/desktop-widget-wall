@@ -66,6 +66,42 @@ pub struct Core {
     pub flights: HashMap<String, Arc<Slot>>,
     /// The clock reads run on; the real one when None. Tests set their own.
     pub clock: Option<Arc<dyn Clock + Send + Sync>>,
+    /// Mailboxes that refused the optional EntryID expansion, with the next probe time.
+    pub expand_refused: HashMap<String, ExpandRefusal>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ExpandRefusal {
+    signature: String,
+    retry_at: u64,
+    logged: bool,
+}
+
+const EXPAND_PROBE_SECS: u64 = 6 * 60 * 60;
+
+fn account_signature(acct: &Account) -> String {
+    format!("{}|{}", acct.client_id, acct.tenant)
+}
+
+fn should_expand(core: &mut Core, acct: &Account, now: u64) -> bool {
+    let signature = account_signature(acct);
+    if core.expand_refused.get(&acct.id).is_some_and(|state| state.signature != signature) {
+        core.expand_refused.remove(&acct.id);
+    }
+    core.expand_refused.get(&acct.id).is_none_or(|state| now >= state.retry_at)
+}
+
+fn remember_expand_refusal(core: &mut Core, acct: &Account, now: u64) {
+    let signature = account_signature(acct);
+    let was_logged = core.expand_refused.get(&acct.id).is_some_and(|state| state.signature == signature && state.logged);
+    core.expand_refused.insert(acct.id.clone(), ExpandRefusal { signature, retry_at: now + EXPAND_PROBE_SECS, logged: true });
+    if !was_logged && core.log_lines.len() < 64 {
+        core.log_lines.push(format!("{} the item id for desktop Outlook is not offered by this mailbox", utc_iso(now)));
+    }
+}
+
+fn remember_expand_success(core: &mut Core, acct: &Account) {
+    core.expand_refused.remove(&acct.id);
 }
 
 /// One read at a time per account. A read takes the slot for its whole run (token request,
@@ -152,13 +188,25 @@ pub struct Links {
     /// The day view's Outlook event links, under the same day keys as `day_map`: key to
     /// (account id, web link). Swapped together with `day_map`, never read by `lookup_link`.
     pub web_map: HashMap<String, OpenTarget>,
+    /// Whether classic Outlook can currently be used for entries without a web link.
+    pub desktop_usable: bool,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct OpenTarget {
     pub account_id: String,
     pub web: Option<String>,
     pub entry: Option<String>,
+}
+
+impl std::fmt::Debug for OpenTarget {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OpenTarget")
+            .field("account_id", &self.account_id)
+            .field("web", &self.web)
+            .field("entry", &self.entry.as_ref().map(|_| "<redacted>"))
+            .finish()
+    }
 }
 
 pub fn lookup_link(links: &Mutex<Links>, key: &str) -> Option<String> {
@@ -425,22 +473,38 @@ fn read_window(
             return r;
         }
     };
-    let (mut reply, mut diag) = graph.calendar_view_diag(&access, &start, &end, &ctx);
-    if matches!(reply, GraphReply::Unauthorized) {
-        // The cached token was refused: drop it, refresh once, ask once more.
-        access = match obtain(acct, store, tokens, core, now, &ctx, generation, Some(access.as_str()), &mut token_failure) {
-            Ok(a) => a,
-            Err(stop) => {
-                let mut r = stopped(stop);
-                r.diag = token_failure;
-                return r;
-            }
+    let mut expanded = should_expand(&mut lock(core), acct, now);
+    let mut fell_back = !expanded;
+    let mut refreshed = false;
+    let (reply, diag) = loop {
+        let (reply, diag) = if expanded {
+            graph.calendar_view_diag(&access, &start, &end, &ctx)
+        } else {
+            graph.calendar_view_without_expand_diag(&access, &start, &end, &ctx)
         };
-        (reply, diag) = graph.calendar_view_diag(&access, &start, &end, &ctx);
-    }
-    if diag.as_ref().is_some_and(|d| matches!(d.status, 400 | 501)) {
-        (reply, diag) = graph.calendar_view_without_expand_diag(&access, &start, &end, &ctx);
-    }
+        if matches!(reply, GraphReply::Unauthorized) && !refreshed {
+            access = match obtain(acct, store, tokens, core, now, &ctx, generation, Some(access.as_str()), &mut token_failure) {
+                Ok(a) => a,
+                Err(stop) => {
+                    let mut r = stopped(stop);
+                    r.diag = token_failure;
+                    return r;
+                }
+            };
+            refreshed = true;
+            continue;
+        }
+        if expanded && !fell_back && diag.as_ref().is_some_and(|d| matches!(d.status, 400 | 501)) {
+            remember_expand_refusal(&mut lock(core), acct, now);
+            expanded = false;
+            fell_back = true;
+            continue;
+        }
+        if expanded && matches!(reply, GraphReply::Ok(_)) {
+            remember_expand_success(&mut lock(core), acct);
+        }
+        break (reply, diag);
+    };
     let mut read = match reply {
         GraphReply::Ok(body) => done(AccountState::Ok, Some(shape_events(&body, &acct.id)), None),
         GraphReply::Unauthorized => done(AccountState::Unavailable, None, Some("graph-401".to_string())),
@@ -745,7 +809,7 @@ pub fn read_day_only(
             if let Some(url) = cand.join {
                 guard.day_map.insert(key.clone(), (cand.account_id.clone(), url));
             }
-            let can_open = cand.web.is_some() || cand.entry.is_some();
+            let can_open = cand.web.is_some() || (guard.desktop_usable && cand.entry.is_some());
             if can_open {
                 guard.web_map.insert(key.clone(), OpenTarget { account_id: cand.account_id.clone(), web: cand.web, entry: cand.entry });
             }
@@ -823,6 +887,7 @@ pub fn sign_out(id: &str, store: &dyn SecretStore, core: &Mutex<Core>, links: &M
     core.last.remove(id);
     core.last_day.remove(id);
     core.pending.remove(id);
+    core.expand_refused.remove(id);
     // Held state says signed out in the same lock hold, so no later read or peek of another
     // account can copy out a stale "ok" for this one.
     core.states.insert(id.to_string(), ("signed-out".to_string(), None));
@@ -888,38 +953,28 @@ mod tests {
         }
     }
 
-    struct ExpandRefused {
-        expanded: Cell<usize>,
-        basic: Cell<usize>,
-        status: u16,
+    #[derive(Clone, Copy)]
+    enum GraphStep { Ok, Unauthorized, Status(u16) }
+    struct ScriptGraph { steps: RefCell<Vec<GraphStep>>, expanded: RefCell<Vec<bool>> }
+    impl ScriptGraph {
+        fn new(steps: Vec<GraphStep>) -> Self { Self { steps: RefCell::new(steps), expanded: RefCell::new(Vec::new()) } }
+        fn next(&self, expanded: bool) -> (GraphReply, Option<Diag>) {
+            self.expanded.borrow_mut().push(expanded);
+            let step = self.steps.borrow_mut().remove(0);
+            match step {
+                GraphStep::Ok => (GraphReply::Ok(body("Meeting", "script")), None),
+                GraphStep::Unauthorized => (GraphReply::Unauthorized, None),
+                GraphStep::Status(status) => {
+                    let reply = if status >= 500 { GraphReply::Transient(format!("graph-{status}")) } else { GraphReply::Failed(format!("graph-{status}")) };
+                    (reply, Some(Diag { kind: Kind::Day, host: "graph", net: None, status, code: None, inner: None, request_id: None, client_request_id: None, attempt: 1, elapsed_ms: 1, probe: None }))
+                }
+            }
+        }
     }
-    impl GraphClient for ExpandRefused {
-        fn calendar_view(&self, _access: &str, _start: &str, _end: &str) -> GraphReply {
-            GraphReply::Failed(format!("graph-{}", self.status))
-        }
-        fn calendar_view_diag(&self, _access: &str, _start: &str, _end: &str, _ctx: &Ctx) -> (GraphReply, Option<Diag>) {
-            self.expanded.set(self.expanded.get() + 1);
-            (
-                if self.status >= 500 { GraphReply::Transient(format!("graph-{}", self.status)) } else { GraphReply::Failed(format!("graph-{}", self.status)) },
-                Some(Diag {
-                    kind: Kind::Day,
-                    host: "graph",
-                    net: None,
-                    status: self.status,
-                    code: None,
-                    inner: None,
-                    request_id: None,
-                    client_request_id: None,
-                    attempt: 1,
-                    elapsed_ms: 1,
-                    probe: None,
-                }),
-            )
-        }
-        fn calendar_view_without_expand_diag(&self, _access: &str, _start: &str, _end: &str, _ctx: &Ctx) -> (GraphReply, Option<Diag>) {
-            self.basic.set(self.basic.get() + 1);
-            (GraphReply::Ok(body("Fallback meeting", "fallback")), None)
-        }
+    impl GraphClient for ScriptGraph {
+        fn calendar_view(&self, _access: &str, _start: &str, _end: &str) -> GraphReply { self.next(true).0 }
+        fn calendar_view_diag(&self, _access: &str, _start: &str, _end: &str, _ctx: &Ctx) -> (GraphReply, Option<Diag>) { self.next(true) }
+        fn calendar_view_without_expand_diag(&self, _access: &str, _start: &str, _end: &str, _ctx: &Ctx) -> (GraphReply, Option<Diag>) { self.next(false) }
     }
 
     fn acct(id: &str) -> Account {
@@ -968,19 +1023,50 @@ mod tests {
     }
 
     #[test]
-    fn an_expand_refusal_retries_once_without_it() {
-        for status in [400, 501] {
+    fn graph_retry_state_machine_has_exact_request_limits() {
+        let cases = [
+            (vec![GraphStep::Status(400), GraphStep::Ok], vec![true, false], 1, "ok"),
+            (vec![GraphStep::Status(501), GraphStep::Ok], vec![true, false], 1, "ok"),
+            (vec![GraphStep::Unauthorized, GraphStep::Ok], vec![true, true], 2, "ok"),
+            (vec![GraphStep::Status(400), GraphStep::Unauthorized, GraphStep::Ok], vec![true, false, false], 2, "ok"),
+            (vec![GraphStep::Unauthorized, GraphStep::Status(400), GraphStep::Ok], vec![true, true, false], 2, "ok"),
+            (vec![GraphStep::Status(429)], vec![true], 1, "unavailable"),
+            (vec![GraphStep::Status(500)], vec![true], 1, "unavailable"),
+            (vec![GraphStep::Status(503)], vec![true], 1, "unavailable"),
+        ];
+        for (steps, modes, token_calls, state) in cases {
             let (store, core) = setup();
             let links = Mutex::new(Links::default());
-            let tokens = FakeTokens::new(vec![ok_token("a", None)]);
-            let graph = ExpandRefused { expanded: Cell::new(0), basic: Cell::new(0), status };
+            let tokens = FakeTokens::new(vec![ok_token("a", None), ok_token("b", None)]);
+            let graph = ScriptGraph::new(steps);
             let payload = read_day(&[acct("work")], &store, &tokens, &graph, &core, &links, NOW, NOW, NOW + 3600);
-            assert_eq!(graph.expanded.get(), 1);
-            assert_eq!(graph.basic.get(), 1);
-            assert_eq!(payload.events.len(), 1);
-            assert!(!payload.events[0].can_open);
-            assert!(lookup_open_target(&links, &payload.events[0].key).is_none());
+            assert_eq!(*graph.expanded.borrow(), modes);
+            assert_eq!(tokens.calls.get(), token_calls);
+            assert_eq!(payload.accounts[0].state, state);
         }
+    }
+
+    #[test]
+    fn expand_refusal_cache_skips_probes_then_expires_and_sign_out_clears_it() {
+        let (store, core) = setup();
+        let links = Mutex::new(Links::default());
+        let tokens = FakeTokens::new(vec![ok_token("a", None)]);
+        let first = ScriptGraph::new(vec![GraphStep::Status(400), GraphStep::Ok]);
+        read_day(&[acct("work")], &store, &tokens, &first, &core, &links, NOW, NOW, NOW + 3600);
+        assert_eq!(core.lock().unwrap().log_lines.iter().filter(|line| line.contains("the item id for desktop Outlook is not offered by this mailbox")).count(), 1);
+        let cached = ScriptGraph::new(vec![GraphStep::Ok]);
+        read_day(&[acct("work")], &store, &tokens, &cached, &core, &links, NOW + 1, NOW, NOW + 3600);
+        assert_eq!(*cached.expanded.borrow(), vec![false]);
+        let probe = ScriptGraph::new(vec![GraphStep::Ok]);
+        read_day(&[acct("work")], &store, &tokens, &probe, &core, &links, NOW + EXPAND_PROBE_SECS, NOW, NOW + 3600);
+        assert_eq!(*probe.expanded.borrow(), vec![true]);
+        core.lock().unwrap().expand_refused.insert("work".into(), ExpandRefusal { signature: account_signature(&acct("work")), retry_at: NOW + 9, logged: true });
+        let mut changed = acct("work");
+        changed.tenant = "organizations".into();
+        assert!(should_expand(&mut core.lock().unwrap(), &changed, NOW));
+        core.lock().unwrap().expand_refused.insert("work".into(), ExpandRefusal { signature: account_signature(&acct("work")), retry_at: NOW + 9, logged: true });
+        sign_out("work", &store, &core, &links);
+        assert!(core.lock().unwrap().expand_refused.is_empty());
     }
 
     #[test]
@@ -1185,6 +1271,29 @@ mod tests {
         let p2 = read_day(&[acct("work")], &store, &t, &g, &core, &links, NOW + 10, from, to);
         assert!(lookup_web_link(&links, &old).is_none());
         assert_eq!(lookup_web_link(&links, &p2.events[0].key).as_deref(), Some(WEB));
+    }
+
+    #[test]
+    fn entry_only_event_is_openable_only_while_desktop_is_usable() {
+        let (store, core) = setup();
+        let mut row = event_at("Planning", "p1", "2026-11-12T17:00:00.0000000", "2026-11-12T18:00:00.0000000");
+        row["singleValueExtendedProperties"] = json!([{ "id": "Binary 0x0FFF", "value": "AAAAAAAAAAAAAAAAAAAAAAAAAAA=" }]);
+        let body = json!({ "value": [row] });
+        let tokens = FakeTokens::new(vec![ok_token("a", None)]);
+        let graph = FakeGraph::new(vec![GraphReply::Ok(body.clone()), GraphReply::Ok(body)]);
+        let links = Mutex::new(Links::default());
+        let closed = read_day(&[acct("work")], &store, &tokens, &graph, &core, &links, NOW, NOW, NOW + 3600);
+        assert!(!closed.events[0].can_open);
+        links.lock().unwrap().desktop_usable = true;
+        let open = read_day(&[acct("work")], &store, &tokens, &graph, &core, &links, NOW + 1, NOW, NOW + 3600);
+        assert!(open.events[0].can_open);
+    }
+
+    #[test]
+    fn open_target_debug_redacts_the_entry_id() {
+        let text = format!("{:?}", OpenTarget { account_id: "work".into(), web: None, entry: Some("AB".repeat(20)) });
+        assert!(!text.contains("ABABAB"));
+        assert!(text.contains("<redacted>"));
     }
 
     #[test]

@@ -9,24 +9,26 @@ import { useToolsStore } from './store';
 import { calendarName } from './trouble';
 
 type Tone = 'plain' | 'bad';
-type OpenStatus = 'desktop' | 'browser-new-outlook' | 'browser-not-found' | 'browser-config';
+type OpenStatus = 'desktop' | 'browser-new-outlook' | 'browser-not-found' | 'browser-config' | 'desktop-config-typo';
 
 const openWords: Record<OpenStatus, { line: string; hint: string }> = {
   desktop: { line: 'Outlook on this PC', hint: 'Meetings open in classic Outlook when it is available.' },
   'browser-new-outlook': { line: 'the browser', hint: 'New Outlook has no way to open one meeting.' },
   'browser-not-found': { line: 'the browser', hint: 'Outlook was not found on this PC.' },
   'browser-config': { line: 'the browser', hint: 'This is set in meet.json.' },
+  'desktop-config-typo': { line: 'Outlook on this PC', hint: 'meet.json has an unknown openIn value, so the desktop default is used.' },
 };
 
-function useOpenStatus(): OpenStatus | null {
+function useOpenStatus(opened: number): OpenStatus | null {
   const [status, setStatus] = useState<OpenStatus | null>(null);
   useEffect(() => {
     let live = true;
+    setStatus(null);
     void invoke<OpenStatus>('wall2_meet_open_status').then((value) => live && setStatus(value), () => undefined);
     return () => {
       live = false;
     };
-  }, []);
+  }, [opened]);
   return status;
 }
 
@@ -164,7 +166,8 @@ export function Accounts() {
   const m = useMeet(true);
   const sp = useSpotifyAccount();
   const accounts = m.data?.accounts ?? [];
-  const openStatus = useOpenStatus();
+  const opened = useToolsStore((s) => s.opened);
+  const openStatus = useOpenStatus(opened);
   const blocked = m.signingIn !== null || sp.waiting;
   const setWaiting = useToolsStore((s) => s.setWaiting);
   const note = useToolsStore((s) => s.note);
@@ -206,9 +209,7 @@ export function Accounts() {
       {note && <div className="tools-note bad">{note}</div>}
       <ul className="tools-list" aria-label="Accounts">
         {calendars}
-        {openStatus && (
-          <Row icon={<IconCalendar size={22} aria-hidden="true" />} name="Meetings open in:" line={openWords[openStatus].line} hover={openWords[openStatus].hint} />
-        )}
+        <Row icon={<IconCalendar size={22} aria-hidden="true" />} name="Meetings open in:" line={openStatus ? openWords[openStatus].line : 'Checking'} hover={openStatus ? openWords[openStatus].hint : 'Checking how meetings open.'} />
         <SpotifyRow sp={sp} blocked={blocked} />
       </ul>
       {(m.notice || sp.notice) && <div className="tools-note bad">{m.notice ?? sp.notice}</div>}
