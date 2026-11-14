@@ -121,7 +121,7 @@ export function settleOpenRuns(
     const start = Date.parse(d.start) - skewMs;
     if (!Number.isFinite(start)) return d;
     const card = byId.get(d.lane);
-    if (working.has(d.lane) && (card?.live === 'working' || cut <= start + 12 * 60 * 60_000)) return d;
+    if (working.has(d.lane) && (card?.live !== 'idle' || cut <= start + 12 * 60 * 60_000)) return d;
     const quiet = secs(card?.idleS) ?? secs(card?.waitingSinceS);
     const seenAt = seen.get(d.lane);
     const raw = working.has(d.lane)

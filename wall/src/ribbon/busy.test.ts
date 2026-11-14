@@ -142,5 +142,14 @@ describe('settleOpenRuns', () => {
       at('23:30'),
     );
     expect(ownTurn.day[0].end).toBeNull();
+    const oldHelper = settleOpenRuns(
+      { lanes: [card()], sessionsList: null, day: [open] },
+      parents,
+      new Set(['a']),
+      new Map(),
+      at('23:30'),
+      at('23:30'),
+    );
+    expect(oldHelper.day[0].end).toBeNull();
   });
 });
