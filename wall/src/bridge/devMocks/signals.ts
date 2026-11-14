@@ -14,7 +14,9 @@ export function registerSignalMocks(): void {
   const leave = q.has('leave') ? Number(q.get('leave')) : Number.NaN;
   if (Number.isFinite(leave) && leave >= 0 && leave <= 180) {
     const now = Date.now();
-    payload.mockLeave = { key: 'signal-dev', leaveAt: now + leave * 60_000, startsAt: now + (leave + 30) * 60_000 };
+    // The dev leave carries its own title (a real one is looked up in the meeting list by key).
+    const title = q.get('long') === '1' ? "Long appointment with a very long name that goes on and on about the day's plans and the people to see (10:45 start)" : "Doctor's appointment (10:45 start)";
+    payload.mockLeave = { key: 'signal-dev', leaveAt: now + leave * 60_000, startsAt: now + (leave + 30) * 60_000, title } as SignalPayload['mockLeave'];
   }
   mocks.set('wall2_signals', () => payload);
   mocks.set('wall2_signals_report', () => null);

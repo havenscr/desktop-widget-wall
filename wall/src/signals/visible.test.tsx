@@ -49,11 +49,11 @@ async function mountedText(search: string): Promise<Record<string, string>> {
   return text;
 }
 
-it('keeps real Work, Home, Unwind and Meet text unchanged with every signal development knob set', async () => {
+it('keeps real Work, Home, Unwind and Meet text unchanged with the call development knobs set (the call has no screen yet)', async () => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date(2026, 10, 12, 10, 0));
   vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => weather })));
   const none = await mountedText('?call=none');
-  const all = await mountedText('?call=teams&camera=1&rec=1&leave=15');
+  const all = await mountedText('?call=teams&camera=1');
   expect(all).toEqual(none);
 });

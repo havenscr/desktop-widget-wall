@@ -76,3 +76,12 @@ export const useSignalStore = createSignalStore({
   invoke,
   listen,
 });
+
+/**
+ * True while a recorder holds the microphone or camera: Watt keeps quiet then. The buddy calls it
+ * (it is not wired in here; `wall/src/buddy/` belongs to another change). Reads the store when no
+ * state is passed.
+ */
+export function isQuietForRecording(state: Pick<DerivedSignals, 'known' | 'recording'> = useSignalStore.getState()): boolean {
+  return state.known && state.recording;
+}
