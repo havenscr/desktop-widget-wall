@@ -77,9 +77,7 @@ function SlotMeter({ summary, stale, fit, busy }: { summary: OmniSummary; stale:
       </span>
       {fit < 2 && (
         <span className="xs">
-          <b>
-            {n} of {limit}
-          </b>
+          <b>{`${n} of ${limit}`}</b>
           {fit === 0 ? ' working' : ''}
         </span>
       )}

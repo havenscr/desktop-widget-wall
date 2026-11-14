@@ -627,7 +627,10 @@ try {
         for (const q of range.getClientRects()) if (q.width > 0) tops.add(Math.round(q.top));
       }
       const tall = e.matches('.lanes-hd-l > *, .lanes-hd > .row > *') && e.getBoundingClientRect().height > 36.5;
-      return tops.size > 1 || tall ? ['header part wraps: ' + (e.textContent || '').trim().slice(0, 48) + ' (' + Math.round(e.getBoundingClientRect().height) + ' px tall)'] : [];
+      // day handle, rows, colours: the meter's sentence is a coloured count and a word in two
+      // nodes, each one line even when the sentence breaks between them; its box says it wrapped.
+      const box = e.matches('.slot-meter .xs') && e.getBoundingClientRect().height > parseFloat(getComputedStyle(e).fontSize) * 1.7;
+      return tops.size > 1 || tall || box ? ['header part wraps: ' + (e.textContent || '').trim().slice(0, 48) + ' (' + Math.round(e.getBoundingClientRect().height) + ' px tall)'] : [];
     });
     // The deck (Always here and Now): nothing below its floor (a clearance above the mountain
     // ridge, worked out from the Work camera; the Now row carries it as data-floor), every key
