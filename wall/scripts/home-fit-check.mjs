@@ -19,11 +19,12 @@
 // that breaks one rule on purpose; `--self-test` runs every break and exits 0 only if each
 // one failed with its own FAIL line. `--shots=dir` saves a screenshot of each state.
 
-import { execFileSync, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { onCleanup, runChrome } from './lib/chrome-run.mjs';
 
 const args = process.argv.slice(2);
 const flag = (name) => args.find((a) => a === `--${name}` || a.startsWith(`--${name}=`));
@@ -75,6 +76,7 @@ const STATES = [
 
 const wall = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const work = mkdtempSync(join(tmpdir(), 'wall2-fit-'));
+onCleanup(() => rmSync(work, { recursive: true, force: true }));
 const out = join(work, 'dist');
 process.env.NODE_ENV = 'development';
 
@@ -212,7 +214,7 @@ setTimeout(() => {
   let failed = false;
   for (const s of brk ? STATES.filter((x) => x.name === BREAKS[brk].state) : STATES) {
     const url = `file://${page}?hz=home&at=2026-11-11T16:36:00-08:00&clock=review&weather=ok&${s.q}&rules=${s.rules.join(',')}${s.rows ? `&rows=${s.rows}` : ''}${s.click ? `&click=${encodeURIComponent(s.click)}` : ''}`;
-    const dom = execFileSync(chrome, [...flags, '--dump-dom', url], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 120_000, maxBuffer: 64 * 1024 * 1024 });
+    const dom = await runChrome(chrome, [...flags, '--dump-dom', url], { label: s.name, limitMs: 120_000 });
     const hit = /<pre id="fit">([^<]*)<\/pre>/.exec(dom);
     if (!hit) {
       console.log(`FAIL ${s.name}: the page did not report (did Home render?)`);
@@ -220,7 +222,7 @@ setTimeout(() => {
       continue;
     }
     const r = JSON.parse(hit[1].replace(/&quot;/g, '"').replace(/&amp;/g, '&'));
-    if (shots) execFileSync(chrome, [...flags, `--screenshot=${resolve(shots, `home-${s.name}.png`)}`, url], { stdio: 'ignore', timeout: 120_000 });
+    if (shots) await runChrome(chrome, [...flags, `--screenshot=${resolve(shots, `home-${s.name}.png`)}`, url], { label: `${s.name}, screenshot`, limitMs: 120_000 });
     console.log(`${s.name} (${s.q}): ${JSON.stringify(r.m)}`);
     for (const f of r.fail) console.log(`FAIL ${f}`);
     if (r.fail.length) failed = true;

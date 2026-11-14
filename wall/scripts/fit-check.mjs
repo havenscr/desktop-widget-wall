@@ -36,12 +36,13 @@
 // box past that side (or widens the page) and must fail. `--self-test` runs every
 // `--overflow` case and exits 0 only if each one failed with the FAIL line for its side.
 
-import { execFileSync, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { inflateSync } from 'node:zlib';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { ChromeRunError, onCleanup, runChrome } from './lib/chrome-run.mjs';
 
 const args = process.argv.slice(2);
 const flag = (name) => args.find((a) => a === `--${name}` || a.startsWith(`--${name}=`));
@@ -543,6 +544,7 @@ function contrast(a, b) {
 const SLACK = 0.5;
 
 const out = mkdtempSync(join(tmpdir(), 'wall-fit-check-'));
+onCleanup(() => rmSync(out, { recursive: true, force: true }));
 try {
   await build({
     root,
@@ -1159,11 +1161,11 @@ try {
   for (const v of overflow ? breakOn : VARIANTS) {
     console.log(`${v.name} (${v.q}):`);
     const url = `${pathToFileURL(page).href}${v.q}${v.sky ? `&skycheck=${v.sky}` : ''}${overflow && SKY_BREAK_Q[overflow] ? SKY_BREAK_Q[overflow] : ''}&checks=${encodeURIComponent(v.checks.join('|'))}${v.click ? `&click=${encodeURIComponent(v.click)}` : ''}${v.card ? '&card=1' : ''}${v.hits ? `&hits=${encodeURIComponent(v.hits.join('|'))}` : ''}${v.noHit ? `&nohit=${encodeURIComponent(v.noHit)}` : ''}${v.listen ? '&listen=1' : ''}`;
-    const dom = execFileSync(
+    const dom = await runChrome(
       chrome,
       // Headless Chromium keeps 87 px of the window for itself, so 807 gives a 2560 by 720 viewport.
       ['--headless', '--no-sandbox', '--disable-gpu', '--window-size=2560,807', '--virtual-time-budget=8000', '--dump-dom', url],
-      { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] },
+      { label: v.name },
     );
     const m = /<pre id="fit-check">([^<]*)<\/pre>/.exec(dom);
     if (!m) {
@@ -1208,7 +1210,7 @@ try {
       const shot = join(out, 'edges.png');
       // A screenshot run keeps no room of the window for itself, so its viewport is 2560 by 807 and
       // the 2560 by 720 stage sits centred in it (scale 1): every box moves down by half the difference.
-      execFileSync(chrome, ['--headless', '--no-sandbox', '--disable-gpu', '--window-size=2560,807', '--hide-scrollbars', '--virtual-time-budget=8000', `--screenshot=${shot}`, url], { stdio: 'ignore' });
+      await runChrome(chrome, ['--headless', '--no-sandbox', '--disable-gpu', '--window-size=2560,807', '--hide-scrollbars', '--virtual-time-budget=8000', `--screenshot=${shot}`, url], { label: `${v.name}, edges` });
       const img = readPng(shot);
       if (img.w !== 2560 || img.h < 720) {
         console.log(`  FAIL deck: the edge screenshot is ${img.w} x ${img.h}, smaller than the stage`);
@@ -1403,6 +1405,10 @@ try {
     } else console.log(`watch polish: the Look switch is at ${first} in all ${switchBoxes.length} states`);
   }
   process.exit(failed ? 1 : 0);
+} catch (e) {
+  if (!(e instanceof ChromeRunError)) throw e;
+  console.error(`  FAIL ${e.message}`);
+  process.exitCode = 1;
 } finally {
   rmSync(out, { recursive: true, force: true });
 }
