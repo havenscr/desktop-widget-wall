@@ -69,6 +69,7 @@ pub struct Slots {
     /// Child sessions in total. Null when absent.
     pub helpers: Option<u64>,
     /// Slot-holding parent or standalone sessions that are at work now. Null when absent.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub busy: Option<u64>,
 }
 
@@ -84,6 +85,7 @@ pub struct BackgroundWork {
 pub struct Kids {
     pub total: u64,
     pub working: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub running: Option<u64>,
 }
 
@@ -112,6 +114,7 @@ pub struct Lane {
     /// Parents only; null otherwise.
     pub kids: Option<Kids>,
     /// Background agents and commands; null when absent or malformed.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub bg: Option<BackgroundWork>,
     /// Seconds the session has waited on the owner; null when absent.
     pub waiting_since_s: Option<u64>,
@@ -1913,12 +1916,14 @@ mod tests {
         assert_eq!(v["sessions"], json!({}));
         assert_eq!(v["yourMove"]["ids"], json!([]));
         assert_eq!(v["usage"]["accounts"], json!([]));
-        for key in ["sessions", "working", "helpers", "busy"] {
+        for key in ["sessions", "working", "helpers"] {
             assert!(v["slots"].get(key).unwrap().is_null(), "slots.{key}");
         }
-        for key in ["live", "idleS", "kids", "bg", "waitingSinceS", "next", "harness"] {
+        assert!(v["slots"].get("busy").is_none());
+        for key in ["live", "idleS", "kids", "waitingSinceS", "next", "harness"] {
             assert!(v["lanes"][0].get(key).unwrap().is_null(), "lane {key}");
         }
+        assert!(v["lanes"][0].get("bg").is_none());
         assert_eq!(v["lanes"][0]["failed"], json!(false));
     }
 
@@ -2063,6 +2068,7 @@ mod tests {
         let v = serde_json::to_value(&s).unwrap();
         assert_eq!(v["sessionsList"].as_array().unwrap().len(), 12);
         assert!(v["sessionsList"][0].get("elapsedS").is_some());
+        assert!(v["sessionsList"][0]["kids"].get("running").is_none());
         // Lanes stay capped at three on their own.
         assert_eq!(s.lanes.len(), 2);
     }
