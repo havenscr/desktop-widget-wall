@@ -42,6 +42,10 @@ export function reflectionAlpha(weight: number, gate: number): number {
  *
  * The transform is set explicitly (`setTransform`) and restored after: a transform left set by an
  * earlier draw once put the reflection in the sky. Nothing is created per frame (the gradient is cached by band height).
+ *
+ * `back`: with the sky layers on, the sky is on another canvas (the same size) under this one;
+ * the band is then that canvas's band with this one's drawn over it, so the lake mirrors the
+ * same picture as with one canvas.
  */
 export function drawReflection(
   r: Reflection,
@@ -52,6 +56,7 @@ export function drawReflection(
   scale: number,
   alpha: number,
   make: () => HTMLCanvasElement = () => document.createElement('canvas'),
+  back: CanvasImageSource | null = null,
 ): boolean {
   if (!(alpha > 0.002)) return false;
   const y0 = hy * scale;
@@ -73,6 +78,10 @@ export function drawReflection(
   // The band above the horizon, faded to clear at its top and solid at the line.
   x.setTransform(1, 0, 0, 1, 0, 0);
   x.globalCompositeOperation = 'copy';
+  if (back) {
+    x.drawImage(back, 0, y0 - h, width, h, 0, 0, width, h);
+    x.globalCompositeOperation = 'source-over';
+  }
   x.drawImage(ctx.canvas, 0, y0 - h, width, h, 0, 0, width, h);
   x.globalCompositeOperation = 'destination-in';
   if (!r.fade || r.fadeH !== h) {

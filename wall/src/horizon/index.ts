@@ -1,9 +1,9 @@
 import { STAGE_HEIGHT, STAGE_WIDTH } from '../stage/fitScale';
 import { CAMERAS, type CameraPreset } from './cameras';
-import { draw, type HorizonEcho, type HorizonGrid } from './renderer';
+import { draw, type HorizonEcho, type HorizonGrid, type HorizonPart } from './renderer';
 
 export { sun, when } from './renderer';
-export type { HorizonDrawOptions, HorizonEcho, HorizonGrid } from './renderer';
+export type { HorizonDrawOptions, HorizonEcho, HorizonGrid, HorizonPart } from './renderer';
 export { CAMERAS, GLIDE_SECONDS, HOME_MORNING, SWING_SECONDS, MOON, blendCamera, homeCameraFor, type CameraPreset } from './cameras';
 
 export interface HorizonOptions {
@@ -31,6 +31,8 @@ export interface HorizonOptions {
   grid?: HorizonGrid | null;
   /** Moon centre x, centre y and radius in design pixels (default none). */
   moon?: readonly [number, number, number] | null;
+  /** Draw only the sky or only the ground (the sky layers, `sky.ts`); default the whole picture. */
+  part?: HorizonPart;
 }
 
 export const HORIZON_Y = CAMERAS.work.hy;
@@ -57,5 +59,6 @@ export function drawHorizon(ctx: CanvasRenderingContext2D, options: HorizonOptio
     echo: options.echo ?? null,
     grid: options.grid ?? null,
     moon: options.moon ? [options.moon[0], options.moon[1], options.moon[2]] : null,
+    ...(options.part ? { part: options.part } : null),
   });
 }

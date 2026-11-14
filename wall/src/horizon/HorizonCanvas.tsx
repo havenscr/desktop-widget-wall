@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useReducedMotion } from '../ui/useReducedMotion';
 import { useIdle } from '../ui/useIdle';
 import { wantsDemo } from '../audio/capture';
@@ -28,9 +29,12 @@ import { frameDelta, shouldDraw } from './pacing';
 import { clearGridPulse, createGridPulse, stepGridPulse } from './pulse';
 import { parseReview } from './review';
 import { publishCamera } from './signal';
+import { frontHost, moonFor, useSkyStore } from './sky';
 import { drawHorizon, type HorizonGrid, type HorizonOptions } from './index';
 
 const REDRAW_MS = 60_000;
+/** The front canvas's place: the whole stage, whatever element it is mounted in. */
+const FRONT_STYLE = { position: 'fixed', left: 0, top: 0, pointerEvents: 'none' } as const;
 /** Home's morning rule is re-checked this often. */
 const MORNING_CHECK_MS = 60_000;
 
@@ -60,6 +64,18 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
     pauseDanceHistory(idle);
   }, [idle]);
   useEffect(() => () => pauseDanceHistory(false), []);
+  // The sky layers (`sky.ts`): while a screen gives an element for it, the ground is drawn on a
+  // second canvas mounted there, in front of whatever the screen puts into the sky.
+  const claims = useSkyStore((s) => s.claims);
+  const host = zen ? null : frontHost(claims);
+  const frontRef = useRef<HTMLCanvasElement | null>(null);
+  const [front, setFront] = useState<HTMLCanvasElement | null>(null);
+  const frontCanvas = useCallback((el: HTMLCanvasElement | null) => {
+    frontRef.current = el;
+    setFront(el);
+  }, []);
+  // True while the drawing is a still (reduced motion, or a frozen review frame).
+  const stillRef = useRef(false);
   const glide = useRef<Glide>(settled(cameraFor(review?.place ?? place ?? 'work', review ? review.ms : now())));
   const repaint = useRef<() => void>(() => {});
   const first = useRef(true);
@@ -130,6 +146,7 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
     const canvas = ref.current;
     if (!canvas || zen) return;
     const still = reduced || (review !== null && !demo);
+    stillRef.current = still;
     // Start the pulse from nothing: after Zen or a reduced motion spell the stored bands are stale.
     clearGridPulse(pulse.current);
     grid.current = null;
@@ -194,12 +211,33 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
       }
       // The moon shows only once the camera has arrived at Unwind (no glide in progress), and
       // goes the moment a glide away starts. The review still and reduced motion jump straight there.
-      if (glide.current.progress >= 1 && glide.current.to === CAMERAS.unwind) options.moon = MOON;
-      drawHorizon(ctx, options);
+      // A screen with a picture over its place, or a look that owns that sky, withholds it (`sky.ts`).
+      if (glide.current.progress >= 1 && glide.current.to === CAMERAS.unwind) {
+        const moon = moonFor(MOON, useSkyStore.getState().claims);
+        if (moon) options.moon = moon;
+      }
+      // With the front canvas mounted: the sky here, the ground there, on the same frame.
+      const fc = frontRef.current;
+      let fctx: CanvasRenderingContext2D | null = null;
+      if (fc) {
+        if (fc.width !== width || fc.height !== height) {
+          fc.width = width;
+          fc.height = height;
+        }
+        fctx = fc.getContext('2d');
+      }
+      if (fctx) {
+        drawHorizon(ctx, { ...options, part: 'sky' });
+        drawHorizon(fctx, { ...options, part: 'ground' });
+      } else {
+        drawHorizon(ctx, options);
+      }
       // The lake mirrors the finished frame on the visualizer camera, only while lines are drawn.
       if (REFLECT && options.echo) {
         const open = still ? initialEchoGate(glide.current).value : gate.current.value * awake.current;
-        drawReflection(reflection.current, ctx, width, height, camera.hy, scale, reflectionAlpha(visualizerWeight(camera), open));
+        const alpha = reflectionAlpha(visualizerWeight(camera), open);
+        if (fctx) drawReflection(reflection.current, fctx, width, height, camera.hy, scale, alpha, undefined, canvas);
+        else drawReflection(reflection.current, ctx, width, height, camera.hy, scale, alpha);
       }
     };
     repaint.current = paint;
@@ -254,6 +292,17 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
     };
   }, [reduced, review, zen, demo]);
 
+  // A still frame is drawn again when the sky layers change (the front canvas comes or goes, a
+  // claim moves the moon); the animated loop picks the change up on its next frame.
+  // (The canvas element is read from its ref, which is set before effects run, so its arrival
+  // and the claim that brought it make one repaint.)
+  const seen = useRef({ claims, front: frontRef.current });
+  useEffect(() => {
+    if (seen.current.claims === claims && seen.current.front === frontRef.current) return;
+    seen.current = { claims, front: frontRef.current };
+    if (stillRef.current) repaint.current();
+  }, [claims, front]);
+
   // Hidden pages return with the lines at rest, and the grid pulse and the band history from nothing, never from stale levels.
   useEffect(() => {
     const onHide = () => {
@@ -299,6 +348,11 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
   }, [place, review]);
 
   return (
-    <canvas ref={ref} className="horizon-canvas" aria-hidden="true" style={zen ? { display: 'none' } : undefined} />
+    <>
+      <canvas ref={ref} className="horizon-canvas" aria-hidden="true" style={zen ? { display: 'none' } : undefined} />
+      {/* Fixed to the stage (its transform is the containing block), so it covers the stage
+          whatever box it is mounted in, and takes no pointer. */}
+      {host ? createPortal(<canvas ref={frontCanvas} className="horizon-canvas horizon-front" aria-hidden="true" style={FRONT_STYLE} />, host) : null}
+    </>
   );
 }

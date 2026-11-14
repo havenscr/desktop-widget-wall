@@ -129,7 +129,7 @@ it('review URL draws one frozen still: requested camera and time, t 0, phase 0, 
   expect(draw).toHaveBeenCalledWith(expect.anything(), {
     ...sizes(),
     camera: CAMERAS.unwind,
-    moon: [1730, 112, 44],
+    moon: [1230, 336, 44],
     ms: Date.UTC(2026, 10, 12, 0, 0, 0),
     t: 0,
     phase: 0,
@@ -350,7 +350,7 @@ it('draws the moon on Unwind only', () => {
   usePlaceStore.setState({ active: 'unwind' });
   render(<HorizonCanvas now={() => NOON} />);
   runFrame(100);
-  expect(draw.mock.lastCall![1].moon).toEqual([1730, 112, 44]);
+  expect(draw.mock.lastCall![1].moon).toEqual([1230, 336, 44]);
   act(() => usePlaceStore.getState().setActive('home'));
   runFrame(200);
   expect(draw.mock.lastCall![1]).not.toHaveProperty('moon');
@@ -369,7 +369,7 @@ it('shows the moon only after the glide to Unwind has finished, and hides it whe
     expect(draw.mock.lastCall![1]).not.toHaveProperty('moon');
   }
   for (let ts = 1600; ts <= 2000; ts += 100) runFrame(ts);
-  expect(draw.mock.lastCall![1].moon).toEqual([1730, 112, 44]);
+  expect(draw.mock.lastCall![1].moon).toEqual([1230, 336, 44]);
   act(() => usePlaceStore.getState().setActive('work'));
   runFrame(2100);
   expect(draw.mock.lastCall![1]).not.toHaveProperty('moon');
@@ -379,7 +379,7 @@ it('draws the moon on Unwind under reduced motion, where there is no glide', () 
   setReducedMotion(true);
   render(<HorizonCanvas now={() => NOON} />);
   act(() => usePlaceStore.getState().setActive('unwind'));
-  expect(draw.mock.lastCall![1].moon).toEqual([1730, 112, 44]);
+  expect(draw.mock.lastCall![1].moon).toEqual([1230, 336, 44]);
 });
 
 it('hidden pages return with the lines at rest and the live opacity from nothing', () => {
@@ -418,7 +418,7 @@ it('the review still shows the lines at rest, even with music playing, and none 
   expect(o.echo).toEqual(restEcho(CAMERAS.unwind));
   expect(o.echo).toMatchObject({ n: 11, t: 0, rest: 1, restA: REST_OPACITY_VISUALIZER, drift: REST_PHASE });
   expect(o.echo!.sample).toBeUndefined();
-  expect(o.moon).toEqual([1730, 112, 44]);
+  expect(o.moon).toEqual([1230, 336, 44]);
   unmount();
   window.history.replaceState(null, '', homeAt(16, 30));
   const second = render(<HorizonCanvas now={() => 0} />);

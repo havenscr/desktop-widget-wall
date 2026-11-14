@@ -39,8 +39,14 @@ export interface CameraPreset {
 /** The terrain a camera looks at: the one panorama (azimuth 128 to 300), so every move is a glide. */
 export type Terrain = TerrainName;
 
-/** Moon centre x, centre y and radius, design pixels. Drawn on the Unwind camera only. */
-export const MOON: readonly [number, number, number] = [1730, 112, 44];
+/**
+ * Moon centre x, centre y and radius, design pixels. Drawn on the Unwind camera only. It sits in
+ * the open sky under the player and left of the Spotify card on Listen (at least 40 px clear of
+ * both, and of the clock and Up next), the same place on Watch with nothing on, just above the
+ * low ridge at stage x 1180 to 1280 (its foot may touch the ridge, which is drawn in front of it).
+ * A screen that puts a picture there withholds it through `sky.ts` (`moonFor`).
+ */
+export const MOON: readonly [number, number, number] = [1230, 336, 44];
 
 /** Seconds a camera takes to glide to another place's framing. */
 export const GLIDE_SECONDS = 1.6;
