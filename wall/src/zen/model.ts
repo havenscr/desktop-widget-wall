@@ -1,3 +1,5 @@
+import { cards, laneWorks, type OmniSummary } from '../agents/model';
+
 /** One breath: 4 s in, 2 s hold, 6 s out. */
 export const CYCLE_SECONDS = 12;
 export const SESSION_MINUTES = [3, 5, 10] as const;
@@ -35,6 +37,11 @@ export function minRingDiameter(): number {
 /** Share of today's flame brightness that stays behind the veil (0 to 1). The veil itself is the rest. */
 export const ZEN_BRIGHTNESS = 0.45;
 export const ZEN_VEIL = 1 - ZEN_BRIGHTNESS;
+
+/** Working parents and standalone sessions, from the same full card list as Work. */
+export function dreamWorkingCount(summary: Pick<OmniSummary, 'lanes' | 'sessionsList'>): number {
+  return cards(summary).filter(laneWorks).length;
+}
 
 const COUNT_WORDS: Record<number, string> = { 3: 'THREE', 5: 'FIVE', 10: 'TEN' };
 /** "FIVE MINUTES OF ZEN" */

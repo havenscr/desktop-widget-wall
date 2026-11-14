@@ -1,7 +1,7 @@
 import { IconCalendar } from '@tabler/icons-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { agentsStale, useAgents } from '../agents/useAgents';
-import { cards, laneWorks, needsYouCount } from '../agents/model';
+import { needsYouCount } from '../agents/model';
 import { SheepSvg } from '../buddy/Watt';
 import { SPRITES, SPRITE_PX } from '../buddy/sprites';
 import { formatClock } from '../clock/format';
@@ -9,7 +9,7 @@ import { MOODS_CACHE_KEY, moodLabel } from '../home/Moods';
 import { tomorrowTime } from '../unwind/model';
 import { readMark } from '../unwind/RoomCard';
 import { clockTime, useTomorrow } from '../unwind/Tomorrow';
-import { dreamStatusText, driftOffset, DRIFT_TICK_MS } from './model';
+import { dreamStatusText, dreamWorkingCount, driftOffset, DRIFT_TICK_MS } from './model';
 
 /** Where Watt sleeps, in stage pixels (left edge and ground line). */
 export const DREAM_SHEEP = { x: 1226, base: 688 } as const;
@@ -58,7 +58,7 @@ function DreamStatus({ now }: { now: () => Date }) {
   const st = useAgents();
   const fresh = st.status === 'ready' && st.summary !== null && !agentsStale(st);
   // The same rule as Work: a lane that waits on the owner is not working.
-  const working = fresh ? cards(st.summary!).filter(laneWorks).length : null;
+  const working = fresh ? dreamWorkingCount(st.summary!) : null;
   const needs = fresh ? needsYouCount(st.summary!) : null;
   const text = dreamStatusText(working, needs, onMoodLabel(now().getTime()));
   if (!text) return null;

@@ -14,7 +14,7 @@ import { agentCounts, laneStateWord, settledToday } from './AgentRow';
 import { workingIds } from './busy';
 import { agentsLineParts } from './model';
 import { statusLine as unwindStatusLine } from '../unwind/model';
-import { dreamStatusText } from '../zen/model';
+import { dreamStatusText, dreamWorkingCount } from '../zen/model';
 import { Ribbon } from './Ribbon';
 import { useFixedClock, usePacificTime } from './testZone';
 
@@ -181,7 +181,7 @@ it('one working contract drives every view for helper, quiet, waiting, failed an
     expect(wattWorkingIds([c.card]).size, c.card.id).toBe(count);
     expect(workStatusLine(s), c.card.id).toContain(count ? 'One agent still working' : 'No agents working');
     expect(agentsLineParts(agentCounts(s)).tail, c.card.id).toContain(`${count} working`);
-    expect(dreamStatusText(count, 0, null).includes('still working'), c.card.id).toBe(c.works);
+    expect(dreamStatusText(dreamWorkingCount(s), 0, null).includes('still working'), c.card.id).toBe(c.works);
     expect(unwindStatusLine('off', { lanes: [c.card], sessionsList: [c.card], yourMove: { total: 0 } }).includes('still running'), c.card.id).toBe(c.works);
     expect(laneStateWord(c.card), c.card.id).toBe(c.word);
     expect(todayRows(s, null, t('10:24'))[0].end, c.card.id).toBe(c.word);
