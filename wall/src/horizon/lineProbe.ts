@@ -37,6 +37,8 @@ export const COLUMNS = 32;
 export const RISE_MARGIN = 48;
 /** The most pixels of the type, in the box, whose stacking is read in one frame. */
 const SAMPLES = 60;
+/** Frames with the type in the box whose stacking is read: the page's layers do not change, and each read is costly. */
+const STACK_FRAMES = 3;
 
 export function parseLineProbe(search: string): LineProbe | null {
   const q = new URLSearchParams(search);
@@ -45,6 +47,7 @@ export function parseLineProbe(search: string): LineProbe | null {
   let under = 0;
   let above = 0;
   let nopic = 0;
+  let read = 0;
   let most = 0;
   let scratch: HTMLCanvasElement | null = null;
   let hit: HTMLStyleElement | null = null;
@@ -78,6 +81,10 @@ export function parseLineProbe(search: string): LineProbe | null {
             for (let col = 0; col < w; col += 2) if (d[(row * w + col) * 4 + 3] > 8) seen[Math.min(COLUMNS - 1, Math.floor((col * COLUMNS) / w))] = 1;
           }
           // Stacking: every element hit-testable for this one call, so the order is the paint order.
+          if (read >= STACK_FRAMES) {
+            publish();
+            return;
+          }
           hit ??= document.createElement('style');
           hit.textContent = '*{pointer-events:auto !important}';
           document.head.appendChild(hit);
@@ -86,6 +93,7 @@ export function parseLineProbe(search: string): LineProbe | null {
           // At most SAMPLES of the type's pixels in the box, evenly through them in scan order.
           let q = 0;
           for (let row = 0; row < h; row++) for (let col = 0; col < w; col += 2) if (d[(row * w + col) * 4 + 3] > 8) q++;
+          if (q > 0) read++;
           const every = Math.max(1, Math.ceil(q / SAMPLES));
           let n = 0;
           for (let row = 0; row < h; row++) {
@@ -106,9 +114,12 @@ export function parseLineProbe(search: string): LineProbe | null {
           hit.remove();
         }
       }
-      let cols = 0;
-      for (let i = 0; i < COLUMNS; i++) cols += seen[i];
-      main.dataset.lineProbe = `${drawn},${most},${boxes.length},${onTop},${under},${cols},${above},${nopic}`;
+      publish();
+      function publish() {
+        let cols = 0;
+        for (let i = 0; i < COLUMNS; i++) cols += seen[i];
+        main.dataset.lineProbe = `${drawn},${most},${boxes.length},${onTop},${under},${cols},${above},${nopic}`;
+      }
     },
   };
 }
