@@ -31,7 +31,7 @@ const task = (id: string, title: string, over: Record<string, unknown> = {}) => 
   ...over,
 });
 
-it('asks for the home tag and shows three rows with "N more can wait"', async () => {
+it('asks for the home tag with room for twenty and shows "N more can wait" under the rows', async () => {
   const args: unknown[] = [];
   mocks.set('wall2_tasks_summary', (a) => {
     args.push(a);
@@ -42,7 +42,7 @@ it('asks for the home tag and shows three rows with "N more can wait"', async ()
   });
   const { container } = render(<Chores />);
   await flush();
-  expect(args).toEqual([{ tag: 'home' }]);
+  expect(args).toEqual([{ tag: 'home', limit: 20 }]);
   expect([...container.querySelectorAll('.tk3 .n')].map((n) => n.textContent)).toEqual(['Bins out tonight', 'Order the furnace filter', 'Call the sweep']);
   expect([...container.querySelectorAll('.est')].map((n) => n.textContent)).toEqual(['7 PM', '15 m']);
   expect(screen.getByText('5 more can wait')).toBeTruthy();
@@ -222,4 +222,25 @@ it('a chore tick waits five seconds with Undo; Undo completes nothing', async ()
   fireEvent.click(screen.getByRole('button', { name: 'Done: Water the plants' }));
   await flush(TICK_UNDO_MS);
   expect(done).toHaveBeenCalledWith({ id: 'w' });
+});
+
+it('shows five rows in view with the rest a scroll away, and three while network alerts are open', async () => {
+  const many = Array.from({ length: 13 }, (_, i) => task(`h${i}`, `Chore ${i}`));
+  mocks.set('wall2_tasks_summary', () => ({ next: many, remaining: 2 }));
+  mocks.set('wall2_home_security', () => ({ reachable: true, stale: false, lastScan: null, alerts: 0, firewalla: { api: 'up', boxOnline: true, checkedAt: null, alarms24h: 0 }, portalUrl: null }));
+  mocks.set('wall2_desk_security', () => Promise.reject(new Error('absent')));
+  const quiet = render(<Chores />);
+  await flush();
+  const list = quiet.container.querySelector('.chore-rows') as HTMLElement;
+  expect(list.className).toContain('fit5');
+  expect(list.className).toContain('scrolls');
+  // All thirteen are in the list (it scrolls); the foot counts the eight below and the two past the read.
+  expect(list.querySelectorAll('.tk3')).toHaveLength(13);
+  expect(screen.getByText('10 more can wait')).toBeTruthy();
+  quiet.unmount();
+  mocks.set('wall2_home_security', () => ({ reachable: true, stale: false, lastScan: null, alerts: 2, firewalla: { api: 'up', boxOnline: true, checkedAt: null, alarms24h: 0 }, portalUrl: null }));
+  const busy = render(<Chores />);
+  await flush();
+  expect((busy.container.querySelector('.chore-rows') as HTMLElement).className).toContain('fit3');
+  expect(screen.getByText('12 more can wait')).toBeTruthy();
 });
