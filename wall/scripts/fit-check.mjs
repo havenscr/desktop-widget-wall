@@ -105,6 +105,11 @@ const EXPECT = {
   'tile-icon': /^ *FAIL deck: the icon of key tile ".*" sits /m,
   'tile-iconbox': /^ *FAIL deck: the icon of key tile ".*" is not inside its icon box/m,
   'drawer-scrim': /^ *FAIL strip: with the drawer open, /m,
+  // deck pins and stretch
+  'sparse-width': /^ *FAIL deck: a tile row does not fill its width/m,
+  'tile-equal': /^ *FAIL deck: tiles in one row do not share one width and height/m,
+  'icon-wide': /^ *FAIL deck: the icon of key tile "Add a key" sits [\d.]+ px below its tile top, its row first one sits [\d.]+ px/m,
+  'key-menu': /^ *FAIL deck: the key menu leaves the stage/m,
   // left wing
   lwbuttons: /^ *FAIL left wing: music buttons leave the wing/m,
   lwoverlap: /^ *FAIL left wing: music buttons overlap the title/m,
@@ -189,10 +194,15 @@ const OVERFLOWS = {
   'rec-chip': '.rec-chip { min-width: 400px !important; }',
   'rec-height': '.rec-keys .key-tile { height: 92px !important; }',
   // deck and drawer fixes: one tile 20 px taller; one icon 8 px lower; a 40 px icon; a scrim that takes no clicks.
-  'tile-height': '.work .right-wing .keys .deck-tiles > .deck-tile.key-tile:nth-child(2) { height: 90px !important; }',
-  'tile-icon': '.work .right-wing .pinned .deck-tile.key-tile:first-child svg { margin-top: 8px !important; }',
+  'tile-height': '.work .right-wing .keys .deck-tiles > .key-tile-wrap:nth-child(2) > .deck-tile.key-tile { height: 90px !important; }',
+  'tile-icon': '.work .right-wing .pinned .key-tile-wrap:nth-child(2) > .deck-tile.key-tile svg { margin-top: 8px !important; }',
   'tile-iconbox': '.work .right-wing .keys .deck-tile.key-tile:first-child svg { width: 40px !important; height: 40px !important; }',
   'drawer-scrim': '.drawer-scrim { pointer-events: none !important; }',
+  // deck pins and stretch: a fixed 113 px tile in a one-tile row; the second pinned tile 20 px taller; the Add tile's icon 8 px lower in a wide row; a key menu pushed out of the stage.
+  'sparse-width': '.work .right-wing .keys .deck-tiles > .key-tile-wrap { width: 113px !important; }',
+  'tile-equal': '.work .right-wing .pinned .deck-tiles > .key-tile-wrap:nth-child(2) > .deck-tile.key-tile { height: 90px !important; }',
+  'icon-wide': '.work .right-wing .pinned .deck-tiles > .add-key svg { margin-top: 8px !important; }',
+  'key-menu': '.key-menu { transform: translateX(-3000px) !important; }',
   // left wing
   lwbuttons: '.work .left-wing .music-mini-text { flex: none !important; width: 900px !important; }',
   lwoverlap: '.work .left-wing .music-mini-btns { transform: translateX(-200px); }',
@@ -426,6 +436,13 @@ const VARIANTS = [
   deck('library sets: a held set whose app is not in front', 'keys=library&hold=lib-excel'),
   deck('library sets, Auto, the longest labels pinned', 'keys=library&pins=long'),
   deck('one key only', 'keys=one'),
+  // deck pins and stretch: Add counts as a tile and sparse rows fill their width.
+  deck('one pin plus Add, one Now key', 'keys=one&hold=one&pins=one'),
+  deck('three pins plus Add, two Now keys', 'keys=two&hold=two&pins=three'),
+  deck('three pins plus Add, three Now keys', 'keys=three&hold=three&pins=three'),
+  // A key menu open on the leftmost key of each row: a popover (held to the stage and off the bottom strip's handle by the deck rules, not to its row's box).
+  deck('key menu open on the leftmost Now key', 'keys=three&hold=three&pins=three', { click: 'ctx:.keys .key-tile', checks: ['.work .right-wing .deck-hd'], viewportOnly: true }),
+  deck('key menu open on the leftmost pinned key', 'keys=three&hold=three&pins=three', { click: 'ctx:.pinned .key-tile', checks: ['.work .right-wing .deck-hd'], viewportOnly: true }),
   deck('a held set refused after a click (the app in front is not its app)', 'keys=wrong', { click: '.keys .key-tile' }),
   deck('Power BI cannot be brought forward, after a click', 'keys=refuse', { click: '.keys .key-tile' }),
   deck('heavy: three things wait (a meeting, an agent asks, an alarm), For you held', 'keys=typical&hold=foryou', { checks: FOR_YOU, q: work('ask', '&keys=typical&hold=foryou') }),
@@ -437,8 +454,8 @@ const VARIANTS = [
   { name: 'Deck, sparse: no big screen, nothing in front yet', q: work('0', '&keys=idle&arrange=none&meet=none&net=calm'), checks: [...DECK_ROWS, '.work .right-wing .deck-quiet'] },
   { name: 'Deck, keys.json has a problem, no windows for a layout', q: work('3', '&keys=problem&arrange=nowin'), checks: [...DECK_ROWS, '.work .right-wing .deck-quiet'], click: '.pin-tile' },
   // The picker runs over the mountains to just above the timeline, so it is held to the viewport and the timeline rule.
-  { name: 'Deck, the key picker open over both rows', q: work('3', '&keys=typical'), checks: PICKER, click: 'ctx:.pin-tile', viewportOnly: true },
-  { name: 'Deck, the key picker open with the library sets', q: work('3', '&keys=library'), checks: PICKER, click: 'ctx:.pin-tile', viewportOnly: true },
+  { name: 'Deck, the key picker open over both rows', q: work('3', '&keys=typical&pins=three'), checks: PICKER, click: '.add-key', viewportOnly: true },
+  { name: 'Deck, the key picker open with the library sets', q: work('3', '&keys=library&pins=three'), checks: PICKER, click: '.add-key', viewportOnly: true },
   // keys style: the key colours by day and by night (each key's edge against the sky behind it at
   // least 3 to 1), and the Now row one height on a key page and on the For you page (nowH).
   { name: 'Keys style, day: library sets held on VS Code', q: `?hz=work&at=${encodeURIComponent('2026-11-11T12:10:00-08:00')}&clock=review&weather=ok&keys=library&hold=lib-vscode`, checks: DECK, edges: true, nowH: 'keys' },
@@ -729,7 +746,8 @@ try {
       // What the deck draws: its rows and their parts (the box itself is empty room). The open key
       // picker may run past the floor over the mountains; it is held to the timeline below.
       for (const e of deckEl.querySelectorAll('*')) {
-        if (e.closest('.pk')) continue;
+        // The open key menu is a popover held to the stage and off the strip's handle by its own rule below.
+        if (e.closest('.pk, .key-menu')) continue;
         const r = e.getBoundingClientRect();
         if (r.width === 0 || r.height === 0 || getComputedStyle(e).visibility === 'hidden') continue;
         lowest = Math.max(lowest, r.bottom);
@@ -758,8 +776,30 @@ try {
         const ic = t.querySelector('svg');
         if (!ic) continue;
         const q = ic.getBoundingClientRect();
-        if (Math.abs(iconAt(t) - iconAt(keyTiles[0])) > 0.5) deck.push('deck: the icon of key tile "' + name + '" sits ' + iconAt(t) + ' px below its tile top, the first one sits ' + iconAt(keyTiles[0]) + ' px');
-        if (q.top < r.top + 7 - 0.5 || q.bottom > r.top + 27 + 0.5 || q.left < r.left + 1 - 0.5 || q.right > r.right - 1 + 0.5) deck.push('deck: the icon of key tile "' + name + '" is not inside its icon box (icon y ' + Math.round(q.top - r.top) + ' to ' + Math.round(q.bottom - r.top) + ' in a tile that gives 7 to 27)');
+        const row = t.closest('.deck-tiles');
+        const peer = row?.querySelector('.deck-tile.key-tile');
+        if (peer && Math.abs(iconAt(t) - iconAt(peer)) > 0.5) deck.push('deck: the icon of key tile "' + name + '" sits ' + iconAt(t) + ' px below its tile top, its row first one sits ' + iconAt(peer) + ' px');
+        const wide = row?.classList.contains('wide');
+        const up1 = row?.classList.contains('up1');
+        const minY = wide ? 20 : up1 ? 7 : 7;
+        const maxY = wide ? 50 : up1 ? 32 : 27;
+        if (q.top < r.top + minY - 0.5 || q.bottom > r.top + maxY + 0.5 || q.left < r.left + 1 - 0.5 || q.right > r.right - 1 + 0.5) deck.push('deck: the icon of key tile "' + name + '" is not inside its icon box');
+      }
+      // deck pins and stretch: each row has equal tiles and fills its available width exactly.
+      for (const row of deckEl.querySelectorAll('.deck-tiles')) {
+        const rr = row.getBoundingClientRect();
+        const rowTiles = [...row.children].map((child) => child.matches('.key-tile-wrap') ? child.querySelector('.key-tile') : child).filter((child) => child?.matches?.('.key-tile')).map((child) => child.getBoundingClientRect());
+        if (!rowTiles.length) continue;
+        if (rowTiles.some((r) => Math.abs(r.width - rowTiles[0].width) > 0.5 || Math.abs(r.height - rowTiles[0].height) > 0.5)) deck.push('deck: tiles in one row do not share one width and height');
+        if (Math.abs(rowTiles[0].left - rr.left) > 0.5 || Math.abs(rowTiles[rowTiles.length - 1].right - rr.right) > 0.5) deck.push('deck: a tile row does not fill its width');
+      }
+      const menu = deckEl.querySelector('.key-menu');
+      if (menu) {
+        const mr = menu.getBoundingClientRect();
+        const sr = document.querySelector('.stage')?.getBoundingClientRect();
+        const handle = document.querySelector('.rib-handle')?.getBoundingClientRect();
+        if (sr && (mr.left < sr.left || mr.right > sr.right || mr.top < sr.top || mr.bottom > sr.bottom)) deck.push('deck: the key menu leaves the stage');
+        if (handle && hit(mr, handle)) deck.push('deck: the key menu covers the bottom strip handle');
       }
       // The open key picker runs down to just above the timeline and never covers it: its
       // bottom at least 16 px (the gap between the main rows) above the ribbon's top.
@@ -1290,6 +1330,11 @@ try {
     'tile-icon': (v) => v.name === 'Keys style, day: library sets held on VS Code',
     'tile-iconbox': (v) => v.name === 'Keys style, day: library sets held on VS Code',
     'drawer-scrim': (v) => v.name === 'Strip: the Day drawer open',
+    // deck pins and stretch
+    'sparse-width': (v) => v.name === 'Deck, one pin plus Add, one Now key',
+    'tile-equal': (v) => v.name === 'Deck, three pins plus Add, three Now keys',
+    'icon-wide': (v) => v.name === 'Deck, one pin plus Add, one Now key',
+    'key-menu': (v) => v.name.startsWith('Deck, key menu open on the leftmost'),
     'hide-pill': (v) => v.name === 'Unwind, Hide screen grown',
     // whole sky and sun
     sky: (v) => v.name.startsWith('Watch, whole sky playing'),

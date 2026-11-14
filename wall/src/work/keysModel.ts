@@ -172,6 +172,11 @@ export const KEYS_PER_ROW = 5;
 export const DECK_TILE_H = 70;
 /** The gap between deck tiles, design pixels. */
 export const DECK_TILE_GAP = 8;
+
+/** Visual size for a row after its complete tile count is known. */
+export function tileSizeClass(count: number): '' | 'wide' | 'up1' {
+  return count <= 2 ? 'wide' : count === 3 ? 'up1' : '';
+}
 /** How far the deck stays above the mountains (and Watt's band), design pixels. */
 export const DECK_CLEARANCE = 12;
 
