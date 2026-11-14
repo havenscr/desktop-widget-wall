@@ -38,6 +38,7 @@ import { frontHost, moonFor, useSkyClaim, useSkyStore, type SkyBox } from './sky
 import { drawVeil, veilStrength } from './veil';
 import { drawHorizon, type HorizonGrid, type HorizonOptions } from './index';
 import { lineSettings } from './linesSettings';
+import { parseLineProbe } from './lineProbe';
 import {
   FLAT_REST_OPACITY,
   ampScale,
@@ -67,6 +68,8 @@ const VEIL_SETTLE_MS = 800;
 const FRONT_STYLE = { position: 'fixed', left: 0, top: 0, pointerEvents: 'none', clipPath: `inset(0 0 0 ${MAIN_LEFT}px)` } as const;
 /** Home's morning rule is re-checked this often. */
 const MORNING_CHECK_MS = 60_000;
+/** No picture boxes (the fit check's deliberate break only). */
+const NO_BOXES: readonly SkyBox[] = [];
 
 /**
  * Canvas filling the stage. Backing store = stage scale x devicePixelRatio.
@@ -151,6 +154,8 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
   // The new line types (Bars, Ribbon, Sparks, Skyline): their state and one frame input, made once.
   const types = useRef(createLineTypes());
   const typeFrame = useRef(createLineFrame());
+  // Dev builds only: `?lineprobe=1` counts a new type's pixels inside the picture boxes (the fit check).
+  const [lineProbe] = useState(() => (import.meta.env.DEV ? parseLineProbe(window.location.search) : null));
   // The scratch canvas for the lake reflection, made on first use.
   const reflection = useRef(createReflection());
   // Tell Watt (read only) where the camera is going and whether it is moving; cleared on unmount
@@ -273,7 +278,7 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
           tf.restLine = flat ? sstep(m.rest) * Math.min(1, gate.current.value * awake.current) : 0;
           tf.kick = danceKick();
           tf.dt = drawDt;
-          tf.boxes = lineBoxes.current;
+          tf.boxes = lineProbe?.noClip ? NO_BOXES : lineBoxes.current;
           tf.stops = stops;
           typeShown = true;
           const k = visualizerWeight(camera);
@@ -349,6 +354,7 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
       if (typeShown) {
         stepLineTypes(types.current, tf);
         drawLineType(fctx ?? ctx, types.current, tf);
+        if (lineProbe) lineProbe.run(types.current, tf, lineBoxes.current, canvas);
       }
       // The lake mirrors the finished frame on the visualizer camera, only while lines are drawn.
       if (REFLECT && lines.reflection && (options.echo || typeShown)) {

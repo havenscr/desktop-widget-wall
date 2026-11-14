@@ -1,4 +1,5 @@
 import { useLinesStore, validateLines } from '../../horizon/linesSettings';
+import { useWatchStore } from '../../unwind/watch/store';
 
 /**
  * Dev only: the Lines setting for stills, the gallery and the fit check, set for this page only
@@ -9,6 +10,7 @@ import { useLinesStore, validateLines } from '../../horizon/linesSettings';
  *   ?lcol=look|floor|sunset|ice|mint              the colours
  *   ?lrest=ridgelevels|flat                       the resting look
  *   ?lrefl=0                                      reflection off
+ *   ?ltab=listen                                  open Unwind's Listen side (not left to the default)
  */
 export function registerLinesMocks(search: string = window.location.search): void {
   const q = new URLSearchParams(search);
@@ -31,4 +33,5 @@ export function registerLinesMocks(search: string = window.location.search): voi
     any = true;
   }
   if (any) useLinesStore.setState(validateLines(next));
+  if (q.get('ltab') === 'listen') useWatchStore.getState().setTab('listen');
 }

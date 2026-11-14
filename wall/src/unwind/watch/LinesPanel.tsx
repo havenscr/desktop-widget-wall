@@ -8,11 +8,11 @@ import { useWatchStore } from './store';
 export const LINES_TITLE = 'How the lines move';
 
 const TYPES: { id: LineType; name: string; note: string }[] = [
-  { id: 'mountains', name: 'Mountains', note: 'The ridgelines dance as they do today; hits ripple back through them.' },
-  { id: 'bars', name: 'Bars', note: 'Bars rise from the horizon, bass in the middle; markers float down.' },
-  { id: 'ribbon', name: 'Ribbon', note: 'One glowing ribbon; hits lift it into a wave with two faint trails.' },
-  { id: 'sparks', name: 'Sparks', note: 'A row of dots; a hit throws them up and they fall back.' },
-  { id: 'skyline', name: 'Skyline', note: 'Stepped blocks like a far city, built a floor at a time.' },
+  { id: 'mountains', name: 'Mountains', note: 'The ridgelines dance as they do today.' },
+  { id: 'bars', name: 'Bars', note: 'Bars rise from the horizon, bass in the middle.' },
+  { id: 'ribbon', name: 'Ribbon', note: 'One glowing ribbon; hits lift it into a wave.' },
+  { id: 'sparks', name: 'Sparks', note: 'A row of dots; each hit throws them up.' },
+  { id: 'skyline', name: 'Skyline', note: 'Stepped blocks like a far city, a floor at a time.' },
 ];
 const COLOURS: { id: LineColours; name: string; note: string }[] = [
   { id: 'look', name: 'From the look', note: "The wall's own colours, or the playing cover's" },
@@ -102,10 +102,10 @@ export function LinesPanel() {
     <div className="ln-panel">
       <div className="ln-row ln-head">
         <span className="ln-label">Type</span>
-        <span className="ln-value">
-          {type.name}
-          {s.type === DEFAULT_LINES.type ? ', your usual' : ''}
-        </span>
+        <button type="button" className="ln-reset" {...tip('Every lines setting back to your usual: Mountains, 50, 50, 104 px, from the look, reflection on, ridge at rest')} onClick={s.reset}>
+          <IconRestore size={16} aria-hidden="true" />
+          Reset to my usual
+        </button>
       </div>
       <div className="ln-chips ln-types" role="radiogroup" aria-label="Line type" onKeyDown={arrows(TYPES, s.type, (id) => set({ type: id }))}>
         {TYPES.map((x) => (
@@ -148,7 +148,7 @@ export function LinesPanel() {
             </button>
           ))}
         </div>
-        <span className="ln-value">{colours.name}</span>
+        <span className="ln-value ln-fill">{colours.name}</span>
       </div>
       <div className="ln-row">
         <span className="ln-label" id="ln-refl-label">
@@ -194,10 +194,7 @@ export function LinesPanel() {
             </button>
           ))}
         </div>
-        <button type="button" className="ln-reset" {...tip('Every lines setting back to your usual: Mountains, 50, 50, 104 px, from the look, reflection on, ridge at rest')} onClick={s.reset}>
-          <IconRestore size={16} aria-hidden="true" />
-          Reset to my usual
-        </button>
+        <span className="ln-value ln-fill">{preset === 'dancing' ? 'your usual' : preset ? '' : 'your own mix'}</span>
       </div>
       <p className="ln-foot">One setting for the lines everywhere music plays.</p>
     </div>

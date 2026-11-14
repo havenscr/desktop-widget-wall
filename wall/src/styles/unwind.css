@@ -1537,8 +1537,11 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.ln-head .ln-value {
+/* After the swatches and the presets the value takes the room that is left. */
+.ln-value.ln-fill {
+  flex: 1;
   width: auto;
+  min-width: 0;
 }
 .ln-hint,
 .ln-foot {
@@ -1646,11 +1649,11 @@
 }
 .ln-swatches {
   display: flex;
-  gap: 12px;
+  gap: 8px;
 }
 .ln-sw {
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   display: grid;
   place-items: center;
   border-radius: 50%;
