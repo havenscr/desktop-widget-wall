@@ -1,4 +1,4 @@
-import { useState, type CSSProperties, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
 import { IconRestore } from '@tabler/icons-react';
 import { tip } from '../../ui/HoverTip';
 import { HINTS, CONTROLS, controlWords, isUsual, resolveTune, type RangeControl, type SwitchControl } from './lookSettings';
@@ -105,9 +105,35 @@ function SwitchRow({ look, c, hint }: { look: LookId; c: SwitchControl; hint: (k
  * usual", the one-line hint of the control in use, and "Reset to my usual" for this look only.
  * Every change reaches the stage at once (`setTune`).
  */
+/**
+ * Sets `data-more` on the rows' scrolling area (`below`, `above`, `both` or `none`) as it scrolls and
+ * resizes, so the stylesheet fades only an edge that has more behind it.
+ */
+function useScrollEdges(ref: { current: HTMLDivElement | null }, look: LookId) {
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const update = () => {
+      const above = el.scrollTop > 1;
+      const below = el.scrollTop + el.clientHeight < el.scrollHeight - 1;
+      el.dataset.more = above && below ? 'both' : below ? 'below' : above ? 'above' : 'none';
+    };
+    update();
+    el.addEventListener('scroll', update, { passive: true });
+    const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(update);
+    ro?.observe(el);
+    return () => {
+      el.removeEventListener('scroll', update);
+      ro?.disconnect();
+    };
+  }, [ref, look]);
+}
+
 export function LookTunePanel({ look, foot = TUNE_FOOT }: { look: LookId; foot?: string }) {
   const tune = useWatchStore((s) => s.tune);
   const [hinted, setHinted] = useState<string | null>(null);
+  const rowsRef = useRef<HTMLDivElement>(null);
+  useScrollEdges(rowsRef, look);
   const usual = isUsual(look, tune);
   return (
     <div className="wk-set" role="group" aria-label={`${lookName(look)} settings`} data-look={look}>
@@ -126,7 +152,7 @@ export function LookTunePanel({ look, foot = TUNE_FOOT }: { look: LookId; foot?:
           Reset to my usual
         </button>
       </div>
-      <div className="wk-rows">
+      <div className="wk-rows" ref={rowsRef}>
       {CONTROLS[look].map((c) => (c.kind === 'range' ? <RangeRow key={c.key} look={look} c={c} hint={setHinted} /> : <SwitchRow key={c.key} look={look} c={c} hint={setHinted} />))}
       </div>
       <p className="ln-foot wk-foot">{hinted ? HINTS[hinted] : foot}</p>

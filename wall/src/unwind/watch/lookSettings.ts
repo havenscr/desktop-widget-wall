@@ -15,6 +15,8 @@ import { DRIVE_IN_GROUND, DRIVE_IN_SCREEN, HOLO_PANE, LOOK_BOXES, skySoftEdge, t
  */
 
 export const TUNE_KEY = 'wall2-watch-look-tune';
+/** The most characters of a stored record that are read at all (the real shape is under 600). */
+export const TUNE_MAX_CHARS = 100_000;
 
 export interface SkyTune {
   /** Percent of the usual box, about the foot centre. */
@@ -246,7 +248,9 @@ function storedNum(v: unknown, min: number, max: number, dflt: number): number {
 /** Stored settings, each field checked on its own; anything missing, of the wrong type or out of its range is discarded and that field takes its usual value. */
 export function parseTune(raw: string | null): LookTune {
   const out = defaultTune();
-  if (!raw || raw.length > 4000) return out;
+  // The real record is under 600 characters; one past this cap is not one this app wrote, and only then is every look dropped.
+  // Below it, whatever cannot be read is dropped one field at a time (extra keys and long values do no harm).
+  if (!raw || raw.length > TUNE_MAX_CHARS) return out;
   let v: unknown;
   try {
     v = JSON.parse(raw);

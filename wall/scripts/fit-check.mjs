@@ -31,7 +31,7 @@
 // CI does not run this; run it by hand before a layout change is handed over.
 //
 //   WALL_CHROME=/path/to/chrome-or-headless-shell npm --prefix wall run fit-check
-//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, card-end, header, deck, tiles, picker, chips, heading, zenhint, strip, fold, drawer, rows, handle, sky, floor, sun, tools, toolsnames, meetfill, meetempty, fy-height, key-edge, hide-pill, hide-note, leave-band, rec-chip, rec-height, tile-height, tile-icon, tile-iconbox, drawer-scrim, lwbuttons, lwoverlap, lwsquare, lwring, lwtemp, lwround, sky-front, sky-moon, sky-always, sky-crop, sky-seam, sky-soft, sky-foot, tower-over, tower-wide, tower-box, tower-switch, holo-big, holo-noblend, holo-beam, holo-take, tile-text, listen-player, listen-card, listen-slot, listen-next, lines-size, lines-control, lines-text, lines-clip, watch-rest, watch-title, watch-away, watch-mark, lip-cover, lip-band, lip-scrim, row-parts, over-hatch, row-type, onair-box, onair-notes, onair-keys, onair-watt, watt-seat, watt-spot, watt-tower, watt-ground, tune-box, tune-clear, tune-tower, tune-sign, tune-light, tune-sheet, tune-control, tune-text, tune-cut, tune-clip, tune-row, tune-foot)
+//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, card-end, header, deck, tiles, picker, chips, heading, zenhint, strip, fold, drawer, rows, handle, sky, floor, sun, tools, toolsnames, meetfill, meetempty, fy-height, key-edge, hide-pill, hide-note, leave-band, rec-chip, rec-height, tile-height, tile-icon, tile-iconbox, drawer-scrim, lwbuttons, lwoverlap, lwsquare, lwring, lwtemp, lwround, sky-front, sky-moon, sky-always, sky-crop, sky-seam, sky-soft, sky-foot, tower-over, tower-wide, tower-box, tower-switch, holo-big, holo-noblend, holo-beam, holo-take, tile-text, listen-player, listen-card, listen-slot, listen-next, lines-size, lines-control, lines-text, lines-clip, watch-rest, watch-title, watch-away, watch-mark, lip-cover, lip-band, lip-scrim, row-parts, over-hatch, row-type, onair-box, onair-notes, onair-keys, onair-watt, watt-seat, watt-spot, watt-tower, watt-ground, tune-box, tune-clear, tune-tower, tune-sign, tune-light, tune-sheet, tune-control, tune-text, tune-cut, tune-clip, tune-row, tune-foot, tune-fade, tune-remnant, tune-gap)
 //   npm --prefix wall run fit-check -- --self-test
 //   npm --prefix wall run fit-check -- --only=look settings    (only the states whose name contains that text)
 //
@@ -186,6 +186,9 @@ const EXPECT = {
   'tune-cut': /^ *FAIL look settings: ".*" is cut /m,
   'tune-clip': /^ *FAIL look settings: \d+ control\(s\) are cut off by the sheet with no scrolling/m,
   'tune-foot': /^ *FAIL look settings: ".*" is cut \(\d+ px high/m,
+  'tune-fade': /^ *FAIL look settings: the scrolling rows end with no fade/m,
+  'tune-remnant': /^ *FAIL look settings: a fade is drawn on the rows with nothing more to scroll/m,
+  'tune-gap': /^ *FAIL look settings: the "Settings for" buttons are [\d.]+ px apart/m,
   'tune-row': /^ *FAIL look settings: row ".*" is [\d.]+ px tall \(40 at least\)/m,
   'sky-soft': /^ *FAIL whole sky soft edge: /m,
   'sky-foot': /^ *FAIL whole sky soft edge: /m,
@@ -352,6 +355,9 @@ const OVERFLOWS = {
   // the scrolling section clipped with no scrolling; 30 px rows
   'tune-clip': '.wk-set .wk-rows { overflow: hidden !important; }',
   'tune-foot': '.wk-set > .wk-foot { max-height: 22px !important; overflow: hidden !important; }',
+  'tune-fade': '.wk-set .wk-rows { -webkit-mask-image: none !important; mask-image: none !important; }',
+  'tune-remnant': '.wk-set .wk-rows { -webkit-mask-image: linear-gradient(180deg, #000, transparent) !important; mask-image: linear-gradient(180deg, #000, transparent) !important; }',
+  'tune-gap': '.wk-pick .w-seg { gap: 0 !important; }',
   'tune-row': '.wk-set .ln-row { min-height: 30px !important; height: 30px !important; }',
   // Keeps the production side ramp exactly and replaces only the top ramp with one that also fades the foot (an extra stop near 100 percent).
   'sky-foot': `.w-sky .w-screen { -webkit-mask-image: ${SKY_SIDE_RAMP}, ${SKY_TOP_RAMP_FOOT} !important; mask-image: ${SKY_SIDE_RAMP}, ${SKY_TOP_RAMP_FOOT} !important; }`,
@@ -1767,7 +1773,34 @@ try {
             rowsBox.scrollTop = 0;
           }
         }
-        if (scrolls && !getComputedStyle(rowsBox).backgroundAttachment.includes('local')) fails.push('look settings: the scrolling section shows no cue that more lies below');
+        // At rest (scrolled to the top): a fade on the edge that has more, 12 px of padding, a row cut by the edge showing only what lies in the fade; nothing faded when all fits.
+        const cs0 = getComputedStyle(rowsBox);
+        const masked = (cs0.maskImage || cs0.webkitMaskImage || 'none') !== 'none';
+        if (!scrolls && masked) fails.push('look settings: a fade is drawn on the rows with nothing more to scroll');
+        if (scrolls) {
+          const rb1 = R(rowsBox);
+          if (!masked) fails.push('look settings: the scrolling rows end with no fade');
+          const rowEls = [...rowsBox.querySelectorAll('.ln-row')];
+          const first = R(rowEls[0]);
+          if (first.t < rb1.t + 11.5) fails.push('look settings: the first row starts ' + Math.round((first.t - rb1.t) * 10) / 10 + ' px under the top of the rows (12 at least, clear of the fade)');
+          for (const row of rowEls) {
+            const r = R(row);
+            if (r.t < rb1.b && r.b > rb1.b + 0.5 && rb1.b - r.t > 28.5) fails.push('look settings: row "' + row.textContent.trim().slice(0, 24) + '" shows ' + Math.round(rb1.b - r.t) + ' px at the bottom edge, more than the 28 px fade covers');
+          }
+        }
+        // The chooser of the look to adjust: its buttons as tall and as big in type as the kind rows' buttons, 8 px apart, nothing clipped.
+        const pick = [...sheet.querySelectorAll('.wk-pick .w-seg button')];
+        if (pick.length) {
+          const ref = sheet.querySelector('.w-kinds .w-srow:not(.wk-pick) .w-seg button');
+          const refH = ref ? R(ref).h : 0;
+          const refFs = ref ? getComputedStyle(ref).fontSize : '';
+          pick.forEach((b, i) => {
+            const r = R(b);
+            if (ref && (Math.abs(r.h - refH) > 0.5 || getComputedStyle(b).fontSize !== refFs)) fails.push('look settings: the "' + b.textContent.trim() + '" button is ' + Math.round(r.h) + ' px tall at ' + getComputedStyle(b).fontSize + ', not like the rows above (' + refH + ' px, ' + refFs + ')');
+            if (b.scrollWidth > b.clientWidth + 0.5) fails.push('look settings: the "' + b.textContent.trim() + '" button is clipped');
+            if (i > 0) { const gap = r.l - R(pick[i - 1]).r; if (gap < 7.5) fails.push('look settings: the "Settings for" buttons are ' + Math.round(gap * 10) / 10 + ' px apart (8 at least)'); }
+          });
+        }
         for (const el of set.querySelectorAll('button, input')) {
           const r = R(el);
           const name = el.getAttribute('aria-label') || el.textContent.trim() || (document.getElementById(el.getAttribute('aria-labelledby') || '') || {}).textContent || el.id;
@@ -2121,6 +2154,9 @@ try {
     'tune-cut': (v) => v.name === 'Look settings, sheet, the sun',
     'tune-clip': (v) => v.name === 'Look settings, sheet, a look per kind, the drive-in',
     'tune-foot': (v) => v.name === 'Look settings, sheet, a look per kind, the drive-in',
+    'tune-fade': (v) => v.name === 'Look settings, sheet, a look per kind, the drive-in',
+    'tune-remnant': (v) => v.name === 'Look settings, sheet, the sun',
+    'tune-gap': (v) => v.name === 'Look settings, sheet, a look per kind, the drive-in',
     'tune-row': (v) => v.name === 'Look settings, sheet, the sun',
   };
   const breakOn = BREAK_ON[overflow] ? VARIANTS.filter(BREAK_ON[overflow]) : VARIANTS.slice(0, 1);

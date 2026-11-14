@@ -15,6 +15,7 @@ import {
   DEFAULT_TUNE,
   DRIVE_FOOT,
   TUNE_KEY,
+  TUNE_MAX_CHARS,
   controlWords,
   defaultTune,
   isUsual,
@@ -105,6 +106,18 @@ describe('the stored settings', () => {
     expect(parseTune(JSON.stringify({ feather: { size: 109 }, drivein: { size: 106, floor: -1 } }))).toEqual(DEFAULT_TUNE);
     // A value at an end of its range is kept.
     expect(parseTune(JSON.stringify({ sky: { size: 60, soft: 200 }, sun: { up: -100, size: 280 }, feather: { size: 108 }, drivein: { size: 80 }, holo: { tilt: 12, see: 60 } }))).toMatchObject({ sky: { size: 60, soft: 200 }, sun: { up: -100, size: 280 }, feather: { size: 108 }, drivein: { size: 80 }, holo: { tilt: 12, see: 60 } });
+  });
+
+  it('a long stored record drops only what cannot be read: a long junk key or a long value harms nothing, only a record past the cap is not read', () => {
+    const real = { sky: { size: 80, soft: 40 }, sun: { up: -20 }, drivein: { light: true } };
+    const withJunk = JSON.stringify({ ...real, junk: 'x'.repeat(10_000) });
+    expect(withJunk.length).toBeGreaterThan(4000);
+    expect(parseTune(withJunk)).toMatchObject({ sky: { size: 80, soft: 40 }, sun: { up: -20 }, drivein: { light: true } });
+    // A long value in a field is the wrong type or out of range: that field only.
+    expect(parseTune(JSON.stringify({ sky: { size: 'y'.repeat(5000), soft: 40 }, sun: { up: -20 } }))).toMatchObject({ sky: { size: 100, soft: 40 }, sun: { up: -20 } });
+    // The real record is far under the cap; one past it is not read at all.
+    expect(JSON.stringify(DEFAULT_TUNE).length).toBeLessThan(600);
+    expect(parseTune(JSON.stringify({ ...real, junk: 'x'.repeat(TUNE_MAX_CHARS) }))).toEqual(DEFAULT_TUNE);
   });
 
   it('older, broken or missing stored shapes fall back to the defaults', () => {
@@ -588,6 +601,30 @@ describe('the sheet\'s section for the look', () => {
     });
     expect(JSON.parse(localStorage.getItem(TUNE_KEY)!).sky.soft).toBe(60);
     writes.mockRestore();
+  });
+
+  it('the rows\' scrolling area says which edge has more behind it: only that edge fades, and with nothing to scroll nothing does', async () => {
+    const sheet = await open('drivein');
+    const rows = sheet.querySelector('.wk-rows') as HTMLElement;
+    const measure = (top: number, client: number, height: number) => {
+      Object.defineProperty(rows, 'scrollTop', { configurable: true, writable: true, value: top });
+      Object.defineProperty(rows, 'clientHeight', { configurable: true, value: client });
+      Object.defineProperty(rows, 'scrollHeight', { configurable: true, value: height });
+      fireEvent.scroll(rows);
+      return rows.dataset.more;
+    };
+    expect(measure(0, 200, 200)).toBe('none');
+    expect(measure(0, 200, 330)).toBe('below');
+    expect(measure(60, 200, 330)).toBe('both');
+    expect(measure(130, 200, 330)).toBe('above');
+    expect(measure(0, 200, 200)).toBe('none');
+    // The stylesheet fades 28 px at an edge that has more, pads 12 px only then, and draws nothing else (no glow, no background cue).
+    const blocks = (sel: string) => css.split('}').filter((b) => b.includes(sel)).join('}');
+    expect(blocks(".wk-set .wk-rows[data-more='below']")).toMatch(/mask-image: linear-gradient\(180deg, #000 0, #000 calc\(100% - 28px\), transparent 100%\)/);
+    expect(blocks(".wk-set .wk-rows[data-more='above']")).toMatch(/mask-image: linear-gradient\(180deg, transparent 0, #000 28px, #000 100%\)/);
+    expect(blocks(".wk-set .wk-rows[data-more='both']")).toMatch(/transparent 0, #000 28px, #000 calc\(100% - 28px\), transparent 100%/);
+    expect(rule('.wk-set .wk-rows')).not.toMatch(/mask|background|radial-gradient/);
+    expect(css).toMatch(/\.wk-set \.wk-rows\[data-more='both'\] \{\s*padding: 12px 0;/);
   });
 
   it('every control has a tooltip note and a one-line hint, and a range\'s usual lies inside its bounds', () => {
