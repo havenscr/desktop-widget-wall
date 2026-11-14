@@ -9,7 +9,7 @@ import { UnwindView } from './testView';
 import { useSignalStore } from '../../signals/store';
 import { usePlaceStore } from '../../state/places';
 import { resetLastPlayed } from '../lastPlayed';
-import { DEFAULT_LOOKS, HOLO_PANE, LOOKS, LOOKS_KEY, LOOK_BOXES, behindTheLand, isLook, layeredNow, loadLooks, ownsTheMoonSky, parseLooks, pickLook } from './looks';
+import { DEFAULT_LOOKS, HOLO_PANE, LOOKS, LOOKS_KEY, LOOK_BOXES, behindTheLand, isLook, layeredNow, loadLooks, ownsTheMoonSky, parseLooks } from './looks';
 import { BEAM_CLEAR, EMITTER, HOLO_TILT, HologramEmitter, beamClip, paneQuad } from './HologramStage';
 import { SAVED_KEY } from './saved';
 import { resetWatch, useWatchStore } from './store';
@@ -76,7 +76,7 @@ describe('the Hologram as a stored look', () => {
     expect(parseLooks(kind)).toEqual({ mode: 'kind', all: 'holo', video: 'holo', live: 'sky', twitch: 'drivein' });
     expect(parseLooks(JSON.stringify({ mode: 'one', all: 'hologram' })).all).toBe(DEFAULT_LOOKS.all);
     expect(parseLooks(JSON.stringify({ mode: 'one', all: 'holo', video: 'nope' }))).toMatchObject({ all: 'holo', video: DEFAULT_LOOKS.video });
-    useWatchStore.getState().setLooks(pickLook(DEFAULT_LOOKS, 'video', 'holo'));
+    useWatchStore.getState().setLooks({ ...DEFAULT_LOOKS, all: 'holo' });
     expect(parseLooks(localStorage.getItem(LOOKS_KEY)).all).toBe('holo');
     expect(loadLooks().all).toBe('holo');
   });

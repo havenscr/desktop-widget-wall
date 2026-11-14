@@ -130,7 +130,7 @@ describe('the sky layers under each look', () => {
     await flush();
     expect(front()).not.toBeNull();
     for (const look of ['drivein', 'feather', 'sun', 'sky'] as LookId[]) {
-      act(() => useWatchStore.getState().pickLook(look));
+      act(() => useWatchStore.getState().setLooks({ ...useWatchStore.getState().looks, all: look }));
       await flush();
       expect(claims().watch.boxes).toEqual(box(look));
       expect(document.querySelectorAll('canvas.horizon-front').length).toBe(BEHIND[look] ? 1 : 0);

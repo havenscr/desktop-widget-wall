@@ -8,7 +8,7 @@ import { UnwindView } from './testView';
 import { useSignalStore } from '../../signals/store';
 import { usePlaceStore } from '../../state/places';
 import { resetLastPlayed } from '../lastPlayed';
-import { DEFAULT_LOOKS, DRIVE_IN_SCREEN, LOOKS_KEY, lookTargetName, parseLooks, pickLook } from './looks';
+import { DEFAULT_LOOKS, DRIVE_IN_SCREEN, LOOKS_KEY, parseLooks } from './looks';
 import { AUTOPLAY_WAIT_MS, framePoster, HANDSHAKE_EVERY_MS, PlayerFrame, TWITCH_CLICK_MS } from './PlayerFrame';
 import { SAVED_KEY, type SavedItem } from './saved';
 import { driveInAudience, resetWatch, useWatchStore } from './store';
@@ -443,9 +443,6 @@ describe('the looks are chosen in the gear sheet, with no Look switch on the pag
     const sw = screen.getByRole('radiogroup', { name: 'Look for videos and playlists' });
     await act(async () => within(sw).getByRole('radio', { name: 'Whole sky' }).click());
     expect(parseLooks(localStorage.getItem(LOOKS_KEY))).toMatchObject({ mode: 'kind', video: 'sky', live: 'sky', twitch: 'drivein', all: 'drivein' });
-    expect(pickLook(DEFAULT_LOOKS, 'twitch', 'sun')).toEqual({ ...DEFAULT_LOOKS, all: 'sun' });
-    expect(lookTargetName({ ...DEFAULT_LOOKS, mode: 'kind' }, 'playlist')).toBe('Videos and playlists');
-    expect(lookTargetName(DEFAULT_LOOKS, 'playlist')).toBeNull();
   });
 });
 
@@ -483,7 +480,7 @@ describe('the buddy seam and the opener', () => {
     useWatchStore.getState().play(ITEMS[0]);
     expect(driveInAudience(useWatchStore.getState())).toEqual({ x: 1244, y: 54, w: 672, h: 378 });
     expect(driveInAudience(useWatchStore.getState())).toBe(DRIVE_IN_SCREEN);
-    useWatchStore.getState().pickLook('feather');
+    useWatchStore.getState().setLooks({ ...DEFAULT_LOOKS, all: 'feather' });
     expect(driveInAudience(useWatchStore.getState())).toBeNull();
   });
 
