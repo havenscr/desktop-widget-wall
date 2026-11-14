@@ -1,5 +1,4 @@
-import { IconDeviceTv, IconHeadphones, IconMoon } from '@tabler/icons-react';
-import { usePlaceStore } from '../state/places';
+import { IconDeviceTv, IconHeadphones } from '@tabler/icons-react';
 import { WATCH_PANEL_ID, WATCH_TAB_ID } from './watch/Watch';
 import { useWatchStore } from './watch/store';
 
@@ -10,8 +9,8 @@ export const LISTEN_TAB_ID = 'u-tab-listen';
 /**
  * Listen and Watch as two toggles under the clock (7A: no tab pill over the centre). They
  * switch the centre between the music player and video (leaving Watch removes any video).
- * Neither moves the horizon camera while Unwind is shown. Dream (Zen already dimmed) stays as a
- * third, quieter toggle for now: its removal waits on a Watch test that still clicks it.
+ * Neither moves the horizon camera while Unwind is shown. There is no Dream toggle: Zen dims by
+ * itself late at night.
  */
 export function Tabs() {
   const tab = useWatchStore((s) => s.tab);
@@ -43,10 +42,6 @@ export function Tabs() {
       >
         <IconDeviceTv size={22} stroke={1.8} aria-hidden="true" />
         Watch
-      </button>
-      <button type="button" role="tab" aria-selected="false" className="u-tab u-dream" title="Open Zen already dimmed" onClick={() => usePlaceStore.getState().openDream()}>
-        <IconMoon size={20} stroke={1.8} aria-hidden="true" />
-        Dream
       </button>
     </div>
   );

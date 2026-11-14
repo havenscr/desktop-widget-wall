@@ -887,8 +887,7 @@ frame (no ribbon) in the wide zones `470px 1fr 540px`. The parts are in `wall/sr
   accessible name); a double click sends once; "Could not watch input" shows beside it for five seconds.
   The wind down ring (PR 10) goes between the date line and Tomorrow.
 - **Centre.** The toggles (`Tabs.tsx`, under the date line): Listen is this view (its toggle controls the player
-  panel); Watch switches the centre to video (see "Watch" below); Dream opens Zen already dimmed (`openDream` in the place store;
-  Zen reads the flag once). The player (`Player.tsx`): 224 px art, the source
+  panel); Watch switches the centre to video (see "Watch" below). There is no Dream toggle: Zen dims by itself. The player (`Player.tsx`): 224 px art, the source
   app in pink capitals (the player's name, see below), a 64 px title, the artist, and under them one row of the buttons, a 360 px position with times
   (advanced locally twice a second between polls while playing and visible, never past
   the duration), then previous, play or pause and next with the playing app's volume
@@ -922,7 +921,7 @@ frame (no ribbon) in the wide zones `470px 1fr 540px`. The parts are in `wall/sr
   large empty tile.
 - **Listen, as the owner chose it (7A, 8B, 6A, 9A, 10B).** Unwind is music on this computer
   and never controls the house: the house-wide lights row is gone, and **Unwind never
-  controls any room other than the office**. Listen and Watch (and, for now, Dream) are
+  controls any room other than the office**. Listen and Watch are
   toggles under the date line, not a pill over the centre. The cover (the real art from
   now playing; a neutral tile only when there is none) and the title sit at the top of the
   centre, and previous, play, next, the position with its times and the volume sit in one

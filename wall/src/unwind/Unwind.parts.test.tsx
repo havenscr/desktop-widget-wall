@@ -50,13 +50,9 @@ it('keeps Unwind (and so the horizon camera) on Listen and Watch, and switches b
   expect(usePlaceStore.getState().active).toBe('unwind');
 });
 
-it('opens Zen in Dream from the Dream toggle', async () => {
+it('has no Dream toggle: Listen and Watch only', () => {
   render(<Tabs />);
-  expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual(['Listen', 'Watch', 'Dream']);
-  await act(async () => screen.getByRole('tab', { name: 'Dream' }).click());
-  expect(usePlaceStore.getState().active).toBe('zen');
-  expect(usePlaceStore.getState().zenDream).toBe(true);
-  expect(usePlaceStore.getState().from).toBe('unwind');
+  expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual(['Listen', 'Watch']);
 });
 
 it('shows the first event after midnight as Tomorrow, or nothing', async () => {

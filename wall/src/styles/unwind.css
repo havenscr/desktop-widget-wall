@@ -2281,8 +2281,3 @@
     transition: none;
   }
 }
-/* Dream sits last and quieter than Listen and Watch. */
-.u-wing .u-tab.u-dream {
-  padding: 0 18px;
-  color: var(--faint);
-}
