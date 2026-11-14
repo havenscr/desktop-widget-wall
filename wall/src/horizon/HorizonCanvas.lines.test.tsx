@@ -191,6 +191,21 @@ describe('the Lines setting in the frame', () => {
     expect(work).toBeLessThan(unwind * 0.5);
   });
 
+  it('a still frame (reduced motion) shows a new type at rest: Sparks as a dotted row, Flat as one line', () => {
+    window.matchMedia = ((query: string) => ({ matches: query.includes('reduce'), media: query, addEventListener() {}, removeEventListener() {} })) as unknown as typeof window.matchMedia;
+    useLinesStore.getState().setLines({ type: 'sparks' });
+    usePlaceStore.setState({ active: 'unwind' });
+    render(<HorizonCanvas now={() => NOON} />);
+    expect(rec.log.filter((l) => l.startsWith('arc(')).length).toBe(64 * 4);
+    expect(draw.mock.lastCall![1].echo).toMatchObject({ rest: 1, look: 'ridgelevels' });
+    cleanup();
+    rec.log.length = 0;
+    useLinesStore.getState().setLines({ type: 'bars', rest: 'flat' });
+    render(<HorizonCanvas now={() => NOON} />);
+    expect(draw.mock.lastCall![1].echo).toBeUndefined();
+    expect(rec.log).toContain('lineWidth=1.6');
+  });
+
   it('Reflection off draws no reflection', () => {
     useLinesStore.getState().setLines({ reflection: false });
     const ts = playUnwind();
