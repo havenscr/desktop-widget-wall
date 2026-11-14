@@ -182,9 +182,14 @@ export function rejectArt(): void {
   useNowPlayingStore.setState({ art: null });
 }
 
-/** Send a media command, then refresh once if the page is still visible and someone is watching. */
+/**
+ * Send a media command to the session the player shows (its app id goes along, so the click lands
+ * on that app even when Windows names another session current), then refresh once if the page is
+ * still visible and someone is watching.
+ */
 export function sendMediaCommand(name: MediaCommand): void {
-  invoke(name)
+  const sourceId = useNowPlayingStore.getState().info?.source_app_id;
+  invoke(name, sourceId ? { sourceId } : undefined)
     .catch(() => {})
     .finally(() => {
       if (document.hidden || !active || consumers === 0) return;

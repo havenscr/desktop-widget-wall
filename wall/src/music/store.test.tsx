@@ -3,7 +3,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { mocks } from '../bridge/tauri';
 import { Unwind } from '../screens/Unwind';
 import { MusicBar } from './MusicBar';
-import { ART_RETRY_MS, POLL_MS, acquireNowPlaying, rejectArt, resetNowPlaying, useNowPlayingStore } from './store';
+import { ART_RETRY_MS, POLL_MS, acquireNowPlaying, rejectArt, resetNowPlaying, sendMediaCommand, useNowPlayingStore } from './store';
 
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => {
@@ -135,4 +135,26 @@ it('never asks again for a cover it refused: a type outside the list, or one the
   const before = sent.length;
   await flush(ART_RETRY_MS * 3);
   expect(sent.slice(before).every((k) => k === 'Next|||Player')).toBe(true);
+});
+
+it('sends the shown session id with every media command, and none when nothing is shown', async () => {
+  const seen: unknown[] = [];
+  mocks.set('get_now_playing', () => ({ title: 'x', playback_status: 'playing', source_app_id: 'Example.Player_abc!App' }));
+  for (const name of ['media_play_pause', 'media_next', 'media_previous']) mocks.set(name, (args) => void seen.push([name, args]));
+  render(<MusicBar />);
+  await flush();
+  sendMediaCommand('media_play_pause');
+  sendMediaCommand('media_next');
+  sendMediaCommand('media_previous');
+  await flush();
+  expect(seen).toEqual([
+    ['media_play_pause', { sourceId: 'Example.Player_abc!App' }],
+    ['media_next', { sourceId: 'Example.Player_abc!App' }],
+    ['media_previous', { sourceId: 'Example.Player_abc!App' }],
+  ]);
+  seen.length = 0;
+  useNowPlayingStore.setState({ info: null });
+  sendMediaCommand('media_next');
+  await flush();
+  expect(seen).toEqual([['media_next', undefined]]);
 });

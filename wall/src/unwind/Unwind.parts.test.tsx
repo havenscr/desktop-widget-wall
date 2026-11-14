@@ -347,6 +347,48 @@ it('matches only Watch playing or last-stopped titles, including the YouTube suf
   expect(document.body.textContent).not.toContain('msedgewebview2');
 });
 
+it('takes a title match under an unknown id as the wall\'s own video, and never under a known player', async () => {
+  resetWatch();
+  const item = { kind: 'video' as const, id: 'abcdefghijk', label: 'Quiet Coast' };
+  useWatchStore.setState({ saved: [item], playing: item, tab: 'listen' });
+  mocks.set('get_now_playing', () => ({ title: 'Quiet Coast', source_app_id: 'Example.Host_abc123!App', playback_status: 'playing' }));
+  const own = render(<Unwind />);
+  await flush();
+  expect(screen.getByText('Playing in Watch')).toBeTruthy();
+  own.unmount();
+  resetNowPlaying();
+
+  // The same title from Spotify is Spotify, not the wall's video.
+  mocks.set('get_now_playing', () => ({ title: 'Quiet Coast', source_app_id: 'SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify', playback_status: 'playing' }));
+  render(<Unwind />);
+  await flush();
+  expect(screen.queryByText('Playing in Watch')).toBeNull();
+  expect(document.querySelector('.u-src')!.textContent).toBe('Spotify');
+});
+
+it('shows an ended session as last played with the play button, never a full bar with pause', async () => {
+  const toggle = vi.fn();
+  mocks.set('get_now_playing', () => ({
+    title: 'Evening Radio Mix',
+    artist: 'Example Host',
+    source_app_id: 'Example.VideoApp_abc123!App',
+    playback_status: 'paused',
+    ended: true,
+    position_seconds: 146,
+    duration_seconds: 146,
+  }));
+  mocks.set('media_play_pause', toggle);
+  render(<Unwind />);
+  await flush();
+  expect(screen.getByText('Last played on Video App')).toBeTruthy();
+  expect(screen.getByText('Evening Radio Mix')).toBeTruthy();
+  expect(screen.queryByRole('progressbar')).toBeNull();
+  expect(screen.queryByLabelText('Pause')).toBeNull();
+  expect((screen.getByLabelText('Play') as HTMLButtonElement).disabled).toBe(false);
+  await act(async () => screen.getByRole('button', { name: 'Play again' }).click());
+  expect(toggle).toHaveBeenCalledWith({ sourceId: 'Example.VideoApp_abc123!App' });
+});
+
 it('says "Open Spotify to play again" when the last track has no media session', async () => {
   resetLastPlayed({ title: 'Tokyo Burnout', artist: 'Tokyo Rose', source: 'Spotify' });
   mocks.set('get_now_playing', () => ({ playback_status: 'unknown' }));

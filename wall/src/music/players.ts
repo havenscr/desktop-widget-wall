@@ -147,6 +147,11 @@ function known(source: string): KnownPlayer | null {
   return FIREFOX_INSTALL_ID.test(id) ? (KNOWN.find((k) => k.name === 'Firefox') ?? null) : null;
 }
 
+/** True when this source is one of the known players (Spotify, a browser, and so on); an unknown app is not. */
+export function isKnownPlayer(source: string | null | undefined): boolean {
+  return !!source && !!source.trim() && known(source) !== null;
+}
+
 /** The source as the wall shows it: the id when the session gave one, else the older label. */
 export function sourceKey(info: { source_app_id?: string | null; source_app?: string | null } | null): string | null {
   const id = info?.source_app_id?.trim();
