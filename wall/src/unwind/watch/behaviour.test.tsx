@@ -308,6 +308,65 @@ describe('the keys on the Watch tab', () => {
   });
 });
 
+/** Makes `:focus-visible` answer `on` (jsdom answers true for any focus; a browser says false after a mouse click). */
+function stubFocusVisible(on: boolean) {
+  const orig = Element.prototype.matches;
+  return vi.spyOn(Element.prototype, 'matches').mockImplementation(function (this: Element, sel: string) {
+    return sel === ':focus-visible' ? on : orig.call(this, sel);
+  });
+}
+
+describe('review fixes: focus after a mouse click, and the keys on a button', () => {
+  it('a mouse click on a control does not hold the controls: they rest 3 seconds after the pointer leaves, and the clicked button lets go of focus', async () => {
+    await playing();
+    const spy = stubFocusVisible(false);
+    try {
+      const now = document.querySelector('.w-now')!;
+      const pause = screen.getByRole('button', { name: 'Pause' });
+      fireEvent.pointerEnter(now);
+      act(() => pause.focus());
+      fireEvent.pointerLeave(now);
+      expect(document.activeElement).not.toBe(pause);
+      await flush(CTL_REST_MS - 100);
+      expect(ctl()).toBe('shown');
+      await flush(100);
+      expect(ctl()).toBe('rest');
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('a focus that came from the keyboard holds the controls shown while it stays', async () => {
+    await playing();
+    const spy = stubFocusVisible(true);
+    try {
+      const pause = screen.getByRole('button', { name: 'Pause' });
+      act(() => pause.focus());
+      await flush(CTL_REST_MS * 3);
+      expect(ctl()).toBe('shown');
+      expect(document.activeElement).toBe(pause);
+      act(() => pause.blur());
+      await flush(CTL_REST_MS);
+      expect(ctl()).toBe('rest');
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('Escape on a focused button does nothing; Escape on the page stops the video and is default-prevented; Escape with nothing playing is left alone', async () => {
+    await playing();
+    const stopBtn = screen.getByRole('button', { name: 'Stop' });
+    act(() => stopBtn.focus());
+    expect(fireEvent.keyDown(stopBtn, { key: 'Escape' })).toBe(true);
+    expect(useWatchStore.getState().playing).not.toBeNull();
+    act(() => stopBtn.blur());
+    expect(fireEvent.keyDown(document.body, { key: 'Escape' })).toBe(false);
+    expect(useWatchStore.getState().playing).toBeNull();
+    // Nothing playing: the key goes on to leave fullscreen.
+    expect(fireEvent.keyDown(document.body, { key: 'Escape' })).toBe(true);
+  });
+});
+
 describe('the message gate after the stage was out of sight', () => {
   it('reads messages only from this frame on the embed origin, and sends commands only there', async () => {
     await playing();

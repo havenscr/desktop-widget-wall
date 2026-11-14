@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type FocusEvent, type KeyboardEvent, type MouseEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type FocusEvent, type KeyboardEvent, type MouseEvent, type PointerEvent } from 'react';
 import {
   IconExternalLink,
   IconMovie,
@@ -85,8 +85,8 @@ function EmptyDriveIn() {
 /** watch behaviour: the handlers a block that wakes the faded controls takes (`useControlsFade`). */
 interface ZoneHandlers {
   onPointerEnter: () => void;
-  onPointerLeave: () => void;
-  onFocus: () => void;
+  onPointerLeave: (e: PointerEvent<HTMLElement>) => void;
+  onFocus: (e: FocusEvent<HTMLElement>) => void;
   onBlur: (e: FocusEvent<HTMLElement>) => void;
 }
 
@@ -311,6 +311,15 @@ function typing(el: Element | null): boolean {
   return el.matches('input, textarea, select');
 }
 
+/** True when the focus on `el` is a keyboard one (`:focus-visible`); a browser without the selector counts every focus as keyboard. */
+function keyboardFocus(el: Element): boolean {
+  try {
+    return el.matches(':focus-visible');
+  } catch {
+    return true;
+  }
+}
+
 /** True while something that takes Escape first is open: the Watch sheet, the tools drawer, a dialog, a menu or Watt's menu. */
 function somethingOpen(): boolean {
   if (useWatchStore.getState().sheet || useToolsStore.getState().open) return true;
@@ -348,11 +357,16 @@ function useControlsFade(canRest: boolean, peek: boolean) {
       hold.current[key] = true;
       wake();
     },
-    onPointerLeave: () => {
+    onPointerLeave: (e: PointerEvent<HTMLElement>) => {
       hold.current[key] = false;
+      // A button the mouse clicked keeps focus after the pointer leaves; let it go so it does not hide a live control.
+      const el = document.activeElement;
+      if (el instanceof HTMLElement && e.currentTarget.contains(el) && !keyboardFocus(el)) el.blur();
       wake();
     },
-    onFocus: () => {
+    // Only focus that came from the keyboard holds the controls shown; a mouse click does not.
+    onFocus: (e: FocusEvent<HTMLElement>) => {
+      if (!keyboardFocus(e.target)) return;
       hold.current.focus = true;
       wake();
     },
@@ -385,8 +399,12 @@ function useWatchKeys(on: boolean, youtube: boolean, wake: () => void) {
       if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey || e.repeat) return;
       const t = e.target instanceof Element ? e.target : null;
       if (typing(t) || typing(document.activeElement)) return;
+      // Neither key acts on a button, a link or a radio: they keep their own presses.
+      if (t && t.closest('button, [role="radio"], [role="button"], a')) return;
       if (e.key === 'Escape') {
         if (somethingOpen()) return;
+        // Taken here, so the same press does not also leave fullscreen (a second Escape does).
+        e.preventDefault();
         useWatchStore.getState().stop();
         return;
       }
@@ -394,7 +412,6 @@ function useWatchKeys(on: boolean, youtube: boolean, wake: () => void) {
       const onPage = !t || t === document.body || t === document.documentElement;
       const inBlock = t !== null && t.closest('.w-now, .w-lookbar, .w-layer') !== null;
       if (!onPage && !inBlock) return;
-      if (t && t.closest('button, [role="radio"], [role="button"], a')) return;
       if (somethingOpen()) return;
       e.preventDefault();
       wake();
