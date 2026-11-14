@@ -19,6 +19,7 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { killTree, reapGroup, sweepGroup, trackGroup } from './lib/chrome-run.mjs';
+import { loadAreasOrExit, validateRegistrations } from './areas/load.mjs';
 
 const args = process.argv.slice(2);
 const flag = (name) => args.find((a) => a === `--${name}` || a.startsWith(`--${name}=`));
@@ -540,31 +541,6 @@ state('unwind', 'listen: heavy library', 'spotify=heavy', TIMES.night);
 add('unwind', 'listen: heavy playlist songs', url('unwind', TIMES.night, 'spotify=heavy'), true, '.sp-tile');
 state('unwind', 'listen: long names', 'long=1&media=long&spotify=long');
 add('unwind', 'listen: long names, songs of a 240 song playlist', url('unwind', TYPICAL_AT, 'long=1&media=long&spotify=long'), true, '.sp-tile');
-// The tall view: the music card opens into the right third (the round button; a click on it is the open).
-const TALL_AT = (extra = 'audio=demo') => url('unwind', TIMES.night, extra);
-add('unwind', 'tall music: button under the pointer', TALL_AT(), true, 'hover:.sp-grow');
-add('unwind', 'tall music: open on Playlists', TALL_AT(), true, '.sp-grow');
-add('unwind', 'tall music: a playlist opened', TALL_AT(), true, '.sp-grow >> .sp-tile');
-add('unwind', 'tall music: search in groups', TALL_AT(), true, '.sp-grow >> type:.sp-search input=road');
-add('unwind', 'tall music: Up next', TALL_AT(), true, '.sp-grow >> .sp-tabs button:nth-child(5)');
-// A real drag on the time bar (mouse down, moves, up): the mock remembers the seek, so the bar shows where it was left.
-add('unwind', 'tall music: time bar dragged', TALL_AT(), true, '.sp-grow >> drag:.sp-seek@2250,606');
-add('unwind', 'tall music: Play on open', TALL_AT(), true, '.sp-grow >> .sp-dev');
-add('unwind', 'tall music: Play on, music on a speaker', TALL_AT('spotifyplay=speaker'), true, '.sp-grow >> .sp-dev');
-add('unwind', 'tall music: Play on, nothing awake', TALL_AT('spotify=nodevices&spotifyplay=none&media=none'), true, '.sp-grow >> .sp-dev');
-add('unwind', 'tall music: starting Spotify', TALL_AT('spotify=starting'), true, '.sp-grow >> .sp-tile >> .sp-shbtns .sp-btn.fill');
-add('unwind', 'tall music: YouTube Music', TALL_AT(), true, '.sp-switch button:nth-child(2) >> .sp-grow');
-add('unwind', 'tall music: long names', url('unwind', TYPICAL_AT, 'long=1&media=long&spotify=long'), true, '.sp-grow');
-add('unwind', 'tall music: long names, a playlist opened', url('unwind', TYPICAL_AT, 'long=1&media=long&spotify=long'), true, '.sp-grow >> .sp-tile');
-// The content of the chosen pictures (`spotify=picture`: ten covers, six songs, three albums and three playlists), for the side-by-side stills.
-const PIC = 'audio=demo&spotify=picture';
-add('unwind', 'tall music pictures: open on Playlists', TALL_AT(PIC), true, '.sp-grow');
-add('unwind', 'tall music pictures: a playlist opened', TALL_AT(PIC), true, '.sp-grow >> .sp-tile');
-add('unwind', 'tall music pictures: search in groups', TALL_AT(PIC), true, '.sp-grow >> type:.sp-search input=night');
-add('unwind', 'tall music pictures: Up next', TALL_AT(PIC), true, '.sp-grow >> .sp-tabs button:nth-child(5)');
-add('unwind', 'tall music pictures: Play on open', TALL_AT(PIC), true, '.sp-grow >> .sp-dev');
-add('unwind', 'tall music: Spotify not answering', TALL_AT('spotify=down'), true, '.sp-grow');
-add('unwind', 'tall music: nothing playing', TALL_AT('media=none&spotifyplay=none'), true, '.sp-grow');
 
 /**
  * What each state must show, so a knob that silently stops working fails the run:
@@ -870,26 +846,6 @@ const EXPECT = [
   ['unwind', 'listen: long names, songs', ['240 songs', 'Lantern Song 9, an extremely long name']],
   ['unwind', 'listen: long names', ['An Extremely Long Song Title', 'Road Trip 1, an extremely long name']],
   ['unwind', 'unwind: hide screen', 'Hide screen'],
-  ['unwind', 'tall music: button under the pointer', ['Play on', 'Road Trip 1']],
-  ['unwind', 'tall music: open on Playlists', ['Play on', 'Up next', 'Road Trip 8']],
-  ['unwind', 'tall music: a playlist opened', ['Lantern Song 9', 'Shuffle', '58 songs', 'Playlists']],
-  ['unwind', 'tall music: search in groups', ['Songs', 'Albums', 'Playlists', 'Track 1', 'Album 1', 'Playlist 1']],
-  ['unwind', 'tall music: Up next', ['Playing now', 'Spotify sets the order. A click skips ahead to that song.', 'Lantern Song 2']],
-  ['unwind', 'tall music: time bar dragged', ['Lantern Song 1', '3:01', '!1:05']],
-  ['unwind', 'tall music: Play on open', ['Kitchen speaker', 'Phone', 'Computer, playing now', 'A phone or speaker shows here only while its Spotify is awake.']],
-  ['unwind', 'tall music: Play on, music on a speaker', ['Speaker, playing now', 'Play on']],
-  ['unwind', 'tall music: Play on, nothing awake', ['Spotify is closed. The wall starts it.', 'This PC']],
-  ['unwind', 'tall music: starting Spotify', ['Starting Spotify on this PC', 'plays as soon as it is ready']],
-  ['unwind', 'tall music: YouTube Music', ['Open YouTube Music', '!Search Spotify']],
-  ['unwind', 'tall music: long names', ['Road Trip 1, an extremely long name', 'Up next']],
-  ['unwind', 'tall music: long names, a playlist', ['240 songs', 'Lantern Song 9, an extremely long name']],
-  ['unwind', 'tall music: Spotify not answering', 'Spotify is not answering right now.'],
-  ['unwind', 'tall music pictures: open on Playlists', ['Road Trip 10', 'Play on']],
-  ['unwind', 'tall music pictures: a playlist opened', ['Lantern Song 9', 'Shuffle', 'Playlists']],
-  ['unwind', 'tall music pictures: search in groups', ['Track 6', 'Album 3', 'Playlist 3', '3:00']],
-  ['unwind', 'tall music pictures: Up next', ['Playing now', 'Lantern Song 2']],
-  ['unwind', 'tall music pictures: Play on open', ['Kitchen speaker', 'Phone']],
-  ['unwind', 'tall music: nothing playing', ['Nothing playing', 'Road Trip 1']],
 ];
 // The calm strip, the Day drawer and the Agents today panel.
 EXPECT.push(
@@ -960,44 +916,26 @@ const NO_TEXT = [
   ['unwind', 'Watt: on Watch', 'only where Watt stands changes'],
 ];
 
-// On Air: the show timer, the run of show from run-of-show.txt (`show=`), the notes, Mark a moment
-// (`marks=`) and the recording keys, with the stored timer (`oatimer=`) running, stopped or idle.
-// hz=onair: the horizon's camera is On Air's own from the first frame, so Watt (who waits for his place's camera) stands in the still.
-const onAir = (extra) => url('work', TYPICAL_AT, `screen=onair&${extra}`).replace('hz=work', 'hz=onair');
-add('onair', 'on air: typical (running at 42:13)', onAir('show=typical&marks=2&oatimer=run'), true);
-add('onair', 'on air: stopped', onAir('show=typical&marks=2&oatimer=stopped'), true);
-add('onair', 'on air: no file', onAir('show=missing&marks=0&oatimer=idle'), true);
-add('onair', 'on air: refused file', onAir('show=refused&marks=0&oatimer=idle'), true);
-add('onair', 'on air: forty parts', onAir('show=forty&marks=2&oatimer=run'), true);
-add('onair', 'on air: long notes', onAir('show=long&marks=2&oatimer=run'), true);
-add('onair', 'on air: marks full', onAir('show=typical&marks=full&oatimer=run'), true, '.oa-mark-btn');
-add('onair', 'on air: one part', onAir('show=one&marks=0&oatimer=run'), true);
-add('onair', 'on air: read fails', onAir('show=down&marks=0&oatimer=idle'), true);
-add('onair', 'on air: recording, Stop lit', onAir('show=typical&marks=2&oatimer=run&rec=1'), true);
-add('onair', 'on air: Watt standing', onAir('show=typical&marks=2&oatimer=run&wattspot=1000'), true);
-add('onair', 'on air: timer stopped at 24 hours', onAir('show=typical&marks=2&oatimer=limit'), true);
-add('onair', 'on air: Open file failed, marks line unchanged', onAir('show=missing&marks=2&oatimer=idle&openfail=show'), true, '.oa-empty-btn');
-add('onair', 'on air: reset asks again', onAir('show=typical&marks=2&oatimer=stopped'), true, '.oa-reset');
-EXPECT.push(
-  ['onair', 'on air: typical', ['42:1', 'Product demo', '7 min left', 'Point it at the real model first', 'Next: Audience questions, 15 min', '2 marked: 03:12, 09:40. Saved to marks.txt', 'Record 16:9', 'Hide screen', '!+1 more']],
-  ['onair', 'on air: stopped', ['42:13', 'stopped at', 'Start', 'Reset']],
-  ['onair', 'on air: no file', ['No run-of-show.txt yet', 'Open file', '## Part name | 10', 'None yet today']],
-  ['onair', 'on air: refused file', ['run-of-show.txt is over 32 KB', 'Fix the file']],
-  ['onair', 'on air: forty parts', ['Segment 40: Questions', 'Marathon stream', '4 lines skipped']],
-  ['onair', 'on air: long notes', ['An extremely long part name', 'Note 12: walk through', ' more']],
-  ['onair', 'on air: marks full', 'marks.txt is full; move it aside'],
-  ['onair', 'on air: one part', ['This is the last part', 'Product demo']],
-  ['onair', 'on air: read fails', 'Could not read run-of-show.txt'],
-  ['onair', 'on air: recording', ['Recording00:', 'Mark a moment']],
-  ['onair', 'on air: Watt standing', ['Product demo', '42:1']],
-  ['onair', 'on air: timer stopped at 24 hours', ['24:00:00', 'Stopped at 24 hours', 'Start']],
-  ['onair', 'on air: Open file failed, marks line unchanged', ['Could not open run-of-show.txt', '2 marked: 03:12, 09:40. Saved to marks.txt']],
-  ['onair', 'on air: reset asks again', 'Reset? Click again'],
-);
+const areaFlag = flag('area');
+const areaName = areaFlag === undefined ? undefined : areaFlag.includes('=') ? areaFlag.slice(areaFlag.indexOf('=') + 1) : '';
+const areas = await loadAreasOrExit(areaName);
+const activeAreas = areaName ? areas.filter((area) => area.name === areaName) : areas;
+try {
+  validateRegistrations(areas, { 'state name': STATES.map((stateEntry) => `${stateEntry.screen}\0${stateEntry.name}`) });
+} catch (error) {
+  console.error(`areas: ${error.message}`);
+  process.exit(2);
+}
+const areaStates = [];
+for (const area of activeAreas) {
+  for (const entry of area.gallery?.states ?? []) areaStates.push({ ...entry, click: entry.actions });
+}
+STATES.push(...areaStates);
 
 const matches = (st, [sc, prefix, , exact]) => sc === st.screen && (exact === true ? st.name === prefix : st.name.startsWith(prefix));
 const missing = [];
 for (const st of STATES) {
+  if (st.expect !== undefined || st.expectNote !== undefined) continue;
   const hit = EXPECT.find((e) => matches(st, e));
   if (hit) st.expect = hit[2];
   else {
@@ -1012,7 +950,8 @@ if (missing.length) {
 }
 
 const only = flag('only')?.split('=')[1]?.toLowerCase();
-const selected = only ? STATES.filter((s) => `${s.screen} ${s.name}`.toLowerCase().includes(only)) : STATES;
+const availableStates = areaName ? areaStates : STATES;
+const selected = only ? availableStates.filter((s) => `${s.screen} ${s.name}`.toLowerCase().includes(only)) : availableStates;
 
 if (selected.length === 0) {
   console.error(`gallery: --only=${only} matches no state (try --list)`);

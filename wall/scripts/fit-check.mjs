@@ -31,7 +31,8 @@
 // CI does not run this; run it by hand before a layout change is handed over.
 //
 //   WALL_CHROME=/path/to/chrome-or-headless-shell npm --prefix wall run fit-check
-//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, card-end, header, deck, tiles, picker, chips, heading, zenhint, strip, fold, drawer, rows, handle, sky, floor, sun, tools, toolsnames, yt-clip, yt-text, yt-control, yt-row, yt-actions, meetfill, meetempty, fy-height, key-edge, hide-pill, hide-note, leave-band, rec-chip, rec-height, tile-height, tile-icon, tile-iconbox, drawer-scrim, lwbuttons, lwoverlap, lwsquare, lwring, lwtemp, lwround, sky-front, sky-moon, sky-always, sky-crop, sky-seam, sky-soft, sky-foot, tower-over, tower-wide, tower-box, tower-switch, holo-big, holo-noblend, holo-beam, holo-take, tile-text, listen-player, listen-card, listen-slot, listen-next, tall-box, tall-foot, tall-small, tall-ctl, tall-clip, tall-out, tall-rest, tall-pop, tall-btns, tall-moon, lines-size, lines-control, lines-text, lines-clip, watch-rest, watch-title, watch-away, watch-mark, lip-cover, lip-band, lip-scrim, row-parts, over-hatch, row-type, onair-box, onair-notes, onair-keys, onair-watt, watt-seat, watt-spot, watt-tower, watt-ground)
+//   npm --prefix wall run fit-check -- --overflow=right
+//   npm --prefix wall run fit-check -- --list-breaks
 //   npm --prefix wall run fit-check -- --self-test
 //
 // WALL_CHROME (or the first argument that is not a flag) is a Chromium or
@@ -46,12 +47,26 @@ import { inflateSync } from 'node:zlib';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { ChromeRunError, onCleanup, runChrome } from './lib/chrome-run.mjs';
+import { loadAreasOrExit, validateFitReferences, validateRegistrations } from './areas/load.mjs';
 
 // The whole sky's picture box in wall pixels (LOOK_BOXES.sky in looks.ts, which fit-check compares with the drawn one).
 const LOOK_BOX_SKY = { x: 1106, y: 16, w: 889, h: 500 };
 
 const args = process.argv.slice(2);
 const flag = (name) => args.find((a) => a === `--${name}` || a.startsWith(`--${name}=`));
+const areaFlag = flag('area');
+const areaName = areaFlag === undefined ? undefined : areaFlag.includes('=') ? areaFlag.slice(areaFlag.indexOf('=') + 1) : '';
+const areas = await loadAreasOrExit(areaName);
+const activeAreas = areaName ? areas.filter((area) => area.name === areaName) : areas;
+if (flag('area')) {
+  const selectedArea = areas.find((area) => area.name === areaName);
+  for (const [kind, count] of [['variants', selectedArea?.fit?.variants?.length ?? 0], ['rules', Object.keys(selectedArea?.fit?.rules ?? {}).length], ['breaks', Object.keys(selectedArea?.fit?.breaks ?? {}).length]]) {
+    if (count === 0) {
+      console.error(`fit-check: area "${areaName}" has zero ${kind}`);
+      process.exit(2);
+    }
+  }
+}
 const chrome = args.find((a) => !a.startsWith('--')) || process.env.WALL_CHROME;
 if (!chrome) {
   console.error('fit-check: set WALL_CHROME (or pass the path) to a Chromium or chrome-headless-shell binary.');
@@ -142,18 +157,6 @@ const EXPECT = {
   'listen-card': /^ *FAIL listen: the Spotify card /m,
   'listen-slot': /^ *FAIL listen: .* enters the office lights slot/m,
   'listen-next': /^ *FAIL listen: Up next /m,
-  // the tall view: its box, the bottom row, text size, control size, nothing cut, the resting card, the Play on list, the moon
-  'tall-box': /^ *FAIL listen tall: the card is at x /m,
-  'tall-foot': /^ *FAIL listen tall: the card ends at y \d+, into the bottom row/m,
-  'tall-small': /^ *FAIL listen tall: text under 16 px in /m,
-  'tall-ctl': /^ *FAIL listen tall: control .* is \d+ by \d+ \(32 at least\)/m,
-  'tall-clip': /^ *FAIL listen tall: text clipped in /m,
-  'tall-out': /^ *FAIL listen tall: .* sticks out of the card/m,
-  'tall-rest': /^ *FAIL listen: the resting card is \d+ by \d+ \(800 by 462\)/m,
-  'tall-pop': /^ *FAIL listen: the Play on list is at /m,
-  // A moon forced into the open view is not drawn at all (the card claims its box), so the night check finds none.
-  'tall-btns': /^ *FAIL listen tall: .* runs past its column by \d+ px/m,
-  'tall-moon': /^ *FAIL sky layers: no moon drawn at night/m,
   // watch polish
   'watch-block': /^ *FAIL watch polish: the left block is at /m,
   'watch-gear': /^ *FAIL watch polish: the gear /m,
@@ -192,11 +195,6 @@ const EXPECT = {
   'sky-seam': /^ *FAIL sky layers: the pixel proof at \w+: \d+ pixels differ by more than 2 levels/m,
   'sky-soft': /^ *FAIL whole sky soft edge: /m,
   'sky-foot': /^ *FAIL whole sky soft edge: /m,
-  // on air
-  'onair-box': /^ *FAIL on air: \.oa-card .*outside its planned box/m,
-  'onair-notes': /^ *FAIL on air: the notes are cut /m,
-  'onair-keys': /^ *FAIL on air: key tile ".*" is \d+ x \d+ px/m,
-  'onair-watt': /^ *FAIL on air: Watt .* overlaps /m,
   // lines controls
   'lines-size': /^ *FAIL lines: the sheet is \d+ px tall/m,
   'lines-control': /^ *FAIL lines: control ".*" is [\d.]+ px tall/m,
@@ -297,17 +295,6 @@ const OVERFLOWS = {
   'listen-card': '.sp-card { height: 900px !important; }',
   'listen-slot': '.u-line { margin-left: 1960px; width: 600px; }',
   'listen-next': '.u-next-row { height: 80px !important; }',
-  // the tall view: moved 60 px left; grown to the very bottom; 14 px covers' counts; 24 px player buttons; the player's title cut with no ellipsis; the chip pushed out of the card; the resting card narrowed; the list pushed out of the wall; the moon forced into the open view (a URL knob, SKY_BREAK_Q).
-  'tall-box': '.sp-card.tall { left: 1523px !important; }',
-  'tall-foot': '.sp-card.tall { height: 700px !important; }',
-  'tall-small': '.sp-card.tall .sp-tline { font-size: 14px !important; }',
-  'tall-ctl': '.sp-card.tall .sp-pl-btn { width: 24px !important; height: 24px !important; }',
-  'tall-clip': '.sp-card.tall .sp-pl-title { flex: 0 0 60px !important; } .sp-card.tall .sp-pl-title b { text-overflow: clip !important; }',
-  'tall-out': '.sp-card.tall .sp-hx { margin-right: -60px !important; }',
-  'tall-rest': '.sp-card { width: 760px !important; }',
-  'tall-pop': '.sp-devices { right: -700px !important; }',
-  'tall-btns': '.sp-shbtns .sp-btn { flex: none !important; padding: 0 34px !important; }',
-  'tall-moon': '',
   // watch polish: the left block back at its old line (y 126) in one look; the gear off the row's end; a 600 px control in
   // the row; the block moved onto the video.
   'watch-block': '.top:has(.w-sun) .w-now { top: 106px !important; }',
@@ -363,12 +350,6 @@ const OVERFLOWS = {
   'sky-soft': '.w-sky .w-screen { -webkit-mask-image: none !important; mask-image: none !important; }',
   // Keeps the production side ramp exactly and replaces only the top ramp with one that also fades the foot (an extra stop near 100 percent).
   'sky-foot': `.w-sky .w-screen { -webkit-mask-image: ${SKY_SIDE_RAMP}, ${SKY_TOP_RAMP_FOOT} !important; mask-image: ${SKY_SIDE_RAMP}, ${SKY_TOP_RAMP_FOOT} !important; }`,
-  // on air: the notes card 1400 px wide; every note shown at 40 px (none behind "+N more"); 20 px key tiles.
-  'onair-box': '.onair .oa-card { width: 1400px !important; }',
-  'onair-notes': '.onair .oa-note { font-size: 40px !important; } .onair .oa-note[hidden] { display: flex !important; }',
-  'onair-keys': '.onair .oa-keys .deck-tile.key-tile { height: 20px !important; min-height: 0 !important; padding: 0 !important; }',
-  // on air: Watt lifted onto the notes card
-  'onair-watt': '.watt-sheep, .watt-hit { margin-top: -300px !important; }',
   // lines controls: a 900 px panel, a 24 px chip, a 12 px label, the clip removed (a URL knob, LINES_BREAK_Q).
   'lines-size': '.ln-panel { height: 900px !important; }',
   'lines-control': '.ln-chips button { height: 24px !important; }',
@@ -377,30 +358,32 @@ const OVERFLOWS = {
   'spotify-copy': '.sp-note { width: 80px !important; overflow: hidden !important; white-space: nowrap !important; }',
   'account-copy': '.tools-note { width: 80px !important; overflow: hidden !important; white-space: nowrap !important; }',
 };
-// sky layers: breaks that need the horizon's development knobs in the URL, not a stylesheet.
-const SKY_BREAK_Q = { 'sky-moon': '&skymoon=300,200,44', 'sky-always': '&sky=front', 'tall-moon': '&skymoon=2200,300,44' };
-// lines controls: the clip around the picture boxes left out (a development knob of the horizon).
-const LINES_BREAK_Q = { 'lines-clip': '&lclip=0' };
-if (flag('self-test')) {
-  const script = fileURLToPath(import.meta.url);
-  let missed = 0;
-  for (const side of Object.keys(OVERFLOWS)) {
-    const r = spawnSync(process.execPath, [script, chrome, `--overflow=${side}`], { encoding: 'utf8' });
-    // Caught only when the run failed and reported the side that was broken; a non-zero exit
-    // for any other reason (a crash, a page that did not render) does not count.
-    const line = EXPECT[side].exec(r.stdout ?? '');
-    const caught = r.status === 1 && line !== null;
-    if (!caught) missed += 1;
-    const full = line ? r.stdout.slice(line.index).split('\n')[0].trim() : 'no FAIL line for this side';
-    console.log(`${caught ? 'ok  ' : 'MISS'} --overflow=${side}: exit ${r.status}; ${full}`);
-  }
-  console.log(missed === 0 ? 'self-test: every deliberate overflow failed the check' : `self-test: ${missed} overflow(s) not caught`);
-  process.exit(missed === 0 ? 0 : 1);
+const AREA_BREAKS = Object.assign({}, ...activeAreas.map((area) => area.fit?.breaks ?? {}));
+try {
+  validateRegistrations(areas, {
+    'measurement key': ['res', 'page', 'overlaps', 'cut', 'gaps', 'wattCard', 'header', 'deck', 'deckRoom', 'nowH', 'edges', 'hide', 'hits', 'grid', 'lw', 'sig', 'toolsOut', 'copyOut', 'meetOut', 'strip', 'opened', 'watchPolish', 'skyLayers', 'thCheck', 'tileText', 'listen', 'lines', 'watchBehaviour', 'wattDriveIn'],
+    'rule key': ['wattDriveIn', 'watchBehaviour', 'skyLayers', 'watchPolish', 'thCheck', 'tileText', 'listen', 'lines', 'toolsOut', 'copyOut', 'meetOut', 'strip', 'deck', 'header', 'res', 'page'],
+    'break name': Object.keys(EXPECT),
+  });
+} catch (error) {
+  console.error(`areas: ${error.message}`);
+  process.exit(2);
 }
+for (const [name, entry] of Object.entries(AREA_BREAKS)) {
+  EXPECT[name] = entry.expect;
+  if (entry.css !== undefined) OVERFLOWS[name] = entry.css;
+}
+// Breaks may change the page query instead of, or as well as, injecting CSS.
+const BREAK_QUERIES = {
+  'sky-moon': '&skymoon=300,200,44',
+  'sky-always': '&sky=front',
+  'lines-clip': '&lclip=0',
+  ...Object.fromEntries(Object.entries(AREA_BREAKS).filter(([, entry]) => entry.query !== undefined).map(([name, entry]) => [name, entry.query])),
+};
 
 const overflow = flag('overflow')?.split('=')[1];
-if (overflow !== undefined && !(overflow in OVERFLOWS)) {
-  console.error(`fit-check: --overflow takes one of ${Object.keys(OVERFLOWS).join(', ')}`);
+if (overflow !== undefined && !(overflow in EXPECT)) {
+  console.error(`fit-check: --overflow takes one of ${Object.keys(EXPECT).join(', ')}`);
   process.exit(2);
 }
 
@@ -486,22 +469,6 @@ const QUIET = [
   { name: 'Listen, with the leave banner', agents: '3', hz: 'unwind', extra: '&leave=12&long=1', checks: ['.u-listen', '.sp-card', '.u-line', '.leave-banner'], listen: true },
   { name: 'Listen, YouTube Music chosen', agents: '3', hz: 'unwind', extra: '', click: '.sp-switch button:nth-child(2)', checks: ['.u-listen', '.sp-card', '.sp-yt'], listen: true },
   { name: 'Listen, Spotify signed out', agents: '3', hz: 'unwind', extra: '&spotify=signedout', checks: ['.u-listen', '.sp-card', '.sp-state', '.u-next'], listen: true },
-  // The tall view (the round button opens it): 833 by 624 at wall 1707, 24, clear of the bottom row, in every state.
-  { name: 'Listen, the tall view open on Playlists', agents: '3', hz: 'unwind', listen: true, checks: ['.sp-card'], extra: '&audio=demo', click: '.sp-grow' },
-  { name: 'Listen, the tall view, heavy library', agents: '3', hz: 'unwind', listen: true, checks: ['.sp-card'], extra: '&spotify=heavy', click: '.sp-grow' },
-  { name: 'Listen, the tall view, a playlist opened', agents: '3', hz: 'unwind', listen: true, checks: ['.sp-card'], extra: '&audio=demo', click: '.sp-grow >> .sp-tile' },
-  { name: 'Listen, the tall view, the songs of a 2000 song playlist', agents: '3', hz: 'unwind', listen: true, checks: ['.sp-card'], extra: '&spotify=heavy', click: '.sp-grow >> .sp-tile' },
-  { name: 'Listen, the tall view, search in groups', agents: '3', hz: 'unwind', listen: true, checks: ['.sp-card'], extra: '&audio=demo', click: '.sp-grow >> type:.sp-search input=road' },
-  { name: 'Listen, the tall view, Up next', agents: '3', hz: 'unwind', listen: true, checks: ['.sp-card'], extra: '&audio=demo', click: '.sp-grow >> .sp-tabs button:nth-child(5)' },
-  { name: 'Listen, the tall view, Play on open', agents: '3', hz: 'unwind', listen: true, checks: ['.sp-card'], extra: '&audio=demo', click: '.sp-grow >> .sp-dev' },
-  { name: 'Listen, the tall view, Play on, nothing awake', agents: '3', hz: 'unwind', listen: true, checks: ['.sp-card'], extra: '&spotify=nodevices&spotifyplay=none&media=none', click: '.sp-grow >> .sp-dev' },
-  { name: 'Listen, the tall view, starting Spotify', agents: '3', hz: 'unwind', listen: true, checks: ['.sp-card'], extra: '&spotify=starting', click: '.sp-grow >> .sp-tile >> .sp-shbtns .sp-btn.fill' },
-  { name: 'Listen, the tall view, YouTube Music chosen', agents: '3', hz: 'unwind', listen: true, checks: ['.sp-card'], extra: '', click: '.sp-switch button:nth-child(2) >> .sp-grow' },
-  { name: 'Listen, the tall view, long names', agents: '3', hz: 'unwind', listen: true, checks: ['.sp-card'], extra: '&spotify=long&media=long', click: '.sp-grow' },
-  { name: 'Listen, the tall view, long names, a playlist opened', agents: '3', hz: 'unwind', listen: true, checks: ['.sp-card'], extra: '&spotify=long&media=long', click: '.sp-grow >> .sp-tile' },
-  { name: 'Listen, the tall view, nothing playing', agents: '3', hz: 'unwind', listen: true, checks: ['.sp-card'], extra: '&media=none&spotifyplay=none', click: '.sp-grow' },
-  { name: 'Listen, the tall view, Spotify not answering', agents: '3', hz: 'unwind', listen: true, checks: ['.sp-card'], extra: '&spotify=down', click: '.sp-grow' },
-  { name: 'Listen, the tall view, signed out', agents: '3', hz: 'unwind', listen: true, checks: ['.sp-card'], extra: '&spotify=signedout', click: '.sp-grow' },
   // Zen in the evening: the dim hint stays inside the controls' column (the box the Start row sets).
   { name: 'Zen, evening hint under the controls', agents: '3', go: 'zen', at: '2026-11-11T20:15:00-08:00', extra: '', checks: ['.zen-bl', '.zen-bl .zen-dimhint'] },
   // Dream at night: helper answering, helper off; calendar read, unreadable, nothing tomorrow.
@@ -598,7 +565,6 @@ const QUIET = [
   { name: 'Sky layers, Listen at night, nothing playing, the moon in open sky', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&media=none', checks: ['.u-listen'], sky: 'moon', moonAt: '760,352,44' },
   { name: 'Sky layers, Watch with nothing on at night, the moon in open sky', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=feather', checks: ['.w-now'], sky: 'moon', moonAt: '1890,260,44' },
   { name: 'Sky layers, Listen at night, the songs view open, the moon in open sky', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&spotify=long&media=long', click: '.sp-tile', checks: ['.sp-card', '.sp-songs'], listen: true, sky: 'moon', moonAt: '760,352,44' },
-  { name: 'Sky layers, Listen at night, the tall view open, the moon in open sky', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&audio=demo', click: '.sp-grow', checks: ['.sp-card'], listen: true, sky: 'moon', moonAt: '760,352,44' },
   { name: 'Sky layers, Listen at dusk, the moon in open sky', agents: '3', hz: 'unwind', at: '2026-11-11T17:30:00-08:00', extra: '', checks: ['.u-listen'], sky: 'moon', moonAt: '760,352,44' },
   { name: 'Sky layers, Listen at dusk, long names, the moon in open sky', agents: 'ask', hz: 'unwind', at: '2026-11-11T17:30:00-08:00', extra: '&spotify=long&media=long', checks: ['.u-listen'], sky: 'moon', moonAt: '760,352,44' },
   { name: 'Sky layers, Listen at dusk, long names, the songs view open, the moon in open sky', agents: 'ask', hz: 'unwind', at: '2026-11-11T17:30:00-08:00', extra: '&spotify=long&media=long', click: '.sp-tile', checks: ['.sp-card', '.sp-songs'], listen: true, sky: 'moon', moonAt: '760,352,44' },
@@ -762,22 +728,42 @@ VARIANTS.push(
   { name: 'Strip: the Day drawer, twelve busy, long titles', q: work('12busy', '&meet=overlap'), click: '.rib-handle', checks: ['.day-drawer', '.day-drawer .dd-rows'], strip: true, viewportOnly: true },
   { name: 'Strip: Agents today over the limit', q: work('12busy', '&days=typical'), click: '.rib .ag-line', checks: ['.agents-today', '.agents-today .at-head', '.agents-today .at-busy'], strip: true, viewportOnly: true },
 );
-// On Air: the three columns in their planned boxes above the strip in every state, the notes
-// card with long notes (the rest behind "+N more"), forty parts, no file, a refused file and a full marks file.
-const onAirQ = (knobs) => `?hz=onair&at=${encodeURIComponent('2026-11-11T10:24:00-08:00')}&clock=review&weather=ok&screen=onair&${knobs}`;
-const ONAIR = ['.onair .oa-left', '.onair .oa-card', '.onair .oa-right', '.onair .oa-card-foot', '.onair .oa-mark'];
-VARIANTS.push(
-  { name: 'On Air, typical: running at 42:13', q: onAirQ('show=typical&marks=2&oatimer=run'), checks: ONAIR, onair: true },
-  { name: 'On Air, long names and twelve long notes', q: onAirQ('show=long&marks=2&oatimer=run'), checks: ONAIR, onair: true },
-  { name: 'On Air, forty parts', q: onAirQ('show=forty&marks=2&oatimer=run'), checks: ONAIR, onair: true },
-  { name: 'On Air, no run-of-show.txt yet', q: onAirQ('show=missing&marks=0&oatimer=idle'), checks: ONAIR, onair: true },
-  { name: 'On Air, a refused file', q: onAirQ('show=refused&marks=0&oatimer=idle'), checks: ONAIR, onair: true },
-  { name: 'On Air, Watt standing under the notes card', q: onAirQ('show=typical&marks=2&oatimer=run&wattspot=1000'), checks: ONAIR, onair: true },
-  { name: 'On Air, Watt set down at the far left', q: onAirQ('show=typical&marks=2&oatimer=run&wattspot=200'), checks: ONAIR, onair: true },
-  { name: 'On Air, Watt set down at the far right', q: onAirQ('show=typical&marks=2&oatimer=run&wattspot=2300'), checks: ONAIR, onair: true },
-  { name: 'On Air, the timer stopped itself at 24 hours', q: onAirQ('show=typical&marks=2&oatimer=limit'), checks: ONAIR, onair: true },
-  { name: 'On Air, marks.txt full after a click, recording', q: onAirQ('show=typical&marks=full&oatimer=run&rec=1'), checks: ONAIR, onair: true, click: '.oa-mark-btn' },
-);
+const allAreaVariants = areas.flatMap((area) => area.fit?.variants ?? []);
+const validationVariants = [...VARIANTS, ...allAreaVariants];
+const areaVariants = activeAreas.flatMap((area) => area.fit?.variants ?? []);
+const builtInVariantNames = VARIANTS.map((variant) => variant.name);
+if (flag('area')) VARIANTS.splice(0, VARIANTS.length, ...areaVariants);
+else VARIANTS.push(...areaVariants);
+try {
+  validateRegistrations(areas, { 'variant name': builtInVariantNames });
+  validateFitReferences(areas, validationVariants);
+} catch (error) {
+  console.error(`areas: ${error.message}`);
+  process.exit(2);
+}
+if (flag('list-breaks')) {
+  console.log(Object.keys(EXPECT).join('\n'));
+  process.exit(0);
+}
+if (flag('self-test')) {
+  const script = fileURLToPath(import.meta.url);
+  let missed = 0;
+  const breakNames = flag('area') ? Object.keys(AREA_BREAKS) : Object.keys(EXPECT);
+  for (const side of breakNames) {
+    const childArgs = [script, chrome, `--overflow=${side}`];
+    if (flag('area')) childArgs.push(flag('area'));
+    const r = spawnSync(process.execPath, childArgs, { encoding: 'utf8' });
+    // Caught only when the run failed and reported the side that was broken; a non-zero exit
+    // for any other reason (a crash, a page that did not render) does not count.
+    const line = EXPECT[side].exec(r.stdout ?? '');
+    const caught = r.status === 1 && line !== null;
+    if (!caught) missed += 1;
+    const full = line ? r.stdout.slice(line.index).split('\n')[0].trim() : 'no FAIL line for this side';
+    console.log(`${caught ? 'ok  ' : 'MISS'} --overflow=${side}: exit ${r.status}; ${full}`);
+  }
+  console.log(missed === 0 ? 'self-test: every deliberate overflow failed the check' : `self-test: ${missed} overflow(s) not caught`);
+  process.exit(missed === 0 ? 0 : 1);
+}
 // keys style: a small PNG reader (8-bit RGB or RGBA, not interlaced, as Chromium writes them) and contrast.
 function readPng(file) {
   const buf = readFileSync(file);
@@ -877,7 +863,7 @@ try {
   // difference is what the picture mixes with).
   const measure = `<script>{ const m = new URLSearchParams(location.search).get('thpx'); const css = { bare: '.w-layer > :not(.w-stage):not(.w-holo-plate), .w-panel > * { visibility: hidden !important; }', noplate: '.w-holo-plate { visibility: hidden !important; }' }[m]; if (css) { const st = document.createElement('style'); st.textContent = css; document.head.appendChild(st); } }</script><script>setTimeout(() => {
     // unwind listen: measured at the end of the songs view's slide (virtual time draws no frames for it to run).
-    if (new URLSearchParams(location.search).get('listen')) { const st = document.createElement('style'); st.textContent = '.sp-songs { animation: none !important; } .sp-card { transition: none !important; }'; document.head.appendChild(st); }
+    if (new URLSearchParams(location.search).get('listen')) { const st = document.createElement('style'); st.textContent = '.sp-songs { animation: none !important; }'; document.head.appendChild(st); }
     // Steps separated by " >> " run 300 ms apart; within a step, " then " runs them at once.
     (new URLSearchParams(location.search).get('click') ?? '').split(' >> ').filter(Boolean).forEach((step, i) => setTimeout(() => {
     for (const click of step.split(' then ').filter(Boolean)) {
@@ -1431,69 +1417,12 @@ try {
     // draws (text, an image, a control) enters the office lights slot.
     const listen = [];
     if (new URLSearchParams(location.search).get('listen')) {
-      const cardEl = document.querySelector('.sp-card');
-      const card = cardEl?.getBoundingClientRect();
-      const tall = cardEl?.getAttribute('data-tall') === 'true';
+      const card = document.querySelector('.sp-card')?.getBoundingClientRect();
       const player = document.querySelector('.u-listen .u-player')?.getBoundingClientRect();
       if (player && player.bottom > 300.5) listen.push('listen: the player ends at y ' + Math.round(player.bottom) + ', over the lines (300 at most)');
-      if (player && card && !tall && player.right > card.left - 0.5) listen.push('listen: the player reaches x ' + Math.round(player.right) + ', into the Spotify card at ' + Math.round(card.left));
+      if (player && card && player.right > card.left - 0.5) listen.push('listen: the player reaches x ' + Math.round(player.right) + ', into the Spotify card at ' + Math.round(card.left));
       if (!card) listen.push('listen: the Spotify card is not there');
-      else if (tall) {
-        // The tall view: the right third, 833 by 624 at wall 1707, 24, ending above the bottom row (Screens off and the office lights slot).
-        const near = (a, b) => Math.abs(a - b) <= 1.5;
-        if (!near(card.left, 1707) || !near(card.top, 24) || !near(card.width, 833) || !near(card.height, 624)) listen.push('listen tall: the card is at x ' + Math.round(card.left) + ' to ' + Math.round(card.right) + ', y ' + Math.round(card.top) + ' to ' + Math.round(card.bottom) + ' (833 by 624 at 1707, 24)');
-        if (card.bottom > 648.5) listen.push('listen tall: the card ends at y ' + Math.round(card.bottom) + ', into the bottom row (648 at most)');
-        if (card.left < 0 || card.right > 2540.5 || card.top < 0 || card.bottom > 720) listen.push('listen tall: the card leaves the wall: x ' + Math.round(card.left) + ' to ' + Math.round(card.right) + ', y ' + Math.round(card.top) + ' to ' + Math.round(card.bottom));
-        for (const [name, el] of [['Screens off', document.querySelector('.u-corner')], ['the office lights slot', document.querySelector('[data-slot="office-lights"]')]]) {
-          const r = el?.getBoundingClientRect();
-          if (r && r.width > 0 && hit(card, r)) listen.push('listen tall: the card covers ' + name);
-        }
-        const name = (e) => (e.className?.baseVal ?? e.className ?? e.tagName) || e.tagName;
-        // No text under 16 px (the small "not set up" tag of today's switch aside).
-        const small = [...cardEl.querySelectorAll('*')].filter((e) => !e.closest('.sp-off') && [...e.childNodes].some((c) => c.nodeType === 3 && c.textContent.trim()) && parseFloat(getComputedStyle(e).fontSize) < 15.99);
-        for (const e of small.slice(0, 3)) listen.push('listen tall: text under 16 px in ' + name(e) + ' "' + (e.textContent || '').trim().slice(0, 24) + '" (' + getComputedStyle(e).fontSize + ')');
-        // Controls at least 32 px each way (the time bar's track is thin: its grab area, the ::before, is what counts).
-        for (const e of cardEl.querySelectorAll('button, input, [role="slider"]')) {
-          const r = e.getBoundingClientRect();
-          if (r.width === 0 || r.height === 0) continue;
-          if (e.getAttribute('role') === 'slider') {
-            const pb = getComputedStyle(e, '::before');
-            const grab = r.height - parseFloat(pb.top) - parseFloat(pb.bottom);
-            if (!(grab >= 31.5)) listen.push('listen tall: the time bar grab area is ' + Math.round(grab) + ' px tall (32 at least)');
-            continue;
-          }
-          if (r.width < 31.5 || r.height < 31.5) listen.push('listen tall: control ' + name(e) + ' "' + (e.getAttribute('aria-label') || e.textContent || '').trim().slice(0, 20) + '" is ' + Math.round(r.width) + ' by ' + Math.round(r.height) + ' (32 at least)');
-        }
-        // Play and Shuffle of an opened list stay inside their 200 px column.
-        const sh = cardEl.querySelector('.sp-shead');
-        const shb = cardEl.querySelector('.sp-shbtns');
-        if (sh && shb) {
-          const colBox = sh.getBoundingClientRect();
-          for (const b of shb.children) if (b.getBoundingClientRect().right > colBox.right + 0.5) listen.push('listen tall: ' + (b.textContent || '').trim() + ' runs past its column by ' + Math.round(b.getBoundingClientRect().right - colBox.right) + ' px');
-        }
-        // Nothing cut or sticking out in the header, the tab row, the player row, the opened list's head (the chooser hangs in the top row) and the lines under them.
-        for (const root of cardEl.querySelectorAll('.sp-top, .sp-bar, .sp-player, .sp-shead, .sp-qhead, .sp-note')) {
-          for (const e of [root, ...root.querySelectorAll('*')]) {
-            const r = e.getBoundingClientRect();
-            if (r.width === 0 || r.height === 0 || e.closest('svg') || e.tagName === 'svg') continue;
-            if (r.left < card.left - 0.5 || r.right > card.right + 0.5 || r.top < card.top - 0.5 || r.bottom > card.bottom + 0.5) listen.push('listen tall: ' + name(e) + ' sticks out of the card');
-            const cs = getComputedStyle(e);
-            if ((cs.overflowX !== 'visible') && e.scrollWidth > e.clientWidth + 1 && cs.textOverflow !== 'ellipsis' && [...e.childNodes].some((c) => c.nodeType === 3 && c.textContent.trim())) listen.push('listen tall: text clipped in ' + name(e) + ' "' + (e.textContent || '').trim().slice(0, 24) + '" with no ellipsis');
-          }
-        }
-      }
       else if (card.left < 1739.5 || card.right > 2540.5 || card.bottom > 510.5 || card.top < 0) listen.push('listen: the Spotify card is at x ' + Math.round(card.left) + ' to ' + Math.round(card.right) + ', y ' + Math.round(card.top) + ' to ' + Math.round(card.bottom) + ' (x 1740 to 2540, y 0 to 510)');
-      // At rest the card is today's 800 by 462 (YouTube Music's own height aside), with the Play on chip and the round button on one line.
-      if (card && !tall && !cardEl.classList.contains('yt') && (Math.abs(card.width - 800) > 1.5 || Math.abs(card.height - 462) > 1.5)) listen.push('listen: the resting card is ' + Math.round(card.width) + ' by ' + Math.round(card.height) + ' (800 by 462)');
-      const chipEl = cardEl?.querySelector('.sp-dev');
-      const growEl = cardEl?.querySelector('.sp-grow');
-      if (cardEl && !growEl) listen.push('listen: the round button that opens the tall view is not there');
-      if (chipEl && growEl) {
-        const a = chipEl.getBoundingClientRect(), b = growEl.getBoundingClientRect();
-        if (Math.abs(a.top + a.height / 2 - (b.top + b.height / 2)) > 2 || a.right > b.left - 4) listen.push('listen: the Play on chip and the round button are not on one line, apart');
-      }
-      const pop = cardEl?.querySelector('.sp-devices')?.getBoundingClientRect();
-      if (pop && card && (pop.left < 0 || pop.top < 0 || pop.right > 2560 || pop.bottom > 720 || pop.left < card.left - 0.5 || pop.right > card.right + 0.5 || pop.bottom > card.bottom + 0.5 || pop.top < card.top - 0.5)) listen.push('listen: the Play on list is at x ' + Math.round(pop.left) + ' to ' + Math.round(pop.right) + ', y ' + Math.round(pop.top) + ' to ' + Math.round(pop.bottom) + ', outside the wall or the card');
       const next = document.querySelector('.u-next')?.getBoundingClientRect();
       const wingBox = document.querySelector('.u-wing')?.getBoundingClientRect();
       const rows = [...document.querySelectorAll('.u-next-row')].map((e) => e.getBoundingClientRect());
@@ -1926,68 +1855,18 @@ try {
       }
       return fails;
     })();
-    // On Air: each column inside its planned box (stage x) between the top of the band and the strip,
-    // no note of the notes card cut without a "+N more" line that counts the hidden ones, key tiles at least 40 px.
-    const onair = (() => {
-      const fails = [];
-      const want = new URLSearchParams(location.search).get('screen') === 'onair';
-      if (!document.querySelector('.onair')) return want ? ['on air: the place did not open'] : [];
-      const rib = document.querySelector('.rib');
-      const floor = Math.min(510, rib ? rib.getBoundingClientRect().top : 720);
-      const r1 = (n) => Math.round(n * 10) / 10;
-      for (const [sel, l, r, parts] of [['.oa-left', 124, 764, '.oa-timer, .oa-runbox, .oa-run, .oa-file, .oa-empty'], ['.oa-card', 800, 1880, '.oa-k, .oa-notes, .oa-help, .oa-nonotes, .oa-card-foot, .oa-card-foot > *'], ['.oa-right', 1920, 2540, '.oa-mark, .oa-keys, .oa-keys > *, .oa-foot, .oa-k, .oa-k-brief']]) {
-        const col = document.querySelector('.onair ' + sel);
-        if (!col) { fails.push('on air: ' + sel + ' is missing'); continue; }
-        for (const e of [col, ...col.querySelectorAll(parts)]) {
-          const b = e.getBoundingClientRect();
-          if (b.width === 0 && b.height === 0) continue;
-          if (b.left < l - 0.5 || b.right > r + 0.5 || b.top < 20 - 0.5 || b.bottom > floor + 0.5) {
-            fails.push('on air: ' + sel + (e === col ? '' : ' ' + (e.className || e.tagName)) + ' at x ' + r1(b.left) + ' to ' + r1(b.right) + ', y ' + r1(b.top) + ' to ' + r1(b.bottom) + ' is outside its planned box (x ' + l + ' to ' + r + ', y 20 to ' + r1(floor) + ')');
-            break;
-          }
-        }
-      }
-      const list = document.querySelector('.onair .oa-notes');
-      if (list) {
-        const lb = list.getBoundingClientRect();
-        const notes = [...list.querySelectorAll(':scope > .oa-note')];
-        const hidden = notes.filter((n) => getComputedStyle(n).display === 'none').length;
-        const cutNote = notes.findIndex((n) => getComputedStyle(n).display !== 'none' && n.getBoundingClientRect().bottom > lb.bottom + 0.5);
-        const more = list.querySelector(':scope > .oa-more');
-        const moreShown = more && getComputedStyle(more).display !== 'none' ? (more.textContent || '').trim() : '';
-        if (list.scrollHeight > list.clientHeight + 0.5 || cutNote >= 0) fails.push('on air: the notes are cut (' + (cutNote >= 0 ? 'note ' + (cutNote + 1) + ' of ' + notes.length + ' ends below the card' : 'the list is ' + list.scrollHeight + ' px for ' + list.clientHeight) + ', ' + hidden + ' behind "+N more")');
-        else if (hidden > 0 && moreShown !== '+' + hidden + ' more') fails.push('on air: the notes are cut: ' + hidden + ' hidden but the more line reads "' + moreShown + '"');
-        else if (hidden === 0 && moreShown !== '') fails.push('on air: the more line reads "' + moreShown + '" with no note hidden');
-      }
-      // Watt stands on the ground line below the columns: his box (and his click box) overlaps none of them.
-      const wattBoxes = [['Watt', '.watt-sheep'], ['Watt click box', '.watt-hit']];
-      for (const [label, sel] of wattBoxes) {
-        const w = document.querySelector(sel);
-        if (!w) { if (sel === '.watt-hit' && want) fails.push('on air: Watt is not on the page'); continue; }
-        const wb = w.getBoundingClientRect();
-        if (wb.width === 0 && wb.height === 0) continue;
-        for (const csel of ['.oa-left', '.oa-card', '.oa-right']) {
-          const cb = document.querySelector('.onair ' + csel)?.getBoundingClientRect();
-          if (cb && wb.left < cb.right && cb.left < wb.right && wb.top < cb.bottom && cb.top < wb.bottom) fails.push('on air: ' + label + ' at x ' + r1(wb.left) + ' to ' + r1(wb.right) + ', y ' + r1(wb.top) + ' to ' + r1(wb.bottom) + ' overlaps ' + csel + ' (y ' + r1(cb.top) + ' to ' + r1(cb.bottom) + ')');
-        }
-      }
-      const tiles = [...document.querySelectorAll('.onair .oa-keys .key-tile')];
-      if (tiles.length !== 4) fails.push('on air: ' + tiles.length + ' recording keys, expected 4');
-      for (const t of tiles) {
-        const b = t.getBoundingClientRect();
-        if (b.height < 40 - 0.5 || b.width < 40 - 0.5) fails.push('on air: key tile "' + t.getAttribute('aria-label') + '" is ' + Math.round(b.width) + ' x ' + Math.round(b.height) + ' px (at least 40 by 40)');
-      }
-      return fails;
-    })();
-    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, cardEnds, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, copyOut, meetOut, strip, opened, watchPolish, skyLayers, thCheck, tileText, listen, lines, watchBehaviour, onair, wattDriveIn });
+    const areaResults = Object.fromEntries(Object.entries(globalThis.__areaMeasurements ?? {}).map(([key, fn]) => [key, fn()]));
+    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, cardEnds, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, copyOut, meetOut, strip, opened, watchPolish, skyLayers, thCheck, tileText, listen, lines, watchBehaviour, wattDriveIn, areaResults });
     document.body.appendChild(pre);
   }, new URLSearchParams(location.search).get('card') ? 7000 : 3000);</script>`;
-  const broken = overflow ? `<style>${OVERFLOWS[overflow]}</style>` : '';
+  const areaMeasurements = Object.assign({}, ...activeAreas.map((area) => area.fit?.measurements ?? {}));
+  const areaMeasurementScript = `<script>globalThis.__areaMeasurements = {${Object.entries(areaMeasurements).map(([key, fn]) => `${JSON.stringify(key)}: ${fn.toString()}`).join(',')}};</script>`;
+  const broken = overflow && OVERFLOWS[overflow] ? `<style>${OVERFLOWS[overflow]}</style>` : '';
   const page = join(out, 'work.html');
-  writeFileSync(page, html.replace('</body>', `${broken}${measure}</body>`));
+  writeFileSync(page, html.replace('</body>', `${broken}${areaMeasurementScript}${measure}</body>`));
 
   let failed = false;
-  if (overflow) console.log(`deliberate overflow: ${overflow} (${OVERFLOWS[overflow]})`);
+  if (overflow) console.log(`deliberate overflow: ${overflow} (${OVERFLOWS[overflow] || BREAK_QUERIES[overflow]})`);
   // A deliberate break runs on the first state, or for the picker on the state that opens it.
   const BREAK_ON = {
     'card-end': (v) => v.name === 'Card ends: helpers working',
@@ -2048,16 +1927,6 @@ try {
     'listen-card': (v) => v.name === 'Listen, playing with the lines moving',
     'listen-slot': (v) => v.name === 'Listen, playing with the lines moving',
     'listen-next': (v) => v.name === 'Listen, playing with the lines moving',
-    'tall-box': (v) => v.name === 'Listen, the tall view open on Playlists',
-    'tall-foot': (v) => v.name === 'Listen, the tall view open on Playlists',
-    'tall-small': (v) => v.name === 'Listen, the tall view open on Playlists',
-    'tall-ctl': (v) => v.name === 'Listen, the tall view open on Playlists',
-    'tall-clip': (v) => v.name === 'Listen, the tall view open on Playlists',
-    'tall-out': (v) => v.name === 'Listen, the tall view open on Playlists',
-    'tall-rest': (v) => v.name === 'Listen, playing with the lines moving',
-    'tall-pop': (v) => v.name === 'Listen, the tall view, Play on open',
-    'tall-btns': (v) => v.name === 'Listen, the tall view, a playlist opened',
-    'tall-moon': (v) => v.name === 'Sky layers, Listen at night, the tall view open, the moon in open sky',
     // watch polish
     'watch-block': (v) => v.name.startsWith('Watch polish'),
     'watch-gear': (v) => v.name === 'Watch polish, feathered, single video',
@@ -2095,17 +1964,13 @@ try {
     'sky-crop': (v) => v.name === 'Sky layers, whole sky at night',
     'sky-soft': (v) => v.name === 'Sky layers, whole sky at night',
     'sky-foot': (v) => v.name === 'Sky layers, whole sky at night',
-    // on air
-    'onair-box': (v) => v.name === 'On Air, typical: running at 42:13',
-    'onair-notes': (v) => v.name === 'On Air, long names and twelve long notes',
-    'onair-keys': (v) => v.name === 'On Air, typical: running at 42:13',
-    'onair-watt': (v) => v.name === 'On Air, Watt standing under the notes card',
     // lines controls
     'lines-size': (v) => v.name === 'Lines settings sheet',
     'lines-control': (v) => v.name === 'Lines settings sheet',
     'lines-text': (v) => v.name === 'Lines settings sheet',
     'lines-clip': (v) => v.name === 'Lines, bars under the drive-in',
   };
+  for (const [name, entry] of Object.entries(AREA_BREAKS)) BREAK_ON[name] = entry.appliesTo;
   const breakOn = BREAK_ON[overflow] ? VARIANTS.filter(BREAK_ON[overflow]) : VARIANTS.slice(0, 1);
   /** keys style: the Now row's height on each page that has one, compared after every state ran. */
   const nowHeights = [];
@@ -2115,7 +1980,8 @@ try {
   const skyMoons = [];
   for (const v of overflow ? breakOn : VARIANTS) {
     console.log(`${v.name} (${v.q}):`);
-    const url = `${pathToFileURL(page).href}${v.q}${v.sky ? `&skycheck=${v.sky}` : ''}${overflow && SKY_BREAK_Q[overflow] ? SKY_BREAK_Q[overflow] : ''}${overflow && LINES_BREAK_Q[overflow] ? LINES_BREAK_Q[overflow] : ''}&checks=${encodeURIComponent(v.checks.join('|'))}${v.click ? `&click=${encodeURIComponent(v.click)}` : ''}${v.card ? '&card=1' : ''}${v.hits ? `&hits=${encodeURIComponent(v.hits.join('|'))}` : ''}${v.noHit ? `&nohit=${encodeURIComponent(v.noHit)}` : ''}${v.listen ? '&listen=1' : ''}${v.linesSheet ? '&linescheck=1' : ''}${v.th ? `&th=${v.th}` : ''}${v.wb ? `&wbcheck=${v.wb}` : ''}`;
+    const breakQuery = overflow && BREAK_QUERIES[overflow] ? (typeof BREAK_QUERIES[overflow] === 'function' ? BREAK_QUERIES[overflow](v) : BREAK_QUERIES[overflow]) : '';
+    const url = `${pathToFileURL(page).href}${v.q}${v.sky ? `&skycheck=${v.sky}` : ''}${breakQuery}&checks=${encodeURIComponent(v.checks.join('|'))}${v.click ? `&click=${encodeURIComponent(v.click)}` : ''}${v.card ? '&card=1' : ''}${v.hits ? `&hits=${encodeURIComponent(v.hits.join('|'))}` : ''}${v.noHit ? `&nohit=${encodeURIComponent(v.noHit)}` : ''}${v.listen ? '&listen=1' : ''}${v.linesSheet ? '&linescheck=1' : ''}${v.th ? `&th=${v.th}` : ''}${v.wb ? `&wbcheck=${v.wb}` : ''}`;
     const dom = await runChrome(
       chrome,
       // Headless Chromium keeps 87 px of the window for itself, so 807 gives a 2560 by 720 viewport.
@@ -2128,7 +1994,7 @@ try {
       process.exit(1);
     }
     const text = m[1].replaceAll('&quot;', '"').replaceAll('&amp;', '&');
-    const { res, page: doc, overlaps, cut, gaps, cardEnds, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, copyOut, meetOut, strip, opened, watchPolish, skyLayers, thCheck, tileText, listen, lines, watchBehaviour, onair, wattDriveIn } = JSON.parse(text);
+    const { res, page: doc, overlaps, cut, gaps, cardEnds, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, copyOut, meetOut, strip, opened, watchPolish, skyLayers, thCheck, tileText, listen, lines, watchBehaviour, wattDriveIn, areaResults } = JSON.parse(text);
     // watt drive-in
     if (wattDriveIn) {
       for (const f of wattDriveIn.fails) console.log(`  FAIL ${f}`);
@@ -2136,10 +2002,11 @@ try {
       else if (wattDriveIn.waiting) console.log('  ok   watt drive-in: the marquee is waiting, Watt is not at the show');
       else console.log(`  ok   watt drive-in: seated at ${wattDriveIn.at}, on his ground, 30 px or more left of the screen, 22 px or more from every control at his height, near his seat, 24 px or less into the tower`);
     }
-    // on air
-    for (const f of onair) console.log(`  FAIL ${f}`);
-    if (onair.length) failed = true;
-    else if (v.onair) console.log('  ok   on air: three columns inside their planned boxes above the strip, no note cut without "+N more", key tiles at least 40 px');
+    for (const area of activeAreas) {
+      for (const rule of Object.values(area.fit?.rules ?? {})) {
+        if (rule(v, areaResults, console.log)) failed = true;
+      }
+    }
     // watch behaviour
     for (const f of watchBehaviour) console.log(`  FAIL ${f}`);
     if (watchBehaviour.length) failed = true;
@@ -2154,7 +2021,7 @@ try {
     // The moon the rule gives for this layout (the first clear one of cameras.ts MOON_PLACES): on Listen in
     // every player state the low place under the player, on Watch with nothing on its first place. Not with a
     // break that moves the moon on purpose (that one must fail on its distance alone).
-    if (v.moonAt && !(overflow && SKY_BREAK_Q[overflow]) && skyLayers.moon !== v.moonAt) {
+    if (v.moonAt && !(overflow && BREAK_QUERIES[overflow]) && skyLayers.moon !== v.moonAt) {
       failed = true;
       console.log(`  FAIL sky layers: the moon is at ${skyLayers.moon || 'no place'}, expected ${v.moonAt} (the first place clear of this layout)`);
     }
@@ -2231,7 +2098,7 @@ try {
     // unwind listen
     for (const l of listen) console.log(`  FAIL ${l}`);
     if (listen.length) failed = true;
-    else if (v.listen) console.log(v.name.includes('tall view') ? '  ok   listen tall: the card is 833 by 624 at 1707, 24 above the bottom row, no text under 16 px, every control 32 px or more, nothing cut or out of the card, the Play on list inside the card' : '  ok   listen: the player ends above y 300 left of the card, the card in x 1740 to 2540 above y 510 (800 by 462 at rest), Up next in the wing above the horizon, the office lights slot empty');
+    else if (v.listen) console.log('  ok   listen: the player ends above y 300 left of the card, the card in x 1740 to 2540 above y 510, Up next in the wing above the horizon, the office lights slot empty');
     // lines controls
     for (const l of lines) console.log(`  FAIL ${l}`);
     if (lines.length) failed = true;
