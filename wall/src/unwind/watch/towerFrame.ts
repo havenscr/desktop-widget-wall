@@ -121,3 +121,9 @@ function build(): string {
 
 /** The frame's markup, made once. */
 export const TOWER_SVG: string = build();
+
+/**
+ * The neon line's path (the outline the Travelling light follows, `DriveInFrame.tsx`): the video box
+ * grown by 9.5 px, corner radius 2, the same path the frame's neon stroke uses.
+ */
+export const NEON_PATH: string = grow(9.5, 2);

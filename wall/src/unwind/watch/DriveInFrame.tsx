@@ -1,4 +1,7 @@
-import { FRAME_CX, MARQUEE_NAME, MARQUEE_PAUSED, MARQUEE_PLAYING, MARQUEE_TEXT_Y, TOWER_SVG } from './towerFrame';
+import { useEffect, useState } from 'react';
+import { useReducedMotion } from '../../ui/useReducedMotion';
+import { DRIVE_IN_SCREEN } from './looks';
+import { FRAME_CX, MARQUEE_NAME, NEON_PATH, MARQUEE_PAUSED, MARQUEE_PLAYING, MARQUEE_TEXT_Y, TOWER_SVG } from './towerFrame';
 
 /**
  * What the drive-in is doing, as the marquee tells it. `empty` is nothing on; `waiting` is
@@ -66,8 +69,19 @@ function Words({ on, children, className }: { on: boolean; children: string; cla
  * once under reduced motion, see `.w-mq`), the name alone with nothing on or nothing showing yet
  * (see `driveInMode`).
  */
-export function DriveInFrame({ mode }: { mode: DriveInMode }) {
+export function DriveInFrame({ mode, light = false }: { mode: DriveInMode; light?: boolean }) {
+  const reduced = useReducedMotion();
+  const [hidden, setHidden] = useState(() => typeof document !== 'undefined' && document.hidden);
+  useEffect(() => {
+    const on = () => setHidden(document.hidden);
+    document.addEventListener('visibilitychange', on);
+    return () => document.removeEventListener('visibilitychange', on);
+  }, []);
+  // The travelling light runs only while the video plays and the page is seen; otherwise it is not drawn (the line stays lit).
+  // A display that goes off or a locked session stops the video itself (`useStopRules`), which removes the stage.
+  const travelling = light && mode === 'playing' && !reduced && !hidden;
   return (
+    <>
     <svg
       className="w-tower"
       viewBox="0 0 2560 720"
@@ -86,6 +100,26 @@ export function DriveInFrame({ mode }: { mode: DriveInMode }) {
           {MARQUEE_NAME}
         </Words>
       </g>
+    </svg>
+    {travelling ? <TravellingLight /> : null}
+    </>
+  );
+}
+
+/**
+ * The Travelling light: one soft bright segment (a tenth of the neon line, a brighter core and a
+ * fading tail) moving once round the neon line in 12 s, on the existing path (`NEON_PATH`) by a
+ * stroke dash offset in a CSS animation (no script, no layout). It has its own small svg, cropped
+ * to the frame, so each frame repaints that one layer and never the stage or the picture; the line
+ * lies 9.5 px outside the picture's box, so the light never paints on the picture.
+ */
+function TravellingLight() {
+  const V = DRIVE_IN_SCREEN;
+  return (
+    <svg className="w-light" viewBox={`${V.x - 20} ${V.y - 20} ${V.w + 40} ${V.h + 40}`} width={V.w + 40} height={V.h + 40} aria-hidden="true" focusable="false" style={{ pointerEvents: 'none' }}>
+      <path className="w-light-tail" d={NEON_PATH} pathLength={100} />
+      <path className="w-light-mid" d={NEON_PATH} pathLength={100} />
+      <path className="w-light-core" d={NEON_PATH} pathLength={100} />
     </svg>
   );
 }

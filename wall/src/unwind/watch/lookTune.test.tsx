@@ -8,6 +8,7 @@ import { resetNowPlaying } from '../../music/store';
 import { useSignalStore } from '../../signals/store';
 import { usePlaceStore } from '../../state/places';
 import { resetLastPlayed } from '../lastPlayed';
+import { NEON_PATH } from './towerFrame';
 import { DRIVE_IN_SCREEN, LOOKS, LOOKS_KEY, LOOK_BOXES, skySoftEdge, type LookId } from './looks';
 import {
   CONTROLS,
@@ -83,7 +84,7 @@ describe('the stored settings', () => {
     expect(DEFAULT_TUNE.sky).toEqual({ size: 100, soft: 120, bright: 90, floor: true });
     expect(DEFAULT_TUNE.sun).toEqual({ size: 461, up: 29, glow: 50, streak: true });
     expect(DEFAULT_TUNE.feather).toEqual({ size: 100, soft: 20, glow: 50 });
-    expect(DEFAULT_TUNE.drivein).toEqual({ size: 100, floor: 42, sign: true });
+    expect(DEFAULT_TUNE.drivein).toEqual({ size: 100, floor: 42, sign: true, neon: true, light: true });
     expect(DEFAULT_TUNE.holo).toEqual({ tilt: 7, plate: 74, beam: true });
     expect(loadTune()).toEqual(DEFAULT_TUNE);
   });
@@ -367,13 +368,14 @@ describe('each control reaches what it changes', () => {
   });
 
   it('Drive-in: size scales the picture and the tower together; floor light; sign', async () => {
-    const { r, stage } = await stageOf('drivein', { drivein: { size: 90, floor: 10, sign: false } });
+    const { r, stage } = await stageOf('drivein', { drivein: { size: 90, floor: 10, sign: false, neon: false, light: true } });
     const b = lookBox('drivein', parseTune(localStorage.getItem(TUNE_KEY)));
     expect(prop(stage, '--w-w')).toBe(`${b.w}px`);
     expect(prop(stage, '--w-tl')).toBe(`${-b.x}px`);
     expect(prop(stage, '--w-tf')).toBe('scale(0.9)');
     expect(prop(stage, '--w-spill-a')).toBe('0.1');
     expect(prop(stage, '--w-sign')).toBe('none');
+    expect(prop(stage, '--w-neon')).toBe('none');
     // One svg, scaled about the footing centre; the picture and the audience are the same box.
     expect(document.querySelectorAll('.w-tower').length).toBe(1);
     expect(stage.getAttribute('data-audience')).toBe(`${b.x},${b.y},${b.w},${b.h}`);
@@ -509,5 +511,97 @@ describe('the sheet\'s section for the look', () => {
     expect(within(sheet).getByRole('group', { name: 'Whole sky settings' })).toBeTruthy();
     await act(async () => within(pick).getByRole('radio', { name: 'The sun' }).click());
     expect((within(sheet).getByRole('slider', { name: 'Glow' }) as HTMLInputElement).value).toBe('80');
+  });
+});
+
+describe('the drive-in\'s sign, neon line and travelling light', () => {
+  const play = async (tune: Record<string, number | boolean>, state: 'playing' | 'paused' | 'refused' = 'playing') => {
+    setup('drivein', true, { drivein: tune });
+    const r = render(<UnwindView />);
+    await flush();
+    const st = useWatchStore.getState();
+    if (state === 'refused') st.setNeedsClick(true);
+    else {
+      st.setReport({ started: true, time: 5, duration: 100, count: 0, index: 0 });
+      if (state === 'paused') st.setPaused(true);
+    }
+    await flush();
+    return r;
+  };
+  const light = () => document.querySelector('.w-light');
+
+  it('the three are switches of the Drive-in look, on by default, the light needing the neon line', () => {
+    const c = CONTROLS.drivein.filter((x) => x.kind === 'switch');
+    expect(c.map((x) => [x.key, x.label, x.usual])).toEqual([
+      ['sign', 'Sign under the video', true],
+      ['neon', 'Neon line', true],
+      ['light', 'Travelling light', true],
+    ]);
+    expect((c[2] as { needs?: { key: string } }).needs?.key).toBe('neon');
+  });
+
+  it('the light is drawn only while the video plays: not paused, not waiting for a click', async () => {
+    let r = await play({});
+    expect(light()).not.toBeNull();
+    expect(document.querySelectorAll('.w-light path').length).toBe(3);
+    r.unmount();
+    r = await play({}, 'paused');
+    expect(light()).toBeNull();
+    r.unmount();
+    r = await play({}, 'refused');
+    expect(light()).toBeNull();
+    r.unmount();
+  });
+
+  it('the light follows the neon line\'s own path, stays outside the picture\'s box and is its own layer', async () => {
+    const r = await play({});
+    const d = document.querySelector('.w-light path')!.getAttribute('d');
+    expect(d).toBe(NEON_PATH);
+    expect(document.querySelector('.w-tower')!.innerHTML).toContain(`d="${NEON_PATH}"`);
+    // The svg is cropped to the box plus 20 px, so the line (9.5 px out) lies inside it and never on the picture.
+    expect(document.querySelector('.w-light')!.getAttribute('viewBox')).toBe(`${DRIVE_IN_SCREEN.x - 20} ${DRIVE_IN_SCREEN.y - 20} ${DRIVE_IN_SCREEN.w + 40} ${DRIVE_IN_SCREEN.h + 40}`);
+    expect(rule('.w-light')).toMatch(/will-change: transform/);
+    expect(rule('.w-light')).toMatch(/pointer-events: none/);
+    // One lap in 12 seconds, a dash offset on the existing path, nothing that lays out; none under reduced motion.
+    expect(rule('.w-light path')).toMatch(/animation: w-snake 12s linear infinite/);
+    expect(css).toMatch(/@keyframes w-snake\s*\{\s*from\s*\{\s*stroke-dashoffset/);
+    expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\)\s*\{\s*\.w-light\s*\{\s*display: none/);
+    r.unmount();
+  });
+
+  it('no light with the switch off or the neon line off; the neon off hides the two neon strokes by one property', async () => {
+    let r = await play({ light: false });
+    expect(light()).toBeNull();
+    r.unmount();
+    r = await play({ neon: false });
+    expect(light()).toBeNull();
+    expect((document.querySelector('.w-stage') as HTMLElement).style.getPropertyValue('--w-neon')).toBe('none');
+    expect(document.querySelectorAll('.w-tower path[stroke="url(#wtneon)"]').length).toBe(2);
+    expect(rule(".w-tower path[stroke='url(#wtneon)']")).toMatch(/display: var\(--w-neon, inline\)/);
+    r.unmount();
+  });
+
+  it('the sign off hides the board and its words only: one handle, nothing else moves', async () => {
+    const r = await play({ sign: false });
+    expect((document.querySelector('.w-stage') as HTMLElement).style.getPropertyValue('--w-sign')).toBe('none');
+    const signs = document.querySelectorAll('.w-tower .w-sign');
+    expect(signs.length).toBe(2);
+    expect(Object.keys(tuneVars('drivein', { ...defaultTune(), drivein: { ...DEFAULT_TUNE.drivein, sign: false } }))).toEqual(['--w-sign']);
+    r.unmount();
+  });
+
+  it('the sheet disables the light with a one line reason while the neon line is off', async () => {
+    setup('drivein');
+    render(<UnwindView />);
+    await flush();
+    await act(async () => screen.getByRole('button', { name: 'How video is shown' }).click());
+    const sheet = screen.getByRole('dialog', { name: 'How video is shown' });
+    const sw = within(sheet).getByRole('switch', { name: 'Travelling light' });
+    expect(sw.getAttribute('aria-disabled')).toBe('false');
+    await act(async () => within(sheet).getByRole('switch', { name: 'Neon line' }).click());
+    expect(sw.getAttribute('aria-disabled')).toBe('true');
+    expect(within(sheet).getByText('Needs the neon line on')).toBeTruthy();
+    await act(async () => sw.click());
+    expect(useWatchStore.getState().tune.drivein.light).toBe(true);
   });
 });

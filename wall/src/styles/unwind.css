@@ -906,6 +906,67 @@
 .w-mq {
   transition: opacity 1s ease;
 }
+/* The Neon line setting: the frame's two neon paths (the glow and the line) are the ones stroked with the neon gradient. */
+.w-tower path[stroke='url(#wtneon)'] {
+  display: var(--w-neon, inline);
+}
+/* The Travelling light: its own small svg over the frame (cropped to the screen's box plus 20 px,
+   scaled with the tower), so a frame of its animation repaints this layer only. One lap in 12 s.
+   Three dashes on the neon line (pathLength 100) share one head: a tail of 10, a middle of 5.5, a core of 2. */
+.w-light {
+  position: absolute;
+  left: calc(var(--w-tl, -1244px) + 1224px);
+  top: calc(var(--w-tt, -54px) + 34px);
+  width: 712px;
+  height: 418px;
+  transform: var(--w-tf, none);
+  transform-origin: 356px 471px;
+  will-change: transform;
+  pointer-events: none;
+}
+.w-light path {
+  fill: none;
+  stroke-linecap: round;
+  animation: w-snake 12s linear infinite;
+}
+.w-light-tail {
+  --o: 0;
+  stroke: #35e6ea;
+  stroke-width: 3;
+  stroke-opacity: 0.3;
+  stroke-dasharray: 10 90;
+}
+.w-light-mid {
+  --o: -4.5;
+  stroke: #9af9fc;
+  stroke-width: 2.4;
+  stroke-opacity: 0.55;
+  stroke-dasharray: 5.5 94.5;
+}
+.w-light-core {
+  --o: -8;
+  stroke: #e6feff;
+  stroke-width: 2;
+  stroke-opacity: 0.95;
+  stroke-dasharray: 2 98;
+}
+@keyframes w-snake {
+  from {
+    stroke-dashoffset: var(--o);
+  }
+  to {
+    stroke-dashoffset: calc(var(--o) - 100);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .w-light {
+    display: none;
+  }
+}
+.ln-switch.wk-blocked {
+  opacity: 0.45;
+  cursor: default;
+}
 /* The Sign setting: the marquee board and its words (--w-sign is set to none when it is off). */
 .w-sign {
   display: var(--w-sign, inline);

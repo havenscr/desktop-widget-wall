@@ -1,7 +1,8 @@
 import type { ReactNode } from 'react';
 import { createElement as h } from 'react';
 import type { WatchRef } from '../../unwind/watch/links';
-import { LOOKS_KEY } from '../../unwind/watch/looks';
+import { LOOKS_KEY, isLook } from '../../unwind/watch/looks';
+import { TUNE_KEY, defaultTune, withPatch } from '../../unwind/watch/lookSettings';
 import { framePoster } from '../../unwind/watch/PlayerFrame';
 import { SAVED_KEY } from '../../unwind/watch/saved';
 import { useWatchStore } from '../../unwind/watch/store';
@@ -20,6 +21,7 @@ import { knob } from './long';
  *   ?wlook=feather|sky|sun|drivein|holo   one look for everything
  *   ?wplay=<n>                play saved item n (0 is the first)
  *   ?wsheet=one|kind          open the settings sheet (`kind`: a look per kind)
+ *   ?wtune=sky.size=80,sky.soft=0,sun.up=-100   settings of a look (look.key=value, a switch as 0 or 1)
  *   ?wtab=listen              stay on Listen (for the art's Video corner)
  *   ?wposter=bright           a pale bright picture, the worst case for text over video
  *   ?wstate=paused|refused|silent   a mock player: paused; autoplay refused (the click line;
@@ -129,6 +131,17 @@ export function registerWatchMocks(): void {
     else localStorage.setItem(SAVED_KEY, JSON.stringify(list === 'many' ? many() : THREE));
     const look = knob('wlook');
     const sheet = knob('wsheet');
+    const tune = knob('wtune');
+    if (tune) {
+      let t = defaultTune();
+      for (const pair of tune.split(',')) {
+        const m = /^([a-z]+)\.([a-z]+)=(-?\d+)$/.exec(pair);
+        if (!m || !isLook(m[1])) continue;
+        const rec = t[m[1]] as unknown as Record<string, number | boolean>;
+        t = withPatch(t, m[1], { [m[2]!]: typeof rec[m[2]!] === 'boolean' ? m[3] === '1' : Number(m[3]) });
+      }
+      localStorage.setItem(TUNE_KEY, JSON.stringify(t));
+    }
     if (look || sheet === 'kind') localStorage.setItem(LOOKS_KEY, JSON.stringify({ mode: sheet === 'kind' ? 'kind' : 'one', all: look ?? 'drivein' }));
   } catch {
     /* no storage: the stills show the empty list */

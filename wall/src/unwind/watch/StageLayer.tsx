@@ -89,7 +89,7 @@ function VideoStage({ item, look, shown }: { item: WatchRef & { label: string };
         {/* The feathered glow (in front of the land, with its picture) and the sun's halo (behind it). */}
         {dress === 'feather' ? <div className="w-glow" aria-hidden="true" /> : null}
         {dress === 'sun' ? <div className="w-halo" aria-hidden="true" /> : null}
-        {dress === 'drivein' ? <DriveInFrame mode={driveInMode({ paused, started, needsClick, clickHint, ended, reports: item.kind !== 'twitch' })} /> : null}
+        {dress === 'drivein' ? <DriveInFrame light={tune.drivein.neon && tune.drivein.light} mode={driveInMode({ paused, started, needsClick, clickHint, ended, reports: item.kind !== 'twitch' })} /> : null}
         {dress === 'drivein' ? <div className="w-spill" aria-hidden="true" /> : null}
         {/* The picture: this element and the frame in it are never replaced while the video lives. */}
         <div className="w-screen">

@@ -46,7 +46,9 @@ function RangeRow({ look, c, hint }: { look: LookId; c: RangeControl; hint: (k: 
 
 function SwitchRow({ look, c, hint }: { look: LookId; c: SwitchControl; hint: (k: string | null) => void }) {
   const tune = useWatchStore((s) => s.tune);
-  const on = (tune[look] as unknown as Record<string, boolean>)[c.key]!;
+  const rec = tune[look] as unknown as Record<string, boolean>;
+  const on = rec[c.key]!;
+  const blocked = c.needs ? rec[c.needs.key] === false : false;
   const k = `${look}.${c.key}`;
   const id = `wk-${look}-${c.key}-label`;
   return (
@@ -57,17 +59,20 @@ function SwitchRow({ look, c, hint }: { look: LookId; c: SwitchControl; hint: (k
       <button
         type="button"
         role="switch"
-        aria-checked={on}
+        aria-checked={on && !blocked}
+        aria-disabled={blocked}
         aria-labelledby={id}
-        className={`ln-switch${on ? ' on' : ''}`}
-        {...tip(`${c.note}. ${on ? 'Click to turn it off.' : 'Click to turn it on.'}`)}
+        className={`ln-switch${on && !blocked ? ' on' : ''}${blocked ? ' wk-blocked' : ''}`}
+        {...tip(blocked ? `${c.needs!.reason}. ${c.note}` : `${c.note}. ${on ? 'Click to turn it off.' : 'Click to turn it on.'}`)}
         onFocus={() => hint(k)}
         onBlur={() => hint(null)}
-        onClick={() => useWatchStore.getState().setTune(look, { [c.key]: !on })}
+        onClick={() => {
+          if (!blocked) useWatchStore.getState().setTune(look, { [c.key]: !on });
+        }}
       >
         <i aria-hidden="true" />
       </button>
-      <span className="ln-value ln-fill">{on ? (c.usual ? 'On, your usual' : 'On') : c.usual ? 'Off' : 'Off, your usual'}</span>
+      <span className="ln-value ln-fill">{blocked ? c.needs!.reason : on ? (c.usual ? 'On, your usual' : 'On') : c.usual ? 'Off' : 'Off, your usual'}</span>
     </div>
   );
 }

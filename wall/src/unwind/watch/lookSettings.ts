@@ -46,8 +46,12 @@ export interface DriveTune {
   size: number;
   /** The screen's light on the floor, percent opacity (42 today). */
   floor: number;
-  /** The marquee board and its words. */
+  /** The marquee board under the screen and its words. */
   sign: boolean;
+  /** The neon line round the frame and its glow. */
+  neon: boolean;
+  /** A soft light that travels round the neon line while the video plays (needs the neon line). */
+  light: boolean;
 }
 export interface HoloTune {
   /** The pane's turn in degrees. */
@@ -69,7 +73,7 @@ export const DEFAULT_TUNE: Readonly<LookTune> = Object.freeze({
   sky: Object.freeze({ size: 100, soft: 120, bright: 90, floor: true }),
   sun: Object.freeze({ size: 461, up: 29, glow: 50, streak: true }),
   feather: Object.freeze({ size: 100, soft: 20, glow: 50 }),
-  drivein: Object.freeze({ size: 100, floor: 42, sign: true }),
+  drivein: Object.freeze({ size: 100, floor: 42, sign: true, neon: true, light: true }),
   holo: Object.freeze({ tilt: 7, plate: 74, beam: true }),
 });
 
@@ -119,6 +123,8 @@ export interface RangeControl extends Base {
 export interface SwitchControl extends Base {
   kind: 'switch';
   usual: boolean;
+  /** Another switch of the look this one needs: while that one is off this one is disabled and says why. */
+  needs?: { key: string; reason: string };
 }
 export type Control = RangeControl | SwitchControl;
 
@@ -173,7 +179,9 @@ export const CONTROLS: Readonly<Record<LookId, readonly Control[]>> = Object.fre
   drivein: [
     { kind: 'range', key: 'size', label: 'Size', note: 'The screen and its tower together. The most keeps the tower inside the strip and clear of the cards', min: 80, max: () => 105, hardMax: 105, step: 1, usual: 100, show: pct, more: 'larger', less: 'smaller' },
     { kind: 'range', key: 'floor', label: 'Floor light', note: 'How strongly the screen’s light falls on the floor. 0 is none', min: 0, max: () => 100, hardMax: 100, step: 1, usual: 42, show: (v) => `${v}`, more: 'brighter', less: 'fainter' },
-    { kind: 'switch', key: 'sign', label: 'Sign', note: 'The marquee board under the screen and its words', usual: true },
+    { kind: 'switch', key: 'sign', label: 'Sign under the video', note: 'The marquee board under the screen and its words (Watt\u2019s Drive-in, now showing, intermission)', usual: true },
+    { kind: 'switch', key: 'neon', label: 'Neon line', note: 'The neon line round the frame and its glow. Off leaves the steel surround as it is', usual: true },
+    { kind: 'switch', key: 'light', label: 'Travelling light', note: 'A soft light that travels slowly round the neon line while the video plays. It stops when paused and under reduced motion', usual: true, needs: { key: 'neon', reason: 'Needs the neon line on' } },
   ],
   holo: [
     { kind: 'range', key: 'tilt', label: 'Tilt', note: 'How far the pane turns. 0 faces you', min: 0, max: () => 12, hardMax: 12, step: 1, usual: 7, show: (v) => `${v} degrees`, more: 'steeper', less: 'flatter' },
@@ -198,6 +206,8 @@ export const HINTS: Readonly<Record<string, string>> = Object.freeze({
   'drivein.size': 'Screen and tower together; the most fits the strip',
   'drivein.floor': 'How strongly the screen\u2019s light falls on the floor',
   'drivein.sign': 'The marquee board under the screen',
+  'drivein.neon': 'The neon line round the frame and its glow',
+  'drivein.light': 'A soft light that travels slowly round the line',
   'holo.tilt': 'How far the pane turns; 0 faces you',
   'holo.plate': 'How dark the glass behind the picture is',
   'holo.beam': 'The fan of light from the emitter to the pane',
@@ -446,6 +456,7 @@ export function tuneVars(look: LookId, tune: LookTune): Vars {
       }
       if (t.drivein.floor !== d.floor) v['--w-spill-a'] = a3(t.drivein.floor / 100);
       if (!t.drivein.sign) v['--w-sign'] = 'none';
+      if (!t.drivein.neon) v['--w-neon'] = 'none';
       break;
     }
     case 'holo': {
