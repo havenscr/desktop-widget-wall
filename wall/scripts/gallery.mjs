@@ -144,6 +144,22 @@ state('home', 'sound quiet: nothing playing', 'sonos=quiet');
 state('home', 'sound down', 'sonos=down');
 state('home', 'sound not set up', 'sonos=off');
 state('home', 'sound silent (fallback after 2.5 seconds)', 'sonos=slow');
+// Sound's Where row: the three places share the row, at rest and with each place in use.
+state('home', 'sound where: none in use', 'where=none');
+state('home', 'sound where: Office in use', 'where=office');
+state('home', 'sound where: All Speakers in use', 'where=all');
+state('home', 'sound where: Common Areas in use', 'where=common');
+// Sound's failed reads: a good first read, then one failure at 30 seconds and its second try 5 seconds later,
+// so these states wait (the page's own timers, in real time) before the still is taken.
+for (const [name, knob, wait] of [
+  ['sound failure: one failed read waiting for its second try, nothing shown', 'pending', 36_000],
+  ['sound failure: did not answer in time, dimmed', 'timeout', 42_000],
+  ['sound failure: cannot be reached, dimmed', 'dropped', 42_000],
+  ['sound failure: answer could not be read, dimmed', 'garbled', 42_000],
+]) {
+  add('home', name, url('home', TYPICAL_AT, `sonos=${knob}`), true);
+  STATES[STATES.length - 1].wait = wait;
+}
 for (const [name, extra] of [
   ['broken: home app not set up', 'home=off'],
   ['broken: home app down', 'home=down'],
@@ -601,13 +617,21 @@ const EXPECT = [
   ['home', 'moods none', 'No moods set up'],
   ['home', 'tasks heavy', '115 more can wait'],
   ['home', 'tasks few', ['Review the dashboard draft', '!Order printer paper']],
-  ['home', 'sound heavy: long names, many speakers', ['Late night', 'Workday']],
+  ['home', 'sound heavy: long names, many speakers', ['Late Night', 'Workday']],
   ['home', 'sound sparse: one routine, one speaker', 'Sound'],
   ['home', 'sound few: one matching routine plus More', 'More'],
   ['home', 'sound quiet: nothing playing', 'Nothing playing'],
   ['home', 'sound down', 'The Sonos service did not answer'],
   ['home', 'sound not set up', 'Add sonosBaseUrl to feeds.json'],
   ['home', 'sound silent (fallback after 2.5 seconds)', 'Sound'],
+  ['home', 'sound where: none in use', ['Office', 'All Speakers', 'Common Areas', 'Sonos Off']],
+  ['home', 'sound where: Office in use', ['Office', 'All Speakers', 'Common Areas']],
+  ['home', 'sound where: All Speakers in use', ['Office', 'All Speakers', 'Common Areas']],
+  ['home', 'sound where: Common Areas in use', ['Office', 'All Speakers', 'Common Areas']],
+  ['home', 'sound failure: one failed read waiting', ['Morning', 'Where', '!Sonos did not answer', '!Sonos cannot be reached', '!could not read']],
+  ['home', 'sound failure: did not answer in time', 'Sonos did not answer in time. Last good read less than a minute ago'],
+  ['home', 'sound failure: cannot be reached', 'Sonos cannot be reached. Last good read less than a minute ago'],
+  ['home', 'sound failure: answer could not be read', 'Sonos sent an answer the wall could not read. Last good read less than a minute ago'],
   ['home', 'broken: home app not set up', 'Network and securityNot set up'],
   ['home', 'broken: home app down', 'Home app not reachable'],
   ['home', 'broken: moods failing', 'MoodsHome app not reachable'],
@@ -628,7 +652,7 @@ const EXPECT = [
   ['home', 'moods slid', ['Movie', '1 more']],
   ['home', 'chores five', ['Sort the recycling', '8 more can wait']],
   ['home', 'chores with alerts', ['10 more can wait', 'Click for all 6']],
-  ['home', 'sound playing on a speaker', ['Now playing', 'Lantern Song 1', 'Living room, 4 speakers', 'All speakers', 'Common areas']],
+  ['home', 'sound playing on a speaker', ['Now playing', 'Lantern Song 1', 'Living room, 4 speakers', 'All Speakers', 'Common Areas']],
   ['home', 'shield drawer, stale read', ['open alerts as of', 'Clear all waits for a fresh read']],
   ['home', 'shield drawer, plain http address', ['Clear all needs a private or https address']],
   ['home', 'sound nothing playing', ['Nothing playing', 'Play']],
@@ -1128,7 +1152,7 @@ async function render(cdp, base, s, file, ctl) {
     await to('Emulation.setTimezoneOverride', { timezoneId: TZ });
     await to('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
     await to('Page.navigate', { url: `${base}?${s.query}` });
-    await new Promise((r) => setTimeout(r, SETTLE_MS));
+    await new Promise((r) => setTimeout(r, SETTLE_MS + (s.wait ?? 0)));
     for (const step of [s.click ?? []].flat().flatMap((c) => c.split(' >> '))) {
       // A state shown just after a click (a task tick's Undo window). A string may chain steps with ` >> `.
       // `ctx:<selector>` right-clicks (opens the key picker), `hover:` moves the real pointer onto
@@ -1300,7 +1324,7 @@ try {
           const r = await Promise.race([
             render(via, base, s, join(outDir, file), ctl),
             new Promise((_, rej) => {
-              timer = setTimeout(() => rej(new Error('timed out')), STATE_TIMEOUT_MS);
+              timer = setTimeout(() => rej(new Error('timed out')), STATE_TIMEOUT_MS + (s.wait ?? 0));
             }),
           ]);
           if (r.errors.length) error = [...new Set(r.errors)].slice(0, 3).join(' | ');

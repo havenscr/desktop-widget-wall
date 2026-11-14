@@ -31,7 +31,7 @@
 // CI does not run this; run it by hand before a layout change is handed over.
 //
 //   WALL_CHROME=/path/to/chrome-or-headless-shell npm --prefix wall run fit-check
-//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, card-end, header, deck, tiles, picker, chips, heading, zenhint, strip, fold, drawer, rows, handle, sky, floor, sun, tools, toolsnames, meetfill, meetempty, fy-height, key-edge, hide-pill, hide-note, leave-band, rec-chip, rec-height, tile-height, tile-icon, tile-iconbox, drawer-scrim, lwbuttons, lwoverlap, lwsquare, lwring, lwtemp, lwround, sky-front, sky-moon, sky-always, sky-crop, sky-seam, sky-soft, sky-foot, tower-over, tower-wide, tower-box, tower-switch, holo-big, holo-noblend, holo-beam, holo-take, tile-text, listen-player, listen-card, listen-slot, listen-next, lines-size, lines-control, lines-text, lines-clip, watch-rest, watch-title, watch-away, watch-mark, lip-cover, lip-band, lip-scrim, row-parts, over-hatch, row-type, onair-box, onair-notes, onair-keys, onair-watt, watt-seat, watt-spot, watt-tower, watt-ground)
+//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, card-end, header, deck, tiles, picker, chips, heading, zenhint, strip, fold, drawer, rows, handle, sky, floor, sun, tools, toolsnames, meetfill, meetempty, fy-height, key-edge, hide-pill, hide-note, leave-band, rec-chip, rec-height, tile-height, tile-icon, tile-iconbox, drawer-scrim, lwbuttons, lwoverlap, lwsquare, lwring, lwtemp, lwround, sky-front, sky-moon, sky-always, sky-crop, sky-seam, sky-soft, sky-foot, tower-over, tower-wide, tower-box, tower-switch, holo-big, holo-noblend, holo-beam, holo-take, tile-text, listen-player, listen-card, listen-slot, listen-next, lines-size, lines-control, lines-text, lines-clip, watch-rest, watch-title, watch-away, watch-mark, lip-cover, lip-band, lip-scrim, row-parts, over-hatch, row-type, onair-box, onair-notes, onair-keys, onair-watt, watt-seat, watt-spot, watt-tower, watt-ground, sound-equal, sound-fill, sound-centre, sound-clip, sound-wrap, sound-cover)
 //   npm --prefix wall run fit-check -- --self-test
 //
 // WALL_CHROME (or the first argument that is not a flag) is a Chromium or
@@ -110,6 +110,13 @@ const EXPECT = {
   'key-edge': /^ *FAIL deck: key ".*" edge against the sky /m,
   'hide-pill': /^ *FAIL hide screen: /m,
   'hide-note': /^ *FAIL hide screen note: /m,
+  // Home's Sound card: the Where buttons and the amber line in the card's head
+  'sound-equal': /^ *FAIL sound where: the three buttons are [\d.]+, [\d.]+ and [\d.]+ px wide/m,
+  'sound-fill': /^ *FAIL sound where: the buttons stop [\d.]+ px short of the row's end/m,
+  'sound-centre': /^ *FAIL sound where: ".*" sits [\d.]+ px off centre/m,
+  'sound-clip': /^ *FAIL sound where: ".*" is clipped/m,
+  'sound-wrap': /^ *FAIL sound line: the longest sentence wraps/m,
+  'sound-cover': /^ *FAIL sound line: the longest sentence covers the heading/m,
   // leave and recording
   'leave-band': /^ *FAIL leave banner: /m,
   'rec-chip': /^ *FAIL recording chip: /m,
@@ -236,6 +243,13 @@ const OVERFLOWS = {
   'key-edge': '.work .right-wing .deck-tile.key-tile { border-color: transparent !important; }',
   'hide-pill': '.screens-off:is(:hover, :focus-visible) { min-width: 900px; }',
   'hide-note': '.screens-off-note { bottom: 0 !important; }',
+  // Home's Sound card: one Where button narrower; all three short of the row's end; content pushed left; type too big for the box; the amber line squeezed to wrap; the amber line laid over the heading.
+  'sound-equal': '.sound-where .seg:nth-of-type(2) { flex: 0 0 90px !important; }',
+  'sound-fill': '.sound-where .seg { flex: 0 0 150px !important; }',
+  'sound-centre': '.sound-panel.l2 .sound-where .seg { justify-content: flex-start !important; }',
+  'sound-clip': '.sound-where .seg { font-size: 34px !important; }',
+  'sound-wrap': '.sound-head .warn-text { white-space: normal !important; width: 160px !important; }',
+  'sound-cover': '.sound-head .warn-text { position: absolute !important; left: 0 !important; }',
   // leave and recording
   'leave-band': '.leave-banner { top: 200px !important; }',
   'rec-chip': '.rec-chip { min-width: 400px !important; }',
@@ -609,6 +623,11 @@ const VARIANTS = [
   // The failure note ("Could not watch input") showing while the pill is grown: the two never meet.
   { name: 'Unwind, Hide screen grown with the failure note', q: query({ hz: 'unwind', agents: '3', extra: '&hide=fail' }), checks: ['.u-line', '.screens-off', '.screens-off-note'], click: '.screens-off then hover:.screens-off', hide: true, note: true, viewportOnly: true },
   { name: 'Home, Sound at its fullest: many moods, many speakers, long names, sleep timer', q: home('sonos=heavy&moods=many'), checks: [...HOME_CENTRE.filter((c) => !c.endsWith('mood-row')), ...SOUND_FULL] },
+  { name: 'Home, Sound: the Where buttons', q: home('moods=five'), checks: ['.home .sound-where'], sound: 'where' },
+  { name: 'Home, Sound: the Where buttons, Common Areas in use', q: home('moods=five&where=common'), checks: ['.home .sound-where'], sound: 'where' },
+  { name: 'Home, Sound: the Where buttons, long preset names', q: home('sonos=heavy&moods=many'), checks: ['.home .sound-where'], sound: 'where' },
+  { name: 'Home, Sound: the longest amber line', q: home('moods=five'), checks: ['.home .sound-head'], sound: 'line' },
+  { name: 'Home, Sound: the longest amber line, Sound at its fullest', q: home('sonos=heavy&moods=many'), checks: ['.home .sound-head'], sound: 'line' },
   { name: 'Home, typical: five moods, Sound playing', q: home('moods=five'), checks: [...HOME_CENTRE, ...SOUND_FULL] },
   { name: 'Home, one matching routine plus More: no blank cell in the quick-play row', q: home('sonos=few&moods=five'), checks: [...HOME_CENTRE, ...SOUND_FULL] },
   { name: 'Home, sparse: no moods, one routine, one speaker', q: home('sonos=sparse&moods=none'), checks: ['.home .home-centre', '.home .moods', ...SOUND_FULL.slice(0, 4)] },
@@ -1712,7 +1731,55 @@ try {
       }
       return fails;
     })();
-    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, cardEnds, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, copyOut, meetOut, strip, opened, watchPolish, skyLayers, thCheck, tileText, listen, lines, watchBehaviour, onair, wattDriveIn });
+    // Home's Sound card (soundcheck=where|line). Where: the three buttons equal (1 px), filling the row up to
+    // its end (the row's own padding and border aside), content centred (1.5 px), not clipped, 19 px type.
+    // Line: the longest amber sentence (probed into the head in place of whatever is there) stays on one line
+    // and clear of the heading and of the card's edge.
+    const sound = [];
+    const soundCheck = new URLSearchParams(location.search).get('soundcheck');
+    if (soundCheck === 'where') {
+      const row = document.querySelector('.home .sound-where');
+      const segs = row ? [...row.querySelectorAll('.seg')] : [];
+      if (!row || segs.length !== 3) sound.push('sound where: expected the row with three buttons, found ' + segs.length);
+      else {
+        const rr = row.getBoundingClientRect();
+        const ws = segs.map((e) => Math.round(e.getBoundingClientRect().width * 10) / 10);
+        if (Math.max(...ws) - Math.min(...ws) > 1) sound.push('sound where: the three buttons are ' + ws[0] + ', ' + ws[1] + ' and ' + ws[2] + ' px wide (within 1 px of each other)');
+        const lastRight = segs[2].getBoundingClientRect().right;
+        const short = Math.round((rr.right - lastRight) * 10) / 10;
+        if (short > 6.5) sound.push('sound where: the buttons stop ' + short + " px short of the row's end (at most 6.5: its padding and border)");
+        for (const e of segs) {
+          const b = e.getBoundingClientRect();
+          const rg = document.createRange(); rg.selectNodeContents(e);
+          const cb = rg.getBoundingClientRect();
+          const off = Math.round(Math.abs((cb.left - b.left) - (b.right - cb.right)) * 10) / 10;
+          if (off > 1.5) sound.push('sound where: "' + e.textContent + '" sits ' + off + ' px off centre (at most 1.5)');
+          if (e.scrollWidth > e.clientWidth + 1 || cb.left < b.left - 0.5 || cb.right > b.right + 0.5) sound.push('sound where: "' + e.textContent + '" is clipped (content ' + Math.round(cb.width) + ' px in a ' + Math.round(b.width) + ' px button)');
+          const fs = parseFloat(getComputedStyle(e).fontSize);
+          if (Math.abs(fs - 19) > 0.5 && !(e.textContent === '')) sound.push('sound where: "' + e.textContent + '" is set at ' + fs + ' px, not 19');
+        }
+      }
+    } else if (soundCheck === 'line') {
+      const head = document.querySelector('.home .sound-head');
+      const k = head && head.querySelector('.k');
+      if (!head || !k) sound.push('sound line: no card head to test');
+      else {
+        let line = head.querySelector('.warn-text');
+        if (!line) { line = document.createElement('span'); line.className = 'xs warn-text'; line.setAttribute('role', 'status'); head.appendChild(line); }
+        line.textContent = 'Sonos sent an answer the wall could not read. Last good read less than a minute ago';
+        const lb = line.getBoundingClientRect();
+        const kb = k.getBoundingClientRect();
+        const hb = head.getBoundingClientRect();
+        const lh = parseFloat(getComputedStyle(line).lineHeight) || parseFloat(getComputedStyle(line).fontSize) * 1.3;
+        if (lb.height > lh * 1.5) sound.push('sound line: the longest sentence wraps (' + Math.round(lb.height) + ' px tall, one line is ' + Math.round(lh) + ')');
+        if (lb.left < kb.right + 8 - 0.5 && lb.top < kb.bottom && kb.top < lb.bottom) sound.push('sound line: the longest sentence covers the heading (its left edge ' + Math.round(lb.left) + ' against the heading ending at ' + Math.round(kb.right) + ', 8 px clear needed)');
+        if (lb.right > hb.right + 0.5 || lb.left < hb.left - 0.5) sound.push('sound line: the longest sentence leaves the card head (x ' + Math.round(lb.left) + ' to ' + Math.round(lb.right) + ' in ' + Math.round(hb.left) + ' to ' + Math.round(hb.right) + ')');
+        const card = head.closest('.sound');
+        const cr = card && card.getBoundingClientRect();
+        if (cr && (lb.right > cr.right + 0.5 || lb.bottom > cr.bottom)) sound.push('sound line: the longest sentence leaves the card');
+      }
+    }
+    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, cardEnds, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, copyOut, meetOut, strip, opened, watchPolish, skyLayers, thCheck, tileText, listen, lines, watchBehaviour, onair, wattDriveIn, sound });
     document.body.appendChild(pre);
   }, new URLSearchParams(location.search).get('card') ? 7000 : 3000);</script>`;
   const broken = overflow ? `<style>${OVERFLOWS[overflow]}</style>` : '';
@@ -1818,6 +1885,12 @@ try {
     'lines-control': (v) => v.name === 'Lines settings sheet',
     'lines-text': (v) => v.name === 'Lines settings sheet',
     'lines-clip': (v) => v.name === 'Lines, bars under the drive-in',
+    'sound-equal': (v) => v.name === 'Home, Sound: the Where buttons',
+    'sound-fill': (v) => v.name === 'Home, Sound: the Where buttons',
+    'sound-centre': (v) => v.name === 'Home, Sound: the Where buttons',
+    'sound-clip': (v) => v.name === 'Home, Sound: the Where buttons',
+    'sound-wrap': (v) => v.name === 'Home, Sound: the longest amber line',
+    'sound-cover': (v) => v.name === 'Home, Sound: the longest amber line',
   };
   const breakOn = BREAK_ON[overflow] ? VARIANTS.filter(BREAK_ON[overflow]) : VARIANTS.slice(0, 1);
   /** keys style: the Now row's height on each page that has one, compared after every state ran. */
@@ -1828,7 +1901,7 @@ try {
   const skyMoons = [];
   for (const v of overflow ? breakOn : VARIANTS) {
     console.log(`${v.name} (${v.q}):`);
-    const url = `${pathToFileURL(page).href}${v.q}${v.sky ? `&skycheck=${v.sky}` : ''}${overflow && SKY_BREAK_Q[overflow] ? SKY_BREAK_Q[overflow] : ''}${overflow && LINES_BREAK_Q[overflow] ? LINES_BREAK_Q[overflow] : ''}&checks=${encodeURIComponent(v.checks.join('|'))}${v.click ? `&click=${encodeURIComponent(v.click)}` : ''}${v.card ? '&card=1' : ''}${v.hits ? `&hits=${encodeURIComponent(v.hits.join('|'))}` : ''}${v.noHit ? `&nohit=${encodeURIComponent(v.noHit)}` : ''}${v.listen ? '&listen=1' : ''}${v.linesSheet ? '&linescheck=1' : ''}${v.th ? `&th=${v.th}` : ''}${v.wb ? `&wbcheck=${v.wb}` : ''}`;
+    const url = `${pathToFileURL(page).href}${v.q}${v.sky ? `&skycheck=${v.sky}` : ''}${overflow && SKY_BREAK_Q[overflow] ? SKY_BREAK_Q[overflow] : ''}${overflow && LINES_BREAK_Q[overflow] ? LINES_BREAK_Q[overflow] : ''}&checks=${encodeURIComponent(v.checks.join('|'))}${v.click ? `&click=${encodeURIComponent(v.click)}` : ''}${v.card ? '&card=1' : ''}${v.hits ? `&hits=${encodeURIComponent(v.hits.join('|'))}` : ''}${v.noHit ? `&nohit=${encodeURIComponent(v.noHit)}` : ''}${v.listen ? '&listen=1' : ''}${v.linesSheet ? '&linescheck=1' : ''}${v.th ? `&th=${v.th}` : ''}${v.wb ? `&wbcheck=${v.wb}` : ''}${v.sound ? `&soundcheck=${v.sound}` : ''}`;
     const dom = await runChrome(
       chrome,
       // Headless Chromium keeps 87 px of the window for itself, so 807 gives a 2560 by 720 viewport.
@@ -1841,7 +1914,7 @@ try {
       process.exit(1);
     }
     const text = m[1].replaceAll('&quot;', '"').replaceAll('&amp;', '&');
-    const { res, page: doc, overlaps, cut, gaps, cardEnds, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, copyOut, meetOut, strip, opened, watchPolish, skyLayers, thCheck, tileText, listen, lines, watchBehaviour, onair, wattDriveIn } = JSON.parse(text);
+    const { res, page: doc, overlaps, cut, gaps, cardEnds, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, copyOut, meetOut, strip, opened, watchPolish, skyLayers, thCheck, tileText, listen, lines, watchBehaviour, onair, wattDriveIn, sound } = JSON.parse(text);
     // watt drive-in
     if (wattDriveIn) {
       for (const f of wattDriveIn.fails) console.log(`  FAIL ${f}`);
@@ -2013,6 +2086,11 @@ try {
     for (const d of sig) console.log(`  FAIL ${d}`);
     if (sig.length) failed = true;
     else if (/[?&](leave|rec)=/.test(v.q)) console.log('  ok   leave banner and recording chip: inside their band, one line, covering no text or control');
+    if (v.sound) {
+      for (const d of sound) console.log(`  FAIL ${d}`);
+      if (sound.length) failed = true;
+      else console.log(v.sound === 'where' ? '  ok   sound where: three equal buttons filling the row, content centred, not clipped, 19 px' : '  ok   sound line: the longest sentence on one line, clear of the heading, inside the card');
+    }
     for (const d of lw) console.log(`  FAIL ${d}`);
     if (lw.length) failed = true;
     else if (v.q.includes('hz=work')) console.log('  ok   left wing: three music buttons on one line, TEMP header centred, round controls round');

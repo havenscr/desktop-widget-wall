@@ -117,13 +117,14 @@ no `homeBaseUrl` the row says "Not set up"; with no moods it shows the one compa
 
 ### Sound on Home
 
-`home/Sound.tsx`, `home/useSonos.ts`, `home/soundModel.ts`, `src-tauri/src/wall2_sonos.rs`.
+`home/Sound.tsx`, `home/useSonos.ts`, `home/soundModel.ts`, `src-tauri/src/wall2_sonos.rs`
+(its reads: `wall2_sonos_read.rs`; its log: `wall2_sonos_log.rs`).
 The owner's Sonos service on the home box, read every 30 seconds while the wall is
 visible. Nothing on the wall plays or changes volume without a click, and one deliberate
 click is one write: the second click of a double click and the repeats of a held key are
 ignored, and each control stays latched for 800 ms after its write settles.
 
-- **Quick play**: five buttons, in this order: Morning, Day, Evening, Late night, Workday.
+- **Quick play**: five buttons, in this order: Morning, Day, Evening, Late Night, Workday.
   Each is the music routine whose name carries that word as a whole word ("Workday" never
   reads as Day; "late night" may be one word or two; case is ignored). The button's label
   is exactly the word, whatever the routine is called; the tooltip has the routine's own
@@ -142,13 +143,15 @@ ignored, and each control stays latched for 800 ms after its write settles.
 - **Started**: the service does not say which routine is playing, so "On now" is never
   claimed. The routine last started from this wall says "started N min ago" only while
   what plays is evidently what it started: the first read with music records its group;
-  nothing playing, "Sonos off", another group, or no group to tell by clears it for
+  nothing playing, "Sonos Off", another group, or no group to tell by clears it for
   good; it never lasts past an hour (`wall2-sonos-last-play` in local storage).
-- **Where**: three places, in this order: Office, All speakers, Common areas. They are the
-  service's group presets whose names start with those words; the label drops anything in
-  parentheses ("Office (Work)" reads "Office"), and other presets are not shown. The one in
-  use shows its full name and the others shrink. The preset whose grouping matches the
-  speakers' groups now is marked (Rust compares them).
+- **Where**: three places, in this order: Office, All Speakers, Common Areas (title case,
+  like the buttons around them). They are the service's group presets whose names start
+  with those words; the label drops anything in parentheses ("Office (Work)" reads
+  "Office"), and other presets are not shown. The three buttons share the row's width
+  equally, up to the "Sonos Off" button, with their icon and label centred; the one in use
+  keeps its look and its share and shows the same label as the others. The preset whose
+  grouping matches the speakers' groups now is marked (Rust compares them).
 - **Loading**: Home's centre draws at its final sizes from the first paint: the mood row at
   the height it has with Sound present, and a Sound skeleton of the real block's height
   (quiet shapes, no spinner, no text). The tall-mood layout is chosen only once Sonos has
@@ -170,15 +173,25 @@ ignored, and each control stays latched for 800 ms after its write settles.
   does not name; a preset that would leave a speaker above 40 or at an
   unknown level ("Studio is at 100. Apply anyway?"), unless the preset itself sets that
   speaker to 40 or less (a line-in group, the PC's own sound, does not count).
-- **Play and pause**: "Sonos off" pauses every speaker while music plays; with nothing
+- **Play and pause**: "Sonos Off" pauses every speaker while music plays; with nothing
   playing the button names the suggestion ("Play Evening") and is off when no routine fits
   the hour. The service has no next or resume command, so there is no Next button.
   **Sleep** offers 30, 60 or 90 minutes (5 minute fade); the soonest running timer shows
   its minutes left and cancels on a click.
 - Every action shows a brief result beside the heading ("Playing Evening", "Could not
   reach Sonos", "Some speakers did not change", which reads again at once). A read that
-  failed, or one over two minutes old, dims the card, says "Sonos not reachable, showing
-  3 min ago" and turns every control off. Never reached shows one compact card; no
+  failed twice in a row, or one over two minutes old, dims the card, says what happened
+  and turns every control off. One failed read changes nothing on screen: the page reads
+  once more 5 seconds later (one at a time, never while the wall is hidden, dropped when
+  it is closed), and only a second failure shows. The amber line names the kind of
+  failure, then the age of the last good read: "Sonos did not answer in time. Last good
+  read 1 min ago" (the 4 second limit passed), "Sonos cannot be reached. Last good read
+  1 min ago" (no connection, or it was reset) or "Sonos sent an answer the wall could not
+  read. Last good read 1 min ago" (a status other than success, or a body that was
+  unreadable, too large or not JSON). Under a minute the age reads "less than a minute
+  ago"; with no good read yet the line is the first sentence alone. The Tools drawer's
+  Sound row says the same first sentence. The 30 second cadence, the two minute rule and
+  the lock on writes are unchanged. Never reached shows one compact card; no
   `sonosBaseUrl` shows one line saying what to add. With the moods out as well, the
   centre shows one status card instead (`home/CentreStatus.tsx`, `home/centreSources.ts`):
   each source and its state in plain words, the age of its last good read, the key to
@@ -208,9 +221,27 @@ left out; 0 to 100, clamped), `POST /api/action/pause-all`, `POST /api/sleep-tim
 `{minutes, fadeMinutes: 5}` (30, 60 or 90 only) and `DELETE /api/sleep-timer/<id>`.
 Each "asks first" case above answers `needs-confirm` without `confirm: true`. Errors are
 fixed strings ("Could not reach Sonos", "Sonos could not do that", "Sonos status is out
-of date", "Some speakers did not change") and nothing is logged. Dev mocks
-(`bridge/devMocks/sonos.ts`) take `?sonos=off|down|sparse|heavy|quiet`;
+of date", "Some speakers did not change"); a failed summary read answers one fixed word
+for its kind instead: `timed-out`, `no-answer` or `bad-answer` (the page words them as
+above). Writes keep their fixed strings and nothing else is logged. Dev mocks
+(`bridge/devMocks/sonos.ts`) take `?sonos=off|down|sparse|heavy|quiet`, `?where=office|all|common|none`
+(the place in use), and `?sonos=timeout|dropped|garbled` (a good first read, then every
+read fails as that kind: the dimmed card with its line after about 35 seconds) or
+`?sonos=pending` (a good first read, one failure waiting for its second try);
 `?moods=five|many|none|off|down` sets the mood cards.
+
+**The Sonos log.** `wall2-sonos.log` in the app's log folder (64 KB cap, started with
+each run of the app) holds one line per failed read and one per successful read that took
+over 2 seconds: `<failed|slow> <read> <kind> <HTTP status or 0> <milliseconds>`, for
+example `failed status timed-out 0 4003` or `slow status none 200 2310`. The read is one
+of `status`, `speakers`, `routines`, `groups`, `presets`, `scenes`, `timers` or `lists`
+(an answer with too many entries); the kind is `timed-out`, `no-answer`, `bad-answer` or
+`none`. A failed optional read (groups, presets, scenes, timers) is only written while
+the three needed reads worked, so an outage costs three lines per read, not seven. Only
+these fixed words and numbers are ever written: no room, speaker, routine or track name,
+no address, no answer text. It exists to tell a slow answer from no answer: lines with
+`timed-out` and a time near 4000 mean the service answered too slowly; `no-answer` with a
+small time means nothing was listening.
 
 ### Around the house (Home, right wing)
 
@@ -1643,8 +1674,8 @@ words: `not-configured`, `absent` (404, the route is not live yet), `failed`, `s
   while alerts are open, since the shield card is taller then), a slim scrollbar and the
   wheel with the pointer over the list, and "N more can wait" under it.
 - **Sound** (`home/Sound.tsx`): the five plays carry line icons on a colour wash
-  (cup, headphones, lamp, moon, laptop). Where reads exactly Office, All speakers and
-  Common areas, whatever the matching preset is called. Now playing sits at the left: with a Spotify
+  (cup, headphones, lamp, moon, laptop). Where reads exactly Office, All Speakers and
+  Common Areas, whatever the matching preset is called. Now playing sits at the left: with a Spotify
   track on a house speaker (its device name matches a Sonos speaker or group the Sonos
   read shows playing) the cover, title, artist, where it plays, pause and progress; a
   track on this PC is never shown as the house playing. The position counts on from the
