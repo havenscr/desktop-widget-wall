@@ -313,6 +313,7 @@ state('unwind', `${TH} tower at night, playing`, `${WM}&wlist=three&wlook=drivei
 state('unwind', `${TH} tower at noon, playing`, `${WM}&wlist=three&wlook=drivein&wplay=0`, TIMES.noon);
 state('unwind', `${TH} tower at night, paused`, `${WM}&wlist=three&wlook=drivein&wplay=0&wstate=paused`, TIMES.night);
 state('unwind', `${TH} tower at noon, paused`, `${WM}&wlist=three&wlook=drivein&wplay=0&wstate=paused`, TIMES.noon);
+state('unwind', `${TH} tower at night, autoplay refused`, `${WM}&wlist=three&wlook=drivein&wplay=0&wstate=refused`, TIMES.night);
 state('unwind', `${TH} tower at night, nothing on`, `${WM}&wlist=three&wlook=drivein`, TIMES.night);
 state('unwind', `${TH} tower at noon, nothing on`, `${WM}&wlist=three&wlook=drivein`, TIMES.noon);
 state('unwind', `${TH} tower at night, 24 saved, long label`, `${WM}&wlist=many&wlook=drivein&wplay=3`, TIMES.night);
@@ -594,6 +595,7 @@ const EXPECT = [
   ['unwind', 'tower and hologram: tower at noon, playing', ['Playing on the wall', "WATT\u2019S DRIVE-IN \u00b7 NOW SHOWING"]],
   ['unwind', 'tower and hologram: tower at night, paused', ['Paused', "WATT\u2019S DRIVE-IN \u00b7 INTERMISSION"]],
   ['unwind', 'tower and hologram: tower at noon, paused', ['Paused', "WATT\u2019S DRIVE-IN \u00b7 INTERMISSION"]],
+  ['unwind', 'tower and hologram: tower at night, autoplay refused', ['Click the video to start', "WATT\u2019S DRIVE-IN"]],
   ['unwind', 'tower and hologram: tower at night, nothing on', ['Nothing on', 'Nothing on the screen', "WATT\u2019S DRIVE-IN"]],
   ['unwind', 'tower and hologram: tower at noon, nothing on', ['Nothing on', 'Nothing on the screen']],
   ['unwind', 'tower and hologram: tower at night, 24', ['24 saved', 'Saved for the weekend, a very long playlist name', 'YouTube playlist']],
