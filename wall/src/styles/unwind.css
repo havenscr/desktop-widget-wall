@@ -939,9 +939,12 @@
   mask-image: linear-gradient(180deg, #000, transparent 80%);
   pointer-events: none;
 }
-/* Open in YouTube (or on Twitch): a plain button before the gear in the control row, always there. */
+/* Open in YouTube (or on Twitch): a plain button before the gear in the control row, always there.
+   It is the one that gives way when the row is short of room (a wider font on another machine): its
+   label truncates with an ellipsis, never below the icon and four letters, and the gear stays whole. */
 .w-open {
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 88px;
   height: 40px;
   margin-left: 4px;
   padding: 0 10px;
@@ -954,6 +957,12 @@
   color: var(--dim);
   background: rgba(8, 6, 26, 0.7);
   border: 1px solid var(--line);
+}
+.w-open-t {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .w-open:hover {
   color: var(--tx);

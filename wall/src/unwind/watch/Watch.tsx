@@ -248,7 +248,7 @@ function Controls({ item, openFailed, setOpenFailed }: { item: WatchRef & { labe
         </button>
         <button type="button" className="w-open" {...tip(`Opens this ${kindName(item.kind).toLowerCase()} on its own site in your web browser`)} onClick={() => void open()}>
           <IconExternalLink size={18} aria-hidden="true" />
-          {label}
+          <span className="w-open-t">{label}</span>
         </button>
         <WatchGear />
       </div>

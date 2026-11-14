@@ -138,6 +138,9 @@ const EXPECT = {
   // watch polish
   'watch-block': /^ *FAIL watch polish: the left block is at /m,
   'watch-gear': /^ *FAIL watch polish: the gear /m,
+  'watch-slack': /^ *FAIL watch polish: with 16 px more text /m,
+  'watch-fill': /^ *FAIL watch polish: the position fill has no background/m,
+  'watch-mark': /^ *FAIL watch polish: the position marker is at x /m,
   'watch-row': /^ *FAIL \.w-ctl: width \d+ <= \d+/m,
   'watch-over': /^ *FAIL watch polish: .*w-(now|ctl).* is drawn over the video's box/m,
   'watt-seat1106': /^ *FAIL watt drive-in: Watt's left edge is /m,
@@ -266,6 +269,11 @@ const OVERFLOWS = {
   // the row; the block moved onto the video.
   'watch-block': '.top:has(.w-sun) .w-now { top: 106px !important; }',
   'watch-gear': '.w-gear { margin-left: 0 !important; }',
+  // the Open label may not give way: with 16 px more text the row overflows its block
+  'watch-slack': '.w-open { flex: none !important; min-width: 0 !important; }',
+  // the position fill's colour from a token nothing defines (the owner's bug); the marker left at the bar's start
+  'watch-fill': '.w-bar b { background: linear-gradient(90deg, var(--pink), var(--cyan)) !important; }',
+  'watch-mark': '.w-bar .w-mark { left: 0 !important; }',
   'watch-row': '.w-ctl .w-open { min-width: 600px !important; }',
   'watch-over': '.w-now { left: 1200px !important; top: 200px !important; }',
   // A refused autoplay that never lets the pointer reach the whole-sky picture.
@@ -464,6 +472,9 @@ const QUIET = [
   { name: 'Watch polish, nothing on, feathered', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=feather', checks: ['.w-now', '.w-gear'], hits: ['.w-gear'] },
   { name: 'Watch polish, nothing on, whole sky', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=sky', checks: ['.w-now', '.w-gear'], hits: ['.w-gear'] },
   { name: 'Watch polish, nothing on, the sun', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=sun', checks: ['.w-now', '.w-gear'], hits: ['.w-gear'] },
+  // The position bar's marker near either end stays inside the bar.
+  { name: 'Watch polish, position at the start', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=feather&wplay=0&wstate=start', checks: WATCH_POLISH, hits: WATCH_POLISH_HITS },
+  { name: 'Watch polish, position at the end', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=sky&wplay=0&wstate=end', checks: WATCH_POLISH, hits: WATCH_POLISH_HITS },
   { name: 'Watch polish, whole sky, paused', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=sky&wplay=0&wstate=paused', checks: WATCH_POLISH, hits: WATCH_POLISH_HITS },
   // watt drive-in: Watt seated in front of the drive-in screen (checked in every drive-in state
   // with something on): at night and at noon, paused, with 24 saved and a long label, and with
@@ -1356,8 +1367,50 @@ try {
           for (const rd of ctl.querySelectorAll('.rd')) { const r = box(rd); if (r.w !== 40 || r.h !== 40) fails.push('watch polish: a round button is ' + r.w + ' by ' + r.h + ', not 40 by 40'); }
         }
         if (cb.l + cb.w > nb.l + nb.w + 0.5) fails.push('watch polish: the control row runs past the left block');
+        // Slack: on another machine the text may be wider. With the Open label 16 px wider than today's, nothing leaves
+        // the row, nothing wraps, the gear is still the last, whole button, and the label alone gives way (never below
+        // the icon and four letters, 88 px for the button).
+        const lab = ctl.querySelector('.w-open-t');
+        if (lab) {
+          const st = document.createElement('style');
+          st.textContent = '.w-open-t { display: inline-block; padding-right: 16px; }';
+          document.head.appendChild(st);
+          void document.body.offsetWidth;
+          const r = ctl.getBoundingClientRect();
+          const kb = [...ctl.children].map((e) => e.getBoundingClientRect());
+          const mid2 = (k) => k.top + k.height / 2;
+          const g = ctl.querySelector('.w-gear');
+          const o = ctl.querySelector('.w-open');
+          if (ctl.lastElementChild !== g) fails.push('watch polish: with 16 px more text the gear is not the last button');
+          if (kb.some((k) => k.left < r.left - 0.5 || k.right > r.right + 0.5)) fails.push('watch polish: with 16 px more text a control leaves the row (' + kb.map((k) => Math.round(k.left) + '-' + Math.round(k.right)).join(' ') + ' in ' + Math.round(r.left) + '-' + Math.round(r.right) + ')');
+          if (kb.some((k) => Math.abs(mid2(k) - mid2(kb[0])) > 2)) fails.push('watch polish: with 16 px more text the control row wraps');
+          if (o && o.getBoundingClientRect().width < 88 - 0.5) fails.push('watch polish: with 16 px more text the Open button is ' + Math.round(o.getBoundingClientRect().width) + ' px, under 88');
+          if (g && !(g.getBoundingClientRect().width >= 39.5)) fails.push('watch polish: with 16 px more text the gear is squeezed to ' + Math.round(g.getBoundingClientRect().width) + ' px');
+          st.remove();
+          void document.body.offsetWidth;
+        }
       }
       if (document.querySelector('.w-lookbar')) fails.push('watch polish: the Look switch is on the page');
+      // The position bar, while a length and a time above zero are known: the fill is drawn (wider than zero, a real
+      // background: an undefined colour token drops the whole declaration), the marker sits at the fill's end inside
+      // the bar and takes no click, and the bar is at least 32 px tall to click.
+      const bar = document.querySelector('.w-bar');
+      if (bar) {
+        const fill = bar.querySelector('b'), mark = bar.querySelector('.w-mark');
+        const br = bar.getBoundingClientRect();
+        if (!fill || !mark) fails.push('watch polish: the position bar has no fill or no marker');
+        else {
+          const fr = fill.getBoundingClientRect(), mr = mark.getBoundingClientRect();
+          const cs = getComputedStyle(fill);
+          if (!(fr.width > 0)) fails.push('watch polish: the position fill is not wider than zero');
+          if (cs.backgroundImage === 'none' && (cs.backgroundColor === 'rgba(0, 0, 0, 0)' || cs.backgroundColor === 'transparent')) fails.push('watch polish: the position fill has no background (an undefined colour token?)');
+          const want = Math.min(Math.max(fr.right, br.left + 5), br.right - 5);
+          if (Math.abs(mr.left + mr.width / 2 - want) > 1.5) fails.push('watch polish: the position marker is at x ' + Math.round(mr.left + mr.width / 2) + ', not at the fill end ' + Math.round(want));
+          if (mr.left < br.left - 0.5 || mr.right > br.right + 0.5) fails.push('watch polish: the position marker leaves the bar (' + Math.round(mr.left) + '-' + Math.round(mr.right) + ' in ' + Math.round(br.left) + '-' + Math.round(br.right) + ')');
+          if (getComputedStyle(mark).pointerEvents !== 'none') fails.push('watch polish: the position marker takes the pointer');
+        }
+        if (br.height < 32 - 0.5) fails.push('watch polish: the position bar is ' + Math.round(br.height) + ' px tall to click, under 32');
+      }
       const skyStage = document.querySelector('.w-sky');
       // sky layers: .w-front holds the horizon's front canvas (the land in front of the video; no pointer, no text).
       if (skyStage) for (const c of skyStage.children) if (!c.classList.contains('w-screen') && !c.classList.contains('w-front')) fails.push('watch polish: ' + c.className + " is drawn over the video's box (whole sky)");
@@ -1793,6 +1846,9 @@ try {
     // watch polish
     'watch-block': (v) => v.name.startsWith('Watch polish'),
     'watch-gear': (v) => v.name === 'Watch polish, feathered, single video',
+    'watch-slack': (v) => v.name === 'Watch polish, feathered, single video',
+    'watch-fill': (v) => v.name === 'Watch polish, feathered, single video',
+    'watch-mark': (v) => v.name === 'Watch polish, feathered, single video',
     'watch-row': (v) => v.name === 'Watch polish, feathered, single video',
     'watch-over': (v) => v.name === 'Watch polish, drive-in, playlist, long label',
     'watch-take': (v) => v.name === 'Watch polish, whole sky, autoplay refused',

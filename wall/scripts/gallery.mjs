@@ -378,6 +378,10 @@ state('unwind', `${TH} hologram, autoplay refused`, `${WM}&wlist=three&wlook=hol
 // at rest (the controls faded, only the title) in the drive-in, the whole sky and the Hologram, plus nothing on.
 for (const id of ['feather', 'sky', 'sun', 'drivein', 'holo']) state('unwind', `watch block: shown, ${id}`, `${WM}&wlist=three&wlook=${id}&wplay=0`, TIMES.night);
 for (const id of ['drivein', 'sky', 'holo']) state('unwind', `watch block: at rest, ${id}`, `${WM}&wlist=three&wlook=${id}&wplay=0&wctl=rest`, TIMES.night);
+// The position bar's fill and marker near the start and near the end (the marker stays inside the bar).
+state('unwind', 'watch block: position near the start, whole sky', `${WM}&wlist=three&wlook=sky&wplay=0&wstate=start`, TIMES.night);
+state('unwind', 'watch block: position near the end, whole sky', `${WM}&wlist=three&wlook=sky&wplay=0&wstate=end`, TIMES.night);
+state('unwind', 'watch block: position near the end, drive-in', `${WM}&wlist=three&wlook=drivein&wplay=0&wstate=end`, TIMES.night);
 for (const id of ['drivein', 'sky', 'holo']) state('unwind', `watch block: nothing on, ${id}`, `${WM}&wlist=three&wlook=${id}`, TIMES.night);
 state('unwind', `${TH} settings, five tiles, Hologram chosen`, `${WM}&wlist=three&wlook=holo&wplay=0&wsheet=one`, TIMES.night);
 state('unwind', `${TH} settings, five looks per kind`, `${WM}&wlist=many&wlook=holo&wplay=0&wsheet=kind`, TIMES.night);
@@ -680,6 +684,8 @@ const EXPECT = [
   ['unwind', 'tower and hologram: hologram, autoplay refused', ['Click the video to start', '!12:34']],
   ['unwind', 'tower and hologram: hologram at', ['Open in YouTube', '12:34']],
   // No Look switch under the block any more: the row ends with the gear, and no look's name is on the page.
+  ['unwind', 'watch block: position near the start', ['0:04', '45:10', 'Open in YouTube']],
+  ['unwind', 'watch block: position near the end', ['45:06', '45:10', 'Open in YouTube']],
   ['unwind', 'watch block: shown,', ['Playing on the wall', 'Open in YouTube', '12:34', '!Feathered', '!Whole sky', '!The sun']],
   ['unwind', 'watch block: at rest,', ['Night drive mix', '!Feathered', '!Whole sky', '!The sun']],
   ['unwind', 'watch block: nothing on,', ['Nothing on', 'Play Night drive mix', '!Feathered', '!Whole sky', '!The sun']],
