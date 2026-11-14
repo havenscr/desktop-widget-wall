@@ -7,6 +7,10 @@
  * plain numbers, so the rules (which run in the script) do the arithmetic.
  */
 function measureHeart() {
+  // Transitions off first, so the boxes measured are the ones the card settles on.
+  const st = document.createElement('style');
+  st.textContent = '.sp-card { transition: none !important; }';
+  document.head.appendChild(st);
   const q = (s) => document.querySelector(s);
   const box = (el) => {
     if (!el) return null;

@@ -31,6 +31,36 @@ The port is optional and defaults to 8898. Press Sign in on the wall once the Sp
 panel exists. Starting playback from the wall needs Spotify Premium. The integration
 has not been verified against the live Spotify service.
 
+### Saving songs (the heart on the player row)
+
+The sign-in asks for one more permission, `user-library-modify` (the scope Spotify's reference lists
+for saving and removing library items, [Save Items to Library](https://developer.spotify.com/documentation/web-api/reference/save-library-items)
+and [Remove Items from Library](https://developer.spotify.com/documentation/web-api/reference/remove-library-items);
+the older Save Tracks page names the same scope). Nothing else was added to `SCOPE`: reading whether a song is saved needs
+`user-library-read`, which the sign-in already had.
+
+A sign-in made before this permission existed does not hold it, so saving is off until the owner signs in
+once more (Tools, Spotify, Sign out, Sign in). Until then the heart is dim, and a click opens a note with an
+Open Tools button. After the new sign-in the heart works with no restart. The Rust side keeps the `scope`
+list of the last token answer in memory (the code exchange replaces it; a refresh answer replaces it only
+when it names one), and `wall2_spotify_status` carries one more boolean, `canSave`: true only when that list
+is known and holds the permission. After a restart only a refresh token is stored, so the list is unknown, and
+`canSave` is false, until the first token refresh answers; the heart reads the status again after its first read.
+
+Two commands, both limited to the `wall2` window, with the module's fixed words:
+
+- `wall2_spotify_saved(id)` answers whether the track is in Liked Songs (`GET /me/library/contains`).
+- `wall2_spotify_save(id, on)` saves or removes it (`PUT` or `DELETE /me/library`). A 403 answers
+  `needs sign in` and turns `canSave` off.
+
+Both take a Spotify track id, exactly 22 letters or digits, checked before anything is sent; the track URI is
+built from it in Rust. Spotify's February 2026 changes removed the per-type `/me/tracks` calls in favour of the
+library calls above, which take a `uris` query (at most 40; the wall sends one).
+
+Whether the playing song is saved is read once per song, never on a timer. A click shows the change at once and
+puts it back with one line ("Could not save this song") if Spotify refuses. A song with no id (a podcast episode,
+a local file) and nothing playing have no heart. Dev mock: `spotifyheart=saved|unsaved|readfail|savefail|nopermission|episode`.
+
 Status treats a stored refresh token as signed in. If Spotify has expired that grant,
 the status changes only after the first library or playback call tries to refresh it.
 The panel must render every Spotify name as plain text, including playlist names from
@@ -1326,8 +1356,7 @@ frame (no ribbon) in the wide zones `470px 1fr 540px`. The parts are in `wall/sr
   marked unavailable with the reason. The time bar can be dragged, or moved five seconds with the arrow
   keys (a held key sends at most one seek per 300 ms and the final position on release), and seeks through
   `wall2_spotify_seek`; the local clock reads the state again when the song's length is reached.
-  There is no Save to Liked: the sign-in's scopes do not include `user-library-modify` and this
-  change adds none. Every list shows loading words (never blank) on its first read, and keeps what is on screen while it reads again, then its empty or error words. A playlist the owner does not make or co-edit cannot have its songs listed (Spotify's rule), so
+  The heart at the right end of the row is Save to Liked (see "Saving songs" under Spotify above). Every list shows loading words (never blank) on its first read, and keeps what is on screen while it reads again, then its empty or error words. A playlist the owner does not make or co-edit cannot have its songs listed (Spotify's rule), so
   opening one says "Spotify shows the songs only for playlists you made. To see these, copy it into a playlist
   of your own in Spotify. Play and Shuffle still work." with no Retry (it could never help); in the tall view a
   dim second line adds "While it plays, Up next shows what is coming." where "Up next" is a button that opens
