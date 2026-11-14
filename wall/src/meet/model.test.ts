@@ -116,6 +116,9 @@ describe('reasonText', () => {
     expect(signInMessage('token-400-65001')).toBe('Sign-in was not accepted (token-400-65001)');
     expect(signInMessage('store-write')).toBe('Could not save the sign-in on this PC (store-write)');
     expect(signInMessage('token-network-dns')).toContain("name lookup failed. The browser part worked. Network log: wall2-meet.log");
+    expect(signInMessage('token-network-connect')).toContain('no answer. The browser part worked. Network log: wall2-meet.log');
+    expect(signInMessage('token-network-tls')).toContain('the secure connection failed. The browser part worked. Network log: wall2-meet.log');
+    expect(signInMessage('token-network-timeout')).toContain('timed out. The browser part worked. Network log: wall2-meet.log');
     expect(signInMessage('failed')).toBe('Sign-in did not work');
   });
 });
