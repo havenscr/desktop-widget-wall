@@ -90,8 +90,8 @@ export function registerMeetMocks(): void {
     };
   });
   mocks.set('wall2_meet_sign_in', async () => {
-    await new Promise((r) => setTimeout(r, mode() === 'signin-fault' ? 100 : 1500));
     if (mode() === 'signin-fault') throw new Error('token-network-dns');
+    await new Promise((r) => setTimeout(r, 1500));
     second = true;
   });
   mocks.set('wall2_meet_cancel_sign_in', () => undefined);
