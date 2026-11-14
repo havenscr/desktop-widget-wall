@@ -89,6 +89,24 @@ export function validateFitReferences(areas, variants) {
   }
 }
 
+export function validateRegistrations(areas, builtIns = {}) {
+  const seen = new Map();
+  const unique = (kind, key, origin) => {
+    const id = `${kind}:${key}`;
+    const previous = seen.get(id);
+    if (previous) throw new Error(`duplicate ${kind} "${key.replace('\0', ' / ')}" in ${previous} and ${origin}`);
+    seen.set(id, origin);
+  };
+  for (const [kind, keys] of Object.entries(builtIns)) for (const key of keys) unique(kind, key, 'built-in');
+  for (const area of areas) {
+    for (const state of area.gallery?.states ?? []) unique('state name', `${state.screen}\0${state.name}`, area.file);
+    for (const variant of area.fit?.variants ?? []) unique('variant name', variant.name, area.file);
+    for (const key of Object.keys(area.fit?.measurements ?? {})) unique('measurement key', key, area.file);
+    for (const key of Object.keys(area.fit?.rules ?? {})) unique('rule key', key, area.file);
+    for (const key of Object.keys(area.fit?.breaks ?? {})) unique('break name', key, area.file);
+  }
+}
+
 function object(value, file, path) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`${file}: ${path} must be an object`);
 }

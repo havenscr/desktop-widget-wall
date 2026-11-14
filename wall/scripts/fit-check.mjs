@@ -46,7 +46,7 @@ import { inflateSync } from 'node:zlib';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { ChromeRunError, onCleanup, runChrome } from './lib/chrome-run.mjs';
-import { loadAreasOrExit, validateFitReferences } from './areas/load.mjs';
+import { loadAreasOrExit, validateFitReferences, validateRegistrations } from './areas/load.mjs';
 
 // The whole sky's picture box in wall pixels (LOOK_BOXES.sky in looks.ts, which fit-check compares with the drawn one).
 const LOOK_BOX_SKY = { x: 1106, y: 16, w: 889, h: 500 };
@@ -323,6 +323,16 @@ const OVERFLOWS = {
   'account-copy': '.tools-note { width: 80px !important; overflow: hidden !important; white-space: nowrap !important; }',
 };
 const AREA_BREAKS = Object.assign({}, ...areas.map((area) => area.fit?.breaks ?? {}));
+try {
+  validateRegistrations(areas, {
+    'measurement key': ['res', 'page', 'overlaps', 'cut', 'gaps', 'wattCard', 'header', 'deck', 'deckRoom', 'nowH', 'edges', 'hide', 'hits', 'grid', 'lw', 'sig', 'toolsOut', 'copyOut', 'meetOut', 'strip', 'opened', 'watchPolish', 'skyLayers', 'thCheck', 'tileText', 'listen', 'lines', 'watchBehaviour', 'wattDriveIn'],
+    'rule key': ['wattDriveIn', 'watchBehaviour', 'skyLayers', 'watchPolish', 'thCheck', 'tileText', 'listen', 'lines', 'toolsOut', 'copyOut', 'meetOut', 'strip', 'deck', 'header', 'res', 'page'],
+    'break name': Object.keys(EXPECT),
+  });
+} catch (error) {
+  console.error(`areas: ${error.message}`);
+  process.exit(2);
+}
 for (const [name, entry] of Object.entries(AREA_BREAKS)) {
   EXPECT[name] = entry.expect;
   OVERFLOWS[name] = entry.css;
@@ -656,6 +666,7 @@ const areaVariants = areas.flatMap((area) => area.fit?.variants ?? []);
 if (flag('area')) VARIANTS.splice(0, VARIANTS.length, ...areaVariants);
 else VARIANTS.push(...areaVariants);
 try {
+  validateRegistrations(areas, { 'variant name': VARIANTS.filter((variant) => !areaVariants.includes(variant)).map((variant) => variant.name) });
   validateFitReferences(areas, VARIANTS);
 } catch (error) {
   console.error(`areas: ${error.message}`);

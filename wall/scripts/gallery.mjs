@@ -19,7 +19,7 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { killTree, reapGroup, sweepGroup, trackGroup } from './lib/chrome-run.mjs';
-import { loadAreasOrExit } from './areas/load.mjs';
+import { loadAreasOrExit, validateRegistrations } from './areas/load.mjs';
 
 const args = process.argv.slice(2);
 const flag = (name) => args.find((a) => a === `--${name}` || a.startsWith(`--${name}=`));
@@ -869,6 +869,12 @@ const NO_TEXT = [
 
 const areaName = flag('area')?.split('=')[1];
 const areas = await loadAreasOrExit(areaName);
+try {
+  validateRegistrations(areas, { 'state name': STATES.map((stateEntry) => `${stateEntry.screen}\0${stateEntry.name}`) });
+} catch (error) {
+  console.error(`areas: ${error.message}`);
+  process.exit(2);
+}
 const areaStates = [];
 for (const area of areas) {
   for (const entry of area.gallery?.states ?? []) areaStates.push({ ...entry, click: entry.actions });
