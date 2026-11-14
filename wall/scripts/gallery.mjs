@@ -27,7 +27,7 @@ const W = 2560;
 const H = 720;
 const SETTLE_MS = 2500;
 const STATE_TIMEOUT_MS = 30_000;
-/** How long a state may take past SETTLE_MS for its expected text to appear (a busy machine). */
+/** How long a state may take past SETTLE_MS for its expected text to appear (a busy machine). Never applies to text that must not be shown. */
 const EXPECT_GRACE_MS = 8000;
 const PARALLEL = 3;
 const TZ = 'America/Los_Angeles';
@@ -849,18 +849,23 @@ async function render(cdp, base, s, file, ctl) {
       return JSON.parse(check.result.value);
     };
     const wants = [s.expect ?? []].flat().map((want) => (want.startsWith('!') ? { needle: want.slice(1), absent: true } : { needle: want, absent: false }));
-    const missed = (text) => wants.filter(({ needle, absent }) => text.includes(needle) === absent);
+    const missed = (text, absentToo = true) => wants.filter(({ needle, absent }) => text.includes(needle) === absent && (absentToo || !absent));
     // On a loaded machine the first data can land after the settle time: read again for up to
-    // EXPECT_GRACE_MS before calling expected text missing (a wrong text still fails, only later).
+    // EXPECT_GRACE_MS before calling text that must appear missing (a wrong text still fails, only
+    // later). The grace is only for text that must appear. Text that must NOT be shown is judged
+    // on the first read, as before the grace: waiting would let an unwanted text pass by
+    // disappearing within the wait, and a state that shows it for a moment is wrong.
     let info = await read();
-    for (const until = Date.now() + EXPECT_GRACE_MS; missed(info.text).length && Date.now() < until && !ctl.cancelled; ) {
+    const firstText = info.text;
+    for (const until = Date.now() + EXPECT_GRACE_MS; missed(info.text, false).length && Date.now() < until && !ctl.cancelled; ) {
       await new Promise((r) => setTimeout(r, 500));
       info = await read();
     }
     if (!info.root || info.emptyRoot) errors.push('the app did not render (no .shell; a render error unmounts the root)');
     if (process.env.WALL_GALLERY_TEXT_DIR) writeFileSync(join(process.env.WALL_GALLERY_TEXT_DIR, basename(file).replace('.png', '.txt')), info.text);
     if (info.boundary) errors.push('an error fallback is showing');
-    for (const { needle, absent } of missed(info.text)) errors.push(`${absent ? 'unexpected' : 'expected'} text ${absent ? 'shown' : 'not shown'}: "${needle}"`);
+    const failed = [...missed(info.text, false), ...missed(firstText).filter((w) => w.absent)];
+    for (const { needle, absent } of failed) errors.push(`${absent ? 'unexpected' : 'expected'} text ${absent ? 'shown' : 'not shown'}: "${needle}"`);
     if (info.w !== W || info.h !== H) errors.push(`viewport ${info.w} x ${info.h}`);
     if (ctl.cancelled) throw new Error('cancelled');
     const shot = await to('Page.captureScreenshot', { format: 'png', clip: { x: 0, y: 0, width: W, height: H, scale: 1 } });

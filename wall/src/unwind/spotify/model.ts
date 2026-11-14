@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { SpotifyItem, SpotifyTrack } from '../../music/spotify';
+import type { SpotifyItem } from '../../music/spotify';
 
 /** Which player Unwind's card follows: Spotify (browse and play) or YouTube Music (through Windows). */
 export type ListenSource = 'spotify' | 'youtube';
@@ -103,37 +103,20 @@ export function trackLength(ms: number): string {
 export const SEARCH_WAIT_MS = 400;
 export const SEARCH_MIN = 2;
 
-/** The list the wall last started a song from, and the ids of the songs read from it. */
-interface ContextState {
-  context: { kind: 'playlist' | 'album'; id: string } | null;
-  ids: ReadonlySet<string>;
-  remember: (context: { kind: 'playlist' | 'album'; id: string }, tracks: readonly SpotifyTrack[]) => void;
-}
-
-export const useLastContext = create<ContextState>((set) => ({
-  context: null,
-  ids: new Set(),
-  remember: (context, tracks) => set({ context, ids: new Set(tracks.map((t) => t.id).filter((id): id is string => !!id)) }),
-}));
-
-export type UpNextPlan =
-  | { kind: 'context'; context: { kind: 'playlist' | 'album'; id: string }; offsetId: string }
-  | { kind: 'skip'; skips: number }
-  | { kind: 'none'; line: string };
+export type UpNextPlan = { kind: 'skip'; skips: number } | { kind: 'none'; line: string };
 
 /** The quiet line when Up next cannot reach a track without replacing the queue. */
 export const UP_NEXT_NONE_LINE = 'Open its list to play it';
 
 /**
- * How Up next reaches a queued track without ever replacing the queue. In its list (context and
- * offset) only when the wall started that list, read this track from it, and the song Spotify is
- * playing now is in it too (so that list is what plays). Otherwise by skipping forward through
- * Windows, but only when Spotify is the player Windows reports as current (a skip could reach
- * another player). Otherwise nothing is sent and one quiet line says why.
+ * How Up next reaches a queued track without ever replacing the queue: by skipping forward
+ * through Windows (the n-th row is n skips, never more than the queue holds), and only when
+ * Spotify is the player Windows reports as current (a skip could reach another player).
+ * Otherwise nothing is sent and one quiet line says why. It never starts a list: the wall
+ * cannot know which list is playing, so a play with a list could replace the queue with the wrong one.
  */
-export function upNextPlan(id: string | null, index: number, last: Pick<ContextState, 'context' | 'ids'>, playingId: string | null, spotifyIsCurrent: boolean): UpNextPlan {
-  if (id && playingId && last.context && last.ids.has(id) && last.ids.has(playingId)) return { kind: 'context', context: last.context, offsetId: id };
-  if (spotifyIsCurrent) return { kind: 'skip', skips: index + 1 };
+export function upNextPlan(index: number, queued: number, spotifyIsCurrent: boolean): UpNextPlan {
+  if (spotifyIsCurrent && queued > 0) return { kind: 'skip', skips: Math.min(index + 1, queued) };
   return { kind: 'none', line: UP_NEXT_NONE_LINE };
 }
 

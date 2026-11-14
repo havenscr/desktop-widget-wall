@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type UIEvent } from 'react';
+import { useCallback, useEffect, useId, useRef, useState, type FocusEvent, type KeyboardEvent as ReactKeyboardEvent, type UIEvent } from 'react';
 import {
   IconArrowLeft,
   IconArrowsShuffle,
@@ -32,7 +32,6 @@ import {
   spotifyProblem,
   tileLine,
   trackLength,
-  useLastContext,
   useListenSource,
   useSpotifyNow,
   type ListenSource,
@@ -185,7 +184,11 @@ function Browser() {
   const [tab, setTab] = useState<BrowseTab>('playlists');
   const [lists, setLists] = useState<Record<BrowseTab, ListState>>(() => ({ search: EMPTY_LIST, playlists: EMPTY_LIST, albums: EMPTY_LIST, liked: EMPTY_LIST, recent: EMPTY_LIST }));
   const [query, setQuery] = useState('');
+  // What the search box last asked, for the empty-state line (state) and to skip asking the same
+  // words twice (ref: `runSearch` must not change identity when a search starts or fails, or the
+  // debounce effect below would re-arm and search again by itself).
   const [asked, setAsked] = useState('');
+  const askedRef = useRef('');
   const [open, setOpen] = useState<SpotifyItem | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const nowTitle = useNowPlayingStore((s) => s.info?.title ?? '');
@@ -240,12 +243,14 @@ function Browser() {
   }, [tab, lists, load]);
 
   // Search: on Enter, or after 400 ms without typing, with at least two characters. `again` asks
-  // the same words once more (Retry after a failure).
+  // the same words once more (Retry after a failure). Nothing a search sets is read by the effect
+  // below, so a failure never starts another search: only typing, Enter and Retry do.
   const runSearch = useCallback(
     (q: string, again = false) => {
       const text = q.trim();
-      if (text.length < SEARCH_MIN || (text === asked && !again)) return;
+      if (text.length < SEARCH_MIN || (text === askedRef.current && !again)) return;
       const mine = ++searchSeq.current;
+      askedRef.current = text;
       setAsked(text);
       setTab('search');
       setOpen(null);
@@ -260,6 +265,7 @@ function Browser() {
           if (!mounted.current || mine !== searchSeq.current) return;
           const problem = spotifyProblem(e);
           // The same words may be asked again (Retry, or typing them once more).
+          askedRef.current = '';
           setAsked('');
           // A failure keeps the last good results under a note; with none, the line and Retry show.
           if (listsRef.current.search.items.length > 0) {
@@ -269,7 +275,7 @@ function Browser() {
         },
       );
     },
-    [asked, patch],
+    [patch],
   );
   useEffect(() => {
     if (query.trim().length < SEARCH_MIN) return;
@@ -372,18 +378,61 @@ function Browser() {
 /** After the pointer leaves a tile, its details card stays this long so the pointer can reach it. */
 export const DETAILS_LINGER_MS = 300;
 
+/** Set while the program puts focus back on a tile after Escape: that focus must not reopen the card. */
+let keepClosed = false;
+
 /**
  * The details card for a tile (R2): the name, the kind with its owner or artist said once, the
  * song count when the bridge gives one (nothing is shown that it does not give), and Play,
  * Shuffle and Songs. It is the shared tip in its pinned form, so its buttons take the pointer.
+ * From the keyboard it is the next stop after its tile (the card is drawn elsewhere in the page,
+ * so the tile hands the focus over): Tab walks Play, Shuffle, Songs; Shift+Tab from Play and
+ * Escape go back to the tile; Tab past Songs closes it and moves on to the next tile.
  */
-function TileDetails({ item, onOpen, onPlay, onShuffle }: { item: SpotifyItem; onOpen: () => void; onPlay: () => void; onShuffle: () => void }) {
+function TileDetails({ tileId, item, onOpen, onPlay, onShuffle }: { tileId: string; item: SpotifyItem; onOpen: () => void; onPlay: () => void; onShuffle: () => void }) {
   const act = (f: () => void) => () => {
     hideTip(true);
     f();
   };
+  const tile = () => document.querySelector<HTMLElement>(`.sp-tile[data-tile="${tileId}"]`);
+  const key = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (e.key === 'Escape') {
+      e.stopPropagation();
+      hideTip(true);
+      // Focus returns to the tile without opening its card again.
+      keepClosed = true;
+      try {
+        tile()?.focus();
+      } finally {
+        keepClosed = false;
+      }
+      return;
+    }
+    if (e.key !== 'Tab' || e.ctrlKey || e.altKey || e.metaKey) return;
+    const buttons = [...e.currentTarget.querySelectorAll<HTMLElement>('button')];
+    const at = buttons.indexOf(document.activeElement as HTMLElement);
+    if (e.shiftKey && at === 0) {
+      e.preventDefault();
+      tile()?.focus();
+    } else if (!e.shiftKey && at === buttons.length - 1) {
+      const tiles = [...document.querySelectorAll<HTMLElement>('.sp-tile')];
+      const next = tiles[tiles.indexOf(tile() as HTMLElement) + 1];
+      hideTip(true);
+      // The next tile takes the focus (and opens its own card); with none, the focus moves on by itself.
+      if (next) {
+        e.preventDefault();
+        next.focus();
+      }
+    }
+  };
+  // Focus that leaves the card for anywhere but its tile or another tile closes it.
+  const blur = (e: FocusEvent<HTMLDivElement>) => {
+    const to = e.relatedTarget as Element | null;
+    if (to && (e.currentTarget.contains(to) || to.closest('.sp-tile'))) return;
+    hideTip(true);
+  };
   return (
-    <div className="sp-details">
+    <div className="sp-details" data-for={tileId} onKeyDown={key} onBlur={blur}>
       <div className="sp-dname">{item.name}</div>
       <div className="sp-dline">{kindLine(item)}</div>
       {item.count !== null ? (
@@ -425,18 +474,24 @@ function PlayingBars() {
 /**
  * A playlist or album as a large cover tile (R1): the cover fills the tile, the name and the song
  * count under it (both shortened with an ellipsis). A click (or Enter) opens its songs; resting on
- * it rings it and opens its details card; leaving it closes the card unless the pointer went onto it.
+ * it, or taking keyboard focus on it, rings it and opens its details card (one card at a time, so
+ * a click after a keyboard focus never leaves two); leaving it closes the card unless the pointer
+ * went onto it. Tab goes into the card (see `TileDetails`); Escape closes it.
  */
 function Tile({ item, kindWord, onOpen, onPlay, onShuffle }: { item: SpotifyItem; kindWord: boolean; onOpen: () => void; onPlay: () => void; onShuffle: () => void }) {
+  const tileId = useId();
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // A press on the tile focuses it too; that focus is the click's, and the click closes the card.
+  const pressed = useRef(false);
   const clear = () => {
     if (timer.current) clearTimeout(timer.current);
     timer.current = null;
   };
   useEffect(() => clear, []);
+  const card = () => <TileDetails tileId={tileId} item={item} onOpen={onOpen} onPlay={onPlay} onShuffle={onShuffle} />;
   const show = (el: HTMLElement) => {
     clear();
-    timer.current = setTimeout(() => pinTip(el, () => <TileDetails item={item} onOpen={onOpen} onPlay={onPlay} onShuffle={onShuffle} />, { side: true }), TIP_DELAY_MS);
+    timer.current = setTimeout(() => pinTip(el, card, { side: true }), TIP_DELAY_MS);
   };
   const leave = () => {
     clear();
@@ -444,15 +499,55 @@ function Tile({ item, kindWord, onOpen, onPlay, onShuffle }: { item: SpotifyItem
       if (!document.querySelector('.hover-tip:hover, .sp-tile:hover')) hideTip(true);
     }, DETAILS_LINGER_MS);
   };
+  const cardOpen = () => !!document.querySelector(`.hover-tip .sp-details[data-for="${tileId}"]`);
   return (
     <div className="sp-tilebox" role="listitem">
       <button
         type="button"
         className="sp-tile"
+        data-tile={tileId}
         aria-label={`${item.name}, ${kindLine(item)}${item.count !== null ? `, ${songs(item.count)}` : ''}. Open its songs`}
         onMouseEnter={(e) => show(e.currentTarget)}
-        onMouseLeave={leave}
+        onMouseLeave={() => {
+          pressed.current = false;
+          leave();
+        }}
+        onMouseDown={() => {
+          pressed.current = true;
+        }}
+        onFocus={(e) => {
+          if (pressed.current || keepClosed) {
+            pressed.current = false;
+            return;
+          }
+          clear();
+          // Bring it into view first, so the card is placed where the tile will stay.
+          e.currentTarget.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+          pinTip(e.currentTarget, card, { side: true });
+        }}
+        onBlur={(e) => {
+          pressed.current = false;
+          const to = e.relatedTarget as Element | null;
+          // Focus going into the card, or on to another tile, keeps or replaces the card.
+          if (to && (to.closest('.hover-tip') || to.closest('.sp-tile'))) return;
+          leave();
+        }}
+        onKeyDown={(e) => {
+          if (!cardOpen() || e.ctrlKey || e.altKey || e.metaKey) return;
+          if (e.key === 'Escape') {
+            e.stopPropagation();
+            clear();
+            hideTip(true);
+          } else if (e.key === 'Tab' && !e.shiftKey) {
+            const first = document.querySelector<HTMLElement>(`.hover-tip .sp-details[data-for="${tileId}"] button`);
+            if (first) {
+              e.preventDefault();
+              first.focus();
+            }
+          }
+        }}
         onClick={() => {
+          pressed.current = false;
           clear();
           hideTip(true);
           onOpen();
@@ -559,7 +654,6 @@ function SongsView({ item, onBack, onNote }: { item: SpotifyItem; onBack: () => 
   const fail = (e: unknown) => mounted.current && onNote(playProblemLine(spotifyProblem(e)));
   const playFrom = (t: SpotifyTrack) => {
     if (!t.id || !t.playable) return;
-    useLastContext.getState().remember({ kind, id: item.id }, st.items);
     spotify.play('track', t.id, { context: { kind, id: item.id }, offsetId: t.id }).then(() => void refreshNowPlaying(), fail);
   };
   const owner = kindLine(item).replace(/^(Playlist|Album)( by )?/, '');

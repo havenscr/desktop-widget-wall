@@ -6,7 +6,7 @@ import { PLAY_TINT } from '../../horizon/echo';
 import type { SpotifyItem, SpotifyTrack } from '../../music/spotify';
 import { resetNowPlaying } from '../../music/store';
 import { resetTools, useToolsStore } from '../../tools/store';
-import { isNowPlaying, kindLine, LISTEN_SOURCE_KEY, resetListenSource, spotifyProblem, tileLine, trackLength, UP_NEXT_NONE_LINE, upNextPlan, useLastContext, useListenSource, useSpotifyNow } from './model';
+import { isNowPlaying, kindLine, LISTEN_SOURCE_KEY, resetListenSource, spotifyProblem, tileLine, SEARCH_WAIT_MS, trackLength, UP_NEXT_NONE_LINE, upNextPlan, useListenSource, useSpotifyNow } from './model';
 import { useNowPlayingStore } from '../../music/store';
 import { hideTip } from '../../ui/HoverTip';
 import { HoverTipLayer } from '../../ui/HoverTip';
@@ -30,7 +30,6 @@ beforeEach(() => {
   resetListenSource();
   resetSpotifyStatus();
   resetTools();
-  useLastContext.setState({ context: null, ids: new Set() });
   useSpotifyNow.setState({ id: null });
 });
 afterEach(() => {
@@ -174,15 +173,15 @@ it('marks the song playing by track id, else by title and artist, never by the t
   expect(isNowPlaying({ id: null, name: 'Same', artists: 'Band A' }, null, 'Same', '')).toBe(false);
 });
 
-it('plans an Up next click without ever replacing the queue', () => {
-  const last = { context: { kind: 'playlist' as const, id: id(9) }, ids: new Set([id(1), id(2)]) };
-  // In its list only when the song playing now is in that list too.
-  expect(upNextPlan(id(2), 0, last, id(1), true)).toEqual({ kind: 'context', context: last.context, offsetId: id(2) });
-  expect(upNextPlan(id(2), 1, last, id(7), true)).toEqual({ kind: 'skip', skips: 2 });
-  expect(upNextPlan(id(2), 1, last, null, true)).toEqual({ kind: 'skip', skips: 2 });
-  // Not Spotify in front: nothing is sent.
-  expect(upNextPlan(id(2), 1, last, id(7), false)).toEqual({ kind: 'none', line: UP_NEXT_NONE_LINE });
-  expect(upNextPlan(id(3), 0, { context: null, ids: new Set() }, null, false).kind).toBe('none');
+it('plans an Up next click as skips only, bounded by the queue, and never as a play', () => {
+  // The n-th row is n skips, while Spotify is the player in front.
+  expect(upNextPlan(0, 3, true)).toEqual({ kind: 'skip', skips: 1 });
+  expect(upNextPlan(2, 3, true)).toEqual({ kind: 'skip', skips: 3 });
+  // Never more skips than the queue holds.
+  expect(upNextPlan(5, 3, true)).toEqual({ kind: 'skip', skips: 3 });
+  // Not Spotify in front, or nothing queued: nothing is sent.
+  expect(upNextPlan(1, 3, false)).toEqual({ kind: 'none', line: UP_NEXT_NONE_LINE });
+  expect(upNextPlan(0, 0, true).kind).toBe('none');
 });
 
 it('shows playlists as a grid of cover tiles; resting on one opens its details with Play, Shuffle and Songs', async () => {
@@ -229,6 +228,66 @@ it('shows playlists as a grid of cover tiles; resting on one opens its details w
   expect(document.querySelector('.sp-songs')).not.toBeNull();
 });
 
+it('a tile takes keyboard focus into its details card: Tab reaches Play, Escape closes it and returns, Tab past Songs moves to the next tile', async () => {
+  signedIn();
+  mocks.set('wall2_spotify_playlists', () => [item(1), item(2)]);
+  mocks.set('wall2_spotify_tracks', () => ({ items: [track(1)], total: 1, more: false }));
+  render(
+    <>
+      <SpotifyCard />
+      <HoverTipLayer />
+    </>,
+  );
+  await flush();
+  const tiles = [...document.querySelectorAll<HTMLButtonElement>('.sp-grid .sp-tile')];
+  const cards = () => document.querySelectorAll('.hover-tip .sp-details');
+  expect(cards()).toHaveLength(0);
+  // Focus alone shows the card, with no hover and no wait.
+  await act(async () => tiles[0].focus());
+  expect(cards()).toHaveLength(1);
+  expect(document.querySelector('.hover-tip .sp-details .sp-dname')?.textContent).toBe('List 1');
+  // Tab goes from the tile to the first button in the card.
+  fireEvent.keyDown(tiles[0], { key: 'Tab' });
+  expect(document.activeElement?.textContent).toBe('Play');
+  // Escape closes the card and puts the focus back on the tile, which stays closed.
+  fireEvent.keyDown(document.activeElement as Element, { key: 'Escape' });
+  await flush();
+  expect(cards()).toHaveLength(0);
+  expect(document.activeElement).toBe(tiles[0]);
+  // Escape on the tile itself closes an open card too.
+  await act(async () => tiles[0].blur());
+  await act(async () => tiles[0].focus());
+  expect(cards()).toHaveLength(1);
+  fireEvent.keyDown(tiles[0], { key: 'Escape' });
+  expect(cards()).toHaveLength(0);
+  // Tab past the last button (Songs) closes the card and moves on to the next tile, whose card opens.
+  await act(async () => tiles[0].blur());
+  await act(async () => tiles[0].focus());
+  fireEvent.keyDown(tiles[0], { key: 'Tab' });
+  const buttons = [...document.querySelectorAll<HTMLButtonElement>('.hover-tip .sp-dbtns button')];
+  expect(buttons.map((b) => b.textContent)).toEqual(['Play', 'Shuffle', 'Songs']);
+  await act(async () => buttons[2].focus());
+  fireEvent.keyDown(buttons[2], { key: 'Tab' });
+  expect(document.activeElement).toBe(tiles[1]);
+  expect(cards()).toHaveLength(1);
+  expect(document.querySelector('.hover-tip .sp-details .sp-dname')?.textContent).toBe('List 2');
+  // Shift+Tab from Play goes back to the tile.
+  fireEvent.keyDown(tiles[1], { key: 'Tab' });
+  fireEvent.keyDown(document.activeElement as Element, { key: 'Tab', shiftKey: true });
+  expect(document.activeElement).toBe(tiles[1]);
+  // A mouse click on a tile after keyboard focus leaves no card open, and opens its songs.
+  await act(async () => tiles[0].focus());
+  expect(cards()).toHaveLength(1);
+  await act(async () => {
+    fireEvent.mouseDown(tiles[0]);
+    tiles[0].focus();
+    tiles[0].click();
+  });
+  await flush();
+  expect(cards()).toHaveLength(0);
+  expect(document.querySelector('.sp-songs')).not.toBeNull();
+});
+
 it('opens a tile into its songs, plays a song in its list, marks the playing song by id, and goes back on Escape', async () => {
   signedIn();
   mocks.set('wall2_spotify_playlists', () => [item(1), item(2)]);
@@ -253,7 +312,6 @@ it('opens a tile into its songs, plays a song in its list, marks the playing son
   expect(document.querySelector('.sp-track.off')?.textContent).toContain('Song 3');
   await act(async () => screen.getByText('Song 2').closest('button')!.click());
   expect(plays.at(-1)).toEqual({ request: { kind: 'track', id: id(502), context: { kind: 'playlist', id: id(1) }, offsetId: id(502) } });
-  expect(useLastContext.getState().ids.has(id(501))).toBe(true);
   await act(async () => screen.getByText('Song 3').closest('button')!.click());
   expect(plays).toHaveLength(1);
   fireEvent.keyDown(document, { key: 'Escape' });
@@ -404,6 +462,52 @@ it('a failed first search shows the line with Retry, and typing the same words a
   expect(asked).toEqual(['ab', 'ab']);
 });
 
+describe('a failed search never searches again by itself', () => {
+  // The service answers a failure after 100 ms (a busy or down answer takes time), so a loop that
+  // re-armed itself on the failure would show up as repeated searches within the 10 seconds.
+  const failing = () => {
+    mocks.set('wall2_spotify_playlists', () => []);
+    const asked: string[] = [];
+    let fail = true;
+    mocks.set('wall2_spotify_search', (a) => {
+      asked.push(String(a?.query));
+      return new Promise((resolve, reject) => {
+        setTimeout(() => (fail ? reject(new Error('busy')) : resolve({ tracks: [], albums: [], playlists: [] })), 100);
+      });
+    });
+    return { asked, heal: () => void (fail = false) };
+  };
+
+  // React renders only when an act scope ends, so the quiet time is stepped: a loop that re-arms
+  // itself on a failure shows up as a search per step, not as one big batch.
+  const quiet = async (ms: number) => {
+    for (let t = 0; t < ms; t += 100) await flush(100);
+  };
+
+  it('one typed query, a failure, then ten quiet seconds: exactly one search; Retry, Enter and new words each make one more', async () => {
+    signedIn();
+    const { asked } = failing();
+    render(<SpotifyCard />);
+    await flush();
+    const box = screen.getByRole('searchbox');
+    fireEvent.change(box, { target: { value: 'ab' } });
+    await flush(SEARCH_WAIT_MS + 50);
+    await quiet(10_000);
+    expect(asked).toEqual(['ab']);
+    expect(screen.getByText('Spotify is busy, try in a minute.')).toBeTruthy();
+    await act(async () => screen.getByRole('button', { name: 'Retry' }).click());
+    await quiet(10_000);
+    expect(asked).toEqual(['ab', 'ab']);
+    fireEvent.keyDown(box, { key: 'Enter' });
+    await quiet(10_000);
+    expect(asked).toEqual(['ab', 'ab', 'ab']);
+    fireEvent.change(box, { target: { value: 'abc' } });
+    await flush(SEARCH_WAIT_MS + 50);
+    await quiet(10_000);
+    expect(asked).toEqual(['ab', 'ab', 'ab', 'abc']);
+  });
+});
+
 describe('Up next clicks', () => {
   const queue = () => mocks.set('wall2_spotify_queue', () => ({ current: track(1), next: [track(2), track(3), track(4), track(5)] }));
   const setup = (playingId: string | null) => {
@@ -421,27 +525,47 @@ describe('Up next clicks', () => {
     await flush();
   };
 
-  it('plays in its list when that list is what plays now', async () => {
+  // Row 3 (index 2) is three skips and never a play, whatever the wall started before: nothing,
+  // a list holding both songs, or a list holding neither.
+  const threeSkipsAfter = async (listTracks: SpotifyTrack[] | null) => {
     const sent = setup(id(501));
-    useLastContext.setState({ context: { kind: 'playlist', id: id(9) }, ids: new Set([id(501), id(503)]) });
     playingOn('Spotify');
-    render(<UpNext />);
+    mocks.set('wall2_spotify_playlists', () => [item(9)]);
+    mocks.set('wall2_spotify_tracks', () => ({ items: listTracks ?? [], total: listTracks?.length ?? 0, more: false }));
+    render(
+      <>
+        <SpotifyCard />
+        <UpNext />
+      </>,
+    );
     await flush();
-    await clickRow(1);
-    expect(sent).toEqual([['play', { request: { kind: 'track', id: id(503), context: { kind: 'playlist', id: id(9) }, offsetId: id(503) } }]]);
-  });
-
-  it('skips forward through Windows when Spotify is the current player and its list is not what plays', async () => {
-    const sent = setup(id(777));
-    useLastContext.setState({ context: { kind: 'playlist', id: id(9) }, ids: new Set([id(503)]) });
-    playingOn('Spotify');
-    render(<UpNext />);
-    await flush();
-    await clickRow(1);
+    if (listTracks) {
+      // Start a song from the songs view, then go back: the old code remembered this list.
+      await act(async () => (document.querySelector('.sp-tile') as HTMLButtonElement).click());
+      await flush();
+      await act(async () => (document.querySelectorAll('.sp-track')[1] as HTMLButtonElement).click());
+      await flush();
+      expect(sent.map((x) => x[0])).toEqual(['play']);
+      sent.length = 0;
+    }
+    await clickRow(2);
     expect(sent).toEqual([
       ['media_next', null],
       ['media_next', null],
+      ['media_next', null],
     ]);
+  };
+
+  it('sends three skips and no play for row 3 when nothing is remembered', async () => {
+    await threeSkipsAfter(null);
+  });
+
+  it('sends three skips and no play for row 3 after a list that holds both the playing and the clicked song was played', async () => {
+    await threeSkipsAfter([track(1), track(2), track(3), track(4), track(5)]);
+  });
+
+  it('sends three skips and no play for row 3 after a list that holds neither song was played', async () => {
+    await threeSkipsAfter([track(7), track(8)]);
   });
 
   it('sends nothing and says why when another player is in front', async () => {

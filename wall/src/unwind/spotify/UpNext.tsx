@@ -8,7 +8,7 @@ import { useToolsStore } from '../../tools/store';
 import { tip } from '../../ui/HoverTip';
 import { useVisible } from '../../ui/useVisible';
 import { Cover } from './Cover';
-import { playProblemLine, spotifyProblem, trackLength, upNextPlan, useLastContext, useListenSource, useSpotifyNow } from './model';
+import { playProblemLine, spotifyProblem, trackLength, upNextPlan, useListenSource, useSpotifyNow } from './model';
 import { useSpotifyStatus } from './status';
 
 /** How often the queue is read while Up next shows (and again when the track changes). */
@@ -17,9 +17,10 @@ export const UP_NEXT_ROWS = 3;
 
 /**
  * Up next (8B), in the left wing under the toggles: the next three tracks with their covers,
- * title and artist. A click plays that track without ever replacing the queue: in its list when
- * that list is what plays, else by skipping forward when Spotify is the current player, else it
- * says "Open its list to play it" (see `upNextPlan`). Hover shows the album and the length. Hidden with YouTube Music
+ * title and artist. A click only skips forward (the n-th row is n skips through Windows) while
+ * Spotify is the player in front; otherwise it sends nothing and says "Open its list to play it"
+ * (see `upNextPlan`). It never starts a list, so it never replaces the queue. Hover shows the
+ * album and the length. Hidden with YouTube Music
  * chosen, with Spotify not set up, and when nothing is queued; signed out it says where to sign in.
  */
 export function UpNext() {
@@ -71,23 +72,23 @@ export function UpNext() {
   }
   if (next.length === 0) return null;
 
-  const play = async (t: SpotifyTrack, index: number) => {
-    // What plays now decides the path (see `upNextPlan`); a failed read means "unknown", never a guess.
-    const playback = await spotify.playback().catch(() => null);
+  const play = (index: number) => {
+    // Skips go to the player in front: only Spotify, and never more than the queue holds.
     const info = useNowPlayingStore.getState().info;
     const spotifyIsCurrent = !isQuiet(info) && playerName(sourceKey(info)) === 'Spotify';
-    const plan = upNextPlan(t.id, index, useLastContext.getState(), playback?.track?.id ?? null, spotifyIsCurrent);
-    try {
-      if (plan.kind === 'context') await spotify.play('track', plan.offsetId, { context: plan.context, offsetId: plan.offsetId });
-      else if (plan.kind === 'skip') for (let i = 0; i < plan.skips; i++) await invoke('media_next');
-      else {
-        if (mounted.current) setNote(plan.line);
-        return;
-      }
-      void refreshNowPlaying();
-    } catch (e) {
-      if (mounted.current) setNote(playProblemLine(spotifyProblem(e)));
+    const plan = upNextPlan(index, next.length, spotifyIsCurrent);
+    if (plan.kind === 'none') {
+      setNote(plan.line);
+      return;
     }
+    void (async () => {
+      try {
+        for (let i = 0; i < plan.skips; i++) await invoke('media_next');
+        void refreshNowPlaying();
+      } catch (e) {
+        if (mounted.current) setNote(playProblemLine(spotifyProblem(e)));
+      }
+    })();
   };
 
   return (
@@ -109,7 +110,7 @@ export function UpNext() {
                   </span>
                 </div>
               ))}
-              onClick={() => void play(t, i)}
+              onClick={() => play(i)}
             >
               <Cover src={t.thumbUrl} size={48} />
               <span className="u-next-t">{t.name}</span>

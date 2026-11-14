@@ -940,10 +940,9 @@ frame (no ribbon) in the wide zones `470px 1fr 540px`. The parts are in `wall/sr
 - **Up next** (`unwind/spotify/UpNext.tsx`), in the left wing under the toggles: the next
   three tracks of the Spotify queue (`wall2_spotify_queue`, every 20 seconds while shown and
   on every track change) with 48 px covers, the title and the artist; hover gives the album
-  and length. A click never replaces the queue: it reads what plays first, plays the track in
-  its list (`play` with `context` and `offsetId`) only when that list is what plays now, else
-  skips forward with the media keys only when Spotify is the current Windows player, else says
-  "Open its list to play it". Hidden with YouTube
+  and length. A click only skips: the n-th row sends n skips with the media keys (never more than the queue
+  holds), and only when Spotify is the current Windows player, else it sends nothing and says
+  "Open its list to play it". It never plays a list, so it never replaces the queue. Hidden with YouTube
   Music chosen, with Spotify not set up, and when nothing is queued; signed out it reads
   "Sign in to Spotify in Tools to see what is next" (a click opens Tools).
 - **The Spotify card** (`unwind/spotify/SpotifyCard.tsx`), the upper right (stage x 1740 to
