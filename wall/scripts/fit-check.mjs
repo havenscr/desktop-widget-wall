@@ -22,10 +22,13 @@
 // clear of the failure note. Leave and recording: the leave banner inside x 600 to 1940 and its band (y 0 to 70 on
 // Work, y 510 to 600 off Work) covering no text or control, the recording chip one 32 px line at most 200 px wide in the
 // Agents header (and inside the banner, or in the band off Work), and the Recording page the same height as a key page.
+// Sky layers: a front canvas only while a Watch look sits behind the land, covering the stage over the video
+// (opaque on the lake, clear at the top of the sky), the whole sky's picture uncropped inside the stage, and the moon at night 40 px clear of every card,
+// the player and the clock, in one place on Listen and on Watch with nothing on.
 // CI does not run this; run it by hand before a layout change is handed over.
 //
 //   WALL_CHROME=/path/to/chrome-or-headless-shell npm --prefix wall run fit-check
-//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, header, deck, tiles, picker, chips, heading, zenhint, strip, fold, drawer, rows, handle, sky, floor, sun, tools, toolsnames, meetfill, meetempty, fy-height, key-edge, hide-pill, hide-note, leave-band, rec-chip, rec-height, tile-height, tile-icon, tile-iconbox, drawer-scrim, lwbuttons, lwoverlap, lwsquare, lwring, lwtemp, lwround, listen-player, listen-card, listen-slot, listen-next)
+//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, header, deck, tiles, picker, chips, heading, zenhint, strip, fold, drawer, rows, handle, sky, floor, sun, tools, toolsnames, meetfill, meetempty, fy-height, key-edge, hide-pill, hide-note, leave-band, rec-chip, rec-height, tile-height, tile-icon, tile-iconbox, drawer-scrim, lwbuttons, lwoverlap, lwsquare, lwring, lwtemp, lwround, sky-front, sky-moon, sky-always, sky-crop, sky-seam, listen-player, listen-card, listen-slot, listen-next, lip-cover, lip-band, lip-scrim, row-parts, over-hatch, row-type)
 //   npm --prefix wall run fit-check -- --self-test
 //
 // WALL_CHROME (or the first argument that is not a flag) is a Chromium or
@@ -74,6 +77,13 @@ const EXPECT = {
   drawer: /^ *FAIL strip: \.day-drawer (reaches above the clock|sticks out of the stage)/m,
   rows: /^ *FAIL strip: an Agents today row is \d+ px tall/m,
   handle: /^ *FAIL strip: the drawer handle covers /m,
+  // day handle, rows, colours
+  'lip-cover': /^ *FAIL strip: the drawer handle covers /m,
+  'lip-band': /^ *FAIL strip: the drawer handle band covers /m,
+  'lip-scrim': /^ *FAIL strip: the Close the day lip /m,
+  'row-parts': /^ *FAIL strip: drawer row .* (parts overlap|runs out of its row|quiet line is squeezed|wraps)/m,
+  'over-hatch': /^ *FAIL strip: an over-the-limit cell is not (taller|hatched)/m,
+  'row-type': /^ *FAIL strip: text under 16 px in /m,
   sky: /^ *FAIL no point of the sky or the floor lands on \.w-sky/m,
   floor: /^ *FAIL pointer at \.u-tomorrow .*reaches w-skyspill/m,
   sun: /^ *FAIL pointer at .*reaches w-stage w-sun/m,
@@ -112,6 +122,12 @@ const EXPECT = {
   'watch-row': /^ *FAIL \.w-ctl: width \d+ <= \d+/m,
   'watch-over': /^ *FAIL watch polish: .*w-lookbar.* is drawn over the video's box/m,
   'watch-take': /^ *FAIL pointer at \.w-sky \.w-frame /m,
+  // sky layers
+  'sky-front': /^ *FAIL sky layers: the front canvas is hidden/m,
+  'sky-moon': /^ *FAIL sky layers: the moon at 300,200,44 is \d+ px from /m,
+  'sky-always': /^ *FAIL sky layers: 1 front canvas with no look behind the land/m,
+  'sky-crop': /^ *FAIL sky layers: the whole sky picture is at -?\d+,-?\d+,\d+, not inside the stage near its top/m,
+  'sky-seam': /^ *FAIL sky layers: the pixel proof at \w+: \d+ pixels differ by more than 2 levels/m,
 };
 const OVERFLOWS = {
   left: '.work .left-wing { transform: translateX(-200px); }',
@@ -133,9 +149,18 @@ const OVERFLOWS = {
   fold: '.rib .ev.fold { width: 30px !important; }',
   drawer: '.day-drawer { translate: 0 -300px; }',
   rows: '.agents-today .at-row { height: 20px !important; min-height: 0 !important; }',
-  handle: '.rib .rib-handle { top: 20px !important; }',
+  handle: '.rib-handle.day-lip { bottom: 75px !important; }',
+  // day handle, rows, colours: a 60 px lip, a 600 px title, the hatch removed, 12 px text.
+  'lip-cover': '.rib-handle.day-lip { bottom: 61px !important; height: 60px !important; }',
+  // The band keeping the pointer even where the buddy or a card lies under it.
+  'lip-band': '.rib-handle.day-lip[data-pass] { pointer-events: auto !important; }',
+  'lip-scrim': '.day-drawer .rib-handle.day-lip { z-index: 0 !important; pointer-events: none !important; }',
+  'row-parts': '.day-drawer .dd-name { width: 600px !important; }',
+  'over-hatch': '.rib .agent-row .ac i.b5 { background: var(--busy-5) !important; top: 7px !important; height: 6px !important; }',
+  'row-type': '.day-drawer .dd-line { font-size: 12px !important; }',
   // The whole-sky video layer catching the pointer and drawn over the controls.
-  sky: '.w-sky, .w-sky * { pointer-events: auto !important; } .w-sky { z-index: 30 !important; }',
+  // sky layers: the whole sky's picture no longer spans the strip, so the break also widens it over the controls.
+  sky: '.w-sky, .w-sky * { pointer-events: auto !important; } .w-sky { z-index: 30 !important; left: 0 !important; width: 2436px !important; }',
   // The floor wash catching the pointer and drawn over the Tomorrow card and the status line.
   floor: '.w-skyspill { pointer-events: auto !important; z-index: 30 !important; left: -130px !important; width: 2440px !important; }',
   // The sun's box spread over the whole band, over the controls.
@@ -181,7 +206,19 @@ const OVERFLOWS = {
   'watch-over': '.w-lookbar { left: 1200px !important; top: 200px !important; }',
   // A refused autoplay that never lets the pointer reach the whole-sky picture.
   'watch-take': '.w-frame.w-take { pointer-events: none !important; }',
+  // sky layers: the front canvas hidden (the whole sky's video no longer behind the land), the moon
+  // forced under the clock and the tabs (a URL knob, SKY_BREAK_Q; the player and the cards claim their
+  // boxes, so a moon forced beside them is not drawn at all), the front canvas mounted on a place that never asked.
+  'sky-front': '.horizon-front { display: none !important; }',
+  'sky-moon': '',
+  'sky-always': '',
+  // The whole sky's picture scaled 1.4 times (it would run off the top of the stage).
+  'sky-crop': '.w-sky .w-screen { transform: scale(1.4); }',
+  // The pixel proof: the front canvas a shade brighter than the main one (a seam between the two).
+  'sky-seam': '.horizon-front { filter: brightness(1.04) !important; }',
 };
+// sky layers: breaks that need the horizon's development knobs in the URL, not a stylesheet.
+const SKY_BREAK_Q = { 'sky-moon': '&skymoon=300,200,44', 'sky-always': '&sky=front' };
 if (flag('self-test')) {
   const script = fileURLToPath(import.meta.url);
   let missed = 0;
@@ -307,6 +344,26 @@ const QUIET = [
   // A refused autoplay over the whole sky: the hint shows, and a click lands on the picture where the wall draws nothing.
   { name: 'Watch polish, whole sky, autoplay refused', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=sky&wplay=0&wstate=refused', checks: WATCH_POLISH, hits: [...WATCH_POLISH_HITS, '.w-clickline', '.w-sky .w-frame'] },
   { name: 'Watch polish, nothing on, drive-in', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=drivein', checks: ['.w-now', '.w-lookbar'], hits: ['.w-lookbar button'] },
+  // sky layers: the video behind the land (the horizon's front canvas over the video's box) in the
+  // three looks that sit in the sky, the drive-in in front of it with no front canvas, and the moon
+  // in open sky at night and at dusk, 40 px clear of every card, the player and the clock, on Listen
+  // (short names, long names, nothing playing, the songs view open) and on Watch with nothing on, at
+  // the place the rule gives (`moonAt`, the first clear one of its places, cameras.ts MOON_PLACES).
+  // Every other state has no front canvas. The feathered picture stands in front of the land.
+  { name: 'Sky layers, whole sky at night', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=sky&wplay=0', checks: ['.w-now', '.w-lookbar'], sky: 'front' },
+  { name: 'Sky layers, whole sky at noon', agents: '3', hz: 'unwind', at: '2026-11-11T12:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=sky&wplay=1', checks: ['.w-now', '.w-lookbar'], sky: 'front' },
+  { name: 'Sky layers, the sun at night', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=sun&wplay=0', checks: ['.w-now', '.w-lookbar'], sky: 'front' },
+  { name: 'Sky layers, feathered at night, in front of the land', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=feather&wplay=0', checks: ['.w-now', '.w-lookbar'], sky: 'flat' },
+  { name: 'Sky layers, drive-in at night, in front of the land', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=drivein&wplay=2', checks: ['.w-now', '.w-lookbar'], sky: 'flat' },
+  { name: 'Sky layers, Listen at night, the moon in open sky', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '', checks: ['.u-listen'], sky: 'moon', moonAt: '760,352,44' },
+  { name: 'Sky layers, Listen at night, long names, the moon in open sky', agents: 'ask', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&spotify=long&media=long', checks: ['.u-listen'], sky: 'moon', moonAt: '760,352,44' },
+  { name: 'Sky layers, Listen at night, nothing playing, the moon in open sky', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&media=none', checks: ['.u-listen'], sky: 'moon', moonAt: '760,352,44' },
+  { name: 'Sky layers, Watch with nothing on at night, the moon in open sky', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=feather', checks: ['.w-now'], sky: 'moon', moonAt: '1890,260,44' },
+  { name: 'Sky layers, Listen at night, the songs view open, the moon in open sky', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&spotify=long&media=long', click: '.sp-tile', checks: ['.sp-card', '.sp-songs'], listen: true, sky: 'moon', moonAt: '760,352,44' },
+  { name: 'Sky layers, Listen at dusk, the moon in open sky', agents: '3', hz: 'unwind', at: '2026-11-11T17:30:00-08:00', extra: '', checks: ['.u-listen'], sky: 'moon', moonAt: '760,352,44' },
+  { name: 'Sky layers, Listen at dusk, long names, the moon in open sky', agents: 'ask', hz: 'unwind', at: '2026-11-11T17:30:00-08:00', extra: '&spotify=long&media=long', checks: ['.u-listen'], sky: 'moon', moonAt: '760,352,44' },
+  { name: 'Sky layers, Listen at dusk, long names, the songs view open, the moon in open sky', agents: 'ask', hz: 'unwind', at: '2026-11-11T17:30:00-08:00', extra: '&spotify=long&media=long', click: '.sp-tile', checks: ['.sp-card', '.sp-songs'], listen: true, sky: 'moon', moonAt: '760,352,44' },
+  { name: 'Sky layers, Watch with nothing on at dusk, the moon in open sky', agents: '3', hz: 'unwind', at: '2026-11-11T17:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=feather', checks: ['.w-now'], sky: 'moon', moonAt: '1890,260,44' },
 ].map((v) => ({ ...v, q: query(v) }));
 // The Tools drawer over each place, and in each hard state: the drawer, its two columns and every
 // section stay inside the stage, right of the rail and the clock, with no cut text that has no tooltip.
@@ -376,7 +433,7 @@ const VARIANTS = [
   // Recording page one height with a key page and For you (nowH).
   { name: 'Leave banner on Work, 12 minutes, long title', q: work('3', '&leave=12'), checks: ['.leave-banner'], viewportOnly: true },
   { name: 'Leave banner on Work, amber, helper not set up', q: work('off', '&leave=4'), checks: ['.leave-banner'], viewportOnly: true },
-  { name: 'Leave banner on Work with the Day drawer open', q: work('12ask', '&leave=12&rec=1&meet=overlap'), click: '.rib .rib-handle', checks: ['.leave-banner', '.day-drawer', '.day-drawer .dd-agenda'], strip: true, viewportOnly: true },
+  { name: 'Leave banner on Work with the Day drawer open', q: work('12ask', '&leave=12&rec=1&meet=overlap'), click: '.rib-handle:not(.in-drawer)', checks: ['.leave-banner', '.day-drawer', '.day-drawer .dd-agenda'], strip: true, viewportOnly: true },
   { name: 'Leave banner on Work, leave now with the recording chip', q: work('12ask', '&leave=0&rec=1'), checks: ['.leave-banner', '.leave-banner .rec-chip'], viewportOnly: true },
   { name: 'Leave banner on Home', q: home('moods=five&leave=12'), checks: ['.leave-banner'], viewportOnly: true },
   { name: 'Leave banner on Unwind, amber', q: query({ hz: 'unwind', agents: '3', extra: '&leave=4' }), checks: ['.leave-banner'], viewportOnly: true },
@@ -436,9 +493,16 @@ VARIANTS.push(
   { name: 'Strip: overlaps, twelve sessions', q: work('12ask', '&meet=overlap'), checks: ['.rib'], strip: true, viewportOnly: true },
   { name: 'Strip: the needle at the centre, under the handle', q: query({ at: '2026-11-11T14:50:00-08:00', agents: '12ask', extra: '&meet=overlap' }), checks: ['.rib'], strip: true, viewportOnly: true },
   { name: 'Strip: late in the day', q: query({ at: '2026-11-11T22:50:00-08:00', agents: '12ask', extra: '&meet=overlap' }), checks: ['.rib'], strip: true, viewportOnly: true },
-  { name: 'Strip: the Day drawer open', q: work('12ask', '&meet=overlap'), click: '.rib .rib-handle', checks: ['.day-drawer', '.day-drawer .dd-agenda', '.day-drawer .dd-rows'], strip: true, viewportOnly: true },
+  { name: 'Strip: the Day drawer open', q: work('12ask', '&meet=overlap'), click: '.rib-handle', checks: ['.day-drawer', '.day-drawer .dd-agenda', '.day-drawer .dd-rows'], strip: true, viewportOnly: true },
   { name: 'Strip: Agents today, twelve sessions', q: work('12ask', '&days=typical'), click: '.rib .ag-line', checks: ['.agents-today', '.agents-today .at-head'], strip: true, viewportOnly: true },
   { name: 'Strip: Agents today, a heavy past day', q: work('12', '&days=heavy'), click: '.rib .ag-line >> .at-seg button:nth-child(2)', checks: ['.agents-today', '.agents-today .at-head', '.agents-today .at-foot'], strip: true, viewportOnly: true },
+);
+// day handle, rows, colours: twelve open with nine working (over the limit since mid morning, one
+// failed, one waiting) on the strip, in the Day drawer with long titles, and in the Agents panel.
+VARIANTS.push(
+  { name: 'Strip: twelve open, nine working, over the limit', q: work('12busy'), checks: ['.rib'], strip: true, viewportOnly: true },
+  { name: 'Strip: the Day drawer, twelve busy, long titles', q: work('12busy', '&meet=overlap'), click: '.rib-handle', checks: ['.day-drawer', '.day-drawer .dd-rows'], strip: true, viewportOnly: true },
+  { name: 'Strip: Agents today over the limit', q: work('12busy', '&days=typical'), click: '.rib .ag-line', checks: ['.agents-today', '.agents-today .at-head', '.agents-today .at-busy'], strip: true, viewportOnly: true },
 );
 // keys style: a small PNG reader (8-bit RGB or RGBA, not interlaced, as Chromium writes them) and contrast.
 function readPng(file) {
@@ -626,7 +690,10 @@ try {
         for (const q of range.getClientRects()) if (q.width > 0) tops.add(Math.round(q.top));
       }
       const tall = e.matches('.lanes-hd-l > *, .lanes-hd > .row > *') && e.getBoundingClientRect().height > 36.5;
-      return tops.size > 1 || tall ? ['header part wraps: ' + (e.textContent || '').trim().slice(0, 48) + ' (' + Math.round(e.getBoundingClientRect().height) + ' px tall)'] : [];
+      // day handle, rows, colours: the meter's sentence is a coloured count and a word in two
+      // nodes, each one line even when the sentence breaks between them; its box says it wrapped.
+      const box = e.matches('.slot-meter .xs') && e.getBoundingClientRect().height > parseFloat(getComputedStyle(e).fontSize) * 1.7;
+      return tops.size > 1 || tall || box ? ['header part wraps: ' + (e.textContent || '').trim().slice(0, 48) + ' (' + Math.round(e.getBoundingClientRect().height) + ' px tall)'] : [];
     });
     // The deck (Always here and Now): nothing below its floor (a clearance above the mountain
     // ridge, worked out from the Work camera; the Now row carries it as data-floor), every key
@@ -727,11 +794,48 @@ try {
       if (Math.abs(h - 104) > 0.5) strip.push('strip: the Work strip is ' + Math.round(h) + ' px tall (must be 104)');
       const labels = [...ribW.querySelectorAll('.ev, .ev-side, .ag-line, .due:not(.bare), .adbar')].map((e) => ({ r: e.getBoundingClientRect(), t: (e.textContent || e.getAttribute('aria-label') || '').slice(0, 30) }));
       labels.forEach((a, i) => labels.slice(i + 1).forEach((b) => { if (hit(a.r, b.r)) strip.push('strip: labels share pixels: ' + a.t + ' / ' + b.t); }));
-      // The drawer handle covers no chip, bar or label.
-      const handle = ribW.querySelector('.rib-handle');
+      // day handle, rows, colours: the handle (the strip's top edge, outside the strip's box) at rest
+      // covers no chip, bar or label: where they share pixels the label must be the one on top (the
+      // needle's pill draws over it). It is at least 26 px tall and runs the strip's width, 24 px in.
+      const handle = document.querySelector('.rib-handle.day-lip:not(.open)');
       if (handle) {
         const hr = handle.getBoundingClientRect();
-        for (const e of ribW.querySelectorAll('.ev, .ev-side, .adbar, .hl, .ndl b, .ag-line, .due, .agent-row .ac')) if (hit(hr, e.getBoundingClientRect())) strip.push('strip: the drawer handle covers ' + (e.textContent || e.className).trim().slice(0, 30));
+        const rr = ribW.getBoundingClientRect();
+        if (hr.height < 26 - 0.5 || hr.left > rr.left + 24.5 || hr.right < rr.right - 24.5) strip.push('strip: the drawer handle is ' + Math.round(hr.width) + ' by ' + Math.round(hr.height) + ' (at least the strip less 48 by 26)');
+        for (const e of ribW.querySelectorAll('.ev, .ev-side, .adbar, .hl, .ndl b, .ag-line, .due, .agent-row .ac')) {
+          const er = e.getBoundingClientRect();
+          if (!hit(hr, er)) continue;
+          const x = (Math.max(hr.left, er.left) + Math.min(hr.right, er.right)) / 2;
+          const y = (Math.max(hr.top, er.top) + Math.min(hr.bottom, er.bottom)) / 2;
+          const top = document.elementFromPoint(x, y);
+          if (top && handle.contains(top)) strip.push('strip: the drawer handle covers ' + (e.textContent || e.className).trim().slice(0, 30));
+        }
+        // The band covers nothing clickable at rest: wherever something that acts on a click (an agent
+        // card, a folded chip, a pinned key, the buddy, a button) lies under the band, the pointer moved
+        // there makes the lip pass it through (data-pass), so the lip is no longer the topmost thing.
+        const clickable = 'button, a[href], [role="button"], [tabindex]:not([tabindex="-1"]), .lane[data-id], .ev, .key-tile, .watt-hit, .tk3, .sg-hit';
+        const seenUnder = new Set();
+        for (let x = Math.ceil(hr.left) + 2; x < hr.right; x += 6) {
+          for (let y = Math.ceil(hr.top) + 1; y < Math.min(hr.bottom, rr.top + 9); y += 3) {
+            const under = (stack) => stack.slice(1).map((e) => e.closest(clickable)).find((c) => c && !handle.contains(c));
+            let stack = document.elementsFromPoint(x, y);
+            if (stack.length === 0 || !handle.contains(stack[0]) || !under(stack)) continue;
+            window.dispatchEvent(new PointerEvent('pointermove', { clientX: x, clientY: y }));
+            stack = document.elementsFromPoint(x, y);
+            const c = handle.contains(stack[0]) && !stack[0].closest('.lip-pill') ? under(stack) : null;
+            if (c && !seenUnder.has(c)) {
+              seenUnder.add(c);
+              strip.push('strip: the drawer handle band covers ' + (c.getAttribute('aria-label') || c.textContent || c.className).trim().slice(0, 30) + ' at (' + x + ', ' + y + ')');
+            }
+          }
+        }
+        window.dispatchEvent(new PointerEvent('pointermove', { clientX: -50, clientY: -50 }));
+      }
+      // Over the limit is never colour alone: such a cell is taller than the others and hatched.
+      for (const i of ribW.querySelectorAll('.agent-row .ac i.b5')) {
+        const cs = getComputedStyle(i);
+        if (i.getBoundingClientRect().height < 10 - 0.5) strip.push('strip: an over-the-limit cell is not taller (' + Math.round(i.getBoundingClientRect().height) + ' px)');
+        if (!cs.backgroundImage.includes('repeating-linear-gradient')) strip.push('strip: an over-the-limit cell is not hatched');
       }
       for (const f of ribW.querySelectorAll('.ev.fold')) {
         const n = f.querySelector('.fold-n');
@@ -775,9 +879,41 @@ try {
         for (const keep of document.querySelectorAll('.leave-banner, .rec-float')) if (!(z(keep) > z(scrim))) strip.push('strip: with the drawer open, ' + keep.className + ' is not above the scrim, so its words would be dimmed');
       }
     }
+    // day handle, rows, colours: the "Close the day" lip is a real button inside the drawer's own
+    // subtree, with a z-index above the drawer's other layers, and the REAL scrim (above) never
+    // covers it: the element at the lip's centre is the lip.
+    const lipIn = document.querySelector('.day-drawer .rib-handle.day-lip');
+    if (lipIn) {
+      if (lipIn.tagName !== 'BUTTON') strip.push('strip: the Close the day lip is not a button');
+      if (!lipIn.classList.contains('in-drawer')) strip.push('strip: the Close the day lip lacks the in-drawer class');
+      const z = (e) => parseInt(getComputedStyle(e).zIndex, 10) || 0;
+      const others = Math.max(0, ...[...document.querySelector('.day-drawer').children].filter((c) => c !== lipIn).map(z));
+      if (z(lipIn) <= others) strip.push('strip: the Close the day lip has z-index ' + z(lipIn) + ', not above the other layers of the drawer (' + others + ')');
+      if (!document.querySelector('.drawer-scrim')) strip.push('strip: the Close the day lip is checked with no real scrim up');
+      const lr = lipIn.querySelector('.lip-pill').getBoundingClientRect();
+      const topEl = document.elementFromPoint(lr.left + lr.width / 2, lr.top + lr.height / 2);
+      if (!topEl || !lipIn.contains(topEl)) strip.push('strip: the Close the day lip is under the scrim (found ' + (topEl ? topEl.className || topEl.tagName : 'nothing') + ')');
+    }
     for (const row of document.querySelectorAll('.agents-today .at-row:not(.skel), .day-drawer .dd-row')) {
       const h = row.getBoundingClientRect().height;
       if (h < 32 - 0.5) strip.push('strip: an Agents today row is ' + Math.round(h) + ' px tall (at least 32)');
+    }
+    // day handle, rows, colours: a drawer row's number, title, pill, quiet line, track and time
+    // never share pixels or leave the row, the row is one line, and the quiet line keeps its room.
+    for (const row of document.querySelectorAll('.day-drawer .dd-row')) {
+      const rr = row.getBoundingClientRect();
+      const name = row.querySelector('.dd-name')?.textContent?.slice(0, 24) ?? '';
+      const parts = [...row.children].map((e) => ({ c: e.className, r: e.getBoundingClientRect() }));
+      parts.forEach((a, i) => parts.slice(i + 1).forEach((b) => { if (hit(a.r, b.r)) strip.push('strip: drawer row "' + name + '" parts overlap: ' + a.c + ' / ' + b.c); }));
+      for (const p of parts) if (p.r.right > rr.right + 0.5 || p.r.left < rr.left - 0.5) strip.push('strip: drawer row "' + name + '" ' + p.c + ' runs out of its row');
+      for (const e of row.querySelectorAll('.dd-name, .dd-pill, .dd-line, .dd-time')) if (e.scrollHeight > e.clientHeight + 1 || e.getBoundingClientRect().height > rr.height) strip.push('strip: drawer row "' + name + '" wraps in ' + e.className);
+      const line = row.querySelector('.dd-line');
+      if (line && line.getBoundingClientRect().width < 300) strip.push('strip: drawer row "' + name + '" quiet line is squeezed to ' + Math.round(line.getBoundingClientRect().width) + ' px');
+    }
+    // No text under 16 px in the drawer rows, their header and the Busy at once line and band.
+    for (const e of document.querySelectorAll('.day-drawer :is(.dd-name, .dd-pill, .dd-line, .dd-time, .dd-counts, .dd-axis span), .agents-today :is(.at-busy-k, .at-busy-s .w, .at-busy-s b, .at-busy-sum, .at-band-k, .at-band-note)')) {
+      const px = parseFloat(getComputedStyle(e).fontSize);
+      if (px < 16 - 0.01 && (e.textContent || '').trim()) strip.push('strip: text under 16 px in ' + e.className + ' (' + px + ' px)');
     }
     const opened = { drawer: !!document.querySelector('.day-drawer'), panel: !!document.querySelector('.agents-today'), rows: document.querySelectorAll('.agents-today .at-row:not(.skel)').length };
     // The Tools drawer: inside x 1700 to 2560 and y 0 to 720, clear of the rail, and no text cut unless a hover card carries it.
@@ -1002,7 +1138,8 @@ try {
       const ctl = document.querySelector('.w-ctl');
       if (ctl && ctl.children.length) { const kids = [...ctl.children].map(box); const mid = (k) => k.t + k.h / 2; if (kids.some((k) => Math.abs(mid(k) - mid(kids[0])) > 2)) fails.push('watch polish: the control row wraps'); }
       const skyStage = document.querySelector('.w-sky');
-      if (skyStage) for (const c of skyStage.children) if (!c.classList.contains('w-screen')) fails.push('watch polish: ' + c.className + " is drawn over the video's box (whole sky)");
+      // sky layers: .w-front holds the horizon's front canvas (the land in front of the video; no pointer, no text).
+      if (skyStage) for (const c of skyStage.children) if (!c.classList.contains('w-screen') && !c.classList.contains('w-front')) fails.push('watch polish: ' + c.className + " is drawn over the video's box (whole sky)");
       const scr = document.querySelector('.w-stage:not(.w-sky):not(.w-empty) .w-screen');
       if (scr) {
         const v = box(scr);
@@ -1016,7 +1153,67 @@ try {
       }
       return { sw: box(sw), fails };
     })();
-    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, meetOut, strip, opened, watchPolish, listen });
+    // sky layers: a front canvas exactly when a look sits behind the land; with one, it is shown,
+    // covers the stage, comes after the video in the same stage, is opaque on the lake under the
+    // video and clear (but for the grain) at the top of the sky; with \`skycheck=moon\` the moon is drawn and its disc is
+    // 40 px clear of every card, the player, Up next, the tabs, the left block and the clock's text.
+    const skyLayers = (() => {
+      const fails = [];
+      const check = new URLSearchParams(location.search).get('skycheck');
+      const fronts = [...document.querySelectorAll('canvas.horizon-front')];
+      const layered = document.querySelector('.w-stage.w-layered');
+      if (fronts.length !== (layered ? 1 : 0)) fails.push('sky layers: ' + fronts.length + ' front canvas with ' + (layered ? 'a look' : 'no look') + ' behind the land');
+      if (check === 'front') {
+        const f = fronts[0];
+        const scr = layered && layered.querySelector('.w-screen');
+        if (!f || !scr) fails.push('sky layers: no front canvas or no video behind the land');
+        else {
+          const cs = getComputedStyle(f);
+          if (cs.display === 'none' || cs.visibility !== 'visible' || Number(cs.opacity) < 1) fails.push('sky layers: the front canvas is hidden (' + cs.display + ', ' + cs.visibility + ', ' + cs.opacity + ')');
+          const r = f.getBoundingClientRect();
+          if (Math.abs(r.left) > 1 || Math.abs(r.top) > 1 || Math.abs(r.width - 2560) > 1 || Math.abs(r.height - 720) > 1) fails.push('sky layers: the front canvas is at ' + [r.left, r.top, r.width, r.height].map(Math.round).join(',') + ', not the stage');
+          if (f.closest('.w-stage') !== layered || !(scr.compareDocumentPosition(f) & Node.DOCUMENT_POSITION_FOLLOWING)) fails.push('sky layers: the front canvas is not after the video in its stage');
+          const v = scr.getBoundingClientRect();
+          const box = (layered.getAttribute('data-sky-box') || '').split(',').map(Number);
+          if (box.length !== 4 || Math.abs(box[0] - v.left) > 1 || Math.abs(box[1] - v.top) > 1 || Math.abs(box[2] - v.width) > 1 || Math.abs(box[3] - v.height) > 1) fails.push('sky layers: the look box ' + box.join(',') + ' is not the drawn video ' + [v.left, v.top, v.width, v.height].map(Math.round).join(','));
+          // The whole sky: the whole picture, never cropped: inside the stage at the top, left and
+          // right, its top at most 24 px down, and the frame exactly the picture's box.
+          if (layered.classList.contains('w-sky')) {
+            if (v.top < 0 || v.left < 0 || v.right > 2560 || v.top > 24) fails.push('sky layers: the whole sky picture is at ' + [v.left, v.top, v.right].map(Math.round).join(',') + ', not inside the stage near its top');
+            const fr = scr.querySelector('.w-frame');
+            const r2 = fr && fr.getBoundingClientRect();
+            if (!r2 || Math.abs(r2.left - v.left) > 1 || Math.abs(r2.top - v.top) > 1 || Math.abs(r2.width - v.width) > 1 || Math.abs(r2.height - v.height) > 1) fails.push('sky layers: the whole sky frame is cropped');
+          }
+          const x = f.getContext('2d');
+          const sx = f.width / 2560;
+          const at = (px, py) => x.getImageData(Math.round(px * sx), Math.round(py * sx), 1, 1).data[3];
+          const cx = v.left + v.width / 2;
+          if (at(cx, 680) < 255) fails.push('sky layers: the front canvas is not opaque on the lake under the video');
+          // Only the film grain (at most 10 of 255) lies over the top of the sky.
+          if (at(cx, 4) > 12) fails.push('sky layers: the front canvas paints the top of the sky over the video');
+        }
+      }
+      if (check === 'moon') {
+        const c = document.querySelector('canvas.horizon-canvas:not(.horizon-front)');
+        const m = (c && c.dataset.moon || '').split(',').map(Number);
+        if (m.length !== 3) fails.push('sky layers: no moon drawn at night');
+        else {
+          const [mx, my, mr] = m;
+          const boxes = [...document.querySelectorAll('.u-card, .sp-card, .u-player, .u-next, .u-tabs, .w-now, .w-lookbar, .w-gear, .w-stage, .rail')].map((e) => [e.className.baseVal ?? e.className, e.getBoundingClientRect()]);
+          const clk = document.querySelector('.clk');
+          if (clk) { const rg = document.createRange(); rg.selectNodeContents(clk); boxes.push(['the clock', rg.getBoundingClientRect()]); }
+          for (const [name, r] of boxes) {
+            if (!r.width || !r.height) continue;
+            const dx = Math.max(r.left - mx, 0, mx - r.right);
+            const dy = Math.max(r.top - my, 0, my - r.bottom);
+            const gap = Math.hypot(dx, dy) - mr;
+            if (gap < 40) fails.push('sky layers: the moon at ' + m.join(',') + ' is ' + Math.max(0, Math.round(gap)) + ' px from ' + String(name).split(' ')[0] + ' (40 at least)');
+          }
+        }
+      }
+      return { fails, moon: (document.querySelector('canvas.horizon-canvas:not(.horizon-front)') || {}).dataset?.moon ?? '' };
+    })();
+    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, meetOut, strip, opened, watchPolish, skyLayers, listen });
     document.body.appendChild(pre);
   }, new URLSearchParams(location.search).get('card') ? 7000 : 3000);</script>`;
   const broken = overflow ? `<style>${OVERFLOWS[overflow]}</style>` : '';
@@ -1049,6 +1246,13 @@ try {
     strip: (v) => v.name === 'Strip: overlaps, twelve sessions',
     fold: (v) => v.name === 'Strip: overlaps, twelve sessions',
     handle: (v) => v.name === 'Strip: overlaps, twelve sessions',
+    // day handle, rows, colours
+    'lip-cover': (v) => v.name === 'Strip: overlaps, twelve sessions',
+    'lip-band': (v) => v.name === 'Strip: overlaps, twelve sessions',
+    'lip-scrim': (v) => v.name === 'Strip: the Day drawer open',
+    'row-parts': (v) => v.name === 'Strip: the Day drawer, twelve busy, long titles',
+    'over-hatch': (v) => v.name === 'Strip: twelve open, nine working, over the limit',
+    'row-type': (v) => v.name === 'Strip: the Day drawer, twelve busy, long titles',
     drawer: (v) => v.name === 'Strip: the Day drawer open',
     rows: (v) => v.name === 'Strip: Agents today, a heavy past day',
     'hide-note': (v) => v.name === 'Unwind, Hide screen grown with the failure note',
@@ -1068,15 +1272,22 @@ try {
     'watch-row': (v) => v.name === 'Watch polish, feathered, single video',
     'watch-over': (v) => v.name === 'Watch polish, drive-in, playlist, long label',
     'watch-take': (v) => v.name === 'Watch polish, whole sky, autoplay refused',
+    // sky layers
+    'sky-front': (v) => v.name === 'Sky layers, whole sky at night',
+    'sky-moon': (v) => v.name === 'Sky layers, Listen at night, the moon in open sky',
+    'sky-always': (v) => v.name === 'Sky layers, Listen at night, the moon in open sky',
+    'sky-crop': (v) => v.name === 'Sky layers, whole sky at night',
   };
   const breakOn = BREAK_ON[overflow] ? VARIANTS.filter(BREAK_ON[overflow]) : VARIANTS.slice(0, 1);
   /** keys style: the Now row's height on each page that has one, compared after every state ran. */
   const nowHeights = [];
   /** watch polish: the Look switch's box in each Watch polish state, compared after the run. */
   const switchBoxes = [];
+  /** sky layers: the moon drawn in each moon state, compared after the run (one place on Listen and on Watch). */
+  const skyMoons = [];
   for (const v of overflow ? breakOn : VARIANTS) {
     console.log(`${v.name} (${v.q}):`);
-    const url = `${pathToFileURL(page).href}${v.q}&checks=${encodeURIComponent(v.checks.join('|'))}${v.click ? `&click=${encodeURIComponent(v.click)}` : ''}${v.card ? '&card=1' : ''}${v.hits ? `&hits=${encodeURIComponent(v.hits.join('|'))}` : ''}${v.noHit ? `&nohit=${encodeURIComponent(v.noHit)}` : ''}${v.listen ? '&listen=1' : ''}`;
+    const url = `${pathToFileURL(page).href}${v.q}${v.sky ? `&skycheck=${v.sky}` : ''}${overflow && SKY_BREAK_Q[overflow] ? SKY_BREAK_Q[overflow] : ''}&checks=${encodeURIComponent(v.checks.join('|'))}${v.click ? `&click=${encodeURIComponent(v.click)}` : ''}${v.card ? '&card=1' : ''}${v.hits ? `&hits=${encodeURIComponent(v.hits.join('|'))}` : ''}${v.noHit ? `&nohit=${encodeURIComponent(v.noHit)}` : ''}${v.listen ? '&listen=1' : ''}`;
     const dom = await runChrome(
       chrome,
       // Headless Chromium keeps 87 px of the window for itself, so 807 gives a 2560 by 720 viewport.
@@ -1089,7 +1300,20 @@ try {
       process.exit(1);
     }
     const text = m[1].replaceAll('&quot;', '"').replaceAll('&amp;', '&');
-    const { res, page: doc, overlaps, cut, gaps, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, meetOut, strip, opened, watchPolish, listen } = JSON.parse(text);
+    const { res, page: doc, overlaps, cut, gaps, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, meetOut, strip, opened, watchPolish, skyLayers, listen } = JSON.parse(text);
+    // sky layers
+    for (const f of skyLayers.fails) console.log(`  FAIL ${f}`);
+    if (skyLayers.fails.length) failed = true;
+    else if (v.sky === 'front') console.log('  ok   sky layers: the front canvas covers the stage over the video, the land opaque, the sky clear');
+    else if (v.sky === 'moon') console.log(`  ok   sky layers: the moon at ${skyLayers.moon} is 40 px clear of every card, the player and the clock`);
+    // The moon the rule gives for this layout (the first clear one of cameras.ts MOON_PLACES): on Listen in
+    // every player state the low place under the player, on Watch with nothing on its first place. Not with a
+    // break that moves the moon on purpose (that one must fail on its distance alone).
+    if (v.moonAt && !(overflow && SKY_BREAK_Q[overflow]) && skyLayers.moon !== v.moonAt) {
+      failed = true;
+      console.log(`  FAIL sky layers: the moon is at ${skyLayers.moon || 'no place'}, expected ${v.moonAt} (the first place clear of this layout)`);
+    }
+    if (v.sky === 'moon') skyMoons.push({ name: v.name, moon: skyLayers.moon });
     // watch polish
     if (watchPolish) {
       for (const f of watchPolish.fails) console.log(`  FAIL ${f}`);
@@ -1248,6 +1472,57 @@ try {
     } else console.log(`keys style: the Now row is ${hs[0]} px tall on every key page, on For you and on Recording`);
   }
   // watch polish: the Look switch sits in one place, one size, in every look and with nothing on.
+  // sky layers
+  // The moon takes the first clear one of its places (cameras.ts MOON_PLACES), so each layout may
+  // put it elsewhere; each state's place was checked 40 px clear of every card above.
+  if (skyMoons.length) console.log(`sky layers: the moon in ${skyMoons.length} moon states: ${skyMoons.map((s) => `${s.moon} (${s.name.replace('Sky layers, ', '')})`).join('; ')}`);
+  // sky layers, the pixel proof: Unwind drawn at night, at dusk and at noon on one canvas
+  // (`sky=flat`) and with the front layer claimed by an empty host in the main area (`sky=empty`),
+  // nothing between the two canvases, compared pixel for pixel over the whole stage. The two are
+  // the same picture by their sums; what is left is the browser's 8-bit rounding of blending two
+  // layers and the veil in a different order (1 or 2 levels a channel), and a few levels at the
+  // page's own glows, which the main area's layer group blends on their own. So: no pixel may be
+  // more than 8 levels off, and at most 1 in 1000 more than 2 (a missing veil, a seam at the
+  // horizon line or the rail's column, a wrong reflection or grid moves far more pixels further).
+  if (!overflow || overflow === 'sky-seam') {
+    const proof = join(out, 'proof.html');
+    writeFileSync(proof, html.replace('</body>', `${broken}</body>`));
+    for (const [when, at] of [['night', '2026-11-11T22:30:00-08:00'], ['dusk', '2026-11-11T16:54:00-08:00'], ['noon', '2026-11-11T12:30:00-08:00']]) {
+      const shots = [];
+      for (const mode of ['flat', 'empty']) {
+        const shot = join(out, `proof-${when}-${mode}.png`);
+        const url = `${pathToFileURL(proof).href}?hz=unwind&at=${encodeURIComponent(at)}&agents=3&weather=ok&sky=${mode}`;
+        await runChrome(chrome, ['--headless', '--no-sandbox', '--disable-gpu', '--window-size=2560,807', '--hide-scrollbars', '--virtual-time-budget=8000', `--screenshot=${shot}`, url], { label: `sky layers pixel proof, ${when}, ${mode}` });
+        shots.push(readPng(shot));
+      }
+      const [a, b] = shots;
+      let diff = 0;
+      let over2 = 0;
+      let worst = 0;
+      let box = null;
+      if (a.w !== b.w || a.h !== b.h || a.w !== 2560 || a.h < 720) diff = -1;
+      else {
+        for (let y = 0; y < a.h; y++)
+          for (let x = 0; x < a.w; x++) {
+            const i = (y * a.w + x) * a.ch;
+            const j = (y * b.w + x) * b.ch;
+            const d = Math.max(Math.abs(a.px[i] - b.px[j]), Math.abs(a.px[i + 1] - b.px[j + 1]), Math.abs(a.px[i + 2] - b.px[j + 2]));
+            if (d > 0) diff += 1;
+            if (d > 2) {
+              over2 += 1;
+              box = box ? [Math.min(box[0], x), Math.min(box[1], y), Math.max(box[2], x), Math.max(box[3], y)] : [x, y, x, y];
+            }
+            if (d > worst) worst = d;
+          }
+      }
+      const all = a.w * a.h;
+      const summary = `${diff} of ${all} pixels differ at all, ${over2} by more than 2 levels${box ? ` (within ${box.join(',')})` : ''}, the most ${worst}`;
+      if (diff < 0 || worst > 8 || over2 > all / 1000) {
+        failed = true;
+        console.log(`  FAIL sky layers: the pixel proof at ${when}: ${diff < 0 ? 'the two screenshots differ in size' : `${over2} pixels differ by more than 2 levels: ${summary}`}, one canvas against the front layer with nothing between`);
+      } else console.log(`sky layers: the pixel proof at ${when}: ${summary}; one canvas against the front layer with nothing between`);
+    }
+  }
   if (switchBoxes.length > 1) {
     const key = (b) => `${b.l},${b.t} ${b.w}x${b.h}`;
     const first = key(switchBoxes[0].box);

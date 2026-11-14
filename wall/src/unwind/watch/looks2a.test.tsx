@@ -115,8 +115,9 @@ describe('each look', () => {
     expect(document.querySelectorAll('iframe').length).toBe(1);
     const sky = document.querySelector('.w-sky')!;
     expect(sky.querySelector('iframe')).not.toBeNull();
-    // Nothing of the wall's lies on the picture: the stage holds the picture only.
-    expect([...sky.children].map((c) => c.className)).toEqual(['w-screen']);
+    // Nothing of the wall's lies on the picture: the stage holds the picture and, after it, the
+    // element the horizon mounts its front canvas in (the land in front of the picture).
+    expect([...sky.children].map((c) => c.className)).toEqual(['w-screen', 'w-front']);
     // The Look switch and Open in YouTube are outside the layer that takes no pointer.
     expect(sky.querySelector('button')).toBeNull();
     expect(document.querySelector('.w-now .w-open')).not.toBeNull();
@@ -133,27 +134,7 @@ describe('each look', () => {
     }
   });
 
-  it('with the moon up, veils it for the feathered look only: the whole sky and the sun hide it themselves', async () => {
-    // 10:30 PM Pacific in November: the sun is far below the horizon, so the horizon draws its moon.
-    vi.setSystemTime(new Date('2026-11-11T22:30:00-08:00'));
-    const veil: Record<string, boolean> = {};
-    for (const look of IDS) {
-      setup(look);
-      const { unmount } = render(<Unwind />);
-      await flush();
-      veil[look] = document.querySelector('.w-moonveil') !== null;
-      unmount();
-    }
-    expect(veil).toEqual({ feather: true, sky: false, sun: false, drivein: false });
-    // At noon the moon is down and even the feathered look has no veil.
-    vi.setSystemTime(new Date('2026-11-11T12:30:00-08:00'));
-    setup('feather');
-    render(<Unwind />);
-    await flush();
-    expect(document.querySelector('.w-moonveil')).toBeNull();
-  });
-
-  it('draws the sun with its halo and floor streak, and no moon veil (the disc covers the moon)', async () => {
+  it('draws the sun with its halo and floor streak', async () => {
     setup('sun');
     render(<Unwind />);
     await flush();

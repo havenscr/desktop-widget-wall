@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { IconBrandTwitch, IconBrandYoutube, IconBroadcast, IconCheck, IconPencil, IconPlaylist, IconX } from '@tabler/icons-react';
+import { useSkyKeepClear } from '../../horizon/sky';
 import { useSignalStore } from '../../signals/store';
 import { kindName, refKey, type WatchKind } from './links';
 import { MAX_LABEL, MAX_SAVED, type SavedItem } from './saved';
@@ -100,6 +101,9 @@ export function WatchCard() {
   const playingKey = playing ? refKey(playing) : null;
   const list = useMoreBelow(saved.length);
   const st = useWatchStore.getState();
+  // sky layers: the moon keeps clear of this card.
+  const [card, setCard] = useState<HTMLElement | null>(null);
+  useSkyKeepClear('watch-card', card);
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
@@ -139,7 +143,7 @@ export function WatchCard() {
 
   if (saved.length === 0) {
     return (
-      <section className="u-card w-card empty" aria-label="Watch list">
+      <section ref={setCard} className="u-card w-card empty" aria-label="Watch list">
         <div className="u-card-head">
           <span className="u-k">Watch list</span>
         </div>
@@ -152,7 +156,7 @@ export function WatchCard() {
   }
 
   return (
-    <section className="u-card w-card" aria-label="Watch list">
+    <section ref={setCard} className="u-card w-card" aria-label="Watch list">
       <div className="u-card-head">
         <span className="u-k">Watch list</span>
         <span className="u-xs" title={`At most ${MAX_SAVED}`}>

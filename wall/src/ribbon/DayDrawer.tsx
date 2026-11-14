@@ -1,11 +1,12 @@
-import { useEffect, useLayoutEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef, type ReactNode } from 'react';
 import { IconChevronDown } from '@tabler/icons-react';
 import { invoke } from '../bridge/tauri';
-import { cards, laneWaits, type OmniSummary } from '../agents/model';
+import { cards, elapsedText, laneWaits, prText, type Lane, type OmniSummary } from '../agents/model';
 import { focusSession } from '../agents/open';
 import { agentsStale, useAgentsStore } from '../agents/useAgents';
 import { tip } from '../ui/HoverTip';
-import { agentCounts, daySegments, laneStateWord } from './AgentRow';
+import { daySegments, laneStateWord } from './AgentRow';
+import { isoDay, useDaysStore } from './days';
 import { useBehindDrawer } from './DrawerScrim';
 import { allDayBarText, hm, hourText, shortTime, spanText, wallHour, type Chip } from './model';
 
@@ -53,16 +54,38 @@ export function agendaLanes(items: readonly Chip[]): { c: Chip; lane: number; la
 
 const RANK: Record<string, number> = { 'waiting on you': 0, working: 1 };
 
+/** Lines the helper sends that only repeat the state the pill already shows. */
+const BARE = new Set(['running', 'idle', 'failed', 'working', 'waiting', 'blocked', 'in review', 'waiting on you']);
+
+/**
+ * A row's one quiet line, from what the wall knows of a session open now, joined with a middle
+ * dot: the helper's line (unless it is only a state word), else its next step; how long it has
+ * waited on the owner; its helpers; its pull request. Blank when none of these is known: never
+ * invented text. A saved past day has none of these fields, so its rows have no such line.
+ */
+export function quietLine(l: Lane): string {
+  const parts: string[] = [];
+  const said = l.line.trim();
+  if (said && !BARE.has(said.toLowerCase())) parts.push(said);
+  else if (l.next && l.next.trim()) parts.push(`Next: ${l.next.trim()}`);
+  if (laneWaits(l) && l.waitingSinceS != null) parts.push(parts.length > 0 ? elapsedText(l.waitingSinceS) : `Waiting ${elapsedText(l.waitingSinceS)}`);
+  if (l.kids && l.kids.total > 0) parts.push(`${l.kids.total} helper${l.kids.total === 1 ? '' : 's'}, ${l.kids.working === 0 ? 'none working' : `${l.kids.working} working`}`);
+  if (l.pr) parts.push(prText(l));
+  return parts.join(' \u00b7 ');
+}
+
 /**
  * The Day drawer, pulled up from the calm strip's handle (or a folded chip): 532 px over the
  * lower part of Work, never over the rail or the clock. Left, an agenda (8 AM to 6 PM, wider
  * when a meeting is outside it) with overlapping meetings side by side and the now line;
  * each meeting opens in Outlook, with Join where the calendar has a join link. Right, one row
  * per open session (needing the owner first, then working, then the rest): number, title,
- * state, its line, its day as a bar and the time worked; a click opens it in OmniGent. The
- * header's "Agents today" opens the panel. Escape, the handle, Close or a click outside
- * closes it. Behind it the page is dimmed and inert (see DrawerScrim): a click
- * outside only closes the drawer and never reaches what was under the pointer.
+ * state (once, as the pill; a failed session's pill is rose), one quiet line of what it does
+ * or waits for (`quietLine`), its day as a bar and the time worked; a click opens it in
+ * OmniGent. The header's "Agents today" opens the panel. Escape, the handle on its top edge
+ * ("Close the day"), Close or a click outside closes it. Behind it the page is dimmed and
+ * inert (see DrawerScrim): a click outside only closes the drawer and never reaches what was
+ * under the pointer.
  */
 export function DayDrawer({
   chips,
@@ -72,6 +95,7 @@ export function DayDrawer({
   scrollHour,
   onClose,
   onOpenPanel,
+  lip = null,
 }: {
   chips: Chip[];
   allDay: Chip[];
@@ -80,6 +104,8 @@ export function DayDrawer({
   scrollHour: number | null;
   onClose: () => void;
   onOpenPanel: (() => void) | null;
+  /** The handle, on the drawer's top edge ("Close the day"). */
+  lip?: ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const agenda = useRef<HTMLDivElement>(null);
@@ -103,23 +129,24 @@ export function DayDrawer({
   useBehindDrawer(ref, onClose);
   const s: OmniSummary | null = st.summary;
   const stale = agentsStale(st);
-  const segs = daySegments(st, now);
+  const todayRecord = useDaysStore((d) => d.records[isoDay(now)]);
+  const segs = daySegments(st, now, todayRecord?.record ?? null);
   const list = s ? cards(s) : [];
   const rows = list
     .map((l, i) => ({ l, num: i + 1, word: laneStateWord(l) }))
-    .sort((a, b) => (RANK[a.word] ?? 2) - (RANK[b.word] ?? 2) || a.num - b.num);
+    // A failed session that also waits on the owner still sorts with those needing him.
+    .sort((a, b) => (laneWaits(a.l) ? 0 : (RANK[a.word] ?? 2)) - (laneWaits(b.l) ? 0 : (RANK[b.word] ?? 2)) || a.num - b.num);
   const nowH = wallHour(now, now);
   const barLo = Math.min(6, ...segs.map((g) => Math.floor(wallHour(g.start, now))).filter((h) => h >= 0));
   const barHi = Math.max(barLo + 1, nowH);
   const bx = (ms: number) => ((Math.min(barHi, Math.max(barLo, wallHour(ms, now))) - barLo) / (barHi - barLo)) * 100;
-  const counts = s ? agentCounts(s) : null;
+  // The header counts what the pills say, so a failed session is never counted as working.
+  const counts = s ? { total: rows.length, need: rows.filter((r) => r.word === 'waiting on you').length, working: rows.filter((r) => r.word === 'working').length, failed: rows.filter((r) => r.word === 'failed').length } : null;
   const dateText = new Date(now).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
   const lanes = agendaLanes(chips);
   return (
     <div className="day-drawer" ref={ref} role="dialog" aria-modal="true" aria-label="Day" tabIndex={-1}>
-      <button type="button" className="rib-handle in-drawer" aria-label="Close the Day drawer" onClick={onClose} {...tip('Close the Day drawer')}>
-        <i />
-      </button>
+      {lip}
       <div className="dd-head">
         <span className="dd-k">Day</span>
         <span className="dd-date">{dateText}</span>
@@ -221,7 +248,13 @@ export function DayDrawer({
                     , <span className="need">{counts.need} need you</span>
                   </>
                 )}
-                , {counts.working} working, {counts.idle} idle{stale ? ', may be out of date' : ''}
+                , {counts.working} working
+                {counts.failed > 0 && (
+                  <>
+                    , <span className="failed">{counts.failed} failed</span>
+                  </>
+                )}
+                , {counts.total - counts.need - counts.working - counts.failed} idle{stale ? ', may be out of date' : ''}
               </span>
             )}
             <span className="dd-axis">
@@ -241,7 +274,8 @@ export function DayDrawer({
               const mine = segs.filter((g) => g.lane === l.id);
               const work = mine.filter((g) => g.kind === 'run' || g.kind === 'past').reduce((t, g) => t + g.end - g.start, 0);
               const wait = mine.filter((g) => g.kind === 'wait').reduce((t, g) => t + g.end - g.start, 0);
-              const tone = laneWaits(l) ? 'need' : word === 'working' ? 'working' : '';
+              const tone = word === 'failed' ? 'failed' : laneWaits(l) ? 'need' : word === 'working' ? 'working' : '';
+              const quiet = quietLine(l);
               return (
                 <button
                   key={l.id}
@@ -256,6 +290,7 @@ export function DayDrawer({
                       <span className="tip-s">
                         {word}, worked {hm(work)} today{wait > 0 ? `, waited on you ${hm(wait)}` : ''}
                       </span>
+                      {quiet && <span className="tip-s">{quiet}</span>}
                       {s?.linksAvailable && <span className="tip-k">Click to open it in OmniGent</span>}
                     </>
                   ))}
@@ -263,7 +298,7 @@ export function DayDrawer({
                   <span className="num">{num}</span>
                   <span className="dd-name">{l.title}</span>
                   <span className={`dd-pill ${tone}`}>{word}</span>
-                  <span className="dd-line">{l.line}</span>
+                  <span className="dd-line">{quiet}</span>
                   <span className="dd-bar">
                     {mine.map((g) => (
                       <i key={g.key} className={g.kind} style={{ left: `${bx(g.start)}%`, width: `max(4px, ${bx(g.end) - bx(g.start)}%)` }} />

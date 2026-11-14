@@ -98,18 +98,21 @@ it('folds a run of overlapping meetings into one chip, its count never narrower 
   expect(calmLayout(chips([ev('p', '09:00', '10:00'), ev('q', '10:00', '11:00')], NOW), NOW).folds).toHaveLength(0);
 });
 
-it('the activity cells count sessions busy in each 12 minutes from 6 AM, amber where one waited', () => {
+it('the activity cells count sessions working at once in each 12 minutes from 6 AM, amber where one waited', () => {
   const at = (hm: string) => t('2026-11-13', hm);
   const cells = activityCells(
     [
       { lane: 'a', kind: 'run', start: at('09:00'), end: at('09:30') },
       { lane: 'b', kind: 'wait', start: at('09:10'), end: at('09:20') },
+      { lane: 'c', kind: 'past', start: at('09:26'), end: at('09:40') },
     ],
     NOW,
   );
+  // A wait is not work: b never counts. a and c overlap from 9:26 to 9:30, so that cell peaks at 2.
   expect(cells.map((c) => [c.busy, c.waits])).toEqual([
-    [2, true],
-    [2, true],
+    [1, true],
+    [1, true],
+    [2, false],
     [1, false],
   ]);
 });

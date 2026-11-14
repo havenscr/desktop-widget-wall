@@ -9,6 +9,7 @@ import {
 import { anchorProgress, formatTime, isPlaying, isQuiet, type NowPlayingInfo, type ProgressAnchor } from '../music/model';
 import { playerName, sourceKey } from '../music/players';
 import { rejectArt } from '../music/store';
+import { useSkyKeepClear } from '../horizon/sky';
 import { useNowPlaying } from '../music/useNowPlaying';
 import { useVisible } from '../ui/useVisible';
 import { useLastPlayed } from './lastPlayed';
@@ -78,6 +79,9 @@ export function Player() {
   const pct = progress ? (progress.position / progress.duration) * 100 : 0;
   const source = sourceKey(info);
   const sourceLabel = playerName(source);
+  // The horizon's moon keeps 40 px clear of the player (it moves to another of its places).
+  const [box, setBox] = useState<HTMLDivElement | null>(null);
+  useSkyKeepClear('listen-player', box);
 
   // The idle view: the session's own stopped track first, then the last one seen here.
   const idle = quiet
@@ -144,7 +148,7 @@ export function Player() {
 
   if (quiet && !idle) {
     return (
-      <div className="u-player quiet" data-state="empty">
+      <div ref={setBox} className="u-player quiet" data-state="empty">
         <div className="u-now u-calm">
           <span className="u-k">Quiet</span>
           <div className="u-np u-none">Nothing playing</div>
@@ -157,7 +161,7 @@ export function Player() {
 
   if (idle) {
     return (
-      <div className="u-player quiet" data-state="idle">
+      <div ref={setBox} className="u-player quiet" data-state="idle">
         <div className="u-now">
           <div className="u-art dim">
             {idle.art ? <img src={idle.art} alt="" onError={() => dropIdleArt(idle.art)} /> : <IconMusic size={72} stroke={1.25} aria-hidden="true" />}
@@ -175,7 +179,7 @@ export function Player() {
   }
 
   return (
-    <div className="u-player" data-state="playing">
+    <div ref={setBox} className="u-player" data-state="playing">
       <div className="u-now">
         <div className="u-art">
           {art ? <img src={art} alt="" onError={rejectArt} /> : <IconMusic size={72} stroke={1.25} aria-hidden="true" />}

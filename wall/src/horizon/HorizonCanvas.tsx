@@ -1,13 +1,15 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useReducedMotion } from '../ui/useReducedMotion';
 import { useIdle } from '../ui/useIdle';
 import { wantsDemo } from '../audio/capture';
 import { STAGE_HEIGHT, STAGE_WIDTH, fitScale } from '../stage/fitScale';
+import { MAIN_LEFT } from '../screens/frameLayout';
 import { usePlaceStore } from '../state/places';
 import { REFLECT, createReflection, drawReflection, reflectionAlpha } from './reflection';
 import { audioBands, audioBeats, clearDanceHistory, danceKick, pauseDanceHistory, useAudioStore } from '../audio/store';
 import { loudness, smoothStep } from '../audio/model';
-import { CAMERAS, HOME_MORNING, MOON, cameraFor, cloudShiftFor, glideCamera, localDay, settled, startGlide, stepGlide, type CameraPreset, type Glide } from './cameras';
+import { CAMERAS, HOME_MORNING, MOON_PLACES, cameraFor, cloudShiftFor, glideCamera, localDay, settled, startGlide, stepGlide, type CameraPreset, type Glide } from './cameras';
 import {
   REST_PHASE,
   createEchoMotion,
@@ -27,11 +29,24 @@ import {
 import { liveTint } from '../music/coverTint';
 import { frameDelta, shouldDraw } from './pacing';
 import { clearGridPulse, createGridPulse, stepGridPulse } from './pulse';
-import { parseReview } from './review';
+import { parseReview, parseSkyReview } from './review';
 import { publishCamera } from './signal';
+import { frontHost, moonFor, useSkyClaim, useSkyStore } from './sky';
+import { drawVeil, veilStrength } from './veil';
 import { drawHorizon, type HorizonGrid, type HorizonOptions } from './index';
 
 const REDRAW_MS = 60_000;
+/**
+ * After a place change the veil's strength is read each frame for this long (its CSS transition is
+ * 600 ms); otherwise it is read once, when the front canvas comes, and kept.
+ */
+const VEIL_SETTLE_MS = 800;
+/**
+ * The front canvas's place: the whole stage, whatever element it is mounted in, cut at the main
+ * area's left edge (`MAIN_LEFT`). The rail is painted before the main area, so the front canvas
+ * would cover it; left of that edge the main canvas keeps the ground (copied from the front one).
+ */
+const FRONT_STYLE = { position: 'fixed', left: 0, top: 0, pointerEvents: 'none', clipPath: `inset(0 0 0 ${MAIN_LEFT}px)` } as const;
 /** Home's morning rule is re-checked this often. */
 const MORNING_CHECK_MS = 60_000;
 
@@ -61,6 +76,30 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
     pauseDanceHistory(idle);
   }, [idle]);
   useEffect(() => () => pauseDanceHistory(false), []);
+  // The sky layers (`sky.ts`): while a screen gives an element for it, the ground is drawn on a
+  // second canvas mounted there, in front of whatever the screen puts into the sky.
+  const claims = useSkyStore((s) => s.claims);
+  // Dev builds only: `?sky=front` mounts the front canvas everywhere, `?sky=flat` never, `?skymoon=x,y,r` moves the moon (fit-check breaks, cost measurement).
+  const [skyReview] = useState(() => (import.meta.env.DEV ? parseSkyReview(window.location.search) : null));
+  const alwaysFront = !zen && skyReview?.front === 'always';
+  const host = zen || skyReview?.front === 'always' || skyReview?.front === 'never' ? null : frontHost(claims);
+  // The moon's candidate places (`MOON_PLACES`), or the one review place.
+  const [moonPlaces] = useState(() => (skyReview?.moon ? [skyReview.moon] : MOON_PLACES));
+  // The moon last drawn, published on the canvas as `data-moon` ("x,y,r", or empty) for the fit check.
+  const shownMoon = useRef<readonly number[] | null | undefined>(undefined);
+  const frontRef = useRef<HTMLCanvasElement | null>(null);
+  const [front, setFront] = useState<HTMLCanvasElement | null>(null);
+  const frontCanvas = useCallback((el: HTMLCanvasElement | null) => {
+    frontRef.current = el;
+    setFront(el);
+  }, []);
+  // The place veil the front canvas repeats (`veil.ts`): its element, its strength as last read,
+  // and until when (performance.now) it is read again each frame: -1 once it has settled, -2 when
+  // the element is to be looked up again on the next paint with a front canvas (at first, and after a place change).
+  // `timer`: a still frame drawn while the veil moves is drawn once more when it has settled.
+  const veil = useRef<{ el: Element | null; a: number; until: number; timer: number }>({ el: null, a: 0, until: -2, timer: 0 });
+  // True while the drawing is a still (reduced motion, or a frozen review frame).
+  const stillRef = useRef(false);
   const glide = useRef<Glide>(settled(cameraFor(review?.place ?? place ?? 'work', review ? review.ms : now())));
   const repaint = useRef<() => void>(() => {});
   const first = useRef(true);
@@ -131,6 +170,7 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
     const canvas = ref.current;
     if (!canvas || zen) return;
     const still = reduced || (review !== null && !demo);
+    stillRef.current = still;
     // Start the pulse from nothing: after Zen or a reduced motion spell the stored bands are stale.
     clearGridPulse(pulse.current);
     grid.current = null;
@@ -196,12 +236,70 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
       }
       // The moon shows only once the camera has arrived at Unwind (no glide in progress), and
       // goes the moment a glide away starts. The review still and reduced motion jump straight there.
-      if (glide.current.progress >= 1 && glide.current.to === CAMERAS.unwind) options.moon = MOON;
-      drawHorizon(ctx, options);
+      // A screen with a picture over its place, or a look that owns that sky, withholds it (`sky.ts`).
+      if (glide.current.progress >= 1 && glide.current.to === CAMERAS.unwind) {
+        const moon = moonFor(moonPlaces, useSkyStore.getState().claims);
+        if (moon) options.moon = moon;
+      }
+      if (shownMoon.current !== (options.moon ?? null)) {
+        shownMoon.current = options.moon ?? null;
+        canvas.dataset.moon = options.moon ? options.moon.join(',') : '';
+      }
+      // With the front canvas mounted: the sky here, the ground there, on the same frame. A front
+      // canvas no longer in the page (its host was taken out) is none: this canvas draws it all.
+      const fc = frontRef.current;
+      let fctx: CanvasRenderingContext2D | null = null;
+      if (fc && fc.isConnected) {
+        if (fc.width !== width || fc.height !== height) {
+          fc.width = width;
+          fc.height = height;
+        }
+        fctx = fc.getContext('2d');
+      }
+      if (fctx) {
+        options.part = 'sky';
+        drawHorizon(ctx, options);
+        options.part = 'ground';
+        drawHorizon(fctx, options);
+      } else {
+        drawHorizon(ctx, options);
+      }
       // The lake mirrors the finished frame on the visualizer camera, only while lines are drawn.
       if (REFLECT && options.echo) {
         const open = still ? initialEchoGate(glide.current).value : gate.current.value * awake.current;
-        drawReflection(reflection.current, ctx, width, height, camera.hy, scale, reflectionAlpha(visualizerWeight(camera), open));
+        const alpha = reflectionAlpha(visualizerWeight(camera), open);
+        if (fctx) drawReflection(reflection.current, fctx, width, height, camera.hy, scale, alpha, undefined, canvas);
+        else drawReflection(reflection.current, ctx, width, height, camera.hy, scale, alpha);
+      }
+      if (fc && fctx) {
+        // Left of the main area (the rail's column) the front canvas is cut away: the main canvas
+        // takes the ground there over its sky, so the rail's glass shows the whole picture.
+        const strip = Math.min(width, Math.ceil(MAIN_LEFT * scale));
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.globalAlpha = 1;
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.drawImage(fc, 0, 0, strip, height, 0, 0, strip, height);
+        ctx.restore();
+        // The place veil lies over the main canvas as a page layer; the front canvas is above it,
+        // so it lays the same veil on its own pixels (`veil.ts`).
+        const v = veil.current;
+        if (v.until === -2) {
+          v.el = canvas.parentElement?.querySelector(':scope > .veil') ?? null;
+          v.until = performance.now() + VEIL_SETTLE_MS;
+        }
+        if (v.until >= 0) {
+          v.a = veilStrength(v.el);
+          const left = v.until - performance.now();
+          if (left < 0) v.until = -1;
+          else if (still && !v.timer) {
+            v.timer = window.setTimeout(() => {
+              v.timer = 0;
+              repaint.current();
+            }, left + 50);
+          }
+        }
+        drawVeil(fctx, width, height, v.a);
       }
     };
     repaint.current = paint;
@@ -256,6 +354,25 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
     };
   }, [reduced, review, zen, demo]);
 
+  // The veil is looked up and read on the first frame with the front canvas and again after a
+  // place change (then each frame through its transition), never otherwise: a style read each
+  // frame forces a style flush.
+  useEffect(() => {
+    veil.current.until = -2;
+  }, [active]);
+  useEffect(() => () => window.clearTimeout(veil.current.timer), []);
+
+  // A still frame is drawn again when the sky layers change (the front canvas comes or goes, a
+  // claim moves the moon); the animated loop picks the change up on its next frame.
+  // (The canvas element is read from its ref, which is set before effects run, so its arrival
+  // and the claim that brought it make one repaint.)
+  const seen = useRef({ claims, front: frontRef.current });
+  useEffect(() => {
+    if (seen.current.claims === claims && seen.current.front === frontRef.current) return;
+    seen.current = { claims, front: frontRef.current };
+    if (stillRef.current) repaint.current();
+  }, [claims, front]);
+
   // Hidden pages return with the lines at rest, and the grid pulse and the band history from nothing, never from stale levels.
   useEffect(() => {
     const onHide = () => {
@@ -301,6 +418,35 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
   }, [place, review]);
 
   return (
-    <canvas ref={ref} className="horizon-canvas" aria-hidden="true" style={zen ? { display: 'none' } : undefined} />
+    <>
+      <canvas ref={ref} className="horizon-canvas" aria-hidden="true" style={zen ? { display: 'none' } : undefined} />
+      {/* Fixed to the stage (its transform is the containing block), so it covers the stage
+          whatever box it is mounted in, and takes no pointer. */}
+      {alwaysFront ? <canvas ref={frontCanvas} className="horizon-canvas horizon-front" aria-hidden="true" style={FRONT_STYLE} /> : null}
+      {host ? createPortal(<canvas ref={frontCanvas} className="horizon-canvas horizon-front" aria-hidden="true" style={FRONT_STYLE} />, host) : null}
+      {skyReview?.front === 'empty' && !zen ? <EmptyLayer place={active} /> : null}
+    </>
+  );
+}
+
+/**
+ * Review knob `?sky=empty` (development builds only): claims the sky layers with an empty host
+ * placed in the main area as a screen's host is (`.w-stage.w-layered` in `unwind.css`), so the
+ * front canvas is mounted with no picture between it and the main canvas. The pixel proof
+ * (`npm run fit-check`) compares that with the one-canvas picture: they must be the same pixels.
+ */
+function EmptyLayer({ place }: { place: string }) {
+  const [main, setMain] = useState<Element | null>(null);
+  const [host, setHost] = useState<HTMLDivElement | null>(null);
+  useEffect(() => {
+    setMain(document.querySelector('.main'));
+  }, [place]);
+  useSkyClaim('review-empty', main ? { front: host } : null);
+  if (!main) return null;
+  return createPortal(
+    <div className="w-stage w-layered sky-empty" style={{ inset: 0, pointerEvents: 'none' }} aria-hidden="true">
+      <div ref={setHost} style={{ position: 'absolute', inset: 0 }} />
+    </div>,
+    main,
   );
 }

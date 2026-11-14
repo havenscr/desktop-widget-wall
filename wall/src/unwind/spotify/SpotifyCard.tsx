@@ -13,6 +13,7 @@ import {
   IconSearch,
 } from '@tabler/icons-react';
 import { invoke } from '../../bridge/tauri';
+import { useSkyKeepClear } from '../../horizon/sky';
 import { isPlaying, isQuiet } from '../../music/model';
 import { playerName, sourceKey } from '../../music/players';
 import { spotify, type SpotifyItem, type SpotifyTrack } from '../../music/spotify';
@@ -97,8 +98,11 @@ const nearEnd = (e: UIEvent<HTMLElement>) => {
 export function SpotifyCard() {
   const source = useListenSource((s) => s.source);
   const setSource = useListenSource((s) => s.setSource);
+  // The horizon's moon keeps 40 px clear of this card (it moves to another of its places).
+  const [card, setCard] = useState<HTMLElement | null>(null);
+  useSkyKeepClear('listen-card', card);
   return (
-    <section className={`u-card sp-card${source === 'youtube' ? ' yt' : ''}`} aria-label="Music to play">
+    <section ref={setCard} className={`u-card sp-card${source === 'youtube' ? ' yt' : ''}`} aria-label="Music to play">
       <div className="sp-top">
         <SourceSwitch source={source} onPick={setSource} />
         <span className="sp-hint">Which player the wall follows</span>
