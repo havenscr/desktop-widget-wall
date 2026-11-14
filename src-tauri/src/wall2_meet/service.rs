@@ -1050,7 +1050,7 @@ mod tests {
     fn expand_refusal_cache_skips_probes_then_expires_and_sign_out_clears_it() {
         let (store, core) = setup();
         let links = Mutex::new(Links::default());
-        let tokens = FakeTokens::new(vec![ok_token("a", None)]);
+        let tokens = FakeTokens::new(vec![ok_token("a", None), ok_token("b", None)]);
         let first = ScriptGraph::new(vec![GraphStep::Status(400), GraphStep::Ok]);
         read_day(&[acct("work")], &store, &tokens, &first, &core, &links, NOW, NOW, NOW + 3600);
         assert_eq!(core.lock().unwrap().log_lines.iter().filter(|line| line.contains("the item id for desktop Outlook is not offered by this mailbox")).count(), 1);
