@@ -3265,6 +3265,14 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.sp-li-len {
+  flex: none;
+  margin-left: auto;
+  padding-right: 4px;
+  font: 400 16px/1 var(--body);
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+}
 .sp-li.on .sp-li-n {
   color: var(--cyan);
 }

@@ -5,11 +5,12 @@ import type { SpotifyDevice, SpotifyItem, SpotifyTrack } from '../../music/spoti
 import { resetNowPlaying } from '../../music/store';
 import { resetTools } from '../../tools/store';
 import { hideTip, resetTip } from '../../ui/HoverTip';
-import { deviceKindWord, playDeviceId, resetSpotifyTarget, resetListenSource, seekPosition, SEARCH_WAIT_MS, TALL_CLOSE_MS, useListenSource, useSpotifyNow, useSpotifyStart } from './model';
-import { deviceRows, DEVICES_FOOT } from './PlayOn';
-import { PLAYBACK_POLL_MS, SEEK_STEP_MS } from './PlayerRow';
+import { deviceKindWord, GONE_LINE, LOCKED_LINE, playDeviceId, resetSpotifyTarget, resetListenSource, seekPosition, SEARCH_WAIT_MS, TALL_CLOSE_MS, useListenSource, useSpotifyDevices, useSpotifyNow, useSpotifyStart, useSpotifyTarget } from './model';
+import { deviceRows, DEVICES_FOOT, STALE_NOTE } from './PlayOn';
+import { PLAYBACK_POLL_MS, SEEK_KEY_GAP_MS, SEEK_STEP_MS } from './PlayerRow';
 import { SpotifyCard } from './SpotifyCard';
 import { QUEUE_NOTE } from './TallViews';
+import { arrowTarget, gridColumns } from './Tile';
 import { resetSpotifyStatus, useSpotifyStatus } from './status';
 
 vi.setConfig({ testTimeout: 20_000 });
@@ -57,6 +58,10 @@ async function setup(over: { devices?: SpotifyDevice[]; playing?: boolean } = {}
   record('media_next');
   record('media_previous');
   record('media_play_pause');
+  record('wall2_spotify_pause');
+  record('wall2_spotify_resume');
+  record('wall2_spotify_next');
+  record('wall2_spotify_previous');
   windows('Spotify', 'Spotify.exe');
   const view = render(
     <>
@@ -73,6 +78,8 @@ const card = () => document.querySelector('.sp-card') as HTMLElement;
 const isTall = () => card().getAttribute('data-tall') === 'true';
 const openButton = () => screen.getByRole('button', { name: /the tall music view/ });
 const open = async () => {
+  // A click on the button has the pointer on the card.
+  fireEvent.pointerEnter(card());
   await act(async () => openButton().click());
   await flush();
 };
@@ -88,6 +95,7 @@ beforeEach(() => {
   resetSpotifyTarget();
   useSpotifyNow.setState({ id: null });
   useSpotifyStart.setState({ starting: false, rev: 0, name: '' });
+  useSpotifyDevices.setState({ devices: null, stale: false, problem: null });
 });
 afterEach(() => {
   hideTip(true);
@@ -198,15 +206,36 @@ describe('opening and closing the tall view', () => {
     expect(behind).toHaveBeenCalledTimes(1);
   });
 
-  it('a press outside that never becomes a click stops swallowing after a moment', async () => {
+  it('a press held for a long time still has its click swallowed, and only that one', async () => {
     await setup();
     await open();
     const target = screen.getByText('Behind');
     await act(async () => fireEvent.pointerDown(target));
     expect(isTall()).toBe(false);
-    await flush(700);
+    await flush(30_000);
+    await act(async () => {
+      fireEvent.mouseUp(target);
+      fireEvent.click(target);
+    });
+    expect(behind).not.toHaveBeenCalled();
+    await flush(1);
     await act(async () => fireEvent.click(target));
     expect(behind).toHaveBeenCalledTimes(1);
+  });
+
+  it('a press that is cancelled (or a context menu) stops the swallowing with it', async () => {
+    await setup();
+    await open();
+    const target = screen.getByText('Behind');
+    await act(async () => fireEvent.pointerDown(target));
+    await act(async () => fireEvent.pointerCancel(target));
+    await act(async () => fireEvent.click(target));
+    expect(behind).toHaveBeenCalledTimes(1);
+    await open();
+    await act(async () => fireEvent.pointerDown(target));
+    await act(async () => fireEvent.contextMenu(target));
+    await act(async () => fireEvent.click(target));
+    expect(behind).toHaveBeenCalledTimes(2);
   });
 
   it('a press inside the card, or on a tile details card, does not close it', async () => {
@@ -424,23 +453,33 @@ describe('inside the tall view', () => {
       expect(document.querySelectorAll('.sp-qrow')).toHaveLength(4);
       expect(document.querySelector('.sp-qrow.on')?.textContent).toContain('Song 1');
     });
-    it('a click skips ahead through Windows by the row number and never starts a list', async () => {
+    it('a click skips ahead with Spotify\'s own next, by the row number, and never starts a list', async () => {
       await setup();
       await tabUp();
       await act(async () => (document.querySelectorAll('button.sp-qrow')[1] as HTMLButtonElement).click());
       await flush();
-      expect(sent.filter((s) => s[0] === 'media_next')).toHaveLength(2);
-      expect(sent.some((s) => s[0] === 'wall2_spotify_play')).toBe(false);
+      expect(sent.filter((s) => s[0] === 'wall2_spotify_next')).toHaveLength(2);
+      expect(sent.some((s) => s[0] === 'media_next' || s[0] === 'wall2_spotify_play')).toBe(false);
     });
-    it('with another player in front it sends nothing and says why', async () => {
+    it('works with another program in front of Windows, because it does not use the media keys', async () => {
       await setup();
       windows('Edge', 'msedge');
       await flush(10_000);
       await tabUp();
       await act(async () => (document.querySelectorAll('button.sp-qrow')[0] as HTMLButtonElement).click());
       await flush();
+      expect(sent.filter((s) => s[0] === 'wall2_spotify_next')).toHaveLength(1);
       expect(sent.some((s) => s[0] === 'media_next')).toBe(false);
-      expect(screen.getByText('Open its list to play it')).toBeTruthy();
+    });
+    it('says so when Spotify refuses a skip', async () => {
+      await setup();
+      mocks.set('wall2_spotify_next', () => {
+        throw new Error('refused');
+      });
+      await tabUp();
+      await act(async () => (document.querySelectorAll('button.sp-qrow')[0] as HTMLButtonElement).click());
+      await flush();
+      expect(screen.getByText('Could not skip. Spotify refused this list.')).toBeTruthy();
     });
     it('has its empty, error and busy states', async () => {
       await setup();
@@ -537,14 +576,40 @@ describe('the player row and seek', () => {
     await act(async () => fireEvent.pointerUp(slider(), { clientX: 900, pointerId: 1 }));
     expect(sent.find((s) => s[0] === 'wall2_spotify_seek')?.[1]).toEqual({ positionMs: 200_000 });
   });
-  it('the arrow keys move it five seconds, Home goes to the start', async () => {
+  const seekCalls = () => sent.filter((s) => s[0] === 'wall2_spotify_seek').map((s) => (s[1] as { positionMs: number }).positionMs);
+  it('an arrow key moves it five seconds and Home goes to the start', async () => {
     await setup();
     await open();
     await act(async () => slider().focus());
     await act(async () => fireEvent.keyDown(slider(), { key: 'ArrowRight' }));
+    await act(async () => fireEvent.keyUp(slider(), { key: 'ArrowRight' }));
+    await flush(SEEK_KEY_GAP_MS);
     await act(async () => fireEvent.keyDown(slider(), { key: 'Home' }));
-    const seeks = sent.filter((s) => s[0] === 'wall2_spotify_seek').map((s) => (s[1] as { positionMs: number }).positionMs);
-    expect(seeks).toEqual([65_000 + SEEK_STEP_MS, 0]);
+    await act(async () => fireEvent.keyUp(slider(), { key: 'Home' }));
+    expect(seekCalls()).toEqual([65_000 + SEEK_STEP_MS, 0]);
+  });
+  it('a held arrow key sends one seek at first, then at most one every 300 ms, and the final position on key up', async () => {
+    await setup();
+    await open();
+    await act(async () => slider().focus());
+    // Twelve repeats, 50 ms apart.
+    for (let i = 0; i < 12; i++) {
+      await act(async () => fireEvent.keyDown(slider(), { key: 'ArrowRight' }));
+      await flush(50);
+    }
+    // First repeat at once (70 s), then the position reached after 300 ms; none more than one per 300 ms.
+    expect(seekCalls().length).toBeLessThanOrEqual(3);
+    expect(seekCalls()[0]).toBe(65_000 + SEEK_STEP_MS);
+    // The bar follows every repeat even before a seek goes out.
+    expect(slider().getAttribute('aria-valuenow')).toBe(String(65 + 12 * 5));
+    await act(async () => fireEvent.keyUp(slider(), { key: 'ArrowRight' }));
+    await flush(1);
+    const calls = seekCalls();
+    expect(calls[calls.length - 1]).toBe(65_000 + 12 * SEEK_STEP_MS);
+    // Nothing is left to send afterwards.
+    const n = calls.length;
+    await flush(2000);
+    expect(seekCalls().length).toBe(n);
   });
   it('a refused seek says so in the row and reads again', async () => {
     await setup();
@@ -569,21 +634,111 @@ describe('the player row and seek', () => {
     fireEvent.pointerUp(slider(), { clientX: 200, pointerId: 1 });
     expect(sent.some((s) => s[0] === 'wall2_spotify_seek')).toBe(false);
   });
-  it('the buttons go through Windows while Spotify is in front, and say why they cannot otherwise', async () => {
+  const playbackOn = (name: string, kind: string, playing: boolean) =>
+    mocks.set('wall2_spotify_playback', () => ({ playing, device: { name, kind }, track: track(1), progressMs: 65_000, shuffle: false }));
+  const press = async (name: 'previous' | 'play' | 'next') => {
+    await act(async () => (document.querySelector(`[data-control="${name}"]`) as HTMLButtonElement).click());
+    await flush();
+  };
+  const names = () => sent.map((s) => s[0]);
+  it('the three buttons use Spotify\'s own commands while Spotify reports a player', async () => {
     await setup();
     await open();
     await flush(2000);
-    await act(async () => (document.querySelector('[data-control="next"]') as HTMLButtonElement).click());
-    await act(async () => (document.querySelector('[data-control="play"]') as HTMLButtonElement).click());
-    await act(async () => (document.querySelector('[data-control="previous"]') as HTMLButtonElement).click());
-    expect(sent.map((s) => s[0]).filter((n) => n.startsWith('media_'))).toEqual(['media_next', 'media_play_pause', 'media_previous']);
-    sent.length = 0;
+    await press('next');
+    await press('play');
+    await press('previous');
+    // Playing, so the middle button pauses.
+    expect(names().filter((n) => n.startsWith('wall2_spotify_') && n !== 'wall2_spotify_play')).toEqual(['wall2_spotify_next', 'wall2_spotify_pause', 'wall2_spotify_previous']);
+    expect(names().some((n) => n.startsWith('media_'))).toBe(false);
+  });
+  it('after a press the playback state is read again, at once and once more shortly after', async () => {
+    let reads = 0;
+    await setup();
+    await open();
+    mocks.set('wall2_spotify_playback', () => {
+      reads++;
+      return { playing: true, device: { name: 'Desk speakers', kind: 'Computer' }, track: track(1), progressMs: 65_000, shuffle: false };
+    });
+    const before = reads;
+    await press('next');
+    expect(reads - before).toBeGreaterThanOrEqual(1);
+    const mid = reads;
+    await flush(900);
+    expect(reads).toBeGreaterThan(mid);
+  });
+  it('music moved to a phone while desktop Spotify is the paused Windows session: Play resumes the phone and never starts this PC', async () => {
+    await setup();
+    playbackOn('Phone', 'Smartphone', false);
+    windows('Spotify', 'Spotify.exe');
+    mocks.set('get_now_playing', () => ({ title: 'Song 1', artist: 'Some Artist', playback_status: 'paused', source_app: 'Spotify', source_app_id: 'Spotify.exe' }));
+    await open();
+    await flush(2000);
+    const play = document.querySelector('[data-control="play"]') as HTMLButtonElement;
+    expect(play.getAttribute('aria-label')).toBe('Play');
+    expect(play.getAttribute('aria-disabled')).toBe('false');
+    await press('play');
+    expect(names()).toContain('wall2_spotify_resume');
+    expect(names().some((n) => n === 'media_play_pause' || n === 'wall2_spotify_play')).toBe(false);
+  });
+  it('music on a chosen phone with another program as the Windows session: all three buttons work', async () => {
+    await setup();
+    playbackOn('Phone', 'Smartphone', true);
     windows('Edge', 'msedge');
-    await flush(10_000);
-    const next = document.querySelector('[data-control="next"]') as HTMLButtonElement;
-    expect(next.getAttribute('aria-disabled')).toBe('true');
-    await act(async () => next.click());
-    expect(sent.some((s) => s[0] === 'media_next')).toBe(false);
+    await open();
+    await flush(2000);
+    for (const c of ['previous', 'play', 'next'] as const) expect((document.querySelector(`[data-control="${c}"]`) as HTMLButtonElement).getAttribute('aria-disabled')).toBe('false');
+    await press('previous');
+    await press('play');
+    await press('next');
+    expect(names().filter((n) => n.startsWith('wall2_spotify_') && n !== 'wall2_spotify_play')).toEqual(['wall2_spotify_previous', 'wall2_spotify_pause', 'wall2_spotify_next']);
+    expect(names().some((n) => n.startsWith('media_'))).toBe(false);
+  });
+  it('with nothing playing anywhere the buttons are marked unavailable and send nothing', async () => {
+    await setup({ playing: false });
+    windows('Edge', 'msedge');
+    await open();
+    await flush(2000);
+    for (const c of ['previous', 'play', 'next'] as const) {
+      const b = document.querySelector(`[data-control="${c}"]`) as HTMLButtonElement;
+      expect(b.getAttribute('aria-disabled')).toBe('true');
+      await act(async () => b.click());
+    }
+    expect(names().some((n) => n.startsWith('media_') || ['wall2_spotify_pause', 'wall2_spotify_resume', 'wall2_spotify_next', 'wall2_spotify_previous'].includes(n))).toBe(false);
+  });
+  it('only when Spotify reports no player and the Windows session is Spotify on this PC do the media keys serve', async () => {
+    await setup({ playing: false });
+    windows('Spotify', 'Spotify.exe');
+    await open();
+    await flush(2000);
+    await press('next');
+    await press('play');
+    expect(names().filter((n) => n.startsWith('media_'))).toEqual(['media_next', 'media_play_pause']);
+    expect(names().some((n) => ['wall2_spotify_pause', 'wall2_spotify_resume', 'wall2_spotify_next'].includes(n))).toBe(false);
+  });
+  it('a refused press says so in the row', async () => {
+    await setup();
+    mocks.set('wall2_spotify_pause', () => {
+      throw new Error('no device');
+    });
+    await open();
+    await flush(2000);
+    await press('play');
+    expect(screen.getByText('Could not pause. Open Spotify on this PC first.')).toBeTruthy();
+  });
+  it('reads again when a song\'s length is reached, not on every tick after', async () => {
+    let reads = 0;
+    await setup();
+    mocks.set('wall2_spotify_playback', () => {
+      reads++;
+      return { playing: true, device: { name: 'Desk speakers', kind: 'Computer' }, track: { ...track(1), durationMs: 10_000 }, progressMs: 8_000, shuffle: false };
+    });
+    await open();
+    await flush(500);
+    const before = reads;
+    await flush(2500);
+    // 8 s plus 2 s reaches 10 s: one read, then the 3 s gap holds the next.
+    expect(reads - before).toBe(1);
   });
   it('reads playback again every 20 seconds and when the song changes', async () => {
     let reads = 0;
@@ -769,4 +924,402 @@ describe('Play on', () => {
   });
 });
 
+
 const QUEUE_POLL_MS_FOR_TEST = 20_000;
+
+describe('a chosen player that is gone, locked or unreachable', () => {
+  const pickPhone = async () => {
+    await act(async () => chip().click());
+    await flush();
+    await act(async () => (document.querySelectorAll('.sp-device')[1] as HTMLButtonElement).click());
+    await flush();
+  };
+  const playOpened = async () => {
+    await act(async () => (document.querySelector('.sp-tile') as HTMLButtonElement).click());
+    await flush();
+    await act(async () => (document.querySelector('.sp-shead .sp-btn.fill') as HTMLButtonElement).click());
+    await flush();
+  };
+  const plays = () => sent.filter((s) => s[0] === 'wall2_spotify_play');
+
+  it('awake: the chip names it and Play goes there', async () => {
+    await setup({ playing: false });
+    await pickPhone();
+    expect(chip().textContent).toContain('Phone');
+    await playOpened();
+    expect(plays()).toHaveLength(1);
+    expect(plays()[0][1]).toMatchObject({ request: { deviceId: dev(2) } });
+  });
+
+  it('gone: Play sends nothing, the line says so, the pick is cleared and the chip names the player that plays', async () => {
+    await setup({ playing: false });
+    await pickPhone();
+    // The phone fell asleep: Spotify's list no longer has it.
+    mocks.set('wall2_spotify_devices', () => [DEVICES[0], DEVICES[2]]);
+    await act(async () => (document.querySelector('.sp-tile') as HTMLButtonElement).click());
+    await flush();
+    await act(async () => (document.querySelector('.sp-shead .sp-btn.fill') as HTMLButtonElement).click());
+    await flush();
+    expect(plays()).toHaveLength(0);
+    expect(screen.getByText(GONE_LINE)).toBeTruthy();
+    expect(useSpotifyTarget.getState().target).toBeNull();
+    expect(chip().textContent).toContain('Desk speakers');
+    // Choosing again afterwards plays on the player the chip names.
+    await act(async () => (document.querySelector('.sp-shead .sp-btn.fill') as HTMLButtonElement).click());
+    await flush();
+    expect(plays()).toHaveLength(1);
+    expect(plays()[0][1]).toMatchObject({ request: { deviceId: dev(1) } });
+  });
+
+  it('locked: Play sends nothing and says that player does not allow control', async () => {
+    await setup({ playing: false });
+    await pickPhone();
+    mocks.set('wall2_spotify_devices', () => [DEVICES[0], { ...DEVICES[1], restricted: true }, DEVICES[2]]);
+    await act(async () => (document.querySelector('.sp-tile') as HTMLButtonElement).click());
+    await flush();
+    await act(async () => (document.querySelector('.sp-shead .sp-btn.fill') as HTMLButtonElement).click());
+    await flush();
+    expect(plays()).toHaveLength(0);
+    expect(screen.getByText(LOCKED_LINE)).toBeTruthy();
+    expect(useSpotifyTarget.getState().target).toBeNull();
+  });
+
+  it('gone between the check and the play (Rust answers "device gone"): the same line and a cleared pick', async () => {
+    await setup({ playing: false });
+    await pickPhone();
+    mocks.set('wall2_spotify_play', () => {
+      throw new Error('device gone');
+    });
+    await playOpened();
+    expect(screen.getByText(GONE_LINE)).toBeTruthy();
+    expect(useSpotifyTarget.getState().target).toBeNull();
+    expect(chip().textContent).not.toContain('Phone');
+  });
+
+  it('a computer that is gone is started again by Play (this PC), not refused', async () => {
+    await setup({ playing: false, devices: [device(1, 'Desk speakers', 'Computer'), device(2, 'Phone', 'Smartphone')] });
+    await act(async () => chip().click());
+    await flush();
+    await act(async () => (document.querySelectorAll('.sp-device')[0] as HTMLButtonElement).click());
+    await flush();
+    expect(chip().textContent).toContain('Desk speakers');
+    mocks.set('wall2_spotify_devices', () => [device(2, 'Phone', 'Smartphone')]);
+    await playOpened();
+    expect(plays()).toHaveLength(1);
+    expect((plays()[0][1] as { request: Record<string, unknown> }).request.deviceId).toBeUndefined();
+  });
+
+  it('a failed refresh before Play lets it go, since Rust checks the same list', async () => {
+    await setup({ playing: false });
+    await pickPhone();
+    mocks.set('wall2_spotify_devices', () => {
+      throw new Error('down');
+    });
+    await playOpened();
+    expect(plays()).toHaveLength(1);
+    expect(plays()[0][1]).toMatchObject({ request: { deviceId: dev(2) } });
+  });
+
+  it('the chooser reads the list again when it opens', async () => {
+    await setup();
+    let reads = 0;
+    mocks.set('wall2_spotify_devices', () => {
+      reads++;
+      return DEVICES;
+    });
+    const before = reads;
+    await act(async () => chip().click());
+    await flush();
+    expect(reads).toBeGreaterThan(before);
+  });
+
+  it('after a failed refresh the old rows stay, marked as possibly out of date and not as live', async () => {
+    await setup();
+    await act(async () => chip().click());
+    await flush();
+    expect(document.querySelector('.sp-devices .sp-device small')?.textContent).toBe('Computer, playing now');
+    key('Escape');
+    mocks.set('wall2_spotify_devices', () => {
+      throw new Error('down');
+    });
+    await act(async () => chip().click());
+    await flush();
+    expect(screen.getByText(STALE_NOTE)).toBeTruthy();
+    expect(document.querySelector('.sp-devices')?.classList.contains('stale')).toBe(true);
+    const rows = [...document.querySelectorAll('.sp-device')];
+    expect(rows).toHaveLength(3);
+    expect(rows.map((r) => r.querySelector('small')?.textContent)).toEqual(['Computer', 'Phone', 'Speaker']);
+    expect(rows.every((r) => r.getAttribute('aria-pressed') === 'false')).toBe(true);
+    // A good read takes the marks away.
+    mocks.set('wall2_spotify_devices', () => DEVICES);
+    key('Escape');
+    await act(async () => chip().click());
+    await flush();
+    expect(screen.queryByText(STALE_NOTE)).toBeNull();
+  });
+
+  it('music on a player that does not allow control: the chip names it and says so', async () => {
+    await setup({ devices: [{ ...device(5, 'Living room TV', 'TV', true, true) }, device(1, 'Desk speakers', 'Computer')] });
+    expect(chip().textContent).toContain('Living room TV');
+    expect(chip().getAttribute('aria-label')).toContain('cannot be controlled from here');
+    expect(chip().classList.contains('locked')).toBe(true);
+    expect(chip().textContent).not.toContain('This PC');
+  });
+});
+
+describe('every first read shows loading words, and a re-read keeps what is on screen', () => {
+  const held = () => {
+    let resolve: (v: unknown) => void = () => undefined;
+    const promise = new Promise((r) => {
+      resolve = r;
+    });
+    return { promise, resolve };
+  };
+  const tabs = () => [...document.querySelectorAll<HTMLButtonElement>('.sp-tabs button')];
+
+  it('Playlists, Albums, Liked and Recent', async () => {
+    await setup();
+    const lists: [string, string, string][] = [['wall2_spotify_albums', 'Reading your albums.', 'Albums'], ['wall2_spotify_liked', 'Reading your liked songs.', 'Liked'], ['wall2_spotify_recent', 'Reading what you played lately.', 'Recent']];
+    for (const [cmd, line, label] of lists) {
+      const h = held();
+      mocks.set(cmd, () => h.promise);
+      // Rest layout: the tab row has Search first.
+      await act(async () => tabs().find((t) => t.textContent === label)?.click());
+      await flush();
+      const busy = document.querySelector('[aria-busy="true"]');
+      expect(busy?.textContent, cmd).toBe(line);
+      await act(async () => h.resolve([item(77, 'playlist', 'Held list')]));
+      await flush();
+      expect(document.querySelector('[aria-busy="true"]'), cmd).toBeNull();
+      expect(screen.getByText('Held list')).toBeTruthy();
+    }
+  });
+
+  it('the first view, Playlists, before its answer arrives', async () => {
+    signedIn();
+    const h = held();
+    mocks.set('wall2_spotify_playlists', () => h.promise);
+    mocks.set('get_now_playing', () => null);
+    render(<SpotifyCard />);
+    await flush();
+    expect(document.querySelector('[aria-busy="true"]')?.textContent).toBe('Reading your playlists.');
+    expect(document.querySelector('.sp-tile')).toBeNull();
+    await act(async () => h.resolve([item(77, 'playlist', 'Held list')]));
+    await flush();
+    expect(document.querySelector('[aria-busy="true"]')).toBeNull();
+    expect(screen.getByText('Held list')).toBeTruthy();
+  });
+
+  it('a search, and then a second search keeps the results on screen', async () => {
+    await setup();
+    await open();
+    const h = held();
+    mocks.set('wall2_spotify_search', () => h.promise);
+    await act(async () => fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'first' } }));
+    await flush(SEARCH_WAIT_MS);
+    expect(document.querySelector('[aria-busy="true"]')?.textContent).toBe('Searching Spotify.');
+    await act(async () => h.resolve({ tracks: [item(1, 'track', 'Hit 1')], albums: [], playlists: [] }));
+    await flush();
+    expect(screen.getByText('Hit 1')).toBeTruthy();
+    const h2 = held();
+    mocks.set('wall2_spotify_search', () => h2.promise);
+    await act(async () => fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'second' } }));
+    await flush(SEARCH_WAIT_MS);
+    expect(document.querySelector('[aria-busy="true"]')).toBeNull();
+    expect(screen.getByText('Hit 1')).toBeTruthy();
+  });
+
+  it('the songs of a playlist', async () => {
+    await setup();
+    const h = held();
+    mocks.set('wall2_spotify_tracks', () => h.promise);
+    await act(async () => (document.querySelector('.sp-tile') as HTMLButtonElement).click());
+    await flush();
+    expect(document.querySelector('.sp-tracks [aria-busy="true"]')?.textContent).toBe('Reading the songs.');
+    expect(screen.queryByText(/No songs in this/)).toBeNull();
+    await act(async () => h.resolve({ items: [track(1)], total: 1, more: false }));
+    await flush();
+    expect(document.querySelector('.sp-tracks [aria-busy="true"]')).toBeNull();
+    expect(screen.getByText('Song 1')).toBeTruthy();
+  });
+
+  it('a first read that fails still ends in its error line, never in blank', async () => {
+    await setup();
+    mocks.set('wall2_spotify_albums', () => {
+      throw new Error('down');
+    });
+    await act(async () => tabs().find((t) => t.textContent === 'Albums')?.click());
+    await flush();
+    expect(document.querySelector('[aria-busy="true"]')).toBeNull();
+    expect(screen.getByText('Spotify is not answering right now.')).toBeTruthy();
+  });
+});
+
+describe('arrow keys in the cover grid', () => {
+  const columns = (grid: HTMLElement, n: number) => {
+    grid.style.gridTemplateColumns = `repeat(${n}, minmax(0, 1fr))`;
+  };
+  const tilesIn = (grid: Element) => [...grid.querySelectorAll<HTMLButtonElement>('.sp-tile')];
+  const arrow = async (el: HTMLElement, k: string) => {
+    await act(async () => {
+      fireEvent.keyDown(el, { key: k });
+    });
+  };
+
+  it('moves by the pure rule: edges stay, a short last row is reached by Down', () => {
+    // Twelve tiles, five a row: rows of 5, 5 and 2.
+    expect(arrowTarget(0, 12, 5, 'ArrowLeft')).toBe(0);
+    expect(arrowTarget(0, 12, 5, 'ArrowUp')).toBe(0);
+    expect(arrowTarget(4, 12, 5, 'ArrowRight')).toBe(5);
+    expect(arrowTarget(11, 12, 5, 'ArrowRight')).toBe(11);
+    expect(arrowTarget(7, 12, 5, 'ArrowUp')).toBe(2);
+    expect(arrowTarget(7, 12, 5, 'ArrowDown')).toBe(11);
+    expect(arrowTarget(3, 12, 5, 'ArrowDown')).toBe(8);
+    expect(arrowTarget(11, 12, 5, 'ArrowDown')).toBe(11);
+    expect(arrowTarget(10, 12, 5, 'ArrowDown')).toBe(10);
+    expect(arrowTarget(0, 1, 5, 'ArrowDown')).toBe(0);
+    expect(arrowTarget(0, 12, 1, 'ArrowDown')).toBe(1);
+  });
+
+  it('reads the column count from the style, the resolved tracks, or the layout', () => {
+    const g = document.createElement('div');
+    g.style.gridTemplateColumns = 'repeat(3, minmax(0, 1fr))';
+    document.body.appendChild(g);
+    expect(gridColumns(g, [])).toBe(3);
+    g.style.gridTemplateColumns = '143.8px 143.8px 143.8px 143.8px 143.8px';
+    expect(gridColumns(g, [])).toBe(5);
+    g.style.gridTemplateColumns = '';
+    expect(gridColumns(g, [])).toBe(1);
+    g.remove();
+  });
+
+  for (const layout of ['the resting card', 'the tall view'] as const) {
+    it(`walks the tiles of ${layout} and scrolls the focused one into view`, async () => {
+      await setup();
+      if (layout === 'the tall view') await open();
+      const scroll = vi.fn();
+      Element.prototype.scrollIntoView = scroll;
+      const grid = document.querySelector('.sp-grid') as HTMLElement;
+      columns(grid, 5);
+      const tiles = tilesIn(grid);
+      expect(tiles).toHaveLength(12);
+      await act(async () => tiles[7].focus());
+      await arrow(tiles[7], 'ArrowRight');
+      expect(document.activeElement).toBe(tiles[8]);
+      await arrow(tiles[8], 'ArrowLeft');
+      await arrow(tiles[7], 'ArrowUp');
+      expect(document.activeElement).toBe(tiles[2]);
+      await arrow(tiles[2], 'ArrowDown');
+      expect(document.activeElement).toBe(tiles[7]);
+      // Down from the second row on a column the short last row lacks lands on its last tile.
+      await arrow(tiles[7], 'ArrowDown');
+      expect(document.activeElement).toBe(tiles[11]);
+      // The edges stay.
+      await arrow(tiles[11], 'ArrowRight');
+      expect(document.activeElement).toBe(tiles[11]);
+      await arrow(tiles[11], 'ArrowDown');
+      expect(document.activeElement).toBe(tiles[11]);
+      await act(async () => tiles[0].focus());
+      await arrow(tiles[0], 'ArrowLeft');
+      await arrow(tiles[0], 'ArrowUp');
+      expect(document.activeElement).toBe(tiles[0]);
+      expect(scroll).toHaveBeenCalled();
+    });
+  }
+
+  it('walks the three-column grids of a grouped search', async () => {
+    await setup();
+    await open();
+    await act(async () => fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'hit' } }));
+    await flush(SEARCH_WAIT_MS);
+    const grids = [...document.querySelectorAll<HTMLElement>('.sp-grid3')];
+    expect(grids).toHaveLength(2);
+    columns(grids[0], 3);
+    const albums = tilesIn(grids[0]);
+    await act(async () => albums[1].focus());
+    await arrow(albums[1], 'ArrowRight');
+    expect(document.activeElement).toBe(albums[2]);
+    // The arrows stay inside their own grid: no tile of the playlists group is reached from the albums.
+    await arrow(albums[2], 'ArrowDown');
+    expect(document.activeElement).toBe(albums[2]);
+  });
+
+  it('leaves Shift and Control arrows alone', async () => {
+    await setup();
+    const tiles = tilesIn(document.querySelector('.sp-grid') as Element);
+    columns(document.querySelector('.sp-grid') as HTMLElement, 5);
+    await act(async () => tiles[0].focus());
+    await act(async () => {
+      fireEvent.keyDown(tiles[0], { key: 'ArrowRight', shiftKey: true });
+      fireEvent.keyDown(tiles[0], { key: 'ArrowRight', ctrlKey: true });
+    });
+    expect(document.activeElement).toBe(tiles[0]);
+  });
+});
+
+describe('search songs show their length', () => {
+  it('at the right edge of the row when Spotify gave one, and nothing when it did not', async () => {
+    await setup();
+    mocks.set('wall2_spotify_search', () => ({
+      tracks: [{ ...item(1, 'track', 'Timed'), durationMs: 215_000 }, item(2, 'track', 'Untimed')],
+      albums: [],
+      playlists: [],
+    }));
+    await open();
+    await act(async () => fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'hit' } }));
+    await flush(SEARCH_WAIT_MS);
+    const rows = [...document.querySelectorAll('.sp-li')];
+    expect(rows).toHaveLength(2);
+    expect(rows[0].querySelector('.sp-li-len')?.textContent).toBe('3:35');
+    expect(rows[1].querySelector('.sp-li-len')).toBeNull();
+  });
+});
+
+describe('closing by itself follows the keyboard focus too', () => {
+  it('opened by keyboard with the pointer elsewhere it stays open while the focus is inside, then closes 15 s after the focus leaves', async () => {
+    await setup();
+    const b = openButton();
+    await act(async () => b.focus());
+    await act(async () => b.click());
+    await flush(TALL_CLOSE_MS * 3);
+    expect(isTall()).toBe(true);
+    await act(async () => screen.getByText('Behind').focus());
+    await flush(TALL_CLOSE_MS - 1);
+    expect(isTall()).toBe(true);
+    await flush(1);
+    expect(isTall()).toBe(false);
+  });
+
+  it('focus moving between parts of the view does not start it', async () => {
+    await setup();
+    await act(async () => openButton().focus());
+    await act(async () => openButton().click());
+    await act(async () => screen.getByRole('searchbox').focus());
+    await flush(TALL_CLOSE_MS * 2);
+    expect(isTall()).toBe(true);
+  });
+
+  it('opened with neither the pointer nor the focus on it, the 15 seconds start at once', async () => {
+    await setup();
+    await act(async () => openButton().click());
+    await flush(TALL_CLOSE_MS - 1);
+    expect(isTall()).toBe(true);
+    await flush(1);
+    expect(isTall()).toBe(false);
+  });
+
+  it('a search field that went away while focused no longer holds it open', async () => {
+    await setup();
+    await open();
+    const c = card();
+    await act(async () => screen.getByRole('searchbox').focus());
+    // Closing and opening again rebuilds the field; nothing is focused afterwards.
+    await act(async () => openButton().click());
+    expect(isTall()).toBe(false);
+    await open();
+    expect(document.activeElement).not.toBe(screen.getByRole('searchbox'));
+    fireEvent.pointerLeave(c);
+    await flush(TALL_CLOSE_MS);
+    expect(isTall()).toBe(false);
+  });
+});

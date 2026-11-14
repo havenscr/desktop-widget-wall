@@ -8,6 +8,48 @@ import { kindLine, songs, tileLine } from './model';
 /** After the pointer leaves a tile, its details card stays this long so the pointer can reach it. */
 export const DETAILS_LINGER_MS = 300;
 
+/**
+ * How many columns a grid of tiles shows right now: the browser's resolved tracks, or a `repeat(n, ...)` written
+ * in the style, else the tiles that share the first one's top edge. A single column is the floor.
+ */
+export function gridColumns(grid: HTMLElement, tiles: HTMLElement[]): number {
+  const cols = getComputedStyle(grid).gridTemplateColumns;
+  const repeat = /repeat\((\d+)/.exec(cols);
+  if (repeat) return Math.max(1, Number(repeat[1]));
+  const tracks = cols.trim().split(/\s+/).filter((t) => /^[\d.]+px$/.test(t));
+  if (tracks.length > 0) return tracks.length;
+  const top = tiles[0]?.getBoundingClientRect().top;
+  return Math.max(1, tiles.filter((t) => Math.abs(t.getBoundingClientRect().top - top) < 2).length);
+}
+
+/** The tile an arrow key reaches from tile `i` of `n` in a grid of `cols`: edges stay put, a short last row is reached by Down. */
+export function arrowTarget(i: number, n: number, cols: number, key: string): number {
+  const lastRow = Math.floor((n - 1) / cols);
+  const row = Math.floor(i / cols);
+  if (key === 'ArrowLeft') return i > 0 ? i - 1 : i;
+  if (key === 'ArrowRight') return i < n - 1 ? i + 1 : i;
+  if (key === 'ArrowUp') return i - cols >= 0 ? i - cols : i;
+  if (key === 'ArrowDown') return i + cols <= n - 1 ? i + cols : row < lastRow ? n - 1 : i;
+  return i;
+}
+
+/** Arrow keys move the focus between the tiles of one grid (the resting card's and the tall view's). True when it was an arrow. */
+function gridKey(e: ReactKeyboardEvent<HTMLButtonElement>): boolean {
+  if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) return false;
+  const grid = e.currentTarget.closest<HTMLElement>('.sp-grid');
+  if (!grid) return false;
+  const tiles = [...grid.querySelectorAll<HTMLElement>('.sp-tile')];
+  const at = tiles.indexOf(e.currentTarget);
+  if (at < 0) return false;
+  e.preventDefault();
+  const to = arrowTarget(at, tiles.length, gridColumns(grid, tiles), e.key);
+  if (to !== at) {
+    tiles[to].focus();
+    tiles[to].scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+  }
+  return true;
+}
+
 /** Set while the program puts focus back on a tile after Escape: that focus must not reopen the card. */
 let keepClosed = false;
 
@@ -163,6 +205,7 @@ export function Tile({ item, kindWord, onOpen, onPlay, onShuffle }: { item: Spot
           leave();
         }}
         onKeyDown={(e) => {
+          if (!e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey && gridKey(e)) return;
           if (!cardOpen() || e.ctrlKey || e.altKey || e.metaKey) return;
           if (e.key === 'Escape') {
             e.stopPropagation();

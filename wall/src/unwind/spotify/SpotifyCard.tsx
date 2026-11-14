@@ -70,8 +70,6 @@ export const TALL_TABS: readonly { id: BrowseTab; label: string }[] = [
 export const PAGE = 50;
 /** Within this many pixels of the end of a list, the next page is read. */
 const MORE_AT_PX = 160;
-/** After a press outside closes the tall view, its follow-up mouse events are swallowed for at most this long. */
-const SWALLOW_MS = 600;
 /** A note at the foot of the card goes away after this long. */
 export const NOTE_MS = 6000;
 
@@ -146,22 +144,27 @@ export function SpotifyCard() {
   const chip = useRef<HTMLButtonElement | null>(null);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pointerIn = useRef(false);
-  const searchFocus = useRef(false);
   const swallowOff = useRef<(() => void) | null>(null);
 
   const clearClose = useCallback(() => {
     if (closeTimer.current) clearTimeout(closeTimer.current);
     closeTimer.current = null;
   }, []);
-  const armClose = useCallback(() => {
-    clearClose();
-    if (pointerIn.current || searchFocus.current) return;
-    closeTimer.current = setTimeout(() => {
-      closeTimer.current = null;
-      setChooser(false);
-      setTall(false);
-    }, TALL_CLOSE_MS);
-  }, [clearClose]);
+  // Keyboard focus inside the card counts like the pointer inside (the search field included): the 15 seconds start only when
+  // neither is there. `focusTo` is where focus went when this follows a blur (null: nowhere), else the focused element.
+  const armClose = useCallback(
+    (focusTo?: Element | null) => {
+      clearClose();
+      const f = focusTo === undefined ? document.activeElement : focusTo;
+      if (pointerIn.current || (card && f && f !== document.body && card.contains(f))) return;
+      closeTimer.current = setTimeout(() => {
+        closeTimer.current = null;
+        setChooser(false);
+        setTall(false);
+      }, TALL_CLOSE_MS);
+    },
+    [clearClose, card],
+  );
   const close = useCallback(
     (giveFocusBack: boolean) => {
       clearClose();
@@ -187,7 +190,9 @@ export function SpotifyCard() {
   // Without the tall view there is nothing to wait for; with it, the timer is armed by the pointer leaving.
   useEffect(() => {
     if (!tall) clearClose();
-  }, [tall, clearClose]);
+    // Opened with neither the pointer nor the focus on it (the card has no way to know the pointer is elsewhere): the 15 seconds start.
+    else armClose();
+  }, [tall, clearClose, armClose]);
 
   // Escape closes the innermost thing: the chooser, then a playlist's Back (the songs view does it),
   // then the tall view. Captured, so the chooser's Escape does not also reach the songs view.
@@ -228,22 +233,26 @@ export function SpotifyCard() {
         ev.preventDefault();
         ev.stopPropagation();
       };
-      // The click is the last of the follow-ups: it is swallowed too, then the listeners go.
+      // Tied to this press, not to a time: the mouse events that follow it are swallowed until its own click (the last of them)
+      // has gone by, or the press is cancelled (a pointer cancel, a context menu, an aux click, a drag, the window losing focus).
       const stopClick = (ev: Event) => {
         stop(ev);
         setTimeout(off, 0);
       };
-      const id = setTimeout(() => off(), SWALLOW_MS);
+      const cancels = ['pointercancel', 'auxclick', 'contextmenu', 'dragend'] as const;
       function off() {
         document.removeEventListener('mousedown', stop, true);
         document.removeEventListener('mouseup', stop, true);
         document.removeEventListener('click', stopClick, true);
-        clearTimeout(id);
+        cancels.forEach((k) => document.removeEventListener(k, off, true));
+        window.removeEventListener('blur', off);
         if (swallowOff.current === off) swallowOff.current = null;
       }
       document.addEventListener('mousedown', stop, true);
       document.addEventListener('mouseup', stop, true);
       document.addEventListener('click', stopClick, true);
+      cancels.forEach((k) => document.addEventListener(k, off, true));
+      window.addEventListener('blur', off);
       swallowOff.current = off;
       close(false);
     };
@@ -265,19 +274,9 @@ export function SpotifyCard() {
         pointerIn.current = false;
         if (tall) armClose();
       }}
-      onFocusCapture={(e) => {
-        const t = e.target as Element;
-        if (t.matches('input[type="search"]')) {
-          searchFocus.current = true;
-          clearClose();
-        }
-      }}
+      onFocusCapture={() => clearClose()}
       onBlurCapture={(e) => {
-        const t = e.target as Element;
-        if (t.matches('input[type="search"]')) {
-          searchFocus.current = false;
-          if (tall && !pointerIn.current) armClose();
-        }
+        if (tall && !pointerIn.current) armClose(e.relatedTarget as Element | null);
       }}
     >
       <div

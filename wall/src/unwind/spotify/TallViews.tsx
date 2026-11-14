@@ -77,6 +77,7 @@ export function SearchGroups({
                     <span className="sp-li-n">{item.name}</span>
                     <span className="sp-li-a">{on ? 'Playing now' : item.subtitle ?? ''}</span>
                   </span>
+                  {typeof item.durationMs === 'number' ? <span className="sp-li-len">{trackLength(item.durationMs)}</span> : null}
                 </button>
               );
             })}
