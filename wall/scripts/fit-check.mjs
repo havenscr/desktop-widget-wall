@@ -347,9 +347,9 @@ const QUIET = [
   { name: 'Watch behaviour, whole sky, controls at rest', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=many&wlook=sky&wplay=3&wctl=rest', checks: ['.w-now', '.w-card'], wb: 'rest' },
   { name: 'Watch behaviour, the sun, Twitch, controls at rest', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=sun&wplay=2&wctl=rest', checks: ['.w-now', '.w-card'], wb: 'rest' },
   { name: 'Watch behaviour, drive-in, long label, controls at rest', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=many&wlook=drivein&wplay=3&wctl=rest', checks: ['.w-now', '.w-card'], wb: 'rest' },
-  { name: 'Watch behaviour, Work with a video playing elsewhere', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=drivein&wplay=0&wplace=work', checks: ['.rail .rb', '.work .centre'], wb: 'away' },
-  { name: 'Watch behaviour, Home with the whole sky playing elsewhere', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=sky&wplay=0&wplace=home', checks: ['.rail .rb'], wb: 'away' },
-  { name: 'Watch behaviour, Meet with the sun playing elsewhere', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=sun&wplay=0&wplace=meet', checks: ['.rail .rb'], wb: 'away' },
+  { name: 'Watch behaviour, Work with a video playing elsewhere', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=drivein&wplay=0&wplace=work', checks: ['.work .centre'], wb: 'away' },
+  { name: 'Watch behaviour, Home with the whole sky playing elsewhere', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=sky&wplay=0&wplace=home', checks: ['.home .home-centre'], wb: 'away' },
+  { name: 'Watch behaviour, Meet with the sun playing elsewhere', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=sun&wplay=0&wplace=meet', checks: ['.meet .panel'], wb: 'away' },
   // sky layers: the video behind the land (the horizon's front canvas over the video's box) in the
   // three looks that sit in the sky, the drive-in in front of it with no front canvas, and the moon
   // in open sky at night and at dusk, 40 px clear of every card, the player and the clock, on Listen
