@@ -527,8 +527,9 @@ The day ribbon (`wall/src/ribbon/`, `styles/ribbon.css`) is on Work, Home and Me
     nothing about a limit. Each cell's hover says how many worked at once then and the limit;
     the row's own hover (the icon) carries a one line key to the colours and the amber
     underline. See "How many work at once" below. One line after the needle: "12 sessions: 2 need
-    you, 5 working" ("need you" in amber), or with none waiting "3 sessions: 2 working, 1
-    idle" (review and idle sessions count as idle). With under 360 px right of the needle it
+    you, 5 working" ("need you" in amber), or with none waiting "3 sessions: 2 working (1
+    through helpers), 1 idle". A chat whose own turn ended while its helpers continue counts as
+    working. Review and other idle sessions count as idle. With under 360 px right of the needle it
     sits right-aligned before it. A click on the line or a cell opens Agents today. A stale
     answer is dimmed, its cells end at the last good answer, and the line adds "as of" that
     time. Task marks keep their labels off the bar and the line (diamond only, label in the
@@ -555,9 +556,10 @@ The day ribbon (`wall/src/ribbon/`, `styles/ribbon.css`) is on Work, Home and Me
   by side, the now line; a meeting opens in Outlook, with Join (`wall2_meet_join`) where the
   calendar has a join link and the meeting has not ended (Enter or Space on a meeting opens it
   too). Right, one row per open session,
-  those waiting on the owner first, then working, then the rest: number, title (372 px, one
-  line, the full title in the hover), the state once as a pill (working, waiting on you,
-  failed in rose, in review, idle), one quiet line, its day as a bar (420 px) and the time
+  those waiting on the owner first, then working (including work through helpers), then the
+  rest: number, title (372 px, one line, the full title in the hover), the state once as a pill
+  (working, helpers working, waiting on you, failed in rose, in review, idle), one quiet line,
+  its day as a bar (420 px) and the time
   worked (runs, finished or not; waits and review spans not counted). The quiet line is built
   only from what the helper sends for an open session, joined with a middle dot: its line
   (unless that is only a state word such as "running"), else "Next: " and its next step; how
@@ -592,7 +594,7 @@ The day ribbon (`wall/src/ribbon/`, `styles/ribbon.css`) is on Work, Home and Me
   and no wait total on a past day (hidden, never zero). End words: merged
   (`pr.state` merged), carried over (the session's last span has no end on that day),
   pull request open or closed, finished; today also waiting on you, in review, working,
-  idle. A past day's hours run midnight to midnight in the record's own zone (`tz`). States:
+  helpers working, idle. A past day's hours run midnight to midnight in the record's own zone (`tz`). States:
   skeleton rows while loading; hidden button when the helper is not set up; a stale today
   with "As of" its time, never as live; a past read that fails keeps the last good one with
   "As of"; a day list or today's record that cannot be refreshed keeps the last good one with
@@ -617,7 +619,9 @@ The day ribbon (`wall/src/ribbon/`, `styles/ribbon.css`) is on Work, Home and Me
   standalone session the wall knows today (a card, or a session in today's saved record, read
   at once when the day log first shows a run of a session that is not on a card, and once per
   such id after that, never on a timer). A finished run counts for the time it ran; an open
-  run is open only while its session's card says working (not idle, not waiting, not failed).
+  run is open only while its session's card says working: its own turn runs, or its own turn is
+  idle while a background agent, background command or child session still runs. Waiting and
+  failed sessions do not count. An idle-own-turn run is capped at 12 hours; an active own turn is not.
   When the card stops working with the run still open (or the session closes), the run is
   kept and ENDED where the session stopped, never dropped, so past work stays in the strip's
   cells, the Busy at once sums, the header's Today line and the panel and drawer rows, while
@@ -628,7 +632,7 @@ The day ribbon (`wall/src/ribbon/`, `styles/ribbon.css`) is on Work, Home and Me
   own start (a session the wall never saw working counts no time, not invented time). A child or a side chat never counts on its own, so a
   session and its helpers count once; two spans of one session at the same time count once. A
   cell takes the most at once inside its 12 minutes. The meter shows the count now: the
-  server's own `working` count when the helper sends one (by construction it equals the log's
+  server's own `busy` count when the helper sends one, then the older `working` count (by construction it equals the log's
   open runs of working cards), else the log's count, else `used`. The limit is the helper's
   `slots.limit`; a missing, zero or negative one is unknown: the meter shows the honest count
   ("N working"), and no pips, steps, limit line, "over" tag or count colours are drawn. A
@@ -1837,13 +1841,13 @@ Add one optional key to `feeds.json` (see "Setting it up: `feeds.json`"):
 ### Commands
 
 - `wall2_omni_summary` reads `GET /wall/v1/summary` and returns the typed summary: slots, up to three lanes, parked count, your move, Claude usage, the day's spans and the box `system` block. Titles and lines are capped at 80 characters, ids must match `^[a-f0-9-]{8,64}$` (a lane with any other id is dropped), the answer is read through a 64 KB cap and fails as soon as it is over, whole-number counts only (slot numbers kept as sent, so "5 of 4 slots" shows as it is, up to 99; elapsed time capped at 7 days, PR numbers positive), `usage.claude5hPct` may be null (the weekly figure still shows); every timestamp must be RFC 3339 with `Z` or an offset and at most 40 characters: a bad `now` fails the answer, a bad `since` or `weekResetsAt` becomes null, and a day span with a bad start or end, or an end before its start, is dropped, bidirectional and zero-width characters are dropped from text, and picture `options` are never passed on. A malformed or oversized answer, or any network failure, answers `failed`.
-- From helper 1.1.0 the summary also carries, all optional so an older helper's answer reads as before: `sessionsList` (every open parent or standalone session, up to 12, deduplicated, or null), per session `live` (`working` or `idle`), `idleS`, `kids` (`{ total, working }`, working never above total), `waitingSinceS`, `next` (up to 60 characters), `harness` (`claude`, `codex` or `other`; any other text is `other`) and `failed` (true only for `true`); `sessions` (a map of up to 40 ids to `{ title, stage, state }` for naming bars of sessions with no card); `yourMove.ids` (up to 5 waiting ids); `usage.accounts` (up to 6 `{ provider, label, weekPct, fiveHourPct, weekResetsAt }`, labels up to 24 characters) with `usage.claudeWeekPct` now nullable; and `slots.sessions`, `slots.working`, `slots.helpers`. The same id, text, number and time rules apply to each.
+- From helper 1.1.0 the summary also carries, all optional so an older helper's answer reads as before: `sessionsList` (every open parent or standalone session, up to 12, deduplicated, or null), per session `live` (`working` or `idle`), `idleS`, `kids` (`{ total, working }`, working never above total), `waitingSinceS`, `next` (up to 60 characters), `harness` (`claude`, `codex` or `other`; any other text is `other`) and `failed` (true only for `true`); `sessions` (a map of up to 40 ids to `{ title, stage, state }` for naming bars of sessions with no card); `yourMove.ids` (up to 5 waiting ids); `usage.accounts` (up to 6 `{ provider, label, weekPct, fiveHourPct, weekResetsAt }`, labels up to 24 characters) with `usage.claudeWeekPct` now nullable; and `slots.sessions`, `slots.working`, `slots.helpers`. Helper 1.3.0 can also send per-session `bg` (`{ agents, shells }`), `kids.running`, and `slots.busy`; each is optional and bounded, so an older helper still reads exactly as before. The same id, text, number and time rules apply to each.
 - `wall2_open_session(id)` accepts only an id that matches the same pattern and appeared in the most recent successful summary (its lanes, session list, waiting ids, first waiting entry, names map or day log), builds `omnigent://<omniLinkHost>/c/<id>` in Rust and opens it. Any other id is refused.
 - `wall2_focus_omnigent(id?)` opens the session as `wall2_open_session` does (when an id is given), then brings the OmniGent desktop window forward on the primary monitor. It trusts only the executable registered for `omnigent://` links (the default value of `Software\Classes\omnigent\shell\open\command` under HKCU, then HKLM; the quoted or unquoted path is parsed and compared in full, case-insensitively, after dropping a `\\?\` prefix), so a program with the same file name in another folder is refused; with no handler registered nothing is brought forward (the link still opens). It looks for a visible, unowned, titled top-level window of that executable every 100 ms for up to 2 seconds, skipping a hung window, restores it if minimised, moves it into the primary monitor's work area if it is elsewhere (keeping it maximised if it was), and sets it foreground, using only calls that cannot block on another program's message loop (`ShowWindowAsync`, `SetWindowPos` with `SWP_ASYNCWINDOWPOS`). One attempt runs at a time; a click while one runs starts none. If no window turns up, nothing more happens. Windows only; elsewhere the second step does nothing. When the wall itself sits on the primary monitor it stays above OmniGent (it is always on top).
 - `wall2_machines` returns `{ pc: { cpuPct, gpuPct, ramPct }, box: { cpuPct, gpuPct, ramPct, tempC } | null, boxStale }`. The PC numbers come from the same function as the old `get_system_stats` (which is unchanged). The PC numbers are returned at once on every call. The box numbers come from the helper summary's `system` block, refreshed in the background (one read at a time, at most one every 15 seconds, 3 second timeout), so a slow helper never delays the PC numbers and the first call after start shows `box: null`. After a failed read the last good box numbers stay with `boxStale: true` for up to 10 minutes, then `box` is `null`. `box` is also `null` when the helper is not set up. The numbers are kept per `omniHelperUrl`, so a changed address never shows the old host's numbers.
 - All of them refuse any window but `wall2` (`forbidden`).
 
-Nothing here logs, and nothing here takes a wake lock or sets an execution state. Browser dev (`npm run dev`) shows mock answers from `devMocks/omni.ts`; `?agents=3` (default), `2`, `1`, `0`, `7`, `12` (sessions from a helper 1.1.0 answer, with three subscriptions, one near full), `ask` (one waiting), `ask2` (two waiting, one not on a card), `failed`, `12busy` (twelve open, nine working at once, over the limit of 4 since mid morning, one waiting, one failed, one idle, and a helper's run that is never counted; add `&limit=0` for a helper that sends no limit), `old` (an older helper's answer), `stale`, `off` (not set up) or `down` (not answering) picks the helper's state.
+Nothing here logs, and nothing here takes a wake lock or sets an execution state. Browser dev (`npm run dev`) shows mock answers from `devMocks/omni.ts`; `?agents=3` (default), `2`, `1`, `0`, `7`, `12` (sessions from a helper 1.1.0 answer, with three subscriptions, one near full), `helpers` (an idle own turn with two agents, one command and one child still running), `ask` (one waiting), `ask2` (two waiting, one not on a card), `failed`, `12busy` (twelve open, nine working at once, over the limit of 4 since mid morning, one waiting, one failed, one idle, and a helper's run that is never counted; add `&limit=0` for a helper that sends no limit), `old` (an older helper's answer), `stale`, `off` (not set up) or `down` (not answering) picks the helper's state.
 
 ### Saved records
 

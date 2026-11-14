@@ -569,14 +569,17 @@ export interface AgentCounts {
   total: number;
   need: number;
   working: number;
+  throughHelpers?: number;
   idle: number;
 }
 
 /** "12 sessions: 2 need you, 5 working" or, with none needing him, "3 sessions: 2 working, 1 idle". */
 export function agentsLineParts(c: AgentCounts): { head: string; need: string | null; tail: string } {
   const head = `${c.total} session${c.total === 1 ? '' : 's'}: `;
-  if (c.need > 0) return { head, need: `${c.need} need${c.need === 1 ? 's' : ''} you`, tail: `, ${c.working} working` };
-  return { head, need: null, tail: `${c.working} working, ${c.idle} idle` };
+  const throughHelpers = c.throughHelpers ?? 0;
+  const helper = throughHelpers > 0 ? ` (${throughHelpers} through helpers)` : '';
+  if (c.need > 0) return { head, need: `${c.need} need${c.need === 1 ? 's' : ''} you`, tail: `, ${c.working} working${helper}` };
+  return { head, need: null, tail: `${c.working} working${helper}, ${c.idle} idle` };
 }
 
 /** Width the agents line takes, estimated from its words (16 px type). */
