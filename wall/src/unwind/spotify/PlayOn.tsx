@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type Ref } from 'react';
-import { IconCheck, IconChevronDown, IconChevronUp, IconDeviceDesktop, IconDeviceMobile, IconDeviceSpeaker, IconDeviceTv } from '@tabler/icons-react';
+import { IconCheck, IconChevronDown, IconChevronUp, IconDeviceDesktop, IconDeviceMobile, IconDeviceSpeaker, IconDeviceTv, IconLock } from '@tabler/icons-react';
 import { spotify, type SpotifyDevice } from '../../music/spotify';
 import { useNowPlayingStore } from '../../music/store';
 import { tip } from '../../ui/HoverTip';
 import { useVisible } from '../../ui/useVisible';
-import { deviceKindWord, problemLine, spotifyProblem, useSpotifyStart, useSpotifyTarget } from './model';
+import { deviceKindWord, problemLine, readDevices, spotifyProblem, useSpotifyDevices, useSpotifyStart, useSpotifyTarget } from './model';
 
 export const PC_NAME = 'This PC';
 const PC_LINE = 'Spotify is closed. The wall starts it.';
+export const STALE_NOTE = 'Could not refresh, these may be out of date.';
+export const LOCKED_CHIP = 'cannot be controlled from here';
 export const DEVICES_FOOT = 'A phone or speaker shows here only while its Spotify is awake.';
 
 interface Row {
@@ -32,18 +34,19 @@ function DeviceIcon({ kind, size }: { kind: string; size: number }) {
  * the music follows ticked (the owner's pick, else the active one). When no computer is listed, "This PC"
  * comes first: pressing Play there starts Spotify (the start flow already built).
  */
-export function deviceRows(devices: SpotifyDevice[], picked: string | null): Row[] {
+export function deviceRows(devices: SpotifyDevice[], picked: string | null, stale = false): Row[] {
   const pc = !devices.some((d) => d.kind.toLowerCase() === 'computer');
   const rows: Row[] = [];
   if (pc) rows.push({ key: 'pc', device: null, name: PC_NAME, line: PC_LINE, on: picked === '', dim: false });
   for (const d of devices) {
-    const on = picked !== null ? d.id === picked : d.active;
+    // A list that could not be refreshed is not shown as live: no "playing now", no tick from the old active flag.
+    const on = picked !== null ? d.id === picked : d.active && !stale;
     const word = deviceKindWord(d.kind);
     rows.push({
       key: d.id,
       device: d,
       name: d.name,
-      line: d.restricted ? `${word}. Spotify does not allow control of it from here.` : d.active ? `${word}, playing now` : word,
+      line: d.restricted ? `${word}. Spotify does not allow control of it from here.` : d.active && !stale ? `${word}, playing now` : word,
       on,
       dim: !!d.restricted,
     });
@@ -63,8 +66,9 @@ export function PlayOn({ open, onOpen, chipRef }: { open: boolean; onOpen: (open
   const target = useSpotifyTarget((s) => s.target);
   const starting = useSpotifyStart((s) => s.starting);
   const rev = useSpotifyStart((s) => s.rev);
-  const [devices, setDevices] = useState<SpotifyDevice[] | null>(null);
-  const [problem, setProblem] = useState<string | null>(null);
+  const devices = useSpotifyDevices((s) => s.devices);
+  const stale = useSpotifyDevices((s) => s.stale);
+  const problem = useSpotifyDevices((s) => s.problem);
   const [busy, setBusy] = useState(false);
   const mounted = useRef(true);
   const wrap = useRef<HTMLDivElement | null>(null);
@@ -75,24 +79,7 @@ export function PlayOn({ open, onOpen, chipRef }: { open: boolean; onOpen: (open
     };
   }, []);
 
-  const read = useCallback(() => {
-    return spotify.devices().then(
-      (got) => {
-        if (!mounted.current) return;
-        const list = Array.isArray(got) ? got : [];
-        setDevices(list);
-        setProblem(null);
-        const active = list.find((d) => d.active && !d.restricted);
-        useSpotifyTarget.getState().setActiveId(active ? active.id : null);
-        // A player picked earlier that is no longer awake is forgotten, so Play never goes to a missing one.
-        const t = useSpotifyTarget.getState().target;
-        if (t && ((t.id && !list.some((d) => d.id === t.id)) || (!t.id && list.some((d) => d.kind.toLowerCase() === 'computer')))) useSpotifyTarget.getState().setTarget(null);
-      },
-      (e) => {
-        if (mounted.current) setProblem(problemLine(spotifyProblem(e)));
-      },
-    );
-  }, []);
+  const read = useCallback(() => readDevices(), []);
   // Read on mount, when the song changes (so the chip follows where it plays), after a start, and when the chooser opens.
   useEffect(() => {
     if (visible) void read();
@@ -111,9 +98,12 @@ export function PlayOn({ open, onOpen, chipRef }: { open: boolean; onOpen: (open
   }, [open, onOpen]);
 
   const active = devices?.find((d) => d.active && !d.restricted) ?? null;
+  // The music plays on a player that does not allow control: its name, with the words.
+  const locked = devices?.find((d) => d.active && d.restricted) ?? null;
   // While the wall starts Spotify the chip says where it will play (this PC); it reads the real device after.
-  const label = starting ? PC_NAME : target ? target.name : active ? active.name : PC_NAME;
-  const rows = devices ? deviceRows(devices, target ? target.id : null) : [];
+  const label = starting ? PC_NAME : target ? target.name : active ? active.name : locked ? locked.name : PC_NAME;
+  const lockedNow = !starting && !target && !active && !!locked;
+  const rows = devices ? deviceRows(devices, target ? target.id : null, stale) : [];
   const [note, setNote] = useState<string | null>(null);
 
   const pick = async (row: Row) => {
@@ -159,14 +149,14 @@ export function PlayOn({ open, onOpen, chipRef }: { open: boolean; onOpen: (open
       <button
         ref={chipRef}
         type="button"
-        className={`sp-dev${open ? ' on' : ''}`}
+        className={`sp-dev${open ? ' on' : ''}${lockedNow ? ' locked' : ''}`}
         aria-haspopup="true"
         aria-expanded={open}
-        aria-label={`Play on ${label}. Choose where the music plays`}
+        aria-label={`Play on ${label}${lockedNow ? `, ${LOCKED_CHIP}` : ''}. Choose where the music plays`}
         {...tip(() => (
           <div className="sp-tipline">
             <b>Play on {label}</b>
-            <span>Click to choose which of your Spotify players plays.</span>
+            <span>{lockedNow ? `${label} ${LOCKED_CHIP}.` : 'Click to choose which of your Spotify players plays.'}</span>
           </div>
         ))}
         onClick={() => onOpen(!open)}
@@ -174,13 +164,15 @@ export function PlayOn({ open, onOpen, chipRef }: { open: boolean; onOpen: (open
         <IconDeviceSpeaker size={20} stroke={1.8} aria-hidden="true" />
         <small>Play on</small>
         <span>{label}</span>
+        {lockedNow ? <IconLock className="sp-dev-lock" size={18} stroke={1.8} aria-hidden="true" /> : null}
         {open ? <IconChevronUp size={18} stroke={1.8} aria-hidden="true" /> : <IconChevronDown size={18} stroke={1.8} aria-hidden="true" />}
       </button>
       {open ? (
-        <div className="sp-devices" role="group" aria-label="Play on" onKeyDown={key}>
+        <div className={`sp-devices${stale ? ' stale' : ''}`} role="group" aria-label="Play on" onKeyDown={key}>
           <div className="sp-devk">Play on</div>
           {devices === null && !problem ? <div className="sp-device-empty">Looking for your players.</div> : null}
           {problem && devices === null ? <div className="sp-device-empty">{problem}</div> : null}
+          {stale && devices !== null ? <div className="sp-device-note" role="status">{STALE_NOTE}</div> : null}
           {rows.map((r) => (
             <button key={r.key} type="button" className={`sp-device${r.on ? ' on' : ''}${r.dim ? ' dim' : ''}`} aria-pressed={r.on} disabled={r.dim} onClick={() => void pick(r)}>
               {r.device ? <DeviceIcon kind={r.device.kind} size={26} /> : <IconDeviceDesktop size={26} stroke={1.8} aria-hidden="true" />}

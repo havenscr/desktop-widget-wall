@@ -22,6 +22,9 @@ export function registerSpotifyMocks(): void {
   const playMode = () => new URLSearchParams(window.location.search).get('spotifyplay') ?? 'pc';
   let signedIn = mode() !== 'signedout';
   let seekedMs: number | null = null;
+  // Transport state, so the player row shows what a press did: paused, and how many songs were skipped.
+  let paused = false;
+  let shift = 0;
   const count = () => mode() === 'heavy' ? 50 : mode() === 'search10' ? 10 : mode() === 'empty' ? 0 : 8;
   const fail = () => { if (mode() === 'down') throw new Error('down'); };
   const list = (kind: SpotifyMode, stem: string) => Array.from({ length: count() }, (_, n) => item(n + 1, kind, `${stem} ${n + 1}`));
@@ -34,10 +37,10 @@ export function registerSpotifyMocks(): void {
   mocks.set('wall2_spotify_albums', () => { available(); return list('album', 'Night Signals'); });
   mocks.set('wall2_spotify_liked', () => { available(); return list('track', 'Saved Track'); });
   mocks.set('wall2_spotify_recent', () => { available(); return list('track', 'Recently Played'); });
-  mocks.set('wall2_spotify_search', () => { available(); return { tracks: list('track', 'Track'), albums: list('album', 'Album'), playlists: list('playlist', 'Playlist') }; });
+  mocks.set('wall2_spotify_search', () => { available(); return { tracks: list('track', 'Track').map((t, n) => ({ ...t, durationMs: 180_000 + n * 7_000 })), albums: list('album', 'Album'), playlists: list('playlist', 'Playlist') }; });
   mocks.set('wall2_spotify_tracks', (args) => { available(); if (mode() === 'notyours') throw new Error('not yours'); const kind = args?.kind; const page = Number(args?.page ?? 0); const total = mode() === 'heavy' ? 2000 : mode() === 'long' ? 240 : kind === 'album' ? 12 : 58; const start = page * 50; const items = Array.from({ length: Math.max(0, Math.min(50, total - start)) }, (_, n) => track(start + n + 1, !(kind === 'playlist' && start + n === 8))); return { items, total, more: start + items.length < total }; });
   mocks.set('wall2_spotify_queue', () => { available(); return mode() === 'empty' ? { current: null, next: [] } : { current: track(1), next: Array.from({ length: 10 }, (_, n) => track(n + 2)) }; });
-  mocks.set('wall2_spotify_playback', () => { available(); if (playMode() === 'none' || mode() === 'empty') return null; const device = playMode() === 'speaker' ? { name: 'Living room', kind: 'Speaker' } : { name: 'Desk speakers', kind: 'Computer' }; return { playing: true, device, track: track(1), progressMs: seekedMs ?? 65_000, shuffle: false }; });
+  mocks.set('wall2_spotify_playback', () => { available(); if (playMode() === 'none' || mode() === 'empty') return null; const device = playMode() === 'speaker' ? { name: 'Living room', kind: 'Speaker' } : { name: 'Desk speakers', kind: 'Computer' }; return { playing: !paused, device, track: track(1 + shift), progressMs: seekedMs ?? 65_000, shuffle: false }; });
   // Players that are awake: this PC (unless Spotify has to be started), a phone and a speaker. `spotifyplay=speaker` makes the speaker the active one; `spotify=nodevices` lists none.
   mocks.set('wall2_spotify_devices', () => {
     available();
@@ -54,5 +57,9 @@ export function registerSpotifyMocks(): void {
   mocks.set('wall2_spotify_transfer', () => { available(); });
   // A seek is remembered, so the next read of playback shows where the bar was left.
   mocks.set('wall2_spotify_seek', (args) => { available(); seekedMs = Number(args?.positionMs ?? 0); });
+  mocks.set('wall2_spotify_pause', () => { available(); paused = true; });
+  mocks.set('wall2_spotify_resume', () => { available(); paused = false; });
+  mocks.set('wall2_spotify_next', () => { available(); shift += 1; seekedMs = 0; });
+  mocks.set('wall2_spotify_previous', () => { available(); shift = Math.max(0, shift - 1); seekedMs = 0; });
   mocks.set('wall2_spotify_shuffle', () => { available(); });
 }

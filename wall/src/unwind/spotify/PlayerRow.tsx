@@ -13,6 +13,12 @@ import { problemLine, seekPosition, spotifyProblem, trackLength, useSpotifyNow }
 export const PLAYBACK_POLL_MS = 20_000;
 /** The arrow keys move the time bar this far. */
 export const SEEK_STEP_MS = 5_000;
+/** A held arrow key sends at most one seek this often, and the final position when the key is let go. */
+export const SEEK_KEY_GAP_MS = 300;
+/** After a press Spotify's answer can lag: the state is read again this long after the first read. */
+const AFTER_PRESS_MS = 800;
+/** The local clock re-reads the state when a song's length is reached, then not again for this long. */
+const END_READ_GAP_MS = 3_000;
 const NOTE_MS = 6_000;
 
 interface Anchor {
@@ -21,13 +27,17 @@ interface Anchor {
   at: number;
 }
 
+type Press = 'previous' | 'play' | 'next';
+
 /**
  * The player row at the foot of the tall view: the song's cover, title and artist, previous, play or
  * pause, next, and a time bar that can be dragged (or moved with the arrow keys) to seek. What plays
- * comes from Spotify (`playback`), with a local clock between reads. The three buttons go through
- * Windows' media keys like the player at the top, so they work while Spotify is the player Windows
- * has in front; otherwise they say so instead of doing nothing. Save to Liked is not here: the
- * sign-in does not ask Spotify for permission to change the library.
+ * comes from Spotify (`playback`), with a local clock between reads. While Spotify reports a player
+ * (this PC, a phone, a speaker) the three buttons act on that player through Spotify's own commands, so
+ * the row controls what it shows wherever the music plays; Windows' media keys are used only when Spotify
+ * reports no player and the Windows session is Spotify on this PC. After a press, and when a song's
+ * length is reached, the state is read again. Save to Liked is not here: the sign-in does not ask
+ * Spotify for permission to change the library.
  */
 export function PlayerRow() {
   const visible = useVisible();
@@ -40,6 +50,11 @@ export function PlayerRow() {
   const mounted = useRef(true);
   const timers = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
   const track = useRef<HTMLDivElement | null>(null);
+  // A held arrow key: the position it has reached, when the last seek went out, and the timer for the next one.
+  const keyPos = useRef<number | null>(null);
+  const lastSeekAt = useRef(0);
+  const keyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const endReadAt = useRef(0);
   const later = useCallback((f: () => void, ms: number) => {
     const id = setTimeout(() => {
       timers.current.delete(id);
@@ -54,6 +69,8 @@ export function PlayerRow() {
       mounted.current = false;
       set.forEach(clearTimeout);
       set.clear();
+      if (keyTimer.current) clearTimeout(keyTimer.current);
+      keyTimer.current = null;
     };
   }, []);
 
@@ -91,30 +108,53 @@ export function PlayerRow() {
   const base = pb ? pb.progressMs + (running ? Math.max(0, now - anchor.at) : 0) : 0;
   const position = Math.min(duration, drag ?? base);
   const fraction = duration > 0 ? position / duration : 0;
+  // The song's length is reached (or a change made on a phone moved things): ask Spotify what plays now.
+  useEffect(() => {
+    if (!running || base < duration || Date.now() - endReadAt.current < END_READ_GAP_MS) return;
+    endReadAt.current = Date.now();
+    read();
+  }, [running, base, duration, read]);
 
   const fromWindows = !isQuiet(info) && playerName(sourceKey(info)) === 'Spotify';
-  const canControl = fromWindows;
-  const why = `Windows sends these keys to the player in front. ${pb?.device ? `Spotify plays on ${pb.device.name}` : 'Spotify is not the player in front'}.`;
-  const playing = fromWindows ? info?.playback_status?.toLowerCase() === 'playing' : !!pb?.playing;
-  const press = (name: 'media_previous' | 'media_play_pause' | 'media_next') => {
-    if (!canControl) return;
-    command(name);
-    later(read, 800);
-  };
+  // Spotify reports a player: its own commands, whichever device plays. None: Windows' keys, but only for Spotify on this PC.
+  const viaSpotify = !!pb;
+  const viaWindows = !pb && fromWindows;
+  const canControl = viaSpotify || viaWindows;
+  const why = 'Nothing is playing in Spotify.';
+  const playing = viaSpotify ? !!pb?.playing : viaWindows ? info?.playback_status?.toLowerCase() === 'playing' : false;
 
-  const fail = (e: unknown) => {
+  const failNote = (verb: string, e: unknown) => {
     if (!mounted.current) return;
-    setNote(`Could not seek. ${problemLine(spotifyProblem(e))}`);
+    setNote(`Could not ${verb}. ${problemLine(spotifyProblem(e))}`);
     later(() => setNote(null), NOTE_MS);
     read();
   };
+  const press = (name: Press) => {
+    if (!canControl) return;
+    if (viaWindows) {
+      command(name === 'previous' ? 'media_previous' : name === 'next' ? 'media_next' : 'media_play_pause');
+      later(read, AFTER_PRESS_MS);
+      return;
+    }
+    const verb = name === 'previous' ? 'go back' : name === 'next' ? 'skip' : playing ? 'pause' : 'play';
+    const run = name === 'previous' ? spotify.previous() : name === 'next' ? spotify.next() : playing ? spotify.pause() : spotify.resume();
+    run.then(
+      () => {
+        if (!mounted.current) return;
+        read();
+        later(read, AFTER_PRESS_MS);
+      },
+      (e) => failNote(verb, e),
+    );
+  };
+
   const commit = (ms: number) => {
     if (!song) return;
     const at = Math.min(duration, Math.max(0, ms));
     // The bar moves at once; a failure puts it back.
     setAnchor((a) => (a.playback ? { playback: { ...a.playback, progressMs: at }, at: Date.now() } : a));
     setNow(Date.now());
-    spotify.seek(at).then(() => later(read, 800), fail);
+    spotify.seek(at).then(() => later(read, AFTER_PRESS_MS), (e) => failNote('seek', e));
   };
   const fractionAt = (e: ReactPointerEvent<HTMLDivElement>) => {
     const r = (track.current ?? e.currentTarget).getBoundingClientRect();
@@ -135,12 +175,28 @@ export function PlayerRow() {
     setDrag(null);
     commit(ms);
   };
+  // Arrow keys: the bar follows each repeat, but a seek goes out at most every 300 ms, and the final position when the key is let go.
+  const sendKey = () => {
+    if (keyTimer.current) clearTimeout(keyTimer.current);
+    keyTimer.current = null;
+    const at = keyPos.current;
+    if (at === null) return;
+    keyPos.current = null;
+    lastSeekAt.current = Date.now();
+    setDrag(null);
+    commit(at);
+  };
   const key = (e: ReactKeyboardEvent<HTMLDivElement>) => {
     if (!song || e.ctrlKey || e.altKey || e.metaKey) return;
     const step = e.key === 'ArrowRight' || e.key === 'ArrowUp' ? SEEK_STEP_MS : e.key === 'ArrowLeft' || e.key === 'ArrowDown' ? -SEEK_STEP_MS : 0;
     if (step === 0 && e.key !== 'Home' && e.key !== 'End') return;
     e.preventDefault();
-    commit(e.key === 'Home' ? 0 : e.key === 'End' ? duration : position + step);
+    const to = e.key === 'Home' ? 0 : e.key === 'End' ? duration : (keyPos.current ?? position) + step;
+    keyPos.current = Math.min(duration, Math.max(0, to));
+    setDrag(keyPos.current);
+    const wait = lastSeekAt.current + SEEK_KEY_GAP_MS - Date.now();
+    if (wait <= 0) sendKey();
+    else if (!keyTimer.current) keyTimer.current = setTimeout(sendKey, wait);
   };
 
   const control = (name: string, label: string, run: () => void, big: boolean, icon: ReactNode) => (
@@ -169,9 +225,9 @@ export function PlayerRow() {
         <b>{song ? song.name : 'Nothing playing'}</b>
         {note ? <small className="warn" role="status">{note}</small> : <small>{song ? song.artists : 'Press play on a song or a list.'}</small>}
       </span>
-      {control('previous', 'Previous song', () => press('media_previous'), false, <IconPlayerSkipBackFilled size={18} aria-hidden="true" />)}
-      {control('play', playing ? 'Pause' : 'Play', () => press('media_play_pause'), true, playing ? <IconPlayerPauseFilled size={20} aria-hidden="true" /> : <IconPlayerPlayFilled size={20} aria-hidden="true" />)}
-      {control('next', 'Next song', () => press('media_next'), false, <IconPlayerSkipForwardFilled size={18} aria-hidden="true" />)}
+      {control('previous', 'Previous song', () => press('previous'), false, <IconPlayerSkipBackFilled size={18} aria-hidden="true" />)}
+      {control('play', playing ? 'Pause' : 'Play', () => press('play'), true, playing ? <IconPlayerPauseFilled size={20} aria-hidden="true" /> : <IconPlayerPlayFilled size={20} aria-hidden="true" />)}
+      {control('next', 'Next song', () => press('next'), false, <IconPlayerSkipForwardFilled size={18} aria-hidden="true" />)}
       <span className="sp-pl-time">{song ? trackLength(position) : '0:00'}</span>
       <div
         ref={track}
@@ -189,6 +245,9 @@ export function PlayerRow() {
         onPointerUp={up}
         onPointerCancel={() => setDrag(null)}
         onKeyDown={key}
+        onKeyUp={() => {
+          if (keyPos.current !== null) sendKey();
+        }}
       >
         <i style={{ width: `${fraction * 100}%` }} />
         <u style={{ left: `${fraction * 100}%` }} />

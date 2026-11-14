@@ -6,7 +6,7 @@ import { useVisible } from '../../ui/useVisible';
 import { Cover } from './Cover';
 import { problemLine, spotifyProblem, trackLength, useSpotifyNow, type SpotifyProblem } from './model';
 import { Tile, PlayingBars } from './Tile';
-import { QUEUE_POLL_MS, runSkips, skipPlan } from './UpNext';
+import { QUEUE_POLL_MS } from './UpNext';
 
 /** Tiles shown for each of albums and playlists in a grouped search. */
 export const GROUP_TILES = 3;
@@ -97,8 +97,7 @@ export function SearchGroups({
 
 /**
  * Up next as its own view: the song playing, then the songs that follow (the bridge gives at most
- * ten). A click skips ahead to that song through Windows, exactly as the left wing's Up next does,
- * and says so when it cannot (see `skipPlan`). Read when it opens, when the song changes and every
+ * ten). A click skips ahead to that song with Spotify's next command (the row number is the number of skips). Read when it opens, when the song changes and every
  * 20 seconds while it shows; a busy answer keeps the rows it has.
  */
 export function QueueView() {
@@ -146,15 +145,18 @@ export function QueueView() {
   }, [note]);
 
   const next = queue && queue.current && Array.isArray(queue.next) ? queue.next : [];
+  // A click skips ahead by Spotify's own next command on the player it reports, so it works wherever the music plays
+  // (the row number is the number of skips, never more than the queue holds), then the queue is read again.
   const skip = (index: number) => {
-    const plan = skipPlan(index, next.length);
-    if (plan.kind === 'none') {
-      setNote(plan.line);
-      return;
-    }
-    void runSkips(plan.skips).then((line) => {
-      if (line && mounted.current) setNote(line);
-    });
+    const skips = Math.min(index + 1, next.length);
+    void (async () => {
+      try {
+        for (let i = 0; i < skips; i++) await spotify.next();
+      } catch (e) {
+        if (mounted.current) setNote(`Could not skip. ${problemLine(spotifyProblem(e))}`);
+      }
+      if (mounted.current) read();
+    })();
   };
   if (problem && !queue) {
     return (

@@ -1,7 +1,7 @@
 import { invoke } from '../bridge/tauri';
 
 export type SpotifyMode = 'playlist' | 'album' | 'track';
-export interface SpotifyItem { id: string; name: string; kind: SpotifyMode; imageUrl: string | null; thumbUrl: string | null; subtitle: string | null; count: number | null }
+export interface SpotifyItem { id: string; name: string; kind: SpotifyMode; imageUrl: string | null; thumbUrl: string | null; subtitle: string | null; count: number | null; /** Only a song of a search answer has its length. */ durationMs?: number }
 export interface SpotifyDevice { id: string; name: string; kind: string; active: boolean; restricted?: boolean; volume: number | null }
 export interface SpotifyStatus { setup: boolean; signedIn: boolean; reason: string | null }
 export interface SpotifySearch { tracks: SpotifyItem[]; albums: SpotifyItem[]; playlists: SpotifyItem[] }
@@ -31,5 +31,10 @@ export const spotify = {
   cancelStart: () => invoke<void>('wall2_spotify_cancel_start'),
   transfer: (deviceId: string) => invoke<void>('wall2_spotify_transfer', { deviceId }),
   seek: (positionMs: number) => invoke<void>('wall2_spotify_seek', { positionMs }),
+  // Transport on the player Spotify reports as active, wherever it plays (no device is named).
+  pause: () => invoke<void>('wall2_spotify_pause'),
+  resume: () => invoke<void>('wall2_spotify_resume'),
+  next: () => invoke<void>('wall2_spotify_next'),
+  previous: () => invoke<void>('wall2_spotify_previous'),
   shuffle: (on: boolean) => invoke<void>('wall2_spotify_shuffle', { on }),
 };

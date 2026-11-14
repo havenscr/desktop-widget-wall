@@ -30,8 +30,9 @@ import { QueueView, SearchGroups } from './TallViews';
 import {
   isNowPlaying,
   kindLine,
+  confirmPlayer,
   playDeviceId,
-  playProblemLine,
+  playFailureLine,
   problemLine,
   SEARCH_MIN,
   SEARCH_WAIT_MS,
@@ -91,6 +92,16 @@ const EMPTY_LINE: Record<BrowseTab, string> = {
   liked: 'No liked songs yet.',
   recent: 'Nothing played lately.',
   queue: 'Nothing is queued.',
+};
+
+/** What a list says while its first read is on its way (it never shows blank). */
+export const LOADING_LINE: Record<BrowseTab, string> = {
+  search: 'Searching Spotify.',
+  playlists: 'Reading your playlists.',
+  albums: 'Reading your albums.',
+  liked: 'Reading your liked songs.',
+  recent: 'Reading what you played lately.',
+  queue: 'Reading the queue.',
 };
 
 function readTab(tab: Exclude<BrowseTab, 'search' | 'queue'>, page: number): Promise<SpotifyItem[]> {
@@ -396,16 +407,12 @@ export async function finishPlay(answer: 'played' | 'starting', onStarting: () =
   await refreshNowPlaying();
 }
 
-/** The device a Play goes to (the owner's pick, else where the music is), or nothing for "this PC" as before. */
-const deviceArg = (): { deviceId?: string } => {
-  const id = playDeviceId();
-  return id ? { deviceId: id } : {};
-};
-
 /** Play an item whole, or shuffled, and report startup only when Rust opened Spotify. */
 async function playWhole(item: SpotifyItem, shuffled: boolean, onStarting: () => void): Promise<void> {
   useSpotifyStart.setState({ name: item.name });
-  await finishPlay(await spotify.play(item.kind, item.id, { shuffle: shuffled, ...deviceArg() }), onStarting);
+  // The player is confirmed against a fresh list first (see `confirmPlayer`): nothing plays on another player than the one named.
+  const player = await confirmPlayer();
+  await finishPlay(await spotify.play(item.kind, item.id, { shuffle: shuffled, ...player }), onStarting);
 }
 
 function Browser({ tall }: { tall: boolean }) {
@@ -516,11 +523,16 @@ function Browser({ tall }: { tall: boolean }) {
     return () => clearTimeout(id);
   }, [query, runSearch]);
 
-  const fail = (e: unknown) => mounted.current && setNote(playProblemLine(spotifyProblem(e)));
-  const playItem = (item: SpotifyItem) => {
-    void playWhole(item, false, () => mounted.current && setNote(STARTING_NOTE)).then(() => mounted.current && setNote(null), fail);
+  const playIt = (item: SpotifyItem, shuffled: boolean) => {
+    // Whether a player was named decides the words of a refusal ("That player ..." or about this PC).
+    const named = !!playDeviceId();
+    void playWhole(item, shuffled, () => mounted.current && setNote(STARTING_NOTE)).then(
+      () => mounted.current && setNote(null),
+      (e) => mounted.current && setNote(playFailureLine(e, named)),
+    );
   };
-  const shuffleItem = (item: SpotifyItem) => void playWhole(item, true, () => mounted.current && setNote(STARTING_NOTE)).then(() => mounted.current && setNote(null), fail);
+  const playItem = (item: SpotifyItem) => playIt(item, false);
+  const shuffleItem = (item: SpotifyItem) => playIt(item, true);
 
   const cur = lists[tab];
   const songsIn = cur.items.filter((i) => i.kind === 'track');
@@ -628,6 +640,10 @@ function Browser({ tall }: { tall: boolean }) {
                 Retry
               </button>
             )}
+          </div>
+        ) : cur.items.length === 0 && (cur.loading || !cur.loaded) ? (
+          <div className="sp-empty" aria-busy="true">
+            {LOADING_LINE[tab]}
           </div>
         ) : cur.loaded && cur.items.length === 0 ? (
           <div className="sp-empty">{EMPTY_LINE[tab]}</div>
@@ -774,14 +790,25 @@ function SongsView({ item, tall, backLabel, onBack, onNote }: { item: SpotifyIte
     return () => document.removeEventListener('keydown', key);
   }, [onBack]);
 
-  const fail = (e: unknown) => mounted.current && onNote(playProblemLine(spotifyProblem(e)));
+  const fail = (e: unknown, named: boolean) => mounted.current && onNote(playFailureLine(e, named));
   const playAll = (shuffled: boolean) => {
-    void playWhole(item, shuffled, () => onNote(STARTING_NOTE)).then(() => onNote(null), fail);
+    const named = !!playDeviceId();
+    void playWhole(item, shuffled, () => onNote(STARTING_NOTE)).then(() => onNote(null), (e) => fail(e, named));
   };
   const playFrom = (t: SpotifyTrack) => {
     if (!t.id || !t.playable) return;
     useSpotifyStart.setState({ name: t.name });
-    spotify.play('track', t.id, { context: { kind, id: item.id }, offsetId: t.id, ...deviceArg() }).then((answer) => finishPlay(answer, () => onNote(STARTING_NOTE))).then(() => onNote(null), fail);
+    const named = !!playDeviceId();
+    void (async () => {
+      try {
+        const player = await confirmPlayer();
+        const answer = await spotify.play('track', t.id as string, { context: { kind, id: item.id }, offsetId: t.id as string, ...player });
+        await finishPlay(answer, () => onNote(STARTING_NOTE));
+        onNote(null);
+      } catch (e) {
+        fail(e, named);
+      }
+    })();
   };
   const owner = kindLine(item).replace(/^(Playlist|Album)( by )?/, '');
   const all = !st.more && st.items.length > 0 && st.items.length >= st.total;
@@ -829,6 +856,10 @@ function SongsView({ item, tall, backLabel, onBack, onNote }: { item: SpotifyIte
             <button type="button" className="sp-btn" onClick={() => load(0)}>
               Retry
             </button>
+          </li>
+        ) : st.loading && st.items.length === 0 ? (
+          <li className="sp-empty" aria-busy="true">
+            Reading the songs.
           </li>
         ) : !st.loading && st.items.length === 0 ? (
           <li className="sp-empty">No songs in this {kind}.</li>

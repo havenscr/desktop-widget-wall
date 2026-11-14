@@ -2966,6 +2966,15 @@
   scrollbar-width: thin;
   scrollbar-color: rgba(154, 123, 255, 0.75) rgba(255, 255, 255, 0.05);
 }
+.sp-dev.locked {
+  border-color: rgba(255, 194, 77, 0.45);
+}
+.sp-dev-lock {
+  color: var(--amber);
+}
+.sp-devices.stale .sp-device {
+  opacity: 0.7;
+}
 .sp-devk,
 .sp-gk {
   font: 600 16px/1 var(--disp);

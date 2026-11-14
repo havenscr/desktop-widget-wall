@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { SpotifyItem } from '../../music/spotify';
+import { spotify, type SpotifyDevice, type SpotifyItem } from '../../music/spotify';
 
 /** Which player Unwind's card follows: Spotify (browse and play) or YouTube Music (through Windows). */
 export type ListenSource = 'spotify' | 'youtube';
@@ -37,7 +37,7 @@ export function resetListenSource(): void {
 }
 
 /** What went wrong with a Spotify call, from the bridge's error text. */
-export type SpotifyProblem = 'notsetup' | 'needsSignIn' | 'busy' | 'starting' | 'choose' | 'restricted' | 'nodevice' | 'notYours' | 'gone' | 'connection' | 'refused' | 'down' | `server:${number}` | `status:${number}` | 'failed';
+export type SpotifyProblem = 'notsetup' | 'needsSignIn' | 'busy' | 'starting' | 'choose' | 'restricted' | 'devicegone' | 'nodevice' | 'notYours' | 'gone' | 'connection' | 'refused' | 'down' | `server:${number}` | `status:${number}` | 'failed';
 
 export function spotifyProblem(e: unknown): SpotifyProblem {
   const text = (e instanceof Error ? e.message : typeof e === 'string' ? e : '').toLowerCase();
@@ -46,6 +46,7 @@ export function spotifyProblem(e: unknown): SpotifyProblem {
   if (text.includes('busy')) return 'busy';
   if (text.includes('starting')) return 'starting';
   if (text.includes('choose')) return 'choose';
+  if (text.includes('device gone')) return 'devicegone';
   if (text.includes('restricted')) return 'restricted';
   if (text.includes('no device')) return 'nodevice';
   if (text.includes('not yours')) return 'notYours';
@@ -75,6 +76,8 @@ export function problemLine(p: SpotifyProblem): string {
       return 'More than one computer is signed in to Spotify. Pick this PC in Spotify once, then press Play.';
     case 'restricted':
       return 'Spotify on this PC does not allow remote control right now. Press Play in Spotify.';
+    case 'devicegone':
+      return GONE_LINE;
     case 'nodevice':
       return 'Open Spotify on this PC first.';
     case 'notYours':
@@ -94,8 +97,15 @@ export function problemLine(p: SpotifyProblem): string {
   }
 }
 
-/** The one line after a play that did not start. */
-export function playProblemLine(p: SpotifyProblem): string {
+/** A chosen player that went to sleep: Play does nothing and says so. */
+export const GONE_LINE = 'That player is not awake. Choose where to play.';
+/** A chosen player that does not allow control from here. */
+export const LOCKED_LINE = 'That player does not allow control from here. Choose where to play.';
+
+/** The one line after a play that did not start. `named`: the play named a player the owner chose. */
+export function playProblemLine(p: SpotifyProblem, named = false): string {
+  if (p === 'devicegone') return GONE_LINE;
+  if (p === 'restricted' && named) return LOCKED_LINE;
   if (p === 'nodevice') return 'Spotify opened but did not show up as a player. Press Play in Spotify once, then try again.';
   if (p === 'starting') return 'Spotify is still starting.';
   if (p === 'choose') return 'More than one computer is signed in to Spotify. Pick this PC in Spotify once, then press Play.';
@@ -246,4 +256,62 @@ export function deviceKindWord(kind: string): string {
 export function seekPosition(fraction: number, durationMs: number): number {
   if (!Number.isFinite(fraction) || !Number.isFinite(durationMs) || durationMs <= 0) return 0;
   return Math.round(Math.min(1, Math.max(0, fraction)) * durationMs);
+}
+
+/** The players Spotify last listed (null before the first read) and whether the last read failed, so the list may be stale. */
+export const useSpotifyDevices = create<{ devices: SpotifyDevice[] | null; stale: boolean; problem: string | null }>(() => ({ devices: null, stale: false, problem: null }));
+
+/**
+ * Read the players now. A good answer replaces the list, records which player is active and allows control, and forgets
+ * a pick that is no longer awake (a "This PC" pick once a computer is listed). A failed read keeps the old list but marks it stale.
+ */
+export async function readDevices(): Promise<SpotifyDevice[] | null> {
+  try {
+    const got = await spotify.devices();
+    const list = Array.isArray(got) ? got : [];
+    useSpotifyDevices.setState({ devices: list, stale: false, problem: null });
+    const active = list.find((d) => d.active && !d.restricted);
+    const state = useSpotifyTarget.getState();
+    state.setActiveId(active ? active.id : null);
+    const t = state.target;
+    if (t && ((t.id && !list.some((d) => d.id === t.id)) || (!t.id && list.some((d) => d.kind.toLowerCase() === 'computer')))) state.setTarget(null);
+    return list;
+  } catch (e) {
+    useSpotifyDevices.setState({ stale: true, problem: problemLine(spotifyProblem(e)) });
+    return null;
+  }
+}
+
+/**
+ * Before a Play that names a player (the owner's pick, or the active one): read the list again. A picked player that is gone
+ * (a computer: Play starts Spotify there as before; anything else) or does not allow control stops the Play with a fixed word,
+ * clears the pick and plays nothing, so music never lands on another player while the chip names this one. A failed read lets
+ * the play go on: Rust checks the same thing against Spotify's own list.
+ */
+export async function confirmPlayer(): Promise<{ deviceId?: string }> {
+  const before = useSpotifyTarget.getState().target;
+  if (!before && !useSpotifyTarget.getState().activeId) return {};
+  const list = await readDevices();
+  if (before && before.id && list) {
+    const found = list.find((d) => d.id === before.id);
+    if (!found) {
+      useSpotifyTarget.getState().setTarget(null);
+      if (before.kind.toLowerCase() !== 'computer') throw new Error('device gone');
+    } else if (found.restricted) {
+      useSpotifyTarget.getState().setTarget(null);
+      throw new Error('restricted');
+    }
+  }
+  const id = playDeviceId();
+  return id ? { deviceId: id } : {};
+}
+
+/** The line for a play that failed; a gone player also clears the pick and reads the list again so the chip tells the truth. */
+export function playFailureLine(e: unknown, named: boolean): string {
+  const p = spotifyProblem(e);
+  if (p === 'devicegone' || (p === 'restricted' && named)) {
+    useSpotifyTarget.getState().setTarget(null);
+    useSpotifyStart.setState((s) => ({ rev: s.rev + 1 }));
+  }
+  return playProblemLine(p, named);
 }
