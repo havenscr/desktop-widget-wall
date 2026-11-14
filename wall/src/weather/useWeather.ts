@@ -1,8 +1,19 @@
 import { useEffect, useRef } from 'react';
 import { create } from 'zustand';
+import { invoke } from '../bridge/tauri';
 import { loadSettings } from '../settings/settings';
 import { useVisible } from '../ui/useVisible';
-import { buildUrl, parseWeather, shouldRefresh, type WeatherFailure, type WeatherReading } from './model';
+import {
+  asksSecondSource,
+  BACKOFF_MS,
+  failureFromError,
+  parseNws,
+  parseWeather,
+  shouldRefresh,
+  type WeatherFailure,
+  type WeatherReading,
+  type WeatherSource,
+} from './model';
 
 const CHECK_MS = 60_000;
 export const FETCH_TIMEOUT_MS = 15_000;
@@ -13,12 +24,21 @@ export interface WeatherState {
   failed: boolean;
   failure?: WeatherFailure | null;
   attemptedAt?: number | null;
+  /** After a 429: the time (epoch ms) the first source is asked again; null otherwise. */
+  nextTryAt?: number | null;
   now: number;
 }
 
-const defaultFetch: typeof fetch = (...a) => fetch(...a);
+/**
+ * Asks the native side for one source's reply text (it names the failure kind in the error).
+ * The page never calls the weather services itself.
+ */
+export type WeatherReader = (source: WeatherSource, latitude: number, longitude: number) => Promise<string>;
 
-const initial = (): WeatherState => ({ reading: null, failed: false, failure: null, attemptedAt: null, now: Date.now() });
+const nativeReader: WeatherReader = (source, latitude, longitude) =>
+  invoke<string>('wall2_weather', { latitude, longitude, source });
+
+const initial = (): WeatherState => ({ reading: null, failed: false, failure: null, attemptedAt: null, nextTryAt: null, now: Date.now() });
 
 /** The one shared reading every `useWeather` user sees. */
 export const useWeatherStore = create<WeatherState>(() => initial());
@@ -29,44 +49,103 @@ let lastAttempt: number | null = null;
 let inFlight = false;
 /** Bumped when the last user leaves, so a fetch started before that cannot land after it. */
 let epoch = 0;
-/** The fetcher of the most recently joined user (tests pass their own). */
-let fetcher: typeof fetch = defaultFetch;
+/** The reader of the most recently joined user (tests pass their own). */
+let reader: WeatherReader = nativeReader;
+/** The first source is left alone until this time (epoch ms) after a 429; 0 when it is not. */
+let blockedUntil = 0;
+/** Which of the 15, 30 and 60 minute waits comes next after a 429. */
+let backoffStep = 0;
 
-async function run(): Promise<void> {
+/** Rejects with `timeout` when the reply does not come in time; a late reply is dropped. */
+function withTimeout(p: Promise<string>): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const id = setTimeout(() => reject('timeout'), FETCH_TIMEOUT_MS);
+    p.then(
+      (v) => {
+        clearTimeout(id);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(id);
+        reject(e);
+      },
+    );
+  });
+}
+
+/** One source: a reading, or the failure kind. */
+async function attempt(source: WeatherSource, latitude: number, longitude: number): Promise<WeatherReading | WeatherFailure> {
+  let text: string;
+  try {
+    text = await withTimeout(reader(source, latitude, longitude));
+  } catch (error) {
+    return failureFromError(error);
+  }
+  try {
+    const body: unknown = JSON.parse(text);
+    return source === 'nws' ? parseNws(body, Date.now()) : parseWeather(body, Date.now());
+  } catch {
+    return 'parse';
+  }
+}
+
+/**
+ * One try. Open-Meteo first (not while a 429 holds it back, unless `force`); when it refuses (429)
+ * or cannot be reached, the National Weather Service. A 429 moves the next Open-Meteo try 15, then
+ * 30, then 60 minutes out; a success resets that.
+ */
+async function run(force = false): Promise<void> {
   if (inFlight) return;
   inFlight = true;
   const mine = epoch;
-  lastAttempt = Date.now();
-  useWeatherStore.setState({ attemptedAt: lastAttempt });
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  const started = Date.now();
+  lastAttempt = started;
+  useWeatherStore.setState({ attemptedAt: started });
   try {
     const s = loadSettings();
-    const res = await fetcher(buildUrl(s.latitude, s.longitude), { signal: controller.signal });
-    if (!res.ok) throw new Error(`weather-http:${res.status}`);
-    let body: unknown;
-    try { body = await res.json(); } catch { throw new Error('weather-parse') }
-    let next: WeatherReading;
-    try { next = parseWeather(body, Date.now()); } catch { throw new Error('weather-parse') }
-    if (mine === epoch) useWeatherStore.setState({ reading: next, failed: false, failure: null });
-  } catch (error) {
-    /* keep the last good reading; the card shows its age */
-    const message = error instanceof Error ? error.message : '';
-    const failure: WeatherFailure = controller.signal.aborted ? 'timeout' : message.startsWith('weather-http:') ? `http ${Number(message.slice(13))}` : message === 'weather-parse' ? 'parse' : 'network';
-    if (mine === epoch) useWeatherStore.setState({ failed: true, failure });
+    let reading: WeatherReading | null = null;
+    let failure: WeatherFailure;
+    if (!force && started < blockedUntil) {
+      failure = 'http 429';
+    } else {
+      const first = await attempt('open-meteo', s.latitude, s.longitude);
+      if (typeof first !== 'string') {
+        blockedUntil = 0;
+        backoffStep = 0;
+        reading = first;
+        failure = 'parse';
+      } else {
+        failure = first;
+        if (first === 'http 429') {
+          blockedUntil = started + BACKOFF_MS[Math.min(backoffStep, BACKOFF_MS.length - 1)];
+          backoffStep = Math.min(backoffStep + 1, BACKOFF_MS.length - 1);
+        }
+      }
+    }
+    if (!reading && asksSecondSource(failure)) {
+      const second = await attempt('nws', s.latitude, s.longitude);
+      if (typeof second !== 'string') reading = second;
+    }
+    if (mine !== epoch) return;
+    if (reading) useWeatherStore.setState({ reading, failed: false, failure: null, nextTryAt: reading.source === 'nws' && failure === 'http 429' ? blockedUntil : null });
+    /* a failure keeps the last good reading; the card shows its age */
+    else useWeatherStore.setState({ failed: true, failure, nextTryAt: failure === 'http 429' ? blockedUntil : null });
   } finally {
-    clearTimeout(timeout);
     if (mine === epoch) inFlight = false;
   }
 }
 
 function check(): void {
-  useWeatherStore.setState({ now: Date.now() });
-  if (shouldRefresh(lastAttempt, Date.now(), useWeatherStore.getState().reading !== null)) void run();
+  const now = Date.now();
+  useWeatherStore.setState({ now });
+  const st = useWeatherStore.getState();
+  // No reading and Open-Meteo is refusing this address: no new try before the planned time.
+  if (!st.reading && st.nextTryAt && now < st.nextTryAt) return;
+  if (shouldRefresh(lastAttempt, now, st.reading !== null)) void run();
 }
 
-function join(f: typeof fetch): void {
-  fetcher = f;
+function join(r: WeatherReader): void {
+  reader = r;
   users += 1;
   if (users === 1) timer = setInterval(check, CHECK_MS);
   // Every mount checks (and refreshes the clock), throttled by the last attempt; a mount with
@@ -96,6 +175,9 @@ export function resetWeatherStore(): void {
   epoch += 1;
   inFlight = false;
   lastAttempt = null;
+  blockedUntil = 0;
+  backoffStep = 0;
+  reader = nativeReader;
   useWeatherStore.setState(initial(), true);
 }
 
@@ -104,14 +186,16 @@ export function resetWeatherStore(): void {
  * Watt): one fetch however many are mounted. Fetches when the first visible user mounts and
  * every 15 minutes while at least one is mounted and visible; fetches once when the page becomes
  * visible after 15 minutes or more. With no reading yet it retries every minute. A failure keeps
- * the last good reading. A request is aborted after 15 seconds. `now` ticks each minute so the
+ * the last good reading. The read is native (`wall2_weather`) and gives up after 15 seconds. After a
+ * 429 Open-Meteo is left alone for 15, then 30, then 60 minutes, and the National Weather Service is
+ * asked instead. `now` ticks each minute so the
  * stale text stays current. When the last user leaves (the page is hidden) polling stops but the
  * reading and the time of the last attempt are kept.
  */
-export function useWeather(f: typeof fetch = defaultFetch): WeatherState {
+export function useWeather(r: WeatherReader = nativeReader): WeatherState {
   const visible = useVisible();
-  const fRef = useRef(f);
-  fRef.current = f;
+  const fRef = useRef(r);
+  fRef.current = r;
   useEffect(() => {
     if (!visible) return;
     join(fRef.current);
@@ -120,7 +204,10 @@ export function useWeather(f: typeof fetch = defaultFetch): WeatherState {
   return useWeatherStore();
 }
 
-/** The Tools drawer's Retry for Weather: one fetch now, outside the 15 minute check (skipped while one runs). */
+/**
+ * The Tools drawer's Retry for Weather: one fetch now, outside the 15 minute check and outside a
+ * 429 wait (skipped while one runs).
+ */
 export function refreshWeather(): Promise<void> {
-  return run();
+  return run(true);
 }

@@ -1,4 +1,4 @@
-import { staleText } from './model';
+import { staleText, weatherFailureText } from './model';
 import { useWeather, type WeatherState } from './useWeather';
 import { WeatherIcon } from './WeatherIcon';
 
@@ -15,6 +15,7 @@ export function WeatherCardView({ state }: { state: WeatherState }) {
       <section className="panel weather" aria-label="Weather">
         <span className="k">Weather</span>
         <div className="s">{failed ? 'Weather unavailable' : 'Loading weather'}</div>
+        {failed && <div className="wx-why">{weatherFailureText(state.failure, state.nextTryAt)}</div>}
       </section>
     );
   }

@@ -693,6 +693,19 @@
   gap: 10px;
   color: var(--faint);
 }
+.wx-status-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+/* Why the weather is unavailable, in plain sight (16 px floor); wraps inside its card. */
+.wx-why {
+  display: block;
+  font-size: 16px;
+  line-height: 1.25;
+  color: var(--faint);
+  overflow-wrap: anywhere;
+}
 .centre-fill .wx-now {
   gap: 28px;
 }

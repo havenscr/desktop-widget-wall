@@ -1,13 +1,53 @@
+import { clockText } from '../meet/model';
 import { describeWeather, type WeatherLook } from './codes';
 
-export type WeatherFailure = 'network' | 'timeout' | `http ${number}` | 'parse';
+export type WeatherFailure = 'network' | 'timeout' | `http ${number}` | 'parse' | 'dns' | 'connect' | 'tls' | 'read' | 'input';
 
-export function weatherFailureText(failure: WeatherFailure | null | undefined): string {
+/** Where a reading came from: the first source, or the United States National Weather Service. */
+export type WeatherSource = 'open-meteo' | 'nws';
+
+export const WEATHER_SOURCE_NAMES: Record<WeatherSource, string> = {
+  'open-meteo': 'Open-Meteo',
+  nws: 'the National Weather Service',
+};
+
+/**
+ * The failure kinds the native read sends as its error text (`dns`, `connect`, `tls`, `timeout`,
+ * `read`, `input`, `http <status>`); anything else is a plain `network` failure.
+ */
+export function failureFromError(error: unknown): WeatherFailure {
+  const text = typeof error === 'string' ? error : error instanceof Error ? error.message : '';
+  if (['dns', 'connect', 'tls', 'timeout', 'read', 'input'].includes(text)) return text as WeatherFailure;
+  const http = /^http (\d{3})$/.exec(text);
+  return http ? `http ${Number(http[1])}` : 'network';
+}
+
+/**
+ * Plain words for a failure. `retryAt` (epoch ms) is the next planned try after a 429, when
+ * there is one.
+ */
+export function weatherFailureText(failure: WeatherFailure | null | undefined, retryAt?: number | null): string {
   if (failure === 'network') return 'Could not reach Open-Meteo.';
+  if (failure === 'dns') return "This PC could not look up Open-Meteo's address.";
+  if (failure === 'connect') return 'Open-Meteo refused the connection.';
+  if (failure === 'tls') return 'The secure connection to Open-Meteo failed.';
   if (failure === 'timeout') return 'Open-Meteo did not answer in time.';
+  if (failure === 'read') return 'The reply from Open-Meteo broke off before the end.';
+  if (failure === 'input') return 'The place set for the weather is not valid.';
   if (failure === 'parse') return 'The weather reply could not be read.';
+  if (failure === 'http 429') {
+    return `Open-Meteo is refusing this address for now (too many requests).${retryAt ? ` Next try at ${clockText(retryAt)}.` : ''}`;
+  }
   if (failure?.startsWith('http ')) return `Open-Meteo answered ${failure.slice(5)}.`;
   return 'The weather service did not answer.';
+}
+
+/** After a 429 the first source is left alone for 15 minutes, then 30, then 60 at most. */
+export const BACKOFF_MS = [15 * 60_000, 30 * 60_000, 60 * 60_000] as const;
+
+/** Failures after which the second source is asked: a refusal (429) or no way to reach the first. */
+export function asksSecondSource(failure: WeatherFailure): boolean {
+  return failure === 'http 429' || ['network', 'timeout', 'dns', 'connect', 'tls', 'read'].includes(failure);
 }
 
 export const REFRESH_MS = 15 * 60 * 1000;
@@ -29,6 +69,8 @@ export interface WeatherReading {
   hours: HourPoint[];
   /** Epoch ms when this reading was fetched. */
   fetchedAt: number;
+  /** Which source it came from (absent reads as Open-Meteo). */
+  source?: WeatherSource;
 }
 
 export function buildUrl(latitude: number, longitude: number): string {
@@ -82,6 +124,84 @@ export function parseWeather(data: unknown, fetchedAt: number): WeatherReading {
     low: Math.round(lo),
     hours,
     fetchedAt,
+    source: 'open-meteo',
+  };
+}
+
+/**
+ * National Weather Service short forecast words to a WMO weather code the wall already knows
+ * (`describeWeather`). The first row whose words are contained in the text wins, so the order
+ * matters: precipitation, then fog, then cloud cover, then clear. No match is -1 ("Unknown").
+ */
+export const NWS_TABLE: ReadonlyArray<readonly [string, number]> = [
+  ['thunder', 95],
+  ['freezing rain', 66],
+  ['sleet', 66],
+  ['ice pellets', 66],
+  ['freezing drizzle', 56],
+  ['heavy snow', 75],
+  ['blizzard', 75],
+  ['light snow', 71],
+  ['flurries', 71],
+  ['snow showers', 85],
+  ['snow', 73],
+  ['heavy rain', 65],
+  ['light rain', 61],
+  ['showers', 81],
+  ['drizzle', 51],
+  ['rain', 63],
+  ['fog', 45],
+  ['mist', 45],
+  ['mostly sunny', 1],
+  ['mostly clear', 1],
+  ['partly sunny', 2],
+  ['partly cloudy', 2],
+  ['mostly cloudy', 3],
+  ['cloudy', 3],
+  ['overcast', 3],
+  ['sunny', 0],
+  ['clear', 0],
+];
+
+export function nwsCode(shortForecast: string): number {
+  const text = shortForecast.toLowerCase();
+  const row = NWS_TABLE.find(([words]) => text.includes(words));
+  return row ? row[1] : -1;
+}
+
+interface NwsPeriod {
+  startTime: string;
+  isDaytime?: boolean;
+  temperature: number;
+  temperatureUnit?: string;
+  shortForecast?: string;
+}
+
+/**
+ * Turn the Weather Service's hourly forecast into a reading. The first hour is "now"; today's
+ * high and low come from that day's hours still ahead (so an evening reading's high is the
+ * evening's highest hour); the strip is the next six hours. Times are local to the place.
+ */
+export function parseNws(data: unknown, fetchedAt: number): WeatherReading {
+  const periods = (data as { properties?: { periods?: NwsPeriod[] } })?.properties?.periods;
+  if (!Array.isArray(periods) || periods.length === 0) throw new Error('Unexpected weather response');
+  const temp = (p: NwsPeriod) => {
+    if (typeof p?.temperature !== 'number' || !Number.isFinite(p.temperature) || typeof p.startTime !== 'string') throw new Error('Incomplete weather response');
+    return p.temperatureUnit === 'C' ? (p.temperature * 9) / 5 + 32 : p.temperature;
+  };
+  const look = (p: NwsPeriod) => describeWeather(nwsCode(p.shortForecast ?? ''), p.isDaytime !== false);
+  const first = periods[0];
+  const day = first.startTime.slice(0, 10);
+  const today = periods.filter((p) => p.startTime?.slice(0, 10) === day).map(temp);
+  const hours: HourPoint[] = periods.slice(1, 7).map((p) => ({ label: hourLabel(p.startTime), temp: Math.round(temp(p)), look: look(p) }));
+  return {
+    temp: Math.round(temp(first)),
+    look: look(first),
+    high: Math.round(Math.max(...today)),
+    low: Math.round(Math.min(...today)),
+    hours,
+    fetchedAt,
+    source: 'nws',
   };
 }
 

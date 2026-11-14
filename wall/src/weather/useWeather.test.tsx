@@ -1,8 +1,10 @@
 import { act, render, renderHook, screen, waitFor } from '@testing-library/react';
 import { StrictMode } from 'react';
 import { afterEach, expect, it, vi } from 'vitest';
+import { mocks } from '../bridge/tauri';
+import { BACKOFF_MS } from './model';
 import { WeatherCard } from './WeatherCard';
-import { FETCH_TIMEOUT_MS, refreshWeather, resetWeatherStore, useWeather, useWeatherStore } from './useWeather';
+import { FETCH_TIMEOUT_MS, refreshWeather, resetWeatherStore, useWeather, useWeatherStore, type WeatherReader } from './useWeather';
 
 const body = {
   current: { time: '2026-11-11T10:15', temperature_2m: 57.6, weather_code: 3, is_day: 1 },
@@ -13,16 +15,28 @@ const body = {
   },
   daily: { temperature_2m_max: [61], temperature_2m_min: [44] },
 };
-const ok = async () => ({ ok: true, json: async () => body }) as unknown as Response;
+const nwsBody = {
+  properties: {
+    periods: Array.from({ length: 10 }, (_, i) => ({
+      startTime: `2026-11-11T${String(10 + i).padStart(2, '0')}:00:00-08:00`,
+      isDaytime: true,
+      temperature: 40 + i,
+      temperatureUnit: 'F',
+      shortForecast: 'Sunny',
+    })),
+  },
+};
+const ok = async () => JSON.stringify(body);
 
 afterEach(() => {
   resetWeatherStore();
+  mocks.clear();
   vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
 it('shows the reading inside StrictMode (effect remount)', async () => {
-  vi.stubGlobal('fetch', vi.fn(ok));
+  mocks.set('wall2_weather', ok);
   render(
     <StrictMode>
       <WeatherCard />
@@ -31,52 +45,63 @@ it('shows the reading inside StrictMode (effect remount)', async () => {
   await waitFor(() => expect(screen.getByText('58°')).toBeTruthy());
 });
 
-it('says unavailable after a failed first fetch, then recovers on the one minute retry', async () => {
+it('never calls the network from the page: the read is the native command', async () => {
+  const f = vi.fn();
+  vi.stubGlobal('fetch', f);
+  const seen: unknown[] = [];
+  mocks.set('wall2_weather', (args) => {
+    seen.push(args?.source);
+    return ok();
+  });
+  render(<WeatherCard />);
+  await waitFor(() => expect(screen.getByText('58°')).toBeTruthy());
+  expect(f).not.toHaveBeenCalled();
+  expect(seen).toEqual(['open-meteo']);
+});
+
+it('says unavailable after a failed first read, then recovers on the one minute retry', async () => {
   vi.useFakeTimers();
   let fail = true;
   const f = vi.fn(async () => {
-    if (fail) throw new Error('offline');
+    if (fail) throw 'connect';
     return ok();
   });
-  vi.stubGlobal('fetch', f);
+  mocks.set('wall2_weather', f);
   render(<WeatherCard />);
   await act(async () => {
     await vi.advanceTimersByTimeAsync(10);
   });
   expect(screen.getByText('Weather unavailable')).toBeTruthy();
+  // A connect failure asks the second source too, so the first source is called once and the second once.
+  const callsAfterFirstTry = f.mock.calls.length;
+  expect(callsAfterFirstTry).toBe(2);
   await act(async () => {
     await vi.advanceTimersByTimeAsync(59_980);
   });
-  expect(f).toHaveBeenCalledTimes(1);
+  expect(f).toHaveBeenCalledTimes(callsAfterFirstTry);
   fail = false;
   await act(async () => {
     await vi.advanceTimersByTimeAsync(20);
   });
-  expect(f).toHaveBeenCalledTimes(2);
+  expect(f).toHaveBeenCalledTimes(callsAfterFirstTry + 1);
   expect(screen.getByText('58°')).toBeTruthy();
 });
 
-it('aborts a hung request after 15 seconds and fetches again later', async () => {
+it('gives up on a hung read after 15 seconds and reads again later', async () => {
   vi.useFakeTimers();
-  let signalSeen: AbortSignal | undefined;
   let hang = true;
-  const f = vi.fn((_url: unknown, init?: RequestInit) => {
-    if (!hang) return ok();
-    signalSeen = init?.signal ?? undefined;
-    return new Promise<Response>((_, reject) => {
-      init?.signal?.addEventListener('abort', () => reject(new Error('aborted')));
-    });
-  }) as unknown as typeof fetch;
-  const { result } = renderHook(() => useWeather(f));
+  // While it hangs both sources hang: the first gives up at 15 s, then the second is asked.
+  const read: WeatherReader = vi.fn(() => (hang ? new Promise<string>(() => undefined) : ok()));
+  const { result } = renderHook(() => useWeather(read));
   await act(async () => {
     await vi.advanceTimersByTimeAsync(10);
   });
-  expect(signalSeen?.aborted).toBe(false);
+  expect(result.current.failed).toBe(false);
   await act(async () => {
-    await vi.advanceTimersByTimeAsync(FETCH_TIMEOUT_MS);
+    await vi.advanceTimersByTimeAsync(FETCH_TIMEOUT_MS * 2);
   });
-  expect(signalSeen?.aborted).toBe(true);
   expect(result.current.failed).toBe(true);
+  expect(result.current.failure).toBe('timeout');
   hang = false;
   await act(async () => {
     await vi.advanceTimersByTimeAsync(60_000);
@@ -86,13 +111,136 @@ it('aborts a hung request after 15 seconds and fetches again later', async () =>
 
 it('keeps HTTP and unreadable reply failures distinct with the last try time', async () => {
   let reply: 'http' | 'json' = 'http';
-  const f = vi.fn(async () => reply === 'http'
-    ? ({ ok: false, status: 403 } as Response)
-    : ({ ok: true, json: async () => { throw new Error('bad json'); } } as unknown as Response));
-  renderHook(() => useWeather(f as typeof fetch));
+  const read: WeatherReader = vi.fn(async () => {
+    if (reply === 'http') throw 'http 403';
+    return 'not json at all';
+  });
+  renderHook(() => useWeather(read));
   await waitFor(() => expect(useWeatherStore.getState().failure).toBe('http 403'));
   expect(useWeatherStore.getState().attemptedAt).toEqual(expect.any(Number));
+  // A 403 is not a refusal to wait out and not an unreachable service: the second source is not asked.
+  expect(read).toHaveBeenCalledTimes(1);
   reply = 'json';
   await act(async () => refreshWeather());
   expect(useWeatherStore.getState().failure).toBe('parse');
+});
+
+it('keeps every native failure kind distinct and names an unknown error as a network failure', async () => {
+  for (const kind of ['dns', 'connect', 'tls', 'timeout', 'read', 'input', 'http 500']) {
+    resetWeatherStore();
+    const read: WeatherReader = async () => {
+      throw kind;
+    };
+    const { unmount } = renderHook(() => useWeather(read));
+    await waitFor(() => expect(useWeatherStore.getState().failure).toBe(kind));
+    unmount();
+  }
+  resetWeatherStore();
+  const odd: WeatherReader = async () => {
+    throw new Error('something else');
+  };
+  renderHook(() => useWeather(odd));
+  await waitFor(() => expect(useWeatherStore.getState().failure).toBe('network'));
+});
+
+it('after a 429 leaves the first source alone for 15, then 30, then 60 minutes, and asks the Weather Service', async () => {
+  vi.useFakeTimers();
+  const calls: string[] = [];
+  const read: WeatherReader = async (source) => {
+    calls.push(source);
+    if (source === 'open-meteo') throw 'http 429';
+    return JSON.stringify(nwsBody);
+  };
+  const { result } = renderHook(() => useWeather(read));
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(10);
+  });
+  // First try: Open-Meteo refuses, the Weather Service answers; the reading says where it came from.
+  expect(calls).toEqual(['open-meteo', 'nws']);
+  expect(result.current.reading?.source).toBe('nws');
+  expect(result.current.failed).toBe(false);
+  expect(result.current.nextTryAt).toEqual(expect.any(Number));
+  // The next refresh (15 minutes) asks Open-Meteo again, it refuses again (30 minute wait).
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(BACKOFF_MS[0] + 60_000);
+  });
+  expect(calls).toEqual(['open-meteo', 'nws', 'open-meteo', 'nws']);
+  // Inside the 30 minute wait the refresh goes straight to the Weather Service.
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(BACKOFF_MS[0] + 60_000);
+  });
+  expect(calls.slice(4)).toEqual(['nws']);
+  // Past it Open-Meteo is tried again (60 minute wait next, and never more than 60).
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(BACKOFF_MS[0]);
+  });
+  expect(calls.slice(5)).toEqual(['open-meteo', 'nws']);
+});
+
+it('with no reading after a 429 waits for the planned time, then the Retry button tries at once', async () => {
+  vi.useFakeTimers();
+  const calls: string[] = [];
+  const read: WeatherReader = async (source) => {
+    calls.push(source);
+    throw source === 'nws' ? 'http 404' : 'http 429';
+  };
+  const { result } = renderHook(() => useWeather(read));
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(10);
+  });
+  expect(result.current.failed).toBe(true);
+  expect(result.current.failure).toBe('http 429');
+  const retryAt = result.current.nextTryAt!;
+  expect(retryAt - result.current.attemptedAt!).toBe(BACKOFF_MS[0]);
+  expect(calls).toEqual(['open-meteo', 'nws']);
+  // Nothing for 14 minutes even though a reading-less wall normally retries every minute.
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(14 * 60_000);
+  });
+  expect(calls).toHaveLength(2);
+  // The Tools drawer's Retry tries Open-Meteo at once.
+  await act(async () => refreshWeather());
+  expect(calls).toEqual(['open-meteo', 'nws', 'open-meteo', 'nws']);
+  // A second 429 waits 30 minutes, a third and later 60.
+  expect(useWeatherStore.getState().nextTryAt! - useWeatherStore.getState().attemptedAt!).toBe(BACKOFF_MS[1]);
+  await act(async () => refreshWeather());
+  expect(useWeatherStore.getState().nextTryAt! - useWeatherStore.getState().attemptedAt!).toBe(BACKOFF_MS[2]);
+  await act(async () => refreshWeather());
+  expect(useWeatherStore.getState().nextTryAt! - useWeatherStore.getState().attemptedAt!).toBe(BACKOFF_MS[2]);
+});
+
+it('a success resets the 429 wait', async () => {
+  vi.useFakeTimers();
+  let refuse = true;
+  const read: WeatherReader = async (source) => {
+    if (source === 'nws') throw 'http 404';
+    if (refuse) throw 'http 429';
+    return ok();
+  };
+  const { result } = renderHook(() => useWeather(read));
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(10);
+  });
+  await act(async () => refreshWeather());
+  expect(result.current.nextTryAt! - result.current.attemptedAt!).toBe(BACKOFF_MS[1]);
+  refuse = false;
+  await act(async () => refreshWeather());
+  expect(result.current.reading?.source).toBe('open-meteo');
+  expect(result.current.nextTryAt).toBeNull();
+  refuse = true;
+  await act(async () => refreshWeather());
+  expect(result.current.nextTryAt! - result.current.attemptedAt!).toBe(BACKOFF_MS[0]);
+});
+
+it('asks the Weather Service when Open-Meteo cannot be reached, and keeps the first failure when both fail', async () => {
+  const calls: string[] = [];
+  const read: WeatherReader = async (source) => {
+    calls.push(source);
+    throw source === 'nws' ? 'http 404' : 'dns';
+  };
+  renderHook(() => useWeather(read));
+  await waitFor(() => expect(useWeatherStore.getState().failed).toBe(true));
+  expect(calls).toEqual(['open-meteo', 'nws']);
+  expect(useWeatherStore.getState().failure).toBe('dns');
+  expect(useWeatherStore.getState().nextTryAt).toBeNull();
 });

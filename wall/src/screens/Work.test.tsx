@@ -28,12 +28,14 @@ const flush = async (ms = 0) => {
 };
 
 let meet: () => unknown;
+let weatherRead: ReturnType<typeof vi.fn<() => Promise<string>>>;
 beforeEach(() => {
   useFocusStore.getState().dispose();
   localStorage.clear();
   vi.useFakeTimers();
   vi.setSystemTime(at(10, 24));
-  vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => weather })));
+  weatherRead = vi.fn(async () => JSON.stringify(weather));
+  mocks.set('wall2_weather', weatherRead);
   meet = () => ({
     accounts: [{ id: 'work', label: 'Work', state: 'ok' }],
     meetings: [{ key: 'k', accountId: 'work', title: 'Call with Dana', start: at(12, 0).toISOString(), end: at(12, 30).toISOString(), canJoin: true }],
@@ -81,7 +83,7 @@ it('puts the weather after the date and reads the weather once', async () => {
   const r = render(<Screens />);
   await flush();
   expect(r.container.querySelector('.clk-date')!.textContent).toBe('Wednesday, November 1158°, overcast');
-  expect(fetch).toHaveBeenCalledTimes(1);
+  expect(weatherRead).toHaveBeenCalledTimes(1);
 });
 
 it('shows Next as "12:00, in 1 h 36 m", ticking, and hides it when Meet is not set up', async () => {
@@ -157,13 +159,13 @@ it('hides the weather after the date once the reading is stale', async () => {
   const r = render(<Screens />);
   await flush();
   expect(r.container.querySelector('.clk-date .wx-line')).not.toBeNull();
-  vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new Error('offline'))));
+  mocks.set('wall2_weather', () => Promise.reject('network'));
   await flush(20 * 60_000);
   expect(r.container.querySelector('.clk-date .wx-line')).toBeNull();
 });
 
 it('gives the focus card the whole centre with a weather line while weather loads', async () => {
-  vi.stubGlobal('fetch', vi.fn(() => new Promise(() => undefined)));
+  mocks.set('wall2_weather', () => new Promise(() => undefined));
   const r = render(<Screens />);
   await flush();
   const centre = r.container.querySelector('.centre')!;
@@ -174,17 +176,16 @@ it('gives the focus card the whole centre with a weather line while weather load
 
 it('gives the focus card the whole centre when the first weather fetch fails, and splits again once a reading arrives', async () => {
   let fail = true;
-  vi.stubGlobal(
-    'fetch',
-    vi.fn(async () => {
-      if (fail) throw new Error('offline');
-      return { ok: true, json: async () => weather };
-    }),
-  );
+  mocks.set('wall2_weather', async () => {
+    if (fail) throw 'network';
+    return JSON.stringify(weather);
+  });
   const r = render(<Screens />);
   await flush();
   expect(r.container.querySelector('.centre')!.className).toBe('centre centre-fill solo noted');
-  expect(r.container.querySelector('.focus-note')!.textContent).toBe('Weather unavailable');
+  // The reason is printed under the words, no hover needed.
+  expect(r.container.querySelector('.focus-note .wx-why')!.textContent).toBe('Could not reach Open-Meteo.');
+  expect(r.container.querySelector('.focus-note')!.textContent).toBe('Weather unavailableCould not reach Open-Meteo.');
   fail = false;
   await flush(60_000);
   const centre = r.container.querySelector('.centre')!;
