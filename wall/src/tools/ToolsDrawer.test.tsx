@@ -144,9 +144,10 @@ it('opened from a link it rings Accounts for 2 seconds', async () => {
 });
 
 it('Tools class lists do not reuse bare shared work classes', async () => {
-  const fs = await import(/* @vite-ignore */ 'node:fs');
-  const source = fs.readFileSync(new URL('ToolsDrawer.tsx', import.meta.url), 'utf8');
-  const work = fs.readFileSync(new URL('../styles/work.css', import.meta.url), 'utf8');
+  const mod = 'node:fs';
+  const fs = await import(/* @vite-ignore */ mod);
+  const source = fs.readFileSync(['src', 'tools', 'ToolsDrawer.tsx'].join('/'), 'utf8');
+  const work = fs.readFileSync(['src', 'styles', 'work.css'].join('/'), 'utf8');
   const shared = new Set([...work.matchAll(/^\.([a-z][a-z0-9-]*)\s*\{/gm)].map((m) => m[1]));
   const toolLists = [...source.matchAll(/['"]([^'"]*tools-[^'"]*)['"]/g)].flatMap((m) => m[1].split(/\s+/));
   expect(toolLists.filter((name) => shared.has(name))).toEqual([]);
