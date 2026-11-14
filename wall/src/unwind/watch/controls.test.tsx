@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mocks } from '../../bridge/tauri';
 import { resetNowPlaying } from '../../music/store';
-import { Unwind } from '../../screens/Unwind';
+import { UnwindView } from './testView';
 import { useSignalStore } from '../../signals/store';
 import { usePlaceStore } from '../../state/places';
 import { resetLastPlayed } from '../lastPlayed';
@@ -40,7 +40,7 @@ async function playing(kind: 'video' | 'playlist' | 'twitch', looks?: object, lo
   seed(looks);
   useWatchStore.getState().setTab('watch');
   useWatchStore.getState().play(ITEMS.find((i) => i.kind === kind)!);
-  render(<Unwind />);
+  render(<UnwindView />);
   await flush();
   const frame = document.querySelector('iframe')!;
   const win = frame.contentWindow!;
