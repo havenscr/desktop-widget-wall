@@ -19,7 +19,7 @@
 // that breaks one rule on purpose; `--self-test` runs every break and exits 0 only if each
 // one failed with its own FAIL line. `--shots=dir` saves a screenshot of each state.
 
-import { execFileSync, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
