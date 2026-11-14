@@ -678,7 +678,7 @@ mod tests {
         assert!(get_json_with_limit(&cfg(),"/list",TRACK_BODY,&list_http,&creds).is_ok()); assert_eq!(list_http.limits(),vec![TRACK_BODY]);
         let small_body=serde_json::to_vec(&json!({"padding":"x".repeat(ANSWER_BODY as usize)})).unwrap();
         let small_http=FakeHttp::new(vec![],vec![Ok(HttpReply{status:200,retry_after:None,body:small_body})]);
-        assert_eq!(get_json_with(&cfg(),"/small",&small_http,&creds),Err("down".into())); assert_eq!(small_http.limits(),vec![ANSWER_BODY]);
+        assert_eq!(get_json_with(&cfg(),"/small",&small_http,&creds),Err(NO_CONNECTION.into())); assert_eq!(small_http.limits(),vec![ANSWER_BODY]);
     }
 
     #[test]
