@@ -374,6 +374,10 @@ skyline, the lake in front. It is drawn on one canvas by `HorizonCanvas.tsx`.
   ranges and their lines, the ripple, the city, the shore, the haze at the horizon, the lake
   with its lights and reflection, the grid and the grain, on transparency). The two parts make
   exactly the whole picture's canvas calls (a test), so outside the picture nothing changes.
+  Two page layers sit between the canvases: the place veil (`.veil`), which the front canvas
+  lays on its own pixels (`veil.ts`, 'source-atop', stops checked against frame.css), and the
+  rail, which the front canvas would cover: it is cut at the main area's left edge
+  (`MAIN_LEFT`) and the main canvas takes the ground left of it, copied from the front one.
   The front canvas follows the same frame loop, resize and camera glide, rests with the main
   one and draws nothing while the page is hidden. With no claim there is one canvas and the
   calls are the golden ones (a test, and gallery stills of Work, Home, Meet and Unwind compared
