@@ -51,6 +51,26 @@ const hoverText = async (el: Element): Promise<string> => {
   await flush(300);
   return document.querySelector('.hover-tip')?.textContent ?? '';
 };
+
+it.each([
+  ['desktop', 'Outlook on this PC', 'Meetings open in classic Outlook when it is available.'],
+  ['browser-new-outlook', 'the browser', 'New Outlook has no way to open one meeting.'],
+  ['browser-not-found', 'the browser', 'Outlook was not found on this PC.'],
+  ['browser-config', 'the browser', 'This is set in meet.json.'],
+])('shows the meeting opening state %s', async (status, line, hint) => {
+  mocks.set('wall2_meet_next', () => data);
+  mocks.set('wall2_meet_open_status', () => status);
+  render(
+    <>
+      <Accounts />
+      <HoverTipLayer />
+    </>,
+  );
+  await flush();
+  const row = screen.getByText('Meetings open in:').closest('li')!;
+  expect(row.textContent).toContain(line);
+  expect(await hoverText(row)).toBe(hint);
+});
 const peekOnly = (full: MeetData) => (args?: Record<string, unknown>) =>
   args?.peek ? { accounts: full.accounts.map((a) => ({ ...a, state: 'checking' as const })), meetings: [], seq: 1 } : undefined;
 

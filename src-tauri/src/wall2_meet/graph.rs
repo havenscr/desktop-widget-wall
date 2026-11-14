@@ -2,6 +2,7 @@
 
 use super::reason::{clean_code, graph_reason, GRAPH_BODY, GRAPH_NETWORK, GRAPH_TIMEOUT, MAX_ERROR_BODY};
 use super::{MAX_BODY, MAX_TITLE_CHARS};
+use base64::Engine;
 use serde_json::Value;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -21,6 +22,8 @@ pub struct Candidate {
     pub join: Option<String>,
     /// The event's Outlook web link, only when `web_link_allowed` passed. Stays in Rust.
     pub web: Option<String>,
+    /// Classic Outlook EntryID as validated uppercase hex. Stays in Rust.
+    pub entry: Option<String>,
 }
 
 pub enum GraphReply {
@@ -318,12 +321,22 @@ pub const SELECT: &str = "id,subject,start,end,isAllDay,isCancelled,responseStat
 pub const TOP: u32 = 50;
 pub const CALENDAR_VIEW_PATH: &str = "https://graph.microsoft.com/v1.0/me/calendarView";
 pub const PREFER: &str = "outlook.timezone=\"UTC\"";
+const ENTRY_EXPAND_ENCODED: &str = "singleValueExtendedProperties%28%24filter%3Did%20eq%20%27Binary%200x0FFF%27%29";
 
 /// The calendarView request: the documented options only (`startDateTime`, `endDateTime`,
 /// `$select`, `$orderby` on the start time, `$top`), both date-times in UTC with a `Z`.
 pub fn calendar_view_url(start: &str, end: &str) -> String {
+    calendar_view_url_inner(start, end, true)
+}
+
+pub fn calendar_view_url_without_expand(start: &str, end: &str) -> String {
+    calendar_view_url_inner(start, end, false)
+}
+
+fn calendar_view_url_inner(start: &str, end: &str, expand: bool) -> String {
+    let expand = if expand { format!("&$expand={ENTRY_EXPAND_ENCODED}") } else { String::new() };
     format!(
-        "{CALENDAR_VIEW_PATH}?startDateTime={}&endDateTime={}&$select={SELECT}&$orderby=start/dateTime&$top={TOP}",
+        "{CALENDAR_VIEW_PATH}?startDateTime={}&endDateTime={}&$select={SELECT}&$orderby=start/dateTime&$top={TOP}{expand}",
         urlencoding::encode(start),
         urlencoding::encode(end),
     )
@@ -335,6 +348,10 @@ pub trait GraphClient {
     /// The same read with the budget and the failure details. The default ignores both;
     /// the real client uses them.
     fn calendar_view_diag(&self, access: &str, start: &str, end: &str, _ctx: &Ctx) -> (GraphReply, Option<Diag>) {
+        (self.calendar_view(access, start, end), None)
+    }
+
+    fn calendar_view_without_expand_diag(&self, access: &str, start: &str, end: &str, _ctx: &Ctx) -> (GraphReply, Option<Diag>) {
         (self.calendar_view(access, start, end), None)
     }
 }
@@ -478,6 +495,14 @@ fn str_at<'a>(v: &'a Value, path: &[&str]) -> Option<&'a str> {
     cur.as_str()
 }
 
+pub fn entry_hex(value: &str) -> Option<String> {
+    let bytes = base64::engine::general_purpose::STANDARD.decode(value).ok()?;
+    if !(20..=512).contains(&bytes.len()) {
+        return None;
+    }
+    Some(bytes.iter().map(|byte| format!("{byte:02X}")).collect())
+}
+
 /// Events of one account: not cancelled, not declined, not all-day, with a valid start and end.
 pub fn shape_events(body: &Value, account_id: &str) -> Vec<Candidate> {
     let Some(rows) = body.get("value").and_then(Value::as_array) else {
@@ -508,6 +533,12 @@ pub fn shape_events(body: &Value, account_id: &str) -> Vec<Candidate> {
                     .and_then(Value::as_str)
                     .and_then(|id| event_link(id, str_at(e, &["webLink"])))
                     .or_else(|| str_at(e, &["webLink"]).filter(|u| web_link_allowed(u)).map(str::to_string)),
+                entry: e
+                    .get("singleValueExtendedProperties")
+                    .and_then(Value::as_array)
+                    .and_then(|rows| rows.iter().find(|row| str_at(row, &["id"]).is_some_and(|id| id.eq_ignore_ascii_case("Binary 0x0FFF"))))
+                    .and_then(|row| str_at(row, &["value"]))
+                    .and_then(entry_hex),
             })
         })
         .collect()
@@ -554,6 +585,7 @@ mod tests {
             account_id: acct.into(),
             join: None,
             web: None,
+            entry: None,
         };
         let a: Vec<_> = (0..12).map(|n| one(n, "a")).collect();
         let b: Vec<_> = (0..12).map(|n| one(n, "b")).collect();
@@ -777,11 +809,11 @@ mod tests {
         let url = calendar_view_url("2026-11-12T17:00:00Z", "2026-11-13T17:00:00Z");
         assert_eq!(
             url,
-            "https://graph.microsoft.com/v1.0/me/calendarView?startDateTime=2026-11-12T17%3A00%3A00Z&endDateTime=2026-11-13T17%3A00%3A00Z&$select=id,subject,start,end,isAllDay,isCancelled,responseStatus,onlineMeeting,onlineMeetingUrl,iCalUId,webLink&$orderby=start/dateTime&$top=50"
+            "https://graph.microsoft.com/v1.0/me/calendarView?startDateTime=2026-11-12T17%3A00%3A00Z&endDateTime=2026-11-13T17%3A00%3A00Z&$select=id,subject,start,end,isAllDay,isCancelled,responseStatus,onlineMeeting,onlineMeetingUrl,iCalUId,webLink&$orderby=start/dateTime&$top=50&$expand=singleValueExtendedProperties%28%24filter%3Did%20eq%20%27Binary%200x0FFF%27%29"
         );
         let names: Vec<&str> = url.split_once('?').unwrap().1.split('&').map(|p| p.split('=').next().unwrap()).collect();
-        assert_eq!(names, ["startDateTime", "endDateTime", "$select", "$orderby", "$top"]);
-        assert!(!url.contains("$filter"));
+        assert_eq!(names, ["startDateTime", "endDateTime", "$select", "$orderby", "$top", "$expand"]);
+        assert_eq!(calendar_view_url_without_expand("2026-11-12T17:00:00Z", "2026-11-13T17:00:00Z"), url.split("&$expand=").next().unwrap());
         assert_eq!(PREFER, "outlook.timezone=\"UTC\"");
     }
 
@@ -858,6 +890,7 @@ mod tests {
             account_id: account.into(),
             join: None,
             web: None,
+            entry: None,
         }
     }
 
@@ -1013,6 +1046,31 @@ mod tests {
         assert_eq!(out[0].web.as_deref(), Some("https://outlook.office.com/calendar/item/AAMk%2F1%3D"));
         assert_eq!(out[1].web.as_deref(), Some("https://outlook.office365.com/owa/?itemid=zz&exvsurl=1&path=/calendar/item"));
         assert_eq!(out[2].web, None);
+    }
+
+    #[test]
+    fn entry_id_is_bounded_base64_and_uppercase_hex() {
+        use base64::Engine;
+        let encoded = |size| base64::engine::general_purpose::STANDARD.encode((0..size).map(|n| n as u8).collect::<Vec<_>>());
+        assert!(entry_hex(&encoded(19)).is_none());
+        assert_eq!(entry_hex(&encoded(20)).unwrap(), "000102030405060708090A0B0C0D0E0F10111213");
+        assert_eq!(entry_hex(&encoded(512)).unwrap().len(), 1024);
+        assert!(entry_hex(&encoded(513)).is_none());
+        assert!(entry_hex("").is_none());
+        assert!(entry_hex("not base64").is_none());
+    }
+
+    #[test]
+    fn shaping_reads_only_the_entry_id_property() {
+        use base64::Engine;
+        let value = base64::engine::general_purpose::STANDARD.encode([0xAB; 20]);
+        let mut row = event("k", "2026-11-12T18:00:00.0000000", "4");
+        row["singleValueExtendedProperties"] = json!([
+            { "id": "String 0x1234", "value": value },
+            { "id": "binary 0x0fff", "value": value }
+        ]);
+        let out = shape_events(&json!({ "value": [row] }), "work");
+        assert_eq!(out[0].entry.as_deref(), Some("ABABABABABABABABABABABABABABABABABABABAB"));
     }
 
     #[test]

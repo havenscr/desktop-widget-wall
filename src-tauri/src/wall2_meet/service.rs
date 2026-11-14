@@ -151,7 +151,14 @@ pub struct Links {
     pub day_map: HashMap<String, (String, String)>,
     /// The day view's Outlook event links, under the same day keys as `day_map`: key to
     /// (account id, web link). Swapped together with `day_map`, never read by `lookup_link`.
-    pub web_map: HashMap<String, (String, String)>,
+    pub web_map: HashMap<String, OpenTarget>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct OpenTarget {
+    pub account_id: String,
+    pub web: Option<String>,
+    pub entry: Option<String>,
 }
 
 pub fn lookup_link(links: &Mutex<Links>, key: &str) -> Option<String> {
@@ -160,9 +167,15 @@ pub fn lookup_link(links: &Mutex<Links>, key: &str) -> Option<String> {
 }
 
 /// The Outlook web link behind a day key. Reads only `web_map`, so a join key never opens here.
+#[cfg(test)]
 pub fn lookup_web_link(links: &Mutex<Links>, key: &str) -> Option<String> {
     let guard = links.lock().unwrap_or_else(|e| e.into_inner());
-    guard.web_map.get(key).map(|(_, url)| url.clone())
+    guard.web_map.get(key).and_then(|target| target.web.clone())
+}
+
+pub fn lookup_open_target(links: &Mutex<Links>, key: &str) -> Option<OpenTarget> {
+    let guard = links.lock().unwrap_or_else(|e| e.into_inner());
+    guard.web_map.get(key).cloned()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -404,7 +417,7 @@ fn read_window(
         return skipped_read(core, &acct.id);
     };
     let mut token_failure: Option<Diag> = None;
-    let access = match obtain(acct, store, tokens, core, now, &ctx, generation, None, &mut token_failure) {
+    let mut access = match obtain(acct, store, tokens, core, now, &ctx, generation, None, &mut token_failure) {
         Ok(a) => a,
         Err(stop) => {
             let mut r = stopped(stop);
@@ -415,7 +428,7 @@ fn read_window(
     let (mut reply, mut diag) = graph.calendar_view_diag(&access, &start, &end, &ctx);
     if matches!(reply, GraphReply::Unauthorized) {
         // The cached token was refused: drop it, refresh once, ask once more.
-        let access = match obtain(acct, store, tokens, core, now, &ctx, generation, Some(access.as_str()), &mut token_failure) {
+        access = match obtain(acct, store, tokens, core, now, &ctx, generation, Some(access.as_str()), &mut token_failure) {
             Ok(a) => a,
             Err(stop) => {
                 let mut r = stopped(stop);
@@ -424,6 +437,9 @@ fn read_window(
             }
         };
         (reply, diag) = graph.calendar_view_diag(&access, &start, &end, &ctx);
+    }
+    if diag.as_ref().is_some_and(|d| matches!(d.status, 400 | 501)) {
+        (reply, diag) = graph.calendar_view_without_expand_diag(&access, &start, &end, &ctx);
     }
     let mut read = match reply {
         GraphReply::Ok(body) => done(AccountState::Ok, Some(shape_events(&body, &acct.id)), None),
@@ -729,9 +745,9 @@ pub fn read_day_only(
             if let Some(url) = cand.join {
                 guard.day_map.insert(key.clone(), (cand.account_id.clone(), url));
             }
-            let can_open = cand.web.is_some();
-            if let Some(url) = cand.web {
-                guard.web_map.insert(key.clone(), (cand.account_id.clone(), url));
+            let can_open = cand.web.is_some() || cand.entry.is_some();
+            if can_open {
+                guard.web_map.insert(key.clone(), OpenTarget { account_id: cand.account_id.clone(), web: cand.web, entry: cand.entry });
             }
             let is_live = is_live(&cand.title);
             DayEventOut { key, account_id: cand.account_id, title: cand.title, start: cand.start, end: cand.end, can_join, can_open, is_live }
@@ -813,7 +829,7 @@ pub fn sign_out(id: &str, store: &dyn SecretStore, core: &Mutex<Core>, links: &M
     let mut l = links.lock().unwrap_or_else(|e| e.into_inner());
     l.map.retain(|_, (account, _)| account != id);
     l.day_map.retain(|_, (account, _)| account != id);
-    l.web_map.retain(|_, (account, _)| account != id);
+    l.web_map.retain(|_, target| target.account_id != id);
 }
 
 #[cfg(test)]
@@ -872,6 +888,40 @@ mod tests {
         }
     }
 
+    struct ExpandRefused {
+        expanded: Cell<usize>,
+        basic: Cell<usize>,
+        status: u16,
+    }
+    impl GraphClient for ExpandRefused {
+        fn calendar_view(&self, _access: &str, _start: &str, _end: &str) -> GraphReply {
+            GraphReply::Failed(format!("graph-{}", self.status))
+        }
+        fn calendar_view_diag(&self, _access: &str, _start: &str, _end: &str, _ctx: &Ctx) -> (GraphReply, Option<Diag>) {
+            self.expanded.set(self.expanded.get() + 1);
+            (
+                if self.status >= 500 { GraphReply::Transient(format!("graph-{}", self.status)) } else { GraphReply::Failed(format!("graph-{}", self.status)) },
+                Some(Diag {
+                    kind: Kind::Day,
+                    host: "graph",
+                    net: None,
+                    status: self.status,
+                    code: None,
+                    inner: None,
+                    request_id: None,
+                    client_request_id: None,
+                    attempt: 1,
+                    elapsed_ms: 1,
+                    probe: None,
+                }),
+            )
+        }
+        fn calendar_view_without_expand_diag(&self, _access: &str, _start: &str, _end: &str, _ctx: &Ctx) -> (GraphReply, Option<Diag>) {
+            self.basic.set(self.basic.get() + 1);
+            (GraphReply::Ok(body("Fallback meeting", "fallback")), None)
+        }
+    }
+
     fn acct(id: &str) -> Account {
         Account {
             id: id.into(),
@@ -915,6 +965,21 @@ mod tests {
         let p = read_next(&[acct("work")], &store, &t, &g, &core, &links, NOW);
         assert_eq!(p.accounts[0].state, "signed-out");
         assert_eq!(t.calls.get() + g.calls.get(), 0);
+    }
+
+    #[test]
+    fn an_expand_refusal_retries_once_without_it() {
+        for status in [400, 501] {
+            let (store, core) = setup();
+            let links = Mutex::new(Links::default());
+            let tokens = FakeTokens::new(vec![ok_token("a", None)]);
+            let graph = ExpandRefused { expanded: Cell::new(0), basic: Cell::new(0), status };
+            let payload = read_day(&[acct("work")], &store, &tokens, &graph, &core, &links, NOW, NOW, NOW + 3600);
+            assert_eq!(graph.expanded.get(), 1);
+            assert_eq!(graph.basic.get(), 1);
+            assert_eq!(payload.events.len(), 1);
+            assert!(lookup_open_target(&links, &payload.events[0].key).unwrap().entry.is_none());
+        }
     }
 
     #[test]
@@ -1081,6 +1146,7 @@ mod tests {
     fn day_body_with_web() -> Value {
         let mut with_web = event_at("Weekly planning", "p1", "2026-11-12T17:00:00.0000000", "2026-11-12T18:00:00.0000000");
         with_web["webLink"] = json!(WEB);
+        with_web["singleValueExtendedProperties"] = json!([{ "id": "Binary 0x0FFF", "value": "AAAAAAAAAAAAAAAAAAAAAAAAAAA=" }]);
         let mut bad_web = event_at("Design review", "r1", "2026-11-12T19:00:00.0000000", "2026-11-12T20:00:00.0000000");
         bad_web["webLink"] = json!("https://evil.example/calendar/item/x");
         let no_web = event_at("Focus time", "f1", "2026-11-12T21:00:00.0000000", "2026-11-12T22:00:00.0000000");
@@ -1100,6 +1166,7 @@ mod tests {
         assert!(!p.events[1].can_open, "a link on another host is never published");
         assert!(!p.events[2].can_open);
         assert_eq!(lookup_web_link(&links, &p.events[0].key).as_deref(), Some(WEB));
+        assert_eq!(lookup_open_target(&links, &p.events[0].key).unwrap().entry.as_deref(), Some("0000000000000000000000000000000000000000"));
         assert!(lookup_web_link(&links, &p.events[1].key).is_none());
         assert!(lookup_web_link(&links, &p.events[2].key).is_none());
         // The join lookup never hands out a web link.
@@ -1108,7 +1175,7 @@ mod tests {
         assert_eq!(v["events"][0]["canOpen"], json!(true));
         assert_eq!(v["events"][2]["canOpen"], json!(false));
         let text = v.to_string();
-        for bad in ["outlook", "webLink", "AAMkAGI1", "evil.example"] {
+        for bad in ["outlook", "webLink", "AAMkAGI1", "evil.example", "0000000000000000000000000000000000000000"] {
             assert!(!text.contains(bad), "payload leaks {bad}: {text}");
         }
         // A new day read swaps the web links with the day keys.
@@ -1129,8 +1196,10 @@ mod tests {
         let p = read_day(&[acct("work")], &store, &t, &g, &core, &links, NOW, from, to);
         let key = p.events[0].key.clone();
         assert!(lookup_web_link(&links, &key).is_some());
+        assert!(lookup_open_target(&links, &key).unwrap().entry.is_some());
         sign_out("work", &store, &core, &links);
         assert!(lookup_web_link(&links, &key).is_none());
+        assert!(lookup_open_target(&links, &key).is_none());
         assert!(links.lock().unwrap().web_map.is_empty());
     }
 
@@ -1146,9 +1215,11 @@ mod tests {
         let join_key = n.meetings[0].key.clone();
         assert!(lookup_link(&links, &join_key).is_some());
         assert!(lookup_web_link(&links, &join_key).is_none());
+        assert!(lookup_open_target(&links, &join_key).is_none());
         let (from, to) = (1_794_441_600, 1_794_441_600 + 36 * 3600);
         read_day(&[acct("work")], &store, &t, &g, &core, &links, NOW + 10, from, to);
         assert!(lookup_web_link(&links, &join_key).is_none());
+        assert!(lookup_open_target(&links, &join_key).is_none());
     }
 
     #[test]
