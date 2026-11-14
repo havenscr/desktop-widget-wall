@@ -30,7 +30,8 @@
 // CI does not run this; run it by hand before a layout change is handed over.
 //
 //   WALL_CHROME=/path/to/chrome-or-headless-shell npm --prefix wall run fit-check
-//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, header, deck, tiles, picker, chips, heading, zenhint, strip, fold, drawer, rows, handle, sky, floor, sun, tools, toolsnames, meetfill, meetempty, fy-height, key-edge, hide-pill, hide-note, leave-band, rec-chip, rec-height, tile-height, tile-icon, tile-iconbox, drawer-scrim, lwbuttons, lwoverlap, lwsquare, lwring, lwtemp, lwround, sky-front, sky-moon, sky-always, sky-crop, sky-seam, sky-soft, sky-foot, tower-over, tower-wide, tower-box, tower-switch, holo-big, holo-noblend, holo-beam, holo-take, tile-text, listen-player, listen-card, listen-slot, listen-next, lines-size, lines-control, lines-text, lines-clip, watch-rest, watch-title, watch-away, watch-mark, lip-cover, lip-band, lip-scrim, row-parts, over-hatch, row-type, onair-box, onair-notes, onair-keys, onair-watt, watt-seat, watt-spot, watt-tower, watt-ground)
+//   npm --prefix wall run fit-check -- --overflow=right
+//   npm --prefix wall run fit-check -- --list-breaks
 //   npm --prefix wall run fit-check -- --self-test
 //
 // WALL_CHROME (or the first argument that is not a flag) is a Chromium or
@@ -312,6 +313,10 @@ for (const [name, entry] of Object.entries(AREA_BREAKS)) {
   EXPECT[name] = entry.expect;
   OVERFLOWS[name] = entry.css;
 }
+if (flag('list-breaks')) {
+  console.log(Object.keys(OVERFLOWS).join('\n'));
+  process.exit(0);
+}
 // sky layers: breaks that need the horizon's development knobs in the URL, not a stylesheet.
 const SKY_BREAK_Q = { 'sky-moon': '&skymoon=300,200,44', 'sky-always': '&sky=front' };
 // lines controls: the clip around the picture boxes left out (a development knob of the horizon).
@@ -319,8 +324,11 @@ const LINES_BREAK_Q = { 'lines-clip': '&lclip=0' };
 if (flag('self-test')) {
   const script = fileURLToPath(import.meta.url);
   let missed = 0;
-  for (const side of Object.keys(OVERFLOWS)) {
-    const r = spawnSync(process.execPath, [script, chrome, `--overflow=${side}`], { encoding: 'utf8' });
+  const breakNames = flag('area') ? Object.keys(AREA_BREAKS) : Object.keys(OVERFLOWS);
+  for (const side of breakNames) {
+    const childArgs = [script, chrome, `--overflow=${side}`];
+    if (flag('area')) childArgs.push(flag('area'));
+    const r = spawnSync(process.execPath, childArgs, { encoding: 'utf8' });
     // Caught only when the run failed and reported the side that was broken; a non-zero exit
     // for any other reason (a crash, a page that did not render) does not count.
     const line = EXPECT[side].exec(r.stdout ?? '');
