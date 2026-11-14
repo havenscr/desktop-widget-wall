@@ -219,19 +219,26 @@ export interface WherePlace {
   preset: SonosPreset;
 }
 
-const WHERE_WORDS = [/^office\b/i, /^all\s+speakers\b/i, /^common\s+areas?\b/i];
+/** The three Where choices: the words a preset's name starts with, and the label shown,
+ * always exactly these (the owner's names), whatever else the preset's name says. */
+const WHERE_WORDS: readonly { re: RegExp; label: string }[] = [
+  { re: /^office\b/i, label: 'Office' },
+  { re: /^all\s+speakers\b/i, label: 'All speakers' },
+  { re: /^common\s+areas?\b/i, label: 'Common areas' },
+];
 
 /** "Office (Work)" reads "Office". */
 export function whereLabel(name: string): string {
   return name.replace(/\s*\([^)]*\)/g, '').replace(/\s+/g, ' ').trim() || name;
 }
 
-/** Office, All speakers, Common areas, in that order: the presets whose names start so. */
+/** Office, All speakers, Common areas, in that order: the presets whose names start so,
+ * labelled with exactly those words (the preset's own id goes to the command). */
 export function wherePlaces(presets: readonly SonosPreset[]): WherePlace[] {
   const out: WherePlace[] = [];
-  for (const re of WHERE_WORDS) {
+  for (const { re, label } of WHERE_WORDS) {
     const preset = [...presets].sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()) || a.id.localeCompare(b.id)).find((p) => re.test(p.name.trim()));
-    if (preset) out.push({ label: whereLabel(preset.name), preset });
+    if (preset) out.push({ label, preset });
   }
   return out;
 }

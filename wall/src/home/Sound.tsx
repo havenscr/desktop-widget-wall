@@ -456,7 +456,7 @@ function Live({
       done: () => changeMark(null),
     });
   const suggested = s.music.find((r) => r.key === suggestion) ?? null;
-  const track = houseTrack(playback, s);
+  const track = houseTrack(playback.read, s);
   // Without a track: the play this wall started (while the music it started still plays).
   const activeTile = playing.length > 0 && mark?.seen ? (face.find((t) => t.routine.key === mark.key) ?? null) : null;
   const activeSlot = activeTile?.slot ?? null;
@@ -493,6 +493,7 @@ function Live({
           s={s}
           now={now}
           track={track}
+          trackAt={playback.at}
           activeSlot={activeSlot}
           activeName={activeName}
           locked={locked}
@@ -986,15 +987,16 @@ function Popup({
  * for what the house speakers play). Any failure, Spotify not set up or signed out, is no
  * track: the strip then shows what the Sonos read knows.
  */
-function usePlayback(sync: number): PlaybackRead | null {
+function usePlayback(sync: number): { read: PlaybackRead | null; at: number } {
   const visible = useVisible();
-  const [p, setP] = useState<PlaybackRead | null>(null);
+  // `at`: when this read landed, on the wall clock. The track's position is as of then.
+  const [p, setP] = useState<{ read: PlaybackRead | null; at: number }>(() => ({ read: null, at: clock() }));
   useEffect(() => {
     if (!visible) return;
     let live = true;
     invoke<PlaybackRead | null>('wall2_spotify_playback')
-      .then((r) => live && setP(r ?? null))
-      .catch(() => live && setP(null));
+      .then((r) => live && setP({ read: r ?? null, at: clock() }))
+      .catch(() => live && setP({ read: null, at: clock() }));
     return () => {
       live = false;
     };
@@ -1013,6 +1015,7 @@ function NowStrip({
   s,
   now,
   track,
+  trackAt,
   activeSlot,
   activeName,
   locked,
@@ -1023,6 +1026,8 @@ function NowStrip({
   s: SonosSummary;
   now: number;
   track: ReturnType<typeof houseTrack>;
+  /** When the Spotify read that carries the track's position landed. */
+  trackAt: number;
   activeSlot: Slot | null;
   activeName: string | null;
   locked: boolean;
@@ -1031,10 +1036,9 @@ function NowStrip({
   suggestedSlot: Slot | null;
 }) {
   const where = playingWhere(s);
-  // Progress moves on between reads while the track plays; the read every 30 seconds sets it again.
-  const base = useRef({ read: s.readAtMs, at: now });
-  if (base.current.read !== s.readAtMs) base.current = { read: s.readAtMs, at: now };
-  const since = track ? Math.max(0, now - base.current.at) : 0;
+  // Progress moves on between reads while the track plays, counted from the Spotify read that
+  // carries the position (it lands after the Sonos read that asks for it).
+  const since = track ? Math.max(0, now - trackAt) : 0;
   const pos = track ? Math.min(track.durationMs, track.progressMs + since) : 0;
   const pause = (
     <button type="button" className="np-rd big" aria-label="Pause" disabled={locked} {...tip('Pause every Sonos speaker')} {...once(pauseAll)}>

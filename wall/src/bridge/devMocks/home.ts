@@ -72,7 +72,8 @@ const ALERTS = [
  * The home app's desk routes. `?desk=absent` (the default: the home app's change is not
  * live, every route answers `absent`), `typical`, `stale` (old data, flagged stale) or
  * `down` (the routes fail). `?alerts=0|1|6|20` open alerts, `?rooms=0|2|4|8` rooms (two lit
- * in four), `?desktoken=none` no desk token on this PC (Clear all says not set up).
+ * in four), `?desktoken=none` no desk token on this PC (Clear all says not set up),
+ * `?desktoken=lan` a token but a plain http home address on the network (Clear all says why).
  */
 function registerDeskMocks(): void {
   const mode = () => knob('desk') ?? 'absent';
@@ -96,11 +97,12 @@ function registerDeskMocks(): void {
       const severity = i === 0 ? 'high' : a.severity;
       return { id: `alert:${(i + 1).toString(16).padStart(16, '0')}`, severity, text: a.text, at: new Date(t - mins * 60_000).toISOString(), ageSeconds: mins * 60 };
     });
-    return { available: true, stale: stale(), observedAt: observed(), devices: 31, blocked: 412, unseen: n, alerts, canClear: knob('desktoken') !== 'none' };
+    return { available: true, stale: stale(), observedAt: observed(), devices: 31, blocked: 412, unseen: n, alerts, canClear: !['none', 'lan'].includes(knob('desktoken') ?? ''), clearInsecure: knob('desktoken') === 'lan' };
   });
   mocks.set('wall2_desk_clear_alerts', async () => {
     await new Promise((resolve) => setTimeout(resolve, 300));
     if (knob('desktoken') === 'none') throw new Error('not-set-up');
+    if (knob('desktoken') === 'lan') throw new Error('needs-private-address');
     const n = cleared ? 0 : Number(knob('alerts') ?? 6);
     if (n === 0) throw new Error('nothing-to-clear');
     cleared = true;

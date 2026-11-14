@@ -1474,6 +1474,10 @@ button.panel.network.shield:focus-visible {
   font-weight: 500;
   cursor: help;
 }
+/* After Clear all the drawer closes; the card's heading says what was cleared, briefly. */
+.net-head .net-cleared {
+  color: var(--mint);
+}
 .sd-x {
   flex: none;
   width: 34px;

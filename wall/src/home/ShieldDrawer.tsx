@@ -27,6 +27,7 @@ const CLEAR_WORDS: Record<string, string> = {
   'nothing-to-clear': 'Nothing to clear',
   forbidden: 'The home app refused the clear',
   absent: 'The home app cannot clear yet',
+  'needs-private-address': 'Clear all needs a private or https address',
 };
 
 const NOTE_MS = 5000;
@@ -78,8 +79,8 @@ export function ShieldDrawer({ s, refresh, onClose }: { s: Shield; refresh: numb
     if (busy) return;
     setBusy(true);
     try {
-      const n = await clearAllAlerts();
-      if (mounted.current) say(n === 1 ? 'Cleared 1 alert' : `Cleared ${n} alerts`);
+      // On success the list empties and the drawer closes; the card shows "Cleared N alerts".
+      await clearAllAlerts();
     } catch (e) {
       const text = e instanceof Error ? e.message : String(e);
       if (mounted.current) say(CLEAR_WORDS[text] ?? 'Could not clear');
@@ -90,7 +91,9 @@ export function ShieldDrawer({ s, refresh, onClose }: { s: Shield; refresh: numb
 
   const target: 'security' | 'portal' | null = links.security ? 'security' : links.portal ? 'portal' : null;
   const shownMore = s.open - s.alerts.length;
-  const title = s.alerts.length > 0 && s.open !== s.alerts.length && s.source === 'desk' ? `${s.open} new of ${s.alerts.length}` : `${s.open} open ${s.open === 1 ? 'alert' : 'alerts'}`;
+  const count = s.alerts.length > 0 && s.open !== s.alerts.length && s.source === 'desk' ? `${s.open} new of ${s.alerts.length}` : `${s.open} open ${s.open === 1 ? 'alert' : 'alerts'}`;
+  // Not live: the list is what the last good read said, and the title says when that was.
+  const title = s.stale && s.asOf ? `${count} ${s.asOf}` : count;
   return (
     <div ref={ref} className="shield-drawer" role="dialog" aria-label="Open alerts">
       <div className="sd-head">
@@ -109,6 +112,16 @@ export function ShieldDrawer({ s, refresh, onClose }: { s: Shield; refresh: numb
           <button type="button" className="sd-txt" disabled={busy} onClick={() => void clear()} {...tip('Mark every open alert seen in the home app')}>
             {busy ? 'Clearing' : 'Clear all'}
           </button>
+        )}
+        {s.clearWaits && (
+          <span className="sd-txt off" {...tip('The last read is not live, so Clear all would clear alerts this list may not show. It comes back with the next good read.')}>
+            Clear all waits for a fresh read
+          </span>
+        )}
+        {s.clearInsecure && (
+          <span className="sd-txt off" {...tip('The home app address in feeds.json is plain http on the local network, so the wall does not send its desk token there. Use https, a loopback or a tailnet address.')}>
+            Clear all needs a private or https address
+          </span>
         )}
         {s.clearNotSetUp && (
           <span className="sd-txt off" {...tip('Clear all needs homeDeskToken in feeds.json on this PC (and the same token in the home app).')}>

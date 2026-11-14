@@ -3,9 +3,13 @@
 //! The base address is `feeds.json` key `homeBaseUrl` (as `wall2_home_security` reads it).
 //! The write token is `feeds.json` key `homeDeskToken`: it is read here only, sent only as
 //! the `X-Desk-Token` header, and never returned to the web view, logged or put in an error.
+//! The web view cannot read `feeds.json` another way either: the old widget config commands
+//! in `lib.rs` refuse the `wall2` window and any key that is not a plain name. The token is
+//! sent only to an `https` base, a loopback address or a tailnet address (see
+//! `token_may_go_to`); to a plain `http` base on the local network the clear is not tried.
 //! Every answer is capped at 64 KB and checked field by field. Errors are fixed words:
 //! `not-configured`, `absent` (the route is not there yet), `failed`, `not-set-up` (no
-//! token), `nothing-to-clear` and `forbidden`. Old data is never an error: each answer
+//! token), `nothing-to-clear`, `forbidden` and `needs-private-address`. Old data is never an error: each answer
 //! carries its own `stale` flag, and a missing flag counts as stale. Nothing here logs.
 
 use crate::wall2_feeds::{read_base, NOT_CONFIGURED};
@@ -26,6 +30,8 @@ pub(crate) const FAILED: &str = "failed";
 pub(crate) const NO_TOKEN: &str = "not-set-up";
 pub(crate) const NOTHING: &str = "nothing-to-clear";
 pub(crate) const FORBIDDEN: &str = "forbidden";
+/// The base is plain `http` and not loopback or tailnet: the token is not sent there.
+pub(crate) const INSECURE: &str = "needs-private-address";
 
 /// The exact body the clear route accepts.
 pub(crate) const CLEAR_BODY: &str = "{}";
@@ -78,6 +84,9 @@ pub struct DeskSecurity {
     /// True when a desk token is set on this PC, so Clear all can be offered. Only the
     /// fact; the token itself never leaves Rust.
     pub can_clear: bool,
+    /// True when the base is one the token may not go to (plain `http` on the local
+    /// network): the drawer says why Clear all is not offered.
+    pub clear_insecure: bool,
 }
 
 // Section: transport seam (tests use a fake; nothing in tests reaches a real service)
@@ -271,6 +280,7 @@ pub(crate) fn shape_security(body: &Value, can_clear: bool) -> DeskSecurity {
         unseen: count(body.get("unseen_alerts"), 100_000),
         alerts,
         can_clear,
+        clear_insecure: false,
     }
 }
 
@@ -288,12 +298,51 @@ fn read_token(app: &tauri::AppHandle) -> Option<String> {
     token_from_config(text.as_deref())
 }
 
+/// Where the write token may go: an `https` base, a loopback address (`localhost`,
+/// `127.0.0.0/8`, `::1`) or a tailnet address (`100.64.0.0/10`, or a `*.ts.net` name).
+/// Plain `http` to anything else would carry the token across the local network in the
+/// clear, so it is refused. `base` is a checked `scheme://host[:port]`; case does not matter.
+pub(crate) fn token_may_go_to(base: &str) -> bool {
+    let b = base.trim().to_ascii_lowercase();
+    if b.starts_with("https://") {
+        return true;
+    }
+    let Some(rest) = b.strip_prefix("http://") else {
+        return false;
+    };
+    let host = if let Some(inner) = rest.strip_prefix('[') {
+        match inner.find(']') {
+            Some(end) => &inner[..end],
+            None => return false,
+        }
+    } else {
+        rest.split(|c: char| c == ':' || c == '/').next().unwrap_or("")
+    };
+    if host == "localhost" || host == "::1" {
+        return true;
+    }
+    if let Some(name) = host.strip_suffix(".ts.net") {
+        return !name.is_empty() && !name.starts_with('.');
+    }
+    match host.parse::<std::net::Ipv4Addr>() {
+        Ok(ip) => {
+            let o = ip.octets();
+            o[0] == 127 || (o[0] == 100 && (64..=127).contains(&o[1]))
+        }
+        Err(_) => false,
+    }
+}
+
 /// The clear call: body exactly `{}`, JSON content type, the token header. The token is
-/// only ever a header value; every error is one of the fixed words.
+/// only ever a header value, sent only where `token_may_go_to` allows; every error is one
+/// of the fixed words. Success needs `ok: true` and a whole `cleared` count from 0 to 100000.
 pub(crate) fn clear_with(http: &dyn DeskHttp, base: &str, token: Option<&str>) -> Result<u32, String> {
     let Some(token) = token else {
         return Err(NO_TOKEN.to_string());
     };
+    if !token_may_go_to(base) {
+        return Err(INSECURE.to_string());
+    }
     let url = format!("{base}/api/desk/security/alerts/clear");
     let headers = [("Content-Type", "application/json"), ("X-Desk-Token", token)];
     let answer = http.post(&url, &headers, CLEAR_BODY).map_err(|_| FAILED.to_string())?;
@@ -303,7 +352,7 @@ pub(crate) fn clear_with(http: &dyn DeskHttp, base: &str, token: Option<&str>) -
             if body.get("ok").and_then(Value::as_bool) != Some(true) {
                 return Err(FAILED.to_string());
             }
-            Ok(count(body.get("cleared"), 100_000).unwrap_or(0))
+            count(body.get("cleared"), 100_000).ok_or_else(|| FAILED.to_string())
         }
         409 => Err(NOTHING.to_string()),
         403 => Err(FORBIDDEN.to_string()),
@@ -343,7 +392,13 @@ pub async fn wall2_desk_security(window: tauri::WebviewWindow, app: tauri::AppHa
     crate::wall2_meet::require_wall2(window.label())?;
     let base = base(&app)?;
     let can_clear = read_token(&app).is_some();
-    off_thread(move || Ok(shape_security(&read_json(&RealHttp, &format!("{base}/api/desk/security"))?, can_clear))).await
+    let clear_insecure = can_clear && !token_may_go_to(&base);
+    off_thread(move || {
+        let mut s = shape_security(&read_json(&RealHttp, &format!("{base}/api/desk/security"))?, can_clear && !clear_insecure);
+        s.clear_insecure = clear_insecure;
+        Ok(s)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -489,11 +544,11 @@ mod tests {
     #[test]
     fn clear_sends_exactly_the_empty_object_with_both_headers() {
         let f = fake(200, "{\"ok\":true,\"cleared\":3,\"seen_alert_ids\":3}");
-        assert_eq!(clear_with(&f, "http://home.test", Some(TOKEN)), Ok(3));
+        assert_eq!(clear_with(&f, "https://home.test", Some(TOKEN)), Ok(3));
         let seen = f.seen.borrow();
         assert_eq!(seen.len(), 1);
         let (url, headers, body) = &seen[0];
-        assert_eq!(url, "http://home.test/api/desk/security/alerts/clear");
+        assert_eq!(url, "https://home.test/api/desk/security/alerts/clear");
         assert_eq!(body, "{}");
         assert!(headers.contains(&("Content-Type".to_string(), "application/json".to_string())));
         assert!(headers.contains(&("X-Desk-Token".to_string(), TOKEN.to_string())));
@@ -503,17 +558,77 @@ mod tests {
     fn clear_errors_are_fixed_words_and_never_carry_the_token() {
         let cases = [(409, NOTHING), (403, FORBIDDEN), (404, ABSENT), (503, NO_TOKEN), (500, FAILED), (415, FAILED), (400, FAILED)];
         for (code, word) in cases {
-            let err = clear_with(&fake(code, TOKEN), "http://home.test", Some(TOKEN)).unwrap_err();
+            let err = clear_with(&fake(code, TOKEN), "https://home.test", Some(TOKEN)).unwrap_err();
             assert_eq!(err, word);
             assert!(!err.contains(TOKEN));
         }
         let down = Fake { transport_down: true, ..Fake::default() };
-        let err = clear_with(&down, "http://home.test", Some(TOKEN)).unwrap_err();
+        let err = clear_with(&down, "https://home.test", Some(TOKEN)).unwrap_err();
         assert_eq!(err, FAILED);
         assert!(!err.contains(TOKEN));
         // A 200 that is not the success shape is a failure, not a count.
-        assert_eq!(clear_with(&fake(200, TOKEN), "http://h", Some(TOKEN)).unwrap_err(), FAILED);
-        assert_eq!(clear_with(&fake(200, "{\"ok\":true}"), "http://h", Some(TOKEN)), Ok(0));
+        assert_eq!(clear_with(&fake(200, TOKEN), "https://h", Some(TOKEN)).unwrap_err(), FAILED);
+    }
+
+    #[test]
+    fn clear_needs_a_whole_bounded_cleared_count() {
+        for body in [
+            "{\"ok\":true}",
+            "{\"ok\":true,\"cleared\":null}",
+            "{\"ok\":true,\"cleared\":-1}",
+            "{\"ok\":true,\"cleared\":2.5}",
+            "{\"ok\":true,\"cleared\":\"3\"}",
+            "{\"ok\":true,\"cleared\":100001}",
+            "{\"ok\":false,\"cleared\":3}",
+        ] {
+            assert_eq!(clear_with(&fake(200, body), "https://h", Some(TOKEN)).unwrap_err(), FAILED, "{body}");
+        }
+        assert_eq!(clear_with(&fake(200, "{\"ok\":true,\"cleared\":0}"), "https://h", Some(TOKEN)), Ok(0));
+        assert_eq!(clear_with(&fake(200, "{\"ok\":true,\"cleared\":100000}"), "https://h", Some(TOKEN)), Ok(100_000));
+    }
+
+    #[test]
+    fn the_token_goes_only_to_https_loopback_or_tailnet() {
+        for ok in [
+            "https://home.test",
+            "HTTPS://Home.Test:8443",
+            "http://localhost:3000",
+            "http://127.0.0.1:8080",
+            "http://127.9.9.9",
+            "http://[::1]:8080",
+            "http://100.64.0.1",
+            "http://100.127.255.254:443",
+            "http://box.tail1234.ts.net",
+            "http://Box.Tail1234.TS.NET:8080",
+        ] {
+            assert!(token_may_go_to(ok), "{ok} must be allowed");
+        }
+        for no in [
+            "http://192.168.1.10:8080",
+            "http://10.0.0.5",
+            "http://home.lan",
+            "http://100.63.255.255",
+            "http://100.128.0.1",
+            "http://ts.net",
+            "http://.ts.net",
+            "http://evil.ts.net.example.com",
+            "http://localhost.example.com",
+            "http://[fe80::1]",
+            "ftp://127.0.0.1",
+            "",
+        ] {
+            assert!(!token_may_go_to(no), "{no} must be refused");
+        }
+    }
+
+    #[test]
+    fn clear_to_a_plain_http_lan_base_never_sends_the_token() {
+        let f = fake(200, "{\"ok\":true,\"cleared\":1}");
+        let err = clear_with(&f, "http://192.168.1.10:8080", Some(TOKEN)).unwrap_err();
+        assert_eq!(err, INSECURE);
+        assert!(!err.contains(TOKEN));
+        assert!(f.seen.borrow().is_empty());
+        assert_eq!(clear_with(&f, "http://100.100.1.2:8080", Some(TOKEN)), Ok(1));
     }
 
     #[test]

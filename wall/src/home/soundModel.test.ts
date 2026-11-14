@@ -282,6 +282,12 @@ it('More never lists Group all or Pause all', () => {
 it('two presets that start with the same word: the first by name wins', () => {
   const p = (id: string, name: string) => ({ id, name, active: false, loud: [] });
   expect(wherePlaces([p('z', 'Office Zed'), p('a', 'Office Alpha')]).map((x) => x.preset.id)).toEqual(['a']);
+  // The label is the owner's word, never the preset's longer name; the id is the preset's own.
+  expect(wherePlaces([p('a', 'Office Alpha'), p('s', 'ALL SPEAKERS upstairs'), p('c', 'common area east')]).map((x) => [x.label, x.preset.id])).toEqual([
+    ['Office', 'a'],
+    ['All speakers', 's'],
+    ['Common areas', 'c'],
+  ]);
 });
 
 it('Where is Office, All speakers, Common areas in that order; the label drops parentheses; other presets are hidden', () => {
@@ -289,8 +295,8 @@ it('Where is Office, All speakers, Common areas in that order; the label drops p
   const places = wherePlaces([p('a', 'Common Areas'), p('b', 'Upstairs'), p('c', 'All Speakers'), p('d', 'Office (Work)')]);
   expect(places.map((x) => [x.label, x.preset.id])).toEqual([
     ['Office', 'd'],
-    ['All Speakers', 'c'],
-    ['Common Areas', 'a'],
+    ['All speakers', 'c'],
+    ['Common areas', 'a'],
   ]);
   expect(wherePlaces([p('b', 'Upstairs')])).toEqual([]);
   expect(whereLabel('Office (Work)')).toBe('Office');

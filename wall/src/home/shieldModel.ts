@@ -35,6 +35,11 @@ export interface Shield {
   canClear: boolean;
   /** The desk route is live but no token is set: Clear all says so instead of acting. */
   clearNotSetUp: boolean;
+  /** A token is set, but the read is not live: Clear all waits for a fresh read (it would
+   * clear alerts the wall cannot show as current). */
+  clearWaits: boolean;
+  /** A token is set, but the home app's address is plain http on the local network. */
+  clearInsecure: boolean;
   /** The extra numbers for the hover on the summary line. */
   detail: string[];
   /** The firewall is down or its box offline (today's read says so). */
@@ -79,7 +84,9 @@ function fromDesk(d: DeskSecurity, readAt: number | null, failed: boolean, now: 
     blocked: num(d.blocked),
     bad: legacy ? tone(legacy) === 'bad' : false,
     canClear: d.canClear && open > 0 && !stale,
-    clearNotSetUp: !d.canClear && open > 0,
+    clearNotSetUp: !d.canClear && !d.clearInsecure && open > 0,
+    clearWaits: d.canClear && open > 0 && stale,
+    clearInsecure: !!d.clearInsecure && open > 0,
     detail,
   };
 }
@@ -99,7 +106,7 @@ function legacyDetail(s: SecuritySummary | null): string[] {
 }
 
 function fromLegacy(sec: Pick<SecurityState, 'status' | 'summary' | 'now' | 'readAt'>): Shield {
-  const base = { source: 'legacy' as const, canClear: false, clearNotSetUp: false, devices: null, blocked: null, detail: [] as string[], bad: false };
+  const base = { source: 'legacy' as const, canClear: false, clearNotSetUp: false, clearWaits: false, clearInsecure: false, devices: null, blocked: null, detail: [] as string[], bad: false };
   if (sec.status === 'unconfigured') return { ...base, kind: 'off', open: 0, alerts: [], stale: true, asOf: null, title: 'Not set up' };
   if (sec.status === 'loading' && !sec.summary) return { ...base, kind: 'loading', open: 0, alerts: [], stale: true, asOf: null, title: 'Loading' };
   const s = sec.summary;

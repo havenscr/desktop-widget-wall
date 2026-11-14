@@ -1225,11 +1225,18 @@ the `wall2` window and run off the main thread: `wall2_desk_house`
 characters, names of 40), `wall2_desk_security` (`GET /api/desk/security`: alerts with
 id, severity mapped to high, medium or low, text capped at 120, time and age; devices,
 blocked, unseen, available, stale) and `wall2_desk_clear_alerts`
-(`POST /api/desk/security/alerts/clear`, body exactly `{}`, header `X-Desk-Token`). The
-token is `homeDeskToken` in `feeds.json`, read only by Rust; it never reaches the page, a
-log or an error. Errors are fixed words: `not-configured`, `absent` (404, the route is
-not live yet), `failed`, `stale`, `not-set-up` (no token), `nothing-to-clear` (409) and
-`forbidden` (403). Every part that reads a desk route hides while it answers `absent`.
+(`POST /api/desk/security/alerts/clear`, body exactly `{}`, header `X-Desk-Token`; a
+success needs `ok: true` and a whole `cleared` count). The token is `homeDeskToken` in
+`feeds.json`, read only by Rust; it never reaches the page, a log or an error. The page
+has no other way to it: the old app's `save_widget_config` and `load_widget_config`
+refuse the `wall2` window (only the old app's `main` window calls them) and any key that
+is not 1 to 64 letters, digits, `_` or `-`, so no key can name `feeds.json`. The token is
+sent only to an `https` base, a loopback address or a tailnet address (`100.64.0.0/10`
+or a `*.ts.net` name); with a plain `http` base on the local network the clear is not
+tried and the drawer says "Clear all needs a private or https address". Errors are fixed
+words: `not-configured`, `absent` (404, the route is not live yet), `failed`, `stale`,
+`not-set-up` (no token), `nothing-to-clear` (409), `forbidden` (403) and
+`needs-private-address`. Every part that reads a desk route hides while it answers `absent`.
 
 - **Shield card** (`home/NetworkTile.tsx`, `home/shieldModel.ts`): a ring with one arc
   per open alert (twelve at most, "12+" inside past that), the count inside, the newest
@@ -1238,7 +1245,12 @@ not live yet), `failed`, `stale`, `not-set-up` (no token), `nothing-to-clear` (4
   numbers and the two links. Stale is a grey ring and "as of" a time, never mint. A
   click opens the drawer (`home/ShieldDrawer.tsx`) with every alert, Open on each and one
   Clear all, which marks every current alert seen in the home app (it has no clear for
-  one alert). Without a desk token it reads "Clear all: not set up". While the desk route
+  one alert). Clear all clears every alert the home app holds at that moment, including
+  any raised after the wall's last read, which the drawer never showed. After it the list
+  empties, the drawer closes, the card's heading says "Cleared N alerts" for a few
+  seconds and a fresh read follows (a read already out is dropped). While the read is
+  stale the drawer's title carries "as of" a time and Clear all says it waits for a fresh
+  read. Without a desk token it reads "Clear all: not set up". While the desk route
   is absent the card reads today's `wall2_home_security` and Clear all is hidden.
 - **House line** (`home/HouseLine.tsx`): "68° inside. Lights on in two rooms." and a dot
   per room (lit when its lights are on; the name and state on hover), under the sun
@@ -1246,20 +1258,23 @@ not live yet), `failed`, `stale`, `not-set-up` (no token), `nothing-to-clear` (4
   "Next" automation line is not built: the home app has no routine schedule yet.
 - **Moods** (`home/Moods.tsx`): three large cards; with more, a narrow More card shows
   the next mood peeking, "N more" and dots, and a click or the wheel slides by three.
-  Later pages carry a Back arrow, and the last page's More card reads Back.
+  Later pages carry a Back arrow, and the last page's More card reads Back. The last
+  page shows the last three (the row stops at its end), so no card slot is left empty.
 - **Chores** (`home/Chores.tsx`): up to twenty tagged chores, five rows in view (three
   while alerts are open, since the shield card is taller then), a slim scrollbar and the
   wheel with the pointer over the list, and "N more can wait" under it.
 - **Sound** (`home/Sound.tsx`): the five plays carry line icons on a colour wash
-  (cup, headphones, lamp, moon, laptop). Now playing sits at the left: with a Spotify
+  (cup, headphones, lamp, moon, laptop). Where reads exactly Office, All speakers and
+  Common areas, whatever the matching preset is called. Now playing sits at the left: with a Spotify
   track on a house speaker (its device name matches a Sonos speaker or group the Sonos
   read shows playing) the cover, title, artist, where it plays, pause and progress; a
-  track on this PC is never shown as the house playing. Otherwise the play's name or the
+  track on this PC is never shown as the house playing. The position counts on from the
+  Spotify read that carries it. Otherwise the play's name or the
   Sonos track, where it plays and pause; with nothing playing, the hour's suggestion.
   There is no next button: the wall has no Spotify skip.
 
 Dev mocks: `?desk=absent|typical|stale|down` (absent by default), `?alerts=0|1|6|20`,
-`?rooms=0|2|4|8`, `?moods=3|7|12`, `?desktoken=none`, and `?spotifyplay=speaker` pairs a
+`?rooms=0|2|4|8`, `?moods=3|7|12`, `?desktoken=none|lan`, and `?spotifyplay=speaker` pairs a
 Spotify track with a Sonos speaker. `npm --prefix wall run fit:home` checks the right
 column, the drawer, the house area and the mood card widths (`--self-test` breaks each).
 

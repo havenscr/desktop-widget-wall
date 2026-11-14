@@ -51,6 +51,9 @@ export interface DeskSecurity {
   alerts: DeskAlert[];
   /** A desk token is set on this PC, so Clear all can be offered (the token stays in Rust). */
   canClear: boolean;
+  /** The token is set but the home app's address is plain http on the local network: Rust
+   * does not send it there, and the drawer says why Clear all is not offered. */
+  clearInsecure?: boolean;
 }
 
 export interface FeedState<T> {
@@ -64,7 +67,9 @@ export interface FeedState<T> {
 
 export interface Feed<T> {
   use: UseBoundStore<StoreApi<FeedState<T>>>;
-  refresh: () => Promise<void>;
+  /** Read now. `fresh` (after a write): a read already running started too early, so its
+   * answer is dropped and one more read follows it. */
+  refresh: (fresh?: boolean) => Promise<void>;
   join: () => void;
   leave: () => void;
   watch: () => void;
@@ -85,24 +90,32 @@ function feed<T>(command: string, everyMs: number): Feed<T> {
   let inFlight = false;
   let lastRead: number | null = null;
   let epoch = 0;
-  const refresh = async (): Promise<void> => {
+  // Bumped by a write: a read that started before it answers with what the write changed.
+  let cut = 0;
+  const refresh = async (fresh = false): Promise<void> => {
+    if (fresh) cut += 1;
     if (inFlight) return;
     const mine = epoch;
+    const myCut = cut;
     inFlight = true;
     lastRead = Date.now();
     try {
       const data = await invoke<T>(command);
-      if (mine !== epoch) return;
+      if (mine !== epoch || myCut !== cut) return;
       use.setState({ status: 'ready', data, readAt: clock(), now: clock() });
     } catch (e) {
-      if (mine !== epoch) return;
+      if (mine !== epoch || myCut !== cut) return;
       const text = e instanceof Error ? e.message : String(e);
       // Absent and not set up drop the old data: nothing from a route that is gone stays on screen.
       if (text === ABSENT) use.setState({ status: 'absent', data: null, readAt: null, now: clock() });
       else if (text === NOT_CONFIGURED) use.setState({ status: 'unconfigured', data: null, readAt: null, now: clock() });
       else use.setState({ status: 'error', now: clock() });
     } finally {
-      if (mine === epoch) inFlight = false;
+      if (mine === epoch) {
+        inFlight = false;
+        // A write landed while this read was out: read once more, after it.
+        if (myCut !== cut) void refresh();
+      }
     }
   };
   return {
@@ -169,9 +182,25 @@ export function useDeskHouse(): { house: FeedState<House>; rooms: FeedState<Desk
 /** A read older than this is stale on screen (two polls missed, and a minute). */
 export const maxAge = (everyMs: number) => 2 * everyMs + 60_000;
 
-/** Clear all on the home app (it marks every current alert seen), then a fresh read. */
+/** What the last Clear all did, shown on the card for a few seconds once the drawer closes. */
+export const CLEARED_NOTE_MS = 6000;
+export const useClearedNote = create<{ text: string | null }>(() => ({ text: null }));
+let noteTimer: ReturnType<typeof setTimeout> | undefined;
+function noteCleared(n: number): void {
+  useClearedNote.setState({ text: n === 1 ? 'Cleared 1 alert' : `Cleared ${n} alerts` });
+  clearTimeout(noteTimer);
+  noteTimer = setTimeout(() => useClearedNote.setState({ text: null }), CLEARED_NOTE_MS);
+}
+
+/**
+ * Clear all on the home app (it marks every current alert seen). On success the shown list
+ * empties at once (a read already running started before the clear, so its answer is
+ * dropped), the card says how many were cleared, and a fresh read follows.
+ */
 export async function clearAllAlerts(): Promise<number> {
   const n = await invoke<number>('wall2_desk_clear_alerts');
-  await deskSecurity.refresh();
+  deskSecurity.use.setState((st) => (st.data ? { data: { ...st.data, alerts: [], unseen: 0 } } : {}));
+  noteCleared(n);
+  await deskSecurity.refresh(true);
   return n;
 }

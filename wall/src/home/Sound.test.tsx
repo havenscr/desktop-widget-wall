@@ -325,7 +325,7 @@ it('Rust asking for a confirm opens the same question; a failure says so', async
   fireEvent.click(screen.getByText('Start'));
   await flush();
   expect(writes).toEqual([{ cmd: 'wall2_sonos_play', args: { routineKey: 'Dawn_Mix', confirm: true } }]);
-  fireEvent.click(screen.getByRole('radio', { name: 'All Speakers' }));
+  fireEvent.click(screen.getByRole('radio', { name: 'All speakers' }));
   await flush();
   expect(screen.getByText('Could not reach Sonos').className).toContain('warn-text');
 });
@@ -335,14 +335,14 @@ it('Where shows Office, All speakers and Common areas only (the label drops the 
   render(<Sound />);
   await flush();
   const radios = screen.getAllByRole('radio');
-  expect(radios.map((r) => r.textContent)).toEqual(['Office', 'All Speakers', 'Common Areas']);
+  expect(radios.map((r) => r.textContent)).toEqual(['Office', 'All speakers', 'Common areas']);
   expect(radios[0].getAttribute('aria-checked')).toBe('true');
   fireEvent.click(radios[1]);
   await flush();
   expect(writes).toEqual([{ cmd: 'wall2_sonos_preset', args: { presetId: 'whole' } }]);
-  expect(screen.getByText('Speakers set to All Speakers')).toBeTruthy();
+  expect(screen.getByText('Speakers set to All speakers')).toBeTruthy();
   writes = [];
-  fireEvent.click(screen.getByRole('radio', { name: 'Common Areas' }));
+  fireEvent.click(screen.getByRole('radio', { name: 'Common areas' }));
   await flush();
   expect(writes).toEqual([]);
   expect(screen.getByRole('alertdialog').textContent).toContain('It sets Den to 70. Apply anyway?');
@@ -357,7 +357,7 @@ it('applying a preset closes the Speakers pop-out first', async () => {
   await flush();
   fireEvent.click(screen.getByText(/Speakers 4/).closest('button')!);
   expect(screen.getByRole('dialog', { name: 'Speakers' })).toBeTruthy();
-  fireEvent.click(screen.getByRole('radio', { name: 'All Speakers' }));
+  fireEvent.click(screen.getByRole('radio', { name: 'All speakers' }));
   expect(screen.queryByRole('dialog', { name: 'Speakers' })).toBeNull();
 });
 
@@ -576,7 +576,7 @@ it('one deliberate action is one write: double clicks and held keys never send t
   await held(screen.getByText('Morning').closest('button')!);
   expect(count('wall2_sonos_play')).toBe(2);
   await flush(LATCH_MS);
-  await dbl(screen.getByRole('radio', { name: 'All Speakers' }));
+  await dbl(screen.getByRole('radio', { name: 'All speakers' }));
   expect(count('wall2_sonos_preset')).toBe(1);
   await flush(LATCH_MS);
   await held(screen.getByRole('radio', { name: 'Office' }));
@@ -778,4 +778,24 @@ it('with nothing playing the strip says so and offers the hour\'s suggestion', a
   const strip = container.querySelector('.sound-np.quiet')!;
   expect(strip.textContent).toContain('Nothing playing');
   expect(strip.textContent).toContain('Suggested for this hour');
+});
+
+it('the progress counts from the Spotify read that carries the position, not from the Sonos read before it', async () => {
+  wire();
+  // Spotify answers five seconds after the Sonos read: the position (1:05) is as of then.
+  let landed = 0;
+  mocks.set('wall2_spotify_playback', () => new Promise((done) => setTimeout(() => {
+    landed = Date.now();
+    done(playback({ name: 'Den', kind: 'Speaker' }));
+  }, 5_000)));
+  const { container } = render(<Sound />);
+  await flush();
+  await flush(20_000);
+  // The block's clock moves on every 15 seconds; the shown position is 1:05 plus the time
+  // since the Spotify read landed (counting from the Sonos read would add five seconds).
+  const shown = container.querySelector('.np-prog span')?.textContent ?? '';
+  const [m, sec] = shown.split(':').map(Number);
+  const tick = Math.floor((Date.now() - NOW) / 15_000) * 15_000 + NOW;
+  expect(landed).toBeGreaterThan(NOW);
+  expect(m * 60 + sec).toBe(65 + Math.floor((tick - landed) / 1000));
 });

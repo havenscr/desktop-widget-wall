@@ -281,6 +281,25 @@ it('three moods fill the row; more show three large and a More card that slides 
   expect(pageStart(0, 2)).toBe(0);
 });
 
+it('the last page keeps a full row of three, as the drawn carousel stops at its end: dots and the More card stay truthful', async () => {
+  const four = Array.from({ length: 4 }, (_, i) => ({ id: `m${i}`, label: `Mood ${i}` }));
+  mocks.set('wall2_moods', () => four);
+  const { container } = render(<Moods />);
+  await flush();
+  const names = () => [...container.querySelectorAll('.mood-btn .mood-name')].map((n) => n.textContent);
+  const dots = () => [...container.querySelectorAll('.mood-dots i')].map((d) => d.className);
+  expect(names()).toEqual(['Mood 0', 'Mood 1', 'Mood 2']);
+  expect(screen.getByText('1 more')).toBeTruthy();
+  expect(dots()).toEqual(['on', '']);
+  fireEvent.click(container.querySelector('.mood-more') as HTMLElement);
+  // The row stops at its end: the last three, so the one new mood comes in on the right
+  // and no card slot is left empty. Nothing is left to the right, so the card reads Back.
+  expect(names()).toEqual(['Mood 1', 'Mood 2', 'Mood 3']);
+  expect(screen.queryByText(/ more$/)).toBeNull();
+  expect(screen.getByText('Back')).toBeTruthy();
+  expect(dots()).toEqual(['', 'on']);
+});
+
 it('"In N min" counts down while the wall stays open', async () => {
   vi.setSystemTime(new Date('2026-11-12T16:30:00-08:00'));
   const at = Date.now() + 5 * 60_000;

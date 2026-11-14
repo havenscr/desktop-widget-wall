@@ -4,7 +4,7 @@ import { tip } from '../ui/HoverTip';
 import { useLinks, useOpenLink } from './netLinks';
 import { ShieldDrawer, SevShape } from './ShieldDrawer';
 import { MAX_ARCS, ringCount, shieldFrom, shieldSub, type Shield } from './shieldModel';
-import { useDeskSecurity } from './useDesk';
+import { useClearedNote, useDeskSecurity } from './useDesk';
 import { useSecurity } from './useSecurity';
 
 /** The card's shared read of both security sources (the rail and Chores read it too). */
@@ -86,6 +86,8 @@ export function NetworkTile() {
   const detail = [...sub, ...s.detail].filter(Boolean).join('. ');
   // Not live: the count says when it was read ("6 open as of 3:12 PM"), never as if current.
   const side = busy ? [`${s.open} open`, s.stale ? s.asOf : null].filter(Boolean).join(' ') : s.asOf;
+  // After Clear all the drawer closes; the card says what was cleared for a few seconds.
+  const cleared = useClearedNote((n) => n.text);
   const body = (
     <>
       <span className="shield-art">
@@ -122,7 +124,13 @@ export function NetworkTile() {
     <section className={open && busy ? 'network-block drawer-open' : 'network-block'} aria-label="Network and security">
       <div className="net-head">
         <span className="k">Network and security</span>
-        {side && <span className={s.stale ? 'xs stale' : 'xs'}>{side}</span>}
+        {cleared ? (
+          <span className="xs net-cleared" role="status">
+            {cleared}
+          </span>
+        ) : (
+          side && <span className={s.stale ? 'xs stale' : 'xs'}>{side}</span>
+        )}
       </div>
       {busy ? (
         <button type="button" className={cls} aria-expanded={open} aria-haspopup="dialog" onClick={() => setOpen((o) => !o)} {...tip(`Show all ${s.open} open alerts`)}>

@@ -3543,9 +3543,35 @@ fn get_config_dir() -> Result<PathBuf, String> {
     Ok(config_dir)
 }
 
+/// A widget config key names one file in the old app's config folder: 1 to 64 ASCII
+/// letters, digits, `_` or `-`. Anything else (`..`, a slash or backslash, a drive, a dot,
+/// a NUL, empty, too long) is refused before any path is built, so a key can never point
+/// at another file (such as Wall 2's `feeds.json`, which holds the desk token).
+fn widget_config_key_ok(key: &str) -> bool {
+    !key.is_empty() && key.len() <= 64 && key.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+}
+
+/// Only the old app's window calls the widget config commands (`src/public/scripts`);
+/// nothing in Wall 2's front end does, so its window (and any other) is refused.
+fn widget_config_caller_ok(label: &str) -> bool {
+    label == MAIN_LABEL
+}
+
+/// The checks both widget config commands make first, in this order: the window, then the key.
+fn widget_config_gate(label: &str, key: &str) -> Result<(), String> {
+    if !widget_config_caller_ok(label) {
+        return Err("forbidden".to_string());
+    }
+    if !widget_config_key_ok(key) {
+        return Err("invalid key".to_string());
+    }
+    Ok(())
+}
+
 /// Save widget configuration to persistent storage
 #[tauri::command]
-async fn save_widget_config(key: String, value: String) -> Result<(), String> {
+async fn save_widget_config(window: tauri::WebviewWindow, key: String, value: String) -> Result<(), String> {
+    widget_config_gate(window.label(), &key)?;
     let config_dir = get_config_dir()?;
     let file_path = config_dir.join(format!("{}.json", key));
 
@@ -3556,7 +3582,8 @@ async fn save_widget_config(key: String, value: String) -> Result<(), String> {
 
 /// Load widget configuration from persistent storage
 #[tauri::command]
-async fn load_widget_config(key: String) -> Result<Option<String>, String> {
+async fn load_widget_config(window: tauri::WebviewWindow, key: String) -> Result<Option<String>, String> {
+    widget_config_gate(window.label(), &key)?;
     let config_dir = get_config_dir()?;
     let file_path = config_dir.join(format!("{}.json", key));
 
@@ -4084,7 +4111,27 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::{extract_app_name, fallback_app_name, parse_dnd_mode};
+    use super::{extract_app_name, fallback_app_name, parse_dnd_mode, widget_config_gate, widget_config_key_ok};
+
+    #[test]
+    fn widget_config_keys_never_leave_the_config_folder() {
+        for bad in ["..\\x", "../x", "C:\\x", "C:x", "a/b", "a\\b", "a.b", "feeds.json", "a\0b", "", " a", "a b", "caf\u{e9}"] {
+            assert!(!widget_config_key_ok(bad), "{bad:?} must be refused");
+        }
+        assert!(!widget_config_key_ok(&"a".repeat(65)));
+        assert!(widget_config_key_ok(&"a".repeat(64)));
+        for good in ["countdown-config", "focus-timer-config", "msal_token_hc", "A9_-z"] {
+            assert!(widget_config_key_ok(good), "{good:?} must be allowed");
+        }
+    }
+
+    #[test]
+    fn widget_config_is_for_the_old_window_only() {
+        assert_eq!(widget_config_gate("wall2", "countdown-config"), Err("forbidden".to_string()));
+        assert_eq!(widget_config_gate("other", "countdown-config"), Err("forbidden".to_string()));
+        assert_eq!(widget_config_gate("main", "..\\feeds"), Err("invalid key".to_string()));
+        assert_eq!(widget_config_gate("main", "countdown-config"), Ok(()));
+    }
 
     #[test]
     fn app_names_never_say_app() {

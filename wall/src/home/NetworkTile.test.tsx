@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { mocks } from '../bridge/tauri';
 import { NetworkTile } from './NetworkTile';
+import { CLEARED_NOTE_MS, deskSecurity, useClearedNote } from './useDesk';
 
 // One test steps fake timers through five minutes: a busy machine gets 20 seconds per test.
 vi.setConfig({ testTimeout: 20_000 });
@@ -18,6 +19,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
   mocks.clear();
+  useClearedNote.setState({ text: null });
 });
 
 const summary = {
@@ -143,9 +145,87 @@ it('Clear all calls the home app once, says how many, and the card goes quiet on
   fireEvent.click(screen.getByText('Clear all'));
   await flush();
   expect(calls).toHaveLength(1);
-  // The drawer closes once nothing is open; the card is quiet.
+  // The drawer closes once nothing is open; the card is quiet and says what was cleared.
   expect(screen.queryByRole('dialog')).toBeNull();
   expect(screen.getByText('Nothing is open.')).toBeTruthy();
+  expect(screen.getByRole('status').textContent).toBe('Cleared 6 alerts');
+  await flush(CLEARED_NOTE_MS + 100);
+  expect(screen.queryByText('Cleared 6 alerts')).toBeNull();
+});
+
+it('Clear all during a read already out: that read is dropped and a fresh one follows', async () => {
+  let cleared = false;
+  let reads = 0;
+  mocks.set('wall2_home_security', () => summary);
+  mocks.set('wall2_desk_security', () => {
+    reads += 1;
+    // The second read is slow and was asked before the clear: it still lists all six.
+    if (reads === 2) return new Promise((done) => setTimeout(() => done(desk(6)), 2000));
+    return cleared ? desk(0) : desk(6);
+  });
+  mocks.set('wall2_desk_clear_alerts', () => {
+    cleared = true;
+    return 6;
+  });
+  mocks.set('wall2_links', () => ({ security: true, portal: false }));
+  const { container } = render(<NetworkTile />);
+  await flush();
+  fireEvent.click(container.querySelector('.panel.network') as HTMLElement);
+  await flush();
+  act(() => {
+    void deskSecurity.refresh();
+  });
+  fireEvent.click(screen.getByText('Clear all'));
+  await flush(3000);
+  expect(reads).toBe(3);
+  expect(arcs(container)).toBe(0);
+  expect(screen.getByText('Nothing is open.')).toBeTruthy();
+  expect(screen.queryByRole('dialog')).toBeNull();
+});
+
+it('a stale read: the drawer title says when, and Clear all waits for a fresh read', async () => {
+  const calls: unknown[] = [];
+  mocks.set('wall2_home_security', () => summary);
+  mocks.set('wall2_desk_security', () => desk(3, { stale: true, observedAt: '2026-11-11T11:13:00Z' }));
+  mocks.set('wall2_desk_clear_alerts', (a) => void calls.push(a));
+  mocks.set('wall2_links', () => ({ security: true, portal: false }));
+  const { container } = render(<NetworkTile />);
+  await flush();
+  fireEvent.click(container.querySelector('.panel.network') as HTMLElement);
+  await flush();
+  expect(container.querySelector('.sd-head b')?.textContent).toMatch(/^3 open alerts as of /);
+  expect(screen.getByText('Clear all waits for a fresh read')).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Clear all' })).toBeNull();
+  expect(calls).toEqual([]);
+});
+
+it('a plain http home address on the network: Clear all says it needs a private or https address', async () => {
+  mocks.set('wall2_home_security', () => summary);
+  mocks.set('wall2_desk_security', () => desk(2, { canClear: false, clearInsecure: true }));
+  mocks.set('wall2_links', () => ({ security: true, portal: false }));
+  const { container } = render(<NetworkTile />);
+  await flush();
+  fireEvent.click(container.querySelector('.panel.network') as HTMLElement);
+  await flush();
+  expect(screen.getByText('Clear all needs a private or https address')).toBeTruthy();
+  expect(screen.queryByText('Clear all: not set up')).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Clear all' })).toBeNull();
+});
+
+it('a click outside the drawer closes it; a click inside does not', async () => {
+  mocks.set('wall2_home_security', () => summary);
+  mocks.set('wall2_desk_security', () => desk(2));
+  mocks.set('wall2_links', () => ({ security: true, portal: false }));
+  const { container } = render(<NetworkTile />);
+  await flush();
+  fireEvent.click(container.querySelector('.panel.network') as HTMLElement);
+  await flush();
+  fireEvent.pointerDown(container.querySelector('.sd-row') as HTMLElement);
+  await flush();
+  expect(screen.getByRole('dialog')).toBeTruthy();
+  fireEvent.pointerDown(document.body);
+  await flush();
+  expect(screen.queryByRole('dialog')).toBeNull();
 });
 
 it('without a desk token, Clear all says not set up and never calls the home app', async () => {
