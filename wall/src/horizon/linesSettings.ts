@@ -38,35 +38,64 @@ export function validateLines(value: unknown): LinesSettings {
   };
 }
 
+/** The stored setting, validated; the defaults when nothing (or nothing readable) is stored. */
 function load(): LinesSettings {
-  let value: LinesSettings;
-  try { value = validateLines(JSON.parse(localStorage.getItem(LINES_KEY) || 'null')); } catch { value = { ...DEFAULT_LINES }; }
-  if (import.meta.env.DEV && typeof window !== 'undefined') {
-    const q = new URLSearchParams(window.location.search);
-    const type = q.get('lines'), lively = q.get('lively'), smooth = q.get('smooth'), height = q.get('lheight'), colours = q.get('lcol'), rest = q.get('lrest');
-    value = validateLines({ ...value, ...(type ? { type } : {}), ...(lively ? { lively: Number(lively) } : {}), ...(smooth ? { smooth: Number(smooth) } : {}), ...(height ? { height: Number(height) } : {}), ...(colours ? { colours } : {}), ...(rest ? { rest } : {}) });
+  try {
+    return validateLines(JSON.parse(localStorage.getItem(LINES_KEY) || 'null'));
+  } catch {
+    return { ...DEFAULT_LINES };
   }
-  return value;
 }
-function save(value: LinesSettings) { try { localStorage.setItem(LINES_KEY, JSON.stringify(value)); } catch { /* Storage may be unavailable. */ } }
+function save(value: LinesSettings): void {
+  try {
+    localStorage.setItem(LINES_KEY, JSON.stringify(value));
+  } catch {
+    // Storage may be unavailable: the setting then lasts until the wall restarts.
+  }
+}
 
 interface LinesStore extends LinesSettings {
   setLines: (next: Partial<LinesSettings>) => void;
   reset: () => void;
 }
 
+/** One setting for the lines everywhere music plays. The frame reads it with `lineSettings()`, never through a render. */
 export const useLinesStore = create<LinesStore>((set) => ({
   ...load(),
-  setLines: (next) => set((state) => { const value = validateLines({ ...state, ...next }); save(value); return value; }),
-  reset: () => set(() => { const value = { ...DEFAULT_LINES }; save(value); return value; }),
+  setLines: (next) =>
+    set((state) => {
+      const value = validateLines({ ...state, ...next });
+      save(value);
+      return value;
+    }),
+  reset: () =>
+    set(() => {
+      const value = { ...DEFAULT_LINES };
+      save(value);
+      return value;
+    }),
 }));
 
 export const lineSettings = (): LinesSettings => useLinesStore.getState();
 
-export function resetLinesStore(): void { useLinesStore.setState({ ...load() }); }
+/** Tests: read the stored setting again. */
+export function resetLinesStore(): void {
+  useLinesStore.setState({ ...load() });
+}
 
+/** The presets: each sets the three sliders (the notes' table). */
 export const LINE_PRESETS = {
   calm: { lively: 22, smooth: 72, height: 60 },
   dancing: { lively: 50, smooth: 50, height: 104 },
   wild: { lively: 88, smooth: 28, height: 180 },
 } as const;
+export type LinePreset = keyof typeof LINE_PRESETS;
+
+/** The preset whose three slider values the setting has, or null. */
+export function activePreset(s: Pick<LinesSettings, 'lively' | 'smooth' | 'height'>): LinePreset | null {
+  for (const key of Object.keys(LINE_PRESETS) as LinePreset[]) {
+    const p = LINE_PRESETS[key];
+    if (s.lively === p.lively && s.smooth === p.smooth && s.height === p.height) return key;
+  }
+  return null;
+}
