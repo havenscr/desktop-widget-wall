@@ -98,55 +98,51 @@ export const SURROUND = Object.freeze({ x0: L - 14, y0: T - 14, x1: R + 14, y1: 
 export const GROUND_Y = G;
 
 /** Side s is -1 for the left, 1 for the right. A point on the stay of side s at height y. */
-const stayAt = (s: number, y: number): [number, number] => [(s < 0 ? L - 12 : R + 12) + s * (STAY_RUN * (y - STAY_TOP)) / (G - STAY_TOP), y];
+const stayAt = (s: number, y: number): [number, number] => [(s < 0 ? L - 12 : R + 12) + (s * STAY_RUN * (y - STAY_TOP)) / (G - STAY_TOP), y];
+/** A point on the surround's outer side edge, side s, at height y. */
+const edgeAt = (s: number, y: number): [number, number] => [s < 0 ? L - 14 : R + 14, y];
 
 function buildMembers(): Member[] {
   const out: Member[] = [];
   const add = (name: string, group: string, kind: Member['kind'], w: number, a: readonly [number, number], b: readonly [number, number]) => out.push({ name, group, kind, w, a, b });
-  // Knee braces from each tower up to the truss.
+  const side = (s: number) => (s < 0 ? 'L' : 'R');
+  // Knee braces: each runs from its tower's inner leg up to the lower chord.
   for (const s of [-1, 1]) {
     const cx = s < 0 ? tl : tr;
-    add(`knee-${s < 0 ? 'L' : 'R'}`, `knee-${s}`, 'brace', 2.5, [cx - s * 14, Y1 + 34], [cx + -s * 62, Y1 + 2]);
+    add(`knee-${side(s)}`, `knee-${side(s)}`, 'brace', 2.5, [cx - s * 9, Y1 + 34], [cx - s * 62, Y1]);
   }
-  // The truss under the screen: a Warren web between two chords, then the chords.
+  // The truss under the screen: a Warren web that starts and ends on the stays, then the two chords
+  // that run from one stay to the other.
+  const xl = stayAt(-1, Y1)[0];
+  const xr = stayAt(1, Y1)[0];
   for (let i = 1; i <= BAYS; i++) {
-    const x0 = L - 8 + ((V.w + 16) / BAYS) * (i - 1);
-    const x1 = L - 8 + ((V.w + 16) / BAYS) * i;
+    const x0 = xl + ((xr - xl) * (i - 1)) / BAYS;
+    const x1 = xl + ((xr - xl) * i) / BAYS;
     add(`web-${i}`, 'web', 'lace', 1.5, [x0, i % 2 ? Y1 : Y0], [x1, i % 2 ? Y0 : Y1]);
   }
-  add('chord-upper', 'chord-upper', 'main', 4, [L - 12, Y0], [R + 12, Y0]);
-  add('chord-lower', 'chord-lower', 'main', 4, [L - 12, Y1], [R + 12, Y1]);
-  // The raking side stays with lacing back to the surround.
+  add('chord-upper', 'chord-upper', 'main', 4, stayAt(-1, Y0), stayAt(1, Y0));
+  add('chord-lower', 'chord-lower', 'main', 4, stayAt(-1, Y1), stayAt(1, Y1));
+  // The raking side stays: from the surround's side down to a footing on the ground line, with
+  // zigzag lacing between the stay and the surround's side edge.
+  const laceRows: [number, number][] = [[B - 60, 0], [B - 40, 1], [B - 20, 0], [B, 1], [Y0, 0]]; // [height, 1 when the node is on the surround]
   for (const s of [-1, 1]) {
-    const k = s < 0 ? 'L' : 'R';
-    const x = s < 0 ? L - 12 : R + 12;
-    const lace: [number, number, number, number][] = [
-      [B - 60, x, B - 58, x + s * 10],
-      [B - 20, x, B - 18, x + s * 20.5],
-      [B + 22, x, B + 24, x + s * 32],
-      [B - 60, x, B - 18, x + s * 20.5],
-      [B - 20, x, B + 24, x + s * 32],
-    ];
-    lace.forEach(([ya, xa, yb, xb], i) => add(`stay-lace-${k}${i + 1}`, `stay-lace-${k}`, 'lace', 1.5, [xa, ya], [xb, yb]));
-    add(`stay-${k}`, `stay-${k}`, 'main', 4, [x, STAY_TOP], [x + s * 26, G]);
+    const k = side(s);
+    const node = ([y, onEdge]: [number, number]) => (onEdge ? edgeAt(s, y) : stayAt(s, y));
+    for (let i = 1; i < laceRows.length; i++) add(`stay-lace-${k}${i}`, `stay-lace-${k}`, 'lace', 1.5, node(laceRows[i - 1]), node(laceRows[i]));
+    add(`stay-${k}`, `stay-${k}`, 'main', 4, stayAt(s, STAY_TOP), stayAt(s, G));
   }
-  // The two lattice towers: two battered legs with zigzag lacing.
+  // The two lattice towers: an outer leg battered 9 px outward and a straight inner leg, with
+  // zigzag lacing (which starts on the outer leg, so the towers mirror each other).
   for (const s of [-1, 1]) {
-    const k = s < 0 ? 'L' : 'R';
+    const k = side(s);
     const cx = s < 0 ? tl : tr;
-    const a0 = cx - 9;
-    const b0 = cx + 9;
-    const a1 = cx - 9 - (s < 0 ? 9 : 0);
-    const b1 = cx + 9 + (s > 0 ? 9 : 0);
-    const at = (t: number, a: boolean): [number, number] => [a ? a0 + (a1 - a0) * t : b0 + (b1 - b0) * t, Y1 + (G - Y1) * t];
-    for (let i = 1; i <= 4; i++) {
-      const p = at((i - 1) / 4, (i - 1) % 2 === 0);
-      const q = at(i / 4, i % 2 === 0);
-      add(`tower-lace-${k}${i}`, `tower-lace-${k}`, 'lace', 1.5, p, q);
-    }
-    for (let i = 1; i < 4; i++) add(`tower-tie-${k}${i}`, `tower-lace-${k}`, 'lace', 1.5, at(i / 4, true), at(i / 4, false));
-    add(`tower-leg-${k}1`, `tower-leg-${k}1`, 'main', 5, [a0, Y1], [a1, G]);
-    add(`tower-leg-${k}2`, `tower-leg-${k}2`, 'main', 5, [b0, Y1], [b1, G]);
+    const outer = (t: number): [number, number] => [cx + s * (9 + 9 * t), Y1 + (G - Y1) * t];
+    const inner = (t: number): [number, number] => [cx - s * 9, Y1 + (G - Y1) * t];
+    const at = (t: number, isOuter: boolean) => (isOuter ? outer(t) : inner(t));
+    for (let i = 1; i <= 4; i++) add(`tower-lace-${k}${i}`, `tower-lace-${k}`, 'lace', 1.5, at((i - 1) / 4, i % 2 === 1), at(i / 4, i % 2 === 0));
+    for (let i = 1; i < 4; i++) add(`tower-tie-${k}${i}`, `tower-lace-${k}`, 'lace', 1.5, outer(i / 4), inner(i / 4));
+    add(`tower-leg-${k}1`, `tower-leg-${k}1`, 'main', 5, outer(0), outer(1));
+    add(`tower-leg-${k}2`, `tower-leg-${k}2`, 'main', 5, inner(0), inner(1));
   }
   return out;
 }
@@ -183,9 +179,18 @@ const byName = (name: string) => MEMBERS.find((m) => m.name === name)!;
 
 /** The whole frame as SVG markup (everything but the marquee's words), in wall pixels. */
 function build(): string {
-  const rim = (names: string[]) => `<path d="${names.map((nm) => { const m = byName(nm); return `M${n(m.a[0] - 1.5)} ${n(m.a[1])}L${n(m.b[0] - 1.5)} ${n(m.b[1])}`; }).join('')}" stroke="${RIM2}" stroke-width="1" fill="none"/>`;
+  const rim = (names: string[]) =>
+    names
+      .map((nm) => {
+        const m = byName(nm);
+        return `<path d="M${n(m.a[0] - 1.5)} ${n(m.a[1])}L${n(m.b[0] - 1.5)} ${n(m.b[1])}" stroke="${RIM2}" stroke-width="1" fill="none"/>`;
+      })
+      .join('');
   const up = byName('chord-upper');
-  const structure = `${strokes(MEMBERS.filter((m) => m.group.startsWith('knee')))}${strokes(MEMBERS.filter((m) => m.group === 'web'))}${strokes(MEMBERS.filter((m) => m.group.startsWith('chord')))}<path d="M${n(up.a[0])} ${n(up.a[1] - 2)}H${n(up.b[0])}" stroke="${RIM2}" stroke-width="1"/>${strokes(MEMBERS.filter((m) => m.group.startsWith('stay')))}${rim(['stay-L', 'stay-R'])}${strokes(MEMBERS.filter((m) => m.group.startsWith('tower')))}${rim(['tower-leg-L1', 'tower-leg-L2', 'tower-leg-R1', 'tower-leg-R2'])}`;
+  const part = (prefix: string) => strokes(MEMBERS.filter((m) => m.group.startsWith(prefix)));
+  // Back to front: braces, towers, the truss (its chords cover the towers' tops), then the stays
+  // (they cover the chords' ends, so the joint reads as one fixing).
+  const structure = `${part('knee')}${part('tower')}${rim(['tower-leg-L1', 'tower-leg-L2', 'tower-leg-R1', 'tower-leg-R2'])}${part('web')}${part('chord')}<path d="M${n(up.a[0])} ${n(up.a[1] - 2)}H${n(up.b[0])}" stroke="${RIM2}" stroke-width="1"/>${part('stay')}${rim(['stay-L', 'stay-R'])}`;
   const foot = (f: Footing) => {
     const w = f.x1 - f.x0;
     return `<path d="M${f.x0} ${G}l4 -6h${w - 8}l4 6z" fill="#2a2050"/><path d="M${f.x0 + 4} ${G - 6}h${w - 8}" stroke="${RIM}" stroke-width="1"/>`;
