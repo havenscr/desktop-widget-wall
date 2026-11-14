@@ -303,7 +303,7 @@ fn read_token(app: &tauri::AppHandle) -> Option<String> {
 /// Plain `http` to anything else would carry the token across the local network in the
 /// clear, so it is refused. `base` is a checked `scheme://host[:port]`; case does not matter.
 pub(crate) fn token_may_go_to(base: &str) -> bool {
-    let b = base.trim().to_ascii_lowercase();
+    let b = base.to_ascii_lowercase();
     let rest = if let Some(r) = b.strip_prefix("https://") {
         r
     } else if let Some(r) = b.strip_prefix("http://") {
@@ -349,7 +349,11 @@ pub(crate) fn token_may_go_to(base: &str) -> bool {
     if let Some(name) = host.strip_suffix(".ts.net") {
         return !name.is_empty() && !name.starts_with('.') && name.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'.');
     }
-    // Only a plain dotted quad: `127.1`, octal, hex and integer forms do not parse here.
+    // Only a plain dotted quad: `127.1`, octal, hex and integer forms do not parse here, and
+    // a part with a leading zero is refused whatever the parser version (it may read as octal).
+    if host.split('.').any(|part| part.len() > 1 && part.starts_with('0')) {
+        return false;
+    }
     match host.parse::<std::net::Ipv4Addr>() {
         Ok(ip) => {
             let o = ip.octets();
@@ -626,6 +630,9 @@ mod tests {
             "http://100.127.255.254:443",
             "http://box.tail1234.ts.net",
             "http://Box.Tail1234.TS.NET:8080",
+            // The two ends of 100.64.0.0/10.
+            "http://100.64.0.0",
+            "http://100.127.255.255:8080",
         ] {
             assert!(token_may_go_to(ok), "{ok} must be allowed");
         }
@@ -666,6 +673,18 @@ mod tests {
             "http://127.1",
             "http://[::ffff:127.0.0.1]",
             "http://[::ffff:7f00:1]",
+            // Just outside 100.64.0.0/10; leading zeros; whitespace around the base.
+            "http://100.63.255.255",
+            "http://100.128.0.0",
+            "http://0127.0.0.1",
+            "http://127.000.000.001",
+            "http://100.064.0.1",
+            " http://127.0.0.1",
+            "http://127.0.0.1 ",
+            "http://127.0.0.1\n",
+            "http://127.0.0.1\t:80",
+            "https://",
+            "https://:443",
         ] {
             assert!(!token_may_go_to(no), "{no} must be refused");
         }
