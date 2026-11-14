@@ -192,9 +192,9 @@ describe('the sky layers under each look', () => {
     await flush();
     act(() => useWatchStore.setState({ needsClick: true }));
     await flush();
-    const f = front()!;
+    const f = front() as HTMLCanvasElement | null;
     expect(f).not.toBeNull();
-    expect(f.style.pointerEvents).toBe('none');
+    expect(f!.style.pointerEvents).toBe('none');
     expect(document.querySelector('.w-stage')!.classList.contains('w-layered')).toBe(true);
   });
 });
