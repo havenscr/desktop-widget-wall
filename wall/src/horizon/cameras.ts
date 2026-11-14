@@ -85,6 +85,7 @@ export const CAMERAS: Readonly<Record<CameraPlace, CameraPreset>> = {
   work: { ...WIDE },
   home: { az0: 218.1, ppd: 54, hy: 582, vex: 1.3, cs: 1, vx: 1280, ecx: 2300, eamp: 6, ea: 0.22, en: 3, snowDeg: 0.84, gp: 0.5, ter: 'pano' },
   meet: { ...WIDE },
+  onair: { ...WIDE },
   unwind: { az0: 246, ppd: 49.2, hy: 505, vex: 2.5, cs: 1, vx: 1330, ecx: 1330, eamp: 34, ea: 0.9, en: 11, snowDeg: 0.84, gp: 1, ter: 'pano' },
 };
 

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-export type PlaceId = 'work' | 'home' | 'unwind' | 'meet' | 'zen';
+export type PlaceId = 'work' | 'home' | 'unwind' | 'meet' | 'onair' | 'zen';
 /** The places with a horizon camera (Zen draws no horizon). */
 export type CameraPlace = Exclude<PlaceId, 'zen'>;
 

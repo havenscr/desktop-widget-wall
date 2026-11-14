@@ -25,15 +25,6 @@ const PLACE_ICONS: Record<'work' | 'home' | 'unwind', Icon> = {
   unwind: IconHeadphones,
 };
 
-function Disabled({ label, Glyph }: { label: string; Glyph: Icon }) {
-  return (
-    <button type="button" className="rb" disabled aria-label={label}>
-      <Glyph size={30} stroke={1.8} aria-hidden="true" />
-      {label}
-    </button>
-  );
-}
-
 function FullscreenButton() {
   const full = useFullscreen();
   const label = full ? 'Exit fullscreen' : 'Enter fullscreen';
@@ -122,7 +113,17 @@ export function Rail() {
         <IconUsers size={30} stroke={1.8} aria-hidden="true" />
         Meet
       </button>
-      <Disabled label="On air" Glyph={IconBroadcast} />
+      <button
+        type="button"
+        className="rb"
+        aria-label="On air"
+        aria-current={active === 'onair' ? 'page' : undefined}
+        onClick={() => setActive('onair')}
+        {...tip('Show timer, run of show, marks and the recording keys')}
+      >
+        <IconBroadcast size={30} stroke={1.8} aria-hidden="true" />
+        On air
+      </button>
       <div className="rail-spacer" />
       <button
         type="button"

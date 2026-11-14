@@ -1191,6 +1191,7 @@ describe('carrying him', () => {
       ['work', 582],
       ['home', 582],
       ['meet', 582],
+      ['onair', 582],
       ['unwind', 505],
     ];
     for (const [place, hy] of cases) {
