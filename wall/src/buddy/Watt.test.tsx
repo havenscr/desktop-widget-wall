@@ -135,6 +135,8 @@ beforeEach(() => {
 });
 afterEach(() => {
   Object.assign(restClock, realRest);
+  // Shared store: every test starts on Listen.
+  act(() => useWatchStore.getState().setTab('listen'));
   resetMeetingFeed();
   resetWeatherStore();
   invokeMock.mockImplementation(defaultInvoke);
