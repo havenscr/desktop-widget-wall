@@ -559,6 +559,10 @@
 .sound-result {
   color: var(--mint);
 }
+/* The amber line keeps clear of the card's edge. */
+.sound-head .warn-text {
+  margin-right: 12px;
+}
 .sound-quiet {
   padding: 2px 0;
   min-width: 0;

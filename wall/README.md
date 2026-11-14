@@ -183,15 +183,23 @@ ignored, and each control stays latched for 800 ms after its write settles.
 - Every action shows a brief result beside the heading ("Playing Evening", "Could not
   reach Sonos", "Some speakers did not change", which reads again at once). A read that
   failed twice in a row, or one over two minutes old, dims the card, says what happened
-  and turns every control off. One failed read changes nothing on screen: the page reads
-  once more 5 seconds later (one at a time, never while the wall is hidden, dropped when
-  it is closed), and only a second failure shows. The amber line names the kind of
+  and turns every control off. Every read, from the 30 second cadence or by hand, is the
+  first of a pair: when it fails the page reads once more 5 seconds later (one at a time,
+  never while the wall is hidden, dropped when it is closed), and until that second read
+  ends the card shows what it showed (a healthy card as it is, a dimmed one with its line
+  and kind). Only the second read's failure changes what is shown (two different kinds in
+  a row: the second), and any good read clears the line at once, so a dimmed card
+  recovers within 5 seconds of the service answering. The amber line names the kind of
   failure, then the age of the last good read: "Sonos did not answer in time. Last good
   read 1 min ago" (the 4 second limit passed), "Sonos cannot be reached. Last good read
   1 min ago" (no connection, or it was reset) or "Sonos sent an answer the wall could not
   read. Last good read 1 min ago" (a status other than success, or a body that was
   unreadable, too large or not JSON). Under a minute the age reads "less than a minute
-  ago"; with no good read yet the line is the first sentence alone. The Tools drawer's
+  ago"; with no good read yet the line is the first sentence alone. A card that is only
+  old, with no failed read (for example just after the wall was hidden for hours), says
+  "Checking Sonos. Last good read 3 h ago" and names a kind only after a read has failed.
+  With no reading at all, the line and the card's body use the same first sentence
+  ("Sonos cannot be reached. Checks again every 30 seconds."). The Tools drawer's
   Sound row says the same first sentence. The 30 second cadence, the two minute rule and
   the lock on writes are unchanged. Never reached shows one compact card; no
   `sonosBaseUrl` shows one line saying what to add. With the moods out as well, the
@@ -227,23 +235,30 @@ of date", "Some speakers did not change"); a failed summary read answers one fix
 for its kind instead: `timed-out`, `no-answer` or `bad-answer` (the page words them as
 above). Writes keep their fixed strings and nothing else is logged. Dev mocks
 (`bridge/devMocks/sonos.ts`) take `?sonos=off|down|sparse|heavy|quiet`, `?where=office|all|common|none`
-(the place in use), and `?sonos=timeout|dropped|garbled` (a good first read, then every
-read fails as that kind: the dimmed card with its line after about 35 seconds) or
-`?sonos=pending` (a good first read, one failure waiting for its second try);
+(the place in use), and `?sonos=timeout|dropped|garbled` (a good first read, then a failed
+read and a failed second try of that kind: the dimmed card with its line) or
+`?sonos=pending` (the same, but the second try never answers: one failed read waiting,
+nothing shown). A dev review frame (`?hz=&at=`) shortens the 5 second wait to a quarter of
+a second, so these states show at once in the gallery and the fit check; the real timers
+are proven by the unit tests;
 `?moods=five|many|none|off|down` sets the mood cards.
 
-**The Sonos log.** `wall2-sonos.log` in the app's log folder (64 KB cap, started with
-each run of the app) holds one line per failed read and one per successful read that took
-over 2 seconds: `<failed|slow> <read> <kind> <HTTP status or 0> <milliseconds>`, for
-example `failed status timed-out 0 4003` or `slow status none 200 2310`. The read is one
-of `status`, `speakers`, `routines`, `groups`, `presets`, `scenes`, `timers` or `lists`
-(an answer with too many entries); the kind is `timed-out`, `no-answer`, `bad-answer` or
-`none`. A failed optional read (groups, presets, scenes, timers) is only written while
-the three needed reads worked, so an outage costs three lines per read, not seven. Only
-these fixed words and numbers are ever written: no room, speaker, routine or track name,
-no address, no answer text. It exists to tell a slow answer from no answer: lines with
-`timed-out` and a time near 4000 mean the service answered too slowly; `no-answer` with a
-small time means nothing was listening.
+**The Sonos log.** `wall2-sonos.log` and `wall2-sonos.log.1` in the app's log folder hold
+one line per failed read and one per successful read that took over 2 seconds:
+`<failed|slow> <read> <kind> <HTTP status or 0> <milliseconds>`, for example
+`failed status timed-out 0 4003` or `slow status none 200 2310`. The read is one of
+`status`, `speakers`, `routines`, `groups`, `presets`, `scenes`, `timers` or `lists` (an
+answer with too many entries); the kind is `timed-out`, `no-answer`, `bad-answer` or
+`none`. Every failed read is written, the optional ones too, so the file shows whether
+everything failed at once or only the needed reads did. The file is opened for append and a
+start never truncates it. At 64 KB it moves to `wall2-sonos.log.1` (replacing an older
+one) and a new file starts, so the two together never pass about 128 KB and the newest
+lines are always in `wall2-sonos.log`. A file that cannot be opened, moved or written
+loses its lines and never blocks a read. Only fixed words and numbers are ever written: no
+room, speaker, routine or track name, no address, no answer text. It exists to tell a slow
+answer from no answer: lines with `timed-out` and a time near 4000 mean the service
+answered too slowly; `no-answer` with a small time means nothing was listening. If the
+amber line shows again, send both files.
 
 ### Around the house (Home, right wing)
 

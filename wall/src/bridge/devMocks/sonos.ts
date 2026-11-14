@@ -1,14 +1,16 @@
 import { reviewNow } from '../../ui/reviewClock';
 import { mocks } from '../tauri';
+import { retryFor } from '../../tools/reports';
 import { knob } from './long';
 
 /**
  * The Sound block's Sonos service, with invented speakers, routines and presets. Review
  * knobs: `?sonos=off` (not set up), `?sonos=down` (never reached), `?sonos=sparse` (one
  * routine, one speaker, no presets), `?sonos=heavy` (many routines with long names, many
- * speakers, a sleep timer), `?sonos=timeout`, `?sonos=dropped` and `?sonos=garbled` (the first read works, every later one
- * fails as timed-out, no-answer or bad-answer: the dimmed card with its line, after about 35 seconds), `?sonos=pending` (the first read works, the second fails,
- * the third never answers: one failure waiting for its retry, nothing shown, after about 31 seconds), `?where=office|all|common|none` (which place is in use), `?sonos=quiet` (nothing playing), `?sonos=few` (one matching routine plus More), `?sonos=slow` (never answers, for the loading state), `?skip=1` (an unforced play is
+ * speakers, a sleep timer), `?sonos=timeout`, `?sonos=dropped` and `?sonos=garbled` (a good first read, then a quarter of
+ * a second later a read that fails as timed-out, no-answer or bad-answer, and its second try fails the same way:
+ * the dimmed card with its line, shown at once because a review frame shortens the 5 second wait), `?sonos=pending` (the
+ * same, but the second try never answers: one failed read waiting, nothing shown), `?where=office|all|common|none` (which place is in use), `?sonos=quiet` (nothing playing), `?sonos=few` (one matching routine plus More), `?sonos=slow` (never answers, for the loading state), `?skip=1` (an unforced play is
  * skipped). The default is a typical
  * evening with music playing on a group.
  */
@@ -17,8 +19,9 @@ const now = () => (reviewNow ? reviewNow() : Date.now());
 type Mode = 'typical' | 'off' | 'down' | 'sparse' | 'heavy' | 'quiet' | 'slow' | 'few' | 'timeout' | 'dropped' | 'garbled' | 'pending';
 
 /** After its first good read each of these modes fails with the word Rust sends. */
-const FAILS: Partial<Record<Mode, string>> = { timeout: 'timed-out', dropped: 'no-answer', garbled: 'bad-answer' };
-let reads = 0;
+const FAILS: Partial<Record<Mode, string>> = { timeout: 'timed-out', dropped: 'no-answer', garbled: 'bad-answer', pending: 'timed-out' };
+/** Reads answered so far in each mode (each mode counts its own). */
+const reads = new Map<Mode, number>();
 
 function mode(): Mode {
   const k = knob('sonos');
@@ -138,15 +141,17 @@ export function registerSonosMocks(): void {
     if (m === 'slow') return new Promise(() => undefined);
     if (m === 'off') return Promise.reject(new Error('not-configured'));
     if (m === 'down') return Promise.reject(new Error('Could not reach Sonos'));
-    if (m === 'pending') {
-      reads += 1;
-      if (reads === 1) return summary('typical');
-      return reads === 2 ? Promise.reject(new Error('timed-out')) : new Promise(() => undefined);
-    }
     const word = FAILS[m];
     if (word) {
-      reads += 1;
-      return reads === 1 ? summary('typical') : Promise.reject(new Error(word));
+      const n = (reads.get(m) ?? 0) + 1;
+      reads.set(m, n);
+      if (n === 1) {
+        // Ask the page for a second read soon, so the failing phases show without waiting 30 seconds.
+        setTimeout(() => void retryFor('sound')?.(), 150);
+        return summary('typical');
+      }
+      // The failed read, then (pending) a second try that never answers, or (the others) one that fails the same way.
+      return m === 'pending' && n > 2 ? new Promise(() => undefined) : Promise.reject(new Error(word));
     }
     // `?spotifyplay=speaker` pairs with the Spotify mock: Spotify plays on "Living room", so
     // the group lead here takes that name and Home's strip shows the track.

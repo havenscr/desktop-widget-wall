@@ -149,17 +149,13 @@ state('home', 'sound where: none in use', 'where=none');
 state('home', 'sound where: Office in use', 'where=office');
 state('home', 'sound where: All Speakers in use', 'where=all');
 state('home', 'sound where: Common Areas in use', 'where=common');
-// Sound's failed reads: a good first read, then one failure at 30 seconds and its second try 5 seconds later,
-// so these states wait (the page's own timers, in real time) before the still is taken.
-for (const [name, knob, wait] of [
-  ['sound failure: one failed read waiting for its second try, nothing shown', 'pending', 36_000],
-  ['sound failure: did not answer in time, dimmed', 'timeout', 42_000],
-  ['sound failure: cannot be reached, dimmed', 'dropped', 42_000],
-  ['sound failure: answer could not be read, dimmed', 'garbled', 42_000],
-]) {
-  add('home', name, url('home', TYPICAL_AT, `sonos=${knob}`), true);
-  STATES[STATES.length - 1].wait = wait;
-}
+// Sound's failed reads: a good first read, then a failed read and a failed second try. A review frame shortens
+// the 5 second wait to a quarter of a second, so each state shows its phase at once (the real timers are
+// proven by the unit tests).
+state('home', 'sound failure: one failed read waiting for its second try, nothing shown', 'sonos=pending');
+state('home', 'sound failure: did not answer in time, dimmed', 'sonos=timeout');
+state('home', 'sound failure: cannot be reached, dimmed', 'sonos=dropped');
+state('home', 'sound failure: answer could not be read, dimmed', 'sonos=garbled');
 for (const [name, extra] of [
   ['broken: home app not set up', 'home=off'],
   ['broken: home app down', 'home=down'],
@@ -629,7 +625,7 @@ const EXPECT = [
   ['home', 'sound sparse: one routine, one speaker', 'Sound'],
   ['home', 'sound few: one matching routine plus More', 'More'],
   ['home', 'sound quiet: nothing playing', 'Nothing playing'],
-  ['home', 'sound down', 'The Sonos service did not answer'],
+  ['home', 'sound down', ['Sonos cannot be reached. Checks again every 30 seconds.', 'Sonos cannot be reached']],
   ['home', 'sound not set up', 'Add sonosBaseUrl to feeds.json'],
   ['home', 'sound silent (fallback after 2.5 seconds)', 'Sound'],
   ['home', 'sound where: none in use', ['Office', 'All Speakers', 'Common Areas', 'Sonos Off']],
@@ -1165,7 +1161,7 @@ async function render(cdp, base, s, file, ctl) {
     await to('Emulation.setTimezoneOverride', { timezoneId: TZ });
     await to('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
     await to('Page.navigate', { url: `${base}?${s.query}` });
-    await new Promise((r) => setTimeout(r, SETTLE_MS + (s.wait ?? 0)));
+    await new Promise((r) => setTimeout(r, SETTLE_MS));
     for (const step of [s.click ?? []].flat().flatMap((c) => c.split(' >> '))) {
       // A state shown just after a click (a task tick's Undo window). A string may chain steps with ` >> `.
       // `ctx:<selector>` right-clicks (opens the key picker), `hover:` moves the real pointer onto
@@ -1337,7 +1333,7 @@ try {
           const r = await Promise.race([
             render(via, base, s, join(outDir, file), ctl),
             new Promise((_, rej) => {
-              timer = setTimeout(() => rej(new Error('timed out')), STATE_TIMEOUT_MS + (s.wait ?? 0));
+              timer = setTimeout(() => rej(new Error('timed out')), STATE_TIMEOUT_MS);
             }),
           ]);
           if (r.errors.length) error = [...new Set(r.errors)].slice(0, 3).join(' | ');

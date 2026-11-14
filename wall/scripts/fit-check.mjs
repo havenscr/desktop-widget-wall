@@ -31,7 +31,7 @@
 // CI does not run this; run it by hand before a layout change is handed over.
 //
 //   WALL_CHROME=/path/to/chrome-or-headless-shell npm --prefix wall run fit-check
-//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, card-end, header, deck, tiles, picker, chips, heading, zenhint, strip, fold, drawer, rows, handle, sky, floor, sun, tools, toolsnames, meetfill, meetempty, fy-height, key-edge, hide-pill, hide-note, leave-band, rec-chip, rec-height, tile-height, tile-icon, tile-iconbox, drawer-scrim, lwbuttons, lwoverlap, lwsquare, lwring, lwtemp, lwround, sky-front, sky-moon, sky-always, sky-crop, sky-seam, sky-soft, sky-foot, tower-over, tower-wide, tower-box, tower-switch, holo-big, holo-noblend, holo-beam, holo-take, tile-text, listen-player, listen-card, listen-slot, listen-next, lines-size, lines-control, lines-text, lines-clip, watch-rest, watch-title, watch-away, watch-mark, lip-cover, lip-band, lip-scrim, row-parts, over-hatch, row-type, onair-box, onair-notes, onair-keys, onair-watt, watt-seat, watt-spot, watt-tower, watt-ground, sound-equal, sound-fill, sound-centre, sound-clip, sound-wrap, sound-cover)
+//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, card-end, header, deck, tiles, picker, chips, heading, zenhint, strip, fold, drawer, rows, handle, sky, floor, sun, tools, toolsnames, meetfill, meetempty, fy-height, key-edge, hide-pill, hide-note, leave-band, rec-chip, rec-height, tile-height, tile-icon, tile-iconbox, drawer-scrim, lwbuttons, lwoverlap, lwsquare, lwring, lwtemp, lwround, sky-front, sky-moon, sky-always, sky-crop, sky-seam, sky-soft, sky-foot, tower-over, tower-wide, tower-box, tower-switch, holo-big, holo-noblend, holo-beam, holo-take, tile-text, listen-player, listen-card, listen-slot, listen-next, lines-size, lines-control, lines-text, lines-clip, watch-rest, watch-title, watch-away, watch-mark, lip-cover, lip-band, lip-scrim, row-parts, over-hatch, row-type, onair-box, onair-notes, onair-keys, onair-watt, watt-seat, watt-spot, watt-tower, watt-ground, sound-equal, sound-fill, sound-centre, sound-clip, sound-wrap, sound-cover, sound-edge)
 //   npm --prefix wall run fit-check -- --self-test
 //
 // WALL_CHROME (or the first argument that is not a flag) is a Chromium or
@@ -117,6 +117,7 @@ const EXPECT = {
   'sound-clip': /^ *FAIL sound where: ".*" is clipped/m,
   'sound-wrap': /^ *FAIL sound line: the longest sentence wraps/m,
   'sound-cover': /^ *FAIL sound line: the longest sentence covers the heading/m,
+  'sound-edge': /^ *FAIL sound line: the longest sentence ends [\d.]+ px from the card head's edge/m,
   // leave and recording
   'leave-band': /^ *FAIL leave banner: /m,
   'rec-chip': /^ *FAIL recording chip: /m,
@@ -255,6 +256,7 @@ const OVERFLOWS = {
   'sound-clip': '.sound-where .seg { font-size: 34px !important; }',
   'sound-wrap': '.sound-head .warn-text { white-space: normal !important; width: 160px !important; }',
   'sound-cover': '.sound-head .warn-text { position: absolute !important; left: 0 !important; }',
+  'sound-edge': '.sound-head .warn-text { margin-right: 0 !important; }',
   // leave and recording
   'leave-band': '.leave-banner { top: 200px !important; }',
   'rec-chip': '.rec-chip { min-width: 400px !important; }',
@@ -662,6 +664,10 @@ const VARIANTS = [
   { name: 'Home, Sound: the Where buttons, long preset names', q: home('sonos=heavy&moods=many'), checks: ['.home .sound-where'], sound: 'where' },
   { name: 'Home, Sound: the longest amber line', q: home('moods=five'), checks: ['.home .sound-head'], sound: 'line' },
   { name: 'Home, Sound: the longest amber line, Sound at its fullest', q: home('sonos=heavy&moods=many'), checks: ['.home .sound-head'], sound: 'line' },
+  // Each failed phase of the card, at once (a review frame shortens the 5 second wait): dimmed with each kind's line, and one failed read waiting.
+  { name: 'Home, Sound dimmed: did not answer in time', q: home('sonos=timeout&moods=five'), checks: [...HOME_CENTRE, ...SOUND_FULL], sound: 'line' },
+  { name: 'Home, Sound dimmed: answer could not be read', q: home('sonos=garbled&moods=five'), checks: [...HOME_CENTRE, ...SOUND_FULL], sound: 'line' },
+  { name: 'Home, Sound: one failed read waiting for its second try', q: home('sonos=pending&moods=five'), checks: [...HOME_CENTRE, ...SOUND_FULL], sound: 'where' },
   { name: 'Home, typical: five moods, Sound playing', q: home('moods=five'), checks: [...HOME_CENTRE, ...SOUND_FULL] },
   { name: 'Home, one matching routine plus More: no blank cell in the quick-play row', q: home('sonos=few&moods=five'), checks: [...HOME_CENTRE, ...SOUND_FULL] },
   { name: 'Home, sparse: no moods, one routine, one speaker', q: home('sonos=sparse&moods=none'), checks: ['.home .home-centre', '.home .moods', ...SOUND_FULL.slice(0, 4)] },
@@ -1878,6 +1884,8 @@ try {
         const lh = parseFloat(getComputedStyle(line).lineHeight) || parseFloat(getComputedStyle(line).fontSize) * 1.3;
         if (lb.height > lh * 1.5) sound.push('sound line: the longest sentence wraps (' + Math.round(lb.height) + ' px tall, one line is ' + Math.round(lh) + ')');
         if (lb.left < kb.right + 8 - 0.5 && lb.top < kb.bottom && kb.top < lb.bottom) sound.push('sound line: the longest sentence covers the heading (its left edge ' + Math.round(lb.left) + ' against the heading ending at ' + Math.round(kb.right) + ', 8 px clear needed)');
+        const edge = Math.round((hb.right - lb.right) * 10) / 10;
+        if (edge < 12 - 0.5) sound.push('sound line: the longest sentence ends ' + edge + " px from the card head's edge (12 px clear needed)");
         if (lb.right > hb.right + 0.5 || lb.left < hb.left - 0.5) sound.push('sound line: the longest sentence leaves the card head (x ' + Math.round(lb.left) + ' to ' + Math.round(lb.right) + ' in ' + Math.round(hb.left) + ' to ' + Math.round(hb.right) + ')');
         const card = head.closest('.sound');
         const cr = card && card.getBoundingClientRect();
@@ -2001,6 +2009,7 @@ try {
     'sound-clip': (v) => v.name === 'Home, Sound: the Where buttons',
     'sound-wrap': (v) => v.name === 'Home, Sound: the longest amber line',
     'sound-cover': (v) => v.name === 'Home, Sound: the longest amber line',
+    'sound-edge': (v) => v.name === 'Home, Sound: the longest amber line',
   };
   const breakOn = BREAK_ON[overflow] ? VARIANTS.filter(BREAK_ON[overflow]) : VARIANTS.slice(0, 1);
   /** keys style: the Now row's height on each page that has one, compared after every state ran. */
