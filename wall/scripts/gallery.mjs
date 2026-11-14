@@ -250,6 +250,23 @@ state('unwind', 'status chips, focus on', 'focus=long');
 state('unwind', 'music paused', 'media=paused');
 state('unwind', 'long track and artist', 'media=long');
 state('unwind', 'audio demo (levels moving)', 'audio=demo');
+// lines controls: every type on Listen (chosen by the state, not left to the default tab) and under
+// the drive-in look with a video showing, calm and wild for the mountains and for a new type, both
+// rest looks, the sheet's Lines side, and Work and Home keeping a new type calm.
+for (const type of ['mountains', 'bars', 'ribbon', 'sparks', 'skyline']) {
+  state('unwind', `lines: ${type} on Listen`, `ltab=listen&audio=demo&lines=${type}`, TIMES.night);
+  state('unwind', `lines: ${type} under the drive-in`, `watch=mock&wlist=three&wlook=drivein&wplay=0&audio=demo&lines=${type}`, TIMES.night);
+}
+state('unwind', 'lines: calm', 'ltab=listen&audio=demo&lines=mountains&lively=22&smooth=72&lheight=60', TIMES.night);
+state('unwind', 'lines: wild', 'ltab=listen&audio=demo&lines=mountains&lively=88&smooth=28&lheight=180', TIMES.night);
+state('unwind', 'lines: bars calm', 'ltab=listen&audio=demo&lines=bars&lively=22&smooth=72&lheight=60', TIMES.night);
+state('unwind', 'lines: bars wild', 'ltab=listen&audio=demo&lines=bars&lively=88&smooth=28&lheight=180', TIMES.night);
+state('unwind', 'lines: flat at rest', 'ltab=listen&lines=ribbon&lrest=flat', TIMES.night);
+state('unwind', 'lines: mountains flat at rest', 'ltab=listen&lines=mountains&lrest=flat', TIMES.night);
+state('unwind', 'lines: ridge and levels at rest', 'ltab=listen&lines=ribbon&lrest=ridgelevels', TIMES.night);
+state('unwind', 'lines sheet: the Lines side from Listen', 'watch=mock&wlist=none&wtab=listen&wsheet=one&lines=bars&audio=demo', TIMES.night);
+state('work', 'lines: bars stay calm', 'audio=demo&lines=bars');
+state('home', 'lines: skyline stays calm', 'audio=demo&lines=skyline');
 for (const [name, extra] of [
   ['broken: media unavailable', 'media=off'],
   ['broken: calendar not set up', 'meet=off'],
@@ -735,6 +752,7 @@ EXPECT.push(
   ['work', 'deck fixes: Day drawer open, typical', ['Agents today', 'Vendor demo1:30 to 3:30', 'waiting on you']],
   ['work', 'deck fixes: Day drawer open, heavy', ['Agents today', 'waiting on you']],
   ['work', 'deck fixes: Day drawer open, leave banner', ['Leave in 12 min.', 'Agents today', 'Recording00:']],
+  ['unwind', 'lines sheet: the Lines side from Listen', ['How the lines move', 'Bars', '50, your usual', 'One setting for the lines everywhere music plays.']],
 );
 
 /**
@@ -750,6 +768,9 @@ const NO_TEXT = [
   ['work', 'audio demo', 'only the drawn levels move'],
   ['home', 'audio demo', 'only the drawn levels move'],
   ['unwind', 'audio demo', 'only the drawn levels move'],
+  ['unwind', 'lines:', 'the knobs change the canvas or the settings sheet layout'],
+  ['work', 'lines:', 'only the drawn levels move'],
+  ['home', 'lines:', 'only the drawn levels move'],
   ['zen', 'focus running, long title', 'Zen shows no session title'],
   // Watt set down elsewhere: only where he stands changes (his stored spot), no text.
   ['work', 'Watt: set down', 'only where Watt stands changes'],

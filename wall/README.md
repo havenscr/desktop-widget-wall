@@ -860,6 +860,35 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
   (`?hz=unwind&at=...&audio=demo`) the camera and sky stay frozen but the frame loop runs, so
   the echo and the pulse can be captured. A production bundle ignores the query.
 - **Ripple** (`echo.ts`). The echo lines of the range, drawn by the renderer's `echo` option.
+  - **Line settings** (`linesSettings.ts`, local storage key `wall2-lines`, validated on read; a
+    broken or unknown field falls back to its default). One setting for the lines everywhere music
+    plays, read by the frame with `lineSettings()` (no render per frame). With every value at its
+    default the wall draws exactly what it drew before.
+    - Type: Mountains (default), Bars, Ribbon, Sparks or Skyline.
+    - How lively, 0 to 100 (usual 50), x = (v - 50) / 50: the line amplitude times 2^(0.8x), the
+      dance hit times 2^x, the dance limit times 2^(0.75x) (`setDanceParams` in `audio/dance.ts`).
+    - Smoothness, 0 to 100 (usual 50), y = (v - 50) / 50: both dance releases times 4^y; the new
+      types' fall gravity 520 / (2^y)^2 px/s2.
+    - Height, 20 to 220 px (usual 104): a soft cap `H * tanh(v / H)` on how far a hit throws a
+      line. The new types always go through it; on Mountains it caps the sampled height at
+      `H / amp` and is off while that is within 0.02 of the dance limit (the usual setting).
+    - Colours: From the look (the playing cover's tint, default), Floor light, Sunset, Ice or Mint,
+      for every type.
+    - Reflection on (default) or off. At rest: Ridge and levels (default) or Flat (resting opacity
+      0.6; the new types lie down to one calm line on the horizon).
+    - Presets: Calm 22, 72, 60 px; Dancing 50, 50, 104 px (the usual); Wild 88, 28, 180 px.
+  - **New line types** (`lineTypes.ts`, a port of the lines playground the owner chose). They read
+    the dance history by age (0 is now) with a short hold (the largest of now, 0.8 times 0.1 s ago
+    and 0.6 times 0.2 s ago) and a gain of 1.7, are drawn after the picture above the horizon only,
+    with every claimed picture box clipped out, on the front canvas when there is one (with the
+    land), at the live opacity the camera gives the lines (calm on Work and Home). While one plays
+    the ridgelines are not drawn; when the music stops the resting look fades in. Bars: 64 columns
+    18 px wide with a floating marker. Ribbon: one line, two trails, a faint fill and a glow wider
+    on the kick. Sparks: 64 dots thrown up and falling under gravity, two trail dots along the
+    throw. Skyline: 32 blocks of 12 px floors. State and colour gradients are made once (again only
+    when the palette, the centre or the canvas changes). Dev knobs (`bridge/devMocks/lines.ts`):
+    `lines=<type>`, `lively`, `smooth`, `lheight`, `lcol`, `lrest`, `lrefl=0`, `ltab=listen`;
+    `lineprobe=1` (with `lclip=0` for the break) is the fit check's count of pixels inside a box.
   - Work and Home (3 lines): while music drives them, opacity `ea` times a smoothed loudness (bass
     weighted), `n`, `amp`, `cx` from the camera (`en`, `eamp`, `ecx`), `hs` 900.
   - Unwind (11 lines, the visualizer): while music drives them, opacity `ea` (0.9) raised to full,
@@ -1378,7 +1407,11 @@ there, still playing, when the owner comes back (see "The stage layer" below).
   click, the sun comes forward (`layeredNow`). The left block, the Look switch and the Watch list
   card claim their own boxes as keep-clear (`useSkyKeepClear`). The look's claim is held only while
   the stage is in sight; the keep-clear claims go with the Watch panel (Listen, nothing on, another
-  place, Zen). The gear beside the tabs opens a sheet over the right wing:
+  place, Zen). The gear on Watch opens a sheet over the right wing on its Looks side; the gear on
+  Listen (`LinesGear`, "How the lines move") opens it on its Lines side. A "Looks | Lines" switch
+  in its heading row changes the side, and the heading follows it. The Lines side
+  (`LinesPanel.tsx`) has one control per 40 px row with its value read back in words, and sizes
+  the sheet to its content. The Looks side:
   one look for everything (four picture tiles), or one each for videos and playlists, live
   streams and Twitch (four choices a row), at 540 px (`wall2-watch-look`, checked on read;
   values stored before the two new looks still read the same). The Look switch sets it too.

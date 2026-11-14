@@ -3,6 +3,7 @@ import danceSrc from '../audio/dance.ts?raw';
 import spectrumSrc from '../audio/spectrum.ts?raw';
 import rendererSrc from './renderer.ts?raw';
 import reflectionSrc from './reflection.ts?raw';
+import lineTypesSrc from './lineTypes.ts?raw';
 
 /**
  * A source guard for the per-frame paths this branch added: their bodies may not create arrays,
@@ -32,7 +33,8 @@ export function allocations(body: string, allowGradient = false): string[] {
     ['array literal', /(^|[=(,:?&|]|return)\s*\[/m],
     ['object literal', /(^|[=(,:?&|]|return)\s*\{/m],
     ['spread', /\.\.\./],
-    ['array method', /\.(map|filter|slice|concat|from|fill|subarray)\(/],
+    // `ctx.fill()` paints a path and makes nothing.
+    ['array method', /(?<!\bctx)\.(map|filter|slice|concat|from|fill|subarray)\(/],
     ['string template', /`/],
   ];
   for (const [label, re] of rules) if (re.test(code)) bad.push(label);
@@ -48,6 +50,14 @@ describe('the frame path allocates nothing', () => {
     ['echoEdge', rendererSrc, 'echoEdge', false],
     ['echoMask', rendererSrc, 'echoMask', false],
     ['drawReflection', reflectionSrc, 'drawReflection', true],
+    ['typePx', lineTypesSrc, 'typePx', false],
+    ['stepLineTypes', lineTypesSrc, 'stepLineTypes', false],
+    ['drawLineType', lineTypesSrc, 'drawLineType', false],
+    ['drawBars', lineTypesSrc, 'drawBars', false],
+    ['drawRibbon', lineTypesSrc, 'drawRibbon', false],
+    ['drawSparks', lineTypesSrc, 'drawSparks', false],
+    ['drawSkyline', lineTypesSrc, 'drawSkyline', false],
+    ['drawRestLine', lineTypesSrc, 'drawRestLine', false],
   ];
   for (const [label, src, name, grad] of paths) {
     it(`${label} has no array, object, closure or typed array in its body`, () => {
