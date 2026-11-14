@@ -148,11 +148,17 @@ pub fn reached(host: &str) {
 #[derive(Debug)]
 pub struct TimedResolver;
 
-pub fn ipv4_first(mut addrs: Vec<SocketAddr>) -> Vec<SocketAddr> {
-    if let Some(at) = addrs.iter().position(SocketAddr::is_ipv4) {
-        addrs.swap(0, at);
+pub fn ipv4_first(addrs: Vec<SocketAddr>) -> Vec<SocketAddr> {
+    let mut v4 = addrs.iter().copied().filter(SocketAddr::is_ipv4);
+    let mut v6 = addrs.iter().copied().filter(SocketAddr::is_ipv6);
+    let mut ordered = Vec::with_capacity(4);
+    while ordered.len() < 4 {
+        let before = ordered.len();
+        if let Some(addr) = v4.next() { ordered.push(addr); }
+        if ordered.len() < 4 { if let Some(addr) = v6.next() { ordered.push(addr); } }
+        if ordered.len() == before { break }
     }
-    addrs
+    ordered
 }
 
 impl ureq::Resolver for TimedResolver {
@@ -241,9 +247,13 @@ mod tests {
 
     #[test]
     fn resolver_order_gives_ipv4_the_first_bounded_connect_attempt() {
-        let ordered = ipv4_first(vec![a("[2001:db8::1]:443"), a("192.0.2.1:443"), a("[2001:db8::2]:443")]);
+        let ordered = ipv4_first(vec![a("[2001:db8::1]:443"), a("192.0.2.1:443"), a("[2001:db8::2]:443"), a("192.0.2.2:443"), a("192.0.2.3:443")]);
         assert!(ordered[0].is_ipv4());
-        assert_eq!(ordered.len(), 3);
+        assert_eq!(ordered.len(), 4);
+        assert!(ordered.windows(2).all(|pair| pair[0].is_ipv4() != pair[1].is_ipv4()));
+        // ureq 2.12.1 stream.rs halves the remaining 5 second connect deadline when
+        // several addresses exist, so the first IPv4 address receives 2.5 seconds.
+        assert!(crate::wall2_meet::graph::CONNECT_TIMEOUT / 2 >= Duration::from_secs(2));
     }
 
     fn np(phase: &'static str, af: &'static str, resolved: u8, dns_ms: Option<u32>, v4: Probe, v6: Probe) -> NetProbe {

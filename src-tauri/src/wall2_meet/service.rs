@@ -154,6 +154,10 @@ pub fn record(core: &mut Core, id: &str, state: &str, reason: Option<&str>, now:
     record_detail(core, id, state, reason, now, None);
 }
 
+fn log_account_key(id: &str) -> &str {
+    if (1..=16).contains(&id.len()) && id.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-') { id } else { "account-1" }
+}
+
 /// `record`, plus the Graph failure details when there are some. A line with details is
 /// written for every failure, changed state or not, so each failed call can be traced.
 pub fn record_detail(core: &mut Core, id: &str, state: &str, reason: Option<&str>, now: u64, detail: Option<&Diag>) {
@@ -166,8 +170,8 @@ pub fn record_detail(core: &mut Core, id: &str, state: &str, reason: Option<&str
     // The queue is drained after every read; the cap only guards a caller that never drains.
     if core.log_lines.len() < 64 {
         let line = match detail {
-            Some(d) => format_line_detail(&utc_iso(now), id, &old, state, new.1.as_deref(), &d.log_fields()),
-            None => format_line(&utc_iso(now), id, &old, state, new.1.as_deref()),
+            Some(d) => format_line_detail(&utc_iso(now), log_account_key(id), &old, state, new.1.as_deref(), &d.log_fields()),
+            None => format_line(&utc_iso(now), log_account_key(id), &old, state, new.1.as_deref()),
         };
         core.log_lines.push(line);
     }
@@ -924,6 +928,15 @@ pub fn sign_out(id: &str, store: &dyn SecretStore, core: &Mutex<Core>, links: &M
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn log_account_keys_are_bounded_and_never_email_like() {
+        assert_eq!(log_account_key("hc-2"), "hc-2");
+        assert_eq!(log_account_key("person@example.test"), "account-1");
+        let mut core=Core::default(); record(&mut core,"person@example.test","unavailable",Some("token-network"),NOW);
+        assert!(core.log_lines[0].contains(" account-1 "));
+        assert!(!core.log_lines[0].contains('@'));
+    }
     use crate::wall2_meet::store::{Chunked, MemoryBlobs};
     use serde_json::{json, Value};
     use std::cell::{Cell, RefCell};
@@ -1569,6 +1582,33 @@ mod tests {
         let granted = super::super::auth::Granted { code: "c".into(), verifier: "v".into(), redirect_uri: "http://localhost:1/auth-callback.html".into() };
         assert!(complete_sign_in(&acct("work"), &granted, &store, &tokens, &core, NOW).is_ok());
         assert_eq!(tokens.calls.get(), 2);
+    }
+
+    #[test]
+    fn sign_in_never_retries_a_server_answer() {
+        struct Answers { status: u16, calls: Cell<u8> }
+        impl TokenClient for Answers {
+            fn post(&self,_:&str,_:&[(&str,&str)])->TokenReply{unreachable!()}
+            fn post_diag(&self,_:&str,_:&[(&str,&str)],_:Duration,ctx:&Ctx)->(TokenReply,Option<Diag>){self.calls.set(self.calls.get()+1);let reply=match self.status{400=>TokenReply::Refused("token-400".into()),429=>TokenReply::Failed("token-429".into()),_=>TokenReply::Failed("token-500".into())};(reply,Some(Diag{kind:ctx.kind,host:"login",net:None,status:self.status,code:None,inner:None,request_id:None,client_request_id:None,attempt:1,elapsed_ms:1,probe:None}))}
+        }
+        let granted=super::super::auth::Granted{code:"c".into(),verifier:"v".into(),redirect_uri:"http://localhost:1/auth-callback.html".into()};
+        for status in [400,429,500] {
+            let tokens=Answers{status,calls:Cell::new(0)}; let core=Mutex::new(Core::default()); let store=Chunked(MemoryBlobs::default());
+            assert!(complete_sign_in(&acct("work"),&granted,&store,&tokens,&core,NOW).is_err()); assert_eq!(tokens.calls.get(),1);
+        }
+    }
+
+    #[test]
+    fn failed_sign_in_logs_phase_family_and_family_results() {
+        struct Down;
+        impl TokenClient for Down {
+            fn post(&self,_:&str,_:&[(&str,&str)])->TokenReply{unreachable!()}
+            fn post_diag(&self,_:&str,_:&[(&str,&str)],_:Duration,ctx:&Ctx)->(TokenReply,Option<Diag>){(TokenReply::Transient("token-network".into()),Some(Diag{kind:ctx.kind,host:"login",net:Some("connect"),status:0,code:None,inner:None,request_id:None,client_request_id:None,attempt:1,elapsed_ms:9,probe:Some(super::super::netprobe::NetProbe{phase:"connect",af:"ipv4",resolved:2,dns_ms:Some(1),v4:super::super::netprobe::Probe::Fail(4),v6:super::super::netprobe::Probe::Fail(5),probe_ms:9})}))}
+        }
+        let core=Mutex::new(Core::default()); let store=Chunked(MemoryBlobs::default()); let granted=super::super::auth::Granted{code:"c".into(),verifier:"v".into(),redirect_uri:"http://localhost:1/auth-callback.html".into()};
+        assert_eq!(complete_sign_in(&acct("hc"),&granted,&store,&Down,&core,NOW),Err("token-network-connect".into()));
+        let line=&core.lock().unwrap().log_lines[0];
+        for field in ["net=connect","af=ipv4","v4=fail4","v6=fail5"] { assert!(line.contains(field),"{line}"); }
     }
 
     fn reasons(p: &MeetPayload) -> Vec<Option<&str>> {

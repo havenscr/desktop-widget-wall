@@ -67,6 +67,14 @@ it('calendar: no account readable is down, a failed read with an earlier list is
   expect(readText(none.at)).toBe('never');
 });
 
+it('calendar hover lists each account and its diagnosed reason', () => {
+  const calendar = { asOf: NOW - min(2), failed: false, feedStale: true, noCalendar: false, reads: 2, accounts: [
+    { id: 'work', label: 'Work', state: 'ok' as const },
+    { id: 'hc', label: 'Second', state: 'unavailable' as const, reason: 'token-network-dns' },
+  ] };
+  expect(row(base({ calendar }), 'calendar').reason).toBe("Work: Reading normally. Second: Could not reach Microsoft's sign-in server: name lookup failed.");
+});
+
 it('agents follow their own stale rule: a stale answer, a failed read or a coming-back page is amber, an unreachable helper red', () => {
   expect(row(base({ agents: agents({ summary: { stale: true } as never }) }), 'agents').tone).toBe('warn');
   expect(row(base({ agents: agents({ readFailed: true }) }), 'agents').tone).toBe('warn');
@@ -95,6 +103,14 @@ it('weather is amber exactly when the card would say it is old', () => {
   expect(row(w(WEATHER_REFRESH_MS + min(2)), 'weather').tone).toBe('warn');
   expect(row(base({ weather: { reading: null, failed: true } }), 'weather').tone).toBe('down');
   expect(row(base({ weather: { reading: null, failed: false } }), 'weather').tone).toBe('none');
+});
+
+it('weather keeps all four failed tries visible beside the older reading', () => {
+  for (const [failure, words] of [['network','could not reach'],['timeout','did not answer'],['parse','could not be read'],['http 503','answered 503']] as const) {
+    const weather = { reading: { fetchedAt: NOW - min(5) } as never, failed: true, failure, attemptedAt: NOW - min(2) };
+    const got=row(base({weather}),'weather');
+    expect(got.tone).toBe('warn'); expect(got.reason.toLowerCase()).toContain(words); expect(got.reason).toContain('Showing the reading from');
+  }
 });
 
 it('music is amber when the 2 second poll has gone quiet, grey before the first answer', () => {

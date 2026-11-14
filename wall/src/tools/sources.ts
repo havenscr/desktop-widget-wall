@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { invoke } from '../bridge/tauri';
 import { agentsStale, retryAgents, useAgentsStore, type AgentsState } from '../agents/useAgents';
 import { ALARM_MAX_AGE_MS, refreshSecurity, useSecurityFeed, type SecurityState } from '../home/useSecurity';
-import { clockText } from '../meet/model';
+import { clockText, reasonText, type MeetAccount } from '../meet/model';
 import { POLL_MS as MUSIC_POLL_MS, refreshNowPlaying, useNowPlayingStore } from '../music/store';
 import { REFRESH_MS as TASKS_REFRESH_MS } from '../tasks/model';
 import { STALE_MS as SOUND_STALE_MS } from '../home/soundModel';
@@ -40,7 +40,7 @@ export const SOURCE_NAMES: readonly { id: SourceId; name: string }[] = [
 /** Everything the registry reads, as plain values. */
 export interface SourceSnapshot {
   now: number;
-  calendar: { asOf: number | null; failed: boolean; feedStale: boolean; noCalendar: boolean; reads: number };
+  calendar: { asOf: number | null; failed: boolean; feedStale: boolean; noCalendar: boolean; reads: number; accounts?: MeetAccount[] };
   agents: AgentsState;
   security: Pick<SecurityState, 'status' | 'summary' | 'readAt'>;
   weather: Pick<WeatherState, 'reading' | 'failed' | 'failure' | 'attemptedAt'>;
@@ -81,10 +81,11 @@ export function buildSources(s: SourceSnapshot): SourceRow[] {
     const c = s.calendar;
     const id = 'calendar' as const;
     const name = 'Calendar';
-    if (c.noCalendar) rows.push({ id, name, tone: 'down', at: c.asOf, reason: 'No calendar account can be read. Sign in under Accounts.' });
+    const accounts = c.accounts?.map((a) => `${a.label}: ${a.state === 'ok' ? 'Reading normally' : reasonText(a.reason) ?? (a.state === 'signed-out' ? 'Signed out' : 'Unavailable')}`).join('. ');
+    if (c.noCalendar) rows.push({ id, name, tone: 'down', at: c.asOf, reason: accounts || 'No calendar account can be read. Sign in under Accounts.' });
     else if (c.failed && c.asOf === null) rows.push({ id, name, tone: 'down', at: null, reason: 'The calendar read failed and there is no earlier read.' });
     else if (c.failed) rows.push({ id, name, tone: 'warn', at: c.asOf, reason: 'The last calendar read failed. Showing the earlier list.' });
-    else if (c.feedStale) rows.push({ id, name, tone: 'warn', at: c.asOf, reason: 'An account did not answer. Some meetings are from an earlier read.' });
+    else if (c.feedStale) rows.push({ id, name, tone: 'warn', at: c.asOf, reason: accounts || 'An account did not answer. Some meetings are from an earlier read.' });
     else if (c.asOf === null) rows.push({ id, name, tone: 'none', at: null, reason: 'Not read yet, or the calendar is not set up.' });
     else rows.push({ id, name, tone: 'ok', at: c.asOf, reason: 'Reading normally.' });
   }
@@ -136,7 +137,10 @@ export function buildSources(s: SourceSnapshot): SourceRow[] {
     const name = 'Weather';
     const w = s.weather.reading;
     if (!w) rows.push(s.weather.failed ? { id, name, tone: 'down', at: s.weather.attemptedAt ?? null, reason: weatherFailureText(s.weather.failure) } : { id, name, tone: 'none', at: null, reason: 'Not read yet.' });
-    else {
+    else if (s.weather.failed) {
+      const attempted = s.weather.attemptedAt ?? now;
+      rows.push({ id, name, tone: 'warn', at: w.fetchedAt, reason: `Last try failed ${ago(attempted, now)}: ${weatherFailureText(s.weather.failure).replace(/\.$/, '').toLowerCase()}. Showing the reading from ${new Date(w.fetchedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.` });
+    } else {
       const old = staleText(w.fetchedAt, now);
       if (old) rows.push({ id, name, tone: 'warn', at: w.fetchedAt, reason: `The reading is old (${old}). It refreshes every ${WEATHER_REFRESH_MS / 60_000} min.` });
       else rows.push({ id, name, tone: 'ok', at: w.fetchedAt, reason: 'Reading normally.' });
@@ -167,7 +171,7 @@ export function useSources(): SourceRow[] {
   useEffect(() => setNow(clock()), [feed.reads, agents.checkedAt, security.attempts, weather.reading, music, reports]);
   return buildSources({
     now,
-    calendar: { asOf: feed.asOf, failed: feed.failed, feedStale: feed.feedStale, noCalendar: feed.noCalendar, reads: feed.reads },
+    calendar: { asOf: feed.asOf, failed: feed.failed, feedStale: feed.feedStale, noCalendar: feed.noCalendar, reads: feed.reads, accounts: feed.accounts },
     agents,
     security,
     weather,

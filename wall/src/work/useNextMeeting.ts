@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { create } from 'zustand';
 import { invoke } from '../bridge/tauri';
-import { calendarNotAvailable, nextMeeting, REFRESH_MS, TICK_MS, type Meeting, type MeetData } from '../meet/model';
+import { calendarNotAvailable, nextMeeting, REFRESH_MS, TICK_MS, type MeetAccount, type Meeting, type MeetData } from '../meet/model';
 import { useVisible } from '../ui/useVisible';
 
 const systemNow = () => Date.now();
@@ -19,6 +19,7 @@ export interface NextMeetingState {
 
 interface MeetingFeed {
   meetings: Meeting[];
+  accounts: MeetAccount[];
   feedStale: boolean;
   failed: boolean;
   asOf: number | null;
@@ -27,7 +28,7 @@ interface MeetingFeed {
   reads: number;
 }
 
-const initial = (): MeetingFeed => ({ meetings: [], feedStale: false, failed: false, asOf: null, noCalendar: false, reads: 0 });
+const initial = (): MeetingFeed => ({ meetings: [], accounts: [], feedStale: false, failed: false, asOf: null, noCalendar: false, reads: 0 });
 
 /** The one shared meeting list every `useNextMeeting` user reads. */
 export const useMeetingFeed = create<MeetingFeed>(() => initial());
@@ -67,6 +68,7 @@ function read(): void {
       const partial = d?.stale === true;
       useMeetingFeed.setState((s) => ({
         meetings: Array.isArray(d?.meetings) ? d.meetings : [],
+        accounts: Array.isArray(d?.accounts) ? d.accounts : [],
         feedStale: partial,
         failed: false,
         noCalendar: calendarNotAvailable(d?.accounts ?? []),
