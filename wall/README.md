@@ -901,14 +901,16 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
 - **Moon.** The Unwind camera draws the moon, radius 44, at the first of three places
   (`MOON_PLACES`) whose disc is 40 px or more from every picture box and every card's keep-clear
   box that a screen claims (`moonFor` in `sky.ts`): (1890, 260) right of Listen's player, the
-  place it always had; (760, 340) low under the player's left half, right of Up next, for a
-  layout whose right side a wide card takes; (1450, 150) high in the middle of the sky. Each is
+  place it always had; (760, 352) low under the player's left half, right of Up next, for a
+  layout whose right side a wide card takes (43 px under the player at its tallest, with nothing
+  playing, and just above the ranges, where they are lowest); (1450, 150) high in the middle of the sky. Each is
   wholly above the Unwind ridgeline and clear of the clock (a test). With none clear, or a claim
   that says `noMoon`, there is no moon, and its light on the lake goes with it. On Listen the
   Spotify card (`SpotifyCard.tsx`) and the player (`Player.tsx`) claim their drawn boxes, so the
-  moon sits at (760, 340) there; on Watch the list card, the left block and the Look switch do. The same claims
+  moon sits at (760, 352) there, whatever the player shows; on Watch the list card, the left block and the Look switch do. The same claims
   always give the same place, so it changes only when a box does, and it is simply drawn at its
-  new place on the next frame. It shows once the glide to Unwind has finished (it goes as
+  new place on the next frame (a resting still frame is drawn again once for each change; a claim
+  made again with the same boxes changes nothing). It shows once the glide to Unwind has finished (it goes as
   soon as a glide away starts); no other place does. The review still `?hz=unwind` draws it, since that camera jumps straight there. The drawn
   moon is published on the canvas as `data-moon` for the fit check.
 
