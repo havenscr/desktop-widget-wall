@@ -1,3 +1,5 @@
+// @ts-ignore node's own file call; the stylesheet rules are read as text.
+import { readFileSync } from 'node:fs';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mocks } from '../../bridge/tauri';
@@ -6,7 +8,7 @@ import { UnwindView } from './testView';
 import { useSignalStore } from '../../signals/store';
 import { usePlaceStore } from '../../state/places';
 import { resetLastPlayed } from '../lastPlayed';
-import { DEFAULT_LOOKS, DRIVE_IN_SCREEN, LOOKS_KEY, lookTargetName, parseLooks, pickLook } from './looks';
+import { DEFAULT_LOOKS, DRIVE_IN_SCREEN, LOOKS_KEY, parseLooks } from './looks';
 import { AUTOPLAY_WAIT_MS, framePoster, HANDSHAKE_EVERY_MS, PlayerFrame, TWITCH_CLICK_MS } from './PlayerFrame';
 import { SAVED_KEY, type SavedItem } from './saved';
 import { driveInAudience, resetWatch, useWatchStore } from './store';
@@ -37,11 +39,20 @@ function seed(looks?: object) {
 }
 
 async function playing(kind: 'video' | 'playlist' | 'twitch', looks?: object, load = true) {
+  const { unmount } = await renderPlaying(kind, looks);
+  return { ...(await frameOf(load)), unmount };
+}
+
+async function renderPlaying(kind: 'video' | 'playlist' | 'twitch', looks?: object) {
   seed(looks);
   useWatchStore.getState().setTab('watch');
   useWatchStore.getState().play(ITEMS.find((i) => i.kind === kind)!);
-  render(<UnwindView />);
+  const r = render(<UnwindView />);
   await flush();
+  return r;
+}
+
+async function frameOf(load: boolean) {
   const frame = document.querySelector('iframe')!;
   const win = frame.contentWindow!;
   const post = vi.spyOn(win, 'postMessage').mockImplementation(() => {});
@@ -321,34 +332,144 @@ describe('the frame wiring on its own', () => {
   });
 });
 
-describe('the Look switch', () => {
-  it('sets the one look for everything', async () => {
+describe('the looks are chosen in the gear sheet, with no Look switch on the page', () => {
+  it('has no Look switch with a video playing, paused, waiting for a click, or with nothing on', async () => {
     await playing('video', { mode: 'one', all: 'drivein' });
-    const sw = screen.getByRole('radiogroup', { name: 'Look' });
-    await act(async () => within(sw).getByRole('radio', { name: 'The sun' }).click());
+    const none = () => {
+      expect(document.querySelector('.w-lookbar')).toBeNull();
+      expect(screen.queryByRole('radiogroup', { name: /^Look(,|$)/ })).toBeNull();
+    };
+    none();
+    act(() => useWatchStore.getState().setPaused(true));
+    none();
+    act(() => useWatchStore.getState().setNeedsClick(true));
+    none();
+    act(() => useWatchStore.getState().stop());
+    none();
+    // The row of the idle block still has the gear, last.
+    const row = document.querySelector('.w-now > .w-ctl')!;
+    expect(row.lastElementChild).toBe(screen.getByRole('button', { name: 'How video is shown' }));
+  });
+
+  it('puts the gear last in the row of a video, of a playlist and of Twitch', async () => {
+    for (const kind of ['video', 'playlist', 'twitch'] as const) {
+      const { unmount } = await renderPlaying(kind);
+      const row = document.querySelector('.w-now > .w-ctl')!;
+      const gear = screen.getByRole('button', { name: 'How video is shown' });
+      expect(row.lastElementChild).toBe(gear);
+      expect(gear.className).toContain('w-gear');
+      // The open button comes just before it.
+      expect(gear.previousElementSibling?.className).toContain('w-open');
+      unmount();
+    }
+  });
+
+  it('sets the one look for everything from the sheet it opens on its Looks side, and not inside the stage', async () => {
+    await playing('video', { mode: 'one', all: 'drivein' });
+    await act(async () => screen.getByRole('button', { name: 'How video is shown' }).click());
+    const sw = screen.getByRole('radiogroup', { name: 'Look for everything' });
+    await act(async () => within(sw).getByRole('radio', { name: /The sun/ }).click());
     expect(parseLooks(localStorage.getItem(LOOKS_KEY))).toMatchObject({ mode: 'one', all: 'sun' });
     expect(document.querySelector('.w-stage')?.getAttribute('data-look')).toBe('sun');
-    // The switch is not inside the stage, so it is never drawn on the video.
     expect(sw.closest('.w-stage')).toBeNull();
   });
 
-  it('with a look per kind sets only the kind now playing, and names it', async () => {
-    await playing('video', { mode: 'kind', all: 'drivein', video: 'feather', live: 'sky', twitch: 'drivein' });
-    const sw = screen.getByRole('radiogroup', { name: 'Look, for videos and playlists' });
-    await act(async () => within(sw).getByRole('radio', { name: 'Whole sky' }).click());
-    expect(parseLooks(localStorage.getItem(LOOKS_KEY))).toMatchObject({ mode: 'kind', video: 'sky', live: 'sky', twitch: 'drivein', all: 'drivein' });
-    expect(pickLook(DEFAULT_LOOKS, 'twitch', 'sun')).toEqual({ ...DEFAULT_LOOKS, all: 'sun' });
-    expect(lookTargetName({ ...DEFAULT_LOOKS, mode: 'kind' }, 'playlist')).toBe('Videos and playlists');
-    expect(lookTargetName(DEFAULT_LOOKS, 'playlist')).toBeNull();
+  it('walks the look tiles with the arrow keys: Right and Down forward, Left and Up back, wrapping, Home and End, focus follows, the look is selected, only the chosen tile is tabbable', async () => {
+    await playing('video', { mode: 'one', all: 'feather' });
+    await act(async () => screen.getByRole('button', { name: 'How video is shown' }).click());
+    const group = () => screen.getByRole('radiogroup', { name: 'Look for everything' });
+    const radios = () => [...group().querySelectorAll<HTMLElement>('[role=radio]')];
+    const chosen = () => radios().filter((r) => r.getAttribute('aria-checked') === 'true').map((r) => r.textContent);
+    const tabbable = () => radios().filter((r) => r.tabIndex === 0).map((r) => r.textContent);
+    expect(chosen()).toEqual(['Feathered']);
+    expect(tabbable()).toEqual(['Feathered']);
+    act(() => radios()[0].focus());
+    const press = (key: string) => act(() => void fireEvent.keyDown(document.activeElement!, { key }));
+    const names = ['Whole sky', 'The sun', 'Drive-in', 'Hologram', 'Feathered'];
+    for (const name of names) {
+      press('ArrowRight');
+      expect(chosen()).toEqual([name]);
+      expect(tabbable()).toEqual([name]);
+      expect(document.activeElement?.textContent).toBe(name);
+    }
+    expect(parseLooks(localStorage.getItem(LOOKS_KEY)).all).toBe('feather');
+    press('ArrowLeft');
+    expect(chosen()).toEqual(['Hologram']);
+    expect(document.activeElement?.textContent).toBe('Hologram');
+    expect(document.querySelector('.w-stage')?.getAttribute('data-look')).toBe('holo');
+    press('ArrowUp');
+    expect(chosen()).toEqual(['Drive-in']);
+    press('ArrowDown');
+    expect(chosen()).toEqual(['Hologram']);
+    press('Home');
+    expect(chosen()).toEqual(['Feathered']);
+    press('ArrowLeft');
+    expect(chosen()).toEqual(['Hologram']);
+    press('End');
+    expect(chosen()).toEqual(['Hologram']);
+    press('Home');
+    press('End');
+    expect(chosen()).toEqual(['Hologram']);
+    // A key that is not an arrow changes nothing.
+    press('a');
+    expect(chosen()).toEqual(['Hologram']);
   });
 
-  it('moves with the arrow keys', async () => {
+  it('walks each per-kind row on its own with the arrow keys', async () => {
+    await playing('video', { mode: 'kind', all: 'drivein', video: 'feather', live: 'sky', twitch: 'drivein' });
+    await act(async () => screen.getByRole('button', { name: 'How video is shown' }).click());
+    const row = (name: string) => screen.getByRole('radiogroup', { name });
+    const lit = (name: string) => [...row(name).querySelectorAll<HTMLElement>('[role=radio]')].filter((r) => r.getAttribute('aria-checked') === 'true').map((r) => r.textContent);
+    const tabbable = (name: string) => [...row(name).querySelectorAll<HTMLElement>('[role=radio]')].filter((r) => r.tabIndex === 0).map((r) => r.textContent);
+    expect(tabbable('Look for live streams')).toEqual(['Whole sky']);
+    act(() => (row('Look for live streams').querySelectorAll('[role=radio]')[1] as HTMLElement).focus());
+    act(() => void fireEvent.keyDown(document.activeElement!, { key: 'ArrowRight' }));
+    expect(lit('Look for live streams')).toEqual(['The sun']);
+    expect(document.activeElement?.textContent).toBe('The sun');
+    expect(tabbable('Look for live streams')).toEqual(['The sun']);
+    // The other rows are untouched.
+    expect(lit('Look for videos and playlists')).toEqual(['Feathered']);
+    expect(lit('Look for twitch')).toEqual(['Drive-in']);
+    expect(parseLooks(localStorage.getItem(LOOKS_KEY))).toMatchObject({ mode: 'kind', video: 'feather', live: 'sun', twitch: 'drivein' });
+    act(() => void fireEvent.keyDown(document.activeElement!, { key: 'End' }));
+    expect(lit('Look for live streams')).toEqual(['Hologram']);
+    act(() => void fireEvent.keyDown(document.activeElement!, { key: 'ArrowRight' }));
+    expect(lit('Look for live streams')).toEqual(['Feathered']);
+  });
+
+  it('with a look per kind the sheet sets the kind it picks, and names the group', async () => {
+    await playing('video', { mode: 'kind', all: 'drivein', video: 'feather', live: 'sky', twitch: 'drivein' });
+    await act(async () => screen.getByRole('button', { name: 'How video is shown' }).click());
+    const sw = screen.getByRole('radiogroup', { name: 'Look for videos and playlists' });
+    await act(async () => within(sw).getByRole('radio', { name: 'Whole sky' }).click());
+    expect(parseLooks(localStorage.getItem(LOOKS_KEY))).toMatchObject({ mode: 'kind', video: 'sky', live: 'sky', twitch: 'drivein', all: 'drivein' });
+  });
+});
+
+describe('the position bar', () => {
+  it('fills to the played fraction, carries a marker at the fill end, and the marker takes no click', async () => {
     await playing('video', { mode: 'one', all: 'feather' });
-    const sw = screen.getByRole('radiogroup', { name: 'Look' });
-    act(() => {
-      sw.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
-    });
-    expect(within(sw).getByRole('radio', { name: 'Whole sky' }).getAttribute('aria-checked')).toBe('true');
+    for (const [time, f, width] of [[0, '0.0000', '0%'], [43, '0.4300', '43%'], [100, '1.0000', '100%']] as const) {
+      act(() => useWatchStore.getState().setReport({ time, duration: 100, started: true }));
+      const bar = document.querySelector<HTMLElement>('.w-bar')!;
+      expect(bar.style.getPropertyValue('--f')).toBe(f);
+      expect(bar.querySelector<HTMLElement>('b')!.style.width).toBe(width);
+      const mark = bar.querySelector('.w-mark')!;
+      expect(mark.getAttribute('aria-hidden')).toBe('true');
+      expect(mark.closest('.w-bar')).toBe(bar);
+    }
+  });
+
+  it('draws its fill and its marker from tokens that exist, holds the marker inside the bar, and is 32 px tall to click', () => {
+    const css = (readFileSync('src/styles/unwind.css', 'utf8') as string).replace(/\/\*[\s\S]*?\*\//g, '');
+    const rule = (sel: string) => [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].filter((m) => m[1]!.split(',').map((x) => x.trim()).includes(sel)).map((m) => m[2]).join('');
+    expect(rule('.w-bar b')).toContain('var(--mag), var(--cyan)');
+    expect(rule('.w-bar b')).not.toContain('--pink');
+    expect(rule('.w-live')).toContain('var(--mag)');
+    expect(rule('.w-bar')).toMatch(/height: 32px/);
+    expect(rule('.w-bar .w-mark')).toMatch(/clamp\(0px, calc\(var\(--f, 0\) \* 100% - 5px\), calc\(100% - 10px\)\)/);
+    expect(rule('.w-bar .w-mark')).toMatch(/pointer-events: none/);
+    expect(rule('.w-bar .w-mark')).toMatch(/width: 10px/);
   });
 });
 
@@ -359,7 +480,7 @@ describe('the buddy seam and the opener', () => {
     useWatchStore.getState().play(ITEMS[0]);
     expect(driveInAudience(useWatchStore.getState())).toEqual({ x: 1244, y: 54, w: 672, h: 378 });
     expect(driveInAudience(useWatchStore.getState())).toBe(DRIVE_IN_SCREEN);
-    useWatchStore.getState().pickLook('feather');
+    useWatchStore.getState().setLooks({ ...DEFAULT_LOOKS, all: 'feather' });
     expect(driveInAudience(useWatchStore.getState())).toBeNull();
   });
 

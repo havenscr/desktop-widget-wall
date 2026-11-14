@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { IconX } from '@tabler/icons-react';
 import { LOOK_GROUPS, LOOKS, type LookId, type LookSettings } from './looks';
 import { useWatchStore } from './store';
@@ -14,11 +14,28 @@ function LookPicture({ look }: { look: LookId }) {
   );
 }
 
+/**
+ * Arrow keys across the looks of one radiogroup: Left and Up the previous, Right and Down the
+ * next (wrapping), Home and End the first and last. The arrow selects as well as moves the
+ * focus, as a radiogroup does; only the chosen look is in the Tab order (`tabIndex`).
+ */
+function lookKeys(value: LookId, onPick: (l: LookId) => void) {
+  return (e: KeyboardEvent<HTMLElement>) => {
+    const n = LOOKS.length;
+    const i = Math.max(0, LOOKS.findIndex((l) => l.id === value));
+    const to = e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? (i + n - 1) % n : e.key === 'ArrowRight' || e.key === 'ArrowDown' ? (i + 1) % n : e.key === 'Home' ? 0 : e.key === 'End' ? n - 1 : -1;
+    if (to < 0) return;
+    e.preventDefault();
+    onPick(LOOKS[to].id);
+    e.currentTarget.querySelectorAll<HTMLElement>('[role="radio"]')[to]?.focus();
+  };
+}
+
 function Choice({ value, onPick, label }: { value: LookId; onPick: (l: LookId) => void; label: string }) {
   return (
-    <div className="w-seg" role="radiogroup" aria-label={label}>
+    <div className="w-seg" role="radiogroup" aria-label={label} onKeyDown={lookKeys(value, onPick)}>
       {LOOKS.map((l) => (
-        <button key={l.id} type="button" role="radio" aria-checked={value === l.id} className={value === l.id ? 'on' : ''} title={l.hint} onClick={() => onPick(l.id)}>
+        <button key={l.id} type="button" role="radio" aria-checked={value === l.id} tabIndex={value === l.id ? 0 : -1} className={value === l.id ? 'on' : ''} title={l.hint} onClick={() => onPick(l.id)}>
           {l.name}
         </button>
       ))}
@@ -87,9 +104,9 @@ export function WatchSheet({ initial = 'looks' }: { initial?: 'looks' | 'lines' 
       </div>
       {looks.mode === 'one' ? (
         <div className="w-one">
-          <div className="w-tiles" role="radiogroup" aria-label="Look for everything">
+          <div className="w-tiles" role="radiogroup" aria-label="Look for everything" onKeyDown={lookKeys(looks.all, (l) => set({ all: l }))}>
           {LOOKS.map((l) => (
-            <button key={l.id} type="button" role="radio" aria-checked={looks.all === l.id} className={`w-tile${looks.all === l.id ? ' on' : ''}`} title={l.hint} onClick={() => set({ all: l.id })}>
+            <button key={l.id} type="button" role="radio" aria-checked={looks.all === l.id} tabIndex={looks.all === l.id ? 0 : -1} className={`w-tile${looks.all === l.id ? ' on' : ''}`} title={l.hint} onClick={() => set({ all: l.id })}>
               <LookPicture look={l.id} />
               {l.name}
             </button>
@@ -108,7 +125,6 @@ export function WatchSheet({ initial = 'looks' }: { initial?: 'looks' | 'lines' 
         </div>
       )}
       <div className="w-sfoot">
-        <span>The Look switch on Watch sets the look too.</span>
         <span className="w-count">
           Saved here: {yt} YouTube, {tw} Twitch
         </span>
