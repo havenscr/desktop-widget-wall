@@ -652,6 +652,7 @@ const EXPECT = [
   ['meet', 'tools: open', ['Open Tools', 'Keys file', 'Second calendar']],
   // The Tools drawer, over each place and in each hard state
   ['work', 'tools: open', ['Accounts', 'Sources', 'Video look', 'Keys file', 'Build 7c9f442']],
+  ['work', 'tools: ringed accounts', ['Accounts', 'Sources', 'Video look', 'Keys file']],
   ['work', 'tools: account signed out', ['Work calendar', 'Second calendar', 'Signed out', 'Sign in']],
   ['work', 'tools: sources failing', ['Sources', 'never']],
   ['work', 'tools: keys refused', 'keys.json refused: app 3, key 7'],
