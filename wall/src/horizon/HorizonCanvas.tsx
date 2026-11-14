@@ -11,6 +11,9 @@ import { audioBands, audioBeats, clearDanceHistory, danceKick, pauseDanceHistory
 import { loudness, smoothStep } from '../audio/model';
 import { CAMERAS, HOME_MORNING, MOON_PLACES, cameraFor, cloudShiftFor, glideCamera, localDay, settled, startGlide, stepGlide, type CameraPreset, type Glide } from './cameras';
 import {
+  REST_LOOK,
+  REST_OPACITY,
+  REST_OPACITY_VISUALIZER,
   REST_PHASE,
   createEchoMotion,
   createEchoSampler,
@@ -31,9 +34,25 @@ import { frameDelta, shouldDraw } from './pacing';
 import { clearGridPulse, createGridPulse, stepGridPulse } from './pulse';
 import { parseReview, parseSkyReview } from './review';
 import { publishCamera } from './signal';
-import { frontHost, moonFor, useSkyClaim, useSkyStore } from './sky';
+import { frontHost, moonFor, useSkyClaim, useSkyStore, type SkyBox } from './sky';
 import { drawVeil, veilStrength } from './veil';
 import { drawHorizon, type HorizonGrid, type HorizonOptions } from './index';
+import { lineSettings } from './linesSettings';
+import { parseLineProbe } from './lineProbe';
+import {
+  FLAT_REST_OPACITY,
+  ampScale,
+  createLineFrame,
+  createLineTypes,
+  createMountainCap,
+  danceLimit,
+  drawLineType,
+  lineStops,
+  setMountainCap,
+  sstep,
+  stepLineTypes,
+  typeLiveShare,
+} from './lineTypes';
 
 const REDRAW_MS = 60_000;
 /**
@@ -49,6 +68,8 @@ const VEIL_SETTLE_MS = 800;
 const FRONT_STYLE = { position: 'fixed', left: 0, top: 0, pointerEvents: 'none', clipPath: `inset(0 0 0 ${MAIN_LEFT}px)` } as const;
 /** Home's morning rule is re-checked this often. */
 const MORNING_CHECK_MS = 60_000;
+/** No picture boxes (the fit check's deliberate break only). */
+const NO_BOXES: readonly SkyBox[] = [];
 
 /**
  * Canvas filling the stage. Backing store = stage scale x devicePixelRatio.
@@ -79,6 +100,12 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
   // The sky layers (`sky.ts`): while a screen gives an element for it, the ground is drawn on a
   // second canvas mounted there, in front of whatever the screen puts into the sky.
   const claims = useSkyStore((s) => s.claims);
+  const lineBoxes = useRef<SkyBox[]>([]);
+  useEffect(() => {
+    const boxes = lineBoxes.current;
+    boxes.length = 0;
+    for (const id in claims) if (claims[id].boxes) boxes.push(...claims[id].boxes!);
+  }, [claims]);
   // Dev builds only: `?sky=front` mounts the front canvas everywhere, `?sky=flat` never, `?skymoon=x,y,r` moves the moon (fit-check breaks, cost measurement).
   const [skyReview] = useState(() => (import.meta.env.DEV ? parseSkyReview(window.location.search) : null));
   const alwaysFront = !zen && skyReview?.front === 'always';
@@ -119,9 +146,16 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
   // The drawn line count: follows the camera's `en` through a glide at no more than
   // `LINE_COUNT_RATE` counts a second, so each line crossfades slowly, and lands on it exactly.
   const lineCount = useRef(glide.current.to.en);
-  // The echo's clock and the real-band sampler.
+  // The echo's clock and the real-band sampler, read through the Height cap (`lineTypes.ts`; off
+  // at the usual setting, so the bands are read exactly as before).
   const echoT = useRef(0);
-  const sampler = useRef(createEchoSampler());
+  const cap = useRef(createMountainCap());
+  const sampler = useRef(createEchoSampler(cap.current.bands));
+  // The new line types (Bars, Ribbon, Sparks, Skyline): their state and one frame input, made once.
+  const types = useRef(createLineTypes());
+  const typeFrame = useRef(createLineFrame());
+  // Dev builds only: `?lineprobe=1` counts a new type's pixels inside the picture boxes (the fit check).
+  const [lineProbe] = useState(() => (import.meta.env.DEV ? parseLineProbe(window.location.search) : null));
   // The scratch canvas for the lake reflection, made on first use.
   const reflection = useRef(createReflection());
   // Tell Watt (read only) where the camera is going and whether it is moving; cleared on unmount
@@ -179,9 +213,14 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
     let T = 0;
     let last = 0;
     let raf = 0;
+    let drawDt = 1 / 30;
+    const measureCost = import.meta.env.DEV && new URLSearchParams(window.location.search).has('linecost');
+    let costFrames = 0;
+    let costMs = 0;
 
     const paint = () => {
       if (document.hidden) return;
+      const costStart = measureCost ? performance.now() : 0;
       const scale = fitScale(window.innerWidth, window.innerHeight) * (window.devicePixelRatio || 1);
       const width = Math.round(STAGE_WIDTH * scale);
       const height = Math.round(STAGE_HEIGHT * scale);
@@ -192,6 +231,12 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
       const camera = glideCamera(glide.current);
+      // The Lines setting (`linesSettings.ts`), read from the store without a render.
+      const lines = lineSettings();
+      const newType = lines.type !== 'mountains';
+      const flat = lines.rest === 'flat';
+      const tf = typeFrame.current;
+      let typeShown = false;
       const options: HorizonOptions = {
         width,
         height,
@@ -206,19 +251,46 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
       // The grid pulse never appears in the review still or under reduced motion's still frames.
       if (!still) {
         const m = motion.current;
-        // The lines take the playing cover's colours (cross-faded between tracks; teal with no cover).
-        let echo = echoOptions(camera, loud.current, echoT.current, gate.current.value * awake.current, m.rest, undefined, undefined, m.rest < 1 ? danceKick() * (1 - m.rest) : 0, liveTint(performance.now()));
+        // The lines take the playing cover's colours (cross-faded between tracks; teal with no cover),
+        // or the chosen palette, for every type.
+        const stops = lineStops(lines.colours, liveTint(performance.now()));
+        let echo = echoOptions(camera, loud.current, echoT.current, gate.current.value * awake.current, m.rest, lines.rest, flat ? FLAT_REST_OPACITY : undefined, m.rest < 1 ? danceKick() * (1 - m.rest) : 0, stops);
+        if (echo && lines.lively !== 50) echo.amp *= ampScale(lines.lively);
         const turningOff = glide.current.to.ea === 0 && glide.current.progress < 1;
         if (echo && turningOff && echoStrength(echo) > lastEchoA.current) {
           scaleEcho(echo, lastEchoA.current / echoStrength(echo));
           if (echoStrength(echo) <= 0.005) echo = null;
         }
         lastEchoA.current = echo ? echoStrength(echo) : 0;
+        if (echo && newType) {
+          // A new type in place of the ridgelines: drawn after the picture at the live opacity this
+          // camera gives the lines (calm on Work and Home), lying down as the music stops. With Ridge
+          // and levels the wall's own resting lines fade in under it; with Flat one calm line does.
+          tf.type = lines.type;
+          tf.height = lines.height;
+          tf.smooth = lines.smooth;
+          tf.amp = echo.amp;
+          tf.cx = echo.cx ?? STAGE_WIDTH / 2;
+          tf.hs = echo.hs ?? 900;
+          tf.hy = camera.hy;
+          tf.scale = scale;
+          tf.live = echo.a * typeLiveShare(lines.type, m.rest, flat);
+          tf.restLine = flat ? sstep(m.rest) * Math.min(1, gate.current.value * awake.current) : 0;
+          tf.kick = danceKick();
+          tf.dt = drawDt;
+          tf.boxes = lineProbe?.noClip ? NO_BOXES : lineBoxes.current;
+          tf.stops = stops;
+          typeShown = true;
+          const k = visualizerWeight(camera);
+          const restOpacity = (REST_OPACITY + (REST_OPACITY_VISUALIZER - REST_OPACITY) * k) * sstep(m.rest);
+          echo = !flat && m.rest > 0.02 ? echoOptions(camera, 0, echoT.current, gate.current.value * awake.current, 1, REST_LOOK, restOpacity, 0, stops) : null;
+        }
         if (echo) {
           echo.n = Math.max(1, lineCount.current);
           echo.drift = m.drift;
           // The real bands, while any line still follows them (at rest none does, so none are read).
-          if (m.rest < 1) {
+          if (m.rest < 1 && !newType) {
+            setMountainCap(cap.current, lines.height, echo.amp, danceLimit(lines.lively));
             const s = sampler.current;
             s.t = echoT.current;
             echo.sample = s.sample;
@@ -227,8 +299,22 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
         }
         if (grid.current) options.grid = grid.current;
       } else {
-        // The still frame shows the lines at rest.
-        const echo = echoOptions(camera, 0, 0, initialEchoGate(glide.current).value, 1);
+        // The still frame shows the lines at rest, in the chosen resting look (Flat: one calm line).
+        const open = initialEchoGate(glide.current).value;
+        const echo = newType && flat ? null : echoOptions(camera, 0, 0, open, 1, lines.rest, flat ? FLAT_REST_OPACITY : undefined, 0, lineStops(lines.colours));
+        if (newType && open > 0.001) {
+          // A new type at rest, as the moving frame leaves it once settled.
+          tf.type = lines.type;
+          tf.hy = camera.hy;
+          tf.cx = camera.ecx;
+          tf.scale = scale;
+          tf.live = typeLiveShare(lines.type, 1, flat) * open;
+          tf.restLine = flat ? open : 0;
+          tf.dt = 0;
+          tf.boxes = lineBoxes.current;
+          tf.stops = lineStops(lines.colours);
+          typeShown = true;
+        }
         if (echo) {
           echo.drift = REST_PHASE;
           options.echo = echo;
@@ -264,8 +350,15 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
       } else {
         drawHorizon(ctx, options);
       }
+      // A new type belongs to the land: on the front canvas when there is one, in front of a video
+      // behind the mountains as the ridgelines are, and never inside a claimed picture box.
+      if (typeShown) {
+        stepLineTypes(types.current, tf);
+        drawLineType(fctx ?? ctx, types.current, tf);
+        if (lineProbe) lineProbe.run(types.current, tf, lineBoxes.current, canvas);
+      }
       // The lake mirrors the finished frame on the visualizer camera, only while lines are drawn.
-      if (REFLECT && options.echo) {
+      if (REFLECT && lines.reflection && (options.echo || typeShown)) {
         const open = still ? initialEchoGate(glide.current).value : gate.current.value * awake.current;
         const alpha = reflectionAlpha(visualizerWeight(camera), open);
         if (fctx) drawReflection(reflection.current, fctx, width, height, camera.hy, scale, alpha, undefined, canvas);
@@ -301,6 +394,11 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
         }
         drawVeil(fctx, width, height, v.a);
       }
+      if (measureCost) {
+        costMs += performance.now() - costStart;
+        costFrames++;
+        canvas.dataset.lineCost = `${costFrames},${costMs.toFixed(3)},${(costMs / costFrames).toFixed(4)}`;
+      }
     };
     repaint.current = paint;
 
@@ -308,6 +406,7 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
       raf = requestAnimationFrame(frame);
       if (!shouldDraw(ts, last, document.hidden)) return;
       const dt = frameDelta(ts, last);
+      drawDt = dt;
       last = ts;
       T += dt;
       const audio = useAudioStore.getState();

@@ -4,6 +4,7 @@ import { registerDaysMocks } from './days';
 import { registerDeckMocks } from './deck';
 import { registerGalleryMocks } from './gallery';
 import { registerHomeMocks } from './home';
+import { registerLinesMocks } from './lines';
 import { registerMeetMocks } from './meet';
 import { registerMediaMocks } from './media';
 import { registerOmniMocks } from './omni';
@@ -36,6 +37,7 @@ export function registerDevMocks(): void {
   registerSignalMocks();
   registerSpotifyMocks();
   registerWatchMocks();
+  registerLinesMocks();
   registerDaysMocks();
   registerOnAirMocks();
   mocks.set('wall2_build_info', () => ({ commit: 'dev', builtAt: '2026-11-13T09:05Z' }));

@@ -236,7 +236,7 @@ export interface HorizonEcho {
 }
 
 /** The resting looks of the ridgelines; see `REST_LOOK` in echo.ts. */
-export const REST_LOOKS = ['contours', 'levels', 'haze', 'ridge', 'ridgelevels'] as const;
+export const REST_LOOKS = ['contours', 'levels', 'haze', 'ridge', 'ridgelevels', 'flat'] as const;
 export type RestLook = (typeof REST_LOOKS)[number];
 /* The resting looks' sizes, from the concept page (a 1280 by 300 drawing whose mountain peaks at
    0.641 of its 150 px height): vertical sizes are in units of that peak, so they keep their share
@@ -244,7 +244,7 @@ export type RestLook = (typeof REST_LOOKS)[number];
 const REST_PEAK=.641*150,REST_LEVEL_TOP=.92*150/REST_PEAK,REST_LW=1,REST_LAG=.22;
 /* Fill under each resting line, as a share of the live fill: the layered look stays for contours
    and levels; haze and ridge draw lines only (their fills would paint the sky or recolour the range). */
-const REST_FILL:Record<RestLook,number>={contours:1,levels:1,haze:0,ridge:0,ridgelevels:1};
+const REST_FILL:Record<RestLook,number>={contours:1,levels:1,haze:0,ridge:0,ridgelevels:1,flat:1};
 /* 'ridgelevels': the top line traces the ridge, the others are straight levels cut off by the mountain, up to this share of its height.
    A line between the top two blends its level, share and glow into the ridge's by its place, so a drifting line never jumps; at rest the places are whole. */
 const REST_RL_TOP=.9;
@@ -380,7 +380,7 @@ export function draw(ctx:CanvasRenderingContext2D,o:HorizonDrawOptions):HorizonD
   const set=(n:number,wk:number)=>{
   /* a line's resting height at sample i: kc runs 0 (the lowest line) to n - 1 (the top one), q is kc / (n - 1);
      the haze ranges are softened (box smoothed) the farther back they sit */
-  const rh=(i:Any,kc:Any,q:Any)=>LK==='levels'?Math.min(cr[i],vu*REST_LEVEL_TOP*REST_PEAK*(kc+1)/(n+.6)+2.5*vu*Math.sin(Math.PI*i*2/W)*(kc/n))
+  const rh=(i:Any,kc:Any,q:Any)=>LK==='flat'?0:LK==='levels'?Math.min(cr[i],vu*REST_LEVEL_TOP*REST_PEAK*(kc+1)/(n+.6)+2.5*vu*Math.sin(Math.PI*i*2/W)*(kc/n))
    :LK==='haze'?hz(Math.round(clamp(((i*2-q*70*hu)*(1+q*.1)-q*.03*W)/2,0,N-1)),Math.round(q*30))*(1+q*.42)+q*26*vu
    :LK==='ridge'?Math.max(0,cr[i]-Math.max(0,2-kc)*7*vu)
    :LK==='ridgelevels'?mix(Math.min(cr[i],cmax*REST_RL_TOP*(kc+1)/(n-1)),cr[i],clamp(kc-(n-2),0,1))
