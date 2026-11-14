@@ -433,7 +433,7 @@ it('Spotify signed out with a null reason (as Rust sends it) shows Not connected
   expect(await hoverText(row)).toBe('');
 });
 
-it('Spotify with a reason shows it on hover', async () => {
+it('Spotify names a saved sign-in read failure', async () => {
   mocks.set('wall2_meet_next', () => ({ accounts: [], meetings: [] }));
   mocks.set('wall2_spotify_status', () => ({ setup: true, signedIn: false, reason: 'failed' }));
   render(
@@ -443,5 +443,21 @@ it('Spotify with a reason shows it on hover', async () => {
     </>,
   );
   await flush();
-  expect(await hoverText(screen.getByText('Not connected').closest('li')!)).toContain('failed');
+  expect(screen.getByText('Could not read the saved sign-in')).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Retry' })).toBeTruthy();
+});
+
+it('Spotify status is read again when Tools opens and when the window focuses', async () => {
+  const status = vi.fn(() => ({ setup: true, signedIn: false, reason: null }));
+  mocks.set('wall2_meet_next', () => ({ accounts: [], meetings: [] }));
+  mocks.set('wall2_spotify_status', status);
+  render(<Accounts />);
+  await flush();
+  expect(status).toHaveBeenCalledTimes(1);
+  useToolsStore.getState().openDrawer();
+  await flush();
+  expect(status).toHaveBeenCalledTimes(2);
+  window.dispatchEvent(new Event('focus'));
+  await flush();
+  expect(status).toHaveBeenCalledTimes(3);
 });

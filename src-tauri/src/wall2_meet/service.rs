@@ -154,9 +154,16 @@ pub fn record(core: &mut Core, id: &str, state: &str, reason: Option<&str>, now:
     record_detail(core, id, state, reason, now, None);
 }
 
+fn log_account_key(id: &str, position: usize) -> String {
+    if (1..=16).contains(&id.len()) && id.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-') { id.into() } else { format!("account-{}", position.max(1)) }
+}
+
 /// `record`, plus the Graph failure details when there are some. A line with details is
 /// written for every failure, changed state or not, so each failed call can be traced.
 pub fn record_detail(core: &mut Core, id: &str, state: &str, reason: Option<&str>, now: u64, detail: Option<&Diag>) {
+    record_detail_at(core,id,1,state,reason,now,detail);
+}
+fn record_detail_at(core: &mut Core, id: &str, position: usize, state: &str, reason: Option<&str>, now: u64, detail: Option<&Diag>) {
     let reason = reason.filter(|r| is_valid_reason(r)).map(str::to_string);
     let new = (state.to_string(), reason);
     let old = core.states.get(id).map(|(s, _)| s.as_str()).unwrap_or("start").to_string();
@@ -166,8 +173,8 @@ pub fn record_detail(core: &mut Core, id: &str, state: &str, reason: Option<&str
     // The queue is drained after every read; the cap only guards a caller that never drains.
     if core.log_lines.len() < 64 {
         let line = match detail {
-            Some(d) => format_line_detail(&utc_iso(now), id, &old, state, new.1.as_deref(), &d.log_fields()),
-            None => format_line(&utc_iso(now), id, &old, state, new.1.as_deref()),
+            Some(d) => format_line_detail(&utc_iso(now), &log_account_key(id,position), &old, state, new.1.as_deref(), &d.log_fields()),
+            None => format_line(&utc_iso(now), &log_account_key(id,position), &old, state, new.1.as_deref()),
         };
         core.log_lines.push(line);
     }
@@ -588,7 +595,7 @@ fn settle(
             continue;
         }
         let Read { state, meetings: fresh, reason, diag, .. } = read;
-        record_detail(core, &acct.id, state.as_str(), reason.as_deref(), now, diag.as_ref());
+        record_detail_at(core, &acct.id, acct.position, state.as_str(), reason.as_deref(), now, diag.as_ref());
         let list = match fresh {
             Some(l) => {
                 if keep_last {
@@ -844,7 +851,12 @@ pub fn complete_sign_in(
         ("code_verifier", granted.verifier.as_str()),
         ("scope", SCOPE),
     ];
-    match tokens.post(&acct.tenant, &form) {
+    let ctx = Ctx::new(Kind::Next, clock_of(core), BUDGET);
+    let (mut reply, mut detail) = tokens.post_diag(&acct.tenant, &form, ctx.remaining().min(READ_TIMEOUT), &ctx);
+    if matches!(reply, TokenReply::Transient(_)) && detail.is_some() && useful_sign_in_retry(ctx.remaining()) {
+        (reply, detail) = tokens.post_diag(&acct.tenant, &form, ctx.remaining().min(READ_TIMEOUT), &ctx);
+    }
+    match reply {
         TokenReply::Ok { access, expires_in, refresh: Some(refresh) } => {
             // Store and bump the generation in one step, so a read that began earlier cannot
             // slip its own tokens in between. The store write under the lock is deliberate
@@ -852,28 +864,44 @@ pub fn complete_sign_in(
             let mut guard = lock(core);
             if !store.set(&acct.id, &refresh) {
                 drop(guard);
-                return Err(sign_in_failed(core, acct, STORE_WRITE, now));
+                return Err(sign_in_failed(core, acct, STORE_WRITE, now, None));
             }
             let core = &mut *guard;
             *core.generations.entry(acct.id.clone()).or_insert(0) += 1;
             core.pending.remove(&acct.id);
             core.cache.insert(acct.id.clone(), Cached { access, expires_at: now + expires_in });
-            record(core, &acct.id, "signed-in", None, now);
+            record_detail_at(core, &acct.id, acct.position, "signed-in", None, now, None);
             Ok(())
         }
         // A reply without a refresh token is a 2xx that cannot be used.
-        TokenReply::Ok { refresh: None, .. } => Err(sign_in_failed(core, acct, "token-200", now)),
-        TokenReply::Rejected(why) | TokenReply::Transient(why) | TokenReply::Refused(why) | TokenReply::Failed(why) => {
-            Err(sign_in_failed(core, acct, &why, now))
+        TokenReply::Ok { refresh: None, .. } => Err(sign_in_failed(core, acct, "token-200", now, detail.as_ref())),
+        TokenReply::Rejected(why) | TokenReply::Refused(why) | TokenReply::Failed(why) => {
+            Err(sign_in_failed(core, acct, &why, now, detail.as_ref()))
+        }
+        TokenReply::Transient(why) => {
+            let reason = if why == "token-network" { sign_in_network_reason(detail.as_ref()) } else { why };
+            Err(sign_in_failed(core, acct, &reason, now, detail.as_ref()))
         }
     }
 }
 
+fn sign_in_network_reason(detail: Option<&Diag>) -> String {
+    let phase = detail.and_then(|d| d.probe.map(|p| p.phase)).or_else(|| detail.and_then(|d| d.net));
+    match phase {
+        Some("dns") => "token-network-dns",
+        Some("tls") => "token-network-tls",
+        Some("timeout") => "token-network-timeout",
+        Some("connect") => "token-network-connect",
+        _ => "token-network",
+    }.to_string()
+}
+fn useful_sign_in_retry(left: Duration) -> bool { left >= Duration::from_secs(2) }
+
 /// Log a failed first redemption and return its reason code for the web view.
-fn sign_in_failed(core: &Mutex<Core>, acct: &Account, reason: &str, now: u64) -> String {
+fn sign_in_failed(core: &Mutex<Core>, acct: &Account, reason: &str, now: u64, detail: Option<&Diag>) -> String {
     let reason = if is_valid_reason(reason) { reason.to_string() } else { "token-400".to_string() };
     let mut core = core.lock().unwrap_or_else(|e| e.into_inner());
-    record(&mut core, &acct.id, "sign-in-failed", Some(&reason), now);
+    record_detail_at(&mut core, &acct.id, acct.position, "sign-in-failed", Some(&reason), now, detail);
     reason
 }
 
@@ -904,6 +932,16 @@ pub fn sign_out(id: &str, store: &dyn SecretStore, core: &Mutex<Core>, links: &M
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn log_account_keys_are_bounded_and_never_email_like() {
+        assert_eq!(log_account_key("hc-2",1), "hc-2");
+        assert_eq!(log_account_key("first@example.test",1), "account-1");
+        assert_eq!(log_account_key("second@example.test",2), "account-2");
+        let mut core=Core::default(); record(&mut core,"person@example.test","unavailable",Some("token-network"),NOW);
+        assert!(core.log_lines[0].contains(" account-1 "));
+        assert!(!core.log_lines[0].contains('@'));
+    }
     use crate::wall2_meet::store::{Chunked, MemoryBlobs};
     use serde_json::{json, Value};
     use std::cell::{Cell, RefCell};
@@ -987,6 +1025,7 @@ mod tests {
             label: id.to_uppercase(),
             client_id: "00000000-0000-0000-0000-000000000000".into(),
             tenant: "common".into(),
+            position: 1,
         }
     }
 
@@ -1526,6 +1565,62 @@ mod tests {
         sign_out("work", &store, &core, &links);
         assert_eq!(store.get("work"), None);
         assert!(core.lock().unwrap().cache.is_empty());
+    }
+
+    #[test]
+    fn sign_in_retries_one_diagnosed_transport_failure() {
+        struct RetryTokens { calls: Cell<u8> }
+        impl TokenClient for RetryTokens {
+            fn post(&self, _tenant: &str, _form: &[(&str, &str)]) -> TokenReply { unreachable!() }
+            fn post_diag(&self, _tenant: &str, _form: &[(&str, &str)], _limit: Duration, ctx: &Ctx) -> (TokenReply, Option<Diag>) {
+                let call = self.calls.get();
+                self.calls.set(call + 1);
+                if call == 0 {
+                    (TokenReply::Transient("token-network".into()), Some(Diag { kind: ctx.kind, host: "login", net: Some("connect"), status: 0, code: None, inner: None, request_id: None, client_request_id: None, attempt: 1, elapsed_ms: 1, probe: None }))
+                } else {
+                    (ok_token("access", Some("refresh")), None)
+                }
+            }
+        }
+        let store = Chunked(MemoryBlobs::default());
+        let core = Mutex::new(Core::default());
+        let tokens = RetryTokens { calls: Cell::new(0) };
+        let granted = super::super::auth::Granted { code: "c".into(), verifier: "v".into(), redirect_uri: "http://localhost:1/auth-callback.html".into() };
+        assert!(complete_sign_in(&acct("work"), &granted, &store, &tokens, &core, NOW).is_ok());
+        assert_eq!(tokens.calls.get(), 2);
+    }
+
+    #[test]
+    fn sign_in_retry_requires_two_useful_seconds_left() {
+        assert!(!useful_sign_in_retry(Duration::from_millis(1999)));
+        assert!(useful_sign_in_retry(Duration::from_secs(2)));
+    }
+
+    #[test]
+    fn sign_in_never_retries_a_server_answer() {
+        struct Answers { status: u16, calls: Cell<u8> }
+        impl TokenClient for Answers {
+            fn post(&self,_:&str,_:&[(&str,&str)])->TokenReply{unreachable!()}
+            fn post_diag(&self,_:&str,_:&[(&str,&str)],_:Duration,ctx:&Ctx)->(TokenReply,Option<Diag>){self.calls.set(self.calls.get()+1);let reply=match self.status{400=>TokenReply::Refused("token-400".into()),429=>TokenReply::Failed("token-429".into()),_=>TokenReply::Failed("token-500".into())};(reply,Some(Diag{kind:ctx.kind,host:"login",net:None,status:self.status,code:None,inner:None,request_id:None,client_request_id:None,attempt:1,elapsed_ms:1,probe:None}))}
+        }
+        let granted=super::super::auth::Granted{code:"c".into(),verifier:"v".into(),redirect_uri:"http://localhost:1/auth-callback.html".into()};
+        for status in [400,429,500] {
+            let tokens=Answers{status,calls:Cell::new(0)}; let core=Mutex::new(Core::default()); let store=Chunked(MemoryBlobs::default());
+            assert!(complete_sign_in(&acct("work"),&granted,&store,&tokens,&core,NOW).is_err()); assert_eq!(tokens.calls.get(),1);
+        }
+    }
+
+    #[test]
+    fn failed_sign_in_logs_phase_family_and_family_results() {
+        struct Down;
+        impl TokenClient for Down {
+            fn post(&self,_:&str,_:&[(&str,&str)])->TokenReply{unreachable!()}
+            fn post_diag(&self,_:&str,_:&[(&str,&str)],_:Duration,ctx:&Ctx)->(TokenReply,Option<Diag>){(TokenReply::Transient("token-network".into()),Some(Diag{kind:ctx.kind,host:"login",net:Some("connect"),status:0,code:None,inner:None,request_id:None,client_request_id:None,attempt:1,elapsed_ms:9,probe:Some(super::super::netprobe::NetProbe{phase:"connect",af:"ipv4",resolved:2,dns_ms:Some(1),v4:super::super::netprobe::Probe::Fail(4),v6:super::super::netprobe::Probe::Fail(5),probe_ms:9})}))}
+        }
+        let core=Mutex::new(Core::default()); let store=Chunked(MemoryBlobs::default()); let granted=super::super::auth::Granted{code:"c".into(),verifier:"v".into(),redirect_uri:"http://localhost:1/auth-callback.html".into()};
+        assert_eq!(complete_sign_in(&acct("hc"),&granted,&store,&Down,&core,NOW),Err("token-network-connect".into()));
+        let line=&core.lock().unwrap().log_lines[0];
+        for field in ["net=connect","af=ipv4","v4=fail4","v6=fail5"] { assert!(line.contains(field),"{line}"); }
     }
 
     fn reasons(p: &MeetPayload) -> Vec<Option<&str>> {

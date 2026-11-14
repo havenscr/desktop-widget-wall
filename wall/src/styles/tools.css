@@ -23,6 +23,11 @@
   font: 22px/1.3 var(--body);
   color: var(--tx);
 }
+.tools-drawer:has(.tools-note) {
+  gap: 0;
+  padding-top: 3px;
+  padding-bottom: 0;
+}
 .tools-drawer * {
   box-sizing: border-box;
 }
@@ -91,7 +96,7 @@
   outline-offset: 10px;
 }
 /* The Accounts section ringed for 2 seconds when the drawer opens from the Meet link. */
-.tools-block.ring {
+.tools-block.tools-ringed {
   outline-color: rgba(53, 230, 234, 0.55);
   box-shadow: 0 0 30px -8px rgba(53, 230, 234, 0.5);
 }
@@ -146,8 +151,8 @@
   display: block;
 }
 .tools-note {
-  font: 16px/1.3 var(--body);
-  padding-top: 6px;
+  font: 16px/1.1 var(--body);
+  padding-top: 4px;
 }
 .tools-faint {
   font: 16px/1.3 var(--body);
