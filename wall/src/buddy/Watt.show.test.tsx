@@ -23,6 +23,8 @@ import { Watt, restClock } from './Watt';
  * rectangles, so the seat is shown to follow whatever the selector gives); one test uses the real
  * selector with the drive-in look on.
  */
+// These tests step timers for minutes of his time: a 20 second limit each.
+vi.setConfig({ testTimeout: 20_000 });
 const screen = vi.hoisted(() => ({ rect: null as ScreenRect | null }));
 vi.mock('../unwind/watch/store', async (original) => {
   const real = await original<typeof import('../unwind/watch/store')>();
