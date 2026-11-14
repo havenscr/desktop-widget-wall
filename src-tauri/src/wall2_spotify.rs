@@ -443,9 +443,13 @@ fn valid_query(query: &str) -> Result<String, String> {
 pub async fn wall2_spotify_search(window: WebviewWindow, query: String) -> Result<Search, String> {
     require(&window)?;
     let query = valid_query(&query)?;
-    tauri::async_runtime::spawn_blocking(move || { let cfg = config(window.app_handle())?; let current_user = profile(&cfg)?; let v = get_track_json(&cfg, &search_path(&query))?; Ok(Search { tracks: shape_list(v.get("tracks").unwrap_or(&Value::Null), "track", None), albums: shape_list(v.get("albums").unwrap_or(&Value::Null), "album", None), playlists: shape_list(v.get("playlists").unwrap_or(&Value::Null), "playlist", Some(&current_user)) }) }).await.map_err(|_| "failed".to_string())?
+    tauri::async_runtime::spawn_blocking(move || { let cfg = config(window.app_handle())?; let current_user = profile(&cfg)?; search_with(&cfg, &query, &current_user, &RealHttp, &RealCreds) }).await.map_err(|_| "failed".to_string())?
 }
 fn search_path(query: &str) -> String { format!("/search?market=from_token&type=track,album,playlist&limit=10&q={}", urlencoding::encode(query)) }
+fn search_with(cfg: &Config, query: &str, current_user: &Profile, http: &dyn Http, creds: &dyn Creds) -> Result<Search, String> {
+    let v=get_json_with_limit(cfg,&search_path(query),TRACK_BODY,http,creds)?;
+    Ok(Search { tracks: shape_list(v.get("tracks").unwrap_or(&Value::Null), "track", None), albums: shape_list(v.get("albums").unwrap_or(&Value::Null), "album", None), playlists: shape_list(v.get("playlists").unwrap_or(&Value::Null), "playlist", Some(current_user)) })
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -474,8 +478,9 @@ fn add_album_to_tracks(page: &mut Value, album: &Value) {
 }
 fn validate_tracks(kind: &str, id: &str, page: Option<u32>) -> Result<u32, String> { let page = page.unwrap_or(0); if !matches!(kind, "playlist" | "album") || !valid_id(id) || page > 39 { Err("invalid id".into()) } else { Ok(page) } }
 fn tracks_path(kind: &str, id: &str, page: u32) -> String { if kind == "playlist" { format!("/playlists/{id}/items?market=from_token&limit=50&offset={}&additional_types=track&fields=items(item(id,name,type,is_local,is_playable,restrictions,artists(name),album(name,images),duration_ms)),next,total", page as usize * PAGE_SIZE) } else { format!("/albums/{id}/tracks?market=from_token&limit=50&offset={}", page as usize * PAGE_SIZE) } }
+fn tracks_with(cfg:&Config,kind:&str,id:&str,page:u32,http:&dyn Http,creds:&dyn Creds)->Result<TrackPage,String>{ let value=get_json_with_limit(cfg,&tracks_path(kind,id,page),TRACK_BODY,http,creds)?; Ok(shape_track_page(&value,kind)) }
 #[tauri::command]
-pub async fn wall2_spotify_tracks(window: WebviewWindow, kind: String, id: String, page: Option<u32>) -> Result<TrackPage, String> { require(&window)?; let page = validate_tracks(&kind, &id, page)?; tauri::async_runtime::spawn_blocking(move || { let cfg = config(window.app_handle())?; let path = tracks_path(&kind, &id, page); let mut value = get_track_json(&cfg, &path)?; if kind == "album" { let album = get_track_json(&cfg, &format!("/albums/{id}?market=from_token"))?; add_album_to_tracks(&mut value, &album); } Ok(shape_track_page(&value, &kind)) }).await.map_err(|_| "failed".to_string())? }
+pub async fn wall2_spotify_tracks(window: WebviewWindow, kind: String, id: String, page: Option<u32>) -> Result<TrackPage, String> { require(&window)?; let page = validate_tracks(&kind, &id, page)?; tauri::async_runtime::spawn_blocking(move || { let cfg = config(window.app_handle())?; if kind=="playlist" { return tracks_with(&cfg,&kind,&id,page,&RealHttp,&RealCreds) } let path = tracks_path(&kind, &id, page); let mut value = get_track_json(&cfg, &path)?; let album = get_track_json(&cfg, &format!("/albums/{id}?market=from_token"))?; add_album_to_tracks(&mut value, &album); Ok(shape_track_page(&value, &kind)) }).await.map_err(|_| "failed".to_string())? }
 
 #[derive(Debug, Serialize, PartialEq)] pub struct Queue { current: Option<Track>, next: Vec<Track> }
 fn shape_queue(v: &Value) -> Queue { Queue { current: v.get("currently_playing").and_then(shape_track), next: v.get("queue").and_then(Value::as_array).into_iter().flatten().filter_map(shape_track).take(10).collect() } }
@@ -846,6 +851,22 @@ mod tests {
     fn token_ok(refresh: Option<&str>) -> Result<HttpReply,()> { hr(200, &format!(r#"{{"access_token":"access","expires_in":3600{}}}"#, refresh.map(|r| format!(r#", "refresh_token":"{r}""#)).unwrap_or_default())) }
     fn reset_state() { *token().lock().unwrap()=None; *not_before().lock().unwrap()=None; *profile_cache().lock().unwrap()=None; CANCEL_SIGN_IN.store(false,Ordering::SeqCst); SIGNING_IN.store(false,Ordering::SeqCst); }
     fn cfg() -> Config { Config { client_id:"a".repeat(32),redirect_port:8898 } }
+
+    #[test]
+    fn search_and_playlist_track_reads_send_the_2026_request_paths() {
+        let _test_guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        reset_state();
+        *token().lock().unwrap()=Some(Token{access:"ok".into(),expires:Instant::now()+Duration::from_secs(3600)});
+        let http=FakeHttp::new(vec![],vec![hr(200,r#"{"items":[],"total":0,"next":null}"#),hr(200,r#"{"tracks":{"items":[]},"albums":{"items":[]},"playlists":{"items":[]}}"#)]);
+        let creds=FakeCreds::new(Some("old"));
+        tracks_with(&cfg(),"playlist",ID,2,&http,&creds).unwrap();
+        search_with(&cfg(),"two words",&Profile{id:"me".into(),display_name:None},&http,&creds).unwrap();
+        let paths=http.paths();
+        assert!(paths[0].starts_with(&format!("/playlists/{ID}/items?")));
+        for part in ["limit=50","offset=100","additional_types=track","fields=items(item("] { assert!(paths[0].contains(part),"{part}"); }
+        assert!(paths[1].starts_with("/search?"));
+        assert!(paths[1].contains("limit=10"));
+    }
 
     #[test]
     fn shuffled_play_sets_shuffle_before_play_and_ignores_only_shuffle_failure() {
