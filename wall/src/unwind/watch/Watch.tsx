@@ -16,7 +16,7 @@ import { useSkyClaim, useSkyKeepClear } from '../../horizon/sky';
 import { useSignalStore } from '../../signals/store';
 import { tip } from '../../ui/HoverTip';
 import { kindName, refKey, validRef, type WatchKind, type WatchRef } from './links';
-import { DriveInFrame } from './DriveInFrame';
+import { DriveInFrame, driveInMode } from './DriveInFrame';
 import { HologramEmitter, HologramPlate } from './HologramStage';
 import { LOOKS, LOOK_BOXES, layeredNow, lookFor, lookTargetName, ownsTheMoonSky, type LookId } from './looks';
 import { PlayerFrame, playerLink } from './PlayerFrame';
@@ -311,6 +311,9 @@ function VideoStage({ item, look }: { item: WatchRef & { label: string }; look: 
   const audience = useWatchStore(driveInAudience);
   const needsClick = useWatchStore((s) => s.needsClick);
   const paused = useWatchStore((s) => s.paused);
+  const started = useWatchStore((s) => s.report.started);
+  const ended = useWatchStore((s) => s.report.ended);
+  const clickHint = useWatchStore((s) => s.clickHint);
   const [front, setFront] = useState<HTMLDivElement | null>(null);
   useWatchSky(look, front, needsClick);
   const sky = look === 'sky';
@@ -332,7 +335,7 @@ function VideoStage({ item, look }: { item: WatchRef & { label: string }; look: 
         {/* The feathered glow (in front of the land, with its picture) and the sun's halo (behind it). */}
         {look === 'feather' ? <div className="w-glow" aria-hidden="true" /> : null}
         {look === 'sun' ? <div className="w-halo" aria-hidden="true" /> : null}
-        {look === 'drivein' ? <DriveInFrame mode={paused ? 'paused' : 'playing'} /> : null}
+        {look === 'drivein' ? <DriveInFrame mode={driveInMode({ paused, started, needsClick, clickHint, ended, reports: item.kind !== 'twitch' })} /> : null}
         {look === 'drivein' ? <div className="w-spill" aria-hidden="true" /> : null}
         <div className="w-screen">
           <PlayerFrame key={refKey(item)} item={item} title={item.label} />
