@@ -28,7 +28,7 @@
 // CI does not run this; run it by hand before a layout change is handed over.
 //
 //   WALL_CHROME=/path/to/chrome-or-headless-shell npm --prefix wall run fit-check
-//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, header, deck, tiles, picker, chips, heading, zenhint, strip, fold, drawer, rows, handle, sky, floor, sun, tools, toolsnames, meetfill, meetempty, fy-height, key-edge, hide-pill, hide-note, leave-band, rec-chip, rec-height, tile-height, tile-icon, tile-iconbox, drawer-scrim, lwbuttons, lwoverlap, lwsquare, lwring, lwtemp, lwround, sky-front, sky-moon, sky-always, sky-crop, sky-seam, listen-player, listen-card, listen-slot, listen-next)
+//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, header, deck, tiles, picker, chips, heading, zenhint, strip, fold, drawer, rows, handle, sky, floor, sun, tools, toolsnames, meetfill, meetempty, fy-height, key-edge, hide-pill, hide-note, leave-band, rec-chip, rec-height, tile-height, tile-icon, tile-iconbox, drawer-scrim, lwbuttons, lwoverlap, lwsquare, lwring, lwtemp, lwround, sky-front, sky-moon, sky-always, sky-crop, sky-seam, tower-over, tower-wide, tower-box, tower-switch, holo-big, holo-noblend, holo-take, listen-player, listen-card, listen-slot, listen-next)
 //   npm --prefix wall run fit-check -- --self-test
 //
 // WALL_CHROME (or the first argument that is not a flag) is a Chromium or
@@ -114,6 +114,14 @@ const EXPECT = {
   'watch-row': /^ *FAIL \.w-ctl: width \d+ <= \d+/m,
   'watch-over': /^ *FAIL watch polish: .*w-lookbar.* is drawn over the video's box/m,
   'watch-take': /^ *FAIL pointer at \.w-sky \.w-frame /m,
+  // tower and hologram
+  'tower-over': /^ *FAIL tower and hologram: .* paints over the picture/m,
+  'tower-wide': /^ *FAIL tower and hologram: the tower .* overlaps /m,
+  'tower-box': /^ *FAIL tower and hologram: the video box is at /m,
+  'tower-switch': /^ *FAIL watch polish: the Look switch is at /m,
+  'holo-big': /^ *FAIL tower and hologram: the Hologram .* (overlaps|leaves) /m,
+  'holo-noblend': /^ *FAIL tower and hologram: the Hologram is not blended/m,
+  'holo-take': /^ *FAIL pointer at \.w-holo \.w-frame /m,
   // sky layers
   'sky-front': /^ *FAIL sky layers: the front canvas is hidden/m,
   'sky-moon': /^ *FAIL sky layers: the moon at 300,200,44 is \d+ px from /m,
@@ -190,6 +198,16 @@ const OVERFLOWS = {
   'watch-over': '.w-lookbar { left: 1200px !important; top: 200px !important; }',
   // A refused autoplay that never lets the pointer reach the whole-sky picture.
   'watch-take': '.w-frame.w-take { pointer-events: none !important; }',
+  // tower and hologram: the frame's rings filled over the picture; the tower widened 120 px (to 1.16 times, about its centre);
+  // the video's box back at the old place; the Look switch moved under the Hologram only; the Hologram's pane scaled 1.3 times;
+  // its blend dropped; a refused autoplay's click that never reaches the tilted frame.
+  'tower-over': '.w-tower path[fill-rule="evenodd"] { fill-rule: nonzero !important; }',
+  'tower-wide': '.w-tower { transform: scaleX(1.16); transform-origin: 1580px 0; }',
+  'tower-box': '.w-drivein { left: 1000px !important; top: 40px !important; }',
+  'tower-switch': '.w-panel:has(.w-holo) .w-lookbar { left: 540px !important; }',
+  'holo-big': '.w-holo { scale: 1.3; }',
+  'holo-noblend': '.w-holo { mix-blend-mode: normal !important; }',
+  'holo-take': '.w-frame.w-take { pointer-events: none !important; }',
   // sky layers: the front canvas hidden (the whole sky's video no longer behind the land), the moon
   // forced under the clock and the tabs (a URL knob, SKY_BREAK_Q; the player and the cards claim their
   // boxes, so a moon forced beside them is not drawn at all), the front canvas mounted on a place that never asked.
@@ -307,7 +325,7 @@ const QUIET = [
   { name: 'Watch, nothing saved', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=none', checks: WATCH_IDLE },
   { name: 'Watch, three saved, nothing on', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three', checks: [...WATCH_IDLE, '.w-list', '.w-row'] },
   { name: 'Watch, three saved, feathered playing', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=feather&wplay=0', checks: [...WATCH_PLAYING, '.w-list'] },
-  { name: 'Watch, 24 saved, drive-in, long label playing', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=many&wlook=drivein&wplay=3', checks: [...WATCH_PLAYING, '.w-post'] },
+  { name: 'Watch, 24 saved, drive-in, long label playing', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=many&wlook=drivein&wplay=3', checks: WATCH_PLAYING },
   { name: 'Watch, settings sheet, one look', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wplay=0&wsheet=one', checks: ['.w-sheet', '.w-tiles', '.w-tile', '.w-sfoot'] },
   // Part 2a: the whole sky and the sun. The whole sky lies under every control: each named
   // control gets the pointer at its centre, and no point of the sky reaches the video layer.
@@ -328,6 +346,21 @@ const QUIET = [
   // A refused autoplay over the whole sky: the hint shows, and a click lands on the picture where the wall draws nothing.
   { name: 'Watch polish, whole sky, autoplay refused', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=sky&wplay=0&wstate=refused', checks: WATCH_POLISH, hits: [...WATCH_POLISH_HITS, '.w-clickline', '.w-sky .w-frame'] },
   { name: 'Watch polish, nothing on, drive-in', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=drivein', checks: ['.w-now', '.w-lookbar'], hits: ['.w-lookbar button'] },
+  // tower and hologram: the drive-in's Screen tower frame (playing, paused, nothing on, a long label) and the
+  // Hologram look. The Look switch's box must be the same in all of them (compared after the run, with the
+  // other Watch polish states, so five looks and nothing on are all covered); in the page: nothing of the frame over
+  // the video's box (every painted shape tested at points of the box), the box exactly wall 1244, 54, 672 by 378,
+  // the frame clear of the left block, the Look switch and the list card, the marquee's words for the state, the
+  // Hologram's tilted pane inside the stage and clear of the card, blended, with its plate under it.
+  { name: 'Watch polish, tower playing', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=drivein&wplay=0', checks: WATCH_POLISH, hits: WATCH_POLISH_HITS, th: 'tower' },
+  { name: 'Watch polish, tower paused', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=drivein&wplay=0&wstate=paused', checks: WATCH_POLISH, hits: WATCH_POLISH_HITS, th: 'tower' },
+  { name: 'Watch polish, tower, nothing on', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=drivein', checks: ['.w-now', '.w-lookbar'], hits: ['.w-lookbar button'], th: 'tower' },
+  { name: 'Watch polish, tower, 24 saved, long label', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=many&wlook=drivein&wplay=3', checks: WATCH_POLISH, hits: WATCH_POLISH_HITS, th: 'tower' },
+  { name: 'Watch polish, hologram, single video', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=holo&wplay=0', checks: WATCH_POLISH, hits: WATCH_POLISH_HITS, th: 'holo' },
+  { name: 'Watch polish, hologram, playlist, long label', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=many&wlook=holo&wplay=3', checks: WATCH_POLISH, hits: WATCH_POLISH_HITS, th: 'holo' },
+  // A refused autoplay under the Hologram: the hint shows, and a click lands on the tilted frame's real area.
+  { name: 'Watch polish, hologram, autoplay refused', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=holo&wplay=0&wstate=refused', checks: WATCH_POLISH, hits: [...WATCH_POLISH_HITS, '.w-clickline', '.w-holo .w-frame'], th: 'holo' },
+  { name: 'Watch polish, nothing on, hologram', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=holo', checks: ['.w-now', '.w-lookbar'], hits: ['.w-lookbar button'] },
   // sky layers: the video behind the land (the horizon's front canvas over the video's box) in the
   // three looks that sit in the sky, the drive-in in front of it with no front canvas, and the moon
   // in open sky at night and at dusk, 40 px clear of every card, the player and the clock, on Listen
@@ -1088,7 +1121,79 @@ try {
       }
       return { fails, moon: (document.querySelector('canvas.horizon-canvas:not(.horizon-front)') || {}).dataset?.moon ?? '' };
     })();
-    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, meetOut, strip, opened, watchPolish, skyLayers, listen });
+    // tower and hologram: with th=tower, nothing of the drive-in's frame paints over the video's box
+    // (every drawn shape tested with the browser's own fill and stroke tests at points of the box), the box
+    // is exactly wall 1244, 54, 672 by 378, the frame is clear of the left block, the Look switch and the
+    // list card, and the marquee says what the state says; with th=holo, the tilted pane is inside the stage
+    // and clear of the card, drawn whole, blended, its plate under it, the emitter taking no pointer.
+    const thCheck = (() => {
+      const mode = new URLSearchParams(location.search).get('th');
+      if (!mode) return null;
+      const fails = [];
+      const R = (e) => { const r = e.getBoundingClientRect(); return { l: r.left, t: r.top, w: r.width, h: r.height }; };
+      const meet = (a, b) => a.l < b.l + b.w && b.l < a.l + a.w && a.t < b.t + b.h && b.t < a.t + a.h;
+      const keep = ['.w-now', '.w-lookbar', '.w-card'].map((sel) => [sel, document.querySelector(sel)]).filter((k) => k[1]);
+      const stage = document.querySelector('.w-stage');
+      const scr = stage && stage.querySelector('.w-screen');
+      if (!stage || !scr) { fails.push('tower and hologram: no stage or no screen'); return { fails }; }
+      if (mode === 'tower') {
+        const svg = stage.querySelector('.w-tower');
+        if (!svg) { fails.push('tower and hologram: the drive-in has no tower frame'); return { fails }; }
+        if (stage.firstElementChild !== svg || !(svg.compareDocumentPosition(scr) & Node.DOCUMENT_POSITION_FOLLOWING)) fails.push('tower and hologram: the frame is not the first child of the stage under the screen');
+        if (getComputedStyle(svg).pointerEvents !== 'none') fails.push('tower and hologram: the frame takes the pointer');
+        const v = R(scr);
+        if (Math.abs(v.l - 1244) > 0.5 || Math.abs(v.t - 54) > 0.5 || Math.abs(v.w - 672) > 0.5 || Math.abs(v.h - 378) > 0.5) fails.push('tower and hologram: the video box is at ' + [v.l, v.t, v.w, v.h].map(Math.round).join(',') + ', not 1244,54,672,378');
+        const pts = [];
+        for (let i = 0; i <= 12; i++) for (let j = 0; j <= 7; j++) pts.push(new DOMPoint(1244.5 + 671 * i / 12, 54.5 + 377 * j / 7));
+        let shapes = 0;
+        for (const el of svg.querySelectorAll('path, rect, ellipse, circle, line')) {
+          if (el.closest('defs') || el.closest('g[mask]') || el.getAttribute('clip-path')) continue;
+          shapes++;
+          const cs = getComputedStyle(el);
+          const fill = cs.fill !== 'none' && Number(cs.fillOpacity) > 0, stroke = cs.stroke !== 'none' && parseFloat(cs.strokeWidth) > 0;
+          const hit = pts.find((pt) => (fill && el.isPointInFill(pt)) || (stroke && el.isPointInStroke(pt)));
+          if (hit) { fails.push('tower and hologram: ' + el.tagName + ' ' + (el.getAttribute('d') || '').slice(0, 40) + ' paints over the picture at ' + Math.round(hit.x) + ',' + Math.round(hit.y)); break; }
+        }
+        if (shapes < 30) fails.push('tower and hologram: only ' + shapes + ' shapes tested in the frame');
+        for (const el of svg.querySelectorAll('path, rect')) {
+          if (el.closest('defs') || el.closest('g[mask]')) continue;
+          const b = R(el);
+          const clash = keep.find((k) => { const q = R(k[1]); return meet(b, { l: q.l - 12, t: q.t - 12, w: q.w + 24, h: q.h + 24 }); });
+          if (clash) { fails.push('tower and hologram: the tower ' + el.tagName + ' at ' + [b.l, b.t, b.w, b.h].map(Math.round).join(',') + ' overlaps (or is within 12 px of) ' + clash[0]); break; }
+        }
+        const mode2 = svg.getAttribute('data-marquee');
+        const sub = (document.querySelector('.w-sub') || {}).textContent || '';
+        const want = stage.classList.contains('w-empty') ? 'empty' : /Paused/.test(sub) ? 'paused' : 'playing';
+        if (mode2 !== want) fails.push('tower and hologram: the marquee mode is ' + mode2 + ', the state is ' + want);
+        const on = [...svg.querySelectorAll('text.w-mq')].filter((t) => t.getAttribute('data-on') === '1');
+        const words = on.map((t) => t.textContent).join('|');
+        const exp = { playing: 'NOW SHOWING', paused: 'INTERMISSION', empty: '' }[want];
+        if (on.length !== 1 || (want === 'empty' ? / · /.test(words) || !/DRIVE-IN$/.test(words) : !words.endsWith(exp))) fails.push('tower and hologram: the marquee says "' + words + '" for ' + want);
+        if (on[0]) { const bb = on[0].getBBox(); if (bb.width > 384) fails.push('tower and hologram: the marquee words are ' + Math.round(bb.width) + ' px wide on a 384 px board'); }
+      } else {
+        const plate = document.querySelector('.w-holo-plate');
+        if (!stage.classList.contains('w-holo') || !plate) { fails.push('tower and hologram: no Hologram stage or plate'); return { fails }; }
+        if (!(plate.compareDocumentPosition(stage) & Node.DOCUMENT_POSITION_FOLLOWING)) fails.push('tower and hologram: the plate is not under the stage');
+        const ts = getComputedStyle(stage), tp = getComputedStyle(plate);
+        if (ts.transform === 'none' || ts.transform !== tp.transform) fails.push('tower and hologram: the plate and the stage do not share the tilt (' + tp.transform + ' / ' + ts.transform + ')');
+        if (ts.mixBlendMode !== 'screen') fails.push('tower and hologram: the Hologram is not blended (' + ts.mixBlendMode + ')');
+        if (scr.offsetWidth !== 736 || scr.offsetHeight !== 414) fails.push('tower and hologram: the Hologram picture is ' + scr.offsetWidth + ' by ' + scr.offsetHeight + ', not the whole 736 by 414');
+        if ([...stage.children].some((c) => c !== scr)) fails.push('tower and hologram: something lies on the Hologram picture beside the screen');
+        if (document.querySelector('canvas.horizon-front') || document.querySelector('.w-layered')) fails.push('tower and hologram: the Hologram claims a front layer');
+        const emit = document.querySelector('.w-holo-emit');
+        if (!emit || getComputedStyle(emit).pointerEvents !== 'none') fails.push('tower and hologram: the emitter is missing or takes the pointer');
+        const v = R(scr);
+        if (v.l < 0 || v.t < 0 || v.l + v.w > 2560 || v.t + v.h > 720) fails.push('tower and hologram: the Hologram pane leaves the stage at ' + [v.l, v.t, v.w, v.h].map(Math.round).join(','));
+        for (const part of [scr, ...plate.querySelectorAll('i')]) {
+          const b = R(part);
+          if (b.l < 0 || b.l + b.w > 2560 || b.t < 0) { fails.push('tower and hologram: the Hologram ' + part.className + ' leaves the stage'); break; }
+          const clash = keep.find((k) => meet(b, R(k[1])));
+          if (clash) { fails.push('tower and hologram: the Hologram ' + (part.className || 'pane') + ' at ' + [b.l, b.t, b.w, b.h].map(Math.round).join(',') + ' overlaps ' + clash[0]); break; }
+        }
+      }
+      return { fails, mode };
+    })();
+    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, meetOut, strip, opened, watchPolish, skyLayers, thCheck, listen });
     document.body.appendChild(pre);
   }, new URLSearchParams(location.search).get('card') ? 7000 : 3000);</script>`;
   const broken = overflow ? `<style>${OVERFLOWS[overflow]}</style>` : '';
@@ -1140,6 +1245,14 @@ try {
     'watch-row': (v) => v.name === 'Watch polish, feathered, single video',
     'watch-over': (v) => v.name === 'Watch polish, drive-in, playlist, long label',
     'watch-take': (v) => v.name === 'Watch polish, whole sky, autoplay refused',
+    // tower and hologram
+    'tower-over': (v) => v.name === 'Watch polish, tower playing',
+    'tower-wide': (v) => v.name === 'Watch polish, tower playing',
+    'tower-box': (v) => v.name === 'Watch polish, tower playing',
+    'tower-switch': (v) => v.name.startsWith('Watch polish'),
+    'holo-big': (v) => v.name === 'Watch polish, hologram, single video',
+    'holo-noblend': (v) => v.name === 'Watch polish, hologram, single video',
+    'holo-take': (v) => v.name === 'Watch polish, hologram, autoplay refused',
     // sky layers
     'sky-front': (v) => v.name === 'Sky layers, whole sky at night',
     'sky-moon': (v) => v.name === 'Sky layers, Listen at night, the moon in open sky',
@@ -1155,7 +1268,7 @@ try {
   const skyMoons = [];
   for (const v of overflow ? breakOn : VARIANTS) {
     console.log(`${v.name} (${v.q}):`);
-    const url = `${pathToFileURL(page).href}${v.q}${v.sky ? `&skycheck=${v.sky}` : ''}${overflow && SKY_BREAK_Q[overflow] ? SKY_BREAK_Q[overflow] : ''}&checks=${encodeURIComponent(v.checks.join('|'))}${v.click ? `&click=${encodeURIComponent(v.click)}` : ''}${v.card ? '&card=1' : ''}${v.hits ? `&hits=${encodeURIComponent(v.hits.join('|'))}` : ''}${v.noHit ? `&nohit=${encodeURIComponent(v.noHit)}` : ''}${v.listen ? '&listen=1' : ''}`;
+    const url = `${pathToFileURL(page).href}${v.q}${v.sky ? `&skycheck=${v.sky}` : ''}${overflow && SKY_BREAK_Q[overflow] ? SKY_BREAK_Q[overflow] : ''}&checks=${encodeURIComponent(v.checks.join('|'))}${v.click ? `&click=${encodeURIComponent(v.click)}` : ''}${v.card ? '&card=1' : ''}${v.hits ? `&hits=${encodeURIComponent(v.hits.join('|'))}` : ''}${v.noHit ? `&nohit=${encodeURIComponent(v.noHit)}` : ''}${v.listen ? '&listen=1' : ''}${v.th ? `&th=${v.th}` : ''}`;
     const dom = execFileSync(
       chrome,
       // Headless Chromium keeps 87 px of the window for itself, so 807 gives a 2560 by 720 viewport.
@@ -1168,7 +1281,7 @@ try {
       process.exit(1);
     }
     const text = m[1].replaceAll('&quot;', '"').replaceAll('&amp;', '&');
-    const { res, page: doc, overlaps, cut, gaps, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, meetOut, strip, opened, watchPolish, skyLayers, listen } = JSON.parse(text);
+    const { res, page: doc, overlaps, cut, gaps, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, meetOut, strip, opened, watchPolish, skyLayers, thCheck, listen } = JSON.parse(text);
     // sky layers
     for (const f of skyLayers.fails) console.log(`  FAIL ${f}`);
     if (skyLayers.fails.length) failed = true;
@@ -1181,6 +1294,13 @@ try {
       if (watchPolish.fails.length) failed = true;
       else console.log('  ok   watch polish: the control row is one line clear of the list, nothing over the video\'s box');
       if (v.name.startsWith('Watch polish')) switchBoxes.push({ name: v.name, box: watchPolish.sw });
+    }
+    // tower and hologram
+    if (thCheck) {
+      for (const f of thCheck.fails) console.log(`  FAIL ${f}`);
+      if (thCheck.fails.length) failed = true;
+      else if (thCheck.mode === 'tower') console.log('  ok   tower and hologram: nothing of the frame paints over the video box 1244,54,672,378; the frame is clear of the left block, the Look switch and the list card; the marquee says the state');
+      else console.log('  ok   tower and hologram: the tilted pane is whole, inside the stage, clear of the card, blended over its plate, with no front layer');
     }
     // unwind listen
     for (const l of listen) console.log(`  FAIL ${l}`);
