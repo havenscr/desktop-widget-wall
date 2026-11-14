@@ -293,6 +293,7 @@ add('work', 'leave: amber', url('work', TYPICAL_AT, 'leave=4'), true);
 add('work', 'leave: now', url('work', TYPICAL_AT, 'leave=0'), true);
 add('work', 'leave: long title', url('work', TYPICAL_AT, 'leave=12&long=1'), true);
 add('work', 'leave: heavy data', url('work', TYPICAL_AT, `${HEAVY}&leave=4`), true);
+add('work', 'leave: Day drawer open', url('work', TYPICAL_AT, 'meet=overlap&agents=12ask&leave=12&rec=1'), true, '.rib .rib-handle');
 add('work', 'leave: feed stale, nothing shown', url('work', TYPICAL_AT, 'leave=4&meet=partial'), true);
 add('home', 'leave: on home', url('home', TYPICAL_AT, 'leave=12'), true);
 add('unwind', 'leave: on unwind', url('unwind', TYPICAL_AT, 'leave=4'), true);
@@ -477,6 +478,7 @@ const EXPECT = [
   ['work', 'leave: now', ['Leave now.', 'Dismiss']],
   ['work', 'leave: long title', ['Leave in 12 min.', 'Long appointment with a very long name']],
   ['work', 'leave: heavy data', ['Leave in 4 min.', 'Dismiss', 'Architecture working']],
+  ['work', 'leave: Day drawer open', ['Leave in 12 min.', 'Agents today', 'Recording00:']],
   ['work', 'leave: feed stale', ['may be out of date', '!Leave in']],
   ['home', 'leave: on home', ['Leave in 12 min.', 'Moods']],
   ['unwind', 'leave: on unwind', ['Leave in 4 min.', 'Dismiss', 'Hide screen']],
