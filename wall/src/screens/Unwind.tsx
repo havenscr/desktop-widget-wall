@@ -9,7 +9,7 @@ import { Tomorrow } from '../unwind/Tomorrow';
 import { useCoverTintFollow } from '../unwind/useCoverTintFollow';
 import { WatchSheet } from '../unwind/watch/Sheet';
 import { useWatchStore } from '../unwind/watch/store';
-import { WatchGear, WatchPanel } from '../unwind/watch/Watch';
+import { WatchPanel } from '../unwind/watch/Watch';
 import { LinesGear } from '../unwind/watch/LinesPanel';
 import { WatchCard } from '../unwind/watch/WatchCard';
 import { UNWIND_ROOM_HEIGHT, UNWIND_ROOM_TOP } from './frameLayout';
@@ -28,7 +28,7 @@ function SpotifyStatusPoll() {
  * Up next on Listen; Tomorrow and the status line along the bottom. Centre on Listen (7A):
  * the cover and title at the top with the controls in one row under the title, the dancing
  * lines clear below (tinted by the cover). Upper right on Listen (6A): the Spotify card, or
- * YouTube Music with its switch. On Watch: video in the sky with its gear, and the Watch list
+ * YouTube Music with its switch. On Watch: video in the sky with its gear in the left block, and the Watch list
  * in the right wing. The lower right holds an empty slot (`data-slot="office-lights"`) kept
  * for an office-only lights control: Unwind never controls any other room.
  * The moon, the ridgelines and Watt are drawn by the horizon and buddy layers.
@@ -51,12 +51,7 @@ export function Unwind() {
       </div>
       <div className="u-centre">
         {watch ? (
-          <>
-            <div className="u-tabrow">
-              <WatchGear />
-            </div>
-            <WatchPanel />
-          </>
+          <WatchPanel />
         ) : (
           <>
             {/* lines controls: the gear on Listen opens the sheet on its Lines side. */}

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { usePlaceStore } from '../../state/places';
 import { defaultLabel, LINK_ERRORS, MAX_LINK_LENGTH, parseLink, validRef } from './links';
-import { DEFAULT_LOOKS, lookFor, parseLooks, pickLook } from './looks';
+import { DEFAULT_LOOKS, lookFor, parseLooks } from './looks';
 import { addSaved, ADD_ERRORS, cleanLabel, MAX_SAVED, parseSaved, removeSaved, renameSaved, SAVED_KEY } from './saved';
 import { resetWatch, useWatchStore } from './store';
 import { stopReason, type StopInputs } from './stops';
@@ -228,16 +228,11 @@ describe('looks', () => {
     });
     expect(parseLooks(JSON.stringify({ mode: 'other' })).mode).toBe('one');
   });
-  it('picks the look per kind, and the Look switch sets one kind or every kind', () => {
+  it('picks the look per kind, or one look for every kind', () => {
     const kind = { ...DEFAULT_LOOKS, mode: 'kind' as const };
     expect(lookFor(kind, 'playlist')).toBe(kind.video);
     expect(lookFor(kind, 'twitch')).toBe(kind.twitch);
     expect(lookFor(DEFAULT_LOOKS, 'twitch')).toBe(DEFAULT_LOOKS.all);
-    expect(pickLook(DEFAULT_LOOKS, 'video', 'sun').all).toBe('sun');
-    const picked = pickLook(kind, 'live', 'sun');
-    expect(picked.live).toBe('sun');
-    expect(picked.video).toBe(kind.video);
-    expect(picked.all).toBe(kind.all);
   });
 });
 

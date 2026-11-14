@@ -217,7 +217,7 @@ it('opens in the browser through the Rust command with the kind and id only', as
   expect(calls).toEqual([{ kind: 'live', id: 'Lofi_Live01' }]);
 });
 
-it('sets the look from the Look switch and draws the drive-in screen or the feathered video', async () => {
+it('sets the look from the gear sheet and draws the drive-in screen or the feathered video', async () => {
   seed();
   framePoster.render = () => <span>poster</span>;
   useWatchStore.getState().setTab('watch');
@@ -228,7 +228,9 @@ it('sets the look from the Look switch and draws the drive-in screen or the feat
   expect(document.querySelectorAll('.w-tower').length).toBe(1);
   expect(document.querySelector('.w-post')).toBeNull();
   expect(document.querySelector('iframe')).toBeNull();
-  await act(async () => within(screen.getByRole('radiogroup', { name: 'Look' })).getByRole('radio', { name: 'Feathered' }).click());
+  expect(document.querySelector('.w-lookbar')).toBeNull();
+  await act(async () => screen.getByRole('button', { name: 'How video is shown' }).click());
+  await act(async () => within(screen.getByRole('radiogroup', { name: 'Look for everything' })).getByRole('radio', { name: /Feathered/ }).click());
   expect(document.querySelector('.w-stage')?.getAttribute('data-look')).toBe('feather');
   expect(parseLooks(localStorage.getItem(LOOKS_KEY)).all).toBe('feather');
 });

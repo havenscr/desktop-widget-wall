@@ -118,6 +118,11 @@ const EXPECT = {
   sun: /^ *FAIL pointer at .*reaches w-stage w-sun/m,
   tools: /^ *FAIL tools drawer: .*outside x 1700 to 2560/m,
   toolsnames: /^ *FAIL tools: .* is cut with no tooltip/m,
+  'yt-clip': /^ *FAIL youtube row: .* past the Accounts column/m,
+  'yt-text': /^ *FAIL youtube row: text under 16 px/m,
+  'yt-control': /^ *FAIL youtube row: control .* px/m,
+  'yt-row': /^ *FAIL youtube row: does not match the Spotify row/m,
+  'yt-actions': /^ *FAIL youtube row: the form actions wrap or are cut/m,
   meetfill: /^ *FAIL meet: nothing fills the upper right/m,
   meetempty: /^ *FAIL meet: nothing fills the upper right/m,
   // keys style
@@ -153,9 +158,14 @@ const EXPECT = {
   'listen-slot': /^ *FAIL listen: .* enters the office lights slot/m,
   'listen-next': /^ *FAIL listen: Up next /m,
   // watch polish
-  'watch-switch': /^ *FAIL watch polish: the Look switch is at /m,
+  'watch-block': /^ *FAIL watch polish: the left block is at /m,
+  'watch-gear': /^ *FAIL watch polish: the gear /m,
+  'watch-slack': /^ *FAIL watch polish: with 16 px more text /m,
+  'watch-fill': /^ *FAIL watch polish: the position fill has no background/m,
+  'watch-marker': /^ *FAIL watch polish: the position marker is at x /m,
   'watch-row': /^ *FAIL \.w-ctl: width \d+ <= \d+/m,
-  'watch-over': /^ *FAIL watch polish: .*w-lookbar.* is drawn over the video's box/m,
+  'watch-over': /^ *FAIL watch polish: .*w-(now|ctl).* is drawn over the video's box/m,
+  'watt-seat1106': /^ *FAIL watt drive-in: Watt's left edge is /m,
   'watch-take': /^ *FAIL pointer at \.w-sky \.w-frame /m,
   // watt drive-in
   'watt-seat': /^ *FAIL watt drive-in: Watt .* is not 30 px clear of the screen/m,
@@ -166,7 +176,7 @@ const EXPECT = {
   'tower-over': /^ *FAIL tower and hologram: .* paints over the picture/m,
   'tower-wide': /^ *FAIL tower and hologram: the tower .* overlaps /m,
   'tower-box': /^ *FAIL tower and hologram: the video box is at /m,
-  'tower-switch': /^ *FAIL watch polish: the Look switch is at /m,
+  'tower-block': /^ *FAIL watch polish: the left block is at /m,
   'holo-big': /^ *FAIL tower and hologram: the Hologram .* (overlaps|leaves) /m,
   'holo-noblend': /^ *FAIL tower and hologram: pixel proof: the picture does not mix with the plate/m,
   'holo-beam': /^ *FAIL tower and hologram: pixel proof: something paints over the Hologram picture/m,
@@ -237,6 +247,16 @@ const OVERFLOWS = {
   tools: '.tools-drawer { width: 1400px !important; }',
   // A 20 px name column cuts the account and source names (they carry no tooltip of their own).
   toolsnames: '.tools-name, .tools-srcname { width: 20px !important; max-width: 20px !important; flex: none !important; overflow: hidden; }',
+  // YouTube row: the Set up form's inputs 700 px wide run past the Accounts column.
+  'yt-clip': '.tools-yt-form .tools-input { flex: none !important; width: 700px !important; }',
+  // YouTube row: 12 px text in the hint, the links line and the field labels.
+  'yt-text': '.tools-yt-hint, .tools-yt-links, .tools-yt-links button, .tools-yt-field > span { font-size: 12px !important; }',
+  // YouTube row: 24 px inputs, links and form buttons (mouse targets are 32 px or more).
+  'yt-control': '.tools-input, .tools-link, .tools-yt-actions .tools-btn { height: 24px !important; }',
+  // YouTube row: a 60 px high row that no longer matches Spotify's 46 px.
+  'yt-row': '.tools-list [data-account="youtube"] { height: 60px !important; }',
+  // YouTube row: the form's actions stacked in a column instead of one line.
+  'yt-actions': '.tools-yt-actions { flex-direction: column !important; align-items: flex-start !important; }',
   // Meet's Later list hidden leaves the upper right empty.
   meetfill: '.meet .meet-later { display: none !important; }',
   // The same on a state with no meeting: the upper right is empty there too.
@@ -275,10 +295,17 @@ const OVERFLOWS = {
   'listen-card': '.sp-card { height: 900px !important; }',
   'listen-slot': '.u-line { margin-left: 1960px; width: 600px; }',
   'listen-next': '.u-next-row { height: 80px !important; }',
-  // watch polish: the Look switch moved 40 px in one look; a 600 px control in the row; the switch back on the video.
-  'watch-switch': '.top:has(.w-sun) .w-lookbar { left: 540px !important; }',
+  // watch polish: the left block back at its old line (y 126) in one look; the gear off the row's end; a 600 px control in
+  // the row; the block moved onto the video.
+  'watch-block': '.top:has(.w-sun) .w-now { top: 106px !important; }',
+  'watch-gear': '.w-gear { margin-left: 0 !important; }',
+  // the Open label may not give way: with 16 px more text the row overflows its block
+  'watch-slack': '.w-open { flex: none !important; min-width: 0 !important; }',
+  // the position fill's colour from a token nothing defines (the owner's bug); the marker left at the bar's start
+  'watch-fill': '.w-bar b { background: linear-gradient(90deg, var(--pink), var(--cyan)) !important; }',
+  'watch-marker': '.w-bar .w-mark { left: 0 !important; }',
   'watch-row': '.w-ctl .w-open { min-width: 600px !important; }',
-  'watch-over': '.w-lookbar { left: 1200px !important; top: 200px !important; }',
+  'watch-over': '.w-now { left: 1200px !important; top: 200px !important; }',
   // A refused autoplay that never lets the pointer reach the whole-sky picture.
   'watch-take': '.w-frame.w-take { pointer-events: none !important; }',
   // watt drive-in: his seat moved to the screen's centre; his seat lifted 100 px off the ground.
@@ -286,14 +313,16 @@ const OVERFLOWS = {
   'watt-ground': '.watt-sheep { translate: 0 -100px !important; }',
   // his seat 80 px too far left (30 px clear of the screen still holds); 20 px nearer the screen (into the tower's foot).
   'watt-spot': '.watt-sheep { translate: -80px 0 !important; }',
+  // his left edge 12 px off the chosen 1106 (30 px from the screen at 1244 with his 108 px width), still within the 40 px of his seat.
+  'watt-seat1106': '.watt-sheep { translate: -12px 0 !important; }',
   'watt-tower': '.watt-sheep { translate: 20px 0 !important; }',
   // tower and hologram: the frame's rings filled over the picture; the tower widened 120 px (to 1.16 times, about its centre);
-  // the video's box back at the old place; the Look switch moved under the Hologram only; the Hologram's pane scaled 1.3 times;
+  // the video's box back at the old place; the left block moved under the Hologram only; the Hologram's pane scaled 1.3 times;
   // its blend dropped; a refused autoplay's click that never reaches the tilted frame.
   'tower-over': '.w-tower path[fill-rule="evenodd"] { fill-rule: nonzero !important; }',
   'tower-wide': '.w-tower { transform: scaleX(1.16); transform-origin: 1580px 0; }',
   'tower-box': '.w-drivein { left: 1000px !important; top: 40px !important; }',
-  'tower-switch': '.top:has(.w-holo) .w-lookbar { left: 540px !important; }',
+  'tower-block': '.top:has(.w-holo) .w-now { left: 540px !important; }',
   'holo-big': '.w-holo { scale: 1.3; }',
   'holo-noblend': '.w-holo { mix-blend-mode: normal !important; }',
   // the beam moved 46 px up, over the picture (and a blurred stand-in for any other glow lying on it)
@@ -303,7 +332,7 @@ const OVERFLOWS = {
   'tile-text': '.w-tile { font-size: 14px !important; }',
   // watch behaviour: the faded controls still clickable; the dimmed title moved onto the video; the
   // stage left visible and clickable on another place; the rail's playing mark pushed out of its button.
-  'watch-rest': ".w-now[data-ctl='rest'] > .w-ctl, .w-panel[data-ctl='rest'] > .w-lookbar button { pointer-events: auto !important; }",
+  'watch-rest': ".w-now[data-ctl='rest'] > .w-ctl, .w-now[data-ctl='rest'] > .w-ctl button { pointer-events: auto !important; }",
   'watch-title': ".w-now[data-ctl='rest'] > .w-title { transform: translateX(560px); }",
   'watch-away': ".w-layer[data-shown='false'] { opacity: 1 !important; } .w-layer[data-shown='false'] * { pointer-events: auto !important; }",
   'watch-mark': '.rb-play { right: -70px !important; }',
@@ -367,17 +396,26 @@ const WINGS = ['.work .left-wing', '.work .right-wing'];
 const LANES = ['.work .centre', '.work .centre .lane', '.work .centre .shelf'];
 const MEET = ['.meet .panel'];
 const WATCH_IDLE = ['.w-card', '.w-card .u-card-head', '.w-field', '.w-now'];
-const WATCH_PLAYING = [...WATCH_IDLE, '.w-ctl', '.w-screen', '.w-time', '.w-open', '.w-lookbar'];
+const WATCH_PLAYING = [...WATCH_IDLE, '.w-ctl', '.w-screen', '.w-time', '.w-open', '.w-gear'];
 // Named controls that must still take the pointer with video playing: the rail, the tabs and
 // the gear, the transport, the list's first row and its field, a Room chip, the status chips,
 // Screens off and Watt.
 // Below the horizon, under the whole sky's floor wash: the Tomorrow card, the status line's
 // chips and Screens off (Unwind has no timeline strip).
 const FLOOR_HITS = ['.u-tomorrow', '.u-line .u-act', '.screens-off'];
-const SKY_HITS = ['.rail .rb', '.u-tab', '.w-gear', '.w-ctl .rd:not(:disabled)', '.w-lookbar button', '.w-play', '.w-mini', '.w-paste', '.u-line .u-act', '.screens-off', '.w-open', '.watt-hit-part'];
-// watch polish: the left block, its control row, the position line and the Look switch.
-const WATCH_POLISH = ['.w-now', '.w-ctl', '.w-time', '.w-lookbar', '.w-card'];
-const WATCH_POLISH_HITS = ['.w-lookbar button', '.w-ctl .rd:not(:disabled)', '.w-open'];
+const SKY_HITS = ['.rail .rb', '.u-tab', '.w-gear', '.w-ctl .rd:not(:disabled)', '.w-play', '.w-mini', '.w-paste', '.u-line .u-act', '.screens-off', '.w-open', '.watt-hit-part'];
+// watch polish: the left block, its control row (the gear is its last button), the position line.
+const WATCH_POLISH = ['.w-now', '.w-ctl', '.w-time', '.w-gear', '.w-card'];
+const WATCH_LOOKS = [['feather', 'feathered'], ['sky', 'whole sky'], ['sun', 'the sun'], ['drivein', 'drive-in'], ['holo', 'hologram']];
+const WATCH_MATRIX = () => {
+  const states = [['playing', '&wplay=0'], ['paused', '&wplay=0&wstate=paused'], ['click', '&wplay=0&wstate=refused'], ['nothing on', '']];
+  const out = [];
+  for (const [look, name] of WATCH_LOOKS) for (const [st, extra] of states) {
+    out.push({ name: `Watch matrix, ${name}, ${st}`, agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: `&watch=mock&wlist=three&wlook=${look}${extra}`, checks: st === 'nothing on' ? ['.w-now', '.w-gear'] : WATCH_POLISH, hits: st === 'nothing on' ? ['.w-gear'] : WATCH_POLISH_HITS, sky: 'moonif' });
+  }
+  return out;
+};
+const WATCH_POLISH_HITS = ['.w-gear', '.w-ctl .rd:not(:disabled)', '.w-open'];
 const DREAM = ['.dream-clock', '.dream-date', '.dream-card', '.dream-status', '.dream-hint'];
 // With more than three sessions the card list scrolls inside the centre: the three cards in
 // view, the header and the shelf must fit; the list itself is meant to scroll.
@@ -448,13 +486,13 @@ const QUIET = [
   { name: 'Watch, settings sheet, one look', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wplay=0&wsheet=one', checks: ['.w-sheet', '.w-tiles', '.w-tile', '.w-sfoot'] },
   // Part 2a: the whole sky and the sun. The whole sky lies under every control: each named
   // control gets the pointer at its centre, and no point of the sky reaches the video layer.
-  { name: 'Watch, whole sky playing, every control still takes the pointer', agents: 'ask', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=sky&wplay=0', checks: [...WATCH_IDLE, '.w-ctl', '.w-open', '.w-lookbar'], hits: [...SKY_HITS, ...FLOOR_HITS], noHit: '.w-sky, .w-skyspill' },
-  { name: 'Watch, whole sky, 24 saved, long label', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=many&wlook=sky&wplay=3', checks: [...WATCH_IDLE, '.w-ctl', '.w-open', '.w-lookbar'], hits: [...SKY_HITS, ...FLOOR_HITS], noHit: '.w-sky, .w-skyspill' },
+  { name: 'Watch, whole sky playing, every control still takes the pointer', agents: 'ask', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=sky&wplay=0', checks: [...WATCH_IDLE, '.w-ctl', '.w-open', '.w-gear'], hits: [...SKY_HITS, ...FLOOR_HITS], noHit: '.w-sky, .w-skyspill' },
+  { name: 'Watch, whole sky, 24 saved, long label', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=many&wlook=sky&wplay=3', checks: [...WATCH_IDLE, '.w-ctl', '.w-open', '.w-gear'], hits: [...SKY_HITS, ...FLOOR_HITS], noHit: '.w-sky, .w-skyspill' },
   { name: 'Watch, the sun playing', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=sun&wplay=0', checks: [...WATCH_IDLE, '.w-ctl', '.w-time', '.w-open', '.w-list'], hits: SKY_HITS },
   { name: 'Watch, the sun, 24 saved, Twitch', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=many&wlook=sun&wplay=2', checks: [...WATCH_IDLE, '.w-ctl', '.w-time', '.w-open'], hits: SKY_HITS },
   { name: 'Watch, settings sheet with four looks, one look', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=sky&wplay=0&wsheet=one', checks: ['.w-sheet', '.w-tiles', '.w-tile', '.w-hint', '.w-sfoot'] },
   { name: 'Watch, settings sheet, a look per kind', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=many&wplay=2&wsheet=kind', checks: ['.w-sheet', '.w-srow', '.w-srow .w-seg', '.w-sfoot'] },
-  // watch polish: the control row and the Look switch in every look. The switch's box must be the
+  // watch polish: the control row (the gear its last button) in every look. The left block's box must be the
   // same in every state below (compared after the run), the row one line clear of the list, and
   // nothing of the wall's over the video's box; the drive-in's driveInAudience must be its screen.
   { name: 'Watch polish, feathered, single video', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=feather&wplay=0', checks: WATCH_POLISH, hits: WATCH_POLISH_HITS },
@@ -464,7 +502,18 @@ const QUIET = [
   { name: 'Watch polish, drive-in, autoplay refused', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=drivein&wplay=0&wstate=refused', checks: WATCH_POLISH, hits: WATCH_POLISH_HITS },
   // A refused autoplay over the whole sky: the hint shows, and a click lands on the picture where the wall draws nothing.
   { name: 'Watch polish, whole sky, autoplay refused', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=sky&wplay=0&wstate=refused', checks: WATCH_POLISH, hits: [...WATCH_POLISH_HITS, '.w-clickline', '.w-sky .w-frame'] },
-  { name: 'Watch polish, nothing on, drive-in', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=drivein', checks: ['.w-now', '.w-lookbar'], hits: ['.w-lookbar button'] },
+  { name: 'Watch polish, nothing on, drive-in', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=drivein', checks: ['.w-now', '.w-gear'], hits: ['.w-gear'] },
+  // The left block without the Look switch: nothing on in the other looks (the gear alone ends the idle row), and paused over the whole sky.
+  { name: 'Watch polish, nothing on, feathered', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=feather', checks: ['.w-now', '.w-gear'], hits: ['.w-gear'] },
+  { name: 'Watch polish, nothing on, whole sky', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=sky', checks: ['.w-now', '.w-gear'], hits: ['.w-gear'] },
+  { name: 'Watch polish, nothing on, the sun', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=sun', checks: ['.w-now', '.w-gear'], hits: ['.w-gear'] },
+  // The matrix: every look in playing, paused, waiting for a click and nothing on (the block, overlap, gear, clock, list and
+  // moon rules on each; a combination already listed above is not repeated). At night, so the moon is drawn where a look leaves it.
+  ...WATCH_MATRIX(),
+  // The position bar's marker near either end stays inside the bar.
+  { name: 'Watch polish, position at the start', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=feather&wplay=0&wstate=start', checks: WATCH_POLISH, hits: WATCH_POLISH_HITS },
+  { name: 'Watch polish, position at the end', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=sky&wplay=0&wstate=end', checks: WATCH_POLISH, hits: WATCH_POLISH_HITS },
+  { name: 'Watch polish, whole sky, paused', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=sky&wplay=0&wstate=paused', checks: WATCH_POLISH, hits: WATCH_POLISH_HITS },
   // watt drive-in: Watt seated in front of the drive-in screen (checked in every drive-in state
   // with something on): at night and at noon, paused, with 24 saved and a long label, and with
   // the leave banner. He still takes the pointer there.
@@ -474,22 +523,22 @@ const QUIET = [
   { name: 'Watt drive-in, 24 saved, long label', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=many&wlook=drivein&wplay=3', checks: WATCH_POLISH, hits: ['.watt-hit-part'] },
   { name: 'Watt drive-in, leave banner', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=drivein&wplay=0&leave=12', checks: [...WATCH_POLISH, '.leave-banner'], hits: ['.watt-hit-part'] },
   // tower and hologram: the drive-in's Screen tower frame (playing, paused, nothing on, a long label) and the
-  // Hologram look. The Look switch's box must be the same in all of them (compared after the run, with the
+  // Hologram look. The left block's box must be the same in all of them (compared after the run, with the
   // other Watch polish states, so five looks and nothing on are all covered); in the page: nothing of the frame over
   // the video's box (every painted shape tested at points of the box), the box exactly wall 1244, 54, 672 by 378,
-  // the frame clear of the left block, the Look switch and the list card, the marquee's words for the state, the
+  // the frame clear of the left block and the list card, the marquee's words for the state, the
   // Hologram's tilted pane inside the stage and clear of the card, blended, with its plate under it.
   { name: 'Watch polish, tower playing', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=drivein&wplay=0', checks: WATCH_POLISH, hits: WATCH_POLISH_HITS, th: 'tower' },
   { name: 'Watch polish, tower paused', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=drivein&wplay=0&wstate=paused', checks: WATCH_POLISH, hits: WATCH_POLISH_HITS, th: 'tower' },
   // A refused autoplay under the tower: nothing shows yet, so the marquee says the name alone (never NOW SHOWING).
   { name: 'Watch polish, tower, autoplay refused', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=drivein&wplay=0&wstate=refused', checks: WATCH_POLISH, hits: [...WATCH_POLISH_HITS, '.w-clickline', '.w-drivein .w-frame'], th: 'tower' },
-  { name: 'Watch polish, tower, nothing on', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=drivein', checks: ['.w-now', '.w-lookbar'], hits: ['.w-lookbar button'], th: 'tower' },
+  { name: 'Watch polish, tower, nothing on', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=drivein', checks: ['.w-now', '.w-gear'], hits: ['.w-gear'], th: 'tower' },
   { name: 'Watch polish, tower, 24 saved, long label', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=many&wlook=drivein&wplay=3', checks: WATCH_POLISH, hits: WATCH_POLISH_HITS, th: 'tower' },
   { name: 'Watch polish, hologram, single video', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=holo&wplay=0', checks: WATCH_POLISH, hits: WATCH_POLISH_HITS, th: 'holo', px: true },
   { name: 'Watch polish, hologram, playlist, long label', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=many&wlook=holo&wplay=3', checks: WATCH_POLISH, hits: WATCH_POLISH_HITS, th: 'holo' },
   // A refused autoplay under the Hologram: the hint shows, and a click lands on the tilted frame's real area.
   { name: 'Watch polish, hologram, autoplay refused', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=holo&wplay=0&wstate=refused', checks: WATCH_POLISH, hits: [...WATCH_POLISH_HITS, '.w-clickline', '.w-holo .w-frame'], th: 'holo' },
-  { name: 'Watch polish, nothing on, hologram', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=holo', checks: ['.w-now', '.w-lookbar'], hits: ['.w-lookbar button'] },
+  { name: 'Watch polish, nothing on, hologram', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=holo', checks: ['.w-now', '.w-gear'], hits: ['.w-gear'] },
   // watch behaviour: the controls faded in each look (nothing of them takes the pointer, the dimmed
   // title clear of the video's box), and a video playing while he is on Work, Home or Meet (the stage
   // fully transparent and taking no pointer there, the rail's playing mark inside Unwind's button).
@@ -506,11 +555,11 @@ const QUIET = [
   // (short names, long names, nothing playing, the songs view open) and on Watch with nothing on, at
   // the place the rule gives (`moonAt`, the first clear one of its places, cameras.ts MOON_PLACES).
   // Every other state has no front canvas. The feathered picture stands in front of the land.
-  { name: 'Sky layers, whole sky at night', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=sky&wplay=0', checks: ['.w-now', '.w-lookbar'], sky: 'front' },
-  { name: 'Sky layers, whole sky at noon', agents: '3', hz: 'unwind', at: '2026-11-11T12:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=sky&wplay=1', checks: ['.w-now', '.w-lookbar'], sky: 'front' },
-  { name: 'Sky layers, the sun at night', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=sun&wplay=0', checks: ['.w-now', '.w-lookbar'], sky: 'front' },
-  { name: 'Sky layers, feathered at night, in front of the land', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=feather&wplay=0', checks: ['.w-now', '.w-lookbar'], sky: 'flat' },
-  { name: 'Sky layers, drive-in at night, in front of the land', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=drivein&wplay=2', checks: ['.w-now', '.w-lookbar'], sky: 'flat' },
+  { name: 'Sky layers, whole sky at night', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=sky&wplay=0', checks: ['.w-now', '.w-gear'], sky: 'front' },
+  { name: 'Sky layers, whole sky at noon', agents: '3', hz: 'unwind', at: '2026-11-11T12:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=sky&wplay=1', checks: ['.w-now', '.w-gear'], sky: 'front' },
+  { name: 'Sky layers, the sun at night', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=sun&wplay=0', checks: ['.w-now', '.w-gear'], sky: 'front' },
+  { name: 'Sky layers, feathered at night, in front of the land', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=feather&wplay=0', checks: ['.w-now', '.w-gear'], sky: 'flat' },
+  { name: 'Sky layers, drive-in at night, in front of the land', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=drivein&wplay=2', checks: ['.w-now', '.w-gear'], sky: 'flat' },
   { name: 'Sky layers, Listen at night, the moon in open sky', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '', checks: ['.u-listen'], sky: 'moon', moonAt: '760,352,44' },
   { name: 'Sky layers, Listen at night, long names, the moon in open sky', agents: 'ask', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&spotify=long&media=long', checks: ['.u-listen'], sky: 'moon', moonAt: '760,352,44' },
   { name: 'Sky layers, Listen at night, nothing playing, the moon in open sky', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&media=none', checks: ['.u-listen'], sky: 'moon', moonAt: '760,352,44' },
@@ -523,6 +572,7 @@ const QUIET = [
 ].map((v) => ({ ...v, q: query(v) }));
 // The Tools drawer over each place, and in each hard state: the drawer, its two columns and every
 // section stay inside the stage, right of the rail and the clock, with no cut text that has no tooltip.
+const YT_ROW = '.tools-list[aria-label="Accounts"] [data-account="youtube"]';
 const TOOLS = ['.tools-drawer', '.tools-drawer .tools-col', '.tools-drawer .tools-block', '.tools-drawer .tools-list', '.tools-drawer .tools-foot'];
 const tools = (name, q) => ({ name: `Tools, ${name}`, q, checks: TOOLS, viewportOnly: true });
 const TOOLS_VARIANTS = [
@@ -536,6 +586,14 @@ const TOOLS_VARIANTS = [
   tools('keys refused with a long reason', `${work('3')}&keys=refused&tools=1`),
   tools('no keys file', `${work('3')}&source=default&tools=1`),
   tools('Spotify not set up, a sign-in waiting', `${work('3')}&spotify=off&meet=signedout&tools=1`),
+  // The YouTube row in each state it can show, and the Set up form open from Set up and from Change setup.
+  // A state that shows a (possibly two-line) Accounts note is held to the drawer itself: a note's fractional line boxes round to one pixel more than its box.
+  ...[['not set up', 'off'], ['signed out', 'out'], ['signed in', 'in'], ['setup broken, said in the note', 'broken'], ['sign in again', 'again'], ['could not check', 'down'], ['signed in, setup missing', 'missing'], ['setup unreadable', 'unreadable'], ['waiting after a reload', 'reloaded']].map(([n, k]) => (['broken', 'unreadable'].includes(k) ? { ...tools(`YouTube ${n}`, `${work('3')}&youtube=${k}&tools=1`), checks: ['.tools-drawer'] } : tools(`YouTube ${n}`, `${work('3')}&youtube=${k}&tools=1`))),
+  { name: 'Tools, YouTube waiting for the browser', q: `${work('3')}&youtube=waiting&tools=1`, click: YT_ROW + ' .tools-btn.cy', checks: TOOLS, viewportOnly: true },
+  { name: 'Tools, YouTube setup form open', q: `${work('3')}&youtube=off&tools=1`, click: YT_ROW + ' .tools-btn', checks: TOOLS, viewportOnly: true },
+  { name: 'Tools, YouTube refused setup, form open', q: `${work('3')}&youtube=brokenout&tools=1`, click: YT_ROW + ' .tools-btn', checks: TOOLS, viewportOnly: true },
+  { name: 'Tools, YouTube change setup form open', q: `${work('3')}&youtube=out&tools=1`, click: YT_ROW + ' .tools-btn.ico', checks: TOOLS, viewportOnly: true },
+  { name: 'Tools, YouTube sign-in refused note', q: `${work('3')}&youtube=refuse&tools=1`, click: YT_ROW + ' .tools-btn.cy', checks: ['.tools-drawer', '.tools-note'], viewportOnly: true },
   { name: 'Spotify copy, choose this computer', q: `${query({ hz: 'unwind', agents: '3', extra: '&spotify=choose' })}`, click: '.sp-tile >> .sp-shead .sp-btn.fill', checks: ['.sp-card', '.sp-note'] },
   { name: 'Account copy, failed sign-in', q: `${work('3')}&meet=signin-fault&tools=1`, click: '.tools-list[aria-label="Accounts"] .tools-row:nth-child(2) button', checks: ['.tools-drawer', '.tools-note'], viewportOnly: true },
 ];
@@ -1162,6 +1220,42 @@ try {
         // The row's hover card does not excuse a cut name or a cut read time: those cells must show whole.
         else if (e.matches('.tools-name, .tools-srcname, [data-kind="time"]') && e.scrollWidth > e.clientWidth + 1) toolsOut.push('tools: "' + (e.textContent || '').trim().slice(0, 40) + '" is cut with no tooltip of its own');
       }
+      // The YouTube row, its Set up form, its hint and its links line: inside the Accounts column, text 16 px or more,
+      // controls 32 px or more, and a row built like Spotify's (same height, name, line and icon).
+      const yt = drawer.querySelector('[data-account="youtube"]');
+      if (yt) {
+        const column = drawer.querySelector('.tools-block[data-section="accounts"]').getBoundingClientRect();
+        const name = (e) => (typeof e.className === 'string' && e.className ? '.' + e.className.split(' ')[0] : e.tagName.toLowerCase()) + ' "' + (e.textContent || '').trim().slice(0, 24) + '"';
+        const parts = [yt, ...drawer.querySelectorAll('.tools-yt-form, .tools-yt-links')];
+        for (const part of parts) {
+          for (const e of [part, ...part.querySelectorAll('*')]) {
+            const r = e.getBoundingClientRect();
+            if (r.width === 0 && r.height === 0) continue;
+            if (r.left < column.left - 0.5 || r.right > column.right + 0.5 || r.bottom > dr.bottom - 0.5) toolsOut.push('youtube row: ' + name(e) + ' reaches x ' + Math.round(r.left) + ' to ' + Math.round(r.right) + ', y to ' + Math.round(r.bottom) + ' past the Accounts column (x ' + Math.round(column.left) + ' to ' + Math.round(column.right) + ') or its foot');
+            if (e.matches('span, div, label, li, button') && e.scrollWidth > e.clientWidth + 1 && !e.closest('[data-tip]')) toolsOut.push('youtube row: ' + name(e) + ' is cut with no tooltip');
+            if ([...e.childNodes].some((n) => n.nodeType === 3 && (n.textContent || '').trim())) {
+              const px = parseFloat(getComputedStyle(e).fontSize);
+              if (px < 16 - 0.01) toolsOut.push('youtube row: text under 16 px in ' + name(e) + ' (' + px + ' px)');
+            }
+          }
+          for (const c of part.matches('button, input') ? [part] : part.querySelectorAll('button, input')) {
+            const r = c.getBoundingClientRect();
+            if (r.height < 32 - 0.01 || (c.matches('button') && r.width < 32 - 0.01)) toolsOut.push('youtube row: control ' + name(c) + ' is ' + Math.round(r.width) + ' by ' + Math.round(r.height) + ' px, under 32 px');
+          }
+        }
+        // The form's actions (Save, Cancel and, when a setup exists, Forget this setup) share one line and none is cut.
+        const actions = drawer.querySelector('.tools-yt-actions');
+        if (actions) {
+          const kids = [...actions.children];
+          if (new Set(kids.map((k) => Math.round(k.getBoundingClientRect().top))).size > 1 || actions.scrollWidth > actions.clientWidth + 1) toolsOut.push('youtube row: the form actions wrap or are cut (' + kids.map((k) => (k.textContent || '').trim()).join(', ') + ')');
+        }
+        const spotifyRow = [...drawer.querySelectorAll('.tools-acct')].find((r) => (r.querySelector('.tools-name')?.textContent || '') === 'Spotify');
+        if (spotifyRow) {
+          const look = (r) => { const n = getComputedStyle(r.querySelector('.tools-name')); const l = getComputedStyle(r.querySelector('.tools-line')); const i = r.querySelector('.tools-ico svg').getBoundingClientRect(); return [Math.round(r.getBoundingClientRect().height), n.fontSize, n.fontWeight, l.fontSize, Math.round(i.width)].join(' / '); };
+          if (look(yt) !== look(spotifyRow)) toolsOut.push('youtube row: does not match the Spotify row (height / name size / name weight / line size / icon: ' + look(yt) + ' against ' + look(spotifyRow) + ')');
+        }
+        for (const r of drawer.querySelectorAll('.tools-acct')) if (Math.round(r.getBoundingClientRect().height) !== 46) toolsOut.push('youtube row: an account row (' + name(r.querySelector('.tools-name')) + ') is ' + Math.round(r.getBoundingClientRect().height) + ' px tall, not 46');
+      }
     }
     // Meet's upper right is never an empty gap: a card reaches the right edge of the stage.
     const meetOut = [];
@@ -1355,28 +1449,96 @@ try {
         for (const e of inside.slice(0, 3)) listen.push('listen: ' + (e.className?.baseVal ?? e.className ?? e.tagName) + ' "' + (e.textContent || '').trim().slice(0, 30) + '" enters the office lights slot');
       }
     }
-    // watch polish: the Look switch's box; the control row on one line and clear of the list; nothing
-    // of the wall's over the video's box; and the drive-in's driveInAudience equal to its drawn
-    // screen. The one exemption: the whole sky's picture lies under the whole band, so the left
-    // block, the Look switch, the tabs and the cards sit above it by design; even there nothing
-    // of the wall's may lie inside the picture's own layer (no wash, no button).
+    // watch polish: the left block's box (wall 624, 30, 460 wide in every look and state: the line
+    // Listen's player starts at); the gear the last button of the control row, flush with its end, 40 px like
+    // its neighbours; the control row on one line and clear of the list; nothing of the wall's over the
+    // video's box; the block clear of the clock column, the sitting sheep's seat and the list card; and the
+    // drive-in's driveInAudience equal to its drawn screen. The one exemption: the whole sky's picture lies
+    // under the whole band, so the left block, the tabs and the cards sit above it by design; even there
+    // nothing of the wall's may lie inside the picture's own layer (no wash, no button).
     const watchPolish = (() => {
-      const sw = document.querySelector('.w-lookbar');
-      if (!sw) return null;
+      const now = document.querySelector('.w-now');
+      if (!now) return null;
       const box = (e) => { const r = e.getBoundingClientRect(); return { l: Math.round(r.left), t: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) }; };
       const meet = (a, b) => a.l < b.l + b.w && b.l < a.l + a.w && a.t < b.t + b.h && b.t < a.t + a.h;
       const fails = [];
+      const nb = box(now);
+      if (nb.l !== 624 || nb.t !== 30 || nb.w !== 460) fails.push('watch polish: the left block is at ' + nb.l + ',' + nb.t + ' ' + nb.w + ' wide, not 624,30 460 wide');
       const card = document.querySelector('.w-card');
-      for (const sel of ['.w-ctl', '.w-time', '.w-lookbar']) { const e = document.querySelector(sel); if (e && card && meet(box(e), box(card))) fails.push('watch polish: ' + sel + ' overlaps the list'); }
+      for (const sel of ['.w-now', '.w-ctl', '.w-time']) { const e = document.querySelector(sel); if (e && card && meet(box(e), box(card))) fails.push('watch polish: ' + sel + ' overlaps the list'); }
+      // The clock column (the left wing) ends before the block starts.
+      const wing = document.querySelector('.u-wing');
+      if (wing) { const wb = box(wing); if (wb.l + wb.w > nb.l - 20) fails.push('watch polish: the left block is at ' + nb.l + ', less than 20 px from the clock column ending at ' + (wb.l + wb.w)); }
+      // The sitting sheep's seat (when he is in the drive-in) is clear of the block.
+      const sheep = document.querySelector('.watt-sheep > svg');
+      if (sheep && document.querySelector('.w-stage.w-drivein') && meet(box(sheep), { l: nb.l - 22, t: nb.t - 22, w: nb.w + 44, h: nb.h + 44 })) fails.push("watch polish: the left block is within 22 px of the sheep's seat");
       const ctl = document.querySelector('.w-ctl');
-      if (ctl && ctl.children.length) { const kids = [...ctl.children].map(box); const mid = (k) => k.t + k.h / 2; if (kids.some((k) => Math.abs(mid(k) - mid(kids[0])) > 2)) fails.push('watch polish: the control row wraps'); }
+      if (ctl && ctl.children.length) {
+        const kids = [...ctl.children].map(box);
+        const mid = (k) => k.t + k.h / 2;
+        if (kids.some((k) => Math.abs(mid(k) - mid(kids[0])) > 2)) fails.push('watch polish: the control row wraps');
+        const gear = ctl.querySelector('.w-gear');
+        const cb = box(ctl);
+        if (!gear || ctl.lastElementChild !== gear) fails.push('watch polish: the gear is not the last button of the control row');
+        else {
+          const g = box(gear);
+          const g2 = gear.getBoundingClientRect(), c2 = ctl.getBoundingClientRect();
+          if (g.w !== 40 || g.h !== 40) fails.push('watch polish: the gear is ' + g.w + ' by ' + g.h + ', not 40 by 40 like the round buttons');
+          if (Math.abs(g2.right - c2.right) > 0.5) fails.push('watch polish: the gear ends at ' + Math.round(g2.right) + ', not flush with the end of the row at ' + Math.round(c2.right));
+          for (const rd of ctl.querySelectorAll('.rd')) { const r = box(rd); if (r.w !== 40 || r.h !== 40) fails.push('watch polish: a round button is ' + r.w + ' by ' + r.h + ', not 40 by 40'); }
+        }
+        if (cb.l + cb.w > nb.l + nb.w + 0.5) fails.push('watch polish: the control row runs past the left block');
+        // Slack: on another machine the text may be wider. With the Open label 16 px wider than today's, nothing leaves
+        // the row, nothing wraps, the gear is still the last, whole button, and the label alone gives way (never below
+        // the icon and four letters, 88 px for the button).
+        const lab = ctl.querySelector('.w-open-t');
+        if (lab) {
+          const st = document.createElement('style');
+          st.textContent = '.w-open-t { display: inline-block; padding-right: 16px; }';
+          document.head.appendChild(st);
+          void document.body.offsetWidth;
+          const r = ctl.getBoundingClientRect();
+          const kb = [...ctl.children].map((e) => e.getBoundingClientRect());
+          const mid2 = (k) => k.top + k.height / 2;
+          const g = ctl.querySelector('.w-gear');
+          const o = ctl.querySelector('.w-open');
+          if (ctl.lastElementChild !== g) fails.push('watch polish: with 16 px more text the gear is not the last button');
+          if (kb.some((k) => k.left < r.left - 0.5 || k.right > r.right + 0.5)) fails.push('watch polish: with 16 px more text a control leaves the row (' + kb.map((k) => Math.round(k.left) + '-' + Math.round(k.right)).join(' ') + ' in ' + Math.round(r.left) + '-' + Math.round(r.right) + ')');
+          if (kb.some((k) => Math.abs(mid2(k) - mid2(kb[0])) > 2)) fails.push('watch polish: with 16 px more text the control row wraps');
+          if (o && o.getBoundingClientRect().width < 88 - 0.5) fails.push('watch polish: with 16 px more text the Open button is ' + Math.round(o.getBoundingClientRect().width) + ' px, under 88');
+          if (g && !(g.getBoundingClientRect().width >= 39.5)) fails.push('watch polish: with 16 px more text the gear is squeezed to ' + Math.round(g.getBoundingClientRect().width) + ' px');
+          st.remove();
+          void document.body.offsetWidth;
+        }
+      }
+      if (document.querySelector('.w-lookbar')) fails.push('watch polish: the Look switch is on the page');
+      // The position bar, while a length and a time above zero are known: the fill is drawn (wider than zero, a real
+      // background: an undefined colour token drops the whole declaration), the marker sits at the fill's end inside
+      // the bar and takes no click, and the bar is at least 32 px tall to click.
+      const bar = document.querySelector('.w-bar');
+      if (bar) {
+        const fill = bar.querySelector('b'), mark = bar.querySelector('.w-mark');
+        const br = bar.getBoundingClientRect();
+        if (!fill || !mark) fails.push('watch polish: the position bar has no fill or no marker');
+        else {
+          const fr = fill.getBoundingClientRect(), mr = mark.getBoundingClientRect();
+          const cs = getComputedStyle(fill);
+          if (!(fr.width > 0)) fails.push('watch polish: the position fill is not wider than zero');
+          if (cs.backgroundImage === 'none' && (cs.backgroundColor === 'rgba(0, 0, 0, 0)' || cs.backgroundColor === 'transparent')) fails.push('watch polish: the position fill has no background (an undefined colour token?)');
+          const want = Math.min(Math.max(fr.right, br.left + 5), br.right - 5);
+          if (Math.abs(mr.left + mr.width / 2 - want) > 1.5) fails.push('watch polish: the position marker is at x ' + Math.round(mr.left + mr.width / 2) + ', not at the fill end ' + Math.round(want));
+          if (mr.left < br.left - 0.5 || mr.right > br.right + 0.5) fails.push('watch polish: the position marker leaves the bar (' + Math.round(mr.left) + '-' + Math.round(mr.right) + ' in ' + Math.round(br.left) + '-' + Math.round(br.right) + ')');
+          if (getComputedStyle(mark).pointerEvents !== 'none') fails.push('watch polish: the position marker takes the pointer');
+        }
+        if (br.height < 32 - 0.5) fails.push('watch polish: the position bar is ' + Math.round(br.height) + ' px tall to click, under 32');
+      }
       const skyStage = document.querySelector('.w-sky');
       // sky layers: .w-front holds the horizon's front canvas (the land in front of the video; no pointer, no text).
       if (skyStage) for (const c of skyStage.children) if (!c.classList.contains('w-screen') && !c.classList.contains('w-front')) fails.push('watch polish: ' + c.className + " is drawn over the video's box (whole sky)");
       const scr = document.querySelector('.w-stage:not(.w-sky):not(.w-empty) .w-screen');
       if (scr) {
         const v = box(scr);
-        for (const e of document.querySelectorAll('.w-lookbar, .w-now, .w-ctl, .w-time, .w-open, .w-card')) if (meet(box(e), v)) fails.push('watch polish: ' + e.className + " is drawn over the video's box");
+        for (const e of document.querySelectorAll('.w-now, .w-ctl, .w-time, .w-open, .w-gear, .w-card')) if (meet(box(e), v)) fails.push('watch polish: ' + e.className + " is drawn over the video's box");
         const st = scr.closest('.w-stage');
         if (st.classList.contains('w-drivein')) {
           const aud = st.getAttribute('data-audience') || '';
@@ -1384,11 +1546,11 @@ try {
           if (!aud || Math.abs(x - v.l) > 1 || Math.abs(y - v.t) > 1 || Math.abs(w - v.w) > 1 || Math.abs(h - v.h) > 1) fails.push('watch polish: driveInAudience ' + aud + ' is not the drawn screen ' + [v.l, v.t, v.w, v.h].join(','));
         }
       }
-      return { sw: box(sw), fails };
+      return { sw: { l: nb.l, t: nb.t, w: nb.w }, fails };
     })();
     // watt drive-in: with something on in the drive-in look, Watt sits in his seat. His sprite is at
     // least 30 px left of the screen (the rectangle driveInAudience gives), at least 22 px from every
-    // control at his height (every .w-ctl, the Look switch, the list card, the Now block, the leave
+    // control at his height (every .w-ctl, the list card, the Now block, the leave
     // banner: layout boxes, so a control that has faded still counts), within 40 px of the seat the
     // rule gives (the rightmost point that keeps both gaps; none within 300 px means he sits where he
     // stands, and then only the screen gap and the ground are checked), with his feet on the ground
@@ -1413,7 +1575,7 @@ try {
       if (me.right > x - 30 + 0.5) fails.push('watt drive-in: Watt at ' + at + ' is not 30 px clear of the screen at x ' + x);
       // The controls at his height: boxes reaching into his band (layout boxes, faded or not).
       const bands = [];
-      for (const e of document.querySelectorAll('.w-lookbar, .w-ctl, .w-card, .w-now, .leave-banner')) {
+      for (const e of document.querySelectorAll('.w-ctl, .w-card, .w-now, .leave-banner')) {
         const r = e.getBoundingClientRect();
         if (r.width <= 0 || r.height <= 0 || r.bottom <= me.top || r.top >= me.bottom) continue;
         bands.push({ sel: e.className.toString().split(' ')[0], x0: r.left, x1: r.right });
@@ -1430,6 +1592,8 @@ try {
       }
       const none = seat < Math.max(140, x - 300 - w) || bands.some((b) => seat > b.x0 - w - 22 && seat < b.x1 + 22);
       if (!none && Math.abs(me.left - seat) > 40) fails.push('watt drive-in: Watt at ' + at + ' is not within 40 px of his seat at ' + seat);
+      // With the Look switch gone nothing of the left block reaches his height, so the screen alone sets the seat: the chosen picture's left edge 1106 (the screen at 1244, his 108 px, 30 px between).
+      if (x === 1244 && bands.length === 0 && Math.abs(me.left - 1106) > 1) fails.push("watt drive-in: Watt's left edge is " + Math.round(me.left) + ', not 1106 (the chosen seat with the screen at 1244 and nothing of the left block at his height)');
       if (Math.abs(me.bottom - 505) > 1 || me.left < 139) fails.push('watt drive-in: Watt at ' + at + ' is not on his ground');
       // The tower's painted parts at his height (not the floor reflection, the ground shadow or the
       // surround's rings): how far he stands into any of them.
@@ -1492,13 +1656,14 @@ try {
           if (at(cx, 4) > 12) fails.push('sky layers: the front canvas paints the top of the sky over the video');
         }
       }
-      if (check === 'moon') {
+      // \`moonif\`: the moon, when this layout draws one (a look that owns the sky has none), is clear of every box.
+      if (check === 'moon' || check === 'moonif') {
         const c = document.querySelector('canvas.horizon-canvas:not(.horizon-front)');
         const m = (c && c.dataset.moon || '').split(',').map(Number);
-        if (m.length !== 3) fails.push('sky layers: no moon drawn at night');
+        if (m.length !== 3) { if (check === 'moon') fails.push('sky layers: no moon drawn at night'); }
         else {
           const [mx, my, mr] = m;
-          const boxes = [...document.querySelectorAll('.u-card, .sp-card, .u-player, .u-next, .u-tabs, .w-now, .w-lookbar, .w-gear, .w-stage, .rail')].map((e) => [e.className.baseVal ?? e.className, e.getBoundingClientRect()]);
+          const boxes = [...document.querySelectorAll('.u-card, .sp-card, .u-player, .u-next, .u-tabs, .w-now, .w-gear, .w-stage, .rail')].map((e) => [e.className.baseVal ?? e.className, e.getBoundingClientRect()]);
           const clk = document.querySelector('.clk');
           if (clk) { const rg = document.createRange(); rg.selectNodeContents(clk); boxes.push(['the clock', rg.getBoundingClientRect()]); }
           for (const [name, r] of boxes) {
@@ -1514,7 +1679,7 @@ try {
     })();
     // tower and hologram: with th=tower, nothing of the drive-in's frame paints over the video's box
     // (every drawn shape tested with the browser's own fill and stroke tests at points of the box), the box
-    // is exactly wall 1244, 54, 672 by 378, the frame is clear of the left block, the Look switch and the
+    // is exactly wall 1244, 54, 672 by 378, the frame is clear of the left block and the
     // list card, and the marquee says what the state says; with th=holo, the tilted pane is inside the stage
     // and clear of the card, drawn whole, blended, its plate under it, the emitter taking no pointer.
     const thCheck = (() => {
@@ -1523,7 +1688,7 @@ try {
       const fails = [];
       const R = (e) => { const r = e.getBoundingClientRect(); return { l: r.left, t: r.top, w: r.width, h: r.height }; };
       const meet = (a, b) => a.l < b.l + b.w && b.l < a.l + a.w && a.t < b.t + b.h && b.t < a.t + a.h;
-      const keep = ['.w-now', '.w-lookbar', '.w-card'].map((sel) => [sel, document.querySelector(sel)]).filter((k) => k[1]);
+      const keep = ['.w-now', '.w-card'].map((sel) => [sel, document.querySelector(sel)]).filter((k) => k[1]);
       const stage = document.querySelector('.w-stage');
       const scr = stage && stage.querySelector('.w-screen');
       let quad = null;
@@ -1641,16 +1806,16 @@ try {
       const meet = (a, b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
       if (mode === 'rest') {
         // Headless virtual time hardly runs CSS transitions: read where the 250 ms fade ends.
-        for (const e of document.querySelectorAll('.w-now > *, .w-lookbar')) e.style.transition = 'none';
+        for (const e of document.querySelectorAll('.w-now > *')) e.style.transition = 'none';
         void document.body.offsetWidth;
         const now = document.querySelector('.w-now');
         if (!now || now.getAttribute('data-ctl') !== 'rest') fails.push('watch behaviour: the controls are not at rest');
-        for (const e of document.querySelectorAll('.w-now .u-src, .w-ctl button, .w-ctl .w-open, .w-bar, .w-hintbtn, .w-lookbar button')) {
+        for (const e of document.querySelectorAll('.w-now .u-src, .w-ctl button, .w-ctl .w-open, .w-bar, .w-hintbtn')) {
           const r = e.getBoundingClientRect();
           if (!(r.width > 0 && r.height > 0)) continue;
           const h = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
           if (h && (h === e || e.contains(h))) fails.push('watch behaviour: ' + cls(e) + ' takes the pointer while the controls are hidden');
-          if (Number(getComputedStyle(e.closest('.w-ctl, .w-time, .w-lookbar, .u-src') || e).opacity) > 0.01) fails.push('watch behaviour: ' + cls(e) + ' shows while the controls are hidden');
+          if (Number(getComputedStyle(e.closest('.w-ctl, .w-time, .u-src') || e).opacity) > 0.01) fails.push('watch behaviour: ' + cls(e) + ' shows while the controls are hidden');
         }
         const title = document.querySelector('.w-now .w-title');
         const scr = document.querySelector('.w-stage .w-screen');
@@ -1704,6 +1869,11 @@ try {
     picker: (v) => v.name.startsWith('Deck, the key picker open over'),
     tools: (v) => v.name === 'Tools, over Work, typical',
     toolsnames: (v) => v.name === 'Tools, over Work, typical',
+    'yt-clip': (v) => v.name === 'Tools, YouTube setup form open',
+    'yt-text': (v) => v.name === 'Tools, YouTube setup form open',
+    'yt-control': (v) => v.name === 'Tools, YouTube setup form open',
+    'yt-row': (v) => v.name === 'Tools, YouTube signed out',
+    'yt-actions': (v) => v.name === 'Tools, YouTube change setup form open',
     'spotify-copy': (v) => v.name === 'Spotify copy, choose this computer',
     'account-copy': (v) => v.name === 'Account copy, failed sign-in',
     meetfill: (v) => v.name === 'Meet, both accounts read',
@@ -1753,7 +1923,11 @@ try {
     'listen-slot': (v) => v.name === 'Listen, playing with the lines moving',
     'listen-next': (v) => v.name === 'Listen, playing with the lines moving',
     // watch polish
-    'watch-switch': (v) => v.name.startsWith('Watch polish'),
+    'watch-block': (v) => v.name.startsWith('Watch polish'),
+    'watch-gear': (v) => v.name === 'Watch polish, feathered, single video',
+    'watch-slack': (v) => v.name === 'Watch polish, feathered, single video',
+    'watch-fill': (v) => v.name === 'Watch polish, feathered, single video',
+    'watch-marker': (v) => v.name === 'Watch polish, feathered, single video',
     'watch-row': (v) => v.name === 'Watch polish, feathered, single video',
     'watch-over': (v) => v.name === 'Watch polish, drive-in, playlist, long label',
     'watch-take': (v) => v.name === 'Watch polish, whole sky, autoplay refused',
@@ -1761,12 +1935,13 @@ try {
     'watt-seat': (v) => v.name === 'Watt drive-in, seated at night',
     'watt-ground': (v) => v.name === 'Watt drive-in, seated at night',
     'watt-spot': (v) => v.name === 'Watt drive-in, seated at night',
+    'watt-seat1106': (v) => v.name === 'Watt drive-in, seated at night',
     'watt-tower': (v) => v.name === 'Watt drive-in, seated at night',
     // tower and hologram
     'tower-over': (v) => v.name === 'Watch polish, tower playing',
     'tower-wide': (v) => v.name === 'Watch polish, tower playing',
     'tower-box': (v) => v.name === 'Watch polish, tower playing',
-    'tower-switch': (v) => v.name.startsWith('Watch polish'),
+    'tower-block': (v) => v.name.startsWith('Watch polish'),
     'holo-big': (v) => v.name === 'Watch polish, hologram, single video',
     'holo-noblend': (v) => v.name === 'Watch polish, hologram, single video',
     'holo-beam': (v) => v.name === 'Watch polish, hologram, single video',
@@ -1794,7 +1969,7 @@ try {
   const breakOn = BREAK_ON[overflow] ? VARIANTS.filter(BREAK_ON[overflow]) : VARIANTS.slice(0, 1);
   /** keys style: the Now row's height on each page that has one, compared after every state ran. */
   const nowHeights = [];
-  /** watch polish: the Look switch's box in each Watch polish state, compared after the run. */
+  /** watch polish: the left block's box (left, top, width) in each Watch polish state, compared after the run. */
   const switchBoxes = [];
   /** sky layers: the moon drawn in each moon state, compared after the run (one place on Listen and on Watch). */
   const skyMoons = [];
@@ -1836,6 +2011,7 @@ try {
     for (const f of skyLayers.fails) console.log(`  FAIL ${f}`);
     if (skyLayers.fails.length) failed = true;
     else if (v.sky === 'front') console.log('  ok   sky layers: the front canvas covers the stage over the video, the land opaque, the sky clear');
+    else if (v.sky === 'moonif') console.log(`  ok   sky layers: ${skyLayers.moon ? `the moon at ${skyLayers.moon} is 40 px clear of the block, the cards and the clock` : 'no moon in this layout'}`);
     else if (v.sky === 'moon') console.log(`  ok   sky layers: the moon at ${skyLayers.moon} is 40 px clear of every card, the player and the clock`);
     // The moon the rule gives for this layout (the first clear one of cameras.ts MOON_PLACES): on Listen in
     // every player state the low place under the player, on Watch with nothing on its first place. Not with a
@@ -1850,7 +2026,7 @@ try {
       for (const f of watchPolish.fails) console.log(`  FAIL ${f}`);
       if (watchPolish.fails.length) failed = true;
       else console.log('  ok   watch polish: the control row is one line clear of the list, nothing over the video\'s box');
-      if (v.name.startsWith('Watch polish')) switchBoxes.push({ name: v.name, box: watchPolish.sw });
+      if (v.name.startsWith('Watch polish') || v.name.startsWith('Watch matrix')) switchBoxes.push({ name: v.name, box: watchPolish.sw });
     }
     // look tiles
     for (const f of tileText) console.log(`  FAIL ${f}`);
@@ -1860,7 +2036,7 @@ try {
     if (thCheck) {
       for (const f of thCheck.fails) console.log(`  FAIL ${f}`);
       if (thCheck.fails.length) failed = true;
-      else if (thCheck.mode === 'tower') console.log('  ok   tower and hologram: nothing of the frame paints over the video box 1244,54,672,378; the frame is clear of the left block, the Look switch and the list card; the marquee says the state');
+      else if (thCheck.mode === 'tower') console.log('  ok   tower and hologram: nothing of the frame paints over the video box 1244,54,672,378; the frame is clear of the left block and the list card; the marquee says the state');
       else console.log('  ok   tower and hologram: the tilted pane is whole, inside the stage, clear of the card, blended over its plate, with no front layer');
     }
     // tower and hologram, the pixel proofs: inside the tilted pane (the browser's own corners, inset 2 px) the page as
@@ -2070,7 +2246,7 @@ try {
       console.log(`  FAIL deck: the Now row is ${hs[0]} px tall on every page, expected 108 (a 32 px heading, 6 px, a 70 px tile row)`);
     } else console.log(`keys style: the Now row is ${hs[0]} px tall on every key page, on For you and on Recording`);
   }
-  // watch polish: the Look switch sits in one place, one size, in every look and with nothing on.
+  // watch polish: the left block sits in one place (the cross-state compare is at the end of the run).
   // sky layers
   // The moon takes the first clear one of its places (cameras.ts MOON_PLACES), so each layout may
   // put it elsewhere; each state's place was checked 40 px clear of every card above.
@@ -2162,13 +2338,13 @@ try {
     }
   }
   if (switchBoxes.length > 1) {
-    const key = (b) => `${b.l},${b.t} ${b.w}x${b.h}`;
+    const key = (b) => `${b.l},${b.t} ${b.w} wide`;
     const first = key(switchBoxes[0].box);
     const off = switchBoxes.filter((s) => key(s.box) !== first);
     if (off.length) {
       failed = true;
-      for (const s of off) console.log(`  FAIL watch polish: the Look switch is at ${key(s.box)} on ${s.name}, not ${first} as on ${switchBoxes[0].name}`);
-    } else console.log(`watch polish: the Look switch is at ${first} in all ${switchBoxes.length} states`);
+      for (const s of off) console.log(`  FAIL watch polish: the left block is at ${key(s.box)} on ${s.name}, not ${first} as on ${switchBoxes[0].name}`);
+    } else console.log(`watch polish: the left block is at ${first} in all ${switchBoxes.length} states`);
   }
   process.exit(failed ? 1 : 0);
 } catch (e) {

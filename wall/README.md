@@ -49,6 +49,57 @@ in memory until sign in or sign out so search and playlist paging reuse it safel
 When a play request includes a context, that context and its optional offset take
 precedence over the top-level kind and id; the top-level values remain validated.
 
+## YouTube
+
+The wall signs in to YouTube so that later changes can read the owner's own playlists and
+liked videos. This change builds only the sign-in and its row in Tools; it reads no
+playlists and plays nothing, and the library and playback arrive in later changes. It needs
+a Google Cloud OAuth client of the "Desktop app" type, made in your own Google Cloud project.
+
+- **Scope.** Only `https://www.googleapis.com/auth/youtube.readonly` (view the account). The
+  wall cannot change, post or delete anything. A grant that comes back without that scope,
+  or without a refresh token, is revoked at once and the sign-in ends as `denied`.
+- **Setting the client.** Tools, Accounts, YouTube, Set up: paste the client id and the client
+  secret and press Save. Rust checks both (the id as `<digits>-<name>.apps.googleusercontent.com`,
+  the secret as 20 to 64 letters, digits, `_` or `-`) and keeps them together in Windows
+  Credential Manager (`WidgetWall2/youtube/client/0`). Neither value is ever sent back to the
+  page, written to a file or logged. The form refuses while signed in: sign out first.
+- **File route.** Instead of the form, a `youtube.json` in the app config folder (beside
+  `spotify.json` and `feeds.json`) is read, never written. It is either
+  `{ "clientId": "...", "clientSecret": "..." }` or Google's own downloaded file (the
+  `installed` shape; a `web` client is refused). Only the two named fields are read: any other
+  field, endpoints included, is ignored, because the endpoints are fixed in Rust. A client
+  saved through the form wins; the file is read only when none is saved. `youtube.json` and
+  `client_secret*.json` are in `.gitignore`.
+- **Sign-in.** Sign in opens the system browser on Google's page (PKCE, S256, a random state)
+  and listens for the answer on `127.0.0.1` at a random free port, path `/callback`, for at
+  most five minutes; Cancel ends it. The listener is closed as soon as the code arrives. The
+  browser tab then says "Signed in. You can close this tab." While the app is in Google's
+  "Testing" state the refresh token dies in seven days, so publish it as "In production"; as an
+  app only the owner uses it stays unverified, and Google shows its warning page at each
+  sign-in.
+- **Where the tokens live.** The refresh token in Credential Manager
+  (`WidgetWall2/youtube/refresh/<n>`), the access token in memory only. Only `invalid_grant`
+  deletes the stored token (and only if it is still the one that was tried); a refused client
+  (`invalid_client`) deletes nothing and the row reads "Setup broken".
+- **Sign-out.** Revokes the grant at Google (five seconds), then always clears the stored
+  token, the one in memory and the note; the client stays, so Sign in works again at once.
+- **Status.** `wall2_youtube_status` answers only `{ setup, signedIn, reason, searchesLeft }`
+  with `reason` one of `not set up`, `sign in again`, `setup broken` or `failed`;
+  `searchesLeft` is for the search of a later change and is empty for now.
+- **Links.** The row carries the two links YouTube API Services asks for, YouTube Terms and
+  Google Privacy Policy. The page sends only the kind word (`youtube-terms`, `google-privacy`)
+  to `wall2_open_link`; the addresses are fixed in Rust.
+- **The log `wall2-youtube.log`** (app log folder, 64 KB cap) holds lines of four fields:
+  an event (`sign-in-start`, `sign-in-ok`, `sign-in-failed`, `sign-out`, `revoke-failed`,
+  `refresh-ok`, `refresh-refused`, `refresh-failed`, `client-saved`, `client-forgotten`), a
+  reason (`none`, `busy`, `down`, `failed`, `sign-in-again`, `setup-broken`, `denied`,
+  `cancelled`, `timed-out`), an HTTP status and milliseconds. Never an id, token, client value,
+  title or query.
+- **No test talks to Google.** Every path runs against fake `Http` and `Creds` traits; the real
+  sign-in, Google's warning page and whether its token exchange needs the secret are checked by
+  hand.
+
 ## Run, test, build (web)
 
 All commands run from the repository root (or `cd wall` and drop `--prefix wall`).
@@ -1068,7 +1119,7 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
   wholly above the Unwind ridgeline and clear of the clock (a test). With none clear, or a claim
   that says `noMoon`, there is no moon, and its light on the lake goes with it. On Listen the
   Spotify card (`SpotifyCard.tsx`) and the player (`Player.tsx`) claim their drawn boxes, so the
-  moon sits at (760, 352) there, whatever the player shows; on Watch the list card, the left block and the Look switch do. The same claims
+  moon sits at (760, 352) there, whatever the player shows; on Watch the list card and the left block do. The same claims
   always give the same place, so it changes only when a box does, and it is simply drawn at its
   new place on the next frame (a resting still frame is drawn again once for each change; a claim
   made again with the same boxes changes nothing). It shows once the glide to Unwind has finished (it goes as
@@ -1330,9 +1381,9 @@ Watt is also a small pet ("he"), calm and silent (no sound at all):
   - **While the wall records** (`isQuietForRecording()` in `signals/store.ts`) he sits quietly where
     he is: no wander and no idle life, no line of his own, no click noticing, no hop or look he
     starts himself, no notes or beat; the owner can still pet him, open his menu and carry him.
-  - **At the drive-in** (`buddy/audience.ts`): while a show is on (the video playing or paused in the drive-in look, with its stage in sight on Unwind's Watch tab: a video playing out of sight is parked and is not a show), he walks to a seat just left of the screen rectangle the selector gives (`driveInAudience`): his seated sprite (108 px, props put away) keeps at least 30 px from the screen's left edge and at least 22 px from the nearest control at his height on either side, and the seat is the rightmost point that does (the screen at x 1244 and the Look switch ending at x 1084 give a left edge of 1106). The controls are measured from the layout boxes (a faded control still takes its place) once for the screen and layout, and again only when the window resizes or something appears in or goes from the page; the answer, a seat or none, is kept. The seat has its own ground (`seatGround`); `WATCH_GROUND`, which bounds his wander, stays at x 1020. With no seat within 300 px of the screen he does not walk: he sits down where he stands, turned to it. Reduced motion: simply there. He sits with one sign of life every 20 to 40 seconds (a blink, an ear, a head dip) and looks round once on a pause; no bubble, no click notice, no headphones; the show keeps him up past bedtime, and his frame loop rests on one timer. He may stand up to 24 px into the tower's left foot and stay (the chosen picture has him 19 px in). Nothing depends on the Look switch existing.
+  - **At the drive-in** (`buddy/audience.ts`): while a show is on (the video playing or paused in the drive-in look, with its stage in sight on Unwind's Watch tab: a video playing out of sight is parked and is not a show), he walks to a seat just left of the screen rectangle the selector gives (`driveInAudience`): his seated sprite (108 px, props put away) keeps at least 30 px from the screen's left edge and at least 22 px from the nearest control at his height on either side, and the seat is the rightmost point that does (the screen at x 1244 and nothing of the left block at his height give a left edge of 1106). The controls are measured from the layout boxes (a faded control still takes its place) once for the screen and layout, and again only when the window resizes or something appears in or goes from the page; the answer, a seat or none, is kept. The seat has its own ground (`seatGround`); `WATCH_GROUND`, which bounds his wander, stays at x 1020. With no seat within 300 px of the screen he does not walk: he sits down where he stands, turned to it. Reduced motion: simply there. He sits with one sign of life every 20 to 40 seconds (a blink, an ear, a head dip) and looks round once on a pause; no bubble, no click notice, no headphones; the show keeps him up past bedtime, and his frame loop rests on one timer. He may stand up to 24 px into the tower's left foot and stay (the chosen picture has him 19 px in). Nothing depends on the controls under the left block: there are none.
   - While the drive-in's marquee waits (loading, a refused autoplay's click, a Twitch start hint) there is no show: he does not walk to the seat; a show he is already at keeps him seated through a wait inside it (the next item of a playlist), and a video that ended sends him home. When a show ends he walks back to his Watch spot. Order, first match wins (`showRole`, one table in `audience.test.ts`): no show, a video that ended or has not started (off); a call, reading with him (both send him back); the wall recording (he sits where he is, no walk); his menu open (he stays put while it is open); a nap he was sent to (he finishes it lying where he is, then goes to the show if it is still on); the owner's hand in this show (set down, picked up, Come here, Stay: he watches from where he was put); then watching. The leave banner acts through his ground, and on Unwind it takes none; bedtime does not apply while a show is on. The owner's hand is tied to one show (`ShowTrack`): it survives a call, reading and recording inside that show and is cleared when the selector leaves it (the video stops or ends, the owner leaves the tab or Unwind), so the next show starts free.
-  - The fit check holds his seat 30 px clear of the screen, 22 px clear of every control at his height (every `.w-ctl`, the Look switch, the list, the Now block, the banner), within 40 px of the seat the rule gives, on the ground line, and no more than 24 px into the tower's painted parts at his height; its self-test breaks (`watt-seat`, `watt-spot`, `watt-tower`, `watt-ground`) each fail for their own reason. The gallery's `drag:` step sets him down during a show.
+  - The fit check holds his seat 30 px clear of the screen, 22 px clear of every control at his height (every `.w-ctl`, the list, the Now block, the banner), within 40 px of the seat the rule gives (a left edge of 1106 with the screen at 1244 and nothing of the block at his height), on the ground line, and no more than 24 px into the tower's painted parts at his height; its self-test breaks (`watt-seat`, `watt-spot`, `watt-seat1106`, `watt-tower`, `watt-ground`) each fail for their own reason. The gallery's `drag:` step sets him down during a show.
   - **He notices clicks.** One passive `pointerdown` listener on the window (capture, so it sees
     clicks a control stops; it never prevents or stops anything, and does a few comparisons and
     starts a reaction; no polling, no timer while idle). A click anywhere on the wall that is not
@@ -1438,14 +1489,19 @@ there, still playing, when the owner comes back (see "The stage layer" below).
   Open on Twitch. An auto-mix playlist (an id starting `RD`) passes the id check but may not
   play in the embed; Open in YouTube is the way out. Video quality cannot be set from the wall:
   an embedded player picks it from its size.
+- **The left block** (`.w-now` in `Watch.tsx`): starts at wall y 30, the line Listen's player
+  starts at, so nothing jumps between the two tabs; wall x 624 to 1084. Kind line (y 30), the
+  title (up to two lines), "Playing on the wall", the control row, the time bar. There is no
+  Look switch under it and no row of its own for the gear: the looks are chosen in the gear's
+  sheet (five picture tiles, or one choice per kind) and in the Tools drawer's Video look.
 - **The control row** (`Watch.tsx`, in the left block under the title, the left wing's small
-  round `.rd` controls): Previous and Next (on only for a playlist the player reports), Play or
-  Pause, Mute, Stop, and Open in YouTube (or Open on Twitch); under it the elapsed time, a thin
-  bar (a click or the arrow keys seek) and the length, or "Live" for a stream.
-- **The Look switch** (`LookSwitch` in `Watch.tsx`): the five looks as one segmented control
-  in a fixed place under the left block (one box, 500 by 46 at wall 624, 444, ending at x 1084, the same in every look,
-  playing or not; never on the video; its segments take their own width and share the rest). With one look for everything it sets that look; with a look per kind it sets the
-  look of the kind on (its hover tip and name say which). Arrow keys move.
+  round `.rd` controls, 40 px): Previous and Next (on only for a playlist the player reports),
+  Play or Pause, Mute, Stop, Open in YouTube (or Open on Twitch), and the gear, the row's last
+  button (40 px, flush with the end of the time bar): "How video is shown", which opens the sheet
+  on its Looks side. The gear fades and returns with the row. With nothing on, the row is the
+  Play button for the first saved item and the gear. Under the row the elapsed time, a thin
+  bar (a click or the arrow keys seek) and the length, or "Live" for a stream. Closing the sheet
+  with Escape or its cross puts the focus back on the gear.
 - **For the buddy**: `driveInAudience(state)` in `store.ts` (usable as a store selector) is
   null, or, while something is on in the drive-in look, the screen's rectangle in wall pixels
   (`DRIVE_IN_SCREEN` in `looks.ts`), so the sheep can sit in front of it and watch. The fit
@@ -1499,7 +1555,7 @@ there, still playing, when the owner comes back (see "The stage layer" below).
   all); the whole sky and the sun (`behindTheLand`) also give `.w-front`, after the picture, where the
   horizon mounts its front canvas, and their stage sits at z-index -1 in the main area's own
   layer group (`.w-layered`), under every control and line of text. While the player waits for a
-  click, the sun comes forward (`layeredNow`). The left block, the Look switch and the Watch list
+  click, the sun comes forward (`layeredNow`). The left block and the Watch list
   card claim their own boxes as keep-clear (`useSkyKeepClear`). The look's claim is held only while
   the stage is in sight; the keep-clear claims go with the Watch panel (Listen, nothing on, another
   place, Zen). The gear on Watch opens a sheet over the right wing on its Looks side; the gear on
@@ -1509,7 +1565,7 @@ there, still playing, when the owner comes back (see "The stage layer" below).
   the sheet to its content. The Looks side:
   one look for everything (five picture tiles), or one each for videos and playlists, live
   streams and Twitch (five choices a row), at 540 px (`wall2-watch-look`, checked on read;
-  values stored before the newer looks still read the same). The Look switch sets it too.
+  values stored before the newer looks still read the same).
 - **The stage layer** (`StageLayer.tsx`, watch behaviour): the video's stage (the frame in its
   look, with the player's message bridge) is not part of Unwind. The screens frame
   (`screens/Frame.tsx`) mounts `WatchStageLayer` once in `.top`, Unwind's own box, for every
@@ -1532,10 +1588,10 @@ there, still playing, when the owner comes back (see "The stage layer" below).
   Tools drawer is a drawer over the same place: the video stays where it is under it, and the
   drawer stacks above the layer and its pointer band. Music from Listen and a video can play together; nothing mixes or ducks.
 - **The controls fade** (5A, `useControlsFade` in `Watch.tsx`): while a video plays, 3 seconds
-  (`CTL_REST_MS`) after the pointer leaves the left block, the Look row and a 72 px band over the
+  (`CTL_REST_MS`) after the pointer leaves the left block and a 72 px band over the
   video's lower edge (`EdgeBand`, the wall's own transparent box beside the frame, never over
   it), and keyboard focus leaves the controls (a click leaves the clicked button without focus once the pointer is gone), the kind line, the "Playing on the wall" line, the play
-  row, the time bar and the Look switch fade to nothing (250 ms; at once under reduced motion)
+  row (the gear is its last button) and the time bar fade to nothing (250 ms; at once under reduced motion)
   and take no pointer; the title stays at half strength with no glow. Pointer, focus or Tab
   brings them back at once. They never fade while paused or ended, with nothing on, or while a
   notice shows ("Click the video to start", "Not started? Click the video", "Could not open the
@@ -2163,7 +2219,7 @@ holds both policies to `frame-ancestors 'none'` and to exactly the two `frame-sr
 
 The rail's Tools button (pressed while open) opens a drawer over the right third of any place: 806 px wide at x 1734, top 20. Escape, its close button or a click outside close it, and it closes by itself after 2 minutes with no pointer over it. Escape is taken by the drawer (the key press is marked handled, and `fullscreen.ts` ignores an Escape another layer already took), so in fullscreen it closes the drawer and stays fullscreen. While a browser sign-in waits the idle close holds; closing the drawer on purpose during a wait cancels that sign-in (calendar or Spotify) and the next open says "Sign-in cancelled" for a few seconds. The code is in `src/tools/` and `src/styles/tools.css`.
 
-- **Accounts.** Each calendar account from `useMeet(true)` (the same hook Meet uses, reading on any place while the drawer is open) with its state line and Sign in, Sign out or Try again; Spotify from `src/music/spotify.ts` (Not set up, with a hover naming `spotify.json` in the app's config folder, and no button, when it has no `spotify.json`). While a sign-in waits, the row says "Waiting for the browser" and has Cancel. There is no Twitch row: Twitch has no sign-in yet, and a button that does nothing is never drawn. A sign-in or sign-out refreshes Meet and Work's calendar read at once.
+- **Accounts.** Each calendar account from `useMeet(true)` (the same hook Meet uses, reading on any place while the drawer is open) with its state line and Sign in, Sign out or Try again; Spotify from `src/music/spotify.ts` (Not set up, with a hover naming `spotify.json` in the app's config folder, and no button, when it has no `spotify.json`). YouTube (see "YouTube" above) is the row under Spotify, with its Set up form (the form takes the left column while it is open, so Video look and Keys file are hidden until it closes) and a line with its two required links. While a sign-in waits, the row says "Waiting for the browser" and has Cancel. There is no Twitch row: Twitch has no sign-in yet, and a button that does nothing is never drawn. A sign-in or sign-out refreshes Meet and Work's calendar read at once.
 - **Sources.** One row each for Calendar, Tasks, Agents, Home, Sound, Music, Weather and Box: a dot (mint fresh, amber stale or failing, red down or not set up, grey nothing read yet), the last good read as a clock time or "never", the store's own reason on hover, and Retry, which runs that store's existing refresh and stays busy until that read settles (15 seconds at most); a second click while it runs starts nothing. Music's Retry says "Nothing is playing to read" when its poll is not running. The rules are in `src/tools/sources.ts` and use each store's own stale rule: the agents helper's `agentsStale`, Home's alarm age, Sound's two minutes, the weather card's "updated N min ago" age, Music's 2 second poll. Tasks, Sound and Box keep their state inside their hooks, so each hook reports every read to `src/tools/reports.ts` and registers its own refresh while mounted; when no screen has it mounted, Retry (and opening the drawer) reads the same command once. Home here is the home app's security read, which is also what the rail's alarm dot uses.
 - **Video look.** The chips are the Watch looks (`LOOKS` in `src/unwind/watch/looks.ts`) and use the Watch store's `setLooks`: picking one sets one look for everything. When Watch is set to a look per kind no chip is lit and the hint says so. There is no Off, because the Watch store has none.
 - **Keys file.** "keys.json, N keys, read 8:02 AM" counts the keys the file names (its own sets and its pinned keys, not the built-in sets). A refused file shows in amber with the whole reason on hover; no file says "No keys.json. Defaults in use". Reload forgets the shared read and asks `wall2_keys_summary` again. Open calls `wall2_open_keys_file`, which takes no argument: Rust opens `keys.json` in the app config folder with the default editor, or the folder when there is no file yet, and only answers `not-configured` or `failed`. Only the `wall2` window may call it.
@@ -2171,7 +2227,7 @@ The rail's Tools button (pressed while open) opens a drawer over the right third
 
 What Tools reads that the screens did not: opening it starts the account reads (the same reads Meet makes), reads Tasks, Sound and Box once when no screen has them mounted, and polls the keys file every 2 seconds while it is open (Work's deck already does that).
 
-Review knobs: `?tools=1` opens the drawer on load (`?tools=accounts` rings Accounts) and `?keys=refused` makes `wall2_keys_summary` refuse the file with a long reason. `fit-check` holds the drawer inside x 1700 to 2560 and y 0 to 720, clear of the rail, with no cut text that has no tooltip, and holds Meet's upper right filled in every Meet state (the Later card carries a plain line when there is no list).
+Review knobs: `?tools=1` opens the drawer on load (`?tools=accounts` rings Accounts), `?youtube=off|out|waiting|in|again|broken|brokenout|down|refuse|rejectsave` picks the YouTube row's state (development mock only) and `?keys=refused` makes `wall2_keys_summary` refuse the file with a long reason. `fit-check` holds the drawer inside x 1700 to 2560 and y 0 to 720, clear of the rail, with no cut text that has no tooltip, holds the YouTube row, its form, its hint and its links line inside the Accounts column with text 16 px or more, controls 32 px or more and a row built like Spotify's, and holds Meet's upper right filled in every Meet state (the Later card carries a plain line when there is no list).
 
 ## Fullscreen keys
 

@@ -60,6 +60,7 @@ beforeEach(() => {
   mocks.set('wall2_build_info', () => ({ commit: '7c9f442', builtAt: '2026-11-13T16:17Z' }));
   mocks.set('wall2_meet_next', () => ({ accounts: [{ id: 'work', label: 'Work', state: 'ok' }, { id: 'second', label: 'Second', state: 'signed-out' }], meetings: [] }));
   mocks.set('wall2_spotify_status', () => ({ setup: false, signedIn: false }));
+  mocks.set('wall2_youtube_status', () => ({ setup: true, signedIn: true, reason: null, searchesLeft: null }));
   mocks.set('wall2_tasks_next', () => []);
   mocks.set('wall2_sonos_summary', () => ({}));
   mocks.set('wall2_machines', () => ({ pc: {}, box: {}, boxStale: false }));
@@ -167,8 +168,8 @@ it('Accounts: the signed-out calendar has Sign in, Spotify not set up has no but
   expect(screen.getByRole('button', { name: 'Sign in' })).toBeTruthy();
   expect(list.textContent).toContain('Not set up');
   expect(list.textContent).not.toContain('Twitch');
-  // Calendar sign out + calendar sign in; Spotify has none.
-  expect(list.querySelectorAll('button')).toHaveLength(2);
+  // Calendar sign out + calendar sign in + YouTube sign out; Spotify has none (its links are two more buttons).
+  expect(list.querySelectorAll('.tools-btn')).toHaveLength(3);
 });
 
 it('Video look: chips from the Watch looks, the active one lit, a click uses the Watch setter', async () => {
