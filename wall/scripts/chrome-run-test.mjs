@@ -14,7 +14,7 @@
 // temporary folder behind.
 // Not for Windows (uses ps).
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -76,6 +76,24 @@ const before = calls.length;
 killTree(done, rec);
 check(calls.length === before, 'a real child that has exited is never killed');
 
+// a browser that crashes is tried again; a clean run after two crashes returns its output
+{
+  const dir = mkdtempSync(join(tmpdir(), 'wall-chrome-test-'));
+  const flag = join(dir, 'n');
+  const prog = `const fs=require('fs');const f=${JSON.stringify(flag)};let n=0;try{n=+fs.readFileSync(f,'utf8')}catch{}fs.writeFileSync(f,String(n+1));if(n<2)process.kill(process.pid,'SIGTRAP');console.log('fine')`;
+  const logged = [];
+  const log = console.log;
+  console.log = (...a) => logged.push(a.join(' '));
+  let out;
+  try {
+    out = await runChrome(process.execPath, ['-e', prog], { label: 'crash state', limitMs: 20000 });
+  } finally {
+    console.log = log;
+  }
+  check(out.trim() === 'fine' && logged.length === 2 && /retry 1: the browser exited with SIGTRAP \(crash state\)/.test(logged[0]), `two crashes are retried, the third try returns its output (${logged.length} retry lines)`);
+  rmSync(dir, { recursive: true, force: true });
+}
+
 // ---- processes
 const snapshot = () =>
   (spawnSync('ps', ['-eo', 'pid=,ppid=,pgid=,args='], { encoding: 'utf8' }).stdout ?? '')
@@ -96,6 +114,12 @@ const gone = async (pid) => {
   for (let i = 0; i < 20; i++) {
     try {
       process.kill(pid, 0);
+    } catch {
+      return true;
+    }
+    // A zombie (stopped, waiting only for its parent to collect it) is gone for this purpose.
+    try {
+      if (/^\d+ \(.*\) Z/.test(readFileSync(`/proc/${pid}/stat`, 'utf8'))) return true;
     } catch {
       return true;
     }
@@ -129,7 +153,11 @@ async function runCase(mode) {
   const pids = [...seen.keys()];
   console.log(`  recorded ${pids.length} process(es) of this run: ${pids.join(', ') || 'none'}`);
   const left = [];
-  for (const pid of pids) if (!(await gone(pid))) left.push(pid);
+  for (const pid of pids) {
+    if (await gone(pid)) continue;
+    left.push(pid);
+    console.log(`    still there: ${spawnSync('ps', ['-o', 'pid,ppid,pgid,stat,args', '-p', String(pid)], { encoding: 'utf8' }).stdout.trim().split('\n').pop()}`);
+  }
   const leftovers = readdirSync(tmp);
   rmSync(tmp, { recursive: true, force: true });
   return { status, stdout, stderr, secs, seen, firstPair, left, leftovers };

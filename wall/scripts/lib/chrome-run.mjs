@@ -30,9 +30,10 @@ let hooked = false;
 
 /** Thrown after the last try failed (or the browser could not run at all). The caller prints and sets its exit code. */
 export class ChromeRunError extends Error {
-  constructor(message) {
+  constructor(message, { crashed = false } = {}) {
     super(message);
     this.name = 'ChromeRunError';
+    this.crashed = crashed; // the browser itself died (a signal or a non-zero exit): worth another try
   }
 }
 
@@ -128,7 +129,7 @@ async function once(chrome, args, limitMs, maxBuffer, hang) {
       child.once('close', (code, sig) => {
         clearTimeout(timer);
         if (over) reject(new ChromeRunError('the browser printed more than the allowed output'));
-        else if (code !== 0) reject(new ChromeRunError(`the browser exited with ${sig ?? `code ${code}`}`));
+        else if (code !== 0) reject(new ChromeRunError(`the browser exited with ${sig ?? `code ${code}`}`, { crashed: true }));
         else resolve({ out: Buffer.concat(chunks).toString('utf8') });
       });
     });
@@ -151,7 +152,18 @@ export async function runChrome(chrome, args, { label = '', maxBuffer = 64 * 102
   const secs = Math.round(limitMs / 1000);
   const name = label ? ` (${label})` : '';
   for (let n = 1; n <= TRIES; n++) {
-    const r = await once(chrome, args, limitMs, maxBuffer, n <= hang);
+    let r;
+    try {
+      r = await once(chrome, args, limitMs, maxBuffer, n <= hang);
+    } catch (e) {
+      // A browser that crashed (for example with SIGTRAP on a busy machine) is tried again like one that hung.
+      if (!(e instanceof ChromeRunError) || !e.crashed) throw e;
+      if (n < TRIES) {
+        console.log(`  retry ${n}: ${e.message}${name}`);
+        continue;
+      }
+      throw new ChromeRunError(`${e.message} on all ${TRIES} tries${name}`);
+    }
     if (!r.timedOut) return r.out;
     if (n < TRIES) console.log(`  retry ${n}: the browser did not answer in ${secs} s${name}`);
   }
