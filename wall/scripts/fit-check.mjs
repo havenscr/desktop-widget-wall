@@ -380,6 +380,15 @@ const FLOOR_HITS = ['.u-tomorrow', '.u-line .u-act', '.screens-off'];
 const SKY_HITS = ['.rail .rb', '.u-tab', '.w-gear', '.w-ctl .rd:not(:disabled)', '.w-play', '.w-mini', '.w-paste', '.u-line .u-act', '.screens-off', '.w-open', '.watt-hit-part'];
 // watch polish: the left block, its control row (the gear is its last button), the position line.
 const WATCH_POLISH = ['.w-now', '.w-ctl', '.w-time', '.w-gear', '.w-card'];
+const WATCH_LOOKS = [['feather', 'feathered'], ['sky', 'whole sky'], ['sun', 'the sun'], ['drivein', 'drive-in'], ['holo', 'hologram']];
+const WATCH_MATRIX = () => {
+  const states = [['playing', '&wplay=0'], ['paused', '&wplay=0&wstate=paused'], ['click', '&wplay=0&wstate=refused'], ['nothing on', '']];
+  const out = [];
+  for (const [look, name] of WATCH_LOOKS) for (const [st, extra] of states) {
+    out.push({ name: `Watch matrix, ${name}, ${st}`, agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: `&watch=mock&wlist=three&wlook=${look}${extra}`, checks: st === 'nothing on' ? ['.w-now', '.w-gear'] : WATCH_POLISH, hits: st === 'nothing on' ? ['.w-gear'] : WATCH_POLISH_HITS, sky: 'moonif' });
+  }
+  return out;
+};
 const WATCH_POLISH_HITS = ['.w-gear', '.w-ctl .rd:not(:disabled)', '.w-open'];
 const DREAM = ['.dream-clock', '.dream-date', '.dream-card', '.dream-status', '.dream-hint'];
 // With more than three sessions the card list scrolls inside the centre: the three cards in
@@ -472,6 +481,9 @@ const QUIET = [
   { name: 'Watch polish, nothing on, feathered', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=feather', checks: ['.w-now', '.w-gear'], hits: ['.w-gear'] },
   { name: 'Watch polish, nothing on, whole sky', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=sky', checks: ['.w-now', '.w-gear'], hits: ['.w-gear'] },
   { name: 'Watch polish, nothing on, the sun', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=sun', checks: ['.w-now', '.w-gear'], hits: ['.w-gear'] },
+  // The matrix: every look in playing, paused, waiting for a click and nothing on (the block, overlap, gear, clock, list and
+  // moon rules on each; a combination already listed above is not repeated). At night, so the moon is drawn where a look leaves it.
+  ...WATCH_MATRIX(),
   // The position bar's marker near either end stays inside the bar.
   { name: 'Watch polish, position at the start', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=feather&wplay=0&wstate=start', checks: WATCH_POLISH, hits: WATCH_POLISH_HITS },
   { name: 'Watch polish, position at the end', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=sky&wplay=0&wstate=end', checks: WATCH_POLISH, hits: WATCH_POLISH_HITS },
@@ -1535,10 +1547,11 @@ try {
           if (at(cx, 4) > 12) fails.push('sky layers: the front canvas paints the top of the sky over the video');
         }
       }
-      if (check === 'moon') {
+      // \`moonif\`: the moon, when this layout draws one (a look that owns the sky has none), is clear of every box.
+      if (check === 'moon' || check === 'moonif') {
         const c = document.querySelector('canvas.horizon-canvas:not(.horizon-front)');
         const m = (c && c.dataset.moon || '').split(',').map(Number);
-        if (m.length !== 3) fails.push('sky layers: no moon drawn at night');
+        if (m.length !== 3) { if (check === 'moon') fails.push('sky layers: no moon drawn at night'); }
         else {
           const [mx, my, mr] = m;
           const boxes = [...document.querySelectorAll('.u-card, .sp-card, .u-player, .u-next, .u-tabs, .w-now, .w-gear, .w-stage, .rail')].map((e) => [e.className.baseVal ?? e.className, e.getBoundingClientRect()]);
@@ -1934,6 +1947,7 @@ try {
     for (const f of skyLayers.fails) console.log(`  FAIL ${f}`);
     if (skyLayers.fails.length) failed = true;
     else if (v.sky === 'front') console.log('  ok   sky layers: the front canvas covers the stage over the video, the land opaque, the sky clear');
+    else if (v.sky === 'moonif') console.log(`  ok   sky layers: ${skyLayers.moon ? `the moon at ${skyLayers.moon} is 40 px clear of the block, the cards and the clock` : 'no moon in this layout'}`);
     else if (v.sky === 'moon') console.log(`  ok   sky layers: the moon at ${skyLayers.moon} is 40 px clear of every card, the player and the clock`);
     // The moon the rule gives for this layout (the first clear one of cameras.ts MOON_PLACES): on Listen in
     // every player state the low place under the player, on Watch with nothing on its first place. Not with a
@@ -1948,7 +1962,7 @@ try {
       for (const f of watchPolish.fails) console.log(`  FAIL ${f}`);
       if (watchPolish.fails.length) failed = true;
       else console.log('  ok   watch polish: the control row is one line clear of the list, nothing over the video\'s box');
-      if (v.name.startsWith('Watch polish')) switchBoxes.push({ name: v.name, box: watchPolish.sw });
+      if (v.name.startsWith('Watch polish') || v.name.startsWith('Watch matrix')) switchBoxes.push({ name: v.name, box: watchPolish.sw });
     }
     // look tiles
     for (const f of tileText) console.log(`  FAIL ${f}`);
