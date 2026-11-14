@@ -142,7 +142,7 @@ const EXPECT = {
   'watch-gear': /^ *FAIL watch polish: the gear /m,
   'watch-slack': /^ *FAIL watch polish: with 16 px more text /m,
   'watch-fill': /^ *FAIL watch polish: the position fill has no background/m,
-  'watch-mark': /^ *FAIL watch polish: the position marker is at x /m,
+  'watch-marker': /^ *FAIL watch polish: the position marker is at x /m,
   'watch-row': /^ *FAIL \.w-ctl: width \d+ <= \d+/m,
   'watch-over': /^ *FAIL watch polish: .*w-(now|ctl).* is drawn over the video's box/m,
   'watt-seat1106': /^ *FAIL watt drive-in: Watt's left edge is /m,
@@ -278,7 +278,7 @@ const OVERFLOWS = {
   'watch-slack': '.w-open { flex: none !important; min-width: 0 !important; }',
   // the position fill's colour from a token nothing defines (the owner's bug); the marker left at the bar's start
   'watch-fill': '.w-bar b { background: linear-gradient(90deg, var(--pink), var(--cyan)) !important; }',
-  'watch-mark': '.w-bar .w-mark { left: 0 !important; }',
+  'watch-marker': '.w-bar .w-mark { left: 0 !important; }',
   'watch-row': '.w-ctl .w-open { min-width: 600px !important; }',
   'watch-over': '.w-now { left: 1200px !important; top: 200px !important; }',
   // A refused autoplay that never lets the pointer reach the whole-sky picture.
@@ -1886,7 +1886,7 @@ try {
     'watch-gear': (v) => v.name === 'Watch polish, feathered, single video',
     'watch-slack': (v) => v.name === 'Watch polish, feathered, single video',
     'watch-fill': (v) => v.name === 'Watch polish, feathered, single video',
-    'watch-mark': (v) => v.name === 'Watch polish, feathered, single video',
+    'watch-marker': (v) => v.name === 'Watch polish, feathered, single video',
     'watch-row': (v) => v.name === 'Watch polish, feathered, single video',
     'watch-over': (v) => v.name === 'Watch polish, drive-in, playlist, long label',
     'watch-take': (v) => v.name === 'Watch polish, whole sky, autoplay refused',
