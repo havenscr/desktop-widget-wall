@@ -267,3 +267,23 @@ it('the drawer rows show the state once as the pill, a failed session in rose, a
   expect(laneStateWord(lane({ waiting: true }))).toBe('waiting on you');
   expect(quietLine(lane({ failed: true, waiting: true, state: 'blocked', line: 'failed', waitingSinceS: 600, pr: null }))).toBe('Waiting 10 min');
 });
+
+it('a failed session that also waits on the owner keeps its place among those needing him, and its pill says failed', async () => {
+  mocks.set('wall2_omni_summary', () =>
+    summary({
+      sessionsList: [
+        lane({ id: 'a1b2c3d4-0001', title: 'Plain worker' }),
+        lane({ id: 'a1b2c3d4-0002', title: 'Failed and waiting', failed: true, waiting: true, state: 'blocked', waitingSinceS: 300, line: 'failed' }),
+      ],
+      day: [],
+    }),
+  );
+  const r = render(<Ribbon kind="work" />);
+  await flush();
+  fireEvent.click(r.container.querySelector('.rib-handle') as HTMLElement);
+  const rows = [...r.container.querySelectorAll('.day-drawer .dd-row')] as HTMLElement[];
+  expect(rows.map((x) => x.querySelector('.dd-name')!.textContent)).toEqual(['Failed and waiting', 'Plain worker']);
+  expect(rows[0].querySelector('.dd-pill')!.textContent).toBe('failed');
+  expect(rows[0].querySelector('.dd-pill')!.className).toBe('dd-pill failed');
+  expect(rows[0].querySelector('.dd-line')!.textContent).toBe('Waiting 5 min');
+});

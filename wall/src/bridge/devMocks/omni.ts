@@ -7,7 +7,8 @@ import { mocks } from '../tauri';
  * `3` (default), `2`, `1`, `0`, `7` or `12` sessions from a helper 1.1.0 answer, `ask` (one
  * waiting, with a question), `ask2` (two waiting, one of them not on a card), `7ask` (seven sessions, the fifth waiting), `12busy` (twelve open, nine working at once, over the limit of 4 since mid morning, one waiting, one failed, one idle, and a helper's run that never counts), `12ask` (twelve sessions, two waiting) and `12staleask` (the same, stale), `staleask` (one waiting, then the answer goes stale), `failed` (one failed), `old`
  * (three lanes as the older helper sends them), `stale`, `off` (not set up) and `down` (set
- * up, not answering).
+ * up, not answering). `&limit=0` sends a zero limit (an older helper with none to give): the
+ * wall then draws no pips, steps or limit line, only the honest count.
  */
 const agentsKnob = (): string => (typeof window !== 'undefined' ? (new URLSearchParams(window.location.search).get('agents') ?? '3') : '3');
 
@@ -42,6 +43,7 @@ export function registerOmniMocks(): void {
     const iso = (minsAgo: number) => new Date(now - minsAgo * 60_000).toISOString();
     const id = (i: number) => `a1b2c3d4-${String(i + 1).padStart(4, '0')}`;
     const old = AGENTS === 'old';
+    const noLimit = knob('limit') === '0';
     const count = { '0': 0, '1': 1, '2': 2, '7': 7, '7ask': 7, '12': 12, '12ask': 12, '12staleask': 12, '12busy': 12 }[AGENTS] ?? 3;
     const busy12 = AGENTS === '12busy';
     const stale = AGENTS === 'stale' || AGENTS === 'staleask' || AGENTS === '12staleask';
@@ -127,7 +129,7 @@ export function registerOmniMocks(): void {
       now: new Date(Date.now()).toISOString(),
       tz: 'America/Los_Angeles',
       stale,
-      slots: old ? { used: 9, limit: 4 } : { used: shown.length + 4, limit: 4, sessions: shown.length, working, helpers: 4 },
+      slots: old ? { used: 9, limit: noLimit ? 0 : 4 } : { used: shown.length + 4, limit: noLimit ? 0 : 4, sessions: shown.length, working, helpers: 4 },
       lanes: shown.slice(0, 3),
       parked: 4,
       yourMove: {

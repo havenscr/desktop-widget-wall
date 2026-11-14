@@ -25,7 +25,7 @@
 // CI does not run this; run it by hand before a layout change is handed over.
 //
 //   WALL_CHROME=/path/to/chrome-or-headless-shell npm --prefix wall run fit-check
-//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, header, deck, tiles, picker, chips, heading, zenhint, strip, fold, drawer, rows, handle, lip-cover, lip-scrim, row-parts, over-hatch, row-type, sky, floor, sun, tools, toolsnames, meetfill, meetempty, fy-height, key-edge, hide-pill, hide-note, leave-band, rec-chip, rec-height, tile-height, tile-icon, tile-iconbox, drawer-scrim, lwbuttons, lwoverlap, lwsquare, lwring, lwtemp, lwround, listen-player, listen-card, listen-slot, listen-next)
+//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, header, deck, tiles, picker, chips, heading, zenhint, strip, fold, drawer, rows, handle, lip-cover, lip-band, lip-scrim, row-parts, over-hatch, row-type, sky, floor, sun, tools, toolsnames, meetfill, meetempty, fy-height, key-edge, hide-pill, hide-note, leave-band, rec-chip, rec-height, tile-height, tile-icon, tile-iconbox, drawer-scrim, lwbuttons, lwoverlap, lwsquare, lwring, lwtemp, lwround, listen-player, listen-card, listen-slot, listen-next)
 //   npm --prefix wall run fit-check -- --self-test
 //
 // WALL_CHROME (or the first argument that is not a flag) is a Chromium or
@@ -75,6 +75,7 @@ const EXPECT = {
   handle: /^ *FAIL strip: the drawer handle covers /m,
   // day handle, rows, colours
   'lip-cover': /^ *FAIL strip: the drawer handle covers /m,
+  'lip-band': /^ *FAIL strip: the drawer handle band covers /m,
   'lip-scrim': /^ *FAIL strip: the Close the day lip /m,
   'row-parts': /^ *FAIL strip: drawer row .* (parts overlap|runs out of its row|quiet line is squeezed|wraps)/m,
   'over-hatch': /^ *FAIL strip: an over-the-limit cell is not (taller|hatched)/m,
@@ -141,6 +142,8 @@ const OVERFLOWS = {
   handle: '.rib-handle.day-lip { bottom: 75px !important; }',
   // day handle, rows, colours: a 60 px lip, a 600 px title, the hatch removed, 12 px text.
   'lip-cover': '.rib-handle.day-lip { bottom: 61px !important; height: 60px !important; }',
+  // The band keeping the pointer even where the buddy or a card lies under it.
+  'lip-band': '.rib-handle.day-lip[data-pass] { pointer-events: auto !important; }',
   'lip-scrim': '.day-drawer .rib-handle.day-lip { z-index: 0 !important; pointer-events: none !important; }',
   'row-parts': '.day-drawer .dd-name { width: 600px !important; }',
   'over-hatch': '.rib .agent-row .ac i.b5 { background: var(--busy-5) !important; top: 7px !important; height: 6px !important; }',
@@ -737,6 +740,26 @@ try {
           const top = document.elementFromPoint(x, y);
           if (top && handle.contains(top)) strip.push('strip: the drawer handle covers ' + (e.textContent || e.className).trim().slice(0, 30));
         }
+        // The band covers nothing clickable at rest: wherever something that acts on a click (an agent
+        // card, a folded chip, a pinned key, the buddy, a button) lies under the band, the pointer moved
+        // there makes the lip pass it through (data-pass), so the lip is no longer the topmost thing.
+        const clickable = 'button, a[href], [role="button"], [tabindex]:not([tabindex="-1"]), .lane[data-id], .ev, .key-tile, .watt-hit, .tk3, .sg-hit';
+        const seenUnder = new Set();
+        for (let x = Math.ceil(hr.left) + 2; x < hr.right; x += 6) {
+          for (let y = Math.ceil(hr.top) + 1; y < Math.min(hr.bottom, rr.top + 9); y += 3) {
+            const under = (stack) => stack.slice(1).map((e) => e.closest(clickable)).find((c) => c && !handle.contains(c));
+            let stack = document.elementsFromPoint(x, y);
+            if (stack.length === 0 || !handle.contains(stack[0]) || !under(stack)) continue;
+            window.dispatchEvent(new PointerEvent('pointermove', { clientX: x, clientY: y }));
+            stack = document.elementsFromPoint(x, y);
+            const c = handle.contains(stack[0]) && !stack[0].closest('.lip-pill') ? under(stack) : null;
+            if (c && !seenUnder.has(c)) {
+              seenUnder.add(c);
+              strip.push('strip: the drawer handle band covers ' + (c.getAttribute('aria-label') || c.textContent || c.className).trim().slice(0, 30) + ' at (' + x + ', ' + y + ')');
+            }
+          }
+        }
+        window.dispatchEvent(new PointerEvent('pointermove', { clientX: -50, clientY: -50 }));
       }
       // Over the limit is never colour alone: such a cell is taller than the others and hatched.
       for (const i of ribW.querySelectorAll('.agent-row .ac i.b5')) {
@@ -1094,6 +1117,7 @@ try {
     handle: (v) => v.name === 'Strip: overlaps, twelve sessions',
     // day handle, rows, colours
     'lip-cover': (v) => v.name === 'Strip: overlaps, twelve sessions',
+    'lip-band': (v) => v.name === 'Strip: overlaps, twelve sessions',
     'lip-scrim': (v) => v.name === 'Strip: the Day drawer open',
     'row-parts': (v) => v.name === 'Strip: the Day drawer, twelve busy, long titles',
     'over-hatch': (v) => v.name === 'Strip: twelve open, nine working, over the limit',

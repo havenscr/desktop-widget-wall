@@ -493,9 +493,11 @@ The day ribbon (`wall/src/ribbon/`, `styles/ribbon.css`) is on Work, Home and Me
     most sessions working at once in it against the limit (mint 1, cyan 2, violet 3, amber at
     the limit, red over it; over the limit the cell is also 10 px tall instead of 6 and
     hatched, so it never rests on colour alone), with an amber underline where one waited on
-    the owner; a cell where nobody worked (only a wait or a review span) is grey. Each cell's
-    hover says how many worked at once then and the limit. See "How many work at once"
-    below. One line after the needle: "12 sessions: 2 need
+    the owner; a cell where nobody worked (only a wait or a review span) is grey. With no known
+    limit (an older helper sends none, or a zero) the cells keep their plain cyan look and say
+    nothing about a limit. Each cell's hover says how many worked at once then and the limit;
+    the row's own hover (the icon) carries a one line key to the colours and the amber
+    underline. See "How many work at once" below. One line after the needle: "12 sessions: 2 need
     you, 5 working" ("need you" in amber), or with none waiting "3 sessions: 2 working, 1
     idle" (review and idle sessions count as idle). With under 360 px right of the needle it
     sits right-aligned before it. A click on the line or a cell opens Agents today. A stale
@@ -507,10 +509,17 @@ The day ribbon (`wall/src/ribbon/`, `styles/ribbon.css`) is on Work, Home and Me
     it) to 9 px inside it, so it ends above the hour and sun labels and the all-day bar; the
     needle's time pill draws over it. At rest: a hairline along the edge and one chevron (at
     the centre, or stepped aside in 40 px steps clear of the labels and the needle's pill).
-    Under the pointer a full-width lip lights with the chevron and "Open the day"; a click
-    anywhere on it opens the Day drawer. With the drawer open the same handle sits on the
-    drawer's top edge and reads "Close the day". Named "Open the day" or "Close the day";
-    Enter and Space work, and keyboard focus moves with it.
+    Once the pointer has rested in the band for 180 ms a full-width lip lights with the
+    chevron and "Open the day" (crossing the edge on the way to a card never flashes it;
+    leaving cancels at once; keyboard focus and the open state need no wait); a click anywhere
+    on it opens the Day drawer. At rest the band never takes the pointer from anything that
+    acts on a click (an agent card, a folded chip, a key, the buddy standing on the edge):
+    while the pointer is over such a thing in the band the lip lets it through (`data-pass`)
+    and does not light; only the chevron stays a target there. With the drawer open the same
+    handle sits on the drawer's top edge (above the scrim, inside the drawer's layer) and
+    reads "Close the day". Named "Open the day" or "Close the day"; Enter and Space work.
+    Keyboard focus follows the drawer's own rule: into the drawer on open, back to the
+    strip's handle on close (the drawer's lip carries `in-drawer`, the strip's does not).
 - **Day drawer** (`ribbon/DayDrawer.tsx`): 532 px over the lower part of Work (main area y
   148 to 680), never over the rail or the clock. Left, an agenda from 8 AM to 6 PM (wider
   when a meeting starts earlier or ends later; it scrolls inside), overlapping meetings side
@@ -565,22 +574,31 @@ The day ribbon (`wall/src/ribbon/`, `styles/ribbon.css`) is on Work, Home and Me
   2, at 3, at 4 and over 4 sessions working at once, each with its colour swatch, and "Over
   your limit of 4 for 1 h 48 m today" (or "Never over your limit of 4"); the first row,
   "Sessions busy at once", draws the same as stepped bars on the panel's hour axis with a
-  dashed line at the limit. A past day's rows have no quiet line (the record has none of
-  those fields): the title takes the room (520 px) and the track is 514 px.
+  dashed line at the limit. With no known limit neither is drawn. On a past day the saved
+  record cannot tell running from waiting, so the line reads "Open at once" ("Up to 2 open at
+  once, from the saved record"): it counts every session with a recorded span and never says
+  "over your limit", and the limit line is left out. A past day's rows have no quiet line (the
+  record has none of those fields): the title takes the room (520 px) and the track is 514 px.
 - **How many work at once** (`ribbon/busy.ts`; one rule for the header's slot meter, the
   strip's cells and the panel's Busy at once line): a session counts while it is working, a
-  `run` span in the helper's live day log (open or finished; waits and review spans do not
-  count), and only when it is a parent or standalone session the wall knows today (a card,
-  or a session in today's saved record, read when the day log has a run of a session that is
-  not on a card, at most every 10 minutes). A child or a side chat never counts on its own,
-  so a session and its helpers count once, as the meter always did; two spans of one session
-  at the same time count once. A cell takes the most at once inside its 12 minutes; the
-  meter the count now (with no day log at all, an older helper, the server's own `working`
-  count, else `used`). The limit is the helper's `slots.limit`, as the meter has always read
-  it. A saved past day has stage spans only, no runs and no waits, so there a session counts
-  while it has a recorded stage span, and the line says "(recorded spans)". Colours by step:
-  1 mint, 2 cyan, 3 violet (any count from 3 up to one under the limit), at the limit amber,
-  over it red and hatched (`--busy-*` in `styles/ribbon.css`).
+  `run` span in the helper's live day log (waits and review spans do not count), clipped to
+  the day (a span that began before midnight counts from midnight; the spans are built
+  straight from the log, not from the strip's layout), and only when it is a parent or
+  standalone session the wall knows today (a card, or a session in today's saved record, read
+  at once when the day log first shows a run of a session that is not on a card, and once per
+  such id after that, never on a timer). A finished run counts for the time it ran; an open
+  run counts only while its session's card says working (not idle, not waiting, not failed),
+  so the count agrees with the pills. A child or a side chat never counts on its own, so a
+  session and its helpers count once; two spans of one session at the same time count once. A
+  cell takes the most at once inside its 12 minutes. The meter shows the count now: the
+  server's own `working` count when the helper sends one (by construction it equals the log's
+  open runs of working cards), else the log's count, else `used`. The limit is the helper's
+  `slots.limit`; a missing, zero or negative one is unknown: the meter shows the honest count
+  ("N working"), and no pips, steps, limit line, "over" tag or count colours are drawn. A
+  saved past day has stage spans only, no runs and no waits, so there a session counts while
+  it has a recorded stage span, and the panel says so. Colours by step: 1 mint, 2 cyan, 3
+  violet (any count from 3 up to one under the limit), at the limit amber, over it red and
+  hatched (`--busy-*` in `styles/ribbon.css`).
 - **Saved record commands** (`src-tauri/src/wall2_omni.rs`, the section at the end), both
   gated to the wall window, https only, read through the 64 KB cap, errors `not-configured`,
   `invalid-config`, `failed`, nothing logged:
@@ -1658,7 +1676,7 @@ Add one optional key to `feeds.json` (see "Setting it up: `feeds.json`"):
 - `wall2_machines` returns `{ pc: { cpuPct, gpuPct, ramPct }, box: { cpuPct, gpuPct, ramPct, tempC } | null, boxStale }`. The PC numbers come from the same function as the old `get_system_stats` (which is unchanged). The PC numbers are returned at once on every call. The box numbers come from the helper summary's `system` block, refreshed in the background (one read at a time, at most one every 15 seconds, 3 second timeout), so a slow helper never delays the PC numbers and the first call after start shows `box: null`. After a failed read the last good box numbers stay with `boxStale: true` for up to 10 minutes, then `box` is `null`. `box` is also `null` when the helper is not set up. The numbers are kept per `omniHelperUrl`, so a changed address never shows the old host's numbers.
 - All of them refuse any window but `wall2` (`forbidden`).
 
-Nothing here logs, and nothing here takes a wake lock or sets an execution state. Browser dev (`npm run dev`) shows mock answers from `devMocks/omni.ts`; `?agents=3` (default), `2`, `1`, `0`, `7`, `12` (sessions from a helper 1.1.0 answer, with three subscriptions, one near full), `ask` (one waiting), `ask2` (two waiting, one not on a card), `failed`, `12busy` (twelve open, nine working at once, over the limit of 4 since mid morning, one waiting, one failed, one idle, and a helper's run that is never counted), `old` (an older helper's answer), `stale`, `off` (not set up) or `down` (not answering) picks the helper's state.
+Nothing here logs, and nothing here takes a wake lock or sets an execution state. Browser dev (`npm run dev`) shows mock answers from `devMocks/omni.ts`; `?agents=3` (default), `2`, `1`, `0`, `7`, `12` (sessions from a helper 1.1.0 answer, with three subscriptions, one near full), `ask` (one waiting), `ask2` (two waiting, one not on a card), `failed`, `12busy` (twelve open, nine working at once, over the limit of 4 since mid morning, one waiting, one failed, one idle, and a helper's run that is never counted; add `&limit=0` for a helper that sends no limit), `old` (an older helper's answer), `stale`, `off` (not set up) or `down` (not answering) picks the helper's state.
 
 ### Saved records
 

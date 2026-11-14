@@ -440,12 +440,20 @@
   cursor: pointer;
   z-index: 3;
 }
-/* Inside the drawer's own layer (z-index 45), above its other parts, so a scrim another change
-   puts behind the drawer never covers "Close the day". */
+/* Inside the drawer's own layer (z-index 47, above the scrim at 46), above its other parts, so the
+   scrim behind the drawer never covers "Close the day". */
 .day-drawer .rib-handle.day-lip {
   top: -17px;
   bottom: auto;
   z-index: 6;
+}
+/* Over something that acts on a click (see DayLip.tsx) the band lets the pointer through; only the
+   chevron stays a target. */
+.day-lip[data-pass] {
+  pointer-events: none;
+}
+.day-lip[data-pass] .lip-pill {
+  pointer-events: auto;
 }
 .day-lip::before {
   content: '';
@@ -509,17 +517,17 @@
   padding: 0 16px;
 }
 .day-lip.open .lip-t,
-.day-lip:hover .lip-t,
+.day-lip.intent .lip-t,
 .day-lip:focus-visible .lip-t {
   display: inline;
 }
-.day-lip:hover::before {
+.day-lip.intent::before {
   opacity: 1;
 }
-.day-lip:hover .lip-line {
+.day-lip.intent .lip-line {
   opacity: 0;
 }
-.day-lip:hover .lip-pill,
+.day-lip.intent .lip-pill,
 .day-lip:focus-visible .lip-pill {
   top: -13px;
   height: 28px;

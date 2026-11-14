@@ -132,7 +132,8 @@ export function DayDrawer({
   const list = s ? cards(s) : [];
   const rows = list
     .map((l, i) => ({ l, num: i + 1, word: laneStateWord(l) }))
-    .sort((a, b) => (RANK[a.word] ?? 2) - (RANK[b.word] ?? 2) || a.num - b.num);
+    // A failed session that also waits on the owner still sorts with those needing him.
+    .sort((a, b) => (laneWaits(a.l) ? 0 : (RANK[a.word] ?? 2)) - (laneWaits(b.l) ? 0 : (RANK[b.word] ?? 2)) || a.num - b.num);
   const nowH = wallHour(now, now);
   const barLo = Math.min(6, ...segs.map((g) => Math.floor(wallHour(g.start, now))).filter((h) => h >= 0));
   const barHi = Math.max(barLo + 1, nowH);
@@ -271,7 +272,7 @@ export function DayDrawer({
               const mine = segs.filter((g) => g.lane === l.id);
               const work = mine.filter((g) => g.kind === 'run' || g.kind === 'past').reduce((t, g) => t + g.end - g.start, 0);
               const wait = mine.filter((g) => g.kind === 'wait').reduce((t, g) => t + g.end - g.start, 0);
-              const tone = laneWaits(l) ? 'need' : word === 'failed' ? 'failed' : word === 'working' ? 'working' : '';
+              const tone = word === 'failed' ? 'failed' : laneWaits(l) ? 'need' : word === 'working' ? 'working' : '';
               const quiet = quietLine(l);
               return (
                 <button

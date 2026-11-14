@@ -395,6 +395,9 @@ add('work', 'colours: header at 4 of 4', url('work', TYPICAL_AT, 'agents=7ask'),
 add('work', 'colours: header at 9 of 4', url('work', TYPICAL_AT, 'agents=12busy'), true, 'hover:.slot-meter');
 add('work', 'colours: the strip over the limit', url('work', TYPICAL_AT, 'agents=12busy&meet=overlap'), true);
 add('work', 'colours: the panel over the limit', url('work', TYPICAL_AT, 'agents=12busy&days=typical'), true, '.rib .ag-line');
+// A limit the helper does not send (a zero): the honest count only, no pips, steps or limit line.
+add('work', 'colours: no limit, header and strip', url('work', TYPICAL_AT, 'agents=12busy&limit=0&meet=overlap'), true);
+add('work', 'colours: no limit, the panel', url('work', TYPICAL_AT, 'agents=12busy&limit=0&days=typical'), true, '.rib .ag-line');
 // unwind listen: the cover on top with its controls in the sky, Up next under the toggles, the
 // Spotify card in the upper right (its switch, covers, a hover, a playlist's songs) and its hard states.
 state('unwind', 'listen: playing', 'audio=demo', TIMES.night);
@@ -663,12 +666,14 @@ EXPECT.push(
   ['work', 'day handle: at noon', 'Open the day'],
   ['work', 'day rows: typical', ['Agents today', 'waiting on you', '3 helpers, 2 working']],
   ['work', 'day rows: heavy', ['9 working, 1 failed', 'Waiting on a thumbnail choice']],
-  ['work', 'day rows: a past day', ['From the saved record of the day', 'recorded spans']],
+  ['work', 'day rows: a past day', ['From the saved record of the day', 'open at once, from the saved record', '!Over your limit']],
   ['work', 'colours: header at 2 of 4', '2 of 4 working'],
   ['work', 'colours: header at 4 of 4', ['4 of 4 working', 'at the limit']],
   ['work', 'colours: header at 9 of 4', ['9 of 4 working', '5 over']],
   ['work', 'colours: the strip over the limit', ['12 sessions: 1 needs you, 9 working', '5 over']],
   ['work', 'colours: the panel over the limit', ['Busy at once', 'Over your limit of 4 for']],
+  ['work', 'colours: no limit, header and strip', ['9 working', '!5 over', '!of 4']],
+  ['work', 'colours: no limit, the panel', ['Agents today', '!Busy at once', '!Over your limit']],
   // deck and drawer fixes
   ['work', 'deck fixes: mixed', ['Always here', 'Sonos: play what suits the hour']],
   ['work', 'deck fixes: general set', ['Always here', 'Now \u00b7 General']],
