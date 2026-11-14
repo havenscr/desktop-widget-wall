@@ -7,6 +7,7 @@ import { useFocusStore } from '../focus/store';
 import { HoverTipLayer, resetTip, TIP_DELAY_MS } from '../ui/HoverTip';
 import { agendaLanes, agendaRange, quietLine } from './DayDrawer';
 import { laneStateWord } from './AgentRow';
+import { DrawerScrim } from './DrawerScrim';
 import { chips, RX } from './model';
 import { Ribbon } from './Ribbon';
 import { resetDays } from './days';
@@ -90,8 +91,13 @@ it('folds three overlapping meetings into one "3 at 1:30" chip whose hover lists
   expect(tipText).toContain('Vendor demo1:30 to 3:30 PM');
 });
 
-it('the handle opens the Day drawer; a folded chip opens it too; Escape and a click outside close it', async () => {
-  const r = render(<Ribbon kind="work" />);
+it('the handle opens the Day drawer; a folded chip opens it too; Escape and a click outside (on the scrim) close it', async () => {
+  const r = render(
+    <>
+      <Ribbon kind="work" />
+      <DrawerScrim />
+    </>,
+  );
   await flush();
   expect(r.container.querySelector('.day-drawer')).toBeNull();
   fireEvent.click(r.container.querySelector('.rib-handle') as HTMLElement);
@@ -100,8 +106,30 @@ it('the handle opens the Day drawer; a folded chip opens it too; Escape and a cl
   expect(r.container.querySelector('.day-drawer')).toBeNull();
   fireEvent.click(r.container.querySelector('.ev.fold') as HTMLElement);
   expect(r.container.querySelector('.day-drawer')).not.toBeNull();
-  fireEvent.mouseDown(document.body);
+  fireEvent.click(r.container.querySelector('.drawer-scrim') as HTMLElement);
   expect(r.container.querySelector('.day-drawer')).toBeNull();
+  // A press that is not on the scrim (a stray mouse down on the page) closes nothing.
+  fireEvent.click(r.container.querySelector('.ev.fold') as HTMLElement);
+  fireEvent.mouseDown(document.body);
+  expect(r.container.querySelector('.day-drawer')).not.toBeNull();
+});
+
+it('focus goes back to the Day handle when the drawer closes, also when a folded chip opened it', async () => {
+  const r = render(
+    <>
+      <Ribbon kind="work" />
+      <DrawerScrim />
+    </>,
+  );
+  await flush();
+  const fold = r.container.querySelector('.ev.fold') as HTMLElement;
+  fold.focus();
+  expect(document.activeElement).toBe(fold);
+  fireEvent.click(fold);
+  expect(document.activeElement).toBe(r.container.querySelector('.day-drawer'));
+  fireEvent.keyDown(window, { key: 'Escape' });
+  expect(document.activeElement).toBe(r.container.querySelector('.rib-handle:not(.in-drawer)'));
+  await flush(600);
 });
 
 it('the drawer lists the agenda with overlaps side by side and Join, and one row per session, waiting first', async () => {
@@ -174,13 +202,13 @@ it('the handle is one button on the strip\'s top edge: click, Enter and Space op
   expect(lip()[0].textContent).toBe('Close the day');
   fireEvent.click(lip()[0]);
   expect(r.container.querySelector('.day-drawer')).toBeNull();
-  // Enter opens, and keyboard focus moves with the handle.
+  // Enter opens; the open drawer takes keyboard focus (the modal rule).
   lip()[0].focus();
   fireEvent.keyDown(lip()[0], { key: 'Enter' });
   expect(r.container.querySelector('.day-drawer')).not.toBeNull();
-  expect(document.activeElement).toBe(lip()[0]);
+  expect(document.activeElement).toBe(r.container.querySelector('.day-drawer'));
   expect(lip()[0].getAttribute('aria-label')).toBe('Close the day');
-  // Space closes.
+  // Space closes, and focus returns to the strip's handle.
   fireEvent.keyDown(lip()[0], { key: ' ' });
   expect(r.container.querySelector('.day-drawer')).toBeNull();
   expect(lip()[0].getAttribute('aria-label')).toBe('Open the day');

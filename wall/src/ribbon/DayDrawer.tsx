@@ -6,6 +6,7 @@ import { focusSession } from '../agents/open';
 import { agentsStale, useAgentsStore } from '../agents/useAgents';
 import { tip } from '../ui/HoverTip';
 import { daySegments, laneStateWord } from './AgentRow';
+import { useBehindDrawer } from './DrawerScrim';
 import { allDayBarText, hm, hourText, shortTime, spanText, wallHour, type Chip } from './model';
 
 /** Pixels per hour in the agenda. */
@@ -81,7 +82,9 @@ export function quietLine(l: Lane): string {
  * state (once, as the pill; a failed session's pill is rose), one quiet line of what it does
  * or waits for (`quietLine`), its day as a bar and the time worked; a click opens it in
  * OmniGent. The header's "Agents today" opens the panel. Escape, the handle on its top edge
- * ("Close the day"), Close or a click outside closes it.
+ * ("Close the day"), Close or a click outside closes it. Behind it the page is dimmed and
+ * inert (see DrawerScrim): a click outside only closes the drawer and never reaches what was
+ * under the pointer.
  */
 export function DayDrawer({
   chips,
@@ -118,18 +121,11 @@ export function DayDrawer({
     const key = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
     };
-    const down = (e: MouseEvent) => {
-      const t = e.target as Element | null;
-      if (!t || ref.current?.contains(t) || t.closest('.rib-handle, .ev.fold, .hover-tip')) return;
-      onClose();
-    };
     window.addEventListener('keydown', key);
-    window.addEventListener('mousedown', down);
-    return () => {
-      window.removeEventListener('keydown', key);
-      window.removeEventListener('mousedown', down);
-    };
+    return () => window.removeEventListener('keydown', key);
   }, [onClose]);
+  // The page behind is dimmed and inert; a click on the scrim (DrawerScrim) closes the drawer.
+  useBehindDrawer(ref, onClose);
   const s: OmniSummary | null = st.summary;
   const stale = agentsStale(st);
   const segs = daySegments(st, now);
@@ -146,7 +142,7 @@ export function DayDrawer({
   const dateText = new Date(now).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
   const lanes = agendaLanes(chips);
   return (
-    <div className="day-drawer" ref={ref} role="dialog" aria-label="Day">
+    <div className="day-drawer" ref={ref} role="dialog" aria-modal="true" aria-label="Day" tabIndex={-1}>
       {lip}
       <div className="dd-head">
         <span className="dd-k">Day</span>

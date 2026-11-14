@@ -1,4 +1,3 @@
-import { useEffect, useRef } from 'react';
 import { IconChevronDown, IconChevronUp } from '@tabler/icons-react';
 import { tip } from '../ui/HoverTip';
 
@@ -9,29 +8,24 @@ import { tip } from '../ui/HoverTip';
  * is a hairline along the edge and one chevron (at `x`, which steps aside from the labels as the
  * old handle did); under the pointer a full-width lip lights with the chevron and "Open the
  * day". With the drawer open the same lip sits on the drawer's top edge and reads "Close the
- * day". Enter and Space work as a click; `focusOnMount` keeps keyboard focus on the handle
- * when it moves between the strip and the drawer.
+ * day". Enter and Space work as a click. Keyboard focus follows the drawer's own rule
+ * (`useBehindDrawer`): into the drawer on open, back to the strip's handle on close; the drawer's
+ * lip carries `in-drawer` so that rule finds the strip's one.
  */
-export function DayLip({ open, x, onToggle, focusOnMount = false }: { open: boolean; x: number | null; onToggle: (byKey: boolean) => void; focusOnMount?: boolean }) {
-  const ref = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    if (focusOnMount) ref.current?.focus();
-    // Only when it mounts.
-  }, []);
+export function DayLip({ open, x, onToggle }: { open: boolean; x: number | null; onToggle: () => void }) {
   const name = open ? 'Close the day' : 'Open the day';
   const Chevron = open ? IconChevronDown : IconChevronUp;
   return (
     <button
-      ref={ref}
       type="button"
-      className={`rib-handle day-lip${open ? ' open' : ''}`}
+      className={`rib-handle day-lip${open ? ' open in-drawer' : ''}`}
       aria-label={name}
       aria-expanded={open}
-      onClick={(e) => onToggle(e.detail === 0)}
+      onClick={onToggle}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
-          if (!e.repeat) onToggle(true);
+          if (!e.repeat) onToggle();
         }
       }}
       onKeyUp={(e) => {

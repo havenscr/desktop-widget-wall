@@ -7,6 +7,7 @@ import { tip } from '../ui/HoverTip';
 import { useBusyToday } from './AgentRow';
 import { busyLevels, busyStep, shortSpan, stepsFor, stepWords, timeBySteps, type BusySpan } from './busy';
 import { axisRange, dayBefore, dayStart, isoDay, loadDay, loadDays, longDate, neighbours, recordRows, todayRows, totalsText, useDaysStore, type PanelRow } from './days';
+import { useBehindDrawer } from './DrawerScrim';
 import { hm, hourText, shortTime, wallHour } from './model';
 
 const END_TONE: Record<string, string> = {
@@ -98,7 +99,7 @@ function BusyLine({ spans, limit, today }: { spans: BusySpan[]; limit: number; t
  * record, which has no waits: a past day shows no wait spans and no wait total. With an older
  * helper (no record routes) the picker hides and Today still works. A stale answer is shown
  * with "as of" its time, never as live. Rows open their session; many rows scroll inside.
- * Escape, the close button or a click outside closes it.
+ * Escape, the close button or a click outside closes it; behind it the page is dimmed and inert (see DrawerScrim).
  */
 export function AgentsToday({ now, onClose }: { now: number; onClose: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -129,18 +130,11 @@ export function AgentsToday({ now, onClose }: { now: number; onClose: () => void
     const key = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
     };
-    const down = (e: MouseEvent) => {
-      const t = e.target as Element | null;
-      if (!t || ref.current?.contains(t) || t.closest('.ag-line, .dd-k.link, .rib .agent-row, .hover-tip')) return;
-      onClose();
-    };
     window.addEventListener('keydown', key);
-    window.addEventListener('mousedown', down);
-    return () => {
-      window.removeEventListener('keydown', key);
-      window.removeEventListener('mousedown', down);
-    };
+    return () => window.removeEventListener('keydown', key);
   }, [onClose]);
+  // The page behind is dimmed and inert; a click on the scrim (DrawerScrim) closes the panel.
+  useBehindDrawer(ref, onClose, 'opener');
 
   const read = days.records[shown];
   const stale = agentsStale(st);
@@ -201,7 +195,7 @@ export function AgentsToday({ now, onClose }: { now: number; onClose: () => void
     } else band.push({ from, to, step, lo: l.count, hi: l.count });
   }
   return (
-    <div className={`agents-today${isToday && stale ? ' stale' : ''}${isToday ? '' : ' past'}`} ref={ref} role="dialog" aria-label="Agents today">
+    <div className={`agents-today${isToday && stale ? ' stale' : ''}${isToday ? '' : ' past'}`} ref={ref} role="dialog" aria-label="Agents today" tabIndex={-1}>
       <div className="at-head">
         <span className="at-k">Agents{picker ? '' : ' today'}</span>
         {picker && (

@@ -169,7 +169,7 @@ export function autoPage(summary: KeysSummary): Page | null {
 /** Keys to a row in both deck rows; every tile is the same size. */
 export const KEYS_PER_ROW = 5;
 /** A deck tile's height (the Always here and the Now rows alike), design pixels. */
-export const DECK_TILE_H = 60;
+export const DECK_TILE_H = 70;
 /** The gap between deck tiles, design pixels. */
 export const DECK_TILE_GAP = 8;
 /** How far the deck stays above the mountains (and Watt's band), design pixels. */

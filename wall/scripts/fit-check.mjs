@@ -25,7 +25,7 @@
 // CI does not run this; run it by hand before a layout change is handed over.
 //
 //   WALL_CHROME=/path/to/chrome-or-headless-shell npm --prefix wall run fit-check
-//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, header, deck, tiles, picker, chips, heading, zenhint, strip, fold, drawer, rows, handle, lip-cover, lip-scrim, row-parts, over-hatch, row-type, sky, floor, sun, tools, toolsnames, meetfill, meetempty, fy-height, key-edge, hide-pill, hide-note, leave-band, rec-chip, rec-height, lwbuttons, lwoverlap, lwsquare, lwring, lwtemp, lwround, listen-player, listen-card, listen-slot, listen-next)
+//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, header, deck, tiles, picker, chips, heading, zenhint, strip, fold, drawer, rows, handle, lip-cover, lip-scrim, row-parts, over-hatch, row-type, sky, floor, sun, tools, toolsnames, meetfill, meetempty, fy-height, key-edge, hide-pill, hide-note, leave-band, rec-chip, rec-height, tile-height, tile-icon, tile-iconbox, drawer-scrim, lwbuttons, lwoverlap, lwsquare, lwring, lwtemp, lwround, listen-player, listen-card, listen-slot, listen-next)
 //   npm --prefix wall run fit-check -- --self-test
 //
 // WALL_CHROME (or the first argument that is not a flag) is a Chromium or
@@ -95,6 +95,11 @@ const EXPECT = {
   'leave-band': /^ *FAIL leave banner: /m,
   'rec-chip': /^ *FAIL recording chip: /m,
   'rec-height': /^ *FAIL deck: the Now row is \d+ px tall on Recording/m,
+  // deck and drawer fixes
+  'tile-height': /^ *FAIL deck: key tile ".*" is [\d.]+ px tall/m,
+  'tile-icon': /^ *FAIL deck: the icon of key tile ".*" sits /m,
+  'tile-iconbox': /^ *FAIL deck: the icon of key tile ".*" is not inside its icon box/m,
+  'drawer-scrim': /^ *FAIL strip: with the drawer open, /m,
   // left wing
   lwbuttons: /^ *FAIL left wing: music buttons leave the wing/m,
   lwoverlap: /^ *FAIL left wing: music buttons overlap the title/m,
@@ -163,6 +168,11 @@ const OVERFLOWS = {
   'leave-band': '.leave-banner { top: 200px !important; }',
   'rec-chip': '.rec-chip { min-width: 400px !important; }',
   'rec-height': '.rec-keys .key-tile { height: 92px !important; }',
+  // deck and drawer fixes: one tile 20 px taller; one icon 8 px lower; a 40 px icon; a scrim that takes no clicks.
+  'tile-height': '.work .right-wing .keys .deck-tiles > .deck-tile.key-tile:nth-child(2) { height: 90px !important; }',
+  'tile-icon': '.work .right-wing .pinned .deck-tile.key-tile:first-child svg { margin-top: 8px !important; }',
+  'tile-iconbox': '.work .right-wing .keys .deck-tile.key-tile:first-child svg { width: 40px !important; height: 40px !important; }',
+  'drawer-scrim': '.drawer-scrim { pointer-events: none !important; }',
   // left wing
   lwbuttons: '.work .left-wing .music-mini-text { flex: none !important; width: 900px !important; }',
   lwoverlap: '.work .left-wing .music-mini-btns { transform: translateX(-200px); }',
@@ -373,7 +383,7 @@ const VARIANTS = [
   // Recording page one height with a key page and For you (nowH).
   { name: 'Leave banner on Work, 12 minutes, long title', q: work('3', '&leave=12'), checks: ['.leave-banner'], viewportOnly: true },
   { name: 'Leave banner on Work, amber, helper not set up', q: work('off', '&leave=4'), checks: ['.leave-banner'], viewportOnly: true },
-  { name: 'Leave banner on Work with the Day drawer open', q: work('12ask', '&leave=12&rec=1&meet=overlap'), click: '.rib-handle', checks: ['.leave-banner', '.day-drawer', '.day-drawer .dd-agenda'], viewportOnly: true },
+  { name: 'Leave banner on Work with the Day drawer open', q: work('12ask', '&leave=12&rec=1&meet=overlap'), click: '.rib-handle:not(.in-drawer)', checks: ['.leave-banner', '.day-drawer', '.day-drawer .dd-agenda'], strip: true, viewportOnly: true },
   { name: 'Leave banner on Work, leave now with the recording chip', q: work('12ask', '&leave=0&rec=1'), checks: ['.leave-banner', '.leave-banner .rec-chip'], viewportOnly: true },
   { name: 'Leave banner on Home', q: home('moods=five&leave=12'), checks: ['.leave-banner'], viewportOnly: true },
   { name: 'Leave banner on Unwind, amber', q: query({ hz: 'unwind', agents: '3', extra: '&leave=4' }), checks: ['.leave-banner'], viewportOnly: true },
@@ -638,21 +648,27 @@ try {
     // ridge, worked out from the Work camera; the Now row carries it as data-floor), every key
     // label inside its tile, no two tiles sharing pixels, and the Now heading never cut.
     const deck = [];
+    // deck and drawer fixes: how far the lowest thing the deck draws sits above its floor (px).
+    let deckRoom = null;
     const floorEl = document.querySelector('.work .right-wing .keys[data-floor]');
     const deckEl = document.querySelector('.work .right-wing .deck');
     if (deckEl) {
       const floor = floorEl ? Number(floorEl.dataset.floor) : Infinity;
       if (!floorEl && document.querySelector('.work .right-wing .keys')) deck.push('deck: the Now row carries no data-floor, so its floor cannot be checked');
       let low = null;
+      let lowest = -Infinity;
       // What the deck draws: its rows and their parts (the box itself is empty room). The open key
       // picker may run past the floor over the mountains; it is held to the timeline below.
       for (const e of deckEl.querySelectorAll('*')) {
         if (e.closest('.pk')) continue;
         const r = e.getBoundingClientRect();
         if (r.width === 0 || r.height === 0 || getComputedStyle(e).visibility === 'hidden') continue;
+        lowest = Math.max(lowest, r.bottom);
         if (r.bottom > floor + 0.5 && (low === null || r.bottom > low.b)) low = { b: r.bottom, t: (e.className && e.className.baseVal === undefined ? e.className : e.tagName) };
       }
-      if (low) deck.push('deck: ' + low.t + ' reaches y ' + Math.round(low.b) + ', below the floor at ' + floor);
+      if (Number.isFinite(floor) && Number.isFinite(lowest)) deckRoom = Math.round((floor - lowest) * 10) / 10;
+      // deck and drawer fixes: the 70 px tiles leave about 4 px above the floor in the right wing, so the message says so.
+      if (low) deck.push('deck: ' + low.t + ' reaches y ' + Math.round(low.b) + ', below the floor at ' + floor + ' (the deck has only about 4 px of room above its floor with 70 px tiles; a change that needs more height has to take it from the wing, not from this margin)');
       const tiles = [...deckEl.querySelectorAll('.deck-tile')].map((t) => ({ t, r: t.getBoundingClientRect() }));
       for (const { t, r } of tiles) {
         const l = t.querySelector('.deck-lbl');
@@ -661,6 +677,21 @@ try {
         if (q.left < r.left - 0.5 || q.right > r.right + 0.5 || q.top < r.top - 0.5 || q.bottom > r.bottom + 0.5 || l.scrollWidth > l.clientWidth + 1) deck.push('deck: label "' + l.textContent + '" runs outside its tile');
       }
       tiles.forEach((a, i) => tiles.slice(i + 1).forEach((b) => { if (hit(a.r, b.r)) deck.push('deck: tiles "' + a.t.textContent + '" and "' + b.t.textContent + '" share pixels'); }));
+      // deck and drawer fixes: every key tile is one height (70: 6 padding, a 20 icon box, a 4 gap, a 32 label
+      // area of two lines, 6 padding, a 1 px edge each side), every icon sits at the same offset and inside its
+      // icon box (never into the label area, never against the tile's edge).
+      const keyTiles = [...deckEl.querySelectorAll('.deck-tile.key-tile')];
+      const iconAt = (t) => { const i = t.querySelector('svg'); return i ? Math.round((i.getBoundingClientRect().top - t.getBoundingClientRect().top) * 10) / 10 : null; };
+      for (const t of keyTiles) {
+        const r = t.getBoundingClientRect();
+        const name = t.getAttribute('aria-label') ?? t.textContent;
+        if (Math.abs(r.height - 70) > 0.5) deck.push('deck: key tile "' + name + '" is ' + Math.round(r.height * 10) / 10 + ' px tall (every key tile is 70)');
+        const ic = t.querySelector('svg');
+        if (!ic) continue;
+        const q = ic.getBoundingClientRect();
+        if (Math.abs(iconAt(t) - iconAt(keyTiles[0])) > 0.5) deck.push('deck: the icon of key tile "' + name + '" sits ' + iconAt(t) + ' px below its tile top, the first one sits ' + iconAt(keyTiles[0]) + ' px');
+        if (q.top < r.top + 7 - 0.5 || q.bottom > r.top + 27 + 0.5 || q.left < r.left + 1 - 0.5 || q.right > r.right - 1 + 0.5) deck.push('deck: the icon of key tile "' + name + '" is not inside its icon box (icon y ' + Math.round(q.top - r.top) + ' to ' + Math.round(q.bottom - r.top) + ' in a tile that gives 7 to 27)');
+      }
       // The open key picker runs down to just above the timeline and never covers it: its
       // bottom at least 16 px (the gap between the main rows) above the ribbon's top.
       const pk = deckEl.querySelector('.pk');
@@ -729,22 +760,46 @@ try {
       if (r.left < 0 || r.top < 0 || r.right > innerWidth + 0.5 || r.bottom > innerHeight + 0.5) strip.push('strip: ' + sel + ' sticks out of the stage');
       if (rail && r.left < rail.getBoundingClientRect().right - 0.5) strip.push('strip: ' + sel + ' covers the rail');
     }
+    // deck and drawer fixes: with the drawer open the page behind it is behind one scrim (the element at an
+    // agent card's, a task's and a rail key's place is the scrim, so no click reaches them), the drawer is above
+    // the scrim, and the leave banner and the recording chip are above it too (readable).
+    const dd = document.querySelector('.day-drawer');
+    if (dd) {
+      const scrim = document.querySelector('.drawer-scrim');
+      if (!scrim) strip.push('strip: with the drawer open, there is no scrim behind it');
+      else {
+        const dr = dd.getBoundingClientRect();
+        for (const [what, sel, need] of [['an agent card', '.work .centre .lane', true], ['a task', '.work .right-wing .tk3', false], ['a rail key', '.rail .rb', false]]) {
+          const e = document.querySelector(sel);
+          if (!e) { if (need) strip.push('strip: with the drawer open, no agent card shows above it to test'); continue; }
+          const r = e.getBoundingClientRect();
+          const lo = r.top;
+          const hi = Math.min(r.bottom, dr.top);
+          if (hi - lo < 6) { if (need) strip.push('strip: with the drawer open, no agent card shows above it to test'); continue; }
+          const x = Math.round((r.left + r.right) / 2);
+          const y = Math.round((lo + hi) / 2);
+          const at = document.elementFromPoint(x, y);
+          if (!at || !at.closest('.drawer-scrim')) strip.push('strip: with the drawer open, a click at ' + what + ' (' + x + ', ' + y + ') lands on ' + (at ? at.tagName + '.' + String(at.className).slice(0, 30) : 'nothing') + ', not on the scrim');
+        }
+        const z = (e) => Number(getComputedStyle(e).zIndex);
+        if (!(z(dd) > z(scrim))) strip.push('strip: with the drawer open, the drawer is not above the scrim');
+        for (const keep of document.querySelectorAll('.leave-banner, .rec-float')) if (!(z(keep) > z(scrim))) strip.push('strip: with the drawer open, ' + keep.className + ' is not above the scrim, so its words would be dimmed');
+      }
+    }
     // day handle, rows, colours: the "Close the day" lip is a real button inside the drawer's own
-    // subtree, with a z-index above the drawer's other layers, and a scrim another change puts
-    // behind the drawer (simulated here, below the drawer's layer) never covers it.
+    // subtree, with a z-index above the drawer's other layers, and the REAL scrim (above) never
+    // covers it: the element at the lip's centre is the lip.
     const lipIn = document.querySelector('.day-drawer .rib-handle.day-lip');
     if (lipIn) {
       if (lipIn.tagName !== 'BUTTON') strip.push('strip: the Close the day lip is not a button');
+      if (!lipIn.classList.contains('in-drawer')) strip.push('strip: the Close the day lip lacks the in-drawer class');
       const z = (e) => parseInt(getComputedStyle(e).zIndex, 10) || 0;
       const others = Math.max(0, ...[...document.querySelector('.day-drawer').children].filter((c) => c !== lipIn).map(z));
       if (z(lipIn) <= others) strip.push('strip: the Close the day lip has z-index ' + z(lipIn) + ', not above the other layers of the drawer (' + others + ')');
-      const scrim = document.createElement('div');
-      scrim.style.cssText = 'position:fixed;inset:0;z-index:44';
-      lipIn.closest('.day-drawer').before(scrim);
+      if (!document.querySelector('.drawer-scrim')) strip.push('strip: the Close the day lip is checked with no real scrim up');
       const lr = lipIn.querySelector('.lip-pill').getBoundingClientRect();
       const topEl = document.elementFromPoint(lr.left + lr.width / 2, lr.top + lr.height / 2);
-      scrim.remove();
-      if (!topEl || !lipIn.contains(topEl)) strip.push('strip: the Close the day lip is under a scrim (found ' + (topEl ? topEl.className || topEl.tagName : 'nothing') + ')');
+      if (!topEl || !lipIn.contains(topEl)) strip.push('strip: the Close the day lip is under the scrim (found ' + (topEl ? topEl.className || topEl.tagName : 'nothing') + ')');
     }
     for (const row of document.querySelectorAll('.agents-today .at-row:not(.skel), .day-drawer .dd-row')) {
       const h = row.getBoundingClientRect().height;
@@ -854,7 +909,8 @@ try {
     // Keyboard focus: each control focused in turn must show an outline that is visible (width,
     // style, a colour with some opacity that is not the control's own fill) and round.
     for (const e of wing ? wing.querySelectorAll('.rd, .focus-mini-ring') : []) {
-      if (e.disabled) continue;
+      // deck and drawer fixes: behind the open Day drawer the wing is inert and takes no focus, on purpose.
+      if (e.disabled || e.closest('[inert]')) continue;
       const name = e.getAttribute('aria-label') || e.className;
       e.focus();
       const cs = getComputedStyle(e);
@@ -1003,7 +1059,7 @@ try {
       }
       return { sw: box(sw), fails };
     })();
-    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, wattCard, header, deck, nowH, edges, hide, hits, grid, lw, sig, toolsOut, meetOut, strip, opened, watchPolish, listen });
+    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, meetOut, strip, opened, watchPolish, listen });
     document.body.appendChild(pre);
   }, new URLSearchParams(location.search).get('card') ? 7000 : 3000);</script>`;
   const broken = overflow ? `<style>${OVERFLOWS[overflow]}</style>` : '';
@@ -1023,6 +1079,11 @@ try {
     // keys style
     'fy-height': (v) => v.name === 'Keys style, day: library sets held on VS Code' || v.name === 'Keys style, For you with two plates',
     'key-edge': (v) => v.name === 'Keys style, day: library sets held on VS Code',
+    // deck and drawer fixes
+    'tile-height': (v) => v.name === 'Keys style, day: library sets held on VS Code',
+    'tile-icon': (v) => v.name === 'Keys style, day: library sets held on VS Code',
+    'tile-iconbox': (v) => v.name === 'Keys style, day: library sets held on VS Code',
+    'drawer-scrim': (v) => v.name === 'Strip: the Day drawer open',
     'hide-pill': (v) => v.name === 'Unwind, Hide screen grown',
     // whole sky and sun
     sky: (v) => v.name.startsWith('Watch, whole sky playing'),
@@ -1077,7 +1138,7 @@ try {
       process.exit(1);
     }
     const text = m[1].replaceAll('&quot;', '"').replaceAll('&amp;', '&');
-    const { res, page: doc, overlaps, cut, gaps, wattCard, header, deck, nowH, edges, hide, hits, grid, lw, sig, toolsOut, meetOut, strip, opened, watchPolish, listen } = JSON.parse(text);
+    const { res, page: doc, overlaps, cut, gaps, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, meetOut, strip, opened, watchPolish, listen } = JSON.parse(text);
     // watch polish
     if (watchPolish) {
       for (const f of watchPolish.fails) console.log(`  FAIL ${f}`);
@@ -1165,7 +1226,7 @@ try {
     }
     for (const d of deck) console.log(`  FAIL ${d}`);
     if (deck.length) failed = true;
-    else if (v.q.includes('hz=work')) console.log('  ok   the deck stays above its floor, every key label inside its tile, the Now heading whole');
+    else if (v.q.includes('hz=work')) console.log(`  ok   the deck stays above its floor${deckRoom === null ? '' : ` (${deckRoom} px of room)`}, every key label inside its tile, the Now heading whole`);
     for (const h of header) console.log(`  FAIL ${h}`);
     if (header.length) failed = true;
     else if (v.q.includes('hz=work')) console.log('  ok   the agents header is one line');
@@ -1229,6 +1290,10 @@ try {
     if (hs.length > 1) {
       failed = true;
       for (const n of nowHeights) console.log(`  FAIL deck: the Now row is ${Math.round(n.h)} px tall on ${n.page === 'recording' ? 'Recording' : n.name} (every page must match)`);
+    } else if (Math.abs(hs[0] - 108) > 0.5) {
+      // deck and drawer fixes: the row is its 32 px heading, 6 px, and one 70 px tile row (108; it was 98 with 60 px tiles).
+      failed = true;
+      console.log(`  FAIL deck: the Now row is ${hs[0]} px tall on every page, expected 108 (a 32 px heading, 6 px, a 70 px tile row)`);
     } else console.log(`keys style: the Now row is ${hs[0]} px tall on every key page, on For you and on Recording`);
   }
   // watch polish: the Look switch sits in one place, one size, in every look and with nothing on.

@@ -361,6 +361,18 @@ add('home', 'recording: home', url('home', TYPICAL_AT, 'rec=1'), true);
 add('unwind', 'recording: unwind', url('unwind', TYPICAL_AT, 'rec=1'), true);
 add('meet', 'recording: meet', url('meet', TYPICAL_AT, 'rec=1'), true);
 add('zen', 'recording: none on zen', url('zen', TYPICAL_AT, 'rec=1'), true);
+// deck and drawer fixes: every key tile one height with its icon at one place (one-line and two-line
+// labels mixed on Always here and on a Now page, a For you page, the Recording page, the key picker
+// open), and the Day drawer open over a dimmed page (typical, heavy, with the leave banner).
+add('work', 'deck fixes: mixed one and two line labels, day', url('work', KS_DAY, 'keys=library&hold=lib-vscode&pins=long'), true);
+add('work', 'deck fixes: mixed one and two line labels, night', url('work', TIMES.night, 'keys=library&hold=lib-vscode&pins=long'), true);
+add('work', 'deck fixes: general set, day', url('work', KS_DAY, 'keys=general&hold=general'), true);
+add('work', 'deck fixes: For you page', url('work', KS_DAY, 'agents=ask&keys=typical&hold=foryou&meet=none&net=calm'), true);
+add('work', 'deck fixes: Recording page', url('work', KS_DAY, 'rec=1&keys=library&meet=none'), true);
+add('work', 'deck fixes: key picker open', url('work', KS_DAY, 'keys=library'), true, 'ctx:.pin-tile');
+add('work', 'deck fixes: Day drawer open, typical', url('work', TYPICAL_AT, 'meet=overlap&agents=12ask'), true, '.rib-handle:not(.in-drawer)');
+add('work', 'deck fixes: Day drawer open, heavy', url('work', TYPICAL_AT, `${HEAVY}`), true, '.rib-handle:not(.in-drawer)');
+add('work', 'deck fixes: Day drawer open, leave banner showing', url('work', TYPICAL_AT, 'meet=overlap&agents=12ask&leave=12&rec=1'), true, '.rib-handle:not(.in-drawer)');
 add('unwind', 'unwind: hide screen at rest', url('unwind', TYPICAL_AT), true);
 add('unwind', 'unwind: hide screen hover', url('unwind', TYPICAL_AT), true, 'hover:.screens-off');
 // The failure note ("Could not watch input", `hide=fail`) after a click, with the pointer still on the pill, and with keyboard focus.
@@ -657,6 +669,15 @@ EXPECT.push(
   ['work', 'colours: header at 9 of 4', ['9 of 4 working', '5 over']],
   ['work', 'colours: the strip over the limit', ['12 sessions: 1 needs you, 9 working', '5 over']],
   ['work', 'colours: the panel over the limit', ['Busy at once', 'Over your limit of 4 for']],
+  // deck and drawer fixes
+  ['work', 'deck fixes: mixed', ['Always here', 'Sonos: play what suits the hour']],
+  ['work', 'deck fixes: general set', ['Always here', 'Now \u00b7 General']],
+  ['work', 'deck fixes: For you page', 'Now \u00b7 For you'],
+  ['work', 'deck fixes: Recording page', ['Now \u00b7 Recording', 'Stop recording', 'Mark moment']],
+  ['work', 'deck fixes: key picker open', ['Reset to defaults', 'Anywhere on the PC']],
+  ['work', 'deck fixes: Day drawer open, typical', ['Agents today', 'Vendor demo1:30 to 3:30', 'waiting on you']],
+  ['work', 'deck fixes: Day drawer open, heavy', ['Agents today', 'waiting on you']],
+  ['work', 'deck fixes: Day drawer open, leave banner', ['Leave in 12 min.', 'Agents today', 'Recording00:']],
 );
 
 /**

@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useState } from 'react';
 import { IconBolt, IconCalendar, IconHome } from '@tabler/icons-react';
 import { invoke } from '../bridge/tauri';
 import { useFocusStore } from '../focus/store';
@@ -200,15 +200,9 @@ export function Ribbon({ kind, now = Date.now }: { kind: RibbonKind; now?: () =>
   // The handle keeps off the hour and sun labels and the needle's time pill.
   const handleLeft = handleX([...hourLabels(n.x).map((l) => labelBox(l.x, l.text)), ...sunLabels(sun, t, n.x).map((l) => labelBox(l.x, l.text, 9)), labelBox(n.x, n.text, 11)]);
   const openDrawer = useCallback((hour: number | null) => setOverlay((o) => (o?.kind === 'drawer' && hour === null ? null : { kind: 'drawer', hour })), []);
-  // The handle moves between the strip and the drawer's top edge: keyboard focus goes with it.
-  const lipFocus = useRef(false);
-  const toggleByLip = useCallback(
-    (byKey: boolean) => {
-      lipFocus.current = byKey;
-      openDrawer(null);
-    },
-    [openDrawer],
-  );
+  // The handle moves between the strip and the drawer's top edge. Focus follows the drawer's own
+  // rule (it takes focus on open and the strip's handle gets it back on close), so nothing here.
+  const toggleByLip = useCallback(() => openDrawer(null), [openDrawer]);
   return (
     <>
       <section className={`${isLate(t) ? 'rib late' : 'rib'}${calm && allDay.length > 0 ? ' has-allday' : ''}`} data-kind={kind} aria-label="Today">
@@ -383,7 +377,7 @@ export function Ribbon({ kind, now = Date.now }: { kind: RibbonKind; now?: () =>
           <b {...tip(() => needleTip(dayChips, t, day.calendar === 'ok'))}>{n.text}</b>
         </div>
       </section>
-      {calm && overlay?.kind !== 'drawer' && <DayLip open={false} x={handleLeft + HANDLE_W / 2 - LIP_INSET} onToggle={toggleByLip} focusOnMount={lipFocus.current} />}
+      {calm && overlay?.kind !== 'drawer' && <DayLip open={false} x={handleLeft + HANDLE_W / 2 - LIP_INSET} onToggle={toggleByLip} />}
       {calm && overlay?.kind === 'drawer' && (
         <DayDrawer
           chips={dayChips}
@@ -393,7 +387,7 @@ export function Ribbon({ kind, now = Date.now }: { kind: RibbonKind; now?: () =>
           scrollHour={overlay.hour}
           onClose={close}
           onOpenPanel={canPanel ? openPanel : null}
-          lip={<DayLip open x={null} onToggle={toggleByLip} focusOnMount={lipFocus.current} />}
+          lip={<DayLip open x={null} onToggle={toggleByLip} />}
         />
       )}
       {calm && overlay?.kind === 'panel' && <AgentsToday now={t} onClose={close} />}
