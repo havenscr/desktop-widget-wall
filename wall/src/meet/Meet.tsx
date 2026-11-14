@@ -185,10 +185,10 @@ export function Meet() {
   let hint: string | null = null;
   if (m.status === 'unconfigured') {
     message = 'Calendar is not connected yet.';
-    hint = 'Setup steps are in the Wall 2 README, section Meet.';
+    hint = 'Setup steps are in the Ridgeline README, section Meet.';
   } else if (m.status === 'invalid') {
     message = 'Not set up';
-    hint = 'meet.json is not valid. See the Meet section of the Wall 2 README.';
+    hint = 'meet.json is not valid. See the Meet section of the Ridgeline README.';
   } else if (m.status === 'loading') {
     message = 'Loading meetings';
   } else if (m.status === 'error' && !m.data) {
