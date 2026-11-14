@@ -205,6 +205,7 @@ function media(mode: string): void {
         album: '',
         source_app: 'Video App',
         source_app_id: 'Example.VideoApp_abc123!App',
+        session_key: 'Example.VideoApp_abc123!App#0',
         art_key: 'Evening Radio Mix|Example Host||Video App',
         // The review break `mediabreak=live` shows the same session as live, so a check can prove it notices.
         playback_status: knob('mediabreak') === 'live' ? 'playing' : 'paused',

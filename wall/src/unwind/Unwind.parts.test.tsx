@@ -558,6 +558,28 @@ it('the date hover keeps a failed weather try visible over an older reading', as
   vi.doUnmock('../weather/useWeather');
 });
 
+it('the date hover names the Weather Service for an older reading from it, failed or not', async () => {
+  const wallNow = Date.parse('2026-11-11T21:42:00-08:00');
+  const reading = { temp: 49, look: { label: 'Clear', icon: 'moon' }, fetchedAt: wallNow - 5 * 60_000, source: 'nws' };
+  const hover = async (state: object) => {
+    vi.doMock('../weather/useWeather', () => ({ useWeather: () => state }));
+    vi.resetModules();
+    const { DateLine: Fresh } = await import('./DateLine');
+    const { HoverTipLayer: FreshLayer, TIP_DELAY_MS } = await import('../ui/HoverTip');
+    const r = render(<><Fresh now={() => new Date(wallNow)} wallNow={() => wallNow} /><FreshLayer /></>);
+    fireEvent.mouseEnter(r.container.querySelector('.u-date')!);
+    await flush(TIP_DELAY_MS);
+    const text = document.querySelector('.hover-tip')?.textContent ?? '';
+    r.unmount();
+    vi.doUnmock('../weather/useWeather');
+    return text;
+  };
+  expect(await hover({ reading, failed: true, failure: 'http 429', attemptedAt: wallNow - 60_000, nextTryAt: wallNow + 10 * 60_000 })).toMatch(/Showing the reading from .* \(from the National Weather Service\)\./);
+  expect(await hover({ reading, failed: false })).toContain('Weather from the National Weather Service');
+  // An Open-Meteo reading names no source.
+  expect(await hover({ reading: { ...reading, source: 'open-meteo' }, failed: true, failure: 'network', attemptedAt: wallNow })).not.toContain('National Weather Service');
+});
+
 it('the lights chips mark the one on now, give each a hover, and fold past six into More', async () => {
   localStorage.setItem(LAST_MOOD_KEY, 'm8');
   localStorage.setItem(LAST_MOOD_AT_KEY, JSON.stringify({ id: 'm8', at: Date.now() - 60_000 }));

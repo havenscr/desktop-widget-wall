@@ -32,11 +32,11 @@ export function openMeteoBody(cold = false): string {
   });
 }
 
-/** An invented Weather Service style hourly reply starting at the current hour. */
+/** An invented Weather Service style reply: the hourly forecast from the current hour and the 12 hour forecast. */
 export function nwsBody(): string {
   const t = Math.floor(now() / 3_600_000) * 3_600_000;
   const words = ['Mostly Cloudy', 'Chance Rain Showers', 'Partly Cloudy', 'Sunny', 'Light Rain', 'Clear'];
-  return JSON.stringify({
+  const hourly = {
     properties: {
       periods: Array.from({ length: 24 }, (_, i) => {
         const ms = t + i * 3_600_000;
@@ -50,7 +50,20 @@ export function nwsBody(): string {
         };
       }),
     },
-  });
+  };
+  const day = new Date(t);
+  day.setHours(6, 0, 0, 0);
+  const night = new Date(t);
+  night.setHours(18, 0, 0, 0);
+  const forecast = {
+    properties: {
+      periods: [
+        { startTime: localSeconds(day.getTime()), isDaytime: true, temperature: 57, temperatureUnit: 'F', shortForecast: 'Partly Cloudy' },
+        { startTime: localSeconds(night.getTime()), isDaytime: false, temperature: 44, temperatureUnit: 'F', shortForecast: 'Mostly Clear' },
+      ],
+    },
+  };
+  return JSON.stringify({ hourly, forecast });
 }
 
 /** The native weather read, as a plain browser sees it: Open-Meteo answers with a reading. */

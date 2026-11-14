@@ -22,7 +22,7 @@ export function DateLine({ now = () => new Date(), wallNow = Date.now }: { now?:
   const missing = !fresh && (failed || reading !== null);
   const minutes = attemptedAt ? Math.max(0, Math.floor((wallNow() - attemptedAt) / 60_000)) : 0;
   const tried = minutes < 1 ? 'less than a minute ago' : `${minutes} min ago`;
-  const failedTip = failed && reading ? `Last try failed ${tried}: ${weatherFailureText(failure, nextTryAt)} Showing the reading from ${new Date(reading.fetchedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.` : null;
+  const failedTip = failed && reading ? `Last try failed ${tried}: ${weatherFailureText(failure, nextTryAt)} Showing the reading from ${new Date(reading.fetchedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}${reading.source === 'nws' ? ` (from ${WEATHER_SOURCE_NAMES.nws})` : ''}.` : null;
   // A reading from the second source says so (Open-Meteo is refusing this address or cannot be reached).
   const sourceTip = !failedTip && fresh && reading?.source === 'nws' ? `Weather from ${WEATHER_SOURCE_NAMES.nws}, read at ${clockText(reading.fetchedAt)}, while Open-Meteo is not answering.` : null;
   const hoverTip = failedTip ?? sourceTip;

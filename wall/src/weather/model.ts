@@ -123,12 +123,13 @@ export function parseWeather(data: unknown, fetchedAt: number): WeatherReading {
 /**
  * National Weather Service short forecast words to a WMO weather code the wall already knows
  * (`describeWeather`). The first row whose words are contained in the text wins, so the order
- * matters: precipitation, then fog, then cloud cover, then clear. No match is -1 ("Unknown").
+ * matters: precipitation, then fog, then cloud cover, then clear. No match is -1 ("Unknown"). Haze and smoke read as fog, a wintry mix as sleet, frost as clear (cold).
  */
 export const NWS_TABLE: ReadonlyArray<readonly [string, number]> = [
   ['thunder', 95],
   ['freezing rain', 66],
   ['sleet', 66],
+  ['wintry mix', 66],
   ['ice pellets', 66],
   ['freezing drizzle', 56],
   ['heavy snow', 75],
@@ -144,6 +145,8 @@ export const NWS_TABLE: ReadonlyArray<readonly [string, number]> = [
   ['rain', 63],
   ['fog', 45],
   ['mist', 45],
+  ['haze', 45],
+  ['smoke', 45],
   ['mostly sunny', 1],
   ['mostly clear', 1],
   ['partly sunny', 2],
@@ -153,6 +156,7 @@ export const NWS_TABLE: ReadonlyArray<readonly [string, number]> = [
   ['overcast', 3],
   ['sunny', 0],
   ['clear', 0],
+  ['frost', 0],
 ];
 
 export function nwsCode(shortForecast: string): number {
@@ -169,28 +173,53 @@ interface NwsPeriod {
   shortForecast?: string;
 }
 
+const nwsPeriods = (data: unknown): NwsPeriod[] | null => {
+  const periods = (data as { properties?: { periods?: NwsPeriod[] } } | null)?.properties?.periods;
+  return Array.isArray(periods) ? periods : null;
+};
+
+/** One period's temperature in Fahrenheit (the service says its unit per period). */
+function nwsTemp(p: NwsPeriod): number {
+  if (typeof p?.temperature !== 'number' || !Number.isFinite(p.temperature) || typeof p.startTime !== 'string') throw new Error('Incomplete weather response');
+  return p.temperatureUnit === 'C' ? (p.temperature * 9) / 5 + 32 : p.temperature;
+}
+
 /**
- * Turn the Weather Service's hourly forecast into a reading. The first hour is "now"; today's
- * high and low come from that day's hours still ahead (so an evening reading's high is the
- * evening's highest hour); the strip is the next six hours. Times are local to the place.
+ * Turn the Weather Service's reply into a reading: `{ hourly, forecast }` (the plain hourly reply
+ * also works). "Now" and the next six hours come from the hourly reply (times are local to the place).
+ * Today's high is the 12 hour forecast's daytime period of today when it exists, and its low is the
+ * night period (tonight's, or the overnight one before dawn). Once today's daytime period has passed
+ * (the forecast starts at "Tonight") the high is the larger of the temperature now and `seenHigh`, the
+ * highest reading the wall has seen today (the caller keeps it); without the 12 hour forecast the high and
+ * low come from the day's hours still ahead. The high is never under the temperature now, nor the low over it.
  */
-export function parseNws(data: unknown, fetchedAt: number): WeatherReading {
-  const periods = (data as { properties?: { periods?: NwsPeriod[] } })?.properties?.periods;
-  if (!Array.isArray(periods) || periods.length === 0) throw new Error('Unexpected weather response');
-  const temp = (p: NwsPeriod) => {
-    if (typeof p?.temperature !== 'number' || !Number.isFinite(p.temperature) || typeof p.startTime !== 'string') throw new Error('Incomplete weather response');
-    return p.temperatureUnit === 'C' ? (p.temperature * 9) / 5 + 32 : p.temperature;
-  };
+export function parseNws(data: unknown, fetchedAt: number, seenHigh: number | null = null): WeatherReading {
+  const wrapped = typeof data === 'object' && data !== null && 'hourly' in data;
+  const periods = nwsPeriods(wrapped ? (data as { hourly: unknown }).hourly : data);
+  if (!periods || periods.length === 0) throw new Error('Unexpected weather response');
+  const forecast = wrapped ? nwsPeriods((data as { forecast?: unknown }).forecast) : null;
   const look = (p: NwsPeriod) => describeWeather(nwsCode(p.shortForecast ?? ''), p.isDaytime !== false);
   const first = periods[0];
+  const now = nwsTemp(first);
   const day = first.startTime.slice(0, 10);
-  const today = periods.filter((p) => p.startTime?.slice(0, 10) === day).map(temp);
-  const hours: HourPoint[] = periods.slice(1, 7).map((p) => ({ label: hourLabel(p.startTime), temp: Math.round(temp(p)), look: look(p) }));
+  const ahead = periods.filter((p) => p.startTime?.slice(0, 10) === day).map(nwsTemp);
+  let high: number;
+  let low: number;
+  if (forecast && forecast.length > 0) {
+    const daytime = forecast.find((p) => p.isDaytime === true && p.startTime?.slice(0, 10) === day);
+    const night = forecast.find((p) => p.isDaytime === false);
+    high = daytime ? nwsTemp(daytime) : Math.max(now, seenHigh ?? now);
+    low = night ? nwsTemp(night) : Math.min(...ahead);
+  } else {
+    high = Math.max(...ahead, seenHigh ?? -Infinity);
+    low = Math.min(...ahead);
+  }
+  const hours: HourPoint[] = periods.slice(1, 7).map((p) => ({ label: hourLabel(p.startTime), temp: Math.round(nwsTemp(p)), look: look(p) }));
   return {
-    temp: Math.round(temp(first)),
+    temp: Math.round(now),
     look: look(first),
-    high: Math.round(Math.max(...today)),
-    low: Math.round(Math.min(...today)),
+    high: Math.round(Math.max(high, now)),
+    low: Math.round(Math.min(low, now)),
     hours,
     fetchedAt,
     source: 'nws',

@@ -93,6 +93,7 @@ const NWS_PHRASES: [string, number][] = [
   ['Thunderstorms Likely', 95],
   ['Freezing Rain', 66],
   ['Sleet', 66],
+  ['Wintry Mix', 66],
   ['Ice Pellets', 66],
   ['Freezing Drizzle', 56],
   ['Heavy Snow', 75],
@@ -108,6 +109,8 @@ const NWS_PHRASES: [string, number][] = [
   ['Rain Likely', 63],
   ['Patchy Fog', 45],
   ['Mist', 45],
+  ['Areas Of Haze', 45],
+  ['Smoke', 45],
   ['Mostly Sunny', 1],
   ['Mostly Clear', 1],
   ['Partly Sunny', 2],
@@ -117,6 +120,7 @@ const NWS_PHRASES: [string, number][] = [
   ['Overcast', 3],
   ['Sunny', 0],
   ['Clear', 0],
+  ['Patchy Frost', 0],
 ];
 
 it('maps the Weather Service short forecast words through the table, one test per row', () => {
@@ -133,32 +137,40 @@ it('reads phrases that hold two rows words by the earlier row, and an unknown ph
   expect(nwsCode('Slight Chance Light Rain then Thunderstorms')).toBe(95);
   expect(nwsCode('Rain And Snow')).toBe(73);
   expect(nwsCode('Mostly Cloudy then Chance Light Snow')).toBe(71);
-  expect(nwsCode('Areas Of Frost')).toBe(-1);
+  expect(nwsCode('Blowing Dust')).toBe(-1);
+  // Frost with clouds reads as the clouds, frost alone as clear.
+  expect(nwsCode('Areas Of Frost then Mostly Cloudy')).toBe(3);
+  expect(nwsCode('Areas Of Frost')).toBe(0);
   expect(nwsCode('')).toBe(-1);
 });
 
-const nws = {
-  properties: {
-    periods: [
-      { startTime: '2026-11-11T10:00:00-08:00', isDaytime: true, temperature: 51, temperatureUnit: 'F', shortForecast: 'Mostly Cloudy' },
-      { startTime: '2026-11-11T11:00:00-08:00', isDaytime: true, temperature: 53, temperatureUnit: 'F', shortForecast: 'Light Rain' },
-      { startTime: '2026-11-11T12:00:00-08:00', isDaytime: true, temperature: 55, temperatureUnit: 'F', shortForecast: 'Sunny' },
-      { startTime: '2026-11-11T17:00:00-08:00', isDaytime: false, temperature: 47, temperatureUnit: 'F', shortForecast: 'Clear' },
-      { startTime: '2026-11-11T18:00:00-08:00', isDaytime: false, temperature: 45, temperatureUnit: 'F', shortForecast: 'Clear' },
-      { startTime: '2026-11-11T19:00:00-08:00', isDaytime: false, temperature: 44, temperatureUnit: 'F', shortForecast: 'Patchy Fog' },
-      { startTime: '2026-11-11T20:00:00-08:00', isDaytime: false, temperature: 43, temperatureUnit: 'F', shortForecast: 'Clear' },
-      { startTime: '2026-11-12T08:00:00-08:00', isDaytime: true, temperature: 70, temperatureUnit: 'F', shortForecast: 'Sunny' },
-    ],
-  },
-};
+const hour = (iso: string, temperature: number, shortForecast = 'Sunny', isDaytime = true, temperatureUnit = 'F') => ({ startTime: iso, isDaytime, temperature, temperatureUnit, shortForecast });
+const hourly = (periods: ReturnType<typeof hour>[]) => ({ properties: { periods } });
 
-it('turns the Weather Service hourly reply into a reading: now, today range, next six hours, the source', () => {
-  const r = parseNws(nws, 1000);
+// A morning answer: 8 AM, the hours of the rest of the day, and the 12 hour forecast starting at "Today".
+const morningHours = [
+  hour('2026-11-11T08:00:00-08:00', 51, 'Mostly Cloudy'),
+  hour('2026-11-11T09:00:00-08:00', 53, 'Light Rain'),
+  hour('2026-11-11T10:00:00-08:00', 55),
+  hour('2026-11-11T17:00:00-08:00', 47, 'Clear', false),
+  hour('2026-11-11T18:00:00-08:00', 45, 'Clear', false),
+  hour('2026-11-11T19:00:00-08:00', 44, 'Patchy Fog', false),
+  hour('2026-11-11T20:00:00-08:00', 43, 'Clear', false),
+  hour('2026-11-12T08:00:00-08:00', 70),
+];
+const morningForecast = hourly([
+  hour('2026-11-11T06:00:00-08:00', 58, 'Partly Sunny'),
+  hour('2026-11-11T18:00:00-08:00', 41, 'Mostly Clear', false),
+  hour('2026-11-12T06:00:00-08:00', 66, 'Sunny'),
+]);
+
+it('turns the Weather Service reply into a reading: now, today range, next six hours, the source', () => {
+  const r = parseNws({ hourly: hourly(morningHours), forecast: morningForecast }, 1000);
   expect(r.temp).toBe(51);
   expect(r.look.label).toBe('Overcast');
-  // Today's hours only: tomorrow's 70 is not today's high.
-  expect([r.high, r.low]).toEqual([55, 43]);
-  expect(r.hours.map((h) => h.label)).toEqual(['11 AM', '12 PM', '5 PM', '6 PM', '7 PM', '8 PM']);
+  // The 12 hour forecast: today's daytime period is the high, tonight's period the low.
+  expect([r.high, r.low]).toEqual([58, 41]);
+  expect(r.hours.map((h) => h.label)).toEqual(['9 AM', '10 AM', '5 PM', '6 PM', '7 PM', '8 PM']);
   expect(r.hours.map((h) => h.temp)).toEqual([53, 55, 47, 45, 44, 43]);
   expect(r.hours[0].look.label).toBe('Light rain');
   // Night hours get the night icons.
@@ -167,9 +179,63 @@ it('turns the Weather Service hourly reply into a reading: now, today range, nex
   expect(r.source).toBe('nws');
 });
 
-it('converts a Celsius reply and marks an Open-Meteo reading with its source', () => {
-  const c = { properties: { periods: [{ startTime: '2026-11-11T10:00:00-08:00', isDaytime: true, temperature: 10, temperatureUnit: 'C', shortForecast: 'Sunny' }] } };
-  expect(parseNws(c, 0).temp).toBe(50);
+it('in the afternoon the high is the afternoon period of the forecast', () => {
+  const afternoon = [hour('2026-11-11T15:00:00-08:00', 57), hour('2026-11-11T16:00:00-08:00', 56), hour('2026-11-11T17:00:00-08:00', 54)];
+  const forecast = hourly([
+    hour('2026-11-11T14:00:00-08:00', 60, 'Sunny'),
+    hour('2026-11-11T18:00:00-08:00', 43, 'Clear', false),
+    hour('2026-11-12T06:00:00-08:00', 62),
+  ]);
+  const r = parseNws({ hourly: hourly(afternoon), forecast }, 0);
+  expect([r.temp, r.high, r.low]).toEqual([57, 60, 43]);
+});
+
+it('late in the evening the high is the larger of now and the highest reading seen today, the low is tonight', () => {
+  const evening = [hour('2026-11-11T23:00:00-08:00', 44, 'Clear', false), hour('2026-11-12T00:00:00-08:00', 43, 'Clear', false), hour('2026-11-12T01:00:00-08:00', 42, 'Clear', false)];
+  // The forecast starts at "Tonight": today's daytime period has passed.
+  const forecast = hourly([
+    hour('2026-11-11T18:00:00-08:00', 41, 'Clear', false),
+    hour('2026-11-12T06:00:00-08:00', 59, 'Sunny'),
+    hour('2026-11-12T18:00:00-08:00', 40, 'Clear', false),
+  ]);
+  // Nothing seen earlier today (after a restart): the high is the temperature now, never "high equals low equals now" by accident.
+  const none = parseNws({ hourly: hourly(evening), forecast }, 0);
+  expect([none.temp, none.high, none.low]).toEqual([44, 44, 41]);
+  // A reading of 57 was seen this afternoon.
+  const seen = parseNws({ hourly: hourly(evening), forecast }, 0, 57);
+  expect([seen.temp, seen.high, seen.low]).toEqual([44, 57, 41]);
+  // A seen value under the temperature now never lowers the high.
+  expect(parseNws({ hourly: hourly(evening), forecast }, 0, 30).high).toBe(44);
+});
+
+it('reads the forecast in either unit, and never puts the high under now or the low over it', () => {
+  const c = (t: number) => ({ temperature: t, temperatureUnit: 'C' });
+  const evening = hourly([{ ...hour('2026-11-11T23:00:00-08:00', 0, 'Clear', false), ...c(10) }, { ...hour('2026-11-12T00:00:00-08:00', 0, 'Clear', false), ...c(9) }]);
+  const forecast = hourly([{ ...hour('2026-11-11T18:00:00-08:00', 0, 'Clear', false), ...c(5) }, { ...hour('2026-11-12T06:00:00-08:00', 0), ...c(15) }]);
+  // 10 C is 50 F, 5 C is 41 F; today's daytime period has passed, so the high is now (50) when nothing was seen.
+  const r = parseNws({ hourly: evening, forecast }, 0);
+  expect([r.temp, r.high, r.low]).toEqual([50, 50, 41]);
+  // A morning in Celsius: day 14 C is 57 F, night 4 C is 39 F.
+  const morning = hourly([{ ...hour('2026-11-11T08:00:00-08:00', 0), ...c(8) }]);
+  const fc = hourly([{ ...hour('2026-11-11T06:00:00-08:00', 0), ...c(14) }, { ...hour('2026-11-11T18:00:00-08:00', 0, 'Clear', false), ...c(4) }]);
+  const m = parseNws({ hourly: morning, forecast: fc }, 0);
+  expect([m.temp, m.high, m.low]).toEqual([46, 57, 39]);
+  // A forecast that says today's high is under the temperature now does not show a high under it.
+  const warm = parseNws({ hourly: hourly([hour('2026-11-11T15:00:00-08:00', 62)]), forecast: hourly([hour('2026-11-11T14:00:00-08:00', 58), hour('2026-11-11T18:00:00-08:00', 40, 'Clear', false)]) }, 0);
+  expect([warm.high, warm.low]).toEqual([62, 40]);
+});
+
+it('without the 12 hour forecast the high and low come from the hours still ahead, and the plain hourly reply still reads', () => {
+  const r = parseNws({ hourly: hourly(morningHours), forecast: null }, 0);
+  expect([r.high, r.low]).toEqual([55, 43]);
+  const plain = parseNws(hourly(morningHours), 0);
+  expect([plain.high, plain.low]).toEqual([55, 43]);
+  // With nothing but the hour left, the high can still take a reading seen today.
+  const late = hourly([hour('2026-11-11T23:00:00-08:00', 44, 'Clear', false)]);
+  expect(parseNws({ hourly: late, forecast: null }, 0, 57).high).toBe(57);
+});
+
+it('marks an Open-Meteo reading with its source', () => {
   expect(parseWeather(sample, 0).source).toBe('open-meteo');
 });
 

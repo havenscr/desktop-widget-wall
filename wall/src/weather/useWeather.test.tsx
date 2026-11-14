@@ -15,7 +15,7 @@ const body = {
   },
   daily: { temperature_2m_max: [61], temperature_2m_min: [44] },
 };
-const nwsBody = {
+const nwsHourly = {
   properties: {
     periods: Array.from({ length: 10 }, (_, i) => ({
       startTime: `2026-11-11T${String(10 + i).padStart(2, '0')}:00:00-08:00`,
@@ -149,7 +149,7 @@ it('after a 429 leaves the first source alone for 15, then 30, then 60 minutes, 
   const read: WeatherReader = async (source) => {
     calls.push(source);
     if (source === 'open-meteo') throw 'http 429';
-    return JSON.stringify(nwsBody);
+    return JSON.stringify({ hourly: nwsHourly, forecast: null });
   };
   const { result } = renderHook(() => useWeather(read));
   await act(async () => {
@@ -177,7 +177,7 @@ it('after a 429 leaves the first source alone for 15, then 30, then 60 minutes, 
   expect(calls.slice(5)).toEqual(['open-meteo', 'nws']);
 });
 
-it('with no reading after a 429 waits for the planned time, then the Retry button tries at once', async () => {
+it('with no reading after a 429 waits for the planned time; Retry tries at once but never lengthens the wait', async () => {
   vi.useFakeTimers();
   const calls: string[] = [];
   const read: WeatherReader = async (source) => {
@@ -198,18 +198,29 @@ it('with no reading after a 429 waits for the planned time, then the Retry butto
     await vi.advanceTimersByTimeAsync(14 * 60_000);
   });
   expect(calls).toHaveLength(2);
-  // The Tools drawer's Retry tries Open-Meteo at once.
-  await act(async () => refreshWeather());
-  expect(calls).toEqual(['open-meteo', 'nws', 'open-meteo', 'nws']);
-  // A second 429 waits 30 minutes, a third and later 60.
+  // Pressing Retry tries Open-Meteo at once each time and leaves the planned time where it was.
+  for (let i = 1; i <= 3; i++) {
+    await act(async () => refreshWeather());
+    expect(calls).toHaveLength(2 + 2 * i);
+    expect(calls.slice(-2)).toEqual(['open-meteo', 'nws']);
+    expect(useWeatherStore.getState().nextTryAt).toBe(retryAt);
+  }
+  // A scheduled try that meets a 429 advances the wait: 30 minutes, then 60, then 60 again.
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(2 * 60_000);
+  });
   expect(useWeatherStore.getState().nextTryAt! - useWeatherStore.getState().attemptedAt!).toBe(BACKOFF_MS[1]);
-  await act(async () => refreshWeather());
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(BACKOFF_MS[1] + 60_000);
+  });
   expect(useWeatherStore.getState().nextTryAt! - useWeatherStore.getState().attemptedAt!).toBe(BACKOFF_MS[2]);
-  await act(async () => refreshWeather());
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(BACKOFF_MS[2] + 60_000);
+  });
   expect(useWeatherStore.getState().nextTryAt! - useWeatherStore.getState().attemptedAt!).toBe(BACKOFF_MS[2]);
 });
 
-it('a success resets the 429 wait', async () => {
+it('a pressed Retry that starts a wait while none is running does not advance it, and a success resets the steps', async () => {
   vi.useFakeTimers();
   let refuse = true;
   const read: WeatherReader = async (source) => {
@@ -221,14 +232,20 @@ it('a success resets the 429 wait', async () => {
   await act(async () => {
     await vi.advanceTimersByTimeAsync(10);
   });
-  await act(async () => refreshWeather());
+  // Past the first wait a scheduled try meets another 429: 30 minutes.
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(BACKOFF_MS[0] + 60_000);
+  });
   expect(result.current.nextTryAt! - result.current.attemptedAt!).toBe(BACKOFF_MS[1]);
   refuse = false;
   await act(async () => refreshWeather());
   expect(result.current.reading?.source).toBe('open-meteo');
   expect(result.current.nextTryAt).toBeNull();
+  // After the success the next refusal starts again at 15 minutes.
   refuse = true;
-  await act(async () => refreshWeather());
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(15 * 60_000 + 60_000);
+  });
   expect(result.current.nextTryAt! - result.current.attemptedAt!).toBe(BACKOFF_MS[0]);
 });
 

@@ -55,6 +55,20 @@ let reader: WeatherReader = nativeReader;
 let blockedUntil = 0;
 /** Which of the 15, 30 and 60 minute waits comes next after a 429. */
 let backoffStep = 0;
+/** The highest temperature seen today (with its local date), for the second source's evening high. In memory only. */
+let seenToday: { date: string; high: number } | null = null;
+
+const localDate = (ms: number): string => {
+  const d = new Date(ms);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
+/** Notes a reading's highest value for today: Open-Meteo's high counts, the second source's reading only by its temperature now. */
+function rememberHigh(reading: WeatherReading): void {
+  const date = localDate(reading.fetchedAt);
+  const seen = reading.source === 'nws' ? reading.temp : Math.max(reading.temp, reading.high);
+  seenToday = seenToday && seenToday.date === date ? { date, high: Math.max(seenToday.high, seen) } : { date, high: seen };
+}
 
 /** Rejects with `timeout` when the reply does not come in time; a late reply is dropped. */
 function withTimeout(p: Promise<string>): Promise<string> {
@@ -83,7 +97,9 @@ async function attempt(source: WeatherSource, latitude: number, longitude: numbe
   }
   try {
     const body: unknown = JSON.parse(text);
-    return source === 'nws' ? parseNws(body, Date.now()) : parseWeather(body, Date.now());
+    const at = Date.now();
+    const seen = seenToday && seenToday.date === localDate(at) ? seenToday.high : null;
+    return source === 'nws' ? parseNws(body, at, seen) : parseWeather(body, at);
   } catch {
     return 'parse';
   }
@@ -117,8 +133,15 @@ async function run(force = false): Promise<void> {
       } else {
         failure = first;
         if (first === 'http 429') {
-          blockedUntil = started + BACKOFF_MS[Math.min(backoffStep, BACKOFF_MS.length - 1)];
-          backoffStep = Math.min(backoffStep + 1, BACKOFF_MS.length - 1);
+          const wait = BACKOFF_MS[Math.min(backoffStep, BACKOFF_MS.length - 1)];
+          if (!force) {
+            // Only a scheduled try that meets a 429 advances the wait (15, 30, 60 minutes).
+            blockedUntil = started + wait;
+            backoffStep = Math.min(backoffStep + 1, BACKOFF_MS.length - 1);
+          } else if (started >= blockedUntil) {
+            // A pressed Retry never lengthens a wait that is running; with none running it starts the current one.
+            blockedUntil = started + wait;
+          }
         }
       }
     }
@@ -127,6 +150,7 @@ async function run(force = false): Promise<void> {
       if (typeof second !== 'string') reading = second;
     }
     if (mine !== epoch) return;
+    if (reading) rememberHigh(reading);
     if (reading) useWeatherStore.setState({ reading, failed: false, failure: null, nextTryAt: reading.source === 'nws' && failure === 'http 429' ? blockedUntil : null });
     /* a failure keeps the last good reading; the card shows its age */
     else useWeatherStore.setState({ failed: true, failure, nextTryAt: failure === 'http 429' ? blockedUntil : null });
@@ -177,6 +201,7 @@ export function resetWeatherStore(): void {
   lastAttempt = null;
   blockedUntil = 0;
   backoffStep = 0;
+  seenToday = null;
   reader = nativeReader;
   useWeatherStore.setState(initial(), true);
 }
