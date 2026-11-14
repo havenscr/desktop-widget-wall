@@ -1,3 +1,5 @@
+// @ts-ignore node's own file calls; this test reads the app's source and stylesheet as text.
+import { readFileSync } from 'node:fs';
 import { act, fireEvent, render } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { lane, summary } from '../agents/fixtures';
@@ -147,4 +149,22 @@ it('a press on the scrim does not take focus out of the drawer', async () => {
   const down = fireEvent.mouseDown(r.container.querySelector('.drawer-scrim') as HTMLElement);
   // Prevented: the browser does not move focus to the body.
   expect(down).toBe(false);
+});
+
+it('the app draws the scrim between the shell and the leave banner, and the layers stack scrim, drawer, banner', () => {
+  const app: string = readFileSync('src/App.tsx', 'utf8');
+  const at = (t: string) => app.indexOf(t);
+  expect(at('<DrawerScrim />')).toBeGreaterThan(at('<Screens />'));
+  expect(at('<DrawerScrim />')).toBeLessThan(at('<LeaveBanner />'));
+  expect(at('<DrawerScrim />')).toBeLessThan(at('<FloatingRecordingChip />'));
+  const css: string = readFileSync('src/styles/ribbon.css', 'utf8');
+  const z = (sel: string) => Number(new RegExp(`\\n${sel.replace(/[.~ ]/g, '\\$&')} \\{[^}]*z-index: (\\d+)`).exec(css)?.[1]);
+  expect(z('.drawer-scrim')).toBeLessThan(z('.day-drawer'));
+  const above = Number(/\.drawer-scrim ~ \.leave-banner,\n\.drawer-scrim ~ \.rec-float \{[^}]*z-index: (\d+)/.exec(css)?.[1]);
+  expect(above).toBeGreaterThan(z('.day-drawer'));
+  // The dim is 20 to 30 percent and there is no live blur of the animated sky.
+  const dim = Number(/\.drawer-scrim \{[^}]*background: rgba\(\d+, \d+, \d+, ([\d.]+)\)/.exec(css)?.[1]);
+  expect(dim).toBeGreaterThanOrEqual(0.2);
+  expect(dim).toBeLessThanOrEqual(0.3);
+  expect(/\.drawer-scrim \{[^}]*backdrop-filter/.test(css)).toBe(false);
 });
