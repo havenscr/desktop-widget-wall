@@ -283,9 +283,10 @@ fn artists(v: &Value) -> Option<String> {
     clean(Some(&Value::String(joined)), 80)
 }
 
+// Only a song of a search answer carries `duration_ms`; every other list leaves the key out.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub struct Item { pub id: String, pub name: String, pub kind: String, pub image_url: Option<String>, pub thumb_url: Option<String>, pub subtitle: Option<String>, pub count: Option<u32> }
+pub struct Item { pub id: String, pub name: String, pub kind: String, pub image_url: Option<String>, pub thumb_url: Option<String>, pub subtitle: Option<String>, pub count: Option<u32>, #[serde(default, skip_serializing_if = "Option::is_none")] pub duration_ms: Option<u32> }
 
 fn shape_item(v: &Value, kind: &str, current_user: Option<&Profile>) -> Option<Item> {
     let id = v.get("id")?.as_str()?;
@@ -302,7 +303,7 @@ fn shape_item(v: &Value, kind: &str, current_user: Option<&Profile>) -> Option<I
         _ => None,
     }.and_then(|s| clean(Some(&Value::String(s)), 80));
     let count = match kind { "playlist" => v.pointer("/items/total").or_else(|| v.pointer("/tracks/total")), "album" => v.get("total_tracks"), _ => None }.and_then(Value::as_u64).and_then(|n| u32::try_from(n).ok());
-    Some(Item { id: id.into(), name: clean(v.get("name"), 160)?, kind: kind.into(), image_url: image_near(images, 300), thumb_url: image_near(images, 64), subtitle, count })
+    Some(Item { id: id.into(), name: clean(v.get("name"), 160)?, kind: kind.into(), image_url: image_near(images, 300), thumb_url: image_near(images, 64), subtitle, count, duration_ms: None })
 }
 
 fn shape_list(v: &Value, kind: &str, current_user: Option<&Profile>) -> Vec<Item> {
@@ -459,9 +460,15 @@ pub async fn wall2_spotify_search(window: WebviewWindow, query: String) -> Resul
     tauri::async_runtime::spawn_blocking(move || { let cfg = config(window.app_handle())?; let current_user = profile(&cfg)?; search_with(&cfg, &query, &current_user, &RealHttp, &RealCreds) }).await.map_err(|_| "failed".to_string())?
 }
 fn search_path(query: &str) -> String { format!("/search?market=from_token&type=track,album,playlist&limit=10&q={}", urlencoding::encode(query)) }
+/// A song's length in milliseconds when Spotify gives one: a whole number, at most a day, else absent.
+fn song_length(v: &Value) -> Option<u32> { v.get("duration_ms").and_then(Value::as_u64).filter(|n| *n <= 86_400_000).and_then(|n| u32::try_from(n).ok()) }
+/// The songs of a search answer, each with its length (the grouped search shows it); no other list is shaped this way.
+fn shape_search_tracks(v: &Value) -> Vec<Item> {
+    v.get("items").and_then(Value::as_array).into_iter().flatten().take(PAGE_SIZE).filter_map(|x| shape_item(x, "track", None).map(|item| Item { duration_ms: song_length(x), ..item })).collect()
+}
 fn search_with(cfg: &Config, query: &str, current_user: &Profile, http: &dyn Http, creds: &dyn Creds) -> Result<Search, String> {
     let v=get_json_with_limit(cfg,&search_path(query),TRACK_BODY,http,creds)?;
-    Ok(Search { tracks: shape_list(v.get("tracks").unwrap_or(&Value::Null), "track", None), albums: shape_list(v.get("albums").unwrap_or(&Value::Null), "album", None), playlists: shape_list(v.get("playlists").unwrap_or(&Value::Null), "playlist", Some(current_user)) })
+    Ok(Search { tracks: shape_search_tracks(v.get("tracks").unwrap_or(&Value::Null)), albums: shape_list(v.get("albums").unwrap_or(&Value::Null), "album", None), playlists: shape_list(v.get("playlists").unwrap_or(&Value::Null), "playlist", Some(current_user)) })
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -839,6 +846,20 @@ mod tests {
         assert_eq!(seek_path(0), Ok("/me/player/seek?position_ms=0".into()));
         assert_eq!(seek_path(MAX_SEEK_MS), Ok(format!("/me/player/seek?position_ms={MAX_SEEK_MS}")));
         assert_eq!(seek_path(MAX_SEEK_MS + 1), Err("invalid position".into()));
+    }
+
+    #[test]
+    fn only_search_songs_carry_a_length_and_a_bad_one_stays_absent() {
+        let song = |len: Value| json!({"id":ID,"name":"Song","artists":[{"name":"A"}],"album":{"images":[]},"duration_ms":len});
+        let got = shape_search_tracks(&json!({"items":[song(json!(215000)), song(json!(null)), song(json!("215000")), song(json!(86400001u64)), song(json!(-5)), {"id":ID,"name":"No length","artists":[],"album":{"images":[]}}]}));
+        assert_eq!(got.iter().map(|i| i.duration_ms).collect::<Vec<_>>(), vec![Some(215000), None, None, None, None, None]);
+        // The key is sent only when there is a length, and the other lists never get it.
+        assert_eq!(serde_json::to_value(&got[0]).unwrap()["durationMs"], json!(215000));
+        assert!(serde_json::to_value(&got[1]).unwrap().get("durationMs").is_none());
+        let liked = shape_list(&json!({"items":[{"track":song(json!(215000))}]}), "track", None);
+        assert_eq!(liked.len(), 1);
+        assert!(serde_json::to_value(&liked[0]).unwrap().get("durationMs").is_none());
+        assert_eq!(song_length(&json!({"duration_ms":86400000u64})), Some(86_400_000));
     }
 
     #[test]
