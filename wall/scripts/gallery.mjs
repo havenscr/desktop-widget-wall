@@ -520,6 +520,8 @@ add('unwind', 'tall music: open on Playlists', TALL_AT(), true, '.sp-grow');
 add('unwind', 'tall music: a playlist opened', TALL_AT(), true, '.sp-grow >> .sp-tile');
 add('unwind', 'tall music: search in groups', TALL_AT(), true, '.sp-grow >> type:.sp-search input=road');
 add('unwind', 'tall music: Up next', TALL_AT(), true, '.sp-grow >> .sp-tabs button:nth-child(5)');
+// A real drag on the time bar (mouse down, moves, up): the mock remembers the seek, so the bar shows where it was left.
+add('unwind', 'tall music: time bar dragged', TALL_AT(), true, '.sp-grow >> drag:.sp-seek@2250,606');
 add('unwind', 'tall music: Play on open', TALL_AT(), true, '.sp-grow >> .sp-dev');
 add('unwind', 'tall music: Play on, music on a speaker', TALL_AT('spotifyplay=speaker'), true, '.sp-grow >> .sp-dev');
 add('unwind', 'tall music: Play on, nothing awake', TALL_AT('spotify=nodevices&spotifyplay=none&media=none'), true, '.sp-grow >> .sp-dev');
@@ -662,7 +664,7 @@ const EXPECT = [
   ['unwind', 'broken: calendar read fails', '!First thing'],
   ['unwind', 'broken: task app down', 'First thing: Planning check-in at 9:30'],
   ['unwind', 'broken: weather down', ['Wednesday morning', '!58°']],
-  ['unwind', 'typical', ['Tokyo Burnout', 'Which player the wall follows', '!Lights']],
+  ['unwind', 'typical', ['Tokyo Burnout', 'Play on', '!Lights']],
   ['unwind', 'network alarm', '4 network alerts.'],
   ['unwind', 'watch: nothing saved', ['Nothing on', 'Paste a YouTube or Twitch link', '!saved']],
   ['unwind', 'watch: three saved, nothing on', ['Nothing on', 'Play Night drive mix', '3 saved']],
@@ -819,6 +821,7 @@ const EXPECT = [
   ['unwind', 'tall music: a playlist opened', ['Lantern Song 9', 'Shuffle', '58 songs', 'Playlists']],
   ['unwind', 'tall music: search in groups', ['Songs', 'Albums', 'Playlists', 'Track 1', 'Album 1', 'Playlist 1']],
   ['unwind', 'tall music: Up next', ['Playing now', 'Spotify sets the order. A click skips ahead to that song.', 'Lantern Song 2']],
+  ['unwind', 'tall music: time bar dragged', ['Lantern Song 1', '3:01', '!1:05']],
   ['unwind', 'tall music: Play on open', ['Kitchen speaker', 'Phone', 'Computer, playing now', 'A phone or speaker shows here only while its Spotify is awake.']],
   ['unwind', 'tall music: Play on, music on a speaker', ['Speaker, playing now', 'Play on']],
   ['unwind', 'tall music: Play on, nothing awake', ['Spotify is closed. The wall starts it.', 'This PC']],
