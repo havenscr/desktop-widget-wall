@@ -48,8 +48,12 @@ export function registerMeetMocks(): void {
       events: mode() === 'down' || mode() === 'none' ? [] : [
         { key: 'd1-0', accountId: 'work', title: 'Standup', start: day(9, 0), end: day(9, 15), canJoin: true, canOpen: true, isLive: false },
         { key: 'd1-1', accountId: 'work', title: 'Design review with the platform team', start: day(10, 30), end: day(11, 30), canJoin: true, canOpen: true, isLive: false },
-        { key: 'd1-2', accountId: 'work', title: 'Lunch with Sam', start: day(12, 0), end: day(13, 0), canJoin: false, isLive: false },
-        { key: 'd1-3', accountId: 'work', title: 'Livestream: weekly build', start: day(15, 0), end: day(16, 0), canJoin: false, isLive: true },
+        ...(mode() === 'overlap'
+          ? []
+          : [
+              { key: 'd1-2', accountId: 'work', title: 'Lunch with Sam', start: day(12, 0), end: day(13, 0), canJoin: false, isLive: false },
+              { key: 'd1-3', accountId: 'work', title: 'Livestream: weekly build', start: day(15, 0), end: day(16, 0), canJoin: false, isLive: true },
+            ]),
         { key: 'd1-4', accountId: 'work', title: 'Weekly planning', start: day(17, 0), end: day(17, 30), canJoin: true, canOpen: true, isLive: false },
         ...(second ? [{ key: 'd1-5', accountId: 'second', title: 'Board prep', start: day(19, 0), end: day(20, 0), canJoin: true, isLive: false }] : []),
         // `?meet=busy`: five meetings at the same hour, for the "+N" chip.
@@ -64,6 +68,15 @@ export function registerMeetMocks(): void {
               canOpen: true,
               isLive: false,
             }))
+          : []),
+        // `?meet=overlap`: three overlapping meetings around 1:30 and an all-day event.
+        ...(mode() === 'overlap'
+          ? [
+              { key: 'd1-o0', accountId: 'work', title: 'Budget sync', start: day(12, 45), end: day(13, 45), canJoin: true, canOpen: true, isLive: false },
+              { key: 'd1-o1', accountId: 'work', title: 'Design critique', start: day(13, 0), end: day(14, 0), canJoin: true, canOpen: true, isLive: false },
+              { key: 'd1-o2', accountId: 'work', title: 'Vendor demo', start: day(13, 30), end: day(15, 30), canJoin: false, canOpen: true, isLive: false },
+              { key: 'd1-o3', accountId: 'work', title: 'Team offsite week', start: day(0, 0), end: day(24, 0), canJoin: false, canOpen: true, isLive: false },
+            ]
           : []),
         { key: 'd1-6', accountId: 'work', title: 'Planning check-in', start: day(24 + 9, 30), end: day(24 + 10, 0), canJoin: true, canOpen: true, isLive: false },
         { key: 'd1-7', accountId: 'work', title: 'Quarterly review', start: day(24 + 14, 0), end: day(24 + 15, 0), canJoin: true, canOpen: true, isLive: false },

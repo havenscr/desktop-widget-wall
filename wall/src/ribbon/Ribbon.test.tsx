@@ -108,7 +108,7 @@ it('uses the home icon for row 2 on Home, with no focus bar', async () => {
   expect(r.container.querySelector('.fo')).toBeNull();
 });
 
-it('draws overlapping events in two stacked lanes and a narrow chip with its title beside it', async () => {
+it('Home: draws overlapping events in two stacked lanes and a narrow chip with its title beside it', async () => {
   mocks.set('wall2_meet_day', () => ({
     accounts: [],
     events: [
@@ -116,7 +116,7 @@ it('draws overlapping events in two stacked lanes and a narrow chip with its tit
       { key: 'b', accountId: 'work', title: 'Standup', start: iso('12:00'), end: iso('12:15'), canJoin: false, isLive: false },
     ],
   }));
-  const r = render(<Ribbon kind="work" />);
+  const r = render(<Ribbon kind="home" />);
   await flush();
   const [a, b] = [...r.container.querySelectorAll('.ev')] as HTMLElement[];
   expect(a.className).toBe('ev next s2');
@@ -326,12 +326,12 @@ it('an older answer cannot turn an empty good day into "not available" either', 
   expect(labels(r.container)).not.toContain('Calendar not available');
 });
 
-it('three meetings at once stack in three thin lanes with no title drawn', async () => {
+it('Home: three meetings at once stack in three thin lanes with no title drawn', async () => {
   mocks.set('wall2_meet_day', () => ({
     accounts: [],
     events: ['a', 'b', 'c'].map((k) => ({ key: `d-${k}`, accountId: 'work', title: `Meeting ${k}`, start: iso('13:00'), end: iso('14:00'), canJoin: false, isLive: false })),
   }));
-  const r = render(<Ribbon kind="work" />);
+  const r = render(<Ribbon kind="home" />);
   await flush();
   const evs = [...r.container.querySelectorAll('.ev')] as HTMLElement[];
   expect(evs.map((e) => [e.className, e.textContent])).toEqual([
@@ -343,7 +343,7 @@ it('three meetings at once stack in three thin lanes with no title drawn', async
   expect(r.container.querySelector('.ev.more')).toBeNull();
 });
 
-it('four meetings at once: two real chips and a "+2" chip; a click on it lists the other two to open in Outlook', async () => {
+it('Home: four meetings at once: two real chips and a "+2" chip; a click on it lists the other two to open in Outlook', async () => {
   const opened: string[] = [];
   mocks.set('wall2_open_event', (args) => {
     opened.push(String(args?.key));
@@ -354,7 +354,7 @@ it('four meetings at once: two real chips and a "+2" chip; a click on it lists t
   }));
   const r = render(
     <>
-      <Ribbon kind="work" />
+      <Ribbon kind="home" />
       <HoverTipLayer />
     </>,
   );
@@ -375,7 +375,7 @@ it('four meetings at once: two real chips and a "+2" chip; a click on it lists t
   expect(document.querySelector('.hover-tip')).toBeNull();
 });
 
-it('folds all-day events into one "1 all day" chip at the row start that lists them on hover', async () => {
+it('Home: folds all-day events into one "1 all day" chip at the row start that lists them on hover', async () => {
   mocks.set('wall2_meet_day', () => ({
     accounts: [{ id: 'work', label: 'Work', state: 'ok' }],
     events: [
@@ -385,7 +385,7 @@ it('folds all-day events into one "1 all day" chip at the row start that lists t
   }));
   const r = render(
     <>
-      <Ribbon kind="work" />
+      <Ribbon kind="home" />
       <HoverTipLayer />
     </>,
   );

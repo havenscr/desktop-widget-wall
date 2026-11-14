@@ -109,9 +109,10 @@ export function registerOmniMocks(): void {
           ],
         };
     const summary: Record<string, unknown> = {
-      // The answer's own time is the real clock (the wall treats an answer over 30 minutes
-      // old as not reachable); the lanes' day follows the review's moment.
-      now: new Date().toISOString(),
+      // The answer's own time is this page's clock (the wall treats a helper clock that has not
+      // moved for 30 minutes as not reachable). `?clock=review` moves Date.now but not a bare
+      // `new Date()`, so it is read from Date.now: then a review still's day spans line up.
+      now: new Date(Date.now()).toISOString(),
       tz: 'America/Los_Angeles',
       stale,
       slots: old ? { used: 9, limit: 4 } : { used: shown.length + 4, limit: 4, sessions: shown.length, working, helpers: 4 },

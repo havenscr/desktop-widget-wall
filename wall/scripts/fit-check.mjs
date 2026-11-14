@@ -19,11 +19,13 @@
 // playing in each look, and with its settings sheet open both ways. Keys style: every key edge at
 // least 3 to 1 against the sky (read from a screenshot) by day and night, the Now row one height on
 // a key page and on For you, and the grown Hide screen pill inside the corner under the Room card,
-// clear of the failure note.
+// clear of the failure note. Leave and recording: the leave banner inside x 600 to 1940 and its band (y 0 to 70 on
+// Work, y 510 to 600 off Work) covering no text or control, the recording chip one 32 px line at most 200 px wide in the
+// Agents header (and inside the banner, or in the band off Work), and the Recording page the same height as a key page.
 // CI does not run this; run it by hand before a layout change is handed over.
 //
 //   WALL_CHROME=/path/to/chrome-or-headless-shell npm --prefix wall run fit-check
-//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, header, deck, tiles, picker, chips, heading, zenhint, sky, floor, sun, tools, toolsnames, meetfill, meetempty, fy-height, key-edge, hide-pill, hide-note)
+//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, header, deck, tiles, picker, chips, heading, zenhint, strip, fold, drawer, rows, handle, sky, floor, sun, tools, toolsnames, meetfill, meetempty, fy-height, key-edge, hide-pill, hide-note, leave-band, rec-chip, rec-height, lwbuttons, lwoverlap, lwsquare, lwring, lwtemp, lwround)
 //   npm --prefix wall run fit-check -- --self-test
 //
 // WALL_CHROME (or the first argument that is not a flag) is a Chromium or
@@ -66,6 +68,11 @@ const EXPECT = {
   chips: /^ *FAIL overlap: chip /m,
   heading: /^ *FAIL deck: the Now heading /m,
   menu: /^ *FAIL Watt menu: .*Watt himself/m,
+  strip: /^ *FAIL strip: the Work strip is \d+ px tall/m,
+  fold: /^ *FAIL strip: the folded chip's count is cut/m,
+  drawer: /^ *FAIL strip: \.day-drawer (reaches above the clock|sticks out of the stage)/m,
+  rows: /^ *FAIL strip: an Agents today row is \d+ px tall/m,
+  handle: /^ *FAIL strip: the drawer handle covers /m,
   sky: /^ *FAIL pointer at .*reaches w-scrim/m,
   floor: /^ *FAIL pointer at \.u-tomorrow .*reaches w-skyspill/m,
   sun: /^ *FAIL pointer at .*reaches w-stage w-sun/m,
@@ -78,6 +85,10 @@ const EXPECT = {
   'key-edge': /^ *FAIL deck: key ".*" edge against the sky /m,
   'hide-pill': /^ *FAIL hide screen: /m,
   'hide-note': /^ *FAIL hide screen note: /m,
+  // leave and recording
+  'leave-band': /^ *FAIL leave banner: /m,
+  'rec-chip': /^ *FAIL recording chip: /m,
+  'rec-height': /^ *FAIL deck: the Now row is \d+ px tall on Recording/m,
   // left wing
   lwbuttons: /^ *FAIL left wing: music buttons leave the wing/m,
   lwoverlap: /^ *FAIL left wing: music buttons overlap the title/m,
@@ -92,7 +103,7 @@ const OVERFLOWS = {
   top: '.work .right-wing { transform: translateY(-60px); }',
   bottom: '.work .centre .shelf { transform: translateY(120px); }',
   page: 'body::after { content: ""; position: absolute; left: 3000px; top: 0; width: 10px; height: 10px; }',
-  agents: '.rib .agent-row .sg-hit { height: 20px !important; }',
+  agents: '.rib .agent-row .sg-hit { width: 60px !important; }',
   labels: '.work .centre .lane .jn em { padding: 0 14px !important; }',
   header: '.work .centre .lanes-hd .slot-meter .xs { display: inline-block; width: 60px; white-space: normal !important; }',
   deck: '.work .right-wing section.pinned { margin-top: 80px; }',
@@ -102,6 +113,11 @@ const OVERFLOWS = {
   chips: '.rib .ev { width: 400px !important; }',
   heading: '.work .right-wing .keys .deck-name { max-width: 40px; overflow: hidden; }',
   menu: '.watt-menu-at { transform: translateY(300px); }',
+  strip: '.rib[data-kind="work"] { box-sizing: content-box; height: 104px; padding-bottom: 20px; }',
+  fold: '.rib .ev.fold { width: 30px !important; }',
+  drawer: '.day-drawer { translate: 0 -300px; }',
+  rows: '.agents-today .at-row { height: 20px !important; min-height: 0 !important; }',
+  handle: '.rib .rib-handle { top: 20px !important; }',
   // The whole-sky video layer catching the pointer and drawn over the controls.
   sky: '.w-sky, .w-sky * { pointer-events: auto !important; } .w-sky { z-index: 30 !important; }',
   // The floor wash catching the pointer and drawn over the Tomorrow card and the status line.
@@ -121,6 +137,10 @@ const OVERFLOWS = {
   'key-edge': '.work .right-wing .deck-tile.key-tile { border-color: transparent !important; }',
   'hide-pill': '.screens-off:is(:hover, :focus-visible) { min-width: 900px; }',
   'hide-note': '.screens-off-note { bottom: 0 !important; }',
+  // leave and recording
+  'leave-band': '.leave-banner { top: 200px !important; }',
+  'rec-chip': '.rec-chip { min-width: 400px !important; }',
+  'rec-height': '.rec-keys .key-tile { height: 92px !important; }',
   // left wing
   lwbuttons: '.work .left-wing .music-mini-text { flex: none !important; width: 900px !important; }',
   lwoverlap: '.work .left-wing .music-mini-btns { transform: translateX(-200px); }',
@@ -129,7 +149,6 @@ const OVERFLOWS = {
   lwtemp: '.work .left-wing .mc-hd span:last-child { transform: translateX(14px); }',
   lwround: '.work .wl .rd, .work .wl .focus-mini-ring, .work .wl .ring { border-radius: 0 !important; }',
 };
-
 if (flag('self-test')) {
   const script = fileURLToPath(import.meta.url);
   let missed = 0;
@@ -292,6 +311,23 @@ const VARIANTS = [
   { name: 'Keys style, day: held on Excel with VS Code in front (keys that cannot be sent)', q: `?hz=work&at=${encodeURIComponent('2026-11-11T12:10:00-08:00')}&clock=review&weather=ok&keys=library&hold=lib-excel`, checks: DECK, edges: true, nowH: 'keys' },
   { name: 'Keys style, For you with two plates', q: work('ask', '&keys=typical&hold=foryou&meet=none&net=calm'), checks: FOR_YOU, nowH: 'foryou' },
   { name: 'Keys style, For you with one plate', q: work('3', '&keys=typical&hold=foryou&meet=none'), checks: FOR_YOU, nowH: 'foryou' },
+  // leave and recording: the banner in its band covering no text or control (over the hidden Agents header on Work),
+  // the chip one short line in the header (also with twelve sessions, two waiting, an alarm: its tightest), and the
+  // Recording page one height with a key page and For you (nowH).
+  { name: 'Leave banner on Work, 12 minutes, long title', q: work('3', '&leave=12'), checks: ['.leave-banner'], viewportOnly: true },
+  { name: 'Leave banner on Work, amber, helper not set up', q: work('off', '&leave=4'), checks: ['.leave-banner'], viewportOnly: true },
+  { name: 'Leave banner on Work with the Day drawer open', q: work('12ask', '&leave=12&rec=1&meet=overlap'), click: '.rib .rib-handle', checks: ['.leave-banner', '.day-drawer', '.day-drawer .dd-agenda'], viewportOnly: true },
+  { name: 'Leave banner on Work, leave now with the recording chip', q: work('12ask', '&leave=0&rec=1'), checks: ['.leave-banner', '.leave-banner .rec-chip'], viewportOnly: true },
+  { name: 'Leave banner on Home', q: home('moods=five&leave=12'), checks: ['.leave-banner'], viewportOnly: true },
+  { name: 'Leave banner on Unwind, amber', q: query({ hz: 'unwind', agents: '3', extra: '&leave=4' }), checks: ['.leave-banner'], viewportOnly: true },
+  { name: 'Leave banner on Meet', q: query({ agents: '3', go: 'meet', live: true, extra: '&leave=12' }), checks: ['.leave-banner'], viewportOnly: true },
+  { name: 'Recording chip in the Agents header, twelve sessions, two waiting, an alarm', q: work('12ask', '&rec=1'), checks: [...SCROLLED, '.work .centre .lanes-hd .rec-chip'] },
+  { name: 'Recording chip in the Agents header, stale helper', q: work('12staleask', '&rec=1'), checks: [...SCROLLED, '.work .centre .lanes-hd .rec-chip'] },
+  { name: 'Recording chip on Work with the helper down', q: work('down', '&rec=1'), checks: ['.rec-float'], viewportOnly: true },
+  { name: 'Recording chip on Home', q: home('moods=five&rec=1'), checks: ['.rec-float'], viewportOnly: true },
+  { name: 'Recording chip on Unwind', q: query({ hz: 'unwind', agents: '3', extra: '&rec=1' }), checks: ['.rec-float'], viewportOnly: true },
+  { name: 'Recording page: the Now row, library sets', q: work('3', '&keys=library&rec=1'), checks: DECK, nowH: 'recording' },
+  { name: 'Recording page with long titles waiting (For you chip)', q: work('ask', '&keys=typical&rec=1'), checks: DECK, nowH: 'recording' },
   // The Hide screen button grown under the pointer.
   { name: 'Unwind, Hide screen grown', q: query({ hz: 'unwind', agents: '3', extra: '' }), checks: ['.u-room', '.screens-off'], click: 'hover:.screens-off', hide: true, viewportOnly: true },
   // The failure note ("Could not watch input") showing while the pill is grown: the two never meet.
@@ -327,6 +363,16 @@ const VARIANTS = [
   { name: 'Watt menu on Unwind', q: query({ hz: 'unwind', agents: '3', extra: '' }), checks: ['.watt-menu'], viewportOnly: true, card: true },
   ...TOOLS_VARIANTS,
 ];
+// The calm strip on Work: 104 px with folded overlaps, the Day drawer and the Agents today panel
+// inside the stage, below the clock and right of the rail, and the panel's rows at least 32 px.
+VARIANTS.push(
+  { name: 'Strip: overlaps, twelve sessions', q: work('12ask', '&meet=overlap'), checks: ['.rib'], strip: true, viewportOnly: true },
+  { name: 'Strip: the needle at the centre, under the handle', q: query({ at: '2026-11-11T14:50:00-08:00', agents: '12ask', extra: '&meet=overlap' }), checks: ['.rib'], strip: true, viewportOnly: true },
+  { name: 'Strip: late in the day', q: query({ at: '2026-11-11T22:50:00-08:00', agents: '12ask', extra: '&meet=overlap' }), checks: ['.rib'], strip: true, viewportOnly: true },
+  { name: 'Strip: the Day drawer open', q: work('12ask', '&meet=overlap'), click: '.rib .rib-handle', checks: ['.day-drawer', '.day-drawer .dd-agenda', '.day-drawer .dd-rows'], strip: true, viewportOnly: true },
+  { name: 'Strip: Agents today, twelve sessions', q: work('12ask', '&days=typical'), click: '.rib .ag-line', checks: ['.agents-today', '.agents-today .at-head'], strip: true, viewportOnly: true },
+  { name: 'Strip: Agents today, a heavy past day', q: work('12', '&days=heavy'), click: '.rib .ag-line >> .at-seg button:nth-child(2)', checks: ['.agents-today', '.agents-today .at-head', '.agents-today .at-foot'], strip: true, viewportOnly: true },
+);
 // keys style: a small PNG reader (8-bit RGB or RGBA, not interlaced, as Chromium writes them) and contrast.
 function readPng(file) {
   const buf = readFileSync(file);
@@ -421,9 +467,11 @@ try {
   // For each checked box: its scroll sizes, and how far it sticks out of its container and
   // of the viewport on each side (screen pixels, 0 when inside). Plus the page's own scroll.
   const measure = `<script>setTimeout(() => {
-    for (const click of (new URLSearchParams(location.search).get('click') || '').split(' then ').filter(Boolean)) {
-    if (click && click.startsWith('ctx:')) document.querySelector(click.slice(4))?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
-    else if (click && click.startsWith('hover:')) {
+    // Steps separated by " >> " run 300 ms apart; within a step, " then " runs them at once.
+    (new URLSearchParams(location.search).get('click') ?? '').split(' >> ').filter(Boolean).forEach((step, i) => setTimeout(() => {
+    for (const click of step.split(' then ').filter(Boolean)) {
+    if (click.startsWith('ctx:')) document.querySelector(click.slice(4))?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+    else if (click.startsWith('hover:')) {
       // Headless --dump-dom has no pointer: every top-level :hover rule is copied for a class that stands in for it.
       const extra = [];
       for (const sheet of document.styleSheets) for (const r of sheet.cssRules) if (r.selectorText && r.selectorText.includes(':hover')) extra.push(r.cssText.replaceAll(':hover', '.fit-hover'));
@@ -432,8 +480,9 @@ try {
       const st = document.createElement('style'); st.textContent = extra.join(' '); document.head.appendChild(st);
       document.querySelector(click.slice(6))?.classList.add('fit-hover');
     }
-    else if (click) document.querySelector(click)?.click();
+    else document.querySelector(click)?.click();
     }
+    }, i * 300));
     // Watt's card: asked for until it is open (Meet's horizon takes a few seconds to settle first).
     if (new URLSearchParams(location.search).get('card')) {
       const ask = () => { if (!document.querySelector('.watt-menu')) document.querySelector('.watt-hit')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })); };
@@ -554,6 +603,42 @@ try {
         if (cut) deck.push('deck: the Now heading "' + name.textContent + '" is cut');
       }
     }
+    // The calm strip: its height, labels that share pixels, the folded chip's count, the
+    // overlays inside the stage below the clock and right of the rail, the panel's row heights.
+    const strip = [];
+    const ribW = document.querySelector('.rib[data-kind="work"]');
+    if (ribW) {
+      const h = ribW.getBoundingClientRect().height;
+      if (Math.abs(h - 104) > 0.5) strip.push('strip: the Work strip is ' + Math.round(h) + ' px tall (must be 104)');
+      const labels = [...ribW.querySelectorAll('.ev, .ev-side, .ag-line, .due:not(.bare), .adbar')].map((e) => ({ r: e.getBoundingClientRect(), t: (e.textContent || e.getAttribute('aria-label') || '').slice(0, 30) }));
+      labels.forEach((a, i) => labels.slice(i + 1).forEach((b) => { if (hit(a.r, b.r)) strip.push('strip: labels share pixels: ' + a.t + ' / ' + b.t); }));
+      // The drawer handle covers no chip, bar or label.
+      const handle = ribW.querySelector('.rib-handle');
+      if (handle) {
+        const hr = handle.getBoundingClientRect();
+        for (const e of ribW.querySelectorAll('.ev, .ev-side, .adbar, .hl, .ndl b, .ag-line, .due, .agent-row .ac')) if (hit(hr, e.getBoundingClientRect())) strip.push('strip: the drawer handle covers ' + (e.textContent || e.className).trim().slice(0, 30));
+      }
+      for (const f of ribW.querySelectorAll('.ev.fold')) {
+        const n = f.querySelector('.fold-n');
+        const fr = f.getBoundingClientRect();
+        if (n && (n.scrollWidth > n.clientWidth + 1 || n.getBoundingClientRect().right > fr.right - 4)) strip.push("strip: the folded chip's count is cut: " + n.textContent);
+      }
+    }
+    const clk = document.querySelector('.clk');
+    const rail = document.querySelector('.rail');
+    for (const sel of ['.day-drawer', '.agents-today']) {
+      const el = document.querySelector(sel);
+      if (!el) continue;
+      const r = el.getBoundingClientRect();
+      if (clk && r.top < clk.getBoundingClientRect().bottom - 0.5) strip.push('strip: ' + sel + ' reaches above the clock (top ' + Math.round(r.top) + ')');
+      if (r.left < 0 || r.top < 0 || r.right > innerWidth + 0.5 || r.bottom > innerHeight + 0.5) strip.push('strip: ' + sel + ' sticks out of the stage');
+      if (rail && r.left < rail.getBoundingClientRect().right - 0.5) strip.push('strip: ' + sel + ' covers the rail');
+    }
+    for (const row of document.querySelectorAll('.agents-today .at-row:not(.skel), .day-drawer .dd-row')) {
+      const h = row.getBoundingClientRect().height;
+      if (h < 32 - 0.5) strip.push('strip: an Agents today row is ' + Math.round(h) + ' px tall (at least 32)');
+    }
+    const opened = { drawer: !!document.querySelector('.day-drawer'), panel: !!document.querySelector('.agents-today'), rows: document.querySelectorAll('.agents-today .at-row:not(.skel)').length };
     // The Tools drawer: inside x 1700 to 2560 and y 0 to 720, clear of the rail, and no text cut unless a hover card carries it.
     const toolsOut = [];
     const drawer = document.querySelector('.tools-drawer');
@@ -652,6 +737,48 @@ try {
       else if (rad < Math.min(r.width, r.height) / 2 - 0.5) lw.push('left wing: focus outline on ' + name + ' is square (radius ' + rad + ' px)');
       e.blur();
     }
+    // leave and recording: the banner inside x 600 to 1940 and its band (Work: the top band, y 0 to 70; elsewhere the
+    // empty band above the ribbon, y 510 to 600), carrying its parts inside it and covering no text or control; the chip
+    // one line (32 px) and at most 200 px wide, in the Agents header, in the banner, or in the band.
+    const sig = [];
+    for (const b of document.querySelectorAll('.leave-banner, .rec-float')) {
+      const [bandTop, bandBottom] = b.dataset.band === 'top' ? [0, 70] : [510, 600];
+      const name = b.matches('.leave-banner') ? 'leave banner' : 'recording chip';
+      const r = b.getBoundingClientRect();
+      if (r.left < 600 - 0.5 || r.right > 1940 + 0.5 || r.top < bandTop - 0.5 || r.bottom > bandBottom + 0.5) sig.push(name + ': at x ' + Math.round(r.left) + ' to ' + Math.round(r.right) + ', y ' + Math.round(r.top) + ' to ' + Math.round(r.bottom) + ' (must be inside x 600 to 1940 and y ' + bandTop + ' to ' + bandBottom + ')');
+      for (const k of b.querySelectorAll('*')) {
+        const q = k.getBoundingClientRect();
+        if (q.width > 0 && (q.left < r.left - 0.5 || q.right > r.right + 0.5 || q.top < r.top - 0.5 || q.bottom > r.bottom + 0.5)) sig.push(name + ': ' + (k.textContent || k.className).toString().trim().slice(0, 30) + ' leaves the banner');
+      }
+      for (const e of document.querySelectorAll('.shell *')) {
+        const own = [...e.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim());
+        if (!own && !e.matches('button, a, input, select, textarea, [role=button], [tabindex]')) continue;
+        const cs = getComputedStyle(e);
+        if (cs.visibility === 'hidden' || cs.display === 'none' || Number(cs.opacity) === 0) continue;
+        // A control by its box; plain text by the box of its words (a wide label box holds empty room).
+        let q = e.getBoundingClientRect();
+        if (!e.matches('button, a, input, select, textarea, [role=button], [tabindex]')) {
+          const range = document.createRange();
+          range.selectNodeContents(e);
+          const words = [...e.childNodes].filter((n) => n.nodeType === 3 && n.textContent.trim());
+          const rects = words.flatMap((n) => { const g = document.createRange(); g.selectNodeContents(n); return [...g.getClientRects()]; }).filter((x) => x.width > 0);
+          q = rects.find((x) => hit(x, r)) || { width: 0, height: 0 };
+        }
+        if (q.width > 0 && q.height > 0 && hit(q, r)) sig.push(name + ': covers ' + (e.textContent || '').trim().slice(0, 30) + ' (' + e.tagName.toLowerCase() + '.' + (typeof e.className === 'string' ? e.className : '') + ')');
+      }
+    }
+    for (const c of document.querySelectorAll('.rec-chip')) {
+      const q = c.getBoundingClientRect();
+      const hd = c.closest('.lanes-hd');
+      const tops = new Set();
+      const walk = document.createTreeWalker(c, NodeFilter.SHOW_TEXT);
+      for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+        const g = document.createRange();
+        g.selectNodeContents(n);
+        for (const t of g.getClientRects()) if (t.width > 0) tops.add(Math.round(t.top / 4));
+      }
+      if (q.height > 32.5 || q.width > 200.5 || tops.size > 1 || (hd && (hd.scrollWidth > hd.clientWidth + 1 || q.right > hd.getBoundingClientRect().right + 0.5))) sig.push('recording chip: ' + Math.round(q.width) + ' x ' + Math.round(q.height) + ' px, ' + tops.size + ' lines' + (hd ? ', header scroll ' + hd.scrollWidth + ' of ' + hd.clientWidth : '') + ' (one 32 px line, at most 200 px wide, inside its header)');
+    }
     // Hit tests: each named control must get the pointer at its own centre, and no point of the
     // sky (a grid over the top band) may land on a layer that only draws the video.
     const hits = (new URLSearchParams(location.search).get('hits') || '').split('|').filter(Boolean).map((sel) => {
@@ -667,7 +794,7 @@ try {
     const noHit = new URLSearchParams(location.search).get('nohit');
     const grid = [];
     if (noHit) for (let y = 30; y < 720; y += 40) for (let x = 130; x < 2560; x += 80) { const h = document.elementFromPoint(x, y); if (h && h.closest(noHit)) grid.push(x + ',' + y); }
-    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, wattCard, header, deck, nowH, edges, hide, hits, grid, lw, toolsOut, meetOut });
+    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, wattCard, header, deck, nowH, edges, hide, hits, grid, lw, sig, toolsOut, meetOut, strip, opened });
     document.body.appendChild(pre);
   }, new URLSearchParams(location.search).get('card') ? 7000 : 3000);</script>`;
   const broken = overflow ? `<style>${OVERFLOWS[overflow]}</style>` : '';
@@ -692,9 +819,18 @@ try {
     sky: (v) => v.name.startsWith('Watch, whole sky playing'),
     floor: (v) => v.name.startsWith('Watch, whole sky playing'),
     sun: (v) => v.name === 'Watch, the sun playing',
+    strip: (v) => v.name === 'Strip: overlaps, twelve sessions',
+    fold: (v) => v.name === 'Strip: overlaps, twelve sessions',
+    handle: (v) => v.name === 'Strip: overlaps, twelve sessions',
+    drawer: (v) => v.name === 'Strip: the Day drawer open',
+    rows: (v) => v.name === 'Strip: Agents today, a heavy past day',
     'hide-note': (v) => v.name === 'Unwind, Hide screen grown with the failure note',
     // Watt's menu pushed down onto him
     menu: (v) => v.name === 'Watt menu on Work',
+    // leave and recording
+    'leave-band': (v) => v.name === 'Leave banner on Work, 12 minutes, long title' || v.name === 'Leave banner on Home',
+    'rec-chip': (v) => v.name === 'Recording chip in the Agents header, twelve sessions, two waiting, an alarm',
+    'rec-height': (v) => v.name === 'Recording page: the Now row, library sets' || v.name === 'Keys style, day: library sets held on VS Code',
   };
   const breakOn = BREAK_ON[overflow] ? VARIANTS.filter(BREAK_ON[overflow]) : VARIANTS.slice(0, 1);
   /** keys style: the Now row's height on each page that has one, compared after every state ran. */
@@ -714,7 +850,7 @@ try {
       process.exit(1);
     }
     const text = m[1].replaceAll('&quot;', '"').replaceAll('&amp;', '&');
-    const { res, page: doc, overlaps, cut, gaps, wattCard, header, deck, nowH, edges, hide, hits, grid, lw, toolsOut, meetOut } = JSON.parse(text);
+    const { res, page: doc, overlaps, cut, gaps, wattCard, header, deck, nowH, edges, hide, hits, grid, lw, sig, toolsOut, meetOut, strip, opened } = JSON.parse(text);
     for (const t of [...toolsOut, ...meetOut]) console.log(`  FAIL ${t}`);
     if (toolsOut.length || meetOut.length) failed = true;
     else if (v.q.includes('tools=')) console.log('  ok   the drawer stays inside x 1700 to 2560 and y 0 to 720, clear of the rail, no cut text without a tooltip');
@@ -776,9 +912,19 @@ try {
           : `  ${okHide ? 'ok  ' : 'FAIL'} hide screen: ${hide.grown ? 'grown' : 'not grown'} to ${hide.w} px, right edge ${hide.right} and bottom ${hide.bottom} from its corner box (0), ${hide.inCorner ? 'inside' : 'outside'} the corner under the Room card, overlaps ${hide.foot} parts of the status line and ${hide.room} Room cards`,
       );
     }
+    for (const d of sig) console.log(`  FAIL ${d}`);
+    if (sig.length) failed = true;
+    else if (/[?&](leave|rec)=/.test(v.q)) console.log('  ok   leave banner and recording chip: inside their band, one line, covering no text or control');
     for (const d of lw) console.log(`  FAIL ${d}`);
     if (lw.length) failed = true;
     else if (v.q.includes('hz=work')) console.log('  ok   left wing: three music buttons on one line, TEMP header centred, round controls round');
+    if (v.strip) {
+      for (const f of strip) console.log(`  FAIL ${f}`);
+      const wantOpen = v.click?.includes('rib-handle') ? opened.drawer : v.click?.includes('ag-line') ? opened.panel && opened.rows > 0 : true;
+      if (!wantOpen) console.log(`  FAIL strip: the overlay did not open (${JSON.stringify(opened)})`);
+      if (strip.length || !wantOpen) failed = true;
+      else console.log('  ok   strip 104 px, no strip labels sharing pixels, folded counts whole, overlays inside the stage below the clock, rows at least 32 px');
+    }
     for (const d of deck) console.log(`  FAIL ${d}`);
     if (deck.length) failed = true;
     else if (v.q.includes('hz=work')) console.log('  ok   the deck stays above its floor, every key label inside its tile, the Now heading whole');
@@ -840,12 +986,12 @@ try {
     }
   }
   // keys style: the Now row is one height on every page (a key page and the For you page).
-  if (nowHeights.some((n) => n.page === 'keys') && nowHeights.some((n) => n.page === 'foryou')) {
+  if (nowHeights.some((n) => n.page === 'keys') && (nowHeights.some((n) => n.page === 'foryou') || nowHeights.some((n) => n.page === 'recording'))) {
     const hs = [...new Set(nowHeights.map((n) => n.h))];
     if (hs.length > 1) {
       failed = true;
-      for (const n of nowHeights) console.log(`  FAIL deck: the Now row is ${Math.round(n.h)} px tall on ${n.name} (every page must match)`);
-    } else console.log(`keys style: the Now row is ${hs[0]} px tall on every key page and on For you`);
+      for (const n of nowHeights) console.log(`  FAIL deck: the Now row is ${Math.round(n.h)} px tall on ${n.page === 'recording' ? 'Recording' : n.name} (every page must match)`);
+    } else console.log(`keys style: the Now row is ${hs[0]} px tall on every key page, on For you and on Recording`);
   }
   process.exit(failed ? 1 : 0);
 } finally {
