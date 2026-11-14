@@ -693,14 +693,13 @@ afterEach(() => {
   resetLibIndex();
 });
 
-it('opens no menu while an overlay owns the pointer: not by right-click, the corner button or the keyboard', async () => {
+it('opens no menu while an overlay owns the pointer: not by right-click or the keyboard', async () => {
   libraryMocks();
   answer = front('general', 'notepad.exe');
   render(<Keys />);
   await flush();
   document.documentElement.setAttribute(OPEN_ATTR, '');
   fireEvent.contextMenu(screen.getByRole('button', { name: 'Snip' }));
-  fireEvent.click(screen.getByRole('button', { name: 'More options for Snip' }));
   fireEvent.keyDown(screen.getByRole('button', { name: 'Snip' }), { key: 'ContextMenu' });
   fireEvent.keyDown(screen.getByRole('button', { name: 'Snip' }), { key: 'F10', shiftKey: true });
   await flush();
@@ -708,6 +707,27 @@ it('opens no menu while an overlay owns the pointer: not by right-click, the cor
   // The same gestures open it once the overlay is gone.
   document.documentElement.removeAttribute(OPEN_ATTR);
   fireEvent.contextMenu(screen.getByRole('button', { name: 'Snip' }));
+  await flush();
+  expect(menuUp()).not.toBeNull();
+});
+
+it('no Now key has a corner button: not at rest, hovered or focused', async () => {
+  libraryMocks();
+  answer = front('general', 'notepad.exe');
+  const { container } = render(<Keys />);
+  await flush();
+  const snip = screen.getByRole('button', { name: 'Snip' });
+  const none = () => {
+    expect(container.querySelector('.key-more')).toBeNull();
+    expect(screen.queryByRole('button', { name: /More options for/ })).toBeNull();
+    expect(container.querySelectorAll('.key-tile-wrap > *').length).toBe(container.querySelectorAll('.key-tile-wrap').length);
+  };
+  none();
+  fireEvent.mouseEnter(snip);
+  none();
+  snip.focus();
+  none();
+  fireEvent.keyDown(snip, { key: 'F10', shiftKey: true });
   await flush();
   expect(menuUp()).not.toBeNull();
 });
@@ -821,17 +841,17 @@ it('every enabled Now key says the menu exists in its tooltip, and a disabled ke
   await flush();
   fireEvent.mouseEnter(screen.getByRole('button', { name: 'Clipboard' }));
   await flush(400);
-  expect(document.body.textContent).toContain('Send Clipboard to the app in front. Right-click, or the button in its corner, for more.');
+  expect(document.body.textContent).toContain('Send Clipboard to the app in front. Right-click for more.');
   fireEvent.mouseLeave(screen.getByRole('button', { name: 'Clipboard' }));
   await flush(400);
   fireEvent.mouseEnter(screen.getByRole('button', { name: 'Lock' }));
   await flush(400);
-  expect(document.body.textContent).toContain('Lock. Right-click, or the button in its corner, for more.');
+  expect(document.body.textContent).toContain('Lock. Right-click for more.');
   fireEvent.mouseLeave(screen.getByRole('button', { name: 'Lock' }));
   await flush(400);
   fireEvent.mouseEnter(screen.getByRole('button', { name: 'Thirds' }));
   await flush(400);
-  expect(document.body.textContent).not.toContain('Right-click, or the button in its corner');
+  expect(document.body.textContent).not.toContain('Right-click for more.');
   expect(document.body.textContent).toContain('There is no big screen');
 });
 
