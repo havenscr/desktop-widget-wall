@@ -1471,12 +1471,13 @@ try {
     const proof = join(out, 'proof.html');
     writeFileSync(proof, html.replace('</body>', `${broken}</body>`));
     for (const [when, at] of [['night', '2026-11-11T22:30:00-08:00'], ['dusk', '2026-11-11T16:54:00-08:00'], ['noon', '2026-11-11T12:30:00-08:00']]) {
-      const shots = ['flat', 'empty'].map((mode) => {
+      const shots = [];
+      for (const mode of ['flat', 'empty']) {
         const shot = join(out, `proof-${when}-${mode}.png`);
         const url = `${pathToFileURL(proof).href}?hz=unwind&at=${encodeURIComponent(at)}&agents=3&weather=ok&sky=${mode}`;
-        execFileSync(chrome, ['--headless', '--no-sandbox', '--disable-gpu', '--window-size=2560,807', '--hide-scrollbars', '--virtual-time-budget=8000', `--screenshot=${shot}`, url], { stdio: 'ignore' });
-        return readPng(shot);
-      });
+        await runChrome(chrome, ['--headless', '--no-sandbox', '--disable-gpu', '--window-size=2560,807', '--hide-scrollbars', '--virtual-time-budget=8000', `--screenshot=${shot}`, url], { label: `sky layers, pixel proof at ${when}, ${mode}` });
+        shots.push(readPng(shot));
+      }
       const [a, b] = shots;
       let diff = 0;
       let over2 = 0;
