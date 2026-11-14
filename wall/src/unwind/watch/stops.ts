@@ -1,9 +1,9 @@
-import type { PlaceId } from '../../state/places';
-
-/** Everything that ends a video. Each is a reason the frame is removed (never just hidden). */
+/**
+ * Everything that ends a video by itself. Each is a reason the frame is removed (never just
+ * hidden). Leaving the Watch tab or Unwind is not one: the video plays on out of sight and is
+ * there, still playing, when the owner comes back (`StageLayer.tsx`).
+ */
 export interface StopInputs {
-  place: PlaceId;
-  tab: 'listen' | 'watch';
   /** The page is shown (`document.hidden` is false). */
   visible: boolean;
   /** The display is off or Windows is locked (`useDisplayDark`). Input idle never stops a video. */
@@ -14,16 +14,13 @@ export interface StopInputs {
   inCall: boolean;
 }
 
-export type StopReason = 'place' | 'tab' | 'hidden' | 'display' | 'screens-off' | 'call';
+export type StopReason = 'hidden' | 'display' | 'screens-off' | 'call';
 
 /**
- * Why a video must stop now, or null while it may play. Leaving Unwind covers Zen and Dream,
- * which open as the Zen place. Nothing here ever starts a video: once stopped it stays
- * stopped until the owner clicks play.
+ * Why a video must stop now, or null while it may play. Nothing here ever starts a video: once
+ * stopped it stays stopped until the owner clicks play.
  */
 export function stopReason(s: StopInputs): StopReason | null {
-  if (s.place !== 'unwind') return 'place';
-  if (s.tab !== 'watch') return 'tab';
   if (!s.visible) return 'hidden';
   if (s.displayDark) return 'display';
   if (s.screensOff) return 'screens-off';
@@ -32,7 +29,7 @@ export function stopReason(s: StopInputs): StopReason | null {
 }
 
 /** A short line for the left block after a stop the owner did not ask for. */
-export function stopLine(r: StopReason): string | null {
+export function stopLine(r: StopReason): string {
   switch (r) {
     case 'display':
       return 'Stopped when the display went off or Windows locked.';
@@ -42,7 +39,5 @@ export function stopLine(r: StopReason): string | null {
       return 'Stopped for your call.';
     case 'hidden':
       return 'Stopped while the wall was hidden.';
-    default:
-      return null;
   }
 }

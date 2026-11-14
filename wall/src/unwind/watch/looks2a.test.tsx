@@ -2,7 +2,7 @@ import { act, within, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mocks } from '../../bridge/tauri';
 import { resetNowPlaying } from '../../music/store';
-import { Unwind } from '../../screens/Unwind';
+import { UnwindView } from './testView';
 import { useSignalStore } from '../../signals/store';
 import { usePlaceStore } from '../../state/places';
 import { resetLastPlayed } from '../lastPlayed';
@@ -85,7 +85,7 @@ describe('the look list', () => {
 describe('each look', () => {
   it.each(IDS)('%s plays in the same single frame with the same attributes, and Open in browser shows', async (look) => {
     setup(look);
-    render(<Unwind />);
+    render(<UnwindView />);
     await flush();
     expect(document.querySelector('.w-stage')?.getAttribute('data-look')).toBe(look);
     const frames = document.querySelectorAll('iframe');
@@ -104,7 +104,7 @@ describe('each look', () => {
 
   it('draws the whole sky with its wash, its buttons apart from the picture, and a still floor wash outside the frame', async () => {
     setup('sky');
-    render(<Unwind />);
+    render(<UnwindView />);
     await flush();
     // The floor wash is a still element beside the sky, not a second frame.
     const spill = document.querySelector('.w-skyspill')!;
@@ -127,7 +127,7 @@ describe('each look', () => {
   it('draws no floor wash in the other looks', async () => {
     for (const look of ['feather', 'sun', 'drivein'] as LookId[]) {
       setup(look);
-      const { unmount } = render(<Unwind />);
+      const { unmount } = render(<UnwindView />);
       await flush();
       expect(document.querySelector('.w-skyspill')).toBeNull();
       unmount();
@@ -136,7 +136,7 @@ describe('each look', () => {
 
   it('draws the sun with its halo and floor streak', async () => {
     setup('sun');
-    render(<Unwind />);
+    render(<UnwindView />);
     await flush();
     const sun = document.querySelector('.w-sun')!;
     expect(sun.querySelector('.w-halo')).not.toBeNull();
@@ -144,9 +144,9 @@ describe('each look', () => {
     expect(sun.querySelector('.w-screen iframe')).not.toBeNull();
   });
 
-  it.each(IDS)('%s: the frame goes when a call starts, the page hides or Unwind is left, and does not come back', async (look) => {
+  it.each(IDS)('%s: the frame goes when a call starts or the page hides and does not come back; leaving Unwind keeps it', async (look) => {
     setup(look);
-    const { unmount } = render(<Unwind />);
+    const { unmount } = render(<UnwindView />);
     await flush();
     expect(document.querySelector('iframe')).not.toBeNull();
     act(() => useSignalStore.setState({ call: { kind: 'teams', since: 0, camera: false } as never }));
@@ -164,15 +164,23 @@ describe('each look', () => {
     act(() => document.dispatchEvent(new Event('visibilitychange')));
 
     act(() => useWatchStore.getState().play({ kind: 'video', id: V }));
-    expect(document.querySelector('iframe')).not.toBeNull();
+    const frame = document.querySelector('iframe')!;
+    const parent = frame.parentElement;
     act(() => usePlaceStore.getState().setActive('work'));
-    expect(useWatchStore.getState().playing).toBeNull();
+    expect(useWatchStore.getState().playing).not.toBeNull();
+    expect(document.querySelector('iframe')).toBe(frame);
+    expect(frame.parentElement).toBe(parent);
+    expect(document.querySelector('.w-stage')!.getAttribute('data-look')).toBeNull();
+    act(() => usePlaceStore.getState().setActive('unwind'));
+    expect(document.querySelector('iframe')).toBe(frame);
+    expect(frame.parentElement).toBe(parent);
+    expect(document.querySelector('.w-stage')!.getAttribute('data-look')).toBe(look);
     unmount();
   });
 
   it('switches through all four looks from the Look switch without restarting the video (the same frame, the same address)', async () => {
     setup('feather');
-    render(<Unwind />);
+    render(<UnwindView />);
     await flush();
     const frame = document.querySelector('iframe')!;
     const src = frame.getAttribute('src');
@@ -195,7 +203,7 @@ describe('each look', () => {
 describe('the settings sheet with four looks', () => {
   it('offers four tiles in one-look mode and four choices on each row per kind', async () => {
     setup('drivein');
-    render(<Unwind />);
+    render(<UnwindView />);
     await flush();
     await act(async () => screen.getByRole('button', { name: 'How video is shown' }).click());
     const all = screen.getByRole('radiogroup', { name: 'Look for everything' });

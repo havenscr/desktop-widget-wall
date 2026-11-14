@@ -3,6 +3,7 @@ import { Clock } from '../clock/Clock';
 import { Ribbon, type RibbonKind } from '../ribbon/Ribbon';
 import type { PlaceId } from '../state/places';
 import { reviewDate, reviewNow } from '../ui/reviewClock';
+import { WatchStageLayer } from '../unwind/watch/StageLayer';
 
 /**
  * The end of the clock's date line, for a place to fill through a portal (Work puts the
@@ -31,6 +32,8 @@ export function Frame({ place, children }: { place: PlaceId; children: ReactNode
         <Clock now={reviewDate}>
           <span className="clk-slot" ref={setSlot} />
         </Clock>
+        {/* The video's layer: mounted once for every place, so a video plays on when he leaves Unwind. */}
+        <WatchStageLayer />
         <ClockSlot.Provider value={slot}>{children}</ClockSlot.Provider>
       </div>
       {kind && <div className="band" aria-hidden="true" />}
