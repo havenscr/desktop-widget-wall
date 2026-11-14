@@ -964,6 +964,10 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
     stacking probe: of the type's pixels inside the picture's box, none may have its canvas above a
     picture in front of the land, and for a picture behind the land all must (across 24 of 32
     columns of its width), and nothing may rise past the Height setting plus 48 px.
+    The probe reads which layer is above which; it cannot see a mask or a blend. In Feathered (its
+    edges and lower part are masked) and Hologram (the pane is blended over a dark plate) lines that
+    pass behind the picture can show faintly through it, as the Mountains type already does there;
+    the rule still reports them as covered.
   - Work and Home (3 lines): while music drives them, opacity `ea` times a smoothed loudness (bass
     weighted), `n`, `amp`, `cx` from the camera (`en`, `eamp`, `ecx`), `hs` 900.
   - Unwind (11 lines, the visualizer): while music drives them, opacity `ea` (0.9) raised to full,

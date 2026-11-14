@@ -6,7 +6,7 @@ import { drawLineType, type LineTypeFrame, type LineTypesState } from './lineTyp
  * every frame (headless virtual time draws few) and, for the picture's box, publishes on the main
  * canvas as `data-line-probe` the numbers the two line rules read:
  *
- *   `drawn,most,boxes,onTop,under,cols,above,nopic`
+ *   `drawn,most,boxes,onTop,under,cols,above,nopic,measured`
  *
  * - `drawn`: sampled pixels of the type in the frame, `most` the most so far, `boxes` the claimed boxes.
  * - `onTop` and `under`: of the type's pixels inside the picture's box (sampled, counted
@@ -17,8 +17,14 @@ import { drawLineType, type LineTypeFrame, type LineTypesState } from './lineTyp
  * - `cols`: of `COLUMNS` equal columns across the box's width, how many held a pixel of the type in
  *   some frame (the type plays the full width).
  * - `above`: pixels drawn higher than the Height setting allows (`RISE_MARGIN` more than it).
+ * - `measured`: sampled points where the drawn canvas was found in the stack at all. With none, the
+ *   stacking was not measured and neither rule may pass or fail on it (the fit check says so on its own).
  * - `nopic`: sampled points where no picture element lies under the point (the box is the picture's
  *   bounding box: a tilted pane leaves corners). Such a point is neither above nor below the picture.
+ *
+ * The limit: the probe reads which layer is above which. It cannot see a mask or a blend, so a
+ * picture whose edges are masked (Feathered) or blended over a plate (Hologram) is still reported
+ * as covering the lines that pass behind it, though they may show faintly through it.
  *
  * `&lover=1` lifts the drawn canvas above the page (the break for a picture in front);
  * `&ltarget=main` draws the type on the main canvas even when a front canvas stands (the break for
@@ -49,6 +55,7 @@ export function parseLineProbe(search: string): LineProbe | null {
   let above = 0;
   let nopic = 0;
   let read = 0;
+  let measured = 0;
   let most = 0;
   let scratch: HTMLCanvasElement | null = null;
   let hit: HTMLStyleElement | null = null;
@@ -88,38 +95,45 @@ export function parseLineProbe(search: string): LineProbe | null {
           }
           hit ??= document.createElement('style');
           hit.textContent = '*{pointer-events:auto !important}';
-          document.head.appendChild(hit);
           const r = main.getBoundingClientRect();
           const k = r.width / (main.width / f.scale);
           // At most SAMPLES of the type's pixels in the box, evenly through them in scan order.
           let q = 0;
           for (let row = 0; row < h; row++) for (let col = 0; col < w; col += 2) if (d[(row * w + col) * 4 + 3] > 8) q++;
-          if (q > 0) read++;
-          const every = Math.max(1, Math.ceil(q / SAMPLES));
-          let n = 0;
-          for (let row = 0; row < h; row++) {
-            for (let col = 0; col < w; col += 2) {
-              if (d[(row * w + col) * 4 + 3] <= 8 || n++ % every !== 0) continue;
-              const cx = r.left + ((x0 + col) / f.scale) * k;
-              const cy = r.top + ((y0 + row) / f.scale) * k;
-              if (cx < 0 || cy < 0 || cx >= window.innerWidth || cy >= window.innerHeight) continue;
-              const list = document.elementsFromPoint(cx, cy);
-              const own = list.indexOf(target);
-              const pic = list.findIndex((e) => e.closest('.w-screen') !== null);
-              if (own < 0) continue;
-              if (pic < 0) nopic++;
-              else if (own < pic) onTop++;
-              else under++;
+          if (q > 0) {
+            read++;
+            const every = Math.max(1, Math.ceil(q / SAMPLES));
+            let n = 0;
+            // The style is attached for this read whatever happened before, and removed whatever happens in it.
+            if (!hit.isConnected) document.head.appendChild(hit);
+            try {
+              for (let row = 0; row < h; row++) {
+                for (let col = 0; col < w; col += 2) {
+                  if (d[(row * w + col) * 4 + 3] <= 8 || n++ % every !== 0) continue;
+                  const cx = r.left + ((x0 + col) / f.scale) * k;
+                  const cy = r.top + ((y0 + row) / f.scale) * k;
+                  if (cx < 0 || cy < 0 || cx >= window.innerWidth || cy >= window.innerHeight) continue;
+                  const list = document.elementsFromPoint(cx, cy);
+                  const own = list.indexOf(target);
+                  const pic = list.findIndex((e) => e.closest('.w-screen') !== null);
+                  if (own < 0) continue;
+                  measured++;
+                  if (pic < 0) nopic++;
+                  else if (own < pic) onTop++;
+                  else under++;
+                }
+              }
+            } finally {
+              hit.remove();
             }
           }
-          hit.remove();
         }
       }
       publish();
       function publish() {
         let cols = 0;
         for (let i = 0; i < COLUMNS; i++) cols += seen[i];
-        main.dataset.lineProbe = `${drawn},${most},${boxes.length},${onTop},${under},${cols},${above},${nopic}`;
+        main.dataset.lineProbe = `${drawn},${most},${boxes.length},${onTop},${under},${cols},${above},${nopic},${measured}`;
       }
     },
   };

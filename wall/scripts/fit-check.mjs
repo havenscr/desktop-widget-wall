@@ -440,11 +440,14 @@ const QUIET = [
   // lines controls: the sheet's Lines side from Listen (its size, every control inside it, 32 px controls,
   // 16 px text), and two new types under the drive-in with a video showing (nothing inside its box).
   { name: 'Lines settings sheet', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=none&wtab=listen&wsheet=one&lines=bars&audio=demo', checks: ['.w-sheet', '.ln-panel', '.ln-types', '.ln-swatches', '.ln-reset', '.ln-foot'], linesSheet: true },
-  // A new type plays the full width in every look: under a picture in front of the land (drive-in, hologram) it
-  // is painted below the picture; under a picture behind the land (the sun, the whole sky) in front of it.
+  // A new type plays the full width in every look: under a picture in front of the land (feathered, drive-in, hologram) it
+  // is painted below the picture; under a picture behind the land (the sun, the whole sky) in front of it. The rule reads
+  // which layer is above which: it cannot see a mask or a blend (the feathered edges, the hologram's pane).
   { name: 'Lines, bars under the drive-in', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=drivein&wplay=0&audio=demo&lines=bars&lineprobe=front', checks: ['.w-screen'], linesProbe: 'front' },
   { name: 'Lines, skyline under the drive-in', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=drivein&wplay=0&audio=demo&lines=skyline&lineprobe=front', checks: ['.w-screen'], linesProbe: 'front' },
   { name: 'Lines, ribbon under the hologram', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=holo&wplay=0&audio=demo&lines=ribbon&lineprobe=front', checks: ['.w-screen'], linesProbe: 'front' },
+  { name: 'Lines, bars under the feathered picture', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=feather&wplay=0&audio=demo&lines=bars&lineprobe=front', checks: ['.w-screen'], linesProbe: 'front' },
+  { name: 'Lines, skyline under the feathered picture', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=feather&wplay=0&audio=demo&lines=skyline&lineprobe=front', checks: ['.w-screen'], linesProbe: 'front' },
   { name: 'Lines, skyline under the sun', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=sun&wplay=0&audio=demo&lines=skyline&lineprobe=behind', checks: ['.w-layer'], linesProbe: 'behind' },
   { name: 'Lines, bars under the whole sky', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=sky&wplay=0&audio=demo&lines=bars&lineprobe=behind', checks: ['.w-layer'], linesProbe: 'behind' },
   { name: 'Lines, sparks under the whole sky', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=sky&wplay=0&audio=demo&lines=sparks&lineprobe=behind', checks: ['.w-layer'], linesProbe: 'behind' },
@@ -1712,10 +1715,11 @@ try {
     if (new URLSearchParams(location.search).get('lineprobe')) {
       const mode = new URLSearchParams(location.search).get('lineprobe');
       const probe = document.querySelector('canvas.horizon-canvas:not(.horizon-front)')?.dataset.lineProbe;
-      const [, drawn, boxes, onTop, under, cols, above] = (probe || '0,0,0,0,0,0,0,0').split(',').map(Number);
+      const [, drawn, boxes, onTop, under, cols, above, , measured] = (probe || '0,0,0,0,0,0,0,0,0').split(',').map(Number);
       if (!probe) lines.push('lines: the probe reported nothing (no new type was drawn)');
       else if (!boxes) lines.push('lines: no picture box was claimed');
       else if (!drawn) lines.push('lines: the new type drew nothing');
+      else if (!measured) lines.push('lines: the stacking could not be measured, no sampled point found the drawn canvas in the page: ' + probe);
       else if (mode === 'front' && onTop > 0) lines.push('lines: a new type is painted above the picture at ' + onTop + ' sampled points (a picture in front of the land hides all of it)');
       else if (mode === 'front' && under < 1) lines.push('lines: a new type never passes behind the picture (nothing to hide, the check proved nothing): ' + probe);
       else if (mode === 'behind' && (under > 0 || onTop < 1 || cols < 24)) lines.push('lines: a new type does not play in front of the picture: ' + onTop + ' sampled points in front, ' + under + ' behind, ' + cols + ' of 32 columns across the picture (none behind, and 24 columns at least)');
