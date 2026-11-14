@@ -153,7 +153,7 @@ export interface PanelSpan {
   open: boolean;
 }
 
-export type EndWord = 'merged' | 'pull request open' | 'pull request closed' | 'carried over' | 'waiting on you' | 'in review' | 'working' | 'helpers working' | 'idle' | 'finished';
+export type EndWord = 'merged' | 'pull request open' | 'pull request closed' | 'carried over' | 'waiting on you' | 'in review' | 'working' | 'helpers working' | 'idle' | 'failed' | 'finished';
 
 export interface PanelRow {
   id: string;
@@ -299,7 +299,9 @@ export function todayRows(s: OmniSummary, record: DayRecord | null, now: number,
       : waits
         ? 'waiting on you'
         : card
-          ? card.state === 'review'
+          ? card.failed
+            ? 'failed'
+            : card.state === 'review'
             ? 'in review'
             : helpersWork(card)
               ? 'helpers working'
