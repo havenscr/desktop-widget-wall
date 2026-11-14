@@ -1,4 +1,6 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
+// @ts-ignore node's own file calls; this test reads the stylesheet as text.
+import { readFileSync } from 'node:fs';
 import { useSyncExternalStore } from 'react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { mocks } from '../bridge/tauri';
@@ -8,7 +10,7 @@ import { resetKeysFeed } from './keysFeed';
 import { resetLibIndex } from './keyLibrary';
 import { LIBRARY_DATA } from '../bridge/devMocks/libraryData';
 import { FOR_YOU_SHOWN, Keys, KEYS_POLL_MS, NEW_AGAIN_MS, TAKEOVER_MS, WHEEL_GAP_MS } from './Keys';
-import { MODE_KEY, type KeysSummary } from './keysModel';
+import { DECK_TILE_H, MODE_KEY, type KeysSummary } from './keysModel';
 import { LATCH_MS } from './useGuard';
 
 // What waits on the owner is tested on its own (forYou.test.tsx); here a small store stands in
@@ -628,4 +630,36 @@ it('For you with one item shows one plate and keeps the second half empty', asyn
   await arrive(item('s1'));
   expect(document.querySelectorAll('.fy-plate').length).toBe(1);
   expect(document.querySelector('.fy-list')!.children.length).toBe(1);
+});
+
+it('a one-line and a two-line label make tiles of one class and one structure (icon, then a two-line label area)', async () => {
+  const wide = { id: 'wide', name: 'Wide', general: false, keys: [k('Snip'), k('Clipboard history for the whole day, long'), k('Lock')] };
+  answer = front('wide', null, [wide, general]);
+  render(<Keys />);
+  await flush();
+  const tiles = screen.getAllByRole('button').filter((b) => b.classList.contains('key-tile'));
+  expect(tiles.length).toBe(3);
+  const shape = (t: Element) => [t.className, [...t.children].map((c) => `${c.tagName}.${c.getAttribute('class') ?? ''}`)];
+  expect(shape(tiles[1])).toEqual(shape(tiles[0]));
+  expect(shape(tiles[2])).toEqual(shape(tiles[0]));
+  expect(shape(tiles[0])[1]).toEqual(['svg.tabler-icon tabler-icon-keyboard', 'SPAN.deck-lbl']);
+});
+
+it('the key tile rule builds one height from an icon box and a two-line label area, and DECK_TILE_H says the same', () => {
+  const css = readFileSync('src/styles/work.css', 'utf8');
+  const rule = (sel: string) => css.match(new RegExp(`\\n${sel.replace(/[.[\]]/g, '\\$&')} \\{([^}]*)\\}`))![1];
+  const tile = rule('.deck-tile.key-tile');
+  expect(tile).toContain('height: 70px');
+  expect(tile).toContain('grid-template-rows: 20px 32px');
+  expect(tile).toContain('row-gap: 4px');
+  expect(tile).toContain('padding: 6px 8px');
+  expect(tile).toContain('line-height: 16px');
+  // 6 + 20 + 4 + 32 + 6 padding and gaps, plus the two 1 px edges.
+  expect(6 + 20 + 4 + 32 + 6 + 2).toBe(DECK_TILE_H);
+  const label = rule('.key-tile .deck-lbl');
+  expect(label).toContain('-webkit-line-clamp: 2');
+  expect(label).toContain('max-height: 32px');
+  expect(label).toContain('align-self: center');
+  // The For you plates are the same height, so the Now row is one height on every page.
+  expect(rule('.fy-li')).toContain(`height: ${DECK_TILE_H}px`);
 });

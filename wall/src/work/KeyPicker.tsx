@@ -3,6 +3,7 @@ import { tip } from '../ui/HoverTip';
 import { KeyIcon } from './keyIcons';
 import { searchLibrary, type LibGroup, type LibKey } from './libraryModel';
 import { pickerBottomY, stageTopOf, type KeyInfo } from './keysModel';
+import { overlayOwnsPointer } from '../ribbon/DrawerScrim';
 
 /** Why a library row cannot be pinned, or null when it can. */
 export function rowBlock(k: LibKey): string | null {
@@ -43,7 +44,7 @@ export function KeyPicker({
     // A press outside closes the picker and does nothing else: the click that ends it is
     // swallowed once, so a task row or a card button under the pointer is not also activated.
     const away = (e: Event) => {
-      if (!box.current || box.current.contains(e.target as Node)) return;
+      if (overlayOwnsPointer() || !box.current || box.current.contains(e.target as Node)) return;
       onClose();
       const eat = (c: Event) => {
         c.stopPropagation();
@@ -59,7 +60,7 @@ export function KeyPicker({
     };
     // Escape closes from anywhere while the picker is open, whatever has the focus.
     const escape = (e: globalThis.KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
+      if (e.key !== 'Escape' || overlayOwnsPointer()) return;
       e.preventDefault();
       onClose();
     };
