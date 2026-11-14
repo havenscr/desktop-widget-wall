@@ -915,35 +915,6 @@
 .key-tile-wrap > .key-tile {
   width: 100%;
 }
-.key-more {
-  position: absolute;
-  z-index: 3;
-  top: 2px;
-  right: 2px;
-  width: 32px;
-  height: 32px;
-  display: grid;
-  place-items: center;
-  border-radius: 8px;
-  background: rgba(10, 7, 28, 0.94);
-  color: var(--tx);
-  box-shadow: inset 0 0 0 1px rgba(220, 211, 251, 0.7);
-  opacity: 0;
-  pointer-events: none;
-  cursor: pointer;
-}
-.key-tile-wrap:hover > .key-more,
-.key-tile-wrap:focus-within > .key-more,
-.key-more.on {
-  opacity: 1;
-  pointer-events: auto;
-}
-.key-more:hover,
-.key-more.on {
-  background: var(--cyan);
-  color: #06041a;
-  box-shadow: none;
-}
 .deck-tile {
   min-width: 0;
   height: 44px;

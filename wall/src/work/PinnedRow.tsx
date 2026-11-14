@@ -11,7 +11,7 @@ import { KeyIcon } from './keyIcons';
 import { libIndex, pinKind } from './keyKind';
 import { joinKeys, loadKeys, useKeysFeedStore } from './keysFeed';
 import { KeyPicker } from './KeyPicker';
-import { KeyMenu, KeyMenuButton, type KeyMenuAction } from './KeyMenu';
+import { KeyMenu, type KeyMenuAction } from './KeyMenu';
 import { keyboardOnMouseKey, useKeyPress } from './keyPress';
 import { allKeys, FALLBACK_PINS, MAX_PINS, parsePins, PINS_CHANGED_EVENT, PINS_KEY, readPinsRaw, removePin, resolvePin, savePins, serializePins, swapPin, type LibGroup, type PinView } from './libraryModel';
 import { tileSizeClass } from './keysModel';
@@ -63,7 +63,7 @@ export function PinnedRow() {
   const [raw, setRaw] = useState<string | null>(readPinsRaw);
   const [picker, setPicker] = useState<number | null>(null);
   const [menu, setMenu] = useState<number | null>(null);
-  /** Whether the open menu came from the keyboard (the ContextMenu key, Shift+F10, Enter on the corner button). */
+  /** Whether the open menu came from the keyboard (the ContextMenu key or Shift+F10). */
   const menuByKey = useRef(false);
   const [busy, setBusy] = useState(false);
   useEffect(() => {
@@ -200,6 +200,9 @@ export function PinnedRow() {
             const where = { name: p.group ?? 'the app in front', general: p.group === null };
             const actions: KeyMenuAction[] = [
               { id: 'replace', label: 'Replace with another key' },
+              pins.length >= MAX_PINS
+                ? { id: 'add', label: 'Always here is full', note: `${MAX_PINS} of ${MAX_PINS}`, disabled: true }
+                : { id: 'add', label: 'Add a key', note: `${pins.length} of ${MAX_PINS}` },
               { id: 'remove', label: 'Remove from Always here' },
               { id: 'file', label: 'Edit keys file', note: 'keys.json' },
             ];
@@ -214,7 +217,7 @@ export function PinnedRow() {
                 {...tip(
                   layoutOff
                     ? layoutOffReason(arrange)
-                    : `${p.label}${p.group ? ` (${p.group})` : ''}${p.kind === 'check' ? ', a shortcut to check on your PC' : ''}. ${p.how}. Right-click, or the button in its corner, for more.`,
+                    : `${p.label}${p.group ? ` (${p.group})` : ''}${p.kind === 'check' ? ', a shortcut to check on your PC' : ''}. ${p.how}. Right-click for more.`,
                 )}
                 onContextMenu={onContext(i)}
                 onKeyDown={onKey(i, p.action)}
@@ -228,15 +231,6 @@ export function PinnedRow() {
                 <KeyIcon name={p.icon} size={20} />
                 <span className="deck-lbl">{p.label}</span>
               </button>
-              <KeyMenuButton
-                label={p.label}
-                open={menu === i}
-                onOpen={(byKeyboard) => {
-                  menuByKey.current = byKeyboard;
-                  setMenu(i);
-                }}
-                onClose={() => setMenu(null)}
-              />
               {menu === i && (
                 <KeyMenu
                   title={`${p.label}, in Always here`}
@@ -245,6 +239,7 @@ export function PinnedRow() {
                   onClose={() => setMenu(null)}
                   onChoose={(id) => {
                     if (id === 'replace') openPicker(i);
+                    if (id === 'add') openPicker(pins.length);
                     if (id === 'remove') keep(removePin(pins.map((pin) => pin.ref), i));
                   }}
                 />

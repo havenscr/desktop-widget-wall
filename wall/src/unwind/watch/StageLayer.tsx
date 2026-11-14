@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { useSkyClaim } from '../../horizon/sky';
 import { usePlaceStore } from '../../state/places';
+import { DriveInFrame, driveInMode } from './DriveInFrame';
+import { HologramEmitter, HologramPlate } from './HologramStage';
 import { refKey, type WatchRef } from './links';
 import { LOOK_BOXES, layeredNow, lookFor, ownsTheMoonSky, type LookId } from './looks';
 import { PlayerFrame } from './PlayerFrame';
@@ -45,7 +47,7 @@ export function useWatchSky(look: LookId, front: HTMLElement | null, needsClick:
 /**
  * The video in the scene, in its look. Nothing of the wall's is drawn on the video: the Look
  * switch and every control sit in the left block. Glows, the floor's light and the drive-in's
- * frame and posts sit around the picture, never over it.
+ * frame sit around the picture, never over it.
  *
  * The player frame must never be removed or moved to another parent while the video lives (an
  * embedded player reloads when it is), so every child below keeps its slot whatever the look and
@@ -55,6 +57,10 @@ export function useWatchSky(look: LookId, front: HTMLElement | null, needsClick:
 function VideoStage({ item, look, shown }: { item: WatchRef & { label: string }; look: LookId; shown: boolean }) {
   const audience = useWatchStore(driveInAudience);
   const needsClick = useWatchStore((s) => s.needsClick);
+  const paused = useWatchStore((s) => s.paused);
+  const started = useWatchStore((s) => s.report.started);
+  const ended = useWatchStore((s) => s.report.ended);
+  const clickHint = useWatchStore((s) => s.clickHint);
   const [front, setFront] = useState<HTMLDivElement | null>(null);
   useWatchSky(look, front, needsClick, shown);
   // The look's own markup, one block per look (null while parked).
@@ -63,6 +69,11 @@ function VideoStage({ item, look, shown }: { item: WatchRef & { label: string };
   const b = LOOK_BOXES[look];
   return (
     <>
+      {/* Hologram: the glass plate, hairlines and ticks in the pane's box and tilt, then the emitter, its
+          beam and its floor glow in front of the land: both BEFORE the stage, so the picture is painted
+          above them and nothing of either lies on it. */}
+      {dress === 'holo' ? <HologramPlate /> : null}
+      {dress === 'holo' ? <HologramEmitter /> : null}
       <div
         className={dress ? `w-stage w-${dress}${layered ? ' w-layered' : ''}` : 'w-stage w-parked'}
         data-look={dress ?? undefined}
@@ -73,6 +84,7 @@ function VideoStage({ item, look, shown }: { item: WatchRef & { label: string };
         {/* The feathered glow (in front of the land, with its picture) and the sun's halo (behind it). */}
         {dress === 'feather' ? <div className="w-glow" aria-hidden="true" /> : null}
         {dress === 'sun' ? <div className="w-halo" aria-hidden="true" /> : null}
+        {dress === 'drivein' ? <DriveInFrame mode={driveInMode({ paused, started, needsClick, clickHint, ended, reports: item.kind !== 'twitch' })} /> : null}
         {dress === 'drivein' ? <div className="w-spill" aria-hidden="true" /> : null}
         {/* The picture: this element and the frame in it are never replaced while the video lives. */}
         <div className="w-screen">
@@ -84,12 +96,6 @@ function VideoStage({ item, look, shown }: { item: WatchRef & { label: string };
         {layered ? <div className="w-front" ref={setFront} aria-hidden="true" /> : null}
         {/* On the floor, in front of the land: the sun's warm streak. */}
         {dress === 'sun' ? <div className="w-streak" aria-hidden="true" /> : null}
-        {dress === 'drivein' ? (
-          <>
-            <i className="w-post l" aria-hidden="true" />
-            <i className="w-post r" aria-hidden="true" />
-          </>
-        ) : null}
       </div>
       {/* The floor picks up a faint wash of the sky's colour (approved page, B). One frame cannot be
           mirrored, so this is a still colour wash in the page's light colours, taking no pointer. */}

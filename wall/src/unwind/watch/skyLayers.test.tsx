@@ -25,9 +25,9 @@ const THREE = [
   { kind: 'live', id: 'Lofi_Live01', label: 'Lofi radio' },
   { kind: 'twitch', id: 'pixel_harbor', label: 'pixel_harbor' },
 ];
-const IDS: LookId[] = ['feather', 'sky', 'sun', 'drivein'];
+const IDS: LookId[] = ['feather', 'sky', 'sun', 'drivein', 'holo'];
 // The feathered picture stands in front of the mountains (the owner's choice), as the drive-in does.
-const BEHIND: Record<LookId, boolean> = { feather: false, sky: true, sun: true, drivein: false };
+const BEHIND: Record<LookId, boolean> = { feather: false, sky: true, sun: true, drivein: false, holo: false };
 
 const flush = async (ms = 0) => {
   await act(async () => {

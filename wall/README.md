@@ -1368,9 +1368,9 @@ there, still playing, when the owner comes back (see "The stage layer" below).
   round `.rd` controls): Previous and Next (on only for a playlist the player reports), Play or
   Pause, Mute, Stop, and Open in YouTube (or Open on Twitch); under it the elapsed time, a thin
   bar (a click or the arrow keys seek) and the length, or "Live" for a stream.
-- **The Look switch** (`LookSwitch` in `Watch.tsx`): the four looks as one segmented control
-  in a fixed place under the left block (the same box in every look, playing or not; never on
-  the video). With one look for everything it sets that look; with a look per kind it sets the
+- **The Look switch** (`LookSwitch` in `Watch.tsx`): the five looks as one segmented control
+  in a fixed place under the left block (one box, 500 by 46 at wall 624, 444, ending at x 1084, the same in every look,
+  playing or not; never on the video; its segments take their own width and share the rest). With one look for everything it sets that look; with a look per kind it sets the
   look of the kind on (its hover tip and name say which). Arrow keys move.
 - **For the buddy**: `driveInAudience(state)` in `store.ts` (usable as a store selector) is
   null, or, while something is on in the drive-in look, the screen's rectangle in wall pixels
@@ -1394,11 +1394,27 @@ there, still playing, when the owner comes back (see "The stage layer" below).
   centred at wall x 1331 with its foot 29 px over the horizon, the ranges in front of its lower part,
   a clean circle with no bands across the video (the owner's later words replace the approved
   page's bands), a warm halo and a streak on the floor; it
-  shows the middle 56 percent of a 16:9 picture's width) and `drivein` (a framed screen at the
-  approved page's size, 691 by 389 at wall 1124, 60 (40 px right of the left block, as near the
-  approved centre as the layout allows), on two posts standing on the horizon in front of the
-  ranges, the stage light's colours washed on the floor under it; with nothing
-  on, the empty screen stands there). Sky layers: each look claims the horizon's sky
+  shows the middle 56 percent of a 16:9 picture's width) and `drivein` (the Screen tower: the
+  video's box is exactly 16:9, 672 by 378 at wall 1244, 54 (`DRIVE_IN_SCREEN`), with no border of its own;
+  the frame is one SVG over the whole scene, `DriveInFrame.tsx` with its drawing in `towerFrame.ts`, the first
+  child of the stage under the floor light and the screen, taking no pointer: a steel surround with a
+  coping and one neon edge line, a Warren truss, two lattice towers and raking stays on footings on the horizon,
+  a marquee board, a ground shadow and the legs mirrored in the floor. Every fill round the picture is a
+  ring with the box cut out (even-odd) and the neon's glow is clipped to the same ring, so nothing of
+  it can cover the picture; a test checks that from the component's own geometry and the fit check
+  checks it in the browser. The marquee reads WATT'S DRIVE-IN, NOW SHOWING while playing and
+  INTERMISSION while paused (a cross-fade of about a second, at once under reduced motion); with nothing
+  on, the empty screen is dark and the marquee reads the name only; the stage light's colours are washed
+  on the floor under it, re-centred under the new box and still starting on the horizon) and `holo` (the
+  Hologram: the whole 16:9 picture, 736 by 414 at wall 1210, 42, on a pane tilted in 3D
+  (`perspective(2400px) rotateY(-7deg) rotateX(1.2deg)`) with `mix-blend-mode: screen` over a dark glass
+  plate in the same box and tilt (`HologramPlate`, before the stage), two cyan hairlines and four corner
+  ticks outside the picture, and a small emitter on the floor with its beam fan and floor glow
+  (`HologramEmitter`, after the stage). It stands in front of the land, claims no front layer, and the
+  moon keeps clear of its box; the pointer never reaches the player, but a refused autoplay's click lands
+  on the tilted frame's real area. The blend needs the stage and the sky in one layer group: where the
+  layering cannot blend (no `mix-blend-mode`, or the main area isolated by a look behind the land) the
+  blend is dropped and the plate and the tilt stay). Sky layers: each look claims the horizon's sky
   (`useWatchSky`, `horizon/sky.ts`) with its picture's box (`LOOK_BOXES`, so the moon keeps 40 px
   clear of it: another of its places, or none); the sun and the drive-in own that sky (no moon at
   all); the whole sky and the sun (`behindTheLand`) also give `.w-front`, after the picture, where the
@@ -1412,9 +1428,9 @@ there, still playing, when the owner comes back (see "The stage layer" below).
   in its heading row changes the side, and the heading follows it. The Lines side
   (`LinesPanel.tsx`) has one control per 40 px row with its value read back in words, and sizes
   the sheet to its content. The Looks side:
-  one look for everything (four picture tiles), or one each for videos and playlists, live
-  streams and Twitch (four choices a row), at 540 px (`wall2-watch-look`, checked on read;
-  values stored before the two new looks still read the same). The Look switch sets it too.
+  one look for everything (five picture tiles), or one each for videos and playlists, live
+  streams and Twitch (five choices a row), at 540 px (`wall2-watch-look`, checked on read;
+  values stored before the newer looks still read the same). The Look switch sets it too.
 - **The stage layer** (`StageLayer.tsx`, watch behaviour): the video's stage (the frame in its
   look, with the player's message bridge) is not part of Unwind. The screens frame
   (`screens/Frame.tsx`) mounts `WatchStageLayer` once in `.top`, Unwind's own box, for every
@@ -1459,7 +1475,7 @@ there, still playing, when the owner comes back (see "The stage layer" below).
 - **Listen**: when something is saved, the album art has a small "Video" corner that
   switches to Watch. Nothing else on Listen changes.
 - **Dev**: `?watch=mock` draws a poster where the frame goes (headless Chromium shows an empty
-  frame) and opens Watch; `?wlist=none|three|many`, `?wlook=feather|sky|sun|drivein`, `?wposter=bright` (a pale test picture, the worst case for
+  frame) and opens Watch; `?wlist=none|three|many`, `?wlook=feather|sky|sun|drivein|holo`, `?wposter=bright` (a pale test picture, the worst case for
   text over video), `?wplay=<n>`,
   `?wsheet=one|kind`, `?wtab=listen`, and a mock player with `?wstate=paused|refused|silent`
   (default: playing at 12:34 of 45:10; a playlist reports item 4 of 24). The stills hold the
@@ -1878,7 +1894,7 @@ Listed in the picker as "coming" and not runnable: `task:add` (needs a write to 
 
 The pin icon beside the heading. Up to five keys that never change by themselves: the owner's pins on this display (local storage `wall2-keys-pins`, validated on read against the library and `keys.json`: a stored value that is malformed means the defaults, while a well formed reference that no longer resolves is simply dropped, down to an empty row with only the Add tile; a pin on a `keys.json` key is stored with that key's label and action and is dropped when the file no longer has the same key there), else the keys named in `pinned` in `keys.json`, else **Thirds, Focus, Record 16:9, Snip, Hide screen**. After the first Add, Remove or Replace on the wall, this display keeps its own pin list, and later edits to `pinned` in `keys.json` no longer change it (the choice made on the wall wins; Reset to defaults in the picker clears it). A free slot appears as a dashed **Add a key** tile and opens the picker for the next place. The last key can be removed, leaving only Add. After a layout key the heading says "3 windows arranged" (or "2 of 3") with an Undo button for 60 seconds, and the layout key keeps its outline.
 
-Every pinned key and every key on a Now set page has a corner menu button while hovered or focused. Right-click, ContextMenu and Shift+F10 open the same menu. Pinned keys can be replaced or removed. A Now key can be pinned only when it matches one durable library id; keys that exist only in `keys.json` say so instead of storing a position that could point at a different key after an edit. Every menu can open `keys.json`. Escape, a click outside, a choice, a change of page or of the set shown (Auto following another app) closes it, and so does five seconds with the pointer resting elsewhere: the countdown does not run while the pointer is over the menu or while keyboard focus is inside it. The corner button toggles it, and Escape or a choice returns focus to the key. Every Now key's hover mentions the menu. The deck ignores these controls while the Day drawer or Agents panel owns the pointer.
+Every pinned key and every key on a Now set page has a menu, opened by right-click (or by the ContextMenu key or Shift+F10 on a focused key). No button is drawn on a key at hover or focus; the key keeps its own look. A pinned key's menu offers Replace with another key, Add a key (the same picker the Add tile opens, for the next free place; disabled with "Always here is full" and `5 of 5` when all five places are taken), Remove from Always here, and Edit keys file. A Now key can be pinned only when it matches one durable library id; keys that exist only in `keys.json` say so instead of storing a position that could point at a different key after an edit. Every menu can open `keys.json`. Escape, a click outside, a choice, a change of page or of the set shown (Auto following another app) closes it, and so does five seconds with the pointer resting elsewhere: the countdown does not run while the pointer is over the menu or while keyboard focus is inside it. A second right-click on the same key closes the menu and opens it again at once. Escape or a choice returns focus to the key. Every enabled key's tooltip ends with "Right-click for more."; a disabled key keeps only its reason. The deck ignores these gestures while the Day drawer or Agents panel owns the pointer.
 
 **The picker** opens over the two rows' box (never Next three) and runs down over the mountains to just above the day timeline, leaving the 16 px gap the main rows keep (`pickerBottomY` in `keysModel.ts`, measured again when anything above it in the wing changes size; it never covers the timeline or its chips). Search stays at the top and "Reset to defaults" at the bottom; only the list between them scrolls, with the wall's slim scrollbar and a fade at its foot so no row shows cut mid-text. It holds the whole library by group, a search box (label, group and what a key does), the current five marked ("pinned", "this slot"), a click swaps that key into the slot (a key already pinned trades places), "Reset to defaults" at the bottom. Escape (from anywhere while it is open) or a click outside closes it, and the click that closes it does nothing else; the arrow keys move through the rows; rows are 36 px tall, two to a line. Keys marked **check** are shortcuts the owner must confirm on his PC: they are never in a set Auto shows, and the page offers one only once it is pinned. Rust itself accepts any runnable library id (held to its group's programs), so the "only when pinned" rule lives in the page. "coming" rows and shortcuts still to be worked out (the three Power BI ribbon ones) are listed but cannot be pinned. `keys.json` is never written.
 
