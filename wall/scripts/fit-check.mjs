@@ -28,10 +28,12 @@
 // the player and the clock, in one place on Listen and on Watch with nothing on.
 // On Air: the three columns inside their planned boxes above the strip, no note cut without "+N more",
 // and the recording key tiles at least 40 px.
+// Watt wear: with the star chosen it is drawn in every state he can be in (standing, his menu open, asleep, lying down,
+// seated at the drive-in, with the headphones, with a scarf), inside his sprite's box; a headphone cup that is drawn sits on his head.
 // CI does not run this; run it by hand before a layout change is handed over.
 //
 //   WALL_CHROME=/path/to/chrome-or-headless-shell npm --prefix wall run fit-check
-//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, card-end, header, deck, tiles, picker, chips, heading, zenhint, strip, fold, drawer, rows, handle, sky, floor, sun, tools, toolsnames, meetfill, meetempty, fy-height, key-edge, hide-pill, hide-note, leave-band, rec-chip, rec-height, tile-height, tile-icon, tile-iconbox, drawer-scrim, lwbuttons, lwoverlap, lwsquare, lwring, lwtemp, lwround, sky-front, sky-moon, sky-always, sky-crop, sky-seam, sky-soft, sky-foot, tower-over, tower-wide, tower-box, tower-switch, holo-big, holo-noblend, holo-beam, holo-take, tile-text, listen-player, listen-card, listen-slot, listen-next, lines-size, lines-control, lines-text, lines-clip, watch-rest, watch-title, watch-away, watch-mark, lip-cover, lip-band, lip-scrim, row-parts, over-hatch, row-type, onair-box, onair-notes, onair-keys, onair-watt, watt-seat, watt-spot, watt-tower, watt-ground)
+//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, card-end, header, deck, tiles, picker, chips, heading, zenhint, strip, fold, drawer, rows, handle, sky, floor, sun, tools, toolsnames, meetfill, meetempty, fy-height, key-edge, hide-pill, hide-note, leave-band, rec-chip, rec-height, tile-height, tile-icon, tile-iconbox, drawer-scrim, lwbuttons, lwoverlap, lwsquare, lwring, lwtemp, lwround, sky-front, sky-moon, sky-always, sky-crop, sky-seam, sky-soft, sky-foot, tower-over, tower-wide, tower-box, tower-switch, holo-big, holo-noblend, holo-beam, holo-take, tile-text, listen-player, listen-card, listen-slot, listen-next, lines-size, lines-control, lines-text, lines-clip, watch-rest, watch-title, watch-away, watch-mark, lip-cover, lip-band, lip-scrim, row-parts, over-hatch, row-type, onair-box, onair-notes, onair-keys, onair-watt, watt-seat, watt-spot, watt-tower, watt-ground, watt-star, watt-star-menu, watt-cup)
 //   npm --prefix wall run fit-check -- --self-test
 //
 // WALL_CHROME (or the first argument that is not a flag) is a Chromium or
@@ -152,6 +154,10 @@ const EXPECT = {
   'watt-spot': /^ *FAIL watt drive-in: Watt .* is not within 40 px of his seat/m,
   'watt-tower': /^ *FAIL watt drive-in: Watt .* px into the tower, not 24 or less/m,
   'watt-ground': /^ *FAIL watt drive-in: Watt .* is not on his ground/m,
+  // watt wear
+  'watt-star': /^ *FAIL watt wear: the star at .* is not inside his sprite/m,
+  'watt-star-menu': /^ *FAIL watt wear: the star is not drawn while his menu is open/m,
+  'watt-cup': /^ *FAIL watt wear: the headphones at .* are not on his head/m,
   // tower and hologram
   'tower-over': /^ *FAIL tower and hologram: .* paints over the picture/m,
   'tower-wide': /^ *FAIL tower and hologram: the tower .* overlaps /m,
@@ -286,6 +292,10 @@ const OVERFLOWS = {
   // watt drive-in: his seat moved to the screen's centre; his seat lifted 100 px off the ground.
   'watt-seat': '.watt-sheep { translate: 1000px 0 !important; }',
   'watt-ground': '.watt-sheep { translate: 0 -100px !important; }',
+  // watt wear: the star moved 300 px off him; the star hidden while his menu is open; the cup lifted 200 px off his head.
+  'watt-star': '.watt-prop-star { translate: 300px 0 !important; }',
+  'watt-star-menu': '.watt-prop-star { display: none !important; }',
+  'watt-cup': '.watt-prop-headphones { translate: 0 -200px !important; }',
   // his seat 80 px too far left (30 px clear of the screen still holds); 20 px nearer the screen (into the tower's foot).
   'watt-spot': '.watt-sheep { translate: -80px 0 !important; }',
   // his left edge 12 px off the chosen 1106 (30 px from the screen at 1244 with his 108 px width), still within the 40 px of his seat.
@@ -671,6 +681,16 @@ const VARIANTS = [
   { name: 'Watt menu on Work', q: work('3', '&meet=none'), checks: ['.watt-menu'], viewportOnly: true, card: true },
   { name: 'Watt menu on Home', q: home('moods=five'), checks: ['.watt-menu'], viewportOnly: true, card: true },
   { name: 'Watt menu on Unwind', q: query({ hz: 'unwind', agents: '3', extra: '' }), checks: ['.watt-menu'], viewportOnly: true, card: true },
+  // watt wear: the star he wears is drawn in every state he can be in (standing, his menu open and he looks up, asleep at
+  // night, lying down for a nap, seated at the drive-in, with the headphones, with a scarf), inside his sprite's box; a cup
+  // that is drawn sits on his head. (The cape and the star are both cosmetics: never worn together.)
+  { name: 'Watt wears the star, standing', q: query({ hz: 'unwind', agents: '3', extra: '&wattwear=star' }), checks: ['.watt-sheep > svg'], viewportOnly: true },
+  { name: 'Watt wears the star, menu open', q: query({ hz: 'unwind', agents: '3', extra: '&wattwear=star' }), checks: ['.watt-menu'], viewportOnly: true, card: true },
+  { name: 'Watt wears the star, asleep at night', q: query({ hz: 'unwind', agents: '3', at: '2026-11-11T22:30:00-08:00', extra: '&wattwear=star' }), checks: ['.watt-sheep > svg'], viewportOnly: true },
+  { name: 'Watt wears the star, lying down for a nap', q: query({ hz: 'unwind', agents: '3', extra: '&wattwear=star&meet=none' }), click: 'ctx:.watt-hit >> .watt-menu .wm-it:nth-child(3)', checks: ['.watt-sheep > svg'], viewportOnly: true },
+  { name: 'Watt wears the star, seated at the drive-in', q: query({ hz: 'unwind', agents: '3', at: '2026-11-11T22:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=drivein&wplay=0&wattwear=star' }), checks: ['.watt-sheep > svg'], viewportOnly: true },
+  { name: 'Watt wears the star and the headphones', q: query({ hz: 'unwind', agents: '3', extra: '&wattwear=star&audio=demo' }), checks: ['.watt-sheep > svg'], viewportOnly: true },
+  { name: 'Watt wears the star and a scarf', q: query({ hz: 'unwind', agents: '3', extra: '&wattwear=star&weather=cold' }), checks: ['.watt-sheep > svg'], viewportOnly: true },
   // home round two: the shield card (quiet, open alerts, its drawer), the house line, mood
   // pages and Sound's now-playing strip stay inside the band. Its own rules (five chores and
   // three with alerts, the drawer, the house area, mood card widths) are in home-fit-check.mjs.
@@ -1522,6 +1542,36 @@ try {
       if (into > 24) fails.push('watt drive-in: Watt at ' + at + ' stands ' + Math.round(into) + ' px into the tower, not 24 or less');
       return { at, fails };
     })();
+    // watt wear: with the star chosen (?wattwear=star) it is drawn whatever he is doing (his menu open included), and
+    // every pixel of it lies inside his sprite's box (it never rises above him or hangs off him); a headphone cup
+    // that is drawn sits on his head: inside his sprite's box but for the two sprite rows the band may rise above it.
+    const wattWear = (() => {
+      const wantStar = new URLSearchParams(location.search).get('wattwear') === 'star';
+      const sheep = document.querySelector('.watt-sheep > svg');
+      const cup = document.querySelector('.watt-prop-headphones > svg');
+      if (!wantStar && !cup) return null;
+      const fails = [];
+      if (!sheep) return { fails: ['watt wear: Watt is not on the page'] };
+      const me = sheep.getBoundingClientRect();
+      const inside = (r, up) => r.left >= me.left - 0.5 && r.right <= me.right + 0.5 && r.top >= me.top - up - 0.5 && r.bottom <= me.bottom + 0.5;
+      const menu = !!document.querySelector('.watt-menu');
+      const at = (r) => Math.round(r.left) + ',' + Math.round(r.top) + ' to ' + Math.round(r.right) + ',' + Math.round(r.bottom);
+      let star = null;
+      if (wantStar) {
+        const el = document.querySelector('.watt-prop-star > svg');
+        const r = el && el.getBoundingClientRect();
+        if (!r || r.width < 1) fails.push('watt wear: the star is not drawn' + (menu ? ' while his menu is open' : ''));
+        else {
+          star = at(r);
+          if (!inside(r, 0)) fails.push('watt wear: the star at ' + at(r) + ' is not inside his sprite at ' + at(me));
+        }
+      }
+      if (cup) {
+        const r = cup.getBoundingClientRect();
+        if (!inside(r, 2 * (r.width / 5))) fails.push('watt wear: the headphones at ' + at(r) + ' are not on his head at ' + at(me));
+      }
+      return { fails, star, cup: !!cup, menu };
+    })();
         // sky layers: a front canvas exactly when a look sits behind the land; with one, it is shown,
     // covers the stage, comes after the video in the same stage, is opaque on the lake under the
     // video and clear (but for the grain) at the top of the sky; with \`skycheck=moon\` the moon is drawn and its disc is
@@ -1817,7 +1867,7 @@ try {
       }
       return fails;
     })();
-    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, cardEnds, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, copyOut, meetOut, strip, opened, watchPolish, skyLayers, thCheck, tileText, listen, lines, watchBehaviour, onair, wattDriveIn });
+    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, cardEnds, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, copyOut, meetOut, strip, opened, watchPolish, skyLayers, thCheck, tileText, listen, lines, watchBehaviour, onair, wattDriveIn, wattWear });
     document.body.appendChild(pre);
   }, new URLSearchParams(location.search).get('card') ? 7000 : 3000);</script>`;
   const broken = overflow ? `<style>${OVERFLOWS[overflow]}</style>` : '';
@@ -1923,6 +1973,10 @@ try {
     'onair-notes': (v) => v.name === 'On Air, long names and twelve long notes',
     'onair-keys': (v) => v.name === 'On Air, typical: running at 42:13',
     'onair-watt': (v) => v.name === 'On Air, Watt standing under the notes card',
+    // watt wear
+    'watt-star': (v) => v.name === 'Watt wears the star, standing',
+    'watt-star-menu': (v) => v.name === 'Watt wears the star, menu open',
+    'watt-cup': (v) => v.name === 'Watt wears the star and the headphones',
     // lines controls
     'lines-size': (v) => v.name === 'Lines settings sheet',
     'lines-control': (v) => v.name === 'Lines settings sheet',
@@ -1951,13 +2005,19 @@ try {
       process.exit(1);
     }
     const text = m[1].replaceAll('&quot;', '"').replaceAll('&amp;', '&');
-    const { res, page: doc, overlaps, cut, gaps, cardEnds, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, copyOut, meetOut, strip, opened, watchPolish, skyLayers, thCheck, tileText, listen, lines, watchBehaviour, onair, wattDriveIn } = JSON.parse(text);
+    const { res, page: doc, overlaps, cut, gaps, cardEnds, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, copyOut, meetOut, strip, opened, watchPolish, skyLayers, thCheck, tileText, listen, lines, watchBehaviour, onair, wattDriveIn, wattWear } = JSON.parse(text);
     // watt drive-in
     if (wattDriveIn) {
       for (const f of wattDriveIn.fails) console.log(`  FAIL ${f}`);
       if (wattDriveIn.fails.length) failed = true;
       else if (wattDriveIn.waiting) console.log('  ok   watt drive-in: the marquee is waiting, Watt is not at the show');
       else console.log(`  ok   watt drive-in: seated at ${wattDriveIn.at}, on his ground, 30 px or more left of the screen, 22 px or more from every control at his height, near his seat, 24 px or less into the tower`);
+    }
+    // watt wear
+    if (wattWear) {
+      for (const f of wattWear.fails) console.log(`  FAIL ${f}`);
+      if (wattWear.fails.length) failed = true;
+      else console.log(`  ok   watt wear:${wattWear.star ? ` the star at ${wattWear.star} inside his sprite${wattWear.menu ? ', with his menu open' : ''}` : ''}${wattWear.cup ? ' the headphones on his head' : ''}`);
     }
     // on air
     for (const f of onair) console.log(`  FAIL ${f}`);
