@@ -100,6 +100,7 @@ try {
   for (const input of inputs) {
     const dom = await runChrome(chrome, ['--headless', '--no-sandbox', '--disable-gpu', '--window-size=2560,807', '--dump-dom', `${pathToFileURL(page).href}?${input}`], {
       label: input,
+      limitMs: 240_000, // the page measures 20 s of real time per input, and a loaded machine stretches it
       maxBuffer: 256 * 1024 * 1024,
       exitOnFail: true,
     });

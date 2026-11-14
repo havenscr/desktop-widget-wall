@@ -85,11 +85,12 @@ function once(chrome, args, limitMs, maxBuffer, hang) {
 
 /**
  * Run `chrome args` and return its standard output. `label` names the state in messages.
- * With `exitOnFail` a failure prints one line and exits 1; otherwise it throws.
+ * `limitMs` is the time limit per try (default 45 s). With `exitOnFail` a failure prints one line
+ * and exits 1; otherwise it throws.
  */
-export async function runChrome(chrome, args, { label = '', maxBuffer = 64 * 1024 * 1024, exitOnFail = false } = {}) {
+export async function runChrome(chrome, args, { label = '', maxBuffer = 64 * 1024 * 1024, exitOnFail = false, limitMs: limit = DEFAULT_LIMIT_MS } = {}) {
   hook();
-  const limitMs = Number(process.env.WALL_CHROME_LIMIT_MS || DEFAULT_LIMIT_MS);
+  const limitMs = Number(process.env.WALL_CHROME_LIMIT_MS || limit);
   const secs = Math.round(limitMs / 1000);
   const name = label ? ` (${label})` : '';
   let error = null;
