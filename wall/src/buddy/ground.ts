@@ -43,6 +43,7 @@ export function seatGround(limit: number): Span[] {
 export const GROUNDS: Readonly<Record<WattPlace, readonly Span[]>> = {
   work: [{ min: 140, max: 2420, left: 124, right: 2536 }],
   meet: [{ min: 140, max: 2420, left: 124, right: 2536 }],
+  onair: [{ min: 140, max: 2420, left: 124, right: 2536 }],
   home: [{ min: 140, max: 2400, left: 124, right: 2536 }],
   // Listen: left of the transport row, and between the row (box to x 1402) and the Room card (x 2000).
   unwind: [
@@ -76,7 +77,7 @@ export function groundOf(place: WattPlace, watch: boolean, banner = false): read
 }
 
 /** How far he wanders either side of his spot, design pixels. */
-export const WANDER_R: Readonly<Record<WattPlace, number>> = { work: 105, meet: 105, home: 110, unwind: 60 };
+export const WANDER_R: Readonly<Record<WattPlace, number>> = { work: 105, meet: 105, onair: 105, home: 110, unwind: 60 };
 
 /** Where he stands on a place he was never set down on: the middle of the concept's walk. */
 export function defaultSpot(place: WattPlace): number {

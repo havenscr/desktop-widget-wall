@@ -7,7 +7,7 @@ export interface ReviewFrame {
   ms: number;
 }
 
-const PLACE_IDS: readonly string[] = ['work', 'home', 'unwind'];
+const PLACE_IDS: readonly string[] = ['work', 'home', 'onair', 'unwind'];
 
 /**
  * Parse `?hz=<place>&at=<ISO time>`. Returns null unless both are present and valid.

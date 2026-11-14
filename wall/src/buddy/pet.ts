@@ -28,7 +28,7 @@ export interface Today {
 }
 
 /** The places Watt can be told to stay on. */
-export const STAY_PLACES = ['work', 'home', 'meet', 'unwind'] as const;
+export const STAY_PLACES = ['work', 'home', 'meet', 'onair', 'unwind'] as const;
 export type StayPlace = (typeof STAY_PLACES)[number];
 /** Where he was told to stay: the place, the left edge x on the stage and the local date it was set. */
 export interface Stay {
