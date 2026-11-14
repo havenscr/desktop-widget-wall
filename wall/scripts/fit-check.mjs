@@ -1602,7 +1602,7 @@ try {
         if (s.t < -0.5 || s.b > 658.5 || s.r > 2560.5) fails.push('look settings: the sheet is ' + Math.round(s.h) + ' px tall, y ' + Math.round(s.t) + ' to ' + Math.round(s.b) + ' (inside the stage and clear of the office slot at y 662)');
         for (const el of set.querySelectorAll('button, input')) {
           const r = R(el);
-          const name = el.getAttribute('aria-label') || el.textContent.trim() || el.id;
+          const name = el.getAttribute('aria-label') || el.textContent.trim() || (document.getElementById(el.getAttribute('aria-labelledby') || '') || {}).textContent || el.id;
           if (r.l < s.l - 0.5 || r.r > s.r + 0.5 || r.t < s.t - 0.5 || r.b > s.b + 0.5) fails.push('look settings: control "' + name + '" is cut by the sheet');
           if (r.h < 31.5) fails.push('look settings: control "' + name + '" is ' + Math.round(r.h * 10) / 10 + ' px tall (32 at least)');
         }

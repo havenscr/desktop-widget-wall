@@ -1439,6 +1439,47 @@ there, still playing, when the owner comes back (see "The stage layer" below).
   one look for everything (five picture tiles), or one each for videos and playlists, live
   streams and Twitch (five choices a row), at 540 px (`wall2-watch-look`, checked on read;
   values stored before the newer looks still read the same). The Look switch sets it too.
+- **Settings for each look** (`lookSettings.ts`, `LookTunePanel.tsx`, key `wall2-watch-look-tune`):
+  under the tiles the sheet shows the chosen look's own sliders and switches in the Lines side's
+  rows (the value read back in words, a tick at "your usual", "Reset to my usual" for that look
+  only, a tooltip on every control, and the foot line "Each look keeps its own settings. Changes
+  show at once."). With a look per kind a chooser says which look is adjusted; the settings belong
+  to the look, never to the kind of video. Every default is today's number: with nothing moved the
+  stage carries no setting at all (the whole sky's soft edge always was carried) and every rule in
+  `unwind.css` falls back to today's value, so the wall draws what it always drew. A slider changes
+  custom properties on the stage and nothing else. `lookBox(look, settings)` is the one source of
+  the picture's box: the stage's place, the sky claim (the moon keeps clear), the edge band, the
+  buddy's drive-in audience and fit-check all read it. Each stored value is bounded on read; one
+  that depends on another is limited too (`resolveTune`). A broken or missing value falls back to
+  its default. Dev bundles take `?wtune=sky.size=80,sun.up=-100` (a switch as 0 or 1).
+
+  | Look | Setting | Range | Usual | Limit and why |
+  |---|---|---|---|---|
+  | Whole sky | Size | 60 to 100 % | 100 | about the foot centre (wall 1550, 516), so smaller only: 100 is as tall as the sky allows |
+  | | Soft edge | 0 to 200 px | 120 | at most 40 % of the picture's smaller side (120 px at 60 %), so the ramps never cross |
+  | | Brightness | 50 to 100 | 90 | |
+  | | Floor light | on or off | on | |
+  | The sun | Size | 280 to 461 px | 461 | 461 is the largest that fits the sky at the usual height; centre kept at x 1331 |
+  | | Height | 100 px sunk to 60 px up | 29 up | the disc's top stays 8 px under the strip's top (at most 497 less the size) |
+  | | Glow | 0 to 100 | 50 | halo and rim |
+  | | Floor streak | on or off | on | |
+  | Feathered | Size | 60 to 108 % | 100 | about the foot centre (1555, 505); 108 keeps the right edge under the cards (x 2000) |
+  | | Soft edge | 10 to 30 % | 20 | the top and foot fades keep their proportion (17 and 26 percent at 20) |
+  | | Glow | 0 to 100 | 50 | |
+  | Drive-in | Size | 80 to 105 % | 100 | the screen, the tower and the floor light scale together about the footings (1580, 505); 105 keeps the coping inside the strip and the side stays clear of the cards. The buddy's seat follows the screen |
+  | | Floor light | 0 to 100 | 42 | |
+  | | Sign under the video | on or off | on | the marquee board and its words; nothing else moves |
+  | | Neon line | on or off | on | the neon line and its glow; the steel surround stays |
+  | | Travelling light | on or off | on | new: one soft light (a tenth of the line, a brighter core, a fading tail) travels once round the neon line in 12 s, only while the drive-in shows a playing video; needs the neon line; not drawn while paused, while waiting for a click, with the page hidden, or under reduced motion (the line is simply lit). A CSS dash-offset animation on its own small svg: no script, no layout, no repaint of the stage |
+  | Hologram | Tilt | 0 to 12 degrees | 7 | the pane's reach stays clear of the left block and the cards |
+  | | Plate darkness | 40 to 90 | 74 | the glass plate's alpha |
+  | | Beam | on or off | on | the emitter's fan and rays |
+
+  Fit-check (`--only=look settings`) measures every look at both ends of each range (the picture
+  is the box the code uses, uncropped 16:9, clear of the left block, clock, tabs and list card,
+  nothing painted on it, the whole tower and the travelling light clear of it, hiding the sign
+  moves nothing else) and the Looks sheet with its longest section (inside the stage, clear of the
+  office slot, controls 32 px at least, text 16 px at least).
 - **The stage layer** (`StageLayer.tsx`, watch behaviour): the video's stage (the frame in its
   look, with the player's message bridge) is not part of Unwind. The screens frame
   (`screens/Frame.tsx`) mounts `WatchStageLayer` once in `.top`, Unwind's own box, for every
