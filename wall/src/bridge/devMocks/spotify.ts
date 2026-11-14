@@ -37,7 +37,16 @@ export function registerSpotifyMocks(): void {
   mocks.set('wall2_spotify_tracks', (args) => { available(); if (mode() === 'notyours') throw new Error('not yours'); const kind = args?.kind; const page = Number(args?.page ?? 0); const total = mode() === 'heavy' ? 2000 : mode() === 'long' ? 240 : kind === 'album' ? 12 : 58; const start = page * 50; const items = Array.from({ length: Math.max(0, Math.min(50, total - start)) }, (_, n) => track(start + n + 1, !(kind === 'playlist' && start + n === 8))); return { items, total, more: start + items.length < total }; });
   mocks.set('wall2_spotify_queue', () => { available(); return mode() === 'empty' ? { current: null, next: [] } : { current: track(1), next: Array.from({ length: 10 }, (_, n) => track(n + 2)) }; });
   mocks.set('wall2_spotify_playback', () => { available(); if (playMode() === 'none' || mode() === 'empty') return null; const device = playMode() === 'speaker' ? { name: 'Living room', kind: 'Speaker' } : { name: 'Desk speakers', kind: 'Computer' }; return { playing: true, device, track: track(1), progressMs: 65_000, shuffle: false }; });
-  mocks.set('wall2_spotify_devices', () => { available(); return [{ id: deviceId(91), name: 'Desk speakers', kind: 'Computer', active: true, volume: 28 }, { id: deviceId(92), name: 'Kitchen speaker', kind: 'Speaker', active: false, volume: 34 }] satisfies SpotifyDevice[]; });
+  // Players that are awake: this PC (unless Spotify has to be started), a phone and a speaker. `spotifyplay=speaker` makes the speaker the active one; `spotify=nodevices` lists none.
+  mocks.set('wall2_spotify_devices', () => {
+    available();
+    if (mode() === 'nodevices') return [] satisfies SpotifyDevice[];
+    const onSpeaker = playMode() === 'speaker';
+    const pc: SpotifyDevice = { id: deviceId(91), name: 'Desk speakers', kind: 'Computer', active: !onSpeaker && playMode() !== 'none', restricted: false, volume: 28 };
+    const phone: SpotifyDevice = { id: deviceId(93), name: 'Phone', kind: 'Smartphone', active: false, restricted: false, volume: 60 };
+    const speaker: SpotifyDevice = { id: deviceId(92), name: 'Kitchen speaker', kind: 'Speaker', active: onSpeaker, restricted: false, volume: 34 };
+    return mode() === 'starting' ? [phone, speaker] : [pc, phone, speaker];
+  });
   mocks.set('wall2_spotify_play', () => { available(); if (mode() === 'nodevice') throw new Error('no device'); if (mode() === 'choose') throw new Error('choose'); if (mode() === 'alreadystarting') throw new Error('starting'); return mode() === 'starting' ? 'starting' : 'played'; });
   mocks.set('wall2_spotify_start_status', () => ({ starting: mode() === 'starting', result: mode() === 'starting' ? null : 'played' }));
   mocks.set('wall2_spotify_cancel_start', () => undefined);

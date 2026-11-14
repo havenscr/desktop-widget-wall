@@ -37,6 +37,7 @@ import {
   SEARCH_WAIT_MS,
   songs,
   spotifyProblem,
+  STARTING_NOTE,
   TALL_CLOSE_MS,
   trackLength,
   useListenSource,
@@ -403,6 +404,7 @@ const deviceArg = (): { deviceId?: string } => {
 
 /** Play an item whole, or shuffled, and report startup only when Rust opened Spotify. */
 async function playWhole(item: SpotifyItem, shuffled: boolean, onStarting: () => void): Promise<void> {
+  useSpotifyStart.setState({ name: item.name });
   await finishPlay(await spotify.play(item.kind, item.id, { shuffle: shuffled, ...deviceArg() }), onStarting);
 }
 
@@ -516,9 +518,9 @@ function Browser({ tall }: { tall: boolean }) {
 
   const fail = (e: unknown) => mounted.current && setNote(playProblemLine(spotifyProblem(e)));
   const playItem = (item: SpotifyItem) => {
-    void playWhole(item, false, () => mounted.current && setNote('Starting Spotify')).then(() => mounted.current && setNote(null), fail);
+    void playWhole(item, false, () => mounted.current && setNote(STARTING_NOTE)).then(() => mounted.current && setNote(null), fail);
   };
-  const shuffleItem = (item: SpotifyItem) => void playWhole(item, true, () => mounted.current && setNote('Starting Spotify')).then(() => mounted.current && setNote(null), fail);
+  const shuffleItem = (item: SpotifyItem) => void playWhole(item, true, () => mounted.current && setNote(STARTING_NOTE)).then(() => mounted.current && setNote(null), fail);
 
   const cur = lists[tab];
   const songsIn = cur.items.filter((i) => i.kind === 'track');
@@ -654,11 +656,30 @@ function Browser({ tall }: { tall: boolean }) {
           </>
         )
       )}
-      {note ? (
-        <div className="sp-note" role="status">
-          {note}
-        </div>
-      ) : null}
+      {note ? <Note text={note} /> : null}
+    </div>
+  );
+}
+
+/**
+ * The line at the foot of the card: an amber note, or, while the wall starts Spotify, a calm status line
+ * (the Spotify mark, what is happening, and what plays as soon as it is ready, over a thin line that fills once).
+ */
+function Note({ text }: { text: string }) {
+  const name = useSpotifyStart((s) => s.name);
+  if (text !== STARTING_NOTE) {
+    return (
+      <div className="sp-note" role="status">
+        {text}
+      </div>
+    );
+  }
+  return (
+    <div className="sp-note starting" role="status">
+      <IconBrandSpotify size={24} stroke={1.8} aria-hidden="true" />
+      <span className="sp-st-a">Starting Spotify on this PC</span>
+      <span className="sp-st-b">{name ? `${name} plays as soon as it is ready` : 'It plays as soon as it is ready'}</span>
+      <span className="sp-st-line" aria-hidden="true" />
     </div>
   );
 }
@@ -755,11 +776,12 @@ function SongsView({ item, tall, backLabel, onBack, onNote }: { item: SpotifyIte
 
   const fail = (e: unknown) => mounted.current && onNote(playProblemLine(spotifyProblem(e)));
   const playAll = (shuffled: boolean) => {
-    void playWhole(item, shuffled, () => onNote('Starting Spotify')).then(() => onNote(null), fail);
+    void playWhole(item, shuffled, () => onNote(STARTING_NOTE)).then(() => onNote(null), fail);
   };
   const playFrom = (t: SpotifyTrack) => {
     if (!t.id || !t.playable) return;
-    spotify.play('track', t.id, { context: { kind, id: item.id }, offsetId: t.id, ...deviceArg() }).then((answer) => finishPlay(answer, () => onNote('Starting Spotify'))).then(() => onNote(null), fail);
+    useSpotifyStart.setState({ name: t.name });
+    spotify.play('track', t.id, { context: { kind, id: item.id }, offsetId: t.id, ...deviceArg() }).then((answer) => finishPlay(answer, () => onNote(STARTING_NOTE))).then(() => onNote(null), fail);
   };
   const owner = kindLine(item).replace(/^(Playlist|Album)( by )?/, '');
   const all = !st.more && st.items.length > 0 && st.items.length >= st.total;

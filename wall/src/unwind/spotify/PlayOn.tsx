@@ -111,7 +111,8 @@ export function PlayOn({ open, onOpen, chipRef }: { open: boolean; onOpen: (open
   }, [open, onOpen]);
 
   const active = devices?.find((d) => d.active && !d.restricted) ?? null;
-  const label = starting ? 'Starting Spotify' : target ? target.name : active ? active.name : PC_NAME;
+  // While the wall starts Spotify the chip says where it will play (this PC); it reads the real device after.
+  const label = starting ? PC_NAME : target ? target.name : active ? active.name : PC_NAME;
   const rows = devices ? deviceRows(devices, target ? target.id : null) : [];
   const [note, setNote] = useState<string | null>(null);
 

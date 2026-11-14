@@ -2934,7 +2934,7 @@
   z-index: 6;
   right: 70px;
   top: 70px;
-  width: 400px;
+  width: 410px;
   max-height: calc(100% - 86px);
   overflow-y: auto;
   padding: 14px;
@@ -3029,6 +3029,11 @@
   border-top: 1px solid var(--line);
   font: 400 16px/22px var(--body);
   color: var(--dim);
+}
+.sp-li,
+.sp-qrow,
+.sp-device {
+  box-sizing: border-box;
 }
 .sp-grow:focus-visible,
 .sp-dev:focus-visible,
@@ -3133,11 +3138,23 @@
 }
 .sp-shbtns {
   display: flex;
-  gap: 10px;
+  gap: 8px;
   margin-top: 12px;
+}
+.sp-shbtns .sp-btn {
+  padding: 0 14px;
+  gap: 6px;
+}
+.sp-bar .sp-search {
+  color: var(--dim);
+}
+.sp-bar .sp-search input::placeholder {
+  color: var(--dim);
 }
 .sp-songs.tall .sp-tracks {
   flex: 1;
+  /* Nine rows of 42 px show whole; more scroll. */
+  max-height: 378px;
   min-width: 0;
   padding-right: 0;
   -webkit-mask-image: linear-gradient(180deg, #000 calc(100% - 34px), rgba(0, 0, 0, 0.25));
@@ -3438,10 +3455,65 @@ button.sp-qrow:hover {
   justify-content: center;
   gap: 20px;
 }
+/* While the wall starts Spotify: a calm status line, a thin line along its foot that fills once. */
+.sp-note.starting {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  overflow: hidden;
+  font: 500 18px/24px var(--body);
+  color: var(--tx);
+  border-color: rgba(53, 230, 234, 0.35);
+}
+.sp-note.starting svg {
+  flex: none;
+  color: var(--cyan);
+}
+.sp-st-a {
+  flex: none;
+}
+.sp-st-b {
+  margin-left: auto;
+  min-width: 0;
+  font: 400 16px/20px var(--body);
+  color: var(--dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sp-st-line {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 0;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+.sp-st-line::after {
+  content: '';
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--cyan);
+  transform-origin: left;
+  animation: sp-fill 15s linear forwards;
+}
+@keyframes sp-fill {
+  from {
+    transform: scaleX(0);
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   .sp-card,
   .sp-card.tall {
     transition: none;
+  }
+  .sp-st-line::after {
+    animation: none;
+    transform: scaleX(0.5);
   }
 }
 /* The empty slot kept for office lights (7A's quiet row at the foot): right edge 70 px from the

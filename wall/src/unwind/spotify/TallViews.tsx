@@ -8,6 +8,9 @@ import { problemLine, spotifyProblem, trackLength, useSpotifyNow, type SpotifyPr
 import { Tile, PlayingBars } from './Tile';
 import { QUEUE_POLL_MS, runSkips, skipPlan } from './UpNext';
 
+/** Tiles shown for each of albums and playlists in a grouped search. */
+export const GROUP_TILES = 3;
+
 /** The honest line Up next shows in the tall view (the Web API cannot reorder or remove). */
 export const QUEUE_NOTE = 'Spotify sets the order. A click skips ahead to that song.';
 
@@ -30,8 +33,9 @@ export function SearchGroups({
   onShuffle: (item: SpotifyItem) => void;
 }) {
   const tracks = items.filter((i) => i.kind === 'track');
-  const albums = items.filter((i) => i.kind === 'album');
-  const playlists = items.filter((i) => i.kind === 'playlist');
+  // Albums and playlists show three tiles each, one whole row, so nothing is cut at the foot.
+  const albums = items.filter((i) => i.kind === 'album').slice(0, GROUP_TILES);
+  const playlists = items.filter((i) => i.kind === 'playlist').slice(0, GROUP_TILES);
   const tiles = (list: SpotifyItem[], none: string) =>
     list.length === 0 ? (
       <div className="sp-gnone">{none}</div>

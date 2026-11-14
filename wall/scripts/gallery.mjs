@@ -513,6 +513,22 @@ state('unwind', 'listen: heavy library', 'spotify=heavy', TIMES.night);
 add('unwind', 'listen: heavy playlist songs', url('unwind', TIMES.night, 'spotify=heavy'), true, '.sp-tile');
 state('unwind', 'listen: long names', 'long=1&media=long&spotify=long');
 add('unwind', 'listen: long names, songs of a 240 song playlist', url('unwind', TYPICAL_AT, 'long=1&media=long&spotify=long'), true, '.sp-tile');
+// The tall view: the music card opens into the right third (the round button; a click on it is the open).
+const TALL_AT = (extra = 'audio=demo') => url('unwind', TIMES.night, extra);
+add('unwind', 'tall music: button under the pointer', TALL_AT(), true, 'hover:.sp-grow');
+add('unwind', 'tall music: open on Playlists', TALL_AT(), true, '.sp-grow');
+add('unwind', 'tall music: a playlist opened', TALL_AT(), true, '.sp-grow >> .sp-tile');
+add('unwind', 'tall music: search in groups', TALL_AT(), true, '.sp-grow >> type:.sp-search input=road');
+add('unwind', 'tall music: Up next', TALL_AT(), true, '.sp-grow >> .sp-tabs button:nth-child(5)');
+add('unwind', 'tall music: Play on open', TALL_AT(), true, '.sp-grow >> .sp-dev');
+add('unwind', 'tall music: Play on, music on a speaker', TALL_AT('spotifyplay=speaker'), true, '.sp-grow >> .sp-dev');
+add('unwind', 'tall music: Play on, nothing awake', TALL_AT('spotify=nodevices&spotifyplay=none&media=none'), true, '.sp-grow >> .sp-dev');
+add('unwind', 'tall music: starting Spotify', TALL_AT('spotify=starting'), true, '.sp-grow >> .sp-tile >> .sp-shbtns .sp-btn.fill');
+add('unwind', 'tall music: YouTube Music', TALL_AT(), true, '.sp-switch button:nth-child(2) >> .sp-grow');
+add('unwind', 'tall music: long names', url('unwind', TYPICAL_AT, 'long=1&media=long&spotify=long'), true, '.sp-grow');
+add('unwind', 'tall music: long names, a playlist opened', url('unwind', TYPICAL_AT, 'long=1&media=long&spotify=long'), true, '.sp-grow >> .sp-tile');
+add('unwind', 'tall music: Spotify not answering', TALL_AT('spotify=down'), true, '.sp-grow');
+add('unwind', 'tall music: nothing playing', TALL_AT('media=none&spotifyplay=none'), true, '.sp-grow');
 
 /**
  * What each state must show, so a knob that silently stops working fails the run:
@@ -775,7 +791,7 @@ const EXPECT = [
   ['zen', 'recording: none on zen', ['Breathe in', '!Recording00']],
   ['unwind', 'unwind: hide screen note', ['Could not watch input', 'Hide screen']],
   // unwind listen
-  ['unwind', 'listen: playing', ['Tokyo Burnout', 'Up next', 'Lantern Song 2', 'Road Trip 1', 'Which player the wall follows']],
+  ['unwind', 'listen: playing', ['Tokyo Burnout', 'Up next', 'Lantern Song 2', 'Road Trip 1', 'Play on', '!Which player the wall follows']],
   ['unwind', 'listen: nothing playing', ['Nothing playing', 'Road Trip 1']],
   ['unwind', 'listen: youtube music', ['Open YouTube Music', 'Browsing happens in its own window', '!Up next']],
   ['unwind', 'listen: songs of a playlist', ['Shuffle', 'Lantern Song 9', '58 songs', 'Playlist']],
@@ -798,6 +814,20 @@ const EXPECT = [
   ['unwind', 'listen: long names, songs', ['240 songs', 'Lantern Song 9, an extremely long name']],
   ['unwind', 'listen: long names', ['An Extremely Long Song Title', 'Road Trip 1, an extremely long name']],
   ['unwind', 'unwind: hide screen', 'Hide screen'],
+  ['unwind', 'tall music: button under the pointer', ['Play on', 'Road Trip 1']],
+  ['unwind', 'tall music: open on Playlists', ['Play on', 'Up next', 'Road Trip 8']],
+  ['unwind', 'tall music: a playlist opened', ['Lantern Song 9', 'Shuffle', '58 songs', 'Playlists']],
+  ['unwind', 'tall music: search in groups', ['Songs', 'Albums', 'Playlists', 'Track 1', 'Album 1', 'Playlist 1']],
+  ['unwind', 'tall music: Up next', ['Playing now', 'Spotify sets the order. A click skips ahead to that song.', 'Lantern Song 2']],
+  ['unwind', 'tall music: Play on open', ['Kitchen speaker', 'Phone', 'Computer, playing now', 'A phone or speaker shows here only while its Spotify is awake.']],
+  ['unwind', 'tall music: Play on, music on a speaker', ['Speaker, playing now', 'Play on']],
+  ['unwind', 'tall music: Play on, nothing awake', ['Spotify is closed. The wall starts it.', 'This PC']],
+  ['unwind', 'tall music: starting Spotify', ['Starting Spotify on this PC', 'plays as soon as it is ready']],
+  ['unwind', 'tall music: YouTube Music', ['Open YouTube Music', '!Search Spotify']],
+  ['unwind', 'tall music: long names', ['Road Trip 1, an extremely long name', 'Up next']],
+  ['unwind', 'tall music: long names, a playlist', ['240 songs', 'Lantern Song 9, an extremely long name']],
+  ['unwind', 'tall music: Spotify not answering', 'Spotify is not answering right now.'],
+  ['unwind', 'tall music: nothing playing', ['Nothing playing', 'Road Trip 1']],
 ];
 // The calm strip, the Day drawer and the Agents today panel.
 EXPECT.push(

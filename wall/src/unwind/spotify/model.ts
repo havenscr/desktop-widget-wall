@@ -226,7 +226,10 @@ export function resetSpotifyTarget(): void {
 }
 
 /** True while the wall waits for Spotify to start on this PC; `rev` changes when a play ends, so the device list is read again. */
-export const useSpotifyStart = create<{ starting: boolean; rev: number }>(() => ({ starting: false, rev: 0 }));
+export const useSpotifyStart = create<{ starting: boolean; rev: number; name: string }>(() => ({ starting: false, rev: 0, name: '' }));
+
+/** The note the card shows while the wall starts Spotify (the card draws it as its status line). */
+export const STARTING_NOTE = 'Starting Spotify';
 
 /** "Computer", "Phone", "Speaker", or Spotify's own word for another kind. */
 export function deviceKindWord(kind: string): string {
