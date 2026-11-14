@@ -2,6 +2,7 @@ import { IconCheck } from '@tabler/icons-react';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { useFocusStore } from '../focus/store';
 import { dueLine, estText, HOLD_SLOP_PX, LONG_PRESS_MS, openTask, updatedText, visibleRows, type TaskItem } from './model';
+import { tip } from '../ui/HoverTip';
 import { usePendingTicks } from './pendingTick';
 import { TaskTags } from './TaskTags';
 import { useTasks, type TasksQuery } from './useTasks';
@@ -139,7 +140,7 @@ function TaskRow({
             {mark === 'failed' ? (
               <span className="xs task-err">Could not complete.</span>
             ) : (
-              <span className="chip-col">{est && <span className="est" title={due ? `Estimate. Due: ${due}` : 'Estimate'}>{est}</span>}</span>
+              <span className="chip-col">{est && <span className="est" {...tip(due ? `Estimate. Due ${due}` : 'Estimate')}>{est}</span>}</span>
             )}
           </button>
           {mark === 'failed' && (
