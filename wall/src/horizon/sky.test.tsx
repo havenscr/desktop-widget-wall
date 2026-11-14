@@ -27,7 +27,7 @@ function frame(cam: CameraPreset, hour: number, extra: Partial<HorizonDrawOption
     t: 2.5,
     phase: 0.4,
     grain: false,
-    moon: [1490, 336, 44],
+    moon: [1890, 260, 44],
     echo: { n: cam.en, amp: cam.eamp, a: 0.5, t: 2.5, cx: cam.ecx, hs: 900 },
     grid: { bright: 0.6, waves: [{ p: 0.3, a: 0.4 }] },
     ...extra,
@@ -71,7 +71,7 @@ describe('the renderer draws the sky and the ground apart', () => {
 
   it('the sky part holds the sky, the stars, the moon and the clouds, and none of the ground', () => {
     const sky = calls(frame(CAMERAS.unwind, 22.5, { part: 'sky' }));
-    expect(sky).toContain('arc(1490,336,44,0,7)'); // the moon's disc
+    expect(sky).toContain('arc(1890,260,44,0,7)'); // the moon's disc
     expect(sky.some((l) => l.startsWith('fillRect(0,0,2560,'))).toBe(true); // the sky gradient
     // Nothing on the lake: no grid lines down to the bottom edge, no additive light.
     expect(sky.some((l) => l === 'globalCompositeOperation=lighter')).toBe(false);
@@ -81,7 +81,7 @@ describe('the renderer draws the sky and the ground apart', () => {
   it('the ground part has no sky: no sky gradient, no stars or moon disc, no sun disc', () => {
     for (const hour of [22.5, 16.9, 12.5]) {
       const ground = calls(frame(CAMERAS.unwind, hour, { part: 'ground' }));
-      expect(ground).not.toContain('arc(1490,336,44,0,7)');
+      expect(ground).not.toContain('arc(1890,260,44,0,7)');
       expect(ground.some((l) => l.startsWith(`fillRect(0,0,2560,${CAMERAS.unwind.hy + 1})`))).toBe(false);
       // The whole picture's calls before the far range are all the sky's; none of them is in the ground part.
       const whole = calls(frame(CAMERAS.unwind, hour));
@@ -108,7 +108,7 @@ describe('the renderer draws the sky and the ground apart', () => {
 });
 
 describe('the moon rule', () => {
-  const MOON = [1490, 336, 44] as const;
+  const MOON = [1890, 260, 44] as const;
 
   it('keeps the moon with no claims, or claims that neither cover it nor ask for no moon', () => {
     expect(moonFor(MOON, {})).toBe(MOON);
@@ -125,10 +125,10 @@ describe('the moon rule', () => {
     expect(moonFor(MOON, { w: { boxes: [[1150, 50, 810, 455]] } })).toBeNull(); // the feathered picture over it
     expect(moonFor(MOON, { w: { boxes: [[124, 0, 2436, 505]] } })).toBeNull(); // the whole sky
     // A box to its right: drawn at 85 px or more from its centre (44 + 40 + 1), gone at 83.
-    expect(moonFor(MOON, { w: { boxes: [[1490 + 85, 0, 300, 700]] } })).toBe(MOON);
-    expect(moonFor(MOON, { w: { boxes: [[1490 + 83, 0, 300, 700]] } })).toBeNull();
+    expect(moonFor(MOON, { w: { boxes: [[1890 + 85, 0, 300, 700]] } })).toBe(MOON);
+    expect(moonFor(MOON, { w: { boxes: [[1890 + 83, 0, 300, 700]] } })).toBeNull();
     // Corners count by distance, not by the box's sides: a box whose corner is 90 px away diagonally keeps it.
-    expect(moonFor(MOON, { w: { boxes: [[1490 + 64, 336 + 64, 100, 100]] } })).toBe(MOON);
+    expect(moonFor(MOON, { w: { boxes: [[1890 + 64, 260 + 64, 100, 100]] } })).toBe(MOON);
   });
 });
 

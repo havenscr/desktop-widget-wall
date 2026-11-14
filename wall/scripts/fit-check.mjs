@@ -863,7 +863,8 @@ try {
       const ctl = document.querySelector('.w-ctl');
       if (ctl && ctl.children.length) { const kids = [...ctl.children].map(box); const mid = (k) => k.t + k.h / 2; if (kids.some((k) => Math.abs(mid(k) - mid(kids[0])) > 2)) fails.push('watch polish: the control row wraps'); }
       const skyStage = document.querySelector('.w-sky');
-      if (skyStage) for (const c of skyStage.children) if (!c.classList.contains('w-screen')) fails.push('watch polish: ' + c.className + " is drawn over the video's box (whole sky)");
+      // sky layers: .w-front holds the horizon's front canvas (the land in front of the video; no pointer, no text).
+      if (skyStage) for (const c of skyStage.children) if (!c.classList.contains('w-screen') && !c.classList.contains('w-front')) fails.push('watch polish: ' + c.className + " is drawn over the video's box (whole sky)");
       const scr = document.querySelector('.w-stage:not(.w-sky):not(.w-empty) .w-screen');
       if (scr) {
         const v = box(scr);

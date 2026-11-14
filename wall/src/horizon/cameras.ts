@@ -41,14 +41,11 @@ export type Terrain = TerrainName;
 
 /**
  * Moon centre x, centre y and radius, design pixels. Drawn on the Unwind camera only. It sits in
- * open sky right of Listen's player, at least 40 px clear of every card, the player and the clock,
- * the same place on Watch with nothing on. The place also stays 40 px clear in the Listen layout
- * with the player across the top and a Spotify card on the upper right (x 1740 on): under that
- * player and left of that card. The slope of the ridge east of it may touch its lower right edge
- * (the ridge is drawn in front of it).
- * A screen that puts a picture there withholds it through `sky.ts` (`moonFor`).
+ * open sky right of Listen's player and above the Lights card, at least 40 px clear of every card,
+ * the player (its widest, with long names) and the clock, the same place on Watch with nothing on
+ * (left of the list card). A screen that puts a picture there withholds it through `sky.ts` (`moonFor`).
  */
-export const MOON: readonly [number, number, number] = [1490, 336, 44];
+export const MOON: readonly [number, number, number] = [1890, 260, 44];
 
 /** Seconds a camera takes to glide to another place's framing. */
 export const GLIDE_SECONDS = 1.6;
