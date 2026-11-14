@@ -387,6 +387,13 @@ const VARIANTS = [
   { name: 'Watt menu on Work', q: work('3', '&meet=none'), checks: ['.watt-menu'], viewportOnly: true, card: true },
   { name: 'Watt menu on Home', q: home('moods=five'), checks: ['.watt-menu'], viewportOnly: true, card: true },
   { name: 'Watt menu on Unwind', q: query({ hz: 'unwind', agents: '3', extra: '' }), checks: ['.watt-menu'], viewportOnly: true, card: true },
+  // home round two: the shield card (quiet, open alerts, its drawer), the house line, mood
+  // pages and Sound's now-playing strip stay inside the band. Its own rules (five chores and
+  // three with alerts, the drawer, the house area, mood card widths) are in home-fit-check.mjs.
+  { name: 'Home round two, quiet with the house line', q: home('desk=typical&alerts=0&chores=many&rooms=8'), checks: ['.home .home-right', '.home .network-block', '.home .chores', '.home .home-wing', '.home .house'] },
+  { name: 'Home round two, twenty alerts, twelve moods, a track on a speaker', q: home('desk=typical&alerts=20&moods=12&spotifyplay=speaker&chores=many'), checks: ['.home .home-right', '.home .network-block', '.home .mood-row', '.home .sound-panel', '.home .sound-np', '.home .sound-plays'] },
+  { name: 'Home round two, the alert drawer open', q: home('desk=typical&alerts=20'), click: '.panel.network.shield', checks: ['.home .shield-drawer'], viewportOnly: true },
+  // end home round two
   ...TOOLS_VARIANTS,
 ];
 // The calm strip on Work: 104 px with folded overlaps, the Day drawer and the Agents today panel
