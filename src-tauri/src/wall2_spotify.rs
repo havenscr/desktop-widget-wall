@@ -516,7 +516,7 @@ fn choose_device(devices: &[Device], requested: Option<&str>, computer: Option<&
 pub struct PlayContext { kind: String, id: String }
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct PlayRequest { kind: String, id: String, device_id: Option<String>, context: Option<PlayContext>, offset_id: Option<String> }
+pub struct PlayRequest { kind: String, id: String, device_id: Option<String>, context: Option<PlayContext>, offset_id: Option<String>, #[serde(default)] shuffle: bool }
 static WRITE: OnceLock<Mutex<()>> = OnceLock::new();
 static STARTING_PLAYER: AtomicBool = AtomicBool::new(false);
 static CANCEL_PLAYER: AtomicBool = AtomicBool::new(false);
@@ -586,10 +586,14 @@ where N: FnMut() -> Duration, S: FnMut(Duration), C: FnMut() -> bool, D: FnMut(D
         devices = source(left)?;
     }
 }
+fn play_on_device(cfg: &Config, request: &PlayRequest, device: &str) -> Result<(), String> {
+    if request.shuffle { let _ = put(cfg, &format!("/me/player/shuffle?state=true&device_id={device}"), None); }
+    put(cfg, &format!("/me/player/play?device_id={device}"), Some(play_payload(request)))
+}
 fn finish_start(cfg: &Config, request: &PlayRequest, began: Instant, devices: Vec<Device>) -> Result<(), String> {
     let computer = std::env::var("COMPUTERNAME").ok();
     let device = wait_for_computer(devices, request.device_id.as_deref(), computer.as_deref(), START_WAIT, || began.elapsed(), std::thread::sleep, || CANCEL_PLAYER.load(Ordering::SeqCst), |left| devices_before(cfg, Instant::now() + left))?;
-    put(cfg, &format!("/me/player/play?device_id={device}"), Some(play_payload(request)))
+    play_on_device(cfg, request, &device)
 }
 
 #[tauri::command]
@@ -600,7 +604,7 @@ pub async fn wall2_spotify_play(window: WebviewWindow, request: PlayRequest) -> 
         let cfg = config(window.app_handle())?;
         let devices = shape_devices(&get_json(&cfg, "/me/player/devices")?);
         match choose_device(&devices, request.device_id.as_deref(), std::env::var("COMPUTERNAME").ok().as_deref()) {
-            DeviceChoice::Ready(device) => { put(&cfg, &format!("/me/player/play?device_id={device}"), Some(play_payload(&request)))?; Ok("played".into()) }
+            DeviceChoice::Ready(device) => { play_on_device(&cfg, &request, &device)?; Ok("played".into()) }
             DeviceChoice::Choose => Err(CHOOSE.into()),
             DeviceChoice::Start => {
                 let counts = device_counts(&devices);
@@ -716,9 +720,9 @@ mod tests {
     #[test]
     fn contextual_play_validation_and_payload_are_exact() {
         let other = "ABCDEFGHIJKL0123456789";
-        let request = PlayRequest { kind:"album".into(), id:other.into(), device_id:None, context:Some(PlayContext { kind:"playlist".into(), id:ID.into() }), offset_id:Some(ID.into()) };
+        let request = PlayRequest { kind:"album".into(), id:other.into(), device_id:None, context:Some(PlayContext { kind:"playlist".into(), id:ID.into() }), offset_id:Some(ID.into()), shuffle:false };
         assert!(validate_play(&request).is_ok()); assert_eq!(play_payload(&request), json!({"context_uri":format!("spotify:playlist:{ID}"),"offset":{"uri":format!("spotify:track:{ID}")}}));
-        let make = |context:Option<PlayContext>, offset:&str| PlayRequest { kind:"track".into(), id:ID.into(), device_id:None, context, offset_id:Some(offset.into()) };
+        let make = |context:Option<PlayContext>, offset:&str| PlayRequest { kind:"track".into(), id:ID.into(), device_id:None, context, offset_id:Some(offset.into()), shuffle:false };
         assert_eq!(validate_play(&make(None, ID)), Err("invalid id".into()));
         assert_eq!(validate_play(&make(Some(PlayContext { kind:"track".into(), id:ID.into() }), ID)), Err("invalid id".into()));
         assert_eq!(validate_play(&make(Some(PlayContext { kind:"playlist".into(), id:"bad".into() }), ID)), Err("invalid id".into()));
@@ -842,6 +846,25 @@ mod tests {
     fn token_ok(refresh: Option<&str>) -> Result<HttpReply,()> { hr(200, &format!(r#"{{"access_token":"access","expires_in":3600{}}}"#, refresh.map(|r| format!(r#", "refresh_token":"{r}""#)).unwrap_or_default())) }
     fn reset_state() { *token().lock().unwrap()=None; *not_before().lock().unwrap()=None; *profile_cache().lock().unwrap()=None; CANCEL_SIGN_IN.store(false,Ordering::SeqCst); SIGNING_IN.store(false,Ordering::SeqCst); }
     fn cfg() -> Config { Config { client_id:"a".repeat(32),redirect_port:8898 } }
+
+    #[test]
+    fn shuffled_play_sets_shuffle_before_play_and_ignores_only_shuffle_failure() {
+        let _test_guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        reset_state();
+        *token().lock().unwrap()=Some(Token{access:"ok".into(),expires:Instant::now()+Duration::from_secs(3600)});
+        let http=FakeHttp::new(vec![],vec![hr(500,""),hr(204,"")]);
+        let request=PlayRequest{kind:"playlist".into(),id:ID.into(),device_id:None,context:None,offset_id:None,shuffle:true};
+        let device="desktop";
+        let shuffle=format!("/me/player/shuffle?state=true&device_id={device}");
+        let play=format!("/me/player/play?device_id={device}");
+        let result = {
+            let cfg=cfg();
+            if request.shuffle { let _=put_with(&cfg,&shuffle,None,&http,&FakeCreds::new(Some("old"))); }
+            put_with(&cfg,&play,Some(play_payload(&request)),&http,&FakeCreds::new(Some("old")))
+        };
+        assert_eq!(result,Ok(()));
+        assert_eq!(http.paths(),vec![shuffle,play]);
+    }
 
     #[test]
     fn seam_pins_refresh_throttle_retry_write_and_cancel_behaviour() {

@@ -242,8 +242,7 @@ it('shows playlists as a grid of cover tiles; resting on one opens its details w
   await act(async () => (screen.getByRole('button', { name: 'Shuffle' }) as HTMLButtonElement).click());
   await flush();
   expect(calls).toEqual([
-    ['wall2_spotify_play', { request: { kind: 'playlist', id: id(1) } }],
-    ['wall2_spotify_shuffle', { on: true }],
+    ['wall2_spotify_play', { request: { kind: 'playlist', id: id(1), shuffle: true } }],
   ]);
   fireEvent.mouseEnter(tiles[0]);
   await flush(300);

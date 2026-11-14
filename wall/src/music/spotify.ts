@@ -9,7 +9,7 @@ export interface SpotifyTrack { id: string | null; name: string; artists: string
 export interface SpotifyTrackPage { items: SpotifyTrack[]; total: number; more: boolean }
 export interface SpotifyQueue { current: SpotifyTrack | null; next: SpotifyTrack[] }
 export interface SpotifyPlayback { playing: boolean; device: { name: string; kind: string } | null; track: SpotifyTrack | null; progressMs: number; shuffle: boolean }
-export interface SpotifyPlayOptions { deviceId?: string; context?: { kind: 'playlist' | 'album'; id: string }; offsetId?: string }
+export interface SpotifyPlayOptions { deviceId?: string; context?: { kind: 'playlist' | 'album'; id: string }; offsetId?: string; shuffle?: boolean }
 export interface SpotifyStartStatus { starting: boolean; result: string | null }
 
 export const spotify = {

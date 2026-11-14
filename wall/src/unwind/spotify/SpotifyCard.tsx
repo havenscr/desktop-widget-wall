@@ -196,8 +196,7 @@ export async function finishPlay(answer: 'played' | 'starting', onStarting: () =
 
 /** Play an item whole, or shuffled, and report startup only when Rust opened Spotify. */
 async function playWhole(item: SpotifyItem, shuffled: boolean, onStarting: () => void): Promise<void> {
-  await finishPlay(await spotify.play(item.kind, item.id), onStarting);
-  if (shuffled) await spotify.shuffle(true);
+  await finishPlay(await spotify.play(item.kind, item.id, { shuffle: shuffled }), onStarting);
 }
 
 function Browser() {
