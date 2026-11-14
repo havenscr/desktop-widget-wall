@@ -66,6 +66,11 @@ export interface NowPlaying {
   speaker: string;
   track: string | null;
   artist: string | null;
+  /** The track's length and position in whole seconds as of `SonosSummary.readAtMs`; null for a station (no length). */
+  duration: number | null;
+  position: number | null;
+  /** The read held a cover address Rust may fetch (`wall2_sonos_art`). */
+  art: boolean;
 }
 
 export interface SonosSummary {
@@ -79,6 +84,8 @@ export interface SonosSummary {
   nowPlaying: NowPlaying | null;
   currentGroup: string | null;
   readAtMs: number;
+  /** The sound service said it has the back and next commands. */
+  canSkip: boolean;
 }
 
 export type VolumeTarget = { kind: 'speaker' | 'group'; id: string };
@@ -535,4 +542,103 @@ export function playingWhere(s: SonosSummary): string | null {
   const g = s.groups.find((x) => x.id === s.currentGroup);
   const lead = g && on.some((sp) => sp.name === g.coordinator) ? g.coordinator : on[0].name;
   return on.length === 1 ? lead : `${lead}, ${on.length} speakers`;
+}
+
+/** A cover Rust fetched: a type and the bytes in base 64 (`wall2_sonos_art`). */
+export interface ArtImage {
+  mime: string;
+  base64: string;
+}
+
+/** The picture types Rust sniffs; only these are ever turned into an address for an `img`. */
+const ART_MIMES = ['image/jpeg', 'image/png', 'image/webp'];
+
+/** An `img` source for a fetched cover; null for anything but the three picture types Rust sends. */
+export function artSrc(a: ArtImage | null | undefined): string | null {
+  if (!a || !ART_MIMES.includes(a.mime) || !/^[A-Za-z0-9+/]+={0,2}$/.test(a.base64) || a.base64.length === 0) return null;
+  return `data:${a.mime};base64,${a.base64}`;
+}
+
+/** The longest the page advances a track's position past the read that carried it: the stale limit. */
+export const TIME_ADVANCE_MAX_MS = STALE_MS;
+
+/**
+ * A track's position as the bar shows it: the position the read carried plus the time since that read,
+ * never past the end, never moving back. Frozen at the read's own position while the read is not live.
+ * Null (no bar) when there is no length or no position.
+ */
+export function trackClock(duration: number | null, position: number | null, readAtMs: number, now: number, live: boolean): { posMs: number; durMs: number } | null {
+  if (duration === null || position === null || duration <= 0) return null;
+  const durMs = duration * 1000;
+  const since = live ? Math.min(Math.max(0, now - readAtMs), TIME_ADVANCE_MAX_MS) : 0;
+  return { posMs: Math.min(durMs, Math.max(0, position * 1000 + since)), durMs };
+}
+
+/** The sentence for a skip the service refused with one of its two fixed words, else null. */
+export function skipSentence(word: string): string | null {
+  if (word === 'cannot-skip') return 'This station cannot skip';
+  if (word === 'nothing-playing') return 'Nothing is playing';
+  return null;
+}
+
+/** What the music half of the Now Playing block shows (null when nothing plays). */
+export interface MusicView {
+  title: string;
+  artist: string | null;
+  /** An `img` source for the cover, when one is known. */
+  cover: string | null;
+  /** The play this wall started (its art), shown on the tile when there is no cover. */
+  slot: Slot | null;
+  /** "Den, 4 speakers". */
+  where: string;
+  /** Hover text for the where line. */
+  whereTip: string;
+  clock: { posMs: number; durMs: number } | null;
+  /** Back and next are offered: the sound service has the commands. */
+  canSkip: boolean;
+}
+
+/**
+ * The music half: a Spotify track on a house speaker (`track`) with its own cover and time, else the
+ * Sonos read alone (the play this wall started by name, else the track the service names, else "Music")
+ * with the cover Rust fetched and the length the service gave. Null when no speaker plays music.
+ */
+export function musicView(args: {
+  s: SonosSummary;
+  track: HouseTrack | null;
+  /** When the Spotify read that carries the track's position landed. */
+  trackAt: number;
+  activeName: string | null;
+  activeSlot: Slot | null;
+  /** The fetched cover as an `img` source. */
+  art: string | null;
+  now: number;
+  live: boolean;
+}): MusicView | null {
+  const { s, track, trackAt, activeName, activeSlot, art, now, live } = args;
+  const where = playingWhere(s);
+  if (track) {
+    return {
+      title: track.title,
+      artist: track.artist || null,
+      cover: track.cover,
+      slot: null,
+      where: track.where,
+      whereTip: `Spotify on ${track.where}`,
+      clock: trackClock(track.durationMs / 1000, track.progressMs / 1000, trackAt, now, live),
+      canSkip: s.canSkip,
+    };
+  }
+  if (!where) return null;
+  const np = s.nowPlaying;
+  return {
+    title: activeName ?? (np?.track ? np.track : 'Music'),
+    artist: !activeName && np?.artist ? np.artist : null,
+    cover: art,
+    slot: activeSlot,
+    where,
+    whereTip: nowLine(s),
+    clock: np ? trackClock(np.duration, np.position, s.readAtMs, now, live) : null,
+    canSkip: s.canSkip,
+  };
 }

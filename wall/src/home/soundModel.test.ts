@@ -62,6 +62,7 @@ const SUMMARY: SonosSummary = {
   nowPlaying: null,
   currentGroup: 'G2',
   readAtMs: 0,
+  canSkip: false,
 };
 
 it('shortens a routine name for its button', () => {
@@ -186,7 +187,7 @@ it('shows the soonest running sleep timer, never one that ended', () => {
 
 it('says what plays and where, never claiming a track it does not know', () => {
   expect(nowLine(SUMMARY)).toBe('Playing on 2 speakers');
-  expect(nowLine({ ...SUMMARY, nowPlaying: { speaker: 'Den', track: 'Song A', artist: 'Band B' } })).toBe('Song A, Band B, on 2 speakers');
+  expect(nowLine({ ...SUMMARY, nowPlaying: { speaker: 'Den', track: 'Song A', artist: 'Band B', duration: null, position: null, art: false } })).toBe('Song A, Band B, on 2 speakers');
   const quiet = { ...SUMMARY, speakers: SUMMARY.speakers.map((s) => ({ ...s, state: s.input ? s.state : ('stopped' as const) })) };
   expect(nowLine(quiet)).toBe('Nothing playing');
 });

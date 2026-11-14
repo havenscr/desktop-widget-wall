@@ -49,9 +49,10 @@ function summary(over: Partial<SonosSummary> = {}): SonosSummary {
     controls: [{ key: 'Group_All', name: 'Group Everything', action: 'groupAll', loud: [] }],
     scenes: [],
     sleepTimers: [],
-    nowPlaying: { speaker: 'Den', track: 'Song A', artist: 'Band B' },
+    nowPlaying: { speaker: 'Den', track: 'Song A', artist: 'Band B', duration: null, position: null, art: false },
     currentGroup: 'G2',
     readAtMs: NOW,
+    canSkip: false,
     ...over,
   };
 }
@@ -854,11 +855,10 @@ it('the progress counts from the Spotify read that carries the position, not fro
   const { container } = render(<Sound />);
   await flush();
   await flush(20_000);
-  // The block's clock moves on every 15 seconds; the shown position is 1:05 plus the time
-  // since the Spotify read landed (counting from the Sonos read would add five seconds).
+  // The bar's own clock moves each second; the shown position is 1:05 plus the time since the
+  // Spotify read landed (counting from the Sonos read would add five seconds).
   const shown = container.querySelector('.np-prog span')?.textContent ?? '';
   const [m, sec] = shown.split(':').map(Number);
-  const tick = Math.floor((Date.now() - NOW) / 15_000) * 15_000 + NOW;
   expect(landed).toBeGreaterThan(NOW);
-  expect(m * 60 + sec).toBe(65 + Math.floor((tick - landed) / 1000));
+  expect(m * 60 + sec).toBe(65 + Math.floor((Date.now() - landed) / 1000));
 });

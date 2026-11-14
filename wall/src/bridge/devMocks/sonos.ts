@@ -11,8 +11,10 @@ import { knob } from './long';
  * a second later a read that fails as timed-out, no-answer or bad-answer, and its second try fails the same way:
  * the dimmed card with its line, shown at once because a review frame shortens the 5 second wait), `?sonos=pending` (the
  * same, but the second try never answers: one failed read waiting, nothing shown), `?where=office|all|common|none` (which place is in use), `?sonos=quiet` (nothing playing), `?sonos=few` (one matching routine plus More), `?sonos=slow` (never answers, for the loading state), `?skip=1` (an unforced play is
- * skipped). The default is a typical
- * evening with music playing on a group.
+ * skipped). `?np=` is a comma list for the Now Playing block: `station` (no length, as for a radio station), `noart` (no cover
+ * address), `skip` (the service has back and next), `skipfail` (a skip is refused as a station that cannot skip), `long` (a very long
+ * title and artist), `paused` (the Spotify-free read plays but the length is unknown to the page: same as `station`). The default is a typical
+ * evening with music playing on a group, a cover, a 3:01 length at 1:05 and no back or next.
  */
 const now = () => (reviewNow ? reviewNow() : Date.now());
 
@@ -49,6 +51,41 @@ const LONG_ROUTINES = [
   ...ROUTINES.slice(5),
   ...Array.from({ length: 6 }, (_, i) => ({ key: `Extra_${i}`, name: `Extra Playlist Number ${i + 1}`, favorite: `Station ${i + 1}`, volume: 10 })),
 ];
+
+/** The `?np=` words. */
+function np(word: string): boolean {
+  return (knob('np') ?? '').split(',').includes(word);
+}
+
+/**
+ * The invented cover: a sunset over a dark field, drawn on a canvas when there is one (the browser), else a 1 pixel
+ * picture (tests). Rust sends a sniffed type and base 64 bytes; this is the same shape.
+ */
+function coverImage(): { mime: string; base64: string } {
+  const fallback = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+  try {
+    const c = document.createElement('canvas');
+    c.width = 272;
+    c.height = 272;
+    const g = c.getContext('2d');
+    if (!g) return { mime: 'image/png', base64: fallback };
+    const sky = g.createLinearGradient(0, 0, 0, 272);
+    sky.addColorStop(0, '#2b1a63');
+    sky.addColorStop(0.52, '#8f2f86');
+    sky.addColorStop(1, '#ff6f6a');
+    g.fillStyle = sky;
+    g.fillRect(0, 0, 272, 272);
+    g.fillStyle = '#ffd98a';
+    g.beginPath();
+    g.arc(136, 180, 66, 0, Math.PI * 2);
+    g.fill();
+    g.fillStyle = '#140e31';
+    g.fillRect(0, 185, 272, 87);
+    return { mime: 'image/png', base64: c.toDataURL('image/png').split(',')[1] ?? fallback };
+  } catch {
+    return { mime: 'image/png', base64: fallback };
+  }
+}
 
 function speakers(m: Mode) {
   if (m === 'sparse') return [{ name: 'Den', state: 'stopped', volume: 12, input: null, group: 'G1', online: true }];
@@ -90,6 +127,16 @@ function groups(m: Mode) {
   ];
 }
 
+function nowPlaying(m: Mode) {
+  const length = np('station') ? { duration: null, position: null } : { duration: 181, position: 65 };
+  const art = !np('noart');
+  if (np('long') && (m === 'typical' || m === 'heavy'))
+    return { speaker: 'Den', track: 'A Song With A Rather Long Title That Keeps Going And Going Through The Night (Extended Mix)', artist: 'The Invented Band Of Several Long Named Members', ...length, art };
+  if (m === 'heavy') return { speaker: 'Den', track: 'A Song With A Rather Long Title That Keeps Going (Extended Mix)', artist: 'The Invented Band', ...length, art };
+  if (m === 'typical') return { speaker: 'Den', track: 'Night Drive', artist: 'Neon Coast', ...length, art };
+  return null;
+}
+
 function summary(m: Mode) {
   const t = now();
   const place = knob('where');
@@ -124,14 +171,10 @@ function summary(m: Mode) {
           ],
     scenes: [],
     sleepTimers: m === 'heavy' ? [{ id: 't1', endsAtMs: t + 42 * 60_000, fadeMinutes: 5 }] : [],
-    nowPlaying:
-      m === 'heavy'
-        ? { speaker: 'Den', track: 'A Song With A Rather Long Title That Keeps Going (Extended Mix)', artist: 'The Invented Band' }
-        : m === 'typical'
-          ? { speaker: 'Den', track: 'Night Drive', artist: 'Neon Coast' }
-          : null,
+    nowPlaying: nowPlaying(m),
     currentGroup: m === 'sparse' ? 'G1' : 'G2',
     readAtMs: t,
+    canSkip: np('skip') || np('skipfail'),
   };
 }
 
@@ -170,6 +213,11 @@ export function registerSonosMocks(): void {
   mocks.set('wall2_sonos_preset', slow);
   mocks.set('wall2_sonos_volume', slow);
   mocks.set('wall2_sonos_pause_all', slow);
+  mocks.set('wall2_sonos_art', async () => (np('noart') ? null : coverImage()));
+  mocks.set('wall2_sonos_skip', async () => {
+    await slow();
+    if (np('skipfail')) throw new Error('cannot-skip');
+  });
   mocks.set('wall2_sonos_sleep', slow);
   mocks.set('wall2_sonos_sleep_cancel', slow);
   if (!mocks.has('open_volume_mixer')) mocks.set('open_volume_mixer', () => undefined);
