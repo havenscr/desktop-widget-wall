@@ -35,7 +35,7 @@ import {
   NEEDS_CONFIRM,
   SAFE_VOLUME,
   SLEEP_CHOICES,
-  ageWords,
+  failureLine,
   PLAY_ART,
   chipLabel,
   clockMs,
@@ -64,6 +64,7 @@ import {
   suggestedKey,
   writeLastPlay,
   type ControlRoutine,
+  type FailureKind,
   type MusicRoutine,
   type PlayMark,
   type PlaybackRead,
@@ -125,7 +126,7 @@ function once(fn: () => void) {
 
 /**
  * The Sound block on Home: quick-play buttons for the Sonos service's music routines (the
- * five the owner uses: Morning, Day, Evening, Late night, Workday; the rest under More), the hour's suggestion, a
+ * five the owner uses: Morning, Day, Evening, Late Night, Workday; the rest under More), the hour's suggestion, a
  * Where switch for the group presets, one volume slider that moves the playing group by a
  * step, a Speakers list with a slider each, play or pause, and a sleep timer. Nothing plays
  * or changes volume without a click; a loud change asks first; a play the routine's own
@@ -133,7 +134,7 @@ function once(fn: () => void) {
  * block and stops writes.
  */
 export function Sound({ fallback = false }: { fallback?: boolean }) {
-  const { status, summary, okAt, now, stale, refresh } = useSonos();
+  const { status, summary, okAt, now, failure, stale, refresh } = useSonos();
   const publish = useCentreStatus((st) => st.set);
   const state = status === 'unconfigured' ? 'unconfigured' : summary ? 'ok' : status === 'error' ? 'down' : 'loading';
   useEffect(() => {
@@ -176,7 +177,7 @@ export function Sound({ fallback = false }: { fallback?: boolean }) {
   if (!summary) {
     const down = status === 'error';
     return (
-      <Shell side={down ? { text: 'Could not reach Sonos', warn: true } : null} bare>
+      <Shell side={down ? { text: failureLine(failure ?? 'no-answer', null, now), warn: true } : null} bare>
         <div className="sound-note s">
           <IconDeviceSpeaker size={30} stroke={1.6} aria-hidden="true" />
           <span>{down ? 'The Sonos service did not answer. Checks again every 30 seconds.' : 'The Sonos service has not answered yet. Checks again every 30 seconds.'}</span>
@@ -184,7 +185,7 @@ export function Sound({ fallback = false }: { fallback?: boolean }) {
       </Shell>
     );
   }
-  return <Live summary={summary} okAt={okAt} now={now} stale={stale} refresh={refresh} />;
+  return <Live summary={summary} okAt={okAt} now={now} failure={failure} stale={stale} refresh={refresh} />;
 }
 
 function Shell({
@@ -224,12 +225,14 @@ function Live({
   summary: s,
   okAt,
   now,
+  failure,
   stale,
   refresh,
 }: {
   summary: SonosSummary;
   okAt: number | null;
   now: number;
+  failure: FailureKind | null;
   stale: boolean;
   refresh: () => Promise<void>;
 }) {
@@ -474,7 +477,7 @@ function Live({
       </span>
     );
   } else if (!result && stale) {
-    side = { text: okAt ? `Sonos not reachable, showing ${ageWords(okAt, now)}` : 'Sonos not reachable', warn: true };
+    side = { text: failureLine(failure ?? 'no-answer', okAt, now), warn: true };
   }
 
   const hasMore = more.length > 0 || extraControls.length > 0;
@@ -535,7 +538,7 @@ function Live({
               />
             );
           })}
-          {face.length === 0 && <div className="sound-quiet s span-all" style={hasMore ? { gridColumn: '1 / span 2' } : undefined}>No Morning, Day, Evening, Late night or Workday routine in the Sonos service yet.</div>}
+          {face.length === 0 && <div className="sound-quiet s span-all" style={hasMore ? { gridColumn: '1 / span 2' } : undefined}>No Morning, Day, Evening, Late Night or Workday routine in the Sonos service yet.</div>}
           {(more.length > 0 || extraControls.length > 0) && (
             <div className="sound-anchor">
               <button
@@ -612,7 +615,7 @@ function Live({
           {playing.length > 0 && (
             <button type="button" className="sound-btn" title="Pause every Sonos speaker" disabled={locked} {...once(pauseAll)}>
               <IconPlayerPauseFilled size={22} aria-hidden="true" />
-              Sonos off
+              Sonos Off
             </button>
           )}
         </div>

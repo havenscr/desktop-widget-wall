@@ -734,8 +734,10 @@
   color: var(--faint);
 }
 .sound-where .seg {
-  flex: 0 1 auto;
+  /* The places share the row's width equally, whatever their words. */
+  flex: 1 1 0;
   min-width: 0;
+  text-align: center;
   height: 38px;
   padding: 0 16px;
   border-radius: 12px;
@@ -750,10 +752,8 @@
   color: var(--tx);
   background: rgba(255, 255, 255, 0.06);
 }
-/* The preset in use shows its full name; the others shrink. */
+/* The place in use keeps its look and its share of the row. */
 .sound-where .seg.on {
-  flex: none;
-  max-width: 460px;
   color: var(--cyan);
   background: rgba(53, 230, 234, 0.16);
   box-shadow: inset 0 0 0 1px rgba(53, 230, 234, 0.45);
@@ -1728,6 +1728,7 @@ button.panel.network.shield:focus-visible {
 .sound-panel.l2 .sound-where .seg {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 7px;
 }
 .sound-panel.l2 .sound-where .seg svg {

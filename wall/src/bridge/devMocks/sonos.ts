@@ -6,17 +6,23 @@ import { knob } from './long';
  * The Sound block's Sonos service, with invented speakers, routines and presets. Review
  * knobs: `?sonos=off` (not set up), `?sonos=down` (never reached), `?sonos=sparse` (one
  * routine, one speaker, no presets), `?sonos=heavy` (many routines with long names, many
- * speakers, a sleep timer), `?sonos=quiet` (nothing playing), `?sonos=few` (one matching routine plus More), `?sonos=slow` (never answers, for the loading state), `?skip=1` (an unforced play is
+ * speakers, a sleep timer), `?sonos=timeout`, `?sonos=dropped` and `?sonos=garbled` (the first read works, every later one
+ * fails as timed-out, no-answer or bad-answer: the dimmed card with its line, after about 35 seconds), `?sonos=pending` (the first read works, the second fails,
+ * the third never answers: one failure waiting for its retry, nothing shown, after about 31 seconds), `?where=office|all|common|none` (which place is in use), `?sonos=quiet` (nothing playing), `?sonos=few` (one matching routine plus More), `?sonos=slow` (never answers, for the loading state), `?skip=1` (an unforced play is
  * skipped). The default is a typical
  * evening with music playing on a group.
  */
 const now = () => (reviewNow ? reviewNow() : Date.now());
 
-type Mode = 'typical' | 'off' | 'down' | 'sparse' | 'heavy' | 'quiet' | 'slow' | 'few';
+type Mode = 'typical' | 'off' | 'down' | 'sparse' | 'heavy' | 'quiet' | 'slow' | 'few' | 'timeout' | 'dropped' | 'garbled' | 'pending';
+
+/** After its first good read each of these modes fails with the word Rust sends. */
+const FAILS: Partial<Record<Mode, string>> = { timeout: 'timed-out', dropped: 'no-answer', garbled: 'bad-answer' };
+let reads = 0;
 
 function mode(): Mode {
   const k = knob('sonos');
-  return k === 'off' || k === 'down' || k === 'sparse' || k === 'heavy' || k === 'quiet' || k === 'slow' || k === 'few' ? k : 'typical';
+  return k === 'off' || k === 'down' || k === 'sparse' || k === 'heavy' || k === 'quiet' || k === 'slow' || k === 'few' || k === 'timeout' || k === 'dropped' || k === 'garbled' || k === 'pending' ? k : 'typical';
 }
 
 const ROUTINES = [
@@ -83,6 +89,7 @@ function groups(m: Mode) {
 
 function summary(m: Mode) {
   const t = now();
+  const place = knob('where');
   const presets =
     m === 'sparse'
       ? []
@@ -94,9 +101,9 @@ function summary(m: Mode) {
             { id: 'upstairs', name: 'Upstairs Only', active: false, loud: [] },
           ]
         : [
-            { id: 'whole', name: 'All Speakers', active: false, loud: [{ name: 'Studio', level: 100, sets: false }] },
-            { id: 'desk', name: 'Office (Work)', active: m !== 'quiet', loud: [] },
-            { id: 'living', name: 'Common Areas', active: false, loud: [] },
+            { id: 'whole', name: 'All Speakers', active: place === 'all', loud: [{ name: 'Studio', level: 100, sets: false }] },
+            { id: 'desk', name: 'Office (Work)', active: place ? place === 'office' : m !== 'quiet', loud: [] },
+            { id: 'living', name: 'Common Areas', active: place === 'common', loud: [] },
             { id: 'upstairs', name: 'Upstairs Only', active: false, loud: [] },
           ];
   return {
@@ -131,6 +138,16 @@ export function registerSonosMocks(): void {
     if (m === 'slow') return new Promise(() => undefined);
     if (m === 'off') return Promise.reject(new Error('not-configured'));
     if (m === 'down') return Promise.reject(new Error('Could not reach Sonos'));
+    if (m === 'pending') {
+      reads += 1;
+      if (reads === 1) return summary('typical');
+      return reads === 2 ? Promise.reject(new Error('timed-out')) : new Promise(() => undefined);
+    }
+    const word = FAILS[m];
+    if (word) {
+      reads += 1;
+      return reads === 1 ? summary('typical') : Promise.reject(new Error(word));
+    }
     // `?spotifyplay=speaker` pairs with the Spotify mock: Spotify plays on "Living room", so
     // the group lead here takes that name and Home's strip shows the track.
     if (knob('spotifyplay') === 'speaker') return JSON.parse(JSON.stringify(summary(m)).replaceAll('"Den"', '"Living room"'));
