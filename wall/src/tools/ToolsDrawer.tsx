@@ -12,6 +12,7 @@ import type { KeysSummary } from '../work/keysModel';
 import { Accounts } from './accounts';
 import { readText, readUnmountedSources, retrySource, SOURCE_NAMES, useSources, type SourceId, type SourceRow } from './sources';
 import { anySignInWaiting, useToolsStore } from './store';
+import { overlayOwnsPointer } from '../ribbon/DrawerScrim';
 
 /** The drawer closes by itself after this long with no pointer over it. */
 export const AUTO_CLOSE_MS = 120_000;
@@ -217,14 +218,14 @@ function Drawer() {
   // Escape or a click outside closes it (the Tools button toggles itself).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
+      if (e.key !== 'Escape' || overlayOwnsPointer()) return;
       // Take the key: in fullscreen the same press must not also leave fullscreen.
       e.preventDefault();
       close();
     };
     const onDown = (e: PointerEvent) => {
       const t = e.target as Element | null;
-      if (!t || ref.current?.contains(t) || t.closest('.rb[aria-label="Tools"]') || t.closest('.hover-tip')) return;
+      if (overlayOwnsPointer() || !t || ref.current?.contains(t) || t.closest('.rb[aria-label="Tools"]') || t.closest('.hover-tip')) return;
       close();
     };
     document.addEventListener('keydown', onKey);

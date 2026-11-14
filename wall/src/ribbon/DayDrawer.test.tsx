@@ -113,6 +113,25 @@ it('the handle opens the Day drawer; a folded chip opens it too; Escape and a cl
   expect(r.container.querySelector('.day-drawer')).not.toBeNull();
 });
 
+it('focus goes back to the Day handle when the drawer closes, also when a folded chip opened it', async () => {
+  const r = render(
+    <>
+      <Ribbon kind="work" />
+      <DrawerScrim />
+    </>,
+  );
+  await flush();
+  const handle = r.container.querySelector('.rib .rib-handle:not(.in-drawer)') as HTMLElement;
+  const fold = r.container.querySelector('.ev.fold') as HTMLElement;
+  fold.focus();
+  expect(document.activeElement).toBe(fold);
+  fireEvent.click(fold);
+  expect(document.activeElement).toBe(r.container.querySelector('.day-drawer'));
+  fireEvent.keyDown(window, { key: 'Escape' });
+  expect(document.activeElement).toBe(handle);
+  await flush(600);
+});
+
 it('the drawer lists the agenda with overlaps side by side and Join, and one row per session, waiting first', async () => {
   const r = render(<Ribbon kind="work" />);
   await flush();

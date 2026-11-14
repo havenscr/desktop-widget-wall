@@ -626,21 +626,27 @@ try {
     // ridge, worked out from the Work camera; the Now row carries it as data-floor), every key
     // label inside its tile, no two tiles sharing pixels, and the Now heading never cut.
     const deck = [];
+    // deck and drawer fixes: how far the lowest thing the deck draws sits above its floor (px).
+    let deckRoom = null;
     const floorEl = document.querySelector('.work .right-wing .keys[data-floor]');
     const deckEl = document.querySelector('.work .right-wing .deck');
     if (deckEl) {
       const floor = floorEl ? Number(floorEl.dataset.floor) : Infinity;
       if (!floorEl && document.querySelector('.work .right-wing .keys')) deck.push('deck: the Now row carries no data-floor, so its floor cannot be checked');
       let low = null;
+      let lowest = -Infinity;
       // What the deck draws: its rows and their parts (the box itself is empty room). The open key
       // picker may run past the floor over the mountains; it is held to the timeline below.
       for (const e of deckEl.querySelectorAll('*')) {
         if (e.closest('.pk')) continue;
         const r = e.getBoundingClientRect();
         if (r.width === 0 || r.height === 0 || getComputedStyle(e).visibility === 'hidden') continue;
+        lowest = Math.max(lowest, r.bottom);
         if (r.bottom > floor + 0.5 && (low === null || r.bottom > low.b)) low = { b: r.bottom, t: (e.className && e.className.baseVal === undefined ? e.className : e.tagName) };
       }
-      if (low) deck.push('deck: ' + low.t + ' reaches y ' + Math.round(low.b) + ', below the floor at ' + floor);
+      if (Number.isFinite(floor) && Number.isFinite(lowest)) deckRoom = Math.round((floor - lowest) * 10) / 10;
+      // deck and drawer fixes: the 70 px tiles leave about 4 px above the floor in the right wing, so the message says so.
+      if (low) deck.push('deck: ' + low.t + ' reaches y ' + Math.round(low.b) + ', below the floor at ' + floor + ' (the deck has only about 4 px of room above its floor with 70 px tiles; a change that needs more height has to take it from the wing, not from this margin)');
       const tiles = [...deckEl.querySelectorAll('.deck-tile')].map((t) => ({ t, r: t.getBoundingClientRect() }));
       for (const { t, r } of tiles) {
         const l = t.querySelector('.deck-lbl');
@@ -982,7 +988,7 @@ try {
       }
       return { sw: box(sw), fails };
     })();
-    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, wattCard, header, deck, nowH, edges, hide, hits, grid, lw, sig, toolsOut, meetOut, strip, opened, watchPolish, listen });
+    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, meetOut, strip, opened, watchPolish, listen });
     document.body.appendChild(pre);
   }, new URLSearchParams(location.search).get('card') ? 7000 : 3000);</script>`;
   const broken = overflow ? `<style>${OVERFLOWS[overflow]}</style>` : '';
@@ -1055,7 +1061,7 @@ try {
       process.exit(1);
     }
     const text = m[1].replaceAll('&quot;', '"').replaceAll('&amp;', '&');
-    const { res, page: doc, overlaps, cut, gaps, wattCard, header, deck, nowH, edges, hide, hits, grid, lw, sig, toolsOut, meetOut, strip, opened, watchPolish, listen } = JSON.parse(text);
+    const { res, page: doc, overlaps, cut, gaps, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, meetOut, strip, opened, watchPolish, listen } = JSON.parse(text);
     // watch polish
     if (watchPolish) {
       for (const f of watchPolish.fails) console.log(`  FAIL ${f}`);
@@ -1143,7 +1149,7 @@ try {
     }
     for (const d of deck) console.log(`  FAIL ${d}`);
     if (deck.length) failed = true;
-    else if (v.q.includes('hz=work')) console.log('  ok   the deck stays above its floor, every key label inside its tile, the Now heading whole');
+    else if (v.q.includes('hz=work')) console.log(`  ok   the deck stays above its floor${deckRoom === null ? '' : ` (${deckRoom} px of room)`}, every key label inside its tile, the Now heading whole`);
     for (const h of header) console.log(`  FAIL ${h}`);
     if (header.length) failed = true;
     else if (v.q.includes('hz=work')) console.log('  ok   the agents header is one line');
