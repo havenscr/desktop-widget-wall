@@ -1328,7 +1328,7 @@ try {
       if (wing) { const wb = box(wing); if (wb.l + wb.w > nb.l - 20) fails.push('watch polish: the left block is at ' + nb.l + ', less than 20 px from the clock column ending at ' + (wb.l + wb.w)); }
       // The sitting sheep's seat (when he is in the drive-in) is clear of the block.
       const sheep = document.querySelector('.watt-sheep > svg');
-      if (sheep && document.querySelector('.w-stage.w-drivein') && meet(box(sheep), { l: nb.l - 22, t: nb.t - 22, w: nb.w + 44, h: nb.h + 44 })) fails.push('watch polish: the left block is within 22 px of the sheep\'s seat');
+      if (sheep && document.querySelector('.w-stage.w-drivein') && meet(box(sheep), { l: nb.l - 22, t: nb.t - 22, w: nb.w + 44, h: nb.h + 44 })) fails.push("watch polish: the left block is within 22 px of the sheep's seat");
       const ctl = document.querySelector('.w-ctl');
       if (ctl && ctl.children.length) {
         const kids = [...ctl.children].map(box);

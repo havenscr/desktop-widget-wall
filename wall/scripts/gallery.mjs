@@ -303,7 +303,7 @@ state('unwind', 'watch: whole sky at dusk', `${WM}&wlist=three&wlook=sky&wplay=0
 state('unwind', 'watch: sun, 24 saved, Twitch', `${WM}&wlist=many&wlook=sun&wplay=2`, TIMES.night);
 state('unwind', 'watch: settings, four looks, whole sky chosen', `${WM}&wlist=three&wlook=sky&wplay=0&wsheet=one`, TIMES.night);
 state('unwind', 'watch: settings, four looks per kind', `${WM}&wlist=many&wlook=sun&wplay=0&wsheet=kind`, TIMES.night);
-// watch polish: the wall's own control row and the fixed Look switch in every look, with a mock
+// watch polish: the wall's own control row (the gear its last button) in every look, with a mock
 // player (`wstate`): a single video, a playlist, paused, autoplay refused, Twitch, nothing reported.
 state('unwind', 'watch polish: drive-in, single video', `${WM}&wlist=three&wlook=drivein&wplay=0`, TIMES.night);
 state('unwind', 'watch polish: drive-in at noon', `${WM}&wlist=three&wlook=drivein&wplay=0`, TIMES.noon);
@@ -357,7 +357,7 @@ state('unwind', 'sky layers: Listen at night, nothing playing, the moon in open 
 state('unwind', 'sky layers: Watch, nothing on, at night, the moon in open sky', `${WM}&wlist=three&wlook=feather`, TIMES.night);
 
 // tower and hologram: the drive-in's Screen tower frame (playing, paused, nothing on, night and noon),
-// the Hologram look (night and noon, playing and paused), the Look switch on each of the five looks,
+// the Hologram look (night and noon, playing and paused),
 // and the settings sheet with five tiles in both of its modes (mock poster only, never a real video).
 const TH = 'tower and hologram:';
 state('unwind', `${TH} tower at night, playing`, `${WM}&wlist=three&wlook=drivein&wplay=0`, TIMES.night);
@@ -374,7 +374,11 @@ state('unwind', `${TH} hologram at night, paused`, `${WM}&wlist=three&wlook=holo
 state('unwind', `${TH} hologram at noon, paused`, `${WM}&wlist=three&wlook=holo&wplay=0&wstate=paused`, TIMES.noon);
 state('unwind', `${TH} hologram at night, 24 saved, long label`, `${WM}&wlist=many&wlook=holo&wplay=3`, TIMES.night);
 state('unwind', `${TH} hologram, autoplay refused`, `${WM}&wlist=three&wlook=holo&wplay=0&wstate=refused`, TIMES.night);
-for (const id of ['feather', 'sky', 'sun', 'drivein', 'holo']) state('unwind', `${TH} Look switch on ${id}`, `${WM}&wlist=three&wlook=${id}&wplay=0`, TIMES.night);
+// The left block without the Look switch: the play row with the gear at its end, shown in each of the five looks and
+// at rest (the controls faded, only the title) in the drive-in, the whole sky and the Hologram, plus nothing on.
+for (const id of ['feather', 'sky', 'sun', 'drivein', 'holo']) state('unwind', `watch block: shown, ${id}`, `${WM}&wlist=three&wlook=${id}&wplay=0`, TIMES.night);
+for (const id of ['drivein', 'sky', 'holo']) state('unwind', `watch block: at rest, ${id}`, `${WM}&wlist=three&wlook=${id}&wplay=0&wctl=rest`, TIMES.night);
+for (const id of ['drivein', 'sky', 'holo']) state('unwind', `watch block: nothing on, ${id}`, `${WM}&wlist=three&wlook=${id}`, TIMES.night);
 state('unwind', `${TH} settings, five tiles, Hologram chosen`, `${WM}&wlist=three&wlook=holo&wplay=0&wsheet=one`, TIMES.night);
 state('unwind', `${TH} settings, five looks per kind`, `${WM}&wlist=many&wlook=holo&wplay=0&wsheet=kind`, TIMES.night);
 
@@ -662,7 +666,10 @@ const EXPECT = [
   ['unwind', 'tower and hologram: hologram at night, 24', ['24 saved', 'Saved for the weekend, a very long playlist name', 'Hologram']],
   ['unwind', 'tower and hologram: hologram, autoplay refused', ['Hologram', 'Click the video to start', '!12:34']],
   ['unwind', 'tower and hologram: hologram at', ['Hologram', 'Open in YouTube', '12:34']],
-  ['unwind', 'tower and hologram: Look switch on', ['Feathered', 'Whole sky', 'The sun', 'Drive-in', 'Hologram']],
+  // No Look switch under the block any more: the row ends with the gear, and no look's name is on the page.
+  ['unwind', 'watch block: shown,', ['Playing on the wall', 'Open in YouTube', '12:34', '!Feathered', '!Whole sky', '!The sun']],
+  ['unwind', 'watch block: at rest,', ['Night drive mix', '!Feathered', '!Whole sky', '!The sun']],
+  ['unwind', 'watch block: nothing on,', ['Nothing on', 'Play Night drive mix', '!Feathered', '!Whole sky', '!The sun']],
   ['unwind', 'tower and hologram: settings, five tiles', ['How video is shown', 'One look for everything', 'Hologram', 'The whole picture floats']],
   ['unwind', 'tower and hologram: settings, five looks per kind', ['Videos and playlists', 'Live streams', 'Hologram']],
   // watch polish
