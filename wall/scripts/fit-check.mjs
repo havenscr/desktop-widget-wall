@@ -174,7 +174,7 @@ const OVERFLOWS = {
   // A refused autoplay that never lets the pointer reach the whole-sky picture.
   'watch-take': '.w-frame.w-take { pointer-events: none !important; }',
   // watt drive-in: his seat moved to the screen's centre; his seat lifted 100 px off the ground.
-  'watt-seat': '.watt-sheep { translate: 480px 0 !important; }',
+  'watt-seat': '.watt-sheep { translate: 1000px 0 !important; }',
   'watt-ground': '.watt-sheep { translate: 0 -100px !important; }',
 };
 if (flag('self-test')) {
