@@ -99,6 +99,8 @@ export function registerOnAirMocks(): void {
   });
 
   const saved = savedTimer(knob('oatimer'), Date.now());
+  // Forty parts: the current one deep in the list, so the list has scrolled to it.
+  if (saved && which === 'forty') saved.partIndex = 23;
   if (saved) {
     try {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(saved));

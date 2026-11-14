@@ -25,10 +25,12 @@
 // Sky layers: a front canvas only while a Watch look sits behind the land, covering the stage over the video
 // (opaque on the lake, clear at the top of the sky), the whole sky's picture uncropped inside the stage, and the moon at night 40 px clear of every card,
 // the player and the clock, in one place on Listen and on Watch with nothing on.
+// On Air: the three columns inside their planned boxes above the strip, no note cut without "+N more",
+// and the recording key tiles at least 40 px.
 // CI does not run this; run it by hand before a layout change is handed over.
 //
 //   WALL_CHROME=/path/to/chrome-or-headless-shell npm --prefix wall run fit-check
-//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, header, deck, tiles, picker, chips, heading, zenhint, strip, fold, drawer, rows, handle, sky, floor, sun, tools, toolsnames, meetfill, meetempty, fy-height, key-edge, hide-pill, hide-note, leave-band, rec-chip, rec-height, tile-height, tile-icon, tile-iconbox, drawer-scrim, lwbuttons, lwoverlap, lwsquare, lwring, lwtemp, lwround, sky-front, sky-moon, sky-always, sky-crop, sky-seam, listen-player, listen-card, listen-slot, listen-next, watch-rest, watch-title, watch-away, watch-mark, lip-cover, lip-band, lip-scrim, row-parts, over-hatch, row-type)
+//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, header, deck, tiles, picker, chips, heading, zenhint, strip, fold, drawer, rows, handle, sky, floor, sun, tools, toolsnames, meetfill, meetempty, fy-height, key-edge, hide-pill, hide-note, leave-band, rec-chip, rec-height, tile-height, tile-icon, tile-iconbox, drawer-scrim, lwbuttons, lwoverlap, lwsquare, lwring, lwtemp, lwround, sky-front, sky-moon, sky-always, sky-crop, sky-seam, listen-player, listen-card, listen-slot, listen-next, watch-rest, watch-title, watch-away, watch-mark, lip-cover, lip-band, lip-scrim, row-parts, over-hatch, row-type, onair-box, onair-notes, onair-keys)
 //   npm --prefix wall run fit-check -- --self-test
 //
 // WALL_CHROME (or the first argument that is not a flag) is a Chromium or
@@ -138,6 +140,10 @@ const EXPECT = {
   'sky-always': /^ *FAIL sky layers: 1 front canvas with no look behind the land/m,
   'sky-crop': /^ *FAIL sky layers: the whole sky picture is at -?\d+,-?\d+,\d+, not inside the stage near its top/m,
   'sky-seam': /^ *FAIL sky layers: the pixel proof at \w+: \d+ pixels differ by more than 2 levels/m,
+  // on air
+  'onair-box': /^ *FAIL on air: \.oa-card .*outside its planned box/m,
+  'onair-notes': /^ *FAIL on air: the notes are cut /m,
+  'onair-keys': /^ *FAIL on air: key tile ".*" is \d+ x \d+ px/m,
 };
 const OVERFLOWS = {
   left: '.work .left-wing { transform: translateX(-200px); }',
@@ -238,6 +244,10 @@ const OVERFLOWS = {
   'sky-crop': '.w-sky .w-screen { transform: scale(1.4); }',
   // The pixel proof: the front canvas a shade brighter than the main one (a seam between the two).
   'sky-seam': '.horizon-front { filter: brightness(1.04) !important; }',
+  // on air: the notes card 1400 px wide; every note shown at 40 px (none behind "+N more"); 20 px key tiles.
+  'onair-box': '.onair .oa-card { width: 1400px !important; }',
+  'onair-notes': '.onair .oa-note { font-size: 40px !important; } .onair .oa-note[hidden] { display: flex !important; }',
+  'onair-keys': '.onair .oa-keys .deck-tile.key-tile { height: 20px !important; min-height: 0 !important; padding: 0 !important; }',
 };
 // sky layers: breaks that need the horizon's development knobs in the URL, not a stylesheet.
 const SKY_BREAK_Q = { 'sky-moon': '&skymoon=300,200,44', 'sky-always': '&sky=front' };
@@ -538,6 +548,18 @@ VARIANTS.push(
   { name: 'Strip: twelve open, nine working, over the limit', q: work('12busy'), checks: ['.rib'], strip: true, viewportOnly: true },
   { name: 'Strip: the Day drawer, twelve busy, long titles', q: work('12busy', '&meet=overlap'), click: '.rib-handle', checks: ['.day-drawer', '.day-drawer .dd-rows'], strip: true, viewportOnly: true },
   { name: 'Strip: Agents today over the limit', q: work('12busy', '&days=typical'), click: '.rib .ag-line', checks: ['.agents-today', '.agents-today .at-head', '.agents-today .at-busy'], strip: true, viewportOnly: true },
+);
+// On Air: the three columns in their planned boxes above the strip in every state, the notes
+// card with long notes (the rest behind "+N more"), forty parts, no file, a refused file and a full marks file.
+const onAirQ = (knobs) => `?hz=work&at=${encodeURIComponent('2026-11-11T10:24:00-08:00')}&clock=review&weather=ok&screen=onair&${knobs}`;
+const ONAIR = ['.onair .oa-left', '.onair .oa-card', '.onair .oa-right', '.onair .oa-card-foot', '.onair .oa-mark'];
+VARIANTS.push(
+  { name: 'On Air, typical: running at 42:13', q: onAirQ('show=typical&marks=2&oatimer=run'), checks: ONAIR, onair: true },
+  { name: 'On Air, long names and twelve long notes', q: onAirQ('show=long&marks=2&oatimer=run'), checks: ONAIR, onair: true },
+  { name: 'On Air, forty parts', q: onAirQ('show=forty&marks=2&oatimer=run'), checks: ONAIR, onair: true },
+  { name: 'On Air, no run-of-show.txt yet', q: onAirQ('show=missing&marks=0&oatimer=idle'), checks: ONAIR, onair: true },
+  { name: 'On Air, a refused file', q: onAirQ('show=refused&marks=0&oatimer=idle'), checks: ONAIR, onair: true },
+  { name: 'On Air, marks.txt full after a click, recording', q: onAirQ('show=typical&marks=full&oatimer=run&rec=1'), checks: ONAIR, onair: true, click: '.oa-mark-btn' },
 );
 // keys style: a small PNG reader (8-bit RGB or RGBA, not interlaced, as Chromium writes them) and contrast.
 function readPng(file) {
@@ -1305,7 +1327,48 @@ try {
       }
       return fails;
     })();
-    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, meetOut, strip, opened, watchPolish, skyLayers, listen, watchBehaviour });
+    // On Air: each column inside its planned box (stage x) between the top of the band and the strip,
+    // no note of the notes card cut without a "+N more" line that counts the hidden ones, key tiles at least 40 px.
+    const onair = (() => {
+      const fails = [];
+      const want = new URLSearchParams(location.search).get('screen') === 'onair';
+      if (!document.querySelector('.onair')) return want ? ['on air: the place did not open'] : [];
+      const rib = document.querySelector('.rib');
+      const floor = Math.min(510, rib ? rib.getBoundingClientRect().top : 720);
+      const r1 = (n) => Math.round(n * 10) / 10;
+      for (const [sel, l, r, parts] of [['.oa-left', 124, 764, '.oa-timer, .oa-runbox, .oa-run, .oa-file, .oa-empty'], ['.oa-card', 800, 1880, '.oa-k, .oa-notes, .oa-help, .oa-nonotes, .oa-card-foot, .oa-card-foot > *'], ['.oa-right', 1920, 2540, '.oa-mark, .oa-keys, .oa-keys > *, .oa-foot, .oa-k, .oa-k-brief']]) {
+        const col = document.querySelector('.onair ' + sel);
+        if (!col) { fails.push('on air: ' + sel + ' is missing'); continue; }
+        for (const e of [col, ...col.querySelectorAll(parts)]) {
+          const b = e.getBoundingClientRect();
+          if (b.width === 0 && b.height === 0) continue;
+          if (b.left < l - 0.5 || b.right > r + 0.5 || b.top < 20 - 0.5 || b.bottom > floor + 0.5) {
+            fails.push('on air: ' + sel + (e === col ? '' : ' ' + (e.className || e.tagName)) + ' at x ' + r1(b.left) + ' to ' + r1(b.right) + ', y ' + r1(b.top) + ' to ' + r1(b.bottom) + ' is outside its planned box (x ' + l + ' to ' + r + ', y 20 to ' + r1(floor) + ')');
+            break;
+          }
+        }
+      }
+      const list = document.querySelector('.onair .oa-notes');
+      if (list) {
+        const lb = list.getBoundingClientRect();
+        const notes = [...list.querySelectorAll(':scope > .oa-note')];
+        const hidden = notes.filter((n) => getComputedStyle(n).display === 'none').length;
+        const cutNote = notes.findIndex((n) => getComputedStyle(n).display !== 'none' && n.getBoundingClientRect().bottom > lb.bottom + 0.5);
+        const more = list.querySelector(':scope > .oa-more');
+        const moreShown = more && getComputedStyle(more).display !== 'none' ? (more.textContent || '').trim() : '';
+        if (list.scrollHeight > list.clientHeight + 0.5 || cutNote >= 0) fails.push('on air: the notes are cut (' + (cutNote >= 0 ? 'note ' + (cutNote + 1) + ' of ' + notes.length + ' ends below the card' : 'the list is ' + list.scrollHeight + ' px for ' + list.clientHeight) + ', ' + hidden + ' behind "+N more")');
+        else if (hidden > 0 && moreShown !== '+' + hidden + ' more') fails.push('on air: the notes are cut: ' + hidden + ' hidden but the more line reads "' + moreShown + '"');
+        else if (hidden === 0 && moreShown !== '') fails.push('on air: the more line reads "' + moreShown + '" with no note hidden');
+      }
+      const tiles = [...document.querySelectorAll('.onair .oa-keys .key-tile')];
+      if (tiles.length !== 4) fails.push('on air: ' + tiles.length + ' recording keys, expected 4');
+      for (const t of tiles) {
+        const b = t.getBoundingClientRect();
+        if (b.height < 40 - 0.5 || b.width < 40 - 0.5) fails.push('on air: key tile "' + t.getAttribute('aria-label') + '" is ' + Math.round(b.width) + ' x ' + Math.round(b.height) + ' px (at least 40 by 40)');
+      }
+      return fails;
+    })();
+    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, meetOut, strip, opened, watchPolish, skyLayers, listen, watchBehaviour, onair });
     document.body.appendChild(pre);
   }, new URLSearchParams(location.search).get('card') ? 7000 : 3000);</script>`;
   const broken = overflow ? `<style>${OVERFLOWS[overflow]}</style>` : '';
@@ -1379,6 +1442,10 @@ try {
     'sky-moon': (v) => v.name === 'Sky layers, Listen at night, the moon in open sky',
     'sky-always': (v) => v.name === 'Sky layers, Listen at night, the moon in open sky',
     'sky-crop': (v) => v.name === 'Sky layers, whole sky at night',
+    // on air
+    'onair-box': (v) => v.name === 'On Air, typical: running at 42:13',
+    'onair-notes': (v) => v.name === 'On Air, long names and twelve long notes',
+    'onair-keys': (v) => v.name === 'On Air, typical: running at 42:13',
   };
   const breakOn = BREAK_ON[overflow] ? VARIANTS.filter(BREAK_ON[overflow]) : VARIANTS.slice(0, 1);
   /** keys style: the Now row's height on each page that has one, compared after every state ran. */
@@ -1402,7 +1469,11 @@ try {
       process.exit(1);
     }
     const text = m[1].replaceAll('&quot;', '"').replaceAll('&amp;', '&');
-    const { res, page: doc, overlaps, cut, gaps, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, meetOut, strip, opened, watchPolish, skyLayers, listen, watchBehaviour } = JSON.parse(text);
+    const { res, page: doc, overlaps, cut, gaps, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, meetOut, strip, opened, watchPolish, skyLayers, listen, watchBehaviour, onair } = JSON.parse(text);
+    // on air
+    for (const f of onair) console.log(`  FAIL ${f}`);
+    if (onair.length) failed = true;
+    else if (v.onair) console.log('  ok   on air: three columns inside their planned boxes above the strip, no note cut without "+N more", key tiles at least 40 px');
     // watch behaviour
     for (const f of watchBehaviour) console.log(`  FAIL ${f}`);
     if (watchBehaviour.length) failed = true;
