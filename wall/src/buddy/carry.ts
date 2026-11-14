@@ -697,7 +697,7 @@ export function carryFrame(c: Carry, T: number, hy: number, size: number, still:
   if (f.prop === 'book' && f.pose !== 'read') f.prop = null;
   if (f.prop && !propFits(f.prop, f.pose)) f.prop = null;
   if (f.scarf && !propFits('scarf', f.pose)) f.scarf = false;
-  if (f.cosmetic && !propFits(f.cosmetic, f.pose)) f.cosmetic = null;
+  if (f.cosmetic && !propFits(f.cosmetic, f.pose, f.prop)) f.cosmetic = null;
 }
 
 /**
