@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type FocusEvent, type KeyboardEvent, type MouseEvent, type PointerEvent } from 'react';
 import {
   IconExternalLink,
   IconMovie,
@@ -12,14 +12,15 @@ import {
   IconVolumeOff,
 } from '@tabler/icons-react';
 import { invoke } from '../../bridge/tauri';
-import { useSkyClaim, useSkyKeepClear } from '../../horizon/sky';
+import { useSkyKeepClear } from '../../horizon/sky';
 import { useSignalStore } from '../../signals/store';
+import { useToolsStore } from '../../tools/store';
 import { tip } from '../../ui/HoverTip';
-import { kindName, refKey, validRef, type WatchKind, type WatchRef } from './links';
-import { LOOKS, LOOK_BOXES, layeredNow, lookFor, lookTargetName, ownsTheMoonSky, type LookId } from './looks';
-import { PlayerFrame, playerLink } from './PlayerFrame';
-import { driveInAudience, useWatchStore } from './store';
-import { useStopRules } from './useStopRules';
+import { kindName, validRef, type WatchKind, type WatchRef } from './links';
+import { LOOKS, lookFor, lookTargetName, type LookId } from './looks';
+import { playerLink } from './PlayerFrame';
+import { useWatchSky } from './StageLayer';
+import { useWatchStore } from './store';
 
 export const WATCH_PANEL_ID = 'u-panel-watch';
 export const WATCH_TAB_ID = 'u-tab-watch';
@@ -66,22 +67,6 @@ export function WatchGear() {
   );
 }
 
-/**
- * sky layers: what the look on screen asks of the horizon (`horizon/sky.ts`): its picture's box,
- * so the moon keeps clear of it (another of its places, or none); no moon at all for a look that
- * owns that sky (the sun, the drive-in); and, for a picture that sits behind the land (the whole
- * sky, the sun), the element the horizon mounts its front canvas in (`layeredNow`: the sun comes
- * forward while the player waits for a click). Released when the look goes (Watch left, nothing on, Zen).
- */
-function useWatchSky(look: LookId, front: HTMLElement | null, needsClick: boolean) {
-  const b = LOOK_BOXES[look];
-  useSkyClaim('watch', {
-    front: layeredNow(look, needsClick) ? front : null,
-    boxes: [[b.x, b.y, b.w, b.h]],
-    noMoon: ownsTheMoonSky(look),
-  });
-}
-
 /** The drive-in screen with nothing on it (the drive-in look, nothing playing). */
 function EmptyDriveIn() {
   useWatchSky('drivein', null, false);
@@ -95,6 +80,14 @@ function EmptyDriveIn() {
       <i className="w-post r" />
     </div>
   );
+}
+
+/** watch behaviour: the handlers a block that wakes the faded controls takes (`useControlsFade`). */
+interface ZoneHandlers {
+  onPointerEnter: () => void;
+  onPointerLeave: (e: PointerEvent<HTMLElement>) => void;
+  onFocus: (e: FocusEvent<HTMLElement>) => void;
+  onBlur: (e: FocusEvent<HTMLElement>) => void;
 }
 
 /** "1:05" or "1:02:03". */
@@ -112,7 +105,7 @@ export function clock(sec: number): string {
  * everything it sets that look; with a look per kind it sets the look of the kind on (or, with
  * nothing on, of the first saved item), and its hover tip says which. Arrow keys move.
  */
-export function LookSwitch({ kind }: { kind: WatchKind }) {
+export function LookSwitch({ kind, zone }: { kind: WatchKind; zone?: ZoneHandlers }) {
   const looks = useWatchStore((s) => s.looks);
   const current = lookFor(looks, kind);
   const group = lookTargetName(looks, kind);
@@ -132,7 +125,7 @@ export function LookSwitch({ kind }: { kind: WatchKind }) {
   };
   const where = group ? `Sets the look for ${group.toLowerCase()} (a look per kind is on in the settings).` : 'Sets the look for every video.';
   return (
-    <div ref={setBar} className="w-lookbar w-seg" role="radiogroup" aria-label={group ? `Look, for ${group.toLowerCase()}` : 'Look'} onKeyDown={onKey}>
+    <div ref={setBar} className="w-lookbar w-seg" role="radiogroup" aria-label={group ? `Look, for ${group.toLowerCase()}` : 'Look'} onKeyDown={onKey} {...zone}>
       {LOOKS.map((l, i) => {
         const on = l.id === current;
         return (
@@ -212,7 +205,7 @@ function Position({ live }: { live: boolean }) {
  * Twitch); under them the position, or the line asking for a click when autoplay was refused.
  * Twitch offers no messages to a frame, so only Stop and Open show for it.
  */
-function Controls({ item }: { item: WatchRef & { label: string } }) {
+function Controls({ item, openFailed, setOpenFailed }: { item: WatchRef & { label: string }; openFailed: boolean; setOpenFailed: (on: boolean) => void }) {
   const paused = useWatchStore((s) => s.paused);
   const muted = useWatchStore((s) => s.muted);
   const count = useWatchStore((s) => s.report.count);
@@ -222,9 +215,14 @@ function Controls({ item }: { item: WatchRef & { label: string } }) {
   const st = useWatchStore.getState();
   const youtube = item.kind !== 'twitch';
   const list = item.kind === 'playlist' && count > 1;
-  const [openFailed, setOpenFailed] = useState(false);
   const failTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
-  useEffect(() => () => clearTimeout(failTimer.current), []);
+  useEffect(
+    () => () => {
+      clearTimeout(failTimer.current);
+      setOpenFailed(false);
+    },
+    [setOpenFailed],
+  );
   const open = async () => {
     clearTimeout(failTimer.current);
     setOpenFailed(false);
@@ -301,61 +299,139 @@ function Controls({ item }: { item: WatchRef & { label: string } }) {
   );
 }
 
+/** watch behaviour: how long the controls stay after the pointer or focus leaves them, while a video plays. */
+export const CTL_REST_MS = 3000;
+/** Development only: the dev mocks (`?wctl=rest`) shorten the wait so headless stills catch the faded block. */
+export const ctlTiming = { restMs: CTL_REST_MS };
+
+/** True for an element that takes typed text (the list's link field, a rename field). */
+function typing(el: Element | null): boolean {
+  if (!el) return false;
+  if (el instanceof HTMLElement && el.isContentEditable) return true;
+  return el.matches('input, textarea, select');
+}
+
+/** True when the focus on `el` is a keyboard one (`:focus-visible`); a browser without the selector counts every focus as keyboard. */
+function keyboardFocus(el: Element): boolean {
+  try {
+    return el.matches(':focus-visible');
+  } catch {
+    return true;
+  }
+}
+
+/** True while something that takes Escape first is open: the Watch sheet, the tools drawer, a dialog, a menu or Watt's menu. */
+function somethingOpen(): boolean {
+  if (useWatchStore.getState().sheet || useToolsStore.getState().open) return true;
+  return document.querySelector('[role="dialog"], [role="menu"], .watt-menu') !== null;
+}
+
 /**
- * The video in the scene, in its look. Nothing of the wall's is drawn on the video: the Look
- * switch and every control sit in the left block. Glows, the floor's light and the drive-in's
- * frame and posts sit around the picture, never over it.
+ * watch behaviour (5A): whether the left block's controls are at rest (faded out). They may rest
+ * only while `canRest` (something plays, not paused, no notice showing); then one timer puts them
+ * to rest `CTL_REST_MS` after the pointer left the left block, the Look row and the band on the
+ * video's lower edge (`peek`), and focus left the controls. Pointer, focus or a Tab press brings
+ * them back at once. No timer runs while they cannot rest; the timer is cleared on unmount.
  */
-function VideoStage({ item, look }: { item: WatchRef & { label: string }; look: LookId }) {
-  const audience = useWatchStore(driveInAudience);
-  const needsClick = useWatchStore((s) => s.needsClick);
-  const [front, setFront] = useState<HTMLDivElement | null>(null);
-  useWatchSky(look, front, needsClick);
-  const sky = look === 'sky';
-  const layered = layeredNow(look, needsClick);
-  const b = LOOK_BOXES[look];
-  return (
-    <>
-      <div
-        className={`w-stage w-${look}${layered ? ' w-layered' : ''}`}
-        data-look={look}
-        data-audience={audience ? `${audience.x},${audience.y},${audience.w},${audience.h}` : undefined}
-        data-sky-box={`${b.x},${b.y},${b.w},${b.h}`}
-      >
-        {/* The feathered glow (in front of the land, with its picture) and the sun's halo (behind it). */}
-        {look === 'feather' ? <div className="w-glow" aria-hidden="true" /> : null}
-        {look === 'sun' ? <div className="w-halo" aria-hidden="true" /> : null}
-        {look === 'drivein' ? <div className="w-spill" aria-hidden="true" /> : null}
-        <div className="w-screen">
-          <PlayerFrame key={refKey(item)} item={item} title={item.label} />
-        </div>
-        {/* The horizon mounts its front canvas here (the ranges, the land and the grid), over the
-            picture and under everything after it; only for a look that sits behind the land. */}
-        {layered ? <div className="w-front" ref={setFront} aria-hidden="true" /> : null}
-        {/* On the floor, in front of the land: the sun's warm streak. */}
-        {look === 'sun' ? <div className="w-streak" aria-hidden="true" /> : null}
-        {look === 'drivein' ? (
-          <>
-            <i className="w-post l" aria-hidden="true" />
-            <i className="w-post r" aria-hidden="true" />
-          </>
-        ) : null}
-      </div>
-      {/* The floor picks up a faint wash of the sky's colour (approved page, B). One frame cannot be
-          mirrored, so this is a still colour wash in the page's light colours, taking no pointer. */}
-      {sky ? <div className="w-skyspill" aria-hidden="true" /> : null}
-    </>
-  );
+function useControlsFade(canRest: boolean, peek: boolean) {
+  const [rest, setRest] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const hold = useRef({ now: false, look: false, focus: false, peek: false, can: false });
+  hold.current.peek = peek;
+  hold.current.can = canRest;
+  const wake = useCallback(() => {
+    clearTimeout(timer.current);
+    timer.current = undefined;
+    setRest(false);
+    const h = hold.current;
+    if (!h.can || h.now || h.look || h.focus || h.peek) return;
+    timer.current = setTimeout(() => {
+      timer.current = undefined;
+      setRest(true);
+    }, ctlTiming.restMs);
+  }, []);
+  useEffect(() => wake(), [canRest, peek, wake]);
+  useEffect(() => () => clearTimeout(timer.current), []);
+  const zone = (key: 'now' | 'look') => ({
+    onPointerEnter: () => {
+      hold.current[key] = true;
+      wake();
+    },
+    onPointerLeave: (e: PointerEvent<HTMLElement>) => {
+      hold.current[key] = false;
+      // A button the mouse clicked keeps focus after the pointer leaves; let it go so it does not hide a live control.
+      const el = document.activeElement;
+      if (el instanceof HTMLElement && e.currentTarget.contains(el) && !keyboardFocus(el)) el.blur();
+      wake();
+    },
+    // Only focus that came from the keyboard holds the controls shown; a mouse click does not.
+    onFocus: (e: FocusEvent<HTMLElement>) => {
+      if (!keyboardFocus(e.target)) return;
+      hold.current.focus = true;
+      wake();
+    },
+    onBlur: (e: FocusEvent<HTMLElement>) => {
+      const to = e.relatedTarget as Element | null;
+      if (to && to.closest('.w-now, .w-lookbar')) return;
+      hold.current.focus = false;
+      wake();
+    },
+  });
+  return { rest: canRest && rest, wake, zone };
+}
+
+/**
+ * The Watch tab's keys while something plays: Tab wakes the controls (and moves through them as
+ * usual); Space plays or pauses when the focus is on the page, the stage or the left block outside
+ * a button (a focused button keeps its own Space press), never in a field; Escape stops the video
+ * unless the focus is in a field or a sheet, drawer, dialog or menu is open (those take Escape
+ * first). Mounted only with the Watch panel, so no key reaches the video from another place or tab.
+ */
+function useWatchKeys(on: boolean, youtube: boolean, wake: () => void) {
+  useEffect(() => {
+    if (!on) return;
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key === 'Tab') {
+        wake();
+        return;
+      }
+      if (e.key !== ' ' && e.key !== 'Escape') return;
+      if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey || e.repeat) return;
+      const t = e.target instanceof Element ? e.target : null;
+      if (typing(t) || typing(document.activeElement)) return;
+      // Neither key acts on a button, a link or a radio: they keep their own presses.
+      if (t && t.closest('button, [role="radio"], [role="button"], a')) return;
+      if (e.key === 'Escape') {
+        if (somethingOpen()) return;
+        // Taken here, so the same press does not also leave fullscreen (a second Escape does).
+        e.preventDefault();
+        useWatchStore.getState().stop();
+        return;
+      }
+      if (!youtube) return;
+      const onPage = !t || t === document.body || t === document.documentElement;
+      const inBlock = t !== null && t.closest('.w-now, .w-lookbar, .w-layer') !== null;
+      if (!onPage && !inBlock) return;
+      if (somethingOpen()) return;
+      e.preventDefault();
+      wake();
+      const st = useWatchStore.getState();
+      st.setPaused(!st.paused);
+    };
+    // Capture: read before a sheet or drawer that closes on Escape has gone from the page.
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [on, youtube, wake]);
 }
 
 /**
  * The Watch tab's centre: what is on (kind, label, the wall's own controls and the position)
- * on the left under the tabs, the Look switch in its fixed place under that, and the video
- * placed in the scene to its right in the chosen look. With nothing on it says what to do
- * and offers the first saved item. The stop rules run while this is mounted.
+ * on the left under the tabs, and the Look switch in its fixed place under that. The video itself
+ * is drawn by the stage layer (`StageLayer.tsx`), which lives on every place. With nothing on it
+ * says what to do and offers the first saved item. While a video plays and he is not using them,
+ * the controls fade out after `CTL_REST_MS` and only a quiet title stays (5A).
  */
 export function WatchPanel() {
-  useStopRules();
   const playing = useWatchStore((s) => s.playing);
   const saved = useWatchStore((s) => s.saved);
   const looks = useWatchStore((s) => s.looks);
@@ -363,18 +439,24 @@ export function WatchPanel() {
   const needsClick = useWatchStore((s) => s.needsClick);
   const ended = useWatchStore((s) => s.report.ended);
   const stopped = useWatchStore((s) => s.stopped);
+  const peek = useWatchStore((s) => s.peek);
   const inCall = useSignalStore((s) => s.call !== null);
   const st = useWatchStore.getState();
   // sky layers: the moon keeps clear of the left block, playing or not.
   const [nowEl, setNowEl] = useState<HTMLDivElement | null>(null);
   useSkyKeepClear('watch-now', nowEl);
+  const [openFailed, setOpenFailed] = useState(false);
+  // Notices never hide: the click line, the hint line and an open failure keep the block shown.
+  const canRest = playing !== null && !paused && !ended && !needsClick && !openFailed;
+  const { rest, wake, zone } = useControlsFade(canRest, peek);
+  useWatchKeys(playing !== null, playing !== null && playing.kind !== 'twitch', wake);
 
   if (!playing) {
     const first = saved[0];
     const kind = first?.kind ?? 'video';
     return (
       <div className="w-panel" role="tabpanel" id={WATCH_PANEL_ID} aria-labelledby={WATCH_TAB_ID} data-state="idle">
-        <div className="w-now" ref={setNowEl}>
+        <div className="w-now" ref={setNowEl} data-ctl="shown">
           <span className="u-k">Watch</span>
           <div className="w-title w-none">Nothing on</div>
           <div className="w-sub">
@@ -400,22 +482,21 @@ export function WatchPanel() {
     );
   }
 
-  const look = lookFor(looks, playing.kind);
   const youtube = playing.kind !== 'twitch';
+  const ctl = rest ? 'rest' : 'shown';
   return (
-    <div className="w-panel" role="tabpanel" id={WATCH_PANEL_ID} aria-labelledby={WATCH_TAB_ID} data-state="playing">
-      <div className="w-now" ref={setNowEl}>
+    <div className="w-panel" role="tabpanel" id={WATCH_PANEL_ID} aria-labelledby={WATCH_TAB_ID} data-state="playing" data-ctl={ctl}>
+      <div className="w-now" ref={setNowEl} data-ctl={ctl} {...zone('now')}>
         <span className="u-k u-src">{kindName(playing.kind)}</span>
         <div className="w-title" title={playing.label}>
           {playing.label}
         </div>
-        <div className="w-sub" title="It stops by itself when you leave Watch or Unwind, the screens or the display go off, Windows locks or a call starts.">
+        <div className="w-sub" title="It plays on when you go to Listen or another place. It stops by itself when the screens or the display go off, Windows locks or a call starts.">
           {!youtube ? 'Live on the wall' : needsClick ? 'Waiting for a click on the video' : ended ? 'Ended' : paused ? 'Paused' : 'Playing on the wall'}
         </div>
-        <Controls item={playing} />
+        <Controls item={playing} openFailed={openFailed} setOpenFailed={setOpenFailed} />
       </div>
-      <LookSwitch kind={playing.kind} />
-      <VideoStage item={playing} look={look} />
+      <LookSwitch kind={playing.kind} zone={zone('look')} />
     </div>
   );
 }
