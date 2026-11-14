@@ -80,9 +80,11 @@ export function Player() {
   const source = sourceKey(info);
   const rawSourceLabel = playerName(source);
   const watchPlaying = useWatchStore((s) => s.playing);
-  const watchSaved = useWatchStore((s) => s.saved);
+  const watchStopped = useWatchStore((s) => s.lastStopped);
   const webView = rawSourceLabel?.toLowerCase() === 'msedgewebview2';
-  const watchMatch = !!info?.title && webView && (watchPlaying?.label === info.title || watchSaved.some((item) => item.label === info.title));
+  const watchTitle = (value: string | null | undefined) => value?.trim().replace(/ - YouTube$/i, '').trim();
+  const sessionTitle = watchTitle(info?.title);
+  const watchMatch = !!sessionTitle && webView && [watchPlaying, watchStopped].some((item) => watchTitle(item?.label) === sessionTitle);
   const sourceLabel = watchMatch ? 'Watch' : webView ? 'an app on this PC' : rawSourceLabel;
   // The horizon's moon keeps 40 px clear of the player (it moves to another of its places).
   const [box, setBox] = useState<HTMLDivElement | null>(null);

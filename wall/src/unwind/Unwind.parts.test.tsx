@@ -320,11 +320,11 @@ it('shows the last played track with Play again when nothing plays', async () =>
   r.unmount();
 });
 
-it('recognises the wall video session and anonymises another WebView2 session', async () => {
+it('matches only Watch playing or last-stopped titles, including the YouTube suffix', async () => {
   resetWatch();
   const item = { kind: 'video' as const, id: 'abcdefghijk', label: 'Quiet Coast' };
   useWatchStore.setState({ saved: [item], playing: item, tab: 'listen' });
-  mocks.set('get_now_playing', () => ({ title: 'Quiet Coast', source_app_id: 'msedgewebview2.exe', playback_status: 'playing' }));
+  mocks.set('get_now_playing', () => ({ title: ' Quiet Coast - YouTube ', source_app_id: 'msedgewebview2.exe', playback_status: 'playing' }));
   const r = render(<Unwind />);
   await flush();
   expect(screen.getByText('Playing in Watch')).toBeTruthy();
@@ -332,7 +332,14 @@ it('recognises the wall video session and anonymises another WebView2 session', 
   expect(useWatchStore.getState().tab).toBe('watch');
   r.unmount();
 
-  useWatchStore.setState({ tab: 'listen', playing: null });
+  useWatchStore.setState({ tab: 'listen', playing: null, lastStopped: item });
+  mocks.set('get_now_playing', () => ({ title: 'Quiet Coast', source_app_id: 'msedgewebview2.exe', playback_status: 'stopped' }));
+  const stopped=render(<Unwind />); await flush(); expect(screen.getByText('Last played in Watch')).toBeTruthy(); stopped.unmount();
+
+  useWatchStore.setState({ tab: 'listen', playing: null, lastStopped: null, saved: [item] });
+  mocks.set('get_now_playing', () => ({ title: 'Quiet Coast', source_app_id: 'msedgewebview2.exe', playback_status: 'playing' }));
+  const saved=render(<Unwind />); await flush(); expect(screen.getByText('an app on this PC')).toBeTruthy(); saved.unmount();
+
   mocks.set('get_now_playing', () => ({ title: 'Mail alert', source_app_id: 'msedgewebview2.exe', playback_status: 'stopped' }));
   render(<Unwind />);
   await flush();
