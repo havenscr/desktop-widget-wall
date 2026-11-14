@@ -327,7 +327,7 @@ state('unwind', 'look settings: drive-in, travelling light on, playing', `${WM}&
 state('unwind', 'look settings: drive-in, travelling light switched on, paused so it is not drawn', `${WM}&wlist=three&wlook=drivein&wplay=0&wstate=paused&wtune=drivein.light=1`, TIMES.night);
 state('unwind', 'look settings: hologram, flat, no beam, light plate', `${WM}&wlist=three&wlook=holo&wplay=0&wtune=holo.tilt=0,holo.beam=0,holo.see=60`, TIMES.night);
 state('unwind', 'look settings: hologram, steepest, dark plate', `${WM}&wlist=three&wlook=holo&wplay=0&wtune=holo.tilt=12,holo.see=10`, TIMES.night);
-// watch polish: the wall's own control row and the fixed Look switch in every look, with a mock
+// watch polish: the wall's own control row (the gear its last button) in every look, with a mock
 // player (`wstate`): a single video, a playlist, paused, autoplay refused, Twitch, nothing reported.
 state('unwind', 'watch polish: drive-in, single video', `${WM}&wlist=three&wlook=drivein&wplay=0`, TIMES.night);
 state('unwind', 'watch polish: drive-in at noon', `${WM}&wlist=three&wlook=drivein&wplay=0`, TIMES.noon);
@@ -381,7 +381,7 @@ state('unwind', 'sky layers: Listen at night, nothing playing, the moon in open 
 state('unwind', 'sky layers: Watch, nothing on, at night, the moon in open sky', `${WM}&wlist=three&wlook=feather`, TIMES.night);
 
 // tower and hologram: the drive-in's Screen tower frame (playing, paused, nothing on, night and noon),
-// the Hologram look (night and noon, playing and paused), the Look switch on each of the five looks,
+// the Hologram look (night and noon, playing and paused),
 // and the settings sheet with five tiles in both of its modes (mock poster only, never a real video).
 const TH = 'tower and hologram:';
 state('unwind', `${TH} tower at night, playing`, `${WM}&wlist=three&wlook=drivein&wplay=0`, TIMES.night);
@@ -398,7 +398,15 @@ state('unwind', `${TH} hologram at night, paused`, `${WM}&wlist=three&wlook=holo
 state('unwind', `${TH} hologram at noon, paused`, `${WM}&wlist=three&wlook=holo&wplay=0&wstate=paused`, TIMES.noon);
 state('unwind', `${TH} hologram at night, 24 saved, long label`, `${WM}&wlist=many&wlook=holo&wplay=3`, TIMES.night);
 state('unwind', `${TH} hologram, autoplay refused`, `${WM}&wlist=three&wlook=holo&wplay=0&wstate=refused`, TIMES.night);
-for (const id of ['feather', 'sky', 'sun', 'drivein', 'holo']) state('unwind', `${TH} Look switch on ${id}`, `${WM}&wlist=three&wlook=${id}&wplay=0`, TIMES.night);
+// The left block without the Look switch: the play row with the gear at its end, shown in each of the five looks and
+// at rest (the controls faded, only the title) in the drive-in, the whole sky and the Hologram, plus nothing on.
+for (const id of ['feather', 'sky', 'sun', 'drivein', 'holo']) state('unwind', `watch block: shown, ${id}`, `${WM}&wlist=three&wlook=${id}&wplay=0`, TIMES.night);
+for (const id of ['drivein', 'sky', 'holo']) state('unwind', `watch block: at rest, ${id}`, `${WM}&wlist=three&wlook=${id}&wplay=0&wctl=rest`, TIMES.night);
+// The position bar's fill and marker near the start and near the end (the marker stays inside the bar).
+state('unwind', 'watch block: position near the start, whole sky', `${WM}&wlist=three&wlook=sky&wplay=0&wstate=start`, TIMES.night);
+state('unwind', 'watch block: position near the end, whole sky', `${WM}&wlist=three&wlook=sky&wplay=0&wstate=end`, TIMES.night);
+state('unwind', 'watch block: position near the end, drive-in', `${WM}&wlist=three&wlook=drivein&wplay=0&wstate=end`, TIMES.night);
+for (const id of ['drivein', 'sky', 'holo']) state('unwind', `watch block: nothing on, ${id}`, `${WM}&wlist=three&wlook=${id}`, TIMES.night);
 state('unwind', `${TH} settings, five tiles, Hologram chosen`, `${WM}&wlist=three&wlook=holo&wplay=0&wsheet=one`, TIMES.night);
 state('unwind', `${TH} settings, five looks per kind`, `${WM}&wlist=many&wlook=holo&wplay=0&wsheet=kind`, TIMES.night);
 
@@ -675,21 +683,21 @@ const EXPECT = [
   ['unwind', 'network alarm', '4 network alerts.'],
   ['unwind', 'watch: nothing saved', ['Nothing on', 'Paste a YouTube or Twitch link', '!saved']],
   ['unwind', 'watch: three saved, nothing on', ['Nothing on', 'Play Night drive mix', '3 saved']],
-  ['unwind', 'watch: feathered', ['Feathered', 'Open in YouTube', 'Lofi beats radio']],
-  ['unwind', 'watch: drive-in, Twitch', ['Drive-in', 'Open on Twitch', 'Twitch channel', 'Live on the wall']],
+  ['unwind', 'watch: feathered', ['Open in YouTube', 'Lofi beats radio']],
+  ['unwind', 'watch: drive-in, Twitch', ['Open on Twitch', 'Twitch channel', 'Live on the wall']],
   ['unwind', 'watch: 24 saved', ['24 saved', 'Saved for the weekend, a very long playlist name', 'YouTube playlist']],
   ['unwind', 'watch: settings, one look', ['How video is shown', 'One look for everything', 'Feathered']],
   ['unwind', 'watch: settings, a look per kind', ['Videos and playlists', 'Live streams', 'Saved here: 19 YouTube, 5 Twitch']],
   ['unwind', 'watch: listen with the Video corner', ['Video', 'Tokyo Burnout', '!Nothing on']],
   ['unwind', 'watch: sparse data', ['Night drive mix', 'Open in YouTube']],
-  ['unwind', 'watch: whole sky, 24', ['Whole sky', '24 saved', 'Saved for the weekend', '12:34']],
-  ['unwind', 'watch: whole sky', ['Whole sky', 'Open in YouTube']],
-  ['unwind', 'watch: sun, 24 saved, Twitch', ['The sun', '24 saved', 'Live on the wall', 'Open on Twitch']],
-  ['unwind', 'watch: sun', ['The sun', 'Open in YouTube']],
+  ['unwind', 'watch: whole sky, 24', ['24 saved', 'Saved for the weekend', '12:34']],
+  ['unwind', 'watch: whole sky', ['Open in YouTube']],
+  ['unwind', 'watch: sun, 24 saved, Twitch', ['24 saved', 'Live on the wall', 'Open on Twitch']],
+  ['unwind', 'watch: sun', ['Open in YouTube']],
   ['unwind', 'watch: settings, four looks, whole sky', ['How video is shown', 'Whole sky', 'The sun', 'Drive-in']],
   ['unwind', 'watch: settings, four looks per kind', ['Videos and playlists', 'Live streams', 'The sun']],
   // tower and hologram
-  ['unwind', 'tower and hologram: tower at night, playing', ['Playing on the wall', "WATT\u2019S DRIVE-IN \u00b7 NOW SHOWING", 'Drive-in']],
+  ['unwind', 'tower and hologram: tower at night, playing', ['Playing on the wall', "WATT\u2019S DRIVE-IN \u00b7 NOW SHOWING"]],
   ['unwind', 'tower and hologram: tower at noon, playing', ['Playing on the wall', "WATT\u2019S DRIVE-IN \u00b7 NOW SHOWING"]],
   ['unwind', 'tower and hologram: tower at night, paused', ['Paused', "WATT\u2019S DRIVE-IN \u00b7 INTERMISSION"]],
   ['unwind', 'tower and hologram: tower at noon, paused', ['Paused', "WATT\u2019S DRIVE-IN \u00b7 INTERMISSION"]],
@@ -697,10 +705,15 @@ const EXPECT = [
   ['unwind', 'tower and hologram: tower at night, nothing on', ['Nothing on', 'Nothing on the screen', "WATT\u2019S DRIVE-IN"]],
   ['unwind', 'tower and hologram: tower at noon, nothing on', ['Nothing on', 'Nothing on the screen']],
   ['unwind', 'tower and hologram: tower at night, 24', ['24 saved', 'Saved for the weekend, a very long playlist name', 'YouTube playlist']],
-  ['unwind', 'tower and hologram: hologram at night, 24', ['24 saved', 'Saved for the weekend, a very long playlist name', 'Hologram']],
-  ['unwind', 'tower and hologram: hologram, autoplay refused', ['Hologram', 'Click the video to start', '!12:34']],
-  ['unwind', 'tower and hologram: hologram at', ['Hologram', 'Open in YouTube', '12:34']],
-  ['unwind', 'tower and hologram: Look switch on', ['Feathered', 'Whole sky', 'The sun', 'Drive-in', 'Hologram']],
+  ['unwind', 'tower and hologram: hologram at night, 24', ['24 saved', 'Saved for the weekend, a very long playlist name']],
+  ['unwind', 'tower and hologram: hologram, autoplay refused', ['Click the video to start', '!12:34']],
+  ['unwind', 'tower and hologram: hologram at', ['Open in YouTube', '12:34']],
+  // No Look switch under the block any more: the row ends with the gear, and no look's name is on the page.
+  ['unwind', 'watch block: position near the start', ['0:04', '45:10', 'Open in YouTube']],
+  ['unwind', 'watch block: position near the end', ['45:06', '45:10', 'Open in YouTube']],
+  ['unwind', 'watch block: shown,', ['Playing on the wall', 'Open in YouTube', '12:34', '!Feathered', '!Whole sky', '!The sun']],
+  ['unwind', 'watch block: at rest,', ['Night drive mix', '!Feathered', '!Whole sky', '!The sun']],
+  ['unwind', 'watch block: nothing on,', ['Nothing on', 'Play Night drive mix', '!Feathered', '!Whole sky', '!The sun']],
   ['unwind', 'tower and hologram: settings, five tiles', ['How video is shown', 'One look for everything', 'Hologram', 'The whole picture floats']],
   ['unwind', 'tower and hologram: settings, five looks per kind', ['Videos and playlists', 'Live streams', 'Hologram']],
   // watch polish
@@ -708,14 +721,14 @@ const EXPECT = [
   ['unwind', 'watch polish: drive-in', ['Playing on the wall', '12:34', '45:10', 'Open in YouTube', '!Not playing? Open in browser']],
   ['unwind', 'watch polish: feathered, playlist', ['YouTube playlist', '12:34', 'Open in YouTube']],
   ['unwind', 'watch polish: feathered, autoplay refused', ['Click the video to start', '!12:34']],
-  ['unwind', 'watch polish: whole sky, playlist', ['12:34', 'Whole sky']],
+  ['unwind', 'watch polish: whole sky, playlist', ['12:34']],
   ['unwind', 'watch polish: whole sky, Twitch', ['Open on Twitch', '!12:34']],
-  ['unwind', 'watch polish: sun, playlist', ['12:34', 'The sun']],
+  ['unwind', 'watch polish: sun, playlist', ['12:34']],
   ['unwind', 'watch polish: sun, nothing reported yet', ['Playing on the wall', '!12:34', 'Open in YouTube']],
-  ['unwind', 'watch polish: leave banner', ['Open in YouTube', 'Drive-in']],
-  ['unwind', 'watch polish: nothing on', ['Nothing on', 'Whole sky', 'Drive-in']],
-  ['unwind', 'soft edge: whole sky at night', ['Whole sky', 'Open in YouTube']],
-  ['unwind', 'soft edge: whole sky at noon', ['Whole sky', 'Open in YouTube']],
+  ['unwind', 'watch polish: leave banner', ['Open in YouTube']],
+  ['unwind', 'watch polish: nothing on', ['Nothing on']],
+  ['unwind', 'soft edge: whole sky at night', ['Open in YouTube']],
+  ['unwind', 'soft edge: whole sky at noon', ['Open in YouTube']],
   ['unwind', 'soft edge: whole sky, autoplay refused', ['Click the video to start', 'Waiting for a click on the video']],
   ['unwind', 'watch polish: whole sky, autoplay refused', ['Click the video to start', 'Waiting for a click on the video']],
   // watch behaviour (the faded parts are still in the page, only transparent)
@@ -724,13 +737,13 @@ const EXPECT = [
   ['unwind', 'watch behaviour:', ['Night drive mix', 'Playing on the wall']],
   ['unwind', 'watch polish: Twitch not started hint, drive-in', ['Not started? Click the video', 'Live on the wall', 'Open on Twitch']],
   // sky layers
-  ['unwind', 'sky layers: whole sky', ['Whole sky', 'Playing on the wall']],
-  ['unwind', 'sky layers: the sun', ['The sun', 'Playing on the wall']],
-  ['unwind', 'sky layers: drive-in', ['Drive-in', 'Open on Twitch']],
-  ['unwind', 'sky layers: feathered', ['Feathered', 'Playing on the wall']],
+  ['unwind', 'sky layers: whole sky', ['Playing on the wall']],
+  ['unwind', 'sky layers: the sun', ['Playing on the wall']],
+  ['unwind', 'sky layers: drive-in', ['Open on Twitch']],
+  ['unwind', 'sky layers: feathered', ['Playing on the wall']],
   ['unwind', 'sky layers: Listen at night, nothing playing', ['Nothing playing', '!Tokyo Burnout']],
   ['unwind', 'sky layers: Listen', ['Tokyo Burnout', '!Nothing on']],
-  ['unwind', 'sky layers: Watch, nothing on', ['Nothing on', 'Feathered']],
+  ['unwind', 'sky layers: Watch, nothing on', ['Nothing on']],
   // Meet
   ['meet', 'sparse', 'Nothing scheduled in the next 24 hours'],
   ['meet', 'heavy', 'Architecture working session'],
@@ -872,7 +885,7 @@ EXPECT.push(
   ['unwind', 'look settings: sheet, a look per kind', ['Settings for', 'A look keeps its own settings, whatever kind of video plays in it. Changes show at once.', '90%, smaller than usual', 'Off']],
 );
 // watt drive-in: the drive-in look is on with something playing (Watt himself has no text).
-EXPECT.push(['unwind', 'Watt: drive-in', ['Drive-in', 'Open in YouTube']]);
+EXPECT.push(['unwind', 'Watt: drive-in', ['Open in YouTube']]);
 
 /**
  * States that set a knob but change nothing in the page text, so no text can prove them: the

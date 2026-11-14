@@ -84,20 +84,6 @@ export function lookFor(s: LookSettings, kind: WatchKind): LookId {
   return s.mode === 'one' ? s.all : s[groupOf(kind)];
 }
 
-/**
- * The Look switch: set the look this kind plays in. With one look for everything it sets that
- * look; with a look per kind it sets the look of this kind's group only.
- */
-export function pickLook(s: LookSettings, kind: WatchKind, look: LookId): LookSettings {
-  return s.mode === 'one' ? { ...s, all: look } : { ...s, [groupOf(kind)]: look };
-}
-
-/** The group name the Look switch sets, for its hover tip; null with one look for everything. */
-export function lookTargetName(s: LookSettings, kind: WatchKind): string | null {
-  if (s.mode === 'one') return null;
-  return LOOK_GROUPS.find((g) => g.id === groupOf(kind))?.name ?? null;
-}
-
 /** A rectangle in wall pixels (the 2560 by 720 strip). */
 export interface WallRect {
   x: number;
@@ -109,7 +95,7 @@ export interface WallRect {
 /**
  * The drive-in's video box in wall pixels: exactly 16:9, the picture itself (the Screen tower
  * frame is drawn round it and never over it, see `towerFrame.ts`). It stands 34 px right of and 6 px
- * above the old screen, so the sitting sheep fits between the Look switch (which ends at x 1084)
+ * above the old screen, so the sitting sheep fits between the left block (which ends at x 1084)
  * and the frame, and the frame has 73 px of structure between the picture's foot and the ground.
  * The Watch rules in `unwind.css` place it at these numbers less Unwind's offset (124, 20);
  * fit-check compares.

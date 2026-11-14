@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { usePlaceStore } from '../../state/places';
 import { parseLink, refKey, type WatchRef } from './links';
 import { driveInMode } from './DriveInFrame';
-import { DRIVE_IN_SCREEN, lookFor, loadLooks, pickLook, saveLooks, type LookId, type LookSettings, type WallRect } from './looks';
+import { DRIVE_IN_SCREEN, lookFor, loadLooks, saveLooks, type LookId, type LookSettings, type WallRect } from './looks';
 import { lookBox, loadTune, resetLook, saveTune, withPatch, type LookTune } from './lookSettings';
 
 /** A slider's steps update the stage at once but are written to storage at most this often (and on release, blur, settle and hide). */
@@ -93,8 +93,6 @@ export interface WatchState {
   setTune: (look: LookId, patch: Record<string, number | boolean>, persist?: 'now' | 'soon') => void;
   /** One look's settings back to its defaults. */
   resetTune: (look: LookId) => void;
-  /** The Look switch: set the look for what is on (or, with nothing on, for the first saved item's kind). */
-  pickLook: (look: LookId) => void;
   setReport: (r: Partial<PlayerReport>) => void;
   setNeedsClick: (on: boolean) => void;
   setClickHint: (on: boolean) => void;
@@ -179,10 +177,6 @@ export const useWatchStore = create<WatchState>((set, get) => ({
   setLooks: (looks) => {
     saveLooks(looks);
     set({ looks });
-  },
-  pickLook: (look) => {
-    const kind = get().playing?.kind ?? get().saved[0]?.kind ?? 'video';
-    get().setLooks(pickLook(get().looks, kind, look));
   },
   setReport: (r) => {
     const cur = get().report;

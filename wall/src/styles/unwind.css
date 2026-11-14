@@ -590,9 +590,13 @@
   gap: 14px;
   align-self: flex-start;
 }
+/* The gear: the last button of the left block's row (Watch), the same size as its round
+   neighbours, flush with the end of the time bar. */
 .w-gear {
-  width: 52px;
-  height: 52px;
+  width: 40px;
+  height: 40px;
+  margin-left: auto;
+  flex: none;
   border-radius: 50%;
   display: grid;
   place-items: center;
@@ -616,11 +620,12 @@
   min-width: 0;
 }
 /* Placed on its own (not in flow under the tabs), so the Listen and Watch switch can move
-   without moving anything of Watch: the left block keeps the spot Listen's player starts at. */
+   without moving anything of Watch: the left block starts at wall y 30, the line Listen's
+   player starts at, so nothing jumps between the two tabs. */
 .w-now {
   position: absolute;
   left: 500px;
-  top: 106px;
+  top: 10px;
   z-index: 1;
   display: flex;
   flex-direction: column;
@@ -628,6 +633,7 @@
   gap: 10px;
   width: 460px;
   min-width: 0;
+  padding-bottom: 2px;
 }
 .w-title {
   max-width: 100%;
@@ -655,14 +661,15 @@
   display: flex;
   flex-wrap: nowrap;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   margin-top: 12px;
+  width: 100%;
   max-width: 100%;
 }
 /* The left wing's small round controls (`.rd`, as in Work's music row): one size, drawn for a mouse. */
 .w-ctl .rd {
-  width: 44px;
-  height: 44px;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
 }
 .w-ctl .rd:not(.big) {
@@ -681,7 +688,11 @@
   align-items: center;
   gap: 12px;
   width: 100%;
-  height: 28px;
+  /* 32 px so the 32 px bar and the "Not started?" button fit inside it; the 2 px margins keep the
+     row's place (it still takes 28 px of the block's height) and the block's 2 px of padding below
+     holds the overhang. */
+  height: 32px;
+  margin: -2px 0;
   font-size: 17px;
   color: var(--dim);
   font-variant-numeric: tabular-nums;
@@ -691,7 +702,8 @@
 }
 .w-bar {
   flex: 1;
-  height: 16px;
+  /* A 32 px hit area for the mouse; the visible line stays 4 px and is centred in it. */
+  height: 32px;
   display: flex;
   align-items: center;
   cursor: pointer;
@@ -702,7 +714,7 @@
   position: absolute;
   left: 0;
   right: 0;
-  top: 6px;
+  top: 14px;
   height: 4px;
   border-radius: 2px;
   background: rgba(200, 190, 255, 0.2);
@@ -711,7 +723,26 @@
   position: relative;
   height: 4px;
   border-radius: 2px;
-  background: linear-gradient(90deg, var(--pink), var(--cyan));
+  background: linear-gradient(90deg, var(--mag), var(--cyan));
+}
+/* The marker at the fill's end (`--f` is the played fraction, set on the bar): a 10 px dot in the
+   fill's end colour with a thin dark edge so it reads on a bright or a dark sky. It takes no
+   click (the bar does) and is held inside the bar, so at 0 and at 100 percent it stays whole. */
+.w-bar .w-mark {
+  position: absolute;
+  top: 11px;
+  left: clamp(0px, calc(var(--f, 0) * 100% - 5px), calc(100% - 10px));
+  box-sizing: border-box;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--cyan);
+  border: 1px solid rgba(8, 6, 26, 0.85);
+  pointer-events: none;
+}
+.w-bar:hover .w-mark,
+.w-bar:focus-visible .w-mark {
+  transform: scale(1.15);
 }
 .w-bar:hover::before {
   background: rgba(200, 190, 255, 0.32);
@@ -725,7 +756,7 @@
   font: 600 14px/1 var(--disp);
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--pink);
+  color: var(--mag);
 }
 .w-clickline {
   color: var(--amber);
@@ -735,10 +766,10 @@
   color: var(--faint);
 }
 .w-hintbtn {
-  height: 28px;
-  padding: 0 12px;
-  border-radius: 14px;
-  font-size: 15px;
+  height: 32px;
+  padding: 0 14px;
+  border-radius: 16px;
+  font-size: 16px;
   color: var(--faint);
   border: 1px solid var(--line);
   background: rgba(8, 6, 26, 0.6);
@@ -750,29 +781,6 @@
   outline: 3px solid var(--cyan);
   outline-offset: 2px;
 }
-/* The Look switch: one fixed place under the left block, the same box in every look and
-   whether or not something plays; never on the video. */
-.w-lookbar {
-  position: absolute;
-  left: 460px;
-  top: 424px;
-  z-index: 1;
-  box-sizing: border-box;
-  width: 500px;
-  height: 46px;
-  background: rgba(10, 7, 28, 0.8);
-}
-/* Five looks: the box grew once, to the left (its right end stays at wall x 1084), to 500 px, and the
-   segments take their own width and share what is left, so no label is ever squeezed. */
-.w-lookbar.w-seg button {
-  flex: 1 1 auto;
-  padding: 0 4px;
-  font-size: 16px;
-}
-.w-lookbar button:focus-visible {
-  outline: 3px solid var(--cyan);
-  outline-offset: 1px;
-}
 .w-note {
   margin-top: 12px;
   font-size: 18px;
@@ -782,6 +790,17 @@
 .w-start {
   max-width: 100%;
   min-width: 0;
+}
+/* With nothing on, the row is the Play button for the first saved item and the gear at its end:
+   the button takes the row's height (40 px) so both sit on one line. */
+.w-idle .w-start {
+  align-self: center;
+  margin-top: 0;
+  height: 40px;
+  padding: 0 18px;
+  border-radius: 20px;
+  gap: 8px;
+  font-size: 19px;
 }
 .w-start:disabled {
   opacity: 0.45;
@@ -993,12 +1012,15 @@
   mask-image: linear-gradient(180deg, #000, transparent 80%);
   pointer-events: none;
 }
-/* Open in YouTube (or on Twitch): a plain button at the end of the control row, always there. */
+/* Open in YouTube (or on Twitch): a plain button before the gear in the control row, always there.
+   It is the one that gives way when the row is short of room (a wider font on another machine): its
+   label truncates with an ellipsis, never below the icon and four letters, and the gear stays whole. */
 .w-open {
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 88px;
   height: 40px;
-  margin-left: 6px;
-  padding: 0 14px;
+  margin-left: 4px;
+  padding: 0 10px;
   border-radius: 20px;
   display: inline-flex;
   align-items: center;
@@ -1008,6 +1030,12 @@
   color: var(--dim);
   background: rgba(8, 6, 26, 0.7);
   border: 1px solid var(--line);
+}
+.w-open-t {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .w-open:hover {
   color: var(--tx);
@@ -1509,7 +1537,7 @@
   pointer-events: none;
 }
 .top:has(.w-sky .w-take) > :not(.unwind, .w-layer),
-.top:has(.w-sky .w-take) .unwind :is(.u-wing, .u-corner, .u-right, .u-tabrow, .w-now, .w-lookbar, .w-sheet) {
+.top:has(.w-sky .w-take) .unwind :is(.u-wing, .u-corner, .u-right, .u-tabrow, .w-now, .w-sheet) {
   pointer-events: auto;
 }
 /* The floor's wash under the whole sky, where frame B draws its blurred spill (stage x 512 to
@@ -1537,8 +1565,7 @@
   background: rgba(10, 7, 28, 0.97);
 }
 .top:has(.w-sky) .unwind .u-tabs,
-.top:has(.w-sky) .unwind .w-gear,
-.top:has(.w-sky) .unwind .w-lookbar {
+.top:has(.w-sky) .unwind .w-gear {
   background: rgba(10, 7, 28, 0.9);
 }
 
@@ -2136,24 +2163,19 @@
 .unwind[data-tab='watch'] .w-panel {
   pointer-events: none;
 }
-.unwind[data-tab='watch'] :is(.u-wing, .u-corner, .u-right, .u-tabrow, .w-now, .w-lookbar, .w-sheet) {
+.unwind[data-tab='watch'] :is(.u-wing, .u-corner, .u-right, .w-now, .w-sheet) {
   pointer-events: auto;
 }
 /* 5A: while a video plays and he is not using them, the kind line, the "Playing on the wall"
-   line, the play row, the time bar and the Look switch fade to nothing and take no pointer (they
-   can still take focus, which brings them back); the title stays at half strength with no glow.
-   The left block's and the Look row's boxes still feel the pointer, which brings them back. */
+   line, the play row (the gear is its last button) and the time bar fade to nothing and take no
+   pointer (they can still take focus, which brings them back); the title stays at half strength
+   with no glow. The left block's box still feels the pointer, which brings it back. */
 .w-now > :is(.u-src, .w-sub, .w-ctl, .w-time),
-.w-now > .w-title,
-.w-panel > .w-lookbar {
+.w-now > .w-title {
   transition: opacity 250ms ease;
 }
-.w-now[data-ctl='rest'] > :is(.u-src, .w-sub, .w-ctl, .w-time),
-.w-panel[data-ctl='rest'] > .w-lookbar {
+.w-now[data-ctl='rest'] > :is(.u-src, .w-sub, .w-ctl, .w-time) {
   opacity: 0;
-}
-.w-now[data-ctl='rest'] > :is(.u-src, .w-sub, .w-ctl, .w-time),
-.w-panel[data-ctl='rest'] > .w-lookbar button {
   pointer-events: none;
 }
 .w-now[data-ctl='rest'] > .w-title {
@@ -2162,8 +2184,7 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .w-now > :is(.u-src, .w-sub, .w-ctl, .w-time),
-  .w-now > .w-title,
-  .w-panel > .w-lookbar {
+  .w-now > .w-title {
     transition: none;
   }
 }
@@ -2222,10 +2243,6 @@
 .u-wing .u-tab:not(.on):hover {
   color: var(--tx);
   background: rgba(255, 255, 255, 0.06);
-}
-/* On Watch the gear keeps the top of the centre, where the tab pill used to start. */
-.unwind[data-tab='watch'] .u-tabrow {
-  min-height: 52px;
 }
 
 /* Up next (stage 124, 266): three rows of 48 px covers, the title and the artist. The rows end by
