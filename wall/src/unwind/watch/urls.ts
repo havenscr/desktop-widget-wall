@@ -35,7 +35,10 @@ export function embedUrl(ref: unknown, where: PageWhere | null): string | null {
   if (r.kind === 'twitch') {
     return `${TWITCH_EMBED_ORIGIN}/?channel=${id}&parent=${encodeURIComponent(where.hostname)}`;
   }
-  const tail = `autoplay=1&playsinline=1&rel=0&enablejsapi=1&origin=${encodeURIComponent(where.origin)}`;
+  // The player's own controls, keyboard, fullscreen button and annotations are off by the
+  // documented embed parameters (`modestbranding` is deprecated and left out); the wall's own
+  // buttons drive it through the frame messages that `enablejsapi` and `origin` allow.
+  const tail = `autoplay=1&controls=0&disablekb=1&fs=0&iv_load_policy=3&playsinline=1&rel=0&enablejsapi=1&origin=${encodeURIComponent(where.origin)}`;
   if (r.kind === 'playlist') return `${YOUTUBE_EMBED_ORIGIN}/embed/videoseries?list=${id}&${tail}`;
   return `${YOUTUBE_EMBED_ORIGIN}/embed/${id}?${tail}`;
 }
@@ -50,11 +53,18 @@ export function isPlayerOrigin(origin: unknown): boolean {
   return typeof origin === 'string' && PLAYER_ORIGINS.includes(origin);
 }
 
-export type YouTubeCommand = 'playVideo' | 'pauseVideo' | 'mute' | 'unMute';
+export type YouTubeCommand = 'playVideo' | 'pauseVideo' | 'mute' | 'unMute' | 'setVolume' | 'nextVideo' | 'previousVideo' | 'seekTo';
 
-/** The YouTube embed's command message (sent with the embed origin as the target). */
-export function commandMessage(func: YouTubeCommand): string {
-  return JSON.stringify({ event: 'command', func, args: [] });
+/** The volume inside the player: always full; the owner sets the level with the system volume. */
+export const PLAYER_VOLUME = 100;
+
+/**
+ * The YouTube embed's command message (sent with the embed origin as the target). Arguments
+ * are finite numbers or booleans only; anything else is dropped.
+ */
+export function commandMessage(func: YouTubeCommand, args: readonly (number | boolean)[] = []): string {
+  const clean = args.filter((a) => typeof a === 'boolean' || (typeof a === 'number' && Number.isFinite(a)));
+  return JSON.stringify({ event: 'command', func, args: clean });
 }
 
 /** Asks the YouTube embed to send its state changes. */
@@ -62,27 +72,35 @@ export const LISTENING_MESSAGE = JSON.stringify({ event: 'listening', id: 1, cha
 
 export type PlayState = 'playing' | 'paused' | 'ended' | 'buffering';
 
-/**
- * The play state in a message from a player frame, or null. The message is trusted for
- * nothing else: only an exact player origin, a string under 20 kB of JSON, and a YouTube
- * `onStateChange` or `infoDelivery.playerState` number are read.
- */
-export function readPlayState(origin: unknown, data: unknown): PlayState | null {
-  // Twitch's player is never asked for its state, so only the YouTube embed is read.
-  if (origin !== YOUTUBE_EMBED_ORIGIN) return null;
-  if (typeof data !== 'string' || data.length > 20_000) return null;
-  let msg: unknown;
-  try {
-    msg = JSON.parse(data);
-  } catch {
-    return null;
-  }
-  if (!msg || typeof msg !== 'object') return null;
-  const m = msg as { event?: unknown; info?: unknown };
-  let state: unknown = null;
-  if (m.event === 'onStateChange') state = m.info;
-  else if (m.event === 'infoDelivery' && m.info && typeof m.info === 'object') state = (m.info as { playerState?: unknown }).playerState;
-  switch (state) {
+/** What a player frame may tell the wall; every field optional, every number finite and clamped. */
+export interface PlayerInfo {
+  state?: PlayState;
+  /** Seconds played, 0 to `MAX_SECONDS`. */
+  time?: number;
+  /** Length in seconds, 0 to `MAX_SECONDS` (0 for a live stream). */
+  duration?: number;
+  /** Items in the playlist the player is on (0 for a single video). */
+  count?: number;
+  /** The item playing in that playlist, 0 based. */
+  index?: number;
+  /** True for the frame's ready message (`onReady` or `initialDelivery`). */
+  ready?: boolean;
+}
+
+/** The largest message read, in characters. */
+export const MAX_MESSAGE = 20_000;
+/** Longer than any real video or stream position (a week). */
+export const MAX_SECONDS = 7 * 24 * 3600;
+/** The most playlist items counted. */
+export const MAX_ITEMS = 5000;
+
+function num(v: unknown, max: number): number | undefined {
+  if (typeof v !== 'number' || !Number.isFinite(v)) return undefined;
+  return Math.min(max, Math.max(0, v));
+}
+
+function stateOf(v: unknown): PlayState | undefined {
+  switch (v) {
     case 1:
       return 'playing';
     case 2:
@@ -92,6 +110,49 @@ export function readPlayState(origin: unknown, data: unknown): PlayState | null 
     case 3:
       return 'buffering';
     default:
-      return null;
+      return undefined;
   }
+}
+
+/**
+ * The gate for every message from a player frame (outside input). Accepted only when the
+ * sender is exactly the YouTube embed origin AND the message came from this frame's own
+ * window; the data must be a JSON string under `MAX_MESSAGE` characters with one of the
+ * player's four known events. Only the fields above are read, each by its expected type
+ * (numbers finite and clamped, the playlist only counted); nothing is evaluated or turned
+ * into markup. Null for anything else.
+ */
+export function readPlayerMessage(origin: unknown, source: unknown, frame: unknown, data: unknown): PlayerInfo | null {
+  if (origin !== YOUTUBE_EMBED_ORIGIN) return null;
+  if (!frame || source !== frame) return null;
+  if (typeof data !== 'string' || data.length > MAX_MESSAGE) return null;
+  let msg: unknown;
+  try {
+    msg = JSON.parse(data);
+  } catch {
+    return null;
+  }
+  if (!msg || typeof msg !== 'object' || Array.isArray(msg)) return null;
+  const m = msg as { event?: unknown; info?: unknown };
+  if (m.event === 'onReady') return { ready: true };
+  if (m.event === 'onStateChange') {
+    const state = stateOf(m.info);
+    return state ? { state } : null;
+  }
+  if (m.event !== 'infoDelivery' && m.event !== 'initialDelivery') return null;
+  if (!m.info || typeof m.info !== 'object' || Array.isArray(m.info)) return null;
+  const i = m.info as Record<string, unknown>;
+  const out: PlayerInfo = {};
+  if (m.event === 'initialDelivery') out.ready = true;
+  const state = stateOf(i.playerState);
+  if (state) out.state = state;
+  const time = num(i.currentTime, MAX_SECONDS);
+  if (time !== undefined) out.time = time;
+  const duration = num(i.duration, MAX_SECONDS);
+  if (duration !== undefined) out.duration = duration;
+  if (Array.isArray(i.playlist)) out.count = Math.min(MAX_ITEMS, i.playlist.length);
+  else if (i.playlist === null) out.count = 0;
+  const index = num(i.playlistIndex, MAX_ITEMS);
+  if (index !== undefined) out.index = Math.floor(index);
+  return Object.keys(out).length ? out : null;
 }

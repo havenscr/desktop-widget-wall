@@ -237,6 +237,21 @@ state('unwind', 'watch: whole sky at dusk', `${WM}&wlist=three&wlook=sky&wplay=0
 state('unwind', 'watch: sun, 24 saved, Twitch', `${WM}&wlist=many&wlook=sun&wplay=2`, TIMES.night);
 state('unwind', 'watch: settings, four looks, whole sky chosen', `${WM}&wlist=three&wlook=sky&wplay=0&wsheet=one`, TIMES.night);
 state('unwind', 'watch: settings, four looks per kind', `${WM}&wlist=many&wlook=sun&wplay=0&wsheet=kind`, TIMES.night);
+// watch polish: the wall's own control row and the fixed Look switch in every look, with a mock
+// player (`wstate`): a single video, a playlist, paused, autoplay refused, Twitch, nothing reported.
+state('unwind', 'watch polish: drive-in, single video', `${WM}&wlist=three&wlook=drivein&wplay=0`, TIMES.night);
+state('unwind', 'watch polish: drive-in at noon', `${WM}&wlist=three&wlook=drivein&wplay=0`, TIMES.noon);
+state('unwind', 'watch polish: drive-in, paused', `${WM}&wlist=three&wlook=drivein&wplay=0&wstate=paused`, TIMES.night);
+state('unwind', 'watch polish: feathered, playlist', `${WM}&wlist=many&wlook=feather&wplay=3`, TIMES.night);
+state('unwind', 'watch polish: feathered, autoplay refused', `${WM}&wlist=three&wlook=feather&wplay=0&wstate=refused`, TIMES.night);
+state('unwind', 'watch polish: whole sky, playlist', `${WM}&wlist=many&wlook=sky&wplay=3`, TIMES.night);
+state('unwind', 'watch polish: whole sky, Twitch', `${WM}&wlist=three&wlook=sky&wplay=2`, TIMES.night);
+state('unwind', 'watch polish: sun, playlist', `${WM}&wlist=many&wlook=sun&wplay=3`, TIMES.night);
+state('unwind', 'watch polish: sun, nothing reported yet', `${WM}&wlist=three&wlook=sun&wplay=0&wstate=silent`, TIMES.night);
+state('unwind', 'watch polish: whole sky, autoplay refused', `${WM}&wlist=three&wlook=sky&wplay=0&wstate=refused`, TIMES.night);
+state('unwind', 'watch polish: Twitch not started hint, drive-in', `${WM}&wlist=three&wlook=drivein&wplay=2&wstate=refused`, TIMES.night);
+state('unwind', 'watch polish: leave banner over the drive-in', `${WM}&wlist=three&wlook=drivein&wplay=0&leave=12`, TIMES.night);
+state('unwind', 'watch polish: nothing on, whole sky chosen', `${WM}&wlist=three&wlook=sky`, TIMES.night);
 
 // The Tools drawer: opened on load (`tools=1`), over each place and in its hard states.
 state('work', 'tools: open', 'tools=1');
@@ -417,19 +432,32 @@ const EXPECT = [
   ['unwind', 'network alarm', '4 network alerts.'],
   ['unwind', 'watch: nothing saved', ['Nothing on', 'Paste a YouTube or Twitch link', '!saved']],
   ['unwind', 'watch: three saved, nothing on', ['Nothing on', 'Play Night drive mix', '3 saved']],
-  ['unwind', 'watch: feathered', ['Look: Feathered', 'Not playing? Open in browser', 'Lofi beats radio']],
-  ['unwind', 'watch: drive-in, Twitch', ['Look: Drive-in', 'Twitch channel', 'Live on the wall']],
+  ['unwind', 'watch: feathered', ['Feathered', 'Open in YouTube', 'Lofi beats radio']],
+  ['unwind', 'watch: drive-in, Twitch', ['Drive-in', 'Open on Twitch', 'Twitch channel', 'Live on the wall']],
   ['unwind', 'watch: 24 saved', ['24 saved', 'Saved for the weekend, a very long playlist name', 'YouTube playlist']],
   ['unwind', 'watch: settings, one look', ['How video is shown', 'One look for everything', 'Feathered']],
   ['unwind', 'watch: settings, a look per kind', ['Videos and playlists', 'Live streams', 'Saved here: 19 YouTube, 5 Twitch']],
   ['unwind', 'watch: listen with the Video corner', ['Video', 'Tokyo Burnout', '!Nothing on']],
-  ['unwind', 'watch: sparse data', ['Night drive mix', 'Not playing? Open in browser']],
-  ['unwind', 'watch: whole sky, 24', ['Look: Whole sky', '24 saved', 'Saved for the weekend']],
-  ['unwind', 'watch: whole sky', ['Look: Whole sky', 'Not playing? Open in browser']],
-  ['unwind', 'watch: sun, 24 saved, Twitch', ['Look: The sun', '24 saved', 'Live on the wall']],
-  ['unwind', 'watch: sun', ['Look: The sun', 'Not playing? Open in browser']],
+  ['unwind', 'watch: sparse data', ['Night drive mix', 'Open in YouTube']],
+  ['unwind', 'watch: whole sky, 24', ['Whole sky', '24 saved', 'Saved for the weekend', '12:34']],
+  ['unwind', 'watch: whole sky', ['Whole sky', 'Open in YouTube']],
+  ['unwind', 'watch: sun, 24 saved, Twitch', ['The sun', '24 saved', 'Live on the wall', 'Open on Twitch']],
+  ['unwind', 'watch: sun', ['The sun', 'Open in YouTube']],
   ['unwind', 'watch: settings, four looks, whole sky', ['How video is shown', 'Whole sky', 'The sun', 'Drive-in']],
   ['unwind', 'watch: settings, four looks per kind', ['Videos and playlists', 'Live streams', 'The sun']],
+  // watch polish
+  ['unwind', 'watch polish: drive-in, paused', ['Paused', '12:34', '45:10', 'Open in YouTube']],
+  ['unwind', 'watch polish: drive-in', ['Playing on the wall', '12:34', '45:10', 'Open in YouTube', '!Not playing? Open in browser']],
+  ['unwind', 'watch polish: feathered, playlist', ['YouTube playlist', '12:34', 'Open in YouTube']],
+  ['unwind', 'watch polish: feathered, autoplay refused', ['Click the video to start', '!12:34']],
+  ['unwind', 'watch polish: whole sky, playlist', ['12:34', 'Whole sky']],
+  ['unwind', 'watch polish: whole sky, Twitch', ['Open on Twitch', '!12:34']],
+  ['unwind', 'watch polish: sun, playlist', ['12:34', 'The sun']],
+  ['unwind', 'watch polish: sun, nothing reported yet', ['Playing on the wall', '!12:34', 'Open in YouTube']],
+  ['unwind', 'watch polish: leave banner', ['Open in YouTube', 'Drive-in']],
+  ['unwind', 'watch polish: nothing on', ['Nothing on', 'Whole sky', 'Drive-in']],
+  ['unwind', 'watch polish: whole sky, autoplay refused', ['Click the video to start', 'Waiting for a click on the video']],
+  ['unwind', 'watch polish: Twitch not started hint, drive-in', ['Not started? Click the video', 'Live on the wall', 'Open on Twitch']],
   // Meet
   ['meet', 'sparse', 'Nothing scheduled in the next 24 hours'],
   ['meet', 'heavy', 'Architecture working session'],
