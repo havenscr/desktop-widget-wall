@@ -260,14 +260,24 @@ describe('the cards Unwind stands in the sky keep the moon clear of them', () =>
     expect(moonFor(MOON_PLACES, claims())).toBeNull();
   });
 
-  it('Watch with nothing on: the list card, the left block and the Look switch claim their boxes; the moon stays at its first place, clear of them', async () => {
-    lay({ '.w-card': [2030, 20, 510, 330], '.w-now': [620, 120, 520, 260], '.w-lookbar': [620, 400, 458, 44] });
+  it('Watch with nothing on: the list card and the left block (at wall y 30, with no Look switch under it) claim their boxes; the moon stays at its first place, clear of them', async () => {
+    lay({ '.w-card': [2030, 20, 510, 330], '.w-now': [624, 30, 460, 221] });
     setup('feather', false);
     render(<UnwindView />);
     await flush();
     expect(claims()['watch-card']).toEqual({ clear: [[2030, 20, 510, 330]] });
-    expect(claims()['watch-now']).toEqual({ clear: [[620, 120, 520, 260]] });
-    expect(claims()['watch-look']).toEqual({ clear: [[620, 400, 458, 44]] });
+    expect(claims()['watch-now']).toEqual({ clear: [[624, 30, 460, 221]] });
+    expect(claims()['watch-look']).toBeUndefined();
+    expect(moonFor(MOON_PLACES, claims())).toBe(MOON);
+  });
+
+  it('Watch with a long title: the block claims its taller box, and the first moon place is still clear of it', async () => {
+    // A second title line adds 53 px to everything below it.
+    lay({ '.w-card': [2030, 20, 510, 330], '.w-now': [624, 30, 460, 274] });
+    setup('feather', false);
+    render(<UnwindView />);
+    await flush();
+    expect(claims()['watch-now']).toEqual({ clear: [[624, 30, 460, 274]] });
     expect(moonFor(MOON_PLACES, claims())).toBe(MOON);
   });
 });

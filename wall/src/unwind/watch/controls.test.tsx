@@ -37,11 +37,20 @@ function seed(looks?: object) {
 }
 
 async function playing(kind: 'video' | 'playlist' | 'twitch', looks?: object, load = true) {
+  const { unmount } = await renderPlaying(kind, looks);
+  return { ...(await frameOf(load)), unmount };
+}
+
+async function renderPlaying(kind: 'video' | 'playlist' | 'twitch', looks?: object) {
   seed(looks);
   useWatchStore.getState().setTab('watch');
   useWatchStore.getState().play(ITEMS.find((i) => i.kind === kind)!);
-  render(<UnwindView />);
+  const r = render(<UnwindView />);
   await flush();
+  return r;
+}
+
+async function frameOf(load: boolean) {
   const frame = document.querySelector('iframe')!;
   const win = frame.contentWindow!;
   const post = vi.spyOn(win, 'postMessage').mockImplementation(() => {});
@@ -321,34 +330,57 @@ describe('the frame wiring on its own', () => {
   });
 });
 
-describe('the Look switch', () => {
-  it('sets the one look for everything', async () => {
+describe('the looks are chosen in the gear sheet, with no Look switch on the page', () => {
+  it('has no Look switch with a video playing, paused, waiting for a click, or with nothing on', async () => {
     await playing('video', { mode: 'one', all: 'drivein' });
-    const sw = screen.getByRole('radiogroup', { name: 'Look' });
-    await act(async () => within(sw).getByRole('radio', { name: 'The sun' }).click());
+    const none = () => {
+      expect(document.querySelector('.w-lookbar')).toBeNull();
+      expect(screen.queryByRole('radiogroup', { name: /^Look(,|$)/ })).toBeNull();
+    };
+    none();
+    act(() => useWatchStore.getState().setPaused(true));
+    none();
+    act(() => useWatchStore.getState().setNeedsClick(true));
+    none();
+    act(() => useWatchStore.getState().stop());
+    none();
+    // The row of the idle block still has the gear, last.
+    const row = document.querySelector('.w-now > .w-ctl')!;
+    expect(row.lastElementChild).toBe(screen.getByRole('button', { name: 'How video is shown' }));
+  });
+
+  it('puts the gear last in the row of a video, of a playlist and of Twitch', async () => {
+    for (const kind of ['video', 'playlist', 'twitch'] as const) {
+      const { unmount } = await renderPlaying(kind);
+      const row = document.querySelector('.w-now > .w-ctl')!;
+      const gear = screen.getByRole('button', { name: 'How video is shown' });
+      expect(row.lastElementChild).toBe(gear);
+      expect(gear.className).toContain('w-gear');
+      // The open button comes just before it.
+      expect(gear.previousElementSibling?.className).toContain('w-open');
+      unmount();
+    }
+  });
+
+  it('sets the one look for everything from the sheet it opens on its Looks side, and not inside the stage', async () => {
+    await playing('video', { mode: 'one', all: 'drivein' });
+    await act(async () => screen.getByRole('button', { name: 'How video is shown' }).click());
+    const sw = screen.getByRole('radiogroup', { name: 'Look for everything' });
+    await act(async () => within(sw).getByRole('radio', { name: /The sun/ }).click());
     expect(parseLooks(localStorage.getItem(LOOKS_KEY))).toMatchObject({ mode: 'one', all: 'sun' });
     expect(document.querySelector('.w-stage')?.getAttribute('data-look')).toBe('sun');
-    // The switch is not inside the stage, so it is never drawn on the video.
     expect(sw.closest('.w-stage')).toBeNull();
   });
 
-  it('with a look per kind sets only the kind now playing, and names it', async () => {
+  it('with a look per kind the sheet sets the kind it picks, and names the group', async () => {
     await playing('video', { mode: 'kind', all: 'drivein', video: 'feather', live: 'sky', twitch: 'drivein' });
-    const sw = screen.getByRole('radiogroup', { name: 'Look, for videos and playlists' });
+    await act(async () => screen.getByRole('button', { name: 'How video is shown' }).click());
+    const sw = screen.getByRole('radiogroup', { name: 'Look for videos and playlists' });
     await act(async () => within(sw).getByRole('radio', { name: 'Whole sky' }).click());
     expect(parseLooks(localStorage.getItem(LOOKS_KEY))).toMatchObject({ mode: 'kind', video: 'sky', live: 'sky', twitch: 'drivein', all: 'drivein' });
     expect(pickLook(DEFAULT_LOOKS, 'twitch', 'sun')).toEqual({ ...DEFAULT_LOOKS, all: 'sun' });
     expect(lookTargetName({ ...DEFAULT_LOOKS, mode: 'kind' }, 'playlist')).toBe('Videos and playlists');
     expect(lookTargetName(DEFAULT_LOOKS, 'playlist')).toBeNull();
-  });
-
-  it('moves with the arrow keys', async () => {
-    await playing('video', { mode: 'one', all: 'feather' });
-    const sw = screen.getByRole('radiogroup', { name: 'Look' });
-    act(() => {
-      sw.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
-    });
-    expect(within(sw).getByRole('radio', { name: 'Whole sky' }).getAttribute('aria-checked')).toBe('true');
   });
 });
 

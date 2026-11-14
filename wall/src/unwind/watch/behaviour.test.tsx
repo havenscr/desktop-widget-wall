@@ -196,13 +196,8 @@ describe('the controls fade (5A)', () => {
     expect(ctl()).toBe('rest');
   });
 
-  it('the Look row and the band over the video\'s lower edge bring them back too', async () => {
+  it('the band over the video\'s lower edge brings them back too', async () => {
     await playing();
-    await flush(CTL_REST_MS);
-    expect(ctl()).toBe('rest');
-    fireEvent.pointerEnter(document.querySelector('.w-lookbar')!);
-    expect(ctl()).toBe('shown');
-    fireEvent.pointerLeave(document.querySelector('.w-lookbar')!);
     await flush(CTL_REST_MS);
     expect(ctl()).toBe('rest');
     const band = document.querySelector('.w-edge')!;
@@ -215,6 +210,59 @@ describe('the controls fade (5A)', () => {
     fireEvent.pointerLeave(band);
     await flush(CTL_REST_MS);
     expect(ctl()).toBe('rest');
+  });
+
+  it('the gear is the last button of the play row: it fades with the row, comes back with it, and holds it while it has focus', async () => {
+    await playing();
+    const gear = screen.getByRole('button', { name: 'How video is shown' });
+    const row = document.querySelector('.w-now > .w-ctl')!;
+    expect(gear.parentElement).toBe(row);
+    expect([...row.querySelectorAll('button')].pop()).toBe(gear);
+    expect(row.lastElementChild).toBe(gear);
+    expect(document.querySelector('.u-tabrow')).toBeNull();
+    expect(document.querySelector('.w-lookbar')).toBeNull();
+    await flush(CTL_REST_MS);
+    expect(ctl()).toBe('rest');
+    // The gear is inside the faded row (the stylesheet fades `.w-ctl` and its children together).
+    expect(gear.closest('.w-now')!.getAttribute('data-ctl')).toBe('rest');
+    fireEvent.keyDown(document.body, { key: 'Tab' });
+    expect(ctl()).toBe('shown');
+    act(() => gear.focus());
+    await flush(CTL_REST_MS * 2);
+    expect(ctl()).toBe('shown');
+    act(() => gear.blur());
+    await flush(CTL_REST_MS);
+    expect(ctl()).toBe('rest');
+  });
+
+  it('Enter on the gear opens the sheet on its Looks side; Escape closes it and puts the focus back on the gear, and the video plays on', async () => {
+    await playing();
+    const gear = screen.getByRole('button', { name: 'How video is shown' });
+    act(() => gear.focus());
+    await act(async () => gear.click());
+    const sheet = screen.getByRole('dialog', { name: 'How video is shown' });
+    expect(sheet).toBeTruthy();
+    expect(gear.getAttribute('aria-expanded')).toBe('true');
+    expect(document.activeElement).toBe(sheet);
+    fireEvent.keyDown(window, { key: 'Escape' });
+    await flush();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(document.activeElement).toBe(gear);
+    expect(useWatchStore.getState().playing).not.toBeNull();
+  });
+
+  it('a click outside the sheet closes it without taking the focus from what was clicked', async () => {
+    await playing();
+    const gear = screen.getByRole('button', { name: 'How video is shown' });
+    await act(async () => gear.click());
+    const pause = screen.getByRole('button', { name: 'Pause' });
+    act(() => {
+      pause.focus();
+      fireEvent.pointerDown(pause);
+    });
+    await flush();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(document.activeElement).toBe(pause);
   });
 
   it('Tab brings them back, and they stay while a control has focus', async () => {
