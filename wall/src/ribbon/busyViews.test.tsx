@@ -1,6 +1,7 @@
 import { act, fireEvent, render } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { lane, summary } from '../agents/fixtures';
+import { agentLayout, dayTotals } from '../agents/model';
 import { CentreSlot } from '../agents/CentreSlot';
 import { resetAgents } from '../agents/useAgents';
 import { mocks } from '../bridge/tauri';
@@ -190,6 +191,16 @@ it('at the limit the meter says so in amber; a past day counts its recorded span
 }, 20_000);
 
 it('a helper or side chat gets no row, no count and no click target: the drawer lists the six parents only', async () => {
+  const withChild = busyDay();
+  const clean = { ...withChild, day: withChild.day.filter((d) => d.lane !== 'c0ffee00-0001') };
+  const polluted = { ...withChild, day: [...withChild.day, { lane: 'c0ffee00-side', start: iso('09:45'), end: null, kind: 'run' as const }] };
+  const layout = (value: typeof polluted) => agentLayout(value, t('10:24'), (ms) => (ms - t('09:00')) / 60_000, null, 0, Number.POSITIVE_INFINITY);
+  const cleanLayout = layout(clean);
+  const pollutedLayout = layout(polluted);
+  expect(dayTotals(pollutedLayout.segs)).toBe(dayTotals(cleanLayout.segs));
+  expect(pollutedLayout.segs.map(({ lane, start, end }) => ({ lane, start, end }))).toEqual(cleanLayout.segs.map(({ lane, start, end }) => ({ lane, start, end })));
+  expect(pollutedLayout.segs.map(({ x, width }) => ({ x, width }))).toEqual(cleanLayout.segs.map(({ x, width }) => ({ x, width })));
+
   answer = busyDay;
   const r = render(<Ribbon kind="work" />);
   await flush();
@@ -200,4 +211,5 @@ it('a helper or side chat gets no row, no count and no click target: the drawer 
   expect(rows.map((x) => x.querySelector('.dd-name')!.textContent).sort()).toEqual(ids.map((_, i) => `Session ${i + 1}`));
   // No control anywhere in the drawer or the strip names the helper's id.
   expect(r.container.innerHTML).not.toContain('c0ffee00-0001');
+  expect(r.container.innerHTML).not.toContain('c0ffee00-side');
 }, 20_000);

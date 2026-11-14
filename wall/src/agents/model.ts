@@ -588,7 +588,8 @@ export function agentLayout(
   maxRows = AGENT_ROWS,
 ): AgentLayout {
   const now = until === null ? nowMs : Math.min(nowMs, until);
-  const sorted = [...s.day].sort((a, b) => Date.parse(a.start) - Date.parse(b.start));
+  const parentIds = new Set(cards({ lanes: s.lanes, sessionsList: s.sessionsList ?? null }).map((l) => l.id));
+  const sorted = s.day.filter((d) => parentIds.has(d.lane)).sort((a, b) => Date.parse(a.start) - Date.parse(b.start));
   const raw: AgentSegment[] = [];
   for (const d of sorted) {
     const start = Date.parse(d.start) - skewMs;

@@ -191,7 +191,6 @@ describe('ribbon segments', () => {
     });
     const segs = agentSegments(s, now, hourAt);
     expect(segs.map((g) => [g.row, g.kind, g.x, g.width])).toEqual([
-      [2, 'past', 300, 100],
       [1, 'done', 500, 60],
       [0, 'run', 570, 30],
       [1, 'wait', 580, 20],
@@ -199,7 +198,7 @@ describe('ribbon segments', () => {
   });
 
   it('skips spans the ribbon cannot place and keeps a tiny span visible', () => {
-    const s = summary({ lanes: [], day: [{ lane: 'a1b2c3d4-0001', start: at(1), end: at(0.5), kind: 'run' }, { lane: 'a1b2c3d4-0001', start: 'nope', end: null, kind: 'run' }] });
+    const s = summary({ lanes: [lane({ id: 'a1b2c3d4-0001' })], day: [{ lane: 'a1b2c3d4-0001', start: at(1), end: at(0.5), kind: 'run' }, { lane: 'a1b2c3d4-0001', start: 'nope', end: null, kind: 'run' }] });
     expect(agentSegments(s, now, hourAt).map((g) => g.width)).toEqual([5]);
     expect(agentSegments(s, now, () => null)).toEqual([]);
   });
