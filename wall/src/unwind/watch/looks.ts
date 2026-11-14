@@ -121,7 +121,7 @@ export const DRIVE_IN_SCREEN: Readonly<WallRect> = Object.freeze({ x: 1124, y: 6
  * - feather: the feathered picture, its soft edges included.
  * - sky: the whole 16:9 picture, never cropped: as tall as the sky allows (its top 16 px under the
  *   top of the strip, its foot 11 px under the horizon line, so only the land hides its lower edge),
- *   between the left block (which ends at x 1084, its dark ground at 1104) and the cards (from x 2000).
+ *   between the left block (which ends at x 1084; 22 px of sky between them) and the cards (from x 2000).
  * - sun: the disc at the approved page's place (centre x 1331, its foot 29 px over the horizon), 461 px across.
  * - drivein: the screen (`DRIVE_IN_SCREEN`).
  */

@@ -25,8 +25,13 @@ export function parseReview(search: string): ReviewFrame | null {
 
 /** Review knobs for the sky layers (`sky.ts`), development builds only: the fit check's self-test breaks and the cost measurement. */
 export interface SkyReview {
-  /** `?sky=front`: mount the front canvas on every place, asked for or not. `?sky=flat`: never mount it (one canvas, as before). */
-  front?: 'always' | 'never';
+  /**
+   * `?sky=front`: mount the front canvas on every place, asked for or not. `?sky=flat`: never mount
+   * it (one canvas, as before). `?sky=empty`: claim the layer with an empty host in the main area,
+   * where a screen's host goes, with nothing between the two canvases (the pixel proof: the
+   * picture must be exactly the one-canvas picture).
+   */
+  front?: 'always' | 'never' | 'empty';
   /** `?skymoon=x,y,r`: draw the moon here in place of `MOON`. */
   moon?: [number, number, number];
 }
@@ -38,6 +43,7 @@ export function parseSkyReview(search: string): SkyReview | null {
   const sky = q.get('sky');
   if (sky === 'front') out.front = 'always';
   else if (sky === 'flat') out.front = 'never';
+  else if (sky === 'empty') out.front = 'empty';
   const m = (q.get('skymoon') ?? '').split(',').map(Number);
   if (m.length === 3 && m.every((v) => Number.isFinite(v)) && m[2] > 0) out.moon = [m[0], m[1], m[2]];
   return out.front || out.moon ? out : null;

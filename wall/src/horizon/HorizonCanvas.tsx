@@ -30,7 +30,7 @@ import { frameDelta, shouldDraw } from './pacing';
 import { clearGridPulse, createGridPulse, stepGridPulse } from './pulse';
 import { parseReview, parseSkyReview } from './review';
 import { publishCamera } from './signal';
-import { frontHost, moonFor, useSkyStore } from './sky';
+import { frontHost, moonFor, useSkyClaim, useSkyStore } from './sky';
 import { drawVeil, veilStrength } from './veil';
 import { drawHorizon, type HorizonGrid, type HorizonOptions } from './index';
 
@@ -81,7 +81,7 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
   // Dev builds only: `?sky=front` mounts the front canvas everywhere, `?sky=flat` never, `?skymoon=x,y,r` moves the moon (fit-check breaks, cost measurement).
   const [skyReview] = useState(() => (import.meta.env.DEV ? parseSkyReview(window.location.search) : null));
   const alwaysFront = !zen && skyReview?.front === 'always';
-  const host = zen || skyReview?.front ? null : frontHost(claims);
+  const host = zen || skyReview?.front === 'always' || skyReview?.front === 'never' ? null : frontHost(claims);
   // The moon's candidate places (`MOON_PLACES`), or the one review place.
   const [moonPlaces] = useState(() => (skyReview?.moon ? [skyReview.moon] : MOON_PLACES));
   // The moon last drawn, published on the canvas as `data-moon` ("x,y,r", or empty) for the fit check.
@@ -411,6 +411,29 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
           whatever box it is mounted in, and takes no pointer. */}
       {alwaysFront ? <canvas ref={frontCanvas} className="horizon-canvas horizon-front" aria-hidden="true" style={FRONT_STYLE} /> : null}
       {host ? createPortal(<canvas ref={frontCanvas} className="horizon-canvas horizon-front" aria-hidden="true" style={FRONT_STYLE} />, host) : null}
+      {skyReview?.front === 'empty' && !zen ? <EmptyLayer place={active} /> : null}
     </>
+  );
+}
+
+/**
+ * Review knob `?sky=empty` (development builds only): claims the sky layers with an empty host
+ * placed in the main area as a screen's host is (`.w-stage.w-layered` in `unwind.css`), so the
+ * front canvas is mounted with no picture between it and the main canvas. The pixel proof
+ * (`npm run fit-check`) compares that with the one-canvas picture: they must be the same pixels.
+ */
+function EmptyLayer({ place }: { place: string }) {
+  const [main, setMain] = useState<Element | null>(null);
+  const [host, setHost] = useState<HTMLDivElement | null>(null);
+  useEffect(() => {
+    setMain(document.querySelector('.main'));
+  }, [place]);
+  useSkyClaim('review-empty', main ? { front: host } : null);
+  if (!main) return null;
+  return createPortal(
+    <div className="w-stage w-layered sky-empty" style={{ inset: 0, pointerEvents: 'none' }} aria-hidden="true">
+      <div ref={setHost} style={{ position: 'absolute', inset: 0 }} />
+    </div>,
+    main,
   );
 }

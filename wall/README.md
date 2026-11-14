@@ -367,7 +367,11 @@ skyline, the lake in front. It is drawn on one canvas by `HorizonCanvas.tsx`.
   `devicePixelRatio`.
 - **Sky layers** (`sky.ts`). A screen that puts a picture in the sky (Watch) holds a claim
   with `useSkyClaim(id, claim)`: `front` (an element), `boxes` (stage rectangles its picture
-  covers) and `noMoon`. While a claim gives an element, `HorizonCanvas` mounts a second canvas
+  covers), `clear` (stage rectangles of cards the moon keeps clear of) and `noMoon`. A card
+  claims its own drawn box with `useSkyKeepClear(id, element)` (read again when its size
+  changes). An element no longer in the page is no host: the main canvas then draws the whole
+  picture that frame, and `useSkyClaim` replaces the claim without it as soon as it leaves the
+  page. While a claim gives an element, `HorizonCanvas` mounts a second canvas
   in it (`.horizon-front`, fixed to the stage so it covers it whatever the element's box, taking
   no pointer) and each frame draws the sky on the main canvas (`draw` with `part: 'sky'`: the
   sky, stars, moon, sun and clouds) and the ground on the front one (`part: 'ground'`: the
@@ -381,8 +385,15 @@ skyline, the lake in front. It is drawn on one canvas by `HorizonCanvas.tsx`.
   The front canvas follows the same frame loop, resize and camera glide, rests with the main
   one and draws nothing while the page is hidden. With no claim there is one canvas and the
   calls are the golden ones (a test, and gallery stills of Work, Home, Meet and Unwind compared
-  pixel for pixel). Dev builds only: `?sky=front` mounts the front canvas everywhere,
-  `?sky=flat` never, `?skymoon=x,y,r` moves the moon (fit-check breaks and cost measurement).
+  pixel for pixel). The pixel proof in `npm run fit-check` draws Unwind at night, at dusk and at
+  noon on one canvas and with the front layer claimed by an empty host in the main area, nothing
+  between the two, and compares the screenshots pixel for pixel over the whole stage: 0 pixels
+  may differ. Per frame with the layer on nothing is allocated for it (one options object, its
+  `part` set before each draw; the sky part makes no rim gradient or glitter) and the veil's
+  strength is read only when the front canvas comes and through a place change's transition.
+  Dev builds only: `?sky=front` mounts the front canvas everywhere, `?sky=flat` never,
+  `?sky=empty` claims it with an empty host (the pixel proof), `?skymoon=x,y,r` puts the moon
+  at one place only (fit-check breaks and cost measurement).
 - **Reduced motion.** With `prefers-reduced-motion: reduce` the horizon is drawn
   once a minute and cameras switch without the glide.
 - **Review hook (dev server only).** Open
@@ -873,12 +884,16 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
   band slots, reused every frame. No grid when silent, under reduced motion or in the review
   still; without `grid` the renderer makes exactly the canvas calls it made before (a golden
   call log test).
-- **Moon.** The Unwind camera draws the moon at (1890, 260) radius 44 (`MOON`), in the open
-  sky right of Listen's player and above the Lights card, at least 40 px clear of every card, the
-  player (at its widest, with long names) and the clock, the same place on Watch with nothing on. It shows once the glide to Unwind has finished (it goes as
-  soon as a glide away starts); no other place does. A sky claim withholds it (`moonFor` in
-  `sky.ts`): `noMoon`, or a claimed box within 40 px of its disc; its light on the lake goes with
-  it. The review still `?hz=unwind` draws it, since that camera jumps straight there. The drawn
+- **Moon.** The Unwind camera draws the moon, radius 44, at the first of three places
+  (`MOON_PLACES`) whose disc is 40 px or more from every picture box and every card's keep-clear
+  box that a screen claims (`moonFor` in `sky.ts`): (1890, 260) right of Listen's player, the
+  place it always had; (760, 340) low under the player's left half, right of Up next, for a
+  layout whose right side a wide card takes; (1450, 150) high in the middle of the sky. Each is
+  wholly above the Unwind ridgeline and clear of the clock (a test). With none clear, or a claim
+  that says `noMoon`, there is no moon, and its light on the lake goes with it. The same claims
+  always give the same place, so it changes only when a box does, and it is simply drawn at its
+  new place on the next frame. It shows once the glide to Unwind has finished (it goes as
+  soon as a glide away starts); no other place does. The review still `?hz=unwind` draws it, since that camera jumps straight there. The drawn
   moon is published on the canvas as `data-moon` for the fit check.
 
 ## Unwind and Watt
@@ -1224,15 +1239,15 @@ switch sits. Leaving Watch (or Unwind) removes any video.
   `https://www.youtube.com/watch?v=<id>`, `https://www.youtube.com/playlist?list=<id>` or
   `https://www.twitch.tv/<login>` itself. The page never passes an address.
 - **Looks** (`looks.ts`, `Watch.tsx`): `feather` (the video in the sky left of the list, its
-  edges masked soft, the picture fully visible, behind the ranges and the land so the
-  ridgelines cross in front of its lower edge), `sky` (the whole 16:9 picture, never cropped,
+  edges masked soft, the picture fully visible, in front of the mountains (the owner's choice),
+  its lower edge fading out before the horizon line so the ridgelines there show), `sky` (the whole 16:9 picture, never cropped,
   889 by 500 at wall 1106, 16: its top 16 px under the top of the strip, its foot under the
   horizon line BEHIND the ranges and the land, so only the land hides its lower edge, between the
   left block and the cards; plain edges with a faint line and glow, no feather (the owner's
   later words replace the approved page's crop); the embedded player cannot report its video's
   shape, so the frame is fitted as 16:9; it lies under every control and takes no pointer;
-  nothing of the wall's is drawn on it: the left block keeps its own dark ground and the cards
-  turn nearly opaque), `sun` (a 461 px disc at the approved page's place,
+  nothing of the wall's is drawn on it: the left block stands beside it on the sky with no plate,
+  and the cards turn nearly opaque), `sun` (a 461 px disc at the approved page's place,
   centred at wall x 1331 with its foot 29 px over the horizon, the ranges in front of its lower part,
   a clean circle with no bands across the video (the owner's later words replace the approved
   page's bands), a warm halo and a streak on the floor; it
@@ -1241,12 +1256,13 @@ switch sits. Leaving Watch (or Unwind) removes any video.
   approved centre as the layout allows), on two posts standing on the horizon in front of the
   ranges, the stage light's colours washed on the floor under it; with nothing
   on, the empty screen stands there). Sky layers: each look claims the horizon's sky
-  (`useWatchSky`, `horizon/sky.ts`) with its picture's box (`LOOK_BOXES`, so no moon is drawn
-  behind it); the sun and the drive-in own that sky (no moon at all); the feathered picture, the
-  whole sky and the sun (`behindTheLand`) also give `.w-front`, after the picture, where the
+  (`useWatchSky`, `horizon/sky.ts`) with its picture's box (`LOOK_BOXES`, so the moon keeps 40 px
+  clear of it: another of its places, or none); the sun and the drive-in own that sky (no moon at
+  all); the whole sky and the sun (`behindTheLand`) also give `.w-front`, after the picture, where the
   horizon mounts its front canvas, and their stage sits at z-index -1 in the main area's own
   layer group (`.w-layered`), under every control and line of text. While the player waits for a
-  click, the feathered picture and the sun come forward (`layeredNow`). The claim goes with the
+  click, the sun comes forward (`layeredNow`). The left block, the Look switch and the Watch list
+  card claim their own boxes as keep-clear (`useSkyKeepClear`). The claim goes with the
   Watch panel (Listen, nothing on, another place, Zen). The gear beside the tabs opens a sheet over the right wing:
   one look for everything (four picture tiles), or one each for videos and playlists, live
   streams and Twitch (four choices a row), at 540 px (`wall2-watch-look`, checked on read;

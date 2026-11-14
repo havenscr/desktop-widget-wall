@@ -278,6 +278,11 @@ describe('the whole sky is fitted whole', () => {
     expect(screen).not.toContain('mask');
   });
 
+  it('the left block has no dark plate beside the whole sky (no picture lies under it; its text reads on the sky)', () => {
+    expect(rule('.unwind:has(.w-sky) .w-now')).toBeNull();
+    expect(css).not.toMatch(/:has\(\.w-sky\)[^{]*\.w-now\s*\{/);
+  });
+
   it('the sun is a clean circle: no bands across the video', () => {
     const sun = rule('.w-sun .w-screen')!;
     expect(sun).toContain('border-radius:50%');

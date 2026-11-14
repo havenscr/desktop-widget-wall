@@ -106,9 +106,10 @@ const EXPECT = {
   'watch-take': /^ *FAIL pointer at \.w-sky \.w-frame /m,
   // sky layers
   'sky-front': /^ *FAIL sky layers: the front canvas is hidden/m,
-  'sky-moon': /^ *FAIL sky layers: the moon at 1230,336,44 is \d+ px from /m,
+  'sky-moon': /^ *FAIL sky layers: the moon at 600,200,44 is \d+ px from /m,
   'sky-always': /^ *FAIL sky layers: 1 front canvas with no look behind the land/m,
   'sky-crop': /^ *FAIL sky layers: the whole sky picture is at -?\d+,-?\d+,\d+, not inside the stage near its top/m,
+  'sky-seam': /^ *FAIL sky layers: the pixel proof at \w+: \d+ pixels differ/m,
 };
 const OVERFLOWS = {
   left: '.work .left-wing { transform: translateX(-200px); }',
@@ -175,9 +176,11 @@ const OVERFLOWS = {
   'sky-always': '',
   // The whole sky's picture scaled 1.4 times (it would run off the top of the stage).
   'sky-crop': '.w-sky .w-screen { transform: scale(1.4); }',
+  // The pixel proof: the front canvas a shade brighter than the main one (a seam between the two).
+  'sky-seam': '.horizon-front { filter: brightness(1.04) !important; }',
 };
 // sky layers: breaks that need the horizon's development knobs in the URL, not a stylesheet.
-const SKY_BREAK_Q = { 'sky-moon': '&skymoon=1230,336,44', 'sky-always': '&sky=front' };
+const SKY_BREAK_Q = { 'sky-moon': '&skymoon=600,200,44', 'sky-always': '&sky=front' };
 if (flag('self-test')) {
   const script = fileURLToPath(import.meta.url);
   let missed = 0;
@@ -296,16 +299,19 @@ const QUIET = [
   { name: 'Watch polish, nothing on, drive-in', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=drivein', checks: ['.w-now', '.w-lookbar'], hits: ['.w-lookbar button'] },
   // sky layers: the video behind the land (the horizon's front canvas over the video's box) in the
   // three looks that sit in the sky, the drive-in in front of it with no front canvas, and the moon
-  // in open sky at night, 40 px clear of every card, the player and the clock, on Listen and on
-  // Watch with nothing on (the same place on both). Every other state has no front canvas.
+  // in open sky at night and at dusk, 40 px clear of every card, the player and the clock, on Listen
+  // and on Watch with nothing on (the first clear one of its places, cameras.ts MOON_PLACES).
+  // Every other state has no front canvas. The feathered picture stands in front of the land.
   { name: 'Sky layers, whole sky at night', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=sky&wplay=0', checks: ['.w-now', '.w-lookbar'], sky: 'front' },
   { name: 'Sky layers, whole sky at noon', agents: '3', hz: 'unwind', at: '2026-11-11T12:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=sky&wplay=1', checks: ['.w-now', '.w-lookbar'], sky: 'front' },
   { name: 'Sky layers, the sun at night', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=sun&wplay=0', checks: ['.w-now', '.w-lookbar'], sky: 'front' },
-  { name: 'Sky layers, feathered at night', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=feather&wplay=0', checks: ['.w-now', '.w-lookbar'], sky: 'front' },
+  { name: 'Sky layers, feathered at night, in front of the land', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=feather&wplay=0', checks: ['.w-now', '.w-lookbar'], sky: 'flat' },
   { name: 'Sky layers, drive-in at night, in front of the land', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=drivein&wplay=2', checks: ['.w-now', '.w-lookbar'], sky: 'flat' },
   { name: 'Sky layers, Listen at night, the moon in open sky', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '', checks: ['.u-listen'], sky: 'moon' },
   { name: 'Sky layers, Listen at night, long names, the moon in open sky', agents: 'ask', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&spotify=long&media=long', checks: ['.u-listen'], sky: 'moon' },
   { name: 'Sky layers, Watch with nothing on at night, the moon in open sky', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=feather', checks: ['.w-now'], sky: 'moon' },
+  { name: 'Sky layers, Listen at dusk, the moon in open sky', agents: '3', hz: 'unwind', at: '2026-11-11T17:30:00-08:00', extra: '', checks: ['.u-listen'], sky: 'moon' },
+  { name: 'Sky layers, Watch with nothing on at dusk, the moon in open sky', agents: '3', hz: 'unwind', at: '2026-11-11T17:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=feather', checks: ['.w-now'], sky: 'moon' },
 ].map((v) => ({ ...v, q: query(v) }));
 // The Tools drawer over each place, and in each hard state: the drawer, its two columns and every
 // section stay inside the stage, right of the rail and the clock, with no cut text that has no tooltip.
@@ -1170,12 +1176,42 @@ try {
   }
   // watch polish: the Look switch sits in one place, one size, in every look and with nothing on.
   // sky layers
-  if (skyMoons.length > 1) {
-    const off = skyMoons.filter((s) => s.moon !== skyMoons[0].moon);
-    if (off.length) {
-      failed = true;
-      for (const s of off) console.log(`  FAIL sky layers: the moon is at ${s.moon} on ${s.name}, not ${skyMoons[0].moon} as on ${skyMoons[0].name}`);
-    } else console.log(`sky layers: the moon is at ${skyMoons[0].moon} in all ${skyMoons.length} moon states`);
+  // The moon takes the first clear one of its places (cameras.ts MOON_PLACES), so each layout may
+  // put it elsewhere; each state's place was checked 40 px clear of every card above.
+  if (skyMoons.length) console.log(`sky layers: the moon in ${skyMoons.length} moon states: ${skyMoons.map((s) => `${s.moon} (${s.name.replace('Sky layers, ', '')})`).join('; ')}`);
+  // sky layers, the pixel proof: Unwind drawn at night, at dusk and at noon on one canvas
+  // (`sky=flat`) and with the front layer claimed by an empty host in the main area (`sky=empty`),
+  // nothing between the two canvases: the screenshots must be the same, pixel for pixel, over the whole stage.
+  if (!overflow || overflow === 'sky-seam') {
+    const proof = join(out, 'proof.html');
+    writeFileSync(proof, html.replace('</body>', `${broken}</body>`));
+    for (const [when, at] of [['night', '2026-11-11T22:30:00-08:00'], ['dusk', '2026-11-11T16:54:00-08:00'], ['noon', '2026-11-11T12:30:00-08:00']]) {
+      const shots = ['flat', 'empty'].map((mode) => {
+        const shot = join(out, `proof-${when}-${mode}.png`);
+        const url = `${pathToFileURL(proof).href}?hz=unwind&at=${encodeURIComponent(at)}&agents=3&weather=ok&sky=${mode}`;
+        execFileSync(chrome, ['--headless', '--no-sandbox', '--disable-gpu', '--window-size=2560,807', '--hide-scrollbars', '--virtual-time-budget=8000', `--screenshot=${shot}`, url], { stdio: 'ignore' });
+        return readPng(shot);
+      });
+      const [a, b] = shots;
+      let diff = 0;
+      let box = null;
+      if (a.w !== b.w || a.h !== b.h || a.w !== 2560 || a.h < 720) diff = -1;
+      else {
+        for (let y = 0; y < a.h; y++)
+          for (let x = 0; x < a.w; x++) {
+            const i = (y * a.w + x) * a.ch;
+            const j = (y * b.w + x) * b.ch;
+            if (a.px[i] !== b.px[j] || a.px[i + 1] !== b.px[j + 1] || a.px[i + 2] !== b.px[j + 2]) {
+              diff += 1;
+              box = box ? [Math.min(box[0], x), Math.min(box[1], y), Math.max(box[2], x), Math.max(box[3], y)] : [x, y, x, y];
+            }
+          }
+      }
+      if (diff !== 0) {
+        failed = true;
+        console.log(`  FAIL sky layers: the pixel proof at ${when}: ${diff < 0 ? 'the two screenshots differ in size' : `${diff} pixels differ (within ${box.join(',')})`}, one canvas against the front layer with nothing between`);
+      } else console.log(`sky layers: the pixel proof at ${when}: 0 of ${a.w * a.h} pixels differ, one canvas against the front layer with nothing between`);
+    }
   }
   if (switchBoxes.length > 1) {
     const key = (b) => `${b.l},${b.t} ${b.w}x${b.h}`;
