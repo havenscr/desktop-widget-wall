@@ -302,13 +302,14 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
         // The still frame shows the lines at rest, in the chosen resting look (Flat: one calm line).
         const open = initialEchoGate(glide.current).value;
         const echo = newType && flat ? null : echoOptions(camera, 0, 0, open, 1, lines.rest, flat ? FLAT_REST_OPACITY : undefined, 0, lineStops(lines.colours));
-        if (newType && flat && open > 0.001) {
+        if (newType && open > 0.001) {
+          // A new type at rest, as the moving frame leaves it once settled.
           tf.type = lines.type;
           tf.hy = camera.hy;
           tf.cx = camera.ecx;
           tf.scale = scale;
-          tf.live = typeLiveShare(lines.type, 1, true) * open;
-          tf.restLine = open;
+          tf.live = typeLiveShare(lines.type, 1, flat) * open;
+          tf.restLine = flat ? open : 0;
           tf.dt = 0;
           tf.boxes = lineBoxes.current;
           tf.stops = lineStops(lines.colours);
