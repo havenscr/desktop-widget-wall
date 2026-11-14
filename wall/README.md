@@ -1225,13 +1225,17 @@ switch sits. Leaving Watch (or Unwind) removes any video.
   `https://www.twitch.tv/<login>` itself. The page never passes an address.
 - **Looks** (`looks.ts`, `Watch.tsx`): `feather` (the video in the sky left of the list, its
   edges masked soft, the picture fully visible, behind the ranges and the land so the
-  ridgelines cross in front of its lower edge), `sky` (the video fills the sky from the top of
-  the strip to the horizon line, cropped top and bottom, fading toward the clock, and runs down
-  BEHIND the ranges and the land; it lies under every control and takes no pointer;
-  nothing of the wall's is drawn on it: the left block carries its own dark ground behind its
-  text and the cards turn nearly opaque), `sun` (a 461 px disc at the approved page's place,
-  centred at wall x 1331 with its foot 29 px over the horizon, the ranges in front of its foot,
-  with slats, a warm halo and a streak on the floor; it
+  ridgelines cross in front of its lower edge), `sky` (the whole 16:9 picture, never cropped,
+  889 by 500 at wall 1106, 16: its top 16 px under the top of the strip, its foot under the
+  horizon line BEHIND the ranges and the land, so only the land hides its lower edge, between the
+  left block and the cards; plain edges with a faint line and glow, no feather (the owner's
+  later words replace the approved page's crop); the embedded player cannot report its video's
+  shape, so the frame is fitted as 16:9; it lies under every control and takes no pointer;
+  nothing of the wall's is drawn on it: the left block keeps its own dark ground and the cards
+  turn nearly opaque), `sun` (a 461 px disc at the approved page's place,
+  centred at wall x 1331 with its foot 29 px over the horizon, the ranges in front of its lower part,
+  a clean circle with no bands across the video (the owner's later words replace the approved
+  page's bands), a warm halo and a streak on the floor; it
   shows the middle 56 percent of a 16:9 picture's width) and `drivein` (a framed screen at the
   approved page's size, 691 by 389 at wall 1124, 60 (40 px right of the left block, as near the
   approved centre as the layout allows), on two posts standing on the horizon in front of the

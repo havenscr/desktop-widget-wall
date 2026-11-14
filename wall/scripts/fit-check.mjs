@@ -23,12 +23,12 @@
 // Work, y 510 to 600 off Work) covering no text or control, the recording chip one 32 px line at most 200 px wide in the
 // Agents header (and inside the banner, or in the band off Work), and the Recording page the same height as a key page.
 // Sky layers: a front canvas only while a Watch look sits behind the land, covering the stage over the video
-// (opaque on the lake, clear at the top of the sky), and the moon at night 40 px clear of every card,
+// (opaque on the lake, clear at the top of the sky), the whole sky's picture uncropped inside the stage, and the moon at night 40 px clear of every card,
 // the player and the clock, in one place on Listen and on Watch with nothing on.
 // CI does not run this; run it by hand before a layout change is handed over.
 //
 //   WALL_CHROME=/path/to/chrome-or-headless-shell npm --prefix wall run fit-check
-//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, header, deck, tiles, picker, chips, heading, zenhint, strip, fold, drawer, rows, handle, sky, floor, sun, tools, toolsnames, meetfill, meetempty, fy-height, key-edge, hide-pill, hide-note, leave-band, rec-chip, rec-height, lwbuttons, lwoverlap, lwsquare, lwring, lwtemp, lwround, sky-front, sky-moon, sky-always)
+//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, header, deck, tiles, picker, chips, heading, zenhint, strip, fold, drawer, rows, handle, sky, floor, sun, tools, toolsnames, meetfill, meetempty, fy-height, key-edge, hide-pill, hide-note, leave-band, rec-chip, rec-height, lwbuttons, lwoverlap, lwsquare, lwring, lwtemp, lwround, sky-front, sky-moon, sky-always, sky-crop)
 //   npm --prefix wall run fit-check -- --self-test
 //
 // WALL_CHROME (or the first argument that is not a flag) is a Chromium or
@@ -108,6 +108,7 @@ const EXPECT = {
   'sky-front': /^ *FAIL sky layers: the front canvas is hidden/m,
   'sky-moon': /^ *FAIL sky layers: the moon at 1230,336,44 is \d+ px from /m,
   'sky-always': /^ *FAIL sky layers: 1 front canvas with no look behind the land/m,
+  'sky-crop': /^ *FAIL sky layers: the whole sky picture is at -?\d+,-?\d+,\d+, not inside the stage near its top/m,
 };
 const OVERFLOWS = {
   left: '.work .left-wing { transform: translateX(-200px); }',
@@ -131,7 +132,8 @@ const OVERFLOWS = {
   rows: '.agents-today .at-row { height: 20px !important; min-height: 0 !important; }',
   handle: '.rib .rib-handle { top: 20px !important; }',
   // The whole-sky video layer catching the pointer and drawn over the controls.
-  sky: '.w-sky, .w-sky * { pointer-events: auto !important; } .w-sky { z-index: 30 !important; }',
+  // sky layers: the whole sky's picture no longer spans the strip, so the break also widens it over the controls.
+  sky: '.w-sky, .w-sky * { pointer-events: auto !important; } .w-sky { z-index: 30 !important; left: 0 !important; width: 2436px !important; }',
   // The floor wash catching the pointer and drawn over the Tomorrow card and the status line.
   floor: '.w-skyspill { pointer-events: auto !important; z-index: 30 !important; left: -130px !important; width: 2440px !important; }',
   // The sun's box spread over the whole band, over the controls.
@@ -171,6 +173,8 @@ const OVERFLOWS = {
   'sky-front': '.horizon-front { display: none !important; }',
   'sky-moon': '',
   'sky-always': '',
+  // The whole sky's picture scaled 1.4 times (it would run off the top of the stage).
+  'sky-crop': '.w-sky .w-screen { transform: scale(1.4); }',
 };
 // sky layers: breaks that need the horizon's development knobs in the URL, not a stylesheet.
 const SKY_BREAK_Q = { 'sky-moon': '&skymoon=1230,336,44', 'sky-always': '&sky=front' };
@@ -901,6 +905,14 @@ try {
           const v = scr.getBoundingClientRect();
           const box = (layered.getAttribute('data-sky-box') || '').split(',').map(Number);
           if (box.length !== 4 || Math.abs(box[0] - v.left) > 1 || Math.abs(box[1] - v.top) > 1 || Math.abs(box[2] - v.width) > 1 || Math.abs(box[3] - v.height) > 1) fails.push('sky layers: the look box ' + box.join(',') + ' is not the drawn video ' + [v.left, v.top, v.width, v.height].map(Math.round).join(','));
+          // The whole sky: the whole picture, never cropped: inside the stage at the top, left and
+          // right, its top at most 24 px down, and the frame exactly the picture's box.
+          if (layered.classList.contains('w-sky')) {
+            if (v.top < 0 || v.left < 0 || v.right > 2560 || v.top > 24) fails.push('sky layers: the whole sky picture is at ' + [v.left, v.top, v.right].map(Math.round).join(',') + ', not inside the stage near its top');
+            const fr = scr.querySelector('.w-frame');
+            const r2 = fr && fr.getBoundingClientRect();
+            if (!r2 || Math.abs(r2.left - v.left) > 1 || Math.abs(r2.top - v.top) > 1 || Math.abs(r2.width - v.width) > 1 || Math.abs(r2.height - v.height) > 1) fails.push('sky layers: the whole sky frame is cropped');
+          }
           const x = f.getContext('2d');
           const sx = f.width / 2560;
           const at = (px, py) => x.getImageData(Math.round(px * sx), Math.round(py * sx), 1, 1).data[3];
@@ -976,6 +988,7 @@ try {
     'sky-front': (v) => v.name === 'Sky layers, whole sky at night',
     'sky-moon': (v) => v.name === 'Sky layers, Listen at night, the moon in open sky',
     'sky-always': (v) => v.name === 'Sky layers, Listen at night, the moon in open sky',
+    'sky-crop': (v) => v.name === 'Sky layers, whole sky at night',
   };
   const breakOn = BREAK_ON[overflow] ? VARIANTS.filter(BREAK_ON[overflow]) : VARIANTS.slice(0, 1);
   /** keys style: the Now row's height on each page that has one, compared after every state ran. */

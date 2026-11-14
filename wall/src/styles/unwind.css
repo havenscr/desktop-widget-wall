@@ -1312,24 +1312,27 @@
   color: var(--dim);
 }
 
-/* Whole sky (approved page, B). The picture covers the sky from the top of the strip to the
-   horizon line, edge to edge, cropped top and bottom like a cover; it fades toward the clock
-   and runs down to the horizon BEHIND the ranges and the land (the horizon's front canvas, see
-   .w-layered). It lies under every control: the main area becomes its own layer group
-   (isolation) and the picture sits at z-index -1 inside it, above the horizon's sky and below
-   the clock, the tabs, the cards and the left block; it takes no pointer at all (until a refused
-   autoplay asks for a click). The moon is not drawn behind it (its box is in LOOK_BOXES), and
-   the left block has its own dark ground. */
+/* Whole sky (approved page, B, with the owner's later words: never cropped, rising from behind
+   the mountains, nearly to the top of the strip). The whole 16:9 picture (LOOK_BOXES.sky in
+   looks.ts: wall 1106, 16, 889 by 500), as tall as the sky allows: its top 16 px under the top of
+   the strip, its foot 11 px under the horizon line, BEHIND the ranges and the land (the horizon's
+   front canvas, see .w-layered), so only the land hides its lower edge; between the left block
+   and the cards, so nothing of the wall's lies on it. Its edges are plain (the owner asked for no
+   feather on this look), with a faint line and glow so a bare edge does not look cut out.
+   The embedded player cannot report its video's shape, so the frame is fitted as 16:9. It lies
+   under every control: the main area becomes its own layer group (isolation) and the picture
+   sits at z-index -1 inside it, above the horizon's sky and below the clock, the tabs, the cards
+   and the left block; it takes no pointer at all (until a refused autoplay asks for a click).
+   The moon is not drawn beside it (its box is in LOOK_BOXES). */
 .main:has(.w-sky) {
   isolation: isolate;
 }
 .w-sky {
   z-index: -1;
-  left: 0;
-  top: -20px;
-  width: 2436px;
-  height: 505px;
-  overflow: hidden;
+  left: 982px;
+  top: -4px;
+  width: 889px;
+  height: 500px;
   pointer-events: none;
 }
 .w-sky * {
@@ -1340,21 +1343,9 @@
 }
 .w-sky .w-screen {
   filter: brightness(0.9) saturate(1.1);
-  -webkit-mask-image: linear-gradient(90deg, transparent 18%, #000 40%, #000 88%, transparent);
-  mask-image: linear-gradient(90deg, transparent 18%, #000 40%, #000 88%, transparent);
+  box-shadow: 0 0 0 1px rgba(214, 204, 255, 0.08), 0 0 36px rgba(150, 130, 255, 0.16);
 }
-.w-sky .w-frame {
-  inset: auto;
-  left: 0;
-  top: 50%;
-  width: 100%;
-  height: auto;
-  aspect-ratio: 16 / 9;
-  transform: translateY(-50%);
-}
-/* Nothing of the wall's lies on the whole-sky picture: its mask keeps the clock's side clear
-   (fully see-through to 18 percent, whole from 40), and the left block carries its own dark
-   ground behind its text, as the cards do. */
+/* The left block keeps its own dark ground beside the whole-sky picture, as the cards do. */
 .unwind:has(.w-sky) .w-now {
   border-radius: 2px;
   background: rgba(6, 4, 22, 0.86);
@@ -1405,11 +1396,11 @@
 
 /* The sun (approved page, C). A 461 px disc at the approved page's place: centred at stage x
    1331, its foot 29 px over the horizon line (LOOK_BOXES.sun in looks.ts: wall 1101, 15), with
-   the page's warm rim and glow, slats cut through its lower part, the ranges and the land in
-   front of its foot (the horizon's front canvas), a halo behind it and a warm streak on the
+   the page's warm rim and glow, a clean circle (the owner asked for no bands across the video),
+   the ranges and the land in front of its foot (the horizon's front canvas), a halo behind it and a warm streak on the
    floor. The look owns that sky, so the horizon draws no moon while it shows. Inside it the
    16:9 picture is 821 by 461, so the disc shows its middle 56 percent of the width and the
-   full height, the corners and slats cut away. The box is the halo's (563 px); the disc sits 51 px in. */
+   full height, the corners cut away. The box is the halo's (563 px); the disc sits 51 px in. */
 .w-sun {
   left: 926px;
   top: -56px;
@@ -1428,8 +1419,6 @@
   border-radius: 50%;
   overflow: hidden;
   box-shadow: 0 0 77px rgba(255, 150, 96, 0.45);
-  -webkit-mask-image: linear-gradient(#000 0 60%, transparent 60% 62%, #000 62% 68%, transparent 68% 71%, #000 71% 76%, transparent 76% 80%, #000 80% 84%, transparent 84% 89%, #000 89% 92%, transparent 92% 97%, #000 97%);
-  mask-image: linear-gradient(#000 0 60%, transparent 60% 62%, #000 62% 68%, transparent 68% 71%, #000 71% 76%, transparent 76% 80%, #000 80% 84%, transparent 84% 89%, #000 89% 92%, transparent 92% 97%, #000 97%);
 }
 .w-sun .w-frame {
   left: -39%;

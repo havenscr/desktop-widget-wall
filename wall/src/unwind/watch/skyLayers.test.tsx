@@ -1,3 +1,5 @@
+// @ts-ignore node's own file call; the whole-sky tests read unwind.css as text.
+import { readFileSync } from 'node:fs';
 import { act, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mocks } from '../../bridge/tauri';
@@ -10,6 +12,7 @@ import { Unwind } from '../../screens/Unwind';
 import { useSignalStore } from '../../signals/store';
 import { usePlaceStore } from '../../state/places';
 import { resetLastPlayed } from '../lastPlayed';
+import { CAMERAS } from '../../horizon/cameras';
 import { LOOKS_KEY, LOOK_BOXES, type LookId } from './looks';
 import { SAVED_KEY } from './saved';
 import { resetWatch, useWatchStore } from './store';
@@ -196,5 +199,50 @@ describe('the sky layers under each look', () => {
     expect(f).not.toBeNull();
     expect(f!.style.pointerEvents).toBe('none');
     expect(document.querySelector('.w-stage')!.classList.contains('w-layered')).toBe(true);
+  });
+});
+
+describe('the whole sky is fitted whole', () => {
+  // The embedded player does not report its video's shape, so the frame is fitted as 16:9 (the
+  // fit check measures the drawn box in a real browser: inside the stage at the top and sides).
+  const b = LOOK_BOXES.sky;
+  // Read as text from disk (the test setup does not load unwind.css as a style).
+  const css: string = readFileSync('src/styles/unwind.css', 'utf8');
+  /** The declarations of the rule whose selector is exactly `sel` (whitespace taken out), or null. */
+  const rule = (sel: string) => {
+    const lines: string[] = css.replace(/\r/g, '').split('\n');
+    const at = lines.findIndex((l) => l.trim() === `${sel} {`);
+    if (at < 0) return null;
+    const end = lines.findIndex((l, i) => i > at && l.trim() === '}');
+    return lines.slice(at + 1, end).join('').replace(/\s+/g, '');
+  };
+
+  it('is the whole 16:9 picture, inside the strip at the top and the sides, its top 12 to 20 px down, its foot under the horizon', () => {
+    expect(Math.abs(b.w / b.h - 16 / 9)).toBeLessThan(0.002);
+    expect(b.x).toBeGreaterThanOrEqual(0);
+    expect(b.x + b.w).toBeLessThanOrEqual(2560);
+    expect(b.y).toBeGreaterThanOrEqual(12);
+    expect(b.y).toBeLessThanOrEqual(20);
+    expect(b.y + b.h).toBeGreaterThan(CAMERAS.unwind.hy); // only the land hides its lower edge
+  });
+
+  it('the stage is the box (less Unwind\'s offset, 124 by 20) and the frame fills it: no cover crop', () => {
+    const sky = rule('.w-sky')!;
+    expect(sky).toContain(`left:${b.x - 124}px;`);
+    expect(sky).toContain(`top:${b.y - 20}px;`);
+    expect(sky).toContain(`width:${b.w}px;`);
+    expect(sky).toContain(`height:${b.h}px;`);
+    expect(sky).not.toContain('overflow:hidden');
+    // No rule sizes or moves the whole sky's frame: it keeps .w-frame's inset 0 and 100 percent.
+    expect(rule('.w-sky .w-frame')).toBeNull();
+    // Plain edges: no mask fades or crops any of it (the owner asked for no feather on this look).
+    const screen = rule('.w-sky .w-screen')!;
+    expect(screen).not.toContain('mask');
+  });
+
+  it('the sun is a clean circle: no bands across the video', () => {
+    const sun = rule('.w-sun .w-screen')!;
+    expect(sun).toContain('border-radius:50%');
+    expect(sun).not.toContain('mask');
   });
 });
