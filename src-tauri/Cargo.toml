@@ -24,6 +24,7 @@ cpal = "0.15"
 # Windows APIs
 windows = { version = "0.58", features = [
     "Foundation",
+    "Foundation_Collections",
     "Media_Control",
     "Storage_Streams",
     # Audio Mixer (Core Audio API)
