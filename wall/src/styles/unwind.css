@@ -766,6 +766,17 @@
   max-width: 100%;
   min-width: 0;
 }
+/* With nothing on, the row is the Play button for the first saved item and the gear at its end:
+   the button takes the row's height (40 px) so both sit on one line. */
+.w-idle .w-start {
+  align-self: center;
+  margin-top: 0;
+  height: 40px;
+  padding: 0 18px;
+  border-radius: 20px;
+  gap: 8px;
+  font-size: 19px;
+}
 .w-start:disabled {
   opacity: 0.45;
   cursor: default;
