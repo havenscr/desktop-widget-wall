@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
+// @ts-ignore node's own file calls; this test reads the stylesheet as text.
 import { readFileSync } from 'node:fs';
 import { useSyncExternalStore } from 'react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
