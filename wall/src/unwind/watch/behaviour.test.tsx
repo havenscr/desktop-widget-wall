@@ -235,6 +235,23 @@ describe('the controls fade (5A)', () => {
     expect(ctl()).toBe('rest');
   });
 
+  it('the row stays shown while the sheet the gear opened is open, and fades 3 seconds after it closes', async () => {
+    await playing();
+    const gear = screen.getByRole('button', { name: 'How video is shown' });
+    await act(async () => gear.click());
+    await flush(CTL_REST_MS * 3);
+    expect(ctl()).toBe('shown');
+    expect(screen.getByRole('dialog', { name: 'How video is shown' })).toBeTruthy();
+    act(() => useWatchStore.getState().setSheet(false));
+    // The focus came back to the gear (a keyboard close): the row stays while it has focus, then the usual 3 seconds.
+    expect(document.activeElement).toBe(gear);
+    act(() => gear.blur());
+    await flush(CTL_REST_MS - 100);
+    expect(ctl()).toBe('shown');
+    await flush(200);
+    expect(ctl()).toBe('rest');
+  });
+
   it('Enter on the gear opens the sheet on its Looks side; Escape closes it and puts the focus back on the gear, and the video plays on', async () => {
     await playing();
     const gear = screen.getByRole('button', { name: 'How video is shown' });

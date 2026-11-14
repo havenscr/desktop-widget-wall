@@ -286,7 +286,7 @@ function somethingOpen(): boolean {
 
 /**
  * watch behaviour (5A): whether the left block's controls are at rest (faded out). They may rest
- * only while `canRest` (something plays, not paused, no notice showing); then one timer puts them
+ * only while `canRest` (something plays, not paused, no notice showing, the sheet closed); then one timer puts them
  * to rest `CTL_REST_MS` after the pointer left the left block (the gear is its row's last button) and the band on the
  * video's lower edge (`peek`), and focus left the controls. Pointer, focus or a Tab press brings
  * them back at once. No timer runs while they cannot rest; the timer is cleared on unmount.
@@ -397,6 +397,7 @@ export function WatchPanel() {
   const needsClick = useWatchStore((s) => s.needsClick);
   const ended = useWatchStore((s) => s.report.ended);
   const stopped = useWatchStore((s) => s.stopped);
+  const sheetOpen = useWatchStore((s) => s.sheet);
   const peek = useWatchStore((s) => s.peek);
   const inCall = useSignalStore((s) => s.call !== null);
   const st = useWatchStore.getState();
@@ -405,7 +406,8 @@ export function WatchPanel() {
   useSkyKeepClear('watch-now', nowEl);
   const [openFailed, setOpenFailed] = useState(false);
   // Notices never hide: the click line, the hint line and an open failure keep the block shown.
-  const canRest = playing !== null && !paused && !ended && !needsClick && !openFailed;
+  // So does the sheet the gear opened: the row (and the lit gear) stays while it is open.
+  const canRest = playing !== null && !paused && !ended && !needsClick && !openFailed && !sheetOpen;
   const { rest, wake, zone } = useControlsFade(canRest, peek);
   useWatchKeys(playing !== null, playing !== null && playing.kind !== 'twitch', wake);
 
