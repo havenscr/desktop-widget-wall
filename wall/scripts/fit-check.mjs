@@ -144,7 +144,8 @@ const EXPECT = {
   'tall-out': /^ *FAIL listen tall: .* sticks out of the card/m,
   'tall-rest': /^ *FAIL listen: the resting card is \d+ by \d+ \(800 by 462\)/m,
   'tall-pop': /^ *FAIL listen: the Play on list is at /m,
-  'tall-moon': /^ *FAIL sky layers: the moon at 2200,300,44 is \d+ px from /m,
+  // A moon forced into the open view is not drawn at all (the card claims its box), so the night check finds none.
+  'tall-moon': /^ *FAIL sky layers: no moon drawn at night/m,
   // watch polish
   'watch-switch': /^ *FAIL watch polish: the Look switch is at /m,
   'watch-row': /^ *FAIL \.w-ctl: width \d+ <= \d+/m,
