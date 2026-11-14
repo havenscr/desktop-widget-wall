@@ -159,6 +159,8 @@ const EXPECT = {
   'lines-control': /^ *FAIL lines: control ".*" is [\d.]+ px tall/m,
   'lines-text': /^ *FAIL lines: text under 16 px /m,
   'lines-clip': /^ *FAIL lines: a new type draws \d+ pixels inside the video's box/m,
+  'spotify-copy': /^ *FAIL copy: Spotify message is cut/m,
+  'account-copy': /^ *FAIL copy: account message is cut/m,
 };
 const OVERFLOWS = {
   left: '.work .left-wing { transform: translateX(-200px); }',
@@ -286,6 +288,8 @@ const OVERFLOWS = {
   'lines-control': '.ln-chips button { height: 24px !important; }',
   'lines-text': '.ln-label { font-size: 12px !important; }',
   'lines-clip': '',
+  'spotify-copy': '.sp-note { width: 80px !important; overflow: hidden !important; white-space: nowrap !important; }',
+  'account-copy': '.tools-note { width: 80px !important; overflow: hidden !important; white-space: nowrap !important; }',
 };
 // sky layers: breaks that need the horizon's development knobs in the URL, not a stylesheet.
 const SKY_BREAK_Q = { 'sky-moon': '&skymoon=300,200,44', 'sky-always': '&sky=front' };
@@ -492,6 +496,8 @@ const TOOLS_VARIANTS = [
   tools('keys refused with a long reason', `${work('3')}&keys=refused&tools=1`),
   tools('no keys file', `${work('3')}&source=default&tools=1`),
   tools('Spotify not set up, a sign-in waiting', `${work('3')}&spotify=off&meet=signedout&tools=1`),
+  { name: 'Spotify copy, choose this computer', q: `${query({ hz: 'unwind', agents: '3', extra: '&spotify=choose' })}`, click: '.sp-tile >> .sp-shead .sp-btn.fill', checks: ['.sp-card', '.sp-note'] },
+  { name: 'Account copy, failed sign-in', q: `${work('3')}&meet=signin-fault&tools=1`, click: '.tools-list[aria-label="Accounts"] .tools-row:nth-child(2) button', checks: ['.tools-drawer', '.tools-note'] },
 ];
 const VARIANTS = [
   { name: 'three lanes, long titles', q: work('3'), checks: [...WINGS, ...LANES] },
@@ -1046,6 +1052,11 @@ try {
     const opened = { drawer: !!document.querySelector('.day-drawer'), panel: !!document.querySelector('.agents-today'), rows: document.querySelectorAll('.agents-today .at-row:not(.skel)').length };
     // The Tools drawer: inside x 1700 to 2560 and y 0 to 720, clear of the rail, and no text cut unless a hover card carries it.
     const toolsOut = [];
+    const copyOut = [];
+    const spotifyCopy = document.querySelector('.sp-note');
+    if (spotifyCopy && spotifyCopy.scrollWidth > spotifyCopy.clientWidth + 1) copyOut.push('copy: Spotify message is cut');
+    const accountCopy = document.querySelector('.tools-note');
+    if (accountCopy && accountCopy.scrollWidth > accountCopy.clientWidth + 1) copyOut.push('copy: account message is cut');
     const drawer = document.querySelector('.tools-drawer');
     if (drawer) {
       const dr = drawer.getBoundingClientRect();
@@ -1572,7 +1583,7 @@ try {
       }
       return fails;
     })();
-    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, meetOut, strip, opened, watchPolish, skyLayers, thCheck, tileText, listen, lines, watchBehaviour, wattDriveIn });
+    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, copyOut, meetOut, strip, opened, watchPolish, skyLayers, thCheck, tileText, listen, lines, watchBehaviour, wattDriveIn });
     document.body.appendChild(pre);
   }, new URLSearchParams(location.search).get('card') ? 7000 : 3000);</script>`;
   const broken = overflow ? `<style>${OVERFLOWS[overflow]}</style>` : '';
@@ -1587,6 +1598,8 @@ try {
     picker: (v) => v.name.startsWith('Deck, the key picker open over'),
     tools: (v) => v.name === 'Tools, over Work, typical',
     toolsnames: (v) => v.name === 'Tools, over Work, typical',
+    'spotify-copy': (v) => v.name === 'Spotify copy, choose this computer',
+    'account-copy': (v) => v.name === 'Account copy, failed sign-in',
     meetfill: (v) => v.name === 'Meet, both accounts read',
     meetempty: (v) => v.name === 'Meet, nothing scheduled',
     // keys style
@@ -1690,7 +1703,7 @@ try {
       process.exit(1);
     }
     const text = m[1].replaceAll('&quot;', '"').replaceAll('&amp;', '&');
-    const { res, page: doc, overlaps, cut, gaps, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, meetOut, strip, opened, watchPolish, skyLayers, thCheck, tileText, listen, lines, watchBehaviour, wattDriveIn } = JSON.parse(text);
+    const { res, page: doc, overlaps, cut, gaps, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, copyOut, meetOut, strip, opened, watchPolish, skyLayers, thCheck, tileText, listen, lines, watchBehaviour, wattDriveIn } = JSON.parse(text);
     // watt drive-in
     if (wattDriveIn) {
       for (const f of wattDriveIn.fails) console.log(`  FAIL ${f}`);
@@ -1794,8 +1807,8 @@ try {
     if (lines.length) failed = true;
     else if (v.linesSheet) console.log('  ok   lines: the sheet fits the stage, every control inside it and 32 px tall, no text under 16 px');
     else if (v.linesProbe) console.log("  ok   lines: the new type drew and nothing inside the video's box");
-    for (const t of [...toolsOut, ...meetOut]) console.log(`  FAIL ${t}`);
-    if (toolsOut.length || meetOut.length) failed = true;
+    for (const t of [...toolsOut, ...copyOut, ...meetOut]) console.log(`  FAIL ${t}`);
+    if (toolsOut.length || copyOut.length || meetOut.length) failed = true;
     else if (v.q.includes('tools=')) console.log('  ok   the drawer stays inside x 1700 to 2560 and y 0 to 720, clear of the rail, no cut text without a tooltip');
     else if (v.q.includes('go=meet')) console.log('  ok   Meet: a card reaches the right edge, nothing empty in the upper right');
     // keys style

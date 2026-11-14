@@ -38,7 +38,9 @@ export function registerSpotifyMocks(): void {
   mocks.set('wall2_spotify_queue', () => { available(); return mode() === 'empty' ? { current: null, next: [] } : { current: track(1), next: Array.from({ length: 10 }, (_, n) => track(n + 2)) }; });
   mocks.set('wall2_spotify_playback', () => { available(); if (playMode() === 'none' || mode() === 'empty') return null; const device = playMode() === 'speaker' ? { name: 'Living room', kind: 'Speaker' } : { name: 'Desk speakers', kind: 'Computer' }; return { playing: true, device, track: track(1), progressMs: 65_000, shuffle: false }; });
   mocks.set('wall2_spotify_devices', () => { available(); return [{ id: deviceId(91), name: 'Desk speakers', kind: 'Computer', active: true, volume: 28 }, { id: deviceId(92), name: 'Kitchen speaker', kind: 'Speaker', active: false, volume: 34 }] satisfies SpotifyDevice[]; });
-  mocks.set('wall2_spotify_play', () => { available(); if (mode() === 'nodevice') throw new Error('no device'); if (mode() === 'starting') return new Promise(() => undefined); });
+  mocks.set('wall2_spotify_play', () => { available(); if (mode() === 'nodevice') throw new Error('no device'); if (mode() === 'choose') throw new Error('choose'); if (mode() === 'alreadystarting') throw new Error('starting'); return mode() === 'starting' ? 'starting' : 'played'; });
+  mocks.set('wall2_spotify_start_status', () => ({ starting: mode() === 'starting', result: mode() === 'starting' ? null : 'played' }));
+  mocks.set('wall2_spotify_cancel_start', () => undefined);
   mocks.set('wall2_spotify_transfer', () => { available(); });
   mocks.set('wall2_spotify_shuffle', () => { available(); });
 }

@@ -195,6 +195,7 @@ function media(mode: string): void {
     const base = (await prev?.()) as Record<string, unknown>;
     if (mode === 'paused') return { ...base, playback_status: 'paused' };
     if (mode === 'watchown') return { ...base, title: 'Night drive mix', artist: '', source_app: 'msedgewebview2', source_app_id: 'msedgewebview2.exe', playback_status: 'playing' };
+    if (mode === 'watchstopped') return { ...base, title: 'Night drive mix', artist: '', source_app: 'msedgewebview2', source_app_id: 'msedgewebview2.exe', playback_status: 'stopped' };
     if (mode === 'webview') return { ...base, title: 'Mail alert', artist: '', source_app: 'msedgewebview2', source_app_id: 'msedgewebview2.exe', playback_status: 'stopped' };
     if (mode === 'long') {
       return {

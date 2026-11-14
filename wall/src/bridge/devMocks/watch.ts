@@ -137,11 +137,13 @@ export function registerWatchMocks(): void {
   st.load();
   // After the review place is applied (the horizon mounts first), so leaving Work does not stop it.
   setTimeout(() => {
+    if (knob('wlast') === 'one') useWatchStore.setState({ lastStopped: useWatchStore.getState().saved[0] ?? null, playing: null });
     if (knob('wtab') !== 'listen') useWatchStore.getState().setTab('watch');
     const n = Number(knob('wplay'));
     const item = useWatchStore.getState().saved[n];
     if (knob('wplay') !== null && item) {
       useWatchStore.getState().play(item);
+      if (knob('wtab') === 'listen') useWatchStore.getState().setTab('listen');
       mockPlayer(item.kind, knob('wstate'));
       if (knob('wctl') === 'rest') ctlTiming.restMs = 200;
       else useWatchStore.getState().setPeek(true);

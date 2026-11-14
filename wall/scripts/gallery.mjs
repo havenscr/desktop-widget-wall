@@ -382,7 +382,8 @@ state('work', 'tools: sources failing', 'agents=down&weather=stale&tools=1');
 state('work', 'tools: keys refused', 'keys=refused&tools=1');
 state('work', 'tools: no keys file', 'source=default&tools=1');
 state('work', 'tools: Spotify not set up', 'spotify=off&tools=1');
-state('work', 'tools: calendar sign-in fault', 'meet=signin-fault&tools=1');
+add('work', 'tools: calendar sign-in fault', url('work', TYPICAL_AT, 'meet=signin-fault&tools=1'), true, '.tools-list[aria-label="Accounts"] .tools-row:nth-child(2) button');
+add('work', 'tools: Sources weather failure hover', url('work', TYPICAL_AT, 'weather=stale&tools=1'), true, 'hover:.tools-src[data-source="weather"]');
 state('work', 'tools: Spotify saved sign-in unreadable', 'spotify=statusfail&tools=1');
 state('home', 'tools: open', 'tools=1');
 state('unwind', 'tools: open', 'tools=1');
@@ -496,9 +497,13 @@ state('unwind', 'listen: signed out', 'spotify=signedout', TIMES.night);
 state('unwind', 'listen: spotify down', 'spotify=down', TIMES.night);
 state('unwind', 'listen: spotify not set up', 'spotify=off', TIMES.night);
 add('unwind', 'listen: Starting Spotify', url('unwind', TIMES.night, 'spotify=starting'), true, '.sp-tile >> .sp-shead .sp-btn.fill');
+add('unwind', 'listen: Spotify is still starting', url('unwind', TIMES.night, 'spotify=alreadystarting'), true, '.sp-tile >> .sp-shead .sp-btn.fill');
+add('unwind', 'listen: choose this computer', url('unwind', TIMES.night, 'spotify=choose'), true, '.sp-tile >> .sp-shead .sp-btn.fill');
+add('unwind', 'listen: search with ten results', url('unwind', TIMES.night, 'spotify=search10'), true, 'type:.sp-search input=road');
 add('unwind', 'listen: Spotify did not show up', url('unwind', TIMES.night, 'spotify=nodevice'), true, '.sp-tile >> .sp-shead .sp-btn.fill');
 add('unwind', 'listen: followed playlist songs unavailable', url('unwind', TIMES.night, 'spotify=notyours'), true, '.sp-tile');
-state('unwind', 'listen: Playing in Watch', 'watch=mock&wlist=three&wtab=listen&media=watchown', TIMES.night);
+state('unwind', 'listen: Playing in Watch', 'watch=mock&wlist=three&wtab=listen&wplay=0&media=watchown', TIMES.night);
+state('unwind', 'listen: Last played in Watch', 'watch=mock&wlist=three&wtab=listen&wlast=one&media=watchstopped', TIMES.night);
 state('unwind', 'listen: another WebView app', 'watch=mock&wlist=three&wtab=listen&media=webview', TIMES.night);
 state('unwind', 'listen: heavy library', 'spotify=heavy', TIMES.night);
 add('unwind', 'listen: heavy playlist songs', url('unwind', TIMES.night, 'spotify=heavy'), true, '.sp-tile');
@@ -715,7 +720,8 @@ const EXPECT = [
   ['work', 'tools: keys refused', 'keys.json refused: app 3, key 7'],
   ['work', 'tools: no keys file', 'No keys.json. Defaults in use'],
   ['work', 'tools: Spotify not set up', ['Spotify', 'Not set up']],
-  ['work', 'tools: calendar sign-in fault', ['Second calendar', 'Network problem']],
+  ['work', 'tools: calendar sign-in fault', ['The browser part worked.', 'wall2-meet.log']],
+  ['work', 'tools: Sources weather failure hover', ['Last try failed', 'Showing the reading from']],
   ['work', 'tools: Spotify saved sign-in unreadable', ['Spotify', 'Could not read the saved sign-in']],
   ['home', 'tools: open', ['Accounts', 'Keys file']],
   ['unwind', 'tools: open', ['Accounts', 'Keys file']],
@@ -772,9 +778,13 @@ const EXPECT = [
   ['unwind', 'listen: spotify down', ['Spotify is not answering right now.', '!Up next']],
   ['unwind', 'listen: spotify not set up', ['Spotify is not set up on this wall', 'not set up', '!Up next']],
   ['unwind', 'listen: Starting Spotify', 'Starting Spotify'],
+  ['unwind', 'listen: Spotify is still starting', 'Spotify is still starting'],
+  ['unwind', 'listen: choose this computer', 'More than one computer is signed in to Spotify'],
+  ['unwind', 'listen: search with ten results', ['Track 10', 'Playlist 10']],
   ['unwind', 'listen: Spotify did not show up', 'Spotify opened but did not show up as a player'],
   ['unwind', 'listen: followed playlist songs unavailable', ['Spotify only lists the songs of playlists you own. Play it whole.', 'Play']],
   ['unwind', 'listen: Playing in Watch', ['Playing in Watch', 'Back to Watch']],
+  ['unwind', 'listen: Last played in Watch', ['Last played in Watch', 'Back to Watch']],
   ['unwind', 'listen: another WebView app', ['Last played on an app on this PC', '!msedgewebview2']],
   ['unwind', 'listen: heavy library', ['Road Trip 50', 'Up next']],
   ['unwind', 'listen: heavy playlist songs', ['2,000 songs', 'Lantern Song 50']],
@@ -1094,6 +1104,9 @@ async function render(cdp, base, s, file, ctl) {
         await to('Runtime.evaluate', { expression: `document.querySelector(${JSON.stringify(step.slice(4))})?.focus()` });
       } else if (step.startsWith('focus:')) {
         await to('Runtime.evaluate', { expression: `document.querySelector(${JSON.stringify(step.slice(6))})?.focus({ focusVisible: true })` });
+      } else if (step.startsWith('type:')) {
+        const [selector, value = ''] = step.slice(5).split('=');
+        await to('Runtime.evaluate', { expression: `(() => { const el=document.querySelector(${JSON.stringify(selector)}); if (!el) return; const set=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')?.set; set?.call(el,${JSON.stringify(value)}); el.dispatchEvent(new Event('input',{bubbles:true})); })()` });
       } else if (pointer) {
         const sel = JSON.stringify(step.slice(pointer[0].length));
         const at = await to('Runtime.evaluate', { expression: `(() => { const r = document.querySelector(${sel})?.getBoundingClientRect(); return r ? [r.left + r.width - 12, r.top + r.height / 2] : null; })()`, returnByValue: true });
