@@ -935,24 +935,28 @@ frame (no ribbon) in the wide zones `470px 1fr 540px`. The parts are in `wall/sr
 - **Up next** (`unwind/spotify/UpNext.tsx`), in the left wing under the toggles: the next
   three tracks of the Spotify queue (`wall2_spotify_queue`, every 20 seconds while shown and
   on every track change) with 48 px covers, the title and the artist; hover gives the album
-  and length. A click plays that track in the list it came from when the wall started that
-  list (`play` with `context` and `offsetId`, so the list carries on), otherwise it skips
-  forward to it with the media keys, so the queue is never replaced. Hidden with YouTube
+  and length. A click never replaces the queue: it reads what plays first, plays the track in
+  its list (`play` with `context` and `offsetId`) only when that list is what plays now, else
+  skips forward with the media keys only when Spotify is the current Windows player, else says
+  "Open its list to play it". Hidden with YouTube
   Music chosen, with Spotify not set up, and when nothing is queued; signed out it reads
   "Sign in to Spotify in Tools to see what is next" (a click opens Tools).
 - **The Spotify card** (`unwind/spotify/SpotifyCard.tsx`), the upper right (stage x 1740 to
   2540, y 24 to 486). On top, the switch Spotify or YouTube Music ("Which player the wall
   follows", kept per display in `wall2-unwind-source`). Spotify: a search field (on Enter,
-  or 400 ms after the last key, two characters at least), then Search, Playlists, Albums,
-  Liked and Recent over two columns of 60 px rows with the real covers (`thumbUrl`; a
-  neutral tile with a music note when there is none or it fails to load, never a colour
-  gradient), the name and its line ("Playlist · 58 songs"). Hover on a row shows the
-  larger cover, the kind, its line and the song count; a round play button on the row
-  plays a playlist or album whole. A click on a playlist or album slides the card to its
-  songs (`wall2_spotify_tracks`, 50 at a time as the list scrolls; Back or Escape returns,
-  Play all plays it, the song now playing is marked, a song that cannot be played is dimmed
-  with the reason in its tooltip); a click on a song plays from it in its list. A click on a
-  song in Liked, Recent or Search plays it. Lists scroll inside the card with the wheel and
+  or 400 ms after the last key, two characters at least; only the newest search may change the
+  list, and a failed one keeps the last good results under a note with Retry), then the tabs
+  Search, Playlists, Albums, Liked and Recent in a pill. Playlists and Albums are a grid of large
+  cover tiles, five across, the name and the song count under each (`imageUrl`; a neutral tile
+  with a music note when there is none or it fails to load, never a colour gradient). Resting on
+  a tile rings it and opens its details card (the shared tip, pinned): the kind with its owner
+  or artist said once, the song count when the bridge gives it, and Play, Shuffle and Songs.
+  Liked and Recent are songs, as rows. A click on a tile opens its songs
+  (`wall2_spotify_tracks`, 50 at a time as the list scrolls; Back or Escape returns, Play and
+  Shuffle play it whole, the song now playing is marked by track id or by title and artist, a
+  song that cannot be played is dimmed with the reason in its tooltip, and the total length
+  shows once every song is read); a click on a song plays from it in its list. A click on a song
+  in Liked, Recent or Search plays it. Lists scroll inside the card with the wheel and
   never grow it. States: not set up, signed out (both point to Tools, where Spotify signs
   in), not answering (with Retry), busy (the list stays, "Spotify is busy, try in a
   minute"), no device after a play ("Open Spotify on this PC first, then try again"), an
