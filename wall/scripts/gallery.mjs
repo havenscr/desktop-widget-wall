@@ -298,7 +298,7 @@ state('unwind', 'Watt: drive-in, seated', DI, TIMES.night);
 state('unwind', 'Watt: drive-in at noon', DI, TIMES.noon);
 state('unwind', 'Watt: drive-in, paused', `${DI}&wstate=paused`, TIMES.night);
 state('unwind', 'Watt: drive-in, 24 saved, long label', `${WM}&wlist=many&wlook=drivein&wplay=3`, TIMES.night);
-add('unwind', 'Watt: drive-in, set down during the show', url('unwind', TIMES.night, DI), true, 'drag:.watt-hit-part@420,380');
+add('unwind', 'Watt: drive-in, set down during the show', url('unwind', TIMES.night, DI), true, 'drag:.watt-hit-part@240,380');
 // end watt drive-in
 
 // The Tools drawer: opened on load (`tools=1`), over each place and in its hard states.
