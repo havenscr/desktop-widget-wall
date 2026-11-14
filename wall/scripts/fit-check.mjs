@@ -539,11 +539,11 @@ const TOOLS_VARIANTS = [
   tools('no keys file', `${work('3')}&source=default&tools=1`),
   tools('Spotify not set up, a sign-in waiting', `${work('3')}&spotify=off&meet=signedout&tools=1`),
   // The YouTube row in each state it can show, and the Set up form open from Set up and from Change setup.
-  ...[['not set up', 'off'], ['signed out', 'out'], ['signed in', 'in'], ['setup broken, said in words', 'broken'], ['sign in again', 'again'], ['could not check', 'down']].map(([n, k]) => tools(`YouTube ${n}`, `${work('3')}&youtube=${k}&tools=1`)),
+  ...[['not set up', 'off'], ['signed out', 'out'], ['signed in', 'in'], ['setup broken, said in the note', 'broken'], ['sign in again', 'again'], ['could not check', 'down']].map(([n, k]) => tools(`YouTube ${n}`, `${work('3')}&youtube=${k}&tools=1`)),
   { name: 'Tools, YouTube waiting for the browser', q: `${work('3')}&youtube=waiting&tools=1`, click: YT_ROW + ' .tools-btn.cy', checks: TOOLS, viewportOnly: true },
   { name: 'Tools, YouTube setup form open', q: `${work('3')}&youtube=off&tools=1`, click: YT_ROW + ' .tools-btn', checks: TOOLS, viewportOnly: true },
   { name: 'Tools, YouTube change setup form open', q: `${work('3')}&youtube=out&tools=1`, click: YT_ROW + ' .tools-btn.ico', checks: TOOLS, viewportOnly: true },
-  { name: 'Tools, YouTube sign-in refused note', q: `${work('3')}&youtube=refuse&tools=1`, click: YT_ROW + ' .tools-btn.cy', checks: TOOLS, viewportOnly: true },
+  { name: 'Tools, YouTube sign-in refused note', q: `${work('3')}&youtube=refuse&tools=1`, click: YT_ROW + ' .tools-btn.cy', checks: ['.tools-drawer', '.tools-note'], viewportOnly: true },
   { name: 'Spotify copy, choose this computer', q: `${query({ hz: 'unwind', agents: '3', extra: '&spotify=choose' })}`, click: '.sp-tile >> .sp-shead .sp-btn.fill', checks: ['.sp-card', '.sp-note'] },
   { name: 'Account copy, failed sign-in', q: `${work('3')}&meet=signin-fault&tools=1`, click: '.tools-list[aria-label="Accounts"] .tools-row:nth-child(2) button', checks: ['.tools-drawer', '.tools-note'], viewportOnly: true },
 ];
@@ -1138,7 +1138,7 @@ try {
       if (yt) {
         const column = drawer.querySelector('.tools-block[data-section="accounts"]').getBoundingClientRect();
         const name = (e) => (typeof e.className === 'string' && e.className ? '.' + e.className.split(' ')[0] : e.tagName.toLowerCase()) + ' "' + (e.textContent || '').trim().slice(0, 24) + '"';
-        const parts = [yt, ...drawer.querySelectorAll('.tools-yt-form, .tools-yt-links, li.tools-yt-hint')];
+        const parts = [yt, ...drawer.querySelectorAll('.tools-yt-form, .tools-yt-links')];
         for (const part of parts) {
           for (const e of [part, ...part.querySelectorAll('*')]) {
             const r = e.getBoundingClientRect();

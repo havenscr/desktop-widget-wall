@@ -96,7 +96,7 @@ it('the YouTube row says Checking first and Could not check when the status fail
   release(FIRST_RUN);
 });
 
-it('a refused client is said in words under the row, and in amber on the row itself', async () => {
+it('a refused client is said in words in the Accounts note, and in amber on the row itself', async () => {
   await show(status({ signedIn: true, reason: 'setup broken' }));
   expect(screen.getByText('Google refused this setup. Sign out, then set it up again.')).toBeTruthy();
   expect(row().querySelector('.tools-line.bad')?.textContent).toBe('Setup broken');
@@ -258,7 +258,7 @@ it.each([
   expect(row().textContent).toContain('Signed out');
 });
 
-it('a cancelled sign-in says nothing, and a refused client is shown by the row instead of a note', async () => {
+it('a cancelled sign-in says nothing, and a refused client says why instead of "did not finish"', async () => {
   let answer = status();
   mocks.set('wall2_youtube_sign_in', () => {
     throw new Error('cancelled');
@@ -273,9 +273,9 @@ it('a cancelled sign-in says nothing, and a refused client is shown by the row i
   });
   fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
   await flush();
-  expect(document.querySelector('.tools-note')).toBeNull();
+  // The note is the refused-client sentence, not a vague "did not finish".
+  expect(document.querySelector('.tools-note')?.textContent).toBe('Google refused this setup. Set it up again.');
   expect(row().textContent).toContain('Setup broken');
-  expect(screen.getByText('Google refused this setup. Set it up again.')).toBeTruthy();
 });
 
 it('Sign out calls the bridge and reads again', async () => {

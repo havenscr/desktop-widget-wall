@@ -255,7 +255,7 @@ function useYoutubeAccount(opened: number) {
     setNotice(null);
     read();
   };
-  // The client was refused: said in words under the row, because the row's own line is one short phrase.
+  // The client was refused: said in words in the Accounts note, because the row's own line is one short phrase.
   const brokenHint = !waiting && !failed && !editing && status?.reason === 'setup broken' ? (status.signedIn ? 'Google refused this setup. Sign out, then set it up again.' : 'Google refused this setup. Set it up again.') : null;
   return { status, failed, waiting, notice, editing, brokenHint, setEditing, read, signIn, cancel, signOut, openLink, saved };
 }
@@ -435,11 +435,10 @@ export function Accounts() {
         <Row icon={<IconCalendar size={22} aria-hidden="true" />} name="Meetings open in:" line={openLine} hover={openHint} />
         <SpotifyRow sp={sp} blocked={blocked} />
         <YoutubeRow yt={yt} blocked={blocked} />
-        {yt.brokenHint && <li className="tools-yt-hint bad">{yt.brokenHint}</li>}
         {yt.editing && <YoutubeSetup onSaved={yt.saved} onCancel={() => yt.setEditing(false)} />}
         <YoutubeLinks openLink={yt.openLink} />
       </ul>
-      {(m.notice || sp.notice || yt.notice) && <div className="tools-note bad">{m.notice ?? sp.notice ?? yt.notice}</div>}
+      {(m.notice || sp.notice || yt.notice || yt.brokenHint) && <div className="tools-note bad">{m.notice ?? sp.notice ?? yt.notice ?? yt.brokenHint}</div>}
     </>
   );
 }

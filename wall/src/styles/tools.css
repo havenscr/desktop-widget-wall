@@ -306,9 +306,6 @@
 .tools-yt-hint.bad {
   color: var(--amber);
 }
-li.tools-yt-hint {
-  padding: 0 0 10px;
-}
 .tools-yt-links {
   display: flex;
   flex-wrap: wrap;
