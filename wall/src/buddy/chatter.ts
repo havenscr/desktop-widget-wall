@@ -30,6 +30,8 @@ export interface Quiet {
   focusSince: number | null;
   /** The wall is recording: he sits quietly (`isQuietForRecording`). */
   recording?: boolean;
+  /** At the drive-in for a show: no speech bubble while he watches. */
+  watching?: boolean;
 }
 
 /** The scheduler's memory. Changed in place by `markSpoken`. */
@@ -47,7 +49,7 @@ export function createChat(): ChatState {
 /** True when nothing but the rate limit stands in the way. */
 export function quietNow(q: Quiet, now: number): boolean {
   return (
-    q.chatty === 'off' || q.inCall || q.idle || q.away || q.recording === true || (q.focusSince !== null && now - q.focusSince < FOCUS_QUIET_MS)
+    q.chatty === 'off' || q.inCall || q.idle || q.away || q.recording === true || q.watching === true || (q.focusSince !== null && now - q.focusSince < FOCUS_QUIET_MS)
   );
 }
 

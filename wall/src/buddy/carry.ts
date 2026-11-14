@@ -1,6 +1,7 @@
 import { STAGE_HEIGHT, STAGE_WIDTH } from '../stage/fitScale';
 import { onGround, type Span } from './ground';
 import { WALK_SPEED, spriteHeight, spriteWidth } from './model';
+import { watchLook, watchRestFor, type WatchLook } from './audience';
 import { bodyBox, canBlink, createBox, propFits, reactLength, type Box, type Mind, type PetFrame } from './petFrame';
 
 /**
@@ -138,6 +139,16 @@ export interface Carry {
   fed: boolean;
   /** Stay: he sits where he was set down until it is switched off (the sit never ends). */
   stay: boolean;
+  /**
+   * Watching the drive-in (`audience.ts`): the sit never ends while the show is on, he faces
+   * `watchDir`, and his seated look runs on its own clock from `watchFrom`; `lookAt` is when a look
+   * round to the viewer began (the video paused), -Infinity for none. A walk to the seat is a walk
+   * back with `target` set and `watch` on: he sits when he arrives.
+   */
+  watch: boolean;
+  watchDir: 1 | -1;
+  watchFrom: number;
+  lookAt: number;
   /** Where the walk back ends: NaN is his wander; a number is a place he was called to. */
   target: number;
   /** Set when a walk back arrives; the component reads and clears it. */
@@ -196,6 +207,10 @@ export function createCarry(): Carry {
     interrupted: false,
     fed: false,
     stay: false,
+    watch: false,
+    watchDir: 1,
+    watchFrom: 0,
+    lookAt: -Infinity,
     target: Number.NaN,
     arrived: false,
     speed: 1,
@@ -214,6 +229,8 @@ export function airborne(c: Carry): boolean {
 /** Forget a carry at once: no fall, no sit (a place change moves him anyway). */
 export function cancelCarry(c: Carry): void {
   c.stay = false;
+  c.watch = false;
+  c.lookAt = -Infinity;
   c.target = Number.NaN;
   c.arrived = false;
   c.pendingX = Number.NaN;
@@ -337,7 +354,12 @@ function land(c: Carry, T: number, hy: number, size: number): void {
   c.y = hy - spriteHeight('land', size);
   c.landT = T;
   c.mode = LAND;
-  c.settleUntil = c.stay ? Infinity : T + LAND_S + SETTLE_S;
+  c.settleUntil = c.stay || c.watch ? Infinity : T + LAND_S + SETTLE_S;
+  // Set down during a show, he watches from where he lands.
+  if (c.watch) {
+    c.watchFrom = T + LAND_S + SETTLE_STAND_S;
+    c.lookAt = -Infinity;
+  }
   c.dizzyUntil = c.shaken ? T + LAND_S + DIZZY_S : 0;
   c.tilt = 0;
   c.tiltV = 0;
@@ -441,12 +463,19 @@ export function stepCarry(c: Carry, dt: number, T: number, hy: number, size: num
       if (Math.abs(d) <= Math.max(step, 0.5)) {
         c.x = goal;
         c.speed = 1;
-        c.mode = c.stay ? SIT : NONE;
+        // At the drive-in seat he sits down at once and watches.
+        const seated = c.watch && c.target === c.target;
+        c.mode = c.stay || seated ? SIT : NONE;
         c.arrived = true;
         if (c.stay) {
           c.landT = T - LAND_S;
           c.settleUntil = Infinity;
         }
+        if (seated) {
+          c.landT = sitAt(T);
+          sitToWatch(c, T, c.watchDir);
+        }
+        else if (!c.stay) c.watch = false;
       } else {
         c.x += Math.sign(d) * step;
         c.dir = d > 0 ? 1 : -1;
@@ -476,7 +505,7 @@ export function stepCarry(c: Carry, dt: number, T: number, hy: number, size: num
  * fading over; while he sits, the time until his pose next changes (standing up into the sit,
  * the look around, swirly eyes ending, the sit ending); Infinity when no carry runs.
  */
-export function carryRestFor(c: Carry, T: number): number {
+export function carryRestFor(c: Carry, T: number, quiet = false): number {
   if (c.mode === NONE) return Infinity;
   if (c.mode !== SIT) return 0;
   let next = Infinity;
@@ -487,7 +516,10 @@ export function carryRestFor(c: Carry, T: number): number {
   at(c.dizzyUntil - T);
   const s = T - c.landT - LAND_S;
   at(SETTLE_STAND_S - s);
-  if (s >= SETTLE_STAND_S) {
+  if (c.watch) {
+    // Watching: his signs of life and a look round are the only changes.
+    if (s >= SETTLE_STAND_S && !(c.shaken && T < c.dizzyUntil)) at(watchRestFor(T - c.watchFrom, T - c.lookAt, false, quiet));
+  } else if (s >= SETTLE_STAND_S) {
     const r = s % 24;
     for (const edge of [7, 10, 13, 16, 24]) at(edge - r);
   }
@@ -528,7 +560,9 @@ function watchShake(c: Carry, T: number, raw: number): void {
  * back, with the squash and stretch, the tilt, the tuft he is held by, the dust and his shadow on
  * the ground where he will land, written into the frame.
  */
-export function carryFrame(c: Carry, T: number, hy: number, size: number, still: boolean, m: Pick<Mind, 'react' | 'reactT' | 'lie' | 'clickKind'>, f: PetFrame): void {
+const seen: WatchLook = { pose: 'watch', blink: false };
+
+export function carryFrame(c: Carry, T: number, hy: number, size: number, still: boolean, m: Pick<Mind, 'react' | 'reactT' | 'lie' | 'clickKind' | 'quiet'>, f: PetFrame): void {
   f.notes = false;
   f.z = false;
   f.hearts = false;
@@ -639,7 +673,15 @@ export function carryFrame(c: Carry, T: number, hy: number, size: number, still:
       if (c.shaken && T < c.dizzyUntil) f.pose = 'dizzy';
       else if (m.lie) f.pose = 'lie';
       else if (!still && s < SETTLE_STAND_S) f.pose = 'idle';
-      else {
+      else if (c.watch) {
+        // Watching the drive-in: seated, turned to the screen, a small sign of life now and then.
+        watchLook(T - c.watchFrom, T - c.lookAt, still, m.quiet, seen);
+        f.pose = seen.pose;
+        f.blink = seen.blink;
+        f.dir = seen.pose === 'front' ? 1 : c.watchDir;
+        // A film, not music: no headphones.
+        if (f.prop === 'headphones') f.prop = null;
+      } else {
         const r = s % 24;
         if (r >= 13 && r < 16) f.pose = 'look';
         else {
@@ -685,10 +727,75 @@ export function callCarry(c: Carry, T: number, x: number, dir: 1 | -1, to: numbe
   c.moveT = T;
   c.fade = 1;
   c.speed = TROT;
+  // Called somewhere, he wanders there (a seat walk sets this again after the call).
+  c.watch = false;
   c.shaken = false;
   c.dizzyUntil = 0;
   c.squash = 1;
   c.tilt = 0;
+}
+
+/**
+ * Send him to his drive-in seat at `seat`, facing `dir` once there: his ordinary walk at his
+ * ordinary pace from `x`; he sits and watches when he arrives.
+ */
+export function seatCarry(c: Carry, T: number, x: number, seat: number, dir: 1 | -1): void {
+  callCarry(c, T, x, seat >= x ? 1 : -1, seat, true);
+  c.speed = 1;
+  c.watch = true;
+  c.watchDir = dir;
+}
+
+/** Under reduced motion he is simply in his seat, already watching. */
+export function seatNow(c: Carry, T: number, seat: number, dir: 1 | -1): void {
+  c.mode = SIT;
+  c.x = seat;
+  c.target = Number.NaN;
+  c.arrived = false;
+  c.fade = 1;
+  c.speed = 1;
+  c.shaken = false;
+  c.dizzyUntil = 0;
+  c.squash = 1;
+  c.tilt = 0;
+  c.landT = sitAt(T);
+  sitToWatch(c, T, dir);
+}
+
+/**
+ * A landing time that has him seated at `T` already (no stand first), a millisecond past the
+ * stand so rounding never leaves him standing until his next planned change.
+ */
+export function sitAt(T: number): number {
+  return T - LAND_S - SETTLE_STAND_S - 0.001;
+}
+
+/** He sits and watches where he is (in his seat, or where the owner set him down). */
+export function sitToWatch(c: Carry, T: number, dir: 1 | -1): void {
+  c.watch = true;
+  c.watchDir = dir;
+  c.settleUntil = Infinity;
+  c.target = Number.NaN;
+  c.lookAt = -Infinity;
+  // A sit already under way keeps its clock (no sign of life at once); a new one starts now.
+  c.watchFrom = Math.max(T, c.landT + LAND_S + SETTLE_STAND_S);
+}
+
+/** The video paused while he watches: he looks round at the viewer once, then back. */
+export function lookRound(c: Carry, T: number): void {
+  if (c.watch && c.mode === SIT) c.lookAt = T;
+}
+
+/**
+ * The show is over: he gets up and walks back to his wander (with Stay on he keeps sitting where
+ * he is); on his way to the seat he turns for home instead.
+ */
+export function endWatch(c: Carry, T: number): void {
+  if (!c.watch) return;
+  c.watch = false;
+  c.lookAt = -Infinity;
+  if (c.mode === RETURN) c.target = Number.NaN;
+  else if ((c.mode === SIT || c.mode === LAND) && !c.stay) c.settleUntil = T;
 }
 
 /** Switch Stay on at `x`: he sits there, and the sit never ends until `endStay`. */

@@ -66,6 +66,8 @@ export function nextBlink(T: number): number {
  * `playing` is music on (notes drift).
  */
 export function restFor(walk: Walk, t: number, T: number, night: boolean, playing: boolean, m: Mind): number {
+  // At the drive-in his seat is a carry sit: it plans its own changes (`carryRestFor`).
+  if (m.watching && m.carry && !m.lie) return m.react !== null && m.reactT < reactLength(m) ? 0 : Infinity;
   if (night || m.lie || m.nap || (!m.quiet && (m.firefly || playing || m.bob > 0))) return 0;
   if (m.react !== null && m.reactT < reactLength(m)) return 0;
   let next = Infinity;
@@ -167,6 +169,12 @@ export interface Mind {
   idleLife: boolean;
   /** The wall is recording: he sits quietly (no wander, no idle life, nothing he starts himself). */
   quiet: boolean;
+  /**
+   * He is at the drive-in for a show (`audience.ts`): seated or on his way to his seat. His sit
+   * plans its own changes (`carryRestFor`), so music, the beat, the firefly, the display idle and
+   * his idle blinks plan nothing, and he notices no clicks.
+   */
+  watching: boolean;
 }
 
 export function createMind(): Mind {
@@ -201,6 +209,7 @@ export function createMind(): Mind {
     clickUp: false,
     idleLife: true,
     quiet: false,
+    watching: false,
   };
 }
 
@@ -265,7 +274,7 @@ export function createPetFrame(): PetFrame {
 }
 
 /** Poses with open eyes that a blink can close. */
-const BLINKABLE: ReadonlySet<Pose> = new Set<Pose>(['idle', 'walk', 'look', 'alert', 'sit', 'read', 'eat', 'held', 'held2']);
+const BLINKABLE: ReadonlySet<Pose> = new Set<Pose>(['idle', 'walk', 'look', 'alert', 'sit', 'read', 'eat', 'held', 'held2', 'watch', 'watchEar', 'front']);
 export function canBlink(pose: Pose): boolean {
   return BLINKABLE.has(pose);
 }
