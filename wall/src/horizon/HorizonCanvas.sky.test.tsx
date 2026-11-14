@@ -3,7 +3,8 @@ import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HorizonCanvas } from './HorizonCanvas';
 import { MOON, drawHorizon } from './index';
-import { stubContext } from './canvasStub';
+import { recordingContext, stubContext } from './canvasStub';
+import { MAIN_LEFT } from '../screens/frameLayout';
 import { useSkyClaim, useSkyStore, type SkyClaim } from './sky';
 import { usePlaceStore } from '../state/places';
 import { resetAudio } from '../audio/store';
@@ -140,6 +141,34 @@ describe('the front layer', () => {
     }
     // The same size as the main canvas, and it follows a resize with it.
     expect([front.width, front.height]).toEqual([mainCanvas(container).width, mainCanvas(container).height]);
+  });
+
+  it('the rail\'s column: the front canvas is cut at the main area\'s left edge and the main canvas takes the ground there from it; the veil goes on the front canvas', () => {
+    const logs = new Map<HTMLCanvasElement, string[]>();
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(function (this: HTMLCanvasElement) {
+      if (!ctxOf.has(this)) {
+        const r = recordingContext();
+        logs.set(this, r.log);
+        ctxOf.set(this, r.ctx);
+      }
+      return ctxOf.get(this) as never;
+    } as never);
+    const { container } = render(
+      <>
+        <div className="veil" style={{ ['--veil' as string]: '0.1' }} />
+        <HorizonCanvas now={() => NIGHT} />
+        <Asker claim={{}} />
+      </>,
+    );
+    const front = frontCanvas()!;
+    expect(front.style.clipPath).toBe(`inset(0px 0px 0px ${MAIN_LEFT}px)`);
+    for (const l of logs.values()) l.length = 0; // the first paint came before the front canvas
+    runFrame(100);
+    const main = logs.get(mainCanvas(container))!;
+    const strip = Math.ceil(MAIN_LEFT * Number(mainCanvas(container).width / 2560));
+    expect(main.filter((l) => l.startsWith('drawImage('))).toEqual([`drawImage([],0,0,${strip},${front.height},0,0,${strip},${front.height})`]);
+    // drawHorizon is mocked here, so the front canvas's own calls are the veil's (and nothing else).
+    expect(logs.get(front)!).toContain('globalCompositeOperation=source-atop');
   });
 
   it('released: the second canvas goes and the main canvas draws the whole picture again on the next frame', () => {

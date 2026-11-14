@@ -4,6 +4,7 @@ import { useReducedMotion } from '../ui/useReducedMotion';
 import { useIdle } from '../ui/useIdle';
 import { wantsDemo } from '../audio/capture';
 import { STAGE_HEIGHT, STAGE_WIDTH, fitScale } from '../stage/fitScale';
+import { MAIN_LEFT } from '../screens/frameLayout';
 import { usePlaceStore } from '../state/places';
 import { REFLECT, createReflection, drawReflection, reflectionAlpha } from './reflection';
 import { audioBands, audioBeats, clearDanceHistory, danceKick, pauseDanceHistory, useAudioStore } from '../audio/store';
@@ -30,11 +31,16 @@ import { clearGridPulse, createGridPulse, stepGridPulse } from './pulse';
 import { parseReview, parseSkyReview } from './review';
 import { publishCamera } from './signal';
 import { frontHost, moonFor, useSkyStore } from './sky';
+import { drawVeil, veilStrength } from './veil';
 import { drawHorizon, type HorizonGrid, type HorizonOptions } from './index';
 
 const REDRAW_MS = 60_000;
-/** The front canvas's place: the whole stage, whatever element it is mounted in. */
-const FRONT_STYLE = { position: 'fixed', left: 0, top: 0, pointerEvents: 'none' } as const;
+/**
+ * The front canvas's place: the whole stage, whatever element it is mounted in, cut at the main
+ * area's left edge (`MAIN_LEFT`). The rail is painted before the main area, so the front canvas
+ * would cover it; left of that edge the main canvas keeps the ground (copied from the front one).
+ */
+const FRONT_STYLE = { position: 'fixed', left: 0, top: 0, pointerEvents: 'none', clipPath: `inset(0 0 0 ${MAIN_LEFT}px)` } as const;
 /** Home's morning rule is re-checked this often. */
 const MORNING_CHECK_MS = 60_000;
 
@@ -248,6 +254,20 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
         const alpha = reflectionAlpha(visualizerWeight(camera), open);
         if (fctx) drawReflection(reflection.current, fctx, width, height, camera.hy, scale, alpha, undefined, canvas);
         else drawReflection(reflection.current, ctx, width, height, camera.hy, scale, alpha);
+      }
+      if (fc && fctx) {
+        // Left of the main area (the rail's column) the front canvas is cut away: the main canvas
+        // takes the ground there over its sky, so the rail's glass shows the whole picture.
+        const strip = Math.min(width, Math.ceil(MAIN_LEFT * scale));
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.globalAlpha = 1;
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.drawImage(fc, 0, 0, strip, height, 0, 0, strip, height);
+        ctx.restore();
+        // The place veil lies over the main canvas as a page layer; the front canvas is above it,
+        // so it lays the same veil on its own pixels (`veil.ts`).
+        drawVeil(fctx, width, height, veilStrength(canvas.parentElement?.querySelector(':scope > .veil') ?? null));
       }
     };
     repaint.current = paint;
