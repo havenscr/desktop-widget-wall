@@ -424,7 +424,7 @@
    under the pointer a full-width lip lights with "Open the day" (keyboard focus shows the words
    in a cyan ringed pill). The needle's
    time pill draws over it. In the drawer the same lip sits on its top edge: "Close the day". */
-.rib .ndl {
+.rib .ndl b {
   z-index: 4;
 }
 .rib-handle.day-lip {
