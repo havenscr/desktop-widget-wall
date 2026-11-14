@@ -155,7 +155,7 @@ export function validSpan(v: unknown): v is DaySpan {
 }
 
 const PROVIDERS: readonly string[] = ['claude', 'codex', 'other'];
-const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : null);
+const num = (v: unknown): number | null => (typeof v === 'number' && Number.isInteger(v) && v >= 0 ? v : null);
 const pct = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? Math.min(100, Math.max(0, v)) : null);
 
 /** A valid lane with its optional fields of the right type (a wrong one becomes null). */
@@ -172,6 +172,7 @@ function cleanLane(l: Lane): Lane {
     live: l.live === 'working' || l.live === 'idle' ? l.live : null,
     idleS: num(l.idleS),
     kids: kt !== null && kw !== null ? { total: kt, working: Math.min(kw, kt), running: kr === null ? null : Math.min(kr, kt, 99) } : null,
+    // Background work is one trusted reading, so one malformed member drops the whole block.
     bg: agents !== null && shells !== null ? { agents: Math.min(agents, 99), shells: Math.min(shells, 99) } : null,
     waitingSinceS: num(l.waitingSinceS),
     next: typeof l.next === 'string' && l.next.trim() ? l.next : null,

@@ -283,6 +283,17 @@ describe('cards from a newer helper', () => {
     expect(old.slots.busy).toBeNull();
   });
 
+  it('accepts only whole counts and drops a background block with one bad member', () => {
+    const raw = summary({
+      slots: { used: 1, limit: 4, busy: 1.5 },
+      lanes: [lane({ kids: { total: 2, working: 1, running: 1.5 }, bg: { agents: 1, shells: 0.5 } })],
+    });
+    const s = normalizeSummary(raw)!;
+    expect(s.slots.busy).toBeNull();
+    expect(s.lanes[0].kids).toEqual({ total: 2, working: 1, running: null });
+    expect(s.lanes[0].bg).toBeNull();
+  });
+
   it('gives one meter per subscription, the fullest above 90 in amber, or the old single meter', () => {
     const m = usageMeters({
       claudeWeekPct: 94,
