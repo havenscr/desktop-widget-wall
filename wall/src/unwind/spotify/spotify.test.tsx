@@ -13,7 +13,7 @@ import { HoverTipLayer } from '../../ui/HoverTip';
 import { useSpotifyStatusPoll } from './status';
 import { Unwind } from '../../screens/Unwind';
 import { useWatchStore } from '../watch/store';
-import { SpotifyCard } from './SpotifyCard';
+import { finishPlay, SpotifyCard } from './SpotifyCard';
 import { resetSpotifyStatus, useSpotifyStatus } from './status';
 import { UpNext } from './UpNext';
 
@@ -50,9 +50,27 @@ it('maps the bridge errors to problems', () => {
   expect(spotifyProblem(new Error('not set up'))).toBe('notsetup');
   expect(spotifyProblem('sign in again')).toBe('needsSignIn');
   expect(spotifyProblem('busy')).toBe('busy');
+  expect(spotifyProblem('starting')).toBe('starting');
+  expect(spotifyProblem('choose')).toBe('choose');
+  expect(spotifyProblem('restricted')).toBe('restricted');
   expect(spotifyProblem('no device')).toBe('nodevice');
   expect(spotifyProblem(new Error('down'))).toBe('down');
+  expect(spotifyProblem('server-503')).toBe('server:503');
+  expect(spotifyProblem('status-400')).toBe('status:400');
   expect(spotifyProblem(42)).toBe('failed');
+});
+
+it('shows startup only for Rust starting and clears it on success or failure', async () => {
+  const notes: string[]=[]; let calls=0;
+  mocks.set('wall2_spotify_start_status',()=> ++calls===1?{starting:true,result:null}:{starting:false,result:'played'});
+  mocks.set('get_now_playing',()=>null);
+  const success=finishPlay('starting',()=>notes.push('Starting Spotify'));
+  expect(notes).toEqual(['Starting Spotify']); await flush(1000); await success;
+  await expect(finishPlay('starting',()=>notes.push('Starting Spotify'))).resolves.toBeUndefined();
+  mocks.set('wall2_spotify_start_status',()=>({starting:false,result:'no device'}));
+  await expect(finishPlay('starting',()=>notes.push('Starting Spotify'))).rejects.toThrow('no device');
+  await expect(finishPlay('played',()=>notes.push('wrong'))).resolves.toBeUndefined();
+  expect(notes).not.toContain('wrong');
 });
 
 it('takes three colours from a cover, held inside the contrast floor', () => {
@@ -118,6 +136,13 @@ it('pages a long playlist as it scrolls, inside the card', async () => {
   await flush();
   expect(pages).toEqual([0, 1]);
   expect(document.querySelectorAll('.sp-track')).toHaveLength(100);
+});
+
+it('a followed playlist keeps Play when Spotify refuses its song list', async () => {
+  signedIn(); mocks.set('wall2_spotify_playlists',()=>[item(1)]); mocks.set('wall2_spotify_tracks',()=>{throw new Error('not yours')}); mocks.set('wall2_spotify_play',()=> 'played');
+  render(<SpotifyCard />); await flush(); await act(async()=> (document.querySelector('.sp-tile') as HTMLButtonElement).click()); await flush();
+  expect(screen.getByText('Spotify only lists the songs of playlists you own. Play it whole.')).toBeTruthy();
+  expect(screen.getByRole('button',{name:'Play'})).toBeTruthy();
 });
 
 it('points to Tools when signed out, and says not set up when Spotify is not set up', async () => {
@@ -218,8 +243,7 @@ it('shows playlists as a grid of cover tiles; resting on one opens its details w
   await act(async () => (screen.getByRole('button', { name: 'Shuffle' }) as HTMLButtonElement).click());
   await flush();
   expect(calls).toEqual([
-    ['wall2_spotify_shuffle', { on: true }],
-    ['wall2_spotify_play', { request: { kind: 'playlist', id: id(1) } }],
+    ['wall2_spotify_play', { request: { kind: 'playlist', id: id(1), shuffle: true } }],
   ]);
   fireEvent.mouseEnter(tiles[0]);
   await flush(300);
@@ -343,7 +367,7 @@ it('keeps the list when Spotify is busy and says so; says to open Spotify when n
   await flush(300);
   await act(async () => (screen.getByRole('button', { name: 'Play' }) as HTMLButtonElement).click());
   await flush();
-  expect(screen.getByText('Open Spotify on this PC first, then try again.')).toBeTruthy();
+  expect(screen.getByText('Spotify opened but did not show up as a player. Press Play in Spotify once, then try again.')).toBeTruthy();
   busy = true;
   await act(async () => screen.getByRole('tab', { name: 'Albums' }).click());
   await flush();
