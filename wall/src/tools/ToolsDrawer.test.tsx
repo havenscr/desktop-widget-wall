@@ -148,7 +148,9 @@ it('Tools class lists do not reuse bare shared work classes', async () => {
   const fs = await import(/* @vite-ignore */ mod);
   const pathMod = 'node:path';
   const path = await import(/* @vite-ignore */ pathMod);
-  const tools = new URL('.', import.meta.url).pathname.replace(/^\/+/, '');
+  const urlMod = 'node:url';
+  const { fileURLToPath } = await import(/* @vite-ignore */ urlMod);
+  const tools = path.dirname(fileURLToPath(import.meta.url));
   const sources: string[] = (fs.readdirSync(tools) as string[]).filter((name: string) => /\.(?:tsx?|jsx?)$/.test(name)).map((name: string) => fs.readFileSync(path.join(tools, name), 'utf8'));
   const work = fs.readFileSync(path.resolve(tools, '../styles/work.css'), 'utf8');
   const shared = new Set([...work.matchAll(/^\.([a-z][a-z0-9-]*)\s*\{/gm)].map((m) => m[1]));
