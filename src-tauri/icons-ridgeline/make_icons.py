@@ -15,29 +15,31 @@ CHROME = os.environ.get("WALL_CHROME", "chromium")
 BIG = 1024  # draw once large, then scale down with a good filter
 
 
-def render_svg(svg_path, out_png):
+def render_svg(svg_path, work_dir, out_png):
     svg = open(svg_path, encoding="utf-8").read()
     page = (
         '<!doctype html><meta charset="utf-8"><style>html,body{margin:0;background:transparent}'
         f'svg{{display:block;width:{BIG}px;height:{BIG}px}}</style>{svg}'
     )
-    with tempfile.TemporaryDirectory() as tmp:
-        html = os.path.join(tmp, "icon.html")
-        open(html, "w", encoding="utf-8").write(page)
-        subprocess.run(
-            [
-                CHROME, "--headless", "--no-sandbox", "--disable-gpu", "--hide-scrollbars",
-                "--default-background-color=00000000", f"--window-size={BIG},{BIG}",
-                f"--screenshot={out_png}", "file://" + html,
-            ],
-            check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-        )
+    html = os.path.join(work_dir, "icon.html")
+    open(html, "w", encoding="utf-8").write(page)
+    subprocess.run(
+        [
+            CHROME, "--headless", "--no-sandbox", "--disable-gpu", "--hide-scrollbars",
+            "--default-background-color=00000000", f"--window-size={BIG},{BIG}",
+            f"--screenshot={out_png}", "file://" + html,
+        ],
+        check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
 
 
 def main():
-    big_png = os.path.join(tempfile.gettempdir(), "ridgeline-icon-big.png")
-    render_svg(os.path.join(HERE, "icon.svg"), big_png)
-    big = Image.open(big_png).convert("RGBA")
+    # Everything temporary stays inside this folder, which is removed when the block ends.
+    with tempfile.TemporaryDirectory() as tmp:
+        big_png = os.path.join(tmp, "icon-big.png")
+        render_svg(os.path.join(HERE, "icon.svg"), tmp, big_png)
+        big = Image.open(big_png).convert("RGBA")
+        big.load()
     assert big.size == (BIG, BIG), big.size
 
     def at(n):
@@ -48,7 +50,6 @@ def main():
     at(256).save(os.path.join(HERE, "128x128@2x.png"))
     sizes = [16, 24, 32, 48, 64, 256]
     at(256).save(os.path.join(HERE, "icon.ico"), format="ICO", sizes=[(s, s) for s in sizes])
-    os.remove(big_png)
 
 
 if __name__ == "__main__":
