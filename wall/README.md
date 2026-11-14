@@ -1714,8 +1714,46 @@ separate queue, are rate limited, and can use at most 200 lines, so they cannot 
 device edges. Calendar blocks longer than 24 hours are refused before time-zone conversion.
 
 Development query knobs are `?call=teams|zoom|browser|none`, `?camera=1`, `?rec=1` and
-`?leave=<minutes until leaving>`. They fill the hidden store only, so every screen remains
-unchanged.
+`?leave=<minutes until leaving>`. The call knobs fill the hidden store only (no screen uses a
+call yet). `rec` and `leave` now show the recording chip, the Recording keys and the leave
+banner, as below.
+
+### Leave-soon banner and recording mode
+
+**Leave banner** (`signals/LeaveBanner.tsx`, mounted once in `App.tsx`). A calendar block whose
+title says "(10:45 start)" (the real start; `parseRealStart` reads only that wording) is a travel
+block: the block's own start is the time to leave. From 30 minutes before it the banner reads
+"Leave in 12 min. Doctor's appointment starts 10:45" in cyan with a quiet "turns amber at 5
+minutes". At 5 minutes and under it turns amber and shows Dismiss. From the leave time it reads
+"Leave now." until 10 minutes later or the real start, whichever comes first, then goes. The
+text is a button that opens the event in Outlook (`wall2_open_event`); the hover card gives the
+block's time and the real start; a long title is cut with an ellipsis and shown whole on hover.
+Dismiss hides it for that event only, until its real start (kept in local storage, inside try and
+catch, and cleared once the event is over). It is never shown while the meeting list is stale or
+failed, or the signals are unknown, and not on Zen. On Work it sits over the Agents header (x 624,
+y 12, 1290 by 50) and hides the header while it shows; nothing moves. On Home, Unwind and Meet
+the top band holds controls, so it sits in the empty band above the ribbon (y 528) and covers
+none. The signal store drops an event at its leave time, so the banner keeps the last one for its
+"Leave now" window while the event is still in the meeting list.
+
+**Recording mode** (a recorder, Camtasia or OBS, holds the microphone or camera). A small red
+"Recording mm:ss" chip (time counts from when the wall first saw the recorder on; the hover card
+says so) shows in the Agents header on Work (it shrinks to a dot and the time when the header is
+tight), inside the leave banner when that shows, and in the band off Work (at the right of the
+centre on Work when the helper is down and there is no header). Not on Zen. In the Now row, Auto
+shows a "Recording" page: Stop recording (red edge), Pause, Mark moment and Snip, the deck's own
+key tiles in the capture colour at the same height. Stepping by hand still works, Hold wins, and
+Auto returns by itself when the recording ends. `isQuietForRecording()` in `signals/store.ts` is
+the selector for Watt to keep quiet (not wired in here).
+
+**Rust, guarded.** The three recording keys (`rec-stop` F10, `rec-toggle` F9, `rec-marker` Ctrl+M)
+belong to the Recording group, whose keys go only to Camtasia or OBS in front; Camtasia's recorder
+hotkeys are global, so these three, and only these, may be sent whatever is in front. All of
+these must hold (`recording_pass` in `wall2_keys.rs`, with a test for each): the library id is one
+of the three, its chord is exactly the fixed one, and the native recording signal
+(`wall2_signals::recording_now`, read in Rust inside `wall2_keys_send_library`, after the window
+check, never taken from the page) is on. The pass is a value only that function can build; a key
+of a set never gets one; Win+L and Ctrl+Alt+Delete stay refused. The page sends only a library id.
 
 ## Zen and Dream
 

@@ -1165,6 +1165,9 @@
 .deck-dot.am i {
   background: var(--amber, #f5b84a);
 }
+.deck-dots.rec .deck-dot.am i {
+  background: var(--faint);
+}
 .deck-dot:focus-visible,
 .deck-chip:focus-visible,
 .pk-row:focus-visible,
