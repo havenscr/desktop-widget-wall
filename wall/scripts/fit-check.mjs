@@ -1288,11 +1288,11 @@ try {
             const fr = scr.querySelector('.w-frame');
             const r2 = fr && fr.getBoundingClientRect();
             if (!r2 || Math.abs(r2.left - v.left) > 1 || Math.abs(r2.top - v.top) > 1 || Math.abs(r2.width - v.width) > 1 || Math.abs(r2.height - v.height) > 1) fails.push('sky layers: the whole sky frame is cropped');
-            // The soft edge: one mask on the picture, a left and right ramp and a top ramp, none from the foot.
+            // The soft edge (the computed 180deg ramp is written without its direction): one mask on the picture, a left and right ramp and a top ramp, none from the foot.
             const mk = getComputedStyle(scr).maskImage || getComputedStyle(scr).webkitMaskImage || 'none';
             const grads = mk.split('linear-gradient(').slice(1).map((g) => 'linear-gradient(' + g.trim());
-            const side = grads.find((g) => g.startsWith('linear-gradient(90deg'));
-            const topRamp = grads.find((g) => g.startsWith('linear-gradient(180deg'));
+            const side = grads.find((g) => g.startsWith('linear-gradient(90deg') || g.startsWith('linear-gradient(to right'));
+            const topRamp = grads.find((g) => g.startsWith('linear-gradient(180deg') || g.startsWith('linear-gradient(to bottom') || g.startsWith('linear-gradient(rgb'));
             if (mk === 'none' || !side || !topRamp || grads.length !== 2) fails.push('whole sky soft edge: the picture has ' + (mk === 'none' ? 'no mask (a plain edge)' : grads.length + ' mask layers, not one ramp for the sides and one for the top'));
             else if (!/100%/.test(side) || /100%/.test(topRamp)) fails.push('whole sky soft edge: the mask fades the foot, or not both sides');
             if (getComputedStyle(scr).filter.includes('blur')) fails.push('whole sky soft edge: the picture is blurred');
