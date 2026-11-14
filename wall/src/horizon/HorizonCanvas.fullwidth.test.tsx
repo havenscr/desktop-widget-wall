@@ -8,6 +8,7 @@ import { useSkyClaim, useSkyStore, type SkyClaim } from './sky';
 import { usePlaceStore } from '../state/places';
 import { BAND_COUNT, HISTORY_ROWS, danceHistory, ingestLevels, resetAudio, tickAudio } from '../audio/store';
 import { resetLinesStore, useLinesStore, type LineType } from './linesSettings';
+import { LOOK_BOXES, layeredNow, type LookId } from '../unwind/watch/looks';
 
 // The frame loop is stepped by hand; a timer-stepping file keeps a generous limit.
 vi.setConfig({ testTimeout: 20_000 });
@@ -22,8 +23,19 @@ const NOON = new Date(2026, 10, 11, 12, 0).getTime();
 const LOUD = { bass: 0.9, mid: 0.5, high: 0.3, bands: [1], waveform: [0.1] };
 const BYTES = Array.from({ length: 32 }, (_, i) => (i < 4 ? 240 : 120));
 const NEW_TYPES: LineType[] = ['bars', 'ribbon', 'sparks', 'skyline'];
-/** A picture box in the middle of the stage, as a look claims it (design pixels). */
-const BOX = [1106, 16, 889, 500] as const;
+/**
+ * The real looks the Watch tab has, as the stage claims them: the look, whether the player is
+ * waiting for a click (the sun then comes forward), and whether the horizon then mounts a front
+ * canvas (`layeredNow`, the real function, asserted below against this table).
+ */
+const LOOKS: { name: string; look: LookId; needsClick: boolean; layered: boolean }[] = [
+  { name: 'Feathered', look: 'feather', needsClick: false, layered: false },
+  { name: 'Whole sky', look: 'sky', needsClick: false, layered: true },
+  { name: 'The sun, playing', look: 'sun', needsClick: false, layered: true },
+  { name: 'The sun, waiting for a click', look: 'sun', needsClick: true, layered: false },
+  { name: 'Drive-in', look: 'drivein', needsClick: false, layered: false },
+  { name: 'Hologram', look: 'holo', needsClick: false, layered: false },
+];
 
 let frames: Map<number, FrameRequestCallback>;
 let nextId: number;
@@ -51,23 +63,24 @@ function hitNow(level: number) {
   for (let b = 0; b < BAND_COUNT; b++) h.data[h.head * BAND_COUNT + b] = level;
 }
 
-/** A stand-in for Watch: a claim of the picture's box, with a front host (a look behind the land) or without (a look in front of it). */
-function Asker({ behind }: { behind: boolean }) {
+/** A stand-in for the stage: it claims the look's real box, with a front host only when the look is layered now. */
+function Asker({ look, needsClick }: { look: LookId; needsClick: boolean }) {
   const [host, setHost] = useState<HTMLElement | null>(null);
-  const claim: SkyClaim = { boxes: [BOX], front: behind ? host : null };
+  const b = LOOK_BOXES[look];
+  const claim: SkyClaim = { boxes: [[b.x, b.y, b.w, b.h]], front: layeredNow(look, needsClick) ? host : null };
   useSkyClaim('test', claim);
   return <div className="asker-host" ref={setHost} />;
 }
 
 /** Play on Unwind with a picture claimed, one frame at a hit; returns the main canvas, the front canvas (if any) and their logs for that frame. */
-function playWith(type: LineType, behind: boolean) {
+function playWith(type: LineType, look: LookId, needsClick: boolean) {
   useLinesStore.getState().setLines({ type });
   usePlaceStore.setState({ active: 'unwind' });
   feedBands(0, 2000);
   const { container } = render(
     <>
       <HorizonCanvas now={() => NOON} />
-      <Asker behind={behind} />
+      <Asker look={look} needsClick={needsClick} />
     </>,
   );
   let ts = 100;
@@ -114,25 +127,55 @@ afterEach(() => {
   useSkyStore.setState({ claims: {} });
 });
 
+/** The x of every point a recorded draw touches between the type's clip and its restore. */
+function xs(log: string[]): number[] {
+  const out: number[] = [];
+  const from = log.indexOf('clip()');
+  const to = log.indexOf('restore()', from);
+  for (const l of log.slice(from, to)) {
+    const m = /^(\w+)\((.*)\)$/.exec(l);
+    if (!m) continue;
+    const n = m[2].split(',').map(Number);
+    if (n.some((v) => Number.isNaN(v))) continue;
+    if (m[1] === 'fillRect' || m[1] === 'roundRect') out.push(n[0], n[0] + n[2]);
+    else if (m[1] === 'arc' || m[1] === 'moveTo' || m[1] === 'lineTo') out.push(n[0]);
+    else if (m[1] === 'quadraticCurveTo') out.push(n[2]);
+    else if (m[1] === 'bezierCurveTo') out.push(n[4]);
+  }
+  return out;
+}
+
+describe('the real looks decide where the lines are mounted', () => {
+  for (const l of LOOKS) {
+    it(`${l.name}: layeredNow says ${l.layered}`, () => {
+      expect(layeredNow(l.look, l.needsClick)).toBe(l.layered);
+    });
+  }
+});
+
 describe('a new line type plays the full width in every look', () => {
   for (const type of NEW_TYPES) {
-    it(`${type}, picture behind the land: drawn on the front canvas, in front of the picture, no box cut out`, () => {
-      const { main, front } = playWith(type, true);
-      expect(front).not.toBeNull();
-      expect(drewType(front!)).toBe(true);
-      expect(drewType(main)).toBe(false);
-      // No even-odd clip, and no rectangle of the picture's box anywhere in the type's path.
-      expect(front!).not.toContain('clip(evenodd)');
-      expect(front!.some((l) => l.startsWith(`rect(${BOX[0] - 2},`))).toBe(false);
-    });
-
-    it(`${type}, picture in front of the land: drawn on the main canvas with no clip of the box`, () => {
-      const { main, front } = playWith(type, false);
-      expect(front).toBeNull();
-      expect(drewType(main)).toBe(true);
-      expect(main).not.toContain('clip(evenodd)');
-      expect(main.some((l) => l.startsWith(`rect(${BOX[0] - 2},`))).toBe(false);
-    });
+    for (const l of LOOKS) {
+      it(`${type}, ${l.name}: drawn on the ${l.layered ? 'front' : 'main'} canvas, no box cut out, across the picture's x range`, () => {
+        const box = LOOK_BOXES[l.look];
+        const { main, front } = playWith(type, l.look, l.needsClick);
+        const drawn = l.layered ? front : main;
+        expect(front !== null).toBe(l.layered);
+        expect(drawn).not.toBeNull();
+        expect(drewType(drawn!)).toBe(true);
+        // Nothing is drawn on the other canvas.
+        if (l.layered) expect(drewType(main)).toBe(false);
+        // No even-odd clip, and no rectangle of the picture's box anywhere in the type's path.
+        expect(drawn!).not.toContain('clip(evenodd)');
+        expect(drawn!.some((x) => x.startsWith(`rect(${box.x - 2},`))).toBe(false);
+        // The draw calls reach left of the box, inside it and right of it.
+        const x = xs(drawn!);
+        expect(x.length).toBeGreaterThan(0);
+        expect(Math.min(...x)).toBeLessThan(box.x);
+        expect(Math.max(...x)).toBeGreaterThan(box.x + box.w);
+        expect(x.some((v) => v > box.x + 40 && v < box.x + box.w - 40)).toBe(true);
+      });
+    }
 
     it(`${type}, no picture (Listen and every other place): drawn on the main canvas as before`, () => {
       useLinesStore.getState().setLines({ type });

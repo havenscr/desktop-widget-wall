@@ -98,12 +98,16 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
   // The sky layers (`sky.ts`): while a screen gives an element for it, the ground is drawn on a
   // second canvas mounted there, in front of whatever the screen puts into the sky.
   const claims = useSkyStore((s) => s.claims);
+  // Dev builds only: `?lineprobe=front|behind` reads where a new type is drawn against the picture (the fit check).
+  const [lineProbe] = useState(() => (import.meta.env.DEV ? parseLineProbe(window.location.search) : null));
+  // The picture boxes, kept only for the probe, the one reader of them: production keeps none.
   const lineBoxes = useRef<SkyBox[]>([]);
   useEffect(() => {
+    if (!lineProbe) return;
     const boxes = lineBoxes.current;
     boxes.length = 0;
     for (const id in claims) if (claims[id].boxes) boxes.push(...claims[id].boxes!);
-  }, [claims]);
+  }, [claims, lineProbe]);
   // Dev builds only: `?sky=front` mounts the front canvas everywhere, `?sky=flat` never, `?skymoon=x,y,r` moves the moon (fit-check breaks, cost measurement).
   const [skyReview] = useState(() => (import.meta.env.DEV ? parseSkyReview(window.location.search) : null));
   const alwaysFront = !zen && skyReview?.front === 'always';
@@ -152,8 +156,6 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
   // The new line types (Bars, Ribbon, Sparks, Skyline): their state and one frame input, made once.
   const types = useRef(createLineTypes());
   const typeFrame = useRef(createLineFrame());
-  // Dev builds only: `?lineprobe=1` counts a new type's pixels inside the picture boxes (the fit check).
-  const [lineProbe] = useState(() => (import.meta.env.DEV ? parseLineProbe(window.location.search) : null));
   // The scratch canvas for the lake reflection, made on first use.
   const reflection = useRef(createReflection());
   // Tell Watt (read only) where the camera is going and whether it is moving; cleared on unmount
