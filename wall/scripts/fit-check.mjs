@@ -25,10 +25,12 @@
 // Sky layers: a front canvas only while a Watch look sits behind the land, covering the stage over the video
 // (opaque on the lake, clear at the top of the sky), the whole sky's picture uncropped inside the stage, and the moon at night 40 px clear of every card,
 // the player and the clock, in one place on Listen and on Watch with nothing on.
+// On Air: the three columns inside their planned boxes above the strip, no note cut without "+N more",
+// and the recording key tiles at least 40 px.
 // CI does not run this; run it by hand before a layout change is handed over.
 //
 //   WALL_CHROME=/path/to/chrome-or-headless-shell npm --prefix wall run fit-check
-//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, header, deck, tiles, picker, chips, heading, zenhint, strip, fold, drawer, rows, handle, sky, floor, sun, tools, toolsnames, meetfill, meetempty, fy-height, key-edge, hide-pill, hide-note, leave-band, rec-chip, rec-height, tile-height, tile-icon, tile-iconbox, drawer-scrim, lwbuttons, lwoverlap, lwsquare, lwring, lwtemp, lwround, sky-front, sky-moon, sky-always, sky-crop, sky-seam, tower-over, tower-wide, tower-box, tower-switch, holo-big, holo-noblend, holo-beam, holo-take, tile-text, listen-player, listen-card, listen-slot, listen-next, lines-size, lines-control, lines-text, lines-clip, watch-rest, watch-title, watch-away, watch-mark, lip-cover, lip-band, lip-scrim, row-parts, over-hatch, row-type)
+//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, header, deck, tiles, picker, chips, heading, zenhint, strip, fold, drawer, rows, handle, sky, floor, sun, tools, toolsnames, meetfill, meetempty, fy-height, key-edge, hide-pill, hide-note, leave-band, rec-chip, rec-height, tile-height, tile-icon, tile-iconbox, drawer-scrim, lwbuttons, lwoverlap, lwsquare, lwring, lwtemp, lwround, sky-front, sky-moon, sky-always, sky-crop, sky-seam, sky-soft, sky-foot, tower-over, tower-wide, tower-box, tower-switch, holo-big, holo-noblend, holo-beam, holo-take, tile-text, listen-player, listen-card, listen-slot, listen-next, lines-size, lines-control, lines-text, lines-clip, watch-rest, watch-title, watch-away, watch-mark, lip-cover, lip-band, lip-scrim, row-parts, over-hatch, row-type, onair-box, onair-notes, onair-keys, onair-watt, watt-seat, watt-spot, watt-tower, watt-ground)
 //   npm --prefix wall run fit-check -- --self-test
 //
 // WALL_CHROME (or the first argument that is not a flag) is a Chromium or
@@ -44,6 +46,9 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { ChromeRunError, onCleanup, runChrome } from './lib/chrome-run.mjs';
 
+// The whole sky's picture box in wall pixels (LOOK_BOXES.sky in looks.ts, which fit-check compares with the drawn one).
+const LOOK_BOX_SKY = { x: 1106, y: 16, w: 889, h: 500 };
+
 const args = process.argv.slice(2);
 const flag = (name) => args.find((a) => a === `--${name}` || a.startsWith(`--${name}=`));
 const chrome = args.find((a) => !a.startsWith('--')) || process.env.WALL_CHROME;
@@ -56,6 +61,13 @@ if (!chrome) {
  * Stylesheets that break the layout on purpose, one per side, for `--overflow`, and the
  * FAIL line the self-test must find for each (the side that was broken, nothing else).
  */
+
+// The whole sky's soft edge, as in unwind.css: smoothstep stops over --w-sky-soft (120 px here).
+const SKY_STEPS = [[0.1, 0.028], [0.2, 0.104], [0.3, 0.216], [0.4, 0.352], [0.5, 0.5], [0.6, 0.648], [0.7, 0.784], [0.8, 0.896], [0.9, 0.972]];
+const skyStart = () => [`rgba(0, 0, 0, 0) 0px`, ...SKY_STEPS.map(([f, a]) => `rgba(0, 0, 0, ${a}) calc(120px * ${f})`), `rgba(0, 0, 0, 1) calc(120px * 1)`];
+const SKY_SIDE_RAMP = `linear-gradient(90deg, ${[...skyStart(), `rgba(0, 0, 0, 1) calc(100% - 120px * 1)`, ...[...SKY_STEPS].reverse().map(([f, a]) => `rgba(0, 0, 0, ${a}) calc(100% - 120px * ${f})`), `rgba(0, 0, 0, 0) 100%`].join(', ')})`;
+const SKY_TOP_RAMP_FOOT = `linear-gradient(180deg, ${[...skyStart(), `rgba(0, 0, 0, 0.9) calc(100% - 4px)`, `rgba(0, 0, 0, 0) 100%`].join(', ')})`;
+
 const EXPECT = {
   left: /^ *FAIL \.work \.left-wing:.*viewport [^,]*\bleft \d+/m,
   right: /^ *FAIL \.work \.centre \.lane \[\d\]:.*container right \d+/m,
@@ -154,6 +166,13 @@ const EXPECT = {
   'sky-always': /^ *FAIL sky layers: 1 front canvas with no look behind the land/m,
   'sky-crop': /^ *FAIL sky layers: the whole sky picture is at -?\d+,-?\d+,\d+, not inside the stage near its top/m,
   'sky-seam': /^ *FAIL sky layers: the pixel proof at \w+: \d+ pixels differ by more than 2 levels/m,
+  'sky-soft': /^ *FAIL whole sky soft edge: /m,
+  'sky-foot': /^ *FAIL whole sky soft edge: /m,
+  // on air
+  'onair-box': /^ *FAIL on air: \.oa-card .*outside its planned box/m,
+  'onair-notes': /^ *FAIL on air: the notes are cut /m,
+  'onair-keys': /^ *FAIL on air: key tile ".*" is \d+ x \d+ px/m,
+  'onair-watt': /^ *FAIL on air: Watt .* overlaps /m,
   // lines controls
   'lines-size': /^ *FAIL lines: the sheet is \d+ px tall/m,
   'lines-control': /^ *FAIL lines: control ".*" is [\d.]+ px tall/m,
@@ -283,6 +302,16 @@ const OVERFLOWS = {
   'sky-crop': '.w-sky .w-screen { transform: scale(1.4); }',
   // The pixel proof: the front canvas a shade brighter than the main one (a seam between the two).
   'sky-seam': '.horizon-front { filter: brightness(1.04) !important; }',
+  // The whole sky's soft edge: the mask removed (a plain edge again), and a mask that also fades the foot.
+  'sky-soft': '.w-sky .w-screen { -webkit-mask-image: none !important; mask-image: none !important; }',
+  // Keeps the production side ramp exactly and replaces only the top ramp with one that also fades the foot (an extra stop near 100 percent).
+  'sky-foot': `.w-sky .w-screen { -webkit-mask-image: ${SKY_SIDE_RAMP}, ${SKY_TOP_RAMP_FOOT} !important; mask-image: ${SKY_SIDE_RAMP}, ${SKY_TOP_RAMP_FOOT} !important; }`,
+  // on air: the notes card 1400 px wide; every note shown at 40 px (none behind "+N more"); 20 px key tiles.
+  'onair-box': '.onair .oa-card { width: 1400px !important; }',
+  'onair-notes': '.onair .oa-note { font-size: 40px !important; } .onair .oa-note[hidden] { display: flex !important; }',
+  'onair-keys': '.onair .oa-keys .deck-tile.key-tile { height: 20px !important; min-height: 0 !important; padding: 0 !important; }',
+  // on air: Watt lifted onto the notes card
+  'onair-watt': '.watt-sheep, .watt-hit { margin-top: -300px !important; }',
   // lines controls: a 900 px panel, a 24 px chip, a 12 px label, the clip removed (a URL knob, LINES_BREAK_Q).
   'lines-size': '.ln-panel { height: 900px !important; }',
   'lines-control': '.ln-chips button { height: 24px !important; }',
@@ -627,6 +656,22 @@ VARIANTS.push(
   { name: 'Strip: twelve open, nine working, over the limit', q: work('12busy'), checks: ['.rib'], strip: true, viewportOnly: true },
   { name: 'Strip: the Day drawer, twelve busy, long titles', q: work('12busy', '&meet=overlap'), click: '.rib-handle', checks: ['.day-drawer', '.day-drawer .dd-rows'], strip: true, viewportOnly: true },
   { name: 'Strip: Agents today over the limit', q: work('12busy', '&days=typical'), click: '.rib .ag-line', checks: ['.agents-today', '.agents-today .at-head', '.agents-today .at-busy'], strip: true, viewportOnly: true },
+);
+// On Air: the three columns in their planned boxes above the strip in every state, the notes
+// card with long notes (the rest behind "+N more"), forty parts, no file, a refused file and a full marks file.
+const onAirQ = (knobs) => `?hz=onair&at=${encodeURIComponent('2026-11-11T10:24:00-08:00')}&clock=review&weather=ok&screen=onair&${knobs}`;
+const ONAIR = ['.onair .oa-left', '.onair .oa-card', '.onair .oa-right', '.onair .oa-card-foot', '.onair .oa-mark'];
+VARIANTS.push(
+  { name: 'On Air, typical: running at 42:13', q: onAirQ('show=typical&marks=2&oatimer=run'), checks: ONAIR, onair: true },
+  { name: 'On Air, long names and twelve long notes', q: onAirQ('show=long&marks=2&oatimer=run'), checks: ONAIR, onair: true },
+  { name: 'On Air, forty parts', q: onAirQ('show=forty&marks=2&oatimer=run'), checks: ONAIR, onair: true },
+  { name: 'On Air, no run-of-show.txt yet', q: onAirQ('show=missing&marks=0&oatimer=idle'), checks: ONAIR, onair: true },
+  { name: 'On Air, a refused file', q: onAirQ('show=refused&marks=0&oatimer=idle'), checks: ONAIR, onair: true },
+  { name: 'On Air, Watt standing under the notes card', q: onAirQ('show=typical&marks=2&oatimer=run&wattspot=1000'), checks: ONAIR, onair: true },
+  { name: 'On Air, Watt set down at the far left', q: onAirQ('show=typical&marks=2&oatimer=run&wattspot=200'), checks: ONAIR, onair: true },
+  { name: 'On Air, Watt set down at the far right', q: onAirQ('show=typical&marks=2&oatimer=run&wattspot=2300'), checks: ONAIR, onair: true },
+  { name: 'On Air, the timer stopped itself at 24 hours', q: onAirQ('show=typical&marks=2&oatimer=limit'), checks: ONAIR, onair: true },
+  { name: 'On Air, marks.txt full after a click, recording', q: onAirQ('show=typical&marks=full&oatimer=run&rec=1'), checks: ONAIR, onair: true, click: '.oa-mark-btn' },
 );
 // keys style: a small PNG reader (8-bit RGB or RGBA, not interlaced, as Chromium writes them) and contrast.
 function readPng(file) {
@@ -1380,6 +1425,14 @@ try {
             const fr = scr.querySelector('.w-frame');
             const r2 = fr && fr.getBoundingClientRect();
             if (!r2 || Math.abs(r2.left - v.left) > 1 || Math.abs(r2.top - v.top) > 1 || Math.abs(r2.width - v.width) > 1 || Math.abs(r2.height - v.height) > 1) fails.push('sky layers: the whole sky frame is cropped');
+            // The soft edge (the computed 180deg ramp is written without its direction): one mask on the picture, a left and right ramp and a top ramp, none from the foot.
+            const mk = getComputedStyle(scr).maskImage || getComputedStyle(scr).webkitMaskImage || 'none';
+            const grads = mk.split('linear-gradient(').slice(1).map((g) => 'linear-gradient(' + g.trim());
+            const side = grads.find((g) => g.startsWith('linear-gradient(90deg') || g.startsWith('linear-gradient(to right'));
+            const topRamp = grads.find((g) => g.startsWith('linear-gradient(180deg') || g.startsWith('linear-gradient(to bottom') || g.startsWith('linear-gradient(rgb'));
+            if (mk === 'none' || !side || !topRamp || grads.length !== 2) fails.push('whole sky soft edge: the picture has ' + (mk === 'none' ? 'no mask (a plain edge)' : grads.length + ' mask layers, not one ramp for the sides and one for the top'));
+            else if (!/100%/.test(side) || /100%/.test(topRamp)) fails.push('whole sky soft edge: the mask fades the foot, or not both sides');
+            if (getComputedStyle(scr).filter.includes('blur')) fails.push('whole sky soft edge: the picture is blurred');
           }
           const x = f.getContext('2d');
           const sx = f.width / 2560;
@@ -1583,7 +1636,60 @@ try {
       }
       return fails;
     })();
-    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, copyOut, meetOut, strip, opened, watchPolish, skyLayers, thCheck, tileText, listen, lines, watchBehaviour, wattDriveIn });
+    // On Air: each column inside its planned box (stage x) between the top of the band and the strip,
+    // no note of the notes card cut without a "+N more" line that counts the hidden ones, key tiles at least 40 px.
+    const onair = (() => {
+      const fails = [];
+      const want = new URLSearchParams(location.search).get('screen') === 'onair';
+      if (!document.querySelector('.onair')) return want ? ['on air: the place did not open'] : [];
+      const rib = document.querySelector('.rib');
+      const floor = Math.min(510, rib ? rib.getBoundingClientRect().top : 720);
+      const r1 = (n) => Math.round(n * 10) / 10;
+      for (const [sel, l, r, parts] of [['.oa-left', 124, 764, '.oa-timer, .oa-runbox, .oa-run, .oa-file, .oa-empty'], ['.oa-card', 800, 1880, '.oa-k, .oa-notes, .oa-help, .oa-nonotes, .oa-card-foot, .oa-card-foot > *'], ['.oa-right', 1920, 2540, '.oa-mark, .oa-keys, .oa-keys > *, .oa-foot, .oa-k, .oa-k-brief']]) {
+        const col = document.querySelector('.onair ' + sel);
+        if (!col) { fails.push('on air: ' + sel + ' is missing'); continue; }
+        for (const e of [col, ...col.querySelectorAll(parts)]) {
+          const b = e.getBoundingClientRect();
+          if (b.width === 0 && b.height === 0) continue;
+          if (b.left < l - 0.5 || b.right > r + 0.5 || b.top < 20 - 0.5 || b.bottom > floor + 0.5) {
+            fails.push('on air: ' + sel + (e === col ? '' : ' ' + (e.className || e.tagName)) + ' at x ' + r1(b.left) + ' to ' + r1(b.right) + ', y ' + r1(b.top) + ' to ' + r1(b.bottom) + ' is outside its planned box (x ' + l + ' to ' + r + ', y 20 to ' + r1(floor) + ')');
+            break;
+          }
+        }
+      }
+      const list = document.querySelector('.onair .oa-notes');
+      if (list) {
+        const lb = list.getBoundingClientRect();
+        const notes = [...list.querySelectorAll(':scope > .oa-note')];
+        const hidden = notes.filter((n) => getComputedStyle(n).display === 'none').length;
+        const cutNote = notes.findIndex((n) => getComputedStyle(n).display !== 'none' && n.getBoundingClientRect().bottom > lb.bottom + 0.5);
+        const more = list.querySelector(':scope > .oa-more');
+        const moreShown = more && getComputedStyle(more).display !== 'none' ? (more.textContent || '').trim() : '';
+        if (list.scrollHeight > list.clientHeight + 0.5 || cutNote >= 0) fails.push('on air: the notes are cut (' + (cutNote >= 0 ? 'note ' + (cutNote + 1) + ' of ' + notes.length + ' ends below the card' : 'the list is ' + list.scrollHeight + ' px for ' + list.clientHeight) + ', ' + hidden + ' behind "+N more")');
+        else if (hidden > 0 && moreShown !== '+' + hidden + ' more') fails.push('on air: the notes are cut: ' + hidden + ' hidden but the more line reads "' + moreShown + '"');
+        else if (hidden === 0 && moreShown !== '') fails.push('on air: the more line reads "' + moreShown + '" with no note hidden');
+      }
+      // Watt stands on the ground line below the columns: his box (and his click box) overlaps none of them.
+      const wattBoxes = [['Watt', '.watt-sheep'], ['Watt click box', '.watt-hit']];
+      for (const [label, sel] of wattBoxes) {
+        const w = document.querySelector(sel);
+        if (!w) { if (sel === '.watt-hit' && want) fails.push('on air: Watt is not on the page'); continue; }
+        const wb = w.getBoundingClientRect();
+        if (wb.width === 0 && wb.height === 0) continue;
+        for (const csel of ['.oa-left', '.oa-card', '.oa-right']) {
+          const cb = document.querySelector('.onair ' + csel)?.getBoundingClientRect();
+          if (cb && wb.left < cb.right && cb.left < wb.right && wb.top < cb.bottom && cb.top < wb.bottom) fails.push('on air: ' + label + ' at x ' + r1(wb.left) + ' to ' + r1(wb.right) + ', y ' + r1(wb.top) + ' to ' + r1(wb.bottom) + ' overlaps ' + csel + ' (y ' + r1(cb.top) + ' to ' + r1(cb.bottom) + ')');
+        }
+      }
+      const tiles = [...document.querySelectorAll('.onair .oa-keys .key-tile')];
+      if (tiles.length !== 4) fails.push('on air: ' + tiles.length + ' recording keys, expected 4');
+      for (const t of tiles) {
+        const b = t.getBoundingClientRect();
+        if (b.height < 40 - 0.5 || b.width < 40 - 0.5) fails.push('on air: key tile "' + t.getAttribute('aria-label') + '" is ' + Math.round(b.width) + ' x ' + Math.round(b.height) + ' px (at least 40 by 40)');
+      }
+      return fails;
+    })();
+    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, copyOut, meetOut, strip, opened, watchPolish, skyLayers, thCheck, tileText, listen, lines, watchBehaviour, onair, wattDriveIn });
     document.body.appendChild(pre);
   }, new URLSearchParams(location.search).get('card') ? 7000 : 3000);</script>`;
   const broken = overflow ? `<style>${OVERFLOWS[overflow]}</style>` : '';
@@ -1675,6 +1781,13 @@ try {
     'sky-moon': (v) => v.name === 'Sky layers, Listen at night, the moon in open sky',
     'sky-always': (v) => v.name === 'Sky layers, Listen at night, the moon in open sky',
     'sky-crop': (v) => v.name === 'Sky layers, whole sky at night',
+    'sky-soft': (v) => v.name === 'Sky layers, whole sky at night',
+    'sky-foot': (v) => v.name === 'Sky layers, whole sky at night',
+    // on air
+    'onair-box': (v) => v.name === 'On Air, typical: running at 42:13',
+    'onair-notes': (v) => v.name === 'On Air, long names and twelve long notes',
+    'onair-keys': (v) => v.name === 'On Air, typical: running at 42:13',
+    'onair-watt': (v) => v.name === 'On Air, Watt standing under the notes card',
     // lines controls
     'lines-size': (v) => v.name === 'Lines settings sheet',
     'lines-control': (v) => v.name === 'Lines settings sheet',
@@ -1703,7 +1816,7 @@ try {
       process.exit(1);
     }
     const text = m[1].replaceAll('&quot;', '"').replaceAll('&amp;', '&');
-    const { res, page: doc, overlaps, cut, gaps, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, copyOut, meetOut, strip, opened, watchPolish, skyLayers, thCheck, tileText, listen, lines, watchBehaviour, wattDriveIn } = JSON.parse(text);
+    const { res, page: doc, overlaps, cut, gaps, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, copyOut, meetOut, strip, opened, watchPolish, skyLayers, thCheck, tileText, listen, lines, watchBehaviour, onair, wattDriveIn } = JSON.parse(text);
     // watt drive-in
     if (wattDriveIn) {
       for (const f of wattDriveIn.fails) console.log(`  FAIL ${f}`);
@@ -1711,6 +1824,10 @@ try {
       else if (wattDriveIn.waiting) console.log('  ok   watt drive-in: the marquee is waiting, Watt is not at the show');
       else console.log(`  ok   watt drive-in: seated at ${wattDriveIn.at}, on his ground, 30 px or more left of the screen, 22 px or more from every control at his height, near his seat, 24 px or less into the tower`);
     }
+    // on air
+    for (const f of onair) console.log(`  FAIL ${f}`);
+    if (onair.length) failed = true;
+    else if (v.onair) console.log('  ok   on air: three columns inside their planned boxes above the strip, no note cut without "+N more", key tiles at least 40 px');
     // watch behaviour
     for (const f of watchBehaviour) console.log(`  FAIL ${f}`);
     if (watchBehaviour.length) failed = true;
@@ -2003,6 +2120,45 @@ try {
         failed = true;
         console.log(`  FAIL sky layers: the pixel proof at ${when}: ${diff < 0 ? 'the two screenshots differ in size' : `${over2} pixels differ by more than 2 levels: ${summary}`}, one canvas against the front layer with nothing between`);
       } else console.log(`sky layers: the pixel proof at ${when}: ${summary}; one canvas against the front layer with nothing between`);
+    }
+  }
+  // The whole sky's soft edge, the pixel proof: the page as drawn against the same page with the
+  // picture hidden (the sky alone). At the picture's top left corner and at the middle of its left
+  // edge the two agree to a few levels (the fade has taken the picture away); in the middle of the
+  // picture they differ clearly (the picture is there, untouched). Night and noon.
+  if (!overflow || overflow === 'sky-soft') {
+    const proof = join(out, 'proof-soft.html');
+    writeFileSync(proof, html.replace('</body>', `${broken}</body>`));
+    const hide = html.replace('</body>', `${broken}<style>.w-sky .w-screen { visibility: hidden !important; }</style></body>`);
+    const proofHidden = join(out, 'proof-soft-hidden.html');
+    writeFileSync(proofHidden, hide);
+    for (const [when, at] of [['night', '2026-11-11T22:30:00-08:00'], ['noon', '2026-11-11T12:30:00-08:00']]) {
+      const shots = [];
+      for (const [name, file] of [['drawn', proof], ['hidden', proofHidden]]) {
+        const shot = join(out, `soft-${when}-${name}.png`);
+        const url = `${pathToFileURL(file).href}?hz=unwind&at=${encodeURIComponent(at)}&agents=3&weather=ok&watch=mock&wlist=three&wlook=sky&wplay=0`;
+        await runChrome(chrome, ['--headless', '--no-sandbox', '--disable-gpu', '--window-size=2560,807', '--hide-scrollbars', '--virtual-time-budget=8000', `--screenshot=${shot}`, url], { label: `whole sky soft edge pixel proof, ${when}, ${name}` });
+        shots.push(readPng(shot));
+      }
+      const [a, b] = shots;
+      const bx = LOOK_BOX_SKY;
+      const dy = (a.h - 720) / 2;
+      const diffAt = (x, y) => {
+        const i = ((Math.round(y + dy)) * a.w + Math.round(x)) * a.ch;
+        return Math.max(Math.abs(a.px[i] - b.px[i]), Math.abs(a.px[i + 1] - b.px[i + 1]), Math.abs(a.px[i + 2] - b.px[i + 2]));
+      };
+      if (a.w !== b.w || a.h !== b.h || a.w !== 2560) {
+        failed = true;
+        console.log(`  FAIL whole sky soft edge: the pixel proof at ${when}: the two screenshots differ in size`);
+        continue;
+      }
+      const corner = diffAt(bx.x + 2, bx.y + 2);
+      const side = diffAt(bx.x + 2, bx.y + 250);
+      const middle = diffAt(bx.x + bx.w / 2, bx.y + 150);
+      if (corner > 4 || side > 4 || middle < 20) {
+        failed = true;
+        console.log(`  FAIL whole sky soft edge: the pixel proof at ${when}: the corner differs from the sky by ${corner} levels and the left edge by ${side} (each must be 4 or less), the middle by ${middle} (it must be 20 or more)`);
+      } else console.log(`whole sky soft edge: the pixel proof at ${when}: the corner is the sky (${corner} levels off), the left edge too (${side}), the middle is the picture (${middle} levels from the sky)`);
     }
   }
   if (switchBoxes.length > 1) {

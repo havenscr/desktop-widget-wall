@@ -344,6 +344,10 @@ state('work', 'watch behaviour: a video playing elsewhere', `${WM}&wlist=three&w
 // moon in its open-sky place on Listen (playing and with nothing playing) and on Watch with nothing on.
 state('unwind', 'sky layers: whole sky at night', `${WM}&wlist=three&wlook=sky&wplay=0`, TIMES.night);
 state('unwind', 'sky layers: whole sky at noon', `${WM}&wlist=three&wlook=sky&wplay=1`, TIMES.noon);
+// The whole sky's soft edge: the picture's top, left and right edges fade into the sky.
+state('unwind', 'soft edge: whole sky at night', `${WM}&wlist=three&wlook=sky&wplay=0`, TIMES.night);
+state('unwind', 'soft edge: whole sky at noon', `${WM}&wlist=three&wlook=sky&wplay=1`, TIMES.noon);
+state('unwind', 'soft edge: whole sky, autoplay refused', `${WM}&wlist=three&wlook=sky&wplay=0&wstate=refused`, TIMES.night);
 state('unwind', 'sky layers: the sun at night', `${WM}&wlist=three&wlook=sun&wplay=0`, TIMES.night);
 state('unwind', 'sky layers: the sun at noon', `${WM}&wlist=three&wlook=sun&wplay=1`, TIMES.noon);
 state('unwind', 'sky layers: drive-in at night, no moon', `${WM}&wlist=three&wlook=drivein&wplay=2`, TIMES.night);
@@ -685,6 +689,9 @@ const EXPECT = [
   ['unwind', 'watch polish: sun, nothing reported yet', ['Playing on the wall', '!12:34', 'Open in YouTube']],
   ['unwind', 'watch polish: leave banner', ['Open in YouTube', 'Drive-in']],
   ['unwind', 'watch polish: nothing on', ['Nothing on', 'Whole sky', 'Drive-in']],
+  ['unwind', 'soft edge: whole sky at night', ['Whole sky', 'Open in YouTube']],
+  ['unwind', 'soft edge: whole sky at noon', ['Whole sky', 'Open in YouTube']],
+  ['unwind', 'soft edge: whole sky, autoplay refused', ['Click the video to start', 'Waiting for a click on the video']],
   ['unwind', 'watch polish: whole sky, autoplay refused', ['Click the video to start', 'Waiting for a click on the video']],
   // watch behaviour (the faded parts are still in the page, only transparent)
   ['unwind', 'watch behaviour: drive-in, paused', ['Paused', 'Night drive mix']],
@@ -858,6 +865,41 @@ const NO_TEXT = [
   ['unwind', 'Watt: set down', 'only where Watt stands changes'],
   ['unwind', 'Watt: on Watch', 'only where Watt stands changes'],
 ];
+
+// On Air: the show timer, the run of show from run-of-show.txt (`show=`), the notes, Mark a moment
+// (`marks=`) and the recording keys, with the stored timer (`oatimer=`) running, stopped or idle.
+// hz=onair: the horizon's camera is On Air's own from the first frame, so Watt (who waits for his place's camera) stands in the still.
+const onAir = (extra) => url('work', TYPICAL_AT, `screen=onair&${extra}`).replace('hz=work', 'hz=onair');
+add('onair', 'on air: typical (running at 42:13)', onAir('show=typical&marks=2&oatimer=run'), true);
+add('onair', 'on air: stopped', onAir('show=typical&marks=2&oatimer=stopped'), true);
+add('onair', 'on air: no file', onAir('show=missing&marks=0&oatimer=idle'), true);
+add('onair', 'on air: refused file', onAir('show=refused&marks=0&oatimer=idle'), true);
+add('onair', 'on air: forty parts', onAir('show=forty&marks=2&oatimer=run'), true);
+add('onair', 'on air: long notes', onAir('show=long&marks=2&oatimer=run'), true);
+add('onair', 'on air: marks full', onAir('show=typical&marks=full&oatimer=run'), true, '.oa-mark-btn');
+add('onair', 'on air: one part', onAir('show=one&marks=0&oatimer=run'), true);
+add('onair', 'on air: read fails', onAir('show=down&marks=0&oatimer=idle'), true);
+add('onair', 'on air: recording, Stop lit', onAir('show=typical&marks=2&oatimer=run&rec=1'), true);
+add('onair', 'on air: Watt standing', onAir('show=typical&marks=2&oatimer=run&wattspot=1000'), true);
+add('onair', 'on air: timer stopped at 24 hours', onAir('show=typical&marks=2&oatimer=limit'), true);
+add('onair', 'on air: Open file failed, marks line unchanged', onAir('show=missing&marks=2&oatimer=idle&openfail=show'), true, '.oa-empty-btn');
+add('onair', 'on air: reset asks again', onAir('show=typical&marks=2&oatimer=stopped'), true, '.oa-reset');
+EXPECT.push(
+  ['onair', 'on air: typical', ['42:1', 'Product demo', '7 min left', 'Point it at the real model first', 'Next: Audience questions, 15 min', '2 marked: 03:12, 09:40. Saved to marks.txt', 'Record 16:9', 'Hide screen', '!+1 more']],
+  ['onair', 'on air: stopped', ['42:13', 'stopped at', 'Start', 'Reset']],
+  ['onair', 'on air: no file', ['No run-of-show.txt yet', 'Open file', '## Part name | 10', 'None yet today']],
+  ['onair', 'on air: refused file', ['run-of-show.txt is over 32 KB', 'Fix the file']],
+  ['onair', 'on air: forty parts', ['Segment 40: Questions', 'Marathon stream', '4 lines skipped']],
+  ['onair', 'on air: long notes', ['An extremely long part name', 'Note 12: walk through', ' more']],
+  ['onair', 'on air: marks full', 'marks.txt is full; move it aside'],
+  ['onair', 'on air: one part', ['This is the last part', 'Product demo']],
+  ['onair', 'on air: read fails', 'Could not read run-of-show.txt'],
+  ['onair', 'on air: recording', ['Recording00:', 'Mark a moment']],
+  ['onair', 'on air: Watt standing', ['Product demo', '42:1']],
+  ['onair', 'on air: timer stopped at 24 hours', ['24:00:00', 'Stopped at 24 hours', 'Start']],
+  ['onair', 'on air: Open file failed, marks line unchanged', ['Could not open run-of-show.txt', '2 marked: 03:12, 09:40. Saved to marks.txt']],
+  ['onair', 'on air: reset asks again', 'Reset? Click again'],
+);
 
 const matches = (st, [sc, prefix, , exact]) => sc === st.screen && (exact === true ? st.name === prefix : st.name.startsWith(prefix));
 const missing = [];

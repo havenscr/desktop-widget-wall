@@ -107,6 +107,8 @@ describe('the walk table', () => {
     expect(WALKS.unwind.max + unwindW).toBeLessThanOrEqual(580);
     expect(Math.abs(middle(WALKS.unwind) + unwindW / 2 - 500)).toBeLessThanOrEqual(10);
     expect(WALKS.meet).toEqual(WALKS.work);
+    // On Air's columns all end at the top band's bottom, so his walk there is Work's.
+    expect(WALKS.onair).toEqual(WALKS.work);
     expect([WALKS.work.px, WALKS.home.px, WALKS.unwind.px]).toEqual([4, 5, 6]);
   });
 });
@@ -148,6 +150,13 @@ const WATCH_MEASURED: Rect[] = [
   { left: 1283, right: 1826, top: 517, bottom: 553 },
 ];
 
+/** On Air's columns as `[left, width]` from the main area's left edge, the way onair.css places them. */
+const ON_AIR_COLUMNS: readonly (readonly [number, number])[] = [
+  [0, 640],
+  [676, 1080],
+  [1796, 620],
+];
+
 /** The panel rectangles on a place, in stage pixels: the frame's layout constants, plus Unwind's transport row. */
 function panels(place: WattPlace, watch = false): Rect[] {
   const out: Rect[] = [{ left: SHELL_INSET, right: SHELL_INSET + RAIL_WIDTH, top: MAIN_TOP, bottom: MAIN_TOP + MAIN_HEIGHT }];
@@ -156,6 +165,8 @@ function panels(place: WattPlace, watch = false): Rect[] {
     // Top band zones (left wing, centre, right wing) and the ribbon across the main area.
     for (const z of zoneEdges(ZONES)) out.push({ left: MAIN_LEFT + z.left, right: MAIN_LEFT + z.right, top: band.top, bottom: band.bottom });
     out.push({ left: MAIN_LEFT, right: MAIN_LEFT + MAIN_WIDTH, top: ribbon.top, bottom: ribbon.bottom });
+    // On Air's own three columns (onair.css): the timer and run of show, the notes card, Mark and the keys.
+    if (place === 'onair') for (const [left, width] of ON_AIR_COLUMNS) out.push({ left: MAIN_LEFT + left, right: MAIN_LEFT + left + width, top: band.top, bottom: band.bottom });
   } else {
     // A tall place: the left wing above the gap and below the horizon, the right wing the full
     // height, and the transport and volume row in the centre.
@@ -476,8 +487,9 @@ describe('buddyFrame', () => {
 });
 
 describe('where Watt shows', () => {
-  it('on Work, Home, Meet and Unwind; not on Zen, nor on Meet during a call', () => {
+  it('on Work, Home, Meet, On Air and Unwind; not on Zen, nor on Meet during a call', () => {
     for (const place of PLACES) expect(wattPlaceFor(place)).toBe(place);
+    expect(wattPlaceFor('onair')).toBe('onair');
     expect(wattPlaceFor('zen')).toBeNull();
     expect(wattPlaceFor('meet', true)).toBeNull();
     expect(wattPlaceFor('work', true)).toBe('work');
