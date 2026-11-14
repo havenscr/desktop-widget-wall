@@ -677,10 +677,11 @@ VARIANTS.push(
 const allAreaVariants = areas.flatMap((area) => area.fit?.variants ?? []);
 const validationVariants = [...VARIANTS, ...allAreaVariants];
 const areaVariants = activeAreas.flatMap((area) => area.fit?.variants ?? []);
+const builtInVariantNames = VARIANTS.map((variant) => variant.name);
 if (flag('area')) VARIANTS.splice(0, VARIANTS.length, ...areaVariants);
 else VARIANTS.push(...areaVariants);
 try {
-  validateRegistrations(areas, { 'variant name': VARIANTS.filter((variant) => !areaVariants.includes(variant)).map((variant) => variant.name) });
+  validateRegistrations(areas, { 'variant name': builtInVariantNames });
   validateFitReferences(areas, validationVariants);
 } catch (error) {
   console.error(`areas: ${error.message}`);
