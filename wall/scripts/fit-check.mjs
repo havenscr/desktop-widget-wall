@@ -59,6 +59,13 @@ if (!chrome) {
  * Stylesheets that break the layout on purpose, one per side, for `--overflow`, and the
  * FAIL line the self-test must find for each (the side that was broken, nothing else).
  */
+
+// The whole sky's soft edge, as in unwind.css: smoothstep stops over --w-sky-soft (120 px here).
+const SKY_STEPS = [[0.1, 0.028], [0.2, 0.104], [0.3, 0.216], [0.4, 0.352], [0.5, 0.5], [0.6, 0.648], [0.7, 0.784], [0.8, 0.896], [0.9, 0.972]];
+const skyStart = () => [`rgba(0, 0, 0, 0) 0px`, ...SKY_STEPS.map(([f, a]) => `rgba(0, 0, 0, ${a}) calc(120px * ${f})`), `rgba(0, 0, 0, 1) calc(120px * 1)`];
+const SKY_SIDE_RAMP = `linear-gradient(90deg, ${[...skyStart(), `rgba(0, 0, 0, 1) calc(100% - 120px * 1)`, ...[...SKY_STEPS].reverse().map(([f, a]) => `rgba(0, 0, 0, ${a}) calc(100% - 120px * ${f})`), `rgba(0, 0, 0, 0) 100%`].join(', ')})`;
+const SKY_TOP_RAMP_FOOT = `linear-gradient(180deg, ${[...skyStart(), `rgba(0, 0, 0, 0.9) calc(100% - 4px)`, `rgba(0, 0, 0, 0) 100%`].join(', ')})`;
+
 const EXPECT = {
   left: /^ *FAIL \.work \.left-wing:.*viewport [^,]*\bleft \d+/m,
   right: /^ *FAIL \.work \.centre \.lane \[\d\]:.*container right \d+/m,
@@ -288,7 +295,8 @@ const OVERFLOWS = {
   'sky-seam': '.horizon-front { filter: brightness(1.04) !important; }',
   // The whole sky's soft edge: the mask removed (a plain edge again), and a mask that also fades the foot.
   'sky-soft': '.w-sky .w-screen { -webkit-mask-image: none !important; mask-image: none !important; }',
-  'sky-foot': '.w-sky .w-screen { -webkit-mask-image: linear-gradient(180deg, #000, #000 calc(100% - 120px), transparent) !important; mask-image: linear-gradient(180deg, #000, #000 calc(100% - 120px), transparent) !important; }',
+  // Keeps the production side ramp exactly and replaces only the top ramp with one that also fades the foot (an extra stop near 100 percent).
+  'sky-foot': `.w-sky .w-screen { -webkit-mask-image: ${SKY_SIDE_RAMP}, ${SKY_TOP_RAMP_FOOT} !important; mask-image: ${SKY_SIDE_RAMP}, ${SKY_TOP_RAMP_FOOT} !important; }`,
   // lines controls: a 900 px panel, a 24 px chip, a 12 px label, the clip removed (a URL knob, LINES_BREAK_Q).
   'lines-size': '.ln-panel { height: 900px !important; }',
   'lines-control': '.ln-chips button { height: 24px !important; }',

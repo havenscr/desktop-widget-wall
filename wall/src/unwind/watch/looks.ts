@@ -155,6 +155,17 @@ export const LOOK_BOXES: Readonly<Record<LookId, Readonly<WallRect>>> = Object.f
 export const SKY_SOFT_EDGE = 120;
 
 /**
+ * The soft edge width actually carried to the stage: between 0 and 40 percent of the picture's
+ * smaller side (the whole sky's box), so the opposing ramps never cross and leave a seam. 120 stays 120.
+ */
+export function skySoftEdge(px: number): number {
+  const box = LOOK_BOXES.sky;
+  const cap = Math.min(box.w, box.h) * 0.4;
+  if (!Number.isFinite(px)) return 0;
+  return Math.min(Math.max(px, 0), cap);
+}
+
+/**
  * sky layers: the looks whose picture sits in the sky behind the land, so the horizon draws the
  * ranges, the land and the grid on its front canvas in front of it (approved B and C). The
  * feathered picture stays in front of the mountains (the owner's choice), its lower edge fading

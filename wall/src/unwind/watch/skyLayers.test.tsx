@@ -13,7 +13,7 @@ import { useSignalStore } from '../../signals/store';
 import { usePlaceStore } from '../../state/places';
 import { resetLastPlayed } from '../lastPlayed';
 import { CAMERAS } from '../../horizon/cameras';
-import { LOOKS_KEY, LOOK_BOXES, SKY_SOFT_EDGE, type LookId } from './looks';
+import { LOOKS_KEY, LOOK_BOXES, SKY_SOFT_EDGE, skySoftEdge, type LookId } from './looks';
 import { SAVED_KEY } from './saved';
 import { resetWatch, useWatchStore } from './store';
 
@@ -354,6 +354,12 @@ describe('the whole sky is fitted whole', () => {
     // The horizontal ramp has both a left and a right half.
     const horizontal = m.slice(0, m.indexOf('linear-gradient(180deg'));
     expect(horizontal).toContain('calc(100%-var(--w-sky-soft)');
+  });
+
+  it('the carried soft edge width is clamped to 40 percent of the picture\'s smaller side', () => {
+    expect(skySoftEdge(120)).toBe(120);
+    expect(skySoftEdge(-30)).toBe(0);
+    expect(skySoftEdge(5000)).toBe(200);
   });
 
   it('the stage carries the width from the constant, on the whole sky only', async () => {
