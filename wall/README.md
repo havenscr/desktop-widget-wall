@@ -38,7 +38,7 @@ other people in search, and must never render those names as markup.
 Library items include bounded subtitles, counts and cover images selected near 300 and
 64 pixels. Track lists use 50 items per page and stop at page 39. Queue reads return at
 most 10 upcoming tracks. Playback reads return no value when Spotify has no active
-session. The YouTube Music action opens the fixed `https://music.youtube.com/` address.
+session. The seek command (`wall2_spotify_seek`) takes a position in milliseconds, at most 24 hours, and returns the module's fixed words on failure. The YouTube Music action opens the fixed `https://music.youtube.com/` address.
 Track-producing reads send `market=from_token`. A track is unplayable only when
 `is_playable` is present and false, it is restricted or local, or the item is not a
 track; a missing `is_playable` means playable. An unplayable row reaches the web view
@@ -1292,6 +1292,64 @@ frame (no ribbon) in the wide zones `470px 1fr 540px`. The parts are in `wall/sr
   minute"), no device after a play ("Open Spotify on this PC first, then try again"), an
   empty library. YouTube Music chosen: what Windows says is playing, previous, play and
   next through Windows, and "Open YouTube Music" (`wall2_open_link`). No YouTube browsing.
+  At the right end of the top row, where the hint "Which player the wall follows" used to
+  stand on the Spotify side (the hint stays on the YouTube Music side and where Spotify cannot
+  be browsed), sit the "Play on" chip and one round button (below).
+- **The tall view and "Play on"** (`SpotifyCard.tsx`, `PlayOn.tsx`, `PlayerRow.tsx`,
+  `TallViews.tsx`, `Tile.tsx`). The round button at the card's top right (or a click on the
+  empty part of its top row) opens the card into the right third of the wall: 833 by 624 at
+  wall 1707, 24, ending at y 648 so Screens off and the office lights slot stay free. The
+  page behind stays live (no scrim); the sky keeps clear of the bigger box through the same
+  keep-clear claim, so the moon does not move. Opening takes 240 ms and closing 400 ms (none
+  under reduced motion); the state is not stored, so the wall starts closed. It closes on the
+  same button, on Escape (the "Play on" list first, then a playlist's Back, then the view; focus
+  returns to the button), on a press anywhere outside it (that press is swallowed together with the
+  mouse events that follow it, until its own click has gone by or the press is cancelled or ends
+  (the pointer going up lets go just after the click would have come; so do the card being taken away and
+  the page being hidden), however long it is held, so it does not also press what lies under it; a tile's details card counts as
+  inside), and by itself 15 seconds after the pointer has left it and the keyboard focus is outside
+  it too (opened by keyboard it stays while the focus is inside; opened with neither there, the 15
+  seconds start at once), never while the pointer or the focus, the search field included, is on it. Inside: the tab row
+  (Playlists, Albums, Liked, Recent, Up next; left and right move along it) and the search field
+  in one row, with the field as the search (results in groups: songs, then at most three albums
+  and three playlists; emptying it returns to the library); two full rows of covers, more
+  scrolling (the arrow keys walk the tiles by the rendered column count, the edges stay, Down from a
+  column a short last row lacks reaches its last tile, the focused tile scrolls into view); a playlist or album opened as its cover, kind, name, count, Play and Shuffle on the
+  left and its songs on the right; Up next (what plays now and what follows, at most ten, from
+  `wall2_spotify_queue`; a click skips ahead with Spotify's own next command, once per row, on the player
+  Spotify reports); and the player row (cover, title, artist, previous, play or pause, next, and a time
+  bar). While Spotify reports a player (this PC, a phone, a speaker) the three buttons act on it through
+  `wall2_spotify_previous`, `_pause`, `_resume` and `_next` (the player Spotify says is active, no device
+  named; they need only `user-modify-playback-state`, which the sign-in already asks for), whichever program
+  is Windows' media session, and the state is read again after each press. Windows' media keys serve only
+  when Spotify reports no player and the Windows session is Spotify on this PC; otherwise the buttons are
+  marked unavailable with the reason. The time bar can be dragged, or moved five seconds with the arrow
+  keys (a held key sends at most one seek per 300 ms and the final position on release), and seeks through
+  `wall2_spotify_seek`; the local clock reads the state again when the song's length is reached.
+  There is no Save to Liked: the sign-in's scopes do not include `user-library-modify` and this
+  change adds none. Every list shows loading words (never blank) on its first read, and keeps what is on screen while it reads again, then its empty or error words. A playlist the owner does not make or co-edit cannot have its songs listed (Spotify's rule), so
+  opening one says "Spotify shows the songs only for playlists you made. To see these, copy it into a playlist
+  of your own in Spotify. Play and Shuffle still work." with no Retry (it could never help); in the tall view a
+  dim second line adds "While it plays, Up next shows what is coming." where "Up next" is a button that opens
+  that tab. A song in a search answer shows its length at the row's right edge (`durationMs`, sent only for search songs). On the YouTube Music side
+  the tall view holds today's content in the larger box.
+  "Play on" is a chip showing where the music plays (the owner's pick, else the active Spotify
+  player, else "This PC"; "This PC" also while the wall starts Spotify), and a click opens the
+  list of the owner's Spotify players from `wall2_spotify_devices` (name and kind, a tick on the one
+  in use, "This PC" first with "Spotify is closed. The wall starts it." when no computer is awake, and
+  the note that a phone or speaker shows only while its Spotify is awake). Choosing one while music
+  plays moves it with `wall2_spotify_transfer`; with nothing playing it only makes that player the
+  target of the next Play, which then sends its `deviceId` (the play command honours a chosen phone
+  or speaker as well as a computer). A chosen player that is no longer listed (asleep) or does not allow
+  control is never swapped for another: Rust answers `device gone` or `restricted` and plays nothing, the
+  card says "That player is not awake. Choose where to play." (or that it does not allow control) and
+  clears the pick; the list is read again when the chooser opens and before a Play that names a player
+  (a computer in the list that is gone is refused like any other player; only the pick "This PC", which has no player id, is started by Play); after a failed read the old rows stay
+  marked "Could not refresh, these may be out of date." and not as live. Music on a player that does not
+  allow control shows that player's name with a lock on the chip, and the words in its tip. Device names
+  are shown as text only. While Spotify
+  starts the card shows a calm status line (the Spotify mark, "Starting Spotify on this PC", what plays
+  once ready, a thin line that fills once).
 - **The office lights slot.** Where 7A drew the quiet row at the foot (right edge 70 px
   from the stage's right edge, top 662, 34 px tall, 420 px wide at most) Unwind keeps one
   empty box, `data-slot="office-lights"`, with no content, border or pointer, for an
@@ -1625,6 +1683,50 @@ there, still playing, when the owner comes back (see "The stage layer" below).
   one look for everything (five picture tiles), or one each for videos and playlists, live
   streams and Twitch (five choices a row), at 540 px (`wall2-watch-look`, checked on read;
   values stored before the newer looks still read the same).
+- **Settings for each look** (`lookSettings.ts`, `LookTunePanel.tsx`, key `wall2-watch-look-tune`):
+  under the tiles the sheet shows the chosen look's own sliders and switches in the Lines side's
+  rows (the value read back in words, a tick at "your usual", "Reset to my usual" for that look
+  only, a tooltip on every control, and the foot line "Each look keeps its own settings. Changes
+  show at once."). With a look per kind a chooser says which look is adjusted; the settings belong
+  to the look, never to the kind of video. Every default is today's number: with nothing moved the
+  stage carries no setting at all (the whole sky's soft edge always was carried) and every rule in
+  `unwind.css` falls back to today's value, so the wall draws what it always drew. A slider changes
+  custom properties on the stage and nothing else. `lookBox(look, settings)` is the one source of
+  the picture's box: the stage's place, the sky claim (the moon keeps clear), the edge band, the
+  buddy's drive-in audience and fit-check all read it. On load a value outside its range, of the wrong type or not finite is discarded and that one
+  field takes its usual value (the rest of the look is kept); a change from the sheet is bounded by
+  its control. A limit that depends on another setting (Soft edge by Size, Sun Height by Size) is
+  applied where the value is drawn (`resolveTune`), never to what is stored. A slider step updates
+  the stage at once and is written to storage at most every 300 ms, and on release, blur, key up
+  and when the page is hidden. Dev bundles take `?wtune=sky.size=80,sun.up=-100` (a switch as 0 or 1).
+
+  | Look | Setting | Range | Usual | Limit and why |
+  |---|---|---|---|---|
+  | Whole sky | Size | 60 to 100 % | 100 | about the foot centre (wall 1550, 516), so smaller only: 100 is as tall as the sky allows |
+  | | Soft edge | 0 to 200 px, steps of 1 | 120 | at most 40 % of the picture's smaller side (120 px at 60 %), so the ramps never cross; the stored value is kept when Size takes the limit down, and the sheet says so |
+  | | Brightness | 50 to 100 | 90 | |
+  | | Floor light | on or off | on | |
+  | The sun | Size | 280 to 461 px | 461 | 461 is the largest that fits the sky at the usual height; centre kept at x 1331 |
+  | | Height | 100 px sunk to 60 px up | 29 up | the disc's top stays 8 px under the strip's top (at most 497 less the size) |
+  | | Glow | 0 to 100, steps of 1 | 50 | halo and rim |
+  | | Floor streak | on or off | on | |
+  | Feathered | Size | 60 to 108 % | 100 | about the foot centre (1555, 505); at 110 the box would be 1110, 5, 891 by 501 and its right edge (2001) would run 1 px under the list card (x 2000), so it ends at 108 |
+  | | Soft edge | 10 to 30 % | 20 | the top and foot fades keep their proportion (17 and 26 percent at 20) |
+  | | Glow | 0 to 100 | 50 | |
+  | Drive-in | Size | 80 to 105 % | 100 | the screen, the tower and the floor light scale together about the footings (1580, 505); at 110 the tower would reach x 1157 to 2004 (4 px under the list card) and its coping would stand 13 px above the strip, so it ends at 105. The buddy's seat follows the screen |
+  | | Floor light | 0 to 100 | 42 | |
+  | | Sign under the video | on or off | on | the marquee board and its words; nothing else moves |
+  | | Neon line | on or off | on | the neon line and its glow; the steel surround stays |
+  | | Travelling light | on or off | off | new, off unless asked for: one soft light (a tenth of the line, a brighter core, a fading tail) travels once round the neon line in 12 s, only while the drive-in shows a playing video; needs the neon line; not drawn while paused, while waiting for a click, with the page hidden, or under reduced motion (the line is simply lit). A CSS dash-offset animation on its own small svg: no script, no layout, no repaint of the stage; it repaints only while a drive-in video plays and never under reduced motion. Its path and bounds are `NEON_PATH` and `NEON_BOUNDS` in `towerFrame.ts`, the same path as the frame's neon |
+  | Hologram | Tilt | 0 to 12 degrees | 7 | the pane's reach stays clear of the left block and the cards |
+  | | See-through | 10 to 60 | 26 | how much of the wall shows through the glass plate: 100 less the plate's alpha, so 26 is today's 0.74; more shows more |
+  | | Beam | on or off | on | the emitter's fan and rays |
+
+  Fit-check (`--area=watchlooks`, the area file `scripts/areas/watchlooks.mjs`) measures every look at both ends of each range (the picture
+  is the box the code uses, uncropped 16:9, clear of the left block, clock, tabs and list card,
+  nothing painted on it, the whole tower and the travelling light clear of it, hiding the sign
+  moves nothing else) and the Looks sheet with its longest section (inside the stage, clear of the
+  office slot, controls 32 px at least, text 16 px at least).
 - **The stage layer** (`StageLayer.tsx`, watch behaviour): the video's stage (the frame in its
   look, with the player's message bridge) is not part of Unwind. The screens frame
   (`screens/Frame.tsx`) mounts `WatchStageLayer` once in `.top`, Unwind's own box, for every
