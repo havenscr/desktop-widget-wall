@@ -6,6 +6,7 @@ import { mocks } from '../bridge/tauri';
 import { useFocusStore } from '../focus/store';
 import { HoverTipLayer, resetTip, TIP_DELAY_MS } from '../ui/HoverTip';
 import { agendaLanes, agendaRange } from './DayDrawer';
+import { DrawerScrim } from './DrawerScrim';
 import { chips, RX } from './model';
 import { Ribbon } from './Ribbon';
 import { resetDays } from './days';
@@ -89,8 +90,13 @@ it('folds three overlapping meetings into one "3 at 1:30" chip whose hover lists
   expect(tipText).toContain('Vendor demo1:30 to 3:30 PM');
 });
 
-it('the handle opens the Day drawer; a folded chip opens it too; Escape and a click outside close it', async () => {
-  const r = render(<Ribbon kind="work" />);
+it('the handle opens the Day drawer; a folded chip opens it too; Escape and a click outside (on the scrim) close it', async () => {
+  const r = render(
+    <>
+      <Ribbon kind="work" />
+      <DrawerScrim />
+    </>,
+  );
   await flush();
   expect(r.container.querySelector('.day-drawer')).toBeNull();
   fireEvent.click(r.container.querySelector('.rib .rib-handle') as HTMLElement);
@@ -99,8 +105,12 @@ it('the handle opens the Day drawer; a folded chip opens it too; Escape and a cl
   expect(r.container.querySelector('.day-drawer')).toBeNull();
   fireEvent.click(r.container.querySelector('.ev.fold') as HTMLElement);
   expect(r.container.querySelector('.day-drawer')).not.toBeNull();
-  fireEvent.mouseDown(document.body);
+  fireEvent.click(r.container.querySelector('.drawer-scrim') as HTMLElement);
   expect(r.container.querySelector('.day-drawer')).toBeNull();
+  // A press that is not on the scrim (a stray mouse down on the page) closes nothing.
+  fireEvent.click(r.container.querySelector('.ev.fold') as HTMLElement);
+  fireEvent.mouseDown(document.body);
+  expect(r.container.querySelector('.day-drawer')).not.toBeNull();
 });
 
 it('the drawer lists the agenda with overlaps side by side and Join, and one row per session, waiting first', async () => {

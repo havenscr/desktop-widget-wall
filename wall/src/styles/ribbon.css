@@ -404,6 +404,28 @@
   background: rgba(255, 255, 255, 0.7);
 }
 
+/* Behind the open Day drawer: one stage-wide layer, above every other part of the wall (the Tools
+   drawer is 45) and below the drawer (47). It dims the page (30 percent) and takes every click, so
+   a click outside the drawer only closes it. The leave banner and the recording chip rise above it
+   (48): their words are time-critical, so they stay undimmed, but the page's `inert` makes them
+   unclickable until the drawer closes. No blur: the sky behind animates all day, and a live 5 px
+   blur of it cost four times a frame (headless, software drawing: 30 ms closed, 120 ms open), so the
+   scrim only dims. */
+.drawer-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 46;
+  background: rgba(6, 4, 22, 0.3);
+  cursor: default;
+}
+.drawer-scrim ~ .leave-banner,
+.drawer-scrim ~ .rec-float {
+  z-index: 48;
+}
+.day-drawer:focus {
+  outline: none;
+}
+
 /* The Day drawer: 532 px over the lower part of Work (main area y 148 to 680). */
 .day-drawer {
   position: absolute;
@@ -412,7 +434,7 @@
   width: 2416px;
   height: 532px;
   box-sizing: border-box;
-  z-index: 45;
+  z-index: 47;
   display: flex;
   flex-direction: column;
   padding: 14px 28px 16px;
