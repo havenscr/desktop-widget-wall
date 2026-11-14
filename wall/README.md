@@ -1398,11 +1398,15 @@ there, still playing, when the owner comes back (see "The stage layer" below).
   video's lower edge still work; the frame itself takes the pointer only in that click case and
   never while parked. While a video plays out of sight, the rail's Unwind button carries a small
   cyan play mark; its tooltip says "<title> is playing. Click to go to it." and a click goes to
-  Unwind's Watch tab. Music from Listen and a video can play together; nothing mixes or ducks.
+  Unwind's Watch tab. A video that is paused, or waiting for a click, shows a dimmer pause mark
+  and "<title> is paused. Click to go to it."; an ended video shows no mark. When the stage is
+  parked, focus inside the player frame is dropped, so no key reaches the invisible player. The
+  Tools drawer is a drawer over the same place: the video stays where it is under it, and the
+  drawer stacks above the layer and its pointer band. Music from Listen and a video can play together; nothing mixes or ducks.
 - **The controls fade** (5A, `useControlsFade` in `Watch.tsx`): while a video plays, 3 seconds
   (`CTL_REST_MS`) after the pointer leaves the left block, the Look row and a 72 px band over the
   video's lower edge (`EdgeBand`, the wall's own transparent box beside the frame, never over
-  it), and focus leaves the controls, the kind line, the "Playing on the wall" line, the play
+  it), and keyboard focus leaves the controls (a click leaves the clicked button without focus once the pointer is gone), the kind line, the "Playing on the wall" line, the play
   row, the time bar and the Look switch fade to nothing (250 ms; at once under reduced motion)
   and take no pointer; the title stays at half strength with no glow. Pointer, focus or Tab
   brings them back at once. They never fade while paused or ended, with nothing on, or while a
@@ -1410,8 +1414,9 @@ there, still playing, when the owner comes back (see "The stage layer" below).
   browser"). One timer, only while they may fade, cleared on unmount.
   Keys on the Watch tab: Tab shows them and moves through them; Space plays or pauses when the
   focus is on the page, the stage or the left block outside a button (a focused button keeps
-  its own Space press; never in a field); Escape stops the video unless the focus is in a field
-  or the sheet, the tools drawer, a dialog or a menu is open. Elsewhere neither key touches it.
+  its own Space press; never in a field); Escape stops the video (and that press does not also
+  leave fullscreen; a second one does) unless the focus is in a field, a button or a link, or the
+  sheet, the tools drawer, a dialog or a menu is open. Elsewhere neither key touches it.
 - **When video stops** (`stops.ts`, `useStopRules.ts`, run by the stage layer on every place):
   the page hidden, the display off or Windows locked (`ui/useDisplayDark.ts`, the
   `display-state` half of `useIdle`; input idle never stops a video, since nobody touches the
