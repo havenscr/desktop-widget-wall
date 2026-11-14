@@ -9,6 +9,22 @@
     "beforeBuildCommand": "npm --prefix wall ci && npm --prefix wall run build",
     "frontendDist": "../wall/dist"
   },
+  "bundle": {
+    "icon": [
+      "icons-ridgeline/32x32.png",
+      "icons-ridgeline/128x128.png",
+      "icons-ridgeline/128x128@2x.png",
+      "icons-ridgeline/icon.ico"
+    ],
+    "windows": {
+      "wix": {
+        "upgradeCode": "45c8f91e-8224-55fe-92ae-75e0e555cffa"
+      },
+      "nsis": {
+        "installerHooks": "ridgeline-installer-hooks.nsh"
+      }
+    }
+  },
   "app": {
     "windows": [
       {
