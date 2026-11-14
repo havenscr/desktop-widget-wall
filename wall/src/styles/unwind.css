@@ -697,7 +697,8 @@
 }
 .w-bar {
   flex: 1;
-  height: 16px;
+  /* A 32 px hit area for the mouse; the visible line stays 4 px and is centred in it. */
+  height: 32px;
   display: flex;
   align-items: center;
   cursor: pointer;
@@ -708,7 +709,7 @@
   position: absolute;
   left: 0;
   right: 0;
-  top: 6px;
+  top: 14px;
   height: 4px;
   border-radius: 2px;
   background: rgba(200, 190, 255, 0.2);
@@ -717,7 +718,26 @@
   position: relative;
   height: 4px;
   border-radius: 2px;
-  background: linear-gradient(90deg, var(--pink), var(--cyan));
+  background: linear-gradient(90deg, var(--mag), var(--cyan));
+}
+/* The marker at the fill's end (`--f` is the played fraction, set on the bar): a 10 px dot in the
+   fill's end colour with a thin dark edge so it reads on a bright or a dark sky. It takes no
+   click (the bar does) and is held inside the bar, so at 0 and at 100 percent it stays whole. */
+.w-bar .w-mark {
+  position: absolute;
+  top: 11px;
+  left: clamp(0px, calc(var(--f, 0) * 100% - 5px), calc(100% - 10px));
+  box-sizing: border-box;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--cyan);
+  border: 1px solid rgba(8, 6, 26, 0.85);
+  pointer-events: none;
+}
+.w-bar:hover .w-mark,
+.w-bar:focus-visible .w-mark {
+  transform: scale(1.15);
 }
 .w-bar:hover::before {
   background: rgba(200, 190, 255, 0.32);
@@ -731,7 +751,7 @@
   font: 600 14px/1 var(--disp);
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--pink);
+  color: var(--mag);
 }
 .w-clickline {
   color: var(--amber);
@@ -741,10 +761,10 @@
   color: var(--faint);
 }
 .w-hintbtn {
-  height: 28px;
-  padding: 0 12px;
-  border-radius: 14px;
-  font-size: 15px;
+  height: 32px;
+  padding: 0 14px;
+  border-radius: 16px;
+  font-size: 16px;
   color: var(--faint);
   border: 1px solid var(--line);
   background: rgba(8, 6, 26, 0.6);

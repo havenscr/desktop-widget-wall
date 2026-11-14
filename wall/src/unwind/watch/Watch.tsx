@@ -143,11 +143,13 @@ function Position({ live }: { live: boolean }) {
         aria-valuemax={duration}
         aria-valuenow={time}
         aria-valuetext={`${clock(time)} of ${clock(duration)}`}
+        style={{ ['--f' as string]: frac.toFixed(4) }}
         {...tip('Click to jump there; arrow keys move 10 seconds.')}
         onClick={seek}
         onKeyDown={nudge}
       >
         <b style={{ width: `${(frac * 100).toFixed(2)}%` }} />
+        <i className="w-mark" aria-hidden="true" />
       </div>
       <span className="w-t">{clock(duration)}</span>
     </>

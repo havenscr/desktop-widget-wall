@@ -1,3 +1,5 @@
+// @ts-ignore node's own file call; the stylesheet rules are read as text.
+import { readFileSync } from 'node:fs';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mocks } from '../../bridge/tauri';
@@ -444,6 +446,33 @@ describe('the looks are chosen in the gear sheet, with no Look switch on the pag
     expect(pickLook(DEFAULT_LOOKS, 'twitch', 'sun')).toEqual({ ...DEFAULT_LOOKS, all: 'sun' });
     expect(lookTargetName({ ...DEFAULT_LOOKS, mode: 'kind' }, 'playlist')).toBe('Videos and playlists');
     expect(lookTargetName(DEFAULT_LOOKS, 'playlist')).toBeNull();
+  });
+});
+
+describe('the position bar', () => {
+  it('fills to the played fraction, carries a marker at the fill end, and the marker takes no click', async () => {
+    await playing('video', { mode: 'one', all: 'feather' });
+    for (const [time, f, width] of [[0, '0.0000', '0%'], [43, '0.4300', '43%'], [100, '1.0000', '100%']] as const) {
+      act(() => useWatchStore.getState().setReport({ time, duration: 100, started: true }));
+      const bar = document.querySelector<HTMLElement>('.w-bar')!;
+      expect(bar.style.getPropertyValue('--f')).toBe(f);
+      expect(bar.querySelector<HTMLElement>('b')!.style.width).toBe(width);
+      const mark = bar.querySelector('.w-mark')!;
+      expect(mark.getAttribute('aria-hidden')).toBe('true');
+      expect(mark.closest('.w-bar')).toBe(bar);
+    }
+  });
+
+  it('draws its fill and its marker from tokens that exist, holds the marker inside the bar, and is 32 px tall to click', () => {
+    const css = (readFileSync('src/styles/unwind.css', 'utf8') as string).replace(/\/\*[\s\S]*?\*\//g, '');
+    const rule = (sel: string) => [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].filter((m) => m[1]!.split(',').map((x) => x.trim()).includes(sel)).map((m) => m[2]).join('');
+    expect(rule('.w-bar b')).toContain('var(--mag), var(--cyan)');
+    expect(rule('.w-bar b')).not.toContain('--pink');
+    expect(rule('.w-live')).toContain('var(--mag)');
+    expect(rule('.w-bar')).toMatch(/height: 32px/);
+    expect(rule('.w-bar .w-mark')).toMatch(/clamp\(0px, calc\(var\(--f, 0\) \* 100% - 5px\), calc\(100% - 10px\)\)/);
+    expect(rule('.w-bar .w-mark')).toMatch(/pointer-events: none/);
+    expect(rule('.w-bar .w-mark')).toMatch(/width: 10px/);
   });
 });
 
