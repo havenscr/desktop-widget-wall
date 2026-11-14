@@ -1,4 +1,5 @@
-import { IconBulbOff, IconCheck, IconLoader2 } from '@tabler/icons-react';
+import { IconBulbOff, IconCheck, IconChevronLeft, IconChevronRight, IconLoader2 } from '@tabler/icons-react';
+import { tip } from '../ui/HoverTip';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { invoke } from '../bridge/tauri';
 import { NOT_CONFIGURED } from '../tasks/model';
@@ -15,8 +16,24 @@ export interface Mood {
   nextAtMs?: number | null;
 }
 
-/** Up to this many mood cards share the row; more scroll sideways (the wheel scrolls them). */
-export const MOODS_PER_ROW = 6;
+/**
+ * Three mood cards share the row. With more, a narrow More card follows them (the next
+ * mood peeking, "N more", dots), and a click or the wheel slides by three; at the end it
+ * reads Back and slides to the start.
+ */
+export const MOODS_PAGE = 3;
+/** One wheel step per gesture: further wheel events within this time are ignored. */
+export const WHEEL_MS = 450;
+
+/** The first mood shown on page `page`: steps of three, the last page showing the last three. */
+export function pageStart(page: number, count: number): number {
+  return Math.max(0, Math.min(page * MOODS_PAGE, count - MOODS_PAGE));
+}
+
+/** Pages of three for `count` moods (one when three or fewer). */
+export function pageCount(count: number): number {
+  return Math.max(1, Math.ceil(count / MOODS_PAGE));
+}
 
 /** "In 4 min" when the mood is scheduled within the next hour, otherwise null. */
 export function inText(nextAtMs: number | null | undefined, now: number): string | null {
@@ -103,6 +120,8 @@ export function Moods() {
   const [last, setLast] = useState<string | null>(readLast);
   const [now, setNow] = useState(() => (reviewNow ?? Date.now)());
   const [okAt, setOkAt] = useState<number | null>(null);
+  const [page, setPage] = useState(0);
+  const wheelAt = useRef(-Infinity);
   const mounted = useRef(false);
   const busy = useRef(false);
   const doneTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -201,11 +220,20 @@ export function Moods() {
 
   // A list (fresh, or the last good one while the home app is away) shows as cards.
   const showCards = moods.length > 0 && status !== 'unconfigured';
-  let note: string | null = null;
+  let note: string | null = null as string | null;
   if (status === 'unconfigured') note = 'Not set up';
   else if (status === 'error') note = 'Home app not reachable';
-  const scroll = moods.length > MOODS_PER_ROW;
-  const rowStyle = scroll ? undefined : { gridTemplateColumns: `repeat(${Math.max(moods.length, 1)}, minmax(0, 1fr))` };
+  const paged = moods.length > MOODS_PAGE;
+  const pages = pageCount(moods.length);
+  const p = Math.min(page, pages - 1);
+  const start = paged ? pageStart(p, moods.length) : 0;
+  const shown = paged ? moods.slice(start, start + MOODS_PAGE) : moods;
+  const atEnd = start + MOODS_PAGE >= moods.length;
+  const peek = paged ? (atEnd ? moods[0] : moods[start + MOODS_PAGE]) : null;
+  const left = moods.length - (start + MOODS_PAGE);
+  const step = (dir: 1 | -1) => setPage((cur) => Math.max(0, Math.min(pages - 1, Math.min(cur, pages - 1) + dir)));
+  const rowStyle = paged ? undefined : { gridTemplateColumns: `repeat(${Math.max(moods.length, 1)}, minmax(0, 1fr))` };
+  if (!note && !error && paged) note = `${moods.length} moods`;
   return (
     <section className={showCards ? 'moods' : 'moods bare'} aria-label="Moods">
       <div className="moods-head">
@@ -217,11 +245,20 @@ export function Moods() {
       {!showCards && status === 'loading' && <div className="mood-skel" aria-hidden="true" />}
       {showCards && (
         <div
-          className={scroll ? 'mood-row scroll' : 'mood-row'}
+          className={paged ? (start > 0 ? 'mood-row paged has-back' : 'mood-row paged') : 'mood-row'}
           style={rowStyle}
-          onWheel={scroll ? (e) => (e.currentTarget.scrollLeft += e.deltaY) : undefined}
+          onWheel={
+            paged
+              ? (e) => {
+                  const d = e.deltaY || e.deltaX;
+                  if (!d || e.timeStamp - wheelAt.current < WHEEL_MS) return;
+                  wheelAt.current = e.timeStamp;
+                  step(d > 0 ? 1 : -1);
+                }
+              : undefined
+          }
         >
-          {moods.map((m) => {
+          {shown.map((m) => {
             const busyHere = phase?.id === m.id ? phase.kind : null;
             const on = last === m.id;
             const sub = moodNote(m.id);
@@ -229,7 +266,7 @@ export function Moods() {
             const cls = ['mood-btn', busyHere ?? '', on ? 'last' : ''].filter(Boolean).join(' ');
             return (
               <button
-                key={m.id}
+                key={paged ? `${start}:${m.id}` : m.id}
                 type="button"
                 className={cls}
                 data-mood={m.id}
@@ -253,6 +290,35 @@ export function Moods() {
               </button>
             );
           })}
+          {paged && start > 0 && (
+            <button type="button" className="mood-back" aria-label="Previous moods" onClick={() => step(-1)} {...tip('Back to the moods before these')}>
+              <IconChevronLeft size={22} stroke={2.2} aria-hidden="true" />
+            </button>
+          )}
+          {paged && peek && (
+            <button
+              type="button"
+              className={atEnd ? 'mood-more back' : 'mood-more'}
+              aria-label={atEnd ? 'Back to the first moods' : `${left} more moods`}
+              onClick={() => (atEnd ? setPage(0) : step(1))}
+              {...tip(atEnd ? 'Back to the first three moods' : `Next: ${moods.slice(start + MOODS_PAGE, start + MOODS_PAGE * 2).map(moodLabel).join(', ')}`)}
+            >
+              <span className="mood-peek" aria-hidden="true">
+                <MoodArt id={peek.id} />
+              </span>
+              <span className="mood-more-in">
+                <span className="mood-arrow" aria-hidden="true">
+                  {atEnd ? <IconChevronLeft size={22} stroke={2.2} /> : <IconChevronRight size={22} stroke={2.2} />}
+                </span>
+                <b>{atEnd ? 'Back' : `${left} more`}</b>
+                <span className="mood-dots" aria-hidden="true">
+                  {Array.from({ length: pages }, (_, i) => (
+                    <i key={i} className={i === p ? 'on' : ''} />
+                  ))}
+                </span>
+              </span>
+            </button>
+          )}
         </div>
       )}
     </section>

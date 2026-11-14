@@ -61,6 +61,11 @@ export function registerTaskMocks(): void {
     { id: 't10', title: 'Write the workshop outline for the spring conference', due: 16, allDay: true, hour: 0, estimate: '60plus', tags: ['work'], bucket: 0 },
     { id: 't11', title: 'Clear the shared drive', due: 20, allDay: true, hour: 0, estimate: null, tags: [], bucket: 0 },
   ];
+  // `?chores=many`: thirteen home chores (Home shows five rows that scroll, and "8 more").
+  if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('chores') === 'many') {
+    const extra = ['Change the furnace filter', 'Call the chimney sweep', 'Renew the car tabs', 'Clean the gutters', 'Oil the squeaky hinge', 'Test the smoke alarms', 'Wash the front windows', 'Restock the pantry'];
+    tasks = [...tasks, ...extra.map((title, i): MockTask => ({ id: `th${i + 1}`, title, due: 3 + i, allDay: true, hour: 0, estimate: i % 3 === 0 ? '15' : i % 3 === 1 ? '30' : null, tags: ['home'], bucket: 2 }))];
+  }
   mocks.set('wall2_tasks_next', () => tasks.slice(0, 3).map(toItem));
   mocks.set('wall2_open_task', () => undefined);
   mocks.set('wall2_task_done', (args) => {
@@ -77,9 +82,11 @@ export function registerTaskMocks(): void {
       .filter((t) => notTag === null || !has(t, notTag))
       .filter((t) => bucket === null || t.bucket === bucket);
     const tomorrow = open.filter((t) => t.due === 1);
+    // Home's chores ask for more rows (`limit`, 1 to 20); everyone else gets three.
+    const limit = typeof args?.limit === 'number' ? Math.min(20, Math.max(1, Math.floor(args.limit))) : 3;
     return {
-      next: open.slice(0, 3).map(toItem),
-      remaining: Math.max(0, open.length - 3),
+      next: open.slice(0, limit).map(toItem),
+      remaining: Math.max(0, open.length - limit),
       dueTomorrow: { count: tomorrow.length, estMinutes: tomorrow.reduce((sum, t) => sum + estMinutes(t.estimate), 0) },
     };
   });

@@ -1,163 +1,164 @@
-import { IconShield, IconShieldCheck, IconShieldExclamation, IconShieldX } from '@tabler/icons-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { invoke } from '../bridge/tauri';
+import { IconChevronRight } from '@tabler/icons-react';
+import { useEffect, useState } from 'react';
 import { tip } from '../ui/HoverTip';
-import { ageText, alertRows, alertsLine, lastScanText, netNumbers, numbersOnLine, statusLine, tone, type SecuritySummary, type Tone } from './model';
+import { useLinks, useOpenLink } from './netLinks';
+import { ShieldDrawer, SevShape } from './ShieldDrawer';
+import { MAX_ARCS, ringCount, shieldFrom, shieldSub, type Shield } from './shieldModel';
+import { useClearedNote, useDeskSecurity } from './useDesk';
 import { useSecurity } from './useSecurity';
 
-const SHIELD = { ok: IconShieldCheck, warn: IconShieldExclamation, bad: IconShieldX } as const;
+/** The card's shared read of both security sources (the rail and Chores read it too). */
+export function useShield(): Shield {
+  const sec = useSecurity();
+  const desk = useDeskSecurity();
+  return shieldFrom(desk, sec);
+}
 
-function Status({ t, text, aside, dimAside = false }: { t: Tone | 'off'; text: string; aside?: string | null; dimAside?: boolean }) {
-  const Glyph = t === 'off' ? IconShield : SHIELD[t];
+const R = 82;
+const C = 2 * Math.PI * R;
+const SEV_COLOUR = { high: 'var(--amber)', medium: 'var(--violet, #9a7bff)', low: '#b7afd6' } as const;
+
+/**
+ * The shield in its ring: one lit arc per open alert (at most twelve), the count inside;
+ * quiet is one whole mint ring with a check; stale or not live is a grey ring, never mint.
+ */
+export function ShieldRing({ s }: { s: Shield }) {
+  const grey = s.kind !== 'ready' || s.stale;
+  const n = Math.min(s.open, MAX_ARCS);
+  const quiet = s.kind === 'ready' && s.open <= 0;
+  const seg = n > 0 ? C / n : C;
+  const gap = n > 1 ? Math.min(16, seg * 0.3) : 0;
+  const line = grey ? 'var(--faint)' : s.bad ? 'var(--amber)' : 'var(--mint)';
   return (
-    <div className="net-status">
-      <Glyph className={`net-icon ${t}`} size={30} stroke={1.8} aria-hidden="true" />
-      <span className="t2 net-line">{text}</span>
-      {aside && <span className={dimAside ? 'xs net-aside stale' : 'xs net-aside'}>{aside}</span>}
-    </div>
+    <svg className="shield-ring" viewBox="0 0 190 190" aria-hidden="true">
+      {n === 0 && <circle cx="95" cy="95" r={R} fill="none" stroke={line} strokeOpacity={grey ? 0.5 : 0.55} strokeWidth="5" />}
+      {n > 0 &&
+        Array.from({ length: n }, (_, i) => {
+          const sev = s.alerts[i]?.severity;
+          const colour = grey ? 'var(--faint)' : sev ? SEV_COLOUR[sev] : 'var(--amber)';
+          return (
+            <circle
+              key={i}
+              className="arc"
+              cx="95"
+              cy="95"
+              r={R}
+              fill="none"
+              stroke={colour}
+              strokeWidth="7"
+              strokeLinecap={n > 1 ? 'round' : 'butt'}
+              strokeDasharray={`${seg - gap} ${C - seg + gap}`}
+              strokeDashoffset={-(i * seg + gap / 2)}
+              transform="rotate(-90 95 95)"
+            />
+          );
+        })}
+      <path d="M95 44 L133 58 V92 C133 118 116 137 95 146 C74 137 57 118 57 92 V58 Z" fill={grey ? 'rgba(255,255,255,.04)' : 'rgba(93,242,182,.07)'} stroke={line} strokeWidth="3.5" strokeLinejoin="round" />
+      {quiet && !grey && <path d="M78 95 L90 107 L113 81" fill="none" stroke="var(--mint)" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" />}
+      {s.open > 0 && (
+        <text x="95" y={s.open > MAX_ARCS ? 107 : 111} textAnchor="middle" className="shield-n" fontSize={s.open > MAX_ARCS ? 34 : 46}>
+          {ringCount(s.open)}
+        </text>
+      )}
+    </svg>
   );
 }
 
 /**
- * Network and security, as the concept draws it: the heading above the card (like "Around
- * the house"), then the card with the status line and its shield, the numbers the feed
- * has, up to three open alerts as one-line rows, and the Alarms and Open Firewalla links as
- * full-width buttons along the bottom. The numbers row shows only with three or more
- * numbers; one or two sit on the status line's right ("Up, box online", "7 alarms in
- * 24 h"), and the scan age then moves up beside the heading. The card is as tall as what
- * it holds.
+ * Network and security as a shield you can read from across the room: the ring with one
+ * lit arc per open alert and the count inside, the newest alert in one line, and a click
+ * that opens the drawer with all of them (Open on each, and Clear all once the home app's
+ * desk route and the desk token exist). Quiet, it is a whole mint ring, "All quiet", the
+ * device and blocked numbers, and the Security and Firewalla links.
  */
 export function NetworkTile() {
-  const { status, summary, now, attempts } = useSecurity();
-  const ready = summary && status !== 'unconfigured' && status !== 'loading';
-  const onLine = ready ? numbersOnLine(netNumbers(summary)) : null;
-  const scan = ready ? lastScanText(summary.lastScan, now) : null;
-  let body;
-  if (status === 'unconfigured') {
-    body = <Status t="off" text="Not set up" />;
-  } else if (status === 'loading') {
-    body = <Status t="off" text="Loading" />;
-  } else if (!summary) {
-    body = (
-      <>
-        <Status t="warn" text="Home app not reachable" />
-        <div className="s">Checks again every 5 minutes.</div>
-      </>
-    );
-  } else {
-    body = <Ready summary={summary} now={now} stale={status === 'error'} aside={onLine ?? scan} numbersAside={onLine !== null} />;
-  }
-  // Lists stop at three and the rest is a number, beside the heading to keep the card short.
-  const more = ready ? summary.alerts - alertRows(summary).length : 0;
-  const shown = summary ? alertRows(summary).length : 0;
-  const side = shown > 0 && more > 0 ? `${more} more open` : onLine ? scan : null;
+  const s = useShield();
+  const { attempts } = useSecurity();
+  const [open, setOpen] = useState(false);
+  const busy = s.kind === 'ready' && s.open > 0;
+  // Nothing to list any more (cleared, or the read went away): the drawer closes itself.
+  useEffect(() => {
+    if (!busy) setOpen(false);
+  }, [busy]);
+  const newest = s.alerts[0] ?? null;
+  const sub = shieldSub(s);
+  const cls = ['panel', 'network', 'shield', busy ? 'busy' : 'calm', s.stale ? 'stale' : ''].filter(Boolean).join(' ');
+  const detail = [...sub, ...s.detail].filter(Boolean).join('. ');
+  // Not live: the count says when it was read ("6 open as of 3:12 PM"), never as if current.
+  const side = busy ? [`${s.open} open`, s.stale ? s.asOf : null].filter(Boolean).join(' ') : s.asOf;
+  // After Clear all the drawer closes; the card says what was cleared for a few seconds.
+  const cleared = useClearedNote((n) => n.text);
+  const body = (
+    <>
+      <span className="shield-art">
+        <ShieldRing s={s} />
+      </span>
+      <span className="shield-txt">
+        <span className="shield-title">{s.title}</span>
+        <span className="shield-sub" {...tip(detail || s.title)}>
+          {sub.map((l, i) => (
+            <span key={i}>{l}</span>
+          ))}
+        </span>
+        {busy && newest && (
+          <span className="shield-new">
+            <SevShape sev={newest.severity} size={20} />
+            <b>{newest.text}</b>
+          </span>
+        )}
+        {busy && (
+          <span className="shield-hint">
+            {[newest?.age ? `${newest.age} ago` : null, `Click for all ${s.open}`].filter(Boolean).join('. ')}
+            <IconChevronRight size={16} stroke={2} aria-hidden="true" />
+          </span>
+        )}
+        {!busy && s.kind === 'ready' && (
+          <span className="shield-links">
+            <Links refresh={attempts} />
+          </span>
+        )}
+      </span>
+    </>
+  );
   return (
-    <section className="network-block" aria-label="Network and security">
+    <section className={open && busy ? 'network-block drawer-open' : 'network-block'} aria-label="Network and security">
       <div className="net-head">
         <span className="k">Network and security</span>
-        {side && <span className="xs">{side}</span>}
+        {cleared ? (
+          <span className="xs net-cleared" role="status">
+            {cleared}
+          </span>
+        ) : (
+          side && <span className={s.stale ? 'xs stale' : 'xs'}>{side}</span>
+        )}
       </div>
-      <div className="panel network">
-        {body}
-        <Links refresh={attempts} />
-      </div>
+      {busy ? (
+        <button type="button" className={cls} aria-expanded={open} aria-haspopup="dialog" onClick={() => setOpen((o) => !o)} {...tip(`Show all ${s.open} open alerts`)}>
+          {body}
+        </button>
+      ) : (
+        <div className={cls}>{body}</div>
+      )}
+      {open && busy && <ShieldDrawer s={s} refresh={attempts} onClose={() => setOpen(false)} />}
     </section>
   );
 }
 
-function Ready({
-  summary,
-  now,
-  stale,
-  aside,
-  numbersAside,
-}: {
-  summary: SecuritySummary;
-  now: number;
-  stale: boolean;
-  aside: string | null;
-  /** The aside holds the numbers (not the scan age), so a stale feed dims it like the row. */
-  numbersAside: boolean;
-}) {
-  const t = stale ? 'warn' : tone(summary);
-  const nums = netNumbers(summary);
-  const rows = alertRows(summary);
-  return (
-    <>
-      <Status t={t} text={stale ? 'Home app not reachable' : statusLine(summary)} aside={aside} dimAside={stale && numbersAside} />
-      {nums.length >= 3 && (
-        <div className={stale ? 'net-nums stale' : 'net-nums'} style={{ gridTemplateColumns: `repeat(${nums.length}, minmax(0, 1fr))` }}>
-          {nums.map((n) => (
-            <div key={n.key} className="st3">
-              <b>{n.value}</b>
-              <span>{n.label}</span>
-            </div>
-          ))}
-        </div>
-      )}
-      {rows.length > 0 ? (
-        <ul className={stale ? 'net-alerts stale' : 'net-alerts'} aria-label="Open alerts">
-          {rows.map((r, i) => {
-            const age = ageText(r.atMs, now);
-            return (
-              <li key={i} className="net-alert">
-                <i className={`sev ${r.severity ?? 'none'}`} aria-hidden="true" />
-                <span className="net-alert-text">{r.text}</span>
-                {age && <span className="xs">{age}</span>}
-              </li>
-            );
-          })}
-        </ul>
-      ) : (
-        summary.alerts > 0 && <div className="b6">{alertsLine(summary.alerts)}</div>
-      )}
-    </>
-  );
-}
-
-const FAIL_MS = 3000;
-
-interface LinkAvailability {
-  security: boolean;
-  portal: boolean;
-}
-
-/** Full-width buttons, Alarms and Open Firewalla, that open the home app's Security page or the Firewalla portal (Rust opens them). */
+/** The Security and Firewalla buttons, each only when Rust has its address. */
 function Links({ refresh }: { refresh: number }) {
-  const [avail, setAvail] = useState<LinkAvailability>({ security: false, portal: false });
-  const [failed, setFailed] = useState(false);
-  const timer = useRef<number | undefined>(undefined);
-
-  useEffect(() => {
-    let live = true;
-    invoke<LinkAvailability>('wall2_links')
-      .then((a) => live && setAvail(a))
-      .catch(() => live && setAvail({ security: false, portal: false }));
-    return () => {
-      live = false;
-    };
-  }, [refresh]);
-  useEffect(() => () => window.clearTimeout(timer.current), []);
-
-  const open = useCallback((kind: 'security' | 'portal') => {
-    invoke('wall2_open_link', { kind }).catch(() => {
-      setFailed(true);
-      window.clearTimeout(timer.current);
-      timer.current = window.setTimeout(() => setFailed(false), FAIL_MS);
-    });
-  }, []);
-
+  const avail = useLinks(refresh);
+  const { open, failed } = useOpenLink();
   if (!avail.security && !avail.portal) return null;
   return (
-    <div className="net-links">
+    <span className="net-links">
       {avail.security && (
         <button type="button" className="net-link" onClick={() => open('security')} {...tip('Open the network alarms in the home app')}>
-          Alarms
+          Security
         </button>
       )}
       {avail.portal && (
         <button type="button" className="net-link" onClick={() => open('portal')} {...tip('Open the Firewalla portal in the browser')}>
-          Open Firewalla
+          Firewalla
         </button>
       )}
       {failed && (
@@ -165,6 +166,6 @@ function Links({ refresh }: { refresh: number }) {
           Could not open
         </span>
       )}
-    </div>
+    </span>
   );
 }

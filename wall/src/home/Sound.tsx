@@ -1,6 +1,14 @@
 import {
+  IconCoffee,
+  IconDesk,
+  IconDeviceLaptop,
   IconDeviceSpeaker,
   IconDots,
+  IconHeadphones,
+  IconHome,
+  IconLamp,
+  IconMoonStars,
+  IconSofa,
   IconPlayerPauseFilled,
   IconPlayerPlayFilled,
   IconVolume,
@@ -19,6 +27,8 @@ import {
   type ReactNode,
 } from 'react';
 import { invoke } from '../bridge/tauri';
+import { useVisible } from '../ui/useVisible';
+import { tip } from '../ui/HoverTip';
 import { useCentreStatus } from './centreSources';
 import {
   LATCH_MS,
@@ -26,8 +36,12 @@ import {
   SAFE_VOLUME,
   SLEEP_CHOICES,
   ageWords,
+  PLAY_ART,
   chipLabel,
+  clockMs,
   faceTiles,
+  houseTrack,
+  playingWhere,
   moreControls,
   moreRoutines,
   wherePlaces,
@@ -52,7 +66,9 @@ import {
   type ControlRoutine,
   type MusicRoutine,
   type PlayMark,
+  type PlaybackRead,
   type PlayResult,
+  type Slot,
   type SonosPreset,
   type SonosSpeaker,
   type SonosSummary,
@@ -224,6 +240,7 @@ function Live({
   const [pop, setPop] = useState<Pop>(null);
   const [mark, setMark] = useState<PlayMark | null>(readLastPlay);
   const [skip, setSkip] = useState<Skip | null>(null);
+  const playback = usePlayback(s.readAtMs);
   const busyRef = useRef(false);
   /** Per control: clicks before this time (ms) are ignored. */
   const latch = useRef<Record<string, number>>({});
@@ -439,6 +456,11 @@ function Live({
       done: () => changeMark(null),
     });
   const suggested = s.music.find((r) => r.key === suggestion) ?? null;
+  const track = houseTrack(playback.read, s);
+  // Without a track: the play this wall started (while the music it started still plays).
+  const activeTile = playing.length > 0 && mark?.seen ? (face.find((t) => t.routine.key === mark.key) ?? null) : null;
+  const activeSlot = activeTile?.slot ?? null;
+  const activeName = activeTile?.label ?? null;
 
   let side: Result | null = result;
   let extra: ReactNode = null;
@@ -466,7 +488,30 @@ function Live({
 
   return (
     <Shell side={side} extra={extra} stale={stale}>
-      <div className="panel sound-panel">
+      <div className="panel sound-panel l2">
+        <NowStrip
+          s={s}
+          now={now}
+          track={track}
+          trackAt={playback.at}
+          activeSlot={activeSlot}
+          activeName={activeName}
+          locked={locked}
+          pauseAll={pauseAll}
+          playSuggested={
+            <button
+              type="button"
+              className="sound-btn cy"
+              title={suggested ? `Start ${suggested.name}, the suggestion for this hour` : 'No routine fits this hour; pick one above'}
+              disabled={locked || !suggested}
+              {...once(() => suggested && play(suggested))}
+            >
+              <IconPlayerPlayFilled size={22} aria-hidden="true" />
+              {suggested ? `Play ${face.find((t) => t.routine.key === suggested.key)?.label ?? chipLabel(suggested.name)}` : 'Play'}
+            </button>
+          }
+          suggestedSlot={suggested ? (face.find((t) => t.routine.key === suggested.key)?.slot ?? null) : null}
+        />
         <div className="sound-plays" role="group" aria-label="Quick play" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
           {face.map((t) => {
             const r = t.routine;
@@ -485,7 +530,7 @@ function Live({
                 disabled={locked}
                 tag={tag}
                 name={t.label}
-                sub={r.favorite ?? (typeof r.volume === 'number' ? `volume ${r.volume}` : 'routine')}
+                slot={t.slot}
                 action={() => play(r)}
               />
             );
@@ -555,29 +600,19 @@ function Live({
                   disabled={locked}
                   {...once(() => applyPreset(p, label))}
                 >
+                  {(() => {
+                    const Icon = WHERE_ICONS.find(([re]) => re.test(label))?.[1];
+                    return Icon ? <Icon size={20} stroke={1.8} aria-hidden="true" /> : null;
+                  })()}
                   {label}
                 </button>
               ))}
             </div>
           )}
-          <span className="sound-now s" title={s.nowPlaying?.track ? nowLine(s) : playing.map((p) => p.name).join(', ') || 'Nothing playing'}>
-            {nowLine(s)}
-          </span>
-          {playing.length > 0 ? (
+          {playing.length > 0 && (
             <button type="button" className="sound-btn" title="Pause every Sonos speaker" disabled={locked} {...once(pauseAll)}>
               <IconPlayerPauseFilled size={22} aria-hidden="true" />
               Sonos off
-            </button>
-          ) : (
-            <button
-              type="button"
-              className="sound-btn cy"
-              title={suggested ? `Start ${suggested.name}, the suggestion for this hour` : 'No routine fits this hour; pick one above'}
-              disabled={locked || !suggested}
-              {...once(() => suggested && play(suggested))}
-            >
-              <IconPlayerPlayFilled size={22} aria-hidden="true" />
-              {suggested ? `Play ${face.find((t) => t.routine.key === suggested.key)?.label ?? chipLabel(suggested.name)}` : 'Play'}
             </button>
           )}
         </div>
@@ -700,13 +735,32 @@ function Live({
  * A quick-play chip. Its name takes up to two lines; under a two-line name the favourite
  * line hides (it stays in the tooltip). Only a chip with a tag reserves room for it.
  */
+const PLAY_ICONS = { cup: IconCoffee, headphones: IconHeadphones, lamp: IconLamp, moon: IconMoonStars, laptop: IconDeviceLaptop } as const;
+
+/** A play's line icon on its colour wash (art A). */
+export function PlayArt({ slot, size = 24 }: { slot: Slot; size?: number }) {
+  const art = PLAY_ART[slot];
+  const Icon = PLAY_ICONS[art.icon];
+  return (
+    <span className="sound-art" style={{ '--c': art.rgb } as CSSProperties} aria-hidden="true">
+      <Icon size={size} stroke={1.7} />
+    </span>
+  );
+}
+
+const WHERE_ICONS: [RegExp, typeof IconDesk][] = [
+  [/^office/i, IconDesk],
+  [/^all/i, IconHome],
+  [/^common/i, IconSofa],
+];
+
 function Chip({
   className,
   title,
   disabled,
   tag,
   name,
-  sub,
+  slot,
   action,
 }: {
   className: string;
@@ -714,7 +768,7 @@ function Chip({
   disabled: boolean;
   tag: ReactNode;
   name: string;
-  sub: string;
+  slot: Slot;
   action: () => void;
 }) {
   const nameRef = useRef<HTMLElement>(null);
@@ -726,12 +780,12 @@ function Chip({
     setTwo(el.scrollHeight > lh * 1.4);
   }, [name, tag]);
   return (
-    <button type="button" className={two ? `${className} two` : className} title={title} disabled={disabled} {...once(action)}>
+    <button type="button" className={two ? `${className} two` : className} title={title} disabled={disabled} style={{ '--c': PLAY_ART[slot].rgb } as CSSProperties} {...once(action)}>
       {tag}
+      <PlayArt slot={slot} />
       <b ref={nameRef} className="sound-chip-name">
         {name}
       </b>
-      {!two && <span className="sound-chip-sub">{sub}</span>}
     </button>
   );
 }
@@ -922,6 +976,137 @@ function Popup({
   return (
     <div ref={ref} className={['sound-pop', right ? 'right' : '', down ? 'down' : '', wide ? 'wide' : ''].filter(Boolean).join(' ')} role="dialog" aria-label={label}>
       {children}
+    </div>
+  );
+}
+
+// Section: home round two (now playing at the left)
+
+/**
+ * The Spotify playback read beside each Sonos read (Spotify is read only here, and only
+ * for what the house speakers play). Any failure, Spotify not set up or signed out, is no
+ * track: the strip then shows what the Sonos read knows.
+ */
+function usePlayback(sync: number): { read: PlaybackRead | null; at: number } {
+  const visible = useVisible();
+  // `at`: when this read landed, on the wall clock. The track's position is as of then.
+  const [p, setP] = useState<{ read: PlaybackRead | null; at: number }>(() => ({ read: null, at: clock() }));
+  useEffect(() => {
+    if (!visible) return;
+    let live = true;
+    invoke<PlaybackRead | null>('wall2_spotify_playback')
+      .then((r) => live && setP({ read: r ?? null, at: clock() }))
+      .catch(() => live && setP({ read: null, at: clock() }));
+    return () => {
+      live = false;
+    };
+  }, [visible, sync]);
+  return p;
+}
+
+/**
+ * Now playing at the left of the Sound block. With a Spotify track on a house speaker:
+ * cover, title, artist, where it plays, pause and progress (no next: the wall has no
+ * Spotify skip, and media keys reach only this PC). With music the Sonos read alone knows
+ * of: the play this wall started (its art), where it plays and pause. With nothing playing:
+ * "Nothing playing" and the hour's suggestion as a Play button.
+ */
+function NowStrip({
+  s,
+  now,
+  track,
+  trackAt,
+  activeSlot,
+  activeName,
+  locked,
+  pauseAll,
+  playSuggested,
+  suggestedSlot,
+}: {
+  s: SonosSummary;
+  now: number;
+  track: ReturnType<typeof houseTrack>;
+  /** When the Spotify read that carries the track's position landed. */
+  trackAt: number;
+  activeSlot: Slot | null;
+  activeName: string | null;
+  locked: boolean;
+  pauseAll: () => void;
+  playSuggested: ReactNode;
+  suggestedSlot: Slot | null;
+}) {
+  const where = playingWhere(s);
+  // Progress moves on between reads while the track plays, counted from the Spotify read that
+  // carries the position (it lands after the Sonos read that asks for it).
+  const since = track ? Math.max(0, now - trackAt) : 0;
+  const pos = track ? Math.min(track.durationMs, track.progressMs + since) : 0;
+  const pause = (
+    <button type="button" className="np-rd big" aria-label="Pause" disabled={locked} {...tip('Pause every Sonos speaker')} {...once(pauseAll)}>
+      <IconPlayerPauseFilled size={24} aria-hidden="true" />
+    </button>
+  );
+  if (track) {
+    return (
+      <div className="sound-np" aria-label="Now playing">
+        <div className="np-top">
+          {track.cover ? <img className="np-cover" src={track.cover} alt="" /> : <span className="np-cover blank" aria-hidden="true" />}
+          <div className="np-meta">
+            <span className="np-k">Now playing</span>
+            <b className="np-title" {...tip(track.title)}>
+              {track.title}
+            </b>
+            <span className="np-artist" {...tip(track.artist)}>
+              {track.artist}
+            </span>
+            <span className="np-where" {...tip(`Spotify on ${track.where}`)}>
+              <IconDeviceSpeaker size={18} stroke={1.8} aria-hidden="true" />
+              {track.where}
+            </span>
+            <div className="np-ctl">{pause}</div>
+          </div>
+        </div>
+        {track.durationMs > 0 && (
+          <div className="np-prog" {...tip(() => `${clockMs(pos)} of ${clockMs(track.durationMs)}`)}>
+            <span>{clockMs(pos)}</span>
+            <div>
+              <i style={{ width: `${Math.round((pos / track.durationMs) * 100)}%` }} />
+            </div>
+            <span>{clockMs(track.durationMs)}</span>
+          </div>
+        )}
+      </div>
+    );
+  }
+  if (where) {
+    return (
+      <div className="sound-np plain" aria-label="Now playing">
+        <div className="np-top">
+          {activeSlot ? <PlayArt slot={activeSlot} size={44} /> : <span className="np-cover blank small" aria-hidden="true"><IconDeviceSpeaker size={40} stroke={1.5} /></span>}
+          <div className="np-meta">
+            <span className="np-k">Now playing</span>
+            <b className="np-title">{activeName ?? (s.nowPlaying?.track ? s.nowPlaying.track : 'Music')}</b>
+            {!activeName && s.nowPlaying?.artist && <span className="np-artist">{s.nowPlaying.artist}</span>}
+            <span className="np-where" {...tip(nowLine(s))}>
+              <IconDeviceSpeaker size={18} stroke={1.8} aria-hidden="true" />
+              {where}
+            </span>
+            <div className="np-ctl">{pause}</div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="sound-np quiet" aria-label="Now playing">
+      <div className="np-top">
+        {suggestedSlot ? <PlayArt slot={suggestedSlot} size={44} /> : <span className="np-cover blank small" aria-hidden="true"><IconDeviceSpeaker size={40} stroke={1.5} /></span>}
+        <div className="np-meta">
+          <span className="np-k">Sound</span>
+          <b className="np-title">Nothing playing</b>
+          <span className="np-artist">{suggestedSlot ? 'Suggested for this hour' : 'Pick a play beside this'}</span>
+          <div className="np-ctl">{playSuggested}</div>
+        </div>
+      </div>
     </div>
   );
 }
