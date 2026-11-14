@@ -13,7 +13,7 @@ import { knob } from './long';
  * same, but the second try never answers: one failed read waiting, nothing shown), `?where=office|all|common|none` (which place is in use), `?sonos=quiet` (nothing playing), `?sonos=few` (one matching routine plus More), `?sonos=slow` (never answers, for the loading state), `?skip=1` (an unforced play is
  * skipped). `?np=` is a comma list for the Now Playing block: `station` (no length, as for a radio station), `noart` (no cover
  * address), `skip` (the service has back and next), `skipfail` (a skip is refused as a station that cannot skip), `long` (a very long
- * title and artist), `paused` (the Spotify-free read plays but the length is unknown to the page: same as `station`). The default is a typical
+ * title and artist). The default is a typical
  * evening with music playing on a group, a cover, a 3:01 length at 1:05 and no back or next.
  */
 const now = () => (reviewNow ? reviewNow() : Date.now());

@@ -1662,9 +1662,10 @@ button.panel.network.shield:focus-visible {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding-top: 2px;
+  padding-top: 4px;
 }
 .np-k {
+  margin-bottom: 4px;
   font: 600 16px/16px var(--disp);
   letter-spacing: 0.16em;
   text-transform: uppercase;

@@ -276,8 +276,9 @@ function VideoFull({ v, hint, cut, setCut }: { v: WallVideoView; hint: boolean; 
 }
 
 function Split({ v, m, p }: { v: WallVideoView; m: MusicView; p: NowBlockProps }) {
-  const line1 = v.needsClick ? 'Click the video on Watch' : v.time ? timeOf(v.time.pos, v.time.dur) : v.shortSub;
-  const line2 = v.needsClick || v.time ? v.shortSub : '';
+  const sub = v.sub.length <= 16 ? v.sub : v.shortSub;
+  const line1 = v.needsClick ? 'Click the video on Watch' : v.time ? timeOf(v.time.pos, v.time.dur) : sub;
+  const line2 = v.needsClick || v.time ? sub : '';
   const videoBtns = v.needsClick || !v.youtube ? 1 : 2;
   return (
     <>
