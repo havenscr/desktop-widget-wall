@@ -542,7 +542,9 @@ try {
       const covered = [];
       if (hit(me, cr)) covered.push('Watt himself');
       if (tail < me.left - 1 || tail > me.right + 1) covered.push('tail not over him (tail ' + Math.round(tail) + ', him ' + Math.round(me.left) + ' to ' + Math.round(me.right) + ')');
-      wattCard = { heights, outside, covered, buttons: heights.length };
+      // The smallest text in the menu (16 px at least, to read on the strip at 100 percent).
+      const minFont = Math.min(...[...card.querySelectorAll('*')].filter((e) => [...e.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim())).map((e) => parseFloat(getComputedStyle(e).fontSize)));
+      wattCard = { heights, outside, covered, buttons: heights.length, minFont };
     }
     // Work's agents header: every part one line tall (no text in it wraps, no part taller than the 36 px row).
     const header = [...document.querySelectorAll('.work .centre .lanes-hd *')].flatMap((e) => {
@@ -942,12 +944,12 @@ try {
     }
     if (v.card) {
       const c = wattCard;
-      const okCard = c !== null && c.buttons >= 11 && Math.min(...c.heights) >= 34 - SLACK && c.outside === 0 && c.covered.length === 0;
+      const okCard = c !== null && c.buttons >= 11 && Math.min(...c.heights) >= 34 - SLACK && c.outside === 0 && c.covered.length === 0 && c.minFont >= 16;
       if (!okCard) failed = true;
       console.log(
         c === null
           ? '  FAIL Watt menu did not open'
-          : `  ${okCard ? 'ok  ' : 'FAIL'} Watt menu: ${c.buttons} items, shortest ${Math.round(Math.min(...c.heights))} px (at least 34), ${c.outside} parts outside the menu, ${c.covered.length ? c.covered.join('; ') : 'not over him, its tail over him'}`,
+          : `  ${okCard ? 'ok  ' : 'FAIL'} Watt menu: ${c.buttons} items, shortest ${Math.round(Math.min(...c.heights))} px (at least 34), smallest text ${c.minFont} px (at least 16), ${c.outside} parts outside the menu, ${c.covered.length ? c.covered.join('; ') : 'not over him, its tail over him'}`,
       );
     }
     for (const o of overlaps) console.log(`  FAIL overlap: ${o}`);

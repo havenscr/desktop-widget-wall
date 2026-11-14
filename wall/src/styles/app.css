@@ -216,7 +216,7 @@ button,
   display: block;
 }
 .hover-tip .tip-k {
-  font: 600 14px/1.35 var(--disp);
+  font: 600 16px/1.35 var(--disp);
   color: var(--cyan);
   display: block;
   margin-top: 4px;

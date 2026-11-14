@@ -246,7 +246,7 @@
   font: 700 22px/1 var(--disp);
 }
 .wm-mood {
-  font: 600 14px/1 var(--disp);
+  font: 600 16px/1 var(--disp);
   color: #4a3fa0;
 }
 .wm-mood.m-happy {
@@ -257,7 +257,7 @@
 }
 .wm-days {
   margin-left: auto;
-  font: 500 14px/1 var(--body);
+  font: 500 16px/1 var(--body);
   color: #4a4270;
 }
 .wm-today,
@@ -270,9 +270,9 @@
   color: #6a3a10;
 }
 .wm-gp {
-  margin: 10px 0 6px;
-  font: 700 12px/1 var(--disp);
-  letter-spacing: 0.1em;
+  margin: 8px 0 5px;
+  font: 700 16px/1 var(--disp);
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: #5a5090;
 }
@@ -322,8 +322,8 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-top: 10px;
-  font: 600 14px/1 var(--disp);
+  margin-top: 8px;
+  font: 600 16px/1 var(--disp);
   color: #4a4270;
 }
 .wm-fl {
@@ -336,7 +336,7 @@
 .wm-seg .wm-sb {
   min-height: 34px;
   padding: 0 10px;
-  font-size: 15px;
+  font-size: 16px;
   background: transparent;
   box-shadow: none;
 }
