@@ -252,7 +252,7 @@ function Drawer() {
       </div>
       <div className="tools-cols">
         <div className="tools-col left">
-          <div className={ring ? 'tools-block ring' : 'tools-block'} data-section="accounts">
+          <div className={ring ? 'tools-block tools-ringed' : 'tools-block'} data-section="accounts">
             <div className="tools-k sm">Accounts</div>
             <Accounts />
           </div>

@@ -1,5 +1,15 @@
 import { describeWeather, type WeatherLook } from './codes';
 
+export type WeatherFailure = 'network' | 'timeout' | `http ${number}` | 'parse';
+
+export function weatherFailureText(failure: WeatherFailure | null | undefined): string {
+  if (failure === 'network') return 'Could not reach api.open-meteo.com.';
+  if (failure === 'timeout') return 'Open-Meteo did not answer in time.';
+  if (failure === 'parse') return 'The weather reply could not be read.';
+  if (failure?.startsWith('http ')) return `Open-Meteo answered ${failure.slice(5)}.`;
+  return 'The weather service did not answer.';
+}
+
 export const REFRESH_MS = 15 * 60 * 1000;
 /** Retry interval while there is still no reading at all. */
 export const RETRY_MS = 60 * 1000;

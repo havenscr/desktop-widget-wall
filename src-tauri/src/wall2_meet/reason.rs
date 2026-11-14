@@ -65,7 +65,7 @@ pub fn token_reason(status: u16, body: &[u8]) -> String {
 
 /// True when `s` is one of the allowed shapes. Used by tests and as a last guard.
 pub fn is_valid_reason(s: &str) -> bool {
-    if matches!(s, "graph-network" | "graph-timeout" | "graph-body" | "token-network" | "store-write" | "store-read") {
+    if matches!(s, "graph-network" | "graph-timeout" | "graph-body" | "token-network" | "token-network-dns" | "token-network-connect" | "token-network-tls" | "token-network-timeout" | "store-write" | "store-read") {
         return true;
     }
     let (family, rest) = if let Some(r) = s.strip_prefix("graph-") {

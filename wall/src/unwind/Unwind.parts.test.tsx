@@ -320,6 +320,26 @@ it('shows the last played track with Play again when nothing plays', async () =>
   r.unmount();
 });
 
+it('recognises the wall video session and anonymises another WebView2 session', async () => {
+  resetWatch();
+  const item = { kind: 'video' as const, id: 'abcdefghijk', label: 'Quiet Coast' };
+  useWatchStore.setState({ saved: [item], playing: item, tab: 'listen' });
+  mocks.set('get_now_playing', () => ({ title: 'Quiet Coast', source_app_id: 'msedgewebview2.exe', playback_status: 'playing' }));
+  const r = render(<Unwind />);
+  await flush();
+  expect(screen.getByText('Playing in Watch')).toBeTruthy();
+  await act(async () => screen.getByRole('button', { name: 'Back to Watch' }).click());
+  expect(useWatchStore.getState().tab).toBe('watch');
+  r.unmount();
+
+  useWatchStore.setState({ tab: 'listen', playing: null });
+  mocks.set('get_now_playing', () => ({ title: 'Mail alert', source_app_id: 'msedgewebview2.exe', playback_status: 'stopped' }));
+  render(<Unwind />);
+  await flush();
+  expect(screen.getByText('Last played on an app on this PC')).toBeTruthy();
+  expect(document.body.textContent).not.toContain('msedgewebview2');
+});
+
 it('says "Open Spotify to play again" when the last track has no media session', async () => {
   resetLastPlayed({ title: 'Tokyo Burnout', artist: 'Tokyo Rose', source: 'Spotify' });
   mocks.set('get_now_playing', () => ({ playback_status: 'unknown' }));

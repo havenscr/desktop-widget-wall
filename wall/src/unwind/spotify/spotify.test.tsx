@@ -343,7 +343,7 @@ it('keeps the list when Spotify is busy and says so; says to open Spotify when n
   await flush(300);
   await act(async () => (screen.getByRole('button', { name: 'Play' }) as HTMLButtonElement).click());
   await flush();
-  expect(screen.getByText('Open Spotify on this PC first, then try again.')).toBeTruthy();
+  expect(screen.getByText('Spotify opened but did not show up as a player. Press Play in Spotify once, then try again.')).toBeTruthy();
   busy = true;
   await act(async () => screen.getByRole('tab', { name: 'Albums' }).click());
   await flush();

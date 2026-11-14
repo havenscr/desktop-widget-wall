@@ -78,7 +78,12 @@ export function Player() {
   const hasSession = !!info && !!info.playback_status && info.playback_status !== 'unknown';
   const pct = progress ? (progress.position / progress.duration) * 100 : 0;
   const source = sourceKey(info);
-  const sourceLabel = playerName(source);
+  const rawSourceLabel = playerName(source);
+  const watchPlaying = useWatchStore((s) => s.playing);
+  const watchSaved = useWatchStore((s) => s.saved);
+  const webView = rawSourceLabel?.toLowerCase() === 'msedgewebview2';
+  const watchMatch = !!info?.title && webView && (watchPlaying?.label === info.title || watchSaved.some((item) => item.label === info.title));
+  const sourceLabel = watchMatch ? 'Watch' : webView ? 'an app on this PC' : rawSourceLabel;
   // The horizon's moon keeps 40 px clear of the player (it moves to another of its places).
   const [box, setBox] = useState<HTMLDivElement | null>(null);
   useSkyKeepClear('listen-player', box);
@@ -110,7 +115,11 @@ export function Player() {
   ) : null;
 
   // The idle row's own words beside the buttons: Play again, or why play cannot start here.
-  const again = idle ? (
+  const again = watchMatch ? (
+    <button type="button" className="u-again" onClick={() => useWatchStore.getState().setTab('watch')}>
+      Back to Watch
+    </button>
+  ) : idle ? (
     hasSession ? (
       <button type="button" className="u-again" onClick={() => command('media_play_pause')}>
         <IconPlayerPlayFilled size={22} aria-hidden="true" />
@@ -168,7 +177,7 @@ export function Player() {
             <VideoCorner />
           </div>
           <div className="u-meta">
-            <span className="u-k">{idle.source ? `Last played on ${idle.source}` : 'Last played'}</span>
+            <span className="u-k">{watchMatch ? 'Last played in Watch' : idle.source ? `Last played on ${idle.source}` : 'Last played'}</span>
             <div className="u-np u-was u-ell">{idle.title}</div>
             <div className="u-artist u-ell">{idle.artist}</div>
             {transport}
@@ -186,7 +195,7 @@ export function Player() {
           <VideoCorner />
         </div>
         <div className="u-meta">
-          {sourceLabel ? <span className="u-k u-src">{sourceLabel}</span> : null}
+          {sourceLabel ? <span className="u-k u-src">{watchMatch ? 'Playing in Watch' : sourceLabel}</span> : null}
           <div className="u-np u-ell">{info?.title || 'Unknown title'}</div>
           <div className="u-artist u-ell">{info?.artist || info?.album || ''}</div>
           {transport}

@@ -137,9 +137,20 @@ it('closes by itself after 2 minutes with no pointer over it; a pointer over it 
 it('opened from a link it rings Accounts for 2 seconds', async () => {
   await openIt('accounts');
   const block = document.querySelector('[data-section="accounts"]')!;
-  expect(block.className).toContain('ring');
+  expect(block.className).toContain('tools-ringed');
+  expect(block.className.split(/\s+/)).not.toContain('ring');
   await flush(RING_MS + 100);
-  expect(block.className).not.toContain('ring');
+  expect(block.className).not.toContain('tools-ringed');
+});
+
+it('Tools class lists do not reuse bare shared work classes', async () => {
+  const mod = 'node:fs';
+  const fs = await import(/* @vite-ignore */ mod);
+  const source = fs.readFileSync(['src', 'tools', 'ToolsDrawer.tsx'].join('/'), 'utf8');
+  const work = fs.readFileSync(['src', 'styles', 'work.css'].join('/'), 'utf8');
+  const shared = new Set([...work.matchAll(/^\.([a-z][a-z0-9-]*)\s*\{/gm)].map((m) => m[1]));
+  const toolLists = [...source.matchAll(/['"]([^'"]*tools-[^'"]*)['"]/g)].flatMap((m) => m[1].split(/\s+/));
+  expect(toolLists.filter((name) => shared.has(name))).toEqual([]);
 });
 
 it('Accounts: the signed-out calendar has Sign in, Spotify not set up has no button, and there is no Twitch row', async () => {

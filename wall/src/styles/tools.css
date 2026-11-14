@@ -91,7 +91,7 @@
   outline-offset: 10px;
 }
 /* The Accounts section ringed for 2 seconds when the drawer opens from the Meet link. */
-.tools-block.ring {
+.tools-block.tools-ringed {
   outline-color: rgba(53, 230, 234, 0.55);
   box-shadow: 0 0 30px -8px rgba(53, 230, 234, 0.5);
 }

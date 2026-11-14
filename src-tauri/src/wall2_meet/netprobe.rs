@@ -148,10 +148,17 @@ pub fn reached(host: &str) {
 #[derive(Debug)]
 pub struct TimedResolver;
 
+pub fn ipv4_first(mut addrs: Vec<SocketAddr>) -> Vec<SocketAddr> {
+    if let Some(at) = addrs.iter().position(SocketAddr::is_ipv4) {
+        addrs.swap(0, at);
+    }
+    addrs
+}
+
 impl ureq::Resolver for TimedResolver {
     fn resolve(&self, netloc: &str) -> std::io::Result<Vec<SocketAddr>> {
         let began = Instant::now();
-        let result = netloc.to_socket_addrs().map(|i| i.collect::<Vec<_>>());
+        let result = netloc.to_socket_addrs().map(|i| ipv4_first(i.collect::<Vec<_>>()));
         let ms = began.elapsed().as_millis().min(u32::MAX as u128) as u32;
         record(netloc, ms, result.as_ref().map(|v| v.clone()).unwrap_or_default());
         result
@@ -230,6 +237,13 @@ mod tests {
 
     fn a(s: &str) -> SocketAddr {
         s.parse().unwrap()
+    }
+
+    #[test]
+    fn resolver_order_gives_ipv4_the_first_bounded_connect_attempt() {
+        let ordered = ipv4_first(vec![a("[2001:db8::1]:443"), a("192.0.2.1:443"), a("[2001:db8::2]:443")]);
+        assert!(ordered[0].is_ipv4());
+        assert_eq!(ordered.len(), 3);
     }
 
     fn np(phase: &'static str, af: &'static str, resolved: u8, dns_ms: Option<u32>, v4: Probe, v6: Probe) -> NetProbe {
