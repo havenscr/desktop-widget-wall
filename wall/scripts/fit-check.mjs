@@ -31,7 +31,7 @@
 // CI does not run this; run it by hand before a layout change is handed over.
 //
 //   WALL_CHROME=/path/to/chrome-or-headless-shell npm --prefix wall run fit-check
-//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, card-end, header, deck, tiles, picker, chips, heading, zenhint, strip, fold, drawer, rows, handle, sky, floor, sun, tools, toolsnames, meetfill, meetempty, fy-height, key-edge, hide-pill, hide-note, leave-band, rec-chip, rec-height, tile-height, tile-icon, tile-iconbox, drawer-scrim, lwbuttons, lwoverlap, lwsquare, lwring, lwtemp, lwround, sky-front, sky-moon, sky-always, sky-crop, sky-seam, sky-soft, sky-foot, tower-over, tower-wide, tower-box, tower-switch, holo-big, holo-noblend, holo-beam, holo-take, tile-text, listen-player, listen-card, listen-slot, listen-next, lines-size, lines-control, lines-text, lines-clip, watch-rest, watch-title, watch-away, watch-mark, lip-cover, lip-band, lip-scrim, row-parts, over-hatch, row-type, onair-box, onair-notes, onair-keys, onair-watt, watt-seat, watt-spot, watt-tower, watt-ground, tune-box, tune-clear, tune-tower, tune-sign, tune-light, tune-sheet, tune-control, tune-text, tune-cut)
+//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, card-end, header, deck, tiles, picker, chips, heading, zenhint, strip, fold, drawer, rows, handle, sky, floor, sun, tools, toolsnames, meetfill, meetempty, fy-height, key-edge, hide-pill, hide-note, leave-band, rec-chip, rec-height, tile-height, tile-icon, tile-iconbox, drawer-scrim, lwbuttons, lwoverlap, lwsquare, lwring, lwtemp, lwround, sky-front, sky-moon, sky-always, sky-crop, sky-seam, sky-soft, sky-foot, tower-over, tower-wide, tower-box, tower-switch, holo-big, holo-noblend, holo-beam, holo-take, tile-text, listen-player, listen-card, listen-slot, listen-next, lines-size, lines-control, lines-text, lines-clip, watch-rest, watch-title, watch-away, watch-mark, lip-cover, lip-band, lip-scrim, row-parts, over-hatch, row-type, onair-box, onair-notes, onair-keys, onair-watt, watt-seat, watt-spot, watt-tower, watt-ground, tune-box, tune-clear, tune-tower, tune-sign, tune-light, tune-sheet, tune-control, tune-text, tune-cut, tune-clip, tune-row)
 //   npm --prefix wall run fit-check -- --self-test
 //   npm --prefix wall run fit-check -- --only=look settings    (only the states whose name contains that text)
 //
@@ -179,6 +179,8 @@ const EXPECT = {
   'tune-control': /^ *FAIL look settings: control ".*" is [\d.]+ px tall/m,
   'tune-text': /^ *FAIL look settings: text under 16 px/m,
   'tune-cut': /^ *FAIL look settings: ".*" is cut /m,
+  'tune-clip': /^ *FAIL look settings: \d+ control\(s\) are cut off by the sheet with no scrolling/m,
+  'tune-row': /^ *FAIL look settings: row ".*" is [\d.]+ px tall \(40 at least\)/m,
   'sky-soft': /^ *FAIL whole sky soft edge: /m,
   'sky-foot': /^ *FAIL whole sky soft edge: /m,
   // on air
@@ -328,10 +330,13 @@ const OVERFLOWS = {
   'tune-tower': '.w-tower { transform: scale(1.5) !important; }',
   'tune-sign': ".w-stage[style*='--w-sign'] .w-screen { left: 30px !important; }",
   'tune-light': '.w-light path { transform: scale(0.75); transform-box: fill-box; transform-origin: center; }',
-  'tune-sheet': '.wk-set .ln-row { min-height: 110px !important; }',
+  'tune-sheet': '.w-sheet.w-tune { max-height: none !important; } .wk-set .ln-row { min-height: 110px !important; }',
   'tune-control': '.wk-set .ln-switch { height: 20px !important; }',
   'tune-text': '.wk-set .ln-label { font-size: 12px !important; }',
   'tune-cut': '.wk-set .ln-value { width: 60px !important; }',
+  // the scrolling section clipped with no scrolling; 30 px rows
+  'tune-clip': '.wk-set .wk-rows { overflow: hidden !important; }',
+  'tune-row': '.wk-set .ln-row { min-height: 30px !important; height: 30px !important; }',
   // Keeps the production side ramp exactly and replaces only the top ramp with one that also fades the foot (an extra stop near 100 percent).
   'sky-foot': `.w-sky .w-screen { -webkit-mask-image: ${SKY_SIDE_RAMP}, ${SKY_TOP_RAMP_FOOT} !important; mask-image: ${SKY_SIDE_RAMP}, ${SKY_TOP_RAMP_FOOT} !important; }`,
   // on air: the notes card 1400 px wide; every note shown at 40 px (none behind "+N more"); 20 px key tiles.
@@ -462,15 +467,15 @@ const QUIET = [
   { name: 'Watch, three saved, nothing on', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three', checks: [...WATCH_IDLE, '.w-list', '.w-row'] },
   { name: 'Watch, three saved, feathered playing', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=feather&wplay=0', checks: [...WATCH_PLAYING, '.w-list'] },
   { name: 'Watch, 24 saved, drive-in, long label playing', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=many&wlook=drivein&wplay=3', checks: WATCH_PLAYING },
-  { name: 'Watch, settings sheet, one look', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wplay=0&wsheet=one', checks: ['.w-sheet', '.w-tiles', '.w-tile'] },
+  { name: 'Watch, settings sheet, one look', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wplay=0&wsheet=one', checks: ['.w-sheet', '.w-tiles', '.w-tile', '.w-sfoot'] },
   // Part 2a: the whole sky and the sun. The whole sky lies under every control: each named
   // control gets the pointer at its centre, and no point of the sky reaches the video layer.
   { name: 'Watch, whole sky playing, every control still takes the pointer', agents: 'ask', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=sky&wplay=0', checks: [...WATCH_IDLE, '.w-ctl', '.w-open', '.w-lookbar'], hits: [...SKY_HITS, ...FLOOR_HITS], noHit: '.w-sky, .w-skyspill' },
   { name: 'Watch, whole sky, 24 saved, long label', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=many&wlook=sky&wplay=3', checks: [...WATCH_IDLE, '.w-ctl', '.w-open', '.w-lookbar'], hits: [...SKY_HITS, ...FLOOR_HITS], noHit: '.w-sky, .w-skyspill' },
   { name: 'Watch, the sun playing', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=sun&wplay=0', checks: [...WATCH_IDLE, '.w-ctl', '.w-time', '.w-open', '.w-list'], hits: SKY_HITS },
   { name: 'Watch, the sun, 24 saved, Twitch', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=many&wlook=sun&wplay=2', checks: [...WATCH_IDLE, '.w-ctl', '.w-time', '.w-open'], hits: SKY_HITS },
-  { name: 'Watch, settings sheet with four looks, one look', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=sky&wplay=0&wsheet=one', checks: ['.w-sheet', '.w-tiles', '.w-tile', '.w-hint'] },
-  { name: 'Watch, settings sheet, a look per kind', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=many&wplay=2&wsheet=kind', checks: ['.w-sheet', '.w-srow', '.w-srow .w-seg'] },
+  { name: 'Watch, settings sheet with four looks, one look', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=sky&wplay=0&wsheet=one', checks: ['.w-sheet', '.w-tiles', '.w-tile', '.w-hint', '.w-sfoot'] },
+  { name: 'Watch, settings sheet, a look per kind', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=many&wplay=2&wsheet=kind', checks: ['.w-sheet', '.w-srow', '.w-srow .w-seg', '.w-sfoot'] },
   // look settings (one block): the Looks sheet with the longest section, and every look at both ends of each
   // setting that moves or sizes it (the picture the box the code uses, clear of its neighbours, nothing on it).
   { name: 'Look settings, sheet, the sun', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wplay=0&wlook=sun&wsheet=one&wtune=sun.size=380', checks: ['.w-sheet', '.wk-set'], tune: 'sheet' },
@@ -478,6 +483,7 @@ const QUIET = [
   { name: 'Look settings, sheet, the drive-in (five settings)', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wplay=0&wlook=drivein&wsheet=one&wtune=drivein.size=90,drivein.sign=0,drivein.neon=0', checks: ['.w-sheet', '.wk-set'], tune: 'sheet' },
   { name: 'Look settings, sheet, a look per kind, the drive-in', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=many&wplay=2&wsheet=kind&wtune=drivein.size=90', checks: ['.w-sheet', '.wk-set'], tune: 'sheet' },
   { name: 'Look settings, whole sky, smallest', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wplay=0&wlook=sky&wtune=sky.size=60,sky.soft=200,sky.bright=50,sky.floor=0', checks: ['.w-now', '.w-lookbar'], tune: 'look' },
+  { name: 'Look settings, whole sky, largest (the usual size)', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wplay=0&wlook=sky&wtune=sky.size=100', checks: ['.w-now', '.w-lookbar'], tune: 'look' },
   { name: 'Look settings, whole sky, plain edge', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wplay=0&wlook=sky&wtune=sky.soft=0,sky.bright=100', checks: ['.w-now', '.w-lookbar'], tune: 'look' },
   { name: 'Look settings, sun, smallest and highest', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wplay=0&wlook=sun&wtune=sun.size=280,sun.up=60', checks: ['.w-now', '.w-lookbar'], tune: 'look' },
   { name: 'Look settings, sun, largest and sunk', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wplay=0&wlook=sun&wtune=sun.up=-100', checks: ['.w-now', '.w-lookbar'], tune: 'look' },
@@ -488,8 +494,8 @@ const QUIET = [
   { name: 'Look settings, drive-in, largest', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wplay=0&wlook=drivein&wtune=drivein.size=105,drivein.neon=0', checks: ['.w-now', '.w-lookbar'], tune: 'look' },
   { name: 'Look settings, drive-in, travelling light', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wplay=0&wlook=drivein&wtune=drivein.light=1', checks: ['.w-now', '.w-lookbar'], tune: 'look' },
   { name: 'Look settings, drive-in, sign hidden', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wplay=0&wlook=drivein&wtune=drivein.sign=0', checks: ['.w-now', '.w-lookbar'], tune: 'look' },
-  { name: 'Look settings, hologram, flat', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wplay=0&wlook=holo&wtune=holo.tilt=0,holo.beam=0,holo.plate=40', checks: ['.w-now', '.w-lookbar'], tune: 'look' },
-  { name: 'Look settings, hologram, steepest', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wplay=0&wlook=holo&wtune=holo.tilt=12,holo.plate=90', checks: ['.w-now', '.w-lookbar'], tune: 'look' },
+  { name: 'Look settings, hologram, flat', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wplay=0&wlook=holo&wtune=holo.tilt=0,holo.beam=0,holo.see=60', checks: ['.w-now', '.w-lookbar'], tune: 'look' },
+  { name: 'Look settings, hologram, steepest', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wplay=0&wlook=holo&wtune=holo.tilt=12,holo.see=10', checks: ['.w-now', '.w-lookbar'], tune: 'look' },
   // watch polish: the control row and the Look switch in every look. The switch's box must be the
   // same in every state below (compared after the run), the row one line clear of the list, and
   // nothing of the wall's over the video's box; the drive-in's driveInAudience must be its screen.
@@ -1634,10 +1640,31 @@ try {
         if (!sheet || !set) return { fails: ['look settings: the Looks sheet has no settings section'], mode };
         const s = R(sheet);
         if (s.t < -0.5 || s.b > 658.5 || s.r > 2560.5) fails.push('look settings: the sheet is ' + Math.round(s.h) + ' px tall, y ' + Math.round(s.t) + ' to ' + Math.round(s.b) + ' (inside the stage and clear of the office slot at y 662)');
+        const rowsBox = set.querySelector('.wk-rows');
+        const rb = R(rowsBox);
+        const scrolls = rowsBox.scrollHeight > rowsBox.clientHeight + 1;
+        for (const row of set.querySelectorAll('.ln-row')) {
+          const r = R(row);
+          if (r.h < 39.5) fails.push('look settings: row "' + row.textContent.trim().slice(0, 24) + '" is ' + Math.round(r.h * 10) / 10 + ' px tall (40 at least)');
+        }
+        // Rows may overflow only into a scroll with a cue; the last control must be reachable.
+        const inRows = [...rowsBox.querySelectorAll('button, input')];
+        const cut = inRows.filter((el) => { const r = R(el); return r.t < rb.t - 0.5 || r.b > rb.b + 0.5; });
+        if (cut.length) {
+          const cs = getComputedStyle(rowsBox);
+          if (!scrolls || !(cs.overflowY === 'auto' || cs.overflowY === 'scroll')) fails.push('look settings: ' + cut.length + ' control(s) are cut off by the sheet with no scrolling');
+          else {
+            rowsBox.scrollTop = rowsBox.scrollHeight;
+            const lb = R(inRows[inRows.length - 1]);
+            if (lb.b > R(rowsBox).b + 0.5) fails.push('look settings: the last control cannot be scrolled to');
+            rowsBox.scrollTop = 0;
+          }
+        }
+        if (scrolls && !getComputedStyle(rowsBox).backgroundAttachment.includes('local')) fails.push('look settings: the scrolling section shows no cue that more lies below');
         for (const el of set.querySelectorAll('button, input')) {
           const r = R(el);
           const name = el.getAttribute('aria-label') || el.textContent.trim() || (document.getElementById(el.getAttribute('aria-labelledby') || '') || {}).textContent || el.id;
-          if (r.l < s.l - 0.5 || r.r > s.r + 0.5 || r.t < s.t - 0.5 || r.b > s.b + 0.5) fails.push('look settings: control "' + name + '" is cut by the sheet');
+          if (!(scrolls && rowsBox.contains(el)) && (r.l < s.l - 0.5 || r.r > s.r + 0.5 || r.t < s.t - 0.5 || r.b > s.b + 0.5)) fails.push('look settings: control "' + name + '" is cut by the sheet');
           if (r.h < 31.5) fails.push('look settings: control "' + name + '" is ' + Math.round(r.h * 10) / 10 + ' px tall (32 at least)');
         }
         for (const el of [set, ...set.querySelectorAll('*')]) {
@@ -1975,6 +2002,8 @@ try {
     'tune-control': (v) => v.name === 'Look settings, sheet, the drive-in (five settings)',
     'tune-text': (v) => v.name === 'Look settings, sheet, the drive-in (five settings)',
     'tune-cut': (v) => v.name === 'Look settings, sheet, the sun',
+    'tune-clip': (v) => v.name === 'Look settings, sheet, a look per kind, the drive-in',
+    'tune-row': (v) => v.name === 'Look settings, sheet, the sun',
   };
   const breakOn = BREAK_ON[overflow] ? VARIANTS.filter(BREAK_ON[overflow]) : VARIANTS.slice(0, 1);
   /** keys style: the Now row's height on each page that has one, compared after every state ran. */

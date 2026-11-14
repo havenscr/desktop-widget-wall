@@ -319,12 +319,13 @@ state('unwind', 'look settings: feathered, largest, wide soft edge', `${WM}&wlis
 state('unwind', 'look settings: feathered, small, sharp edge', `${WM}&wlist=three&wlook=feather&wplay=0&wtune=feather.size=60,feather.soft=10,feather.glow=0`, TIMES.night);
 state('unwind', 'look settings: drive-in, smallest, no sign', `${WM}&wlist=three&wlook=drivein&wplay=0&wtune=drivein.size=80,drivein.sign=0,drivein.floor=100`, TIMES.night);
 state('unwind', 'look settings: drive-in, largest', `${WM}&wlist=three&wlook=drivein&wplay=0&wtune=drivein.size=105,drivein.floor=0`, TIMES.night);
+state('unwind', 'look settings: drive-in, usual: no light, sign shown, neon lit', `${WM}&wlist=three&wlook=drivein&wplay=0`, TIMES.night);
 state('unwind', 'look settings: drive-in, sign hidden', `${WM}&wlist=three&wlook=drivein&wplay=0&wtune=drivein.sign=0`, TIMES.night);
 state('unwind', 'look settings: drive-in, neon line off', `${WM}&wlist=three&wlook=drivein&wplay=0&wtune=drivein.neon=0`, TIMES.night);
 state('unwind', 'look settings: drive-in, travelling light on, playing', `${WM}&wlist=three&wlook=drivein&wplay=0&wtune=drivein.light=1`, TIMES.night);
-state('unwind', 'look settings: drive-in, travelling light, paused so it is not drawn', `${WM}&wlist=three&wlook=drivein&wplay=0&wstate=paused`, TIMES.night);
-state('unwind', 'look settings: hologram, flat, no beam, light plate', `${WM}&wlist=three&wlook=holo&wplay=0&wtune=holo.tilt=0,holo.beam=0,holo.plate=40`, TIMES.night);
-state('unwind', 'look settings: hologram, steepest, dark plate', `${WM}&wlist=three&wlook=holo&wplay=0&wtune=holo.tilt=12,holo.plate=90`, TIMES.night);
+state('unwind', 'look settings: drive-in, travelling light switched on, paused so it is not drawn', `${WM}&wlist=three&wlook=drivein&wplay=0&wstate=paused&wtune=drivein.light=1`, TIMES.night);
+state('unwind', 'look settings: hologram, flat, no beam, light plate', `${WM}&wlist=three&wlook=holo&wplay=0&wtune=holo.tilt=0,holo.beam=0,holo.see=60`, TIMES.night);
+state('unwind', 'look settings: hologram, steepest, dark plate', `${WM}&wlist=three&wlook=holo&wplay=0&wtune=holo.tilt=12,holo.see=10`, TIMES.night);
 // watch polish: the wall's own control row and the fixed Look switch in every look, with a mock
 // player (`wstate`): a single video, a playlist, paused, autoplay refused, Twitch, nothing reported.
 state('unwind', 'watch polish: drive-in, single video', `${WM}&wlist=three&wlook=drivein&wplay=0`, TIMES.night);
@@ -865,7 +866,7 @@ EXPECT.push(
 
 EXPECT.push(
   ['unwind', 'look settings: sheet, the sun at 380 px', ['The sun', 'Floor streak', '380 px, smaller than usual', 'Reset to my usual', 'Each look keeps its own settings. Changes show at once.']],
-  ['unwind', 'look settings: sheet, whole sky at its usual', ['Whole sky', 'Soft edge', '120 px, your usual', 'Each look keeps its own settings. Changes show at once.']],
+  ['unwind', 'look settings: sheet, whole sky at its usual', ['Whole sky', 'Soft edge', '120 px, your usual', 'Saved here:', 'Each look keeps its own settings. Changes show at once.']],
   ['unwind', 'look settings: sheet, a look per kind', ['Settings for', 'A look keeps its own settings, whatever kind of video plays in it. Changes show at once.', '90%, smaller than usual', 'Off']],
 );
 // watt drive-in: the drive-in look is on with something playing (Watt himself has no text).
