@@ -39,7 +39,14 @@ export function validateLines(value: unknown): LinesSettings {
 }
 
 function load(): LinesSettings {
-  try { return validateLines(JSON.parse(localStorage.getItem(LINES_KEY) || 'null')); } catch { return { ...DEFAULT_LINES }; }
+  let value: LinesSettings;
+  try { value = validateLines(JSON.parse(localStorage.getItem(LINES_KEY) || 'null')); } catch { value = { ...DEFAULT_LINES }; }
+  if (import.meta.env.DEV && typeof window !== 'undefined') {
+    const q = new URLSearchParams(window.location.search);
+    const type = q.get('lines'), lively = q.get('lively'), smooth = q.get('smooth'), height = q.get('lheight'), colours = q.get('lcol'), rest = q.get('lrest');
+    value = validateLines({ ...value, ...(type ? { type } : {}), ...(lively ? { lively: Number(lively) } : {}), ...(smooth ? { smooth: Number(smooth) } : {}), ...(height ? { height: Number(height) } : {}), ...(colours ? { colours } : {}), ...(rest ? { rest } : {}) });
+  }
+  return value;
 }
 function save(value: LinesSettings) { try { localStorage.setItem(LINES_KEY, JSON.stringify(value)); } catch { /* Storage may be unavailable. */ } }
 

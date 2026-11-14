@@ -275,6 +275,7 @@ const QUIET = [
   // unwind listen: the player clear of the lines, the Spotify card in the upper right, Up next in the
   // wing above the horizon, and nothing in the office lights slot, in each Listen state.
   { name: 'Listen, playing with the lines moving', agents: '3', hz: 'unwind', extra: '&audio=demo', checks: ['.u-listen', '.sp-card', '.u-next', '.u-line'], listen: true },
+  { name: 'Lines settings sheet', agents: '3', hz: 'unwind', extra: '&watch=mock&wtab=listen&wsheet=lines&lines=bars&audio=demo', checks: ['.w-sheet', '.ln-panel', '.ln-types', '.ln-slider', '.ln-colours', '.ln-actions'] },
   { name: 'Listen, nothing playing', agents: '3', hz: 'unwind', extra: '&media=none', checks: ['.u-listen', '.sp-card', '.u-line'], listen: true },
   { name: 'Listen, heavy library and long names', agents: 'ask', hz: 'unwind', extra: '&spotify=heavy&media=long', checks: ['.u-listen', '.sp-card', '.u-next', '.u-line'], listen: true },
   { name: 'Listen, the songs of a 2000 song playlist', agents: '3', hz: 'unwind', extra: '&spotify=heavy', click: '.sp-tile', checks: ['.sp-card', '.sp-songs', '.sp-shead'], listen: true },

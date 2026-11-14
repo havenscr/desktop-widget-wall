@@ -785,6 +785,14 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
   (`?hz=unwind&at=...&audio=demo`) the camera and sky stay frozen but the frame loop runs, so
   the echo and the pulse can be captured. A production bundle ignores the query.
 - **Ripple** (`echo.ts`). The echo lines of the range, drawn by the renderer's `echo` option.
+  - **Line settings** (`linesSettings.ts`, local storage key `wall2-lines`). One validated setting
+    applies everywhere. Type is Mountains, Bars, Ribbon, Sparks or Skyline. How lively and
+    Smoothness run from 0 to 100 (usual 50); Height runs from 20 to 220 px (usual 104); Colours are
+    Look, Floor, Sunset, Ice or Mint; Reflection is on by default; At rest is Ridge and levels or
+    Flat. Calm sets 22, 72 and 60 px; Dancing sets 50, 50 and 104 px; Wild sets 88, 28 and 180 px.
+    Defaults keep the original renderer path and its golden call log. New types use the same shaped
+    band history, draw above the horizon, clip every claimed picture box, and move to the front
+    canvas with the land. Their state arrays are allocated once.
   - Work and Home (3 lines): while music drives them, opacity `ea` times a smoothed loudness (bass
     weighted), `n`, `amp`, `cx` from the camera (`en`, `eamp`, `ecx`), `hs` 900.
   - Unwind (11 lines, the visualizer): while music drives them, opacity `ea` (0.9) raised to full,
@@ -1299,7 +1307,8 @@ switch sits. Leaving Watch (or Unwind) removes any video.
   layer group (`.w-layered`), under every control and line of text. While the player waits for a
   click, the sun comes forward (`layeredNow`). The left block, the Look switch and the Watch list
   card claim their own boxes as keep-clear (`useSkyKeepClear`). The claim goes with the
-  Watch panel (Listen, nothing on, another place, Zen). The gear beside the tabs opens a sheet over the right wing:
+  Watch panel (Listen, nothing on, another place, Zen). The gear on Watch and the matching gear on
+  Listen open a sheet over the right wing. Its Looks and Lines tabs keep the controls to one page:
   one look for everything (four picture tiles), or one each for videos and playlists, live
   streams and Twitch (four choices a row), at 540 px (`wall2-watch-look`, checked on read;
   values stored before the two new looks still read the same). The Look switch sets it too.

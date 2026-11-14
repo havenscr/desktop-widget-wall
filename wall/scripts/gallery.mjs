@@ -240,6 +240,15 @@ state('unwind', 'status chips, focus on', 'focus=long');
 state('unwind', 'music paused', 'media=paused');
 state('unwind', 'long track and artist', 'media=long');
 state('unwind', 'audio demo (levels moving)', 'audio=demo');
+// lines controls: every type, calm and wild movement, both rest looks, and the sheet.
+for (const type of ['mountains', 'bars', 'ribbon', 'sparks', 'skyline']) state('unwind', `lines: ${type}`, `audio=demo&lines=${type}`, TIMES.night);
+state('unwind', 'lines: calm', 'audio=demo&lines=mountains&lively=22&smooth=72&lheight=60', TIMES.night);
+state('unwind', 'lines: wild', 'audio=demo&lines=mountains&lively=88&smooth=28&lheight=180', TIMES.night);
+state('unwind', 'lines: flat at rest', 'lines=ribbon&lrest=flat', TIMES.night);
+state('unwind', 'lines: ridge and levels at rest', 'lines=ribbon&lrest=ridgelevels', TIMES.night);
+state('unwind', 'lines: settings sheet', 'watch=mock&wtab=listen&wsheet=lines&lines=bars', TIMES.night);
+state('work', 'lines: bars stay calm', 'audio=demo&lines=bars');
+state('home', 'lines: skyline stays calm', 'audio=demo&lines=skyline');
 for (const [name, extra] of [
   ['broken: media unavailable', 'media=off'],
   ['broken: calendar not set up', 'meet=off'],

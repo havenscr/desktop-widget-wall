@@ -32,7 +32,7 @@ function Choice({ value, onPick, label }: { value: LookId; onPick: (l: LookId) =
  * local storage (`wall2-watch-look`) and checked on read.
  */
 export function WatchSheet() {
-  const [page, setPage] = useState<'looks' | 'lines'>('looks');
+  const [page, setPage] = useState<'looks' | 'lines'>(() => import.meta.env.DEV && new URLSearchParams(window.location.search).get('wsheet') === 'lines' ? 'lines' : 'looks');
   const looks = useWatchStore((s) => s.looks);
   const saved = useWatchStore((s) => s.saved);
   const ref = useRef<HTMLDivElement>(null);
