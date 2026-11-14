@@ -49,13 +49,13 @@ pub fn select_arg(hex: &str) -> Option<String> {
     Some(format!("outlook:{hex}"))
 }
 
-pub fn valid_outlook_path(path: &Path, exists_as_file: bool) -> bool {
+pub fn valid_outlook_path(path: &Path, exists_as_file: impl FnOnce(&Path) -> bool) -> bool {
     let text = path.as_os_str().to_string_lossy();
-    valid_outlook_path_parts(&text, path.is_absolute(), exists_as_file)
+    valid_outlook_path_parts(&text, path.is_absolute(), || exists_as_file(path))
         && path.file_name().and_then(|name| name.to_str()).is_some_and(|name| name.eq_ignore_ascii_case("OUTLOOK.EXE"))
 }
 
-pub fn valid_outlook_path_parts(text: &str, absolute: bool, exists_as_file: bool) -> bool {
+pub fn valid_outlook_path_parts(text: &str, absolute: bool, exists_as_file: impl FnOnce() -> bool) -> bool {
     absolute
         && text.len() <= 260
         && !text.starts_with("\\\\")
@@ -63,7 +63,7 @@ pub fn valid_outlook_path_parts(text: &str, absolute: bool, exists_as_file: bool
         && !text.contains('"')
         && !text.chars().any(char::is_control)
         && text.rsplit(['\\', '/']).next().is_some_and(|name| name.eq_ignore_ascii_case("OUTLOOK.EXE"))
-        && exists_as_file
+        && exists_as_file()
 }
 
 pub fn open_with<Find, Launch, Open>(
@@ -149,7 +149,7 @@ mod windows_impl {
         registry_lookup_order().into_iter().find_map(|(root, view)| {
             let root = match root { RegistryRoot::Machine => HKEY_LOCAL_MACHINE, RegistryRoot::User => HKEY_CURRENT_USER };
             let path = PathBuf::from(registry_string(root, view)?);
-            valid_outlook_path(&path, path.is_file()).then_some(path)
+            valid_outlook_path(&path, |candidate| candidate.is_file()).then_some(path)
         })
     }
 }
@@ -200,10 +200,28 @@ mod tests {
 
     #[test]
     fn path_core_refuses_network_device_and_other_bad_paths() {
-        assert!(valid_outlook_path_parts(r"C:\Office\OUTLOOK.EXE", true, true));
+        assert!(valid_outlook_path_parts(r"C:\Office\OUTLOOK.EXE", true, || true));
         for bad in [r"\\server\share\OUTLOOK.EXE", r"\\?\C:\Office\OUTLOOK.EXE", r"\\.\C:\Office\OUTLOOK.EXE", "//server/share/OUTLOOK.EXE"] {
-            assert!(!valid_outlook_path_parts(bad, true, true), "accepted {bad}");
+            assert!(!valid_outlook_path_parts(bad, true, || panic!("checked disk for {bad}")), "accepted {bad}");
         }
+    }
+
+    #[test]
+    fn path_core_checks_shape_before_the_disk() {
+        let bad = [
+            (r"C:\Office\NOTEPAD.EXE".to_string(), true),
+            (format!(r"C:\{}\OUTLOOK.EXE", "a".repeat(260)), true),
+            (r#"C:\Office\"OUTLOOK.EXE""#.to_string(), true),
+            ("C:\\Office\\OUTLOOK.EXE\n".to_string(), true),
+            (r"C:\Office\OUTLOOK.EXE".to_string(), false),
+        ];
+        for (path, absolute) in bad {
+            assert!(!valid_outlook_path_parts(&path, absolute, || panic!("checked disk for {path:?}")));
+        }
+        let mut calls = 0;
+        assert!(valid_outlook_path_parts(r"C:\Office\OUTLOOK.EXE", true, || { calls += 1; true }));
+        assert_eq!(calls, 1);
+        assert!(!valid_outlook_path_parts(r"C:\Office\OUTLOOK.EXE", true, || false));
     }
 
     #[test]
@@ -255,7 +273,7 @@ mod tests {
 
     #[test]
     fn outlook_path_validation_core_is_exact() {
-        assert!(valid_outlook_path_parts(r"C:\Program Files\Microsoft Office\root\Office16\OUTLOOK.EXE", true, true));
+        assert!(valid_outlook_path_parts(r"C:\Program Files\Microsoft Office\root\Office16\OUTLOOK.EXE", true, || true));
         for bad in [
             r"Office16\OUTLOOK.EXE".to_string(),
             r#"C:\Office16\"OUTLOOK.EXE""#.to_string(),
@@ -264,8 +282,8 @@ mod tests {
             format!(r"C:\{}\OUTLOOK.EXE", "a".repeat(260)),
             "C:\\Office16\\OUTLOOK.EXE\n".to_string(),
         ] {
-            assert!(!valid_outlook_path_parts(&bad, !bad.starts_with("Office16"), true), "accepted {bad:?}");
+            assert!(!valid_outlook_path_parts(&bad, !bad.starts_with("Office16"), || true), "accepted {bad:?}");
         }
-        assert!(!valid_outlook_path_parts(r"C:\Office16\OUTLOOK.EXE", true, false));
+        assert!(!valid_outlook_path_parts(r"C:\Office16\OUTLOOK.EXE", true, || false));
     }
 }
