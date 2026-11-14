@@ -145,6 +145,7 @@
   flex: none;
 }
 .oa-run {
+  position: relative;
   flex: 0 1 auto;
   min-height: 0;
   overflow-y: auto;
@@ -302,6 +303,7 @@
 }
 .oa-more {
   flex: none;
+  height: 24px;
   padding-left: 28px;
   font: 600 20px/1.2 var(--body);
   color: var(--dim);
@@ -432,6 +434,8 @@
   color: var(--dim);
 }
 .oa-mark-open {
+  width: 40px;
+  padding: 0;
   margin-right: 16px;
 }
 .oa-keys {

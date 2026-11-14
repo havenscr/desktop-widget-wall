@@ -112,7 +112,7 @@ export function NotesCard() {
             </li>
           ))}
           <li className="oa-more" hidden={hidden.length === 0} {...tip(hidden.join('\n'))}>
-            {`+${hidden.length} more`}
+            {hidden.length > 0 ? `+${hidden.length} more` : ''}
           </li>
         </ul>
       )}

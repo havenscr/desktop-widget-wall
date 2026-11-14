@@ -759,6 +759,34 @@ const NO_TEXT = [
   ['unwind', 'Watt: on Watch', 'only where Watt stands changes'],
 ];
 
+// On Air: the show timer, the run of show from run-of-show.txt (`show=`), the notes, Mark a moment
+// (`marks=`) and the recording keys, with the stored timer (`oatimer=`) running, stopped or idle.
+const onAir = (extra) => url('work', TYPICAL_AT, `screen=onair&${extra}`);
+add('onair', 'on air: typical (running at 42:13)', onAir('show=typical&marks=2&oatimer=run'), true);
+add('onair', 'on air: stopped', onAir('show=typical&marks=2&oatimer=stopped'), true);
+add('onair', 'on air: no file', onAir('show=missing&marks=0&oatimer=idle'), true);
+add('onair', 'on air: refused file', onAir('show=refused&marks=0&oatimer=idle'), true);
+add('onair', 'on air: forty parts', onAir('show=forty&marks=2&oatimer=run'), true);
+add('onair', 'on air: long notes', onAir('show=long&marks=2&oatimer=run'), true);
+add('onair', 'on air: marks full', onAir('show=typical&marks=full&oatimer=run'), true, '.oa-mark-btn');
+add('onair', 'on air: one part', onAir('show=one&marks=0&oatimer=run'), true);
+add('onair', 'on air: read fails', onAir('show=down&marks=0&oatimer=idle'), true);
+add('onair', 'on air: recording, Stop lit', onAir('show=typical&marks=2&oatimer=run&rec=1'), true);
+add('onair', 'on air: reset asks again', onAir('show=typical&marks=2&oatimer=stopped'), true, '.oa-reset');
+EXPECT.push(
+  ['onair', 'on air: typical', ['42:1', 'Product demo', '7 min left', 'Point it at the real model first', 'Next: Audience questions, 15 min', '2 marked: 03:12, 09:40. Saved to marks.txt', 'Record 16:9', 'Hide screen', '!+1 more']],
+  ['onair', 'on air: stopped', ['42:13', 'stopped at', 'Start', 'Reset']],
+  ['onair', 'on air: no file', ['No run-of-show.txt yet', 'Open file', '## Part name | 10', 'None yet today']],
+  ['onair', 'on air: refused file', ['run-of-show.txt is over 32 KB', 'Fix the file']],
+  ['onair', 'on air: forty parts', ['Segment 40: Questions', 'Marathon stream', '4 lines skipped']],
+  ['onair', 'on air: long notes', ['An extremely long part name', 'Note 12: walk through', ' more']],
+  ['onair', 'on air: marks full', 'marks.txt is full; move it aside'],
+  ['onair', 'on air: one part', ['This is the last part', 'Product demo']],
+  ['onair', 'on air: read fails', 'Could not read run-of-show.txt'],
+  ['onair', 'on air: recording', ['Recording00:', 'Mark a moment']],
+  ['onair', 'on air: reset asks again', 'Reset? Click again'],
+);
+
 const matches = (st, [sc, prefix, , exact]) => sc === st.screen && (exact === true ? st.name === prefix : st.name.startsWith(prefix));
 const missing = [];
 for (const st of STATES) {

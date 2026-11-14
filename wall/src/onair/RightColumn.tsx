@@ -1,4 +1,4 @@
-import { IconBookmark, IconDeviceDesktopOff, IconPlayerRecordFilled, IconPlayerStopFilled, IconScreenshot, type Icon } from '@tabler/icons-react';
+import { IconBookmark, IconDeviceDesktopOff, IconFileText, IconPlayerRecordFilled, IconPlayerStopFilled, IconScreenshot, type Icon } from '@tabler/icons-react';
 import { useSignalStore } from '../signals/store';
 import { tip } from '../ui/HoverTip';
 import { libKeyKind } from '../work/keyKind';
@@ -26,7 +26,7 @@ function MarkTile() {
           if (e.detail > 1) return;
           void mark();
         }}
-        {...tip('Write the show time and the current part to marks.txt, for cutting Shorts later. A second click within a second counts once.')}
+        {...tip('Write the show time and the current part to marks.txt, for cutting Shorts later. The count and times under it are today\'s. A second click within a second counts once.')}
       >
         <span className="oa-mark-ico" aria-hidden="true">
           <IconBookmark size={26} />
@@ -38,8 +38,8 @@ function MarkTile() {
           </span>
         </span>
       </button>
-      <button type="button" className="oa-btn sm oa-mark-open" onClick={() => void open('marks')} {...tip('Open marks.txt in the default editor: one line a mark, the local time, the show time and the part')}>
-        Open marks.txt
+      <button type="button" className="oa-btn oa-mark-open" aria-label="Open marks.txt" onClick={() => void open('marks')} {...tip('Open marks.txt in the default editor: one line a mark, with the local time, the show time and the part')}>
+        <IconFileText size={20} aria-hidden="true" />
       </button>
     </div>
   );

@@ -7,6 +7,7 @@ import { registerHomeMocks } from './home';
 import { registerMeetMocks } from './meet';
 import { registerMediaMocks } from './media';
 import { registerOmniMocks } from './omni';
+import { registerOnAirMocks } from './onair';
 import { registerPowerMocks } from './power';
 import { registerSonosMocks } from './sonos';
 import { registerSignalMocks } from './signals';
@@ -36,6 +37,7 @@ export function registerDevMocks(): void {
   registerSpotifyMocks();
   registerWatchMocks();
   registerDaysMocks();
+  registerOnAirMocks();
   mocks.set('wall2_build_info', () => ({ commit: 'dev', builtAt: '2026-11-13T09:05Z' }));
   registerToolsMocks();
 }

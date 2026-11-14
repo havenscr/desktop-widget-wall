@@ -116,7 +116,7 @@ export function RunOfShow({ now }: { now: number }) {
     const row = listRef.current?.querySelector<HTMLElement>('[aria-current="step"]');
     const list = listRef.current;
     if (!row || !list) return;
-    if (row.offsetTop < list.scrollTop || row.offsetTop + row.offsetHeight > list.scrollTop + list.clientHeight) list.scrollTop = Math.max(0, row.offsetTop - 44);
+    if (row.offsetTop < list.scrollTop || row.offsetTop + row.offsetHeight > list.scrollTop + list.clientHeight) list.scrollTop = Math.max(0, row.offsetTop - row.offsetHeight);
   }, [current, parts.length]);
   const title = show?.state === 'ok' ? show.title : null;
   return (

@@ -195,7 +195,7 @@ export function markLine(m: MarkResult | null): string {
   if (!m) return 'Saved to marks.txt';
   if (m.today === 0) return 'None yet today. Saved to marks.txt';
   const last = m.last.length ? `: ${m.last.join(', ')}` : '';
-  return `${m.today} marked today${last}. Saved to marks.txt`;
+  return `${m.today} marked${last}. Saved to marks.txt`;
 }
 
 /** A Show answer checked before use (a broken answer is treated as a failed read). */
