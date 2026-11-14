@@ -250,6 +250,7 @@ state('unwind', 'watch polish: sun, playlist', `${WM}&wlist=many&wlook=sun&wplay
 state('unwind', 'watch polish: sun, nothing reported yet', `${WM}&wlist=three&wlook=sun&wplay=0&wstate=silent`, TIMES.night);
 state('unwind', 'watch polish: whole sky, autoplay refused', `${WM}&wlist=three&wlook=sky&wplay=0&wstate=refused`, TIMES.night);
 state('unwind', 'watch polish: Twitch not started hint, drive-in', `${WM}&wlist=three&wlook=drivein&wplay=2&wstate=refused`, TIMES.night);
+state('unwind', 'watch polish: leave banner over the drive-in', `${WM}&wlist=three&wlook=drivein&wplay=0&leave=12`, TIMES.night);
 state('unwind', 'watch polish: nothing on, whole sky chosen', `${WM}&wlist=three&wlook=sky`, TIMES.night);
 
 // The Tools drawer: opened on load (`tools=1`), over each place and in its hard states.
@@ -453,6 +454,7 @@ const EXPECT = [
   ['unwind', 'watch polish: whole sky, Twitch', ['Open on Twitch', '!12:34']],
   ['unwind', 'watch polish: sun, playlist', ['12:34', 'The sun']],
   ['unwind', 'watch polish: sun, nothing reported yet', ['Playing on the wall', '!12:34', 'Open in YouTube']],
+  ['unwind', 'watch polish: leave banner', ['Open in YouTube', 'Drive-in']],
   ['unwind', 'watch polish: nothing on', ['Nothing on', 'Whole sky', 'Drive-in']],
   ['unwind', 'watch polish: whole sky, autoplay refused', ['Click the video to start', 'Waiting for a click on the video']],
   ['unwind', 'watch polish: Twitch not started hint, drive-in', ['Not started? Click the video', 'Live on the wall', 'Open on Twitch']],
