@@ -1,4 +1,4 @@
-import { laneWorks, needsYouCount, type Lane, type OmniSummary } from '../agents/model';
+import { cards, laneWorks, needsYouCount, type Lane, type OmniSummary } from '../agents/model';
 import { playerProcesses, procName } from '../music/players';
 import type { DayEvent } from '../ribbon/model';
 import type { WeatherReading } from '../weather/model';
@@ -87,6 +87,7 @@ export function firstTomorrow(events: readonly DayEvent[], now: number): DayEven
 export interface StatusSummary {
   stale?: boolean;
   lanes: ReadonlyArray<{ state: string; id?: string; waiting?: boolean }>;
+  sessionsList?: ReadonlyArray<Lane> | null;
   yourMove: { total: number; first?: { sessionId?: string } | null };
   /** The helper can open a chat (`wall2_open_session`). */
   linksAvailable?: boolean;
@@ -144,7 +145,7 @@ export function statusParts(focus: FocusSeen, summary: StatusSummary | null): St
   if (summary && summary.stale !== true) {
     // The same rules Work and Dream use: a lane that waits on the owner is not running, and a
     // waiting lane counts as needing the owner even when the helper's your-move total is lower.
-    const lanes = summary.lanes as unknown as Lane[];
+    const lanes = cards({ lanes: summary.lanes as Lane[], sessionsList: summary.sessionsList as Lane[] | null | undefined ?? null });
     const running = lanes.filter(laneWorks).length;
     if (running > 0) parts.push({ kind: 'running', text: `${running} ${running === 1 ? 'agent' : 'agents'} still running.` });
     const total = summary.yourMove.total;
