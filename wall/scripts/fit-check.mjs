@@ -28,7 +28,7 @@
 // CI does not run this; run it by hand before a layout change is handed over.
 //
 //   WALL_CHROME=/path/to/chrome-or-headless-shell npm --prefix wall run fit-check
-//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, header, deck, tiles, picker, chips, heading, zenhint, strip, fold, drawer, rows, handle, sky, floor, sun, tools, toolsnames, meetfill, meetempty, fy-height, key-edge, hide-pill, hide-note, leave-band, rec-chip, rec-height, tile-height, tile-icon, tile-iconbox, drawer-scrim, lwbuttons, lwoverlap, lwsquare, lwring, lwtemp, lwround, sky-front, sky-moon, sky-always, sky-crop, sky-seam, tower-over, tower-wide, tower-box, tower-switch, holo-big, holo-noblend, holo-beam, holo-take, tile-text, listen-player, listen-card, listen-slot, listen-next, watch-rest, watch-title, watch-away, watch-mark, lip-cover, lip-band, lip-scrim, row-parts, over-hatch, row-type)
+//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, header, deck, tiles, picker, chips, heading, zenhint, strip, fold, drawer, rows, handle, sky, floor, sun, tools, toolsnames, meetfill, meetempty, fy-height, key-edge, hide-pill, hide-note, leave-band, rec-chip, rec-height, tile-height, tile-icon, tile-iconbox, drawer-scrim, lwbuttons, lwoverlap, lwsquare, lwring, lwtemp, lwround, sky-front, sky-moon, sky-always, sky-crop, sky-seam, tower-over, tower-wide, tower-box, tower-switch, holo-big, holo-noblend, holo-beam, holo-take, tile-text, listen-player, listen-card, listen-slot, listen-next, lines-size, lines-control, lines-text, lines-clip, watch-rest, watch-title, watch-away, watch-mark, lip-cover, lip-band, lip-scrim, row-parts, over-hatch, row-type)
 //   npm --prefix wall run fit-check -- --self-test
 //
 // WALL_CHROME (or the first argument that is not a flag) is a Chromium or
@@ -148,6 +148,11 @@ const EXPECT = {
   'sky-always': /^ *FAIL sky layers: 1 front canvas with no look behind the land/m,
   'sky-crop': /^ *FAIL sky layers: the whole sky picture is at -?\d+,-?\d+,\d+, not inside the stage near its top/m,
   'sky-seam': /^ *FAIL sky layers: the pixel proof at \w+: \d+ pixels differ by more than 2 levels/m,
+  // lines controls
+  'lines-size': /^ *FAIL lines: the sheet is \d+ px tall/m,
+  'lines-control': /^ *FAIL lines: control ".*" is [\d.]+ px tall/m,
+  'lines-text': /^ *FAIL lines: text under 16 px /m,
+  'lines-clip': /^ *FAIL lines: a new type draws \d+ pixels inside the video's box/m,
 };
 const OVERFLOWS = {
   left: '.work .left-wing { transform: translateX(-200px); }',
@@ -262,9 +267,16 @@ const OVERFLOWS = {
   'sky-crop': '.w-sky .w-screen { transform: scale(1.4); }',
   // The pixel proof: the front canvas a shade brighter than the main one (a seam between the two).
   'sky-seam': '.horizon-front { filter: brightness(1.04) !important; }',
+  // lines controls: a 900 px panel, a 24 px chip, a 12 px label, the clip removed (a URL knob, LINES_BREAK_Q).
+  'lines-size': '.ln-panel { height: 900px !important; }',
+  'lines-control': '.ln-chips button { height: 24px !important; }',
+  'lines-text': '.ln-label { font-size: 12px !important; }',
+  'lines-clip': '',
 };
 // sky layers: breaks that need the horizon's development knobs in the URL, not a stylesheet.
 const SKY_BREAK_Q = { 'sky-moon': '&skymoon=300,200,44', 'sky-always': '&sky=front' };
+// lines controls: the clip around the picture boxes left out (a development knob of the horizon).
+const LINES_BREAK_Q = { 'lines-clip': '&lclip=0' };
 if (flag('self-test')) {
   const script = fileURLToPath(import.meta.url);
   let missed = 0;
@@ -347,6 +359,11 @@ const QUIET = [
   // unwind listen: the player clear of the lines, the Spotify card in the upper right, Up next in the
   // wing above the horizon, and nothing in the office lights slot, in each Listen state.
   { name: 'Listen, playing with the lines moving', agents: '3', hz: 'unwind', extra: '&audio=demo', checks: ['.u-listen', '.sp-card', '.u-next', '.u-line'], listen: true },
+  // lines controls: the sheet's Lines side from Listen (its size, every control inside it, 32 px controls,
+  // 16 px text), and two new types under the drive-in with a video showing (nothing inside its box).
+  { name: 'Lines settings sheet', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=none&wtab=listen&wsheet=one&lines=bars&audio=demo', checks: ['.w-sheet', '.ln-panel', '.ln-types', '.ln-swatches', '.ln-reset', '.ln-foot'], linesSheet: true },
+  { name: 'Lines, bars under the drive-in', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=drivein&wplay=0&audio=demo&lines=bars&lineprobe=1', checks: ['.w-screen'], linesProbe: true },
+  { name: 'Lines, skyline under the drive-in', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=drivein&wplay=0&audio=demo&lines=skyline&lineprobe=1', checks: ['.w-screen'], linesProbe: true },
   { name: 'Listen, nothing playing', agents: '3', hz: 'unwind', extra: '&media=none', checks: ['.u-listen', '.sp-card', '.u-line'], listen: true },
   { name: 'Listen, heavy library and long names', agents: 'ask', hz: 'unwind', extra: '&spotify=heavy&media=long', checks: ['.u-listen', '.sp-card', '.u-next', '.u-line'], listen: true },
   { name: 'Listen, the songs of a 2000 song playlist', agents: '3', hz: 'unwind', extra: '&spotify=heavy', click: '.sp-tile', checks: ['.sp-card', '.sp-songs', '.sp-shead'], listen: true },
@@ -1380,6 +1397,36 @@ try {
     })();
     // look tiles: the labels in the settings sheet keep 16 px at least (the wall's smallest text).
     const tileText = [...document.querySelectorAll('.w-tile')].filter((t) => parseFloat(getComputedStyle(t).fontSize) < 16).map((t) => 'watch polish: look tile "' + (t.textContent || '').trim() + '" has ' + getComputedStyle(t).fontSize + ' text (16 px at least)');
+    // lines controls: the Lines side of the sheet stays inside the stage and 680 px with every control inside
+    // it, no control under 32 px tall and no text under 16 px; a new type draws nothing inside a picture box.
+    const lines = [];
+    if (new URLSearchParams(location.search).get('linescheck')) {
+      const sheet = document.querySelector('.w-sheet.ln-sheet');
+      if (!sheet) lines.push('lines: the sheet is not open on its Lines side');
+      else {
+        const s = sheet.getBoundingClientRect();
+        if (s.height > 680.5 || s.top < -0.5 || s.bottom > 720.5) lines.push('lines: the sheet is ' + Math.round(s.height) + ' px tall, y ' + Math.round(s.top) + ' to ' + Math.round(s.bottom) + ' (680 at most, inside the stage)');
+        for (const el of sheet.querySelectorAll('.ln-panel button, .ln-panel input, .ln-pages button')) {
+          const r = el.getBoundingClientRect();
+          const name = el.getAttribute('aria-label') || el.textContent.trim() || el.id;
+          if (r.left < s.left - 0.5 || r.right > s.right + 0.5 || r.top < s.top - 0.5 || r.bottom > s.bottom + 0.5) lines.push('lines: control "' + name + '" is cut by the sheet');
+          if (r.height < 31.5) lines.push('lines: control "' + name + '" is ' + Math.round(r.height * 10) / 10 + ' px tall (32 at least)');
+        }
+        for (const el of [sheet.querySelector('.ln-pages'), sheet.querySelector('.ln-panel'), ...sheet.querySelectorAll('.ln-pages *, .ln-panel *')]) {
+          if (!el || ![...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim())) continue;
+          const fs = parseFloat(getComputedStyle(el).fontSize);
+          if (fs < 15.5) lines.push('lines: text under 16 px in "' + el.textContent.trim().slice(0, 30) + '" (' + fs + ' px)');
+        }
+      }
+    }
+    if (new URLSearchParams(location.search).get('lineprobe')) {
+      const probe = document.querySelector('canvas.horizon-canvas:not(.horizon-front)')?.dataset.lineProbe;
+      const [inside, drawn, boxes] = (probe || '0,0,0').split(',').map(Number);
+      if (!probe) lines.push('lines: the probe reported nothing (no new type was drawn)');
+      else if (!boxes) lines.push('lines: no picture box was claimed');
+      else if (!drawn) lines.push('lines: the new type drew nothing');
+      else if (inside > 0) lines.push("lines: a new type draws " + inside + " pixels inside the video's box");
+    }
     // watch behaviour: \`wbcheck=rest\`: the controls are faded, none of them takes the pointer at its
     // centre, and the dimmed title stays clear of the video's box. \`wbcheck=away\`: on another place
     // the frame is still there, its layer fully transparent or off the stage, no point of its box
@@ -1436,7 +1483,7 @@ try {
       }
       return fails;
     })();
-    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, meetOut, strip, opened, watchPolish, skyLayers, thCheck, tileText, listen, watchBehaviour });
+    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, meetOut, strip, opened, watchPolish, skyLayers, thCheck, tileText, listen, lines, watchBehaviour });
     document.body.appendChild(pre);
   }, new URLSearchParams(location.search).get('card') ? 7000 : 3000);</script>`;
   const broken = overflow ? `<style>${OVERFLOWS[overflow]}</style>` : '';
@@ -1520,6 +1567,11 @@ try {
     'sky-moon': (v) => v.name === 'Sky layers, Listen at night, the moon in open sky',
     'sky-always': (v) => v.name === 'Sky layers, Listen at night, the moon in open sky',
     'sky-crop': (v) => v.name === 'Sky layers, whole sky at night',
+    // lines controls
+    'lines-size': (v) => v.name === 'Lines settings sheet',
+    'lines-control': (v) => v.name === 'Lines settings sheet',
+    'lines-text': (v) => v.name === 'Lines settings sheet',
+    'lines-clip': (v) => v.name === 'Lines, bars under the drive-in',
   };
   const breakOn = BREAK_ON[overflow] ? VARIANTS.filter(BREAK_ON[overflow]) : VARIANTS.slice(0, 1);
   /** keys style: the Now row's height on each page that has one, compared after every state ran. */
@@ -1530,7 +1582,7 @@ try {
   const skyMoons = [];
   for (const v of overflow ? breakOn : VARIANTS) {
     console.log(`${v.name} (${v.q}):`);
-    const url = `${pathToFileURL(page).href}${v.q}${v.sky ? `&skycheck=${v.sky}` : ''}${overflow && SKY_BREAK_Q[overflow] ? SKY_BREAK_Q[overflow] : ''}&checks=${encodeURIComponent(v.checks.join('|'))}${v.click ? `&click=${encodeURIComponent(v.click)}` : ''}${v.card ? '&card=1' : ''}${v.hits ? `&hits=${encodeURIComponent(v.hits.join('|'))}` : ''}${v.noHit ? `&nohit=${encodeURIComponent(v.noHit)}` : ''}${v.listen ? '&listen=1' : ''}${v.th ? `&th=${v.th}` : ''}${v.wb ? `&wbcheck=${v.wb}` : ''}`;
+    const url = `${pathToFileURL(page).href}${v.q}${v.sky ? `&skycheck=${v.sky}` : ''}${overflow && SKY_BREAK_Q[overflow] ? SKY_BREAK_Q[overflow] : ''}${overflow && LINES_BREAK_Q[overflow] ? LINES_BREAK_Q[overflow] : ''}&checks=${encodeURIComponent(v.checks.join('|'))}${v.click ? `&click=${encodeURIComponent(v.click)}` : ''}${v.card ? '&card=1' : ''}${v.hits ? `&hits=${encodeURIComponent(v.hits.join('|'))}` : ''}${v.noHit ? `&nohit=${encodeURIComponent(v.noHit)}` : ''}${v.listen ? '&listen=1' : ''}${v.linesSheet ? '&linescheck=1' : ''}${v.th ? `&th=${v.th}` : ''}${v.wb ? `&wbcheck=${v.wb}` : ''}`;
     const dom = await runChrome(
       chrome,
       // Headless Chromium keeps 87 px of the window for itself, so 807 gives a 2560 by 720 viewport.
@@ -1543,7 +1595,7 @@ try {
       process.exit(1);
     }
     const text = m[1].replaceAll('&quot;', '"').replaceAll('&amp;', '&');
-    const { res, page: doc, overlaps, cut, gaps, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, meetOut, strip, opened, watchPolish, skyLayers, thCheck, tileText, listen, watchBehaviour } = JSON.parse(text);
+    const { res, page: doc, overlaps, cut, gaps, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, meetOut, strip, opened, watchPolish, skyLayers, thCheck, tileText, listen, lines, watchBehaviour } = JSON.parse(text);
     // watch behaviour
     for (const f of watchBehaviour) console.log(`  FAIL ${f}`);
     if (watchBehaviour.length) failed = true;
@@ -1635,6 +1687,11 @@ try {
     for (const l of listen) console.log(`  FAIL ${l}`);
     if (listen.length) failed = true;
     else if (v.listen) console.log('  ok   listen: the player ends above y 300 left of the card, the card in x 1740 to 2540 above y 510, Up next in the wing above the horizon, the office lights slot empty');
+    // lines controls
+    for (const l of lines) console.log(`  FAIL ${l}`);
+    if (lines.length) failed = true;
+    else if (v.linesSheet) console.log('  ok   lines: the sheet fits the stage, every control inside it and 32 px tall, no text under 16 px');
+    else if (v.linesProbe) console.log("  ok   lines: the new type drew and nothing inside the video's box");
     for (const t of [...toolsOut, ...meetOut]) console.log(`  FAIL ${t}`);
     if (toolsOut.length || meetOut.length) failed = true;
     else if (v.q.includes('tools=')) console.log('  ok   the drawer stays inside x 1700 to 2560 and y 0 to 720, clear of the rail, no cut text without a tooltip');
