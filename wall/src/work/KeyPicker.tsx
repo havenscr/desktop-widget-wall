@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { tip } from '../ui/HoverTip';
 import { KeyIcon } from './keyIcons';
-import { searchLibrary, type LibGroup, type LibKey } from './libraryModel';
+import { MAX_PINS, searchLibrary, type LibGroup, type LibKey } from './libraryModel';
 import { pickerBottomY, stageTopOf, type KeyInfo } from './keysModel';
 import { overlayOwnsPointer } from '../ribbon/DrawerScrim';
 
@@ -25,6 +25,7 @@ export function KeyPicker({
   onChoose,
   onReset,
   onClose,
+  adding = false,
 }: {
   lib: LibGroup[];
   filePins: KeyInfo[];
@@ -34,6 +35,7 @@ export function KeyPicker({
   onChoose: (ref: string) => void;
   onReset: () => void;
   onClose: () => void;
+  adding?: boolean;
 }) {
   const [query, setQuery] = useState('');
   const box = useRef<HTMLDivElement | null>(null);
@@ -104,7 +106,13 @@ export function KeyPicker({
 
   const current = pins[slot] ?? null;
   return (
-    <div className="pk" ref={box} role="dialog" style={height !== null ? { bottom: 'auto', height } : undefined} aria-label={`Choose the key for slot ${slot + 1}`} onKeyDown={onKeyDown}>
+    <div className="pk" ref={box} role="dialog" style={height !== null ? { bottom: 'auto', height } : undefined} aria-label={adding ? 'Add a key to Always here' : `Choose the key for slot ${slot + 1}`} onKeyDown={onKeyDown}>
+      {adding && (
+        <div className="pk-purpose">
+          <span>Add a key to Always here</span>
+          <em>key {slot + 1} of {MAX_PINS}</em>
+        </div>
+      )}
       <div className="pk-top">
         <input
           ref={search}

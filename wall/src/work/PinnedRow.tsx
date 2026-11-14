@@ -1,6 +1,7 @@
-import { IconPin } from '@tabler/icons-react';
+import { IconPin, IconPlus } from '@tabler/icons-react';
 import { useEffect, useState, type KeyboardEvent, type MouseEvent } from 'react';
 import { invoke } from '../bridge/tauri';
+import { overlayOwnsPointer } from '../ribbon/DrawerScrim';
 import { tip } from '../ui/HoverTip';
 import { useVisible } from '../ui/useVisible';
 import { isLayoutAction, layoutOffReason, useArrangeStatus } from './arrangeStatus';
@@ -10,13 +11,15 @@ import { KeyIcon } from './keyIcons';
 import { libIndex, pinKind } from './keyKind';
 import { joinKeys, loadKeys, useKeysFeedStore } from './keysFeed';
 import { KeyPicker } from './KeyPicker';
+import { KeyMenu, KeyMenuButton, type KeyMenuAction } from './KeyMenu';
 import { keyboardOnMouseKey, useKeyPress } from './keyPress';
-import { allKeys, FALLBACK_PINS, MAX_PINS, parsePins, PINS_KEY, readPinsRaw, resolvePin, savePins, serializePins, swapPin, type LibGroup, type PinView } from './libraryModel';
+import { allKeys, FALLBACK_PINS, MAX_PINS, parsePins, PINS_CHANGED_EVENT, PINS_KEY, readPinsRaw, removePin, resolvePin, savePins, serializePins, swapPin, type LibGroup, type PinView } from './libraryModel';
+import { tileSizeClass } from './keysModel';
 import { useBrief } from './useBrief';
 import { runWallAction } from './wallActions';
 
 /** Always five columns, so a pinned tile is the size of a Now tile whatever the count. */
-const columns = (_n: number) => MAX_PINS;
+const columns = (n: number) => Math.min(MAX_PINS, Math.max(1, n));
 
 /** The library, read once; null while it loads or when it cannot be read. */
 function useLibrary(): { lib: LibGroup[] | null; failed: boolean; retry: () => void } {
@@ -59,7 +62,13 @@ export function PinnedRow() {
   const [clock, setClock] = useState(() => Date.now());
   const [raw, setRaw] = useState<string | null>(readPinsRaw);
   const [picker, setPicker] = useState<number | null>(null);
+  const [menu, setMenu] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    const changed = () => setRaw(readPinsRaw());
+    window.addEventListener(PINS_CHANGED_EVENT, changed);
+    return () => window.removeEventListener(PINS_CHANGED_EVENT, changed);
+  }, []);
 
   // Hide Undo when its minute is up.
   useEffect(() => {
@@ -86,8 +95,7 @@ export function PinnedRow() {
   if (read.status === 'absent') return null;
 
   const undoShown = applied !== null && applied.until > clock;
-  const choose = (slot: number, ref: string) => {
-    const next = swapPin(pins.map((p) => p.ref), slot, ref);
+  const keep = (next: string[]) => {
     const text = serializePins(next, filePins);
     try {
       localStorage.setItem(PINS_KEY, text);
@@ -95,6 +103,10 @@ export function PinnedRow() {
       // Storage may be blocked; the choice then lasts until the page reloads.
     }
     setRaw(text);
+  };
+  const choose = (slot: number, ref: string) => {
+    const next = swapPin(pins.map((p) => p.ref), slot, ref);
+    keep(next);
     setPicker(null);
   };
   const reset = () => {
@@ -102,15 +114,19 @@ export function PinnedRow() {
     setRaw(null);
     setPicker(null);
   };
-  const openPicker = (slot: number) => setPicker(slot);
+  const openPicker = (slot: number) => {
+    if (overlayOwnsPointer()) return;
+    setMenu(null);
+    setPicker(slot);
+  };
   const onContext = (slot: number) => (e: MouseEvent) => {
     e.preventDefault();
-    openPicker(slot);
+    if (!overlayOwnsPointer()) setMenu(slot);
   };
   const onKey = (slot: number, action: string | null) => (e: KeyboardEvent) => {
     if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) {
       e.preventDefault();
-      openPicker(slot);
+      if (!overlayOwnsPointer()) setMenu(slot);
       return;
     }
     onKeyDown(action)(e);
@@ -161,7 +177,7 @@ export function PinnedRow() {
           )}
         </span>
       </div>
-      {pins.length === 0 ? (
+      {pins.length === 0 && lib === null ? (
         <div className="s deck-quiet row sb" {...tip(libFailed ? 'The key library could not be read. Try again, or restart the wall if this stays.' : 'Reading the key library')}>
           <span>{libFailed ? 'Keys not available' : lib === null ? 'Loading keys' : 'No keys pinned'}</span>
           {libFailed && (
@@ -171,24 +187,28 @@ export function PinnedRow() {
           )}
         </div>
       ) : (
-        <div className="deck-tiles pin-tiles" style={{ gridTemplateColumns: `repeat(${columns(pins.length)}, minmax(0, 1fr))` }}>
+        <div className={`deck-tiles pin-tiles ${tileSizeClass(pins.length + (pins.length < MAX_PINS ? 1 : 0))}`} style={{ gridTemplateColumns: `repeat(${columns(pins.length + (pins.length < MAX_PINS ? 1 : 0))}, minmax(0, 1fr))` }}>
           {pins.map((p, i) => {
             const layoutOff = isLayoutAction(p.action) && arrange !== true;
             const sel = undoShown && applied?.action === p.action && p.action !== null;
             const where = { name: p.group ?? 'the app in front', general: p.group === null };
+            const actions: KeyMenuAction[] = [
+              { id: 'replace', label: 'Replace with another key' },
+              { id: 'remove', label: 'Remove from Always here' },
+              { id: 'file', label: 'Edit keys file', note: 'keys.json' },
+            ];
             return (
+              <div className="key-tile-wrap" key={p.ref}>
               <button
-                key={p.ref}
                 type="button"
                 className={`deck-tile key-tile pin-tile${layoutOff ? ' off' : ''}${sel ? ' sel' : ''}`}
                 aria-label={p.label}
                 data-kind={layoutOff ? undefined : kindOf(p)}
                 aria-disabled={layoutOff || undefined}
-                aria-haspopup="dialog"
                 {...tip(
                   layoutOff
                     ? layoutOffReason(arrange)
-                    : `${p.label}${p.group ? ` (${p.group})` : ''}${p.kind === 'check' ? ', a shortcut to check on your PC' : ''}. ${p.how}. Right-click to change this key.`,
+                    : `${p.label}${p.group ? ` (${p.group})` : ''}${p.kind === 'check' ? ', a shortcut to check on your PC' : ''}. ${p.how}. Right-click, or the button in its corner, for more.`,
                 )}
                 onContextMenu={onContext(i)}
                 onKeyDown={onKey(i, p.action)}
@@ -202,12 +222,31 @@ export function PinnedRow() {
                 <KeyIcon name={p.icon} size={20} />
                 <span className="deck-lbl">{p.label}</span>
               </button>
+              <KeyMenuButton label={p.label} open={menu === i} onOpen={() => setMenu(i)} />
+              {menu === i && (
+                <KeyMenu
+                  title={`${p.label}, in Always here`}
+                  actions={actions}
+                  onClose={() => setMenu(null)}
+                  onChoose={(id) => {
+                    if (id === 'replace') openPicker(i);
+                    if (id === 'remove') keep(removePin(pins.map((pin) => pin.ref), i));
+                  }}
+                />
+              )}
+              </div>
             );
           })}
+          {pins.length < MAX_PINS && (
+            <button type="button" className="deck-tile key-tile add-key" aria-label="Add a key" {...tip(`Add a key to Always here. ${pins.length} of ${MAX_PINS} used.`)} onClick={() => openPicker(pins.length)}>
+              <IconPlus size={20} aria-hidden="true" />
+              <span className="deck-lbl">Add a key</span>
+            </button>
+          )}
         </div>
       )}
       {picker !== null && lib && (
-        <KeyPicker lib={lib} filePins={filePins} pins={pins.map((p) => p.ref)} slot={picker} onChoose={(ref) => choose(picker, ref)} onReset={reset} onClose={() => setPicker(null)} />
+        <KeyPicker lib={lib} filePins={filePins} pins={pins.map((p) => p.ref)} slot={picker} adding={picker >= pins.length} onChoose={(ref) => choose(picker, ref)} onReset={reset} onClose={() => setPicker(null)} />
       )}
     </section>
   );

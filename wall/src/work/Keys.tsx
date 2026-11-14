@@ -7,7 +7,9 @@ import {
   IconVideo,
   type Icon,
 } from '@tabler/icons-react';
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type WheelEvent } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type WheelEvent } from 'react';
+import { invoke } from '../bridge/tauri';
+import { overlayOwnsPointer } from '../ribbon/DrawerScrim';
 import { tip } from '../ui/HoverTip';
 import { useVisible } from '../ui/useVisible';
 import { useArrangeStatus, layoutOffReason, isLayoutAction } from './arrangeStatus';
@@ -15,6 +17,7 @@ import { runForYou, useForYou, type ForYouItem, type ForYouKind } from './forYou
 import { useGuard } from './useGuard';
 import { ActionError } from './wallActions';
 import { KeyIcon } from './keyIcons';
+import { KeyMenu, KeyMenuButton, type KeyMenuAction } from './KeyMenu';
 import { setKeyKind, type KeyKind } from './keyKind';
 import { useLibIndex } from './keyLibrary';
 import { joinKeys, KEYS_POLL_MS, loadKeys, useKeysFeedStore } from './keysFeed';
@@ -36,11 +39,13 @@ import {
   saveMode,
   sendReason,
   stepPage,
+  tileSizeClass,
   type KeysSummary,
   type Mode,
   type Page,
   type SetInfo,
 } from './keysModel';
+import { MAX_PINS, parsePins, PINS_CHANGED_EVENT, PINS_KEY, readPinsRaw, serializePins, type LibGroup } from './libraryModel';
 import { keyboardOnMouseKey, useKeyPress } from './keyPress';
 import { useBrief } from './useBrief';
 import { RecordingKeyRow } from '../signals/RecordingKeyRow';
@@ -62,7 +67,7 @@ export const NEW_AGAIN_MS = 10 * 60_000;
 const FORGET_MS = 24 * 60 * 60_000;
 
 /** Columns in the Now row: always five, so every tile is the size of an Always here tile. */
-export const columnsFor = (_n: number): number => KEYS_PER_ROW;
+export const columnsFor = (n: number): number => Math.min(KEYS_PER_ROW, Math.max(1, n));
 /** The stage y of the top of the main area (the right wing's top). */
 const WING_TOP = 20;
 
@@ -162,6 +167,16 @@ export function Keys() {
   const tilesRef = useRef<HTMLDivElement | null>(null);
   const headRef = useRef<HTMLDivElement | null>(null);
   const [headFit, setHeadFit] = useState<{ key: string; level: HeadFit }>({ key: '', level: 0 });
+  const [menu, setMenu] = useState<number | null>(null);
+  const [library, setLibrary] = useState<LibGroup[] | null>(null);
+  useEffect(() => {
+    let live = true;
+    void invoke<LibGroup[]>('wall2_keys_library').then((groups) => live && setLibrary(Array.isArray(groups) ? groups : null), () => live && setLibrary(null));
+    return () => {
+      live = false;
+    };
+  }, []);
+  useEffect(() => setMenu(null), [mode, chunk, takeUntil, recording]);
 
   const setMode = useCallback((m: Mode) => {
     setModeState(m);
@@ -199,7 +214,7 @@ export function Keys() {
   useEffect(() => {
     const down = (e: Event) => {
       if (!rowRef.current?.contains(e.target as Node)) return;
-      if (e.type === 'keydown' && (e as KeyboardEvent).repeat) return;
+      if (e.type === 'keydown' && (e as globalThis.KeyboardEvent).repeat) return;
       inFlight.current = 1;
     };
     const up = () => {
@@ -456,15 +471,46 @@ export function Keys() {
   return (
     <section className="keys deck-row" data-floor={floor} aria-label={heading} onWheel={onWheel} ref={rowRef}>
       {head}
-      <div ref={tilesRef} className={`deck-tiles keys-tiles${keys.length > KEYS_PER_ROW ? ' two' : ''}`} style={{ gridTemplateColumns: `repeat(${columnsFor(keys.length)}, minmax(0, 1fr))` }}>
+      <div ref={tilesRef} className={`deck-tiles keys-tiles ${tileSizeClass(keys.length)}${keys.length > KEYS_PER_ROW ? ' two' : ''}`} style={{ gridTemplateColumns: `repeat(${columnsFor(keys.length)}, minmax(0, 1fr))` }}>
         {keys.map((k, j) => {
           const i = base + j;
           const layoutOff = isLayoutAction(k.action) && arrange !== true;
           const wrongApp = k.action === null && hold && !ok;
           const label = keyLabel(k.label, set.name);
+          const matches = library?.flatMap((group) => group.keys.filter((candidate) => candidate.runnable && candidate.kind !== 'soon' && candidate.label === k.label && candidate.action === k.action).map((candidate) => `lib:${candidate.id}`)) ?? [];
+          const pinRef = matches.length === 1 ? matches[0] : null;
+          const rawPins = library ? parsePins(readPinsRaw(), library, sum.filePins) : null;
+          const pinRefs = rawPins ?? sum.defaultPins;
+          const alreadyPinned = pinRef !== null && pinRefs.includes(pinRef);
+          const full = pinRefs.length >= MAX_PINS;
+          const actions: KeyMenuAction[] = [
+            alreadyPinned
+              ? { id: 'pin', label: 'Already in Always here', disabled: true }
+              : pinRef === null
+                ? { id: 'pin', label: 'This key lives in keys.json', disabled: true }
+                : full
+                  ? { id: 'pin', label: 'Always here is full', note: `${MAX_PINS} of ${MAX_PINS}`, disabled: true }
+                  : { id: 'pin', label: 'Pin to Always here', note: `${pinRefs.length} of ${MAX_PINS}` },
+            { id: 'file', label: 'Edit keys file', note: 'keys.json' },
+          ];
+          const openMenu = () => {
+            if (!overlayOwnsPointer()) setMenu(i);
+          };
+          const onMenuKey = (event: KeyboardEvent<HTMLButtonElement>) => {
+            if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+              event.preventDefault();
+              openMenu();
+              return;
+            }
+            onKeyDown(k.action)(event);
+          };
+          const onContext = (event: MouseEvent) => {
+            event.preventDefault();
+            openMenu();
+          };
           return (
+            <div className="key-tile-wrap" key={`${set.id}-${i}`}>
             <button
-              key={`${set.id}-${i}`}
               type="button"
               className={`deck-tile key-tile${wrongApp || layoutOff ? ' off' : ''}`}
               aria-label={k.label}
@@ -481,7 +527,8 @@ export function Keys() {
                         ? `Send ${k.label} to the app in front`
                         : `Send ${k.label} to ${set.name}`,
               )}
-              onKeyDown={onKeyDown(k.action)}
+              onKeyDown={onMenuKey}
+              onContextMenu={onContext}
               onClick={(e) => {
                 // A key that cannot be sent never reaches Rust: the heading says why, nothing is invoked.
                 if (wrongApp) return showBrief(sendReason('no app', set, hold));
@@ -491,6 +538,21 @@ export function Keys() {
               <KeyIcon name={k.icon} size={20} />
               <span className="deck-lbl">{label}</span>
             </button>
+            <KeyMenuButton label={k.label} open={menu === i} onOpen={openMenu} />
+            {menu === i && (
+              <KeyMenu
+                title={`${k.label}, in ${set.name}`}
+                actions={actions}
+                onClose={() => setMenu(null)}
+                onChoose={(id) => {
+                  if (id !== 'pin' || !pinRef || full || alreadyPinned || !library) return;
+                  const next = [...pinRefs, pinRef];
+                  localStorage.setItem(PINS_KEY, serializePins(next, sum.filePins));
+                  window.dispatchEvent(new Event(PINS_CHANGED_EVENT));
+                }}
+              />
+            )}
+            </div>
           );
         })}
       </div>

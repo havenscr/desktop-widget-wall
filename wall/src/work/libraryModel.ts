@@ -20,6 +20,7 @@ export interface LibGroup {
 }
 
 export const PINS_KEY = 'wall2-keys-pins';
+export const PINS_CHANGED_EVENT = 'wall2-pins-changed';
 /** "Always here" holds at most this many keys. */
 export const MAX_PINS = 5;
 /**
@@ -73,7 +74,7 @@ export function parsePins(raw: string | null, lib: readonly LibGroup[], filePins
   if (raw === null) return null;
   try {
     const v: unknown = JSON.parse(raw);
-    if (!Array.isArray(v) || v.length === 0 || v.length > MAX_PINS) return null;
+    if (!Array.isArray(v) || v.length > MAX_PINS) return null;
     const out: string[] = [];
     for (const r of v) {
       if (isFileEntry(r)) {
@@ -88,7 +89,7 @@ export function parsePins(raw: string | null, lib: readonly LibGroup[], filePins
       if (typeof r !== 'string' || out.includes(r) || !resolvePin(r, lib, filePins)) return null;
       out.push(r);
     }
-    return out.length > 0 ? out : null;
+    return v.length === 0 ? [] : out.length > 0 ? out : null;
   } catch {
     return null;
   }
@@ -147,6 +148,11 @@ export function swapPin(pins: readonly string[], slot: number, ref: string): str
   return out;
 }
 
+/** Remove one pin without changing the order of the others. The last pin may be removed. */
+export function removePin(pins: readonly string[], slot: number): string[] {
+  return pins.filter((_ref, index) => index !== slot);
+}
+
 /** Library groups narrowed by a search, matching label, group title and what the key does. Empty groups drop out. */
 export function searchLibrary(lib: readonly LibGroup[], query: string): LibGroup[] {
   const q = query.trim().toLowerCase();
@@ -155,4 +161,3 @@ export function searchLibrary(lib: readonly LibGroup[], query: string): LibGroup
     .map((g) => ({ ...g, keys: g.keys.filter((k) => `${k.label} ${g.title} ${k.how}`.toLowerCase().includes(q)) }))
     .filter((g) => g.keys.length > 0);
 }
-

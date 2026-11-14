@@ -204,11 +204,13 @@ it('still shows the default keys when keys.json is invalid, since the library do
 
 const openPicker = async (name: string) => {
   fireEvent.contextMenu(screen.getByRole('button', { name }));
+  await flush(801);
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Replace with another key' }));
   await flush();
   return screen.getByRole('dialog');
 };
 
-it('right-click opens the picker over the deck with the library by group, a search box and the five marked', async () => {
+it('right-click opens the key menu and Replace opens the picker with the library by group', async () => {
   render(<PinnedRow />);
   await flush();
   const dlg = await openPicker('Snip');
@@ -220,17 +222,40 @@ it('right-click opens the picker over the deck with the library by group, a sear
   expect(within(dlg).getByRole('button', { name: 'Reset to defaults' })).toBeTruthy();
 });
 
-it('the ContextMenu key and Shift+F10 open it too', async () => {
+it('the ContextMenu key and Shift+F10 open the key menu too', async () => {
   render(<PinnedRow />);
   await flush();
   fireEvent.keyDown(screen.getByRole('button', { name: 'Focus' }), { key: 'ContextMenu' });
   await flush();
-  expect(screen.getByRole('dialog')).toBeTruthy();
-  fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
-  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(screen.getByRole('menu')).toBeTruthy();
+  fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' });
+  expect(screen.queryByRole('menu')).toBeNull();
   fireEvent.keyDown(screen.getByRole('button', { name: 'Snip' }), { key: 'F10', shiftKey: true });
   await flush();
-  expect(screen.getByRole('dialog')).toBeTruthy();
+  expect(screen.getByRole('menu')).toBeTruthy();
+});
+
+it('Add a key appends into the next free slot and Remove can leave only the Add tile', async () => {
+  localStorage.setItem(PINS_KEY, JSON.stringify(['lib:thirds']));
+  render(<PinnedRow />);
+  await flush();
+  fireEvent.click(screen.getByRole('button', { name: 'Add a key' }));
+  await flush();
+  expect(screen.getByRole('dialog', { name: 'Add a key to Always here' })).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Snip' }));
+  await flush();
+  expect(labels()).toEqual(['Thirds', 'Snip']);
+  fireEvent.click(screen.getByRole('button', { name: 'More options for Thirds' }));
+  await flush();
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Remove from Always here' }));
+  await flush();
+  fireEvent.click(screen.getByRole('button', { name: 'More options for Snip' }));
+  await flush();
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Remove from Always here' }));
+  await flush();
+  expect(labels()).toEqual([]);
+  expect(screen.getByRole('button', { name: 'Add a key' })).toBeTruthy();
+  expect(localStorage.getItem(PINS_KEY)).toBe('[]');
 });
 
 it('clicking a row swaps that key into the slot and keeps it in storage; the others stay', async () => {
@@ -270,7 +295,7 @@ it('Reset to defaults clears the choice', async () => {
 });
 
 it('storage that is not valid against the library is ignored and the defaults show', async () => {
-  for (const bad of ['nope', '[]', JSON.stringify(['lib:nope']), JSON.stringify(['lib:snip', 'lib:snip']), JSON.stringify(['lib:new-chat']), JSON.stringify(['lib:snip', 'lib:focus', 'lib:thirds', 'lib:mute', 'lib:mixer', 'lib:zen'])]) {
+  for (const bad of ['nope', JSON.stringify(['lib:nope']), JSON.stringify(['lib:snip', 'lib:snip']), JSON.stringify(['lib:new-chat']), JSON.stringify(['lib:snip', 'lib:focus', 'lib:thirds', 'lib:mute', 'lib:mixer', 'lib:zen'])]) {
     localStorage.setItem(PINS_KEY, bad);
     resetKeysFeed();
     const { unmount } = render(<PinnedRow />);
@@ -358,14 +383,24 @@ it('the click that closes the picker is not also delivered to what was under the
     </div>,
   );
   await flush();
-  await openPicker('Snip');
+  fireEvent.click(screen.getByRole('button', { name: 'More options for Snip' }));
+  await flush();
+  if (!screen.queryByRole('menu')) fireEvent.click(screen.getByRole('button', { name: 'More options for Snip' }));
+  await flush();
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Replace with another key' }));
+  await flush();
   fireEvent.pointerDown(screen.getByRole('button', { name: 'task row' }));
   fireEvent.click(screen.getByRole('button', { name: 'task row' }), { detail: 1 });
   expect(screen.queryByRole('dialog')).toBeNull();
   expect(task).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: 'task row' }), { detail: 1 });
   expect(task).toHaveBeenCalledTimes(1);
-  await openPicker('Snip');
+  fireEvent.click(screen.getByRole('button', { name: 'More options for Snip' }));
+  await flush();
+  if (!screen.queryByRole('menu')) fireEvent.click(screen.getByRole('button', { name: 'More options for Snip' }));
+  await flush();
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Replace with another key' }));
+  await flush();
   fireEvent.pointerDown(screen.getByRole('button', { name: 'Later' }));
   fireEvent.click(screen.getByRole('button', { name: 'Later' }), { detail: 1 });
   expect(later).not.toHaveBeenCalled();

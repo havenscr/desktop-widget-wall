@@ -102,6 +102,22 @@ it('shows the general set when the app in front has none of its own', async () =
   expect(screen.getByRole('button', { name: 'Clipboard' })).toBeTruthy();
 });
 
+it('opens a key menu without sending and pins a library key to Always here', async () => {
+  mocks.set('wall2_keys_library', () => LIBRARY_DATA);
+  answer = front('general', 'notepad.exe');
+  render(<Keys />);
+  await flush();
+  fireEvent.contextMenu(screen.getByRole('button', { name: 'Snip' }));
+  await flush();
+  expect(sent).toEqual([]);
+  expect(screen.getByRole('menu')).toBeTruthy();
+  fireEvent.click(screen.getByRole('menuitem', { name: /Pin to Always here/ }));
+  await flush();
+  expect(JSON.parse(localStorage.getItem('wall2-keys-pins') ?? '')).toEqual(['lib:snip']);
+  expect(sent).toEqual([]);
+  resetLibIndex();
+});
+
 it('says "No keys for this app" when there is no set and no general set', async () => {
   answer = front(null, 'notepad.exe', [sales]);
   render(<Keys />);
