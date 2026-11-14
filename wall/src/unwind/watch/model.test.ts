@@ -242,16 +242,14 @@ describe('looks', () => {
 });
 
 describe('stop rules', () => {
-  const base: StopInputs = { place: 'unwind', tab: 'watch', visible: true, displayDark: false, screensOff: false, inCall: false };
-  it('lets a video play only on Watch on Unwind, shown, display on, screens on, no call', () => {
+  const base: StopInputs = { visible: true, displayDark: false, screensOff: false, inCall: false };
+  it('lets a video play while shown, display on, screens on and no call; leaving Watch or Unwind is no reason', () => {
     expect(stopReason(base)).toBeNull();
-    expect(stopReason({ ...base, place: 'zen' })).toBe('place');
-    expect(stopReason({ ...base, place: 'work' })).toBe('place');
-    expect(stopReason({ ...base, tab: 'listen' })).toBe('tab');
     expect(stopReason({ ...base, visible: false })).toBe('hidden');
     expect(stopReason({ ...base, displayDark: true })).toBe('display');
     expect(stopReason({ ...base, screensOff: true })).toBe('screens-off');
     expect(stopReason({ ...base, inCall: true })).toBe('call');
+    expect(Object.keys(base).sort()).toEqual(['displayDark', 'inCall', 'screensOff', 'visible']);
   });
 
   beforeEach(() => {
@@ -260,25 +258,27 @@ describe('stop rules', () => {
     resetWatch();
     usePlaceStore.setState({ active: 'unwind' });
   });
-  it('removes the frame when Zen opens or another place does, and never restarts it', () => {
+  it('keeps playing when Zen opens or another place does, and the sheet closes', () => {
     const st = useWatchStore.getState();
     st.play({ kind: 'video', id: V });
+    st.setSheet(true);
     expect(useWatchStore.getState().playing?.label).toBe('Night drive');
     usePlaceStore.getState().setActive('zen');
-    expect(useWatchStore.getState().playing).toBeNull();
-    usePlaceStore.setState({ active: 'unwind' });
-    expect(useWatchStore.getState().playing).toBeNull();
-    st.play({ kind: 'video', id: V });
+    expect(useWatchStore.getState().playing?.label).toBe('Night drive');
+    expect(useWatchStore.getState().sheet).toBe(false);
     usePlaceStore.getState().setActive('work');
-    expect(useWatchStore.getState().playing).toBeNull();
+    expect(useWatchStore.getState().playing?.label).toBe('Night drive');
+    usePlaceStore.setState({ active: 'unwind' });
+    expect(useWatchStore.getState().playing?.label).toBe('Night drive');
+    expect(useWatchStore.getState().tab).toBe('watch');
   });
-  it('removes the frame when the tab goes back to Listen', () => {
+  it('keeps playing when the tab goes to Listen and back', () => {
     useWatchStore.getState().play({ kind: 'video', id: V });
     expect(useWatchStore.getState().tab).toBe('watch');
     useWatchStore.getState().setTab('listen');
-    expect(useWatchStore.getState().playing).toBeNull();
+    expect(useWatchStore.getState().playing?.label).toBe('Night drive');
     useWatchStore.getState().setTab('watch');
-    expect(useWatchStore.getState().playing).toBeNull();
+    expect(useWatchStore.getState().playing?.label).toBe('Night drive');
   });
   it('plays only what is saved, and removing the item stops it', () => {
     useWatchStore.getState().play({ kind: 'video', id: 'Zz3dEfGh1jK' });
