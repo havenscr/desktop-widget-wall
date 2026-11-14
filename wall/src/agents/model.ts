@@ -316,47 +316,8 @@ export function prText(l: Lane): string {
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
-/**
- * The slot wording, which never reads as a bug when more run than the limit: "4 working,
- * 6 open, 4 slots" from a newer helper, "9 running, 4 slots" from an older one.
- */
-export function slotsText(s: OmniSummary): string {
-  const { working, sessions, limit, used } = s.slots;
-  if (typeof working === 'number' && typeof sessions === 'number') return `${working} working, ${sessions} open, ${plural(limit, 'slot')}`;
-  return `${used} running, ${plural(limit, 'slot')}`;
-}
-
-/** The slot meter's short sentence for a tight header: "5 of 8 working" (or "3 of 4 running" from an older helper). */
-export function slotsShortText(s: OmniSummary): string {
-  const { working, sessions, limit, used } = s.slots;
-  if (typeof working === 'number' && typeof sessions === 'number') return `${working} of ${sessions} working`;
-  return `${used} of ${limit} running`;
-}
-
 /** Most pips the slot meter draws; past this the limit shows as a number only. */
 export const MAX_PIPS = 6;
-
-/**
- * The slot meter: one pip per slot (up to six), filled for each working session (or each
- * used slot from an older helper), and how many more work than there are pips.
- */
-export function slotMeter(s: OmniSummary): { pips: boolean[]; over: number } {
-  const filled = typeof s.slots.working === 'number' ? s.slots.working : s.slots.used;
-  const n = Math.max(1, Math.min(MAX_PIPS, s.slots.limit));
-  return { pips: Array.from({ length: n }, (_, i) => i < filled), over: Math.max(0, filled - n) };
-}
-
-/** The slot meter's tooltip: the breakdown, and what a click does. */
-export function slotsTip(s: OmniSummary): string {
-  const { working, sessions, helpers, limit, used } = s.slots;
-  const parts: string[] = [];
-  if (typeof working === 'number') parts.push(`${working} working`);
-  if (typeof sessions === 'number') parts.push(`${sessions} open`);
-  if (typeof helpers === 'number') parts.push(plural(helpers, 'helper'));
-  if (parts.length === 0) parts.push(`${used} running`);
-  parts.push(`${plural(limit, 'slot')} on the server (more may run than there are slots)`);
-  return `${parts.join(', ')}. Click to bring OmniGent forward.`;
-}
 
 /**
  * The header's right side: "One thing for you" with the waiting session's title and "then

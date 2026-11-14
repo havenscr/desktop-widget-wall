@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import { IconChevronLeft, IconChevronRight, IconGitPullRequest, IconX } from '@tabler/icons-react';
+import { IconAlertTriangle, IconChevronLeft, IconChevronRight, IconGitPullRequest, IconX } from '@tabler/icons-react';
 import { STAGES } from '../agents/model';
 import { invoke } from '../bridge/tauri';
 import { agentsStale, agentsUntil, useAgentsStore } from '../agents/useAgents';
 import { tip } from '../ui/HoverTip';
-import { axisRange, dayBefore, isoDay, loadDay, loadDays, longDate, neighbours, recordRows, todayRows, totalsText, useDaysStore, type PanelRow } from './days';
+import { useBusyToday } from './AgentRow';
+import { busyLevels, busyStep, knownLimit, shortSpan, stepsFor, stepWords, timeBySteps, type BusySpan } from './busy';
+import { axisRange, dayBefore, dayStart, isoDay, loadDay, loadDays, longDate, neighbours, recordRows, todayRows, totalsText, useDaysStore, type PanelRow } from './days';
 import { useBehindDrawer } from './DrawerScrim';
 import { hm, hourText, shortTime, wallHour } from './model';
 
@@ -34,6 +36,63 @@ function Skeleton() {
         </div>
       ))}
     </>
+  );
+}
+
+const HOUR_MS = 3_600_000;
+
+/** "9:36 AM" for an hour of the day shown (0 to 24). */
+function clockAt(h: number): string {
+  const m = Math.round(h * 60);
+  const hh = Math.floor(m / 60) % 24;
+  return `${hh % 12 || 12}:${String(m % 60).padStart(2, '0')} ${hh < 12 ? 'AM' : 'PM'}`;
+}
+/** The "Sessions busy at once" row: bar height for each step (one, two, three, at the limit, over it). */
+const BAND_H = [0, 6, 11, 16, 21, 28];
+
+/**
+ * "Busy at once" under the heading: the time spent at each count of sessions working at once
+ * (each with its colour swatch), and how long it was over the limit. Its tooltip says what is
+ * counted: today the live day log's runs (a session and its helpers count once, waiting does
+ * not count). A past day's saved record cannot tell running from waiting (it has stage spans
+ * only), so there the line reads "Open at once", counts every session with a recorded span, and
+ * never says "over your limit": it only says the most that were open at once.
+ */
+function BusyLine({ spans, limit, today }: { spans: BusySpan[]; limit: number; today: boolean }) {
+  const by = timeBySteps(spans, limit);
+  const over = today && by[5] >= 60_000;
+  const peak = busyLevels(spans).reduce((m, l) => Math.max(m, l.count), 0);
+  const rule = today
+    ? 'Counts sessions working at once: runs in the live day log of parent and standalone sessions; a session and its helpers count once, waiting does not count.'
+    : 'Sessions open at once, from the saved record. The record has stage spans only, with no runs and no waits, so every session with a recorded span counts, working or not.';
+  return (
+    <div
+      className="at-busy"
+      {...tip(() => (
+        <>
+          <span className="tip-t">{today ? 'Busy at once today' : 'Open at once, from the saved record'}</span>
+          <span className="tip-s">{rule}</span>
+          {today && <span className="tip-s">Your limit is {limit}, from the agents helper.</span>}
+        </>
+      ))}
+    >
+      <span className="at-busy-k">{today ? 'Busy at once' : 'Open at once'}</span>
+      {stepsFor(limit).map((st) => (
+        <span key={st} className="at-busy-s">
+          <i className={`sw b${today ? st : Math.min(3, st)}`} aria-hidden="true" />
+          <span className="w">{today ? stepWords(st, limit) : stepWords(st, limit).replace('over', 'more than')}</span>
+          <b className={by[st] >= 60_000 ? (today && st === 5 ? 'over' : '') : 'none'}>{shortSpan(by[st])}</b>
+        </span>
+      ))}
+      <span className={`at-busy-sum${over ? ' over' : ''}`}>
+        {over && <IconAlertTriangle stroke={2} aria-hidden="true" />}
+        {today
+          ? over
+            ? `Over your limit of ${limit} for ${shortSpan(by[5])} today`
+            : `Never over your limit of ${limit} today`
+          : `Up to ${peak} open at once, from the saved record`}
+      </span>
+    </div>
   );
 }
 
@@ -84,12 +143,13 @@ export function AgentsToday({ now, onClose }: { now: number; onClose: () => void
   useBehindDrawer(ref, onClose, 'opener');
 
   const read = days.records[shown];
+  const busyT = useBusyToday(now);
   const stale = agentsStale(st);
   const until = agentsUntil(st) ?? now;
   let rows: PanelRow[] | null = null;
   let note = '';
   if (isToday) {
-    if (st.summary) rows = todayRows(st.summary, read?.record ?? null, now, Math.min(now, until), st.skewMs);
+    if (st.summary) rows = todayRows(busyT?.summary ?? st.summary, read?.record ?? null, now, Math.min(now, until), st.skewMs, busyT?.ends);
     note = !st.summary
       ? st.status === 'loading'
         ? ''
@@ -119,8 +179,31 @@ export function AgentsToday({ now, onClose }: { now: number; onClose: () => void
   const hours: number[] = [];
   for (let h = axis.lo; h <= axis.hi; h += axis.step) hours.push(h);
   const noWait = !isToday;
+  // Busy at once: today from the live working spans (one rule with the meter and the strip),
+  // a past day from its record's spans (hours from that day's midnight). The limit is the
+  // helper's, as the meter reads it; with no live answer there is no limit to measure against.
+  const limit = knownLimit(st.summary?.slots.limit);
+  const base = isToday ? dayStart(today) : 0;
+  const busySpans: BusySpan[] = isToday ? (busyT?.spans ?? []) : (rows ?? []).flatMap((r) => r.spans.map((x) => ({ id: r.id, start: x.from * HOUR_MS, end: x.to * HOUR_MS })));
+  const showBusy = limit !== null && rows !== null && rows.length > 0;
+  const lim = limit ?? 0;
+  // One bar per stretch at the same step (over the limit is one hatched stretch, whatever the count).
+  const band: { from: number; to: number; step: number; lo: number; hi: number }[] = [];
+  for (const l of showBusy ? busyLevels(busySpans) : []) {
+    const from = (l.start - base) / HOUR_MS;
+    const to = (l.end - base) / HOUR_MS;
+    // A past day's record cannot tell working from waiting, so it never draws against the limit:
+    // plain steps only (no amber at the limit, no red or hatch over it).
+    const step = isToday ? busyStep(l.count, lim) : Math.min(3, busyStep(l.count, lim));
+    const last = band[band.length - 1];
+    if (last && last.step === step && Math.abs(last.to - from) < 1e-9) {
+      last.to = to;
+      last.lo = Math.min(last.lo, l.count);
+      last.hi = Math.max(last.hi, l.count);
+    } else band.push({ from, to, step, lo: l.count, hi: l.count });
+  }
   return (
-    <div className={`agents-today${isToday && stale ? ' stale' : ''}`} ref={ref} role="dialog" aria-label="Agents today" tabIndex={-1}>
+    <div className={`agents-today${isToday && stale ? ' stale' : ''}${isToday ? '' : ' past'}`} ref={ref} role="dialog" aria-label="Agents today" tabIndex={-1}>
       <div className="at-head">
         <span className="at-k">Agents{picker ? '' : ' today'}</span>
         {picker && (
@@ -170,6 +253,7 @@ export function AgentsToday({ now, onClose }: { now: number; onClose: () => void
           <IconX stroke={1.8} aria-hidden="true" />
         </button>
       </div>
+      {showBusy && <BusyLine spans={busySpans} limit={lim} today={isToday} />}
       <div className="at-axis" aria-hidden="true">
         {hours.map((h) => (
           <span key={h} style={{ left: `${tx(h)}%` }}>
@@ -184,6 +268,23 @@ export function AgentsToday({ now, onClose }: { now: number; onClose: () => void
           ))}
           {isToday && rows && rows.length > 0 && <i className="at-now" style={{ left: `${tx(Math.min(nowHour, wallHour(until, now)))}%` }} />}
         </div>
+        {showBusy && (
+          <div className="at-band">
+            <span className="at-band-k">{isToday ? 'Sessions busy at once' : 'Sessions open at once'}</span>
+            <span className="at-track">
+              {band.map((b) => (
+                <i
+                  key={b.from}
+                  className={`b${b.step}`}
+                  style={{ left: `${tx(b.from)}%`, width: `max(2px, calc(${tx(b.to) - tx(b.from)}% - 1px))`, height: BAND_H[b.step] }}
+                  {...tip(`${clockAt(b.from)} to ${clockAt(b.to)}: ${b.lo === b.hi ? b.hi : `${b.lo} to ${b.hi}`} ${isToday ? 'working' : 'open'} at once${isToday && b.hi > lim ? `, over your limit of ${lim}` : ''}`)}
+                />
+              ))}
+              {isToday && <i className="at-limit" style={{ bottom: 3 + BAND_H[4] }} aria-hidden="true" />}
+            </span>
+            <span className="at-band-note">{isToday ? `dashed line: your limit of ${lim}` : 'from the saved record'}</span>
+          </div>
+        )}
         {loading && <Skeleton />}
         {rows && rows.length === 0 && <span className="at-none">{isToday ? 'No agent activity yet today' : 'No sessions recorded on this day'}</span>}
         {!loading && !rows && <span className="at-none">{note}</span>}
