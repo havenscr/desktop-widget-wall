@@ -28,7 +28,7 @@
 // CI does not run this; run it by hand before a layout change is handed over.
 //
 //   WALL_CHROME=/path/to/chrome-or-headless-shell npm --prefix wall run fit-check
-//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, header, deck, tiles, picker, chips, heading, zenhint, strip, fold, drawer, rows, handle, sky, floor, sun, tools, toolsnames, meetfill, meetempty, fy-height, key-edge, hide-pill, hide-note, leave-band, rec-chip, rec-height, tile-height, tile-icon, tile-iconbox, drawer-scrim, lwbuttons, lwoverlap, lwsquare, lwring, lwtemp, lwround, sky-front, sky-moon, sky-always, sky-crop, sky-seam, tower-over, tower-wide, tower-box, tower-switch, holo-big, holo-noblend, holo-beam, holo-take, tile-text, listen-player, listen-card, listen-slot, listen-next, lines-size, lines-control, lines-text, lines-clip, watch-rest, watch-title, watch-away, watch-mark, lip-cover, lip-band, lip-scrim, row-parts, over-hatch, row-type)
+//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, header, deck, tiles, picker, chips, heading, zenhint, strip, fold, drawer, rows, handle, sky, floor, sun, tools, toolsnames, meetfill, meetempty, fy-height, key-edge, hide-pill, hide-note, leave-band, rec-chip, rec-height, tile-height, tile-icon, tile-iconbox, drawer-scrim, lwbuttons, lwoverlap, lwsquare, lwring, lwtemp, lwround, sky-front, sky-moon, sky-always, sky-crop, sky-seam, sky-soft, sky-foot, tower-over, tower-wide, tower-box, tower-switch, holo-big, holo-noblend, holo-beam, holo-take, tile-text, listen-player, listen-card, listen-slot, listen-next, lines-size, lines-control, lines-text, lines-clip, watch-rest, watch-title, watch-away, watch-mark, lip-cover, lip-band, lip-scrim, row-parts, over-hatch, row-type)
 //   npm --prefix wall run fit-check -- --self-test
 //
 // WALL_CHROME (or the first argument that is not a flag) is a Chromium or
@@ -43,6 +43,9 @@ import { inflateSync } from 'node:zlib';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { ChromeRunError, onCleanup, runChrome } from './lib/chrome-run.mjs';
+
+// The whole sky's picture box in wall pixels (LOOK_BOXES.sky in looks.ts, which fit-check compares with the drawn one).
+const LOOK_BOX_SKY = { x: 1106, y: 16, w: 889, h: 500 };
 
 const args = process.argv.slice(2);
 const flag = (name) => args.find((a) => a === `--${name}` || a.startsWith(`--${name}=`));
@@ -148,6 +151,8 @@ const EXPECT = {
   'sky-always': /^ *FAIL sky layers: 1 front canvas with no look behind the land/m,
   'sky-crop': /^ *FAIL sky layers: the whole sky picture is at -?\d+,-?\d+,\d+, not inside the stage near its top/m,
   'sky-seam': /^ *FAIL sky layers: the pixel proof at \w+: \d+ pixels differ by more than 2 levels/m,
+  'sky-soft': /^ *FAIL whole sky soft edge: /m,
+  'sky-foot': /^ *FAIL whole sky soft edge: /m,
   // lines controls
   'lines-size': /^ *FAIL lines: the sheet is \d+ px tall/m,
   'lines-control': /^ *FAIL lines: control ".*" is [\d.]+ px tall/m,
@@ -267,6 +272,9 @@ const OVERFLOWS = {
   'sky-crop': '.w-sky .w-screen { transform: scale(1.4); }',
   // The pixel proof: the front canvas a shade brighter than the main one (a seam between the two).
   'sky-seam': '.horizon-front { filter: brightness(1.04) !important; }',
+  // The whole sky's soft edge: the mask removed (a plain edge again), and a mask that also fades the foot.
+  'sky-soft': '.w-sky .w-screen { -webkit-mask-image: none !important; mask-image: none !important; }',
+  'sky-foot': '.w-sky .w-screen { -webkit-mask-image: linear-gradient(180deg, #000, #000 calc(100% - 120px), transparent) !important; mask-image: linear-gradient(180deg, #000, #000 calc(100% - 120px), transparent) !important; }',
   // lines controls: a 900 px panel, a 24 px chip, a 12 px label, the clip removed (a URL knob, LINES_BREAK_Q).
   'lines-size': '.ln-panel { height: 900px !important; }',
   'lines-control': '.ln-chips button { height: 24px !important; }',
@@ -1280,6 +1288,14 @@ try {
             const fr = scr.querySelector('.w-frame');
             const r2 = fr && fr.getBoundingClientRect();
             if (!r2 || Math.abs(r2.left - v.left) > 1 || Math.abs(r2.top - v.top) > 1 || Math.abs(r2.width - v.width) > 1 || Math.abs(r2.height - v.height) > 1) fails.push('sky layers: the whole sky frame is cropped');
+            // The soft edge: one mask on the picture, a left and right ramp and a top ramp, none from the foot.
+            const mk = getComputedStyle(scr).maskImage || getComputedStyle(scr).webkitMaskImage || 'none';
+            const grads = mk.split('linear-gradient(').slice(1).map((g) => 'linear-gradient(' + g.trim());
+            const side = grads.find((g) => g.startsWith('linear-gradient(90deg'));
+            const topRamp = grads.find((g) => g.startsWith('linear-gradient(180deg'));
+            if (mk === 'none' || !side || !topRamp || grads.length !== 2) fails.push('whole sky soft edge: the picture has ' + (mk === 'none' ? 'no mask (a plain edge)' : grads.length + ' mask layers, not one ramp for the sides and one for the top'));
+            else if (!/100%/.test(side) || /100%/.test(topRamp)) fails.push('whole sky soft edge: the mask fades the foot, or not both sides');
+            if (getComputedStyle(scr).filter.includes('blur')) fails.push('whole sky soft edge: the picture is blurred');
           }
           const x = f.getContext('2d');
           const sx = f.width / 2560;
@@ -1567,6 +1583,8 @@ try {
     'sky-moon': (v) => v.name === 'Sky layers, Listen at night, the moon in open sky',
     'sky-always': (v) => v.name === 'Sky layers, Listen at night, the moon in open sky',
     'sky-crop': (v) => v.name === 'Sky layers, whole sky at night',
+    'sky-soft': (v) => v.name === 'Sky layers, whole sky at night',
+    'sky-foot': (v) => v.name === 'Sky layers, whole sky at night',
     // lines controls
     'lines-size': (v) => v.name === 'Lines settings sheet',
     'lines-control': (v) => v.name === 'Lines settings sheet',
@@ -1888,6 +1906,45 @@ try {
         failed = true;
         console.log(`  FAIL sky layers: the pixel proof at ${when}: ${diff < 0 ? 'the two screenshots differ in size' : `${over2} pixels differ by more than 2 levels: ${summary}`}, one canvas against the front layer with nothing between`);
       } else console.log(`sky layers: the pixel proof at ${when}: ${summary}; one canvas against the front layer with nothing between`);
+    }
+  }
+  // The whole sky's soft edge, the pixel proof: the page as drawn against the same page with the
+  // picture hidden (the sky alone). At the picture's top left corner and at the middle of its left
+  // edge the two agree to a few levels (the fade has taken the picture away); in the middle of the
+  // picture they differ clearly (the picture is there, untouched). Night and noon.
+  if (!overflow || overflow === 'sky-soft') {
+    const proof = join(out, 'proof-soft.html');
+    writeFileSync(proof, html.replace('</body>', `${broken}</body>`));
+    const hide = html.replace('</body>', `${broken}<style>.w-sky .w-screen { visibility: hidden !important; }</style></body>`);
+    const proofHidden = join(out, 'proof-soft-hidden.html');
+    writeFileSync(proofHidden, hide);
+    for (const [when, at] of [['night', '2026-11-11T22:30:00-08:00'], ['noon', '2026-11-11T12:30:00-08:00']]) {
+      const shots = [];
+      for (const [name, file] of [['drawn', proof], ['hidden', proofHidden]]) {
+        const shot = join(out, `soft-${when}-${name}.png`);
+        const url = `${pathToFileURL(file).href}?hz=unwind&at=${encodeURIComponent(at)}&agents=3&weather=ok&watch=mock&wlist=three&wlook=sky&wplay=0`;
+        await runChrome(chrome, ['--headless', '--no-sandbox', '--disable-gpu', '--window-size=2560,807', '--hide-scrollbars', '--virtual-time-budget=8000', `--screenshot=${shot}`, url], { label: `whole sky soft edge pixel proof, ${when}, ${name}` });
+        shots.push(readPng(shot));
+      }
+      const [a, b] = shots;
+      const bx = LOOK_BOX_SKY;
+      const dy = (a.h - 720) / 2;
+      const diffAt = (x, y) => {
+        const i = ((Math.round(y + dy)) * a.w + Math.round(x)) * a.ch;
+        return Math.max(Math.abs(a.px[i] - b.px[i]), Math.abs(a.px[i + 1] - b.px[i + 1]), Math.abs(a.px[i + 2] - b.px[i + 2]));
+      };
+      if (a.w !== b.w || a.h !== b.h || a.w !== 2560) {
+        failed = true;
+        console.log(`  FAIL whole sky soft edge: the pixel proof at ${when}: the two screenshots differ in size`);
+        continue;
+      }
+      const corner = diffAt(bx.x + 2, bx.y + 2);
+      const side = diffAt(bx.x + 2, bx.y + 250);
+      const middle = diffAt(bx.x + bx.w / 2, bx.y + 150);
+      if (corner > 4 || side > 4 || middle < 20) {
+        failed = true;
+        console.log(`  FAIL whole sky soft edge: the pixel proof at ${when}: the corner differs from the sky by ${corner} levels and the left edge by ${side} (each must be 4 or less), the middle by ${middle} (it must be 20 or more)`);
+      } else console.log(`whole sky soft edge: the pixel proof at ${when}: the corner is the sky (${corner} levels off), the left edge too (${side}), the middle is the picture (${middle} levels from the sky)`);
     }
   }
   if (switchBoxes.length > 1) {
