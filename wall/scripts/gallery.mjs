@@ -258,6 +258,11 @@ for (const type of ['mountains', 'bars', 'ribbon', 'sparks', 'skyline']) {
   state('unwind', `lines: ${type} on Listen`, `ltab=listen&audio=demo&lines=${type}`, TIMES.night);
   state('unwind', `lines: ${type} under the drive-in`, `watch=mock&wlist=three&wlook=drivein&wplay=0&audio=demo&lines=${type}`, TIMES.night);
 }
+// A new type plays the full width in front of a video that stands behind the mountains (The sun, Whole sky) and passes behind the screen in the drive-in.
+for (const type of ['bars', 'ribbon', 'sparks', 'skyline']) {
+  state('unwind', `lines: ${type} under the sun`, `watch=mock&wlist=three&wlook=sun&wplay=0&audio=demo&lines=${type}`, TIMES.night);
+  state('unwind', `lines: ${type} under the whole sky`, `watch=mock&wlist=three&wlook=sky&wplay=0&audio=demo&lines=${type}`, TIMES.night);
+}
 state('unwind', 'lines: calm', 'ltab=listen&audio=demo&lines=mountains&lively=22&smooth=72&lheight=60', TIMES.night);
 state('unwind', 'lines: wild', 'ltab=listen&audio=demo&lines=mountains&lively=88&smooth=28&lheight=180', TIMES.night);
 state('unwind', 'lines: bars calm', 'ltab=listen&audio=demo&lines=bars&lively=22&smooth=72&lheight=60', TIMES.night);
