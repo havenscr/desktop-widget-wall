@@ -1,4 +1,18 @@
 /* Day ribbon (concept `.rib`, v3.src.html ribbon block). Design pixels: 2416 x 104, grid row 3 of .main. */
+
+/* Colours by how many sessions work at once (ribbon/busy.ts steps): mint 1, cyan 2, violet 3,
+   amber at the limit, red over it. Fills; the -t text colours clear 7 to 1 on the dark ground.
+   Over the limit is never colour alone: it is hatched, taller, and tagged where it is counted. */
+:root {
+  --busy-1: rgb(93, 242, 182);
+  --busy-2: rgb(53, 230, 234);
+  --busy-3: rgb(154, 123, 255);
+  --busy-4: rgb(255, 194, 77);
+  --busy-5: rgb(255, 77, 109);
+  --busy-t3: rgb(190, 170, 255);
+  --busy-t5: rgb(255, 150, 168);
+  --busy-hatch: repeating-linear-gradient(135deg, rgba(8, 4, 20, 0.55) 0 2px, transparent 2px 6px);
+}
 .rib {
   position: relative;
   border-radius: 24px;
@@ -313,8 +327,9 @@
   white-space: nowrap;
 }
 
-/* The thin activity bar: 12 minute cells from 6 AM to now (brighter the more sessions were
-   busy, amber where one waited), and the agents line after the needle. */
+/* The thin activity bar: 12 minute cells from 6 AM to now, each coloured by the most sessions
+   working at once in it (over the limit also 10 px tall and hatched), an amber underline where
+   one waited; and the agents line after the needle. */
 .rib .agent-row .ac {
   position: absolute;
   top: 72px;
@@ -330,13 +345,39 @@
   top: 7px;
   height: 6px;
   border-radius: 2px;
-  background: var(--cyan);
+  background: rgba(255, 255, 255, 0.22);
 }
-.rib .agent-row .ac i.wait {
+:is(.rib .agent-row .ac i, .at-band .at-track i, .at-busy .sw).b1 {
+  background: var(--busy-1);
+}
+:is(.rib .agent-row .ac i, .at-band .at-track i, .at-busy .sw).b2 {
+  background: var(--busy-2);
+}
+:is(.rib .agent-row .ac i, .at-band .at-track i, .at-busy .sw).b3 {
+  background: var(--busy-3);
+}
+:is(.rib .agent-row .ac i, .at-band .at-track i, .at-busy .sw).b4 {
+  background: var(--busy-4);
+}
+:is(.rib .agent-row .ac i, .at-band .at-track i, .at-busy .sw).b5 {
+  background: var(--busy-hatch), var(--busy-5);
+}
+.rib .agent-row .ac i.b5 {
+  top: 3px;
+  height: 10px;
+}
+.rib .agent-row .ac i.wait::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -5px;
+  height: 2px;
+  border-radius: 1px;
   background: var(--amber);
 }
 .rib .agent-row .ac:hover i {
-  filter: brightness(1.4);
+  filter: brightness(1.3);
 }
 .rib .agent-row.stale .ac {
   opacity: 0.45;
@@ -377,31 +418,119 @@
 .rib .agent-row.stale .ag-line {
   color: var(--dim);
 }
-/* The handle that pulls up the Day drawer: a 48 by 5 bar on the strip's top edge. */
-/* 80 by 26: it ends above the all-day bar (y 27); Ribbon.tsx sets its left clear of labels. */
-.rib-handle {
+/* The Day drawer's handle (DayLip.tsx): the strip's whole top edge. A 26 px hit band from 17 px
+   above the strip (the empty gap over it) to 9 px inside it, above the hour labels (y 9) and the
+   all-day bar (y 27), from 24 px in at each end. At rest: a hairline on the edge and a chevron;
+   under the pointer (or keyboard focus) a full-width lip lights with "Open the day". The needle's
+   time pill draws over it. In the drawer the same lip sits on its top edge: "Close the day". */
+.rib .ndl {
+  z-index: 4;
+}
+.rib-handle.day-lip {
   position: absolute;
-  left: calc(50% - 40px);
-  top: 0;
-  width: 80px;
+  left: 24px;
+  right: 24px;
+  bottom: 95px;
   height: 26px;
   padding: 0;
   border: 0;
   background: none;
+  color: var(--tx);
   cursor: pointer;
   z-index: 3;
 }
-.rib-handle i {
-  position: absolute;
-  left: 16px;
-  top: 3px;
-  width: 48px;
-  height: 5px;
-  border-radius: 3px;
-  background: rgba(255, 255, 255, 0.35);
+.day-drawer .rib-handle.day-lip {
+  top: -17px;
+  bottom: auto;
 }
-.rib-handle:hover i {
-  background: rgba(255, 255, 255, 0.7);
+.day-lip::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -17px;
+  height: 36px;
+  box-sizing: border-box;
+  border-radius: 24px 24px 0 0;
+  background: linear-gradient(180deg, rgba(53, 230, 234, 0.08), rgba(53, 230, 234, 0.34));
+  border-bottom: 2px solid var(--cyan);
+  box-shadow: 0 -8px 26px -8px rgba(53, 230, 234, 0.55);
+  opacity: 0;
+  transition: opacity 0.25s ease;
+  pointer-events: none;
+}
+.day-lip .lip-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 17px;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(220, 211, 251, 0.34) 30%, rgba(220, 211, 251, 0.34) 70%, transparent);
+  pointer-events: none;
+}
+.day-lip .lip-pill {
+  position: absolute;
+  top: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+  height: 22px;
+  min-width: 44px;
+  box-sizing: border-box;
+  padding: 0 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border-radius: 11px;
+  background: rgb(17, 13, 40);
+  border: 1px solid rgba(220, 211, 251, 0.42);
+  color: var(--tx);
+  white-space: nowrap;
+  pointer-events: none;
+}
+.day-lip .lip-pill svg {
+  flex: none;
+  width: 18px;
+  height: 18px;
+}
+.day-lip .lip-t {
+  display: none;
+  font: 600 17px/1 var(--disp);
+  letter-spacing: 0.08em;
+}
+.day-lip.open .lip-pill {
+  top: 1px;
+  height: 28px;
+  border-radius: 14px;
+  padding: 0 16px;
+}
+.day-lip.open .lip-t,
+.day-lip:hover .lip-t,
+.day-lip:focus-visible .lip-t {
+  display: inline;
+}
+.day-lip:hover::before,
+.day-lip:focus-visible::before {
+  opacity: 1;
+}
+.day-lip:hover .lip-line,
+.day-lip:focus-visible .lip-line {
+  opacity: 0;
+}
+.day-lip:hover .lip-pill,
+.day-lip:focus-visible .lip-pill {
+  top: -13px;
+  height: 28px;
+  border-radius: 14px;
+  padding: 0 16px;
+  border-color: transparent;
+  color: #fff;
+}
+.day-lip:focus-visible {
+  outline: none;
+}
+.day-lip:focus-visible .lip-pill {
+  border-color: var(--cyan);
 }
 
 /* The Day drawer: 532 px over the lower part of Work (main area y 148 to 680). */
@@ -422,9 +551,6 @@
   box-shadow: 0 -18px 50px -20px rgba(2, 1, 10, 0.9);
   color: var(--tx);
   font-variant-numeric: tabular-nums;
-}
-.day-drawer .rib-handle.in-drawer {
-  left: calc(50% - 40px);
 }
 .dd-head {
   display: flex;
@@ -637,28 +763,31 @@ button.dd-k.link:hover {
   flex: none;
 }
 .dd-counts {
-  font: 400 16px/1 var(--body);
+  font: 400 17px/1 var(--body);
   color: var(--dim);
   white-space: nowrap;
 }
 .dd-counts .need {
   color: var(--amber);
 }
+.dd-counts .failed {
+  color: rgb(255, 170, 192);
+}
 .dd-axis {
   position: relative;
   margin-left: auto;
-  margin-right: 96px;
+  margin-right: 118px;
   width: 420px;
   flex: none;
-  height: 14px;
+  height: 16px;
 }
 .dd-axis span {
   position: absolute;
   top: 0;
   transform: translateX(-50%);
-  font: 500 12px/1 var(--disp);
-  letter-spacing: 0.06em;
-  color: var(--faint);
+  font: 500 16px/1 var(--disp);
+  letter-spacing: 0.04em;
+  color: var(--dim);
   white-space: nowrap;
 }
 .dd-rows {
@@ -700,27 +829,34 @@ button.dd-k.link:hover {
   font: 600 12px/1 var(--disp);
   color: var(--tx);
 }
+/* Agents today rows: number 24, title 372, the state once as a pill 142, one quiet line (about
+   346), the day track 420, the time 104; 14 px gaps. */
 .dd-name {
-  width: 220px;
+  width: 372px;
   flex: none;
-  font: 600 17px/1.1 var(--body);
+  font: 600 17px/1.15 var(--body);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .dd-pill {
   flex: none;
-  width: 124px;
+  width: 142px;
   box-sizing: border-box;
   height: 24px;
   border-radius: 12px;
   border: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.06);
   color: var(--dim);
-  font: 600 13px/22px var(--disp);
-  letter-spacing: 0.04em;
+  font: 600 16px/22px var(--disp);
+  letter-spacing: 0.02em;
   text-align: center;
   white-space: nowrap;
+}
+.dd-pill.failed {
+  background: rgba(255, 112, 150, 0.14);
+  border-color: rgba(255, 112, 150, 0.6);
+  color: rgb(255, 170, 192);
 }
 .dd-pill.need {
   background: rgba(255, 194, 77, 0.14);
@@ -733,9 +869,9 @@ button.dd-k.link:hover {
   color: var(--cyan);
 }
 .dd-line {
-  flex: 1;
+  flex: 1 1 346px;
   min-width: 0;
-  font: 400 15px/1.2 var(--body);
+  font: 400 16px/1.2 var(--body);
   color: var(--dim);
   white-space: nowrap;
   overflow: hidden;
@@ -762,7 +898,14 @@ button.dd-k.link:hover {
 .dd-bar i.wait {
   background: var(--amber);
 }
-.dd-time,
+.dd-time {
+  flex: none;
+  width: 104px;
+  text-align: right;
+  font: 500 16px/1 var(--disp);
+  color: var(--dim);
+  white-space: nowrap;
+}
 .at-time {
   flex: none;
   width: 82px;
@@ -1081,4 +1224,128 @@ button.dd-k.link:hover {
 }
 .at-note.warn {
   color: var(--amber);
+}
+
+/* A past day in the panel: its record holds a title, spans and a pull request only, so the
+   title takes the room (520 px) and the track is 514. */
+.agents-today.past .at-name {
+  width: 520px;
+}
+.agents-today.past .at-axis {
+  margin-left: 556px;
+  width: 514px;
+}
+.agents-today.past .at-grid {
+  left: 556px;
+  width: 514px;
+}
+.agents-today.past .at-track {
+  width: 514px;
+}
+.agents-today.past .at-end,
+.agents-today.past .at-time {
+  font-size: 16px;
+}
+
+/* "Busy at once" under the panel's heading: time at each count, and over the limit. */
+.at-busy {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  height: 44px;
+  margin-top: 8px;
+  border-top: 1px solid var(--line);
+  flex: none;
+  white-space: nowrap;
+  cursor: help;
+}
+.at-busy-k {
+  font: 600 16px/1 var(--disp);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--tx);
+}
+.at-busy-s {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.at-busy .sw {
+  display: inline-block;
+  flex: none;
+  width: 18px;
+  height: 12px;
+  border-radius: 2px;
+}
+.at-busy .sw.b5 {
+  height: 16px;
+}
+.at-busy-s .w {
+  font: 400 16px/1 var(--body);
+  color: var(--dim);
+}
+.at-busy-s b {
+  font: 600 17px/1 var(--disp);
+  color: var(--tx);
+}
+.at-busy-s b.none {
+  color: var(--dim);
+}
+.at-busy-s b.over {
+  color: var(--busy-t5);
+}
+.at-busy-sum {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font: 600 16px/1 var(--disp);
+  color: var(--dim);
+}
+.at-busy-sum.over {
+  color: var(--busy-t5);
+}
+.at-busy-sum svg {
+  width: 16px;
+  height: 16px;
+}
+/* "Sessions busy at once": the first row, on the panel's own hour axis, a dashed line at the limit. */
+.at-band {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 36px;
+  flex: none;
+  border-top: 1px solid var(--line);
+}
+.at-band-k {
+  width: 290px;
+  flex: none;
+  box-sizing: border-box;
+  padding-left: 36px;
+  font: 600 18px/1.2 var(--body);
+  white-space: nowrap;
+}
+.agents-today.past .at-band-k {
+  width: 556px;
+}
+.at-band .at-track i {
+  position: absolute;
+  bottom: 3px;
+  border-radius: 2px 2px 0 0;
+}
+.at-band .at-track i.at-limit {
+  left: 0;
+  right: 0;
+  height: 0;
+  border-radius: 0;
+  border-top: 1px dashed rgba(255, 255, 255, 0.55);
+  background: none;
+  pointer-events: none;
+}
+.at-band-note {
+  margin-left: auto;
+  font: 400 16px/1 var(--body);
+  color: var(--dim);
+  white-space: nowrap;
 }

@@ -1,7 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { tip } from '../ui/HoverTip';
 import { FreeRow, Lane } from './Lane';
-import { ageText, allFreeText, cards, clockText, countText, questionFor, freeSlots, headerAsk, slotMeter, slotsShortText, slotsText, slotsTip, type OmniSummary } from './model';
+import { IconAlertTriangle } from '@tabler/icons-react';
+import { ageText, allFreeText, cards, clockText, countText, questionFor, freeSlots, headerAsk, MAX_PIPS, type OmniSummary } from './model';
+import { busyNow, useBusyToday } from '../ribbon/AgentRow';
+import { busyStep, timeBySteps, todayLimitText } from '../ribbon/busy';
+import { dayStart, isoDay } from '../ribbon/days';
 import { scrollToCard, useCardScroll } from './cardScroll';
 import { snooze, useSnoozed } from './snooze';
 import { focusSession } from './open';
@@ -16,7 +20,7 @@ const IN_VIEW = 3;
 
 /**
  * How far the header has given way to fit on one line: 0 everything in full, 1 the meter's
- * short sentence ("5 of 8 working"), 2 the pips alone, 3 the alarm chip as a dot and a count.
+ * count alone ("5 of 4", the tag kept), 2 the pips alone, 3 the alarm chip as a dot and a count.
  * After that the ask button's title truncates with an ellipsis.
  */
 export type HeaderFit = 0 | 1 | 2 | 3;
@@ -35,27 +39,74 @@ function headerTight(hd: HTMLElement): boolean {
   return false;
 }
 
-/** The slot meter: a pip per slot, filled for each working session, "+N" past the last pip. */
-function SlotMeter({ summary, stale, fit }: { summary: OmniSummary; stale: boolean; fit: HeaderFit }) {
-  const m = slotMeter(summary);
+/**
+ * The slot meter: a pip per slot (up to six), the lit ones in the colour of how many sessions
+ * work right now against the limit (mint 1, cyan 2, violet 3, amber at the limit, red over it),
+ * "N of 4 working", "at the limit" at it, and over it hatched pips and a tag with a warning
+ * mark, "5 over", so over the limit never rests on colour alone. The count is the one rule
+ * the strip's cells and the panel's "Busy at once" line use (`ribbon/busy.ts`).
+ */
+function SlotMeter({ summary, stale, fit, busy }: { summary: OmniSummary; stale: boolean; fit: HeaderFit; busy: MeterCount }) {
+  const { n, limit, today } = busy;
+  const step = busyStep(n, limit);
+  const pips = Math.max(1, Math.min(MAX_PIPS, limit));
+  const over = Math.max(0, n - limit);
+  const open = typeof summary.slots.sessions === 'number' ? `, ${summary.slots.sessions} open` : '';
+  const head = `${n} working${open}, limit ${limit}`;
+  const rule = 'Counts sessions working at once; a session and its helpers count once.';
   return (
     <button
       type="button"
-      className="slot-meter"
+      className={`slot-meter s${step}`}
       disabled={stale}
-      aria-label={slotsTip(summary)}
+      aria-label={`${head}. ${today ? `${today} ` : ''}${rule} Click to bring OmniGent forward.`}
       onClick={() => focusSession()}
-      {...tip(stale ? `${slotsTip(summary).replace(' Click to bring OmniGent forward.', '')} These numbers may be out of date.` : slotsTip(summary))}
+      {...tip(() => (
+        <>
+          <span className="tip-t">{head}</span>
+          {today && <span className="tip-s">{today}</span>}
+          <span className="tip-s">{rule}</span>
+          {stale ? <span className="tip-s">These numbers may be out of date.</span> : <span className="tip-k">Click to bring OmniGent forward</span>}
+        </>
+      ))}
     >
       <span className="pips" aria-hidden="true">
-        {m.pips.map((on, i) => (
-          <i key={i} className={on ? 'on' : ''} />
+        {Array.from({ length: pips }, (_, i) => (
+          <i key={i} className={i < n ? 'on' : ''} />
         ))}
-        {m.over > 0 && <em>+{m.over}</em>}
       </span>
-      {fit < 2 && <span className="xs">{fit === 0 ? slotsText(summary) : slotsShortText(summary)}</span>}
+      {fit < 2 && (
+        <span className="xs">
+          <b>
+            {n} of {limit}
+          </b>
+          {fit === 0 ? ' working' : ''}
+        </span>
+      )}
+      {fit === 0 && step === 4 && <span className="at-limit">at the limit</span>}
+      {over > 0 && (
+        <span className="over-tag">
+          <IconAlertTriangle stroke={2} aria-hidden="true" />
+          {over} over
+        </span>
+      )}
     </button>
   );
+}
+
+/** What the meter shows: sessions working now, the limit, and today's time at and over it. */
+interface MeterCount {
+  n: number;
+  limit: number;
+  today: string | null;
+}
+
+function useMeterCount(summary: OmniSummary, now: number): MeterCount {
+  const b = useBusyToday(now);
+  const limit = summary.slots.limit;
+  if (!b) return { n: summary.slots.working ?? summary.slots.used, limit, today: null };
+  const today = b.fromLog ? todayLimitText(timeBySteps(b.spans, limit, dayStart(isoDay(now)), b.until), limit) : null;
+  return { n: busyNow(b, summary), limit, today };
 }
 
 /**
@@ -93,7 +144,8 @@ export function Lanes({ summary, stale, freshAt, now, idle }: { summary: OmniSum
   const alarms = useOpenAlarms();
   const recording = useSignalStore((s) => s.recording);
   const hd = useRef<HTMLDivElement>(null);
-  const fitKey = `${slotsText(summary)}|${count}|${ask.text}|${ask.title ?? ''}|${ask.more ?? ''}|${ask.tone}|${alarms}|${stale}|${freshAt}|${recording}`;
+  const meter = useMeterCount(summary, now);
+  const fitKey = `${meter.n}|${meter.limit}|${count}|${ask.text}|${ask.title ?? ''}|${ask.more ?? ''}|${ask.tone}|${alarms}|${stale}|${freshAt}|${recording}`;
   const [fitState, setFitState] = useState<{ key: string; level: HeaderFit }>({ key: fitKey, level: 0 });
   const fit: HeaderFit = fitState.key === fitKey ? fitState.level : 0;
   useLayoutEffect(() => {
@@ -119,7 +171,7 @@ export function Lanes({ summary, stale, freshAt, now, idle }: { summary: OmniSum
       <div className="lanes-hd" ref={hd} data-fit={fit}>
         <div className="row lanes-hd-l">
           <span className="k">Agents</span>
-          <SlotMeter summary={summary} stale={stale} fit={fit} />
+          <SlotMeter summary={summary} stale={stale} fit={fit} busy={meter} />
           <AlarmChip className="xs lanes-alarm" compact={fit >= 3} />
           {count && (
             <button

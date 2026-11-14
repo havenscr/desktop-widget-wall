@@ -93,7 +93,7 @@ it('the handle opens the Day drawer; a folded chip opens it too; Escape and a cl
   const r = render(<Ribbon kind="work" />);
   await flush();
   expect(r.container.querySelector('.day-drawer')).toBeNull();
-  fireEvent.click(r.container.querySelector('.rib .rib-handle') as HTMLElement);
+  fireEvent.click(r.container.querySelector('.rib-handle') as HTMLElement);
   expect(r.container.querySelector('.day-drawer')).not.toBeNull();
   fireEvent.keyDown(window, { key: 'Escape' });
   expect(r.container.querySelector('.day-drawer')).toBeNull();
@@ -106,7 +106,7 @@ it('the handle opens the Day drawer; a folded chip opens it too; Escape and a cl
 it('the drawer lists the agenda with overlaps side by side and Join, and one row per session, waiting first', async () => {
   const r = render(<Ribbon kind="work" />);
   await flush();
-  fireEvent.click(r.container.querySelector('.rib .rib-handle') as HTMLElement);
+  fireEvent.click(r.container.querySelector('.rib-handle') as HTMLElement);
   const d = r.container.querySelector('.day-drawer') as HTMLElement;
   const evs = [...d.querySelectorAll('.dd-ev')] as HTMLElement[];
   expect(evs.map((e) => e.querySelector('b')!.textContent)).toEqual(['Standup', 'Budget sync', 'Design critique', 'Vendor demo', 'Weekly planning']);
