@@ -1323,8 +1323,8 @@
    looks.ts: wall 1106, 16, 889 by 500), as tall as the sky allows: its top 16 px under the top of
    the strip, its foot 11 px under the horizon line, BEHIND the ranges and the land (the horizon's
    front canvas, see .w-layered), so only the land hides its lower edge; between the left block
-   and the cards, so nothing of the wall's lies on it. Its edges are plain (the owner asked for no
-   feather on this look), with a faint line and glow so a bare edge does not look cut out.
+   and the cards, so nothing of the wall's lies on it. Its top, left and right edges fade
+   softly into the sky (see .w-sky .w-screen); its foot is not faded.
    The embedded player cannot report its video's shape, so the frame is fitted as 16:9. It lies
    under every control: the main area becomes its own layer group (isolation) and the picture
    sits at z-index -1 inside it, above the horizon's sky and below the clock, the tabs, the cards
