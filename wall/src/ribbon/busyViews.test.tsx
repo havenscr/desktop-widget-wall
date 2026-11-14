@@ -144,3 +144,16 @@ it('at the limit the meter says so in amber; a past day counts its recorded span
   expect(panel.querySelector('.dd-line, .at-line')).toBeNull();
   expect([...panel.querySelectorAll('.at-row .at-name')].map((x) => x.textContent)).toEqual(['Release notes draft', 'Docs tidy pass']);
 }, 20_000);
+
+it('a helper or side chat gets no row, no count and no click target: the drawer lists the six parents only', async () => {
+  answer = busyDay;
+  const r = render(<Ribbon kind="work" />);
+  await flush();
+  fireEvent.click(r.container.querySelector('.rib-handle') as HTMLElement);
+  await flush();
+  const rows = [...r.container.querySelectorAll('.day-drawer .dd-row')];
+  expect(rows).toHaveLength(6);
+  expect(rows.map((x) => x.querySelector('.dd-name')!.textContent).sort()).toEqual(ids.map((_, i) => `Session ${i + 1}`));
+  // No control anywhere in the drawer or the strip names the helper's id.
+  expect(r.container.innerHTML).not.toContain('c0ffee00-0001');
+}, 20_000);

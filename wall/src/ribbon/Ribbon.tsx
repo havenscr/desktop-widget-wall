@@ -126,10 +126,10 @@ export function laneBox(lane: number, lanes: number): { top: number; height: num
   return { top: ROW_TOP + lane * (height + LANE_GAP), height };
 }
 
-/** What row 2 holds, as the tooltip on its icon. */
 /** The lip starts this far into the strip (inside its rounded corners). */
 const LIP_INSET = 24;
 
+/** What row 2 holds, as the tooltip on its icon. */
 const ROW2_TIP: Record<RibbonKind, string> = {
   work: 'Agent activity and tasks due today',
   home: 'Home tasks due today',

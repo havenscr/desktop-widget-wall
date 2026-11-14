@@ -25,7 +25,7 @@
 // CI does not run this; run it by hand before a layout change is handed over.
 //
 //   WALL_CHROME=/path/to/chrome-or-headless-shell npm --prefix wall run fit-check
-//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, header, deck, tiles, picker, chips, heading, zenhint, strip, fold, drawer, rows, handle, lip-cover, row-parts, over-hatch, row-type, sky, floor, sun, tools, toolsnames, meetfill, meetempty, fy-height, key-edge, hide-pill, hide-note, leave-band, rec-chip, rec-height, lwbuttons, lwoverlap, lwsquare, lwring, lwtemp, lwround, listen-player, listen-card, listen-slot, listen-next)
+//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, header, deck, tiles, picker, chips, heading, zenhint, strip, fold, drawer, rows, handle, lip-cover, lip-scrim, row-parts, over-hatch, row-type, sky, floor, sun, tools, toolsnames, meetfill, meetempty, fy-height, key-edge, hide-pill, hide-note, leave-band, rec-chip, rec-height, lwbuttons, lwoverlap, lwsquare, lwring, lwtemp, lwround, listen-player, listen-card, listen-slot, listen-next)
 //   npm --prefix wall run fit-check -- --self-test
 //
 // WALL_CHROME (or the first argument that is not a flag) is a Chromium or
@@ -75,6 +75,7 @@ const EXPECT = {
   handle: /^ *FAIL strip: the drawer handle covers /m,
   // day handle, rows, colours
   'lip-cover': /^ *FAIL strip: the drawer handle covers /m,
+  'lip-scrim': /^ *FAIL strip: the Close the day lip /m,
   'row-parts': /^ *FAIL strip: drawer row .* (parts overlap|runs out of its row|quiet line is squeezed|wraps)/m,
   'over-hatch': /^ *FAIL strip: an over-the-limit cell is not (taller|hatched)/m,
   'row-type': /^ *FAIL strip: text under 16 px in /m,
@@ -135,6 +136,7 @@ const OVERFLOWS = {
   handle: '.rib-handle.day-lip { bottom: 75px !important; }',
   // day handle, rows, colours: a 60 px lip, a 600 px title, the hatch removed, 12 px text.
   'lip-cover': '.rib-handle.day-lip { bottom: 61px !important; height: 60px !important; }',
+  'lip-scrim': '.day-drawer .rib-handle.day-lip { z-index: 0 !important; pointer-events: none !important; }',
   'row-parts': '.day-drawer .dd-name { width: 600px !important; }',
   'over-hatch': '.rib .agent-row .ac i.b5 { background: var(--busy-5) !important; top: 7px !important; height: 6px !important; }',
   'row-type': '.day-drawer .dd-line { font-size: 12px !important; }',
@@ -727,6 +729,23 @@ try {
       if (r.left < 0 || r.top < 0 || r.right > innerWidth + 0.5 || r.bottom > innerHeight + 0.5) strip.push('strip: ' + sel + ' sticks out of the stage');
       if (rail && r.left < rail.getBoundingClientRect().right - 0.5) strip.push('strip: ' + sel + ' covers the rail');
     }
+    // day handle, rows, colours: the "Close the day" lip is a real button inside the drawer's own
+    // subtree, with a z-index above the drawer's other layers, and a scrim another change puts
+    // behind the drawer (simulated here, below the drawer's layer) never covers it.
+    const lipIn = document.querySelector('.day-drawer .rib-handle.day-lip');
+    if (lipIn) {
+      if (lipIn.tagName !== 'BUTTON') strip.push('strip: the Close the day lip is not a button');
+      const z = (e) => parseInt(getComputedStyle(e).zIndex, 10) || 0;
+      const others = Math.max(0, ...[...document.querySelector('.day-drawer').children].filter((c) => c !== lipIn).map(z));
+      if (z(lipIn) <= others) strip.push('strip: the Close the day lip has z-index ' + z(lipIn) + ', not above the drawer\'s other layers (' + others + ')');
+      const scrim = document.createElement('div');
+      scrim.style.cssText = 'position:fixed;inset:0;z-index:44';
+      document.body.appendChild(scrim);
+      const lr = lipIn.querySelector('.lip-pill').getBoundingClientRect();
+      const topEl = document.elementFromPoint(lr.left + lr.width / 2, lr.top + lr.height / 2);
+      scrim.remove();
+      if (!topEl || !lipIn.contains(topEl)) strip.push('strip: the Close the day lip is under a scrim (found ' + (topEl ? topEl.className || topEl.tagName : 'nothing') + ')');
+    }
     for (const row of document.querySelectorAll('.agents-today .at-row:not(.skel), .day-drawer .dd-row')) {
       const h = row.getBoundingClientRect().height;
       if (h < 32 - 0.5) strip.push('strip: an Agents today row is ' + Math.round(h) + ' px tall (at least 32)');
@@ -1014,6 +1033,7 @@ try {
     handle: (v) => v.name === 'Strip: overlaps, twelve sessions',
     // day handle, rows, colours
     'lip-cover': (v) => v.name === 'Strip: overlaps, twelve sessions',
+    'lip-scrim': (v) => v.name === 'Strip: the Day drawer open',
     'row-parts': (v) => v.name === 'Strip: the Day drawer, twelve busy, long titles',
     'over-hatch': (v) => v.name === 'Strip: twelve open, nine working, over the limit',
     'row-type': (v) => v.name === 'Strip: the Day drawer, twelve busy, long titles',

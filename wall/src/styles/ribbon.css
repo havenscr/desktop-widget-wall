@@ -440,9 +440,12 @@
   cursor: pointer;
   z-index: 3;
 }
+/* Inside the drawer's own layer (z-index 45), above its other parts, so a scrim another change
+   puts behind the drawer never covers "Close the day". */
 .day-drawer .rib-handle.day-lip {
   top: -17px;
   bottom: auto;
+  z-index: 6;
 }
 .day-lip::before {
   content: '';
