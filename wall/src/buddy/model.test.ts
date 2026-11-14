@@ -728,10 +728,11 @@ describe('sprites', () => {
       }
     }
   });
-  it('every pose keeps the sizes: 18 wide, 12 tall (sleep and lie 8, land and sit 11)', () => {
+  it('every pose keeps the sizes: 18 wide, 12 tall (sleep and lie 8, land, sit and the seated watching poses 11)', () => {
+    const seated: readonly string[] = ['land', 'sit', 'watch', 'watchEar', 'front'];
     for (const pose of POSES) {
-      expect(SPRITES[pose][0]).toHaveLength(18);
-      expect(SPRITES[pose]).toHaveLength(pose === 'sleep' || pose === 'lie' ? 8 : pose === 'land' || pose === 'sit' ? 11 : 12);
+      for (const row of SPRITES[pose]) expect(row).toHaveLength(18);
+      expect(SPRITES[pose]).toHaveLength(pose === 'sleep' || pose === 'lie' ? 8 : seated.includes(pose) ? 11 : 12);
     }
   });
   it('sleep equals the concept map exactly', () => {

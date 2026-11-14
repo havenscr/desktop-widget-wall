@@ -28,6 +28,18 @@ export interface Span {
  */
 export const WATCH_GROUND: readonly Span[] = [{ min: 140, max: 1020, left: 124, right: 1140 }];
 
+/**
+ * His seat at the drive-in has its own ground: from the same left end as the Watch ground to the
+ * latest left edge `limit` that keeps him clear of the screen (`audience.ts` gives the limit).
+ * `WATCH_GROUND` is not stretched to it: that one also bounds his ordinary wander and where the
+ * owner can set him down. No ground at all when the limit lies left of the ground's start.
+ */
+export function seatGround(limit: number): Span[] {
+  const min = WATCH_GROUND[0].min;
+  const max = Math.floor(limit);
+  return max < min ? [] : [{ min, max, left: WATCH_GROUND[0].left, right: max + 120 }];
+}
+
 export const GROUNDS: Readonly<Record<WattPlace, readonly Span[]>> = {
   work: [{ min: 140, max: 2420, left: 124, right: 2536 }],
   meet: [{ min: 140, max: 2420, left: 124, right: 2536 }],
