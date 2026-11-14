@@ -1,5 +1,5 @@
 import { IconPin, IconPlus } from '@tabler/icons-react';
-import { useEffect, useState, type KeyboardEvent, type MouseEvent } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
 import { invoke } from '../bridge/tauri';
 import { overlayOwnsPointer } from '../ribbon/DrawerScrim';
 import { tip } from '../ui/HoverTip';
@@ -63,6 +63,8 @@ export function PinnedRow() {
   const [raw, setRaw] = useState<string | null>(readPinsRaw);
   const [picker, setPicker] = useState<number | null>(null);
   const [menu, setMenu] = useState<number | null>(null);
+  /** Whether the open menu came from the keyboard (the ContextMenu key, Shift+F10, Enter on the corner button). */
+  const menuByKey = useRef(false);
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     const changed = () => setRaw(readPinsRaw());
@@ -121,12 +123,16 @@ export function PinnedRow() {
   };
   const onContext = (slot: number) => (e: MouseEvent) => {
     e.preventDefault();
-    if (!overlayOwnsPointer()) setMenu(slot);
+    if (overlayOwnsPointer()) return;
+    menuByKey.current = false;
+    setMenu(slot);
   };
   const onKey = (slot: number, action: string | null) => (e: KeyboardEvent) => {
     if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) {
       e.preventDefault();
-      if (!overlayOwnsPointer()) setMenu(slot);
+      if (overlayOwnsPointer()) return;
+      menuByKey.current = true;
+      setMenu(slot);
       return;
     }
     onKeyDown(action)(e);
@@ -222,11 +228,20 @@ export function PinnedRow() {
                 <KeyIcon name={p.icon} size={20} />
                 <span className="deck-lbl">{p.label}</span>
               </button>
-              <KeyMenuButton label={p.label} open={menu === i} onOpen={() => setMenu(i)} />
+              <KeyMenuButton
+                label={p.label}
+                open={menu === i}
+                onOpen={(byKeyboard) => {
+                  menuByKey.current = byKeyboard;
+                  setMenu(i);
+                }}
+                onClose={() => setMenu(null)}
+              />
               {menu === i && (
                 <KeyMenu
                   title={`${p.label}, in Always here`}
                   actions={actions}
+                  byKeyboard={menuByKey.current}
                   onClose={() => setMenu(null)}
                   onChoose={(id) => {
                     if (id === 'replace') openPicker(i);

@@ -7,7 +7,7 @@ import {
   IconVideo,
   type Icon,
 } from '@tabler/icons-react';
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type WheelEvent } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState, type KeyboardEvent, type MouseEvent, type WheelEvent } from 'react';
 import { invoke } from '../bridge/tauri';
 import { overlayOwnsPointer } from '../ribbon/DrawerScrim';
 import { tip } from '../ui/HoverTip';
@@ -167,7 +167,17 @@ export function Keys() {
   const tilesRef = useRef<HTMLDivElement | null>(null);
   const headRef = useRef<HTMLDivElement | null>(null);
   const [headFit, setHeadFit] = useState<{ key: string; level: HeadFit }>({ key: '', level: 0 });
-  const [menu, setMenu] = useState<number | null>(null);
+  /** The open key menu: the key's index and what the row showed when it opened (the set's id and part). */
+  const [menu, setMenu] = useState<{ at: number; shown: string; byKey: boolean } | null>(null);
+  /** What the row shows now, kept for the check below (set after the early returns). */
+  const shownNow = useRef<string | null>(null);
+  shownNow.current = null;
+  // A read of the pins on this display that follows a pin made through the Add tile.
+  const [, pinsChanged] = useReducer((n: number) => n + 1, 0);
+  useEffect(() => {
+    window.addEventListener(PINS_CHANGED_EVENT, pinsChanged);
+    return () => window.removeEventListener(PINS_CHANGED_EVENT, pinsChanged);
+  }, []);
   const [library, setLibrary] = useState<LibGroup[] | null>(null);
   useEffect(() => {
     let live = true;
@@ -177,6 +187,11 @@ export function Keys() {
     };
   }, []);
   useEffect(() => setMenu(null), [mode, chunk, takeUntil, recording]);
+  // The feed can bring another set under an open menu (Auto follows the app in front): the menu
+  // belongs to the key it was opened on, so it closes when what is shown is not that any more.
+  useEffect(() => {
+    if (menu && menu.shown !== shownNow.current) setMenu(null);
+  });
 
   const setMode = useCallback((m: Mode) => {
     setModeState(m);
@@ -296,6 +311,8 @@ export function Keys() {
   const chunks = keyChunks(allKeys);
   const paged = allKeys.length > KEYS_PER_ROW && !twoRows;
   const chunkAt = paged && chunk.setId === pageSet?.id ? Math.min(chunk.at, chunks.length - 1) : 0;
+  const shown = pageSet ? `${pageSet.id}:${chunkAt}` : null;
+  shownNow.current = shown;
 
   const runItem = (item: ForYouItem, detail: number) =>
     void fyGuard.run(`fy:${item.key}`, detail, async () => {
@@ -493,20 +510,20 @@ export function Keys() {
                   : { id: 'pin', label: 'Pin to Always here', note: `${pinRefs.length} of ${MAX_PINS}` },
             { id: 'file', label: 'Edit keys file', note: 'keys.json' },
           ];
-          const openMenu = () => {
-            if (!overlayOwnsPointer()) setMenu(i);
+          const openMenu = (byKey: boolean) => {
+            if (!overlayOwnsPointer() && shown !== null) setMenu({ at: i, shown, byKey });
           };
           const onMenuKey = (event: KeyboardEvent<HTMLButtonElement>) => {
             if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
               event.preventDefault();
-              openMenu();
+              openMenu(true);
               return;
             }
             onKeyDown(k.action)(event);
           };
           const onContext = (event: MouseEvent) => {
             event.preventDefault();
-            openMenu();
+            openMenu(false);
           };
           return (
             <div className="key-tile-wrap" key={`${set.id}-${i}`}>
@@ -521,11 +538,7 @@ export function Keys() {
                   ? layoutOffReason(arrange)
                   : wrongApp
                     ? `${k.label}: ${set.name} is not in front, so this would send nothing. Bring ${set.name} forward, or click Auto to follow the app in front.`
-                    : k.action
-                      ? k.label
-                      : set.general
-                        ? `Send ${k.label} to the app in front`
-                        : `Send ${k.label} to ${set.name}`,
+                    : `${k.action ? k.label : set.general ? `Send ${k.label} to the app in front` : `Send ${k.label} to ${set.name}`}. Right-click, or the button in its corner, for more.`,
               )}
               onKeyDown={onMenuKey}
               onContextMenu={onContext}
@@ -538,16 +551,21 @@ export function Keys() {
               <KeyIcon name={k.icon} size={20} />
               <span className="deck-lbl">{label}</span>
             </button>
-            <KeyMenuButton label={k.label} open={menu === i} onOpen={openMenu} />
-            {menu === i && (
+            <KeyMenuButton label={k.label} open={menu?.at === i && menu.shown === shown} onOpen={openMenu} onClose={() => setMenu(null)} />
+            {menu?.at === i && menu.shown === shown && (
               <KeyMenu
                 title={`${k.label}, in ${set.name}`}
                 actions={actions}
+                byKeyboard={menu.byKey}
                 onClose={() => setMenu(null)}
                 onChoose={(id) => {
                   if (id !== 'pin' || !pinRef || full || alreadyPinned || !library) return;
                   const next = [...pinRefs, pinRef];
-                  localStorage.setItem(PINS_KEY, serializePins(next, sum.filePins));
+                  try {
+                    localStorage.setItem(PINS_KEY, serializePins(next, sum.filePins));
+                  } catch {
+                    // Storage may be blocked; the pin is then not kept, and the click does not throw.
+                  }
                   window.dispatchEvent(new Event(PINS_CHANGED_EVENT));
                 }}
               />
