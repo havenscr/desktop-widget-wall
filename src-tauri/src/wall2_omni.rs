@@ -614,8 +614,8 @@ fn fetch_summary(base: &str) -> Result<OmniSummary, String> {
 
 // Section: session ids
 
-/// The session ids in the most recent successful summary. A session can be opened only if
-/// its id is in here.
+/// Parent session ids from the live sources in the most recent successful summary. A session
+/// can be opened only if its id is in here.
 static KNOWN_IDS: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
 fn ids_of(s: &OmniSummary) -> Vec<String> {
@@ -627,8 +627,6 @@ fn ids_of(s: &OmniSummary) -> Vec<String> {
         ids.push(first.session_id.clone());
     }
     ids.extend(s.your_move.ids.iter().cloned());
-    ids.extend(s.sessions.keys().cloned());
-    ids.extend(s.day.iter().map(|d| d.lane.clone()));
     ids.sort();
     ids.dedup();
     ids
@@ -2146,7 +2144,7 @@ mod tests {
     }
 
     #[test]
-    fn known_ids_include_every_new_source() {
+    fn known_ids_include_only_live_parent_sources() {
         let mut body = full();
         body["sessionsList"] = json!([lane_json(&id(11))]);
         body["yourMove"]["ids"] = json!([id(12)]);
@@ -2154,10 +2152,13 @@ mod tests {
         body["sessions"][id(13)] = json!({ "title": "Named" });
         body["day"] = json!([{ "lane": id(14), "start": "2026-11-12T17:00:00Z", "end": null, "kind": "run" }]);
         let ids = ids_of(&shape_summary(&body).unwrap());
-        for n in [1, 2, 11, 12, 13, 14] {
+        for n in [1, 2, 11, 12] {
             assert!(ids.contains(&id(n)), "missing {}", id(n));
         }
-        assert_eq!(ids.len(), 6);
+        for n in [13, 14] {
+            assert!(!ids.contains(&id(n)), "accepted {}", id(n));
+        }
+        assert_eq!(ids.len(), 4);
     }
 
     const EXE: &str = r"C:\Program Files\Example\omnigent.exe";
