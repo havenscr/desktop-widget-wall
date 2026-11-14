@@ -708,3 +708,18 @@ it('Dream status: a lane that waits on the owner is not counted as working, like
   resetAgents();
   mocks.clear();
 });
+
+it('Dream status: counts helper work outside the three glance lanes', async () => {
+  vi.setSystemTime(new Date(2026, 10, 11, 23, 48));
+  resetAgents();
+  localStorage.clear();
+  const quiet = [lane({ id: 'a', live: 'idle' }), lane({ id: 'b', live: 'idle' }), lane({ id: 'c', live: 'idle' })];
+  const helper = lane({ id: 'd', live: 'idle', bg: { agents: 1, shells: 0 } });
+  mocks.set('wall2_omni_summary', () => summary({ lanes: quiet, sessionsList: [...quiet, helper] }));
+  mocks.set('wall2_meet_day', () => ({ events: [] }));
+  render(<Dream onWake={() => undefined} />);
+  await flushAsync();
+  expect(document.querySelector('.dream-status')!.textContent).toMatch(/^1 agent still working/);
+  resetAgents();
+  mocks.clear();
+});

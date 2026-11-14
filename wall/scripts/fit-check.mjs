@@ -13,7 +13,8 @@
 // an older helper's answer, one lane, no lane, and the fill when the helper is not set up.
 // In every Work state it also fails on agent hit boxes of two sessions that share pixels, on
 // calendar chips (or a title beside one) that share pixels, and on a card line that cuts its words
-// while more than 60 px of it is unused, and on stage labels closer than 8 px. Home is checked
+// while more than 60 px of it is unused, on stage labels closer than 8 px, and on a card's
+// right-end time or action closer than 12 px to its stage track. Home is checked
 // with its Sound block at its fullest, typical, sparse, not reachable and not set up. Exits
 // non-zero on a failure. Unwind's Watch tab is checked empty, with three and with 24 saved,
 // playing in each look, and with its settings sheet open both ways. Keys style: every key edge at
@@ -108,6 +109,7 @@ const EXPECT = {
   'lip-band': /^ *FAIL strip: the drawer handle band covers /m,
   'lip-scrim': /^ *FAIL strip: the Close the day lip /m,
   'row-parts': /^ *FAIL strip: drawer row .* (parts overlap|runs out of its row|quiet line is squeezed|wraps)/m,
+  'helper-pill': /^ *FAIL strip: drawer row .* pill text is cut/m,
   'over-hatch': /^ *FAIL strip: an over-the-limit cell is not (taller|hatched)/m,
   'row-type': /^ *FAIL strip: text under 16 px in /m,
   sky: /^ *FAIL no point of the sky or the floor lands on \.w-sky/m,
@@ -187,6 +189,7 @@ const EXPECT = {
   'lines-control': /^ *FAIL lines: control ".*" is [\d.]+ px tall/m,
   'lines-text': /^ *FAIL lines: text under 16 px /m,
   'lines-clip': /^ *FAIL lines: a new type draws \d+ pixels inside the video's box/m,
+  'card-end': /^ *FAIL card right end on card \d+: /m,
   'spotify-copy': /^ *FAIL copy: Spotify message is cut/m,
   'account-copy': /^ *FAIL copy: account message is cut/m,
 };
@@ -198,6 +201,7 @@ const OVERFLOWS = {
   page: 'body::after { content: ""; position: absolute; left: 3000px; top: 0; width: 10px; height: 10px; }',
   agents: '.rib .agent-row .sg-hit { width: 60px !important; }',
   labels: '.work .centre .lane .jn em { padding: 0 14px !important; }',
+  'card-end': '.work .centre .lane .lm .s { white-space: nowrap; font-size: 38px !important; } .work .centre .lane .lm .s::after { content: " deliberately long right end label"; }',
   header: '.work .centre .lanes-hd .slot-meter .xs { display: inline-block; width: 60px; white-space: normal !important; }',
   deck: '.work .right-wing section.pinned { margin-top: 80px; }',
   tiles: '.work .right-wing .key-tile .deck-lbl { flex: none; width: 160px; max-width: none !important; }',
@@ -217,6 +221,7 @@ const OVERFLOWS = {
   'lip-band': '.rib-handle.day-lip[data-pass] { pointer-events: auto !important; }',
   'lip-scrim': '.day-drawer .rib-handle.day-lip { z-index: 0 !important; pointer-events: none !important; }',
   'row-parts': '.day-drawer .dd-name { width: 600px !important; }',
+  'helper-pill': '.day-drawer .dd-pill.helpers { width: 60px !important; overflow: hidden !important; }',
   'over-hatch': '.rib .agent-row .ac i.b5 { background: var(--busy-5) !important; top: 7px !important; height: 6px !important; }',
   'row-type': '.day-drawer .dd-line { font-size: 12px !important; }',
   // The whole-sky video layer catching the pointer and drawn over the controls.
@@ -280,7 +285,7 @@ const OVERFLOWS = {
   'watt-ground': '.watt-sheep { translate: 0 -100px !important; }',
   // his seat 80 px too far left (30 px clear of the screen still holds); 20 px nearer the screen (into the tower's foot).
   'watt-spot': '.watt-sheep { translate: -80px 0 !important; }',
-  'watt-tower': '.watt-sheep { translate: 14px 0 !important; }',
+  'watt-tower': '.watt-sheep { translate: 20px 0 !important; }',
   // tower and hologram: the frame's rings filled over the picture; the tower widened 120 px (to 1.16 times, about its centre);
   // the video's box back at the old place; the Look switch moved under the Hologram only; the Hologram's pane scaled 1.3 times;
   // its blend dropped; a refused autoplay's click that never reaches the tilted frame.
@@ -539,6 +544,7 @@ const TOOLS_VARIANTS = [
 ];
 const VARIANTS = [
   { name: 'three lanes, long titles', q: work('3'), checks: [...WINGS, ...LANES] },
+  { name: 'Card ends: helpers working', q: work('helpers'), checks: LANES },
   { name: 'twelve sessions, long titles, five meetings at once', q: work('12', '&meet=busy'), checks: SCROLLED },
   { name: 'seven sessions, the fifth waiting', q: work('7ask'), checks: SCROLLED },
   // The agents header never wraps: twelve sessions, two waiting with a long title, a network alarm, fresh and stale.
@@ -656,6 +662,7 @@ VARIANTS.push(
   { name: 'Strip: the needle at the centre, under the handle', q: query({ at: '2026-11-11T14:50:00-08:00', agents: '12ask', extra: '&meet=overlap' }), checks: ['.rib'], strip: true, viewportOnly: true },
   { name: 'Strip: late in the day', q: query({ at: '2026-11-11T22:50:00-08:00', agents: '12ask', extra: '&meet=overlap' }), checks: ['.rib'], strip: true, viewportOnly: true },
   { name: 'Strip: the Day drawer open', q: work('12ask', '&meet=overlap'), click: '.rib-handle', checks: ['.day-drawer', '.day-drawer .dd-agenda', '.day-drawer .dd-rows'], strip: true, viewportOnly: true },
+  { name: 'Strip: helpers working in the Day drawer', q: work('helpers'), click: '.rib-handle', checks: ['.day-drawer', '.day-drawer .dd-pill.helpers', '.day-drawer .dd-rows'], strip: true, viewportOnly: true },
   { name: 'Strip: Agents today, twelve sessions', q: work('12ask', '&days=typical'), click: '.rib .ag-line', checks: ['.agents-today', '.agents-today .at-head'], strip: true, viewportOnly: true },
   { name: 'Strip: Agents today, a heavy past day', q: work('12', '&days=heavy'), click: '.rib .ag-line >> .at-seg button:nth-child(2)', checks: ['.agents-today', '.agents-today .at-head', '.agents-today .at-foot'], strip: true, viewportOnly: true },
 );
@@ -854,6 +861,16 @@ try {
     const gaps = [...document.querySelectorAll('.work .centre .lane .jr')].flatMap((jr, i) => {
       const ems = [...jr.querySelectorAll('.jn em')].map((e) => e.getBoundingClientRect()).sort((a, b) => a.left - b.left);
       return ems.slice(1).flatMap((r, k) => (r.left - ems[k].right < 8 ? ['stage labels on card ' + i + ': gap ' + Math.round((r.left - ems[k].right) * 10) / 10 + ' px between label ' + k + ' and ' + (k + 1)] : []));
+    });
+    // Every card's right-end time or action stays clear of every stage dot and label.
+    const cardEnds = [...document.querySelectorAll('.work .centre .lane:not(.slim)')].flatMap((lane, i) => {
+      const end = lane.querySelector('.lm .s, .lm button');
+      const stages = [...lane.querySelectorAll('.jr .jn i, .jr .jn em')];
+      if (!end || !stages.length) return [];
+      const left = end.getBoundingClientRect().left;
+      const right = Math.max(...stages.map((e) => e.getBoundingClientRect().right));
+      const gap = left - right;
+      return gap < 12 ? ['card right end on card ' + i + ': gap ' + Math.round(gap * 10) / 10 + ' px from stage track (at least 12 px)'] : [];
     });
     // Watt's menu: item heights, parts outside the menu, whether it covers him, and where its tail points.
     let wattCard = null;
@@ -1108,6 +1125,12 @@ try {
       parts.forEach((a, i) => parts.slice(i + 1).forEach((b) => { if (hit(a.r, b.r)) strip.push('strip: drawer row "' + name + '" parts overlap: ' + a.c + ' / ' + b.c); }));
       for (const p of parts) if (p.r.right > rr.right + 0.5 || p.r.left < rr.left - 0.5) strip.push('strip: drawer row "' + name + '" ' + p.c + ' runs out of its row');
       for (const e of row.querySelectorAll('.dd-name, .dd-pill, .dd-line, .dd-time')) if (e.scrollHeight > e.clientHeight + 1 || e.getBoundingClientRect().height > rr.height) strip.push('strip: drawer row "' + name + '" wraps in ' + e.className);
+      const pill = row.querySelector('.dd-pill.helpers');
+      if (pill) {
+        const range = document.createRange();
+        range.selectNodeContents(pill);
+        if (range.getBoundingClientRect().width > pill.clientWidth - 8) strip.push('strip: drawer row "' + name + '" pill text is cut');
+      }
       const line = row.querySelector('.dd-line');
       if (line && line.getBoundingClientRect().width < 300) strip.push('strip: drawer row "' + name + '" quiet line is squeezed to ' + Math.round(line.getBoundingClientRect().width) + ' px');
     }
@@ -1659,7 +1682,7 @@ try {
       return fails;
     })();
     const areaResults = Object.fromEntries(Object.entries(globalThis.__areaMeasurements ?? {}).map(([key, fn]) => [key, fn()]));
-    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, copyOut, meetOut, strip, opened, watchPolish, skyLayers, thCheck, tileText, listen, lines, watchBehaviour, wattDriveIn, areaResults });
+    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, cardEnds, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, copyOut, meetOut, strip, opened, watchPolish, skyLayers, thCheck, tileText, listen, lines, watchBehaviour, wattDriveIn, areaResults });
     document.body.appendChild(pre);
   }, new URLSearchParams(location.search).get('card') ? 7000 : 3000);</script>`;
   const areaMeasurements = Object.assign({}, ...areas.map((area) => area.fit?.measurements ?? {}));
@@ -1672,6 +1695,7 @@ try {
   if (overflow) console.log(`deliberate overflow: ${overflow} (${OVERFLOWS[overflow] || BREAK_QUERIES[overflow]})`);
   // A deliberate break runs on the first state, or for the picker on the state that opens it.
   const BREAK_ON = {
+    'card-end': (v) => v.name === 'Card ends: helpers working',
     zenhint: (v) => v.name.startsWith('Zen,'),
     picker: (v) => v.name.startsWith('Deck, the key picker open over'),
     tools: (v) => v.name === 'Tools, over Work, typical',
@@ -1688,6 +1712,7 @@ try {
     'tile-icon': (v) => v.name === 'Keys style, day: library sets held on VS Code',
     'tile-iconbox': (v) => v.name === 'Keys style, day: library sets held on VS Code',
     'drawer-scrim': (v) => v.name === 'Strip: the Day drawer open',
+    'helper-pill': (v) => v.name === 'Strip: helpers working in the Day drawer',
     // deck pins and stretch
     'sparse-width': (v) => v.name === 'Deck, one pin plus Add, one Now key',
     'tile-equal': (v) => v.name === 'Deck, three pins plus Add, three Now keys',
@@ -1785,7 +1810,7 @@ try {
       process.exit(1);
     }
     const text = m[1].replaceAll('&quot;', '"').replaceAll('&amp;', '&');
-    const { res, page: doc, overlaps, cut, gaps, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, copyOut, meetOut, strip, opened, watchPolish, skyLayers, thCheck, tileText, listen, lines, watchBehaviour, wattDriveIn, areaResults } = JSON.parse(text);
+    const { res, page: doc, overlaps, cut, gaps, cardEnds, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, copyOut, meetOut, strip, opened, watchPolish, skyLayers, thCheck, tileText, listen, lines, watchBehaviour, wattDriveIn, areaResults } = JSON.parse(text);
     // watt drive-in
     if (wattDriveIn) {
       for (const f of wattDriveIn.fails) console.log(`  FAIL ${f}`);
@@ -1996,8 +2021,9 @@ try {
     for (const o of overlaps) console.log(`  FAIL overlap: ${o}`);
     for (const c of cut) console.log(`  FAIL ${c}`);
     for (const g of gaps) console.log(`  FAIL ${g}`);
-    if (overlaps.length || cut.length || gaps.length) failed = true;
-    else console.log('  ok   no overlapping agent hit boxes or chips, no cut card line beside unused room, stage labels at least 8 px apart');
+    for (const c of cardEnds) console.log(`  FAIL ${c}`);
+    if (overlaps.length || cut.length || gaps.length || cardEnds.length) failed = true;
+    else console.log('  ok   no overlapping agent hit boxes or chips, no cut card line beside unused room, stage labels at least 8 px apart, card ends at least 12 px clear of stage tracks');
     const pageOk = doc.vw === 2560 && doc.vh === 720 && doc.sw <= doc.cw && doc.sh <= doc.ch;
     if (!pageOk) failed = true;
     console.log(`  ${pageOk ? 'ok  ' : 'FAIL'} page: viewport ${doc.vw} x ${doc.vh} (must be 2560 x 720), scroll ${doc.sw} x ${doc.sh} <= ${doc.cw} x ${doc.ch}`);

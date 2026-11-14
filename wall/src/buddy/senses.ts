@@ -1,4 +1,4 @@
-import type { DaySpan, Lane } from '../agents/model';
+import { laneWorks, type DaySpan, type Lane } from '../agents/model';
 import type { WeatherReading } from '../weather/model';
 import type { Topic } from './lines';
 
@@ -71,7 +71,7 @@ export function midday(hour: number): boolean {
 /** Lanes that are working (not waiting for an answer). */
 export function workingIds(lanes: readonly Lane[]): Set<string> {
   const out = new Set<string>();
-  for (const l of lanes) if (l.state === 'working' && !l.waiting) out.add(l.id);
+  for (const l of lanes) if (laneWorks(l)) out.add(l.id);
   return out;
 }
 
