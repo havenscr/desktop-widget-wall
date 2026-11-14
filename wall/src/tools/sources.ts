@@ -6,7 +6,7 @@ import { clockText } from '../meet/model';
 import { POLL_MS as MUSIC_POLL_MS, refreshNowPlaying, useNowPlayingStore } from '../music/store';
 import { REFRESH_MS as TASKS_REFRESH_MS } from '../tasks/model';
 import { STALE_MS as SOUND_STALE_MS } from '../home/soundModel';
-import { REFRESH_MS as WEATHER_REFRESH_MS, staleText } from '../weather/model';
+import { REFRESH_MS as WEATHER_REFRESH_MS, staleText, weatherFailureText } from '../weather/model';
 import { refreshWeather, useWeatherStore, type WeatherState } from '../weather/useWeather';
 import { refreshMeetingFeed, useMeetingFeed } from '../work/useNextMeeting';
 import { reviewNow } from '../ui/reviewClock';
@@ -43,7 +43,7 @@ export interface SourceSnapshot {
   calendar: { asOf: number | null; failed: boolean; feedStale: boolean; noCalendar: boolean; reads: number };
   agents: AgentsState;
   security: Pick<SecurityState, 'status' | 'summary' | 'readAt'>;
-  weather: Pick<WeatherState, 'reading' | 'failed'>;
+  weather: Pick<WeatherState, 'reading' | 'failed' | 'failure' | 'attemptedAt'>;
   music: { at: number };
   reports: Partial<Record<ReportId, Report>>;
 }
@@ -135,7 +135,7 @@ export function buildSources(s: SourceSnapshot): SourceRow[] {
     const id = 'weather' as const;
     const name = 'Weather';
     const w = s.weather.reading;
-    if (!w) rows.push(s.weather.failed ? { id, name, tone: 'down', at: null, reason: 'The weather service did not answer.' } : { id, name, tone: 'none', at: null, reason: 'Not read yet.' });
+    if (!w) rows.push(s.weather.failed ? { id, name, tone: 'down', at: s.weather.attemptedAt ?? null, reason: weatherFailureText(s.weather.failure) } : { id, name, tone: 'none', at: null, reason: 'Not read yet.' });
     else {
       const old = staleText(w.fetchedAt, now);
       if (old) rows.push({ id, name, tone: 'warn', at: w.fetchedAt, reason: `The reading is old (${old}). It refreshes every ${WEATHER_REFRESH_MS / 60_000} min.` });

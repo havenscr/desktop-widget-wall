@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useWeather } from '../weather/useWeather';
 import { dateLine, freshReading, WEATHER_UNAVAILABLE } from './model';
+import { tip } from '../ui/HoverTip';
+import { weatherFailureText } from '../weather/model';
 
 /**
  * "Wednesday night, 49° and clear" under the clock. Re-renders each minute. The weather
@@ -8,7 +10,7 @@ import { dateLine, freshReading, WEATHER_UNAVAILABLE } from './model';
  * day part alone.
  */
 export function DateLine({ now = () => new Date(), wallNow = Date.now }: { now?: () => Date; wallNow?: () => number }) {
-  const { reading, failed } = useWeather();
+  const { reading, failed, failure, attemptedAt } = useWeather();
   const [d, setD] = useState(now);
   useEffect(() => {
     const id = setInterval(() => setD(now()), 60_000);
@@ -20,7 +22,7 @@ export function DateLine({ now = () => new Date(), wallNow = Date.now }: { now?:
   return (
     <div className="u-date">
       {dateLine(d, fresh)}
-      {missing ? <span className="u-asof">, {WEATHER_UNAVAILABLE}</span> : null}
+      {missing ? <span className="u-asof" {...tip(`${weatherFailureText(failure)} Last tried ${attemptedAt ? new Date(attemptedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : 'recently'}.`)}>, {WEATHER_UNAVAILABLE}</span> : null}
     </div>
   );
 }

@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { create } from 'zustand';
 import { loadSettings } from '../settings/settings';
 import { useVisible } from '../ui/useVisible';
-import { buildUrl, parseWeather, shouldRefresh, type WeatherReading } from './model';
+import { buildUrl, parseWeather, shouldRefresh, type WeatherFailure, type WeatherReading } from './model';
 
 const CHECK_MS = 60_000;
 export const FETCH_TIMEOUT_MS = 15_000;
@@ -11,12 +11,14 @@ export interface WeatherState {
   reading: WeatherReading | null;
   /** True after a failed fetch while there is still no reading. */
   failed: boolean;
+  failure?: WeatherFailure | null;
+  attemptedAt?: number | null;
   now: number;
 }
 
 const defaultFetch: typeof fetch = (...a) => fetch(...a);
 
-const initial = (): WeatherState => ({ reading: null, failed: false, now: Date.now() });
+const initial = (): WeatherState => ({ reading: null, failed: false, failure: null, attemptedAt: null, now: Date.now() });
 
 /** The one shared reading every `useWeather` user sees. */
 export const useWeatherStore = create<WeatherState>(() => initial());
@@ -35,17 +37,23 @@ async function run(): Promise<void> {
   inFlight = true;
   const mine = epoch;
   lastAttempt = Date.now();
+  useWeatherStore.setState({ attemptedAt: lastAttempt });
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
     const s = loadSettings();
     const res = await fetcher(buildUrl(s.latitude, s.longitude), { signal: controller.signal });
-    if (!res.ok) throw new Error(`Weather HTTP ${res.status}`);
-    const next = parseWeather(await res.json(), Date.now());
-    if (mine === epoch) useWeatherStore.setState({ reading: next, failed: false });
-  } catch {
+    if (!res.ok) throw new Error(`weather-http:${res.status}`);
+    let body: unknown;
+    try { body = await res.json(); } catch { throw new Error('weather-parse') }
+    let next: WeatherReading;
+    try { next = parseWeather(body, Date.now()); } catch { throw new Error('weather-parse') }
+    if (mine === epoch) useWeatherStore.setState({ reading: next, failed: false, failure: null });
+  } catch (error) {
     /* keep the last good reading; the card shows its age */
-    if (mine === epoch && !useWeatherStore.getState().reading) useWeatherStore.setState({ failed: true });
+    const message = error instanceof Error ? error.message : '';
+    const failure: WeatherFailure = controller.signal.aborted ? 'timeout' : message.startsWith('weather-http:') ? `http ${Number(message.slice(13))}` : message === 'weather-parse' ? 'parse' : 'network';
+    if (mine === epoch) useWeatherStore.setState({ failed: !useWeatherStore.getState().reading, failure });
   } finally {
     clearTimeout(timeout);
     if (mine === epoch) inFlight = false;

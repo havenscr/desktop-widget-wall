@@ -2,7 +2,7 @@ import { act, render, renderHook, screen, waitFor } from '@testing-library/react
 import { StrictMode } from 'react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { WeatherCard } from './WeatherCard';
-import { FETCH_TIMEOUT_MS, resetWeatherStore, useWeather } from './useWeather';
+import { FETCH_TIMEOUT_MS, refreshWeather, resetWeatherStore, useWeather, useWeatherStore } from './useWeather';
 
 const body = {
   current: { time: '2026-11-11T10:15', temperature_2m: 57.6, weather_code: 3, is_day: 1 },
@@ -78,4 +78,17 @@ it('aborts a hung request after 15 seconds and fetches again later', async () =>
     await vi.advanceTimersByTimeAsync(60_000);
   });
   expect(result.current.reading?.temp).toBe(58);
+});
+
+it('keeps HTTP and unreadable reply failures distinct with the last try time', async () => {
+  let reply: 'http' | 'json' = 'http';
+  const f = vi.fn(async () => reply === 'http'
+    ? ({ ok: false, status: 403 } as Response)
+    : ({ ok: true, json: async () => { throw new Error('bad json'); } } as unknown as Response));
+  renderHook(() => useWeather(f as typeof fetch));
+  await waitFor(() => expect(useWeatherStore.getState().failure).toBe('http 403'));
+  expect(useWeatherStore.getState().attemptedAt).toEqual(expect.any(Number));
+  reply = 'json';
+  await act(async () => refreshWeather());
+  expect(useWeatherStore.getState().failure).toBe('parse');
 });
