@@ -8,6 +8,7 @@
 import { dayKey, sessionsOn, type FocusSession } from '../focus/day';
 import type { TaskItem } from '../tasks/model';
 import type { SunTimes } from './sun';
+import { busyPeak, workingSpans } from './busy';
 
 export const RIBBON_WIDTH = 2416;
 export const START_HOUR = 6;
@@ -529,7 +530,7 @@ export function allDayBarText(items: readonly Chip[]): string {
 /** The activity bar's cells: 12 minutes each. */
 export const CELL_MIN = 12;
 
-/** One cell of the thin activity bar: how many sessions were busy in it, and whether one waited on the owner. */
+/** One cell of the thin activity bar: the most sessions working at once in it, and whether one waited on the owner. */
 export interface ActivityCell {
   x: number;
   width: number;
@@ -541,8 +542,9 @@ export interface ActivityCell {
 
 /**
  * The thin activity bar: 12 minute cells from 6 AM to `until` (now, or the stale cut), each
- * with how many sessions had a span in it (any kind) and whether any of them waited on the
- * owner. Cells with nothing in them are left out.
+ * with the most sessions WORKING at once in it (`busy`: run spans, open or finished, as
+ * `busy.ts` counts them; the caller passes only parent and standalone sessions) and whether
+ * any of them waited on the owner. Cells with no span of any kind are left out.
  */
 export function activityCells(spans: readonly { lane: string; kind: string; start: number; end: number }[], now: number, until: number = now): ActivityCell[] {
   const d = new Date(now);
@@ -553,7 +555,7 @@ export function activityCells(spans: readonly { lane: string; kind: string; star
     const end = Math.min(until, t + CELL_MIN * 60_000);
     const inCell = spans.filter((g) => g.start < end && g.end > t);
     if (inCell.length === 0) continue;
-    const busy = new Set(inCell.map((g) => g.lane)).size;
+    const busy = busyPeak(workingSpans(inCell, new Set(inCell.map((g) => g.lane))), t, end);
     const x = RX(clampHour(wallHour(t, now)));
     const x1 = RX(clampHour(wallHour(end, now)));
     out.push({ x, width: Math.max(1, x1 - x - 1), start: t, end, busy, waits: inCell.some((g) => g.kind === 'wait') });
@@ -561,10 +563,6 @@ export function activityCells(spans: readonly { lane: string; kind: string; star
   return out;
 }
 
-/** A cell's opacity: brighter the more sessions were busy. */
-export function cellOpacity(busy: number): number {
-  return Math.min(1, 0.25 + busy * 0.12);
-}
 
 /** The agents line's counts: open sessions, how many need the owner, work, or sit idle. */
 export interface AgentCounts {

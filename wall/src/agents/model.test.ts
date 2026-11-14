@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  slotsShortText,
   ageText,
   agentSegments,
   allFreeText,
@@ -13,12 +12,8 @@ import {
   needsYouCount,
   prText,
   ringFraction,
-  slotMeter,
-  slotsText,
-  slotsTip,
   statusLine,
   waitingIds,
-  MAX_PIPS,
   cardLine,
   cardMeta,
   cards,
@@ -79,13 +74,6 @@ describe('lanes', () => {
 });
 
 describe('header and slots', () => {
-  it('shows the real slot numbers, even past the limit', () => {
-    expect(slotsText(summary())).toBe('3 running, 3 slots');
-    expect(slotsText(summary({ slots: { used: 9, limit: 4 } }))).toBe('9 running, 4 slots');
-    expect(slotsText(summary({ slots: { used: 1, limit: 1 } }))).toBe('1 running, 1 slot');
-    expect(slotsText(summary({ slots: { used: 8, limit: 4, sessions: 6, working: 4, helpers: 7 } }))).toBe('4 working, 6 open, 4 slots');
-  });
-
   it('says Nothing needs you, or One thing for you with the title and how many more', () => {
     expect(headerAsk(summary())).toMatchObject({ text: 'No agent needs you', title: null, id: null, more: null, tone: 'cyan' });
     // An older helper: the first entry names it.
@@ -128,17 +116,6 @@ describe('header and slots', () => {
     expect(headerAsk(s, 2)).toMatchObject({ id: 'a1b2c3d4-0002' });
     // An id nothing names is still a session.
     expect(headerAsk(summary({ yourMove: { total: 1, first: null, ids: ['a1b2c3d4-0abc'] } })).title).toBe('a session');
-  });
-
-  it('draws the slot meter with a pip per slot and the overflow past the last', () => {
-    expect(slotMeter(summary({ slots: { used: 8, limit: 4, sessions: 6, working: 2, helpers: 3 } }))).toEqual({ pips: [true, true, false, false], over: 0 });
-    expect(slotMeter(summary({ slots: { used: 8, limit: 4, sessions: 9, working: 7, helpers: 3 } }))).toEqual({ pips: [true, true, true, true], over: 3 });
-    // An older helper fills by used slots.
-    expect(slotMeter(summary({ slots: { used: 9, limit: 4 } })).over).toBe(5);
-    expect(slotMeter(summary({ slots: { used: 1, limit: 20 } })).pips).toHaveLength(MAX_PIPS);
-    expect(slotsTip(summary({ slots: { used: 8, limit: 4, sessions: 6, working: 4, helpers: 7 } }))).toBe(
-      '4 working, 6 open, 7 helpers, 4 slots on the server (more may run than there are slots). Click to bring OmniGent forward.',
-    );
   });
 
   it('counts free rows up to three, inside the limit', () => {
@@ -406,7 +383,3 @@ it('sums the day for the agent row icon', () => {
   expect(dayTotals([g('a', 'done', at(8), at(9))])).toBe('Today: no time of agent work across 1 session, no waiting on you');
 });
 
-it('shortens the slot sentence for a tight header: "5 of 8 working"', () => {
-  expect(slotsShortText(summary({ slots: { used: 12, limit: 4, sessions: 8, working: 5, helpers: 4 } }))).toBe('5 of 8 working');
-  expect(slotsShortText(summary({ slots: { used: 3, limit: 4 } }))).toBe('3 of 4 running');
-});
