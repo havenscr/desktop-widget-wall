@@ -1,9 +1,11 @@
-# Wall 2
+# Ridgeline
 
-Wall 2 is the next front end for Widget Wall. It lives beside the existing app
-(`src/`, untouched) and is built with Vite, React and TypeScript (strict). It
-runs in a plain browser for development and inside Tauri as a second app,
-"Widget Wall 2". So far: a scaled stage, the live horizon, a left rail with
+Ridgeline is the next front end for Widget Wall. It was called "Wall 2" while it
+was built, and some file, folder and code names (`wall/`, `wall2_*.rs`, the window
+label `wall2`, the app identifier) keep that name on purpose. It lives beside the
+existing app (`src/`, untouched) and is built with Vite, React and TypeScript
+(strict). It runs in a plain browser for development and inside Tauri as a second
+app, "Ridgeline". So far: a scaled stage, the live horizon, a left rail with
 three places, a clock, the Work tab basics (weather, music, focus timer), a task
 card, a network tile and mood buttons on Home, the Unwind tab with Watt the sheep, a sound ripple
 on the horizon, the Zen place with Dream, a small Tauri bridge and tests. Home has its moods, Sonos controls and a network tile; the Rooms row is still to come.
@@ -247,15 +249,15 @@ out, and the Speakers and More pop-outs open.
 ## Run and build inside Tauri
 
 `src-tauri/tauri.wall2.conf.json` is a second Tauri config. It overrides only
-the product name ("Widget Wall 2"), identifier, version, the `build` block
+the product name ("Ridgeline"), identifier, version, the `build` block
 (dev URL `http://localhost:1421`, build commands, `frontendDist` at
-`wall/dist`) and one window (label `wall2`). Everything else comes from
-`src-tauri/tauri.conf.json`.
+`wall/dist`), one window (label `wall2`) and the `bundle` icons and installer
+settings described below. Everything else comes from `src-tauri/tauri.conf.json`.
 
 **Window.** The window is labelled `wall2` and gets its own narrow capability,
 `src-tauri/capabilities/wall2.json` (`core:default` only; the old `default`
 capability is not loaded). This limits core and plugin permissions only; the
-app's own commands stay callable from Wall 2 until a later change adds a command
+app's own commands stay callable from Ridgeline until a later change adds a command
 list in `build.rs`. It is borderless, not resizable, not always on top
 and not in the taskbar; the tray icon shows it ("Show Window" or a left click)
 and quits it, and its tray menu has no "Toggle Fullscreen". At startup Rust
@@ -269,7 +271,7 @@ screen; it re-places itself when the strip returns.
 **Placement and its log.** `src-tauri/src/wall2_window.rs` lists monitors with
 Win32 and places the window with `SetWindowPos` on its handle: move onto the
 monitor, set the full rectangle, read it back, retry up to 3 times. A window
-subclass (Wall 2 only) re-applies the target after every `WM_DPICHANGED`, since
+subclass (Ridgeline only) re-applies the target after every `WM_DPICHANGED`, since
 a display scale change while crossing monitors can otherwise undo the move. At
 startup it places hidden, shows, places again, then re-checks at about 250 ms,
 1 s and 3 s. Every step is written to `wall2-placement.log` (truncated at each
@@ -293,6 +295,66 @@ npm run build:wall2     # tauri build with the second config (installers)
 
 `build:wall2` runs `npm --prefix wall ci && npm --prefix wall run build` first.
 The old app is unchanged: `npm run tauri build` still builds "Widget Wall".
+
+**Installer files.** `build:wall2` writes `Ridgeline_<version>_x64-setup.exe` (NSIS)
+and `Ridgeline_<version>_x64_en-US.msi` under `src-tauri/target/release/bundle/nsis/`
+and `.../msi/`, next to `widget-wall-desktop.exe` (the executable keeps the crate's
+name). CI uploads all three as the artifact `widget-wall-2-windows`; the artifact
+name did not change with the product name.
+
+**Icon.** The icon set is in `src-tauri/icons-ridgeline/` (`icon.svg` is the
+source; `make_icons.py` redraws the PNGs and `icon.ico` from it, see its header).
+`tauri.wall2.conf.json` points `bundle.icon` at it. The window icon and the tray
+icon are the first frame of the first `.ico` in that list, taken as one bitmap
+that Windows scales for every size it needs, so `icon.ico` stores its 32 px frame
+first (then 16, 24, 48, 64 and 256); a 16 px first frame, which is what Tauri's
+own icon command writes, would be stretched and blurry. The executable's own
+icon is the same file, and Windows picks the best frame for each size there. The old app's `src-tauri/icons/` is not used by this build.
+
+**Name, identifier and your data.** Renaming changes the name only. The app
+identifier (`com.havens-consulting.widget-wall2`) is unchanged, and Tauri keys the
+config folder (`feeds.json`, `meet.json`, the keys file), the local data folder
+(web view storage, so saved settings and local storage), the cache and the logs
+folder by the identifier, not by the product name. The Credential Manager entries
+for Spotify and Microsoft sign-ins are named `WidgetWall2/<service>/...` by the
+code, not by the product name. None of them move.
+
+**Installing over an existing "Widget Wall 2".** The bundler derives the install
+folder, the Installed apps entry and the Start menu and desktop shortcuts from the
+product name, and the default MSI upgrade code from `<productName>.exe.app.x64`.
+So a plain rename would install a second app beside the first. Two settings
+prevent that:
+
+- `bundle.windows.wix.upgradeCode` is set to the code the old name produced
+  (`45c8f91e-8224-55fe-92ae-75e0e555cffa`), so the new MSI upgrades an old MSI
+  install of Widget Wall 2.
+- `bundle.windows.nsis.installerHooks` loads `src-tauri/ridgeline-installer-hooks.nsh`.
+  Before installing, it finds an old setup.exe install through the old name's own
+  registry keys and runs only that install's `uninstall.exe`, silently and in update
+  mode (which skips deleting app data). Once the old uninstall entry is gone, it
+  also removes the old Start menu and desktop shortcuts and the old install-folder
+  key, which update mode leaves behind. Nothing is done if the old install is not
+  there. The app itself creates no sign-in (Run) entry; the hook only moves an
+  existing Run entry that pointed exactly at the old exe to the new name.
+
+Only like for like replaces the old install: the new setup.exe replaces an old
+setup.exe install, and the new MSI replaces an old MSI install. An MSI followed by
+the setup.exe (or the reverse) leaves two entries; then remove the old one in
+Installed apps.
+
+If the old install cannot be removed (the uninstall fails, or its Installed apps
+entry is still there afterwards), the installer shows one message and installs
+Ridgeline beside it. It never aborts, and the installer itself removes nothing in
+that case (the old uninstaller may already have partly run before it failed). Remove Widget Wall 2 afterwards in Windows Settings, Installed apps.
+
+The silent old uninstall closes every running `widget-wall-desktop.exe` of the
+current user, which includes the first app ("Widget Wall"), since both use that
+file name; start it again afterwards.
+
+After the first install, Installed apps should show one entry, "Ridgeline". If it
+also shows "Widget Wall 2", uninstall that entry and leave the "delete the
+application data" box unticked. A pin on the taskbar cannot be moved from the
+installer: unpin the old icon if you had pinned it, and pin Ridgeline.
 
 ## Where things are
 
@@ -1509,7 +1571,7 @@ commands, one shared `ureq` agent with an 8 second timeout, answers capped at
 
 ### Setting it up: `feeds.json`
 
-Create `feeds.json` in Wall 2's app config directory, the folder Tauri calls
+Create `feeds.json` in Ridgeline's app config directory, the folder Tauri calls
 `app_config_dir` for the identifier `com.havens-consulting.widget-wall2`. On
 Windows that is `%APPDATA%\com.havens-consulting.widget-wall2\feeds.json`. The
 file is read on every call, so a change applies on the next refresh.
@@ -1715,7 +1777,7 @@ All token and Graph work happens in Rust (`src-tauri/src/wall2_meet/`). The web 
 
 ### Setting it up: `meet.json`
 
-Create `meet.json` next to `feeds.json` in Wall 2's app config directory (`%APPDATA%\com.havens-consulting.widget-wall2\`). It holds no secrets:
+Create `meet.json` next to `feeds.json` in Ridgeline's app config directory (`%APPDATA%\com.havens-consulting.widget-wall2\`). It holds no secrets:
 
 ```json
 {
@@ -1733,9 +1795,9 @@ Create `meet.json` next to `feeds.json` in Wall 2's app config directory (`%APPD
 
 ### Sign in and sign out
 
-Open Tools (the rail button at the bottom, on any place), then "Sign in" on an account under Accounts. Wall 2 opens the system browser at the Microsoft sign-in page and waits up to 5 minutes on a loopback listener (`127.0.0.1`, a random port). The sign-in uses PKCE (S256) and a random `state`; the listener answers 404 to any other path and 400 to a callback whose `state` is wrong or missing (and keeps waiting), and it closes after the first valid callback, a failed or denied answer, a cancel, or the 5 minute limit. The redirect is `http://localhost:<port>/auth-callback.html`; Microsoft ignores the port for `localhost` redirects, so the registrations the old app already uses accept it. If the browser shows AADSTS50011 (reply URL mismatch), add `http://localhost/auth-callback.html` under "Mobile and desktop applications" in that app registration.
+Open Tools (the rail button at the bottom, on any place), then "Sign in" on an account under Accounts. Ridgeline opens the system browser at the Microsoft sign-in page and waits up to 5 minutes on a loopback listener (`127.0.0.1`, a random port). The sign-in uses PKCE (S256) and a random `state`; the listener answers 404 to any other path and 400 to a callback whose `state` is wrong or missing (and keeps waiting), and it closes after the first valid callback, a failed or denied answer, a cancel, or the 5 minute limit. The redirect is `http://localhost:<port>/auth-callback.html`; Microsoft ignores the port for `localhost` redirects, so the registrations the old app already uses accept it. If the browser shows AADSTS50011 (reply URL mismatch), add `http://localhost/auth-callback.html` under "Mobile and desktop applications" in that app registration.
 
-The only scopes asked for are `offline_access` and `Calendars.Read`. After the first sign-in Wall 2 refreshes silently. "Sign out" deletes the stored token and the cached access token on this machine; it does not call Microsoft. "Cancel" ends a waiting sign-in. A sign-in that Microsoft rejects later (`invalid_grant`, or another refusal such as `consent_required`) shows "Sign in needed". Closing Tools during a sign-in cancels it. If one account is unavailable, its last meetings and Join buttons stay (with "updated N min ago") until it answers again.
+The only scopes asked for are `offline_access` and `Calendars.Read`. After the first sign-in Ridgeline refreshes silently. "Sign out" deletes the stored token and the cached access token on this machine; it does not call Microsoft. "Cancel" ends a waiting sign-in. A sign-in that Microsoft rejects later (`invalid_grant`, or another refusal such as `consent_required`) shows "Sign in needed". Closing Tools during a sign-in cancels it. If one account is unavailable, its last meetings and Join buttons stay (with "updated N min ago") until it answers again.
 
 ### Where the token lives
 
@@ -1756,15 +1818,15 @@ events to the day view (there is no "updated N min ago" copy here).
 
 ### Join links
 
-Join opens only a Teams meeting link: `https` with no user name, password or port other than 443, host exactly `teams.microsoft.com` or `teams.live.com`, a path starting `/l/meetup-join/` or `/meet/`, and at most 2048 characters. Anything else (Zoom, Google Meet, a Safe Links wrapper, an unknown Teams format) shows no Join button. The link stays in Rust behind a key like `3-1`; the web view passes only the key, and Rust checks the rules again before opening it in the system browser. The Wall 2 capability has no opener permission.
+Join opens only a Teams meeting link: `https` with no user name, password or port other than 443, host exactly `teams.microsoft.com` or `teams.live.com`, a path starting `/l/meetup-join/` or `/meet/`, and at most 2048 characters. Anything else (Zoom, Google Meet, a Safe Links wrapper, an unknown Teams format) shows no Join button. The link stays in Rust behind a key like `3-1`; the web view passes only the key, and Rust checks the rules again before opening it in the system browser. The Ridgeline capability has no opener permission.
 
 ### Opening an event in Outlook
 
-The day read selects Graph's `webLink` and asks for the `Binary 0x0FFF` legacy extended property for each event. That property is decoded only when it is standard base64 containing 20 to 512 bytes, then kept as uppercase hex in Rust. Both values stay behind the same day key, are cleared with the day keys on every day read, and are dropped for an account at sign-out. The web view gets only `canOpen: true`. If Graph refuses the extended property request with status 400 or 501, Wall 2 retries once without it so the calendar still works.
+The day read selects Graph's `webLink` and asks for the `Binary 0x0FFF` legacy extended property for each event. That property is decoded only when it is standard base64 containing 20 to 512 bytes, then kept as uppercase hex in Rust. Both values stay behind the same day key, are cleared with the day keys on every day read, and are dropped for an account at sign-out. The web view gets only `canOpen: true`. If Graph refuses the extended property request with status 400 or 501, Ridgeline retries once without it so the calendar still works.
 
-With `openIn` set to `desktop` or omitted, `wall2_open_event(key)` first looks for classic Outlook in its registered Windows application path. The path must be absolute, no longer than 260 characters, name `OUTLOOK.EXE`, contain no quote or control character, and exist as a file. When Windows says the new Outlook is selected, classic Outlook is not used. An event with a valid entry id starts that fixed executable directly with the two arguments `/select` and `outlook:<HEX>`. An event without an entry id starts it with `/select` and `outlook:calendar`. No shell or joined command line is used. If Outlook is unavailable, process start fails, or `openIn` is `browser`, Wall 2 checks the stored web link again (`https`, no user name or password, no port other than 443, at most 4096 characters, and an exact allowed Outlook host) and opens it with the default handler. The page supplies only the opaque day key, and nothing about the entry id is sent to the page or logged.
+With `openIn` set to `desktop` or omitted, `wall2_open_event(key)` first looks for classic Outlook in its registered Windows application path. The path must be absolute, no longer than 260 characters, name `OUTLOOK.EXE`, contain no quote or control character, and exist as a file. When Windows says the new Outlook is selected, classic Outlook is not used. An event with a valid entry id starts that fixed executable directly with the two arguments `/select` and `outlook:<HEX>`. An event without an entry id starts it with `/select` and `outlook:calendar`. No shell or joined command line is used. If Outlook is unavailable, process start fails, or `openIn` is `browser`, Ridgeline checks the stored web link again (`https`, no user name or password, no port other than 443, at most 4096 characters, and an exact allowed Outlook host) and opens it with the default handler. The page supplies only the opaque day key, and nothing about the entry id is sent to the page or logged.
 
-New Outlook has no documented way to open one existing meeting. The Tools drawer reports whether clicks use classic Outlook or the browser. These behaviors have not been verified against live Graph and Outlook: whether the calendar read returns the item id, what item id it returns for one occurrence of a recurring meeting, whether a second account's mailbox opens from the same Outlook profile, whether current classic Outlook builds honor `/select outlook:<HEX>`, registry discovery across 64-bit and 32-bit views, new Outlook detection, process launch, and fallback behavior. Outlook shows its own error box when it cannot find an item, and Wall 2 cannot detect that result. Use `"openIn": "browser"` to opt out.
+New Outlook has no documented way to open one existing meeting. The Tools drawer reports whether clicks use classic Outlook or the browser. These behaviors have not been verified against live Graph and Outlook: whether the calendar read returns the item id, what item id it returns for one occurrence of a recurring meeting, whether a second account's mailbox opens from the same Outlook profile, whether current classic Outlook builds honor `/select outlook:<HEX>`, registry discovery across 64-bit and 32-bit views, new Outlook detection, process launch, and fallback behavior. Outlook shows its own error box when it cannot find an item, and Ridgeline cannot detect that result. Use `"openIn": "browser"` to opt out.
 
 ### Refresh
 
@@ -1772,7 +1834,7 @@ The list is read when Meet opens and every 5 minutes while Meet is the active pl
 
 ### Why an account is unavailable
 
-An account row in Tools shows one plain line ("Microsoft is not answering", "Network problem", "Signed out", "Sign-in expired") and, for a failing account, when it checks next as a relative time ("checking again in 2 min"). The code (one of the fixed shapes below, with a plain reading) and the exact time of the last try are in the row's tooltip, never on its face. A failing row has Try again; a signed-out or expired account has the cyan Sign in. Meet itself shows only one amber line in the Next card ("Second calendar signed out. Open Tools"), whose link opens Tools with Accounts ringed for 2 seconds. When one account is read and another is not, LATER says "Nothing else on <account>" with a dim line for the other ("<account> not read since 9:40 AM", "is signed out", "is being checked" while it is still being read), and the NEXT card says "may be out of date" whenever any account is not read yet or not fresh. LATER says a bare "Nothing else" only when every account was read fresh. "checking again in N min" counts to the real next read: the earlier of the next fast retry and the next 5 minute poll. The last known meetings are kept per account and only for an account whose read failed; signing an account out (or its sign-in expiring) drops its meetings at once. When every account fails, the last known NEXT card stays, dimmed, with its clock time and "as of <time>" (no countdown) and no Join; a "Calendar not available" card (with the last good read and the link to Tools) shows only when there is no last known meeting. Join is filled only for a meeting that is live or starts within 15 minutes; every other Join is quiet and outlined. When Meet is not set up it says "Calendar is not connected yet." with "Setup steps are in the Wall 2 README, section Meet." under it. A code has one of these fixed shapes and nothing else:
+An account row in Tools shows one plain line ("Microsoft is not answering", "Network problem", "Signed out", "Sign-in expired") and, for a failing account, when it checks next as a relative time ("checking again in 2 min"). The code (one of the fixed shapes below, with a plain reading) and the exact time of the last try are in the row's tooltip, never on its face. A failing row has Try again; a signed-out or expired account has the cyan Sign in. Meet itself shows only one amber line in the Next card ("Second calendar signed out. Open Tools"), whose link opens Tools with Accounts ringed for 2 seconds. When one account is read and another is not, LATER says "Nothing else on <account>" with a dim line for the other ("<account> not read since 9:40 AM", "is signed out", "is being checked" while it is still being read), and the NEXT card says "may be out of date" whenever any account is not read yet or not fresh. LATER says a bare "Nothing else" only when every account was read fresh. "checking again in N min" counts to the real next read: the earlier of the next fast retry and the next 5 minute poll. The last known meetings are kept per account and only for an account whose read failed; signing an account out (or its sign-in expiring) drops its meetings at once. When every account fails, the last known NEXT card stays, dimmed, with its clock time and "as of <time>" (no countdown) and no Join; a "Calendar not available" card (with the last good read and the link to Tools) shows only when there is no last known meeting. Join is filled only for a meeting that is live or starts within 15 minutes; every other Join is quiet and outlined. When Meet is not set up it says "Calendar is not connected yet." with "Setup steps are in the Ridgeline README, section Meet." under it. A code has one of these fixed shapes and nothing else:
 
 | Code | Meaning | Shown as |
 | --- | --- | --- |
@@ -1813,7 +1875,7 @@ Headers: `Authorization: Bearer <token>`, `Prefer: outlook.timezone="UTC"`, `Acc
 
 ### The Meet log: `wall2-meet.log`
 
-Wall 2 writes `wall2-meet.log` in the app log directory (Tauri's `app_log_dir`, `%LOCALAPPDATA%\com.havens-consulting.widget-wall2\logs\`, the same folder as `wall2-placement.log`). It is cleared at every launch and capped at 64 KB, and a write failure is ignored. A line is written each time an account's state or reason changes, and also for every failed Graph call (so a repeat failure can be traced):
+Ridgeline writes `wall2-meet.log` in the app log directory (Tauri's `app_log_dir`, `%LOCALAPPDATA%\com.havens-consulting.widget-wall2\logs\`, the same folder as `wall2-placement.log`). It is cleared at every launch and capped at 64 KB, and a write failure is ignored. A line is written each time an account's state or reason changes, and also for every failed Graph call (so a repeat failure can be traced):
 
 ```
 2026-11-12T17:00:00Z hc start ok none
@@ -1828,7 +1890,7 @@ The Meet module has no `println!`, `eprintln!` or `dbg!`, and the only file it w
 
 ## Agents
 
-Wall 2 reads a small helper service on the home box (the agent lanes helper) through Rust, like the other feeds: `src-tauri/src/wall2_omni.rs`. The web view never sees the helper's address and never supplies a URL.
+Ridgeline reads a small helper service on the home box (the agent lanes helper) through Rust, like the other feeds: `src-tauri/src/wall2_omni.rs`. The web view never sees the helper's address and never supplies a URL.
 
 ### Setting it up
 
@@ -2074,7 +2136,7 @@ Review knobs (development only): `?screen=onair` opens On Air; `?show=typical|on
 
 ## Content security policy
 
-Set in `src-tauri/tauri.wall2.conf.json` under `app.security.csp` (Wall 2 only;
+Set in `src-tauri/tauri.wall2.conf.json` under `app.security.csp` (Ridgeline only;
 the old app's config is untouched). It allows own files (`'self'`), data: images,
 own fonts, connections to the Tauri IPC (`ipc:`, `http://ipc.localhost`,
 `https://ipc.localhost`) and `https://api.open-meteo.com`, and frames from the two
@@ -2121,7 +2183,7 @@ outside Tauri). Key repeats are ignored and nothing happens in a plain browser. 
 restores the outer position and size saved just before entering fullscreen.
 One change runs at a time (a second request while one is in flight is ignored).
 `src-tauri/capabilities/wall2.json` adds `core:window:allow-set-fullscreen`,
-`allow-set-position` and `allow-set-size` (Wall 2 only). Reading the state
+`allow-set-position` and `allow-set-size` (Ridgeline only). Reading the state
 (`isFullscreen`, `outerPosition`, `outerSize`) is already in `core:default`.
 
 ## Pointer and touch
