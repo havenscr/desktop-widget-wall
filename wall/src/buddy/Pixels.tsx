@@ -31,9 +31,9 @@ export function SheepSvg({ pose, px = SPRITE_PX, blink = false }: { pose: Pose; 
   return <PixelSvg map={blink ? BLINKS[pose] : SPRITES[pose]} px={px} color={pixelColor} />;
 }
 
-/** A prop over the sheep, placed from the pose's ear (or the sprite's corner) in sprite pixels. */
-export function PropSvg({ prop, pose, px }: { prop: Prop; pose: Pose; px: number }) {
-  const [ox, oy] = propOrigin(prop, pose);
+/** A prop over the sheep, placed from the pose's ear (or the sprite's corner) in sprite pixels. `worn` is the day prop on him. */
+export function PropSvg({ prop, pose, px, worn = null }: { prop: Prop; pose: Pose; px: number; worn?: Prop | null }) {
+  const [ox, oy] = propOrigin(prop, pose, worn);
   return (
     <span className={`watt-prop watt-prop-${prop}`} style={{ left: ox * px, top: oy * px }}>
       <PixelSvg map={PROP_SPRITES[prop].map} px={px} />

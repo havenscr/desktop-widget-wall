@@ -24,6 +24,7 @@ import { knob } from './long';
  *   ?clock=review           (Date.now starts at the `?at=` moment and then runs, so screens that read it agree)
  *   ?focus=long               (a focus session running under a long title)
  *   ?wattspot=<x>             (Watt was set down at that x on every place, On Air included: his stored spot, before he loads)
+ *   ?wattwear=star|bow|cape   (Watt has been a friend for 7 days and wears that, before he loads)
  */
 
 const now = () => (reviewNow ? reviewNow() : Date.now());
@@ -303,9 +304,14 @@ const LONG_FOCUS = 'Draft the workshop outline for the spring conference and cir
 /** Registered last, after every other mock, so a knob wins. A no-op without knobs. */
 export function registerGalleryMocks(): void {
   const spot = Number(knob('wattspot'));
-  if (knob('wattspot') && Number.isFinite(spot)) {
+  const wear = knob('wattwear');
+  const worn = wear === 'star' || wear === 'bow' || wear === 'cape' ? wear : null;
+  if ((knob('wattspot') && Number.isFinite(spot)) || worn) {
+    const stored: Record<string, unknown> = {};
+    if (knob('wattspot') && Number.isFinite(spot)) stored.spots = { work: spot, home: spot, meet: spot, onair: spot, unwind: spot };
+    if (worn) Object.assign(stored, { cosmetic: worn, days: 7 });
     try {
-      window.localStorage.setItem('wall2.watt', JSON.stringify({ spots: { work: spot, home: spot, meet: spot, onair: spot, unwind: spot } }));
+      window.localStorage.setItem('wall2.watt', JSON.stringify(stored));
     } catch {
       /* storage blocked: he stands where he always does */
     }

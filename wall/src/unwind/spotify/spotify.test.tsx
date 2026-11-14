@@ -6,7 +6,7 @@ import { PLAY_TINT } from '../../horizon/echo';
 import type { SpotifyItem, SpotifyTrack } from '../../music/spotify';
 import { resetNowPlaying } from '../../music/store';
 import { resetTools, useToolsStore } from '../../tools/store';
-import { isNowPlaying, kindLine, LISTEN_SOURCE_KEY, resetListenSource, spotifyProblem, tileLine, SEARCH_WAIT_MS, trackLength, UP_NEXT_NONE_LINE, upNextPlan, useListenSource, useSpotifyNow } from './model';
+import { NOT_YOURS_LINE, isNowPlaying, kindLine, LISTEN_SOURCE_KEY, resetListenSource, spotifyProblem, tileLine, SEARCH_WAIT_MS, trackLength, UP_NEXT_NONE_LINE, upNextPlan, useListenSource, useSpotifyNow } from './model';
 import { useNowPlayingStore } from '../../music/store';
 import { hideTip } from '../../ui/HoverTip';
 import { HoverTipLayer } from '../../ui/HoverTip';
@@ -105,8 +105,12 @@ it('keeps the player switch per display, with a hint, and shows YouTube Music wi
   mocks.set('wall2_open_link', (a) => open(a));
   render(<SpotifyCard />);
   await flush();
-  expect(screen.getByText('Which player the wall follows')).toBeTruthy();
+  // On the Spotify side the "Play on" chip takes the place of the hint (it stays where Spotify cannot be browsed).
+  expect(screen.queryByText('Which player the wall follows')).toBeNull();
+  expect(screen.getByRole('button', { name: /^Play on/ })).toBeTruthy();
   await act(async () => screen.getByRole('radio', { name: 'YouTube Music' }).click());
+  expect(screen.getByText('Which player the wall follows')).toBeTruthy();
+  expect(screen.queryByRole('button', { name: /^Play on/ })).toBeNull();
   expect(localStorage.getItem(LISTEN_SOURCE_KEY)).toBe('youtube');
   expect(useListenSource.getState().source).toBe('youtube');
   await act(async () => screen.getByRole('button', { name: 'Open YouTube Music' }).click());
@@ -141,7 +145,9 @@ it('pages a long playlist as it scrolls, inside the card', async () => {
 it('a followed playlist keeps Play when Spotify refuses its song list', async () => {
   signedIn(); mocks.set('wall2_spotify_playlists',()=>[item(1)]); mocks.set('wall2_spotify_tracks',()=>{throw new Error('not yours')}); mocks.set('wall2_spotify_play',()=> 'played');
   render(<SpotifyCard />); await flush(); await act(async()=> (document.querySelector('.sp-tile') as HTMLButtonElement).click()); await flush();
-  expect(screen.getByText('Spotify only lists the songs of playlists you own. Play it whole.')).toBeTruthy();
+  expect(screen.getByText(NOT_YOURS_LINE)).toBeTruthy();
+  // Retry never helps for a playlist that is not his, so it is not offered.
+  expect(screen.queryByRole('button',{name:'Retry'})).toBeNull();
   expect(screen.getByRole('button',{name:'Play'})).toBeTruthy();
 });
 
