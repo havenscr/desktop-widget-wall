@@ -3934,6 +3934,8 @@ pub fn run() {
             wall2_spotify::wall2_spotify_tracks,
             wall2_spotify::wall2_spotify_queue,
             wall2_spotify::wall2_spotify_playback,
+            wall2_spotify::wall2_spotify_saved,
+            wall2_spotify::wall2_spotify_save,
             wall2_desk::wall2_desk_house,
             wall2_desk::wall2_desk_rooms,
             wall2_desk::wall2_desk_security,
