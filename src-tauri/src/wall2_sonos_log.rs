@@ -61,6 +61,12 @@ struct Writer {
     cap: u64,
     file: Option<File>,
     bytes: u64,
+    /// The file is over the cap and could neither be moved nor removed: lines are dropped (never
+    /// written past the cap) until a later attempt succeeds.
+    stuck: bool,
+    /// How files are moved and removed (the real ones; tests swap in failing ones).
+    mv: fn(&Path, &Path) -> std::io::Result<()>,
+    rm: fn(&Path) -> std::io::Result<()>,
 }
 
 impl Writer {
@@ -68,23 +74,28 @@ impl Writer {
         std::fs::create_dir_all(dir).ok()?;
         let file = OpenOptions::new().create(true).append(true).open(dir.join(NAME)).ok()?;
         let bytes = file.metadata().map(|m| m.len()).unwrap_or(0);
-        Some(Writer { dir: dir.to_path_buf(), cap, file: Some(file), bytes })
+        Some(Writer { dir: dir.to_path_buf(), cap, file: Some(file), bytes, stuck: false, mv: |a, b| std::fs::rename(a, b), rm: |a| std::fs::remove_file(a) })
     }
 
-    fn rotate(&mut self) {
+    /// Moves the current file aside and starts a new one. False when neither moving nor removing the
+    /// current file worked: the file is left alone and nothing more is written to it.
+    fn rotate(&mut self) -> bool {
         self.file = None;
         let current = self.dir.join(NAME);
-        if std::fs::rename(&current, self.dir.join(OLDER)).is_err() {
-            // Could not move it: start the current file over rather than keep writing past the cap.
-            let _ = std::fs::remove_file(&current);
+        if (self.mv)(&current, &self.dir.join(OLDER)).is_err() && (self.rm)(&current).is_err() {
+            self.stuck = true;
+            return false;
         }
+        self.stuck = false;
         self.bytes = 0;
         self.file = OpenOptions::new().create(true).append(true).open(&current).ok();
+        true
     }
 
     fn write(&mut self, line: &str) {
-        if self.file.is_some() && self.bytes > 0 && self.bytes + line.len() as u64 > self.cap {
-            self.rotate();
+        let full = self.file.is_some() && self.bytes > 0 && self.bytes + line.len() as u64 > self.cap;
+        if (self.stuck || full) && !self.rotate() {
+            return;
         }
         if self.file.is_none() {
             self.file = OpenOptions::new().create(true).append(true).open(self.dir.join(NAME)).ok();
@@ -225,6 +236,29 @@ mod tests {
             w.write(&numbered(i));
         }
         assert!(!read(&t.0, OLDER).contains("stale"));
+    }
+
+    #[test]
+    fn when_the_file_can_neither_be_moved_nor_removed_nothing_more_is_written_until_it_can() {
+        let t = Tmp::new("stuck");
+        let mut w = Writer::open(&t.0, 30).unwrap();
+        w.mv = |_, _| Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied));
+        w.rm = |_| Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied));
+        for i in 0..10 {
+            w.write(&numbered(i));
+        }
+        // Three lines fit the 30 byte cap; every later attempt failed to rotate and dropped its line.
+        assert_eq!(read(&t.0, NAME), format!("{}{}{}", numbered(0), numbered(1), numbered(2)));
+        assert!(std::fs::metadata(t.0.join(NAME)).unwrap().len() <= 30);
+        assert_eq!(read(&t.0, OLDER), "");
+        assert!(w.stuck);
+        // A later attempt that works rotates and the newest line is in the current file again.
+        w.mv = |a, b| std::fs::rename(a, b);
+        w.rm = |a| std::fs::remove_file(a);
+        w.write(&numbered(10));
+        assert!(!w.stuck);
+        assert_eq!(read(&t.0, NAME), numbered(10));
+        assert!(read(&t.0, OLDER).ends_with(&numbered(2)));
     }
 
     #[test]

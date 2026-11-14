@@ -188,9 +188,15 @@ mod tests {
     /// them into timeouts), a short one only for the two that are meant to cross it.
     const PROMPT_MS: u64 = 5000;
     const SHORT_MS: u64 = 600;
+    /// A stalled body must get its head in before the limit runs out, so it has more room than silence.
+    const STALL_MS: u64 = 1500;
 
     fn fail_of(how: Serve) -> Failure {
-        let ms = if matches!(how, Serve::Silent | Serve::StallBody) { SHORT_MS } else { PROMPT_MS };
+        let ms = match how {
+            Serve::Silent => SHORT_MS,
+            Serve::StallBody => STALL_MS,
+            _ => PROMPT_MS,
+        };
         get_json(&agent(ms), &serve(how), "/api/status").unwrap_err()
     }
 

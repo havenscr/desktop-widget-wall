@@ -19,6 +19,7 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { killTree, reapGroup, sweepGroup, trackGroup } from './lib/chrome-run.mjs';
+import { loadAreasOrExit, validateRegistrations } from './areas/load.mjs';
 
 const args = process.argv.slice(2);
 const flag = (name) => args.find((a) => a === `--${name}` || a.startsWith(`--${name}=`));
@@ -144,18 +145,6 @@ state('home', 'sound quiet: nothing playing', 'sonos=quiet');
 state('home', 'sound down', 'sonos=down');
 state('home', 'sound not set up', 'sonos=off');
 state('home', 'sound silent (fallback after 2.5 seconds)', 'sonos=slow');
-// Sound's Where row: the three places share the row, at rest and with each place in use.
-state('home', 'sound where: none in use', 'where=none');
-state('home', 'sound where: Office in use', 'where=office');
-state('home', 'sound where: All Speakers in use', 'where=all');
-state('home', 'sound where: Common Areas in use', 'where=common');
-// Sound's failed reads: a good first read, then a failed read and a failed second try. A review frame shortens
-// the 5 second wait to a quarter of a second, so each state shows its phase at once (the real timers are
-// proven by the unit tests).
-state('home', 'sound failure: one failed read waiting for its second try, nothing shown', 'sonos=pending');
-state('home', 'sound failure: did not answer in time, dimmed', 'sonos=timeout');
-state('home', 'sound failure: cannot be reached, dimmed', 'sonos=dropped');
-state('home', 'sound failure: answer could not be read, dimmed', 'sonos=garbled');
 for (const [name, extra] of [
   ['broken: home app not set up', 'home=off'],
   ['broken: home app down', 'home=down'],
@@ -644,14 +633,6 @@ const EXPECT = [
   ['home', 'sound down', ['Sonos cannot be reached. Checks again every 30 seconds.', 'Sonos cannot be reached']],
   ['home', 'sound not set up', 'Add sonosBaseUrl to feeds.json'],
   ['home', 'sound silent (fallback after 2.5 seconds)', 'Sound'],
-  ['home', 'sound where: none in use', ['Office', 'All Speakers', 'Common Areas', 'Sonos Off']],
-  ['home', 'sound where: Office in use', ['Office', 'All Speakers', 'Common Areas']],
-  ['home', 'sound where: All Speakers in use', ['Office', 'All Speakers', 'Common Areas']],
-  ['home', 'sound where: Common Areas in use', ['Office', 'All Speakers', 'Common Areas']],
-  ['home', 'sound failure: one failed read waiting', ['Morning', 'Where', '!Sonos did not answer', '!Sonos cannot be reached', '!could not read']],
-  ['home', 'sound failure: did not answer in time', 'Sonos did not answer in time. Last good read less than a minute ago'],
-  ['home', 'sound failure: cannot be reached', 'Sonos cannot be reached. Last good read less than a minute ago'],
-  ['home', 'sound failure: answer could not be read', 'Sonos sent an answer the wall could not read. Last good read less than a minute ago'],
   ['home', 'broken: home app not set up', 'Network and securityNot set up'],
   ['home', 'broken: home app down', 'Home app not reachable'],
   ['home', 'broken: moods failing', 'MoodsHome app not reachable'],
@@ -935,44 +916,26 @@ const NO_TEXT = [
   ['unwind', 'Watt: on Watch', 'only where Watt stands changes'],
 ];
 
-// On Air: the show timer, the run of show from run-of-show.txt (`show=`), the notes, Mark a moment
-// (`marks=`) and the recording keys, with the stored timer (`oatimer=`) running, stopped or idle.
-// hz=onair: the horizon's camera is On Air's own from the first frame, so Watt (who waits for his place's camera) stands in the still.
-const onAir = (extra) => url('work', TYPICAL_AT, `screen=onair&${extra}`).replace('hz=work', 'hz=onair');
-add('onair', 'on air: typical (running at 42:13)', onAir('show=typical&marks=2&oatimer=run'), true);
-add('onair', 'on air: stopped', onAir('show=typical&marks=2&oatimer=stopped'), true);
-add('onair', 'on air: no file', onAir('show=missing&marks=0&oatimer=idle'), true);
-add('onair', 'on air: refused file', onAir('show=refused&marks=0&oatimer=idle'), true);
-add('onair', 'on air: forty parts', onAir('show=forty&marks=2&oatimer=run'), true);
-add('onair', 'on air: long notes', onAir('show=long&marks=2&oatimer=run'), true);
-add('onair', 'on air: marks full', onAir('show=typical&marks=full&oatimer=run'), true, '.oa-mark-btn');
-add('onair', 'on air: one part', onAir('show=one&marks=0&oatimer=run'), true);
-add('onair', 'on air: read fails', onAir('show=down&marks=0&oatimer=idle'), true);
-add('onair', 'on air: recording, Stop lit', onAir('show=typical&marks=2&oatimer=run&rec=1'), true);
-add('onair', 'on air: Watt standing', onAir('show=typical&marks=2&oatimer=run&wattspot=1000'), true);
-add('onair', 'on air: timer stopped at 24 hours', onAir('show=typical&marks=2&oatimer=limit'), true);
-add('onair', 'on air: Open file failed, marks line unchanged', onAir('show=missing&marks=2&oatimer=idle&openfail=show'), true, '.oa-empty-btn');
-add('onair', 'on air: reset asks again', onAir('show=typical&marks=2&oatimer=stopped'), true, '.oa-reset');
-EXPECT.push(
-  ['onair', 'on air: typical', ['42:1', 'Product demo', '7 min left', 'Point it at the real model first', 'Next: Audience questions, 15 min', '2 marked: 03:12, 09:40. Saved to marks.txt', 'Record 16:9', 'Hide screen', '!+1 more']],
-  ['onair', 'on air: stopped', ['42:13', 'stopped at', 'Start', 'Reset']],
-  ['onair', 'on air: no file', ['No run-of-show.txt yet', 'Open file', '## Part name | 10', 'None yet today']],
-  ['onair', 'on air: refused file', ['run-of-show.txt is over 32 KB', 'Fix the file']],
-  ['onair', 'on air: forty parts', ['Segment 40: Questions', 'Marathon stream', '4 lines skipped']],
-  ['onair', 'on air: long notes', ['An extremely long part name', 'Note 12: walk through', ' more']],
-  ['onair', 'on air: marks full', 'marks.txt is full; move it aside'],
-  ['onair', 'on air: one part', ['This is the last part', 'Product demo']],
-  ['onair', 'on air: read fails', 'Could not read run-of-show.txt'],
-  ['onair', 'on air: recording', ['Recording00:', 'Mark a moment']],
-  ['onair', 'on air: Watt standing', ['Product demo', '42:1']],
-  ['onair', 'on air: timer stopped at 24 hours', ['24:00:00', 'Stopped at 24 hours', 'Start']],
-  ['onair', 'on air: Open file failed, marks line unchanged', ['Could not open run-of-show.txt', '2 marked: 03:12, 09:40. Saved to marks.txt']],
-  ['onair', 'on air: reset asks again', 'Reset? Click again'],
-);
+const areaFlag = flag('area');
+const areaName = areaFlag === undefined ? undefined : areaFlag.includes('=') ? areaFlag.slice(areaFlag.indexOf('=') + 1) : '';
+const areas = await loadAreasOrExit(areaName);
+const activeAreas = areaName ? areas.filter((area) => area.name === areaName) : areas;
+try {
+  validateRegistrations(areas, { 'state name': STATES.map((stateEntry) => `${stateEntry.screen}\0${stateEntry.name}`) });
+} catch (error) {
+  console.error(`areas: ${error.message}`);
+  process.exit(2);
+}
+const areaStates = [];
+for (const area of activeAreas) {
+  for (const entry of area.gallery?.states ?? []) areaStates.push({ ...entry, click: entry.actions });
+}
+STATES.push(...areaStates);
 
 const matches = (st, [sc, prefix, , exact]) => sc === st.screen && (exact === true ? st.name === prefix : st.name.startsWith(prefix));
 const missing = [];
 for (const st of STATES) {
+  if (st.expect !== undefined || st.expectNote !== undefined) continue;
   const hit = EXPECT.find((e) => matches(st, e));
   if (hit) st.expect = hit[2];
   else {
@@ -987,7 +950,8 @@ if (missing.length) {
 }
 
 const only = flag('only')?.split('=')[1]?.toLowerCase();
-const selected = only ? STATES.filter((s) => `${s.screen} ${s.name}`.toLowerCase().includes(only)) : STATES;
+const availableStates = areaName ? areaStates : STATES;
+const selected = only ? availableStates.filter((s) => `${s.screen} ${s.name}`.toLowerCase().includes(only)) : availableStates;
 
 if (selected.length === 0) {
   console.error(`gallery: --only=${only} matches no state (try --list)`);
