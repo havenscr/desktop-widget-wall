@@ -31,6 +31,8 @@ export interface WatchState {
   looks: LookSettings;
   /** The item in the frame, or null: no frame at all. */
   playing: SavedItem | null;
+  /** The item most recently stopped in Watch, used only to identify its stopped media session. */
+  lastStopped: SavedItem | null;
   /** The owner's own pause and mute (YouTube only); the frame's state messages may correct `paused`. */
   paused: boolean;
   muted: boolean;
@@ -73,6 +75,7 @@ export const useWatchStore = create<WatchState>((set, get) => ({
   saved: loadSaved(),
   looks: loadLooks(),
   playing: null,
+  lastStopped: null,
   paused: false,
   muted: false,
   report: NO_REPORT,
@@ -115,11 +118,12 @@ export const useWatchStore = create<WatchState>((set, get) => ({
   play: (ref) => {
     const item = get().saved.find((i) => refKey(i) === refKey(ref));
     if (!item) return;
-    set({ playing: item, paused: false, muted: false, report: NO_REPORT, needsClick: false, clickHint: false, stopped: null, tab: 'watch' });
+    set({ playing: item, lastStopped: null, paused: false, muted: false, report: NO_REPORT, needsClick: false, clickHint: false, stopped: null, tab: 'watch' });
   },
   stop: (why) => {
-    if (!get().playing) return;
-    set({ playing: null, paused: false, report: NO_REPORT, needsClick: false, clickHint: false, stopped: why ? stopLine(why) : null });
+    const playing = get().playing;
+    if (!playing) return;
+    set({ playing: null, lastStopped: playing, paused: false, report: NO_REPORT, needsClick: false, clickHint: false, stopped: why ? stopLine(why) : null });
   },
   setPaused: (paused) => set({ paused }),
   setMuted: (muted) => set({ muted }),
@@ -205,5 +209,5 @@ usePlaceStore.subscribe((s) => {
 
 /** Tests only: back to a fresh store over whatever local storage holds now. */
 export function resetWatch(): void {
-  useWatchStore.setState({ tab: 'listen', saved: loadSaved(), looks: loadLooks(), playing: null, paused: false, muted: false, report: NO_REPORT, needsClick: false, clickHint: false, sheet: false, stopped: null, editing: null, peek: false });
+  useWatchStore.setState({ tab: 'listen', saved: loadSaved(), looks: loadLooks(), playing: null, lastStopped: null, paused: false, muted: false, report: NO_REPORT, needsClick: false, clickHint: false, sheet: false, stopped: null, editing: null, peek: false });
 }

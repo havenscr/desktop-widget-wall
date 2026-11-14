@@ -100,7 +100,7 @@ export function statusWord(state: AccountState): string {
 
 /** What is wrong with an unavailable account, in plain words. */
 export function unavailableWords(reason: string | undefined | null): string {
-  if (reason === 'graph-network' || reason === 'token-network') return 'Network problem';
+  if (reason === 'graph-network' || reason?.startsWith('token-network')) return 'Network problem';
   if (reason === TIMED_OUT) return 'Microsoft is not answering';
   const m = reason ? /^(?:graph|token)-([0-9]{3})/.exec(reason) : null;
   if (m) {
@@ -121,12 +121,16 @@ export function calendarNotAvailable(accounts: readonly { state: AccountState }[
   return accounts.length > 0 && accounts.every((a) => a.state !== 'ok' && a.state !== 'checking');
 }
 
-const REASON_SHAPE = /^(?:graph-[0-9]{3}(?:-[A-Za-z][A-Za-z0-9_]{0,39})?|token-[0-9]{3}(?:-[0-9]{1,7})?|graph-network|graph-timeout|graph-body|token-network|store-write|store-read)$/;
+const REASON_SHAPE = /^(?:graph-[0-9]{3}(?:-[A-Za-z][A-Za-z0-9_]{0,39})?|token-[0-9]{3}(?:-[0-9]{1,7})?|graph-network|graph-timeout|graph-body|token-network(?:-(?:dns|connect|tls|timeout))?|store-write|store-read)$/;
 
 /** Plain words for a reason code, or null when the code is not one of the known shapes. */
 export function reasonText(code: string | undefined | null): string | null {
   if (!code || !REASON_SHAPE.test(code)) return null;
   if (code.startsWith('store-')) return 'Could not save the sign-in on this PC';
+  if (code === 'token-network-dns') return "Could not reach Microsoft's sign-in server: name lookup failed";
+  if (code === 'token-network-connect') return "Could not reach Microsoft's sign-in server: no answer";
+  if (code === 'token-network-tls') return "Could not reach Microsoft's sign-in server: the secure connection failed";
+  if (code === 'token-network-timeout') return "Could not reach Microsoft's sign-in server: timed out";
   if (code === 'graph-network' || code === 'token-network') return 'No connection to Microsoft';
   if (code === 'graph-timeout') return 'Microsoft did not answer in time';
   if (code === 'graph-body') return 'Calendar sent a reply that could not be read';
@@ -229,6 +233,8 @@ export function signInMessage(error: string): string | null {
     case NOT_CONFIGURED:
       return 'Not set up';
     default:
-      return reasonLine(error) ?? 'Sign-in did not work';
+      return error.startsWith('token-network')
+        ? `${reasonText(error) ?? "Could not reach Microsoft's sign-in server"}. The browser part worked. Network log: wall2-meet.log`
+        : reasonLine(error) ?? 'Sign-in did not work';
   }
 }

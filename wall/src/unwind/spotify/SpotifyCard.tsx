@@ -178,10 +178,25 @@ function useIsNow(): (t: { id: string | null; name: string; artists?: string | n
   return (t) => isNowPlaying(t, nowId, title, artist);
 }
 
-/** Play an item whole, or shuffled (the shuffle switch first, then the play). */
-function playWhole(item: SpotifyItem, shuffled: boolean): Promise<void> {
-  const go = () => spotify.play(item.kind, item.id);
-  return (shuffled ? spotify.shuffle(true).then(go) : go()).then(() => void refreshNowPlaying());
+const waitSecond = () => new Promise<void>((resolve) => setTimeout(resolve, 1_000));
+export async function finishPlay(answer: 'played' | 'starting', onStarting: () => void): Promise<void> {
+  if (answer === 'starting') {
+    onStarting();
+    for (;;) {
+      const state = await spotify.startStatus();
+      if (!state.starting) {
+        if (state.result !== 'played') throw new Error(state.result ?? 'failed');
+        break;
+      }
+      await waitSecond();
+    }
+  }
+  await refreshNowPlaying();
+}
+
+/** Play an item whole, or shuffled, and report startup only when Rust opened Spotify. */
+async function playWhole(item: SpotifyItem, shuffled: boolean, onStarting: () => void): Promise<void> {
+  await finishPlay(await spotify.play(item.kind, item.id, { shuffle: shuffled }), onStarting);
 }
 
 function Browser() {
@@ -207,6 +222,7 @@ function Browser() {
     mounted.current = true;
     return () => {
       mounted.current = false;
+      void spotify.cancelStart().catch(() => undefined);
     };
   }, []);
   useEffect(() => {
@@ -288,8 +304,10 @@ function Browser() {
   }, [query, runSearch]);
 
   const fail = (e: unknown) => mounted.current && setNote(playProblemLine(spotifyProblem(e)));
-  const playItem = (item: SpotifyItem) => void playWhole(item, false).catch(fail);
-  const shuffleItem = (item: SpotifyItem) => void playWhole(item, true).catch(fail);
+  const playItem = (item: SpotifyItem) => {
+    void playWhole(item, false, () => mounted.current && setNote('Starting Spotify')).then(() => mounted.current && setNote(null), fail);
+  };
+  const shuffleItem = (item: SpotifyItem) => void playWhole(item, true, () => mounted.current && setNote('Starting Spotify')).then(() => mounted.current && setNote(null), fail);
 
   const cur = lists[tab];
   const songsIn = cur.items.filter((i) => i.kind === 'track');
@@ -611,7 +629,7 @@ interface SongsState {
  * inside the card and never grows it). A click plays from that song on, in its list; the song
  * now playing is marked; a song that cannot be played (a local file) is dimmed and says why.
  */
-function SongsView({ item, onBack, onNote }: { item: SpotifyItem; onBack: () => void; onNote: (n: string) => void }) {
+function SongsView({ item, onBack, onNote }: { item: SpotifyItem; onBack: () => void; onNote: (n: string | null) => void }) {
   const kind = item.kind === 'album' ? 'album' : 'playlist';
   const [st, setSt] = useState<SongsState>({ items: [], total: item.count ?? 0, page: 0, more: false, loading: true, problem: null });
   const isNow = useIsNow();
@@ -656,9 +674,12 @@ function SongsView({ item, onBack, onNote }: { item: SpotifyItem; onBack: () => 
   }, [onBack]);
 
   const fail = (e: unknown) => mounted.current && onNote(playProblemLine(spotifyProblem(e)));
+  const playAll = (shuffled: boolean) => {
+    void playWhole(item, shuffled, () => onNote('Starting Spotify')).then(() => onNote(null), fail);
+  };
   const playFrom = (t: SpotifyTrack) => {
     if (!t.id || !t.playable) return;
-    spotify.play('track', t.id, { context: { kind, id: item.id }, offsetId: t.id }).then(() => void refreshNowPlaying(), fail);
+    spotify.play('track', t.id, { context: { kind, id: item.id }, offsetId: t.id }).then((answer) => finishPlay(answer, () => onNote('Starting Spotify'))).then(() => onNote(null), fail);
   };
   const owner = kindLine(item).replace(/^(Playlist|Album)( by )?/, '');
   const all = !st.more && st.items.length > 0 && st.items.length >= st.total;
@@ -677,11 +698,11 @@ function SongsView({ item, onBack, onNote }: { item: SpotifyItem; onBack: () => 
           <span className="sp-name">{item.name}</span>
           <span className="sp-line">{facts}</span>
         </span>
-        <button type="button" className="sp-btn fill big" onClick={() => void playWhole(item, false).catch(fail)}>
+        <button type="button" className="sp-btn fill big" onClick={() => playAll(false)}>
           <IconPlayerPlayFilled size={18} aria-hidden="true" />
           Play
         </button>
-        <button type="button" className="sp-btn plain big" onClick={() => void playWhole(item, true).catch(fail)}>
+        <button type="button" className="sp-btn plain big" onClick={() => playAll(true)}>
           <IconArrowsShuffle size={18} aria-hidden="true" />
           Shuffle
         </button>

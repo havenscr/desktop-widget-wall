@@ -214,6 +214,7 @@ pub struct Account {
     pub label: String,
     pub client_id: String,
     pub tenant: String,
+    pub position: usize,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -251,7 +252,7 @@ pub fn parse_config(text: Option<&str>) -> Result<Vec<Account>, &'static str> {
         return Err(INVALID_CONFIG);
     }
     let mut out: Vec<Account> = Vec::new();
-    for row in rows {
+    for (position, row) in rows.iter().enumerate() {
         let text_of = |k: &str| row.get(k).and_then(Value::as_str);
         let id = text_of("id").filter(|s| valid_id(s)).ok_or(INVALID_CONFIG)?;
         let label = text_of("label")
@@ -266,7 +267,7 @@ pub fn parse_config(text: Option<&str>) -> Result<Vec<Account>, &'static str> {
         if out.iter().any(|a| a.id == id) {
             return Err(INVALID_CONFIG);
         }
-        out.push(Account { id: id.into(), label: label.into(), client_id: client_id.to_string(), tenant: tenant.to_string() });
+        out.push(Account { id: id.into(), label: label.into(), client_id: client_id.to_string(), tenant: tenant.to_string(), position: position + 1 });
     }
     Ok(out)
 }
