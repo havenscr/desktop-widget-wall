@@ -4,7 +4,9 @@ import { FADE_MS, NOT_CONFIGURED, REFRESH_MS, type RowMark, type TaskItem } from
 import { useVisible } from '../ui/useVisible';
 
 /** Around the house is the task app's `home` tag, not a list. */
-export const CHORES_ARGS = { tag: 'home' } as const;
+/** Home lists up to twenty chores (five rows in view, the rest a scroll away). */
+export const CHORES_LIMIT = 20;
+export const CHORES_ARGS = { tag: 'home', limit: CHORES_LIMIT } as const;
 
 export interface ChoresState {
   status: 'loading' | 'ready' | 'unconfigured' | 'error';
@@ -62,7 +64,7 @@ export function useChores(): ChoresState {
     try {
       const r = await invoke<Summary>('wall2_tasks_summary', { ...CHORES_ARGS });
       if (!mounted.current) return;
-      const fresh = Array.isArray(r?.next) ? r.next.slice(0, 3) : [];
+      const fresh = Array.isArray(r?.next) ? r.next.slice(0, CHORES_LIMIT) : [];
       const settled: string[] = [];
       for (const [id, c] of completed.current) {
         if (c.saved && c.faded && mine > c.savedAfter) settled.push(id);
