@@ -145,7 +145,7 @@ export default {
     workState('due today: twelve due, two overdue', 'due=twelve', ['Due today12, 2 overdue', 'Send the signed engagement letter', '!more can wait']),
     workState('due today: twelve due with the longest titles', 'due=twelve&long=1', ['Due today12, 2 overdue', 'Send the project proposal with the revised budget and the new timeline']),
     workState('due today: row ticked, Done with Undo', 'due=three', ['Done.', 'Undo'], '.tasks .task-check'),
-    homeState('home tags: five rows, first tag named, the rest as dots', 'desk=typical&alerts=0&chores=many', ['Order printer paper', 'Errands', 'Repairs', 'Garden', '!Home']),
+    homeState('home tags: five rows, first tag named, the rest as dots', 'desk=typical&alerts=0&chores=many', ['Order printer paper', 'Errands', 'Repairs', 'Garden']),
     homeState('home tags: three rows while alerts are open', 'desk=typical&alerts=6&chores=many', ['Order printer paper', 'Errands']),
   ] },
   fit: {
