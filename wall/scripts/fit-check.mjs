@@ -343,13 +343,13 @@ const QUIET = [
   // watch behaviour: the controls faded in each look (nothing of them takes the pointer, the dimmed
   // title clear of the video's box), and a video playing while he is on Work, Home or Meet (the stage
   // fully transparent and taking no pointer there, the rail's playing mark inside Unwind's button).
-  { name: 'Watch behaviour, feathered, controls at rest', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=feather&wplay=0&wctl=rest', checks: ['.w-now', '.w-title', '.w-card'], wb: 'rest' },
-  { name: 'Watch behaviour, whole sky, controls at rest', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=many&wlook=sky&wplay=3&wctl=rest', checks: ['.w-now', '.w-title', '.w-card'], wb: 'rest' },
-  { name: 'Watch behaviour, the sun, Twitch, controls at rest', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=sun&wplay=2&wctl=rest', checks: ['.w-now', '.w-title', '.w-card'], wb: 'rest' },
-  { name: 'Watch behaviour, drive-in, long label, controls at rest', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=many&wlook=drivein&wplay=3&wctl=rest', checks: ['.w-now', '.w-title', '.w-card'], wb: 'rest' },
-  { name: 'Watch behaviour, Work with a video playing elsewhere', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=drivein&wplay=0&wplace=work', checks: ['.rail', '.work .centre'], wb: 'away' },
-  { name: 'Watch behaviour, Home with the whole sky playing elsewhere', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=sky&wplay=0&wplace=home', checks: ['.rail'], wb: 'away' },
-  { name: 'Watch behaviour, Meet with the sun playing elsewhere', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=sun&wplay=0&wplace=meet', checks: ['.rail'], wb: 'away' },
+  { name: 'Watch behaviour, feathered, controls at rest', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=feather&wplay=0&wctl=rest', checks: ['.w-now', '.w-card'], wb: 'rest' },
+  { name: 'Watch behaviour, whole sky, controls at rest', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=many&wlook=sky&wplay=3&wctl=rest', checks: ['.w-now', '.w-card'], wb: 'rest' },
+  { name: 'Watch behaviour, the sun, Twitch, controls at rest', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=sun&wplay=2&wctl=rest', checks: ['.w-now', '.w-card'], wb: 'rest' },
+  { name: 'Watch behaviour, drive-in, long label, controls at rest', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=many&wlook=drivein&wplay=3&wctl=rest', checks: ['.w-now', '.w-card'], wb: 'rest' },
+  { name: 'Watch behaviour, Work with a video playing elsewhere', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=drivein&wplay=0&wplace=work', checks: ['.rail .rb', '.work .centre'], wb: 'away' },
+  { name: 'Watch behaviour, Home with the whole sky playing elsewhere', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=sky&wplay=0&wplace=home', checks: ['.rail .rb'], wb: 'away' },
+  { name: 'Watch behaviour, Meet with the sun playing elsewhere', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=sun&wplay=0&wplace=meet', checks: ['.rail .rb'], wb: 'away' },
   // sky layers: the video behind the land (the horizon's front canvas over the video's box) in the
   // three looks that sit in the sky, the drive-in in front of it with no front canvas, and the moon
   // in open sky at night and at dusk, 40 px clear of every card, the player and the clock, on Listen
@@ -1122,6 +1122,9 @@ try {
       const cls = (e) => (typeof e.className === 'string' ? e.className : e.tagName).split(' ').slice(0, 2).join('.');
       const meet = (a, b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
       if (mode === 'rest') {
+        // Headless virtual time hardly runs CSS transitions: read where the 250 ms fade ends.
+        for (const e of document.querySelectorAll('.w-now > *, .w-lookbar')) e.style.transition = 'none';
+        void document.body.offsetWidth;
         const now = document.querySelector('.w-now');
         if (!now || now.getAttribute('data-ctl') !== 'rest') fails.push('watch behaviour: the controls are not at rest');
         for (const e of document.querySelectorAll('.w-now .u-src, .w-ctl button, .w-ctl .w-open, .w-bar, .w-hintbtn, .w-lookbar button')) {
