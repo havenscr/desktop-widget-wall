@@ -469,10 +469,16 @@ The day ribbon (`wall/src/ribbon/`, `styles/ribbon.css`) is on Work, Home and Me
   Before 6 AM it stays at the left end and still shows the real time. Hover on it counts
   down to the next meeting today ("Next meeting in 1 h 36 m: Weekly planning"), names the
   one in progress when none follows, or says "No more meetings today" after a good read.
-- **Hover cards** (`ui/HoverTip.tsx`): one small card at a time, drawn inside the stage
-  above what it explains (below when there is no room), after a 250 ms rest of the
-  pointer, gone at once when it leaves; keyboard focus shows it too, but not the focus
-  that follows a click. A shown card is redrawn every 15 seconds (the needle's countdown
+- **Hover cards** (`ui/HoverTip.tsx`): the wall's one tooltip, `tip(content)` on any control.
+  One small card at a time, drawn inside the stage above what it explains (below when there
+  is no room), never over it, with a pixel tail pointing at it; after a 250 ms rest of the
+  pointer, gone at once when it leaves, on a press and on any scroll; keyboard focus shows it
+  too, but not the focus that follows a click. Its look is Watt's speech bubble shape (square
+  corners, a 2 px ring, the pixel tail) in the wall's dark with his lavender as the ring:
+  titles 18 px Oxanium, detail 16 px, hints 14 px in cyan, so it reads on the strip at 100
+  percent (nothing in a tooltip or in Watt's menu is under 16 px). A card goes when its anchor moves
+  more than 4 px, and the focus a menu gives back after a choice opens none. Reduced motion drops
+  its fade. Lavender filled bubbles stay Watt's own voice. A shown card is redrawn every 15 seconds (the needle's countdown
   stays right) and closes when its anchor leaves the page. A pinned card (the "+N" chip's
   list) takes the pointer and closes on a click elsewhere or Escape.
 - **The calm strip** (Work and Meet; Home's strip is unchanged), still 104 px:
@@ -977,12 +983,39 @@ horizon canvas and the veil and under the panels; its styles are `buddy/watt.css
 - Walk table (`WALKS` in `buddy/model.ts`, left edge range and sprite pixel size): Work and
   Meet 880 to 1090 at 4 px, Home 1506 to 1726 at 5 px, Unwind 430 to 470 at 6 px (the body
   between about x 430 and 580, the concept's spot in `f_unwind`, below the wind down block and
-  left of the transport row). The feet stand on the camera's `hy` (582 on Work, Home and Meet,
-  505 on Unwind). `model.test.ts` builds the rail, zone and ribbon rectangles from
-  `screens/frameLayout.ts` (plus Unwind's transport row, `UNWIND_ROW`) and checks that no range
-  (every pose, notes and z's included) reaches one at 2560 by 720.
+  left of the transport row). That is where he stands until he is set down somewhere else.
+  The feet stand on the camera's `hy` (582 on Work, Home and Meet, 505 on Unwind).
+- Ground (`buddy/ground.ts`): where he may be set down, as spans of his left edge, measured
+  with every control and line of text of the place. Work and Meet 140 to 2420, Home 140 to
+  2400 (the whole band between the top row and the ribbon); Unwind on Listen 140 to 494 (left
+  of the transport row) and 1416 to 1870 (between the row and the Room card); Unwind on Watch
+  140 to 1020 (the video takes the rest). While the leave banner shows in the band above the
+  ribbon (Home and Meet, x 624 to 1914), his ground there goes round it: Home 140 to 516 and 1932
+  to 2400, Meet 140 to 536 and 1930 to 2420; he fades over to the nearest free spot and his stored
+  spot is kept for when it goes. His spot on each place is kept in his stored record
+  (`spots`), and he wanders around it: up to 105 px either side on Work and Meet, 110 on Home,
+  60 on Unwind, centred on the spot and kept in its span. `model.test.ts` builds the rail, zone
+  and ribbon rectangles from `screens/frameLayout.ts` (plus Unwind's transport row,
+  `UNWIND_ROW`, and the Watch tab's video) and checks that no span (every pose, prop, notes,
+  z's, the mark, the clover and every line's bubble) reaches one at 2560 by 720. On Unwind's
+  narrow left stretch a long line can fit on neither side of him at some spots; there it waits
+  unseen rather than cover him. When Unwind's tab changes and his spot is not on the new
+  ground, he fades over to it (his stored spot is kept for the other tab).
 - Pace: it stands 20 to 40 seconds at each stop, then walks slowly (14 px a second) to the
   next; it starts standing in the middle of the range.
+- The idle life on his stands (not under reduced motion): a blink (one 120 ms frame with his
+  eyes shut every 3 to 7 seconds), grazing at one stop (the head lowered, nibbling, for six
+  seconds), and settling in on the longest stop (40 s: he sits after six seconds and stands up
+  three seconds before he walks on). So, blink aside, one idle behaviour every two to two and a
+  half minutes: one graze and one settle in each loop of his wander (about 4.5 minutes on
+  Unwind, 5 on Work, Meet and Home). `model.test.ts` holds that cadence.
+- The frame loop draws only while something moves on every frame (a walk, a carry, a fall, a
+  reaction, a fade, music notes, sleeping z's, the dusk firefly, the beat). While he stands it
+  sleeps on one timer until the next planned change (`restFor` in `petFrame.ts`, `carryRestFor`
+  in `carry.ts`: the end of a stand, a blink, a graze nibble, sitting down or standing up, the
+  pointer notice ending), paints that change once and sleeps again, so a standing Watt requests
+  no animation frames at all. A pointer near him wakes him for one step. A hidden page schedules
+  nothing; its return picks up.
 - It is up only while the horizon's camera is settled on its place. `horizon/signal.ts` is a
   small read-only signal the horizon publishes (the camera it is on or heading to, and whether
   it is moving); Watt hides whenever the camera moves or points somewhere other than the camera
@@ -1010,62 +1043,107 @@ Watt is also a small pet ("he"), calm and silent (no sound at all):
   bubble is his own lavender with his dark face colour for the text; its box is sized from
   measured Oxanium widths (`petFrame.ts`), placed beside him within the band, and
   `model.test.ts` checks every line.
-- **Reactions** (`buddy/petFrame.ts`): a small hop when a focus session completes or an agent
+- **Reactions** (`buddy/petFrame.ts`): a hop when a focus session completes or an agent
   finishes; he looks up toward the agent cards and shows an amber mark while something waits
   (click it: it opens the waiting session through `wall2_open_session` when the helper gives a
   link; elsewhere it goes to Work, and on Work with no link it only tells, as the agent cards
-  above already show what waits); he looks at the clock five minutes before a meeting; he
-  bobs (a soft squash) on the beat at most once every 1.2 seconds.
+  above already show what waits; its tooltip names what waits); he looks at the clock five
+  minutes before a meeting; he bobs (a soft squash) on the beat at most once every 1.2 seconds.
+- **Motion** (`petFrame.ts` `shape`, `lieDown`, `noticeClick`; `carry.ts`): every move has its
+  in-between frames at pixel-art counts (poses step at about 10 a second, positions move
+  smoothly), with squash and stretch that keeps his volume (`sx` wider when `squash` is
+  flatter). The hop: a crouch, a stretch, about 5 sprite pixels up with the legs tucked, a
+  squash with dust, a settle. The spin: a crouch, then a true turn (side, front, the other side,
+  back, side) a little off the ground. The happy hop: two stiff-legged bounces, the second with a
+  turn, hearts as he lands. Every lift is capped by the room under the walk's ceiling. The nap:
+  he turns round, sits, lies down and breathes slowly with z's; he gets up with a yawn and a
+  stretch.
 - **The pointer on him** (`Watt.tsx`, `buddy/carry.ts`). Hovering opens nothing: the cursor is a
-  grab hand and the tooltip reads "Click to pet. Drag to carry. Right-click for his card."
+  grab hand and the wall's tooltip reads "Click to pet. Drag to carry. Right-click for his menu."
+  (never the browser's own; a press takes it down).
   - **Click pets.** A press and release with under 6 px of movement and under half a second is a
     pet: hearts and a wiggle, and a spoken reply only outside every quiet time, at least 20
     seconds after any bubble and at most once a minute (a second click within three seconds adds
-    nothing). It never opens the card. Keyboard: he is one tab stop; Enter or Space pets.
-  - **Right-click opens his card** (`contextmenu` on him, and only on him; the browser's own menu
-    is prevented by a listener on his element, which runs before the page's other handlers, and
-    WebView2 shows no menu when the event is prevented). The ContextMenu key, Shift+F10 or the
-    letter M opens it too and moves focus into it. The card shows his name, his mood in one word,
-    two honest lines about today, days together, how chatty he is and what he wears. It is a strip
-    in the band over the horizon beside him (on Unwind, under the transport row over the empty
-    floor). It closes on Escape (focus returns to him), a click or right-click outside it, a
-    right-click on him again, a place change, keyboard focus moving on past it and when he goes
-    away; he stands still while it is open. His click area is his body and head, not the sprite's
-    empty corners.
+    nothing). It never opens the menu. Petting him while he naps gets him up instead of a wiggle.
+    Keyboard: he is one tab stop; Enter or Space pets.
+  - **Right-click opens his menu** (`buddy/Menu.tsx`; `contextmenu` on him, and only on him; the
+    browser's own menu is prevented by a listener on his element, which runs before the page's
+    other handlers, and WebView2 shows no menu when the event is prevented). The ContextMenu key,
+    Shift+F10 or the letter M opens it too and moves focus to its first item; Up, Down, Home and
+    End move between items. It is his own speech bubble above him (lavender, square corners, a 2
+    px dark ring, its tail pointing down at him; `placeMenu` keeps it in the main area and never
+    over him; it may sit over the cards above him while it is open, as a pop-up does): his name,
+    his mood in one word, days together, a line about today, then Tricks (Hop, Spin, Nap), Where
+    (Come here, Stay here) and Together (Read with me), each with a small pixel icon, and a quiet
+    footer for how chatty he is (Off, Some, Chatty) and what he wears (those unlocked and the
+    next one, "Star in 2 days"). Every item is 38 px tall (the footer's 34 px) with the wall's
+    tooltip. Choosing something he does closes it (focus returns to him when it was in the
+    menu), and he answers after the move, never under the menu; the footer's choices keep it
+    open. It also closes on Escape, a click or right-click outside it, a right-click on him
+    again, a place change, keyboard focus moving on past it and when he goes away. While it is
+    open he stands still and looks up at it. His click area is his body and head, not the
+    sprite's empty corners.
   - **Pick him up and set him down.** Press on him and move 6 px or more (mouse, pen or touch;
     pointer capture, so nothing under him sees the pointer) and he is lifted by the wool on his
-    back, in a held pose with his legs swaying with the pointer's speed, drawn above the cards.
-    He is kept on the screen. Letting go drops him gently (300 to 500 ms by height, one small
-    squash) to the ground line of the band under the release point, at that x kept inside the
-    span he walks on that place; under reduced motion he is simply there. He then sits and looks
-    around for about 20 seconds before walking back to where his wander stands. A carry is never
-    a pet. Pointer cancel, a lost capture, the window losing focus, the page hiding, a call
-    starting or the display going idle put him down at once from where he is (no fall when the
-    page is hidden); a place change just moves him. Letting go within 24 px of a clover feeds it
-    to him. Shaking him (three fast direction changes inside a second) gives swirly eyes for
-    three seconds after landing. While carried the amber mark and the clover are hidden. He says
-    at most one "held" line, one "landed" line and a "dizzy" line at most once a minute, all
-    obeying every quiet time and the chattiness setting, and carry lines come at most every 20
-    seconds across carries.
+    back: one surprised frame (ears up), a stretch as the wool takes his weight, the tuft he is
+    held by drawn above his back, then a dangle that swings like a pendulum (a damped spring
+    driven by the pointer's speed, so it carries past upright when the pointer stops). He turns
+    to face the way he is carried once the pointer has moved steadily for 0.15 seconds, his legs
+    pedal faster the faster he goes, and a shadow on the ground shows where he will land. He is
+    drawn above the cards and kept on the screen. Letting go drops him straight down under
+    gravity onto the ground line at the nearest free spot of the place's ground (drifting
+    sideways over a quarter second only when the spot below is not free), stretched as he
+    falls; he lands with a deep squash and dust, a rebound, and a shake of his wool, stands a
+    moment, sits, and after a few seconds wanders around his new spot. The spot is kept per
+    place (`spots` in his stored record; Unwind keeps one per tab, `unwind` for Listen and
+    `unwindWatch` for Watch) until he is set down elsewhere or called to the middle. Under reduced motion he is simply there. A carry is never a pet. Pointer cancel, a
+    lost capture, the window losing focus, the page hiding, a call starting or the display going
+    idle put him down from where he is (no fall when the page is hidden, and no landing line); a
+    place change sets him down at once on the new place's ground at his x. Letting go within 24
+    px of a clover feeds it to him. Shaking him (three fast direction changes inside a second)
+    gives swirly eyes for three seconds after landing. While carried the amber mark and the
+    clover are hidden. He says at most one "held" line (a "fast" one when he is carried quickly,
+    none once shaken), one "landed" line only once he is down and his wool is shaken out, and a
+    "dizzy" line at most once a minute, all obeying every quiet time and the chattiness setting;
+    carry lines come at most every 20 seconds across carries. His held line shows only over open
+    ground: carried over a control, a line of text or a card of the wall it is hidden, so it never
+    covers information (his body stays above everything, to show where he will land).
   - **He notices the pointer.** Within about 260 px, and not busy (reading in focus, walking, a
-    clover on the ground, asleep, a reaction running), he turns to face a pointer that moved in the
-    last 6 seconds, with his ears up (the "alert" pose); after 6 still seconds he loses interest.
-    Not under reduced motion.
+    clover on the ground, asleep, a reaction running, his menu open), he turns to face a pointer
+    that moved in the last 6 seconds, with his ears up (the "alert" pose); after 6 still seconds
+    he loses interest. Not under reduced motion.
+  - **While the wall records** (`isQuietForRecording()` in `signals/store.ts`) he sits quietly where
+    he is: no wander and no idle life, no line of his own, no click noticing, no hop or look he
+    starts himself, no notes or beat; the owner can still pet him, open his menu and carry him.
+  - **He notices clicks.** One passive `pointerdown` listener on the window (capture, so it sees
+    clicks a control stops; it never prevents or stops anything, and does a few comparisons and
+    starts a reaction; no polling, no timer while idle). A click anywhere on the wall that is not
+    on him or anything of his turns him toward it: within 320 px of his head, ears up, a squash
+    then a flick of his wool and a 1.6 second look (up at it when it was above him); to 1000 px,
+    ears up and a 1.1 second look; farther, one ear frame and a 0.7 second glance. A burst of
+    clicks is one reaction (nothing for 1.5 seconds after one). He never moves for it. One near
+    reaction in three may get a line ("Ooh. A click."), at most once every three minutes and only
+    through the usual quiet and chattiness rules, never over another bubble. Never while he is
+    carried, falling or walking back, in a trick or a nap, reading, with his menu open, asleep,
+    away, in a call or a meeting, while the wall records or while the page is hidden
+    (`noticeBlocked` in `Watt.tsx` holds the list). Under reduced motion he only turns.
   - **Happy hop and a milestone.** Three clicks within 4 seconds (the second and third add nothing
-    to the pet count) give one happy hop, a jump with a turn of the wool, at most once every 20
-    seconds. The tenth pet of a day gives a one-off sparkle and a "milestone" line.
-- **Tricks and commands in his card** (a row of 32 px buttons, each with a tooltip). "Hop" and
-  "Spin" are small reactions; "Nap" lies him down asleep for a minute or until he is petted;
-  "Come here" trots him to the middle of the place, where the wander picks up from; "Stay" is a
-  switch that keeps him sitting where he was last set down (or where he stands, if he never was)
-  until it is switched off, the place changes or the day ends. Stay is kept in the stored record
-  (`stay`: place, x, local date) and checked whole on read (a known place, an x on the stage,
-  today's date; anything else is dropped). The tricks are refused quietly, not hidden: in a call
-  or a meeting, in the first minute of focus, while he sleeps at night and while he is away, the
-  buttons are off and their tooltip says why. "Read with me, 25 min" starts the existing focus
-  timer through the focus store at its default length (no new timer logic) and is off, with a
-  tooltip, while a session runs. Tricks add a line from the "tricks" or "stay" group, on the same
-  quiet and chattiness rules, at most every 20 seconds.
+    to the pet count) give one happy hop, at most once every 20 seconds. The tenth pet of a day
+    gives a one-off sparkle and a "milestone" line.
+- **Tricks and commands in his menu.** "Hop" and "Spin" are small reactions; "Nap" lies him down
+  asleep for a minute or until he is petted, with its own line; "Come here" sends him back to the
+  middle of the place and forgets his spot there (he trots at three times his pace when it is on
+  the same stretch of ground and near, and fades over when it is not, as across Unwind's
+  transport row); "Stay here" is a switch that keeps him sitting where he was last set down (or
+  where he stands) until it is switched off, the place changes or the day ends. Stay is kept in
+  the stored record (`stay`: place, x, local date) and checked whole on read (a known place, an x
+  on the stage, today's date; anything else is dropped). The tricks are refused quietly, not
+  hidden: in a call or a meeting, in the first minute of focus, while he sleeps at night and while
+  he is away, the items are marked off, the menu says why in a line, and their tooltip and
+  accessible description say why too. "Read with me, 25 min" starts the existing focus timer
+  through the focus store at its default length (no new timer logic) and is off while a session
+  runs. Tricks add a line from the "tricks", "nap" or "stay" group once he has done them, on the
+  same quiet and chattiness rules, at most every 20 seconds.
 - **A firefly at dusk.** Between sunset (`ribbon/sun.ts`) and his bedtime (9:30 PM) one small
   firefly drifts in a slow loop near him and blinks softly (never brighter than his wool); he
   turns to watch it. Not under reduced motion, never in a call.
@@ -1077,7 +1155,8 @@ Watt is also a small pet ("he"), calm and silent (no sound at all):
   a day a clover grows on his walk; he eats it when he reaches it, or click it to give it to
   him. Cosmetics (bow, star, cape) unlock with days together.
 - **Stored locally** (`localStorage` key `wall2.watt`, `buddy/pet.ts`): how chatty he is, the
-  cosmetic, days together, today's counts and his Stay. His click area, mark and clover sit above the
+  cosmetic, days together, today's counts, his Stay and his spot on each place (each spot is
+  kept only when it is a known place and an x on the stage). His click area, mark and clover sit above the
   shell (`z-index: 1`) and take the pointer only while he is up; carried, he is at `z-index: 40`.
 - What he knows comes from existing hooks (`useAgentStatusLine`, `useAgentsWaiting`, the
   agents store, `useWeather`, `useNextMeeting`, the focus store, the audio store and beat

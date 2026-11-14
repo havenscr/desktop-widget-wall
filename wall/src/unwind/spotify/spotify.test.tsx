@@ -212,9 +212,10 @@ it('shows playlists as a grid of cover tiles; resting on one opens its details w
   expect(card.textContent).not.toContain('Length');
   expect(card.textContent).not.toContain('Last played');
   // Beside the tile (R2), not above or below it: jsdom gives every box 0 by 0 at the origin, so a
-  // side card sits 10 px right of it and top aligned at the stage's edge (12), a centred one at 12 and 10.
-  const placed = (card.closest('.hover-tip') as HTMLElement).style;
-  expect([placed.left, placed.top]).toEqual(['10px', '12px']);
+  // side card sits one tail gap (14 px) right of it, top aligned at the stage's edge (12); a
+  // centred one would sit at 12 and 14, marked below.
+  const placed = card.closest('.hover-tip') as HTMLElement;
+  expect([placed.style.left, placed.style.top, placed.dataset.side]).toEqual(['14px', '12px', 'right']);
   await act(async () => (screen.getByRole('button', { name: 'Shuffle' }) as HTMLButtonElement).click());
   await flush();
   expect(calls).toEqual([
