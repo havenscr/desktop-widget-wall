@@ -74,6 +74,15 @@ Every push runs `.github/workflows/build-windows.yml` on a Windows runner and
 uploads the exe + MSI + NSIS installers as the `widget-wall-windows` artifact -
 download it from the run's page under the repo's **Actions** tab.
 
+### Ridgeline (the second app)
+
+`npm run build:wall2` builds the second app, "Ridgeline" (called "Wall 2" while it was
+built), from `wall/`. Its installers are
+`src-tauri/target/release/bundle/msi/Ridgeline_<version>_x64_en-US.msi` and
+`src-tauri/target/release/bundle/nsis/Ridgeline_<version>_x64-setup.exe`. Installing
+Ridgeline over an existing "Widget Wall 2" replaces it and keeps its settings and
+sign-ins; see `wall/README.md`, section "Run and build inside Tauri".
+
 ## Development
 
 ```bash

@@ -132,7 +132,7 @@ describe('the Screen tower frame', () => {
   });
 
   it('keeps the frame within the clearances the layout needs', () => {
-    // The outer footing ends at x 1965, 35 px short of the list card (x 2000), and the left one at x 1195, 111 px clear of the Look switch (which ends at x 1084).
+    // The outer footing ends at x 1965, 35 px short of the list card (x 2000), and the left one at x 1195, 111 px clear of the left block (which ends at x 1084).
     const doc = new DOMParser().parseFromString(`<svg xmlns="http://www.w3.org/2000/svg">${TOWER_SVG}</svg>`, 'image/svg+xml');
     let right = 0;
     let left = 1e9;

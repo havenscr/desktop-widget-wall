@@ -48,7 +48,7 @@ it('shows Not set up when meet.json is missing', async () => {
   render(<Meet />);
   await flush();
   expect(screen.getByText('Calendar is not connected yet.')).toBeTruthy();
-  expect(screen.getByText('Setup steps are in the Wall 2 README, section Meet.')).toBeTruthy();
+  expect(screen.getByText('Setup steps are in the Ridgeline README, section Meet.')).toBeTruthy();
   expect(screen.queryByText(/meet\.json/)).toBeNull();
 });
 
