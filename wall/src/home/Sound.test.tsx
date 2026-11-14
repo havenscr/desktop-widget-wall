@@ -90,7 +90,10 @@ it('never reached says so, with no controls', async () => {
   mocks.set('wall2_sonos_summary', () => Promise.reject(new Error('Could not reach Sonos')));
   const { container } = render(<Sound />);
   await flush();
-  expect(screen.getByText('Could not reach Sonos')).toBeTruthy();
+  // One failed read shows nothing; the second, 5 seconds later, says what happened.
+  expect(screen.queryByText('Sonos cannot be reached')).toBeNull();
+  await flush(5_000);
+  expect(screen.getByText('Sonos cannot be reached')).toBeTruthy();
   expect(container.querySelectorAll('button')).toHaveLength(0);
 });
 
@@ -99,7 +102,7 @@ it('shows the five quick plays in the owner\'s order with More, and nothing is w
   const { container } = render(<Sound />);
   await flush(5 * 60_000);
   const names = [...container.querySelectorAll('.sound-plays > .sound-chip .sound-chip-name')].map((n) => n.textContent);
-  expect(names).toEqual(['Morning', 'Day', 'Evening', 'Late night', 'Workday']);
+  expect(names).toEqual(['Morning', 'Day', 'Evening', 'Late Night', 'Workday']);
   expect(screen.getByText('3 more')).toBeTruthy();
   expect(writes).toEqual([]);
   const evening = screen.getByText('Evening').closest('button')!;
@@ -325,24 +328,24 @@ it('Rust asking for a confirm opens the same question; a failure says so', async
   fireEvent.click(screen.getByText('Start'));
   await flush();
   expect(writes).toEqual([{ cmd: 'wall2_sonos_play', args: { routineKey: 'Dawn_Mix', confirm: true } }]);
-  fireEvent.click(screen.getByRole('radio', { name: 'All speakers' }));
+  fireEvent.click(screen.getByRole('radio', { name: 'All Speakers' }));
   await flush();
   expect(screen.getByText('Could not reach Sonos').className).toContain('warn-text');
 });
 
-it('Where shows Office, All speakers and Common areas only (the label drops the parentheses), marks the grouping in use, and a loud preset names the speaker', async () => {
+it('Where shows Office, All Speakers and Common Areas only (the label drops the parentheses), marks the grouping in use, and a loud preset names the speaker', async () => {
   wire();
   render(<Sound />);
   await flush();
   const radios = screen.getAllByRole('radio');
-  expect(radios.map((r) => r.textContent)).toEqual(['Office', 'All speakers', 'Common areas']);
+  expect(radios.map((r) => r.textContent)).toEqual(['Office', 'All Speakers', 'Common Areas']);
   expect(radios[0].getAttribute('aria-checked')).toBe('true');
   fireEvent.click(radios[1]);
   await flush();
   expect(writes).toEqual([{ cmd: 'wall2_sonos_preset', args: { presetId: 'whole' } }]);
-  expect(screen.getByText('Speakers set to All speakers')).toBeTruthy();
+  expect(screen.getByText('Speakers set to All Speakers')).toBeTruthy();
   writes = [];
-  fireEvent.click(screen.getByRole('radio', { name: 'Common areas' }));
+  fireEvent.click(screen.getByRole('radio', { name: 'Common Areas' }));
   await flush();
   expect(writes).toEqual([]);
   expect(screen.getByRole('alertdialog').textContent).toContain('It sets Den to 70. Apply anyway?');
@@ -357,7 +360,7 @@ it('applying a preset closes the Speakers pop-out first', async () => {
   await flush();
   fireEvent.click(screen.getByText(/Speakers 4/).closest('button')!);
   expect(screen.getByRole('dialog', { name: 'Speakers' })).toBeTruthy();
-  fireEvent.click(screen.getByRole('radio', { name: 'All speakers' }));
+  fireEvent.click(screen.getByRole('radio', { name: 'All Speakers' }));
   expect(screen.queryByRole('dialog', { name: 'Speakers' })).toBeNull();
 });
 
@@ -381,13 +384,13 @@ it('Speakers lists every speaker; line-in says PC audio and offers the PC volume
   expect(writes).toEqual([{ cmd: 'wall2_sonos_volume', args: { target: { kind: 'speaker', id: 'Den' }, level: 20 } }]);
 });
 
-it('Sonos off pauses everything and clears the started mark; with nothing playing, Play names the suggestion', async () => {
+it('Sonos Off pauses everything and clears the started mark; with nothing playing, Play names the suggestion', async () => {
   wire();
   localStorage.setItem(LAST_PLAY_KEY, JSON.stringify({ key: 'Noon_Mix', at: NOW - 60_000, group: 'G2', seen: true }));
   const { unmount } = render(<Sound />);
   await flush();
   expect(screen.getByText('started 1 min ago')).toBeTruthy();
-  fireEvent.click(screen.getByText('Sonos off').closest('button')!);
+  fireEvent.click(screen.getByText('Sonos Off').closest('button')!);
   await flush();
   expect(writes).toEqual([{ cmd: 'wall2_sonos_pause_all', args: undefined }]);
   expect(localStorage.getItem(LAST_PLAY_KEY)).toBeNull();
@@ -462,10 +465,48 @@ it('a read that is not live dims the block, says how old it is, and turns writes
   fail = true;
   await flush(3 * 60_000);
   expect(container.querySelector('.sound.stale')).toBeTruthy();
-  expect(screen.getByText(/^Sonos not reachable, showing \d+ min ago$/)).toBeTruthy();
+  expect(screen.getByText(/^Sonos cannot be reached\. Last good read \d+ min ago$/)).toBeTruthy();
   const play = screen.getByText('Morning').closest('button') as HTMLButtonElement;
   expect(play.disabled).toBe(true);
   expect((screen.getByLabelText('Volume, Den and 1 more') as HTMLInputElement).disabled).toBe(true);
+  expect(writes).toEqual([]);
+});
+
+it('one failed read leaves the card as it is; the second, 5 seconds later, dims it and a good read clears the line', async () => {
+  let word: string | null = null;
+  wire(() => (word ? Promise.reject(new Error(word)) : summary()));
+  const { container } = render(<Sound />);
+  await flush();
+  word = 'timed-out';
+  await flush(30_000);
+  expect(container.querySelector('.sound.stale')).toBeNull();
+  expect(container.querySelector('.sound-head .warn-text')).toBeNull();
+  expect((screen.getByText('Morning').closest('button') as HTMLButtonElement).disabled).toBe(false);
+  await flush(5_000);
+  expect(container.querySelector('.sound.stale')).toBeTruthy();
+  expect(screen.getByText('Sonos did not answer in time. Last good read less than a minute ago').className).toContain('warn-text');
+  word = null;
+  await flush(30_000);
+  expect(container.querySelector('.sound.stale')).toBeNull();
+  expect(container.querySelector('.sound-head .warn-text')).toBeNull();
+});
+
+it.each([
+  ['timed-out', 'Sonos did not answer in time'],
+  ['no-answer', 'Sonos cannot be reached'],
+  ['bad-answer', 'Sonos sent an answer the wall could not read'],
+])('a failed read of kind %s says %s, with the age of the last good read, and writes stay off', async (word, sentence) => {
+  let fail = false;
+  wire(() => (fail ? Promise.reject(new Error(word)) : summary()));
+  const { container } = render(<Sound />);
+  await flush();
+  fail = true;
+  await flush(30_000 + 5_000);
+  expect(container.querySelector('.sound.stale')).toBeTruthy();
+  expect(screen.getByText(`${sentence}. Last good read less than a minute ago`)).toBeTruthy();
+  await flush(30_000);
+  expect(screen.getByText(`${sentence}. Last good read 1 min ago`)).toBeTruthy();
+  expect((screen.getByText('Morning').closest('button') as HTMLButtonElement).disabled).toBe(true);
   expect(writes).toEqual([]);
 });
 
@@ -576,13 +617,13 @@ it('one deliberate action is one write: double clicks and held keys never send t
   await held(screen.getByText('Morning').closest('button')!);
   expect(count('wall2_sonos_play')).toBe(2);
   await flush(LATCH_MS);
-  await dbl(screen.getByRole('radio', { name: 'All speakers' }));
+  await dbl(screen.getByRole('radio', { name: 'All Speakers' }));
   expect(count('wall2_sonos_preset')).toBe(1);
   await flush(LATCH_MS);
   await held(screen.getByRole('radio', { name: 'Office' }));
   expect(count('wall2_sonos_preset')).toBe(2);
   await flush(LATCH_MS);
-  await dbl(screen.getByText('Sonos off').closest('button')!);
+  await dbl(screen.getByText('Sonos Off').closest('button')!);
   expect(count('wall2_sonos_pause_all')).toBe(1);
   await flush(LATCH_MS);
   fireEvent.click(screen.getByText('Sleep').closest('button')!);
@@ -664,7 +705,7 @@ it('the rendered face suggests a Latenight tile at 23:00, and marks Evening only
   wire(() => summary({ music: [routine('n', 'Latenight'), routine('e', 'Evening Workday')] }));
   const { container } = render(<Sound />);
   await flush();
-  expect(screen.getByText('Late night').closest('button')!.className).toContain('sug');
+  expect(screen.getByText('Late Night').closest('button')!.className).toContain('sug');
   expect(container.querySelectorAll('.sound-chip.sug')).toHaveLength(1);
 });
 
@@ -685,7 +726,7 @@ it('one matched routine plus More: the row has two columns, no blank cell; fewer
   expect(row.style.gridTemplateColumns).toBe('repeat(2, minmax(0px, 1fr))');
   expect(row.children).toHaveLength(2);
   for (const n of [2, 3, 4]) {
-    const music = ['Morning', 'Day', 'Evening', 'Late night'].slice(0, n).map((w, i) => routine(`k${i}`, `${w} Mix`));
+    const music = ['Morning', 'Day', 'Evening', 'Late Night'].slice(0, n).map((w, i) => routine(`k${i}`, `${w} Mix`));
     wire(() => summary({ music, controls: [] }));
     const r = render(<Sound />);
     await flush();
@@ -728,7 +769,7 @@ it('a read that fails after Sonos was up keeps the block, marked stale, and the 
   await flush();
   const before = container.querySelector('.sound-plays')!.children.length;
   up = false;
-  await flush(31_000);
+  await flush(36_000);
   expect(container.querySelector('.sound.stale')).toBeTruthy();
   expect(container.querySelector('.sound-plays')!.children.length).toBe(before);
   expect(container.querySelector('.sound.bare')).toBeNull();
