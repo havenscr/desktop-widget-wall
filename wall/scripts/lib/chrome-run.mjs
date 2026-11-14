@@ -8,6 +8,13 @@
 // killed by its id, never by program name, and only while the browser is still running (an id
 // of a process that has gone may belong to someone else by now).
 //
+// When the browser's own process has exited but a child of it lingers (holding the output pipe),
+// the group is never signalled by its id. Instead, on Linux, /proc is read for the members that
+// remain: a process counts only when its group id is the browser's, it started no earlier than the
+// browser, and the group has not been seen empty before (a number that is free again may be reused
+// by an unrelated group). Each is killed by its own pid. Where /proc does not exist (macOS,
+// Windows) nothing extra is done in that case: a lingering child there is not cleaned up.
+//
 // Temporary files: every try gets its own temporary folder, made here and handed to the browser
 // as its temporary location (TMPDIR, TEMP and TMP). Chromium keeps its own `org.chromium.*`
 // scratch folder there, so a killed browser leaves nothing in the system temporary folder, and
@@ -18,7 +25,7 @@
 // WALL_CHROME_LIMIT_MS=<ms> replaces the time limit per try of EVERY caller (the default is 45 s;
 // echo-calm asks for 240 s and fit:home for 90 s, and the variable replaces those too).
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -40,6 +47,68 @@ export class ChromeRunError extends Error {
 /** True only for a child that is still running and has a real process id (a positive whole number). */
 export function canKill(child) {
   return !!child && Number.isInteger(child.pid) && child.pid > 0 && child.exitCode === null && child.signalCode === null;
+}
+
+const groups = new Map(); // child -> { pgid, start, emptied }: groups of browsers this module (or the gallery) started
+
+/** Fields of /proc/<pid>/stat as { state, pgid, start }, or null (no /proc, or the process is gone). */
+function procStat(pid) {
+  try {
+    const t = readFileSync(`/proc/${pid}/stat`, 'utf8');
+    const f = t.slice(t.lastIndexOf(')') + 2).split(' ');
+    return { state: f[0], pgid: Number(f[2]), start: Number(f[19]) };
+  } catch {
+    return null;
+  }
+}
+
+/** Remember a just-started browser's group id (its own pid: it leads the group) and start time. Linux only; elsewhere a no-op. */
+export function trackGroup(child) {
+  if (!child || !Number.isInteger(child.pid) || child.pid <= 0 || process.platform === 'win32') return;
+  const st = procStat(child.pid);
+  if (!st || st.pgid !== child.pid || !Number.isFinite(st.start)) return;
+  groups.set(child, { pgid: child.pid, start: st.start, emptied: false });
+  child.once('exit', () => sweepGroup(child));
+}
+
+/**
+ * After the browser's own process has exited: kill, by its own pid, every live process still in its group
+ * that started no earlier than the browser. Returns the pids it signalled. Never signals a group id.
+ * `kill` is for tests.
+ */
+export function sweepGroup(child, kill = (pid) => process.kill(pid, 'SIGKILL')) {
+  const g = groups.get(child);
+  if (!g || g.emptied || canKill(child)) return [];
+  let names;
+  try {
+    names = readdirSync('/proc').filter((n) => /^\d+$/.test(n));
+  } catch {
+    return [];
+  }
+  const hit = [];
+  for (const n of names) {
+    const pid = Number(n);
+    if (pid === process.pid) continue;
+    const st = procStat(pid);
+    if (!st || st.state === 'Z' || st.pgid !== g.pgid || st.start < g.start) continue;
+    hit.push(pid);
+    try {
+      kill(pid);
+    } catch {
+      /* already gone */
+    }
+  }
+  if (hit.length === 0) g.emptied = true;
+  return hit;
+}
+
+/** Sweep a group (see sweepGroup) until nothing is left in it, waiting up to 5 s; then forget it. */
+export async function reapGroup(child, kill) {
+  for (let i = 0; i < 50; i++) {
+    if (sweepGroup(child, kill).length === 0) break;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  groups.delete(child);
 }
 
 function defaultKill(pid) {
@@ -67,9 +136,11 @@ export function onCleanup(fn) {
 function cleanupAll() {
   for (const rec of live) {
     killTree(rec.child);
+    sweepGroup(rec.child);
     rmSync(rec.dir, { recursive: true, force: true });
   }
   live.clear();
+  for (const child of [...groups.keys()]) sweepGroup(child);
   for (const fn of cleanups) {
     try {
       fn();
@@ -109,6 +180,7 @@ async function once(chrome, args, limitMs, maxBuffer, hang) {
     detached: process.platform !== 'win32',
     env: { ...process.env, TMPDIR: dir, TEMP: dir, TMP: dir },
   });
+  trackGroup(child);
   const rec = { child, dir };
   live.add(rec);
   try {
@@ -137,6 +209,7 @@ async function once(chrome, args, limitMs, maxBuffer, hang) {
     killTree(child); // a no-op when it has already exited
     live.delete(rec); // forget the handle: no later hook can reach it
     await Promise.race([stopped(child), new Promise((r) => setTimeout(r, 5000))]);
+    await reapGroup(child); // a child that outlived the browser's own process
     rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   }
 }

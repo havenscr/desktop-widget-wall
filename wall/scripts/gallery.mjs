@@ -18,7 +18,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { killTree } from './lib/chrome-run.mjs';
+import { killTree, reapGroup, sweepGroup, trackGroup } from './lib/chrome-run.mjs';
 
 const args = process.argv.slice(2);
 const flag = (name) => args.find((a) => a === `--${name}` || a.startsWith(`--${name}=`));
@@ -716,9 +716,13 @@ async function shutdown() {
     });
   }
   killTree(proc);
+  if (proc) await reapGroup(proc); // a child that outlived the browser's own process
   rmSync(work, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 }
-process.on('exit', () => killTree(chromeProc));
+process.on('exit', () => {
+  killTree(chromeProc);
+  if (chromeProc) sweepGroup(chromeProc);
+});
 for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
   process.on(sig, () => {
     shutdown().finally(() => process.exit(sig === 'SIGINT' ? 130 : sig === 'SIGHUP' ? 129 : 143));
@@ -768,6 +772,7 @@ async function launch() {
     { stdio: ['ignore', 'ignore', 'pipe'], detached: process.platform !== 'win32', env: { ...process.env, TMPDIR: scratch, TEMP: scratch, TMP: scratch } },
   );
   const proc = chromeProc;
+  trackGroup(proc);
   proc.once('exit', () => {
     if (chromeProc === proc) chromeProc = null; // forget a browser that has gone: nothing may kill its old id later
     if (!shuttingDown) for (const d of [scratch, profile]) rmSync(d, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
@@ -994,6 +999,7 @@ try {
       const old = chromeProc;
       killTree(old);
       if (old) await new Promise((r) => (old.exitCode !== null || old.signalCode !== null ? r() : old.once('exit', r)));
+      if (old) await reapGroup(old);
       cdp = await launch();
     })().finally(() => {
       relaunching = null;

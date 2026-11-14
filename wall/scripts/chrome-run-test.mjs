@@ -10,6 +10,11 @@
 // the parent and child relationship and one owned group, and asserts afterwards that every recorded
 // process id is gone. Every case runs in its own node process with its own temporary folder
 // (TMPDIR), which must be empty afterwards.
+// Part 2b, a browser that exits first: its process ends at once (or after 1.5 s) and leaves a child that
+// sleeps and holds the output pipe. The helper must return within the limit, the child must be gone
+// afterwards (a zombie counts as gone, a sleeping process does not), and the temporary folder must be
+// empty. In the second case an unrelated process in its own group, started while the group is being
+// swept, must still be alive afterwards.
 // Part 3, only with WALL_CHROME: a real page killed by a very short limit leaves no process and no
 // temporary folder behind.
 // Not for Windows (uses ps).
@@ -27,6 +32,18 @@ const standIn = [process.execPath, ['-e', "console.log('<html><body><p id=\"x\">
 
 if (process.argv.includes('--child')) {
   const mode = process.argv[process.argv.indexOf('--child') + 1];
+  if (mode === 'orphan' || mode === 'neighbor') {
+    const prog = `const {spawn}=require('child_process'),fs=require('fs');const k=spawn(process.execPath,['-e','setInterval(()=>{},1e3)'],{stdio:['ignore','inherit','ignore']});fs.writeFileSync(process.env.WALL_TEST_PIDS+'/kid',String(k.pid));console.log('<html><body><p id="x">fine</p></body></html>');setTimeout(()=>process.exit(0),${mode === 'neighbor' ? 1500 : 0})`;
+    try {
+      const out = await runChrome(process.execPath, ['-e', prog], { label: 'test state', limitMs: 4000 });
+      console.log(out.includes('id="x"') ? 'child: the page was dumped' : 'child: wrong output');
+      process.exit(out.includes('id="x"') ? 0 : 1);
+    } catch (e) {
+      if (!(e instanceof ChromeRunError)) throw e;
+      console.error(`  FAIL ${e.message}`);
+      process.exit(1);
+    }
+  }
   const [cmd, args] = real ? [real, ['--headless', '--no-sandbox', '--disable-gpu', '--dump-dom', PAGE]] : standIn;
   const opts = { label: 'test state', limitMs: 4000, hang: mode === 'hang2' ? 2 : mode === 'hang3' ? 3 : 0 };
   if (mode === 'realkill') opts.limitMs = 150;
@@ -185,6 +202,58 @@ for (const mode of ['hang2', 'hang3']) {
   }
   check(r.left.length === 0, `every recorded process id is gone${r.left.length ? ` (still there: ${r.left.join(', ')})` : ''}`);
   check(r.leftovers.length === 0, `its temporary folder is empty${r.leftovers.length ? ` (left: ${r.leftovers.join(', ')})` : ''}`);
+}
+
+// ---- part 2b: the browser's own process exits first, a child lingers
+async function runOrphan(mode) {
+  const tmp = mkdtempSync(join(tmpdir(), 'wall-chrome-test-'));
+  const pids = mkdtempSync(join(tmpdir(), 'wall-chrome-pids-'));
+  const child = spawn(process.execPath, [here, '--child', mode], { env: { ...process.env, TMPDIR: tmp, TEMP: tmp, TMP: tmp, WALL_TEST_PIDS: pids } });
+  let out = '';
+  child.stdout.on('data', (d) => (out += d));
+  child.stderr.on('data', (d) => (out += d));
+  let neighbor = null;
+  if (mode === 'neighbor') {
+    await new Promise((r) => setTimeout(r, 700));
+    neighbor = spawn(process.execPath, ['-e', 'setInterval(()=>{},1e3)'], { detached: true, stdio: 'ignore' });
+  }
+  const t0 = Date.now();
+  const status = await new Promise((r) => child.once('close', r));
+  const secs = (Date.now() - t0) / 1000;
+  for (const l of out.trimEnd().split('\n')) console.log(`    | ${l}`);
+  let kid = 0;
+  try {
+    kid = Number(readFileSync(join(pids, 'kid'), 'utf8'));
+  } catch {
+    /* never started */
+  }
+  const kidGone = kid > 0 && (await gone(kid));
+  if (kid > 0 && !kidGone) process.kill(kid, 'SIGKILL'); // the pid is the one this test saw
+  const leftovers = readdirSync(tmp);
+  rmSync(tmp, { recursive: true, force: true });
+  rmSync(pids, { recursive: true, force: true });
+  let neighborAlive = null;
+  if (neighbor) {
+    const st = (() => {
+      try {
+        return readFileSync(`/proc/${neighbor.pid}/stat`, 'utf8');
+      } catch {
+        return null;
+      }
+    })();
+    neighborAlive = st !== null && !/^\d+ \(.*\) Z/.test(st);
+    process.kill(neighbor.pid, 'SIGKILL');
+  }
+  return { status, secs, kid, kidGone, leftovers, neighborAlive };
+}
+for (const mode of ['orphan', 'neighbor']) {
+  console.log(mode === 'orphan' ? 'the browser exits at once and leaves a child holding the pipe, limit 4 s:' : 'the browser exits after 1.5 s, an unrelated process in its own group is running, limit 4 s:');
+  const r = await runOrphan(mode);
+  check(r.kid > 0, `the lingering child was recorded (${r.kid})`);
+  check(r.status === 0 && r.secs < 4, `the run returned its output within the limit (exit ${r.status}, ${r.secs.toFixed(1)} s)`);
+  check(r.kidGone, 'the lingering child is gone afterwards');
+  check(r.leftovers.length === 0, `its temporary folder is empty${r.leftovers.length ? ` (left: ${r.leftovers.join(', ')})` : ''}`);
+  if (mode === 'neighbor') check(r.neighborAlive === true, 'the unrelated process in its own group is still alive');
 }
 
 // ---- part 3: the real browser
