@@ -158,7 +158,13 @@ it('9 to 11, the session then waits on the owner: the same two hours stay', asyn
 it('a parent that just closed (no card, today\'s record names it) keeps its 9 to 11 in the cells, the sums and the panel row', async () => {
   vi.setSystemTime(at('11:00'));
   answer = working;
-  const r = render(<Ribbon kind="work" />);
+  const r = render(
+    <>
+      <CentreSlot weather={weather} />
+      <Ribbon kind="work" />
+      <HoverTipLayer />
+    </>,
+  );
   await flush();
   record = { date: D, tz: 'America/Los_Angeles', sessions: [{ id: A, title: 'Long build', spans: [{ stage: 'build', start: iso('09:00'), end: iso('11:00') }], pr: null }] };
   answer = () => summary({ slots: { used: 0, limit: 1, sessions: 0, working: 0 }, sessionsList: [], lanes: [], day: [openRun()] });
@@ -170,6 +176,11 @@ it('a parent that just closed (no card, today\'s record names it) keeps its 9 to
   expect(b.spans).toEqual([{ id: A, start: at('09:00'), end: at('11:00') }]);
   const cells = [...r.container.querySelectorAll('.agent-row .ac i')].map((i) => i.className);
   expect(cells).toHaveLength(10);
+  expect(cells.length * 12).toBe(busyTime(b.spans) / 60_000);
+  const meter = r.container.querySelector('.slot-meter') as HTMLElement;
+  fireEvent.mouseEnter(meter);
+  await flush(TIP_DELAY_MS + 10);
+  expect(document.querySelector('.hover-tip')!.textContent).toContain('Today: at 1 for 2 h 00 m.');
   const rows = todayRows(b.summary, read?.record ?? null, at('11:30'), at('11:30'), st.skewMs, b.ends);
   expect(rows[0].workMs / 60_000).toBe(120);
   r.unmount();
