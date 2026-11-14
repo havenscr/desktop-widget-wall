@@ -119,7 +119,7 @@ import { PixelSvg, PropSvg, SheepSvg } from './Pixels';
 import { bump, dayKey, loadPet, spotKey, moodOf, rollDay, savePet, type Cosmetic, type PetData, type StayPlace } from './pet';
 import { sunTimes } from '../ribbon/sun';
 import { CLOVER_WAIT_MS, cloverDue, dayTopic, finishedBetween, midday, moonUp, senseWeather, weatherTopics, workingIds } from './senses';
-import { CLOVER, DUST, FIREFLY, HEART, MARK, PROP_SPRITES, SHADOW, SMALL_PX, SPRITE_PX, TUFT, TUFT_AT, type Pose, type Prop } from './sprites';
+import { CLOVER, DUST, FIREFLY, HEART, MARK, SHADOW, SMALL_PX, SPARKLE, SPRITE_PX, TUFT, TUFT_AT, type Pose, type Prop } from './sprites';
 import './watt.css';
 import { overlayOwnsPointer } from '../ribbon/DrawerScrim';
 
@@ -2052,10 +2052,10 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
         <PixelSvg map={FIREFLY} px={SMALL_PX} />
       </span>
       <span className="watt-spark" ref={sparks[0]} aria-hidden="true">
-        <PixelSvg map={PROP_SPRITES.star.map} px={SMALL_PX} />
+        <PixelSvg map={SPARKLE} px={SMALL_PX} />
       </span>
       <span className="watt-spark" ref={sparks[1]} aria-hidden="true">
-        <PixelSvg map={PROP_SPRITES.star.map} px={SMALL_PX} />
+        <PixelSvg map={SPARKLE} px={SMALL_PX} />
       </span>
       <span className="watt-z" ref={zs[0]} aria-hidden="true">
         z

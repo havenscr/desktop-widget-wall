@@ -100,6 +100,30 @@ describe('what she wears', () => {
     expect(frame(mind({ cosmetic: 'cape' })).cosmetic).toBe('cape');
     expect(frame(mind({ cosmetic: 'none' })).cosmetic).toBeNull();
   });
+  it('wears the star in every pose, the raised head (look) included, and never drops it', () => {
+    for (const pose of POSES) expect(propFits('star', pose), pose).toBe(true);
+    // The pose he holds while his menu is open: he looks up, and the star is there.
+    const up = frame(mind({ react: 'look', reactT: 1, cosmetic: 'star' }));
+    expect(up.pose).toBe('look');
+    expect(up.cosmetic).toBe('star');
+    // Whatever he is doing, a chosen star is on him (every reaction, day prop, night and nap).
+    const seen = new Set<string>();
+    for (const react of [null, 'hop', 'pet', 'look', 'wake', 'eat', 'happy', 'spin', 'sparkle'] as const)
+      for (const over of [{}, { focus: true }, { rain: true }, { cold: true }, { nap: true }, { lie: true }, { evening: true }, { sleepy: true }])
+        for (const night of [false, true])
+          for (const reactT of [0.1, 0.5, 0.9]) {
+            const f = frame(mind({ ...over, cosmetic: 'star', react, reactT: react ? REACT_S[react] * reactT : 0 }), { night });
+            seen.add(f.pose);
+            expect(f.cosmetic, `${f.pose}`).toBe('star');
+          }
+    expect(seen.has('look')).toBe(true);
+    expect(seen.size).toBeGreaterThan(6);
+  });
+  it('wears the headphones on Unwind with music in every pose that has a side view', () => {
+    expect(frame(mind(), { place: 'unwind', playing: true }).prop).toBe('headphones');
+    expect(propFits('headphones', 'look')).toBe(true);
+    for (const pose of ['spin1', 'spin2', 'front'] as const) expect(propFits('headphones', pose), pose).toBe(false);
+  });
   it('never draws a prop that would stick out too far: every pose and prop is checked', () => {
     for (const pose of POSES) for (const prop of PROPS) if (propFits(prop, pose)) expect(PROP_RISE_MAX).toBe(2);
     expect(propFits('umbrella', 'look')).toBe(false);

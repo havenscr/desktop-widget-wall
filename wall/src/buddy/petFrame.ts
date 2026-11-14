@@ -1,7 +1,7 @@
 import { MAIN_LEFT, MAIN_WIDTH } from '../screens/frameLayout';
 import { IDLES, STOPS, buddyFrame, createWander, spriteHeight, spriteWidth, wanderAt, type BuddyFrame, type Walk, type WanderPoint, type WattPlace } from './model';
 import type { Cosmetic } from './pet';
-import { CLOVER, EAR, MARK, PROP_SPRITES, SMALL_PX, SPRITES, propOrigin, type Pose, type Prop } from './sprites';
+import { CLOVER, EAR, MARK, NO_HEADPHONES, PROP_SPRITES, SMALL_PX, SPRITES, propOrigin, type Pose, type Prop } from './sprites';
 
 /**
  * Watt as a pet: what she wears, what she is doing about the wall, where her bubble, her amber mark
@@ -281,9 +281,12 @@ export function canBlink(pose: Pose): boolean {
 
 /**
  * True when `prop` can be drawn on `pose`: it rises at most `PROP_RISE_MAX` sprite pixels above the
- * sprite, never hangs below her feet, and sticks out at most two pixels on either side.
+ * sprite, never hangs below her feet, and sticks out at most two pixels on either side. The headphones
+ * (a cup on one ear) are not drawn on the poses seen from the front or the back. The star is a patch on the
+ * wool: it never rises above the sprite, so this rule never drops it.
  */
 export function propFits(prop: Prop, pose: Pose): boolean {
+  if (prop === 'headphones' && NO_HEADPHONES.has(pose)) return false;
   const s = PROP_SPRITES[prop];
   const [ox, oy] = propOrigin(prop, pose);
   const map = SPRITES[pose];

@@ -267,20 +267,62 @@ export interface PropSprite {
   anchor: 'ear' | 'body';
 }
 
+const STAR_MAP: readonly string[] = ['..s..', '.sts.', 'sttts', '.sts.', '.s.s.'];
+
 export const PROP_SPRITES: Readonly<Record<Prop, PropSprite>> = {
   book: { map: ['bBBb', 'bBBb', 'bbbb'], dx: 2, dy: 3, anchor: 'ear' },
-  headphones: { map: ['.kkkk.', 'k....k', 'c....c', 'c....c'], dx: -1, dy: -2, anchor: 'ear' },
+  // One big cup over the ear, the band over the top of the head and down in front of the face.
+  headphones: { map: ['..kk.', 'ccc.k', 'cCc..', 'ccc..'], dx: -2, dy: -1, anchor: 'ear' },
   sunglasses: { map: ['ggghg'], dx: -1, dy: 2, anchor: 'ear' },
   umbrella: { map: ['..UUUUU..', '.uuuuuuu.', 'uuuuuuuuu', '....i....', '....i....', '....i....', '....ii...'], dx: -5, dy: -4, anchor: 'ear' },
   scarf: { map: ['rRrRr', '.r...', '.R...'], dx: -2, dy: 4, anchor: 'ear' },
   nightcap: { map: ['....nN', '..nnn.', '.nnnn.'], dx: -1, dy: -3, anchor: 'ear' },
   bow: { map: ['xx.xx', '.xxx.'], dx: -3, dy: -1, anchor: 'ear' },
-  star: { map: ['.s.', 'sss', '.s.'], dx: 1, dy: -4, anchor: 'ear' },
+  // A five-point star patch on his wool; `dx`, `dy` are the standing pose's place, `STAR_AT` the rest.
+  star: { map: STAR_MAP, dx: 5, dy: 3, anchor: 'body' },
   cape: { map: ['qqqqq.', 'qQqqqq', 'qqQqq.', 'qqqQ..', 'qq....'], dx: -1, dy: 3, anchor: 'body' },
 };
 
+/**
+ * Where the star patch goes on each pose, its top left in sprite pixels from the sheep's top left.
+ * Every one of its pixels lies on wool of that pose and clear of what can be worn with it
+ * (headphones, scarf, sunglasses, nightcap, book); the sprite tests check it. Poses whose body is
+ * shorter (sleeping, lying, landing, hopping) take it one row higher; the front and back views, which
+ * show no flank, take it on the nearest wool, left of the face.
+ */
+export const STAR_AT: Readonly<Record<Pose, readonly [number, number]>> = {
+  idle: [5, 3],
+  walk: [5, 3],
+  sleep: [5, 2],
+  read: [5, 3],
+  look: [5, 3],
+  yawn: [5, 3],
+  stretch: [5, 3],
+  eat: [5, 3],
+  held: [5, 3],
+  held2: [5, 3],
+  land: [5, 2],
+  sit: [5, 3],
+  dizzy: [5, 3],
+  alert: [5, 3],
+  hop: [5, 2],
+  spin1: [2, 3],
+  spin2: [2, 3],
+  lie: [5, 2],
+  watch: [5, 3],
+  watchEar: [5, 3],
+  front: [2, 3],
+};
+
+/** Poses seen from the front or the back: a side-on cup on the ear cannot be drawn on them. */
+export const NO_HEADPHONES: ReadonlySet<Pose> = new Set<Pose>(['spin1', 'spin2', 'front']);
+
+/** The small plus sparkle (the happy reaction's glitter), not the star he wears. */
+export const SPARKLE: readonly string[] = ['.s.', 'sss', '.s.'];
+
 /** Top left of a prop on `pose`, in sprite pixels from the sheep's top left (may be negative). */
 export function propOrigin(prop: Prop, pose: Pose): [number, number] {
+  if (prop === 'star') return [STAR_AT[pose][0], STAR_AT[pose][1]];
   const s = PROP_SPRITES[prop];
   if (s.anchor === 'body') return [s.dx, s.dy];
   const [ex, ey] = EAR[pose];
@@ -313,6 +355,8 @@ export const PROP_COLORS: Readonly<Record<string, string>> = {
   N: '#f6f2ff',
   x: '#ff7ab8',
   s: '#ffc24d',
+  t: '#fff0b8',
+  C: '#ff7ab8',
   q: '#ff3d9a',
   Q: '#c42a78',
   v: '#ff3d9a',
