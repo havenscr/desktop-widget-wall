@@ -342,6 +342,7 @@ state('unwind', 'sky layers: Watch, nothing on, at night, the moon in open sky',
 
 // The Tools drawer: opened on load (`tools=1`), over each place and in its hard states.
 state('work', 'tools: open', 'tools=1');
+state('work', 'tools: ringed accounts', 'tools=accounts');
 state('work', 'tools: account signed out', 'meet=signedout&tools=1');
 state('work', 'tools: sources failing', 'agents=down&weather=stale&tools=1');
 state('work', 'tools: keys refused', 'keys=refused&tools=1');
