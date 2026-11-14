@@ -1,68 +1,176 @@
 import { describe, expect, it } from 'vitest';
-import { BAND_MARGIN, LIFE_EVERY_S, LIFE_FIRST_S, LIFE_JITTER_S, LIFE_S, LOOK_ROUND_S, SEAT_GAP_MIN, facing, lifeAt, clearOf, seatFor, seatReach, showRole, watchLook, watchRestFor, type ShowInput } from './audience';
-import { groundOf, type Span } from './ground';
+import { LIFE_EVERY_S, LIFE_FIRST_S, LIFE_JITTER_S, LIFE_S, LOOK_ROUND_S, SEAT_CLEARANCE, SEAT_GAP, SEAT_NEAR, facing, followShow, lifeAt, newShowTrack, ownerPinned, ownerTouched, seatFor, showRole, watchLook, watchRestFor, type Marquee, type ShowInput } from './audience';
+import { WATCH_GROUND, groundOf, seatGround } from './ground';
 import { SPRITES } from './sprites';
 
-const PX = 6;
-const WATCH = groundOf('unwind', true);
+const W = 108;
 /** Two invented screens, nowhere near each other. */
 const A = { x: 1300, y: 50, w: 700, h: 394 };
 const B = { x: 860, y: 90, w: 600, h: 338 };
 
 describe('his seat', () => {
-  it('is left of the screen by at least 60 px of clear ground (his whole reach included), on his ground', () => {
+  /** The wall's real numbers: the screen at x 1244 and the Look switch ending at x 1084. */
+  const SCREEN = { x: 1244, y: 54, w: 672, h: 378 };
+  const SWITCH = { x0: 584, x1: 1084 };
+
+  it('with the real screen and the Look switch, his left edge is 1106: 30 px from the screen, 22 px from the switch', () => {
+    const x = seatFor(SCREEN, [SWITCH], W)!;
+    expect(x).toBe(1106);
+    expect(SCREEN.x - (x + W)).toBe(SEAT_GAP);
+    expect(x - SWITCH.x1).toBe(SEAT_CLEARANCE);
+  });
+
+  it('is the rightmost point that keeps 30 px from the screen when nothing stands at his height', () => {
     for (const s of [A, B]) {
-      const x = seatFor(s, WATCH, PX)!;
-      expect(x).not.toBeNull();
-      expect(x + seatReach(PX)).toBeLessThanOrEqual(s.x - SEAT_GAP_MIN);
-      expect(WATCH.some((g) => x >= g.min && x <= g.max)).toBe(true);
+      const x = seatFor(s, [], W)!;
+      expect(x + W).toBe(s.x - SEAT_GAP);
     }
+    expect(seatFor(A, [], W)).not.toBe(seatFor(B, [], W));
+  });
+
+  it('does not depend on the Look switch existing: the same seat without it', () => {
+    expect(seatFor(SCREEN, [], W)).toBe(1106);
+  });
+
+  it('has its own ground: it reaches the screen while the Watch ground (his wander) stops at 1020', () => {
+    expect(seatGround(SCREEN.x - SEAT_GAP - W)).toEqual([expect.objectContaining({ min: WATCH_GROUND[0].min, max: 1106 })]);
+    expect(WATCH_GROUND[0].max).toBe(1020);
+    expect(groundOf('unwind', true)[0].max).toBe(1020);
+    expect(seatGround(100)).toEqual([]);
+  });
+
+  it('a control beside him, left or right, is kept 22 px away; the seat moves to its far side when it must', () => {
+    // A card right of his spot, reaching into the 22 px: he moves left of it.
+    const card = { x0: SCREEN.x - 20, x1: SCREEN.x + 200 };
+    const x = seatFor(SCREEN, [card], W)!;
+    expect(x + W).toBeLessThanOrEqual(card.x0 - SEAT_CLEARANCE);
+    // A control standing across his spot: left of it when that is near enough, else no seat.
+    const wide = { x0: 1000, x1: 1200 };
+    expect(seatFor(SCREEN, [wide], W)).toBe(1000 - W - SEAT_CLEARANCE);
+    expect(seatFor(SCREEN, [{ x0: 700, x1: 1200 }], W)).toBeNull();
+  });
+
+  it('no seat further than 300 px from the screen: he watches from where he stands', () => {
+    expect(seatFor(SCREEN, [{ x0: 0, x1: 2560 }], W)).toBeNull();
+    const far = seatFor(SCREEN, [{ x0: 1000, x1: 1200 }], W)!;
+    expect(SCREEN.x - (far + W)).toBeLessThanOrEqual(SEAT_NEAR);
+    // A screen too near the left end for any ground at all.
+    expect(seatFor({ x: 200, y: 0, w: 600, h: 300 }, [], W)).toBeNull();
   });
 
   it('follows the rectangle it is given', () => {
-    expect(seatFor(A, WATCH, PX)).not.toBe(seatFor(B, WATCH, PX));
-    expect(seatFor(B, WATCH, PX)).toBe(B.x - SEAT_GAP_MIN - seatReach(PX));
-  });
-
-  it('keeps the approved proportion when the screen is wide enough for it to exceed 60 px', () => {
-    const wide = { x: 1400, y: 0, w: 1400, h: 788 };
-    const ground: Span[] = [{ min: 0, max: 2000, left: 0, right: 2560 }];
-    const x = seatFor(wide, ground, PX)!;
-    expect(wide.x - (x + seatReach(PX))).toBe(Math.round((1400 * 1.9) / 27));
-  });
-
-  it('on ground that does not reach the seat, the nearest point that keeps the gap; none when the ground starts too near the screen', () => {
-    const ground: Span[] = [{ min: 100, max: 400, left: 90, right: 540 }];
-    expect(seatFor(A, ground, PX)).toBe(400);
-    expect(seatFor({ x: 250, y: 0, w: 600, h: 300 }, ground, PX)).toBeNull();
-    // Two stretches: the one that keeps the gap wins even when the other is nearer.
-    const two: Span[] = [
-      { min: 100, max: 300, left: 90, right: 440 },
-      { min: 1200, max: 1300, left: 1190, right: 1440 },
-    ];
-    expect(seatFor({ x: 1250, y: 0, w: 600, h: 300 }, two, PX)).toBe(300);
+    expect(seatFor({ x: 900, y: 0, w: 600, h: 300 }, [], W)).toBe(900 - SEAT_GAP - W);
   });
 
   it('he faces the screen from it', () => {
-    expect(facing(A, seatFor(A, WATCH, PX)!, 108)).toBe(1);
-    expect(facing({ x: 100, y: 0, w: 200, h: 100 }, 900, 108)).toBe(-1);
+    expect(facing(A, seatFor(A, [], W)!, W)).toBe(1);
+    expect(facing({ x: 100, y: 0, w: 200, h: 100 }, 900, W)).toBe(-1);
   });
 });
 
 describe('what the show asks of him, in order', () => {
-  const base: ShowInput = { screen: A, onWatch: true, inCall: false, reading: false, recording: false };
-  it('watch when nothing else holds him', () => expect(showRole(base)).toBe('watch'));
-  it('off with no screen, or off the Watch tab', () => {
+  const base: ShowInput = { screen: A, marquee: 'playing', onWatch: true, inCall: false, reading: false, recording: false, menuOpen: false, napping: false, engaged: false, pinned: false };
+  it('watch when nothing else holds him', () => {
+    expect(showRole(base)).toBe('watch');
+    expect(showRole({ ...base, marquee: 'paused' })).toBe('watch');
+  });
+
+  it('off with no show: no screen, the video parked (not on the Watch tab), nothing chosen, or ended', () => {
     expect(showRole({ ...base, screen: null })).toBe('off');
     expect(showRole({ ...base, onWatch: false })).toBe('off');
+    expect(showRole({ ...base, marquee: 'none' })).toBe('off');
+    expect(showRole({ ...base, marquee: 'ended', engaged: true })).toBe('off');
   });
-  it('a call outranks reading, reading outranks recording, recording outranks watching', () => {
-    expect(showRole({ ...base, inCall: true, reading: true, recording: true })).toBe('off');
-    expect(showRole({ ...base, reading: true, recording: true })).toBe('off');
-    expect(showRole({ ...base, recording: true })).toBe('hold');
+
+  it('waiting (loading, a click awaited): not at the show yet means off; inside a show he is at, he keeps his seat', () => {
+    expect(showRole({ ...base, marquee: 'waiting' })).toBe('off');
+    expect(showRole({ ...base, marquee: 'waiting', engaged: true })).toBe('hold');
+    expect(showRole({ ...base, marquee: 'waiting', engaged: true, inCall: true })).toBe('off');
   });
+
+  // Every condition, in the order of the doc comment: each outranks the ones after it.
+  const ORDER: readonly (keyof ShowInput)[] = ['inCall', 'reading', 'recording', 'menuOpen', 'napping', 'pinned'];
+  const EXPECT: Record<string, 'off' | 'hold'> = { inCall: 'off', reading: 'off', recording: 'hold', menuOpen: 'hold', napping: 'hold', pinned: 'hold' };
+  it('for every pair that can meet, the earlier one decides (a call, reading, recording, menu, nap, the owner\'s hand)', () => {
+    for (let i = 0; i < ORDER.length; i++) {
+      expect(showRole({ ...base, [ORDER[i]]: true })).toBe(EXPECT[ORDER[i]]);
+      for (let j = i + 1; j < ORDER.length; j++) {
+        expect(showRole({ ...base, [ORDER[i]]: true, [ORDER[j]]: true }), `${ORDER[i]} over ${ORDER[j]}`).toBe(EXPECT[ORDER[i]]);
+      }
+    }
+    // All at once, and every later one with all the earlier ones off.
+    expect(showRole({ ...base, inCall: true, reading: true, recording: true, menuOpen: true, napping: true, pinned: true })).toBe('off');
+    expect(showRole({ ...base, reading: true, recording: true, menuOpen: true, napping: true, pinned: true })).toBe('off');
+    expect(showRole({ ...base, recording: true, menuOpen: true, napping: true, pinned: true })).toBe('hold');
+  });
+
+  it('a hold never walks him: it is the one role that leaves the seat alone, and it ends when its cause does', () => {
+    const roles = new Set<string>();
+    for (const m of ['menuOpen', 'napping', 'pinned', 'recording'] as const) roles.add(showRole({ ...base, [m]: true }));
+    expect([...roles]).toEqual(['hold']);
+    expect(showRole({ ...base, menuOpen: false, napping: false })).toBe('watch');
+  });
+
   it('the leave banner takes none of his Watch ground, so it cannot move the seat on Unwind', () => {
     expect(groundOf('unwind', true, true)).toEqual(groundOf('unwind', true, false));
+  });
+});
+
+describe('one show at a time: the owner\'s hand holds for the show it happened in', () => {
+  const on = (t: ReturnType<typeof newShowTrack>, m: Marquee) => followShow(t, m);
+
+  it('a drop during a show pins him until that show ends, and not for the next one', () => {
+    const t = newShowTrack();
+    on(t, 'playing');
+    ownerTouched(t);
+    expect(ownerPinned(t)).toBe(true);
+    on(t, 'paused');
+    expect(ownerPinned(t)).toBe(true);
+    on(t, 'none');
+    expect(ownerPinned(t)).toBe(false);
+    on(t, 'playing');
+    expect(ownerPinned(t)).toBe(false);
+  });
+
+  it('two shows in quick succession, with a drop that lands after the first ended: the second is free', () => {
+    const t = newShowTrack();
+    on(t, 'playing');
+    on(t, 'none');
+    on(t, 'playing');
+    // (the first show's falling Watt lands now: no show was live when it was dropped, so nothing is set)
+    expect(ownerPinned(t)).toBe(false);
+    ownerTouched(t);
+    expect(ownerPinned(t)).toBe(true);
+  });
+
+  it('a touch with no show live sets nothing, now or later', () => {
+    const t = newShowTrack();
+    ownerTouched(t);
+    on(t, 'playing');
+    expect(ownerPinned(t)).toBe(false);
+  });
+
+  it('a wait inside a show (the next item loading) keeps it; a wait that starts one, or an end, does not', () => {
+    const t = newShowTrack();
+    on(t, 'waiting');
+    expect(t.live).toBe(false);
+    on(t, 'playing');
+    ownerTouched(t);
+    on(t, 'waiting');
+    expect(ownerPinned(t)).toBe(true);
+    on(t, 'playing');
+    expect(ownerPinned(t)).toBe(true);
+    on(t, 'ended');
+    expect(ownerPinned(t)).toBe(false);
+  });
+
+  it('a call, reading or recording are not part of the selector: the hand survives them', () => {
+    const t = newShowTrack();
+    on(t, 'playing');
+    ownerTouched(t);
+    // (they change the role, never the marquee: the track sees only `playing` throughout)
+    on(t, 'playing');
+    expect(ownerPinned(t)).toBe(true);
   });
 });
 
@@ -128,31 +236,5 @@ describe('watching', () => {
     expect(watchRestFor(10, Infinity, true, false)).toBe(Infinity);
     expect(watchRestFor(10, Infinity, false, true)).toBe(Infinity);
     expect(watchRestFor(10, 1, false, false)).toBeCloseTo(LOOK_ROUND_S - 1);
-  });
-});
-
-describe('his seat keeps clear of controls', () => {
-  // An invented bar across the floor, as the Look switch stands (x 600 to 1060).
-  const bar = [{ x0: 600, x1: 1060 }];
-  it('takes the stretch under a control out of his ground, his whole reach kept clear', () => {
-    const g = clearOf(WATCH, bar, PX);
-    for (const s of g) {
-      expect(s.max <= 600 - seatReach(PX) - BAND_MARGIN || s.min >= 1060 + BAND_MARGIN).toBe(true);
-    }
-    expect(g.length).toBeGreaterThan(0);
-  });
-  it('the seat then lies left of the control, and follows the screen when the control moves', () => {
-    const x = seatFor(A, clearOf(WATCH, bar, PX), PX)!;
-    expect(x + seatReach(PX)).toBeLessThanOrEqual(600 - BAND_MARGIN);
-    const y = seatFor(A, clearOf(WATCH, [{ x0: 400, x1: 700 }], PX), PX)!;
-    // A control further left leaves the nearer stretch on its right: he sits there instead.
-    expect(y).toBeGreaterThanOrEqual(700 + BAND_MARGIN);
-    expect(y).toBeGreaterThan(x);
-  });
-  it('no control at his height changes nothing', () => {
-    expect(seatFor(A, clearOf(WATCH, [], PX), PX)).toBe(seatFor(A, WATCH, PX));
-  });
-  it('a control covering all of his ground leaves no seat', () => {
-    expect(seatFor(A, clearOf(WATCH, [{ x0: 0, x1: 2560 }], PX), PX)).toBeNull();
   });
 });

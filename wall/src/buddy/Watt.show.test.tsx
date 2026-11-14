@@ -6,13 +6,12 @@ import { publishCamera } from '../horizon/signal';
 import { usePlaceStore } from '../state/places';
 import { useSignalStore } from '../signals/store';
 import { useChipLayout } from '../signals/layout';
-import { driveInAudience, useWatchStore } from '../unwind/watch/store';
+import { NO_REPORT, driveInAudience, useWatchStore } from '../unwind/watch/store';
 import { resetAgents } from '../agents/useAgents';
 import { useFocusStore } from '../focus/store';
 import { resetMeetingFeed } from '../work/useNextMeeting';
 import { resetWeatherStore } from '../weather/useWeather';
-import { seatFor, seatReach, SEAT_GAP_MIN, type ScreenRect } from './audience';
-import { WATCH_GROUND } from './ground';
+import { SEAT_CLEARANCE, SEAT_GAP, seatFor, type ScreenRect } from './audience';
 import { PET_KEY } from './pet';
 import { BLINKS, POSES, SPRITES, pixelColor, type Pose } from './sprites';
 import { Watt, restClock } from './Watt';
@@ -28,7 +27,12 @@ vi.setConfig({ testTimeout: 20_000 });
 const screen = vi.hoisted(() => ({ rect: null as ScreenRect | null }));
 vi.mock('../unwind/watch/store', async (original) => {
   const real = await original<typeof import('../unwind/watch/store')>();
-  return { ...real, driveInAudience: (s: Parameters<typeof real.driveInAudience>[0]) => (screen.rect ? (s.playing ? screen.rect : null) : real.driveInAudience(s)) };
+  return {
+    ...real,
+    driveInAudience: (s: Parameters<typeof real.driveInAudience>[0]) => (screen.rect ? (s.playing ? screen.rect : null) : real.driveInAudience(s)),
+    driveInShow: (s: Parameters<typeof real.driveInShow>[0], place: string | null) =>
+      screen.rect ? (real.stageShown(place, s.tab) && s.playing ? real.driveInMarquee(s) : 'none') : real.driveInShow(s, place),
+  };
 });
 const idleState = vi.hoisted(() => ({ on: false }));
 vi.mock('../ui/useIdle', () => ({ useIdle: () => idleState.on }));
@@ -41,6 +45,8 @@ vi.mock('../ribbon/sun', async (original) => ({
   sunTimes: () => ({ rise: null, set: null }),
 }));
 
+/** His seated sprite's width: 18 pixels of 6. */
+const W = 108;
 const A: ScreenRect = Object.freeze({ x: 1240, y: 70, w: 680, h: 382 });
 const B: ScreenRect = Object.freeze({ x: 900, y: 90, w: 600, h: 338 });
 const FILM = { kind: 'video', id: 'aaaaaaaaaaa', label: 'An invented film' } as never;
@@ -112,9 +118,9 @@ function poseOf(c: HTMLElement): string {
 const play = (rect: ScreenRect | null = A) =>
   act(() => {
     screen.rect = rect;
-    useWatchStore.setState({ tab: 'watch', playing: FILM, paused: false });
+    useWatchStore.setState({ tab: 'watch', playing: FILM, paused: false, report: { ...NO_REPORT, started: true } });
   });
-const stopShow = () => act(() => useWatchStore.setState({ playing: null }));
+const stopShow = () => act(() => useWatchStore.setState({ playing: null, report: NO_REPORT }));
 
 beforeEach(() => {
   frames = new Map();
@@ -178,10 +184,10 @@ describe('the drive-in', () => {
     expect(showOf(container)).toBe('going');
     expect(xOf(container)).toBeGreaterThan(home);
     untilSeated(container);
-    const seat = seatFor(A, WATCH_GROUND, 6)!;
+    const seat = seatFor(A, [], W)!;
     expect(showOf(container)).toBe('seated');
     expect(xOf(container)).toBe(seat);
-    expect(xOf(container) + seatReach(6)).toBeLessThanOrEqual(A.x - SEAT_GAP_MIN);
+    expect(xOf(container) + W).toBe(A.x - SEAT_GAP);
     expect(dirOf(container)).toBe(1);
     expect(poseOf(container)).toBe('watch');
     stopShow();
@@ -196,47 +202,93 @@ describe('the drive-in', () => {
     const { container } = start();
     play(B);
     untilSeated(container);
-    expect(xOf(container)).toBe(seatFor(B, WATCH_GROUND, 6));
+    expect(xOf(container)).toBe(seatFor(B, [], W));
     play(A);
     runFor(1);
     expect(showOf(container)).toBe('going');
     untilSeated(container);
-    expect(xOf(container)).toBe(seatFor(A, WATCH_GROUND, 6));
-    expect(seatFor(A, WATCH_GROUND, 6)).not.toBe(seatFor(B, WATCH_GROUND, 6));
+    expect(xOf(container)).toBe(seatFor(A, [], W));
+    expect(seatFor(A, [], W)).not.toBe(seatFor(B, [], W));
   });
 
   it('with the real selector and the drive-in look on, he sits left of the rectangle it returns', () => {
     reduced(true);
     const { container } = render(<Watt now={day} />);
-    act(() => useWatchStore.setState({ looks: { mode: 'one', all: 'drivein', video: 'drivein', live: 'drivein', twitch: 'drivein' } as never, playing: FILM, tab: 'watch' }));
+    act(() => useWatchStore.setState({ looks: { mode: 'one', all: 'drivein', video: 'drivein', live: 'drivein', twitch: 'drivein' } as never, playing: FILM, tab: 'watch', report: { ...NO_REPORT, started: true } }));
     const rect = driveInAudience(useWatchStore.getState());
     expect(rect).not.toBeNull();
     expect(showOf(container)).toBe('seated');
-    expect(xOf(container)).toBe(seatFor(rect!, WATCH_GROUND, 6));
+    expect(xOf(container)).toBe(seatFor(rect!, [], W));
   });
 
-  it('his seat keeps clear of a control standing at his height (the Look switch), on whichever side is nearer the screen', () => {
+  it('his seat keeps 22 px clear of a control standing at his height, and the answer is measured once, not per frame', () => {
     reduced(true);
     const bar = document.createElement('div');
     bar.className = 'w-lookbar';
     document.body.appendChild(bar);
+    const spy = vi.fn();
     const at = (left: number, right: number) => {
-      bar.getBoundingClientRect = () => ({ left, right, top: 0, bottom: 2000, width: right - left, height: 2000, x: left, y: 0, toJSON: () => ({}) });
+      bar.getBoundingClientRect = () => {
+        spy();
+        return { left, right, top: 0, bottom: 2000, width: right - left, height: 2000, x: left, y: 0, toJSON: () => ({}) };
+      };
     };
     try {
-      // A bar well left of the screen: the stretch right of it is the nearer one.
+      // A bar well left of the screen: his usual place right of it is free.
       at(300, 700);
       const { container, unmount } = render(<Watt now={day} />);
       play(A);
       expect(showOf(container)).toBe('seated');
-      expect(xOf(container)).toBeGreaterThanOrEqual(700);
-      // A bar reaching the screen: only the stretch left of it is free.
+      expect(xOf(container)).toBe(A.x - SEAT_GAP - W);
+      // A bar across the spot, a seat left of it near enough: he sits 22 px left of it.
       stopShow();
-      at(620, 1180);
+      at(980, 1200);
+      window.dispatchEvent(new Event('resize'));
       play(A);
       expect(showOf(container)).toBe('seated');
-      expect(xOf(container) + seatReach(6)).toBeLessThanOrEqual(620);
+      expect(xOf(container) + W).toBe(980 - SEAT_CLEARANCE);
+      // A bar that leaves no seat within 300 px of the screen: he does not walk; he sits where he stands.
+      stopShow();
+      runFor(2);
+      const here = xOf(container);
+      at(500, 1200);
+      window.dispatchEvent(new Event('resize'));
+      play(A);
+      expect(showOf(container)).toBe('seated');
+      expect(Math.abs(xOf(container) - here)).toBeLessThan(200);
+      expect(xOf(container) + W).toBeLessThan(A.x - SEAT_GAP - 100);
+      expect(dirOf(container)).toBe(1);
+      // Measured once for the screen and layout: a minute of his time reads the bar no more.
       unmount();
+    } finally {
+      bar.remove();
+    }
+  });
+
+  it('without reduced motion the layout is read when the screen or layout changes, never every frame (no seat)', () => {
+    const bar = document.createElement('div');
+    bar.className = 'w-lookbar';
+    document.body.appendChild(bar);
+    const spy = vi.fn();
+    bar.getBoundingClientRect = () => {
+      spy();
+      return { left: 500, right: 1200, top: 0, bottom: 2000, width: 700, height: 2000, x: 500, y: 0, toJSON: () => ({}) };
+    };
+    try {
+      const { container } = start();
+      play(A);
+      runFor(5);
+      expect(showOf(container)).toBe('seated');
+      const reads = spy.mock.calls.length;
+      expect(reads).toBeGreaterThan(0);
+      expect(reads).toBeLessThan(6);
+      runFor(120);
+      expect(spy.mock.calls.length).toBe(reads);
+      // A resize measures again, once.
+      act(() => void window.dispatchEvent(new Event('resize')));
+      runFor(5);
+      expect(spy.mock.calls.length).toBeGreaterThan(reads);
+      expect(spy.mock.calls.length).toBeLessThan(reads + 6);
     } finally {
       bar.remove();
     }
@@ -248,7 +300,7 @@ describe('the drive-in', () => {
     const home = xOf(container);
     play(A);
     expect(showOf(container)).toBe('seated');
-    expect(xOf(container)).toBe(seatFor(A, WATCH_GROUND, 6));
+    expect(xOf(container)).toBe(seatFor(A, [], W));
     expect(poseOf(container)).toBe('watch');
     stopShow();
     expect(showOf(container)).toBe('');
@@ -317,7 +369,7 @@ describe('priority: what outranks watching', () => {
     expect(showOf(container)).toBe('');
     act(() => useSignalStore.setState({ known: false, recording: false } as never));
     untilSeated(container);
-    expect(xOf(container)).toBe(seatFor(A, WATCH_GROUND, 6));
+    expect(xOf(container)).toBe(seatFor(A, [], W));
   });
 
   it('recording that starts on his way: he sits down where he is and watches from there, quietly', () => {

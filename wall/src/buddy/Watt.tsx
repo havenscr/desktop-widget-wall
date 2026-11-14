@@ -371,6 +371,8 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
     };
     const stale = () => {
       seatCache.current.dirty = true;
+      // Measured again at his next step: wake him for it, but only while a show is on.
+      if (showTrack.current.live) wake.current();
     };
     follow();
     const offWatch = useWatchStore.subscribe(follow);
@@ -391,8 +393,8 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
   // The show now on (the marquee's state with the stage in sight; `none` for a parked video), read
   // from the same decision as the stage layer. Its identity (`showTrack`) tells one show from the
   // next: the owner's hand holds for the show it happened in and no other (`audience.ts`).
-  const activePlace = usePlaceStore((st) => st.active);
-  const showState = useWatchStore((st) => driveInShow(st, activePlace));
+  const stagePlace = usePlaceStore((st) => st.active);
+  const showState = useWatchStore((st) => driveInShow(st, stagePlace));
   const showTrack = useRef(newShowTrack());
   /**
    * Where his seat is for the current screen and layout: measured when the screen, the horizon or
