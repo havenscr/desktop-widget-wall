@@ -1584,11 +1584,10 @@ try {
     if (new URLSearchParams(location.search).get('lineprobe')) {
       const mode = new URLSearchParams(location.search).get('lineprobe');
       const probe = document.querySelector('canvas.horizon-canvas:not(.horizon-front)')?.dataset.lineProbe;
-      const [, drawn, boxes, onTop, under, cols, above, nopic] = (probe || '0,0,0,0,0,0,0,0').split(',').map(Number);
+      const [, drawn, boxes, onTop, under, cols, above] = (probe || '0,0,0,0,0,0,0,0').split(',').map(Number);
       if (!probe) lines.push('lines: the probe reported nothing (no new type was drawn)');
       else if (!boxes) lines.push('lines: no picture box was claimed');
       else if (!drawn) lines.push('lines: the new type drew nothing');
-      else if (nopic > 0) lines.push('lines: the picture was not found under ' + nopic + ' sampled points of the type');
       else if (mode === 'front' && onTop > 0) lines.push('lines: a new type is painted above the picture at ' + onTop + ' sampled points (a picture in front of the land hides all of it)');
       else if (mode === 'front' && under < 1) lines.push('lines: a new type never passes behind the picture (nothing to hide, the check proved nothing): ' + probe);
       else if (mode === 'behind' && (under > 0 || onTop < 1 || cols < 24)) lines.push('lines: a new type does not play in front of the picture: ' + onTop + ' sampled points in front, ' + under + ' behind, ' + cols + ' of 32 columns across the picture (none behind, and 24 columns at least)');

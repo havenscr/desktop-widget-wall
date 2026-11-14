@@ -17,7 +17,8 @@ import { drawLineType, type LineTypeFrame, type LineTypesState } from './lineTyp
  * - `cols`: of `COLUMNS` equal columns across the box's width, how many held a pixel of the type in
  *   some frame (the type plays the full width).
  * - `above`: pixels drawn higher than the Height setting allows (`RISE_MARGIN` more than it).
- * - `nopic`: sampled points where no picture element was found under the point (should be 0).
+ * - `nopic`: sampled points where no picture element lies under the point (the box is the picture's
+ *   bounding box: a tilted pane leaves corners). Such a point is neither above nor below the picture.
  *
  * `&lover=1` lifts the drawn canvas above the page (the break for a picture in front);
  * `&ltarget=main` draws the type on the main canvas even when a front canvas stands (the break for
