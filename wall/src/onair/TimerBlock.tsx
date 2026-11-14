@@ -46,12 +46,12 @@ export function TimerBlock({ now }: { now: number }) {
         </span>
         <div className="oa-time-btns">
           {saved.running ? (
-            <button type="button" className="oa-btn cy oa-go" onClick={stop} {...tip('Stop the timer (it keeps its time; Start carries on)')}>
+            <button type="button" className="oa-btn cy oa-go" aria-label="Stop timer" onClick={stop} {...tip('Stop the timer (it keeps its time; Start carries on)')}>
               <IconPlayerPauseFilled size={20} aria-hidden="true" />
               Stop
             </button>
           ) : (
-            <button type="button" className="oa-btn cy oa-go" onClick={start} {...tip(ms > 0 ? `Carry on from ${time}` : 'Start the show timer')}>
+            <button type="button" className="oa-btn cy oa-go" aria-label="Start timer" onClick={start} {...tip(ms > 0 ? `Carry on from ${time}` : 'Start the show timer')}>
               <IconPlayerPlayFilled size={20} aria-hidden="true" />
               Start
             </button>

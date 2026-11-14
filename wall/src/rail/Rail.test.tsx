@@ -57,7 +57,7 @@ it('Zen opens the Zen place', () => {
   expect(screen.getByRole('button', { name: 'Zen' }).getAttribute('aria-current')).toBe('page');
 });
 
-it('arrow keys go Work, Home, Unwind, Meet, Zen and wrap, skipping the disabled buttons', () => {
+it('arrow keys go Work, Home, Unwind, Meet, On air, Zen and wrap', () => {
   render(<Rail />);
   const key = (name: string, k: 'ArrowDown' | 'ArrowUp') => {
     const b = screen.getByRole('button', { name });
@@ -68,10 +68,12 @@ it('arrow keys go Work, Home, Unwind, Meet, Zen and wrap, skipping the disabled 
   expect(key('Work', 'ArrowDown')).toBe('home');
   expect(key('Home', 'ArrowDown')).toBe('unwind');
   expect(key('Unwind', 'ArrowDown')).toBe('meet');
-  expect(key('Meet', 'ArrowDown')).toBe('zen');
+  expect(key('Meet', 'ArrowDown')).toBe('onair');
+  expect(key('On air', 'ArrowDown')).toBe('zen');
   expect(key('Zen', 'ArrowDown')).toBe('work');
   expect(key('Work', 'ArrowUp')).toBe('zen');
-  expect(key('Zen', 'ArrowUp')).toBe('meet');
+  expect(key('Zen', 'ArrowUp')).toBe('onair');
+  expect(key('On air', 'ArrowUp')).toBe('meet');
   expect(key('Meet', 'ArrowUp')).toBe('unwind');
   expect(key('Unwind', 'ArrowUp')).toBe('home');
 });

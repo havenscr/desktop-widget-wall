@@ -91,7 +91,7 @@ export function parseSaved(raw: string | null, now: number): Saved {
     partIndex: part,
     partSinceMs: since,
   };
-  if (elapsedMs(saved, now) > MAX_SHOW_MS) return IDLE;
+  if (saved.accumulatedMs + (saved.startedAt !== null ? now - saved.startedAt : 0) > MAX_SHOW_MS) return IDLE;
   return saved;
 }
 

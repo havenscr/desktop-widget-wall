@@ -145,6 +145,8 @@ export function createOnAirStore(deps: OnAirDeps) {
       open: async (which) => {
         try {
           await deps.invoke('wall2_onair_open', { which });
+          // Open file makes a starter when there was none: read it as soon as the five second floor allows.
+          if (which === 'show' && get().show?.state !== 'ok') setTimeout(() => void get().loadShow(), Math.max(0, lastRead + m.READ_FLOOR_MS - deps.now()) + 50);
           if (get().note?.startsWith('Could not open') || get().note === 'No config folder on this PC') set({ note: null });
         } catch (e) {
           set({ note: m.openErrorText(e, which) });
