@@ -5,6 +5,7 @@ import { mocks } from '../tauri';
 /** Meet: two accounts and a few meetings around now. Sign-in just flips the state. */
 export function registerMeetMocks(): void {
   let second = false;
+  mocks.set('wall2_meet_open_status', () => 'desktop');
   // Minutes from now (the review's moment in a review still, `?hz=&at=`).
   const at = (mins: number) => {
     const now = reviewNow ? reviewNow() : Date.now();
