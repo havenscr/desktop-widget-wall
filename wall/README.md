@@ -1081,10 +1081,18 @@ switch sits. Leaving Watch (or Unwind) removes any video.
   The frame takes no pointer (`pointer-events: none` on the frame itself, nothing drawn over
   it), so the players' hover overlays never show. If a play request has not started within 6
   seconds (autoplay refused), the control row says "Click the video to start" and the pointer
-  is let through until it plays (Twitch reports nothing, so for Twitch the line reads "Not
-  started? Click the video" after the same wait).
-  The wall's own controls drive YouTube through the frame messages: the "listening" handshake
-  (once a second until the player answers, ten tries at most), then `command` messages
+  is let through until it plays (over the whole sky, the frame's and Unwind's own boxes let
+  the pointer through meanwhile, so a click lands on the picture wherever the wall draws
+  nothing). Twitch never says it started: its status stays "Live on the wall", and after the
+  same wait one quiet line, "Not started? Click the video", lets the pointer through for one
+  click (noticed as the window losing focus to the frame) or 10 seconds; a small "Not
+  started?" button asks for it again.
+  The end of a playlist item sends nothing (the playlist moves on by itself); the end of a
+  single video, a stream or the last item shows "Ended". A state the player reports is never
+  sent back to it as a command.
+  The wall's own controls drive YouTube through the frame messages, and post nothing before
+  the frame's `load` event: the "listening" handshake (once a second until the player answers,
+  ten tries at most, never while the page is hidden, cleared on unmount), then `command` messages
   (`playVideo`, `pauseVideo`, `mute`, `unMute`, `setVolume`, `previousVideo`, `nextVideo`,
   `seekTo`) sent only to the exact embed origin. The volume inside the player is set to 100
   and unmuted when playback starts and on Sound on (the system volume sets the level).
