@@ -17,6 +17,7 @@ import { PLACES, usePlaceStore } from '../state/places';
 import { alarmChipText, useOpenAlarms } from '../home/useSecurity';
 import { tip } from '../ui/HoverTip';
 import { useToolsStore } from '../tools/store';
+import { useWatchStore } from '../unwind/watch/store';
 
 const PLACE_ICONS: Record<'work' | 'home' | 'unwind', Icon> = {
   work: IconBriefcase,
@@ -58,6 +59,10 @@ export function Rail() {
   const alarms = useOpenAlarms();
   const toolsOpen = useToolsStore((s) => s.open);
   const toggleTools = useToolsStore((s) => s.toggle);
+  // watch behaviour: a video playing out of sight (another place, or Listen) marks Unwind's button.
+  const videoTab = useWatchStore((s) => s.tab);
+  const video = useWatchStore((s) => s.playing?.label ?? null);
+  const videoAway = video !== null && !(active === 'unwind' && videoTab === 'watch');
 
   const onKeyDown = (e: KeyboardEvent<HTMLElement>) => {
     if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
@@ -79,20 +84,26 @@ export function Rail() {
         const Glyph = PLACE_ICONS[id as keyof typeof PLACE_ICONS];
         // An open network alarm puts a small amber dot on Home's icon, on every place.
         const alarm = id === 'home' && alarms > 0;
+        const away = id === 'unwind' && videoAway;
+        const goWatch = () => {
+          setActive('unwind');
+          useWatchStore.getState().setTab('watch');
+        };
         return (
           <button
             key={id}
             type="button"
             className="rb"
             aria-label={label}
-            aria-description={alarm ? alarmChipText(alarms) : undefined}
+            aria-description={alarm ? alarmChipText(alarms) : away ? `${video} is playing` : undefined}
             aria-current={active === id ? 'page' : undefined}
-            onClick={() => setActive(id)}
-            {...(alarm ? tip(`${alarmChipText(alarms)} open. Home lists them.`) : {})}
+            onClick={away ? goWatch : () => setActive(id)}
+            {...(alarm ? tip(`${alarmChipText(alarms)} open. Home lists them.`) : away ? tip(`${video} is playing. Click to go to it.`) : {})}
           >
             <span className="rb-ico">
               <Glyph size={30} stroke={1.8} aria-hidden="true" />
               {alarm && <i className="rb-alarm" aria-hidden="true" />}
+              {away && <i className="rb-play" aria-hidden="true" />}
             </span>
             {label}
           </button>

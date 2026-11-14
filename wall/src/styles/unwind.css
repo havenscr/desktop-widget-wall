@@ -1351,13 +1351,13 @@
    boxes, so while it waits for a click those boxes let the pointer through and only the wall's
    blocks (the clock, the wings, the tabs, the left block, the switch, the cards) take it. */
 .top:has(.w-sky .w-take),
-.unwind:has(.w-sky .w-take),
-.unwind:has(.w-sky .w-take) .u-centre,
-.unwind:has(.w-sky .w-take) .w-panel {
+.top:has(.w-sky .w-take) .unwind,
+.top:has(.w-sky .w-take) .unwind .u-centre,
+.top:has(.w-sky .w-take) .unwind .w-panel {
   pointer-events: none;
 }
-.top:has(.w-sky .w-take) > :not(.unwind),
-.unwind:has(.w-sky .w-take) :is(.u-wing, .u-corner, .u-right, .u-tabrow, .w-now, .w-lookbar, .w-sheet) {
+.top:has(.w-sky .w-take) > :not(.unwind, .w-layer),
+.top:has(.w-sky .w-take) .unwind :is(.u-wing, .u-corner, .u-right, .u-tabrow, .w-now, .w-lookbar, .w-sheet) {
   pointer-events: auto;
 }
 /* The floor's wash under the whole sky, where frame B draws its blurred spill (stage x 512 to
@@ -1381,12 +1381,12 @@
   mask-image: linear-gradient(180deg, #000, transparent 85%);
 }
 /* Over a picture the cards and the tabs need a solid ground. */
-.unwind:has(.w-sky) .u-card {
+.top:has(.w-sky) .unwind .u-card {
   background: rgba(10, 7, 28, 0.97);
 }
-.unwind:has(.w-sky) .u-tabs,
-.unwind:has(.w-sky) .w-gear,
-.unwind:has(.w-sky) .w-lookbar {
+.top:has(.w-sky) .unwind .u-tabs,
+.top:has(.w-sky) .unwind .w-gear,
+.top:has(.w-sky) .unwind .w-lookbar {
   background: rgba(10, 7, 28, 0.9);
 }
 
@@ -1476,6 +1476,98 @@
 }
 .w-sheet {
   gap: 14px;
+}
+
+/* ---- watch behaviour (`unwind/watch/StageLayer.tsx`, the fade in `Watch.tsx`) ----
+   The video's layer is mounted by the screens frame in `.top` (Unwind's own box) on every place,
+   so the player frame is never removed or moved when he leaves Watch or Unwind. In sight only on
+   Unwind's Watch tab. Anywhere else it is transparent and takes no pointer, and the stage is
+   parked in a plain 16:9 box with no look (no glow, halo, posts or front layer), so no look rule
+   reaches another place. Never display: none or visibility: hidden: a browser may pause or
+   throttle a frame that is not rendered. */
+.w-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.w-layer[data-shown='false'] {
+  opacity: 0;
+}
+.w-layer[data-shown='false'] * {
+  pointer-events: none !important;
+}
+.w-parked {
+  left: 1000px;
+  top: 40px;
+  width: 691px;
+  height: 389px;
+}
+/* The band over the video's lower edge: transparent, it only wakes the faded controls. */
+.w-edge {
+  position: absolute;
+  pointer-events: auto;
+}
+.w-edge.w-edge-off {
+  pointer-events: none;
+}
+/* On the Watch tab Unwind's own boxes let the pointer through to the layer under them (the
+   click to start a refused autoplay, the band); only the wall's blocks take it, as the whole
+   sky has always done while it waits for a click. */
+.unwind[data-tab='watch'],
+.unwind[data-tab='watch'] .u-centre,
+.unwind[data-tab='watch'] .w-panel {
+  pointer-events: none;
+}
+.unwind[data-tab='watch'] :is(.u-wing, .u-corner, .u-right, .u-tabrow, .w-now, .w-lookbar, .w-sheet) {
+  pointer-events: auto;
+}
+/* 5A: while a video plays and he is not using them, the kind line, the "Playing on the wall"
+   line, the play row, the time bar and the Look switch fade to nothing and take no pointer (they
+   can still take focus, which brings them back); the title stays at half strength with no glow.
+   The left block's and the Look row's boxes still feel the pointer, which brings them back. */
+.w-now > :is(.u-src, .w-sub, .w-ctl, .w-time),
+.w-now > .w-title,
+.w-panel > .w-lookbar {
+  transition: opacity 250ms ease;
+}
+.w-now[data-ctl='rest'] > :is(.u-src, .w-sub, .w-ctl, .w-time),
+.w-panel[data-ctl='rest'] > .w-lookbar {
+  opacity: 0;
+}
+.w-now[data-ctl='rest'] > :is(.u-src, .w-sub, .w-ctl, .w-time),
+.w-panel[data-ctl='rest'] > .w-lookbar button {
+  pointer-events: none;
+}
+.w-now[data-ctl='rest'] > .w-title {
+  opacity: 0.5;
+  text-shadow: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .w-now > :is(.u-src, .w-sub, .w-ctl, .w-time),
+  .w-now > .w-title,
+  .w-panel > .w-lookbar {
+    transition: none;
+  }
+}
+/* The Unwind button on the rail while a video plays out of sight: a small cyan play mark. */
+.rb-play {
+  position: absolute;
+  top: -5px;
+  right: -9px;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: var(--cyan);
+  box-shadow: 0 0 0 3px #0e0a24;
+}
+.rb-play::after {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 4px;
+  border-left: 6px solid #0e0a24;
+  border-top: 3.5px solid transparent;
+  border-bottom: 3.5px solid transparent;
 }
 
 /* ---- Listen: 7A (cover on top, controls in the sky), 8B (Up next), 6A with 9A (the Spotify
