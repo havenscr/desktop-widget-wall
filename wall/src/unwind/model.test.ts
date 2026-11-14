@@ -1,4 +1,5 @@
 import { expect, it } from 'vitest';
+import { lane } from '../agents/fixtures';
 import { usePacificTime } from '../ribbon/testZone';
 import {
   clampVolume,
@@ -58,6 +59,12 @@ it('builds the status line from focus and the helper summary', () => {
   expect(statusLine('off', { lanes: [{ state: 'working' }], yourMove: { total: 1 } })).toBe('Work is put away. 1 agent still running. One thing needs you.');
   expect(statusLine('on', { lanes: [], yourMove: { total: 3 } })).toBe('Focus is still on. 3 things need you.');
   expect(statusLine('off', null)).toBe('Work is put away.');
+});
+
+it('uses the full card list when helper work is outside the three glance lanes', () => {
+  const quiet = [lane({ id: 'a', live: 'idle' }), lane({ id: 'b', live: 'idle' }), lane({ id: 'c', live: 'idle' })];
+  const helper = lane({ id: 'd', live: 'idle', bg: { agents: 1, shells: 0 } });
+  expect(statusLine('off', { lanes: quiet, sessionsList: [...quiet, helper], yourMove: { total: 0 } })).toContain('1 agent still running.');
 });
 
 it('leaves out stale helper data, a count that is not a number, and focus before it loads', () => {
