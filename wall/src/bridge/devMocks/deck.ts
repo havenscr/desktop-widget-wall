@@ -56,6 +56,8 @@ export function registerDeckMocks(): void {
   };
   const many = { ...app, id: 'many', name: 'Big set', keys: ['Alpha', 'Bravo', 'Charlie', 'Delta', 'Echo', 'Foxtrot', 'Golf', longOr('Hotel', 'Hotel long label')].map((l) => key(l, 'keyboard')) };
   const one = { ...app, id: 'one', name: 'One key', keys: [key('Refresh', 'refresh')] };
+  const two = { ...app, id: 'two', name: 'Two keys', keys: [key('Refresh', 'refresh'), key('Format', 'brush')] };
+  const three = { ...app, id: 'three', name: 'Three keys', keys: [key('Refresh', 'refresh'), key('Format', 'brush'), key('Tables', 'code')] };
 
   let sets = [general, app];
   let autoId: string | null = 'sales';
@@ -82,6 +84,14 @@ export function registerDeckMocks(): void {
     case 'one':
       sets = [one, general];
       autoId = 'one';
+      break;
+    case 'two':
+      sets = [two, general];
+      autoId = 'two';
+      break;
+    case 'three':
+      sets = [three, general];
+      autoId = 'three';
       break;
     case 'library': {
       // As `wall2_keys::with_builtin_sets` lists them: the file's own sets, then General and one per app group.
@@ -112,7 +122,11 @@ export function registerDeckMocks(): void {
 
   // `?pins=long`: the five longest library labels pinned (the Always here row with long labels).
   const defaultPins =
-    knob('pins') === 'long'
+    knob('pins') === 'one'
+      ? ['lib:thirds']
+      : knob('pins') === 'three'
+        ? ['lib:thirds', 'lib:focus', 'lib:snip']
+        : knob('pins') === 'long'
       ? ['lib:sonos-play', 'lib:xl-repeat', 'lib:vscode-search', 'lib:pt-ocr', 'lib:rec-windows']
       : ['lib:thirds', 'lib:focus', 'lib:record-169', 'lib:snip', 'lib:strip-dark'];
   mocks.set('wall2_keys_summary', () => {
