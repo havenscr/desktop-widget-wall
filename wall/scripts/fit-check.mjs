@@ -31,7 +31,7 @@
 // CI does not run this; run it by hand before a layout change is handed over.
 //
 //   WALL_CHROME=/path/to/chrome-or-headless-shell npm --prefix wall run fit-check
-//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, card-end, header, deck, tiles, picker, chips, heading, zenhint, strip, fold, drawer, rows, handle, sky, floor, sun, tools, toolsnames, meetfill, meetempty, fy-height, key-edge, hide-pill, hide-note, leave-band, rec-chip, rec-height, tile-height, tile-icon, tile-iconbox, drawer-scrim, lwbuttons, lwoverlap, lwsquare, lwring, lwtemp, lwround, sky-front, sky-moon, sky-always, sky-crop, sky-seam, sky-soft, sky-foot, tower-over, tower-wide, tower-box, tower-switch, holo-big, holo-noblend, holo-beam, holo-take, tile-text, listen-player, listen-card, listen-slot, listen-next, tall-box, tall-foot, tall-small, tall-ctl, tall-clip, tall-out, tall-rest, tall-pop, tall-moon, lines-size, lines-control, lines-text, lines-clip, watch-rest, watch-title, watch-away, watch-mark, lip-cover, lip-band, lip-scrim, row-parts, over-hatch, row-type, onair-box, onair-notes, onair-keys, onair-watt, watt-seat, watt-spot, watt-tower, watt-ground)
+//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, card-end, header, deck, tiles, picker, chips, heading, zenhint, strip, fold, drawer, rows, handle, sky, floor, sun, tools, toolsnames, meetfill, meetempty, fy-height, key-edge, hide-pill, hide-note, leave-band, rec-chip, rec-height, tile-height, tile-icon, tile-iconbox, drawer-scrim, lwbuttons, lwoverlap, lwsquare, lwring, lwtemp, lwround, sky-front, sky-moon, sky-always, sky-crop, sky-seam, sky-soft, sky-foot, tower-over, tower-wide, tower-box, tower-switch, holo-big, holo-noblend, holo-beam, holo-take, tile-text, listen-player, listen-card, listen-slot, listen-next, tall-box, tall-foot, tall-small, tall-ctl, tall-clip, tall-out, tall-rest, tall-pop, tall-btns, tall-moon, lines-size, lines-control, lines-text, lines-clip, watch-rest, watch-title, watch-away, watch-mark, lip-cover, lip-band, lip-scrim, row-parts, over-hatch, row-type, onair-box, onair-notes, onair-keys, onair-watt, watt-seat, watt-spot, watt-tower, watt-ground)
 //   npm --prefix wall run fit-check -- --self-test
 //
 // WALL_CHROME (or the first argument that is not a flag) is a Chromium or
@@ -147,6 +147,7 @@ const EXPECT = {
   'tall-rest': /^ *FAIL listen: the resting card is \d+ by \d+ \(800 by 462\)/m,
   'tall-pop': /^ *FAIL listen: the Play on list is at /m,
   // A moon forced into the open view is not drawn at all (the card claims its box), so the night check finds none.
+  'tall-btns': /^ *FAIL listen tall: .* runs past its column by \d+ px/m,
   'tall-moon': /^ *FAIL sky layers: no moon drawn at night/m,
   // watch polish
   'watch-block': /^ *FAIL watch polish: the left block is at /m,
@@ -290,6 +291,7 @@ const OVERFLOWS = {
   'tall-out': '.sp-card.tall .sp-hx { margin-right: -60px !important; }',
   'tall-rest': '.sp-card { width: 760px !important; }',
   'tall-pop': '.sp-devices { right: -700px !important; }',
+  'tall-btns': '.sp-shbtns .sp-btn { padding: 0 34px !important; }',
   'tall-moon': '',
   // watch polish: the left block back at its old line (y 126) in one look; the gear off the row's end; a 600 px control in
   // the row; the block moved onto the video.
@@ -1402,6 +1404,13 @@ try {
           }
           if (r.width < 31.5 || r.height < 31.5) listen.push('listen tall: control ' + name(e) + ' "' + (e.getAttribute('aria-label') || e.textContent || '').trim().slice(0, 20) + '" is ' + Math.round(r.width) + ' by ' + Math.round(r.height) + ' (32 at least)');
         }
+        // Play and Shuffle of an opened list stay inside their 200 px column.
+        const sh = cardEl.querySelector('.sp-shead');
+        const shb = cardEl.querySelector('.sp-shbtns');
+        if (sh && shb) {
+          const colBox = sh.getBoundingClientRect();
+          for (const b of shb.children) if (b.getBoundingClientRect().right > colBox.right + 0.5) listen.push('listen tall: ' + (b.textContent || '').trim() + ' runs past its column by ' + Math.round(b.getBoundingClientRect().right - colBox.right) + ' px');
+        }
         // Nothing cut or sticking out in the header, the tab row, the player row, the opened list's head (the chooser hangs in the top row) and the lines under them.
         for (const root of cardEl.querySelectorAll('.sp-top, .sp-bar, .sp-player, .sp-shead, .sp-qhead, .sp-note')) {
           for (const e of [root, ...root.querySelectorAll('*')]) {
@@ -1982,6 +1991,7 @@ try {
     'tall-out': (v) => v.name === 'Listen, the tall view open on Playlists',
     'tall-rest': (v) => v.name === 'Listen, playing with the lines moving',
     'tall-pop': (v) => v.name === 'Listen, the tall view, Play on open',
+    'tall-btns': (v) => v.name === 'Listen, the tall view, a playlist opened',
     'tall-moon': (v) => v.name === 'Sky layers, Listen at night, the tall view open, the moon in open sky',
     // watch polish
     'watch-block': (v) => v.name.startsWith('Watch polish'),

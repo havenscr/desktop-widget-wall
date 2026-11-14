@@ -3168,8 +3168,12 @@
   margin-top: 12px;
 }
 .sp-shbtns .sp-btn {
-  padding: 0 14px;
+  /* Play and Shuffle together stay inside the 200 px column. */
+  padding: 0 11px;
   gap: 6px;
+  font-size: 17px;
+  flex: 0 1 auto;
+  min-width: 0;
 }
 .sp-bar .sp-search {
   color: var(--dim);
@@ -3315,7 +3319,8 @@
 }
 .sp-qrow {
   width: 100%;
-  height: 46px;
+  /* 42 px as the chosen picture draws it: nine rows, the last fading. */
+  height: 42px;
   display: flex;
   align-items: center;
   gap: 12px;

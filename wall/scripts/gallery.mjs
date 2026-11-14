@@ -540,6 +540,13 @@ add('unwind', 'tall music: starting Spotify', TALL_AT('spotify=starting'), true,
 add('unwind', 'tall music: YouTube Music', TALL_AT(), true, '.sp-switch button:nth-child(2) >> .sp-grow');
 add('unwind', 'tall music: long names', url('unwind', TYPICAL_AT, 'long=1&media=long&spotify=long'), true, '.sp-grow');
 add('unwind', 'tall music: long names, a playlist opened', url('unwind', TYPICAL_AT, 'long=1&media=long&spotify=long'), true, '.sp-grow >> .sp-tile');
+// The content of the chosen pictures (`spotify=picture`: ten covers, six songs, three albums and three playlists), for the side-by-side stills.
+const PIC = 'audio=demo&spotify=picture';
+add('unwind', 'tall music pictures: open on Playlists', TALL_AT(PIC), true, '.sp-grow');
+add('unwind', 'tall music pictures: a playlist opened', TALL_AT(PIC), true, '.sp-grow >> .sp-tile');
+add('unwind', 'tall music pictures: search in groups', TALL_AT(PIC), true, '.sp-grow >> type:.sp-search input=night');
+add('unwind', 'tall music pictures: Up next', TALL_AT(PIC), true, '.sp-grow >> .sp-tabs button:nth-child(5)');
+add('unwind', 'tall music pictures: Play on open', TALL_AT(PIC), true, '.sp-grow >> .sp-dev');
 add('unwind', 'tall music: Spotify not answering', TALL_AT('spotify=down'), true, '.sp-grow');
 add('unwind', 'tall music: nothing playing', TALL_AT('media=none&spotifyplay=none'), true, '.sp-grow');
 
@@ -847,6 +854,11 @@ const EXPECT = [
   ['unwind', 'tall music: long names', ['Road Trip 1, an extremely long name', 'Up next']],
   ['unwind', 'tall music: long names, a playlist', ['240 songs', 'Lantern Song 9, an extremely long name']],
   ['unwind', 'tall music: Spotify not answering', 'Spotify is not answering right now.'],
+  ['unwind', 'tall music pictures: open on Playlists', ['Road Trip 10', 'Play on']],
+  ['unwind', 'tall music pictures: a playlist opened', ['Lantern Song 9', 'Shuffle', 'Playlists']],
+  ['unwind', 'tall music pictures: search in groups', ['Track 6', 'Album 3', 'Playlist 3', '3:00']],
+  ['unwind', 'tall music pictures: Up next', ['Playing now', 'Lantern Song 2']],
+  ['unwind', 'tall music pictures: Play on open', ['Kitchen speaker', 'Phone']],
   ['unwind', 'tall music: nothing playing', ['Nothing playing', 'Road Trip 1']],
 ];
 // The calm strip, the Day drawer and the Agents today panel.
