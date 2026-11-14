@@ -128,7 +128,9 @@ const EXPECT = {
   'watch-over': /^ *FAIL watch polish: .*w-lookbar.* is drawn over the video's box/m,
   'watch-take': /^ *FAIL pointer at \.w-sky \.w-frame /m,
   // watt drive-in
-  'watt-seat': /^ *FAIL watt drive-in: Watt .* is not 60 px clear of the screen/m,
+  'watt-seat': /^ *FAIL watt drive-in: Watt .* is not 30 px clear of the screen/m,
+  'watt-spot': /^ *FAIL watt drive-in: Watt .* is not within 40 px of his seat/m,
+  'watt-tower': /^ *FAIL watt drive-in: Watt .* px into the tower, not 24 or less/m,
   'watt-ground': /^ *FAIL watt drive-in: Watt .* is not on his ground/m,
   // tower and hologram
   'tower-over': /^ *FAIL tower and hologram: .* paints over the picture/m,
@@ -243,6 +245,9 @@ const OVERFLOWS = {
   // watt drive-in: his seat moved to the screen's centre; his seat lifted 100 px off the ground.
   'watt-seat': '.watt-sheep { translate: 1000px 0 !important; }',
   'watt-ground': '.watt-sheep { translate: 0 -100px !important; }',
+  // his seat 80 px too far left (30 px clear of the screen still holds); 20 px nearer the screen (into the tower's foot).
+  'watt-spot': '.watt-sheep { translate: -80px 0 !important; }',
+  'watt-tower': '.watt-sheep { translate: 14px 0 !important; }',
   // tower and hologram: the frame's rings filled over the picture; the tower widened 120 px (to 1.16 times, about its centre);
   // the video's box back at the old place; the Look switch moved under the Hologram only; the Hologram's pane scaled 1.3 times;
   // its blend dropped; a refused autoplay's click that never reaches the tilted frame.
@@ -1264,10 +1269,14 @@ try {
       }
       return { sw: box(sw), fails };
     })();
-    // watt drive-in: with something on in the drive-in look, Watt sits in his seat: his box at
-    // least 60 px left of the screen (the rectangle driveInAudience gives), clear of the control
-    // row, the Look switch, the list card and the leave banner, and his feet on his ground
-    // (Unwind's horizon at y 505, his left edge in the Watch ground's 140 to 1020, buddy/ground.ts).
+    // watt drive-in: with something on in the drive-in look, Watt sits in his seat. His sprite is at
+    // least 30 px left of the screen (the rectangle driveInAudience gives), at least 22 px from every
+    // control at his height (every .w-ctl, the Look switch, the list card, the Now block, the leave
+    // banner: layout boxes, so a control that has faded still counts), within 40 px of the seat the
+    // rule gives (the rightmost point that keeps both gaps; none within 300 px means he sits where he
+    // stands, and then only the screen gap and the ground are checked), with his feet on the ground
+    // line (Unwind's horizon at y 505), and no more than 24 px into the tower's left foot and stay (the
+    // chosen picture has him 19 px into the foot; every painted tower part at his height is measured).
     const wattDriveIn = (() => {
       const aud = document.querySelector('.w-stage.w-drivein')?.getAttribute('data-audience');
       const sheep = document.querySelector('.watt-sheep > svg');
@@ -1275,13 +1284,41 @@ try {
       const [x] = aud.split(',').map(Number);
       const me = sheep.getBoundingClientRect();
       const at = Math.round(me.left) + ',' + Math.round(me.top) + ' to ' + Math.round(me.right) + ',' + Math.round(me.bottom);
-      const meet = (a, b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
       const fails = [];
       const show = document.querySelector('.watt')?.dataset.show || 'not watching';
       if (show !== 'seated') fails.push('watt drive-in: Watt is not seated (' + show + ')');
-      if (me.right > x - 60) fails.push('watt drive-in: Watt at ' + at + ' is not 60 px clear of the screen at x ' + x);
-      for (const sel of ['.w-ctl', '.w-lookbar', '.w-card', '.leave-banner']) { const e = document.querySelector(sel); if (e && meet(me, e.getBoundingClientRect())) fails.push('watt drive-in: Watt at ' + at + ' overlaps ' + sel); }
-      if (Math.abs(me.bottom - 505) > 1 || me.left < 139 || me.left > 1021) fails.push('watt drive-in: Watt at ' + at + ' is not on his ground');
+      if (me.right > x - 30 + 0.5) fails.push('watt drive-in: Watt at ' + at + ' is not 30 px clear of the screen at x ' + x);
+      // The controls at his height: boxes reaching into his band (layout boxes, faded or not).
+      const bands = [];
+      for (const e of document.querySelectorAll('.w-lookbar, .w-ctl, .w-card, .w-now, .leave-banner')) {
+        const r = e.getBoundingClientRect();
+        if (r.width <= 0 || r.height <= 0 || r.bottom <= me.top || r.top >= me.bottom) continue;
+        bands.push({ sel: e.className.toString().split(' ')[0], x0: r.left, x1: r.right });
+        if (me.left < r.right + 22 && r.left < me.right + 22) fails.push('watt drive-in: Watt at ' + at + ' is not 22 px clear of ' + e.className.toString().split(' ')[0] + ' at ' + Math.round(r.left) + ' to ' + Math.round(r.right));
+      }
+      // The seat the rule gives (audience.ts seatFor): the rightmost left edge keeping 30 px to the
+      // screen and 22 px to every band, none further than 300 px from the screen.
+      const w = me.width;
+      let seat = Math.floor(x - 30 - w);
+      for (let pass = 0; pass <= bands.length; pass++) {
+        let moved = false;
+        for (const b of bands) if (seat > b.x0 - w - 22 && seat < b.x1 + 22) { seat = Math.floor(b.x0 - w - 22); moved = true; }
+        if (!moved) break;
+      }
+      const none = seat < Math.max(140, x - 300 - w) || bands.some((b) => seat > b.x0 - w - 22 && seat < b.x1 + 22);
+      if (!none && Math.abs(me.left - seat) > 40) fails.push('watt drive-in: Watt at ' + at + ' is not within 40 px of his seat at ' + seat);
+      if (Math.abs(me.bottom - 505) > 1 || me.left < 139) fails.push('watt drive-in: Watt at ' + at + ' is not on his ground');
+      // The tower's painted parts at his height (not the floor reflection, the ground shadow or the
+      // surround's rings): how far he stands into any of them.
+      let into = 0;
+      for (const p of document.querySelectorAll('.w-tower path, .w-tower rect')) {
+        if (p.closest('g[mask]') || p.getAttribute('fill-rule') === 'evenodd') continue;
+        const r = p.getBoundingClientRect();
+        if (r.width <= 0 || r.bottom <= me.top || r.top >= me.bottom || r.left > x - 8) continue;
+        const d = Math.min(me.right, r.right) - Math.max(me.left, r.left);
+        if (d > into) into = d;
+      }
+      if (into > 24) fails.push('watt drive-in: Watt at ' + at + ' stands ' + Math.round(into) + ' px into the tower, not 24 or less');
       return { at, fails };
     })();
         // sky layers: a front canvas exactly when a look sits behind the land; with one, it is shown,
@@ -1584,6 +1621,8 @@ try {
     // watt drive-in
     'watt-seat': (v) => v.name === 'Watt drive-in, seated at night',
     'watt-ground': (v) => v.name === 'Watt drive-in, seated at night',
+    'watt-spot': (v) => v.name === 'Watt drive-in, seated at night',
+    'watt-tower': (v) => v.name === 'Watt drive-in, seated at night',
     // tower and hologram
     'tower-over': (v) => v.name === 'Watch polish, tower playing',
     'tower-wide': (v) => v.name === 'Watch polish, tower playing',
@@ -1637,7 +1676,7 @@ try {
     if (wattDriveIn) {
       for (const f of wattDriveIn.fails) console.log(`  FAIL ${f}`);
       if (wattDriveIn.fails.length) failed = true;
-      else console.log(`  ok   watt drive-in: seated at ${wattDriveIn.at}, on his ground, 60 px or more left of the screen, clear of the control row, the Look switch, the list and the banner`);
+      else console.log(`  ok   watt drive-in: seated at ${wattDriveIn.at}, on his ground, 30 px or more left of the screen, 22 px or more from every control at his height, near his seat, 24 px or less into the tower`);
     }
     // watch behaviour
     for (const f of watchBehaviour) console.log(`  FAIL ${f}`);
