@@ -154,7 +154,8 @@ const OVERFLOWS = {
   // The floor wash catching the pointer and drawn over the Tomorrow card and the status line.
   floor: '.w-skyspill { pointer-events: auto !important; z-index: 30 !important; left: -130px !important; width: 2440px !important; }',
   // The sun's box spread over the whole band, over the controls.
-  sun: '.w-sun { left: -100px !important; width: 2500px !important; z-index: 30 !important; }',
+  // The stage sits in the video's layer, which takes no pointer: the break makes the sun take it too.
+  sun: '.w-sun { left: -100px !important; width: 2500px !important; z-index: 30 !important; pointer-events: auto !important; }',
   // The Tools drawer 1400 px wide runs past the right edge of the stage.
   tools: '.tools-drawer { width: 1400px !important; }',
   // A 20 px name column cuts the account and source names (they carry no tooltip of their own).
@@ -191,7 +192,7 @@ const OVERFLOWS = {
   'listen-slot': '.u-line { margin-left: 1960px; width: 600px; }',
   'listen-next': '.u-next-row { height: 80px !important; }',
   // watch polish: the Look switch moved 40 px in one look; a 600 px control in the row; the switch back on the video.
-  'watch-switch': '.w-panel:has(.w-sun) .w-lookbar { left: 540px !important; }',
+  'watch-switch': '.top:has(.w-sun) .w-lookbar { left: 540px !important; }',
   'watch-row': '.w-ctl .w-open { min-width: 600px !important; }',
   'watch-over': '.w-lookbar { left: 1200px !important; top: 200px !important; }',
   // A refused autoplay that never lets the pointer reach the whole-sky picture.
