@@ -332,6 +332,21 @@ state('unwind', 'Watt: drive-in, autoplay refused, the marquee waiting (he is no
 state('unwind', 'Watt: drive-in, 24 saved, long label', `${WM}&wlist=many&wlook=drivein&wplay=3`, TIMES.night);
 add('unwind', 'Watt: drive-in, set down during the show', url('unwind', TIMES.night, DI), true, 'drag:.watt-hit-part@240,380');
 // end watt drive-in
+// watt wear: his headphones (Unwind with music) and his star patch on whatever he is doing: standing, with his
+// menu open (he looks up), asleep at night, lying down, sitting at the drive-in, with the headphones and with a scarf.
+// The cape and the star are both cosmetics and are never worn together, so there is no star-and-cape state.
+const STAR = 'wattwear=star';
+state('unwind', 'Watt wears: headphones while music plays', 'audio=demo');
+state('unwind', 'Watt wears: the star, standing', STAR);
+add('unwind', 'Watt wears: the star, menu open and he looks up', url('unwind', TYPICAL_AT, STAR), true, 'ctx:.watt-hit');
+state('unwind', 'Watt wears: the star, asleep at night', STAR, TIMES.night);
+// (The tricks wait during a meeting, so the Nap state has none on the calendar.)
+add('unwind', 'Watt wears: the star, lying down (the Nap trick)', url('unwind', TYPICAL_AT, `${STAR}&meet=none`), true, 'ctx:.watt-hit >> .watt-menu .wm-it:nth-child(3) >> .nothing >> .nothing');
+state('unwind', 'Watt wears: the star, sitting at the drive-in', `${DI}&${STAR}`, TIMES.night);
+state('unwind', 'Watt wears: the star and the headphones', `${STAR}&audio=demo`);
+state('unwind', 'Watt wears: the star and a scarf', `${STAR}&weather=cold`);
+state('unwind', 'Watt wears: the cape instead of the star', 'wattwear=cape');
+// end watt wear
 // watch behaviour: the controls faded (5A) in each look, shown, paused, with a notice; and Work with a
 // video playing out of sight (the rail's playing mark on Unwind).
 state('unwind', 'watch behaviour: feathered, controls hidden', `${WM}&wlist=three&wlook=feather&wplay=0&wctl=rest`, TIMES.night);
@@ -538,6 +553,7 @@ const EXPECT = [
   ['home', 'Watt: menu open', ['Tricks', 'Stay here', 'Talks']],
   ['unwind', 'Watt: menu open', ['Tricks', 'Together', 'Wears']],
   ['unwind', 'Watt: menu at night', ['Watt is asleep', 'Tricks']],
+  ['unwind', 'Watt wears: the star, menu open', ['Tricks', 'Wears', '!Star in']],
   ['home', 'Watt: leave banner, he steps aside', ['Leave in 12 min.']],
   ['work', 'Watt: recording, he sits quietly', ['Now \u00b7 Recording', 'Recording00:']],
   // Work
@@ -883,6 +899,8 @@ const NO_TEXT = [
   ['meet', 'Watt: set down', 'only where Watt stands changes'],
   ['unwind', 'Watt: set down', 'only where Watt stands changes'],
   ['unwind', 'Watt: on Watch', 'only where Watt stands changes'],
+  // What he wears is drawn pixels: the unit tests (every pose) and fit-check (the star inside his box) hold it.
+  ['unwind', 'Watt wears:', 'the headphones and the star are drawn pixels, not text'],
 ];
 
 // On Air: the show timer, the run of show from run-of-show.txt (`show=`), the notes, Mark a moment
