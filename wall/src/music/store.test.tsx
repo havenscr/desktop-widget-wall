@@ -3,7 +3,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { mocks } from '../bridge/tauri';
 import { Unwind } from '../screens/Unwind';
 import { MusicBar } from './MusicBar';
-import { ART_RETRY_MS, POLL_MS, acquireNowPlaying, rejectArt, resetNowPlaying, sendMediaCommand, useNowPlayingStore } from './store';
+import { ART_RETRY_MS, POLL_MS, acquireNowPlaying, mediaTarget, rejectArt, resetNowPlaying, sendMediaCommand, useNowPlayingStore } from './store';
 
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => {
@@ -137,9 +137,9 @@ it('never asks again for a cover it refused: a type outside the list, or one the
   expect(sent.slice(before).every((k) => k === 'Next|||Player')).toBe(true);
 });
 
-it('sends the shown session id with every media command, and none when nothing is shown', async () => {
+it('sends the shown session key and id with every media command, and none when nothing is shown', async () => {
   const seen: unknown[] = [];
-  mocks.set('get_now_playing', () => ({ title: 'x', playback_status: 'playing', source_app_id: 'Example.Player_abc!App' }));
+  mocks.set('get_now_playing', () => ({ title: 'x', playback_status: 'playing', source_app_id: 'Example.Player_abc!App', session_key: 'Example.Player_abc!App#1' }));
   for (const name of ['media_play_pause', 'media_next', 'media_previous']) mocks.set(name, (args) => void seen.push([name, args]));
   render(<MusicBar />);
   await flush();
@@ -148,13 +148,21 @@ it('sends the shown session id with every media command, and none when nothing i
   sendMediaCommand('media_previous');
   await flush();
   expect(seen).toEqual([
-    ['media_play_pause', { sourceId: 'Example.Player_abc!App' }],
-    ['media_next', { sourceId: 'Example.Player_abc!App' }],
-    ['media_previous', { sourceId: 'Example.Player_abc!App' }],
+    ['media_play_pause', { sessionKey: 'Example.Player_abc!App#1', sourceId: 'Example.Player_abc!App' }],
+    ['media_next', { sessionKey: 'Example.Player_abc!App#1', sourceId: 'Example.Player_abc!App' }],
+    ['media_previous', { sessionKey: 'Example.Player_abc!App#1', sourceId: 'Example.Player_abc!App' }],
   ]);
   seen.length = 0;
   useNowPlayingStore.setState({ info: null });
   sendMediaCommand('media_next');
   await flush();
   expect(seen).toEqual([['media_next', undefined]]);
+});
+
+it('aims a command by the key when there is one, by the id for an older reply, and at nothing when nothing is shown', () => {
+  expect(mediaTarget({ session_key: 'a#1', source_app_id: 'a' })).toEqual({ sessionKey: 'a#1', sourceId: 'a' });
+  expect(mediaTarget({ source_app_id: 'a' })).toEqual({ sourceId: 'a' });
+  expect(mediaTarget({ session_key: 'a#0' })).toEqual({ sessionKey: 'a#0' });
+  expect(mediaTarget({ title: 'x' })).toBeUndefined();
+  expect(mediaTarget(null)).toBeUndefined();
 });

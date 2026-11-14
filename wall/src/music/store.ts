@@ -183,13 +183,25 @@ export function rejectArt(): void {
 }
 
 /**
- * Send a media command to the session the player shows (its app id goes along, so the click lands
- * on that app even when Windows names another session current), then refresh once if the page is
- * still visible and someone is watching.
+ * The arguments that aim a media command at the session the player shows: its key (so the click lands
+ * on that very session, even one of two with the same app id) and its app id (a reply from an older
+ * native side has no key). Undefined when nothing is shown. Capture it when a click starts, so every
+ * command of one click goes to the same session.
+ */
+export function mediaTarget(info: NowPlayingInfo | null = useNowPlayingStore.getState().info): { sessionKey?: string; sourceId?: string } | undefined {
+  const sessionKey = info?.session_key || undefined;
+  const sourceId = info?.source_app_id || undefined;
+  if (!sessionKey && !sourceId) return undefined;
+  return { ...(sessionKey ? { sessionKey } : {}), ...(sourceId ? { sourceId } : {}) };
+}
+
+/**
+ * Send a media command to the session the player shows (its key and app id go along, so the click
+ * lands on that session even when Windows names another one current), then refresh once if the
+ * page is still visible and someone is watching.
  */
 export function sendMediaCommand(name: MediaCommand): void {
-  const sourceId = useNowPlayingStore.getState().info?.source_app_id;
-  invoke(name, sourceId ? { sourceId } : undefined)
+  invoke(name, mediaTarget())
     .catch(() => {})
     .finally(() => {
       if (document.hidden || !active || consumers === 0) return;

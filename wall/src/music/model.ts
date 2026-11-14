@@ -18,6 +18,8 @@ export interface NowPlayingInfo {
    * side reports it as paused and sets this, so the wall shows "last played", never a full bar.
    */
   ended?: boolean;
+  /** The shown session's key (its app id and its place among sessions of that app); sent back with every command. */
+  session_key?: string | null;
 }
 
 export const ALLOWED_ART_MIMES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'] as const;

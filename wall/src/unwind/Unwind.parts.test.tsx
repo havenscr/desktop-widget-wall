@@ -372,6 +372,7 @@ it('shows an ended session as last played with the play button, never a full bar
     title: 'Evening Radio Mix',
     artist: 'Example Host',
     source_app_id: 'Example.VideoApp_abc123!App',
+    session_key: 'Example.VideoApp_abc123!App#0',
     playback_status: 'paused',
     ended: true,
     position_seconds: 146,
@@ -386,7 +387,7 @@ it('shows an ended session as last played with the play button, never a full bar
   expect(screen.queryByLabelText('Pause')).toBeNull();
   expect((screen.getByLabelText('Play') as HTMLButtonElement).disabled).toBe(false);
   await act(async () => screen.getByRole('button', { name: 'Play again' }).click());
-  expect(toggle).toHaveBeenCalledWith({ sourceId: 'Example.VideoApp_abc123!App' });
+  expect(toggle).toHaveBeenCalledWith({ sessionKey: 'Example.VideoApp_abc123!App#0', sourceId: 'Example.VideoApp_abc123!App' });
 });
 
 it('says "Open Spotify to play again" when the last track has no media session', async () => {
