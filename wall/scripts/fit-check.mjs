@@ -72,7 +72,7 @@ const EXPECT = {
   drawer: /^ *FAIL strip: \.day-drawer (reaches above the clock|sticks out of the stage)/m,
   rows: /^ *FAIL strip: an Agents today row is \d+ px tall/m,
   handle: /^ *FAIL strip: the drawer handle covers /m,
-  sky: /^ *FAIL pointer at .*reaches w-scrim/m,
+  sky: /^ *FAIL no point of the sky or the floor lands on \.w-sky/m,
   floor: /^ *FAIL pointer at \.u-tomorrow .*reaches w-skyspill/m,
   sun: /^ *FAIL pointer at .*reaches w-stage w-sun/m,
   tools: /^ *FAIL tools drawer: .*outside x 1700 to 2560/m,
@@ -100,6 +100,11 @@ const EXPECT = {
   'listen-card': /^ *FAIL listen: the Spotify card /m,
   'listen-slot': /^ *FAIL listen: .* enters the office lights slot/m,
   'listen-next': /^ *FAIL listen: Up next /m,
+  // watch polish
+  'watch-switch': /^ *FAIL watch polish: the Look switch is at /m,
+  'watch-row': /^ *FAIL \.w-ctl: width \d+ <= \d+/m,
+  'watch-over': /^ *FAIL watch polish: .*w-lookbar.* is drawn over the video's box/m,
+  'watch-take': /^ *FAIL pointer at \.w-sky \.w-frame /m,
 };
 const OVERFLOWS = {
   left: '.work .left-wing { transform: translateX(-200px); }',
@@ -157,6 +162,12 @@ const OVERFLOWS = {
   'listen-card': '.sp-card { height: 900px !important; }',
   'listen-slot': '.u-line { margin-left: 1960px; width: 600px; }',
   'listen-next': '.u-next-row { height: 80px !important; }',
+  // watch polish: the Look switch moved 40 px in one look; a 600 px control in the row; the switch back on the video.
+  'watch-switch': '.w-panel:has(.w-sun) .w-lookbar { left: 540px !important; }',
+  'watch-row': '.w-ctl .w-open { min-width: 600px !important; }',
+  'watch-over': '.w-lookbar { left: 1200px !important; top: 200px !important; }',
+  // A refused autoplay that never lets the pointer reach the whole-sky picture.
+  'watch-take': '.w-frame.w-take { pointer-events: none !important; }',
 };
 if (flag('self-test')) {
   const script = fileURLToPath(import.meta.url);
@@ -190,14 +201,17 @@ const WINGS = ['.work .left-wing', '.work .right-wing'];
 const LANES = ['.work .centre', '.work .centre .lane', '.work .centre .shelf'];
 const MEET = ['.meet .panel'];
 const WATCH_IDLE = ['.w-card', '.w-card .u-card-head', '.w-field', '.w-now'];
-const WATCH_PLAYING = [...WATCH_IDLE, '.w-ctl', '.w-screen', '.w-under', '.w-open'];
+const WATCH_PLAYING = [...WATCH_IDLE, '.w-ctl', '.w-screen', '.w-time', '.w-open', '.w-lookbar'];
 // Named controls that must still take the pointer with video playing: the rail, the tabs and
 // the gear, the transport, the list's first row and its field, a Room chip, the status chips,
 // Screens off and Watt.
 // Below the horizon, under the whole sky's floor wash: the Tomorrow card, the status line's
 // chips and Screens off (Unwind has no timeline strip).
 const FLOOR_HITS = ['.u-tomorrow', '.u-line .u-act', '.screens-off'];
-const SKY_HITS = ['.rail .rb', '.u-tab', '.w-gear', '.w-ctl .u-rd', '.w-play', '.w-mini', '.w-paste', '.u-line .u-act', '.screens-off', '.w-open', '.watt-hit-part'];
+const SKY_HITS = ['.rail .rb', '.u-tab', '.w-gear', '.w-ctl .rd:not(:disabled)', '.w-lookbar button', '.w-play', '.w-mini', '.w-paste', '.u-line .u-act', '.screens-off', '.w-open', '.watt-hit-part'];
+// watch polish: the left block, its control row, the position line and the Look switch.
+const WATCH_POLISH = ['.w-now', '.w-ctl', '.w-time', '.w-lookbar', '.w-card'];
+const WATCH_POLISH_HITS = ['.w-lookbar button', '.w-ctl .rd:not(:disabled)', '.w-open'];
 const DREAM = ['.dream-clock', '.dream-date', '.dream-card', '.dream-status', '.dream-hint'];
 // With more than three sessions the card list scrolls inside the centre: the three cards in
 // view, the header and the shelf must fit; the list itself is meant to scroll.
@@ -263,12 +277,23 @@ const QUIET = [
   { name: 'Watch, settings sheet, one look', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wplay=0&wsheet=one', checks: ['.w-sheet', '.w-tiles', '.w-tile', '.w-sfoot'] },
   // Part 2a: the whole sky and the sun. The whole sky lies under every control: each named
   // control gets the pointer at its centre, and no point of the sky reaches the video layer.
-  { name: 'Watch, whole sky playing, every control still takes the pointer', agents: 'ask', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=sky&wplay=0', checks: [...WATCH_IDLE, '.w-ctl', '.w-open', '.w-look'], hits: [...SKY_HITS, ...FLOOR_HITS], noHit: '.w-sky, .w-skyspill' },
-  { name: 'Watch, whole sky, 24 saved, long label', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=many&wlook=sky&wplay=3', checks: [...WATCH_IDLE, '.w-ctl', '.w-open', '.w-look'], hits: [...SKY_HITS, ...FLOOR_HITS], noHit: '.w-sky, .w-skyspill' },
-  { name: 'Watch, the sun playing', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=sun&wplay=0', checks: [...WATCH_IDLE, '.w-ctl', '.w-under', '.w-open', '.w-list'], hits: SKY_HITS },
-  { name: 'Watch, the sun, 24 saved, Twitch', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=many&wlook=sun&wplay=2', checks: [...WATCH_IDLE, '.w-ctl', '.w-under', '.w-open'], hits: SKY_HITS },
+  { name: 'Watch, whole sky playing, every control still takes the pointer', agents: 'ask', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=sky&wplay=0', checks: [...WATCH_IDLE, '.w-ctl', '.w-open', '.w-lookbar'], hits: [...SKY_HITS, ...FLOOR_HITS], noHit: '.w-sky, .w-skyspill' },
+  { name: 'Watch, whole sky, 24 saved, long label', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=many&wlook=sky&wplay=3', checks: [...WATCH_IDLE, '.w-ctl', '.w-open', '.w-lookbar'], hits: [...SKY_HITS, ...FLOOR_HITS], noHit: '.w-sky, .w-skyspill' },
+  { name: 'Watch, the sun playing', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=sun&wplay=0', checks: [...WATCH_IDLE, '.w-ctl', '.w-time', '.w-open', '.w-list'], hits: SKY_HITS },
+  { name: 'Watch, the sun, 24 saved, Twitch', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=many&wlook=sun&wplay=2', checks: [...WATCH_IDLE, '.w-ctl', '.w-time', '.w-open'], hits: SKY_HITS },
   { name: 'Watch, settings sheet with four looks, one look', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=sky&wplay=0&wsheet=one', checks: ['.w-sheet', '.w-tiles', '.w-tile', '.w-hint', '.w-sfoot'] },
   { name: 'Watch, settings sheet, a look per kind', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=many&wplay=2&wsheet=kind', checks: ['.w-sheet', '.w-srow', '.w-srow .w-seg', '.w-sfoot'] },
+  // watch polish: the control row and the Look switch in every look. The switch's box must be the
+  // same in every state below (compared after the run), the row one line clear of the list, and
+  // nothing of the wall's over the video's box; the drive-in's driveInAudience must be its screen.
+  { name: 'Watch polish, feathered, single video', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=feather&wplay=0', checks: WATCH_POLISH, hits: WATCH_POLISH_HITS },
+  { name: 'Watch polish, whole sky, playlist', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=many&wlook=sky&wplay=3', checks: WATCH_POLISH, hits: WATCH_POLISH_HITS },
+  { name: 'Watch polish, the sun, Twitch', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=sun&wplay=2', checks: WATCH_POLISH, hits: WATCH_POLISH_HITS },
+  { name: 'Watch polish, drive-in, playlist, long label', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=many&wlook=drivein&wplay=3', checks: WATCH_POLISH, hits: WATCH_POLISH_HITS },
+  { name: 'Watch polish, drive-in, autoplay refused', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=drivein&wplay=0&wstate=refused', checks: WATCH_POLISH, hits: WATCH_POLISH_HITS },
+  // A refused autoplay over the whole sky: the hint shows, and a click lands on the picture where the wall draws nothing.
+  { name: 'Watch polish, whole sky, autoplay refused', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=sky&wplay=0&wstate=refused', checks: WATCH_POLISH, hits: [...WATCH_POLISH_HITS, '.w-clickline', '.w-sky .w-frame'] },
+  { name: 'Watch polish, nothing on, drive-in', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=drivein', checks: ['.w-now', '.w-lookbar'], hits: ['.w-lookbar button'] },
 ].map((v) => ({ ...v, q: query(v) }));
 // The Tools drawer over each place, and in each hard state: the drawer, its two columns and every
 // section stay inside the stage, right of the rail and the clock, with no cut text that has no tooltip.
@@ -867,7 +892,37 @@ try {
         for (const e of inside.slice(0, 3)) listen.push('listen: ' + (e.className?.baseVal ?? e.className ?? e.tagName) + ' "' + (e.textContent || '').trim().slice(0, 30) + '" enters the office lights slot');
       }
     }
-    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, wattCard, header, deck, nowH, edges, hide, hits, grid, lw, sig, toolsOut, meetOut, strip, opened, listen });
+    // watch polish: the Look switch's box; the control row on one line and clear of the list; nothing
+    // of the wall's over the video's box; and the drive-in's driveInAudience equal to its drawn
+    // screen. The one exemption: the whole sky's picture lies under the whole band, so the left
+    // block, the Look switch, the tabs and the cards sit above it by design; even there nothing
+    // of the wall's may lie inside the picture's own layer (no wash, no button).
+    const watchPolish = (() => {
+      const sw = document.querySelector('.w-lookbar');
+      if (!sw) return null;
+      const box = (e) => { const r = e.getBoundingClientRect(); return { l: Math.round(r.left), t: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) }; };
+      const meet = (a, b) => a.l < b.l + b.w && b.l < a.l + a.w && a.t < b.t + b.h && b.t < a.t + a.h;
+      const fails = [];
+      const card = document.querySelector('.w-card');
+      for (const sel of ['.w-ctl', '.w-time', '.w-lookbar']) { const e = document.querySelector(sel); if (e && card && meet(box(e), box(card))) fails.push('watch polish: ' + sel + ' overlaps the list'); }
+      const ctl = document.querySelector('.w-ctl');
+      if (ctl && ctl.children.length) { const kids = [...ctl.children].map(box); const mid = (k) => k.t + k.h / 2; if (kids.some((k) => Math.abs(mid(k) - mid(kids[0])) > 2)) fails.push('watch polish: the control row wraps'); }
+      const skyStage = document.querySelector('.w-sky');
+      if (skyStage) for (const c of skyStage.children) if (!c.classList.contains('w-screen')) fails.push('watch polish: ' + c.className + " is drawn over the video's box (whole sky)");
+      const scr = document.querySelector('.w-stage:not(.w-sky):not(.w-empty) .w-screen');
+      if (scr) {
+        const v = box(scr);
+        for (const e of document.querySelectorAll('.w-lookbar, .w-now, .w-ctl, .w-time, .w-open, .w-card')) if (meet(box(e), v)) fails.push('watch polish: ' + e.className + " is drawn over the video's box");
+        const st = scr.closest('.w-stage');
+        if (st.classList.contains('w-drivein')) {
+          const aud = st.getAttribute('data-audience') || '';
+          const [x, y, w, h] = aud.split(',').map(Number);
+          if (!aud || Math.abs(x - v.l) > 1 || Math.abs(y - v.t) > 1 || Math.abs(w - v.w) > 1 || Math.abs(h - v.h) > 1) fails.push('watch polish: driveInAudience ' + aud + ' is not the drawn screen ' + [v.l, v.t, v.w, v.h].join(','));
+        }
+      }
+      return { sw: box(sw), fails };
+    })();
+    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, wattCard, header, deck, nowH, edges, hide, hits, grid, lw, sig, toolsOut, meetOut, strip, opened, watchPolish, listen });
     document.body.appendChild(pre);
   }, new URLSearchParams(location.search).get('card') ? 7000 : 3000);</script>`;
   const broken = overflow ? `<style>${OVERFLOWS[overflow]}</style>` : '';
@@ -907,10 +962,17 @@ try {
     'listen-card': (v) => v.name === 'Listen, playing with the lines moving',
     'listen-slot': (v) => v.name === 'Listen, playing with the lines moving',
     'listen-next': (v) => v.name === 'Listen, playing with the lines moving',
+    // watch polish
+    'watch-switch': (v) => v.name.startsWith('Watch polish'),
+    'watch-row': (v) => v.name === 'Watch polish, feathered, single video',
+    'watch-over': (v) => v.name === 'Watch polish, drive-in, playlist, long label',
+    'watch-take': (v) => v.name === 'Watch polish, whole sky, autoplay refused',
   };
   const breakOn = BREAK_ON[overflow] ? VARIANTS.filter(BREAK_ON[overflow]) : VARIANTS.slice(0, 1);
   /** keys style: the Now row's height on each page that has one, compared after every state ran. */
   const nowHeights = [];
+  /** watch polish: the Look switch's box in each Watch polish state, compared after the run. */
+  const switchBoxes = [];
   for (const v of overflow ? breakOn : VARIANTS) {
     console.log(`${v.name} (${v.q}):`);
     const url = `${pathToFileURL(page).href}${v.q}&checks=${encodeURIComponent(v.checks.join('|'))}${v.click ? `&click=${encodeURIComponent(v.click)}` : ''}${v.card ? '&card=1' : ''}${v.hits ? `&hits=${encodeURIComponent(v.hits.join('|'))}` : ''}${v.noHit ? `&nohit=${encodeURIComponent(v.noHit)}` : ''}${v.listen ? '&listen=1' : ''}`;
@@ -926,7 +988,14 @@ try {
       process.exit(1);
     }
     const text = m[1].replaceAll('&quot;', '"').replaceAll('&amp;', '&');
-    const { res, page: doc, overlaps, cut, gaps, wattCard, header, deck, nowH, edges, hide, hits, grid, lw, sig, toolsOut, meetOut, strip, opened, listen } = JSON.parse(text);
+    const { res, page: doc, overlaps, cut, gaps, wattCard, header, deck, nowH, edges, hide, hits, grid, lw, sig, toolsOut, meetOut, strip, opened, watchPolish, listen } = JSON.parse(text);
+    // watch polish
+    if (watchPolish) {
+      for (const f of watchPolish.fails) console.log(`  FAIL ${f}`);
+      if (watchPolish.fails.length) failed = true;
+      else console.log('  ok   watch polish: the control row is one line clear of the list, nothing over the video\'s box');
+      if (v.name.startsWith('Watch polish')) switchBoxes.push({ name: v.name, box: watchPolish.sw });
+    }
     // unwind listen
     for (const l of listen) console.log(`  FAIL ${l}`);
     if (listen.length) failed = true;
@@ -1072,6 +1141,16 @@ try {
       failed = true;
       for (const n of nowHeights) console.log(`  FAIL deck: the Now row is ${Math.round(n.h)} px tall on ${n.page === 'recording' ? 'Recording' : n.name} (every page must match)`);
     } else console.log(`keys style: the Now row is ${hs[0]} px tall on every key page, on For you and on Recording`);
+  }
+  // watch polish: the Look switch sits in one place, one size, in every look and with nothing on.
+  if (switchBoxes.length > 1) {
+    const key = (b) => `${b.l},${b.t} ${b.w}x${b.h}`;
+    const first = key(switchBoxes[0].box);
+    const off = switchBoxes.filter((s) => key(s.box) !== first);
+    if (off.length) {
+      failed = true;
+      for (const s of off) console.log(`  FAIL watch polish: the Look switch is at ${key(s.box)} on ${s.name}, not ${first} as on ${switchBoxes[0].name}`);
+    } else console.log(`watch polish: the Look switch is at ${first} in all ${switchBoxes.length} states`);
   }
   process.exit(failed ? 1 : 0);
 } finally {
