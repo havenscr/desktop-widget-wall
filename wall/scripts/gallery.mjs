@@ -302,6 +302,27 @@ state('unwind', 'sky layers: feathered at night, no moon', `${WM}&wlist=three&wl
 state('unwind', 'sky layers: Listen at night, the moon in open sky', 'weather=ok', TIMES.night);
 state('unwind', 'sky layers: Watch, nothing on, at night, the moon in open sky', `${WM}&wlist=three&wlook=feather`, TIMES.night);
 
+// tower and hologram: the drive-in's Screen tower frame (playing, paused, nothing on, night and noon),
+// the Hologram look (night and noon, playing and paused), the Look switch on each of the five looks,
+// and the settings sheet with five tiles in both of its modes (mock poster only, never a real video).
+const TH = 'tower and hologram:';
+state('unwind', `${TH} tower at night, playing`, `${WM}&wlist=three&wlook=drivein&wplay=0`, TIMES.night);
+state('unwind', `${TH} tower at noon, playing`, `${WM}&wlist=three&wlook=drivein&wplay=0`, TIMES.noon);
+state('unwind', `${TH} tower at night, paused`, `${WM}&wlist=three&wlook=drivein&wplay=0&wstate=paused`, TIMES.night);
+state('unwind', `${TH} tower at noon, paused`, `${WM}&wlist=three&wlook=drivein&wplay=0&wstate=paused`, TIMES.noon);
+state('unwind', `${TH} tower at night, nothing on`, `${WM}&wlist=three&wlook=drivein`, TIMES.night);
+state('unwind', `${TH} tower at noon, nothing on`, `${WM}&wlist=three&wlook=drivein`, TIMES.noon);
+state('unwind', `${TH} tower at night, 24 saved, long label`, `${WM}&wlist=many&wlook=drivein&wplay=3`, TIMES.night);
+state('unwind', `${TH} hologram at night, playing`, `${WM}&wlist=three&wlook=holo&wplay=0`, TIMES.night);
+state('unwind', `${TH} hologram at noon, playing`, `${WM}&wlist=three&wlook=holo&wplay=0`, TIMES.noon);
+state('unwind', `${TH} hologram at night, paused`, `${WM}&wlist=three&wlook=holo&wplay=0&wstate=paused`, TIMES.night);
+state('unwind', `${TH} hologram at noon, paused`, `${WM}&wlist=three&wlook=holo&wplay=0&wstate=paused`, TIMES.noon);
+state('unwind', `${TH} hologram at night, 24 saved, long label`, `${WM}&wlist=many&wlook=holo&wplay=3`, TIMES.night);
+state('unwind', `${TH} hologram, autoplay refused`, `${WM}&wlist=three&wlook=holo&wplay=0&wstate=refused`, TIMES.night);
+for (const id of ['feather', 'sky', 'sun', 'drivein', 'holo']) state('unwind', `${TH} Look switch on ${id}`, `${WM}&wlist=three&wlook=${id}&wplay=0`, TIMES.night);
+state('unwind', `${TH} settings, five tiles, Hologram chosen`, `${WM}&wlist=three&wlook=holo&wplay=0&wsheet=one`, TIMES.night);
+state('unwind', `${TH} settings, five looks per kind`, `${WM}&wlist=many&wlook=holo&wplay=0&wsheet=kind`, TIMES.night);
+
 // The Tools drawer: opened on load (`tools=1`), over each place and in its hard states.
 state('work', 'tools: open', 'tools=1');
 state('work', 'tools: account signed out', 'meet=signedout&tools=1');
@@ -546,6 +567,20 @@ const EXPECT = [
   ['unwind', 'watch: sun', ['The sun', 'Open in YouTube']],
   ['unwind', 'watch: settings, four looks, whole sky', ['How video is shown', 'Whole sky', 'The sun', 'Drive-in']],
   ['unwind', 'watch: settings, four looks per kind', ['Videos and playlists', 'Live streams', 'The sun']],
+  // tower and hologram
+  ['unwind', 'tower and hologram: tower at night, playing', ['Playing on the wall', "WATT\u2019S DRIVE-IN \u00b7 NOW SHOWING", 'Drive-in']],
+  ['unwind', 'tower and hologram: tower at noon, playing', ['Playing on the wall', "WATT\u2019S DRIVE-IN \u00b7 NOW SHOWING"]],
+  ['unwind', 'tower and hologram: tower at night, paused', ['Paused', "WATT\u2019S DRIVE-IN \u00b7 INTERMISSION"]],
+  ['unwind', 'tower and hologram: tower at noon, paused', ['Paused', "WATT\u2019S DRIVE-IN \u00b7 INTERMISSION"]],
+  ['unwind', 'tower and hologram: tower at night, nothing on', ['Nothing on', 'Nothing on the screen', "WATT\u2019S DRIVE-IN"]],
+  ['unwind', 'tower and hologram: tower at noon, nothing on', ['Nothing on', 'Nothing on the screen']],
+  ['unwind', 'tower and hologram: tower at night, 24', ['24 saved', 'Saved for the weekend, a very long playlist name', 'YouTube playlist']],
+  ['unwind', 'tower and hologram: hologram at night, 24', ['24 saved', 'Saved for the weekend, a very long playlist name', 'Hologram']],
+  ['unwind', 'tower and hologram: hologram, autoplay refused', ['Hologram', 'Click the video to start', '!12:34']],
+  ['unwind', 'tower and hologram: hologram at', ['Hologram', 'Open in YouTube', '12:34']],
+  ['unwind', 'tower and hologram: Look switch on', ['Feathered', 'Whole sky', 'The sun', 'Drive-in', 'Hologram']],
+  ['unwind', 'tower and hologram: settings, five tiles', ['How video is shown', 'One look for everything', 'Hologram', 'The whole picture floats']],
+  ['unwind', 'tower and hologram: settings, five looks per kind', ['Videos and playlists', 'Live streams', 'Hologram']],
   // watch polish
   ['unwind', 'watch polish: drive-in, paused', ['Paused', '12:34', '45:10', 'Open in YouTube']],
   ['unwind', 'watch polish: drive-in', ['Playing on the wall', '12:34', '45:10', 'Open in YouTube', '!Not playing? Open in browser']],

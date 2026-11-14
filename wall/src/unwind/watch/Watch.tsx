@@ -16,6 +16,8 @@ import { useSkyClaim, useSkyKeepClear } from '../../horizon/sky';
 import { useSignalStore } from '../../signals/store';
 import { tip } from '../../ui/HoverTip';
 import { kindName, refKey, validRef, type WatchKind, type WatchRef } from './links';
+import { DriveInFrame } from './DriveInFrame';
+import { HologramEmitter, HologramPlate } from './HologramStage';
 import { LOOKS, LOOK_BOXES, layeredNow, lookFor, lookTargetName, ownsTheMoonSky, type LookId } from './looks';
 import { PlayerFrame, playerLink } from './PlayerFrame';
 import { driveInAudience, useWatchStore } from './store';
@@ -87,12 +89,11 @@ function EmptyDriveIn() {
   useWatchSky('drivein', null, false);
   return (
     <div className="w-stage w-drivein w-empty" data-look="drivein" aria-hidden="true">
+      <DriveInFrame mode="empty" />
       <div className="w-screen">
         <IconMovie size={64} stroke={1.25} />
         <span>Nothing on the screen</span>
       </div>
-      <i className="w-post l" />
-      <i className="w-post r" />
     </div>
   );
 }
@@ -107,7 +108,7 @@ export function clock(sec: number): string {
 }
 
 /**
- * The Look switch: the four looks in one segmented control, always in the same place under the
+ * The Look switch: the five looks in one segmented control, always in the same place under the
  * left block (never on the video), whether or not something plays. With one look for
  * everything it sets that look; with a look per kind it sets the look of the kind on (or, with
  * nothing on, of the first saved item), and its hover tip says which. Arrow keys move.
@@ -304,11 +305,12 @@ function Controls({ item }: { item: WatchRef & { label: string } }) {
 /**
  * The video in the scene, in its look. Nothing of the wall's is drawn on the video: the Look
  * switch and every control sit in the left block. Glows, the floor's light and the drive-in's
- * frame and posts sit around the picture, never over it.
+ * frame sit around the picture, never over it.
  */
 function VideoStage({ item, look }: { item: WatchRef & { label: string }; look: LookId }) {
   const audience = useWatchStore(driveInAudience);
   const needsClick = useWatchStore((s) => s.needsClick);
+  const paused = useWatchStore((s) => s.paused);
   const [front, setFront] = useState<HTMLDivElement | null>(null);
   useWatchSky(look, front, needsClick);
   const sky = look === 'sky';
@@ -316,6 +318,8 @@ function VideoStage({ item, look }: { item: WatchRef & { label: string }; look: 
   const b = LOOK_BOXES[look];
   return (
     <>
+      {/* Hologram: the glass plate, hairlines and ticks, in the pane's box and tilt, under the stage. */}
+      {look === 'holo' ? <HologramPlate /> : null}
       <div
         className={`w-stage w-${look}${layered ? ' w-layered' : ''}`}
         data-look={look}
@@ -325,6 +329,7 @@ function VideoStage({ item, look }: { item: WatchRef & { label: string }; look: 
         {/* The feathered glow (in front of the land, with its picture) and the sun's halo (behind it). */}
         {look === 'feather' ? <div className="w-glow" aria-hidden="true" /> : null}
         {look === 'sun' ? <div className="w-halo" aria-hidden="true" /> : null}
+        {look === 'drivein' ? <DriveInFrame mode={paused ? 'paused' : 'playing'} /> : null}
         {look === 'drivein' ? <div className="w-spill" aria-hidden="true" /> : null}
         <div className="w-screen">
           <PlayerFrame key={refKey(item)} item={item} title={item.label} />
@@ -334,13 +339,9 @@ function VideoStage({ item, look }: { item: WatchRef & { label: string }; look: 
         {layered ? <div className="w-front" ref={setFront} aria-hidden="true" /> : null}
         {/* On the floor, in front of the land: the sun's warm streak. */}
         {look === 'sun' ? <div className="w-streak" aria-hidden="true" /> : null}
-        {look === 'drivein' ? (
-          <>
-            <i className="w-post l" aria-hidden="true" />
-            <i className="w-post r" aria-hidden="true" />
-          </>
-        ) : null}
       </div>
+      {/* Hologram: the emitter, its beam and its floor glow, in front of the land. */}
+      {look === 'holo' ? <HologramEmitter /> : null}
       {/* The floor picks up a faint wash of the sky's colour (approved page, B). One frame cannot be
           mirrored, so this is a still colour wash in the page's light colours, taking no pointer. */}
       {sky ? <div className="w-skyspill" aria-hidden="true" /> : null}

@@ -870,45 +870,47 @@
   inset: 0;
   pointer-events: none;
 }
-/* DRIVE_IN_SCREEN in looks.ts (wall 1124, 60, 691 by 389) less Unwind's offset: the
-   approved page's screen size, 40 px right of the left block (the approved centre would run into it). */
+/* ---- Drive-in: the Screen tower. DRIVE_IN_SCREEN in looks.ts (wall 1244, 54, 672 by 378, exactly
+   16:9) less Unwind's offset: the picture itself, with no border of its own. The frame is one
+   SVG over the whole scene (DriveInFrame.tsx), first child of the stage, so it sits under the
+   floor light and the screen, takes no pointer, and every fill in it is a ring with this box cut
+   out. The marquee's words cross-fade in about a second (at once under reduced motion). ---- */
 .w-drivein {
-  left: 1000px;
-  top: 40px;
-  width: 691px;
-  height: 389px;
+  left: 1120px;
+  top: 34px;
+  width: 672px;
+  height: 378px;
 }
 .w-drivein .w-screen {
-  box-sizing: border-box;
-  border: 7px solid #1a1232;
-  border-radius: 9px;
-  overflow: hidden;
-  background: #0a0616;
-  box-shadow: 0 0 0 2px rgba(170, 150, 255, 0.35), 0 0 108px rgba(140, 170, 255, 0.28);
+  background: #000;
 }
-.w-post {
+.w-tower {
   position: absolute;
-  top: 389px;
-  width: 7px;
-  height: 56px;
-  background: #1a1232;
-  box-shadow: 0 0 0 1px rgba(170, 150, 255, 0.25);
+  left: -1244px;
+  top: -54px;
+  width: 2560px;
+  height: 720px;
+  overflow: visible;
+  pointer-events: none;
 }
-.w-post.l {
-  left: 19%;
+.w-mq {
+  transition: opacity 1s ease;
 }
-.w-post.r {
-  left: 81%;
+@media (prefers-reduced-motion: reduce) {
+  .w-mq {
+    transition: none;
+  }
 }
+/* ---- end of the drive-in's frame ---- */
 /* The screen's light on the grid floor, where the approved page draws its blurred reflection
    (a band a little wider than the screen, from the horizon down, gone by 80 percent). One frame
    cannot be mirrored, so it is a still wash in the stage light's colours (amber left, pink in
    the middle, cyan right), strongest at the horizon line. */
 .w-spill {
   position: absolute;
-  left: -77px;
+  left: -86.5px;
   width: 845px;
-  top: 445px;
+  top: 451px;
   height: 218px;
   opacity: 0.42;
   filter: blur(18px);
@@ -1304,7 +1306,7 @@
   gap: 14px;
   font-size: 22px;
   color: var(--faint);
-  box-shadow: 0 0 0 2px rgba(170, 150, 255, 0.22), 0 0 80px rgba(140, 170, 255, 0.12);
+  background: #07050f;
 }
 .w-hint {
   margin: 12px 0 0;
@@ -1432,15 +1434,134 @@
   pointer-events: none;
 }
 
-/* The sheet with four looks: four tiles in a row, and per kind each label over a full-width
-   choice of four, so it fits the right wing at 540 px. */
+/* ---- Hologram (the owner's pick from the pictures). The whole 16:9 picture (HOLO_PANE in
+   looks.ts: wall 1210, 42, 736 by 414) on a pane tilted in 3D, blended with `screen` over a dark
+   glass plate in the same box and tilt (the plate is the stage's previous sibling, so the blend
+   sees it), two cyan hairlines and four corner ticks outside the picture, and an emitter on the
+   floor with its beam (HologramStage.tsx). It stands in front of the land and claims no front
+   layer. Nothing lies on the picture; the pointer never reaches the player, but a refused
+   autoplay's click (.w-take) lands on the tilted frame's real area. Where the layering cannot
+   blend, the blend is dropped and the plate and the tilt stay. ---- */
+.w-holo,
+.w-holo-plate {
+  left: 1086px;
+  top: 22px;
+  width: 736px;
+  height: 414px;
+  transform: perspective(2400px) rotateY(-7deg) rotateX(1.2deg);
+  transform-origin: 50% 60%;
+}
+.w-holo {
+  mix-blend-mode: screen;
+}
+@supports not (mix-blend-mode: screen) {
+  .w-holo {
+    mix-blend-mode: normal;
+  }
+}
+.main:has(.w-layered) .w-holo {
+  mix-blend-mode: normal;
+}
+.w-holo-plate {
+  position: absolute;
+  pointer-events: none;
+}
+.w-holo-glass {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(7, 5, 22, 0.74), rgba(7, 5, 22, 0.6));
+  box-shadow: 0 0 0 1px rgba(53, 230, 234, 0.28), 0 0 70px rgba(53, 230, 234, 0.16), 0 0 160px rgba(120, 150, 255, 0.12);
+}
+.w-holo-hr {
+  position: absolute;
+  left: -22px;
+  right: -22px;
+  height: 1.5px;
+  background: linear-gradient(90deg, transparent, #35e6ea 10%, #b9fbff 50%, #35e6ea 90%, transparent);
+  box-shadow: 0 0 7px rgba(53, 230, 234, 0.5);
+}
+.w-holo-hr.t {
+  top: -9px;
+}
+.w-holo-hr.b {
+  bottom: -9px;
+}
+.w-holo-tk {
+  position: absolute;
+  width: 26px;
+  height: 26px;
+  border: 1.5px solid rgba(185, 251, 255, 0.85);
+  filter: drop-shadow(0 0 4px rgba(53, 230, 234, 0.6));
+}
+.w-holo-tk.tl {
+  left: -16px;
+  top: -16px;
+  border-right: 0;
+  border-bottom: 0;
+}
+.w-holo-tk.tr {
+  right: -16px;
+  top: -16px;
+  border-left: 0;
+  border-bottom: 0;
+}
+.w-holo-tk.bl {
+  left: -16px;
+  bottom: -16px;
+  border-right: 0;
+  border-top: 0;
+}
+.w-holo-tk.br {
+  right: -16px;
+  bottom: -16px;
+  border-left: 0;
+  border-top: 0;
+}
+.w-holo-emit {
+  position: absolute;
+  left: -124px;
+  top: -20px;
+  width: 2560px;
+  height: 720px;
+  overflow: visible;
+  pointer-events: none;
+}
+.w-holo-beam {
+  mix-blend-mode: screen;
+}
+/* The settings sheet's small drawing of the Hologram: a tilted pane, its hairline and an emitter. */
+.w-pic.holo b {
+  left: 24%;
+  right: 24%;
+  top: 10%;
+  bottom: 38%;
+  opacity: 0.85;
+  transform: perspective(160px) rotateY(-12deg);
+  outline: 1px solid rgba(53, 230, 234, 0.7);
+  outline-offset: 2px;
+}
+.w-pic.holo::after {
+  content: '';
+  position: absolute;
+  left: calc(50% - 9px);
+  bottom: 14%;
+  width: 18px;
+  height: 4px;
+  border-radius: 50%;
+  background: #d6feff;
+  box-shadow: 0 0 8px 2px rgba(53, 230, 234, 0.7);
+}
+/* ---- end of the Hologram ---- */
+
+/* The sheet with five looks: five tiles in a row, and per kind each label over a full-width
+   choice of five, so it fits the right wing at 540 px. */
 .w-tiles {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
 }
 .w-tile {
-  padding: 8px;
-  font-size: 17px;
+  padding: 6px;
+  font-size: 15px;
 }
 .w-pic {
   height: 84px;
