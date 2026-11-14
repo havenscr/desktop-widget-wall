@@ -518,7 +518,7 @@ fn shape_accounts(v: Option<&Value>) -> Vec<UsageAccount> {
 
 fn shape_day(v: Option<&Value>) -> Vec<DaySpan> {
     let Some(items) = v.and_then(Value::as_array) else { return Vec::new() };
-    items
+    let mut day = items
         .iter()
         .filter_map(|d| {
             let start = stamp(d.get("start"))?;
@@ -539,12 +539,12 @@ fn shape_day(v: Option<&Value>) -> Vec<DaySpan> {
                 kind: one_of(d.get("kind"), &["run", "wait", "done"])?,
             })
         })
-        .rev()
-        .take(MAX_DAY)
-        .collect::<Vec<_>>()
-        .into_iter()
-        .rev()
-        .collect()
+        .collect::<Vec<_>>();
+    while day.len() > MAX_DAY {
+        let Some(oldest_closed) = day.iter().position(|span| span.end.is_some()) else { break };
+        day.remove(oldest_closed);
+    }
+    day
 }
 
 fn shape_system(v: Option<&Value>) -> Option<BoxSystem> {
@@ -1595,6 +1595,7 @@ mod tests {
             newest.push(json!({
                 "lane": "a1b2c3d4-0001",
                 "start": format!("2026-11-{:02}T{:02}:00:00Z", 1 + n / 24, n % 24),
+                "end": format!("2026-11-{:02}T{:02}:00:00Z", 1 + n / 24, n % 24),
                 "kind": "run"
             }));
         }
@@ -1602,6 +1603,15 @@ mod tests {
         let day = shape_summary(&body).unwrap().day;
         assert_eq!(day.len(), 400);
         assert_eq!(day.first().unwrap().start, "2026-11-03T02:00:00Z");
+        assert_eq!(day.last().unwrap().start, "2026-11-19T17:00:00Z");
+
+        let open = json!({ "lane": "a1b2c3d4-0001", "start": "2026-11-01T00:00:00Z", "end": null, "kind": "run" });
+        let mut crowded = vec![open];
+        crowded.extend(body["day"].as_array().unwrap().iter().cloned());
+        body["day"] = json!(crowded);
+        let day = shape_summary(&body).unwrap().day;
+        assert_eq!(day.len(), 400);
+        assert!(day.iter().any(|span| span.start == "2026-11-01T00:00:00Z" && span.end.is_none()));
         assert_eq!(day.last().unwrap().start, "2026-11-19T17:00:00Z");
     }
 
