@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { SILENCE_MS, clamp01, hasSound, smoothStep, type AudioLevelsPayload, type Levels } from './model';
 import { createBeatDetector, type BeatDetector } from './beat';
-import { APP_DANCE_PARAMS, clearDance, createDance, stepDance, type DanceParams } from './dance';
+import { APP_DANCE_PARAMS, clearDance, createDance, setDanceParams, stepDance, type DanceParams } from './dance';
 import { lineSettings } from '../horizon/linesSettings';
 
 export interface AudioState extends Levels {
@@ -114,14 +114,9 @@ function advanceHistory(now: number, playing: boolean): void {
     dancing.head = (dancing.head + 1) % HISTORY_ROWS;
     if (playing) for (let i = 0; i < BAND_COUNT; i++) danceRaw[i] = bands[i];
     else danceRaw.fill(0);
-    const smooth = (lineSettings().smooth - 50) / 50;
-    const lively = (lineSettings().lively - 50) / 50;
-    const releaseScale = Math.pow(4, smooth);
-    danceParams.levelRelease = APP_DANCE_PARAMS.levelRelease * releaseScale;
-    danceParams.fastRelease = APP_DANCE_PARAMS.fastRelease * releaseScale;
-    danceParams.base = APP_DANCE_PARAMS.base;
-    danceParams.hit = APP_DANCE_PARAMS.hit * Math.pow(2, lively);
-    danceParams.limit = APP_DANCE_PARAMS.limit * Math.pow(2, 0.75 * lively);
+    // How lively and Smoothness (the Lines setting) shape the heights as they are written.
+    const lines = lineSettings();
+    setDanceParams(danceParams, lines.lively, lines.smooth);
     stepDance(dance, danceRaw, 1 / HISTORY_HZ, dancing.data, dancing.head * BAND_COUNT, danceParams);
     if (dancing.rows < HISTORY_ROWS) dancing.rows++;
     if (!playing) quietRows++;

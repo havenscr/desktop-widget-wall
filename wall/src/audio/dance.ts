@@ -31,8 +31,38 @@ export const DANCE_PEAK_MIN = 0.07;
 export const DANCE_BASE = 0.32;
 export const DANCE_HIT = 1.35;
 export const DANCE_LIMIT = 1.8;
-export interface DanceParams { levelRelease: number; fastRelease: number; base: number; hit: number; limit: number }
-export const APP_DANCE_PARAMS: Readonly<DanceParams> = { levelRelease: DANCE_LEVEL_RELEASE_S, fastRelease: DANCE_FAST_RELEASE_S, base: DANCE_BASE, hit: DANCE_HIT, limit: DANCE_LIMIT };
+/** The five numbers the Lines controls move (`stepDance`'s parameters); `APP_DANCE_PARAMS` is the wall as it was. */
+export interface DanceParams {
+  levelRelease: number;
+  fastRelease: number;
+  base: number;
+  hit: number;
+  limit: number;
+}
+export const APP_DANCE_PARAMS: Readonly<DanceParams> = {
+  levelRelease: DANCE_LEVEL_RELEASE_S,
+  fastRelease: DANCE_FAST_RELEASE_S,
+  base: DANCE_BASE,
+  hit: DANCE_HIT,
+  limit: DANCE_LIMIT,
+};
+
+/**
+ * Write the dance numbers for How lively and Smoothness (0 to 100, 50 is the usual) into `out`, as
+ * the lines playground maps them: with x = (lively - 50) / 50 and y = (smooth - 50) / 50, the hit
+ * is `DANCE_HIT` times 2^x, the limit `DANCE_LIMIT` times 2^(0.75x), both releases times 4^y; the
+ * base and the attack times do not change. At 50 and 50 every number is the app's own.
+ */
+export function setDanceParams(out: DanceParams, lively: number, smooth: number): void {
+  const x = (lively - 50) / 50;
+  const y = (smooth - 50) / 50;
+  const release = Math.pow(4, y);
+  out.levelRelease = DANCE_LEVEL_RELEASE_S * release;
+  out.fastRelease = DANCE_FAST_RELEASE_S * release;
+  out.base = DANCE_BASE;
+  out.hit = DANCE_HIT * Math.pow(2, x);
+  out.limit = DANCE_LIMIT * Math.pow(2, 0.75 * x);
+}
 /** The kick: transients under this are zero, the rest are raised to this power, then followed. */
 export const KICK_GATE = 0.04;
 export const KICK_POWER = 1.5;
