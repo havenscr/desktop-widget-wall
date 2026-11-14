@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import { useState } from 'react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { resetTip } from '../ui/HoverTip';
-import { KeyMenu, KeyMenuButton, MENU_CLOSE_MS, type KeyMenuAction } from './KeyMenu';
+import { KeyMenu, MENU_CLOSE_MS, type KeyMenuAction } from './KeyMenu';
 
 const actions: KeyMenuAction[] = [
   { id: 'pin', label: 'Pin to Always here' },
@@ -12,7 +12,7 @@ const actions: KeyMenuAction[] = [
 let closed: number;
 let chosen: string[];
 
-/** A key tile with its corner button and its menu, as the rows draw them. Inline callbacks on purpose. */
+/** A key tile with its menu, as the rows draw them. Inline callbacks on purpose. */
 function Harness({ byKeyboard = false }: { byKeyboard?: boolean }) {
   const [open, setOpen] = useState(true);
   return (
@@ -20,7 +20,6 @@ function Harness({ byKeyboard = false }: { byKeyboard?: boolean }) {
       <button type="button" className="key-tile">
         Tile
       </button>
-      <KeyMenuButton label="Tile" open={open} onOpen={() => setOpen(true)} onClose={() => setOpen(false)} />
       {open && (
         <KeyMenu
           title="Tile"
@@ -112,18 +111,11 @@ it('a key press inside the menu cancels the countdown while focus stays inside',
   expect(menu()).not.toBeNull();
 });
 
-it('the corner button toggles: a press while the menu is open closes it and it stays closed', async () => {
+it('a press on the key, which is how a right-click begins, closes the open menu', () => {
   render(<Harness />);
-  const corner = screen.getByRole('button', { name: 'More options for Tile' });
-  // The press begins outside the menu but on its own trigger: the outside handler leaves it to the click.
-  fireEvent.pointerDown(corner);
-  expect(menu()).not.toBeNull();
-  fireEvent.click(corner);
+  const tile = screen.getByRole('button', { name: 'Tile' });
+  fireEvent.pointerDown(tile);
   expect(menu()).toBeNull();
-  await flush(10);
-  expect(menu()).toBeNull();
-  fireEvent.click(corner);
-  expect(menu()).not.toBeNull();
 });
 
 it('a press elsewhere closes the menu and does not move focus back to the key', () => {
