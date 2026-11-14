@@ -31,7 +31,7 @@
 // CI does not run this; run it by hand before a layout change is handed over.
 //
 //   WALL_CHROME=/path/to/chrome-or-headless-shell npm --prefix wall run fit-check
-//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, card-end, header, deck, tiles, picker, chips, heading, zenhint, strip, fold, drawer, rows, handle, sky, floor, sun, tools, toolsnames, meetfill, meetempty, fy-height, key-edge, hide-pill, hide-note, leave-band, rec-chip, rec-height, tile-height, tile-icon, tile-iconbox, drawer-scrim, lwbuttons, lwoverlap, lwsquare, lwring, lwtemp, lwround, sky-front, sky-moon, sky-always, sky-crop, sky-seam, sky-soft, sky-foot, tower-over, tower-wide, tower-box, tower-switch, holo-big, holo-noblend, holo-beam, holo-take, tile-text, listen-player, listen-card, listen-slot, listen-next, lines-size, lines-control, lines-text, lines-clip, watch-rest, watch-title, watch-away, watch-mark, lip-cover, lip-band, lip-scrim, row-parts, over-hatch, row-type, onair-box, onair-notes, onair-keys, onair-watt, watt-seat, watt-spot, watt-tower, watt-ground, tune-box, tune-clear, tune-tower, tune-sign, tune-light, tune-sheet, tune-control, tune-text, tune-cut, tune-clip, tune-row, tune-foot, tune-fade, tune-remnant, tune-gap)
+//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, card-end, header, deck, tiles, picker, chips, heading, zenhint, strip, fold, drawer, rows, handle, sky, floor, sun, tools, toolsnames, yt-clip, yt-text, yt-control, yt-row, yt-actions, meetfill, meetempty, fy-height, key-edge, hide-pill, hide-note, leave-band, rec-chip, rec-height, tile-height, tile-icon, tile-iconbox, drawer-scrim, lwbuttons, lwoverlap, lwsquare, lwring, lwtemp, lwround, sky-front, sky-moon, sky-always, sky-crop, sky-seam, sky-soft, sky-foot, tower-over, tower-wide, tower-box, tower-switch, holo-big, holo-noblend, holo-beam, holo-take, tile-text, listen-player, listen-card, listen-slot, listen-next, lines-size, lines-control, lines-text, lines-clip, watch-rest, watch-title, watch-away, watch-mark, lip-cover, lip-band, lip-scrim, row-parts, over-hatch, row-type, onair-box, onair-notes, onair-keys, onair-watt, watt-seat, watt-spot, watt-tower, watt-ground, tune-box, tune-clear, tune-tower, tune-sign, tune-light, tune-sheet, tune-control, tune-text, tune-cut, tune-clip, tune-row, tune-foot, tune-fade, tune-remnant, tune-gap)
 //   npm --prefix wall run fit-check -- --self-test
 //   npm --prefix wall run fit-check -- --only=look settings    (only the states whose name contains that text)
 //
@@ -104,6 +104,11 @@ const EXPECT = {
   sun: /^ *FAIL pointer at .*reaches w-stage w-sun/m,
   tools: /^ *FAIL tools drawer: .*outside x 1700 to 2560/m,
   toolsnames: /^ *FAIL tools: .* is cut with no tooltip/m,
+  'yt-clip': /^ *FAIL youtube row: .* past the Accounts column/m,
+  'yt-text': /^ *FAIL youtube row: text under 16 px/m,
+  'yt-control': /^ *FAIL youtube row: control .* px/m,
+  'yt-row': /^ *FAIL youtube row: does not match the Spotify row/m,
+  'yt-actions': /^ *FAIL youtube row: the form actions wrap or are cut/m,
   meetfill: /^ *FAIL meet: nothing fills the upper right/m,
   meetempty: /^ *FAIL meet: nothing fills the upper right/m,
   // keys style
@@ -249,6 +254,16 @@ const OVERFLOWS = {
   tools: '.tools-drawer { width: 1400px !important; }',
   // A 20 px name column cuts the account and source names (they carry no tooltip of their own).
   toolsnames: '.tools-name, .tools-srcname { width: 20px !important; max-width: 20px !important; flex: none !important; overflow: hidden; }',
+  // YouTube row: the Set up form's inputs 700 px wide run past the Accounts column.
+  'yt-clip': '.tools-yt-form .tools-input { flex: none !important; width: 700px !important; }',
+  // YouTube row: 12 px text in the hint, the links line and the field labels.
+  'yt-text': '.tools-yt-hint, .tools-yt-links, .tools-yt-links button, .tools-yt-field > span { font-size: 12px !important; }',
+  // YouTube row: 24 px inputs, links and form buttons (mouse targets are 32 px or more).
+  'yt-control': '.tools-input, .tools-link, .tools-yt-actions .tools-btn { height: 24px !important; }',
+  // YouTube row: a 60 px high row that no longer matches Spotify's 46 px.
+  'yt-row': '.tools-list [data-account="youtube"] { height: 60px !important; }',
+  // YouTube row: the form's actions stacked in a column instead of one line.
+  'yt-actions': '.tools-yt-actions { flex-direction: column !important; align-items: flex-start !important; }',
   // Meet's Later list hidden leaves the upper right empty.
   meetfill: '.meet .meet-later { display: none !important; }',
   // The same on a state with no meeting: the upper right is empty there too.
@@ -607,6 +622,7 @@ const QUIET = [
 ].map((v) => ({ ...v, q: query(v) }));
 // The Tools drawer over each place, and in each hard state: the drawer, its two columns and every
 // section stay inside the stage, right of the rail and the clock, with no cut text that has no tooltip.
+const YT_ROW = '.tools-list[aria-label="Accounts"] [data-account="youtube"]';
 const TOOLS = ['.tools-drawer', '.tools-drawer .tools-col', '.tools-drawer .tools-block', '.tools-drawer .tools-list', '.tools-drawer .tools-foot'];
 const tools = (name, q) => ({ name: `Tools, ${name}`, q, checks: TOOLS, viewportOnly: true });
 const TOOLS_VARIANTS = [
@@ -620,6 +636,14 @@ const TOOLS_VARIANTS = [
   tools('keys refused with a long reason', `${work('3')}&keys=refused&tools=1`),
   tools('no keys file', `${work('3')}&source=default&tools=1`),
   tools('Spotify not set up, a sign-in waiting', `${work('3')}&spotify=off&meet=signedout&tools=1`),
+  // The YouTube row in each state it can show, and the Set up form open from Set up and from Change setup.
+  // A state that shows a (possibly two-line) Accounts note is held to the drawer itself: a note's fractional line boxes round to one pixel more than its box.
+  ...[['not set up', 'off'], ['signed out', 'out'], ['signed in', 'in'], ['setup broken, said in the note', 'broken'], ['sign in again', 'again'], ['could not check', 'down'], ['signed in, setup missing', 'missing'], ['setup unreadable', 'unreadable'], ['waiting after a reload', 'reloaded']].map(([n, k]) => (['broken', 'unreadable'].includes(k) ? { ...tools(`YouTube ${n}`, `${work('3')}&youtube=${k}&tools=1`), checks: ['.tools-drawer'] } : tools(`YouTube ${n}`, `${work('3')}&youtube=${k}&tools=1`))),
+  { name: 'Tools, YouTube waiting for the browser', q: `${work('3')}&youtube=waiting&tools=1`, click: YT_ROW + ' .tools-btn.cy', checks: TOOLS, viewportOnly: true },
+  { name: 'Tools, YouTube setup form open', q: `${work('3')}&youtube=off&tools=1`, click: YT_ROW + ' .tools-btn', checks: TOOLS, viewportOnly: true },
+  { name: 'Tools, YouTube refused setup, form open', q: `${work('3')}&youtube=brokenout&tools=1`, click: YT_ROW + ' .tools-btn', checks: TOOLS, viewportOnly: true },
+  { name: 'Tools, YouTube change setup form open', q: `${work('3')}&youtube=out&tools=1`, click: YT_ROW + ' .tools-btn.ico', checks: TOOLS, viewportOnly: true },
+  { name: 'Tools, YouTube sign-in refused note', q: `${work('3')}&youtube=refuse&tools=1`, click: YT_ROW + ' .tools-btn.cy', checks: ['.tools-drawer', '.tools-note'], viewportOnly: true },
   { name: 'Spotify copy, choose this computer', q: `${query({ hz: 'unwind', agents: '3', extra: '&spotify=choose' })}`, click: '.sp-tile >> .sp-shead .sp-btn.fill', checks: ['.sp-card', '.sp-note'] },
   { name: 'Account copy, failed sign-in', q: `${work('3')}&meet=signin-fault&tools=1`, click: '.tools-list[aria-label="Accounts"] .tools-row:nth-child(2) button', checks: ['.tools-drawer', '.tools-note'], viewportOnly: true },
 ];
@@ -1225,6 +1249,42 @@ try {
         if (e.scrollWidth > e.clientWidth + 1 && !e.closest('[data-tip]')) toolsOut.push('tools: "' + (e.textContent || '').trim().slice(0, 40) + '" is cut with no tooltip');
         // The row's hover card does not excuse a cut name or a cut read time: those cells must show whole.
         else if (e.matches('.tools-name, .tools-srcname, [data-kind="time"]') && e.scrollWidth > e.clientWidth + 1) toolsOut.push('tools: "' + (e.textContent || '').trim().slice(0, 40) + '" is cut with no tooltip of its own');
+      }
+      // The YouTube row, its Set up form, its hint and its links line: inside the Accounts column, text 16 px or more,
+      // controls 32 px or more, and a row built like Spotify's (same height, name, line and icon).
+      const yt = drawer.querySelector('[data-account="youtube"]');
+      if (yt) {
+        const column = drawer.querySelector('.tools-block[data-section="accounts"]').getBoundingClientRect();
+        const name = (e) => (typeof e.className === 'string' && e.className ? '.' + e.className.split(' ')[0] : e.tagName.toLowerCase()) + ' "' + (e.textContent || '').trim().slice(0, 24) + '"';
+        const parts = [yt, ...drawer.querySelectorAll('.tools-yt-form, .tools-yt-links')];
+        for (const part of parts) {
+          for (const e of [part, ...part.querySelectorAll('*')]) {
+            const r = e.getBoundingClientRect();
+            if (r.width === 0 && r.height === 0) continue;
+            if (r.left < column.left - 0.5 || r.right > column.right + 0.5 || r.bottom > dr.bottom - 0.5) toolsOut.push('youtube row: ' + name(e) + ' reaches x ' + Math.round(r.left) + ' to ' + Math.round(r.right) + ', y to ' + Math.round(r.bottom) + ' past the Accounts column (x ' + Math.round(column.left) + ' to ' + Math.round(column.right) + ') or its foot');
+            if (e.matches('span, div, label, li, button') && e.scrollWidth > e.clientWidth + 1 && !e.closest('[data-tip]')) toolsOut.push('youtube row: ' + name(e) + ' is cut with no tooltip');
+            if ([...e.childNodes].some((n) => n.nodeType === 3 && (n.textContent || '').trim())) {
+              const px = parseFloat(getComputedStyle(e).fontSize);
+              if (px < 16 - 0.01) toolsOut.push('youtube row: text under 16 px in ' + name(e) + ' (' + px + ' px)');
+            }
+          }
+          for (const c of part.matches('button, input') ? [part] : part.querySelectorAll('button, input')) {
+            const r = c.getBoundingClientRect();
+            if (r.height < 32 - 0.01 || (c.matches('button') && r.width < 32 - 0.01)) toolsOut.push('youtube row: control ' + name(c) + ' is ' + Math.round(r.width) + ' by ' + Math.round(r.height) + ' px, under 32 px');
+          }
+        }
+        // The form's actions (Save, Cancel and, when a setup exists, Forget this setup) share one line and none is cut.
+        const actions = drawer.querySelector('.tools-yt-actions');
+        if (actions) {
+          const kids = [...actions.children];
+          if (new Set(kids.map((k) => Math.round(k.getBoundingClientRect().top))).size > 1 || actions.scrollWidth > actions.clientWidth + 1) toolsOut.push('youtube row: the form actions wrap or are cut (' + kids.map((k) => (k.textContent || '').trim()).join(', ') + ')');
+        }
+        const spotifyRow = [...drawer.querySelectorAll('.tools-acct')].find((r) => (r.querySelector('.tools-name')?.textContent || '') === 'Spotify');
+        if (spotifyRow) {
+          const look = (r) => { const n = getComputedStyle(r.querySelector('.tools-name')); const l = getComputedStyle(r.querySelector('.tools-line')); const i = r.querySelector('.tools-ico svg').getBoundingClientRect(); return [Math.round(r.getBoundingClientRect().height), n.fontSize, n.fontWeight, l.fontSize, Math.round(i.width)].join(' / '); };
+          if (look(yt) !== look(spotifyRow)) toolsOut.push('youtube row: does not match the Spotify row (height / name size / name weight / line size / icon: ' + look(yt) + ' against ' + look(spotifyRow) + ')');
+        }
+        for (const r of drawer.querySelectorAll('.tools-acct')) if (Math.round(r.getBoundingClientRect().height) !== 46) toolsOut.push('youtube row: an account row (' + name(r.querySelector('.tools-name')) + ') is ' + Math.round(r.getBoundingClientRect().height) + ' px tall, not 46');
       }
     }
     // Meet's upper right is never an empty gap: a card reaches the right edge of the stage.
@@ -2047,6 +2107,11 @@ try {
     picker: (v) => v.name.startsWith('Deck, the key picker open over'),
     tools: (v) => v.name === 'Tools, over Work, typical',
     toolsnames: (v) => v.name === 'Tools, over Work, typical',
+    'yt-clip': (v) => v.name === 'Tools, YouTube setup form open',
+    'yt-text': (v) => v.name === 'Tools, YouTube setup form open',
+    'yt-control': (v) => v.name === 'Tools, YouTube setup form open',
+    'yt-row': (v) => v.name === 'Tools, YouTube signed out',
+    'yt-actions': (v) => v.name === 'Tools, YouTube change setup form open',
     'spotify-copy': (v) => v.name === 'Spotify copy, choose this computer',
     'account-copy': (v) => v.name === 'Account copy, failed sign-in',
     meetfill: (v) => v.name === 'Meet, both accounts read',

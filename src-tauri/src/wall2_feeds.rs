@@ -992,7 +992,13 @@ pub fn wall2_open_link(app: tauri::AppHandle, kind: String) -> Result<(), String
 }
 
 fn fixed_link(kind: &str) -> Option<&'static str> {
-    match kind { "youtube-music" => Some("https://music.youtube.com/"), _ => None }
+    match kind {
+        "youtube-music" => Some("https://music.youtube.com/"),
+        // The two links YouTube API Services asks every app that uses them to show.
+        "youtube-terms" => Some("https://www.youtube.com/t/terms"),
+        "google-privacy" => Some("https://policies.google.com/privacy"),
+        _ => None,
+    }
 }
 
 #[cfg(test)]
@@ -1412,6 +1418,9 @@ mod tests {
     #[test]
     fn youtube_music_link_is_fixed() {
         assert_eq!(fixed_link("youtube-music"), Some("https://music.youtube.com/"));
+        assert_eq!(fixed_link("youtube-terms"), Some("https://www.youtube.com/t/terms"));
+        assert_eq!(fixed_link("google-privacy"), Some("https://policies.google.com/privacy"));
+        assert_eq!(fixed_link("https://www.youtube.com/t/terms"), None);
         assert_eq!(fixed_link("other"), None);
     }
 
