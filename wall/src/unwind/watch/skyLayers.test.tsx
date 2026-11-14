@@ -234,6 +234,25 @@ describe('the cards Unwind stands in the sky keep the moon clear of them', () =>
     expect(moonFor(MOON_PLACES, claims())).toBe(MOON);
   });
 
+  it('Listen: the player claims its own drawn box too, so a player grown down toward the second place takes the moon away rather than under it', async () => {
+    // The player at its widest (long names) leaves the second place 45 px clear.
+    const spy = lay({ '.sp-card': [1740, 24, 800, 462], '.u-player': [624, 26, 1086, 225] });
+    useWatchStore.getState().setTab('listen');
+    const { unmount } = render(<Unwind />);
+    await flush();
+    expect(claims()['listen-player']).toEqual({ clear: [[624, 26, 1086, 225]] });
+    expect(moonFor(MOON_PLACES, claims())).toBe(MOON_PLACES[1]);
+    unmount();
+    expect(claims()).toEqual({});
+    // A player 30 px taller: the second place is too near it and the third lies on it, so no moon.
+    spy.mockRestore();
+    lay({ '.sp-card': [1740, 24, 800, 462], '.u-player': [624, 26, 1086, 255] });
+    render(<Unwind />);
+    await flush();
+    expect(claims()['listen-player']).toEqual({ clear: [[624, 26, 1086, 255]] });
+    expect(moonFor(MOON_PLACES, claims())).toBeNull();
+  });
+
   it('Watch with nothing on: the list card, the left block and the Look switch claim their boxes; the moon stays at its first place, clear of them', async () => {
     lay({ '.w-card': [2030, 20, 510, 330], '.w-now': [620, 120, 520, 260], '.w-lookbar': [620, 400, 458, 44] });
     setup('feather', false);
