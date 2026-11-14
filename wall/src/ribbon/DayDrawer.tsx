@@ -65,7 +65,8 @@ const BARE = new Set(['running', 'idle', 'failed', 'working', 'waiting', 'blocke
  */
 export function quietLine(l: Lane): string {
   const parts: string[] = [];
-  if (helpersWork(l)) {
+  const throughHelpers = helpersWork(l);
+  if (throughHelpers) {
     if (l.kids?.running != null) {
       const detail: string[] = [];
       if (l.bg && l.bg.agents > 0) detail.push(`${l.bg.agents} agent${l.bg.agents === 1 ? '' : 's'}`);
@@ -78,7 +79,10 @@ export function quietLine(l: Lane): string {
   if (said && !BARE.has(said.toLowerCase())) parts.push(said);
   else if (l.next && l.next.trim()) parts.push(`Next: ${l.next.trim()}`);
   if (laneWaits(l) && l.waitingSinceS != null) parts.push(parts.length > 0 ? elapsedText(l.waitingSinceS) : `Waiting ${elapsedText(l.waitingSinceS)}`);
-  if (l.kids && l.kids.total > 0 && l.kids.running == null) parts.push(`${l.kids.total} helper${l.kids.total === 1 ? '' : 's'}, ${l.kids.working === 0 ? 'none working' : `${l.kids.working} working`}`);
+  if (l.kids && l.kids.total > 0 && !throughHelpers) {
+    if (l.kids.running != null) parts.push(`${l.kids.total} helper${l.kids.total === 1 ? '' : 's'}, ${l.kids.running} at work`);
+    else parts.push(`${l.kids.total} helper${l.kids.total === 1 ? '' : 's'}, ${l.kids.working === 0 ? 'none working' : `${l.kids.working} working`}`);
+  }
   if (l.pr) parts.push(prText(l));
   return parts.join(' \u00b7 ');
 }
