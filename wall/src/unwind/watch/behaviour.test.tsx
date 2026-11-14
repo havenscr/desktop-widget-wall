@@ -5,6 +5,7 @@ import { useSkyStore } from '../../horizon/sky';
 import { resetNowPlaying } from '../../music/store';
 import { Rail } from '../../rail/Rail';
 import { useSignalStore } from '../../signals/store';
+import { useToolsStore } from '../../tools/store';
 import { usePlaceStore } from '../../state/places';
 import { HoverTipLayer, resetTip, TIP_DELAY_MS } from '../../ui/HoverTip';
 import { resetLastPlayed } from '../lastPlayed';
@@ -421,6 +422,64 @@ describe('review fixes: focus never stays in the parked player', () => {
     act(() => unwindButton().focus());
     await act(async () => useWatchStore.getState().setTab('listen'));
     expect(document.activeElement).toBe(unwindButton());
+  });
+});
+
+describe('review fixes: the Escape guards and the Tools drawer', () => {
+  it('Escape does not stop the video while the Tools drawer, a dialog, a menu or Watt\'s menu is open', async () => {
+    await playing();
+    act(() => useToolsStore.setState({ open: true }));
+    expect(fireEvent.keyDown(document.body, { key: 'Escape' })).toBe(true);
+    expect(useWatchStore.getState().playing).not.toBeNull();
+    act(() => useToolsStore.setState({ open: false }));
+    for (const markup of ['<div role="dialog"></div>', '<div role="menu"></div>', '<div class="watt-menu"></div>']) {
+      const host = document.createElement('div');
+      host.innerHTML = markup;
+      document.body.appendChild(host);
+      expect(fireEvent.keyDown(document.body, { key: 'Escape' }), markup).toBe(true);
+      expect(useWatchStore.getState().playing, markup).not.toBeNull();
+      host.remove();
+    }
+    expect(fireEvent.keyDown(document.body, { key: 'Escape' })).toBe(false);
+    expect(useWatchStore.getState().playing).toBeNull();
+  });
+
+  it('with the Tools drawer open over a playing video the Watch keys do nothing and the controls stay as they were', async () => {
+    await playing();
+    await flush(CTL_REST_MS);
+    expect(ctl()).toBe('rest');
+    act(() => useToolsStore.setState({ open: true }));
+    const changes: (string | null)[] = [];
+    const watch = new MutationObserver(() => changes.push(ctl()));
+    watch.observe(document.querySelector('.w-now')!, { attributes: true, attributeFilter: ['data-ctl'] });
+    expect(fireEvent.keyDown(document.body, { key: ' ' })).toBe(true);
+    expect(fireEvent.keyDown(document.body, { key: 'Escape' })).toBe(true);
+    expect(useWatchStore.getState().paused).toBe(false);
+    expect(useWatchStore.getState().playing).not.toBeNull();
+    await flush(CTL_REST_MS * 4);
+    watch.disconnect();
+    expect(changes).toEqual([]);
+    expect(ctl()).toBe('rest');
+    act(() => useToolsStore.setState({ open: false }));
+  });
+
+  // jsdom has no layout, so the stacking is read from the style sheets: the drawer sits at a
+  // z-index above the shell, and neither the video layer nor its pointer band sets one.
+  it('the drawer stacks above the video layer and its pointer band (style sheets)', async () => {
+    // The style sheets are read from disk: the test config turns only two of them into text.
+    const mod = 'node:fs';
+    const fs = await import(/* @vite-ignore */ mod);
+    const sheet = (name: string): string => fs.readFileSync(new URL(['..', '..', 'styles', name].join('/'), import.meta.url), 'utf8');
+    const toolsCss = sheet('tools.css');
+    const unwindCss = sheet('unwind.css');
+    const rule = (css: string, selector: string) => {
+      const at = css.indexOf(`\n${selector} {`);
+      return at < 0 ? '' : css.slice(at, css.indexOf('}', at));
+    };
+    const z = (body: string) => Number(/z-index:\s*(-?\d+)/.exec(body)?.[1] ?? Number.NaN);
+    expect(z(rule(toolsCss, '.tools-drawer'))).toBeGreaterThanOrEqual(45);
+    expect(rule(unwindCss, '.w-layer')).not.toMatch(/z-index/);
+    expect(rule(unwindCss, '.w-edge')).not.toMatch(/z-index/);
   });
 });
 
