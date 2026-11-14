@@ -31,7 +31,7 @@
 // CI does not run this; run it by hand before a layout change is handed over.
 //
 //   WALL_CHROME=/path/to/chrome-or-headless-shell npm --prefix wall run fit-check
-//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, card-end, header, deck, tiles, picker, chips, heading, zenhint, strip, fold, drawer, rows, handle, sky, floor, sun, tools, toolsnames, meetfill, meetempty, fy-height, key-edge, hide-pill, hide-note, leave-band, rec-chip, rec-height, tile-height, tile-icon, tile-iconbox, drawer-scrim, lwbuttons, lwoverlap, lwsquare, lwring, lwtemp, lwround, sky-front, sky-moon, sky-always, sky-crop, sky-seam, sky-soft, sky-foot, tower-over, tower-wide, tower-box, tower-switch, holo-big, holo-noblend, holo-beam, holo-take, tile-text, listen-player, listen-card, listen-slot, listen-next, lines-size, lines-control, lines-text, lines-clip, watch-rest, watch-title, watch-away, watch-mark, lip-cover, lip-band, lip-scrim, row-parts, over-hatch, row-type, onair-box, onair-notes, onair-keys, onair-watt, watt-seat, watt-spot, watt-tower, watt-ground, tune-box, tune-clear, tune-tower, tune-sign, tune-light, tune-sheet, tune-control, tune-text, tune-cut, tune-clip, tune-row)
+//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, card-end, header, deck, tiles, picker, chips, heading, zenhint, strip, fold, drawer, rows, handle, sky, floor, sun, tools, toolsnames, meetfill, meetempty, fy-height, key-edge, hide-pill, hide-note, leave-band, rec-chip, rec-height, tile-height, tile-icon, tile-iconbox, drawer-scrim, lwbuttons, lwoverlap, lwsquare, lwring, lwtemp, lwround, sky-front, sky-moon, sky-always, sky-crop, sky-seam, sky-soft, sky-foot, tower-over, tower-wide, tower-box, tower-switch, holo-big, holo-noblend, holo-beam, holo-take, tile-text, listen-player, listen-card, listen-slot, listen-next, lines-size, lines-control, lines-text, lines-clip, watch-rest, watch-title, watch-away, watch-mark, lip-cover, lip-band, lip-scrim, row-parts, over-hatch, row-type, onair-box, onair-notes, onair-keys, onair-watt, watt-seat, watt-spot, watt-tower, watt-ground, tune-box, tune-clear, tune-tower, tune-sign, tune-light, tune-sheet, tune-control, tune-text, tune-cut, tune-clip, tune-row, tune-foot)
 //   npm --prefix wall run fit-check -- --self-test
 //   npm --prefix wall run fit-check -- --only=look settings    (only the states whose name contains that text)
 //
@@ -180,6 +180,7 @@ const EXPECT = {
   'tune-text': /^ *FAIL look settings: text under 16 px/m,
   'tune-cut': /^ *FAIL look settings: ".*" is cut /m,
   'tune-clip': /^ *FAIL look settings: \d+ control\(s\) are cut off by the sheet with no scrolling/m,
+  'tune-foot': /^ *FAIL look settings: ".*" is cut \(\d+ px high/m,
   'tune-row': /^ *FAIL look settings: row ".*" is [\d.]+ px tall \(40 at least\)/m,
   'sky-soft': /^ *FAIL whole sky soft edge: /m,
   'sky-foot': /^ *FAIL whole sky soft edge: /m,
@@ -336,6 +337,7 @@ const OVERFLOWS = {
   'tune-cut': '.wk-set .ln-value { width: 60px !important; }',
   // the scrolling section clipped with no scrolling; 30 px rows
   'tune-clip': '.wk-set .wk-rows { overflow: hidden !important; }',
+  'tune-foot': '.wk-set > .wk-foot { max-height: 22px !important; overflow: hidden !important; }',
   'tune-row': '.wk-set .ln-row { min-height: 30px !important; height: 30px !important; }',
   // Keeps the production side ramp exactly and replaces only the top ramp with one that also fades the foot (an extra stop near 100 percent).
   'sky-foot': `.w-sky .w-screen { -webkit-mask-image: ${SKY_SIDE_RAMP}, ${SKY_TOP_RAMP_FOOT} !important; mask-image: ${SKY_SIDE_RAMP}, ${SKY_TOP_RAMP_FOOT} !important; }`,
@@ -1672,7 +1674,12 @@ try {
           const fs = parseFloat(getComputedStyle(el).fontSize);
           if (fs < 15.5) fails.push('look settings: text under 16 px in "' + el.textContent.trim().slice(0, 30) + '" (' + fs + ' px)');
           if (el.scrollWidth > el.clientWidth + 0.5) fails.push('look settings: "' + el.textContent.trim().slice(0, 30) + '" is cut (' + el.scrollWidth + ' px in ' + el.clientWidth + ')');
+          if (el.scrollHeight > el.clientHeight + 1.5) fails.push('look settings: "' + el.textContent.trim().slice(0, 30) + '" is cut (' + el.scrollHeight + ' px high in ' + el.clientHeight + ')');
         }
+        const foot = set.querySelector('.wk-foot');
+        const sfoot = sheet.querySelector('.w-sfoot');
+        if (foot && sfoot && meet(R(foot), R(sfoot))) fails.push('look settings: the foot line "' + foot.textContent.trim().slice(0, 30) + '" overlaps the saved-items line');
+        if (!sfoot || !R(sfoot).h) fails.push('look settings: the saved-items foot is not shown');
         if (set.querySelectorAll('.ln-row').length < 4) fails.push('look settings: the section has fewer than three controls');
         return { fails, mode };
       }
@@ -2003,6 +2010,7 @@ try {
     'tune-text': (v) => v.name === 'Look settings, sheet, the drive-in (five settings)',
     'tune-cut': (v) => v.name === 'Look settings, sheet, the sun',
     'tune-clip': (v) => v.name === 'Look settings, sheet, a look per kind, the drive-in',
+    'tune-foot': (v) => v.name === 'Look settings, sheet, a look per kind, the drive-in',
     'tune-row': (v) => v.name === 'Look settings, sheet, the sun',
   };
   const breakOn = BREAK_ON[overflow] ? VARIANTS.filter(BREAK_ON[overflow]) : VARIANTS.slice(0, 1);

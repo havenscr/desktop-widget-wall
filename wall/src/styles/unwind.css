@@ -2018,7 +2018,10 @@
 .wk-foot {
   white-space: normal;
   text-overflow: clip;
-  min-height: 22px;
+}
+/* Only the rows give way when the sheet reaches its height. */
+.wk-set > :not(.wk-rows) {
+  flex: none;
 }
 .w-sheet.w-tune .w-hint {
   margin-top: 4px;

@@ -311,6 +311,7 @@ state('unwind', 'watch: settings, four looks per kind', `${WM}&wlist=many&wlook=
 state('unwind', 'look settings: sheet, the sun at 380 px', `${WM}&wlist=three&wlook=sun&wplay=0&wsheet=one&wtune=sun.size=380`, TIMES.night);
 state('unwind', 'look settings: sheet, whole sky at its usual', `${WM}&wlist=three&wlook=sky&wplay=0&wsheet=one&wtune=sky.floor=1`, TIMES.night);
 state('unwind', 'look settings: sheet, a look per kind, the drive-in tuned', `${WM}&wlist=many&wplay=2&wsheet=kind&wtune=drivein.size=90,drivein.sign=0`, TIMES.night);
+state('unwind', 'look settings: sheet, the hologram, see-through at 40', `${WM}&wlist=three&wlook=holo&wplay=0&wsheet=one&wtune=holo.see=40`, TIMES.night);
 state('unwind', 'look settings: the sun small', `${WM}&wlist=three&wlook=sun&wplay=0&wtune=sun.size=280,sun.up=60,sun.glow=100`, TIMES.night);
 state('unwind', 'look settings: the sun large and low', `${WM}&wlist=three&wlook=sun&wplay=0&wtune=sun.up=-60,sun.glow=20,sun.streak=0`, TIMES.dusk);
 for (const soft of [0, 120, 200]) state('unwind', `look settings: whole sky, soft edge ${soft}`, `${WM}&wlist=three&wlook=sky&wplay=0&wposter=bright&wtune=sky.soft=${soft}`, TIMES.noon);
@@ -866,6 +867,7 @@ EXPECT.push(
 
 EXPECT.push(
   ['unwind', 'look settings: sheet, the sun at 380 px', ['The sun', 'Floor streak', '380 px, smaller than usual', 'Reset to my usual', 'Each look keeps its own settings. Changes show at once.']],
+  ['unwind', 'look settings: sheet, the hologram', ['Hologram', 'See-through', '40, clearer than usual', 'Beam', 'Reset to my usual']],
   ['unwind', 'look settings: sheet, whole sky at its usual', ['Whole sky', 'Soft edge', '120 px, your usual', 'Saved here:', 'Each look keeps its own settings. Changes show at once.']],
   ['unwind', 'look settings: sheet, a look per kind', ['Settings for', 'A look keeps its own settings, whatever kind of video plays in it. Changes show at once.', '90%, smaller than usual', 'Off']],
 );
