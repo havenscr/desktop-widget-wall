@@ -154,13 +154,16 @@ pub fn record(core: &mut Core, id: &str, state: &str, reason: Option<&str>, now:
     record_detail(core, id, state, reason, now, None);
 }
 
-fn log_account_key(id: &str) -> &str {
-    if (1..=16).contains(&id.len()) && id.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-') { id } else { "account-1" }
+fn log_account_key(id: &str, position: usize) -> String {
+    if (1..=16).contains(&id.len()) && id.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-') { id.into() } else { format!("account-{}", position.max(1)) }
 }
 
 /// `record`, plus the Graph failure details when there are some. A line with details is
 /// written for every failure, changed state or not, so each failed call can be traced.
 pub fn record_detail(core: &mut Core, id: &str, state: &str, reason: Option<&str>, now: u64, detail: Option<&Diag>) {
+    record_detail_at(core,id,1,state,reason,now,detail);
+}
+fn record_detail_at(core: &mut Core, id: &str, position: usize, state: &str, reason: Option<&str>, now: u64, detail: Option<&Diag>) {
     let reason = reason.filter(|r| is_valid_reason(r)).map(str::to_string);
     let new = (state.to_string(), reason);
     let old = core.states.get(id).map(|(s, _)| s.as_str()).unwrap_or("start").to_string();
@@ -170,8 +173,8 @@ pub fn record_detail(core: &mut Core, id: &str, state: &str, reason: Option<&str
     // The queue is drained after every read; the cap only guards a caller that never drains.
     if core.log_lines.len() < 64 {
         let line = match detail {
-            Some(d) => format_line_detail(&utc_iso(now), log_account_key(id), &old, state, new.1.as_deref(), &d.log_fields()),
-            None => format_line(&utc_iso(now), log_account_key(id), &old, state, new.1.as_deref()),
+            Some(d) => format_line_detail(&utc_iso(now), &log_account_key(id,position), &old, state, new.1.as_deref(), &d.log_fields()),
+            None => format_line(&utc_iso(now), &log_account_key(id,position), &old, state, new.1.as_deref()),
         };
         core.log_lines.push(line);
     }
@@ -592,7 +595,7 @@ fn settle(
             continue;
         }
         let Read { state, meetings: fresh, reason, diag, .. } = read;
-        record_detail(core, &acct.id, state.as_str(), reason.as_deref(), now, diag.as_ref());
+        record_detail_at(core, &acct.id, acct.position, state.as_str(), reason.as_deref(), now, diag.as_ref());
         let list = match fresh {
             Some(l) => {
                 if keep_last {
@@ -867,7 +870,7 @@ pub fn complete_sign_in(
             *core.generations.entry(acct.id.clone()).or_insert(0) += 1;
             core.pending.remove(&acct.id);
             core.cache.insert(acct.id.clone(), Cached { access, expires_at: now + expires_in });
-            record(core, &acct.id, "signed-in", None, now);
+            record_detail_at(core, &acct.id, acct.position, "signed-in", None, now, None);
             Ok(())
         }
         // A reply without a refresh token is a 2xx that cannot be used.
@@ -897,7 +900,7 @@ fn sign_in_network_reason(detail: Option<&Diag>) -> String {
 fn sign_in_failed(core: &Mutex<Core>, acct: &Account, reason: &str, now: u64, detail: Option<&Diag>) -> String {
     let reason = if is_valid_reason(reason) { reason.to_string() } else { "token-400".to_string() };
     let mut core = core.lock().unwrap_or_else(|e| e.into_inner());
-    record_detail(&mut core, &acct.id, "sign-in-failed", Some(&reason), now, detail);
+    record_detail_at(&mut core, &acct.id, acct.position, "sign-in-failed", Some(&reason), now, detail);
     reason
 }
 
@@ -931,8 +934,9 @@ mod tests {
 
     #[test]
     fn log_account_keys_are_bounded_and_never_email_like() {
-        assert_eq!(log_account_key("hc-2"), "hc-2");
-        assert_eq!(log_account_key("person@example.test"), "account-1");
+        assert_eq!(log_account_key("hc-2",1), "hc-2");
+        assert_eq!(log_account_key("first@example.test",1), "account-1");
+        assert_eq!(log_account_key("second@example.test",2), "account-2");
         let mut core=Core::default(); record(&mut core,"person@example.test","unavailable",Some("token-network"),NOW);
         assert!(core.log_lines[0].contains(" account-1 "));
         assert!(!core.log_lines[0].contains('@'));
@@ -1020,6 +1024,7 @@ mod tests {
             label: id.to_uppercase(),
             client_id: "00000000-0000-0000-0000-000000000000".into(),
             tenant: "common".into(),
+            position: 1,
         }
     }
 
