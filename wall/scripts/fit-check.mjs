@@ -155,6 +155,7 @@ const EXPECT = {
   'onair-box': /^ *FAIL on air: \.oa-card .*outside its planned box/m,
   'onair-notes': /^ *FAIL on air: the notes are cut /m,
   'onair-keys': /^ *FAIL on air: key tile ".*" is \d+ x \d+ px/m,
+  'onair-watt': /^ *FAIL on air: Watt .* overlaps /m,
   // lines controls
   'lines-size': /^ *FAIL lines: the sheet is \d+ px tall/m,
   'lines-control': /^ *FAIL lines: control ".*" is [\d.]+ px tall/m,
@@ -280,6 +281,8 @@ const OVERFLOWS = {
   'onair-box': '.onair .oa-card { width: 1400px !important; }',
   'onair-notes': '.onair .oa-note { font-size: 40px !important; } .onair .oa-note[hidden] { display: flex !important; }',
   'onair-keys': '.onair .oa-keys .deck-tile.key-tile { height: 20px !important; min-height: 0 !important; padding: 0 !important; }',
+  // on air: Watt lifted onto the notes card
+  'onair-watt': '.watt-sheep, .watt-hit { margin-top: -300px !important; }',
   // lines controls: a 900 px panel, a 24 px chip, a 12 px label, the clip removed (a URL knob, LINES_BREAK_Q).
   'lines-size': '.ln-panel { height: 900px !important; }',
   'lines-control': '.ln-chips button { height: 24px !important; }',
@@ -615,7 +618,7 @@ VARIANTS.push(
 );
 // On Air: the three columns in their planned boxes above the strip in every state, the notes
 // card with long notes (the rest behind "+N more"), forty parts, no file, a refused file and a full marks file.
-const onAirQ = (knobs) => `?hz=work&at=${encodeURIComponent('2026-11-11T10:24:00-08:00')}&clock=review&weather=ok&screen=onair&${knobs}`;
+const onAirQ = (knobs) => `?hz=onair&at=${encodeURIComponent('2026-11-11T10:24:00-08:00')}&clock=review&weather=ok&screen=onair&${knobs}`;
 const ONAIR = ['.onair .oa-left', '.onair .oa-card', '.onair .oa-right', '.onair .oa-card-foot', '.onair .oa-mark'];
 VARIANTS.push(
   { name: 'On Air, typical: running at 42:13', q: onAirQ('show=typical&marks=2&oatimer=run'), checks: ONAIR, onair: true },
@@ -623,6 +626,10 @@ VARIANTS.push(
   { name: 'On Air, forty parts', q: onAirQ('show=forty&marks=2&oatimer=run'), checks: ONAIR, onair: true },
   { name: 'On Air, no run-of-show.txt yet', q: onAirQ('show=missing&marks=0&oatimer=idle'), checks: ONAIR, onair: true },
   { name: 'On Air, a refused file', q: onAirQ('show=refused&marks=0&oatimer=idle'), checks: ONAIR, onair: true },
+  { name: 'On Air, Watt standing under the notes card', q: onAirQ('show=typical&marks=2&oatimer=run&wattspot=1000'), checks: ONAIR, onair: true },
+  { name: 'On Air, Watt set down at the far left', q: onAirQ('show=typical&marks=2&oatimer=run&wattspot=200'), checks: ONAIR, onair: true },
+  { name: 'On Air, Watt set down at the far right', q: onAirQ('show=typical&marks=2&oatimer=run&wattspot=2300'), checks: ONAIR, onair: true },
+  { name: 'On Air, the timer stopped itself at 24 hours', q: onAirQ('show=typical&marks=2&oatimer=limit'), checks: ONAIR, onair: true },
   { name: 'On Air, marks.txt full after a click, recording', q: onAirQ('show=typical&marks=full&oatimer=run&rec=1'), checks: ONAIR, onair: true, click: '.oa-mark-btn' },
 );
 // keys style: a small PNG reader (8-bit RGB or RGBA, not interlaced, as Chromium writes them) and contrast.
@@ -1550,6 +1557,18 @@ try {
         else if (hidden > 0 && moreShown !== '+' + hidden + ' more') fails.push('on air: the notes are cut: ' + hidden + ' hidden but the more line reads "' + moreShown + '"');
         else if (hidden === 0 && moreShown !== '') fails.push('on air: the more line reads "' + moreShown + '" with no note hidden');
       }
+      // Watt stands on the ground line below the columns: his box (and his click box) overlaps none of them.
+      const wattBoxes = [['Watt', '.watt-sheep'], ['Watt click box', '.watt-hit']];
+      for (const [label, sel] of wattBoxes) {
+        const w = document.querySelector(sel);
+        if (!w) { if (sel === '.watt-hit' && want) fails.push('on air: Watt is not on the page'); continue; }
+        const wb = w.getBoundingClientRect();
+        if (wb.width === 0 && wb.height === 0) continue;
+        for (const csel of ['.oa-left', '.oa-card', '.oa-right']) {
+          const cb = document.querySelector('.onair ' + csel)?.getBoundingClientRect();
+          if (cb && wb.left < cb.right && cb.left < wb.right && wb.top < cb.bottom && cb.top < wb.bottom) fails.push('on air: ' + label + ' at x ' + r1(wb.left) + ' to ' + r1(wb.right) + ', y ' + r1(wb.top) + ' to ' + r1(wb.bottom) + ' overlaps ' + csel + ' (y ' + r1(cb.top) + ' to ' + r1(cb.bottom) + ')');
+        }
+      }
       const tiles = [...document.querySelectorAll('.onair .oa-keys .key-tile')];
       if (tiles.length !== 4) fails.push('on air: ' + tiles.length + ' recording keys, expected 4');
       for (const t of tiles) {
@@ -1647,6 +1666,7 @@ try {
     'onair-box': (v) => v.name === 'On Air, typical: running at 42:13',
     'onair-notes': (v) => v.name === 'On Air, long names and twelve long notes',
     'onair-keys': (v) => v.name === 'On Air, typical: running at 42:13',
+    'onair-watt': (v) => v.name === 'On Air, Watt standing under the notes card',
     // lines controls
     'lines-size': (v) => v.name === 'Lines settings sheet',
     'lines-control': (v) => v.name === 'Lines settings sheet',

@@ -147,7 +147,7 @@ export function clockText(ms: number): string {
 /** The line under the timer: when and how it started, and that no stream service is connected. */
 export function startedLine(s: Saved, now: number): string {
   const tail = 'No stream service connected.';
-  if (atLimit(s)) return `Stopped at 24 hours. Reset to start again. ${tail}`;
+  if (atLimit(s)) return 'Stopped at 24 hours. Reset to start again.';
   if (s.firstStartAt === null && elapsedMs(s, now) === 0) return `Not started. Start it when the show begins. ${tail}`;
   const started = s.firstStartAt !== null ? `Started ${clockText(s.firstStartAt)} by hand` : 'Started by hand';
   if (!s.running && s.stoppedAt !== null) return `${started}, stopped at ${clockText(s.stoppedAt)}. ${tail}`;

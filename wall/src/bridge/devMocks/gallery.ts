@@ -22,7 +22,7 @@ import { knob } from './long';
  *   ?weather=ok|stale|down|cold   (stands in for the weather fetch)
  *   ?clock=review           (Date.now starts at the `?at=` moment and then runs, so screens that read it agree)
  *   ?focus=long               (a focus session running under a long title)
- *   ?wattspot=<x>             (Watt was set down at that x on every place: his stored spot, before he loads)
+ *   ?wattspot=<x>             (Watt was set down at that x on every place, On Air included: his stored spot, before he loads)
  */
 
 const now = () => (reviewNow ? reviewNow() : Date.now());
@@ -295,7 +295,7 @@ export function registerGalleryMocks(): void {
   const spot = Number(knob('wattspot'));
   if (knob('wattspot') && Number.isFinite(spot)) {
     try {
-      window.localStorage.setItem('wall2.watt', JSON.stringify({ spots: { work: spot, home: spot, meet: spot, unwind: spot } }));
+      window.localStorage.setItem('wall2.watt', JSON.stringify({ spots: { work: spot, home: spot, meet: spot, onair: spot, unwind: spot } }));
     } catch {
       /* storage blocked: he stands where he always does */
     }

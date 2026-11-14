@@ -1,4 +1,4 @@
-import { STORAGE_KEY, type MarkResult, type Part, type Saved, type Show } from '../../onair/model';
+import { MAX_SHOW_MS, STORAGE_KEY, type MarkResult, type Part, type Saved, type Show } from '../../onair/model';
 import { usePlaceStore } from '../../state/places';
 import { mocks } from '../tauri';
 import { knob } from './long';
@@ -11,7 +11,8 @@ import { knob } from './long';
  *   ?show=typical|one|long|forty|empty|missing|refused|down
  *                                      the run of show (`down`: the read itself fails)
  *   ?marks=0|2|full                    marks so far today (`full`: marks.txt refuses the next mark)
- *   ?oatimer=run|stopped|idle          the stored timer: running at 42:13, stopped at 42:13, never started
+ *   ?oatimer=run|stopped|idle|limit    the stored timer: running at 42:13, stopped at 42:13, never started, stopped itself at 24 hours
+ *   ?openfail=show|marks               Open file (or Open marks.txt) fails
  *
  * Open file turns `missing` into the starter's three parts, as the app does.
  */
@@ -52,6 +53,7 @@ function savedTimer(kind: string | null, now: number): Saved | null {
   const at = 42 * 60_000 + 13_000;
   if (kind === 'run') return { running: true, startedAt: now - at, accumulatedMs: 0, firstStartAt: now - at, stoppedAt: null, partIndex: 2, partSinceMs: at - 13 * 60_000 };
   if (kind === 'stopped') return { running: false, startedAt: null, accumulatedMs: at, firstStartAt: now - at - 3 * 60_000, stoppedAt: now - 3 * 60_000, partIndex: 2, partSinceMs: at - 13 * 60_000 };
+  if (kind === 'limit') return { running: false, startedAt: null, accumulatedMs: MAX_SHOW_MS, firstStartAt: now - MAX_SHOW_MS - 3_600_000, stoppedAt: now - 3_600_000, partIndex: 4, partSinceMs: MAX_SHOW_MS - 25 * 60_000 };
   if (kind === 'idle') return { running: false, startedAt: null, accumulatedMs: 0, firstStartAt: null, stoppedAt: null, partIndex: 0, partSinceMs: 0 };
   return null;
 }
@@ -94,6 +96,7 @@ export function registerOnAirMocks(): void {
     return result();
   });
   mocks.set('wall2_onair_open', (args) => {
+    if (args?.which && args.which === knob('openfail')) throw 'failed';
     if (args?.which === 'show' && which === 'missing') which = 'starter';
     return undefined;
   });
