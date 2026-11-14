@@ -367,6 +367,44 @@ describe('review fixes: focus after a mouse click, and the keys on a button', ()
   });
 });
 
+describe('review fixes: the rail mark says what the video is doing', () => {
+  const tipText = async () => {
+    fireEvent.mouseEnter(unwindButton());
+    await flush(TIP_DELAY_MS);
+    const text = document.querySelector('.hover-tip')!.textContent;
+    fireEvent.mouseLeave(unwindButton());
+    return text;
+  };
+
+  it('playing shows the play mark, paused or waiting for a click shows the pause mark, an ended video shows none; a click goes to Watch while marked', async () => {
+    await playing();
+    await act(async () => usePlaceStore.getState().setActive('work'));
+    expect(unwindButton().querySelector('.rb-play:not(.rb-paused)')).not.toBeNull();
+    expect(await tipText()).toBe('Night drive mix is playing. Click to go to it.');
+
+    act(() => useWatchStore.getState().setPaused(true));
+    expect(unwindButton().querySelector('.rb-play.rb-paused')).not.toBeNull();
+    expect(unwindButton().getAttribute('aria-description')).toBe('Night drive mix is paused');
+    expect(await tipText()).toBe('Night drive mix is paused. Click to go to it.');
+
+    act(() => useWatchStore.getState().setPaused(false));
+    act(() => useWatchStore.getState().setNeedsClick(true));
+    expect(unwindButton().querySelector('.rb-play.rb-paused')).not.toBeNull();
+    expect(await tipText()).toBe('Night drive mix is paused. Click to go to it.');
+    await act(async () => fireEvent.click(unwindButton()));
+    expect(usePlaceStore.getState().active).toBe('unwind');
+    expect(useWatchStore.getState().tab).toBe('watch');
+
+    await act(async () => usePlaceStore.getState().setActive('work'));
+    act(() => useWatchStore.getState().setNeedsClick(false));
+    act(() => useWatchStore.getState().setReport({ ended: true }));
+    expect(unwindButton().querySelector('.rb-play')).toBeNull();
+    expect(unwindButton().getAttribute('aria-description')).toBeNull();
+    await act(async () => fireEvent.click(unwindButton()));
+    expect(usePlaceStore.getState().active).toBe('unwind');
+  });
+});
+
 describe('the message gate after the stage was out of sight', () => {
   it('reads messages only from this frame on the embed origin, and sends commands only there', async () => {
     await playing();

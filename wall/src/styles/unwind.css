@@ -1569,6 +1569,19 @@
   border-top: 3.5px solid transparent;
   border-bottom: 3.5px solid transparent;
 }
+/* Paused, or waiting for a click: a dimmer mark with two bars in place of the triangle. */
+.rb-play.rb-paused {
+  background: color-mix(in srgb, var(--cyan) 45%, #0e0a24);
+}
+.rb-play.rb-paused::after {
+  left: 5px;
+  top: 4px;
+  width: 2px;
+  height: 7px;
+  border: 0;
+  background: #0e0a24;
+  box-shadow: 3px 0 0 #0e0a24;
+}
 
 /* ---- Listen: 7A (cover on top, controls in the sky), 8B (Up next), 6A with 9A (the Spotify
    card in the upper right, its switch on top). Positions are in .unwind's own pixels (stage x

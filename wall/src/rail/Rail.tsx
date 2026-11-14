@@ -62,7 +62,9 @@ export function Rail() {
   // watch behaviour: a video playing out of sight (another place, or Listen) marks Unwind's button.
   const videoTab = useWatchStore((s) => s.tab);
   const video = useWatchStore((s) => s.playing?.label ?? null);
-  const videoAway = video !== null && !(active === 'unwind' && videoTab === 'watch');
+  // The mark says what the video is doing: playing, or paused (also while it waits for a click); an ended video has none.
+  const videoState = useWatchStore((s) => (s.playing === null || s.report.ended ? null : s.paused || s.needsClick ? 'paused' : 'playing'));
+  const videoAway = video !== null && videoState !== null && !(active === 'unwind' && videoTab === 'watch');
 
   const onKeyDown = (e: KeyboardEvent<HTMLElement>) => {
     if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
@@ -95,15 +97,15 @@ export function Rail() {
             type="button"
             className="rb"
             aria-label={label}
-            aria-description={alarm ? alarmChipText(alarms) : away ? `${video} is playing` : undefined}
+            aria-description={alarm ? alarmChipText(alarms) : away ? `${video} is ${videoState}` : undefined}
             aria-current={active === id ? 'page' : undefined}
             onClick={away ? goWatch : () => setActive(id)}
-            {...(alarm ? tip(`${alarmChipText(alarms)} open. Home lists them.`) : away ? tip(`${video} is playing. Click to go to it.`) : {})}
+            {...(alarm ? tip(`${alarmChipText(alarms)} open. Home lists them.`) : away ? tip(`${video} is ${videoState}. Click to go to it.`) : {})}
           >
             <span className="rb-ico">
               <Glyph size={30} stroke={1.8} aria-hidden="true" />
               {alarm && <i className="rb-alarm" aria-hidden="true" />}
-              {away && <i className="rb-play" aria-hidden="true" />}
+              {away && <i className={`rb-play${videoState === 'paused' ? ' rb-paused' : ''}`} aria-hidden="true" />}
             </span>
             {label}
           </button>
