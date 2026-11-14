@@ -867,10 +867,11 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
   band slots, reused every frame. No grid when silent, under reduced motion or in the review
   still; without `grid` the renderer makes exactly the canvas calls it made before (a golden
   call log test).
-- **Moon.** The Unwind camera draws the moon at (1230, 336) radius 44 (`MOON`), in the open
-  sky under Listen's player and left of the Spotify card, at least 40 px clear of every card, the
-  player and the clock, the same place on Watch with nothing on; its foot may touch the low ridge
-  there, which is drawn in front of it. It shows once the glide to Unwind has finished (it goes as
+- **Moon.** The Unwind camera draws the moon at (1490, 336) radius 44 (`MOON`), in the open
+  sky right of Listen's player, at least 40 px clear of every card, the player and the clock, the
+  same place on Watch with nothing on (and still 40 px clear in a Listen layout with the player
+  across the top and a Spotify card on the upper right); the slope of the ridge east of it may
+  touch its lower right edge, which is drawn in front of it. It shows once the glide to Unwind has finished (it goes as
   soon as a glide away starts); no other place does. A sky claim withholds it (`moonFor` in
   `sky.ts`): `noMoon`, or a claimed box within 40 px of its disc; its light on the lake goes with
   it. The review still `?hz=unwind` draws it, since that camera jumps straight there. The drawn

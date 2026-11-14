@@ -105,7 +105,7 @@ const EXPECT = {
   'watch-take': /^ *FAIL pointer at \.w-sky \.w-frame /m,
   // sky layers
   'sky-front': /^ *FAIL sky layers: the front canvas is hidden/m,
-  'sky-moon': /^ *FAIL sky layers: the moon at 1730,112,44 is \d+ px from /m,
+  'sky-moon': /^ *FAIL sky layers: the moon at 1230,336,44 is \d+ px from /m,
   'sky-always': /^ *FAIL sky layers: 1 front canvas with no look behind the land/m,
 };
 const OVERFLOWS = {
@@ -165,13 +165,13 @@ const OVERFLOWS = {
   // A refused autoplay that never lets the pointer reach the whole-sky picture.
   'watch-take': '.w-frame.w-take { pointer-events: none !important; }',
   // sky layers: the front canvas hidden (the whole sky's video no longer behind the land), the moon
-  // back at its old place (a URL knob, SKY_BREAK_Q), the front canvas mounted on a place that never asked.
+  // under Listen's player (a URL knob, SKY_BREAK_Q), the front canvas mounted on a place that never asked.
   'sky-front': '.horizon-front { display: none !important; }',
   'sky-moon': '',
   'sky-always': '',
 };
 // sky layers: breaks that need the horizon's development knobs in the URL, not a stylesheet.
-const SKY_BREAK_Q = { 'sky-moon': '&skymoon=1730,112,44', 'sky-always': '&sky=front' };
+const SKY_BREAK_Q = { 'sky-moon': '&skymoon=1230,336,44', 'sky-always': '&sky=front' };
 if (flag('self-test')) {
   const script = fileURLToPath(import.meta.url);
   let missed = 0;

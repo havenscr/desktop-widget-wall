@@ -268,7 +268,7 @@ describe('the moon under the sky claims', () => {
     );
     runFrame(100);
     expect(draw.mock.lastCall![1].moon).toEqual(MOON);
-    expect(MOON).toEqual([1230, 336, 44]);
+    expect(MOON).toEqual([1490, 336, 44]);
     const show = (claim: Omit<SkyClaim, 'front'> | null) => {
       rerender(
         <>
@@ -281,7 +281,7 @@ describe('the moon under the sky claims', () => {
     };
     expect(show({ noMoon: true })).not.toHaveProperty('moon');
     expect(show({ boxes: [[1150, 50, 810, 455]] })).not.toHaveProperty('moon');
-    expect(show({ boxes: [[1400, 50, 400, 300]] }).moon).toEqual(MOON); // a picture well clear of it
+    expect(show({ boxes: [[1650, 50, 300, 150]] }).moon).toEqual(MOON); // a picture well clear of it
     expect(show(null).moon).toEqual(MOON);
   });
 });
