@@ -304,26 +304,52 @@ fn read_token(app: &tauri::AppHandle) -> Option<String> {
 /// clear, so it is refused. `base` is a checked `scheme://host[:port]`; case does not matter.
 pub(crate) fn token_may_go_to(base: &str) -> bool {
     let b = base.trim().to_ascii_lowercase();
-    if b.starts_with("https://") {
-        return true;
-    }
-    let Some(rest) = b.strip_prefix("http://") else {
+    let rest = if let Some(r) = b.strip_prefix("https://") {
+        r
+    } else if let Some(r) = b.strip_prefix("http://") {
+        r
+    } else {
         return false;
     };
-    let host = if let Some(inner) = rest.strip_prefix('[') {
+    // Safe on its own, whatever checked the base before: only `host[:port]` may follow the
+    // scheme. No userinfo (`@`), path, query, fragment, backslash, space or control character.
+    if rest.is_empty() || rest.chars().any(|c| matches!(c, '@' | '/' | '\\' | '?' | '#') || c.is_whitespace() || c.is_control()) {
+        return false;
+    }
+    let (host, port) = if let Some(inner) = rest.strip_prefix('[') {
         match inner.find(']') {
-            Some(end) => &inner[..end],
+            Some(end) => (&inner[..end], &inner[end + 1..]),
             None => return false,
         }
     } else {
-        rest.split(|c: char| c == ':' || c == '/').next().unwrap_or("")
+        match rest.find(':') {
+            Some(i) => (&rest[..i], &rest[i..]),
+            None => (rest, ""),
+        }
     };
+    // The port, when there is one, is 1 to 5 digits and nothing else.
+    if !port.is_empty() {
+        let digits = match port.strip_prefix(':') {
+            Some(d) => d,
+            None => return false,
+        };
+        if digits.is_empty() || digits.len() > 5 || !digits.bytes().all(|c| c.is_ascii_digit()) {
+            return false;
+        }
+    }
+    if host.is_empty() || host.ends_with('.') {
+        return false;
+    }
+    if b.starts_with("https://") {
+        return true;
+    }
     if host == "localhost" || host == "::1" {
         return true;
     }
     if let Some(name) = host.strip_suffix(".ts.net") {
-        return !name.is_empty() && !name.starts_with('.');
+        return !name.is_empty() && !name.starts_with('.') && name.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'.');
     }
+    // Only a plain dotted quad: `127.1`, octal, hex and integer forms do not parse here.
     match host.parse::<std::net::Ipv4Addr>() {
         Ok(ip) => {
             let o = ip.octets();
@@ -616,6 +642,30 @@ mod tests {
             "http://[fe80::1]",
             "ftp://127.0.0.1",
             "",
+            // Userinfo, a path, a query, a fragment or a backslash after the host.
+            "http://127.0.0.1:80@evil.example",
+            "http://a.ts.net:80@evil.example",
+            "http://user@127.0.0.1",
+            "https://user@home.test",
+            "http://127.0.0.1/x",
+            "https://home.test/x",
+            "http://127.0.0.1?x",
+            "http://127.0.0.1#x",
+            "http://127.0.0.1\\x",
+            // A trailing dot, a bad port.
+            "http://localhost.",
+            "http://box.tail1234.ts.net.",
+            "https://home.test.",
+            "http://127.0.0.1:",
+            "http://127.0.0.1:80x",
+            "http://127.0.0.1:123456",
+            // Octal, hex, integer and short forms of loopback; a mapped IPv6 address.
+            "http://0177.0.0.1",
+            "http://0x7f.0.0.1",
+            "http://2130706433",
+            "http://127.1",
+            "http://[::ffff:127.0.0.1]",
+            "http://[::ffff:7f00:1]",
         ] {
             assert!(!token_may_go_to(no), "{no} must be refused");
         }

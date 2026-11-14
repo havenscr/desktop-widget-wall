@@ -1569,7 +1569,8 @@ async fn open_task_manager() -> Result<(), String> {
 
 /// Open a file using the system default application
 #[tauri::command]
-async fn open_file(path: String) -> Result<(), String> {
+async fn open_file(window: tauri::WebviewWindow, path: String) -> Result<(), String> {
+    old_window_only(window.label())?;
     tauri::async_runtime::spawn_blocking(move || {
         std::process::Command::new("cmd")
             .args(["/C", "start", "", &path])
@@ -1583,7 +1584,8 @@ async fn open_file(path: String) -> Result<(), String> {
 
 /// Copy a file to the Windows clipboard (like right-click -> Copy in Explorer)
 #[tauri::command]
-async fn copy_file_to_clipboard(path: String) -> Result<(), String> {
+async fn copy_file_to_clipboard(window: tauri::WebviewWindow, path: String) -> Result<(), String> {
+    old_window_only(window.label())?;
     use std::ptr;
     use windows::Win32::System::DataExchange::{
         CloseClipboard, EmptyClipboard, OpenClipboard, SetClipboardData,
@@ -1656,7 +1658,8 @@ async fn copy_file_to_clipboard(path: String) -> Result<(), String> {
 
 /// Open File Explorer showing the folder containing a file, centered on main monitor
 #[tauri::command]
-async fn open_folder_in_explorer(path: String) -> Result<(), String> {
+async fn open_folder_in_explorer(window: tauri::WebviewWindow, path: String) -> Result<(), String> {
+    old_window_only(window.label())?;
     use windows::Win32::Foundation::{BOOL, HWND, LPARAM};
     use windows::Win32::Graphics::Gdi::{
         GetMonitorInfoW, MonitorFromPoint, MONITORINFO, MONITOR_DEFAULTTOPRIMARY,
@@ -3548,7 +3551,15 @@ fn get_config_dir() -> Result<PathBuf, String> {
 /// a NUL, empty, too long) is refused before any path is built, so a key can never point
 /// at another file (such as Wall 2's `feeds.json`, which holds the desk token).
 fn widget_config_key_ok(key: &str) -> bool {
-    !key.is_empty() && key.len() <= 64 && key.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+    !key.is_empty() && key.len() <= 64 && key.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-') && !reserved_device_name(key)
+}
+
+/// Windows device names (`CON`, `PRN`, `AUX`, `NUL`, `COM1` to `COM9`, `LPT1` to `LPT9`, any
+/// case): as a file name they open the device, not a file in the config folder.
+fn reserved_device_name(key: &str) -> bool {
+    let k = key.to_ascii_uppercase();
+    let b = k.as_bytes();
+    matches!(k.as_str(), "CON" | "PRN" | "AUX" | "NUL") || (b.len() == 4 && (k.starts_with("COM") || k.starts_with("LPT")) && (b'1'..=b'9').contains(&b[3]))
 }
 
 /// Only the old app's window calls the widget config commands (`src/public/scripts`);
@@ -3557,11 +3568,20 @@ fn widget_config_caller_ok(label: &str) -> bool {
     label == MAIN_LABEL
 }
 
+/// The old app's commands that take a key or a path from the page run only for its `main`
+/// window: the widget config commands, and `open_file`, `copy_file_to_clipboard` and
+/// `open_folder_in_explorer` (only `src/public/scripts/widgets/recent-files.js` calls them).
+fn old_window_only(label: &str) -> Result<(), String> {
+    if widget_config_caller_ok(label) {
+        Ok(())
+    } else {
+        Err("forbidden".to_string())
+    }
+}
+
 /// The checks both widget config commands make first, in this order: the window, then the key.
 fn widget_config_gate(label: &str, key: &str) -> Result<(), String> {
-    if !widget_config_caller_ok(label) {
-        return Err("forbidden".to_string());
-    }
+    old_window_only(label)?;
     if !widget_config_key_ok(key) {
         return Err("invalid key".to_string());
     }
@@ -4111,7 +4131,7 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::{extract_app_name, fallback_app_name, parse_dnd_mode, widget_config_gate, widget_config_key_ok};
+    use super::{extract_app_name, fallback_app_name, old_window_only, parse_dnd_mode, widget_config_gate, widget_config_key_ok};
 
     #[test]
     fn widget_config_keys_never_leave_the_config_folder() {
@@ -4123,6 +4143,24 @@ mod tests {
         for good in ["countdown-config", "focus-timer-config", "msal_token_hc", "A9_-z"] {
             assert!(widget_config_key_ok(good), "{good:?} must be allowed");
         }
+    }
+
+    #[test]
+    fn widget_config_keys_are_never_device_names() {
+        for bad in ["CON", "con", "Prn", "aux", "NUL", "nul", "COM1", "com9", "LPT1", "lpt9", "Com5"] {
+            assert!(!widget_config_key_ok(bad), "{bad:?} must be refused");
+        }
+        for good in ["CONFIG", "console", "COM", "COM0", "COM10", "LPT", "nul-x", "aux_1", "com1x"] {
+            assert!(widget_config_key_ok(good), "{good:?} must be allowed");
+        }
+    }
+
+    #[test]
+    fn file_commands_are_for_the_old_window_only() {
+        assert_eq!(old_window_only("wall2"), Err("forbidden".to_string()));
+        assert_eq!(old_window_only("other"), Err("forbidden".to_string()));
+        assert_eq!(old_window_only(""), Err("forbidden".to_string()));
+        assert_eq!(old_window_only("main"), Ok(()));
     }
 
     #[test]
