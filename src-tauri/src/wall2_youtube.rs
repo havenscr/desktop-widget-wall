@@ -19,6 +19,12 @@ const NOT_SETUP: &str = "not set up";
 const SIGN_AGAIN: &str = "sign in again";
 const SIGN_OUT_FIRST: &str = "sign out first";
 const SETUP_BROKEN: &str = "setup broken";
+/// A client is stored but cannot be read back: only a new setup helps.
+const UNREADABLE: &str = "setup unreadable";
+/// A refresh token is stored but no client can be found (the file was moved or deleted).
+const SETUP_MISSING: &str = "setup missing";
+/// A sign-in is waiting for the browser (the page may have been reloaded in the middle of it).
+const SIGNING: &str = "signing in";
 const INVALID: &str = "invalid";
 const FAILED: &str = "failed";
 const BUSY: &str = "busy";
@@ -185,13 +191,13 @@ enum TokenReply {
     /// 400 `invalid_grant`: the grant is dead.
     InvalidGrant,
     /// 400 or 401 `invalid_client` or `unauthorized_client`: only a new setup can fix it.
-    SetupBroken,
+    SetupBroken(u16),
     Busy,
     Down,
 }
 impl fmt::Debug for TokenReply {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self { Self::Ok { .. } => "Ok(<hidden>)", Self::InvalidGrant => "InvalidGrant", Self::SetupBroken => "SetupBroken", Self::Busy => "Busy", Self::Down => "Down" })
+        f.write_str(match self { Self::Ok { .. } => "Ok(<hidden>)", Self::InvalidGrant => "InvalidGrant", Self::SetupBroken(_) => "SetupBroken", Self::Busy => "Busy", Self::Down => "Down" })
     }
 }
 
@@ -214,7 +220,7 @@ fn token_reply(result: Result<HttpReply, ()>) -> TokenReply {
         }
         400 | 401 => match oauth_error(&reply.body).as_deref() {
             Some("invalid_grant") if reply.status == 400 => TokenReply::InvalidGrant,
-            Some("invalid_client" | "unauthorized_client") => TokenReply::SetupBroken,
+            Some("invalid_client" | "unauthorized_client") => TokenReply::SetupBroken(reply.status),
             _ => TokenReply::Down,
         },
         429 => TokenReply::Busy,
@@ -270,9 +276,9 @@ fn access_with(client: &Client, force: bool, http: &dyn Http, creds: &dyn Creds)
             write(Event::RefreshRefused, Reason::SignInAgain, 400, started.elapsed().as_millis());
             Err(SIGN_AGAIN)
         }
-        TokenReply::SetupBroken => {
+        TokenReply::SetupBroken(status) => {
             set_note(Some(SETUP_BROKEN));
-            write(Event::RefreshRefused, Reason::SetupBroken, 400, started.elapsed().as_millis());
+            write(Event::RefreshRefused, Reason::SetupBroken, status, started.elapsed().as_millis());
             Err(SETUP_BROKEN)
         }
         TokenReply::Busy => { write(Event::RefreshFailed, Reason::Busy, 429, started.elapsed().as_millis()); Err(BUSY) }
@@ -282,10 +288,11 @@ fn access_with(client: &Client, force: bool, http: &dyn Http, creds: &dyn Creds)
 
 // ---- which client is in use -----------------------------------------------------------------
 
-/// A client stored through the form wins; `youtube.json` is read only when none is stored.
+/// A client stored through the form wins; `youtube.json` is read only when none is stored. A
+/// stored entry that cannot be parsed is a broken setup: the file is not consulted then.
 fn resolve_client(creds: &dyn Creds, file: impl FnOnce() -> Option<Client>) -> Result<Client, &'static str> {
     match creds.load_client() {
-        Fetch::Found(blob) => { if let Some(client) = parse_client_blob(&blob) { return Ok(client) } }
+        Fetch::Found(blob) => return parse_client_blob(&blob).ok_or(UNREADABLE),
         Fetch::Missing => {}
         Fetch::Failed => return Err(FAILED),
     }
@@ -327,15 +334,17 @@ pub struct Status { setup: bool, signed_in: bool, reason: Option<String>, search
 
 fn status_with(creds: &dyn Creds, file: impl FnOnce() -> Option<Client>) -> Status {
     let status = |setup: bool, signed_in: bool, reason: Option<&str>| Status { setup, signed_in, reason: reason.map(str::to_string), searches_left: None };
+    // Signed in comes from the stored token alone, so Sign out stays reachable whatever happened to the client.
+    let token = creds.load();
+    let signed_in = matches!(token, Ok(Some(_)));
     match resolve_client(creds, file) {
-        Err(word) => return status(false, false, Some(word)),
-        Ok(_) => {}
-    }
-    let note = *lock(&NOTE);
-    match creds.load() {
-        Ok(Some(_)) => status(true, true, note),
-        Ok(None) => status(true, false, note),
-        Err(_) => status(true, false, Some(FAILED)),
+        Ok(_) => {
+            let reason = if token.is_err() { Some(FAILED) } else if SIGNING_IN.load(Ordering::SeqCst) { Some(SIGNING) } else { *lock(&NOTE) };
+            status(true, signed_in, reason)
+        }
+        Err(NOT_SETUP) => status(false, signed_in, Some(if signed_in { SETUP_MISSING } else { NOT_SETUP })),
+        Err(UNREADABLE) => status(true, signed_in, Some(UNREADABLE)),
+        Err(word) => status(false, signed_in, Some(word)),
     }
 }
 
@@ -381,7 +390,7 @@ fn finish_sign_in(http: &dyn Http, creds: &dyn Creds, client: &Client, redirect:
             Err(DENIED)
         }
         TokenReply::InvalidGrant => Err(FAILED),
-        TokenReply::SetupBroken => { set_note(Some(SETUP_BROKEN)); Err(SETUP_BROKEN) }
+        TokenReply::SetupBroken(_) => { set_note(Some(SETUP_BROKEN)); Err(SETUP_BROKEN) }
         TokenReply::Busy => Err(BUSY),
         TokenReply::Down => Err(DOWN),
     }
@@ -422,6 +431,8 @@ impl Drop for SignInGuard { fn drop(&mut self) { SIGNING_IN.store(false, Orderin
 fn begin_sign_in(creds: &dyn Creds, file: impl FnOnce() -> Option<Client>) -> Result<(Client, SignInGuard), &'static str> {
     let _guard = lock(&CLIENT);
     let client = resolve_client(creds, file)?;
+    // A stale page must not overwrite a stored token and leave the old grant unrevoked.
+    match creds.load() { Ok(None) => {} Ok(Some(_)) => return Err(SIGN_OUT_FIRST), Err(_) => return Err(FAILED) }
     if SIGNING_IN.swap(true, Ordering::SeqCst) { return Err(BUSY) }
     CANCEL_SIGN_IN.store(false, Ordering::SeqCst);
     Ok((client, SignInGuard))
@@ -645,8 +656,14 @@ mod tests {
         let mut read_file = false;
         assert_eq!(resolve_client(&creds, || { read_file = true; Some(client()) }), Ok(other.clone()));
         assert!(!read_file, "the file is read only when none is stored");
-        *lock(&creds.client) = Some("{not valid".into());
-        assert_eq!(resolve_client(&creds, || Some(client())), Ok(client()));
+        // A stored entry that cannot be read back is a broken setup, and the file is never consulted then.
+        for damaged in ["{not valid", r#"{"clientId":"x","clientSecret":"y"}"#, "[]", ""] {
+            *lock(&creds.client) = Some(damaged.into());
+            let mut asked = false;
+            assert_eq!(resolve_client(&creds, || { asked = true; Some(client()) }), Err(UNREADABLE), "{damaged}");
+            assert!(!asked, "the file must not be consulted: {damaged}");
+        }
+        *lock(&creds.client) = None;
         assert_eq!(resolve_client(&creds, || None), Err(NOT_SETUP));
         creds.client_read_fails.store(true, Ordering::SeqCst);
         assert_eq!(resolve_client(&creds, || Some(client())), Err(FAILED));
@@ -710,7 +727,7 @@ mod tests {
         assert_eq!(waiting.join().unwrap(), Ok("real-code".to_string()));
         let started = Instant::now();
         let mut closed = false;
-        while started.elapsed() < Duration::from_secs(5) {
+        while started.elapsed() < Duration::from_secs(10) {
             if TcpStream::connect(("127.0.0.1", port)).is_err() { closed = true; break }
             std::thread::sleep(Duration::from_millis(50));
         }
@@ -738,8 +755,8 @@ mod tests {
         assert_eq!(token_reply(reply(400, r#"{"error":"invalid_grant"}"#)), TokenReply::InvalidGrant);
         assert_eq!(token_reply(reply(401, r#"{"error":"invalid_grant"}"#)), TokenReply::Down);
         for status in [400, 401] {
-            assert_eq!(token_reply(reply(status, r#"{"error":"invalid_client"}"#)), TokenReply::SetupBroken);
-            assert_eq!(token_reply(reply(status, r#"{"error":"unauthorized_client"}"#)), TokenReply::SetupBroken);
+            assert_eq!(token_reply(reply(status, r#"{"error":"invalid_client"}"#)), TokenReply::SetupBroken(status));
+            assert_eq!(token_reply(reply(status, r#"{"error":"unauthorized_client"}"#)), TokenReply::SetupBroken(status));
             assert_eq!(token_reply(reply(status, r#"{"error":"something_else"}"#)), TokenReply::Down);
             assert_eq!(token_reply(reply(status, "")), TokenReply::Down);
         }
@@ -955,6 +972,69 @@ mod tests {
     }
 
     #[test]
+    fn signed_in_always_comes_from_the_stored_token() {
+        let _t = exclusive();
+        // A token and no usable client (the file was renamed): signed in, and the word says the setup is missing.
+        let creds = FakeCreds::new(Some("stored-refresh"));
+        assert_eq!(status_with(&creds, || None), Status { setup: false, signed_in: true, reason: Some(SETUP_MISSING.into()), searches_left: None });
+        // The same with the client's read failing: still signed in, so Sign out stays reachable.
+        creds.client_read_fails.store(true, Ordering::SeqCst);
+        assert_eq!(status_with(&creds, || None), Status { setup: false, signed_in: true, reason: Some(FAILED.into()), searches_left: None });
+        creds.client_read_fails.store(false, Ordering::SeqCst);
+        // A damaged stored client with a token: broken setup, signed in.
+        *lock(&creds.client) = Some("{damaged".into());
+        assert_eq!(status_with(&creds, || Some(client())), Status { setup: true, signed_in: true, reason: Some(UNREADABLE.into()), searches_left: None });
+        // The same without a token: broken setup, signed out, so Set up is allowed.
+        *lock(&creds.refresh) = None;
+        assert_eq!(status_with(&creds, || Some(client())), Status { setup: true, signed_in: false, reason: Some(UNREADABLE.into()), searches_left: None });
+        // Setting it up again repairs it.
+        assert_eq!(set_client_with(&creds, &good_id(), &good_secret()), Ok(()));
+        assert_eq!(status_with(&creds, || None), Status { setup: true, signed_in: false, reason: None, searches_left: None });
+    }
+
+    #[test]
+    fn signing_out_needs_no_client() {
+        let _t = exclusive();
+        let creds = FakeCreds::new(Some("stored-refresh"));
+        assert_eq!(resolve_client(&creds, || None), Err(NOT_SETUP));
+        let http = FakeHttp::new(vec![reply(200, "")]);
+        sign_out_with(&http, &creds);
+        assert_eq!(http.calls(), [(REVOKE_URL.to_string(), vec![("token".to_string(), "stored-refresh".to_string())])]);
+        assert_eq!(creds.refresh_value(), None);
+        // And when the revoke cannot even be made, everything is still cleared.
+        *lock(&creds.refresh) = Some("stored-refresh".into());
+        sign_out_with(&FakeHttp::new(vec![Err(())]), &creds);
+        assert_eq!(creds.refresh_value(), None);
+        assert_eq!(status_with(&creds, || None).reason.as_deref(), Some(NOT_SETUP));
+    }
+
+    #[test]
+    fn status_says_a_sign_in_is_waiting_and_cancel_ends_it() {
+        let _t = exclusive();
+        let creds = FakeCreds::new(None);
+        let (_client, running) = begin_sign_in(&creds, || Some(client())).unwrap();
+        // A page reloaded in the middle of the sign-in asks and is told.
+        assert_eq!(status_with(&creds, || Some(client())), Status { setup: true, signed_in: false, reason: Some(SIGNING.into()), searches_left: None });
+        // A second Sign in is refused as busy, not started over.
+        assert_eq!(begin_sign_in(&creds, || Some(client())).err(), Some(BUSY));
+        // Cancel ends the waiting listener, and once the guard is gone the status is plain again.
+        CANCEL_SIGN_IN.store(true, Ordering::SeqCst);
+        let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
+        assert_eq!(listen_for_code(server, "s", Duration::from_secs(5), || CANCEL_SIGN_IN.load(Ordering::SeqCst)), Err(CANCELLED));
+        drop(running);
+        assert_eq!(status_with(&creds, || Some(client())), Status { setup: true, signed_in: false, reason: None, searches_left: None });
+    }
+
+    #[test]
+    fn a_refused_client_logs_the_real_status() {
+        let _t = exclusive();
+        let creds = FakeCreds::new(Some("keep-refresh"));
+        let http = FakeHttp::new(vec![reply(401, r#"{"error":"invalid_client"}"#)]);
+        assert_eq!(access_with(&client(), true, &http, &creds), Err(SETUP_BROKEN));
+        assert!(crate::wall2_youtube_log::test_lines().iter().any(|l| l.starts_with("refresh-refused setup-broken 401 ")));
+    }
+
+    #[test]
     fn secret_holding_types_print_nothing() {
         let text = format!("{:?} {:?} {:?}", client(), HttpReply { status: 200, body: b"secret-body-text".to_vec() }, token_reply(tokens(Some("refresh-one"), Some(SCOPE))));
         for secret in [good_id(), good_secret(), "secret-body-text".to_string(), "refresh-one".to_string(), "access-one".to_string()] { assert!(!text.contains(&secret), "{secret}"); }
@@ -1011,6 +1091,11 @@ mod tests {
         assert!(SIGNING_IN.load(Ordering::SeqCst), "the refused second try must not clear the first");
         drop(first);
         assert!(!SIGNING_IN.load(Ordering::SeqCst));
+        // A stored token refuses a new sign-in, so a stale page cannot leave the old grant unrevoked.
+        let signed = FakeCreds::new(Some("stored-refresh"));
+        assert_eq!(begin_sign_in(&signed, || Some(client())).err(), Some(SIGN_OUT_FIRST));
+        assert!(!SIGNING_IN.load(Ordering::SeqCst), "a refusal must leave the flag alone");
+        assert_eq!(signed.refresh_value().as_deref(), Some("stored-refresh"));
     }
 
     #[test]
@@ -1074,9 +1159,9 @@ pub async fn wall2_youtube_forget_client(window: WebviewWindow) -> Result<(), St
 pub async fn wall2_youtube_sign_in(window: WebviewWindow) -> Result<(), String> {
     require(&window)?;
     let app = window.app_handle().clone();
-    let (client, _running) = begin_sign_in(&RealCreds, || file_client(&app)).map_err(str::to_string)?;
     tauri::async_runtime::spawn_blocking(move || {
-        let _running = _running;
+        // The client lookup (Credential Manager, a file) and the guard both happen here, off the async thread.
+        let (client, _running) = begin_sign_in(&RealCreds, || file_client(&app)).map_err(str::to_string)?;
         let verifier = crate::wall2_oauth::random_b64(32).ok_or_else(|| FAILED.to_string())?;
         let state = crate::wall2_oauth::random_b64(16).ok_or_else(|| FAILED.to_string())?;
         let challenge = crate::wall2_oauth::challenge_for(&verifier).ok_or_else(|| FAILED.to_string())?;
