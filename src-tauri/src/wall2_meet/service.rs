@@ -844,7 +844,12 @@ pub fn complete_sign_in(
         ("code_verifier", granted.verifier.as_str()),
         ("scope", SCOPE),
     ];
-    match tokens.post(&acct.tenant, &form) {
+    let ctx = Ctx::new(Kind::Next, clock_of(core), BUDGET);
+    let (mut reply, mut detail) = tokens.post_diag(&acct.tenant, &form, ctx.remaining().min(READ_TIMEOUT), &ctx);
+    if matches!(reply, TokenReply::Transient(_)) && detail.is_some() && !ctx.remaining().is_zero() {
+        (reply, detail) = tokens.post_diag(&acct.tenant, &form, ctx.remaining().min(READ_TIMEOUT), &ctx);
+    }
+    match reply {
         TokenReply::Ok { access, expires_in, refresh: Some(refresh) } => {
             // Store and bump the generation in one step, so a read that began earlier cannot
             // slip its own tokens in between. The store write under the lock is deliberate
@@ -852,7 +857,7 @@ pub fn complete_sign_in(
             let mut guard = lock(core);
             if !store.set(&acct.id, &refresh) {
                 drop(guard);
-                return Err(sign_in_failed(core, acct, STORE_WRITE, now));
+                return Err(sign_in_failed(core, acct, STORE_WRITE, now, None));
             }
             let core = &mut *guard;
             *core.generations.entry(acct.id.clone()).or_insert(0) += 1;
@@ -862,18 +867,33 @@ pub fn complete_sign_in(
             Ok(())
         }
         // A reply without a refresh token is a 2xx that cannot be used.
-        TokenReply::Ok { refresh: None, .. } => Err(sign_in_failed(core, acct, "token-200", now)),
-        TokenReply::Rejected(why) | TokenReply::Transient(why) | TokenReply::Refused(why) | TokenReply::Failed(why) => {
-            Err(sign_in_failed(core, acct, &why, now))
+        TokenReply::Ok { refresh: None, .. } => Err(sign_in_failed(core, acct, "token-200", now, detail.as_ref())),
+        TokenReply::Rejected(why) | TokenReply::Refused(why) | TokenReply::Failed(why) => {
+            Err(sign_in_failed(core, acct, &why, now, detail.as_ref()))
+        }
+        TokenReply::Transient(why) => {
+            let reason = if why == "token-network" { sign_in_network_reason(detail.as_ref()) } else { why };
+            Err(sign_in_failed(core, acct, &reason, now, detail.as_ref()))
         }
     }
 }
 
+fn sign_in_network_reason(detail: Option<&Diag>) -> String {
+    let phase = detail.and_then(|d| d.probe.map(|p| p.phase)).or_else(|| detail.and_then(|d| d.net));
+    match phase {
+        Some("dns") => "token-network-dns",
+        Some("tls") => "token-network-tls",
+        Some("timeout") => "token-network-timeout",
+        Some("connect") => "token-network-connect",
+        _ => "token-network",
+    }.to_string()
+}
+
 /// Log a failed first redemption and return its reason code for the web view.
-fn sign_in_failed(core: &Mutex<Core>, acct: &Account, reason: &str, now: u64) -> String {
+fn sign_in_failed(core: &Mutex<Core>, acct: &Account, reason: &str, now: u64, detail: Option<&Diag>) -> String {
     let reason = if is_valid_reason(reason) { reason.to_string() } else { "token-400".to_string() };
     let mut core = core.lock().unwrap_or_else(|e| e.into_inner());
-    record(&mut core, &acct.id, "sign-in-failed", Some(&reason), now);
+    record_detail(&mut core, &acct.id, "sign-in-failed", Some(&reason), now, detail);
     reason
 }
 
@@ -1526,6 +1546,29 @@ mod tests {
         sign_out("work", &store, &core, &links);
         assert_eq!(store.get("work"), None);
         assert!(core.lock().unwrap().cache.is_empty());
+    }
+
+    #[test]
+    fn sign_in_retries_one_diagnosed_transport_failure() {
+        struct RetryTokens { calls: Cell<u8> }
+        impl TokenClient for RetryTokens {
+            fn post(&self, _tenant: &str, _form: &[(&str, &str)]) -> TokenReply { unreachable!() }
+            fn post_diag(&self, _tenant: &str, _form: &[(&str, &str)], _limit: Duration, ctx: &Ctx) -> (TokenReply, Option<Diag>) {
+                let call = self.calls.get();
+                self.calls.set(call + 1);
+                if call == 0 {
+                    (TokenReply::Transient("token-network".into()), Some(Diag { kind: ctx.kind, host: "login", net: Some("connect"), status: 0, code: None, inner: None, request_id: None, client_request_id: None, attempt: 1, elapsed_ms: 1, probe: None }))
+                } else {
+                    (ok_token("access", Some("refresh")), None)
+                }
+            }
+        }
+        let store = Chunked(MemoryBlobs::default());
+        let core = Mutex::new(Core::default());
+        let tokens = RetryTokens { calls: Cell::new(0) };
+        let granted = super::super::auth::Granted { code: "c".into(), verifier: "v".into(), redirect_uri: "http://localhost:1/auth-callback.html".into() };
+        assert!(complete_sign_in(&acct("work"), &granted, &store, &tokens, &core, NOW).is_ok());
+        assert_eq!(tokens.calls.get(), 2);
     }
 
     fn reasons(p: &MeetPayload) -> Vec<Option<&str>> {

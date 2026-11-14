@@ -86,6 +86,10 @@ describe('reasonText', () => {
       ['graph-503-ServiceUnavailable', 'Microsoft is busy'],
       ['graph-network', 'No connection to Microsoft'],
       ['token-network', 'No connection to Microsoft'],
+      ['token-network-dns', "Could not reach Microsoft's sign-in server: name lookup failed"],
+      ['token-network-connect', "Could not reach Microsoft's sign-in server: no answer"],
+      ['token-network-tls', "Could not reach Microsoft's sign-in server: the secure connection failed"],
+      ['token-network-timeout', "Could not reach Microsoft's sign-in server: timed out"],
       ['token-400', 'Sign-in was not accepted'],
       ['token-400-9002327', 'Sign-in was not accepted'],
       ['store-write', 'Could not save the sign-in on this PC'],
@@ -111,6 +115,7 @@ describe('reasonText', () => {
   it('a sign-in that failed reads with its reason', () => {
     expect(signInMessage('token-400-65001')).toBe('Sign-in was not accepted (token-400-65001)');
     expect(signInMessage('store-write')).toBe('Could not save the sign-in on this PC (store-write)');
+    expect(signInMessage('token-network-dns')).toContain("name lookup failed. The browser part worked. Network log: wall2-meet.log");
     expect(signInMessage('failed')).toBe('Sign-in did not work');
   });
 });
