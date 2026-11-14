@@ -31,6 +31,7 @@ import {
   laneWorks,
 } from './model';
 import { lane, summary } from './fixtures';
+import { workingIds as wattWorkingIds } from '../buddy/senses';
 
 describe('lanes', () => {
   it('uses one rule for own-turn and helper work', () => {
@@ -47,6 +48,13 @@ describe('lanes', () => {
     expect(helpersWork(lane({ live: 'working', bg: { agents: 1, shells: 0 } }))).toBe(false);
     expect(laneWorks(lane({ live: 'working' }))).toBe(true);
     expect(laneWorks(lane())).toBe(true);
+  });
+
+  it('gives Watt the shared working rule over every supplied card', () => {
+    const helper = lane({ id: 'helper', live: 'idle', bg: { agents: 1, shells: 0 } });
+    const quiet = lane({ id: 'quiet', live: 'idle' });
+    const failed = lane({ id: 'failed', failed: true });
+    expect([...wattWorkingIds([helper, quiet, failed])]).toEqual(['helper']);
   });
 
   it('amber when blocked or waiting, mint when ready to merge or live, cyan otherwise', () => {
