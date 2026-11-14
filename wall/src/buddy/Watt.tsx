@@ -114,6 +114,7 @@ import { sunTimes } from '../ribbon/sun';
 import { CLOVER_WAIT_MS, cloverDue, dayTopic, finishedBetween, midday, moonUp, senseWeather, weatherTopics, workingIds } from './senses';
 import { CLOVER, DUST, FIREFLY, HEART, MARK, PROP_SPRITES, SHADOW, SMALL_PX, SPRITE_PX, TUFT, TUFT_AT, type Pose, type Prop } from './sprites';
 import './watt.css';
+import { overlayOwnsPointer } from '../ribbon/DrawerScrim';
 
 export { SheepSvg } from './Pixels';
 
@@ -764,7 +765,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
       menuEl.current?.querySelector<HTMLElement>('[data-item]:not([aria-disabled])')?.focus();
     }
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
+      if (e.key !== 'Escape' || overlayOwnsPointer()) return;
       const a = document.activeElement;
       const inside = !!a && (a === hit.current || !!a.closest?.('.watt-menu'));
       closeRef.current();
@@ -775,7 +776,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
     };
     const onDown = (e: PointerEvent) => {
       const t = e.target as Element | null;
-      if (t?.closest?.('.watt-menu')) return;
+      if (overlayOwnsPointer() || t?.closest?.('.watt-menu')) return;
       // A right-click on him is his own contextmenu, which toggles the menu.
       if (e.button === 2 && t?.closest?.('.watt-hit')) return;
       closeRef.current();
@@ -1078,7 +1079,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
   const lastClickLine = useRef(-Infinity);
   useEffect(() => {
     const onDown = (e: PointerEvent) => {
-      if (e.button !== 0) return;
+      if (e.button !== 0 || overlayOwnsPointer()) return;
       const t = e.target as Element | null;
       if (t?.closest?.('.watt')) return;
       const p = presence.current;
