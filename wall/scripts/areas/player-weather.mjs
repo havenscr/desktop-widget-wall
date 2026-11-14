@@ -9,7 +9,7 @@ const fitWork = (knobs, kind) => `?${workQuery(knobs)}&npcheck=${kind}`;
 const fitUnwind = (knobs, kind) => `?${unwindQuery(knobs)}&npcheck=${kind}`;
 
 const WHY = 'Work, weather refused: the reason under "Weather unavailable"';
-const WHY_LANES = 'Work, weather refused with agent lanes: the reason under "Weather unavailable"';
+const WHY_LANES = 'Work, weather refused with the agents not reachable: the reason under "Weather unavailable"';
 const PLAYER = 'Listen, an ended session: last played with the play button';
 
 // Why (npcheck=why): the reason text sits inside the card it is printed in, is at least 16 px, and takes two lines at most.
@@ -60,7 +60,7 @@ export default {
   fit: {
     variants: [
       { name: WHY, q: fitWork('weather=refused&agents=0', 'why'), checks: ['.focus-note .wx-status'] },
-      { name: WHY_LANES, q: fitWork('weather=refused&agents=3', 'why'), checks: ['.focus-note .wx-status'] },
+      { name: WHY_LANES, q: fitWork('weather=refused&agents=down', 'why'), checks: ['.focus-note .wx-status'] },
       { name: PLAYER, q: fitUnwind('weather=ok&media=ended', 'player'), checks: ['.u-player'] },
     ],
     measurements: { np: measureNp },
