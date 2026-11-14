@@ -362,6 +362,9 @@
 :is(.rib .agent-row .ac i, .at-band .at-track i, .at-busy .sw).b5 {
   background: var(--busy-hatch), var(--busy-5);
 }
+.rib .agent-row .ac i.bn {
+  background: var(--cyan);
+}
 .rib .agent-row .ac i.b5 {
   top: 3px;
   height: 10px;

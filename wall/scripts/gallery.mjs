@@ -673,7 +673,7 @@ EXPECT.push(
   ['work', 'colours: the strip over the limit', ['12 sessions: 1 needs you, 9 working', '5 over']],
   ['work', 'colours: the panel over the limit', ['Busy at once', 'Over your limit of 4 for']],
   ['work', 'colours: no limit, header and strip', ['9 working', '!5 over', '!of 4']],
-  ['work', 'colours: no limit, the panel', ['Agents today', '!Busy at once', '!Over your limit']],
+  ['work', 'colours: no limit, the panel', ['Click a row to open its session', '!Busy at once', '!Over your limit']],
   // deck and drawer fixes
   ['work', 'deck fixes: mixed', ['Always here', 'Sonos: play what suits the hour']],
   ['work', 'deck fixes: general set', ['Always here', 'Now \u00b7 General']],
