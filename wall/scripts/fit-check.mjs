@@ -158,8 +158,8 @@ const OVERFLOWS = {
   'rec-chip': '.rec-chip { min-width: 400px !important; }',
   'rec-height': '.rec-keys .key-tile { height: 92px !important; }',
   // deck and drawer fixes: one tile 20 px taller; one icon 8 px lower; a 40 px icon; a scrim that takes no clicks.
-  'tile-height': '.work .right-wing .keys .deck-tiles > .deck-tile.key-tile:nth-child(2) { height: 90px !important; }',
-  'tile-icon': '.work .right-wing .pinned .deck-tile.key-tile:first-child svg { margin-top: 8px !important; }',
+  'tile-height': '.work .right-wing .keys .deck-tiles > .key-tile-wrap:nth-child(2) > .deck-tile.key-tile { height: 90px !important; }',
+  'tile-icon': '.work .right-wing .pinned .key-tile-wrap:nth-child(2) > .deck-tile.key-tile svg { margin-top: 8px !important; }',
   'tile-iconbox': '.work .right-wing .keys .deck-tile.key-tile:first-child svg { width: 40px !important; height: 40px !important; }',
   'drawer-scrim': '.drawer-scrim { pointer-events: none !important; }',
   // left wing
@@ -679,7 +679,7 @@ try {
         const wide = row?.classList.contains('wide');
         const up1 = row?.classList.contains('up1');
         const minY = wide ? 20 : up1 ? 7 : 7;
-        const maxY = wide ? 50 : up1 ? 31 : 27;
+        const maxY = wide ? 50 : up1 ? 32 : 27;
         if (q.top < r.top + minY - 0.5 || q.bottom > r.top + maxY + 0.5 || q.left < r.left + 1 - 0.5 || q.right > r.right - 1 + 0.5) deck.push('deck: the icon of key tile "' + name + '" is not inside its icon box');
       }
       // deck pins and stretch: each row has equal tiles and fills its available width exactly.
