@@ -18,6 +18,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { killTree, reapGroup, sweepGroup, trackGroup } from './lib/chrome-run.mjs';
 
 const args = process.argv.slice(2);
 const flag = (name) => args.find((a) => a === `--${name}` || a.startsWith(`--${name}=`));
@@ -27,6 +28,7 @@ const W = 2560;
 const H = 720;
 const SETTLE_MS = 2500;
 const STATE_TIMEOUT_MS = 30_000;
+const RESTARTED = 'browser restarted';
 /** How long a state may take past SETTLE_MS for its expected text to appear (a busy machine). Never applies to text that must not be shown. */
 const EXPECT_GRACE_MS = 8000;
 const PARALLEL = 3;
@@ -765,6 +767,7 @@ const work = mkdtempSync(join(tmpdir(), 'wall-gallery-'));
 let chromeProc = null;
 let cdpConn = null;
 let shuttingDown = false;
+let launches = 0;
 
 /** Close the connection, ask Chromium to exit, wait (forced kill after 5 s), then remove the temp folder. */
 async function shutdown() {
@@ -778,7 +781,7 @@ async function shutdown() {
   const proc = chromeProc;
   if (proc && proc.exitCode === null && proc.signalCode === null) {
     await new Promise((resolve) => {
-      const force = setTimeout(() => proc.kill('SIGKILL'), 5000);
+      const force = setTimeout(() => killTree(proc), 5000);
       proc.once('exit', () => {
         clearTimeout(force);
         resolve();
@@ -786,11 +789,17 @@ async function shutdown() {
       proc.kill('SIGTERM');
     });
   }
+  killTree(proc);
+  if (proc) await reapGroup(proc); // a child that outlived the browser's own process
   rmSync(work, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 }
-for (const sig of ['SIGINT', 'SIGTERM']) {
+process.on('exit', () => {
+  killTree(chromeProc);
+  if (chromeProc) sweepGroup(chromeProc);
+});
+for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
   process.on(sig, () => {
-    shutdown().finally(() => process.exit(sig === 'SIGINT' ? 130 : 143));
+    shutdown().finally(() => process.exit(sig === 'SIGINT' ? 130 : sig === 'SIGHUP' ? 129 : 143));
   });
 }
 
@@ -826,14 +835,22 @@ async function buildBundle() {
 }
 
 async function launch() {
-  const profile = join(work, 'profile');
+  const profile = join(work, `profile-${++launches}`);
+  const scratch = join(work, `tmp-${launches}`); // the browser's own temporary folder, removed with its profile
   mkdirSync(profile);
+  mkdirSync(scratch);
   let stderr = '';
   chromeProc = spawn(
     chrome,
     ['--headless', '--no-sandbox', '--disable-gpu', '--hide-scrollbars', '--mute-audio', `--user-data-dir=${profile}`, '--remote-debugging-port=0', `--window-size=${W},${H + 87}`, 'about:blank'],
-    { stdio: ['ignore', 'ignore', 'pipe'] },
+    { stdio: ['ignore', 'ignore', 'pipe'], detached: process.platform !== 'win32', env: { ...process.env, TMPDIR: scratch, TEMP: scratch, TMP: scratch } },
   );
+  const proc = chromeProc;
+  trackGroup(proc);
+  proc.once('exit', () => {
+    if (chromeProc === proc) chromeProc = null; // forget a browser that has gone: nothing may kill its old id later
+    if (!shuttingDown) for (const d of [scratch, profile]) rmSync(d, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+  });
   chromeProc.stderr.on('data', (d) => {
     stderr = (stderr + d).slice(-4000);
   });
@@ -867,6 +884,7 @@ async function launch() {
   });
   let id = 0;
   const pending = new Map();
+  let gone = null;
   const listeners = new Set();
   ws.onmessage = (ev) => {
     const msg = JSON.parse(ev.data);
@@ -878,12 +896,19 @@ async function launch() {
   };
   const send = (method, params = {}, sessionId) =>
     new Promise((resolve, reject) => {
+      if (gone) return reject(gone);
       const n = ++id;
       pending.set(n, { resolve, reject });
       ws.send(JSON.stringify({ id: n, method, params, sessionId }));
     });
   cdpConn = { close: () => ws.close() };
-  return { send, listeners, close: () => ws.close() };
+  /** Reject every request still waiting on this browser (it is being replaced) and refuse new ones. */
+  const abort = (err) => {
+    gone = err;
+    for (const p of pending.values()) p.reject(err);
+    pending.clear();
+  };
+  return { send, listeners, abort, close: () => ws.close() };
 }
 
 /** Render one state in its own browser context (fresh storage). Returns { errors }. */
@@ -1032,7 +1057,29 @@ try {
   const base = await buildBundle();
   rmSync(outDir, { recursive: true, force: true });
   mkdirSync(outDir, { recursive: true });
-  const cdp = await launch();
+  let cdp = await launch();
+  let relaunching = null;
+  /** A state timed out on `dead`: kill that browser tree and start a new one (once, however many states ask). */
+  async function relaunch(dead) {
+    if (cdp !== dead) return;
+    relaunching ??= (async () => {
+      console.log('  retry: the browser did not answer, restarting it');
+      dead.abort(new Error(RESTARTED));
+      try {
+        dead.close();
+      } catch {
+        /* already closed */
+      }
+      const old = chromeProc;
+      killTree(old);
+      if (old) await new Promise((r) => (old.exitCode !== null || old.signalCode !== null ? r() : old.once('exit', r)));
+      if (old) await reapGroup(old);
+      cdp = await launch();
+    })().finally(() => {
+      relaunching = null;
+    });
+    await relaunching;
+  }
   const manifest = new Array(selected.length);
   let failures = 0;
   let next = 0;
@@ -1049,23 +1096,34 @@ try {
       const s = selected[i];
       const file = names[i];
       let error = null;
-      const ctl = { cancelled: false, cleanup: async () => {} };
       let timer;
-      try {
-        const r = await Promise.race([
-          render(cdp, base, s, join(outDir, file), ctl),
-          new Promise((_, rej) => {
-            timer = setTimeout(() => rej(new Error('timed out')), STATE_TIMEOUT_MS);
-          }),
-        ]);
-        if (r.errors.length) error = [...new Set(r.errors)].slice(0, 3).join(' | ');
-      } catch (e) {
-        error = e instanceof Error ? e.message : String(e);
-        // Stop the late work: no screenshot write, target and listeners closed.
-        ctl.cancelled = true;
-        await ctl.cleanup();
-      } finally {
-        clearTimeout(timer);
+      for (let attempt = 1, restarts = 0; ; ) {
+        error = null;
+        const ctl = { cancelled: false, cleanup: async () => {} };
+        const via = cdp;
+        try {
+          const r = await Promise.race([
+            render(via, base, s, join(outDir, file), ctl),
+            new Promise((_, rej) => {
+              timer = setTimeout(() => rej(new Error('timed out')), STATE_TIMEOUT_MS);
+            }),
+          ]);
+          if (r.errors.length) error = [...new Set(r.errors)].slice(0, 3).join(' | ');
+        } catch (e) {
+          error = e instanceof Error ? e.message : String(e);
+          // Stop the late work: no screenshot write, target and listeners closed (a dead browser never answers: 5 s at most).
+          ctl.cancelled = true;
+          await Promise.race([ctl.cleanup(), new Promise((r) => setTimeout(r, 5000))]);
+        } finally {
+          clearTimeout(timer);
+        }
+        if (error === RESTARTED && restarts++ < 3) {
+          // Another state's timeout replaced the browser: retry on the new one without using up this state's own retry.
+          await relaunching;
+          continue;
+        }
+        if (error !== 'timed out' || attempt++ === 2) break;
+        await relaunch(via);
       }
       if (error) failures++;
       manifest[i] = { screen: s.screen, state: s.name, url: s.query, ...(s.expect ? { expect: s.expect } : {}), ...(s.expectNote ? { expectNote: s.expectNote } : {}), file, width: W, height: H, ...(error ? { error } : {}) };
