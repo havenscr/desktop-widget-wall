@@ -400,6 +400,22 @@ state('work', 'tools: Spotify not set up', 'spotify=off&tools=1');
 add('work', 'tools: calendar sign-in fault', url('work', TYPICAL_AT, 'meet=signin-fault&tools=1'), true, '.tools-list[aria-label="Accounts"] .tools-row:nth-child(2) button');
 add('work', 'tools: Sources weather failure hover', url('work', TYPICAL_AT, 'weather=stale&tools=1'), true, 'hover:.tools-src[data-source="weather"]');
 state('work', 'tools: Spotify saved sign-in unreadable', 'spotify=statusfail&tools=1');
+// The YouTube row in Accounts: each state it can show, and the Set up form open from Set up and from Change setup.
+const YT_ROW = '.tools-list[aria-label="Accounts"] [data-account="youtube"]';
+state('work', 'tools: YouTube not set up', 'youtube=off&tools=1');
+add('work', 'tools: YouTube setup form open', url('work', TYPICAL_AT, 'youtube=off&tools=1'), true, `${YT_ROW} .tools-btn`);
+state('work', 'tools: YouTube signed out', 'youtube=out&tools=1');
+add('work', 'tools: YouTube change setup form open', url('work', TYPICAL_AT, 'youtube=out&tools=1'), true, `${YT_ROW} .tools-btn.ico`);
+add('work', 'tools: YouTube waiting for the browser', url('work', TYPICAL_AT, 'youtube=waiting&tools=1'), true, `${YT_ROW} .tools-btn.cy`);
+state('work', 'tools: YouTube signed in', 'youtube=in&tools=1');
+state('work', 'tools: YouTube setup broken', 'youtube=broken&tools=1');
+state('work', 'tools: YouTube sign in again', 'youtube=again&tools=1');
+state('work', 'tools: YouTube could not check', 'youtube=down&tools=1');
+state('work', 'tools: YouTube signed in, setup missing', 'youtube=missing&tools=1');
+state('work', 'tools: YouTube setup unreadable', 'youtube=unreadable&tools=1');
+state('work', 'tools: YouTube waiting after a reload', 'youtube=reloaded&tools=1');
+add('work', 'tools: YouTube refused setup, form open', url('work', TYPICAL_AT, 'youtube=brokenout&tools=1'), true, `${YT_ROW} .tools-btn`);
+add('work', 'tools: YouTube sign-in refused note', url('work', TYPICAL_AT, 'youtube=refuse&tools=1'), true, `${YT_ROW} .tools-btn.cy`);
 state('home', 'tools: open', 'tools=1');
 state('unwind', 'tools: open', 'tools=1');
 state('meet', 'tools: open', 'tools=1');
@@ -747,6 +763,20 @@ const EXPECT = [
   ['work', 'tools: calendar sign-in fault', ['The browser part worked.', 'wall2-meet.log']],
   ['work', 'tools: Sources weather failure hover', ['Last try failed', 'Showing the reading from']],
   ['work', 'tools: Spotify saved sign-in unreadable', ['Spotify', 'Could not read the saved sign-in']],
+  ['work', 'tools: YouTube not set up', ['YouTube', 'Not set up', 'Set up', 'Uses YouTube API Services:', 'YouTube Terms', 'Google Privacy Policy']],
+  ['work', 'tools: YouTube setup form open', ['Client ID', 'Client secret', 'Save', "Kept in Windows' credential store, never in a file."]],
+  ['work', 'tools: YouTube signed out', ['YouTube', 'Signed out', 'Sign in']],
+  ['work', 'tools: YouTube change setup form open', ['Client ID', 'Client secret', 'Save', 'Cancel', 'Forget this setup']],
+  ['work', 'tools: YouTube waiting for the browser', ['YouTube', 'Waiting for the browser']],
+  ['work', 'tools: YouTube signed in', ['YouTube', 'Signed in', 'Sign out']],
+  ['work', 'tools: YouTube setup broken', ['Setup broken', 'Google refused this setup. Sign out, then set it up again.']],
+  ['work', 'tools: YouTube sign in again', ['Sign in again']],
+  ['work', 'tools: YouTube could not check', ['YouTube', 'Could not check', 'Retry']],
+  ['work', 'tools: YouTube signed in, setup missing', ['YouTube', 'Signed in, setup missing', 'Sign out']],
+  ['work', 'tools: YouTube setup unreadable', ['Setup broken', 'The saved setup could not be read. Set it up again.']],
+  ['work', 'tools: YouTube waiting after a reload', ['YouTube', 'Waiting for the browser', 'Cancel']],
+  ['work', 'tools: YouTube refused setup, form open', ['Client ID', 'Client secret', 'Save', '!Google refused this setup']],
+  ['work', 'tools: YouTube sign-in refused note', ['YouTube sign-in was refused']],
   ['home', 'tools: open', ['Accounts', 'Keys file']],
   ['unwind', 'tools: open', ['Accounts', 'Keys file']],
   // Zen and Dream

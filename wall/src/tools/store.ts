@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 
 export type ToolsFocus = 'accounts' | null;
-export type SignInKind = 'calendar' | 'spotify';
+export type SignInKind = 'calendar' | 'spotify' | 'youtube';
 
 interface ToolsState {
   open: boolean;
@@ -22,7 +22,7 @@ interface ToolsState {
   clearNote: () => void;
 }
 
-const idle = { calendar: false, spotify: false };
+const idle = { calendar: false, spotify: false, youtube: false };
 
 export const useToolsStore = create<ToolsState>((set, get) => ({
   open: false,
@@ -35,7 +35,7 @@ export const useToolsStore = create<ToolsState>((set, get) => ({
   close: () => {
     const s = get();
     let cancelled = false;
-    for (const kind of ['calendar', 'spotify'] as const) {
+    for (const kind of ['calendar', 'spotify', 'youtube'] as const) {
       if (s.waiting[kind]) {
         cancelled = true;
         s.cancelers[kind]?.();
@@ -51,7 +51,7 @@ export const useToolsStore = create<ToolsState>((set, get) => ({
 /** True while any browser sign-in waits. */
 export const anySignInWaiting = (): boolean => {
   const w = useToolsStore.getState().waiting;
-  return w.calendar || w.spotify;
+  return w.calendar || w.spotify || w.youtube;
 };
 
 /** Tests only. */

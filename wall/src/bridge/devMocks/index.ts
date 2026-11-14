@@ -16,6 +16,7 @@ import { registerSpotifyMocks } from './spotify';
 import { registerTaskMocks } from './tasks';
 import { registerToolsMocks } from './tools';
 import { registerWatchMocks } from './watch';
+import { registerYoutubeMocks } from './youtube';
 
 /**
  * Realistic answers for the commands the Work and Home tabs call, so `npm run dev` in a
@@ -36,6 +37,7 @@ export function registerDevMocks(): void {
   registerGalleryMocks();
   registerSignalMocks();
   registerSpotifyMocks();
+  registerYoutubeMocks();
   registerWatchMocks();
   registerLinesMocks();
   registerDaysMocks();
