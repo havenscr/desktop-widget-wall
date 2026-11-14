@@ -1188,22 +1188,30 @@ frame (no ribbon) in the wide zones `470px 1fr 540px`. The parts are in `wall/sr
   keep-clear claim, so the moon does not move. Opening takes 240 ms and closing 400 ms (none
   under reduced motion); the state is not stored, so the wall starts closed. It closes on the
   same button, on Escape (the "Play on" list first, then a playlist's Back, then the view; focus
-  returns to the button), on a press anywhere outside it (that press is swallowed, with the
-  mouse events that follow it for at most 0.6 s, so it does not also press what lies under it;
-  a tile's details card counts as inside), and by itself 15 seconds after the pointer has left
-  it, never while the pointer is on it or the search field has focus. Inside: the tab row
+  returns to the button), on a press anywhere outside it (that press is swallowed together with the
+  mouse events that follow it, until its own click has gone by or the press is cancelled, however
+  long it is held, so it does not also press what lies under it; a tile's details card counts as
+  inside), and by itself 15 seconds after the pointer has left it and the keyboard focus is outside
+  it too (opened by keyboard it stays while the focus is inside; opened with neither there, the 15
+  seconds start at once), never while the pointer or the focus, the search field included, is on it. Inside: the tab row
   (Playlists, Albums, Liked, Recent, Up next; left and right move along it) and the search field
   in one row, with the field as the search (results in groups: songs, then at most three albums
   and three playlists; emptying it returns to the library); two full rows of covers, more
-  scrolling; a playlist or album opened as its cover, kind, name, count, Play and Shuffle on the
+  scrolling (the arrow keys walk the tiles by the rendered column count, the edges stay, Down from a
+  column a short last row lacks reaches its last tile, the focused tile scrolls into view); a playlist or album opened as its cover, kind, name, count, Play and Shuffle on the
   left and its songs on the right; Up next (what plays now and what follows, at most ten, from
-  `wall2_spotify_queue`; a click skips ahead through Windows, as the left wing's Up next does, and
-  says so when another player is in front); and the player row (cover, title, artist, previous,
-  play or pause and next through Windows' media keys like the player at the top, so they say why
-  they cannot act when Spotify is not the player Windows has in front; a time bar that can be
-  dragged, or moved five seconds with the arrow keys, which seeks through `wall2_spotify_seek`).
+  `wall2_spotify_queue`; a click skips ahead with Spotify's own next command, once per row, on the player
+  Spotify reports); and the player row (cover, title, artist, previous, play or pause, next, and a time
+  bar). While Spotify reports a player (this PC, a phone, a speaker) the three buttons act on it through
+  `wall2_spotify_previous`, `_pause`, `_resume` and `_next` (the player Spotify says is active, no device
+  named; they need only `user-modify-playback-state`, which the sign-in already asks for), whichever program
+  is Windows' media session, and the state is read again after each press. Windows' media keys serve only
+  when Spotify reports no player and the Windows session is Spotify on this PC; otherwise the buttons are
+  marked unavailable with the reason. The time bar can be dragged, or moved five seconds with the arrow
+  keys (a held key sends at most one seek per 300 ms and the final position on release), and seeks through
+  `wall2_spotify_seek`; the local clock reads the state again when the song's length is reached.
   There is no Save to Liked: the sign-in's scopes do not include `user-library-modify` and this
-  change adds none. Every list keeps its loading, empty and error words. On the YouTube Music side
+  change adds none. Every list shows loading words (never blank) on its first read, and keeps what is on screen while it reads again, then its empty or error words. A song in a search answer shows its length at the row's right edge (`durationMs`, sent only for search songs). On the YouTube Music side
   the tall view holds today's content in the larger box.
   "Play on" is a chip showing where the music plays (the owner's pick, else the active Spotify
   player, else "This PC"; "This PC" also while the wall starts Spotify), and a click opens the
@@ -1212,8 +1220,14 @@ frame (no ribbon) in the wide zones `470px 1fr 540px`. The parts are in `wall/sr
   the note that a phone or speaker shows only while its Spotify is awake). Choosing one while music
   plays moves it with `wall2_spotify_transfer`; with nothing playing it only makes that player the
   target of the next Play, which then sends its `deviceId` (the play command honours a chosen phone
-  or speaker as well as a computer, and falls back to the old choice when it is gone). A pick that
-  is no longer awake is forgotten at the next read; device names are shown as text only. While Spotify
+  or speaker as well as a computer). A chosen player that is no longer listed (asleep) or does not allow
+  control is never swapped for another: Rust answers `device gone` or `restricted` and plays nothing, the
+  card says "That player is not awake. Choose where to play." (or that it does not allow control) and
+  clears the pick; the list is read again when the chooser opens and before a Play that names a player
+  (a computer that is gone is started again by Play as before); after a failed read the old rows stay
+  marked "Could not refresh, these may be out of date." and not as live. Music on a player that does not
+  allow control shows that player's name with a lock on the chip, and the words in its tip. Device names
+  are shown as text only. While Spotify
   starts the card shows a calm status line (the Spotify mark, "Starting Spotify on this PC", what plays
   once ready, a thin line that fills once).
 - **The office lights slot.** Where 7A drew the quiet row at the foot (right edge 70 px
