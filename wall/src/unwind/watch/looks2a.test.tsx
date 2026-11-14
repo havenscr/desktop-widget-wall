@@ -96,9 +96,11 @@ describe('each look', () => {
     expect(f.getAttribute('referrerpolicy')).toBe('strict-origin-when-cross-origin');
     expect(f.getAttribute('sandbox')).toBe('allow-scripts allow-same-origin');
     expect(screen.getByRole('button', { name: /^Open in YouTube$/ })).toBeTruthy();
-    // The Look switch shows this look checked, and nothing of the wall's is inside the stage.
-    const sw = screen.getByRole('radiogroup', { name: 'Look' });
-    expect(sw.querySelector('[aria-checked=true]')?.textContent).toBe(LOOKS.find((l) => l.id === look)!.name);
+    // There is no Look switch on the page; the sheet's tile for this look is checked, and nothing of the wall's is inside the stage.
+    expect(document.querySelector('.w-lookbar')).toBeNull();
+    await act(async () => screen.getByRole('button', { name: 'How video is shown' }).click());
+    const tiles = screen.getByRole('radiogroup', { name: 'Look for everything' });
+    expect(tiles.querySelector('[aria-checked=true]')?.textContent).toBe(LOOKS.find((l) => l.id === look)!.name);
     expect(document.querySelector('.w-stage')!.querySelector('button')).toBeNull();
   });
 
@@ -118,10 +120,10 @@ describe('each look', () => {
     // Nothing of the wall's lies on the picture: the stage holds the picture and, after it, the
     // element the horizon mounts its front canvas in (the land in front of the picture).
     expect([...sky.children].map((c) => c.className)).toEqual(['w-screen', 'w-front']);
-    // The Look switch and Open in YouTube are outside the layer that takes no pointer.
+    // The gear and Open in YouTube are outside the layer that takes no pointer.
     expect(sky.querySelector('button')).toBeNull();
     expect(document.querySelector('.w-now .w-open')).not.toBeNull();
-    expect(document.querySelector('.w-lookbar')!.closest('.w-sky')).toBeNull();
+    expect(document.querySelector('.w-gear')!.closest('.w-sky')).toBeNull();
   });
 
   it('draws no floor wash in the other looks', async () => {
@@ -178,7 +180,7 @@ describe('each look', () => {
     unmount();
   });
 
-  it('switches through all five looks from the Look switch without restarting the video (the same frame, the same address)', async () => {
+  it('switches through all five looks from the gear sheet without restarting the video (the same frame, the same address)', async () => {
     setup('feather');
     render(<UnwindView />);
     await flush();
@@ -186,8 +188,9 @@ describe('each look', () => {
     const src = frame.getAttribute('src');
     expect(src).toContain(V);
     const seen: string[] = [];
+    await act(async () => screen.getByRole('button', { name: 'How video is shown' }).click());
     for (const name of ['Whole sky', 'The sun', 'Drive-in', 'Hologram', 'Feathered']) {
-      await act(async () => within(screen.getByRole('radiogroup', { name: 'Look' })).getByRole('radio', { name }).click());
+      await act(async () => within(screen.getByRole('radiogroup', { name: 'Look for everything' })).getByRole('radio', { name }).click());
       seen.push(document.querySelector('.w-stage')!.getAttribute('data-look')!);
       expect(document.querySelectorAll('iframe').length).toBe(1);
       // A new frame would reload the player and start the video again: it must be the same node.

@@ -22,10 +22,10 @@ import { knob } from './long';
  *   ?wsheet=one|kind          open the settings sheet (`kind`: a look per kind)
  *   ?wtab=listen              stay on Listen (for the art's Video corner)
  *   ?wposter=bright           a pale bright picture, the worst case for text over video
- *   ?wstate=paused|refused|silent   a mock player: paused; autoplay refused (the click line;
+ *   ?wstate=paused|refused|silent|start|end   a mock player: paused; autoplay refused (the click line;
  *                             for Twitch the "Not started?" hint);
  *                             or a player that has reported nothing yet (default: playing at
- *                             12:34 of 45:10; a playlist reports item 4 of 24; live has no length)
+ *                             12:34 of 45:10; `start` is 0:04 and `end` 45:06 of it; a playlist reports item 4 of 24; live has no length)
  *   ?wctl=rest                watch behaviour: the controls fade as with no pointer near (after
  *                             200 ms, so a still catches it); by default the stills hold them
  *                             shown, as with the pointer over the video's lower edge
@@ -115,7 +115,9 @@ function mockPlayer(kind: string, state: string | null): void {
     return;
   }
   if (state === 'silent' || kind === 'twitch') return;
-  st.setReport({ started: true, time: 754, duration: kind === 'live' ? 0 : 2710, count: kind === 'playlist' ? 24 : 0, index: kind === 'playlist' ? 3 : 0 });
+  // `start` and `end` put the position near either end of the bar (the marker stays inside it).
+  const at = state === 'start' ? 4 : state === 'end' ? 2706 : 754;
+  st.setReport({ started: true, time: at, duration: kind === 'live' ? 0 : 2710, count: kind === 'playlist' ? 24 : 0, index: kind === 'playlist' ? 3 : 0 });
   if (state === 'paused') st.setPaused(true);
 }
 
