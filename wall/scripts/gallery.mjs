@@ -321,6 +321,17 @@ state('unwind', 'watch polish: whole sky, autoplay refused', `${WM}&wlist=three&
 state('unwind', 'watch polish: Twitch not started hint, drive-in', `${WM}&wlist=three&wlook=drivein&wplay=2&wstate=refused`, TIMES.night);
 state('unwind', 'watch polish: leave banner over the drive-in', `${WM}&wlist=three&wlook=drivein&wplay=0&leave=12`, TIMES.night);
 state('unwind', 'watch polish: nothing on, whole sky chosen', `${WM}&wlist=three&wlook=sky`, TIMES.night);
+// watt drive-in: Watt in his seat left of the drive-in screen, watching (night, noon, paused, 24
+// saved with a long label), and set down by the owner during the show (`drag:` carries him there):
+// he stays where he lands and watches from there.
+const DI = `${WM}&wlist=three&wlook=drivein&wplay=0`;
+state('unwind', 'Watt: drive-in, seated', DI, TIMES.night);
+state('unwind', 'Watt: drive-in at noon', DI, TIMES.noon);
+state('unwind', 'Watt: drive-in, paused', `${DI}&wstate=paused`, TIMES.night);
+state('unwind', 'Watt: drive-in, autoplay refused, the marquee waiting (he is not at the show)', `${DI}&wstate=refused`, TIMES.night);
+state('unwind', 'Watt: drive-in, 24 saved, long label', `${WM}&wlist=many&wlook=drivein&wplay=3`, TIMES.night);
+add('unwind', 'Watt: drive-in, set down during the show', url('unwind', TIMES.night, DI), true, 'drag:.watt-hit-part@240,380');
+// end watt drive-in
 // watch behaviour: the controls faded (5A) in each look, shown, paused, with a notice; and Work with a
 // video playing out of sight (the rail's playing mark on Unwind).
 state('unwind', 'watch behaviour: feathered, controls hidden', `${WM}&wlist=three&wlook=feather&wplay=0&wctl=rest`, TIMES.night);
@@ -800,6 +811,9 @@ EXPECT.push(
   ['unwind', 'lines sheet: the Lines side from Listen', ['How the lines move', 'Bars', '50, your usual', 'One setting for the lines everywhere music plays.']],
 );
 
+// watt drive-in: the drive-in look is on with something playing (Watt himself has no text).
+EXPECT.push(['unwind', 'Watt: drive-in', ['Drive-in', 'Open in YouTube']]);
+
 /**
  * States that set a knob but change nothing in the page text, so no text can prove them: the
  * reason is recorded in the manifest. Everything else that sets a knob needs an EXPECT.
@@ -1053,7 +1067,18 @@ async function render(cdp, base, s, file, ctl) {
       // the element, `press:` also holds the button down there, `focus:` focuses it, `kbd:` presses
       // Tab (so focus-visible applies) and then focuses it, anything else clicks.
       const pointer = /^(hover|press):/.exec(step);
-      if (step.startsWith('kbd:')) {
+      // watt drive-in: `drag:<selector>@x,y` presses on the element, carries it to (x, y) and lets go.
+      const drag = /^drag:(.+)@(\d+),(\d+)$/.exec(step);
+      if (drag) {
+        const at = await to('Runtime.evaluate', { expression: `(() => { const r = document.querySelector(${JSON.stringify(drag[1])})?.getBoundingClientRect(); return r ? [r.left + r.width / 2, r.top + r.height / 2] : null; })()`, returnByValue: true });
+        const [x0, y0] = at.result.value ?? [0, 0];
+        const [x1, y1] = [Number(drag[2]), Number(drag[3])];
+        await to('Input.dispatchMouseEvent', { type: 'mouseMoved', x: x0, y: y0 });
+        await to('Input.dispatchMouseEvent', { type: 'mousePressed', x: x0, y: y0, button: 'left', buttons: 1, clickCount: 1 });
+        for (let i = 1; i <= 8; i++) await to('Input.dispatchMouseEvent', { type: 'mouseMoved', x: x0 + ((x1 - x0) * i) / 8, y: y0 + ((y1 - y0) * i) / 8, button: 'left', buttons: 1 });
+        await to('Input.dispatchMouseEvent', { type: 'mouseReleased', x: x1, y: y1, button: 'left', buttons: 0, clickCount: 1 });
+        await to('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 2500, y: 40 });
+      } else if (step.startsWith('kbd:')) {
         await to('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 });
         await to('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 });
         await to('Runtime.evaluate', { expression: `document.querySelector(${JSON.stringify(step.slice(4))})?.focus()` });

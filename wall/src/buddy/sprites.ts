@@ -7,10 +7,10 @@
  * idle body rows plus two leg rows. The other poses are drawn the same way, at the same size; props
  * and the little things (heart, clover, amber mark) use their own colour letters (`PROP_COLORS`).
  */
-export type Pose = 'idle' | 'walk' | 'sleep' | 'read' | 'look' | 'yawn' | 'stretch' | 'eat' | 'held' | 'held2' | 'land' | 'sit' | 'dizzy' | 'alert' | 'hop' | 'spin1' | 'spin2' | 'lie';
+export type Pose = 'idle' | 'walk' | 'sleep' | 'read' | 'look' | 'yawn' | 'stretch' | 'eat' | 'held' | 'held2' | 'land' | 'sit' | 'dizzy' | 'alert' | 'hop' | 'spin1' | 'spin2' | 'lie' | 'watch' | 'watchEar' | 'front';
 
 /** Every pose, for the tests and the sprite sheet. */
-export const POSES: readonly Pose[] = ['idle', 'walk', 'sleep', 'read', 'look', 'yawn', 'stretch', 'eat', 'held', 'held2', 'land', 'sit', 'dizzy', 'alert', 'hop', 'spin1', 'spin2', 'lie'];
+export const POSES: readonly Pose[] = ['idle', 'walk', 'sleep', 'read', 'look', 'yawn', 'stretch', 'eat', 'held', 'held2', 'land', 'sit', 'dizzy', 'alert', 'hop', 'spin1', 'spin2', 'lie', 'watch', 'watchEar', 'front'];
 
 const LEGS = ['...l..l...l..l....', '...l..l...l..l....'];
 
@@ -28,6 +28,18 @@ const IDLE: readonly string[] = [
   '...l..l...l..l....',
   '...l..l...l..l....',
 ];
+
+/** The look pose's raised head, and the sit pose's round bottom, for the watching poses. */
+const WATCH_HEAD: readonly string[] = [
+  '....wwwwwww...pf..',
+  '..wwwwwwwwwww.fff.',
+  '.wwwwwwwwwwwwwfeff',
+  '.wwwwwwwwwwwwwffff',
+  'wwwwwwwwwwwwwwfff.',
+  'wwwwwwwwwwwwwwwf..',
+  'wwwwwwwwwwwwwwww..',
+];
+const SIT_BOTTOM: readonly string[] = ['.wwwwwwwwwwwwww...', 'wwwwwwwwwwwwwwwl..', 'wwwwwwwwwwwwwwwl..', '.lll.........ll...'];
 
 export const SPRITES: Readonly<Record<Pose, readonly string[]>> = {
   idle: IDLE,
@@ -176,6 +188,26 @@ export const SPRITES: Readonly<Record<Pose, readonly string[]>> = {
     'wwwwwwwwwwwwwwwfff',
     '.wwwwwwwwwwwwwlll.',
   ],
+  // Watching the drive-in: sitting (the sit's round bottom and tucked paws) with the head raised
+  // to the screen (the look pose's head). `watchEar` is the same with his ear laid back for a
+  // moment, one of his small signs of life.
+  watch: [...WATCH_HEAD, ...SIT_BOTTOM],
+  watchEar: ['....wwwwwww....f..', '..wwwwwwwwwwwpfff.', ...WATCH_HEAD.slice(2), ...SIT_BOTTOM],
+  // Seated, turned round to the viewer (the spin's front view on the sit's tucked paws): the
+  // one look back while the video is paused.
+  front: [
+    '.....wwwwwwww.....',
+    '...wwwwwwwwwwww...',
+    '..wwwwwwwwwwwwww..',
+    '..wwwwpffffpwwww..',
+    '..wwwwwfeffefwww..',
+    '..wwwwwffffffwww..',
+    '..wwwwwwffffwwww..',
+    '..wwwwwwwwwwwwww..',
+    '.wwwwwwwwwwwwwwww.',
+    '.wwwwwwwwwwwwwwww.',
+    '..lll........lll..',
+  ],
 };
 
 /** The same poses with the eyes shut for one frame (a blink): every open eye pixel closed. */
@@ -214,6 +246,10 @@ export const EAR: Readonly<Record<Pose, readonly [number, number]>> = {
   spin1: [8, 3],
   spin2: [8, 3],
   lie: [14, 3],
+  watch: [14, 0],
+  // The head stays put while the ear lies back: props on the head do not move.
+  watchEar: [14, 0],
+  front: [8, 3],
 };
 
 /** Things she wears or holds. `book` to `nightcap` follow the day; `bow`, `star` and `cape` are cosmetics. */

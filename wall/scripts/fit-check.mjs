@@ -129,6 +129,11 @@ const EXPECT = {
   'watch-row': /^ *FAIL \.w-ctl: width \d+ <= \d+/m,
   'watch-over': /^ *FAIL watch polish: .*w-lookbar.* is drawn over the video's box/m,
   'watch-take': /^ *FAIL pointer at \.w-sky \.w-frame /m,
+  // watt drive-in
+  'watt-seat': /^ *FAIL watt drive-in: Watt .* is not 30 px clear of the screen/m,
+  'watt-spot': /^ *FAIL watt drive-in: Watt .* is not within 40 px of his seat/m,
+  'watt-tower': /^ *FAIL watt drive-in: Watt .* px into the tower, not 24 or less/m,
+  'watt-ground': /^ *FAIL watt drive-in: Watt .* is not on his ground/m,
   // tower and hologram
   'tower-over': /^ *FAIL tower and hologram: .* paints over the picture/m,
   'tower-wide': /^ *FAIL tower and hologram: the tower .* overlaps /m,
@@ -242,6 +247,12 @@ const OVERFLOWS = {
   'watch-over': '.w-lookbar { left: 1200px !important; top: 200px !important; }',
   // A refused autoplay that never lets the pointer reach the whole-sky picture.
   'watch-take': '.w-frame.w-take { pointer-events: none !important; }',
+  // watt drive-in: his seat moved to the screen's centre; his seat lifted 100 px off the ground.
+  'watt-seat': '.watt-sheep { translate: 1000px 0 !important; }',
+  'watt-ground': '.watt-sheep { translate: 0 -100px !important; }',
+  // his seat 80 px too far left (30 px clear of the screen still holds); 20 px nearer the screen (into the tower's foot).
+  'watt-spot': '.watt-sheep { translate: -80px 0 !important; }',
+  'watt-tower': '.watt-sheep { translate: 14px 0 !important; }',
   // tower and hologram: the frame's rings filled over the picture; the tower widened 120 px (to 1.16 times, about its centre);
   // the video's box back at the old place; the Look switch moved under the Hologram only; the Hologram's pane scaled 1.3 times;
   // its blend dropped; a refused autoplay's click that never reaches the tilted frame.
@@ -412,6 +423,14 @@ const QUIET = [
   // A refused autoplay over the whole sky: the hint shows, and a click lands on the picture where the wall draws nothing.
   { name: 'Watch polish, whole sky, autoplay refused', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=sky&wplay=0&wstate=refused', checks: WATCH_POLISH, hits: [...WATCH_POLISH_HITS, '.w-clickline', '.w-sky .w-frame'] },
   { name: 'Watch polish, nothing on, drive-in', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=drivein', checks: ['.w-now', '.w-lookbar'], hits: ['.w-lookbar button'] },
+  // watt drive-in: Watt seated in front of the drive-in screen (checked in every drive-in state
+  // with something on): at night and at noon, paused, with 24 saved and a long label, and with
+  // the leave banner. He still takes the pointer there.
+  { name: 'Watt drive-in, seated at night', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=drivein&wplay=0', checks: WATCH_POLISH, hits: ['.watt-hit-part'] },
+  { name: 'Watt drive-in, seated at noon', agents: '3', hz: 'unwind', at: '2026-11-11T12:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=drivein&wplay=0', checks: WATCH_POLISH, hits: ['.watt-hit-part'] },
+  { name: 'Watt drive-in, paused', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=drivein&wplay=0&wstate=paused', checks: WATCH_POLISH, hits: ['.watt-hit-part'] },
+  { name: 'Watt drive-in, 24 saved, long label', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=many&wlook=drivein&wplay=3', checks: WATCH_POLISH, hits: ['.watt-hit-part'] },
+  { name: 'Watt drive-in, leave banner', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=drivein&wplay=0&leave=12', checks: [...WATCH_POLISH, '.leave-banner'], hits: ['.watt-hit-part'] },
   // tower and hologram: the drive-in's Screen tower frame (playing, paused, nothing on, a long label) and the
   // Hologram look. The Look switch's box must be the same in all of them (compared after the run, with the
   // other Watch polish states, so five looks and nothing on are all covered); in the page: nothing of the frame over
@@ -1271,7 +1290,65 @@ try {
       }
       return { sw: box(sw), fails };
     })();
-    // sky layers: a front canvas exactly when a look sits behind the land; with one, it is shown,
+    // watt drive-in: with something on in the drive-in look, Watt sits in his seat. His sprite is at
+    // least 30 px left of the screen (the rectangle driveInAudience gives), at least 22 px from every
+    // control at his height (every .w-ctl, the Look switch, the list card, the Now block, the leave
+    // banner: layout boxes, so a control that has faded still counts), within 40 px of the seat the
+    // rule gives (the rightmost point that keeps both gaps; none within 300 px means he sits where he
+    // stands, and then only the screen gap and the ground are checked), with his feet on the ground
+    // line (Unwind's horizon at y 505), and no more than 24 px into the tower's left foot and stay (the
+    // chosen picture has him 19 px into the foot; every painted tower part at his height is measured).
+    const wattDriveIn = (() => {
+      const aud = document.querySelector('.w-stage.w-drivein')?.getAttribute('data-audience');
+      const sheep = document.querySelector('.watt-sheep > svg');
+      if (!aud || !sheep) return null;
+      const [x] = aud.split(',').map(Number);
+      const me = sheep.getBoundingClientRect();
+      const at = Math.round(me.left) + ',' + Math.round(me.top) + ' to ' + Math.round(me.right) + ',' + Math.round(me.bottom);
+      const fails = [];
+      const show = document.querySelector('.watt')?.dataset.show || 'not watching';
+      // The marquee waiting (a refused autoplay: nothing has played yet): there is no show, so he is not at it.
+      const mq = document.querySelector('.w-tower')?.getAttribute('data-marquee');
+      if (mq !== 'playing' && mq !== 'paused') {
+        if (show === 'seated' || show === 'going') return { at, fails: ['watt drive-in: Watt is at a show that has not started (' + show + ', the marquee says ' + mq + ')'] };
+        return { at, fails: [], waiting: true };
+      }
+      if (show !== 'seated') fails.push('watt drive-in: Watt is not seated (' + show + ')');
+      if (me.right > x - 30 + 0.5) fails.push('watt drive-in: Watt at ' + at + ' is not 30 px clear of the screen at x ' + x);
+      // The controls at his height: boxes reaching into his band (layout boxes, faded or not).
+      const bands = [];
+      for (const e of document.querySelectorAll('.w-lookbar, .w-ctl, .w-card, .w-now, .leave-banner')) {
+        const r = e.getBoundingClientRect();
+        if (r.width <= 0 || r.height <= 0 || r.bottom <= me.top || r.top >= me.bottom) continue;
+        bands.push({ sel: e.className.toString().split(' ')[0], x0: r.left, x1: r.right });
+        if (me.left < r.right + 22 && r.left < me.right + 22) fails.push('watt drive-in: Watt at ' + at + ' is not 22 px clear of ' + e.className.toString().split(' ')[0] + ' at ' + Math.round(r.left) + ' to ' + Math.round(r.right));
+      }
+      // The seat the rule gives (audience.ts seatFor): the rightmost left edge keeping 30 px to the
+      // screen and 22 px to every band, none further than 300 px from the screen.
+      const w = me.width;
+      let seat = Math.floor(x - 30 - w);
+      for (let pass = 0; pass <= bands.length; pass++) {
+        let moved = false;
+        for (const b of bands) if (seat > b.x0 - w - 22 && seat < b.x1 + 22) { seat = Math.floor(b.x0 - w - 22); moved = true; }
+        if (!moved) break;
+      }
+      const none = seat < Math.max(140, x - 300 - w) || bands.some((b) => seat > b.x0 - w - 22 && seat < b.x1 + 22);
+      if (!none && Math.abs(me.left - seat) > 40) fails.push('watt drive-in: Watt at ' + at + ' is not within 40 px of his seat at ' + seat);
+      if (Math.abs(me.bottom - 505) > 1 || me.left < 139) fails.push('watt drive-in: Watt at ' + at + ' is not on his ground');
+      // The tower's painted parts at his height (not the floor reflection, the ground shadow or the
+      // surround's rings): how far he stands into any of them.
+      let into = 0;
+      for (const p of document.querySelectorAll('.w-tower path, .w-tower rect')) {
+        if (p.closest('g[mask]') || p.getAttribute('fill-rule') === 'evenodd') continue;
+        const r = p.getBoundingClientRect();
+        if (r.width <= 0 || r.bottom <= me.top || r.top >= me.bottom || r.left > x - 8) continue;
+        const d = Math.min(me.right, r.right) - Math.max(me.left, r.left);
+        if (d > into) into = d;
+      }
+      if (into > 24) fails.push('watt drive-in: Watt at ' + at + ' stands ' + Math.round(into) + ' px into the tower, not 24 or less');
+      return { at, fails };
+    })();
+        // sky layers: a front canvas exactly when a look sits behind the land; with one, it is shown,
     // covers the stage, comes after the video in the same stage, is opaque on the lake under the
     // video and clear (but for the grain) at the top of the sky; with \`skycheck=moon\` the moon is drawn and its disc is
     // 40 px clear of every card, the player, Up next, the tabs, the left block and the clock's text.
@@ -1504,7 +1581,7 @@ try {
       }
       return fails;
     })();
-    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, meetOut, strip, opened, watchPolish, skyLayers, thCheck, tileText, listen, lines, watchBehaviour });
+    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, meetOut, strip, opened, watchPolish, skyLayers, thCheck, tileText, listen, lines, watchBehaviour, wattDriveIn });
     document.body.appendChild(pre);
   }, new URLSearchParams(location.search).get('card') ? 7000 : 3000);</script>`;
   const broken = overflow ? `<style>${OVERFLOWS[overflow]}</style>` : '';
@@ -1570,6 +1647,11 @@ try {
     'watch-row': (v) => v.name === 'Watch polish, feathered, single video',
     'watch-over': (v) => v.name === 'Watch polish, drive-in, playlist, long label',
     'watch-take': (v) => v.name === 'Watch polish, whole sky, autoplay refused',
+    // watt drive-in
+    'watt-seat': (v) => v.name === 'Watt drive-in, seated at night',
+    'watt-ground': (v) => v.name === 'Watt drive-in, seated at night',
+    'watt-spot': (v) => v.name === 'Watt drive-in, seated at night',
+    'watt-tower': (v) => v.name === 'Watt drive-in, seated at night',
     // tower and hologram
     'tower-over': (v) => v.name === 'Watch polish, tower playing',
     'tower-wide': (v) => v.name === 'Watch polish, tower playing',
@@ -1618,7 +1700,14 @@ try {
       process.exit(1);
     }
     const text = m[1].replaceAll('&quot;', '"').replaceAll('&amp;', '&');
-    const { res, page: doc, overlaps, cut, gaps, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, meetOut, strip, opened, watchPolish, skyLayers, thCheck, tileText, listen, lines, watchBehaviour } = JSON.parse(text);
+    const { res, page: doc, overlaps, cut, gaps, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, meetOut, strip, opened, watchPolish, skyLayers, thCheck, tileText, listen, lines, watchBehaviour, wattDriveIn } = JSON.parse(text);
+    // watt drive-in
+    if (wattDriveIn) {
+      for (const f of wattDriveIn.fails) console.log(`  FAIL ${f}`);
+      if (wattDriveIn.fails.length) failed = true;
+      else if (wattDriveIn.waiting) console.log('  ok   watt drive-in: the marquee is waiting, Watt is not at the show');
+      else console.log(`  ok   watt drive-in: seated at ${wattDriveIn.at}, on his ground, 30 px or more left of the screen, 22 px or more from every control at his height, near his seat, 24 px or less into the tower`);
+    }
     // watch behaviour
     for (const f of watchBehaviour) console.log(`  FAIL ${f}`);
     if (watchBehaviour.length) failed = true;
