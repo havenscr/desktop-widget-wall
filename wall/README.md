@@ -2017,6 +2017,52 @@ The Power BI chords above are placeholders, not checked against the program. Ico
 
 Dev mocks for stills (`?keys=typical|general|nogeneral|idle|many|one|wrong|refuse|problem|library|off`, `?pins=long`, `?hold=<set id or foryou>`, `?source=default`, `?arrange=ok|none|nowin|off`; what waits for For you comes from `?agents=ask`, `?meet=none` and `?net=calm`) are in `wall/src/bridge/devMocks/deck.ts`. `npm --prefix wall run fit-check` checks the deck in sparse, typical and heavy states, For you held, the picker open, and the built-in library sets (twelve pages, the longest labels, a set whose app is not in front), and fails when any part of the deck goes below its floor (the open picker aside), a key label runs outside its tile, two tiles share pixels, the Now heading is cut, or the open picker comes within 16 px of the timeline (checked with the whole library open).
 
+## On Air
+
+The rail's On air button opens a first version of a place for running a live show by hand. It needs no stream service: a show timer, the run of show from a text file, the current part's notes with Previous part and Next part, Mark a moment, and the key deck's recording keys. The code is in `src/onair/` and `src/styles/onair.css`; the files are read and written by `src-tauri/src/wall2_onair.rs`. The day strip stays (the Work kind) and the horizon uses Work's camera (`onair` in `CAMERAS`, the same wide framing). The clock is hidden on On Air, as planned: the show timer sits in its place and the time of day stays on the strip. Watt lives here too: his walk and ground on On Air are Work's (all three columns end at the bottom of the top band, so the band under them is his), and the recording rule for him is unchanged.
+
+- **Show timer** (left, 104 px). Start, Stop (it pauses and keeps the time; Start carries on) and Reset, which works only while stopped and asks "Reset? Click again" for three seconds so a slip never loses the time; Reset also goes back to the first part. The time reads `mm:ss` up to 59:59, then `h:mm:ss`, at most 24 hours: at 24 hours the timer stops itself and the line under it says "Stopped at 24 hours. Reset to start again."; a stored running timer older than that comes back in the same stopped state, and a stored start in the future (past two seconds of clock jitter) is not trusted. Under it: "Started 9:42 AM by hand. No stream service connected." The timer and the current part are kept in local storage (`wall2-onair`: running, `startedAt`, `accumulatedMs`, the first start, the stop time, the part and when it began), checked field by field when read (anything odd gives an idle timer), so a running timer keeps counting across a reload, a place change or a restart of the wall, from the stored start.
+- **Run of show** (left). One row a part: done parts ticked, the current one lit with its minutes left, then a quiet amber "N min over" once it runs past its planned minutes. A click on a row makes it current. Forty parts scroll inside the list, which keeps the current row in view. The foot says where the parts come from (and how many lines were skipped, with the reasons on hover), with Reload and Open file. The file is read when the place opens and on Reload, never more often than every 5 seconds (Reload says "Just read" inside that time); a read that fails keeps the last good parts and says so in amber. Each read holds the current part to the parts there are and keeps that (the time in the part starts again when the read moves it), so a file that shrinks and grows again does not bring the old part back. A failed Open file says so in this foot, never under Mark a moment.
+- **Notes for this part** (centre card, 1080 by 486). The current part's notes as large as they fit (36, 30, 26 or 22 px); notes that do not fit even at 22 px end in "+N more" with the rest on hover. Previous part and Next part (52 px), and "Next: Audience questions, 15 min". With no file, a refused file or no parts, the card shows how the file works in three lines.
+- **Mark a moment** (right, 96 px). One click appends a line to `marks.txt` with the show time and the current part. A double click, or a second click within a second, counts once (in the page and again in Rust). The tile shows today's count and the last three show times ("2 marked: 03:12, 09:40. Saved to marks.txt"); a refusal says why in one amber line ("marks.txt is full; move it aside", "No config folder on this PC"). The file button beside it opens `marks.txt`. Today's count is read again after local midnight (one timer to the next midnight, nothing while the page is hidden, and a read on coming back if the date moved on). The two files keep separate notes: a marks refusal clears when the marks are next read.
+- **Recording keys** (right). Four of the key deck's own tiles (its classes and its colours by kind), from the built-in library by id: Record 16:9 (`record-169`, the `layout:record169` wall action), Stop (`rec-stop`), Snip (`snip`) and Hide screen (`strip-dark`, the wall's Hide screen). Each press goes through the deck's own press path (`useKeyPress` and `wall2_keys_send_library`, then `runWallAction` when Rust answers with a wall action); the result shows for a few seconds in place of the heading. Stop agrees with recording mode: lit with the red edge while a recorder runs, plain with a dashed edge (and saying so on hover) when none does. Label, icon, group, action and where a key goes are read from the key library by id (the recorder's keys also from `signals/recordingKeys.ts`), never copied; an id the library lacks shows a disabled tile with a one-line reason. While the page is hidden or the display is off, nothing on this place ticks.
+- **Kept free.** The right column ends with the footnote "First version: a timer, a text file and keys. No chat, viewer count or prompter link yet." The space under it, down to the strip, is kept for a planned studio lights block; nothing else goes there.
+
+### The two files
+
+Both live in the app config folder, beside `feeds.json`. The page never sends a path and never sees the file's own text.
+
+`run-of-show.txt`, UTF-8, at most 32 KB (larger: refused, "run-of-show.txt is over 32 KB"; not UTF-8: refused, "run-of-show.txt is not UTF-8 text"). One item a line:
+
+```text
+# Friday stream
+// Comments start with two slashes and are ignored.
+## Welcome | 5
+- Say hello and what today is about
+## Product demo | 20
+- Point it at the real model first
+Any other line under a part is a note too
+## Questions
+```
+
+- `# <title>`: optional, only on the first line that is not blank or a comment; at most 60 characters (longer is cut with an ellipsis).
+- `## <part name> | <minutes>`: a part. The name is 1 to 60 characters (longer is cut with an ellipsis); minutes are optional, 1 to 240 (out of range: no minutes). Text after the last bar that is not a number belongs to the name. At most 40 parts; later parts and their notes are skipped.
+- `- <note>`, or any other line under a part: a note, at most 160 characters (longer is cut with an ellipsis), at most 12 a part.
+- Lines before the first part (other than the title and comments), empty notes and lines past a limit are skipped and counted. Control characters, line and paragraph separators and direction marks are dropped everywhere, and a tab becomes a space.
+
+Open file (`wall2_onair_open` with `show`) writes a starter file with three example parts only when there is no file, never over one, then opens it in the default editor.
+
+`marks.txt` is append only, one line a mark, tab separated: the local time (RFC 3339 with its offset), the show time `hh:mm:ss`, and the part name (control characters, separators and direction marks removed, a tab turned into a space; `-` for none). For example `2026-11-13T10:24:31-08:00	00:42:13	Product demo`. One file for every day; the date is on each line. Past 1 MB a mark is refused ("marks.txt is full; move it aside"): move the file aside and the next mark starts a new one. Today's count reads at most the last 64 KB.
+
+Commands (only the `wall2` window may call them; the file work runs off the main thread; nothing is logged; errors are `not-configured`, `failed` or `refused`):
+
+- `wall2_onair_show()`: `{ state: "ok" | "missing" | "refused", title, parts: [{ name, minutes, notes }], skipped, reason, readAt }`.
+- `wall2_onair_mark(showMs, part)`: `showMs` at most 24 hours and `part` at most 60 characters, else `refused`; answers `{ today, last }` (the last three show times marked today). A second call within a second writes nothing and answers the same count.
+- `wall2_onair_marks_today()`: the same answer, without writing.
+- `wall2_onair_open(which)`: `show` or `marks` only (anything else is `refused`).
+
+Review knobs (development only): `?screen=onair` opens On Air; `?show=typical|one|long|forty|empty|missing|refused|down`; `?marks=0|2|full`; `?oatimer=run|stopped|idle|limit` (running at 42:13, stopped at 42:13, never started, stopped itself at 24 hours); `?openfail=show|marks` makes Open file fail. The gallery's `onair` screen has the typical, stopped, no file, refused file, forty parts, long notes, marks full, one part, read fails, recording, Watt standing, 24 hour stop, failed Open file and Reset states (they open with `?hz=onair`, so the horizon is on On Air's own camera from the first frame and Watt, who waits for his place's camera, stands in the still). `fit-check` holds each column inside its planned box (x 124 to 764, 800 to 1880 and 1920 to 2540, above the strip), fails on a note cut without "+N more", on a recording key smaller than 40 by 40 px and on Watt's box (or his click box) overlapping a column; its self-test breaks are `onair-box` (the notes card 1400 px wide), `onair-notes` (every note shown at 40 px) `onair-keys` (20 px tiles) and `onair-watt` (Watt lifted onto the notes card).
+
 ## Content security policy
 
 Set in `src-tauri/tauri.wall2.conf.json` under `app.security.csp` (Wall 2 only;

@@ -69,6 +69,7 @@ mod wall2_signals;
 mod wall2_sonos;
 mod wall2_watch;
 mod wall2_tools;
+mod wall2_onair;
 use audio_analysis::{AudioAnalyzer, AudioLevels};
 
 // ================================================================
@@ -3919,7 +3920,11 @@ pub fn run() {
             wall2_desk::wall2_desk_house,
             wall2_desk::wall2_desk_rooms,
             wall2_desk::wall2_desk_security,
-            wall2_desk::wall2_desk_clear_alerts
+            wall2_desk::wall2_desk_clear_alerts,
+            wall2_onair::wall2_onair_show,
+            wall2_onair::wall2_onair_mark,
+            wall2_onair::wall2_onair_marks_today,
+            wall2_onair::wall2_onair_open
         ])
         .setup(|app| {
             #[cfg(windows)]
