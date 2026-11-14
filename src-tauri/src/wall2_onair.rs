@@ -79,9 +79,20 @@ pub struct Show {
     pub read_at: u64,
 }
 
-/// Drops every control character (tabs and line ends included) and trims the ends.
+/// True for a character that never reaches a file line or the page: every control character, the
+/// line and paragraph separators, and the invisible direction marks and overrides.
+fn is_dropped(c: char) -> bool {
+    c.is_control()
+        || matches!(c, '\u{2028}' | '\u{2029}' | '\u{200E}' | '\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}')
+}
+
+/// A tab becomes a space; every other dropped character (see `is_dropped`) is removed; the ends are trimmed.
 pub(crate) fn clean(s: &str) -> String {
-    s.chars().filter(|c| !c.is_control()).collect::<String>().trim().to_string()
+    s.chars()
+        .filter_map(|c| if c == '\t' { Some(' ') } else if is_dropped(c) { None } else { Some(c) })
+        .collect::<String>()
+        .trim()
+        .to_string()
 }
 
 /// At most `max` characters; a longer text keeps `max - 1` and ends with an ellipsis.
@@ -233,6 +244,18 @@ pub(crate) fn mark_line(utc: i64, offset: i64, show_ms: u64, part: Option<&str>)
     format!("{}\t{}\t{}\n", rfc3339_local(utc, offset), show_time(show_ms), part)
 }
 
+/// The bytes of one appended write: the line, led by a newline when the file is not empty and its
+/// last byte is not one (a file saved by hand without a final newline), so a mark never joins the
+/// last line. A file ending in `\r\n` already ends in a newline byte.
+pub(crate) fn append_bytes(last_byte: Option<u8>, line: &str) -> Vec<u8> {
+    let mut out = Vec::with_capacity(line.len() + 1);
+    if last_byte.is_some_and(|b| b != b'\n') {
+        out.push(b'\n');
+    }
+    out.extend_from_slice(line.as_bytes());
+    out
+}
+
 /// True when a line of this length still fits under the marks file's limit.
 pub(crate) fn fits(file_len: u64, line_len: usize) -> bool {
     file_len + line_len as u64 <= MARKS_MAX_BYTES
@@ -352,19 +375,24 @@ fn mark(app: &tauri::AppHandle, show_ms: u64, part: Option<String>) -> Result<Ma
             return read_today(&path, utc, offset);
         }
         let line = mark_line(utc, offset, show_ms, part.as_deref());
-        let len = match std::fs::metadata(&path) {
-            Ok(m) => m.len(),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => 0,
-            Err(_) => return Err("failed".to_string()),
-        };
-        if !fits(len, line.len()) {
-            return Err("refused".to_string());
-        }
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir).map_err(|_| "failed".to_string())?;
         }
-        let mut file = std::fs::OpenOptions::new().create(true).append(true).open(&path).map_err(|_| "failed".to_string())?;
-        file.write_all(line.as_bytes()).map_err(|_| "failed".to_string())?;
+        let mut file = std::fs::OpenOptions::new().create(true).read(true).append(true).open(&path).map_err(|_| "failed".to_string())?;
+        let len = file.metadata().map_err(|_| "failed".to_string())?.len();
+        let mut last_byte = None;
+        if len > 0 {
+            let mut one = [0u8; 1];
+            file.seek(SeekFrom::Start(len - 1)).map_err(|_| "failed".to_string())?;
+            file.read_exact(&mut one).map_err(|_| "failed".to_string())?;
+            last_byte = Some(one[0]);
+        }
+        let bytes = append_bytes(last_byte, &line);
+        if !fits(len, bytes.len()) {
+            return Err("refused".to_string());
+        }
+        // One write, so a line is never split; an append always lands at the end of the file.
+        file.write_all(&bytes).map_err(|_| "failed".to_string())?;
         *last = Some(now);
     }
     read_today(&path, utc, offset)
@@ -503,7 +531,39 @@ mod tests {
         assert_eq!(title.as_deref(), Some("Show"));
         assert_eq!(p[0].name, "Part");
         assert_eq!(p[0].minutes, Some(5));
-        assert_eq!(p[0].notes, vec!["abc".to_string()]);
+        assert_eq!(p[0].notes, vec!["ab c".to_string()]);
+    }
+
+    #[test]
+    fn separators_and_direction_marks_are_dropped_and_a_tab_is_a_space() {
+        assert_eq!(clean("a\u{2028}b\u{2029}c"), "abc");
+        assert_eq!(clean("\u{200E}x\u{200F}y\u{202A}\u{202B}\u{202C}\u{202D}\u{202E}z\u{2066}\u{2067}\u{2068}\u{2069}"), "xyz");
+        assert_eq!(clean("Part\tTwo"), "Part Two");
+        assert_eq!(clean("\t\u{2028}\t"), "");
+        // Ordinary text, including right-to-left letters themselves, is kept.
+        assert_eq!(clean("caf\u{e9} \u{5e9}\u{5dc}\u{5d5}\u{5dd}"), "caf\u{e9} \u{5e9}\u{5dc}\u{5d5}\u{5dd}");
+        let (title, p, _) = parse_show("# A\u{202E}B\n## Na\u{2028}me\tx | 5\n- n\u{200F}ote\tone\n");
+        assert_eq!(title.as_deref(), Some("AB"));
+        assert_eq!(p[0].name, "Name x");
+        assert_eq!(p[0].notes, vec!["note one".to_string()]);
+        let line = mark_line(1_794_603_909, 0, 0, Some("P\u{2029}a\u{202E}r\tt"));
+        assert_eq!(line, "2026-11-13T21:05:09+00:00\t00:00:00\tPar t\n");
+    }
+
+    #[test]
+    fn a_mark_never_joins_the_last_line() {
+        let line = "2026-11-13T21:05:09+00:00\t00:00:00\t-\n";
+        assert_eq!(append_bytes(None, line), line.as_bytes());
+        assert_eq!(append_bytes(Some(b'\n'), line), line.as_bytes());
+        // A file saved by hand without a final newline: the same write starts with one.
+        let mut want = vec![b'\n'];
+        want.extend_from_slice(line.as_bytes());
+        assert_eq!(append_bytes(Some(b'x'), line), want);
+        // A file ending in a Windows line end already ends in a newline byte.
+        let file = b"2026-11-12T09:00:00+00:00\t00:01:00\tA\r\n";
+        assert_eq!(append_bytes(file.last().copied(), line), line.as_bytes());
+        // The size limit counts the extra byte.
+        assert_eq!(append_bytes(Some(b'x'), line).len(), line.len() + 1);
     }
 
     #[test]
@@ -542,7 +602,7 @@ mod tests {
         let utc = 1_794_603_909;
         assert_eq!(mark_line(utc, -8 * 3600, 2_533_000, Some("Product demo")), "2026-11-13T13:05:09-08:00\t00:42:13\tProduct demo\n");
         assert_eq!(mark_line(utc, 0, 0, None), "2026-11-13T21:05:09+00:00\t00:00:00\t-\n");
-        assert_eq!(mark_line(utc, 5 * 3600 + 1800, 3_725_999, Some("A\tB\nC\r")), "2026-11-14T02:35:09+05:30\t01:02:05\tABC\n");
+        assert_eq!(mark_line(utc, 5 * 3600 + 1800, 3_725_999, Some("A\tB\nC\r")), "2026-11-14T02:35:09+05:30\t01:02:05\tA BC\n");
         assert_eq!(mark_line(utc, 0, 1, Some(" \t\n")), "2026-11-13T21:05:09+00:00\t00:00:00\t-\n");
         assert_eq!(mark_line(utc, 0, SHOW_MS_MAX, Some("x")).split('\t').nth(1), Some("24:00:00"));
         assert_eq!(mark_line(utc, 0, 0, Some("x")).matches('\t').count(), 2);
