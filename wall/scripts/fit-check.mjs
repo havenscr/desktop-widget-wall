@@ -111,7 +111,7 @@ const EXPECT = {
   'watch-take': /^ *FAIL pointer at \.w-sky \.w-frame /m,
   // sky layers
   'sky-front': /^ *FAIL sky layers: the front canvas is hidden/m,
-  'sky-moon': /^ *FAIL sky layers: the moon at 600,200,44 is \d+ px from /m,
+  'sky-moon': /^ *FAIL sky layers: the moon at 300,200,44 is \d+ px from /m,
   'sky-always': /^ *FAIL sky layers: 1 front canvas with no look behind the land/m,
   'sky-crop': /^ *FAIL sky layers: the whole sky picture is at -?\d+,-?\d+,\d+, not inside the stage near its top/m,
   'sky-seam': /^ *FAIL sky layers: the pixel proof at \w+: \d+ pixels differ by more than 2 levels/m,
@@ -181,7 +181,8 @@ const OVERFLOWS = {
   // A refused autoplay that never lets the pointer reach the whole-sky picture.
   'watch-take': '.w-frame.w-take { pointer-events: none !important; }',
   // sky layers: the front canvas hidden (the whole sky's video no longer behind the land), the moon
-  // under Listen's player (a URL knob, SKY_BREAK_Q), the front canvas mounted on a place that never asked.
+  // forced under the clock and the tabs (a URL knob, SKY_BREAK_Q; the player and the cards claim their
+  // boxes, so a moon forced beside them is not drawn at all), the front canvas mounted on a place that never asked.
   'sky-front': '.horizon-front { display: none !important; }',
   'sky-moon': '',
   'sky-always': '',
@@ -191,7 +192,7 @@ const OVERFLOWS = {
   'sky-seam': '.horizon-front { filter: brightness(1.04) !important; }',
 };
 // sky layers: breaks that need the horizon's development knobs in the URL, not a stylesheet.
-const SKY_BREAK_Q = { 'sky-moon': '&skymoon=600,200,44', 'sky-always': '&sky=front' };
+const SKY_BREAK_Q = { 'sky-moon': '&skymoon=300,200,44', 'sky-always': '&sky=front' };
 if (flag('self-test')) {
   const script = fileURLToPath(import.meta.url);
   let missed = 0;
