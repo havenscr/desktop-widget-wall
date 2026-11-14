@@ -4,7 +4,7 @@ import { FreeRow, Lane } from './Lane';
 import { IconAlertTriangle } from '@tabler/icons-react';
 import { ageText, allFreeText, cards, clockText, countText, questionFor, freeSlots, headerAsk, MAX_PIPS, type OmniSummary } from './model';
 import { busyNow, useBusyToday } from '../ribbon/AgentRow';
-import { busyStep, timeBySteps, todayLimitText } from '../ribbon/busy';
+import { busyStep, knownLimit, timeBySteps, todayLimitText } from '../ribbon/busy';
 import { dayStart, isoDay } from '../ribbon/days';
 import { scrollToCard, useCardScroll } from './cardScroll';
 import { snooze, useSnoozed } from './snooze';
@@ -44,20 +44,22 @@ function headerTight(hd: HTMLElement): boolean {
  * work right now against the limit (mint 1, cyan 2, violet 3, amber at the limit, red over it),
  * "N of 4 working", "at the limit" at it, and over it hatched pips and a tag with a warning
  * mark, "5 over", so over the limit never rests on colour alone. The count is the one rule
- * the strip's cells and the panel's "Busy at once" line use (`ribbon/busy.ts`).
+ * the strip's cells and the panel's "Busy at once" line use (`ribbon/busy.ts`). With no known
+ * limit (an older helper sends none, or a zero) it shows the honest count alone: "N working",
+ * no pips, no colour step, no over tag.
  */
 function SlotMeter({ summary, stale, fit, busy }: { summary: OmniSummary; stale: boolean; fit: HeaderFit; busy: MeterCount }) {
   const { n, limit, today } = busy;
-  const step = busyStep(n, limit);
-  const pips = Math.max(1, Math.min(MAX_PIPS, limit));
-  const over = Math.max(0, n - limit);
+  const step = limit === null ? 0 : busyStep(n, limit);
+  const pips = limit === null ? 0 : Math.max(1, Math.min(MAX_PIPS, limit));
+  const over = limit === null ? 0 : Math.max(0, n - limit);
   const open = typeof summary.slots.sessions === 'number' ? `, ${summary.slots.sessions} open` : '';
-  const head = `${n} working${open}, limit ${limit}`;
+  const head = limit === null ? `${n} working${open}, limit unknown` : `${n} working${open}, limit ${limit}`;
   const rule = 'Sessions working at once; helpers count with their session.';
   return (
     <button
       type="button"
-      className={`slot-meter s${step}`}
+      className={`slot-meter${step > 0 ? ` s${step}` : ''}${limit === null ? ' nolimit' : ''}`}
       disabled={stale}
       aria-label={`${head}. ${today ? `${today} ` : ''}${rule} Click to bring OmniGent forward.`}
       onClick={() => focusSession()}
@@ -70,18 +72,20 @@ function SlotMeter({ summary, stale, fit, busy }: { summary: OmniSummary; stale:
         </>
       ))}
     >
-      <span className="pips" aria-hidden="true">
-        {Array.from({ length: pips }, (_, i) => (
-          <i key={i} className={i < n ? 'on' : ''} />
-        ))}
-      </span>
-      {fit < 2 && (
+      {limit !== null && (
+        <span className="pips" aria-hidden="true">
+          {Array.from({ length: pips }, (_, i) => (
+            <i key={i} className={i < n ? 'on' : ''} />
+          ))}
+        </span>
+      )}
+      {(fit < 2 || limit === null) && (
         <span className="xs">
-          <b>{`${n} of ${limit}`}</b>
+          <b>{limit === null ? n : `${n} of ${limit}`}</b>
           {fit === 0 ? ' working' : ''}
         </span>
       )}
-      {fit === 0 && step === 4 && <span className="at-limit">at the limit</span>}
+      {fit === 0 && limit !== null && step === 4 && <span className="at-limit">at the limit</span>}
       {over > 0 && (
         <span className="over-tag">
           <IconAlertTriangle stroke={2} aria-hidden="true" />
@@ -95,15 +99,15 @@ function SlotMeter({ summary, stale, fit, busy }: { summary: OmniSummary; stale:
 /** What the meter shows: sessions working now, the limit, and today's time at and over it. */
 interface MeterCount {
   n: number;
-  limit: number;
+  limit: number | null;
   today: string | null;
 }
 
 function useMeterCount(summary: OmniSummary, now: number): MeterCount {
   const b = useBusyToday(now);
-  const limit = summary.slots.limit;
+  const limit = knownLimit(summary.slots.limit);
   if (!b) return { n: summary.slots.working ?? summary.slots.used, limit, today: null };
-  const today = b.fromLog ? todayLimitText(timeBySteps(b.spans, limit, dayStart(isoDay(now)), b.until), limit) : null;
+  const today = b.fromLog && limit !== null ? todayLimitText(timeBySteps(b.spans, limit, dayStart(isoDay(now)), b.until), limit) : null;
   return { n: busyNow(b, summary), limit, today };
 }
 

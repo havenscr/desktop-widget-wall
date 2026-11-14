@@ -118,7 +118,7 @@ it('the header, a cell and the Busy at once line agree: five working at once, on
 it('at the limit the meter says so in amber; a past day counts its recorded spans and has no quiet line', async () => {
   answer = () => {
     const s = busyDay();
-    return { ...s, day: s.day.filter((d) => d.lane !== ids[4] && d.lane !== ids[3]).concat([{ lane: ids[3], start: iso('10:00'), end: null, kind: 'run' }]) };
+    return { ...s, slots: { ...s.slots, working: 4 }, day: s.day.filter((d) => d.lane !== ids[4] && d.lane !== ids[3]).concat([{ lane: ids[3], start: iso('10:00'), end: null, kind: 'run' }]) };
   };
   const r = render(
     <>
@@ -139,8 +139,12 @@ it('at the limit the meter says so in amber; a past day counts its recorded span
   const panel = r.container.querySelector('.agents-today') as HTMLElement;
   expect(panel.className).toContain('past');
   // 9:00 to 10:00 and 10:30 to 11:00 one, 10:00 to 10:30 two: from the record's stage spans, labelled.
-  expect([...panel.querySelectorAll('.at-busy-s')].map((x) => x.textContent)).toEqual(['at 11 h 30 m', 'at 230 m', 'at 30 m', 'at 40 m', 'over 40 m']);
-  expect(panel.querySelector('.at-busy-sum')!.textContent).toBe('Never over your limit of 4 that day (recorded spans)');
+  expect([...panel.querySelectorAll('.at-busy-s')].map((x) => x.textContent)).toEqual(['at 11 h 30 m', 'at 230 m', 'at 30 m', 'at 40 m', 'more than 40 m']);
+  // The record cannot tell running from waiting, so it says what it counted and never says "over your limit".
+  expect(panel.querySelector('.at-busy-k')!.textContent).toBe('Open at once');
+  expect(panel.querySelector('.at-busy-sum')!.textContent).toBe('Up to 2 open at once, from the saved record');
+  expect(panel.textContent).not.toContain('Over your limit');
+  expect(panel.querySelector('.at-limit')).toBeNull();
   expect(panel.querySelector('.dd-line, .at-line')).toBeNull();
   expect([...panel.querySelectorAll('.at-row .at-name')].map((x) => x.textContent)).toEqual(['Release notes draft', 'Docs tidy pass']);
 }, 20_000);

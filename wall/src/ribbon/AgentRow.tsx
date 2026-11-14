@@ -2,8 +2,8 @@ import { useEffect, useRef } from 'react';
 import { agentLayout, cards, dayTotals, laneWaits, type AgentSegment, type Lane, type OmniSummary } from '../agents/model';
 import { agentsStale, agentsUntil, useAgents, useAgentsStore, type AgentsState } from '../agents/useAgents';
 import { tip } from '../ui/HoverTip';
-import { busyAt, busyStep, parentIds, workingSpans, type BusySpan } from './busy';
-import { isoDay, loadDay, useDaysStore, type DayRecord } from './days';
+import { busyAt, busyStep, countedSegments, knownLimit, logSegments, parentIds, workingIds, workingSpans, type BusySpan, type LogSeg } from './busy';
+import { dayStart, isoDay, reloadDay, useDaysStore, type DayRecord } from './days';
 import { activityCells, agentsLineParts, agentsLineWidth, agentsLineX, END_HOUR, needle, RX, shortTime, START_HOUR, wallHour, type AgentCounts } from './model';
 
 /** x on the ribbon for a time today, clamped to 6 AM to 12 AM; null for another day. */
@@ -16,10 +16,14 @@ export function ribbonX(ms: number, now: number): number | null {
 /** Words for a session's state, as the Day drawer's pills and the panel use them. */
 export const STATE_WORDS: Record<string, string> = { working: 'working', blocked: 'waiting on you', review: 'in review', idle: 'idle' };
 
-/** A card's state word: waiting on the owner first, then failed, then idle (helper 1.1.0 on), then its state. */
+/**
+ * A card's state word: failed first (a failed session is never read as working or waiting; the
+ * quiet line still says how long it has waited), then waiting on the owner, then idle (helper
+ * 1.1.0 on), then its state.
+ */
 export function laneStateWord(l: Lane): string {
-  if (laneWaits(l)) return STATE_WORDS.blocked;
   if (l.failed) return 'failed';
+  if (laneWaits(l)) return STATE_WORDS.blocked;
   if (l.live === 'idle' && l.state === 'working') return STATE_WORDS.idle;
   return STATE_WORDS[l.state] ?? l.state;
 }
@@ -64,54 +68,64 @@ export function agentBoxes(st: AgentsState, now: number): { x: number; width: nu
 }
 
 /**
- * Today's working spans, as the header's meter, the strip's cells and the panel's "Busy at once"
- * line all count them (`busy.ts`): run spans of parent and standalone sessions only. `until` is
- * now, or the last good answer for a stale one; `fromLog` is false when the helper sent no day
- * log at all (then the meter falls back to the server's own count).
+ * Today's counted spans, as the header's meter, the strip's cells and the panel's "Busy at once"
+ * line all count them (`busy.ts`): the day log's spans of parent and standalone sessions only,
+ * clipped to today (a span from before midnight counts from midnight), with no open run of a
+ * session whose card does not say working. `until` is now, or the last good answer for a stale
+ * one; `fromLog` is false when the helper sent no day log at all. `limit` is null when the
+ * helper sent none (or a zero): nothing is then measured against a limit.
  */
 export interface BusyToday {
+  segs: LogSeg[];
   spans: BusySpan[];
-  limit: number;
+  limit: number | null;
   until: number;
   fromLog: boolean;
 }
 
 export function busyToday(st: AgentsState, now: number, record: DayRecord | null = null): BusyToday | null {
-  if (!st.summary) return null;
-  return {
-    spans: workingSpans(daySegments(st, now), parentIds(st.summary, record)),
-    limit: st.summary.slots.limit,
-    until: Math.min(now, agentsUntil(st) ?? now),
-    fromLog: st.summary.day.length > 0,
-  };
+  const s = st.summary;
+  if (!s) return null;
+  const until = Math.min(now, agentsUntil(st) ?? now);
+  const parents = parentIds(s, record);
+  const segs = countedSegments(logSegments(s.day, dayStart(isoDay(now)), until, st.skewMs), parents, workingIds(s));
+  return { segs, spans: workingSpans(segs, parents), limit: knownLimit(s.slots.limit), until, fromLog: s.day.length > 0 };
 }
 
-/** Today's working spans from the shared stores (today's saved record names the sessions that closed). */
+/** Today's counted spans from the shared stores (today's saved record names the sessions that closed). */
 export function useBusyToday(now: number): BusyToday | null {
   const st = useAgentsStore();
   const read = useDaysStore((d) => d.records[isoDay(now)]);
   return busyToday(st, now, read?.record ?? null);
 }
 
-/** How many work right now: the day log's open runs, or the server's count when there is no log. */
+/**
+ * How many work right now. The server's own working count when the helper sends one (it is the
+ * number the cards' pills add up to); else the day log's open runs of working cards; else the
+ * slots in use (an older helper).
+ */
 export function busyNow(b: BusyToday, s: OmniSummary): number {
-  return b.fromLog ? busyAt(b.spans, b.until - 1) : (s.slots.working ?? s.slots.used);
+  if (typeof s.slots.working === 'number') return s.slots.working;
+  return b.fromLog ? busyAt(b.spans, b.until - 1) : s.slots.used;
 }
 
-/** "10:00 to 10:12: up to 3 working at once, over your limit of 2, one waited on you". */
-export function cellWords(c: { start: number; end: number; busy: number; waits: boolean }, limit: number): string {
+/** "10:00 to 10:12: up to 3 working at once, over your limit of 2, one waited on you" (no limit words without a limit). */
+export function cellWords(c: { start: number; end: number; busy: number; waits: boolean }, limit: number | null): string {
   const n = c.busy === 0 ? 'none working' : c.busy === 1 ? '1 working' : `up to ${c.busy} working at once`;
-  return `${shortTime(c.start)} to ${shortTime(c.end)}: ${n}${c.busy > limit ? `, over your limit of ${limit}` : ''}${c.waits ? ', one waited on you' : ''}`;
+  return `${shortTime(c.start)} to ${shortTime(c.end)}: ${n}${limit !== null && c.busy > limit ? `, over your limit of ${limit}` : ''}${c.waits ? ', one waited on you' : ''}`;
 }
 
-/** Ten minutes: a session that closed earlier today is named by today's saved record, read at most this often. */
-const RECORD_EVERY_MS = 10 * 60_000;
+/** What the strip's colours mean, in one line (the activity row's own tip carries it). */
+export function colourKey(limit: number | null): string {
+  if (limit === null) return 'Each cell is 12 minutes of agent work; an amber underline means a session waited on you.';
+  return `Cell colour is how many sessions worked at once: 1 mint, 2 cyan, 3 violet, ${limit} amber, over ${limit} red, hatched and taller. An amber underline means a session waited on you.`;
+}
 
 /**
  * The calm strip's agent row (Work and Meet, row 2): a thin activity bar from 6 AM to now in
  * 12 minute cells, each coloured by the most sessions working at once in it against the limit
- * (`busy.ts`: mint 1, cyan 2, violet 3, amber at the limit, red, taller and hatched over it),
- * with an amber underline where one waited on the owner;
+ * (`busy.ts`: mint 1, cyan 2, violet 3, amber at the limit, red, taller and hatched over it;
+ * with no known limit the plain look), with an amber underline where one waited on the owner;
  * and one line after the now needle, "12 sessions: 2 need you, 5 working" (with none waiting,
  * "3 sessions: 2 working, 1 idle"), which opens the "Agents today" panel. Late in the day,
  * with under 360 px right of the needle, the line sits right-aligned before it. Each cell's
@@ -128,18 +142,22 @@ export function AgentRow({ now, dueCount = null, onOpenPanel }: { now: number; d
   const until = agentsUntil(st) ?? now;
   const today = isoDay(now);
   const read = useDaysStore((d) => d.records[today]);
-  const parents = s ? parentIds(s, read?.record ?? null) : new Set<string>();
+  const busy = busyToday(st, now, read?.record ?? null);
   // Only parent and standalone sessions draw and count (a child or a side chat never does).
-  const cells = activityCells(segs.filter((g) => parents.has(g.lane)), now, Math.min(now, until));
-  const limit = s?.slots.limit ?? 0;
-  // A run in the day log of a session that is not on a card may be a parent that closed earlier
-  // today: today's saved record (parents only) says, so it is read when such a run is there.
-  const unknownRun = s !== null && segs.some((g) => (g.kind === 'run' || g.kind === 'past') && !parents.has(g.lane));
-  const readAt = read?.at ?? 0;
-  const tick = Math.floor(now / RECORD_EVERY_MS);
+  const cells = busy ? activityCells(busy.segs, now, Math.min(now, until)) : [];
+  const limit = busy?.limit ?? null;
+  // A run in the day log of a session that is not on a card may be a parent that closed a moment
+  // ago: today's saved record (parents only) says. It is read at once when such an id first
+  // shows, and once per id after that (a helper's id stays unknown: never on a timer).
+  const asked = useRef(new Set<string>());
+  const parents = s ? parentIds(s, read?.record ?? null) : new Set<string>();
+  const unknown = s ? [...new Set(logSegments(s.day, dayStart(today), Math.min(now, until), st.skewMs).filter((g) => (g.kind === 'run' || g.kind === 'past') && !parents.has(g.lane)).map((g) => g.lane))] : [];
+  const fresh = unknown.filter((id) => !asked.current.has(`${today}|${id}`)).sort().join('|');
   useEffect(() => {
-    if (unknownRun && st.status === 'ready' && Date.now() - readAt >= RECORD_EVERY_MS) void loadDay(today);
-  }, [unknownRun, st.status, today, tick]);
+    if (!fresh || st.status !== 'ready') return;
+    for (const id of fresh.split('|')) asked.current.add(`${today}|${id}`);
+    void reloadDay(today);
+  }, [fresh, st.status, today]);
   const live = useRef(segs);
   live.current = segs;
   const line = lineBox(st, now);
@@ -164,6 +182,7 @@ export function AgentRow({ now, dueCount = null, onOpenPanel }: { now: number; d
           <>
             <span className="tip-t">Agent activity and tasks due today</span>
             <span className="tip-s">{dayTotals(live.current)}{stale ? ' (may be out of date)' : ''}</span>
+            <span className="tip-s">{colourKey(limit)}</span>
           </>
         ))}
       />
@@ -178,13 +197,13 @@ export function AgentRow({ now, dueCount = null, onOpenPanel }: { now: number; d
           {...tip(() => (
             <>
               <span className="tip-t">{cellWords(c, limit)}</span>
-              <span className="tip-s">Counts sessions working at once (a family counts once); your limit is {limit}</span>
+              <span className="tip-s">Counts sessions working at once (a family counts once){limit !== null ? `; your limit is ${limit}` : ''}</span>
               {stale && <span className="tip-s">May be out of date</span>}
               {onOpenPanel && <span className="tip-k">Click to open Agents today</span>}
             </>
           ))}
         >
-          <i className={`b${busyStep(c.busy, limit)}${c.waits ? ' wait' : ''}`} />
+          <i className={`${limit === null ? 'bn' : `b${busyStep(c.busy, limit)}`}${c.waits ? ' wait' : ''}`} />
         </span>
       ))}
       {line && (

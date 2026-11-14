@@ -87,12 +87,23 @@ export async function loadDay(date: string): Promise<void> {
   try {
     const record = await invoke<DayRecord | null>('wall2_omni_day', { date });
     useDaysStore.setState((s) => ({ records: { ...s.records, [date]: { record: record ?? null, at: Date.now(), failed: false } }, loading: { ...s.loading, [date]: false } }));
+    if (again.delete(date)) void loadDay(date);
   } catch {
     useDaysStore.setState((s) => {
       const old = s.records[date];
       return { records: { ...s.records, [date]: { record: old?.record ?? null, at: old?.at ?? 0, failed: true } }, loading: { ...s.loading, [date]: false } };
     });
+    again.delete(date);
   }
+}
+
+/** Days whose read must run once more because a session closed while the last read was in flight. */
+const again = new Set<string>();
+
+/** Read one day's record now; when a read of it is already in flight, read once more when it ends. */
+export async function reloadDay(date: string): Promise<void> {
+  if (useDaysStore.getState().loading[date]) again.add(date);
+  else await loadDay(date);
 }
 
 /** Tests only. */

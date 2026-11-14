@@ -1,15 +1,18 @@
-import { cards, type OmniSummary } from '../agents/model';
+import { cards, laneWaits, type DaySpan, type OmniSummary } from '../agents/model';
 import type { DayRecord } from './days';
 
 /**
  * How many sessions work at once, one rule for the Agents header's meter, the strip's activity
  * cells and the "Busy at once" line in the Agents panel:
  *
- * A session counts while it is WORKING: a run span in the helper's live day log (open or
- * finished; waits and review spans do not count), and only when it is a parent or standalone
- * session the wall knows today (a card, or a session in today's saved record). A child or a
+ * A session counts while it is WORKING: a run span in the helper's live day log (waits and
+ * review spans do not count), and only when it is a parent or standalone session the wall knows
+ * today (a card, or a session in today's saved record). A finished run counts for the time it
+ * ran; an OPEN run counts only while its session's card says working (an idle, waiting or failed
+ * card with a run still open does not count, so the count agrees with the pills). A child or a
  * side chat is never counted on its own, so a family counts once, as the meter always did.
- * Two spans of the same session never count it twice.
+ * Two spans of the same session never count it twice. A span that crosses midnight counts for
+ * the part inside the day.
  *
  * A saved past day holds stage spans only, with no runs and no waits, so there a session
  * counts while it has a recorded stage span (the record's "agent work"); the panel says so.
@@ -25,6 +28,57 @@ export function parentIds(s: Pick<OmniSummary, 'lanes' | 'sessionsList'>, record
   const out = new Set(cards(s).map((l) => l.id));
   for (const x of record?.sessions ?? []) out.add(x.id);
   return out;
+}
+
+/**
+ * The limit when it is a real one (a positive number), else null. An older helper may send none,
+ * or a zero: then there is no limit to measure against and nothing is drawn against one.
+ */
+export function knownLimit(limit: number | null | undefined): number | null {
+  return typeof limit === 'number' && Number.isFinite(limit) && limit > 0 ? limit : null;
+}
+
+/** One span of the day log, clipped to the day (and the stale cut), with the kinds the strip draws. */
+export interface LogSeg {
+  lane: string;
+  kind: 'run' | 'wait' | 'past' | 'done';
+  start: number;
+  end: number;
+  open: boolean;
+}
+
+/**
+ * The helper's day log as spans on this PC's clock, clipped to `[from, cut]`: `from` is the
+ * start of the selected day and `cut` is now (or the last good answer of a stale one). Built
+ * straight from the log, never from the strip's layout, so a span that began before midnight is
+ * counted from midnight instead of being lost. `run` is an open run, `past` a finished one.
+ */
+export function logSegments(day: readonly DaySpan[], from: number, cut: number, skewMs = 0): LogSeg[] {
+  const out: LogSeg[] = [];
+  for (const d of day) {
+    const start = Date.parse(d.start) - skewMs;
+    const endRaw = d.end === null ? cut : Date.parse(d.end) - skewMs;
+    if (!Number.isFinite(start) || !Number.isFinite(endRaw) || start >= cut) continue;
+    const a = Math.max(start, from);
+    const b = Math.min(endRaw, cut);
+    if (b <= a) continue;
+    const open = d.end === null || endRaw > cut;
+    out.push({ lane: d.lane, kind: d.kind === 'wait' ? 'wait' : d.kind === 'done' ? 'done' : open ? 'run' : 'past', start: a, end: b, open });
+  }
+  return out;
+}
+
+/** Cards that say working right now: working, not idle, not waiting on the owner, not failed. */
+export function workingIds(s: Pick<OmniSummary, 'lanes' | 'sessionsList'>): Set<string> {
+  return new Set(cards(s).filter((l) => l.state === 'working' && l.live !== 'idle' && !laneWaits(l) && !l.failed).map((l) => l.id));
+}
+
+/**
+ * The spans that count: parents and standalone sessions only, and no open run of a session whose
+ * card does not say working (so an idle card with a run still open adds nothing).
+ */
+export function countedSegments(segs: readonly LogSeg[], parents: ReadonlySet<string>, working: ReadonlySet<string>): LogSeg[] {
+  return segs.filter((g) => parents.has(g.lane) && !(g.kind === 'run' && !working.has(g.lane)));
 }
 
 /** The working spans of the known parents, from the drawn day log (`run` open, `past` finished). */

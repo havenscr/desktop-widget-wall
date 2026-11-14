@@ -262,5 +262,8 @@ it('the drawer rows show the state once as the pill, a failed session in rose, a
   for (const x of rows) expect(x.querySelector('.dd-line')!.textContent).not.toBe(x.querySelector('.dd-pill')!.textContent!);
   expect(d.querySelector('.dd-counts')!.textContent).toBe('3 sessions, 1 working, 1 failed, 1 idle');
   expect(laneStateWord(lane({ failed: true }))).toBe('failed');
-  expect(laneStateWord(lane({ failed: true, waiting: true }))).toBe('waiting on you');
+  // Failed beats waiting: the pill never reads "waiting on you" for a failed session (the quiet line keeps the wait).
+  expect(laneStateWord(lane({ failed: true, waiting: true }))).toBe('failed');
+  expect(laneStateWord(lane({ waiting: true }))).toBe('waiting on you');
+  expect(quietLine(lane({ failed: true, waiting: true, state: 'blocked', line: 'failed', waitingSinceS: 600, pr: null }))).toBe('Waiting 10 min');
 });
