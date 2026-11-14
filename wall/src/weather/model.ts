@@ -73,15 +73,7 @@ export interface WeatherReading {
   source?: WeatherSource;
 }
 
-export function buildUrl(latitude: number, longitude: number): string {
-  return (
-    `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}` +
-    '&current=temperature_2m,weather_code,is_day' +
-    '&hourly=temperature_2m,weather_code,is_day' +
-    '&daily=temperature_2m_max,temperature_2m_min' +
-    '&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=auto&forecast_days=2'
-  );
-}
+/* The Open-Meteo address is built natively (`wall2_weather.rs`, `open_meteo_url`). */
 
 interface OpenMeteo {
   current: { time: string; temperature_2m: number; weather_code: number; is_day: number };

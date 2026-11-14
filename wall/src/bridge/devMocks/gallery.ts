@@ -205,8 +205,9 @@ function media(mode: string): void {
         source_app: 'Video App',
         source_app_id: 'Example.VideoApp_abc123!App',
         art_key: 'Evening Radio Mix|Example Host||Video App',
-        playback_status: 'paused',
-        ended: true,
+        // The review break `mediabreak=live` shows the same session as live, so a check can prove it notices.
+        playback_status: knob('mediabreak') === 'live' ? 'playing' : 'paused',
+        ended: knob('mediabreak') !== 'live',
         position_seconds: 146,
         duration_seconds: 146,
       };

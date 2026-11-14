@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { asksSecondSource, buildUrl, failureFromError, NWS_TABLE, nwsCode, parseNws, parseWeather, REFRESH_MS, shouldRefresh, staleText, weatherFailureText } from './model';
+import { asksSecondSource, failureFromError, NWS_TABLE, nwsCode, parseNws, parseWeather, REFRESH_MS, shouldRefresh, staleText, weatherFailureText } from './model';
 
 const sample = {
   current: { time: '2026-11-11T10:15', temperature_2m: 57.6, weather_code: 3, is_day: 1 },
@@ -11,12 +11,6 @@ const sample = {
   },
   daily: { temperature_2m_max: [61.4], temperature_2m_min: [44.2] },
 };
-
-it('builds the request the old app uses', () => {
-  const u = buildUrl(47.68, -122.21);
-  expect(u).toContain('latitude=47.68&longitude=-122.21');
-  expect(u).toContain('temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=auto');
-});
 
 it('parses now, today range and the next six hours', () => {
   const r = parseWeather(sample, 1000);
