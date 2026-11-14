@@ -344,6 +344,10 @@ state('work', 'watch behaviour: a video playing elsewhere', `${WM}&wlist=three&w
 // moon in its open-sky place on Listen (playing and with nothing playing) and on Watch with nothing on.
 state('unwind', 'sky layers: whole sky at night', `${WM}&wlist=three&wlook=sky&wplay=0`, TIMES.night);
 state('unwind', 'sky layers: whole sky at noon', `${WM}&wlist=three&wlook=sky&wplay=1`, TIMES.noon);
+// The whole sky's soft edge: the picture's top, left and right edges fade into the sky.
+state('unwind', 'soft edge: whole sky at night', `${WM}&wlist=three&wlook=sky&wplay=0`, TIMES.night);
+state('unwind', 'soft edge: whole sky at noon', `${WM}&wlist=three&wlook=sky&wplay=1`, TIMES.noon);
+state('unwind', 'soft edge: whole sky, autoplay refused', `${WM}&wlist=three&wlook=sky&wplay=0&wstate=refused`, TIMES.night);
 state('unwind', 'sky layers: the sun at night', `${WM}&wlist=three&wlook=sun&wplay=0`, TIMES.night);
 state('unwind', 'sky layers: the sun at noon', `${WM}&wlist=three&wlook=sun&wplay=1`, TIMES.noon);
 state('unwind', 'sky layers: drive-in at night, no moon', `${WM}&wlist=three&wlook=drivein&wplay=2`, TIMES.night);
@@ -672,6 +676,9 @@ const EXPECT = [
   ['unwind', 'watch polish: sun, nothing reported yet', ['Playing on the wall', '!12:34', 'Open in YouTube']],
   ['unwind', 'watch polish: leave banner', ['Open in YouTube', 'Drive-in']],
   ['unwind', 'watch polish: nothing on', ['Nothing on', 'Whole sky', 'Drive-in']],
+  ['unwind', 'soft edge: whole sky at night', ['Whole sky', 'Open in YouTube']],
+  ['unwind', 'soft edge: whole sky at noon', ['Whole sky', 'Open in YouTube']],
+  ['unwind', 'soft edge: whole sky, autoplay refused', ['Click the video to start', 'Waiting for a click on the video']],
   ['unwind', 'watch polish: whole sky, autoplay refused', ['Click the video to start', 'Waiting for a click on the video']],
   // watch behaviour (the faded parts are still in the page, only transparent)
   ['unwind', 'watch behaviour: drive-in, paused', ['Paused', 'Night drive mix']],
