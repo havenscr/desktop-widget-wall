@@ -1,4 +1,4 @@
-import type { Span } from './ground';
+import { seatGround } from './ground';
 import type { Pose } from './sprites';
 
 /**
@@ -18,42 +18,17 @@ export interface ScreenRect {
 }
 
 /**
- * The gap between his right side and the screen's left edge: the approved page's proportion (its
- * sheep ends 1.9 of the page's 27 screen units left of the screen), but never under 60 px, so he
- * stays clear of the frame's left leg and its stays.
+ * The seat's rules, all measured from the rectangle the Watch selector returns. His SPRITE (his real
+ * seated width: his props are put away while he watches) keeps at least `SEAT_GAP` px from the
+ * screen's left edge, and at least `SEAT_CLEARANCE` px from the nearest control at his height on
+ * either side. The seat is the rightmost point that keeps both; with the screen at x 1244 and the
+ * Look switch ending at x 1084 that is a left edge of 1106 (the owner's chosen picture). A seat
+ * further than `SEAT_NEAR` px from the screen is no seat: he does not walk, he watches from where he
+ * stands (see `Watt.tsx`).
  */
-export const SEAT_GAP_K = 1.9 / 27;
-export const SEAT_GAP_MIN = 60;
-
-/** How far right of his left edge anything of his reaches while he sits: the sprite and two pixels of props. */
-export function seatReach(px: number): number {
-  return (18 + 2) * px;
-}
-
-/**
- * His seat (left edge x) for `screen` on the ground `spans`: left of the screen by the gap, on the
- * ground, and never nearer the screen than the gap. When the ground does not reach that far left
- * of the screen there is no seat (null): he watches from where he is.
- */
-export function seatFor(screen: ScreenRect, spans: readonly Span[], px: number): number | null {
-  const reach = seatReach(px);
-  const gap = Math.max(SEAT_GAP_MIN, Math.round(screen.w * SEAT_GAP_K));
-  const want = screen.x - gap - reach;
-  let best: number | null = null;
-  let bestD = Infinity;
-  for (const s of spans) {
-    const x = Math.min(s.max, Math.max(s.min, want));
-    // The nearest point of this stretch is nearer the screen than the gap allows: not a seat.
-    // (Every point of a span is a place he may stand; `ground.ts` measured them.)
-    if (x > want + 0.5) continue;
-    const d = Math.abs(x - want);
-    if (d < bestD) {
-      bestD = d;
-      best = Math.floor(x);
-    }
-  }
-  return best;
-}
+export const SEAT_GAP = 30;
+export const SEAT_CLEARANCE = 22;
+export const SEAT_NEAR = 300;
 
 /** A stretch of the floor, x to x, that a control or card of the wall covers at his height. */
 export interface Band {
@@ -61,33 +36,31 @@ export interface Band {
   readonly x1: number;
 }
 
-/** Clear air kept between him and a control, px. */
-export const BAND_MARGIN = 8;
-
 /**
- * His ground with the stretches under `bands` taken out: his whole reach (`seatReach`) stays at
- * least `BAND_MARGIN` clear of every band, so he never sits over the Look switch, the control row or
- * a card. Spans that vanish are dropped.
+ * His seat (left edge x) for `screen`, `width` being his seated sprite's width, with the controls
+ * at his height as `bands` (layout boxes: a faded control still takes its place). On the seat's own
+ * ground (`seatGround`) the rightmost point that keeps the gap to the screen and the clearance to every
+ * band; null when none lies within `SEAT_NEAR` of the screen.
  */
-export function clearOf(spans: readonly Span[], bands: readonly Band[], px: number): Span[] {
-  const reach = seatReach(px);
-  let out: Span[] = spans.map((s) => ({ ...s }));
-  for (const b of bands) {
-    // His left edge may not lie in (x0 - reach - margin, x1 + margin).
-    const lo = b.x0 - reach - BAND_MARGIN;
-    const hi = b.x1 + BAND_MARGIN;
-    const next: Span[] = [];
-    for (const s of out) {
-      if (s.max <= lo || s.min >= hi) {
-        next.push(s);
-        continue;
+export function seatFor(screen: ScreenRect, bands: readonly Band[], width: number): number | null {
+  const ground = seatGround(screen.x - SEAT_GAP - width)[0];
+  if (!ground) return null;
+  const lo = Math.max(ground.min, Math.ceil(screen.x - SEAT_NEAR - width));
+  let x = Math.floor(ground.max);
+  // A band over the spot moves the seat to its left side; a few passes settle bands that touch.
+  for (let pass = 0; pass <= bands.length; pass++) {
+    let moved = false;
+    for (const b of bands) {
+      if (x > b.x0 - width - SEAT_CLEARANCE && x < b.x1 + SEAT_CLEARANCE) {
+        x = Math.floor(b.x0 - width - SEAT_CLEARANCE);
+        moved = true;
       }
-      if (s.min <= lo) next.push({ ...s, max: lo });
-      if (s.max >= hi) next.push({ ...s, min: hi });
     }
-    out = next;
+    if (!moved) break;
   }
-  return out;
+  if (x < lo || x > ground.max) return null;
+  for (const b of bands) if (x > b.x0 - width - SEAT_CLEARANCE && x < b.x1 + SEAT_CLEARANCE) return null;
+  return x;
 }
 
 /** The way he faces to watch from left edge `x` (sprite `width` wide): toward the screen's middle. */
@@ -96,31 +69,84 @@ export function facing(screen: ScreenRect, x: number, width: number): 1 | -1 {
 }
 
 /**
- * What the show asks of him, in the order the wall's other rules come first:
- * 1. no show (nothing on in the drive-in look, or not on Unwind's Watch tab): `off`;
- * 2. a call: `off` (a call also stops the video);
- * 3. reading with him (a focus session running): `off`, he reads as he always does;
- * 4. the wall recording: `hold`, he sits quietly where he is and starts no walk;
- * 5. otherwise `watch`.
- * The leave banner comes before all of these through his ground: the seat is found on the ground
- * he has now (on Unwind the banner sits below his feet and takes none of it).
- * The owner's hand (a carry, Come here, Stay) is applied by the component: where the owner puts
- * him during a show, he stays and watches from there.
+ * What the drive-in's marquee says is on (the Watch store's `driveInMarquee`): `none` when nothing
+ * is chosen; `playing` and `paused` are a show; `waiting` is something chosen that has not started
+ * (loading, waiting for a click, or the next item of a playlist); `ended` is a video that is over.
+ */
+export type Marquee = 'none' | 'playing' | 'paused' | 'waiting' | 'ended';
+
+/**
+ * What the show asks of him. The priority order, first match wins (`audience.test.ts` proves every
+ * pair that can meet):
+ * 1. no show: no screen (another look, nothing on), not on Unwind's Watch tab (a parked video is
+ *    not a show), or the video ended: `off`;
+ * 2. waiting: before the picture has played (loading, a click awaited) he is not at the show: `off`;
+ *    while a show he is already at waits for its next item (a playlist, a pause for buffering) he
+ *    keeps his seat: `hold`;
+ * 3. a call: `off` (a call also stops the video);
+ * 4. reading with him (a focus session running): `off`, he reads as he always does;
+ * 5. the wall recording: `hold`, he sits quietly where he is and starts no walk;
+ * 6. his menu open: `hold`, he stays put while it is open (the owner's commands come first);
+ * 7. a nap the owner sent him to: `hold`, he finishes it lying where he is, then goes to the show;
+ * 8. the owner's hand in this show (a pick-up, a drop, Come here, Stay): `hold`, he watches from
+ *    where he was put, until this show ends;
+ * 9. otherwise `watch`: he walks to his seat.
+ * `hold` means he sits and watches where he is and starts no walk; `watch` walks him to the seat.
+ * Underneath all of it, a carry in the air or a landing is always his own motion and wins over a
+ * walk (`Watt.tsx`); the leave banner sits below his feet on Unwind and takes none of his ground.
  */
 export type ShowRole = 'off' | 'hold' | 'watch';
 export interface ShowInput {
   screen: ScreenRect | null;
+  marquee: Marquee;
   onWatch: boolean;
   inCall: boolean;
   reading: boolean;
   recording: boolean;
+  menuOpen: boolean;
+  napping: boolean;
+  /** He is already at this show (walking to the seat, or seated). */
+  engaged: boolean;
+  /** The owner put him somewhere during this show, or Stay is on. */
+  pinned: boolean;
 }
 export function showRole(s: ShowInput): ShowRole {
-  if (!s.screen || !s.onWatch) return 'off';
+  if (!s.screen || !s.onWatch || s.marquee === 'none' || s.marquee === 'ended') return 'off';
+  if (s.marquee === 'waiting' && !s.engaged) return 'off';
   if (s.inCall) return 'off';
   if (s.reading) return 'off';
-  if (s.recording) return 'hold';
+  if (s.marquee === 'waiting') return 'hold';
+  if (s.recording || s.menuOpen || s.napping || s.pinned) return 'hold';
   return 'watch';
+}
+
+/**
+ * One show's identity. `gen` counts the shows that have ended; the owner's hand (`hand`) belongs to
+ * the show whose number it holds. A show is live while the marquee says playing or paused (and
+ * through a wait inside it); it ends when the selector leaves it (the video stops or ends, the
+ * owner leaves the Watch tab or Unwind). A call, reading and the wall recording do not end it.
+ */
+export interface ShowTrack {
+  live: boolean;
+  gen: number;
+  hand: number;
+}
+export function newShowTrack(): ShowTrack {
+  return { live: false, gen: 0, hand: -1 };
+}
+/** The marquee as the selectors give it now (with the stage in sight, else `none`). */
+export function followShow(t: ShowTrack, marquee: Marquee): void {
+  const live = marquee === 'playing' || marquee === 'paused' || (marquee === 'waiting' && t.live);
+  if (t.live && !live) t.gen += 1;
+  t.live = live;
+}
+/** The owner picks him up or sets him down: it counts for the show now live, and for no other. */
+export function ownerTouched(t: ShowTrack): void {
+  t.hand = t.live ? t.gen : -1;
+}
+/** True while the owner's hand holds him in the show now live. */
+export function ownerPinned(t: ShowTrack): boolean {
+  return t.live && t.hand === t.gen;
 }
 
 /**

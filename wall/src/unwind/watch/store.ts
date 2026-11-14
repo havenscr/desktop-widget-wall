@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { usePlaceStore } from '../../state/places';
 import { parseLink, refKey, type WatchRef } from './links';
+import { driveInMode } from './DriveInFrame';
 import { DRIVE_IN_SCREEN, lookFor, loadLooks, pickLook, saveLooks, type LookId, type LookSettings, type WallRect } from './looks';
 import { addSaved, loadSaved, removeSaved, renameSaved, saveSaved, type SavedItem } from './saved';
 import { stopLine, type StopReason } from './stops';
@@ -159,6 +160,39 @@ export function driveInAudience(s: Pick<WatchState, 'playing' | 'looks'>): Reado
   if (lookFor(s.looks, s.playing.kind) !== 'drivein') return null;
   // One frozen object, so a store selector sees the same value from call to call.
   return DRIVE_IN_SCREEN;
+}
+
+/**
+ * True while the video stage is in sight: Unwind is the place and its Watch tab is showing. One
+ * decision for the stage layer (`StageLayer.tsx`: a video that keeps playing out of sight is parked,
+ * not shown) and for the show selector below, so the two never disagree.
+ */
+export function stageShown(place: string | null, tab: UnwindTab): boolean {
+  return place === 'unwind' && tab === 'watch';
+}
+
+/** What the drive-in's marquee says is on, as `audience.ts` reads it (the same words as `driveInMode`, plus `ended`). */
+export type DriveInMarquee = 'none' | 'playing' | 'paused' | 'waiting' | 'ended';
+
+/**
+ * For the buddy: the marquee's state for whatever is chosen. A selector over the Watch store alone
+ * (it says nothing of the look or of whether the stage is in sight: `driveInAudience` and
+ * `stageShown` do). `ended` is a video that is over; `waiting` is loading or awaiting a click.
+ */
+export function driveInMarquee(s: Pick<WatchState, 'playing' | 'paused' | 'needsClick' | 'clickHint' | 'report'>): DriveInMarquee {
+  if (!s.playing) return 'none';
+  if (s.report.ended) return 'ended';
+  const m = driveInMode({ paused: s.paused, started: s.report.started, needsClick: s.needsClick, clickHint: s.clickHint, ended: false, reports: s.playing.kind !== 'twitch' });
+  return m === 'empty' ? 'none' : m;
+}
+
+/**
+ * The show now on, as one value: the marquee's state while the stage is in sight with something
+ * chosen in the drive-in look, else `none`. A parked video (another tab or place) is not a show.
+ */
+export function driveInShow(s: WatchState, place: string | null): DriveInMarquee {
+  if (!stageShown(place, s.tab) || driveInAudience(s) === null) return 'none';
+  return driveInMarquee(s);
 }
 
 // Leaving Unwind (another place, Zen or Dream) closes the sheet; the video plays on out of sight.
