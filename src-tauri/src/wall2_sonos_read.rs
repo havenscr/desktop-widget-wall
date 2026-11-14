@@ -90,17 +90,15 @@ fn get_timed(agent: &ureq::Agent, base: &str, path: &str) -> Timed {
     Timed { result, ms: start.elapsed().as_millis() }
 }
 
-/// Which lines the reads earn. Every failed required read; a failed optional read only
-/// while the required three succeeded (so an outage costs three lines, not seven); every
-/// successful read slower than two seconds.
+/// Which lines the reads earn: one for every failed read, and one for every successful read slower
+/// than two seconds. (Whether everything failed at once or only the required reads did is what the
+/// log has to show; its rotation bounds the volume.)
 fn log_lines(timed: &[Timed]) -> Vec<String> {
-    let required_failed = timed.iter().take(REQUIRED).any(|t| t.result.is_err());
     let mut lines = Vec::new();
     for (i, t) in timed.iter().enumerate() {
         let read = READS[i].0;
         match &t.result {
-            Err(f) if i < REQUIRED || !required_failed => lines.push(log::line(Event::Failed, read, f.kind, f.status, t.ms)),
-            Err(_) => {}
+            Err(f) => lines.push(log::line(Event::Failed, read, f.kind, f.status, t.ms)),
             Ok(_) if t.ms > SLOW_MS => lines.push(log::line(Event::Slow, read, Kind::None, 200, t.ms)),
             Ok(_) => {}
         }
@@ -186,13 +184,19 @@ mod tests {
         ureq::AgentBuilder::new().timeout(Duration::from_millis(ms)).redirects(0).build()
     }
 
+    /// A generous limit for every case that should answer at once (a loaded runner must not turn
+    /// them into timeouts), a short one only for the two that are meant to cross it.
+    const PROMPT_MS: u64 = 5000;
+    const SHORT_MS: u64 = 600;
+
     fn fail_of(how: Serve) -> Failure {
-        get_json(&agent(600), &serve(how), "/api/status").unwrap_err()
+        let ms = if matches!(how, Serve::Silent | Serve::StallBody) { SHORT_MS } else { PROMPT_MS };
+        get_json(&agent(ms), &serve(how), "/api/status").unwrap_err()
     }
 
     #[test]
     fn a_good_answer_reads() {
-        assert!(get_json(&agent(2000), &serve(Serve::Json), "/api/status").is_ok());
+        assert!(get_json(&agent(PROMPT_MS), &serve(Serve::Json), "/api/status").is_ok());
     }
 
     #[test]
@@ -214,7 +218,7 @@ mod tests {
             let l = TcpListener::bind("127.0.0.1:0").unwrap();
             format!("http://{}", l.local_addr().unwrap())
         };
-        assert_eq!(get_json(&agent(600), &gone, "/api/status").unwrap_err(), Failure { kind: Kind::NoAnswer, status: 0 });
+        assert_eq!(get_json(&agent(PROMPT_MS), &gone, "/api/status").unwrap_err(), Failure { kind: Kind::NoAnswer, status: 0 });
         assert_eq!(fail_of(Serve::Close), Failure { kind: Kind::NoAnswer, status: 0 });
     }
 
@@ -256,9 +260,16 @@ mod tests {
     }
 
     #[test]
-    fn an_outage_costs_three_lines_and_a_degraded_read_names_the_optional_one() {
+    fn every_failed_read_is_logged_whether_all_failed_or_only_some() {
         let outage: Vec<Timed> = (0..7).map(|_| bad(Kind::NoAnswer, 0, 3)).collect();
-        assert_eq!(log_lines(&outage).len(), 3);
+        let lines = log_lines(&outage);
+        assert_eq!(lines.len(), 7);
+        assert_eq!(lines[3], "failed groups no-answer 0 3\n");
+        assert_eq!(lines[6], "failed timers no-answer 0 3\n");
+        // Only the required three failed: three lines, none for the four that worked.
+        let mut required: Vec<Timed> = (0..3).map(|_| bad(Kind::TimedOut, 0, 4000)).collect();
+        required.extend((0..4).map(|_| ok(5)));
+        assert_eq!(log_lines(&required).len(), 3);
         let mut degraded = seven(vec![]);
         degraded[5] = bad(Kind::TimedOut, 0, 4001);
         assert_eq!(log_lines(&degraded), ["failed scenes timed-out 0 4001\n"]);
@@ -266,10 +277,10 @@ mod tests {
 
     #[test]
     fn the_seven_reads_answer_or_fail_with_the_first_required_kind() {
-        let got = read_seven(&agent(2000), &serve(Serve::Json)).unwrap();
+        let got = read_seven(&agent(PROMPT_MS), &serve(Serve::Json)).unwrap();
         assert_eq!(got.len(), 7);
-        assert_eq!(read_seven(&agent(600), &serve(Serve::Status(500))).unwrap_err(), Kind::BadAnswer);
-        assert_eq!(read_seven(&agent(600), &serve(Serve::Silent)).unwrap_err(), Kind::TimedOut);
-        assert_eq!(read_seven(&agent(600), &serve(Serve::Close)).unwrap_err(), Kind::NoAnswer);
+        assert_eq!(read_seven(&agent(PROMPT_MS), &serve(Serve::Status(500))).unwrap_err(), Kind::BadAnswer);
+        assert_eq!(read_seven(&agent(SHORT_MS), &serve(Serve::Silent)).unwrap_err(), Kind::TimedOut);
+        assert_eq!(read_seven(&agent(PROMPT_MS), &serve(Serve::Close)).unwrap_err(), Kind::NoAnswer);
     }
 }
