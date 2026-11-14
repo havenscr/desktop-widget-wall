@@ -316,7 +316,7 @@ amber line shows again, send both files.
 `home/Chores.tsx` and `home/useChores.ts`: the next open tasks tagged `home` (a
 tag, not a list; five rows in view, see "Home round two") from `wall2_tasks_summary({ tag: "home" })`, with "N more can wait"
 for the rest. The pill shows the time for a task due later today at a set time, else
-its estimate. Ticking the circle shows "Done." with the title struck through, an Undo
+its estimate, in a fixed 62 px column; the row's tags sit before it (see "Tags on task rows"). Ticking the circle shows "Done." with the title struck through, an Undo
 button and a thin bar for five seconds (`tasks/pendingTick.ts`); only then (or when the
 place changes) is the chore saved with `wall2_task_done`, hidden after 2 seconds and the
 list read again. Undo puts the row back and saves nothing. A failed save brings the row
@@ -922,7 +922,7 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
   `?at=`, `?agents=`, `?long=1`, `?audio=demo`, and the newer ones in
   `src/bridge/devMocks/gallery.ts` (`screen`, `tasks`, `meet`, `home`, `net`, `moods`, `media`,
   `box`, `pc`, `usage`, `weather`, `focus`, `clock`). None of it is in a production build.
-- **Right wing**: the next three tasks (see "Task card" below), then the key deck: Always
+- **Right wing**: Due today, a small scrolling list (see "Task card" below), then the key deck: Always
   here and Now (see "The key deck").
 
 - **Focus timer** (`wall/src/focus/`). A ring with the minutes left in the
@@ -1714,14 +1714,27 @@ file is read on every call, so a change applies on the next refresh.
 
 ### Task card (Work tab, top right)
 
-The right wing of Work, as the concept's rows (`.tk3`), 72 pixels tall.
+The right wing of Work, as the concept's rows (`.tk3`), 70 pixels tall with a 1 pixel rule.
 
-`wall/src/tasks/`. Work reads `wall2_tasks_summary({ notTag: "home" })`: the next three
-open tasks without the home tag, and how many more are open. Each row: a check circle,
-the title, and the estimate chip ("15 m", "45 m", "60+ m", none without an estimate).
-The header says "N more can wait" when there are more. Refreshes every 2 minutes while
-visible and after each completion. (`useTasks()` with no filter still reads
-`wall2_tasks_next`; Zen uses that.)
+`wall/src/tasks/`. **Due today** is a small list of every open task without the home tag
+that is due today or overdue, a mini version of the task app. Work reads
+`wall2_tasks_summary({ notTag: "home", due: "today", limit: 60 })`. The block keeps the
+height of three rows (213 px with the heading above it); three rows are in view and the rest
+are a scroll away: the mouse wheel with the pointer over the list, a calm 6 px bar at the
+right (shown whenever there are more than three rows), a soft fade at the foot while more
+rows wait below and at the head once scrolled, and the arrow keys and Page Up and Down when a
+row has focus. The page itself never scrolls with it. A refresh, or a ticked row leaving the
+list, keeps the first row in view where it was. The heading reads "Due today" with the count at
+its right ("7", or "7, 2 overdue"); there is no "N more can wait" line on Work. Overdue rows
+come first (Rust puts them first, each group in the task app's own order). Each row: a check
+circle, the title, the row's tags (see "Tags on task rows"), and the estimate chip ("15 m",
+"45 m", "60+ m") in a fixed 78 px column so the tags line up down the list.
+
+When nothing is due today the block reads **Next up**, shows the next three tasks (the
+read without `due`, as the old "Next three" did, so it is never an empty box) and says "Nothing
+due today" in dim text at the heading's right. A failing refresh puts "updated N min ago" in
+that slot. Refreshes every 2 minutes while visible and after each completion.
+(`useTasks()` with no filter still reads `wall2_tasks_next`; Zen uses that.)
 
 - **Check**: the row shows "Done." with the title struck through, an Undo button and a
   thin bar that runs down over five seconds (no animation with reduced motion); one tick
@@ -1749,10 +1762,10 @@ visible and after each completion. (`useTasks()` with no filter still reads
   with a small "updated N min ago".
 - **Estimate and summary**: each task
   carries `est` (`"15"`, `"30"`, `"45"`, `"60plus"` or null), read from the row's
-  `estimate` field. `wall2_tasks_summary({ tag?, notTag?, list? })` returns
-  `{ next, remaining, dueTomorrow }`: the first three open tasks, how many more are
+  `estimate` field. `wall2_tasks_summary({ tag?, notTag?, list?, limit?, due? })` returns
+  `{ next, remaining, dueTomorrow }` (and `dueToday` with `due`): the first three open tasks, how many more are
   open, and the count and summed minutes (`60plus` counts as 60, no estimate counts
-  as 0) of tasks due on the next local day. The three filters are all optional and
+  as 0) of tasks due on the next local day. The filters are all optional and
   combine:
   - `tag` keeps tasks whose `tags` contains it; `notTag` drops tasks whose `tags`
     contains it. Both ignore case. Each is trimmed, then must match
@@ -1762,9 +1775,59 @@ visible and after each completion. (`useTasks()` with no filter still reads
     whose `name` equals it (case and outer spaces ignored) and keeps tasks with that
     `bucket_id`. An unknown name gives an empty summary, not an error.
   - A bad value is refused before any request. None of the three ever goes into a URL.
-  - "Around the house" is `tag: "home"`. Work is `notTag: "home"`.
+  - `due` has one allowed value, `"today"` (anything else is refused before any request): it
+    keeps the tasks whose due date, in the PC's local time, is today or earlier (overdue). A
+    timed task is compared by its instant, an all-day task (or a bare date) by its date text;
+    a task with no due date, or one that cannot be read, is never in it. With `due`, `limit`
+    may go up to 60 (20 without it) and the answer gains `dueToday`, the count before the
+    limit. The task app's list order is not by due date, so overdue tasks are put first; each
+    group keeps the app's order. Every row the page can show can be ticked or opened.
+  - "Around the house" is `tag: "home"`. Work is `notTag: "home"` with `due: "today"`.
 
   The existing `wall2_tasks_next` is unchanged.
+
+### Tags on task rows (Work and Home)
+
+Every task row on Work's Due today and Home's Around the house shows its tags the way the
+owner's task app draws them: the first tag as a named chip (28 px high, a 16 px glyph and a
+600 16 px name), each further tag as a 28 px round dot with its glyph, 6 px apart, text and
+glyph in the tag's colour on a 14 percent wash of it with a 38 percent edge. Each chip and dot
+has a hover card with the tag's name; tags are not buttons. When the chip would leave the title
+under 180 px, every tag of the row is a dot. A row with no tags looks as it did. On Home the
+tags sit after the title against a fixed 62 px pill column (a row with no pill keeps the room).
+
+Where it comes from: `open_tasks` in `wall2_feeds.rs` keeps up to three tags per row, from the
+task's own `tags` strings: trimmed, empty ones dropped, duplicates dropped after lower-casing,
+the tag the read filtered by (`home` on Home) dropped, and a tag over 40 characters or with a
+control character dropped. This display rule is looser than the filter rule above, so tags with
+accents or dots show. `wall2_tasks_summary` also reads the task app's tag list (`GET /api/tags`,
+the same timeout and size cap), keeps at most 200 entries as name (lower-cased), icon (only a
+plain Tabler name, `^[a-z0-9-]{1,64}$`) and colour (only one of the eleven names `teal blue
+green pink magenta lime brown slate khaki orange red`), and joins them to the row tags by
+lower-cased name. The list is kept in memory for ten minutes, so the two minute task read does
+not fetch it again, and a failed read of it (retried after a minute) never fails the tasks read:
+rows then carry their tags with no icon and no colour. Nothing else of the tag list reaches the
+page; the page only ever gets names, never markup or CSS.
+
+- **Label**: the tag as the owner typed it when it has any capital letter; otherwise title case
+  (a capital for the first letter after the start, a space, a slash or a hyphen) with two generic
+  acronym rules: a word of exactly two letters is written in capitals ("hr" is "HR"), and so is
+  a word of up to five letters with no vowel (a, e, i, o, u, y; "dbx" is "DBX"). There is no table
+  of tag names. A tag that reads wrong (a two letter word that is not an acronym, say) can be
+  given an exception in `tag_label` later.
+- **Colours** (`tagStyle.ts`): the eleven names map to eight hues as the task app does: teal
+  `#6cb6e8`, blue `#7f9cff`, green `#5fc98b`, lime and khaki `#b4cc5c`, pink and red `#f08ac0`,
+  magenta `#d389e6`, brown and orange `#c49a74`, slate `#9fb0c6`; no colour is the wall's dim
+  text. Each is 4.5 or more as 16 px text on its wash (a test holds it); none needed lightening.
+- **Icons**: the owner can pick any Tabler outline icon, so the wall carries the whole set as
+  data. `vite-plugin-tabler-icons.mjs` turns `@tabler/icons`' `tabler-nodes-outline.json` (a dev
+  dependency) into the virtual module `virtual:tabler-icon-data`, a map from icon name to its
+  paths, which only `tasks/tagIcons.tsx` imports, only through `import()`. A production build
+  therefore emits it as its own chunk, fetched the first time a tag with an icon name is drawn,
+  never on the first load (`npm run prod-check` proves the entry chunk does not hold it). The
+  glyph is drawn as an inline SVG from React elements (24 by 24 view box, `currentColor`, 2 px,
+  round caps and joins); until the chunk has loaded, and for a name it does not hold, the plain
+  `tag` glyph shows.
 
 ### Network alarm on every place
 
@@ -2059,7 +2122,7 @@ were cleaned on the helper's side. That is why a row from a saved record may ope
 
 ## The key deck (Work, right wing)
 
-Two rows under "Next three", in one box (`.deck`): **Always here** and **Now**. Both act on the owner's Windows PC outside the wall, only on a click on the wall, and fail closed. None of it has been run on a real Windows machine yet: CI compiles and unit-tests the decisions, the Win32 calls are unverified. The deck is not drawn on a build where the commands do not exist.
+Two rows under "Due today", in one box (`.deck`): **Always here** and **Now**. Both act on the owner's Windows PC outside the wall, only on a click on the wall, and fail closed. None of it has been run on a real Windows machine yet: CI compiles and unit-tests the decisions, the Win32 calls are unverified. The deck is not drawn on a build where the commands do not exist.
 
 Files: `Keys.tsx` (Now), `PinnedRow.tsx` (Always here), `KeyMenu.tsx`, `KeyPicker.tsx`, `forYou.ts`, `wallActions.ts`, `libraryModel.ts`, `keysModel.ts`, `keysFeed.ts`, `keyPress.ts`, `deckStore.ts`; Rust in `src-tauri/src/wall2_keys.rs` (config, chords, sending), `wall2_keylib.rs` (the library and the list of wall actions) and `wall2_arrange.rs` (window layouts).
 
@@ -2077,7 +2140,7 @@ A key is either a **chord** (keys pressed in the program in front) or a **wall a
 | `mixer` | The existing volume mixer command. |
 | `sonos:pause-all`, `sonos:play-suggested` | The existing Sound commands. A key never bypasses a confirm: a loud routine opens Home and says so. Stale Sound data is refused. |
 | `mood:<id>` | The existing mood command, for a mood id the home app lists. |
-| `tasks:open`, `task:first` | Opens the first of "Next three" in the task app. |
+| `tasks:open`, `task:first` | Opens the first row of "Due today" (of "Next up" when nothing is due) in the task app. |
 | `omnigent:front`, `agents:open-waiting` | Brings OmniGent forward, or opens the first waiting session that is not snoozed. Refused when the helper is not answering. |
 | `meet:join-next`, `event:open-next` | Joins, or opens in Outlook, the next meeting. Refused when the meeting list is old. |
 | `zen`, `dream` | Opens Zen or Dream. |
@@ -2090,7 +2153,7 @@ The pin icon beside the heading. Up to five keys that never change by themselves
 
 Every pinned key and every key on a Now set page has a menu, opened by right-click (or by the ContextMenu key or Shift+F10 on a focused key). No button is drawn on a key at hover or focus; the key keeps its own look. A pinned key's menu offers Replace with another key, Add a key (the same picker the Add tile opens, for the next free place; disabled with "Always here is full" and `5 of 5` when all five places are taken), Remove from Always here, and Edit keys file. A Now key can be pinned only when it matches one durable library id; keys that exist only in `keys.json` say so instead of storing a position that could point at a different key after an edit. Every menu can open `keys.json`. Escape, a click outside, a choice, a change of page or of the set shown (Auto following another app) closes it, and so does five seconds with the pointer resting elsewhere: the countdown does not run while the pointer is over the menu or while keyboard focus is inside it. A second right-click on the same key closes the menu and opens it again at once. Escape or a choice returns focus to the key. Every enabled key's tooltip ends with "Right-click for more."; a disabled key keeps only its reason. The deck ignores these gestures while the Day drawer or Agents panel owns the pointer.
 
-**The picker** opens over the two rows' box (never Next three) and runs down over the mountains to just above the day timeline, leaving the 16 px gap the main rows keep (`pickerBottomY` in `keysModel.ts`, measured again when anything above it in the wing changes size; it never covers the timeline or its chips). Search stays at the top and "Reset to defaults" at the bottom; only the list between them scrolls, with the wall's slim scrollbar and a fade at its foot so no row shows cut mid-text. It holds the whole library by group, a search box (label, group and what a key does), the current five marked ("pinned", "this slot"), a click swaps that key into the slot (a key already pinned trades places), "Reset to defaults" at the bottom. Escape (from anywhere while it is open) or a click outside closes it, and the click that closes it does nothing else; the arrow keys move through the rows; rows are 36 px tall, two to a line. Keys marked **check** are shortcuts the owner must confirm on his PC: they are never in a set Auto shows, and the page offers one only once it is pinned. Rust itself accepts any runnable library id (held to its group's programs), so the "only when pinned" rule lives in the page. "coming" rows and shortcuts still to be worked out (the three Power BI ribbon ones) are listed but cannot be pinned. `keys.json` is never written.
+**The picker** opens over the two rows' box (never Due today) and runs down over the mountains to just above the day timeline, leaving the 16 px gap the main rows keep (`pickerBottomY` in `keysModel.ts`, measured again when anything above it in the wing changes size; it never covers the timeline or its chips). Search stays at the top and "Reset to defaults" at the bottom; only the list between them scrolls, with the wall's slim scrollbar and a fade at its foot so no row shows cut mid-text. It holds the whole library by group, a search box (label, group and what a key does), the current five marked ("pinned", "this slot"), a click swaps that key into the slot (a key already pinned trades places), "Reset to defaults" at the bottom. Escape (from anywhere while it is open) or a click outside closes it, and the click that closes it does nothing else; the arrow keys move through the rows; rows are 36 px tall, two to a line. Keys marked **check** are shortcuts the owner must confirm on his PC: they are never in a set Auto shows, and the page offers one only once it is pinned. Rust itself accepts any runnable library id (held to its group's programs), so the "only when pinned" rule lives in the page. "coming" rows and shortcuts still to be worked out (the three Power BI ribbon ones) are listed but cannot be pinned. `keys.json` is never written.
 
 ### Now
 

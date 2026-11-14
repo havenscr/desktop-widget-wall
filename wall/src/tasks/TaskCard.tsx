@@ -13,10 +13,11 @@ const WORK_QUERY: TasksQuery = { notTag: 'home', due: 'today' };
 export const WORK_ROWS = 3;
 export const WORK_ROW_PX = 71;
 /**
- * Width a Work row leaves for the title and its tags together: the 596 px wing, less the tick
- * (50), the fixed 78 px time column, two 16 px gaps and the 6 px scroll gutter.
+ * Width a Work row leaves for the title and its tags together, counting the gap between them
+ * the way `tagLayout` does: the 590 px row (596 less the 6 px scroll gutter), less the 50 px
+ * tick, the fixed 78 px time column and the 16 px gap before it.
  */
-const WORK_ROOM = 430;
+const WORK_ROOM = 442;
 
 /**
  * One task as the concept draws it (`.tk3`): a check circle, the title and the estimate.

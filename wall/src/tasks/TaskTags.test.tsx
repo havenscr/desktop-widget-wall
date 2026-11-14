@@ -1,7 +1,5 @@
-import { act, fireEvent, render } from '@testing-library/react';
-import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { join } from 'node:path';
-import { afterEach, expect, it, vi } from 'vitest';
+import { render } from '@testing-library/react';
+import { afterEach, expect, it } from 'vitest';
 import { encodeIcon, encodeSet } from '../../vite-plugin-tabler-icons.mjs';
 import { TaskTags } from './TaskTags';
 import { decodeIcon, ICON_NAME, setIconDataForTests } from './tagIcons';
@@ -62,11 +60,6 @@ it('the first tag is a chip with its name, the rest are dots, and each carries i
   expect(chip.length).toBe(1);
   expect(chip[0]!.textContent).toBe('Repairs');
   expect([...dots].map((d) => d.getAttribute('aria-label'))).toEqual(['Phone Call', 'Garden']);
-  // Hovering a dot opens the shared hover card after its short rest (the tag name is its content).
-  vi.useFakeTimers();
-  fireEvent.mouseEnter(dots[0]!);
-  act(() => void vi.advanceTimersByTime(300));
-  vi.useRealTimers();
 });
 
 it('with three tags and little room every tag is a dot; with none there is nothing', () => {
@@ -83,10 +76,12 @@ it('the chip rule leaves the title at least 180 px', () => {
   expect(chipWidth('x'.repeat(60))).toBe(CHIP_MAX_PX);
   // Home: one chip and two dots on a 442 px title column.
   expect(tagLayout([{ label: 'Repairs' }, { label: 'a' }, { label: 'b' }], 442)).toBe('chip');
-  // Work, the widest chip and two dots, leaves exactly 180.
-  expect(430 - (12 + CHIP_MAX_PX + 68)).toBe(MIN_TITLE_PX);
-  expect(tagLayout([{ label: 'x'.repeat(40) }, { label: 'a' }, { label: 'b' }], 430)).toBe('chip');
-  expect(tagLayout([{ label: 'x'.repeat(40) }, { label: 'a' }, { label: 'b' }], 429)).toBe('dots');
+  // Work (442), the widest chip and two dots, leaves 192: more than 180, so the chip stays.
+  expect(442 - (12 + CHIP_MAX_PX + 68)).toBeGreaterThanOrEqual(MIN_TITLE_PX);
+  expect(tagLayout([{ label: 'x'.repeat(40) }, { label: 'a' }, { label: 'b' }], 442)).toBe('chip');
+  // Exactly 180 left is enough; 179 is not.
+  expect(tagLayout([{ label: 'x'.repeat(40) }, { label: 'a' }, { label: 'b' }], 12 + CHIP_MAX_PX + 68 + 180)).toBe('chip');
+  expect(tagLayout([{ label: 'x'.repeat(40) }, { label: 'a' }, { label: 'b' }], 12 + CHIP_MAX_PX + 68 + 179)).toBe('dots');
   expect(tagLayout([], 430)).toBe('dots');
 });
 
@@ -135,21 +130,15 @@ it('a tag draws its icon from the loaded data as an inline svg of elements, and 
   expect(r.container.querySelector('.t-dot svg')?.getAttribute('class')).toContain('tabler-icon-tag');
 });
 
+const sources = import.meta.glob('../**/*.{ts,tsx}', { query: '?raw', import: 'default', eager: true }) as Record<string, string>;
+
 it('the icon data is loaded only through import(): no source file imports it statically, and no code sets markup from it', () => {
-  const root = join(__dirname, '..');
-  const files: string[] = [];
-  const walk = (dir: string) => {
-    for (const f of readdirSync(dir)) {
-      const p = join(dir, f);
-      if (statSync(p).isDirectory()) walk(p);
-      else if (/\.(ts|tsx)$/.test(f) && !f.endsWith('.d.ts')) files.push(p);
-    }
-  };
-  walk(root);
-  const static_ = files.filter((f) => /^\s*import[^(\n]*['"]virtual:tabler-icon-data['"]/m.test(readFileSync(f, 'utf8')));
-  expect(static_).toEqual([]);
-  expect(readFileSync(join(root, 'tasks', 'tagIcons.tsx'), 'utf8')).toContain("import('virtual:tabler-icon-data')");
-  for (const f of ['tagIcons.tsx', 'TaskTags.tsx']) expect(readFileSync(join(root, 'tasks', f), 'utf8')).not.toContain('dangerouslySetInnerHTML');
+  const files = Object.entries(sources).filter(([name]) => !name.endsWith('.d.ts'));
+  expect(files.length).toBeGreaterThan(100);
+  const staticImports = files.filter(([, text]) => /^\s*import[^(\n]*['"]virtual:tabler-icon-data['"]/m.test(text)).map(([name]) => name);
+  expect(staticImports).toEqual([]);
+  expect(sources['./tagIcons.tsx']).toContain("import('virtual:tabler-icon-data')");
+  for (const f of ['./tagIcons.tsx', './TaskTags.tsx']) expect(sources[f]).not.toContain('dangerouslySetInnerHTML');
 });
 
 it('the real icon chunk holds the owner\'s kind of names and loads on demand', async () => {
