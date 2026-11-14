@@ -72,7 +72,7 @@ it('renders the Listen tab with the same text as before when nothing is saved, a
 });
 
 it('the gear on Listen opens the sheet on its Lines side; Watch opens it on Looks', async () => {
-  render(<Unwind />);
+  render(<UnwindView />);
   await flush();
   await act(async () => screen.getByRole('button', { name: 'How the lines move' }).click());
   const sheet = screen.getByRole('dialog', { name: 'How the lines move' });
