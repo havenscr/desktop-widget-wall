@@ -1345,8 +1345,8 @@ try {
           }
           if (r.width < 31.5 || r.height < 31.5) listen.push('listen tall: control ' + name(e) + ' "' + (e.getAttribute('aria-label') || e.textContent || '').trim().slice(0, 20) + '" is ' + Math.round(r.width) + ' by ' + Math.round(r.height) + ' (32 at least)');
         }
-        // Nothing cut or sticking out in the header, the tab row, the player row, the opened list's head, the chooser and the lines under them.
-        for (const root of cardEl.querySelectorAll('.sp-top, .sp-bar, .sp-player, .sp-shead, .sp-devices, .sp-qhead, .sp-note')) {
+        // Nothing cut or sticking out in the header, the tab row, the player row, the opened list's head (the chooser hangs in the top row) and the lines under them.
+        for (const root of cardEl.querySelectorAll('.sp-top, .sp-bar, .sp-player, .sp-shead, .sp-qhead, .sp-note')) {
           for (const e of [root, ...root.querySelectorAll('*')]) {
             const r = e.getBoundingClientRect();
             if (r.width === 0 || r.height === 0 || e.closest('svg') || e.tagName === 'svg') continue;
