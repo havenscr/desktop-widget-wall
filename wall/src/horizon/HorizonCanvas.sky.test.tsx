@@ -317,8 +317,12 @@ describe('the front layer', () => {
       </>,
     );
     expect(draw.mock.calls.map(([, o]) => o.part)).toEqual(['sky', 'ground']);
+    // Once more when the place's veil has settled (its transition is 600 ms), so the front canvas's veil is the settled one.
     draw.mockClear();
-    act(() => vi.advanceTimersByTime(60_000));
+    act(() => vi.advanceTimersByTime(1000));
+    expect(draw.mock.calls.map(([, o]) => o.part)).toEqual(['sky', 'ground']);
+    draw.mockClear();
+    act(() => vi.advanceTimersByTime(59_000));
     expect(draw.mock.calls.map(([, o]) => o.part)).toEqual(['sky', 'ground']);
   });
 });

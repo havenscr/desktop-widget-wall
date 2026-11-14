@@ -93,8 +93,10 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
     setFront(el);
   }, []);
   // The place veil the front canvas repeats (`veil.ts`): its element, its strength as last read,
-  // and until when (performance.now) it is read again each frame; -1 once it has settled.
-  const veil = useRef<{ el: Element | null; a: number; until: number }>({ el: null, a: 0, until: -1 });
+  // and until when (performance.now) it is read again each frame: -1 once it has settled, -2 when
+  // the element is to be looked up again on the next paint with a front canvas (at first, and after a place change).
+  // `timer`: a still frame drawn while the veil moves is drawn once more when it has settled.
+  const veil = useRef<{ el: Element | null; a: number; until: number; timer: number }>({ el: null, a: 0, until: -2, timer: 0 });
   // True while the drawing is a still (reduced motion, or a frozen review frame).
   const stillRef = useRef(false);
   const glide = useRef<Glide>(settled(cameraFor(review?.place ?? place ?? 'work', review ? review.ms : now())));
@@ -280,9 +282,20 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
         // The place veil lies over the main canvas as a page layer; the front canvas is above it,
         // so it lays the same veil on its own pixels (`veil.ts`).
         const v = veil.current;
+        if (v.until === -2) {
+          v.el = canvas.parentElement?.querySelector(':scope > .veil') ?? null;
+          v.until = performance.now() + VEIL_SETTLE_MS;
+        }
         if (v.until >= 0) {
           v.a = veilStrength(v.el);
-          if (performance.now() > v.until) v.until = -1;
+          const left = v.until - performance.now();
+          if (left < 0) v.until = -1;
+          else if (still && !v.timer) {
+            v.timer = window.setTimeout(() => {
+              v.timer = 0;
+              repaint.current();
+            }, left + 50);
+          }
         }
         drawVeil(fctx, width, height, v.a);
       }
@@ -339,15 +352,13 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
     };
   }, [reduced, review, zen, demo]);
 
-  // The veil is looked up and read when the front canvas comes and on a place change (then each
-  // frame through its transition), never otherwise: a style read each frame forces a style flush.
-  // Before the repaint below, so a still frame drawn for the new layer has its veil.
+  // The veil is looked up and read on the first frame with the front canvas and again after a
+  // place change (then each frame through its transition), never otherwise: a style read each
+  // frame forces a style flush.
   useEffect(() => {
-    if (!front) return;
-    const v = veil.current;
-    v.el = ref.current?.parentElement?.querySelector(':scope > .veil') ?? null;
-    v.until = performance.now() + VEIL_SETTLE_MS;
-  }, [front, active]);
+    veil.current.until = -2;
+  }, [active]);
+  useEffect(() => () => window.clearTimeout(veil.current.timer), []);
 
   // A still frame is drawn again when the sky layers change (the front canvas comes or goes, a
   // claim moves the moon); the animated loop picks the change up on its next frame.
