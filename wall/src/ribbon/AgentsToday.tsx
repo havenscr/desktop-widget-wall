@@ -18,6 +18,7 @@ const END_TONE: Record<string, string> = {
   'waiting on you': 'amber',
   'in review': 'mint',
   working: 'cyan',
+  'helpers working': 'mint',
   idle: 'faint',
   finished: 'dim',
 };

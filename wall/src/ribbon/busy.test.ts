@@ -113,4 +113,43 @@ describe('settleOpenRuns', () => {
     const kid = { lane: 'kid', start: iso('09:00'), end: null, kind: 'run' as const };
     expect(settle([kid], [], new Map()).day[0].end).toBeNull();
   });
+  it('keeps helper work open but caps an idle own turn at twelve hours', () => {
+    const helpers = card({ live: 'idle', bg: { agents: 1, shells: 0 } });
+    const beforeCap = settleOpenRuns(
+      { lanes: [helpers], sessionsList: null, day: [open] },
+      parents,
+      new Set(['a']),
+      new Map(),
+      at('20:30'),
+      at('20:30'),
+    );
+    expect(beforeCap.day[0].end).toBeNull();
+    const afterCap = settleOpenRuns(
+      { lanes: [helpers], sessionsList: null, day: [open] },
+      parents,
+      new Set(['a']),
+      new Map(),
+      at('23:30'),
+      at('23:30'),
+    );
+    expect(afterCap.day[0].end).toBe(iso('21:00'));
+    const ownTurn = settleOpenRuns(
+      { lanes: [card({ live: 'working' })], sessionsList: null, day: [open] },
+      parents,
+      new Set(['a']),
+      new Map(),
+      at('23:30'),
+      at('23:30'),
+    );
+    expect(ownTurn.day[0].end).toBeNull();
+    const oldHelper = settleOpenRuns(
+      { lanes: [card()], sessionsList: null, day: [open] },
+      parents,
+      new Set(['a']),
+      new Map(),
+      at('23:30'),
+      at('23:30'),
+    );
+    expect(oldHelper.day[0].end).toBeNull();
+  });
 });
