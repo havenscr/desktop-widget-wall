@@ -106,6 +106,9 @@ const EXPECT = {
   'watch-row': /^ *FAIL \.w-ctl: width \d+ <= \d+/m,
   'watch-over': /^ *FAIL watch polish: .*w-lookbar.* is drawn over the video's box/m,
   'watch-take': /^ *FAIL pointer at \.w-sky \.w-frame /m,
+  // watt drive-in
+  'watt-seat': /^ *FAIL watt drive-in: Watt .* is not 60 px clear of the screen/m,
+  'watt-ground': /^ *FAIL watt drive-in: Watt .* is not on his ground/m,
 };
 const OVERFLOWS = {
   left: '.work .left-wing { transform: translateX(-200px); }',
@@ -170,6 +173,9 @@ const OVERFLOWS = {
   'watch-over': '.w-lookbar { left: 1200px !important; top: 200px !important; }',
   // A refused autoplay that never lets the pointer reach the whole-sky picture.
   'watch-take': '.w-frame.w-take { pointer-events: none !important; }',
+  // watt drive-in: his seat moved to the screen's centre; his seat lifted 100 px off the ground.
+  'watt-seat': '.watt-sheep { translate: 480px 0 !important; }',
+  'watt-ground': '.watt-sheep { translate: 0 -100px !important; }',
 };
 if (flag('self-test')) {
   const script = fileURLToPath(import.meta.url);
@@ -296,6 +302,14 @@ const QUIET = [
   // A refused autoplay over the whole sky: the hint shows, and a click lands on the picture where the wall draws nothing.
   { name: 'Watch polish, whole sky, autoplay refused', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=sky&wplay=0&wstate=refused', checks: WATCH_POLISH, hits: [...WATCH_POLISH_HITS, '.w-clickline', '.w-sky .w-frame'] },
   { name: 'Watch polish, nothing on, drive-in', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=drivein', checks: ['.w-now', '.w-lookbar'], hits: ['.w-lookbar button'] },
+  // watt drive-in: Watt seated in front of the drive-in screen (checked in every drive-in state
+  // with something on): at night and at noon, paused, with 24 saved and a long label, and with
+  // the leave banner. He still takes the pointer there.
+  { name: 'Watt drive-in, seated at night', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=drivein&wplay=0', checks: WATCH_POLISH, hits: ['.watt-hit-part'] },
+  { name: 'Watt drive-in, seated at noon', agents: '3', hz: 'unwind', at: '2026-11-11T12:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=drivein&wplay=0', checks: WATCH_POLISH, hits: ['.watt-hit-part'] },
+  { name: 'Watt drive-in, paused', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=drivein&wplay=0&wstate=paused', checks: WATCH_POLISH, hits: ['.watt-hit-part'] },
+  { name: 'Watt drive-in, 24 saved, long label', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=many&wlook=drivein&wplay=3', checks: WATCH_POLISH, hits: ['.watt-hit-part'] },
+  { name: 'Watt drive-in, leave banner', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=drivein&wplay=0&leave=12', checks: [...WATCH_POLISH, '.leave-banner'], hits: ['.watt-hit-part'] },
 ].map((v) => ({ ...v, q: query(v) }));
 // The Tools drawer over each place, and in each hard state: the drawer, its two columns and every
 // section stay inside the stage, right of the rail and the clock, with no cut text that has no tooltip.
@@ -930,7 +944,27 @@ try {
       }
       return { sw: box(sw), fails };
     })();
-    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, wattCard, header, deck, nowH, edges, hide, hits, grid, lw, sig, toolsOut, meetOut, strip, opened, watchPolish, listen });
+    // watt drive-in: with something on in the drive-in look, Watt sits in his seat: his box at
+    // least 60 px left of the screen (the rectangle driveInAudience gives), clear of the control
+    // row, the Look switch, the list card and the leave banner, and his feet on his ground
+    // (Unwind's horizon at y 505, his left edge in the Watch ground's 140 to 1020, buddy/ground.ts).
+    const wattDriveIn = (() => {
+      const aud = document.querySelector('.w-stage.w-drivein')?.getAttribute('data-audience');
+      const sheep = document.querySelector('.watt-sheep > svg');
+      if (!aud || !sheep) return null;
+      const [x] = aud.split(',').map(Number);
+      const me = sheep.getBoundingClientRect();
+      const at = Math.round(me.left) + ',' + Math.round(me.top) + ' to ' + Math.round(me.right) + ',' + Math.round(me.bottom);
+      const meet = (a, b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+      const fails = [];
+      const show = document.querySelector('.watt')?.dataset.show || 'not watching';
+      if (show !== 'seated') fails.push('watt drive-in: Watt is not seated (' + show + ')');
+      if (me.right > x - 60) fails.push('watt drive-in: Watt at ' + at + ' is not 60 px clear of the screen at x ' + x);
+      for (const sel of ['.w-ctl', '.w-lookbar', '.w-card', '.leave-banner']) { const e = document.querySelector(sel); if (e && meet(me, e.getBoundingClientRect())) fails.push('watt drive-in: Watt at ' + at + ' overlaps ' + sel); }
+      if (Math.abs(me.bottom - 505) > 1 || me.left < 139 || me.left > 1021) fails.push('watt drive-in: Watt at ' + at + ' is not on his ground');
+      return { at, fails };
+    })();
+    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, wattCard, header, deck, nowH, edges, hide, hits, grid, lw, sig, toolsOut, meetOut, strip, opened, watchPolish, listen, wattDriveIn });
     document.body.appendChild(pre);
   }, new URLSearchParams(location.search).get('card') ? 7000 : 3000);</script>`;
   const broken = overflow ? `<style>${OVERFLOWS[overflow]}</style>` : '';
@@ -977,6 +1011,9 @@ try {
     'watch-row': (v) => v.name === 'Watch polish, feathered, single video',
     'watch-over': (v) => v.name === 'Watch polish, drive-in, playlist, long label',
     'watch-take': (v) => v.name === 'Watch polish, whole sky, autoplay refused',
+    // watt drive-in
+    'watt-seat': (v) => v.name === 'Watt drive-in, seated at night',
+    'watt-ground': (v) => v.name === 'Watt drive-in, seated at night',
   };
   const breakOn = BREAK_ON[overflow] ? VARIANTS.filter(BREAK_ON[overflow]) : VARIANTS.slice(0, 1);
   /** keys style: the Now row's height on each page that has one, compared after every state ran. */
@@ -998,7 +1035,13 @@ try {
       process.exit(1);
     }
     const text = m[1].replaceAll('&quot;', '"').replaceAll('&amp;', '&');
-    const { res, page: doc, overlaps, cut, gaps, wattCard, header, deck, nowH, edges, hide, hits, grid, lw, sig, toolsOut, meetOut, strip, opened, watchPolish, listen } = JSON.parse(text);
+    const { res, page: doc, overlaps, cut, gaps, wattCard, header, deck, nowH, edges, hide, hits, grid, lw, sig, toolsOut, meetOut, strip, opened, watchPolish, listen, wattDriveIn } = JSON.parse(text);
+    // watt drive-in
+    if (wattDriveIn) {
+      for (const f of wattDriveIn.fails) console.log(`  FAIL ${f}`);
+      if (wattDriveIn.fails.length) failed = true;
+      else console.log(`  ok   watt drive-in: seated at ${wattDriveIn.at}, on his ground, 60 px or more left of the screen, clear of the control row, the Look switch, the list and the banner`);
+    }
     // watch polish
     if (watchPolish) {
       for (const f of watchPolish.fails) console.log(`  FAIL ${f}`);

@@ -1114,6 +1114,9 @@ Watt is also a small pet ("he"), calm and silent (no sound at all):
   - **While the wall records** (`isQuietForRecording()` in `signals/store.ts`) he sits quietly where
     he is: no wander and no idle life, no line of his own, no click noticing, no hop or look he
     starts himself, no notes or beat; the owner can still pet him, open his menu and carry him.
+  - **At the drive-in** (`buddy/audience.ts`): while Watch plays in the drive-in look (`driveInAudience`), he walks to a seat on his ground at least 60 px left of that rectangle (the approved page's proportion when larger; reduced motion: simply there), sits turned to it with one sign of life every 20 to 40 seconds (a blink, an ear, a head dip) and looks round once on a pause; no bubble, no click notice, no headphones; the show keeps him up past bedtime, and his frame loop rests on one timer.
+  - When it ends he walks back to his Watch spot. Order: a call, then reading with him (both send him back), then recording (he sits where he is, no walk), then the leave banner (through his ground; on Unwind it takes none), then the owner's hand (set down, Come here, Stay: he stays put for the rest of the show), then watching.
+  - The fit check holds his seat clear of the screen, the control row, the Look switch, the list and the banner, on his ground; the gallery's `drag:` step sets him down during a show.
   - **He notices clicks.** One passive `pointerdown` listener on the window (capture, so it sees
     clicks a control stops; it never prevents or stops anything, and does a few comparisons and
     starts a reaction; no polling, no timer while idle). A click anywhere on the wall that is not
