@@ -28,7 +28,7 @@
 // CI does not run this; run it by hand before a layout change is handed over.
 //
 //   WALL_CHROME=/path/to/chrome-or-headless-shell npm --prefix wall run fit-check
-//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, header, deck, tiles, picker, chips, heading, zenhint, strip, fold, drawer, rows, handle, sky, floor, sun, tools, toolsnames, meetfill, meetempty, fy-height, key-edge, hide-pill, hide-note, leave-band, rec-chip, rec-height, tile-height, tile-icon, tile-iconbox, drawer-scrim, lwbuttons, lwoverlap, lwsquare, lwring, lwtemp, lwround, sky-front, sky-moon, sky-always, sky-crop, sky-seam, tower-over, tower-wide, tower-box, tower-switch, holo-big, holo-noblend, holo-take, listen-player, listen-card, listen-slot, listen-next)
+//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, header, deck, tiles, picker, chips, heading, zenhint, strip, fold, drawer, rows, handle, sky, floor, sun, tools, toolsnames, meetfill, meetempty, fy-height, key-edge, hide-pill, hide-note, leave-band, rec-chip, rec-height, tile-height, tile-icon, tile-iconbox, drawer-scrim, lwbuttons, lwoverlap, lwsquare, lwring, lwtemp, lwround, sky-front, sky-moon, sky-always, sky-crop, sky-seam, tower-over, tower-wide, tower-box, tower-switch, holo-big, holo-noblend, holo-take, listen-player, listen-card, listen-slot, listen-next, lip-cover, lip-band, lip-scrim, row-parts, over-hatch, row-type)
 //   npm --prefix wall run fit-check -- --self-test
 //
 // WALL_CHROME (or the first argument that is not a flag) is a Chromium or
@@ -77,6 +77,13 @@ const EXPECT = {
   drawer: /^ *FAIL strip: \.day-drawer (reaches above the clock|sticks out of the stage)/m,
   rows: /^ *FAIL strip: an Agents today row is \d+ px tall/m,
   handle: /^ *FAIL strip: the drawer handle covers /m,
+  // day handle, rows, colours
+  'lip-cover': /^ *FAIL strip: the drawer handle covers /m,
+  'lip-band': /^ *FAIL strip: the drawer handle band covers /m,
+  'lip-scrim': /^ *FAIL strip: the Close the day lip /m,
+  'row-parts': /^ *FAIL strip: drawer row .* (parts overlap|runs out of its row|quiet line is squeezed|wraps)/m,
+  'over-hatch': /^ *FAIL strip: an over-the-limit cell is not (taller|hatched)/m,
+  'row-type': /^ *FAIL strip: text under 16 px in /m,
   sky: /^ *FAIL no point of the sky or the floor lands on \.w-sky/m,
   floor: /^ *FAIL pointer at \.u-tomorrow .*reaches w-skyspill/m,
   sun: /^ *FAIL pointer at .*reaches w-stage w-sun/m,
@@ -150,7 +157,15 @@ const OVERFLOWS = {
   fold: '.rib .ev.fold { width: 30px !important; }',
   drawer: '.day-drawer { translate: 0 -300px; }',
   rows: '.agents-today .at-row { height: 20px !important; min-height: 0 !important; }',
-  handle: '.rib .rib-handle { top: 20px !important; }',
+  handle: '.rib-handle.day-lip { bottom: 75px !important; }',
+  // day handle, rows, colours: a 60 px lip, a 600 px title, the hatch removed, 12 px text.
+  'lip-cover': '.rib-handle.day-lip { bottom: 61px !important; height: 60px !important; }',
+  // The band keeping the pointer even where the buddy or a card lies under it.
+  'lip-band': '.rib-handle.day-lip[data-pass] { pointer-events: auto !important; }',
+  'lip-scrim': '.day-drawer .rib-handle.day-lip { z-index: 0 !important; pointer-events: none !important; }',
+  'row-parts': '.day-drawer .dd-name { width: 600px !important; }',
+  'over-hatch': '.rib .agent-row .ac i.b5 { background: var(--busy-5) !important; top: 7px !important; height: 6px !important; }',
+  'row-type': '.day-drawer .dd-line { font-size: 12px !important; }',
   // The whole-sky video layer catching the pointer and drawn over the controls.
   // sky layers: the whole sky's picture no longer spans the strip, so the break also widens it over the controls.
   sky: '.w-sky, .w-sky * { pointer-events: auto !important; } .w-sky { z-index: 30 !important; left: 0 !important; width: 2436px !important; }',
@@ -447,7 +462,7 @@ const VARIANTS = [
   // Recording page one height with a key page and For you (nowH).
   { name: 'Leave banner on Work, 12 minutes, long title', q: work('3', '&leave=12'), checks: ['.leave-banner'], viewportOnly: true },
   { name: 'Leave banner on Work, amber, helper not set up', q: work('off', '&leave=4'), checks: ['.leave-banner'], viewportOnly: true },
-  { name: 'Leave banner on Work with the Day drawer open', q: work('12ask', '&leave=12&rec=1&meet=overlap'), click: '.rib .rib-handle', checks: ['.leave-banner', '.day-drawer', '.day-drawer .dd-agenda'], strip: true, viewportOnly: true },
+  { name: 'Leave banner on Work with the Day drawer open', q: work('12ask', '&leave=12&rec=1&meet=overlap'), click: '.rib-handle:not(.in-drawer)', checks: ['.leave-banner', '.day-drawer', '.day-drawer .dd-agenda'], strip: true, viewportOnly: true },
   { name: 'Leave banner on Work, leave now with the recording chip', q: work('12ask', '&leave=0&rec=1'), checks: ['.leave-banner', '.leave-banner .rec-chip'], viewportOnly: true },
   { name: 'Leave banner on Home', q: home('moods=five&leave=12'), checks: ['.leave-banner'], viewportOnly: true },
   { name: 'Leave banner on Unwind, amber', q: query({ hz: 'unwind', agents: '3', extra: '&leave=4' }), checks: ['.leave-banner'], viewportOnly: true },
@@ -507,9 +522,16 @@ VARIANTS.push(
   { name: 'Strip: overlaps, twelve sessions', q: work('12ask', '&meet=overlap'), checks: ['.rib'], strip: true, viewportOnly: true },
   { name: 'Strip: the needle at the centre, under the handle', q: query({ at: '2026-11-11T14:50:00-08:00', agents: '12ask', extra: '&meet=overlap' }), checks: ['.rib'], strip: true, viewportOnly: true },
   { name: 'Strip: late in the day', q: query({ at: '2026-11-11T22:50:00-08:00', agents: '12ask', extra: '&meet=overlap' }), checks: ['.rib'], strip: true, viewportOnly: true },
-  { name: 'Strip: the Day drawer open', q: work('12ask', '&meet=overlap'), click: '.rib .rib-handle', checks: ['.day-drawer', '.day-drawer .dd-agenda', '.day-drawer .dd-rows'], strip: true, viewportOnly: true },
+  { name: 'Strip: the Day drawer open', q: work('12ask', '&meet=overlap'), click: '.rib-handle', checks: ['.day-drawer', '.day-drawer .dd-agenda', '.day-drawer .dd-rows'], strip: true, viewportOnly: true },
   { name: 'Strip: Agents today, twelve sessions', q: work('12ask', '&days=typical'), click: '.rib .ag-line', checks: ['.agents-today', '.agents-today .at-head'], strip: true, viewportOnly: true },
   { name: 'Strip: Agents today, a heavy past day', q: work('12', '&days=heavy'), click: '.rib .ag-line >> .at-seg button:nth-child(2)', checks: ['.agents-today', '.agents-today .at-head', '.agents-today .at-foot'], strip: true, viewportOnly: true },
+);
+// day handle, rows, colours: twelve open with nine working (over the limit since mid morning, one
+// failed, one waiting) on the strip, in the Day drawer with long titles, and in the Agents panel.
+VARIANTS.push(
+  { name: 'Strip: twelve open, nine working, over the limit', q: work('12busy'), checks: ['.rib'], strip: true, viewportOnly: true },
+  { name: 'Strip: the Day drawer, twelve busy, long titles', q: work('12busy', '&meet=overlap'), click: '.rib-handle', checks: ['.day-drawer', '.day-drawer .dd-rows'], strip: true, viewportOnly: true },
+  { name: 'Strip: Agents today over the limit', q: work('12busy', '&days=typical'), click: '.rib .ag-line', checks: ['.agents-today', '.agents-today .at-head', '.agents-today .at-busy'], strip: true, viewportOnly: true },
 );
 // keys style: a small PNG reader (8-bit RGB or RGBA, not interlaced, as Chromium writes them) and contrast.
 function readPng(file) {
@@ -697,7 +719,10 @@ try {
         for (const q of range.getClientRects()) if (q.width > 0) tops.add(Math.round(q.top));
       }
       const tall = e.matches('.lanes-hd-l > *, .lanes-hd > .row > *') && e.getBoundingClientRect().height > 36.5;
-      return tops.size > 1 || tall ? ['header part wraps: ' + (e.textContent || '').trim().slice(0, 48) + ' (' + Math.round(e.getBoundingClientRect().height) + ' px tall)'] : [];
+      // day handle, rows, colours: the meter's sentence is a coloured count and a word in two
+      // nodes, each one line even when the sentence breaks between them; its box says it wrapped.
+      const box = e.matches('.slot-meter .xs') && e.getBoundingClientRect().height > parseFloat(getComputedStyle(e).fontSize) * 1.7;
+      return tops.size > 1 || tall || box ? ['header part wraps: ' + (e.textContent || '').trim().slice(0, 48) + ' (' + Math.round(e.getBoundingClientRect().height) + ' px tall)'] : [];
     });
     // The deck (Always here and Now): nothing below its floor (a clearance above the mountain
     // ridge, worked out from the Work camera; the Now row carries it as data-floor), every key
@@ -776,11 +801,48 @@ try {
       if (Math.abs(h - 104) > 0.5) strip.push('strip: the Work strip is ' + Math.round(h) + ' px tall (must be 104)');
       const labels = [...ribW.querySelectorAll('.ev, .ev-side, .ag-line, .due:not(.bare), .adbar')].map((e) => ({ r: e.getBoundingClientRect(), t: (e.textContent || e.getAttribute('aria-label') || '').slice(0, 30) }));
       labels.forEach((a, i) => labels.slice(i + 1).forEach((b) => { if (hit(a.r, b.r)) strip.push('strip: labels share pixels: ' + a.t + ' / ' + b.t); }));
-      // The drawer handle covers no chip, bar or label.
-      const handle = ribW.querySelector('.rib-handle');
+      // day handle, rows, colours: the handle (the strip's top edge, outside the strip's box) at rest
+      // covers no chip, bar or label: where they share pixels the label must be the one on top (the
+      // needle's pill draws over it). It is at least 26 px tall and runs the strip's width, 24 px in.
+      const handle = document.querySelector('.rib-handle.day-lip:not(.open)');
       if (handle) {
         const hr = handle.getBoundingClientRect();
-        for (const e of ribW.querySelectorAll('.ev, .ev-side, .adbar, .hl, .ndl b, .ag-line, .due, .agent-row .ac')) if (hit(hr, e.getBoundingClientRect())) strip.push('strip: the drawer handle covers ' + (e.textContent || e.className).trim().slice(0, 30));
+        const rr = ribW.getBoundingClientRect();
+        if (hr.height < 26 - 0.5 || hr.left > rr.left + 24.5 || hr.right < rr.right - 24.5) strip.push('strip: the drawer handle is ' + Math.round(hr.width) + ' by ' + Math.round(hr.height) + ' (at least the strip less 48 by 26)');
+        for (const e of ribW.querySelectorAll('.ev, .ev-side, .adbar, .hl, .ndl b, .ag-line, .due, .agent-row .ac')) {
+          const er = e.getBoundingClientRect();
+          if (!hit(hr, er)) continue;
+          const x = (Math.max(hr.left, er.left) + Math.min(hr.right, er.right)) / 2;
+          const y = (Math.max(hr.top, er.top) + Math.min(hr.bottom, er.bottom)) / 2;
+          const top = document.elementFromPoint(x, y);
+          if (top && handle.contains(top)) strip.push('strip: the drawer handle covers ' + (e.textContent || e.className).trim().slice(0, 30));
+        }
+        // The band covers nothing clickable at rest: wherever something that acts on a click (an agent
+        // card, a folded chip, a pinned key, the buddy, a button) lies under the band, the pointer moved
+        // there makes the lip pass it through (data-pass), so the lip is no longer the topmost thing.
+        const clickable = 'button, a[href], [role="button"], [tabindex]:not([tabindex="-1"]), .lane[data-id], .ev, .key-tile, .watt-hit, .tk3, .sg-hit';
+        const seenUnder = new Set();
+        for (let x = Math.ceil(hr.left) + 2; x < hr.right; x += 6) {
+          for (let y = Math.ceil(hr.top) + 1; y < Math.min(hr.bottom, rr.top + 9); y += 3) {
+            const under = (stack) => stack.slice(1).map((e) => e.closest(clickable)).find((c) => c && !handle.contains(c));
+            let stack = document.elementsFromPoint(x, y);
+            if (stack.length === 0 || !handle.contains(stack[0]) || !under(stack)) continue;
+            window.dispatchEvent(new PointerEvent('pointermove', { clientX: x, clientY: y }));
+            stack = document.elementsFromPoint(x, y);
+            const c = handle.contains(stack[0]) && !stack[0].closest('.lip-pill') ? under(stack) : null;
+            if (c && !seenUnder.has(c)) {
+              seenUnder.add(c);
+              strip.push('strip: the drawer handle band covers ' + (c.getAttribute('aria-label') || c.textContent || c.className).trim().slice(0, 30) + ' at (' + x + ', ' + y + ')');
+            }
+          }
+        }
+        window.dispatchEvent(new PointerEvent('pointermove', { clientX: -50, clientY: -50 }));
+      }
+      // Over the limit is never colour alone: such a cell is taller than the others and hatched.
+      for (const i of ribW.querySelectorAll('.agent-row .ac i.b5')) {
+        const cs = getComputedStyle(i);
+        if (i.getBoundingClientRect().height < 10 - 0.5) strip.push('strip: an over-the-limit cell is not taller (' + Math.round(i.getBoundingClientRect().height) + ' px)');
+        if (!cs.backgroundImage.includes('repeating-linear-gradient')) strip.push('strip: an over-the-limit cell is not hatched');
       }
       for (const f of ribW.querySelectorAll('.ev.fold')) {
         const n = f.querySelector('.fold-n');
@@ -824,9 +886,41 @@ try {
         for (const keep of document.querySelectorAll('.leave-banner, .rec-float')) if (!(z(keep) > z(scrim))) strip.push('strip: with the drawer open, ' + keep.className + ' is not above the scrim, so its words would be dimmed');
       }
     }
+    // day handle, rows, colours: the "Close the day" lip is a real button inside the drawer's own
+    // subtree, with a z-index above the drawer's other layers, and the REAL scrim (above) never
+    // covers it: the element at the lip's centre is the lip.
+    const lipIn = document.querySelector('.day-drawer .rib-handle.day-lip');
+    if (lipIn) {
+      if (lipIn.tagName !== 'BUTTON') strip.push('strip: the Close the day lip is not a button');
+      if (!lipIn.classList.contains('in-drawer')) strip.push('strip: the Close the day lip lacks the in-drawer class');
+      const z = (e) => parseInt(getComputedStyle(e).zIndex, 10) || 0;
+      const others = Math.max(0, ...[...document.querySelector('.day-drawer').children].filter((c) => c !== lipIn).map(z));
+      if (z(lipIn) <= others) strip.push('strip: the Close the day lip has z-index ' + z(lipIn) + ', not above the other layers of the drawer (' + others + ')');
+      if (!document.querySelector('.drawer-scrim')) strip.push('strip: the Close the day lip is checked with no real scrim up');
+      const lr = lipIn.querySelector('.lip-pill').getBoundingClientRect();
+      const topEl = document.elementFromPoint(lr.left + lr.width / 2, lr.top + lr.height / 2);
+      if (!topEl || !lipIn.contains(topEl)) strip.push('strip: the Close the day lip is under the scrim (found ' + (topEl ? topEl.className || topEl.tagName : 'nothing') + ')');
+    }
     for (const row of document.querySelectorAll('.agents-today .at-row:not(.skel), .day-drawer .dd-row')) {
       const h = row.getBoundingClientRect().height;
       if (h < 32 - 0.5) strip.push('strip: an Agents today row is ' + Math.round(h) + ' px tall (at least 32)');
+    }
+    // day handle, rows, colours: a drawer row's number, title, pill, quiet line, track and time
+    // never share pixels or leave the row, the row is one line, and the quiet line keeps its room.
+    for (const row of document.querySelectorAll('.day-drawer .dd-row')) {
+      const rr = row.getBoundingClientRect();
+      const name = row.querySelector('.dd-name')?.textContent?.slice(0, 24) ?? '';
+      const parts = [...row.children].map((e) => ({ c: e.className, r: e.getBoundingClientRect() }));
+      parts.forEach((a, i) => parts.slice(i + 1).forEach((b) => { if (hit(a.r, b.r)) strip.push('strip: drawer row "' + name + '" parts overlap: ' + a.c + ' / ' + b.c); }));
+      for (const p of parts) if (p.r.right > rr.right + 0.5 || p.r.left < rr.left - 0.5) strip.push('strip: drawer row "' + name + '" ' + p.c + ' runs out of its row');
+      for (const e of row.querySelectorAll('.dd-name, .dd-pill, .dd-line, .dd-time')) if (e.scrollHeight > e.clientHeight + 1 || e.getBoundingClientRect().height > rr.height) strip.push('strip: drawer row "' + name + '" wraps in ' + e.className);
+      const line = row.querySelector('.dd-line');
+      if (line && line.getBoundingClientRect().width < 300) strip.push('strip: drawer row "' + name + '" quiet line is squeezed to ' + Math.round(line.getBoundingClientRect().width) + ' px');
+    }
+    // No text under 16 px in the drawer rows, their header and the Busy at once line and band.
+    for (const e of document.querySelectorAll('.day-drawer :is(.dd-name, .dd-pill, .dd-line, .dd-time, .dd-counts, .dd-axis span), .agents-today :is(.at-busy-k, .at-busy-s .w, .at-busy-s b, .at-busy-sum, .at-band-k, .at-band-note)')) {
+      const px = parseFloat(getComputedStyle(e).fontSize);
+      if (px < 16 - 0.01 && (e.textContent || '').trim()) strip.push('strip: text under 16 px in ' + e.className + ' (' + px + ' px)');
     }
     const opened = { drawer: !!document.querySelector('.day-drawer'), panel: !!document.querySelector('.agents-today'), rows: document.querySelectorAll('.agents-today .at-row:not(.skel)').length };
     // The Tools drawer: inside x 1700 to 2560 and y 0 to 720, clear of the rail, and no text cut unless a hover card carries it.
@@ -1231,6 +1325,13 @@ try {
     strip: (v) => v.name === 'Strip: overlaps, twelve sessions',
     fold: (v) => v.name === 'Strip: overlaps, twelve sessions',
     handle: (v) => v.name === 'Strip: overlaps, twelve sessions',
+    // day handle, rows, colours
+    'lip-cover': (v) => v.name === 'Strip: overlaps, twelve sessions',
+    'lip-band': (v) => v.name === 'Strip: overlaps, twelve sessions',
+    'lip-scrim': (v) => v.name === 'Strip: the Day drawer open',
+    'row-parts': (v) => v.name === 'Strip: the Day drawer, twelve busy, long titles',
+    'over-hatch': (v) => v.name === 'Strip: twelve open, nine working, over the limit',
+    'row-type': (v) => v.name === 'Strip: the Day drawer, twelve busy, long titles',
     drawer: (v) => v.name === 'Strip: the Day drawer open',
     rows: (v) => v.name === 'Strip: Agents today, a heavy past day',
     'hide-note': (v) => v.name === 'Unwind, Hide screen grown with the failure note',

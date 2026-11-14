@@ -68,11 +68,12 @@ it('draws the thin activity bar from 6 AM to now in 12 minute cells, amber where
   expect(c).toHaveLength(9);
   expect(parseFloat(c[0].style.left)).toBeCloseTo(RX(6), 3);
   expect(parseFloat(c[5].style.left)).toBeCloseTo(RX(9.6), 3);
-  // Two sessions busy in the 10:00 cell, one of them waiting: amber and brighter.
+  // The 10:00 cell: one session working, one waiting (an amber underline, not a count).
   const tenOClock = c[7].querySelector('i') as HTMLElement;
-  expect(tenOClock.className).toBe('wait');
-  expect(Number(tenOClock.style.opacity)).toBeCloseTo(0.49, 2);
-  expect((c[5].querySelector('i') as HTMLElement).className).toBe('');
+  expect(tenOClock.className).toBe('b1 wait');
+  expect((c[5].querySelector('i') as HTMLElement).className).toBe('b1');
+  // 6:00 to 7:00 was in review (a done span): drawn, but nobody working.
+  expect((c[0].querySelector('i') as HTMLElement).className).toBe('b0');
   // The cells are not controls (the line is the keyboard path): no role, hidden from the tree.
   expect(c[7].getAttribute('role')).toBeNull();
   expect(c[7].getAttribute('aria-hidden')).toBe('true');
@@ -146,7 +147,7 @@ it('a click on the agents line opens Agents today; a cell hover says how many we
   await flush();
   fireEvent.mouseEnter(cells(r)[0]);
   await flush(TIP_DELAY_MS + 10);
-  expect(r.container.querySelector('.hover-tip')!.textContent).toContain('9:36 to 9:48: 1 session busy');
+  expect(r.container.querySelector('.hover-tip')!.textContent).toContain('9:36 to 9:48: 1 working');
   fireEvent.click(r.container.querySelector('.ag-line') as HTMLElement);
   await flush();
   expect(r.container.querySelector('.agents-today')).not.toBeNull();

@@ -52,7 +52,7 @@ it('shows the header, three lanes and the shelf when the helper answers', async 
   const r = render(<CentreSlot weather={weather} />);
   await flush();
   const centre = r.container.querySelector('.centre.lanes')!;
-  expect(centre.querySelector('.lanes-hd')!.textContent).toBe('Agents3 running, 3 slotsReady to merge:Admin pill polish');
+  expect(centre.querySelector('.lanes-hd')!.textContent).toBe('Agents3 of 3 workingat the limitReady to merge:Admin pill polish');
   // Nothing waits, and a card is ready: the header says so in mint and shows that card on a click.
   expect(centre.querySelector('.calm')!.className).toContain('t-mint');
   fireEvent.click(centre.querySelector('.ask-btn')!);
@@ -192,7 +192,9 @@ it('shows the real numbers past the limit and hides a missing five hour figure',
   answer = () => summary({ slots: { used: 5, limit: 4 }, usage: { claudeWeekPct: 40, claude5hPct: null, weekResetsAt: null } });
   const r = render(<CentreSlot weather={weather} />);
   await flush();
-  expect(screen.getByText('5 running, 4 slots')).toBeTruthy();
+  // An older answer with no day log: the server's own count, against the limit, with the over tag.
+  expect(r.container.querySelector('.slot-meter')!.textContent).toBe('5 of 4 working1 over');
+  expect(r.container.querySelector('.slot-meter')!.className).toBe('slot-meter s5');
   expect(r.container.querySelector('.shelf')!.textContent).toBe('4 parked sessionsClaude this week40%');
   answer = () => summary({ usage: null, parked: 0 });
   await flush(POLL_MS);
@@ -360,7 +362,7 @@ it('a newer helper: every parent or standalone session gets a card, numbered, wi
   expect(cards).toHaveLength(7);
   expect(cards.map((c) => c.querySelector('.lane-num')!.textContent)).toEqual(['1', '2', '3', '4', '5', '6', '7']);
   expect(r.container.querySelector('.lanes-count')!.textContent).toBe('3 of 7');
-  expect(r.container.querySelector('.slot-meter')!.textContent).toBe('+26 working, 7 open, 4 slots');
+  expect(r.container.querySelector('.slot-meter')!.textContent).toBe('6 of 4 working2 over');
   expect(r.container.querySelectorAll('.slot-meter .pips i.on')).toHaveLength(4);
   expect(r.container.querySelectorAll('.lane.slim')).toHaveLength(0);
 });
