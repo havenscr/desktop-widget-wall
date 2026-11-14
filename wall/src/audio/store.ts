@@ -1,7 +1,8 @@
 import { create } from 'zustand';
 import { SILENCE_MS, clamp01, hasSound, smoothStep, type AudioLevelsPayload, type Levels } from './model';
 import { createBeatDetector, type BeatDetector } from './beat';
-import { clearDance, createDance, stepDance } from './dance';
+import { APP_DANCE_PARAMS, clearDance, createDance, stepDance, type DanceParams } from './dance';
+import { lineSettings } from '../horizon/linesSettings';
 
 export interface AudioState extends Levels {
   /** True while sound arrived in the last 0.35 seconds. */
@@ -53,6 +54,7 @@ export interface BandHistory {
 const dancing = { data: new Float32Array(HISTORY_ROWS * BAND_COUNT), head: -1, rows: 0 };
 const dance = createDance();
 const danceRaw = new Float32Array(BAND_COUNT);
+const danceParams: DanceParams = { ...APP_DANCE_PARAMS };
 let nextRowAt = -Infinity;
 // Rows written since sound was last heard: once a whole ring of silence is in, writing stops.
 let quietRows = 0;
@@ -112,7 +114,15 @@ function advanceHistory(now: number, playing: boolean): void {
     dancing.head = (dancing.head + 1) % HISTORY_ROWS;
     if (playing) for (let i = 0; i < BAND_COUNT; i++) danceRaw[i] = bands[i];
     else danceRaw.fill(0);
-    stepDance(dance, danceRaw, 1 / HISTORY_HZ, dancing.data, dancing.head * BAND_COUNT);
+    const smooth = (lineSettings().smooth - 50) / 50;
+    const lively = (lineSettings().lively - 50) / 50;
+    const releaseScale = Math.pow(4, smooth);
+    danceParams.levelRelease = APP_DANCE_PARAMS.levelRelease * releaseScale;
+    danceParams.fastRelease = APP_DANCE_PARAMS.fastRelease * releaseScale;
+    danceParams.base = APP_DANCE_PARAMS.base;
+    danceParams.hit = APP_DANCE_PARAMS.hit * Math.pow(2, lively);
+    danceParams.limit = APP_DANCE_PARAMS.limit * Math.pow(2, 0.75 * lively);
+    stepDance(dance, danceRaw, 1 / HISTORY_HZ, dancing.data, dancing.head * BAND_COUNT, danceParams);
     if (dancing.rows < HISTORY_ROWS) dancing.rows++;
     if (!playing) quietRows++;
     nextRowAt += ROW_MS;

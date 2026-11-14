@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  APP_DANCE_PARAMS,
   DANCE_BANDS,
   DANCE_LIMIT,
   clearDance,
@@ -30,6 +31,21 @@ describe('soft', () => {
     expect(soft(100, 1.8)).toBeLessThanOrEqual(1.8);
     expect(soft(-0.5, 1.8)).toBeLessThan(0);
   });
+});
+
+it('takes lively and smooth shaping parameters without changing the default path', () => {
+  const raw = flat(0.8);
+  const a = new Float32Array(DANCE_BANDS), b = new Float32Array(DANCE_BANDS);
+  for (let i = 0; i < 30; i++) {
+    stepDance(createDance(), raw, DT, a, 0, APP_DANCE_PARAMS);
+    stepDance(createDance(), raw, DT, b);
+  }
+  expect(a).toEqual(b);
+  const calm = { ...APP_DANCE_PARAMS, hit: APP_DANCE_PARAMS.hit / 2, limit: 1.07, levelRelease: 1.4, fastRelease: 0.8 };
+  const wild = { ...APP_DANCE_PARAMS, hit: APP_DANCE_PARAMS.hit * 2, limit: 3.03, levelRelease: 0.09, fastRelease: 0.05 };
+  const cs = createDance(), ws = createDance();
+  for (let i = 0; i < 30; i++) { stepDance(cs, raw, DT, a, 0, calm); stepDance(ws, raw, DT, b, 0, wild); }
+  expect(Math.max(...b)).toBeGreaterThan(Math.max(...a));
 });
 
 describe('stepDance', () => {
