@@ -20,6 +20,7 @@ const GONE: &str = "no longer offered";
 const STARTING: &str = "starting";
 const CHOOSE: &str = "choose";
 const RESTRICTED: &str = "restricted";
+const DEVICE_GONE: &str = "device gone";
 const SPOTIFY_URI: &str = "spotify:";
 const START_WAIT: Duration = Duration::from_secs(12);
 const CALLBACK: &str = "/callback";
@@ -133,8 +134,8 @@ impl Http for RealHttp {
     fn api_timeout(&self, method: &str, path: &str, bearer: &str, payload: Option<&Value>, limit: u64, timeout: Duration) -> Result<HttpReply, ()> {
         let url = format!("https://api.spotify.com/v1{path}");
         let bounded = ureq::AgentBuilder::new().timeout(timeout.max(Duration::from_millis(1))).redirects(0).build();
-        let request = match method { "GET" => bounded.get(&url), "PUT" => bounded.put(&url), _ => return Err(()) }.set("Authorization", &format!("Bearer {bearer}"));
-        let result = match payload { Some(value) => request.set("Content-Type", "application/json").send_string(&value.to_string()), None => request.call() };
+        let request = match method { "GET" => bounded.get(&url), "PUT" => bounded.put(&url), "POST" => bounded.post(&url), _ => return Err(()) }.set("Authorization", &format!("Bearer {bearer}"));
+        let result = match payload { Some(value) => request.set("Content-Type", "application/json").send_string(&value.to_string()), None if method == "POST" => request.send_string(""), None => request.call() };
         http_reply_with_limit(result, limit)
     }
 }
@@ -519,12 +520,15 @@ fn shape_devices(v: &Value) -> Vec<Device> {
 #[tauri::command] pub async fn wall2_spotify_devices(window: WebviewWindow) -> Result<Vec<Device>, String> { require(&window)?; tauri::async_runtime::spawn_blocking(move || { let cfg = config(window.app_handle())?; Ok(shape_devices(&get_json(&cfg, "/me/player/devices")?)) }).await.map_err(|_| "failed".to_string())? }
 
 #[derive(Debug, PartialEq)]
-enum DeviceChoice { Ready(String), Start, Choose, Restricted }
+enum DeviceChoice { Ready(String), Start, Choose, Restricted, Gone }
 fn choose_device(devices: &[Device], requested: Option<&str>, computer: Option<&str>) -> DeviceChoice {
     let any_computer=devices.iter().any(|d| d.kind.eq_ignore_ascii_case("computer"));
     let computers = devices.iter().filter(|d| !d.restricted && d.kind.eq_ignore_ascii_case("computer")).collect::<Vec<_>>();
     // A device the owner chose in the "Play on" list (a phone or speaker too) is used when it is awake and allows control.
-    if let Some(found) = requested.and_then(|id| devices.iter().find(|d| !d.restricted && d.id == id)) { return DeviceChoice::Ready(found.id.clone()) }
+    // One that is no longer listed (asleep) or does not allow control is never swapped for another player: the answer says so.
+    if let Some(id) = requested {
+        return match devices.iter().find(|d| d.id == id) { Some(d) if !d.restricted => DeviceChoice::Ready(d.id.clone()), Some(_) => DeviceChoice::Restricted, None => DeviceChoice::Gone };
+    }
     if let Some(found) = computers.iter().find(|d| d.active) { return DeviceChoice::Ready(found.id.clone()) }
     if let Some(found) = computer.and_then(|name| computers.iter().find(|d| d.name.eq_ignore_ascii_case(name))) { return DeviceChoice::Ready(found.id.clone()) }
     match computers.as_slice() { [] if any_computer => DeviceChoice::Restricted, [] => DeviceChoice::Start, [only] => DeviceChoice::Ready(only.id.clone()), _ => DeviceChoice::Choose }
@@ -554,12 +558,13 @@ impl Drop for StartingGuard { fn drop(&mut self) { STARTING_PLAYER.store(false, 
 fn write_lock() -> &'static Mutex<()> { WRITE.get_or_init(|| Mutex::new(())) }
 fn begin_write() -> Result<std::sync::MutexGuard<'static, ()>, String> { write_lock().try_lock().map_err(|_| BUSY.to_string()) }
 
-fn put_with(cfg: &Config, path: &str, payload: Option<Value>, http: &dyn Http, creds: &dyn Creds) -> Result<(), String> {
+fn put_with(cfg: &Config, path: &str, payload: Option<Value>, http: &dyn Http, creds: &dyn Creds) -> Result<(), String> { send_with(cfg, "PUT", path, payload, http, creds) }
+fn send_with(cfg: &Config, method: &str, path: &str, payload: Option<Value>, http: &dyn Http, creds: &dyn Creds) -> Result<(), String> {
     let _guard = begin_write()?;
     check_backoff()?;
     let bearer = access_with(cfg, false, http, creds)?;
     let started = Instant::now();
-    match http.api("PUT", path, &bearer, payload.as_ref(), ANSWER_BODY) {
+    match http.api(method, path, &bearer, payload.as_ref(), ANSWER_BODY) {
         Ok(resp) if (200..300).contains(&resp.status) => Ok(()),
         Ok(resp) if resp.status == 404 => { crate::wall2_spotify_log::write(crate::wall2_spotify_log::Event::ApiFailed, crate::wall2_spotify_log::Reason::NoDevice, 404, started.elapsed().as_millis()); Err(NO_DEVICE.into()) },
         Ok(resp) if resp.status == 429 => { back_off_for(retry_after(resp.retry_after)); crate::wall2_spotify_log::write(crate::wall2_spotify_log::Event::ApiFailed, crate::wall2_spotify_log::Reason::Busy, 429, started.elapsed().as_millis()); Err(BUSY.into()) }
@@ -598,8 +603,7 @@ where N: FnMut() -> Duration, S: FnMut(Duration), C: FnMut() -> bool, D: FnMut(D
         if cancelled() { return Err("cancelled".into()) }
         let elapsed = now();
         if elapsed >= limit { return Err(NO_DEVICE.into()) }
-        if let DeviceChoice::Ready(device) = choose_device(&devices, requested, computer) { return Ok(device) }
-        if matches!(choose_device(&devices,requested,computer),DeviceChoice::Restricted) { return Err(RESTRICTED.into()) }
+        match choose_device(&devices, requested, computer) { DeviceChoice::Ready(device) => return Ok(device), DeviceChoice::Restricted => return Err(RESTRICTED.into()), DeviceChoice::Gone => return Err(DEVICE_GONE.into()), _ => {} }
         sleep(Duration::from_secs(1).min(limit.saturating_sub(elapsed)));
         let left = limit.saturating_sub(now());
         if left.is_zero() { return Err(NO_DEVICE.into()) }
@@ -627,6 +631,7 @@ pub async fn wall2_spotify_play(window: WebviewWindow, request: PlayRequest) -> 
             DeviceChoice::Ready(device) => { play_on_device(&cfg, &request, &device)?; Ok("played".into()) }
             DeviceChoice::Choose => Err(CHOOSE.into()),
             DeviceChoice::Restricted => Err(RESTRICTED.into()),
+            DeviceChoice::Gone => Err(DEVICE_GONE.into()),
             DeviceChoice::Start => {
                 let counts = device_counts(&devices);
                 crate::wall2_spotify_log::write_devices(counts.0, counts.1, counts.2, counts.3);
@@ -647,6 +652,21 @@ pub async fn wall2_spotify_play(window: WebviewWindow, request: PlayRequest) -> 
 #[tauri::command] pub async fn wall2_spotify_cancel_start(window: WebviewWindow) -> Result<(), String> { require(&window)?; CANCEL_PLAYER.store(true, Ordering::SeqCst); Ok(()) }
 
 #[tauri::command] pub async fn wall2_spotify_transfer(window: WebviewWindow, device_id: String) -> Result<(), String> { require(&window)?; if !valid_device_id(&device_id) { return Err("invalid id".into()) } tauri::async_runtime::spawn_blocking(move || { let cfg = config(window.app_handle())?; put(&cfg, "/me/player", Some(json!({"device_ids":[device_id],"play":false}))) }).await.map_err(|_| "failed".to_string())? }
+/// Pause, resume, next and previous act on the player Spotify reports as active (no device is named), whichever
+/// device that is, so the row controls what plays even when it plays on a phone or speaker. Resume is a play
+/// with no item: the existing play command needs one, so it has its own command. No new scope: these use
+/// `user-modify-playback-state`, which the sign-in already asks for.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Transport { Pause, Resume, Next, Previous }
+fn transport_request(t: Transport) -> (&'static str, &'static str) {
+    match t { Transport::Pause => ("PUT", "/me/player/pause"), Transport::Resume => ("PUT", "/me/player/play"), Transport::Next => ("POST", "/me/player/next"), Transport::Previous => ("POST", "/me/player/previous") }
+}
+fn transport_with(cfg: &Config, t: Transport, http: &dyn Http, creds: &dyn Creds) -> Result<(), String> { let (method, path) = transport_request(t); send_with(cfg, method, path, None, http, creds) }
+async fn transport(window: WebviewWindow, t: Transport) -> Result<(), String> { require(&window)?; tauri::async_runtime::spawn_blocking(move || { let cfg = config(window.app_handle())?; transport_with(&cfg, t, &RealHttp, &RealCreds) }).await.map_err(|_| "failed".to_string())? }
+#[tauri::command] pub async fn wall2_spotify_pause(window: WebviewWindow) -> Result<(), String> { transport(window, Transport::Pause).await }
+#[tauri::command] pub async fn wall2_spotify_resume(window: WebviewWindow) -> Result<(), String> { transport(window, Transport::Resume).await }
+#[tauri::command] pub async fn wall2_spotify_next(window: WebviewWindow) -> Result<(), String> { transport(window, Transport::Next).await }
+#[tauri::command] pub async fn wall2_spotify_previous(window: WebviewWindow) -> Result<(), String> { transport(window, Transport::Previous).await }
 const MAX_SEEK_MS: u32 = 86_400_000;
 fn seek_path(position_ms: u32) -> Result<String, String> {
     if position_ms > MAX_SEEK_MS { return Err("invalid position".into()) }
@@ -796,7 +816,7 @@ mod tests {
         assert_eq!(choose_device(&named,None,Some("Missing")),DeviceChoice::Ready(DEVICE.into()));
         let restricted = vec![Device { restricted:true, ..d(DEVICE,"Desk",false) }]; assert_eq!(choose_device(&restricted,None,None),DeviceChoice::Restricted);
         let two = vec![d(DEVICE,"Desk",false),d(other,"Other",false)]; assert_eq!(choose_device(&two,None,None),DeviceChoice::Choose);
-        assert_eq!(choose_device(&two,Some("gone"),None),DeviceChoice::Choose);
+        assert_eq!(choose_device(&two,None,None),DeviceChoice::Choose); assert_eq!(choose_device(&two,Some("gone"),None),DeviceChoice::Gone);
         assert_eq!(choose_device(&[],None,None),DeviceChoice::Start);
     }
 
@@ -807,8 +827,11 @@ mod tests {
         let list = vec![dev(DEVICE, "Computer", false), dev(other, "Speaker", false)];
         assert_eq!(choose_device(&list, Some(other), None), DeviceChoice::Ready(other.into()));
         assert_eq!(choose_device(&list, None, None), DeviceChoice::Ready(DEVICE.into()));
+        // A chosen player that does not allow control, or is no longer listed, is never swapped for another.
         let shut = vec![dev(DEVICE, "Computer", false), dev(other, "Speaker", true)];
-        assert_eq!(choose_device(&shut, Some(other), None), DeviceChoice::Ready(DEVICE.into()));
+        assert_eq!(choose_device(&shut, Some(other), None), DeviceChoice::Restricted);
+        assert_eq!(choose_device(&list, Some("zzzz"), None), DeviceChoice::Gone);
+        assert_eq!(choose_device(&[], Some(other), None), DeviceChoice::Gone);
     }
 
     #[test]
@@ -816,6 +839,25 @@ mod tests {
         assert_eq!(seek_path(0), Ok("/me/player/seek?position_ms=0".into()));
         assert_eq!(seek_path(MAX_SEEK_MS), Ok(format!("/me/player/seek?position_ms={MAX_SEEK_MS}")));
         assert_eq!(seek_path(MAX_SEEK_MS + 1), Err("invalid position".into()));
+    }
+
+    #[test]
+    fn pause_resume_next_and_previous_act_on_the_active_player_and_answer_in_fixed_words() {
+        let _test_guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let known = |status: u16| { reset_state(); *token().lock().unwrap()=Some(Token{access:"ok".into(),expires:Instant::now()+Duration::from_secs(3600)}); FakeHttp::new(vec![],vec![hr(status,"")]) };
+        let creds = FakeCreds::new(Some("old"));
+        for (t, method, path) in [(Transport::Pause, "PUT", "/me/player/pause"), (Transport::Resume, "PUT", "/me/player/play"), (Transport::Next, "POST", "/me/player/next"), (Transport::Previous, "POST", "/me/player/previous")] {
+            // No device is named, so Spotify acts on its active one; nothing but the path and the method is sent.
+            let ok = known(204);
+            assert_eq!(transport_with(&cfg(), t, &ok, &creds), Ok(()));
+            assert_eq!(ok.paths(), vec![path.to_string()]);
+            assert_eq!(ok.methods(), vec![method.to_string()]);
+            // No player at all, a refusal and a failed server each answer one fixed word.
+            assert_eq!(transport_with(&cfg(), t, &known(404), &creds), Err(NO_DEVICE.into()));
+            assert_eq!(transport_with(&cfg(), t, &known(403), &creds), Err("refused".into()));
+            assert_eq!(transport_with(&cfg(), t, &known(503), &creds), Err("server-503".into()));
+        }
+        assert_eq!(transport_request(Transport::Pause), ("PUT", "/me/player/pause"));
     }
 
     #[test]
@@ -876,16 +918,17 @@ mod tests {
         fn delete(&self) { *self.0.lock().unwrap() = None; }
         fn delete_if_equal(&self, expected: &str) { let mut value = self.0.lock().unwrap(); if value.as_deref() == Some(expected) { *value = None; } }
     }
-    struct FakeHttp { tokens: Mutex<VecDeque<Result<HttpReply, ()>>>, apis: Mutex<VecDeque<Result<HttpReply, ()>>>, limits: Mutex<Vec<u64>>, paths: Mutex<Vec<String>>, token_calls: std::sync::atomic::AtomicUsize, api_calls: std::sync::atomic::AtomicUsize }
+    struct FakeHttp { tokens: Mutex<VecDeque<Result<HttpReply, ()>>>, apis: Mutex<VecDeque<Result<HttpReply, ()>>>, limits: Mutex<Vec<u64>>, paths: Mutex<Vec<String>>, methods: Mutex<Vec<String>>, token_calls: std::sync::atomic::AtomicUsize, api_calls: std::sync::atomic::AtomicUsize }
     impl FakeHttp {
-        fn new(tokens: Vec<Result<HttpReply,()>>, apis: Vec<Result<HttpReply,()>>) -> Self { Self { tokens: Mutex::new(tokens.into()), apis: Mutex::new(apis.into()), limits: Mutex::new(Vec::new()), paths: Mutex::new(Vec::new()), token_calls: 0.into(), api_calls: 0.into() } }
+        fn new(tokens: Vec<Result<HttpReply,()>>, apis: Vec<Result<HttpReply,()>>) -> Self { Self { tokens: Mutex::new(tokens.into()), apis: Mutex::new(apis.into()), limits: Mutex::new(Vec::new()), paths: Mutex::new(Vec::new()), methods: Mutex::new(Vec::new()), token_calls: 0.into(), api_calls: 0.into() } }
         fn counts(&self) -> (usize,usize) { (self.token_calls.load(Ordering::SeqCst), self.api_calls.load(Ordering::SeqCst)) }
         fn limits(&self) -> Vec<u64> { self.limits.lock().unwrap().clone() }
         fn paths(&self) -> Vec<String> { self.paths.lock().unwrap().clone() }
+        fn methods(&self) -> Vec<String> { self.methods.lock().unwrap().clone() }
     }
     impl Http for FakeHttp {
         fn token(&self, _form: &[(&str,&str)]) -> Result<HttpReply,()> { self.token_calls.fetch_add(1,Ordering::SeqCst); self.tokens.lock().unwrap().pop_front().unwrap_or(Err(())) }
-        fn api(&self, _method:&str, path:&str, _bearer:&str, _payload:Option<&Value>, limit:u64) -> Result<HttpReply,()> { self.api_calls.fetch_add(1,Ordering::SeqCst); self.limits.lock().unwrap().push(limit); self.paths.lock().unwrap().push(path.into()); match self.apis.lock().unwrap().pop_front().unwrap_or(Err(())) { Ok(reply) if reply.body.len() as u64 > limit => Ok(HttpReply { status:598, retry_after:None, body:Vec::new() }), answer => answer } }
+        fn api(&self, method:&str, path:&str, _bearer:&str, _payload:Option<&Value>, limit:u64) -> Result<HttpReply,()> { self.api_calls.fetch_add(1,Ordering::SeqCst); self.methods.lock().unwrap().push(method.into()); self.limits.lock().unwrap().push(limit); self.paths.lock().unwrap().push(path.into()); match self.apis.lock().unwrap().pop_front().unwrap_or(Err(())) { Ok(reply) if reply.body.len() as u64 > limit => Ok(HttpReply { status:598, retry_after:None, body:Vec::new() }), answer => answer } }
     }
     fn hr(status:u16, body:&str) -> Result<HttpReply,()> { Ok(HttpReply{status,retry_after:None,body:body.as_bytes().to_vec()}) }
     fn token_ok(refresh: Option<&str>) -> Result<HttpReply,()> { hr(200, &format!(r#"{{"access_token":"access","expires_in":3600{}}}"#, refresh.map(|r| format!(r#", "refresh_token":"{r}""#)).unwrap_or_default())) }
