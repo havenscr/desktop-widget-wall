@@ -10,15 +10,16 @@ export default {
   gallery: {
     states: [{
       screen: 'work',
-      name: 'example: drawer open',
-      query: 'hz=work&clock=review&weather=ok&example=full',
+      name: 'example: Work typical',
+      query: 'hz=work&at=2026-11-11T10%3A24%3A00-08%3A00&clock=review&weather=ok',
       custom: true,
-      actions: '.example-button',
-      expect: ['Example', '!Could not load'],
+      expect: 'Voice: iPhone mic fix',
     }],
   },
 };
 ```
+
+This gallery example uses the existing Work typical state and passes unchanged. Replace its query and expected text with the state being added.
 
 `actions` accepts a plain `<selector>` click, `hover:<selector>`, `press:<selector>`, `focus:<selector>`, `kbd:<selector>`, `ctx:<selector>`, `type:<selector>=<value>`, and `drag:<selector>@<x>,<y>`. Put steps in an array or join them with ` >> `. Use `expectNote` instead of `expect` only when a state changes pixels but cannot change text.
 
