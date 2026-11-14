@@ -305,8 +305,11 @@ name did not change with the product name.
 **Icon.** The icon set is in `src-tauri/icons-ridgeline/` (`icon.svg` is the
 source; `make_icons.py` redraws the PNGs and `icon.ico` from it, see its header).
 `tauri.wall2.conf.json` points `bundle.icon` at it. The window icon and the tray
-icon are the first `.ico` in that list, and the executable's own icon is the
-same file. The old app's `src-tauri/icons/` is not used by this build.
+icon are the first frame of the first `.ico` in that list, taken as one bitmap
+that Windows scales for every size it needs, so `icon.ico` stores its 32 px frame
+first (then 16, 24, 48, 64 and 256); a 16 px first frame, which is what Tauri's
+own icon command writes, would be stretched and blurry. The executable's own
+icon is the same file, and Windows picks the best frame for each size there. The old app's `src-tauri/icons/` is not used by this build.
 
 **Name, identifier and your data.** Renaming changes the name only. The app
 identifier (`com.havens-consulting.widget-wall2`) is unchanged, and Tauri keys the
@@ -341,8 +344,8 @@ Installed apps.
 
 If the old install cannot be removed (the uninstall fails, or its Installed apps
 entry is still there afterwards), the installer shows one message and installs
-Ridgeline beside it. It never aborts and never touches the old install in that
-case. Remove Widget Wall 2 afterwards in Windows Settings, Installed apps.
+Ridgeline beside it. It never aborts, and the installer itself removes nothing in
+that case (the old uninstaller may already have partly run before it failed). Remove Widget Wall 2 afterwards in Windows Settings, Installed apps.
 
 The silent old uninstall closes every running `widget-wall-desktop.exe` of the
 current user, which includes the first app ("Widget Wall"), since both use that

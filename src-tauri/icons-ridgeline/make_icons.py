@@ -3,8 +3,16 @@
 Regenerate:  python3 src-tauri/icons-ridgeline/make_icons.py
 Needs Python with Pillow and a headless Chromium (set WALL_CHROME to its path) to draw the SVG.
 Writes 32x32.png, 128x128.png, 128x128@2x.png and icon.ico (16, 24, 32, 48, 64, 256) next to this file.
+
+Frame order in icon.ico: 32 first, then 16, 24, 48, 64, 256. Tauri's own icon command writes smallest
+first (16 first), but the app's window icon and tray icon are the FIRST frame, taken as one bitmap and
+scaled by Windows for both the small (16 px) and big (32 px and up) uses; a 16 px first frame would be
+stretched and blurry. Windows picks the best frame by size for everything else (Explorer, Start menu),
+so the order does not matter there.
 """
+import io
 import os
+import struct
 import subprocess
 import tempfile
 
@@ -33,6 +41,26 @@ def render_svg(svg_path, work_dir, out_png):
     )
 
 
+ICO_ORDER = [32, 16, 24, 48, 64, 256]
+
+
+def write_ico(path, frames):
+    """Writes PNG-encoded frames in the given order (Pillow would sort them by size)."""
+    blobs = []
+    for image in frames:
+        buf = io.BytesIO()
+        image.save(buf, format="PNG")
+        blobs.append(buf.getvalue())
+    out = struct.pack("<HHH", 0, 1, len(frames))
+    offset = 6 + 16 * len(frames)
+    for image, blob in zip(frames, blobs):
+        side = 0 if image.width >= 256 else image.width  # 0 means 256 in an ICONDIRENTRY
+        out += struct.pack("<BBBBHHII", side, side, 0, 0, 1, 32, len(blob), offset)
+        offset += len(blob)
+    with open(path, "wb") as f:
+        f.write(out + b"".join(blobs))
+
+
 def main():
     # Everything temporary stays inside this folder, which is removed when the block ends.
     with tempfile.TemporaryDirectory() as tmp:
@@ -48,8 +76,7 @@ def main():
     at(32).save(os.path.join(HERE, "32x32.png"))
     at(128).save(os.path.join(HERE, "128x128.png"))
     at(256).save(os.path.join(HERE, "128x128@2x.png"))
-    sizes = [16, 24, 32, 48, 64, 256]
-    at(256).save(os.path.join(HERE, "icon.ico"), format="ICO", sizes=[(s, s) for s in sizes])
+    write_ico(os.path.join(HERE, "icon.ico"), [at(n) for n in ICO_ORDER])
 
 
 if __name__ == "__main__":
