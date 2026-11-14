@@ -82,6 +82,7 @@ const EXPECT = {
   'lip-band': /^ *FAIL strip: the drawer handle band covers /m,
   'lip-scrim': /^ *FAIL strip: the Close the day lip /m,
   'row-parts': /^ *FAIL strip: drawer row .* (parts overlap|runs out of its row|quiet line is squeezed|wraps)/m,
+  'helper-pill': /^ *FAIL strip: drawer row .* pill text is cut/m,
   'over-hatch': /^ *FAIL strip: an over-the-limit cell is not (taller|hatched)/m,
   'row-type': /^ *FAIL strip: text under 16 px in /m,
   sky: /^ *FAIL no point of the sky or the floor lands on \.w-sky/m,
@@ -171,6 +172,7 @@ const OVERFLOWS = {
   'lip-band': '.rib-handle.day-lip[data-pass] { pointer-events: auto !important; }',
   'lip-scrim': '.day-drawer .rib-handle.day-lip { z-index: 0 !important; pointer-events: none !important; }',
   'row-parts': '.day-drawer .dd-name { width: 600px !important; }',
+  'helper-pill': '.day-drawer .dd-pill.helpers { width: 60px !important; overflow: hidden !important; }',
   'over-hatch': '.rib .agent-row .ac i.b5 { background: var(--busy-5) !important; top: 7px !important; height: 6px !important; }',
   'row-type': '.day-drawer .dd-line { font-size: 12px !important; }',
   // The whole-sky video layer catching the pointer and drawn over the controls.
@@ -546,6 +548,7 @@ VARIANTS.push(
   { name: 'Strip: the needle at the centre, under the handle', q: query({ at: '2026-11-11T14:50:00-08:00', agents: '12ask', extra: '&meet=overlap' }), checks: ['.rib'], strip: true, viewportOnly: true },
   { name: 'Strip: late in the day', q: query({ at: '2026-11-11T22:50:00-08:00', agents: '12ask', extra: '&meet=overlap' }), checks: ['.rib'], strip: true, viewportOnly: true },
   { name: 'Strip: the Day drawer open', q: work('12ask', '&meet=overlap'), click: '.rib-handle', checks: ['.day-drawer', '.day-drawer .dd-agenda', '.day-drawer .dd-rows'], strip: true, viewportOnly: true },
+  { name: 'Strip: helpers working in the Day drawer', q: work('helpers'), click: '.rib-handle', checks: ['.day-drawer', '.day-drawer .dd-pill.helpers', '.day-drawer .dd-rows'], strip: true, viewportOnly: true },
   { name: 'Strip: Agents today, twelve sessions', q: work('12ask', '&days=typical'), click: '.rib .ag-line', checks: ['.agents-today', '.agents-today .at-head'], strip: true, viewportOnly: true },
   { name: 'Strip: Agents today, a heavy past day', q: work('12', '&days=heavy'), click: '.rib .ag-line >> .at-seg button:nth-child(2)', checks: ['.agents-today', '.agents-today .at-head', '.agents-today .at-foot'], strip: true, viewportOnly: true },
 );
@@ -960,6 +963,8 @@ try {
       parts.forEach((a, i) => parts.slice(i + 1).forEach((b) => { if (hit(a.r, b.r)) strip.push('strip: drawer row "' + name + '" parts overlap: ' + a.c + ' / ' + b.c); }));
       for (const p of parts) if (p.r.right > rr.right + 0.5 || p.r.left < rr.left - 0.5) strip.push('strip: drawer row "' + name + '" ' + p.c + ' runs out of its row');
       for (const e of row.querySelectorAll('.dd-name, .dd-pill, .dd-line, .dd-time')) if (e.scrollHeight > e.clientHeight + 1 || e.getBoundingClientRect().height > rr.height) strip.push('strip: drawer row "' + name + '" wraps in ' + e.className);
+      const pill = row.querySelector('.dd-pill.helpers');
+      if (pill && pill.scrollWidth > pill.clientWidth + 1) strip.push('strip: drawer row "' + name + '" pill text is cut');
       const line = row.querySelector('.dd-line');
       if (line && line.getBoundingClientRect().width < 300) strip.push('strip: drawer row "' + name + '" quiet line is squeezed to ' + Math.round(line.getBoundingClientRect().width) + ' px');
     }
@@ -1377,6 +1382,7 @@ try {
     'tile-icon': (v) => v.name === 'Keys style, day: library sets held on VS Code',
     'tile-iconbox': (v) => v.name === 'Keys style, day: library sets held on VS Code',
     'drawer-scrim': (v) => v.name === 'Strip: the Day drawer open',
+    'helper-pill': (v) => v.name === 'Strip: helpers working in the Day drawer',
     // deck pins and stretch
     'sparse-width': (v) => v.name === 'Deck, one pin plus Add, one Now key',
     'tile-equal': (v) => v.name === 'Deck, three pins plus Add, three Now keys',

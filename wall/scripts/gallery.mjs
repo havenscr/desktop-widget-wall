@@ -85,6 +85,7 @@ for (const place of Object.keys(PLACES)) {
 // Work: layout rules that change, and each data source down on its own.
 for (const n of ['2', '1']) state('work', `${n} agent lane${n === '1' ? '' : 's'}`, `agents=${n}`);
 state('work', 'one agent waiting', 'agents=ask');
+state('work', 'one chat with helpers working', 'agents=helpers');
 state('work', 'long strings (fit check set)', 'long=1');
 state('work', 'focus running, long title', 'focus=long');
 state('work', 'music paused', 'media=paused');
@@ -224,7 +225,9 @@ state('work', 'bottom: overlaps and twelve', 'meet=overlap&agents=12ask');
 state('work', 'bottom: normal', '');
 add('work', 'bottom: overlap hover', url('work', TYPICAL_AT, 'meet=overlap&agents=3'), true, 'hover:.rib .ev.fold');
 add('work', 'bottom: day drawer', url('work', TYPICAL_AT, 'meet=overlap&agents=12ask'), true, '.rib-handle');
+add('work', 'bottom: helpers working in day drawer', url('work', TYPICAL_AT, 'agents=helpers'), true, '.rib-handle');
 add('work', 'agents today: today', url('work', TYPICAL_AT, 'agents=7ask&days=typical'), true, '.rib .ag-line');
+add('work', 'agents today: helpers working', url('work', TYPICAL_AT, 'agents=helpers&days=typical'), true, '.rib .ag-line');
 add('work', 'agents today: yesterday', url('work', TYPICAL_AT, 'agents=7ask&days=typical'), true, '.rib .ag-line >> .at-seg button:nth-child(2)');
 add('work', 'agents today: heavy day', url('work', TYPICAL_AT, 'agents=12&days=heavy&long=1'), true, '.rib .ag-line >> .at-seg button:nth-child(2)');
 add('work', 'agents today: empty day', url('work', TYPICAL_AT, 'agents=3&days=empty'), true, '.rib .ag-line >> .at-seg button:nth-child(2)');
