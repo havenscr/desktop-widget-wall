@@ -890,7 +890,9 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
   place it always had; (760, 340) low under the player's left half, right of Up next, for a
   layout whose right side a wide card takes; (1450, 150) high in the middle of the sky. Each is
   wholly above the Unwind ridgeline and clear of the clock (a test). With none clear, or a claim
-  that says `noMoon`, there is no moon, and its light on the lake goes with it. The same claims
+  that says `noMoon`, there is no moon, and its light on the lake goes with it. On Listen the
+  Spotify card (`SpotifyCard.tsx`) and the player (`Player.tsx`) claim their drawn boxes, so the
+  moon sits at (760, 340) there; on Watch the list card, the left block and the Look switch do. The same claims
   always give the same place, so it changes only when a box does, and it is simply drawn at its
   new place on the next frame. It shows once the glide to Unwind has finished (it goes as
   soon as a glide away starts); no other place does. The review still `?hz=unwind` draws it, since that camera jumps straight there. The drawn
