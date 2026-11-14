@@ -541,6 +541,34 @@ describe('a pet', () => {
       resetTip();
     });
 
+    it('a keyboard choice in his menu gives focus back to him without opening his tooltip', () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      resetTip();
+      const { container } = render(
+        <>
+          <Watt now={day} />
+          <HoverTipLayer />
+        </>,
+      );
+      runFor(1.5);
+      fireEvent.keyDown(hitOf(container), { key: 'm' });
+      const hop = [...container.querySelectorAll<HTMLElement>('.watt-menu [data-item]')].find((b) => b.textContent === 'Hop')!;
+      act(() => hop.focus());
+      // Enter on a button is a click with no pointer.
+      fireEvent.click(hop, { detail: 0 });
+      expect(cardOf(container)).toBeNull();
+      expect(document.activeElement).toBe(hitOf(container));
+      act(() => void vi.advanceTimersByTime(1000));
+      expect(container.querySelector('.hover-tip')).toBeNull();
+      // Escape gives focus back the same way.
+      fireEvent.keyDown(hitOf(container), { key: 'm' });
+      fireEvent.keyDown(window, { key: 'Escape' });
+      act(() => void vi.advanceTimersByTime(1000));
+      expect(document.activeElement).toBe(hitOf(container));
+      expect(container.querySelector('.hover-tip')).toBeNull();
+      resetTip();
+    });
+
     it('a click pets and opens nothing', () => {
       const { container } = render(<Watt now={day} />);
       runFor(1.5);

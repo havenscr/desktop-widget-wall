@@ -5,6 +5,8 @@ import { create } from 'zustand';
 export const TIP_DELAY_MS = 250;
 /** A shown card is redrawn this often, so a countdown in it stays right while hovered. */
 export const TIP_REFRESH_MS = 15_000;
+/** A card goes when its anchor has moved more than this, design pixels. */
+export const TIP_MOVE_PX = 4;
 /** How often a shown card checks that its anchor is still on the page. */
 export const TIP_ANCHOR_CHECK_MS = 500;
 /** After a click, the focus that follows it does not reopen the card for this long. */
@@ -94,6 +96,14 @@ export function tip(content: Content) {
   };
 }
 
+/**
+ * Focus about to move to an anchor by the program (a menu giving focus back after a choice): that
+ * focus does not open its card, the same as the focus that follows a click.
+ */
+export function quietFocus(): void {
+  quietFocusUntil = Date.now() + FOCUS_AFTER_CLICK_MS;
+}
+
 /** Tests only: forget any card. */
 export function resetTip(): void {
   quietFocusUntil = 0;
@@ -144,14 +154,20 @@ export function HoverTipLayer() {
   useEffect(() => {
     if (!render) return;
     const check = setInterval(() => {
-      if (anchor && !anchor.isConnected) hideTip(true);
+      if (anchor && !anchor.isConnected) {
+        hideTip(true);
+        return;
+      }
+      // An anchor that moved (Watt walking on, a list scrolling) leaves its card behind: it goes.
+      const now = anchor ? designBox(anchor) : null;
+      if (now && box && (Math.abs(now.x - box.x) > TIP_MOVE_PX || Math.abs(now.y - box.y) > TIP_MOVE_PX)) hideTip(true);
     }, TIP_ANCHOR_CHECK_MS);
     const refresh = setInterval(() => setTick((n) => n + 1), TIP_REFRESH_MS);
     return () => {
       clearInterval(check);
       clearInterval(refresh);
     };
-  }, [render, anchor]);
+  }, [render, anchor, box]);
   useEffect(() => {
     if (!pinned) return;
     const down = (e: Event) => {

@@ -1,7 +1,7 @@
 import { act, fireEvent, render } from '@testing-library/react';
 import { useState } from 'react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { HoverTipLayer, pinTip, resetTip, tip, TIP_ANCHOR_CHECK_MS, TIP_DELAY_MS, TIP_REFRESH_MS } from './HoverTip';
+import { HoverTipLayer, pinTip, resetTip, tip, TIP_ANCHOR_CHECK_MS, TIP_DELAY_MS, TIP_MOVE_PX, TIP_REFRESH_MS } from './HoverTip';
 
 const flush = async (ms = 0) => {
   await act(async () => {
@@ -128,4 +128,27 @@ it('sits above its control with a tail pointing at it (below when there is no ro
   fireEvent.mouseEnter(a);
   await flush(TIP_DELAY_MS);
   expect(document.querySelector<HTMLElement>('.hover-tip')!.dataset.side).toBe('below');
+});
+
+it('goes when its anchor moves more than a few pixels (Watt walking on), and stays while it holds still', async () => {
+  const r = render(
+    <>
+      <span className="anchor" {...tip('About him')}>
+        x
+      </span>
+      <HoverTipLayer />
+    </>,
+  );
+  const a = r.container.querySelector('.anchor')!;
+  let left = 400;
+  a.getBoundingClientRect = () => ({ left, top: 300, width: 40, height: 30, right: left + 40, bottom: 330, x: left, y: 300, toJSON() {} }) as DOMRect;
+  fireEvent.mouseEnter(a);
+  await flush(TIP_DELAY_MS);
+  expect(document.querySelector('.hover-tip')).not.toBeNull();
+  left += TIP_MOVE_PX - 1;
+  await flush(TIP_ANCHOR_CHECK_MS);
+  expect(document.querySelector('.hover-tip')).not.toBeNull();
+  left += 20;
+  await flush(TIP_ANCHOR_CHECK_MS);
+  expect(document.querySelector('.hover-tip')).toBeNull();
 });

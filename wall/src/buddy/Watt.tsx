@@ -9,7 +9,7 @@ import { cameraSignal, subscribeCamera } from '../horizon/signal';
 import { useNowPlayingStore } from '../music/store';
 import { usePlaceStore } from '../state/places';
 import { reviewNow } from '../ui/reviewClock';
-import { hideTip, tip } from '../ui/HoverTip';
+import { hideTip, quietFocus, tip } from '../ui/HoverTip';
 import { useSignalStore } from '../signals/store';
 import { useWatchStore } from '../unwind/watch/store';
 import { useIdle } from '../ui/useIdle';
@@ -726,7 +726,10 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
       const a = document.activeElement;
       const inside = !!a && (a === hit.current || !!a.closest?.('.watt-menu'));
       closeRef.current();
-      if (inside) hit.current?.focus();
+      if (inside) {
+        quietFocus();
+        hit.current?.focus();
+      }
     };
     const onDown = (e: PointerEvent) => {
       const t = e.target as Element | null;
@@ -757,7 +760,11 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
     const inside = !!a && !!a.closest?.('.watt-menu');
     closeRef.current();
     hideTip(true);
-    if (inside) hit.current?.focus();
+    // Focus given back by the menu (a keyboard choice included) does not open his tooltip.
+    if (inside) {
+      quietFocus();
+      hit.current?.focus();
+    }
   }, []);
 
   // Pick him up and set him down. A press that moves 6 px or more becomes a carry (pointer capture,
