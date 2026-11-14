@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useSkyClaim } from '../../horizon/sky';
 import { usePlaceStore } from '../../state/places';
 import { refKey, type WatchRef } from './links';
@@ -133,8 +133,26 @@ export function WatchStageLayer() {
   const looks = useWatchStore((s) => s.looks);
   const shown = useStageShown();
   const look = playing ? lookFor(looks, playing.kind) : null;
+  const layerRef = useRef<HTMLDivElement>(null);
+  // Parked: focus must not stay inside the invisible player (Space or the arrow keys would still reach it).
+  useEffect(() => {
+    const inside = () => {
+      const at = document.activeElement;
+      return at instanceof HTMLElement && layerRef.current?.contains(at);
+    };
+    if (shown || !inside()) return;
+    (document.activeElement as HTMLElement).blur();
+    // A frame can keep focus after blur(): hand focus to the page itself, which is never inside the layer.
+    if (inside()) {
+      const body = document.body;
+      const had = body.hasAttribute('tabindex');
+      if (!had) body.tabIndex = -1;
+      body.focus({ preventScroll: true });
+      if (!had) body.removeAttribute('tabindex');
+    }
+  }, [shown]);
   return (
-    <div className="w-layer" data-shown={shown ? 'true' : 'false'} aria-hidden={shown ? undefined : true}>
+    <div className="w-layer" ref={layerRef} data-shown={shown ? 'true' : 'false'} aria-hidden={shown ? undefined : true}>
       {playing && look ? <VideoStage item={playing} look={look} shown={shown} /> : null}
       {playing && look && shown ? <EdgeBand look={look} /> : null}
     </div>

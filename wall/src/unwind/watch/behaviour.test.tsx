@@ -405,6 +405,25 @@ describe('review fixes: the rail mark says what the video is doing', () => {
   });
 });
 
+describe('review fixes: focus never stays in the parked player', () => {
+  it('leaving Watch drops focus from the frame, and the frame keeps its place', async () => {
+    await playing();
+    const el = frame()!;
+    const parent = el.parentElement;
+    act(() => el.focus());
+    expect(document.activeElement).toBe(el);
+    await act(async () => useWatchStore.getState().setTab('listen'));
+    expect(document.activeElement).not.toBe(el);
+    expect(frame()).toBe(el);
+    expect(el.parentElement).toBe(parent);
+    // Focus on something else is left alone.
+    await act(async () => useWatchStore.getState().setTab('watch'));
+    act(() => unwindButton().focus());
+    await act(async () => useWatchStore.getState().setTab('listen'));
+    expect(document.activeElement).toBe(unwindButton());
+  });
+});
+
 describe('the message gate after the stage was out of sight', () => {
   it('reads messages only from this frame on the embed origin, and sends commands only there', async () => {
     await playing();
