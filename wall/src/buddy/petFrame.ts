@@ -283,12 +283,13 @@ export function canBlink(pose: Pose): boolean {
  * True when `prop` can be drawn on `pose`: it rises at most `PROP_RISE_MAX` sprite pixels above the
  * sprite, never hangs below her feet, and sticks out at most two pixels on either side. The headphones
  * (a cup on one ear) are not drawn on the poses seen from the front or the back. The star is a patch on the
- * wool: it never rises above the sprite, so this rule never drops it.
+ * wool: it never rises above the sprite, so this rule never drops it. `worn` is the day prop on him (the bow sits
+ * further back with the headphones).
  */
-export function propFits(prop: Prop, pose: Pose): boolean {
+export function propFits(prop: Prop, pose: Pose, worn: Prop | null = null): boolean {
   if (prop === 'headphones' && NO_HEADPHONES.has(pose)) return false;
   const s = PROP_SPRITES[prop];
-  const [ox, oy] = propOrigin(prop, pose);
+  const [ox, oy] = propOrigin(prop, pose, worn);
   const map = SPRITES[pose];
   return oy >= -PROP_RISE_MAX && oy + s.map.length <= map.length && ox >= -2 && ox + s.map[0].length <= map[0].length + 2;
 }
@@ -297,7 +298,7 @@ export function propFits(prop: Prop, pose: Pose): boolean {
 export function propRise(f: Pick<PetFrame, 'pose' | 'prop' | 'scarf' | 'cosmetic'>): number {
   let rise = 0;
   const one = (p: Prop | null) => {
-    if (p) rise = Math.max(rise, -propOrigin(p, f.pose)[1]);
+    if (p) rise = Math.max(rise, -propOrigin(p, f.pose, f.prop)[1]);
   };
   one(f.prop);
   one(f.cosmetic);
@@ -418,7 +419,7 @@ export function petFrame(walk: Walk, place: WattPlace, hy: number, night: boolea
   out.mark = m.waiting;
   if (out.prop && !propFits(out.prop, out.pose)) out.prop = null;
   if (out.scarf && !propFits('scarf', out.pose)) out.scarf = false;
-  if (m.cosmetic !== 'none' && propFits(m.cosmetic, out.pose)) out.cosmetic = m.cosmetic;
+  if (m.cosmetic !== 'none' && propFits(m.cosmetic, out.pose, out.prop)) out.cosmetic = m.cosmetic;
   if (shaped && out.lift > 0) {
     // Never past the ceiling: the hop height is the shape's, capped by the room above him.
     const top = hy - spriteHeight(out.pose, walk.px) - propRise(out) * walk.px;
@@ -578,7 +579,7 @@ export function bodyBox(f: Pick<PetFrame, 'pose' | 'prop' | 'scarf' | 'cosmetic'
   let t = 0;
   const one = (p: Prop | null) => {
     if (!p) return;
-    const [ox, oy] = propOrigin(p, f.pose);
+    const [ox, oy] = propOrigin(p, f.pose, f.prop);
     const w = PROP_SPRITES[p].map[0].length;
     const a = dir === 1 ? ox : cols - ox - w;
     l = Math.min(l, a);

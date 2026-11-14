@@ -320,12 +320,25 @@ export const NO_HEADPHONES: ReadonlySet<Pose> = new Set<Pose>(['spin1', 'spin2',
 /** The small plus sparkle (the happy reaction's glitter), not the star he wears. */
 export const SPARKLE: readonly string[] = ['.s.', 'sss', '.s.'];
 
-/** Top left of a prop on `pose`, in sprite pixels from the sheep's top left (may be negative). */
-export function propOrigin(prop: Prop, pose: Pose): [number, number] {
+/**
+ * The bow moves back along his head while the headphones are worn, so that the cup and the band (drawn over it)
+ * hide none of it: three pixels left of its usual place, and on the raised head (`look`, `watch`, `watchEar`)
+ * five left and one down, onto the wool of the crown. A unit test checks that no pixel of it is under a headphone pixel.
+ */
+export const BOW_WITH_HEADPHONES: Readonly<Record<Pose, readonly [number, number]>> = Object.fromEntries(
+  POSES.map((p) => [p, p === 'look' || p === 'watch' || p === 'watchEar' ? [-5, 1] : [-3, 0]]),
+) as unknown as Record<Pose, readonly [number, number]>;
+
+/**
+ * Top left of a prop on `pose`, in sprite pixels from the sheep's top left (may be negative). `worn` is the day
+ * prop on him: with the headphones the bow sits further back (`BOW_WITH_HEADPHONES`); alone it is where it always was.
+ */
+export function propOrigin(prop: Prop, pose: Pose, worn: Prop | null = null): [number, number] {
   if (prop === 'star') return [STAR_AT[pose][0], STAR_AT[pose][1]];
   const s = PROP_SPRITES[prop];
   if (s.anchor === 'body') return [s.dx, s.dy];
   const [ex, ey] = EAR[pose];
+  if (prop === 'bow' && worn === 'headphones') return [ex + s.dx + BOW_WITH_HEADPHONES[pose][0], ey + s.dy + BOW_WITH_HEADPHONES[pose][1]];
   return [ex + s.dx, ey + s.dy];
 }
 

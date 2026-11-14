@@ -2016,8 +2016,9 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
         </span>
         {look.cosmetic === 'cape' && <PropSvg prop="cape" pose={look.pose} px={look.px} />}
         {look.scarf && <PropSvg prop="scarf" pose={look.pose} px={look.px} />}
-        {look.prop && <PropSvg prop={look.prop} pose={look.pose} px={look.px} />}
-        {look.cosmetic && look.cosmetic !== 'cape' && <PropSvg prop={look.cosmetic} pose={look.pose} px={look.px} />}
+        {look.prop && look.prop !== 'headphones' && <PropSvg prop={look.prop} pose={look.pose} px={look.px} />}
+        {look.cosmetic && look.cosmetic !== 'cape' && <PropSvg prop={look.cosmetic} pose={look.pose} px={look.px} worn={look.prop} />}
+        {look.prop === 'headphones' && <PropSvg prop="headphones" pose={look.pose} px={look.px} />}
       </div>
       <button
         type="button"

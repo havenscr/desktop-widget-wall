@@ -9,6 +9,7 @@ import {
   REACT_S,
   SETTLE_FROM_S,
   blinking,
+  bodyBox,
   nextBlink,
   restFor,
   bubbleSize,
@@ -123,6 +124,13 @@ describe('what she wears', () => {
     expect(frame(mind(), { place: 'unwind', playing: true }).prop).toBe('headphones');
     expect(propFits('headphones', 'look')).toBe(true);
     for (const pose of ['spin1', 'spin2', 'front'] as const) expect(propFits('headphones', pose), pose).toBe(false);
+  });
+  it('wears the bow and the headphones together, in every pose that has both, with the bow clear of the cup and the band', () => {
+    const f = frame(mind({ cosmetic: 'bow' }), { place: 'unwind', playing: true });
+    expect(f.prop).toBe('headphones');
+    expect(f.cosmetic).toBe('bow');
+    expect(bodyBox(f, 1, 6, 0, 0).left).toBeLessThanOrEqual(0);
+    for (const pose of POSES) if (propFits('headphones', pose)) expect(propFits('bow', pose, 'headphones'), pose).toBe(true);
   });
   it('never draws a prop that would stick out too far: every pose and prop is checked', () => {
     for (const pose of POSES) for (const prop of PROPS) if (propFits(prop, pose)) expect(PROP_RISE_MAX).toBe(2);

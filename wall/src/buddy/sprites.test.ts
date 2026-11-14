@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { bodyBox, createBox, propFits, propRise } from './petFrame';
-import { EAR, NO_HEADPHONES, POSES, PROPS, PROP_COLORS, PROP_SPRITES, SPARKLE, SPRITES, STAR_AT, propColor, propOrigin, type Pose, type Prop } from './sprites';
+import { BOW_WITH_HEADPHONES, EAR, NO_HEADPHONES, POSES, PROPS, PROP_COLORS, PROP_SPRITES, SPARKLE, SPRITES, STAR_AT, propColor, propOrigin, type Pose, type Prop } from './sprites';
 
 /** Every pixel (x, y) of `map` that is drawn, placed at (ox, oy). */
 function pixels(map: readonly string[], ox: number, oy: number): { x: number; y: number; ch: string }[] {
@@ -33,8 +33,31 @@ describe('the chosen drawings', () => {
   it('the happy sparkle keeps its small plus; it is not the star he wears', () => {
     expect(SPARKLE).toEqual(['.s.', 'sss', '.s.']);
   });
-  it('every pose has a place for the star', () => {
+  it('every pose has a place for the star: the whole table, pinned', () => {
     expect(Object.keys(STAR_AT).sort()).toEqual([...POSES].sort());
+    expect(STAR_AT).toEqual({
+      idle: [5, 3],
+      walk: [5, 3],
+      sleep: [5, 2],
+      read: [5, 3],
+      look: [5, 3],
+      yawn: [5, 3],
+      stretch: [5, 3],
+      eat: [5, 3],
+      held: [5, 3],
+      held2: [5, 3],
+      land: [5, 2],
+      sit: [5, 3],
+      dizzy: [5, 3],
+      alert: [5, 3],
+      hop: [5, 2],
+      spin1: [2, 3],
+      spin2: [2, 3],
+      lie: [5, 2],
+      watch: [5, 3],
+      watchEar: [5, 3],
+      front: [2, 3],
+    });
   });
 });
 
@@ -110,5 +133,44 @@ describe('every prop and pose', () => {
   });
   it('the bow is drawn on every pose (it is not dropped the way the star used to be)', () => {
     expect(POSES.filter((p) => !propFits('bow', p))).toEqual([]);
+  });
+});
+
+describe('the bow with the headphones', () => {
+  const wearing = POSES.filter((p) => propFits('headphones', p));
+  const keyOf = (p: { x: number; y: number }) => key(p.x, p.y);
+  it('alone it is where it always was: from the ear at (-3, -1)', () => {
+    expect(PROP_SPRITES.bow).toEqual({ map: ['xx.xx', '.xxx.'], dx: -3, dy: -1, anchor: 'ear' });
+    for (const pose of POSES) {
+      const [ex, ey] = EAR[pose];
+      expect(propOrigin('bow', pose)).toEqual([ex - 3, ey - 1]);
+      expect(propOrigin('bow', pose, null)).toEqual([ex - 3, ey - 1]);
+      expect(propOrigin('bow', pose, 'scarf')).toEqual([ex - 3, ey - 1]);
+    }
+  });
+  it('the moves are pinned: three pixels back, five back and one down on the raised head', () => {
+    for (const pose of POSES) expect(BOW_WITH_HEADPHONES[pose]).toEqual(pose === 'look' || pose === 'watch' || pose === 'watchEar' ? [-5, 1] : [-3, 0]);
+  });
+  for (const pose of wearing) {
+    it(`${pose}: the cup and the band hide none of the bow (all 7 of its pixels show), the bow is on his wool, and the headphones show whole`, () => {
+      const hp = placed('headphones', pose);
+      const hpKeys = new Set(hp.map(keyOf));
+      const [bx, by] = propOrigin('bow', pose, 'headphones');
+      const bow = pixels(PROP_SPRITES.bow.map, bx, by);
+      expect(bow).toHaveLength(7);
+      // The headphones are drawn over the bow: the bow pixels that show are the ones not under a headphone pixel.
+      expect(bow.filter((b) => !hpKeys.has(keyOf(b)))).toHaveLength(7);
+      for (const b of bow) expect(at(pose, b.x, b.y), `${pose}: bow pixel at ${b.x},${b.y} is not on wool`).toBe('w');
+      // The headphones draw over the bow, so every one of their pixels shows.
+      expect(hp).toHaveLength(12);
+      expect(propFits('bow', pose, 'headphones')).toBe(true);
+      // Where the bow sat before the fix, it would have lost pixels under the cup and the band.
+      const [ox, oy] = propOrigin('bow', pose);
+      const old = pixels(PROP_SPRITES.bow.map, ox, oy).filter((b) => hpKeys.has(keyOf(b)));
+      expect(old.length).toBeGreaterThan(0);
+    });
+  }
+  it('the bow alone is not moved by any other prop', () => {
+    for (const pose of POSES) for (const prop of PROPS) if (prop !== 'headphones') expect(propOrigin('bow', pose, prop)).toEqual(propOrigin('bow', pose));
   });
 });
