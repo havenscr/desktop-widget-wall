@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { CAMERAS } from '../horizon/cameras';
 import { ridgeTopY } from '../horizon/ridge';
 import { rowEdges, zoneEdges, ZONES } from '../screens/frameLayout';
-import { acceptsFront, AUTO, DECK_CLEARANCE, deckFloorY, keyChunks, keyLabel, autoPage, effectiveMode, FOR_YOU, headingFor, MODE_KEY, pagesFor, parseMode, shownSet, stepPage, stepSet, sendReason, type KeysSummary, type SetInfo } from './keysModel';
+import { acceptsFront, AUTO, DECK_CLEARANCE, deckFloorY, keyChunks, keyLabel, autoPage, effectiveMode, FOR_YOU, headingFor, MODE_KEY, pagesFor, parseMode, shownSet, stepPage, stepSet, sendReason, tileSizeClass, type KeysSummary, type SetInfo } from './keysModel';
 
 const general: SetInfo = { id: 'general', name: 'General', general: true, keys: [{ label: 'Snip', icon: 'screenshot', action: null }] };
 const sales: SetInfo = { id: 'sales', name: 'Sales app', general: false, keys: [{ label: 'Refresh', icon: 'refresh', action: null }] };
@@ -116,6 +116,9 @@ describe('pages of the Now row', () => {
 });
 
 describe('the deck', () => {
+  it('sizes rows from their complete tile count', () => {
+    expect([1, 2, 3, 4, 5].map(tileSizeClass)).toEqual(['wide', 'wide', 'up1', '', '']);
+  });
   it('drops a group prefix the page name already says, and keeps every other label', () => {
     expect(keyLabel('VS Code: command palette', 'VS Code')).toBe('Command palette');
     expect(keyLabel('Excel: repeat last action', 'excel')).toBe('Repeat last action');

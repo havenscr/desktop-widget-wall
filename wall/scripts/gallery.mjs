@@ -189,7 +189,15 @@ state('work', 'deck: library sets, VS Code held', 'keys=library&hold=lib-vscode'
 state('work', 'deck: library set whose app is not in front', 'keys=library&hold=lib-excel');
 state('work', 'deck: longest labels pinned', 'keys=library&pins=long');
 // The key picker open with the whole library: down to just above the timeline, over the mountains.
-add('work', 'deck: key picker open, whole library', url('work', TYPICAL_AT, 'keys=library'), true, 'ctx:.pin-tile');
+add('work', 'deck: key picker open, whole library', url('work', TYPICAL_AT, 'keys=library&pins=three'), true, '.add-key');
+// deck pins and stretch: sparse pin rows, sparse Now rows, Add, picker and both key menus.
+state('work', 'deck pins: one pin and Add', 'keys=one&hold=one&pins=one');
+state('work', 'deck pins: three pins and Add', 'keys=three&hold=three&pins=three');
+state('work', 'deck stretch: two Now keys', 'keys=two&hold=two&pins=three');
+add('work', 'deck pins: Add hovered', url('work', TYPICAL_AT, 'keys=three&hold=three&pins=three'), true, 'hover:.add-key');
+add('work', 'deck pins: picker opened by Add', url('work', TYPICAL_AT, 'keys=three&hold=three&pins=three'), true, '.add-key');
+add('work', 'deck pins: pinned key menu', url('work', TYPICAL_AT, 'keys=three&hold=three&pins=three'), true, '.pinned .key-more');
+add('work', 'deck pins: Now key menu', url('work', TYPICAL_AT, 'keys=library&hold=lib-vscode&pins=three'), true, '.keys .key-more');
 // Watt: his menu (a right-click on him) on each place, at night (tricks wait while he sleeps), and set
 // down far from his old walk (`wattspot`, his stored spot), Unwind on both stretches and on Watch.
 add('work', 'Watt: menu open', url('work', TYPICAL_AT, 'meet=none'), true, 'ctx:.watt-hit');
@@ -415,7 +423,7 @@ add('work', 'deck fixes: mixed one and two line labels, night', url('work', TIME
 add('work', 'deck fixes: general set, day', url('work', KS_DAY, 'keys=general&hold=general'), true);
 add('work', 'deck fixes: For you page', url('work', KS_DAY, 'agents=ask&keys=typical&hold=foryou&meet=none&net=calm'), true);
 add('work', 'deck fixes: Recording page', url('work', KS_DAY, 'rec=1&keys=library&meet=none'), true);
-add('work', 'deck fixes: key picker open', url('work', KS_DAY, 'keys=library'), true, 'ctx:.pin-tile');
+add('work', 'deck fixes: key picker open', url('work', KS_DAY, 'keys=library&pins=three'), true, '.add-key');
 add('work', 'deck fixes: Day drawer open, typical', url('work', TYPICAL_AT, 'meet=overlap&agents=12ask'), true, '.rib-handle:not(.in-drawer)');
 add('work', 'deck fixes: Day drawer open, heavy', url('work', TYPICAL_AT, `${HEAVY}`), true, '.rib-handle:not(.in-drawer)');
 add('work', 'deck fixes: Day drawer open, leave banner showing', url('work', TYPICAL_AT, 'meet=overlap&agents=12ask&leave=12&rec=1'), true, '.rib-handle:not(.in-drawer)');
@@ -521,6 +529,14 @@ const EXPECT = [
   ['work', 'deck: library set whose app is not in front', ['Repeat last action', '!Excel: repeat']],
   ['work', 'deck: longest labels pinned', 'Sonos: play what suits the hour'],
   ['work', 'deck: key picker open', ['Reset to defaults', 'Anywhere on the PC']],
+  // deck pins and stretch
+  ['work', 'deck pins: one pin and Add', ['Add a key', 'Now · One key']],
+  ['work', 'deck pins: three pins and Add', ['Add a key', 'Now · Three keys']],
+  ['work', 'deck stretch: two Now keys', ['Now · Two keys', 'Format']],
+  ['work', 'deck pins: Add hovered', 'Add a key'],
+  ['work', 'deck pins: picker opened by Add', ['Add a key to Always here', 'Reset to defaults']],
+  ['work', 'deck pins: pinned key menu', ['Replace with another key', 'Remove from Always here']],
+  ['work', 'deck pins: Now key menu', ['Pin to Always here', 'Edit keys file']],
   ['work', 'agents header: twelve sessions', 'One thing for you'],
   // Home
   ['home', 'sparse', ['No moods set up', 'No meetings today']],

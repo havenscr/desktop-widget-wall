@@ -475,6 +475,7 @@ fn read_window(
     };
     let mut expanded = should_expand(&mut lock(core), acct, now);
     let mut fell_back = !expanded;
+    let mut refusal_pending = false;
     let mut refreshed = false;
     let (reply, diag) = loop {
         let (reply, diag) = if expanded {
@@ -495,7 +496,7 @@ fn read_window(
             continue;
         }
         if expanded && !fell_back && diag.as_ref().is_some_and(|d| matches!(d.status, 400 | 501)) {
-            remember_expand_refusal(&mut lock(core), acct, now);
+            refusal_pending = true;
             expanded = false;
             fell_back = true;
             continue;
@@ -505,6 +506,9 @@ fn read_window(
         }
         break (reply, diag);
     };
+    if refusal_pending && matches!(&reply, GraphReply::Ok(_)) {
+        remember_expand_refusal(&mut lock(core), acct, now);
+    }
     let mut read = match reply {
         GraphReply::Ok(body) => done(AccountState::Ok, Some(shape_events(&body, &acct.id)), None),
         GraphReply::Unauthorized => done(AccountState::Unavailable, None, Some("graph-401".to_string())),
@@ -1067,6 +1071,38 @@ mod tests {
         core.lock().unwrap().expand_refused.insert("work".into(), ExpandRefusal { signature: account_signature(&acct("work")), retry_at: NOW + 9, logged: true });
         sign_out("work", &store, &core, &links);
         assert!(core.lock().unwrap().expand_refused.is_empty());
+    }
+
+    #[test]
+    fn failed_plain_retry_does_not_cache_expand_refusal() {
+        for plain_status in [400, 500] {
+            let (store, core) = setup();
+            let links = Mutex::new(Links::default());
+            let tokens = FakeTokens::new(vec![ok_token("a", None)]);
+            let failed = ScriptGraph::new(vec![GraphStep::Status(400), GraphStep::Status(plain_status)]);
+            let payload = read_day(&[acct("work")], &store, &tokens, &failed, &core, &links, NOW, NOW, NOW + 3600);
+            assert_eq!(payload.accounts[0].state, "unavailable");
+            assert_eq!(*failed.expanded.borrow(), vec![true, false]);
+            assert!(core.lock().unwrap().expand_refused.is_empty());
+            assert!(!core.lock().unwrap().log_lines.iter().any(|line| line.contains("not offered by this mailbox")));
+
+            let next = ScriptGraph::new(vec![GraphStep::Ok]);
+            read_day(&[acct("work")], &store, &tokens, &next, &core, &links, NOW + 1, NOW, NOW + 3600);
+            assert_eq!(*next.expanded.borrow(), vec![true]);
+        }
+    }
+
+    #[test]
+    fn refreshed_plain_retry_caches_only_a_success() {
+        for (last, recorded) in [(GraphStep::Status(400), false), (GraphStep::Ok, true)] {
+            let (store, core) = setup();
+            let links = Mutex::new(Links::default());
+            let tokens = FakeTokens::new(vec![ok_token("a", None), ok_token("b", None)]);
+            let graph = ScriptGraph::new(vec![GraphStep::Status(400), GraphStep::Unauthorized, last]);
+            read_day(&[acct("work")], &store, &tokens, &graph, &core, &links, NOW, NOW, NOW + 3600);
+            assert_eq!(*graph.expanded.borrow(), vec![true, false, false]);
+            assert_eq!(core.lock().unwrap().expand_refused.contains_key("work"), recorded);
+        }
     }
 
     #[test]

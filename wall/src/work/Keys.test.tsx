@@ -12,6 +12,7 @@ import { LIBRARY_DATA } from '../bridge/devMocks/libraryData';
 import { FOR_YOU_SHOWN, Keys, KEYS_POLL_MS, NEW_AGAIN_MS, TAKEOVER_MS, WHEEL_GAP_MS } from './Keys';
 import { DECK_TILE_H, MODE_KEY, type KeysSummary } from './keysModel';
 import { LATCH_MS } from './useGuard';
+import { PINS_CHANGED_EVENT, PINS_KEY } from './libraryModel';
 
 // What waits on the owner is tested on its own (forYou.test.tsx); here a small store stands in
 // for the sources so a test can make an item arrive or go.
@@ -100,6 +101,22 @@ it('shows the general set when the app in front has none of its own', async () =
   await flush();
   expect(screen.getByText('Now · General')).toBeTruthy();
   expect(screen.getByRole('button', { name: 'Clipboard' })).toBeTruthy();
+});
+
+it('opens a key menu without sending and pins a library key to Always here', async () => {
+  mocks.set('wall2_keys_library', () => LIBRARY_DATA);
+  answer = front('general', 'notepad.exe');
+  render(<Keys />);
+  await flush();
+  fireEvent.contextMenu(screen.getByRole('button', { name: 'Snip' }));
+  await flush();
+  expect(sent).toEqual([]);
+  expect(screen.getByRole('menu')).toBeTruthy();
+  fireEvent.click(screen.getByRole('menuitem', { name: /Pin to Always here/ }));
+  await flush();
+  expect(JSON.parse(localStorage.getItem('wall2-keys-pins') ?? '')).toEqual(['lib:snip']);
+  expect(sent).toEqual([]);
+  resetLibIndex();
 });
 
 it('says "No keys for this app" when there is no set and no general set', async () => {
@@ -662,4 +679,181 @@ it('the key tile rule builds one height from an icon box and a two-line label ar
   expect(label).toContain('align-self: center');
   // The For you plates are the same height, so the Now row is one height on every page.
   expect(rule('.fy-li')).toContain(`height: ${DECK_TILE_H}px`);
+});
+
+// Key menus on the Now row: guards, closing, and what they say.
+
+const OPEN_ATTR = 'data-drawer-open';
+const menuUp = () => screen.queryByRole('menu');
+const libraryMocks = () => mocks.set('wall2_keys_library', () => LIBRARY_DATA);
+
+afterEach(() => {
+  document.documentElement.removeAttribute(OPEN_ATTR);
+  vi.restoreAllMocks();
+  resetLibIndex();
+});
+
+it('opens no menu while an overlay owns the pointer: not by right-click, the corner button or the keyboard', async () => {
+  libraryMocks();
+  answer = front('general', 'notepad.exe');
+  render(<Keys />);
+  await flush();
+  document.documentElement.setAttribute(OPEN_ATTR, '');
+  fireEvent.contextMenu(screen.getByRole('button', { name: 'Snip' }));
+  fireEvent.click(screen.getByRole('button', { name: 'More options for Snip' }));
+  fireEvent.keyDown(screen.getByRole('button', { name: 'Snip' }), { key: 'ContextMenu' });
+  fireEvent.keyDown(screen.getByRole('button', { name: 'Snip' }), { key: 'F10', shiftKey: true });
+  await flush();
+  expect(menuUp()).toBeNull();
+  // The same gestures open it once the overlay is gone.
+  document.documentElement.removeAttribute(OPEN_ATTR);
+  fireEvent.contextMenu(screen.getByRole('button', { name: 'Snip' }));
+  await flush();
+  expect(menuUp()).not.toBeNull();
+});
+
+it('closes its menu on a press elsewhere and on a change of page or mode', async () => {
+  libraryMocks();
+  answer = front('general', 'notepad.exe');
+  render(<Keys />);
+  await flush();
+  fireEvent.contextMenu(screen.getByRole('button', { name: 'Snip' }));
+  await flush();
+  expect(menuUp()).not.toBeNull();
+  fireEvent.pointerDown(document.body);
+  expect(menuUp()).toBeNull();
+  fireEvent.contextMenu(screen.getByRole('button', { name: 'Snip' }));
+  await flush();
+  expect(menuUp()).not.toBeNull();
+  // Stepping to another page turns Hold on and shows other keys.
+  fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+  await flush();
+  expect(menuUp()).toBeNull();
+  fireEvent.contextMenu(screen.getByRole('button', { name: 'Refresh' }));
+  await flush();
+  expect(menuUp()).not.toBeNull();
+  // Back to Auto is a change of mode.
+  fireEvent.click(screen.getByRole('switch', { name: /Auto/ }));
+  await flush();
+  expect(menuUp()).toBeNull();
+});
+
+it('closes the menu when the feed brings another set under it', async () => {
+  libraryMocks();
+  answer = front('general', 'notepad.exe');
+  render(<Keys />);
+  await flush();
+  fireEvent.contextMenu(screen.getByRole('button', { name: 'Snip' }));
+  await flush();
+  expect(menuUp()).not.toBeNull();
+  // The same set again (a poll that changed nothing): the menu stays.
+  await flush(KEYS_POLL_MS);
+  expect(menuUp()).not.toBeNull();
+  answer = front('sales', 'sales.exe');
+  await flush(KEYS_POLL_MS);
+  expect(screen.getByText('Now · Sales app')).toBeTruthy();
+  expect(menuUp()).toBeNull();
+  // And it does not come back when the first set returns.
+  answer = front('general', 'notepad.exe');
+  await flush(KEYS_POLL_MS);
+  expect(screen.getByText('Now · General')).toBeTruthy();
+  expect(menuUp()).toBeNull();
+});
+
+it('disables Pin with its reason when Always here is full, and when the key is already there', async () => {
+  libraryMocks();
+  localStorage.setItem(PINS_KEY, JSON.stringify(['lib:thirds', 'lib:focus', 'lib:mute', 'lib:mixer', 'lib:zen']));
+  answer = front('general', 'notepad.exe');
+  render(<Keys />);
+  await flush();
+  fireEvent.contextMenu(screen.getByRole('button', { name: 'Snip' }));
+  await flush();
+  const full = screen.getByRole('menuitem', { name: /Always here is full/ }) as HTMLButtonElement;
+  expect(full.disabled).toBe(true);
+  expect(full.textContent).toContain('5 of 5');
+  fireEvent.click(full);
+  expect(JSON.parse(localStorage.getItem(PINS_KEY) ?? '')).toHaveLength(5);
+  fireEvent.pointerDown(document.body);
+  localStorage.setItem(PINS_KEY, JSON.stringify(['lib:snip']));
+  act(() => window.dispatchEvent(new Event(PINS_CHANGED_EVENT)));
+  fireEvent.contextMenu(screen.getByRole('button', { name: 'Snip' }));
+  await flush();
+  expect((screen.getByRole('menuitem', { name: /Already in Always here/ }) as HTMLButtonElement).disabled).toBe(true);
+});
+
+it('a blocked store does not throw into the Pin click', async () => {
+  libraryMocks();
+  answer = front('general', 'notepad.exe');
+  render(<Keys />);
+  await flush();
+  fireEvent.contextMenu(screen.getByRole('button', { name: 'Snip' }));
+  await flush();
+  vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+    throw new Error('blocked');
+  });
+  expect(() => fireEvent.click(screen.getByRole('menuitem', { name: /Pin to Always here/ }))).not.toThrow();
+  expect(menuUp()).toBeNull();
+});
+
+it("updates the menu's pin count when a pin is made elsewhere", async () => {
+  libraryMocks();
+  answer = front('general', 'notepad.exe');
+  render(<Keys />);
+  await flush();
+  fireEvent.contextMenu(screen.getByRole('button', { name: 'Snip' }));
+  await flush();
+  expect(screen.getByRole('menuitem', { name: /Pin to Always here/ }).textContent).toContain('0 of 5');
+  // A pin made through the Add tile of the Always here row.
+  localStorage.setItem(PINS_KEY, JSON.stringify(['lib:thirds', 'lib:focus', 'lib:mute']));
+  act(() => window.dispatchEvent(new Event(PINS_CHANGED_EVENT)));
+  expect(screen.getByRole('menuitem', { name: /Pin to Always here/ }).textContent).toContain('3 of 5');
+});
+
+it('every enabled Now key says the menu exists in its tooltip, and a disabled key keeps its reason', async () => {
+  mocks.set('wall2_arrange_status', () => false);
+  answer = front('general', 'notepad.exe');
+  render(
+    <>
+      <Keys />
+      <HoverTipLayer />
+    </>,
+  );
+  await flush();
+  fireEvent.mouseEnter(screen.getByRole('button', { name: 'Clipboard' }));
+  await flush(400);
+  expect(document.body.textContent).toContain('Send Clipboard to the app in front. Right-click, or the button in its corner, for more.');
+  fireEvent.mouseLeave(screen.getByRole('button', { name: 'Clipboard' }));
+  await flush(400);
+  fireEvent.mouseEnter(screen.getByRole('button', { name: 'Lock' }));
+  await flush(400);
+  expect(document.body.textContent).toContain('Lock. Right-click, or the button in its corner, for more.');
+  fireEvent.mouseLeave(screen.getByRole('button', { name: 'Lock' }));
+  await flush(400);
+  fireEvent.mouseEnter(screen.getByRole('button', { name: 'Thirds' }));
+  await flush(400);
+  expect(document.body.textContent).not.toContain('Right-click, or the button in its corner');
+  expect(document.body.textContent).toContain('There is no big screen');
+});
+
+it('draws the Now keys at the size and column count for 1 to 5 keys', async () => {
+  const sized = [
+    ['wide', 1],
+    ['wide', 2],
+    ['up1', 3],
+    ['', 4],
+    ['', 5],
+  ] as const;
+  for (const [n, [cls, cols]] of sized.entries()) {
+    const set = { id: `n${n + 1}`, name: `Set ${n + 1}`, general: false, keys: Array.from({ length: n + 1 }, (_v, j) => k(`Key ${j}`)) };
+    answer = front(set.id, null, [set, general]);
+    resetKeysFeed();
+    const { container, unmount } = render(<Keys />);
+    await flush();
+    const tiles = container.querySelector('.keys-tiles') as HTMLElement;
+    expect(tiles.querySelectorAll('.key-tile').length).toBe(n + 1);
+    expect(tiles.classList.contains('wide'), `${n + 1} wide`).toBe(cls === 'wide');
+    expect(tiles.classList.contains('up1'), `${n + 1} up1`).toBe(cls === 'up1');
+    expect(tiles.style.gridTemplateColumns).toBe(`repeat(${cols}, minmax(0px, 1fr))`);
+    unmount();
+  }
 });

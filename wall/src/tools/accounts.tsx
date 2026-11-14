@@ -10,6 +10,7 @@ import { calendarName } from './trouble';
 
 type Tone = 'plain' | 'bad';
 type OpenStatus = 'desktop' | 'browser-new-outlook' | 'browser-not-found' | 'browser-config' | 'desktop-config-typo';
+type OpenStatusState = OpenStatus | 'failed' | null;
 
 const openWords: Record<OpenStatus, { line: string; hint: string }> = {
   desktop: { line: 'Outlook on this PC', hint: 'Meetings open in classic Outlook when it is available.' },
@@ -19,12 +20,12 @@ const openWords: Record<OpenStatus, { line: string; hint: string }> = {
   'desktop-config-typo': { line: 'Outlook on this PC', hint: 'meet.json has an unknown openIn value, so the desktop default is used.' },
 };
 
-function useOpenStatus(opened: number): OpenStatus | null {
-  const [status, setStatus] = useState<OpenStatus | null>(null);
+function useOpenStatus(opened: number): OpenStatusState {
+  const [status, setStatus] = useState<OpenStatusState>(null);
   useEffect(() => {
     let live = true;
     setStatus(null);
-    void invoke<OpenStatus>('wall2_meet_open_status').then((value) => live && setStatus(value), () => undefined);
+    void invoke<OpenStatus>('wall2_meet_open_status').then((value) => live && setStatus(value), () => live && setStatus('failed'));
     return () => {
       live = false;
     };
@@ -168,6 +169,10 @@ export function Accounts() {
   const accounts = m.data?.accounts ?? [];
   const opened = useToolsStore((s) => s.opened);
   const openStatus = useOpenStatus(opened);
+  const openLine = openStatus === 'failed' ? 'Could not check' : openStatus ? openWords[openStatus].line : 'Checking';
+  const openHint = openStatus === 'failed'
+    ? 'The wall could not ask Windows how meetings open. It will ask again when Tools opens.'
+    : openStatus ? openWords[openStatus].hint : 'Checking how meetings open.';
   const blocked = m.signingIn !== null || sp.waiting;
   const setWaiting = useToolsStore((s) => s.setWaiting);
   const note = useToolsStore((s) => s.note);
@@ -209,7 +214,7 @@ export function Accounts() {
       {note && <div className="tools-note bad">{note}</div>}
       <ul className="tools-list" aria-label="Accounts">
         {calendars}
-        <Row icon={<IconCalendar size={22} aria-hidden="true" />} name="Meetings open in:" line={openStatus ? openWords[openStatus].line : 'Checking'} hover={openStatus ? openWords[openStatus].hint : 'Checking how meetings open.'} />
+        <Row icon={<IconCalendar size={22} aria-hidden="true" />} name="Meetings open in:" line={openLine} hover={openHint} />
         <SpotifyRow sp={sp} blocked={blocked} />
       </ul>
       {(m.notice || sp.notice) && <div className="tools-note bad">{m.notice ?? sp.notice}</div>}
