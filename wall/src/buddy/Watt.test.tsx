@@ -7,6 +7,11 @@ import { HorizonCanvas } from '../horizon/HorizonCanvas';
 import { publishCamera } from '../horizon/signal';
 import { usePlaceStore, type PlaceId } from '../state/places';
 import { FADE_IN_S, FADE_OUT_S, WALKS, middle, type WattPlace } from './model';
+import { BANNER, BANNER_GROUND, GROUNDS, WATCH_GROUND, onGround } from './ground';
+import { useChipLayout } from '../signals/layout';
+import { REACT_S } from './petFrame';
+import { useSignalStore } from '../signals/store';
+import { useWatchStore } from '../unwind/watch/store';
 import { resetAgents, useAgentsStore } from '../agents/useAgents';
 import type { OmniSummary } from '../agents/model';
 import { useFocusStore } from '../focus/store';
@@ -14,7 +19,9 @@ import { LINES } from './lines';
 import { PET_KEY, dayKey, defaultPet, emptyToday } from './pet';
 import { resetMeetingFeed, useMeetingFeed } from '../work/useNextMeeting';
 import { resetWeatherStore } from '../weather/useWeather';
-import { PET_LINE_EVERY_MS, PET_REPLY_GAP_MS, WATT_TIP, Watt } from './Watt';
+import { PET_LINE_EVERY_MS, PET_REPLY_GAP_MS, WATT_TIP, Watt, noticeBlocked, restClock, type NoticeState } from './Watt';
+import { FALL, HELD, LAND, MOVE, NONE, RETURN, SIT } from './carry';
+import { HoverTipLayer, resetTip } from '../ui/HoverTip';
 
 const sunMock = vi.hoisted(() => ({ set: null as number | null }));
 vi.mock('../ribbon/sun', async (original) => ({
@@ -41,17 +48,25 @@ const stored = () => JSON.parse(localStorage.getItem(PET_KEY) ?? '{}');
 let frames: Map<number, FrameRequestCallback>;
 let nextId = 1;
 let ts = 0;
+/** His rest timer, driven by the same clock as the frames (see `restClock`). */
+let rests: Map<number, { fn: () => void; due: number }>;
+const realRest = { ...restClock };
 const local = (h: number, m = 0, s = 0) => new Date(2026, 10, 11, h, m, s).getTime();
 const day = () => local(14);
 const night = () => local(23);
 
-/** Run every scheduled frame callback once at the next timestamp (50 ms later). */
+/** Run every scheduled frame callback once at the next timestamp (50 ms later), and any rest that ends by then. */
 function tick() {
   ts += 50;
   const due = [...frames.entries()];
   frames.clear();
   act(() => {
     for (const [, cb] of due) cb(ts);
+    for (const [id, r] of [...rests.entries()]) {
+      if (r.due > ts || !rests.has(id)) continue;
+      rests.delete(id);
+      r.fn();
+    }
   });
 }
 const runFor = (s: number) => {
@@ -81,7 +96,7 @@ const horizon = (to: CameraPreset | null, moving = false) => act(() => publishCa
 function where(container: HTMLElement) {
   const sheep = container.querySelector<HTMLElement>('.watt-sheep')!;
   const m = /translate\(([\d.]+)px,\s*([\d.]+)px\)/.exec(sheep.style.transform) ?? [0, NaN, NaN];
-  const svg = container.querySelector('svg')!;
+  const svg = container.querySelector('.watt-sheep svg')!;
   return {
     x: Number(m[1]),
     feet: Number(m[2]) + Number(svg.getAttribute('height')),
@@ -94,6 +109,15 @@ beforeEach(() => {
   sunMock.set = null;
   idleState.on = false;
   frames = new Map();
+  rests = new Map();
+  restClock.set = (fn, ms) => {
+    const id = nextId++;
+    rests.set(id, { fn, due: ts + ms });
+    return id;
+  };
+  restClock.clear = (id) => void rests.delete(id);
+  // The loop measures a rest cut short by the performance clock: here it is the frame clock.
+  vi.spyOn(performance, 'now').mockImplementation(() => ts);
   ts = 0;
   mqListeners = [];
   vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
@@ -112,6 +136,10 @@ beforeEach(() => {
   invokeMock.mockClear();
 });
 afterEach(() => {
+  Object.assign(restClock, realRest);
+  // Shared stores: every test starts on Listen, with no leave banner.
+  act(() => useWatchStore.getState().setTab('listen'));
+  act(() => useChipLayout.setState({ banner: false }));
   resetMeetingFeed();
   resetWeatherStore();
   invokeMock.mockImplementation(defaultInvoke);
@@ -391,26 +419,32 @@ describe('a pet', () => {
     expect(stored().today.pets).toBe(2);
   });
 
-  it('right-click shows his card: name, mood in one word, two honest lines; chatty off means no bubble at all', () => {
+  it('right-click shows his menu: name, mood in one word, a line about today; chatty off means no bubble at all', () => {
     let ms = day();
     const { container, getByRole, queryByText } = render(<Watt now={() => ms} />);
     runFor(1.5);
     fireEvent.click(container.querySelector('.watt-hit')!);
     fireEvent.contextMenu(container.querySelector('.watt-hit')!);
-    const card = container.querySelector('.watt-card')!;
-    expect(card.querySelector('.wc-name')!.textContent).toBe('Watt');
-    expect(['Content', 'Happy', 'Sleepy', 'Curious']).toContain(card.querySelector('.wc-mood')!.textContent);
-    expect([...card.querySelectorAll('.wc-today li')].map((l) => l.textContent)).toEqual(['Petted once.']);
+    const card = container.querySelector('.watt-menu')!;
+    expect(card.getAttribute('role')).toBe('menu');
+    expect(card.querySelector('.wm-name')!.textContent).toBe('Watt');
+    expect(['Content', 'Happy', 'Sleepy', 'Curious']).toContain(card.querySelector('.wm-mood')!.textContent);
+    expect(card.querySelector('.wm-today')!.textContent).toBe('Petted once.');
     expect(queryByText('First day together')).not.toBeNull();
-    fireEvent.click(getByRole('radio', { name: 'Off' }));
+    // Three short groups and a footer.
+    expect([...card.querySelectorAll('.wm-gp')].map((g) => g.textContent)).toEqual(['Tricks', 'Where', 'Together']);
+    fireEvent.click(getByRole('menuitemradio', { name: 'Off' }));
     expect(stored().chatty).toBe('off');
     expect(container.querySelector('.watt-bubble')).toBeNull();
     ms += 5000;
     fireEvent.click(container.querySelector('.watt-hit')!);
     expect(container.querySelector('.watt-bubble')).toBeNull();
-    // Locked cosmetics say when they unlock; the bow is there from day one.
-    expect(getByRole('radio', { name: 'Cape' })).toHaveProperty('disabled', true);
-    fireEvent.click(getByRole('radio', { name: 'Bow' }));
+    // The next cosmetic to unlock says when; the bow is there from day one.
+    expect(getByRole('menuitemradio', { name: /^Star in \d+ days?$/ }).getAttribute('aria-disabled')).toBe('true');
+    expect(container.querySelector('.watt-menu')!.textContent).not.toContain('Cape');
+    // The footer's choices keep the menu open.
+    expect(container.querySelector('.watt-menu')).not.toBeNull();
+    fireEvent.click(getByRole('menuitemradio', { name: 'Bow' }));
     expect(stored().cosmetic).toBe('bow');
     runFor(0.2);
     expect(container.querySelector('.watt-prop-bow')).not.toBeNull();
@@ -480,14 +514,20 @@ describe('a pet', () => {
     expect(container.querySelector('.watt-bubble')!.classList.contains('still')).toBe(true);
   });
 
-  describe('his card', () => {
+  describe('his menu', () => {
     const hitOf = (c: HTMLElement) => c.querySelector<HTMLElement>('.watt-hit')!;
-    const cardOf = (c: HTMLElement) => c.querySelector('.watt-card');
+    const cardOf = (c: HTMLElement) => c.querySelector('.watt-menu');
     const open = (c: HTMLElement) => fireEvent.contextMenu(hitOf(c));
 
-    it('hovering opens nothing, however long; the tooltip says what the pointer can do', () => {
+    it('hovering opens nothing, however long; the wall\'s own tooltip (never the browser\'s) says what the pointer can do', () => {
       vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
-      const { container } = render(<Watt now={day} />);
+      resetTip();
+      const { container } = render(
+        <>
+          <Watt now={day} />
+          <HoverTipLayer />
+        </>,
+      );
       runFor(1.5);
       fireEvent.mouseEnter(hitOf(container));
       fireEvent.mouseMove(hitOf(container));
@@ -495,8 +535,41 @@ describe('a pet', () => {
       fireEvent.pointerMove(hitOf(container), { pointerId: 1, clientX: 5, clientY: 5 });
       act(() => void vi.advanceTimersByTime(2000));
       expect(cardOf(container)).toBeNull();
-      expect(hitOf(container).title).toBe(WATT_TIP);
-      expect(WATT_TIP).toBe('Click to pet. Drag to carry. Right-click for his card.');
+      expect(hitOf(container).title).toBe('');
+      expect(container.querySelector('.hover-tip')?.textContent).toContain(WATT_TIP);
+      expect(WATT_TIP).toBe('Click to pet. Drag to carry. Right-click for his menu.');
+      // A press takes it down.
+      fireEvent.mouseDown(hitOf(container));
+      expect(container.querySelector('.hover-tip')).toBeNull();
+      resetTip();
+    });
+
+    it('a keyboard choice in his menu gives focus back to him without opening his tooltip', () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      resetTip();
+      const { container } = render(
+        <>
+          <Watt now={day} />
+          <HoverTipLayer />
+        </>,
+      );
+      runFor(1.5);
+      fireEvent.keyDown(hitOf(container), { key: 'm' });
+      const hop = [...container.querySelectorAll<HTMLElement>('.watt-menu [data-item]')].find((b) => b.textContent === 'Hop')!;
+      act(() => hop.focus());
+      // Enter on a button is a click with no pointer.
+      fireEvent.click(hop, { detail: 0 });
+      expect(cardOf(container)).toBeNull();
+      expect(document.activeElement).toBe(hitOf(container));
+      act(() => void vi.advanceTimersByTime(1000));
+      expect(container.querySelector('.hover-tip')).toBeNull();
+      // Escape gives focus back the same way.
+      fireEvent.keyDown(hitOf(container), { key: 'm' });
+      fireEvent.keyDown(window, { key: 'Escape' });
+      act(() => void vi.advanceTimersByTime(1000));
+      expect(document.activeElement).toBe(hitOf(container));
+      expect(container.querySelector('.hover-tip')).toBeNull();
+      resetTip();
     });
 
     it('a click pets and opens nothing', () => {
@@ -523,7 +596,7 @@ describe('a pet', () => {
       const { container } = render(<Watt now={day} />);
       runFor(1.5);
       open(container);
-      fireEvent.pointerDown(cardOf(container)!.querySelector('.wc-name')!);
+      fireEvent.pointerDown(cardOf(container)!.querySelector('.wm-name')!);
       expect(cardOf(container)).not.toBeNull();
       fireEvent.keyDown(window, { key: 'Escape' });
       expect(cardOf(container)).toBeNull();
@@ -566,7 +639,7 @@ describe('a pet', () => {
       fireEvent.click(hitOf(container), { detail: 0 });
       expect(stored().today.pets).toBe(1);
       expect(cardOf(container)).toBeNull();
-      const firstButton = () => container.querySelector('.watt-card button:not(:disabled)');
+      const firstButton = () => container.querySelector('.watt-menu [data-item]:not([aria-disabled])');
       for (const key of [{ key: 'ContextMenu' }, { key: 'F10', shiftKey: true }, { key: 'm' }, { key: 'M' }]) {
         fireEvent.keyDown(hitOf(container), key);
         expect(cardOf(container), JSON.stringify(key)).not.toBeNull();
@@ -797,6 +870,120 @@ describe('the amber mark when it is only a label', () => {
   });
 });
 
+describe('while the wall records', () => {
+  afterEach(() => useSignalStore.setState({ known: false, recording: false }));
+  const rec = (on: boolean) => act(() => useSignalStore.setState({ known: on, recording: on }));
+  it('he sits quietly: no wander, no line of his own, no hop or look he starts himself; the owner can still open his menu and carry him', () => {
+    let ms = day();
+    const { container } = render(<Watt now={() => ms} />);
+    runFor(FADE_IN_S + 0.5);
+    rec(true);
+    runFor(0.5);
+    const rows = () => Number(container.querySelector('.watt-sheep svg')!.getAttribute('height')) / 6;
+    expect(rows()).toBe(11);
+    const x = where(container).x;
+    // Five minutes: no walk, no line.
+    for (let i = 0; i < 30; i++) {
+      ms += 10_000;
+      runFor(10);
+    }
+    expect(where(container).x).toBe(x);
+    expect(container.querySelector('.watt-bubble')).toBeNull();
+    // A focus session finishing does not make him hop.
+    const y0 = where(container).feet;
+    act(() => useFocusStore.setState({ state: { status: 'running', minutes: 25, endAt: ms + 20_000 } as never }));
+    act(() => useFocusStore.setState({ state: { status: 'finished', minutes: 25 } }));
+    let lifted = false;
+    for (let i = 0; i < 20; i++) {
+      tick();
+      if (where(container).feet < y0 - 0.5) lifted = true;
+    }
+    expect(lifted).toBe(false);
+    // His menu still opens, and he can still be carried.
+    fireEvent.contextMenu(container.querySelector('.watt-hit')!);
+    expect(container.querySelector('.watt-menu')).not.toBeNull();
+    fireEvent.keyDown(window, { key: 'Escape' });
+    // Recording ends: he wanders on.
+    rec(false);
+    for (let i = 0; i < 8; i++) {
+      ms += 10_000;
+      runFor(10);
+    }
+    expect(where(container).x).not.toBe(x);
+  });
+});
+
+describe('the frame loop rests while he stands', () => {
+  // The real rest timer on fake timers; frames still come from the mocked requestAnimationFrame.
+  const real = () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] });
+    vi.spyOn(performance, 'now').mockImplementation(() => Date.now());
+    Object.assign(restClock, realRest);
+  };
+  const rafCalls = () => vi.mocked(window.requestAnimationFrame).mock.calls.length;
+  const advance = (ms: number) => {
+    for (let i = 0; i < ms / 100; i++) {
+      act(() => void vi.advanceTimersByTime(100));
+      tick();
+    }
+  };
+  const xOf = (c: HTMLElement) => Number(/translate\(([\d.]+)px/.exec(c.querySelector<HTMLElement>('.watt-sheep')!.style.transform)![1]);
+
+  it('standing at a stop asks for no frame, and the next walk starts on time', () => {
+    real();
+    const { container } = render(<Watt now={day} />);
+    runFor(FADE_IN_S + 0.3);
+    const x = xOf(container);
+    const before = rafCalls();
+    // The first stand is 26 s from his arrival; well inside it, blinks included, no frame at all.
+    advance(23_000);
+    expect(rafCalls()).toBe(before);
+    expect(xOf(container)).toBe(x);
+    // At the end of the stand he walks: frames run, and he moves.
+    advance(3_000);
+    expect(rafCalls()).toBeGreaterThan(before);
+    runFor(1);
+    expect(xOf(container)).not.toBe(x);
+  });
+
+  it('sitting with Stay on asks for no frame for a minute, though his look around still happens', () => {
+    real();
+    const { container } = render(<Watt now={day} />);
+    runFor(FADE_IN_S + 0.3);
+    fireEvent.contextMenu(container.querySelector('.watt-hit')!);
+    fireEvent.click([...container.querySelectorAll<HTMLButtonElement>('.watt-menu button')].find((b) => b.textContent === 'Stay here')!);
+    runFor(1);
+    const before = rafCalls();
+    const dirs = new Set<string>();
+    for (let i = 0; i < 60; i++) {
+      advance(1000);
+      dirs.add(/scaleX\((-?[\d.]+)\)/.exec(container.querySelector<HTMLElement>('.watt-sheep')!.style.transform)![1]);
+    }
+    expect(rafCalls()).toBe(before);
+    // He turned to look about on the timer alone.
+    expect(dirs.size).toBe(2);
+  });
+
+  it('a hidden page schedules nothing at all, and his return picks up', () => {
+    real();
+    const set = vi.spyOn(restClock, 'set');
+    const { container } = render(<Watt now={day} />);
+    runFor(FADE_IN_S + 0.3);
+    Object.defineProperty(document, 'hidden', { configurable: true, value: true });
+    act(() => void document.dispatchEvent(new Event('visibilitychange')));
+    runFor(0.2);
+    const frames0 = rafCalls();
+    const sets0 = set.mock.calls.length;
+    advance(60_000);
+    expect(rafCalls()).toBe(frames0);
+    expect(set.mock.calls.length).toBe(sets0);
+    Object.defineProperty(document, 'hidden', { configurable: true, value: false });
+    act(() => void document.dispatchEvent(new Event('visibilitychange')));
+    expect(set.mock.calls.length + rafCalls()).toBeGreaterThan(sets0 + frames0);
+    expect(container.querySelector('.watt-sheep')).not.toBeNull();
+  });
+});
+
 describe('carrying him', () => {
   const hitOf = (c: HTMLElement) => c.querySelector<HTMLElement>('.watt-hit')!;
   const sheepOf = (c: HTMLElement) => c.querySelector<HTMLElement>('.watt-sheep')!;
@@ -808,10 +995,10 @@ describe('carrying him', () => {
   /** The sheep's drawn top left, the way it faces and its vertical squash. */
   const look = (c: HTMLElement) => {
     const t = sheepOf(c).style.transform;
-    const m = /translate\((-?[\d.]+)px(?:,\s*(-?[\d.]+)px)?\) scaleX\((-?1)\) scaleY\(([\d.]+)\)/.exec(t);
-    return { x: Number(m?.[1]), y: Number(m?.[2] ?? 0), dir: Number(m?.[3]), squash: Number(m?.[4]), t };
+    const m = /translate\((-?[\d.]+)px(?:,\s*(-?[\d.]+)px)?\) scaleX\((-?[\d.]+)\) scaleY\(([\d.]+)\)/.exec(t);
+    return { x: Number(m?.[1]), y: Number(m?.[2] ?? 0), dir: Math.sign(Number(m?.[3])), sx: Math.abs(Number(m?.[3])), squash: Number(m?.[4]), t };
   };
-  const rows = (c: HTMLElement) => (Number(c.querySelector('svg')!.getAttribute('height')) * 18) / Number(c.querySelector('svg')!.getAttribute('width'));
+  const rows = (c: HTMLElement) => (Number(c.querySelector('.watt-sheep svg')!.getAttribute('height')) * 18) / Number(c.querySelector('.watt-sheep svg')!.getAttribute('width'));
   const flat = (c: HTMLElement) => (c.querySelector('.watt-bubble')?.textContent ?? '').replace(/\n/g, ' ');
   const eyes = (c: HTMLElement) => c.querySelectorAll('.watt-sheep > svg rect[fill="#35e6ea"]').length;
   let setCap: ReturnType<typeof vi.fn>;
@@ -852,7 +1039,7 @@ describe('carrying him', () => {
     expect(carried(container)).toBe(false);
     drop(container, 103, 102);
     expect(stored().today.pets).toBe(1);
-    expect(container.querySelector('.watt-card')).toBeNull();
+    expect(container.querySelector('.watt-menu')).toBeNull();
     // Just under 6: still a press.
     let ms = day() + 10_000;
     const second = render(<Watt now={() => ms} />);
@@ -880,7 +1067,7 @@ describe('carrying him', () => {
     runFor(2);
     expect(stored().today?.pets ?? 0).toBe(0);
     expect(Number(container.querySelector<HTMLElement>('.watt-heart')!.style.opacity || 0)).toBe(0);
-    expect(container.querySelector('.watt-card')).toBeNull();
+    expect(container.querySelector('.watt-menu')).toBeNull();
   });
 
   it('a press held longer than half a second is not a pet', () => {
@@ -983,7 +1170,7 @@ describe('carrying him', () => {
     expect(container.querySelector<HTMLElement>('.watt-clover')!.style.visibility).toBe('');
   });
 
-  it('is set down on the ground line under the release point, at that x kept inside his span, on each place', () => {
+  it('drops straight down onto the ground line under the release point, at the nearest free spot, on each place, and keeps it', () => {
     const cases: [WattPlace, number][] = [
       ['work', 582],
       ['home', 582],
@@ -993,60 +1180,67 @@ describe('carrying him', () => {
     for (const [place, hy] of cases) {
       usePlaceStore.setState({ active: place });
       publishCamera(CAMERAS[place], false);
+      localStorage.clear();
       const { container, unmount } = start();
       const walk = WALKS[place];
+      const spans = GROUNDS[place];
       carryAway(container, 2500, 100);
       drop(container, 2500, 100);
-      runFor(1);
+      runFor(2);
       let l = look(container);
-      expect(l.x, place).toBe(walk.max);
+      expect(l.x, place).toBe(spans[spans.length - 1].max);
       expect(l.y + rows(container) * walk.px, place).toBe(hy);
+      expect(stored().spots[place], place).toBe(spans[spans.length - 1].max);
       carryAway(container, 20, 100);
       drop(container, 20, 100);
-      runFor(1);
+      runFor(2);
       l = look(container);
-      expect(l.x, place).toBe(walk.min);
+      expect(l.x, place).toBe(spans[0].min);
       expect(l.y + rows(container) * walk.px, place).toBe(hy);
-      // In the middle of his span he lands where he was let go.
-      const inside = (walk.min + walk.max) / 2 + 20;
-      carryAway(container, inside + 0.5 * 108, 200);
-      drop(container, inside + 0.5 * 108, 200);
-      runFor(1);
+      // Far from his old walk: where he was let go when it is free (anywhere along the band), else the nearest free spot.
+      carryAway(container, 1300, 200);
+      const held = look(container).x;
+      drop(container, 1300, 200);
+      runFor(2);
       l = look(container);
-      expect(l.x, place).toBeGreaterThanOrEqual(walk.min);
-      expect(l.x, place).toBeLessThanOrEqual(walk.max);
+      expect(l.x, place).toBeCloseTo(onGround(spans, held), 6);
+      if (place !== 'unwind') expect(l.x, place).toBeCloseTo(held, 6);
       unmount();
     }
   });
 
-  it('falls gently (ease in, 300 to 500 ms by height), squashes once on landing, then sits', () => {
+  it('falls straight down under gravity, stretched, squashes with dust, shakes his wool, then stands and sits', () => {
     const { container } = start();
     carryAway(container, 450, 60);
-    const high = look(container).y;
+    const high = look(container).y + rows(container) * 6;
+    const x = look(container).x;
     drop(container, 450, 60);
-    const ys: number[] = [];
+    const feet: number[] = [];
     const squash: number[] = [];
-    for (let i = 0; i < 24; i++) {
+    const xs: number[] = [];
+    let dust = 0;
+    for (let i = 0; i < 40; i++) {
       tick();
-      ys.push(look(container).y);
+      feet.push(look(container).y + rows(container) * 6);
       squash.push(look(container).squash);
+      xs.push(look(container).x);
+      dust = Math.max(dust, ...[...container.querySelectorAll<HTMLElement>('.watt-dust')].map((d) => Number(d.style.opacity || 0)));
     }
-    // Ease in: the first 100 ms cover less than a quarter of the fall.
-    const fallen = 505 - 72 - high;
-    expect(ys[1] - high).toBeLessThan(fallen / 4);
-    // Down by 500 ms at the latest (tick 10), and it never goes back up.
-    expect(ys[10]).toBeGreaterThanOrEqual(505 - 66 - 1);
-    for (let i = 1; i < ys.length; i++) expect(ys[i]).toBeGreaterThanOrEqual(ys[i - 1] - 1e-9);
-    // One squash, back to 1.
-    expect(Math.min(...squash)).toBeLessThan(1);
-    expect(Math.min(...squash)).toBeGreaterThan(0.75);
+    // Ease in: the first 100 ms cover less than a quarter of the fall; he never goes back up.
+    expect(feet[1] - high).toBeLessThan((505 - high) / 4);
+    for (let i = 1; i < feet.length; i++) expect(feet[i]).toBeGreaterThanOrEqual(feet[i - 1] - 1e-9);
+    expect(feet[feet.length - 1]).toBe(505);
+    // Straight down: no sideways yank (the wool shake moves him half a pixel at most).
+    for (const v of xs) expect(Math.abs(v - x)).toBeLessThanOrEqual(3 + 1e-9);
+    // Stretched in the air, one deep squash on landing, back to 1.
+    expect(Math.max(...squash)).toBeGreaterThan(1.05);
+    expect(Math.min(...squash)).toBeLessThan(0.75);
     expect(squash[squash.length - 1]).toBe(1);
-    let dips = 0;
-    for (let i = 1; i < squash.length; i++) if (squash[i] < 1 && squash[i - 1] >= 1) dips++;
-    expect(dips).toBe(1);
+    expect(dust).toBeGreaterThan(0);
+    // Then he sits.
+    runFor(2);
     expect(rows(container)).toBe(11);
   });
-
   it('under reduced motion he is simply set down, with no fall and no bounce', () => {
     reduced(true);
     const { container } = render(<Watt now={day} />);
@@ -1062,21 +1256,49 @@ describe('carrying him', () => {
     expect(frames.size).toBe(0);
   });
 
-  it('stays near the spot for about 20 seconds, sitting and looking around, then walks back to his wander', () => {
+  it('sits a moment where he landed, then wanders a little around that spot and never snaps back', () => {
     const { container } = start();
-    carryAway(container, 440, 300);
-    drop(container, 440, 300);
-    runFor(1);
+    carryAway(container, 300, 300);
+    drop(container, 300, 300);
+    runFor(1.5);
     const x = look(container).x;
+    expect(stored().spots.unwind).toBe(Math.round(x));
+    runFor(1.5);
     expect(rows(container)).toBe(11);
-    runFor(17);
     expect(look(container).x).toBe(x);
     expect(look(container).y + 66).toBe(505);
-    // Well after the sit: back on his feet and inside his walk.
-    runFor(25);
-    expect(rows(container)).toBe(12);
-    expect(look(container).x).toBeGreaterThanOrEqual(WALKS.unwind.min);
-    expect(look(container).x).toBeLessThanOrEqual(WALKS.unwind.max);
+    // Long after: on his feet, around his new spot, far from the old walk (430 to 470).
+    for (let i = 0; i < 12; i++) {
+      runFor(15);
+      expect(Math.abs(look(container).x - x)).toBeLessThanOrEqual(60 + 1e-9);
+    }
+    expect(look(container).x).toBeLessThan(WALKS.unwind.min);
+  });
+
+  it('carried over the wall\'s information his held line is hidden, and it shows again over open ground', () => {
+    // A card across the top band (jsdom has no layout, so its box is given).
+    const shell = document.createElement('div');
+    shell.className = 'shell';
+    const card = document.createElement('button');
+    card.textContent = 'A control';
+    card.getBoundingClientRect = () => ({ left: 0, top: 0, right: 2560, bottom: 330, width: 2560, height: 330, x: 0, y: 0, toJSON() {} }) as DOMRect;
+    shell.appendChild(card);
+    document.body.appendChild(shell);
+    try {
+      const { container } = start();
+      carryAway(container, 1200, 160);
+      runFor(1.2);
+      const bubble = () => container.querySelector<HTMLElement>('.watt-bubble');
+      expect(LINES.held.concat(LINES.heldFast)).toContain(bubble()!.textContent!.replace(/\n/g, ' '));
+      expect(bubble()!.style.visibility).toBe('hidden');
+      // His body still shows above everything while he is carried.
+      expect(container.querySelector<HTMLElement>('.watt')!.style.zIndex).toBe('40');
+      move(container, 1200, 600);
+      runFor(0.5);
+      expect(bubble()!.style.visibility).toBe('');
+    } finally {
+      shell.remove();
+    }
   });
 
   describe('anything that is not the pointer puts him down at once', () => {
@@ -1137,11 +1359,14 @@ describe('carrying him', () => {
       runFor(FADE_OUT_S + FADE_IN_S + 1);
       expect(where(container).feet).toBe(582);
       expect(container.querySelector<HTMLElement>('.watt')!.style.zIndex).toBe('');
-      // Set down at once on Home's ground line, at his held x clamped to Home's span (he was left of it).
-      expect(where(container).x).toBe(WALKS.home.min);
-      expect(container.querySelector('svg')!.getAttribute('height')).toBe(String(11 * WALKS.home.px));
+      // Set down at once on Home's ground line, at his held x (free there), and it is his spot on Home now.
+      const x = where(container).x;
+      expect(x).toBeGreaterThanOrEqual(GROUNDS.home[0].min);
+      expect(x).toBeLessThan(WALKS.home.min);
+      expect(stored().spots.home).toBe(Math.round(x));
+      expect(container.querySelector('.watt-sheep svg')!.getAttribute('height')).toBe(String(11 * WALKS.home.px));
     });
-    it('a place change while held on the right edge lands him at the far end of the new span', () => {
+    it('a place change while held on the right edge lands him at the far end of the new ground', () => {
       usePlaceStore.setState({ active: 'work' });
       publishCamera(CAMERAS.work, false);
       const { container } = start();
@@ -1149,7 +1374,7 @@ describe('carrying him', () => {
       go('home');
       publishCamera(CAMERAS.home, false);
       runFor(FADE_OUT_S + FADE_IN_S + 1);
-      expect(where(container).x).toBe(WALKS.home.max);
+      expect(where(container).x).toBe(GROUNDS.home[0].max);
       expect(where(container).feet).toBe(582);
       // Held, then the place changes, then he is never picked up again by the old press.
       expect(carried(container)).toBe(false);
@@ -1175,18 +1400,21 @@ describe('carrying him', () => {
       go('home');
       horizon(CAMERAS.home, true);
       runFor(FADE_OUT_S + 0.2);
-      publishCamera(CAMERAS.home, false);
+      horizon(CAMERAS.home);
       let seen = 0;
+      let first = NaN;
       for (let i = 0; i < 40; i++) {
         tick();
         const w = where(container);
         if (w.opacity > 0) {
           seen++;
-          expect(w.x).toBe(WALKS.home.min);
+          if (first !== first) first = w.x;
+          expect(w.x).toBe(first);
           expect(w.feet).toBe(582);
         }
       }
       expect(seen).toBeGreaterThan(5);
+      expect(first).toBeLessThan(WALKS.home.min);
     });
     it('two quick place changes while held still land him, at the last place', () => {
       usePlaceStore.setState({ active: 'work' });
@@ -1200,7 +1428,7 @@ describe('carrying him', () => {
       publishCamera(CAMERAS.work, false);
       runFor(FADE_OUT_S + FADE_IN_S + 1);
       expect(carried(container)).toBe(false);
-      expect(where(container).x).toBe(WALKS.work.max);
+      expect(where(container).x).toBe(GROUNDS.work[0].max);
       expect(where(container).feet).toBe(582);
     });
     it('a landing whose place never comes back within 10 seconds is given up, and does not happen later', () => {
@@ -1323,8 +1551,8 @@ describe('carrying him', () => {
   it('picking him up ends a nap', () => {
     const { container } = start();
     fireEvent.contextMenu(hitOf(container));
-    fireEvent.click([...document.querySelectorAll<HTMLButtonElement>('.watt-card button')].find((b) => b.textContent === 'Nap')!);
-    runFor(0.3);
+    fireEvent.click([...document.querySelectorAll<HTMLButtonElement>('.watt-menu button')].find((b) => b.textContent === 'Nap')!);
+    runFor(1.3);
     expect(rows(container)).toBe(8);
     fireEvent.keyDown(window, { key: 'Escape' });
     grab(container, 500, 400);
@@ -1332,7 +1560,7 @@ describe('carrying him', () => {
     runFor(0.3);
     expect(rows(container)).toBe(12);
     drop(container, 600, 300);
-    runFor(1.5);
+    runFor(3);
     // He sits after landing; he does not lie down again.
     expect(rows(container)).toBe(11);
   });
@@ -1394,7 +1622,7 @@ describe('carrying him', () => {
       runFor(0.4);
       shake(container, 8);
       drop(container, 1000, 300);
-      runFor(0.9);
+      runFor(1.6);
       expect(eyes(container)).toBe(5);
       expect(LINES.dizzy).toContain(flat(container));
       runFor(3.5);
@@ -1429,7 +1657,7 @@ describe('carrying him', () => {
       move(container, 400, 300);
       tick();
       drop(container, 400, 300);
-      runFor(0.9);
+      runFor(2);
       expect(eyes(container)).toBe(1);
     });
   });
@@ -1446,8 +1674,14 @@ describe('carrying him', () => {
       runFor(5);
       expect(text(container)).toBe(held);
       drop(container, 450, 120);
-      runFor(0.9);
+      // In the air and while he lands, no landed line yet (it waits until he is down).
+      for (let i = 0; i < 18; i++) {
+        tick();
+        expect(LINES.landed).not.toContain(text(container));
+      }
+      runFor(1.2);
       expect(LINES.landed).toContain(text(container));
+      expect(look(container).y + rows(container) * 6).toBe(505);
     });
     it('says nothing when chatty is off, in a call, in the first minute of focus, while idle or asleep', () => {
       const quiet: [string, () => void, (ms: number) => number][] = [
@@ -1520,12 +1754,15 @@ describe('more of a pet', () => {
   const hitOf = (c: HTMLElement) => c.querySelector<HTMLElement>('.watt-hit')!;
   const sheepOf = (c: HTMLElement) => c.querySelector<HTMLElement>('.watt-sheep')!;
   const eyes = (c: HTMLElement) => c.querySelectorAll('.watt-sheep > svg rect[fill="#35e6ea"]').length;
-  const rows = (c: HTMLElement) => (Number(c.querySelector('svg')!.getAttribute('height')) * 18) / Number(c.querySelector('svg')!.getAttribute('width'));
+  const rows = (c: HTMLElement) => (Number(c.querySelector('.watt-sheep svg')!.getAttribute('height')) * 18) / Number(c.querySelector('.watt-sheep svg')!.getAttribute('width'));
   const y = (c: HTMLElement) => Number(/translate\((-?[\d.]+)px(?:,\s*(-?[\d.]+)px)?\)/.exec(sheepOf(c).style.transform)?.[2] ?? 0);
-  const dirOf = (c: HTMLElement) => Number(/scaleX\((-?1)\)/.exec(sheepOf(c).style.transform)![1]);
+  const dirOf = (c: HTMLElement) => Math.sign(Number(/scaleX\((-?[\d.]+)\)/.exec(sheepOf(c).style.transform)![1]));
   const pointer = (x: number, y: number) => act(() => void window.dispatchEvent(new PointerEvent('pointermove', { clientX: x, clientY: y, pointerId: 1 })));
   const open = (c: HTMLElement) => fireEvent.contextMenu(hitOf(c));
-  const button = (name: string) => [...document.querySelectorAll<HTMLButtonElement>('.watt-card button')].find((b) => b.textContent?.startsWith(name))!;
+  const button = (name: string) => [...document.querySelectorAll<HTMLButtonElement>('.watt-menu button')].find((b) => b.textContent?.startsWith(name))!;
+  const off = (b: HTMLElement) => b.getAttribute('aria-disabled') === 'true';
+  const flat = (c: HTMLElement) => (c.querySelector('.watt-bubble')?.textContent ?? '').replace(/\n/g, ' ');
+  const says = (b: HTMLElement) => b.getAttribute('aria-description') ?? '';
   let setCap: ReturnType<typeof vi.fn>;
   const proto = HTMLElement.prototype as unknown as Record<string, unknown>;
   beforeEach(() => {
@@ -1568,13 +1805,234 @@ describe('more of a pet', () => {
     runFor(1.5);
     expect(eyes(container)).toBe(1);
     // Hovering opens nothing.
-    expect(container.querySelector('.watt-card')).toBeNull();
+    expect(container.querySelector('.watt-menu')).toBeNull();
+  });
+
+  describe('he notices clicks', () => {
+    const click = (x: number, y: number, target: EventTarget = document.body) =>
+      act(() => void target.dispatchEvent(new PointerEvent('pointerdown', { clientX: x, clientY: y, button: 0, bubbles: true })));
+    const tuftOn = (c: HTMLElement) => c.querySelector<HTMLElement>('.watt-tuft')!.style.display !== 'none';
+    afterEach(() => useSignalStore.setState({ known: false, recording: false }));
+    it('near him: he turns to it, ears up, his wool flicks and he holds the look; far away only a glance', () => {
+      const { container } = start();
+      const mid = middle(WALKS.unwind) + 54;
+      expect(dirOf(container)).toBe(-1);
+      click(mid + 150, 440);
+      let flicked = false;
+      for (let i = 0; i < 5; i++) {
+        tick();
+        if (tuftOn(container)) flicked = true;
+      }
+      expect(flicked).toBe(true);
+      expect(dirOf(container)).toBe(1);
+      expect(eyes(container)).toBe(3);
+      runFor(1.2);
+      expect(dirOf(container)).toBe(1);
+      runFor(1);
+      expect(dirOf(container)).toBe(-1);
+      // Far away: one ear frame, then a glance, over sooner.
+      runFor(1);
+      click(2400, 100);
+      tick();
+      expect(dirOf(container)).toBe(1);
+      expect(eyes(container)).toBe(3);
+      runFor(0.3);
+      expect(eyes(container)).toBe(1);
+      expect(dirOf(container)).toBe(1);
+      runFor(0.6);
+      expect(dirOf(container)).toBe(-1);
+      // He never moves for a click.
+      expect(where(container).x).toBe(middle(WALKS.unwind));
+    });
+    it('a burst of clicks is one reaction, and a click on him or on anything of his is not noticed', () => {
+      const { container } = start();
+      const mid = middle(WALKS.unwind) + 54;
+      click(mid + 150, 440);
+      tick();
+      expect(dirOf(container)).toBe(1);
+      for (let i = 0; i < 5; i++) {
+        click(mid - 150, 440);
+        tick();
+      }
+      expect(dirOf(container)).toBe(1);
+      runFor(3);
+      expect(dirOf(container)).toBe(-1);
+      // On his own elements (here a drifting z): nothing.
+      click(mid + 150, 440, container.querySelector('.watt-z')!);
+      tick();
+      expect(dirOf(container)).toBe(-1);
+    });
+    it('the guard: noticed only when nothing else holds him, never in any of the quiet states', () => {
+      const base: NoticeState = { shown: true, hidden: false, night: false, carryMode: NONE, menuOpen: false, lie: false, nap: false, reading: false, inCall: false, recording: false, reacting: false };
+      expect(noticeBlocked(base)).toBeNull();
+      // Sitting where he was set down is not a quiet state.
+      expect(noticeBlocked({ ...base, carryMode: SIT })).toBeNull();
+      const never: [string, Partial<NoticeState>][] = [
+        ['carried', { carryMode: HELD }],
+        ['menu open', { menuOpen: true }],
+        ['in a call', { inCall: true }],
+        ['reading', { reading: true }],
+        ['recording', { recording: true }],
+        ['falling', { carryMode: FALL }],
+        ['falling', { carryMode: LAND }],
+        ['napping', { lie: true }],
+        ['napping', { nap: true }],
+        ['asleep', { night: true }],
+        ['walking back', { carryMode: RETURN }],
+        ['walking back', { carryMode: MOVE }],
+        ['hidden', { hidden: true }],
+        ['away', { shown: false }],
+        ['busy', { reacting: true }],
+      ];
+      for (const [why, over] of never) expect(noticeBlocked({ ...base, ...over }), why).toBe(why);
+    });
+    it('the listener uses that guard: with his menu open, in a call or while the wall records a click turns nothing', () => {
+      const mid = middle(WALKS.unwind) + 54;
+      const quiet: [string, (c: HTMLElement) => void, { inCall?: boolean }][] = [
+        ['his menu open', (c) => fireEvent.contextMenu(hitOf(c)), {}],
+        ['a call', () => {}, { inCall: true }],
+        ['recording', () => act(() => useSignalStore.setState({ known: true, recording: true })), {}],
+      ];
+      for (const [name, setup, props] of quiet) {
+        const r = render(<Watt now={day} {...props} />);
+        runFor(FADE_IN_S + 0.5);
+        setup(r.container);
+        runFor(0.3);
+        const before = r.container.querySelector<HTMLElement>('.watt-sheep')!.style.transform;
+        click(mid + 150, 440, name === 'his menu open' ? r.container.querySelector('.watt-menu')! : document.body);
+        tick();
+        tick();
+        expect(r.container.querySelector<HTMLElement>('.watt-sheep')!.style.transform, name).toBe(before);
+        r.unmount();
+        useSignalStore.setState({ known: false, recording: false });
+      }
+    });
+    it('one passive capture pointerdown listener on the window, removed on unmount', () => {
+      const add = vi.spyOn(window, 'addEventListener');
+      const remove = vi.spyOn(window, 'removeEventListener');
+      const r = render(<Watt now={day} />);
+      const downs = add.mock.calls.filter(([type]) => type === 'pointerdown');
+      expect(downs.length).toBe(1);
+      expect(downs[0][2]).toEqual({ capture: true, passive: true });
+      r.unmount();
+      const off = remove.mock.calls.filter(([type]) => type === 'pointerdown');
+      expect(off.length).toBe(1);
+      expect(off[0][1]).toBe(downs[0][1]);
+      expect(off[0][2]).toEqual({ capture: true });
+    });
+    it('now and then a line, for a near click only, at most once in three minutes', () => {
+      let ms = day();
+      const { container } = start(() => ms);
+      const mid = middle(WALKS.unwind) + 54;
+      click(2400, 100);
+      expect(container.querySelector('.watt-bubble')).toBeNull();
+      runFor(2);
+      click(mid + 150, 440);
+      expect(LINES.click).toContain(flat(container));
+      runFor(2);
+      for (let i = 0; i < 4; i++) {
+        ms += 30_000;
+        runFor(2);
+        act(() => void container.querySelector('.watt-bubble')?.remove());
+        click(mid + 150, 440);
+        expect(container.querySelector('.watt-bubble'), `click ${i}`).toBeNull();
+      }
+    });
+  });
+
+  it('a trick\'s line comes once he has done it, and the menu closes when he is told what to do', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    let ms = day();
+    const { container } = start(() => ms);
+    open(container);
+    fireEvent.click(button('Hop'));
+    expect(container.querySelector('.watt-menu')).toBeNull();
+    expect(container.querySelector('.watt-bubble')).toBeNull();
+    act(() => void vi.advanceTimersByTime(REACT_S.hop * 1000 - 50));
+    expect(container.querySelector('.watt-bubble')).toBeNull();
+    act(() => void vi.advanceTimersByTime(400));
+    expect(LINES.tricks).toContain(flat(container));
+    // A nap has its own line (trick lines come at most every 20 seconds).
+    ms += 25_000;
+    runFor(2);
+    act(() => void vi.advanceTimersByTime(25_000));
+    open(container);
+    fireEvent.click(button('Nap'));
+    act(() => void vi.advanceTimersByTime(1500));
+    expect(LINES.nap).toContain(flat(container));
+  });
+
+  it('on Unwind, the Watch tab taking the floor fades him over to his ground there, and Listen gives him his spot back', () => {
+    const { container } = start();
+    fireEvent.pointerDown(hitOf(container), { pointerId: 1, pointerType: 'mouse', button: 0, clientX: 500, clientY: 400 });
+    fireEvent.pointerMove(hitOf(container), { pointerId: 1, pointerType: 'mouse', clientX: 600, clientY: 400 });
+    fireEvent.pointerMove(hitOf(container), { pointerId: 1, pointerType: 'mouse', clientX: 1650, clientY: 300 });
+    runFor(0.6);
+    fireEvent.pointerUp(hitOf(container), { pointerId: 1, pointerType: 'mouse', clientX: 1650, clientY: 300 });
+    runFor(5);
+    const spot = stored().spots.unwind;
+    expect(spot).toBeGreaterThan(GROUNDS.unwind[1].min);
+    act(() => useWatchStore.getState().setTab('watch'));
+    runFor(0.2);
+    expect(Number(container.querySelector<HTMLElement>('.watt')!.style.opacity)).toBeLessThan(1);
+    runFor(1.5);
+    expect(where(container).x).toBeLessThanOrEqual(WATCH_GROUND[0].max);
+    expect(Number(container.querySelector<HTMLElement>('.watt')!.style.opacity)).toBe(1);
+    // His spot is kept for Listen.
+    expect(stored().spots.unwind).toBe(spot);
+    act(() => useWatchStore.getState().setTab('listen'));
+    runFor(1.5);
+    expect(where(container).x).toBeGreaterThanOrEqual(GROUNDS.unwind[1].min);
+  });
+
+  it('Unwind keeps a spot per tab: a drop on Watch leaves his Listen spot alone, and each tab returns him to its own', () => {
+    const drop = (c: HTMLElement, x: number) => {
+      fireEvent.pointerDown(hitOf(c), { pointerId: 1, pointerType: 'mouse', button: 0, clientX: 500, clientY: 400 });
+      fireEvent.pointerMove(hitOf(c), { pointerId: 1, pointerType: 'mouse', clientX: 600, clientY: 400 });
+      fireEvent.pointerMove(hitOf(c), { pointerId: 1, pointerType: 'mouse', clientX: x, clientY: 300 });
+      runFor(0.6);
+      fireEvent.pointerUp(hitOf(c), { pointerId: 1, pointerType: 'mouse', clientX: x, clientY: 300 });
+      runFor(5);
+    };
+    const { container } = start();
+    drop(container, 1650);
+    const listen = stored().spots.unwind;
+    expect(listen).toBeGreaterThan(GROUNDS.unwind[1].min);
+    act(() => useWatchStore.getState().setTab('watch'));
+    runFor(2);
+    drop(container, 320);
+    const watch = stored().spots.unwindWatch;
+    expect(watch).toBeLessThan(400);
+    expect(stored().spots.unwind).toBe(listen);
+    act(() => useWatchStore.getState().setTab('listen'));
+    runFor(2);
+    expect(Math.abs(where(container).x - listen)).toBeLessThanOrEqual(60 + 1e-9);
+    act(() => useWatchStore.getState().setTab('watch'));
+    runFor(2);
+    expect(Math.abs(where(container).x - watch)).toBeLessThanOrEqual(60 + 1e-9);
+    expect(stored().spots).toMatchObject({ unwind: listen, unwindWatch: watch });
+  });
+
+  it('the leave banner in the band takes his ground on Home: he steps aside, keeps his spot, and returns when it goes', () => {
+    usePlaceStore.setState({ active: 'home' });
+    publishCamera(CAMERAS.home, false);
+    const { container } = start();
+    const x0 = where(container).x;
+    expect(x0).toBeGreaterThan(BANNER.left);
+    act(() => useChipLayout.setState({ banner: true }));
+    runFor(2);
+    const x = where(container).x;
+    expect(x <= BANNER_GROUND.home[0].max || x >= BANNER_GROUND.home[1].min).toBe(true);
+    expect(stored().spots?.home).toBeUndefined();
+    act(() => useChipLayout.setState({ banner: false }));
+    runFor(2);
+    expect(Math.abs(where(container).x - x0)).toBeLessThanOrEqual(110 + 1e-9);
   });
 
   it('he does not look at it while he reads, eats, or is carried; under reduced motion he stands still', () => {
     const { container } = start();
     pointer(500, 460);
-    useFocusStore.setState({ state: { status: 'running', minutes: 25, endAt: day() + 20 * 60_000 } as never });
+    act(() => useFocusStore.setState({ state: { status: 'running', minutes: 25, endAt: day() + 20 * 60_000 } as never }));
     runFor(0.3);
     expect(eyes(container)).not.toBe(3);
   });
@@ -1655,17 +2113,19 @@ describe('more of a pet', () => {
       open(r.container);
       return r;
     };
-    it('each trick runs once; the buttons are 32 px tall, have tooltips, and say what they do', () => {
+    it('each trick runs once, closes the menu, and his line comes after the move; the items have tooltips and say what they do', () => {
       const { container } = withCard();
       for (const name of ['Hop', 'Spin', 'Nap', 'Come here', 'Stay', 'Read with me']) {
         const b = button(name);
         expect(b, name).toBeTruthy();
-        expect(b.title.length, name).toBeGreaterThan(8);
+        expect(says(b).length, name).toBeGreaterThan(8);
+        expect(b.title, name).toBe('');
       }
       expect(button('Read with me').textContent).toBe('Read with me, 25 min');
       // Hop: lifts once.
       const base = y(container);
       fireEvent.click(button('Hop'));
+      expect(container.querySelector('.watt-menu')).toBeNull();
       let hi = 0;
       let peaks = 0;
       let prev = 0;
@@ -1678,45 +2138,65 @@ describe('more of a pet', () => {
       }
       expect(hi).toBeGreaterThan(2);
       expect(Math.abs(base - y(container))).toBeLessThan(0.01);
-      // Spin: turns through both turned frames and ends as he was, without lifting.
+      // Spin: turns through both turned frames and ends as he was, barely off the ground.
       const frames = new Set<string>();
+      open(container);
       fireEvent.click(button('Spin'));
       for (let i = 0; i < 26; i++) {
         tick();
         frames.add(container.querySelector('.watt-sheep > svg')!.innerHTML);
-        expect(base - y(container)).toBeLessThan(0.01);
+        expect(base - y(container)).toBeLessThanOrEqual(2 * 6 + 0.01);
       }
+      expect(Math.abs(base - y(container))).toBeLessThan(0.01);
       expect(frames.size).toBeGreaterThanOrEqual(3);
     });
-    it('every card button is held to at least 32 px', () => {
+    it('every menu item is held to at least 34 px (38 px for what he does)', () => {
       withCard();
-      const all = document.querySelectorAll<HTMLButtonElement>('.watt-card button');
-      expect(all.length).toBeGreaterThanOrEqual(13);
-      for (const b of all) expect(b.style.minHeight, b.textContent ?? '').toBe('32px');
+      const all = document.querySelectorAll<HTMLButtonElement>('.watt-menu button');
+      expect(all.length).toBeGreaterThanOrEqual(11);
+      for (const b of all) expect(parseFloat(b.style.minHeight), b.textContent ?? '').toBeGreaterThanOrEqual(34);
+      for (const b of document.querySelectorAll<HTMLButtonElement>('.watt-menu .wm-it')) expect(b.style.minHeight).toBe('38px');
+    });
+    it('arrow keys move between the items, as in a menu', () => {
+      const { container } = start();
+      fireEvent.keyDown(hitOf(container), { key: 'm' });
+      const items = [...container.querySelectorAll<HTMLElement>('.watt-menu [data-item]')];
+      expect(document.activeElement).toBe(items[0]);
+      fireEvent.keyDown(items[0], { key: 'ArrowDown' });
+      expect(document.activeElement).toBe(items[1]);
+      fireEvent.keyDown(items[1], { key: 'ArrowUp' });
+      fireEvent.keyDown(items[0], { key: 'ArrowUp' });
+      expect(document.activeElement).toBe(items[items.length - 1]);
+      fireEvent.keyDown(items[items.length - 1], { key: 'Home' });
+      expect(document.activeElement).toBe(items[0]);
     });
     it('Nap lies him down for a minute, or until he is petted', () => {
       let ms = day();
       const { container } = withCard(() => ms);
       fireEvent.click(button('Nap'));
+      // He turns round and sits first, then lies down.
       runFor(0.3);
+      expect(rows(container)).toBe(12);
+      runFor(1);
       expect(rows(container)).toBe(8);
       expect(Number(container.querySelector<HTMLElement>('.watt-z')!.style.opacity || 0)).toBeGreaterThanOrEqual(0);
       const x = where(container).x;
       runFor(30);
       expect(where(container).x).toBe(x);
       expect(rows(container)).toBe(8);
-      // Petting wakes him.
+      // Petting wakes him: he gets up with a yawn and a stretch.
       fireEvent.pointerDown(document.body);
       fireEvent.click(hitOf(container));
-      runFor(0.3);
+      runFor(0.6);
       expect(rows(container)).toBe(12);
       // A fresh nap ends by itself after a minute.
+      runFor(3);
       fireEvent.contextMenu(hitOf(container));
       fireEvent.click(button('Nap'));
-      runFor(0.3);
+      runFor(1.3);
       expect(rows(container)).toBe(8);
       ms += 61_000;
-      runFor(0.3);
+      runFor(0.6);
       expect(rows(container)).toBe(12);
     });
     it('Come here trots him to the middle of the place and he wanders on from there', () => {
@@ -1728,13 +2208,17 @@ describe('more of a pet', () => {
       runFor(0.6);
       fireEvent.pointerUp(hitOf(container), { pointerId: 1, pointerType: 'mouse', clientX: 2500, clientY: 300 });
       runFor(1.5);
-      expect(where(container).x).toBe(WALKS.unwind.max);
+      // Past Unwind's transport row: the far stretch of ground, at its end.
+      expect(where(container).x).toBe(GROUNDS.unwind[1].max);
+      expect(stored().spots.unwind).toBe(GROUNDS.unwind[1].max);
       open(container);
       fireEvent.click(button('Come here'));
-      runFor(0.5);
-      expect(where(container).x).toBeLessThan(WALKS.unwind.max);
-      runFor(10);
+      // The row is between: he fades over rather than walking through it.
+      runFor(0.2);
+      expect(Number(container.querySelector<HTMLElement>('.watt')!.style.opacity)).toBeLessThan(1);
+      runFor(1.2);
       expect(where(container).x).toBe(middle(WALKS.unwind));
+      expect(stored().spots.unwind).toBeUndefined();
       // And he stands there a while (the wander's first stop) before he goes on.
       runFor(10);
       expect(where(container).x).toBe(middle(WALKS.unwind));
@@ -1743,19 +2227,22 @@ describe('more of a pet', () => {
     it('Stay keeps him sitting where he was set down, survives a reload, and ends on a place change', () => {
       const { container, unmount } = withCard();
       fireEvent.click(button('Stay'));
-      runFor(0.5);
+      runFor(3);
       expect(rows(container)).toBe(11);
       const x = where(container).x;
       expect(stored().stay).toMatchObject({ place: 'unwind', x });
+      open(container);
       expect(button('Stay').getAttribute('aria-checked')).toBe('true');
+      expect(button('Stay').textContent).toBe('Staying');
+      fireEvent.keyDown(window, { key: 'Escape' });
       runFor(90);
       expect(where(container).x).toBe(x);
       expect(rows(container)).toBe(11);
       unmount();
       // Reload: still there, still sitting.
       const again = start();
-      runFor(1);
-      expect(again.container.querySelector('svg')!.getAttribute('height')).toBe(String(11 * 6));
+      runFor(3);
+      expect(again.container.querySelector('.watt-sheep svg')!.getAttribute('height')).toBe(String(11 * 6));
       expect(where(again.container).x).toBe(x);
       // A place change ends it for good.
       go('home');
@@ -1771,6 +2258,7 @@ describe('more of a pet', () => {
       const { container } = withCard();
       fireEvent.click(button('Stay'));
       runFor(1);
+      open(container);
       fireEvent.click(button('Stay'));
       expect(stored().stay).toBeNull();
       runFor(10);
@@ -1794,9 +2282,11 @@ describe('more of a pet', () => {
         runFor(FADE_IN_S + 0.5);
         fireEvent.contextMenu(hitOf(r.container));
         for (const t of ['Hop', 'Spin', 'Nap', 'Come here', 'Stay']) {
-          expect(button(t).disabled, `${name} ${t}`).toBe(true);
-          expect(button(t).title.length, `${name} ${t}`).toBeGreaterThan(8);
+          expect(off(button(t)), `${name} ${t}`).toBe(true);
+          expect(says(button(t)).length, `${name} ${t}`).toBeGreaterThan(8);
         }
+        // The reason is also said in the menu itself.
+        expect(r.container.querySelector('.wm-why')!.textContent!.length).toBeGreaterThan(8);
         fireEvent.click(button('Hop'));
         runFor(1);
         expect(r.container.querySelector('.watt-bubble'), name).toBeNull();
@@ -1805,14 +2295,16 @@ describe('more of a pet', () => {
     });
     it('Read with me starts the focus timer at its default length, and is off with a tooltip while one runs', () => {
       const { container } = withCard();
-      expect(button('Read with me').disabled).toBe(false);
+      expect(off(button('Read with me'))).toBe(false);
       fireEvent.click(button('Read with me'));
       const st = useFocusStore.getState().state;
       expect(st.status).toBe('running');
       expect(st.minutes).toBe(25);
       runFor(0.3);
-      expect(button('Read with me').disabled).toBe(true);
-      expect(button('Read with me').title).toMatch(/already running/);
+      open(container);
+      expect(off(button('Read with me'))).toBe(true);
+      expect(says(button('Read with me'))).toMatch(/already running/);
+      fireEvent.keyDown(window, { key: 'Escape' });
       // He opens his book as he already does in focus.
       runFor(2);
       expect(container.querySelector('.watt-prop-book')).not.toBeNull();

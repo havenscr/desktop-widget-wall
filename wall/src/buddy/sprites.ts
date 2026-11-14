@@ -178,6 +178,22 @@ export const SPRITES: Readonly<Record<Pose, readonly string[]>> = {
   ],
 };
 
+/** The same poses with the eyes shut for one frame (a blink): every open eye pixel closed. */
+export const BLINKS: Readonly<Record<Pose, readonly string[]>> = Object.fromEntries(
+  POSES.map((p) => [p, SPRITES[p].map((row) => row.replace(/e/g, '-'))]),
+) as unknown as Record<Pose, readonly string[]>;
+
+/**
+ * The wool he is held by: two pixels pulled up from his back while he is carried, at `TUFT_AT`
+ * (sprite pixels from his top left, facing right).
+ */
+export const TUFT: readonly string[] = ['.W', 'WW'];
+export const TUFT_AT: readonly [number, number] = [6, -2];
+/** A puff of dust either side of his feet when he lands or hops down. */
+export const DUST: readonly string[] = ['.d.', 'ddd'];
+/** His shadow on the ground under where he will land while he is carried and falling. */
+export const SHADOW: readonly string[] = ['..SSSSSSSSSS..', 'SSSSSSSSSSSSSS'];
+
 /** The ear pixel (column, row) of each pose: props that sit on the head are placed from it. */
 export const EAR: Readonly<Record<Pose, readonly [number, number]>> = {
   idle: [14, 2],
@@ -267,6 +283,9 @@ export const PROP_COLORS: Readonly<Record<string, string>> = {
   o: '#5df2b6',
   O: '#2fb184',
   a: '#ffc24d',
+  W: '#f6f2ff',
+  d: '#bfb2f0',
+  S: '#0a061e',
   y: '#a8c850',
   Y: '#e4f08f',
 };

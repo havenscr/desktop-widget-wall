@@ -19,12 +19,16 @@ export type Topic =
   | 'wake'
   // Being carried and set down (said by `Watt.tsx` on its own rules, never picked by the scheduler).
   | 'held'
+  | 'heldFast'
   | 'landed'
   | 'dizzy'
   // Stay, a trick, ten pets in a day (also said on `Watt.tsx`'s own rules).
   | 'stay'
   | 'tricks'
+  | 'nap'
   | 'milestone'
+  // A click near him that he noticed (said on `Watt.tsx`'s own rules, rarely).
+  | 'click'
   // What is true right now (context, picked over plain thoughts).
   | 'agentsWorking'
   | 'musicPlaying'
@@ -48,9 +52,12 @@ export type Topic =
 
 export const LINES: Readonly<Record<Topic, readonly string[]>> = {
   held: ['Oh. We are up high.', 'The wall looks different from here.', 'My legs have opinions about this.', 'I am holding very still.', 'Excellent altitude, honestly.'],
+  heldFast: ['Whee. Mostly whee.', 'We are going places. Quickly.', 'The wind is in my wool.'],
   landed: ['Ground. Good ground.', 'Landed. Wool intact.', 'This spot will do.', 'A fine new view.', 'Back on four feet.'],
   stay: ['Staying right here. Good spot.', 'I will keep this spot warm.', 'Not going anywhere. Lovely.'],
   tricks: ['Ta da. Small, but proud.', 'That one took practice.', 'Wool, but make it athletic.', 'I have more of those.'],
+  nap: ['Mm. Five more minutes.', 'Resting my eyes. Briefly.', 'A small nap. Very official.'],
+  click: ['Ooh. A click.', 'I saw that one.', 'Busy hands today.', 'That one looked important.', 'Click noted.'],
   milestone: ['Ten pets. A good day.', 'That is ten pets today. I am counting.', 'Ten. A round number of kindness.'],
   dizzy: ['The horizon is spinning slightly.', 'Two walls. I see two walls.', 'One moment. The sky is sloshing.', 'I am fine. The floor is not.'],
   focusStart: [

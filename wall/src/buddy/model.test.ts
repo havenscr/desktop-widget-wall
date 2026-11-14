@@ -45,7 +45,10 @@ import {
   cloverBox,
   cloverHitBox,
   markHitBox,
-  placeCard,
+  GRAZE_STOPS,
+  SETTLE_STOP_S,
+  placeMenu,
+  MENU_W,
   createBox,
   createBubblePlace,
   createMind,
@@ -58,6 +61,8 @@ import {
   type ReactKind,
 } from './petFrame';
 import { POSES, SPRITES, pixelColor, type Pose } from './sprites';
+import { BANNER, BANNER_GROUND, GROUNDS, WATCH_GROUND, groundOf, walkAround, type Span } from './ground';
+import type { Walk } from './model';
 
 const at = (h: number, m = 0) => new Date(2026, 10, 11, h, m);
 const PLACES = Object.keys(WALKS) as WattPlace[];
@@ -132,8 +137,19 @@ const UNWIND_MEASURED: Rect[] = [
   { left: 691, right: 876, top: 648, bottom: 700 }, // Screens off
 ];
 
+/**
+ * Unwind on its Watch tab, measured at 2560 by 720: the video (feathered or the drive-in screen with
+ * its legs) and the chips under it (the look chip and "Open in browser", widest across the looks:
+ * from x 1283 on the whole-sky look). The whole-sky and sun looks paint the sky behind him; that
+ * is a backdrop, not a panel.
+ */
+const WATCH_MEASURED: Rect[] = [
+  { left: 1150, right: 2000, top: 20, bottom: 505 },
+  { left: 1283, right: 1826, top: 517, bottom: 553 },
+];
+
 /** The panel rectangles on a place, in stage pixels: the frame's layout constants, plus Unwind's transport row. */
-function panels(place: WattPlace): Rect[] {
+function panels(place: WattPlace, watch = false): Rect[] {
   const out: Rect[] = [{ left: SHELL_INSET, right: SHELL_INSET + RAIL_WIDTH, top: MAIN_TOP, bottom: MAIN_TOP + MAIN_HEIGHT }];
   const [band, , ribbon] = rowEdges();
   if (ribbonKind(place)) {
@@ -147,7 +163,9 @@ function panels(place: WattPlace): Rect[] {
     out.push({ ...wing, top: MAIN_TOP, bottom: UNWIND_WING_UPPER_BOTTOM });
     out.push({ ...wing, top: CAMERAS.unwind.hy, bottom: MAIN_TOP + MAIN_HEIGHT });
     out.push({ left: MAIN_LEFT + MAIN_WIDTH - ZONES_WIDE[1], right: MAIN_LEFT + MAIN_WIDTH, top: MAIN_TOP, bottom: MAIN_TOP + MAIN_HEIGHT });
-    out.push({ ...UNWIND_ROW }, ...UNWIND_MEASURED);
+    // Listen: the transport row and the art. Watch: the video, its chip, and its title and buttons.
+    if (watch) out.push(...WATCH_MEASURED, { left: 624, right: 1084, top: 150, bottom: 416 }, ...UNWIND_MEASURED.slice(1));
+    else out.push({ ...UNWIND_ROW }, ...UNWIND_MEASURED);
   }
   return out;
 }
@@ -155,9 +173,13 @@ function panels(place: WattPlace): Rect[] {
 /** Every camera a place can show (Home turns to Rainier in the morning). */
 const camerasOf = (place: WattPlace): CameraPreset[] => (place === 'home' ? [CAMERAS.home, HOME_MORNING] : [CAMERAS[place]]);
 
+/** A walk over a whole stretch of ground (every spot he can be set down on in it). */
+function spanWalk(place: WattPlace, span: Span): Walk {
+  return { ...WALKS[place], min: span.min, max: span.max, right: span.right, bubbleLeft: span.left + 4 };
+}
+
 /** The box Watt can reach on a place: the whole walk, every pose, the notes and the z's. */
-function reach(place: WattPlace, camera: CameraPreset): Rect {
-  const walk = WALKS[place];
+function reach(place: WattPlace, camera: CameraPreset, walk: Walk = WALKS[place]): Rect {
   const poses: readonly Pose[] = POSES;
   let right = 0;
   let top = Infinity;
@@ -220,8 +242,11 @@ function reach(place: WattPlace, camera: CameraPreset): Rect {
     for (const pose of POSES) {
       const w = spriteWidth(pose, walk.px);
       const y = camera.hy - spriteHeight(pose, walk.px);
-      for (let x = walk.min; x <= walk.max; x += 5) {
+      const stepX = Math.max(5, (walk.max - walk.min) / 80);
+      for (let x = walk.min; x <= walk.max; x += stepX) {
         const b = placeBubble(walk, camera.hy, x, y, w, size.width, size.height);
+        // A line that fits on neither side of him there is not shown (a narrow stretch of ground).
+        if (!b.fits) continue;
         add({ left: b.left, top: b.top, width: b.width, height: b.height + BUBBLE.tail });
         // The bubble never covers her.
         expect(b.left + b.width <= x - 2 * walk.px || b.left >= x + w + 2 * walk.px, `${place} bubble over Watt at ${x}`).toBe(true);
@@ -268,19 +293,25 @@ describe('walk ranges and the panels at 2560 x 720', () => {
       }
     });
   }
-  it('her hover card covers no card, ribbon, rail or Unwind panel, wherever she stands', () => {
+  it('his menu stays in the main area, above him, never over him, with its tail over him', () => {
     for (const place of PLACES) {
-      const walk = WALKS[place];
-      for (const camera of camerasOf(place)) {
-        for (let x = walk.min; x <= walk.max; x += 10) {
-          const c = placeCard(place, walk, x, spriteWidth('idle', walk.px));
-          const r = { left: c.left, right: c.left + c.width, top: c.top, bottom: c.top + c.height };
-          expect(r.left).toBeGreaterThanOrEqual(MAIN_LEFT);
-          expect(r.right).toBeLessThanOrEqual(MAIN_LEFT + MAIN_WIDTH);
-          for (const panel of panels(place)) expect(overlaps(r, panel), `${place} card over ${JSON.stringify(panel)}`).toBe(false);
-          // And never over her.
-          const me = { left: x, right: x + spriteWidth('idle', walk.px) + 2 * walk.px, top: camera.hy - spriteHeight('idle', walk.px) - 2 * walk.px, bottom: camera.hy };
-          expect(overlaps(r, me), `${place} card over Watt`).toBe(false);
+      for (const span of GROUNDS[place]) {
+        const camera = CAMERAS[place];
+        for (let x = span.min; x <= span.max; x += 10) {
+          const w = spriteWidth('idle', WALKS[place].px);
+          const top = camera.hy - spriteHeight('idle', WALKS[place].px);
+          for (const h of [300, 360]) {
+            const c = placeMenu(x, w, top, h);
+            expect(c.width).toBe(MENU_W);
+            expect(c.left).toBeGreaterThanOrEqual(MAIN_LEFT);
+            expect(c.left + c.width).toBeLessThanOrEqual(MAIN_LEFT + MAIN_WIDTH);
+            expect(c.top).toBeGreaterThanOrEqual(8);
+            const me = { left: x, right: x + w, top: top - 2 * WALKS[place].px, bottom: camera.hy };
+            expect(overlaps({ left: c.left, right: c.left + c.width, top: c.top, bottom: c.top + c.height }, me), `${place} menu over Watt at ${x}`).toBe(false);
+            // The tail (at the menu's bottom edge) is over his body.
+            expect(c.left + c.tail + 7).toBeGreaterThanOrEqual(x - 1);
+            expect(c.left + c.tail + 7).toBeLessThanOrEqual(x + w + 1);
+          }
         }
       }
     }
@@ -298,6 +329,78 @@ describe('walk ranges and the panels at 2560 x 720', () => {
       expect(box.top).toBeGreaterThanOrEqual(rowEdges()[0].bottom);
       expect(box.bottom).toBe(582);
       expect(box.bottom).toBeLessThan(rowEdges()[2].top);
+    }
+  });
+});
+
+describe('the ground he can be set down on', () => {
+  for (const place of PLACES) {
+    it(`${place}: every spot on every stretch of ground keeps all of him clear of the panels`, () => {
+      for (const watch of place === 'unwind' ? [false, true] : [false]) {
+        for (const span of groundOf(place, watch)) {
+          const walk = spanWalk(place, span);
+          for (const camera of camerasOf(place)) {
+            const box = reach(place, camera, walk);
+            expect(box.top).toBeGreaterThanOrEqual(walk.ceiling);
+            expect(box.right).toBeLessThanOrEqual(span.right);
+            expect(box.left).toBeGreaterThanOrEqual(span.left);
+            for (const panel of panels(place, watch)) expect(overlaps(box, panel), `${place}${watch ? ' (Watch)' : ''} span ${span.min} to ${span.max} over ${JSON.stringify(panel)}`).toBe(false);
+          }
+        }
+      }
+    }, 60_000);
+  }
+  it('every line fits beside him somewhere on every stretch, and on the old walk everywhere', () => {
+    for (const place of PLACES) {
+      const camera = CAMERAS[place];
+      const spans = [...GROUNDS[place], ...(place === 'unwind' ? WATCH_GROUND : [])];
+      for (const line of allLines()) {
+        const size = bubbleSize(wrapLine(line, WALKS[place].bubbleW));
+        const w = spriteWidth('idle', WALKS[place].px);
+        const y = camera.hy - spriteHeight('idle', WALKS[place].px);
+        const old = WALKS[place];
+        for (let x = old.min; x <= old.max; x += 5) expect(placeBubble({ ...old, right: groundOf(place, false)[0].right, bubbleLeft: groundOf(place, false)[0].left + 4 }, camera.hy, x, y, w, size.width, size.height).fits, `${place} ${line} at ${x}`).toBe(true);
+        for (const span of spans) {
+          const walk = spanWalk(place, span);
+          let somewhere = false;
+          for (let x = span.min; x <= span.max; x += 10) if (placeBubble(walk, camera.hy, x, y, w, size.width, size.height).fits) somewhere = true;
+          expect(somewhere, `${place} ${line}`).toBe(true);
+        }
+      }
+    }
+  });
+  for (const place of ['home', 'meet'] as const) {
+    it(`${place}: with the leave banner in the band, every spot keeps all of him clear of it and of the panels`, () => {
+      expect(groundOf(place, false, true)).toBe(BANNER_GROUND[place]);
+      for (const span of BANNER_GROUND[place]) {
+        const walk = spanWalk(place, span);
+        const box = reach(place, CAMERAS[place], walk);
+        expect(box.right).toBeLessThanOrEqual(span.right);
+        expect(box.left).toBeGreaterThanOrEqual(span.left);
+        for (const panel of [...panels(place), BANNER]) expect(overlaps(box, panel), `${place} span ${span.min} to ${span.max} over ${JSON.stringify(panel)}`).toBe(false);
+      }
+    }, 60_000);
+  }
+  it('is far wider than the old walk: most of the band on Work, Home and Meet, both sides of the row on Unwind', () => {
+    for (const place of ['work', 'home', 'meet'] as const) expect(GROUNDS[place][0].max - GROUNDS[place][0].min).toBeGreaterThan(2000);
+    expect(GROUNDS.unwind.length).toBe(2);
+    expect(WATCH_GROUND.length).toBe(1);
+    // The concept spots are on the ground.
+    for (const place of PLACES) expect(GROUNDS[place].some((sp) => middle(WALKS[place]) >= sp.min && middle(WALKS[place]) <= sp.max)).toBe(true);
+  });
+});
+
+describe('a calm cadence', () => {
+  it('blink aside, one idle behaviour every two to three minutes in each place\'s loop: one graze, one settle', () => {
+    let settles = 0;
+    for (const idle of IDLES) if (idle >= SETTLE_STOP_S) settles++;
+    expect(settles).toBe(1);
+    expect(GRAZE_STOPS.length).toBe(1);
+    for (const place of PLACES) {
+      const walk = walkAround(place, GROUNDS[place], WALKS[place].min + (WALKS[place].max - WALKS[place].min) / 2);
+      const every = loopSeconds(walk) / (settles + GRAZE_STOPS.length);
+      expect(every, place).toBeGreaterThanOrEqual(120);
+      expect(every, place).toBeLessThanOrEqual(180);
     }
   });
 });

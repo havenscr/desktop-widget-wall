@@ -5,6 +5,8 @@ import { create } from 'zustand';
 export const TIP_DELAY_MS = 250;
 /** A shown card is redrawn this often, so a countdown in it stays right while hovered. */
 export const TIP_REFRESH_MS = 15_000;
+/** A card goes when its anchor has moved more than this, design pixels. */
+export const TIP_MOVE_PX = 4;
 /** How often a shown card checks that its anchor is still on the page. */
 export const TIP_ANCHOR_CHECK_MS = 500;
 /** After a click, the focus that follows it does not reopen the card for this long. */
@@ -12,6 +14,8 @@ const FOCUS_AFTER_CLICK_MS = 600;
 /** The stage's design size: the card stays inside it. */
 const STAGE_W = 2560;
 const EDGE = 12;
+/** Space between a card and its control: room for the tail. */
+const GAP = 14;
 
 type Content = ReactNode | (() => ReactNode);
 
@@ -92,6 +96,14 @@ export function tip(content: Content) {
   };
 }
 
+/**
+ * Focus about to move to an anchor by the program (a menu giving focus back after a choice): that
+ * focus does not open its card, the same as the focus that follows a click.
+ */
+export function quietFocus(): void {
+  quietFocusUntil = Date.now() + FOCUS_AFTER_CLICK_MS;
+}
+
 /** Tests only: forget any card. */
 export function resetTip(): void {
   quietFocusUntil = 0;
@@ -100,7 +112,10 @@ export function resetTip(): void {
 
 /**
  * The one hover card, inside the stage so it scales with it: centred above its anchor (below
- * when there is no room above), kept inside the stage's width. A hover card lets the pointer
+ * when there is no room above), kept inside the stage's width, never over its anchor, with a
+ * pixel tail pointing at it. One look for the whole wall: Watt's speech bubble shape (square
+ * corners, a 2 px ring, a pixel tail) in the wall's dark with his lavender as the ring. It shows
+ * after a short rest (at once for keyboard focus) and goes on a click or a scroll. A hover card lets the pointer
  * through; a pinned one takes it and closes on a click elsewhere or Escape. Either closes
  * when its anchor leaves the page (a card that went away on a poll), and its content is
  * redrawn every 15 seconds while it shows.
@@ -108,7 +123,7 @@ export function resetTip(): void {
 export function HoverTipLayer() {
   const { render, box, anchor, pinned } = useTipStore();
   const ref = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+  const [pos, setPos] = useState<{ left: number; top: number; below: boolean; tail: number } | null>(null);
   const [, setTick] = useState(0);
   useLayoutEffect(() => {
     if (!render || !box || !ref.current) {
@@ -118,20 +133,41 @@ export function HoverTipLayer() {
     const w = ref.current.offsetWidth;
     const h = ref.current.offsetHeight;
     const left = Math.min(STAGE_W - EDGE - w, Math.max(EDGE, box.x + box.w / 2 - w / 2));
-    const above = box.y - h - 10;
-    setPos({ left, top: above >= EDGE ? above : box.y + box.h + 10 });
+    // Above its control, with a gap for the tail; below when there is no room above. Never over it.
+    const above = box.y - h - GAP;
+    const below = above < EDGE;
+    // The tail points at the control's middle, kept off the card's corners.
+    const tail = Math.min(w - 22, Math.max(10, box.x + box.w / 2 - left - 6));
+    setPos({ left, top: below ? box.y + box.h + GAP : above, below, tail });
   }, [render, box]);
+  // Scrolling (any scroller, the wall's lists included) takes a hover card down; a pinned one stays.
+  useEffect(() => {
+    if (!render || pinned) return;
+    const onScroll = () => hideTip();
+    window.addEventListener('scroll', onScroll, { capture: true, passive: true });
+    window.addEventListener('wheel', onScroll, { capture: true, passive: true });
+    return () => {
+      window.removeEventListener('scroll', onScroll, { capture: true });
+      window.removeEventListener('wheel', onScroll, { capture: true });
+    };
+  }, [render, pinned]);
   useEffect(() => {
     if (!render) return;
     const check = setInterval(() => {
-      if (anchor && !anchor.isConnected) hideTip(true);
+      if (anchor && !anchor.isConnected) {
+        hideTip(true);
+        return;
+      }
+      // An anchor that moved (Watt walking on, a list scrolling) leaves its card behind: it goes.
+      const now = anchor ? designBox(anchor) : null;
+      if (now && box && (Math.abs(now.x - box.x) > TIP_MOVE_PX || Math.abs(now.y - box.y) > TIP_MOVE_PX)) hideTip(true);
     }, TIP_ANCHOR_CHECK_MS);
     const refresh = setInterval(() => setTick((n) => n + 1), TIP_REFRESH_MS);
     return () => {
       clearInterval(check);
       clearInterval(refresh);
     };
-  }, [render, anchor]);
+  }, [render, anchor, box]);
   useEffect(() => {
     if (!pinned) return;
     const down = (e: Event) => {
@@ -155,7 +191,8 @@ export function HoverTipLayer() {
       ref={ref}
       className={`hover-tip${pinned ? ' pinned' : ''}`}
       role={pinned ? 'dialog' : 'tooltip'}
-      style={pos ? { left: pos.left, top: pos.top } : { left: -9999, top: 0 }}
+      data-side={pos?.below ? 'below' : 'above'}
+      style={pos ? { left: pos.left, top: pos.top, ['--tail' as string]: `${pos.tail}px` } : { left: -9999, top: 0 }}
     >
       {render()}
     </div>

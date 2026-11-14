@@ -171,32 +171,53 @@ button,
   }
 }
 
-/* The one hover card (ui/HoverTip.tsx): small, quiet, above what it explains. */
+/* The one hover card (ui/HoverTip.tsx), the wall's one tooltip: Watt's bubble shape (square corners,
+   a 2 px ring, a pixel tail toward its control) in the wall's dark, with his lavender as the ring.
+   Text sized to read on the strip at 100 percent: 18 px titles, 16 px detail, 14 px hints. */
 .hover-tip {
   position: absolute;
   z-index: 50;
   max-width: 520px;
-  padding: 12px 16px;
-  border-radius: 14px;
-  background: rgba(14, 10, 36, 0.96);
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  box-shadow: 0 12px 40px -10px rgba(0, 0, 0, 0.8);
-  font: 400 18px/1.4 var(--body);
-  color: var(--tx);
+  padding: 10px 14px;
+  border-radius: 0;
+  background: rgba(16, 10, 40, 0.97);
+  border: 0;
+  box-shadow:
+    0 0 0 2px rgba(220, 211, 251, 0.85),
+    0 10px 30px -8px rgba(0, 0, 0, 0.8);
+  font: 600 18px/1.35 var(--disp);
+  color: #f1ecff;
   pointer-events: none;
   animation: tip-in 160ms ease-out;
 }
+.hover-tip::after {
+  content: '';
+  position: absolute;
+  left: var(--tail, 20px);
+  bottom: -8px;
+  width: 12px;
+  height: 8px;
+  background: rgba(220, 211, 251, 0.85);
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
+}
+.hover-tip[data-side='below']::after {
+  top: -8px;
+  bottom: auto;
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+}
 .hover-tip .tip-t {
-  font-weight: 600;
+  font: 600 18px/1.35 var(--disp);
+  color: #f1ecff;
   display: block;
 }
 .hover-tip .tip-s {
+  font: 400 16px/1.4 var(--body);
   color: var(--dim);
   display: block;
 }
 .hover-tip .tip-k {
-  color: var(--faint);
-  font-size: 15px;
+  font: 600 16px/1.35 var(--disp);
+  color: var(--cyan);
   display: block;
   margin-top: 4px;
 }
@@ -218,11 +239,11 @@ button,
   display: block;
   width: 100%;
   text-align: left;
-  font: inherit;
+  font: 400 17px/1.35 var(--body);
   color: var(--tx);
   background: none;
   border: 0;
-  border-radius: 10px;
+  border-radius: 0;
   padding: 6px 8px;
   margin: 2px -8px;
   cursor: pointer;

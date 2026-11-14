@@ -186,6 +186,24 @@ state('work', 'deck: library set whose app is not in front', 'keys=library&hold=
 state('work', 'deck: longest labels pinned', 'keys=library&pins=long');
 // The key picker open with the whole library: down to just above the timeline, over the mountains.
 add('work', 'deck: key picker open, whole library', url('work', TYPICAL_AT, 'keys=library'), true, 'ctx:.pin-tile');
+// Watt: his menu (a right-click on him) on each place, at night (tricks wait while he sleeps), and set
+// down far from his old walk (`wattspot`, his stored spot), Unwind on both stretches and on Watch.
+add('work', 'Watt: menu open', url('work', TYPICAL_AT, 'meet=none'), true, 'ctx:.watt-hit');
+add('home', 'Watt: menu open', url('home', TYPICAL_AT, 'moods=five'), true, 'ctx:.watt-hit');
+add('unwind', 'Watt: menu open', url('unwind', TYPICAL_AT, ''), true, 'ctx:.watt-hit');
+add('unwind', 'Watt: menu at night, tricks wait', url('unwind', TIMES.night, ''), true, 'ctx:.watt-hit');
+add('work', 'Watt: menu open, agent waiting (mark beside him)', url('work', TYPICAL_AT, 'agents=ask&meet=none'), true, 'ctx:.watt-hit');
+state('work', 'Watt: set down far right', 'wattspot=2300');
+state('work', 'Watt: set down far left', 'wattspot=200');
+state('home', 'Watt: set down left of the moods', 'wattspot=400');
+state('meet', 'Watt: set down under Accounts', 'wattspot=2200');
+state('unwind', 'Watt: set down past the transport row', 'wattspot=1700');
+state('unwind', 'Watt: set down left by the clock', 'wattspot=180');
+// The leave banner in Home's band above the ribbon: he steps aside to the free ground.
+add('home', 'Watt: leave banner, he steps aside', url('home', TYPICAL_AT, 'leave=12'), true);
+// While the wall records he sits quietly where he is (the recording chip says why).
+add('work', 'Watt: recording, he sits quietly', url('work', TYPICAL_AT, 'rec=1&meet=none'), true);
+state('unwind', 'Watt: on Watch, kept off the video', 'wattspot=1700&watch=mock&wlist=three&wlook=feather&wplay=0', TIMES.night);
 // The agents header with twelve sessions, two waiting and an alarm: one line.
 state('work', 'agents header: twelve sessions, two waiting, an alarm', 'agents=12ask');
 // The calm strip (Work): overlapping meetings folded into one chip, one agents line, the Day
@@ -355,6 +373,13 @@ add('unwind', 'unwind: hide screen note while focused', url('unwind', TYPICAL_AT
  * adjacent elements run together ("412blocked").
  */
 const EXPECT = [
+  // Watt's menu: its groups and items (at night the tricks wait and the menu says why).
+  ['work', 'Watt: menu open', ['Tricks', 'Come here', 'Read with me, 25 min']],
+  ['home', 'Watt: menu open', ['Tricks', 'Stay here', 'Talks']],
+  ['unwind', 'Watt: menu open', ['Tricks', 'Together', 'Wears']],
+  ['unwind', 'Watt: menu at night', ['Watt is asleep', 'Tricks']],
+  ['home', 'Watt: leave banner, he steps aside', ['Leave in 12 min.']],
+  ['work', 'Watt: recording, he sits quietly', ['Now \u00b7 Recording', 'Recording00:']],
   // Work
   ['work', 'sparse', ['Nothing due', 'All slots free']],
   ['work', 'heavy', ['115 more can wait', 'Architecture working', 'Draft the workshop outline']],
@@ -585,6 +610,12 @@ const NO_TEXT = [
   ['home', 'audio demo', 'only the drawn levels move'],
   ['unwind', 'audio demo', 'only the drawn levels move'],
   ['zen', 'focus running, long title', 'Zen shows no session title'],
+  // Watt set down elsewhere: only where he stands changes (his stored spot), no text.
+  ['work', 'Watt: set down', 'only where Watt stands changes'],
+  ['home', 'Watt: set down', 'only where Watt stands changes'],
+  ['meet', 'Watt: set down', 'only where Watt stands changes'],
+  ['unwind', 'Watt: set down', 'only where Watt stands changes'],
+  ['unwind', 'Watt: on Watch', 'only where Watt stands changes'],
 ];
 
 const matches = (st, [sc, prefix, , exact]) => sc === st.screen && (exact === true ? st.name === prefix : st.name.startsWith(prefix));
