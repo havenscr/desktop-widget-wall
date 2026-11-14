@@ -592,6 +592,22 @@ describe('a pet', () => {
       expect(fireEvent.contextMenu(document.body)).toBe(true);
     });
 
+    it('with a drawer open on the wall (the root attribute), Escape and a press outside leave his menu alone', () => {
+      const { container } = render(<Watt now={day} />);
+      runFor(1.5);
+      open(container);
+      document.documentElement.setAttribute('data-drawer-open', '');
+      try {
+        fireEvent.keyDown(window, { key: 'Escape' });
+        fireEvent.pointerDown(document.body, { button: 0 });
+        expect(cardOf(container)).not.toBeNull();
+      } finally {
+        document.documentElement.removeAttribute('data-drawer-open');
+      }
+      fireEvent.pointerDown(document.body, { button: 0 });
+      expect(cardOf(container)).toBeNull();
+    });
+
     it('Escape, a click outside, a right-click outside, a place change and his going away each close it; a click inside does not', () => {
       const { container } = render(<Watt now={day} />);
       runFor(1.5);
@@ -1892,6 +1908,7 @@ describe('more of a pet', () => {
         ['his menu open', (c) => fireEvent.contextMenu(hitOf(c)), {}],
         ['a call', () => {}, { inCall: true }],
         ['recording', () => act(() => useSignalStore.setState({ known: true, recording: true })), {}],
+        ['a drawer open on the wall', () => document.documentElement.setAttribute('data-drawer-open', ''), {}],
       ];
       for (const [name, setup, props] of quiet) {
         const r = render(<Watt now={day} {...props} />);
@@ -1905,6 +1922,7 @@ describe('more of a pet', () => {
         expect(r.container.querySelector<HTMLElement>('.watt-sheep')!.style.transform, name).toBe(before);
         r.unmount();
         useSignalStore.setState({ known: false, recording: false });
+        document.documentElement.removeAttribute('data-drawer-open');
       }
     });
     it('one passive capture pointerdown listener on the window, removed on unmount', () => {

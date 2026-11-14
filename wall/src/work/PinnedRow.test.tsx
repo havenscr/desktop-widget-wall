@@ -340,7 +340,7 @@ it('rows are at least 32 px tall and the picker sits inside the deck, never over
   // Its box is the one around the two rows, which sits below Next three in the right wing; the deck grows to hold it when it is short.
   expect(/\.deck \{[^}]*position: relative/.test(css)).toBe(true);
   expect(/\.pinned[^{]*\{[^}]*position: relative/.test(css)).toBe(false);
-  expect(/\.deck:has\(\.pk\) \{[^}]*min-height: 226px/.test(css)).toBe(true);
+  expect(/\.deck:has\(\.pk\) \{[^}]*min-height: 232px/.test(css)).toBe(true);
 });
 
 it('the click that closes the picker is not also delivered to what was under the pointer; the next click is', async () => {
