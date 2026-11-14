@@ -29,8 +29,12 @@ pub fn write(event: Event, reason: Reason, status: u16, elapsed_ms: u128) {
 
 pub fn write_devices(total: usize, computers: usize, phones: usize, other: usize) {
     if let Some(tx) = TX.get() {
-        let _ = tx.try_send(format!("no-device {} {} {} {}\n", total.min(50), computers.min(50), phones.min(50), other.min(50)));
+        let _ = tx.try_send(device_line(total, computers, phones, other));
     }
+}
+
+fn device_line(total: usize, computers: usize, phones: usize, other: usize) -> String {
+    format!("no-device {} {} {} {}\n", total.min(50), computers.min(50), phones.min(50), other.min(50))
 }
 
 pub fn start(dir: Option<std::path::PathBuf>) {
@@ -60,5 +64,6 @@ mod tests {
         for event in [Event::SignInStart, Event::SignInOk, Event::SignInFailed, Event::SignOut, Event::RefreshOk, Event::RefreshRefused, Event::ApiFailed] {
             assert!(line(event, Reason::Failed, 0, 1).bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'-' | b' ' | b'\n')));
         }
+        assert_eq!(device_line(4, 1, 2, 1), "no-device 4 1 2 1\n");
     }
 }

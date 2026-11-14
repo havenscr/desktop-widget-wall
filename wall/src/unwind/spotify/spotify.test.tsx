@@ -13,7 +13,7 @@ import { HoverTipLayer } from '../../ui/HoverTip';
 import { useSpotifyStatusPoll } from './status';
 import { Unwind } from '../../screens/Unwind';
 import { useWatchStore } from '../watch/store';
-import { SpotifyCard } from './SpotifyCard';
+import { finishPlay, SpotifyCard } from './SpotifyCard';
 import { resetSpotifyStatus, useSpotifyStatus } from './status';
 import { UpNext } from './UpNext';
 
@@ -57,6 +57,19 @@ it('maps the bridge errors to problems', () => {
   expect(spotifyProblem('server-503')).toBe('server:503');
   expect(spotifyProblem('status-400')).toBe('status:400');
   expect(spotifyProblem(42)).toBe('failed');
+});
+
+it('shows startup only for Rust starting and clears it on success or failure', async () => {
+  const notes: string[]=[]; let calls=0;
+  mocks.set('wall2_spotify_start_status',()=> ++calls===1?{starting:true,result:null}:{starting:false,result:'played'});
+  mocks.set('get_now_playing',()=>null);
+  const success=finishPlay('starting',()=>notes.push('Starting Spotify'));
+  expect(notes).toEqual(['Starting Spotify']); await flush(1000); await success;
+  await expect(finishPlay('starting',()=>notes.push('Starting Spotify'))).resolves.toBeUndefined();
+  mocks.set('wall2_spotify_start_status',()=>({starting:false,result:'no device'}));
+  await expect(finishPlay('starting',()=>notes.push('Starting Spotify'))).rejects.toThrow('no device');
+  await expect(finishPlay('played',()=>notes.push('wrong'))).resolves.toBeUndefined();
+  expect(notes).not.toContain('wrong');
 });
 
 it('takes three colours from a cover, held inside the contrast floor', () => {

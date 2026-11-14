@@ -72,7 +72,7 @@ it('calendar hover lists each account and its diagnosed reason', () => {
     { id: 'work', label: 'Work', state: 'ok' as const },
     { id: 'hc', label: 'Second', state: 'unavailable' as const, reason: 'token-network-dns' },
   ] };
-  expect(row(base({ calendar }), 'calendar').reason).toBe("Work: Reading normally. Second: Could not reach Microsoft's sign-in server: name lookup failed.");
+  expect(row(base({ calendar }), 'calendar').reason).toBe("Work: Reading normally. Second: Could not reach Microsoft's sign-in server: name lookup failed");
 });
 
 it('agents follow their own stale rule: a stale answer, a failed read or a coming-back page is amber, an unreachable helper red', () => {

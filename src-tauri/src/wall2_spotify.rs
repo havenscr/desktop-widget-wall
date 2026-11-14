@@ -545,8 +545,8 @@ fn put_with(cfg: &Config, path: &str, payload: Option<Value>, http: &dyn Http, c
         Ok(resp) if resp.status == 404 => { crate::wall2_spotify_log::write(crate::wall2_spotify_log::Event::ApiFailed, crate::wall2_spotify_log::Reason::NoDevice, 404, started.elapsed().as_millis()); Err(NO_DEVICE.into()) },
         Ok(resp) if resp.status == 429 => { back_off_for(retry_after(resp.retry_after)); crate::wall2_spotify_log::write(crate::wall2_spotify_log::Event::ApiFailed, crate::wall2_spotify_log::Reason::Busy, 429, started.elapsed().as_millis()); Err(BUSY.into()) }
         Ok(resp) if resp.status == 401 => { access_with(cfg, true, http, creds).map(|_| ())?; Err(BUSY.into()) }
-        Ok(resp) => { crate::wall2_spotify_log::write(crate::wall2_spotify_log::Event::ApiFailed, crate::wall2_spotify_log::Reason::Down, resp.status, started.elapsed().as_millis()); Err("down".into()) }
-        Err(_) => { crate::wall2_spotify_log::write(crate::wall2_spotify_log::Event::ApiFailed, crate::wall2_spotify_log::Reason::Down, 0, started.elapsed().as_millis()); Err("down".into()) },
+        Ok(resp) => { crate::wall2_spotify_log::write(crate::wall2_spotify_log::Event::ApiFailed, crate::wall2_spotify_log::Reason::Down, resp.status, started.elapsed().as_millis()); Err(status_answer(resp.status, false)) }
+        Err(_) => { crate::wall2_spotify_log::write(crate::wall2_spotify_log::Event::ApiFailed, crate::wall2_spotify_log::Reason::Down, 0, started.elapsed().as_millis()); Err(NO_CONNECTION.into()) },
     }
 }
 fn put(cfg: &Config, path: &str, payload: Option<Value>) -> Result<(), String> { put_with(cfg, path, payload, &RealHttp, &RealCreds) }
@@ -568,7 +568,7 @@ fn devices_before(cfg: &Config, deadline: Instant) -> Result<Vec<Device>, String
     let left = deadline.saturating_duration_since(Instant::now());
     if left.is_zero() { return Err(NO_DEVICE.into()) }
     let bearer = access(cfg, false)?;
-    let reply = RealHttp.api_timeout("GET", "/me/player/devices", &bearer, None, ANSWER_BODY, left.min(Duration::from_secs(6))).map_err(|_| NO_CONNECTION.to_string())?;
+    let reply = RealHttp.api_timeout("GET", "/me/player/devices", &bearer, None, ANSWER_BODY, left.min(Duration::from_secs(1))).map_err(|_| NO_CONNECTION.to_string())?;
     if !(200..300).contains(&reply.status) { return Err(status_answer(reply.status, false)) }
     let value: Value = serde_json::from_slice(&reply.body).map_err(|_| "unreadable reply".to_string())?;
     Ok(shape_devices(&value))

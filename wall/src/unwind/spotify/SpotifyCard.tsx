@@ -179,7 +179,7 @@ function useIsNow(): (t: { id: string | null; name: string; artists?: string | n
 }
 
 const waitSecond = () => new Promise<void>((resolve) => setTimeout(resolve, 1_000));
-async function finishPlay(answer: 'played' | 'starting', onStarting: () => void): Promise<void> {
+export async function finishPlay(answer: 'played' | 'starting', onStarting: () => void): Promise<void> {
   if (answer === 'starting') {
     onStarting();
     for (;;) {
