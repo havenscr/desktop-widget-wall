@@ -1439,9 +1439,10 @@
 
 /* ---- Hologram (the owner's pick from the pictures). The whole 16:9 picture (HOLO_PANE in
    looks.ts: wall 1210, 42, 736 by 414) on a pane tilted in 3D, blended with `screen` over a dark
-   glass plate in the same box and tilt (the plate is the stage's previous sibling, so the blend
-   sees it), two cyan hairlines and four corner ticks outside the picture, and an emitter on the
-   floor with its beam (HologramStage.tsx). It stands in front of the land and claims no front
+   glass plate in the same box and tilt (the plate and the emitter come before the stage, so the
+   picture is painted above both and the blend sees the plate), two cyan hairlines and four corner
+   ticks outside the picture, and an emitter on the floor whose beam is cut off just under the
+   pane's lower edge (HologramStage.tsx). It stands in front of the land and claims no front
    layer. Nothing lies on the picture; the pointer never reaches the player, but a refused
    autoplay's click (.w-take) lands on the tilted frame's real area. Where the layering cannot
    blend, the blend is dropped and the plate and the tilt stay. ---- */

@@ -10,12 +10,13 @@ import { useSignalStore } from '../../signals/store';
 import { usePlaceStore } from '../../state/places';
 import { resetLastPlayed } from '../lastPlayed';
 import { DEFAULT_LOOKS, HOLO_PANE, LOOKS, LOOKS_KEY, LOOK_BOXES, behindTheLand, isLook, layeredNow, loadLooks, ownsTheMoonSky, parseLooks, pickLook } from './looks';
+import { BEAM_CLEAR, EMITTER, HOLO_TILT, HologramEmitter, beamClip, paneQuad } from './HologramStage';
 import { SAVED_KEY } from './saved';
 import { resetWatch, useWatchStore } from './store';
 
 // The Hologram, the fifth look: stored and parsed like the others, offered in the Look switch
-// (five segments, one lit, arrow keys), drawn as a plate under a tilted stage and an emitter after
-// it, in front of the land with no front layer, and the moon keeps out of its box.
+// (five segments, one lit, arrow keys), drawn as a plate and an emitter under a tilted stage, in front
+// of the land with no front layer, and the moon keeps out of its box.
 const V = 'Ab3dEfGh1jK';
 const THREE = [
   { kind: 'video', id: V, label: 'Night drive mix' },
@@ -127,7 +128,7 @@ describe('the Look switch with five segments', () => {
 });
 
 describe('the Hologram on the wall', () => {
-  it('draws the plate before the stage and the emitter after it, with the picture whole and nothing over it', async () => {
+  it('draws the plate and the emitter before the stage, with the picture whole and nothing over it', async () => {
     setup('holo');
     const { container } = render(<Unwind />);
     await flush();
@@ -136,7 +137,9 @@ describe('the Hologram on the wall', () => {
     const plate = container.querySelector('.w-holo-plate')!;
     const emit = container.querySelector('.w-holo-emit')!;
     expect(plate.compareDocumentPosition(stage) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(stage.compareDocumentPosition(emit) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(emit.compareDocumentPosition(stage) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // Nothing of the look follows the stage: the picture is painted above every part of the Hologram.
+    for (let n = stage.nextElementSibling; n; n = n.nextElementSibling) expect(String(n.className)).not.toMatch(/holo/);
     // The plate is the pane's own box (before the tilt), less Unwind's offset.
     expect((plate as HTMLElement).style.width).toBe(`${HOLO_PANE.w}px`);
     expect((plate as HTMLElement).style.height).toBe(`${HOLO_PANE.h}px`);
@@ -215,5 +218,59 @@ describe('the settings sheet tile for the Hologram', () => {
     await act(async () => tile.click());
     expect(parseLooks(localStorage.getItem(LOOKS_KEY)).all).toBe('holo');
     expect(screen.getByText(/The whole picture floats on a tilted pane of light/)).toBeTruthy();
+  });
+});
+
+describe('the Hologram beam stays off the picture', () => {
+  /** The height of the line through the pane's lower corners at x, plus the clear gap. */
+  const lowerEdge = (x: number) => {
+    const q = paneQuad();
+    const [bl, br] = [q[3]!, q[2]!];
+    return bl[1] + ((br[1] - bl[1]) / (br[0] - bl[0])) * (x - bl[0]);
+  };
+
+  it('uses the tilt of the stylesheet, and the tilted pane is where the browser puts it', () => {
+    expect(css).toContain(`perspective(${HOLO_TILT.perspective}px) rotateY(${HOLO_TILT.rotateY}deg) rotateX(${HOLO_TILT.rotateX}deg)`);
+    const q = paneQuad();
+    // Corners as the browser draws them (measured in the fit check): the lower edge runs from about y 453 at the left to 459 at the right.
+    expect(q[3]![0]).toBeCloseTo(1218.5, 0);
+    expect(q[3]![1]).toBeCloseTo(453.2, 0);
+    expect(q[2]![0]).toBeCloseTo(1950.3, 0);
+    expect(q[2]![1]).toBeCloseTo(459.4, 0);
+  });
+
+  it('cuts the beam off under the lower edge: the clip is clear of every pane corner and of the whole edge', () => {
+    const clip = beamClip();
+    expect(BEAM_CLEAR).toBeGreaterThanOrEqual(2);
+    // The top side of the clip is the lower edge's line, BEAM_CLEAR lower, over the whole width of the scene.
+    expect(clip[0]![1]).toBeCloseTo(lowerEdge(clip[0]![0]) + BEAM_CLEAR, 5);
+    expect(clip[1]![1]).toBeCloseTo(lowerEdge(clip[1]![0]) + BEAM_CLEAR, 5);
+    expect(clip[0]![0]).toBeLessThanOrEqual(0);
+    expect(clip[1]![0]).toBeGreaterThanOrEqual(2560);
+    for (const [x, y] of paneQuad()) {
+      const edge = clip[0]![1] + ((clip[1]![1] - clip[0]![1]) / (clip[1]![0] - clip[0]![0])) * (x - clip[0]![0]);
+      expect(y).toBeLessThan(edge);
+    }
+  });
+
+  it('clips the beam (its blur included) and the rays with that polygon', () => {
+    const { container } = render(<svg><HologramEmitter /></svg>);
+    const clipPath = container.querySelector('clipPath#whc')!;
+    expect(clipPath).toBeTruthy();
+    const pts = clipPath.querySelector('polygon')!.getAttribute('points')!.split(' ').map((p) => p.split(',').map(Number));
+    expect(pts.length).toBe(4);
+    beamClip().forEach((c, i) => {
+      expect(pts[i]![0]).toBeCloseTo(c[0], 1);
+      expect(pts[i]![1]).toBeCloseTo(c[1], 1);
+    });
+    // The clip applies after the filter, so it also cuts the blur's spread.
+    const beam = container.querySelector('.w-holo-beam')!;
+    expect(beam.getAttribute('filter')).toBe('url(#whbl)');
+    expect(beam.getAttribute('clip-path')).toBe('url(#whc)');
+    const rays = [...container.querySelectorAll('path')].filter((p) => p.getAttribute('stroke') === '#9af9fc');
+    expect(rays.length).toBe(1);
+    expect(rays[0]!.getAttribute('clip-path')).toBe('url(#whc)');
+    // Nothing else of the emitter is drawn above the clip line but the lens, which is on the floor.
+    for (const el of container.querySelectorAll('ellipse')) expect(Number(el.getAttribute('cy'))).toBeGreaterThan(EMITTER.y - 5);
   });
 });

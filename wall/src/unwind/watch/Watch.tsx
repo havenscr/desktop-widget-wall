@@ -318,8 +318,11 @@ function VideoStage({ item, look }: { item: WatchRef & { label: string }; look: 
   const b = LOOK_BOXES[look];
   return (
     <>
-      {/* Hologram: the glass plate, hairlines and ticks, in the pane's box and tilt, under the stage. */}
+      {/* Hologram: the glass plate, hairlines and ticks in the pane's box and tilt, then the emitter, its
+          beam and its floor glow in front of the land: both BEFORE the stage, so the picture is painted
+          above them and nothing of either lies on it. */}
       {look === 'holo' ? <HologramPlate /> : null}
+      {look === 'holo' ? <HologramEmitter /> : null}
       <div
         className={`w-stage w-${look}${layered ? ' w-layered' : ''}`}
         data-look={look}
@@ -340,8 +343,6 @@ function VideoStage({ item, look }: { item: WatchRef & { label: string }; look: 
         {/* On the floor, in front of the land: the sun's warm streak. */}
         {look === 'sun' ? <div className="w-streak" aria-hidden="true" /> : null}
       </div>
-      {/* Hologram: the emitter, its beam and its floor glow, in front of the land. */}
-      {look === 'holo' ? <HologramEmitter /> : null}
       {/* The floor picks up a faint wash of the sky's colour (approved page, B). One frame cannot be
           mirrored, so this is a still colour wash in the page's light colours, taking no pointer. */}
       {sky ? <div className="w-skyspill" aria-hidden="true" /> : null}
