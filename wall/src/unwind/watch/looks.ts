@@ -150,16 +150,15 @@ export const LOOK_BOXES: Readonly<Record<LookId, Readonly<WallRect>>> = Object.f
  * The whole sky's soft edge: how far, in px, the picture's top, left and right edges fade into the
  * sky (the stage carries it as `--w-sky-soft`; the mask is in `unwind.css`). The fade is taken from
  * the picture's own edge, so the box never changes; the middle 649 by 380 is untouched at 120.
- * A later change will make it a setting of this look.
+ * It is the usual of the look's Soft edge setting (`lookSettings.ts`).
  */
 export const SKY_SOFT_EDGE = 120;
 
 /**
  * The soft edge width actually carried to the stage: between 0 and 40 percent of the picture's
- * smaller side (the whole sky's box), so the opposing ramps never cross and leave a seam. 120 stays 120.
+ * smaller side (the whole sky's box, at its size under the look's settings), so the opposing ramps never cross and leave a seam. 120 stays 120.
  */
-export function skySoftEdge(px: number): number {
-  const box = LOOK_BOXES.sky;
+export function skySoftEdge(px: number, box: Readonly<WallRect> = LOOK_BOXES.sky): number {
   const cap = Math.min(box.w, box.h) * 0.4;
   if (!Number.isFinite(px)) return 0;
   return Math.min(Math.max(px, 0), cap);

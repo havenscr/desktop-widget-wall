@@ -79,11 +79,13 @@ export function DriveInFrame({ mode }: { mode: DriveInMode }) {
       style={{ pointerEvents: 'none' }}
     >
       <g dangerouslySetInnerHTML={{ __html: TOWER_SVG }} />
-      <Words on={mode === 'playing'}>{MARQUEE_PLAYING}</Words>
-      <Words on={mode === 'paused'}>{MARQUEE_PAUSED}</Words>
-      <Words on={mode === 'empty' || mode === 'waiting'} className="w-mq-name">
-        {MARQUEE_NAME}
-      </Words>
+      <g className="w-sign">
+        <Words on={mode === 'playing'}>{MARQUEE_PLAYING}</Words>
+        <Words on={mode === 'paused'}>{MARQUEE_PAUSED}</Words>
+        <Words on={mode === 'empty' || mode === 'waiting'} className="w-mq-name">
+          {MARQUEE_NAME}
+        </Words>
+      </g>
     </svg>
   );
 }

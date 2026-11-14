@@ -788,6 +788,9 @@
   cursor: default;
 }
 
+/* Look settings (`lookSettings.ts`): every look's rules read custom properties set on the stage
+   (--w-l, --w-t, --w-w, --w-h, --w-k and the look's own) with today's number as the fallback, so a
+   look nobody has tuned draws exactly what it always drew. A slider changes properties only. */
 /* The video in the scene. Feathered: the picture whole and fully visible, its edges melting
    into the sky through a soft mask; its lower edge fades out before the horizon line, so the
    ridgelines there show in front of it. It stands in front of the mountains (the owner's
@@ -825,15 +828,15 @@
   color: var(--dim);
 }
 .w-feather {
-  left: 1026px;
-  top: 30px;
-  width: 810px;
-  height: 455px;
+  left: var(--w-l, 1026px);
+  top: var(--w-t, 30px);
+  width: var(--w-w, 810px);
+  height: var(--w-h, 455px);
 }
 .w-feather .w-screen {
-  -webkit-mask-image: linear-gradient(90deg, transparent, #000 20%, #000 80%, transparent), linear-gradient(180deg, transparent, #000 17%, #000 74%, transparent);
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 var(--w-fe-x, 20%), #000 calc(100% - var(--w-fe-x, 20%)), transparent), linear-gradient(180deg, transparent, #000 var(--w-fe-t, 17%), #000 var(--w-fe-b, 74%), transparent);
   -webkit-mask-composite: source-in;
-  mask-image: linear-gradient(90deg, transparent, #000 20%, #000 80%, transparent), linear-gradient(180deg, transparent, #000 17%, #000 74%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 var(--w-fe-x, 20%), #000 calc(100% - var(--w-fe-x, 20%)), transparent), linear-gradient(180deg, transparent, #000 var(--w-fe-t, 17%), #000 var(--w-fe-b, 74%), transparent);
   mask-composite: intersect;
 }
 /* The glow round the feathered picture, where the approved page draws a blurred copy of the
@@ -841,11 +844,11 @@
    wash in the stage light's colours (amber left, pink in the middle, cyan right). */
 .w-glow {
   position: absolute;
-  left: -116px;
-  right: -116px;
-  top: -66px;
-  bottom: -66px;
-  opacity: 0.5;
+  left: calc(-116px * var(--w-k, 1));
+  right: calc(-116px * var(--w-k, 1));
+  top: calc(-66px * var(--w-k, 1));
+  bottom: calc(-66px * var(--w-k, 1));
+  opacity: var(--w-glow-a, 0.5);
   filter: blur(40px);
   background:
     radial-gradient(30% 45% at 30% 20%, rgba(255, 176, 84, 0.85), transparent 70%),
@@ -879,18 +882,22 @@
    floor light and the screen, takes no pointer, and every fill in it is a ring with this box cut
    out. The marquee's words cross-fade in about a second (at once under reduced motion). ---- */
 .w-drivein {
-  left: 1120px;
-  top: 34px;
-  width: 672px;
-  height: 378px;
+  left: var(--w-l, 1120px);
+  top: var(--w-t, 34px);
+  width: var(--w-w, 672px);
+  height: var(--w-h, 378px);
 }
 .w-drivein .w-screen {
   background: #000;
 }
 .w-tower {
   position: absolute;
-  left: -1244px;
-  top: -54px;
+  left: var(--w-tl, -1244px);
+  top: var(--w-tt, -54px);
+  /* The Size setting scales the whole tower about the foot centre (wall 1580, 505); the svg's own
+     origin is the wall's, so that point is the same number in its pixels. Unset at the usual size. */
+  transform: var(--w-tf, none);
+  transform-origin: 1580px 505px;
   width: 2560px;
   height: 720px;
   overflow: visible;
@@ -898,6 +905,10 @@
 }
 .w-mq {
   transition: opacity 1s ease;
+}
+/* The Sign setting: the marquee board and its words (--w-sign is set to none when it is off). */
+.w-sign {
+  display: var(--w-sign, inline);
 }
 @media (prefers-reduced-motion: reduce) {
   .w-mq {
@@ -911,11 +922,11 @@
    the middle, cyan right), strongest at the horizon line. */
 .w-spill {
   position: absolute;
-  left: -86.5px;
-  width: 845px;
-  top: 451px;
-  height: 218px;
-  opacity: 0.42;
+  left: calc(-86.5px * var(--w-k, 1));
+  width: calc(845px * var(--w-k, 1));
+  top: var(--w-gy, 451px);
+  height: calc(218px * var(--w-k, 1));
+  opacity: var(--w-spill-a, 0.42);
   filter: blur(18px);
   background:
     radial-gradient(34% 90% at 24% 0, rgba(255, 176, 84, 0.9), transparent 75%),
@@ -1335,10 +1346,10 @@
 }
 .w-sky {
   z-index: -1;
-  left: 982px;
-  top: -4px;
-  width: 889px;
-  height: 500px;
+  left: var(--w-l, 982px);
+  top: var(--w-t, -4px);
+  width: var(--w-w, 889px);
+  height: var(--w-h, 500px);
   pointer-events: none;
 }
 .w-sky * {
@@ -1348,7 +1359,7 @@
   pointer-events: auto;
 }
 .w-sky .w-screen {
-  filter: brightness(0.9) saturate(1.1);
+  filter: brightness(var(--w-bright, 0.9)) saturate(1.1);
   /* The soft edge: the top, left and right edges fade into the sky over --w-sky-soft (set from
      SKY_SOFT_EDGE in looks.ts, 120 px). One still mask (smoothstep stops, so no faint line where
      a ramp ends), taken from the picture's own edge: the box never changes and nothing is cut
@@ -1482,23 +1493,23 @@
    16:9 picture is 821 by 461, so the disc shows its middle 56 percent of the width and the
    full height, the corners cut away. The box is the halo's (563 px); the disc sits 51 px in. */
 .w-sun {
-  left: 926px;
-  top: -56px;
-  width: 563px;
-  height: 563px;
+  left: var(--w-l, 926px);
+  top: var(--w-t, -56px);
+  width: var(--w-w, 563px);
+  height: var(--w-h, 563px);
 }
 .w-halo {
   position: absolute;
   inset: 0;
   border-radius: 50%;
-  background: radial-gradient(closest-side, rgba(255, 150, 96, 0.5), rgba(255, 95, 168, 0.22) 62%, transparent);
+  background: radial-gradient(closest-side, rgba(255, 150, 96, var(--w-halo-a1, 0.5)), rgba(255, 95, 168, var(--w-halo-a2, 0.22)) 62%, transparent);
   pointer-events: none;
 }
 .w-sun .w-screen {
-  inset: 51px;
+  inset: var(--w-inset, 51px);
   border-radius: 50%;
   overflow: hidden;
-  box-shadow: 0 0 77px rgba(255, 150, 96, 0.45);
+  box-shadow: 0 0 calc(77px * var(--w-k, 1)) rgba(255, 150, 96, var(--w-disc-glow, 0.45));
 }
 .w-sun .w-frame {
   left: -39%;
@@ -1506,11 +1517,11 @@
 }
 .w-streak {
   position: absolute;
-  left: 153px;
-  top: 541px;
-  width: 256px;
-  height: 170px;
-  filter: blur(36px);
+  left: calc(153px * var(--w-k, 1));
+  top: var(--w-gy, 541px);
+  width: calc(256px * var(--w-k, 1));
+  height: calc(170px * var(--w-k, 1));
+  filter: blur(calc(36px * var(--w-k, 1)));
   opacity: 0.55;
   background: linear-gradient(180deg, rgba(255, 170, 110, 0.8), rgba(255, 95, 168, 0.25) 60%, transparent);
   pointer-events: none;
@@ -1531,7 +1542,7 @@
   top: 22px;
   width: 736px;
   height: 414px;
-  transform: perspective(2400px) rotateY(-7deg) rotateX(1.2deg);
+  transform: perspective(2400px) rotateY(var(--w-rot, -7deg)) rotateX(1.2deg);
   transform-origin: 50% 60%;
 }
 .w-holo {
@@ -1552,7 +1563,7 @@
 .w-holo-glass {
   position: absolute;
   inset: 0;
-  background: linear-gradient(180deg, rgba(7, 5, 22, 0.74), rgba(7, 5, 22, 0.6));
+  background: linear-gradient(180deg, rgba(7, 5, 22, var(--w-plate-a, 0.74)), rgba(7, 5, 22, var(--w-plate-b, 0.6)));
   box-shadow: 0 0 0 1px rgba(53, 230, 234, 0.28), 0 0 70px rgba(53, 230, 234, 0.16), 0 0 160px rgba(120, 150, 255, 0.12);
 }
 .w-holo-hr {

@@ -3,6 +3,7 @@ import { usePlaceStore } from '../../state/places';
 import { parseLink, refKey, type WatchRef } from './links';
 import { driveInMode } from './DriveInFrame';
 import { DRIVE_IN_SCREEN, lookFor, loadLooks, pickLook, saveLooks, type LookId, type LookSettings, type WallRect } from './looks';
+import { lookBox, loadTune, resetLook, saveTune, withPatch, type LookTune } from './lookSettings';
 import { addSaved, loadSaved, removeSaved, renameSaved, saveSaved, type SavedItem } from './saved';
 import { stopLine, type StopReason } from './stops';
 
@@ -29,6 +30,8 @@ export interface WatchState {
   tab: UnwindTab;
   saved: SavedItem[];
   looks: LookSettings;
+  /** The settings of each look (sliders in the sheet), kept per look. */
+  tune: LookTune;
   /** The item in the frame, or null: no frame at all. */
   playing: SavedItem | null;
   /** The owner's own pause and mute (YouTube only); the frame's state messages may correct `paused`. */
@@ -59,6 +62,10 @@ export interface WatchState {
   setPaused: (p: boolean) => void;
   setMuted: (m: boolean) => void;
   setLooks: (s: LookSettings) => void;
+  /** Change settings of one look (each value bounded by its control). */
+  setTune: (look: LookId, patch: Record<string, number | boolean>) => void;
+  /** One look's settings back to its defaults. */
+  resetTune: (look: LookId) => void;
   /** The Look switch: set the look for what is on (or, with nothing on, for the first saved item's kind). */
   pickLook: (look: LookId) => void;
   setReport: (r: Partial<PlayerReport>) => void;
@@ -72,6 +79,7 @@ export const useWatchStore = create<WatchState>((set, get) => ({
   tab: 'listen',
   saved: loadSaved(),
   looks: loadLooks(),
+  tune: loadTune(),
   playing: null,
   paused: false,
   muted: false,
@@ -82,7 +90,7 @@ export const useWatchStore = create<WatchState>((set, get) => ({
   stopped: null,
   editing: null,
   peek: false,
-  load: () => set({ saved: loadSaved(), looks: loadLooks() }),
+  load: () => set({ saved: loadSaved(), looks: loadLooks(), tune: loadTune() }),
   setTab: (tab) => {
     if (tab === get().tab) return;
     // Leaving Watch never stops the video: it plays on out of sight (`StageLayer.tsx`).
@@ -123,6 +131,16 @@ export const useWatchStore = create<WatchState>((set, get) => ({
   },
   setPaused: (paused) => set({ paused }),
   setMuted: (muted) => set({ muted }),
+  setTune: (look, patch) => {
+    const tune = withPatch(get().tune, look, patch);
+    saveTune(tune);
+    set({ tune });
+  },
+  resetTune: (look) => {
+    const tune = resetLook(get().tune, look);
+    saveTune(tune);
+    set({ tune });
+  },
   setLooks: (looks) => {
     saveLooks(looks);
     set({ looks });
@@ -155,11 +173,11 @@ export const useWatchStore = create<WatchState>((set, get) => ({
  * state (`driveInAudience(useWatchStore.getState())`) or use it as a store selector
  * (`useWatchStore(driveInAudience)`).
  */
-export function driveInAudience(s: Pick<WatchState, 'playing' | 'looks'>): Readonly<WallRect> | null {
+export function driveInAudience(s: Pick<WatchState, 'playing' | 'looks'> & Partial<Pick<WatchState, 'tune'>>): Readonly<WallRect> | null {
   if (!s.playing) return null;
   if (lookFor(s.looks, s.playing.kind) !== 'drivein') return null;
   // One frozen object, so a store selector sees the same value from call to call.
-  return DRIVE_IN_SCREEN;
+  return s.tune ? lookBox('drivein', s.tune) : DRIVE_IN_SCREEN;
 }
 
 /**
@@ -205,5 +223,5 @@ usePlaceStore.subscribe((s) => {
 
 /** Tests only: back to a fresh store over whatever local storage holds now. */
 export function resetWatch(): void {
-  useWatchStore.setState({ tab: 'listen', saved: loadSaved(), looks: loadLooks(), playing: null, paused: false, muted: false, report: NO_REPORT, needsClick: false, clickHint: false, sheet: false, stopped: null, editing: null, peek: false });
+  useWatchStore.setState({ tab: 'listen', saved: loadSaved(), looks: loadLooks(), tune: loadTune(), playing: null, paused: false, muted: false, report: NO_REPORT, needsClick: false, clickHint: false, sheet: false, stopped: null, editing: null, peek: false });
 }

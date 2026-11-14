@@ -105,8 +105,9 @@ function build(): string {
   const feet = `${foot(tl - 4)}${foot(tr + 4)}${foot(L - 38, 22)}${foot(R + 38, 22)}`;
   // The marquee board hangs from the truss between the towers (its words are drawn by the component).
   const m = MARQUEE;
-  const board = `<rect x="${m.x}" y="${m.y}" width="${m.w}" height="${m.h}" rx="4" fill="#100a24" stroke="${LACE}" stroke-width="1.5"/>
-    <rect x="${m.x + 4}" y="${m.y + 4}" width="${m.w - 8}" height="${m.h - 8}" rx="2" fill="none" stroke="rgba(255,176,84,.42)" stroke-width="1"/>`;
+  // `w-sign` is the one handle the Sign setting hides (the board and, in `DriveInFrame.tsx`, its words).
+  const board = `<g class="w-sign"><rect x="${m.x}" y="${m.y}" width="${m.w}" height="${m.h}" rx="4" fill="#100a24" stroke="${LACE}" stroke-width="1.5"/>
+    <rect x="${m.x + 4}" y="${m.y + 4}" width="${m.w - 8}" height="${m.h - 8}" rx="2" fill="none" stroke="rgba(255,176,84,.42)" stroke-width="1"/></g>`;
   // The screen's surround: a steel fascia, a coping on top, black masking next to the picture, one neon edge line.
   const fascia = `${ring(grow(14, 4), `url(#${ID}steel)`)}
     ${ring(grow(4), '#06040f')}
