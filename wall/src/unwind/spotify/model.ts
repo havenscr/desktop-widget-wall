@@ -186,3 +186,61 @@ export function tileLine(item: SpotifyItem): string {
   if (item.count !== null && item.kind !== 'track') return songs(item.count);
   return kindLine(item);
 }
+
+/** The tall view closes by itself this long after the pointer has left the card. */
+export const TALL_CLOSE_MS = 15_000;
+
+/** A player the owner picked in "Play on": the next Play goes there. An empty id is "this PC" (Spotify is started there). */
+export interface SpotifyTarget {
+  id: string;
+  name: string;
+  kind: string;
+}
+
+interface TargetState {
+  /** The owner's own pick, kept until the wall restarts. */
+  target: SpotifyTarget | null;
+  /** The device Spotify last said is active and allows control (what the music follows when nothing was picked). */
+  activeId: string | null;
+  setTarget: (t: SpotifyTarget | null) => void;
+  setActiveId: (id: string | null) => void;
+}
+
+export const useSpotifyTarget = create<TargetState>((set) => ({
+  target: null,
+  activeId: null,
+  setTarget: (target) => set({ target }),
+  setActiveId: (activeId) => set({ activeId }),
+}));
+
+/** The device id a Play sends: the owner's pick, else the active device; none means "this PC" as before. */
+export function playDeviceId(): string | undefined {
+  const { target, activeId } = useSpotifyTarget.getState();
+  if (target) return target.id || undefined;
+  return activeId ?? undefined;
+}
+
+/** Tests only. */
+export function resetSpotifyTarget(): void {
+  useSpotifyTarget.setState({ target: null, activeId: null });
+}
+
+/** True while the wall waits for Spotify to start on this PC; `rev` changes when a play ends, so the device list is read again. */
+export const useSpotifyStart = create<{ starting: boolean; rev: number }>(() => ({ starting: false, rev: 0 }));
+
+/** "Computer", "Phone", "Speaker", or Spotify's own word for another kind. */
+export function deviceKindWord(kind: string): string {
+  const k = kind.toLowerCase();
+  if (k === 'computer') return 'Computer';
+  if (k === 'smartphone' || k === 'phone') return 'Phone';
+  if (k === 'speaker') return 'Speaker';
+  if (k === 'tv') return 'TV';
+  if (!k || k === 'unknown') return 'Player';
+  return kind;
+}
+
+/** A position (0 to 1) along the time bar as a track position, never past the end. */
+export function seekPosition(fraction: number, durationMs: number): number {
+  if (!Number.isFinite(fraction) || !Number.isFinite(durationMs) || durationMs <= 0) return 0;
+  return Math.round(Math.min(1, Math.max(0, fraction)) * durationMs);
+}

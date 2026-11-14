@@ -42,5 +42,6 @@ export function registerSpotifyMocks(): void {
   mocks.set('wall2_spotify_start_status', () => ({ starting: mode() === 'starting', result: mode() === 'starting' ? null : 'played' }));
   mocks.set('wall2_spotify_cancel_start', () => undefined);
   mocks.set('wall2_spotify_transfer', () => { available(); });
+  mocks.set('wall2_spotify_seek', () => { available(); });
   mocks.set('wall2_spotify_shuffle', () => { available(); });
 }

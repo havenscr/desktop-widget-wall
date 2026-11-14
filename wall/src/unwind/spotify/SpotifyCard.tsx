@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useId, useRef, useState, type FocusEvent, type KeyboardEvent as ReactKeyboardEvent, type UIEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type UIEvent } from 'react';
 import {
   IconArrowLeft,
+  IconArrowsMaximize,
+  IconArrowsMinimize,
   IconArrowsShuffle,
   IconBrandSpotify,
-  IconChevronRight,
   IconBrandYoutube,
   IconExternalLink,
   IconPlayerPauseFilled,
@@ -20,27 +21,34 @@ import { spotify, type SpotifyItem, type SpotifyTrack } from '../../music/spotif
 import { refreshNowPlaying, useNowPlayingStore } from '../../music/store';
 import { useNowPlaying } from '../../music/useNowPlaying';
 import { useToolsStore } from '../../tools/store';
-import { hideTip, pinTip, tip, TIP_DELAY_MS } from '../../ui/HoverTip';
+import { quietFocus, tip } from '../../ui/HoverTip';
 import { Cover } from './Cover';
+import { PlayOn } from './PlayOn';
+import { PlayerRow } from './PlayerRow';
+import { PlayingBars, Tile } from './Tile';
+import { QueueView, SearchGroups } from './TallViews';
 import {
   isNowPlaying,
   kindLine,
+  playDeviceId,
   playProblemLine,
   problemLine,
   SEARCH_MIN,
   SEARCH_WAIT_MS,
   songs,
   spotifyProblem,
-  tileLine,
+  TALL_CLOSE_MS,
   trackLength,
   useListenSource,
   useSpotifyNow,
+  useSpotifyStart,
   type ListenSource,
   type SpotifyProblem,
 } from './model';
-import { readSpotifyStatus, useSpotifyStatus } from './status';
+import { readSpotifyStatus, spotifyReady, useSpotifyStatus } from './status';
 
-export type BrowseTab = 'search' | 'playlists' | 'albums' | 'liked' | 'recent';
+export type BrowseTab = 'search' | 'playlists' | 'albums' | 'liked' | 'recent' | 'queue';
+/** The resting card: Search, then the library. */
 export const BROWSE_TABS: readonly { id: BrowseTab; label: string }[] = [
   { id: 'search', label: 'Search' },
   { id: 'playlists', label: 'Playlists' },
@@ -48,10 +56,20 @@ export const BROWSE_TABS: readonly { id: BrowseTab; label: string }[] = [
   { id: 'liked', label: 'Liked' },
   { id: 'recent', label: 'Recent' },
 ];
+/** The tall view: the search field is the search, and Up next is a tab. */
+export const TALL_TABS: readonly { id: BrowseTab; label: string }[] = [
+  { id: 'playlists', label: 'Playlists' },
+  { id: 'albums', label: 'Albums' },
+  { id: 'liked', label: 'Liked' },
+  { id: 'recent', label: 'Recent' },
+  { id: 'queue', label: 'Up next' },
+];
 /** A page of a list or of a playlist's songs (Spotify gives 50 at a time). */
 export const PAGE = 50;
 /** Within this many pixels of the end of a list, the next page is read. */
 const MORE_AT_PX = 160;
+/** After a press outside closes the tall view, its follow-up mouse events are swallowed for at most this long. */
+const SWALLOW_MS = 600;
 /** A note at the foot of the card goes away after this long. */
 export const NOTE_MS = 6000;
 
@@ -71,9 +89,10 @@ const EMPTY_LINE: Record<BrowseTab, string> = {
   albums: 'No saved albums yet.',
   liked: 'No liked songs yet.',
   recent: 'Nothing played lately.',
+  queue: 'Nothing is queued.',
 };
 
-function readTab(tab: Exclude<BrowseTab, 'search'>, page: number): Promise<SpotifyItem[]> {
+function readTab(tab: Exclude<BrowseTab, 'search' | 'queue'>, page: number): Promise<SpotifyItem[]> {
   if (tab === 'playlists') return spotify.playlists(page);
   if (tab === 'albums') return spotify.albums(page);
   if (tab === 'liked') return spotify.liked(page);
@@ -94,20 +113,191 @@ const nearEnd = (e: UIEvent<HTMLElement>) => {
  * row shows the larger cover with its details, a click on a playlist or album slides to its
  * songs, and a click on a song plays it (from that song on, in its list). YouTube Music: what
  * Windows says is playing, its buttons and "Open YouTube Music". The card never controls a room.
+ *
+ * One round button at the top right (or a click on the empty part of the top row) opens the tall
+ * view: the right third of the wall, two rows of covers and a player row. It closes on the same
+ * button, on Escape (the chooser first, a playlist's Back next), on a click anywhere outside it (that
+ * click is swallowed, so it presses nothing behind), and by itself 15 seconds after the pointer has
+ * left it, never while the pointer is on it or the search field has focus. The open state is not stored.
  */
 export function SpotifyCard() {
   const source = useListenSource((s) => s.source);
   const setSource = useListenSource((s) => s.setSource);
-  // The horizon's moon keeps 40 px clear of this card (it moves to another of its places).
+  const ready = useSpotifyStatus(spotifyReady);
+  // The horizon's moon keeps 40 px clear of this card (it moves to another of its places). The claim
+  // follows the card's size, so it follows open and closed.
   const [card, setCard] = useState<HTMLElement | null>(null);
   useSkyKeepClear('listen-card', card);
+  const [tall, setTall] = useState(false);
+  const [chooser, setChooser] = useState(false);
+  const openBtn = useRef<HTMLButtonElement | null>(null);
+  const chip = useRef<HTMLButtonElement | null>(null);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pointerIn = useRef(false);
+  const searchFocus = useRef(false);
+  const swallowOff = useRef<(() => void) | null>(null);
+
+  const clearClose = useCallback(() => {
+    if (closeTimer.current) clearTimeout(closeTimer.current);
+    closeTimer.current = null;
+  }, []);
+  const armClose = useCallback(() => {
+    clearClose();
+    if (pointerIn.current || searchFocus.current) return;
+    closeTimer.current = setTimeout(() => {
+      closeTimer.current = null;
+      setChooser(false);
+      setTall(false);
+    }, TALL_CLOSE_MS);
+  }, [clearClose]);
+  const close = useCallback(
+    (giveFocusBack: boolean) => {
+      clearClose();
+      setChooser(false);
+      setTall(false);
+      if (giveFocusBack) {
+        quietFocus();
+        openBtn.current?.focus();
+      }
+    },
+    [clearClose],
+  );
+  useEffect(
+    () => () => {
+      clearClose();
+      swallowOff.current?.();
+    },
+    [clearClose],
+  );
+  useEffect(() => {
+    if (source !== 'spotify' || !ready) setChooser(false);
+  }, [source, ready]);
+  // Without the tall view there is nothing to wait for; with it, the timer is armed by the pointer leaving.
+  useEffect(() => {
+    if (!tall) clearClose();
+  }, [tall, clearClose]);
+
+  // Escape closes the innermost thing: the chooser, then a playlist's Back (the songs view does it),
+  // then the tall view. Captured, so the chooser's Escape does not also reach the songs view.
+  useEffect(() => {
+    if (!tall && !chooser) return;
+    const key = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      const at = document.activeElement;
+      // A details card has its own Escape.
+      if (document.querySelector('.hover-tip .sp-details') && at && (at.closest('.hover-tip') || at.closest('.sp-tile'))) return;
+      if (chooser) {
+        e.stopPropagation();
+        setChooser(false);
+        quietFocus();
+        chip.current?.focus();
+        return;
+      }
+      if (card?.querySelector('.sp-songs')) return;
+      if (at instanceof HTMLInputElement && at.type === 'search' && at.value) return;
+      e.stopPropagation();
+      close(true);
+    };
+    document.addEventListener('keydown', key, true);
+    return () => document.removeEventListener('keydown', key, true);
+  }, [tall, chooser, card, close]);
+
+  // A press anywhere outside closes it, and that press does nothing else: its follow-up mouse events
+  // are swallowed once. The details card of a tile (drawn elsewhere in the page) counts as inside.
+  useEffect(() => {
+    if (!tall) return;
+    const away = (e: PointerEvent) => {
+      const t = e.target as Element | null;
+      if (!t || (card && card.contains(t)) || t.closest?.('.hover-tip')) return;
+      e.preventDefault();
+      e.stopPropagation();
+      swallowOff.current?.();
+      const stop = (ev: Event) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+      };
+      // The click is the last of the follow-ups: it is swallowed too, then the listeners go.
+      const stopClick = (ev: Event) => {
+        stop(ev);
+        setTimeout(off, 0);
+      };
+      const id = setTimeout(() => off(), SWALLOW_MS);
+      function off() {
+        document.removeEventListener('mousedown', stop, true);
+        document.removeEventListener('mouseup', stop, true);
+        document.removeEventListener('click', stopClick, true);
+        clearTimeout(id);
+        if (swallowOff.current === off) swallowOff.current = null;
+      }
+      document.addEventListener('mousedown', stop, true);
+      document.addEventListener('mouseup', stop, true);
+      document.addEventListener('click', stopClick, true);
+      swallowOff.current = off;
+      close(false);
+    };
+    document.addEventListener('pointerdown', away, true);
+    return () => document.removeEventListener('pointerdown', away, true);
+  }, [tall, card, close]);
+
   return (
-    <section ref={setCard} className={`u-card sp-card${source === 'youtube' ? ' yt' : ''}`} aria-label="Music to play">
-      <div className="sp-top">
+    <section
+      ref={setCard}
+      className={`u-card sp-card${source === 'youtube' ? ' yt' : ''}${tall ? ' tall' : ''}`}
+      data-tall={tall ? 'true' : 'false'}
+      aria-label="Music to play"
+      onPointerEnter={() => {
+        pointerIn.current = true;
+        clearClose();
+      }}
+      onPointerLeave={() => {
+        pointerIn.current = false;
+        if (tall) armClose();
+      }}
+      onFocusCapture={(e) => {
+        const t = e.target as Element;
+        if (t.matches('input[type="search"]')) {
+          searchFocus.current = true;
+          clearClose();
+        }
+      }}
+      onBlurCapture={(e) => {
+        const t = e.target as Element;
+        if (t.matches('input[type="search"]')) {
+          searchFocus.current = false;
+          if (tall && !pointerIn.current) armClose();
+        }
+      }}
+    >
+      <div
+        className="sp-top"
+        onClick={(e) => {
+          // The empty part of the top row opens it too (not the buttons, and not once it is open).
+          if (!tall && !(e.target as Element).closest('button, [role="radiogroup"], input')) setTall(true);
+        }}
+      >
         <SourceSwitch source={source} onPick={setSource} />
-        <span className="sp-hint">Which player the wall follows</span>
+        {source === 'spotify' && ready ? null : <span className="sp-hint">Which player the wall follows</span>}
+        <div className="sp-hx">
+          {source === 'spotify' && ready ? <PlayOn open={chooser} onOpen={setChooser} chipRef={chip} /> : null}
+          <button
+            ref={openBtn}
+            type="button"
+            className="sp-grow"
+            aria-label={tall ? 'Close the tall music view' : 'Open the tall music view'}
+            aria-expanded={tall}
+            {...tip(() => (
+              <div className="sp-tipline">
+                <b>{tall ? 'Close the tall view' : 'Open the tall view'}</b>
+                <span>{tall ? 'It also closes by itself 15 seconds after the pointer leaves, and on Escape.' : 'More covers, your queue and a player row.'}</span>
+              </div>
+            ))}
+            onClick={() => (tall ? close(false) : setTall(true))}
+          >
+            {tall ? <IconArrowsMinimize size={20} stroke={1.8} aria-hidden="true" /> : <IconArrowsMaximize size={20} stroke={1.8} aria-hidden="true" />}
+          </button>
+        </div>
       </div>
-      {source === 'youtube' ? <YouTubeSide /> : <SpotifyBrowse />}
+      {source === 'youtube' ? <YouTubeSide /> : <SpotifyBrowse tall={tall} />}
     </section>
   );
 }
@@ -148,12 +338,17 @@ function CardLine({ text, action }: { text: string; action: 'tools' | 'retry' | 
   );
 }
 
-function SpotifyBrowse() {
+function SpotifyBrowse({ tall }: { tall: boolean }) {
   const { status, failed } = useSpotifyStatus();
   if (!status) return failed ? <CardLine text={problemLine('down')} action="retry" /> : <div className="sp-state" aria-busy="true" />;
   if (!status.setup) return <CardLine text="Spotify is not set up on this wall. Tools says how." action="tools" />;
   if (!status.signedIn) return <CardLine text={problemLine('needsSignIn')} action="tools" />;
-  return <Browser />;
+  return (
+    <>
+      <Browser tall={tall} />
+      {tall ? <PlayerRow /> : null}
+    </>
+  );
 }
 
 /** Ask Spotify once which song plays, so the playing mark goes by track id (a failure keeps what is known). */
@@ -182,26 +377,38 @@ const waitSecond = () => new Promise<void>((resolve) => setTimeout(resolve, 1_00
 export async function finishPlay(answer: 'played' | 'starting', onStarting: () => void): Promise<void> {
   if (answer === 'starting') {
     onStarting();
-    for (;;) {
-      const state = await spotify.startStatus();
-      if (!state.starting) {
-        if (state.result !== 'played') throw new Error(state.result ?? 'failed');
-        break;
+    // The "Play on" chip says "Starting Spotify" while the start flow runs, and reads the players again after it.
+    useSpotifyStart.setState({ starting: true });
+    try {
+      for (;;) {
+        const state = await spotify.startStatus();
+        if (!state.starting) {
+          if (state.result !== 'played') throw new Error(state.result ?? 'failed');
+          break;
+        }
+        await waitSecond();
       }
-      await waitSecond();
+    } finally {
+      useSpotifyStart.setState((s) => ({ starting: false, rev: s.rev + 1 }));
     }
   }
   await refreshNowPlaying();
 }
 
+/** The device a Play goes to (the owner's pick, else where the music is), or nothing for "this PC" as before. */
+const deviceArg = (): { deviceId?: string } => {
+  const id = playDeviceId();
+  return id ? { deviceId: id } : {};
+};
+
 /** Play an item whole, or shuffled, and report startup only when Rust opened Spotify. */
 async function playWhole(item: SpotifyItem, shuffled: boolean, onStarting: () => void): Promise<void> {
-  await finishPlay(await spotify.play(item.kind, item.id, { shuffle: shuffled }), onStarting);
+  await finishPlay(await spotify.play(item.kind, item.id, { shuffle: shuffled, ...deviceArg() }), onStarting);
 }
 
-function Browser() {
+function Browser({ tall }: { tall: boolean }) {
   const [tab, setTab] = useState<BrowseTab>('playlists');
-  const [lists, setLists] = useState<Record<BrowseTab, ListState>>(() => ({ search: EMPTY_LIST, playlists: EMPTY_LIST, albums: EMPTY_LIST, liked: EMPTY_LIST, recent: EMPTY_LIST }));
+  const [lists, setLists] = useState<Record<BrowseTab, ListState>>(() => ({ search: EMPTY_LIST, playlists: EMPTY_LIST, albums: EMPTY_LIST, liked: EMPTY_LIST, recent: EMPTY_LIST, queue: EMPTY_LIST }));
   const [query, setQuery] = useState('');
   // What the search box last asked, for the empty-state line (state) and to skip asking the same
   // words twice (ref: `runSearch` must not change identity when a search starts or fails, or the
@@ -234,7 +441,7 @@ function Browser() {
   const patch = useCallback((t: BrowseTab, p: Partial<ListState>) => setLists((all) => ({ ...all, [t]: { ...all[t], ...p } })), []);
 
   const load = useCallback(
-    (t: Exclude<BrowseTab, 'search'>, page: number) => {
+    (t: Exclude<BrowseTab, 'search' | 'queue'>, page: number) => {
       const cur = listsRef.current[t];
       if (cur.loading) return;
       patch(t, { loading: true });
@@ -259,8 +466,12 @@ function Browser() {
   );
 
   useEffect(() => {
-    if (tab !== 'search' && !lists[tab].loaded && !lists[tab].loading) load(tab, 0);
+    if (tab !== 'search' && tab !== 'queue' && !lists[tab].loaded && !lists[tab].loading) load(tab, 0);
   }, [tab, lists, load]);
+  // Up next lives only in the tall view: closing it leaves that tab for the first one.
+  useEffect(() => {
+    if (!tall && tab === 'queue') setTab('playlists');
+  }, [tall, tab]);
 
   // Search: on Enter, or after 400 ms without typing, with at least two characters. `again` asks
   // the same words once more (Retry after a failure). Nothing a search sets is read by the effect
@@ -313,272 +524,141 @@ function Browser() {
   const songsIn = cur.items.filter((i) => i.kind === 'track');
   const lists2 = cur.items.filter((i) => i.kind !== 'track');
   const scrolled = (e: UIEvent<HTMLElement>) => {
-    if (tab !== 'search' && tab !== 'recent' && cur.more && !cur.loading && nearEnd(e)) load(tab, cur.page + 1);
+    if (tab !== 'search' && tab !== 'queue' && tab !== 'recent' && cur.more && !cur.loading && nearEnd(e)) load(tab, cur.page + 1);
   };
-  return (
-    <div className="sp-body">
-      {open ? (
-        <SongsView item={open} onBack={() => setOpen(null)} onNote={setNote} />
-      ) : (
-        <>
-          <label className="sp-search">
-            <IconSearch size={20} stroke={1.8} aria-hidden="true" />
-            <input
-              type="search"
-              value={query}
-              placeholder="Search Spotify"
-              aria-label="Search Spotify"
-              onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') runSearch(query, true);
-              }}
-            />
-          </label>
-          <div className="sp-tabs" role="tablist" aria-label="Spotify library">
-            {BROWSE_TABS.map((t) => (
-              <button key={t.id} type="button" role="tab" aria-selected={tab === t.id} className={tab === t.id ? 'on' : ''} onClick={() => setTab(t.id)}>
-                {t.label}
-              </button>
-            ))}
+  // Left and right move along the tab row (the arrow keys of a tab list).
+  const tabKey = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    const buttons = [...e.currentTarget.querySelectorAll<HTMLButtonElement>('button[role="tab"]')];
+    const at = buttons.indexOf(document.activeElement as HTMLButtonElement);
+    if (at < 0) return;
+    e.preventDefault();
+    const to = buttons[(at + (e.key === 'ArrowRight' ? 1 : -1) + buttons.length) % buttons.length];
+    to.focus();
+    to.click();
+  };
+  const searchBox = (
+    <label className="sp-search">
+      <IconSearch size={20} stroke={1.8} aria-hidden="true" />
+      <input
+        type="search"
+        value={query}
+        placeholder="Search Spotify"
+        aria-label="Search Spotify"
+        onChange={(e) => {
+          setQuery(e.target.value);
+          // In the tall view the field is the search: emptying it goes back to the library.
+          if (tall && e.target.value.trim() === '' && tab === 'search') setTab('playlists');
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') runSearch(query, true);
+        }}
+      />
+    </label>
+  );
+  const tabs = tall ? TALL_TABS : BROWSE_TABS;
+  const tabsEl = (
+    <div className="sp-tabs" role="tablist" aria-label="Spotify library" onKeyDown={tabKey}>
+      {tabs.map((t) => (
+        <button key={t.id} type="button" role="tab" aria-selected={tab === t.id} tabIndex={tab === t.id || (tab === 'search' && tall && t.id === 'playlists') ? 0 : -1} className={tab === t.id ? 'on' : ''} onClick={() => setTab(t.id)}>
+          {t.label}
+        </button>
+      ))}
+    </div>
+  );
+  const grouped = tall && tab === 'search' && cur.items.length > 0;
+  const list = (
+    <>
+      {tab === 'search' && cur.problem ? (
+        <div className="sp-empty sp-stale">
+          {problemLine(cur.problem)}
+          <button type="button" className="sp-btn" onClick={() => runSearch(query, true)}>
+            Retry
+          </button>
+        </div>
+      ) : null}
+      {songsIn.length > 0 ? (
+        <div className="sp-list" role="list">
+          {songsIn.map((item, i) => (
+            <Row key={`${item.id}-${i}`} item={item} playing={isNow({ id: item.id, name: item.name, artists: item.subtitle })} onPlay={() => playItem(item)} />
+          ))}
+        </div>
+      ) : null}
+      {lists2.length > 0 ? (
+        <div className="sp-grid" role="list">
+          {lists2.map((item, i) => (
+            <Tile key={`${item.kind}-${item.id}-${i}`} item={item} kindWord={tab === 'search'} onOpen={() => setOpen(item)} onPlay={() => playItem(item)} onShuffle={() => shuffleItem(item)} />
+          ))}
+        </div>
+      ) : null}
+    </>
+  );
+  const main =
+    tall && tab === 'queue' ? (
+      <div className="sp-main">
+        <QueueView />
+      </div>
+    ) : grouped ? (
+      <div className="sp-main">
+        {cur.problem ? (
+          <div className="sp-empty sp-stale">
+            {problemLine(cur.problem)}
+            <button type="button" className="sp-btn" onClick={() => runSearch(query, true)}>
+              Retry
+            </button>
           </div>
-          <div className="sp-scroll" onScroll={scrolled}>
-            {tab === 'search' && !asked && cur.items.length === 0 && !cur.problem ? (
-              <div className="sp-empty">Type at least two letters, then wait a moment or press Enter.</div>
-            ) : cur.problem && cur.items.length === 0 ? (
-              <div className="sp-empty">
-                {problemLine(cur.problem)}
-                {cur.problem === 'needsSignIn' || cur.problem === 'notsetup' ? (
-                  <button type="button" className="sp-btn" onClick={() => useToolsStore.getState().openDrawer('accounts')}>
-                    Open Tools
-                  </button>
-                ) : (
-                  <button type="button" className="sp-btn" onClick={() => (tab === 'search' ? runSearch(query, true) : load(tab, 0))}>
-                    Retry
-                  </button>
-                )}
-              </div>
-            ) : cur.loaded && cur.items.length === 0 ? (
-              <div className="sp-empty">{EMPTY_LINE[tab]}</div>
+        ) : null}
+        <SearchGroups items={cur.items} isNow={isNow} onPlay={playItem} onOpen={setOpen} onShuffle={shuffleItem} />
+      </div>
+    ) : (
+      <div className="sp-scroll" onScroll={scrolled}>
+        {tab === 'search' && !asked && cur.items.length === 0 && !cur.problem ? (
+          <div className="sp-empty">Type at least two letters, then wait a moment or press Enter.</div>
+        ) : cur.problem && cur.items.length === 0 ? (
+          <div className="sp-empty">
+            {problemLine(cur.problem)}
+            {cur.problem === 'needsSignIn' || cur.problem === 'notsetup' ? (
+              <button type="button" className="sp-btn" onClick={() => useToolsStore.getState().openDrawer('accounts')}>
+                Open Tools
+              </button>
             ) : (
-              <>
-                {tab === 'search' && cur.problem ? (
-                  <div className="sp-empty sp-stale">
-                    {problemLine(cur.problem)}
-                    <button type="button" className="sp-btn" onClick={() => runSearch(query, true)}>
-                      Retry
-                    </button>
-                  </div>
-                ) : null}
-                {songsIn.length > 0 ? (
-                  <div className="sp-list" role="list">
-                    {songsIn.map((item, i) => (
-                      <Row key={`${item.id}-${i}`} item={item} playing={isNow({ id: item.id, name: item.name, artists: item.subtitle })} onPlay={() => playItem(item)} />
-                    ))}
-                  </div>
-                ) : null}
-                {lists2.length > 0 ? (
-                  <div className="sp-grid" role="list">
-                    {lists2.map((item, i) => (
-                      <Tile key={`${item.kind}-${item.id}-${i}`} item={item} kindWord={tab === 'search'} onOpen={() => setOpen(item)} onPlay={() => playItem(item)} onShuffle={() => shuffleItem(item)} />
-                    ))}
-                  </div>
-                ) : null}
-              </>
+              <button type="button" className="sp-btn" onClick={() => (tab === 'search' ? runSearch(query, true) : load(tab as Exclude<BrowseTab, 'search' | 'queue'>, 0))}>
+                Retry
+              </button>
             )}
           </div>
+        ) : cur.loaded && cur.items.length === 0 ? (
+          <div className="sp-empty">{EMPTY_LINE[tab]}</div>
+        ) : (
+          list
+        )}
+      </div>
+    );
+  const songsView = open ? <SongsView item={open} tall={tall} backLabel={tabs.find((t) => t.id === tab)?.label ?? 'Back'} onBack={() => setOpen(null)} onNote={setNote} /> : null;
+  return (
+    <div className="sp-body">
+      {tall ? (
+        <>
+          <div className="sp-bar">
+            {tabsEl}
+            {searchBox}
+          </div>
+          {songsView ?? main}
         </>
+      ) : (
+        songsView ?? (
+          <>
+            {searchBox}
+            {tabsEl}
+            {main}
+          </>
+        )
       )}
       {note ? (
         <div className="sp-note" role="status">
           {note}
         </div>
       ) : null}
-    </div>
-  );
-}
-
-/** After the pointer leaves a tile, its details card stays this long so the pointer can reach it. */
-export const DETAILS_LINGER_MS = 300;
-
-/** Set while the program puts focus back on a tile after Escape: that focus must not reopen the card. */
-let keepClosed = false;
-
-/**
- * The details card for a tile (R2): the name, the kind with its owner or artist said once, the
- * song count when the bridge gives one (nothing is shown that it does not give), and Play,
- * Shuffle and Songs. It is the shared tip in its pinned form, so its buttons take the pointer.
- * From the keyboard it is the next stop after its tile (the card is drawn elsewhere in the page,
- * so the tile hands the focus over): Tab walks Play, Shuffle, Songs; Shift+Tab from Play and
- * Escape go back to the tile; Tab past Songs closes it and moves on to the next tile.
- */
-function TileDetails({ tileId, item, onOpen, onPlay, onShuffle }: { tileId: string; item: SpotifyItem; onOpen: () => void; onPlay: () => void; onShuffle: () => void }) {
-  const act = (f: () => void) => () => {
-    hideTip(true);
-    f();
-  };
-  const tile = () => document.querySelector<HTMLElement>(`.sp-tile[data-tile="${tileId}"]`);
-  const key = (e: ReactKeyboardEvent<HTMLDivElement>) => {
-    if (e.key === 'Escape') {
-      e.stopPropagation();
-      hideTip(true);
-      // Focus returns to the tile without opening its card again.
-      keepClosed = true;
-      try {
-        tile()?.focus();
-      } finally {
-        keepClosed = false;
-      }
-      return;
-    }
-    if (e.key !== 'Tab' || e.ctrlKey || e.altKey || e.metaKey) return;
-    const buttons = [...e.currentTarget.querySelectorAll<HTMLElement>('button')];
-    const at = buttons.indexOf(document.activeElement as HTMLElement);
-    if (e.shiftKey && at === 0) {
-      e.preventDefault();
-      tile()?.focus();
-    } else if (!e.shiftKey && at === buttons.length - 1) {
-      const tiles = [...document.querySelectorAll<HTMLElement>('.sp-tile')];
-      const next = tiles[tiles.indexOf(tile() as HTMLElement) + 1];
-      hideTip(true);
-      // The next tile takes the focus (and opens its own card); with none, the focus moves on by itself.
-      if (next) {
-        e.preventDefault();
-        next.focus();
-      }
-    }
-  };
-  // Focus that leaves the card for anywhere but its tile or another tile closes it.
-  const blur = (e: FocusEvent<HTMLDivElement>) => {
-    const to = e.relatedTarget as Element | null;
-    if (to && (e.currentTarget.contains(to) || to.closest('.sp-tile'))) return;
-    hideTip(true);
-  };
-  return (
-    <div className="sp-details" data-for={tileId} onKeyDown={key} onBlur={blur}>
-      <div className="sp-dname">{item.name}</div>
-      <div className="sp-dline">{kindLine(item)}</div>
-      {item.count !== null ? (
-        <dl className="sp-dfacts">
-          <dt>Songs</dt>
-          <dd>{item.count.toLocaleString('en-US')}</dd>
-        </dl>
-      ) : null}
-      <div className="sp-dbtns">
-        <button type="button" className="sp-btn fill" onClick={act(onPlay)}>
-          <IconPlayerPlayFilled size={16} aria-hidden="true" />
-          Play
-        </button>
-        <button type="button" className="sp-btn plain" onClick={act(onShuffle)}>
-          <IconArrowsShuffle size={16} aria-hidden="true" />
-          Shuffle
-        </button>
-        <button type="button" className="sp-btn plain" onClick={act(onOpen)}>
-          Songs
-          <IconChevronRight size={16} aria-hidden="true" />
-        </button>
-      </div>
-    </div>
-  );
-}
-
-/** The playing song's mark (R3): four small cyan bars that move gently (still with reduced motion). */
-function PlayingBars() {
-  return (
-    <span className="sp-bars" role="img" aria-label="Playing now">
-      <i />
-      <i />
-      <i />
-      <i />
-    </span>
-  );
-}
-
-/**
- * A playlist or album as a large cover tile (R1): the cover fills the tile, the name and the song
- * count under it (both shortened with an ellipsis). A click (or Enter) opens its songs; resting on
- * it, or taking keyboard focus on it, rings it and opens its details card (one card at a time, so
- * a click after a keyboard focus never leaves two); leaving it closes the card unless the pointer
- * went onto it. Tab goes into the card (see `TileDetails`); Escape closes it.
- */
-function Tile({ item, kindWord, onOpen, onPlay, onShuffle }: { item: SpotifyItem; kindWord: boolean; onOpen: () => void; onPlay: () => void; onShuffle: () => void }) {
-  const tileId = useId();
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // A press on the tile focuses it too; that focus is the click's, and the click closes the card.
-  const pressed = useRef(false);
-  const clear = () => {
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = null;
-  };
-  useEffect(() => clear, []);
-  const card = () => <TileDetails tileId={tileId} item={item} onOpen={onOpen} onPlay={onPlay} onShuffle={onShuffle} />;
-  const show = (el: HTMLElement) => {
-    clear();
-    timer.current = setTimeout(() => pinTip(el, card, { side: true }), TIP_DELAY_MS);
-  };
-  const leave = () => {
-    clear();
-    timer.current = setTimeout(() => {
-      if (!document.querySelector('.hover-tip:hover, .sp-tile:hover')) hideTip(true);
-    }, DETAILS_LINGER_MS);
-  };
-  const cardOpen = () => !!document.querySelector(`.hover-tip .sp-details[data-for="${tileId}"]`);
-  return (
-    <div className="sp-tilebox" role="listitem">
-      <button
-        type="button"
-        className="sp-tile"
-        data-tile={tileId}
-        aria-label={`${item.name}, ${kindLine(item)}${item.count !== null ? `, ${songs(item.count)}` : ''}. Open its songs`}
-        onMouseEnter={(e) => show(e.currentTarget)}
-        onMouseLeave={() => {
-          pressed.current = false;
-          leave();
-        }}
-        onMouseDown={() => {
-          pressed.current = true;
-        }}
-        onFocus={(e) => {
-          if (pressed.current || keepClosed) {
-            pressed.current = false;
-            return;
-          }
-          clear();
-          // Bring it into view first, so the card is placed where the tile will stay.
-          e.currentTarget.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
-          pinTip(e.currentTarget, card, { side: true });
-        }}
-        onBlur={(e) => {
-          pressed.current = false;
-          const to = e.relatedTarget as Element | null;
-          // Focus going into the card, or on to another tile, keeps or replaces the card.
-          if (to && (to.closest('.hover-tip') || to.closest('.sp-tile'))) return;
-          leave();
-        }}
-        onKeyDown={(e) => {
-          if (!cardOpen() || e.ctrlKey || e.altKey || e.metaKey) return;
-          if (e.key === 'Escape') {
-            e.stopPropagation();
-            clear();
-            hideTip(true);
-          } else if (e.key === 'Tab' && !e.shiftKey) {
-            const first = document.querySelector<HTMLElement>(`.hover-tip .sp-details[data-for="${tileId}"] button`);
-            if (first) {
-              e.preventDefault();
-              first.focus();
-            }
-          }
-        }}
-        onClick={() => {
-          pressed.current = false;
-          clear();
-          hideTip(true);
-          onOpen();
-        }}
-      >
-        <Cover src={item.imageUrl ?? item.thumbUrl} size={0} className="sp-tilecover" />
-        <span className="sp-tname2">{item.name}</span>
-        <span className="sp-tline">{kindWord ? `${item.kind === 'album' ? 'Album' : 'Playlist'} · ${tileLine(item)}` : tileLine(item)}</span>
-      </button>
     </div>
   );
 }
@@ -629,7 +709,7 @@ interface SongsState {
  * inside the card and never grows it). A click plays from that song on, in its list; the song
  * now playing is marked; a song that cannot be played (a local file) is dimmed and says why.
  */
-function SongsView({ item, onBack, onNote }: { item: SpotifyItem; onBack: () => void; onNote: (n: string | null) => void }) {
+function SongsView({ item, tall, backLabel, onBack, onNote }: { item: SpotifyItem; tall: boolean; backLabel: string; onBack: () => void; onNote: (n: string | null) => void }) {
   const kind = item.kind === 'album' ? 'album' : 'playlist';
   const [st, setSt] = useState<SongsState>({ items: [], total: item.count ?? 0, page: 0, more: false, loading: true, problem: null });
   const isNow = useIsNow();
@@ -679,33 +759,41 @@ function SongsView({ item, onBack, onNote }: { item: SpotifyItem; onBack: () => 
   };
   const playFrom = (t: SpotifyTrack) => {
     if (!t.id || !t.playable) return;
-    spotify.play('track', t.id, { context: { kind, id: item.id }, offsetId: t.id }).then((answer) => finishPlay(answer, () => onNote('Starting Spotify'))).then(() => onNote(null), fail);
+    spotify.play('track', t.id, { context: { kind, id: item.id }, offsetId: t.id, ...deviceArg() }).then((answer) => finishPlay(answer, () => onNote('Starting Spotify'))).then(() => onNote(null), fail);
   };
   const owner = kindLine(item).replace(/^(Playlist|Album)( by )?/, '');
   const all = !st.more && st.items.length > 0 && st.items.length >= st.total;
   const length = all ? totalLength(st.items.reduce((a, t) => a + (Number.isFinite(t.durationMs) ? t.durationMs : 0), 0)) : null;
   const facts = [st.total > 0 ? songs(st.total) : null, length, owner ? `by ${owner}` : null].filter(Boolean).join(' · ');
 
+  const playButtons = (
+    <>
+      <button type="button" className="sp-btn fill big" onClick={() => playAll(false)}>
+        <IconPlayerPlayFilled size={18} aria-hidden="true" />
+        Play
+      </button>
+      <button type="button" className="sp-btn plain big" onClick={() => playAll(true)}>
+        <IconArrowsShuffle size={18} aria-hidden="true" />
+        Shuffle
+      </button>
+    </>
+  );
   return (
-    <div className="sp-songs">
+    <div className={`sp-songs${tall ? ' tall' : ''}`}>
       <div className="sp-shead">
-        <button type="button" className="sp-back" aria-label="Back to the list" title="Back to the list (Escape)" onClick={onBack}>
-          <IconArrowLeft size={20} stroke={2} aria-hidden="true" />
-        </button>
-        <Cover src={item.imageUrl ?? item.thumbUrl} size={64} />
+        <span className="sp-backrow">
+          <button type="button" className="sp-back" aria-label="Back to the list" title="Back to the list (Escape)" onClick={onBack}>
+            <IconArrowLeft size={20} stroke={2} aria-hidden="true" />
+          </button>
+          {tall ? <span className="sp-backlabel">{backLabel}</span> : null}
+        </span>
+        <Cover src={item.imageUrl ?? item.thumbUrl} size={tall ? 200 : 64} />
         <span className="sp-text">
           <span className="sp-kick">{kind === 'album' ? 'Album' : 'Playlist'}</span>
           <span className="sp-name">{item.name}</span>
           <span className="sp-line">{facts}</span>
         </span>
-        <button type="button" className="sp-btn fill big" onClick={() => playAll(false)}>
-          <IconPlayerPlayFilled size={18} aria-hidden="true" />
-          Play
-        </button>
-        <button type="button" className="sp-btn plain big" onClick={() => playAll(true)}>
-          <IconArrowsShuffle size={18} aria-hidden="true" />
-          Shuffle
-        </button>
+        {tall ? <span className="sp-shbtns">{playButtons}</span> : playButtons}
       </div>
       <ol
         className="sp-tracks"

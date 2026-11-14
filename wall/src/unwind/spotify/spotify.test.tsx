@@ -105,8 +105,12 @@ it('keeps the player switch per display, with a hint, and shows YouTube Music wi
   mocks.set('wall2_open_link', (a) => open(a));
   render(<SpotifyCard />);
   await flush();
-  expect(screen.getByText('Which player the wall follows')).toBeTruthy();
+  // On the Spotify side the "Play on" chip takes the place of the hint (it stays where Spotify cannot be browsed).
+  expect(screen.queryByText('Which player the wall follows')).toBeNull();
+  expect(screen.getByRole('button', { name: /^Play on/ })).toBeTruthy();
   await act(async () => screen.getByRole('radio', { name: 'YouTube Music' }).click());
+  expect(screen.getByText('Which player the wall follows')).toBeTruthy();
+  expect(screen.queryByRole('button', { name: /^Play on/ })).toBeNull();
   expect(localStorage.getItem(LISTEN_SOURCE_KEY)).toBe('youtube');
   expect(useListenSource.getState().source).toBe('youtube');
   await act(async () => screen.getByRole('button', { name: 'Open YouTube Music' }).click());

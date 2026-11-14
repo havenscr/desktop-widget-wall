@@ -2,7 +2,7 @@ import { invoke } from '../bridge/tauri';
 
 export type SpotifyMode = 'playlist' | 'album' | 'track';
 export interface SpotifyItem { id: string; name: string; kind: SpotifyMode; imageUrl: string | null; thumbUrl: string | null; subtitle: string | null; count: number | null }
-export interface SpotifyDevice { id: string; name: string; kind: string; active: boolean; volume: number | null }
+export interface SpotifyDevice { id: string; name: string; kind: string; active: boolean; restricted?: boolean; volume: number | null }
 export interface SpotifyStatus { setup: boolean; signedIn: boolean; reason: string | null }
 export interface SpotifySearch { tracks: SpotifyItem[]; albums: SpotifyItem[]; playlists: SpotifyItem[] }
 export interface SpotifyTrack { id: string | null; name: string; artists: string; album: string; durationMs: number; imageUrl: string | null; thumbUrl: string | null; playable: boolean }
@@ -30,5 +30,6 @@ export const spotify = {
   startStatus: () => invoke<SpotifyStartStatus>('wall2_spotify_start_status'),
   cancelStart: () => invoke<void>('wall2_spotify_cancel_start'),
   transfer: (deviceId: string) => invoke<void>('wall2_spotify_transfer', { deviceId }),
+  seek: (positionMs: number) => invoke<void>('wall2_spotify_seek', { positionMs }),
   shuffle: (on: boolean) => invoke<void>('wall2_spotify_shuffle', { on }),
 };
