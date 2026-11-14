@@ -9,7 +9,7 @@ import { drawLineType, type LineTypeFrame, type LineTypesState } from './lineTyp
  *   `drawn,most,boxes,onTop,under,cols,above,nopic`
  *
  * - `drawn`: sampled pixels of the type in the frame, `most` the most so far, `boxes` the claimed boxes.
- * - `onTop` and `under`: of the type's pixels inside the picture's box (sampled on a grid, counted
+ * - `onTop` and `under`: of the type's pixels inside the picture's box (sampled, counted
  *   over every frame), how many have the canvas the type was drawn on ABOVE the picture and how
  *   many BELOW it in the page's stacking (read from `elementsFromPoint` with every element made
  *   hit-testable for that one call). A picture in front of the land must have none on top; a
@@ -35,8 +35,8 @@ export interface LineProbe {
 export const COLUMNS = 32;
 /** Design pixels above the Height setting a bar's cap, a glow, a spark or its halo may reach. */
 export const RISE_MARGIN = 48;
-/** The grid, in design pixels, the stacking is sampled on. */
-const GRID = 40;
+/** The most pixels of the type, in the box, whose stacking is read in one frame. */
+const SAMPLES = 60;
 
 export function parseLineProbe(search: string): LineProbe | null {
   const q = new URLSearchParams(search);
@@ -83,10 +83,14 @@ export function parseLineProbe(search: string): LineProbe | null {
           document.head.appendChild(hit);
           const r = main.getBoundingClientRect();
           const k = r.width / (main.width / f.scale);
-          const step = Math.max(1, Math.round(GRID * f.scale));
-          for (let row = 0; row < h; row += step) {
-            for (let col = 0; col < w; col += step) {
-              if (d[(row * w + col) * 4 + 3] <= 8) continue;
+          // At most SAMPLES of the type's pixels in the box, evenly through them in scan order.
+          let q = 0;
+          for (let row = 0; row < h; row++) for (let col = 0; col < w; col += 2) if (d[(row * w + col) * 4 + 3] > 8) q++;
+          const every = Math.max(1, Math.ceil(q / SAMPLES));
+          let n = 0;
+          for (let row = 0; row < h; row++) {
+            for (let col = 0; col < w; col += 2) {
+              if (d[(row * w + col) * 4 + 3] <= 8 || n++ % every !== 0) continue;
               const cx = r.left + ((x0 + col) / f.scale) * k;
               const cy = r.top + ((y0 + row) / f.scale) * k;
               if (cx < 0 || cy < 0 || cx >= window.innerWidth || cy >= window.innerHeight) continue;

@@ -30,7 +30,7 @@
 // CI does not run this; run it by hand before a layout change is handed over.
 //
 //   WALL_CHROME=/path/to/chrome-or-headless-shell npm --prefix wall run fit-check
-//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, header, deck, tiles, picker, chips, heading, zenhint, strip, fold, drawer, rows, handle, sky, floor, sun, tools, toolsnames, meetfill, meetempty, fy-height, key-edge, hide-pill, hide-note, leave-band, rec-chip, rec-height, tile-height, tile-icon, tile-iconbox, drawer-scrim, lwbuttons, lwoverlap, lwsquare, lwring, lwtemp, lwround, sky-front, sky-moon, sky-always, sky-crop, sky-seam, sky-soft, sky-foot, tower-over, tower-wide, tower-box, tower-switch, holo-big, holo-noblend, holo-beam, holo-take, tile-text, listen-player, listen-card, listen-slot, listen-next, lines-size, lines-control, lines-text, lines-clip, watch-rest, watch-title, watch-away, watch-mark, lip-cover, lip-band, lip-scrim, row-parts, over-hatch, row-type, onair-box, onair-notes, onair-keys, onair-watt, watt-seat, watt-spot, watt-tower, watt-ground)
+//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, header, deck, tiles, picker, chips, heading, zenhint, strip, fold, drawer, rows, handle, sky, floor, sun, tools, toolsnames, meetfill, meetempty, fy-height, key-edge, hide-pill, hide-note, leave-band, rec-chip, rec-height, tile-height, tile-icon, tile-iconbox, drawer-scrim, lwbuttons, lwoverlap, lwsquare, lwring, lwtemp, lwround, sky-front, sky-moon, sky-always, sky-crop, sky-seam, sky-soft, sky-foot, tower-over, tower-wide, tower-box, tower-switch, holo-big, holo-noblend, holo-beam, holo-take, tile-text, listen-player, listen-card, listen-slot, listen-next, lines-size, lines-control, lines-text, lines-over, lines-hole, watch-rest, watch-title, watch-away, watch-mark, lip-cover, lip-band, lip-scrim, row-parts, over-hatch, row-type, onair-box, onair-notes, onair-keys, onair-watt, watt-seat, watt-spot, watt-tower, watt-ground)
 //   npm --prefix wall run fit-check -- --self-test
 //
 // WALL_CHROME (or the first argument that is not a flag) is a Chromium or
@@ -177,7 +177,8 @@ const EXPECT = {
   'lines-size': /^ *FAIL lines: the sheet is \d+ px tall/m,
   'lines-control': /^ *FAIL lines: control ".*" is [\d.]+ px tall/m,
   'lines-text': /^ *FAIL lines: text under 16 px /m,
-  'lines-clip': /^ *FAIL lines: a new type draws \d+ pixels inside the video's box/m,
+  'lines-over': /^ *FAIL lines: a new type is painted above the picture/m,
+  'lines-hole': /^ *FAIL lines: a new type does not play in front of the picture/m,
   'spotify-copy': /^ *FAIL copy: Spotify message is cut/m,
   'account-copy': /^ *FAIL copy: account message is cut/m,
 };
@@ -316,14 +317,16 @@ const OVERFLOWS = {
   'lines-size': '.ln-panel { height: 900px !important; }',
   'lines-control': '.ln-chips button { height: 24px !important; }',
   'lines-text': '.ln-label { font-size: 12px !important; }',
-  'lines-clip': '',
+  'lines-over': '',
+  'lines-hole': '',
   'spotify-copy': '.sp-note { width: 80px !important; overflow: hidden !important; white-space: nowrap !important; }',
   'account-copy': '.tools-note { width: 80px !important; overflow: hidden !important; white-space: nowrap !important; }',
 };
 // sky layers: breaks that need the horizon's development knobs in the URL, not a stylesheet.
 const SKY_BREAK_Q = { 'sky-moon': '&skymoon=300,200,44', 'sky-always': '&sky=front' };
-// lines controls: the clip around the picture boxes left out (a development knob of the horizon).
-const LINES_BREAK_Q = { 'lines-clip': '&lclip=0' };
+// lines: the drawn canvas lifted above the page (a picture in front of the land), and the type drawn on the
+// main canvas under a picture that stands behind the land (development knobs of the horizon).
+const LINES_BREAK_Q = { 'lines-over': '&lover=1', 'lines-hole': '&ltarget=main' };
 if (flag('self-test')) {
   const script = fileURLToPath(import.meta.url);
   let missed = 0;
@@ -409,8 +412,14 @@ const QUIET = [
   // lines controls: the sheet's Lines side from Listen (its size, every control inside it, 32 px controls,
   // 16 px text), and two new types under the drive-in with a video showing (nothing inside its box).
   { name: 'Lines settings sheet', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=none&wtab=listen&wsheet=one&lines=bars&audio=demo', checks: ['.w-sheet', '.ln-panel', '.ln-types', '.ln-swatches', '.ln-reset', '.ln-foot'], linesSheet: true },
-  { name: 'Lines, bars under the drive-in', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=drivein&wplay=0&audio=demo&lines=bars&lineprobe=1', checks: ['.w-screen'], linesProbe: true },
-  { name: 'Lines, skyline under the drive-in', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=drivein&wplay=0&audio=demo&lines=skyline&lineprobe=1', checks: ['.w-screen'], linesProbe: true },
+  // A new type plays the full width in every look: under a picture in front of the land (drive-in, hologram) it
+  // is painted below the picture; under a picture behind the land (the sun, the whole sky) in front of it.
+  { name: 'Lines, bars under the drive-in', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=drivein&wplay=0&audio=demo&lines=bars&lineprobe=front', checks: ['.w-screen'], linesProbe: 'front' },
+  { name: 'Lines, skyline under the drive-in', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=drivein&wplay=0&audio=demo&lines=skyline&lineprobe=front', checks: ['.w-screen'], linesProbe: 'front' },
+  { name: 'Lines, ribbon under the hologram', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=holo&wplay=0&audio=demo&lines=ribbon&lineprobe=front', checks: ['.w-screen'], linesProbe: 'front' },
+  { name: 'Lines, skyline under the sun', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=sun&wplay=0&audio=demo&lines=skyline&lineprobe=behind', checks: ['.w-layer'], linesProbe: 'behind' },
+  { name: 'Lines, bars under the whole sky', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=sky&wplay=0&audio=demo&lines=bars&lineprobe=behind', checks: ['.w-layer'], linesProbe: 'behind' },
+  { name: 'Lines, sparks under the whole sky', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=sky&wplay=0&audio=demo&lines=sparks&lineprobe=behind', checks: ['.w-layer'], linesProbe: 'behind' },
   { name: 'Listen, nothing playing', agents: '3', hz: 'unwind', extra: '&media=none', checks: ['.u-listen', '.sp-card', '.u-line'], listen: true },
   { name: 'Listen, heavy library and long names', agents: 'ask', hz: 'unwind', extra: '&spotify=heavy&media=long', checks: ['.u-listen', '.sp-card', '.u-next', '.u-line'], listen: true },
   { name: 'Listen, the songs of a 2000 song playlist', agents: '3', hz: 'unwind', extra: '&spotify=heavy', click: '.sp-tile', checks: ['.sp-card', '.sp-songs', '.sp-shead'], listen: true },
@@ -1573,12 +1582,17 @@ try {
       }
     }
     if (new URLSearchParams(location.search).get('lineprobe')) {
+      const mode = new URLSearchParams(location.search).get('lineprobe');
       const probe = document.querySelector('canvas.horizon-canvas:not(.horizon-front)')?.dataset.lineProbe;
-      const [inside, drawn, boxes] = (probe || '0,0,0').split(',').map(Number);
+      const [, drawn, boxes, onTop, under, cols, above, nopic] = (probe || '0,0,0,0,0,0,0,0').split(',').map(Number);
       if (!probe) lines.push('lines: the probe reported nothing (no new type was drawn)');
       else if (!boxes) lines.push('lines: no picture box was claimed');
       else if (!drawn) lines.push('lines: the new type drew nothing');
-      else if (inside > 0) lines.push("lines: a new type draws " + inside + " pixels inside the video's box");
+      else if (nopic > 0) lines.push('lines: the picture was not found under ' + nopic + ' sampled points of the type');
+      else if (mode === 'front' && onTop > 0) lines.push('lines: a new type is painted above the picture at ' + onTop + ' sampled points (a picture in front of the land hides all of it)');
+      else if (mode === 'front' && under < 1) lines.push('lines: a new type never passes behind the picture (nothing to hide, the check proved nothing): ' + probe);
+      else if (mode === 'behind' && (under > 0 || onTop < 1 || cols < 24)) lines.push('lines: a new type does not play in front of the picture: ' + onTop + ' sampled points in front, ' + under + ' behind, ' + cols + ' of 32 columns across the picture (none behind, and 24 columns at least)');
+      else if (above > 0) lines.push('lines: a new type rises above its Height setting: ' + above + ' pixels higher than the setting and 48 px allow');
     }
     // watch behaviour: \`wbcheck=rest\`: the controls are faded, none of them takes the pointer at its
     // centre, and the dimmed title stays clear of the video's box. \`wbcheck=away\`: on another place
@@ -1792,7 +1806,8 @@ try {
     'lines-size': (v) => v.name === 'Lines settings sheet',
     'lines-control': (v) => v.name === 'Lines settings sheet',
     'lines-text': (v) => v.name === 'Lines settings sheet',
-    'lines-clip': (v) => v.name === 'Lines, bars under the drive-in',
+    'lines-over': (v) => v.name === 'Lines, bars under the drive-in',
+    'lines-hole': (v) => v.name === 'Lines, bars under the whole sky',
   };
   const breakOn = BREAK_ON[overflow] ? VARIANTS.filter(BREAK_ON[overflow]) : VARIANTS.slice(0, 1);
   /** keys style: the Now row's height on each page that has one, compared after every state ran. */
@@ -1923,7 +1938,8 @@ try {
     for (const l of lines) console.log(`  FAIL ${l}`);
     if (lines.length) failed = true;
     else if (v.linesSheet) console.log('  ok   lines: the sheet fits the stage, every control inside it and 32 px tall, no text under 16 px');
-    else if (v.linesProbe) console.log("  ok   lines: the new type drew and nothing inside the video's box");
+    else if (v.linesProbe === 'front') console.log('  ok   lines: the new type passes behind the picture, never above it, and stays under its Height setting');
+    else if (v.linesProbe) console.log('  ok   lines: the new type plays in front of the picture across its width, and stays under its Height setting');
     for (const t of [...toolsOut, ...copyOut, ...meetOut]) console.log(`  FAIL ${t}`);
     if (toolsOut.length || copyOut.length || meetOut.length) failed = true;
     else if (v.q.includes('tools=')) console.log('  ok   the drawer stays inside x 1700 to 2560 and y 0 to 720, clear of the rail, no cut text without a tooltip');
