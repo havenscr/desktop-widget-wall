@@ -1754,7 +1754,7 @@ try {
           const cb = rg.getBoundingClientRect();
           const off = Math.round(Math.abs((cb.left - b.left) - (b.right - cb.right)) * 10) / 10;
           if (off > 1.5) sound.push('sound where: "' + e.textContent + '" sits ' + off + ' px off centre (at most 1.5)');
-          if (e.scrollWidth > e.clientWidth + 1 || cb.left < b.left - 0.5 || cb.right > b.right + 0.5) sound.push('sound where: "' + e.textContent + '" is clipped (content ' + Math.round(cb.width) + ' px in a ' + Math.round(b.width) + ' px button)');
+          if (cb.left < b.left + 8 || cb.right > b.right - 8) sound.push('sound where: "' + e.textContent + '" is clipped (content ' + Math.round(cb.width) + ' px in a ' + Math.round(b.width) + ' px button, 8 px clear needed each side)');
           const fs = parseFloat(getComputedStyle(e).fontSize);
           if (Math.abs(fs - 19) > 0.5 && !(e.textContent === '')) sound.push('sound where: "' + e.textContent + '" is set at ' + fs + ' px, not 19');
         }
