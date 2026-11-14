@@ -577,7 +577,8 @@ The day ribbon (`wall/src/ribbon/`, `styles/ribbon.css`) is on Work, Home and Me
   dashed line at the limit. With no known limit neither is drawn. On a past day the saved
   record cannot tell running from waiting, so the line reads "Open at once" ("Up to 2 open at
   once, from the saved record"): it counts every session with a recorded span and never says
-  "over your limit", and the limit line is left out. A past day's rows have no quiet line (the
+  "over your limit", and the limit line is left out; its bars and swatches use plain steps
+  (never the amber at-the-limit or the red hatched over-the-limit look). A past day's rows have no quiet line (the
   record has none of those fields): the title takes the room (520 px) and the track is 514 px.
 - **How many work at once** (`ribbon/busy.ts`; one rule for the header's slot meter, the
   strip's cells and the panel's Busy at once line): a session counts while it is working, a
@@ -587,8 +588,15 @@ The day ribbon (`wall/src/ribbon/`, `styles/ribbon.css`) is on Work, Home and Me
   standalone session the wall knows today (a card, or a session in today's saved record, read
   at once when the day log first shows a run of a session that is not on a card, and once per
   such id after that, never on a timer). A finished run counts for the time it ran; an open
-  run counts only while its session's card says working (not idle, not waiting, not failed),
-  so the count agrees with the pills. A child or a side chat never counts on its own, so a
+  run is open only while its session's card says working (not idle, not waiting, not failed).
+  When the card stops working with the run still open (or the session closes), the run is
+  kept and ENDED where the session stopped, never dropped, so past work stays in the strip's
+  cells, the Busy at once sums, the header's Today line and the panel and drawer rows, while
+  the count for now stays the cards that say working. The end is, in order: the helper's own
+  idle or waiting seconds counted back from its answer; else the last time this wall saw the
+  card working (kept per session id for the day in local storage, ids and times only, so a
+  reload keeps it); else the latest stamp the day log gives for that session; else the run's
+  own start (a session the wall never saw working counts no time, not invented time). A child or a side chat never counts on its own, so a
   session and its helpers count once; two spans of one session at the same time count once. A
   cell takes the most at once inside its 12 minutes. The meter shows the count now: the
   server's own `working` count when the helper sends one (by construction it equals the log's
