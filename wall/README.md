@@ -36,7 +36,7 @@ other people in search, and must never render those names as markup.
 Library items include bounded subtitles, counts and cover images selected near 300 and
 64 pixels. Track lists use 50 items per page and stop at page 39. Queue reads return at
 most 10 upcoming tracks. Playback reads return no value when Spotify has no active
-session. The YouTube Music action opens the fixed `https://music.youtube.com/` address.
+session. The seek command (`wall2_spotify_seek`) takes a position in milliseconds, at most 24 hours, and returns the module's fixed words on failure. The YouTube Music action opens the fixed `https://music.youtube.com/` address.
 Track-producing reads send `market=from_token`. A track is unplayable only when
 `is_playable` is present and false, it is restricted or local, or the item is not a
 track; a missing `is_playable` means playable. An unplayable row reaches the web view
@@ -1111,6 +1111,45 @@ frame (no ribbon) in the wide zones `470px 1fr 540px`. The parts are in `wall/sr
   minute"), no device after a play ("Open Spotify on this PC first, then try again"), an
   empty library. YouTube Music chosen: what Windows says is playing, previous, play and
   next through Windows, and "Open YouTube Music" (`wall2_open_link`). No YouTube browsing.
+  At the right end of the top row, where the hint "Which player the wall follows" used to
+  stand on the Spotify side (the hint stays on the YouTube Music side and where Spotify cannot
+  be browsed), sit the "Play on" chip and one round button (below).
+- **The tall view and "Play on"** (`SpotifyCard.tsx`, `PlayOn.tsx`, `PlayerRow.tsx`,
+  `TallViews.tsx`, `Tile.tsx`). The round button at the card's top right (or a click on the
+  empty part of its top row) opens the card into the right third of the wall: 833 by 624 at
+  wall 1707, 24, ending at y 648 so Screens off and the office lights slot stay free. The
+  page behind stays live (no scrim); the sky keeps clear of the bigger box through the same
+  keep-clear claim, so the moon does not move. Opening takes 240 ms and closing 400 ms (none
+  under reduced motion); the state is not stored, so the wall starts closed. It closes on the
+  same button, on Escape (the "Play on" list first, then a playlist's Back, then the view; focus
+  returns to the button), on a press anywhere outside it (that press is swallowed, with the
+  mouse events that follow it for at most 0.6 s, so it does not also press what lies under it;
+  a tile's details card counts as inside), and by itself 15 seconds after the pointer has left
+  it, never while the pointer is on it or the search field has focus. Inside: the tab row
+  (Playlists, Albums, Liked, Recent, Up next; left and right move along it) and the search field
+  in one row, with the field as the search (results in groups: songs, then at most three albums
+  and three playlists; emptying it returns to the library); two full rows of covers, more
+  scrolling; a playlist or album opened as its cover, kind, name, count, Play and Shuffle on the
+  left and its songs on the right; Up next (what plays now and what follows, at most ten, from
+  `wall2_spotify_queue`; a click skips ahead through Windows, as the left wing's Up next does, and
+  says so when another player is in front); and the player row (cover, title, artist, previous,
+  play or pause and next through Windows' media keys like the player at the top, so they say why
+  they cannot act when Spotify is not the player Windows has in front; a time bar that can be
+  dragged, or moved five seconds with the arrow keys, which seeks through `wall2_spotify_seek`).
+  There is no Save to Liked: the sign-in's scopes do not include `user-library-modify` and this
+  change adds none. Every list keeps its loading, empty and error words. On the YouTube Music side
+  the tall view holds today's content in the larger box.
+  "Play on" is a chip showing where the music plays (the owner's pick, else the active Spotify
+  player, else "This PC"; "This PC" also while the wall starts Spotify), and a click opens the
+  list of the owner's Spotify players from `wall2_spotify_devices` (name and kind, a tick on the one
+  in use, "This PC" first with "Spotify is closed. The wall starts it." when no computer is awake, and
+  the note that a phone or speaker shows only while its Spotify is awake). Choosing one while music
+  plays moves it with `wall2_spotify_transfer`; with nothing playing it only makes that player the
+  target of the next Play, which then sends its `deviceId` (the play command honours a chosen phone
+  or speaker as well as a computer, and falls back to the old choice when it is gone). A pick that
+  is no longer awake is forgotten at the next read; device names are shown as text only. While Spotify
+  starts the card shows a calm status line (the Spotify mark, "Starting Spotify on this PC", what plays
+  once ready, a thin line that fills once).
 - **The office lights slot.** Where 7A drew the quiet row at the foot (right edge 70 px
   from the stage's right edge, top 662, 34 px tall, 420 px wide at most) Unwind keeps one
   empty box, `data-slot="office-lights"`, with no content, border or pointer, for an

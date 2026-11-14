@@ -30,7 +30,7 @@
 // CI does not run this; run it by hand before a layout change is handed over.
 //
 //   WALL_CHROME=/path/to/chrome-or-headless-shell npm --prefix wall run fit-check
-//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, header, deck, tiles, picker, chips, heading, zenhint, strip, fold, drawer, rows, handle, sky, floor, sun, tools, toolsnames, meetfill, meetempty, fy-height, key-edge, hide-pill, hide-note, leave-band, rec-chip, rec-height, tile-height, tile-icon, tile-iconbox, drawer-scrim, lwbuttons, lwoverlap, lwsquare, lwring, lwtemp, lwround, sky-front, sky-moon, sky-always, sky-crop, sky-seam, sky-soft, sky-foot, tower-over, tower-wide, tower-box, tower-switch, holo-big, holo-noblend, holo-beam, holo-take, tile-text, listen-player, listen-card, listen-slot, listen-next, lines-size, lines-control, lines-text, lines-clip, watch-rest, watch-title, watch-away, watch-mark, lip-cover, lip-band, lip-scrim, row-parts, over-hatch, row-type, onair-box, onair-notes, onair-keys, onair-watt, watt-seat, watt-spot, watt-tower, watt-ground)
+//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, header, deck, tiles, picker, chips, heading, zenhint, strip, fold, drawer, rows, handle, sky, floor, sun, tools, toolsnames, meetfill, meetempty, fy-height, key-edge, hide-pill, hide-note, leave-band, rec-chip, rec-height, tile-height, tile-icon, tile-iconbox, drawer-scrim, lwbuttons, lwoverlap, lwsquare, lwring, lwtemp, lwround, sky-front, sky-moon, sky-always, sky-crop, sky-seam, sky-soft, sky-foot, tower-over, tower-wide, tower-box, tower-switch, holo-big, holo-noblend, holo-beam, holo-take, tile-text, listen-player, listen-card, listen-slot, listen-next, tall-box, tall-foot, tall-small, tall-ctl, tall-clip, tall-out, tall-rest, tall-pop, tall-moon, lines-size, lines-control, lines-text, lines-clip, watch-rest, watch-title, watch-away, watch-mark, lip-cover, lip-band, lip-scrim, row-parts, over-hatch, row-type, onair-box, onair-notes, onair-keys, onair-watt, watt-seat, watt-spot, watt-tower, watt-ground)
 //   npm --prefix wall run fit-check -- --self-test
 //
 // WALL_CHROME (or the first argument that is not a flag) is a Chromium or
@@ -135,6 +135,16 @@ const EXPECT = {
   'listen-card': /^ *FAIL listen: the Spotify card /m,
   'listen-slot': /^ *FAIL listen: .* enters the office lights slot/m,
   'listen-next': /^ *FAIL listen: Up next /m,
+  // the tall view: its box, the bottom row, text size, control size, nothing cut, the resting card, the Play on list, the moon
+  'tall-box': /^ *FAIL listen tall: the card is at x /m,
+  'tall-foot': /^ *FAIL listen tall: the card ends at y \d+, into the bottom row/m,
+  'tall-small': /^ *FAIL listen tall: text under 16 px in /m,
+  'tall-ctl': /^ *FAIL listen tall: control .* is \d+ by \d+ \(32 at least\)/m,
+  'tall-clip': /^ *FAIL listen tall: text clipped in /m,
+  'tall-out': /^ *FAIL listen tall: .* sticks out of the card/m,
+  'tall-rest': /^ *FAIL listen: the resting card is \d+ by \d+ \(800 by 462\)/m,
+  'tall-pop': /^ *FAIL listen: the Play on list is at /m,
+  'tall-moon': /^ *FAIL sky layers: the moon at 2200,300,44 is \d+ px from /m,
   // watch polish
   'watch-switch': /^ *FAIL watch polish: the Look switch is at /m,
   'watch-row': /^ *FAIL \.w-ctl: width \d+ <= \d+/m,
@@ -260,6 +270,16 @@ const OVERFLOWS = {
   'listen-card': '.sp-card { height: 900px !important; }',
   'listen-slot': '.u-line { margin-left: 1960px; width: 600px; }',
   'listen-next': '.u-next-row { height: 80px !important; }',
+  // the tall view: moved 60 px left; grown to the very bottom; 14 px covers' counts; 24 px player buttons; the player's title cut with no ellipsis; the chip pushed out of the card; the resting card narrowed; the list pushed out of the wall; the moon forced into the open view (a URL knob, SKY_BREAK_Q).
+  'tall-box': '.sp-card.tall { left: 1523px !important; }',
+  'tall-foot': '.sp-card.tall { height: 700px !important; }',
+  'tall-small': '.sp-card.tall .sp-tline { font-size: 14px !important; }',
+  'tall-ctl': '.sp-card.tall .sp-pl-btn { width: 24px !important; height: 24px !important; }',
+  'tall-clip': '.sp-card.tall .sp-pl-title { flex: 0 0 60px !important; } .sp-card.tall .sp-pl-title b { text-overflow: clip !important; }',
+  'tall-out': '.sp-card.tall .sp-hx { margin-right: -60px !important; }',
+  'tall-rest': '.sp-card { width: 760px !important; }',
+  'tall-pop': '.sp-devices { right: -700px !important; }',
+  'tall-moon': '',
   // watch polish: the Look switch moved 40 px in one look; a 600 px control in the row; the switch back on the video.
   'watch-switch': '.top:has(.w-sun) .w-lookbar { left: 540px !important; }',
   'watch-row': '.w-ctl .w-open { min-width: 600px !important; }',
@@ -321,7 +341,7 @@ const OVERFLOWS = {
   'account-copy': '.tools-note { width: 80px !important; overflow: hidden !important; white-space: nowrap !important; }',
 };
 // sky layers: breaks that need the horizon's development knobs in the URL, not a stylesheet.
-const SKY_BREAK_Q = { 'sky-moon': '&skymoon=300,200,44', 'sky-always': '&sky=front' };
+const SKY_BREAK_Q = { 'sky-moon': '&skymoon=300,200,44', 'sky-always': '&sky=front', 'tall-moon': '&skymoon=2200,300,44' };
 // lines controls: the clip around the picture boxes left out (a development knob of the horizon).
 const LINES_BREAK_Q = { 'lines-clip': '&lclip=0' };
 if (flag('self-test')) {
@@ -420,6 +440,22 @@ const QUIET = [
   { name: 'Listen, with the leave banner', agents: '3', hz: 'unwind', extra: '&leave=12&long=1', checks: ['.u-listen', '.sp-card', '.u-line', '.leave-banner'], listen: true },
   { name: 'Listen, YouTube Music chosen', agents: '3', hz: 'unwind', extra: '', click: '.sp-switch button:nth-child(2)', checks: ['.u-listen', '.sp-card', '.sp-yt'], listen: true },
   { name: 'Listen, Spotify signed out', agents: '3', hz: 'unwind', extra: '&spotify=signedout', checks: ['.u-listen', '.sp-card', '.sp-state', '.u-next'], listen: true },
+  // The tall view (the round button opens it): 833 by 624 at wall 1707, 24, clear of the bottom row, in every state.
+  { name: 'Listen, the tall view open on Playlists', agents: '3', hz: 'unwind', listen: true, checks: ['.sp-card'], extra: '&audio=demo', click: '.sp-grow' },
+  { name: 'Listen, the tall view, heavy library', agents: '3', hz: 'unwind', listen: true, checks: ['.sp-card'], extra: '&spotify=heavy', click: '.sp-grow' },
+  { name: 'Listen, the tall view, a playlist opened', agents: '3', hz: 'unwind', listen: true, checks: ['.sp-card'], extra: '&audio=demo', click: '.sp-grow >> .sp-tile' },
+  { name: 'Listen, the tall view, the songs of a 2000 song playlist', agents: '3', hz: 'unwind', listen: true, checks: ['.sp-card'], extra: '&spotify=heavy', click: '.sp-grow >> .sp-tile' },
+  { name: 'Listen, the tall view, search in groups', agents: '3', hz: 'unwind', listen: true, checks: ['.sp-card'], extra: '&audio=demo', click: '.sp-grow >> type:.sp-search input=road' },
+  { name: 'Listen, the tall view, Up next', agents: '3', hz: 'unwind', listen: true, checks: ['.sp-card'], extra: '&audio=demo', click: '.sp-grow >> .sp-tabs button:nth-child(5)' },
+  { name: 'Listen, the tall view, Play on open', agents: '3', hz: 'unwind', listen: true, checks: ['.sp-card'], extra: '&audio=demo', click: '.sp-grow >> .sp-dev' },
+  { name: 'Listen, the tall view, Play on, nothing awake', agents: '3', hz: 'unwind', listen: true, checks: ['.sp-card'], extra: '&spotify=nodevices&spotifyplay=none&media=none', click: '.sp-grow >> .sp-dev' },
+  { name: 'Listen, the tall view, starting Spotify', agents: '3', hz: 'unwind', listen: true, checks: ['.sp-card'], extra: '&spotify=starting', click: '.sp-grow >> .sp-tile >> .sp-shbtns .sp-btn.fill' },
+  { name: 'Listen, the tall view, YouTube Music chosen', agents: '3', hz: 'unwind', listen: true, checks: ['.sp-card'], extra: '', click: '.sp-switch button:nth-child(2) >> .sp-grow' },
+  { name: 'Listen, the tall view, long names', agents: '3', hz: 'unwind', listen: true, checks: ['.sp-card'], extra: '&spotify=long&media=long', click: '.sp-grow' },
+  { name: 'Listen, the tall view, long names, a playlist opened', agents: '3', hz: 'unwind', listen: true, checks: ['.sp-card'], extra: '&spotify=long&media=long', click: '.sp-grow >> .sp-tile' },
+  { name: 'Listen, the tall view, nothing playing', agents: '3', hz: 'unwind', listen: true, checks: ['.sp-card'], extra: '&media=none&spotifyplay=none', click: '.sp-grow' },
+  { name: 'Listen, the tall view, Spotify not answering', agents: '3', hz: 'unwind', listen: true, checks: ['.sp-card'], extra: '&spotify=down', click: '.sp-grow' },
+  { name: 'Listen, the tall view, signed out', agents: '3', hz: 'unwind', listen: true, checks: ['.sp-card'], extra: '&spotify=signedout', click: '.sp-grow' },
   // Zen in the evening: the dim hint stays inside the controls' column (the box the Start row sets).
   { name: 'Zen, evening hint under the controls', agents: '3', go: 'zen', at: '2026-11-11T20:15:00-08:00', extra: '', checks: ['.zen-bl', '.zen-bl .zen-dimhint'] },
   // Dream at night: helper answering, helper off; calendar read, unreadable, nothing tomorrow.
@@ -505,6 +541,7 @@ const QUIET = [
   { name: 'Sky layers, Listen at night, nothing playing, the moon in open sky', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&media=none', checks: ['.u-listen'], sky: 'moon', moonAt: '760,352,44' },
   { name: 'Sky layers, Watch with nothing on at night, the moon in open sky', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=feather', checks: ['.w-now'], sky: 'moon', moonAt: '1890,260,44' },
   { name: 'Sky layers, Listen at night, the songs view open, the moon in open sky', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&spotify=long&media=long', click: '.sp-tile', checks: ['.sp-card', '.sp-songs'], listen: true, sky: 'moon', moonAt: '760,352,44' },
+  { name: 'Sky layers, Listen at night, the tall view open, the moon in open sky', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&audio=demo', click: '.sp-grow', checks: ['.sp-card'], listen: true, sky: 'moon', moonAt: '760,352,44' },
   { name: 'Sky layers, Listen at dusk, the moon in open sky', agents: '3', hz: 'unwind', at: '2026-11-11T17:30:00-08:00', extra: '', checks: ['.u-listen'], sky: 'moon', moonAt: '760,352,44' },
   { name: 'Sky layers, Listen at dusk, long names, the moon in open sky', agents: 'ask', hz: 'unwind', at: '2026-11-11T17:30:00-08:00', extra: '&spotify=long&media=long', checks: ['.u-listen'], sky: 'moon', moonAt: '760,352,44' },
   { name: 'Sky layers, Listen at dusk, long names, the songs view open, the moon in open sky', agents: 'ask', hz: 'unwind', at: '2026-11-11T17:30:00-08:00', extra: '&spotify=long&media=long', click: '.sp-tile', checks: ['.sp-card', '.sp-songs'], listen: true, sky: 'moon', moonAt: '760,352,44' },
@@ -772,11 +809,16 @@ try {
   // difference is what the picture mixes with).
   const measure = `<script>{ const m = new URLSearchParams(location.search).get('thpx'); const css = { bare: '.w-layer > :not(.w-stage):not(.w-holo-plate), .w-panel > * { visibility: hidden !important; }', noplate: '.w-holo-plate { visibility: hidden !important; }' }[m]; if (css) { const st = document.createElement('style'); st.textContent = css; document.head.appendChild(st); } }</script><script>setTimeout(() => {
     // unwind listen: measured at the end of the songs view's slide (virtual time draws no frames for it to run).
-    if (new URLSearchParams(location.search).get('listen')) { const st = document.createElement('style'); st.textContent = '.sp-songs { animation: none !important; }'; document.head.appendChild(st); }
+    if (new URLSearchParams(location.search).get('listen')) { const st = document.createElement('style'); st.textContent = '.sp-songs { animation: none !important; } .sp-card { transition: none !important; }'; document.head.appendChild(st); }
     // Steps separated by " >> " run 300 ms apart; within a step, " then " runs them at once.
     (new URLSearchParams(location.search).get('click') ?? '').split(' >> ').filter(Boolean).forEach((step, i) => setTimeout(() => {
     for (const click of step.split(' then ').filter(Boolean)) {
     if (click.startsWith('ctx:')) document.querySelector(click.slice(4))?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+    else if (click.startsWith('type:')) {
+      // type:<selector>=<text> sets a field the way typing does (the framework hears an input event).
+      const at = click.indexOf('='); const el = document.querySelector(click.slice(5, at));
+      if (el) { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(el, click.slice(at + 1)); el.dispatchEvent(new Event('input', { bubbles: true })); }
+    }
     else if (click.startsWith('hover:')) {
       // Headless --dump-dom has no pointer: every top-level :hover rule is copied for a class that stands in for it.
       const extra = [];
@@ -1269,12 +1311,62 @@ try {
     // draws (text, an image, a control) enters the office lights slot.
     const listen = [];
     if (new URLSearchParams(location.search).get('listen')) {
-      const card = document.querySelector('.sp-card')?.getBoundingClientRect();
+      const cardEl = document.querySelector('.sp-card');
+      const card = cardEl?.getBoundingClientRect();
+      const tall = cardEl?.getAttribute('data-tall') === 'true';
       const player = document.querySelector('.u-listen .u-player')?.getBoundingClientRect();
       if (player && player.bottom > 300.5) listen.push('listen: the player ends at y ' + Math.round(player.bottom) + ', over the lines (300 at most)');
-      if (player && card && player.right > card.left - 0.5) listen.push('listen: the player reaches x ' + Math.round(player.right) + ', into the Spotify card at ' + Math.round(card.left));
+      if (player && card && !tall && player.right > card.left - 0.5) listen.push('listen: the player reaches x ' + Math.round(player.right) + ', into the Spotify card at ' + Math.round(card.left));
       if (!card) listen.push('listen: the Spotify card is not there');
+      else if (tall) {
+        // The tall view: the right third, 833 by 624 at wall 1707, 24, ending above the bottom row (Screens off and the office lights slot).
+        const near = (a, b) => Math.abs(a - b) <= 1.5;
+        if (!near(card.left, 1707) || !near(card.top, 24) || !near(card.width, 833) || !near(card.height, 624)) listen.push('listen tall: the card is at x ' + Math.round(card.left) + ' to ' + Math.round(card.right) + ', y ' + Math.round(card.top) + ' to ' + Math.round(card.bottom) + ' (833 by 624 at 1707, 24)');
+        if (card.bottom > 648.5) listen.push('listen tall: the card ends at y ' + Math.round(card.bottom) + ', into the bottom row (648 at most)');
+        if (card.left < 0 || card.right > 2540.5 || card.top < 0 || card.bottom > 720) listen.push('listen tall: the card leaves the wall: x ' + Math.round(card.left) + ' to ' + Math.round(card.right) + ', y ' + Math.round(card.top) + ' to ' + Math.round(card.bottom));
+        for (const [name, el] of [['Screens off', document.querySelector('.u-corner')], ['the office lights slot', document.querySelector('[data-slot="office-lights"]')]]) {
+          const r = el?.getBoundingClientRect();
+          if (r && r.width > 0 && hit(card, r)) listen.push('listen tall: the card covers ' + name);
+        }
+        const name = (e) => (e.className?.baseVal ?? e.className ?? e.tagName) || e.tagName;
+        // No text under 16 px (the small "not set up" tag of today's switch aside).
+        const small = [...cardEl.querySelectorAll('*')].filter((e) => !e.closest('.sp-off') && [...e.childNodes].some((c) => c.nodeType === 3 && c.textContent.trim()) && parseFloat(getComputedStyle(e).fontSize) < 15.99);
+        for (const e of small.slice(0, 3)) listen.push('listen tall: text under 16 px in ' + name(e) + ' "' + (e.textContent || '').trim().slice(0, 24) + '" (' + getComputedStyle(e).fontSize + ')');
+        // Controls at least 32 px each way (the time bar's track is thin: its grab area, the ::before, is what counts).
+        for (const e of cardEl.querySelectorAll('button, input, [role="slider"]')) {
+          const r = e.getBoundingClientRect();
+          if (r.width === 0 || r.height === 0) continue;
+          if (e.getAttribute('role') === 'slider') {
+            const pb = getComputedStyle(e, '::before');
+            const grab = r.height - parseFloat(pb.top) - parseFloat(pb.bottom);
+            if (!(grab >= 31.5)) listen.push('listen tall: the time bar grab area is ' + Math.round(grab) + ' px tall (32 at least)');
+            continue;
+          }
+          if (r.width < 31.5 || r.height < 31.5) listen.push('listen tall: control ' + name(e) + ' "' + (e.getAttribute('aria-label') || e.textContent || '').trim().slice(0, 20) + '" is ' + Math.round(r.width) + ' by ' + Math.round(r.height) + ' (32 at least)');
+        }
+        // Nothing cut or sticking out in the header, the tab row, the player row, the opened list's head, the chooser and the lines under them.
+        for (const root of cardEl.querySelectorAll('.sp-top, .sp-bar, .sp-player, .sp-shead, .sp-devices, .sp-qhead, .sp-note')) {
+          for (const e of [root, ...root.querySelectorAll('*')]) {
+            const r = e.getBoundingClientRect();
+            if (r.width === 0 || r.height === 0 || e.closest('svg') || e.tagName === 'svg') continue;
+            if (r.left < card.left - 0.5 || r.right > card.right + 0.5 || r.top < card.top - 0.5 || r.bottom > card.bottom + 0.5) listen.push('listen tall: ' + name(e) + ' sticks out of the card');
+            const cs = getComputedStyle(e);
+            if ((cs.overflowX !== 'visible') && e.scrollWidth > e.clientWidth + 1 && cs.textOverflow !== 'ellipsis' && [...e.childNodes].some((c) => c.nodeType === 3 && c.textContent.trim())) listen.push('listen tall: text clipped in ' + name(e) + ' "' + (e.textContent || '').trim().slice(0, 24) + '" with no ellipsis');
+          }
+        }
+      }
       else if (card.left < 1739.5 || card.right > 2540.5 || card.bottom > 510.5 || card.top < 0) listen.push('listen: the Spotify card is at x ' + Math.round(card.left) + ' to ' + Math.round(card.right) + ', y ' + Math.round(card.top) + ' to ' + Math.round(card.bottom) + ' (x 1740 to 2540, y 0 to 510)');
+      // At rest the card is today's 800 by 462 (YouTube Music's own height aside), with the Play on chip and the round button on one line.
+      if (card && !tall && !cardEl.classList.contains('yt') && (Math.abs(card.width - 800) > 1.5 || Math.abs(card.height - 462) > 1.5)) listen.push('listen: the resting card is ' + Math.round(card.width) + ' by ' + Math.round(card.height) + ' (800 by 462)');
+      const chipEl = cardEl?.querySelector('.sp-dev');
+      const growEl = cardEl?.querySelector('.sp-grow');
+      if (cardEl && !growEl) listen.push('listen: the round button that opens the tall view is not there');
+      if (chipEl && growEl) {
+        const a = chipEl.getBoundingClientRect(), b = growEl.getBoundingClientRect();
+        if (Math.abs(a.top + a.height / 2 - (b.top + b.height / 2)) > 2 || a.right > b.left - 4) listen.push('listen: the Play on chip and the round button are not on one line, apart');
+      }
+      const pop = cardEl?.querySelector('.sp-devices')?.getBoundingClientRect();
+      if (pop && card && (pop.left < 0 || pop.top < 0 || pop.right > 2560 || pop.bottom > 720 || pop.left < card.left - 0.5 || pop.right > card.right + 0.5 || pop.bottom > card.bottom + 0.5 || pop.top < card.top - 0.5)) listen.push('listen: the Play on list is at x ' + Math.round(pop.left) + ' to ' + Math.round(pop.right) + ', y ' + Math.round(pop.top) + ' to ' + Math.round(pop.bottom) + ', outside the wall or the card');
       const next = document.querySelector('.u-next')?.getBoundingClientRect();
       const wingBox = document.querySelector('.u-wing')?.getBoundingClientRect();
       const rows = [...document.querySelectorAll('.u-next-row')].map((e) => e.getBoundingClientRect());
@@ -1751,6 +1843,15 @@ try {
     'listen-card': (v) => v.name === 'Listen, playing with the lines moving',
     'listen-slot': (v) => v.name === 'Listen, playing with the lines moving',
     'listen-next': (v) => v.name === 'Listen, playing with the lines moving',
+    'tall-box': (v) => v.name === 'Listen, the tall view open on Playlists',
+    'tall-foot': (v) => v.name === 'Listen, the tall view open on Playlists',
+    'tall-small': (v) => v.name === 'Listen, the tall view open on Playlists',
+    'tall-ctl': (v) => v.name === 'Listen, the tall view open on Playlists',
+    'tall-clip': (v) => v.name === 'Listen, the tall view open on Playlists',
+    'tall-out': (v) => v.name === 'Listen, the tall view open on Playlists',
+    'tall-rest': (v) => v.name === 'Listen, playing with the lines moving',
+    'tall-pop': (v) => v.name === 'Listen, the tall view, Play on open',
+    'tall-moon': (v) => v.name === 'Sky layers, Listen at night, the tall view open, the moon in open sky',
     // watch polish
     'watch-switch': (v) => v.name.startsWith('Watch polish'),
     'watch-row': (v) => v.name === 'Watch polish, feathered, single video',
@@ -1918,7 +2019,7 @@ try {
     // unwind listen
     for (const l of listen) console.log(`  FAIL ${l}`);
     if (listen.length) failed = true;
-    else if (v.listen) console.log('  ok   listen: the player ends above y 300 left of the card, the card in x 1740 to 2540 above y 510, Up next in the wing above the horizon, the office lights slot empty');
+    else if (v.listen) console.log(v.name.includes('tall view') ? '  ok   listen tall: the card is 833 by 624 at 1707, 24 above the bottom row, no text under 16 px, every control 32 px or more, nothing cut or out of the card, the Play on list inside the card' : '  ok   listen: the player ends above y 300 left of the card, the card in x 1740 to 2540 above y 510 (800 by 462 at rest), Up next in the wing above the horizon, the office lights slot empty');
     // lines controls
     for (const l of lines) console.log(`  FAIL ${l}`);
     if (lines.length) failed = true;
