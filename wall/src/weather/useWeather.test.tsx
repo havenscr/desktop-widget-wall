@@ -44,9 +44,13 @@ it('says unavailable after a failed first fetch, then recovers on the one minute
     await vi.advanceTimersByTimeAsync(10);
   });
   expect(screen.getByText('Weather unavailable')).toBeTruthy();
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(59_980);
+  });
+  expect(f).toHaveBeenCalledTimes(1);
   fail = false;
   await act(async () => {
-    await vi.advanceTimersByTimeAsync(60_000);
+    await vi.advanceTimersByTimeAsync(20);
   });
   expect(f).toHaveBeenCalledTimes(2);
   expect(screen.getByText('58°')).toBeTruthy();

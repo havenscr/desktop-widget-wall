@@ -502,6 +502,19 @@ it('the date line ends with weather unavailable (dim) when the weather cannot be
   vi.doUnmock('../weather/useWeather');
 });
 
+it('the date hover keeps a failed weather try visible over an older reading', async () => {
+  const wallNow = Date.parse('2026-11-11T21:42:00-08:00');
+  vi.doMock('../weather/useWeather', () => ({ useWeather: () => ({ reading: { temp: 49, look: { label: 'Clear' }, fetchedAt: wallNow - 5 * 60_000 }, failed: true, failure: 'network', attemptedAt: wallNow - 2 * 60_000 }) }));
+  vi.resetModules();
+  const { DateLine: Fresh } = await import('./DateLine');
+  const { HoverTipLayer: FreshLayer, TIP_DELAY_MS } = await import('../ui/HoverTip');
+  const r = render(<><Fresh now={() => new Date(wallNow)} wallNow={() => wallNow} /><FreshLayer /></>);
+  fireEvent.mouseEnter(r.container.querySelector('.u-date')!);
+  await flush(TIP_DELAY_MS);
+  expect(document.querySelector('.hover-tip')?.textContent).toContain('Last try failed 2 min ago: could not reach api.open-meteo.com. Showing the reading from');
+  vi.doUnmock('../weather/useWeather');
+});
+
 it('the lights chips mark the one on now, give each a hover, and fold past six into More', async () => {
   localStorage.setItem(LAST_MOOD_KEY, 'm8');
   localStorage.setItem(LAST_MOOD_AT_KEY, JSON.stringify({ id: 'm8', at: Date.now() - 60_000 }));
