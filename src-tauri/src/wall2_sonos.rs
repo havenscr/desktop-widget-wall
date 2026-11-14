@@ -6,8 +6,10 @@
 //! allowed, as for `homeBaseUrl`) and is never put in an error message or a log.
 //!
 //! Reads (`wall2_sonos_summary`, only when the front end asks): `GET /api/status`,
-//! `/api/speakers`, `/api/routines`, `/api/groups`, `/api/group-presets`, `/api/scenes`
-//! and `/api/sleep-timers`, side by side (the last four may fail on their own). An answer
+//! `/api/speakers`, `/api/routines`, `/api/groups`, `/api/group-presets`, `/api/scenes`,
+//! `/api/sleep-timers` and `/api/capabilities`, side by side (the last five may fail on
+//! their own; the capabilities answer `{"skip": true}` only when the service has the back
+//! and next commands, and anything else means `canSkip` is false). An answer
 //! with far more entries than the caps is refused as malformed; the rest is cut down to a
 //! bounded, cleaned summary and kept as the last good read. A failed read answers one fixed
 //! word, `timed-out`, `no-answer` or `bad-answer` (`wall2_sonos_read`), and failed or slow
@@ -27,6 +29,12 @@
 //! - `wall2_sonos_pause_all`: `POST /api/action/pause-all`
 //! - `wall2_sonos_sleep`: `POST /api/sleep-timer` `{"minutes", "fadeMinutes": 5}`
 //! - `wall2_sonos_sleep_cancel`: `DELETE /api/sleep-timer/<id>`
+//! - `wall2_sonos_skip`: `POST /api/action/next` or `/api/action/previous` with `{}`,
+//!   only when the last good read said `canSkip` and music plays; the service's own
+//!   `nothing-playing` and `cannot-skip` answers come back as those fixed words
+//!
+//! Cover art (`wall2_sonos_art`, takes nothing from the page): fetches the `albumArtURI` the
+//! last good read held for the playing speaker, under the bounds in `wall2_sonos_read`.
 //!
 //! Refused with `needs-confirm` unless the call carries `confirm: true` (the front end
 //! asks first): any volume write whose target level is above 40, whatever the last read
@@ -40,7 +48,7 @@
 use crate::wall2_feeds::{parse_iso, read_base, read_body, require_ok};
 use crate::wall2_omni::require_wall2;
 use crate::wall2_sonos_log::{self, Event, Kind, Read};
-use crate::wall2_sonos_read::read_seven;
+use crate::wall2_sonos_read::{art_agent, art_cached, art_url, fetch_art, read_all_eight, ArtCache, ArtImage};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::sync::{Mutex, OnceLock};
@@ -55,6 +63,8 @@ const MAX_SCENES: usize = 12;
 const MAX_TIMERS: usize = 6;
 const MAX_NAME_CHARS: usize = 60;
 const MAX_TRACK_CHARS: usize = 120;
+const MAX_SECONDS: f64 = 86_400.0;
+const MAX_ART_ADDRESS: usize = 1024;
 /// A map or list with more entries than this is a malformed read, refused whole.
 const MAX_ENTRIES: usize = 500;
 /// Names collected from one list (members, rooms) at most.
@@ -76,6 +86,8 @@ const CONTROL_ACTIONS: [&str; 3] = ["pauseAll", "groupAll", "ungroupAll"];
 
 const UNREACHABLE: &str = "Could not reach Sonos";
 const REFUSED: &str = "Sonos could not do that";
+const CANNOT_SKIP: &str = "cannot-skip";
+const NOTHING_PLAYING: &str = "nothing-playing";
 const OUT_OF_DATE: &str = "Sonos status is out of date";
 const PARTIAL: &str = "Some speakers did not change";
 const UNFINISHED: &str = "The request did not finish";
@@ -175,6 +187,13 @@ pub struct NowPlaying {
     pub speaker: String,
     pub track: Option<String>,
     pub artist: Option<String>,
+    /// The track's length and position in whole seconds, when the service gave finite numbers from 0
+    /// to 86,400 (a zero or missing length is None, as for a radio station; a position past the length
+    /// is clamped to it). The position is as of `SonosSummary::read_at_ms`.
+    pub duration: Option<u32>,
+    pub position: Option<u32>,
+    /// True when the read held a cover address this wall may fetch (`wall2_sonos_art` fetches it).
+    pub art: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -192,6 +211,8 @@ pub struct SonosSummary {
     /// The group the block's one volume slider moves; None when no group plays music.
     pub current_group: Option<String>,
     pub read_at_ms: i64,
+    /// The service said it has the back and next commands.
+    pub can_skip: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -315,7 +336,7 @@ fn too_big(v: &Value) -> bool {
 }
 
 pub(crate) fn reads_too_big(r: &Reads) -> bool {
-    [&r.status, &r.speakers, &r.routines, &r.groups, &r.presets, &r.scenes, &r.timers].into_iter().any(too_big)
+    [&r.status, &r.speakers, &r.routines, &r.groups, &r.presets, &r.scenes, &r.timers, &r.capabilities].into_iter().any(too_big)
 }
 
 fn same_set(a: &[String], b: &[String]) -> bool {
@@ -333,6 +354,7 @@ pub(crate) struct Reads {
     pub presets: Value,
     pub scenes: Value,
     pub timers: Value,
+    pub capabilities: Value,
 }
 
 fn pick_speakers(speakers: &Value, status: &Value) -> Vec<Speaker> {
@@ -613,6 +635,20 @@ fn pick_timers(body: &Value, now_ms: i64) -> Vec<SleepTimer> {
     out
 }
 
+/// Whole seconds from a finite JSON number from 0 to 86,400, else None.
+fn seconds(v: Option<&Value>) -> Option<u32> {
+    v?.as_f64().filter(|n| n.is_finite() && (0.0..=MAX_SECONDS).contains(n)).map(|n| n.floor() as u32)
+}
+
+/// A track's length and position: no length (missing, zero or out of range) means neither, as for a
+/// radio station; a position past the length is clamped to it; a missing position means none.
+fn track_time(st: &Value) -> (Option<u32>, Option<u32>) {
+    match seconds(st.get("duration")).filter(|d| *d > 0) {
+        Some(d) => (Some(d), seconds(st.get("position")).map(|p| p.min(d))),
+        None => (None, None),
+    }
+}
+
 /// The first playing speaker with a track (the current group's coordinator first), never
 /// one on an input.
 fn now_playing(status: &Value, speakers: &[Speaker], groups: &[Group], current: Option<&str>) -> Option<NowPlaying> {
@@ -630,10 +666,22 @@ fn now_playing(status: &Value, speakers: &[Speaker], groups: &[Group], current: 
         let track = st.get("track").and_then(Value::as_str).and_then(|t| clean_text(t, MAX_TRACK_CHARS));
         if track.is_some() {
             let artist = st.get("artist").and_then(Value::as_str).and_then(|t| clean_text(t, MAX_TRACK_CHARS));
-            return Some(NowPlaying { speaker: name.to_string(), track, artist });
+            let (duration, position) = track_time(st);
+            let art = art_address(st).is_some_and(|a| art_url(&a).is_some());
+            return Some(NowPlaying { speaker: name.to_string(), track, artist, duration, position, art });
         }
     }
     None
+}
+
+/// The cover address one speaker's status holds, as the service wrote it (checked only when fetched).
+fn art_address(st: &Value) -> Option<String> {
+    st.get("albumArtURI").and_then(Value::as_str).filter(|a| !a.is_empty() && a.len() <= MAX_ART_ADDRESS).map(str::to_string)
+}
+
+/// The cover address of the speaker `now_playing` named, kept in memory beside the summary.
+pub(crate) fn now_art_address(status: &Value, now: Option<&NowPlaying>) -> Option<String> {
+    art_address(status.get(now?.speaker.as_str())?)
 }
 
 pub(crate) fn shape(r: &Reads, read_at_ms: i64) -> SonosSummary {
@@ -654,6 +702,7 @@ pub(crate) fn shape(r: &Reads, read_at_ms: i64) -> SonosSummary {
         now_playing: now,
         current_group: current,
         read_at_ms,
+        can_skip: r.capabilities.get("skip") == Some(&Value::Bool(true)),
     }
 }
 
@@ -805,6 +854,37 @@ pub(crate) fn plan_sleep_cancel(s: &SonosSummary, id: &str) -> Result<Vec<Call>,
     Ok(vec![Call { method: "DELETE", path: format!("/api/sleep-timer/{id}"), body: None }])
 }
 
+/// Back or next: only when the last good read said the service has the commands, and music plays.
+/// The words are fixed: `cannot-skip` and `nothing-playing` (the page shows them as sentences).
+pub(crate) fn plan_skip(s: &SonosSummary, direction: &str) -> Result<Vec<Call>, String> {
+    let path = match direction {
+        "next" => "/api/action/next",
+        "previous" => "/api/action/previous",
+        _ => return Err(REFUSED.to_string()),
+    };
+    if !s.can_skip {
+        return Err(CANNOT_SKIP.to_string());
+    }
+    if !s.speakers.iter().any(|sp| sp.online && sp.state == "playing" && sp.input.is_none()) {
+        return Err(NOTHING_PLAYING.to_string());
+    }
+    Ok(vec![post(path.to_string(), Some(json!({})))])
+}
+
+/// What a 4xx answer to a skip says: the service's own two words, else the plain refusal.
+pub(crate) fn skip_refusal(body: &Value) -> String {
+    match body.get("error").and_then(Value::as_str) {
+        Some(CANNOT_SKIP) => CANNOT_SKIP.to_string(),
+        Some(NOTHING_PLAYING) => NOTHING_PLAYING.to_string(),
+        _ => REFUSED.to_string(),
+    }
+}
+
+/// A 2xx answer to a skip counts unless it says `{"ok": false}`.
+pub(crate) fn skip_accepted(body: &Value) -> bool {
+    body.get("ok") != Some(&Value::Bool(false))
+}
+
 // Section: http
 
 fn sonos_agent() -> &'static ureq::Agent {
@@ -820,14 +900,14 @@ fn fail(e: ureq::Error) -> String {
     text.to_string()
 }
 
-/// The seven reads run side by side, so a slow service costs one timeout, not seven. A
+/// The eight reads run side by side, so a slow service costs one timeout, not eight. A
 /// failed read answers one fixed word for its kind (`timed-out`, `no-answer` or
 /// `bad-answer`, see `wall2_sonos_read`); failed and slow reads are also written to
 /// `wall2-sonos.log`.
 fn read_all(base: &str) -> Result<Reads, String> {
-    let mut answers = read_seven(sonos_agent(), base).map_err(|k| k.word().to_string())?.into_iter();
+    let mut answers = read_all_eight(sonos_agent(), base).map_err(|k| k.word().to_string())?.into_iter();
     let mut next = || answers.next().unwrap_or(Value::Null);
-    Ok(Reads { status: next(), speakers: next(), routines: next(), groups: next(), presets: next(), scenes: next(), timers: next() })
+    Ok(Reads { status: next(), speakers: next(), routines: next(), groups: next(), presets: next(), scenes: next(), timers: next(), capabilities: next() })
 }
 
 /// Writes never reuse a pooled connection, so a dropped connection is never retried by
@@ -846,6 +926,25 @@ fn send_one(base: &str, c: &Call) -> Result<Value, String> {
     };
     let resp = require_ok(result.map_err(fail)?).map_err(|_| REFUSED.to_string())?;
     Ok(read_body(resp).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or(Value::Null))
+}
+
+/// Sends the skip. A 4xx answer is read (bounded) for the service's own word; anything else that
+/// is not a success is the plain refusal.
+fn send_skip(base: &str, c: &Call) -> Result<(), String> {
+    let body = c.body.as_ref().map(Value::to_string).unwrap_or_else(|| "{}".to_string());
+    let sent = write_agent().request(c.method, &format!("{base}{}", c.path)).set("Accept", "application/json").set("Content-Type", "application/json").send_string(&body);
+    match sent {
+        Ok(resp) => {
+            let resp = require_ok(resp).map_err(|_| REFUSED.to_string())?;
+            let answer = read_body(resp).ok().and_then(|b| serde_json::from_slice::<Value>(&b).ok()).unwrap_or(Value::Null);
+            if skip_accepted(&answer) { Ok(()) } else { Err(REFUSED.to_string()) }
+        }
+        Err(ureq::Error::Status(code, resp)) if (400..500).contains(&code) => {
+            let answer = read_body(resp).ok().and_then(|b| serde_json::from_slice::<Value>(&b).ok()).unwrap_or(Value::Null);
+            Err(skip_refusal(&answer))
+        }
+        Err(e) => Err(fail(e)),
+    }
 }
 
 /// Sends every write side by side. All failed: the first error. Some failed: "Some
@@ -876,9 +975,26 @@ static LAST: Mutex<Option<(Instant, SonosSummary)>> = Mutex::new(None);
 /// The key whose last unforced play was skipped, and when.
 static LAST_SKIP: Mutex<Option<(String, Instant)>> = Mutex::new(None);
 
-fn remember(s: &SonosSummary) {
+/// The cover address the last good read held for the playing speaker, and when that read was.
+static LAST_ART: Mutex<Option<(Instant, Option<String>)>> = Mutex::new(None);
+/// The one remembered cover (one fetch per distinct address), in memory only.
+static ART: ArtCache = Mutex::new(None);
+
+fn remember(s: &SonosSummary, art: Option<String>) {
     if let Ok(mut guard) = LAST.lock() {
         *guard = Some((Instant::now(), s.clone()));
+    }
+    if let Ok(mut guard) = LAST_ART.lock() {
+        *guard = Some((Instant::now(), art));
+    }
+}
+
+/// The held cover address, only while the read that held it is no older than a summary may be.
+fn fresh_art_address() -> Option<String> {
+    let guard = LAST_ART.lock().ok()?;
+    match guard.as_ref() {
+        Some((at, art)) if at.elapsed() <= SUMMARY_MAX_AGE => art.clone(),
+        _ => None,
     }
 }
 
@@ -911,7 +1027,8 @@ pub async fn wall2_sonos_summary(window: tauri::WebviewWindow, app: tauri::AppHa
             return Err(Kind::BadAnswer.word().to_string());
         }
         let summary = shape(&reads, now_ms());
-        remember(&summary);
+        let art = now_art_address(&reads.status, summary.now_playing.as_ref());
+        remember(&summary, art);
         Ok(summary)
     })
     .await
@@ -976,6 +1093,26 @@ pub async fn wall2_sonos_pause_all(window: tauri::WebviewWindow, app: tauri::App
     dispatch(base, vec![post("/api/action/pause-all".to_string(), None)]).await
 }
 
+/// Back or next. Refused unless the last good read (at most two minutes old) said `canSkip`; the page
+/// reads the summary again after it.
+#[tauri::command]
+pub async fn wall2_sonos_skip(window: tauri::WebviewWindow, app: tauri::AppHandle, direction: String) -> Result<(), String> {
+    require_wall2(window.label())?;
+    let base = read_base(&app, "sonosBaseUrl", false)?;
+    let calls = plan_skip(&last_good()?, &direction)?;
+    let call = calls.into_iter().next().ok_or_else(|| REFUSED.to_string())?;
+    tauri::async_runtime::spawn_blocking(move || send_skip(&base, &call)).await.map_err(|_| UNFINISHED.to_string())?
+}
+
+/// The playing track's cover as `{ mime, base64 }`, or nothing. Takes no address from the page: it
+/// fetches the one the last good read held (see `wall2_sonos_read` for every bound).
+#[tauri::command]
+pub async fn wall2_sonos_art(window: tauri::WebviewWindow) -> Result<Option<ArtImage>, String> {
+    require_wall2(window.label())?;
+    let address = fresh_art_address();
+    tauri::async_runtime::spawn_blocking(move || art_cached(&ART, address.as_deref(), |url| fetch_art(art_agent(), url))).await.map_err(|_| UNFINISHED.to_string())
+}
+
 #[tauri::command]
 pub async fn wall2_sonos_sleep(window: tauri::WebviewWindow, app: tauri::AppHandle, minutes: u32) -> Result<(), String> {
     require_wall2(window.label())?;
@@ -1007,7 +1144,7 @@ mod tests {
                 "Shed": {"online": false}
             }),
             status: json!({
-                "Den": {"state": "PLAYING", "volume": 12, "inputSource": null, "track": "Song A", "artist": "Band B"},
+                "Den": {"state": "PLAYING", "volume": 12, "inputSource": null, "track": "Song A", "artist": "Band B", "duration": 201, "position": 65, "albumArtURI": "http://192.168.1.50:1400/getaa?s=1&u=x"},
                 "Porch": {"state": "playing", "volume": 9.6},
                 "Studio": {"state": "playing", "volume": 100, "inputSource": "Line In"},
                 "Loft": {"state": "PAUSED_PLAYBACK", "volume": 30},
@@ -1037,6 +1174,7 @@ mod tests {
             }),
             scenes: json!({"calm": {"name": "Calm"}}),
             timers: json!({"t1": {"endsAt": "2026-11-12T22:00:00Z", "fadeMinutes": 5}}),
+            capabilities: json!({"skip": true}),
         }
     }
 
@@ -1195,6 +1333,7 @@ mod tests {
             presets: json!("not an object"),
             scenes: Value::Null,
             timers: Value::Null,
+            capabilities: Value::Null,
         };
         let s = shape(&r, 0);
         assert_eq!(s.speakers.len(), MAX_SPEAKERS);
@@ -1409,5 +1548,159 @@ mod tests {
         assert_eq!(input_kind(None), None);
         assert_eq!(speaker_state(Some("weird"), true), "unknown");
         assert_eq!(speaker_state(Some("playing"), false), "offline");
+    }
+
+    #[test]
+    fn a_track_carries_its_length_position_and_whether_a_cover_may_be_fetched() {
+        let np = summary().now_playing.unwrap();
+        assert_eq!((np.duration, np.position, np.art), (Some(201), Some(65), true));
+    }
+
+    #[test]
+    fn track_time_table() {
+        let t = |v: Value| track_time(&v);
+        assert_eq!(t(json!({"duration": 201, "position": 65})), (Some(201), Some(65)));
+        assert_eq!(t(json!({"duration": 201.9, "position": 65.9})), (Some(201), Some(65)));
+        // A position past the length is clamped to it.
+        assert_eq!(t(json!({"duration": 100, "position": 250})), (Some(100), Some(100)));
+        // No length, a zero length or a length out of range: no time at all (a station).
+        assert_eq!(t(json!({"position": 65})), (None, None));
+        assert_eq!(t(json!({"duration": 0, "position": 65})), (None, None));
+        assert_eq!(t(json!({"duration": -5, "position": 5})), (None, None));
+        assert_eq!(t(json!({"duration": 86_401, "position": 5})), (None, None));
+        assert_eq!(t(json!({"duration": "201", "position": 5})), (None, None));
+        assert_eq!(t(json!({"duration": null, "position": 5})), (None, None));
+        assert_eq!(t(json!({"duration": 86_400, "position": 86_400})), (Some(86_400), Some(86_400)));
+        // A missing, negative, out of range or non-number position keeps the length and drops the position.
+        assert_eq!(t(json!({"duration": 90})), (Some(90), None));
+        assert_eq!(t(json!({"duration": 90, "position": -1})), (Some(90), None));
+        assert_eq!(t(json!({"duration": 90, "position": 1_000_000})), (Some(90), None));
+        assert_eq!(t(json!({"duration": 90, "position": "12"})), (Some(90), None));
+        assert_eq!(t(json!({"duration": 90, "position": 0})), (Some(90), Some(0)));
+    }
+
+    #[test]
+    fn the_cover_address_is_held_for_the_playing_speaker_only() {
+        let r = reads();
+        let s = shape(&r, 1);
+        assert_eq!(now_art_address(&r.status, s.now_playing.as_ref()).as_deref(), Some("http://192.168.1.50:1400/getaa?s=1&u=x"));
+        assert_eq!(now_art_address(&r.status, None), None);
+        // A speaker with no address, an empty one or an over-long one holds none.
+        for art in [json!(null), json!(""), json!("x".repeat(MAX_ART_ADDRESS + 1)), json!(7)] {
+            let mut r = reads();
+            r.status["Den"]["albumArtURI"] = art;
+            let s = shape(&r, 1);
+            assert_eq!(now_art_address(&r.status, s.now_playing.as_ref()), None);
+            assert!(!s.now_playing.unwrap().art);
+        }
+        // An address this wall would not fetch is not offered to the page either.
+        for art in ["http://8.8.8.8:1400/a", "/getaa?s=1", "https://evil.example/a.jpg", "http://127.0.0.1:1400/a"] {
+            let mut r = reads();
+            r.status["Den"]["albumArtURI"] = json!(art);
+            let s = shape(&r, 1);
+            assert!(!s.now_playing.unwrap().art, "{art}");
+        }
+        let mut r = reads();
+        r.status["Den"]["albumArtURI"] = json!("https://i.scdn.co/image/abc");
+        assert!(shape(&r, 1).now_playing.unwrap().art);
+    }
+
+    #[test]
+    fn can_skip_only_for_an_exact_true() {
+        let with = |v: Value| {
+            let mut r = reads();
+            r.capabilities = v;
+            shape(&r, 1).can_skip
+        };
+        assert!(with(json!({"skip": true})));
+        assert!(!with(json!({"skip": false})));
+        assert!(!with(json!({"skip": "true"})));
+        assert!(!with(json!({"skip": 1})));
+        assert!(!with(json!({})));
+        assert!(!with(json!(true)));
+        assert!(!with(Value::Null));
+    }
+
+    #[test]
+    fn skip_is_planned_only_with_the_capability_and_music_playing() {
+        let s = summary();
+        let next = plan_skip(&s, "next").unwrap();
+        assert_eq!((next[0].method, next[0].path.as_str(), next[0].body.clone()), ("POST", "/api/action/next", Some(json!({}))));
+        assert_eq!(plan_skip(&s, "previous").unwrap()[0].path, "/api/action/previous");
+        for bad in ["", "Next", "next ", "back", "../next", "next?x=1", "NEXT"] {
+            assert_eq!(plan_skip(&s, bad).unwrap_err(), REFUSED, "{bad}");
+        }
+        let mut no_cap = summary();
+        no_cap.can_skip = false;
+        assert_eq!(plan_skip(&no_cap, "next").unwrap_err(), "cannot-skip");
+        // Nothing playing (paused, or only a line-in or offline speaker): the service's own word.
+        let mut quiet = summary();
+        for sp in &mut quiet.speakers {
+            if sp.input.is_none() { sp.state = "paused".to_string(); }
+        }
+        assert_eq!(plan_skip(&quiet, "previous").unwrap_err(), "nothing-playing");
+    }
+
+    #[test]
+    fn a_refused_skip_says_the_services_own_word() {
+        assert_eq!(skip_refusal(&json!({"error": "nothing-playing"})), "nothing-playing");
+        assert_eq!(skip_refusal(&json!({"error": "cannot-skip"})), "cannot-skip");
+        assert_eq!(skip_refusal(&json!({"error": "something else entirely"})), REFUSED);
+        assert_eq!(skip_refusal(&json!({"error": 4})), REFUSED);
+        assert_eq!(skip_refusal(&json!({})), REFUSED);
+        assert_eq!(skip_refusal(&Value::Null), REFUSED);
+        assert!(skip_accepted(&json!({"ok": true})));
+        assert!(skip_accepted(&Value::Null));
+        assert!(!skip_accepted(&json!({"ok": false})));
+    }
+
+    /// A loopback-only listener for one test (never a real service): answers every request with the
+    /// given status and body, and sends the request it read to the channel.
+    fn skip_server(code: u16, body: &'static str) -> (String, std::sync::mpsc::Receiver<String>) {
+        use std::io::{Read as _, Write as _};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            if let Ok((mut s, _)) = listener.accept() {
+                // The head and the body may arrive in separate writes: read until the client pauses.
+                let _ = s.set_read_timeout(Some(Duration::from_millis(300)));
+                let mut seen = Vec::new();
+                let mut buf = [0u8; 4096];
+                while let Ok(n) = s.read(&mut buf) {
+                    if n == 0 { break; }
+                    seen.extend_from_slice(&buf[..n]);
+                    if seen.windows(4).any(|w| w == b"\r\n\r\n") && seen.ends_with(b"{}") { break; }
+                }
+                let _ = tx.send(String::from_utf8_lossy(&seen).to_string());
+                let _ = s.write_all(format!("HTTP/1.1 {code} X\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).as_bytes());
+            }
+        });
+        (base, rx)
+    }
+
+    fn skip_call() -> Call {
+        plan_skip(&summary(), "next").unwrap().remove(0)
+    }
+
+    #[test]
+    fn a_skip_goes_out_as_an_empty_json_post_and_each_answer_has_its_word() {
+        let (base, rx) = skip_server(200, r#"{"ok":true}"#);
+        assert_eq!(send_skip(&base, &skip_call()), Ok(()));
+        let seen = rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert!(seen.starts_with("POST /api/action/next HTTP/1.1"), "{seen}");
+        assert!(seen.to_ascii_lowercase().contains("content-type: application/json"), "{seen}");
+        assert!(seen.ends_with("{}"), "{seen}");
+        assert_eq!(send_skip(&skip_server(200, r#"{"ok":false}"#).0, &skip_call()), Err(REFUSED.to_string()));
+        assert_eq!(send_skip(&skip_server(200, "{}").0, &skip_call()), Ok(()));
+        assert_eq!(send_skip(&skip_server(409, r#"{"error":"nothing-playing"}"#).0, &skip_call()), Err("nothing-playing".to_string()));
+        assert_eq!(send_skip(&skip_server(400, r#"{"error":"cannot-skip"}"#).0, &skip_call()), Err("cannot-skip".to_string()));
+        assert_eq!(send_skip(&skip_server(404, "not json").0, &skip_call()), Err(REFUSED.to_string()));
+        assert_eq!(send_skip(&skip_server(500, r#"{"error":"cannot-skip"}"#).0, &skip_call()), Err(REFUSED.to_string()));
+        let gone = {
+            let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            format!("http://{}", l.local_addr().unwrap())
+        };
+        assert_eq!(send_skip(&gone, &skip_call()), Err(UNREACHABLE.to_string()));
     }
 }

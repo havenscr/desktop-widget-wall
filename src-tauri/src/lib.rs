@@ -3819,6 +3819,8 @@ pub fn run() {
             wall2_sonos::wall2_sonos_pause_all,
             wall2_sonos::wall2_sonos_sleep,
             wall2_sonos::wall2_sonos_sleep_cancel,
+            wall2_sonos::wall2_sonos_skip,
+            wall2_sonos::wall2_sonos_art,
             wall2_meet::wall2_meet_next,
             wall2_meet::wall2_meet_day,
             wall2_meet::wall2_meet_sign_in,
