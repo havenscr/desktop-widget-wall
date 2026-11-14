@@ -1,22 +1,31 @@
 import { reviewNow } from '../../ui/reviewClock';
 import { mocks } from '../tauri';
+import { retryFor } from '../../tools/reports';
 import { knob } from './long';
 
 /**
  * The Sound block's Sonos service, with invented speakers, routines and presets. Review
  * knobs: `?sonos=off` (not set up), `?sonos=down` (never reached), `?sonos=sparse` (one
  * routine, one speaker, no presets), `?sonos=heavy` (many routines with long names, many
- * speakers, a sleep timer), `?sonos=quiet` (nothing playing), `?sonos=few` (one matching routine plus More), `?sonos=slow` (never answers, for the loading state), `?skip=1` (an unforced play is
+ * speakers, a sleep timer), `?sonos=timeout`, `?sonos=dropped` and `?sonos=garbled` (a good first read, then a quarter of
+ * a second later a read that fails as timed-out, no-answer or bad-answer, and its second try fails the same way:
+ * the dimmed card with its line, shown at once because a review frame shortens the 5 second wait), `?sonos=pending` (the
+ * same, but the second try never answers: one failed read waiting, nothing shown), `?where=office|all|common|none` (which place is in use), `?sonos=quiet` (nothing playing), `?sonos=few` (one matching routine plus More), `?sonos=slow` (never answers, for the loading state), `?skip=1` (an unforced play is
  * skipped). The default is a typical
  * evening with music playing on a group.
  */
 const now = () => (reviewNow ? reviewNow() : Date.now());
 
-type Mode = 'typical' | 'off' | 'down' | 'sparse' | 'heavy' | 'quiet' | 'slow' | 'few';
+type Mode = 'typical' | 'off' | 'down' | 'sparse' | 'heavy' | 'quiet' | 'slow' | 'few' | 'timeout' | 'dropped' | 'garbled' | 'pending';
+
+/** After its first good read each of these modes fails with the word Rust sends. */
+const FAILS: Partial<Record<Mode, string>> = { timeout: 'timed-out', dropped: 'no-answer', garbled: 'bad-answer', pending: 'timed-out' };
+/** Reads answered so far in each mode (each mode counts its own). */
+const reads = new Map<Mode, number>();
 
 function mode(): Mode {
   const k = knob('sonos');
-  return k === 'off' || k === 'down' || k === 'sparse' || k === 'heavy' || k === 'quiet' || k === 'slow' || k === 'few' ? k : 'typical';
+  return k === 'off' || k === 'down' || k === 'sparse' || k === 'heavy' || k === 'quiet' || k === 'slow' || k === 'few' || k === 'timeout' || k === 'dropped' || k === 'garbled' || k === 'pending' ? k : 'typical';
 }
 
 const ROUTINES = [
@@ -83,6 +92,7 @@ function groups(m: Mode) {
 
 function summary(m: Mode) {
   const t = now();
+  const place = knob('where');
   const presets =
     m === 'sparse'
       ? []
@@ -94,9 +104,9 @@ function summary(m: Mode) {
             { id: 'upstairs', name: 'Upstairs Only', active: false, loud: [] },
           ]
         : [
-            { id: 'whole', name: 'All Speakers', active: false, loud: [{ name: 'Studio', level: 100, sets: false }] },
-            { id: 'desk', name: 'Office (Work)', active: m !== 'quiet', loud: [] },
-            { id: 'living', name: 'Common Areas', active: false, loud: [] },
+            { id: 'whole', name: 'All Speakers', active: place === 'all', loud: [{ name: 'Studio', level: 100, sets: false }] },
+            { id: 'desk', name: 'Office (Work)', active: place ? place === 'office' : m !== 'quiet', loud: [] },
+            { id: 'living', name: 'Common Areas', active: place === 'common', loud: [] },
             { id: 'upstairs', name: 'Upstairs Only', active: false, loud: [] },
           ];
   return {
@@ -131,6 +141,18 @@ export function registerSonosMocks(): void {
     if (m === 'slow') return new Promise(() => undefined);
     if (m === 'off') return Promise.reject(new Error('not-configured'));
     if (m === 'down') return Promise.reject(new Error('Could not reach Sonos'));
+    const word = FAILS[m];
+    if (word) {
+      const n = (reads.get(m) ?? 0) + 1;
+      reads.set(m, n);
+      if (n === 1) {
+        // Ask the page for a second read soon, so the failing phases show without waiting 30 seconds.
+        setTimeout(() => void retryFor('sound')?.(), 150);
+        return summary('typical');
+      }
+      // The failed read, then (pending) a second try that never answers, or (the others) one that fails the same way.
+      return m === 'pending' && n > 2 ? new Promise(() => undefined) : Promise.reject(new Error(word));
+    }
     // `?spotifyplay=speaker` pairs with the Spotify mock: Spotify plays on "Living room", so
     // the group lead here takes that name and Home's strip shows the track.
     if (knob('spotifyplay') === 'speaker') return JSON.parse(JSON.stringify(summary(m)).replaceAll('"Den"', '"Living room"'));

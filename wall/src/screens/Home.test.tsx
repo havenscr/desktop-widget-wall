@@ -103,11 +103,12 @@ it('with only one source out, there is no status card', async () => {
   mocks.set('wall2_tasks_summary', () => ({ next: [], remaining: 0 }));
   mocks.set('wall2_home_security', () => Promise.reject(new Error('not-configured')));
   render(<Home />);
+  // One failed read shows nothing; the second, 5 seconds later, says what happened.
   await act(async () => {
-    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(5_000);
   });
   expect(screen.queryByLabelText('Home centre status')).toBeNull();
-  expect(screen.getByText('Could not reach Sonos')).toBeTruthy();
+  expect(screen.getByText('Sonos cannot be reached')).toBeTruthy();
 });
 
 const SONOS = {
@@ -218,7 +219,7 @@ it('Sonos failing after it was up keeps the centre as it was: no layout class ch
   expect(centre.className).toBe('home-centre');
   up = false;
   await act(async () => {
-    await vi.advanceTimersByTimeAsync(31_000);
+    await vi.advanceTimersByTimeAsync(36_000);
   });
   expect(centre.className).toBe('home-centre');
   expect(container.querySelector('.sound.stale')).toBeTruthy();

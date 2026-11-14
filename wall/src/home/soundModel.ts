@@ -92,6 +92,10 @@ export const NEEDS_CONFIRM = 'needs-confirm';
 export const SONOS_REFRESH_MS = 30_000;
 /** Older than this, the block dims and writes stop (Rust refuses writes past the same two minutes). */
 export const STALE_MS = 2 * 60_000;
+/** After one failed read the wall reads once more this long after; only a second failure shows. */
+export const SONOS_RETRY_MS = 5_000;
+/** The same wait in a dev review frame (`?hz=&at=`), so review stills show the failed phase at once. */
+export const SONOS_REVIEW_RETRY_MS = 250;
 export const SLEEP_CHOICES = [30, 60, 90] as const;
 /** The last routine started from the wall: `{"key","at","group","seen"}` (see `markAfterRead`). */
 export const LAST_PLAY_KEY = 'wall2-sonos-last-play';
@@ -141,7 +145,7 @@ export const FACE_TILES = [
   { slot: 'morning', label: 'Morning' },
   { slot: 'day', label: 'Day' },
   { slot: 'evening', label: 'Evening' },
-  { slot: 'night', label: 'Late night' },
+  { slot: 'night', label: 'Late Night' },
   { slot: 'workday', label: 'Workday' },
 ] as const satisfies readonly { slot: Slot; label: string }[];
 
@@ -223,8 +227,8 @@ export interface WherePlace {
  * always exactly these (the owner's names), whatever else the preset's name says. */
 const WHERE_WORDS: readonly { re: RegExp; label: string }[] = [
   { re: /^office\b/i, label: 'Office' },
-  { re: /^all\s+speakers\b/i, label: 'All speakers' },
-  { re: /^common\s+areas?\b/i, label: 'Common areas' },
+  { re: /^all\s+speakers\b/i, label: 'All Speakers' },
+  { re: /^common\s+areas?\b/i, label: 'Common Areas' },
 ];
 
 /** "Office (Work)" reads "Office". */
@@ -232,7 +236,7 @@ export function whereLabel(name: string): string {
   return name.replace(/\s*\([^)]*\)/g, '').replace(/\s+/g, ' ').trim() || name;
 }
 
-/** Office, All speakers, Common areas, in that order: the presets whose names start so,
+/** Office, All Speakers, Common Areas, in that order: the presets whose names start so,
  * labelled with exactly those words (the preset's own id goes to the command). */
 export function wherePlaces(presets: readonly SonosPreset[]): WherePlace[] {
   const out: WherePlace[] = [];
@@ -379,10 +383,32 @@ export function startedText(at: number, now: number): string {
   return `started ${Math.floor(mins / 60)} h ago`;
 }
 
-/** "3 min ago" for the dimmed block's age line. */
+/** The kind of a failed read, as the Rust side words it (`wall2_sonos_read`). */
+export type FailureKind = 'timed-out' | 'no-answer' | 'bad-answer';
+
+/** Any error text that is not one of the three words (an older build, a browser preview) reads as "cannot be reached". */
+export function failureKind(text: string): FailureKind {
+  return text === 'timed-out' || text === 'bad-answer' ? text : 'no-answer';
+}
+
+/** What happened, in one sentence, for the card's line and the Tools drawer. */
+export function failureSentence(kind: FailureKind): string {
+  if (kind === 'timed-out') return 'Sonos did not answer in time';
+  if (kind === 'bad-answer') return 'Sonos sent an answer the wall could not read';
+  return 'Sonos cannot be reached';
+}
+
+/** The card's amber line: what happened (or, with no failed read, that Sonos is being checked), then how old the last good read is (when there was one). */
+export function failureLine(kind: FailureKind | null, okAt: number | null, now: number): string {
+  // No kind until a read has failed: a card that is only old (the wall was hidden for hours) is being checked.
+  const first = kind === null ? 'Checking Sonos' : failureSentence(kind);
+  return okAt === null ? first : `${first}. Last good read ${ageWords(okAt, now)}`;
+}
+
+/** "3 min ago" for the dimmed block's age line (it only ever sits beside a failed read). */
 export function ageWords(at: number, now: number): string {
   const mins = Math.max(0, Math.floor((now - at) / 60_000));
-  if (mins < 1) return 'just now';
+  if (mins < 1) return 'less than a minute ago';
   if (mins < 60) return `${mins} min ago`;
   return `${Math.floor(mins / 60)} h ago`;
 }

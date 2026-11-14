@@ -10,6 +10,10 @@ import {
   moreRoutines,
   tileMatches,
   wherePlaces,
+  ageWords,
+  failureKind,
+  failureLine,
+  failureSentence,
   whereLabel,
   groupLabel,
   leftOutNote,
@@ -279,24 +283,44 @@ it('More never lists Group all or Pause all', () => {
   expect(moreControls([c('a', 'groupAll'), c('b', 'pauseAll'), c('c', 'ungroupAll')]).map((x) => x.key)).toEqual(['c']);
 });
 
+it('the age words never say "just now" beside a failure: less than a minute, minutes, hours', () => {
+  expect(ageWords(0, 0)).toBe('less than a minute ago');
+  expect(ageWords(0, 59_000)).toBe('less than a minute ago');
+  expect(ageWords(0, 60_000)).toBe('1 min ago');
+  expect(ageWords(0, 59 * 60_000)).toBe('59 min ago');
+  expect(ageWords(0, 2 * 3_600_000)).toBe('2 h ago');
+});
+
+it('each kind of failed read has its own sentence; the line adds the age of the last good read, or stops at the sentence', () => {
+  expect(failureKind('timed-out')).toBe('timed-out');
+  expect(failureKind('no-answer')).toBe('no-answer');
+  expect(failureKind('bad-answer')).toBe('bad-answer');
+  expect(failureKind('Could not reach Sonos')).toBe('no-answer');
+  expect(failureLine('timed-out', 0, 60_000)).toBe('Sonos did not answer in time. Last good read 1 min ago');
+  expect(failureLine('no-answer', 0, 30_000)).toBe('Sonos cannot be reached. Last good read less than a minute ago');
+  expect(failureLine('bad-answer', 0, 2 * 3_600_000)).toBe('Sonos sent an answer the wall could not read. Last good read 2 h ago');
+  expect(failureLine('timed-out', null, 5_000)).toBe('Sonos did not answer in time');
+  expect(failureSentence('bad-answer')).toBe('Sonos sent an answer the wall could not read');
+});
+
 it('two presets that start with the same word: the first by name wins', () => {
   const p = (id: string, name: string) => ({ id, name, active: false, loud: [] });
   expect(wherePlaces([p('z', 'Office Zed'), p('a', 'Office Alpha')]).map((x) => x.preset.id)).toEqual(['a']);
   // The label is the owner's word, never the preset's longer name; the id is the preset's own.
   expect(wherePlaces([p('a', 'Office Alpha'), p('s', 'ALL SPEAKERS upstairs'), p('c', 'common area east')]).map((x) => [x.label, x.preset.id])).toEqual([
     ['Office', 'a'],
-    ['All speakers', 's'],
-    ['Common areas', 'c'],
+    ['All Speakers', 's'],
+    ['Common Areas', 'c'],
   ]);
 });
 
-it('Where is Office, All speakers, Common areas in that order; the label drops parentheses; other presets are hidden', () => {
+it('Where is Office, All Speakers, Common Areas in that order; the label drops parentheses; other presets are hidden', () => {
   const p = (id: string, name: string) => ({ id, name, active: false, loud: [] });
   const places = wherePlaces([p('a', 'Common Areas'), p('b', 'Upstairs'), p('c', 'All Speakers'), p('d', 'Office (Work)')]);
   expect(places.map((x) => [x.label, x.preset.id])).toEqual([
     ['Office', 'd'],
-    ['All speakers', 'c'],
-    ['Common areas', 'a'],
+    ['All Speakers', 'c'],
+    ['Common Areas', 'a'],
   ]);
   expect(wherePlaces([p('b', 'Upstairs')])).toEqual([]);
   expect(whereLabel('Office (Work)')).toBe('Office');

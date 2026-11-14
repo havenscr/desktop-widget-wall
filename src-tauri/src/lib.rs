@@ -69,6 +69,8 @@ mod wall2_omni;
 mod wall2_power;
 mod wall2_signals;
 mod wall2_sonos;
+mod wall2_sonos_log;
+mod wall2_sonos_read;
 mod wall2_watch;
 mod wall2_tools;
 mod wall2_onair;
@@ -4089,6 +4091,7 @@ pub fn run() {
                 wall2_spotify::start_log(app.path().app_log_dir().ok());
                 wall2_youtube::start_log(app.path().app_log_dir().ok());
                 wall2_signals::start(app.handle().clone(), app.path().app_log_dir().ok());
+                wall2_sonos_log::start(app.path().app_log_dir().ok());
                 #[cfg(windows)]
                 {
                     start_displays_worker();
