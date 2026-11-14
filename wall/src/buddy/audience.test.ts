@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { LIFE_EVERY_S, LIFE_FIRST_S, LIFE_JITTER_S, LIFE_S, LOOK_ROUND_S, SEAT_GAP_MIN, facing, lifeAt, seatFor, seatReach, showRole, watchLook, watchRestFor, type ShowInput } from './audience';
+import { BAND_MARGIN, LIFE_EVERY_S, LIFE_FIRST_S, LIFE_JITTER_S, LIFE_S, LOOK_ROUND_S, SEAT_GAP_MIN, facing, lifeAt, clearOf, seatFor, seatReach, showRole, watchLook, watchRestFor, type ShowInput } from './audience';
 import { groundOf, type Span } from './ground';
 import { SPRITES } from './sprites';
 
@@ -128,5 +128,31 @@ describe('watching', () => {
     expect(watchRestFor(10, Infinity, true, false)).toBe(Infinity);
     expect(watchRestFor(10, Infinity, false, true)).toBe(Infinity);
     expect(watchRestFor(10, 1, false, false)).toBeCloseTo(LOOK_ROUND_S - 1);
+  });
+});
+
+describe('his seat keeps clear of controls', () => {
+  // An invented bar across the floor, as the Look switch stands (x 600 to 1060).
+  const bar = [{ x0: 600, x1: 1060 }];
+  it('takes the stretch under a control out of his ground, his whole reach kept clear', () => {
+    const g = clearOf(WATCH, bar, PX);
+    for (const s of g) {
+      expect(s.max <= 600 - seatReach(PX) - BAND_MARGIN || s.min >= 1060 + BAND_MARGIN).toBe(true);
+    }
+    expect(g.length).toBeGreaterThan(0);
+  });
+  it('the seat then lies left of the control, and follows the screen when the control moves', () => {
+    const x = seatFor(A, clearOf(WATCH, bar, PX), PX)!;
+    expect(x + seatReach(PX)).toBeLessThanOrEqual(600 - BAND_MARGIN);
+    const y = seatFor(A, clearOf(WATCH, [{ x0: 400, x1: 700 }], PX), PX)!;
+    // A control further left leaves the nearer stretch on its right: he sits there instead.
+    expect(y).toBeGreaterThanOrEqual(700 + BAND_MARGIN);
+    expect(y).toBeGreaterThan(x);
+  });
+  it('no control at his height changes nothing', () => {
+    expect(seatFor(A, clearOf(WATCH, [], PX), PX)).toBe(seatFor(A, WATCH, PX));
+  });
+  it('a control covering all of his ground leaves no seat', () => {
+    expect(seatFor(A, clearOf(WATCH, [{ x0: 0, x1: 2560 }], PX), PX)).toBeNull();
   });
 });

@@ -215,6 +215,33 @@ describe('the drive-in', () => {
     expect(xOf(container)).toBe(seatFor(rect!, WATCH_GROUND, 6));
   });
 
+  it('his seat keeps clear of a control standing at his height (the Look switch), on whichever side is nearer the screen', () => {
+    reduced(true);
+    const bar = document.createElement('div');
+    bar.className = 'w-lookbar';
+    document.body.appendChild(bar);
+    const at = (left: number, right: number) => {
+      bar.getBoundingClientRect = () => ({ left, right, top: 0, bottom: 2000, width: right - left, height: 2000, x: left, y: 0, toJSON: () => ({}) });
+    };
+    try {
+      // A bar well left of the screen: the stretch right of it is the nearer one.
+      at(300, 700);
+      const { container, unmount } = render(<Watt now={day} />);
+      play(A);
+      expect(showOf(container)).toBe('seated');
+      expect(xOf(container)).toBeGreaterThanOrEqual(700);
+      // A bar reaching the screen: only the stretch left of it is free.
+      stopShow();
+      at(620, 1180);
+      play(A);
+      expect(showOf(container)).toBe('seated');
+      expect(xOf(container) + seatReach(6)).toBeLessThanOrEqual(620);
+      unmount();
+    } finally {
+      bar.remove();
+    }
+  });
+
   it('under reduced motion he is simply in his seat, and simply back, with no frame loop', () => {
     reduced(true);
     const { container } = render(<Watt now={day} />);

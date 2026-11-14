@@ -55,6 +55,41 @@ export function seatFor(screen: ScreenRect, spans: readonly Span[], px: number):
   return best;
 }
 
+/** A stretch of the floor, x to x, that a control or card of the wall covers at his height. */
+export interface Band {
+  readonly x0: number;
+  readonly x1: number;
+}
+
+/** Clear air kept between him and a control, px. */
+export const BAND_MARGIN = 8;
+
+/**
+ * His ground with the stretches under `bands` taken out: his whole reach (`seatReach`) stays at
+ * least `BAND_MARGIN` clear of every band, so he never sits over the Look switch, the control row or
+ * a card. Spans that vanish are dropped.
+ */
+export function clearOf(spans: readonly Span[], bands: readonly Band[], px: number): Span[] {
+  const reach = seatReach(px);
+  let out: Span[] = spans.map((s) => ({ ...s }));
+  for (const b of bands) {
+    // His left edge may not lie in (x0 - reach - margin, x1 + margin).
+    const lo = b.x0 - reach - BAND_MARGIN;
+    const hi = b.x1 + BAND_MARGIN;
+    const next: Span[] = [];
+    for (const s of out) {
+      if (s.max <= lo || s.min >= hi) {
+        next.push(s);
+        continue;
+      }
+      if (s.min <= lo) next.push({ ...s, max: lo });
+      if (s.max >= hi) next.push({ ...s, min: hi });
+    }
+    out = next;
+  }
+  return out;
+}
+
 /** The way he faces to watch from left edge `x` (sprite `width` wide): toward the screen's middle. */
 export function facing(screen: ScreenRect, x: number, width: number): 1 | -1 {
   return screen.x + screen.w / 2 >= x + width / 2 ? 1 : -1;

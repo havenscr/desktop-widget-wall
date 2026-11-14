@@ -81,7 +81,7 @@ import {
   type WattPlace,
 } from './model';
 import { defaultSpot, groundOf, isOnGround, onGround, sameSpan, walkAround } from './ground';
-import { facing, seatFor, showRole } from './audience';
+import { clearOf, facing, seatFor, showRole, type Band } from './audience';
 import { WattMenu, type Trick } from './Menu';
 import {
   BUBBLE,
@@ -207,6 +207,27 @@ export function infoBoxes(toStage: (x: number, y: number) => { x: number; y: num
     const top = a.y;
     const b = toStage(r.right, r.bottom);
     out.push({ left, top, width: b.x - left, height: b.y - top });
+  }
+  return out;
+}
+
+/** What his seat at the drive-in keeps clear of: the Look switch, the control row, the cards. */
+const SEAT_CLEAR = '.w-lookbar, .w-ctl, .w-card, .w-now, .leave-banner';
+/**
+ * The stretches of floor (x to x, stage pixels) covered by those at his seated height, standing on
+ * the horizon `hy`: anything whose box reaches into the band `[hy - height, hy]`.
+ */
+export function controlBands(toStage: (x: number, y: number) => { x: number; y: number }, hy: number, height: number): Band[] {
+  const out: Band[] = [];
+  for (const e of document.querySelectorAll<HTMLElement>(SEAT_CLEAR)) {
+    const r = e.getBoundingClientRect();
+    if (r.width <= 0 || r.height <= 0) continue;
+    const a = toStage(r.left, r.top);
+    const x0 = a.x;
+    const top = a.y;
+    const b = toStage(r.right, r.bottom);
+    if (b.y <= hy - height || top >= hy) continue;
+    out.push({ x0, x1: b.x });
   }
   return out;
 }
@@ -340,6 +361,9 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
   const audienceRef = useRef(audience);
   audienceRef.current = audience;
   const paused = useWatchStore((st) => st.paused);
+  /** Where the controls stand at his height for the current screen (see `controlBands`). */
+  const bandsFor = useRef<unknown>(null);
+  const bandsAt = useRef<Band[]>([]);
   /** The owner moved him (a carry, Come here, Stay): during a show he stays where he was put. */
   const ownerHand = useRef(false);
   // The leave banner in the band above the ribbon takes part of his ground on Home and Meet.
@@ -1323,7 +1347,14 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
           c.landT = sitAt(T0);
           sitToWatch(c, T0, facing(screen, c.x, w));
         }
-        const seat = seatFor(screen, groundOf('unwind', true, bannerRef.current), px);
+        // The seat keeps clear of every control and card at his height (measured when the screen
+        // changes, and again each time he is about to walk).
+        const idle = role === 'watch' && !ownerHand.current && !(c.mode === SIT && c.watch) && !(c.mode === RETURN && c.watch);
+        if (bandsFor.current !== screen || idle) {
+          bandsFor.current = screen;
+          bandsAt.current = controlBands(toStage, p.camera.hy, spriteHeight('watch', px));
+        }
+        const seat = seatFor(screen, clearOf(groundOf('unwind', true, bannerRef.current), bandsAt.current, px), px);
         if (role === 'watch' && !ownerHand.current && seat !== null) {
           const seated = c.mode === SIT && c.watch && Math.abs(c.x - seat) < 0.5;
           const going = c.mode === RETURN && c.watch && c.target === seat;
