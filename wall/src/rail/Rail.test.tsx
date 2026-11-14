@@ -5,13 +5,20 @@ import { usePlaceStore } from '../state/places';
 
 beforeEach(() => usePlaceStore.setState({ active: 'work' }));
 
-it('has six enabled named buttons and one disabled', () => {
+it('has seven enabled named buttons', () => {
   render(<Rail />);
-  for (const name of ['Work', 'Home', 'Unwind', 'Meet', 'Zen', 'Tools']) {
+  for (const name of ['Work', 'Home', 'Unwind', 'Meet', 'On air', 'Zen', 'Tools']) {
     const b = screen.getByRole('button', { name }) as HTMLButtonElement;
     expect(b.disabled).toBe(false);
   }
-  expect((screen.getByRole('button', { name: 'On air' }) as HTMLButtonElement).disabled).toBe(true);
+});
+
+it('On air opens the On Air place and carries aria-current', () => {
+  render(<Rail />);
+  fireEvent.click(screen.getByRole('button', { name: 'On air' }));
+  expect(usePlaceStore.getState().active).toBe('onair');
+  expect(screen.getByRole('button', { name: 'On air' }).getAttribute('aria-current')).toBe('page');
+  expect(screen.getByRole('button', { name: 'Work' }).getAttribute('aria-current')).toBeNull();
 });
 
 it('aria-current follows the store', () => {

@@ -1,0 +1,464 @@
+/* On Air (first version), inside the top band (stage x 124 to 2540, y 20 to 510). Three
+   columns as planned: the timer and run of show at stage x 124 (640 wide), the notes card at
+   stage x 800 (1080 by 486), Mark and the recording keys at stage x 1920 (620 wide). The area
+   under the recording keys' footnote stays empty, kept for the studio lights block. */
+.onair {
+  position: absolute;
+  inset: 0;
+}
+/* On Air puts the show timer where the clock sits; the time of day stays on the strip below. */
+.main[data-place='onair'] > .top > div:has(> .clk) {
+  display: none;
+}
+.onair .oa-k {
+  display: block;
+  min-width: 0;
+}
+
+/* Shared buttons: pointer sized, a hover and a focus ring each. */
+.oa-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  height: 40px;
+  padding: 0 18px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  font: 600 18px/1 var(--body);
+  color: var(--dim);
+  white-space: nowrap;
+  flex: none;
+  box-sizing: border-box;
+  transition: background 160ms ease, border-color 160ms ease, color 160ms ease;
+}
+.oa-btn.cy {
+  background: var(--cyan);
+  color: #06041a;
+  border-color: transparent;
+}
+.oa-btn.fill {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--tx);
+}
+.oa-btn.sm {
+  height: 32px;
+  padding: 0 14px;
+  font-size: 16px;
+  border-radius: 10px;
+}
+.oa-btn:hover:not([aria-disabled='true']) {
+  border-color: rgba(53, 230, 234, 0.55);
+  color: var(--tx);
+  background: rgba(53, 230, 234, 0.1);
+}
+.oa-btn.cy:hover:not([aria-disabled='true']) {
+  background: #5ff0f3;
+  color: #06041a;
+}
+.oa-btn[aria-disabled='true'] {
+  opacity: 0.45;
+  cursor: default;
+}
+.oa-btn:focus-visible,
+.oa-row:focus-visible,
+.oa-mark-btn:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: 2px;
+}
+.onair .amber {
+  color: var(--amber);
+}
+
+/* Left: the show timer, then the run of show. */
+.oa-left {
+  position: absolute;
+  left: 0;
+  top: 4px;
+  width: 640px;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.oa-timer {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+}
+.oa-timer > .oa-k {
+  height: 22px;
+}
+.oa-time-row {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  margin-top: 6px;
+  height: 104px;
+}
+.oa-time {
+  font: 300 104px/1 var(--disp);
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 0 34px rgba(53, 230, 234, 0.28);
+  white-space: nowrap;
+}
+.oa-time[data-running='false'] {
+  color: var(--dim);
+  text-shadow: none;
+}
+.oa-time-btns {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.oa-go {
+  height: 46px;
+  font-size: 20px;
+  min-width: 112px;
+}
+.oa-reset {
+  height: 36px;
+  min-width: 112px;
+}
+.oa-reset.confirm {
+  border-color: rgba(255, 194, 77, 0.7);
+  color: var(--amber);
+}
+.oa-started {
+  margin: 4px 0 20px;
+  font-size: 19px;
+  line-height: 25px;
+  color: var(--dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.oa-runbox {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.oa-runbox > .oa-k {
+  margin-bottom: 8px;
+  flex: none;
+}
+.oa-run {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(183, 175, 214, 0.4) transparent;
+}
+.oa-row {
+  width: 100%;
+  height: 44px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 12px;
+  border-radius: 12px;
+  text-align: left;
+  transition: background 160ms ease;
+}
+.oa-row:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+.oa-row[data-state='now'] {
+  background: rgba(53, 230, 234, 0.1);
+}
+.oa-row-ico {
+  width: 22px;
+  flex: none;
+  display: flex;
+  color: var(--mint);
+}
+.oa-row[data-state='now'] .oa-row-ico {
+  color: var(--cyan);
+}
+.oa-row-name {
+  flex: 1;
+  font: 400 23px/1.2 var(--body);
+  color: var(--dim);
+}
+.oa-row[data-state='now'] .oa-row-name {
+  font-weight: 600;
+  color: var(--tx);
+}
+.oa-row-t {
+  flex: none;
+  font: 500 18px/1 var(--body);
+  color: var(--dim);
+  white-space: nowrap;
+}
+.oa-row[data-state='now'] .oa-row-t {
+  color: var(--cyan);
+}
+/* Past the planned minutes: quiet amber, no flashing. */
+.oa-row .oa-row-t[data-over='true'] {
+  color: var(--amber);
+}
+.oa-file {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+  padding-left: 12px;
+  height: 32px;
+  font: 16px/1.3 var(--body);
+  color: var(--dim);
+}
+.oa-file-l {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.oa-file-l > svg {
+  flex: none;
+}
+.oa-skipped {
+  color: var(--amber);
+  white-space: pre;
+}
+.oa-empty {
+  flex: 0 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 14px 12px;
+  border-radius: 14px;
+  background: rgba(10, 7, 28, 0.45);
+  border: 1px dashed rgba(183, 175, 214, 0.35);
+}
+.oa-empty-t {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 100%;
+  font: 600 23px/1.2 var(--body);
+}
+.oa-empty-t > svg {
+  flex: none;
+}
+.oa-empty .xs {
+  color: var(--dim);
+}
+.oa-empty-btn {
+  margin-top: 4px;
+}
+
+/* Centre: the notes card. */
+.oa-card {
+  left: 676px;
+  top: 4px;
+  width: 1080px;
+  height: 486px;
+  padding: 26px 30px 22px;
+}
+.oa-card > .oa-k {
+  flex: none;
+}
+.oa-notes {
+  --oa-note: 36px;
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  justify-content: safe center;
+  gap: 20px;
+  overflow: hidden;
+}
+.oa-note {
+  display: flex;
+  gap: 18px;
+  font: 600 var(--oa-note) / 1.2 var(--body);
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+  flex: none;
+}
+.oa-note[hidden],
+.oa-more[hidden] {
+  display: none;
+}
+.oa-dot {
+  width: 10px;
+  height: 10px;
+  flex: none;
+  border-radius: 50%;
+  margin-top: calc(var(--oa-note) * 0.6 - 5px);
+  background: var(--cyan);
+  box-shadow: 0 0 12px var(--cyan);
+}
+.oa-more {
+  flex: none;
+  padding-left: 28px;
+  font: 600 20px/1.2 var(--body);
+  color: var(--dim);
+}
+.oa-nonotes,
+.oa-help {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 14px;
+}
+.oa-nonotes-t {
+  font: 600 30px/1.2 var(--body);
+  color: var(--dim);
+}
+.oa-nonotes .xs {
+  color: var(--dim);
+}
+.oa-help-l {
+  font: 400 23px/1.3 var(--body);
+  color: var(--dim);
+}
+.oa-help code {
+  font: 500 22px/1 ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  color: var(--tx);
+  background: rgba(255, 255, 255, 0.07);
+  border-radius: 8px;
+  padding: 3px 8px;
+  margin-right: 6px;
+}
+.oa-card-foot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+}
+.oa-step {
+  height: 52px;
+  font-size: 20px;
+  padding: 0 22px;
+}
+.oa-nextline {
+  margin-left: auto;
+  min-width: 0;
+  color: var(--dim);
+}
+
+/* Right: Mark, the recording keys, the footnote. Nothing below the footnote. */
+.oa-right {
+  position: absolute;
+  left: 1796px;
+  top: 4px;
+  width: 620px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.oa-right > .oa-k,
+.oa-right > .oa-k-brief {
+  height: 26px;
+  line-height: 26px;
+}
+.oa-right > .oa-keys-hd {
+  margin-top: 10px;
+}
+.oa-k-brief {
+  display: block;
+  font: 500 18px/26px var(--body);
+  color: var(--cyan);
+}
+.oa-mark {
+  height: 96px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-radius: 20px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.016)), rgba(10, 7, 28, 0.72);
+  border: 1px solid rgba(255, 194, 77, 0.4);
+  overflow: hidden;
+  transition: border-color 160ms ease;
+}
+.oa-mark:has(.oa-mark-btn:hover) {
+  border-color: rgba(255, 194, 77, 0.8);
+}
+.oa-mark-btn {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 0 0 0 20px;
+  text-align: left;
+  border-radius: 20px;
+}
+.oa-mark-btn:hover {
+  background: rgba(255, 194, 77, 0.06);
+}
+.oa-mark-btn:active .oa-mark-ico {
+  transform: scale(0.94);
+}
+.oa-mark-ico {
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.07);
+  display: grid;
+  place-items: center;
+  flex: none;
+  color: var(--amber);
+}
+.oa-mark-tx {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.oa-mark-t {
+  font: 600 25px/30px var(--body);
+}
+.oa-mark-s {
+  font-size: 19px;
+  line-height: 1.3;
+  color: var(--dim);
+}
+.oa-mark-open {
+  margin-right: 16px;
+}
+.oa-keys {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+.oa-keys .deck-tile.key-tile {
+  height: 76px;
+  grid-template-rows: 22px 32px;
+  padding-top: 9px;
+  font-size: 17px;
+  line-height: 16px;
+}
+.oa-keys .deck-tile.key-tile svg {
+  width: 22px;
+  height: 22px;
+}
+.oa-foot {
+  margin-top: 6px;
+  font: 16px/1.3 var(--body);
+  color: var(--faint);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .oa-btn,
+  .oa-row,
+  .oa-mark {
+    transition: none;
+  }
+}
