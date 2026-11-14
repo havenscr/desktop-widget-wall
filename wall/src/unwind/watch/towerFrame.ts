@@ -64,45 +64,133 @@ const DEFS = `<defs>
 /** Whatever stands on the ground, mirrored into the floor and faded (the floor is glossy). */
 const mirror = (inner: string, op = 0.5) => `<g mask="url(#${ID}refl)" opacity="${op}"><g transform="translate(0 ${2 * G}) scale(1 -1)">${inner}</g></g>`;
 
-/** One lattice tower: two battered verticals with zigzag lacing. */
-function tower(cx: number, dir: number, y1: number): string {
-  const a0 = cx - 9;
-  const b0 = cx + 9;
-  const a1 = cx - 9 - (dir < 0 ? 9 : 0);
-  const b1 = cx + 9 + (dir > 0 ? 9 : 0);
-  const at = (t: number, a: boolean) => (a ? a0 + (a1 - a0) * t : b0 + (b1 - b0) * t);
-  const yy = (t: number) => y1 + (G - y1) * t;
-  let lace = `M${n(at(0, true))} ${yy(0)}`;
-  for (let i = 1; i <= 4; i++) lace += `L${n(at(i / 4, i % 2 === 0))} ${n(yy(i / 4))}`;
-  let ties = '';
-  for (let i = 1; i < 4; i++) ties += `M${n(at(i / 4, true))} ${n(yy(i / 4))}H${n(at(i / 4, false))}`;
-  return `<path d="${lace}${ties}" stroke="${LACE}" stroke-width="1.5" fill="none"/>
-      <path d="M${a0} ${y1}L${a1} ${G}M${b0} ${y1}L${b1} ${G}" stroke="${MEMBER}" stroke-width="5" stroke-linecap="square"/>
-      <path d="M${a0 - 1.5} ${y1}L${a1 - 1.5} ${G}M${b0 - 1.5} ${y1}L${b1 - 1.5} ${G}" stroke="${RIM2}" stroke-width="1"/>`;
+/** One structural member: a straight bar between two points (wall pixels), named, with its stroke. */
+export interface Member {
+  name: string;
+  /** Members of one assembly (a stay, a tower, the truss web) share a group; a joint must meet another group. */
+  group: string;
+  kind: 'main' | 'lace' | 'brace';
+  /** Stroke width in pixels. */
+  w: number;
+  a: readonly [number, number];
+  b: readonly [number, number];
 }
+/** A footing on the ground line: its box (x0, y0 .. x1, y1; the base is the ground). */
+export interface Footing {
+  name: string;
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+
+const tl = L + 104;
+const tr = R - 104; // tower centres
+const Y0 = B + 12; // the truss's upper chord (its lower edge is the surround's lower edge)
+const Y1 = B + 30; // the truss's lower chord
+const STAY_TOP = B - 96;
+const STAY_RUN = 26;
+const BAYS = 28;
+
+/** The surround's outer box (the fascia): 14 px out from the picture. */
+export const SURROUND = Object.freeze({ x0: L - 14, y0: T - 14, x1: R + 14, y1: B + 14 });
+/** The ground line's y. */
+export const GROUND_Y = G;
+
+/** Side s is -1 for the left, 1 for the right. A point on the stay of side s at height y. */
+const stayAt = (s: number, y: number): [number, number] => [(s < 0 ? L - 12 : R + 12) + s * (STAY_RUN * (y - STAY_TOP)) / (G - STAY_TOP), y];
+
+function buildMembers(): Member[] {
+  const out: Member[] = [];
+  const add = (name: string, group: string, kind: Member['kind'], w: number, a: readonly [number, number], b: readonly [number, number]) => out.push({ name, group, kind, w, a, b });
+  // Knee braces from each tower up to the truss.
+  for (const s of [-1, 1]) {
+    const cx = s < 0 ? tl : tr;
+    add(`knee-${s < 0 ? 'L' : 'R'}`, `knee-${s}`, 'brace', 2.5, [cx - s * 14, Y1 + 34], [cx + -s * 62, Y1 + 2]);
+  }
+  // The truss under the screen: a Warren web between two chords, then the chords.
+  for (let i = 1; i <= BAYS; i++) {
+    const x0 = L - 8 + ((V.w + 16) / BAYS) * (i - 1);
+    const x1 = L - 8 + ((V.w + 16) / BAYS) * i;
+    add(`web-${i}`, 'web', 'lace', 1.5, [x0, i % 2 ? Y1 : Y0], [x1, i % 2 ? Y0 : Y1]);
+  }
+  add('chord-upper', 'chord-upper', 'main', 4, [L - 12, Y0], [R + 12, Y0]);
+  add('chord-lower', 'chord-lower', 'main', 4, [L - 12, Y1], [R + 12, Y1]);
+  // The raking side stays with lacing back to the surround.
+  for (const s of [-1, 1]) {
+    const k = s < 0 ? 'L' : 'R';
+    const x = s < 0 ? L - 12 : R + 12;
+    const lace: [number, number, number, number][] = [
+      [B - 60, x, B - 58, x + s * 10],
+      [B - 20, x, B - 18, x + s * 20.5],
+      [B + 22, x, B + 24, x + s * 32],
+      [B - 60, x, B - 18, x + s * 20.5],
+      [B - 20, x, B + 24, x + s * 32],
+    ];
+    lace.forEach(([ya, xa, yb, xb], i) => add(`stay-lace-${k}${i + 1}`, `stay-lace-${k}`, 'lace', 1.5, [xa, ya], [xb, yb]));
+    add(`stay-${k}`, `stay-${k}`, 'main', 4, [x, STAY_TOP], [x + s * 26, G]);
+  }
+  // The two lattice towers: two battered legs with zigzag lacing.
+  for (const s of [-1, 1]) {
+    const k = s < 0 ? 'L' : 'R';
+    const cx = s < 0 ? tl : tr;
+    const a0 = cx - 9;
+    const b0 = cx + 9;
+    const a1 = cx - 9 - (s < 0 ? 9 : 0);
+    const b1 = cx + 9 + (s > 0 ? 9 : 0);
+    const at = (t: number, a: boolean): [number, number] => [a ? a0 + (a1 - a0) * t : b0 + (b1 - b0) * t, Y1 + (G - Y1) * t];
+    for (let i = 1; i <= 4; i++) {
+      const p = at((i - 1) / 4, (i - 1) % 2 === 0);
+      const q = at(i / 4, i % 2 === 0);
+      add(`tower-lace-${k}${i}`, `tower-lace-${k}`, 'lace', 1.5, p, q);
+    }
+    for (let i = 1; i < 4; i++) add(`tower-tie-${k}${i}`, `tower-lace-${k}`, 'lace', 1.5, at(i / 4, true), at(i / 4, false));
+    add(`tower-leg-${k}1`, `tower-leg-${k}1`, 'main', 5, [a0, Y1], [a1, G]);
+    add(`tower-leg-${k}2`, `tower-leg-${k}2`, 'main', 5, [b0, Y1], [b1, G]);
+  }
+  return out;
+}
+
+/** The frame's bars, as named straight segments in wall pixels (the markup is drawn from these). */
+export const MEMBERS: readonly Member[] = Object.freeze(buildMembers());
+
+const footing = (name: string, cx: number, w: number): Footing => ({ name, x0: cx - w / 2, y0: G - 6, x1: cx + w / 2, y1: G });
+/** The four footings: one under each tower, one under each stay. */
+export const FOOTINGS: readonly Footing[] = Object.freeze([footing('foot-tower-L', tl - 4, 44), footing('foot-tower-R', tr + 4, 44), footing('foot-stay-L', L - 38, 22), footing('foot-stay-R', R + 38, 22)]);
+
+const STROKE = { main: MEMBER, lace: LACE, brace: '#3a2f66' } as const;
+
+/** The members as strokes: consecutive members of one style share a path. */
+function strokes(list: readonly Member[]): string {
+  let out = '';
+  let cur: Member | null = null;
+  let d = '';
+  const flush = () => {
+    if (cur) out += `<path d="${d}" stroke="${STROKE[cur.kind]}" stroke-width="${cur.w}" fill="none" stroke-linecap="${cur.kind === 'main' ? 'butt' : 'round'}"/>`;
+    d = '';
+  };
+  for (const m of list) {
+    if (!cur || cur.kind !== m.kind || cur.w !== m.w) {
+      flush();
+      cur = m;
+    }
+    d += `M${n(m.a[0])} ${n(m.a[1])}L${n(m.b[0])} ${n(m.b[1])}`;
+  }
+  flush();
+  return out;
+}
+const byName = (name: string) => MEMBERS.find((m) => m.name === name)!;
 
 /** The whole frame as SVG markup (everything but the marquee's words), in wall pixels. */
 function build(): string {
-  const tl = L + 104;
-  const tr = R - 104; // tower centres
-  const y0 = B + 12;
-  const y1 = B + 30; // the truss under the screen
-  // The Warren truss under the screen: two chords and 28 bays.
-  let zig = `M${L - 8} ${y1}`;
-  const bays = 28;
-  const bw = (V.w + 16) / bays;
-  for (let i = 1; i <= bays; i++) zig += `L${n(L - 8 + bw * i)} ${i % 2 ? y0 : y1}`;
-  const truss = `<path d="${zig}" stroke="${LACE}" stroke-width="1.5" fill="none"/>
-    <path d="M${L - 12} ${y0}H${R + 12}M${L - 12} ${y1}H${R + 12}" stroke="${MEMBER}" stroke-width="4"/>
-    <path d="M${L - 12} ${y0 - 2}H${R + 12}" stroke="${RIM2}" stroke-width="1"/>`;
-  // Knee braces from each tower up to the truss, and raking side stays with lacing back to the surround.
-  const knee = `<path d="M${tl + 14} ${y1 + 34}L${tl + 62} ${y1 + 2}M${tr - 14} ${y1 + 34}L${tr - 62} ${y1 + 2}" stroke="#3a2f66" stroke-width="2.5" stroke-linecap="round"/>`;
-  const stay = (x: number, d: number) => `<path d="M${x} ${B - 96}L${x + d * 26} ${G}" stroke="${MEMBER}" stroke-width="4" stroke-linecap="round"/>
-    <path d="M${x} ${B - 60}L${x + d * 10} ${B - 60 + 2}M${x} ${B - 20}L${x + d * 20.5} ${B - 18}M${x} ${B + 22}L${x + d * 32} ${B + 24}M${x} ${B - 60}L${x + d * 20.5} ${B - 18}M${x} ${B - 20}L${x + d * 32} ${B + 24}" stroke="${LACE}" stroke-width="1.5" fill="none"/>
-    <path d="M${x - 1.5} ${B - 96}L${x + d * 26 - 1.5} ${G}" stroke="${RIM2}" stroke-width="1"/>`;
-  const foot = (cx: number, w = 44) => `<path d="M${cx - w / 2} ${G}l4 -6h${w - 8}l4 6z" fill="#2a2050"/><path d="M${cx - w / 2 + 4} ${G - 6}h${w - 8}" stroke="${RIM}" stroke-width="1"/>`;
-  const structure = `${stay(L - 12, -1)}${stay(R + 12, 1)}${tower(tl, -1, y1)}${tower(tr, 1, y1)}${knee}${truss}`;
-  const feet = `${foot(tl - 4)}${foot(tr + 4)}${foot(L - 38, 22)}${foot(R + 38, 22)}`;
+  const rim = (names: string[]) => `<path d="${names.map((nm) => { const m = byName(nm); return `M${n(m.a[0] - 1.5)} ${n(m.a[1])}L${n(m.b[0] - 1.5)} ${n(m.b[1])}`; }).join('')}" stroke="${RIM2}" stroke-width="1" fill="none"/>`;
+  const up = byName('chord-upper');
+  const structure = `${strokes(MEMBERS.filter((m) => m.group.startsWith('knee')))}${strokes(MEMBERS.filter((m) => m.group === 'web'))}${strokes(MEMBERS.filter((m) => m.group.startsWith('chord')))}<path d="M${n(up.a[0])} ${n(up.a[1] - 2)}H${n(up.b[0])}" stroke="${RIM2}" stroke-width="1"/>${strokes(MEMBERS.filter((m) => m.group.startsWith('stay')))}${rim(['stay-L', 'stay-R'])}${strokes(MEMBERS.filter((m) => m.group.startsWith('tower')))}${rim(['tower-leg-L1', 'tower-leg-L2', 'tower-leg-R1', 'tower-leg-R2'])}`;
+  const foot = (f: Footing) => {
+    const w = f.x1 - f.x0;
+    return `<path d="M${f.x0} ${G}l4 -6h${w - 8}l4 6z" fill="#2a2050"/><path d="M${f.x0 + 4} ${G - 6}h${w - 8}" stroke="${RIM}" stroke-width="1"/>`;
+  };
+  const feet = FOOTINGS.map(foot).join('');
   // The marquee board hangs from the truss between the towers (its words are drawn by the component).
   const m = MARQUEE;
   const board = `<rect x="${m.x}" y="${m.y}" width="${m.w}" height="${m.h}" rx="4" fill="#100a24" stroke="${LACE}" stroke-width="1.5"/>
