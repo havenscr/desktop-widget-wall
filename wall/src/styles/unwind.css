@@ -1352,13 +1352,23 @@
 /* Nothing of the wall's lies on the whole-sky picture: its mask keeps the clock's side clear
    (fully see-through to 18 percent, whole from 40), and the left block carries its own dark
    ground behind its text, as the cards do. */
-.unwind:has(.w-sky) .w-now::before {
-  content: '';
-  position: absolute;
-  z-index: -1;
-  inset: -18px -22px;
-  border-radius: 22px;
+.unwind:has(.w-sky) .w-now {
+  border-radius: 2px;
   background: rgba(6, 4, 22, 0.86);
+  box-shadow: 0 0 0 20px rgba(6, 4, 22, 0.86);
+}
+/* A refused autoplay over the whole sky: the picture lies under the frame's and Unwind's own
+   boxes, so while it waits for a click those boxes let the pointer through and only the wall's
+   blocks (the clock, the wings, the tabs, the left block, the switch, the cards) take it. */
+.top:has(.w-sky .w-take),
+.unwind:has(.w-sky .w-take),
+.unwind:has(.w-sky .w-take) .u-centre,
+.unwind:has(.w-sky .w-take) .w-panel {
+  pointer-events: none;
+}
+.top:has(.w-sky .w-take) > :not(.unwind),
+.unwind:has(.w-sky .w-take) :is(.u-wing, .u-corner, .u-right, .u-tabrow, .w-now, .w-lookbar, .w-sheet) {
+  pointer-events: auto;
 }
 /* The floor's wash under the whole sky, where frame B draws its blurred spill (stage x 512 to
    2355, from the horizon down): the page's light colours (amber left, pink in the middle, cyan
