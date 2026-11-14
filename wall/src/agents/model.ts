@@ -29,8 +29,10 @@ export interface Lane {
   live?: 'working' | 'idle' | null;
   /** Seconds since it last did something (only for an idle session that waits on the owner). */
   idleS?: number | null;
-  /** A parent's helpers: how many, and how many are working. */
-  kids?: { total: number; working: number } | null;
+  /** A parent's helpers: how many hold working slots, and how many run now. */
+  kids?: { total: number; working: number; running?: number | null } | null;
+  /** Background agents and commands still running after this chat's own turn. */
+  bg?: { agents: number; shells: number } | null;
   /** Seconds it has waited on the owner, when known. */
   waitingSinceS?: number | null;
   /** The session's own next step, short. */
@@ -88,7 +90,7 @@ export interface OmniSummary {
    * The server's own numbers (`used` can pass `limit`), and from helper 1.1.0 on: open
    * parents and standalone sessions, how many of them work, and helpers in all.
    */
-  slots: { used: number; limit: number; sessions?: number | null; working?: number | null; helpers?: number | null };
+  slots: { used: number; limit: number; sessions?: number | null; working?: number | null; helpers?: number | null; busy?: number | null };
   lanes: Lane[];
   /** Every open parent or standalone session, up to 12 (helper 1.1.0 on); null from an older helper. */
   sessionsList?: Lane[] | null;
@@ -153,19 +155,25 @@ export function validSpan(v: unknown): v is DaySpan {
 }
 
 const PROVIDERS: readonly string[] = ['claude', 'codex', 'other'];
-const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : null);
+const num = (v: unknown): number | null => (typeof v === 'number' && Number.isInteger(v) && v >= 0 ? v : null);
 const pct = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? Math.min(100, Math.max(0, v)) : null);
 
 /** A valid lane with its optional fields of the right type (a wrong one becomes null). */
 function cleanLane(l: Lane): Lane {
-  const k = l.kids as { total?: unknown; working?: unknown } | null | undefined;
+  const k = l.kids as { total?: unknown; working?: unknown; running?: unknown } | null | undefined;
   const kt = k && typeof k === 'object' ? num(k.total) : null;
   const kw = k && typeof k === 'object' ? num(k.working) : null;
+  const kr = k && typeof k === 'object' ? num(k.running) : null;
+  const bg = l.bg as { agents?: unknown; shells?: unknown } | null | undefined;
+  const agents = bg && typeof bg === 'object' ? num(bg.agents) : null;
+  const shells = bg && typeof bg === 'object' ? num(bg.shells) : null;
   return {
     ...l,
     live: l.live === 'working' || l.live === 'idle' ? l.live : null,
     idleS: num(l.idleS),
-    kids: kt !== null && kw !== null ? { total: kt, working: Math.min(kw, kt) } : null,
+    kids: kt !== null && kw !== null ? { total: kt, working: Math.min(kw, kt), running: kr === null ? null : Math.min(kr, kt, 99) } : null,
+    // Background work is one trusted reading, so one malformed member drops the whole block.
+    bg: agents !== null && shells !== null ? { agents: Math.min(agents, 99), shells: Math.min(shells, 99) } : null,
     waitingSinceS: num(l.waitingSinceS),
     next: typeof l.next === 'string' && l.next.trim() ? l.next : null,
     harness: typeof l.harness === 'string' && PROVIDERS.includes(l.harness) ? l.harness : null,
@@ -220,7 +228,14 @@ export function normalizeSummary(v: unknown): OmniSummary | null {
   const ids = Array.isArray(s.yourMove.ids) ? s.yourMove.ids.filter((x): x is string => typeof x === 'string').slice(0, 5) : [];
   return {
     ...s,
-    slots: { used: s.slots.used, limit: s.slots.limit, sessions: num(s.slots.sessions), working: num(s.slots.working), helpers: num(s.slots.helpers) },
+    slots: {
+      used: s.slots.used,
+      limit: s.slots.limit,
+      sessions: num(s.slots.sessions),
+      working: num(s.slots.working),
+      helpers: num(s.slots.helpers),
+      busy: num(s.slots.busy),
+    },
     lanes: s.lanes.filter(validLane).map(cleanLane),
     sessionsList: list,
     sessions: cleanNames(s.sessions),
@@ -234,6 +249,34 @@ export const STAGE_NAMES: Record<Stage, string> = { plan: 'Plan', build: 'Build'
 /** A lane that wants an answer: the helper flags it waiting, or it is blocked. */
 export function laneWaits(l: Lane): boolean {
   return l.waiting || l.state === 'blocked';
+}
+
+/** True when this chat's own turn ended but work it started is still running. */
+export function helpersWork(l: Lane): boolean {
+  return (
+    l.state === 'working' &&
+    !laneWaits(l) &&
+    !l.failed &&
+    l.live === 'idle' &&
+    ((l.bg?.agents ?? 0) > 0 || (l.bg?.shells ?? 0) > 0 || (l.kids?.running ?? 0) > 0)
+  );
+}
+
+/** The one rule for whether a parent or standalone chat is working now. */
+export function laneWorks(l: Lane): boolean {
+  return l.state === 'working' && !laneWaits(l) && !l.failed && (l.live !== 'idle' || helpersWork(l));
+}
+
+/** Plain details for the helpers-working word and its tooltip. */
+export function helpersWorkText(l: Lane): string {
+  const parts: string[] = [];
+  const agents = l.bg?.agents ?? 0;
+  const shells = l.bg?.shells ?? 0;
+  const children = l.kids?.running ?? 0;
+  if (agents > 0) parts.push(`${agents} agent${agents === 1 ? '' : 's'}`);
+  if (shells > 0) parts.push(`${shells} command${shells === 1 ? '' : 's'}`);
+  if (children > 0) parts.push(`${children} helper${children === 1 ? '' : 's'}`);
+  return parts.length > 0 ? `helpers working: ${parts.join(', ')}` : 'helpers working';
 }
 
 /** A ready pull request with nothing failing or still running: the lane shows "Hold to merge". */
@@ -374,6 +417,7 @@ export function cardLine(l: Lane, question: string | null = null): { text: strin
     return { text: l.waitingSinceS != null ? `Waiting on you for ${elapsedText(l.waitingSinceS)}` : 'Waiting on you', tone: 'amber' };
   }
   if (l.failed) return { text: l.line && !BARE.includes(l.line.toLowerCase()) ? `Failed: ${l.line}` : 'Failed, needs a look', tone: 'red' };
+  if (helpersWork(l)) return { text: helpersWorkText(l), tone: '' };
   const said = l.line && !BARE.includes(l.line.toLowerCase()) ? l.line : '';
   if (l.live === 'working' && said) return { text: said, tone: '' };
   if (l.next) return { text: `Next: ${l.next}`, tone: '' };
@@ -475,7 +519,7 @@ const word = (n: number) => WORDS[n] ?? String(n);
  * working, no agent needs you", "One agent still working, one thing for you".
  */
 export function statusLine(s: OmniSummary): string {
-  const working = cards(s).filter((l) => !laneWaits(l) && l.state === 'working').length;
+  const working = cards(s).filter(laneWorks).length;
   const asks = needsYouCount(s);
   const first = working === 0 ? 'No agents working' : `${word(working)} agent${working === 1 ? '' : 's'} still working`;
   const second = asks === 0 ? 'no agent needs you' : asks === 1 ? 'one thing for you' : `${word(asks).toLowerCase()} things for you`;
@@ -545,7 +589,8 @@ export function agentLayout(
   maxRows = AGENT_ROWS,
 ): AgentLayout {
   const now = until === null ? nowMs : Math.min(nowMs, until);
-  const sorted = [...s.day].sort((a, b) => Date.parse(a.start) - Date.parse(b.start));
+  const parentIds = new Set(cards({ lanes: s.lanes, sessionsList: s.sessionsList ?? null }).map((l) => l.id));
+  const sorted = s.day.filter((d) => parentIds.has(d.lane)).sort((a, b) => Date.parse(a.start) - Date.parse(b.start));
   const raw: AgentSegment[] = [];
   for (const d of sorted) {
     const start = Date.parse(d.start) - skewMs;
@@ -570,7 +615,7 @@ export function agentLayout(
     const l = byId.get(id);
     const mine = raw.filter((g) => g.lane === id);
     if ((l && laneWaits(l)) || mine.some((g) => g.kind === 'wait' && g.open)) return 0;
-    if ((l && l.state === 'working') || mine.some((g) => g.kind === 'run' && g.open)) return 1;
+    if ((l && laneWorks(l)) || mine.some((g) => g.kind === 'run' && g.open)) return 1;
     return 2;
   };
   const picked = fold ? new Set([...order].sort((a, b) => rank(a) - rank(b) || order.indexOf(a) - order.indexOf(b)).slice(0, maxRows - 1)) : new Set(order);
@@ -658,6 +703,7 @@ export function clockText(ms: number): string {
  */
 export function elapsedLabel(l: Lane, now: number): { text: string; tip: string } {
   const started = clockText(now - l.elapsedS * 1000);
+  if (helpersWork(l)) return { text: 'helpers working', tip: `${helpersWorkText(l)}; its own turn is over; helpers it started are still at work.` };
   if (l.live === 'idle' && l.idleS != null) return { text: `idle ${elapsedText(l.idleS)}`, tip: `Idle for ${elapsedText(l.idleS)}; open ${elapsedText(l.elapsedS)}, started ${started}` };
   const what = l.live === 'working' ? 'Working, open' : 'Open';
   return { text: elapsedText(l.elapsedS), tip: `${what} for ${elapsedText(l.elapsedS)}, started ${started}` };

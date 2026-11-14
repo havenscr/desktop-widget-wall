@@ -1,13 +1,20 @@
 import { act, fireEvent, render } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { lane, summary } from '../agents/fixtures';
+import { agentLayout, dayTotals, laneWorks, statusLine as workStatusLine } from '../agents/model';
+import { workingIds as wattWorkingIds } from '../buddy/senses';
 import { CentreSlot } from '../agents/CentreSlot';
 import { resetAgents } from '../agents/useAgents';
 import { mocks } from '../bridge/tauri';
 import { useFocusStore } from '../focus/store';
 import { HoverTipLayer, resetTip, TIP_DELAY_MS } from '../ui/HoverTip';
 import type { WeatherState } from '../weather/useWeather';
-import { resetDays } from './days';
+import { resetDays, todayRows } from './days';
+import { agentCounts, laneStateWord } from './AgentRow';
+import { workingIds } from './busy';
+import { agentsLineParts } from './model';
+import { statusLine as unwindStatusLine } from '../unwind/model';
+import { dreamStatusText } from '../zen/model';
 import { Ribbon } from './Ribbon';
 import { useFixedClock, usePacificTime } from './testZone';
 
@@ -115,6 +122,86 @@ it('the header, a cell and the Busy at once line agree: five working at once, on
   expect(tipText).toContain('helpers count with their session');
 }, 20_000);
 
+it('helper work uses one word, one count and one open span in every live view', async () => {
+  const parent = lane({
+    id: ids[0],
+    title: 'Background verification',
+    live: 'idle',
+    line: 'idle',
+    bg: { agents: 2, shells: 1 },
+    kids: { total: 1, working: 1, running: 1, ids: ['child-must-not-render'] } as never,
+  });
+  answer = () =>
+    summary({
+      slots: { used: 1, limit: 4, sessions: 1, working: 1, helpers: 1 },
+      sessionsList: [parent],
+      lanes: [parent],
+      day: [{ lane: ids[0], start: iso('09:00'), end: null, kind: 'run' }],
+    });
+  const r = render(
+    <>
+      <CentreSlot weather={weather} />
+      <Ribbon kind="work" />
+      <HoverTipLayer />
+    </>,
+  );
+  await flush();
+  expect(r.container.querySelector('.slot-meter .xs')!.textContent).toBe('1 of 4 working');
+  expect(r.container.querySelector('.ag-line')!.textContent).toContain('1 working (1 through helpers)');
+  expect(new Set([...r.container.querySelectorAll('.agent-row .ac i')].map((i) => i.className))).toEqual(new Set(['b1']));
+
+  fireEvent.click(r.container.querySelector('.rib-handle') as HTMLElement);
+  await flush();
+  const row = r.container.querySelector('.day-drawer .dd-row') as HTMLElement;
+  expect(row.querySelector('.dd-pill')!.textContent).toBe('helpers working');
+  expect(row.querySelector('.dd-line')!.textContent).toContain('helpers working: 2 agents, 1 command, 1 helper, 1 at work');
+  expect(r.container.querySelector('.dd-counts')!.textContent).toContain('1 working (1 through helpers)');
+  expect(r.container.innerHTML).not.toContain('child-must-not-render');
+  expect(r.container.querySelectorAll('.day-drawer .dd-row')).toHaveLength(1);
+  fireEvent.mouseEnter(row);
+  await flush(TIP_DELAY_MS + 10);
+  expect(document.querySelector('.hover-tip')!.textContent).toContain('Its own turn is over; helpers it started are still at work.');
+  r.unmount();
+}, 20_000);
+
+it('one working contract drives every view for helper, quiet, waiting, failed and old cards', () => {
+  const cases = [
+    { card: lane({ id: 'helper', live: 'idle', bg: { agents: 1, shells: 0 } }), works: true, word: 'helpers working' },
+    { card: lane({ id: 'quiet', live: 'idle' }), works: false, word: 'idle' },
+    { card: lane({ id: 'waiting', waiting: true }), works: false, word: 'waiting on you' },
+    { card: lane({ id: 'failed', failed: true }), works: false, word: 'failed' },
+    { card: lane({ id: 'old', live: undefined, bg: undefined, kids: undefined }), works: true, word: 'working' },
+  ] as const;
+  for (const c of cases) {
+    const s = summary({ lanes: [c.card], sessionsList: [c.card], slots: { used: 1, limit: 4, working: c.works ? 1 : 0 }, day: [{ lane: c.card.id, start: iso('09:00'), end: c.works ? null : iso('09:30'), kind: 'run' }] });
+    const count = c.works ? 1 : 0;
+    expect(laneWorks(c.card), c.card.id).toBe(c.works);
+    expect(agentCounts(s).working, c.card.id).toBe(count);
+    expect(workingIds(s).size, c.card.id).toBe(count);
+    expect(wattWorkingIds([c.card]).size, c.card.id).toBe(count);
+    expect(workStatusLine(s), c.card.id).toContain(count ? 'One agent still working' : 'No agents working');
+    expect(agentsLineParts(agentCounts(s)).tail, c.card.id).toContain(`${count} working`);
+    expect(dreamStatusText(count, 0, null).includes('still working'), c.card.id).toBe(c.works);
+    expect(unwindStatusLine('off', { lanes: [c.card], sessionsList: [c.card], yourMove: { total: 0 } }).includes('still running'), c.card.id).toBe(c.works);
+    expect(laneStateWord(c.card), c.card.id).toBe(c.word);
+    expect(todayRows(s, null, t('10:24'))[0].end, c.card.id).toBe(c.word);
+  }
+
+  const helper = cases[0].card;
+  const quiet = cases[1].card;
+  const failed = cases[3].card;
+  const ranked = agentLayout(
+    summary({ sessionsList: [quiet, helper, failed], lanes: [quiet, helper, failed], day: [{ lane: quiet.id, start: iso('09:00'), end: iso('09:30'), kind: 'run' }, { lane: helper.id, start: iso('09:00'), end: null, kind: 'run' }, { lane: failed.id, start: iso('09:00'), end: iso('09:20'), kind: 'run' }] }),
+    t('10:24'),
+    (ms) => (ms - t('09:00')) / 60_000,
+    null,
+    0,
+    2,
+  );
+  expect(ranked.segs.map((g) => g.lane)).toEqual(['helper']);
+  expect(ranked.hidden).toEqual(['quiet', 'failed']);
+});
+
 it('at the limit the meter says so in amber; a past day counts its recorded spans and has no quiet line', async () => {
   answer = () => {
     const s = busyDay();
@@ -150,6 +237,16 @@ it('at the limit the meter says so in amber; a past day counts its recorded span
 }, 20_000);
 
 it('a helper or side chat gets no row, no count and no click target: the drawer lists the six parents only', async () => {
+  const withChild = busyDay();
+  const clean = { ...withChild, day: withChild.day.filter((d) => d.lane !== 'c0ffee00-0001') };
+  const polluted = { ...withChild, day: [...withChild.day, { lane: 'c0ffee00-side', start: iso('09:45'), end: null, kind: 'run' as const }] };
+  const layout = (value: typeof polluted) => agentLayout(value, t('10:24'), (ms) => (ms - t('09:00')) / 60_000, null, 0, Number.POSITIVE_INFINITY);
+  const cleanLayout = layout(clean);
+  const pollutedLayout = layout(polluted);
+  expect(dayTotals(pollutedLayout.segs)).toBe(dayTotals(cleanLayout.segs));
+  expect(pollutedLayout.segs.map(({ lane, start, end }) => ({ lane, start, end }))).toEqual(cleanLayout.segs.map(({ lane, start, end }) => ({ lane, start, end })));
+  expect(pollutedLayout.segs.map(({ x, width }) => ({ x, width }))).toEqual(cleanLayout.segs.map(({ x, width }) => ({ x, width })));
+
   answer = busyDay;
   const r = render(<Ribbon kind="work" />);
   await flush();
@@ -160,4 +257,5 @@ it('a helper or side chat gets no row, no count and no click target: the drawer 
   expect(rows.map((x) => x.querySelector('.dd-name')!.textContent).sort()).toEqual(ids.map((_, i) => `Session ${i + 1}`));
   // No control anywhere in the drawer or the strip names the helper's id.
   expect(r.container.innerHTML).not.toContain('c0ffee00-0001');
+  expect(r.container.innerHTML).not.toContain('c0ffee00-side');
 }, 20_000);

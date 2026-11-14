@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { agentLayout, cards, dayTotals, laneWaits, type AgentSegment, type Lane, type OmniSummary } from '../agents/model';
+import { agentLayout, cards, dayTotals, helpersWork, laneWaits, laneWorks, type AgentSegment, type Lane, type OmniSummary } from '../agents/model';
 import { agentsStale, agentsUntil, useAgents, useAgentsStore, type AgentsState } from '../agents/useAgents';
 import { tip } from '../ui/HoverTip';
 import { busyAt, busyStep, countedSegments, knownLimit, logSegments, parentIds, settleOpenRuns, workingIds, workingSpans, type BusySpan, type LogSeg } from './busy';
@@ -15,7 +15,7 @@ export function ribbonX(ms: number, now: number): number | null {
 }
 
 /** Words for a session's state, as the Day drawer's pills and the panel use them. */
-export const STATE_WORDS: Record<string, string> = { working: 'working', blocked: 'waiting on you', review: 'in review', idle: 'idle' };
+export const STATE_WORDS: Record<string, string> = { working: 'working', blocked: 'waiting on you', review: 'in review', idle: 'idle', helpers: 'helpers working' };
 
 /**
  * A card's state word: failed first (a failed session is never read as working or waiting; the
@@ -25,6 +25,7 @@ export const STATE_WORDS: Record<string, string> = { working: 'working', blocked
 export function laneStateWord(l: Lane): string {
   if (l.failed) return 'failed';
   if (laneWaits(l)) return STATE_WORDS.blocked;
+  if (helpersWork(l)) return STATE_WORDS.helpers;
   if (l.live === 'idle' && l.state === 'working') return STATE_WORDS.idle;
   return STATE_WORDS[l.state] ?? l.state;
 }
@@ -33,8 +34,9 @@ export function laneStateWord(l: Lane): string {
 export function agentCounts(s: OmniSummary): AgentCounts {
   const list = cards(s);
   const need = list.filter(laneWaits).length;
-  const working = list.filter((l) => !laneWaits(l) && l.state === 'working' && l.live !== 'idle').length;
-  return { total: list.length, need, working, idle: list.length - need - working };
+  const working = list.filter(laneWorks).length;
+  const throughHelpers = list.filter(helpersWork).length;
+  return { total: list.length, need, working, throughHelpers, idle: list.length - need - working };
 }
 
 /**
@@ -142,6 +144,7 @@ export function useBusyToday(now: number): BusyToday | null {
  * slots in use (an older helper).
  */
 export function busyNow(b: BusyToday, s: OmniSummary): number {
+  if (typeof s.slots.busy === 'number') return s.slots.busy;
   if (typeof s.slots.working === 'number') return s.slots.working;
   return b.fromLog ? busyAt(b.spans, b.until - 1) : s.slots.used;
 }

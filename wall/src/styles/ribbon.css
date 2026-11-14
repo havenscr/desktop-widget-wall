@@ -897,8 +897,8 @@ button.dd-k.link:hover {
   font: 600 12px/1 var(--disp);
   color: var(--tx);
 }
-/* Agents today rows: number 24, title 372, the state once as a pill 142, one quiet line (about
-   346), the day track 420, the time 104; 14 px gaps. */
+/* Agents today rows: number 24, title 372, the state once as a pill 160, one quiet line, the day
+   track 420, the time 104; 14 px gaps. */
 .dd-name {
   width: 372px;
   flex: none;
@@ -909,7 +909,7 @@ button.dd-k.link:hover {
 }
 .dd-pill {
   flex: none;
-  width: 142px;
+  width: 160px;
   box-sizing: border-box;
   height: 24px;
   border-radius: 12px;
@@ -935,6 +935,11 @@ button.dd-k.link:hover {
   background: rgba(53, 230, 234, 0.1);
   border-color: rgba(53, 230, 234, 0.4);
   color: var(--cyan);
+}
+.dd-pill.helpers {
+  background: rgba(120, 235, 185, 0.1);
+  border-color: rgba(120, 235, 185, 0.4);
+  color: var(--mint);
 }
 .dd-line {
   flex: 1 1 346px;

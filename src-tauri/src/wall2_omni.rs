@@ -31,7 +31,7 @@ const DEFAULT_SLOTS: u64 = 3;
 /// Slot numbers are shown as they are ("5 of 4 slots"); this only refuses nonsense.
 const MAX_SLOTS: u64 = 99;
 const MAX_ELAPSED_S: u64 = 7 * 24 * 3600;
-const MAX_DAY: usize = 200;
+const MAX_DAY: usize = 400;
 const MAX_TITLE_CHARS: usize = 80;
 const MAX_LINE_CHARS: usize = 80;
 const MAX_QUESTION_CHARS: usize = 200;
@@ -68,13 +68,25 @@ pub struct Slots {
     pub working: Option<u64>,
     /// Child sessions in total. Null when absent.
     pub helpers: Option<u64>,
+    /// Slot-holding parent or standalone sessions that are at work now. Null when absent.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub busy: Option<u64>,
 }
 
-/// A parent session's children: how many, and how many of them are working.
+/// Background work started by a session, while its own turn is idle.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub struct BackgroundWork {
+    pub agents: u64,
+    pub shells: u64,
+}
+
+/// A parent session's children: how many, how many hold working slots, and how many run now.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 pub struct Kids {
     pub total: u64,
     pub working: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub running: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -101,6 +113,9 @@ pub struct Lane {
     pub idle_s: Option<u64>,
     /// Parents only; null otherwise.
     pub kids: Option<Kids>,
+    /// Background agents and commands; null when absent or malformed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bg: Option<BackgroundWork>,
     /// Seconds the session has waited on the owner; null when absent.
     pub waiting_since_s: Option<u64>,
     /// The session's own next step text; null when absent or empty.
@@ -371,6 +386,7 @@ fn shape_lane(v: &Value) -> Option<Lane> {
         live: one_of(v.get("live"), &["working", "idle"]),
         idle_s: count(v.get("idleS")).map(|n| n.min(MAX_ELAPSED_S)),
         kids: shape_kids(v.get("kids")),
+        bg: shape_background_work(v.get("bg")),
         waiting_since_s: count(v.get("waitingSinceS")).map(|n| n.min(MAX_ELAPSED_S)),
         next: clean_text(v.get("next"), MAX_NEXT_CHARS).filter(|s| !s.is_empty()),
         harness: v.get("harness").and_then(Value::as_str).filter(|s| !s.is_empty()).map(provider_name),
@@ -378,12 +394,21 @@ fn shape_lane(v: &Value) -> Option<Lane> {
     })
 }
 
-/// `{ total, working }`, both whole numbers, capped, with `working` never above `total`.
+/// `{ total, working, running }`, whole numbers with child counts never above `total`.
 fn shape_kids(v: Option<&Value>) -> Option<Kids> {
     let v = v.filter(|k| k.is_object())?;
     let total = count(v.get("total"))?.min(MAX_COUNT);
     let working = count(v.get("working"))?.min(MAX_COUNT).min(total);
-    Some(Kids { total, working })
+    let running = count(v.get("running")).map(|n| n.min(99).min(total));
+    Some(Kids { total, working, running })
+}
+
+/// Optional background counts. A malformed member drops the whole object.
+fn shape_background_work(v: Option<&Value>) -> Option<BackgroundWork> {
+    let v = v.filter(|bg| bg.is_object())?;
+    let agents = count(v.get("agents"))?.min(99);
+    let shells = count(v.get("shells"))?.min(99);
+    Some(BackgroundWork { agents, shells })
 }
 
 /// `claude` and `codex` pass; any other harness or provider name is `other`.
@@ -493,7 +518,7 @@ fn shape_accounts(v: Option<&Value>) -> Vec<UsageAccount> {
 
 fn shape_day(v: Option<&Value>) -> Vec<DaySpan> {
     let Some(items) = v.and_then(Value::as_array) else { return Vec::new() };
-    items
+    let mut day = items
         .iter()
         .filter_map(|d| {
             let start = stamp(d.get("start"))?;
@@ -514,8 +539,12 @@ fn shape_day(v: Option<&Value>) -> Vec<DaySpan> {
                 kind: one_of(d.get("kind"), &["run", "wait", "done"])?,
             })
         })
-        .take(MAX_DAY)
-        .collect()
+        .collect::<Vec<_>>();
+    while day.len() > MAX_DAY {
+        let Some(oldest_closed) = day.iter().position(|span| span.end.is_some()) else { break };
+        day.remove(oldest_closed);
+    }
+    day
 }
 
 fn shape_system(v: Option<&Value>) -> Option<BoxSystem> {
@@ -544,7 +573,14 @@ fn shape_summary(body: &Value) -> Option<OmniSummary> {
         now: stamp(obj.get("now"))?,
         tz: clean_text(obj.get("tz"), 64).unwrap_or_default(),
         stale: obj.get("stale").and_then(Value::as_bool).unwrap_or(false),
-        slots: Slots { used, limit, sessions: extra("sessions"), working: extra("working"), helpers: extra("helpers") },
+        slots: Slots {
+            used,
+            limit,
+            sessions: extra("sessions"),
+            working: extra("working"),
+            helpers: extra("helpers"),
+            busy: slots.and_then(|s| count(s.get("busy"))).map(|n| n.min(99)),
+        },
         lanes,
         sessions_list: obj.get("sessionsList").and_then(Value::as_array).map(|items| shape_lane_list(items, MAX_SESSIONS_LIST)),
         sessions: shape_names(obj.get("sessions")),
@@ -1251,7 +1287,7 @@ mod tests {
 
     /// Slots as an older helper sends them: no extra counts.
     fn slots(used: u64, limit: u64) -> Slots {
-        Slots { used, limit, sessions: None, working: None, helpers: None }
+        Slots { used, limit, sessions: None, working: None, helpers: None, busy: None }
     }
 
     #[test]
@@ -1552,7 +1588,31 @@ mod tests {
             many.push(ok.clone());
         }
         body["day"] = json!(many);
-        assert_eq!(shape_summary(&body).unwrap().day.len(), 200);
+        assert_eq!(shape_summary(&body).unwrap().day.len(), 300);
+
+        let mut newest = Vec::new();
+        for n in 0..450 {
+            newest.push(json!({
+                "lane": "a1b2c3d4-0001",
+                "start": format!("2026-11-{:02}T{:02}:00:00Z", 1 + n / 24, n % 24),
+                "end": format!("2026-11-{:02}T{:02}:00:00Z", 1 + n / 24, n % 24),
+                "kind": "run"
+            }));
+        }
+        body["day"] = json!(newest);
+        let day = shape_summary(&body).unwrap().day;
+        assert_eq!(day.len(), 400);
+        assert_eq!(day.first().unwrap().start, "2026-11-03T02:00:00Z");
+        assert_eq!(day.last().unwrap().start, "2026-11-19T17:00:00Z");
+
+        let open = json!({ "lane": "a1b2c3d4-0001", "start": "2026-11-01T00:00:00Z", "end": null, "kind": "run" });
+        let mut crowded = vec![open];
+        crowded.extend(body["day"].as_array().unwrap().iter().cloned());
+        body["day"] = json!(crowded);
+        let day = shape_summary(&body).unwrap().day;
+        assert_eq!(day.len(), 400);
+        assert!(day.iter().any(|span| span.start == "2026-11-01T00:00:00Z" && span.end.is_none()));
+        assert_eq!(day.last().unwrap().start, "2026-11-19T17:00:00Z");
     }
 
     #[test]
@@ -1857,9 +1917,9 @@ mod tests {
         assert!(s.sessions.is_empty());
         assert!(s.your_move.ids.is_empty());
         assert!(s.usage.as_ref().unwrap().accounts.is_empty());
-        assert_eq!((s.slots.sessions, s.slots.working, s.slots.helpers), (None, None, None));
+        assert_eq!((s.slots.sessions, s.slots.working, s.slots.helpers, s.slots.busy), (None, None, None, None));
         let lane = &s.lanes[0];
-        assert_eq!((lane.live.as_deref(), lane.idle_s, lane.kids, lane.waiting_since_s), (None, None, None, None));
+        assert_eq!((lane.live.as_deref(), lane.idle_s, lane.kids, lane.bg, lane.waiting_since_s), (None, None, None, None, None));
         assert_eq!((lane.next.as_deref(), lane.harness.as_deref(), lane.failed), (None, None, false));
         let v = serde_json::to_value(&s).unwrap();
         assert!(v["sessionsList"].is_null());
@@ -1869,18 +1929,20 @@ mod tests {
         for key in ["sessions", "working", "helpers"] {
             assert!(v["slots"].get(key).unwrap().is_null(), "slots.{key}");
         }
+        assert!(v["slots"].get("busy").is_none());
         for key in ["live", "idleS", "kids", "waitingSinceS", "next", "harness"] {
             assert!(v["lanes"][0].get(key).unwrap().is_null(), "lane {key}");
         }
+        assert!(v["lanes"][0].get("bg").is_none());
         assert_eq!(v["lanes"][0]["failed"], json!(false));
     }
 
     #[test]
     fn slot_extras_are_whole_numbers_capped_at_999() {
         let mut body = full();
-        body["slots"] = json!({ "used": 8, "limit": 4, "sessions": 5, "working": 2, "helpers": 7 });
+        body["slots"] = json!({ "used": 8, "limit": 4, "sessions": 5, "working": 2, "helpers": 7, "busy": 4 });
         let s = shape_summary(&body).unwrap();
-        assert_eq!(s.slots, Slots { used: 8, limit: 4, sessions: Some(5), working: Some(2), helpers: Some(7) });
+        assert_eq!(s.slots, Slots { used: 8, limit: 4, sessions: Some(5), working: Some(2), helpers: Some(7), busy: Some(4) });
         body["slots"] = json!({ "used": 8, "limit": 4, "sessions": 5000, "working": -1, "helpers": "7" });
         let s = shape_summary(&body).unwrap();
         assert_eq!((s.slots.sessions, s.slots.working, s.slots.helpers), (Some(999), None, None));
@@ -1888,6 +1950,8 @@ mod tests {
         assert_eq!(shape_summary(&body).unwrap().slots.working, None);
         let v = serde_json::to_value(shape_summary(&body).unwrap()).unwrap();
         assert_eq!(v["slots"]["sessions"], json!(999));
+        body["slots"]["busy"] = json!(5_000);
+        assert_eq!(shape_summary(&body).unwrap().slots.busy, Some(99));
     }
 
     #[test]
@@ -1895,7 +1959,8 @@ mod tests {
         let mut body = full();
         body["lanes"][0]["live"] = json!("working");
         body["lanes"][0]["idleS"] = json!(120);
-        body["lanes"][0]["kids"] = json!({ "total": 5, "working": 3 });
+        body["lanes"][0]["kids"] = json!({ "total": 5, "working": 3, "running": 2 });
+        body["lanes"][0]["bg"] = json!({ "agents": 2, "shells": 1 });
         body["lanes"][0]["waitingSinceS"] = json!(90);
         body["lanes"][0]["next"] = json!("  Merge the fix\u{7}  ");
         body["lanes"][0]["harness"] = json!("codex");
@@ -1904,7 +1969,8 @@ mod tests {
         let lane = &s.lanes[0];
         assert_eq!(lane.live.as_deref(), Some("working"));
         assert_eq!(lane.idle_s, Some(120));
-        assert_eq!(lane.kids, Some(Kids { total: 5, working: 3 }));
+        assert_eq!(lane.kids, Some(Kids { total: 5, working: 3, running: Some(2) }));
+        assert_eq!(lane.bg, Some(BackgroundWork { agents: 2, shells: 1 }));
         assert_eq!(lane.waiting_since_s, Some(90));
         assert_eq!(lane.next.as_deref(), Some("Merge the fix"));
         assert_eq!(lane.harness.as_deref(), Some("codex"));
@@ -1913,7 +1979,8 @@ mod tests {
         let l = &v["lanes"][0];
         assert_eq!(l["live"], json!("working"));
         assert_eq!(l["idleS"], json!(120));
-        assert_eq!(l["kids"], json!({ "total": 5, "working": 3 }));
+        assert_eq!(l["kids"], json!({ "total": 5, "working": 3, "running": 2 }));
+        assert_eq!(l["bg"], json!({ "agents": 2, "shells": 1 }));
         assert_eq!(l["waitingSinceS"], json!(90));
         assert_eq!(l["next"], json!("Merge the fix"));
         assert_eq!(l["harness"], json!("codex"));
@@ -1927,16 +1994,21 @@ mod tests {
         lane["live"] = json!("running");
         lane["idleS"] = json!(-4);
         lane["kids"] = json!({ "total": 2 });
+        lane["bg"] = json!({ "agents": 1, "shells": "1" });
         lane["waitingSinceS"] = json!("90");
         lane["next"] = json!("   ");
         lane["harness"] = json!(7);
         lane["failed"] = json!("true");
         let s = shape_summary(&body).unwrap();
         let lane = &s.lanes[0];
-        assert_eq!((lane.live.as_deref(), lane.idle_s, lane.kids, lane.waiting_since_s), (None, None, None, None));
+        assert_eq!((lane.live.as_deref(), lane.idle_s, lane.kids, lane.bg, lane.waiting_since_s), (None, None, None, None, None));
         assert_eq!((lane.next.as_deref(), lane.harness.as_deref(), lane.failed), (None, None, false));
         // The lane itself survives every junk extra.
         assert_eq!(s.lanes.len(), 2);
+        body["lanes"][0]["bg"] = json!([1, 0]);
+        assert_eq!(shape_summary(&body).unwrap().lanes[0].bg, None);
+        body["lanes"][0]["bg"] = json!({ "agents": -1, "shells": 0 });
+        assert_eq!(shape_summary(&body).unwrap().lanes[0].bg, None);
     }
 
     #[test]
@@ -1944,15 +2016,17 @@ mod tests {
         let mut body = full();
         body["lanes"][0]["idleS"] = json!(9_000_000_000u64);
         body["lanes"][0]["waitingSinceS"] = json!(9_000_000_000u64);
-        body["lanes"][0]["kids"] = json!({ "total": 3, "working": 8 });
+        body["lanes"][0]["kids"] = json!({ "total": 3, "working": 8, "running": 8 });
+        body["lanes"][0]["bg"] = json!({ "agents": 100_000, "shells": 7 });
         body["lanes"][0]["next"] = json!("n".repeat(200));
         body["lanes"][1]["kids"] = json!({ "total": 5000, "working": 5000 });
         let s = shape_summary(&body).unwrap();
         assert_eq!(s.lanes[0].idle_s, Some(MAX_ELAPSED_S));
         assert_eq!(s.lanes[0].waiting_since_s, Some(MAX_ELAPSED_S));
-        assert_eq!(s.lanes[0].kids, Some(Kids { total: 3, working: 3 }));
+        assert_eq!(s.lanes[0].kids, Some(Kids { total: 3, working: 3, running: Some(3) }));
+        assert_eq!(s.lanes[0].bg, Some(BackgroundWork { agents: 99, shells: 7 }));
         assert_eq!(s.lanes[0].next.as_ref().unwrap().chars().count(), 60);
-        assert_eq!(s.lanes[1].kids, Some(Kids { total: 999, working: 999 }));
+        assert_eq!(s.lanes[1].kids, Some(Kids { total: 999, working: 999, running: None }));
         body["lanes"][0]["kids"] = json!({ "total": 3.5, "working": 1 });
         assert_eq!(shape_summary(&body).unwrap().lanes[0].kids, None);
         body["lanes"][0]["kids"] = json!([3, 1]);
@@ -2002,12 +2076,13 @@ mod tests {
         assert_eq!(list.len(), 12);
         assert_eq!(list[0].id, id(1));
         assert_eq!(list[0].title, "Lane", "the first copy of an id wins");
-        assert_eq!(list[0].kids, Some(Kids { total: 2, working: 1 }));
+        assert_eq!(list[0].kids, Some(Kids { total: 2, working: 1, running: None }));
         assert_eq!(list.iter().filter(|l| l.id == id(1)).count(), 1);
         assert_eq!(list[11].id, id(12));
         let v = serde_json::to_value(&s).unwrap();
         assert_eq!(v["sessionsList"].as_array().unwrap().len(), 12);
         assert!(v["sessionsList"][0].get("elapsedS").is_some());
+        assert!(v["sessionsList"][0]["kids"].get("running").is_none());
         // Lanes stay capped at three on their own.
         assert_eq!(s.lanes.len(), 2);
     }

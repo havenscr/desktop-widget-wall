@@ -85,6 +85,7 @@ for (const place of Object.keys(PLACES)) {
 // Work: layout rules that change, and each data source down on its own.
 for (const n of ['2', '1']) state('work', `${n} agent lane${n === '1' ? '' : 's'}`, `agents=${n}`);
 state('work', 'one agent waiting', 'agents=ask');
+state('work', 'one chat with helpers working', 'agents=helpers');
 state('work', 'long strings (fit check set)', 'long=1');
 state('work', 'focus running, long title', 'focus=long');
 state('work', 'music paused', 'media=paused');
@@ -225,7 +226,9 @@ state('work', 'bottom: overlaps and twelve', 'meet=overlap&agents=12ask');
 state('work', 'bottom: normal', '');
 add('work', 'bottom: overlap hover', url('work', TYPICAL_AT, 'meet=overlap&agents=3'), true, 'hover:.rib .ev.fold');
 add('work', 'bottom: day drawer', url('work', TYPICAL_AT, 'meet=overlap&agents=12ask'), true, '.rib-handle');
+add('work', 'bottom: helpers working in day drawer', url('work', TYPICAL_AT, 'agents=helpers'), true, '.rib-handle');
 add('work', 'agents today: today', url('work', TYPICAL_AT, 'agents=7ask&days=typical'), true, '.rib .ag-line');
+add('work', 'agents today: helpers working', url('work', TYPICAL_AT, 'agents=helpers&days=typical'), true, '.rib .ag-line');
 add('work', 'agents today: yesterday', url('work', TYPICAL_AT, 'agents=7ask&days=typical'), true, '.rib .ag-line >> .at-seg button:nth-child(2)');
 add('work', 'agents today: heavy day', url('work', TYPICAL_AT, 'agents=12&days=heavy&long=1'), true, '.rib .ag-line >> .at-seg button:nth-child(2)');
 add('work', 'agents today: empty day', url('work', TYPICAL_AT, 'agents=3&days=empty'), true, '.rib .ag-line >> .at-seg button:nth-child(2)');
@@ -522,6 +525,7 @@ const EXPECT = [
   ['work', '2 agent lanes', ['Friday social card', '!Admin pill polish']],
   ['work', '1 agent lane', ['Admin pill polish', 'Free slot']],
   ['work', 'one agent waiting', 'Which of the four thumbnails goes on the Friday post?'],
+  ['work', 'one chat with helpers working', ['helpers working: 2 agents, 1 command', '2 of 4 working']],
   ['work', 'long strings', 'Voice mode: iPhone microphone permission fix'],
   ['work', 'focus running, long title', 'Draft the workshop outline'],
   ['work', 'tasks few', ['Review the dashboard draft', '!Order printer paper']],
@@ -778,7 +782,9 @@ EXPECT.push(
   ['work', 'bottom: overlaps and twelve', ['3 at 1:30', '12 sessions: 2 need you']],
   ['work', 'bottom: overlap hover', ['3 meetings overlap', 'Vendor demo1:30 to 3:30 PM']],
   ['work', 'bottom: day drawer', ['Agents today', 'Vendor demo1:30 to 3:30', 'waiting on you']],
+  ['work', 'bottom: helpers working in day drawer', ['helpers working', '2 working (1 through helpers)']],
   ['work', 'agents today: today', ['Click a row to open its session', 'waiting on you']],
+  ['work', 'agents today: helpers working', ['Click a row to open its session', 'helpers working']],
   ['work', 'agents today: yesterday', ['From the saved record of the day', '!m waiting on you']],
   ['work', 'agents today: heavy day', ['From the saved record of the day', 'across 40 sessions']],
   ['work', 'agents today: empty day', 'No sessions recorded on this day'],
