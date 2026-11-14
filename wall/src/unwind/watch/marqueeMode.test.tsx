@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mocks } from '../../bridge/tauri';
 import { useSkyStore } from '../../horizon/sky';
 import { resetNowPlaying } from '../../music/store';
-import { Unwind } from '../../screens/Unwind';
+import { UnwindView } from './testView';
 import { useSignalStore } from '../../signals/store';
 import { usePlaceStore } from '../../state/places';
 import { resetLastPlayed } from '../lastPlayed';
@@ -38,7 +38,7 @@ async function start(item: 0 | 1 = 0) {
   resetWatch();
   store().setTab('watch');
   store().play(item === 0 ? { kind: 'video', id: V } : { kind: 'twitch', id: 'pixel_harbor' });
-  render(<Unwind />);
+  render(<UnwindView />);
   await flush();
 }
 

@@ -28,7 +28,7 @@
 // CI does not run this; run it by hand before a layout change is handed over.
 //
 //   WALL_CHROME=/path/to/chrome-or-headless-shell npm --prefix wall run fit-check
-//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, header, deck, tiles, picker, chips, heading, zenhint, strip, fold, drawer, rows, handle, sky, floor, sun, tools, toolsnames, meetfill, meetempty, fy-height, key-edge, hide-pill, hide-note, leave-band, rec-chip, rec-height, tile-height, tile-icon, tile-iconbox, drawer-scrim, lwbuttons, lwoverlap, lwsquare, lwring, lwtemp, lwround, sky-front, sky-moon, sky-always, sky-crop, sky-seam, tower-over, tower-wide, tower-box, tower-switch, holo-big, holo-noblend, holo-beam, holo-take, tile-text, listen-player, listen-card, listen-slot, listen-next, lip-cover, lip-band, lip-scrim, row-parts, over-hatch, row-type)
+//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, header, deck, tiles, picker, chips, heading, zenhint, strip, fold, drawer, rows, handle, sky, floor, sun, tools, toolsnames, meetfill, meetempty, fy-height, key-edge, hide-pill, hide-note, leave-band, rec-chip, rec-height, tile-height, tile-icon, tile-iconbox, drawer-scrim, lwbuttons, lwoverlap, lwsquare, lwring, lwtemp, lwround, sky-front, sky-moon, sky-always, sky-crop, sky-seam, tower-over, tower-wide, tower-box, tower-switch, holo-big, holo-noblend, holo-beam, holo-take, tile-text, listen-player, listen-card, listen-slot, listen-next, watch-rest, watch-title, watch-away, watch-mark, lip-cover, lip-band, lip-scrim, row-parts, over-hatch, row-type)
 //   npm --prefix wall run fit-check -- --self-test
 //
 // WALL_CHROME (or the first argument that is not a flag) is a Chromium or
@@ -132,6 +132,11 @@ const EXPECT = {
   'holo-beam': /^ *FAIL tower and hologram: pixel proof: something paints over the Hologram picture/m,
   'holo-take': /^ *FAIL pointer at \.w-holo \.w-frame /m,
   'tile-text': /^ *FAIL watch polish: look tile ".*" has [\d.]+px text \(16 px at least\)/m,
+  // watch behaviour
+  'watch-rest': /^ *FAIL watch behaviour: .* takes the pointer while the controls are hidden/m,
+  'watch-title': /^ *FAIL watch behaviour: the dimmed title overlaps the video's box/m,
+  'watch-away': /^ *FAIL watch behaviour: the stage (shows|takes the pointer) on another place/m,
+  'watch-mark': /^ *FAIL watch behaviour: the rail's playing mark sticks out of its button/m,
   // sky layers
   'sky-front': /^ *FAIL sky layers: the front canvas is hidden/m,
   'sky-moon': /^ *FAIL sky layers: the moon at 300,200,44 is \d+ px from /m,
@@ -174,7 +179,8 @@ const OVERFLOWS = {
   // The floor wash catching the pointer and drawn over the Tomorrow card and the status line.
   floor: '.w-skyspill { pointer-events: auto !important; z-index: 30 !important; left: -130px !important; width: 2440px !important; }',
   // The sun's box spread over the whole band, over the controls.
-  sun: '.w-sun { left: -100px !important; width: 2500px !important; z-index: 30 !important; }',
+  // The stage sits in the video's layer, which takes no pointer: the break makes the sun take it too.
+  sun: '.w-sun { left: -100px !important; width: 2500px !important; z-index: 30 !important; pointer-events: auto !important; }',
   // The Tools drawer 1400 px wide runs past the right edge of the stage.
   tools: '.tools-drawer { width: 1400px !important; }',
   // A 20 px name column cuts the account and source names (they carry no tooltip of their own).
@@ -211,7 +217,7 @@ const OVERFLOWS = {
   'listen-slot': '.u-line { margin-left: 1960px; width: 600px; }',
   'listen-next': '.u-next-row { height: 80px !important; }',
   // watch polish: the Look switch moved 40 px in one look; a 600 px control in the row; the switch back on the video.
-  'watch-switch': '.w-panel:has(.w-sun) .w-lookbar { left: 540px !important; }',
+  'watch-switch': '.top:has(.w-sun) .w-lookbar { left: 540px !important; }',
   'watch-row': '.w-ctl .w-open { min-width: 600px !important; }',
   'watch-over': '.w-lookbar { left: 1200px !important; top: 200px !important; }',
   // A refused autoplay that never lets the pointer reach the whole-sky picture.
@@ -230,6 +236,12 @@ const OVERFLOWS = {
   'holo-take': '.w-frame.w-take { pointer-events: none !important; }',
   // the sheet's look tiles back at 14 px text
   'tile-text': '.w-tile { font-size: 14px !important; }',
+  // watch behaviour: the faded controls still clickable; the dimmed title moved onto the video; the
+  // stage left visible and clickable on another place; the rail's playing mark pushed out of its button.
+  'watch-rest': ".w-now[data-ctl='rest'] > .w-ctl, .w-panel[data-ctl='rest'] > .w-lookbar button { pointer-events: auto !important; }",
+  'watch-title': ".w-now[data-ctl='rest'] > .w-title { transform: translateX(560px); }",
+  'watch-away': ".w-layer[data-shown='false'] { opacity: 1 !important; } .w-layer[data-shown='false'] * { pointer-events: auto !important; }",
+  'watch-mark': '.rb-play { right: -70px !important; }',
   // sky layers: the front canvas hidden (the whole sky's video no longer behind the land), the moon
   // forced under the clock and the tabs (a URL knob, SKY_BREAK_Q; the player and the cards claim their
   // boxes, so a moon forced beside them is not drawn at all), the front canvas mounted on a place that never asked.
@@ -385,6 +397,16 @@ const QUIET = [
   // A refused autoplay under the Hologram: the hint shows, and a click lands on the tilted frame's real area.
   { name: 'Watch polish, hologram, autoplay refused', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=holo&wplay=0&wstate=refused', checks: WATCH_POLISH, hits: [...WATCH_POLISH_HITS, '.w-clickline', '.w-holo .w-frame'], th: 'holo' },
   { name: 'Watch polish, nothing on, hologram', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=holo', checks: ['.w-now', '.w-lookbar'], hits: ['.w-lookbar button'] },
+  // watch behaviour: the controls faded in each look (nothing of them takes the pointer, the dimmed
+  // title clear of the video's box), and a video playing while he is on Work, Home or Meet (the stage
+  // fully transparent and taking no pointer there, the rail's playing mark inside Unwind's button).
+  { name: 'Watch behaviour, feathered, controls at rest', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=feather&wplay=0&wctl=rest', checks: ['.w-now', '.w-card'], wb: 'rest' },
+  { name: 'Watch behaviour, whole sky, controls at rest', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=many&wlook=sky&wplay=3&wctl=rest', checks: ['.w-now', '.w-card'], wb: 'rest' },
+  { name: 'Watch behaviour, the sun, Twitch, controls at rest', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=sun&wplay=2&wctl=rest', checks: ['.w-now', '.w-card'], wb: 'rest' },
+  { name: 'Watch behaviour, drive-in, long label, controls at rest', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=many&wlook=drivein&wplay=3&wctl=rest', checks: ['.w-now', '.w-card'], wb: 'rest' },
+  { name: 'Watch behaviour, Work with a video playing elsewhere', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=drivein&wplay=0&wplace=work', checks: ['.work .centre'], wb: 'away' },
+  { name: 'Watch behaviour, Home with the whole sky playing elsewhere', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=sky&wplay=0&wplace=home', checks: ['.home .home-centre'], wb: 'away' },
+  { name: 'Watch behaviour, Meet with the sun playing elsewhere', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=sun&wplay=0&wplace=meet', checks: ['.meet .panel'], wb: 'away' },
   // sky layers: the video behind the land (the horizon's front canvas over the video's box) in the
   // three looks that sit in the sky, the drive-in in front of it with no front canvas, and the moon
   // in open sky at night and at dusk, 40 px clear of every card, the player and the clock, on Listen
@@ -635,10 +657,10 @@ try {
   html = html.replace(/<link rel="stylesheet" crossorigin href="\.\/([^"]+)">/g, (_, href) => `<style>${readFileSync(join(dist, href), 'utf8')}</style>`);
   // For each checked box: its scroll sizes, and how far it sticks out of its container and
   // of the viewport on each side (screen pixels, 0 when inside). Plus the page's own scroll.
-  // Pixel proofs of the Hologram (thpx): `bare` hides everything of the Watch panel but the plate and the stage (so the
+  // Pixel proofs of the Hologram (thpx): `bare` hides everything of the video's layer and of the Watch panel but the plate and the stage (so the
   // difference to the page as drawn is whatever else paints over the picture), `noplate` hides the plate only (so the
   // difference is what the picture mixes with).
-  const measure = `<script>{ const m = new URLSearchParams(location.search).get('thpx'); const css = { bare: '.w-panel > :not(.w-stage):not(.w-holo-plate) { visibility: hidden !important; }', noplate: '.w-holo-plate { visibility: hidden !important; }' }[m]; if (css) { const st = document.createElement('style'); st.textContent = css; document.head.appendChild(st); } }</script><script>setTimeout(() => {
+  const measure = `<script>{ const m = new URLSearchParams(location.search).get('thpx'); const css = { bare: '.w-layer > :not(.w-stage):not(.w-holo-plate), .w-panel > * { visibility: hidden !important; }', noplate: '.w-holo-plate { visibility: hidden !important; }' }[m]; if (css) { const st = document.createElement('style'); st.textContent = css; document.head.appendChild(st); } }</script><script>setTimeout(() => {
     // unwind listen: measured at the end of the songs view's slide (virtual time draws no frames for it to run).
     if (new URLSearchParams(location.search).get('listen')) { const st = document.createElement('style'); st.textContent = '.sp-songs { animation: none !important; }'; document.head.appendChild(st); }
     // Steps separated by " >> " run 300 ms apart; within a step, " then " runs them at once.
@@ -1318,7 +1340,63 @@ try {
     })();
     // look tiles: the labels in the settings sheet keep 16 px at least (the wall's smallest text).
     const tileText = [...document.querySelectorAll('.w-tile')].filter((t) => parseFloat(getComputedStyle(t).fontSize) < 16).map((t) => 'watch polish: look tile "' + (t.textContent || '').trim() + '" has ' + getComputedStyle(t).fontSize + ' text (16 px at least)');
-    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, meetOut, strip, opened, watchPolish, skyLayers, thCheck, tileText, listen });
+    // watch behaviour: \`wbcheck=rest\`: the controls are faded, none of them takes the pointer at its
+    // centre, and the dimmed title stays clear of the video's box. \`wbcheck=away\`: on another place
+    // the frame is still there, its layer fully transparent or off the stage, no point of its box
+    // reaches it, and Unwind's button carries the playing mark inside its own box.
+    const watchBehaviour = (() => {
+      const mode = new URLSearchParams(location.search).get('wbcheck');
+      if (!mode) return [];
+      const fails = [];
+      const cls = (e) => (typeof e.className === 'string' ? e.className : e.tagName).split(' ').slice(0, 2).join('.');
+      const meet = (a, b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+      if (mode === 'rest') {
+        // Headless virtual time hardly runs CSS transitions: read where the 250 ms fade ends.
+        for (const e of document.querySelectorAll('.w-now > *, .w-lookbar')) e.style.transition = 'none';
+        void document.body.offsetWidth;
+        const now = document.querySelector('.w-now');
+        if (!now || now.getAttribute('data-ctl') !== 'rest') fails.push('watch behaviour: the controls are not at rest');
+        for (const e of document.querySelectorAll('.w-now .u-src, .w-ctl button, .w-ctl .w-open, .w-bar, .w-hintbtn, .w-lookbar button')) {
+          const r = e.getBoundingClientRect();
+          if (!(r.width > 0 && r.height > 0)) continue;
+          const h = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+          if (h && (h === e || e.contains(h))) fails.push('watch behaviour: ' + cls(e) + ' takes the pointer while the controls are hidden');
+          if (Number(getComputedStyle(e.closest('.w-ctl, .w-time, .w-lookbar, .u-src') || e).opacity) > 0.01) fails.push('watch behaviour: ' + cls(e) + ' shows while the controls are hidden');
+        }
+        const title = document.querySelector('.w-now .w-title');
+        const scr = document.querySelector('.w-stage .w-screen');
+        if (title && scr) {
+          const range = document.createRange();
+          range.selectNodeContents(title);
+          for (const t of range.getClientRects()) if (t.width > 0 && meet(t, scr.getBoundingClientRect())) { fails.push("watch behaviour: the dimmed title overlaps the video's box"); break; }
+          if (Math.abs(Number(getComputedStyle(title).opacity) - 0.5) > 0.01) fails.push('watch behaviour: the dimmed title is at ' + getComputedStyle(title).opacity + ', not half strength');
+        }
+      }
+      if (mode === 'away') {
+        const frame = document.querySelector('.w-layer .w-frame');
+        if (!frame) fails.push('watch behaviour: no frame while the video plays elsewhere');
+        else {
+          const r = frame.getBoundingClientRect();
+          let op = 1;
+          for (let a = frame; a; a = a.parentElement) op *= Number(getComputedStyle(a).opacity);
+          const onStage = r.right > 0 && r.left < 2560 && r.bottom > 0 && r.top < 720;
+          if (onStage && op > 0.001) fails.push('watch behaviour: the stage shows on another place (opacity ' + op.toFixed(2) + ')');
+          const st = frame.closest('.w-stage').getBoundingClientRect();
+          let took = 0;
+          for (let y = st.top + 10; y < st.bottom; y += 40) for (let x = st.left + 10; x < st.right; x += 40) { const h = document.elementFromPoint(x, y); if (h && h.closest('.w-layer')) took += 1; }
+          if (took) fails.push('watch behaviour: the stage takes the pointer on another place (' + took + ' points)');
+        }
+        const mark = document.querySelector('.rail .rb-play');
+        if (!mark) fails.push("watch behaviour: no playing mark on the rail's Unwind button");
+        else {
+          const m = mark.getBoundingClientRect();
+          const b = mark.closest('.rb').getBoundingClientRect();
+          if (m.left < b.left - 0.5 || m.right > b.right + 0.5 || m.top < b.top - 0.5 || m.bottom > b.bottom + 0.5) fails.push("watch behaviour: the rail's playing mark sticks out of its button");
+        }
+      }
+      return fails;
+    })();
+    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, meetOut, strip, opened, watchPolish, skyLayers, thCheck, tileText, listen, watchBehaviour });
     document.body.appendChild(pre);
   }, new URLSearchParams(location.search).get('card') ? 7000 : 3000);</script>`;
   const broken = overflow ? `<style>${OVERFLOWS[overflow]}</style>` : '';
@@ -1387,6 +1465,11 @@ try {
     'holo-beam': (v) => v.name === 'Watch polish, hologram, single video',
     'holo-take': (v) => v.name === 'Watch polish, hologram, autoplay refused',
     'tile-text': (v) => v.name === 'Watch, settings sheet, one look',
+    // watch behaviour
+    'watch-rest': (v) => v.name === 'Watch behaviour, feathered, controls at rest',
+    'watch-title': (v) => v.name === 'Watch behaviour, drive-in, long label, controls at rest',
+    'watch-away': (v) => v.name === 'Watch behaviour, Work with a video playing elsewhere',
+    'watch-mark': (v) => v.name === 'Watch behaviour, Work with a video playing elsewhere',
     // sky layers
     'sky-front': (v) => v.name === 'Sky layers, whole sky at night',
     'sky-moon': (v) => v.name === 'Sky layers, Listen at night, the moon in open sky',
@@ -1402,7 +1485,7 @@ try {
   const skyMoons = [];
   for (const v of overflow ? breakOn : VARIANTS) {
     console.log(`${v.name} (${v.q}):`);
-    const url = `${pathToFileURL(page).href}${v.q}${v.sky ? `&skycheck=${v.sky}` : ''}${overflow && SKY_BREAK_Q[overflow] ? SKY_BREAK_Q[overflow] : ''}&checks=${encodeURIComponent(v.checks.join('|'))}${v.click ? `&click=${encodeURIComponent(v.click)}` : ''}${v.card ? '&card=1' : ''}${v.hits ? `&hits=${encodeURIComponent(v.hits.join('|'))}` : ''}${v.noHit ? `&nohit=${encodeURIComponent(v.noHit)}` : ''}${v.listen ? '&listen=1' : ''}${v.th ? `&th=${v.th}` : ''}`;
+    const url = `${pathToFileURL(page).href}${v.q}${v.sky ? `&skycheck=${v.sky}` : ''}${overflow && SKY_BREAK_Q[overflow] ? SKY_BREAK_Q[overflow] : ''}&checks=${encodeURIComponent(v.checks.join('|'))}${v.click ? `&click=${encodeURIComponent(v.click)}` : ''}${v.card ? '&card=1' : ''}${v.hits ? `&hits=${encodeURIComponent(v.hits.join('|'))}` : ''}${v.noHit ? `&nohit=${encodeURIComponent(v.noHit)}` : ''}${v.listen ? '&listen=1' : ''}${v.th ? `&th=${v.th}` : ''}${v.wb ? `&wbcheck=${v.wb}` : ''}`;
     const dom = await runChrome(
       chrome,
       // Headless Chromium keeps 87 px of the window for itself, so 807 gives a 2560 by 720 viewport.
@@ -1415,7 +1498,12 @@ try {
       process.exit(1);
     }
     const text = m[1].replaceAll('&quot;', '"').replaceAll('&amp;', '&');
-    const { res, page: doc, overlaps, cut, gaps, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, meetOut, strip, opened, watchPolish, skyLayers, thCheck, tileText, listen } = JSON.parse(text);
+    const { res, page: doc, overlaps, cut, gaps, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, meetOut, strip, opened, watchPolish, skyLayers, thCheck, tileText, listen, watchBehaviour } = JSON.parse(text);
+    // watch behaviour
+    for (const f of watchBehaviour) console.log(`  FAIL ${f}`);
+    if (watchBehaviour.length) failed = true;
+    else if (v.wb === 'rest') console.log("  ok   watch behaviour: the controls are faded and take no pointer, the dimmed title clear of the video's box");
+    else if (v.wb === 'away') console.log("  ok   watch behaviour: out of sight the stage is transparent and takes no pointer; the rail's mark sits in its button");
     // sky layers
     for (const f of skyLayers.fails) console.log(`  FAIL ${f}`);
     if (skyLayers.fails.length) failed = true;

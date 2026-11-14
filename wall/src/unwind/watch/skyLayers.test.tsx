@@ -8,7 +8,7 @@ import { MOON, MOON_PLACES } from '../../horizon/cameras';
 import { stubContext } from '../../horizon/canvasStub';
 import { moonFor, useSkyStore } from '../../horizon/sky';
 import { resetNowPlaying } from '../../music/store';
-import { Unwind } from '../../screens/Unwind';
+import { UnwindView } from './testView';
 import { useSignalStore } from '../../signals/store';
 import { usePlaceStore } from '../../state/places';
 import { resetLastPlayed } from '../lastPlayed';
@@ -76,7 +76,7 @@ describe('the sky layers under each look', () => {
     render(
       <>
         <HorizonCanvas />
-        <Unwind />
+        <UnwindView />
       </>,
     );
     await flush();
@@ -119,12 +119,12 @@ describe('the sky layers under each look', () => {
     expect(document.querySelector('.w-moonveil')).toBeNull();
   });
 
-  it('follows the look as it changes, and is released when Watch is left, when nothing is on and when Unwind is left', async () => {
+  it('follows the look as it changes, and is released while Watch or Unwind is left (the video plays on) and when nothing is on', async () => {
     setup('sky');
     render(
       <>
         <HorizonCanvas />
-        <Unwind />
+        <UnwindView />
       </>,
     );
     await flush();
@@ -135,37 +135,44 @@ describe('the sky layers under each look', () => {
       expect(claims().watch.boxes).toEqual(box(look));
       expect(document.querySelectorAll('canvas.horizon-front').length).toBe(BEHIND[look] ? 1 : 0);
     }
-    // Listen: the claim goes with the Watch panel.
+    // Listen: the video plays on out of sight and claims nothing from the sky.
     act(() => useWatchStore.getState().setTab('listen'));
     await flush();
+    expect(useWatchStore.getState().playing).not.toBeNull();
     expect(claims()).toEqual({});
     expect(front()).toBeNull();
     expect(moonFor(MOON_PLACES, claims())).toBe(MOON);
-    // Leaving Watch stopped the video; back on Watch and playing, it comes back. Stopping the video releases it (the whole sky has no empty screen).
+    // Back on Watch it is still playing, in its look, behind the land again.
     act(() => useWatchStore.getState().setTab('watch'));
     await flush();
-    expect(claims()).toEqual({});
-    act(() => useWatchStore.getState().play({ kind: 'video', id: V }));
-    await flush();
+    expect(claims().watch.boxes).toEqual(box('sky'));
     expect(front()).not.toBeNull();
+    // Stopping the video releases it (the whole sky has no empty screen).
     act(() => useWatchStore.getState().stop());
     await flush();
     expect(claims()).toEqual({});
     expect(front()).toBeNull();
-    // Playing again, then leaving Unwind for another place: nothing is left behind.
+    // Playing again, then leaving Unwind for another place: it plays on and claims nothing.
     act(() => useWatchStore.getState().play({ kind: 'video', id: V }));
     await flush();
     expect(front()).not.toBeNull();
     act(() => usePlaceStore.getState().setActive('work'));
     await flush();
+    expect(useWatchStore.getState().playing).not.toBeNull();
     expect(claims()).toEqual({});
     expect(front()).toBeNull();
+    expect(moonFor(MOON_PLACES, claims())).toBe(MOON);
+    // And back on Unwind, in its look again.
+    act(() => usePlaceStore.getState().setActive('unwind'));
+    await flush();
+    expect(claims().watch.boxes).toEqual(box('sky'));
+    expect(front()).not.toBeNull();
   });
 
   it('with nothing on, the moon shows in every look but the drive-in, whose empty screen owns that sky', async () => {
     for (const look of IDS) {
       setup(look, false);
-      const { unmount } = render(<Unwind />);
+      const { unmount } = render(<UnwindView />);
       await flush();
       expect(moonFor(MOON_PLACES, claims())).toBe(look === 'drivein' ? null : MOON);
       if (look === 'drivein') expect(claims().watch).toEqual({ boxes: box('drivein'), noMoon: true });
@@ -179,7 +186,7 @@ describe('the sky layers under each look', () => {
     render(
       <>
         <HorizonCanvas />
-        <Unwind />
+        <UnwindView />
       </>,
     );
     await flush();
@@ -200,7 +207,7 @@ describe('the sky layers under each look', () => {
     render(
       <>
         <HorizonCanvas />
-        <Unwind />
+        <UnwindView />
       </>,
     );
     await flush();
@@ -225,7 +232,7 @@ describe('the cards Unwind stands in the sky keep the moon clear of them', () =>
   it('Listen: the wide card claims its own drawn box, so the moon moves to the next clear place, and back when Listen goes', async () => {
     lay({ '.sp-card': [1740, 24, 800, 462] });
     useWatchStore.getState().setTab('listen');
-    const { unmount } = render(<Unwind />);
+    const { unmount } = render(<UnwindView />);
     await flush();
     expect(claims()['listen-card']).toEqual({ clear: [[1740, 24, 800, 462]] });
     expect(moonFor(MOON_PLACES, claims())).toBe(MOON_PLACES[1]);
@@ -238,7 +245,7 @@ describe('the cards Unwind stands in the sky keep the moon clear of them', () =>
     // The player at its widest (long names) leaves the second place 45 px clear.
     const spy = lay({ '.sp-card': [1740, 24, 800, 462], '.u-player': [624, 26, 1086, 225] });
     useWatchStore.getState().setTab('listen');
-    const { unmount } = render(<Unwind />);
+    const { unmount } = render(<UnwindView />);
     await flush();
     expect(claims()['listen-player']).toEqual({ clear: [[624, 26, 1086, 225]] });
     expect(moonFor(MOON_PLACES, claims())).toBe(MOON_PLACES[1]);
@@ -247,7 +254,7 @@ describe('the cards Unwind stands in the sky keep the moon clear of them', () =>
     // A player 30 px taller: the second place is too near it and the third lies on it, so no moon.
     spy.mockRestore();
     lay({ '.sp-card': [1740, 24, 800, 462], '.u-player': [624, 26, 1086, 255] });
-    render(<Unwind />);
+    render(<UnwindView />);
     await flush();
     expect(claims()['listen-player']).toEqual({ clear: [[624, 26, 1086, 255]] });
     expect(moonFor(MOON_PLACES, claims())).toBeNull();
@@ -256,7 +263,7 @@ describe('the cards Unwind stands in the sky keep the moon clear of them', () =>
   it('Watch with nothing on: the list card, the left block and the Look switch claim their boxes; the moon stays at its first place, clear of them', async () => {
     lay({ '.w-card': [2030, 20, 510, 330], '.w-now': [620, 120, 520, 260], '.w-lookbar': [620, 400, 458, 44] });
     setup('feather', false);
-    render(<Unwind />);
+    render(<UnwindView />);
     await flush();
     expect(claims()['watch-card']).toEqual({ clear: [[2030, 20, 510, 330]] });
     expect(claims()['watch-now']).toEqual({ clear: [[620, 120, 520, 260]] });
@@ -271,7 +278,7 @@ describe('the feathered look stands in front of the mountains', () => {
     render(
       <>
         <HorizonCanvas />
-        <Unwind />
+        <UnwindView />
       </>,
     );
     await flush();

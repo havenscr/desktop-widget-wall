@@ -292,6 +292,16 @@ state('unwind', 'watch polish: whole sky, autoplay refused', `${WM}&wlist=three&
 state('unwind', 'watch polish: Twitch not started hint, drive-in', `${WM}&wlist=three&wlook=drivein&wplay=2&wstate=refused`, TIMES.night);
 state('unwind', 'watch polish: leave banner over the drive-in', `${WM}&wlist=three&wlook=drivein&wplay=0&leave=12`, TIMES.night);
 state('unwind', 'watch polish: nothing on, whole sky chosen', `${WM}&wlist=three&wlook=sky`, TIMES.night);
+// watch behaviour: the controls faded (5A) in each look, shown, paused, with a notice; and Work with a
+// video playing out of sight (the rail's playing mark on Unwind).
+state('unwind', 'watch behaviour: feathered, controls hidden', `${WM}&wlist=three&wlook=feather&wplay=0&wctl=rest`, TIMES.night);
+state('unwind', 'watch behaviour: whole sky, controls hidden', `${WM}&wlist=three&wlook=sky&wplay=0&wctl=rest`, TIMES.night);
+state('unwind', 'watch behaviour: sun, controls hidden', `${WM}&wlist=three&wlook=sun&wplay=0&wctl=rest`, TIMES.night);
+state('unwind', 'watch behaviour: drive-in, controls hidden', `${WM}&wlist=three&wlook=drivein&wplay=0&wctl=rest`, TIMES.night);
+state('unwind', 'watch behaviour: drive-in, controls shown', `${WM}&wlist=three&wlook=drivein&wplay=0`, TIMES.night);
+state('unwind', 'watch behaviour: drive-in, paused, controls stay', `${WM}&wlist=three&wlook=drivein&wplay=0&wstate=paused&wctl=rest`, TIMES.night);
+state('unwind', 'watch behaviour: feathered, click notice, controls stay', `${WM}&wlist=three&wlook=feather&wplay=0&wstate=refused&wctl=rest`, TIMES.night);
+state('work', 'watch behaviour: a video playing elsewhere', `${WM}&wlist=three&wlook=drivein&wplay=0&wplace=work`, TIMES.night);
 // sky layers: the video behind the land (the horizon's front canvas) in the whole sky and the sun at
 // night and at noon, the drive-in and feathered looks at night with no moon behind them, and the
 // moon in its open-sky place on Listen (playing and with nothing playing) and on Watch with nothing on.
@@ -617,6 +627,10 @@ const EXPECT = [
   ['unwind', 'watch polish: leave banner', ['Open in YouTube', 'Drive-in']],
   ['unwind', 'watch polish: nothing on', ['Nothing on', 'Whole sky', 'Drive-in']],
   ['unwind', 'watch polish: whole sky, autoplay refused', ['Click the video to start', 'Waiting for a click on the video']],
+  // watch behaviour (the faded parts are still in the page, only transparent)
+  ['unwind', 'watch behaviour: drive-in, paused', ['Paused', 'Night drive mix']],
+  ['unwind', 'watch behaviour: feathered, click notice', ['Click the video to start', 'Night drive mix']],
+  ['unwind', 'watch behaviour:', ['Night drive mix', 'Playing on the wall']],
   ['unwind', 'watch polish: Twitch not started hint, drive-in', ['Not started? Click the video', 'Live on the wall', 'Open on Twitch']],
   // sky layers
   ['unwind', 'sky layers: whole sky', ['Whole sky', 'Playing on the wall']],
@@ -749,6 +763,7 @@ EXPECT.push(
  * reason is recorded in the manifest. Everything else that sets a knob needs an EXPECT.
  */
 const NO_TEXT = [
+  ['work', 'watch behaviour: a video playing elsewhere', 'the rail mark is drawn, not text; fit-check checks it and the stage'],
   ['work', 'music paused', 'only the play and pause icon changes'],
   ['work', 'box numbers stale', 'the numbers keep their text and are only dimmed'],
   ['home', 'broken: weather down', 'Home shows no weather text'],

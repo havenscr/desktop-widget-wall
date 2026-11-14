@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mocks } from '../../bridge/tauri';
 import { useSkyStore } from '../../horizon/sky';
 import { resetNowPlaying } from '../../music/store';
-import { Unwind } from '../../screens/Unwind';
+import { UnwindView } from './testView';
 import { useSignalStore } from '../../signals/store';
 import { usePlaceStore } from '../../state/places';
 import { resetLastPlayed } from '../lastPlayed';
@@ -94,7 +94,7 @@ describe('the Hologram as a stored look', () => {
 describe('the Look switch with five segments', () => {
   it('shows five radios, exactly one selected, and the arrow keys walk all five and wrap', async () => {
     setup('feather');
-    render(<Unwind />);
+    render(<UnwindView />);
     await flush();
     const group = () => screen.getByRole('radiogroup', { name: 'Look' });
     const radios = () => [...group().querySelectorAll<HTMLElement>('[role=radio]')];
@@ -130,7 +130,7 @@ describe('the Look switch with five segments', () => {
 describe('the Hologram on the wall', () => {
   it('draws the plate and the emitter before the stage, with the picture whole and nothing over it', async () => {
     setup('holo');
-    const { container } = render(<Unwind />);
+    const { container } = render(<UnwindView />);
     await flush();
     const stage = container.querySelector('.w-stage')!;
     expect(stage.getAttribute('data-look')).toBe('holo');
@@ -152,7 +152,7 @@ describe('the Hologram on the wall', () => {
     // The emitter is drawn by the Hologram only.
     for (const other of ['feather', 'sky', 'sun', 'drivein']) {
       setup(other);
-      const again = render(<Unwind />);
+      const again = render(<UnwindView />);
       await flush();
       expect(again.container.querySelector('.w-holo-plate, .w-holo-emit')).toBeNull();
       again.unmount();
@@ -164,7 +164,7 @@ describe('the Hologram on the wall', () => {
     expect(layeredNow('holo', false)).toBe(false);
     expect(ownsTheMoonSky('holo')).toBe(false);
     setup('holo');
-    render(<Unwind />);
+    render(<UnwindView />);
     await flush();
     const c = useSkyStore.getState().claims.watch;
     expect(c.front ?? null).toBeNull();
@@ -197,7 +197,7 @@ describe('the Hologram on the wall', () => {
 
   it('a refused autoplay still shows the click line and the frame can be clicked', async () => {
     setup('holo');
-    render(<Unwind />);
+    render(<UnwindView />);
     await flush();
     await act(async () => useWatchStore.getState().setNeedsClick(true));
     expect(screen.getByText('Click the video to start')).toBeTruthy();
@@ -209,7 +209,7 @@ describe('the Hologram on the wall', () => {
 describe('the settings sheet tile for the Hologram', () => {
   it('offers a Hologram tile with a drawing and its one-line description, and picking it plays that look', async () => {
     setup('drivein');
-    render(<Unwind />);
+    render(<UnwindView />);
     await flush();
     await act(async () => screen.getByRole('button', { name: 'How video is shown' }).click());
     const tiles = screen.getByRole('radiogroup', { name: 'Look for everything' });

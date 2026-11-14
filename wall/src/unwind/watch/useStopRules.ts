@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { invoke, isTauri } from '../../bridge/tauri';
 import { useSignalStore } from '../../signals/store';
-import { usePlaceStore } from '../../state/places';
 import { useDisplayDark } from '../../ui/useDisplayDark';
 import { useVisible } from '../../ui/useVisible';
 import { useWatchStore } from './store';
@@ -42,20 +41,18 @@ export function useScreensOffMode(): boolean {
 /**
  * Removes the frame when any stop rule holds: the page hidden, the display off or Windows
  * locked (`useDisplayDark`; never input idle, since nobody touches the mouse while watching),
- * Screens off mode, or a call. Leaving the tab or Unwind is handled by the store. Mounted with
- * the Watch panel; it only ever stops, never starts.
+ * Screens off mode, or a call. Mounted with the stage layer, which the app keeps on every place,
+ * so the rules hold while the video plays out of sight; it only ever stops, never starts.
  */
 export function useStopRules(): void {
   const visible = useVisible();
   const displayDark = useDisplayDark();
   const screensOff = useScreensOffMode();
   const inCall = useSignalStore((s) => s.call !== null);
-  const place = usePlaceStore((s) => s.active);
-  const tab = useWatchStore((s) => s.tab);
   const playing = useWatchStore((s) => s.playing !== null);
   useEffect(() => {
     if (!playing) return;
-    const why = stopReason({ place, tab, visible, displayDark, screensOff, inCall });
+    const why = stopReason({ visible, displayDark, screensOff, inCall });
     if (why) useWatchStore.getState().stop(why);
-  }, [playing, place, tab, visible, displayDark, screensOff, inCall]);
+  }, [playing, visible, displayDark, screensOff, inCall]);
 }

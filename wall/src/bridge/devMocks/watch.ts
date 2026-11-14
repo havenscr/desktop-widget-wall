@@ -5,6 +5,8 @@ import { LOOKS_KEY } from '../../unwind/watch/looks';
 import { framePoster } from '../../unwind/watch/PlayerFrame';
 import { SAVED_KEY } from '../../unwind/watch/saved';
 import { useWatchStore } from '../../unwind/watch/store';
+import { ctlTiming } from '../../unwind/watch/Watch';
+import { usePlaceStore } from '../../state/places';
 import { mocks } from '../tauri';
 import { knob } from './long';
 
@@ -24,6 +26,11 @@ import { knob } from './long';
  *                             for Twitch the "Not started?" hint);
  *                             or a player that has reported nothing yet (default: playing at
  *                             12:34 of 45:10; a playlist reports item 4 of 24; live has no length)
+ *   ?wctl=rest                watch behaviour: the controls fade as with no pointer near (after
+ *                             200 ms, so a still catches it); by default the stills hold them
+ *                             shown, as with the pointer over the video's lower edge
+ *   ?wplace=work|home|meet    watch behaviour: after it starts, go to that place, so the video
+ *                             plays out of sight and the rail marks Unwind
  */
 const THREE = [
   { kind: 'video', id: 'Ab3dEfGh1jK', label: 'Night drive mix' },
@@ -136,6 +143,10 @@ export function registerWatchMocks(): void {
     if (knob('wplay') !== null && item) {
       useWatchStore.getState().play(item);
       mockPlayer(item.kind, knob('wstate'));
+      if (knob('wctl') === 'rest') ctlTiming.restMs = 200;
+      else useWatchStore.getState().setPeek(true);
+      const away = knob('wplace');
+      if (away === 'work' || away === 'home' || away === 'meet') usePlaceStore.getState().setActive(away);
     }
     if (knob('wsheet')) useWatchStore.getState().setSheet(true);
   }, 600);
