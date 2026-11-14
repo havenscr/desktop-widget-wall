@@ -35,9 +35,9 @@ function useOpenStatus(opened: number): OpenStatusState {
 }
 
 /** One account: an icon, its name, one line of state (amber when it needs attention) and at most one button. */
-function Row({ icon, name, line, tone = 'plain', hover, children }: { icon: ReactNode; name: string; line: string; tone?: Tone; hover?: string; children?: ReactNode }) {
+function Row({ icon, name, line, tone = 'plain', hover, account, children }: { icon: ReactNode; name: string; line: string; tone?: Tone; hover?: string; account?: string; children?: ReactNode }) {
   return (
-    <li className="tools-row tools-acct" {...(hover ? hoverCard(hover) : {})}>
+    <li className="tools-row tools-acct" data-account={account} {...(hover ? hoverCard(hover) : {})}>
       <span className="tools-ico">{icon}</span>
       <span className="tools-name">{name}</span>
       <span className={tone === 'bad' ? 'tools-line bad' : 'tools-line'}>{line}</span>
@@ -326,7 +326,7 @@ function YoutubeSetup({ onSaved, onCancel }: { onSaved: () => void; onCancel: ()
 function YoutubeRow({ yt, blocked }: { yt: ReturnType<typeof useYoutubeAccount>; blocked: boolean }) {
   const icon = <IconBrandYoutube size={22} aria-hidden="true" />;
   const row = (line: string, tone: Tone, hover: string | undefined, buttons: ReactNode) => (
-    <Row icon={icon} name="YouTube" line={line} tone={tone} hover={hover}>
+    <Row icon={icon} name="YouTube" line={line} tone={tone} hover={hover} account="youtube">
       {buttons}
     </Row>
   );
@@ -340,7 +340,7 @@ function YoutubeRow({ yt, blocked }: { yt: ReturnType<typeof useYoutubeAccount>;
     return row('Could not check', 'bad', 'The YouTube status did not come back.', <Btn label="Retry" onClick={yt.read} hover="Asks again." />);
   }
   const s = yt.status;
-  if (!s) return <Row icon={icon} name="YouTube" line="Checking" />;
+  if (!s) return <Row icon={icon} name="YouTube" line="Checking" account="youtube" />;
   if (s.reason === 'failed') {
     return row(s.setup ? 'Could not read the saved sign-in' : 'Could not check', 'bad', 'Windows did not hand back what the wall stored.', <Btn label="Retry" onClick={yt.read} hover="Asks again." />);
   }

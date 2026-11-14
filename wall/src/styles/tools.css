@@ -314,16 +314,18 @@ li.tools-yt-hint {
   flex-wrap: wrap;
   align-items: center;
   column-gap: 6px;
-  min-height: 32px;
   font: 16px/1.3 var(--body);
   color: var(--faint);
+}
+.tools-yt-links > span:first-child {
+  flex-basis: 100%;
 }
 .tools-yt-pair {
   white-space: nowrap;
 }
 .tools-link {
   height: 32px;
-  padding: 0 2px;
+  padding: 0;
   border: 0;
   background: transparent;
   color: var(--dim);
@@ -337,4 +339,10 @@ li.tools-yt-hint {
 .tools-link:focus-visible {
   outline: 3px solid var(--cyan);
   outline-offset: 2px;
+}
+/* The drawer is 700 px tall at most and the Accounts block already fills most of it, so while
+   the Set up form is open it has the left column to itself: Video look and Keys file come back
+   the moment the form closes. */
+.tools-drawer:has(.tools-yt-form) .tools-col.left > :not([data-section='accounts']) {
+  display: none;
 }
