@@ -1558,14 +1558,15 @@
 /* ---- end of the Hologram ---- */
 
 /* The sheet with five looks: five tiles in a row, and per kind each label over a full-width
-   choice of five, so it fits the right wing at 540 px. */
+   choice of five, so it fits the right wing at 540 px. The tile labels keep 16 px (the wall's
+   smallest text); the room comes from the tile's padding and the gap, not from the type. */
 .w-tiles {
   grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 6px;
+  gap: 4px;
 }
 .w-tile {
-  padding: 5px;
-  font-size: 14px;
+  padding: 4px 3px;
+  font-size: 16px;
   white-space: nowrap;
 }
 .w-pic {

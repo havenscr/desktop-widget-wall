@@ -28,7 +28,7 @@
 // CI does not run this; run it by hand before a layout change is handed over.
 //
 //   WALL_CHROME=/path/to/chrome-or-headless-shell npm --prefix wall run fit-check
-//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, header, deck, tiles, picker, chips, heading, zenhint, strip, fold, drawer, rows, handle, sky, floor, sun, tools, toolsnames, meetfill, meetempty, fy-height, key-edge, hide-pill, hide-note, leave-band, rec-chip, rec-height, tile-height, tile-icon, tile-iconbox, drawer-scrim, lwbuttons, lwoverlap, lwsquare, lwring, lwtemp, lwround, sky-front, sky-moon, sky-always, sky-crop, sky-seam, tower-over, tower-wide, tower-box, tower-switch, holo-big, holo-noblend, holo-take, listen-player, listen-card, listen-slot, listen-next, lip-cover, lip-band, lip-scrim, row-parts, over-hatch, row-type)
+//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, header, deck, tiles, picker, chips, heading, zenhint, strip, fold, drawer, rows, handle, sky, floor, sun, tools, toolsnames, meetfill, meetempty, fy-height, key-edge, hide-pill, hide-note, leave-band, rec-chip, rec-height, tile-height, tile-icon, tile-iconbox, drawer-scrim, lwbuttons, lwoverlap, lwsquare, lwring, lwtemp, lwround, sky-front, sky-moon, sky-always, sky-crop, sky-seam, tower-over, tower-wide, tower-box, tower-switch, holo-big, holo-noblend, holo-beam, holo-take, tile-text, listen-player, listen-card, listen-slot, listen-next, lip-cover, lip-band, lip-scrim, row-parts, over-hatch, row-type)
 //   npm --prefix wall run fit-check -- --self-test
 //
 // WALL_CHROME (or the first argument that is not a flag) is a Chromium or
@@ -128,8 +128,10 @@ const EXPECT = {
   'tower-box': /^ *FAIL tower and hologram: the video box is at /m,
   'tower-switch': /^ *FAIL watch polish: the Look switch is at /m,
   'holo-big': /^ *FAIL tower and hologram: the Hologram .* (overlaps|leaves) /m,
-  'holo-noblend': /^ *FAIL tower and hologram: the Hologram is not blended/m,
+  'holo-noblend': /^ *FAIL tower and hologram: pixel proof: the picture does not mix with the plate/m,
+  'holo-beam': /^ *FAIL tower and hologram: pixel proof: something paints over the Hologram picture/m,
   'holo-take': /^ *FAIL pointer at \.w-holo \.w-frame /m,
+  'tile-text': /^ *FAIL watch polish: look tile ".*" has [\d.]+px text \(16 px at least\)/m,
   // sky layers
   'sky-front': /^ *FAIL sky layers: the front canvas is hidden/m,
   'sky-moon': /^ *FAIL sky layers: the moon at 300,200,44 is \d+ px from /m,
@@ -223,7 +225,11 @@ const OVERFLOWS = {
   'tower-switch': '.w-panel:has(.w-holo) .w-lookbar { left: 540px !important; }',
   'holo-big': '.w-holo { scale: 1.3; }',
   'holo-noblend': '.w-holo { mix-blend-mode: normal !important; }',
+  // the beam moved 46 px up, over the picture (and a blurred stand-in for any other glow lying on it)
+  'holo-beam': '.w-holo-emit { translate: 0 -46px; }',
   'holo-take': '.w-frame.w-take { pointer-events: none !important; }',
+  // the sheet's look tiles back at 14 px text
+  'tile-text': '.w-tile { font-size: 14px !important; }',
   // sky layers: the front canvas hidden (the whole sky's video no longer behind the land), the moon
   // forced under the clock and the tabs (a URL knob, SKY_BREAK_Q; the player and the cards claim their
   // boxes, so a moon forced beside them is not drawn at all), the front canvas mounted on a place that never asked.
@@ -370,9 +376,11 @@ const QUIET = [
   // Hologram's tilted pane inside the stage and clear of the card, blended, with its plate under it.
   { name: 'Watch polish, tower playing', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=drivein&wplay=0', checks: WATCH_POLISH, hits: WATCH_POLISH_HITS, th: 'tower' },
   { name: 'Watch polish, tower paused', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=drivein&wplay=0&wstate=paused', checks: WATCH_POLISH, hits: WATCH_POLISH_HITS, th: 'tower' },
+  // A refused autoplay under the tower: nothing shows yet, so the marquee says the name alone (never NOW SHOWING).
+  { name: 'Watch polish, tower, autoplay refused', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=drivein&wplay=0&wstate=refused', checks: WATCH_POLISH, hits: [...WATCH_POLISH_HITS, '.w-clickline', '.w-drivein .w-frame'], th: 'tower' },
   { name: 'Watch polish, tower, nothing on', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=drivein', checks: ['.w-now', '.w-lookbar'], hits: ['.w-lookbar button'], th: 'tower' },
   { name: 'Watch polish, tower, 24 saved, long label', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=many&wlook=drivein&wplay=3', checks: WATCH_POLISH, hits: WATCH_POLISH_HITS, th: 'tower' },
-  { name: 'Watch polish, hologram, single video', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=holo&wplay=0', checks: WATCH_POLISH, hits: WATCH_POLISH_HITS, th: 'holo' },
+  { name: 'Watch polish, hologram, single video', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=holo&wplay=0', checks: WATCH_POLISH, hits: WATCH_POLISH_HITS, th: 'holo', px: true },
   { name: 'Watch polish, hologram, playlist, long label', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=many&wlook=holo&wplay=3', checks: WATCH_POLISH, hits: WATCH_POLISH_HITS, th: 'holo' },
   // A refused autoplay under the Hologram: the hint shows, and a click lands on the tilted frame's real area.
   { name: 'Watch polish, hologram, autoplay refused', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=holo&wplay=0&wstate=refused', checks: WATCH_POLISH, hits: [...WATCH_POLISH_HITS, '.w-clickline', '.w-holo .w-frame'], th: 'holo' },
@@ -627,7 +635,10 @@ try {
   html = html.replace(/<link rel="stylesheet" crossorigin href="\.\/([^"]+)">/g, (_, href) => `<style>${readFileSync(join(dist, href), 'utf8')}</style>`);
   // For each checked box: its scroll sizes, and how far it sticks out of its container and
   // of the viewport on each side (screen pixels, 0 when inside). Plus the page's own scroll.
-  const measure = `<script>setTimeout(() => {
+  // Pixel proofs of the Hologram (thpx): `bare` hides everything of the Watch panel but the plate and the stage (so the
+  // difference to the page as drawn is whatever else paints over the picture), `noplate` hides the plate only (so the
+  // difference is what the picture mixes with).
+  const measure = `<script>{ const m = new URLSearchParams(location.search).get('thpx'); const css = { bare: '.w-panel > :not(.w-stage):not(.w-holo-plate) { visibility: hidden !important; }', noplate: '.w-holo-plate { visibility: hidden !important; }' }[m]; if (css) { const st = document.createElement('style'); st.textContent = css; document.head.appendChild(st); } }</script><script>setTimeout(() => {
     // unwind listen: measured at the end of the songs view's slide (virtual time draws no frames for it to run).
     if (new URLSearchParams(location.search).get('listen')) { const st = document.createElement('style'); st.textContent = '.sp-songs { animation: none !important; }'; document.head.appendChild(st); }
     // Steps separated by " >> " run 300 ms apart; within a step, " then " runs them at once.
@@ -1234,6 +1245,7 @@ try {
       const keep = ['.w-now', '.w-lookbar', '.w-card'].map((sel) => [sel, document.querySelector(sel)]).filter((k) => k[1]);
       const stage = document.querySelector('.w-stage');
       const scr = stage && stage.querySelector('.w-screen');
+      let quad = null;
       if (!stage || !scr) { fails.push('tower and hologram: no stage or no screen'); return { fails }; }
       if (mode === 'tower') {
         const svg = stage.querySelector('.w-tower');
@@ -1262,12 +1274,13 @@ try {
         }
         const mode2 = svg.getAttribute('data-marquee');
         const sub = (document.querySelector('.w-sub') || {}).textContent || '';
-        const want = stage.classList.contains('w-empty') ? 'empty' : /Paused/.test(sub) ? 'paused' : 'playing';
+        // NOW SHOWING only while the player reports it playing; the name alone while it waits for a click or has ended.
+        const want = stage.classList.contains('w-empty') ? 'empty' : /Waiting for a click|Ended/.test(sub) ? 'waiting' : /Paused/.test(sub) ? 'paused' : 'playing';
         if (mode2 !== want) fails.push('tower and hologram: the marquee mode is ' + mode2 + ', the state is ' + want);
         const on = [...svg.querySelectorAll('text.w-mq')].filter((t) => t.getAttribute('data-on') === '1');
         const words = on.map((t) => t.textContent).join('|');
-        const exp = { playing: 'NOW SHOWING', paused: 'INTERMISSION', empty: '' }[want];
-        if (on.length !== 1 || (want === 'empty' ? / · /.test(words) || !/DRIVE-IN$/.test(words) : !words.endsWith(exp))) fails.push('tower and hologram: the marquee says "' + words + '" for ' + want);
+        const exp = { playing: 'NOW SHOWING', paused: 'INTERMISSION', waiting: '', empty: '' }[want];
+        if (on.length !== 1 || (exp === '' ? / · /.test(words) || !/DRIVE-IN$/.test(words) : !words.endsWith(exp))) fails.push('tower and hologram: the marquee says "' + words + '" for ' + want);
         if (on[0]) { const bb = on[0].getBBox(); if (bb.width > 384) fails.push('tower and hologram: the marquee words are ' + Math.round(bb.width) + ' px wide on a 384 px board'); }
       } else {
         const plate = document.querySelector('.w-holo-plate');
@@ -1282,6 +1295,17 @@ try {
         const emit = document.querySelector('.w-holo-emit');
         if (!emit || getComputedStyle(emit).pointerEvents !== 'none') fails.push('tower and hologram: the emitter is missing or takes the pointer');
         const v = R(scr);
+        // The tilted pane's four corners (the browser's own matrix, about the stage's transform origin), for the pixel proofs.
+        try {
+          const T = new DOMMatrix(ts.transform);
+          const keepTf = stage.style.transform;
+          stage.style.transform = 'none';
+          const u = R(scr);
+          stage.style.transform = keepTf;
+          const ox = u.l + u.w * 0.5, oy = u.t + u.h * 0.6;
+          const P = (x, y) => { const q = T.transformPoint(new DOMPoint(x - ox, y - oy, 0, 1)); return [ox + q.x / q.w, oy + q.y / q.w]; };
+          quad = [P(u.l, u.t), P(u.l + u.w, u.t), P(u.l + u.w, u.t + u.h), P(u.l, u.t + u.h)];
+        } catch (e) { fails.push('tower and hologram: the tilted pane could not be measured (' + e.message + ')'); }
         if (v.l < 0 || v.t < 0 || v.l + v.w > 2560 || v.t + v.h > 720) fails.push('tower and hologram: the Hologram pane leaves the stage at ' + [v.l, v.t, v.w, v.h].map(Math.round).join(','));
         for (const part of [scr, ...plate.querySelectorAll('i')]) {
           const b = R(part);
@@ -1290,9 +1314,11 @@ try {
           if (clash) { fails.push('tower and hologram: the Hologram ' + (part.className || 'pane') + ' at ' + [b.l, b.t, b.w, b.h].map(Math.round).join(',') + ' overlaps ' + clash[0]); break; }
         }
       }
-      return { fails, mode };
+      return { fails, mode, quad };
     })();
-    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, meetOut, strip, opened, watchPolish, skyLayers, thCheck, listen });
+    // look tiles: the labels in the settings sheet keep 16 px at least (the wall's smallest text).
+    const tileText = [...document.querySelectorAll('.w-tile')].filter((t) => parseFloat(getComputedStyle(t).fontSize) < 16).map((t) => 'watch polish: look tile "' + (t.textContent || '').trim() + '" has ' + getComputedStyle(t).fontSize + ' text (16 px at least)');
+    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, meetOut, strip, opened, watchPolish, skyLayers, thCheck, tileText, listen });
     document.body.appendChild(pre);
   }, new URLSearchParams(location.search).get('card') ? 7000 : 3000);</script>`;
   const broken = overflow ? `<style>${OVERFLOWS[overflow]}</style>` : '';
@@ -1358,7 +1384,9 @@ try {
     'tower-switch': (v) => v.name.startsWith('Watch polish'),
     'holo-big': (v) => v.name === 'Watch polish, hologram, single video',
     'holo-noblend': (v) => v.name === 'Watch polish, hologram, single video',
+    'holo-beam': (v) => v.name === 'Watch polish, hologram, single video',
     'holo-take': (v) => v.name === 'Watch polish, hologram, autoplay refused',
+    'tile-text': (v) => v.name === 'Watch, settings sheet, one look',
     // sky layers
     'sky-front': (v) => v.name === 'Sky layers, whole sky at night',
     'sky-moon': (v) => v.name === 'Sky layers, Listen at night, the moon in open sky',
@@ -1387,7 +1415,7 @@ try {
       process.exit(1);
     }
     const text = m[1].replaceAll('&quot;', '"').replaceAll('&amp;', '&');
-    const { res, page: doc, overlaps, cut, gaps, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, meetOut, strip, opened, watchPolish, skyLayers, thCheck, listen } = JSON.parse(text);
+    const { res, page: doc, overlaps, cut, gaps, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, meetOut, strip, opened, watchPolish, skyLayers, thCheck, tileText, listen } = JSON.parse(text);
     // sky layers
     for (const f of skyLayers.fails) console.log(`  FAIL ${f}`);
     if (skyLayers.fails.length) failed = true;
@@ -1408,12 +1436,67 @@ try {
       else console.log('  ok   watch polish: the control row is one line clear of the list, nothing over the video\'s box');
       if (v.name.startsWith('Watch polish')) switchBoxes.push({ name: v.name, box: watchPolish.sw });
     }
+    // look tiles
+    for (const f of tileText) console.log(`  FAIL ${f}`);
+    if (tileText.length) failed = true;
+    else if (v.checks.includes('.w-tile')) console.log('  ok   watch polish: every look tile keeps 16 px text');
     // tower and hologram
     if (thCheck) {
       for (const f of thCheck.fails) console.log(`  FAIL ${f}`);
       if (thCheck.fails.length) failed = true;
       else if (thCheck.mode === 'tower') console.log('  ok   tower and hologram: nothing of the frame paints over the video box 1244,54,672,378; the frame is clear of the left block, the Look switch and the list card; the marquee says the state');
       else console.log('  ok   tower and hologram: the tilted pane is whole, inside the stage, clear of the card, blended over its plate, with no front layer');
+    }
+    // tower and hologram, the pixel proofs: inside the tilted pane (the browser's own corners, inset 2 px) the page as
+    // drawn must equal the page with everything of the panel but the plate and the stage hidden (nothing else paints
+    // over the picture, the beam and its blur included), and must differ from the page with the plate hidden (the
+    // picture mixes with the plate: the blend is on).
+    if (v.px && thCheck && thCheck.quad) {
+      const shoot = async (mode) => {
+        const shot = join(out, `th-${mode || 'as-drawn'}.png`);
+        await runChrome(chrome, ['--headless', '--no-sandbox', '--disable-gpu', '--window-size=2560,807', '--hide-scrollbars', '--virtual-time-budget=8000', `--screenshot=${shot}`, url + (mode ? `&thpx=${mode}` : '')], { label: `${v.name}, pixel proof ${mode || 'as drawn'}` });
+        return readPng(shot);
+      };
+      const [asDrawn, bare, noPlate] = [await shoot(''), await shoot('bare'), await shoot('noplate')];
+      const dy = (asDrawn.h - 720) / 2;
+      const q = thCheck.quad;
+      const inside = (x, y) => {
+        // Inside the convex quad, 2 px in from every edge.
+        for (let i = 0; i < 4; i++) {
+          const [ax, ay] = q[i], [bx, by] = q[(i + 1) % 4];
+          const len = Math.hypot(bx - ax, by - ay);
+          if (((bx - ax) * (y - ay) - (by - ay) * (x - ax)) / len < 2) return false;
+        }
+        return true;
+      };
+      const x0 = Math.floor(Math.min(...q.map((p) => p[0]))), x1 = Math.ceil(Math.max(...q.map((p) => p[0])));
+      const y0 = Math.floor(Math.min(...q.map((p) => p[1]))), y1 = Math.ceil(Math.max(...q.map((p) => p[1])));
+      const compare = (a, b) => {
+        let n = 0, over = 0, sum = 0, worst = 0, box = null;
+        if (a.w !== b.w || a.h !== b.h) return { n: -1, over: 0, mean: 0, worst: 0, box };
+        for (let y = y0; y <= y1; y++)
+          for (let x = x0; x <= x1; x++) {
+            if (!inside(x + 0.5, y + 0.5)) continue;
+            const i = ((Math.round(y + dy)) * a.w + x) * a.ch;
+            const d = Math.max(Math.abs(a.px[i] - b.px[i]), Math.abs(a.px[i + 1] - b.px[i + 1]), Math.abs(a.px[i + 2] - b.px[i + 2]));
+            n += 1;
+            sum += d;
+            if (d > 1) { over += 1; box = box ? [Math.min(box[0], x), Math.min(box[1], y), Math.max(box[2], x), Math.max(box[3], y)] : [x, y, x, y]; }
+            if (d > worst) worst = d;
+          }
+        return { n, over, mean: n ? sum / n : 0, worst, box };
+      };
+      const beam = compare(asDrawn, bare);
+      const mix = compare(asDrawn, noPlate);
+      if (beam.n <= 0 || beam.over > 0) {
+        failed = true;
+        console.log(`  FAIL tower and hologram: pixel proof: something paints over the Hologram picture (${beam.n <= 0 ? 'the screenshots differ in size' : `${beam.over} of ${beam.n} pixels inside the tilted pane change by more than 1 level when everything but the plate and the stage is hidden, within ${beam.box.join(',')}, the most ${beam.worst}`})`);
+      } else console.log(`  ok   tower and hologram: pixel proof: nothing paints over the picture (${beam.n} pixels inside the tilted pane are the same with only the plate and the stage drawn)`);
+      if (mix.n <= 0 || mix.over < mix.n / 20) {
+        failed = true;
+        console.log(`  FAIL tower and hologram: pixel proof: the picture does not mix with the plate (${mix.over} of ${mix.n} pixels inside the tilted pane change by more than 1 level when the plate is hidden, the mean ${mix.mean.toFixed(2)})`);
+      } else console.log(`  ok   tower and hologram: pixel proof: the picture mixes with the plate (${mix.over} of ${mix.n} pixels change when the plate is hidden, the mean ${mix.mean.toFixed(1)} levels)`);
+      if (process.env.WALL_PROOF_LOG) console.log(`  proof numbers: beam ${JSON.stringify(beam)} mix ${JSON.stringify(mix)} quad ${JSON.stringify(q)} dy ${dy}`);
     }
     // unwind listen
     for (const l of listen) console.log(`  FAIL ${l}`);
