@@ -5,6 +5,7 @@ import type { YoutubeStatus } from '../music/youtube';
 import { usePlaceStore } from '../state/places';
 import { HoverTipLayer, resetTip } from '../ui/HoverTip';
 import { Accounts } from './accounts';
+import { ToolsDrawer } from './ToolsDrawer';
 import { anySignInWaiting, resetTools, useToolsStore } from './store';
 
 const flush = async (ms = 0) => {
@@ -58,6 +59,16 @@ const hoverText = async (el: Element): Promise<string> => {
   await flush(300);
   return document.querySelector('.hover-tip')?.textContent ?? '';
 };
+/** True when neither value is in any element's text, any attribute, or any input's value. */
+const nowhere = (...values: string[]): boolean => {
+  for (const el of [document.documentElement, ...document.querySelectorAll('*')]) {
+    const own = [...el.childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent ?? '').join('');
+    const attrs = [...el.attributes].map((a) => a.value).join('\n');
+    const typed = el instanceof HTMLInputElement ? el.value : '';
+    if (values.some((v) => own.includes(v) || attrs.includes(v) || typed.includes(v))) return false;
+  }
+  return true;
+};
 const storedText = (): string => {
   try {
     return JSON.stringify({ ...localStorage }) + JSON.stringify({ ...sessionStorage });
@@ -75,6 +86,10 @@ it.each<[string, YoutubeStatus, string, string[]]>([
   ['refused client while signed out', status({ reason: 'setup broken' }), 'Setup broken', ['Set up']],
   ['the stored sign-in cannot be read', status({ reason: 'failed' }), 'Could not read the saved sign-in', ['Retry']],
   ['the client cannot be read', status({ setup: false, reason: 'failed' }), 'Could not check', ['Retry']],
+  ['signed in but the saved setup is gone', status({ setup: false, signedIn: true, reason: 'setup missing' }), 'Signed in, setup missing', ['Sign out']],
+  ['the saved setup cannot be read, signed in', status({ signedIn: true, reason: 'setup unreadable' }), 'Setup broken', ['Sign out']],
+  ['the saved setup cannot be read, signed out', status({ reason: 'setup unreadable' }), 'Setup broken', ['Set up']],
+  ['a sign-in waits that this page did not start', status({ reason: 'signing in' }), 'Waiting for the browser', ['Cancel']],
 ])('the YouTube row, %s, reads %s with its buttons', async (_name, answer, line, names) => {
   await show(answer);
   expect(row().textContent).toContain(line);
@@ -147,10 +162,11 @@ it('Save sends both values once, empties the form and leaves nothing in the page
   await flush();
   expect(save).toHaveBeenCalledTimes(1);
   expect(save).toHaveBeenCalledWith({ clientId: ID, clientSecret: SECRET });
+  // The form is gone, so no input holds either value; nothing else in the page, an attribute or storage does.
   expect(screen.queryByLabelText('Client ID')).toBeNull();
   expect(screen.queryByLabelText('Client secret')).toBeNull();
-  expect(document.body.innerHTML).not.toContain(ID);
-  expect(document.body.innerHTML).not.toContain(SECRET);
+  expect(document.querySelectorAll('input')).toHaveLength(0);
+  expect(nowhere(ID, SECRET)).toBe(true);
   expect(storedText()).not.toContain('apps.googleusercontent');
   expect(storedText()).not.toContain('GOCSPX');
   expect(row().textContent).toContain('Signed out');
@@ -170,8 +186,9 @@ it('a refused Save names the problem, empties both fields and keeps the values o
   expect(screen.getByRole('alert').textContent).toBe('That is not a Desktop app client. Check both values.');
   expect((screen.getByLabelText('Client ID') as HTMLInputElement).value).toBe('');
   expect((screen.getByLabelText('Client secret') as HTMLInputElement).value).toBe('');
-  expect(document.body.innerHTML).not.toContain(ID);
-  expect(document.body.innerHTML).not.toContain(SECRET);
+  // Every input is present and empty, and no element, attribute or storage key holds either value.
+  expect([...document.querySelectorAll('input')].map((i) => i.value)).toEqual(['', '']);
+  expect(nowhere(ID, SECRET)).toBe(true);
   expect(storedText()).not.toContain('GOCSPX');
 });
 
@@ -355,4 +372,133 @@ it('the YouTube row is a plain account row, built from the same parts as the Spo
   expect(row().className).toBe(spotifyRow.className);
   expect(parts(row()).slice(0, 3)).toEqual(parts(spotifyRow).slice(0, 3));
   expect(row().querySelector('.tools-ico svg')).not.toBeNull();
+});
+
+it('Set up stays hidden while the form is open in the refused-client, signed-out state', async () => {
+  await show(status({ reason: 'setup broken' }));
+  expect(buttons()).toEqual(['Set up']);
+  fireEvent.click(screen.getByRole('button', { name: 'Set up' }));
+  expect(buttons()).toEqual([]);
+  expect(screen.getByLabelText('Client ID')).toBeTruthy();
+});
+
+it('a saved setup that cannot be read says so in the note, with the sign-out step only while signed in', async () => {
+  const view = await show(status({ reason: 'setup unreadable' }));
+  expect(document.querySelector('.tools-note')?.textContent).toBe('The saved setup could not be read. Set it up again.');
+  view.unmount();
+  await show(status({ signedIn: true, reason: 'setup unreadable' }));
+  expect(document.querySelector('.tools-note')?.textContent).toBe('The saved setup could not be read. Sign out, then set it up again.');
+});
+
+it('signed in with the setup gone offers Sign out, with the reason on hover', async () => {
+  const out = vi.fn();
+  mocks.set('wall2_youtube_sign_out', out);
+  await show(status({ setup: false, signedIn: true, reason: 'setup missing' }));
+  expect(await hoverText(row())).toBe('The saved setup is gone. Sign out, then set it up again.');
+  fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+  await flush();
+  expect(out).toHaveBeenCalledTimes(1);
+});
+
+it('after a reload in the middle of a sign-in the row waits again, follows it, and Cancel ends it', async () => {
+  const cancel = vi.fn(() => {
+    answer = status();
+  });
+  let answer = status({ reason: 'signing in' });
+  const read = vi.fn(() => answer);
+  mocks.set('wall2_youtube_cancel_sign_in', cancel);
+  const view = await show(read);
+  expect(row().textContent).toContain('Waiting for the browser');
+  expect(buttons()).toEqual(['Cancel']);
+  expect(useToolsStore.getState().waiting.youtube).toBe(true);
+  // The row keeps asking while Rust says a sign-in waits.
+  const before = read.mock.calls.length;
+  await flush(3100);
+  expect(read.mock.calls.length).toBeGreaterThanOrEqual(before + 2);
+  fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+  expect(cancel).toHaveBeenCalledTimes(1);
+  await flush(1600);
+  expect(row().textContent).toContain('Signed out');
+  expect(buttons()).toEqual(['Change setup', 'Sign in']);
+  // No more asking once it ended.
+  const after = read.mock.calls.length;
+  await flush(5000);
+  expect(read.mock.calls.length).toBe(after);
+  view.unmount();
+});
+
+it('Escape in the form closes only the form, clears it and returns focus; a second Escape closes the drawer', async () => {
+  mocks.set('wall2_youtube_status', () => status());
+  render(<ToolsDrawer />);
+  act(() => useToolsStore.getState().openDrawer());
+  await flush();
+  const opener = screen.getByRole('button', { name: 'Change setup' });
+  fireEvent.click(opener);
+  const id = screen.getByLabelText('Client ID') as HTMLInputElement;
+  fireEvent.change(id, { target: { value: ID } });
+  id.focus();
+  fireEvent.keyDown(id, { key: 'Escape' });
+  await flush();
+  expect(screen.queryByLabelText('Client ID')).toBeNull();
+  expect(screen.getByLabelText('Tools')).toBeTruthy();
+  expect(useToolsStore.getState().open).toBe(true);
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Change setup' }));
+  expect(nowhere(ID)).toBe(true);
+  // Reopened, the form is empty.
+  fireEvent.click(screen.getByRole('button', { name: 'Change setup' }));
+  expect((screen.getByLabelText('Client ID') as HTMLInputElement).value).toBe('');
+  // Escape from a button in the form works the same way.
+  fireEvent.keyDown(screen.getByRole('button', { name: 'Cancel' }), { key: 'Escape' });
+  await flush();
+  expect(screen.queryByLabelText('Client ID')).toBeNull();
+  expect(useToolsStore.getState().open).toBe(true);
+  fireEvent.keyDown(document.body, { key: 'Escape' });
+  await flush();
+  expect(useToolsStore.getState().open).toBe(false);
+});
+
+it('Forget this setup is offered only while signed out with a setup, removes it, and the row goes back to Not set up', async () => {
+  const forget = vi.fn(() => {
+    answer = FIRST_RUN;
+  });
+  let answer = status();
+  mocks.set('wall2_youtube_forget_client', forget);
+  const view = await show(() => answer);
+  fireEvent.click(screen.getByRole('button', { name: 'Change setup' }));
+  const button = screen.getByRole('button', { name: 'Forget this setup' });
+  expect(await hoverText(button)).toBe('Removes the saved Client ID and secret from this PC. The YouTube row goes back to Not set up.');
+  fireEvent.click(button);
+  await flush();
+  expect(forget).toHaveBeenCalledTimes(1);
+  expect(screen.queryByLabelText('Client ID')).toBeNull();
+  expect(row().textContent).toContain('Not set up');
+  expect(buttons()).toEqual(['Set up']);
+  // Not offered on a first-run form, nor while signed in (there is no form then).
+  fireEvent.click(screen.getByRole('button', { name: 'Set up' }));
+  expect(screen.queryByRole('button', { name: 'Forget this setup' })).toBeNull();
+  view.unmount();
+  await show(status({ signedIn: true }));
+  expect(screen.queryByRole('button', { name: 'Change setup' })).toBeNull();
+});
+
+it('a refused Forget says why and keeps the form', async () => {
+  mocks.set('wall2_youtube_forget_client', () => {
+    throw new Error('sign out first');
+  });
+  await show(status());
+  fireEvent.click(screen.getByRole('button', { name: 'Change setup' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Forget this setup' }));
+  await flush();
+  expect(screen.getByRole('alert').textContent).toBe('Sign out of YouTube first.');
+  expect(screen.getByLabelText('Client ID')).toBeTruthy();
+});
+
+it('a sign-in refused because a token is stored says to sign out first', async () => {
+  mocks.set('wall2_youtube_sign_in', () => {
+    throw new Error('sign out first');
+  });
+  await show(status());
+  fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+  await flush();
+  expect(document.querySelector('.tools-note')?.textContent).toBe('Sign out of YouTube first.');
 });

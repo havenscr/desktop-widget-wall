@@ -299,6 +299,12 @@
   display: flex;
   gap: 10px;
 }
+/* A quiet action at the end of a row of buttons: no frame until the pointer is on it. */
+.tools-btn.quiet {
+  margin-left: auto;
+  border-color: transparent;
+  color: var(--faint);
+}
 .tools-yt-hint {
   font: 16px/1.3 var(--body);
   color: var(--faint);

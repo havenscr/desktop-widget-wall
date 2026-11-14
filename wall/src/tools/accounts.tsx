@@ -46,8 +46,8 @@ function Row({ icon, name, line, tone = 'plain', hover, account, children }: { i
   );
 }
 
-function Btn({ label, onClick, cy, disabled, hover, icon }: { label: string; onClick: () => void; cy?: boolean; disabled?: boolean; hover?: string; icon?: ReactNode }) {
-  const cls = ['tools-btn', cy ? 'cy' : '', icon ? 'ico' : ''].filter(Boolean).join(' ');
+function Btn({ label, onClick, cy, quiet, disabled, hover, icon }: { label: string; onClick: () => void; cy?: boolean; quiet?: boolean; disabled?: boolean; hover?: string; icon?: ReactNode }) {
+  const cls = ['tools-btn', cy ? 'cy' : '', quiet ? 'quiet' : '', icon ? 'ico' : ''].filter(Boolean).join(' ');
   return (
     <button type="button" className={cls} disabled={disabled} aria-label={icon ? label : undefined} onClick={onClick} {...(hover ? hoverCard(hover) : {})}>
       {icon ?? label}
@@ -177,7 +177,8 @@ function SpotifyRow({ sp, blocked }: { sp: ReturnType<typeof useSpotifyAccount>;
 
 /** What a YouTube sign-in that did not finish says, by the fixed word Rust sent. `null`: nothing to add (the row says it). */
 function youtubeNotice(word: string): string | null {
-  if (word === 'cancelled' || word === 'setup broken') return null;
+  if (word === 'cancelled' || word === 'setup broken' || word === 'setup unreadable' || word === 'not set up') return null;
+  if (word === 'sign out first') return 'Sign out of YouTube first.';
   if (word === 'denied') return 'YouTube sign-in was refused';
   if (word === 'timed-out') return 'YouTube sign-in timed out';
   if (word === 'busy') return 'Google is busy, try again in a minute';
@@ -199,7 +200,11 @@ function useYoutubeAccount(opened: number) {
   const [waiting, setWaiting] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
+  const [refocus, setRefocus] = useState(0);
   const mounted = useRef(false);
+  // A sign-in may be waiting in Rust that this page did not start (the page was reloaded in the middle of it).
+  const waitingNative = status?.reason === 'signing in';
+  const waitingAny = waiting || waitingNative;
   const waitingRef = useRef(false);
   waitingRef.current = waiting;
   const read = useCallback(() => {
@@ -228,6 +233,16 @@ function useYoutubeAccount(opened: number) {
     window.addEventListener('focus', focused);
     return () => window.removeEventListener('focus', focused);
   }, [read]);
+  // While Rust says a sign-in waits that this page did not start, keep asking, so the row follows it to its end.
+  useEffect(() => {
+    if (!waitingNative || waiting) return;
+    const id = setInterval(read, 1500);
+    return () => clearInterval(id);
+  }, [waitingNative, waiting, read]);
+  // After the form closes on Escape, the button that opened it gets the focus back.
+  useEffect(() => {
+    if (refocus > 0) document.querySelector<HTMLElement>('[data-account="youtube"] .tools-btn')?.focus();
+  }, [refocus]);
   const signIn = () => {
     setNotice(null);
     setEditing(false);
@@ -255,16 +270,23 @@ function useYoutubeAccount(opened: number) {
     setNotice(null);
     read();
   };
+  const escapeForm = () => {
+    setEditing(false);
+    setRefocus((n) => n + 1);
+  };
   // The client was refused: said in words in the Accounts note, because the row's own line is one short phrase.
-  const brokenHint = !waiting && !failed && !editing && status?.reason === 'setup broken' ? (status.signedIn ? 'Google refused this setup. Sign out, then set it up again.' : 'Google refused this setup. Set it up again.') : null;
-  return { status, failed, waiting, notice, editing, brokenHint, setEditing, read, signIn, cancel, signOut, openLink, saved };
+  const refused = status?.reason === 'setup broken';
+  const unreadable = status?.reason === 'setup unreadable';
+  const lead = refused ? 'Google refused this setup.' : 'The saved setup could not be read.';
+  const brokenHint = !waitingAny && !failed && !editing && (refused || unreadable) ? `${lead} ${status.signedIn ? 'Sign out, then set it up again.' : 'Set it up again.'}` : null;
+  return { status, failed, waiting: waitingAny, notice, editing, brokenHint, setEditing, read, signIn, cancel, signOut, openLink, saved, escapeForm };
 }
 
 /**
  * The Set up form: a client id and a client secret, held in this component's state only and
  * cleared after Save whatever the answer. Nothing reads either value back from Rust.
  */
-function YoutubeSetup({ onSaved, onCancel }: { onSaved: () => void; onCancel: () => void }) {
+function YoutubeSetup({ onSaved, onCancel, onEscape, canForget }: { onSaved: () => void; onCancel: () => void; onEscape: () => void; canForget: boolean }) {
   const [id, setId] = useState('');
   const [secret, setSecret] = useState('');
   const [busy, setBusy] = useState(false);
@@ -298,12 +320,36 @@ function YoutubeSetup({ onSaved, onCancel }: { onSaved: () => void; onCancel: ()
       },
     );
   };
+  const forget = () => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    youtube.forgetClient().then(
+      () => {
+        if (!mounted.current) return;
+        setBusy(false);
+        onSaved();
+      },
+      (e) => {
+        if (!mounted.current) return;
+        setBusy(false);
+        setError(e instanceof Error && e.message === 'sign out first' ? 'Sign out of YouTube first.' : 'Could not remove the setup.');
+      },
+    );
+  };
   const enter = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') save();
   };
+  // Escape in the form closes the form only (the values go with it); the drawer keeps its own Escape for the next press.
+  const escape = (e: KeyboardEvent<HTMLElement>) => {
+    if (e.key !== 'Escape') return;
+    e.preventDefault();
+    e.stopPropagation();
+    onEscape();
+  };
   const common = { autoComplete: 'off', spellCheck: false, autoCorrect: 'off', autoCapitalize: 'off', disabled: busy, onKeyDown: enter } as const;
   return (
-    <li className="tools-yt-form" aria-label="YouTube setup">
+    <li className="tools-yt-form" aria-label="YouTube setup" onKeyDown={escape}>
       <label className="tools-yt-field">
         <span>Client ID</span>
         <input {...common} type="text" className="tools-input" value={id} onChange={(e) => setId(e.target.value)} {...hoverCard("The Client ID of your Google Cloud Desktop app client. It ends in .apps.googleusercontent.com.")} />
@@ -315,6 +361,7 @@ function YoutubeSetup({ onSaved, onCancel }: { onSaved: () => void; onCancel: ()
       <div className="tools-yt-actions">
         <Btn label="Save" cy disabled={!ready || busy} onClick={save} hover="Keeps both values in Windows' credential store." />
         <Btn label="Cancel" disabled={busy} onClick={onCancel} hover="Closes the form without saving." />
+        {canForget && <Btn label="Forget this setup" quiet disabled={busy} onClick={forget} hover="Removes the saved Client ID and secret from this PC. The YouTube row goes back to Not set up." />}
       </div>
       <div className={error ? 'tools-yt-hint bad' : 'tools-yt-hint'} role={error ? 'alert' : undefined}>
         {error ?? "From your own Google Cloud project. Kept in Windows' credential store, never in a file."}
@@ -332,6 +379,7 @@ function YoutubeRow({ yt, blocked }: { yt: ReturnType<typeof useYoutubeAccount>;
   );
   const setUp = (cy: boolean) => <Btn label="Set up" cy={cy} disabled={blocked} onClick={() => yt.setEditing(true)} hover="Opens the form for your Google Cloud client id and secret." />;
   const change = <Btn label="Change setup" icon={<IconSettings size={20} aria-hidden="true" />} disabled={blocked} onClick={() => yt.setEditing(true)} hover="Replace the client id and secret. Works only while signed out." />;
+  const signOutButton = <Btn label="Sign out" disabled={blocked} onClick={yt.signOut} hover="Signs out and tells Google to forget this sign-in." />;
   const signInButton = <Btn label="Sign in" cy disabled={blocked} onClick={yt.signIn} hover="Opens Google's sign-in in your browser." />;
   if (yt.waiting) {
     return row('Waiting for the browser', 'plain', 'Finish signing in in the browser window that opened.', <Btn label="Cancel" onClick={yt.cancel} hover="Stops waiting for the browser." />);
@@ -345,11 +393,16 @@ function YoutubeRow({ yt, blocked }: { yt: ReturnType<typeof useYoutubeAccount>;
     return row(s.setup ? 'Could not read the saved sign-in' : 'Could not check', 'bad', 'Windows did not hand back what the wall stored.', <Btn label="Retry" onClick={yt.read} hover="Asks again." />);
   }
   // The client was refused (a wrong secret, or a client that is not a Desktop app): only a new setup fixes it.
-  if (s.reason === 'setup broken') {
-    return row('Setup broken', 'bad', yt.brokenHint ?? undefined, s.signedIn ? <Btn label="Sign out" disabled={blocked} onClick={yt.signOut} hover="Signs out and tells Google to forget this sign-in." /> : setUp(true));
+  if (s.reason === 'setup broken' || s.reason === 'setup unreadable') {
+    const hover = yt.brokenHint ?? (s.reason === 'setup broken' ? 'Google refused this setup.' : 'The saved setup could not be read.');
+    return row('Setup broken', 'bad', hover, s.signedIn ? signOutButton : yt.editing ? null : setUp(true));
+  }
+  // A sign-in is stored but the client is gone (the file was moved): only Sign out helps.
+  if (s.reason === 'setup missing') {
+    return row('Signed in, setup missing', 'bad', 'The saved setup is gone. Sign out, then set it up again.', signOutButton);
   }
   if (!s.setup) return row('Not set up', 'plain', 'Needs a Google Cloud Desktop app client. Setup takes about ten minutes, once.', yt.editing ? null : setUp(true));
-  if (s.signedIn) return row('Signed in', 'plain', undefined, <Btn label="Sign out" disabled={blocked} onClick={yt.signOut} hover="Signs out and tells Google to forget this sign-in." />);
+  if (s.signedIn) return row('Signed in', 'plain', undefined, signOutButton);
   const again = s.reason === 'sign in again';
   return row(again ? 'Sign in again' : 'Signed out', again ? 'bad' : 'plain', again ? 'Google ended the saved sign-in.' : undefined, yt.editing ? null : (<>{change}{signInButton}</>));
 }
@@ -435,7 +488,7 @@ export function Accounts() {
         <Row icon={<IconCalendar size={22} aria-hidden="true" />} name="Meetings open in:" line={openLine} hover={openHint} />
         <SpotifyRow sp={sp} blocked={blocked} />
         <YoutubeRow yt={yt} blocked={blocked} />
-        {yt.editing && <YoutubeSetup onSaved={yt.saved} onCancel={() => yt.setEditing(false)} />}
+        {yt.editing && <YoutubeSetup onSaved={yt.saved} onCancel={() => yt.setEditing(false)} onEscape={yt.escapeForm} canForget={yt.status?.setup === true && !yt.status.signedIn} />}
         <YoutubeLinks openLink={yt.openLink} />
       </ul>
       {(m.notice || sp.notice || yt.notice || yt.brokenHint) && <div className="tools-note bad">{m.notice ?? sp.notice ?? yt.notice ?? yt.brokenHint}</div>}

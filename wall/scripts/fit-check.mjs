@@ -31,7 +31,7 @@
 // CI does not run this; run it by hand before a layout change is handed over.
 //
 //   WALL_CHROME=/path/to/chrome-or-headless-shell npm --prefix wall run fit-check
-//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, card-end, header, deck, tiles, picker, chips, heading, zenhint, strip, fold, drawer, rows, handle, sky, floor, sun, tools, toolsnames, yt-clip, yt-text, yt-control, yt-row, meetfill, meetempty, fy-height, key-edge, hide-pill, hide-note, leave-band, rec-chip, rec-height, tile-height, tile-icon, tile-iconbox, drawer-scrim, lwbuttons, lwoverlap, lwsquare, lwring, lwtemp, lwround, sky-front, sky-moon, sky-always, sky-crop, sky-seam, sky-soft, sky-foot, tower-over, tower-wide, tower-box, tower-switch, holo-big, holo-noblend, holo-beam, holo-take, tile-text, listen-player, listen-card, listen-slot, listen-next, lines-size, lines-control, lines-text, lines-clip, watch-rest, watch-title, watch-away, watch-mark, lip-cover, lip-band, lip-scrim, row-parts, over-hatch, row-type, onair-box, onair-notes, onair-keys, onair-watt, watt-seat, watt-spot, watt-tower, watt-ground)
+//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, card-end, header, deck, tiles, picker, chips, heading, zenhint, strip, fold, drawer, rows, handle, sky, floor, sun, tools, toolsnames, yt-clip, yt-text, yt-control, yt-row, yt-actions, meetfill, meetempty, fy-height, key-edge, hide-pill, hide-note, leave-band, rec-chip, rec-height, tile-height, tile-icon, tile-iconbox, drawer-scrim, lwbuttons, lwoverlap, lwsquare, lwring, lwtemp, lwround, sky-front, sky-moon, sky-always, sky-crop, sky-seam, sky-soft, sky-foot, tower-over, tower-wide, tower-box, tower-switch, holo-big, holo-noblend, holo-beam, holo-take, tile-text, listen-player, listen-card, listen-slot, listen-next, lines-size, lines-control, lines-text, lines-clip, watch-rest, watch-title, watch-away, watch-mark, lip-cover, lip-band, lip-scrim, row-parts, over-hatch, row-type, onair-box, onair-notes, onair-keys, onair-watt, watt-seat, watt-spot, watt-tower, watt-ground)
 //   npm --prefix wall run fit-check -- --self-test
 //
 // WALL_CHROME (or the first argument that is not a flag) is a Chromium or
@@ -107,6 +107,7 @@ const EXPECT = {
   'yt-text': /^ *FAIL youtube row: text under 16 px/m,
   'yt-control': /^ *FAIL youtube row: control .* px/m,
   'yt-row': /^ *FAIL youtube row: does not match the Spotify row/m,
+  'yt-actions': /^ *FAIL youtube row: the form actions wrap or are cut/m,
   meetfill: /^ *FAIL meet: nothing fills the upper right/m,
   meetempty: /^ *FAIL meet: nothing fills the upper right/m,
   // keys style
@@ -239,6 +240,8 @@ const OVERFLOWS = {
   'yt-control': '.tools-input, .tools-link, .tools-yt-actions .tools-btn { height: 24px !important; }',
   // YouTube row: a 60 px high row that no longer matches Spotify's 46 px.
   'yt-row': '.tools-list [data-account="youtube"] { height: 60px !important; }',
+  // YouTube row: the form's actions stacked in a column instead of one line.
+  'yt-actions': '.tools-yt-actions { flex-direction: column !important; align-items: flex-start !important; }',
   // Meet's Later list hidden leaves the upper right empty.
   meetfill: '.meet .meet-later { display: none !important; }',
   // The same on a state with no meeting: the upper right is empty there too.
@@ -544,9 +547,10 @@ const TOOLS_VARIANTS = [
   tools('no keys file', `${work('3')}&source=default&tools=1`),
   tools('Spotify not set up, a sign-in waiting', `${work('3')}&spotify=off&meet=signedout&tools=1`),
   // The YouTube row in each state it can show, and the Set up form open from Set up and from Change setup.
-  ...[['not set up', 'off'], ['signed out', 'out'], ['signed in', 'in'], ['setup broken, said in the note', 'broken'], ['sign in again', 'again'], ['could not check', 'down']].map(([n, k]) => tools(`YouTube ${n}`, `${work('3')}&youtube=${k}&tools=1`)),
+  ...[['not set up', 'off'], ['signed out', 'out'], ['signed in', 'in'], ['setup broken, said in the note', 'broken'], ['sign in again', 'again'], ['could not check', 'down'], ['signed in, setup missing', 'missing'], ['setup unreadable', 'unreadable'], ['waiting after a reload', 'reloaded']].map(([n, k]) => tools(`YouTube ${n}`, `${work('3')}&youtube=${k}&tools=1`)),
   { name: 'Tools, YouTube waiting for the browser', q: `${work('3')}&youtube=waiting&tools=1`, click: YT_ROW + ' .tools-btn.cy', checks: TOOLS, viewportOnly: true },
   { name: 'Tools, YouTube setup form open', q: `${work('3')}&youtube=off&tools=1`, click: YT_ROW + ' .tools-btn', checks: TOOLS, viewportOnly: true },
+  { name: 'Tools, YouTube setup broken, form open', q: `${work('3')}&youtube=brokenout&tools=1`, click: YT_ROW + ' .tools-btn', checks: TOOLS, viewportOnly: true },
   { name: 'Tools, YouTube change setup form open', q: `${work('3')}&youtube=out&tools=1`, click: YT_ROW + ' .tools-btn.ico', checks: TOOLS, viewportOnly: true },
   { name: 'Tools, YouTube sign-in refused note', q: `${work('3')}&youtube=refuse&tools=1`, click: YT_ROW + ' .tools-btn.cy', checks: ['.tools-drawer', '.tools-note'], viewportOnly: true },
   { name: 'Spotify copy, choose this computer', q: `${query({ hz: 'unwind', agents: '3', extra: '&spotify=choose' })}`, click: '.sp-tile >> .sp-shead .sp-btn.fill', checks: ['.sp-card', '.sp-note'] },
@@ -1178,6 +1182,12 @@ try {
             if (r.height < 32 - 0.01 || (c.matches('button') && r.width < 32 - 0.01)) toolsOut.push('youtube row: control ' + name(c) + ' is ' + Math.round(r.width) + ' by ' + Math.round(r.height) + ' px, under 32 px');
           }
         }
+        // The form's actions (Save, Cancel and, when a setup exists, Forget this setup) share one line and none is cut.
+        const actions = drawer.querySelector('.tools-yt-actions');
+        if (actions) {
+          const kids = [...actions.children];
+          if (new Set(kids.map((k) => Math.round(k.getBoundingClientRect().top))).size > 1 || actions.scrollWidth > actions.clientWidth + 1) toolsOut.push('youtube row: the form actions wrap or are cut (' + kids.map((k) => (k.textContent || '').trim()).join(', ') + ')');
+        }
         const spotifyRow = [...drawer.querySelectorAll('.tools-acct')].find((r) => (r.querySelector('.tools-name')?.textContent || '') === 'Spotify');
         if (spotifyRow) {
           const look = (r) => { const n = getComputedStyle(r.querySelector('.tools-name')); const l = getComputedStyle(r.querySelector('.tools-line')); const i = r.querySelector('.tools-ico svg').getBoundingClientRect(); return [Math.round(r.getBoundingClientRect().height), n.fontSize, n.fontWeight, l.fontSize, Math.round(i.width)].join(' / '); };
@@ -1781,6 +1791,7 @@ try {
     'yt-text': (v) => v.name === 'Tools, YouTube setup form open',
     'yt-control': (v) => v.name === 'Tools, YouTube setup form open',
     'yt-row': (v) => v.name === 'Tools, YouTube signed out',
+    'yt-actions': (v) => v.name === 'Tools, YouTube change setup form open',
     'spotify-copy': (v) => v.name === 'Spotify copy, choose this computer',
     'account-copy': (v) => v.name === 'Account copy, failed sign-in',
     meetfill: (v) => v.name === 'Meet, both accounts read',
