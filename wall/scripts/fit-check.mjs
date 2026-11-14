@@ -53,7 +53,8 @@ const LOOK_BOX_SKY = { x: 1106, y: 16, w: 889, h: 500 };
 
 const args = process.argv.slice(2);
 const flag = (name) => args.find((a) => a === `--${name}` || a.startsWith(`--${name}=`));
-const areaName = flag('area')?.split('=')[1];
+const areaFlag = flag('area');
+const areaName = areaFlag === undefined ? undefined : areaFlag.includes('=') ? areaFlag.slice(areaFlag.indexOf('=') + 1) : '';
 const areas = await loadAreasOrExit(areaName);
 if (flag('area')) {
   const selectedArea = areas.find((area) => area.name === areaName);

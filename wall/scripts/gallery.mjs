@@ -867,7 +867,8 @@ const NO_TEXT = [
   ['unwind', 'Watt: on Watch', 'only where Watt stands changes'],
 ];
 
-const areaName = flag('area')?.split('=')[1];
+const areaFlag = flag('area');
+const areaName = areaFlag === undefined ? undefined : areaFlag.includes('=') ? areaFlag.slice(areaFlag.indexOf('=') + 1) : '';
 const areas = await loadAreasOrExit(areaName);
 try {
   validateRegistrations(areas, { 'state name': STATES.map((stateEntry) => `${stateEntry.screen}\0${stateEntry.name}`) });
