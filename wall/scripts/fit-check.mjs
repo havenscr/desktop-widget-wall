@@ -863,6 +863,11 @@ try {
     (new URLSearchParams(location.search).get('click') ?? '').split(' >> ').filter(Boolean).forEach((step, i) => setTimeout(() => {
     for (const click of step.split(' then ').filter(Boolean)) {
     if (click.startsWith('ctx:')) document.querySelector(click.slice(4))?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+    else if (click.startsWith('type:')) {
+      // type:<selector>=<text> sets a field the way typing does (the framework hears an input event).
+      const at = click.indexOf('='); const el = document.querySelector(click.slice(5, at));
+      if (el) { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(el, click.slice(at + 1)); el.dispatchEvent(new Event('input', { bubbles: true })); }
+    }
     else if (click.startsWith('hover:')) {
       // Headless --dump-dom has no pointer: every top-level :hover rule is copied for a class that stands in for it.
       const extra = [];
