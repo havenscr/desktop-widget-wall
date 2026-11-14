@@ -1833,8 +1833,9 @@
   overscroll-behavior: contain;
   margin: 0;
   padding: 0 6px 0 0;
+  /* The thin violet bar of the owner's pictures (R1, R3), so the wheel is invited. */
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.42) rgba(255, 255, 255, 0.07);
+  scrollbar-color: rgba(154, 123, 255, 0.75) rgba(255, 255, 255, 0.05);
 }
 /* The library scrolls inside the card, fading at its foot while more is below. */
 .sp-scroll {
@@ -2183,7 +2184,61 @@
   font-variant-numeric: tabular-nums;
 }
 .sp-n {
-  text-align: right;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+}
+/* Resting on a playable row swaps its number for a play mark (R3). */
+.sp-n .sp-hov {
+  display: none;
+  color: var(--cyan);
+}
+.sp-track:hover .sp-hov,
+.sp-track:focus-visible .sp-hov {
+  display: block;
+}
+.sp-track:hover .sp-n:has(.sp-hov) .sp-num,
+.sp-track:focus-visible .sp-n:has(.sp-hov) .sp-num {
+  display: none;
+}
+/* The playing song: four cyan bars that move gently. */
+.sp-bars {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 16px;
+}
+.sp-bars i {
+  width: 3px;
+  border-radius: 2px;
+  background: var(--cyan);
+  transform-origin: bottom;
+  animation: sp-bar 1.2s ease-in-out infinite alternate;
+}
+.sp-bars i:nth-child(1) {
+  height: 9px;
+}
+.sp-bars i:nth-child(2) {
+  height: 16px;
+  animation-delay: -0.4s;
+}
+.sp-bars i:nth-child(3) {
+  height: 6px;
+  animation-delay: -0.8s;
+}
+.sp-bars i:nth-child(4) {
+  height: 12px;
+  animation-delay: -0.2s;
+}
+@keyframes sp-bar {
+  to {
+    transform: scaleY(0.45);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sp-bars i {
+    animation: none;
+  }
 }
 .sp-tlen {
   text-align: right;

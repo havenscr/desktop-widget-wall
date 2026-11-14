@@ -17,6 +17,9 @@ import { SpotifyCard } from './SpotifyCard';
 import { resetSpotifyStatus, useSpotifyStatus } from './status';
 import { UpNext } from './UpNext';
 
+// Fake timers step only as far as each test needs; a loaded machine still gets room.
+vi.setConfig({ testTimeout: 20_000 });
+
 const id = (n: number) => String(n).padStart(22, '0');
 const item = (n: number, kind: SpotifyItem['kind'] = 'playlist', name = `List ${n}`): SpotifyItem => ({ id: id(n), kind, name, imageUrl: `data:image/png;base64,big${n}`, thumbUrl: `data:image/png;base64,t${n}`, subtitle: kind === 'playlist' ? 'Playlist' : 'Some Artist', count: kind === 'track' ? null : 20 });
 const track = (n: number, playable = true): SpotifyTrack => ({ id: playable ? id(500 + n) : null, name: `Song ${n}`, artists: 'Some Artist', album: 'Some Album', durationMs: 185_000, imageUrl: null, thumbUrl: n === 2 ? null : `data:image/png;base64,c${n}`, playable });
@@ -208,6 +211,10 @@ it('shows playlists as a grid of cover tiles; resting on one opens its details w
   expect(card.textContent).toContain('Playlist by Robin Vale');
   expect(card.textContent).not.toContain('Length');
   expect(card.textContent).not.toContain('Last played');
+  // Beside the tile (R2), not above or below it: jsdom gives every box 0 by 0 at the origin, so a
+  // side card sits 10 px right of it and top aligned at the stage's edge (12), a centred one at 12 and 10.
+  const placed = (card.closest('.hover-tip') as HTMLElement).style;
+  expect([placed.left, placed.top]).toEqual(['10px', '12px']);
   await act(async () => (screen.getByRole('button', { name: 'Shuffle' }) as HTMLButtonElement).click());
   await flush();
   expect(calls).toEqual([
@@ -236,6 +243,10 @@ it('opens a tile into its songs, plays a song in its list, marks the playing son
   expect(tracks).toHaveBeenCalledWith(expect.objectContaining({ kind: 'playlist', id: id(1), page: 0 }));
   expect(document.querySelector('.sp-track.on')?.textContent).toContain('Song 1');
   expect(document.querySelectorAll('.sp-track.on')).toHaveLength(1);
+  // The playing song wears the bars (R3); the play mark is only for the others, shown on hover.
+  expect(document.querySelector('.sp-track.on .sp-bars')?.getAttribute('aria-label')).toBe('Playing now');
+  expect(document.querySelector('.sp-track.on .sp-hov')).toBeNull();
+  expect(document.querySelectorAll('.sp-track:not(.on):not(.off) .sp-hov')).toHaveLength(1);
   // Every song is read, so the whole length shows (3 songs of 3:05).
   expect(document.querySelector('.sp-shead')?.textContent).toContain('3 songs · 9 min');
   expect(document.querySelector('.sp-track.off')?.textContent).toContain('Song 3');

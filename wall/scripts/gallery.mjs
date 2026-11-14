@@ -27,6 +27,8 @@ const W = 2560;
 const H = 720;
 const SETTLE_MS = 2500;
 const STATE_TIMEOUT_MS = 30_000;
+/** How long a state may take past SETTLE_MS for its expected text to appear (a busy machine). */
+const EXPECT_GRACE_MS = 8000;
 const PARALLEL = 3;
 const TZ = 'America/Los_Angeles';
 
@@ -336,6 +338,7 @@ state('unwind', 'listen: nothing playing', 'media=none', TIMES.night);
 add('unwind', 'listen: youtube music', url('unwind', TIMES.night, 'audio=demo'), true, '.sp-switch button:nth-child(2)');
 add('unwind', 'listen: songs of a playlist', url('unwind', TIMES.night, 'audio=demo'), true, '.sp-tile');
 add('unwind', 'listen: hover on a playlist', url('unwind', TIMES.night, 'audio=demo'), true, 'hover:.sp-tile');
+add('unwind', 'listen: songs, hover on a song', url('unwind', TIMES.night, 'audio=demo'), true, '.sp-tile >> hover:.sp-tracks li:nth-child(5) .sp-track');
 state('unwind', 'listen: signed out', 'spotify=signedout', TIMES.night);
 state('unwind', 'listen: spotify down', 'spotify=down', TIMES.night);
 state('unwind', 'listen: spotify not set up', 'spotify=off', TIMES.night);
@@ -543,6 +546,7 @@ const EXPECT = [
   ['unwind', 'listen: youtube music', ['Open YouTube Music', 'Browsing happens in its own window', '!Up next']],
   ['unwind', 'listen: songs of a playlist', ['Shuffle', 'Lantern Song 9', '58 songs', 'Playlist']],
   ['unwind', 'listen: hover on a playlist', ['Shuffle', 'Songs', 'Road Trip 1', '!Playlist / Playlist']],
+  ['unwind', 'listen: songs, hover on a song', ['Lantern Song 5', 'Quiet Geometry']],
   ['unwind', 'listen: signed out', ['Sign in to Spotify in Tools to browse here.', 'Sign in to Spotify in Tools to see what is next']],
   ['unwind', 'listen: spotify down', ['Spotify is not answering right now.', '!Up next']],
   ['unwind', 'listen: spotify not set up', ['Spotify is not set up on this wall', 'not set up', '!Up next']],
@@ -806,19 +810,26 @@ async function render(cdp, base, s, file, ctl) {
       }
       await new Promise((r) => setTimeout(r, 900));
     }
-    const check = await to('Runtime.evaluate', {
-      expression: `JSON.stringify({ root: !!document.querySelector('.shell'), emptyRoot: !document.getElementById('root')?.childElementCount, boundary: /something went wrong|error boundary/i.test(document.body.textContent || ''), text: document.body.textContent || '', w: innerWidth, h: innerHeight, sw: document.documentElement.scrollWidth, sh: document.documentElement.scrollHeight })`,
-      returnByValue: true,
-    });
-    const info = JSON.parse(check.result.value);
+    const read = async () => {
+      const check = await to('Runtime.evaluate', {
+        expression: `JSON.stringify({ root: !!document.querySelector('.shell'), emptyRoot: !document.getElementById('root')?.childElementCount, boundary: /something went wrong|error boundary/i.test(document.body.textContent || ''), text: document.body.textContent || '', w: innerWidth, h: innerHeight, sw: document.documentElement.scrollWidth, sh: document.documentElement.scrollHeight })`,
+        returnByValue: true,
+      });
+      return JSON.parse(check.result.value);
+    };
+    const wants = [s.expect ?? []].flat().map((want) => (want.startsWith('!') ? { needle: want.slice(1), absent: true } : { needle: want, absent: false }));
+    const missed = (text) => wants.filter(({ needle, absent }) => text.includes(needle) === absent);
+    // On a loaded machine the first data can land after the settle time: read again for up to
+    // EXPECT_GRACE_MS before calling expected text missing (a wrong text still fails, only later).
+    let info = await read();
+    for (const until = Date.now() + EXPECT_GRACE_MS; missed(info.text).length && Date.now() < until && !ctl.cancelled; ) {
+      await new Promise((r) => setTimeout(r, 500));
+      info = await read();
+    }
     if (!info.root || info.emptyRoot) errors.push('the app did not render (no .shell; a render error unmounts the root)');
     if (process.env.WALL_GALLERY_TEXT_DIR) writeFileSync(join(process.env.WALL_GALLERY_TEXT_DIR, basename(file).replace('.png', '.txt')), info.text);
     if (info.boundary) errors.push('an error fallback is showing');
-    for (const want of [s.expect ?? []].flat()) {
-      const absent = want.startsWith('!');
-      const needle = absent ? want.slice(1) : want;
-      if (info.text.includes(needle) === absent) errors.push(`${absent ? 'unexpected' : 'expected'} text ${absent ? 'shown' : 'not shown'}: "${needle}"`);
-    }
+    for (const { needle, absent } of missed(info.text)) errors.push(`${absent ? 'unexpected' : 'expected'} text ${absent ? 'shown' : 'not shown'}: "${needle}"`);
     if (info.w !== W || info.h !== H) errors.push(`viewport ${info.w} x ${info.h}`);
     if (ctl.cancelled) throw new Error('cancelled');
     const shot = await to('Page.captureScreenshot', { format: 'png', clip: { x: 0, y: 0, width: W, height: H, scale: 1 } });

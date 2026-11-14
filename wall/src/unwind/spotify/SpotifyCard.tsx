@@ -410,6 +410,18 @@ function TileDetails({ item, onOpen, onPlay, onShuffle }: { item: SpotifyItem; o
   );
 }
 
+/** The playing song's mark (R3): four small cyan bars that move gently (still with reduced motion). */
+function PlayingBars() {
+  return (
+    <span className="sp-bars" role="img" aria-label="Playing now">
+      <i />
+      <i />
+      <i />
+      <i />
+    </span>
+  );
+}
+
 /**
  * A playlist or album as a large cover tile (R1): the cover fills the tile, the name and the song
  * count under it (both shortened with an ellipsis). A click (or Enter) opens its songs; resting on
@@ -424,7 +436,7 @@ function Tile({ item, kindWord, onOpen, onPlay, onShuffle }: { item: SpotifyItem
   useEffect(() => clear, []);
   const show = (el: HTMLElement) => {
     clear();
-    timer.current = setTimeout(() => pinTip(el, () => <TileDetails item={item} onOpen={onOpen} onPlay={onPlay} onShuffle={onShuffle} />), TIP_DELAY_MS);
+    timer.current = setTimeout(() => pinTip(el, () => <TileDetails item={item} onOpen={onOpen} onPlay={onPlay} onShuffle={onShuffle} />, { side: true }), TIP_DELAY_MS);
   };
   const leave = () => {
     clear();
@@ -610,7 +622,16 @@ function SongsView({ item, onBack, onNote }: { item: SpotifyItem; onBack: () => 
                   ))}
                   onClick={() => playFrom(t)}
                 >
-                  <span className="sp-n">{on ? <IconPlayerPlayFilled size={14} aria-label="Playing now" /> : i + 1}</span>
+                  <span className="sp-n">
+                    {on ? (
+                      <PlayingBars />
+                    ) : (
+                      <>
+                        <span className="sp-num">{i + 1}</span>
+                        {ok && <IconPlayerPlayFilled className="sp-hov" size={16} aria-hidden="true" />}
+                      </>
+                    )}
+                  </span>
                   <span className="sp-tname">{t.name}</span>
                   <span className="sp-tart">{t.artists}</span>
                   <span className="sp-tlen">{trackLength(t.durationMs)}</span>

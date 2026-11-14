@@ -11,6 +11,7 @@ export const TIP_ANCHOR_CHECK_MS = 500;
 const FOCUS_AFTER_CLICK_MS = 600;
 /** The stage's design size: the card stays inside it. */
 const STAGE_W = 2560;
+const STAGE_H = 720;
 const EDGE = 12;
 
 type Content = ReactNode | (() => ReactNode);
@@ -22,9 +23,11 @@ interface TipState {
   anchor: Element | null;
   /** A pinned card (opened by a click) takes the pointer and stays until dismissed. */
   pinned: boolean;
+  /** Beside the anchor (right, else left), top aligned with it, instead of above or below. */
+  side: boolean;
 }
 
-const empty: TipState = { render: null, box: null, anchor: null, pinned: false };
+const empty: TipState = { render: null, box: null, anchor: null, pinned: false, side: false };
 const useTipStore = create<TipState>(() => empty);
 let timer: ReturnType<typeof setTimeout> | null = null;
 let quietFocusUntil = 0;
@@ -47,7 +50,7 @@ function show(el: Element, content: Content, delay: number): void {
   timer = setTimeout(() => {
     timer = null;
     if (!el.isConnected || useTipStore.getState().pinned) return;
-    useTipStore.setState({ render: asRender(content), box: designBox(el), anchor: el, pinned: false });
+    useTipStore.setState({ render: asRender(content), box: designBox(el), anchor: el, pinned: false, side: false });
   }, delay);
 }
 
@@ -63,11 +66,14 @@ export function hideTip(force = false): void {
   if (st.render !== null) useTipStore.setState(empty);
 }
 
-/** Show a card that takes the pointer (a list to pick from) under `el` until dismissed. */
-export function pinTip(el: Element, content: Content): void {
+/**
+ * Show a card that takes the pointer (a list to pick from) under `el` until dismissed. With
+ * `side`, it opens beside `el` instead (a details card next to a cover tile, over its neighbours).
+ */
+export function pinTip(el: Element, content: Content, opts: { side?: boolean } = {}): void {
   if (timer) clearTimeout(timer);
   timer = null;
-  useTipStore.setState({ render: asRender(content), box: designBox(el), anchor: el, pinned: true });
+  useTipStore.setState({ render: asRender(content), box: designBox(el), anchor: el, pinned: true, side: !!opts.side });
 }
 
 /**
@@ -100,13 +106,14 @@ export function resetTip(): void {
 
 /**
  * The one hover card, inside the stage so it scales with it: centred above its anchor (below
- * when there is no room above), kept inside the stage's width. A hover card lets the pointer
- * through; a pinned one takes it and closes on a click elsewhere or Escape. Either closes
+ * when there is no room above), or beside it when pinned with `side`, kept inside the stage.
+ * A hover card lets the pointer through; a pinned one takes it and closes on a click elsewhere
+ * or Escape. Either closes
  * when its anchor leaves the page (a card that went away on a poll), and its content is
  * redrawn every 15 seconds while it shows.
  */
 export function HoverTipLayer() {
-  const { render, box, anchor, pinned } = useTipStore();
+  const { render, box, anchor, pinned, side } = useTipStore();
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
   const [, setTick] = useState(0);
@@ -117,10 +124,18 @@ export function HoverTipLayer() {
     }
     const w = ref.current.offsetWidth;
     const h = ref.current.offsetHeight;
+    if (side) {
+      const right = box.x + box.w + 10;
+      setPos({
+        left: right + w <= STAGE_W - EDGE ? right : Math.max(EDGE, box.x - w - 10),
+        top: Math.min(STAGE_H - EDGE - h, Math.max(EDGE, box.y)),
+      });
+      return;
+    }
     const left = Math.min(STAGE_W - EDGE - w, Math.max(EDGE, box.x + box.w / 2 - w / 2));
     const above = box.y - h - 10;
     setPos({ left, top: above >= EDGE ? above : box.y + box.h + 10 });
-  }, [render, box]);
+  }, [render, box, side]);
   useEffect(() => {
     if (!render) return;
     const check = setInterval(() => {
