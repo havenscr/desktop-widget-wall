@@ -6,7 +6,7 @@ import { HologramEmitter, HologramPlate } from './HologramStage';
 import { refKey, type WatchRef } from './links';
 import { LOOK_BOXES, SKY_SOFT_EDGE, layeredNow, lookFor, ownsTheMoonSky, type LookId } from './looks';
 import { PlayerFrame } from './PlayerFrame';
-import { driveInAudience, useWatchStore } from './store';
+import { driveInAudience, stageShown, useWatchStore } from './store';
 import { useStopRules } from './useStopRules';
 
 /** Unwind's offset inside the stage (design pixels): the Watch rules in `unwind.css` place the looks at wall numbers less this. */
@@ -19,7 +19,7 @@ export const EDGE_BAND = 72;
 export function useStageShown(): boolean {
   const place = usePlaceStore((s) => s.active);
   const tab = useWatchStore((s) => s.tab);
-  return place === 'unwind' && tab === 'watch';
+  return stageShown(place, tab);
 }
 
 /**

@@ -12,7 +12,7 @@ import { reviewNow } from '../ui/reviewClock';
 import { hideTip, quietFocus, tip } from '../ui/HoverTip';
 import { isQuietForRecording, useSignalStore } from '../signals/store';
 import { useChipLayout } from '../signals/layout';
-import { useWatchStore } from '../unwind/watch/store';
+import { driveInAudience, driveInShow, useWatchStore } from '../unwind/watch/store';
 import { useIdle } from '../ui/useIdle';
 import { useReducedMotion } from '../ui/useReducedMotion';
 import { useWeather } from '../weather/useWeather';
@@ -30,7 +30,13 @@ import {
   pendingStale,
   landPending,
   endStay,
+  endWatch,
   landingX,
+  lookRound,
+  seatCarry,
+  seatNow,
+  sitAt,
+  sitToWatch,
   startStay,
   CARRY_LINE_GAP_MS,
   CLOVER_FEED_PX,
@@ -75,6 +81,7 @@ import {
   type WattPlace,
 } from './model';
 import { defaultSpot, groundOf, isOnGround, onGround, sameSpan, walkAround } from './ground';
+import { facing, followShow, newShowTrack, ownerPinned, ownerTouched, seatFor, showRole, type Band } from './audience';
 import { WattMenu, type Trick } from './Menu';
 import {
   BUBBLE,
@@ -205,6 +212,27 @@ export function infoBoxes(toStage: (x: number, y: number) => { x: number; y: num
   return out;
 }
 
+/** What his seat at the drive-in keeps clear of: the Look switch, the control row, the cards. */
+const SEAT_CLEAR = '.w-lookbar, .w-ctl, .w-card, .w-now, .leave-banner';
+/**
+ * The stretches of floor (x to x, stage pixels) covered by those at his seated height, standing on
+ * the horizon `hy`: anything whose box reaches into the band `[hy - height, hy]`.
+ */
+export function controlBands(toStage: (x: number, y: number) => { x: number; y: number }, hy: number, height: number): Band[] {
+  const out: Band[] = [];
+  for (const e of document.querySelectorAll<HTMLElement>(SEAT_CLEAR)) {
+    const r = e.getBoundingClientRect();
+    if (r.width <= 0 || r.height <= 0) continue;
+    const a = toStage(r.left, r.top);
+    const x0 = a.x;
+    const top = a.y;
+    const b = toStage(r.right, r.bottom);
+    if (b.y <= hy - height || top >= hy) continue;
+    out.push({ x0, x1: b.x });
+  }
+  return out;
+}
+
 /** What decides whether he notices a click (see `noticeBlocked`). */
 export interface NoticeState {
   /** On show at a place (not away or fading out). */
@@ -219,13 +247,15 @@ export interface NoticeState {
   inCall: boolean;
   recording: boolean;
   reacting: boolean;
+  /** At the drive-in for a show: he keeps his eyes on the screen. */
+  watching?: boolean;
 }
 
 /**
  * Why a click goes unnoticed, or null when he notices it: never while he is away or the page is
  * hidden, asleep, carried, falling, landing or walking back (a carry that is not over), with his
  * menu open, napping (the trick or the display idle), reading, in a call or a meeting, while the
- * wall records, or while another reaction runs.
+ * wall records, watching the drive-in, or while another reaction runs.
  */
 export function noticeBlocked(s: NoticeState): string | null {
   if (!s.shown) return 'away';
@@ -239,6 +269,7 @@ export function noticeBlocked(s: NoticeState): string | null {
   if (s.reading) return 'reading';
   if (s.inCall) return 'in a call';
   if (s.recording) return 'recording';
+  if (s.watching) return 'watching';
   if (s.reacting) return 'busy';
   return null;
 }
@@ -325,6 +356,52 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
   const watchTab = useWatchStore((st) => st.tab === 'watch');
   const watchRef = useRef(watchTab);
   watchRef.current = watchTab;
+  // The drive-in: the screen's rectangle while a show is on in that look, else null (the Watch
+  // store's own selector; `audience.ts` turns it into his seat). Paused, he may look round once.
+  const audience = useWatchStore(driveInAudience);
+  const audienceRef = useRef(audience);
+  audienceRef.current = audience;
+  const paused = useWatchStore((st) => st.paused);
+  // Follow the show's identity synchronously with both stores (a show can end and the next begin
+  // between two frames), and mark the seat's measurement stale when the layout may have moved.
+  useEffect(() => {
+    const follow = () => {
+      const ws = useWatchStore.getState();
+      followShow(showTrack.current, driveInShow(ws, usePlaceStore.getState().active));
+    };
+    const stale = () => {
+      seatCache.current.dirty = true;
+      // Measured again at his next step: wake him for it, but only while a show is on.
+      if (showTrack.current.live) wake.current();
+    };
+    follow();
+    const offWatch = useWatchStore.subscribe(follow);
+    const offPlace = usePlaceStore.subscribe(follow);
+    window.addEventListener('resize', stale);
+    // A control appearing or going (not Watt's own nodes) changes where the controls stand.
+    const mo = new MutationObserver((list) => {
+      for (const m of list) if (!(m.target instanceof Element && m.target.closest('.watt'))) return void stale();
+    });
+    mo.observe(document.body, { childList: true, subtree: true });
+    return () => {
+      offWatch();
+      offPlace();
+      window.removeEventListener('resize', stale);
+      mo.disconnect();
+    };
+  }, []);
+  // The show now on (the marquee's state with the stage in sight; `none` for a parked video), read
+  // from the same decision as the stage layer. Its identity (`showTrack`) tells one show from the
+  // next: the owner's hand holds for the show it happened in and no other (`audience.ts`).
+  const stagePlace = usePlaceStore((st) => st.active);
+  const showState = useWatchStore((st) => driveInShow(st, stagePlace));
+  const showTrack = useRef(newShowTrack());
+  /**
+   * Where his seat is for the current screen and layout: measured when the screen, the horizon or
+   * the layout changes (`dirty`: the window resized, something appeared or went in the page), never
+   * per frame. `seat` null is the cached answer "no seat".
+   */
+  const seatCache = useRef<{ dirty: boolean; screen: unknown; hy: number; seat: number | null }>({ dirty: true, screen: null, hy: Number.NaN, seat: null });
   // The leave banner in the band above the ribbon takes part of his ground on Home and Meet.
   const banner = useChipLayout((st) => st.banner);
   const bannerRef = useRef(banner);
@@ -847,7 +924,8 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
       const f = frameRef.current;
       const at = toStage(e.clientX, e.clientY);
       const near = Math.hypot(at.x - (f.x + f.w / 2), at.y - (f.y + f.w / 3)) <= NOTICE_PX + 80;
-      if (near || mind.current.pointerOn) wake.current();
+      // At the drive-in his eyes stay on the screen: the pointer wakes nothing.
+      if ((near || mind.current.pointerOn) && !mind.current.watching) wake.current();
     };
     window.addEventListener('pointermove', onMove, { passive: true });
     return () => window.removeEventListener('pointermove', onMove);
@@ -882,6 +960,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
     }
     releaseCarry(c, tNowRef.current(), groundOf(p.place, watchRef.current, bannerRef.current), p.camera.hy, WALKS[p.place].px, reducedRef.current || document.hidden, true);
     keepSpot(p.place, c.toX);
+    ownerTouched(showTrack.current);
     wake.current();
   }, [dropCapture]);
   const interruptRef = useRef(interruptCarry);
@@ -984,6 +1063,8 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
         const instant = reducedRef.current || document.hidden;
         releaseCarry(c, tNowRef.current(), groundOf(p.place, watchRef.current, bannerRef.current), p.camera.hy, WALKS[p.place].px, instant, false);
         keepSpot(p.place, c.toX);
+        // During a show he stays where he is set down (and watches from there).
+        ownerTouched(showTrack.current);
         // Staying, he stays at the new spot.
         const st = petRef.current.stay;
         if (st && st.place === p.place) {
@@ -1096,6 +1177,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
         inCall: q.inCall,
         recording: m.quiet,
         reacting: m.react !== null && m.reactT < reactLength(m),
+        watching: m.watching,
       });
       if (blocked) return;
       const T = tNowRef.current();
@@ -1155,6 +1237,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
       const dir = frameRef.current.dir;
       startStay(c, t, x, dir);
       const stay = { place: p.place as StayPlace, x, date: dayKey(nowRef.current()) };
+      ownerTouched(showTrack.current);
       petRef.current = { ...petRef.current, stay };
       update((d) => ({ ...d, stay }));
       wake.current();
@@ -1198,6 +1281,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
         const mid = onGround(spans, defaultSpot(p.place));
         const f = frameRef.current;
         setSpot(p.place, Number.NaN);
+        ownerTouched(showTrack.current);
         if (Math.abs(f.x - mid) < 1 || reducedRef.current) {
           // Under reduced motion he is simply there.
           if (carry.current.mode !== NONE) cancelCarry(carry.current);
@@ -1254,6 +1338,9 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
     let cloverTaken = false;
     let cloverSeen: Clover | null = null;
     let reactAt = -Infinity;
+    /** A drive-in show is on for him; it ended after his bedtime (he is put to sleep once unseen). */
+    let showOn = false;
+    let lateEnd = false;
     const tNow = () => (reduced ? performance.now() / 1000 : T);
 
     /** Advance the presence; returns true when the loop can stop (see `isIdle`). */
@@ -1262,11 +1349,100 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
       const place = wattPlaceFor(usePlaceStore.getState().active, inCallRef.current);
       const camera = place ? cameraOf(place, clock) : null;
       const ready = cameraReady(place, camera, cameraSignal());
-      stepPresence(p, place, camera, clock.night, ready, dt, reduced);
+      // A drive-in show (`audience.ts`): what it asks of him, below the wall's other rules. The
+      // marquee is the stage layer's own decision (a parked video is no show); his menu, a nap he was
+      // sent to and the owner's hand in this show are the owner's commands and outrank the walk.
+      const ws = useWatchStore.getState();
+      const marquee = driveInShow(ws, usePlaceStore.getState().active);
+      const screen = marquee === 'none' ? null : driveInAudience(ws);
+      const cc = carry.current;
+      const showMenu = cardRef.current !== null;
+      const showNap = napUntil.current > 0 && nowRef.current() < napUntil.current;
+      const showPinned = cc.stay || ownerPinned(showTrack.current);
+      const role = showRole({
+        screen,
+        marquee,
+        onWatch: place === 'unwind' && watchRef.current,
+        inCall: inCallRef.current,
+        reading: mind.current.focus,
+        recording: mind.current.quiet,
+        menuOpen: showMenu,
+        napping: showNap,
+        engaged: showOn,
+        pinned: showPinned,
+      });
+      // A show keeps him up past his bedtime: the drive-in is a night out.
+      const night = clock.night && role === 'off';
+      stepPresence(p, place, camera, night, ready, dt, reduced);
       // Fading out, moving while unseen or fading in: frames until he is settled where he belongs.
       const want = ready ? place : null;
-      presenceMoving = p.place !== want || (want !== null && (p.camera !== camera || p.night !== clock.night || p.opacity < 1));
+      presenceMoving = p.place !== want || (want !== null && (p.camera !== camera || p.night !== night || p.opacity < 1));
       const c = carry.current;
+      // The drive-in. Off (no show, a call, reading with him): a show that was on ends, and he gets
+      // up and walks back to his wander. Hold (the wall records): he starts no walk and sits where he
+      // is. Watch: unless the owner has put him somewhere during this show, he walks to his seat left
+      // of the screen; wherever he sits during the show, he sits turned to it and watches.
+      if (role === 'off') {
+        if (showOn) {
+          showOn = false;
+          endWatch(c, tNow());
+          lateEnd = clock.night;
+        }
+      } else if (screen && p.place === 'unwind' && p.camera) {
+        const T0 = tNow();
+        if (!showOn) {
+          showOn = true;
+          quietRef.current();
+        }
+        const px = WALKS.unwind.px;
+        const w = spriteWidth('watch', px);
+        // Held back (the wall records, his menu is open, a nap, the owner's hand): a walk to the seat
+        // already under way ends where he stands, and he sits and watches from there.
+        if (role === 'hold' && c.mode === RETURN && c.watch) {
+          c.mode = SIT;
+          c.landT = sitAt(T0);
+          sitToWatch(c, T0, facing(screen, c.x, w));
+        }
+        // Where the owner put him and a call or a place change cleared his sit: he sits down there again.
+        if (role === 'hold' && c.mode === NONE && showPinned && !mind.current.quiet && !showMenu && !showNap && marquee !== 'waiting') {
+          seatNow(c, T0, frameRef.current.x, facing(screen, frameRef.current.x, w));
+        }
+        if (role === 'watch') {
+          // The seat is measured once for this screen and layout (faded controls still hold their
+          // place: layout boxes, not visibility), and the answer, a seat or none, is kept.
+          const sc = seatCache.current;
+          if (sc.dirty || sc.screen !== screen || sc.hy !== p.camera.hy) {
+            sc.dirty = false;
+            sc.screen = screen;
+            sc.hy = p.camera.hy;
+            sc.seat = seatFor(screen, controlBands(toStage, p.camera.hy, spriteHeight('watch', px)), w);
+          }
+          const seat = sc.seat;
+          if (seat !== null) {
+            const seated = c.mode === SIT && c.watch && Math.abs(c.x - seat) < 0.5;
+            const going = c.mode === RETURN && c.watch && c.target === seat;
+            const free = c.mode === NONE || (c.mode === SIT && !c.stay) || (c.mode === RETURN && (c.watch || c.target !== c.target));
+            if (!seated && !going && free) {
+              const dir = facing(screen, seat, w);
+              // Under reduced motion he is simply there.
+              if (reduced) seatNow(c, T0, seat, dir);
+              else seatCarry(c, T0, c.mode === NONE ? wanderAt(walkOf('unwind'), wanderT.current, wc).x : c.x, seat, dir);
+            }
+          } else if (c.mode === NONE) {
+            // No seat near the screen: he does not walk. He sits down where he stands, turned to it.
+            const here = wanderAt(walkOf('unwind'), wanderT.current, wc).x;
+            seatNow(c, T0, here, facing(screen, here, w));
+          }
+        }
+        if ((c.mode === SIT || c.mode === LAND) && !c.watch) sitToWatch(c, T0, facing(screen, c.x, w));
+      }
+      // A show that ended after his bedtime: once he has faded out, he is put to sleep in the middle.
+      if (lateEnd && (p.night || !clock.night)) {
+        if (p.night) cancelCarry(c);
+        lateEnd = false;
+      }
+      mind.current.watching = showOn && c.watch;
+      quiet.current.watching = showOn;
       if (c.mode !== NONE) {
         // Gone from the place he was carried on (or the camera moving off): nothing to set down.
         if (!ready || !p.place || p.place !== place || !p.camera) dropRef.current();
@@ -1305,7 +1481,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
       mind.current.lieT = lie ? tNow() - napFrom.current : 0;
       // Held across a place change: set down as soon as the new place's camera is ready (he then fades in
       // already where he was set down); given up after 10 s or at night.
-      if (c.mode === NONE && pendingStale(c, nowRef.current() / 1000, clock.night)) c.pendingX = Number.NaN;
+      if (c.mode === NONE && pendingStale(c, nowRef.current() / 1000, night)) c.pendingX = Number.NaN;
       if (c.mode === NONE && c.pendingX === c.pendingX && ready && p.place !== null && p.place === place && p.camera) {
         landPending(c, tNow(), groundOf(place, watchRef.current, bannerRef.current), p.camera.hy, WALKS[place].px);
         keepSpot(place, c.toX);
@@ -1329,7 +1505,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
       if (p.since === 0) wanderT.current = 0;
       else if (!holdsStill(mind.current)) wanderT.current += dt;
       // Waking at 6:30: a yawn and a stretch.
-      if (p.place && prevNight === true && !p.night) {
+      if (p.place && prevNight === true && !p.night && role === 'off') {
         if (!mind.current.quiet) startReact.current('wake');
         talk.current.events.wake = nowRef.current();
       }
@@ -1346,6 +1522,12 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
       const cr = carry.current;
       const air = airborne(cr);
       if (el) {
+        // At the drive-in: "seated" while he sits and watches, "going" on his way to the seat.
+        const show = cr.watch ? (cr.mode === SIT ? 'seated' : cr.mode === RETURN ? 'going' : '') : '';
+        if ((el.dataset.show ?? '') !== show) {
+          if (show) el.dataset.show = show;
+          else delete el.dataset.show;
+        }
         // A move he cannot walk fades him out and in where he goes.
         el.style.opacity = String(p.opacity * (cr.mode === MOVE ? cr.fade : 1));
         // Carried, or with his menu open (a pop-up over the cards above him), he is drawn above the cards.
@@ -1384,7 +1566,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
       mi.clock = tNow();
       // He notices a pointer that moved lately (never under reduced motion, which stands still).
       const pr = ptrRaw.current;
-      mi.pointerOn = !reduced && tNow() - pr.t < NOTICE_S;
+      mi.pointerOn = !reduced && !mi.watching && tNow() - pr.t < NOTICE_S;
       if (mi.pointerOn) {
         const at = toStage(pr.x, pr.y);
         mi.pointerX = at.x;
@@ -1632,8 +1814,8 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
       if (presenceMoving || !p.place || !p.camera) return 0;
       const mi = mind.current;
       const c = carry.current;
-      let r = Math.min(restFor(walkOf(p.place), wanderT.current, tNow(), p.night, useAudioStore.getState().playing, mi), carryRestFor(c, tNow()));
-      if (mi.pointerOn) r = Math.min(r, Math.max(0.05, ptrRaw.current.t + NOTICE_S - tNow()));
+      let r = Math.min(restFor(walkOf(p.place), wanderT.current, tNow(), p.night, useAudioStore.getState().playing, mi), carryRestFor(c, tNow(), mi.quiet));
+      if (mi.pointerOn && !mi.watching) r = Math.min(r, Math.max(0.05, ptrRaw.current.t + NOTICE_S - tNow()));
       return r;
     };
     /**
@@ -1686,7 +1868,19 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
       settle(idle);
     };
 
-    const onVisible = () => paint();
+    // Under reduced motion the clock is one wake a minute, and none while the page is hidden.
+    const arm = () => {
+      if (!timer && !document.hidden) timer = window.setInterval(() => wake.current(), 60_000);
+    };
+    const onVisible = () => {
+      if (document.hidden) {
+        window.clearInterval(timer);
+        timer = 0;
+        return;
+      }
+      arm();
+      wake.current();
+    };
     // Back from hidden: one step, then frames or a rest as usual.
     const onShown = () => {
       if (!document.hidden && !raf) {
@@ -1726,7 +1920,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
     if (reduced) {
       // One still pose; notice the hour changing (and the page returning) once a minute. A place,
       // camera or call change repaints at once (Watt jumps there, as the horizon does).
-      timer = window.setInterval(() => wake.current(), 60_000);
+      arm();
       document.addEventListener('visibilitychange', onVisible);
     } else {
       document.addEventListener('visibilitychange', onShown);
@@ -1752,7 +1946,15 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
   // A call starting or ending, a bubble, a clover or her look changing wakes the loop (or repaints the still pose).
   useEffect(() => {
     wake.current();
-  }, [inCall, bubble, clover, pet.cosmetic, focus.status, ws.rain, ws.cold, minute, watchTab, recordingQuiet, banner]);
+  }, [inCall, bubble, clover, pet.cosmetic, focus.status, ws.rain, ws.cold, minute, watchTab, recordingQuiet, banner, audience, showState]);
+
+  // The video paused while he watches: he looks round at the viewer once, then back (not under
+  // reduced motion, nor while the wall records).
+  useEffect(() => {
+    if (!paused || reducedRef.current || mind.current.quiet) return;
+    lookRound(carry.current, tNowRef.current());
+    wake.current();
+  }, [paused]);
 
   // Dev review stills: a handle on the window to say a line, react or grow a clover.
   useEffect(() => {
