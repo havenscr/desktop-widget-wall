@@ -324,6 +324,7 @@ const DI = `${WM}&wlist=three&wlook=drivein&wplay=0`;
 state('unwind', 'Watt: drive-in, seated', DI, TIMES.night);
 state('unwind', 'Watt: drive-in at noon', DI, TIMES.noon);
 state('unwind', 'Watt: drive-in, paused', `${DI}&wstate=paused`, TIMES.night);
+state('unwind', 'Watt: drive-in, autoplay refused, the marquee waiting (he is not at the show)', `${DI}&wstate=refused`, TIMES.night);
 state('unwind', 'Watt: drive-in, 24 saved, long label', `${WM}&wlist=many&wlook=drivein&wplay=3`, TIMES.night);
 add('unwind', 'Watt: drive-in, set down during the show', url('unwind', TIMES.night, DI), true, 'drag:.watt-hit-part@240,380');
 // end watt drive-in

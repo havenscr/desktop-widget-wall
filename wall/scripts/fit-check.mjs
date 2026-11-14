@@ -1286,6 +1286,12 @@ try {
       const at = Math.round(me.left) + ',' + Math.round(me.top) + ' to ' + Math.round(me.right) + ',' + Math.round(me.bottom);
       const fails = [];
       const show = document.querySelector('.watt')?.dataset.show || 'not watching';
+      // The marquee waiting (a refused autoplay: nothing has played yet): there is no show, so he is not at it.
+      const mq = document.querySelector('.w-tower')?.getAttribute('data-marquee');
+      if (mq !== 'playing' && mq !== 'paused') {
+        if (show === 'seated' || show === 'going') return { at, fails: ['watt drive-in: Watt is at a show that has not started (' + show + ', the marquee says ' + mq + ')'] };
+        return { at, fails: [], waiting: true };
+      }
       if (show !== 'seated') fails.push('watt drive-in: Watt is not seated (' + show + ')');
       if (me.right > x - 30 + 0.5) fails.push('watt drive-in: Watt at ' + at + ' is not 30 px clear of the screen at x ' + x);
       // The controls at his height: boxes reaching into his band (layout boxes, faded or not).
@@ -1676,6 +1682,7 @@ try {
     if (wattDriveIn) {
       for (const f of wattDriveIn.fails) console.log(`  FAIL ${f}`);
       if (wattDriveIn.fails.length) failed = true;
+      else if (wattDriveIn.waiting) console.log('  ok   watt drive-in: the marquee is waiting, Watt is not at the show');
       else console.log(`  ok   watt drive-in: seated at ${wattDriveIn.at}, on his ground, 30 px or more left of the screen, 22 px or more from every control at his height, near his seat, 24 px or less into the tower`);
     }
     // watch behaviour
