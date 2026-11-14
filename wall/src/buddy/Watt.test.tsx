@@ -18,7 +18,7 @@ import { LINES } from './lines';
 import { PET_KEY, dayKey, defaultPet, emptyToday } from './pet';
 import { resetMeetingFeed, useMeetingFeed } from '../work/useNextMeeting';
 import { resetWeatherStore } from '../weather/useWeather';
-import { PET_LINE_EVERY_MS, PET_REPLY_GAP_MS, WATT_TIP, Watt } from './Watt';
+import { PET_LINE_EVERY_MS, PET_REPLY_GAP_MS, WATT_TIP, Watt, restClock } from './Watt';
 import { HoverTipLayer, resetTip } from '../ui/HoverTip';
 
 const sunMock = vi.hoisted(() => ({ set: null as number | null }));
@@ -46,17 +46,25 @@ const stored = () => JSON.parse(localStorage.getItem(PET_KEY) ?? '{}');
 let frames: Map<number, FrameRequestCallback>;
 let nextId = 1;
 let ts = 0;
+/** His rest timer, driven by the same clock as the frames (see `restClock`). */
+let rests: Map<number, { fn: () => void; due: number }>;
+const realRest = { ...restClock };
 const local = (h: number, m = 0, s = 0) => new Date(2026, 10, 11, h, m, s).getTime();
 const day = () => local(14);
 const night = () => local(23);
 
-/** Run every scheduled frame callback once at the next timestamp (50 ms later). */
+/** Run every scheduled frame callback once at the next timestamp (50 ms later), and any rest that ends by then. */
 function tick() {
   ts += 50;
   const due = [...frames.entries()];
   frames.clear();
   act(() => {
     for (const [, cb] of due) cb(ts);
+    for (const [id, r] of [...rests.entries()]) {
+      if (r.due > ts || !rests.has(id)) continue;
+      rests.delete(id);
+      r.fn();
+    }
   });
 }
 const runFor = (s: number) => {
@@ -99,6 +107,15 @@ beforeEach(() => {
   sunMock.set = null;
   idleState.on = false;
   frames = new Map();
+  rests = new Map();
+  restClock.set = (fn, ms) => {
+    const id = nextId++;
+    rests.set(id, { fn, due: ts + ms });
+    return id;
+  };
+  restClock.clear = (id) => void rests.delete(id);
+  // The loop measures a rest cut short by the performance clock: here it is the frame clock.
+  vi.spyOn(performance, 'now').mockImplementation(() => ts);
   ts = 0;
   mqListeners = [];
   vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
@@ -117,6 +134,7 @@ beforeEach(() => {
   invokeMock.mockClear();
 });
 afterEach(() => {
+  Object.assign(restClock, realRest);
   resetMeetingFeed();
   resetWeatherStore();
   invokeMock.mockImplementation(defaultInvoke);
@@ -819,6 +837,77 @@ describe('the amber mark when it is only a label', () => {
   });
 });
 
+describe('the frame loop rests while he stands', () => {
+  // The real rest timer on fake timers; frames still come from the mocked requestAnimationFrame.
+  const real = () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] });
+    vi.spyOn(performance, 'now').mockImplementation(() => Date.now());
+    Object.assign(restClock, realRest);
+  };
+  const rafCalls = () => vi.mocked(window.requestAnimationFrame).mock.calls.length;
+  const advance = (ms: number) => {
+    for (let i = 0; i < ms / 100; i++) {
+      act(() => void vi.advanceTimersByTime(100));
+      tick();
+    }
+  };
+  const xOf = (c: HTMLElement) => Number(/translate\(([\d.]+)px/.exec(c.querySelector<HTMLElement>('.watt-sheep')!.style.transform)![1]);
+
+  it('standing at a stop asks for no frame, and the next walk starts on time', () => {
+    real();
+    const { container } = render(<Watt now={day} />);
+    runFor(FADE_IN_S + 0.3);
+    const x = xOf(container);
+    const before = rafCalls();
+    // The first stand is 26 s from his arrival; well inside it, blinks included, no frame at all.
+    advance(23_000);
+    expect(rafCalls()).toBe(before);
+    expect(xOf(container)).toBe(x);
+    // At the end of the stand he walks: frames run, and he moves.
+    advance(3_000);
+    expect(rafCalls()).toBeGreaterThan(before);
+    runFor(1);
+    expect(xOf(container)).not.toBe(x);
+  });
+
+  it('sitting with Stay on asks for no frame for a minute, though his look around still happens', () => {
+    real();
+    const { container } = render(<Watt now={day} />);
+    runFor(FADE_IN_S + 0.3);
+    fireEvent.contextMenu(container.querySelector('.watt-hit')!);
+    fireEvent.click([...container.querySelectorAll<HTMLButtonElement>('.watt-menu button')].find((b) => b.textContent === 'Stay here')!);
+    runFor(1);
+    const before = rafCalls();
+    const dirs = new Set<string>();
+    for (let i = 0; i < 60; i++) {
+      advance(1000);
+      dirs.add(/scaleX\((-?[\d.]+)\)/.exec(container.querySelector<HTMLElement>('.watt-sheep')!.style.transform)![1]);
+    }
+    expect(rafCalls()).toBe(before);
+    // He turned to look about on the timer alone.
+    expect(dirs.size).toBe(2);
+  });
+
+  it('a hidden page schedules nothing at all, and his return picks up', () => {
+    real();
+    const set = vi.spyOn(restClock, 'set');
+    const { container } = render(<Watt now={day} />);
+    runFor(FADE_IN_S + 0.3);
+    Object.defineProperty(document, 'hidden', { configurable: true, value: true });
+    act(() => void document.dispatchEvent(new Event('visibilitychange')));
+    runFor(0.2);
+    const frames0 = rafCalls();
+    const sets0 = set.mock.calls.length;
+    advance(60_000);
+    expect(rafCalls()).toBe(frames0);
+    expect(set.mock.calls.length).toBe(sets0);
+    Object.defineProperty(document, 'hidden', { configurable: true, value: false });
+    act(() => void document.dispatchEvent(new Event('visibilitychange')));
+    expect(set.mock.calls.length + rafCalls()).toBeGreaterThan(sets0 + frames0);
+    expect(container.querySelector('.watt-sheep')).not.toBeNull();
+  });
+});
+
 describe('carrying him', () => {
   const hitOf = (c: HTMLElement) => c.querySelector<HTMLElement>('.watt-hit')!;
   const sheepOf = (c: HTMLElement) => c.querySelector<HTMLElement>('.watt-sheep')!;
@@ -1209,7 +1298,7 @@ describe('carrying him', () => {
       go('home');
       horizon(CAMERAS.home, true);
       runFor(FADE_OUT_S + 0.2);
-      publishCamera(CAMERAS.home, false);
+      horizon(CAMERAS.home);
       let seen = 0;
       let first = NaN;
       for (let i = 0; i < 40; i++) {
@@ -1762,7 +1851,7 @@ describe('more of a pet', () => {
   it('he does not look at it while he reads, eats, or is carried; under reduced motion he stands still', () => {
     const { container } = start();
     pointer(500, 460);
-    useFocusStore.setState({ state: { status: 'running', minutes: 25, endAt: day() + 20 * 60_000 } as never });
+    act(() => useFocusStore.setState({ state: { status: 'running', minutes: 25, endAt: day() + 20 * 60_000 } as never }));
     runFor(0.3);
     expect(eyes(container)).not.toBe(3);
   });

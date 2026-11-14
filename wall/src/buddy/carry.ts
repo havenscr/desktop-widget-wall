@@ -472,6 +472,29 @@ export function stepCarry(c: Carry, dt: number, T: number, hy: number, size: num
 }
 
 /**
+ * How long the carry can rest, seconds: 0 while he is held, falling, landing, walking back or
+ * fading over; while he sits, the time until his pose next changes (standing up into the sit,
+ * the look around, swirly eyes ending, the sit ending); Infinity when no carry runs.
+ */
+export function carryRestFor(c: Carry, T: number): number {
+  if (c.mode === NONE) return Infinity;
+  if (c.mode !== SIT) return 0;
+  let next = Infinity;
+  const at = (s: number) => {
+    if (s > 1e-6 && s < next) next = s;
+  };
+  at(c.settleUntil - T);
+  at(c.dizzyUntil - T);
+  const s = T - c.landT - LAND_S;
+  at(SETTLE_STAND_S - s);
+  if (s >= SETTLE_STAND_S) {
+    const r = s % 24;
+    for (const edge of [7, 10, 13, 16, 24]) at(edge - r);
+  }
+  return next;
+}
+
+/**
  * Shaking: the pointer swings one way, then the other, fast, three times inside a second. A turn
  * counts when the pointer reverses after a swing of at least `SHAKE_SWING_PX` at `SHAKE_SPEED`.
  */

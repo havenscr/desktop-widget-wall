@@ -3,11 +3,14 @@ import { WALKS, spriteHeight } from './model';
 import {
   CLICK_S,
   GRAZE_FROM_S,
+  GRAZE_STOPS,
   HEARTS_S,
   PROP_RISE_MAX,
   REACT_S,
   SETTLE_FROM_S,
   blinking,
+  nextBlink,
+  restFor,
   bubbleSize,
   clickKind,
   createMind,
@@ -237,7 +240,7 @@ describe('more of a pet', () => {
       return t;
     };
     const grazing = new Set<string>();
-    for (let k = 0; k < 3; k += 0.1) grazing.add(frame(mind(), { t: startOf(2) + GRAZE_FROM_S + k }).pose);
+    for (let k = 0; k < 3; k += 0.1) grazing.add(frame(mind(), { t: startOf(GRAZE_STOPS[0]) + GRAZE_FROM_S + k }).pose);
     expect(grazing.has('eat')).toBe(true);
     expect(frame(mind(), { t: startOf(3) + SETTLE_FROM_S + 2 }).pose).toBe('sit');
     // He stands up again before he walks on.
@@ -290,5 +293,40 @@ describe('a firefly', () => {
     expect(frame(mind({ firefly: true, fireflyX: 1200, fireflyY: 500 }), { still: true }).pose).toBe('idle');
     expect(frame(mind({ firefly: true, fireflyX: 1200, fireflyY: 500, focus: true })).pose).toBe('read');
     expect(frame(mind({ firefly: false, fireflyX: 1200, fireflyY: 500 })).pose).toBe('idle');
+  });
+});
+
+describe('resting between changes', () => {
+  const at = (stop: number) => {
+    let t = 0;
+    for (let i = 0; i < stop; i++) t += IDLES[i] + (Math.abs(STOPS[(i + 1) % STOPS.length] - STOPS[i]) * (walk.max - walk.min)) / 14;
+    return t;
+  };
+  it('plans the next change exactly: the end of a stand, a blink, a graze nibble, sitting down and standing up', () => {
+    const quiet = mind({ idleLife: false });
+    // Stop 0 lasts 26 s: 4 s in, the yawn boundary at 3 s is past, so the stand ends in 22 s.
+    expect(restFor(walk, 4, 0, false, false, quiet)).toBeCloseTo(IDLES[0] - 4, 6);
+    // The settle stop: he sits after 6 s and stands up 3 s before he walks on.
+    const s3 = at(3);
+    expect(restFor(walk, s3 + 4, 0, false, false, quiet)).toBeCloseTo(SETTLE_FROM_S - 4, 6);
+    expect(restFor(walk, s3 + 10, 0, false, false, quiet)).toBeCloseTo(IDLES[3] - 3 - 10, 6);
+    // While grazing, every nibble is a change.
+    const g = at(GRAZE_STOPS[0]) + GRAZE_FROM_S + 0.1;
+    expect(restFor(walk, g, 0, false, false, quiet)).toBeCloseTo(1 / 3 - 0.1, 6);
+    // A blink is planned on the loop clock, and its end too.
+    const T = 0.3;
+    expect(restFor(walk, 4, T, false, false, mind())).toBeCloseTo(Math.min(IDLES[0] - 4, nextBlink(T)), 6);
+    let b = 0;
+    while (!blinking(b)) b += 0.01;
+    expect(nextBlink(b)).toBeLessThanOrEqual(0.12);
+  });
+  it('asks for frames only while something moves: a walk, a reaction, music notes, sleep, the firefly, the beat', () => {
+    const w = at(1) - 1; // walking from stop 0 to stop 1
+    expect(restFor(walk, w, 0, false, false, mind())).toBe(0);
+    expect(restFor(walk, 4, 0, false, true, mind())).toBe(0);
+    expect(restFor(walk, 4, 0, true, false, mind())).toBe(0);
+    for (const over of [{ lie: true }, { nap: true }, { firefly: true }, { bob: 0.5 }, { react: 'hop' as const, reactT: 0.2 }]) expect(restFor(walk, 4, 0, false, false, mind(over)), JSON.stringify(over)).toBe(0);
+    // Held still (his menu open): the wander waits, and with the idle life off nothing at all is planned.
+    expect(restFor(walk, 4, 0, false, false, mind({ held: true, idleLife: false }))).toBe(Infinity);
   });
 });

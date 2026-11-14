@@ -17,6 +17,7 @@ import { useReducedMotion } from '../ui/useReducedMotion';
 import { useWeather } from '../weather/useWeather';
 import { useNextMeeting } from '../work/useNextMeeting';
 import {
+  carryRestFor,
   FALL,
   MOVE,
   RETURN,
@@ -76,6 +77,7 @@ import { WattMenu, type Trick } from './Menu';
 import {
   BUBBLE,
   HEARTS_S,
+  NOTICE_PX,
   NOTICE_S,
   REACT_S,
   atClover,
@@ -96,6 +98,7 @@ import {
   holdsStill,
   markBox,
   petFrame,
+  restFor,
   placeBubble,
   wrapLine,
   type Mind,
@@ -171,6 +174,15 @@ interface Clover {
   stop: number;
   since: number;
 }
+
+/**
+ * The one timer the frame loop rests on while he stands (no frames are drawn then). Swappable so
+ * tests can drive it from their own frame clock; the app uses the window's timers.
+ */
+export const restClock = {
+  set: (fn: () => void, ms: number): number => window.setTimeout(fn, ms),
+  clear: (id: number): void => window.clearTimeout(id),
+};
 
 /** Take an element of hers out of the tab order and out of sight while she is away (no allocation). */
 function switchOff(el: HTMLElement | null, tab: number, vis: string): void {
@@ -727,16 +739,6 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
   const cloverAt = useRef({ x: 0, y: 0, on: false });
   // The pointer, for the "he notices it" look: raw client position and the loop time it last moved.
   const ptrRaw = useRef({ x: 0, y: 0, t: -Infinity });
-  useEffect(() => {
-    const onMove = (e: PointerEvent) => {
-      const r = ptrRaw.current;
-      r.x = e.clientX;
-      r.y = e.clientY;
-      r.t = tNowRef.current();
-    };
-    window.addEventListener('pointermove', onMove, { passive: true });
-    return () => window.removeEventListener('pointermove', onMove);
-  }, []);
   const lastCarryLine = useRef(-Infinity);
   const lastDizzyLine = useRef(-Infinity);
   const heldBubble = useRef(0);
@@ -755,6 +757,21 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
     }
     return o;
   }, []);
+  useEffect(() => {
+    const onMove = (e: PointerEvent) => {
+      const r = ptrRaw.current;
+      r.x = e.clientX;
+      r.y = e.clientY;
+      r.t = tNowRef.current();
+      // While he rests, a pointer near him (or one he is watching) wakes him for one step.
+      const f = frameRef.current;
+      const at = toStage(e.clientX, e.clientY);
+      const near = Math.hypot(at.x - (f.x + f.w / 2), at.y - (f.y + f.w / 3)) <= NOTICE_PX + 80;
+      if (near || mind.current.pointerOn) wake.current();
+    };
+    window.addEventListener('pointermove', onMove, { passive: true });
+    return () => window.removeEventListener('pointermove', onMove);
+  }, [toStage]);
   const dropCapture = useCallback((id: number) => {
     try {
       const el = hit.current;
@@ -1107,9 +1124,16 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
 
   useEffect(() => {
     let T = 0;
-    let last = 0;
+    let last = -1;
     let raf = 0;
     let timer = 0;
+    /** The rest timer while he stands (no frames), and when the rest began (performance clock, ms), or null when time is not counted (away, hidden). */
+    let restTimer = 0;
+    let restAt: number | null = null;
+    let restPlanned = 0;
+    /** Inside a frame or a tick: a wake asked for meanwhile is answered by its closing `settle`. */
+    let busy = false;
+    let presenceMoving = false;
     let reactTimer = 0;
     let prevNight: boolean | null = null;
     let lastBeats = audioBeats().count;
@@ -1143,6 +1167,9 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
       const camera = place ? cameraOf(place, clock) : null;
       const ready = cameraReady(place, camera, cameraSignal());
       stepPresence(p, place, camera, clock.night, ready, dt, reduced);
+      // Fading out, moving while unseen or fading in: frames until he is settled where he belongs.
+      const want = ready ? place : null;
+      presenceMoving = p.place !== want || (want !== null && (p.camera !== camera || p.night !== clock.night || p.opacity < 1));
       const c = carry.current;
       if (c.mode !== NONE) {
         // Gone from the place he was carried on (or the camera moving off): nothing to set down.
@@ -1475,37 +1502,109 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
       }
     };
 
-    const frame = (ts: number) => {
-      raf = requestAnimationFrame(frame);
-      if (!shouldDraw(ts, last, document.hidden)) return;
-      const dt = frameDelta(ts, last);
+    /**
+     * What happens next: away with nowhere to go, stop (a place, call or camera change wakes it);
+     * moving on every frame, the next frame; else rest on one timer until the next planned change
+     * (a hidden page plans nothing: its return wakes it).
+     */
+    const settle = (idle: boolean) => {
+      restClock.clear(restTimer);
+      restTimer = 0;
+      if (idle || document.hidden) {
+        restAt = null;
+        return;
+      }
+      const r = restNow();
+      if (r <= 0) {
+        restAt = null;
+        if (!raf) raf = requestAnimationFrame(frame);
+        return;
+      }
+      restAt = performance.now();
+      restPlanned = r;
+      if (Number.isFinite(r)) restTimer = restClock.set(tick, Math.ceil(r * 1000) + 5);
+    };
+    /** Seconds he can rest now (see `restFor`, `carryRestFor`), 0 when something moves on every frame. */
+    const restNow = (): number => {
+      if (presenceMoving || !p.place || !p.camera) return 0;
+      const mi = mind.current;
+      const c = carry.current;
+      let r = Math.min(restFor(walkOf(p.place), wanderT.current, tNow(), p.night, useAudioStore.getState().playing, mi), carryRestFor(c, tNow()));
+      if (mi.pointerOn) r = Math.min(r, Math.max(0.05, ptrRaw.current.t + NOTICE_S - tNow()));
+      return r;
+    };
+    /**
+     * The loop clock for handlers outside the loop: while he rests the clock stands still, so it
+     * first catches up (one step by the time rested so far) and then answers.
+     */
+    const clockNow = (): number => {
+      if (!reduced && !raf && !busy && restAt !== null) {
+        restPlanned = 0;
+        tick();
+      }
+      return tNow();
+    };
+    /** One step and paint outside the frame loop: a rest ended, or something woke him. */
+    const tick = () => {
+      restClock.clear(restTimer);
+      restTimer = 0;
+      let dt = 0;
+      if (restAt !== null) dt = Math.min(3600, Math.max(restPlanned, (performance.now() - restAt) / 1000));
+      restAt = null;
       T += dt;
-      last = ts;
+      busy = true;
       const idle = step(dt);
       paint();
       reachClover();
       carryTalk();
-      // Away with nowhere to go (Zen, Meet in a call) or waiting for the camera: stop until a
-      // place, call or camera change wakes it.
-      if (idle) {
-        cancelAnimationFrame(raf);
-        raf = 0;
+      busy = false;
+      settle(idle);
+    };
+    const frame = (ts: number) => {
+      raf = 0;
+      if (document.hidden) {
+        settle(false);
+        return;
       }
+      if (last < 0) last = ts;
+      if (!shouldDraw(ts, last, false) && ts !== last) {
+        raf = requestAnimationFrame(frame);
+        return;
+      }
+      const dt = frameDelta(ts, last);
+      T += dt;
+      last = ts;
+      busy = true;
+      const idle = step(dt);
+      paint();
+      reachClover();
+      carryTalk();
+      busy = false;
+      settle(idle);
     };
 
     const onVisible = () => paint();
+    // Back from hidden: one step, then frames or a rest as usual.
+    const onShown = () => {
+      if (!document.hidden && !raf) {
+        restAt = null;
+        tick();
+      }
+    };
     wake.current = () => {
       if (reduced) {
         step(0);
         paint();
         carryTalk();
-      } else if (!raf && !step(0)) {
-        last = 0;
-        raf = requestAnimationFrame(frame);
+      } else if (!raf && !busy) {
+        // Resting (or stopped): step by the time rested so far, paint, and choose again.
+        if (restTimer) restPlanned = 0;
+        last = -1;
+        tick();
       }
     };
     startReact.current = (kind, dir = 1) => {
-      reactAt = tNow();
+      reactAt = clockNow();
       mind.current.react = kind;
       mind.current.reactDir = dir;
       mind.current.reactT = 0;
@@ -1517,7 +1616,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
       }
     };
 
-    tNowRef.current = tNow;
+    tNowRef.current = clockNow;
     const idle = step(0);
     paint();
     if (reduced) {
@@ -1525,16 +1624,19 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
       // camera or call change repaints at once (Watt jumps there, as the horizon does).
       timer = window.setInterval(() => wake.current(), 60_000);
       document.addEventListener('visibilitychange', onVisible);
-    } else if (!idle) {
-      raf = requestAnimationFrame(frame);
+    } else {
+      document.addEventListener('visibilitychange', onShown);
+      settle(idle);
     }
     const offPlace = usePlaceStore.subscribe(() => wake.current());
     const offCamera = subscribeCamera(() => wake.current());
     return () => {
       cancelAnimationFrame(raf);
+      restClock.clear(restTimer);
       window.clearInterval(timer);
       window.clearTimeout(reactTimer);
       document.removeEventListener('visibilitychange', onVisible);
+      document.removeEventListener('visibilitychange', onShown);
       offPlace();
       offCamera();
       tNowRef.current = () => performance.now() / 1000;

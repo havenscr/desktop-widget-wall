@@ -964,9 +964,18 @@ horizon canvas and the veil and under the panels; its styles are `buddy/watt.css
 - Pace: it stands 20 to 40 seconds at each stop, then walks slowly (14 px a second) to the
   next; it starts standing in the middle of the range.
 - The idle life on his stands (not under reduced motion): a blink (one 120 ms frame with his
-  eyes shut every 3 to 7 seconds), grazing at two stops (the head lowered, nibbling, for six
-  seconds), and settling in on the long ones (he sits after six seconds and stands up three
-  seconds before he walks on).
+  eyes shut every 3 to 7 seconds), grazing at one stop (the head lowered, nibbling, for six
+  seconds), and settling in on the longest stop (40 s: he sits after six seconds and stands up
+  three seconds before he walks on). So, blink aside, one idle behaviour every two to two and a
+  half minutes: one graze and one settle in each loop of his wander (about 4.5 minutes on
+  Unwind, 5 on Work, Meet and Home). `model.test.ts` holds that cadence.
+- The frame loop draws only while something moves on every frame (a walk, a carry, a fall, a
+  reaction, a fade, music notes, sleeping z's, the dusk firefly, the beat). While he stands it
+  sleeps on one timer until the next planned change (`restFor` in `petFrame.ts`, `carryRestFor`
+  in `carry.ts`: the end of a stand, a blink, a graze nibble, sitting down or standing up, the
+  pointer notice ending), paints that change once and sleeps again, so a standing Watt requests
+  no animation frames at all. A pointer near him wakes him for one step. A hidden page schedules
+  nothing; its return picks up.
 - It is up only while the horizon's camera is settled on its place. `horizon/signal.ts` is a
   small read-only signal the horizon publishes (the camera it is on or heading to, and whether
   it is moving); Watt hides whenever the camera moves or points somewhere other than the camera

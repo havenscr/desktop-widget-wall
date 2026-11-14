@@ -38,20 +38,75 @@ export function clickKind(x: number, y: number, hx: number, hy: number): ClickKi
  * Pure: the blink times come from a small hash of each 5 second window.
  */
 export function blinking(T: number): boolean {
-  const k = Math.floor(T / 5);
+  const at = blinkAt(Math.floor(T / BLINK_WINDOW_S));
+  return T >= at && T < at + BLINK_S;
+}
+/** A blink lasts this long, seconds; one falls in each window of this many seconds. */
+export const BLINK_S = 0.12;
+const BLINK_WINDOW_S = 5;
+function blinkAt(k: number): number {
   const h = Math.sin(k * 12.9898 + 78.233) * 43758.5453;
-  const at = k * 5 + 0.5 + (h - Math.floor(h)) * 3.8;
-  return T >= at && T < at + 0.12;
+  return k * BLINK_WINDOW_S + 0.5 + (h - Math.floor(h)) * 3.8;
+}
+/** Seconds from `T` until a blink starts or, during one, ends. */
+export function nextBlink(T: number): number {
+  const k = Math.floor(T / BLINK_WINDOW_S);
+  const at = blinkAt(k);
+  if (T < at) return at - T;
+  if (T < at + BLINK_S) return at + BLINK_S - T;
+  return blinkAt(k + 1) - T;
 }
 
-/** Grazing: at these wander stops he lowers his head and nibbles for a few seconds. */
-export const GRAZE_STOPS: readonly number[] = [2, 6];
+/**
+ * How long he can rest while he stands, seconds: 0 when something moves on every frame (a walk, a
+ * reaction, drifting notes or z's, the firefly, the beat), else the time until the next planned
+ * change of what is drawn (the end of a stand, a graze nibble, sitting down or standing up, a
+ * yawn ending, a blink), or Infinity when nothing is planned. The frame loop sleeps that long on
+ * one timer instead of drawing frames (`Watt.tsx`). `t` is his wander clock, `T` the loop clock;
+ * `playing` is music on (notes drift).
+ */
+export function restFor(walk: Walk, t: number, T: number, night: boolean, playing: boolean, m: Mind): number {
+  if (night || m.lie || m.nap || m.firefly || playing || m.bob > 0) return 0;
+  if (m.react !== null && m.reactT < reactLength(m)) return 0;
+  let next = Infinity;
+  const at = (s: number) => {
+    if (s > 1e-6 && s < next) next = s;
+  };
+  // The wander clock waits while he is held still (his menu open, a carry); nothing on it is due then.
+  if (!holdsStill(m)) {
+    const w = wanderAt(walk, t, scratch);
+    if (w.moving) return 0;
+    const stand = IDLES[w.stop];
+    at(stand - w.into);
+    at(3 - w.into);
+    if (IDLES[w.stop] >= SETTLE_STOP_S) {
+      at(SETTLE_FROM_S - w.into);
+      at(stand - SETTLE_UP_S - w.into);
+    }
+    if (GRAZE_STOPS.includes(w.stop)) {
+      if (w.into < GRAZE_FROM_S) at(GRAZE_FROM_S - w.into);
+      else if (w.into < GRAZE_FROM_S + GRAZE_S) at(Math.min(GRAZE_FROM_S + GRAZE_S, (Math.floor(w.into * NIBBLE_HZ) + 1) / NIBBLE_HZ) - w.into);
+    }
+  }
+  if (m.idleLife) at(nextBlink(T));
+  return next;
+}
+
+/**
+ * The idle life is calm: blink aside, one thing the eye notices every two to three minutes. In
+ * each loop of his wander (about four and a half to five minutes) he grazes at one stop and settles
+ * in at one: the longest stop (40 s). `model.test.ts` holds the cadence.
+ */
+/** Grazing: at this wander stop he lowers his head and nibbles for a few seconds. */
+export const GRAZE_STOPS: readonly number[] = [6];
 export const GRAZE_FROM_S = 5;
 export const GRAZE_S = 6;
 /** Settling in: at stops this long or longer he sits down after a while, and stands up before he walks on. */
-export const SETTLE_STOP_S = 32;
+export const SETTLE_STOP_S = 40;
 export const SETTLE_FROM_S = 6;
 export const SETTLE_UP_S = 3;
+/** How often a graze nibble changes his pose, a second. */
+export const NIBBLE_HZ = 3;
 
 /** He notices the pointer when it is this close to him (design pixels). */
 export const NOTICE_PX = 260;
@@ -309,7 +364,7 @@ export function petFrame(walk: Walk, place: WattPlace, hy: number, night: boolea
     } else if (w && m.idleLife && !m.clover) {
       // The idle life on a long stand: he settles in (sits, and stands up before he walks on) or grazes.
       if (IDLES[w.stop] >= SETTLE_STOP_S && w.into >= SETTLE_FROM_S && w.into < IDLES[w.stop] - SETTLE_UP_S) out.pose = 'sit';
-      else if (GRAZE_STOPS.includes(w.stop) && w.into >= GRAZE_FROM_S && w.into < GRAZE_FROM_S + GRAZE_S) out.pose = Math.floor(w.into * 3) % 3 === 0 ? 'idle' : 'eat';
+      else if (GRAZE_STOPS.includes(w.stop) && w.into >= GRAZE_FROM_S && w.into < GRAZE_FROM_S + GRAZE_S) out.pose = Math.floor(w.into * NIBBLE_HZ) % 3 === 0 ? 'idle' : 'eat';
     }
     // A firefly: he turns to watch it, head up, when he is standing about.
     if (!react && !still && m.firefly && !moving && !m.focus && !m.clover && !m.held && out.pose === 'idle') {

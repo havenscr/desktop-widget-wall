@@ -45,6 +45,8 @@ import {
   cloverBox,
   cloverHitBox,
   markHitBox,
+  GRAZE_STOPS,
+  SETTLE_STOP_S,
   placeMenu,
   MENU_W,
   createBox,
@@ -59,7 +61,7 @@ import {
   type ReactKind,
 } from './petFrame';
 import { POSES, SPRITES, pixelColor, type Pose } from './sprites';
-import { GROUNDS, WATCH_GROUND, groundOf, type Span } from './ground';
+import { GROUNDS, WATCH_GROUND, groundOf, walkAround, type Span } from './ground';
 import type { Walk } from './model';
 
 const at = (h: number, m = 0) => new Date(2026, 10, 11, h, m);
@@ -373,6 +375,21 @@ describe('the ground he can be set down on', () => {
     expect(WATCH_GROUND.length).toBe(1);
     // The concept spots are on the ground.
     for (const place of PLACES) expect(GROUNDS[place].some((sp) => middle(WALKS[place]) >= sp.min && middle(WALKS[place]) <= sp.max)).toBe(true);
+  });
+});
+
+describe('a calm cadence', () => {
+  it('blink aside, one idle behaviour every two to three minutes in each place\'s loop: one graze, one settle', () => {
+    let settles = 0;
+    for (const idle of IDLES) if (idle >= SETTLE_STOP_S) settles++;
+    expect(settles).toBe(1);
+    expect(GRAZE_STOPS.length).toBe(1);
+    for (const place of PLACES) {
+      const walk = walkAround(place, GROUNDS[place], WALKS[place].min + (WALKS[place].max - WALKS[place].min) / 2);
+      const every = loopSeconds(walk) / (settles + GRAZE_STOPS.length);
+      expect(every, place).toBeGreaterThanOrEqual(120);
+      expect(every, place).toBeLessThanOrEqual(180);
+    }
   });
 });
 
