@@ -857,6 +857,11 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
   layout on purpose and must fail; `-- --self-test` runs every such case and passes only
   if each one failed with the FAIL line for the side it broke. jsdom has no layout, so the unit tests cannot check this; CI does
   not run it either.
+- **Review script areas** (`wall/scripts/areas/`): new gallery states and fit-check
+  variants, measurements, rules and deliberate breaks live in one area file. Both scripts
+  discover the files in sorted order and reject duplicate state names, measurement keys,
+  rule keys and break names. Use `-- --area=<name>` with either script to run only one area.
+  See `wall/scripts/areas/README.md` for the complete interface and examples.
 - **Browser time limit** (`wall/scripts/lib/chrome-run.mjs`): the one-shot browser runs of the fit check, `fit:home`
   and `echo-calm` stop after 45 s (90 s for `fit:home`, 240 s for `echo-calm`), kill only the browser they started (its own process group while it runs; afterwards, on Linux, any child left in that group, by its own pid), remove its temporary folder and try again, three tries in all; `WALL_CHROME_LIMIT_MS` replaces the limit of every one of them, those two included. The
   gallery restarts its browser once for a state that timed out and retries the states that were waiting on it. `npm --prefix wall run chrome-run-test` proves it (Linux; set `WALL_CHROME` to add a real page).
@@ -1429,6 +1434,11 @@ Watt is also a small pet ("he"), calm and silent (no sound at all):
   the face on the front and back views, which show no flank. A unit test checks, for every pose,
   that all 14 of its pixels are on wool and not under the headphones, scarf, sunglasses, nightcap
   or book. The little plus that glitters after a happy click (`SPARKLE`) is a separate sprite.
+  With the headphones on, the cup and the band are drawn over the bow and the bow sits further
+  back on his head (`BOW_WITH_HEADPHONES`: three pixels back, five back and one down on the raised
+  head), so all of it shows; alone it is where it always was. The review states and rules for all of
+  this are one area file, `scripts/areas/watt-wear.mjs` (the `Watt wears` gallery states, the
+  `watt wear` fit-check rules and their `watt-star`, `watt-star-menu`, `watt-cup` and `watt-bow` breaks).
 - **Stored locally** (`localStorage` key `wall2.watt`, `buddy/pet.ts`): how chatty he is, the
   cosmetic, days together, today's counts, his Stay and his spot on each place (each spot is
   kept only when it is a known place and an x on the stage). His click area, mark and clover sit above the

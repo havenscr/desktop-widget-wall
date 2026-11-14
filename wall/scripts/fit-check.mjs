@@ -28,12 +28,11 @@
 // the player and the clock, in one place on Listen and on Watch with nothing on.
 // On Air: the three columns inside their planned boxes above the strip, no note cut without "+N more",
 // and the recording key tiles at least 40 px.
-// Watt wear: with the star chosen it is drawn in every state he can be in (standing, his menu open, asleep, lying down,
-// seated at the drive-in, with the headphones, with a scarf), inside his sprite's box; a headphone cup that is drawn sits on his head.
 // CI does not run this; run it by hand before a layout change is handed over.
 //
 //   WALL_CHROME=/path/to/chrome-or-headless-shell npm --prefix wall run fit-check
-//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, card-end, header, deck, tiles, picker, chips, heading, zenhint, strip, fold, drawer, rows, handle, sky, floor, sun, tools, toolsnames, yt-clip, yt-text, yt-control, yt-row, yt-actions, meetfill, meetempty, fy-height, key-edge, hide-pill, hide-note, leave-band, rec-chip, rec-height, tile-height, tile-icon, tile-iconbox, drawer-scrim, lwbuttons, lwoverlap, lwsquare, lwring, lwtemp, lwround, sky-front, sky-moon, sky-always, sky-crop, sky-seam, sky-soft, sky-foot, tower-over, tower-wide, tower-box, tower-switch, holo-big, holo-noblend, holo-beam, holo-take, tile-text, listen-player, listen-card, listen-slot, listen-next, lines-size, lines-control, lines-text, lines-clip, watch-rest, watch-title, watch-away, watch-mark, lip-cover, lip-band, lip-scrim, row-parts, over-hatch, row-type, onair-box, onair-notes, onair-keys, onair-watt, watt-seat, watt-spot, watt-tower, watt-ground, watt-star, watt-star-menu, watt-cup)
+//   npm --prefix wall run fit-check -- --overflow=right
+//   npm --prefix wall run fit-check -- --list-breaks
 //   npm --prefix wall run fit-check -- --self-test
 //
 // WALL_CHROME (or the first argument that is not a flag) is a Chromium or
@@ -48,12 +47,26 @@ import { inflateSync } from 'node:zlib';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { ChromeRunError, onCleanup, runChrome } from './lib/chrome-run.mjs';
+import { loadAreasOrExit, validateFitReferences, validateRegistrations } from './areas/load.mjs';
 
 // The whole sky's picture box in wall pixels (LOOK_BOXES.sky in looks.ts, which fit-check compares with the drawn one).
 const LOOK_BOX_SKY = { x: 1106, y: 16, w: 889, h: 500 };
 
 const args = process.argv.slice(2);
 const flag = (name) => args.find((a) => a === `--${name}` || a.startsWith(`--${name}=`));
+const areaFlag = flag('area');
+const areaName = areaFlag === undefined ? undefined : areaFlag.includes('=') ? areaFlag.slice(areaFlag.indexOf('=') + 1) : '';
+const areas = await loadAreasOrExit(areaName);
+const activeAreas = areaName ? areas.filter((area) => area.name === areaName) : areas;
+if (flag('area')) {
+  const selectedArea = areas.find((area) => area.name === areaName);
+  for (const [kind, count] of [['variants', selectedArea?.fit?.variants?.length ?? 0], ['rules', Object.keys(selectedArea?.fit?.rules ?? {}).length], ['breaks', Object.keys(selectedArea?.fit?.breaks ?? {}).length]]) {
+    if (count === 0) {
+      console.error(`fit-check: area "${areaName}" has zero ${kind}`);
+      process.exit(2);
+    }
+  }
+}
 const chrome = args.find((a) => !a.startsWith('--')) || process.env.WALL_CHROME;
 if (!chrome) {
   console.error('fit-check: set WALL_CHROME (or pass the path) to a Chromium or chrome-headless-shell binary.');
@@ -159,10 +172,6 @@ const EXPECT = {
   'watt-spot': /^ *FAIL watt drive-in: Watt .* is not within 40 px of his seat/m,
   'watt-tower': /^ *FAIL watt drive-in: Watt .* px into the tower, not 24 or less/m,
   'watt-ground': /^ *FAIL watt drive-in: Watt .* is not on his ground/m,
-  // watt wear
-  'watt-star': /^ *FAIL watt wear: the star at .* is not inside his sprite/m,
-  'watt-star-menu': /^ *FAIL watt wear: the star is not drawn while his menu is open/m,
-  'watt-cup': /^ *FAIL watt wear: the headphones at .* are not on his head/m,
   // tower and hologram
   'tower-over': /^ *FAIL tower and hologram: .* paints over the picture/m,
   'tower-wide': /^ *FAIL tower and hologram: the tower .* overlaps /m,
@@ -186,11 +195,6 @@ const EXPECT = {
   'sky-seam': /^ *FAIL sky layers: the pixel proof at \w+: \d+ pixels differ by more than 2 levels/m,
   'sky-soft': /^ *FAIL whole sky soft edge: /m,
   'sky-foot': /^ *FAIL whole sky soft edge: /m,
-  // on air
-  'onair-box': /^ *FAIL on air: \.oa-card .*outside its planned box/m,
-  'onair-notes': /^ *FAIL on air: the notes are cut /m,
-  'onair-keys': /^ *FAIL on air: key tile ".*" is \d+ x \d+ px/m,
-  'onair-watt': /^ *FAIL on air: Watt .* overlaps /m,
   // lines controls
   'lines-size': /^ *FAIL lines: the sheet is \d+ px tall/m,
   'lines-control': /^ *FAIL lines: control ".*" is [\d.]+ px tall/m,
@@ -307,10 +311,6 @@ const OVERFLOWS = {
   // watt drive-in: his seat moved to the screen's centre; his seat lifted 100 px off the ground.
   'watt-seat': '.watt-sheep { translate: 1000px 0 !important; }',
   'watt-ground': '.watt-sheep { translate: 0 -100px !important; }',
-  // watt wear: the star moved 300 px off him; the star hidden while his menu is open; the cup lifted 200 px off his head.
-  'watt-star': '.watt-prop-star { translate: 300px 0 !important; }',
-  'watt-star-menu': '.watt-prop-star { display: none !important; }',
-  'watt-cup': '.watt-prop-headphones { translate: 0 -200px !important; }',
   // his seat 80 px too far left (30 px clear of the screen still holds); 20 px nearer the screen (into the tower's foot).
   'watt-spot': '.watt-sheep { translate: -80px 0 !important; }',
   // his left edge 12 px off the chosen 1106 (30 px from the screen at 1244 with his 108 px width), still within the 40 px of his seat.
@@ -350,12 +350,6 @@ const OVERFLOWS = {
   'sky-soft': '.w-sky .w-screen { -webkit-mask-image: none !important; mask-image: none !important; }',
   // Keeps the production side ramp exactly and replaces only the top ramp with one that also fades the foot (an extra stop near 100 percent).
   'sky-foot': `.w-sky .w-screen { -webkit-mask-image: ${SKY_SIDE_RAMP}, ${SKY_TOP_RAMP_FOOT} !important; mask-image: ${SKY_SIDE_RAMP}, ${SKY_TOP_RAMP_FOOT} !important; }`,
-  // on air: the notes card 1400 px wide; every note shown at 40 px (none behind "+N more"); 20 px key tiles.
-  'onair-box': '.onair .oa-card { width: 1400px !important; }',
-  'onair-notes': '.onair .oa-note { font-size: 40px !important; } .onair .oa-note[hidden] { display: flex !important; }',
-  'onair-keys': '.onair .oa-keys .deck-tile.key-tile { height: 20px !important; min-height: 0 !important; padding: 0 !important; }',
-  // on air: Watt lifted onto the notes card
-  'onair-watt': '.watt-sheep, .watt-hit { margin-top: -300px !important; }',
   // lines controls: a 900 px panel, a 24 px chip, a 12 px label, the clip removed (a URL knob, LINES_BREAK_Q).
   'lines-size': '.ln-panel { height: 900px !important; }',
   'lines-control': '.ln-chips button { height: 24px !important; }',
@@ -364,30 +358,32 @@ const OVERFLOWS = {
   'spotify-copy': '.sp-note { width: 80px !important; overflow: hidden !important; white-space: nowrap !important; }',
   'account-copy': '.tools-note { width: 80px !important; overflow: hidden !important; white-space: nowrap !important; }',
 };
-// sky layers: breaks that need the horizon's development knobs in the URL, not a stylesheet.
-const SKY_BREAK_Q = { 'sky-moon': '&skymoon=300,200,44', 'sky-always': '&sky=front' };
-// lines controls: the clip around the picture boxes left out (a development knob of the horizon).
-const LINES_BREAK_Q = { 'lines-clip': '&lclip=0' };
-if (flag('self-test')) {
-  const script = fileURLToPath(import.meta.url);
-  let missed = 0;
-  for (const side of Object.keys(OVERFLOWS)) {
-    const r = spawnSync(process.execPath, [script, chrome, `--overflow=${side}`], { encoding: 'utf8' });
-    // Caught only when the run failed and reported the side that was broken; a non-zero exit
-    // for any other reason (a crash, a page that did not render) does not count.
-    const line = EXPECT[side].exec(r.stdout ?? '');
-    const caught = r.status === 1 && line !== null;
-    if (!caught) missed += 1;
-    const full = line ? r.stdout.slice(line.index).split('\n')[0].trim() : 'no FAIL line for this side';
-    console.log(`${caught ? 'ok  ' : 'MISS'} --overflow=${side}: exit ${r.status}; ${full}`);
-  }
-  console.log(missed === 0 ? 'self-test: every deliberate overflow failed the check' : `self-test: ${missed} overflow(s) not caught`);
-  process.exit(missed === 0 ? 0 : 1);
+const AREA_BREAKS = Object.assign({}, ...activeAreas.map((area) => area.fit?.breaks ?? {}));
+try {
+  validateRegistrations(areas, {
+    'measurement key': ['res', 'page', 'overlaps', 'cut', 'gaps', 'wattCard', 'header', 'deck', 'deckRoom', 'nowH', 'edges', 'hide', 'hits', 'grid', 'lw', 'sig', 'toolsOut', 'copyOut', 'meetOut', 'strip', 'opened', 'watchPolish', 'skyLayers', 'thCheck', 'tileText', 'listen', 'lines', 'watchBehaviour', 'wattDriveIn'],
+    'rule key': ['wattDriveIn', 'watchBehaviour', 'skyLayers', 'watchPolish', 'thCheck', 'tileText', 'listen', 'lines', 'toolsOut', 'copyOut', 'meetOut', 'strip', 'deck', 'header', 'res', 'page'],
+    'break name': Object.keys(EXPECT),
+  });
+} catch (error) {
+  console.error(`areas: ${error.message}`);
+  process.exit(2);
 }
+for (const [name, entry] of Object.entries(AREA_BREAKS)) {
+  EXPECT[name] = entry.expect;
+  if (entry.css !== undefined) OVERFLOWS[name] = entry.css;
+}
+// Breaks may change the page query instead of, or as well as, injecting CSS.
+const BREAK_QUERIES = {
+  'sky-moon': '&skymoon=300,200,44',
+  'sky-always': '&sky=front',
+  'lines-clip': '&lclip=0',
+  ...Object.fromEntries(Object.entries(AREA_BREAKS).filter(([, entry]) => entry.query !== undefined).map(([name, entry]) => [name, entry.query])),
+};
 
 const overflow = flag('overflow')?.split('=')[1];
-if (overflow !== undefined && !(overflow in OVERFLOWS)) {
-  console.error(`fit-check: --overflow takes one of ${Object.keys(OVERFLOWS).join(', ')}`);
+if (overflow !== undefined && !(overflow in EXPECT)) {
+  console.error(`fit-check: --overflow takes one of ${Object.keys(EXPECT).join(', ')}`);
   process.exit(2);
 }
 
@@ -705,16 +701,6 @@ const VARIANTS = [
   { name: 'Watt menu on Work', q: work('3', '&meet=none'), checks: ['.watt-menu'], viewportOnly: true, card: true },
   { name: 'Watt menu on Home', q: home('moods=five'), checks: ['.watt-menu'], viewportOnly: true, card: true },
   { name: 'Watt menu on Unwind', q: query({ hz: 'unwind', agents: '3', extra: '' }), checks: ['.watt-menu'], viewportOnly: true, card: true },
-  // watt wear: the star he wears is drawn in every state he can be in (standing, his menu open and he looks up, asleep at
-  // night, lying down for a nap, seated at the drive-in, with the headphones, with a scarf), inside his sprite's box; a cup
-  // that is drawn sits on his head. (The cape and the star are both cosmetics: never worn together.)
-  { name: 'Watt wears the star, standing', q: query({ hz: 'unwind', agents: '3', extra: '&wattwear=star' }), checks: ['.watt-sheep > svg'], viewportOnly: true },
-  { name: 'Watt wears the star, menu open', q: query({ hz: 'unwind', agents: '3', extra: '&wattwear=star' }), checks: ['.watt-menu'], viewportOnly: true, card: true },
-  { name: 'Watt wears the star, asleep at night', q: query({ hz: 'unwind', agents: '3', at: '2026-11-11T22:30:00-08:00', extra: '&wattwear=star' }), checks: ['.watt-sheep > svg'], viewportOnly: true },
-  { name: 'Watt wears the star, lying down for a nap', q: query({ hz: 'unwind', agents: '3', extra: '&wattwear=star&meet=none' }), click: 'ctx:.watt-hit >> .watt-menu .wm-it:nth-child(3)', checks: ['.watt-sheep > svg'], viewportOnly: true },
-  { name: 'Watt wears the star, seated at the drive-in', q: query({ hz: 'unwind', agents: '3', at: '2026-11-11T22:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=drivein&wplay=0&wattwear=star' }), checks: ['.watt-sheep > svg'], viewportOnly: true },
-  { name: 'Watt wears the star and the headphones', q: query({ hz: 'unwind', agents: '3', extra: '&wattwear=star&audio=demo' }), checks: ['.watt-sheep > svg'], viewportOnly: true },
-  { name: 'Watt wears the star and a scarf', q: query({ hz: 'unwind', agents: '3', extra: '&wattwear=star&weather=cold' }), checks: ['.watt-sheep > svg'], viewportOnly: true },
   // home round two: the shield card (quiet, open alerts, its drawer), the house line, mood
   // pages and Sound's now-playing strip stay inside the band. Its own rules (five chores and
   // three with alerts, the drawer, the house area, mood card widths) are in home-fit-check.mjs.
@@ -742,22 +728,42 @@ VARIANTS.push(
   { name: 'Strip: the Day drawer, twelve busy, long titles', q: work('12busy', '&meet=overlap'), click: '.rib-handle', checks: ['.day-drawer', '.day-drawer .dd-rows'], strip: true, viewportOnly: true },
   { name: 'Strip: Agents today over the limit', q: work('12busy', '&days=typical'), click: '.rib .ag-line', checks: ['.agents-today', '.agents-today .at-head', '.agents-today .at-busy'], strip: true, viewportOnly: true },
 );
-// On Air: the three columns in their planned boxes above the strip in every state, the notes
-// card with long notes (the rest behind "+N more"), forty parts, no file, a refused file and a full marks file.
-const onAirQ = (knobs) => `?hz=onair&at=${encodeURIComponent('2026-11-11T10:24:00-08:00')}&clock=review&weather=ok&screen=onair&${knobs}`;
-const ONAIR = ['.onair .oa-left', '.onair .oa-card', '.onair .oa-right', '.onair .oa-card-foot', '.onair .oa-mark'];
-VARIANTS.push(
-  { name: 'On Air, typical: running at 42:13', q: onAirQ('show=typical&marks=2&oatimer=run'), checks: ONAIR, onair: true },
-  { name: 'On Air, long names and twelve long notes', q: onAirQ('show=long&marks=2&oatimer=run'), checks: ONAIR, onair: true },
-  { name: 'On Air, forty parts', q: onAirQ('show=forty&marks=2&oatimer=run'), checks: ONAIR, onair: true },
-  { name: 'On Air, no run-of-show.txt yet', q: onAirQ('show=missing&marks=0&oatimer=idle'), checks: ONAIR, onair: true },
-  { name: 'On Air, a refused file', q: onAirQ('show=refused&marks=0&oatimer=idle'), checks: ONAIR, onair: true },
-  { name: 'On Air, Watt standing under the notes card', q: onAirQ('show=typical&marks=2&oatimer=run&wattspot=1000'), checks: ONAIR, onair: true },
-  { name: 'On Air, Watt set down at the far left', q: onAirQ('show=typical&marks=2&oatimer=run&wattspot=200'), checks: ONAIR, onair: true },
-  { name: 'On Air, Watt set down at the far right', q: onAirQ('show=typical&marks=2&oatimer=run&wattspot=2300'), checks: ONAIR, onair: true },
-  { name: 'On Air, the timer stopped itself at 24 hours', q: onAirQ('show=typical&marks=2&oatimer=limit'), checks: ONAIR, onair: true },
-  { name: 'On Air, marks.txt full after a click, recording', q: onAirQ('show=typical&marks=full&oatimer=run&rec=1'), checks: ONAIR, onair: true, click: '.oa-mark-btn' },
-);
+const allAreaVariants = areas.flatMap((area) => area.fit?.variants ?? []);
+const validationVariants = [...VARIANTS, ...allAreaVariants];
+const areaVariants = activeAreas.flatMap((area) => area.fit?.variants ?? []);
+const builtInVariantNames = VARIANTS.map((variant) => variant.name);
+if (flag('area')) VARIANTS.splice(0, VARIANTS.length, ...areaVariants);
+else VARIANTS.push(...areaVariants);
+try {
+  validateRegistrations(areas, { 'variant name': builtInVariantNames });
+  validateFitReferences(areas, validationVariants);
+} catch (error) {
+  console.error(`areas: ${error.message}`);
+  process.exit(2);
+}
+if (flag('list-breaks')) {
+  console.log(Object.keys(EXPECT).join('\n'));
+  process.exit(0);
+}
+if (flag('self-test')) {
+  const script = fileURLToPath(import.meta.url);
+  let missed = 0;
+  const breakNames = flag('area') ? Object.keys(AREA_BREAKS) : Object.keys(EXPECT);
+  for (const side of breakNames) {
+    const childArgs = [script, chrome, `--overflow=${side}`];
+    if (flag('area')) childArgs.push(flag('area'));
+    const r = spawnSync(process.execPath, childArgs, { encoding: 'utf8' });
+    // Caught only when the run failed and reported the side that was broken; a non-zero exit
+    // for any other reason (a crash, a page that did not render) does not count.
+    const line = EXPECT[side].exec(r.stdout ?? '');
+    const caught = r.status === 1 && line !== null;
+    if (!caught) missed += 1;
+    const full = line ? r.stdout.slice(line.index).split('\n')[0].trim() : 'no FAIL line for this side';
+    console.log(`${caught ? 'ok  ' : 'MISS'} --overflow=${side}: exit ${r.status}; ${full}`);
+  }
+  console.log(missed === 0 ? 'self-test: every deliberate overflow failed the check' : `self-test: ${missed} overflow(s) not caught`);
+  process.exit(missed === 0 ? 0 : 1);
+}
 // keys style: a small PNG reader (8-bit RGB or RGBA, not interlaced, as Chromium writes them) and contrast.
 function readPng(file) {
   const buf = readFileSync(file);
@@ -1602,36 +1608,6 @@ try {
       if (into > 24) fails.push('watt drive-in: Watt at ' + at + ' stands ' + Math.round(into) + ' px into the tower, not 24 or less');
       return { at, fails };
     })();
-    // watt wear: with the star chosen (?wattwear=star) it is drawn whatever he is doing (his menu open included), and
-    // every pixel of it lies inside his sprite's box (it never rises above him or hangs off him); a headphone cup
-    // that is drawn sits on his head: inside his sprite's box but for the two sprite rows the band may rise above it.
-    const wattWear = (() => {
-      const wantStar = new URLSearchParams(location.search).get('wattwear') === 'star';
-      const sheep = document.querySelector('.watt-sheep > svg');
-      const cup = document.querySelector('.watt-prop-headphones > svg');
-      if (!wantStar && !cup) return null;
-      const fails = [];
-      if (!sheep) return { fails: ['watt wear: Watt is not on the page'] };
-      const me = sheep.getBoundingClientRect();
-      const inside = (r, up) => r.left >= me.left - 0.5 && r.right <= me.right + 0.5 && r.top >= me.top - up - 0.5 && r.bottom <= me.bottom + 0.5;
-      const menu = !!document.querySelector('.watt-menu');
-      const at = (r) => Math.round(r.left) + ',' + Math.round(r.top) + ' to ' + Math.round(r.right) + ',' + Math.round(r.bottom);
-      let star = null;
-      if (wantStar) {
-        const el = document.querySelector('.watt-prop-star > svg');
-        const r = el && el.getBoundingClientRect();
-        if (!r || r.width < 1) fails.push('watt wear: the star is not drawn' + (menu ? ' while his menu is open' : ''));
-        else {
-          star = at(r);
-          if (!inside(r, 0)) fails.push('watt wear: the star at ' + at(r) + ' is not inside his sprite at ' + at(me));
-        }
-      }
-      if (cup) {
-        const r = cup.getBoundingClientRect();
-        if (!inside(r, 2 * (r.width / 5))) fails.push('watt wear: the headphones at ' + at(r) + ' are not on his head at ' + at(me));
-      }
-      return { fails, star, cup: !!cup, menu };
-    })();
         // sky layers: a front canvas exactly when a look sits behind the land; with one, it is shown,
     // covers the stage, comes after the video in the same stage, is opaque on the lake under the
     // video and clear (but for the grain) at the top of the sky; with \`skycheck=moon\` the moon is drawn and its disc is
@@ -1874,68 +1850,18 @@ try {
       }
       return fails;
     })();
-    // On Air: each column inside its planned box (stage x) between the top of the band and the strip,
-    // no note of the notes card cut without a "+N more" line that counts the hidden ones, key tiles at least 40 px.
-    const onair = (() => {
-      const fails = [];
-      const want = new URLSearchParams(location.search).get('screen') === 'onair';
-      if (!document.querySelector('.onair')) return want ? ['on air: the place did not open'] : [];
-      const rib = document.querySelector('.rib');
-      const floor = Math.min(510, rib ? rib.getBoundingClientRect().top : 720);
-      const r1 = (n) => Math.round(n * 10) / 10;
-      for (const [sel, l, r, parts] of [['.oa-left', 124, 764, '.oa-timer, .oa-runbox, .oa-run, .oa-file, .oa-empty'], ['.oa-card', 800, 1880, '.oa-k, .oa-notes, .oa-help, .oa-nonotes, .oa-card-foot, .oa-card-foot > *'], ['.oa-right', 1920, 2540, '.oa-mark, .oa-keys, .oa-keys > *, .oa-foot, .oa-k, .oa-k-brief']]) {
-        const col = document.querySelector('.onair ' + sel);
-        if (!col) { fails.push('on air: ' + sel + ' is missing'); continue; }
-        for (const e of [col, ...col.querySelectorAll(parts)]) {
-          const b = e.getBoundingClientRect();
-          if (b.width === 0 && b.height === 0) continue;
-          if (b.left < l - 0.5 || b.right > r + 0.5 || b.top < 20 - 0.5 || b.bottom > floor + 0.5) {
-            fails.push('on air: ' + sel + (e === col ? '' : ' ' + (e.className || e.tagName)) + ' at x ' + r1(b.left) + ' to ' + r1(b.right) + ', y ' + r1(b.top) + ' to ' + r1(b.bottom) + ' is outside its planned box (x ' + l + ' to ' + r + ', y 20 to ' + r1(floor) + ')');
-            break;
-          }
-        }
-      }
-      const list = document.querySelector('.onair .oa-notes');
-      if (list) {
-        const lb = list.getBoundingClientRect();
-        const notes = [...list.querySelectorAll(':scope > .oa-note')];
-        const hidden = notes.filter((n) => getComputedStyle(n).display === 'none').length;
-        const cutNote = notes.findIndex((n) => getComputedStyle(n).display !== 'none' && n.getBoundingClientRect().bottom > lb.bottom + 0.5);
-        const more = list.querySelector(':scope > .oa-more');
-        const moreShown = more && getComputedStyle(more).display !== 'none' ? (more.textContent || '').trim() : '';
-        if (list.scrollHeight > list.clientHeight + 0.5 || cutNote >= 0) fails.push('on air: the notes are cut (' + (cutNote >= 0 ? 'note ' + (cutNote + 1) + ' of ' + notes.length + ' ends below the card' : 'the list is ' + list.scrollHeight + ' px for ' + list.clientHeight) + ', ' + hidden + ' behind "+N more")');
-        else if (hidden > 0 && moreShown !== '+' + hidden + ' more') fails.push('on air: the notes are cut: ' + hidden + ' hidden but the more line reads "' + moreShown + '"');
-        else if (hidden === 0 && moreShown !== '') fails.push('on air: the more line reads "' + moreShown + '" with no note hidden');
-      }
-      // Watt stands on the ground line below the columns: his box (and his click box) overlaps none of them.
-      const wattBoxes = [['Watt', '.watt-sheep'], ['Watt click box', '.watt-hit']];
-      for (const [label, sel] of wattBoxes) {
-        const w = document.querySelector(sel);
-        if (!w) { if (sel === '.watt-hit' && want) fails.push('on air: Watt is not on the page'); continue; }
-        const wb = w.getBoundingClientRect();
-        if (wb.width === 0 && wb.height === 0) continue;
-        for (const csel of ['.oa-left', '.oa-card', '.oa-right']) {
-          const cb = document.querySelector('.onair ' + csel)?.getBoundingClientRect();
-          if (cb && wb.left < cb.right && cb.left < wb.right && wb.top < cb.bottom && cb.top < wb.bottom) fails.push('on air: ' + label + ' at x ' + r1(wb.left) + ' to ' + r1(wb.right) + ', y ' + r1(wb.top) + ' to ' + r1(wb.bottom) + ' overlaps ' + csel + ' (y ' + r1(cb.top) + ' to ' + r1(cb.bottom) + ')');
-        }
-      }
-      const tiles = [...document.querySelectorAll('.onair .oa-keys .key-tile')];
-      if (tiles.length !== 4) fails.push('on air: ' + tiles.length + ' recording keys, expected 4');
-      for (const t of tiles) {
-        const b = t.getBoundingClientRect();
-        if (b.height < 40 - 0.5 || b.width < 40 - 0.5) fails.push('on air: key tile "' + t.getAttribute('aria-label') + '" is ' + Math.round(b.width) + ' x ' + Math.round(b.height) + ' px (at least 40 by 40)');
-      }
-      return fails;
-    })();
-    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, cardEnds, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, copyOut, meetOut, strip, opened, watchPolish, skyLayers, thCheck, tileText, listen, lines, watchBehaviour, onair, wattDriveIn, wattWear });
+    const areaResults = Object.fromEntries(Object.entries(globalThis.__areaMeasurements ?? {}).map(([key, fn]) => [key, fn()]));
+    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, cardEnds, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, copyOut, meetOut, strip, opened, watchPolish, skyLayers, thCheck, tileText, listen, lines, watchBehaviour, wattDriveIn, areaResults });
     document.body.appendChild(pre);
   }, new URLSearchParams(location.search).get('card') ? 7000 : 3000);</script>`;
-  const broken = overflow ? `<style>${OVERFLOWS[overflow]}</style>` : '';
+  const areaMeasurements = Object.assign({}, ...activeAreas.map((area) => area.fit?.measurements ?? {}));
+  const areaMeasurementScript = `<script>globalThis.__areaMeasurements = {${Object.entries(areaMeasurements).map(([key, fn]) => `${JSON.stringify(key)}: ${fn.toString()}`).join(',')}};</script>`;
+  const broken = overflow && OVERFLOWS[overflow] ? `<style>${OVERFLOWS[overflow]}</style>` : '';
   const page = join(out, 'work.html');
-  writeFileSync(page, html.replace('</body>', `${broken}${measure}</body>`));
+  writeFileSync(page, html.replace('</body>', `${broken}${areaMeasurementScript}${measure}</body>`));
 
   let failed = false;
-  if (overflow) console.log(`deliberate overflow: ${overflow} (${OVERFLOWS[overflow]})`);
+  if (overflow) console.log(`deliberate overflow: ${overflow} (${OVERFLOWS[overflow] || BREAK_QUERIES[overflow]})`);
   // A deliberate break runs on the first state, or for the picker on the state that opens it.
   const BREAK_ON = {
     'card-end': (v) => v.name === 'Card ends: helpers working',
@@ -2033,21 +1959,13 @@ try {
     'sky-crop': (v) => v.name === 'Sky layers, whole sky at night',
     'sky-soft': (v) => v.name === 'Sky layers, whole sky at night',
     'sky-foot': (v) => v.name === 'Sky layers, whole sky at night',
-    // on air
-    'onair-box': (v) => v.name === 'On Air, typical: running at 42:13',
-    'onair-notes': (v) => v.name === 'On Air, long names and twelve long notes',
-    'onair-keys': (v) => v.name === 'On Air, typical: running at 42:13',
-    'onair-watt': (v) => v.name === 'On Air, Watt standing under the notes card',
-    // watt wear
-    'watt-star': (v) => v.name === 'Watt wears the star, standing',
-    'watt-star-menu': (v) => v.name === 'Watt wears the star, menu open',
-    'watt-cup': (v) => v.name === 'Watt wears the star and the headphones',
     // lines controls
     'lines-size': (v) => v.name === 'Lines settings sheet',
     'lines-control': (v) => v.name === 'Lines settings sheet',
     'lines-text': (v) => v.name === 'Lines settings sheet',
     'lines-clip': (v) => v.name === 'Lines, bars under the drive-in',
   };
+  for (const [name, entry] of Object.entries(AREA_BREAKS)) BREAK_ON[name] = entry.appliesTo;
   const breakOn = BREAK_ON[overflow] ? VARIANTS.filter(BREAK_ON[overflow]) : VARIANTS.slice(0, 1);
   /** keys style: the Now row's height on each page that has one, compared after every state ran. */
   const nowHeights = [];
@@ -2057,7 +1975,8 @@ try {
   const skyMoons = [];
   for (const v of overflow ? breakOn : VARIANTS) {
     console.log(`${v.name} (${v.q}):`);
-    const url = `${pathToFileURL(page).href}${v.q}${v.sky ? `&skycheck=${v.sky}` : ''}${overflow && SKY_BREAK_Q[overflow] ? SKY_BREAK_Q[overflow] : ''}${overflow && LINES_BREAK_Q[overflow] ? LINES_BREAK_Q[overflow] : ''}&checks=${encodeURIComponent(v.checks.join('|'))}${v.click ? `&click=${encodeURIComponent(v.click)}` : ''}${v.card ? '&card=1' : ''}${v.hits ? `&hits=${encodeURIComponent(v.hits.join('|'))}` : ''}${v.noHit ? `&nohit=${encodeURIComponent(v.noHit)}` : ''}${v.listen ? '&listen=1' : ''}${v.linesSheet ? '&linescheck=1' : ''}${v.th ? `&th=${v.th}` : ''}${v.wb ? `&wbcheck=${v.wb}` : ''}`;
+    const breakQuery = overflow && BREAK_QUERIES[overflow] ? (typeof BREAK_QUERIES[overflow] === 'function' ? BREAK_QUERIES[overflow](v) : BREAK_QUERIES[overflow]) : '';
+    const url = `${pathToFileURL(page).href}${v.q}${v.sky ? `&skycheck=${v.sky}` : ''}${breakQuery}&checks=${encodeURIComponent(v.checks.join('|'))}${v.click ? `&click=${encodeURIComponent(v.click)}` : ''}${v.card ? '&card=1' : ''}${v.hits ? `&hits=${encodeURIComponent(v.hits.join('|'))}` : ''}${v.noHit ? `&nohit=${encodeURIComponent(v.noHit)}` : ''}${v.listen ? '&listen=1' : ''}${v.linesSheet ? '&linescheck=1' : ''}${v.th ? `&th=${v.th}` : ''}${v.wb ? `&wbcheck=${v.wb}` : ''}`;
     const dom = await runChrome(
       chrome,
       // Headless Chromium keeps 87 px of the window for itself, so 807 gives a 2560 by 720 viewport.
@@ -2070,7 +1989,7 @@ try {
       process.exit(1);
     }
     const text = m[1].replaceAll('&quot;', '"').replaceAll('&amp;', '&');
-    const { res, page: doc, overlaps, cut, gaps, cardEnds, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, copyOut, meetOut, strip, opened, watchPolish, skyLayers, thCheck, tileText, listen, lines, watchBehaviour, onair, wattDriveIn, wattWear } = JSON.parse(text);
+    const { res, page: doc, overlaps, cut, gaps, cardEnds, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, copyOut, meetOut, strip, opened, watchPolish, skyLayers, thCheck, tileText, listen, lines, watchBehaviour, wattDriveIn, areaResults } = JSON.parse(text);
     // watt drive-in
     if (wattDriveIn) {
       for (const f of wattDriveIn.fails) console.log(`  FAIL ${f}`);
@@ -2078,16 +1997,11 @@ try {
       else if (wattDriveIn.waiting) console.log('  ok   watt drive-in: the marquee is waiting, Watt is not at the show');
       else console.log(`  ok   watt drive-in: seated at ${wattDriveIn.at}, on his ground, 30 px or more left of the screen, 22 px or more from every control at his height, near his seat, 24 px or less into the tower`);
     }
-    // watt wear
-    if (wattWear) {
-      for (const f of wattWear.fails) console.log(`  FAIL ${f}`);
-      if (wattWear.fails.length) failed = true;
-      else console.log(`  ok   watt wear:${wattWear.star ? ` the star at ${wattWear.star} inside his sprite${wattWear.menu ? ', with his menu open' : ''}` : ''}${wattWear.cup ? ' the headphones on his head' : ''}`);
+    for (const area of activeAreas) {
+      for (const rule of Object.values(area.fit?.rules ?? {})) {
+        if (rule(v, areaResults, console.log)) failed = true;
+      }
     }
-    // on air
-    for (const f of onair) console.log(`  FAIL ${f}`);
-    if (onair.length) failed = true;
-    else if (v.onair) console.log('  ok   on air: three columns inside their planned boxes above the strip, no note cut without "+N more", key tiles at least 40 px');
     // watch behaviour
     for (const f of watchBehaviour) console.log(`  FAIL ${f}`);
     if (watchBehaviour.length) failed = true;
@@ -2102,7 +2016,7 @@ try {
     // The moon the rule gives for this layout (the first clear one of cameras.ts MOON_PLACES): on Listen in
     // every player state the low place under the player, on Watch with nothing on its first place. Not with a
     // break that moves the moon on purpose (that one must fail on its distance alone).
-    if (v.moonAt && !(overflow && SKY_BREAK_Q[overflow]) && skyLayers.moon !== v.moonAt) {
+    if (v.moonAt && !(overflow && BREAK_QUERIES[overflow]) && skyLayers.moon !== v.moonAt) {
       failed = true;
       console.log(`  FAIL sky layers: the moon is at ${skyLayers.moon || 'no place'}, expected ${v.moonAt} (the first place clear of this layout)`);
     }
