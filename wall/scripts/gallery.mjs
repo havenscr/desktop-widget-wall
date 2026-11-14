@@ -181,6 +181,8 @@ state('home', 'Watt: set down left of the moods', 'wattspot=400');
 state('meet', 'Watt: set down under Accounts', 'wattspot=2200');
 state('unwind', 'Watt: set down past the transport row', 'wattspot=1700');
 state('unwind', 'Watt: set down left by the clock', 'wattspot=180');
+// The leave banner in Home's band above the ribbon: he steps aside to the free ground.
+add('home', 'Watt: leave banner, he steps aside', url('home', TYPICAL_AT, 'leave=12'), true);
 // While the wall records he sits quietly where he is (the recording chip says why).
 add('work', 'Watt: recording, he sits quietly', url('work', TYPICAL_AT, 'rec=1&meet=none'), true);
 state('unwind', 'Watt: on Watch, kept off the video', 'wattspot=1700&watch=mock&wlist=three&wlook=feather&wplay=0', TIMES.night);
@@ -343,6 +345,7 @@ const EXPECT = [
   ['home', 'Watt: menu open', ['Tricks', 'Stay here', 'Talks']],
   ['unwind', 'Watt: menu open', ['Tricks', 'Together', 'Wears']],
   ['unwind', 'Watt: menu at night', ['Watt is asleep', 'Tricks']],
+  ['home', 'Watt: leave banner, he steps aside', ['Leave in 12 min.']],
   ['work', 'Watt: recording, he sits quietly', ['Now \u00b7 Recording', 'Recording00:']],
   // Work
   ['work', 'sparse', ['Nothing due', 'All slots free']],
