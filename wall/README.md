@@ -1554,6 +1554,7 @@ Create `meet.json` next to `feeds.json` in Wall 2's app config directory (`%APPD
 
 ```json
 {
+  "openIn": "desktop",
   "accounts": [
     { "id": "work", "label": "Work", "clientId": "00000000-0000-0000-0000-000000000000" },
     { "id": "second", "label": "Second", "clientId": "00000000-0000-0000-0000-000000000000", "tenant": "common" }
@@ -1562,6 +1563,7 @@ Create `meet.json` next to `feeds.json` in Wall 2's app config directory (`%APPD
 ```
 
 - At most two accounts. `id` is 1 to 16 characters of `a-z` and `0-9`, unique. `label` is 1 to 16 printable characters. `clientId` is the application (client) ID of an app registration. `tenant` is optional: `common` (default), `organizations`, `consumers` or a tenant GUID.
+- `openIn` is optional. `desktop` is the default and uses classic Outlook when it is usable. `browser` always uses the event's web link. An unknown value keeps the desktop default and is reported in the Tools drawer.
 - A missing file shows "Not set up". A file that fails these rules also shows "Not set up" with a note; the native side reports `invalid-config` and never echoes the file.
 
 ### Sign in and sign out
@@ -1593,11 +1595,15 @@ Join opens only a Teams meeting link: `https` with no user name, password or por
 
 ### Opening an event in Outlook
 
-The day read also selects Graph's `webLink` for each event. It stays in Rust behind the same day key (its own map, cleared with the day keys on every day read and dropped for an account at sign-out); the web view gets only `canOpen: true`. A ribbon chip with `canOpen` is a button: `wall2_open_event(key)` looks the link up, checks it again (`https`, no user name or password, no port other than 443, at most 4096 characters, host exactly `outlook.office.com`, `outlook.office365.com`, `outlook.live.com` or `outlook.cloud.microsoft`) and opens it with the default handler; a key that is not exactly the generated shape (`d`, the generation, `-`, the index; ASCII, at most 24 characters) is refused before any lookup, and an unknown key or a link that fails the check answers `gone`. Nothing about it is logged. Honest limit: the link opens Outlook on the web, or the new Outlook app when it takes such links; classic desktop Outlook cannot be opened at one event by a link.
+The day read selects Graph's `webLink` and asks for the `Binary 0x0FFF` legacy extended property for each event. That property is decoded only when it is standard base64 containing 20 to 512 bytes, then kept as uppercase hex in Rust. Both values stay behind the same day key, are cleared with the day keys on every day read, and are dropped for an account at sign-out. The web view gets only `canOpen: true`. If Graph refuses the extended property request with status 400 or 501, Wall 2 retries once without it so the calendar still works.
+
+With `openIn` set to `desktop` or omitted, `wall2_open_event(key)` first looks for classic Outlook in its registered Windows application path. The path must be absolute, no longer than 260 characters, name `OUTLOOK.EXE`, contain no quote or control character, and exist as a file. When Windows says the new Outlook is selected, classic Outlook is not used. An event with a valid entry id starts that fixed executable directly with the two arguments `/select` and `outlook:<HEX>`. An event without an entry id starts it with `/select` and `outlook:calendar`. No shell or joined command line is used. If Outlook is unavailable, process start fails, or `openIn` is `browser`, Wall 2 checks the stored web link again (`https`, no user name or password, no port other than 443, at most 4096 characters, and an exact allowed Outlook host) and opens it with the default handler. The page supplies only the opaque day key, and nothing about the entry id is sent to the page or logged.
+
+New Outlook has no documented way to open one existing meeting. The Tools drawer reports whether clicks use classic Outlook or the browser. These behaviors have not been verified against live Graph and Outlook: whether the calendar read returns the item id, what item id it returns for one occurrence of a recurring meeting, whether a second account's mailbox opens from the same Outlook profile, whether current classic Outlook builds honor `/select outlook:<HEX>`, registry discovery across 64-bit and 32-bit views, new Outlook detection, process launch, and fallback behavior. Outlook shows its own error box when it cannot find an item, and Wall 2 cannot detect that result. Use `"openIn": "browser"` to opt out.
 
 ### Refresh
 
-The list is read when Meet opens and every 5 minutes while Meet is the active place and the window is visible. The countdown ticks every 30 seconds from the last list. A failed read keeps the last list and shows "updated N min ago". When a read leaves an account unavailable, Meet reads again after 30 seconds, then after 60 seconds, then goes back to the 5 minute cadence; the fast retries stop when Meet is hidden, and Try again does not use them up. The calendar read asks for at most 50 events in the next 24 hours and ignores paging (50 is plenty for a day). It selects only the subject, times, response, join link, invite id and web link, never the body, attendees or organizer.
+The list is read when Meet opens and every 5 minutes while Meet is the active place and the window is visible. The countdown ticks every 30 seconds from the last list. A failed read keeps the last list and shows "updated N min ago". When a read leaves an account unavailable, Meet reads again after 30 seconds, then after 60 seconds, then goes back to the 5 minute cadence; the fast retries stop when Meet is hidden, and Try again does not use them up. The calendar read asks for at most 50 events in the next 24 hours and ignores paging (50 is plenty for a day). It selects only the subject, times, response, join link, invite id, web link and the `Binary 0x0FFF` extended property, never the body, attendees or organizer.
 
 ### Why an account is unavailable
 
