@@ -189,9 +189,13 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
     let last = 0;
     let raf = 0;
     let drawDt = 1 / 30;
+    const measureCost = import.meta.env.DEV && new URLSearchParams(window.location.search).has('linecost');
+    let costFrames = 0;
+    let costMs = 0;
 
     const paint = () => {
       if (document.hidden) return;
+      const costStart = measureCost ? performance.now() : 0;
       const scale = fitScale(window.innerWidth, window.innerHeight) * (window.devicePixelRatio || 1);
       const width = Math.round(STAGE_WIDTH * scale);
       const height = Math.round(STAGE_HEIGHT * scale);
@@ -325,6 +329,11 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
           }
         }
         drawVeil(fctx, width, height, v.a);
+      }
+      if (measureCost) {
+        costMs += performance.now() - costStart;
+        costFrames++;
+        canvas.dataset.lineCost = `${costFrames},${costMs.toFixed(3)},${(costMs / costFrames).toFixed(4)}`;
       }
     };
     repaint.current = paint;

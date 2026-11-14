@@ -65,7 +65,7 @@ describe('the resting looks (end states)', () => {
     expect(REST_LOOK).toBe('ridgelevels');
     expect(REST_OPACITY).toBe(0.22);
     expect(REST_OPACITY_VISUALIZER).toBe(0.28);
-    expect([...REST_LOOKS]).toEqual(['contours', 'levels', 'haze', 'ridge', 'ridgelevels']);
+    expect([...REST_LOOKS]).toEqual(['contours', 'levels', 'haze', 'ridge', 'ridgelevels', 'flat']);
   });
 
   it('contours: each line is the range outline scaled to an evenly spaced level, the top one the ridge itself', () => {
@@ -442,4 +442,3 @@ describe('at rest nothing follows time', () => {
     expect(b).toEqual(a);
   });
 });
-

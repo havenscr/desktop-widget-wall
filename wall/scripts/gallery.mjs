@@ -691,6 +691,9 @@ const NO_TEXT = [
   ['work', 'audio demo', 'only the drawn levels move'],
   ['home', 'audio demo', 'only the drawn levels move'],
   ['unwind', 'audio demo', 'only the drawn levels move'],
+  ['unwind', 'lines:', 'the knobs change the canvas or the settings sheet layout'],
+  ['work', 'lines:', 'only the drawn levels move'],
+  ['home', 'lines:', 'only the drawn levels move'],
   ['zen', 'focus running, long title', 'Zen shows no session title'],
   // Watt set down elsewhere: only where he stands changes (his stored spot), no text.
   ['work', 'Watt: set down', 'only where Watt stands changes'],

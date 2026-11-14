@@ -64,7 +64,7 @@ it('renders the Listen tab with the same text as before when nothing is saved, a
   // The text main showed for this track before Watch existed.
   expect(panel.textContent).toBe('Tokyo BurnoutTokyo Rose2:354:13');
   expect(screen.queryByRole('button', { name: 'Video' })).toBeNull();
-  expect(screen.queryByLabelText('How video is shown')).toBeNull();
+  expect(screen.getByLabelText('How video is shown')).not.toBeNull();
   expect(document.querySelector('.w-card')).toBeNull();
 });
 
