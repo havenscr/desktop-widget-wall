@@ -8,8 +8,9 @@ import { DRIVE_IN_SCREEN, DRIVE_IN_GROUND } from './looks';
  * picture is a ring with the box cut out (even-odd), and the one blurred part (the neon's glow) is
  * clipped to the same ring. Nothing animates but the marquee's words (`DriveInFrame.tsx`).
  *
- * The shapes are the approved drawing's exact numbers, ported from its source; the notes in the
- * comments name each part as that drawing does.
+ * The shapes are the approved drawing's, with every bar's end moved onto the bar it meets: the
+ * frame is built from named segments (`MEMBERS`), the stays and chords meet, the truss web starts
+ * and ends on the stays, and `towerGeometry.test.ts` checks every joint.
  */
 
 const V = DRIVE_IN_SCREEN;
