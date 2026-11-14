@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   PLAY_ART,
+  TIME_ADVANCE_MAX_MS,
+  artSrc,
   chipLabel,
   clockMs,
   faceTiles,
@@ -21,13 +23,16 @@ import {
   groupTargets,
   loudText,
   markAfterRead,
+  musicView,
   needsConfirm,
   nowLine,
   soonestTimer,
   orderPresets,
   routineSlot,
+  skipSentence,
   sleepLeft,
   slotsFor,
+  trackClock,
   splitRoutines,
   startedText,
   suggestedKey,
@@ -364,5 +369,90 @@ describe('home round two: what the house plays', () => {
     expect(clockMs(0)).toBe('0:00');
     expect(PLAY_ART.morning.icon).toBe('cup');
     expect(PLAY_ART.workday.icon).toBe('laptop');
+  });
+});
+
+describe('the Now Playing block\'s pure rules', () => {
+  it('turns a fetched cover into an image source only for the three picture types Rust sends', () => {
+    expect(artSrc({ mime: 'image/png', base64: 'iVBORw0KGgo=' })).toBe('data:image/png;base64,iVBORw0KGgo=');
+    expect(artSrc({ mime: 'image/jpeg', base64: '/9j/4AAQ' })).toBe('data:image/jpeg;base64,/9j/4AAQ');
+    expect(artSrc({ mime: 'image/webp', base64: 'UklGRg==' })).toBe('data:image/webp;base64,UklGRg==');
+    for (const bad of [
+      { mime: 'image/svg+xml', base64: 'PHN2Zz4=' },
+      { mime: 'text/html', base64: 'PGI+' },
+      { mime: 'image/png;base64,AAAA', base64: 'AAAA' },
+      { mime: 'image/png', base64: '' },
+      { mime: 'image/png', base64: 'AAAA" onerror="x' },
+      { mime: 'image/png', base64: 'AA AA' },
+      { mime: 'image/png', base64: 'AAAA\n' },
+    ])
+      expect(artSrc(bad)).toBeNull();
+    expect(artSrc(null)).toBeNull();
+    expect(artSrc(undefined)).toBeNull();
+  });
+
+  it('counts a track\'s position on from the read, never past the end, frozen when the read is not live', () => {
+    const t = 1_000_000;
+    expect(trackClock(181, 65, t, t, true)).toEqual({ posMs: 65_000, durMs: 181_000 });
+    expect(trackClock(181, 65, t, t + 10_500, true)).toEqual({ posMs: 75_500, durMs: 181_000 });
+    // Never past the end.
+    expect(trackClock(181, 170, t, t + 60_000, true)).toEqual({ posMs: 181_000, durMs: 181_000 });
+    // A page clock behind the read never moves it back.
+    expect(trackClock(181, 65, t, t - 5_000, true)?.posMs).toBe(65_000);
+    // Never counts on further than the stale limit past the read.
+    expect(trackClock(86_400, 0, t, t + 10 * 60_000, true)?.posMs).toBe(TIME_ADVANCE_MAX_MS);
+    // Not live: stops at the read's own position.
+    expect(trackClock(181, 65, t, t + 30_000, false)?.posMs).toBe(65_000);
+    // No length, no position or a zero length: no bar.
+    expect(trackClock(null, 65, t, t, true)).toBeNull();
+    expect(trackClock(181, null, t, t, true)).toBeNull();
+    expect(trackClock(0, 0, t, t, true)).toBeNull();
+  });
+
+  it('says a refused skip in a sentence, and passes any other error on', () => {
+    expect(skipSentence('cannot-skip')).toBe('This station cannot skip');
+    expect(skipSentence('nothing-playing')).toBe('Nothing is playing');
+    expect(skipSentence('Sonos could not do that')).toBeNull();
+    expect(skipSentence('')).toBeNull();
+  });
+
+  const args = (over: Partial<Parameters<typeof musicView>[0]> = {}): Parameters<typeof musicView>[0] => ({
+    s: { ...SUMMARY, speakers: SUMMARY.speakers.map((x) => (x.name === 'Den' || x.name === 'Porch' ? { ...x, state: 'playing' as const } : x)) },
+    track: null,
+    trackAt: 0,
+    activeName: null,
+    activeSlot: null,
+    art: null,
+    now: 0,
+    live: true,
+    ...over,
+  });
+
+  it('builds the music half from the Sonos read: the track, the cover, the length, where it plays, back and next only when offered', () => {
+    const np = { speaker: 'Den', track: 'Song A', artist: 'Band B', duration: 200, position: 20, art: true };
+    const m = musicView(args({ s: { ...args().s, nowPlaying: np, canSkip: true, readAtMs: 1000 }, art: 'data:image/png;base64,AAAA', now: 6000 }))!;
+    expect(m).toMatchObject({ title: 'Song A', artist: 'Band B', cover: 'data:image/png;base64,AAAA', where: 'Den, 2 speakers', canSkip: true });
+    expect(m.clock).toEqual({ posMs: 25_000, durMs: 200_000 });
+    expect(m.whereTip).toBe('Song A, Band B, on 2 speakers');
+    expect(musicView(args({ s: { ...args().s, nowPlaying: np, canSkip: false } }))!.canSkip).toBe(false);
+  });
+
+  it('keeps the play this wall started as the title, and a station has no clock', () => {
+    const np = { speaker: 'Den', track: 'Song A', artist: 'Band B', duration: null, position: null, art: false };
+    const m = musicView(args({ s: { ...args().s, nowPlaying: np }, activeName: 'Evening', activeSlot: 'evening' }))!;
+    expect(m).toMatchObject({ title: 'Evening', artist: null, slot: 'evening', clock: null });
+    expect(musicView(args({ s: { ...args().s, nowPlaying: null } }))!.title).toBe('Music');
+  });
+
+  it('prefers a Spotify track on a house speaker, with its own cover and time', () => {
+    const track = { title: 'Paper Lanterns', artist: 'The Quiet Hours', cover: 'https://i.scdn.co/x', where: 'Den, 2 speakers', progressMs: 65_000, durationMs: 200_000 };
+    const m = musicView(args({ track, trackAt: 10_000, now: 15_000, s: { ...args().s, canSkip: true } }))!;
+    expect(m).toMatchObject({ title: 'Paper Lanterns', artist: 'The Quiet Hours', cover: 'https://i.scdn.co/x', whereTip: 'Spotify on Den, 2 speakers', canSkip: true });
+    expect(m.clock).toEqual({ posMs: 70_000, durMs: 200_000 });
+  });
+
+  it('has no music half when nothing plays', () => {
+    const quiet = { ...args().s, speakers: args().s.speakers.map((x) => ({ ...x, state: x.input ? x.state : ('stopped' as const) })) };
+    expect(musicView(args({ s: quiet }))).toBeNull();
   });
 });

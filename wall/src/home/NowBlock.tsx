@@ -372,6 +372,10 @@ export function NowBlock(p: NowBlockProps) {
   const [cutKey, setCutKey] = useState<string | null>(null);
   const [hintKey, setHintKey] = useState<string | null>(null);
   useEffect(() => {
+    setCutKey(null);
+    setHintKey(null);
+  }, [videoKey]);
+  useEffect(() => {
     if (!hintKey) return;
     const id = setTimeout(() => setHintKey(null), NP_HINT_MS);
     return () => clearTimeout(id);
