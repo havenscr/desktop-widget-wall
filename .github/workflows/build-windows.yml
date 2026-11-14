@@ -87,10 +87,10 @@ jobs:
             src-tauri/target/release/bundle/nsis/*.exe
           if-no-files-found: error
 
-      - name: Build Wall 2 (exe + MSI + NSIS)
+      - name: Build Ridgeline (exe + MSI + NSIS)
         run: npm run build:wall2
 
-      - name: Upload Wall 2 installers
+      - name: Upload Ridgeline installers
         uses: actions/upload-artifact@v7
         with:
           name: widget-wall-2-windows
