@@ -497,7 +497,7 @@ const TOOLS_VARIANTS = [
   tools('no keys file', `${work('3')}&source=default&tools=1`),
   tools('Spotify not set up, a sign-in waiting', `${work('3')}&spotify=off&meet=signedout&tools=1`),
   { name: 'Spotify copy, choose this computer', q: `${query({ hz: 'unwind', agents: '3', extra: '&spotify=choose' })}`, click: '.sp-tile >> .sp-shead .sp-btn.fill', checks: ['.sp-card', '.sp-note'] },
-  { name: 'Account copy, failed sign-in', q: `${work('3')}&meet=signin-fault&tools=1`, click: '.tools-list[aria-label="Accounts"] .tools-row:nth-child(2) button', checks: ['.tools-drawer', '.tools-note'] },
+  { name: 'Account copy, failed sign-in', q: `${work('3')}&meet=signin-fault&tools=1`, click: '.tools-list[aria-label="Accounts"] .tools-row:nth-child(2) button', checks: ['.tools-drawer', '.tools-note'], viewportOnly: true },
 ];
 const VARIANTS = [
   { name: 'three lanes, long titles', q: work('3'), checks: [...WINGS, ...LANES] },
