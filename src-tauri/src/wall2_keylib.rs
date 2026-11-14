@@ -251,7 +251,7 @@ pub(crate) const LIBRARY: &[LibEntry] = &[
     LibEntry { id: "vscode-sidebar", label: "VS Code: side bar", icon: "window", group: "vscode", kind: LibKind::Key, how: "Ctrl+B", spec: "Ctrl+B" },
     LibEntry { id: "tasks-open", label: "Open the task app", icon: "checklist", group: "tasks", kind: LibKind::Wall, how: "opens it where the wall opens tasks today", spec: "tasks:open" },
     LibEntry { id: "task-add", label: "Add a task", icon: "plus", group: "tasks", kind: LibKind::Soon, how: "a small box on the wall, sends it to your inbox", spec: "soon" },
-    LibEntry { id: "task-first", label: "Open today's first task", icon: "checklist", group: "tasks", kind: LibKind::Wall, how: "the top of Next three", spec: "task:first" },
+    LibEntry { id: "task-first", label: "Open today's first task", icon: "checklist", group: "tasks", kind: LibKind::Wall, how: "the top of Due today", spec: "task:first" },
     LibEntry { id: "focus-25", label: "Focus 25", icon: "timer", group: "tasks", kind: LibKind::Wall, how: "starts the focus timer", spec: "focus:25" },
     LibEntry { id: "focus-50", label: "Focus 50", icon: "timer", group: "tasks", kind: LibKind::Wall, how: "starts the focus timer", spec: "focus:50" },
     LibEntry { id: "focus-stop", label: "Stop focus", icon: "timer-off", group: "tasks", kind: LibKind::Wall, how: "ends the session", spec: "focus:stop" },
