@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { propColor, propOrigin, PROP_SPRITES, SPRITES, SPRITE_PX, pixelColor, type Pose, type Prop } from './sprites';
+import { BLINKS, propColor, propOrigin, PROP_SPRITES, SPRITES, SPRITE_PX, pixelColor, type Pose, type Prop } from './sprites';
 
 type ColorOf = (map: readonly string[], x: number, y: number) => string | null;
 
@@ -26,8 +26,9 @@ export function PixelSvg({ map, px, color = propColor, className }: { map: reado
   );
 }
 
-export function SheepSvg({ pose, px = SPRITE_PX }: { pose: Pose; px?: number }) {
-  return <PixelSvg map={SPRITES[pose]} px={px} color={pixelColor} />;
+/** The sheep in a pose; `blink` shuts his eyes for the frame. */
+export function SheepSvg({ pose, px = SPRITE_PX, blink = false }: { pose: Pose; px?: number; blink?: boolean }) {
+  return <PixelSvg map={blink ? BLINKS[pose] : SPRITES[pose]} px={px} color={pixelColor} />;
 }
 
 /** A prop over the sheep, placed from the pose's ear (or the sprite's corner) in sprite pixels. */

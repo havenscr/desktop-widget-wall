@@ -1,6 +1,28 @@
 import { describe, expect, it } from 'vitest';
 import { WALKS, spriteHeight } from './model';
-import { HEARTS_S, PROP_RISE_MAX, REACT_S, bubbleSize, createMind, createPetFrame, holdsStill, petFrame, propFits, wrapLine, type Mind } from './petFrame';
+import {
+  CLICK_S,
+  GRAZE_FROM_S,
+  GRAZE_STOPS,
+  HEARTS_S,
+  PROP_RISE_MAX,
+  REACT_S,
+  SETTLE_FROM_S,
+  blinking,
+  nextBlink,
+  restFor,
+  bubbleSize,
+  clickKind,
+  createMind,
+  createPetFrame,
+  holdsStill,
+  petFrame,
+  propFits,
+  shape,
+  wrapLine,
+  type Mind,
+} from './petFrame';
+import { IDLES, STOPS, loopSeconds } from './model';
 import { POSES, PROPS, SPRITES } from './sprites';
 
 const walk = WALKS.work;
@@ -133,7 +155,7 @@ describe('more of a pet', () => {
     // A pointer that has lost interest (not on) changes nothing.
     expect(frame(mind({ pointerOn: false, pointerX: 1000, pointerY: 560 })).pose).not.toBe('alert');
   });
-  it('a happy hop lifts and turns; a spin turns on the spot without lifting; both hold him still', () => {
+  it('a happy hop lifts and turns; a spin turns all the way round a little off the ground; both hold him still', () => {
     const poses = new Set<string>();
     let lift = 0;
     for (let k = 0; k < 1; k += 0.05) {
@@ -144,12 +166,19 @@ describe('more of a pet', () => {
     expect(lift).toBeGreaterThan(0);
     expect(poses.has('spin1') && poses.has('spin2')).toBe(true);
     const spin = new Set<string>();
-    for (let k = 0; k < 1; k += 0.05) {
+    const facing = new Set<number>();
+    let spinLift = 0;
+    for (let k = 0; k < 1; k += 0.02) {
       const f = frame(mind({ react: 'spin', reactT: REACT_S.spin * k }));
       spin.add(f.pose);
-      expect(f.lift).toBe(0);
+      if (f.pose === 'idle') facing.add(f.dir);
+      spinLift = Math.max(spinLift, f.lift);
     }
+    // Side, front, the other side, back, side: both sides are seen.
     expect(spin.has('spin1') && spin.has('spin2')).toBe(true);
+    expect(facing.size).toBe(2);
+    expect(spinLift).toBeGreaterThan(0);
+    expect(spinLift).toBeLessThanOrEqual(2 * walk.px);
     expect(holdsStill(mind({ react: 'spin', reactT: 0.2 }))).toBe(true);
     // Reduced motion: one still pose, nothing lifts.
     expect(frame(mind({ react: 'spin', reactT: 0.3 }), { still: true }).pose).toBe('spin1');
@@ -161,11 +190,92 @@ describe('more of a pet', () => {
     expect(frame(mind({ react: 'sparkle', reactT: 1 }), { night: true }).sparkle).toBe(false);
     expect(frame(mind()).sparkle).toBe(false);
   });
-  it('a nap lies him down with z drifting, and holds him still', () => {
-    const f = frame(mind({ lie: true }));
-    expect(f.pose).toBe('lie');
+  it('a nap: he turns round, sits, then lies down breathing with z drifting, and holds still; he gets up with a yawn and a stretch', () => {
+    const seq = [0.1, 0.3, 0.8, 2.4].map((t) => frame(mind({ lie: true, lieT: t })).pose);
+    expect(seq).toEqual(['idle', 'walk', 'sit', 'lie']);
+    const f = frame(mind({ lie: true, lieT: 3 }));
     expect(f.z).toBe(true);
+    expect(f.squash).toBeLessThan(1);
     expect(holdsStill(mind({ lie: true }))).toBe(true);
+    // Reduced motion: he simply lies there.
+    expect(frame(mind({ lie: true, lieT: 0 }), { still: true }).pose).toBe('lie');
+    expect(['yawn', 'stretch']).toContain(frame(mind({ react: 'rise', reactT: 0.6 })).pose);
+    expect(frame(mind({ react: 'rise', reactT: 1.3 })).pose).toBe('stretch');
+  });
+  it('a hop has anticipation, stretch, squash and dust, at pixel-art frame counts', () => {
+    const at = (t: number) => {
+      const o = { pose: 'idle' as const as import('./sprites').Pose, dir: 1 as 1 | -1, lift: 0, squash: 1, sx: 1, dust: 0 };
+      shape('hop', t, o);
+      return o;
+    };
+    expect(at(0.05).squash).toBeLessThan(0.9);
+    expect(at(0.05).sx).toBeGreaterThan(1);
+    expect(at(0.15).squash).toBeGreaterThan(1.1);
+    expect(at(0.38).pose).toBe('hop');
+    expect(at(0.38).lift).toBeGreaterThan(4);
+    expect(at(0.62).squash).toBeLessThan(0.9);
+    expect(at(0.62).dust).toBeGreaterThan(0);
+    expect(at(0.8)).toMatchObject({ squash: 1, sx: 1, lift: 0 });
+    // The happy hop bounces twice, the second with a turn, and hearts land with it.
+    const poses = new Set<string>();
+    for (let t = 0; t < 1.3; t += 0.02) {
+      const o = { pose: 'idle' as import('./sprites').Pose, dir: 1 as 1 | -1, lift: 0, squash: 1, sx: 1, dust: 0 };
+      shape('happy', t, o);
+      poses.add(o.pose);
+    }
+    expect(poses.has('hop') && poses.has('spin1') && poses.has('spin2')).toBe(true);
+    expect(frame(mind({ react: 'happy', reactT: 1.5 })).hearts).toBe(true);
+  });
+  it('the idle life: a blink every few seconds, grazing at some stops, settling in on long ones', () => {
+    let blinks = 0;
+    for (let T = 0; T < 60; T += 0.05) if (blinking(T)) blinks++;
+    // One 120 ms blink every 3 to 7 s: about 12 frames of 50 ms in a minute, never none.
+    expect(blinks).toBeGreaterThan(8);
+    expect(blinks).toBeLessThan(40);
+    expect(frame(mind({ clock: 0 })).blink).toBe(blinking(0));
+    // Find the start of a graze stop and of a settle stop on the wander clock.
+    const startOf = (stop: number) => {
+      let t = 0;
+      for (let i = 0; i < stop; i++) t += IDLES[i] + (Math.abs(STOPS[(i + 1) % STOPS.length] - STOPS[i]) * (walk.max - walk.min)) / 14;
+      return t;
+    };
+    const grazing = new Set<string>();
+    for (let k = 0; k < 3; k += 0.1) grazing.add(frame(mind(), { t: startOf(GRAZE_STOPS[0]) + GRAZE_FROM_S + k }).pose);
+    expect(grazing.has('eat')).toBe(true);
+    expect(frame(mind(), { t: startOf(3) + SETTLE_FROM_S + 2 }).pose).toBe('sit');
+    // He stands up again before he walks on.
+    expect(frame(mind(), { t: startOf(3) + IDLES[3] - 1 }).pose).not.toBe('sit');
+    expect(loopSeconds(walk)).toBeGreaterThan(startOf(7));
+    // None of it under reduced motion, or with the idle life switched off.
+    expect(frame(mind(), { t: startOf(3) + SETTLE_FROM_S + 2, still: true }).pose).toBe('idle');
+    expect(frame(mind({ idleLife: false }), { t: startOf(3) + SETTLE_FROM_S + 2 }).pose).toBe('idle');
+  });
+  it('a noticed click turns him toward it: near flicks his wool and holds the look, far only glances', () => {
+    expect(clickKind(1100, 540, 1000, 540)).toBe('near');
+    expect(clickKind(1700, 300, 1000, 540)).toBe('mid');
+    expect(clickKind(2400, 100, 1000, 540)).toBe('far');
+    const near = frame(mind({ react: 'click', reactT: 0.15, reactDir: -1, clickKind: 'near' }));
+    expect(near.dir).toBe(-1);
+    expect(near.pose).toBe('alert');
+    expect(near.tuft).toBe(true);
+    expect(frame(mind({ react: 'click', reactT: 0.5, reactDir: 1, clickKind: 'near', clickUp: true })).pose).toBe('look');
+    expect(frame(mind({ react: 'click', reactT: 0.05, reactDir: 1, clickKind: 'far' })).pose).toBe('alert');
+    const glance = frame(mind({ react: 'click', reactT: 0.4, reactDir: -1, clickKind: 'far' }));
+    expect(glance.pose).toBe('idle');
+    expect(glance.dir).toBe(-1);
+    // Each kind holds him for its own time, and a far one is over sooner.
+    expect(holdsStill(mind({ react: 'click', reactT: CLICK_S.far - 0.1, clickKind: 'far' }))).toBe(true);
+    expect(holdsStill(mind({ react: 'click', reactT: CLICK_S.far + 0.1, clickKind: 'far' }))).toBe(false);
+    expect(holdsStill(mind({ react: 'click', reactT: CLICK_S.far + 0.1, clickKind: 'near' }))).toBe(true);
+    // Reduced motion: only the turn.
+    const still = frame(mind({ react: 'click', reactT: 0.15, reactDir: -1, clickKind: 'near' }), { still: true });
+    expect(still.dir).toBe(-1);
+    expect(still.tuft).toBe(false);
+  });
+  it('with his menu open he looks up at it', () => {
+    const f = frame(mind({ held: true, menuDir: -1 }));
+    expect(f.pose).toBe('look');
+    expect(f.dir).toBe(-1);
   });
   it('every pose is different from every other: each reads at a glance', () => {
     for (const a of POSES) for (const b of POSES) if (a < b) expect(SPRITES[a].join('|'), `${a} and ${b}`).not.toBe(SPRITES[b].join('|'));
@@ -183,5 +293,40 @@ describe('a firefly', () => {
     expect(frame(mind({ firefly: true, fireflyX: 1200, fireflyY: 500 }), { still: true }).pose).toBe('idle');
     expect(frame(mind({ firefly: true, fireflyX: 1200, fireflyY: 500, focus: true })).pose).toBe('read');
     expect(frame(mind({ firefly: false, fireflyX: 1200, fireflyY: 500 })).pose).toBe('idle');
+  });
+});
+
+describe('resting between changes', () => {
+  const at = (stop: number) => {
+    let t = 0;
+    for (let i = 0; i < stop; i++) t += IDLES[i] + (Math.abs(STOPS[(i + 1) % STOPS.length] - STOPS[i]) * (walk.max - walk.min)) / 14;
+    return t;
+  };
+  it('plans the next change exactly: the end of a stand, a blink, a graze nibble, sitting down and standing up', () => {
+    const quiet = mind({ idleLife: false });
+    // Stop 0 lasts 26 s: 4 s in, the yawn boundary at 3 s is past, so the stand ends in 22 s.
+    expect(restFor(walk, 4, 0, false, false, quiet)).toBeCloseTo(IDLES[0] - 4, 6);
+    // The settle stop: he sits after 6 s and stands up 3 s before he walks on.
+    const s3 = at(3);
+    expect(restFor(walk, s3 + 4, 0, false, false, quiet)).toBeCloseTo(SETTLE_FROM_S - 4, 6);
+    expect(restFor(walk, s3 + 10, 0, false, false, quiet)).toBeCloseTo(IDLES[3] - 3 - 10, 6);
+    // While grazing, every nibble is a change.
+    const g = at(GRAZE_STOPS[0]) + GRAZE_FROM_S + 0.1;
+    expect(restFor(walk, g, 0, false, false, quiet)).toBeCloseTo(1 / 3 - 0.1, 6);
+    // A blink is planned on the loop clock, and its end too.
+    const T = 0.3;
+    expect(restFor(walk, 4, T, false, false, mind())).toBeCloseTo(Math.min(IDLES[0] - 4, nextBlink(T)), 6);
+    let b = 0;
+    while (!blinking(b)) b += 0.01;
+    expect(nextBlink(b)).toBeLessThanOrEqual(0.12);
+  });
+  it('asks for frames only while something moves: a walk, a reaction, music notes, sleep, the firefly, the beat', () => {
+    const w = at(1) - 1; // walking from stop 0 to stop 1
+    expect(restFor(walk, w, 0, false, false, mind())).toBe(0);
+    expect(restFor(walk, 4, 0, false, true, mind())).toBe(0);
+    expect(restFor(walk, 4, 0, true, false, mind())).toBe(0);
+    for (const over of [{ lie: true }, { nap: true }, { firefly: true }, { bob: 0.5 }, { react: 'hop' as const, reactT: 0.2 }]) expect(restFor(walk, 4, 0, false, false, mind(over)), JSON.stringify(over)).toBe(0);
+    // Held still (his menu open): the wander waits, and with the idle life off nothing at all is planned.
+    expect(restFor(walk, 4, 0, false, false, mind({ held: true, idleLife: false }))).toBe(Infinity);
   });
 });
