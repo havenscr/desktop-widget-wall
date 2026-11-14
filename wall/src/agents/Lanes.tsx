@@ -106,7 +106,7 @@ interface MeterCount {
 function useMeterCount(summary: OmniSummary, now: number): MeterCount {
   const b = useBusyToday(now);
   const limit = knownLimit(summary.slots.limit);
-  if (!b) return { n: summary.slots.working ?? summary.slots.used, limit, today: null };
+  if (!b) return { n: summary.slots.busy ?? summary.slots.working ?? summary.slots.used, limit, today: null };
   const today = b.fromLog && limit !== null ? todayLimitText(timeBySteps(b.spans, limit, dayStart(isoDay(now)), b.until), limit) : null;
   return { n: busyNow(b, summary), limit, today };
 }

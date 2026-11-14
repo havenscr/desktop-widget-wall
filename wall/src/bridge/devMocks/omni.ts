@@ -4,7 +4,8 @@ import { mocks } from '../tauri';
 
 /**
  * Dev only: `?agents=` picks a helper state for review stills and the fit check:
- * `3` (default), `2`, `1`, `0`, `7` or `12` sessions from a helper 1.1.0 answer, `ask` (one
+ * `3` (default), `2`, `1`, `0`, `7` or `12` sessions from a helper 1.1.0 answer, `helpers`
+ * (one idle own turn with agents, a command and a child still running), `ask` (one
  * waiting, with a question), `ask2` (two waiting, one of them not on a card), `7ask` (seven sessions, the fifth waiting), `12busy` (twelve open, nine working at once, over the limit of 4 since mid morning, one waiting, one failed, one idle, and a helper's run that never counts), `12ask` (twelve sessions, two waiting) and `12staleask` (the same, stale), `staleask` (one waiting, then the answer goes stale), `failed` (one failed), `old`
  * (three lanes as the older helper sends them), `stale`, `off` (not set up) and `down` (set
  * up, not answering). `&limit=0` sends a zero limit (an older helper with none to give): the
@@ -44,8 +45,9 @@ export function registerOmniMocks(): void {
     const id = (i: number) => `a1b2c3d4-${String(i + 1).padStart(4, '0')}`;
     const old = AGENTS === 'old';
     const noLimit = knob('limit') === '0';
-    const count = { '0': 0, '1': 1, '2': 2, '7': 7, '7ask': 7, '12': 12, '12ask': 12, '12staleask': 12, '12busy': 12 }[AGENTS] ?? 3;
+    const count = { '0': 0, '1': 1, '2': 2, '7': 7, '7ask': 7, '12': 12, '12ask': 12, '12staleask': 12, '12busy': 12, helpers: 3 }[AGENTS] ?? 3;
     const busy12 = AGENTS === '12busy';
+    const helperWork = AGENTS === 'helpers';
     const stale = AGENTS === 'stale' || AGENTS === 'staleask' || AGENTS === '12staleask';
     const waitOn = busy12 ? [4] : AGENTS === 'ask' || AGENTS === 'ask2' || AGENTS === 'staleask' || old ? [1] : AGENTS === '7ask' ? [4] : AGENTS === '12ask' || AGENTS === '12staleask' ? [1, 4] : [];
     const all = POOL.map(([title, long, stage, state, line, next, mins], i) => {
@@ -65,12 +67,14 @@ export function registerOmniMocks(): void {
         pr: i === 0 ? { number: 553, ci: failed ? 'failing' : 'pending', ready: false } : i === 2 ? { number: 561, ci: 'passing', ready: true } : i === 8 ? { number: 570, ci: 'pending', ready: true } : null,
       };
       if (old) return base;
-      const idle = busy12 ? busyIdle || waiting : line === 'idle' || waiting;
+      const idle = helperWork && i === 0 ? true : busy12 ? busyIdle || waiting : line === 'idle' || waiting;
       return {
         ...base,
+        line: helperWork && i === 0 ? 'idle' : base.line,
         live: idle ? 'idle' : 'working',
         idleS: waiting ? 720 : null,
-        kids: i === 0 ? { total: 3, working: 2 } : i === 5 ? { total: 1, working: 0 } : null,
+        kids: i === 0 ? { total: 3, working: 2, running: helperWork ? 1 : 0 } : i === 5 ? { total: 1, working: 0, running: 0 } : null,
+        bg: helperWork && i === 0 ? { agents: 2, shells: 1 } : null,
         waitingSinceS: waiting ? 720 : null,
         next,
         harness: i % 4 === 3 ? 'codex' : 'claude',
@@ -109,7 +113,17 @@ export function registerOmniMocks(): void {
     names[ended] = { title: 'Morning inbox triage', stage: 'live', state: 'review' };
     if (AGENTS === 'ask2') names[extraWait] = { title: 'Invoice wording check', stage: 'plan', state: 'blocked' };
     const titleOf = (x: string | null) => (x ? (names[x]?.title ?? '') : '');
-    const working = busy12 ? 9 : shown.filter((l) => l.state === 'working').length;
+    const working = busy12 ? 9 : old ? shown.filter((l) => l.state === 'working').length : shown.filter((l) => l.state === 'working' && 'live' in l && l.live !== 'idle').length;
+    const busy = busy12
+      ? 9
+      : old
+        ? working
+        : shown.filter(
+            (l) =>
+              l.state === 'working' &&
+              'live' in l &&
+              (l.live !== 'idle' || ('bg' in l && !!l.bg && (l.bg.agents > 0 || l.bg.shells > 0)) || ('kids' in l && (l.kids?.running ?? 0) > 0)),
+          ).length;
     const usage = old
       ? { claudeWeekPct: 62, claude5hPct: 18, weekResetsAt: iso(-3000) }
       : {
@@ -129,7 +143,7 @@ export function registerOmniMocks(): void {
       now: new Date(Date.now()).toISOString(),
       tz: 'America/Los_Angeles',
       stale,
-      slots: old ? { used: 9, limit: noLimit ? 0 : 4 } : { used: shown.length + 4, limit: noLimit ? 0 : 4, sessions: shown.length, working, helpers: 4 },
+      slots: old ? { used: 9, limit: noLimit ? 0 : 4 } : { used: shown.length + 4, limit: noLimit ? 0 : 4, sessions: shown.length, working, busy, helpers: 4 },
       lanes: shown.slice(0, 3),
       parked: 4,
       yourMove: {
