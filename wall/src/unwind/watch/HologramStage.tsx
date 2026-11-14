@@ -1,4 +1,6 @@
+import type { CSSProperties } from 'react';
 import { HOLO_PANE } from './looks';
+import { DEFAULT_TUNE, holoRotateY, type LookTune } from './lookSettings';
 
 /**
  * The Hologram look (the owner's pick from the pictures): the whole 16:9 picture on a pane tilted
@@ -21,12 +23,12 @@ export const EMITTER = Object.freeze({ x: 1578, y: 572 });
 /** The pane's tilt, the numbers of `.w-holo` and `.w-holo-plate` in `unwind.css` (the origin is 50% 60% of the box). */
 export const HOLO_TILT = Object.freeze({ perspective: 2400, rotateY: -7, rotateX: 1.2 });
 
-/** Where a point of the flat pane (wall pixels, at the pane's depth) lands after the tilt. */
-function tilted(x: number, y: number): [number, number] {
+/** Where a point of the flat pane (wall pixels, at the pane's depth) lands after the tilt (`rotateY` degrees, the usual by default). */
+function tilted(x: number, y: number, rotateY: number = HOLO_TILT.rotateY): [number, number] {
   const p = HOLO_PANE;
   const ox = p.x + p.w * 0.5;
   const oy = p.y + p.h * 0.6;
-  const a = (HOLO_TILT.rotateY * Math.PI) / 180;
+  const a = (rotateY * Math.PI) / 180;
   const b = (HOLO_TILT.rotateX * Math.PI) / 180;
   const dy = y - oy;
   const dx = x - ox;
@@ -40,9 +42,9 @@ function tilted(x: number, y: number): [number, number] {
 }
 
 /** The tilted pane's four corners in wall pixels: top left, top right, bottom right, bottom left. */
-export function paneQuad(): [number, number][] {
+export function paneQuad(rotateY: number = HOLO_TILT.rotateY): [number, number][] {
   const p = HOLO_PANE;
-  return [tilted(p.x, p.y), tilted(p.x + p.w, p.y), tilted(p.x + p.w, p.y + p.h), tilted(p.x, p.y + p.h)];
+  return [tilted(p.x, p.y, rotateY), tilted(p.x + p.w, p.y, rotateY), tilted(p.x + p.w, p.y + p.h, rotateY), tilted(p.x, p.y + p.h, rotateY)];
 }
 
 /** How far under the pane's lower edge the beam is cut off (the beam, its blur and its rays never reach the picture). */
@@ -53,8 +55,8 @@ export const BEAM_CLEAR = 2;
  * tilt, as every line stays one) and `BEAM_CLEAR` px below it. The beam's blur and rays are cut to
  * it, so none of them reaches the picture however the filter spreads.
  */
-export function beamClip(): [number, number][] {
-  const q = paneQuad();
+export function beamClip(rotateY: number = HOLO_TILT.rotateY): [number, number][] {
+  const q = paneQuad(rotateY);
   const [bl, br] = [q[3]!, q[2]!];
   const slope = (br[1] - bl[1]) / (br[0] - bl[0]);
   const at = (x: number) => bl[1] + slope * (x - bl[0]) + BEAM_CLEAR;
@@ -66,10 +68,11 @@ export function beamClip(): [number, number][] {
   ];
 }
 
-export function HologramPlate() {
+/** `style` carries the look's custom properties (tilt, plate darkness: `tuneVars`), the plate sitting outside the stage. */
+export function HologramPlate({ style }: { tune?: LookTune; style?: CSSProperties }) {
   const p = HOLO_PANE;
   return (
-    <div className="w-holo-plate" aria-hidden="true" style={{ left: p.x - 124, top: p.y - 20, width: p.w, height: p.h }}>
+    <div className="w-holo-plate" aria-hidden="true" style={{ ...style, left: p.x - 124, top: p.y - 20, width: p.w, height: p.h }}>
       <i className="w-holo-glass" />
       <i className="w-holo-hr t" />
       <i className="w-holo-hr b" />
@@ -81,12 +84,13 @@ export function HologramPlate() {
   );
 }
 
-export function HologramEmitter() {
+export function HologramEmitter({ tune = DEFAULT_TUNE as LookTune }: { tune?: LookTune }) {
   const E = EMITTER;
   // The fan runs from the lens to the pane's lower corners; the clip below cuts it off just under the pane.
-  const q = paneQuad();
+  const rot = holoRotateY(tune);
+  const q = paneQuad(rot);
   const [bl, br] = [q[3]!, q[2]!];
-  const clip = beamClip().map((pt) => pt.map((n) => n.toFixed(2)).join(',')).join(' ');
+  const clip = beamClip(rot).map((pt) => pt.map((n) => n.toFixed(2)).join(',')).join(' ');
   let rays = '';
   for (let i = 0; i <= 10; i++) {
     const t = i / 10;
@@ -116,8 +120,12 @@ export function HologramEmitter() {
         </clipPath>
       </defs>
       <ellipse cx={E.x} cy={E.y + 4} rx="430" ry="46" fill="url(#whg)" opacity=".5" />
-      <path d={`M${E.x - 16} ${E.y - 4}L${bl[0]} ${bl[1]}L${br[0]} ${br[1]}L${E.x + 16} ${E.y - 4}z`} fill="url(#whb)" filter="url(#whbl)" clipPath="url(#whc)" className="w-holo-beam" />
-      <path d={rays} stroke="#9af9fc" strokeOpacity=".1" strokeWidth="1.2" fill="none" clipPath="url(#whc)" />
+      {tune.holo.beam ? (
+        <>
+          <path d={`M${E.x - 16} ${E.y - 4}L${bl[0]} ${bl[1]}L${br[0]} ${br[1]}L${E.x + 16} ${E.y - 4}z`} fill="url(#whb)" filter="url(#whbl)" clipPath="url(#whc)" className="w-holo-beam" />
+          <path d={rays} stroke="#9af9fc" strokeOpacity=".1" strokeWidth="1.2" fill="none" clipPath="url(#whc)" />
+        </>
+      ) : null}
       <ellipse cx={E.x} cy={E.y + 10} rx="58" ry="9" fill="#03020b" opacity=".6" />
       <path d={`M${E.x - 44} ${E.y}a44 10 0 0 0 88 0v7a44 10 0 0 1 -88 0z`} fill="url(#whp)" />
       <ellipse cx={E.x} cy={E.y} rx="44" ry="10" fill="#241a46" stroke="rgba(190,172,255,.55)" strokeWidth="1" />

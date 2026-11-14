@@ -4,7 +4,8 @@ import { usePlaceStore } from '../../state/places';
 import { DriveInFrame, driveInMode } from './DriveInFrame';
 import { HologramEmitter, HologramPlate } from './HologramStage';
 import { refKey, type WatchRef } from './links';
-import { LOOK_BOXES, SKY_SOFT_EDGE, skySoftEdge, layeredNow, lookFor, ownsTheMoonSky, type LookId } from './looks';
+import { layeredNow, lookFor, ownsTheMoonSky, type LookId } from './looks';
+import { DEFAULT_TUNE, lookBox, tuneVars, type LookTune } from './lookSettings';
 import { PlayerFrame } from './PlayerFrame';
 import { driveInAudience, stageShown, useWatchStore } from './store';
 import { useStopRules } from './useStopRules';
@@ -30,8 +31,8 @@ export function useStageShown(): boolean {
  * forward while the player waits for a click). Nothing at all while the stage is out of sight
  * (`shown` false: another tab or place), and released when nothing is on.
  */
-export function useWatchSky(look: LookId, front: HTMLElement | null, needsClick: boolean, shown = true) {
-  const b = LOOK_BOXES[look];
+export function useWatchSky(look: LookId, front: HTMLElement | null, needsClick: boolean, shown = true, tune: LookTune = DEFAULT_TUNE) {
+  const b = lookBox(look, tune);
   useSkyClaim(
     'watch',
     shown
@@ -62,30 +63,33 @@ function VideoStage({ item, look, shown }: { item: WatchRef & { label: string };
   const ended = useWatchStore((s) => s.report.ended);
   const clickHint = useWatchStore((s) => s.clickHint);
   const [front, setFront] = useState<HTMLDivElement | null>(null);
-  useWatchSky(look, front, needsClick, shown);
+  const tune = useWatchStore((s) => s.tune);
+  useWatchSky(look, front, needsClick, shown, tune);
   // The look's own markup, one block per look (null while parked).
   const dress: LookId | null = shown ? look : null;
   const layered = dress !== null && layeredNow(dress, needsClick);
-  const b = LOOK_BOXES[look];
+  const b = lookBox(look, tune);
+  const vars = dress ? tuneVars(dress, tune) : {};
+  const style = Object.keys(vars).length ? (vars as CSSProperties) : undefined;
   return (
     <>
       {/* Hologram: the glass plate, hairlines and ticks in the pane's box and tilt, then the emitter, its
           beam and its floor glow in front of the land: both BEFORE the stage, so the picture is painted
           above them and nothing of either lies on it. */}
-      {dress === 'holo' ? <HologramPlate /> : null}
-      {dress === 'holo' ? <HologramEmitter /> : null}
+      {dress === 'holo' ? <HologramPlate tune={tune} style={style} /> : null}
+      {dress === 'holo' ? <HologramEmitter tune={tune} /> : null}
       <div
         className={dress ? `w-stage w-${dress}${layered ? ' w-layered' : ''}` : 'w-stage w-parked'}
         data-look={dress ?? undefined}
         data-audience={dress && audience ? `${audience.x},${audience.y},${audience.w},${audience.h}` : undefined}
         data-sky-box={dress ? `${b.x},${b.y},${b.w},${b.h}` : undefined}
-        style={dress === 'sky' ? ({ '--w-sky-soft': `${skySoftEdge(SKY_SOFT_EDGE)}px` } as CSSProperties) : undefined}
+        style={style}
       >
         {/* ---- look markup (feathered, sun, drive-in): before the picture ---- */}
         {/* The feathered glow (in front of the land, with its picture) and the sun's halo (behind it). */}
         {dress === 'feather' ? <div className="w-glow" aria-hidden="true" /> : null}
         {dress === 'sun' ? <div className="w-halo" aria-hidden="true" /> : null}
-        {dress === 'drivein' ? <DriveInFrame mode={driveInMode({ paused, started, needsClick, clickHint, ended, reports: item.kind !== 'twitch' })} /> : null}
+        {dress === 'drivein' ? <DriveInFrame light={tune.drivein.neon && tune.drivein.light} mode={driveInMode({ paused, started, needsClick, clickHint, ended, reports: item.kind !== 'twitch' })} /> : null}
         {dress === 'drivein' ? <div className="w-spill" aria-hidden="true" /> : null}
         {/* The picture: this element and the frame in it are never replaced while the video lives. */}
         <div className="w-screen">
@@ -96,11 +100,11 @@ function VideoStage({ item, look, shown }: { item: WatchRef & { label: string };
             picture and under everything after it; only for a look that sits behind the land. */}
         {layered ? <div className="w-front" ref={setFront} aria-hidden="true" /> : null}
         {/* On the floor, in front of the land: the sun's warm streak. */}
-        {dress === 'sun' ? <div className="w-streak" aria-hidden="true" /> : null}
+        {dress === 'sun' && tune.sun.streak ? <div className="w-streak" aria-hidden="true" /> : null}
       </div>
       {/* The floor picks up a faint wash of the sky's colour (approved page, B). One frame cannot be
           mirrored, so this is a still colour wash in the page's light colours, taking no pointer. */}
-      {dress === 'sky' ? <div className="w-skyspill" aria-hidden="true" /> : null}
+      {dress === 'sky' && tune.sky.floor ? <div className="w-skyspill" aria-hidden="true" /> : null}
     </>
   );
 }
@@ -113,7 +117,8 @@ function VideoStage({ item, look, shown }: { item: WatchRef & { label: string };
  */
 function EdgeBand({ look }: { look: LookId }) {
   const needsClick = useWatchStore((s) => s.needsClick);
-  const b = LOOK_BOXES[look];
+  const tune = useWatchStore((s) => s.tune);
+  const b = lookBox(look, tune);
   const peek = (on: boolean) => useWatchStore.getState().setPeek(on);
   return (
     <div

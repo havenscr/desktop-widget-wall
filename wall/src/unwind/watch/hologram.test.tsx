@@ -182,7 +182,8 @@ describe('the Hologram on the wall', () => {
     expect(css).not.toMatch(/\.w-holo[^{]*\{[^}]*pointer-events: auto/);
     expect(rule('.w-holo-plate')).toMatch(/pointer-events: none/);
     // The look: tilted, blended with screen, in the owner's numbers.
-    const tilt = 'perspective(2400px) rotateY(-7deg) rotateX(1.2deg)';
+    // The turn is the Tilt setting's custom property, with the usual 7 degrees as its fallback.
+    const tilt = 'perspective(2400px) rotateY(var(--w-rot, -7deg)) rotateX(1.2deg)';
     expect(css).toContain(tilt);
     expect(rule('.w-holo')).toMatch(/mix-blend-mode: screen/);
     // Fallbacks: no blend where the browser has none or the main area is its own layer group; the tilt and plate stay.
@@ -225,7 +226,7 @@ describe('the Hologram beam stays off the picture', () => {
   };
 
   it('uses the tilt of the stylesheet, and the tilted pane is where the browser puts it', () => {
-    expect(css).toContain(`perspective(${HOLO_TILT.perspective}px) rotateY(${HOLO_TILT.rotateY}deg) rotateX(${HOLO_TILT.rotateX}deg)`);
+    expect(css).toContain(`perspective(${HOLO_TILT.perspective}px) rotateY(var(--w-rot, ${HOLO_TILT.rotateY}deg)) rotateX(${HOLO_TILT.rotateX}deg)`);
     const q = paneQuad();
     // Corners as the browser draws them (measured in the fit check): the lower edge runs from about y 453 at the left to 459 at the right.
     expect(q[3]![0]).toBeCloseTo(1218.5, 0);

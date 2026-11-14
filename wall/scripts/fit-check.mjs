@@ -199,7 +199,6 @@ const EXPECT = {
   'lines-size': /^ *FAIL lines: the sheet is \d+ px tall/m,
   'lines-control': /^ *FAIL lines: control ".*" is [\d.]+ px tall/m,
   'lines-text': /^ *FAIL lines: text under 16 px /m,
-  'lines-clip': /^ *FAIL lines: a new type draws \d+ pixels inside the video's box/m,
   'card-end': /^ *FAIL card right end on card \d+: /m,
   'spotify-copy': /^ *FAIL copy: Spotify message is cut/m,
   'account-copy': /^ *FAIL copy: account message is cut/m,
@@ -350,11 +349,10 @@ const OVERFLOWS = {
   'sky-soft': '.w-sky .w-screen { -webkit-mask-image: none !important; mask-image: none !important; }',
   // Keeps the production side ramp exactly and replaces only the top ramp with one that also fades the foot (an extra stop near 100 percent).
   'sky-foot': `.w-sky .w-screen { -webkit-mask-image: ${SKY_SIDE_RAMP}, ${SKY_TOP_RAMP_FOOT} !important; mask-image: ${SKY_SIDE_RAMP}, ${SKY_TOP_RAMP_FOOT} !important; }`,
-  // lines controls: a 900 px panel, a 24 px chip, a 12 px label, the clip removed (a URL knob, LINES_BREAK_Q).
+  // lines controls: a 900 px panel, a 24 px chip, a 12 px label.
   'lines-size': '.ln-panel { height: 900px !important; }',
   'lines-control': '.ln-chips button { height: 24px !important; }',
   'lines-text': '.ln-label { font-size: 12px !important; }',
-  'lines-clip': '',
   'spotify-copy': '.sp-note { width: 80px !important; overflow: hidden !important; white-space: nowrap !important; }',
   'account-copy': '.tools-note { width: 80px !important; overflow: hidden !important; white-space: nowrap !important; }',
 };
@@ -377,7 +375,6 @@ for (const [name, entry] of Object.entries(AREA_BREAKS)) {
 const BREAK_QUERIES = {
   'sky-moon': '&skymoon=300,200,44',
   'sky-always': '&sky=front',
-  'lines-clip': '&lclip=0',
   ...Object.fromEntries(Object.entries(AREA_BREAKS).filter(([, entry]) => entry.query !== undefined).map(([name, entry]) => [name, entry.query])),
 };
 
@@ -456,10 +453,8 @@ const QUIET = [
   // wing above the horizon, and nothing in the office lights slot, in each Listen state.
   { name: 'Listen, playing with the lines moving', agents: '3', hz: 'unwind', extra: '&audio=demo', checks: ['.u-listen', '.sp-card', '.u-next', '.u-line'], listen: true },
   // lines controls: the sheet's Lines side from Listen (its size, every control inside it, 32 px controls,
-  // 16 px text), and two new types under the drive-in with a video showing (nothing inside its box).
+  // 16 px text). The new types' stacking views and rules live in areas/lines-full-width.mjs.
   { name: 'Lines settings sheet', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=none&wtab=listen&wsheet=one&lines=bars&audio=demo', checks: ['.w-sheet', '.ln-panel', '.ln-types', '.ln-swatches', '.ln-reset', '.ln-foot'], linesSheet: true },
-  { name: 'Lines, bars under the drive-in', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=drivein&wplay=0&audio=demo&lines=bars&lineprobe=1', checks: ['.w-screen'], linesProbe: true },
-  { name: 'Lines, skyline under the drive-in', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=drivein&wplay=0&audio=demo&lines=skyline&lineprobe=1', checks: ['.w-screen'], linesProbe: true },
   { name: 'Listen, nothing playing', agents: '3', hz: 'unwind', extra: '&media=none', checks: ['.u-listen', '.sp-card', '.u-line'], listen: true },
   { name: 'Listen, heavy library and long names', agents: 'ask', hz: 'unwind', extra: '&spotify=heavy&media=long', checks: ['.u-listen', '.sp-card', '.u-next', '.u-line'], listen: true },
   { name: 'Listen, the songs of a 2000 song playlist', agents: '3', hz: 'unwind', extra: '&spotify=heavy', click: '.sp-tile', checks: ['.sp-card', '.sp-songs', '.sp-shead'], listen: true },
@@ -1786,14 +1781,6 @@ try {
         }
       }
     }
-    if (new URLSearchParams(location.search).get('lineprobe')) {
-      const probe = document.querySelector('canvas.horizon-canvas:not(.horizon-front)')?.dataset.lineProbe;
-      const [inside, drawn, boxes] = (probe || '0,0,0').split(',').map(Number);
-      if (!probe) lines.push('lines: the probe reported nothing (no new type was drawn)');
-      else if (!boxes) lines.push('lines: no picture box was claimed');
-      else if (!drawn) lines.push('lines: the new type drew nothing');
-      else if (inside > 0) lines.push("lines: a new type draws " + inside + " pixels inside the video's box");
-    }
     // watch behaviour: \`wbcheck=rest\`: the controls are faded, none of them takes the pointer at its
     // centre, and the dimmed title stays clear of the video's box. \`wbcheck=away\`: on another place
     // the frame is still there, its layer fully transparent or off the stage, no point of its box
@@ -1963,7 +1950,6 @@ try {
     'lines-size': (v) => v.name === 'Lines settings sheet',
     'lines-control': (v) => v.name === 'Lines settings sheet',
     'lines-text': (v) => v.name === 'Lines settings sheet',
-    'lines-clip': (v) => v.name === 'Lines, bars under the drive-in',
   };
   for (const [name, entry] of Object.entries(AREA_BREAKS)) BREAK_ON[name] = entry.appliesTo;
   const breakOn = BREAK_ON[overflow] ? VARIANTS.filter(BREAK_ON[overflow]) : VARIANTS.slice(0, 1);
@@ -2098,7 +2084,6 @@ try {
     for (const l of lines) console.log(`  FAIL ${l}`);
     if (lines.length) failed = true;
     else if (v.linesSheet) console.log('  ok   lines: the sheet fits the stage, every control inside it and 32 px tall, no text under 16 px');
-    else if (v.linesProbe) console.log("  ok   lines: the new type drew and nothing inside the video's box");
     for (const t of [...toolsOut, ...copyOut, ...meetOut]) console.log(`  FAIL ${t}`);
     if (toolsOut.length || copyOut.length || meetOut.length) failed = true;
     else if (v.q.includes('tools=')) console.log('  ok   the drawer stays inside x 1700 to 2560 and y 0 to 720, clear of the rail, no cut text without a tooltip');
