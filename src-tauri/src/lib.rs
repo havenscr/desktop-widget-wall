@@ -3837,6 +3837,7 @@ pub fn run() {
             wall2_spotify::wall2_spotify_start_status,
             wall2_spotify::wall2_spotify_cancel_start,
             wall2_spotify::wall2_spotify_transfer,
+            wall2_spotify::wall2_spotify_seek,
             wall2_spotify::wall2_spotify_shuffle,
             // Wall 2 helper client and machine numbers
             wall2_omni::wall2_omni_summary,

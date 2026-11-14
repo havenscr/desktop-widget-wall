@@ -523,7 +523,8 @@ enum DeviceChoice { Ready(String), Start, Choose, Restricted }
 fn choose_device(devices: &[Device], requested: Option<&str>, computer: Option<&str>) -> DeviceChoice {
     let any_computer=devices.iter().any(|d| d.kind.eq_ignore_ascii_case("computer"));
     let computers = devices.iter().filter(|d| !d.restricted && d.kind.eq_ignore_ascii_case("computer")).collect::<Vec<_>>();
-    if let Some(found) = requested.and_then(|id| computers.iter().find(|d| d.id == id)) { return DeviceChoice::Ready(found.id.clone()) }
+    // A device the owner chose in the "Play on" list (a phone or speaker too) is used when it is awake and allows control.
+    if let Some(found) = requested.and_then(|id| devices.iter().find(|d| !d.restricted && d.id == id)) { return DeviceChoice::Ready(found.id.clone()) }
     if let Some(found) = computers.iter().find(|d| d.active) { return DeviceChoice::Ready(found.id.clone()) }
     if let Some(found) = computer.and_then(|name| computers.iter().find(|d| d.name.eq_ignore_ascii_case(name))) { return DeviceChoice::Ready(found.id.clone()) }
     match computers.as_slice() { [] if any_computer => DeviceChoice::Restricted, [] => DeviceChoice::Start, [only] => DeviceChoice::Ready(only.id.clone()), _ => DeviceChoice::Choose }
@@ -646,6 +647,12 @@ pub async fn wall2_spotify_play(window: WebviewWindow, request: PlayRequest) -> 
 #[tauri::command] pub async fn wall2_spotify_cancel_start(window: WebviewWindow) -> Result<(), String> { require(&window)?; CANCEL_PLAYER.store(true, Ordering::SeqCst); Ok(()) }
 
 #[tauri::command] pub async fn wall2_spotify_transfer(window: WebviewWindow, device_id: String) -> Result<(), String> { require(&window)?; if !valid_device_id(&device_id) { return Err("invalid id".into()) } tauri::async_runtime::spawn_blocking(move || { let cfg = config(window.app_handle())?; put(&cfg, "/me/player", Some(json!({"device_ids":[device_id],"play":false}))) }).await.map_err(|_| "failed".to_string())? }
+const MAX_SEEK_MS: u32 = 86_400_000;
+fn seek_path(position_ms: u32) -> Result<String, String> {
+    if position_ms > MAX_SEEK_MS { return Err("invalid position".into()) }
+    Ok(format!("/me/player/seek?position_ms={position_ms}"))
+}
+#[tauri::command] pub async fn wall2_spotify_seek(window: WebviewWindow, position_ms: u32) -> Result<(), String> { require(&window)?; let path = seek_path(position_ms)?; tauri::async_runtime::spawn_blocking(move || { let cfg = config(window.app_handle())?; put(&cfg, &path, None) }).await.map_err(|_| "failed".to_string())? }
 fn shuffle_with(cfg: &Config, on: bool, http: &dyn Http, creds: &dyn Creds, computer: Option<&str>) -> Result<(), String> { let devices = shape_devices(&get_json_with(cfg, "/me/player/devices", http, creds)?); let DeviceChoice::Ready(device) = choose_device(&devices, None, computer) else { return Err(NO_DEVICE.into()) }; put_with(cfg, &format!("/me/player/shuffle?state={on}&device_id={device}"), None, http, creds) }
 #[tauri::command] pub async fn wall2_spotify_shuffle(window: WebviewWindow, on: bool) -> Result<(), String> { require(&window)?; tauri::async_runtime::spawn_blocking(move || { let cfg = config(window.app_handle())?; let computer = std::env::var("COMPUTERNAME").ok(); shuffle_with(&cfg, on, &RealHttp, &RealCreds, computer.as_deref()) }).await.map_err(|_| "failed".to_string())? }
 
@@ -791,6 +798,24 @@ mod tests {
         let two = vec![d(DEVICE,"Desk",false),d(other,"Other",false)]; assert_eq!(choose_device(&two,None,None),DeviceChoice::Choose);
         assert_eq!(choose_device(&two,Some("gone"),None),DeviceChoice::Choose);
         assert_eq!(choose_device(&[],None,None),DeviceChoice::Start);
+    }
+
+    #[test]
+    fn a_chosen_speaker_or_phone_is_played_on_when_it_is_awake_and_allows_control() {
+        let other = "abcdef0123456789abcdef0123456789abcdef01";
+        let dev = |id: &str, kind: &str, restricted: bool| Device { id: id.into(), name: "X".into(), kind: kind.into(), active: false, restricted, volume: None };
+        let list = vec![dev(DEVICE, "Computer", false), dev(other, "Speaker", false)];
+        assert_eq!(choose_device(&list, Some(other), None), DeviceChoice::Ready(other.into()));
+        assert_eq!(choose_device(&list, None, None), DeviceChoice::Ready(DEVICE.into()));
+        let shut = vec![dev(DEVICE, "Computer", false), dev(other, "Speaker", true)];
+        assert_eq!(choose_device(&shut, Some(other), None), DeviceChoice::Ready(DEVICE.into()));
+    }
+
+    #[test]
+    fn seek_position_is_bounded_and_encoded_as_digits() {
+        assert_eq!(seek_path(0), Ok("/me/player/seek?position_ms=0".into()));
+        assert_eq!(seek_path(MAX_SEEK_MS), Ok(format!("/me/player/seek?position_ms={MAX_SEEK_MS}")));
+        assert_eq!(seek_path(MAX_SEEK_MS + 1), Err("invalid position".into()));
     }
 
     #[test]
