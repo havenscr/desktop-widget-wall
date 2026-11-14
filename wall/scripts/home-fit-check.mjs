@@ -15,7 +15,7 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'n
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { runChrome } from './lib/chrome-run.mjs';
+import { onCleanup, runChrome } from './lib/chrome-run.mjs';
 
 const chrome = process.argv[2] || process.env.CHROME;
 const shot = process.argv[3];
@@ -25,6 +25,7 @@ if (!chrome) {
 }
 const wall = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const work = mkdtempSync(join(tmpdir(), 'wall2-fit-'));
+onCleanup(() => rmSync(work, { recursive: true, force: true }));
 const out = join(work, 'dist');
 
 try {
@@ -96,11 +97,11 @@ setTimeout(() => {
   writeFileSync(page, html);
   const url = `file://${page}?hz=home&at=2026-11-11T16:36:00-08:00`;
   const flags = ['--headless=new', '--no-sandbox', '--disable-gpu', '--hide-scrollbars', '--window-size=2560,720', '--virtual-time-budget=6000'];
-  const dom = await runChrome(chrome, [...flags, '--dump-dom', url], { label: 'Home' });
+  const dom = await runChrome(chrome, [...flags, '--dump-dom', url], { label: 'Home', limitMs: 90_000 });
   const m = /<pre id="fit">([^<]*)<\/pre>/.exec(dom);
   if (!m) throw new Error('the probe did not report (the page did not render Home)');
   const r = JSON.parse(m[1].replace(/&quot;/g, '"').replace(/&amp;/g, '&'));
-  if (shot) await runChrome(chrome, [...flags, `--screenshot=${resolve(shot)}`, url], { label: 'Home, screenshot' });
+  if (shot) await runChrome(chrome, [...flags, `--screenshot=${resolve(shot)}`, url], { label: 'Home, screenshot', limitMs: 90_000 });
   const ticks = r.ticks.map((t) => `${t.w.toFixed(0)}x${t.h.toFixed(0)}@${t.y.toFixed(0)}`).join(', ');
   console.log(`band bottom y ${(r.band.y + r.band.h).toFixed(1)}, right wing content bottom y ${r.bottom.toFixed(1)}, slack between chores and network card ${r.slack.toFixed(1)} px, alert rows ${r.alerts}, ticks ${ticks}`);
   if (r.fail.length) {

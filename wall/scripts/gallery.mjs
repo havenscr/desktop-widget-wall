@@ -28,6 +28,7 @@ const W = 2560;
 const H = 720;
 const SETTLE_MS = 2500;
 const STATE_TIMEOUT_MS = 30_000;
+const RESTARTED = 'browser restarted';
 const PARALLEL = 3;
 const TZ = 'America/Los_Angeles';
 
@@ -651,9 +652,9 @@ async function shutdown() {
   rmSync(work, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 }
 process.on('exit', () => killTree(chromeProc));
-for (const sig of ['SIGINT', 'SIGTERM']) {
+for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
   process.on(sig, () => {
-    shutdown().finally(() => process.exit(sig === 'SIGINT' ? 130 : 143));
+    shutdown().finally(() => process.exit(sig === 'SIGINT' ? 130 : sig === 'SIGHUP' ? 129 : 143));
   });
 }
 
@@ -690,13 +691,20 @@ async function buildBundle() {
 
 async function launch() {
   const profile = join(work, `profile-${++launches}`);
+  const scratch = join(work, `tmp-${launches}`); // the browser's own temporary folder, removed with its profile
   mkdirSync(profile);
+  mkdirSync(scratch);
   let stderr = '';
   chromeProc = spawn(
     chrome,
     ['--headless', '--no-sandbox', '--disable-gpu', '--hide-scrollbars', '--mute-audio', `--user-data-dir=${profile}`, '--remote-debugging-port=0', `--window-size=${W},${H + 87}`, 'about:blank'],
-    { stdio: ['ignore', 'ignore', 'pipe'], detached: process.platform !== 'win32' },
+    { stdio: ['ignore', 'ignore', 'pipe'], detached: process.platform !== 'win32', env: { ...process.env, TMPDIR: scratch, TEMP: scratch, TMP: scratch } },
   );
+  const proc = chromeProc;
+  proc.once('exit', () => {
+    if (chromeProc === proc) chromeProc = null; // forget a browser that has gone: nothing may kill its old id later
+    if (!shuttingDown) for (const d of [scratch, profile]) rmSync(d, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+  });
   chromeProc.stderr.on('data', (d) => {
     stderr = (stderr + d).slice(-4000);
   });
@@ -730,6 +738,7 @@ async function launch() {
   });
   let id = 0;
   const pending = new Map();
+  let gone = null;
   const listeners = new Set();
   ws.onmessage = (ev) => {
     const msg = JSON.parse(ev.data);
@@ -741,12 +750,19 @@ async function launch() {
   };
   const send = (method, params = {}, sessionId) =>
     new Promise((resolve, reject) => {
+      if (gone) return reject(gone);
       const n = ++id;
       pending.set(n, { resolve, reject });
       ws.send(JSON.stringify({ id: n, method, params, sessionId }));
     });
   cdpConn = { close: () => ws.close() };
-  return { send, listeners, close: () => ws.close() };
+  /** Reject every request still waiting on this browser (it is being replaced) and refuse new ones. */
+  const abort = (err) => {
+    gone = err;
+    for (const p of pending.values()) p.reject(err);
+    pending.clear();
+  };
+  return { send, listeners, abort, close: () => ws.close() };
 }
 
 /** Render one state in its own browser context (fresh storage). Returns { errors }. */
@@ -890,12 +906,15 @@ try {
     if (cdp !== dead) return;
     relaunching ??= (async () => {
       console.log('  retry: the browser did not answer, restarting it');
+      dead.abort(new Error(RESTARTED));
       try {
         dead.close();
       } catch {
         /* already closed */
       }
-      killTree(chromeProc);
+      const old = chromeProc;
+      killTree(old);
+      if (old) await new Promise((r) => (old.exitCode !== null || old.signalCode !== null ? r() : old.once('exit', r)));
       cdp = await launch();
     })().finally(() => {
       relaunching = null;
@@ -919,7 +938,7 @@ try {
       const file = names[i];
       let error = null;
       let timer;
-      for (let attempt = 1; attempt <= 2; attempt++) {
+      for (let attempt = 1, restarts = 0; ; ) {
         error = null;
         const ctl = { cancelled: false, cleanup: async () => {} };
         const via = cdp;
@@ -939,7 +958,12 @@ try {
         } finally {
           clearTimeout(timer);
         }
-        if (error !== 'timed out' || attempt === 2) break;
+        if (error === RESTARTED && restarts++ < 3) {
+          // Another state's timeout replaced the browser: retry on the new one without using up this state's own retry.
+          await relaunching;
+          continue;
+        }
+        if (error !== 'timed out' || attempt++ === 2) break;
         await relaunch(via);
       }
       if (error) failures++;
