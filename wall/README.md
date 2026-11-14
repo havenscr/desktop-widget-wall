@@ -1372,9 +1372,9 @@ there, still playing, when the owner comes back (see "The stage layer" below).
   round `.rd` controls): Previous and Next (on only for a playlist the player reports), Play or
   Pause, Mute, Stop, and Open in YouTube (or Open on Twitch); under it the elapsed time, a thin
   bar (a click or the arrow keys seek) and the length, or "Live" for a stream.
-- **The Look switch** (`LookSwitch` in `Watch.tsx`): the four looks as one segmented control
-  in a fixed place under the left block (the same box in every look, playing or not; never on
-  the video). With one look for everything it sets that look; with a look per kind it sets the
+- **The Look switch** (`LookSwitch` in `Watch.tsx`): the five looks as one segmented control
+  in a fixed place under the left block (one box, 500 by 46 at wall 624, 444, ending at x 1084, the same in every look,
+  playing or not; never on the video; its segments take their own width and share the rest). With one look for everything it sets that look; with a look per kind it sets the
   look of the kind on (its hover tip and name say which). Arrow keys move.
 - **For the buddy**: `driveInAudience(state)` in `store.ts` (usable as a store selector) is
   null, or, while something is on in the drive-in look, the screen's rectangle in wall pixels
@@ -1398,11 +1398,27 @@ there, still playing, when the owner comes back (see "The stage layer" below).
   centred at wall x 1331 with its foot 29 px over the horizon, the ranges in front of its lower part,
   a clean circle with no bands across the video (the owner's later words replace the approved
   page's bands), a warm halo and a streak on the floor; it
-  shows the middle 56 percent of a 16:9 picture's width) and `drivein` (a framed screen at the
-  approved page's size, 691 by 389 at wall 1124, 60 (40 px right of the left block, as near the
-  approved centre as the layout allows), on two posts standing on the horizon in front of the
-  ranges, the stage light's colours washed on the floor under it; with nothing
-  on, the empty screen stands there). Sky layers: each look claims the horizon's sky
+  shows the middle 56 percent of a 16:9 picture's width) and `drivein` (the Screen tower: the
+  video's box is exactly 16:9, 672 by 378 at wall 1244, 54 (`DRIVE_IN_SCREEN`), with no border of its own;
+  the frame is one SVG over the whole scene, `DriveInFrame.tsx` with its drawing in `towerFrame.ts`, the first
+  child of the stage under the floor light and the screen, taking no pointer: a steel surround with a
+  coping and one neon edge line, a Warren truss, two lattice towers and raking stays on footings on the horizon,
+  a marquee board, a ground shadow and the legs mirrored in the floor. Every fill round the picture is a
+  ring with the box cut out (even-odd) and the neon's glow is clipped to the same ring, so nothing of
+  it can cover the picture; a test checks that from the component's own geometry and the fit check
+  checks it in the browser. The marquee reads WATT'S DRIVE-IN, NOW SHOWING while playing and
+  INTERMISSION while paused (a cross-fade of about a second, at once under reduced motion); with nothing
+  on, the empty screen is dark and the marquee reads the name only; the stage light's colours are washed
+  on the floor under it, re-centred under the new box and still starting on the horizon) and `holo` (the
+  Hologram: the whole 16:9 picture, 736 by 414 at wall 1210, 42, on a pane tilted in 3D
+  (`perspective(2400px) rotateY(-7deg) rotateX(1.2deg)`) with `mix-blend-mode: screen` over a dark glass
+  plate in the same box and tilt (`HologramPlate`, before the stage), two cyan hairlines and four corner
+  ticks outside the picture, and a small emitter on the floor with its beam fan and floor glow
+  (`HologramEmitter`, after the stage). It stands in front of the land, claims no front layer, and the
+  moon keeps clear of its box; the pointer never reaches the player, but a refused autoplay's click lands
+  on the tilted frame's real area. The blend needs the stage and the sky in one layer group: where the
+  layering cannot blend (no `mix-blend-mode`, or the main area isolated by a look behind the land) the
+  blend is dropped and the plate and the tilt stay). Sky layers: each look claims the horizon's sky
   (`useWatchSky`, `horizon/sky.ts`) with its picture's box (`LOOK_BOXES`, so the moon keeps 40 px
   clear of it: another of its places, or none); the sun and the drive-in own that sky (no moon at
   all); the whole sky and the sun (`behindTheLand`) also give `.w-front`, after the picture, where the
@@ -1416,9 +1432,9 @@ there, still playing, when the owner comes back (see "The stage layer" below).
   in its heading row changes the side, and the heading follows it. The Lines side
   (`LinesPanel.tsx`) has one control per 40 px row with its value read back in words, and sizes
   the sheet to its content. The Looks side:
-  one look for everything (four picture tiles), or one each for videos and playlists, live
-  streams and Twitch (four choices a row), at 540 px (`wall2-watch-look`, checked on read;
-  values stored before the two new looks still read the same). The Look switch sets it too.
+  one look for everything (five picture tiles), or one each for videos and playlists, live
+  streams and Twitch (five choices a row), at 540 px (`wall2-watch-look`, checked on read;
+  values stored before the newer looks still read the same). The Look switch sets it too.
 - **The stage layer** (`StageLayer.tsx`, watch behaviour): the video's stage (the frame in its
   look, with the player's message bridge) is not part of Unwind. The screens frame
   (`screens/Frame.tsx`) mounts `WatchStageLayer` once in `.top`, Unwind's own box, for every
@@ -1463,7 +1479,7 @@ there, still playing, when the owner comes back (see "The stage layer" below).
 - **Listen**: when something is saved, the album art has a small "Video" corner that
   switches to Watch. Nothing else on Listen changes.
 - **Dev**: `?watch=mock` draws a poster where the frame goes (headless Chromium shows an empty
-  frame) and opens Watch; `?wlist=none|three|many`, `?wlook=feather|sky|sun|drivein`, `?wposter=bright` (a pale test picture, the worst case for
+  frame) and opens Watch; `?wlist=none|three|many`, `?wlook=feather|sky|sun|drivein|holo`, `?wposter=bright` (a pale test picture, the worst case for
   text over video), `?wplay=<n>`,
   `?wsheet=one|kind`, `?wtab=listen`, and a mock player with `?wstate=paused|refused|silent`
   (default: playing at 12:34 of 45:10; a playlist reports item 4 of 24). The stills hold the

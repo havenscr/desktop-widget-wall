@@ -16,6 +16,7 @@ import { useSkyKeepClear } from '../../horizon/sky';
 import { useSignalStore } from '../../signals/store';
 import { useToolsStore } from '../../tools/store';
 import { tip } from '../../ui/HoverTip';
+import { DriveInFrame } from './DriveInFrame';
 import { kindName, validRef, type WatchKind, type WatchRef } from './links';
 import { LOOKS, lookFor, lookTargetName, type LookId } from './looks';
 import { playerLink } from './PlayerFrame';
@@ -72,12 +73,11 @@ function EmptyDriveIn() {
   useWatchSky('drivein', null, false);
   return (
     <div className="w-stage w-drivein w-empty" data-look="drivein" aria-hidden="true">
+      <DriveInFrame mode="empty" />
       <div className="w-screen">
         <IconMovie size={64} stroke={1.25} />
         <span>Nothing on the screen</span>
       </div>
-      <i className="w-post l" />
-      <i className="w-post r" />
     </div>
   );
 }
@@ -100,7 +100,7 @@ export function clock(sec: number): string {
 }
 
 /**
- * The Look switch: the four looks in one segmented control, always in the same place under the
+ * The Look switch: the five looks in one segmented control, always in the same place under the
  * left block (never on the video), whether or not something plays. With one look for
  * everything it sets that look; with a look per kind it sets the look of the kind on (or, with
  * nothing on, of the first saved item), and its hover tip says which. Arrow keys move.
