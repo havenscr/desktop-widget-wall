@@ -103,6 +103,39 @@ it('a pinned card takes the pointer, ignores hovers and closes on a click elsewh
   expect(document.querySelector('.hover-tip')).toBeNull();
 });
 
+it('pins a side card beside its anchor (right, else left), top aligned, inside the stage', () => {
+  const size = vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(300);
+  const tall = vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(200);
+  try {
+    const r = render(
+      <>
+        <span className="anchor">x</span>
+        <HoverTipLayer />
+      </>,
+    );
+    const anchor = r.container.querySelector('.anchor')!;
+    const at = (x: number, y: number) => vi.spyOn(anchor, 'getBoundingClientRect').mockReturnValue({ left: x, top: y, width: 140, height: 170, right: x + 140, bottom: y + 170, x, y, toJSON: () => ({}) } as DOMRect);
+    const place = () => {
+      const st = (document.querySelector('.hover-tip') as HTMLElement).style;
+      return [st.left, st.top, (document.querySelector('.hover-tip') as HTMLElement).dataset.side];
+    };
+    at(2000, 100);
+    act(() => pinTip(anchor, 'Details', { side: true }));
+    expect(place()).toEqual(['2154px', '100px', 'right']);
+    act(() => resetTip());
+    at(2400, 600);
+    act(() => pinTip(anchor, 'Details', { side: true }));
+    expect(place()).toEqual(['2086px', '508px', 'left']);
+    act(() => resetTip());
+    at(2000, 100);
+    act(() => pinTip(anchor, 'Pick one'));
+    expect(place()).toEqual(['1920px', '284px', 'below']);
+  } finally {
+    size.mockRestore();
+    tall.mockRestore();
+  }
+});
+
 it('sits above its control with a tail pointing at it (below when there is no room), and a scroll takes it down', async () => {
   const r = render(
     <>

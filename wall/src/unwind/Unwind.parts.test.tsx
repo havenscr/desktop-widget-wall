@@ -50,12 +50,9 @@ it('keeps Unwind (and so the horizon camera) on Listen and Watch, and switches b
   expect(usePlaceStore.getState().active).toBe('unwind');
 });
 
-it('opens Zen in Dream from the Dream tab', async () => {
+it('has no Dream toggle: Listen and Watch only', () => {
   render(<Tabs />);
-  await act(async () => screen.getByRole('tab', { name: 'Dream' }).click());
-  expect(usePlaceStore.getState().active).toBe('zen');
-  expect(usePlaceStore.getState().zenDream).toBe(true);
-  expect(usePlaceStore.getState().from).toBe('unwind');
+  expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual(['Listen', 'Watch']);
 });
 
 it('shows the first event after midnight as Tomorrow, or nothing', async () => {
@@ -312,7 +309,7 @@ it('shows the last played track with Play again when nothing plays', async () =>
   mocks.set('media_play_pause', toggle);
   const r = render(<Unwind />);
   await flush();
-  expect(screen.getByText('Spotify')).toBeTruthy();
+  expect(document.querySelector('.u-src')!.textContent).toBe('Spotify');
   mocks.set('get_now_playing', () => ({ playback_status: 'stopped' }));
   await flush(2100);
   expect(screen.getByText('Last played on Spotify')).toBeTruthy();
