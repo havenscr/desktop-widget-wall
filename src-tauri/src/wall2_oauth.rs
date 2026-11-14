@@ -42,7 +42,7 @@ pub fn parse_callback(request_target: &str, callback_path: &str, expected_state:
 }
 
 pub fn page(text: &str) -> String {
-    format!("<!doctype html><meta charset=\"utf-8\"><title>Wall 2</title><body style=\"font-family:sans-serif;margin:3em\"><p>{text}</p></body>")
+    format!("<!doctype html><meta charset=\"utf-8\"><title>Ridgeline</title><body style=\"font-family:sans-serif;margin:3em\"><p>{text}</p></body>")
 }
 
 pub fn respond(request: tiny_http::Request, status: u16, body: String) {

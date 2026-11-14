@@ -468,9 +468,9 @@ export function Accounts() {
   if (accounts.length > 0) {
     calendars = accounts.map((a) => <CalendarRow key={a.id} a={a} m={m} />);
   } else if (m.status === 'unconfigured') {
-    calendars = <Row icon={<IconCalendar size={22} aria-hidden="true" />} name="Calendar" line="Not set up" hover="Setup steps are in the Wall 2 README, section Meet." />;
+    calendars = <Row icon={<IconCalendar size={22} aria-hidden="true" />} name="Calendar" line="Not set up" hover="Setup steps are in the Ridgeline README, section Meet." />;
   } else if (m.status === 'invalid') {
-    calendars = <Row icon={<IconCalendar size={22} aria-hidden="true" />} name="Calendar" line="meet.json is not valid" tone="bad" hover="See the Meet section of the Wall 2 README." />;
+    calendars = <Row icon={<IconCalendar size={22} aria-hidden="true" />} name="Calendar" line="meet.json is not valid" tone="bad" hover="See the Meet section of the Ridgeline README." />;
   } else if (m.status === 'error') {
     calendars = (
       <Row icon={<IconCalendar size={22} aria-hidden="true" />} name="Calendar" line="Could not be read" tone="bad">
