@@ -51,19 +51,27 @@ pub fn select_arg(hex: &str) -> Option<String> {
 
 pub fn valid_outlook_path(path: &Path, exists_as_file: impl FnOnce(&Path) -> bool) -> bool {
     let text = path.as_os_str().to_string_lossy();
-    valid_outlook_path_parts(&text, path.is_absolute(), || exists_as_file(path))
-        && path.file_name().and_then(|name| name.to_str()).is_some_and(|name| name.eq_ignore_ascii_case("OUTLOOK.EXE"))
+    // Every pure check runs before the disk closure can be reached.
+    path.file_name().and_then(|name| name.to_str()).is_some_and(|name| name.eq_ignore_ascii_case("OUTLOOK.EXE"))
+        && valid_outlook_path_parts(&text, path.is_absolute(), || exists_as_file(path))
 }
 
 pub fn valid_outlook_path_parts(text: &str, absolute: bool, exists_as_file: impl FnOnce() -> bool) -> bool {
     absolute
         && text.len() <= 260
+        && starts_with_drive(text)
         && !text.starts_with("\\\\")
         && !text.starts_with("//")
         && !text.contains('"')
         && !text.chars().any(char::is_control)
         && text.rsplit(['\\', '/']).next().is_some_and(|name| name.eq_ignore_ascii_case("OUTLOOK.EXE"))
         && exists_as_file()
+}
+
+/// A drive letter, a colon and a separator. A path that starts with a separator, in any mix, is
+/// refused: Windows reads `\/server/share` and `/\server\share` as network paths.
+fn starts_with_drive(text: &str) -> bool {
+    matches!(text.as_bytes(), [letter, b':', b'\\' | b'/', ..] if letter.is_ascii_alphabetic())
 }
 
 pub fn open_with<Find, Launch, Open>(
@@ -204,6 +212,47 @@ mod tests {
         for bad in [r"\\server\share\OUTLOOK.EXE", r"\\?\C:\Office\OUTLOOK.EXE", r"\\.\C:\Office\OUTLOOK.EXE", "//server/share/OUTLOOK.EXE"] {
             assert!(!valid_outlook_path_parts(bad, true, || panic!("checked disk for {bad}")), "accepted {bad}");
         }
+    }
+
+    #[test]
+    fn path_core_requires_a_drive_letter_and_separator() {
+        assert!(valid_outlook_path_parts(r"C:\Office\OUTLOOK.EXE", true, || true));
+        assert!(valid_outlook_path_parts("d:/Office/OUTLOOK.EXE", true, || true));
+        for bad in [
+            r"\/server/share/OUTLOOK.EXE",
+            r"/\server\share\OUTLOOK.EXE",
+            "//server/share/OUTLOOK.EXE",
+            r"\\server\share\OUTLOOK.EXE",
+            r"\Office\OUTLOOK.EXE",
+            "/Office/OUTLOOK.EXE",
+            r"C:OUTLOOK.EXE",
+            r"1:\Office\OUTLOOK.EXE",
+        ] {
+            assert!(!valid_outlook_path_parts(bad, true, || panic!("checked disk for {bad}")), "accepted {bad}");
+        }
+    }
+
+    #[test]
+    fn wrapper_never_reaches_the_disk_for_a_bad_path() {
+        for bad in [
+            r"C:\Office\NOTEPAD.EXE",
+            r"\/server/share/OUTLOOK.EXE",
+            r"/\server\share\OUTLOOK.EXE",
+            "//server/share/OUTLOOK.EXE",
+            r"\\server\share\OUTLOOK.EXE",
+            "OUTLOOK.EXE",
+        ] {
+            assert!(!valid_outlook_path(Path::new(bad), |_| panic!("checked disk for {bad}")), "accepted {bad}");
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn wrapper_checks_the_disk_once_for_a_good_path() {
+        let mut calls = 0;
+        assert!(valid_outlook_path(Path::new(r"C:\Office\OUTLOOK.EXE"), |_| { calls += 1; true }));
+        assert_eq!(calls, 1);
+        assert!(!valid_outlook_path(Path::new(r"C:\Office\OUTLOOK.EXE"), |_| false));
     }
 
     #[test]

@@ -2148,17 +2148,18 @@ mod tests {
         let mut body = full();
         body["sessionsList"] = json!([lane_json(&id(11))]);
         body["yourMove"]["ids"] = json!([id(12)]);
+        body["yourMove"]["first"]["sessionId"] = json!(id(15));
         body["sessions"] = json!({});
         body["sessions"][id(13)] = json!({ "title": "Named" });
         body["day"] = json!([{ "lane": id(14), "start": "2026-11-12T17:00:00Z", "end": null, "kind": "run" }]);
         let ids = ids_of(&shape_summary(&body).unwrap());
-        for n in [1, 2, 11, 12] {
+        for n in [1, 2, 11, 12, 15] {
             assert!(ids.contains(&id(n)), "missing {}", id(n));
         }
         for n in [13, 14] {
             assert!(!ids.contains(&id(n)), "accepted {}", id(n));
         }
-        assert_eq!(ids.len(), 4);
+        assert_eq!(ids.len(), 5);
     }
 
     const EXE: &str = r"C:\Program Files\Example\omnigent.exe";
