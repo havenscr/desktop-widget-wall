@@ -301,6 +301,8 @@ function Controls({ item, openFailed, setOpenFailed }: { item: WatchRef & { labe
 
 /** watch behaviour: how long the controls stay after the pointer or focus leaves them, while a video plays. */
 export const CTL_REST_MS = 3000;
+/** Development only: the dev mocks (`?wctl=rest`) shorten the wait so headless stills catch the faded block. */
+export const ctlTiming = { restMs: CTL_REST_MS };
 
 /** True for an element that takes typed text (the list's link field, a rename field). */
 function typing(el: Element | null): boolean {
@@ -337,7 +339,7 @@ function useControlsFade(canRest: boolean, peek: boolean) {
     timer.current = setTimeout(() => {
       timer.current = undefined;
       setRest(true);
-    }, CTL_REST_MS);
+    }, ctlTiming.restMs);
   }, []);
   useEffect(() => wake(), [canRest, peek, wake]);
   useEffect(() => () => clearTimeout(timer.current), []);

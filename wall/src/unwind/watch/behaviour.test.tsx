@@ -10,7 +10,7 @@ import { HoverTipLayer, resetTip, TIP_DELAY_MS } from '../../ui/HoverTip';
 import { resetLastPlayed } from '../lastPlayed';
 import { LOOKS_KEY } from './looks';
 import { framePoster } from './PlayerFrame';
-import { SAVED_KEY } from './saved';
+import { SAVED_KEY, type SavedItem } from './saved';
 import { resetWatch, useWatchStore } from './store';
 import { UnwindView } from './testView';
 import { YOUTUBE_EMBED_ORIGIN } from './urls';
@@ -20,7 +20,7 @@ import { CTL_REST_MS } from './Watch';
 vi.setConfig({ testTimeout: 20_000 });
 
 const V = 'Ab3dEfGh1jK';
-const ITEMS = [
+const ITEMS: SavedItem[] = [
   { kind: 'video', id: V, label: 'Night drive mix' },
   { kind: 'twitch', id: 'pixel_harbor', label: 'pixel_harbor' },
 ];
