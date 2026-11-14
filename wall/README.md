@@ -936,12 +936,35 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
   is already on, leave it alone; otherwise turn it on and remember that focus did
   it (key `wall2-focus-dnd`); turn it off on pause, reset, finish and app start
   only if focus turned it on. Calls run one at a time through a queue.
-- **Weather** (`wall/src/weather/`). Open-Meteo from the front end (same request
-  as the old app: Fahrenheit, mph, `timezone=auto`). Current temperature,
-  condition with an icon, today's high and low, next six hours. Refreshes every
-  15 minutes while visible, and once when the page returns after 15 minutes or
-  more. On failure the last reading stays and shows its age in small text. The
-  code to label and icon map is one pure function, `describeWeather` in `codes.ts`.
+- **Weather** (`wall/src/weather/`). Read natively: the web view never calls a weather
+  service (its security policy no longer lists one). The command `wall2_weather(latitude,
+  longitude, source)` (window `wall2` only; `source` is `open-meteo` or `nws`; the place must
+  be finite and in range) lives in `src-tauri/src/wall2_weather.rs` on the shared HTTP agent and
+  returns the reply text, or fails with `dns`, `connect`, `tls`, `timeout`, `read`, `input` or
+  `http <status>`. The page parses it. Open-Meteo is the first source (same request as the old
+  app: Fahrenheit, mph, `timezone=auto`). When it answers 429 or cannot be reached, the United
+  States National Weather Service (`api.weather.gov`, no key, `points` once and cached, then the
+  hourly forecast; the app and the public repository named in `User-Agent`) is asked: its short
+  forecast words map to a weather code through one table (`NWS_TABLE` in `model.ts`, a test per
+  row), "now" is the first hour, and today's high and low are the day's hours still ahead. Outside
+  the United States it answers 404 and the first failure stays. A reading says which source it came
+  from (`source`): the Tools Sources row and the Unwind date line's hover name the Weather Service
+  when it is the one. Current temperature, condition with an icon, today's high and low, next six
+  hours. Refreshes every 15 minutes while visible (one minute while there is no reading), and once
+  when the page returns after 15 minutes or more. After a 429 Open-Meteo is left alone for 15
+  minutes, then 30, then 60 at most (a success resets this; the Tools drawer's Retry tries at once),
+  and the words say so ("Open-Meteo is refusing this address for now (too many requests). Next
+  try at 3:15 PM."). On failure the last reading stays and shows its age in small text. The reason
+  for a failed read with no reading is printed under "Weather unavailable" on the Work cards (16 px)
+  and kept on hover elsewhere. The code to label and icon map is one pure function, `describeWeather`
+  in `codes.ts`.
+
+  **The weather log.** `wall2-weather.log` and `wall2-weather.log.1` in the app's log folder (same
+  rotation as the Sonos log: append, 64 KB, one older file, shared code in `wall2_sonos_log.rs`) hold
+  one line per failed try and one per recovery: `<UTC time> <open-meteo|nws> failed <kind> <status>
+  [<reason>]` or `<UTC time> <source> recovered`. For an HTTP failure the first 120 characters of the
+  reply's `reason` text are kept (Open-Meteo says which limit: minute, hour or day), printable ASCII
+  only, with every word that holds a decimal number (a coordinate) removed. The place is never logged.
 - **Music** (`wall/src/music/`). One app-wide poll (`store.ts`) shared by Work's now
   playing row, the full music bar and the Unwind view: it polls `get_now_playing` every 2 seconds
   while visible (never while hidden); each call gives up after 5 seconds so a hung
@@ -957,6 +980,26 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
   Previous, play or pause, next call `media_previous`, `media_play_pause`,
   `media_next`; failures are swallowed. Stopped or unknown shows a quiet
   "Nothing playing".
+
+  **Which session the player follows (Wall 2).** Windows names one media session "current", but
+  that one can have ended while it still says it plays (a video at its end, a player that stopped
+  sending updates) while another app plays. `get_now_playing` for the `wall2` window reads every
+  session and `wall2_media.rs` picks: the current session when it plays and has not ended; else
+  any other session that plays and has not ended, the most recently updated first; else the
+  current session; else none. A session has ended when it says playing, its end is known, and
+  either its position plus the time since its last update is past the end by more than 3 seconds,
+  or its position stayed within 1 second of the end on two reads at least 3 seconds apart (kept
+  per app id). An ended session that is shown anyway is reported paused with `ended: true`, so the
+  player reads "Last played" with the play button, never a full bar with pause. The first wall
+  (window `main`) still gets Windows' current session unchanged. The media commands take the
+  shown session's app id (`sourceId`, sent by `sendMediaCommand` in `music/store.ts`) and act on
+  that session when it still exists, else on the current one. In `Player.tsx` the session is the
+  wall's own Watch video when its title is what Watch plays or last stopped and its id is the web
+  view (`msedgewebview2`) or not a known player (`isKnownPlayer`). The log `wall2-media.log`
+  (same rotation) holds one line when the set of sessions or the choice changes: `<UTC time>
+  rule=<current-playing|other-playing|current-shown|none> chosen=<app id> sessions=<id>:<status>;...`
+  (ids cut to 80 characters, `:ended` for a session that plays but ended, `:current` for Windows'
+  choice; no titles, no artists). Review knob `?media=ended` shows an ended session.
 - **Settings** (`wall/src/settings/`). `localStorage` key `wall2-settings`, JSON
   with optional `latitude` and `longitude` (defaults 47.68, -122.21), `zenDimHour` (whole
   hour 18 to 23, default 22) and `zenDimWaitMin` (whole minutes 1 to 60, default 10). No settings
@@ -965,8 +1008,8 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
   (`src/bridge/devMocks/`, dev server only); in a review still (`?hz=&at=`) the
   meeting and task mocks follow the review's time. Review knobs: `?meet=none` (no
   meetings), `?box=none` (no box numbers), `?net=alarms` (the network feed with only
-  its alarm count). Weather needs network access to
-  Open-Meteo.
+  its alarm count). The weather command is mocked (`devMocks/weather.ts`); review knobs
+  `?weather=ok|stale|down|cold|dns|refused|second` (see `devMocks/gallery.ts`).
 
 ## Audio, ripple and moon
 
@@ -2241,7 +2284,7 @@ Review knobs (development only): `?screen=onair` opens On Air; `?show=typical|on
 Set in `src-tauri/tauri.wall2.conf.json` under `app.security.csp` (Ridgeline only;
 the old app's config is untouched). It allows own files (`'self'`), data: images,
 own fonts, connections to the Tauri IPC (`ipc:`, `http://ipc.localhost`,
-`https://ipc.localhost`) and `https://api.open-meteo.com`, and frames from the two
+`https://ipc.localhost`), no weather service (the weather is read natively), and frames from the two
 video players only (`frame-src https://www.youtube-nocookie.com https://player.twitch.tv`,
 in `csp` and `devCsp`, for Unwind's Watch tab). Everything else is
 denied (`default-src 'none'`); no `unsafe-eval`, no `unsafe-inline`. React sets
