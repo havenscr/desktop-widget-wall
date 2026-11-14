@@ -25,9 +25,13 @@ export function veilStrength(el: Element | null): number {
   return Number.isFinite(v) && v > 0 ? Math.min(1, v) : 0;
 }
 
+/** The last gradient made, kept for the next frame while its canvas, height and strength are the same. */
+const made: { ctx: CanvasRenderingContext2D | null; height: number; a: number; g: CanvasGradient | null } = { ctx: null, height: 0, a: 0, g: null };
+
 /**
  * Lay the veil at strength `a` over what `ctx` already holds, on its own pixels only. `width` and
- * `height` are the canvas's size in its pixels. Nothing is drawn at `a` 0.
+ * `height` are the canvas's size in its pixels. Nothing is drawn at `a` 0. The gradient is made
+ * again only when the canvas, its height or the strength changes (a place change), not each frame.
  */
 export function drawVeil(ctx: CanvasRenderingContext2D, width: number, height: number, a: number): void {
   if (!(a > 0)) return;
@@ -35,9 +39,15 @@ export function drawVeil(ctx: CanvasRenderingContext2D, width: number, height: n
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.globalAlpha = 1;
   ctx.globalCompositeOperation = 'source-atop';
-  const g = ctx.createLinearGradient(0, 0, 0, height);
-  for (const [o, k] of VEIL_STOPS) g.addColorStop(o, `rgba(${VEIL_RGB},${+(a * k).toFixed(4)})`);
-  ctx.fillStyle = g;
+  if (made.ctx !== ctx || made.height !== height || made.a !== a || !made.g) {
+    const g = ctx.createLinearGradient(0, 0, 0, height);
+    for (const [o, k] of VEIL_STOPS) g.addColorStop(o, `rgba(${VEIL_RGB},${+(a * k).toFixed(4)})`);
+    made.ctx = ctx;
+    made.height = height;
+    made.a = a;
+    made.g = g;
+  }
+  ctx.fillStyle = made.g;
   ctx.fillRect(0, 0, width, height);
   ctx.restore();
 }

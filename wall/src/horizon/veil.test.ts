@@ -36,6 +36,19 @@ describe('the veil on the front canvas', () => {
     expect(none.log).toEqual([]);
   });
 
+  it('makes its gradient once and lays the same one each frame, until the canvas, its height or the strength changes', () => {
+    const { ctx, log } = recordingContext();
+    for (let i = 0; i < 5; i++) drawVeil(ctx, 3200, 900, 0.25);
+    expect(log.filter((l) => l.startsWith('linear(')).length).toBe(1);
+    expect(log.filter((l) => l.startsWith('fillRect(')).length).toBe(5);
+    drawVeil(ctx, 3200, 900, 0.3);
+    drawVeil(ctx, 3200, 1000, 0.3);
+    expect(log.filter((l) => l.startsWith('linear(')).length).toBe(3);
+    const other = recordingContext();
+    drawVeil(other.ctx, 3200, 1000, 0.3);
+    expect(other.log.filter((l) => l.startsWith('linear(')).length).toBe(1);
+  });
+
   it('reads the strength from the veil element, 0 without one', () => {
     expect(veilStrength(null)).toBe(0);
     const el = document.createElement('div');
