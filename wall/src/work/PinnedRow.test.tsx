@@ -552,3 +552,85 @@ it('a pin saved before the rename (lib:strip-dark) still resolves, now reading H
   expect(labels()).toEqual(['Hide screen', 'Snip']);
   expect(screen.getByRole('button', { name: 'Hide screen' }).getAttribute('data-kind')).toBe('system');
 });
+
+// Guards, closing and sizes of the Always here row.
+
+const OPEN_ATTR = 'data-drawer-open';
+afterEach(() => {
+  document.documentElement.removeAttribute(OPEN_ATTR);
+});
+
+it('opens no menu and no picker while an overlay owns the pointer', async () => {
+  localStorage.setItem(PINS_KEY, JSON.stringify(['lib:thirds', 'lib:snip']));
+  render(<PinnedRow />);
+  await flush();
+  document.documentElement.setAttribute(OPEN_ATTR, '');
+  const snip = screen.getByRole('button', { name: 'Snip' });
+  fireEvent.contextMenu(snip);
+  fireEvent.click(screen.getByRole('button', { name: 'More options for Snip' }));
+  fireEvent.keyDown(snip, { key: 'ContextMenu' });
+  fireEvent.keyDown(snip, { key: 'F10', shiftKey: true });
+  fireEvent.click(screen.getByRole('button', { name: 'Add a key' }));
+  await flush();
+  expect(screen.queryByRole('menu')).toBeNull();
+  expect(screen.queryByRole('dialog')).toBeNull();
+  // Once the overlay is gone the Add tile and the menu work again.
+  document.documentElement.removeAttribute(OPEN_ATTR);
+  fireEvent.click(screen.getByRole('button', { name: 'Add a key' }));
+  await flush();
+  expect(screen.getByRole('dialog')).toBeTruthy();
+});
+
+it('the menu closes on a press elsewhere, and its corner button toggles it', async () => {
+  render(<PinnedRow />);
+  await flush();
+  fireEvent.contextMenu(screen.getByRole('button', { name: 'Snip' }));
+  await flush();
+  expect(screen.getByRole('menu')).toBeTruthy();
+  fireEvent.pointerDown(document.body);
+  expect(screen.queryByRole('menu')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'More options for Snip' }));
+  expect(screen.getByRole('menu')).toBeTruthy();
+  // The corner button that opened it closes it.
+  fireEvent.pointerDown(screen.getByRole('button', { name: 'More options for Snip' }));
+  fireEvent.click(screen.getByRole('button', { name: 'More options for Snip' }));
+  expect(screen.queryByRole('menu')).toBeNull();
+});
+
+it('a menu opened by the keyboard returns focus to its key on Escape', async () => {
+  render(<PinnedRow />);
+  await flush();
+  const focus = screen.getByRole('button', { name: 'Focus' });
+  focus.focus();
+  fireEvent.keyDown(focus, { key: 'ContextMenu' });
+  await flush();
+  expect(screen.getByRole('menu')).toBeTruthy();
+  fireEvent.keyDown(document.body, { key: 'Escape' });
+  expect(screen.queryByRole('menu')).toBeNull();
+  expect(document.activeElement).toBe(focus);
+});
+
+it('draws the row at the size and column count for 1 to 5 tiles, the Add tile counted', async () => {
+  // With n pins the row has n tiles plus the Add tile, up to five.
+  const cases: [string[], number, string][] = [
+    [[], 1, 'wide'],
+    [['lib:thirds'], 2, 'wide'],
+    [['lib:thirds', 'lib:focus'], 3, 'up1'],
+    [['lib:thirds', 'lib:focus', 'lib:snip'], 4, ''],
+    [['lib:thirds', 'lib:focus', 'lib:snip', 'lib:mute'], 5, ''],
+    [['lib:thirds', 'lib:focus', 'lib:snip', 'lib:mute', 'lib:mixer'], 5, ''],
+  ];
+  for (const [pins, tilesDrawn, cls] of cases) {
+    localStorage.setItem(PINS_KEY, JSON.stringify(pins));
+    resetKeysFeed();
+    const { container, unmount } = render(<PinnedRow />);
+    await flush();
+    const row = container.querySelector('.pin-tiles') as HTMLElement;
+    expect(row.querySelectorAll('.key-tile').length, `${pins.length} pins`).toBe(tilesDrawn);
+    expect(!!row.querySelector('.add-key'), `${pins.length} pins add`).toBe(pins.length < 5);
+    expect(row.classList.contains('wide'), `${pins.length} pins wide`).toBe(cls === 'wide');
+    expect(row.classList.contains('up1'), `${pins.length} pins up1`).toBe(cls === 'up1');
+    expect(row.style.gridTemplateColumns).toBe(`repeat(${tilesDrawn}, minmax(0px, 1fr))`);
+    unmount();
+  }
+});
