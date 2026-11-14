@@ -61,7 +61,7 @@ import {
   type ReactKind,
 } from './petFrame';
 import { POSES, SPRITES, pixelColor, type Pose } from './sprites';
-import { GROUNDS, WATCH_GROUND, groundOf, walkAround, type Span } from './ground';
+import { BANNER, BANNER_GROUND, GROUNDS, WATCH_GROUND, groundOf, walkAround, type Span } from './ground';
 import type { Walk } from './model';
 
 const at = (h: number, m = 0) => new Date(2026, 10, 11, h, m);
@@ -369,6 +369,18 @@ describe('the ground he can be set down on', () => {
       }
     }
   });
+  for (const place of ['home', 'meet'] as const) {
+    it(`${place}: with the leave banner in the band, every spot keeps all of him clear of it and of the panels`, () => {
+      expect(groundOf(place, false, true)).toBe(BANNER_GROUND[place]);
+      for (const span of BANNER_GROUND[place]) {
+        const walk = spanWalk(place, span);
+        const box = reach(place, CAMERAS[place], walk);
+        expect(box.right).toBeLessThanOrEqual(span.right);
+        expect(box.left).toBeGreaterThanOrEqual(span.left);
+        for (const panel of [...panels(place), BANNER]) expect(overlaps(box, panel), `${place} span ${span.min} to ${span.max} over ${JSON.stringify(panel)}`).toBe(false);
+      }
+    }, 60_000);
+  }
   it('is far wider than the old walk: most of the band on Work, Home and Meet, both sides of the row on Unwind', () => {
     for (const place of ['work', 'home', 'meet'] as const) expect(GROUNDS[place][0].max - GROUNDS[place][0].min).toBeGreaterThan(2000);
     expect(GROUNDS.unwind.length).toBe(2);

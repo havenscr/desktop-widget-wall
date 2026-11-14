@@ -954,7 +954,10 @@ horizon canvas and the veil and under the panels; its styles are `buddy/watt.css
   with every control and line of text of the place. Work and Meet 140 to 2420, Home 140 to
   2400 (the whole band between the top row and the ribbon); Unwind on Listen 140 to 494 (left
   of the transport row) and 1416 to 1870 (between the row and the Room card); Unwind on Watch
-  140 to 1020 (the video takes the rest). His spot on each place is kept in his stored record
+  140 to 1020 (the video takes the rest). While the leave banner shows in the band above the
+  ribbon (Home and Meet, x 624 to 1914), his ground there goes round it: Home 140 to 516 and 1932
+  to 2400, Meet 140 to 536 and 1930 to 2420; he fades over to the nearest free spot and his stored
+  spot is kept for when it goes. His spot on each place is kept in his stored record
   (`spots`), and he wanders around it: up to 105 px either side on Work and Meet, 110 on Home,
   60 on Unwind, centred on the spot and kept in its span. `model.test.ts` builds the rail, zone
   and ribbon rectangles from `screens/frameLayout.ts` (plus Unwind's transport row,

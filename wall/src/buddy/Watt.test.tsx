@@ -7,7 +7,8 @@ import { HorizonCanvas } from '../horizon/HorizonCanvas';
 import { publishCamera } from '../horizon/signal';
 import { usePlaceStore, type PlaceId } from '../state/places';
 import { FADE_IN_S, FADE_OUT_S, WALKS, middle, type WattPlace } from './model';
-import { GROUNDS, WATCH_GROUND, onGround } from './ground';
+import { BANNER, BANNER_GROUND, GROUNDS, WATCH_GROUND, onGround } from './ground';
+import { useChipLayout } from '../signals/layout';
 import { REACT_S } from './petFrame';
 import { useSignalStore } from '../signals/store';
 import { useWatchStore } from '../unwind/watch/store';
@@ -136,8 +137,9 @@ beforeEach(() => {
 });
 afterEach(() => {
   Object.assign(restClock, realRest);
-  // Shared store: every test starts on Listen.
+  // Shared stores: every test starts on Listen, with no leave banner.
   act(() => useWatchStore.getState().setTab('listen'));
+  act(() => useChipLayout.setState({ banner: false }));
   resetMeetingFeed();
   resetWeatherStore();
   invokeMock.mockImplementation(defaultInvoke);
@@ -2009,6 +2011,22 @@ describe('more of a pet', () => {
     runFor(2);
     expect(Math.abs(where(container).x - watch)).toBeLessThanOrEqual(60 + 1e-9);
     expect(stored().spots).toMatchObject({ unwind: listen, unwindWatch: watch });
+  });
+
+  it('the leave banner in the band takes his ground on Home: he steps aside, keeps his spot, and returns when it goes', () => {
+    usePlaceStore.setState({ active: 'home' });
+    publishCamera(CAMERAS.home, false);
+    const { container } = start();
+    const x0 = where(container).x;
+    expect(x0).toBeGreaterThan(BANNER.left);
+    act(() => useChipLayout.setState({ banner: true }));
+    runFor(2);
+    const x = where(container).x;
+    expect(x <= BANNER_GROUND.home[0].max || x >= BANNER_GROUND.home[1].min).toBe(true);
+    expect(stored().spots?.home).toBeUndefined();
+    act(() => useChipLayout.setState({ banner: false }));
+    runFor(2);
+    expect(Math.abs(where(container).x - x0)).toBeLessThanOrEqual(110 + 1e-9);
   });
 
   it('he does not look at it while he reads, eats, or is carried; under reduced motion he stands still', () => {

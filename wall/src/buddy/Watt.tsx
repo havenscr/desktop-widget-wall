@@ -11,6 +11,7 @@ import { usePlaceStore } from '../state/places';
 import { reviewNow } from '../ui/reviewClock';
 import { hideTip, quietFocus, tip } from '../ui/HoverTip';
 import { isQuietForRecording, useSignalStore } from '../signals/store';
+import { useChipLayout } from '../signals/layout';
 import { useWatchStore } from '../unwind/watch/store';
 import { useIdle } from '../ui/useIdle';
 import { useReducedMotion } from '../ui/useReducedMotion';
@@ -323,18 +324,23 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
   const watchTab = useWatchStore((st) => st.tab === 'watch');
   const watchRef = useRef(watchTab);
   watchRef.current = watchTab;
+  // The leave banner in the band above the ribbon takes part of his ground on Home and Meet.
+  const banner = useChipLayout((st) => st.banner);
+  const bannerRef = useRef(banner);
+  bannerRef.current = banner;
   const walkObj = useRef<Walk>({ ...WALKS.work });
-  const walkFor = useRef<{ place: WattPlace | null; watch: boolean; spot: number }>({ place: null, watch: false, spot: Number.NaN });
-  const spotOf = useCallback((place: WattPlace) => onGround(groundOf(place, watchRef.current), petRef.current.spots[spotKey(place, watchRef.current)] ?? defaultSpot(place)), []);
+  const walkFor = useRef<{ place: WattPlace | null; watch: boolean; banner: boolean; spot: number }>({ place: null, watch: false, banner: false, spot: Number.NaN });
+  const spotOf = useCallback((place: WattPlace) => onGround(groundOf(place, watchRef.current, bannerRef.current), petRef.current.spots[spotKey(place, watchRef.current)] ?? defaultSpot(place)), []);
   const walkOf = useCallback(
     (place: WattPlace): Walk => {
       const spot = spotOf(place);
       const k = walkFor.current;
-      if (k.place !== place || k.watch !== watchRef.current || k.spot !== spot) {
+      if (k.place !== place || k.watch !== watchRef.current || k.banner !== bannerRef.current || k.spot !== spot) {
         k.place = place;
         k.watch = watchRef.current;
+        k.banner = bannerRef.current;
         k.spot = spot;
-        walkAround(place, groundOf(place, watchRef.current), spot, walkObj.current);
+        walkAround(place, groundOf(place, watchRef.current, bannerRef.current), spot, walkObj.current);
       }
       return walkObj.current;
     },
@@ -873,7 +879,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
       cancelCarry(c);
       return;
     }
-    releaseCarry(c, tNowRef.current(), groundOf(p.place, watchRef.current), p.camera.hy, WALKS[p.place].px, reducedRef.current || document.hidden, true);
+    releaseCarry(c, tNowRef.current(), groundOf(p.place, watchRef.current, bannerRef.current), p.camera.hy, WALKS[p.place].px, reducedRef.current || document.hidden, true);
     keepSpot(p.place, c.toX);
     wake.current();
   }, [dropCapture]);
@@ -975,7 +981,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
         const cl = cloverAt.current;
         const feed = cloverRef.current !== null && cl.on && Math.hypot(at.x - cl.x, at.y - cl.y) <= CLOVER_FEED_PX;
         const instant = reducedRef.current || document.hidden;
-        releaseCarry(c, tNowRef.current(), groundOf(p.place, watchRef.current), p.camera.hy, WALKS[p.place].px, instant, false);
+        releaseCarry(c, tNowRef.current(), groundOf(p.place, watchRef.current, bannerRef.current), p.camera.hy, WALKS[p.place].px, instant, false);
         keepSpot(p.place, c.toX);
         // Staying, he stays at the new spot.
         const st = petRef.current.stay;
@@ -1144,7 +1150,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
       }
       if (!p.place || !p.camera || refusalRef.current()) return;
       // Where he was last set down (he is sitting there now), else where he stands.
-      const x = landingX(groundOf(p.place, watchRef.current), c.mode === NONE ? frameRef.current.x : c.x);
+      const x = landingX(groundOf(p.place, watchRef.current, bannerRef.current), c.mode === NONE ? frameRef.current.x : c.x);
       const dir = frameRef.current.dir;
       startStay(c, t, x, dir);
       const stay = { place: p.place as StayPlace, x, date: dayKey(nowRef.current()) };
@@ -1187,7 +1193,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
         lineLater('nap', NAP_LINE_AFTER_MS);
       } else if (kind === 'come' && !carry.current.stay) {
         // Back to the middle of the place: his spot there is forgotten, and the wander picks up from it.
-        const spans = groundOf(p.place, watchRef.current);
+        const spans = groundOf(p.place, watchRef.current, bannerRef.current);
         const mid = onGround(spans, defaultSpot(p.place));
         const f = frameRef.current;
         setSpot(p.place, Number.NaN);
@@ -1241,7 +1247,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
     const wc = createWander();
     let originAir = false;
     let wasLive = false;
-    let watchSeen = watchRef.current;
+    let groundSeen = `${watchRef.current}/${bannerRef.current}`;
     let wasLying = false;
     /** One-shot: set when she reaches the clover, cleared when a new clover grows. */
     let cloverTaken = false;
@@ -1271,9 +1277,11 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
       }
       // Unwind's tab changed under him and he is not on its ground any more (the video took the
       // floor): he fades over to the start of his wander there.
-      if (p.place && p.camera && watchSeen !== watchRef.current) {
-        watchSeen = watchRef.current;
-        const spans = groundOf(p.place, watchSeen);
+      // His ground changed under him (Unwind's tab, the leave banner): to his spot on the new ground.
+      const groundNow = `${watchRef.current}/${bannerRef.current}`;
+      if (p.place && p.camera && groundSeen !== groundNow) {
+        groundSeen = groundNow;
+        const spans = groundOf(p.place, watchRef.current, bannerRef.current);
         const x = frameRef.current.x;
         const wk = walkOf(p.place);
         // To the new tab's own spot: unless he already stands on its ground inside that walk.
@@ -1298,14 +1306,14 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
       // already where he was set down); given up after 10 s or at night.
       if (c.mode === NONE && pendingStale(c, nowRef.current() / 1000, clock.night)) c.pendingX = Number.NaN;
       if (c.mode === NONE && c.pendingX === c.pendingX && ready && p.place !== null && p.place === place && p.camera) {
-        landPending(c, tNow(), groundOf(place, watchRef.current), p.camera.hy, WALKS[place].px);
+        landPending(c, tNow(), groundOf(place, watchRef.current, bannerRef.current), p.camera.hy, WALKS[place].px);
         keepSpot(place, c.toX);
         mind.current.carry = true;
       }
       // Stay: kept in the stored record; applied once he stands on its place, ended when it is gone.
       const st = petRef.current.stay;
       if (p.place && p.camera && p.opacity > 0.5) {
-        if (st && !c.stay && c.mode === NONE && p.place === st.place) startStay(c, tNow(), landingX(groundOf(p.place, watchRef.current), st.x), 1);
+        if (st && !c.stay && c.mode === NONE && p.place === st.place) startStay(c, tNow(), landingX(groundOf(p.place, watchRef.current, bannerRef.current), st.x), 1);
         else if (!st && c.stay) endStay(c, tNow());
       }
       if (c.arrived) {
@@ -1443,7 +1451,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
       if (sh) {
         if (f.shadow > 0) {
           const sw = SHADOW[0].length * walk.px;
-          const lx = onGround(groundOf(p.place, watchRef.current), f.shadowX);
+          const lx = onGround(groundOf(p.place, watchRef.current, bannerRef.current), f.shadowX);
           sh.style.left = `${lx + spriteWidth('idle', walk.px) / 2 - sw / 2}px`;
           sh.style.top = `${p.camera.hy - SHADOW.length * walk.px + walk.px}px`;
           sh.style.opacity = String(0.45 * f.shadow);
@@ -1743,7 +1751,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
   // A call starting or ending, a bubble, a clover or her look changing wakes the loop (or repaints the still pose).
   useEffect(() => {
     wake.current();
-  }, [inCall, bubble, clover, pet.cosmetic, focus.status, ws.rain, ws.cold, minute, watchTab, recordingQuiet]);
+  }, [inCall, bubble, clover, pet.cosmetic, focus.status, ws.rain, ws.cold, minute, watchTab, recordingQuiet, banner]);
 
   // Dev review stills: a handle on the window to say a line, react or grow a clover.
   useEffect(() => {

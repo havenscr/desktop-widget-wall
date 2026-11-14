@@ -39,9 +39,28 @@ export const GROUNDS: Readonly<Record<WattPlace, readonly Span[]>> = {
   ],
 };
 
-/** The ground of a place now (Unwind's depends on its tab). */
-export function groundOf(place: WattPlace, watch: boolean): readonly Span[] {
-  return place === 'unwind' && watch ? WATCH_GROUND : GROUNDS[place];
+/**
+ * The leave banner (`signals/LeaveBanner.tsx`) sits in the band above the ribbon on Home and Meet
+ * (x 624 to 1914, y 528 to 578), where he walks: while it shows, his ground there goes round it.
+ * (On Work it sits over the top band and on Unwind below his feet: neither ground changes.)
+ */
+export const BANNER = { left: 624, right: 1914, top: 528, bottom: 578 } as const;
+export const BANNER_GROUND: Readonly<Record<'home' | 'meet', readonly Span[]>> = {
+  home: [
+    { min: 140, max: 516, left: 124, right: 616 },
+    { min: 1932, max: 2400, left: 1922, right: 2536 },
+  ],
+  meet: [
+    { min: 140, max: 536, left: 124, right: 616 },
+    { min: 1930, max: 2420, left: 1922, right: 2536 },
+  ],
+};
+
+/** The ground of a place now (Unwind's depends on its tab; Home's and Meet's on the leave banner). */
+export function groundOf(place: WattPlace, watch: boolean, banner = false): readonly Span[] {
+  if (place === 'unwind' && watch) return WATCH_GROUND;
+  if (banner && (place === 'home' || place === 'meet')) return BANNER_GROUND[place];
+  return GROUNDS[place];
 }
 
 /** How far he wanders either side of his spot, design pixels. */
