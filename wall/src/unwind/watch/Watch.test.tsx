@@ -225,7 +225,8 @@ it('sets the look from the Look switch and draws the drive-in screen or the feat
   render(<UnwindView />);
   await flush();
   expect(document.querySelector('.w-stage')?.getAttribute('data-look')).toBe('drivein');
-  expect(document.querySelectorAll('.w-post').length).toBe(2);
+  expect(document.querySelectorAll('.w-tower').length).toBe(1);
+  expect(document.querySelector('.w-post')).toBeNull();
   expect(document.querySelector('iframe')).toBeNull();
   await act(async () => within(screen.getByRole('radiogroup', { name: 'Look' })).getByRole('radio', { name: 'Feathered' }).click());
   expect(document.querySelector('.w-stage')?.getAttribute('data-look')).toBe('feather');
