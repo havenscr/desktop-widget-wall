@@ -365,6 +365,35 @@ skyline, the lake in front. It is drawn on one canvas by `HorizonCanvas.tsx`.
 - **Frame loop.** About 30 frames a second on `requestAnimationFrame`, none while
   `document.hidden` (`pacing.ts`). The backing store is stage scale times
   `devicePixelRatio`.
+- **Sky layers** (`sky.ts`). A screen that puts a picture in the sky (Watch) holds a claim
+  with `useSkyClaim(id, claim)`: `front` (an element), `boxes` (stage rectangles its picture
+  covers), `clear` (stage rectangles of cards the moon keeps clear of) and `noMoon`. A card
+  claims its own drawn box with `useSkyKeepClear(id, element)` (read again when its size
+  changes). An element no longer in the page is no host: the main canvas then draws the whole
+  picture that frame, and `useSkyClaim` replaces the claim without it as soon as it leaves the
+  page. While a claim gives an element, `HorizonCanvas` mounts a second canvas
+  in it (`.horizon-front`, fixed to the stage so it covers it whatever the element's box, taking
+  no pointer) and each frame draws the sky on the main canvas (`draw` with `part: 'sky'`: the
+  sky, stars, moon, sun and clouds) and the ground on the front one (`part: 'ground'`: the
+  ranges and their lines, the ripple, the city, the shore, the haze at the horizon, the lake
+  with its lights and reflection, the grid and the grain, on transparency). The two parts make
+  exactly the whole picture's canvas calls (a test), so outside the picture nothing changes.
+  Two page layers sit between the canvases: the place veil (`.veil`), which the front canvas
+  lays on its own pixels (`veil.ts`, 'source-atop', stops checked against frame.css), and the
+  rail, which the front canvas would cover: it is cut at the main area's left edge
+  (`MAIN_LEFT`) and the main canvas takes the ground left of it, copied from the front one.
+  The front canvas follows the same frame loop, resize and camera glide, rests with the main
+  one and draws nothing while the page is hidden. With no claim there is one canvas and the
+  calls are the golden ones (a test, and gallery stills of Work, Home, Meet and Unwind compared
+  pixel for pixel). The pixel proof in `npm run fit-check` draws Unwind at night, at dusk and at
+  noon on one canvas and with the front layer claimed by an empty host in the main area, nothing
+  between the two, and compares the screenshots pixel for pixel over the whole stage: 0 pixels
+  may differ. Per frame with the layer on nothing is allocated for it (one options object, its
+  `part` set before each draw; the sky part makes no rim gradient or glitter) and the veil's
+  strength is read only when the front canvas comes and through a place change's transition.
+  Dev builds only: `?sky=front` mounts the front canvas everywhere, `?sky=flat` never,
+  `?sky=empty` claims it with an empty host (the pixel proof), `?skymoon=x,y,r` puts the moon
+  at one place only (fit-check breaks and cost measurement).
 - **Reduced motion.** With `prefers-reduced-motion: reduce` the horizon is drawn
   once a minute and cameras switch without the glide.
 - **Review hook (dev server only).** Open
@@ -869,9 +898,21 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
   band slots, reused every frame. No grid when silent, under reduced motion or in the review
   still; without `grid` the renderer makes exactly the canvas calls it made before (a golden
   call log test).
-- **Moon.** The Unwind camera draws the moon at (1730, 112) radius 44, once the glide to
-  Unwind has finished (it goes as soon as a glide away starts); no other place does. The
-  review still `?hz=unwind` draws it, since that camera jumps straight there.
+- **Moon.** The Unwind camera draws the moon, radius 44, at the first of three places
+  (`MOON_PLACES`) whose disc is 40 px or more from every picture box and every card's keep-clear
+  box that a screen claims (`moonFor` in `sky.ts`): (1890, 260) right of Listen's player, the
+  place it always had; (760, 352) low under the player's left half, right of Up next, for a
+  layout whose right side a wide card takes (43 px under the player at its tallest, with nothing
+  playing, and just above the ranges, where they are lowest); (1450, 150) high in the middle of the sky. Each is
+  wholly above the Unwind ridgeline and clear of the clock (a test). With none clear, or a claim
+  that says `noMoon`, there is no moon, and its light on the lake goes with it. On Listen the
+  Spotify card (`SpotifyCard.tsx`) and the player (`Player.tsx`) claim their drawn boxes, so the
+  moon sits at (760, 352) there, whatever the player shows; on Watch the list card, the left block and the Look switch do. The same claims
+  always give the same place, so it changes only when a box does, and it is simply drawn at its
+  new place on the next frame (a resting still frame is drawn again once for each change; a claim
+  made again with the same boxes changes nothing). It shows once the glide to Unwind has finished (it goes as
+  soon as a glide away starts); no other place does. The review still `?hz=unwind` draws it, since that camera jumps straight there. The drawn
+  moon is published on the canvas as `data-moon` for the fit check.
 
 ## Unwind and Watt
 
@@ -1250,17 +1291,31 @@ switch sits. Leaving Watch (or Unwind) removes any video.
   `https://www.youtube.com/watch?v=<id>`, `https://www.youtube.com/playlist?list=<id>` or
   `https://www.twitch.tv/<login>` itself. The page never passes an address.
 - **Looks** (`looks.ts`, `Watch.tsx`): `feather` (the video in the sky left of the list, its
-  edges masked soft, the picture fully visible, its lower edge fading out before the horizon line so the ridgelines
-  there stay in front, and covering the moon), `sky` (the video fills the sky from the top of
-  the strip to the horizon line, cropped top and bottom, fading toward the clock and into the
-  horizon, see-through on the clock's side; it lies under every control and takes no pointer;
-  nothing of the wall's is drawn on it: the left block carries its own dark ground behind its
-  text and the cards turn nearly opaque), `sun` (a 461 px disc whose foot
-  stands 24 px over the horizon, centred at wall x 1660 so it covers the moon with 31 px to spare, with slats, a warm halo and a streak on the floor; it
+  edges masked soft, the picture fully visible, in front of the mountains (the owner's choice),
+  its lower edge fading out before the horizon line so the ridgelines there show), `sky` (the whole 16:9 picture, never cropped,
+  889 by 500 at wall 1106, 16: its top 16 px under the top of the strip, its foot under the
+  horizon line BEHIND the ranges and the land, so only the land hides its lower edge, between the
+  left block and the cards; plain edges with a faint line and glow, no feather (the owner's
+  later words replace the approved page's crop); the embedded player cannot report its video's
+  shape, so the frame is fitted as 16:9; it lies under every control and takes no pointer;
+  nothing of the wall's is drawn on it: the left block stands beside it on the sky with no plate,
+  and the cards turn nearly opaque), `sun` (a 461 px disc at the approved page's place,
+  centred at wall x 1331 with its foot 29 px over the horizon, the ranges in front of its lower part,
+  a clean circle with no bands across the video (the owner's later words replace the approved
+  page's bands), a warm halo and a streak on the floor; it
   shows the middle 56 percent of a 16:9 picture's width) and `drivein` (a framed screen at the
-  approved page's size, 691 by 389 at wall 1210, 60, covering the moon whole, on two posts
-  standing on the horizon, the stage light's colours washed on the floor under it; with nothing
-  on, the empty screen stands there). The gear beside the tabs opens a sheet over the right wing:
+  approved page's size, 691 by 389 at wall 1124, 60 (40 px right of the left block, as near the
+  approved centre as the layout allows), on two posts standing on the horizon in front of the
+  ranges, the stage light's colours washed on the floor under it; with nothing
+  on, the empty screen stands there). Sky layers: each look claims the horizon's sky
+  (`useWatchSky`, `horizon/sky.ts`) with its picture's box (`LOOK_BOXES`, so the moon keeps 40 px
+  clear of it: another of its places, or none); the sun and the drive-in own that sky (no moon at
+  all); the whole sky and the sun (`behindTheLand`) also give `.w-front`, after the picture, where the
+  horizon mounts its front canvas, and their stage sits at z-index -1 in the main area's own
+  layer group (`.w-layered`), under every control and line of text. While the player waits for a
+  click, the sun comes forward (`layeredNow`). The left block, the Look switch and the Watch list
+  card claim their own boxes as keep-clear (`useSkyKeepClear`). The claim goes with the
+  Watch panel (Listen, nothing on, another place, Zen). The gear beside the tabs opens a sheet over the right wing:
   one look for everything (four picture tiles), or one each for videos and playlists, live
   streams and Twitch (four choices a row), at 540 px (`wall2-watch-look`, checked on read;
   values stored before the two new looks still read the same). The Look switch sets it too.

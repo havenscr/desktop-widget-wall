@@ -12,12 +12,11 @@ import {
   IconVolumeOff,
 } from '@tabler/icons-react';
 import { invoke } from '../../bridge/tauri';
-import { sun } from '../../horizon/renderer';
-import { reviewNow } from '../../ui/reviewClock';
+import { useSkyClaim, useSkyKeepClear } from '../../horizon/sky';
 import { useSignalStore } from '../../signals/store';
 import { tip } from '../../ui/HoverTip';
 import { kindName, refKey, validRef, type WatchKind, type WatchRef } from './links';
-import { LOOKS, lookFor, lookTargetName, type LookId } from './looks';
+import { LOOKS, LOOK_BOXES, layeredNow, lookFor, lookTargetName, ownsTheMoonSky, type LookId } from './looks';
 import { PlayerFrame, playerLink } from './PlayerFrame';
 import { driveInAudience, useWatchStore } from './store';
 import { useStopRules } from './useStopRules';
@@ -67,18 +66,35 @@ export function WatchGear() {
   );
 }
 
-/** The horizon draws its moon only with the stars out; the sun this far down is a safe stand-in. */
-export const MOON_SUN_ALT = -4;
+/**
+ * sky layers: what the look on screen asks of the horizon (`horizon/sky.ts`): its picture's box,
+ * so the moon keeps clear of it (another of its places, or none); no moon at all for a look that
+ * owns that sky (the sun, the drive-in); and, for a picture that sits behind the land (the whole
+ * sky, the sun), the element the horizon mounts its front canvas in (`layeredNow`: the sun comes
+ * forward while the player waits for a click). Released when the look goes (Watch left, nothing on, Zen).
+ */
+function useWatchSky(look: LookId, front: HTMLElement | null, needsClick: boolean) {
+  const b = LOOK_BOXES[look];
+  useSkyClaim('watch', {
+    front: layeredNow(look, needsClick) ? front : null,
+    boxes: [[b.x, b.y, b.w, b.h]],
+    noMoon: ownsTheMoonSky(look),
+  });
+}
 
-/** True while the horizon's moon is up (checked once a minute). */
-function useMoonUp(): boolean {
-  const read = () => sun(reviewNow ? reviewNow() : Date.now()).alt < MOON_SUN_ALT;
-  const [up, setUp] = useState(read);
-  useEffect(() => {
-    const id = setInterval(() => setUp(read()), 60_000);
-    return () => clearInterval(id);
-  }, []);
-  return up;
+/** The drive-in screen with nothing on it (the drive-in look, nothing playing). */
+function EmptyDriveIn() {
+  useWatchSky('drivein', null, false);
+  return (
+    <div className="w-stage w-drivein w-empty" data-look="drivein" aria-hidden="true">
+      <div className="w-screen">
+        <IconMovie size={64} stroke={1.25} />
+        <span>Nothing on the screen</span>
+      </div>
+      <i className="w-post l" />
+      <i className="w-post r" />
+    </div>
+  );
 }
 
 /** "1:05" or "1:02:03". */
@@ -101,6 +117,9 @@ export function LookSwitch({ kind }: { kind: WatchKind }) {
   const current = lookFor(looks, kind);
   const group = lookTargetName(looks, kind);
   const refs = useRef<(HTMLButtonElement | null)[]>([]);
+  // sky layers: the moon keeps clear of the switch.
+  const [bar, setBar] = useState<HTMLDivElement | null>(null);
+  useSkyKeepClear('watch-look', bar);
   const pick = (id: LookId) => useWatchStore.getState().pickLook(id);
   const onKey = (e: KeyboardEvent<HTMLDivElement>) => {
     const step = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 0;
@@ -113,7 +132,7 @@ export function LookSwitch({ kind }: { kind: WatchKind }) {
   };
   const where = group ? `Sets the look for ${group.toLowerCase()} (a look per kind is on in the settings).` : 'Sets the look for every video.';
   return (
-    <div className="w-lookbar w-seg" role="radiogroup" aria-label={group ? `Look, for ${group.toLowerCase()}` : 'Look'} onKeyDown={onKey}>
+    <div ref={setBar} className="w-lookbar w-seg" role="radiogroup" aria-label={group ? `Look, for ${group.toLowerCase()}` : 'Look'} onKeyDown={onKey}>
       {LOOKS.map((l, i) => {
         const on = l.id === current;
         return (
@@ -288,23 +307,33 @@ function Controls({ item }: { item: WatchRef & { label: string } }) {
  * frame and posts sit around the picture, never over it.
  */
 function VideoStage({ item, look }: { item: WatchRef & { label: string }; look: LookId }) {
-  const moonUp = useMoonUp();
   const audience = useWatchStore(driveInAudience);
+  const needsClick = useWatchStore((s) => s.needsClick);
+  const [front, setFront] = useState<HTMLDivElement | null>(null);
+  useWatchSky(look, front, needsClick);
   const sky = look === 'sky';
+  const layered = layeredNow(look, needsClick);
+  const b = LOOK_BOXES[look];
   return (
     <>
-      <div className={`w-stage w-${look}`} data-look={look} data-audience={audience ? `${audience.x},${audience.y},${audience.w},${audience.h}` : undefined}>
-        {/* The moon sits behind the feathered picture: its disc is dimmed where the soft edge would let it through,
-            under the glow, so the glow is not darkened with it. The sun's disc and the drive-in screen cover the
-            moon whole, and the whole sky is not see-through. */}
-        {look === 'feather' && moonUp ? <div className="w-moonveil" aria-hidden="true" /> : null}
+      <div
+        className={`w-stage w-${look}${layered ? ' w-layered' : ''}`}
+        data-look={look}
+        data-audience={audience ? `${audience.x},${audience.y},${audience.w},${audience.h}` : undefined}
+        data-sky-box={`${b.x},${b.y},${b.w},${b.h}`}
+      >
+        {/* The feathered glow (in front of the land, with its picture) and the sun's halo (behind it). */}
         {look === 'feather' ? <div className="w-glow" aria-hidden="true" /> : null}
         {look === 'sun' ? <div className="w-halo" aria-hidden="true" /> : null}
         {look === 'drivein' ? <div className="w-spill" aria-hidden="true" /> : null}
-        {look === 'sun' ? <div className="w-streak" aria-hidden="true" /> : null}
         <div className="w-screen">
           <PlayerFrame key={refKey(item)} item={item} title={item.label} />
         </div>
+        {/* The horizon mounts its front canvas here (the ranges, the land and the grid), over the
+            picture and under everything after it; only for a look that sits behind the land. */}
+        {layered ? <div className="w-front" ref={setFront} aria-hidden="true" /> : null}
+        {/* On the floor, in front of the land: the sun's warm streak. */}
+        {look === 'sun' ? <div className="w-streak" aria-hidden="true" /> : null}
         {look === 'drivein' ? (
           <>
             <i className="w-post l" aria-hidden="true" />
@@ -336,13 +365,16 @@ export function WatchPanel() {
   const stopped = useWatchStore((s) => s.stopped);
   const inCall = useSignalStore((s) => s.call !== null);
   const st = useWatchStore.getState();
+  // sky layers: the moon keeps clear of the left block, playing or not.
+  const [nowEl, setNowEl] = useState<HTMLDivElement | null>(null);
+  useSkyKeepClear('watch-now', nowEl);
 
   if (!playing) {
     const first = saved[0];
     const kind = first?.kind ?? 'video';
     return (
       <div className="w-panel" role="tabpanel" id={WATCH_PANEL_ID} aria-labelledby={WATCH_TAB_ID} data-state="idle">
-        <div className="w-now">
+        <div className="w-now" ref={setNowEl}>
           <span className="u-k">Watch</span>
           <div className="w-title w-none">Nothing on</div>
           <div className="w-sub">
@@ -363,16 +395,7 @@ export function WatchPanel() {
           ) : null}
         </div>
         <LookSwitch kind={kind} />
-        {lookFor(looks, kind) === 'drivein' ? (
-          <div className="w-stage w-drivein w-empty" data-look="drivein" aria-hidden="true">
-            <div className="w-screen">
-              <IconMovie size={64} stroke={1.25} />
-              <span>Nothing on the screen</span>
-            </div>
-            <i className="w-post l" />
-            <i className="w-post r" />
-          </div>
-        ) : null}
+        {lookFor(looks, kind) === 'drivein' ? <EmptyDriveIn /> : null}
       </div>
     );
   }
@@ -381,7 +404,7 @@ export function WatchPanel() {
   const youtube = playing.kind !== 'twitch';
   return (
     <div className="w-panel" role="tabpanel" id={WATCH_PANEL_ID} aria-labelledby={WATCH_TAB_ID} data-state="playing">
-      <div className="w-now">
+      <div className="w-now" ref={setNowEl}>
         <span className="u-k u-src">{kindName(playing.kind)}</span>
         <div className="w-title" title={playing.label}>
           {playing.label}
