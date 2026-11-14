@@ -27,6 +27,12 @@ pub fn write(event: Event, reason: Reason, status: u16, elapsed_ms: u128) {
     if let Some(tx) = TX.get() { let _ = tx.try_send(line(event, reason, status, elapsed_ms)); }
 }
 
+pub fn write_devices(total: usize, computers: usize, phones: usize, other: usize) {
+    if let Some(tx) = TX.get() {
+        let _ = tx.try_send(format!("no-device {} {} {} {}\n", total.min(50), computers.min(50), phones.min(50), other.min(50)));
+    }
+}
+
 pub fn start(dir: Option<std::path::PathBuf>) {
     let Some(dir) = dir else { return };
     let _ = std::fs::create_dir_all(&dir);

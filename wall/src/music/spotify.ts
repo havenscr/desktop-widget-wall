@@ -10,6 +10,7 @@ export interface SpotifyTrackPage { items: SpotifyTrack[]; total: number; more: 
 export interface SpotifyQueue { current: SpotifyTrack | null; next: SpotifyTrack[] }
 export interface SpotifyPlayback { playing: boolean; device: { name: string; kind: string } | null; track: SpotifyTrack | null; progressMs: number; shuffle: boolean }
 export interface SpotifyPlayOptions { deviceId?: string; context?: { kind: 'playlist' | 'album'; id: string }; offsetId?: string }
+export interface SpotifyStartStatus { starting: boolean; result: string | null }
 
 export const spotify = {
   status: () => invoke<SpotifyStatus>('wall2_spotify_status'),
@@ -25,7 +26,9 @@ export const spotify = {
   queue: () => invoke<SpotifyQueue>('wall2_spotify_queue'),
   playback: () => invoke<SpotifyPlayback | null>('wall2_spotify_playback'),
   devices: () => invoke<SpotifyDevice[]>('wall2_spotify_devices'),
-  play: (kind: SpotifyMode, id: string, options: SpotifyPlayOptions = {}) => invoke<void>('wall2_spotify_play', { request: { kind, id, ...options } }),
+  play: (kind: SpotifyMode, id: string, options: SpotifyPlayOptions = {}) => invoke<'played' | 'starting'>('wall2_spotify_play', { request: { kind, id, ...options } }),
+  startStatus: () => invoke<SpotifyStartStatus>('wall2_spotify_start_status'),
+  cancelStart: () => invoke<void>('wall2_spotify_cancel_start'),
   transfer: (deviceId: string) => invoke<void>('wall2_spotify_transfer', { deviceId }),
   shuffle: (on: boolean) => invoke<void>('wall2_spotify_shuffle', { on }),
 };
