@@ -190,120 +190,189 @@
   }
 }
 
-/* His card (right-click): a strip in the band over the horizon beside him (Unwind: under the transport
-   row), drawn at exactly CARD_W by CARD_H (petFrame.ts), so the overlap test checks what shows. */
-.watt-card {
+/* His menu (right-click): his own speech bubble above him, the tail pointing down at him. Lavender
+   like his bubble, square corners, a 2 px dark ring and a pixel tail. Placed by placeMenu (petFrame.ts). */
+.watt-menu-at {
   position: absolute;
-  width: 880px;
-  height: 80px;
-  box-sizing: border-box;
-  display: flex;
-  gap: 18px;
-  align-items: center;
-  padding: 4px 12px;
-  border-radius: 12px;
-  background: rgba(16, 10, 40, 0.98);
-  border: 1px solid rgba(220, 211, 251, 0.25);
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
-  color: #dcd3fb;
-  font: 500 14px/1.2 var(--body);
+  z-index: 41;
   pointer-events: auto;
 }
-.watt-card:focus {
+.watt-menu {
+  position: relative;
+  width: 392px;
+  box-sizing: border-box;
+  padding: 14px 16px 12px;
+  color: #1a1238;
+  background: rgba(220, 211, 251, 0.97);
+  box-shadow:
+    0 0 0 2px rgba(26, 18, 56, 0.95),
+    0 0 18px rgba(53, 230, 234, 0.2);
+  font: 600 16px/1 var(--disp);
+  transform-origin: var(--tail, 30px) 100%;
+  animation: wm-pop 160ms steps(4) both;
+}
+/* The tail is the wrapper's, so the menu's own box is exactly its content. */
+.watt-menu-at::after {
+  content: '';
+  position: absolute;
+  bottom: -10px;
+  left: var(--tail, 30px);
+  width: 14px;
+  height: 10px;
+  background: rgba(220, 211, 251, 0.97);
+  clip-path: polygon(0 0, 100% 0, 0 100%);
+}
+.watt-menu:focus {
   outline: none;
 }
-.wc-head {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 4px;
-  width: 218px;
-  min-width: 0;
-  white-space: nowrap;
+/* Reduced motion and review stills: no pop. */
+.watt-menu-at.still .watt-menu {
+  animation: none;
 }
-.wc-title {
+@keyframes wm-pop {
+  from {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+}
+.wm-hd {
   display: flex;
   align-items: baseline;
   gap: 10px;
+  margin-bottom: 8px;
+  white-space: nowrap;
 }
-.wc-name {
-  font: 600 18px/1 var(--disp);
-  color: #f6f2ff;
+.wm-name {
+  font: 700 22px/1 var(--disp);
 }
-.wc-mood {
-  font: 600 13px/1 var(--disp);
-  color: var(--cyan);
+.wm-mood {
+  font: 600 16px/1 var(--disp);
+  color: #4a3fa0;
 }
-.wc-mood.m-happy {
-  color: var(--mint);
+.wm-mood.m-happy {
+  color: #1d7a5a;
 }
-.wc-mood.m-sleepy {
-  color: #a99ff0;
+.wm-mood.m-curious {
+  color: #8a5a00;
 }
-.wc-mood.m-curious {
-  color: var(--amber);
+.wm-days {
+  margin-left: auto;
+  font: 500 16px/1 var(--body);
+  color: #4a4270;
 }
-.wc-days {
-  font-size: 12px;
-  opacity: 0.75;
+.wm-today,
+.wm-why {
+  margin: 0 0 6px;
+  font: 500 16px/1.35 var(--body);
+  color: #2a2050;
 }
-.wc-today {
+.wm-why {
+  color: #6a3a10;
+}
+.wm-gp {
+  margin: 8px 0 5px;
+  font: 700 16px/1 var(--disp);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #5a5090;
+}
+.wm-row {
   display: flex;
-  gap: 10px;
-  min-width: 0;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font-size: 13px;
+  flex-wrap: wrap;
+  gap: 6px;
 }
-.wc-rows {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.wc-line {
-  display: flex;
+.wm-it,
+.wm-sb {
+  display: inline-flex;
   align-items: center;
-  gap: 22px;
-}
-.wc-row {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-}
-.wc-label {
-  min-width: 40px;
-  margin-right: 2px;
-  font-size: 12px;
-  opacity: 0.75;
-}
-.wc-row button {
-  min-height: 32px;
-  padding: 0 9px;
-  border-radius: 8px;
-  border: 1px solid rgba(220, 211, 251, 0.25);
-  background: transparent;
-  color: inherit;
-  font: 600 13px/1 var(--body);
+  gap: 8px;
+  min-height: 38px;
+  padding: 0 12px 0 8px;
+  border: 0;
+  border-radius: 0;
+  color: #1a1238;
+  background: rgba(255, 255, 255, 0.55);
+  box-shadow: 0 0 0 2px rgba(26, 18, 56, 0.25) inset;
+  font: 600 16px/1 var(--disp);
   white-space: nowrap;
   cursor: pointer;
 }
-.wc-row button:hover:not(:disabled) {
-  border-color: var(--cyan);
+.wm-it:hover,
+.wm-it:focus-visible,
+.wm-sb:hover,
+.wm-sb:focus-visible {
+  background: #fff;
+  box-shadow: 0 0 0 2px #1a1238 inset;
+  outline: none;
 }
-.wc-row button.on {
-  background: rgba(53, 230, 234, 0.16);
-  border-color: var(--cyan);
-  color: #f6f2ff;
+.wm-it.on,
+.wm-sb[aria-checked='true'] {
+  background: #1a1238;
+  color: #dcd3fb;
 }
-.wc-row button:disabled {
-  opacity: 0.4;
+.wm-it[aria-disabled='true'],
+.wm-sb[aria-disabled='true'] {
+  opacity: 0.45;
   cursor: default;
 }
-.wc-row button.wc-read {
-  border-color: rgba(93, 242, 182, 0.5);
+.wm-ico {
+  flex: none;
+}
+.wm-ft {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+  font: 600 16px/1 var(--disp);
+  color: #4a4270;
+}
+.wm-fl {
+  min-width: 48px;
+}
+.wm-seg {
+  display: inline-flex;
+  box-shadow: 0 0 0 2px rgba(26, 18, 56, 0.25) inset;
+}
+.wm-seg .wm-sb {
+  min-height: 34px;
+  padding: 0 10px;
+  font-size: 16px;
+  background: transparent;
+  box-shadow: none;
+}
+.wm-seg .wm-sb[aria-checked='true'] {
+  background: #1a1238;
+  color: #dcd3fb;
+}
+.wm-seg .wm-sb:hover,
+.wm-seg .wm-sb:focus-visible {
+  box-shadow: 0 0 0 2px #1a1238 inset;
+}
+
+/* Being carried: the tuft of wool he is held by, dust where he lands, his shadow where he will land. */
+.watt-tuft,
+.watt-dust,
+.watt-shadow {
+  position: absolute;
+  left: 0;
+  top: 0;
+}
+.watt-tuft {
+  display: none;
+}
+.watt-dust,
+.watt-shadow {
+  opacity: 0;
+  pointer-events: none;
+}
+.watt-tuft svg,
+.watt-dust svg,
+.watt-shadow svg {
+  display: block;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .watt-menu {
+    animation: none;
+  }
 }

@@ -49,6 +49,21 @@ export interface PetData {
   today: Today;
   /** The Stay trick: kept until switched off, a place change or the day ends. */
   stay: Stay | null;
+  /** Where he was last set down on each place (his left edge, stage pixels); he wanders around it. */
+  spots: Spots;
+}
+
+/**
+ * His spot per place, kept until he is set down elsewhere or called to the middle. Unwind has one
+ * per tab: `unwind` is Listen (so a spot stored before tabs had their own is Listen's), and
+ * `unwindWatch` is Watch.
+ */
+export const SPOT_KEYS = [...STAY_PLACES, 'unwindWatch'] as const;
+export type SpotKey = (typeof SPOT_KEYS)[number];
+export type Spots = Partial<Record<SpotKey, number>>;
+/** The key of a place's spot (Unwind's by its tab). */
+export function spotKey(place: StayPlace, watch: boolean): SpotKey {
+  return place === 'unwind' && watch ? 'unwindWatch' : place;
 }
 
 export const PET_KEY = 'wall2.watt';
@@ -64,7 +79,7 @@ export function emptyToday(date: string): Today {
 }
 
 export function defaultPet(now: number): PetData {
-  return { chatty: 'sometimes', cosmetic: 'none', days: 0, lastDay: null, today: emptyToday(dayKey(now)), stay: null };
+  return { chatty: 'sometimes', cosmetic: 'none', days: 0, lastDay: null, today: emptyToday(dayKey(now)), stay: null, spots: {} };
 }
 
 /** A stored value longer than this is not ours: ignored before it is parsed. */
@@ -108,7 +123,16 @@ export function parsePet(raw: string | null, now: number): PetData {
       sv && typeof sv === 'object' && STAY_PLACES.includes(sv.place as StayPlace) && typeof sv.x === 'number' && Number.isFinite(sv.x) && sv.x >= 0 && sv.x <= MAX_STAY_X && date(sv.date) === key
         ? { place: sv.place as StayPlace, x: sv.x, date: key }
         : null;
-    return { chatty, cosmetic, days, lastDay, today, stay };
+    // Spots: a known place and an x on the stage each; anything else is dropped.
+    const spots: Spots = {};
+    const sp = (v as { spots?: unknown }).spots;
+    if (sp && typeof sp === 'object') {
+      for (const place of SPOT_KEYS) {
+        const x = (sp as Record<string, unknown>)[place];
+        if (typeof x === 'number' && Number.isFinite(x) && x >= 0 && x <= MAX_STAY_X) spots[place] = x;
+      }
+    }
+    return { chatty, cosmetic, days, lastDay, today, stay, spots };
   } catch {
     return base;
   }

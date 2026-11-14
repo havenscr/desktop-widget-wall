@@ -1,5 +1,5 @@
 import { MAIN_LEFT, MAIN_WIDTH } from '../screens/frameLayout';
-import { STOPS, UNWIND_ROW, buddyFrame, createWander, spriteHeight, spriteWidth, wanderAt, type BuddyFrame, type Walk, type WanderPoint, type WattPlace } from './model';
+import { IDLES, STOPS, buddyFrame, createWander, spriteHeight, spriteWidth, wanderAt, type BuddyFrame, type Walk, type WanderPoint, type WattPlace } from './model';
 import type { Cosmetic } from './pet';
 import { CLOVER, EAR, MARK, PROP_SPRITES, SMALL_PX, SPRITES, propOrigin, type Pose, type Prop } from './sprites';
 
@@ -11,8 +11,102 @@ import { CLOVER, EAR, MARK, PROP_SPRITES, SMALL_PX, SPRITES, propOrigin, type Po
  */
 
 /** Short things she does about what happens, each with its length in seconds. */
-export type ReactKind = 'hop' | 'pet' | 'look' | 'wake' | 'eat' | 'happy' | 'spin' | 'sparkle';
-export const REACT_S: Readonly<Record<ReactKind, number>> = { hop: 0.7, pet: 1.6, look: 8, wake: 6, eat: 4, happy: 1.4, spin: 1, sparkle: 2.4 };
+export type ReactKind = 'hop' | 'pet' | 'look' | 'wake' | 'eat' | 'happy' | 'spin' | 'sparkle' | 'click' | 'rise';
+/**
+ * `click` is the longest a noticed click holds him (a near one; `CLICK_S` has each kind); `rise` is
+ * getting up from a nap (a yawn and a stretch).
+ */
+export const REACT_S: Readonly<Record<ReactKind, number>> = { hop: 0.74, pet: 1.6, look: 8, wake: 6, eat: 4, happy: 2.4, spin: 0.8, sparkle: 2.4, click: 1.6, rise: 1.6 };
+
+/** How far a click is from his head: near (within 320 px), mid (to 1000 px) or far. */
+export type ClickKind = 'near' | 'mid' | 'far';
+export const CLICK_NEAR_PX = 320;
+export const CLICK_MID_PX = 1000;
+/** How long each kind of noticed click holds his look, seconds. */
+export const CLICK_S: Readonly<Record<ClickKind, number>> = { near: 1.6, mid: 1.1, far: 0.7 };
+/** A burst of clicks is one reaction: nothing for this long after one, seconds. */
+export const CLICK_GAP_S = 1.5;
+
+/** The kind of a click at (`x`, `y`) for a sheep whose head is at (`hx`, `hy`), stage pixels. */
+export function clickKind(x: number, y: number, hx: number, hy: number): ClickKind {
+  const d = Math.hypot(x - hx, y - hy);
+  return d < CLICK_NEAR_PX ? 'near' : d < CLICK_MID_PX ? 'mid' : 'far';
+}
+
+/**
+ * A blink: one 120 ms frame with his eyes shut, every 3 to 7 seconds (`T` is the loop's seconds).
+ * Pure: the blink times come from a small hash of each 5 second window.
+ */
+export function blinking(T: number): boolean {
+  const at = blinkAt(Math.floor(T / BLINK_WINDOW_S));
+  return T >= at && T < at + BLINK_S;
+}
+/** A blink lasts this long, seconds; one falls in each window of this many seconds. */
+export const BLINK_S = 0.12;
+const BLINK_WINDOW_S = 5;
+function blinkAt(k: number): number {
+  const h = Math.sin(k * 12.9898 + 78.233) * 43758.5453;
+  return k * BLINK_WINDOW_S + 0.5 + (h - Math.floor(h)) * 3.8;
+}
+/** Seconds from `T` until a blink starts or, during one, ends. */
+export function nextBlink(T: number): number {
+  const k = Math.floor(T / BLINK_WINDOW_S);
+  const at = blinkAt(k);
+  if (T < at) return at - T;
+  if (T < at + BLINK_S) return at + BLINK_S - T;
+  return blinkAt(k + 1) - T;
+}
+
+/**
+ * How long he can rest while he stands, seconds: 0 when something moves on every frame (a walk, a
+ * reaction, drifting notes or z's, the firefly, the beat), else the time until the next planned
+ * change of what is drawn (the end of a stand, a graze nibble, sitting down or standing up, a
+ * yawn ending, a blink), or Infinity when nothing is planned. The frame loop sleeps that long on
+ * one timer instead of drawing frames (`Watt.tsx`). `t` is his wander clock, `T` the loop clock;
+ * `playing` is music on (notes drift).
+ */
+export function restFor(walk: Walk, t: number, T: number, night: boolean, playing: boolean, m: Mind): number {
+  if (night || m.lie || m.nap || (!m.quiet && (m.firefly || playing || m.bob > 0))) return 0;
+  if (m.react !== null && m.reactT < reactLength(m)) return 0;
+  let next = Infinity;
+  const at = (s: number) => {
+    if (s > 1e-6 && s < next) next = s;
+  };
+  // The wander clock waits while he is held still (his menu open, a carry); nothing on it is due then.
+  if (!holdsStill(m)) {
+    const w = wanderAt(walk, t, scratch);
+    if (w.moving) return 0;
+    const stand = IDLES[w.stop];
+    at(stand - w.into);
+    at(3 - w.into);
+    if (IDLES[w.stop] >= SETTLE_STOP_S) {
+      at(SETTLE_FROM_S - w.into);
+      at(stand - SETTLE_UP_S - w.into);
+    }
+    if (GRAZE_STOPS.includes(w.stop)) {
+      if (w.into < GRAZE_FROM_S) at(GRAZE_FROM_S - w.into);
+      else if (w.into < GRAZE_FROM_S + GRAZE_S) at(Math.min(GRAZE_FROM_S + GRAZE_S, (Math.floor(w.into * NIBBLE_HZ) + 1) / NIBBLE_HZ) - w.into);
+    }
+  }
+  if (m.idleLife && !m.quiet) at(nextBlink(T));
+  return next;
+}
+
+/**
+ * The idle life is calm: blink aside, one thing the eye notices every two to three minutes. In
+ * each loop of his wander (about four and a half to five minutes) he grazes at one stop and settles
+ * in at one: the longest stop (40 s). `model.test.ts` holds the cadence.
+ */
+/** Grazing: at this wander stop he lowers his head and nibbles for a few seconds. */
+export const GRAZE_STOPS: readonly number[] = [6];
+export const GRAZE_FROM_S = 5;
+export const GRAZE_S = 6;
+/** Settling in: at stops this long or longer he sits down after a while, and stands up before he walks on. */
+export const SETTLE_STOP_S = 40;
+export const SETTLE_FROM_S = 6;
+export const SETTLE_UP_S = 3;
+/** How often a graze nibble changes his pose, a second. */
+export const NIBBLE_HZ = 3;
 
 /** He notices the pointer when it is this close to him (design pixels). */
 export const NOTICE_PX = 260;
@@ -60,6 +154,19 @@ export interface Mind {
   fireflyY: number;
   /** He is being carried, falling, or sitting where he was set down: the wander clock waits (`carry.ts`). */
   carry: boolean;
+  /** The loop's seconds (for the blink). */
+  clock: number;
+  /** Seconds since the Nap trick laid him down (he turns round, sits, then lies). */
+  lieT: number;
+  /** The way his menu is from him, while it is open (he looks up at it). */
+  menuDir: 1 | -1;
+  /** A noticed click: how far, and whether it was above him (he looks up). */
+  clickKind: ClickKind;
+  clickUp: boolean;
+  /** The idle behaviours he does (blink, graze, settle): off in tests that hold his pose still. */
+  idleLife: boolean;
+  /** The wall is recording: he sits quietly (no wander, no idle life, nothing he starts himself). */
+  quiet: boolean;
 }
 
 export function createMind(): Mind {
@@ -87,12 +194,19 @@ export function createMind(): Mind {
     firefly: false,
     fireflyX: 0,
     fireflyY: 0,
+    clock: 0,
+    lieT: 0,
+    menuDir: 1,
+    clickKind: 'near',
+    clickUp: false,
+    idleLife: true,
+    quiet: false,
   };
 }
 
 /** True while `m.react` is one that holds her still (the wander clock stops). */
 export function holdsStill(m: Mind): boolean {
-  return m.held || m.carry || m.lie || (m.react !== null && m.reactT < REACT_S[m.react]);
+  return m.held || m.carry || m.lie || m.quiet || (m.react !== null && m.reactT < reactSpan(m));
 }
 
 /** What Watt draws this frame, beyond the base frame. Reused. */
@@ -112,10 +226,48 @@ export interface PetFrame extends BuddyFrame {
   /** A one-off sparkle (ten pets in a day). */
   sparkle: boolean;
   mark: boolean;
+  /** Horizontal stretch, 1 is none (squash and stretch keep his volume: wider when flatter). */
+  sx: number;
+  /** His eyes shut for this frame. */
+  blink: boolean;
+  /** The wool he is held by (or flicked up), drawn above his back. */
+  tuft: boolean;
+  /** Dust at his feet: 0 none, up to 1 as it puffs out, 1 to 2 as it fades. */
+  dust: number;
+  /** His shadow on the ground where he will land (carried and falling): its opacity, and the sheep's left edge it is under. */
+  shadow: number;
+  shadowX: number;
 }
 
 export function createPetFrame(): PetFrame {
-  return { x: 0, dir: 1, pose: 'idle', notes: false, z: false, prop: null, scarf: false, cosmetic: null, lift: 0, squash: 1, tilt: 0, hearts: false, sparkle: false, mark: false };
+  return {
+    x: 0,
+    dir: 1,
+    pose: 'idle',
+    notes: false,
+    z: false,
+    prop: null,
+    scarf: false,
+    cosmetic: null,
+    lift: 0,
+    squash: 1,
+    tilt: 0,
+    hearts: false,
+    sparkle: false,
+    mark: false,
+    sx: 1,
+    blink: false,
+    tuft: false,
+    dust: 0,
+    shadow: 0,
+    shadowX: 0,
+  };
+}
+
+/** Poses with open eyes that a blink can close. */
+const BLINKABLE: ReadonlySet<Pose> = new Set<Pose>(['idle', 'walk', 'look', 'alert', 'sit', 'read', 'eat', 'held', 'held2']);
+export function canBlink(pose: Pose): boolean {
+  return BLINKABLE.has(pose);
 }
 
 /**
@@ -144,11 +296,12 @@ export function propRise(f: Pick<PetFrame, 'pose' | 'prop' | 'scarf' | 'cosmetic
 const scratch = createWander();
 
 /**
- * Watt this frame: the base frame (`buddyFrame`) on her wander clock `t`, then her reaction, her
- * standing pose (a book while focus runs, the moon in the evening, a yawn when sleepy), her props,
- * a hop that never lifts her or her props past the walk's ceiling, the beat squash, hearts and the
- * amber mark. `hy` is the ground line. With `still` (reduced motion) she keeps the base still pose
- * and position and nothing moves, but she still wears her props and shows her reaction pose.
+ * Watt this frame: the base frame (`buddyFrame`) on his wander clock `t`, then his reaction, his
+ * standing pose (a book while focus runs, the moon in the evening, a yawn when sleepy, and the idle
+ * life: grazing, settling in, a blink), his props, the hops (anticipation, stretch, squash and dust,
+ * never lifting him or his props past the walk's ceiling), the beat squash, hearts and the amber
+ * mark. `hy` is the ground line. With `still` (reduced motion) he keeps the base still pose and
+ * position and nothing moves, but he still wears his props and shows his reaction pose.
  */
 export function petFrame(walk: Walk, place: WattPlace, hy: number, night: boolean, t: number, playing: boolean, still: boolean, m: Mind, out: PetFrame): PetFrame {
   buddyFrame(walk, night, t, playing, still, out);
@@ -157,18 +310,23 @@ export function petFrame(walk: Walk, place: WattPlace, hy: number, night: boolea
   out.cosmetic = null;
   out.lift = 0;
   out.squash = 1;
+  out.sx = 1;
   out.tilt = 0;
   out.hearts = false;
   out.sparkle = false;
   out.mark = false;
-  const react = m.react !== null && m.reactT < Math.max(REACT_S[m.react], m.react === 'pet' ? HEARTS_S : 0) ? m.react : null;
-  const k = react ? m.reactT / REACT_S[react] : 0;
+  out.blink = false;
+  out.tuft = false;
+  out.dust = 0;
+  out.shadow = 0;
+  const react = m.react !== null && m.reactT < reactLength(m) ? m.react : null;
+  const len = react ? reactSpan(m) : 1;
+  const k = react ? m.reactT / len : 0;
+  let shaped = false;
   if (night) {
     out.prop = 'nightcap';
   } else if (m.lie) {
-    out.pose = 'lie';
-    out.z = !still;
-    out.notes = false;
+    lieDown(m.lieT, still, out);
   } else if (m.nap) {
     out.pose = 'sleep';
     out.z = !still;
@@ -181,28 +339,47 @@ export function petFrame(walk: Walk, place: WattPlace, hy: number, night: boolea
       out.dir = m.reactDir;
     } else if (react && k < 1 && react === 'wake') {
       out.pose = k < 0.5 ? 'yawn' : 'stretch';
+    } else if (react && k < 1 && react === 'rise') {
+      out.pose = still ? 'stretch' : m.reactT < 0.25 ? 'lie' : m.reactT < 0.95 ? 'yawn' : 'stretch';
     } else if (react && k < 1 && react === 'eat') {
       out.pose = 'eat';
-    } else if (react && k < 1 && (react === 'spin' || react === 'happy')) {
-      out.pose = spinPose(k, still, react === 'happy');
-    } else if (react && k < 1 && react === 'hop' && !still && k > 0.12 && k < 0.88) {
-      out.pose = 'hop';
+    } else if (react && k < 1 && (react === 'spin' || react === 'happy' || react === 'hop')) {
+      if (still) out.pose = react === 'hop' ? 'hop' : 'spin1';
+      else {
+        shape(react, m.reactT, out);
+        shaped = true;
+      }
+    } else if (react && k < 1 && react === 'click') {
+      out.dir = m.reactDir;
+      if (!still) noticeClick(m.clickKind, m.clickUp, m.reactT, out);
+    } else if (m.quiet && !react) {
+      // Recording: he sits quietly where he is.
+      out.pose = 'sit';
+      out.notes = false;
     } else if (moving) {
       // Walking: the base frame already alternates idle and walk.
     } else if (m.focus) {
       out.pose = 'read';
+    } else if (m.held) {
+      // His menu is open above him: he looks up at it.
+      out.pose = 'look';
+      out.dir = m.menuDir;
     } else if (w && m.evening && w.stop % 2 === 1) {
       out.pose = 'look';
     } else if (w && m.sleepy && w.stop % 3 === 0 && w.into < 3) {
       out.pose = 'yawn';
+    } else if (w && m.idleLife && !m.clover) {
+      // The idle life on a long stand: he settles in (sits, and stands up before he walks on) or grazes.
+      if (IDLES[w.stop] >= SETTLE_STOP_S && w.into >= SETTLE_FROM_S && w.into < IDLES[w.stop] - SETTLE_UP_S) out.pose = 'sit';
+      else if (GRAZE_STOPS.includes(w.stop) && w.into >= GRAZE_FROM_S && w.into < GRAZE_FROM_S + GRAZE_S) out.pose = Math.floor(w.into * NIBBLE_HZ) % 3 === 0 ? 'idle' : 'eat';
     }
     // A firefly: he turns to watch it, head up, when he is standing about.
-    if (!react && !still && m.firefly && !moving && !m.focus && !m.clover && out.pose === 'idle') {
+    if (!react && !still && m.firefly && !m.quiet && !moving && !m.focus && !m.clover && !m.held && out.pose === 'idle') {
       out.dir = m.fireflyX >= out.x + spriteWidth('look', walk.px) / 2 ? 1 : -1;
       if (m.fireflyY < hy - spriteHeight('look', walk.px)) out.pose = 'look';
     }
     // He notices the pointer: faces it, ears up, when he is standing about with nothing on his mind.
-    if (!react && !still && m.pointerOn && !moving && !m.focus && !m.clover) {
+    if (!react && !still && m.pointerOn && !m.quiet && !moving && !m.focus && !m.clover && !m.held) {
       const dx = m.pointerX - (out.x + spriteWidth('alert', walk.px) / 2);
       const dy = m.pointerY - (hy - spriteHeight('alert', walk.px) / 2);
       if (dx * dx + dy * dy <= NOTICE_PX * NOTICE_PX) {
@@ -217,30 +394,152 @@ export function petFrame(walk: Walk, place: WattPlace, hy: number, night: boolea
     out.scarf = m.cold;
     if (react === 'pet') {
       out.hearts = !still || m.reactT < HEARTS_S;
-      // A wiggle: she turns one way, then the other, then back.
+      // A wiggle: he turns one way, then the other, then back.
       if (!still && k < 1) out.dir = (Math.floor(k * 4) % 2 === 0 ? out.dir : -out.dir) as 1 | -1;
     }
+    // Hearts land with the happy hop.
+    if (react === 'happy' && m.reactT >= 1.1) out.hearts = true;
+    if (!still && m.idleLife && !m.quiet && canBlink(out.pose) && blinking(m.clock)) out.blink = true;
   }
   out.sparkle = !night && react === 'sparkle' && k < 1;
-  // The amber mark shows whatever she is doing, asleep included: something waits for him.
+  // The amber mark shows whatever he is doing, asleep included: something waits for him.
   out.mark = m.waiting;
   if (out.prop && !propFits(out.prop, out.pose)) out.prop = null;
   if (out.scarf && !propFits('scarf', out.pose)) out.scarf = false;
   if (m.cosmetic !== 'none' && propFits(m.cosmetic, out.pose)) out.cosmetic = m.cosmetic;
-  if (!still && !night && (react === 'hop' || react === 'happy') && k < 1) {
+  if (shaped && out.lift > 0) {
+    // Never past the ceiling: the hop height is the shape's, capped by the room above him.
     const top = hy - spriteHeight(out.pose, walk.px) - propRise(out) * walk.px;
     const room = Math.max(0, top - walk.ceiling);
-    out.lift = Math.sin(Math.PI * k) * Math.min(walk.px * (react === 'happy' ? 2 : 1.5), room);
-  }
-  if (!still && !night && !m.nap) out.squash = 1 - 0.05 * Math.max(0, Math.min(1, m.bob));
+    out.lift = Math.min(out.lift * walk.px, room);
+  } else out.lift = 0;
+  if (!still && !night && !m.nap && !m.quiet && !shaped && out.squash === 1) out.squash = 1 - 0.05 * Math.max(0, Math.min(1, m.bob));
   return out;
 }
 
-/** The frames of a turn on the spot: side, front, back, front, side (a happy hop turns once more). */
-function spinPose(k: number, still: boolean, happy: boolean): Pose {
-  if (still) return 'spin1';
-  if (happy) return k < 0.12 ? 'idle' : k < 0.3 ? 'spin1' : k < 0.5 ? 'spin2' : k < 0.7 ? 'spin1' : k < 0.88 ? 'spin2' : 'idle';
-  return k < 0.12 ? 'idle' : k < 0.34 ? 'spin1' : k < 0.56 ? 'spin2' : k < 0.78 ? 'spin1' : 'idle';
+/** How long the running reaction lasts (a noticed click by its kind; hearts outlast a pet). */
+export function reactLength(m: Pick<Mind, 'react' | 'clickKind'>): number {
+  if (m.react === null) return 0;
+  if (m.react === 'pet') return Math.max(REACT_S.pet, HEARTS_S);
+  return reactSpan(m);
+}
+function reactSpan(m: Pick<Mind, 'react' | 'clickKind'>): number {
+  if (m.react === 'click') return CLICK_S[m.clickKind];
+  return m.react === null ? 1 : REACT_S[m.react];
+}
+
+/**
+ * The shaped moves (`t` seconds in), at pixel-art frame counts: poses step at about 10 frames a
+ * second while the lift moves smoothly. Writes the pose, the facing, `lift` in sprite pixels (the
+ * caller turns it into design pixels and caps it), the squash and stretch and the dust.
+ * - hop: a crouch, a stretch up, a hop with the legs tucked, a squash with dust, a settle.
+ * - spin: a crouch, then a true turn (side, front, other side, back, side) a little off the ground.
+ * - happy: two stiff-legged bounces, the second with a turn, then hearts.
+ */
+export function shape(kind: 'hop' | 'spin' | 'happy', t: number, out: Pick<PetFrame, 'pose' | 'dir' | 'lift' | 'squash' | 'sx' | 'dust'>): void {
+  const crouch = () => {
+    out.squash = 0.86;
+    out.sx = 1.08;
+  };
+  const land = (dust: number) => {
+    out.squash = 0.84;
+    out.sx = 1.1;
+    out.dust = dust;
+  };
+  if (kind === 'hop') {
+    if (t < 0.12) crouch();
+    else if (t < 0.18) {
+      out.squash = 1.12;
+      out.sx = 0.94;
+      out.lift = 0.25;
+    } else if (t < 0.58) {
+      out.pose = 'hop';
+      out.lift = Math.sin((Math.PI * (t - 0.18)) / 0.4) * 5;
+    } else if (t < 0.68) land(Math.min(1, (t - 0.58) / 0.1));
+    else if (t < 0.74) {
+      out.squash = 1.04;
+      out.dust = 1 + (t - 0.68) / 0.06;
+    }
+    return;
+  }
+  if (kind === 'spin') {
+    const dir = out.dir;
+    if (t < 0.1) {
+      out.squash = 0.9;
+      out.sx = 1.05;
+    } else if (t < 0.6) {
+      const i = Math.min(4, Math.floor((t - 0.1) * 10));
+      out.pose = i === 1 ? 'spin1' : i === 3 ? 'spin2' : 'idle';
+      out.dir = (i === 2 ? -dir : dir) as 1 | -1;
+      out.lift = Math.sin((Math.PI * (t - 0.1)) / 0.5) * 2;
+    } else if (t < 0.7) {
+      out.squash = 0.88;
+      out.sx = 1.06;
+    }
+    return;
+  }
+  // The happy hop (a pronk).
+  if (t < 0.1) crouch();
+  else if (t < 0.46) {
+    out.pose = 'hop';
+    out.lift = Math.sin((Math.PI * (t - 0.1)) / 0.36) * 3;
+  } else if (t < 0.56) land(0.5);
+  else if (t < 1.06) {
+    const turn: readonly Pose[] = ['hop', 'spin1', 'spin2', 'spin1', 'hop'];
+    out.pose = turn[Math.min(4, Math.floor(((t - 0.56) / 0.5) * 5))];
+    out.lift = Math.sin((Math.PI * (t - 0.56)) / 0.5) * 4.5;
+  } else if (t < 1.14) land(Math.min(1, (t - 1.06) / 0.08));
+  else if (t < 1.22) {
+    out.squash = 1.04;
+    out.dust = 1 + (t - 1.14) / 0.08;
+  }
+}
+
+/**
+ * The Nap trick, `t` seconds after it started: he turns round, sits, lies down, then breathes
+ * slowly with drifting z's. Under reduced motion he simply lies there.
+ */
+export function lieDown(t: number, still: boolean, out: Pick<PetFrame, 'pose' | 'dir' | 'z' | 'notes' | 'squash'>): void {
+  out.notes = false;
+  if (still) {
+    out.pose = 'lie';
+    out.z = false;
+    return;
+  }
+  if (t < 0.2) out.pose = 'idle';
+  else if (t < 0.4) {
+    out.pose = 'walk';
+    out.dir = (-out.dir) as 1 | -1;
+  } else if (t < 0.7) out.pose = 'idle';
+  else if (t < 1) {
+    out.pose = 'sit';
+    out.squash = 1 - 0.06 * Math.sin((Math.PI * (t - 0.7)) / 0.3);
+  } else {
+    out.pose = 'lie';
+    out.squash = 1 - 0.035 * (0.5 + 0.5 * Math.sin(((t - 1) * Math.PI) / 1.6));
+  }
+  out.z = t >= 1.5;
+}
+
+/**
+ * A noticed click, `t` seconds in: he has already turned toward it. Near: a squash, then the wool
+ * flicks up, ears up, and he holds the look (up at it when it was above him). Mid: ears up, the
+ * look. Far: one ear frame, then a glance.
+ */
+export function noticeClick(kind: ClickKind, up: boolean, t: number, out: Pick<PetFrame, 'pose' | 'squash' | 'sx' | 'tuft'>): void {
+  if (kind === 'far') {
+    if (t < 0.14) out.pose = 'alert';
+    return;
+  }
+  out.pose = up && t > 0.2 ? 'look' : 'alert';
+  if (kind !== 'near') return;
+  if (t < 0.1) {
+    out.squash = 0.92;
+    out.sx = 1.04;
+  } else if (t < 0.22) {
+    out.tuft = true;
+    out.squash = 1.04;
+  }
 }
 
 /** A box in stage pixels. */
@@ -345,26 +644,37 @@ export function hitParts(pose: Pose, dir: 1 | -1, body: Box, head: Box): void {
   }
 }
 
-/** Her hover card's box, design pixels (the card is drawn at exactly this size). */
-export const CARD_W = 880;
-export const CARD_H = 80;
+/** True when `b` (padded by `pad` on every side) overlaps any of `rects`, stage pixels. */
+export function overlapsAny(b: Box, rects: readonly Box[], pad = 4): boolean {
+  for (const r of rects) {
+    if (b.left - pad < r.left + r.width && r.left < b.left + b.width + pad && b.top - pad < r.top + r.height && r.top < b.top + b.height + pad) return true;
+  }
+  return false;
+}
+
+/** His menu's width, design pixels (its height follows its content). */
+export const MENU_W = 392;
+/** Gap between the menu's tail and the top of his sprite, design pixels. */
+export const MENU_GAP = 22;
+
+/** Where his menu goes, and where its tail meets its bottom edge (from the menu's left). */
+export interface MenuPlace extends Box {
+  tail: number;
+}
 
 /**
- * Where her card goes: in the band over the horizon beside her on Work, Home and Meet (right of
- * her when it fits in the main area, else left), covering nothing but the horizon; on Unwind,
- * below the transport row, right of the Tomorrow block, over the empty floor. Written into `out`.
+ * Where his menu goes: a speech bubble above him, its tail pointing down at him, left aligned a
+ * little left of his middle and kept inside the main area. It is a pop-up, so it may sit over the
+ * cards above him while it is open; it never covers him. `top` is his sprite's top, `height` the
+ * menu's measured height. Written into `out`.
  */
-export function placeCard(place: WattPlace, walk: Walk, x: number, w: number, out: Box = createBox()): Box {
-  out.width = CARD_W;
-  out.height = CARD_H;
-  if (place === 'unwind') {
-    out.left = UNWIND_ROW.left - 24;
-    out.top = UNWIND_ROW.bottom + 8;
-    return out;
-  }
-  out.top = walk.ceiling + 2;
-  const right = x + w + 16;
-  out.left = right + CARD_W <= MAIN_LEFT + MAIN_WIDTH ? right : Math.max(MAIN_LEFT, x - 16 - CARD_W);
+export function placeMenu(x: number, w: number, top: number, height: number, out: MenuPlace = { left: 0, top: 0, width: 0, height: 0, tail: 0 }): MenuPlace {
+  out.width = MENU_W;
+  out.height = height;
+  const mid = x + w / 2;
+  out.left = Math.max(MAIN_LEFT, Math.min(MAIN_LEFT + MAIN_WIDTH - MENU_W, mid - 40));
+  out.top = Math.max(8, top - height - MENU_GAP);
+  out.tail = Math.max(14, Math.min(MENU_W - 30, mid - out.left - 7));
   return out;
 }
 
@@ -451,12 +761,14 @@ export function bubbleSize(lines: readonly string[]): { width: number; height: n
 
 /** Where the bubble sits, and which side its tail points from. Reused. */
 export interface BubblePlace extends Box {
-  /** True when the bubble is left of her (its tail on its right). */
+  /** True when the bubble is left of him (its tail on its right). */
   leftSide: boolean;
+  /** False when it fits on neither side of him without covering him (a narrow stretch of ground): it is not shown. */
+  fits: boolean;
 }
 
 export function createBubblePlace(): BubblePlace {
-  return { left: 0, top: 0, width: 0, height: 0, leftSide: false };
+  return { left: 0, top: 0, width: 0, height: 0, leftSide: false, fits: true };
 }
 
 /**
@@ -473,9 +785,11 @@ export function placeBubble(walk: Walk, hy: number, x: number, y: number, w: num
   if (right + width <= walk.right) {
     out.left = right;
     out.leftSide = false;
+    out.fits = true;
   } else {
     out.left = Math.max(walk.bubbleLeft, x - gap - width);
     out.leftSide = true;
+    out.fits = x - gap - width >= walk.bubbleLeft;
   }
   out.top = Math.max(walk.ceiling + 2, Math.min(y, hy - height - BUBBLE.tail));
   return out;

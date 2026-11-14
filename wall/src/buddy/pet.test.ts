@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MAX_COUNT, MAX_DAYS, MAX_RAW, bump, dayKey, defaultPet, moodOf, parsePet, rollDay, todayLines, unlocked, emptyToday, type MoodInput, type PetData } from './pet';
+import { spotKey, MAX_COUNT, MAX_DAYS, MAX_RAW, bump, dayKey, defaultPet, moodOf, parsePet, rollDay, todayLines, unlocked, emptyToday, type MoodInput, type PetData } from './pet';
 
 const at = (d: number, h = 12) => new Date(2026, 10, d, h).getTime();
 
@@ -141,5 +141,29 @@ describe('his Stay, stored', () => {
     let d = parsePet(withStay({ place: 'home', x: 1600, date: key }), at(11));
     d = bump(rollDay(d, at(11, 13)), 'pets', at(11, 14));
     expect(d.stay).toEqual({ place: 'home', x: 1600, date: key });
+  });
+});
+
+describe('his spots', () => {
+  const now = new Date(2026, 10, 11, 14).getTime();
+  it('keeps a spot per known place with an x on the stage, drops anything else, and keeps them across days', () => {
+    const d = parsePet(JSON.stringify({ spots: { work: 2300, home: -5, unwind: 'x', meet: 99999, zen: 400 } }), now);
+    expect(d.spots).toEqual({ work: 2300 });
+    expect(parsePet(null, now).spots).toEqual({});
+    expect(parsePet(JSON.stringify({ spots: 'nope' }), now).spots).toEqual({});
+    const later = rollDay(d, now + 3 * 86_400_000);
+    expect(later.spots).toEqual({ work: 2300 });
+  });
+});
+
+describe('spots on Unwind, one per tab', () => {
+  const now = new Date(2026, 10, 11, 14).getTime();
+  it('keeps Listen and Watch apart, and a spot stored before tabs had their own is Listen\'s', () => {
+    expect(spotKey('unwind', false)).toBe('unwind');
+    expect(spotKey('unwind', true)).toBe('unwindWatch');
+    expect(spotKey('work', true)).toBe('work');
+    expect(parsePet(JSON.stringify({ spots: { unwind: 1600 } }), now).spots).toEqual({ unwind: 1600 });
+    expect(parsePet(JSON.stringify({ spots: { unwind: 1600, unwindWatch: 300 } }), now).spots).toEqual({ unwind: 1600, unwindWatch: 300 });
+    expect(parsePet(JSON.stringify({ spots: { unwindWatch: -1 } }), now).spots).toEqual({});
   });
 });
