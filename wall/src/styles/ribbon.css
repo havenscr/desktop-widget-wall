@@ -236,3 +236,849 @@
   margin-right: 0;
   box-shadow: 0 0 0 2px rgba(6, 4, 22, 0.9);
 }
+
+/* The calm strip (Work and Meet; concept 4B). One calendar row: a run of overlapping meetings
+   folds into one chip with a count; all-day events are a thin bar over the row. */
+.rib.has-allday .ev,
+.rib.has-allday .ev-side {
+  top: 42px;
+  height: 24px;
+  font-size: 15px;
+  line-height: 22px;
+}
+.rib .adbar {
+  position: absolute;
+  left: 72px;
+  width: 2304px;
+  top: 27px;
+  height: 13px;
+  box-sizing: border-box;
+  padding: 0 8px;
+  border-radius: 6px;
+  background: rgba(154, 123, 255, 0.13);
+  border: 1px solid rgba(154, 123, 255, 0.34);
+  color: #cfc4f5;
+  font: 600 10.5px/11px var(--disp);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.rib .adbar:hover {
+  border-color: rgba(200, 184, 255, 0.8);
+}
+.rib .ev.fold {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 27px;
+  line-height: 25px;
+  text-align: left;
+  cursor: pointer;
+  background: rgba(120, 96, 220, 0.5);
+  box-shadow: 3px 3px 0 0 rgba(154, 123, 255, 0.42), 6px 6px 0 0 rgba(154, 123, 255, 0.2);
+}
+.rib.has-allday .ev.fold {
+  height: 21px;
+  line-height: 19px;
+}
+.rib .ev.fold:hover {
+  border-color: rgba(200, 184, 255, 0.9);
+  filter: brightness(1.15);
+}
+.rib .ev.fold .fold-n {
+  flex: none;
+  font: 600 17px/1 var(--disp);
+  color: #fff;
+}
+.rib.has-allday .ev.fold .fold-n {
+  font-size: 15px;
+}
+.rib .ev.fold .fold-t {
+  min-width: 0;
+  opacity: 0.75;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hover-tip .tip-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+}
+.hover-tip .tip-row .tip-when {
+  color: var(--faint);
+  white-space: nowrap;
+}
+
+/* The thin activity bar: 12 minute cells from 6 AM to now (brighter the more sessions were
+   busy, amber where one waited), and the agents line after the needle. */
+.rib .agent-row .ac {
+  position: absolute;
+  top: 72px;
+  height: 20px;
+}
+.rib .agent-row .ac.open {
+  cursor: pointer;
+}
+.rib .agent-row .ac i {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 7px;
+  height: 6px;
+  border-radius: 2px;
+  background: var(--cyan);
+}
+.rib .agent-row .ac i.wait {
+  background: var(--amber);
+}
+.rib .agent-row .ac:hover i {
+  filter: brightness(1.4);
+}
+.rib .agent-row.stale .ac {
+  opacity: 0.45;
+}
+.rib .ag-line {
+  position: absolute;
+  top: 73px;
+  height: 22px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  font: 500 16px/22px var(--body);
+  color: var(--tx);
+  white-space: nowrap;
+  text-shadow: 0 0 4px rgba(6, 4, 22, 0.95);
+  cursor: pointer;
+}
+/* Late in the day the line sits before the needle, over the bar: on a dark backing. */
+.rib .ag-line.before {
+  background: rgba(8, 6, 24, 0.88);
+}
+.rib .ag-line:disabled {
+  cursor: default;
+}
+.rib .ag-line:not(:disabled):hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+.rib .ag-line.before:not(:disabled):hover {
+  background: rgba(40, 32, 80, 0.95);
+}
+.rib .ag-line .need {
+  color: var(--amber);
+}
+.rib .ag-line .asof {
+  color: var(--faint);
+}
+.rib .agent-row.stale .ag-line {
+  color: var(--dim);
+}
+/* The handle that pulls up the Day drawer: a 48 by 5 bar on the strip's top edge. */
+/* 80 by 26: it ends above the all-day bar (y 27); Ribbon.tsx sets its left clear of labels. */
+.rib-handle {
+  position: absolute;
+  left: calc(50% - 40px);
+  top: 0;
+  width: 80px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  z-index: 3;
+}
+.rib-handle i {
+  position: absolute;
+  left: 16px;
+  top: 3px;
+  width: 48px;
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.35);
+}
+.rib-handle:hover i {
+  background: rgba(255, 255, 255, 0.7);
+}
+
+/* The Day drawer: 532 px over the lower part of Work (main area y 148 to 680). */
+.day-drawer {
+  position: absolute;
+  left: 0;
+  top: 148px;
+  width: 2416px;
+  height: 532px;
+  box-sizing: border-box;
+  z-index: 45;
+  display: flex;
+  flex-direction: column;
+  padding: 14px 28px 16px;
+  border-radius: 24px;
+  background: rgb(14, 11, 34);
+  border: 1px solid var(--line);
+  box-shadow: 0 -18px 50px -20px rgba(2, 1, 10, 0.9);
+  color: var(--tx);
+  font-variant-numeric: tabular-nums;
+}
+.day-drawer .rib-handle.in-drawer {
+  left: calc(50% - 40px);
+}
+.dd-head {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  height: 40px;
+  flex: none;
+}
+.dd-k {
+  font: 600 15px/1 var(--disp);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--tx);
+  white-space: nowrap;
+}
+button.dd-k.link {
+  padding: 0 10px;
+  height: 32px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  cursor: pointer;
+}
+button.dd-k.link:hover {
+  border-color: rgba(53, 230, 234, 0.5);
+  color: var(--cyan);
+}
+.dd-date {
+  font: 400 17px/1 var(--body);
+  color: var(--dim);
+}
+.dd-allday {
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 6px;
+  background: rgba(154, 123, 255, 0.13);
+  border: 1px solid rgba(154, 123, 255, 0.34);
+  color: #cfc4f5;
+  font: 600 12px/22px var(--disp);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  max-width: 600px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dd-close {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--dim);
+  font: 500 15px/1 var(--body);
+  cursor: pointer;
+}
+.dd-close:hover {
+  color: var(--tx);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+.dd-close svg {
+  width: 16px;
+  height: 16px;
+}
+.dd-body {
+  display: flex;
+  gap: 44px;
+  flex: 1;
+  min-height: 0;
+  margin-top: 8px;
+}
+.dd-agenda {
+  position: relative;
+  width: 836px;
+  flex: none;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  padding-top: 10px;
+}
+.dd-grid {
+  position: relative;
+}
+.dd-hour {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1px;
+}
+.dd-hour span {
+  position: absolute;
+  left: 0;
+  top: -8px;
+  width: 62px;
+  text-align: right;
+  font: 500 14px/1 var(--disp);
+  letter-spacing: 0.06em;
+  color: var(--dim);
+  white-space: nowrap;
+}
+.dd-hour i {
+  position: absolute;
+  left: 76px;
+  right: 0;
+  height: 1px;
+  background: var(--line);
+}
+.dd-blocks {
+  position: absolute;
+  left: 76px;
+  right: 0;
+  top: 0;
+  bottom: 16px;
+}
+.dd-ev {
+  position: absolute;
+  box-sizing: border-box;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  align-items: baseline;
+  gap: 2px 10px;
+  padding: 5px 10px;
+  border-radius: 9px;
+  background: rgba(154, 123, 255, 0.22);
+  border: 1px solid rgba(154, 123, 255, 0.55);
+  color: #e4dcff;
+  font: 600 15px/1.2 var(--body);
+  overflow: hidden;
+}
+.dd-ev.short {
+  flex-wrap: nowrap;
+  align-items: center;
+  padding: 0 10px;
+}
+.dd-ev.open {
+  cursor: pointer;
+}
+.dd-ev.open:hover {
+  border-color: rgba(200, 184, 255, 0.9);
+  filter: brightness(1.15);
+}
+.dd-ev.past {
+  opacity: 0.55;
+}
+.dd-ev.live {
+  background: rgba(255, 61, 154, 0.2);
+  border-color: rgba(255, 61, 154, 0.55);
+  color: #ffd9ea;
+}
+.dd-ev b {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dd-ev .dd-t {
+  flex: none;
+  font: 400 13px/1.4 var(--body);
+  opacity: 0.75;
+  white-space: nowrap;
+}
+.dd-join {
+  margin-left: auto;
+  flex: none;
+  height: 22px;
+  padding: 0 10px;
+  border-radius: 7px;
+  border: 1px solid rgba(53, 230, 234, 0.5);
+  background: rgba(53, 230, 234, 0.14);
+  color: var(--cyan);
+  font: 600 13px/1 var(--body);
+  cursor: pointer;
+}
+.dd-join:hover {
+  background: rgba(53, 230, 234, 0.28);
+}
+.dd-now {
+  position: absolute;
+  left: -8px;
+  right: 0;
+  height: 2px;
+  background: #fff;
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.8);
+  pointer-events: none;
+}
+.dd-none {
+  display: block;
+  padding: 10px 0;
+  font: 400 16px/1.4 var(--body);
+  color: var(--faint);
+}
+.dd-agents {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.dd-agents.stale .dd-rows {
+  opacity: 0.6;
+}
+.dd-ag-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  height: 34px;
+  flex: none;
+}
+.dd-counts {
+  font: 400 16px/1 var(--body);
+  color: var(--dim);
+  white-space: nowrap;
+}
+.dd-counts .need {
+  color: var(--amber);
+}
+.dd-axis {
+  position: relative;
+  margin-left: auto;
+  margin-right: 96px;
+  width: 420px;
+  flex: none;
+  height: 14px;
+}
+.dd-axis span {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  font: 500 12px/1 var(--disp);
+  letter-spacing: 0.06em;
+  color: var(--faint);
+  white-space: nowrap;
+}
+.dd-rows {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.dd-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  min-height: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+  background: none;
+  color: var(--tx);
+  text-align: left;
+  cursor: pointer;
+}
+.dd-row:disabled {
+  cursor: default;
+}
+.dd-row:not(:disabled):hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+.dd-row .num,
+.at-row .num {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1px solid rgba(154, 123, 255, 0.6);
+  font: 600 12px/1 var(--disp);
+  color: var(--tx);
+}
+.dd-name {
+  width: 220px;
+  flex: none;
+  font: 600 17px/1.1 var(--body);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dd-pill {
+  flex: none;
+  width: 124px;
+  box-sizing: border-box;
+  height: 24px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--dim);
+  font: 600 13px/22px var(--disp);
+  letter-spacing: 0.04em;
+  text-align: center;
+  white-space: nowrap;
+}
+.dd-pill.need {
+  background: rgba(255, 194, 77, 0.14);
+  border-color: rgba(255, 194, 77, 0.5);
+  color: var(--amber);
+}
+.dd-pill.working {
+  background: rgba(53, 230, 234, 0.1);
+  border-color: rgba(53, 230, 234, 0.4);
+  color: var(--cyan);
+}
+.dd-line {
+  flex: 1;
+  min-width: 0;
+  font: 400 15px/1.2 var(--body);
+  color: var(--dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dd-bar {
+  position: relative;
+  flex: none;
+  width: 420px;
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.05);
+}
+.dd-bar i {
+  position: absolute;
+  top: 0;
+  height: 6px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.3);
+}
+.dd-bar i.run {
+  background: var(--cyan);
+}
+.dd-bar i.wait {
+  background: var(--amber);
+}
+.dd-time,
+.at-time {
+  flex: none;
+  width: 82px;
+  text-align: right;
+  font: 500 15px/1 var(--disp);
+  color: var(--dim);
+  white-space: nowrap;
+}
+
+/* "Agents today": over the horizon, its bottom just above the strip (main area y 568). */
+.agents-today {
+  position: absolute;
+  left: 436px;
+  bottom: 112px;
+  width: 1420px;
+  max-height: 420px;
+  box-sizing: border-box;
+  z-index: 45;
+  display: flex;
+  flex-direction: column;
+  padding: 16px 26px 12px;
+  border-radius: 22px;
+  background: rgb(14, 11, 34);
+  border: 1px solid var(--line);
+  box-shadow: 0 18px 50px -12px rgba(2, 1, 10, 0.9);
+  color: var(--tx);
+  font-variant-numeric: tabular-nums;
+}
+.agents-today.stale .at-rows {
+  opacity: 0.6;
+}
+.at-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  height: 36px;
+  flex: none;
+}
+.at-k {
+  font: 600 15px/1 var(--disp);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.at-pick {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.at-arrow,
+.at-close {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--dim);
+  cursor: pointer;
+}
+.at-arrow svg,
+.at-close svg {
+  width: 18px;
+  height: 18px;
+}
+.at-arrow:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.at-arrow:not(:disabled):hover,
+.at-close:hover {
+  color: var(--tx);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+.at-close {
+  margin-left: 8px;
+}
+.at-seg {
+  display: flex;
+  padding: 3px;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: rgba(10, 7, 28, 0.6);
+}
+.at-seg button {
+  height: 28px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 14px;
+  background: none;
+  color: var(--dim);
+  font: 600 14px/1 var(--disp);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.at-seg button.on {
+  background: rgba(53, 230, 234, 0.16);
+  color: var(--cyan);
+}
+.at-seg button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.at-date {
+  margin-left: 6px;
+  font: 400 16px/1 var(--body);
+  color: var(--dim);
+  white-space: nowrap;
+}
+.at-legend {
+  margin-left: auto;
+  display: flex;
+  gap: 12px;
+}
+.at-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font: 500 13px/1 var(--disp);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--dim);
+  white-space: nowrap;
+}
+.at-legend i {
+  width: 14px;
+  height: 6px;
+  border-radius: 2px;
+}
+.at-legend svg {
+  width: 14px;
+  height: 14px;
+}
+.at-axis {
+  position: relative;
+  height: 26px;
+  margin: 8px 0 0 290px;
+  width: 780px;
+  flex: none;
+}
+.at-axis span {
+  position: absolute;
+  top: 6px;
+  transform: translateX(-50%);
+  font: 500 13px/1 var(--disp);
+  letter-spacing: 0.08em;
+  color: var(--dim);
+  white-space: nowrap;
+}
+.at-rows {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.at-grid {
+  position: absolute;
+  left: 290px;
+  width: 780px;
+  top: 0;
+  bottom: 0;
+  pointer-events: none;
+}
+.at-grid i {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--line);
+}
+.at-grid i.at-now {
+  width: 2px;
+  background: #fff;
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.8);
+}
+.at-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 36px;
+  min-height: 32px;
+  flex: none;
+  padding: 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+  background: none;
+  color: var(--tx);
+  text-align: left;
+  cursor: pointer;
+}
+.at-row:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+.at-row .num {
+  margin-right: 12px;
+}
+.at-name {
+  width: 254px;
+  flex: none;
+  font: 600 18px/1.2 var(--body);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.at-track {
+  position: relative;
+  flex: none;
+  width: 780px;
+  height: 36px;
+}
+.at-sg {
+  position: absolute;
+  top: 17px;
+  height: 8px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.3);
+}
+.at-sg.plan {
+  background: var(--st-plan);
+}
+.at-sg.build {
+  background: var(--st-build);
+}
+.at-sg.review {
+  background: var(--st-review);
+}
+.at-sg.pr {
+  background: var(--st-pr);
+}
+.at-sg.live {
+  background: var(--st-live);
+}
+.at-sg.run {
+  background: var(--cyan);
+}
+.at-sg.wait {
+  background: var(--amber);
+  box-shadow: 0 0 10px var(--amber);
+}
+.at-pr {
+  position: absolute;
+  top: 1px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transform: translateX(-7px);
+  font: 600 11px/1 var(--disp);
+  color: var(--st-pr);
+  white-space: nowrap;
+}
+.at-pr svg {
+  width: 14px;
+  height: 14px;
+}
+.at-end {
+  margin-left: auto;
+  font: 500 15px/1 var(--body);
+  white-space: nowrap;
+}
+.at-end.t-dim {
+  color: var(--dim);
+}
+.at-end.t-mint {
+  color: var(--mint);
+}
+.at-end.t-cyan {
+  color: var(--cyan);
+}
+.at-end.t-amber {
+  color: var(--amber);
+}
+.at-end.t-faint {
+  color: var(--faint);
+}
+.at-row.skel {
+  cursor: default;
+}
+.at-row.skel .num,
+.at-row.skel .at-name,
+.at-row.skel .at-track {
+  height: 12px;
+  border: 0;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.06);
+}
+.at-row.skel .at-name {
+  width: 180px;
+  margin-right: 74px;
+}
+.at-row.skel .at-track {
+  width: 520px;
+}
+.at-none {
+  display: block;
+  padding: 14px 0;
+  font: 400 16px/1.4 var(--body);
+  color: var(--faint);
+}
+.at-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  flex: none;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  font: 400 15px/1.3 var(--body);
+  color: var(--dim);
+}
+.at-note {
+  color: var(--faint);
+}
+.at-note.warn {
+  color: var(--amber);
+}

@@ -23,7 +23,7 @@
 // CI does not run this; run it by hand before a layout change is handed over.
 //
 //   WALL_CHROME=/path/to/chrome-or-headless-shell npm --prefix wall run fit-check
-//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, header, deck, tiles, picker, chips, heading, zenhint, sky, floor, sun, tools, toolsnames, meetfill, meetempty, fy-height, key-edge, hide-pill, hide-note)
+//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, header, deck, tiles, picker, chips, heading, zenhint, strip, fold, drawer, rows, handle, sky, floor, sun, tools, toolsnames, meetfill, meetempty, fy-height, key-edge, hide-pill, hide-note, lwbuttons, lwoverlap, lwsquare, lwring, lwtemp, lwround)
 //   npm --prefix wall run fit-check -- --self-test
 //
 // WALL_CHROME (or the first argument that is not a flag) is a Chromium or
@@ -65,6 +65,11 @@ const EXPECT = {
   zenhint: /^ *FAIL \.zen-bl \.zen-dimhint:.*container right \d+/m,
   chips: /^ *FAIL overlap: chip /m,
   heading: /^ *FAIL deck: the Now heading /m,
+  strip: /^ *FAIL strip: the Work strip is \d+ px tall/m,
+  fold: /^ *FAIL strip: the folded chip's count is cut/m,
+  drawer: /^ *FAIL strip: \.day-drawer (reaches above the clock|sticks out of the stage)/m,
+  rows: /^ *FAIL strip: an Agents today row is \d+ px tall/m,
+  handle: /^ *FAIL strip: the drawer handle covers /m,
   sky: /^ *FAIL pointer at .*reaches w-scrim/m,
   floor: /^ *FAIL pointer at \.u-tomorrow .*reaches w-skyspill/m,
   sun: /^ *FAIL pointer at .*reaches w-stage w-sun/m,
@@ -95,7 +100,7 @@ const OVERFLOWS = {
   top: '.work .right-wing { transform: translateY(-60px); }',
   bottom: '.work .centre .shelf { transform: translateY(120px); }',
   page: 'body::after { content: ""; position: absolute; left: 3000px; top: 0; width: 10px; height: 10px; }',
-  agents: '.rib .agent-row .sg-hit { height: 20px !important; }',
+  agents: '.rib .agent-row .sg-hit { width: 60px !important; }',
   labels: '.work .centre .lane .jn em { padding: 0 14px !important; }',
   header: '.work .centre .lanes-hd .slot-meter .xs { display: inline-block; width: 60px; white-space: normal !important; }',
   deck: '.work .right-wing section.pinned { margin-top: 80px; }',
@@ -104,6 +109,11 @@ const OVERFLOWS = {
   zenhint: '.zen-dimhint { width: 2000px; }',
   chips: '.rib .ev { width: 400px !important; }',
   heading: '.work .right-wing .keys .deck-name { max-width: 40px; overflow: hidden; }',
+  strip: '.rib[data-kind="work"] { box-sizing: content-box; height: 104px; padding-bottom: 20px; }',
+  fold: '.rib .ev.fold { width: 30px !important; }',
+  drawer: '.day-drawer { translate: 0 -300px; }',
+  rows: '.agents-today .at-row { height: 20px !important; min-height: 0 !important; }',
+  handle: '.rib .rib-handle { top: 20px !important; }',
   // The whole-sky video layer catching the pointer and drawn over the controls.
   sky: '.w-sky, .w-sky * { pointer-events: auto !important; } .w-sky { z-index: 30 !important; }',
   // The floor wash catching the pointer and drawn over the Tomorrow card and the status line.
@@ -135,7 +145,6 @@ const OVERFLOWS = {
   'watch-row': '.w-ctl .w-open { min-width: 600px !important; }',
   'watch-over': '.w-lookbar { left: 1200px !important; top: 200px !important; }',
 };
-
 if (flag('self-test')) {
   const script = fileURLToPath(import.meta.url);
   let missed = 0;
@@ -344,6 +353,16 @@ const VARIANTS = [
   { name: 'Watt card on Unwind', q: query({ hz: 'unwind', agents: '3', extra: '' }), checks: ['.watt-card'], viewportOnly: true, card: true },
   ...TOOLS_VARIANTS,
 ];
+// The calm strip on Work: 104 px with folded overlaps, the Day drawer and the Agents today panel
+// inside the stage, below the clock and right of the rail, and the panel's rows at least 32 px.
+VARIANTS.push(
+  { name: 'Strip: overlaps, twelve sessions', q: work('12ask', '&meet=overlap'), checks: ['.rib'], strip: true, viewportOnly: true },
+  { name: 'Strip: the needle at the centre, under the handle', q: query({ at: '2026-11-11T14:50:00-08:00', agents: '12ask', extra: '&meet=overlap' }), checks: ['.rib'], strip: true, viewportOnly: true },
+  { name: 'Strip: late in the day', q: query({ at: '2026-11-11T22:50:00-08:00', agents: '12ask', extra: '&meet=overlap' }), checks: ['.rib'], strip: true, viewportOnly: true },
+  { name: 'Strip: the Day drawer open', q: work('12ask', '&meet=overlap'), click: '.rib .rib-handle', checks: ['.day-drawer', '.day-drawer .dd-agenda', '.day-drawer .dd-rows'], strip: true, viewportOnly: true },
+  { name: 'Strip: Agents today, twelve sessions', q: work('12ask', '&days=typical'), click: '.rib .ag-line', checks: ['.agents-today', '.agents-today .at-head'], strip: true, viewportOnly: true },
+  { name: 'Strip: Agents today, a heavy past day', q: work('12', '&days=heavy'), click: '.rib .ag-line >> .at-seg button:nth-child(2)', checks: ['.agents-today', '.agents-today .at-head', '.agents-today .at-foot'], strip: true, viewportOnly: true },
+);
 // keys style: a small PNG reader (8-bit RGB or RGBA, not interlaced, as Chromium writes them) and contrast.
 function readPng(file) {
   const buf = readFileSync(file);
@@ -438,9 +457,11 @@ try {
   // For each checked box: its scroll sizes, and how far it sticks out of its container and
   // of the viewport on each side (screen pixels, 0 when inside). Plus the page's own scroll.
   const measure = `<script>setTimeout(() => {
-    for (const click of (new URLSearchParams(location.search).get('click') || '').split(' then ').filter(Boolean)) {
-    if (click && click.startsWith('ctx:')) document.querySelector(click.slice(4))?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
-    else if (click && click.startsWith('hover:')) {
+    // Steps separated by " >> " run 300 ms apart; within a step, " then " runs them at once.
+    (new URLSearchParams(location.search).get('click') ?? '').split(' >> ').filter(Boolean).forEach((step, i) => setTimeout(() => {
+    for (const click of step.split(' then ').filter(Boolean)) {
+    if (click.startsWith('ctx:')) document.querySelector(click.slice(4))?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+    else if (click.startsWith('hover:')) {
       // Headless --dump-dom has no pointer: every top-level :hover rule is copied for a class that stands in for it.
       const extra = [];
       for (const sheet of document.styleSheets) for (const r of sheet.cssRules) if (r.selectorText && r.selectorText.includes(':hover')) extra.push(r.cssText.replaceAll(':hover', '.fit-hover'));
@@ -449,8 +470,9 @@ try {
       const st = document.createElement('style'); st.textContent = extra.join(' '); document.head.appendChild(st);
       document.querySelector(click.slice(6))?.classList.add('fit-hover');
     }
-    else if (click) document.querySelector(click)?.click();
+    else document.querySelector(click)?.click();
     }
+    }, i * 300));
     // Watt's card: asked for until it is open (Meet's horizon takes a few seconds to settle first).
     if (new URLSearchParams(location.search).get('card')) {
       const ask = () => { if (!document.querySelector('.watt-card')) document.querySelector('.watt-hit')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })); };
@@ -575,6 +597,42 @@ try {
         if (cut) deck.push('deck: the Now heading "' + name.textContent + '" is cut');
       }
     }
+    // The calm strip: its height, labels that share pixels, the folded chip's count, the
+    // overlays inside the stage below the clock and right of the rail, the panel's row heights.
+    const strip = [];
+    const ribW = document.querySelector('.rib[data-kind="work"]');
+    if (ribW) {
+      const h = ribW.getBoundingClientRect().height;
+      if (Math.abs(h - 104) > 0.5) strip.push('strip: the Work strip is ' + Math.round(h) + ' px tall (must be 104)');
+      const labels = [...ribW.querySelectorAll('.ev, .ev-side, .ag-line, .due:not(.bare), .adbar')].map((e) => ({ r: e.getBoundingClientRect(), t: (e.textContent || e.getAttribute('aria-label') || '').slice(0, 30) }));
+      labels.forEach((a, i) => labels.slice(i + 1).forEach((b) => { if (hit(a.r, b.r)) strip.push('strip: labels share pixels: ' + a.t + ' / ' + b.t); }));
+      // The drawer handle covers no chip, bar or label.
+      const handle = ribW.querySelector('.rib-handle');
+      if (handle) {
+        const hr = handle.getBoundingClientRect();
+        for (const e of ribW.querySelectorAll('.ev, .ev-side, .adbar, .hl, .ndl b, .ag-line, .due, .agent-row .ac')) if (hit(hr, e.getBoundingClientRect())) strip.push('strip: the drawer handle covers ' + (e.textContent || e.className).trim().slice(0, 30));
+      }
+      for (const f of ribW.querySelectorAll('.ev.fold')) {
+        const n = f.querySelector('.fold-n');
+        const fr = f.getBoundingClientRect();
+        if (n && (n.scrollWidth > n.clientWidth + 1 || n.getBoundingClientRect().right > fr.right - 4)) strip.push("strip: the folded chip's count is cut: " + n.textContent);
+      }
+    }
+    const clk = document.querySelector('.clk');
+    const rail = document.querySelector('.rail');
+    for (const sel of ['.day-drawer', '.agents-today']) {
+      const el = document.querySelector(sel);
+      if (!el) continue;
+      const r = el.getBoundingClientRect();
+      if (clk && r.top < clk.getBoundingClientRect().bottom - 0.5) strip.push('strip: ' + sel + ' reaches above the clock (top ' + Math.round(r.top) + ')');
+      if (r.left < 0 || r.top < 0 || r.right > innerWidth + 0.5 || r.bottom > innerHeight + 0.5) strip.push('strip: ' + sel + ' sticks out of the stage');
+      if (rail && r.left < rail.getBoundingClientRect().right - 0.5) strip.push('strip: ' + sel + ' covers the rail');
+    }
+    for (const row of document.querySelectorAll('.agents-today .at-row:not(.skel), .day-drawer .dd-row')) {
+      const h = row.getBoundingClientRect().height;
+      if (h < 32 - 0.5) strip.push('strip: an Agents today row is ' + Math.round(h) + ' px tall (at least 32)');
+    }
+    const opened = { drawer: !!document.querySelector('.day-drawer'), panel: !!document.querySelector('.agents-today'), rows: document.querySelectorAll('.agents-today .at-row:not(.skel)').length };
     // The Tools drawer: inside x 1700 to 2560 and y 0 to 720, clear of the rail, and no text cut unless a hover card carries it.
     const toolsOut = [];
     const drawer = document.querySelector('.tools-drawer');
@@ -714,7 +772,7 @@ try {
       }
       return { sw: box(sw), fails };
     })();
-    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, wattCard, header, deck, nowH, edges, hide, hits, grid, lw, toolsOut, meetOut, watchPolish });
+    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, wattCard, header, deck, nowH, edges, hide, hits, grid, lw, toolsOut, meetOut, strip, opened, watchPolish });
     document.body.appendChild(pre);
   }, new URLSearchParams(location.search).get('card') ? 7000 : 3000);</script>`;
   const broken = overflow ? `<style>${OVERFLOWS[overflow]}</style>` : '';
@@ -739,6 +797,11 @@ try {
     sky: (v) => v.name.startsWith('Watch, whole sky playing'),
     floor: (v) => v.name.startsWith('Watch, whole sky playing'),
     sun: (v) => v.name === 'Watch, the sun playing',
+    strip: (v) => v.name === 'Strip: overlaps, twelve sessions',
+    fold: (v) => v.name === 'Strip: overlaps, twelve sessions',
+    handle: (v) => v.name === 'Strip: overlaps, twelve sessions',
+    drawer: (v) => v.name === 'Strip: the Day drawer open',
+    rows: (v) => v.name === 'Strip: Agents today, a heavy past day',
     'hide-note': (v) => v.name === 'Unwind, Hide screen grown with the failure note',
     // watch polish
     'watch-switch': (v) => v.name.startsWith('Watch polish'),
@@ -765,7 +828,7 @@ try {
       process.exit(1);
     }
     const text = m[1].replaceAll('&quot;', '"').replaceAll('&amp;', '&');
-    const { res, page: doc, overlaps, cut, gaps, wattCard, header, deck, nowH, edges, hide, hits, grid, lw, toolsOut, meetOut, watchPolish } = JSON.parse(text);
+    const { res, page: doc, overlaps, cut, gaps, wattCard, header, deck, nowH, edges, hide, hits, grid, lw, toolsOut, meetOut, strip, opened, watchPolish } = JSON.parse(text);
     // watch polish
     if (watchPolish) {
       for (const f of watchPolish.fails) console.log(`  FAIL ${f}`);
@@ -837,6 +900,13 @@ try {
     for (const d of lw) console.log(`  FAIL ${d}`);
     if (lw.length) failed = true;
     else if (v.q.includes('hz=work')) console.log('  ok   left wing: three music buttons on one line, TEMP header centred, round controls round');
+    if (v.strip) {
+      for (const f of strip) console.log(`  FAIL ${f}`);
+      const wantOpen = v.click?.includes('rib-handle') ? opened.drawer : v.click?.includes('ag-line') ? opened.panel && opened.rows > 0 : true;
+      if (!wantOpen) console.log(`  FAIL strip: the overlay did not open (${JSON.stringify(opened)})`);
+      if (strip.length || !wantOpen) failed = true;
+      else console.log('  ok   strip 104 px, no strip labels sharing pixels, folded counts whole, overlays inside the stage below the clock, rows at least 32 px');
+    }
     for (const d of deck) console.log(`  FAIL ${d}`);
     if (deck.length) failed = true;
     else if (v.q.includes('hz=work')) console.log('  ok   the deck stays above its floor, every key label inside its tile, the Now heading whole');
