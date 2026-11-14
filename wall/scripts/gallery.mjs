@@ -876,6 +876,7 @@ const NO_TEXT = [
 const areaFlag = flag('area');
 const areaName = areaFlag === undefined ? undefined : areaFlag.includes('=') ? areaFlag.slice(areaFlag.indexOf('=') + 1) : '';
 const areas = await loadAreasOrExit(areaName);
+const activeAreas = areaName ? areas.filter((area) => area.name === areaName) : areas;
 try {
   validateRegistrations(areas, { 'state name': STATES.map((stateEntry) => `${stateEntry.screen}\0${stateEntry.name}`) });
 } catch (error) {
@@ -883,7 +884,7 @@ try {
   process.exit(2);
 }
 const areaStates = [];
-for (const area of areas) {
+for (const area of activeAreas) {
   for (const entry of area.gallery?.states ?? []) areaStates.push({ ...entry, click: entry.actions });
 }
 STATES.push(...areaStates);

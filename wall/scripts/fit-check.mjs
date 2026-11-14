@@ -57,6 +57,7 @@ const flag = (name) => args.find((a) => a === `--${name}` || a.startsWith(`--${n
 const areaFlag = flag('area');
 const areaName = areaFlag === undefined ? undefined : areaFlag.includes('=') ? areaFlag.slice(areaFlag.indexOf('=') + 1) : '';
 const areas = await loadAreasOrExit(areaName);
+const activeAreas = areaName ? areas.filter((area) => area.name === areaName) : areas;
 if (flag('area')) {
   const selectedArea = areas.find((area) => area.name === areaName);
   for (const [kind, count] of [['variants', selectedArea?.fit?.variants?.length ?? 0], ['rules', Object.keys(selectedArea?.fit?.rules ?? {}).length], ['breaks', Object.keys(selectedArea?.fit?.breaks ?? {}).length]]) {
@@ -328,7 +329,7 @@ const OVERFLOWS = {
   'spotify-copy': '.sp-note { width: 80px !important; overflow: hidden !important; white-space: nowrap !important; }',
   'account-copy': '.tools-note { width: 80px !important; overflow: hidden !important; white-space: nowrap !important; }',
 };
-const AREA_BREAKS = Object.assign({}, ...areas.map((area) => area.fit?.breaks ?? {}));
+const AREA_BREAKS = Object.assign({}, ...activeAreas.map((area) => area.fit?.breaks ?? {}));
 try {
   validateRegistrations(areas, {
     'measurement key': ['res', 'page', 'overlaps', 'cut', 'gaps', 'wattCard', 'header', 'deck', 'deckRoom', 'nowH', 'edges', 'hide', 'hits', 'grid', 'lw', 'sig', 'toolsOut', 'copyOut', 'meetOut', 'strip', 'opened', 'watchPolish', 'skyLayers', 'thCheck', 'tileText', 'listen', 'lines', 'watchBehaviour', 'wattDriveIn'],
@@ -673,12 +674,14 @@ VARIANTS.push(
   { name: 'Strip: the Day drawer, twelve busy, long titles', q: work('12busy', '&meet=overlap'), click: '.rib-handle', checks: ['.day-drawer', '.day-drawer .dd-rows'], strip: true, viewportOnly: true },
   { name: 'Strip: Agents today over the limit', q: work('12busy', '&days=typical'), click: '.rib .ag-line', checks: ['.agents-today', '.agents-today .at-head', '.agents-today .at-busy'], strip: true, viewportOnly: true },
 );
-const areaVariants = areas.flatMap((area) => area.fit?.variants ?? []);
+const allAreaVariants = areas.flatMap((area) => area.fit?.variants ?? []);
+const validationVariants = [...VARIANTS, ...allAreaVariants];
+const areaVariants = activeAreas.flatMap((area) => area.fit?.variants ?? []);
 if (flag('area')) VARIANTS.splice(0, VARIANTS.length, ...areaVariants);
 else VARIANTS.push(...areaVariants);
 try {
   validateRegistrations(areas, { 'variant name': VARIANTS.filter((variant) => !areaVariants.includes(variant)).map((variant) => variant.name) });
-  validateFitReferences(areas, VARIANTS);
+  validateFitReferences(areas, validationVariants);
 } catch (error) {
   console.error(`areas: ${error.message}`);
   process.exit(2);
@@ -1685,7 +1688,7 @@ try {
     const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, cardEnds, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, copyOut, meetOut, strip, opened, watchPolish, skyLayers, thCheck, tileText, listen, lines, watchBehaviour, wattDriveIn, areaResults });
     document.body.appendChild(pre);
   }, new URLSearchParams(location.search).get('card') ? 7000 : 3000);</script>`;
-  const areaMeasurements = Object.assign({}, ...areas.map((area) => area.fit?.measurements ?? {}));
+  const areaMeasurements = Object.assign({}, ...activeAreas.map((area) => area.fit?.measurements ?? {}));
   const areaMeasurementScript = `<script>globalThis.__areaMeasurements = {${Object.entries(areaMeasurements).map(([key, fn]) => `${JSON.stringify(key)}: ${fn.toString()}`).join(',')}};</script>`;
   const broken = overflow && OVERFLOWS[overflow] ? `<style>${OVERFLOWS[overflow]}</style>` : '';
   const page = join(out, 'work.html');
@@ -1818,7 +1821,7 @@ try {
       else if (wattDriveIn.waiting) console.log('  ok   watt drive-in: the marquee is waiting, Watt is not at the show');
       else console.log(`  ok   watt drive-in: seated at ${wattDriveIn.at}, on his ground, 30 px or more left of the screen, 22 px or more from every control at his height, near his seat, 24 px or less into the tower`);
     }
-    for (const area of areas) {
+    for (const area of activeAreas) {
       for (const rule of Object.values(area.fit?.rules ?? {})) {
         if (rule(v, areaResults, console.log)) failed = true;
       }
