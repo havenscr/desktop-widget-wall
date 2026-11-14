@@ -8,22 +8,31 @@ import { useOnAirStore } from './store';
 function FileLine() {
   const show = useOnAirStore((s) => s.show);
   const showError = useOnAirStore((s) => s.showError);
+  const showNote = useOnAirStore((s) => s.showNote);
   const loadShow = useOnAirStore((s) => s.loadShow);
   const open = useOnAirStore((s) => s.open);
   const [wait, setWait] = useState(false);
+  const waitTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(waitTimer.current), []);
   const skipped = show?.state === 'ok' ? show.skipped : 0;
   const stale = showError !== null && show !== null;
   const reload = async () => {
     const started = await loadShow();
     if (!started) {
       setWait(true);
-      setTimeout(() => setWait(false), 1500);
+      clearTimeout(waitTimer.current);
+      waitTimer.current = setTimeout(() => setWait(false), 1500);
     }
   };
   const fromTip = show ? `Read at ${clockText(show.readAt)}. Edit the file, save it, then Reload.` : 'run-of-show.txt in the wall\'s config folder';
   return (
     <div className="oa-file">
-      {stale ? (
+      {showNote ? (
+        <span className="oa-file-l amber ellipsis" role="status" {...tip(showNote)}>
+          <IconAlertTriangle size={18} aria-hidden="true" />
+          {showNote}
+        </span>
+      ) : stale ? (
         <span className="oa-file-l amber ellipsis" {...tip(`${showError}. Showing the read from ${clockText(show.readAt)}.`)}>
           <IconAlertTriangle size={18} aria-hidden="true" />
           {showError}; showing the last read

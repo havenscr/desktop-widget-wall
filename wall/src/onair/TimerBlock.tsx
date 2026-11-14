@@ -1,7 +1,7 @@
 import { IconPlayerPauseFilled, IconPlayerPlayFilled } from '@tabler/icons-react';
 import { useEffect, useRef, useState } from 'react';
 import { tip } from '../ui/HoverTip';
-import { elapsedMs, formatShowTime, RESET_CONFIRM_MS, startedLine } from './model';
+import { atLimit, elapsedMs, formatShowTime, RESET_CONFIRM_MS, startedLine } from './model';
 import { useOnAirStore } from './store';
 
 /**
@@ -20,6 +20,7 @@ export function TimerBlock({ now }: { now: number }) {
     if (saved.running) setConfirm(false);
   }, [saved.running]);
 
+  const stopped24 = atLimit(saved);
   const ms = elapsedMs(saved, now);
   const time = formatShowTime(ms);
   const nothing = !saved.running && ms === 0 && saved.firstStartAt === null;
@@ -41,7 +42,7 @@ export function TimerBlock({ now }: { now: number }) {
     <div className="oa-timer">
       <span className="k oa-k">On air · show timer</span>
       <div className="oa-time-row">
-        <span className="oa-time" data-running={saved.running ? 'true' : 'false'} role="timer" aria-label={`Show time ${time}`} {...tip(saved.running ? `Running since ${new Date(saved.startedAt ?? now).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : ms > 0 ? 'Stopped. Start carries on from here.' : 'Not started')}>
+        <span className="oa-time" data-running={saved.running ? 'true' : 'false'} role="timer" aria-label={`Show time ${time}`} {...tip(saved.running ? `Running since ${new Date(saved.startedAt ?? now).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : stopped24 ? 'Stopped at 24 hours' : ms > 0 ? 'Stopped. Start carries on from here.' : 'Not started')}>
           {time}
         </span>
         <div className="oa-time-btns">
@@ -51,7 +52,7 @@ export function TimerBlock({ now }: { now: number }) {
               Stop
             </button>
           ) : (
-            <button type="button" className="oa-btn cy oa-go" aria-label="Start timer" onClick={start} {...tip(ms > 0 ? `Carry on from ${time}` : 'Start the show timer')}>
+            <button type="button" className="oa-btn cy oa-go" aria-label="Start timer" aria-disabled={stopped24} onClick={start} {...tip(stopped24 ? 'The timer stopped itself at 24 hours. Reset it to start again.' : ms > 0 ? `Carry on from ${time}` : 'Start the show timer')}>
               <IconPlayerPlayFilled size={20} aria-hidden="true" />
               Start
             </button>

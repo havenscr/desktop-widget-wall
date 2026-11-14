@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clampIndex, elapsedMs, formatShowTime, IDLE, isShow, markErrorText, markLine, MAX_SHOW_MS, nextLine, parseSaved, partTime, startedLine, type Part, type Saved } from './model';
+import { atLimit, clampIndex, elapsedMs, formatShowTime, IDLE, isShow, markErrorText, markLine, MAX_SHOW_MS, nextLine, parseSaved, partTime, startedLine, type Part, type Saved } from './model';
 
 const NOW = Date.parse('2026-11-13T10:24:00-08:00');
 const part = (name: string, minutes: number | null, notes: string[] = []): Part => ({ name, minutes, notes });
@@ -42,7 +42,29 @@ describe('the saved timer', () => {
     expect(parseSaved(JSON.stringify({ ...running, accumulatedMs: -1 }), NOW)).toEqual(IDLE);
     expect(parseSaved(JSON.stringify({ ...running, partIndex: 1.5 }), NOW)).toEqual(IDLE);
     expect(parseSaved(JSON.stringify({ ...running, partIndex: 40 }), NOW)).toEqual(IDLE);
-    expect(parseSaved(JSON.stringify({ ...running, startedAt: NOW - MAX_SHOW_MS - 1 }), NOW)).toEqual(IDLE);
+  });
+
+  it('refuses a running start in the future, past two seconds of clock jitter', () => {
+    expect(parseSaved(JSON.stringify({ ...running, startedAt: NOW + 5000 }), NOW)).toEqual(IDLE);
+    expect(parseSaved(JSON.stringify({ ...running, startedAt: NOW + 50_000 }), NOW)).toEqual(IDLE);
+    const near = parseSaved(JSON.stringify({ ...running, startedAt: NOW + 1500 }), NOW);
+    expect(near.running).toBe(true);
+    expect(elapsedMs(near, NOW)).toBe(1000);
+  });
+
+  it('brings a timer that ran past 24 hours while stored back as stopped at 24 hours', () => {
+    const old = parseSaved(JSON.stringify({ ...running, startedAt: NOW - MAX_SHOW_MS - 1, accumulatedMs: 0 }), NOW);
+    expect(old).toMatchObject({ running: false, startedAt: null, accumulatedMs: MAX_SHOW_MS, stoppedAt: NOW - 1 });
+    expect(atLimit(old)).toBe(true);
+    expect(startedLine(old, NOW)).toMatch(/^Stopped at 24 hours\./);
+    // Banked time counts: the stretch ends when the total reaches a day.
+    const banked = parseSaved(JSON.stringify({ ...running, startedAt: NOW - 3_600_000, accumulatedMs: MAX_SHOW_MS - 60_000 }), NOW);
+    expect(banked).toMatchObject({ running: false, accumulatedMs: MAX_SHOW_MS, stoppedAt: NOW - 3_600_000 + 60_000 });
+    // Just under a day still runs.
+    expect(parseSaved(JSON.stringify({ ...running, startedAt: NOW - MAX_SHOW_MS + 5000, accumulatedMs: 0 }), NOW).running).toBe(true);
+    // A stopped timer at exactly 24 hours is the same state, and Reset clears it.
+    expect(atLimit(parseSaved(JSON.stringify({ ...IDLE, accumulatedMs: MAX_SHOW_MS }), NOW))).toBe(true);
+    expect(atLimit(IDLE)).toBe(false);
   });
 
   it('drops a stop time while running', () => {

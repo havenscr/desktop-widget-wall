@@ -19,12 +19,20 @@ export interface OnAirState {
   showError: string | null;
   reading: boolean;
   marks: m.MarkResult | null;
-  /** One line after a refused or failed mark or open; cleared by the next success. */
-  note: string | null;
+  /** The local date the marks were counted for; null before the first read. */
+  marksDate: string | null;
+  /** One line after a refused or failed mark, marks read or Open marks.txt (shown under Mark a moment). */
+  marksNote: string | null;
+  /** One line after a failed Open run-of-show.txt (shown in the run of show's file line). */
+  showNote: string | null;
   /** True while a mark is being written. */
   marking: boolean;
   /** Restore the saved timer once (safe to call again). */
   hydrate: () => void;
+  /** Stop the timer itself once it has run 24 hours (called as the clock ticks and when the place opens). */
+  settle: () => void;
+  /** Forget a delayed read of the run of show that Open file asked for (the place was closed). */
+  cancelPending: () => void;
   start: () => void;
   stop: () => void;
   /** Back to 00:00 and the first part. Only while stopped. */
@@ -49,6 +57,7 @@ export function createOnAirStore(deps: OnAirDeps) {
   let lastRead = -Infinity;
   let lastMark = -Infinity;
   let readSeq = 0;
+  let pendingRead: ReturnType<typeof setTimeout> | undefined;
   return create<OnAirState>((set, get) => {
     const save = (saved: m.Saved) => {
       set({ saved });
@@ -58,14 +67,24 @@ export function createOnAirStore(deps: OnAirDeps) {
         // Not kept across a reload this time; the timer still runs.
       }
     };
-    const partCount = () => get().show?.parts.length ?? 0;
+    const partCount = () => {
+      const show = get().show;
+      return show?.state === 'ok' ? show.parts.length : 0;
+    };
+    const settle = () => {
+      const s = get().saved;
+      if (!s.running || s.startedAt === null) return;
+      if (s.accumulatedMs + Math.max(0, deps.now() - s.startedAt) >= m.MAX_SHOW_MS) save(m.stoppedAtLimit(s, s.startedAt + (m.MAX_SHOW_MS - s.accumulatedMs)));
+    };
     return {
       saved: m.IDLE,
       show: null,
       showError: null,
       reading: false,
       marks: null,
-      note: null,
+      marksDate: null,
+      marksNote: null,
+      showNote: null,
       marking: false,
       hydrate: () => {
         if (hydrated) return;
@@ -78,9 +97,15 @@ export function createOnAirStore(deps: OnAirDeps) {
         }
         set({ saved: m.parseSaved(raw, deps.now()) });
       },
+      settle,
+      cancelPending: () => {
+        clearTimeout(pendingRead);
+        pendingRead = undefined;
+      },
       start: () => {
         const s = get().saved;
-        if (s.running) return;
+        // A timer that stopped itself at 24 hours starts again only after Reset.
+        if (s.running || m.atLimit(s)) return;
         const now = deps.now();
         save({ ...s, running: true, startedAt: now, firstStartAt: s.firstStartAt ?? now, stoppedAt: null });
       },
@@ -97,7 +122,8 @@ export function createOnAirStore(deps: OnAirDeps) {
       goPart: (index) => {
         const s = get().saved;
         const to = m.clampIndex(index, partCount());
-        if (to === s.partIndex) return;
+        // Compared with the part the page shows (the clamped index), never the raw stored one.
+        if (to === m.clampIndex(s.partIndex, partCount())) return;
         save({ ...s, partIndex: to, partSinceMs: m.elapsedMs(s, deps.now()) });
       },
       loadShow: async () => {
@@ -111,6 +137,11 @@ export function createOnAirStore(deps: OnAirDeps) {
           if (seq !== readSeq) return true;
           if (!m.isShow(answer)) throw new Error('failed');
           set({ show: answer, showError: null, reading: false });
+          // The current part follows the file: held to the parts there are, kept that way, and the
+          // time in the part starts again when that moves it.
+          const cur = get().saved;
+          const held = answer.state === 'ok' && answer.parts.length > 0 ? m.clampIndex(cur.partIndex, answer.parts.length) : cur.partIndex;
+          if (held !== cur.partIndex) save({ ...cur, partIndex: held, partSinceMs: m.elapsedMs(cur, deps.now()) });
         } catch (e) {
           if (seq !== readSeq) return true;
           set({ showError: m.showErrorText(e), reading: false });
@@ -118,11 +149,12 @@ export function createOnAirStore(deps: OnAirDeps) {
         return true;
       },
       loadMarks: async () => {
+        const day = m.localDate(deps.now());
         try {
           const r = await deps.invoke<unknown>('wall2_onair_marks_today');
-          if (m.isMarkResult(r)) set({ marks: r });
+          if (m.isMarkResult(r)) set({ marks: r, marksDate: day, marksNote: null });
         } catch (e) {
-          set({ note: m.markErrorText(e) });
+          set({ marksNote: m.markErrorText(e) });
         }
       },
       mark: async () => {
@@ -135,9 +167,9 @@ export function createOnAirStore(deps: OnAirDeps) {
         set({ marking: true });
         try {
           const r = await deps.invoke<unknown>('wall2_onair_mark', { showMs: Math.floor(m.elapsedMs(st.saved, now)), part });
-          set(m.isMarkResult(r) ? { marks: r, note: null } : { note: 'Could not write marks.txt' });
+          set(m.isMarkResult(r) ? { marks: r, marksDate: m.localDate(now), marksNote: null } : { marksNote: 'Could not write marks.txt' });
         } catch (e) {
-          set({ note: m.markErrorText(e) });
+          set({ marksNote: m.markErrorText(e) });
         } finally {
           set({ marking: false });
         }
@@ -145,11 +177,20 @@ export function createOnAirStore(deps: OnAirDeps) {
       open: async (which) => {
         try {
           await deps.invoke('wall2_onair_open', { which });
-          // Open file makes a starter when there was none: read it as soon as the five second floor allows.
-          if (which === 'show' && get().show?.state !== 'ok') setTimeout(() => void get().loadShow(), Math.max(0, lastRead + m.READ_FLOOR_MS - deps.now()) + 50);
-          if (get().note?.startsWith('Could not open') || get().note === 'No config folder on this PC') set({ note: null });
+          if (which === 'show') {
+            set({ showNote: null });
+            // Open file makes a starter when there was none: read it as soon as the five second floor allows.
+            if (get().show?.state !== 'ok') {
+              clearTimeout(pendingRead);
+              pendingRead = setTimeout(() => {
+                pendingRead = undefined;
+                void get().loadShow();
+              }, Math.max(0, lastRead + m.READ_FLOOR_MS - deps.now()) + 50);
+            }
+          } else if (get().marksNote?.startsWith('Could not open') || get().marksNote === 'No config folder on this PC') set({ marksNote: null });
         } catch (e) {
-          set({ note: m.openErrorText(e, which) });
+          if (which === 'show') set({ showNote: m.openErrorText(e, which) });
+          else set({ marksNote: m.openErrorText(e, which) });
         }
       },
     };

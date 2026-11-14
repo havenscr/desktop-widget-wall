@@ -59,10 +59,23 @@ export const IDLE: Saved = { running: false, startedAt: null, accumulatedMs: 0, 
 
 const num = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 const time = (v: unknown, now: number): number | null => (num(v) && v > 0 && v <= now + 60_000 ? v : null);
+/** A clock that stepped back by up to this much does not make a running start invalid. */
+export const START_TOLERANCE_MS = 2000;
+/** A running start: not in the future (past a couple of seconds of clock jitter). */
+const startTime = (v: unknown, now: number): number | null => (num(v) && v > 0 && v <= now + START_TOLERANCE_MS ? v : null);
+
+/** True once the timer has stopped itself at 24 hours (until Reset). */
+export const atLimit = (s: Pick<Saved, 'running' | 'accumulatedMs'>): boolean => !s.running && s.accumulatedMs >= MAX_SHOW_MS;
+
+/** The stopped state of a timer that reached 24 hours at `reachedAt`. */
+export function stoppedAtLimit(s: Saved, reachedAt: number): Saved {
+  return { ...s, running: false, startedAt: null, accumulatedMs: MAX_SHOW_MS, stoppedAt: reachedAt };
+}
 
 /**
- * The saved form, checked field by field: anything missing, of the wrong type, in the future or
- * past the limits makes the whole thing idle (never a half-trusted timer).
+ * The saved form, checked field by field: anything missing, of the wrong type, a running start
+ * in the future or past the limits makes the whole thing idle (never a half-trusted timer). A
+ * running timer that has run past 24 hours since it was stored comes back as the stopped state.
  */
 export function parseSaved(raw: string | null, now: number): Saved {
   if (!raw) return IDLE;
@@ -74,7 +87,7 @@ export function parseSaved(raw: string | null, now: number): Saved {
   }
   if (!v || typeof v !== 'object') return IDLE;
   const running = v.running === true;
-  const startedAt = time(v.startedAt, now);
+  const startedAt = startTime(v.startedAt, now);
   const acc = v.accumulatedMs;
   const part = v.partIndex;
   const since = v.partSinceMs;
@@ -91,7 +104,9 @@ export function parseSaved(raw: string | null, now: number): Saved {
     partIndex: part,
     partSinceMs: since,
   };
-  if (saved.accumulatedMs + (saved.startedAt !== null ? now - saved.startedAt : 0) > MAX_SHOW_MS) return IDLE;
+  if (saved.startedAt !== null && saved.accumulatedMs + Math.max(0, now - saved.startedAt) >= MAX_SHOW_MS) {
+    return stoppedAtLimit(saved, saved.startedAt + (MAX_SHOW_MS - saved.accumulatedMs));
+  }
   return saved;
 }
 
@@ -111,6 +126,19 @@ export function formatShowTime(ms: number): string {
   return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
 }
 
+/** The local calendar date of a time, `YYYY-MM-DD`. */
+export function localDate(ms: number): string {
+  const d = new Date(ms);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/** Milliseconds from `ms` to the next local midnight (the day after `ms`'s local date begins). */
+export function untilMidnight(ms: number): number {
+  const d = new Date(ms);
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1).getTime() - ms;
+}
+
 /** A clock time as the wall writes it: `9:42 AM`. */
 export function clockText(ms: number): string {
   return new Date(ms).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
@@ -119,6 +147,7 @@ export function clockText(ms: number): string {
 /** The line under the timer: when and how it started, and that no stream service is connected. */
 export function startedLine(s: Saved, now: number): string {
   const tail = 'No stream service connected.';
+  if (atLimit(s)) return `Stopped at 24 hours. Reset to start again. ${tail}`;
   if (s.firstStartAt === null && elapsedMs(s, now) === 0) return `Not started. Start it when the show begins. ${tail}`;
   const started = s.firstStartAt !== null ? `Started ${clockText(s.firstStartAt)} by hand` : 'Started by hand';
   if (!s.running && s.stoppedAt !== null) return `${started}, stopped at ${clockText(s.stoppedAt)}. ${tail}`;
