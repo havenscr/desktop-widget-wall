@@ -978,7 +978,8 @@ mod tests {
             assert_eq!(graph.expanded.get(), 1);
             assert_eq!(graph.basic.get(), 1);
             assert_eq!(payload.events.len(), 1);
-            assert!(lookup_open_target(&links, &payload.events[0].key).unwrap().entry.is_none());
+            assert!(!payload.events[0].can_open);
+            assert!(lookup_open_target(&links, &payload.events[0].key).is_none());
         }
     }
 
