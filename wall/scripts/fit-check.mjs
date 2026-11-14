@@ -22,10 +22,13 @@
 // clear of the failure note. Leave and recording: the leave banner inside x 600 to 1940 and its band (y 0 to 70 on
 // Work, y 510 to 600 off Work) covering no text or control, the recording chip one 32 px line at most 200 px wide in the
 // Agents header (and inside the banner, or in the band off Work), and the Recording page the same height as a key page.
+// Sky layers: a front canvas only while a Watch look sits behind the land, covering the stage over the video
+// (opaque on the lake, clear at the top of the sky), and the moon at night 40 px clear of every card,
+// the player and the clock, in one place on Listen and on Watch with nothing on.
 // CI does not run this; run it by hand before a layout change is handed over.
 //
 //   WALL_CHROME=/path/to/chrome-or-headless-shell npm --prefix wall run fit-check
-//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, header, deck, tiles, picker, chips, heading, zenhint, strip, fold, drawer, rows, handle, sky, floor, sun, tools, toolsnames, meetfill, meetempty, fy-height, key-edge, hide-pill, hide-note, leave-band, rec-chip, rec-height, lwbuttons, lwoverlap, lwsquare, lwring, lwtemp, lwround)
+//   npm --prefix wall run fit-check -- --overflow=right    (left, right, top, bottom, page, agents, labels, header, deck, tiles, picker, chips, heading, zenhint, strip, fold, drawer, rows, handle, sky, floor, sun, tools, toolsnames, meetfill, meetempty, fy-height, key-edge, hide-pill, hide-note, leave-band, rec-chip, rec-height, lwbuttons, lwoverlap, lwsquare, lwring, lwtemp, lwround, sky-front, sky-moon, sky-always)
 //   npm --prefix wall run fit-check -- --self-test
 //
 // WALL_CHROME (or the first argument that is not a flag) is a Chromium or
@@ -100,6 +103,10 @@ const EXPECT = {
   'watch-row': /^ *FAIL \.w-ctl: width \d+ <= \d+/m,
   'watch-over': /^ *FAIL watch polish: .*w-lookbar.* is drawn over the video's box/m,
   'watch-take': /^ *FAIL pointer at \.w-sky \.w-frame /m,
+  // sky layers
+  'sky-front': /^ *FAIL sky layers: the front canvas is hidden/m,
+  'sky-moon': /^ *FAIL sky layers: the moon at 1730,112,44 is \d+ px from /m,
+  'sky-always': /^ *FAIL sky layers: 1 front canvas with no look behind the land/m,
 };
 const OVERFLOWS = {
   left: '.work .left-wing { transform: translateX(-200px); }',
@@ -157,7 +164,14 @@ const OVERFLOWS = {
   'watch-over': '.w-lookbar { left: 1200px !important; top: 200px !important; }',
   // A refused autoplay that never lets the pointer reach the whole-sky picture.
   'watch-take': '.w-frame.w-take { pointer-events: none !important; }',
+  // sky layers: the front canvas hidden (the whole sky's video no longer behind the land), the moon
+  // back at its old place (a URL knob, SKY_BREAK_Q), the front canvas mounted on a place that never asked.
+  'sky-front': '.horizon-front { display: none !important; }',
+  'sky-moon': '',
+  'sky-always': '',
 };
+// sky layers: breaks that need the horizon's development knobs in the URL, not a stylesheet.
+const SKY_BREAK_Q = { 'sky-moon': '&skymoon=1730,112,44', 'sky-always': '&sky=front' };
 if (flag('self-test')) {
   const script = fileURLToPath(import.meta.url);
   let missed = 0;
@@ -274,6 +288,18 @@ const QUIET = [
   // A refused autoplay over the whole sky: the hint shows, and a click lands on the picture where the wall draws nothing.
   { name: 'Watch polish, whole sky, autoplay refused', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=sky&wplay=0&wstate=refused', checks: WATCH_POLISH, hits: [...WATCH_POLISH_HITS, '.w-clickline', '.w-sky .w-frame'] },
   { name: 'Watch polish, nothing on, drive-in', agents: '3', hz: 'unwind', extra: '&watch=mock&wlist=three&wlook=drivein', checks: ['.w-now', '.w-lookbar'], hits: ['.w-lookbar button'] },
+  // sky layers: the video behind the land (the horizon's front canvas over the video's box) in the
+  // three looks that sit in the sky, the drive-in in front of it with no front canvas, and the moon
+  // in open sky at night, 40 px clear of every card, the player and the clock, on Listen and on
+  // Watch with nothing on (the same place on both). Every other state has no front canvas.
+  { name: 'Sky layers, whole sky at night', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=sky&wplay=0', checks: ['.w-now', '.w-lookbar'], sky: 'front' },
+  { name: 'Sky layers, whole sky at noon', agents: '3', hz: 'unwind', at: '2026-11-11T12:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=sky&wplay=1', checks: ['.w-now', '.w-lookbar'], sky: 'front' },
+  { name: 'Sky layers, the sun at night', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=sun&wplay=0', checks: ['.w-now', '.w-lookbar'], sky: 'front' },
+  { name: 'Sky layers, feathered at night', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=feather&wplay=0', checks: ['.w-now', '.w-lookbar'], sky: 'front' },
+  { name: 'Sky layers, drive-in at night, in front of the land', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=drivein&wplay=2', checks: ['.w-now', '.w-lookbar'], sky: 'flat' },
+  { name: 'Sky layers, Listen at night, the moon in open sky', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '', checks: ['.u-listen'], sky: 'moon' },
+  { name: 'Sky layers, Listen at night, long names, the moon in open sky', agents: 'ask', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&spotify=long&media=long', checks: ['.u-listen'], sky: 'moon' },
+  { name: 'Sky layers, Watch with nothing on at night, the moon in open sky', agents: '3', hz: 'unwind', at: '2026-11-11T22:30:00-08:00', extra: '&watch=mock&wlist=three&wlook=feather', checks: ['.w-now'], sky: 'moon' },
 ].map((v) => ({ ...v, q: query(v) }));
 // The Tools drawer over each place, and in each hard state: the drawer, its two columns and every
 // section stay inside the stage, right of the rail and the clock, with no cut text that has no tooltip.
@@ -850,7 +876,59 @@ try {
       }
       return { sw: box(sw), fails };
     })();
-    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, wattCard, header, deck, nowH, edges, hide, hits, grid, lw, sig, toolsOut, meetOut, strip, opened, watchPolish });
+    // sky layers: a front canvas exactly when a look sits behind the land; with one, it is shown,
+    // covers the stage, comes after the video in the same stage, is opaque on the lake under the
+    // video and clear (but for the grain) at the top of the sky; with \`skycheck=moon\` the moon is drawn and its disc is
+    // 40 px clear of every card, the player, Up next, the tabs, the left block and the clock's text.
+    const skyLayers = (() => {
+      const fails = [];
+      const check = new URLSearchParams(location.search).get('skycheck');
+      const fronts = [...document.querySelectorAll('canvas.horizon-front')];
+      const layered = document.querySelector('.w-stage.w-layered');
+      if (fronts.length !== (layered ? 1 : 0)) fails.push('sky layers: ' + fronts.length + ' front canvas with ' + (layered ? 'a look' : 'no look') + ' behind the land');
+      if (check === 'front') {
+        const f = fronts[0];
+        const scr = layered && layered.querySelector('.w-screen');
+        if (!f || !scr) fails.push('sky layers: no front canvas or no video behind the land');
+        else {
+          const cs = getComputedStyle(f);
+          if (cs.display === 'none' || cs.visibility !== 'visible' || Number(cs.opacity) < 1) fails.push('sky layers: the front canvas is hidden (' + cs.display + ', ' + cs.visibility + ', ' + cs.opacity + ')');
+          const r = f.getBoundingClientRect();
+          if (Math.abs(r.left) > 1 || Math.abs(r.top) > 1 || Math.abs(r.width - 2560) > 1 || Math.abs(r.height - 720) > 1) fails.push('sky layers: the front canvas is at ' + [r.left, r.top, r.width, r.height].map(Math.round).join(',') + ', not the stage');
+          if (f.closest('.w-stage') !== layered || !(scr.compareDocumentPosition(f) & Node.DOCUMENT_POSITION_FOLLOWING)) fails.push('sky layers: the front canvas is not after the video in its stage');
+          const v = scr.getBoundingClientRect();
+          const box = (layered.getAttribute('data-sky-box') || '').split(',').map(Number);
+          if (box.length !== 4 || Math.abs(box[0] - v.left) > 1 || Math.abs(box[1] - v.top) > 1 || Math.abs(box[2] - v.width) > 1 || Math.abs(box[3] - v.height) > 1) fails.push('sky layers: the look box ' + box.join(',') + ' is not the drawn video ' + [v.left, v.top, v.width, v.height].map(Math.round).join(','));
+          const x = f.getContext('2d');
+          const sx = f.width / 2560;
+          const at = (px, py) => x.getImageData(Math.round(px * sx), Math.round(py * sx), 1, 1).data[3];
+          const cx = v.left + v.width / 2;
+          if (at(cx, 680) < 255) fails.push('sky layers: the front canvas is not opaque on the lake under the video');
+          // Only the film grain (at most 10 of 255) lies over the top of the sky.
+          if (at(cx, 4) > 12) fails.push('sky layers: the front canvas paints the top of the sky over the video');
+        }
+      }
+      if (check === 'moon') {
+        const c = document.querySelector('canvas.horizon-canvas:not(.horizon-front)');
+        const m = (c && c.dataset.moon || '').split(',').map(Number);
+        if (m.length !== 3) fails.push('sky layers: no moon drawn at night');
+        else {
+          const [mx, my, mr] = m;
+          const boxes = [...document.querySelectorAll('.u-card, .sp-card, .u-player, .u-next, .u-tabs, .w-now, .w-lookbar, .w-gear, .w-stage, .rail')].map((e) => [e.className.baseVal ?? e.className, e.getBoundingClientRect()]);
+          const clk = document.querySelector('.clk');
+          if (clk) { const rg = document.createRange(); rg.selectNodeContents(clk); boxes.push(['the clock', rg.getBoundingClientRect()]); }
+          for (const [name, r] of boxes) {
+            if (!r.width || !r.height) continue;
+            const dx = Math.max(r.left - mx, 0, mx - r.right);
+            const dy = Math.max(r.top - my, 0, my - r.bottom);
+            const gap = Math.hypot(dx, dy) - mr;
+            if (gap < 40) fails.push('sky layers: the moon at ' + m.join(',') + ' is ' + Math.max(0, Math.round(gap)) + ' px from ' + String(name).split(' ')[0] + ' (40 at least)');
+          }
+        }
+      }
+      return { fails, moon: (document.querySelector('canvas.horizon-canvas:not(.horizon-front)') || {}).dataset?.moon ?? '' };
+    })();
+    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, wattCard, header, deck, nowH, edges, hide, hits, grid, lw, sig, toolsOut, meetOut, strip, opened, watchPolish, skyLayers });
     document.body.appendChild(pre);
   }, new URLSearchParams(location.search).get('card') ? 7000 : 3000);</script>`;
   const broken = overflow ? `<style>${OVERFLOWS[overflow]}</style>` : '';
@@ -890,15 +968,21 @@ try {
     'watch-row': (v) => v.name === 'Watch polish, feathered, single video',
     'watch-over': (v) => v.name === 'Watch polish, drive-in, playlist, long label',
     'watch-take': (v) => v.name === 'Watch polish, whole sky, autoplay refused',
+    // sky layers
+    'sky-front': (v) => v.name === 'Sky layers, whole sky at night',
+    'sky-moon': (v) => v.name === 'Sky layers, Listen at night, the moon in open sky',
+    'sky-always': (v) => v.name === 'Sky layers, Listen at night, the moon in open sky',
   };
   const breakOn = BREAK_ON[overflow] ? VARIANTS.filter(BREAK_ON[overflow]) : VARIANTS.slice(0, 1);
   /** keys style: the Now row's height on each page that has one, compared after every state ran. */
   const nowHeights = [];
   /** watch polish: the Look switch's box in each Watch polish state, compared after the run. */
   const switchBoxes = [];
+  /** sky layers: the moon drawn in each moon state, compared after the run (one place on Listen and on Watch). */
+  const skyMoons = [];
   for (const v of overflow ? breakOn : VARIANTS) {
     console.log(`${v.name} (${v.q}):`);
-    const url = `${pathToFileURL(page).href}${v.q}&checks=${encodeURIComponent(v.checks.join('|'))}${v.click ? `&click=${encodeURIComponent(v.click)}` : ''}${v.card ? '&card=1' : ''}${v.hits ? `&hits=${encodeURIComponent(v.hits.join('|'))}` : ''}${v.noHit ? `&nohit=${encodeURIComponent(v.noHit)}` : ''}`;
+    const url = `${pathToFileURL(page).href}${v.q}${v.sky ? `&skycheck=${v.sky}` : ''}${overflow && SKY_BREAK_Q[overflow] ? SKY_BREAK_Q[overflow] : ''}&checks=${encodeURIComponent(v.checks.join('|'))}${v.click ? `&click=${encodeURIComponent(v.click)}` : ''}${v.card ? '&card=1' : ''}${v.hits ? `&hits=${encodeURIComponent(v.hits.join('|'))}` : ''}${v.noHit ? `&nohit=${encodeURIComponent(v.noHit)}` : ''}`;
     const dom = execFileSync(
       chrome,
       // Headless Chromium keeps 87 px of the window for itself, so 807 gives a 2560 by 720 viewport.
@@ -911,7 +995,13 @@ try {
       process.exit(1);
     }
     const text = m[1].replaceAll('&quot;', '"').replaceAll('&amp;', '&');
-    const { res, page: doc, overlaps, cut, gaps, wattCard, header, deck, nowH, edges, hide, hits, grid, lw, sig, toolsOut, meetOut, strip, opened, watchPolish } = JSON.parse(text);
+    const { res, page: doc, overlaps, cut, gaps, wattCard, header, deck, nowH, edges, hide, hits, grid, lw, sig, toolsOut, meetOut, strip, opened, watchPolish, skyLayers } = JSON.parse(text);
+    // sky layers
+    for (const f of skyLayers.fails) console.log(`  FAIL ${f}`);
+    if (skyLayers.fails.length) failed = true;
+    else if (v.sky === 'front') console.log('  ok   sky layers: the front canvas covers the stage over the video, the land opaque, the sky clear');
+    else if (v.sky === 'moon') console.log(`  ok   sky layers: the moon at ${skyLayers.moon} is 40 px clear of every card, the player and the clock`);
+    if (v.sky === 'moon') skyMoons.push({ name: v.name, moon: skyLayers.moon });
     // watch polish
     if (watchPolish) {
       for (const f of watchPolish.fails) console.log(`  FAIL ${f}`);
@@ -1062,6 +1152,14 @@ try {
     } else console.log(`keys style: the Now row is ${hs[0]} px tall on every key page, on For you and on Recording`);
   }
   // watch polish: the Look switch sits in one place, one size, in every look and with nothing on.
+  // sky layers
+  if (skyMoons.length > 1) {
+    const off = skyMoons.filter((s) => s.moon !== skyMoons[0].moon);
+    if (off.length) {
+      failed = true;
+      for (const s of off) console.log(`  FAIL sky layers: the moon is at ${s.moon} on ${s.name}, not ${skyMoons[0].moon} as on ${skyMoons[0].name}`);
+    } else console.log(`sky layers: the moon is at ${skyMoons[0].moon} in all ${skyMoons.length} moon states`);
+  }
   if (switchBoxes.length > 1) {
     const key = (b) => `${b.l},${b.t} ${b.w}x${b.h}`;
     const first = key(switchBoxes[0].box);

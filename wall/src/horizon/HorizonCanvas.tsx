@@ -27,7 +27,7 @@ import {
 } from './echo';
 import { frameDelta, shouldDraw } from './pacing';
 import { clearGridPulse, createGridPulse, stepGridPulse } from './pulse';
-import { parseReview } from './review';
+import { parseReview, parseSkyReview } from './review';
 import { publishCamera } from './signal';
 import { frontHost, moonFor, useSkyStore } from './sky';
 import { drawHorizon, type HorizonGrid, type HorizonOptions } from './index';
@@ -67,7 +67,13 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
   // The sky layers (`sky.ts`): while a screen gives an element for it, the ground is drawn on a
   // second canvas mounted there, in front of whatever the screen puts into the sky.
   const claims = useSkyStore((s) => s.claims);
-  const host = zen ? null : frontHost(claims);
+  // Dev builds only: `?sky=front` mounts the front canvas everywhere, `?sky=flat` never, `?skymoon=x,y,r` moves the moon (fit-check breaks, cost measurement).
+  const [skyReview] = useState(() => (import.meta.env.DEV ? parseSkyReview(window.location.search) : null));
+  const alwaysFront = !zen && skyReview?.front === 'always';
+  const host = zen || skyReview?.front ? null : frontHost(claims);
+  const moonAt = skyReview?.moon ?? MOON;
+  // The moon last drawn, published on the canvas as `data-moon` ("x,y,r", or empty) for the fit check.
+  const shownMoon = useRef<readonly number[] | null | undefined>(undefined);
   const frontRef = useRef<HTMLCanvasElement | null>(null);
   const [front, setFront] = useState<HTMLCanvasElement | null>(null);
   const frontCanvas = useCallback((el: HTMLCanvasElement | null) => {
@@ -213,8 +219,12 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
       // goes the moment a glide away starts. The review still and reduced motion jump straight there.
       // A screen with a picture over its place, or a look that owns that sky, withholds it (`sky.ts`).
       if (glide.current.progress >= 1 && glide.current.to === CAMERAS.unwind) {
-        const moon = moonFor(MOON, useSkyStore.getState().claims);
+        const moon = moonFor(moonAt, useSkyStore.getState().claims);
         if (moon) options.moon = moon;
+      }
+      if (shownMoon.current !== (options.moon ?? null)) {
+        shownMoon.current = options.moon ?? null;
+        canvas.dataset.moon = options.moon ? options.moon.join(',') : '';
       }
       // With the front canvas mounted: the sky here, the ground there, on the same frame.
       const fc = frontRef.current;
@@ -352,6 +362,7 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
       <canvas ref={ref} className="horizon-canvas" aria-hidden="true" style={zen ? { display: 'none' } : undefined} />
       {/* Fixed to the stage (its transform is the containing block), so it covers the stage
           whatever box it is mounted in, and takes no pointer. */}
+      {alwaysFront ? <canvas ref={frontCanvas} className="horizon-canvas horizon-front" aria-hidden="true" style={FRONT_STYLE} /> : null}
       {host ? createPortal(<canvas ref={frontCanvas} className="horizon-canvas horizon-front" aria-hidden="true" style={FRONT_STYLE} />, host) : null}
     </>
   );

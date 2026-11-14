@@ -168,3 +168,15 @@ describe('the sky store', () => {
     expect(useSkyStore.getState().claims).toEqual({});
   });
 });
+
+describe('the sky layers review knobs (development builds only)', () => {
+  it('reads ?sky=front, ?sky=flat and ?skymoon=x,y,r, and nothing else', async () => {
+    const { parseSkyReview } = await import('./review');
+    expect(parseSkyReview('')).toBeNull();
+    expect(parseSkyReview('?sky=front')).toEqual({ front: 'always' });
+    expect(parseSkyReview('?sky=flat')).toEqual({ front: 'never' });
+    expect(parseSkyReview('?sky=other')).toBeNull();
+    expect(parseSkyReview('?skymoon=1730,112,44')).toEqual({ moon: [1730, 112, 44] });
+    for (const bad of ['?skymoon=1,2', '?skymoon=a,b,c', '?skymoon=1,2,0', '?skymoon=1,2,3,4']) expect(parseSkyReview(bad)).toBeNull();
+  });
+});

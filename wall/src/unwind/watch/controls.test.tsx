@@ -357,7 +357,7 @@ describe('the buddy seam and the opener', () => {
     seed({ mode: 'one', all: 'drivein' });
     expect(driveInAudience(useWatchStore.getState())).toBeNull();
     useWatchStore.getState().play(ITEMS[0]);
-    expect(driveInAudience(useWatchStore.getState())).toEqual({ x: 1210, y: 60, w: 691, h: 389 });
+    expect(driveInAudience(useWatchStore.getState())).toEqual({ x: 1124, y: 60, w: 691, h: 389 });
     expect(driveInAudience(useWatchStore.getState())).toBe(DRIVE_IN_SCREEN);
     useWatchStore.getState().pickLook('feather');
     expect(driveInAudience(useWatchStore.getState())).toBeNull();

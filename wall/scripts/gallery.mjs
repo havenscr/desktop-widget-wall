@@ -252,6 +252,17 @@ state('unwind', 'watch polish: whole sky, autoplay refused', `${WM}&wlist=three&
 state('unwind', 'watch polish: Twitch not started hint, drive-in', `${WM}&wlist=three&wlook=drivein&wplay=2&wstate=refused`, TIMES.night);
 state('unwind', 'watch polish: leave banner over the drive-in', `${WM}&wlist=three&wlook=drivein&wplay=0&leave=12`, TIMES.night);
 state('unwind', 'watch polish: nothing on, whole sky chosen', `${WM}&wlist=three&wlook=sky`, TIMES.night);
+// sky layers: the video behind the land (the horizon's front canvas) in the whole sky and the sun at
+// night and at noon, the drive-in and feathered looks at night with no moon behind them, and the
+// moon in its open-sky place on Listen and on Watch with nothing on.
+state('unwind', 'sky layers: whole sky at night', `${WM}&wlist=three&wlook=sky&wplay=0`, TIMES.night);
+state('unwind', 'sky layers: whole sky at noon', `${WM}&wlist=three&wlook=sky&wplay=1`, TIMES.noon);
+state('unwind', 'sky layers: the sun at night', `${WM}&wlist=three&wlook=sun&wplay=0`, TIMES.night);
+state('unwind', 'sky layers: the sun at noon', `${WM}&wlist=three&wlook=sun&wplay=1`, TIMES.noon);
+state('unwind', 'sky layers: drive-in at night, no moon', `${WM}&wlist=three&wlook=drivein&wplay=2`, TIMES.night);
+state('unwind', 'sky layers: feathered at night, no moon', `${WM}&wlist=three&wlook=feather&wplay=0`, TIMES.night);
+state('unwind', 'sky layers: Listen at night, the moon in open sky', 'weather=ok', TIMES.night);
+state('unwind', 'sky layers: Watch, nothing on, at night, the moon in open sky', `${WM}&wlist=three&wlook=feather`, TIMES.night);
 
 // The Tools drawer: opened on load (`tools=1`), over each place and in its hard states.
 state('work', 'tools: open', 'tools=1');
@@ -458,6 +469,13 @@ const EXPECT = [
   ['unwind', 'watch polish: nothing on', ['Nothing on', 'Whole sky', 'Drive-in']],
   ['unwind', 'watch polish: whole sky, autoplay refused', ['Click the video to start', 'Waiting for a click on the video']],
   ['unwind', 'watch polish: Twitch not started hint, drive-in', ['Not started? Click the video', 'Live on the wall', 'Open on Twitch']],
+  // sky layers
+  ['unwind', 'sky layers: whole sky', ['Whole sky', 'Playing on the wall']],
+  ['unwind', 'sky layers: the sun', ['The sun', 'Playing on the wall']],
+  ['unwind', 'sky layers: drive-in', ['Drive-in', 'Open on Twitch']],
+  ['unwind', 'sky layers: feathered', ['Feathered', 'Playing on the wall']],
+  ['unwind', 'sky layers: Listen', ['Tokyo Burnout', '!Nothing on']],
+  ['unwind', 'sky layers: Watch, nothing on', ['Nothing on', 'Feathered']],
   // Meet
   ['meet', 'sparse', 'Nothing scheduled in the next 24 hours'],
   ['meet', 'heavy', 'Architecture working session'],

@@ -786,9 +786,10 @@
 }
 
 /* The video in the scene. Feathered: the picture whole and fully visible, its edges melting
-   into the sky through a soft mask; its lower edge fades out before the horizon line, so the
-   ridgelines there show in front of it. It sits over the moon, so the moon's disc never shows
-   through the picture. Drive-in: a screen with a frame on two posts standing on the horizon. */
+   into the sky through a soft mask, behind the ranges and the land (the horizon's front
+   canvas, .w-layered), so the ridgelines cross in front of its lower edge. The horizon draws no
+   moon behind it (LOOK_BOXES in looks.ts). Drive-in: a screen with a frame on two posts standing
+   on the horizon, in front of the ranges. */
 .w-stage {
   position: absolute;
 }
@@ -850,24 +851,28 @@
   mask-image: radial-gradient(closest-side, #000 40%, transparent);
   pointer-events: none;
 }
-/* Over the horizon's moon (stage 1730, 112, radius 44), under the picture. */
-.w-moonveil {
+/* sky layers: a look behind the land (feathered, whole sky, the sun; `behindTheLand` in
+   looks.ts). The main area becomes its own layer group and the stage sits at z-index -1 in it:
+   above the horizon's main canvas (the sky), below every control, card and line of text. The
+   horizon mounts its front canvas (the ranges, the land and the grid) in .w-front, after the
+   picture, so the land stands in front of the picture; what follows .w-front (the sun's streak,
+   the whole sky's floor wash) lies on the land. The front canvas is fixed to the stage and
+   takes no pointer; .w-front only sets its place in the layer order. */
+.main:has(.w-layered) {
+  isolation: isolate;
+}
+.w-layered {
+  z-index: -1;
+}
+.w-front {
   position: absolute;
-  left: 490px;
-  top: -28px;
-  width: 180px;
-  height: 180px;
-  border-radius: 50%;
-  -webkit-backdrop-filter: brightness(0.22) blur(6px);
-  backdrop-filter: brightness(0.22) blur(6px);
-  -webkit-mask-image: radial-gradient(closest-side, #000 62%, transparent);
-  mask-image: radial-gradient(closest-side, #000 62%, transparent);
+  inset: 0;
   pointer-events: none;
 }
-/* DRIVE_IN_SCREEN in looks.ts (wall 1210, 60, 691 by 389) less Unwind's offset: the
-   approved page's screen size, raised so it covers the horizon's moon whole. */
+/* DRIVE_IN_SCREEN in looks.ts (wall 1124, 60, 691 by 389) less Unwind's offset: the
+   approved page's screen size, 40 px right of the left block (the approved centre would run into it). */
 .w-drivein {
-  left: 1086px;
+  left: 1000px;
   top: 40px;
   width: 691px;
   height: 389px;
@@ -1309,12 +1314,12 @@
 
 /* Whole sky (approved page, B). The picture covers the sky from the top of the strip to the
    horizon line, edge to edge, cropped top and bottom like a cover; it fades toward the clock
-   and down into the horizon, so the ridgelines there stay in front. It lies under every
-   control: the main area becomes its own layer group (isolation) and the picture sits at
-   z-index -1 inside it, above the horizon canvas and below the clock, the tabs, the cards and
-   the left block; it takes no pointer at all (until a refused autoplay asks for a click). The
-   picture is dimmed (no see-through, so the moon never shows
-   through) and the left block has its own dark ground. */
+   and runs down to the horizon BEHIND the ranges and the land (the horizon's front canvas, see
+   .w-layered). It lies under every control: the main area becomes its own layer group
+   (isolation) and the picture sits at z-index -1 inside it, above the horizon's sky and below
+   the clock, the tabs, the cards and the left block; it takes no pointer at all (until a refused
+   autoplay asks for a click). The moon is not drawn behind it (its box is in LOOK_BOXES), and
+   the left block has its own dark ground. */
 .main:has(.w-sky) {
   isolation: isolate;
 }
@@ -1335,10 +1340,8 @@
 }
 .w-sky .w-screen {
   filter: brightness(0.9) saturate(1.1);
-  -webkit-mask-image: linear-gradient(90deg, transparent 18%, #000 40%, #000 88%, transparent), linear-gradient(180deg, #000 40%, transparent 97%);
-  -webkit-mask-composite: source-in;
-  mask-image: linear-gradient(90deg, transparent 18%, #000 40%, #000 88%, transparent), linear-gradient(180deg, #000 40%, transparent 97%);
-  mask-composite: intersect;
+  -webkit-mask-image: linear-gradient(90deg, transparent 18%, #000 40%, #000 88%, transparent);
+  mask-image: linear-gradient(90deg, transparent 18%, #000 40%, #000 88%, transparent);
 }
 .w-sky .w-frame {
   inset: auto;
@@ -1400,16 +1403,16 @@
   background: rgba(10, 7, 28, 0.9);
 }
 
-/* The sun (approved page, C). A 461 px disc whose foot stands 24 px over the horizon line,
-   centred at stage x 1660 so the horizon's moon (stage 1730, 112, radius 44) lies wholly
-   inside it at night, 31 px clear of the rim: the picture covers the moon, so there is never a second disc,
-   with the page's warm rim and glow, slats cut through its lower part, a halo behind it and a
-   warm streak on the floor. Inside it the 16:9 picture is 821 by 461, so the disc shows its
-   middle 56 percent of the width and the full height, the corners and slats cut away. The
-   box is the halo's (563 px); the disc sits 51 px in. */
+/* The sun (approved page, C). A 461 px disc at the approved page's place: centred at stage x
+   1331, its foot 29 px over the horizon line (LOOK_BOXES.sun in looks.ts: wall 1101, 15), with
+   the page's warm rim and glow, slats cut through its lower part, the ranges and the land in
+   front of its foot (the horizon's front canvas), a halo behind it and a warm streak on the
+   floor. The look owns that sky, so the horizon draws no moon while it shows. Inside it the
+   16:9 picture is 821 by 461, so the disc shows its middle 56 percent of the width and the
+   full height, the corners and slats cut away. The box is the halo's (563 px); the disc sits 51 px in. */
 .w-sun {
-  left: 1255px;
-  top: -51px;
+  left: 926px;
+  top: -56px;
   width: 563px;
   height: 563px;
 }
@@ -1435,7 +1438,7 @@
 .w-streak {
   position: absolute;
   left: 153px;
-  top: 536px;
+  top: 541px;
   width: 256px;
   height: 170px;
   filter: blur(36px);
