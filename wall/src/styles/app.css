@@ -205,6 +205,23 @@ button,
   bottom: auto;
   clip-path: polygon(50% 0, 100% 100%, 0 100%);
 }
+/* A details card beside its control: the tail on the near edge, at the control's middle. */
+.hover-tip[data-side='right']::after,
+.hover-tip[data-side='left']::after {
+  top: var(--tail, 20px);
+  bottom: auto;
+  width: 8px;
+  height: 12px;
+}
+.hover-tip[data-side='right']::after {
+  left: -8px;
+  clip-path: polygon(100% 0, 100% 100%, 0 50%);
+}
+.hover-tip[data-side='left']::after {
+  left: auto;
+  right: -8px;
+  clip-path: polygon(0 0, 100% 50%, 0 100%);
+}
 .hover-tip .tip-t {
   font: 600 18px/1.35 var(--disp);
   color: #f1ecff;

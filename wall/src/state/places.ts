@@ -19,8 +19,9 @@ interface PlaceState {
   /** Set by `openDream`; Zen reads it once when it opens and starts in Dream. */
   zenDream: boolean;
   /**
-   * Open Zen already dimmed (Unwind's Dream tab). Dream is now Zen's dimmed state; stream E removes
-   * the Dream tab and this call.
+   * Open Zen already dimmed. Unwind no longer has a Dream toggle; this stays for its other callers:
+   * the Work deck's "dream" action (`work/wallActions.ts`), `?go=dream` in `boot.tsx` and the
+   * gallery's dimmed screen.
    */
   openDream: () => void;
   /** Zen calls this once it has read `zenDream`. */

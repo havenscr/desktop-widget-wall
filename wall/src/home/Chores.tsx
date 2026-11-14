@@ -1,10 +1,17 @@
 import { IconCheck } from '@tabler/icons-react';
+import { tip } from '../ui/HoverTip';
 import { reviewNow } from '../ui/reviewClock';
 import { openTask, type TaskItem } from '../tasks/model';
 import { usePendingTicks } from '../tasks/pendingTick';
 import { TickWait } from '../tasks/TaskCard';
 import { clockText } from './sunLine';
+import { useShield } from './NetworkTile';
+import { alertsOpen } from './shieldModel';
 import { useChores } from './useChores';
+
+/** Rows in view: five, or three while the network card is tall with open alerts. */
+export const ROWS_QUIET = 5;
+export const ROWS_ALERTS = 3;
 
 const EST: Record<string, string> = { '15': '15 m', '30': '30 m', '45': '45 m', '60plus': '1 h+' };
 
@@ -28,17 +35,22 @@ export function chorePill(task: Pick<TaskItem, 'due_at' | 'due_is_all_day' | 'es
 }
 
 /**
- * Around the house: the next three tasks tagged `home`, with "N more can wait". The tick
- * circle finishes a chore after a five second undo window; a click on its title opens it
- * in the task app.
+ * Around the house: the next tasks tagged `home`, five rows in view (three while network
+ * alerts are open and the shield card is tall), the rest a scroll away (a slim scrollbar
+ * and the wheel, with the pointer over the list), and "N more can wait" under them. The
+ * tick circle finishes a chore after a five second undo window; a click on its title opens
+ * it in the task app.
  */
 export function Chores() {
   const { status, tasks, remaining, marks, hidden, complete } = useChores();
+  const fit = alertsOpen(useShield()) ? ROWS_ALERTS : ROWS_QUIET;
   const ticks = usePendingTicks(complete);
   const now = reviewNow ? reviewNow() : Date.now();
   const rows = tasks.filter((t) => !hidden.has(t.id));
   // A failed refresh after a good read keeps the rows, dimmed, with a quiet sign by the heading.
   const stale = status === 'error' && tasks.length > 0;
+  // Out of view: the rows below the fold, and those past the twenty read.
+  const more = Math.max(0, rows.length - fit) + remaining;
   let body;
   if (status === 'unconfigured') {
     body = <div className="s">Not set up</div>;
@@ -58,7 +70,7 @@ export function Chores() {
     );
   } else {
     body = (
-      <div className={stale ? 'chore-rows stale' : 'chore-rows'}>
+      <div className={[`chore-rows fit${fit}`, stale ? 'stale' : '', rows.length > fit ? 'scrolls' : ''].filter(Boolean).join(' ')}>
         {rows.map((t) => {
           const mark = marks[t.id];
           const pending = ticks.pending.has(t.id);
@@ -109,10 +121,14 @@ export function Chores() {
         <span className="k">Around the house</span>
         <span className="chores-side">
           {stale && <span className="xs warn-text">Task app not reachable</span>}
-          {remaining > 0 && status !== 'unconfigured' && <span className={stale ? 'xs stale' : 'xs'}>{remaining} more can wait</span>}
         </span>
       </div>
       {body}
+      {more > 0 && status !== 'unconfigured' && (
+        <div className={stale ? 'chores-foot xs stale' : 'chores-foot xs'} {...tip(rows.length > fit ? `${rows.length + remaining} in all. The wheel scrolls the list.` : `${rows.length + remaining} in all, the rest in the task app`)}>
+          {more} more can wait
+        </div>
+      )}
     </section>
   );
 }
