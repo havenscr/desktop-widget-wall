@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, within, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mocks } from '../../bridge/tauri';
 import { resetNowPlaying } from '../../music/store';
@@ -6,7 +6,7 @@ import { Unwind } from '../../screens/Unwind';
 import { useSignalStore } from '../../signals/store';
 import { usePlaceStore } from '../../state/places';
 import { resetLastPlayed } from '../lastPlayed';
-import { DEFAULT_LOOKS, LOOKS, LOOKS_KEY, isLook, nextLook, parseLooks, stepLook, type LookId } from './looks';
+import { DEFAULT_LOOKS, LOOKS, LOOKS_KEY, isLook, parseLooks, type LookId } from './looks';
 import { SAVED_KEY } from './saved';
 import { resetWatch, useWatchStore } from './store';
 
@@ -37,7 +37,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   localStorage.clear();
   resetWatch();
-  usePlaceStore.setState({ active: 'unwind', from: 'work', zenDream: false });
+  usePlaceStore.setState({ active: 'unwind', from: 'work' });
   useSignalStore.setState({ call: null });
   mocks.set('get_now_playing', () => ({ playback_status: 'stopped' }));
 });
@@ -80,16 +80,6 @@ describe('the look list', () => {
     expect(DEFAULT_LOOKS.live).toBe('sky');
   });
 
-  it('cycles feathered, whole sky, the sun, drive-in and back', () => {
-    expect(IDS.map(nextLook)).toEqual(['sky', 'sun', 'drivein', 'feather']);
-    let s = { ...DEFAULT_LOOKS, all: 'feather' as LookId };
-    const seen: LookId[] = [];
-    for (let i = 0; i < 4; i++) {
-      s = stepLook(s, 'video');
-      seen.push(s.all);
-    }
-    expect(seen).toEqual(['sky', 'sun', 'drivein', 'feather']);
-  });
 });
 
 describe('each look', () => {
@@ -101,12 +91,15 @@ describe('each look', () => {
     const frames = document.querySelectorAll('iframe');
     expect(frames.length).toBe(1);
     const f = frames[0];
-    expect(f.getAttribute('src')).toBe(`https://www.youtube-nocookie.com/embed/${V}?autoplay=1&playsinline=1&rel=0&enablejsapi=1&origin=http%3A%2F%2Flocalhost%3A3000`);
+    expect(f.getAttribute('src')).toBe(`https://www.youtube-nocookie.com/embed/${V}?autoplay=1&controls=0&disablekb=1&fs=0&iv_load_policy=3&playsinline=1&rel=0&enablejsapi=1&origin=http%3A%2F%2Flocalhost%3A3000`);
     expect(f.getAttribute('allow')).toBe('autoplay; encrypted-media; picture-in-picture');
     expect(f.getAttribute('referrerpolicy')).toBe('strict-origin-when-cross-origin');
     expect(f.getAttribute('sandbox')).toBe('allow-scripts allow-same-origin');
-    expect(screen.getByRole('button', { name: /Not playing\? Open in browser/ })).toBeTruthy();
-    expect(screen.getAllByRole('button', { name: new RegExp(`^Look: ${LOOKS.find((l) => l.id === look)!.name}`) }).length).toBe(1);
+    expect(screen.getByRole('button', { name: /^Open in YouTube$/ })).toBeTruthy();
+    // The Look switch shows this look checked, and nothing of the wall's is inside the stage.
+    const sw = screen.getByRole('radiogroup', { name: 'Look' });
+    expect(sw.querySelector('[aria-checked=true]')?.textContent).toBe(LOOKS.find((l) => l.id === look)!.name);
+    expect(document.querySelector('.w-stage')!.querySelector('button')).toBeNull();
   });
 
   it('draws the whole sky with its wash, its buttons apart from the picture, and a still floor wash outside the frame', async () => {
@@ -122,12 +115,12 @@ describe('each look', () => {
     expect(document.querySelectorAll('iframe').length).toBe(1);
     const sky = document.querySelector('.w-sky')!;
     expect(sky.querySelector('iframe')).not.toBeNull();
-    expect(sky.querySelector('.w-scrim')).not.toBeNull();
-    // The Look and Open in browser buttons are outside the layer that takes no pointer.
+    // Nothing of the wall's lies on the picture: the stage holds the picture only.
+    expect([...sky.children].map((c) => c.className)).toEqual(['w-screen']);
+    // The Look switch and Open in YouTube are outside the layer that takes no pointer.
     expect(sky.querySelector('button')).toBeNull();
-    const ui = document.querySelector('.w-skyui')!;
-    expect(ui.querySelector('.w-open')).not.toBeNull();
-    expect(ui.querySelector('.w-look')).not.toBeNull();
+    expect(document.querySelector('.w-now .w-open')).not.toBeNull();
+    expect(document.querySelector('.w-lookbar')!.closest('.w-sky')).toBeNull();
   });
 
   it('draws no floor wash in the other looks', async () => {
@@ -196,7 +189,7 @@ describe('each look', () => {
     unmount();
   });
 
-  it('steps through all four looks from the Look button without restarting the video (the same frame, the same address)', async () => {
+  it('switches through all four looks from the Look switch without restarting the video (the same frame, the same address)', async () => {
     setup('feather');
     render(<Unwind />);
     await flush();
@@ -204,8 +197,8 @@ describe('each look', () => {
     const src = frame.getAttribute('src');
     expect(src).toContain(V);
     const seen: string[] = [];
-    for (let i = 0; i < 4; i++) {
-      await act(async () => screen.getByRole('button', { name: /^Look: / }).click());
+    for (const name of ['Whole sky', 'The sun', 'Drive-in', 'Feathered']) {
+      await act(async () => within(screen.getByRole('radiogroup', { name: 'Look' })).getByRole('radio', { name }).click());
       seen.push(document.querySelector('.w-stage')!.getAttribute('data-look')!);
       expect(document.querySelectorAll('iframe').length).toBe(1);
       // A new frame would reload the player and start the video again: it must be the same node.
@@ -227,7 +220,7 @@ describe('the settings sheet with four looks', () => {
     const all = screen.getByRole('radiogroup', { name: 'Look for everything' });
     const tiles = all.querySelectorAll('[role=radio]');
     expect([...tiles].map((t) => t.textContent)).toEqual(['Feathered', 'Whole sky', 'The sun', 'Drive-in']);
-    await act(async () => screen.getByRole('radio', { name: /The sun/ }).click());
+    await act(async () => within(all).getByRole('radio', { name: /The sun/ }).click());
     expect(parseLooks(localStorage.getItem(LOOKS_KEY))).toMatchObject({ mode: 'one', all: 'sun' });
     expect(document.querySelector('.w-stage')?.getAttribute('data-look')).toBe('sun');
     expect(screen.getByText(/only its middle shows/)).toBeTruthy();

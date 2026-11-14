@@ -94,7 +94,7 @@ export function WatchSheet() {
         </div>
       )}
       <div className="w-sfoot">
-        <span>The Look button on a playing video steps to the next look.</span>
+        <span>The Look switch on Watch sets the look too.</span>
         <span className="w-count">
           Saved here: {yt} YouTube, {tw} Twitch
         </span>

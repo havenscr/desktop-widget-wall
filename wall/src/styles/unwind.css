@@ -653,9 +653,122 @@
 }
 .w-ctl {
   display: flex;
+  flex-wrap: nowrap;
   align-items: center;
-  gap: 18px;
-  margin-top: 16px;
+  gap: 8px;
+  margin-top: 12px;
+  max-width: 100%;
+}
+/* The left wing's small round controls (`.rd`, as in Work's music row): one size, drawn for a mouse. */
+.w-ctl .rd {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+}
+.w-ctl .rd:not(.big) {
+  background: rgba(8, 6, 26, 0.86);
+}
+.w-ctl .rd:hover:not(:disabled):not(.big) {
+  background: rgba(40, 32, 80, 0.95);
+}
+.w-ctl .rd.big:hover {
+  filter: brightness(1.1);
+}
+/* The position under the controls (elapsed, a thin bar a click seeks, the length), or the line
+   asking for a click when autoplay was refused. Its height is kept when empty, so nothing moves. */
+.w-time {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  height: 28px;
+  font-size: 17px;
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+}
+.w-t {
+  flex: none;
+}
+.w-bar {
+  flex: 1;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  position: relative;
+}
+.w-bar::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 6px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(200, 190, 255, 0.2);
+}
+.w-bar b {
+  position: relative;
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--pink), var(--cyan));
+}
+.w-bar:hover::before {
+  background: rgba(200, 190, 255, 0.32);
+}
+.w-bar:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.w-live {
+  font: 600 14px/1 var(--disp);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--pink);
+}
+.w-clickline {
+  color: var(--amber);
+}
+/* Twitch: one quiet line while the pointer may reach the frame, then a small button to ask again. */
+.w-hintline {
+  color: var(--faint);
+}
+.w-hintbtn {
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 14px;
+  font-size: 15px;
+  color: var(--faint);
+  border: 1px solid var(--line);
+  background: rgba(8, 6, 26, 0.6);
+}
+.w-hintbtn:hover {
+  color: var(--tx);
+}
+.w-hintbtn:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: 2px;
+}
+/* The Look switch: one fixed place under the left block, the same box in every look and
+   whether or not something plays; never on the video. */
+.w-lookbar {
+  position: absolute;
+  left: 500px;
+  top: 424px;
+  z-index: 1;
+  box-sizing: border-box;
+  width: 460px;
+  height: 46px;
+  background: rgba(10, 7, 28, 0.8);
+}
+.w-lookbar button {
+  padding: 0 6px;
+  font-size: 16px;
+}
+.w-lookbar button:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: 1px;
 }
 .w-note {
   margin-top: 12px;
@@ -691,6 +804,12 @@
   border: 0;
   display: block;
   background: #05030f;
+  /* The pointer never reaches the player, so its hover overlays never show; only after a
+     refused autoplay (.w-take) may the video be clicked. */
+  pointer-events: none;
+}
+.w-frame.w-take {
+  pointer-events: auto;
 }
 .w-noframe {
   display: grid;
@@ -712,13 +831,23 @@
   mask-image: linear-gradient(90deg, transparent, #000 20%, #000 80%, transparent), linear-gradient(180deg, transparent, #000 17%, #000 74%, transparent);
   mask-composite: intersect;
 }
+/* The glow round the feathered picture, where the approved page draws a blurred copy of the
+   video (46 by 25.9 strip units, half strength). One frame cannot be copied, so it is a still
+   wash in the stage light's colours (amber left, pink in the middle, cyan right). */
 .w-glow {
   position: absolute;
-  left: -110px;
-  right: -110px;
-  top: -40px;
-  bottom: 0;
-  background: radial-gradient(closest-side, rgba(255, 61, 154, 0.2), rgba(154, 123, 255, 0.1) 60%, transparent);
+  left: -116px;
+  right: -116px;
+  top: -66px;
+  bottom: -66px;
+  opacity: 0.5;
+  filter: blur(40px);
+  background:
+    radial-gradient(30% 45% at 30% 20%, rgba(255, 176, 84, 0.85), transparent 70%),
+    radial-gradient(28% 45% at 72% 20%, rgba(84, 214, 255, 0.8), transparent 70%),
+    radial-gradient(30% 40% at 52% 50%, rgba(255, 92, 150, 0.5), transparent 75%);
+  -webkit-mask-image: radial-gradient(closest-side, #000 40%, transparent);
+  mask-image: radial-gradient(closest-side, #000 40%, transparent);
   pointer-events: none;
 }
 /* Over the horizon's moon (stage 1730, 112, radius 44), under the picture. */
@@ -735,11 +864,13 @@
   mask-image: radial-gradient(closest-side, #000 62%, transparent);
   pointer-events: none;
 }
+/* DRIVE_IN_SCREEN in looks.ts (wall 1210, 60, 691 by 389) less Unwind's offset: the
+   approved page's screen size, raised so it covers the horizon's moon whole. */
 .w-drivein {
-  left: 1102px;
-  top: 59px;
-  width: 658px;
-  height: 376px;
+  left: 1086px;
+  top: 40px;
+  width: 691px;
+  height: 389px;
 }
 .w-drivein .w-screen {
   box-sizing: border-box;
@@ -751,9 +882,9 @@
 }
 .w-post {
   position: absolute;
-  top: 376px;
+  top: 389px;
   width: 7px;
-  height: 50px;
+  height: 56px;
   background: #1a1232;
   box-shadow: 0 0 0 1px rgba(170, 150, 255, 0.25);
 }
@@ -763,76 +894,38 @@
 .w-post.r {
   left: 81%;
 }
-/* The screen's light on the grid floor: a soft colour wash, not a mirror. */
+/* The screen's light on the grid floor, where the approved page draws its blurred reflection
+   (a band a little wider than the screen, from the horizon down, gone by 80 percent). One frame
+   cannot be mirrored, so it is a still wash in the stage light's colours (amber left, pink in
+   the middle, cyan right), strongest at the horizon line. */
 .w-spill {
   position: absolute;
-  left: -60px;
-  right: -60px;
-  top: 426px;
-  height: 160px;
-  background: radial-gradient(55% 100% at 50% 0, rgba(140, 170, 255, 0.22), rgba(255, 61, 154, 0.1) 55%, transparent 85%);
+  left: -77px;
+  width: 845px;
+  top: 445px;
+  height: 218px;
+  opacity: 0.42;
+  filter: blur(18px);
+  background:
+    radial-gradient(34% 90% at 24% 0, rgba(255, 176, 84, 0.9), transparent 75%),
+    radial-gradient(34% 90% at 76% 0, rgba(84, 214, 255, 0.85), transparent 75%),
+    radial-gradient(30% 70% at 50% 0, rgba(255, 92, 150, 0.6), transparent 80%);
+  -webkit-mask-image: linear-gradient(180deg, #000, transparent 80%);
+  mask-image: linear-gradient(180deg, #000, transparent 80%);
   pointer-events: none;
 }
-/* Look: on the video, shown while the pointer is over it (or it has focus). */
-.w-look {
-  position: absolute;
-  z-index: 2;
-  right: 18px;
-  top: 18px;
-  height: 36px;
-  padding: 0 14px;
-  border-radius: 18px;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font: 600 16px/1 var(--disp);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--tx);
-  background: rgba(8, 6, 26, 0.82);
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  opacity: 0;
-  transition: opacity 300ms ease;
-}
-.w-feather .w-look {
-  right: 170px;
-  top: 86px;
-}
-.w-stage:hover .w-look,
-.w-look:focus-visible {
-  opacity: 1;
-}
-.w-look:hover {
-  color: var(--cyan);
-}
-.w-look:focus-visible {
-  outline: 3px solid var(--cyan);
-  outline-offset: 2px;
-}
-/* Under the video, on the floor just below the horizon, at all times while something plays. */
-.w-under {
-  position: absolute;
-  left: -100px;
-  right: -100px;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 14px;
-}
-.w-feather .w-under {
-  top: 467px;
-}
-.w-drivein .w-under {
-  top: 438px;
-}
+/* Open in YouTube (or on Twitch): a plain button at the end of the control row, always there. */
 .w-open {
-  height: 36px;
-  padding: 0 16px;
-  border-radius: 18px;
+  flex: none;
+  height: 40px;
+  margin-left: 6px;
+  padding: 0 14px;
+  border-radius: 20px;
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  font-size: 18px;
+  font-size: 16px;
+  white-space: nowrap;
   color: var(--dim);
   background: rgba(8, 6, 26, 0.7);
   border: 1px solid var(--line);
@@ -1196,11 +1289,6 @@
   cursor: pointer;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .w-look {
-    transition: none;
-  }
-}
 /* With nothing on and the drive-in look, the empty screen stands on the horizon. */
 .w-drivein.w-empty .w-screen {
   display: flex;
@@ -1224,9 +1312,9 @@
    and down into the horizon, so the ridgelines there stay in front. It lies under every
    control: the main area becomes its own layer group (isolation) and the picture sits at
    z-index -1 inside it, above the horizon canvas and below the clock, the tabs, the cards and
-   the left block; it takes no pointer at all. Its Look and Open in browser buttons sit apart
-   on the floor (.w-skyui). The picture is dimmed (no see-through, so the moon never shows
-   through) and a dark wash keeps the text on the left readable. */
+   the left block; it takes no pointer at all (until a refused autoplay asks for a click). The
+   picture is dimmed (no see-through, so the moon never shows
+   through) and the left block has its own dark ground. */
 .main:has(.w-sky) {
   isolation: isolate;
 }
@@ -1242,11 +1330,14 @@
 .w-sky * {
   pointer-events: none;
 }
+.w-sky .w-frame.w-take {
+  pointer-events: auto;
+}
 .w-sky .w-screen {
   filter: brightness(0.9) saturate(1.1);
-  -webkit-mask-image: linear-gradient(90deg, transparent, #000 26%, #000 88%, transparent), linear-gradient(180deg, #000 40%, transparent 97%);
+  -webkit-mask-image: linear-gradient(90deg, transparent 18%, #000 40%, #000 88%, transparent), linear-gradient(180deg, #000 40%, transparent 97%);
   -webkit-mask-composite: source-in;
-  mask-image: linear-gradient(90deg, transparent, #000 26%, #000 88%, transparent), linear-gradient(180deg, #000 40%, transparent 97%);
+  mask-image: linear-gradient(90deg, transparent 18%, #000 40%, #000 88%, transparent), linear-gradient(180deg, #000 40%, transparent 97%);
   mask-composite: intersect;
 }
 .w-sky .w-frame {
@@ -1258,12 +1349,26 @@
   aspect-ratio: 16 / 9;
   transform: translateY(-50%);
 }
-.w-scrim {
-  position: absolute;
-  inset: 0;
-  background:
-    linear-gradient(90deg, rgba(6, 4, 22, 0.88) 0, rgba(6, 4, 22, 0.88) 40%, rgba(6, 4, 22, 0) 54%),
-    linear-gradient(180deg, rgba(6, 4, 22, 0.3), rgba(6, 4, 22, 0) 24%);
+/* Nothing of the wall's lies on the whole-sky picture: its mask keeps the clock's side clear
+   (fully see-through to 18 percent, whole from 40), and the left block carries its own dark
+   ground behind its text, as the cards do. */
+.unwind:has(.w-sky) .w-now {
+  border-radius: 2px;
+  background: rgba(6, 4, 22, 0.86);
+  box-shadow: 0 0 0 20px rgba(6, 4, 22, 0.86);
+}
+/* A refused autoplay over the whole sky: the picture lies under the frame's and Unwind's own
+   boxes, so while it waits for a click those boxes let the pointer through and only the wall's
+   blocks (the clock, the wings, the tabs, the left block, the switch, the cards) take it. */
+.top:has(.w-sky .w-take),
+.unwind:has(.w-sky .w-take),
+.unwind:has(.w-sky .w-take) .u-centre,
+.unwind:has(.w-sky .w-take) .w-panel {
+  pointer-events: none;
+}
+.top:has(.w-sky .w-take) > :not(.unwind),
+.unwind:has(.w-sky .w-take) :is(.u-wing, .u-corner, .u-right, .u-tabrow, .w-now, .w-lookbar, .w-sheet) {
+  pointer-events: auto;
 }
 /* The floor's wash under the whole sky, where frame B draws its blurred spill (stage x 512 to
    2355, from the horizon down): the page's light colours (amber left, pink in the middle, cyan
@@ -1285,37 +1390,25 @@
   -webkit-mask-image: linear-gradient(180deg, #000, transparent 85%);
   mask-image: linear-gradient(180deg, #000, transparent 85%);
 }
-.w-skyui {
-  position: absolute;
-  left: 1026px;
-  width: 810px;
-  top: 497px;
-}
-.w-skyui .w-under {
-  top: 0;
-}
-.w-skyui .w-look {
-  position: static;
-  opacity: 1;
-}
 /* Over a picture the cards and the tabs need a solid ground. */
 .unwind:has(.w-sky) .u-card {
   background: rgba(10, 7, 28, 0.97);
 }
 .unwind:has(.w-sky) .u-tabs,
-.unwind:has(.w-sky) .w-gear {
+.unwind:has(.w-sky) .w-gear,
+.unwind:has(.w-sky) .w-lookbar {
   background: rgba(10, 7, 28, 0.9);
 }
 
 /* The sun (approved page, C). A 461 px disc whose foot stands 24 px over the horizon line,
-   centred at stage x 1600 so the horizon's moon (stage 1730, 112, radius 44) lies wholly
-   inside it at night: the picture covers the moon, so there is never a second disc,
+   centred at stage x 1660 so the horizon's moon (stage 1730, 112, radius 44) lies wholly
+   inside it at night, 31 px clear of the rim: the picture covers the moon, so there is never a second disc,
    with the page's warm rim and glow, slats cut through its lower part, a halo behind it and a
    warm streak on the floor. Inside it the 16:9 picture is 821 by 461, so the disc shows its
    middle 56 percent of the width and the full height, the corners and slats cut away. The
    box is the halo's (563 px); the disc sits 51 px in. */
 .w-sun {
-  left: 1195px;
+  left: 1255px;
   top: -51px;
   width: 563px;
   height: 563px;
@@ -1349,13 +1442,6 @@
   opacity: 0.55;
   background: linear-gradient(180deg, rgba(255, 170, 110, 0.8), rgba(255, 95, 168, 0.25) 60%, transparent);
   pointer-events: none;
-}
-.w-sun .w-look {
-  right: 150px;
-  top: 120px;
-}
-.w-sun .w-under {
-  top: 548px;
 }
 
 /* The sheet with four looks: four tiles in a row, and per kind each label over a full-width

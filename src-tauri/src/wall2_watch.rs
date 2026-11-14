@@ -36,16 +36,30 @@ pub(crate) fn watch_link(kind: &str, id: &str) -> Result<String, String> {
     }
 }
 
-/// The checks before anything opens: the calling window, then the kind and id.
-fn check_open(label: &str, kind: &str, id: &str) -> Result<String, String> {
-    crate::wall2_omni::require_wall2(label)?;
-    watch_link(kind, id)
+/// The latest start time passed on (a week of seconds); anything past it is left off.
+const MAX_AT: u32 = 7 * 24 * 3600;
+
+/// `watch_link`, starting a video (not a live stream, a playlist or Twitch) at `at` whole
+/// seconds when given, more than zero and at most `MAX_AT`. The number is formatted here.
+pub(crate) fn watch_link_at(kind: &str, id: &str, at: Option<u32>) -> Result<String, String> {
+    let url = watch_link(kind, id)?;
+    match at {
+        Some(t) if kind == "video" && t > 0 && t <= MAX_AT => Ok(format!("{url}&t={t}s")),
+        _ => Ok(url),
+    }
 }
 
-/// Open a saved Watch item in the browser ("Not playing? Open in browser").
+/// The checks before anything opens: the calling window, then the kind and id.
+fn check_open(label: &str, kind: &str, id: &str, at: Option<u32>) -> Result<String, String> {
+    crate::wall2_omni::require_wall2(label)?;
+    watch_link_at(kind, id, at)
+}
+
+/// Open a saved Watch item in the browser ("Open in YouTube" or "Open on Twitch"), a video at
+/// the time the player last reported when the page passes one.
 #[tauri::command]
-pub fn wall2_watch_open(window: tauri::WebviewWindow, app: tauri::AppHandle, kind: String, id: String) -> Result<(), String> {
-    let url = check_open(window.label(), &kind, &id)?;
+pub fn wall2_watch_open(window: tauri::WebviewWindow, app: tauri::AppHandle, kind: String, id: String, at: Option<u32>) -> Result<(), String> {
+    let url = check_open(window.label(), &kind, &id, at)?;
     app.opener().open_url(url, None::<&str>).map_err(|_| "Could not open the link".to_string())
 }
 
@@ -91,9 +105,20 @@ mod tests {
 
     #[test]
     fn only_the_wall2_window_may_open() {
-        assert_eq!(check_open("main", "video", "Ab3dEfGh1jK"), Err("forbidden".to_string()));
-        assert_eq!(check_open("wall2", "video", "Ab3dEfGh1jK").unwrap(), "https://www.youtube.com/watch?v=Ab3dEfGh1jK");
-        assert_eq!(check_open("wall2", "video", "javascript:x"), Err(UNKNOWN.to_string()));
+        assert_eq!(check_open("main", "video", "Ab3dEfGh1jK", None), Err("forbidden".to_string()));
+        assert_eq!(check_open("wall2", "video", "Ab3dEfGh1jK", None).unwrap(), "https://www.youtube.com/watch?v=Ab3dEfGh1jK");
+        assert_eq!(check_open("wall2", "video", "javascript:x", Some(5)), Err(UNKNOWN.to_string()));
+    }
+
+    #[test]
+    fn a_video_opens_at_the_time_given_and_nothing_else_does() {
+        assert_eq!(watch_link_at("video", "Ab3dEfGh1jK", Some(754)).unwrap(), "https://www.youtube.com/watch?v=Ab3dEfGh1jK&t=754s");
+        assert_eq!(watch_link_at("video", "Ab3dEfGh1jK", Some(0)).unwrap(), "https://www.youtube.com/watch?v=Ab3dEfGh1jK");
+        assert_eq!(watch_link_at("video", "Ab3dEfGh1jK", Some(MAX_AT + 1)).unwrap(), "https://www.youtube.com/watch?v=Ab3dEfGh1jK");
+        assert_eq!(watch_link_at("live", "Lofi_Live-1", Some(60)).unwrap(), "https://www.youtube.com/watch?v=Lofi_Live-1");
+        assert_eq!(watch_link_at("playlist", "PLmockPlaylist0001", Some(60)).unwrap(), "https://www.youtube.com/playlist?list=PLmockPlaylist0001");
+        assert_eq!(watch_link_at("twitch", "pixel_harbor", Some(60)).unwrap(), "https://www.twitch.tv/pixel_harbor");
+        assert_eq!(watch_link_at("video", "bad", Some(60)), Err(UNKNOWN.to_string()));
     }
 
     #[test]
