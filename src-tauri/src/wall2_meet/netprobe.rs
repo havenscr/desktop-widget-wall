@@ -161,6 +161,11 @@ pub fn ipv4_first(addrs: Vec<SocketAddr>) -> Vec<SocketAddr> {
     ordered
 }
 
+pub fn first_connect_share(connect: Duration, lookup: Duration, addresses: usize) -> Duration {
+    let left = connect.saturating_sub(lookup);
+    if addresses > 1 { left / 2 } else { left }
+}
+
 impl ureq::Resolver for TimedResolver {
     fn resolve(&self, netloc: &str) -> std::io::Result<Vec<SocketAddr>> {
         let began = Instant::now();
@@ -251,9 +256,10 @@ mod tests {
         assert!(ordered[0].is_ipv4());
         assert_eq!(ordered.len(), 4);
         assert!(ordered.windows(2).all(|pair| pair[0].is_ipv4() != pair[1].is_ipv4()));
-        // ureq 2.12.1 stream.rs halves the remaining 5 second connect deadline when
-        // several addresses exist, so the first IPv4 address receives 2.5 seconds.
-        assert!(crate::wall2_meet::graph::CONNECT_TIMEOUT / 2 >= Duration::from_secs(2));
+        for addresses in 1..=4 {
+            let share=first_connect_share(crate::wall2_meet::graph::CONNECT_TIMEOUT,Duration::from_secs(1),addresses);
+            assert_eq!(share,if addresses==1 { Duration::from_secs(4) } else { Duration::from_secs(2) });
+        }
     }
 
     fn np(phase: &'static str, af: &'static str, resolved: u8, dns_ms: Option<u32>, v4: Probe, v6: Probe) -> NetProbe {

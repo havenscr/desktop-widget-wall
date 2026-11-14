@@ -853,7 +853,7 @@ pub fn complete_sign_in(
     ];
     let ctx = Ctx::new(Kind::Next, clock_of(core), BUDGET);
     let (mut reply, mut detail) = tokens.post_diag(&acct.tenant, &form, ctx.remaining().min(READ_TIMEOUT), &ctx);
-    if matches!(reply, TokenReply::Transient(_)) && detail.is_some() && !ctx.remaining().is_zero() {
+    if matches!(reply, TokenReply::Transient(_)) && detail.is_some() && useful_sign_in_retry(ctx.remaining()) {
         (reply, detail) = tokens.post_diag(&acct.tenant, &form, ctx.remaining().min(READ_TIMEOUT), &ctx);
     }
     match reply {
@@ -895,6 +895,7 @@ fn sign_in_network_reason(detail: Option<&Diag>) -> String {
         _ => "token-network",
     }.to_string()
 }
+fn useful_sign_in_retry(left: Duration) -> bool { left >= Duration::from_secs(2) }
 
 /// Log a failed first redemption and return its reason code for the web view.
 fn sign_in_failed(core: &Mutex<Core>, acct: &Account, reason: &str, now: u64, detail: Option<&Diag>) -> String {
@@ -1587,6 +1588,12 @@ mod tests {
         let granted = super::super::auth::Granted { code: "c".into(), verifier: "v".into(), redirect_uri: "http://localhost:1/auth-callback.html".into() };
         assert!(complete_sign_in(&acct("work"), &granted, &store, &tokens, &core, NOW).is_ok());
         assert_eq!(tokens.calls.get(), 2);
+    }
+
+    #[test]
+    fn sign_in_retry_requires_two_useful_seconds_left() {
+        assert!(!useful_sign_in_retry(Duration::from_millis(1999)));
+        assert!(useful_sign_in_retry(Duration::from_secs(2)));
     }
 
     #[test]
