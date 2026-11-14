@@ -1816,6 +1816,7 @@
   color: var(--tx);
 }
 .ln-panel button:focus-visible,
+.wk-set button:focus-visible,
 .ln-track input:focus-visible {
   outline: 3px solid var(--cyan);
   outline-offset: 2px;
@@ -1935,6 +1936,58 @@
     transition: none;
   }
 }
+
+/* ---- look settings: the Looks side's section under the tiles (`LookTunePanel.tsx`). It reuses the
+   Lines side's rows (40 px rows, 6 px track, 20 px thumb, the 2 px tick, the 52 by 32 switch); the
+   sheet's height follows its content, and the foot line about saved items makes room for it. ---- */
+.w-sheet.w-tune {
+  height: auto;
+  gap: 12px;
+}
+.w-sheet.w-tune .w-sfoot {
+  display: none;
+}
+.wk-set {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+  font-size: 16px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(150, 130, 255, 0.14);
+}
+.wk-name {
+  flex: none;
+  color: var(--tx);
+  font: 600 17px/1.2 var(--body);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.ln-reset.wk-usual {
+  color: var(--faint);
+  cursor: default;
+}
+.ln-reset.wk-usual:hover {
+  color: var(--faint);
+  border-color: var(--line);
+}
+.wk-pick {
+  flex-direction: row;
+  align-items: center;
+}
+.wk-pick > span {
+  flex: none;
+  font-size: 17px;
+  color: var(--dim);
+}
+.wk-pick .w-seg {
+  flex: 1;
+  min-width: 0;
+}
+.w-sheet.w-tune .w-hint {
+  margin-top: 8px;
+}
+/* ---- end of the look settings ---- */
 
 /* ---- watch behaviour (`unwind/watch/StageLayer.tsx`, the fade in `Watch.tsx`) ----
    The video's layer is mounted by the screens frame in `.top` (Unwind's own box) on every place,

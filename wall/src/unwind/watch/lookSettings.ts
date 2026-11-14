@@ -182,6 +182,27 @@ export const CONTROLS: Readonly<Record<LookId, readonly Control[]>> = Object.fre
   ],
 });
 
+/** The one-line hint shown under the sliders for the control in use (16 px, one line in the sheet). */
+export const HINTS: Readonly<Record<string, string>> = Object.freeze({
+  'sky.size': 'How big the picture stands; 100 is as tall as the sky allows',
+  'sky.soft': 'How far the top and sides fade into the sky; 0 is plain',
+  'sky.bright': 'How bright the picture is over the sky',
+  'sky.floor': 'The faint wash of the picture\u2019s colours on the floor',
+  'sun.size': 'How wide the sun is; the most fits the sky',
+  'sun.up': 'How high it stands; below zero it sinks behind the land',
+  'sun.glow': 'How strong the halo and the warm rim are',
+  'sun.streak': 'The warm streak of the sun on the floor',
+  'feather.size': 'How big the picture is; the most clears the cards',
+  'feather.soft': 'How far the sides melt, as a share of the width',
+  'feather.glow': 'How strong the coloured glow round it is',
+  'drivein.size': 'Screen and tower together; the most fits the strip',
+  'drivein.floor': 'How strongly the screen\u2019s light falls on the floor',
+  'drivein.sign': 'The marquee board under the screen',
+  'holo.tilt': 'How far the pane turns; 0 faces you',
+  'holo.plate': 'How dark the glass behind the picture is',
+  'holo.beam': 'The fan of light from the emitter to the pane',
+});
+
 /** A value read back in plain words: "120 px, your usual", "wider than usual". */
 export function controlWords(c: RangeControl, value: number): string {
   const shown = c.show(value);

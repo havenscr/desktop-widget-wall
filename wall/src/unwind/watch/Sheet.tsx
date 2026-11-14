@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { IconX } from '@tabler/icons-react';
-import { LOOK_GROUPS, LOOKS, type LookId, type LookSettings } from './looks';
+import { LOOK_GROUPS, LOOKS, lookFor, type LookId, type LookSettings } from './looks';
 import { useWatchStore } from './store';
 import { tip } from '../../ui/HoverTip';
 import { LINES_TITLE, LinesPanel } from './LinesPanel';
+import { LookTunePanel } from './LookTunePanel';
 
 /** A small drawing of each look for its tile, as the approved settings sheet draws them. */
 function LookPicture({ look }: { look: LookId }) {
@@ -38,6 +39,10 @@ export function WatchSheet({ initial = 'looks' }: { initial?: 'looks' | 'lines' 
   const title = page === 'lines' ? LINES_TITLE : 'How video is shown';
   const looks = useWatchStore((s) => s.looks);
   const saved = useWatchStore((s) => s.saved);
+  const playing = useWatchStore((s) => s.playing);
+  // With a look per kind, which look the settings below are for (the one playing now, else the first kind's).
+  const [tuned, setTuned] = useState<LookId | null>(null);
+  const tuneLook: LookId = looks.mode === 'one' ? looks.all : tuned ?? (playing ? lookFor(looks, playing.kind) : looks.video);
   const ref = useRef<HTMLDivElement>(null);
   const set = (next: Partial<LookSettings>) => useWatchStore.getState().setLooks({ ...looks, ...next });
   const close = () => useWatchStore.getState().setSheet(false);
@@ -63,7 +68,7 @@ export function WatchSheet({ initial = 'looks' }: { initial?: 'looks' | 'lines' 
   const yt = saved.filter((i) => i.kind !== 'twitch').length;
   const tw = saved.length - yt;
   return (
-    <div className={`w-sheet${page === 'lines' ? ' ln-sheet' : ''}`} role="dialog" aria-label={title} ref={ref} tabIndex={-1}>
+    <div className={`w-sheet${page === 'lines' ? ' ln-sheet' : ' w-tune'}`} role="dialog" aria-label={title} ref={ref} tabIndex={-1}>
       <button type="button" className="w-x" aria-label="Close" title="Close" onClick={close}>
         <IconX size={22} aria-hidden="true" />
       </button>
@@ -105,8 +110,14 @@ export function WatchSheet({ initial = 'looks' }: { initial?: 'looks' | 'lines' 
               <Choice value={looks[g.id]} label={`Look for ${g.name.toLowerCase()}`} onPick={(l) => set({ [g.id]: l })} />
             </div>
           ))}
+          <div className="w-srow wk-pick">
+            <span>Settings for</span>
+            <Choice value={tuneLook} label="Look to adjust" onPick={setTuned} />
+          </div>
+          <p className="w-hint">A look keeps its own settings, whatever kind of video plays in it.</p>
         </div>
       )}
+      <LookTunePanel look={tuneLook} />
       <div className="w-sfoot">
         <span>The Look switch on Watch sets the look too.</span>
         <span className="w-count">
