@@ -1,19 +1,34 @@
-import { useState, type CSSProperties } from 'react';
+import { useState, type CSSProperties, type KeyboardEvent } from 'react';
 import { IconRestore } from '@tabler/icons-react';
 import { tip } from '../../ui/HoverTip';
 import { HINTS, CONTROLS, controlWords, isUsual, resolveTune, type RangeControl, type SwitchControl } from './lookSettings';
 import { lookName, type LookId } from './looks';
-import { useWatchStore } from './store';
+import { flushTune, useWatchStore } from './store';
 
 /** The foot of the section: its one line says this until a control is hovered or focused, then that control's hint. */
 export const TUNE_FOOT = 'Each look keeps its own settings. Changes show at once.';
+
+/**
+ * The slider's keys, taken here so the effect is the same everywhere and proved by a test: the arrows
+ * move one step (Up and Right on, Down and Left back), Page Up and Page Down ten steps, Home and End to
+ * the ends. Every move is kept at once on the stage and written to storage when the key is let go.
+ */
+function keys(e: KeyboardEvent<HTMLInputElement>, look: LookId, c: RangeControl, value: number, max: number) {
+  const step = c.step;
+  const to: Record<string, number> = { ArrowRight: value + step, ArrowUp: value + step, ArrowLeft: value - step, ArrowDown: value - step, PageUp: value + 10 * step, PageDown: value - 10 * step, Home: c.min, End: max };
+  const next = to[e.key];
+  if (next === undefined || e.altKey || e.ctrlKey || e.metaKey) return;
+  e.preventDefault();
+  useWatchStore.getState().setTune(look, { [c.key]: Math.min(max, Math.max(c.min, next)) }, 'soon');
+}
 
 function RangeRow({ look, c, hint }: { look: LookId; c: RangeControl; hint: (k: string | null) => void }) {
   const tune = useWatchStore((s) => s.tune);
   const t = resolveTune(tune);
   const value = (t[look] as unknown as Record<string, number>)[c.key]!;
+  const wish = (tune[look] as unknown as Record<string, number>)[c.key]!;
   const max = c.max(t);
-  const words = controlWords(c, value);
+  const words = controlWords(c, value, wish);
   const span = Math.max(1, max - c.min);
   const style = { '--usual': `${((c.usual - c.min) / span) * 100}%`, '--at': `${((value - c.min) / span) * 100}%` } as CSSProperties;
   const id = `wk-${look}-${c.key}`;
@@ -35,8 +50,15 @@ function RangeRow({ look, c, hint }: { look: LookId; c: RangeControl; hint: (k: 
           aria-valuetext={words}
           {...tip(`${c.note}. The mark is your usual.`)}
           onFocus={() => hint(k)}
-          onBlur={() => hint(null)}
-          onChange={(e) => useWatchStore.getState().setTune(look, { [c.key]: Number(e.target.value) })}
+          onBlur={() => {
+            hint(null);
+            flushTune();
+          }}
+          onChange={(e) => useWatchStore.getState().setTune(look, { [c.key]: Number(e.target.value) }, 'soon')}
+          onPointerUp={flushTune}
+          onPointerCancel={flushTune}
+          onKeyDown={(e) => keys(e, look, c, value, max)}
+          onKeyUp={flushTune}
         />
       </span>
       <span className="ln-value">{words}</span>
@@ -72,7 +94,7 @@ function SwitchRow({ look, c, hint }: { look: LookId; c: SwitchControl; hint: (k
       >
         <i aria-hidden="true" />
       </button>
-      <span className="ln-value ln-fill">{blocked ? c.needs!.reason : on ? (c.usual ? 'On, your usual' : 'On') : c.usual ? 'Off' : 'Off, your usual'}</span>
+      <span className="ln-value ln-fill">{blocked ? c.needs!.reason : on ? (c.words?.on ?? (c.usual ? 'On, your usual' : 'On')) : (c.words?.off ?? (c.usual ? 'Off' : 'Off, your usual'))}</span>
     </div>
   );
 }
@@ -104,7 +126,9 @@ export function LookTunePanel({ look, foot = TUNE_FOOT }: { look: LookId; foot?:
           Reset to my usual
         </button>
       </div>
+      <div className="wk-rows">
       {CONTROLS[look].map((c) => (c.kind === 'range' ? <RangeRow key={c.key} look={look} c={c} hint={setHinted} /> : <SwitchRow key={c.key} look={look} c={c} hint={setHinted} />))}
+      </div>
       <p className="ln-foot wk-foot">{hinted ? HINTS[hinted] : foot}</p>
     </div>
   );

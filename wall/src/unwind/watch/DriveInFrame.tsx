@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useReducedMotion } from '../../ui/useReducedMotion';
 import { DRIVE_IN_SCREEN } from './looks';
-import { FRAME_CX, MARQUEE_NAME, NEON_PATH, MARQUEE_PAUSED, MARQUEE_PLAYING, MARQUEE_TEXT_Y, TOWER_SVG } from './towerFrame';
+import { FRAME_CX, GROUND_Y, MARQUEE_NAME, NEON_BOUNDS, NEON_PATH, MARQUEE_PAUSED, MARQUEE_PLAYING, MARQUEE_TEXT_Y, TOWER_SVG } from './towerFrame';
 
 /**
  * What the drive-in is doing, as the marquee tells it. `empty` is nothing on; `waiting` is
@@ -114,9 +114,19 @@ export function DriveInFrame({ mode, light = false }: { mode: DriveInMode; light
  * lies 9.5 px outside the picture's box, so the light never paints on the picture.
  */
 function TravellingLight() {
-  const V = DRIVE_IN_SCREEN;
+  const B = NEON_BOUNDS;
+  // The svg sits where the tower's svg is (wall 0, 0, moved by the stage's `--w-tl` and `--w-tt`) plus its own offset,
+  // and scales about the footing centre like the tower, so it follows the frame at every size.
+  const place = {
+    left: `calc(var(--w-tl, ${-DRIVE_IN_SCREEN.x}px) + ${B.x}px)`,
+    top: `calc(var(--w-tt, ${-DRIVE_IN_SCREEN.y}px) + ${B.y}px)`,
+    width: B.w,
+    height: B.h,
+    transformOrigin: `${FRAME_CX - B.x}px ${GROUND_Y - B.y}px`,
+    pointerEvents: 'none',
+  } as const;
   return (
-    <svg className="w-light" viewBox={`${V.x - 20} ${V.y - 20} ${V.w + 40} ${V.h + 40}`} width={V.w + 40} height={V.h + 40} aria-hidden="true" focusable="false" style={{ pointerEvents: 'none' }}>
+    <svg className="w-light" viewBox={`${B.x} ${B.y} ${B.w} ${B.h}`} width={B.w} height={B.h} aria-hidden="true" focusable="false" style={place}>
       <path className="w-light-tail" d={NEON_PATH} pathLength={100} />
       <path className="w-light-mid" d={NEON_PATH} pathLength={100} />
       <path className="w-light-core" d={NEON_PATH} pathLength={100} />

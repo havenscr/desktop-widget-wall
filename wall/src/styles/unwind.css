@@ -906,8 +906,8 @@
 .w-mq {
   transition: opacity 1s ease;
 }
-/* The Neon line setting: the frame's two neon paths (the glow and the line) are the ones stroked with the neon gradient. */
-.w-tower path[stroke='url(#wtneon)'] {
+/* The Neon line setting: the group of the frame's two neon strokes (the glow and the line). */
+.w-tower .w-neon {
   display: var(--w-neon, inline);
 }
 /* The Travelling light: its own small svg over the frame (cropped to the screen's box plus 20 px,
@@ -915,12 +915,8 @@
    Three dashes on the neon line (pathLength 100) share one head: a tail of 10, a middle of 5.5, a core of 2. */
 .w-light {
   position: absolute;
-  left: calc(var(--w-tl, -1244px) + 1224px);
-  top: calc(var(--w-tt, -54px) + 34px);
-  width: 712px;
-  height: 418px;
+  /* Its place, size and scaling origin come from the frame's own numbers (NEON_BOUNDS in towerFrame.ts), set by the component. */
   transform: var(--w-tf, none);
-  transform-origin: 356px 471px;
   will-change: transform;
   pointer-events: none;
 }
@@ -2003,6 +1999,8 @@
    sheet's height follows its content, and the foot line about saved items makes room for it. ---- */
 .w-sheet.w-tune {
   height: auto;
+  /* Wall y 20 to 658: clear of the office slot at y 662. With the most rows and a look per kind the rows scroll inside the sheet. */
+  max-height: 638px;
   gap: 6px;
   padding: 16px 26px 12px;
 }
@@ -2025,8 +2023,23 @@
 .w-sheet.w-tune .w-hint {
   margin-top: 4px;
 }
-.wk-set .ln-row {
-  min-height: 34px;
+.wk-set .wk-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(170, 160, 230, 0.6) transparent;
+  /* The cue that more lies below (or above): a cyan glow at that edge, over a cover in the sheet's own colour that goes as the rows scroll to it. */
+  background:
+    linear-gradient(rgb(14, 9, 32) 30%, rgba(14, 9, 32, 0)) center top,
+    linear-gradient(rgba(14, 9, 32, 0), rgb(14, 9, 32) 70%) center bottom,
+    radial-gradient(farthest-side at 50% 0, rgba(83, 230, 235, 0.4), rgba(83, 230, 235, 0)) center top,
+    radial-gradient(farthest-side at 50% 100%, rgba(83, 230, 235, 0.4), rgba(83, 230, 235, 0)) center bottom;
+  background-repeat: no-repeat;
+  background-size: 100% 28px, 100% 28px, 100% 14px, 100% 14px;
+  background-attachment: local, local, scroll, scroll;
 }
 .wk-set .ln-label {
   width: 112px;
@@ -2040,13 +2053,11 @@
 .wk-set .ln-value.ln-fill {
   width: auto;
 }
-.w-sheet.w-tune .w-sfoot {
-  display: none;
-}
 .wk-set {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  flex: 0 1 auto;
   min-height: 0;
   font-size: 16px;
   padding-top: 8px;

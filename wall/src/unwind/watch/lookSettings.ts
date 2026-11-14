@@ -50,14 +50,14 @@ export interface DriveTune {
   sign: boolean;
   /** The neon line round the frame and its glow. */
   neon: boolean;
-  /** A soft light that travels round the neon line while the video plays (needs the neon line). */
+  /** A soft light that travels round the neon line while a drive-in video plays (needs the neon line). Off unless asked for. */
   light: boolean;
 }
 export interface HoloTune {
   /** The pane's turn in degrees. */
   tilt: number;
-  /** The dark plate's alpha in percent. */
-  plate: number;
+  /** How much of the wall shows through the glass plate, in percent: 100 less the plate's alpha (26 is today's alpha of 0.74). */
+  see: number;
   /** The emitter's fan and rays. */
   beam: boolean;
 }
@@ -73,8 +73,8 @@ export const DEFAULT_TUNE: Readonly<LookTune> = Object.freeze({
   sky: Object.freeze({ size: 100, soft: 120, bright: 90, floor: true }),
   sun: Object.freeze({ size: 461, up: 29, glow: 50, streak: true }),
   feather: Object.freeze({ size: 100, soft: 20, glow: 50 }),
-  drivein: Object.freeze({ size: 100, floor: 42, sign: true, neon: true, light: true }),
-  holo: Object.freeze({ tilt: 7, plate: 74, beam: true }),
+  drivein: Object.freeze({ size: 100, floor: 42, sign: true, neon: true, light: false }),
+  holo: Object.freeze({ tilt: 7, see: 26, beam: true }),
 });
 
 /** A fresh, mutable copy of every look's defaults. */
@@ -83,10 +83,10 @@ export function defaultTune(): LookTune {
 }
 
 /** The wall's fixed numbers the boxes are measured from (wall pixels). */
-export const SKY_FOOT = Object.freeze({ x: 1550.5, y: 516 });
-export const SUN_CENTRE_X = 1331.5;
-export const FEATHER_FOOT = Object.freeze({ x: 1555, y: 505 });
-export const DRIVE_FOOT = Object.freeze({ x: 1580, y: DRIVE_IN_GROUND });
+export const SKY_FOOT = Object.freeze({ x: LOOK_BOXES.sky.x + LOOK_BOXES.sky.w / 2, y: LOOK_BOXES.sky.y + LOOK_BOXES.sky.h });
+export const SUN_CENTRE_X = LOOK_BOXES.sun.x + LOOK_BOXES.sun.w / 2;
+export const FEATHER_FOOT = Object.freeze({ x: LOOK_BOXES.feather.x + LOOK_BOXES.feather.w / 2, y: LOOK_BOXES.feather.y + LOOK_BOXES.feather.h });
+export const DRIVE_FOOT = Object.freeze({ x: DRIVE_IN_SCREEN.x + DRIVE_IN_SCREEN.w / 2, y: DRIVE_IN_GROUND });
 /** Unwind's offset: stage CSS pixels are wall pixels less this. */
 const OFF = Object.freeze({ x: 124, y: 20 });
 /** The sun's halo box is this much bigger than its disc (563 over 461), and the disc sits 51 px in at the usual size. */
@@ -125,6 +125,8 @@ export interface SwitchControl extends Base {
   usual: boolean;
   /** Another switch of the look this one needs: while that one is off this one is disabled and says why. */
   needs?: { key: string; reason: string };
+  /** Plain words for the state, where "On" and "Off" alone say too little. */
+  words?: { on: string; off: string };
 }
 export type Control = RangeControl | SwitchControl;
 
@@ -148,7 +150,7 @@ const pct = (v: number) => `${v}%`;
 export const CONTROLS: Readonly<Record<LookId, readonly Control[]>> = Object.freeze({
   sky: [
     { kind: 'range', key: 'size', label: 'Size', note: 'How big the picture stands behind the mountains. 100 is as tall as the sky allows; smaller shrinks it toward the horizon', min: SKY_SIZE_MIN, max: () => 100, hardMax: 100, step: 1, usual: 100, show: (v) => `${v}%`, more: 'larger', less: 'smaller' },
-    { kind: 'range', key: 'soft', label: 'Soft edge', note: 'How far the top, left and right edges fade into the sky. 0 is a plain edge; the most is 40 percent of the smaller side', min: 0, max: skySoftMax, hardMax: 200, step: 5, usual: 120, show: (v) => `${v} px`, more: 'wider', less: 'narrower' },
+    { kind: 'range', key: 'soft', label: 'Soft edge', note: 'How far the top, left and right edges fade into the sky. 0 is a plain edge; the most is 40 percent of the smaller side', min: 0, max: skySoftMax, hardMax: 200, step: 1, usual: 120, show: (v) => `${v} px`, more: 'wider', less: 'narrower' },
     { kind: 'range', key: 'bright', label: 'Brightness', note: 'How bright the picture is over the sky', min: 50, max: () => 100, hardMax: 100, step: 1, usual: 90, show: (v) => `${v}%`, more: 'brighter', less: 'dimmer' },
     { kind: 'switch', key: 'floor', label: 'Floor light', note: 'The faint wash of the picture’s colours on the floor', usual: true },
   ],
@@ -168,24 +170,24 @@ export const CONTROLS: Readonly<Record<LookId, readonly Control[]>> = Object.fre
       more: 'higher',
       less: 'lower',
     },
-    { kind: 'range', key: 'glow', label: 'Glow', note: 'How strong the halo and the warm rim are', min: 0, max: () => 100, hardMax: 100, step: 5, usual: 50, show: (v) => `${v}`, more: 'stronger', less: 'fainter' },
+    { kind: 'range', key: 'glow', label: 'Glow', note: 'How strong the halo and the warm rim are', min: 0, max: () => 100, hardMax: 100, step: 1, usual: 50, show: (v) => `${v}`, more: 'stronger', less: 'fainter' },
     { kind: 'switch', key: 'streak', label: 'Floor streak', note: 'The warm streak of the sun on the floor', usual: true },
   ],
   feather: [
     { kind: 'range', key: 'size', label: 'Size', note: 'How big the melting picture is. The most keeps it clear of the cards', min: 60, max: () => 108, hardMax: 108, step: 1, usual: 100, show: pct, more: 'larger', less: 'smaller' },
     { kind: 'range', key: 'soft', label: 'Soft edge', note: 'How far the sides melt into the sky, as a share of the width. The top and the foot melt in proportion', min: 10, max: () => 30, hardMax: 30, step: 1, usual: 20, show: pct, more: 'wider', less: 'narrower' },
-    { kind: 'range', key: 'glow', label: 'Glow', note: 'How strong the coloured glow round the picture is', min: 0, max: () => 100, hardMax: 100, step: 5, usual: 50, show: (v) => `${v}`, more: 'stronger', less: 'fainter' },
+    { kind: 'range', key: 'glow', label: 'Glow', note: 'How strong the coloured glow round the picture is', min: 0, max: () => 100, hardMax: 100, step: 1, usual: 50, show: (v) => `${v}`, more: 'stronger', less: 'fainter' },
   ],
   drivein: [
     { kind: 'range', key: 'size', label: 'Size', note: 'The screen and its tower together. The most keeps the tower inside the strip and clear of the cards', min: 80, max: () => 105, hardMax: 105, step: 1, usual: 100, show: pct, more: 'larger', less: 'smaller' },
     { kind: 'range', key: 'floor', label: 'Floor light', note: 'How strongly the screen’s light falls on the floor. 0 is none', min: 0, max: () => 100, hardMax: 100, step: 1, usual: 42, show: (v) => `${v}`, more: 'brighter', less: 'fainter' },
     { kind: 'switch', key: 'sign', label: 'Sign under the video', note: 'The marquee board under the screen and its words (Watt\u2019s Drive-in, now showing, intermission)', usual: true },
     { kind: 'switch', key: 'neon', label: 'Neon line', note: 'The neon line round the frame and its glow. Off leaves the steel surround as it is', usual: true },
-    { kind: 'switch', key: 'light', label: 'Travelling light', note: 'A soft light that travels slowly round the neon line while the video plays. It stops when paused and under reduced motion', usual: true, needs: { key: 'neon', reason: 'Needs the neon line on' } },
+    { kind: 'switch', key: 'light', label: 'Travelling light', note: 'A soft light that travels slowly round the neon line, only while a drive-in video plays. It stops when paused and under reduced motion', usual: false, words: { on: 'On, only while it plays', off: 'Off, your usual' }, needs: { key: 'neon', reason: 'Needs the neon line on' } },
   ],
   holo: [
     { kind: 'range', key: 'tilt', label: 'Tilt', note: 'How far the pane turns. 0 faces you', min: 0, max: () => 12, hardMax: 12, step: 1, usual: 7, show: (v) => `${v}\u00b0`, more: 'steeper', less: 'flatter' },
-    { kind: 'range', key: 'plate', label: 'Plate darkness', note: 'How dark the glass plate behind the picture is. Lower lets more of the sky through', min: 40, max: () => 90, hardMax: 90, step: 1, usual: 74, show: (v) => `${v}`, more: 'darker', less: 'lighter' },
+    { kind: 'range', key: 'see', label: 'See-through', note: 'How much of the wall shows through the glass plate behind the picture. More lets more through; less makes the plate darker', min: 10, max: () => 60, hardMax: 60, step: 1, usual: 26, show: (v) => `${v}`, more: 'clearer', less: 'darker' },
     { kind: 'switch', key: 'beam', label: 'Beam', note: 'The fan of light from the emitter to the pane', usual: true },
   ],
 });
@@ -207,15 +209,17 @@ export const HINTS: Readonly<Record<string, string>> = Object.freeze({
   'drivein.floor': 'How strongly the screen\u2019s light falls on the floor',
   'drivein.sign': 'The marquee board under the screen',
   'drivein.neon': 'The neon line round the frame and its glow',
-  'drivein.light': 'A soft light that travels slowly round the line',
+  'drivein.light': 'A light that travels round the line while a video plays',
   'holo.tilt': 'How far the pane turns; 0 faces you',
-  'holo.plate': 'How dark the glass behind the picture is',
+  'holo.see': 'How much of the wall shows through the glass',
   'holo.beam': 'The fan of light from the emitter to the pane',
 });
 
 /** A value read back in plain words: "120 px, your usual", "wider than usual". */
-export function controlWords(c: RangeControl, value: number): string {
+export function controlWords(c: RangeControl, value: number, wish?: number): string {
   const shown = c.show(value);
+  // A stored wish above what the other settings allow now: drawn and shown at the ceiling, and said so.
+  if (wish !== undefined && wish > value) return `${shown}, the most this size allows`;
   if (value === c.usual) return `${shown}, your usual`;
   return `${shown}, ${value > c.usual ? c.more : c.less} than usual`;
 }
@@ -227,12 +231,19 @@ export function resolveTune(t: LookTune): LookTune {
   return { ...t, sky: { ...sky, soft: skySoftEdge(sky.soft, skyBox(sky.size)) }, sun };
 }
 
+/** A live change from the panel: bounded by the control. */
 function clampNum(v: unknown, min: number, max: number, dflt: number): number {
   if (typeof v !== 'number' || !Number.isFinite(v)) return dflt;
   return Math.min(max, Math.max(min, Math.round(v)));
 }
+/** A stored value: in range or discarded (that one field takes its usual value), never clamped to a look nobody chose. */
+function storedNum(v: unknown, min: number, max: number, dflt: number): number {
+  if (typeof v !== 'number' || !Number.isFinite(v)) return dflt;
+  const r = Math.round(v);
+  return r < min || r > max ? dflt : r;
+}
 
-/** Stored settings, each field checked; anything missing, of the wrong type or out of bounds falls back or is clamped. */
+/** Stored settings, each field checked on its own; anything missing, of the wrong type or out of its range is discarded and that field takes its usual value. */
 export function parseTune(raw: string | null): LookTune {
   const out = defaultTune();
   if (!raw || raw.length > 4000) return out;
@@ -251,7 +262,7 @@ export function parseTune(raw: string | null): LookTune {
     const target = out[look] as unknown as Record<string, number | boolean>;
     for (const c of CONTROLS[look]) {
       if (c.kind === 'switch') target[c.key] = typeof r[c.key] === 'boolean' ? (r[c.key] as boolean) : c.usual;
-      else target[c.key] = clampNum(r[c.key], c.min, c.hardMax, c.usual);
+      else target[c.key] = storedNum(r[c.key], c.min, c.hardMax, c.usual);
     }
   }
   return out;
@@ -279,7 +290,7 @@ export function isUsual(look: LookId, t: LookTune): boolean {
   return CONTROLS[look].every((c) => rec[c.key] === c.usual);
 }
 
-/** This look's settings with `patch` applied, each value bounded by its control (the dependent limits included). */
+/** This look's settings with `patch` applied, each value bounded by its control's own range. A limit that depends on another setting is applied where the value is drawn (`resolveTune`), never to what is stored. */
 export function withPatch(t: LookTune, look: LookId, patch: Record<string, number | boolean>): LookTune {
   const next = { ...t, [look]: { ...t[look], ...patch } } as LookTune;
   const rec = next[look] as unknown as Record<string, number | boolean>;
@@ -287,7 +298,7 @@ export function withPatch(t: LookTune, look: LookId, patch: Record<string, numbe
     if (c.kind === 'switch') {
       if (typeof rec[c.key] !== 'boolean') rec[c.key] = c.usual;
     } else {
-      rec[c.key] = clampNum(rec[c.key], c.min, c.max(next), c.usual);
+      rec[c.key] = clampNum(rec[c.key], c.min, c.hardMax, c.usual);
     }
   }
   return next;
@@ -462,9 +473,10 @@ export function tuneVars(look: LookId, tune: LookTune): Vars {
     case 'holo': {
       const d = DEFAULT_TUNE.holo;
       if (t.holo.tilt !== d.tilt) v['--w-rot'] = `${holoRotateY(t)}deg`;
-      if (t.holo.plate !== d.plate) {
-        v['--w-plate-a'] = a3(t.holo.plate / 100);
-        v['--w-plate-b'] = a3(Math.max(0, t.holo.plate / 100 - 0.14));
+      if (t.holo.see !== d.see) {
+        const alpha = (100 - t.holo.see) / 100;
+        v['--w-plate-a'] = a3(alpha);
+        v['--w-plate-b'] = a3(Math.max(0, alpha - 0.14));
       }
       break;
     }

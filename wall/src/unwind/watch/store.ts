@@ -4,6 +4,31 @@ import { parseLink, refKey, type WatchRef } from './links';
 import { driveInMode } from './DriveInFrame';
 import { DRIVE_IN_SCREEN, lookFor, loadLooks, pickLook, saveLooks, type LookId, type LookSettings, type WallRect } from './looks';
 import { lookBox, loadTune, resetLook, saveTune, withPatch, type LookTune } from './lookSettings';
+
+/** A slider's steps update the stage at once but are written to storage at most this often (and on release, blur, settle and hide). */
+export const TUNE_WRITE_MS = 300;
+let tuneTimer: ReturnType<typeof setTimeout> | null = null;
+let tuneDirty = false;
+
+/** Write the settings now if a change waits to be written. */
+export function flushTune(): void {
+  if (tuneTimer !== null) clearTimeout(tuneTimer);
+  tuneTimer = null;
+  if (!tuneDirty) return;
+  tuneDirty = false;
+  saveTune(useWatchStore.getState().tune);
+}
+
+function cancelTuneWrite(): void {
+  if (tuneTimer !== null) clearTimeout(tuneTimer);
+  tuneTimer = null;
+  tuneDirty = false;
+}
+
+function writeTuneSoon(): void {
+  tuneDirty = true;
+  if (tuneTimer === null) tuneTimer = setTimeout(flushTune, TUNE_WRITE_MS);
+}
 import { addSaved, loadSaved, removeSaved, renameSaved, saveSaved, type SavedItem } from './saved';
 import { stopLine, type StopReason } from './stops';
 
@@ -65,7 +90,7 @@ export interface WatchState {
   setMuted: (m: boolean) => void;
   setLooks: (s: LookSettings) => void;
   /** Change settings of one look (each value bounded by its control). */
-  setTune: (look: LookId, patch: Record<string, number | boolean>) => void;
+  setTune: (look: LookId, patch: Record<string, number | boolean>, persist?: 'now' | 'soon') => void;
   /** One look's settings back to its defaults. */
   resetTune: (look: LookId) => void;
   /** The Look switch: set the look for what is on (or, with nothing on, for the first saved item's kind). */
@@ -93,7 +118,10 @@ export const useWatchStore = create<WatchState>((set, get) => ({
   stopped: null,
   editing: null,
   peek: false,
-  load: () => set({ saved: loadSaved(), looks: loadLooks(), tune: loadTune() }),
+  load: () => {
+    cancelTuneWrite();
+    set({ saved: loadSaved(), looks: loadLooks(), tune: loadTune() });
+  },
   setTab: (tab) => {
     if (tab === get().tab) return;
     // Leaving Watch never stops the video: it plays on out of sight (`StageLayer.tsx`).
@@ -135,15 +163,18 @@ export const useWatchStore = create<WatchState>((set, get) => ({
   },
   setPaused: (paused) => set({ paused }),
   setMuted: (muted) => set({ muted }),
-  setTune: (look, patch) => {
-    const tune = withPatch(get().tune, look, patch);
-    saveTune(tune);
-    set({ tune });
+  setTune: (look, patch, persist = 'now') => {
+    set({ tune: withPatch(get().tune, look, patch) });
+    if (persist === 'soon') writeTuneSoon();
+    else {
+      tuneDirty = true;
+      flushTune();
+    }
   },
   resetTune: (look) => {
-    const tune = resetLook(get().tune, look);
-    saveTune(tune);
-    set({ tune });
+    set({ tune: resetLook(get().tune, look) });
+    tuneDirty = true;
+    flushTune();
   },
   setLooks: (looks) => {
     saveLooks(looks);
@@ -217,6 +248,14 @@ export function driveInShow(s: WatchState, place: string | null): DriveInMarquee
   return driveInMarquee(s);
 }
 
+// A page that is hidden or closed writes any settings change still waiting.
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) flushTune();
+  });
+  window.addEventListener('pagehide', flushTune);
+}
+
 // Leaving Unwind (another place, Zen or Dream) closes the sheet; the video plays on out of sight.
 usePlaceStore.subscribe((s) => {
   if (s.active !== 'unwind') {
@@ -227,5 +266,6 @@ usePlaceStore.subscribe((s) => {
 
 /** Tests only: back to a fresh store over whatever local storage holds now. */
 export function resetWatch(): void {
+  cancelTuneWrite();
   useWatchStore.setState({ tab: 'listen', saved: loadSaved(), looks: loadLooks(), tune: loadTune(), playing: null, lastStopped: null, paused: false, muted: false, report: NO_REPORT, needsClick: false, clickHint: false, sheet: false, stopped: null, editing: null, peek: false });
 }

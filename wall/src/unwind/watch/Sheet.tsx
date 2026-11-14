@@ -121,7 +121,6 @@ export function WatchSheet({ initial = 'looks' }: { initial?: 'looks' | 'lines' 
       )}
       <LookTunePanel look={tuneLook} foot={looks.mode === 'kind' ? KIND_FOOT : undefined} />
       <div className="w-sfoot">
-        <span>The Look switch on Watch sets the look too.</span>
         <span className="w-count">
           Saved here: {yt} YouTube, {tw} Twitch
         </span>
