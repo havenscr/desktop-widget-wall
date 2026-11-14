@@ -17,11 +17,11 @@
 //   WALL_CHROME=/path/to/chrome npm --prefix wall run echo-calm
 //   ECHO_CALM_INPUTS=mode=steady,mode=stress&hz=3 ...   (other inputs; `steady` never changes)
 
-import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { runChrome } from './lib/chrome-run.mjs';
 
 const chrome = process.argv.slice(2).find((a) => !a.startsWith('--')) || process.env.WALL_CHROME;
 if (!chrome) {
@@ -98,10 +98,10 @@ try {
   writeFileSync(page, html);
   const inputs = process.env.ECHO_CALM_INPUTS ? process.env.ECHO_CALM_INPUTS.split(',') : ['mode=demo', 'mode=stress&hz=6', 'mode=settle'];
   for (const input of inputs) {
-    const dom = execFileSync(chrome, ['--headless', '--no-sandbox', '--disable-gpu', '--window-size=2560,807', '--dump-dom', `${pathToFileURL(page).href}?${input}`], {
-      encoding: 'utf8',
+    const dom = await runChrome(chrome, ['--headless', '--no-sandbox', '--disable-gpu', '--window-size=2560,807', '--dump-dom', `${pathToFileURL(page).href}?${input}`], {
+      label: input,
       maxBuffer: 256 * 1024 * 1024,
-      stdio: ['ignore', 'pipe', 'ignore'],
+      exitOnFail: true,
     });
     const m = /<pre id="echo-calm">([^<]*)<\/pre>/.exec(dom);
     if (!m) {

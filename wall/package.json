@@ -13,7 +13,8 @@
     "fit:home": "node scripts/home-fit-check.mjs",
     "gallery": "node scripts/gallery.mjs",
     "prod-check": "node scripts/prod-bundle-check.mjs",
-    "echo-calm": "node scripts/echo-calm-check.mjs"
+    "echo-calm": "node scripts/echo-calm-check.mjs",
+    "chrome-run-test": "node scripts/chrome-run-test.mjs"
   },
   "dependencies": {
     "@tabler/icons-react": "^3.51.0",

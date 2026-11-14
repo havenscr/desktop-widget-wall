@@ -633,6 +633,9 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
   layout on purpose and must fail; `-- --self-test` runs every such case and passes only
   if each one failed with the FAIL line for the side it broke. jsdom has no layout, so the unit tests cannot check this; CI does
   not run it either.
+- **Browser time limit** (`wall/scripts/lib/chrome-run.mjs`): the one-shot browser runs of the fit check, `fit:home`
+  and `echo-calm` stop after 45 s (`WALL_CHROME_LIMIT_MS` changes it), kill the whole browser and try again, three tries in all; the
+  gallery restarts its browser once for a state that timed out. `npm --prefix wall run chrome-run-test` proves it (Linux).
 - **State gallery** (`wall/scripts/gallery.mjs`, `npm --prefix wall run gallery` with
   `WALL_CHROME` set to a Chromium binary): renders every screen (Work, Home, Unwind, Meet,
   Zen, Dream and the morning Home camera) in sparse, typical, heavy and broken data states and
