@@ -22,7 +22,7 @@ export interface ScreenRect {
  * seated width: his props are put away while he watches) keeps at least `SEAT_GAP` px from the
  * screen's left edge, and at least `SEAT_CLEARANCE` px from the nearest control at his height on
  * either side. The seat is the rightmost point that keeps both; with the screen at x 1244 and the
- * Look switch ending at x 1084 that is a left edge of 1106 (the owner's chosen picture). A seat
+ * left block ending at x 1084 that is a left edge of 1106 (the owner's chosen picture). A seat
  * further than `SEAT_NEAR` px from the screen is no seat: he does not walk, he watches from where he
  * stands (see `Watt.tsx`).
  */

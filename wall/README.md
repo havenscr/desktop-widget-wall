@@ -1063,7 +1063,7 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
   wholly above the Unwind ridgeline and clear of the clock (a test). With none clear, or a claim
   that says `noMoon`, there is no moon, and its light on the lake goes with it. On Listen the
   Spotify card (`SpotifyCard.tsx`) and the player (`Player.tsx`) claim their drawn boxes, so the
-  moon sits at (760, 352) there, whatever the player shows; on Watch the list card, the left block and the Look switch do. The same claims
+  moon sits at (760, 352) there, whatever the player shows; on Watch the list card and the left block do. The same claims
   always give the same place, so it changes only when a box does, and it is simply drawn at its
   new place on the next frame (a resting still frame is drawn again once for each change; a claim
   made again with the same boxes changes nothing). It shows once the glide to Unwind has finished (it goes as
@@ -1325,9 +1325,9 @@ Watt is also a small pet ("he"), calm and silent (no sound at all):
   - **While the wall records** (`isQuietForRecording()` in `signals/store.ts`) he sits quietly where
     he is: no wander and no idle life, no line of his own, no click noticing, no hop or look he
     starts himself, no notes or beat; the owner can still pet him, open his menu and carry him.
-  - **At the drive-in** (`buddy/audience.ts`): while a show is on (the video playing or paused in the drive-in look, with its stage in sight on Unwind's Watch tab: a video playing out of sight is parked and is not a show), he walks to a seat just left of the screen rectangle the selector gives (`driveInAudience`): his seated sprite (108 px, props put away) keeps at least 30 px from the screen's left edge and at least 22 px from the nearest control at his height on either side, and the seat is the rightmost point that does (the screen at x 1244 and the Look switch ending at x 1084 give a left edge of 1106). The controls are measured from the layout boxes (a faded control still takes its place) once for the screen and layout, and again only when the window resizes or something appears in or goes from the page; the answer, a seat or none, is kept. The seat has its own ground (`seatGround`); `WATCH_GROUND`, which bounds his wander, stays at x 1020. With no seat within 300 px of the screen he does not walk: he sits down where he stands, turned to it. Reduced motion: simply there. He sits with one sign of life every 20 to 40 seconds (a blink, an ear, a head dip) and looks round once on a pause; no bubble, no click notice, no headphones; the show keeps him up past bedtime, and his frame loop rests on one timer. He may stand up to 24 px into the tower's left foot and stay (the chosen picture has him 19 px in). Nothing depends on the Look switch existing.
+  - **At the drive-in** (`buddy/audience.ts`): while a show is on (the video playing or paused in the drive-in look, with its stage in sight on Unwind's Watch tab: a video playing out of sight is parked and is not a show), he walks to a seat just left of the screen rectangle the selector gives (`driveInAudience`): his seated sprite (108 px, props put away) keeps at least 30 px from the screen's left edge and at least 22 px from the nearest control at his height on either side, and the seat is the rightmost point that does (the screen at x 1244 and nothing of the left block at his height give a left edge of 1106). The controls are measured from the layout boxes (a faded control still takes its place) once for the screen and layout, and again only when the window resizes or something appears in or goes from the page; the answer, a seat or none, is kept. The seat has its own ground (`seatGround`); `WATCH_GROUND`, which bounds his wander, stays at x 1020. With no seat within 300 px of the screen he does not walk: he sits down where he stands, turned to it. Reduced motion: simply there. He sits with one sign of life every 20 to 40 seconds (a blink, an ear, a head dip) and looks round once on a pause; no bubble, no click notice, no headphones; the show keeps him up past bedtime, and his frame loop rests on one timer. He may stand up to 24 px into the tower's left foot and stay (the chosen picture has him 19 px in). Nothing depends on the controls under the left block: there are none.
   - While the drive-in's marquee waits (loading, a refused autoplay's click, a Twitch start hint) there is no show: he does not walk to the seat; a show he is already at keeps him seated through a wait inside it (the next item of a playlist), and a video that ended sends him home. When a show ends he walks back to his Watch spot. Order, first match wins (`showRole`, one table in `audience.test.ts`): no show, a video that ended or has not started (off); a call, reading with him (both send him back); the wall recording (he sits where he is, no walk); his menu open (he stays put while it is open); a nap he was sent to (he finishes it lying where he is, then goes to the show if it is still on); the owner's hand in this show (set down, picked up, Come here, Stay: he watches from where he was put); then watching. The leave banner acts through his ground, and on Unwind it takes none; bedtime does not apply while a show is on. The owner's hand is tied to one show (`ShowTrack`): it survives a call, reading and recording inside that show and is cleared when the selector leaves it (the video stops or ends, the owner leaves the tab or Unwind), so the next show starts free.
-  - The fit check holds his seat 30 px clear of the screen, 22 px clear of every control at his height (every `.w-ctl`, the Look switch, the list, the Now block, the banner), within 40 px of the seat the rule gives, on the ground line, and no more than 24 px into the tower's painted parts at his height; its self-test breaks (`watt-seat`, `watt-spot`, `watt-tower`, `watt-ground`) each fail for their own reason. The gallery's `drag:` step sets him down during a show.
+  - The fit check holds his seat 30 px clear of the screen, 22 px clear of every control at his height (every `.w-ctl`, the list, the Now block, the banner), within 40 px of the seat the rule gives (a left edge of 1106 with the screen at 1244 and nothing of the block at his height), on the ground line, and no more than 24 px into the tower's painted parts at his height; its self-test breaks (`watt-seat`, `watt-spot`, `watt-seat1106`, `watt-tower`, `watt-ground`) each fail for their own reason. The gallery's `drag:` step sets him down during a show.
   - **He notices clicks.** One passive `pointerdown` listener on the window (capture, so it sees
     clicks a control stops; it never prevents or stops anything, and does a few comparisons and
     starts a reaction; no polling, no timer while idle). A click anywhere on the wall that is not
@@ -1433,14 +1433,19 @@ there, still playing, when the owner comes back (see "The stage layer" below).
   Open on Twitch. An auto-mix playlist (an id starting `RD`) passes the id check but may not
   play in the embed; Open in YouTube is the way out. Video quality cannot be set from the wall:
   an embedded player picks it from its size.
+- **The left block** (`.w-now` in `Watch.tsx`): starts at wall y 30, the line Listen's player
+  starts at, so nothing jumps between the two tabs; wall x 624 to 1084. Kind line (y 30), the
+  title (up to two lines), "Playing on the wall", the control row, the time bar. There is no
+  Look switch under it and no row of its own for the gear: the looks are chosen in the gear's
+  sheet (five picture tiles, or one choice per kind) and in the Tools drawer's Video look.
 - **The control row** (`Watch.tsx`, in the left block under the title, the left wing's small
-  round `.rd` controls): Previous and Next (on only for a playlist the player reports), Play or
-  Pause, Mute, Stop, and Open in YouTube (or Open on Twitch); under it the elapsed time, a thin
-  bar (a click or the arrow keys seek) and the length, or "Live" for a stream.
-- **The Look switch** (`LookSwitch` in `Watch.tsx`): the five looks as one segmented control
-  in a fixed place under the left block (one box, 500 by 46 at wall 624, 444, ending at x 1084, the same in every look,
-  playing or not; never on the video; its segments take their own width and share the rest). With one look for everything it sets that look; with a look per kind it sets the
-  look of the kind on (its hover tip and name say which). Arrow keys move.
+  round `.rd` controls, 40 px): Previous and Next (on only for a playlist the player reports),
+  Play or Pause, Mute, Stop, Open in YouTube (or Open on Twitch), and the gear, the row's last
+  button (40 px, flush with the end of the time bar): "How video is shown", which opens the sheet
+  on its Looks side. The gear fades and returns with the row. With nothing on, the row is the
+  Play button for the first saved item and the gear. Under the row the elapsed time, a thin
+  bar (a click or the arrow keys seek) and the length, or "Live" for a stream. Closing the sheet
+  with Escape or its cross puts the focus back on the gear.
 - **For the buddy**: `driveInAudience(state)` in `store.ts` (usable as a store selector) is
   null, or, while something is on in the drive-in look, the screen's rectangle in wall pixels
   (`DRIVE_IN_SCREEN` in `looks.ts`), so the sheep can sit in front of it and watch. The fit
@@ -1494,7 +1499,7 @@ there, still playing, when the owner comes back (see "The stage layer" below).
   all); the whole sky and the sun (`behindTheLand`) also give `.w-front`, after the picture, where the
   horizon mounts its front canvas, and their stage sits at z-index -1 in the main area's own
   layer group (`.w-layered`), under every control and line of text. While the player waits for a
-  click, the sun comes forward (`layeredNow`). The left block, the Look switch and the Watch list
+  click, the sun comes forward (`layeredNow`). The left block and the Watch list
   card claim their own boxes as keep-clear (`useSkyKeepClear`). The look's claim is held only while
   the stage is in sight; the keep-clear claims go with the Watch panel (Listen, nothing on, another
   place, Zen). The gear on Watch opens a sheet over the right wing on its Looks side; the gear on
@@ -1504,7 +1509,7 @@ there, still playing, when the owner comes back (see "The stage layer" below).
   the sheet to its content. The Looks side:
   one look for everything (five picture tiles), or one each for videos and playlists, live
   streams and Twitch (five choices a row), at 540 px (`wall2-watch-look`, checked on read;
-  values stored before the newer looks still read the same). The Look switch sets it too.
+  values stored before the newer looks still read the same).
 - **The stage layer** (`StageLayer.tsx`, watch behaviour): the video's stage (the frame in its
   look, with the player's message bridge) is not part of Unwind. The screens frame
   (`screens/Frame.tsx`) mounts `WatchStageLayer` once in `.top`, Unwind's own box, for every
@@ -1527,10 +1532,10 @@ there, still playing, when the owner comes back (see "The stage layer" below).
   Tools drawer is a drawer over the same place: the video stays where it is under it, and the
   drawer stacks above the layer and its pointer band. Music from Listen and a video can play together; nothing mixes or ducks.
 - **The controls fade** (5A, `useControlsFade` in `Watch.tsx`): while a video plays, 3 seconds
-  (`CTL_REST_MS`) after the pointer leaves the left block, the Look row and a 72 px band over the
+  (`CTL_REST_MS`) after the pointer leaves the left block and a 72 px band over the
   video's lower edge (`EdgeBand`, the wall's own transparent box beside the frame, never over
   it), and keyboard focus leaves the controls (a click leaves the clicked button without focus once the pointer is gone), the kind line, the "Playing on the wall" line, the play
-  row, the time bar and the Look switch fade to nothing (250 ms; at once under reduced motion)
+  row (the gear is its last button) and the time bar fade to nothing (250 ms; at once under reduced motion)
   and take no pointer; the title stays at half strength with no glow. Pointer, focus or Tab
   brings them back at once. They never fade while paused or ended, with nothing on, or while a
   notice shows ("Click the video to start", "Not started? Click the video", "Could not open the

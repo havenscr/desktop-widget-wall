@@ -18,7 +18,7 @@ import { useToolsStore } from '../../tools/store';
 import { tip } from '../../ui/HoverTip';
 import { DriveInFrame } from './DriveInFrame';
 import { kindName, validRef, type WatchKind, type WatchRef } from './links';
-import { LOOKS, lookFor, lookTargetName, type LookId } from './looks';
+import { lookFor } from './looks';
 import { playerLink } from './PlayerFrame';
 import { useWatchSky } from './StageLayer';
 import { useWatchStore } from './store';
@@ -50,20 +50,34 @@ export async function openInBrowser(ref: WatchRef, at?: number | null): Promise<
   }
 }
 
-/** The gear beside the tabs: opens the settings sheet for how video is shown. */
+/**
+ * The gear: the last button of the left block's row. It opens the settings sheet on its Looks
+ * side. When the sheet closes and nothing else took the focus (Escape, its cross), the focus
+ * comes back here, so the keyboard carries on from the same button.
+ */
 export function WatchGear() {
   const open = useWatchStore((s) => s.sheet);
+  const ref = useRef<HTMLButtonElement>(null);
+  const was = useRef(open);
+  useEffect(() => {
+    const closed = was.current && !open;
+    was.current = open;
+    if (!closed) return;
+    const a = document.activeElement;
+    if (!a || a === document.body || a === document.documentElement) ref.current?.focus();
+  }, [open]);
   return (
     <button
+      ref={ref}
       type="button"
       className={`w-gear${open ? ' on' : ''}`}
       aria-label="How video is shown"
-      title="How video is shown"
       aria-expanded={open}
       aria-haspopup="dialog"
+      {...tip('How video is shown')}
       onClick={() => useWatchStore.getState().setSheet(!open)}
     >
-      <IconSettings size={26} aria-hidden="true" />
+      <IconSettings size={22} aria-hidden="true" />
     </button>
   );
 }
@@ -82,14 +96,6 @@ function EmptyDriveIn() {
   );
 }
 
-/** watch behaviour: the handlers a block that wakes the faded controls takes (`useControlsFade`). */
-interface ZoneHandlers {
-  onPointerEnter: () => void;
-  onPointerLeave: (e: PointerEvent<HTMLElement>) => void;
-  onFocus: (e: FocusEvent<HTMLElement>) => void;
-  onBlur: (e: FocusEvent<HTMLElement>) => void;
-}
-
 /** "1:05" or "1:02:03". */
 export function clock(sec: number): string {
   const t = Math.max(0, Math.floor(sec));
@@ -97,57 +103,6 @@ export function clock(sec: number): string {
   const m = Math.floor((t % 3600) / 60);
   const ss = String(t % 60).padStart(2, '0');
   return h ? `${h}:${String(m).padStart(2, '0')}:${ss}` : `${m}:${ss}`;
-}
-
-/**
- * The Look switch: the five looks in one segmented control, always in the same place under the
- * left block (never on the video), whether or not something plays. With one look for
- * everything it sets that look; with a look per kind it sets the look of the kind on (or, with
- * nothing on, of the first saved item), and its hover tip says which. Arrow keys move.
- */
-export function LookSwitch({ kind, zone }: { kind: WatchKind; zone?: ZoneHandlers }) {
-  const looks = useWatchStore((s) => s.looks);
-  const current = lookFor(looks, kind);
-  const group = lookTargetName(looks, kind);
-  const refs = useRef<(HTMLButtonElement | null)[]>([]);
-  // sky layers: the moon keeps clear of the switch.
-  const [bar, setBar] = useState<HTMLDivElement | null>(null);
-  useSkyKeepClear('watch-look', bar);
-  const pick = (id: LookId) => useWatchStore.getState().pickLook(id);
-  const onKey = (e: KeyboardEvent<HTMLDivElement>) => {
-    const step = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 0;
-    if (!step) return;
-    e.preventDefault();
-    const i = LOOKS.findIndex((l) => l.id === current);
-    const next = LOOKS[(i + step + LOOKS.length) % LOOKS.length].id;
-    pick(next);
-    refs.current[LOOKS.findIndex((l) => l.id === next)]?.focus();
-  };
-  const where = group ? `Sets the look for ${group.toLowerCase()} (a look per kind is on in the settings).` : 'Sets the look for every video.';
-  return (
-    <div ref={setBar} className="w-lookbar w-seg" role="radiogroup" aria-label={group ? `Look, for ${group.toLowerCase()}` : 'Look'} onKeyDown={onKey} {...zone}>
-      {LOOKS.map((l, i) => {
-        const on = l.id === current;
-        return (
-          <button
-            key={l.id}
-            ref={(el) => {
-              refs.current[i] = el;
-            }}
-            type="button"
-            role="radio"
-            aria-checked={on}
-            tabIndex={on ? 0 : -1}
-            className={on ? 'on' : ''}
-            {...tip(`${l.name}: ${l.hint} ${where}`)}
-            onClick={() => pick(l.id)}
-          >
-            {l.name}
-          </button>
-        );
-      })}
-    </div>
-  );
 }
 
 /** The position: elapsed, a thin bar (a click seeks) and the length; "Live" for a stream with no length. */
@@ -188,11 +143,13 @@ function Position({ live }: { live: boolean }) {
         aria-valuemax={duration}
         aria-valuenow={time}
         aria-valuetext={`${clock(time)} of ${clock(duration)}`}
+        style={{ ['--f' as string]: frac.toFixed(4) }}
         {...tip('Click to jump there; arrow keys move 10 seconds.')}
         onClick={seek}
         onKeyDown={nudge}
       >
         <b style={{ width: `${(frac * 100).toFixed(2)}%` }} />
+        <i className="w-mark" aria-hidden="true" />
       </div>
       <span className="w-t">{clock(duration)}</span>
     </>
@@ -291,8 +248,9 @@ function Controls({ item, openFailed, setOpenFailed }: { item: WatchRef & { labe
         </button>
         <button type="button" className="w-open" {...tip(`Opens this ${kindName(item.kind).toLowerCase()} on its own site in your web browser`)} onClick={() => void open()}>
           <IconExternalLink size={18} aria-hidden="true" />
-          {label}
+          <span className="w-open-t">{label}</span>
         </button>
+        <WatchGear />
       </div>
       <div className="w-time">{line}</div>
     </>
@@ -328,15 +286,15 @@ function somethingOpen(): boolean {
 
 /**
  * watch behaviour (5A): whether the left block's controls are at rest (faded out). They may rest
- * only while `canRest` (something plays, not paused, no notice showing); then one timer puts them
- * to rest `CTL_REST_MS` after the pointer left the left block, the Look row and the band on the
+ * only while `canRest` (something plays, not paused, no notice showing, the sheet closed); then one timer puts them
+ * to rest `CTL_REST_MS` after the pointer left the left block (the gear is its row's last button) and the band on the
  * video's lower edge (`peek`), and focus left the controls. Pointer, focus or a Tab press brings
  * them back at once. No timer runs while they cannot rest; the timer is cleared on unmount.
  */
 function useControlsFade(canRest: boolean, peek: boolean) {
   const [rest, setRest] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const hold = useRef({ now: false, look: false, focus: false, peek: false, can: false });
+  const hold = useRef({ now: false, focus: false, peek: false, can: false });
   hold.current.peek = peek;
   hold.current.can = canRest;
   const wake = useCallback(() => {
@@ -344,7 +302,7 @@ function useControlsFade(canRest: boolean, peek: boolean) {
     timer.current = undefined;
     setRest(false);
     const h = hold.current;
-    if (!h.can || h.now || h.look || h.focus || h.peek) return;
+    if (!h.can || h.now || h.focus || h.peek) return;
     timer.current = setTimeout(() => {
       timer.current = undefined;
       setRest(true);
@@ -352,13 +310,13 @@ function useControlsFade(canRest: boolean, peek: boolean) {
   }, []);
   useEffect(() => wake(), [canRest, peek, wake]);
   useEffect(() => () => clearTimeout(timer.current), []);
-  const zone = (key: 'now' | 'look') => ({
+  const zone = () => ({
     onPointerEnter: () => {
-      hold.current[key] = true;
+      hold.current.now = true;
       wake();
     },
     onPointerLeave: (e: PointerEvent<HTMLElement>) => {
-      hold.current[key] = false;
+      hold.current.now = false;
       // A button the mouse clicked keeps focus after the pointer leaves; let it go so it does not hide a live control.
       const el = document.activeElement;
       if (el instanceof HTMLElement && e.currentTarget.contains(el) && !keyboardFocus(el)) el.blur();
@@ -372,7 +330,7 @@ function useControlsFade(canRest: boolean, peek: boolean) {
     },
     onBlur: (e: FocusEvent<HTMLElement>) => {
       const to = e.relatedTarget as Element | null;
-      if (to && to.closest('.w-now, .w-lookbar')) return;
+      if (to && to.closest('.w-now')) return;
       hold.current.focus = false;
       wake();
     },
@@ -410,7 +368,7 @@ function useWatchKeys(on: boolean, youtube: boolean, wake: () => void) {
       }
       if (!youtube) return;
       const onPage = !t || t === document.body || t === document.documentElement;
-      const inBlock = t !== null && t.closest('.w-now, .w-lookbar, .w-layer') !== null;
+      const inBlock = t !== null && t.closest('.w-now, .w-layer') !== null;
       if (!onPage && !inBlock) return;
       if (somethingOpen()) return;
       e.preventDefault();
@@ -426,7 +384,7 @@ function useWatchKeys(on: boolean, youtube: boolean, wake: () => void) {
 
 /**
  * The Watch tab's centre: what is on (kind, label, the wall's own controls and the position)
- * on the left under the tabs, and the Look switch in its fixed place under that. The video itself
+ * on the left, starting at the line Listen's player starts at, with the gear (how video is shown) as the last button of its row. The video itself
  * is drawn by the stage layer (`StageLayer.tsx`), which lives on every place. With nothing on it
  * says what to do and offers the first saved item. While a video plays and he is not using them,
  * the controls fade out after `CTL_REST_MS` and only a quiet title stays (5A).
@@ -439,6 +397,7 @@ export function WatchPanel() {
   const needsClick = useWatchStore((s) => s.needsClick);
   const ended = useWatchStore((s) => s.report.ended);
   const stopped = useWatchStore((s) => s.stopped);
+  const sheetOpen = useWatchStore((s) => s.sheet);
   const peek = useWatchStore((s) => s.peek);
   const inCall = useSignalStore((s) => s.call !== null);
   const st = useWatchStore.getState();
@@ -447,7 +406,8 @@ export function WatchPanel() {
   useSkyKeepClear('watch-now', nowEl);
   const [openFailed, setOpenFailed] = useState(false);
   // Notices never hide: the click line, the hint line and an open failure keep the block shown.
-  const canRest = playing !== null && !paused && !ended && !needsClick && !openFailed;
+  // So does the sheet the gear opened: the row (and the lit gear) stays while it is open.
+  const canRest = playing !== null && !paused && !ended && !needsClick && !openFailed && !sheetOpen;
   const { rest, wake, zone } = useControlsFade(canRest, peek);
   useWatchKeys(playing !== null, playing !== null && playing.kind !== 'twitch', wake);
 
@@ -463,20 +423,22 @@ export function WatchPanel() {
             {stopped ? `${stopped} ` : ''}
             {first ? 'Pick something from your list, or paste another link there.' : 'Paste a YouTube or Twitch link into the list on the right to save it here.'}
           </div>
-          {first ? (
-            <button
-              type="button"
-              className="u-again w-start"
-              disabled={inCall}
-              title={inCall ? 'Video waits until the call ends' : `Play ${first.label}`}
-              onClick={() => st.play(first)}
-            >
-              <IconPlayerPlayFilled size={24} aria-hidden="true" />
-              <span className="u-ell">Play {first.label}</span>
-            </button>
-          ) : null}
+          <div className="w-ctl w-idle">
+            {first ? (
+              <button
+                type="button"
+                className="u-again w-start"
+                disabled={inCall}
+                title={inCall ? 'Video waits until the call ends' : `Play ${first.label}`}
+                onClick={() => st.play(first)}
+              >
+                <IconPlayerPlayFilled size={24} aria-hidden="true" />
+                <span className="u-ell">Play {first.label}</span>
+              </button>
+            ) : null}
+            <WatchGear />
+          </div>
         </div>
-        <LookSwitch kind={kind} />
         {lookFor(looks, kind) === 'drivein' ? <EmptyDriveIn /> : null}
       </div>
     );
@@ -486,7 +448,7 @@ export function WatchPanel() {
   const ctl = rest ? 'rest' : 'shown';
   return (
     <div className="w-panel" role="tabpanel" id={WATCH_PANEL_ID} aria-labelledby={WATCH_TAB_ID} data-state="playing" data-ctl={ctl}>
-      <div className="w-now" ref={setNowEl} data-ctl={ctl} {...zone('now')}>
+      <div className="w-now" ref={setNowEl} data-ctl={ctl} {...zone()}>
         <span className="u-k u-src">{kindName(playing.kind)}</span>
         <div className="w-title" title={playing.label}>
           {playing.label}
@@ -496,7 +458,6 @@ export function WatchPanel() {
         </div>
         <Controls item={playing} openFailed={openFailed} setOpenFailed={setOpenFailed} />
       </div>
-      <LookSwitch kind={playing.kind} zone={zone('look')} />
     </div>
   );
 }

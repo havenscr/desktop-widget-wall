@@ -9,13 +9,13 @@ import { UnwindView } from './testView';
 import { useSignalStore } from '../../signals/store';
 import { usePlaceStore } from '../../state/places';
 import { resetLastPlayed } from '../lastPlayed';
-import { DEFAULT_LOOKS, HOLO_PANE, LOOKS, LOOKS_KEY, LOOK_BOXES, behindTheLand, isLook, layeredNow, loadLooks, ownsTheMoonSky, parseLooks, pickLook } from './looks';
+import { DEFAULT_LOOKS, HOLO_PANE, LOOKS, LOOKS_KEY, LOOK_BOXES, behindTheLand, isLook, layeredNow, loadLooks, ownsTheMoonSky, parseLooks } from './looks';
 import { BEAM_CLEAR, EMITTER, HOLO_TILT, HologramEmitter, beamClip, paneQuad } from './HologramStage';
 import { SAVED_KEY } from './saved';
 import { resetWatch, useWatchStore } from './store';
 
-// The Hologram, the fifth look: stored and parsed like the others, offered in the Look switch
-// (five segments, one lit, arrow keys), drawn as a plate and an emitter under a tilted stage, in front
+// The Hologram, the fifth look: stored and parsed like the others, offered in the gear's sheet
+// (five tiles, one lit), drawn as a plate and an emitter under a tilted stage, in front
 // of the land with no front layer, and the moon keeps out of its box.
 const V = 'Ab3dEfGh1jK';
 const THREE = [
@@ -76,7 +76,7 @@ describe('the Hologram as a stored look', () => {
     expect(parseLooks(kind)).toEqual({ mode: 'kind', all: 'holo', video: 'holo', live: 'sky', twitch: 'drivein' });
     expect(parseLooks(JSON.stringify({ mode: 'one', all: 'hologram' })).all).toBe(DEFAULT_LOOKS.all);
     expect(parseLooks(JSON.stringify({ mode: 'one', all: 'holo', video: 'nope' }))).toMatchObject({ all: 'holo', video: DEFAULT_LOOKS.video });
-    useWatchStore.getState().setLooks(pickLook(DEFAULT_LOOKS, 'video', 'holo'));
+    useWatchStore.getState().setLooks({ ...DEFAULT_LOOKS, all: 'holo' });
     expect(parseLooks(localStorage.getItem(LOOKS_KEY)).all).toBe('holo');
     expect(loadLooks().all).toBe('holo');
   });
@@ -91,39 +91,34 @@ describe('the Hologram as a stored look', () => {
   });
 });
 
-describe('the Look switch with five segments', () => {
-  it('shows five radios, exactly one selected, and the arrow keys walk all five and wrap', async () => {
+describe('the gear sheet with five looks', () => {
+  it('shows five tiles, exactly one selected, and no Look switch on the page', async () => {
     setup('feather');
     render(<UnwindView />);
     await flush();
-    const group = () => screen.getByRole('radiogroup', { name: 'Look' });
+    expect(document.querySelector('.w-lookbar')).toBeNull();
+    await act(async () => screen.getByRole('button', { name: 'How video is shown' }).click());
+    const group = () => screen.getByRole('radiogroup', { name: 'Look for everything' });
     const radios = () => [...group().querySelectorAll<HTMLElement>('[role=radio]')];
     expect(radios().map((r) => r.textContent)).toEqual(['Feathered', 'Whole sky', 'The sun', 'Drive-in', 'Hologram']);
     const lit = () => radios().filter((r) => r.getAttribute('aria-checked') === 'true').map((r) => r.textContent);
     expect(lit()).toEqual(['Feathered']);
-    const seen: string[] = [];
-    for (let i = 0; i < 5; i++) {
-      await act(async () => {
-        group().dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
-      });
-      expect(lit().length).toBe(1);
-      seen.push(lit()[0]!);
-    }
-    expect(seen).toEqual(['Whole sky', 'The sun', 'Drive-in', 'Hologram', 'Feathered']);
-    await act(async () => {
-      group().dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
-    });
+    await act(async () => within(group()).getByRole('radio', { name: /Hologram/ }).click());
     expect(lit()).toEqual(['Hologram']);
     expect(document.querySelector('.w-stage')?.getAttribute('data-look')).toBe('holo');
   });
 
-  it('keeps one box in every look and with nothing playing (its rule is fixed in the stylesheet)', () => {
-    const r = rule('.w-lookbar');
-    expect(r).toMatch(/left: 460px/);
-    expect(r).toMatch(/width: 500px/);
-    expect(r).toMatch(/height: 46px/);
-    // Nothing look-specific restyles the switch's box.
-    expect(css).not.toMatch(/\.w-holo[^{]*\.w-lookbar\s*\{/);
+  it('keeps the left block at wall y 30 and the gear one of the row\'s 40 px buttons (the rules are fixed in the stylesheet)', () => {
+    expect(rule('.w-now')).toMatch(/left: 500px/);
+    expect(rule('.w-now')).toMatch(/top: 10px/);
+    expect(rule('.w-ctl .rd')).toMatch(/width: 40px/);
+    expect(rule('.w-ctl .rd')).toMatch(/height: 40px/);
+    expect(rule('.w-gear')).toMatch(/width: 40px/);
+    expect(rule('.w-gear')).toMatch(/height: 40px/);
+    expect(rule('.w-gear')).toMatch(/margin-left: auto/);
+    // The Look switch's rules are gone, and nothing look-specific restyles the row.
+    expect(css).not.toMatch(/w-lookbar/);
+    expect(css).not.toMatch(/\.w-holo[^{]*\.w-ctl\s*\{/);
   });
 });
 
