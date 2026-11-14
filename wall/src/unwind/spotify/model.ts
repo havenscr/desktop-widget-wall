@@ -37,7 +37,7 @@ export function resetListenSource(): void {
 }
 
 /** What went wrong with a Spotify call, from the bridge's error text. */
-export type SpotifyProblem = 'notsetup' | 'needsSignIn' | 'busy' | 'nodevice' | 'down' | 'failed';
+export type SpotifyProblem = 'notsetup' | 'needsSignIn' | 'busy' | 'nodevice' | 'notYours' | 'gone' | 'connection' | 'refused' | 'down' | 'failed';
 
 export function spotifyProblem(e: unknown): SpotifyProblem {
   const text = (e instanceof Error ? e.message : typeof e === 'string' ? e : '').toLowerCase();
@@ -45,6 +45,10 @@ export function spotifyProblem(e: unknown): SpotifyProblem {
   if (text.includes('sign in')) return 'needsSignIn';
   if (text.includes('busy')) return 'busy';
   if (text.includes('no device')) return 'nodevice';
+  if (text.includes('not yours')) return 'notYours';
+  if (text.includes('no longer offered')) return 'gone';
+  if (text.includes('no connection')) return 'connection';
+  if (text.includes('refused')) return 'refused';
   if (text.includes('down')) return 'down';
   return 'failed';
 }
@@ -60,6 +64,14 @@ export function problemLine(p: SpotifyProblem): string {
       return 'Spotify is busy, try in a minute.';
     case 'nodevice':
       return 'Open Spotify on this PC first.';
+    case 'notYours':
+      return 'Spotify only lists the songs of playlists you own. Play it whole.';
+    case 'gone':
+      return 'Spotify no longer offers this to the wall.';
+    case 'connection':
+      return 'No connection to Spotify.';
+    case 'refused':
+      return 'Spotify refused this list.';
     case 'down':
       return 'Spotify is not answering right now.';
     default:
@@ -69,7 +81,7 @@ export function problemLine(p: SpotifyProblem): string {
 
 /** The one line after a play that did not start. */
 export function playProblemLine(p: SpotifyProblem): string {
-  if (p === 'nodevice') return 'Open Spotify on this PC first, then try again.';
+  if (p === 'nodevice') return 'Spotify opened but did not show up as a player. Press Play in Spotify once, then try again.';
   if (p === 'busy') return 'Spotify is busy, try in a minute.';
   if (p === 'needsSignIn') return 'Sign in to Spotify in Tools first.';
   return 'Spotify did not start it.';
