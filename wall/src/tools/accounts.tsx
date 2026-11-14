@@ -35,12 +35,12 @@ function useOpenStatus(opened: number): OpenStatusState {
 }
 
 /** One account: an icon, its name, one line of state (amber when it needs attention) and at most one button. */
-function Row({ icon, name, line, tone = 'plain', hover, account, children }: { icon: ReactNode; name: string; line: string; tone?: Tone; hover?: string; account?: string; children?: ReactNode }) {
+function Row({ icon, name, line, tone = 'plain', hover, account, wrap, children }: { icon: ReactNode; name: string; line: string; tone?: Tone; hover?: string; account?: string; wrap?: boolean; children?: ReactNode }) {
   return (
     <li className="tools-row tools-acct" data-account={account} {...(hover ? hoverCard(hover) : {})}>
       <span className="tools-ico">{icon}</span>
       <span className="tools-name">{name}</span>
-      <span className={tone === 'bad' ? 'tools-line bad' : 'tools-line'}>{line}</span>
+      <span className={['tools-line', tone === 'bad' ? 'bad' : '', wrap ? 'two' : ''].filter(Boolean).join(' ')}>{line}</span>
       {children}
     </li>
   );
@@ -372,8 +372,8 @@ function YoutubeSetup({ onSaved, onCancel, onEscape, canForget }: { onSaved: () 
 
 function YoutubeRow({ yt, blocked }: { yt: ReturnType<typeof useYoutubeAccount>; blocked: boolean }) {
   const icon = <IconBrandYoutube size={22} aria-hidden="true" />;
-  const row = (line: string, tone: Tone, hover: string | undefined, buttons: ReactNode) => (
-    <Row icon={icon} name="YouTube" line={line} tone={tone} hover={hover} account="youtube">
+  const row = (line: string, tone: Tone, hover: string | undefined, buttons: ReactNode, wrap = false) => (
+    <Row icon={icon} name="YouTube" line={line} tone={tone} hover={hover} account="youtube" wrap={wrap}>
       {buttons}
     </Row>
   );
@@ -399,7 +399,7 @@ function YoutubeRow({ yt, blocked }: { yt: ReturnType<typeof useYoutubeAccount>;
   }
   // A sign-in is stored but the client is gone (the file was moved): only Sign out helps.
   if (s.reason === 'setup missing') {
-    return row('Signed in, setup missing', 'bad', 'The saved setup is gone. Sign out, then set it up again.', signOutButton);
+    return row('Signed in, setup missing', 'bad', 'The saved setup is gone. Sign out, then set it up again.', signOutButton, true);
   }
   if (!s.setup) return row('Not set up', 'plain', 'Needs a Google Cloud Desktop app client. Setup takes about ten minutes, once.', yt.editing ? null : setUp(true));
   if (s.signedIn) return row('Signed in', 'plain', undefined, signOutButton);

@@ -147,6 +147,11 @@
 .tools-note.bad {
   color: var(--amber);
 }
+.tools-line.two {
+  white-space: normal;
+  line-height: 1.15;
+  text-overflow: clip;
+}
 .tools-line.one {
   display: block;
 }

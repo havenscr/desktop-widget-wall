@@ -406,7 +406,7 @@ state('work', 'tools: YouTube could not check', 'youtube=down&tools=1');
 state('work', 'tools: YouTube signed in, setup missing', 'youtube=missing&tools=1');
 state('work', 'tools: YouTube setup unreadable', 'youtube=unreadable&tools=1');
 state('work', 'tools: YouTube waiting after a reload', 'youtube=reloaded&tools=1');
-add('work', 'tools: YouTube setup broken, form open', url('work', TYPICAL_AT, 'youtube=brokenout&tools=1'), true, `${YT_ROW} .tools-btn`);
+add('work', 'tools: YouTube refused setup, form open', url('work', TYPICAL_AT, 'youtube=brokenout&tools=1'), true, `${YT_ROW} .tools-btn`);
 add('work', 'tools: YouTube sign-in refused note', url('work', TYPICAL_AT, 'youtube=refuse&tools=1'), true, `${YT_ROW} .tools-btn.cy`);
 state('home', 'tools: open', 'tools=1');
 state('unwind', 'tools: open', 'tools=1');
@@ -762,7 +762,7 @@ const EXPECT = [
   ['work', 'tools: YouTube signed in, setup missing', ['YouTube', 'Signed in, setup missing', 'Sign out']],
   ['work', 'tools: YouTube setup unreadable', ['Setup broken', 'The saved setup could not be read. Set it up again.']],
   ['work', 'tools: YouTube waiting after a reload', ['YouTube', 'Waiting for the browser', 'Cancel']],
-  ['work', 'tools: YouTube setup broken, form open', ['Client ID', 'Client secret', 'Save', '!Google refused this setup']],
+  ['work', 'tools: YouTube refused setup, form open', ['Client ID', 'Client secret', 'Save', '!Google refused this setup']],
   ['work', 'tools: YouTube sign-in refused note', ['YouTube sign-in was refused']],
   ['home', 'tools: open', ['Accounts', 'Keys file']],
   ['unwind', 'tools: open', ['Accounts', 'Keys file']],

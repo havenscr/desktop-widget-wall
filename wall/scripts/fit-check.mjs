@@ -550,7 +550,7 @@ const TOOLS_VARIANTS = [
   ...[['not set up', 'off'], ['signed out', 'out'], ['signed in', 'in'], ['setup broken, said in the note', 'broken'], ['sign in again', 'again'], ['could not check', 'down'], ['signed in, setup missing', 'missing'], ['setup unreadable', 'unreadable'], ['waiting after a reload', 'reloaded']].map(([n, k]) => tools(`YouTube ${n}`, `${work('3')}&youtube=${k}&tools=1`)),
   { name: 'Tools, YouTube waiting for the browser', q: `${work('3')}&youtube=waiting&tools=1`, click: YT_ROW + ' .tools-btn.cy', checks: TOOLS, viewportOnly: true },
   { name: 'Tools, YouTube setup form open', q: `${work('3')}&youtube=off&tools=1`, click: YT_ROW + ' .tools-btn', checks: TOOLS, viewportOnly: true },
-  { name: 'Tools, YouTube setup broken, form open', q: `${work('3')}&youtube=brokenout&tools=1`, click: YT_ROW + ' .tools-btn', checks: TOOLS, viewportOnly: true },
+  { name: 'Tools, YouTube refused setup, form open', q: `${work('3')}&youtube=brokenout&tools=1`, click: YT_ROW + ' .tools-btn', checks: TOOLS, viewportOnly: true },
   { name: 'Tools, YouTube change setup form open', q: `${work('3')}&youtube=out&tools=1`, click: YT_ROW + ' .tools-btn.ico', checks: TOOLS, viewportOnly: true },
   { name: 'Tools, YouTube sign-in refused note', q: `${work('3')}&youtube=refuse&tools=1`, click: YT_ROW + ' .tools-btn.cy', checks: ['.tools-drawer', '.tools-note'], viewportOnly: true },
   { name: 'Spotify copy, choose this computer', q: `${query({ hz: 'unwind', agents: '3', extra: '&spotify=choose' })}`, click: '.sp-tile >> .sp-shead .sp-btn.fill', checks: ['.sp-card', '.sp-note'] },
