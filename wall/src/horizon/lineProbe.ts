@@ -3,9 +3,9 @@ import { drawLineType, type LineTypeFrame, type LineTypesState } from './lineTyp
 
 /**
  * Dev builds only, for the fit check: `?lineprobe=1` draws the new type again on a scratch canvas
- * every 10th frame and counts its pixels inside each claimed picture box, published on the main
- * canvas as `data-line-probe` ("pixels inside the boxes, pixels drawn at most, boxes"). `&lclip=0`
- * leaves the boxes out of the clip (the fit check's deliberate break).
+ * every frame (headless virtual time draws few) and counts its pixels inside each claimed picture
+ * box, published on the main canvas as `data-line-probe` ("pixels inside the boxes, pixels drawn
+ * at most, boxes"). `&lclip=0` leaves the boxes out of the clip (the fit check's deliberate break).
  */
 export interface LineProbe {
   noClip: boolean;
@@ -15,14 +15,12 @@ export interface LineProbe {
 export function parseLineProbe(search: string): LineProbe | null {
   const q = new URLSearchParams(search);
   if (!q.has('lineprobe')) return null;
-  let frame = 0;
   let inside = 0;
   let most = 0;
   let scratch: HTMLCanvasElement | null = null;
   return {
     noClip: q.get('lclip') === '0',
     run: (s, f, boxes, main) => {
-      if (frame++ % 10 !== 0) return;
       scratch ??= document.createElement('canvas');
       scratch.width = main.width;
       scratch.height = main.height;
