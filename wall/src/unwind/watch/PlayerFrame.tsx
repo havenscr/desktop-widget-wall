@@ -149,6 +149,7 @@ export function PlayerFrame({ item, title, shown = true }: { item: WatchRef; tit
       if (!info) return;
       heard.current = true;
       const st = useWatchStore.getState();
+      if (info.error !== undefined) st.setReport({ error: info.error });
       if (info.ready) fullVolume();
       const list: { count?: number; index?: number } = {};
       if (info.count !== undefined) list.count = info.count;
