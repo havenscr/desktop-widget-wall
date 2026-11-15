@@ -117,7 +117,7 @@ pub fn session_keys(sources: &[String]) -> Vec<String> {
 }
 
 /// Which listed session a media command acts on: the one with this key, else the first with this app
-/// id, else None (the caller then uses Windows' current session). `keys` and `sources` are the
+/// id, else None (a targeted Wall 2 command must refuse). `keys` and `sources` are the
 /// listed sessions' keys and app ids in list order.
 pub fn resolve(keys: &[String], sources: &[String], key: Option<&str>, id: Option<&str>) -> Option<usize> {
     let key = key.map(str::trim).filter(|k| !k.is_empty());
@@ -128,6 +128,90 @@ pub fn resolve(keys: &[String], sources: &[String], key: Option<&str>, id: Optio
         }
     }
     id.and_then(|id| sources.iter().position(|s| s == id))
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum Target {
+    Found(usize),
+    Gone,
+    Current,
+}
+
+/// Resolve an explicit Wall 2 target, refusing it when no listed session matches.
+/// Other windows and commands with no target keep Windows' current-session behaviour.
+pub fn target(window_label: &str, keys: &[String], sources: &[String], key: Option<&str>, id: Option<&str>) -> Target {
+    if !honour_keys(window_label) || !key.into_iter().chain(id).any(|s| !s.trim().is_empty()) {
+        return Target::Current;
+    }
+    resolve(keys, sources, key, id).filter(|&i| i < keys.len() && i < sources.len()).map_or(Target::Gone, Target::Found)
+}
+
+struct PendingRead<T> {
+    deadline: Instant,
+    result: Mutex<Option<Result<T, String>>>,
+    ready: std::sync::Condvar,
+}
+
+/// One shared read. Completed answers belong to their waiting callers, not future polls.
+pub struct BoundedRead<T> {
+    current: Mutex<Option<std::sync::Arc<PendingRead<T>>>>,
+}
+
+impl<T> BoundedRead<T> {
+    pub const fn new() -> Self { Self { current: Mutex::new(None) } }
+}
+
+/// Join an active read under its original deadline. A still-hung expired worker is busy.
+pub fn run_bounded<T: Clone + Send + 'static>(
+    f: impl FnOnce() -> T + Send + 'static,
+    timeout: std::time::Duration,
+    shared: &BoundedRead<T>,
+) -> Result<T, String> {
+    use std::sync::Arc;
+    let (read, start) = {
+        let mut current = shared.current.lock().unwrap_or_else(|e| e.into_inner());
+        let active = current.as_ref().filter(|r| r.result.lock().unwrap_or_else(|e| e.into_inner()).is_none());
+        if let Some(read) = active {
+            if Instant::now() >= read.deadline { return Err("busy".into()); }
+            (read.clone(), false)
+        } else {
+            let read = Arc::new(PendingRead { deadline: Instant::now() + timeout, result: Mutex::new(None), ready: std::sync::Condvar::new() });
+            *current = Some(read.clone());
+            (read, true)
+        }
+    };
+    if start {
+        let worker = read.clone();
+        if std::thread::Builder::new().spawn(move || {
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)).map_err(|_| "worker failed".to_string());
+            let result = if Instant::now() >= worker.deadline { Err("timed out".into()) } else { result };
+            *worker.result.lock().unwrap_or_else(|e| e.into_inner()) = Some(result);
+            worker.ready.notify_all();
+        }).is_err() {
+            *read.result.lock().unwrap_or_else(|e| e.into_inner()) = Some(Err("worker unavailable".into()));
+            read.ready.notify_all();
+        }
+    }
+    let mut result = read.result.lock().unwrap_or_else(|e| e.into_inner());
+    loop {
+        if let Some(answer) = result.as_ref() { return answer.clone(); }
+        let remaining = read.deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() { return Err("timed out".into()); }
+        result = read.ready.wait_timeout(result, remaining).unwrap_or_else(|e| e.into_inner()).0;
+    }
+}
+
+pub const THUMBNAIL_MAX: u64 = 1024 * 1024;
+
+/// Check the stream size before narrowing it or allocating a thumbnail buffer.
+pub fn thumbnail_size_ok(size: u64) -> bool { (1..=THUMBNAIL_MAX).contains(&size) }
+
+/// Accept only bounded image bytes; never trust the stream's declared content type.
+pub fn thumbnail_ok(size: u64, bytes: &[u8]) -> Option<&'static str> {
+    if !thumbnail_size_ok(size) || bytes.len() as u64 > THUMBNAIL_MAX {
+        return None;
+    }
+    crate::wall2_sonos_read::sniff_image(bytes)
 }
 
 /// A session key counts only from the second window; any other window acts on the current session.
@@ -323,6 +407,108 @@ mod tests {
     }
 
     #[test]
+    fn targeted_commands_refuse_missing_sessions() {
+        let sources = strings(&["a", "b"]);
+        let keys = session_keys(&sources);
+        for (window, key, id, expected) in [
+            ("wall2", Some("b#0"), Some("a"), Target::Found(1)),
+            ("wall2", None, Some("a"), Target::Found(0)),
+            ("wall2", Some("gone#0"), Some("a"), Target::Found(0)),
+            ("wall2", Some("gone#0"), None, Target::Gone),
+            ("wall2", None, Some("gone"), Target::Gone),
+            ("wall2", None, None, Target::Current),
+            ("wall2", Some(" "), Some(""), Target::Current),
+            ("main", Some("gone#0"), None, Target::Current),
+        ] {
+            assert_eq!(target(window, &keys, &sources, key, id), expected);
+        }
+        assert_eq!(target("wall2", &[], &[], Some("a#0"), Some("a")), Target::Gone);
+        assert_eq!(target("wall2", &[], &[], None, Some("a")), Target::Gone);
+        assert_eq!(target("wall2", &keys, &sources[..1], Some("b#0"), None), Target::Gone);
+        assert_eq!(target("wall2", &keys[..1], &sources, None, Some("b")), Target::Gone);
+    }
+
+    #[test]
+    fn concurrent_readers_share_one_answer_and_a_later_poll_reads_again() {
+        use std::sync::{Arc, mpsc};
+        use std::time::Duration;
+        let shared = Arc::new(BoundedRead::new());
+        let (entered, started) = mpsc::channel();
+        let (release, held) = mpsc::channel();
+        let first = shared.clone();
+        let a = std::thread::spawn(move || run_bounded(move || {
+            entered.send(()).unwrap(); held.recv().unwrap(); 7
+        }, Duration::from_secs(2), &first));
+        started.recv_timeout(Duration::from_secs(1)).unwrap();
+        let second = shared.clone();
+        let b = std::thread::spawn(move || run_bounded(|| panic!("second worker"), Duration::from_secs(2), &second));
+        let until = Instant::now() + Duration::from_secs(1);
+        while shared.current.lock().unwrap().as_ref().map_or(0, Arc::strong_count) < 4 && Instant::now() < until {
+            std::thread::yield_now();
+        }
+        let joined = shared.current.lock().unwrap().as_ref().map_or(0, Arc::strong_count) >= 4;
+        release.send(()).unwrap();
+        assert!(joined, "second reader joined the pending answer");
+        assert_eq!(a.join().unwrap(), Ok(7));
+        assert_eq!(b.join().unwrap(), Ok(7));
+        assert_eq!(run_bounded(|| 9, Duration::from_secs(1), &shared), Ok(9));
+    }
+
+    #[test]
+    fn hung_read_times_out_its_waiters_and_refuses_a_late_third_reader() {
+        use std::sync::{Arc, mpsc};
+        use std::time::Duration;
+        let shared = Arc::new(BoundedRead::new());
+        let (entered, started) = mpsc::channel();
+        let (release, held) = mpsc::channel();
+        let first = shared.clone();
+        let a = std::thread::spawn(move || run_bounded(move || {
+            entered.send(()).unwrap(); held.recv().unwrap(); 7
+        }, Duration::from_secs(1), &first));
+        started.recv_timeout(Duration::from_secs(1)).unwrap();
+        assert_eq!(run_bounded(|| panic!("second worker"), Duration::from_secs(2), &shared), Err("timed out".into()));
+        assert_eq!(a.join().unwrap(), Err("timed out".into()));
+        assert_eq!(run_bounded(|| panic!("third worker"), Duration::from_secs(2), &shared), Err("busy".into()));
+        release.send(()).unwrap();
+        let until = Instant::now() + Duration::from_secs(1);
+        while shared.current.lock().unwrap().as_ref().unwrap().result.lock().unwrap().is_none() && Instant::now() < until {
+            std::thread::yield_now();
+        }
+        assert_eq!(run_bounded(|| 9, Duration::from_secs(1), &shared), Ok(9));
+    }
+
+    #[test]
+    fn panicked_read_frees_the_worker_slot() {
+        let shared = BoundedRead::<u32>::new();
+        assert_eq!(run_bounded(|| panic!("fixture panic"), std::time::Duration::from_secs(1), &shared), Err("worker failed".into()));
+        assert_eq!(run_bounded(|| 1, std::time::Duration::from_secs(1), &shared), Ok(1));
+    }
+
+    #[test]
+    fn thumbnail_size_is_checked_before_allocation() {
+        for (size, accepted) in [(0, false), (1, true), (THUMBNAIL_MAX, true), (THUMBNAIL_MAX + 1, false), (u64::MAX, false)] {
+            assert_eq!(thumbnail_size_ok(size), accepted);
+        }
+        let source = include_str!("lib.rs");
+        let body = source.split("fn read_thumbnail_sync(").nth(1).unwrap().split("/// Last").next().unwrap();
+        let check = body.find("thumbnail_size_ok(size)").unwrap();
+        assert!(check < body.find("size as u32").unwrap());
+        assert!(check < body.find("vec![0u8;").unwrap());
+    }
+
+    #[test]
+    fn thumbnails_require_bounded_image_bytes() {
+        let png = b"\x89PNG\r\n\x1a\n";
+        assert_eq!(thumbnail_ok(THUMBNAIL_MAX + 1, png), None);
+        assert_eq!(thumbnail_ok(0, png), None);
+        assert_eq!(thumbnail_ok(png.len() as u64, png), Some("image/png"));
+        assert_eq!(thumbnail_ok(THUMBNAIL_MAX, png), Some("image/png"));
+        assert_eq!(thumbnail_ok(4, b"text"), None);
+        assert_eq!(thumbnail_ok(3, &[0xff, 0xd8, 0xff]), Some("image/jpeg"));
+        assert_eq!(thumbnail_ok(12, b"RIFF1234WEBP"), Some("image/webp"));
+    }
+
+    #[test]
     fn current_playing_wins_even_when_another_plays_too() {
         let s = [c("a", "playing", 10.0, 200.0, 1.0, true), c("b", "playing", 5.0, 100.0, 0.0, false)];
         assert_eq!(picked(&s), Some((0, Rule::CurrentPlaying, false)));
@@ -495,7 +681,7 @@ mod tests {
         // A key that is gone falls back to the first session with the id.
         assert_eq!(resolve(&keys, &sources, Some("a#7"), Some("a")), Some(0));
         assert_eq!(resolve(&keys, &sources, None, Some("b")), Some(1));
-        // Nothing found: the caller uses Windows' current session.
+        // Nothing found: a targeted Wall 2 command must refuse.
         assert_eq!(resolve(&keys, &sources, Some("zzz#0"), Some("zzz")), None);
         assert_eq!(resolve(&keys, &sources, None, None), None);
         assert_eq!(resolve(&keys, &sources, Some("  "), Some("")), None);

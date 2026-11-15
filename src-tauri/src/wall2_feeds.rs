@@ -745,6 +745,7 @@ fn summarize_core(body: &Value, f: Filters, now: i64, off: &dyn Fn(i64) -> i64, 
 #[tauri::command]
 #[allow(non_snake_case)]
 pub async fn wall2_tasks_summary(
+    window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     tag: Option<String>,
     notTag: Option<String>,
@@ -752,6 +753,7 @@ pub async fn wall2_tasks_summary(
     limit: Option<u32>,
     due: Option<String>,
 ) -> Result<TasksSummary, String> {
+    crate::wall2_meet::require_wall2(window.label())?;
     let (tag, notTag, list) = check_filters(tag, notTag, list)?;
     let due = check_due(due)?;
     let limit = task_limit(limit, due);
@@ -781,7 +783,8 @@ pub async fn wall2_tasks_summary(
 }
 
 #[tauri::command]
-pub async fn wall2_tasks_next(app: tauri::AppHandle) -> Result<Vec<TaskItem>, String> {
+pub async fn wall2_tasks_next(window: tauri::WebviewWindow, app: tauri::AppHandle) -> Result<Vec<TaskItem>, String> {
+    crate::wall2_meet::require_wall2(window.label())?;
     let base = read_base(&app, "tasksBaseUrl", true)?;
     tauri::async_runtime::spawn_blocking(move || {
         let body = get_json(&format!("{base}/api/tasks?status=open"))?;
@@ -794,7 +797,8 @@ pub async fn wall2_tasks_next(app: tauri::AppHandle) -> Result<Vec<TaskItem>, St
 }
 
 #[tauri::command]
-pub async fn wall2_task_done(app: tauri::AppHandle, id: String) -> Result<(), String> {
+pub async fn wall2_task_done(window: tauri::WebviewWindow, app: tauri::AppHandle, id: String) -> Result<(), String> {
+    crate::wall2_meet::require_wall2(window.label())?;
     if !valid_task_id(&id) {
         return Err("Invalid task id".to_string());
     }
@@ -844,7 +848,8 @@ struct Shown {
 
 type ShownReads = Vec<Shown>;
 
-/// How long a short read leaves a longer read's rows remembered (two refresh periods and a bit).
+/// The old freshness boundary, retained only to pin the stale-list regression test.
+#[cfg(test)]
 const SHOWN_FRESH_SECS: i64 = 300;
 
 /// Keep `tasks` as the ids `key`'s read showed (at most three), and drop the oldest reads past
@@ -855,17 +860,17 @@ fn remember_in(reads: &mut ShownReads, key: &str, tasks: &[TaskItem]) {
 }
 
 /// As `remember_in`, for a read that asked for `limit` rows, at time `now`. A read replaces
-/// what the same kind of read remembered, EXCEPT a shorter one inside the freshness window:
+/// what the same kind of read remembered, except a shorter one:
 /// a one-row read (the "open the first task" key) must not make the rows of the 60 row list
 /// beside it unknown, so it adds its ids in front of the longer read's (bounded union, newest
 /// first, at most `MAX_DUE_LIMIT`) and leaves that read's limit and time alone, so the union
-/// ends with the window and the next full read replaces it. (Keying by the limit instead would
+/// lasts until the next full read replaces it. (Keying by the limit instead would
 /// use up the eight kinds; the union costs none.)
 fn remember_in_n(reads: &mut ShownReads, key: &str, tasks: &[TaskItem], limit: usize, now: i64) {
     let fresh: Vec<String> = tasks.iter().take(limit.min(MAX_DUE_LIMIT)).map(|t| t.id.clone()).collect();
     let old = reads.iter().position(|r| r.key == key).map(|i| reads.remove(i));
     let entry = match old {
-        Some(o) if limit < o.limit && now - o.at <= SHOWN_FRESH_SECS => {
+        Some(o) if limit < o.limit => {
             let mut ids = fresh.clone();
             ids.extend(o.ids.iter().filter(|id| !fresh.contains(id)).cloned());
             ids.truncate(MAX_DUE_LIMIT);
@@ -1248,7 +1253,8 @@ fn shape_security(body: &Value) -> SecuritySummary {
 }
 
 #[tauri::command]
-pub async fn wall2_home_security(app: tauri::AppHandle) -> Result<SecuritySummary, String> {
+pub async fn wall2_home_security(window: tauri::WebviewWindow, app: tauri::AppHandle) -> Result<SecuritySummary, String> {
+    crate::wall2_meet::require_wall2(window.label())?;
     let base = read_base(&app, "homeBaseUrl", false)?;
     let summary = tauri::async_runtime::spawn_blocking(move || {
         let body = get_json(&format!("{base}/api/security?lite=1"))?;
@@ -1327,12 +1333,16 @@ pub struct LinkAvailability {
 }
 
 #[tauri::command]
-pub fn wall2_links(app: tauri::AppHandle) -> LinkAvailability {
+pub fn wall2_links(window: tauri::WebviewWindow, app: tauri::AppHandle) -> LinkAvailability {
+    if crate::wall2_meet::require_wall2(window.label()).is_err() {
+        return LinkAvailability { security: false, portal: false };
+    }
     LinkAvailability { security: security_link(&app).is_some(), portal: last_portal().is_some() }
 }
 
 #[tauri::command]
-pub fn wall2_open_link(app: tauri::AppHandle, kind: String) -> Result<(), String> {
+pub fn wall2_open_link(window: tauri::WebviewWindow, app: tauri::AppHandle, kind: String) -> Result<(), String> {
+    crate::wall2_meet::require_wall2(window.label())?;
     let url = match kind.as_str() {
         "security" => security_link(&app),
         "portal" => last_portal(),
@@ -1356,6 +1366,24 @@ fn fixed_link(kind: &str) -> Option<&'static str> {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn link_commands_check_the_window_first() {
+        let src = include_str!("wall2_feeds.rs");
+        for (command, check) in [
+            ("pub fn wall2_links(", "if crate::wall2_meet::require_wall2(window.label()).is_err()"),
+            ("pub fn wall2_open_link(", "crate::wall2_meet::require_wall2(window.label())?;"),
+            ("pub async fn wall2_tasks_summary(", "crate::wall2_meet::require_wall2(window.label())?;"),
+            ("pub async fn wall2_tasks_next(", "crate::wall2_meet::require_wall2(window.label())?;"),
+            ("pub async fn wall2_task_done(", "crate::wall2_meet::require_wall2(window.label())?;"),
+            ("pub async fn wall2_home_security(", "crate::wall2_meet::require_wall2(window.label())?;"),
+
+        ] {
+            let body = &src[src.find(command).expect("command")..];
+            let first = body[body.find('{').expect("body") + 1..].trim_start();
+            assert!(first.starts_with(check), "{command}");
+        }
+    }
 
     #[test]
     fn base_url_accepts_scheme_host_port() {
@@ -1866,9 +1894,9 @@ mod tests {
         remember_in_n(&mut reads, "work-due", &newer, 1, 1200);
         assert!(shown_in(&reads, "row-new") && shown_in(&reads, "row-11"));
         assert_eq!(reads[0].ids[0], "row-new");
-        // Past the window a short read replaces, as before: stale rows are not kept for ever.
+        // Even after five minutes, a short read must preserve rows the page still shows.
         remember_in_n(&mut reads, "work-due", &sixty[..1], 1, 1000 + SHOWN_FRESH_SECS + 1);
-        assert!(shown_in(&reads, "row-0") && !shown_in(&reads, "row-11"));
+        assert!(shown_in(&reads, "row-0") && shown_in(&reads, "row-11"));
         // The next full read replaces the union at once and sets the limit again.
         remember_in_n(&mut reads, "work-due", &sixty[10..20], 60, 2000);
         assert!(shown_in(&reads, "row-12") && !shown_in(&reads, "row-0"));
