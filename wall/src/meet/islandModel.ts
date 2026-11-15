@@ -91,3 +91,8 @@ export function stepKind(index: number, count: number, dir: 1 | -1): number {
   if (count <= 1) return 0;
   return (index + dir + count) % count;
 }
+
+/** A short invite is set larger so the pane is not mostly blank: 34 px up to 150 characters, 28 px up to 300, else 24 px. */
+export function inviteSize(text: string): 'l' | 'm' | 's' {
+  return text.length <= 150 ? 'l' : text.length <= 300 ? 'm' : 's';
+}

@@ -4,7 +4,7 @@ import { invoke } from '../bridge/tauri';
 import { elapsedText } from '../signals/RecordingChip';
 import { tip } from '../ui/HoverTip';
 import { initials } from './heroModel';
-import { HOW_TO, indexName, islandKinds, orderLine, stepKind, type CallMark, type IslandKind, type KindId } from './islandModel';
+import { HOW_TO, indexName, inviteSize, islandKinds, orderLine, stepKind, type CallMark, type IslandKind, type KindId } from './islandModel';
 import { clockText, type MeetingDetails, type Reply } from './model';
 import { useMeetStore } from './meetStore';
 import type { ChecklistRead } from './useChecklist';
@@ -24,7 +24,7 @@ function KindIcon({ kind, size }: { kind: IslandKind['icon']; size: number }) {
 
 function InvitePane({ text }: { text: string }) {
   return (
-    <div className="meet-isl-invite" {...tip(text)}>
+    <div className="meet-isl-invite" data-size={inviteSize(text)} {...tip(text)}>
       {text}
     </div>
   );
