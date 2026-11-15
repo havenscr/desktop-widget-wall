@@ -3,12 +3,24 @@
 //! answers with the light's state or one fixed word. Blocking network work runs off the main thread.
 
 use crate::wall2_keylights::{
-    forget_in, parse_side, parse_which, read_config, read_light, set_address_in, test_light, with_real_env, Coalescer, Config, Light, Pair, Patch, Reading, Side, Status, Which, Word,
+    forget_in, parse_side, parse_which, read_config, read_light, save_allowed, set_address_in, test_light, with_real_env, Coalescer, Config, Light, Pair, Patch, Reading, Side, Status, Throttle, Which, Word,
 };
+use std::time::Instant;
 use tauri::Manager;
 
 static LEFT: Coalescer = Coalescer::new();
 static RIGHT: Coalescer = Coalescer::new();
+
+/// One gate per light for tests and reads (one request per half second, never waiting).
+static GATE_LEFT: Throttle = Throttle::new();
+static GATE_RIGHT: Throttle = Throttle::new();
+
+fn gate_of(side: Side) -> &'static Throttle {
+    match side {
+        Side::Left => &GATE_LEFT,
+        Side::Right => &GATE_RIGHT,
+    }
+}
 
 fn queue(side: Side) -> &'static Coalescer {
     match side {
@@ -36,12 +48,16 @@ async fn off_thread<T: Send + 'static>(f: impl FnOnce() -> Result<T, String> + S
 /// One side's read: the light, or `not-set-up` when no address is saved for it.
 fn read_side(cfg: &Config, side: Side) -> Result<Light, Word> {
     let ip = cfg.get(side).ok_or(Word::NotSetUp)?;
-    with_real_env(|env| read_light(env, ip, side))
+    gate_of(side).run(Instant::now(), || with_real_env(|env| read_light(env, ip, side)))
 }
 
 fn write_side(cfg: &Config, side: Side, patch: Patch) -> Result<Light, Word> {
     let ip = cfg.get(side).ok_or(Word::NotSetUp)?;
-    with_real_env(|env| queue(side).write(env, ip, side, patch))
+    // A write changes the light: a read kept from before it is not given back, before or after.
+    gate_of(side).forget();
+    let answer = with_real_env(|env| queue(side).write(env, ip, side, patch));
+    gate_of(side).forget();
+    answer
 }
 
 /// Runs the two sides at once and gathers their answers.
@@ -66,6 +82,10 @@ pub async fn wall2_keylights_status(window: tauri::WebviewWindow, app: tauri::Ap
 pub async fn wall2_keylights_set_address(window: tauri::WebviewWindow, app: tauri::AppHandle, side: String, address: String) -> Result<(), String> {
     gate(&window)?;
     let side = parse_side(&side).map_err(word)?;
+    // At most four tries a minute, whatever their answer: a loop of save and Test cannot probe the network.
+    if !save_allowed(Instant::now()) {
+        return Err(word(Word::SlowDown));
+    }
     let dir = dir(&app)?;
     off_thread(move || set_address_in(&dir, side, &address).map_err(word)).await
 }
@@ -86,7 +106,7 @@ pub async fn wall2_keylights_test(window: tauri::WebviewWindow, app: tauri::AppH
     let dir = dir(&app)?;
     off_thread(move || {
         let ip = read_config(&dir).get(side).ok_or(Word::NotSetUp).map_err(word)?;
-        with_real_env(|env| test_light(env, ip, side)).map_err(word)
+        gate_of(side).run(Instant::now(), || with_real_env(|env| test_light(env, ip, side))).map_err(word)
     })
     .await
 }

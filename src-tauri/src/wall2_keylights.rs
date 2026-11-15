@@ -62,6 +62,10 @@ pub(crate) enum Word {
     TooBig,
     OtherModel,
     Refused,
+    /// Too many tries in a short time (address saves, tests, reads).
+    SlowDown,
+    /// Too many writes are already waiting on this light.
+    Busy,
 }
 
 impl Word {
@@ -75,6 +79,8 @@ impl Word {
             Self::TooBig => "too-big",
             Self::OtherModel => "other-model",
             Self::Refused => "refused",
+            Self::SlowDown => "slow-down",
+            Self::Busy => "busy",
         }
     }
 }
@@ -206,6 +212,8 @@ pub(crate) struct SideSet {
 pub(crate) struct Status {
     pub left: SideSet,
     pub right: SideSet,
+    /// `keylights.json` exists but cannot be read at all.
+    pub unreadable: bool,
 }
 
 /// The two lights' answers. A side a write did not touch is null.
@@ -218,11 +226,16 @@ pub(crate) struct Pair {
 /// Reads the light's state out of an answer body. Any other shape is `other-model`.
 pub(crate) fn light_from_body(body: &[u8]) -> Result<Light, Word> {
     let v: Value = serde_json::from_slice(body).map_err(|_| Word::OtherModel)?;
+    // One light, exactly: a different count or list is another model.
     let n = v.get("numberOfLights").and_then(Value::as_i64).ok_or(Word::OtherModel)?;
-    if n < 1 {
+    if n != 1 {
         return Err(Word::OtherModel);
     }
-    let first = v.get("lights").and_then(Value::as_array).and_then(|a| a.first()).ok_or(Word::OtherModel)?;
+    let lights = v.get("lights").and_then(Value::as_array).ok_or(Word::OtherModel)?;
+    if lights.len() != 1 {
+        return Err(Word::OtherModel);
+    }
+    let first = &lights[0];
     let on = match first.get("on").and_then(Value::as_i64) {
         Some(0) => false,
         Some(1) => true,
@@ -492,8 +505,14 @@ pub(crate) fn test_light(env: &Env, ip: Ipv4Addr, side: Side) -> Result<Light, W
 
 // Section: writes, coalesced to the latest value
 
+/// How many callers may wait on one light's answer besides the one writing. A caller past this gets
+/// `busy` at once (its value is still handed over), so a flood never holds more than a few workers.
+pub(crate) const MAX_WAITERS: usize = 4;
+
 struct Slot {
     pending: Option<Patch>,
+    /// Callers waiting for the shared answer.
+    waiters: usize,
     /// How many writes callers have submitted, and how many of them an answer covers.
     submitted: u64,
     done: u64,
@@ -533,7 +552,7 @@ impl Drop for Lead<'_> {
 
 impl Coalescer {
     pub(crate) const fn new() -> Coalescer {
-        Coalescer { slot: Mutex::new(Slot { pending: None, submitted: 0, done: 0, running: false, last_put: None, result: Err(Word::Failed) }), cv: Condvar::new() }
+        Coalescer { slot: Mutex::new(Slot { pending: None, waiters: 0, submitted: 0, done: 0, running: false, last_put: None, result: Err(Word::Failed) }), cv: Condvar::new() }
     }
 
     #[cfg(test)]
@@ -550,9 +569,14 @@ impl Coalescer {
         g.submitted += 1;
         let mine = g.submitted;
         if g.running {
+            if g.waiters >= MAX_WAITERS {
+                return Err(Word::Busy);
+            }
+            g.waiters += 1;
             while g.done < mine {
                 g = self.cv.wait(g).unwrap_or_else(|e| e.into_inner());
             }
+            g.waiters = g.waiters.saturating_sub(1);
             return g.result;
         }
         g.running = true;
@@ -629,6 +653,8 @@ impl Coalescer {
 pub(crate) struct Config {
     pub left: Option<Ipv4Addr>,
     pub right: Option<Ipv4Addr>,
+    /// The file is there but is not a JSON object: both sides read as not set up, and Tools says so once.
+    pub unreadable: bool,
 }
 
 impl Config {
@@ -648,15 +674,18 @@ impl Config {
     }
 
     pub(crate) fn status(&self) -> Status {
-        Status { left: SideSet { set: self.left.is_some() }, right: SideSet { set: self.right.is_some() } }
+        Status { left: SideSet { set: self.left.is_some() }, right: SideSet { set: self.right.is_some() }, unreadable: self.unreadable }
     }
 }
 
-/// The file's text to a config. A missing, unreadable or malformed file, or a value that fails the address rule, is "not set".
+/// The file's text to a config. No file is "not set". A file that is not a JSON object is `unreadable`
+/// (both sides not set). A value that fails the address rule leaves only that side not set: the other
+/// side stays, and a later save of either side keeps the good one.
 pub(crate) fn parse_config(text: Option<&str>) -> Config {
-    let Some(v) = text.and_then(|t| serde_json::from_str::<Value>(t).ok()) else { return Config::default() };
+    let Some(text) = text else { return Config::default() };
+    let Some(v) = serde_json::from_str::<Value>(text).ok().filter(Value::is_object) else { return Config { unreadable: true, ..Config::default() } };
     let side = |k: &str| v.get(k).and_then(Value::as_str).and_then(|s| parse_address(s).ok());
-    Config { left: side("left"), right: side("right") }
+    Config { left: side("left"), right: side("right"), unreadable: false }
 }
 
 fn render_config(c: &Config) -> String {
@@ -698,6 +727,100 @@ pub(crate) fn set_address_in(dir: &Path, side: Side, raw: &str) -> Result<(), Wo
 pub(crate) fn forget_in(dir: &Path, side: Side) -> Result<(), Word> {
     let _g = lock(&CONFIG_LOCK);
     write_config(dir, &read_config(dir).with(side, None))
+}
+
+// Section: limits (a script in the wall's own window must not use these commands to probe or flood)
+
+/// At most `max` events in any `window`: the address saves (4 a minute).
+#[derive(Default)]
+pub(crate) struct RateWindow {
+    stamps: std::collections::VecDeque<Instant>,
+}
+
+impl RateWindow {
+    /// True and counted when another event is allowed at `now`; false (and not counted) when not.
+    pub(crate) fn allow(&mut self, now: Instant, max: usize, window: Duration) -> bool {
+        while let Some(front) = self.stamps.front() {
+            if now.saturating_duration_since(*front) >= window {
+                self.stamps.pop_front();
+            } else {
+                break;
+            }
+        }
+        if self.stamps.len() >= max {
+            return false;
+        }
+        self.stamps.push_back(now);
+        true
+    }
+}
+
+/// Address saves: at most this many a minute, whatever the answer.
+pub(crate) const SAVES_PER_MINUTE: usize = 4;
+pub(crate) const SAVE_WINDOW: Duration = Duration::from_secs(60);
+/// One test or read per side in this time; a call inside it gets the last answer (or `slow-down` when
+/// there is none) and never waits.
+pub(crate) const READ_GAP: Duration = Duration::from_millis(500);
+
+/// The save limiter shared by both sides.
+pub(crate) static SAVES: Mutex<Option<RateWindow>> = Mutex::new(None);
+
+/// True when a save may go ahead now.
+pub(crate) fn save_allowed(now: Instant) -> bool {
+    lock(&SAVES).get_or_insert_with(RateWindow::default).allow(now, SAVES_PER_MINUTE, SAVE_WINDOW)
+}
+
+struct Seen {
+    started: Option<Instant>,
+    running: bool,
+    last: Option<Result<Light, Word>>,
+}
+
+/// One light's gate for tests and reads: only one request at a time and one per `READ_GAP`. Nothing
+/// here ever waits: a call that cannot go ahead answers at once.
+pub(crate) struct Throttle {
+    seen: Mutex<Seen>,
+}
+
+impl Throttle {
+    pub(crate) const fn new() -> Throttle {
+        Throttle { seen: Mutex::new(Seen { started: None, running: false, last: None }) }
+    }
+
+    /// Runs `f` unless a request ran in the last `READ_GAP` or one is still out; then the last answer, or `slow-down`.
+    pub(crate) fn run(&self, now: Instant, f: impl FnOnce() -> Result<Light, Word>) -> Result<Light, Word> {
+        {
+            let mut g = lock(&self.seen);
+            let recent = g.started.is_some_and(|t| now.saturating_duration_since(t) < READ_GAP);
+            if g.running || recent {
+                return g.last.unwrap_or(Err(Word::SlowDown));
+            }
+            g.running = true;
+            g.started = Some(now);
+        }
+        // Frees the gate even if the request panics.
+        struct Out<'a>(&'a Throttle, Option<Result<Light, Word>>);
+        impl Drop for Out<'_> {
+            fn drop(&mut self) {
+                let mut g = lock(&self.0.seen);
+                g.running = false;
+                if let Some(a) = self.1 {
+                    g.last = Some(a);
+                }
+            }
+        }
+        let mut out = Out(self, None);
+        let answer = f();
+        out.1 = Some(answer);
+        answer
+    }
+
+    /// A write changes the light: an answer from before it is no longer one to give back.
+    pub(crate) fn forget(&self) {
+        let mut g = lock(&self.seen);
+        g.started = None;
+        g.last = None;
+    }
 }
 
 // Section: the log
@@ -941,8 +1064,8 @@ mod tests {
         assert_eq!(off, Light { on: false, brightness: 3, kelvin: 2900 });
         // A light below the stated minimum is shown at the minimum; one above the temperature range is clamped.
         assert_eq!(light_from_body(state(1, 0, 100).as_bytes()).unwrap(), Light { on: true, brightness: 3, kelvin: 7000 });
-        // Extra fields are ignored.
-        let extra = r#"{"numberOfLights":2,"lights":[{"on":1,"brightness":50,"temperature":200,"x":1},{"on":0,"brightness":9,"temperature":300}]}"#;
+        // Extra fields inside the one light are ignored.
+        let extra = r#"{"numberOfLights":1,"lights":[{"on":1,"brightness":50,"temperature":200,"x":1}],"y":2}"#;
         assert_eq!(light_from_body(extra.as_bytes()).unwrap(), Light { on: true, brightness: 50, kelvin: 5000 });
     }
 
@@ -955,6 +1078,11 @@ mod tests {
             "{}",
             r#"{"numberOfLights":1}"#,
             r#"{"numberOfLights":1,"lights":[]}"#,
+            // Exactly one light: a count above one, or a list of more than one, is another model.
+            r#"{"numberOfLights":2,"lights":[{"on":1,"brightness":50,"temperature":200}]}"#,
+            r#"{"numberOfLights":1,"lights":[{"on":1,"brightness":50,"temperature":200},{"on":0,"brightness":9,"temperature":300}]}"#,
+            r#"{"numberOfLights":2,"lights":[{"on":1,"brightness":50,"temperature":200},{"on":0,"brightness":9,"temperature":300}]}"#,
+            r#"{"numberOfLights":1,"lights":{"on":1,"brightness":50,"temperature":200}}"#,
             r#"{"numberOfLights":0,"lights":[{"on":1,"brightness":50,"temperature":200}]}"#,
             r#"{"numberOfLights":1,"lights":[{"on":true,"brightness":50,"temperature":200}]}"#,
             r#"{"numberOfLights":1,"lights":[{"on":2,"brightness":50,"temperature":200}]}"#,
@@ -1136,7 +1264,10 @@ mod tests {
         assert!(puts.len() <= 3, "{} writes for 20 values", puts.len());
         assert!(puts.last().unwrap().contains("\"brightness\":59"), "the last value must be the last one sent: {puts:?}");
         assert_eq!(gets, 1, "exactly one read back for the burst");
-        assert!(answers.iter().all(|a| *a == Ok(Light { on: true, brightness: 99, kelvin: 4400 })));
+        // The writer and up to MAX_WAITERS callers share the answer; the rest were told busy at once, but
+        // their values were handed over all the same (the last value sent is still 59).
+        assert!(answers.iter().all(|a| *a == Err(Word::Busy) || *a == Ok(Light { on: true, brightness: 99, kelvin: 4400 })));
+        assert_eq!(answers.iter().filter(|a| **a != Err(Word::Busy)).count(), 1 + MAX_WAITERS);
         // Earlier writes are logged closed, the last one carries the read back.
         let logs = r.logs.lock().unwrap().clone();
         assert_eq!(logs.len(), puts.len());
@@ -1241,7 +1372,7 @@ mod tests {
     #[test]
     fn an_address_is_validated_then_saved_and_read_back_from_the_file() {
         let t = Tmp::new("save");
-        assert_eq!(read_config(&t.0).status(), Status { left: SideSet { set: false }, right: SideSet { set: false } });
+        assert_eq!(read_config(&t.0).status(), Status { left: SideSet { set: false }, right: SideSet { set: false }, unreadable: false });
         assert_eq!(set_address_in(&t.0, Side::Left, IP), Ok(()));
         assert_eq!(set_address_in(&t.0, Side::Right, IP2), Ok(()));
         let c = read_config(&t.0);
@@ -1254,7 +1385,7 @@ mod tests {
         assert_eq!(forget_in(&t.0, Side::Left), Ok(()));
         let c = read_config(&t.0);
         assert_eq!((c.left, c.right), (None, Some(ip(IP2))));
-        assert_eq!(c.status(), Status { left: SideSet { set: false }, right: SideSet { set: true } });
+        assert_eq!(c.status(), Status { left: SideSet { set: false }, right: SideSet { set: true }, unreadable: false });
     }
 
     #[test]
@@ -1270,11 +1401,48 @@ mod tests {
 
     #[test]
     fn a_hand_edited_or_broken_file_never_yields_an_unchecked_address() {
-        for text in [None, Some(""), Some("not json"), Some("[]"), Some(r#"{"left":"8.8.8.8","right":"http://192.168.1.2"}"#), Some(r#"{"left":5,"right":null}"#)] {
-            assert_eq!(parse_config(text), Config::default(), "{text:?}");
+        // No file: not set up, and nothing to say about it.
+        assert_eq!(parse_config(None), Config::default());
+        // A file that is not a JSON object: both sides not set, and the file is called unreadable.
+        for text in ["", "not json", "[]", "5", "null", "\"x\""] {
+            let c = parse_config(Some(text));
+            assert_eq!((c.left, c.right, c.unreadable), (None, None, true), "{text:?}");
+        }
+        // A readable file with bad values: those sides are not set, and nothing is unreadable.
+        for text in [r#"{"left":"8.8.8.8","right":"http://192.168.1.2"}"#, r#"{"left":5,"right":null}"#, "{}"] {
+            assert_eq!(parse_config(Some(text)), Config::default(), "{text:?}");
         }
         let c = parse_config(Some(r#"{"left":"192.168.50.21","right":"169.254.1.1"}"#));
-        assert_eq!((c.left, c.right), (Some(ip(IP)), None));
+        assert_eq!((c.left, c.right, c.unreadable), (Some(ip(IP)), None, false));
+    }
+
+    #[test]
+    fn a_good_side_survives_a_bad_other_side_and_a_save_of_either_keeps_it() {
+        let t = Tmp::new("oneside");
+        std::fs::create_dir_all(&t.0).unwrap();
+        std::fs::write(t.0.join("keylights.json"), format!(r#"{{"left":"{IP}","right":"8.8.8.8"}}"#)).unwrap();
+        assert_eq!(read_config(&t.0).status(), Status { left: SideSet { set: true }, right: SideSet { set: false }, unreadable: false });
+        assert_eq!(set_address_in(&t.0, Side::Right, IP2), Ok(()));
+        let c = read_config(&t.0);
+        assert_eq!((c.left, c.right), (Some(ip(IP)), Some(ip(IP2))));
+        // And the other way round.
+        std::fs::write(t.0.join("keylights.json"), format!(r#"{{"left":"bad","right":"{IP2}"}}"#)).unwrap();
+        assert_eq!(set_address_in(&t.0, Side::Left, IP), Ok(()));
+        let c = read_config(&t.0);
+        assert_eq!((c.left, c.right), (Some(ip(IP)), Some(ip(IP2))));
+    }
+
+    #[test]
+    fn a_file_that_cannot_be_parsed_says_so_until_an_address_is_typed_again() {
+        let t = Tmp::new("unreadable");
+        std::fs::create_dir_all(&t.0).unwrap();
+        std::fs::write(t.0.join("keylights.json"), "{ broken").unwrap();
+        let st = read_config(&t.0).status();
+        assert_eq!(st, Status { left: SideSet { set: false }, right: SideSet { set: false }, unreadable: true });
+        assert_eq!(serde_json::to_value(&st).unwrap(), json!({"left": {"set": false}, "right": {"set": false}, "unreadable": true}));
+        assert_eq!(set_address_in(&t.0, Side::Left, IP), Ok(()));
+        let st = read_config(&t.0).status();
+        assert_eq!(st, Status { left: SideSet { set: true }, right: SideSet { set: false }, unreadable: false });
     }
 
     #[test]
@@ -1343,5 +1511,124 @@ mod tests {
         for l in &logs {
             assert!(l.is_ascii() && !l.contains('\n'));
         }
+    }
+
+    // ---- limits ----
+
+    #[test]
+    fn address_saves_are_four_a_minute_then_slow_down() {
+        let mut w = RateWindow::default();
+        let t0 = Instant::now();
+        for i in 0..4 {
+            assert!(w.allow(t0 + Duration::from_secs(i), SAVES_PER_MINUTE, SAVE_WINDOW), "save {i}");
+        }
+        assert!(!w.allow(t0 + Duration::from_secs(10), SAVES_PER_MINUTE, SAVE_WINDOW));
+        assert!(!w.allow(t0 + Duration::from_secs(59), SAVES_PER_MINUTE, SAVE_WINDOW));
+        // A refused try is not counted: a minute after the first save one slot opens, then four a minute again.
+        assert!(w.allow(t0 + Duration::from_secs(60), SAVES_PER_MINUTE, SAVE_WINDOW));
+        assert!(!w.allow(t0 + Duration::from_secs(60), SAVES_PER_MINUTE, SAVE_WINDOW));
+        assert!(w.allow(t0 + Duration::from_secs(62), SAVES_PER_MINUTE, SAVE_WINDOW));
+        assert_eq!(Word::SlowDown.as_str(), "slow-down");
+    }
+
+    #[test]
+    fn one_test_or_read_per_side_per_half_second_the_rest_get_the_last_answer() {
+        let th = Throttle::new();
+        let t0 = Instant::now();
+        let calls = AtomicUsize::new(0);
+        let light = Light { on: true, brightness: 60, kelvin: 4400 };
+        // Nothing to give back yet: a call inside the window of a run still in the first moment is slow-down.
+        let first = th.run(t0, || {
+            calls.fetch_add(1, Ordering::SeqCst);
+            Ok(light)
+        });
+        assert_eq!(first, Ok(light));
+        // Inside the window: the last answer, the transport untouched.
+        for ms in [1, 100, 499] {
+            assert_eq!(th.run(t0 + Duration::from_millis(ms), || panic!("no request inside the window")), Ok(light));
+        }
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        // After it: a new request.
+        assert_eq!(th.run(t0 + Duration::from_millis(500), || Err(Word::NoAnswer)), Err(Word::NoAnswer));
+        assert_eq!(th.run(t0 + Duration::from_millis(600), || panic!("no request inside the window")), Err(Word::NoAnswer));
+    }
+
+    #[test]
+    fn a_call_with_no_answer_to_give_gets_slow_down_and_a_write_clears_what_was_kept() {
+        let th = Throttle::new();
+        let t0 = Instant::now();
+        // A request is out (running): a second call never waits for it.
+        let (started_tx, started_rx) = std::sync::mpsc::channel::<()>();
+        let (go_tx, go_rx) = std::sync::mpsc::channel::<()>();
+        let th = Arc::new(th);
+        let th2 = th.clone();
+        let h = std::thread::spawn(move || {
+            th2.run(t0, || {
+                started_tx.send(()).unwrap();
+                let _ = go_rx.recv();
+                Err(Word::Timeout)
+            })
+        });
+        started_rx.recv().unwrap();
+        assert_eq!(th.run(t0 + Duration::from_secs(2), || panic!("one request at a time")), Err(Word::SlowDown));
+        go_tx.send(()).unwrap();
+        assert_eq!(h.join().unwrap(), Err(Word::Timeout));
+        // A write forgets the kept answer and the window, so the next read is a real one.
+        th.forget();
+        let light = Light { on: false, brightness: 3, kelvin: 2900 };
+        assert_eq!(th.run(t0 + Duration::from_millis(10), || Ok(light)), Ok(light));
+    }
+
+    #[test]
+    fn a_thousand_rapid_writes_hold_a_bounded_number_of_callers() {
+        use std::sync::mpsc;
+        let (release_tx, release_rx) = mpsc::channel::<()>();
+        let release_rx = Mutex::new(release_rx);
+        let first = AtomicUsize::new(0);
+        let http = Arc::new(Fake::new(move |m, _, _, _| {
+            if m == "PUT" && first.fetch_add(1, Ordering::SeqCst) == 0 {
+                let _ = release_rx.lock().unwrap().recv();
+            }
+            if m == "PUT" { ok("{}") } else { ok(&state(1, 99, 227)) }
+        }));
+        let co = Arc::new(Coalescer::new());
+        let inside = Arc::new(AtomicUsize::new(0));
+        let most = Arc::new(AtomicUsize::new(0));
+        let busy = Arc::new(AtomicUsize::new(0));
+        let mut handles = Vec::new();
+        for i in 0..1000i64 {
+            let (http, co2, inside, most, busy) = (http.clone(), co.clone(), inside.clone(), most.clone(), busy.clone());
+            handles.push(std::thread::spawn(move || {
+                let n = inside.fetch_add(1, Ordering::SeqCst) + 1;
+                most.fetch_max(n, Ordering::SeqCst);
+                let rg = rig();
+                let got = run(&rg, &http, |env| co2.write(env, ip(IP), Side::Left, Patch { bri: Some(3 + i % 90), ..Patch::default() }));
+                if got == Err(Word::Busy) {
+                    busy.fetch_add(1, Ordering::SeqCst);
+                }
+                inside.fetch_sub(1, Ordering::SeqCst);
+                got
+            }));
+            // The first caller is leading and held inside its write before the flood starts.
+            if i == 0 {
+                while co.submitted() < 1 {
+                    std::thread::sleep(Duration::from_millis(1));
+                }
+                std::thread::sleep(Duration::from_millis(20));
+            }
+        }
+        // Let every caller arrive: all but the leader and MAX_WAITERS answer busy without waiting.
+        let t = Instant::now();
+        while busy.load(Ordering::SeqCst) < 1000 - 1 - MAX_WAITERS && t.elapsed() < Duration::from_secs(20) {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert_eq!(busy.load(Ordering::SeqCst), 1000 - 1 - MAX_WAITERS, "all but the leader and {MAX_WAITERS} waiters are told busy at once");
+        release_tx.send(()).unwrap();
+        let answers: Vec<_> = handles.into_iter().map(|h| h.join().unwrap()).collect();
+        let waited = answers.iter().filter(|a| **a != Err(Word::Busy)).count();
+        assert_eq!(waited, 1 + MAX_WAITERS, "only the leader and the waiters ever held a worker");
+        // The values of the callers told busy were still handed over: the light got a final write.
+        assert!(http.calls().iter().filter(|c| c.starts_with("PUT")).count() <= 3);
+        assert!(answers.iter().filter(|a| **a != Err(Word::Busy)).all(|a| *a == Ok(Light { on: true, brightness: 99, kelvin: 4400 })));
     }
 }
