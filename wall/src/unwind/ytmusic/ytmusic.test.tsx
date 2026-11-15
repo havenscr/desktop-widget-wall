@@ -125,7 +125,7 @@ describe('model', () => {
     expect(sideMode(null, false)).toBe('checking');
     expect(sideMode(null, true)).toBe('unreadable');
     expect(sideMode(s(false, false, 'not set up'), false)).toBe('notsetup');
-    expect(sideMode(s(true, false, null), false)).toBe('signedout');
+    expect(sideMode(s(true, false, null), false)).toBe('nosignin');
     expect(sideMode(s(true, false, 'sign in again'), false)).toBe('again');
     expect(sideMode(s(true, true, 'setup broken'), false)).toBe('broken');
     expect(sideMode(s(true, false, 'setup broken'), false)).toBe('broken');

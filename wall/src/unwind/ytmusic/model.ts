@@ -64,13 +64,13 @@ export function problemAction(p: YtProblem): 'tools' | 'retry' | 'back' | null {
 }
 
 /** What the YouTube side shows for a status. */
-export type SideMode = 'checking' | 'unreadable' | 'notsetup' | 'broken' | 'again' | 'signedout' | 'library';
+export type SideMode = 'checking' | 'unreadable' | 'notsetup' | 'broken' | 'again' | 'nosignin' | 'library';
 
 export function sideMode(status: YoutubeStatus | null, failed: boolean): SideMode {
   if (!status) return failed ? 'unreadable' : 'checking';
   if (!status.setup) return 'notsetup';
   if (status.reason === 'setup broken' || status.reason === 'setup unreadable' || status.reason === 'setup missing') return 'broken';
-  if (!status.signedIn) return status.reason === 'sign in again' ? 'again' : 'signedout';
+  if (!status.signedIn) return status.reason === 'sign in again' ? 'again' : 'nosignin';
   return 'library';
 }
 
@@ -79,7 +79,7 @@ export function hintFor(mode: SideMode): { text: string; action: 'tools' | 'retr
   switch (mode) {
     case 'notsetup':
       return { text: 'Set up YouTube in Tools to see your playlists here. About ten minutes, once.', action: 'tools' };
-    case 'signedout':
+    case 'nosignin':
       return { text: 'Sign in to YouTube in Tools to see your playlists here.', action: 'tools' };
     case 'again':
       return { text: 'YouTube needs a new sign-in.', action: 'tools' };
