@@ -2,12 +2,19 @@
 // under the list's field. One area file: gallery states, fit variants, the in-page measurement, its rule
 // and the deliberate breaks. The mock player's words are invented (see `devMocks/watch.ts`).
 //
-// The gallery's `type:` action cuts its value at the second `=`, so a link with both `v=` and `list=` cannot
-// be typed in it; the offer is shown by the `woffer=1` knob instead, and unit tests paste the real link.
+// The gallery's `type:` action cuts its value at the second `=` (`step.slice(5).split('=')` in gallery.mjs), so a
+// link with both `v=` and `list=` cannot be typed by an action. The offer states use the `wpaste=<link>` mock knob
+// instead: the link rides in the query (URL-encoded) and the mock types it into the real field and presses the real
+// Save button, so parsing, `addLink` and the hand-over of the playlist to the card are the real code.
 
 const BASE = 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&watch=mock';
 const TITLE = 'Rooftop synth session, the full set';
 const CHANNEL = 'Harbor Light Studio';
+const link = (video, list) => encodeURIComponent(`https://www.youtube.com/watch?v=${video}&list=${list}`);
+// A new video with a new list; a video that is in the mock list already (the first of three, and of the 24) with a new list.
+const PASTE_NEW = link('Ab3dEfGh1jQ', 'PLmockPlaylist0002');
+const PASTE_KNOWN = link('Ab3dEfGh1jK', 'PLmockPlaylist0002');
+const PASTE_MIX = link('Ab3dEfGh1jQ', 'RDAb3dEfGh1jQ');
 const SHORTS = 'type:.w-paste=https://www.youtube.com/shorts/Ab3dEfGh1jQ >> .w-add >> .w-row.editing .w-mini';
 
 const state = (name, extra, expect, actions) => ({
@@ -30,8 +37,11 @@ const states = [
   state('at rest with a title', 'wlist=three&wlook=sky&wplay=0&wmeta=title&wctl=rest', [TITLE]),
   state('paused with a title', 'wlist=three&wlook=sky&wplay=0&wmeta=title&wstate=paused', ['Paused', TITLE, CHANNEL]),
   state('the list with a default label filled from the title', 'wlist=default&wlook=sky&wplay=0&wmeta=title', [TITLE, 'YouTube live stream']),
-  state('the paste offer', 'wlist=three&wlook=sky&wplay=0&woffer=1', ['Saved the video. The link also names a playlist.', 'Save the playlist too']),
-  state('after Save the playlist too', 'wlist=three&wlook=sky&wplay=0&woffer=1', ['!Save the playlist too', 'YouTube playlist', '4 saved'], '.w-offer button'),
+  state('the paste offer, a new video and a new playlist', `wlist=three&wlook=sky&wplay=0&wpaste=${PASTE_NEW}`, ['Saved the video. The link also names a playlist.', 'Save the playlist too', '4 saved']),
+  state('the paste offer, a video already saved, three items', `wlist=three&wlook=sky&wplay=0&wpaste=${PASTE_KNOWN}`, ['That video is already saved. The link also names a playlist.', 'That one is already in the list.', 'Save the playlist too', '3 saved']),
+  state('the paste offer with 24 items, a video already saved', `wlist=many&wlook=sky&wplay=0&wpaste=${PASTE_KNOWN}`, ['That video is already saved. The link also names a playlist.', 'That one is already in the list.', 'Save the playlist too', '24 saved']),
+  state('after Save the playlist too', `wlist=three&wlook=sky&wplay=0&wpaste=${PASTE_NEW}`, ['!Save the playlist too', 'YouTube playlist', '5 saved'], '.w-offer button'),
+  state('a video with a Mix list is saved with no offer', `wlist=three&wlook=sky&wplay=0&wpaste=${PASTE_MIX}`, ['4 saved', '!The link also names a playlist', '!Save the playlist too']),
   state('a Shorts link saved as a video', 'wlist=three&wlook=sky', ['YouTube video', '4 saved', '!Saved the video'], SHORTS),
   state('the long title on the feathered look', 'wlist=three&wlook=feather&wplay=0&wmeta=long', ['A very long title for the review states']),
   state('the long title on the whole sky look', 'wlist=three&wlook=sky&wplay=0&wmeta=long&wposter=bright', ['A very long title for the review states']),
@@ -129,8 +139,9 @@ const variants = [
   { name: 'Watch list, long title and channel, whole sky', q: `${Q}&wlist=three&wplay=0&wlook=sky&wmeta=long&wlcheck=long`, checks: ['.w-now', '.w-card'] },
   { name: 'Watch list, long title and channel, drive-in', q: `${Q}&wlist=three&wplay=0&wlook=drivein&wmeta=long&wlcheck=long`, checks: ['.w-now', '.w-card'] },
   { name: 'Watch list, at rest with a title and channel', q: `${Q}&wlist=three&wplay=0&wlook=sky&wmeta=title&wctl=rest&wlcheck=rest`, checks: ['.w-now'] },
-  { name: 'Watch list, paste offer, three items', q: `${Q}&wlist=three&wplay=0&wlook=sky&woffer=1&wlcheck=offer`, checks: ['.w-card'] },
-  { name: 'Watch list, paste offer, 24 items', q: `${Q}&wlist=many&wplay=0&wlook=sky&woffer=1&wlcheck=offer`, checks: ['.w-card'] },
+  { name: 'Watch list, paste offer, three items', q: `${Q}&wlist=three&wplay=0&wlook=sky&wpaste=${PASTE_NEW}&wlcheck=offer`, checks: ['.w-card'] },
+  { name: 'Watch list, paste offer, three items, a video already saved', q: `${Q}&wlist=three&wplay=0&wlook=sky&wpaste=${PASTE_KNOWN}&wlcheck=offer`, checks: ['.w-card'] },
+  { name: 'Watch list, paste offer, 24 items', q: `${Q}&wlist=many&wplay=0&wlook=sky&wpaste=${PASTE_KNOWN}&wlcheck=offer`, checks: ['.w-card'] },
 ];
 
 const on = (...names) => (v) => names.includes(v.name);
@@ -145,7 +156,7 @@ export default {
     breaks: {
       'watchlist-title-lines': { css: '.w-title { -webkit-line-clamp: unset !important; display: block !important; }', expect: /^ *FAIL watch list: the title is \d+ lines/m, appliesTo: on('Watch list, long title and channel, feathered') },
       'watchlist-channel-wrap': { css: '.w-by { white-space: normal !important; }', expect: /^ *FAIL watch list: the channel is \d+ px tall, more than one line/m, appliesTo: on('Watch list, long title and channel, whole sky') },
-      'watchlist-overlap': { css: '.w-by { margin-bottom: 500px !important; }', expect: /^ *FAIL watch list: the left block ends at y \d+, into the office slot/m, appliesTo: on('Watch list, long title and channel, drive-in', 'Watch list, long title and channel, feathered') },
+      'watchlist-overlap': { css: '.w-by { margin-bottom: 500px !important; }', expect: /^ *FAIL watch list: the left block ends at y \d+, into the office slot/m, appliesTo: on('Watch list, long title and channel, feathered', 'Watch list, long title and channel, whole sky', 'Watch list, long title and channel, drive-in') },
       'watchlist-text': { css: '.w-by { font-size: 12px !important; }', expect: /^ *FAIL watch list: text under 16 px in the channel line/m, appliesTo: on('Watch list, title and channel, whole sky') },
       'watchlist-offer-button': { css: '.w-offer button { height: 20px !important; }', expect: /^ *FAIL watch list: the offer button is [\d.]+ px tall/m, appliesTo: on('Watch list, paste offer, 24 items') },
       'watchlist-rest': { css: ".w-now[data-ctl='rest'] > .w-by { opacity: 1 !important; }", expect: /^ *FAIL watch list: the channel line is at opacity/m, appliesTo: on('Watch list, at rest with a title and channel') },

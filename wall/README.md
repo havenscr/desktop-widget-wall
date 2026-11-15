@@ -1714,8 +1714,13 @@ there, still playing, when the owner comes back (see "The stage layer" below).
   a video link also names is never taken silently: after the video is saved, one status line
   under the field reads "Saved the video. The link also names a playlist." with a "Save the
   playlist too" button (the same save path, so "already in the list" and "list is full" read as
-  for any link). The line goes on the next paste, when the field is typed in, or after 20
-  seconds; it is state of the card and is never saved. An entry saved earlier as a playlist
+  for any link; the focus then returns to the field). No offer is made for a Mix or radio list
+  (`list=RD...`) or `WL` and `LL`: those lists are made per viewer or need a sign-in, so a saved
+  entry would often play nothing, and the video alone is saved. A video that is already in the list
+  keeps its "already in the list" answer, and the offer still follows it, worded "That video is
+  already saved. The link also names a playlist.", when that playlist is not saved yet. The line
+  goes on the next paste, when the field is typed in, or after 20 seconds; it is state of the card
+  and is never saved. An entry saved earlier as a playlist
   from such a link kept no video id (the store writes only kind, id and label), so it is left
   as it is: remove it and paste the link again. Video ids are exactly 11 of `[A-Za-z0-9_-]`, playlist ids
   13 to 64, Twitch logins 3 to 25 of `[a-z0-9_]` (lower-cased; site pages such as
