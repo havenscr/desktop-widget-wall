@@ -1,6 +1,7 @@
 import { useFocusStore } from '../../focus/store';
 import { usePlaceStore } from '../../state/places';
 import { reviewNow } from '../../ui/reviewClock';
+import { nwsBody, openMeteoBody } from './weather';
 import { mocks, type CommandArgs, type MockHandler } from '../tauri';
 import { knob } from './long';
 
@@ -19,7 +20,7 @@ import { knob } from './long';
  *   ?media=none|paused|long|off
  *   ?box=max|stale|none|down   (machine numbers; `?pc=down` for the PC side)
  *   ?usage=high|none          (the two usage meters)
- *   ?weather=ok|stale|down|cold   (stands in for the weather fetch)
+ *   ?weather=ok|stale|down|cold|dns|refused|second   (stands in for the native weather read)
  *   ?clock=review           (Date.now starts at the `?at=` moment and then runs, so screens that read it agree)
  *   ?focus=long               (a focus session running under a long title)
  *   ?wattspot=<x>             (Watt was set down at that x on every place, On Air included: his stored spot, before he loads)
@@ -195,6 +196,24 @@ function media(mode: string): void {
     if (mode === 'none') return null;
     const base = (await prev?.()) as Record<string, unknown>;
     if (mode === 'paused') return { ...base, playback_status: 'paused' };
+    if (mode === 'ended') {
+      // A session that says it plays but has ended: the native side reports it paused and ended.
+      return {
+        ...base,
+        title: 'Evening Radio Mix',
+        artist: 'Example Host',
+        album: '',
+        source_app: 'Video App',
+        source_app_id: 'Example.VideoApp_abc123!App',
+        session_key: 'Example.VideoApp_abc123!App#0',
+        art_key: 'Evening Radio Mix|Example Host||Video App',
+        // The review break `mediabreak=live` shows the same session as live, so a check can prove it notices.
+        playback_status: knob('mediabreak') === 'live' ? 'playing' : 'paused',
+        ended: knob('mediabreak') !== 'live',
+        position_seconds: 146,
+        duration_seconds: 146,
+      };
+    }
     if (mode === 'watchown') return { ...base, title: 'Night drive mix', artist: '', source_app: 'msedgewebview2', source_app_id: 'msedgewebview2.exe', playback_status: 'playing' };
     if (mode === 'watchstopped') return { ...base, title: 'Night drive mix', artist: '', source_app: 'msedgewebview2', source_app_id: 'msedgewebview2.exe', playback_status: 'stopped' };
     if (mode === 'webview') return { ...base, title: 'Mail alert', artist: '', source_app: 'msedgewebview2', source_app_id: 'msedgewebview2.exe', playback_status: 'stopped' };
@@ -236,19 +255,15 @@ function usage(mode: string): void {
 }
 
 /**
- * Stand in for the weather fetch (the app calls `fetch` on the forecast service), so no
- * state ever depends on the network. `stale`: answers are good until, shortly after the first
- * one lands, the clock jumps 45 minutes, every later fetch fails, and the page is told it became
- * visible again, which makes the hook check its age and retry, exactly as it does after the
- * window was hidden for a while. The reading then shows its stale hint.
+ * Stand in for the native weather read (`wall2_weather`), so no state ever depends on the network.
+ * `stale`: answers are good until, shortly after the first one lands, the clock jumps 45 minutes,
+ * every later read fails, and the page is told it became visible again, which makes the hook check
+ * its age and retry, exactly as it does after the window was hidden for a while. The reading then
+ * shows its stale hint. `refused`: Open-Meteo answers 429 and the Weather Service cannot be reached
+ * (a place outside its area answers 404), so the card says why. `second`: Open-Meteo answers 429 and
+ * the Weather Service answers with a reading. `dns`: nothing can be looked up.
  */
 function weather(mode: string): void {
-  const real = window.fetch.bind(window);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  const local = (ms: number) => {
-    const d = new Date(ms);
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:00`;
-  };
   let answered = false;
   let skew = 0;
   if (mode === 'stale') {
@@ -266,29 +281,22 @@ function weather(mode: string): void {
       document.dispatchEvent(new Event('visibilitychange'));
     }, 200);
   };
-  window.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-    const url = String(input instanceof Request ? input.url : input);
-    if (!url.includes('open-meteo')) return real(input, init);
-    // Stale: every fetch before the clock jump is answered. The dev build mounts the weather
-    // user twice (the first mount's answer is dropped), so "first fetch only" left no reading.
-    if (mode === 'down' || (mode === 'stale' && skew > 0)) throw new TypeError('network down');
+  mocks.set('wall2_weather', (args) => {
+    const nws = args?.source === 'nws';
+    // Stale: every read before the clock jump is answered. The dev build mounts the weather
+    // user twice (the first mount's answer is dropped), so "first read only" left no reading.
+    if (mode === 'down' || (mode === 'stale' && skew > 0)) throw 'network';
+    if (mode === 'dns') throw 'dns';
+    if (mode === 'refused') throw nws ? 'http 404' : 'http 429';
+    if (mode === 'second') {
+      if (!nws) throw 'http 429';
+      return nwsBody();
+    }
+    if (nws) return nwsBody();
     if (mode === 'stale' && !answered) setTimeout(goStale, 800);
     answered = true;
-    const t = now();
-    const hours = Array.from({ length: 30 }, (_, i) => t + (i - 3) * 3_600_000);
-    const temp = mode === 'cold' ? 24 : 58;
-    const body = {
-      current: { time: local(t), temperature_2m: temp, weather_code: mode === 'cold' ? 73 : 2, is_day: 1 },
-      hourly: {
-        time: hours.map(local),
-        temperature_2m: hours.map((_, i) => temp + Math.round(6 * Math.sin(i / 4))),
-        weather_code: hours.map((_, i) => (i % 5 === 0 ? 61 : 2)),
-        is_day: hours.map((ms) => (new Date(ms).getHours() >= 7 && new Date(ms).getHours() < 18 ? 1 : 0)),
-      },
-      daily: { temperature_2m_max: [temp + 6, temp + 4], temperature_2m_min: [temp - 8, temp - 6] },
-    };
-    return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
-  }) as typeof fetch;
+    return openMeteoBody(mode === 'cold');
+  });
 }
 
 /** The answer's mock text for a focus session under a long title. */

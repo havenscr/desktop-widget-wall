@@ -16,6 +16,7 @@ import { registerSpotifyMocks } from './spotify';
 import { registerTaskMocks } from './tasks';
 import { registerToolsMocks } from './tools';
 import { registerWatchMocks } from './watch';
+import { registerWeatherMocks } from './weather';
 import { registerYoutubeMocks } from './youtube';
 
 /**
@@ -26,6 +27,7 @@ import { registerYoutubeMocks } from './youtube';
 export function registerDevMocks(): void {
   if (isTauri()) return;
   registerMediaMocks();
+  registerWeatherMocks();
   registerTaskMocks();
   registerHomeMocks();
   registerSonosMocks();

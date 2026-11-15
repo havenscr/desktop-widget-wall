@@ -25,6 +25,9 @@ it('is quiet when stopped, unknown or empty', () => {
   expect(isQuiet(null)).toBe(true);
   expect(isQuiet({ playback_status: 'stopped', title: 'x' })).toBe(true);
   expect(isQuiet({ playback_status: 'unknown', title: 'x' })).toBe(true);
+  // A session that says it plays but has ended (the native side reports it paused and ended) is quiet.
+  expect(isQuiet({ playback_status: 'paused', title: 'x', ended: true })).toBe(true);
+  expect(isQuiet({ playback_status: 'paused', title: 'x' })).toBe(false);
   expect(isQuiet({ playback_status: 'playing' })).toBe(true);
   expect(isQuiet({ playback_status: 'paused', title: 'x' })).toBe(false);
   expect(isQuiet({ playback_status: 'changing', title: 'x' })).toBe(false);

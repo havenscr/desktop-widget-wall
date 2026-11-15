@@ -1,5 +1,6 @@
 import { act, render } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
+import { mocks } from '../bridge/tauri';
 import { resetWeatherStore, useWeather } from './useWeather';
 
 const body = {
@@ -11,7 +12,7 @@ const body = {
 afterEach(() => {
   resetWeatherStore();
   vi.useRealTimers();
-  vi.unstubAllGlobals();
+  mocks.clear();
 });
 
 function Temp({ id }: { id: string }) {
@@ -26,8 +27,8 @@ function hide(h: boolean) {
 
 it('two users share one request per interval, and both see the reading', async () => {
   vi.useFakeTimers();
-  const f = vi.fn(async () => ({ ok: true, json: async () => body }) as unknown as Response);
-  vi.stubGlobal('fetch', f);
+  const f = vi.fn(async () => JSON.stringify(body));
+  mocks.set('wall2_weather', f);
   const { getByTestId } = render(
     <>
       <Temp id="a" />
@@ -48,8 +49,8 @@ it('two users share one request per interval, and both see the reading', async (
 
 it('hiding the page then showing it keeps the reading and makes no extra request inside the interval', async () => {
   vi.useFakeTimers();
-  const f = vi.fn(async () => ({ ok: true, json: async () => body }) as unknown as Response);
-  vi.stubGlobal('fetch', f);
+  const f = vi.fn(async () => JSON.stringify(body));
+  mocks.set('wall2_weather', f);
   const { getByTestId } = render(<Temp id="a" />);
   await act(async () => {
     await vi.advanceTimersByTimeAsync(10);
@@ -60,7 +61,7 @@ it('hiding the page then showing it keeps the reading and makes no extra request
     await vi.advanceTimersByTimeAsync(1000);
   });
   f.mockImplementation(async () => {
-    throw new Error('offline');
+    throw 'network';
   });
   hide(false);
   await act(async () => {
