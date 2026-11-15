@@ -1327,12 +1327,16 @@ pub struct LinkAvailability {
 }
 
 #[tauri::command]
-pub fn wall2_links(app: tauri::AppHandle) -> LinkAvailability {
+pub fn wall2_links(window: tauri::WebviewWindow, app: tauri::AppHandle) -> LinkAvailability {
+    if crate::wall2_meet::require_wall2(window.label()).is_err() {
+        return LinkAvailability { security: false, portal: false };
+    }
     LinkAvailability { security: security_link(&app).is_some(), portal: last_portal().is_some() }
 }
 
 #[tauri::command]
-pub fn wall2_open_link(app: tauri::AppHandle, kind: String) -> Result<(), String> {
+pub fn wall2_open_link(window: tauri::WebviewWindow, app: tauri::AppHandle, kind: String) -> Result<(), String> {
+    crate::wall2_meet::require_wall2(window.label())?;
     let url = match kind.as_str() {
         "security" => security_link(&app),
         "portal" => last_portal(),
@@ -1356,6 +1360,19 @@ fn fixed_link(kind: &str) -> Option<&'static str> {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn link_commands_check_the_window_first() {
+        let src = include_str!("wall2_feeds.rs");
+        for (command, check) in [
+            ("pub fn wall2_links(", "if crate::wall2_meet::require_wall2(window.label()).is_err()"),
+            ("pub fn wall2_open_link(", "crate::wall2_meet::require_wall2(window.label())?;"),
+        ] {
+            let body = &src[src.find(command).expect("command")..];
+            let first = body[body.find('{').expect("body") + 1..].trim_start();
+            assert!(first.starts_with(check), "{command}");
+        }
+    }
 
     #[test]
     fn base_url_accepts_scheme_host_port() {
