@@ -282,6 +282,25 @@ describe('the controls fade (5A)', () => {
     expect(document.activeElement).toBe(pause);
   });
 
+  it('a click on bare page closes the sheet and the gear does not take the focus; Escape from inside still gives it back', async () => {
+    await playing();
+    const gear = screen.getByRole('button', { name: 'How video is shown' });
+    await act(async () => gear.click());
+    expect(document.activeElement).toBe(screen.getByRole('dialog', { name: 'How video is shown' }));
+    act(() => {
+      (document.activeElement as HTMLElement).blur();
+      fireEvent.pointerDown(document.body);
+    });
+    await flush();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(document.activeElement).not.toBe(gear);
+    // From inside the sheet, a close by Escape returns the focus to the gear.
+    await act(async () => gear.click());
+    fireEvent.keyDown(window, { key: 'Escape' });
+    await flush();
+    expect(document.activeElement).toBe(gear);
+  });
+
   it('Tab brings them back, and they stay while a control has focus', async () => {
     await playing();
     await flush(CTL_REST_MS);

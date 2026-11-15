@@ -60,12 +60,27 @@ export function WatchGear() {
   const open = useWatchStore((s) => s.sheet);
   const ref = useRef<HTMLButtonElement>(null);
   const was = useRef(open);
+  // Whether the focus was inside the sheet when it closed: a click on bare page, which also closes it, leaves the focus where the owner put it.
+  const inside = useRef(false);
+  useEffect(() => {
+    if (!open) return;
+    const inSheet = (t: EventTarget | null) => t instanceof Element && t.closest('.w-sheet') !== null;
+    inside.current = inSheet(document.activeElement);
+    const onFocus = (e: FocusEvent) => void (inside.current = inSheet(e.target));
+    const onDown = (e: PointerEvent) => void (inside.current = inSheet(e.target));
+    document.addEventListener('focusin', onFocus);
+    window.addEventListener('pointerdown', onDown, true);
+    return () => {
+      document.removeEventListener('focusin', onFocus);
+      window.removeEventListener('pointerdown', onDown, true);
+    };
+  }, [open]);
   useEffect(() => {
     const closed = was.current && !open;
     was.current = open;
     if (!closed) return;
     const a = document.activeElement;
-    if (!a || a === document.body || a === document.documentElement) ref.current?.focus();
+    if (inside.current && (!a || a === document.body || a === document.documentElement)) ref.current?.focus();
   }, [open]);
   return (
     <button
