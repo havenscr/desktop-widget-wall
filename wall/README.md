@@ -1202,7 +1202,7 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
   (window `main`) still gets Windows' current session unchanged. The media commands take the
   shown session's key and app id (`sessionKey` and `sourceId`, sent by `sendMediaCommand` in
   `music/store.ts`, captured when a click starts) and, from the `wall2` window only, act on the session
-  with that key, else the first with that id, else on the current one. The Up next rows skip the way the
+  with that key, else the first with that id; an unresolved named target is refused, while a command with no target uses the current session. The Up next rows skip the way the
   player row's Next does: Spotify's own command when Spotify reports a player, else the media key to the
   session captured when the click began. In `Player.tsx` the session is the
   wall's own Watch video when its title is what Watch plays or last stopped and its id is the web

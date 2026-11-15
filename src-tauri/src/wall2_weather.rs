@@ -249,6 +249,16 @@ fn get(url: &str, accept: &str) -> Result<String, (Failure, String)> {
 /// The point lookup's two addresses, remembered for the last place asked (kept in memory only).
 static POINT: Mutex<Option<(String, String, Option<String>)>> = Mutex::new(None);
 
+fn point_is_gone(result: &Result<String, (Failure, String)>) -> bool {
+    matches!(result, Err((Failure::Http(404 | 410), _)))
+}
+
+fn forget_gone_point(result: &Result<String, (Failure, String)>) {
+    if point_is_gone(result) {
+        *POINT.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    }
+}
+
 fn read_nws(latitude: f64, longitude: f64) -> Result<String, (Failure, String)> {
     let key = format!("{latitude:.4},{longitude:.4}");
     let cached = POINT.lock().unwrap_or_else(|e| e.into_inner()).as_ref().filter(|(k, _, _)| *k == key).map(|(_, h, f)| (h.clone(), f.clone()));
@@ -262,13 +272,15 @@ fn read_nws(latitude: f64, longitude: f64) -> Result<String, (Failure, String)> 
         }
     };
     let hourly = get(&hourly_url, "application/geo+json");
-    if matches!(hourly, Err((Failure::Http(404 | 410), _))) {
-        // The remembered address is gone: ask for the point again next time.
-        *POINT.lock().unwrap_or_else(|e| e.into_inner()) = None;
-    }
+    // Either remembered address being gone requires a fresh point next time.
+    forget_gone_point(&hourly);
     let hourly = hourly?;
     // The 12 hour forecast gives the day's high and low; without it the page falls back to the hours still ahead.
-    let forecast = forecast_url.and_then(|u| get(&u, "application/geo+json").ok());
+    let forecast = forecast_url.and_then(|u| {
+        let result = get(&u, "application/geo+json");
+        forget_gone_point(&result);
+        result.ok()
+    });
     combine_nws(&hourly, forecast.as_deref()).ok_or((Failure::Read, String::new()))
 }
 
@@ -296,6 +308,18 @@ pub async fn wall2_weather(window: tauri::WebviewWindow, latitude: f64, longitud
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_missing_point_addresses_invalidate_the_cache() {
+        for (failure, gone) in [
+            (Failure::Http(404), true), (Failure::Http(410), true),
+            (Failure::Http(403), false), (Failure::Http(500), false),
+            (Failure::Connect, false), (Failure::Timeout, false),
+        ] {
+            assert_eq!(point_is_gone(&Err((failure, String::new()))), gone);
+        }
+        assert!(!point_is_gone(&Ok(String::new())));
+    }
 
     #[test]
     fn coordinates_must_be_finite_and_in_range() {
