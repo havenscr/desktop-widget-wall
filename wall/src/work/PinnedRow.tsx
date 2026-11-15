@@ -99,9 +99,10 @@ function resolvedSlots(entries: readonly unknown[], lib: readonly LibGroup[], fi
 /**
  * The stored list with the pins that resolve replaced by `next` (a change of one slot, or an added one at the end),
  * and every other raw entry left as it was. Never longer than MAX_PINS: room for an added pin comes from the oldest
- * entries that do not resolve, so `parsePins` never sees a list too long to read.
+ * entries that do not resolve (not a keys.json pin while keys.json is loading; with no such room it returns null and
+ * the Add is refused), so `parsePins` never sees a list too long to read.
  */
-function replaceResolved(entries: readonly unknown[], slots: readonly number[], next: readonly string[], filePins: readonly KeyInfo[]): unknown[] {
+function replaceResolved(entries: readonly unknown[], slots: readonly number[], next: readonly string[], filePins: readonly KeyInfo[], filesLoading: boolean): unknown[] | null {
   const one = (ref: string): unknown => (JSON.parse(serializePins([ref], filePins)) as unknown[])[0];
   const out = [...entries];
   slots.forEach((at, k) => {
@@ -109,14 +110,18 @@ function replaceResolved(entries: readonly unknown[], slots: readonly number[], 
   });
   for (let k = slots.length; k < next.length; k++) out.push(one(next[k]));
   const live = new Set(slots);
+  // A keys.json pin is not given up while keys.json is still being read: it may resolve in a moment.
+  const loading = (e: unknown) => filesLoading && (entryRef(e) ?? '').startsWith('file:');
   let excess = out.length - MAX_PINS;
-  return out.filter((_e, at) => {
-    if (excess > 0 && at < entries.length && !live.has(at)) {
+  const kept = out.filter((e, at) => {
+    if (excess > 0 && at < entries.length && !live.has(at) && !loading(e)) {
       excess--;
       return false;
     }
     return true;
   });
+  // Every place is held by a pin that resolves or may yet: the Add is refused, as with five resolving pins.
+  return excess > 0 ? null : kept;
 }
 
 export function PinnedRow() {
@@ -181,8 +186,10 @@ export function PinnedRow() {
   const rawSlots = lib && stored ? resolvedSlots(stored, lib, filePins) : null;
   const choose = (slot: number, ref: string) => {
     const next = swapPin(pins.map((p) => p.ref), slot, ref);
-    if (stored && rawSlots) keepText(JSON.stringify(replaceResolved(stored, rawSlots, next, filePins)));
-    else keep(next);
+    if (stored && rawSlots) {
+      const text = replaceResolved(stored, rawSlots, next, filePins, read.status === 'loading');
+      if (text) keepText(JSON.stringify(text));
+    } else keep(next);
     setPicker(null);
   };
   const removeSlot = (slot: number) => {
