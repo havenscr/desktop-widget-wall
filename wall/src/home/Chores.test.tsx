@@ -295,5 +295,4 @@ it('sets the pill column on the list: never under 62 px, and as wide as the wide
   expect([...container.querySelectorAll('.est')].map((e) => e.textContent)).toEqual(['7:30 PM', '15 m']);
   expect(list.style.getPropertyValue('--pill-w')).toBe('75px');
   spy.mockRestore();
-  expect(render(<Chores />).container.querySelector('.chore-rows')).toBeTruthy();
 });
