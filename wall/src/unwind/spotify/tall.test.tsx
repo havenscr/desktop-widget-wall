@@ -534,13 +534,13 @@ describe('the player row and seek', () => {
   const rect = (el: HTMLElement) => {
     el.getBoundingClientRect = () => ({ left: 100, top: 0, width: 200, height: 6, right: 300, bottom: 6, x: 100, y: 0, toJSON: () => ({}) });
   };
-  it('shows the song, its artist, the times, and no Save to Liked', async () => {
+  it('shows the song, its artist, the times, and the heart for a song with an id', async () => {
     await setup();
     await open();
     expect(document.querySelector('.sp-pl-title b')?.textContent).toBe('Song 1');
     expect(document.querySelector('.sp-pl-title small')?.textContent).toBe('Some Artist');
     expect(slider().getAttribute('aria-valuetext')).toBe('1:05 of 3:20');
-    expect(screen.queryByRole('button', { name: /liked/i })).toBeNull();
+    expect(screen.getByRole('button', { name: /liked songs/i })).toBeTruthy();
   });
   it('runs a local clock while playing and stops at a failed read', async () => {
     await setup();

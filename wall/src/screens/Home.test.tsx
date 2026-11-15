@@ -3,7 +3,8 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { mocks } from '../bridge/tauri';
 import { usePacificTime } from '../ribbon/testZone';
 import css from '../styles/home.css?raw';
-import * as sun from '../home/sunLine';
+import * as sunRibbon from '../ribbon/sun';
+import { resetWeatherStore } from '../weather/useWeather';
 import { Home } from './Home';
 
 usePacificTime();
@@ -52,7 +53,10 @@ it('pins each zone to its own column, so an empty one never shifts the others', 
 });
 
 it('with no moods and an empty left wing, the centre shows one compact card and the right wing stays', async () => {
-  const spy = vi.spyOn(sun, 'sunLine').mockReturnValue(null);
+  // No sun times, the weather read still out and no house line: the wing renders nothing.
+  resetWeatherStore();
+  const spy = vi.spyOn(sunRibbon, 'sunTimes').mockReturnValue({ rise: null, set: null });
+  mocks.set('wall2_weather', () => new Promise(() => undefined));
   mocks.set('wall2_moods', () => []);
   mocks.set('wall2_tasks_summary', () => ({ next: [], remaining: 0 }));
   mocks.set('wall2_home_security', () => Promise.reject(new Error('not-configured')));
