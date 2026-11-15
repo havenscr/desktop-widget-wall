@@ -34,10 +34,8 @@ export function OnAir() {
     if (!awake) return;
     const s = useOnAirStore.getState();
     if (s.marksDate !== localDate(Date.now())) void s.loadMarks();
-    const id = setTimeout(() => {
-      setDay(localDate(Date.now()));
-      void useOnAirStore.getState().loadMarks();
-    }, untilMidnight(Date.now()) + 50);
+    // The timer only moves the day on: this effect runs again for the new day and reads once, as it does on opening.
+    const id = setTimeout(() => setDay(localDate(Date.now())), untilMidnight(Date.now()) + 50);
     return () => clearTimeout(id);
   }, [awake, day]);
   return (

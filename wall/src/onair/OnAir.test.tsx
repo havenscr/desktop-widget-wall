@@ -345,6 +345,25 @@ it('reads today\'s marks again after local midnight, once, and leaves no timer b
   expect(vi.getTimerCount()).toBe(0);
 });
 
+it('a slow read of the marks at midnight is still one read: the timer only moves the day on', async () => {
+  vi.setSystemTime(new Date(2026, 10, 13, 23, 59, 30));
+  let reads = 0;
+  // An answer that takes a moment, as the real command does.
+  mocks.set('wall2_onair_marks_today', () => {
+    reads++;
+    return new Promise((resolve) => setTimeout(() => resolve({ today: reads, last: [] }), 40));
+  });
+  render(<OnAir />);
+  await flush(100);
+  expect(reads).toBe(1);
+  // Just past midnight, with the first answer still on its way: the new day renders now.
+  await flush(29_960);
+  await flush(1);
+  expect(reads).toBe(2);
+  await flush(120_000);
+  expect(reads).toBe(2);
+});
+
 it('reads the marks on coming back only when the date moved on while hidden', async () => {
   vi.setSystemTime(new Date(2026, 10, 13, 22, 0, 0));
   let reads = 0;
