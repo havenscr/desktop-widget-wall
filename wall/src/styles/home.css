@@ -1299,6 +1299,8 @@
 .panel.network.shield.busy .shield-art {
   width: 140px;
   height: 140px;
+  /* The ring and text sit 2 px nearer the edge than the button row (20 and 22 px). */
+  margin-left: -2px;
 }
 .shield-ring {
   display: block;
@@ -1320,6 +1322,7 @@
 }
 .panel.network.shield.busy .shield-txt {
   padding-top: 8px;
+  margin-left: -2px;
 }
 .shield-title {
   font: 600 27px/31px var(--body);
@@ -1477,8 +1480,8 @@
   flex: none;
 }
 .shield-hint {
-  margin: 8px 0 0 27px;
-  font: 400 16px/24px var(--body);
+  margin: 6px 0 0 27px;
+  font: 400 16px/20px var(--body);
   color: #a39bc6;
   white-space: nowrap;
   overflow: hidden;
