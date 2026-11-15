@@ -546,7 +546,8 @@ describe('Up next clicks', () => {
     mocks.set('wall2_spotify_playback', () => (playingId ? { playing: true, device: null, track: { ...track(1), id: playingId }, progressMs: 0, shuffle: false } : null));
     mocks.set('get_now_playing', () => null);
     const sent: [string, unknown][] = [];
-    mocks.set('media_next', () => void sent.push(['media_next', null]));
+    mocks.set('media_next', (a) => void sent.push(['media_next', a ?? null]));
+    mocks.set('wall2_spotify_next', () => void sent.push(['spotify_next', null]));
     mocks.set('wall2_spotify_play', (a) => void sent.push(['play', a]));
     return sent;
   };
@@ -579,10 +580,11 @@ describe('Up next clicks', () => {
       sent.length = 0;
     }
     await clickRow(2);
+    // Spotify reports a player: its own command, three times, never the media key and never a play.
     expect(sent).toEqual([
-      ['media_next', null],
-      ['media_next', null],
-      ['media_next', null],
+      ['spotify_next', null],
+      ['spotify_next', null],
+      ['spotify_next', null],
     ]);
   };
 
@@ -596,6 +598,40 @@ describe('Up next clicks', () => {
 
   it('sends three skips and no play for row 3 after a list that holds neither song was played', async () => {
     await threeSkipsAfter([track(7), track(8)]);
+  });
+
+  it('with no Spotify player reported, every skip of one click is the media key to the session shown when the click began', async () => {
+    const sent = setup(null);
+    const shown = (key: string) =>
+      useNowPlayingStore.setState({ info: { title: 'Song 1', artist: 'Some Artist', playback_status: 'playing', source_app: 'Spotify', source_app_id: 'Spotify.exe', session_key: key } as never });
+    shown('Spotify.exe#1');
+    // The playback answer lands late; meanwhile the player shows another session.
+    const late = deferred<unknown>();
+    mocks.set('wall2_spotify_playback', () => late.promise);
+    render(<UpNext />);
+    await flush();
+    await act(async () => (document.querySelectorAll('.u-next-row')[2] as HTMLButtonElement).click());
+    shown('Spotify.exe#0');
+    await act(async () => late.resolve(null));
+    await flush();
+    const target = { sessionKey: 'Spotify.exe#1', sourceId: 'Spotify.exe' };
+    expect(sent).toEqual([
+      ['media_next', target],
+      ['media_next', target],
+      ['media_next', target],
+    ]);
+  });
+
+  it('with a Spotify player reported, a click never sends the media key even when another app is in front', async () => {
+    const sent = setup(id(501));
+    playingOn('Edge');
+    render(<UpNext />);
+    await flush();
+    await clickRow(1);
+    expect(sent).toEqual([
+      ['spotify_next', null],
+      ['spotify_next', null],
+    ]);
   });
 
   it('sends nothing and says why when another player is in front', async () => {

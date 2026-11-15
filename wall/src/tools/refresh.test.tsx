@@ -57,11 +57,11 @@ it('refreshSecurity reads the home app once and lands in the shared feed', async
 });
 
 it('refreshWeather fetches once now', async () => {
-  const fetchMock = vi.fn(() => Promise.resolve({ ok: false, status: 500, json: () => Promise.resolve({}) }));
-  vi.stubGlobal('fetch', fetchMock);
+  const readMock = vi.fn(() => Promise.reject('http 500'));
+  mocks.set('wall2_weather', readMock);
   refreshWeather();
   await flush();
-  expect(fetchMock).toHaveBeenCalledTimes(1);
+  expect(readMock).toHaveBeenCalledTimes(1);
 });
 
 it('refreshNowPlaying polls once more while the loop runs, and does nothing without a consumer', async () => {

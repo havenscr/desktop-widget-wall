@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import { playingSession, type AudioSession } from '../unwind/model';
-import { cleanAppName, playerName, playerProcesses, sourceKey } from './players';
+import { cleanAppName, isKnownPlayer, playerName, playerProcesses, sourceKey } from './players';
 
 // The id forms the Rust side sends in `source_app_id`: a packaged app's AppUserModelId
 // (`Publisher.Name_hash!Entry`), a desktop app's own id, or a process name.
@@ -138,4 +138,16 @@ it('takes any sixteen hex digit bare id as Firefox from another install, and nev
   expect(playerName('ABCDEF0123456789AB')).toBe('ABCDEF0123456789AB');
   expect(playerName('MEDIAHOST_X')).toBe('MEDIAHOST_X');
   expect(playerName('NightPlayer')).toBe('Night Player');
+});
+
+it('says whether a source is a known player', () => {
+  expect(isKnownPlayer('SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify')).toBe(true);
+  expect(isKnownPlayer('Spotify.exe')).toBe(true);
+  expect(isKnownPlayer('MSEdge')).toBe(true);
+  expect(isKnownPlayer('308046b0af4a39cb')).toBe(true);
+  // An id no rule knows, a lookalike, and nothing at all.
+  expect(isKnownPlayer('Example.VideoApp_abc123!App')).toBe(false);
+  expect(isKnownPlayer('Evil.Spotify_x!App')).toBe(false);
+  expect(isKnownPlayer('')).toBe(false);
+  expect(isKnownPlayer(null)).toBe(false);
 });

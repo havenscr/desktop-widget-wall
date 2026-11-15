@@ -17,6 +17,7 @@ export function registerMediaMocks(): void {
     playback_status: playing ? 'playing' : 'paused',
     source_app: 'Spotify',
     source_app_id: 'SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify',
+    session_key: 'SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify#0',
     art_key: 'Tokyo Burnout|Tokyo Rose|Night Drive|Spotify',
     position_seconds: 63,
     duration_seconds: 214,
