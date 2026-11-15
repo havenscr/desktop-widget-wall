@@ -1,3 +1,5 @@
+import { IconHome } from '@tabler/icons-react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { tip } from '../ui/HoverTip';
 import { HOUSE_REFRESH_MS, maxAge, useDeskHouse, type DeskRooms, type FeedState, type House } from './useDesk';
 
@@ -41,25 +43,104 @@ export function houseView(house: FeedState<House>, rooms: FeedState<DeskRooms>):
   return { text, rooms: roomList, stale, asOf: stale && asOfMs !== null ? `as of ${timeText(asOfMs)}` : null };
 }
 
-/** Home's house line under Sunset: the temperature and lit rooms, then a dot per room. */
+/** The room dots' row: indented to the text, 424 px wide. */
+export const ROOMS_ROW_PX = 424;
+const DOT_PX = 17; // the dot and its gap to the name
+const ROOM_GAP_PX = 18;
+const NAME_CHAR_PX = 9.2;
+const MORE_PX = 74;
+/** The gap kept between the last dot and "as of 9:41 AM" at the right end of the row. */
+const ASOF_GAP_PX = 18;
+
+type RoomDot = { id: string; name: string; on: boolean };
+
+/**
+ * The room dots that fit one line. When every room fits they stay in the home app's order.
+ * When some would not, the lit rooms come first (those are the ones worth seeing) and the rest
+ * are counted as "+N" at the end; their names go in that chip's hover card. Widths are close
+ * estimates at 18 px; the fit check measures the real line.
+ */
+export function fitRooms(rooms: RoomDot[], maxPx = ROOMS_ROW_PX): { shown: RoomDot[]; hidden: RoomDot[] } {
+  const w = (r: RoomDot) => DOT_PX + r.name.length * NAME_CHAR_PX;
+  const total = rooms.reduce((n, r) => n + w(r), 0) + Math.max(0, rooms.length - 1) * ROOM_GAP_PX;
+  if (total <= maxPx) return { shown: rooms, hidden: [] };
+  const ordered = [...rooms.filter((r) => r.on), ...rooms.filter((r) => !r.on)];
+  const shown: RoomDot[] = [];
+  let used = 0;
+  for (const r of ordered) {
+    const next = used + (shown.length ? ROOM_GAP_PX : 0) + w(r);
+    if (next + ROOM_GAP_PX + MORE_PX > maxPx) break;
+    shown.push(r);
+    used = next;
+  }
+  return { shown, hidden: ordered.slice(shown.length) };
+}
+
+/** "68° inside." in bold and the rest plain, as the row draws it. */
+function Lead({ text }: { text: string }) {
+  const m = /^(\d+° inside\.)(.*)$/.exec(text);
+  if (!m) return <>{text}</>;
+  return (
+    <>
+      <b>{m[1]}</b>
+      {m[2]}
+    </>
+  );
+}
+
+/**
+ * Home's house row under the weather row: the temperature and lit rooms, then a dot per room.
+ * Hidden while the home app's desk routes are absent; dimmed when not live. Every dot that fits
+ * the row's full width shows; "as of 9:41 AM" sits at the row's right end only when the measured
+ * dots leave room for it, otherwise it is in the hover card of the house row (and of each dot).
+ */
 export function HouseLine() {
   const { house, rooms } = useDeskHouse();
   const v = houseView(house, rooms);
+  const rowRef = useRef<HTMLDivElement>(null);
+  const [asOfFits, setAsOfFits] = useState(true);
+  const asOfKey = v?.asOf ?? '';
+  const roomKey = v ? v.rooms.map((r) => r.name).join('|') : '';
+  useLayoutEffect(() => {
+    const row = rowRef.current;
+    const label = row?.querySelector<HTMLElement>('.house-asof');
+    if (!row || !label) return;
+    const dots = row.querySelectorAll<HTMLElement>('.house-room');
+    const last = dots[dots.length - 1];
+    const end = last ? last.offsetLeft + last.offsetWidth : 0;
+    setAsOfFits(end + ASOF_GAP_PX + label.offsetWidth <= row.clientWidth);
+  }, [asOfKey, roomKey]);
   if (!v) return null;
+  const { shown, hidden } = fitRooms(v.rooms);
+  const asOf = v.asOf ? `, ${v.asOf}` : '';
   return (
-    <div className={v.stale ? 'home-blk house stale' : 'home-blk house'} aria-label="House">
-      <span className="k">
-        House{v.asOf && <span className="house-asof">{v.asOf}</span>}
-      </span>
-      <div className="t3 house-line">{v.text}</div>
-      {v.rooms.length > 0 && (
-        <div className="house-rooms">
-          {v.rooms.map((r) => (
-            <span key={r.id} className={r.on ? 'house-room on' : 'house-room'} {...tip(`${r.name}: ${r.on ? 'lights on' : 'lights off'}${v.asOf ? `, ${v.asOf}` : ''}`)}>
+    <div className={v.stale ? 'lw-house house stale' : 'lw-house house'} aria-label="House">
+      <div className="lw-row" {...tip(`Inside temperature and lit rooms from the home app${asOf}.`)}>
+        <span className="lw-glyph dim">
+          <IconHome size={22} stroke={1.7} aria-hidden="true" />
+        </span>
+        <span className="lw-text house-line">
+          <Lead text={v.text} />
+        </span>
+      </div>
+      {(v.rooms.length > 0 || v.asOf) && (
+        <div className="house-rooms" ref={rowRef}>
+          {shown.map((r) => (
+            <span key={r.id} className={r.on ? 'house-room on' : 'house-room'} {...tip(`${r.name}: ${r.on ? 'lights on' : 'lights off'}${asOf}`)}>
               <i aria-hidden="true" />
               {r.name}
             </span>
           ))}
+          {hidden.length > 0 && (
+            <span className="house-room more" {...tip(hidden.map((r) => `${r.name}: ${r.on ? 'lights on' : 'lights off'}`).join(', ') + asOf)}>
+              +{hidden.length} more
+            </span>
+          )}
+          {v.asOf && (
+            <span className={asOfFits ? 'lw-side house-asof' : 'lw-side house-asof off'} aria-hidden={asOfFits ? undefined : true}>
+              {v.asOf}
+            </span>
+          )}
         </div>
       )}
       {/* The "Next" automation line goes here once the home app has a routine schedule:
