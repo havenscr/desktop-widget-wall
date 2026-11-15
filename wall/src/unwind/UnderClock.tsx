@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
 import { IconPlus, IconVolume, IconVolumeOff, IconZzz } from '@tabler/icons-react';
-import { playerName, sourceKey } from '../music/players';
+import { playerName, procName, sourceKey } from '../music/players';
 import { useNowPlaying } from '../music/useNowPlaying';
 import { quietFocus, tip } from '../ui/HoverTip';
 import { clampVolume, volumePercent } from './model';
@@ -20,17 +20,14 @@ export const underClock = { hold: false };
 /** How often the chip's minutes are read again while the timer runs. */
 const CHIP_TICK_MS = 10_000;
 
+/**
+ * Sessions this row never moves: a web view or a browser. `set_audio_session_volume` matches a name by "contains" in
+ * either direction, so one of these would also move every other web view app, the wall's own sounds and the browser.
+ */
+export const SHARED_PROCESSES: ReadonlySet<string> = new Set(['msedgewebview2', 'msedge', 'chrome', 'firefox', 'brave', 'opera', 'vivaldi']);
+
 const NO_SOUND = 'Nothing playing on this PC can be turned up or down here.';
 const TWITCH_SOUND = 'Twitch keeps its own volume. Use the sound control on the video.';
-
-/** True when the focus on `el` is a keyboard one (`:focus-visible`); a browser without the selector counts every focus as keyboard. */
-function keyboardFocus(el: Element): boolean {
-  try {
-    return el.matches(':focus-visible');
-  } catch {
-    return true;
-  }
-}
 
 /**
  * Whether the rows are at rest (quiet) or shown. They start at rest. The pointer anywhere in the zone (the
@@ -41,6 +38,22 @@ function useRest(zone: { current: HTMLDivElement | null }, held: boolean) {
   const [pointer, setPointer] = useState(false);
   const [focus, setFocus] = useState(false);
   const [rest, setRest] = useState(true);
+  // Whether the last input was the keyboard: a focus after a click (the pin just pressed) does not hold the rows shown.
+  const keys = useRef(false);
+  useEffect(() => {
+    const key = () => {
+      keys.current = true;
+    };
+    const mouse = () => {
+      keys.current = false;
+    };
+    document.addEventListener('keydown', key, true);
+    document.addEventListener('pointerdown', mouse, true);
+    return () => {
+      document.removeEventListener('keydown', key, true);
+      document.removeEventListener('pointerdown', mouse, true);
+    };
+  }, []);
   useEffect(() => {
     const inside = (e: MouseEvent) => {
       const r = zone.current?.getBoundingClientRect();
@@ -65,7 +78,7 @@ function useRest(zone: { current: HTMLDivElement | null }, held: boolean) {
     const id = setTimeout(() => setRest(true), ctlTiming.restMs);
     return () => clearTimeout(id);
   }, [shown]);
-  return { rest, setFocus };
+  return { rest, focusIn: () => keys.current && setFocus(true), focusOut: () => setFocus(false) };
 }
 
 interface MenuAt {
@@ -193,7 +206,7 @@ function useSound() {
   const app = useAppVolume(video ? null : source);
   const lastLevel = useRef(0);
   const appLevel = volumePercent(app.value);
-  if (!video && app.session && appLevel > 0) lastLevel.current = appLevel;
+  if (!video && app.session && !SHARED_PROCESSES.has(procName(app.session.name)) && appLevel > 0) lastLevel.current = appLevel;
   const name = playerName(source) ?? 'the player';
 
   if (video) {
@@ -211,7 +224,7 @@ function useSound() {
       set: (v: number) => useWatchStore.getState().setVolume(v),
     };
   }
-  const none = !app.session;
+  const none = !app.session || SHARED_PROCESSES.has(procName(app.session.name));
   const back = lastLevel.current || 50;
   return {
     disabled: none,
@@ -306,7 +319,7 @@ function SleepChip() {
 export function UnderClock() {
   const zone = useRef<HTMLDivElement | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
-  const { rest, setFocus } = useRest(zone, menuOpen);
+  const { rest, focusIn, focusOut } = useRest(zone, menuOpen);
   return (
     <>
       {/* The pointer zone: the date line down to the last row. It only measures; it takes no pointer. */}
@@ -314,11 +327,9 @@ export function UnderClock() {
       <div
         className="u-quick"
         data-rest={rest ? 'true' : undefined}
-        onFocus={(e) => {
-          if (keyboardFocus(e.target as Element)) setFocus(true);
-        }}
+        onFocus={focusIn}
         onBlur={(e) => {
-          if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setFocus(false);
+          if (!e.currentTarget.contains(e.relatedTarget as Node | null)) focusOut();
         }}
       >
         <Pins onMenu={setMenuOpen} />

@@ -113,7 +113,9 @@ export function PlayerFrame({ item, title, shown = true }: { item: WatchRef; tit
   // The store's level (the slider under the clock) goes to the player; `posted` is the last one that reached it.
   const sendLevel = () => {
     const level = useWatchStore.getState().volume;
-    if (post(commandMessage('setVolume', [level]))) posted.current = level;
+    const sent = post(commandMessage('setVolume', [level]));
+    if (sent) posted.current = level;
+    return sent;
   };
 
   const fullVolume = () => {
@@ -242,8 +244,7 @@ export function PlayerFrame({ item, title, shown = true }: { item: WatchRef; tit
     if (volTimer.current !== undefined) return;
     const send = () => {
       volTimer.current = undefined;
-      volSentAt.current = Date.now();
-      if (!useWatchStore.getState().muted) sendLevel();
+      if (!useWatchStore.getState().muted && sendLevel()) volSentAt.current = Date.now();
     };
     const wait = volSentAt.current + LEVEL_EVERY_MS - Date.now();
     if (wait <= 0) send();

@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { isPlaying, type NowPlayingInfo } from '../../music/model';
 import { isKnownPlayer, playerName, sourceKey } from '../../music/players';
 import { spotify } from '../../music/spotify';
-import { refreshNowPlaying, sendMediaCommand, useNowPlayingStore } from '../../music/store';
+import { acquireNowPlaying, refreshNowPlaying, sendMediaCommand, useNowPlayingStore } from '../../music/store';
 import { spotifyReady, useSpotifyStatus } from '../spotify/status';
 import { useWatchStore } from './store';
 
@@ -11,6 +11,8 @@ export const SLEEP_STEPS = [30, 60, 90] as const;
 const MINUTE = 60_000;
 /** What the player showed less than this long ago may be trusted for a play or pause toggle. */
 export const INFO_FRESH_MS = 10_000;
+/** The end waits this long at most for a fresh read of what the player shows. */
+export const READ_WAIT_MS = 3_000;
 
 interface SleepState {
   /** `Date.now()` when the timer ends, or null while it is off. */
@@ -93,18 +95,36 @@ function ownVideo(source: string | null): boolean {
 }
 
 /**
+ * One fresh read of what the player shows, whether or not Unwind is polling it now: the poll is held for the read
+ * and a read is asked for. Gives up after `READ_WAIT_MS`; the freshness check below then refuses a stale answer.
+ */
+function freshRead(): Promise<void> {
+  const since = Date.now();
+  const release = acquireNowPlaying();
+  return new Promise((resolve) => {
+    let t: ReturnType<typeof setTimeout> | undefined;
+    const done = () => {
+      unsub();
+      clearTimeout(t);
+      release();
+      resolve();
+    };
+    const unsub = useNowPlayingStore.subscribe((s) => {
+      if (s.at >= since) done();
+    });
+    t = setTimeout(done, READ_WAIT_MS);
+    void refreshNowPlaying().catch(() => {});
+  });
+}
+
+/**
  * What the timer's end does to the player the wall follows. Spotify, when signed in: its own pause (a
  * real pause, never a toggle). Any other known player: one play and pause key, only when the player
  * said `playing` a moment ago. Anything else (paused, no information, a stale answer, the wall's own
  * video, an app the wall does not know): nothing, because a toggle must never start music.
  */
 async function pausePlayer(): Promise<void> {
-  // A fresh read first when the poll runs; without a poll the answer below may be stale.
-  try {
-    await refreshNowPlaying();
-  } catch {
-    /* the last answer stays */
-  }
+  await freshRead();
   const { info, at } = useNowPlayingStore.getState();
   const source = sourceKey(info);
   if (playerName(source) === 'Spotify' && spotifyReady(useSpotifyStatus.getState())) {
