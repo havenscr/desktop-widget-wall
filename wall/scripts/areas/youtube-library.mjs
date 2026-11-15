@@ -103,7 +103,7 @@ function measureYoutubeLibrary() {
   }
   // Where the library cannot show: the remote and the line under it end above wall y 486.
   const hint = hintEl?.getBoundingClientRect();
-  return { yt: true, tall, lib: !!libEl, hint: hint ? { bottom: r0(hint.bottom), top: r0(hint.top) } : null, cardBottom: r0(card.bottom), fails };
+  return { yt: true, tall, lib: !!libEl, tiles: libEl ? libEl.querySelectorAll('.yt-tile').length : 0, rows: libEl ? libEl.querySelectorAll('.yt-row').length : 0, hint: hint ? { bottom: r0(hint.bottom), top: r0(hint.top) } : null, cardBottom: r0(card.bottom), fails };
 }
 
 const fitQuery = (extra, when = day) => `?hz=unwind&at=${when}&long=1&agents=3&${extra}`;
@@ -177,6 +177,9 @@ export default {
           if (!m.hint) fails.push('the line under the remote is not there');
           else if (m.hint.bottom > 486.5 || m.cardBottom > 486.5) fails.push('the remote and its line end at y ' + Math.max(m.hint.bottom, m.cardBottom) + ' (486 at most)');
         } else if (!m.lib) fails.push('the library is not shown');
+        // The states that show content must have read it: tiles for the playlist views, rows for the rest.
+        else if (/(Playlists|a few playlists|searches left|long names)$/.test(variant.name) && m.tiles === 0) fails.push('no playlist tile was drawn (the first read never finished)');
+        else if (/(Liked|search results|a playlist opened)$/.test(variant.name) && m.rows === 0) fails.push('no row was drawn (the read never finished)');
         for (const failure of fails) emit(`  FAIL youtube library: ${failure}`);
         if (fails.length) return true;
         emit(m.lib

@@ -63,18 +63,17 @@ let epoch = 0;
 
 /**
  * Whether the library is on screen: mounted (the YouTube side shows it) and the page visible. Nothing is
- * read while it is not, and `seq` changes whenever it is shown or closed, so a read that was started by an
- * earlier showing never writes its answer into the store (what is loaded stays).
+ * read while it is not, and an answer that arrives while it is closed is dropped (what is loaded stays).
+ * A development build mounts, unmounts and mounts again at once: the answer then still lands, since the
+ * library is shown when it arrives.
  */
-const view = { mounted: false, visible: true, seq: 0 };
+const view = { mounted: false, visible: true };
 const canRead = () => view.mounted && view.visible;
 /** The library was mounted; the returned function says it is gone. */
 export function libraryMounted(): () => void {
   view.mounted = true;
-  view.seq += 1;
   return () => {
     view.mounted = false;
-    view.seq += 1;
   };
 }
 export function libraryVisible(visible: boolean): void {
@@ -127,7 +126,6 @@ export async function loadList(key: Key, more = false, fresh = false): Promise<v
   if (cur.loading) return;
   if (more && (!cur.next || cur.pages >= MAX_PAGES || cur.problem)) return;
   const mine = epoch;
-  const shown = view.seq;
   const forId = key === 'songs' ? state.opened?.id : null;
   const set = (patch: (c: Loaded<YtPlaylist | YtVideo>) => Loaded<YtPlaylist | YtVideo>) => useYtLibrary.setState((s) => ({ [key]: patch(s[key] as Loaded<YtPlaylist | YtVideo>) }) as Partial<LibraryState>);
   const gone = () => mine !== epoch || (key === 'songs' && useYtLibrary.getState().opened?.id !== forId);
@@ -135,8 +133,8 @@ export async function loadList(key: Key, more = false, fresh = false): Promise<v
   try {
     const page = shaped(await read(key, more ? cur.next : null, fresh));
     if (gone()) return;
-    // The library was closed (or shown again) while this read ran: what is loaded stays as it was.
-    if (shown !== view.seq) return void set((c) => ({ ...c, loading: false }));
+    // The library was closed while this read ran: what is loaded stays as it was.
+    if (!view.mounted) return void set((c) => ({ ...c, loading: false }));
     set((c) => ({
       // One rule for every page: a video already in the list is not added again.
       items: mergePage(more ? (c.items as { id: string }[]) : [], page.items as { id: string }[]) as typeof c.items,
@@ -151,7 +149,7 @@ export async function loadList(key: Key, more = false, fresh = false): Promise<v
     }));
   } catch (e) {
     if (gone()) return;
-    if (shown !== view.seq) return void set((c) => ({ ...c, loading: false }));
+    if (!view.mounted) return void set((c) => ({ ...c, loading: false }));
     const problem = ytProblem(e);
     set((c) => ({ ...c, loading: false, loaded: true, problem, failed: more ? 'more' : 'first', failedFresh: !more && fresh }));
     if (staleStatus(problem)) void readYoutubeStatus();
@@ -195,7 +193,6 @@ export async function runSearch(text: string): Promise<void> {
   const words = searchWords(text);
   if (!words || !canRead()) return;
   const mine = epoch;
-  const shown = view.seq;
   const seq = ++searchSeq;
   const key = words.toLowerCase();
   const seen = memo.get(key);
@@ -217,7 +214,7 @@ export async function runSearch(text: string): Promise<void> {
   // This search is over for the page if it is old (a newer one was asked), or if the library was closed meanwhile.
   const stale = () => mine !== epoch || seq !== searchSeq;
   const closed = () => {
-    if (shown === view.seq) return false;
+    if (view.mounted) return false;
     if (seq === searchSeq) useYtLibrary.setState({ query: '', found: null });
     return true;
   };
