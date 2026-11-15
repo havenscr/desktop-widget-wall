@@ -1824,7 +1824,7 @@ Watt is also a small pet ("he"), calm and silent (no sound at all):
   firefly drifts in a slow loop near him and blinks softly (never brighter than his wool); he
   turns to watch it. Not under reduced motion, never in a call.
 - **A little life**: he reads a tiny book during focus, wears headphones on Unwind while music
-  plays, sunglasses at a clear midday, an umbrella in rain, a scarf when it is cold, a nightcap
+  plays, sunglasses at a clear midday, a scarf when it is cold, a nightcap
   asleep; he looks up at the moon in the evening, yawns and stretches when he wakes at 6:30,
   and naps where he stands while the display is idle. His mood (content, happy, sleepy,
   curious) only changes which lines and idle poses he picks; it never goes below content. Twice

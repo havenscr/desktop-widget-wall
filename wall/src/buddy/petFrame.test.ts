@@ -78,8 +78,9 @@ describe('what she wears', () => {
     expect(f.pose).toBe('read');
     expect(f.prop).toBe('book');
   });
-  it('an umbrella in rain, a scarf when cold, sunglasses at a clear midday, headphones on Unwind with music', () => {
-    expect(frame(mind({ rain: true })).prop).toBe('umbrella');
+  it('rain gives no prop; a scarf when cold, sunglasses at a clear midday, headphones on Unwind with music (also in rain)', () => {
+    expect(frame(mind({ rain: true })).prop).toBeNull();
+    expect(frame(mind({ rain: true }), { place: 'unwind', playing: true }).prop).toBe('headphones');
     expect(frame(mind({ cold: true })).scarf).toBe(true);
     expect(frame(mind({ sunny: true })).prop).toBe('sunglasses');
     expect(frame(mind(), { place: 'unwind', playing: true }).prop).toBe('headphones');
@@ -134,7 +135,6 @@ describe('what she wears', () => {
   });
   it('never draws a prop that would stick out too far: every pose and prop is checked', () => {
     for (const pose of POSES) for (const prop of PROPS) if (propFits(prop, pose)) expect(PROP_RISE_MAX).toBe(2);
-    expect(propFits('umbrella', 'look')).toBe(false);
     expect(propFits('scarf', 'sleep')).toBe(false);
     expect(propFits('nightcap', 'sleep')).toBe(true);
   });
@@ -142,11 +142,11 @@ describe('what she wears', () => {
 
 describe('reduced motion', () => {
   it('still poses: middle of the walk, no hop, no wiggle, no squash, nothing drifting; props stay', () => {
-    const f = frame(mind({ react: 'hop', reactT: 0.3, rain: true, bob: 1 }), { still: true });
-    expect(f.x).toBe((walk.min + walk.max) / 2);
+    const f = frame(mind({ react: 'hop', reactT: 0.3, rain: true, bob: 1 }), { still: true, place: 'unwind', playing: true });
+    expect(f.x).toBe((WALKS.unwind.min + WALKS.unwind.max) / 2);
     expect(f.lift).toBe(0);
     expect(f.squash).toBe(1);
-    expect(f.prop).toBe('umbrella');
+    expect(f.prop).toBe('headphones');
     const p = frame(mind({ react: 'pet', reactT: 0.2 }), { still: true });
     expect(p.dir).toBe(1);
     expect(p.hearts).toBe(true);

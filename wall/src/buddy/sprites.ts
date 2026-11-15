@@ -253,8 +253,8 @@ export const EAR: Readonly<Record<Pose, readonly [number, number]>> = {
 };
 
 /** Things she wears or holds. `book` to `nightcap` follow the day; `bow`, `star` and `cape` are cosmetics. */
-export type Prop = 'book' | 'headphones' | 'sunglasses' | 'umbrella' | 'scarf' | 'nightcap' | 'bow' | 'star' | 'cape';
-export const PROPS: readonly Prop[] = ['book', 'headphones', 'sunglasses', 'umbrella', 'scarf', 'nightcap', 'bow', 'star', 'cape'];
+export type Prop = 'book' | 'headphones' | 'sunglasses' | 'scarf' | 'nightcap' | 'bow' | 'star' | 'cape';
+export const PROPS: readonly Prop[] = ['book', 'headphones', 'sunglasses', 'scarf', 'nightcap', 'bow', 'star', 'cape'];
 
 /**
  * A prop's map and where it goes, in sprite pixels: from the pose's ear pixel (`ear`) or from the
@@ -274,7 +274,6 @@ export const PROP_SPRITES: Readonly<Record<Prop, PropSprite>> = {
   // One big cup over the ear, the band over the top of the head and down in front of the face.
   headphones: { map: ['..kk.', 'ccc.k', 'cCc..', 'ccc..'], dx: -2, dy: -1, anchor: 'ear' },
   sunglasses: { map: ['ggghg'], dx: -1, dy: 2, anchor: 'ear' },
-  umbrella: { map: ['..UUUUU..', '.uuuuuuu.', 'uuuuuuuuu', '....i....', '....i....', '....i....', '....ii...'], dx: -5, dy: -4, anchor: 'ear' },
   scarf: { map: ['rRrRr', '.r...', '.R...'], dx: -2, dy: 4, anchor: 'ear' },
   nightcap: { map: ['....nN', '..nnn.', '.nnnn.'], dx: -1, dy: -3, anchor: 'ear' },
   bow: { map: ['xx.xx', '.xxx.'], dx: -3, dy: -1, anchor: 'ear' },
@@ -359,9 +358,6 @@ export const PROP_COLORS: Readonly<Record<string, string>> = {
   c: '#ff3d9a',
   g: '#05030f',
   h: '#35e6ea',
-  u: '#ff3d9a',
-  U: '#ff7ab8',
-  i: '#8f86c9',
   r: '#ff3d9a',
   R: '#ffc24d',
   n: '#6b5fd0',

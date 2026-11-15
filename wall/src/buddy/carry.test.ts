@@ -35,7 +35,7 @@ import {
 } from './carry';
 import { GROUNDS } from './ground';
 import { WALKS, middle, spriteHeight, spriteWidth } from './model';
-import { createMind, createPetFrame } from './petFrame';
+import { createMind, createPetFrame, propRise } from './petFrame';
 
 const walk = WALKS.work;
 const GROUND = GROUNDS.work;
@@ -84,10 +84,11 @@ describe('being carried', () => {
   });
   it('keeps props on the stage too: a prop on his head cannot cross the top edge', () => {
     const c = lifted();
-    const props = { prop: 'umbrella', scarf: false, cosmetic: null } as const;
+    const props = { prop: 'nightcap', scarf: false, cosmetic: null } as const;
+    expect(propRise({ pose: 'held', ...props })).toBeGreaterThan(0);
     moveCarry(c, 600, -400);
     for (let i = 0; i < 60; i++) stepCarry(c, 1 / 60, i / 60, HY, SIZE, 985, false, props);
-    // The umbrella rises two sprite pixels above his head row 0 (see propFits), and the box keeps it in.
+    // The nightcap rises above his head row 0 (see propFits), and the box keeps it in.
     expect(c.y).toBeGreaterThanOrEqual(0);
   });
   it('swings like a pendulum with the pointer speed, past upright once it stops, then hangs still', () => {
