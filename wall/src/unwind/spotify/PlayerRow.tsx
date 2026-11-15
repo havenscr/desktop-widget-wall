@@ -22,6 +22,8 @@ const AFTER_PRESS_MS = 800;
 /** The local clock re-reads the state when a song's length is reached, then not again for this long. */
 const END_READ_GAP_MS = 3_000;
 const NOTE_MS = 6_000;
+/** The note under the heart that says Spotify refused a save closes by itself after this long. */
+export const REFUSED_NOTE_MS = 4_000;
 
 /** The line under the song when Spotify refuses a save or a removal. */
 export const SAVE_FAILED_LINE = 'Could not save this song';
@@ -36,6 +38,17 @@ interface Anchor {
 }
 
 type Press = 'previous' | 'play' | 'next';
+
+interface HeartState {
+  id: string;
+  /** What Spotify last said about the song: the read, or a write that worked. Null until the first answer. */
+  confirmed: boolean | null;
+  /** The value a click is writing now. */
+  pending: boolean | null;
+  /** The read failed and nothing else is known. */
+  failed: boolean;
+}
+type HeartNote = { kind: 'permission' } | { kind: 'refused'; text: string };
 
 /**
  * The player row at the foot of the tall view: the song's cover, title and artist, previous, play or
@@ -128,48 +141,61 @@ export function PlayerRow() {
     read();
   }, [running, base, duration, read]);
 
-  // The heart: saved or not for the song that plays now, keyed by its id so another song's answer is never shown.
+  // The heart. What Spotify says about the song that plays now is kept per song id, so another song's answer is never shown:
+  // `confirmed` is the last answer Spotify gave (the read, or a write that worked), `pending` the value a click is writing.
+  // The heart shows `pending ?? confirmed`; a refused write drops `pending`, so the heart goes back to what Spotify said,
+  // whichever of the read and the write answers first.
   const trackId = song?.id ?? null;
-  const canSave = useSpotifyStatus((st) => st.status?.canSave === true);
-  const [liked, setLiked] = useState<{ id: string; saved: boolean | null; failed: boolean } | null>(null);
-  const [ask, setAsk] = useState(false);
+  const permission = useSpotifyStatus((st) => st.status?.canSave ?? 'unknown');
+  // Only a known "no" dims the heart: before the first token answer after a restart the list is unknown and the heart works as usual.
+  const dim = permission === 'no';
+  const [liked, setLiked] = useState<HeartState | null>(null);
+  const [heartNote, setHeartNote] = useState<HeartNote | null>(null);
   const heart = liked && liked.id === trackId ? liked : null;
-  const saved = heart?.saved === true;
+  const saved = (heart?.pending ?? heart?.confirmed) === true;
   const wrap = useRef<HTMLSpanElement | null>(null);
   const heartBtn = useRef<HTMLButtonElement | null>(null);
-  // The id a click has already changed: a late read must not undo it. And whether a save call is out.
-  const touched = useRef<string | null>(null);
-  const saving = useRef(false);
+  // The song shown now and its heart, as the latest render saw them (the callbacks below run later).
+  const trackRef = useRef(trackId);
+  trackRef.current = trackId;
+  const heartRef = useRef(heart);
+  heartRef.current = heart;
+  // The id whose state a write that worked has set: a read that answers later must not undo it.
+  const settled = useRef<string | null>(null);
+  // The click in progress, status read included: one at a time per song, and a song other than the one shown changes nothing on screen.
+  const operation = useRef<{ id: string } | null>(null);
   useEffect(() => {
-    setAsk(false);
-    touched.current = null;
+    setHeartNote(null);
+    settled.current = null;
     if (!trackId) return;
+    setLiked({ id: trackId, confirmed: null, pending: null, failed: false });
     let live = true;
     spotify.saved(trackId).then(
       (answer) => {
         if (!live) return;
-        if (touched.current !== trackId) setLiked({ id: trackId, saved: answer, failed: false });
+        if (settled.current !== trackId) setLiked((cur) => (cur && cur.id === trackId ? { ...cur, confirmed: answer, failed: false } : cur));
         // That call refreshed the token if it had to, so Spotify has now said which permissions the sign-in holds.
-        if (useSpotifyStatus.getState().status?.canSave !== true) void readSpotifyStatus();
+        if (useSpotifyStatus.getState().status?.canSave !== 'yes') void readSpotifyStatus();
       },
       () => {
-        if (live && touched.current !== trackId) setLiked({ id: trackId, saved: null, failed: true });
+        if (live) setLiked((cur) => (cur && cur.id === trackId && cur.confirmed === null ? { ...cur, failed: true } : cur));
       },
     );
     return () => {
       live = false;
     };
   }, [trackId]);
+  const noteKind = heartNote?.kind ?? null;
   useEffect(() => {
-    if (!ask) return;
+    if (!noteKind) return;
     const outside = (e: PointerEvent) => {
-      if (e.target instanceof Node && !wrap.current?.contains(e.target)) setAsk(false);
+      if (e.target instanceof Node && !wrap.current?.contains(e.target)) setHeartNote(null);
     };
-    // Escape closes the note first, the innermost thing: on the window in the capture phase, so the card's own Escape (which closes the tall view) does not also run.
+    // Escape closes the permission note first, the innermost thing: on the window in the capture phase, so the card's own Escape (which closes the tall view) does not also run.
     const escape = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
+      if (e.key !== 'Escape' || noteKind !== 'permission') return;
       e.stopPropagation();
-      setAsk(false);
+      setHeartNote(null);
       heartBtn.current?.focus();
     };
     document.addEventListener('pointerdown', outside, true);
@@ -178,50 +204,70 @@ export function PlayerRow() {
       document.removeEventListener('pointerdown', outside, true);
       window.removeEventListener('keydown', escape, true);
     };
-  }, [ask]);
-  const flip = (id: string) => {
-    const before = heart;
-    const on = !(before?.saved === true);
-    touched.current = id;
-    saving.current = true;
-    setLiked({ id, saved: on, failed: false });
+  }, [noteKind]);
+  /** Spotify said the sign-in lacks the permission: the capability is "no" whichever song is shown. */
+  const markNoPermission = () => useSpotifyStatus.setState((st) => ({ status: st.status ? { ...st.status, canSave: 'no' } : st.status }));
+  const write = (id: string, mine: { id: string }) => {
+    const finish = () => {
+      if (operation.current === mine) operation.current = null;
+    };
+    const shown = () => mounted.current && trackRef.current === id;
+    const now = heartRef.current;
+    const on = !((now?.pending ?? now?.confirmed) === true);
+    setLiked((cur) => (cur && cur.id === id ? { ...cur, pending: on } : cur));
     spotify.save(id, on).then(
       () => {
-        saving.current = false;
+        finish();
+        if (!shown()) return;
+        settled.current = id;
+        setLiked((cur) => (cur && cur.id === id ? { ...cur, confirmed: on, pending: null, failed: false } : cur));
       },
       (e) => {
-        saving.current = false;
-        if (!mounted.current) return;
-        // The heart goes back, unless the song has changed meanwhile (the new song has its own read).
-        setLiked((cur) => (cur && cur.id === id ? before ?? { id, saved: null, failed: false } : cur));
-        if (spotifyProblem(e) === 'needsSignIn') {
-          useSpotifyStatus.setState((st) => ({ status: st.status ? { ...st.status, canSave: false } : st.status }));
-          setAsk(true);
+        finish();
+        const needsSignIn = spotifyProblem(e) === 'needsSignIn';
+        if (needsSignIn) markNoPermission();
+        if (!shown()) return;
+        setLiked((cur) => (cur && cur.id === id ? { ...cur, pending: null } : cur));
+        if (needsSignIn) {
+          setHeartNote({ kind: 'permission' });
           return;
         }
-        setNote(on ? SAVE_FAILED_LINE : REMOVE_FAILED_LINE);
-        later(() => setNote(null), NOTE_MS);
+        const refused: HeartNote = { kind: 'refused', text: on ? SAVE_FAILED_LINE : REMOVE_FAILED_LINE };
+        setHeartNote(refused);
+        later(() => setHeartNote((cur) => (cur === refused ? null : cur)), REFUSED_NOTE_MS);
       },
     );
   };
   const heartClick = () => {
-    if (!trackId || saving.current) return;
-    if (canSave) {
-      flip(trackId);
+    const id = trackRef.current;
+    if (!id || operation.current?.id === id) return;
+    const mine = { id };
+    operation.current = mine;
+    const shown = () => mounted.current && trackRef.current === id;
+    if (useSpotifyStatus.getState().status?.canSave !== 'no') {
+      write(id, mine);
       return;
     }
     // The sign-in may have been renewed since the status was read: ask again before explaining.
     spotify.status().then(
       (st) => {
-        if (!mounted.current) return;
         if (st && typeof st === 'object') useSpotifyStatus.setState({ status: st, failed: false });
-        if (st?.canSave) flip(trackId);
-        else setAsk(true);
+        if (!shown() || operation.current !== mine) {
+          if (operation.current === mine) operation.current = null;
+          return;
+        }
+        if (st?.canSave === 'no') {
+          operation.current = null;
+          setHeartNote({ kind: 'permission' });
+        } else write(id, mine);
       },
-      () => mounted.current && setAsk(true),
+      () => {
+        if (operation.current === mine) operation.current = null;
+        if (shown()) setHeartNote({ kind: 'permission' });
+      },
     );
   };
-  const heartLabel = canSave ? (saved ? 'Remove from Liked Songs' : 'Save to Liked Songs') : 'Save to Liked Songs (needs a new sign-in)';
+  const heartLabel = dim ? 'Save to Liked Songs (needs a new sign-in)' : saved ? 'Remove from Liked Songs' : 'Save to Liked Songs';
 
   const fromWindows = !isQuiet(info) && playerName(sourceKey(info)) === 'Spotify';
   // Spotify reports a player: its own commands, whichever device plays. None: Windows' keys, but only for Spotify on this PC.
@@ -366,34 +412,49 @@ export function PlayerRow() {
           <button
             ref={heartBtn}
             type="button"
-            className={`sp-pl-btn sp-heart${canSave && saved ? ' on' : ''}${canSave ? '' : ' off'}`}
+            className={`sp-pl-btn sp-heart${!dim && saved ? ' on' : ''}${dim ? ' off' : ''}`}
             aria-label={heartLabel}
-            aria-pressed={canSave ? saved : undefined}
+            aria-pressed={dim ? undefined : saved}
             data-control="heart"
             data-saved={saved ? 'true' : 'false'}
             {...tip(() => (
               <div className="sp-tipline">
-                <b>{canSave ? (saved ? 'Remove from Liked Songs' : 'Save to Liked Songs') : 'Save to Liked Songs'}</b>
-                {canSave ? heart?.failed ? <span>Could not check if it is saved.</span> : null : <span>Needs one more Spotify permission. Click to see how.</span>}
+                <b>{!dim && saved ? 'Remove from Liked Songs' : 'Save to Liked Songs'}</b>
+                {dim ? <span>Needs one more Spotify permission. Click to see how.</span> : heart?.failed ? <span>Could not check if it is saved.</span> : null}
               </div>
             ))}
             onClick={heartClick}
+            // Enter and Space are handled here, the way the wall's other buttons do, so a key press is one activation: Enter on the key down, Space on the key up.
+            onKeyDown={(e) => {
+              if (e.key !== 'Enter' && e.key !== ' ') return;
+              e.preventDefault();
+              if (e.key === 'Enter' && !e.repeat) heartClick();
+            }}
+            onKeyUp={(e) => {
+              if (e.key !== ' ') return;
+              e.preventDefault();
+              heartClick();
+            }}
           >
             {saved ? <IconHeartFilled size={18} aria-hidden="true" /> : <IconHeart size={18} aria-hidden="true" />}
           </button>
-          {ask ? (
+          {heartNote?.kind === 'permission' ? (
             <div className="sp-heart-ask" role="group" aria-label="Saving songs">
               <p>{NEEDS_PERMISSION_LINE}</p>
               <button
                 type="button"
                 className="sp-btn"
                 onClick={() => {
-                  setAsk(false);
+                  setHeartNote(null);
                   useToolsStore.getState().openDrawer('accounts');
                 }}
               >
                 Open Tools
               </button>
+            </div>
+          ) : heartNote ? (
+            <div className="sp-heart-ask refused" role="status">
+              <p>{heartNote.text}</p>
             </div>
           ) : null}
         </span>
