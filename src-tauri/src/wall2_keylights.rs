@@ -1252,7 +1252,7 @@ mod tests {
                 std::thread::sleep(Duration::from_millis(1));
             }
             if i == 0 {
-                // The leader is now inside its first write.
+                // The writing caller is now inside its first write.
                 std::thread::sleep(Duration::from_millis(20));
             }
         }
@@ -1609,7 +1609,7 @@ mod tests {
                 inside.fetch_sub(1, Ordering::SeqCst);
                 got
             }));
-            // The first caller is leading and held inside its write before the flood starts.
+            // The first caller is writing and held inside its write before the flood starts.
             if i == 0 {
                 while co.submitted() < 1 {
                     std::thread::sleep(Duration::from_millis(1));
@@ -1617,16 +1617,16 @@ mod tests {
                 std::thread::sleep(Duration::from_millis(20));
             }
         }
-        // Let every caller arrive: all but the leader and MAX_WAITERS answer busy without waiting.
+        // Let every caller arrive: all but the writing caller and MAX_WAITERS answer busy without waiting.
         let t = Instant::now();
         while busy.load(Ordering::SeqCst) < 1000 - 1 - MAX_WAITERS && t.elapsed() < Duration::from_secs(20) {
             std::thread::sleep(Duration::from_millis(5));
         }
-        assert_eq!(busy.load(Ordering::SeqCst), 1000 - 1 - MAX_WAITERS, "all but the leader and {MAX_WAITERS} waiters are told busy at once");
+        assert_eq!(busy.load(Ordering::SeqCst), 1000 - 1 - MAX_WAITERS, "all but the writing caller and {MAX_WAITERS} waiters are told busy at once");
         release_tx.send(()).unwrap();
         let answers: Vec<_> = handles.into_iter().map(|h| h.join().unwrap()).collect();
         let waited = answers.iter().filter(|a| **a != Err(Word::Busy)).count();
-        assert_eq!(waited, 1 + MAX_WAITERS, "only the leader and the waiters ever held a worker");
+        assert_eq!(waited, 1 + MAX_WAITERS, "only the writing caller and the waiters ever held a worker");
         // The values of the callers told busy were still handed over: the light got a final write.
         assert!(http.calls().iter().filter(|c| c.starts_with("PUT")).count() <= 3);
         assert!(answers.iter().filter(|a| **a != Err(Word::Busy)).all(|a| *a == Ok(Light { on: true, brightness: 99, kelvin: 4400 })));
