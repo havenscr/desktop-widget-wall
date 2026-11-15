@@ -30,6 +30,10 @@ any name and description, add the redirect URI exactly
 The port is optional and defaults to 8898. Press Sign in on the wall's Spotify card. Starting playback from the wall needs Spotify Premium. The integration
 has not been verified against the live Spotify service.
 
+The bounded `wall2-spotify.log` uses only the event words `sign-in-start`, `sign-in-ok`,
+`sign-in-failed`, `sign-out`, `refresh-ok`, `refresh-refused`, `api-failed`, `cover-refused` and
+`no-device`. The `cover-refused` line records only the number of refused cover addresses in that answer.
+
 ### Saving songs (the heart on the player row)
 
 The sign-in asks for one more permission, `user-library-modify` (the scope Spotify's reference lists
@@ -74,7 +78,8 @@ the status changes only after the first library or playback call tries to refres
 The panel must render every Spotify name as plain text, including playlist names from
 other people in search, and must never render those names as markup.
 Library items include bounded subtitles, counts and cover images selected near 300 and
-64 pixels. Track lists use 50 items per page and stop at page 39. Queue reads return at
+64 pixels. Covers are accepted from any host under `scdn.co` or `spotifycdn.com` over `https`.
+Track lists use 50 items per page and stop at page 39. Queue reads return at
 most 10 upcoming tracks. Playback reads return no value when Spotify has no active
 session. The seek command (`wall2_spotify_seek`) takes a position in milliseconds, at most 24 hours, and returns the module's fixed words on failure. The YouTube Music action opens the fixed `https://music.youtube.com/` address.
 Track-producing reads send `market=from_token`. A track is unplayable only when
@@ -2921,7 +2926,7 @@ Set in `src-tauri/tauri.wall2.conf.json` under `app.security.csp` (Ridgeline onl
 the old app's config is untouched). It allows own files (`'self'`), data: images,
 own fonts, connections to the Tauri IPC (`ipc:`, `http://ipc.localhost`,
 `https://ipc.localhost`), pictures only from the card's own picture hosts (`img-src` lists
-`https://i.scdn.co`, `https://mosaic.scdn.co`, `https://image-cdn-ak.spotifycdn.com` and, for the
+`https://*.scdn.co`, `https://*.spotifycdn.com` and, for the
 YouTube library's thumbnails, `https://i.ytimg.com`), no weather service (the weather is read natively), and frames from the two
 video players only (`frame-src https://www.youtube-nocookie.com https://player.twitch.tv`,
 in `csp` and `devCsp`, for Unwind's Watch tab). Everything else is
