@@ -8,9 +8,9 @@ const LOG_CAP: usize = 64 * 1024;
 static TX: OnceLock<SyncSender<String>> = OnceLock::new();
 
 #[derive(Clone, Copy)]
-pub enum Event { SignInStart, SignInOk, SignInFailed, SignOut, RefreshOk, RefreshRefused, ApiFailed }
+pub enum Event { SignInStart, SignInOk, SignInFailed, SignOut, RefreshOk, RefreshRefused, ApiFailed, CoverRefused }
 impl Event {
-    fn word(self) -> &'static str { match self { Self::SignInStart => "sign-in-start", Self::SignInOk => "sign-in-ok", Self::SignInFailed => "sign-in-failed", Self::SignOut => "sign-out", Self::RefreshOk => "refresh-ok", Self::RefreshRefused => "refresh-refused", Self::ApiFailed => "api-failed" } }
+    fn word(self) -> &'static str { match self { Self::SignInStart => "sign-in-start", Self::SignInOk => "sign-in-ok", Self::SignInFailed => "sign-in-failed", Self::SignOut => "sign-out", Self::RefreshOk => "refresh-ok", Self::RefreshRefused => "refresh-refused", Self::ApiFailed => "api-failed", Self::CoverRefused => "cover-refused" } }
 }
 
 #[derive(Clone, Copy)]
@@ -61,7 +61,7 @@ mod tests {
         assert_eq!(fields, ["api-failed", "down", "503", "42"]);
         assert!(fields[2].bytes().all(|b| b.is_ascii_digit()));
         assert!(fields[3].bytes().all(|b| b.is_ascii_digit()));
-        for event in [Event::SignInStart, Event::SignInOk, Event::SignInFailed, Event::SignOut, Event::RefreshOk, Event::RefreshRefused, Event::ApiFailed] {
+        for event in [Event::SignInStart, Event::SignInOk, Event::SignInFailed, Event::SignOut, Event::RefreshOk, Event::RefreshRefused, Event::ApiFailed, Event::CoverRefused] {
             assert!(line(event, Reason::Failed, 0, 1).bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'-' | b' ' | b'\n')));
         }
         assert_eq!(device_line(4, 1, 2, 1), "no-device 4 1 2 1\n");

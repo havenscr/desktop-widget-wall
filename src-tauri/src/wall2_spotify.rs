@@ -299,8 +299,25 @@ fn clean(value: Option<&Value>, max: usize) -> Option<String> {
 
 fn valid_id(s: &str) -> bool { s.len() == 22 && s.bytes().all(|b| b.is_ascii_alphanumeric()) }
 fn valid_device_id(s: &str) -> bool { (1..=64).contains(&s.len()) && s.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-')) }
+fn spotify_image_host(host: &str) -> bool {
+    let host = host.to_ascii_lowercase();
+    !host.is_empty() && !host.ends_with('.') && !host.split('.').any(str::is_empty) && [".scdn.co", ".spotifycdn.com"].iter().any(|parent| host.strip_suffix(parent).is_some_and(|prefix| !prefix.is_empty()))
+}
 fn valid_image(s: &str) -> bool {
-    s.len() <= 2048 && tauri::Url::parse(s).ok().is_some_and(|u| u.scheme() == "https" && u.port().is_none() && u.username().is_empty() && u.password().is_none() && matches!(u.host_str(), Some("i.scdn.co" | "mosaic.scdn.co" | "image-cdn-ak.spotifycdn.com")))
+    s.len() <= 2048 && tauri::Url::parse(s).ok().is_some_and(|u| u.scheme() == "https" && u.port().is_none() && u.username().is_empty() && u.password().is_none() && u.host_str().is_some_and(spotify_image_host))
+}
+fn refused_cover_count(v: &Value) -> usize {
+    match v {
+        Value::Array(values) => values.iter().map(refused_cover_count).sum(),
+        Value::Object(object) => object.iter().map(|(key, value)| {
+            if key == "images" { value.as_array().into_iter().flatten().filter_map(|image| image.get("url").and_then(Value::as_str)).filter(|url| !valid_image(url)).count() } else { refused_cover_count(value) }
+        }).sum(),
+        _ => 0,
+    }
+}
+fn log_refused_covers(v: &Value) {
+    let count = refused_cover_count(v);
+    if count > 0 { crate::wall2_spotify_log::write(crate::wall2_spotify_log::Event::CoverRefused, crate::wall2_spotify_log::Reason::None, count.min(u16::MAX as usize) as u16, 0); }
 }
 fn image_near(v: &Value, target: u64) -> Option<String> {
     let images = v.as_array()?;
@@ -474,7 +491,7 @@ fn profile_with(cfg: &Config, http: &dyn Http, creds: &dyn Creds) -> Result<Prof
     Ok(profile)
 }
 fn profile(cfg: &Config) -> Result<Profile, String> { profile_with(cfg, &RealHttp, &RealCreds) }
-fn list(window: &WebviewWindow, endpoint: &str, kind: &str) -> Result<Vec<Item>, String> { let cfg = config(window.app_handle())?; let current_user = if kind == "playlist" { Some(profile(&cfg)?) } else { None }; Ok(shape_list(&get_track_json(&cfg, endpoint)?, kind, current_user.as_ref())) }
+fn list(window: &WebviewWindow, endpoint: &str, kind: &str) -> Result<Vec<Item>, String> { let cfg = config(window.app_handle())?; let current_user = if kind == "playlist" { Some(profile(&cfg)?) } else { None }; let value = get_track_json(&cfg, endpoint)?; log_refused_covers(&value); Ok(shape_list(&value, kind, current_user.as_ref())) }
 
 #[tauri::command] pub async fn wall2_spotify_playlists(window: WebviewWindow, page: Option<u32>) -> Result<Vec<Item>, String> { require(&window)?; tauri::async_runtime::spawn_blocking(move || list(&window, &format!("/me/playlists?limit=50&offset={}", page_path(page)), "playlist")).await.map_err(|_| "failed".to_string())? }
 #[tauri::command] pub async fn wall2_spotify_albums(window: WebviewWindow, page: Option<u32>) -> Result<Vec<Item>, String> { require(&window)?; tauri::async_runtime::spawn_blocking(move || list(&window, &format!("/me/albums?limit=50&offset={}", page_path(page)), "album")).await.map_err(|_| "failed".to_string())? }
@@ -503,6 +520,7 @@ fn shape_search_tracks(v: &Value) -> Vec<Item> {
 }
 fn search_with(cfg: &Config, query: &str, current_user: &Profile, http: &dyn Http, creds: &dyn Creds) -> Result<Search, String> {
     let v=get_json_with_limit(cfg,&search_path(query),TRACK_BODY,http,creds)?;
+    log_refused_covers(&v);
     Ok(Search { tracks: shape_search_tracks(v.get("tracks").unwrap_or(&Value::Null)), albums: shape_list(v.get("albums").unwrap_or(&Value::Null), "album", None), playlists: shape_list(v.get("playlists").unwrap_or(&Value::Null), "playlist", Some(current_user)) })
 }
 
@@ -533,13 +551,13 @@ fn add_album_to_tracks(page: &mut Value, album: &Value) {
 }
 fn validate_tracks(kind: &str, id: &str, page: Option<u32>) -> Result<u32, String> { let page = page.unwrap_or(0); if !matches!(kind, "playlist" | "album") || !valid_id(id) || page > 39 { Err("invalid id".into()) } else { Ok(page) } }
 fn tracks_path(kind: &str, id: &str, page: u32) -> String { if kind == "playlist" { format!("/playlists/{id}/items?market=from_token&limit=50&offset={}&additional_types=track&fields=items(item(id,name,type,is_local,is_playable,restrictions,artists(name),album(name,images),duration_ms)),next,total", page as usize * PAGE_SIZE) } else { format!("/albums/{id}/tracks?market=from_token&limit=50&offset={}", page as usize * PAGE_SIZE) } }
-fn tracks_with(cfg:&Config,kind:&str,id:&str,page:u32,http:&dyn Http,creds:&dyn Creds)->Result<TrackPage,String>{ let value=get_json_with_limit(cfg,&tracks_path(kind,id,page),TRACK_BODY,http,creds)?; Ok(shape_track_page(&value,kind)) }
+fn tracks_with(cfg:&Config,kind:&str,id:&str,page:u32,http:&dyn Http,creds:&dyn Creds)->Result<TrackPage,String>{ let value=get_json_with_limit(cfg,&tracks_path(kind,id,page),TRACK_BODY,http,creds)?; log_refused_covers(&value); Ok(shape_track_page(&value,kind)) }
 #[tauri::command]
-pub async fn wall2_spotify_tracks(window: WebviewWindow, kind: String, id: String, page: Option<u32>) -> Result<TrackPage, String> { require(&window)?; let page = validate_tracks(&kind, &id, page)?; tauri::async_runtime::spawn_blocking(move || { let cfg = config(window.app_handle())?; if kind=="playlist" { return tracks_with(&cfg,&kind,&id,page,&RealHttp,&RealCreds) } let path = tracks_path(&kind, &id, page); let mut value = get_track_json(&cfg, &path)?; let album = get_track_json(&cfg, &format!("/albums/{id}?market=from_token"))?; add_album_to_tracks(&mut value, &album); Ok(shape_track_page(&value, &kind)) }).await.map_err(|_| "failed".to_string())? }
+pub async fn wall2_spotify_tracks(window: WebviewWindow, kind: String, id: String, page: Option<u32>) -> Result<TrackPage, String> { require(&window)?; let page = validate_tracks(&kind, &id, page)?; tauri::async_runtime::spawn_blocking(move || { let cfg = config(window.app_handle())?; if kind=="playlist" { return tracks_with(&cfg,&kind,&id,page,&RealHttp,&RealCreds) } let path = tracks_path(&kind, &id, page); let mut value = get_track_json(&cfg, &path)?; let album = get_track_json(&cfg, &format!("/albums/{id}?market=from_token"))?; add_album_to_tracks(&mut value, &album); log_refused_covers(&value); Ok(shape_track_page(&value, &kind)) }).await.map_err(|_| "failed".to_string())? }
 
 #[derive(Debug, Serialize, PartialEq)] pub struct Queue { current: Option<Track>, next: Vec<Track> }
 fn shape_queue(v: &Value) -> Queue { Queue { current: v.get("currently_playing").and_then(shape_track), next: v.get("queue").and_then(Value::as_array).into_iter().flatten().filter_map(shape_track).take(10).collect() } }
-fn get_queue_with(cfg: &Config, http: &dyn Http, creds: &dyn Creds) -> Result<Queue, String> { match read_with(cfg, "/me/player/queue?market=from_token", TRACK_BODY, http, creds)? { ReadAnswer::Empty => Ok(Queue { current: None, next: Vec::new() }), ReadAnswer::Json(value) => Ok(shape_queue(&value)) } }
+fn get_queue_with(cfg: &Config, http: &dyn Http, creds: &dyn Creds) -> Result<Queue, String> { match read_with(cfg, "/me/player/queue?market=from_token", TRACK_BODY, http, creds)? { ReadAnswer::Empty => Ok(Queue { current: None, next: Vec::new() }), ReadAnswer::Json(value) => { log_refused_covers(&value); Ok(shape_queue(&value)) } } }
 #[tauri::command] pub async fn wall2_spotify_queue(window: WebviewWindow) -> Result<Queue, String> { require(&window)?; tauri::async_runtime::spawn_blocking(move || { let cfg = config(window.app_handle())?; get_queue_with(&cfg, &RealHttp, &RealCreds) }).await.map_err(|_| "failed".to_string())? }
 
 #[derive(Debug, Serialize, PartialEq)] pub struct PlaybackDevice { name: String, kind: String }
@@ -827,6 +845,25 @@ mod tests {
     fn cover_ports_allow_only_default_https() {
         assert!(valid_image("https://i.scdn.co:443/image/fixture"));
         assert!(!valid_image("https://i.scdn.co:8443/image/fixture"));
+    }
+
+    #[test]
+    fn spotify_image_hosts_require_a_nonempty_subdomain_on_a_label_boundary() {
+        assert!(spotify_image_host("a.scdn.co"));
+        for host in ["scdn.co", "", ".scdn.co", "a..scdn.co", "a.scdn.co.", "ascdn.co"] { assert!(!spotify_image_host(host), "{host}"); }
+    }
+
+    #[test]
+    fn spotify_cover_addresses_accept_all_allowed_picture_subdomains() {
+        for url in ["https://i.scdn.co/image/a", "https://mosaic.scdn.co/640/a", "https://image-cdn-ak.spotifycdn.com/image/a", "https://image-cdn-fa.spotifycdn.com/image/a", "https://lineup-images.scdn.co/a.jpg", "https://I.SCDN.CO/image/a", "https://i.scdn.co:443/image/a"] { assert!(valid_image(url), "{url}"); }
+    }
+
+    #[test]
+    fn spotify_cover_addresses_refuse_bad_schemes_hosts_credentials_ports_and_lengths() {
+        for url in ["http://i.scdn.co/image/a", "https://scdn.co/a", "https://spotifycdn.com/a", "https://i.scdn.co.evil.example/a", "https://evilscdn.co/a", "https://evil-scdn.co/a", "https://i.scdn.co:8443/a", "https://user@i.scdn.co/a", "https://i.scdn.co./a", "https://example.com/i.scdn.co", "https://evil.example/?x=.scdn.co", "https://evil.example#.scdn.co"] { assert!(!valid_image(url), "{url}"); }
+        let oversized = format!("https://i.scdn.co/{}", "a".repeat(2049 - "https://i.scdn.co/".len()));
+        assert_eq!(oversized.len(), 2049);
+        assert!(!valid_image(&oversized));
     }
 
     #[test]
