@@ -69,8 +69,8 @@ export interface NowPlaying {
   /** The track's length and position in whole seconds as of `SonosSummary.readAtMs`; null for a station (no length). */
   duration: number | null;
   position: number | null;
-  /** The read held a cover address Rust may fetch (`wall2_sonos_art`). */
-  art: boolean;
+  /** A short opaque key for the cover address Rust may fetch (`wall2_sonos_art`); it changes with the address. Null: no cover. */
+  art: string | null;
 }
 
 export interface SonosSummary {

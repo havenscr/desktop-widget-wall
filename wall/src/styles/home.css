@@ -1791,6 +1791,13 @@ button.panel.network.shield:focus-visible {
   opacity: 0.5;
   cursor: default;
 }
+.np-rd.busy {
+  opacity: 0.6;
+  cursor: progress;
+}
+.np-meta .np-where {
+  margin-top: 2px;
+}
 .np-open {
   margin-left: auto;
   flex: none;

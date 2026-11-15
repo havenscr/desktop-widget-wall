@@ -192,8 +192,9 @@ pub struct NowPlaying {
     /// is clamped to it). The position is as of `SonosSummary::read_at_ms`.
     pub duration: Option<u32>,
     pub position: Option<u32>,
-    /// True when the read held a cover address this wall may fetch (`wall2_sonos_art` fetches it).
-    pub art: bool,
+    /// A short opaque key (a hash of the cover address, never the address) when the read held a cover address this wall
+    /// may fetch (`wall2_sonos_art` fetches it). It changes when the address does, so the page asks again then.
+    pub art: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -667,7 +668,7 @@ fn now_playing(status: &Value, speakers: &[Speaker], groups: &[Group], current: 
         if track.is_some() {
             let artist = st.get("artist").and_then(Value::as_str).and_then(|t| clean_text(t, MAX_TRACK_CHARS));
             let (duration, position) = track_time(st);
-            let art = art_address(st).is_some_and(|a| art_url(&a).is_some());
+            let art = art_address(st).filter(|a| art_url(a).is_some()).map(|a| art_key(&a));
             return Some(NowPlaying { speaker: name.to_string(), track, artist, duration, position, art });
         }
     }
@@ -677,6 +678,14 @@ fn now_playing(status: &Value, speakers: &[Speaker], groups: &[Group], current: 
 /// The cover address one speaker's status holds, as the service wrote it (checked only when fetched).
 fn art_address(st: &Value) -> Option<String> {
     st.get("albumArtURI").and_then(Value::as_str).filter(|a| !a.is_empty() && a.len() <= MAX_ART_ADDRESS).map(str::to_string)
+}
+
+/// A short opaque key for a cover address: 16 hex digits of its hash. It says only whether the address changed.
+pub(crate) fn art_key(address: &str) -> String {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    address.hash(&mut h);
+    format!("{:016x}", h.finish())
 }
 
 /// The cover address of the speaker `now_playing` named, kept in memory beside the summary.
@@ -880,9 +889,10 @@ pub(crate) fn skip_refusal(body: &Value) -> String {
     }
 }
 
-/// A 2xx answer to a skip counts unless it says `{"ok": false}`.
+/// A 2xx answer to a skip counts only as the contract says: a JSON object whose `ok` is exactly `true`. Anything else
+/// (an empty object, null, a page, another object, `"true"`) is the fixed refusal.
 pub(crate) fn skip_accepted(body: &Value) -> bool {
-    body.get("ok") != Some(&Value::Bool(false))
+    body.as_object().and_then(|o| o.get("ok")) == Some(&Value::Bool(true))
 }
 
 // Section: http
@@ -1553,7 +1563,8 @@ mod tests {
     #[test]
     fn a_track_carries_its_length_position_and_whether_a_cover_may_be_fetched() {
         let np = summary().now_playing.unwrap();
-        assert_eq!((np.duration, np.position, np.art), (Some(201), Some(65), true));
+        assert_eq!((np.duration, np.position), (Some(201), Some(65)));
+        assert_eq!(np.art, Some(art_key("http://192.168.1.50:1400/getaa?s=1&u=x")));
     }
 
     #[test]
@@ -1591,18 +1602,33 @@ mod tests {
             r.status["Den"]["albumArtURI"] = art;
             let s = shape(&r, 1);
             assert_eq!(now_art_address(&r.status, s.now_playing.as_ref()), None);
-            assert!(!s.now_playing.unwrap().art);
+            assert_eq!(s.now_playing.unwrap().art, None);
         }
         // An address this wall would not fetch is not offered to the page either.
         for art in ["http://8.8.8.8:1400/a", "/getaa?s=1", "https://evil.example/a.jpg", "http://127.0.0.1:1400/a"] {
             let mut r = reads();
             r.status["Den"]["albumArtURI"] = json!(art);
             let s = shape(&r, 1);
-            assert!(!s.now_playing.unwrap().art, "{art}");
+            assert_eq!(s.now_playing.unwrap().art, None, "{art}");
         }
         let mut r = reads();
         r.status["Den"]["albumArtURI"] = json!("https://i.scdn.co/image/abc");
-        assert!(shape(&r, 1).now_playing.unwrap().art);
+        assert!(shape(&r, 1).now_playing.unwrap().art.is_some());
+    }
+
+    #[test]
+    fn the_art_key_changes_with_the_address_and_never_holds_it() {
+        let a = art_key("http://192.168.1.50:1400/getaa?s=1&u=x");
+        let b = art_key("http://192.168.1.50:1400/getaa?s=1&u=y");
+        assert_ne!(a, b);
+        assert_eq!(a, art_key("http://192.168.1.50:1400/getaa?s=1&u=x"));
+        assert_eq!(a.len(), 16);
+        assert!(a.bytes().all(|c| c.is_ascii_hexdigit()));
+        assert!(!a.contains("192") && !a.contains("getaa"));
+        // The same title with different art, or the same art for the next track, shows in the key alone.
+        let mut r = reads();
+        r.status["Den"]["albumArtURI"] = json!("http://192.168.1.50:1400/getaa?s=1&u=y");
+        assert_eq!(shape(&r, 1).now_playing.unwrap().art, Some(b));
     }
 
     #[test]
@@ -1650,8 +1676,17 @@ mod tests {
         assert_eq!(skip_refusal(&json!({})), REFUSED);
         assert_eq!(skip_refusal(&Value::Null), REFUSED);
         assert!(skip_accepted(&json!({"ok": true})));
-        assert!(skip_accepted(&Value::Null));
+        assert!(skip_accepted(&json!({"ok": true, "other": 1})));
         assert!(!skip_accepted(&json!({"ok": false})));
+        assert!(!skip_accepted(&json!({})));
+        assert!(!skip_accepted(&Value::Null));
+        assert!(!skip_accepted(&json!({"ok": "true"})));
+        assert!(!skip_accepted(&json!({"ok": 1})));
+        assert!(!skip_accepted(&json!({"ok": null})));
+        assert!(!skip_accepted(&json!({"done": true})));
+        assert!(!skip_accepted(&json!([{"ok": true}])));
+        assert!(!skip_accepted(&json!("ok")));
+        assert!(!skip_accepted(&json!(true)));
     }
 
     /// A loopback-only listener for one test (never a real service): answers every request with the
@@ -1692,7 +1727,10 @@ mod tests {
         assert!(seen.to_ascii_lowercase().contains("content-type: application/json"), "{seen}");
         assert!(seen.ends_with("{}"), "{seen}");
         assert_eq!(send_skip(&skip_server(200, r#"{"ok":false}"#).0, &skip_call()), Err(REFUSED.to_string()));
-        assert_eq!(send_skip(&skip_server(200, "{}").0, &skip_call()), Ok(()));
+        // Only `{"ok": true}` is done: an empty object, null, a page, another object and "true" as text are the refusal.
+        for odd in ["{}", "null", "<html>done</html>", r#"{"done":true}"#, r#"{"ok":"true"}"#, "", "true"] {
+            assert_eq!(send_skip(&skip_server(200, odd).0, &skip_call()), Err(REFUSED.to_string()), "{odd}");
+        }
         assert_eq!(send_skip(&skip_server(409, r#"{"error":"nothing-playing"}"#).0, &skip_call()), Err("nothing-playing".to_string()));
         assert_eq!(send_skip(&skip_server(400, r#"{"error":"cannot-skip"}"#).0, &skip_call()), Err("cannot-skip".to_string()));
         assert_eq!(send_skip(&skip_server(404, "not json").0, &skip_call()), Err(REFUSED.to_string()));

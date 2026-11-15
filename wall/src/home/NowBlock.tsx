@@ -8,8 +8,9 @@ import {
   IconPlayerSkipForwardFilled,
   IconPlayerStopFilled,
 } from '@tabler/icons-react';
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react';
 import { invoke } from '../bridge/tauri';
+import { usePlaceStore } from '../state/places';
 import { tip } from '../ui/HoverTip';
 import { useVisible } from '../ui/useVisible';
 import { artSrc, clockMs, musicView, type ArtImage, type HouseTrack, type MusicView, type NowPlaying, type Slot, type SonosSummary } from './soundModel';
@@ -20,6 +21,10 @@ import { timeOf, useWallVideo, wallVideoControls, type WallVideoView } from './w
 export const NP_FADE_MS = 200;
 /** How long the line "Open Watch to control this" stays after a message the frame did not take. */
 export const NP_HINT_MS = 4000;
+/** A cover that has not come after a change of cover is not held over for longer than this: then the glyph shows. */
+export const NP_HOLD_MS = 2000;
+/** A cover fetch that failed is asked for once more after this (Rust refuses a sooner one). */
+export const NP_ART_RETRY_MS = 31_000;
 /** Shown (and said on hover) when the player frame did not take a back or next message. */
 export const OPEN_WATCH_TO_CONTROL = 'Open Watch to control this';
 
@@ -40,6 +45,8 @@ export interface NowBlockProps {
   locked: boolean;
   pauseAll: () => void;
   skip: (direction: 'next' | 'previous') => void;
+  /** A skip is running or inside its 800 ms latch: its buttons show busy (a click then does nothing). */
+  skipBusy?: boolean;
   /** The quiet block's "Play <word>" button, and the suggested play's art. */
   playSuggested: ReactNode;
   suggestedSlot: Slot | null;
@@ -49,21 +56,48 @@ export interface NowBlockProps {
 
 const reducedMotion = (): boolean => typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-/** The cover Rust fetched for the playing track (null while there is none: the glyph tile shows). */
+/**
+ * The cover Rust fetched for the playing track (null while there is none: the glyph tile shows). Keyed by `np.art`, the opaque
+ * key Rust computes from the cover's address, so a new cover is fetched when the address changes whatever the title is. A fetch
+ * that failed is asked for once more after `NP_ART_RETRY_MS`. The previous cover stays while the new one is on its way, for
+ * `NP_HOLD_MS` at most, so the tile does not flash the glyph between tracks.
+ */
 function useCover(np: NowPlaying | null): string | null {
-  const key = np && np.art ? `${np.speaker}\u0000${np.track ?? ''}\u0000${np.artist ?? ''}` : null;
+  const key = np ? np.art : null;
   const [got, setGot] = useState<{ key: string; src: string | null } | null>(null);
+  const [expiredFor, setExpiredFor] = useState<string | null>(null);
+  const last = useRef<{ key: string; src: string } | null>(null);
   useEffect(() => {
     if (!key) return;
     let live = true;
-    invoke<ArtImage | null>('wall2_sonos_art')
-      .then((a) => live && setGot({ key, src: artSrc(a) }))
-      .catch(() => live && setGot({ key, src: null }));
+    let retry: ReturnType<typeof setTimeout> | undefined;
+    const ask = (again: boolean) =>
+      invoke<ArtImage | null>('wall2_sonos_art')
+        .then((a) => artSrc(a))
+        .catch(() => null)
+        .then((src) => {
+          if (!live) return;
+          setGot({ key, src });
+          if (src === null && again) retry = setTimeout(() => void ask(false), NP_ART_RETRY_MS);
+        });
+    void ask(true);
     return () => {
       live = false;
+      clearTimeout(retry);
     };
   }, [key]);
-  return got && got.key === key ? got.src : null;
+  useEffect(() => {
+    if (!key || (last.current && last.current.key === key)) return;
+    const id = setTimeout(() => setExpiredFor(key), NP_HOLD_MS);
+    return () => clearTimeout(id);
+  }, [key]);
+  const current = got && got.key === key ? got.src : null;
+  useEffect(() => {
+    if (key && current) last.current = { key, src: current };
+  }, [key, current]);
+  if (!key) return null;
+  if (current) return current;
+  return last.current && last.current.key !== key && expiredFor !== key ? last.current.src : null;
 }
 
 /** The clock, each second while `on` and the page shows (the time bar moves between reads); otherwise the last value. */
@@ -100,26 +134,30 @@ function useCrossfade(kind: Layout, node: ReactNode): { leaving: { kind: Layout;
   return { leaving: leaving && leaving.kind !== kind ? leaving : null };
 }
 
-function Rd({ label, tipText, big = false, disabled = false, onClick, children }: { label: string; tipText: string; big?: boolean; disabled?: boolean; onClick: () => void; children: ReactNode }) {
+function Rd({ label, tipText, big = false, disabled = false, busy = false, onClick, children }: { label: string; tipText: string; big?: boolean; disabled?: boolean; busy?: boolean; onClick: () => void; children: ReactNode }) {
   return (
     <button
       type="button"
-      className={`np-rd${big ? ' big' : ''}`}
+      className={`np-rd${big ? ' big' : ''}${busy ? ' busy' : ''}`}
       aria-label={label}
+      aria-busy={busy || undefined}
       disabled={disabled}
       {...tip(tipText)}
       onClick={(e) => {
         if (e.detail > 1) return;
         onClick();
       }}
-      onKeyDown={(e) => {
-        if (e.repeat && (e.key === 'Enter' || e.key === ' ')) e.preventDefault();
-      }}
+      onKeyDown={noRepeat}
     >
       {children}
     </button>
   );
 }
+
+/** A held Enter or Space never repeats a press. */
+const noRepeat = (e: ReactKeyboardEvent) => {
+  if (e.repeat && (e.key === 'Enter' || e.key === ' ')) e.preventDefault();
+};
 
 /** The 6 px time bar with its two times. */
 function TimeBar({ posMs, durMs }: { posMs: number; durMs: number }) {
@@ -156,7 +194,7 @@ function MusicTile({ m, size, playArt }: { m: MusicView; size: number; playArt: 
 
 function VideoTile({ size, tipText }: { size: number; tipText: string }) {
   return (
-    <button type="button" className={`np-tile${size === 92 ? ' sm' : ''}`} aria-label="Open Watch" {...tip(tipText)} onClick={wallVideoControls.openWatch}>
+    <button type="button" className={`np-tile${size === 92 ? ' sm' : ''}`} aria-label="Open Watch" {...tip(tipText)} onClick={wallVideoControls.openWatch} onKeyDown={noRepeat}>
       <IconDeviceTv size={size === 92 ? 38 : 57} stroke={1.5} aria-hidden="true" />
     </button>
   );
@@ -177,18 +215,14 @@ function MusicFull({ m, p }: { m: MusicView; p: NowBlockProps }) {
               {m.artist}
             </span>
           )}
+          {/* A station has no time row: where it plays sits right under the artist, so the top reads as one group. */}
+          {!m.clock && <Where text={m.where} tipText={m.whereTip} />}
         </div>
       </div>
-      {m.clock ? (
-        <TimeBar posMs={m.clock.posMs} durMs={m.clock.durMs} />
-      ) : (
-        <div className="np-mid">
-          <Where text={m.where} tipText={m.whereTip} />
-        </div>
-      )}
+      {m.clock && <TimeBar posMs={m.clock.posMs} durMs={m.clock.durMs} />}
       <div className="np-foot">
         {m.canSkip && (
-          <Rd label="Previous track" tipText="Previous track" disabled={p.locked} onClick={() => p.skip('previous')}>
+          <Rd label="Previous track" tipText="Previous track" disabled={p.locked} busy={p.skipBusy} onClick={() => p.skip('previous')}>
             <IconPlayerSkipBackFilled size={20} aria-hidden="true" />
           </Rd>
         )}
@@ -196,7 +230,7 @@ function MusicFull({ m, p }: { m: MusicView; p: NowBlockProps }) {
           <IconPlayerPauseFilled size={24} aria-hidden="true" />
         </Rd>
         {m.canSkip && (
-          <Rd label="Next track" tipText="Next track" disabled={p.locked} onClick={() => p.skip('next')}>
+          <Rd label="Next track" tipText="Next track" disabled={p.locked} busy={p.skipBusy} onClick={() => p.skip('next')}>
             <IconPlayerSkipForwardFilled size={20} aria-hidden="true" />
           </Rd>
         )}
@@ -233,7 +267,7 @@ function VideoButtons({ v, cut, setCut, open }: { v: WallVideoView; cut: boolean
         <IconPlayerStopFilled size={20} aria-hidden="true" />
       </Rd>
       {open && (
-        <button type="button" className="np-open" {...tip('Open the Watch tab')} onClick={wallVideoControls.openWatch}>
+        <button type="button" className="np-open" {...tip('Open the Watch tab')} onClick={wallVideoControls.openWatch} onKeyDown={noRepeat}>
           Open Watch
           <IconChevronRight size={18} aria-hidden="true" />
         </button>
@@ -364,33 +398,44 @@ function Quiet({ p }: { p: NowBlockProps }) {
 export function NowBlock(p: NowBlockProps) {
   const video = useWallVideo();
   const cover = useCover(p.s.nowPlaying);
-  const probe = musicView({ s: p.s, track: p.track, trackAt: p.trackAt, activeName: p.activeName, activeSlot: p.activeSlot, art: cover, now: p.now, live: p.live });
-  const tick = useSecond(!!probe?.clock && p.live);
-  const music = probe?.clock ? musicView({ s: p.s, track: p.track, trackAt: p.trackAt, activeName: p.activeName, activeSlot: p.activeSlot, art: cover, now: Math.max(p.now, tick), live: p.live }) : probe;
-  // A back or next the frame did not take: the buttons stop, saying why, until another video is on.
-  const videoKey = video ? `${video.kind}|${video.title}` : '';
-  const [cutKey, setCutKey] = useState<string | null>(null);
-  const [hintKey, setHintKey] = useState<string | null>(null);
-  useEffect(() => {
-    setCutKey(null);
-    setHintKey(null);
-  }, [videoKey]);
-  useEffect(() => {
-    if (!hintKey) return;
-    const id = setTimeout(() => setHintKey(null), NP_HINT_MS);
-    return () => clearTimeout(id);
-  }, [hintKey]);
-  const cut = video !== null && cutKey === videoKey;
-  const setCut = () => {
-    setCutKey(videoKey);
-    setHintKey(videoKey);
+  const args = { s: p.s, track: p.track, trackAt: p.trackAt, activeName: p.activeName, activeSlot: p.activeSlot, art: cover, live: p.live };
+  const probe = musicView({ ...args, now: p.now });
+  // The per-second clock runs only while a music time bar is on screen (never in the split view or beside the wall's video).
+  const showsBar = !video && !!probe?.clock;
+  const tick = useSecond(showsBar && p.live);
+  const music = showsBar ? musicView({ ...args, now: Math.max(p.now, tick) }) : probe;
+  // A back or next the frame did not take: both buttons stop, saying why. They come back when another video is on (the item
+  // changes, by identity), when the player talks (its report changes: it has started, or the frame has loaded and answers),
+  // and when Home is shown again.
+  const place = usePlaceStore((s) => s.active);
+  const [cut, setCut] = useState(false);
+  const [hint, setHint] = useState(false);
+  const clearCut = () => {
+    setCut(false);
+    setHint(false);
   };
-  const hint = video !== null && hintKey === videoKey;
+  const item = video?.item ?? null;
+  const report = video?.report ?? null;
+  useEffect(clearCut, [item, report]);
+  useEffect(() => {
+    if (place === 'home') clearCut();
+  }, [place]);
+  useEffect(() => {
+    if (!hint) return;
+    const id = setTimeout(() => setHint(false), NP_HINT_MS);
+    return () => clearTimeout(id);
+  }, [hint]);
+  const cutNow = video !== null && cut;
+  const hintNow = video !== null && hint;
+  const markCut = () => {
+    setCut(true);
+    setHint(true);
+  };
 
   const kind: Layout = video && music ? 'both' : video ? 'video' : music ? 'music' : 'quiet';
   let node: ReactNode;
   if (video && music) node = <Split v={video} m={music} p={p} />;
-  else if (video) node = <VideoFull v={video} hint={hint} cut={cut} setCut={setCut} />;
+  else if (video) node = <VideoFull v={video} hint={hintNow} cut={cutNow} setCut={markCut} />;
   else if (music) node = <MusicFull m={music} p={p} />;
   else node = <Quiet p={p} />;
 

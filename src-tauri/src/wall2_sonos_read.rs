@@ -240,42 +240,65 @@ pub struct ArtImage {
     pub base64: String,
 }
 
+/// A failed fetch of one address is tried once more after this, then never again for that address.
+pub(crate) const ART_RETRY_AFTER: Duration = Duration::from_secs(30);
+
 /// The last address asked for, and what came of it (None when it failed).
 pub(crate) struct ArtSlot {
     address: String,
     image: Option<ArtImage>,
+    /// When it failed, and whether the one more try is still to come (never for an address that is not allowed).
+    failed: Option<(Instant, bool)>,
 }
 
 /// The one remembered result, in memory only: one fetch per distinct address, the failures too.
 pub(crate) type ArtCache = Mutex<Option<ArtSlot>>;
 
-/// The cover for `raw`, the address the last good read held. The same address as last time answers
-/// from memory; a new one is checked (`art_url`), fetched with `fetch`, sniffed and remembered. The
-/// lock is held across the fetch, so two calls for one address never fetch twice. Every failure is
-/// one fixed-word line in the Sonos log and answers None.
+/// The cover for `raw`, the address the last good read held. The same address as last time answers from memory; a new
+/// one is checked (`art_url`), fetched with `fetch`, sniffed and remembered. A fetch that failed is remembered too, and
+/// is tried once more when asked for 30 seconds or more after the failure (an address that is not allowed never is).
+/// The lock is held across the fetch, so two calls for one address never fetch twice. Every failure is one fixed-word
+/// line in the Sonos log and answers None.
 pub(crate) fn art_cached(
     cache: &ArtCache,
     raw: Option<&str>,
     fetch: impl FnOnce(&str) -> Result<(&'static str, Vec<u8>), Failure>,
 ) -> Option<ArtImage> {
+    art_cached_at(cache, raw, Instant::now(), fetch)
+}
+
+/// `art_cached` with the time of the call given (for the retry window).
+pub(crate) fn art_cached_at(
+    cache: &ArtCache,
+    raw: Option<&str>,
+    now: Instant,
+    fetch: impl FnOnce(&str) -> Result<(&'static str, Vec<u8>), Failure>,
+) -> Option<ArtImage> {
     let raw = raw?;
     let mut slot = cache.lock().ok()?;
+    let mut retrying = false;
     if let Some(s) = slot.as_ref().filter(|s| s.address == raw) {
-        return s.image.clone();
+        if s.image.is_some() {
+            return s.image.clone();
+        }
+        match s.failed {
+            Some((at, true)) if now.saturating_duration_since(at) >= ART_RETRY_AFTER => retrying = true,
+            _ => return None,
+        }
     }
     let start = Instant::now();
     let got = match art_url(raw) {
         Some(url) => fetch(&url),
         None => Err(Failure { kind: Kind::Refused, status: 0 }),
     };
-    let image = match got {
-        Ok((mime, bytes)) => Some(ArtImage { mime: mime.to_string(), base64: base64::engine::general_purpose::STANDARD.encode(bytes) }),
+    let (image, failed) = match got {
+        Ok((mime, bytes)) => (Some(ArtImage { mime: mime.to_string(), base64: base64::engine::general_purpose::STANDARD.encode(bytes) }), None),
         Err(f) => {
             log::write_line(log::line(Event::Failed, Read::Art, f.kind, f.status, start.elapsed().as_millis()));
-            None
+            (None, Some((now, !retrying && f.kind != Kind::Refused)))
         }
     };
-    *slot = Some(ArtSlot { address: raw.to_string(), image: image.clone() });
+    *slot = Some(ArtSlot { address: raw.to_string(), image: image.clone(), failed });
     image
 }
 
@@ -621,6 +644,51 @@ mod tests {
         // No address answers None and leaves the memory alone.
         assert_eq!(art_cached(&c, None, |_| panic!("no address")), None);
         assert_eq!(art_cached(&c, Some(b), |_| panic!("still remembered")), None);
+    }
+
+    #[test]
+    fn a_failed_cover_is_tried_once_more_after_30_seconds_then_never() {
+        let c = cache();
+        let t0 = Instant::now();
+        let a = "http://192.168.4.20:1400/getaa?s=1&u=a";
+        let calls = std::cell::Cell::new(0);
+        let fail = |_: &str| { calls.set(calls.get() + 1); Err(Failure { kind: Kind::TimedOut, status: 0 }) };
+        assert_eq!(art_cached_at(&c, Some(a), t0, fail), None);
+        assert_eq!(calls.get(), 1);
+        // Inside the 30 seconds nothing is fetched, at any call.
+        for secs in [0, 1, 10, 29] {
+            assert_eq!(art_cached_at(&c, Some(a), t0 + Duration::from_secs(secs), |_| panic!("tried too soon ({secs} s)")), None);
+        }
+        // From 30 seconds on, one more try; its failure ends it for this address.
+        assert_eq!(art_cached_at(&c, Some(a), t0 + Duration::from_secs(30), fail), None);
+        assert_eq!(calls.get(), 2);
+        for secs in [31, 60, 3600] {
+            assert_eq!(art_cached_at(&c, Some(a), t0 + Duration::from_secs(secs), |_| panic!("tried a third time ({secs} s)")), None);
+        }
+        // A new address starts again from the beginning.
+        let b = "http://192.168.4.20:1400/getaa?s=1&u=b";
+        assert_eq!(art_cached_at(&c, Some(b), t0 + Duration::from_secs(100), fail), None);
+        assert_eq!(calls.get(), 3);
+    }
+
+    #[test]
+    fn the_one_more_try_can_succeed_and_is_then_remembered() {
+        let c = cache();
+        let t0 = Instant::now();
+        let a = "http://192.168.4.20:1400/getaa?s=1&u=a";
+        assert_eq!(art_cached_at(&c, Some(a), t0, |_| Err(Failure { kind: Kind::NoAnswer, status: 0 })), None);
+        let got = art_cached_at(&c, Some(a), t0 + Duration::from_secs(31), |_| Ok(("image/png", PNG_PIC.to_vec()))).unwrap();
+        assert_eq!(got.mime, "image/png");
+        assert_eq!(art_cached_at(&c, Some(a), t0 + Duration::from_secs(90), |_| panic!("fetched a cover already held")), Some(got));
+    }
+
+    #[test]
+    fn an_address_that_is_not_allowed_is_never_tried_again() {
+        let c = cache();
+        let t0 = Instant::now();
+        for secs in [0, 31, 62, 1000] {
+            assert_eq!(art_cached_at(&c, Some("http://8.8.8.8:1400/a"), t0 + Duration::from_secs(secs), |_| panic!("fetched a refused address")), None);
+        }
     }
 
     #[test]

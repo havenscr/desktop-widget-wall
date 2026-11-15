@@ -242,6 +242,8 @@ function Live({
   const [pop, setPop] = useState<Pop>(null);
   const [mark, setMark] = useState<PlayMark | null>(readLastPlay);
   const [skip, setSkip] = useState<Skip | null>(null);
+  const [skipLatch, setSkipLatch] = useState(false);
+  const skipLatchTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const playback = usePlayback(s.readAtMs);
   const busyRef = useRef(false);
   /** Per control: clicks before this time (ms) are ignored. */
@@ -262,6 +264,7 @@ function Live({
       mounted.current = false;
       list.forEach(clearTimeout);
       clearTimeout(resultTimer.current);
+      clearTimeout(skipLatchTimer.current);
     };
   }, []);
 
@@ -458,7 +461,15 @@ function Live({
       done: () => changeMark(null),
     });
   // Back or next on the music (only offered when the sound service said it has the commands); the read after it shows the new track.
-  const skipTrack = (direction: 'next' | 'previous') => void run('skip', () => invoke('wall2_sonos_skip', { direction }), () => null);
+  const skipTrack = (direction: 'next' | 'previous') => {
+    void run('skip', () => invoke('wall2_sonos_skip', { direction }), () => null).finally(() => {
+      // The 800 ms latch after a write drops a second click without a sign: the buttons look busy for that time.
+      if (!mounted.current) return;
+      clearTimeout(skipLatchTimer.current);
+      setSkipLatch(true);
+      skipLatchTimer.current = setTimeout(() => mounted.current && setSkipLatch(false), LATCH_MS);
+    });
+  };
   const suggested = s.music.find((r) => r.key === suggestion) ?? null;
   const track = houseTrack(playback.read, s);
   // Without a track: the play this wall started (while the music it started still plays).
@@ -504,6 +515,7 @@ function Live({
           locked={locked}
           pauseAll={pauseAll}
           skip={skipTrack}
+          skipBusy={busy === 'skip' || skipLatch}
           playArt={(slot, size) => <PlayArt slot={slot} size={size} />}
           playSuggested={
             <button

@@ -1,7 +1,8 @@
 import { useMemo } from 'react';
 import { usePlaceStore } from '../state/places';
 import { playerLink } from '../unwind/watch/PlayerFrame';
-import { useWatchStore, type WatchState } from '../unwind/watch/store';
+import type { SavedItem } from '../unwind/watch/saved';
+import { useWatchStore, type PlayerReport, type WatchState } from '../unwind/watch/store';
 import type { WatchKind } from '../unwind/watch/links';
 import { clockMs } from './soundModel';
 
@@ -13,6 +14,9 @@ import { clockMs } from './soundModel';
  */
 
 export interface WallVideoView {
+  /** The item on and the player's report, by identity: a change of either is how Home learns the frame answers or another video is on. */
+  item: SavedItem;
+  report: PlayerReport;
   title: string;
   kind: WatchKind;
   /** "YouTube video", "YouTube playlist, 4 of 24", "Twitch stream". */
@@ -44,6 +48,8 @@ export function wallVideoView(s: Snapshot): WallVideoView | null {
   const place = list ? `, ${list.index + 1} of ${list.count}` : '';
   const time = item.kind !== 'twitch' && r.time !== null && r.duration !== null && r.duration > 0 ? { pos: Math.min(r.time, r.duration), dur: r.duration } : null;
   return {
+    item,
+    report: r,
     title: item.label,
     kind: item.kind,
     sub: KIND_WORDS[item.kind] + place,

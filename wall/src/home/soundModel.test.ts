@@ -192,7 +192,7 @@ it('shows the soonest running sleep timer, never one that ended', () => {
 
 it('says what plays and where, never claiming a track it does not know', () => {
   expect(nowLine(SUMMARY)).toBe('Playing on 2 speakers');
-  expect(nowLine({ ...SUMMARY, nowPlaying: { speaker: 'Den', track: 'Song A', artist: 'Band B', duration: null, position: null, art: false } })).toBe('Song A, Band B, on 2 speakers');
+  expect(nowLine({ ...SUMMARY, nowPlaying: { speaker: 'Den', track: 'Song A', artist: 'Band B', duration: null, position: null, art: null } })).toBe('Song A, Band B, on 2 speakers');
   const quiet = { ...SUMMARY, speakers: SUMMARY.speakers.map((s) => ({ ...s, state: s.input ? s.state : ('stopped' as const) })) };
   expect(nowLine(quiet)).toBe('Nothing playing');
 });
@@ -429,7 +429,7 @@ describe('the Now Playing block\'s pure rules', () => {
   });
 
   it('builds the music half from the Sonos read: the track, the cover, the length, where it plays, back and next only when offered', () => {
-    const np = { speaker: 'Den', track: 'Song A', artist: 'Band B', duration: 200, position: 20, art: true };
+    const np = { speaker: 'Den', track: 'Song A', artist: 'Band B', duration: 200, position: 20, art: 'key-1' };
     const m = musicView(args({ s: { ...args().s, nowPlaying: np, canSkip: true, readAtMs: 1000 }, art: 'data:image/png;base64,AAAA', now: 6000 }))!;
     expect(m).toMatchObject({ title: 'Song A', artist: 'Band B', cover: 'data:image/png;base64,AAAA', where: 'Den, 2 speakers', canSkip: true });
     expect(m.clock).toEqual({ posMs: 25_000, durMs: 200_000 });
@@ -438,7 +438,7 @@ describe('the Now Playing block\'s pure rules', () => {
   });
 
   it('keeps the play this wall started as the title, and a station has no clock', () => {
-    const np = { speaker: 'Den', track: 'Song A', artist: 'Band B', duration: null, position: null, art: false };
+    const np = { speaker: 'Den', track: 'Song A', artist: 'Band B', duration: null, position: null, art: null };
     const m = musicView(args({ s: { ...args().s, nowPlaying: np }, activeName: 'Evening', activeSlot: 'evening' }))!;
     expect(m).toMatchObject({ title: 'Evening', artist: null, slot: 'evening', clock: null });
     expect(musicView(args({ s: { ...args().s, nowPlaying: null } }))!.title).toBe('Music');

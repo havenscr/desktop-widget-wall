@@ -49,7 +49,7 @@ function summary(over: Partial<SonosSummary> = {}): SonosSummary {
     controls: [{ key: 'Group_All', name: 'Group Everything', action: 'groupAll', loud: [] }],
     scenes: [],
     sleepTimers: [],
-    nowPlaying: { speaker: 'Den', track: 'Song A', artist: 'Band B', duration: null, position: null, art: false },
+    nowPlaying: { speaker: 'Den', track: 'Song A', artist: 'Band B', duration: null, position: null, art: null },
     currentGroup: 'G2',
     readAtMs: NOW,
     canSkip: false,
@@ -922,4 +922,23 @@ it('with a stale read the skip buttons are off and nothing is sent', async () =>
   expect(next.disabled).toBe(true);
   fireEvent.click(next);
   expect(writes.filter((w) => w.cmd === 'wall2_sonos_skip')).toEqual([]);
+});
+
+it('the skip buttons show busy through the 800 ms latch, and a second click inside it sends nothing', async () => {
+  wire(() => summary({ canSkip: true }));
+  const { container } = render(<Sound />);
+  await flush(1_000);
+  const next = () => container.querySelector('[aria-label="Next track"]') as HTMLButtonElement;
+  expect(next().getAttribute('aria-busy')).toBeNull();
+  fireEvent.click(next());
+  await flush(50);
+  expect(next().getAttribute('aria-busy')).toBe('true');
+  fireEvent.click(next());
+  await flush(50);
+  expect(writes.filter((w) => w.cmd === 'wall2_sonos_skip')).toHaveLength(1);
+  await flush(LATCH_MS + 100);
+  expect(next().getAttribute('aria-busy')).toBeNull();
+  fireEvent.click(next());
+  await flush(50);
+  expect(writes.filter((w) => w.cmd === 'wall2_sonos_skip')).toHaveLength(2);
 });

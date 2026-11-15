@@ -91,7 +91,7 @@ function speakers(m: Mode) {
   if (m === 'sparse') return [{ name: 'Den', state: 'stopped', volume: 12, input: null, group: 'G1', online: true }];
   const playing = m === 'quiet' ? 'stopped' : 'playing';
   const base = [
-    { name: 'Studio', state: 'playing', volume: 100, input: 'lineIn', group: 'G1', online: true },
+    { name: 'Studio', state: 'playing', volume: 100, input: np('tv') ? 'tv' : 'lineIn', group: 'G1', online: true },
     { name: 'Den', state: playing, volume: 14, input: null, group: 'G2', online: true },
     { name: 'Porch', state: playing, volume: 10, input: null, group: 'G2', online: true },
     { name: 'Loft', state: playing, volume: 10, input: null, group: 'G2', online: true },
@@ -129,7 +129,7 @@ function groups(m: Mode) {
 
 function nowPlaying(m: Mode) {
   const length = np('station') ? { duration: null, position: null } : { duration: 181, position: 65 };
-  const art = !np('noart');
+  const art = np('noart') ? null : 'cover-1';
   if (np('long') && (m === 'typical' || m === 'heavy'))
     return { speaker: 'Den', track: 'A Song With A Rather Long Title That Keeps Going And Going Through The Night (Extended Mix)', artist: 'The Invented Band Of Several Long Named Members', ...length, art };
   if (m === 'heavy') return { speaker: 'Den', track: 'A Song With A Rather Long Title That Keeps Going (Extended Mix)', artist: 'The Invented Band', ...length, art };
