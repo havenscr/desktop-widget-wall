@@ -349,11 +349,21 @@ const MAX_TAG_META: usize = 200;
 const TAG_META_TTL_SECS: i64 = 600;
 /// After a failed tag list read, how long before the next try (the tasks read still goes on).
 const TAG_META_RETRY_SECS: i64 = 60;
+/// How long the last good tag list keeps serving when every read since has failed.
+const TAG_META_KEEP_SECS: i64 = 3600;
 /// The task app's colour names; anything else in its tag list is dropped.
 const TAG_COLORS: [&str; 11] = ["teal", "blue", "green", "pink", "magenta", "lime", "brown", "slate", "khaki", "orange", "red"];
 
+/// A character a displayed tag or tag name may not hold: a control character, or one of the
+/// invisible format characters that can reorder or hide text (direction marks and overrides,
+/// isolates, zero width characters, the soft hyphen, the byte order mark).
+fn is_unsafe_char(c: char) -> bool {
+    c.is_control()
+        || matches!(c, '\u{ad}' | '\u{61c}' | '\u{200b}'..='\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2060}'..='\u{2064}' | '\u{2066}'..='\u{206f}' | '\u{feff}')
+}
+
 /// The tags a row shows: each tag string trimmed, empty ones dropped, those with a control
-/// character or over 40 characters dropped, duplicates dropped after lower-casing, the tag
+/// or invisible format character, or over 40 characters, dropped, duplicates dropped after lower-casing, the tag
 /// the read filtered by (`drop`, case ignored) dropped, and at most three kept. The rule is
 /// looser than `valid_tag` (which guards the filters the page sends): the owner's own tags
 /// may carry accents or dots. The text stays plain text; the page never reads it as markup.
@@ -365,7 +375,7 @@ fn shape_tags(raw: Option<&Value>, drop: Option<&str>) -> Vec<TaskTag> {
     let mut out: Vec<TaskTag> = Vec::new();
     for name in list.iter().filter_map(Value::as_str) {
         let name = name.trim();
-        if name.is_empty() || name.chars().count() > MAX_TAG_CHARS || name.chars().any(char::is_control) {
+        if name.is_empty() || name.chars().count() > MAX_TAG_CHARS || name.chars().any(is_unsafe_char) {
             continue;
         }
         let key = name.to_lowercase();
@@ -380,11 +390,18 @@ fn shape_tags(raw: Option<&Value>, drop: Option<&str>) -> Vec<TaskTag> {
     out
 }
 
+/// Two letter words that stay in ordinary title case ("To Do", "My Garden"), not capitals.
+const SHORT_WORDS: [&str; 26] = [
+    "am", "an", "as", "at", "be", "by", "do", "go", "he", "if", "in", "is", "it", "me", "my", "no", "of", "oh", "ok", "on", "or", "so", "to", "up", "us", "we",
+];
+
 /// A tag as it reads on the wall. A tag typed with any capital letter keeps its text.
-/// Otherwise the first letter of the tag and of each word after a space, slash or hyphen is
-/// a capital, with two generic acronym rules: a word of exactly two letters is written in
-/// capitals, and so is a word of up to five letters with no vowel (a, e, i, o, u, y).
-/// There is no table of tag names here; a tag that reads wrong can be given an exception.
+/// Otherwise the first letter of the tag and of each word after a space, slash, hyphen or
+/// ampersand is a capital ("r&d" is "R&D": the letters around an ampersand each start a
+/// word), with two generic acronym rules: a word of exactly two letters is written in
+/// capitals unless it is one of the common words in `SHORT_WORDS`, and a word of up to five
+/// letters with no vowel (a, e, i, o, u, y) is written in capitals. There is no table of tag
+/// names here; a tag that reads wrong can be given an exception.
 fn tag_label(name: &str) -> String {
     if name.chars().any(char::is_uppercase) {
         return name.to_string();
@@ -395,7 +412,8 @@ fn tag_label(name: &str) -> String {
         let letters = word.chars().count();
         let all_alpha = word.chars().all(char::is_alphabetic);
         let no_vowel = !word.chars().any(|c| matches!(c, 'a' | 'e' | 'i' | 'o' | 'u' | 'y'));
-        if all_alpha && (letters == 2 || ((1..=5).contains(&letters) && no_vowel)) {
+        let two_letter_acronym = letters == 2 && !SHORT_WORDS.contains(&word.as_str());
+        if all_alpha && (two_letter_acronym || ((1..=5).contains(&letters) && no_vowel)) {
             out.extend(word.chars().flat_map(char::to_uppercase));
         } else {
             let mut chars = word.chars();
@@ -407,7 +425,7 @@ fn tag_label(name: &str) -> String {
         word.clear();
     };
     for c in name.chars() {
-        if matches!(c, ' ' | '/' | '-') {
+        if matches!(c, ' ' | '/' | '-' | '&') {
             flush(&mut word, &mut out);
             out.push(c);
         } else {
@@ -449,7 +467,7 @@ fn parse_tag_meta(body: &Value) -> TagMetaMap {
             continue;
         };
         let key = name.trim().to_lowercase();
-        if key.is_empty() || key.chars().count() > MAX_TAG_CHARS || key.chars().any(char::is_control) {
+        if key.is_empty() || key.chars().count() > MAX_TAG_CHARS || key.chars().any(is_unsafe_char) {
             continue;
         }
         let icon = obj.get("icon").and_then(Value::as_str).filter(|i| valid_icon_name(i)).map(str::to_string);
@@ -489,17 +507,28 @@ fn tag_meta_due(now: i64, good_at: Option<i64>, failed_at: Option<i64>) -> bool 
 }
 
 /// The task app's tag list for the rows in `tasks`, from memory when it is under ten
-/// minutes old. A failed read never fails the tasks read: the last good list is used (or
-/// none), so rows then carry their tags with no icon and no colour.
+/// minutes old. A failed read never fails the tasks read: the last good list keeps serving
+/// for at most an hour from when it was read, after which the rows carry their tags with no
+/// icon and no colour until a read works. Not read at all when no row has a tag.
 fn tag_meta_for(base: &str, tasks: &[TaskItem]) -> TagMetaMap {
+    tag_meta_with(&TAG_CACHE, now_epoch(), tasks, &|| get_json(&format!("{base}/api/tags")))
+}
+
+/// `tag_meta_for` with its cache, clock and read handed in, so a test can drive the real
+/// decisions: a good read, time passing, a failed read, more time passing.
+fn tag_meta_with(cache: &Mutex<Option<TagCache>>, now: i64, tasks: &[TaskItem], fetch: &dyn Fn() -> Result<Value, String>) -> TagMetaMap {
     if tasks.iter().all(|t| t.tags.is_empty()) {
         return TagMetaMap::new();
     }
-    let now = now_epoch();
-    let (due, held) = match TAG_CACHE.lock() {
+    // What the cache can serve now: its list while under an hour old, else nothing.
+    let serve = |c: Option<&TagCache>| match c {
+        Some(c) if c.good_at.is_some_and(|g| now - g < TAG_META_KEEP_SECS) => c.map.clone(),
+        _ => TagMetaMap::new(),
+    };
+    let (due, held) = match cache.lock() {
         Ok(guard) => {
             let c = guard.as_ref();
-            (tag_meta_due(now, c.and_then(|c| c.good_at), c.and_then(|c| c.failed_at)), c.map(|c| c.map.clone()).unwrap_or_default())
+            (tag_meta_due(now, c.and_then(|c| c.good_at), c.and_then(|c| c.failed_at)), serve(c))
         }
         Err(_) => return TagMetaMap::new(),
     };
@@ -507,20 +536,20 @@ fn tag_meta_for(base: &str, tasks: &[TaskItem]) -> TagMetaMap {
         return held;
     }
     // The lock is not held across the request, so another read never waits on it.
-    let fetched = get_json(&format!("{base}/api/tags")).map(|body| parse_tag_meta(&body));
-    let Ok(mut guard) = TAG_CACHE.lock() else {
+    let fetched = fetch().map(|body| parse_tag_meta(&body));
+    let Ok(mut guard) = cache.lock() else {
         return held;
     };
-    let cache = guard.get_or_insert_with(TagCache::default);
+    let entry = guard.get_or_insert_with(TagCache::default);
     match fetched {
         Ok(map) => {
-            cache.map = map;
-            cache.good_at = Some(now);
-            cache.failed_at = None;
+            entry.map = map;
+            entry.good_at = Some(now);
+            entry.failed_at = None;
         }
-        Err(_) => cache.failed_at = Some(now),
+        Err(_) => entry.failed_at = Some(now),
     }
-    cache.map.clone()
+    serve(Some(entry))
 }
 
 /// Open tasks only, the first three in server order.
@@ -1587,6 +1616,19 @@ mod tests {
             ("power bi", "Power BI"),
             ("qa gate", "QA Gate"),
             ("eos", "Eos"),
+            // Common two letter words keep ordinary title case; other two letter words are acronyms.
+            ("to do", "To Do"),
+            ("my to do", "My To Do"),
+            ("to-do/later", "To-Do/Later"),
+            ("go live", "Go Live"),
+            ("up next", "Up Next"),
+            ("ok", "Ok"),
+            ("us", "Us"),
+            ("is it", "Is It"),
+            ("r&d", "R&D"),
+            ("q&a", "Q&A"),
+            ("xy", "XY"),
+            ("ux", "UX"),
             ("gym", "Gym"),
             ("rhythm", "Rhythm"),
             ("x", "X"),
@@ -1689,6 +1731,62 @@ mod tests {
             {"id": "junk", "title": "J", "kind": "task", "status": "open", "tags": ["work"], "due_at": "soon"},
             {"id": "done", "title": "Z", "kind": "task", "status": "done", "due_at": "2026-03-08T12:00:00Z"}
         ]})
+    }
+
+    #[test]
+    fn the_last_good_tag_list_serves_for_an_hour_through_failed_reads_then_stops() {
+        let rows = open_tasks(&json!({"tasks": [{"id": "1", "title": "A", "kind": "task", "status": "open", "tags": ["errands"]}]}), Filters::default());
+        let plain = [shown_task("1")];
+        let cache: Mutex<Option<TagCache>> = Mutex::new(None);
+        let calls = std::cell::Cell::new(0);
+        let good = json!({"tags": [{"name": "errands", "icon": "shopping-cart", "color": "orange"}]});
+        let ok = || {
+            calls.set(calls.get() + 1);
+            Ok(good.clone())
+        };
+        let err = || {
+            calls.set(calls.get() + 1);
+            Err("The service answered 500".to_string())
+        };
+        let has = |m: &TagMetaMap| m.get("errands").is_some_and(|t| t.icon.as_deref() == Some("shopping-cart"));
+        // A good read.
+        assert!(has(&tag_meta_with(&cache, 0, &rows, &ok)));
+        assert_eq!(calls.get(), 1);
+        // Within ten minutes nothing is read again.
+        assert!(has(&tag_meta_with(&cache, 599, &rows, &err)));
+        assert_eq!(calls.get(), 1);
+        // Ten minutes on, the read fails: the old list still serves.
+        assert!(has(&tag_meta_with(&cache, 700, &rows, &err)));
+        assert_eq!(calls.get(), 2);
+        // Within a minute of the failure nothing is tried; a minute on it is tried and fails again.
+        assert!(has(&tag_meta_with(&cache, 759, &rows, &err)));
+        assert_eq!(calls.get(), 2);
+        assert!(has(&tag_meta_with(&cache, 760, &rows, &err)));
+        assert_eq!(calls.get(), 3);
+        // One second short of an hour from the good read, the list still serves; at the hour it stops.
+        assert!(has(&tag_meta_with(&cache, 3599, &rows, &err)));
+        let expired = tag_meta_with(&cache, 3600, &rows, &err);
+        assert!(expired.is_empty(), "after an hour of failures the rows carry no icon and no colour");
+        let mut joined = rows.clone();
+        join_tag_meta(&mut joined, &expired);
+        assert_eq!((joined[0].tags[0].icon.clone(), joined[0].tags[0].color.clone()), (None, None));
+        // It stays empty while reads keep failing, and a read that works brings the list back.
+        assert!(tag_meta_with(&cache, 3700, &rows, &err).is_empty());
+        assert!(has(&tag_meta_with(&cache, 3800, &rows, &ok)));
+        // Rows with no tags never read it, whatever the cache holds.
+        let before = calls.get();
+        assert!(tag_meta_with(&cache, 99_999, &plain, &err).is_empty());
+        assert_eq!(calls.get(), before);
+    }
+
+    #[test]
+    fn invisible_format_characters_are_dropped_like_control_characters() {
+        let tags = json!(["fine", "a\u{200e}b", "a\u{200f}b", "a\u{202a}b", "a\u{202e}b", "a\u{2066}b", "a\u{2069}b", "a\u{200b}b", "a\u{feff}b", "a\u{ad}b", "ok\u{e9}"]);
+        let got = shape_tags(Some(&tags), None);
+        assert_eq!(got.iter().map(|t| t.label.as_str()).collect::<Vec<_>>(), ["Fine", "Ok\u{e9}"]);
+        let meta = parse_tag_meta(&json!({"tags": [{"name": "a\u{202e}b", "color": "red"}, {"name": "plain", "color": "red"}]}));
+        assert_eq!(meta.len(), 1);
+        assert!(meta.contains_key("plain"));
     }
 
     #[test]
