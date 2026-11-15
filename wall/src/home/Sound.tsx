@@ -28,7 +28,6 @@ import {
 } from 'react';
 import { invoke } from '../bridge/tauri';
 import { useVisible } from '../ui/useVisible';
-import { tip } from '../ui/HoverTip';
 import { useCentreStatus } from './centreSources';
 import {
   LATCH_MS,
@@ -39,10 +38,8 @@ import {
   failureSentence,
   PLAY_ART,
   chipLabel,
-  clockMs,
   faceTiles,
   houseTrack,
-  playingWhere,
   moreControls,
   moreRoutines,
   wherePlaces,
@@ -56,8 +53,8 @@ import {
   markAfterRead,
   musicPlaying,
   needsConfirm,
-  nowLine,
   readLastPlay,
+  skipSentence,
   sleepLeft,
   soonestTimer,
   speakerState,
@@ -76,6 +73,7 @@ import {
   type SonosSummary,
 } from './soundModel';
 import { clock, useSonos } from './useSonos';
+import { NowBlock } from './NowBlock';
 
 export const RESULT_MS = 4000;
 /** The service needs a moment after a command before its status shows the change. */
@@ -244,6 +242,8 @@ function Live({
   const [pop, setPop] = useState<Pop>(null);
   const [mark, setMark] = useState<PlayMark | null>(readLastPlay);
   const [skip, setSkip] = useState<Skip | null>(null);
+  const [skipLatch, setSkipLatch] = useState(false);
+  const skipLatchTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const playback = usePlayback(s.readAtMs);
   const busyRef = useRef(false);
   /** Per control: clicks before this time (ms) are ignored. */
@@ -264,6 +264,7 @@ function Live({
       mounted.current = false;
       list.forEach(clearTimeout);
       clearTimeout(resultTimer.current);
+      clearTimeout(skipLatchTimer.current);
     };
   }, []);
 
@@ -325,7 +326,7 @@ function Live({
           });
         } else {
           opts.undo?.();
-          show(text || 'Could not reach Sonos', true);
+          show(skipSentence(text) ?? (text || 'Could not reach Sonos'), true);
           void refresh();
         }
       } finally {
@@ -459,6 +460,16 @@ function Live({
     void run('pause', () => invoke('wall2_sonos_pause_all'), 'Paused every speaker', {
       done: () => changeMark(null),
     });
+  // Back or next on the music (only offered when the sound service said it has the commands); the read after it shows the new track.
+  const skipTrack = (direction: 'next' | 'previous') => {
+    void run('skip', () => invoke('wall2_sonos_skip', { direction }), () => null).finally(() => {
+      // The 800 ms latch after a write drops a second click without a sign: the buttons look busy for that time.
+      if (!mounted.current) return;
+      clearTimeout(skipLatchTimer.current);
+      setSkipLatch(true);
+      skipLatchTimer.current = setTimeout(() => mounted.current && setSkipLatch(false), LATCH_MS);
+    });
+  };
   const suggested = s.music.find((r) => r.key === suggestion) ?? null;
   const track = houseTrack(playback.read, s);
   // Without a track: the play this wall started (while the music it started still plays).
@@ -493,15 +504,19 @@ function Live({
   return (
     <Shell side={side} extra={extra} stale={stale}>
       <div className="panel sound-panel l2">
-        <NowStrip
+        <NowBlock
           s={s}
           now={now}
+          live={!stale}
           track={track}
           trackAt={playback.at}
           activeSlot={activeSlot}
           activeName={activeName}
           locked={locked}
           pauseAll={pauseAll}
+          skip={skipTrack}
+          skipBusy={busy === 'skip' || skipLatch}
+          playArt={(slot, size) => <PlayArt slot={slot} size={size} />}
           playSuggested={
             <button
               type="button"
@@ -1006,111 +1021,4 @@ function usePlayback(sync: number): { read: PlaybackRead | null; at: number } {
     };
   }, [visible, sync]);
   return p;
-}
-
-/**
- * Now playing at the left of the Sound block. With a Spotify track on a house speaker:
- * cover, title, artist, where it plays, pause and progress (no next: the wall has no
- * Spotify skip, and media keys reach only this PC). With music the Sonos read alone knows
- * of: the play this wall started (its art), where it plays and pause. With nothing playing:
- * "Nothing playing" and the hour's suggestion as a Play button.
- */
-function NowStrip({
-  s,
-  now,
-  track,
-  trackAt,
-  activeSlot,
-  activeName,
-  locked,
-  pauseAll,
-  playSuggested,
-  suggestedSlot,
-}: {
-  s: SonosSummary;
-  now: number;
-  track: ReturnType<typeof houseTrack>;
-  /** When the Spotify read that carries the track's position landed. */
-  trackAt: number;
-  activeSlot: Slot | null;
-  activeName: string | null;
-  locked: boolean;
-  pauseAll: () => void;
-  playSuggested: ReactNode;
-  suggestedSlot: Slot | null;
-}) {
-  const where = playingWhere(s);
-  // Progress moves on between reads while the track plays, counted from the Spotify read that
-  // carries the position (it lands after the Sonos read that asks for it).
-  const since = track ? Math.max(0, now - trackAt) : 0;
-  const pos = track ? Math.min(track.durationMs, track.progressMs + since) : 0;
-  const pause = (
-    <button type="button" className="np-rd big" aria-label="Pause" disabled={locked} {...tip('Pause every Sonos speaker')} {...once(pauseAll)}>
-      <IconPlayerPauseFilled size={24} aria-hidden="true" />
-    </button>
-  );
-  if (track) {
-    return (
-      <div className="sound-np" aria-label="Now playing">
-        <div className="np-top">
-          {track.cover ? <img className="np-cover" src={track.cover} alt="" /> : <span className="np-cover blank" aria-hidden="true" />}
-          <div className="np-meta">
-            <span className="np-k">Now playing</span>
-            <b className="np-title" {...tip(track.title)}>
-              {track.title}
-            </b>
-            <span className="np-artist" {...tip(track.artist)}>
-              {track.artist}
-            </span>
-            <span className="np-where" {...tip(`Spotify on ${track.where}`)}>
-              <IconDeviceSpeaker size={18} stroke={1.8} aria-hidden="true" />
-              {track.where}
-            </span>
-            <div className="np-ctl">{pause}</div>
-          </div>
-        </div>
-        {track.durationMs > 0 && (
-          <div className="np-prog" {...tip(() => `${clockMs(pos)} of ${clockMs(track.durationMs)}`)}>
-            <span>{clockMs(pos)}</span>
-            <div>
-              <i style={{ width: `${Math.round((pos / track.durationMs) * 100)}%` }} />
-            </div>
-            <span>{clockMs(track.durationMs)}</span>
-          </div>
-        )}
-      </div>
-    );
-  }
-  if (where) {
-    return (
-      <div className="sound-np plain" aria-label="Now playing">
-        <div className="np-top">
-          {activeSlot ? <PlayArt slot={activeSlot} size={44} /> : <span className="np-cover blank small" aria-hidden="true"><IconDeviceSpeaker size={40} stroke={1.5} /></span>}
-          <div className="np-meta">
-            <span className="np-k">Now playing</span>
-            <b className="np-title">{activeName ?? (s.nowPlaying?.track ? s.nowPlaying.track : 'Music')}</b>
-            {!activeName && s.nowPlaying?.artist && <span className="np-artist">{s.nowPlaying.artist}</span>}
-            <span className="np-where" {...tip(nowLine(s))}>
-              <IconDeviceSpeaker size={18} stroke={1.8} aria-hidden="true" />
-              {where}
-            </span>
-            <div className="np-ctl">{pause}</div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-  return (
-    <div className="sound-np quiet" aria-label="Now playing">
-      <div className="np-top">
-        {suggestedSlot ? <PlayArt slot={suggestedSlot} size={44} /> : <span className="np-cover blank small" aria-hidden="true"><IconDeviceSpeaker size={40} stroke={1.5} /></span>}
-        <div className="np-meta">
-          <span className="np-k">Sound</span>
-          <b className="np-title">Nothing playing</b>
-          <span className="np-artist">{suggestedSlot ? 'Suggested for this hour' : 'Pick a play beside this'}</span>
-          <div className="np-ctl">{playSuggested}</div>
-        </div>
-      </div>
-    </div>
-  );
 }
