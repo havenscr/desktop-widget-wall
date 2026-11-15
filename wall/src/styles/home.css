@@ -334,6 +334,19 @@
   padding: 6px 10px;
   white-space: nowrap;
 }
+/* The pill column is as wide as the widest pill in the list, never under 62 px (the list sets --pill-w),
+   the same on every row so the tags line up; a row with no pill keeps the room. The text never wraps. */
+.home .chore-rows .est {
+  box-sizing: border-box;
+  min-width: var(--pill-w, 62px);
+  flex: none;
+  text-align: center;
+  white-space: nowrap;
+}
+.home .chore-rows .pill-ph {
+  width: var(--pill-w, 62px);
+  flex: none;
+}
 
 /* Network and security: the heading above the card (as "Around the house"), the card as
    tall as what it holds, the block sitting on the band's bottom. */

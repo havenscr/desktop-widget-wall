@@ -156,19 +156,24 @@ it('play what suits the hour plays the suggested routine, never bypasses a confi
   expect(await refusal('sonos:play-suggested')).toBe('Nothing suits this hour');
 });
 
-it('the task actions open the first of Next three by its id', async () => {
-  track('wall2_tasks_next', [{ id: 't1' }, { id: 't2' }]);
+it('the task actions open the first row of Due today by its id, or of Next up when nothing is due', async () => {
+  track('wall2_tasks_summary', (args: Record<string, unknown>) => ({ next: args.due ? [{ id: 't1' }, { id: 't2' }] : [{ id: 'n1' }] }));
   track('wall2_open_task');
   expect(await runWallAction('task:first')).toBe('Opened your first task');
   expect(await runWallAction('tasks:open')).toBe('Opened your first task');
   expect(calls.filter((c) => c[0] === 'wall2_open_task').map((c) => c[1])).toEqual([{ id: 't1' }, { id: 't1' }]);
-  track('wall2_tasks_next', []);
+  expect(calls.find((c) => c[0] === 'wall2_tasks_summary')?.[1]).toEqual({ notTag: 'home', due: 'today', limit: 1 });
+  // Nothing due: the first of the next tasks.
+  track('wall2_tasks_summary', (args: Record<string, unknown>) => ({ next: args.due ? [] : [{ id: 'n1' }] }));
+  expect(await runWallAction('task:first')).toBe('Opened your first task');
+  expect(calls.filter((c) => c[0] === 'wall2_open_task').map((c) => c[1]).at(-1)).toEqual({ id: 'n1' });
+  track('wall2_tasks_summary', { next: [] });
   expect(await refusal('task:first')).toBe('No tasks to open');
-  track('wall2_tasks_next', { not: 'a list' });
+  track('wall2_tasks_summary', { not: 'a list' });
   expect(await refusal('tasks:open')).toBe('No tasks to open');
-  fails('wall2_tasks_next');
+  fails('wall2_tasks_summary');
   expect(await refusal('task:first')).toBe('The task app is not answering');
-  track('wall2_tasks_next', [{ id: 't1' }]);
+  track('wall2_tasks_summary', { next: [{ id: 't1' }] });
   fails('wall2_open_task');
   expect(await refusal('task:first')).toBe('Could not open the task');
 });

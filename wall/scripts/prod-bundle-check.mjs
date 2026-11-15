@@ -33,6 +33,34 @@ try {
       }
     }
   }
+  // The Tabler icon data (tags' glyphs) must be its own lazily loaded chunk: found in exactly the
+  // files that index.html does not load or preload, never in the first load.
+  {
+    const html = readFileSync(join(out, 'dist', 'index.html'), 'utf8');
+    const firstLoad = new Set([...html.matchAll(/(?:src|href)="\.?\/?([^"]+\.js)"/g)].map((m) => m[1]));
+    const ICON_DATA = /["']shopping-cart["']\s*:\s*[`"']M4 19a2 2 0 1 0 4 0/;
+    const holders = files(join(out, 'dist')).filter((f) => f.endsWith('.js') && ICON_DATA.test(readFileSync(f, 'utf8')));
+    const rel = (f) => f.slice(join(out, 'dist').length + 1).replaceAll('\\', '/');
+    if (holders.length !== 1) {
+      bad++;
+      console.log(`FAIL icon data: expected it in exactly one chunk, found it in ${holders.length}`);
+    } else if (firstLoad.has(rel(holders[0]))) {
+      bad++;
+      console.log(`FAIL icon data: ${rel(holders[0])} is part of the first load`);
+    } else if (
+      // A static import (`from"./chunk.js"` or `import"./chunk.js"`) would pull it into whichever chunk names it;
+      // a dynamic `import("./chunk.js")` is what keeps it lazy.
+      files(join(out, 'dist'))
+        .filter((f) => f.endsWith('.js') && f !== holders[0])
+        .some((f) => new RegExp(`(?:from|import)\\s*["'\`]\\./${rel(holders[0]).split('/').pop().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}["'\`]`).test(readFileSync(f, 'utf8')))
+    ) {
+      bad++;
+      console.log(`FAIL icon data: ${rel(holders[0])} is imported statically by another chunk`);
+    } else {
+      const bytes = readFileSync(holders[0]).length;
+      console.log(`prod-check: icon data is its own chunk (${rel(holders[0])}, ${bytes} bytes), not in the first load (${[...firstLoad].join(', ')})`);
+    }
+  }
   console.log(bad ? `prod-check: ${bad} marker(s) found in the production bundle` : 'prod-check: no mock or gallery code in the production bundle');
   process.exitCode = bad ? 1 : 0;
 } finally {

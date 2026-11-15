@@ -244,3 +244,55 @@ it('shows five rows in view with the rest a scroll away, and three while network
   expect((busy.container.querySelector('.chore-rows') as HTMLElement).className).toContain('fit3');
   expect(screen.getByText('12 more can wait')).toBeTruthy();
 });
+
+it('shows each chore\'s tags after the title and keeps the 62 px pill column on every row', async () => {
+  mocks.set('wall2_tasks_summary', () => ({
+    next: [
+      task('1', 'Order printer paper', { tags: [{ label: 'Errands', icon: 'shopping-cart', color: 'orange' }] }),
+      task('2', 'Sort the recycling', { est: null, tags: [] }),
+      task('3', 'Fix the garage door', {
+        tags: [
+          { label: 'Repairs', icon: 'tool', color: 'pink' },
+          { label: 'Phone Call', icon: 'phone', color: 'blue' },
+          { label: 'Errands', icon: 'shopping-cart', color: 'orange' },
+        ],
+      }),
+      task('4', 'Water the plants', { est: null }),
+    ],
+    remaining: 0,
+  }));
+  const { container } = render(<Chores />);
+  await flush();
+  const rows = [...container.querySelectorAll('.chore-rows .tk3')];
+  expect(rows[0]!.querySelector('.t-chip')?.textContent).toBe('Errands');
+  expect(rows[1]!.querySelector('.t-tags')).toBeNull();
+  expect(rows[2]!.querySelector('.t-chip')?.textContent).toBe('Repairs');
+  expect(rows[2]!.querySelectorAll('.t-dot').length).toBe(2);
+  // A row from a read with no tags field at all looks as before.
+  expect(rows[3]!.querySelector('.t-tags')).toBeNull();
+  // The tags come after the title and before the pill (or the empty column that stands for it).
+  for (const row of rows) {
+    const kids = [...row.children].map((c) => c.className);
+    expect(kids.at(-1)).toMatch(/^(est|pill-ph)$/);
+  }
+  expect(rows[0]!.children[2]!.className).toBe('t-tags');
+  expect(rows[1]!.querySelectorAll('.pill-ph').length).toBe(1);
+});
+
+it('sets the pill column on the list: never under 62 px, and as wide as the widest pill', async () => {
+  mocks.set('wall2_tasks_summary', () => ({
+    next: [task('1', 'Pick up the dry cleaning', { due_at: '2026-11-12T03:30:00Z', est: '15' }), task('2', 'Sort the recycling', { est: null }), task('3', 'Water the plants')],
+    remaining: 0,
+  }));
+  // jsdom has no layout: give the timed pill the width its text needs (about 75 px, as 4:30 PM does).
+  const spy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+    const w = this.classList.contains('est') && this.textContent === '7:30 PM' ? 74.2 : 0;
+    return { width: w, height: 0, top: 0, left: 0, right: w, bottom: 0, x: 0, y: 0, toJSON: () => ({}) } as DOMRect;
+  });
+  const { container } = render(<Chores />);
+  await flush();
+  const list = container.querySelector('.chore-rows') as HTMLElement;
+  expect([...container.querySelectorAll('.est')].map((e) => e.textContent)).toEqual(['7:30 PM', '15 m']);
+  expect(list.style.getPropertyValue('--pill-w')).toBe('75px');
+  spy.mockRestore();
+});
