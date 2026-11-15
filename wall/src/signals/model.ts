@@ -9,6 +9,8 @@ export interface SignalPayload {
   camera: DeviceUse;
   /** Plain-browser development fields. Rust never sends them. */
   mockCall?: CallKind;
+  /** Plain-browser development: when the mock call began. */
+  mockSince?: number;
   mockLeave?: LeaveSignal;
 }
 export interface CallSignal { kind: CallKind; since: number; camera: boolean }

@@ -23,6 +23,8 @@ export function createSignalStore(deps: SignalDeps) {
       const meetings = feed.feedStale || feed.failed ? [] : feed.meetings;
       const callResult = deriveCall(next, meetings, now, previous, micFreeSince);
       if (!isTauri() && next.mockCall && !callResult.call) callResult.call = { kind: next.mockCall, since: now, camera: next.camera[next.mockCall] };
+      // Plain-browser development: a mock call that began earlier (`?callsince=-70`).
+      if (!isTauri() && next.mockSince !== undefined && callResult.call) callResult.call = { ...callResult.call, since: next.mockSince };
       micFreeSince = callResult.micFreeSince;
       const recording = deriveRecording(next);
       const leave = next.known ? (!isTauri() && next.mockLeave ? next.mockLeave : deriveLeave(meetings, now, deps.zone())) : null;

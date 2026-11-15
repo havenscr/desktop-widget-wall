@@ -7,6 +7,7 @@
 //! failure maps to a fixed string or a reason code built from numbers and a checked name.
 
 mod auth;
+pub(crate) mod checklist;
 mod desktop;
 mod graph;
 mod meetlog;
@@ -174,11 +175,13 @@ impl graph::GraphClient for HttpGraph {
     }
 
     fn calendar_view_diag(&self, access: &str, start: &str, end: &str, ctx: &graph::Ctx) -> (graph::GraphReply, Option<graph::Diag>) {
-        self.calendar_request(access, graph::calendar_view_url(start, end), ctx)
+        let url = if ctx.wide() { graph::calendar_view_url(start, end) } else { graph::calendar_view_url_day(start, end) };
+        self.calendar_request(access, url, ctx)
     }
 
     fn calendar_view_without_expand_diag(&self, access: &str, start: &str, end: &str, ctx: &graph::Ctx) -> (graph::GraphReply, Option<graph::Diag>) {
-        self.calendar_request(access, graph::calendar_view_url_without_expand(start, end), ctx)
+        let url = if ctx.wide() { graph::calendar_view_url_without_expand(start, end) } else { graph::calendar_view_url_day_without_expand(start, end) };
+        self.calendar_request(access, url, ctx)
     }
 }
 

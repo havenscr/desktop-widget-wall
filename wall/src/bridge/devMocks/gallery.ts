@@ -4,6 +4,7 @@ import { reviewNow } from '../../ui/reviewClock';
 import { nwsBody, openMeteoBody } from './weather';
 import { mocks, type CommandArgs, type MockHandler } from '../tauri';
 import { knob } from './long';
+import { MOCK_DETAILS } from './meet';
 
 /**
  * Dev only: the extra URL knobs the state gallery (`scripts/gallery.mjs`) uses to put each
@@ -115,7 +116,7 @@ function meet(mode: string): void {
     if (mode === 'failing') throw new Error('failed');
     if (mode === 'none') return { accounts: accounts('ok'), meetings: [] };
     if (mode === 'signedout') return { accounts: accounts('signed-out'), meetings: [] };
-    if (mode === 'heavy') return { accounts: accounts('ok'), meetings: upcoming().filter((m) => Date.parse(m.end) > now()) };
+    if (mode === 'heavy') return { accounts: accounts('ok'), meetings: upcoming().filter((m) => Date.parse(m.end) > now()).map((m, i) => (i === 0 ? { ...m, details: MOCK_DETAILS.heavy } : m)) };
     if (mode === 'one') return { accounts: accounts('ok'), meetings: one() };
     if (mode === 'partial') return { accounts: accounts('ok'), meetings: one(), stale: true };
     return undefined;
