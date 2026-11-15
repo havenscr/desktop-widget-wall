@@ -194,11 +194,43 @@ Nothing plays yet: playback is a later change. It needs a Google Cloud OAuth cli
   re-reads). Retry repeats the read that failed (the first page or the next page). Each list of rows takes
   keyboard focus, so the arrow keys, Page Up, Page Down, Home and End scroll it. Under 20 searches left the field says how many; at none it is disabled and says so,
   while Playlists and Liked keep working. A row that will not play outside YouTube is greyed and its
-  length column says "Only on YouTube", "Private" or "Removed". Rows are plain: not buttons, no click,
-  no pointer cursor; each has a hover card. Not set up, signed out, a dead sign-in or a refused setup
-  keep today's remote with one line and one button under it. Nothing plays and nothing pretends to:
-  playback is the next change. `?youtube=in&ytlib=full|few|empty|slow|down|busy|again|gone|low|spent|long`
+  length column says "Only on YouTube", "Private" or "Removed"; it is a plain row (no button, no click, no
+  pointer cursor) with a hover card that says why. Not set up, signed out, a dead sign-in or a refused setup
+  keep today's remote with one line and one button under it. `?youtube=in&ytlib=full|few|empty|slow|down|busy|again|gone|low|spent|long`
   picks the library's state (development mock only), and `?ytsearch=<words>` runs a search on open.
+- **Playing a pick** (`queue.ts`, `YtFoot.tsx`, `YtUpNext.tsx` and the rows in `YtParts.tsx`). A video that
+  plays outside YouTube is a button: a click plays the list from that row, and an opened playlist has Play (from
+  the first playable row) and Shuffle (every playable row once, in a random order). The pick plays on the wall
+  as sound only, in the Watch stage's one player, parked out of sight, and keeps playing on every place.
+  **The owner chose this for his personal app knowing that playing YouTube's embedded player out of sight, as
+  sound without the video, is against YouTube's developer policies for embedded players.** Out of sight is
+  exactly the park described under "The stage layer": the frame stays laid out in its parked box, painted
+  at `opacity: 0` under the page, with no pointer, no focus and `aria-hidden`. Nothing is done to the frame's
+  address, sandbox, allow or referrer attributes, no referrer or user agent is spoofed, no script goes into the
+  frame, and page visibility and focus are not overridden. It plays as a guest and counts as YouTube plays.
+  There is one player: a pick replaces a Watch video and a Watch play or a pin replaces the music; Spotify and the
+  wall's player can still play together. It stops as a Watch video does (the page hidden, the display off or
+  Windows locked, Screens off, a call, the sleep timer) and nothing starts it again. A pick is never saved and
+  never changes the tab; on the Watch tab it shows as the single video it is, with its real title and channel.
+  The queue is the list the pick came from, in memory only (never kept across a restart) and never wrapping. It
+  grows only through the library store (within 10 entries of its end, and up to 200 rows after Play, Shuffle or a
+  click): it takes the rows the store has read and asks the store for its next page; it never reads with a page
+  token of its own, and it ends where its rows end once the list has left the store. Loads are at least a second
+  apart (a click inside that time waits and the last click wins), a video that ends advances once, and Previous
+  restarts the video after 3 seconds. The player's `onError` code is read (a whole number from 0 to 999, nothing
+  else of that message): 100 greys the row as "Removed" for the session, 101 and 150 as "Only on YouTube", and
+  any code skips with one quiet line in the card ("Skipped Glass Harbor: it plays only on YouTube." and its
+  two siblings); five in a row stop the queue ("Stopped after five videos in a row would not play."). The line goes
+  after 8 seconds or at the next play. If YouTube does not start the sound, the foot (tall) and the note line (at
+  rest) say so with one button, "Start it on Watch", which shows the video on Watch where one click starts it.
+  Tall, the foot player (791 by 61) shows whatever the wall's player holds: the music with the queue's previous
+  and next, a Watch video (previous and next only for a playlist) or a Twitch stream (its buttons off); its seek
+  uses the frame's own once-a-second report and `seekTo`. Listen's top player draws the wall's music itself ("YouTube,
+  on the wall", with Play again once it has stopped) and drives the queue, not the media keys, when Windows names
+  the same video or offers no playing session; Home's Now Playing reads "YouTube Music" with its place in the queue;
+  the rail's mark shows away from Unwind and goes to Listen; Up next on Listen lists the next entries.
+  `?ytplay=on|paused|refused|skipped|five|ended|watch|liked|search` (development mock only, with `youtube=in` and
+  `watch=mock`, which never loads a real player) starts a pick about 700 ms after the page is up.
 - **No test talks to Google.** Every path runs against fake `Http` and `Creds` traits; the real
   sign-in, Google's warning page and whether its token exchange needs the secret are checked by
   hand.
@@ -2042,7 +2074,7 @@ there, still playing, when the owner comes back (see "The stage layer" below).
   and "<title> is paused. Click to go to it."; an ended video shows no mark. When the stage is
   parked, focus inside the player frame is dropped, so no key reaches the invisible player. The
   Tools drawer is a drawer over the same place: the video stays where it is under it, and the
-  drawer stacks above the layer and its pointer band. Music from Listen and a video can play together; nothing mixes or ducks.
+  drawer stacks above the layer and its pointer band. Spotify and the wall's player can play together (nothing mixes or ducks); the wall's music (a pick from the YouTube library) and a Watch video cannot: they share this one frame, so each replaces the other. The music is parked here exactly as a Watch video is, and the stage shows only on Unwind's Watch tab.
 - **The controls fade** (5A, `useControlsFade` in `Watch.tsx`): while a video plays, 3 seconds
   (`CTL_REST_MS`) after the pointer leaves the left block and a 72 px band over the
   video's lower edge (`EdgeBand`, the wall's own transparent box beside the frame, never over
