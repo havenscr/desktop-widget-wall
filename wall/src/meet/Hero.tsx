@@ -226,13 +226,14 @@ export function Hero({ m, meeting, label, events }: { m: MeetState; meeting: Mee
         </div>
       )}
       <div className="meet-hero-last">
+        {/* The recording chip stays while a key press line shows; the line sits beside it. */}
+        <HeroChip />
         {brief ? (
           <span className="meet-brief" role="status" {...tip(brief)}>
             {brief}
           </span>
         ) : (
           <>
-            <HeroChip />
             {!call && <span className="meet-xxs">The wall switches to the call by itself when it starts.</span>}
             {m.notice && <span className="meet-notice meet-xxs">{m.notice}</span>}
           </>

@@ -39,11 +39,11 @@ const same = (a: DayLike, b: DayLike) => occurrenceId({ accountId: a.accountId ?
 
 /**
  * The rest of today after the hero: events that start today (by the local day), have not ended, are not the
- * hero itself and do not start before it. Nothing is capped, and a meeting tomorrow is never in it.
+ * hero itself and do not start before it (one that starts at the same minute is after it). Nothing is capped, and a meeting tomorrow is never in it.
  */
 export function todayRest(events: readonly DayLike[], hero: DayLike | undefined, now: number): DayLike[] {
   return events
-    .filter((e) => Date.parse(e.end) > now && daysAhead(Date.parse(e.start), now) === 0 && !(hero && same(e, hero)) && (!hero || Date.parse(e.start) > Date.parse(hero.start)))
+    .filter((e) => Date.parse(e.end) > now && daysAhead(Date.parse(e.start), now) === 0 && !(hero && same(e, hero)) && (!hero || Date.parse(e.start) >= Date.parse(hero.start)))
     .sort((a, b) => Date.parse(a.start) - Date.parse(b.start));
 }
 
@@ -54,7 +54,7 @@ export function latestEnd(list: readonly DayLike[]): number | null {
 
 /** The meetings the next read lists after the hero: not ended, not the hero, starting after it. Nothing is capped here. */
 export function meetingsAfter(meetings: readonly Meeting[], hero: Meeting | undefined, now: number): Meeting[] {
-  return meetings.filter((m) => Date.parse(m.end) > now && !(hero && occurrenceId(m) === occurrenceId(hero)) && (!hero || Date.parse(m.start) > Date.parse(hero.start)));
+  return meetings.filter((m) => Date.parse(m.end) > now && !(hero && occurrenceId(m) === occurrenceId(hero)) && (!hero || Date.parse(m.start) >= Date.parse(hero.start)));
 }
 
 export { MIN };

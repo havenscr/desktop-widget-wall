@@ -565,3 +565,30 @@ it('a call that starts while the page is hidden opens Meet once when the page be
     useSignalStore.setState({ call: null });
   }
 });
+
+it('a meeting that starts at the same minute as the hero is the Next card and reads "Next, overlaps"', async () => {
+  serve({ meetings: () => [m('a', 'Design review', -10, 50, { details }), m('b', 'Same minute', -10, 20, { canJoin: true })] });
+  await setCall(call());
+  const { container } = await renderMeet();
+  const card = within(nextCard(container));
+  expect(card.getByText('Next, overlaps')).toBeTruthy();
+  expect(card.getByText('Same minute')).toBeTruthy();
+  expect(card.getByText('Starts before this one ends')).toBeTruthy();
+});
+
+it('the recording chip stays in the hero while a key press line shows, and the line sits beside it', async () => {
+  serve({ meetings: () => [m('a', 'Design review', -10, 50)] });
+  mocks.set('wall2_keys_send_library', () => Promise.reject(new Error('no-target')));
+  act(() => useSignalStore.setState({ recording: true }));
+  await setCall(call());
+  const { container } = await renderMeet();
+  expect(hero(container).querySelector('.meet-hero-last .rec-chip')).not.toBeNull();
+  fireEvent.click(within(hero(container)).getByRole('button', { name: 'Mute' }));
+  await flush(10);
+  expect(hero(container).querySelector('.meet-hero-last .meet-brief')).not.toBeNull();
+  expect(hero(container).querySelector('.meet-hero-last .rec-chip')).not.toBeNull();
+  // The line goes after a few seconds; the chip never did.
+  await flush(10_000);
+  expect(hero(container).querySelector('.meet-hero-last .meet-brief')).toBeNull();
+  expect(hero(container).querySelector('.meet-hero-last .rec-chip')).not.toBeNull();
+});

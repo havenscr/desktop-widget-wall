@@ -61,3 +61,15 @@ it('meetings after the hero come from the read without a cap and without the her
   expect(out.some((m) => occurrenceId(m) === occurrenceId(hero))).toBe(false);
   expect(out.length).toBeGreaterThan(14);
 });
+
+it('a meeting that starts at the same minute as the hero is after it, not lost', () => {
+  const hero = ev('Hero', local(0, 10), local(0, 11));
+  const other = ev('Same minute', local(0, 10), local(0, 10, 45), 'second');
+  const twin = ev('Hero', local(0, 10), local(0, 11), 'second');
+  const rest = todayRest([hero, other, twin], hero, NOW - 60_000);
+  expect(rest.map((e) => e.title)).toEqual(['Same minute', 'Hero']);
+  // Only the hero's own occurrence is left out.
+  expect(todayRest([hero], hero, NOW)).toEqual([]);
+  const mk = (key: string, title: string, accountId = 'work') => ({ key, accountId, title, start: local(0, 10), end: local(0, 11), canJoin: false });
+  expect(meetingsAfter([mk('a', 'Hero'), mk('b', 'Same minute')], mk('a', 'Hero'), NOW - 60_000).map((m) => m.title)).toEqual(['Same minute']);
+});

@@ -336,7 +336,7 @@
 .meet-key.red:hover:not(.off) {
   border-color: rgba(255, 77, 109, 0.9);
 }
-/* Join takes two keys' width: filled cyan only for a meeting that is live or within 15 minutes. */
+/* Join takes two keys' width and is filled cyan whenever the meeting can be joined (a glow marks one that is live or within 15 minutes). */
 .meet-key.join {
   width: 308px;
   background: var(--cyan);
@@ -420,7 +420,9 @@
   align-items: center;
   gap: 22px;
 }
+/* The key press line sits beside the recording chip and gives way to it. */
 .meet-brief {
+  min-width: 0;
   font: 600 19px/1.3 var(--body);
   color: var(--amber);
   overflow: hidden;

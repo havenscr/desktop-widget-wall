@@ -2296,7 +2296,7 @@ mock also carries the numbers PR 24 will add, so the dev view shows the full car
 
 The Meet tab shows the next meetings from up to two Microsoft 365 calendars for the next 24 hours, a calm countdown to the next one ("In 42 min", "Now, 12 min left", "At 3:30 PM"), and a Join button for Teams links. It makes no sound and flashes nothing; red marks only a call in progress and the Leave key, and the ring turns amber only in the last ten minutes. Cancelled, declined and all-day events are left out, and the same invite on both accounts shows once.
 
-All token and Graph work happens in Rust (`src-tauri/src/wall2_meet/`). The web view sees account states, titles, times and opaque keys. It never sees a token, an authorization code, an email address or a join link, and the content security policy does not change (Graph and login hosts are not allowed in `connect-src`). Every Meet command refuses any window but `wall2`.
+All token and Graph work happens in Rust (`src-tauri/src/wall2_meet/`). The web view sees account states, titles, times, opaque keys and, for the next meetings, names and a cleaned invite text. It never sees a token, an authorization code or a join link: join links stay in Rust behind keys, and the invite text and names, which are outside input, have links, meeting ids, passcodes, phone numbers and addresses removed by fixed rules (see "The wider read, and what it never passes"), a best effort on text that anyone who can send an invitation controls. The content security policy does not change (Graph and login hosts are not allowed in `connect-src`). Every Meet command refuses any window but `wall2`.
 
 ### The layout
 
