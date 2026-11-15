@@ -20,6 +20,18 @@ interface Held {
 }
 
 let mem: Held | null = null;
+/** Storage is written at most this often (by the times noted, this PC's clock); the memory is always current. */
+const WRITE_EVERY_MS = 30_000;
+let dirty = false;
+let wroteAt = Number.NEGATIVE_INFINITY;
+let listening = false;
+
+/** Write what the memory holds now, if anything changed since the last write. Also runs when the page is left. */
+export function flushWorkSeen(): void {
+  if (!dirty || !mem) return;
+  dirty = false;
+  writeStored(mem);
+}
 
 /** The stored record for `day`, or an empty one: anything malformed, or from another day, is ignored. */
 function readStored(day: string): Held {
@@ -77,7 +89,16 @@ export function noteWorking(ids: Iterable<string>, at: number): void {
       const newest = [...h.seen.entries()].sort((a, b) => b[1] - a[1]).slice(0, MAX_IDS);
       h.seen = new Map(newest);
     }
-    writeStored(h);
+    dirty = true;
+    if (!listening && typeof window !== 'undefined') {
+      listening = true;
+      window.addEventListener('pagehide', flushWorkSeen);
+    }
+    // A poll notes every working session every few seconds: write the record about twice a minute, not each time.
+    if (at - wroteAt >= WRITE_EVERY_MS || at < wroteAt) {
+      wroteAt = at;
+      flushWorkSeen();
+    }
   }
 }
 
@@ -86,14 +107,19 @@ export function seenWorking(at: number): ReadonlyMap<string, number> {
   return held(isoDay(at)).seen;
 }
 
-/** A page reload for tests: forget the memory, keep what is in storage. */
+/** A page reload for tests: what waits to be written is written (the page leaving does that), then the memory is forgotten. */
 export function resetWorkSeenMemory(): void {
+  flushWorkSeen();
   mem = null;
+  dirty = false;
+  wroteAt = Number.NEGATIVE_INFINITY;
 }
 
 /** Forget everything, storage included (tests). */
 export function clearWorkSeen(): void {
   mem = null;
+  dirty = false;
+  wroteAt = Number.NEGATIVE_INFINITY;
   try {
     window.localStorage.removeItem(KEY);
   } catch {
