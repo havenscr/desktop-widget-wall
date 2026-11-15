@@ -602,18 +602,29 @@ fn begin_write() -> Result<std::sync::MutexGuard<'static, ()>, String> { write_l
 
 fn put_with(cfg: &Config, path: &str, payload: Option<Value>, http: &dyn Http, creds: &dyn Creds) -> Result<(), String> { send_with(cfg, "PUT", path, payload, http, creds) }
 fn send_with(cfg: &Config, method: &str, path: &str, payload: Option<Value>, http: &dyn Http, creds: &dyn Creds) -> Result<(), String> {
+    send_with_backoff(cfg, method, path, payload, http, creds, true)
+}
+fn send_with_backoff(cfg: &Config, method: &str, path: &str, payload: Option<Value>, http: &dyn Http, creds: &dyn Creds, arm_backoff: bool) -> Result<(), String> {
     let _guard = begin_write()?;
     check_backoff()?;
-    let bearer = access_with(cfg, false, http, creds)?;
+    let mut bearer = access_with(cfg, false, http, creds)?;
     let started = Instant::now();
-    match http.api(method, path, &bearer, payload.as_ref(), ANSWER_BODY) {
-        Ok(resp) if (200..300).contains(&resp.status) => Ok(()),
-        Ok(resp) if resp.status == 404 => { crate::wall2_spotify_log::write(crate::wall2_spotify_log::Event::ApiFailed, crate::wall2_spotify_log::Reason::NoDevice, 404, started.elapsed().as_millis()); Err(NO_DEVICE.into()) },
-        Ok(resp) if resp.status == 429 => { back_off_for(retry_after(resp.retry_after)); crate::wall2_spotify_log::write(crate::wall2_spotify_log::Event::ApiFailed, crate::wall2_spotify_log::Reason::Busy, 429, started.elapsed().as_millis()); Err(BUSY.into()) }
-        Ok(resp) if resp.status == 401 => { access_with(cfg, true, http, creds).map(|_| ())?; Err(BUSY.into()) }
-        Ok(resp) => { crate::wall2_spotify_log::write(crate::wall2_spotify_log::Event::ApiFailed, crate::wall2_spotify_log::Reason::Down, resp.status, started.elapsed().as_millis()); Err(status_answer(resp.status, false)) }
-        Err(_) => { crate::wall2_spotify_log::write(crate::wall2_spotify_log::Event::ApiFailed, crate::wall2_spotify_log::Reason::Down, 0, started.elapsed().as_millis()); Err(NO_CONNECTION.into()) },
+    for attempt in 0..2 {
+        match http.api(method, path, &bearer, payload.as_ref(), ANSWER_BODY) {
+            Ok(resp) if (200..300).contains(&resp.status) => return Ok(()),
+            Ok(resp) if resp.status == 404 => { crate::wall2_spotify_log::write(crate::wall2_spotify_log::Event::ApiFailed, crate::wall2_spotify_log::Reason::NoDevice, 404, started.elapsed().as_millis()); return Err(NO_DEVICE.into()) },
+            Ok(resp) if resp.status == 429 => {
+                if arm_backoff { back_off_for(retry_after(resp.retry_after)); }
+                crate::wall2_spotify_log::write(crate::wall2_spotify_log::Event::ApiFailed, crate::wall2_spotify_log::Reason::Busy, 429, started.elapsed().as_millis());
+                return Err(BUSY.into());
+            }
+            Ok(resp) if resp.status == 401 && attempt == 0 => { bearer = access_with(cfg, true, http, creds)?; }
+            Ok(resp) if resp.status == 401 => return Err(SIGN_AGAIN.into()),
+            Ok(resp) => { crate::wall2_spotify_log::write(crate::wall2_spotify_log::Event::ApiFailed, crate::wall2_spotify_log::Reason::Down, resp.status, started.elapsed().as_millis()); return Err(status_answer(resp.status, false)) },
+            Err(_) => { crate::wall2_spotify_log::write(crate::wall2_spotify_log::Event::ApiFailed, crate::wall2_spotify_log::Reason::Down, 0, started.elapsed().as_millis()); return Err(NO_CONNECTION.into()) },
+        }
     }
+    Err(SIGN_AGAIN.into())
 }
 fn put(cfg: &Config, path: &str, payload: Option<Value>) -> Result<(), String> { put_with(cfg, path, payload, &RealHttp, &RealCreds) }
 
@@ -653,8 +664,12 @@ where N: FnMut() -> Duration, S: FnMut(Duration), C: FnMut() -> bool, D: FnMut(D
     }
 }
 fn play_on_device(cfg: &Config, request: &PlayRequest, device: &str) -> Result<(), String> {
-    if request.shuffle { let _ = put(cfg, &format!("/me/player/shuffle?state=true&device_id={device}"), None); }
-    put(cfg, &format!("/me/player/play?device_id={device}"), Some(play_payload(request)))
+    play_on_device_with(cfg, request, device, &RealHttp, &RealCreds)
+}
+fn play_on_device_with(cfg: &Config, request: &PlayRequest, device: &str, http: &dyn Http, creds: &dyn Creds) -> Result<(), String> {
+    // Optional shuffle must not prevent the requested play from being sent.
+    if request.shuffle { let _ = send_with_backoff(cfg, "PUT", &format!("/me/player/shuffle?state=true&device_id={device}"), None, http, creds, false); }
+    put_with(cfg, &format!("/me/player/play?device_id={device}"), Some(play_payload(request)), http, creds)
 }
 fn finish_start(cfg: &Config, request: &PlayRequest, began: Instant, devices: Vec<Device>) -> Result<(), String> {
     let computer = std::env::var("COMPUTERNAME").ok();
@@ -771,6 +786,48 @@ mod tests {
     const ID: &str = "0123456789ABCDEFGHIJKL";
     const DEVICE: &str = "0123456789abcdef0123456789abcdef01234567";
     const COVER: &str = "https://i.scdn.co/image/cover";
+
+    #[test]
+    fn optional_shuffle_throttle_does_not_block_play() {
+        let _test_guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        for shuffle_throttled in [true, false] {
+            reset_state();
+            *token().lock().unwrap() = Some(Token { access: "ok".into(), expires: Instant::now() + Duration::from_secs(3600) });
+            let throttle = Ok(HttpReply { status: 429, retry_after: Some(30), body: vec![] });
+            let replies = if shuffle_throttled { vec![throttle, hr(204, "")] } else { vec![hr(204, ""), throttle] };
+            let http = FakeHttp::new(vec![], replies);
+            let request = PlayRequest { kind: "playlist".into(), id: ID.into(), device_id: None, context: None, offset_id: None, shuffle: true };
+            let result = play_on_device_with(&cfg(), &request, "desktop", &http, &FakeCreds::new(Some("old")));
+            assert_eq!(result, if shuffle_throttled { Ok(()) } else { Err(BUSY.into()) });
+            assert_eq!(http.counts(), (0, 2));
+            assert_eq!(http.paths(), vec!["/me/player/shuffle?state=true&device_id=desktop", "/me/player/play?device_id=desktop"]);
+            assert_eq!(not_before().lock().unwrap().is_some(), !shuffle_throttled);
+        }
+    }
+
+    #[test]
+    fn expired_access_deadline_sends_no_request() {
+        let _test_guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        reset_state();
+        let http = FakeHttp::new(vec![], vec![]);
+        let result = access_with_deadline(&cfg(), false, &http, &FakeCreds::new(Some("old")), Some(Instant::now() - Duration::from_secs(1)));
+        assert_eq!(result, Err(NO_DEVICE.into()));
+        assert_eq!(http.counts(), (0, 0));
+    }
+
+    #[test]
+    fn restricted_device_stops_startup_without_waiting() {
+        let device = Device { id: DEVICE.into(), name: "Desk".into(), kind: "Computer".into(), active: false, restricted: true, volume: None };
+        let result = wait_for_computer(vec![device], None, None, START_WAIT, || Duration::ZERO,
+            |_| panic!("must not wait"), || false, |_| panic!("must not read"));
+        assert_eq!(result, Err(RESTRICTED.into()));
+    }
+
+    #[test]
+    fn cover_ports_allow_only_default_https() {
+        assert!(valid_image("https://i.scdn.co:443/image/fixture"));
+        assert!(!valid_image("https://i.scdn.co:8443/image/fixture"));
+    }
 
     #[test]
     fn config_rules_and_bounds() {
@@ -1061,11 +1118,7 @@ mod tests {
         let device="desktop";
         let shuffle=format!("/me/player/shuffle?state=true&device_id={device}");
         let play=format!("/me/player/play?device_id={device}");
-        let result = {
-            let cfg=cfg();
-            if request.shuffle { let _=put_with(&cfg,&shuffle,None,&http,&FakeCreds::new(Some("old"))); }
-            put_with(&cfg,&play,Some(play_payload(&request)),&http,&FakeCreds::new(Some("old")))
-        };
+        let result = play_on_device_with(&cfg(), &request, device, &http, &FakeCreds::new(Some("old")));
         assert_eq!(result,Ok(()));
         assert_eq!(http.paths(),vec![shuffle,play]);
     }
@@ -1099,8 +1152,10 @@ mod tests {
         reset_state(); let creds=FakeCreds::new(Some("old")); *token().lock().unwrap()=Some(Token{access:"stale".into(),expires:Instant::now()+Duration::from_secs(3600)}); let playback_twice=FakeHttp::new(vec![token_ok(None)],vec![hr(401,""),hr(401,"")]); assert_eq!(get_playback_with(&cfg(),&playback_twice,&creds),Err(SIGN_AGAIN.into())); assert_eq!(playback_twice.counts(),(1,2));
         reset_state(); let creds=FakeCreds::new(Some("old")); *token().lock().unwrap()=Some(Token{access:"ok".into(),expires:Instant::now()+Duration::from_secs(3600)}); let playback_busy=FakeHttp::new(vec![],vec![Ok(HttpReply{status:429,retry_after:Some(90),body:vec![]})]); assert_eq!(get_playback_with(&cfg(),&playback_busy,&creds),Err(BUSY.into())); assert_eq!(playback_busy.counts().1,1); assert!(not_before().lock().unwrap().unwrap()>Instant::now());
 
-        reset_state(); let creds=FakeCreds::new(Some("old")); *token().lock().unwrap()=Some(Token{access:"stale".into(),expires:Instant::now()+Duration::from_secs(3600)}); let write=FakeHttp::new(vec![token_ok(None)],vec![hr(401,"")]);
-        assert_eq!(put_with(&cfg(),"/x",None,&write,&creds),Err(BUSY.into())); assert_eq!(write.counts(),(1,1));
+        reset_state(); let creds=FakeCreds::new(Some("old")); *token().lock().unwrap()=Some(Token{access:"stale".into(),expires:Instant::now()+Duration::from_secs(3600)}); let write=FakeHttp::new(vec![token_ok(None)],vec![hr(401,""),hr(204,"")]);
+        assert_eq!(put_with(&cfg(),"/x",None,&write,&creds),Ok(())); assert_eq!(write.counts(),(1,2));
+        reset_state(); let creds=FakeCreds::new(Some("old")); *token().lock().unwrap()=Some(Token{access:"stale".into(),expires:Instant::now()+Duration::from_secs(3600)}); let write_twice=FakeHttp::new(vec![token_ok(None)],vec![hr(401,""),hr(401,"")]);
+        assert_eq!(put_with(&cfg(),"/x",None,&write_twice,&creds),Err(SIGN_AGAIN.into())); assert_eq!(write_twice.counts(),(1,2));
         for status in [404u16] { reset_state(); let creds=FakeCreds::new(Some("old")); *token().lock().unwrap()=Some(Token{access:"ok".into(),expires:Instant::now()+Duration::from_secs(3600)}); let http=FakeHttp::new(vec![],vec![hr(status,"")]); assert_eq!(put_with(&cfg(),"/x",None,&http,&creds),Err(NO_DEVICE.into())); }
 
         reset_state(); assert!(begin_sign_in().is_ok()); assert_eq!(begin_sign_in(),Err(BUSY.into())); CANCEL_SIGN_IN.store(true,Ordering::SeqCst); let creds=FakeCreds::new(None); assert_eq!(save_sign_in(&creds,"new","access".into(),3600,None),Err("cancelled".into())); assert_eq!(creds.value(),None); SIGNING_IN.store(false,Ordering::SeqCst);
