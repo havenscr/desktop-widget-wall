@@ -171,18 +171,28 @@ Nothing plays yet: playback is a later change. It needs a Google Cloud OAuth cli
   lower-cased words; at most 200 lists, 5000 video details and 100 searches (the oldest goes first);
   `fresh` skips the cache for that one list (a search is never re-run by it); the page reads at most
   40 pages of one list (it then says "Showing the first 2,000"). Sign-out, a new client and a
-  forgotten client clear every cache and the search count. Rust counts `search.list` calls since the
+  forgotten client clear every cache and the search count; a refused grant and every new sign-in clear the
+  caches too (the day's count stays: it belongs to the client's quota, not to the account), and a read that
+  started before a clear writes nothing back. Paging holds natively: a first page is always allowed, a later
+  page only with the token the previous page of that list handed out, and at most 40 pages of one list;
+  anything else answers `invalid`. Rust counts `search.list` calls since the
   last midnight Pacific (a pure function from Unix seconds, with the US rule: daylight time from 2:00 on
   the second Sunday of March to 2:00 on the first Sunday of November, no extra crate); the status carries
   `searchesLeft` (100 minus the count) while signed in, a 403 `quotaExceeded` on search sets the count
   to 100 until midnight, and search words are trimmed, 1 to 100 characters, with no control or
-  bidirectional character, and never logged.
+  bidirectional character, and never logged. The day's budget is reserved before the call, atomically (two calls
+  starting at 99 spend one), and given back only when no request left the machine; the same words already in
+  flight share one call; a search whose details read failed keeps its answer for ten minutes, so a retry reads
+  the details only and spends no second search.
 - **In the card** (`wall/src/unwind/ytmusic/`). Set up and signed in, the YouTube side is the library:
   one row with the tabs Playlists and Liked and the search field, and under it the playlists as 16:9
   tiles (four columns at rest, five tall) or the liked videos or a search answer as rows. A tile opens
   its videos (Back and Escape return; Refresh reads that playlist from YouTube again and the line
   under it says when it was read). Search runs on Enter only, never on typing; the same words again
-  make no call. Under 20 searches left the field says how many; at none it is disabled and says so,
+  make no call, the same words in flight share one call, and an older answer never replaces a newer one. Nothing
+  is read while the page is hidden or after the side is gone; what is loaded stays across the tall view (Refresh
+  re-reads). Retry repeats the read that failed (the first page or the next page). Each list of rows takes
+  keyboard focus, so the arrow keys, Page Up, Page Down, Home and End scroll it. Under 20 searches left the field says how many; at none it is disabled and says so,
   while Playlists and Liked keep working. A row that will not play outside YouTube is greyed and its
   length column says "Only on YouTube", "Private" or "Removed". Rows are plain: not buttons, no click,
   no pointer cursor; each has a hover card. Not set up, signed out, a dead sign-in or a refused setup
