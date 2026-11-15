@@ -149,20 +149,11 @@ fn clock_of(core: &Mutex<Core>) -> Arc<dyn Clock + Send + Sync> {
     lock(core).clock.clone().unwrap_or_else(|| Arc::new(RealClock))
 }
 
-/// Queue one log line when the account's state or reason differs from the last one logged.
-pub fn record(core: &mut Core, id: &str, state: &str, reason: Option<&str>, now: u64) {
-    record_detail(core, id, state, reason, now, None);
-}
-
 fn log_account_key(id: &str, position: usize) -> String {
     if (1..=16).contains(&id.len()) && id.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-') { id.into() } else { format!("account-{}", position.max(1)) }
 }
 
-/// `record`, plus the Graph failure details when there are some. A line with details is
-/// written for every failure, changed state or not, so each failed call can be traced.
-pub fn record_detail(core: &mut Core, id: &str, state: &str, reason: Option<&str>, now: u64, detail: Option<&Diag>) {
-    record_detail_at(core,id,1,state,reason,now,detail);
-}
+/// Queue a state change or a detailed failure, using the account's explicit position.
 fn record_detail_at(core: &mut Core, id: &str, position: usize, state: &str, reason: Option<&str>, now: u64, detail: Option<&Diag>) {
     let reason = reason.filter(|r| is_valid_reason(r)).map(str::to_string);
     let new = (state.to_string(), reason);
@@ -945,9 +936,14 @@ mod tests {
         assert_eq!(log_account_key("hc-2",1), "hc-2");
         assert_eq!(log_account_key("first@example.test",1), "account-1");
         assert_eq!(log_account_key("second@example.test",2), "account-2");
-        let mut core=Core::default(); record(&mut core,"person@example.test","unavailable",Some("token-network"),NOW);
+        let mut core = Core::default();
+        for (position, id) in [(1, "invalid-account-key-one"), (2, "invalid-account-key-two")] {
+            record_detail_at(&mut core, id, position, "unavailable", Some("token-network"), NOW, None);
+        }
         assert!(core.log_lines[0].contains(" account-1 "));
-        assert!(!core.log_lines[0].contains('@'));
+        assert!(core.log_lines[1].contains(" account-2 "));
+        assert!(core.log_lines.iter().all(|line| !line.contains("invalid-account-key")));
+
     }
     use crate::wall2_meet::store::{Chunked, MemoryBlobs};
     use serde_json::{json, Value};
