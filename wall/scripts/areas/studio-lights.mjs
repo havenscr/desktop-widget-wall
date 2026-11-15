@@ -183,6 +183,7 @@ export default {
           if (!d) fails.push('studio: the drawer is not on the page');
           else {
             if (d.l < 0 || d.r > 2560 || d.t < 0 || d.b > s.floor + 0.5) fails.push('studio: the drawer is at x ' + r1(d.l) + ' to ' + r1(d.r) + ', y ' + r1(d.t) + ' to ' + r1(d.b) + ' (inside the wall, above the strip at y ' + r1(s.floor) + ')');
+            if (s.column && (d.r > s.column.r + 2 || (s.column.w >= 560 && d.l < s.column.l - 2))) fails.push('studio: the drawer at x ' + r1(d.l) + ' to ' + r1(d.r) + ' reaches outside the right column at x ' + r1(s.column.l) + ' to ' + r1(s.column.r) + ' (it must not cover the notes card)');
             for (const k of s.drawerKids) if (k.l < d.l - 1 || k.r > d.r + 1 || k.b > d.b + 1) fails.push('studio: "' + k.n.trim() + '" leaves the drawer');
           }
         }
@@ -220,6 +221,7 @@ export default {
       'studio-block': { css: '.st-block { height: 260px !important; }', expect: /^ *FAIL studio: .*(block|footnote)/m, appliesTo: (v) => v.name === BLOCK_V },
       'studio-controls': { css: '.st-chip { height: 30px !important; }', expect: /^ *FAIL studio: control ".*" is \d+(\.\d)? px high/m, appliesTo: (v) => v.name === BLOCK_V },
       'studio-text': { css: '.st-line { font-size: 13px !important; }', expect: /^ *FAIL studio: text under 16 px/m, appliesTo: (v) => v.name === BLOCK_V },
+      'studio-drawer-wide': { css: '.st-drawer { left: 1680px !important; width: 860px !important; }', expect: /^ *FAIL studio: the drawer at x .* reaches outside the right column/m, appliesTo: (v) => v.name === DRAWER_V },
       'studio-drawer': { css: '.st-drawer { top: 300px !important; }', expect: /^ *FAIL studio: the drawer is at/m, appliesTo: (v) => v.name === DRAWER_V },
       'studio-tools': { css: '.kl-field { width: 900px !important; flex: none !important; }', expect: /^ *FAIL studio: .*(Tools|Key lights)/m, appliesTo: (v) => v.name === 'Studio lights, Tools, typing an address' },
       'studio-chip': { css: '.lights-chip { width: 900px !important; }', expect: /^ *FAIL studio: (the header is cut|the waiting line shrank|the chip)/m, appliesTo: (v) => v.name === CHIP_V },
