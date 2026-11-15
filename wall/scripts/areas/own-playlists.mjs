@@ -230,7 +230,7 @@ export default {
     measurements: { own: measureOwn },
     rules: { own: rule },
     breaks: {
-      'own-list-head': { css: '.w-new { margin: 0 !important; }', expect: /^ *FAIL own playlists: the list is at/m, appliesTo: on('Own playlists, the list') },
+      'own-list-head': { css: '.w-card .u-card-head { margin: 0 !important; }', expect: /^ *FAIL own playlists: the list is at/m, appliesTo: on('Own playlists, the list') },
       'own-row-count': { css: '.w-count { min-width: 300px !important; }', expect: /^ *FAIL own playlists: the (count (ends at x|is at)|name (is only|overlaps))/m, appliesTo: on('Own playlists, rows with counts') },
       'own-pill': { css: '.own-pill { min-width: 300px !important; }', expect: /^ *FAIL own playlists: the (count (ends at x|is at)|name (is only|overlaps))/m, appliesTo: on('Own playlists, the pill on the playing row') },
       'own-play-row': { css: '.w-open-t { min-width: 200px !important; }', expect: /^ *FAIL own playlists: the (play row|open|add|gear)/m, appliesTo: on('Own playlists, the play row') },

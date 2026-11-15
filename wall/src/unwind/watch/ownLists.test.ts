@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { defaultLabel, parseLink, validId } from './links';
 import { MAX_OWN_RECORDS, MAX_OWN_STORED, MAX_OWN_VIDEOS, newOwnId, OWN_ERRORS, OWN_KEY, parseOwn, resetOwnLists, useOwnLists } from './ownLists';
 import { ADD_ERRORS, MAX_SAVED, SAVED_KEY } from './saved';
+import { playerLink } from './playerLink';
 import { resetWatch, useWatchStore } from './store';
 import { embedUrl, playerOrigin } from './urls';
 
@@ -216,7 +217,9 @@ describe('the watch store and own playlists', () => {
     expect(useWatchStore.getState().source).toBe('music');
   });
   it('the same video again does not replace the item', () => {
+    const send = vi.spyOn(playerLink, 'send').mockReturnValue(true);
     useWatchStore.getState().playOwnVideo(vid(1), 'One');
+    expect(send).not.toHaveBeenCalled();
     const first = useWatchStore.getState().playing;
     useWatchStore.setState({ paused: true, report: { ...useWatchStore.getState().report, ended: true } });
     useWatchStore.getState().playOwnVideo(vid(1), 'One');
@@ -224,5 +227,8 @@ describe('the watch store and own playlists', () => {
     expect(st.playing).toBe(first);
     expect(st.paused).toBe(false);
     expect(st.report.ended).toBe(false);
+    // The playing frame is told to start again from the top.
+    expect(send).toHaveBeenCalledWith('seekTo', [0, true]);
+    send.mockRestore();
   });
 });

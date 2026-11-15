@@ -266,14 +266,14 @@ export function playOwn(listId: string, fromVideo?: string): boolean {
 }
 
 export function next(): void {
-  if (!s().listId) return;
+  if (!s().listId || (!isOwnActive() && !pending)) return;
   const base = pending ? pending.pos + 1 : afterPos();
   advance(base, false, true);
 }
 
 /** Back: the start of this video when more than 3 seconds in (or on the first), else the video before. */
 export function previous(): void {
-  if (!s().listId) return;
+  if (!s().listId || (!isOwnActive() && !pending)) return;
   const base = pending?.pos ?? s().pos;
   const time = useWatchStore.getState().report.time ?? 0;
   const before = pending || time <= 3 ? playableBefore(base - 1) : null;
@@ -282,6 +282,7 @@ export function previous(): void {
 
 /** Play this video of the playlist now. */
 export function jump(videoId: string): void {
+  if (!isOwnActive() && !pending) return;
   const { order } = s();
   const at = order.indexOf(videoId);
   if (at < 0 || failed().has(videoId)) return;
