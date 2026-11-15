@@ -54,9 +54,11 @@ interface PlayState {
   skipped: { count: number; why: SkipWhy } | null;
   note: string | null;
   finished: OwnFinished | null;
+  /** With repeat and shuffle on, the next round's order, chosen when the last video of a round starts (so the Next line can name its first). */
+  nextOrder: string[] | null;
 }
 
-const fresh = (): PlayState => ({ listId: null, order: [], pos: 0, current: null, gone: false, shuffled: false, follow: false, skipped: null, note: null, finished: null });
+const fresh = (): PlayState => ({ listId: null, order: [], pos: 0, current: null, gone: false, shuffled: false, follow: false, skipped: null, note: null, finished: null, nextOrder: null });
 
 export const useOwnPlay = create<PlayState>(() => fresh());
 
@@ -90,7 +92,11 @@ export function skipLine(count: number, why: SkipWhy): string {
 }
 
 let lastLoadAt = -Infinity;
-let pending: { pos: number; keepNote: boolean } | null = null;
+/** A load waiting out the spacing: the video it is for (by id, so an edit of the order cannot leave it pointing at the wrong place). */
+let pending: { id: string; keepNote: boolean } | null = null;
+
+/** Where the waiting load's video is in the order now, or -1 when it has left the playlist. */
+const pendingPos = (): number => (pending ? s().order.indexOf(pending.id) : -1);
 let loadTimer: ReturnType<typeof setTimeout> | undefined;
 /** Which load of which video has had its end or its error acted on (`<load number>:<id>`), so a second report does nothing. */
 let advancedFor: string | null = null;
@@ -175,7 +181,9 @@ function load(pos: number, keepNote = false): void {
   if (!validId('video', id) || !useWatchStore.getState().playOwnVideo(id, titleOf(id) || 'YouTube video')) {
     markFailed(id, 'removed');
     advance(pos + 1, keepNote);
+    return;
   }
+  planNext();
 }
 
 /** Ask for the video at `pos`: at once when a second has passed since the last load, else after the rest of it (the last request wins). */
@@ -185,13 +193,19 @@ function request(pos: number, keepNote = false): void {
     load(pos, keepNote);
     return;
   }
-  pending = { pos, keepNote };
+  const id = s().order[pos];
+  if (id === undefined) return;
+  pending = { id, keepNote };
   if (loadTimer === undefined) {
     loadTimer = setTimeout(() => {
       loadTimer = undefined;
       const p = pending;
       pending = null;
-      if (p) load(p.pos, p.keepNote);
+      if (!p) return;
+      const at = s().order.indexOf(p.id);
+      // The video left the playlist while the load waited: go on to the one that now follows, or end the round.
+      if (at >= 0 && !failed().has(p.id)) load(at, p.keepNote);
+      else advance(at >= 0 ? at + 1 : afterPos(), p.keepNote);
     }, Math.max(0, wait));
   }
 }
@@ -217,13 +231,10 @@ function newRound(list: OwnList): boolean {
   const ids = list.items.map((i) => i.id);
   if (ids.length === 0) return false;
   const cur = s().current ?? undefined;
-  let order = list.shuffle ? mix(ids) : ids;
-  if (list.shuffle && ids.length > 1 && order[0] === cur) {
-    const j = 1 + Math.floor(Math.random() * (order.length - 1));
-    [order[0], order[j]] = [order[j]!, order[0]!];
-    order = order.slice();
-  }
-  useOwnPlay.setState({ order, shuffled: list.shuffle, pos: 0, gone: false });
+  const planned = s().nextOrder;
+  // With shuffle the round starts with the order chosen when the last video began (the Next line named its first).
+  const order = list.shuffle ? (planned && validPlan(planned, ids, cur) ? planned : mixAvoiding(ids, cur)) : ids;
+  useOwnPlay.setState({ order, shuffled: list.shuffle, pos: 0, gone: false, nextOrder: null });
   const n = playableFrom(0);
   roundPlayed = new Set();
   if (n === null) return false;
@@ -231,12 +242,44 @@ function newRound(list: OwnList): boolean {
   return true;
 }
 
-function finish(listId: string, played: number, none: boolean): void {
+/** A fresh mix whose first video is not `cur` (when the playlist holds more than one). */
+function mixAvoiding(ids: readonly string[], cur: string | undefined): string[] {
+  const order = mix(ids);
+  if (ids.length > 1 && order[0] === cur) {
+    const j = 1 + Math.floor(Math.random() * (order.length - 1));
+    [order[0], order[j]] = [order[j]!, order[0]!];
+  }
+  return order;
+}
+
+const validPlan = (plan: readonly string[], ids: readonly string[], cur: string | undefined): boolean =>
+  plan.length === ids.length && ids.every((i) => plan.includes(i)) && (ids.length < 2 || plan[0] !== cur);
+
+/**
+ * With repeat and shuffle on, at the last video of a round the next round's order is chosen now (its first video differs
+ * from the one playing), so the Next line can name it and the round that follows uses exactly that order. Anywhere else
+ * nothing is planned.
+ */
+function planNext(): void {
+  const o = s();
+  const list = listNow();
+  const ids = list ? list.items.map((i) => i.id) : [];
+  const last = !!list && list.repeat && list.shuffle && ids.length > 0 && !!o.current && playableFrom(afterPos()) === null;
+  if (!last) {
+    if (o.nextOrder) useOwnPlay.setState({ nextOrder: null });
+    return;
+  }
+  if (o.nextOrder && validPlan(o.nextOrder, ids, o.current ?? undefined)) return;
+  useOwnPlay.setState({ nextOrder: mixAvoiding(ids, o.current ?? undefined) });
+}
+
+function finish(listId: string, played: number, none: boolean, stopPlayer = true): void {
   cancelPending();
   const total = s().order.length;
   useOwnPlay.setState({ finished: { listId, played, total, none }, follow: false, skipped: null });
   setNote(null);
-  useWatchStore.getState().stop();
+  // Nothing of this playlist was ever loaded (every video had failed): what else is playing is not this playlist's to stop.
+  if (stopPlayer) useWatchStore.getState().stop();
 }
 
 // Section: What the owner does.
@@ -258,7 +301,7 @@ export function playOwn(listId: string, fromVideo?: string): boolean {
   setNote(null);
   const n = playableFrom(pos);
   if (n === null) {
-    finish(listId, 0, true);
+    finish(listId, 0, true, false);
     return false;
   }
   request(n);
@@ -267,14 +310,16 @@ export function playOwn(listId: string, fromVideo?: string): boolean {
 
 export function next(): void {
   if (!s().listId || (!isOwnActive() && !pending)) return;
-  const base = pending ? pending.pos + 1 : afterPos();
+  const at = pendingPos();
+  const base = pending ? (at >= 0 ? at + 1 : afterPos()) : afterPos();
   advance(base, false, true);
 }
 
 /** Back: the start of this video when more than 3 seconds in (or on the first), else the video before. */
 export function previous(): void {
   if (!s().listId || (!isOwnActive() && !pending)) return;
-  const base = pending?.pos ?? s().pos;
+  const at = pendingPos();
+  const base = pending && at >= 0 ? at : s().pos;
   const time = useWatchStore.getState().report.time ?? 0;
   const before = pending || time <= 3 ? playableBefore(base - 1) : null;
   request(before ?? base);
@@ -361,7 +406,11 @@ useWatchStore.subscribe((w, prev) => {
   learnFrom(w);
   if (w.playing !== prev.playing) {
     // The play-through is no longer the player's (a Watch play, a pin, a music pick, a stop): a load that was waiting never happens.
-    if (w.playing === null || w.source !== 'own') cancelPending();
+    if (w.playing === null || w.source !== 'own') {
+      cancelPending();
+      // Nothing of the skip note outlives the play-through: its text and its timer go with it.
+      if (s().note !== null || noteTimer !== undefined) setNote(null);
+    }
     // Any play clears the end block.
     if (w.playing && s().finished) useOwnPlay.setState({ finished: null });
   }
@@ -390,6 +439,11 @@ const sameIds = (a: readonly string[], b: readonly string[]) => a.length === b.l
 
 /** Read the playlist again: a deleted one stops; a shuffle switch remakes the order around the video on; edits are folded in. */
 function sync(): void {
+  syncOrder();
+  planNext();
+}
+
+function syncOrder(): void {
   const o = s();
   if (!o.listId) return;
   const watch = useWatchStore.getState();
@@ -485,8 +539,10 @@ export function ownView(w: Watching, o: PlayState, all: OwnLists): OwnView | nul
     }
   }
   const last = nextId === null;
-  // With repeat on at the last video, the next round starts at the first (its mix is not known yet with shuffle on, so none is named).
+  // With repeat on at the last video, the next round starts at the first.
   if (last && list.repeat && !list.shuffle) nextId = list.items.find((i) => !bad.has(i.id))?.id ?? null;
+  // With shuffle on, the next round's order was chosen when this last video began.
+  if (last && list.repeat && list.shuffle) nextId = o.nextOrder?.find((i) => !bad.has(i)) ?? null;
   const nextItem = nextId ? list.items.find((i) => i.id === nextId) : undefined;
   return {
     listId,

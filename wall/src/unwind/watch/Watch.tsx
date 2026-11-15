@@ -29,7 +29,9 @@ import { next as queueNext, previous as queuePrevious, useMusicView } from '../y
 import { AddToPlaylistButton, useAddMenuOpen } from './AddToPlaylist';
 import { useOwnLists } from './ownLists';
 import { next as ownNext, NO_PLAY_LINE, playAgain as ownPlayAgain, previous as ownPrevious, useOwnFinished, useOwnView, type OwnView } from './ownPlay';
-import { countText } from './OwnParts';
+import { clock, countText } from './ownShared';
+
+export { clock };
 
 export const WATCH_PANEL_ID = 'u-panel-watch';
 export const WATCH_TAB_ID = 'u-tab-watch';
@@ -117,15 +119,6 @@ function EmptyDriveIn() {
       </div>
     </div>
   );
-}
-
-/** "1:05" or "1:02:03". */
-export function clock(sec: number): string {
-  const t = Math.max(0, Math.floor(sec));
-  const h = Math.floor(t / 3600);
-  const m = Math.floor((t % 3600) / 60);
-  const ss = String(t % 60).padStart(2, '0');
-  return h ? `${h}:${String(m).padStart(2, '0')}:${ss}` : `${m}:${ss}`;
 }
 
 /** The position: elapsed, a thin bar (a click seeks) and the length; "Live" for a stream with no length. */

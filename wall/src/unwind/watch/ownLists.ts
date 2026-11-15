@@ -276,7 +276,13 @@ export const useOwnLists = create<OwnState>((set, get) => {
       } else useWatchStore.getState().remove(`own:${id}`);
       if (get().open === id) set({ open: null });
     },
-    setOpen: (open) => set({ open }),
+    setOpen: (open) => {
+      // An entry with no record (storage lost after a restart) is an empty playlist: opening it makes the record, so the editor has something to edit.
+      if (open !== null && !get().lists[open] && useWatchStore.getState().saved.some((i) => i.kind === 'own' && i.id === open)) {
+        commit(patch(get().lists, open, { items: [], shuffle: false, repeat: false }));
+      }
+      set({ open });
+    },
   };
 });
 

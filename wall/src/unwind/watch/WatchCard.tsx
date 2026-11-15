@@ -9,12 +9,12 @@ import { useWatchStore } from './store';
 import { AddMenu } from './AddToPlaylist';
 import { OwnEditor } from './OwnEditor';
 import { OwnFollow } from './OwnFollow';
+import { PASTE_ERROR_MS } from './ownShared';
 import { countText, DeleteAsk, OwnTile, savedVideo } from './OwnParts';
 import { useOwnLists } from './ownLists';
 import { playOwn, setFollow, useOwnView, type OwnView } from './ownPlay';
 
-/** How long a refusal line stays under the field. */
-export const PASTE_ERROR_MS = 6000;
+export { PASTE_ERROR_MS };
 /** How long the offer of a second choice (the playlist a pasted video link also names) stays under the field. */
 export const OFFER_MS = 20_000;
 

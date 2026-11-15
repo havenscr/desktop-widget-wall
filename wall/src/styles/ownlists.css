@@ -565,7 +565,8 @@ button.own-v.bad {
 .own-line-drop {
   position: absolute;
   left: -2px;
-  z-index: 2;
+  /* Above the dragged row's ghost, so the whole landing line shows. */
+  z-index: 4;
   width: 498px;
   height: 3px;
   margin-top: -1px;

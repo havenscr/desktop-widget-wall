@@ -20,10 +20,12 @@ export function OwnFollow({ view }: { view: OwnView }) {
   const own = useOwnLists.getState();
   const fade = useFadeBelow(box, items.length);
 
+  const showPlaying = () => box.current?.querySelector<HTMLElement>('[data-playing="true"]')?.scrollIntoView?.({ block: 'nearest' });
+  // The playing row is kept in sight when the video changes, never while the pointer is in the list; once the pointer leaves, it is brought into sight.
   useEffect(() => {
     if (inside.current) return;
-    const el = box.current?.querySelector<HTMLElement>('[data-playing="true"]');
-    el?.scrollIntoView?.({ block: 'nearest' });
+    showPlaying();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view.videoId]);
 
   return (
@@ -35,7 +37,7 @@ export function OwnFollow({ view }: { view: OwnView }) {
         <span className="own-name u-ell" {...tip(view.name)}>
           {view.name}
         </span>
-        <span className="own-sub">
+        <span className="own-sub" {...(view.shuffle ? tip('In the shuffled order') : {})}>
           {view.place} of {view.count}
         </span>
         <span className="own-right">
@@ -61,7 +63,10 @@ export function OwnFollow({ view }: { view: OwnView }) {
           </button>
         </span>
       </div>
-      <div className={`own-vlist fade own-five${fade.more ? ' more' : ''}`} role="list" ref={box} onScroll={fade.check} onPointerEnter={() => void (inside.current = true)} onPointerLeave={() => void (inside.current = false)}>
+      <div className={`own-vlist fade own-five${fade.more ? ' more' : ''}`} role="list" ref={box} onScroll={fade.check} onPointerEnter={() => void (inside.current = true)} onPointerLeave={() => {
+          inside.current = false;
+          showPlaying();
+        }}>
         {items.map((v, i) => {
           const on = v.id === view.videoId;
           const bad = failed.get(v.id);

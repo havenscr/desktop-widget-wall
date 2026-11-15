@@ -478,3 +478,106 @@ describe('learning', () => {
     expect(localStorage.getItem(SAVED_KEY)).toContain(id);
   });
 });
+
+describe('a load waiting out the spacing', () => {
+  it('goes on to the one that now follows when its video was removed while it waited', () => {
+    const id = make(4);
+    playOwn(id);
+    started();
+    vi.advanceTimersByTime(300);
+    ended();
+    expect(playingId()).toBe(vid(1));
+    L().removeVideo(id, vid(2));
+    tick(LOAD_GAP_MS);
+    expect(playingId()).toBe(vid(3));
+    expect(O().pos).toBe(1);
+  });
+
+  it('ends the playlist when every video after it was removed, never stalls', () => {
+    const id = make(3);
+    playOwn(id);
+    started();
+    vi.advanceTimersByTime(300);
+    ended();
+    L().removeVideo(id, vid(2));
+    L().removeVideo(id, vid(3));
+    tick(LOAD_GAP_MS);
+    expect(playingId()).toBeNull();
+    expect(O().finished).toMatchObject({ listId: id, total: 1 });
+  });
+
+  it('still plays its own video when an earlier one was removed (the target is found by id)', () => {
+    const id = make(4);
+    playOwn(id, vid(2));
+    started();
+    vi.advanceTimersByTime(300);
+    ended();
+    L().removeVideo(id, vid(1));
+    tick(LOAD_GAP_MS);
+    expect(playingId()).toBe(vid(3));
+  });
+});
+
+describe('starting a playlist none of whose videos can play', () => {
+  it('shows the none end state and leaves an unrelated playing video alone', () => {
+    const id = make(2);
+    W().addRef({ kind: 'video', id: vid(7) }, false);
+    W().play({ kind: 'video', id: vid(7) });
+    useYtQueue.setState({ failed: new Map([[vid(1), 'embed' as const], [vid(2), 'removed' as const]]) });
+    expect(playOwn(id)).toBe(false);
+    expect(playingId()).toBe(vid(7));
+    expect(W().source).toBe('watch');
+    expect(O().finished).toEqual({ listId: id, played: 0, total: 2, none: true });
+  });
+});
+
+describe('repeat and shuffle at the seam of two rounds', () => {
+  it('chooses the next round when the last video starts, names its first, and the round that starts uses it', () => {
+    const id = make(5, { shuffle: true, repeat: true });
+    for (let trial = 0; trial < 12; trial++) {
+      resetOwnPlay();
+      resetWatch();
+      playOwn(id);
+      for (let i = 0; i < 4; i++) {
+        started();
+        tick(1500);
+        ended();
+        // Only the last video of the round plans the next round.
+        if (i < 3) expect(O().nextOrder).toBeNull();
+      }
+      const last = playingId()!;
+      const plan = O().nextOrder!;
+      expect(plan).toHaveLength(5);
+      expect(plan[0]).not.toBe(last);
+      const view = ownView(W(), O(), L().lists)!;
+      expect(view.last).toBe(true);
+      expect(view.next?.id).toBe(plan[0]);
+      started();
+      tick(1500);
+      ended();
+      expect(O().order).toEqual(plan);
+      expect(playingId()).toBe(plan[0]);
+      expect(O().nextOrder).toBeNull();
+    }
+  });
+
+  it('plans nothing without shuffle or without repeat', () => {
+    const id = make(2, { shuffle: true });
+    playOwn(id, O().order[1] ?? vid(2));
+    expect(O().nextOrder).toBeNull();
+  });
+});
+
+describe('the skip note and the end of the play-through', () => {
+  it('goes, with its timer, when the play-through stops', () => {
+    const id = make(3);
+    playOwn(id);
+    tick(1500);
+    error(150);
+    expect(O().note).not.toBeNull();
+    expect(vi.getTimerCount()).toBeGreaterThan(0);
+    W().stop('hidden');
+    expect(O().note).toBeNull();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+});

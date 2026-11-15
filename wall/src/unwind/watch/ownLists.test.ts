@@ -232,3 +232,23 @@ describe('the watch store and own playlists', () => {
     send.mockRestore();
   });
 });
+
+describe('an entry with no record', () => {
+  it('gets an empty record when it is opened, and an added video lands in both keys', () => {
+    localStorage.setItem(SAVED_KEY, JSON.stringify([{ kind: 'own', id: 'norecord0001', label: 'Lost videos' }]));
+    resetWatch();
+    resetOwnLists();
+    expect(w().lists['norecord0001']).toBeUndefined();
+    w().setOpen('norecord0001');
+    expect(w().open).toBe('norecord0001');
+    expect(w().lists['norecord0001']).toEqual({ items: [], shuffle: false, repeat: false });
+    expect(w().addVideo('norecord0001', { id: vid(1), title: 'One' })).toBeNull();
+    expect(JSON.parse(localStorage.getItem(OWN_KEY)!).lists['norecord0001'].items).toHaveLength(1);
+    expect(JSON.parse(localStorage.getItem(SAVED_KEY)!)[0].id).toBe('norecord0001');
+  });
+
+  it('opening an id with no entry makes no record', () => {
+    w().setOpen('nothingthere');
+    expect(w().lists['nothingthere']).toBeUndefined();
+  });
+});

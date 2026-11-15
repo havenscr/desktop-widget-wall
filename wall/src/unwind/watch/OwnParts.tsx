@@ -4,7 +4,7 @@ import { defaultLabel, validId } from './links';
 import type { OwnVideo } from './ownLists';
 import { reportedFor } from './ownPlay';
 import type { SavedItem } from './saved';
-import { clock } from './Watch';
+import { clock, countText } from './ownShared';
 
 /**
  * Small pieces the wall-made playlists share: the tile that marks one, the texts for counts and lengths, and
@@ -36,10 +36,7 @@ export function OwnThumb({ id, w = 64, h = 36 }: { id: string; w?: number; h?: n
   return <img className="own-thumb" style={style} src={url} alt="" referrerPolicy="no-referrer" loading="lazy" draggable={false} onError={() => setBad(true)} />;
 }
 
-/** "12 videos", "1 video", "No videos". */
-export function countText(n: number): string {
-  return n === 0 ? 'No videos' : n === 1 ? '1 video' : `${n} videos`;
-}
+export { countText };
 
 /** A length as the player shows it ("1:05", "1:02:03"). */
 export function lengthText(seconds: number): string {

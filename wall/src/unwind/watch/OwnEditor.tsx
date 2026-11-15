@@ -8,7 +8,7 @@ import { playOwn } from './ownPlay';
 import { countText, DeleteAsk, metaText, OwnThumb, savedVideo, totalsText, useFadeBelow } from './OwnParts';
 import { MAX_LABEL, type SavedItem } from './saved';
 import { useWatchStore } from './store';
-import { PASTE_ERROR_MS } from './WatchCard';
+import { PASTE_ERROR_MS } from './ownShared';
 import { useYtQueue } from '../ytmusic/queue';
 
 /**
@@ -270,6 +270,8 @@ export function OwnEditor({ id }: { id: string }) {
     if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
       e.preventDefault();
       const to = e.key === 'ArrowUp' ? i - 1 : i + 1;
+      // Only a move that happens needs the focus kept on the row (a no-op would leave the flag to steal focus later).
+      if (to < 0 || to >= items.length) return;
       focusId.current = v.id;
       own.move(id, i, to);
     } else if (e.key === 'Delete') {

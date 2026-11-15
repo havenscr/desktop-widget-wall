@@ -20,6 +20,7 @@ const states = [
   state('the name row of a new playlist', `wown=draft&${PLAY3}`, 'note:the name field holds its text as a value, not as text; the rest of the list is as in the list state'),
   state('the add menu in the play row', `wown=menu&${PLAY3}`, ['Add this video to', 'Friday wind down', 'Slow mornings', 'New playlist']),
   state('the add menu, a row hovered', `wown=menu&${PLAY3}`, ['Add this video to', 'Add this video to Friday wind down'], 'hover:.w-pop-row'),
+  state('the add menu on the lowest saved video opens upward', `wown=rowmenu&${PLAY3}`, ['Add this video to', 'Friday wind down', 'Slow mornings', 'New playlist']),
   state('the add button, hovered', `wown=lists&${PLAY3}`, 'Add to a playlist', 'hover:.w-addpl'),
   state('the editor, twelve videos', `wown=edit&${PLAY3}`, ['Friday wind down', '12 videos · 10 h 13 min', 'named once it has played', 'Plays only on YouTube', 'What is playing', 'From the Watch list', 'Done']),
   state('the editor, a row held by its grip', `wown=drag&${PLAY3}`, ['Friday wind down', 'What is playing']),
@@ -46,6 +47,8 @@ const states = [
  *   play    the play row 460 wide with the add button, nothing wrapped or cut
  *   menu    the add menu inside 784 to 1084, 300 wide, under the row and above the strip's foot
  *   edit    the card 540 by 630 at (2000, 20), seven whole rows, the chips and the field inside, 12 px over the office slot
+ *   rowmenu the add menu opened from a saved video's row: inside the 2560 by 720 stage and not hanging below the card
+ *   drag    the whole landing line shows while a row is held (nothing, such as the ghost of the row, covers it)
  *   follow  the two switches 32 by 32 at (2447, 35) and (2485, 35)
  *   next    the Next line ends at or before x 1004
  */
@@ -80,7 +83,7 @@ const measureOwn = () => {
     }
     if (small.size) fails.push('text under 16 px: ' + [...small].join('; '));
     const tiny = [];
-    for (const b of document.querySelectorAll('.w-new, .own-btn, .own-back, .w-own-switch, .own-chip, .own-grip, .w-pop-row, .own-v .w-mini, .own-row .w-mini, .own-pillbtn, .w-addpl')) {
+    for (const b of document.querySelectorAll('.w-new, .own-btn, .own-back, .w-own-switch, .own-chip, button.own-grip, .w-pop-row, .own-v .w-mini, .own-row .w-mini, .own-pillbtn, .w-addpl')) {
       const r = R(b);
       if (r.w === 0 || r.h === 0) continue;
       if (r.w < 31.5 || r.h < 31.5) tiny.push((b.className || b.tagName) + ' ' + num(r.w) + ' by ' + num(r.h));
@@ -166,6 +169,30 @@ const measureOwn = () => {
         const field = q('.own-field');
         if (field) { const b = R(field); if (!near(b.t, 591, 2) || !near(b.h, 44, 1)) fails.push('the field is at y ' + num(b.t) + ', ' + num(b.h) + ' high (591, 44)'); }
       }
+    } else if (mode === 'rowmenu') {
+      const menu = need('.w-pop[role="menu"]', 'add menu');
+      const card = need('.w-card', 'card');
+      if (menu && card) {
+        const m = R(menu), c = R(card);
+        if (m.l < -0.5 || m.t < -0.5 || m.r > 2560.5 || m.b > 720.5) fails.push('the menu leaves the stage (' + at(m) + ')');
+        if (m.b > c.b + 8.5) fails.push('the menu hangs below the card: it ends at y ' + num(m.b) + ', the card at ' + num(c.b) + ' (8 px at most)');
+        if (m.l < c.l - 0.5 || m.r > c.r + 0.5) fails.push('the menu is outside the card sideways (' + at(m) + ')');
+      }
+    } else if (mode === 'drag') {
+      const line = need('.own-line-drop', 'landing line');
+      if (line) {
+        const l = R(line);
+        if (!near(l.w, 498, 3)) fails.push('the landing line is ' + num(l.w) + ' px wide (498)');
+        const y = l.t + l.h / 2;
+        // The whole line shows: the top thing at its left end, its middle and its right end is the line itself.
+        // Neither the line nor the ghost takes the pointer, so both are let take it for this read of what is on top.
+        const parts = [line, ...document.querySelectorAll('.own-ghost')];
+        for (const e of parts) e.style.pointerEvents = 'auto';
+        const hidden = [l.l + 3, l.l + l.w / 2, l.r - 3].filter((x) => { const top = document.elementFromPoint(x, y); return !(top && (top === line || line.contains(top))); });
+        const over = document.elementFromPoint(l.l + l.w / 2, y);
+        for (const e of parts) e.style.pointerEvents = '';
+        if (hidden.length) fails.push('the landing line is covered at ' + hidden.length + ' of 3 places by ' + ((over && String(over.className)) || 'something'));
+      }
     } else if (mode === 'follow') {
       const sw = [...document.querySelectorAll('.w-own-switch')];
       if (sw.length !== 2) fails.push(sw.length + ' switches in the follow view (two)');
@@ -195,6 +222,8 @@ const OK_LINES = {
   play: 'the play row is 460 wide with the add button, nothing wrapped or cut',
   menu: "the add menu is 300 wide inside 784 to 1084, 6 px under the row and above the strip's foot",
   edit: 'the editor card is 540 by 630 at (2000, 20), seven whole rows, the chips and the field inside, 12 px over the office slot',
+  rowmenu: "the list row's add menu stays inside the stage and does not hang below the card",
+  drag: 'the whole landing line shows above the held row',
   follow: 'the two switches are 32 by 32 at (2447, 35) and (2485, 35)',
   next: 'the Next line ends at or before x 1004',
 };
@@ -216,6 +245,8 @@ const variants = [
   { name: 'Own playlists, the play row', q: `${Q}&wown=lists&wplay=3&owncheck=play`, checks: ['.w-now .w-ctl', '.w-addpl'] },
   { name: 'Own playlists, the add menu', q: `${Q}&wown=menu&wplay=3&owncheck=menu`, checks: ['.w-pop'] },
   { name: 'Own playlists, the editor', q: `${Q}&wown=edit&wplay=3&owncheck=edit`, checks: ['.w-card.own-tall'] },
+  { name: "Own playlists, the list row's add menu", q: `${Q}&wown=rowmenu&wplay=3&owncheck=rowmenu`, checks: ['.w-pop'] },
+  { name: 'Own playlists, a row held in the editor', q: `${Q}&wown=drag&wplay=3&owncheck=drag`, checks: ['.own-line-drop'] },
   { name: 'Own playlists, the follow view', q: `${Q}&wown=repeat&owncheck=follow`, checks: ['.w-own-switch'] },
   { name: 'Own playlists, the Next line', q: `${Q}&wown=playing&owncheck=next`, checks: ['.w-next'] },
 ];
@@ -235,6 +266,8 @@ export default {
       'own-pill': { css: '.own-pill { min-width: 300px !important; }', expect: /^ *FAIL own playlists: the (count (ends at x|is at)|name (is only|overlaps))/m, appliesTo: on('Own playlists, the pill on the playing row') },
       'own-play-row': { css: '.w-open-t { min-width: 200px !important; }', expect: /^ *FAIL own playlists: the (play row|open|add|gear)/m, appliesTo: on('Own playlists, the play row') },
       'own-menu-place': { css: '.w-pop { left: -200px !important; }', expect: /^ *FAIL own playlists: the menu spans x/m, appliesTo: on('Own playlists, the add menu') },
+      'own-row-menu': { css: '.w-pop { top: 600px !important; }', expect: /^ *FAIL own playlists: the menu (leaves the stage|hangs below the card)/m, appliesTo: on("Own playlists, the list row's add menu") },
+      'own-drag-line': { css: '.own-line-drop { z-index: 1 !important; }', expect: /^ *FAIL own playlists: the landing line is covered/m, appliesTo: on('Own playlists, a row held in the editor') },
       'own-editor-height': { css: '.w-card.own-tall { height: 700px !important; }', expect: /^ *FAIL own playlists: the card is at/m, appliesTo: on('Own playlists, the editor') },
       'own-switch-size': { css: '.w-own-switch { width: 24px !important; }', expect: /^ *FAIL own playlists: (switch \d is at|a button under 32 px)/m, appliesTo: on('Own playlists, the follow view') },
       'own-next-width': { css: '.w-next { width: 600px !important; }', expect: /^ *FAIL own playlists: the Next line ends at x/m, appliesTo: on('Own playlists, the Next line') },

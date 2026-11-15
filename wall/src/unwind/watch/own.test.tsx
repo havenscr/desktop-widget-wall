@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mocks } from '../../bridge/tauri';
+import { HoverTipLayer, resetTip } from '../../ui/HoverTip';
 import { resetNowPlaying } from '../../music/store';
 import { useSignalStore } from '../../signals/store';
 import { usePlaceStore } from '../../state/places';
@@ -243,7 +244,7 @@ describe('Add to a playlist', () => {
     }
   });
 
-  it('opens a menu with its kicker and the playlists; Enter adds the video with what the player reported', async () => {
+  it('opens a menu with its kicker and the playlists; the Enter key adds the video with what the player reported', async () => {
     seed();
     await playSingle();
     await click(screen.getByRole('button', { name: 'Add to a playlist' }));
@@ -254,9 +255,9 @@ describe('Add to a playlist', () => {
     expect(within(menu).getByRole('menuitem', { name: 'Friday wind down, 12 videos' })).toBe(rows[0]);
     expect(within(menu).getByRole('menuitem', { name: 'Slow mornings, 5 videos' })).toBe(rows[1]);
     expect(rows[2]!.textContent).toBe('New playlist');
-    // The first row has the focus; Enter picks it.
+    // The first row has the focus; the Enter key picks it.
     expect(document.activeElement).toBe(rows[0]);
-    await click(rows[0]!);
+    await press(rows[0]!, { key: 'Enter' });
     expect(own().lists[FRIDAY]!.items.at(-1)).toEqual({ id: SINGLE, title: 'Reported title', channel: 'Reported channel', seconds: 321 });
     // It holds the video now: a check, and a click takes it out again.
     expect(within(screen.getByRole('menu')).getAllByRole('menuitem')[0]!.querySelector('.w-pop-check')).not.toBeNull();
@@ -291,10 +292,13 @@ describe('Add to a playlist', () => {
     await playSingle();
     await click(screen.getByRole('button', { name: 'Add to a playlist' }));
     expect(screen.getByRole('menu')).toBeTruthy();
+    const add = screen.getByRole('button', { name: 'Add to a playlist' });
     act(() => {
       fireEvent.pointerDown(document.body);
     });
     expect(screen.queryByRole('menu')).toBeNull();
+    // As with Escape, the focus is back on the button.
+    expect(document.activeElement).toBe(add);
   });
 
   it('makes a new playlist with this video in it from the menu', async () => {
@@ -441,6 +445,72 @@ describe('the editor', () => {
     await press(first, { key: 'Delete' });
     expect(own().lists[FRIDAY]!.items).toHaveLength(11);
     expect((document.activeElement as HTMLElement).dataset.vid).toBe(V(2));
+  });
+
+  it('Alt+Up on the first row and Alt+Down on the last move nothing and leave no focus claim behind', async () => {
+    await editor();
+    const first = rows()[0]!;
+    first.focus();
+    await press(first, { key: 'ArrowUp', altKey: true });
+    const last = rows()[11]!;
+    last.focus();
+    await press(last, { key: 'ArrowDown', altKey: true });
+    expect(own().lists[FRIDAY]!.items.map((i) => i.id)).toEqual(items(12).map((i) => i.id));
+    // The paste field takes the focus; a later render (a letter typed) does not pull it back to a row.
+    const field = screen.getByLabelText('Paste a video link') as HTMLInputElement;
+    field.focus();
+    fireEvent.change(field, { target: { value: 'x' } });
+    await flush();
+    expect(document.activeElement).toBe(field);
+  });
+
+  it('an entry with no record opens an editor that holds a new video, in both keys', async () => {
+    seed({ extra: [{ kind: 'own', id: 'norecord0001', label: 'Lost videos' }] });
+    render(<UnwindView />);
+    await flush();
+    await click(row('Lost videos').querySelector('.w-play')!);
+    expect(own().open).toBe('norecord0001');
+    await flush();
+    expect(document.querySelector('.w-card.own-tall')).not.toBeNull();
+    act(() => w().play({ kind: 'video', id: SINGLE }));
+    act(() => w().setReport({ title: 'Reported title' }));
+    await click(screen.getByRole('button', { name: /What is playing/ }));
+    expect(JSON.parse(localStorage.getItem(OWN_KEY)!).lists['norecord0001'].items).toEqual([{ id: SINGLE, title: 'Reported title' }]);
+    expect(JSON.parse(localStorage.getItem(SAVED_KEY)!).some((i: { id: string }) => i.id === 'norecord0001')).toBe(true);
+  });
+
+  it('a drag at the top or bottom edge scrolls the list the right way, and the timer stops after the drop and on unmount', async () => {
+    const r = await editor();
+    const list = document.querySelector<HTMLElement>('.own-vlist')!;
+    const wrap = document.querySelector<HTMLElement>('.own-vwrap')!;
+    const box = { left: 0, top: 0, right: 506, bottom: 428, width: 506, height: 428, x: 0, y: 0, toJSON: () => ({}) };
+    list.getBoundingClientRect = () => box as DOMRect;
+    wrap.getBoundingClientRect = () => box as DOMRect;
+    let top = 100;
+    Object.defineProperty(list, 'scrollTop', { configurable: true, get: () => top, set: (v: number) => void (top = v) });
+    const grip = () => rows()[5]!.querySelector('.own-grip')!;
+    const before = vi.getTimerCount();
+    act(() => void fireEvent.pointerDown(grip(), { button: 0, pointerId: 1, clientY: 5 * 56 + 28 }));
+    // Near the top edge: it scrolls up.
+    act(() => void fireEvent.pointerMove(grip(), { pointerId: 1, clientY: 10 }));
+    await flush(100);
+    expect(top).toBeLessThan(100);
+    const up = top;
+    // Near the bottom edge: it scrolls down.
+    act(() => void fireEvent.pointerMove(grip(), { pointerId: 1, clientY: 420 }));
+    await flush(100);
+    expect(top).toBeGreaterThan(up);
+    // After the drop the timer is gone.
+    act(() => void fireEvent.pointerUp(grip(), { pointerId: 1 }));
+    expect(vi.getTimerCount()).toBe(before);
+    const stopped = top;
+    await flush(200);
+    expect(top).toBe(stopped);
+    // A drag cut off by closing the editor leaves no timer either.
+    act(() => void fireEvent.pointerDown(grip(), { button: 0, pointerId: 1, clientY: 5 * 56 + 28 }));
+    expect(vi.getTimerCount()).toBeGreaterThan(before);
+    r.unmount();
+    expect(vi.getTimerCount()).toBeLessThanOrEqual(before);
   });
 
   it('the remove button takes a video out of the playlist', async () => {
@@ -608,6 +678,47 @@ describe('while it plays', () => {
     expect(JSON.parse(localStorage.getItem(OWN_KEY)!).lists[FRIDAY]).toMatchObject({ shuffle: true, repeat: true });
     // Shuffle on keeps the video on first and the saved order alone.
     expect(own().lists[FRIDAY]!.items.map((i) => i.id)).toEqual(items(12).map((i) => i.id));
+  });
+
+  it('keeps the playing row in sight when the video changes, but not while the pointer is in the list; one scroll after it leaves', async () => {
+    const scroll = vi.fn();
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = scroll;
+    try {
+      await playing();
+      scroll.mockClear();
+      const list = document.querySelector<HTMLElement>('.w-card .own-vlist')!;
+      act(() => void fireEvent.pointerEnter(list));
+      await flush(1100);
+      act(() => jump(V(6)));
+      await flush(1100);
+      expect(w().playing?.id).toBe(V(6));
+      expect(scroll).not.toHaveBeenCalled();
+      act(() => void fireEvent.pointerLeave(list));
+      expect(scroll).toHaveBeenCalledTimes(1);
+      await flush(1100);
+      act(() => jump(V(2)));
+      await flush(1100);
+      // The pointer is out: the new video's row is brought into sight at once.
+      expect(scroll).toHaveBeenCalledTimes(2);
+    } finally {
+      Element.prototype.scrollIntoView = original;
+    }
+  });
+
+  it('says "In the shuffled order" on the place while shuffle is on, and nothing while it is off', async () => {
+    await playing();
+    render(<HoverTipLayer />);
+    const sub = () => document.querySelector<HTMLElement>('.own-sub')!;
+    act(() => void fireEvent.mouseEnter(sub()));
+    await flush(400);
+    expect(document.body.textContent).not.toContain('In the shuffled order');
+    act(() => void fireEvent.mouseLeave(sub()));
+    resetTip();
+    await click(screen.getByRole('button', { name: 'Shuffle' }));
+    act(() => void fireEvent.mouseEnter(sub()));
+    await flush(400);
+    expect(document.body.textContent).toContain('In the shuffled order');
   });
 
   it('a click on another row plays it; a failed row is dimmed and cannot be clicked', async () => {
@@ -780,5 +891,25 @@ describe('Home and the pins', () => {
     seed();
     expect(pinnable([null, null, null], w().saved).map((i) => i.kind)).toEqual(['playlist', 'video']);
     expect(withPin([null, null, null], w().saved, 0, `own:${FRIDAY}`)).toEqual([null, null, null]);
+  });
+});
+
+describe('where the list row\'s menu opens', () => {
+  const fake = (rect: { left: number; top: number; width: number; height: number }, extra: Record<string, unknown> = {}) =>
+    ({ getBoundingClientRect: () => ({ ...rect, right: rect.left + rect.width, bottom: rect.top + rect.height, x: rect.left, y: rect.top }), offsetWidth: rect.width, offsetHeight: rect.height, closest: () => null, ...extra }) as unknown as HTMLElement;
+  it('opens below the row when it fits inside the card, upward when it does not, and stays on the stage', async () => {
+    const { place } = await import('./AddToPlaylist');
+    const card = fake({ left: 2000, top: 20, width: 540, height: 312 });
+    // A row near the top: room below.
+    const high = place(card, fake({ left: 2400, top: 70, width: 32, height: 32 }), 'anchor', 168);
+    expect(high.top).toBeCloseTo(102 - 20 + 6, 0);
+    // A lower row: no room below inside the card's lower edge plus 8 px, so it opens upward from the row.
+    const low = place(card, fake({ left: 2400, top: 230, width: 32, height: 32 }), 'anchor', 168);
+    expect(low.top).toBeLessThan(230 - 20);
+    expect(low.top).toBeGreaterThanOrEqual(0);
+    expect(low.top + 168).toBeLessThanOrEqual(230 - 20);
+    // The play row's menu keeps its place under the row.
+    const left = fake({ left: 624, top: 30, width: 460, height: 400 });
+    expect(place(left, fake({ left: 978, top: 267, width: 40, height: 40 }), 'host', 168).top).toBeCloseTo(267 - 30 + 40 + 6, 0);
   });
 });
