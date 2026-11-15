@@ -20,8 +20,8 @@ const NAMES = ['Night Drive', 'Rainy Window', '41 videos', 'Liked'];
  * At rest the library is 800 by 462 at wall 1740, 24; tall it is 833 by 624 at 1707, 24 above y 648. Playlists
  * are 16:9 tiles, four columns at rest (176 by 99) and five tall; no text under 16 px; every button and the
  * field at least 32 px each way; nothing outside the card, no two of tabs, field, grid, left column and rows
- * overlapping, and a long title ending in an ellipsis inside its box; rows are not play targets (no button, no
- * pointer cursor). Where the library cannot show, the remote and the line under it end above wall y 486.
+ * overlapping, and a long title ending in an ellipsis inside its box; playable rows are pointer buttons and greyed rows are not
+ * play targets (no button, no pointer cursor). Where the library cannot show, the remote and the line under it end above wall y 486.
  */
 function measureYoutubeLibrary() {
   const fails = [];
@@ -95,10 +95,14 @@ function measureYoutubeLibrary() {
       const cs = getComputedStyle(e);
       if (e.scrollWidth > e.clientWidth + 1 && (cs.textOverflow !== 'ellipsis' || cs.overflowX === 'visible')) { fails.push('text clipped in ' + name(e) + ' "' + (e.textContent || '').trim().slice(0, 24) + '" with no ellipsis'); break; }
     }
-    // Rows are not play targets: no button inside, and no pointer cursor on a row or anything in it.
+    // Playable rows are play targets (a button with a pointer cursor); greyed rows are not (no button, no pointer cursor on the row or anything in it).
     for (const row of libEl.querySelectorAll('.yt-row')) {
-      if (row.querySelector('button, [role="button"], a, input')) { fails.push('a row holds a button, a link or a field'); break; }
-      if ([row, ...row.querySelectorAll('*')].some((e) => getComputedStyle(e).cursor === 'pointer')) { fails.push('a row shows a pointer cursor'); break; }
+      const grey = row.classList.contains('off');
+      const btn = row.querySelector('button');
+      if (grey && (btn || row.querySelector('[role="button"], a, input'))) { fails.push('a greyed row holds a button, a link or a field'); break; }
+      if (!grey && !btn) { fails.push('a playable row holds no button'); break; }
+      if (!grey && getComputedStyle(btn).cursor !== 'pointer') { fails.push('a playable row shows a ' + getComputedStyle(btn).cursor + ' cursor (pointer)'); break; }
+      if (grey && [row, ...row.querySelectorAll('*')].some((e) => getComputedStyle(e).cursor === 'pointer')) { fails.push('a row shows a pointer cursor'); break; }
     }
   }
   // Where the library cannot show: the remote and the line under it end above wall y 486.
@@ -122,7 +126,7 @@ export default {
       state('rest, Playlists', lib('full'), NAMES.concat(['Playlists', 'Liked', '!Open YouTube Music']), SWITCH),
       state('rest, a few playlists', lib('few'), ['Night Drive', 'Rainy Window', '!Neon Coast'], SWITCH),
       state('rest, Liked', lib('full'), ['Cassette Rain', 'Only on YouTube', 'Aurora Set'], steps(SWITCH, LIKED)),
-      state('rest, a playlist opened', lib('full'), ['Refresh', 'Read at', 'Glass Harbor', 'Only on YouTube', 'Private', 'Removed', 'Night Drive', '41 videos'], steps(SWITCH, TILE)),
+      state('rest, a playlist opened', lib('full'), ['Refresh', '!Read at', 'Glass Harbor', 'Only on YouTube', 'Private', 'Removed', 'Night Drive', '41 videos'], steps(SWITCH, TILE)),
       state('rest, search results', lib('full', '&ytsearch=night'), ['Results for', 'Back to Playlists', 'Glass Harbor', 'Mira Vale'], SWITCH),
       state('tall, Playlists', lib('full'), NAMES.concat(['Static Bloom Sessions']), steps(SWITCH, TALL)),
       state('tall, a playlist opened', lib('full'), ['Refresh', 'Read at', 'Playlist', 'Night Drive', '41 videos', 'Glass Harbor', 'Mira Vale', 'Liked'], steps(SWITCH, TALL, TILE)),
@@ -183,7 +187,7 @@ export default {
         for (const failure of fails) emit(`  FAIL youtube library: ${failure}`);
         if (fails.length) return true;
         emit(m.lib
-          ? `  ok   youtube library: the ${m.tall ? 'tall card is 833 by 624 at 1707, 24' : 'resting card is 800 by 462 at 1740, 24'}, tiles 16:9${m.tall ? '' : ' (176 by 99, four columns)'}, no text under 16 px, every button and the field 32 px or more, nothing outside the card or overlapping, long names end in an ellipsis, rows are not play targets`
+          ? `  ok   youtube library: the ${m.tall ? 'tall card is 833 by 624 at 1707, 24' : 'resting card is 800 by 462 at 1740, 24'}, tiles 16:9${m.tall ? '' : ' (176 by 99, four columns)'}, no text under 16 px, every button and the field 32 px or more, nothing outside the card or overlapping, long names end in an ellipsis, greyed rows are not play targets`
           : '  ok   youtube library: the remote and the line under it end above wall y 486, no text under 16 px, every button 32 px or more');
         return false;
       },
