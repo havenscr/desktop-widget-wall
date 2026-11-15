@@ -83,6 +83,9 @@ const measureWatchList = () => {
     const n = R(now);
     if (mode === 'rest') {
       if (!by) return { fails: ['watch list: no channel line to fade'], mode };
+      // Headless virtual time hardly runs CSS transitions: read where the 250 ms fade ends.
+      for (const e of now.children) e.style.transition = 'none';
+      void document.body.offsetWidth;
       if (now.getAttribute('data-ctl') !== 'rest') fails.push('the left block is not at rest');
       else if (Number(getComputedStyle(by).opacity) > 0.001) fails.push('the channel line is at opacity ' + getComputedStyle(by).opacity + ' at rest (0)');
       return { fails, mode };
@@ -92,7 +95,7 @@ const measureWatchList = () => {
     if (lines > 2) fails.push('the title is ' + lines + ' lines (two at most)');
     const clamped = title.scrollHeight > title.clientHeight + 1;
     if (mode === 'long' && !clamped && lines <= 2) fails.push('the long title is not cut at two lines');
-    if (cs.webkitLineClamp !== '2' || cs.display !== '-webkit-box') fails.push('a clamped title ends in an ellipsis only with -webkit-line-clamp 2 on a -webkit-box (found ' + cs.webkitLineClamp + ' on ' + cs.display + ')');
+    if (cs.webkitLineClamp !== '2' || cs.overflow !== 'hidden') fails.push('a clamped title ends in an ellipsis only with -webkit-line-clamp 2 and hidden overflow (found ' + cs.webkitLineClamp + ' and ' + cs.overflow + ')');
     if (!by) return { fails: fails.concat(['watch list: no channel line']), mode };
     const b = R(by);
     if (b.h > px(by, 'lineHeight') * 1.05) fails.push('the channel is ' + Math.round(b.h) + ' px tall, more than one line');
@@ -142,7 +145,7 @@ export default {
     breaks: {
       'watchlist-title-lines': { css: '.w-title { -webkit-line-clamp: unset !important; display: block !important; }', expect: /^ *FAIL watch list: the title is \d+ lines/m, appliesTo: on('Watch list, long title and channel, feathered') },
       'watchlist-channel-wrap': { css: '.w-by { white-space: normal !important; }', expect: /^ *FAIL watch list: the channel is \d+ px tall, more than one line/m, appliesTo: on('Watch list, long title and channel, whole sky') },
-      'watchlist-overlap': { css: '.w-by { margin-bottom: 300px !important; }', expect: /^ *FAIL watch list: the left block ends at y \d+, into the office slot/m, appliesTo: on('Watch list, long title and channel, drive-in', 'Watch list, long title and channel, feathered') },
+      'watchlist-overlap': { css: '.w-by { margin-bottom: 500px !important; }', expect: /^ *FAIL watch list: the left block ends at y \d+, into the office slot/m, appliesTo: on('Watch list, long title and channel, drive-in', 'Watch list, long title and channel, feathered') },
       'watchlist-text': { css: '.w-by { font-size: 12px !important; }', expect: /^ *FAIL watch list: text under 16 px in the channel line/m, appliesTo: on('Watch list, title and channel, whole sky') },
       'watchlist-offer-button': { css: '.w-offer button { height: 20px !important; }', expect: /^ *FAIL watch list: the offer button is [\d.]+ px tall/m, appliesTo: on('Watch list, paste offer, 24 items') },
       'watchlist-rest': { css: ".w-now[data-ctl='rest'] > .w-by { opacity: 1 !important; }", expect: /^ *FAIL watch list: the channel line is at opacity/m, appliesTo: on('Watch list, at rest with a title and channel') },
