@@ -22,6 +22,10 @@
   flex-direction: column;
   gap: 12px;
   position: relative;
+  /* The scrollers below reach into the card's padding on the right (their scrollbar sits there): the
+     library's own box reaches it too, so nothing of it overflows its box. */
+  margin-right: calc(-5px - var(--yt-sb));
+  padding-right: calc(5px + var(--yt-sb));
 }
 
 /* Tabs and the search field share one row (46 px), the field filling the rest. */
@@ -247,6 +251,10 @@
 
 /* A playlist opened. At rest: the header row of the songs view (Back, picture, name, Refresh at the
    right). Tall: a left column of 248 and the rows on the right. */
+/* No slide-in for the opened list: the card has just changed size, and the review scripts measure it settled. */
+.yt-songs {
+  animation: none;
+}
 .yt-songs .yt-songthumb {
   width: 114px;
   height: 64px;
