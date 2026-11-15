@@ -3,8 +3,9 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { mocks } from '../bridge/tauri';
 import { usePlaceStore } from '../state/places';
 import { Accounts } from '../tools/accounts';
+import { HoverTipLayer, TIP_DELAY_MS } from '../ui/HoverTip';
 import { resetTools, useToolsStore } from '../tools/store';
-import { MEET_LEFT_PX, Meet } from './Meet';
+import { Meet } from './Meet';
 import type { MeetData } from './model';
 
 const NOW = Date.parse('2026-11-12T17:00:00Z');
@@ -64,8 +65,10 @@ it('renders the next meeting, the countdown, the list and the accounts', async (
   const { container } = render(<Meet />);
   await flush();
   expect(screen.getByText('Design review')).toBeTruthy();
-  expect(screen.getByText('In 3 min')).toBeTruthy();
-  expect(container.querySelector('.meet-count.soon')).toBeTruthy();
+  // The status row counts to the start; the ring says the same in minutes.
+  expect(screen.getByText('Next, in 3 min')).toBeTruthy();
+  expect(container.querySelector('.meet-st[data-tone="next"]')).toBeTruthy();
+  expect(container.querySelector('.meet-ring-n')?.textContent).toBe('3');
   expect(screen.getByText('Planning')).toBeTruthy();
   expect(screen.getByText('Board prep')).toBeTruthy();
   // Accounts live in the Tools drawer now; Meet shows one amber line and no account buttons.
@@ -80,7 +83,8 @@ it('shows Join only when canJoin, and sends the key only', async () => {
   mocks.set('wall2_meet_join', join);
   render(<Meet />);
   await flush();
-  expect(screen.getAllByRole('button', { name: /^Join/ })).toHaveLength(2);
+  // The hero has Join; Planning (the card after it) has no join link, so it gets none.
+  expect(screen.getAllByRole('button', { name: /^Join/ })).toHaveLength(1);
   expect(screen.queryByRole('button', { name: 'Join: Planning' })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: 'Join: Design review' }));
   expect(join).toHaveBeenCalledTimes(1);
@@ -107,7 +111,7 @@ it('the countdown ticks without calling the native side', async () => {
   await flush();
   await flush(60_000);
   expect(reads(next)).toBe(1);
-  expect(screen.getByText('In 2 min')).toBeTruthy();
+  expect(screen.getByText('Next, in 2 min')).toBeTruthy();
 });
 
 it('stops polling when another place is active', async () => {
@@ -162,19 +166,21 @@ it('does not cancel when no sign-in is pending', async () => {
   expect(cancel).not.toHaveBeenCalled();
 });
 
-it('keeps its panels out of the clock area: they sit in .meet-body (CSS: left 482px, first panel edge of Work)', async () => {
+it('lays out the hero, the island, the Next card and Capture inside .meet-body; the Next card is the one panel at the right edge', async () => {
   mocks.set('wall2_meet_next', () => data);
   const { container } = render(<Meet />);
   await flush(10);
   const body = container.querySelector('.meet-body')!;
   expect(body).not.toBeNull();
-  for (const label of ['Next meeting', 'Later meetings']) {
+  for (const label of ['Next meeting', 'Meeting notes', 'Later meetings', 'Capture']) {
     expect(body.contains(screen.getByLabelText(label))).toBe(true);
   }
   expect(container.querySelectorAll('.meet > .panel')).toHaveLength(0);
-  // The body starts at the Work tab's first panel edge (482 px), clear of the clock; moving it left fails here.
-  expect(MEET_LEFT_PX).toBe(482);
-  expect((body as HTMLElement).style.left).toBe(`${MEET_LEFT_PX}px`);
+  // The built-in fit measurement reads the direct panels of the body: the Next card keeps its class, Capture is not a panel.
+  expect([...body.querySelectorAll(':scope > .panel')].map((e) => e.className)).toEqual(['panel meet-island', 'panel meet-later']);
+  expect(screen.getByLabelText('Capture').classList.contains('panel')).toBe(false);
+  // The frame clock steps aside; the hero draws its own time.
+  expect(container.querySelector('.meet-time')).not.toBeNull();
 });
 
 const unavailable: MeetData = {
@@ -251,8 +257,8 @@ it('shows one centred message with the last read time when nothing is scheduled'
   await flush();
   expect(screen.getByText('Nothing scheduled in the next 24 hours')).toBeTruthy();
   expect(screen.getByText(/Last checked at \d+(:\d\d)? [AP]M/)).toBeTruthy();
-  expect(container.querySelector('.meet-empty')).toBeTruthy();
-  // The Later card still fills the upper right, with its plain line.
+  expect(container.querySelector('.meet-hero-note')).toBeTruthy();
+  // The Next card still fills the upper right, with its plain line.
   expect(screen.getByLabelText('Later meetings').textContent).toContain('Nothing else');
 });
 
@@ -260,7 +266,7 @@ it('says which account could not be read when nothing is scheduled', async () =>
   mocks.set('wall2_meet_next', () => ({ ...unavailable, meetings: [] }));
   const { container } = render(<Meet />);
   await flush();
-  expect(container.querySelector('.meet-empty')).toBeTruthy();
+  expect(container.querySelector('.meet-hero-note')).toBeTruthy();
   expect(screen.getByText('Second could not be read')).toBeTruthy();
   expect(screen.getByText(/Second calendar not answering\./)).toBeTruthy();
 });
@@ -278,7 +284,8 @@ it('says Calendar not available when no account can be read', async () => {
   expect(screen.getByText('Calendar not available')).toBeTruthy();
   expect(screen.getByText(/2 calendars need attention\./)).toBeTruthy();
   // One link only: the Later card carries it, the other card just says what is wrong.
-  expect(screen.getAllByRole('button', { name: 'Open Tools' })).toHaveLength(1);
+  // One link in the hero, under the title, and one in the Next card that says why it is empty.
+  expect(screen.getAllByRole('button', { name: 'Open Tools' })).toHaveLength(2);
   expect(screen.getByLabelText('Later meetings').textContent).toContain('Open Tools');
 });
 
@@ -366,7 +373,7 @@ it('LATER says a plain Nothing else when every account is fresh, and a signed-ou
   mocks.set('wall2_meet_next', () => ({ accounts: [{ id: 'work', label: 'Work', state: 'ok' }], meetings: one }));
   const first = render(<Meet />);
   await flush();
-  expect(screen.getByLabelText('Later meetings').textContent).toBe('LaterNothing else');
+  expect(screen.getByLabelText('Later meetings').textContent).toBe('After thisNothing else today');
   expect(screen.getByLabelText('Next meeting').textContent).not.toContain('out of date');
   first.unmount();
   mocks.set('wall2_meet_next', () => ({
@@ -401,7 +408,7 @@ it('keeps the last known meeting, dimmed with as of and no Join, when every acco
   await flush(10);
   await flush(5 * 60_000);
   expect(screen.getByText('Design review')).toBeTruthy();
-  expect(container.querySelector('.meet-next.dimmed')).toBeTruthy();
+  expect(container.querySelector('.meet-hero.dimmed')).toBeTruthy();
   expect(screen.getByText(/^as of \d+(:\d\d)? [AP]M$/)).toBeTruthy();
   expect(screen.queryByRole('button', { name: /^Join/ })).toBeNull();
   expect(screen.queryByText('Calendar not available')).toBeNull();
@@ -492,7 +499,7 @@ it('the dimmed last known card shows the clock time and as of, never a countdown
   await flush();
   fail = true;
   await flush(5 * 60_000 + 10);
-  const card = container.querySelector('.meet-next.dimmed');
+  const card = container.querySelector('.meet-hero.dimmed');
   expect(card).toBeTruthy();
   expect(card?.textContent).not.toMatch(/\bin \d|In \d|min left/);
   expect(card?.textContent).toMatch(/as of/);
@@ -516,7 +523,7 @@ it('a failed account keeps its last known meeting, but a signed-out one never do
   expect(screen.queryByText('Design review')).toBeNull();
 });
 
-it('Join is filled only for a live or within 15 minutes meeting, quiet otherwise', async () => {
+it('the hero Join is filled, with a glow when live or within 15 minutes; the Join after it is outlined until then', async () => {
   mocks.set('wall2_meet_next', () => ({
     accounts: [{ id: 'work', label: 'Work', state: 'ok' }],
     meetings: [
@@ -526,20 +533,29 @@ it('Join is filled only for a live or within 15 minutes meeting, quiet otherwise
   }));
   render(<Meet />);
   await flush();
-  expect(screen.getByRole('button', { name: 'Join: Soon one' }).className).toContain('cy');
+  // The hero's Join is filled; the one after it is outlined until it is within 15 minutes.
+  expect(screen.getByRole('button', { name: 'Join: Soon one' }).className).not.toContain('quiet');
   const far = screen.getByRole('button', { name: 'Join: Far one' });
-  expect(far.className).toContain('meet-quiet');
   expect(far.className).not.toContain('cy');
 });
 
-it('a LATER row has a hover with title, time range and account', async () => {
+it('a Later one-liner has a hover with title, time range and account', async () => {
   mocks.set('wall2_meet_next', () => data);
-  render(<Meet />);
+  render(
+    <>
+      <Meet />
+      <HoverTipLayer />
+    </>,
+  );
   await flush();
-  const row = screen.getByText('Planning').closest('li') as HTMLElement;
-  expect(row.title).toContain('Planning');
-  expect(row.title).toContain(' to ');
-  expect(row.title).toContain('Work');
+  // Design review is the hero, Planning is the card after it, Board prep is the one-liner.
+  const row = screen.getByText('Board prep').closest('.meet-later-row') as HTMLElement;
+  fireEvent.mouseEnter(row);
+  await flush(TIP_DELAY_MS);
+  const words = screen.getByRole('tooltip').textContent ?? '';
+  expect(words).toContain('Board prep');
+  expect(words).toContain(' to ');
+  expect(words).toContain('Work');
 });
 
 it('fills the upper right in every state without a next meeting: Later carries a plain line', async () => {

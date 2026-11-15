@@ -3,6 +3,7 @@
 use super::reason::{clean_code, graph_reason, GRAPH_BODY, GRAPH_NETWORK, GRAPH_TIMEOUT, MAX_ERROR_BODY};
 use super::{MAX_BODY, MAX_TITLE_CHARS};
 use base64::Engine;
+use serde::Serialize;
 use serde_json::Value;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -24,6 +25,8 @@ pub struct Candidate {
     pub web: Option<String>,
     /// Classic Outlook EntryID as validated uppercase hex. Stays in Rust.
     pub entry: Option<String>,
+    /// Names and a cleaned invite text, only from the next-meetings read (see `shape_details`).
+    pub details: Option<Details>,
 }
 
 impl std::fmt::Debug for Candidate {
@@ -37,6 +40,7 @@ impl std::fmt::Debug for Candidate {
             .field("join", &self.join)
             .field("web", &self.web)
             .field("entry", &self.entry.as_ref().map(|_| "<redacted>"))
+            .field("details", &self.details.as_ref().map(|_| "<redacted>"))
             .finish()
     }
 }
@@ -98,12 +102,22 @@ pub struct Ctx {
     pub clock: Arc<dyn Clock + Send + Sync>,
     pub began_ms: u64,
     pub deadline_ms: u64,
+    /// Set when Graph refused the wider next read: the rest of this read asks for the plain fields.
+    plain: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl Ctx {
     pub fn new(kind: Kind, clock: Arc<dyn Clock + Send + Sync>, budget: Duration) -> Ctx {
         let began_ms = clock.now_ms();
-        Ctx { kind, clock, began_ms, deadline_ms: began_ms + budget.as_millis() as u64 }
+        Ctx { kind, clock, began_ms, deadline_ms: began_ms + budget.as_millis() as u64, plain: Arc::new(std::sync::atomic::AtomicBool::new(false)) }
+    }
+    /// True when this read asks for people and invite text: the next read, until Graph refuses it.
+    pub fn wide(&self) -> bool {
+        self.kind == Kind::Next && !self.plain.load(std::sync::atomic::Ordering::SeqCst)
+    }
+    /// Graph refused the wider fields: ask for the plain ones from now on.
+    pub fn fall_back_to_plain(&self) {
+        self.plain.store(true, std::sync::atomic::Ordering::SeqCst);
     }
     pub fn elapsed_ms(&self) -> u64 {
         self.clock.now_ms().saturating_sub(self.began_ms)
@@ -333,25 +347,37 @@ pub fn run_attempts(ctx: &Ctx, send: &mut dyn FnMut(u32, Duration) -> Raw) -> (G
 }
 
 pub const SELECT: &str = "id,subject,start,end,isAllDay,isCancelled,responseStatus,onlineMeeting,onlineMeetingUrl,iCalUId,webLink";
+/// The next-meetings read also asks for who is in the meeting and the first words of the invite
+/// (`shape_details` keeps names and cleaned text only). The day read keeps the plain `SELECT`.
+pub const SELECT_DETAILS: &str = "id,subject,start,end,isAllDay,isCancelled,responseStatus,onlineMeeting,onlineMeetingUrl,iCalUId,webLink,organizer,attendees,bodyPreview";
 pub const TOP: u32 = 50;
 pub const CALENDAR_VIEW_PATH: &str = "https://graph.microsoft.com/v1.0/me/calendarView";
 pub const PREFER: &str = "outlook.timezone=\"UTC\"";
 const ENTRY_EXPAND_ENCODED: &str = "singleValueExtendedProperties%28%24filter%3Did%20eq%20%27Binary%200x0FFF%27%29";
 
-/// The calendarView request: the documented options only (`startDateTime`, `endDateTime`,
-/// `$select`, `$orderby` on the start time, `$top`), both date-times in UTC with a `Z`.
+/// The next-meetings calendarView request: the documented options only (`startDateTime`,
+/// `endDateTime`, `$select`, `$orderby` on the start time, `$top`), both date-times in UTC with a `Z`.
 pub fn calendar_view_url(start: &str, end: &str) -> String {
-    calendar_view_url_inner(start, end, true)
+    calendar_view_url_inner(start, end, true, SELECT_DETAILS)
 }
 
 pub fn calendar_view_url_without_expand(start: &str, end: &str) -> String {
-    calendar_view_url_inner(start, end, false)
+    calendar_view_url_inner(start, end, false, SELECT_DETAILS)
 }
 
-fn calendar_view_url_inner(start: &str, end: &str, expand: bool) -> String {
+/// The day read's request: the same, with the plain `SELECT` (no people, no invite text).
+pub fn calendar_view_url_day(start: &str, end: &str) -> String {
+    calendar_view_url_inner(start, end, true, SELECT)
+}
+
+pub fn calendar_view_url_day_without_expand(start: &str, end: &str) -> String {
+    calendar_view_url_inner(start, end, false, SELECT)
+}
+
+fn calendar_view_url_inner(start: &str, end: &str, expand: bool, select: &str) -> String {
     let expand = if expand { format!("&$expand={ENTRY_EXPAND_ENCODED}") } else { String::new() };
     format!(
-        "{CALENDAR_VIEW_PATH}?startDateTime={}&endDateTime={}&$select={SELECT}&$orderby=start/dateTime&$top={TOP}{expand}",
+        "{CALENDAR_VIEW_PATH}?startDateTime={}&endDateTime={}&$select={select}&$orderby=start/dateTime&$top={TOP}{expand}",
         urlencoding::encode(start),
         urlencoding::encode(end),
     )
@@ -526,6 +552,342 @@ pub fn is_entry_property_id(value: &str) -> bool {
         && tag.strip_prefix("0x").or_else(|| tag.strip_prefix("0X")).and_then(|hex| u32::from_str_radix(hex, 16).ok()) == Some(0x0fff)
 }
 
+// Section: details (people and invite text)
+
+/// People kept per meeting; the rest are only counted.
+pub const MAX_PEOPLE: usize = 20;
+/// A person's name is cut at this many characters.
+pub const MAX_NAME_CHARS: usize = 60;
+/// The cleaned invite text is cut at this many characters.
+pub const MAX_INVITE_CHARS: usize = 400;
+
+/// One invited person as the web view gets them: a name and how they replied. Never an address.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct Person {
+    pub name: String,
+    /// `yes`, `maybe`, `no`, `none` or `organizer`.
+    pub reply: &'static str,
+}
+
+/// What the next-meetings read passes about who is in a meeting and what the invite says.
+/// Names and plain text only: no address, no domain, no link, no meeting id, no passcode.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Details {
+    pub called_by: Option<String>,
+    pub people: Vec<Person>,
+    /// Invited people not in `people`: past the 20 kept, or with no usable name.
+    pub people_more: u32,
+    pub invite: Option<String>,
+}
+
+/// Characters that never reach the page and never hide a word from the rules below: every control character
+/// (Cc) and the invisible format characters (Cf) that could split `://` or `www.`: the soft hyphen, the arabic
+/// letter mark, zero-width and direction marks and overrides, the word joiner and invisible operators, the
+/// byte order mark, the combining grapheme joiner and the tag block (U+E0000 to U+E007F).
+fn is_invisible(c: char) -> bool {
+    c.is_control()
+        || matches!(c, '\u{00AD}' | '\u{034F}' | '\u{061C}' | '\u{180E}' | '\u{200B}'..='\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2060}'..='\u{2064}' | '\u{2066}'..='\u{2069}' | '\u{FEFF}' | '\u{E0000}'..='\u{E007F}')
+}
+
+/// A line with every control character turned to a space, every invisible format character removed
+/// and the whitespace collapsed to single spaces. The rules below always look at this form.
+fn normalize(raw: &str) -> String {
+    let spaced: String = raw.chars().filter_map(|c| if c.is_control() { Some(' ') } else if is_invisible(c) { None } else { Some(c) }).collect();
+    spaced.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// A word shaped like a host, or a host with a path: a dot followed by two or more letters inside the word
+/// ("meet.example/abc", "short.example/x"). The ends are trimmed of punctuation first, so "start." stays a word.
+/// The one dot leader U+2024 and the full-width full stop U+FF0E count as dots; the ideographic full stop U+3002
+/// does only when two ASCII letters follow it (it ends sentences in running Japanese and Chinese text).
+fn host_shaped(word: &str) -> bool {
+    let t = word.trim_matches(|c: char| !c.is_alphanumeric() && c != '/');
+    let chars: Vec<char> = t.chars().collect();
+    chars.windows(3).any(|w| match w[0] {
+        '.' | '\u{2024}' | '\u{FF0E}' => w[1].is_alphabetic() && w[2].is_alphabetic(),
+        '\u{3002}' => w[1].is_ascii_alphabetic() && w[2].is_ascii_alphabetic(),
+        _ => false,
+    })
+}
+
+/// A word shaped like a meeting code: three letters, a hyphen, four letters, a hyphen, three letters ("abc-defg-hij").
+fn meeting_code_shaped(word: &str) -> bool {
+    let t = word.trim_matches(|c: char| !c.is_alphanumeric());
+    let parts: Vec<&str> = t.split('-').collect();
+    parts.len() == 3 && [3usize, 4, 3].iter().zip(&parts).all(|(n, p)| p.chars().count() == *n && p.chars().all(|c| c.is_ascii_alphabetic()))
+}
+
+fn digits_in(text: &str) -> usize {
+    text.chars().filter(|c| c.is_numeric()).count()
+}
+
+/// A name that is safe to pass: control and invisible characters dealt with, whitespace collapsed, a trailing
+/// bracketed part (a company in brackets) removed, cut at 60 characters. None when nothing is left or when the
+/// text looks like an address, a link, a domain, a word shaped like a host or a phone number (Outlook fills the
+/// name with the address when it knows no name).
+pub fn clean_name(raw: &str) -> Option<String> {
+    let mut name = normalize(raw);
+    loop {
+        let open = if name.ends_with(')') { name.rfind('(') } else if name.ends_with(']') { name.rfind('[') } else { None };
+        match open {
+            Some(i) => name = name[..i].trim().to_string(),
+            None => break,
+        }
+    }
+    let lower = name.to_ascii_lowercase();
+    // No name when any word is host shaped ("Ana corp.example", "Join meet.example/j/abc") or the name holds a phone number's worth of digits.
+    if name.is_empty() || name.contains('@') || lower.contains("://") || lower.contains("www.") || name.split_whitespace().any(host_shaped) || digits_in(&name) >= 9 {
+        return None;
+    }
+    Some(name.chars().take(MAX_NAME_CHARS).collect::<String>().trim().to_string()).filter(|n| !n.is_empty())
+}
+
+fn reply_word(response: Option<&str>) -> &'static str {
+    match response {
+        Some("accepted") => "yes",
+        Some("tentativelyAccepted") => "maybe",
+        Some("declined") => "no",
+        Some("organizer") => "organizer",
+        _ => "none",
+    }
+}
+
+/// Markers that always cut: the text is cut before the first line that holds one. They are looked for in the
+/// normalized, lower case line, so a tab, a hidden character or a double space cannot hide one.
+const INVITE_MARKERS: [&str; 17] = [
+    "microsoft teams",
+    "join on your computer",
+    "join zoom",
+    "meeting id",
+    "meeting-id",
+    "meeting number",
+    "meeting-number",
+    "conference id",
+    "access code",
+    "c\u{f3}digo de acceso",
+    "kenncode",
+    "code secret",
+    "passcode",
+    "join by phone",
+    "pin:",
+    "pw:",
+    "pwd",
+];
+
+/// Everyday words that are also the start of a join block ("Password: AbCd1234", "Join the Webex meeting"). A line is cut at
+/// one only when it starts the line, or the rest of the line holds a colon or a word with a digit; otherwise a sentence
+/// that merely mentions it ("rotate the shared password list") stays whole.
+const EVERYDAY_MARKERS: [&str; 11] = ["password", "passwort", "kennwort", "contrase\u{f1}a", "mot de passe", "senha", "webex", "google meet", "pin", "dial in", "dial-in"];
+
+/// The dividers some services draw around the join block.
+const DIVIDERS: [&str; 1] = ["-::~:~::"];
+
+/// True when this lower case line holds an everyday marker that cuts: at the start of the line (nothing but punctuation
+/// before it), or with a colon or a word holding a digit after it.
+fn everyday_marker_cuts(lower: &str) -> bool {
+    for m in EVERYDAY_MARKERS {
+        let mut from = 0;
+        while let Some(at) = lower[from..].find(m) {
+            let i = from + at;
+            let end = i + m.len();
+            from = i + m.len().max(1);
+            let before = lower[..i].chars().next_back();
+            let after = lower[end..].chars().next();
+            // A whole word: not inside another one.
+            if before.is_some_and(char::is_alphanumeric) || after.is_some_and(char::is_alphanumeric) {
+                continue;
+            }
+            let rest = &lower[end..];
+            if lower[..i].chars().all(|c| !c.is_alphanumeric()) || rest.contains(':') || rest.split_whitespace().any(|w| w.chars().any(char::is_numeric)) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn has_underscore_run(line: &str) -> bool {
+    let mut run = 0;
+    for c in line.chars() {
+        run = if c == '_' { run + 1 } else { 0 };
+        if run >= 8 {
+            return true;
+        }
+    }
+    false
+}
+
+/// The longest run of digits once spaces, hyphens and round brackets are taken out ("+1 555 123-4567" is eleven).
+fn longest_digit_run(text: &str) -> usize {
+    let mut best = 0;
+    let mut run = 0;
+    for c in text.chars().filter(|c| !matches!(c, ' ' | '-' | '(' | ')')) {
+        run = if c.is_numeric() { run + 1 } else { 0 };
+        best = best.max(run);
+    }
+    best
+}
+
+/// Takes out digit groups (three or more digits each) that are separated only by spaces, hyphens, dots or commas and
+/// total seven or more digits, as one run: a phone number or an id written in groups. "10:30", "2026", "4.12" and
+/// "$1,250" are not such runs and stay.
+fn strip_digit_chains(text: &str) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    // Digit runs of three or more.
+    let mut runs: Vec<(usize, usize)> = Vec::new();
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i].is_numeric() {
+            let start = i;
+            while i < chars.len() && chars[i].is_numeric() {
+                i += 1;
+            }
+            if i - start >= 3 {
+                runs.push((start, i));
+            }
+        } else {
+            i += 1;
+        }
+    }
+    let mut remove = vec![false; chars.len()];
+    let mut k = 0;
+    while k < runs.len() {
+        let mut j = k;
+        // Extend while the next run follows after nothing but separators.
+        while j + 1 < runs.len() && runs[j + 1].0 > runs[j].1 && chars[runs[j].1..runs[j + 1].0].iter().all(|c| matches!(c, ' ' | '-' | '.' | ',')) {
+            j += 1;
+        }
+        let total: usize = runs[k..=j].iter().map(|(a, b)| b - a).sum();
+        if total >= 7 {
+            for r in remove.iter_mut().take(runs[j].1).skip(runs[k].0) {
+                *r = true;
+            }
+        }
+        k = j + 1;
+    }
+    let mut out = String::new();
+    let mut gap = false;
+    for (c, r) in chars.iter().zip(&remove) {
+        if *r {
+            gap = true;
+        } else {
+            if gap {
+                out.push(' ');
+                gap = false;
+            }
+            out.push(*c);
+        }
+    }
+    if gap {
+        out.push(' ');
+    }
+    out
+}
+
+/// Sentences of one line, each with its end punctuation and the space after it.
+fn sentences(line: &str) -> Vec<&str> {
+    let mut out = Vec::new();
+    let mut start = 0;
+    let bytes = line.as_bytes();
+    for (i, c) in line.char_indices() {
+        if matches!(c, '.' | '!' | '?') && bytes.get(i + 1) == Some(&b' ') {
+            out.push(&line[start..=i]);
+            start = i + 1;
+        }
+    }
+    if start < line.len() {
+        out.push(&line[start..]);
+    }
+    out
+}
+
+/// True for a word the invite never keeps: a link, an address, a phone or sip address, anything shaped like a
+/// host (with or without a path), and a number of five or more digits (an id, a code, a phone number).
+fn dropped_word(word: &str) -> bool {
+    let lower = word.to_ascii_lowercase();
+    lower.contains("://")
+        || lower.contains("www.")
+        || word.contains('@')
+        || ["tel:", "sip:", "mailto:", "callto:"].iter().any(|p| lower.trim_start_matches(|c: char| !c.is_alphanumeric()).starts_with(p))
+        || host_shaped(word)
+        || meeting_code_shaped(word)
+        || digits_in(word) >= 5
+}
+
+/// The invite's own words from `bodyPreview`, as a best effort on text that anyone who can send an invitation
+/// controls. Each line is normalized first (control and invisible characters, whitespace). The text is cut
+/// before the first line that holds a join-block marker or a run of 8 underscores, and before the first line
+/// or sentence with 9 or more digits. Every word that is a link, an address, a phone or sip address, host shaped
+/// or has 5 or more digits is removed. The rest is collapsed and stops at 400 characters. None when
+/// nothing is left.
+pub fn clean_invite(raw: &str) -> Option<String> {
+    let mut kept: Vec<String> = Vec::new();
+    'lines: for line in raw.split(['\n', '\r']) {
+        let norm = normalize(line);
+        let lower = norm.to_lowercase();
+        if has_underscore_run(&norm) || INVITE_MARKERS.iter().chain(DIVIDERS.iter()).any(|m| lower.contains(m)) || everyday_marker_cuts(&lower) {
+            break;
+        }
+        for sentence in sentences(&norm) {
+            if longest_digit_run(sentence) >= 9 {
+                break 'lines;
+            }
+            kept.push(strip_digit_chains(sentence));
+        }
+    }
+    let words: Vec<&str> = kept.iter().flat_map(|l| l.split_whitespace()).filter(|w| !dropped_word(w)).collect();
+    let text: String = words.join(" ").chars().take(MAX_INVITE_CHARS).collect::<String>().trim().to_string();
+    if text.is_empty() {
+        None
+    } else {
+        Some(text)
+    }
+}
+
+/// People and invite text of one event, or None when the event carries none of them (the day
+/// read does not ask for them, and a refused wider read falls back to the plain one).
+pub fn shape_details(e: &Value) -> Option<Details> {
+    if e.get("organizer").is_none() && e.get("attendees").is_none() && e.get("bodyPreview").is_none() {
+        return None;
+    }
+    let called_by = str_at(e, &["organizer", "emailAddress", "name"]).and_then(clean_name);
+    // The organizer is found among the attendees by identity (the address, kept in Rust and never sent; the
+    // cleaned name when neither side has an address) before any cap, so they are listed once whatever their place.
+    let org_address = str_at(e, &["organizer", "emailAddress", "address"]).map(|a| a.trim().to_ascii_lowercase()).filter(|a| !a.is_empty());
+    let attendees: &[Value] = e.get("attendees").and_then(Value::as_array).map(Vec::as_slice).unwrap_or(&[]);
+    let is_organizer = |a: &Value| {
+        let addr = str_at(a, &["emailAddress", "address"]).map(|x| x.trim().to_ascii_lowercase()).filter(|x| !x.is_empty());
+        match (&org_address, &addr) {
+            (Some(o), Some(x)) => o == x,
+            _ => called_by.is_some() && str_at(a, &["emailAddress", "name"]).and_then(clean_name).as_ref().map(|n| n.eq_ignore_ascii_case(called_by.as_deref().unwrap_or(""))) == Some(true),
+        }
+    };
+    let mut people: Vec<Person> = Vec::new();
+    let mut more: u32 = 0;
+    let mut organizer_seen = false;
+    if let Some(name) = &called_by {
+        people.push(Person { name: name.clone(), reply: "organizer" });
+        organizer_seen = true;
+    }
+    let mut organizer_matched = false;
+    for a in attendees {
+        if organizer_seen && !organizer_matched && is_organizer(a) {
+            organizer_matched = true;
+            continue;
+        }
+        match str_at(a, &["emailAddress", "name"]).and_then(clean_name) {
+            Some(name) if people.len() < MAX_PEOPLE => people.push(Person { name, reply: reply_word(str_at(a, &["status", "response"])) }),
+            _ => more = more.saturating_add(1),
+        }
+    }
+    let invite = e.get("bodyPreview").and_then(Value::as_str).and_then(clean_invite);
+    if called_by.is_none() && people.is_empty() && more == 0 && invite.is_none() {
+        return None;
+    }
+    Some(Details { called_by, people, people_more: more, invite })
+}
+
 /// Events of one account: not cancelled, not declined, not all-day, with a valid start and end.
 pub fn shape_events(body: &Value, account_id: &str) -> Vec<Candidate> {
     let Some(rows) = body.get("value").and_then(Value::as_array) else {
@@ -562,6 +924,7 @@ pub fn shape_events(body: &Value, account_id: &str) -> Vec<Candidate> {
                     .and_then(|rows| rows.iter().find(|row| str_at(row, &["id"]).is_some_and(is_entry_property_id)))
                     .and_then(|row| str_at(row, &["value"]))
                     .and_then(entry_hex),
+                details: shape_details(e),
             })
         })
         .collect()
@@ -609,6 +972,7 @@ mod tests {
             join: None,
             web: None,
             entry: None,
+            details: None,
         };
         let a: Vec<_> = (0..12).map(|n| one(n, "a")).collect();
         let b: Vec<_> = (0..12).map(|n| one(n, "b")).collect();
@@ -832,11 +1196,16 @@ mod tests {
         let url = calendar_view_url("2026-11-12T17:00:00Z", "2026-11-13T17:00:00Z");
         assert_eq!(
             url,
-            "https://graph.microsoft.com/v1.0/me/calendarView?startDateTime=2026-11-12T17%3A00%3A00Z&endDateTime=2026-11-13T17%3A00%3A00Z&$select=id,subject,start,end,isAllDay,isCancelled,responseStatus,onlineMeeting,onlineMeetingUrl,iCalUId,webLink&$orderby=start/dateTime&$top=50&$expand=singleValueExtendedProperties%28%24filter%3Did%20eq%20%27Binary%200x0FFF%27%29"
+            "https://graph.microsoft.com/v1.0/me/calendarView?startDateTime=2026-11-12T17%3A00%3A00Z&endDateTime=2026-11-13T17%3A00%3A00Z&$select=id,subject,start,end,isAllDay,isCancelled,responseStatus,onlineMeeting,onlineMeetingUrl,iCalUId,webLink,organizer,attendees,bodyPreview&$orderby=start/dateTime&$top=50&$expand=singleValueExtendedProperties%28%24filter%3Did%20eq%20%27Binary%200x0FFF%27%29"
         );
         let names: Vec<&str> = url.split_once('?').unwrap().1.split('&').map(|p| p.split('=').next().unwrap()).collect();
         assert_eq!(names, ["startDateTime", "endDateTime", "$select", "$orderby", "$top", "$expand"]);
         assert_eq!(calendar_view_url_without_expand("2026-11-12T17:00:00Z", "2026-11-13T17:00:00Z"), url.split("&$expand=").next().unwrap());
+        // The day read keeps the plain fields: no people, no invite text.
+        let day = calendar_view_url_day("2026-11-12T17:00:00Z", "2026-11-13T17:00:00Z");
+        assert_eq!(day, url.replace(SELECT_DETAILS, SELECT));
+        assert!(!day.contains("attendees") && !day.contains("bodyPreview") && !day.contains("organizer"));
+        assert_eq!(calendar_view_url_day_without_expand("2026-11-12T17:00:00Z", "2026-11-13T17:00:00Z"), day.split("&$expand=").next().unwrap());
         assert_eq!(PREFER, "outlook.timezone=\"UTC\"");
     }
 
@@ -914,6 +1283,7 @@ mod tests {
             join: None,
             web: None,
             entry: None,
+            details: None,
         }
     }
 
@@ -1150,5 +1520,355 @@ mod tests {
         for url in bad {
             assert!(!web_link_allowed(url), "should reject {url}");
         }
+    }
+
+    // Section: details tests (invented people and invites only)
+
+    fn event_with(extra: Value) -> Value {
+        let mut e = json!({
+            "subject": "Planning",
+            "start": { "dateTime": "2026-11-12T17:00:00.0000000" },
+            "end": { "dateTime": "2026-11-12T18:00:00.0000000" },
+            "isAllDay": false, "isCancelled": false,
+            "responseStatus": { "response": "accepted" }
+        });
+        for (k, v) in extra.as_object().unwrap() {
+            e[k] = v.clone();
+        }
+        e
+    }
+
+    fn attendee(name: &str, address: &str, response: &str) -> Value {
+        json!({ "type": "required", "status": { "response": response, "time": "0001-01-01T00:00:00Z" }, "emailAddress": { "name": name, "address": address } })
+    }
+
+    fn details_of(extra: Value) -> Option<Details> {
+        let body = json!({ "value": [event_with(extra)] });
+        shape_events(&body, "work").remove(0).details
+    }
+
+    #[test]
+    fn an_event_without_the_wider_fields_has_no_details() {
+        assert_eq!(details_of(json!({})), None);
+        // Fields present but empty: nothing to show, so null too.
+        assert_eq!(details_of(json!({ "attendees": [], "bodyPreview": "" })), None);
+    }
+
+    #[test]
+    fn people_are_names_and_replies_never_addresses() {
+        let d = details_of(json!({
+            "organizer": { "emailAddress": { "name": "Avery Example", "address": "avery@example.test" } },
+            "attendees": [
+                attendee("Avery Example", "avery@example.test", "organizer"),
+                attendee("Blake Sample", "blake@sample.test", "accepted"),
+                attendee("Lee Demo", "lee@demo.test", "tentativelyAccepted"),
+                attendee("Jo Mock", "jo@mock.test", "declined"),
+                attendee("Sam Fake", "sam@fake.test", "notResponded"),
+            ]
+        }))
+        .unwrap();
+        assert_eq!(d.called_by.as_deref(), Some("Avery Example"));
+        let got: Vec<(&str, &str)> = d.people.iter().map(|p| (p.name.as_str(), p.reply)).collect();
+        assert_eq!(got, [("Avery Example", "organizer"), ("Blake Sample", "yes"), ("Lee Demo", "maybe"), ("Jo Mock", "no"), ("Sam Fake", "none")]);
+        assert_eq!(d.people_more, 0);
+        let wire = serde_json::to_string(&d).unwrap();
+        assert!(!wire.contains('@') && !wire.contains("example.test") && !wire.contains(".test"), "{wire}");
+        assert!(wire.contains("\"calledBy\"") && wire.contains("\"peopleMore\""));
+    }
+
+    #[test]
+    fn the_organizer_is_listed_once_even_when_the_attendees_leave_them_out() {
+        let d = details_of(json!({
+            "organizer": { "emailAddress": { "name": "Avery Example", "address": "avery@example.test" } },
+            "attendees": [attendee("Blake Sample", "blake@sample.test", "accepted")]
+        }))
+        .unwrap();
+        assert_eq!(d.people.len(), 2);
+        assert_eq!(d.people[0], Person { name: "Avery Example".into(), reply: "organizer" });
+    }
+
+    #[test]
+    fn a_name_that_is_an_address_or_empty_is_counted_not_listed() {
+        let d = details_of(json!({
+            "attendees": [
+                attendee("alex@corp.test", "alex@corp.test", "accepted"),
+                attendee("", "blank@corp.test", "accepted"),
+                attendee("   ", "space@corp.test", "none"),
+                attendee("Blake Sample", "blake@sample.test", "accepted"),
+                json!({ "type": "required" }),
+            ]
+        }))
+        .unwrap();
+        assert_eq!(d.people.len(), 1);
+        assert_eq!(d.people_more, 4);
+        assert_eq!(clean_name("see www.corp.test"), None);
+        assert_eq!(clean_name("https://corp.test/x"), None);
+    }
+
+    #[test]
+    fn names_lose_control_characters_and_stop_at_sixty() {
+        assert_eq!(clean_name("Blake\u{0}\u{7}\n  Sample\t"), Some("Blake Sample".into()));
+        let long = "N".repeat(90);
+        assert_eq!(clean_name(&long).unwrap().chars().count(), MAX_NAME_CHARS);
+        assert_eq!(clean_name("\u{1}\u{2}"), None);
+    }
+
+    #[test]
+    fn at_most_twenty_people_and_the_rest_are_counted() {
+        let rows: Vec<Value> = (0..27).map(|n| attendee(&format!("Person {n}"), &format!("p{n}@corp.test"), "accepted")).collect();
+        let d = details_of(json!({ "attendees": rows })).unwrap();
+        assert_eq!(d.people.len(), MAX_PEOPLE);
+        assert_eq!(d.people_more, 7);
+        assert_eq!(d.people[19].name, "Person 19");
+    }
+
+    const TEAMS_INVITE: &str = "Agenda: capacity sizing and the cost estimate.\r\nPlease read the draft first.\r\n\r\n________________________________________________________________________________\r\nMicrosoft Teams meeting\r\nJoin: https://teams.example.test/l/meetup-join/19%3ameeting_SECRETTOKEN/0\r\nMeeting ID: 123 456 789 012\r\nPasscode: aB3dEf";
+    const ZOOM_INVITE: &str = "Quick intro and a look at the depot list. Notes at www.docs.example.test/notes or mail ana@corp.test\r\nJoin Zoom Meeting\r\nhttps://zoom.example.test/j/98765432101?pwd=SECRETPWD\r\nMeeting ID: 987 6543 2101\r\nPasscode: 424242";
+
+    #[test]
+    fn a_teams_invite_keeps_the_agenda_and_drops_the_join_block() {
+        let text = clean_invite(TEAMS_INVITE).unwrap();
+        assert_eq!(text, "Agenda: capacity sizing and the cost estimate. Please read the draft first.");
+        for secret in ["https", "teams.example", "SECRETTOKEN", "123 456", "Passcode", "aB3dEf", "Microsoft Teams", "____"] {
+            assert!(!text.contains(secret), "{secret} reached the answer");
+        }
+    }
+
+    #[test]
+    fn a_zoom_invite_keeps_the_words_and_never_the_link_id_or_passcode() {
+        let text = clean_invite(ZOOM_INVITE).unwrap();
+        assert_eq!(text, "Quick intro and a look at the depot list. Notes at or mail");
+        for secret in ["zoom.example", "SECRETPWD", "9876543", "987 6543", "424242", "Passcode", "www.", "@"] {
+            assert!(!text.contains(secret), "{secret} reached the answer");
+        }
+        let d = details_of(json!({ "bodyPreview": ZOOM_INVITE })).unwrap();
+        let wire = serde_json::to_string(&d).unwrap();
+        assert!(!wire.contains("SECRETPWD") && !wire.contains("424242") && !wire.contains("zoom.example"), "{wire}");
+    }
+
+    #[test]
+    fn each_cut_marker_ends_the_invite_and_a_bare_join_block_leaves_nothing() {
+        for marker in ["Microsoft Teams", "Join on your computer", "Join Zoom", "Meeting ID", "Passcode", "Dial in:"] {
+            let raw = format!("Words before.\r\nthing {marker} here\r\nWords after.");
+            assert_eq!(clean_invite(&raw).as_deref(), Some("Words before."), "{marker}");
+        }
+        assert_eq!(clean_invite("Words before.\n________\nWords after.").as_deref(), Some("Words before."));
+        assert_eq!(clean_invite("Words 7_______ stay.").as_deref(), Some("Words 7_______ stay."));
+        assert_eq!(clean_invite("Microsoft Teams meeting\r\nhttps://t.example.test/x"), None);
+        assert_eq!(clean_invite("  \r\n  "), None);
+        assert_eq!(clean_invite("https://a.example.test www.b.example.test c@d.test"), None);
+    }
+
+    #[test]
+    fn the_invite_stops_at_four_hundred_characters_and_collapses_whitespace() {
+        let raw = format!("a   b\t\tc {}", "word ".repeat(200));
+        let text = clean_invite(&raw).unwrap();
+        assert!(text.starts_with("a b c word"));
+        assert!(text.chars().count() <= MAX_INVITE_CHARS);
+        assert!(!text.contains("  "));
+    }
+
+    #[test]
+    fn debug_output_of_a_candidate_hides_the_details() {
+        let d = details_of(json!({ "organizer": { "emailAddress": { "name": "Avery Example", "address": "m@example.test" } } }));
+        let mut c = cand(None, "2026-11-12T18:00:00Z", "work");
+        c.details = d;
+        assert!(!format!("{c:?}").contains("Avery"));
+    }
+
+    // Section: the cleaner on other services' invites and on hostile text (invented tokens, ids and hosts)
+
+    /// The final serialized `details` for an event with this body preview and organizer name.
+    fn wire_of(body: &str, organizer: &str) -> String {
+        let d = details_of(json!({ "bodyPreview": body, "organizer": { "emailAddress": { "name": organizer, "address": "org@host.example" } } }));
+        serde_json::to_string(&d).unwrap()
+    }
+
+    fn assert_none_of(wire: &str, secrets: &[&str]) {
+        for secret in secrets {
+            assert!(!wire.contains(secret), "{secret} reached the answer: {wire}");
+        }
+    }
+
+    #[test]
+    fn a_google_meet_invite_keeps_nothing_of_the_room_the_number_or_the_pin() {
+        let invite = "Planning sync for the quarter.\r\nJoin with Google Meet\r\nhttps://meet.example/abc-defg-hij\r\nOr dial: (US) +1 555-123-4567 PIN: 123456789#";
+        // "Join with Google Meet" is an everyday phrase on a line of its own (no colon, no digit after it): it stays, the link line and the
+        // number line after it do not.
+        assert_eq!(clean_invite(invite).as_deref(), Some("Planning sync for the quarter. Join with Google Meet"));
+        // A bare link before any marker, and a number alone on a line.
+        let bare = "Agenda first.\r\nRoom: meet.example/abc-defg-hij\r\nDial +1 555 123 4567 then 987654321";
+        assert_eq!(clean_invite(bare).as_deref(), Some("Agenda first. Room:"));
+        let wire = wire_of(invite, "Avery Example");
+        assert_none_of(&wire, &["meet.example", "abc-defg-hij", "555", "123456789", "PIN", "https", "dial"]);
+        assert_none_of(&wire_of(bare, "Avery Example"), &["meet.example", "abc-defg-hij", "555", "987654321"]);
+    }
+
+    #[test]
+    fn a_webex_invite_keeps_nothing_of_the_number_or_the_password() {
+        let invite = "Quarterly review with the team.\r\nJoin from Webex\r\nMeeting number: 2551 234 5678\r\nPassword: Tk3xYz\r\nhttps://team.webex.example/meet/avery";
+        assert_eq!(clean_invite(invite).as_deref(), Some("Quarterly review with the team. Join from Webex"));
+        let no_webex_word = "Quarterly review.\r\nMeeting number: 2551 234 5678\r\nPassword: Tk3xYz";
+        assert_eq!(clean_invite(no_webex_word).as_deref(), Some("Quarterly review."));
+        assert_none_of(&wire_of(invite, "Avery Example"), &["2551", "5678", "Tk3xYz", "team.webex", "meet/avery", "https"]);
+    }
+
+    #[test]
+    fn a_german_zoom_invite_cannot_hide_behind_the_hyphen() {
+        let invite = "Kurze Vorstellung der Zahlen.\r\nMeeting-ID: 912 3456 7890\r\nKenncode: 123456";
+        assert_eq!(clean_invite(invite).as_deref(), Some("Kurze Vorstellung der Zahlen."));
+        assert_eq!(clean_invite("Kurz.\r\nCode secret : 654321").as_deref(), Some("Kurz."));
+        assert_eq!(clean_invite("Kurz.\r\nAccess code 111222").as_deref(), Some("Kurz."));
+        assert_eq!(clean_invite("Kurz.\r\nConference ID 5551212").as_deref(), Some("Kurz."));
+        assert_eq!(clean_invite("Kurz.\r\nJoin by phone +49 30 123456").as_deref(), Some("Kurz."));
+        assert_eq!(clean_invite("Kurz.\r\nDial-in: x").as_deref(), Some("Kurz."));
+        assert_eq!(clean_invite("Kurz.\r\n-::~:~::~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~::~:~::-").as_deref(), Some("Kurz."));
+        assert_none_of(&wire_of(invite, "Avery Example"), &["912", "7890", "123456", "Kenncode"]);
+    }
+
+    #[test]
+    fn links_with_no_scheme_phone_and_sip_addresses_and_ids_are_removed_word_by_word() {
+        let text = "Notes at host.example/j/12345?x=secret and tel:+1555 and sip:room.example plus short.example/Ab3 and code 54321 end.";
+        assert_eq!(clean_invite(text).as_deref(), Some("Notes at and and plus and code end."));
+        // The digit rule cuts a sentence with nine or more digits, however they are spaced.
+        assert_eq!(clean_invite("Fine words. Call 555 123 4567 now. Never seen.").as_deref(), Some("Fine words."));
+        assert_eq!(clean_invite("Fine words. Call (555) 123-4567 now.").as_deref(), Some("Fine words."));
+        assert_none_of(&wire_of(text, "Avery Example"), &["host.example", "secret", "tel:", "sip:", "short.example", "54321"]);
+    }
+
+    #[test]
+    fn an_invisible_character_inside_a_scheme_or_www_cannot_hide_it() {
+        for hidden in ["\u{200B}", "\u{200C}", "\u{200D}", "\u{2060}", "\u{FEFF}", "\u{202E}", "\u{200E}", "\u{00AD}"] {
+            let text = format!("Words. ht{hidden}tps://secret.example/x ww{hidden}w.corp.example and ma{hidden}ry@corp.example done.");
+            let got = clean_invite(&text).unwrap();
+            assert_eq!(got, "Words. and done.", "hidden {hidden:?}");
+            assert_none_of(&wire_of(&text, "Avery Example"), &["secret", "corp", "https", "ww"]);
+        }
+        // A marker split by a hidden character or a tab is still a marker.
+        assert_eq!(clean_invite("Words.\nMeeting\tID: 123456").as_deref(), Some("Words."));
+        assert_eq!(clean_invite("Words.\nMeet\u{200B}ing  I\u{200D}D: 1").as_deref(), Some("Words."));
+        assert_eq!(clean_invite("Words.\nPASS\u{FEFF}CODE 12").as_deref(), Some("Words."));
+    }
+
+    #[test]
+    fn ordinary_words_that_end_a_sentence_stay() {
+        assert_eq!(clean_invite("The review will start. Bring your notes.").as_deref(), Some("The review will start. Bring your notes."));
+        assert_eq!(clean_invite("Version v1.2 ships. See e.g. the list.").as_deref(), Some("Version v1.2 ships. See e.g. the list."));
+        assert_eq!(clean_invite("Room 4 is booked until 11.").as_deref(), Some("Room 4 is booked until 11."));
+    }
+
+    #[test]
+    fn a_name_that_is_a_bare_domain_or_hides_a_company_in_brackets_is_cleaned() {
+        assert_eq!(clean_name("corp.example"), None);
+        assert_eq!(clean_name("  short.example/abc "), None);
+        assert_eq!(clean_name("Avery Example (Orchard Example)").as_deref(), Some("Avery Example"));
+        assert_eq!(clean_name("Avery Example [Orchard Example]").as_deref(), Some("Avery Example"));
+        assert_eq!(clean_name("Avery Example (Ops) (Orchard Example)").as_deref(), Some("Avery Example"));
+        assert_eq!(clean_name("(Orchard Example)"), None);
+        assert_eq!(clean_name("Dr. Avery Example").as_deref(), Some("Dr. Avery Example"));
+        assert_eq!(clean_name("Avery Example, Orchard Example (EMEA").as_deref(), Some("Avery Example, Orchard Example (EMEA"));
+        assert_eq!(clean_name("Avery\u{200B} Exa\u{200D}mple").as_deref(), Some("Avery Example"));
+        let d = details_of(json!({ "organizer": { "emailAddress": { "name": "Avery Example (Orchard Example)", "address": "a@host.example" } }, "attendees": [attendee("corp.example", "x@corp.example", "accepted"), attendee("Blake Sample [Orchard]", "b@x.example", "accepted")] })).unwrap();
+        let wire = serde_json::to_string(&d).unwrap();
+        assert_none_of(&wire, &["Orchard", "corp.example", "@"]);
+        assert_eq!(d.people.len(), 2);
+        assert_eq!(d.people_more, 1);
+    }
+
+    #[test]
+    fn an_organizer_beyond_the_first_twenty_attendees_is_counted_once() {
+        let mut rows: Vec<Value> = (0..24).map(|n| attendee(&format!("Person {n}"), &format!("p{n}@corp.test"), "accepted")).collect();
+        rows.insert(20, attendee("Avery Example", "AVERY@example.test", "accepted"));
+        let d = details_of(json!({ "organizer": { "emailAddress": { "name": "Avery Example", "address": "avery@example.test" } }, "attendees": rows })).unwrap();
+        assert_eq!(d.people.len(), MAX_PEOPLE);
+        assert_eq!(d.people[0], Person { name: "Avery Example".into(), reply: "organizer" });
+        // 25 attendees including the organizer: 20 listed, 5 counted, 25 in all.
+        assert_eq!(d.people_more, 5);
+        assert_eq!(d.people.len() as u32 + d.people_more, 25);
+        assert_eq!(d.people.iter().filter(|p| p.name == "Avery Example").count(), 1);
+        // With the organizer absent from the attendees they are one more person.
+        let d2 = details_of(json!({ "organizer": { "emailAddress": { "name": "Avery Example", "address": "avery@example.test" } }, "attendees": [attendee("Blake Sample", "b@x.test", "accepted")] })).unwrap();
+        assert_eq!(d2.people.len() as u32 + d2.people_more, 2);
+    }
+
+    // Section: round 2 of the cleaner
+
+    #[test]
+    fn more_markers_cut_in_other_languages() {
+        for line in ["Passwort: x", "Kennwort x1", "C\u{f3}digo de acceso 77", "Contrase\u{f1}a: x", "Mot de passe: x", "Senha: x", "PW: x", "pwd x", "Password: AbCd1234", "Dial-in: x", "PIN 1234", "Google Meet x1"] {
+            let text = format!("Kurz.\r\n{line}\r\nNach dem Block.");
+            assert_eq!(clean_invite(&text).as_deref(), Some("Kurz."), "{line}");
+        }
+    }
+
+    #[test]
+    fn everyday_words_do_not_wipe_a_sentence_that_only_mentions_them() {
+        let agenda = "Agenda: rotate the shared password list, then Webex licences.";
+        assert_eq!(clean_invite(agenda).as_deref(), Some(agenda));
+        assert_eq!(clean_invite("Agenda: the pin on the board and a dial in plan for later.").as_deref(), Some("Agenda: the pin on the board and a dial in plan for later."));
+        assert_eq!(clean_invite("Please use senha or contrase\u{f1}a managers only.").as_deref(), Some("Please use senha or contrase\u{f1}a managers only."));
+        // "Join the Webex meeting" and then a link line: the words before the link, and no link.
+        assert_eq!(clean_invite("Join the Webex meeting\r\nhttps://team.example/meet/x").as_deref(), Some("Join the Webex meeting"));
+        // A marker word that starts the line, or is followed by a colon or a word with a digit, still cuts.
+        assert_eq!(clean_invite("Words.\r\nPassword: AbCd1234").as_deref(), Some("Words."));
+        assert_eq!(clean_invite("Words.\r\nPassword AbCd1234").as_deref(), Some("Words."));
+        assert_eq!(clean_invite("Words.\r\nThe password is x7y.").as_deref(), Some("Words."));
+        assert_eq!(clean_invite("Words.\r\nThe password: hidden").as_deref(), Some("Words."));
+        // Inside a longer word it is not a marker at all.
+        assert_eq!(clean_invite("Words.\r\nSpinning wheels: ok").as_deref(), Some("Words. Spinning wheels: ok"));
+        // The unambiguous markers cut always.
+        assert_eq!(clean_invite("Words.\r\nsee the meeting id below").as_deref(), Some("Words."));
+        assert_eq!(clean_invite("Words.\r\nThe passcode for this call").as_deref(), Some("Words."));
+    }
+
+    #[test]
+    fn full_width_digits_and_other_scripts_count_as_digits() {
+        assert_eq!(clean_invite("Fine. ID \u{ff11}\u{ff12}\u{ff13}\u{ff14}\u{ff15}\u{ff16}\u{ff17}\u{ff18}\u{ff19} here. After.").as_deref(), Some("Fine."));
+        assert_eq!(clean_invite("Fine. Code \u{661}\u{662}\u{663}\u{664}\u{665}\u{666} end.").as_deref(), Some("Fine. Code end."));
+        assert_eq!(clean_name("Ana \u{ff11}\u{ff12}\u{ff13}\u{ff14}\u{ff15}\u{ff16}\u{ff17}\u{ff18}\u{ff19}"), None);
+    }
+
+    #[test]
+    fn other_dots_and_invisible_marks_cannot_hide_a_host() {
+        assert_eq!(clean_invite("Words. see meet\u{2024}example/abc and meet\u{ff0e}example now.").as_deref(), Some("Words. see and now."));
+        // The ideographic full stop ends a sentence of running text; only ASCII letters after it make a host.
+        let ja = "\u{4f1a}\u{8b70}\u{306e}\u{8cc7}\u{6599}\u{3092}\u{78ba}\u{8a8d}\u{3057}\u{3066}\u{304f}\u{3060}\u{3055}\u{3044}\u{3002}\u{6b21}\u{306e}\u{8b70}\u{984c}";
+        assert_eq!(clean_invite(ja).as_deref(), Some(ja));
+        assert_eq!(clean_invite("Words. go\u{3002}example/abc end.").as_deref(), Some("Words. end."));
+        assert_eq!(clean_invite("Words. ht\u{34f}tps://x.example/y and ww\u{e0001}w.corp.example end.").as_deref(), Some("Words. and end."));
+        assert_eq!(clean_name("Ana corp\u{2024}example"), None);
+        assert_eq!(clean_name("A\u{34f}na\u{e0041} Example").as_deref(), Some("Ana Example"));
+    }
+
+    #[test]
+    fn a_meeting_code_shaped_word_is_dropped() {
+        assert_eq!(clean_invite("Room abc-defg-hij now.").as_deref(), Some("Room now."));
+        assert_eq!(clean_invite("Room (abc-defg-hij), now.").as_deref(), Some("Room now."));
+        assert_eq!(clean_invite("The well-known-fact stays: a-bcd-ef too.").as_deref(), Some("The well-known-fact stays: a-bcd-ef too."));
+    }
+
+    #[test]
+    fn digit_groups_that_total_seven_or_more_are_dropped_as_one_run() {
+        assert_eq!(clean_invite("Ref 1234 5678 done.").as_deref(), Some("Ref done."));
+        assert_eq!(clean_invite("Ref 123-4567 done.").as_deref(), Some("Ref done."));
+        assert_eq!(clean_invite("Ref 123.456.7890 done.").as_deref(), Some("Ref done."));
+        assert_eq!(clean_invite("Ref 123, 456, 78 done.").as_deref(), Some("Ref 123, 456, 78 done."));
+        // Everyday numbers survive.
+        let ok = "Meet at 10:30 in 2026 for $1,250 by 4.12 with 3 or 12 people.";
+        assert_eq!(clean_invite(ok).as_deref(), Some(ok));
+        // A long price is a five-digit word and goes (best effort, the safe side).
+        assert_eq!(clean_invite("Budget 1,250,000 later.").as_deref(), Some("Budget later."));
+        assert_eq!(clean_invite("Items 12-34 and 12 34 56 stay.").as_deref(), Some("Items 12-34 and 12 34 56 stay."));
+    }
+
+    #[test]
+    fn a_name_with_any_host_shaped_word_or_a_phone_number_is_no_name() {
+        assert_eq!(clean_name("Join meet.example/j/abc"), None);
+        assert_eq!(clean_name("Ana corp.example"), None);
+        assert_eq!(clean_name("+1 555 123 4567"), None);
+        assert_eq!(clean_name("Ana 555 1234"), Some("Ana 555 1234".into()));
+        assert_eq!(clean_name("Dr. Avery Example").as_deref(), Some("Dr. Avery Example"));
+        assert_eq!(clean_name("J.R. Smith").as_deref(), Some("J.R. Smith"));
+        assert_eq!(clean_name("St. John"), Some("St. John".into()));
     }
 }

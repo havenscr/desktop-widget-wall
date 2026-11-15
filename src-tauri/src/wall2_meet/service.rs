@@ -1,7 +1,7 @@
 //! The silent refresh and the calendar read, behind traits so tests can fake the network.
 
 use super::auth::{TokenClient, TokenReply, SCOPE};
-use super::graph::{merge, merge_capped, shape_events, Clock, Ctx, Diag, Kind, RealClock, BUDGET, MAX_DAY_EVENTS, READ_TIMEOUT, utc_iso, Candidate, GraphClient, GraphReply};
+use super::graph::{merge, merge_capped, shape_events, Details, Clock, Ctx, Diag, Kind, RealClock, BUDGET, MAX_DAY_EVENTS, READ_TIMEOUT, utc_iso, Candidate, GraphClient, GraphReply};
 use super::meetlog::{format_line, format_line_detail};
 use super::reason::{is_valid_reason, GRAPH_TIMEOUT, STORE_READ, STORE_WRITE};
 use super::store::{Fetch, SecretStore};
@@ -274,6 +274,8 @@ pub struct MeetingOut {
     pub start: String,
     pub end: String,
     pub can_join: bool,
+    /// Names and cleaned invite text, from the next read only. Never an address, link or id.
+    pub details: Option<Details>,
 }
 
 #[derive(Debug, Serialize)]
@@ -502,6 +504,11 @@ fn read_window(
             refreshed = true;
             continue;
         }
+        // The wider next read (people, invite text) refused: the same read once more with the plain fields.
+        if ctx.wide() && matches!(reply, GraphReply::Failed(_)) && diag.as_ref().is_some_and(|d| d.status == 403) {
+            ctx.fall_back_to_plain();
+            continue;
+        }
         if expanded && !fell_back && diag.as_ref().is_some_and(|d| matches!(d.status, 400 | 501)) {
             refusal_pending = true;
             expanded = false;
@@ -680,7 +687,7 @@ pub fn read_next_only(
             if let Some(url) = cand.join {
                 guard.map.insert(key.clone(), (cand.account_id.clone(), url));
             }
-            MeetingOut { key, account_id: cand.account_id, title: cand.title, start: cand.start, end: cand.end, can_join }
+            MeetingOut { key, account_id: cand.account_id, title: cand.title, start: cand.start, end: cand.end, can_join, details: cand.details }
         })
         .collect();
     drop(guard);
@@ -997,11 +1004,12 @@ mod tests {
 
     #[derive(Clone, Copy)]
     enum GraphStep { Ok, Unauthorized, Status(u16) }
-    struct ScriptGraph { steps: RefCell<Vec<GraphStep>>, expanded: RefCell<Vec<bool>> }
+    struct ScriptGraph { steps: RefCell<Vec<GraphStep>>, expanded: RefCell<Vec<bool>>, wide: RefCell<Vec<bool>> }
     impl ScriptGraph {
-        fn new(steps: Vec<GraphStep>) -> Self { Self { steps: RefCell::new(steps), expanded: RefCell::new(Vec::new()) } }
-        fn next(&self, expanded: bool) -> (GraphReply, Option<Diag>) {
+        fn new(steps: Vec<GraphStep>) -> Self { Self { steps: RefCell::new(steps), expanded: RefCell::new(Vec::new()), wide: RefCell::new(Vec::new()) } }
+        fn next(&self, expanded: bool, wide: bool) -> (GraphReply, Option<Diag>) {
             self.expanded.borrow_mut().push(expanded);
+            self.wide.borrow_mut().push(wide);
             let step = self.steps.borrow_mut().remove(0);
             match step {
                 GraphStep::Ok => (GraphReply::Ok(body("Meeting", "script")), None),
@@ -1014,9 +1022,9 @@ mod tests {
         }
     }
     impl GraphClient for ScriptGraph {
-        fn calendar_view(&self, _access: &str, _start: &str, _end: &str) -> GraphReply { self.next(true).0 }
-        fn calendar_view_diag(&self, _access: &str, _start: &str, _end: &str, _ctx: &Ctx) -> (GraphReply, Option<Diag>) { self.next(true) }
-        fn calendar_view_without_expand_diag(&self, _access: &str, _start: &str, _end: &str, _ctx: &Ctx) -> (GraphReply, Option<Diag>) { self.next(false) }
+        fn calendar_view(&self, _access: &str, _start: &str, _end: &str) -> GraphReply { self.next(true, false).0 }
+        fn calendar_view_diag(&self, _access: &str, _start: &str, _end: &str, ctx: &Ctx) -> (GraphReply, Option<Diag>) { self.next(true, ctx.wide()) }
+        fn calendar_view_without_expand_diag(&self, _access: &str, _start: &str, _end: &str, ctx: &Ctx) -> (GraphReply, Option<Diag>) { self.next(false, ctx.wide()) }
     }
 
     fn acct(id: &str) -> Account {
@@ -1110,6 +1118,44 @@ mod tests {
         core.lock().unwrap().expand_refused.insert("work".into(), ExpandRefusal { signature: account_signature(&acct("work")), retry_at: NOW + 9, logged: true });
         sign_out("work", &store, &core, &links);
         assert!(core.lock().unwrap().expand_refused.is_empty());
+    }
+
+    #[test]
+    fn a_refused_wider_next_read_is_asked_again_with_the_plain_fields() {
+        let (store, core) = setup();
+        let links = Mutex::new(Links::default());
+        let tokens = FakeTokens::new(vec![ok_token("a", None)]);
+        let graph = ScriptGraph::new(vec![GraphStep::Status(403), GraphStep::Ok]);
+        let p = read_next_only(&[acct("work")], &store, &tokens, &graph, &core, &links, NOW, Only::All);
+        assert_eq!(p.accounts[0].state, "ok");
+        assert_eq!(p.meetings.len(), 1);
+        assert!(p.meetings[0].details.is_none());
+        assert_eq!(graph.steps.borrow().len(), 0);
+        // The first ask was for the wider fields, the second for the plain ones, both with the expand.
+        assert_eq!(*graph.wide.borrow(), vec![true, false]);
+        assert_eq!(*graph.expanded.borrow(), vec![true, true]);
+    }
+
+    #[test]
+    fn a_refused_plain_read_still_fails_the_account() {
+        let (store, core) = setup();
+        let links = Mutex::new(Links::default());
+        let tokens = FakeTokens::new(vec![ok_token("a", None)]);
+        let graph = ScriptGraph::new(vec![GraphStep::Status(403), GraphStep::Status(403)]);
+        let p = read_next_only(&[acct("work")], &store, &tokens, &graph, &core, &links, NOW, Only::All);
+        assert_eq!(p.accounts[0].state, "unavailable");
+        // Wide once, plain once, and then it gives up: a refused plain read is not asked again.
+        assert_eq!(*graph.wide.borrow(), vec![true, false]);
+    }
+
+    #[test]
+    fn the_day_read_never_asks_for_the_wider_fields() {
+        let (store, core) = setup();
+        let links = Mutex::new(Links::default());
+        let tokens = FakeTokens::new(vec![ok_token("a", None)]);
+        let graph = ScriptGraph::new(vec![GraphStep::Ok]);
+        read_day(&[acct("work")], &store, &tokens, &graph, &core, &links, NOW, NOW, NOW + 3600);
+        assert_eq!(*graph.wide.borrow(), vec![false]);
     }
 
     #[test]

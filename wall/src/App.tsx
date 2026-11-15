@@ -11,6 +11,7 @@ import { Stage } from './stage/Stage';
 import { HoverTipLayer } from './ui/HoverTip';
 import { ToolsDrawer } from './tools/ToolsDrawer';
 import { useSignalStore } from './signals/store';
+import { startAutoSwitch } from './meet/autoSwitch';
 import { LeaveBanner } from './signals/LeaveBanner';
 import { FloatingRecordingChip } from './signals/RecordingChip';
 import { DrawerScrim } from './ribbon/DrawerScrim';
@@ -27,6 +28,8 @@ export function App() {
   useEffect(() => startAudio(), []);
   useEffect(() => acquireNowPlaying(), []);
   useEffect(() => useSignalStore.getState().init(), []);
+  // Meet opens by itself when a Teams or Zoom call starts.
+  useEffect(() => startAutoSwitch(), []);
 
   return (
     <Stage>

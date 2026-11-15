@@ -4010,6 +4010,8 @@ pub fn run() {
             wall2_meet::wall2_open_event,
             wall2_meet::wall2_meet_open_status,
             wall2_meet::wall2_meet_sign_out,
+            wall2_meet::checklist::wall2_meet_checklist,
+            wall2_meet::checklist::wall2_meet_checklist_open,
             wall2_spotify::wall2_spotify_status,
             wall2_spotify::wall2_spotify_sign_in,
             wall2_spotify::wall2_spotify_cancel_sign_in,

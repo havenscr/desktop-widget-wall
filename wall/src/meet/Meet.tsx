@@ -1,186 +1,189 @@
-import { IconVideo } from '@tabler/icons-react';
-import { useToolsStore } from '../tools/store';
+import { useEffect } from 'react';
+import { formatClock } from '../clock/format';
+import { useDayFeed } from '../ribbon/useDayEvents';
+import { usePlaceStore } from '../state/places';
+import { useSignalStore } from '../signals/store';
 import { troubleLine } from '../tools/trouble';
+import { tip } from '../ui/HoverTip';
+import { useVisible } from '../ui/useVisible';
+import { Capture } from './Capture';
+import { Hero } from './Hero';
+import { Island } from './Island';
+import { NextCard, type NextCardProps } from './NextCard';
+import { pickCallMeeting, refreshCallMeeting } from './callMeeting';
 import {
   calendarNotAvailable,
   clockText,
-  countdownText,
-  isSoon,
-  joinIsUrgent,
-  laterEmpty,
-  laterMeetings,
-  mayBeOutOfDate,
   nextMeeting,
+  occurrenceId,
   timeRange,
   visibleMeetings,
   type Meeting,
 } from './model';
+import { HeroChip, TroubleLine } from './parts';
+import { useMeetStore } from './meetStore';
+import { latestEnd, meetingsAfter, todayRest } from './todayModel';
+import { useChecklist } from './useChecklist';
 import { useMeet, type MeetState } from './useMeet';
 
-/** Left edge of the Meet body in stage pixels: the Work tab's first panel (`.focus`), right of the clock. */
-export const MEET_LEFT_PX = 482;
-
-/** The most meetings Later lists; the rest are a count in its header. */
-export const LATER_MAX = 14;
-
-/** Filled only for a meeting that is live or starts within 15 minutes; every other Join is quiet and outlined. */
-function Join({ meeting, big, now, onJoin }: { meeting: Meeting; big?: boolean; now: number; onJoin: (key: string) => void }) {
-  const urgent = joinIsUrgent(meeting, now);
-  const size = big ? 'meet-join-big' : 'meet-join';
+/** A hero that only says one thing (not set up, loading, nothing scheduled): a label, a headline and a line or two. */
+function HeroNote({ label, headline, lines, children }: { label?: string; headline: string; lines?: (string | null)[]; children?: React.ReactNode }) {
   return (
-    <button
-      type="button"
-      className={urgent ? `btn cy ${size}` : `btn meet-quiet ${size}`}
-      aria-label={`Join: ${meeting.title}`}
-      onClick={() => onJoin(meeting.key)}
-    >
-      <IconVideo size={big ? 24 : 20} aria-hidden="true" />
-      Join
-    </button>
-  );
-}
-
-/** The one amber line when a calendar account needs attention: its click opens Tools at Accounts. */
-function TroubleLine({ text, plain }: { text: string; plain?: boolean }) {
-  const open = useToolsStore((s) => s.openDrawer);
-  return (
-    <div className="meet-trouble">
-      {text}
-      {!plain && (
-        <>
-          {' '}
-          <button type="button" className="meet-trouble-link" onClick={() => open('accounts')}>
-            Open Tools
-          </button>
-        </>
-      )}
+    <div className="meet-hero meet-hero-note" aria-label="Next meeting">
+      {label && <span className="k meet-k">{label}</span>}
+      <div className="meet-count">{headline}</div>
+      {(lines ?? []).filter((l): l is string => !!l).map((l) => (
+        <div key={l} className="meet-xs meet-dimline">
+          {l}
+        </div>
+      ))}
+      {children}
+      <HeroChip />
     </div>
   );
 }
 
-function NextPanel({ m, labels, asOf }: { m: MeetState; labels: Map<string, string>; asOf?: { meetings: Meeting[]; at: number } }) {
-  const next = asOf ? nextMeeting(asOf.meetings, m.now) : nextMeeting(visibleMeetings(m.data), m.now);
-  const soon = !asOf && isSoon(next, m.now);
-  const trouble = troubleLine(m.data?.accounts ?? []);
-  const outOfDate = !asOf && mayBeOutOfDate(m.data?.accounts ?? []);
-  return (
-    <section className={asOf ? 'panel meet-next dimmed' : 'panel meet-next'} aria-label="Next meeting">
-      <span className="k">Next</span>
-      {next ? (
-        <>
-          <div className="meet-title">{next.title}</div>
-          <div className="s">
-            {timeRange(next)} · {labels.get(next.accountId) ?? ''}
-          </div>
-          {!asOf && <div className={`meet-count${soon ? ' soon' : ''}`}>{countdownText(next, m.now)}</div>}
-          {trouble ? <TroubleLine text={trouble} /> : outOfDate && <div className="xs meet-stale">may be out of date</div>}
-          {asOf && <div className="xs meet-stale">as of {clockText(asOf.at)}</div>}
-          {!asOf && next.canJoin && <Join meeting={next} big now={m.now} onJoin={m.join} />}
-          {!asOf && m.notice && <div className="xs meet-notice">{m.notice}</div>}
-        </>
-      ) : (
-        <div className="meet-count">{countdownText(undefined, m.now)}</div>
-      )}
-    </section>
-  );
-}
-
-function LaterPanel({ m, labels }: { m: MeetState; labels: Map<string, string> }) {
-  const all = laterMeetings(visibleMeetings(m.data), m.now);
-  const later = all.slice(0, LATER_MAX);
-  const empty = laterEmpty(m.data?.accounts ?? [], m.lastOk);
-  return (
-    <section className="panel meet-later" aria-label="Later meetings">
-      <div className="row sb">
-        <span className="k">Later</span>
-        {all.length > later.length && <span className="xs">{all.length - later.length} more later today</span>}
-      </div>
-      {later.length === 0 ? (
-        <div className="meet-later-empty">
-          <div className="s">{empty.headline}</div>
-          {empty.notes.map((n) => (
-            <div key={n} className="xs meet-dimline">
-              {n}
-            </div>
-          ))}
-        </div>
-      ) : (
-        <ul className="meet-list">
-          {later.map((x) => (
-            <li key={x.key} className="meet-row" title={`${x.title}\n${timeRange(x)} · ${labels.get(x.accountId) ?? ''}`}>
-              <div className="meet-row-text">
-                <div className="b6 ellipsis meet-name">{x.title}</div>
-                <div className="s ellipsis meet-when">
-                  {timeRange(x)} · {labels.get(x.accountId) ?? ''}
-                </div>
-              </div>
-              {x.canJoin && <Join meeting={x} now={m.now} onJoin={m.join} />}
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
-  );
-}
-
-/** A Later card that only states why the list is empty, so the upper right is filled in every state. */
-function LaterNote({ text, link }: { text: string; link?: boolean }) {
-  const open = useToolsStore((s) => s.openDrawer);
-  return (
-    <section className="panel meet-later" aria-label="Later meetings">
-      <span className="k">Later</span>
-      <div className="meet-later-empty">
-        <div className="s">
-          {text}
-          {link && (
-            <>
-              {' '}
-              <button type="button" className="meet-trouble-link" onClick={() => open('accounts')}>
-                Open Tools
-              </button>
-            </>
-          )}
-        </div>
-      </div>
-    </section>
-  );
-}
-
 /** No calendar can be read and there is no earlier meeting to show: the headline, the last good read and the way to Tools. */
-function UnavailablePanel({ m }: { m: MeetState }) {
+function UnavailableHero({ m }: { m: MeetState }) {
   const trouble = troubleLine(m.data?.accounts ?? []);
   return (
-    <section className="panel meet-empty" aria-label="Calendar not available">
+    <div className="meet-hero meet-hero-note" aria-label="Calendar not available">
       <div className="meet-headline-block">
         <div className="meet-headline">Calendar not available</div>
-        <div className="xs">{m.lastOk !== null ? `Last good read at ${clockText(m.lastOk)}` : 'No good read yet'}</div>
+        <div className="meet-xs meet-dimline">{m.lastOk !== null ? `Last good read at ${clockText(m.lastOk)}` : 'No good read yet'}</div>
       </div>
-      {/* The Later card beside this one carries the one Open Tools link. */}
-      {trouble && <TroubleLine text={trouble} plain />}
-      {m.notice && <div className="xs meet-notice">{m.notice}</div>}
-    </section>
+      {trouble && <TroubleLine text={trouble} />}
+      {m.notice && <div className="meet-xs meet-notice">{m.notice}</div>}
+      <ReadAgain m={m} />
+      <HeroChip />
+    </div>
   );
 }
 
-/** Nothing scheduled: a small card as wide as its words, and which account could not be read when one could not. */
-function EmptyPanel({ m }: { m: MeetState }) {
+/** Reads the calendar again now, for a state where nothing can be shown fresh. */
+function ReadAgain({ m }: { m: MeetState }) {
+  return (
+    <button type="button" className="meet-btn meet-retry" onClick={m.refresh} {...tip('Read the calendar again now')}>
+      Read again
+    </button>
+  );
+}
+
+/** Nothing scheduled: what the calendar says, and which account could not be read when one could not. */
+function EmptyHero({ m }: { m: MeetState }) {
   const accounts = m.data?.accounts ?? [];
   const checking = accounts.some((a) => a.state === 'checking');
   const problem = accounts.filter((a) => a.state !== 'ok' && a.state !== 'checking');
   const headline = checking ? 'Checking calendars' : 'Nothing scheduled in the next 24 hours';
   const sub = problem.length > 0 ? `${problem.map((a) => a.label).join(' and ')} could not be read` : m.lastOk !== null ? `Last checked at ${clockText(m.lastOk)}` : null;
+  const trouble = troubleLine(accounts);
   return (
-    <section className="panel meet-empty" aria-label="Nothing scheduled">
-      <div className="meet-count">{headline}</div>
-      {sub && <div className="s">{sub}</div>}
-      {troubleLine(accounts) && <TroubleLine text={troubleLine(accounts) as string} />}
+    <HeroNote headline={headline} lines={[sub]}>
+      {trouble && <TroubleLine text={trouble} />}
+    </HeroNote>
+  );
+}
+
+/** The last known meeting when no account can be read: dimmed, marked "as of", no countdown, no keys. */
+function StaleHero({ m, meeting, label, at }: { m: MeetState; meeting: Meeting; label: string; at: number }) {
+  const trouble = troubleLine(m.data?.accounts ?? []);
+  const clock = formatClock(new Date(m.now));
+  return (
+    <div className="meet-hero dimmed" aria-label="Next meeting" data-tone="stale">
+      <div className="meet-hero-st">
+        <span className="meet-st" data-tone="stale">
+          <i aria-hidden="true" />
+          Last known meeting
+        </span>
+        <span className="meet-time">
+          {clock.time}
+          <small>{clock.meridiem}</small>
+        </span>
+      </div>
+      <div className="meet-hero-title" data-long={meeting.title.length > 50 ? 'true' : undefined} {...tip(meeting.title)}>
+        {meeting.title}
+      </div>
+      <div className="meet-hero-below">
+        <div className="meet-by ellipsis">
+          {timeRange(meeting)} · {label}
+        </div>
+        <div className="meet-xs meet-stale">as of {clockText(at)}</div>
+        {trouble && <TroubleLine text={trouble} />}
+      </div>
+      <div className="meet-hero-last">
+        <ReadAgain m={m} />
+        <HeroChip />
+      </div>
+    </div>
+  );
+}
+
+function Layout({ hero, next, island, title }: { hero: React.ReactNode; next: NextCardProps; island: React.ReactNode; title?: string }) {
+  return (
+    <section className="work meet" data-place="meet" aria-label="Meet">
+      <div className="meet-body">
+        {hero}
+        {island}
+        <NextCard {...next} />
+        <Capture title={title} />
+      </div>
     </section>
   );
 }
 
-/** The Meet tab, laid out right of the clock like Work: next meeting and Join on the left, the rest of the day in the middle, accounts on the right. */
+/** What a state of the calendar puts on the screen, before a running call takes the hero. */
+interface Parts {
+  hero: React.ReactNode;
+  next: NextCardProps;
+  /** The meeting the island and Capture are about, if any. */
+  meeting?: Meeting;
+  /** Details the island may show (none for a dimmed, last known meeting). */
+  details?: Meeting['details'];
+  /** True when the calendar is in its ordinary state (a meeting is next), so a call's Next card can be rebuilt. */
+  ordinary?: boolean;
+}
+
+/**
+ * The Meet tab: the next or running meeting as the hero at the left, an island of what the wall knows about it in the
+ * centre, the meeting after it at the upper right and Capture under it. The frame clock is hidden here; the hero
+ * draws the time. Every state keeps its words and fills its place. While a call is sensed the hero is the call: the
+ * meeting that was current when it started, kept until it ends (or a plain call when there is none), whatever the
+ * calendar says.
+ */
 export function Meet() {
   const m = useMeet();
+  const call = useSignalStore((s) => s.call);
+  const leave = useSignalStore((s) => s.leave);
+  const marks = useMeetStore((s) => s.marks);
+  const callId = useMeetStore((s) => s.callId);
+  const stored = useMeetStore((s) => s.anchor);
+  const setAnchor = useMeetStore((s) => s.setAnchor);
+  const visible = useVisible();
+  const onMeet = usePlaceStore((s) => s.active === 'meet');
+  const day = useDayFeed(visible && onMeet);
+  const { read, reloadSoon } = useChecklist();
+
+  const accounts = m.data?.accounts ?? [];
+  const labels = new Map(accounts.map((a) => [a.id, a.label]));
+  const list = visibleMeetings(m.data);
+
+  // The meeting a running call belongs to: kept for the call's whole life, found again (same occurrence) in each new read.
+  const cid = call ? (callId ?? call.since) : null;
+  const kept = call && stored && stored.callId === cid ? stored.meeting : undefined;
+  const callMeeting = cid === null ? undefined : kept ? refreshCallMeeting(kept, list) : pickCallMeeting(list, cid);
+  useEffect(() => {
+    if (cid !== null && callMeeting && callMeeting !== kept) setAnchor(cid, callMeeting);
+  }, [cid, callMeeting, kept, setAnchor]);
+
+  /** The Next card's words about what follows `hero`: today's count and latest end come from the day feed (the larger of it and the read). */
+  const after = (hero: Meeting | undefined, inCall: boolean, leaveSignal: typeof leave): NextCardProps => {
+    const later = meetingsAfter(list, hero, m.now);
+    const fromDay = todayRest(day.at !== null ? day.events : [], hero, m.now);
+    const fromRead = todayRest(later, hero, m.now);
+    const rest = fromDay.length >= fromRead.length ? fromDay : fromRead;
+    return { kind: 'after', hero, later, todayCount: rest.length, todayLastEnd: latestEnd(rest), labels, now: m.now, inCall, leave: leaveSignal, onJoin: m.join, accounts, lastOk: m.lastOk };
+  };
+
   let message: string | null = null;
   let hint: string | null = null;
   if (m.status === 'unconfigured') {
@@ -195,56 +198,63 @@ export function Meet() {
     message = 'Calendar unavailable';
   }
 
-  if (message) {
-    return (
-      <section className="work meet" data-place="meet" aria-label="Meet">
-        <div className="meet-body" style={{ left: MEET_LEFT_PX }}>
-          <section className="panel meet-next" aria-label="Next meeting">
-            <span className="k">Meet</span>
-            <div className="meet-count">{message}</div>
-            {hint && <div className="xs meet-dimline">{hint}</div>}
-            {m.status === 'error' && (
-              <button type="button" className="btn cy meet-retry" onClick={m.refresh}>
-                Try again
-              </button>
-            )}
-          </section>
-          {m.status === 'loading' ? <LaterNote text="Calendar not read yet." /> : <LaterNote text="No calendar can be read." link />}
-        </div>
-      </section>
-    );
-  }
-
-  const labels = new Map((m.data?.accounts ?? []).map((a) => [a.id, a.label]));
-  const none = calendarNotAvailable(m.data?.accounts ?? []);
+  const none = calendarNotAvailable(accounts);
   // When no account can be read, the last known meeting stays up, dimmed and marked "as of"; the headline only when there is none.
   const lastNext = none && m.lastKnown ? nextMeeting(m.lastKnown.meetings, m.now) : undefined;
-  const empty = none ? !lastNext : !nextMeeting(visibleMeetings(m.data), m.now);
+  const empty = none ? !lastNext : !nextMeeting(list, m.now);
+
+  let parts: Parts;
+  if (message) {
+    parts = {
+      hero: (
+        <HeroNote label="Meet" headline={message} lines={[hint]}>
+          {m.status === 'error' && (
+            <button type="button" className="meet-btn cy meet-retry" onClick={m.refresh} {...tip('Read the calendar again')}>
+              Try again
+            </button>
+          )}
+        </HeroNote>
+      ),
+      next: m.status === 'loading' ? { kind: 'note', text: 'Calendar not read yet.' } : { kind: 'note', text: 'No calendar can be read.', link: true },
+    };
+  } else if (none && empty) {
+    parts = { hero: <UnavailableHero m={m} />, next: { kind: 'note', text: 'No calendar can be read.', link: true } };
+  } else if (none && m.lastKnown && lastNext) {
+    parts = {
+      hero: <StaleHero m={m} meeting={lastNext} label={labels.get(lastNext.accountId) ?? ''} at={m.lastKnown.at} />,
+      meeting: lastNext,
+      next: after(lastNext, false, null),
+    };
+  } else if (empty) {
+    parts = { hero: <EmptyHero m={m} />, next: { kind: 'nothing', accounts, lastOk: m.lastOk } };
+  } else {
+    const hero = nextMeeting(list, m.now) as Meeting;
+    parts = {
+      hero: <Hero m={m} meeting={hero} label={labels.get(hero.accountId) ?? ''} events={day.events} />,
+      meeting: hero,
+      details: hero.details,
+      next: after(hero, false, leave),
+      ordinary: true,
+    };
+  }
+  if (call) {
+    // The call is the hero, whatever the calendar says; the Next card shows what follows the call's meeting.
+    parts = {
+      ...parts,
+      hero: <Hero m={m} meeting={callMeeting} label={callMeeting ? (labels.get(callMeeting.accountId) ?? '') : ''} events={day.events} />,
+      meeting: callMeeting,
+      details: callMeeting?.details,
+      next: parts.ordinary || (parts.next.kind === 'after' && !none) ? after(callMeeting, true, leave) : parts.next,
+    };
+  }
+
+  const title = call ? (callMeeting?.title ?? 'Call') : parts.meeting?.title;
   return (
-    <section className="work meet" data-place="meet" aria-label="Meet">
-      <div className="meet-body" style={{ left: MEET_LEFT_PX }}>
-        {none && empty ? (
-          <>
-            <UnavailablePanel m={m} />
-            <LaterNote text="No calendar can be read." link />
-          </>
-        ) : none && m.lastKnown ? (
-          <>
-            <NextPanel m={m} labels={labels} asOf={m.lastKnown} />
-            <LaterPanel m={m} labels={labels} />
-          </>
-        ) : empty ? (
-          <>
-            <EmptyPanel m={m} />
-            <LaterPanel m={m} labels={labels} />
-          </>
-        ) : (
-          <>
-            <NextPanel m={m} labels={labels} />
-            <LaterPanel m={m} labels={labels} />
-          </>
-        )}
-      </div>
-    </section>
+    <Layout
+      hero={parts.hero}
+      island={<Island key={parts.meeting ? occurrenceId(parts.meeting) : 'none'} details={parts.details} checklist={read} reloadSoon={reloadSoon} meetingId={parts.meeting ? occurrenceId(parts.meeting) : 'none'} marks={marks} />}
+      next={parts.next}
+      title={title}
+    />
   );
 }
