@@ -12,12 +12,22 @@ export const MAX_LABEL = 60;
 const MAX_STORED = 32_000;
 
 /**
+ * Text on one line for display: bidi overrides and isolates and zero-width characters dropped,
+ * control characters become spaces, spaces folded, trimmed, cut to `max` characters. Empty when
+ * nothing is left, or when the input is not a string.
+ */
+export function cleanText(raw: unknown, max: number): string {
+  if (typeof raw !== 'string') return '';
+  const text = raw.replace(/[\u061c\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g, '').replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, ' ').replace(/\s+/g, ' ').trim();
+  return Array.from(text).slice(0, max).join('').trimEnd();
+}
+
+/**
  * A label on one line, trimmed, at most 60 characters; the kind's default when empty. Bidi
  * overrides and isolates and zero-width characters are dropped, control characters become spaces.
  */
 export function cleanLabel(raw: unknown, ref: WatchRef): string {
-  const text = typeof raw === 'string' ? raw.replace(/[\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g, '').replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, ' ').replace(/\s+/g, ' ').trim() : '';
-  return text ? Array.from(text).slice(0, MAX_LABEL).join('') : defaultLabel(ref);
+  return cleanText(raw, MAX_LABEL) || defaultLabel(ref);
 }
 
 /**
