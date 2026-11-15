@@ -70,8 +70,12 @@ describe('the Lines panel', () => {
     expect(screen.getByRole('switch', { name: 'Reflection' }).tabIndex).toBe(0);
   });
 
-  it('Space and Enter on a focused chip choose it: the group does not swallow the keys, so the native button press goes through', () => {
+  it('every chip is an enabled native button and its group does not swallow Space or Enter, so the browser\'s own key press chooses it', () => {
     render(<LinesPanel />);
+    for (const chip of screen.getAllByRole('radio')) {
+      expect(chip.tagName).toBe('BUTTON');
+      expect((chip as HTMLButtonElement).disabled).toBe(false);
+    }
     // jsdom has no native button activation: this does what a browser does (Enter clicks on keydown, Space on keyup),
     // unless a handler cancelled the key.
     const press = (el: HTMLElement, key: 'Enter' | ' ') => {

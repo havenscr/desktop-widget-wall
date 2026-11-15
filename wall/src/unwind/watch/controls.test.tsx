@@ -14,6 +14,8 @@ import { SAVED_KEY, type SavedItem } from './saved';
 import { driveInAudience, resetWatch, useWatchStore } from './store';
 import { LISTENING_MESSAGE, MAX_MESSAGE, MAX_SECONDS, PLAYER_VOLUME, readPlayerMessage, TWITCH_EMBED_ORIGIN, YOUTUBE_EMBED_ORIGIN } from './urls';
 import { openInBrowser } from './Watch';
+import { LOAD_GAP_MS, playAll, resetQueue } from '../ytmusic/queue';
+import type { YtVideo } from '../../music/youtube';
 
 // Steps fake timers through several seconds at most; the limit keeps a stuck step from hanging CI.
 vi.setConfig({ testTimeout: 20_000 });
@@ -136,6 +138,65 @@ describe('the wall drives the player', () => {
     send(win, { event: 'infoDelivery', info: { currentTime: 2, duration: 100 } });
     expect(post.mock.calls.filter((c) => c[0] === pause)).toHaveLength(1);
     expect(post.mock.calls.some((c) => c[0] === play)).toBe(false);
+  });
+
+  describe('when an item ends', () => {
+    const song = (n: number): YtVideo => ({ id: `song${String(n).padStart(7, '0')}`, title: `Song ${n}`, channel: `Channel ${n}`, seconds: 200, thumb: `https://i.ytimg.com/vi/song${String(n).padStart(7, '0')}/mqdefault.jpg`, playable: 'yes' });
+    const pauseMsg = JSON.stringify({ event: 'command', func: 'pauseVideo', args: [] });
+
+    it('the wall\'s music moves on to the next entry, playing, with nothing of the old frame in its report', async () => {
+      localStorage.clear();
+      resetWatch();
+      resetQueue();
+      useWatchStore.getState().setTab('listen');
+      playAll([song(1), song(2)], false, { list: 'liked' });
+      const r = render(<UnwindView />);
+      await flush(LOAD_GAP_MS + 1500);
+      const first = document.querySelector('iframe')!;
+      expect(useWatchStore.getState().playing?.id).toBe(song(1).id);
+      const win = first.contentWindow!;
+      vi.spyOn(win, 'postMessage').mockImplementation(() => {});
+      act(() => fireEvent.load(first));
+      send(win, { event: 'infoDelivery', info: { playerState: 1, currentTime: 190, duration: 200 } });
+      await flush(1500);
+      // The real end message, heard by the first frame: the queue loads the next entry from inside this handler.
+      send(win, { event: 'infoDelivery', info: { playerState: 0, currentTime: 199, duration: 200 } });
+      const st = useWatchStore.getState();
+      expect(st.playing?.id).toBe(song(2).id);
+      expect(st.paused).toBe(false);
+      expect(st.report.time ?? 0).not.toBe(199);
+      expect(st.report.duration ?? 0).not.toBe(200);
+      expect(st.report.ended).toBe(false);
+      // The replacement frame loads and speaks: nothing asks it to pause.
+      await flush(0);
+      const second = document.querySelector('iframe')!;
+      expect(second).not.toBe(first);
+      const win2 = second.contentWindow!;
+      const post2 = vi.spyOn(win2, 'postMessage').mockImplementation(() => {});
+      act(() => fireEvent.load(second));
+      send(win2, { event: 'onReady' });
+      send(win2, { event: 'infoDelivery', info: { playerState: 1, currentTime: 1, duration: 180 } });
+      expect(post2.mock.calls.some((c) => c[0] === pauseMsg)).toBe(false);
+      expect(useWatchStore.getState().paused).toBe(false);
+      r.unmount();
+      resetQueue();
+    });
+
+    it('a Watch playlist\'s last item ending (no queue) reads ended and paused', async () => {
+      const { win } = await playing('playlist');
+      send(win, { event: 'infoDelivery', info: { playerState: 1, playlist: ['a', 'b'], playlistIndex: 1 } });
+      send(win, { event: 'infoDelivery', info: { playerState: 0, playlist: ['a', 'b'], playlistIndex: 1 } });
+      expect(useWatchStore.getState().report.ended).toBe(true);
+      expect(useWatchStore.getState().paused).toBe(true);
+    });
+
+    it('a single Watch video ending reads ended and paused', async () => {
+      const { win } = await playing('video');
+      send(win, { event: 'onStateChange', info: 1 });
+      send(win, { event: 'onStateChange', info: 0 });
+      expect(useWatchStore.getState().report.ended).toBe(true);
+      expect(useWatchStore.getState().paused).toBe(true);
+    });
   });
 
   it('sets the player to full volume, unmuted, when playback starts, and again on Sound on', async () => {
