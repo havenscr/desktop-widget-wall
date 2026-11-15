@@ -293,7 +293,7 @@ const OVERFLOWS = {
   'listen-player': '.u-listen { margin-top: 200px; }',
   'listen-card': '.sp-card { height: 900px !important; }',
   'listen-slot': '.u-line { margin-left: 1960px; width: 600px; }',
-  'listen-next': '.u-next-row { height: 80px !important; }',
+  'listen-next': '.u-next-row { height: 140px !important; }',
   // watch polish: the left block back at its old line (y 126) in one look; the gear off the row's end; a 600 px control in
   // the row; the block moved onto the video.
   'watch-block': '.top:has(.w-sun) .w-now { top: 106px !important; }',

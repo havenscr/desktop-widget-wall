@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { usePlaceStore } from '../../state/places';
 import { defaultLabel, parseLink, refKey, type WatchRef } from './links';
+import { PLAYER_VOLUME } from './urls';
 import { driveInMode } from './DriveInFrame';
 import { DRIVE_IN_SCREEN, lookFor, loadLooks, saveLooks, type LookId, type LookSettings, type WallRect } from './looks';
 import { lookBox, loadTune, resetLook, saveTune, withPatch, type LookTune } from './lookSettings';
@@ -33,6 +34,34 @@ import { addSaved, cleanLabel, loadSaved, removeSaved, renameSaved, saveSaved, t
 import { stopLine, type StopReason } from './stops';
 
 export type UnwindTab = 'listen' | 'watch';
+
+/** Where the wall's own video level (0 to 100) is kept. */
+export const VOLUME_KEY = 'wall2-watch-volume';
+
+/** A level as a whole number from 0 to 100 (anything that is not a number is the player's full level). */
+export function clampLevel(v: unknown): number {
+  if (typeof v !== 'number' || !Number.isFinite(v)) return PLAYER_VOLUME;
+  return Math.min(100, Math.max(0, Math.round(v)));
+}
+
+/** The stored level, read strictly: a whole number from 0 to 100, else the player's full level. */
+export function loadVolume(): number {
+  try {
+    const raw = localStorage.getItem(VOLUME_KEY);
+    if (raw === null || raw.length > 8 || !/^\d{1,3}$/.test(raw)) return PLAYER_VOLUME;
+    return clampLevel(Number(raw));
+  } catch {
+    return PLAYER_VOLUME;
+  }
+}
+
+function saveVolume(level: number): void {
+  try {
+    localStorage.setItem(VOLUME_KEY, String(level));
+  } catch {
+    /* the level stays for this session */
+  }
+}
 
 /** What the player has reported about the item now on (YouTube only; Twitch reports nothing). */
 export interface PlayerReport {
@@ -67,6 +96,8 @@ export interface WatchState {
   /** The owner's own pause and mute (YouTube only); the frame's state messages may correct `paused`. */
   paused: boolean;
   muted: boolean;
+  /** The level the wall's own video plays at (0 to 100, whole numbers), kept across restarts. Twitch has no level to set. */
+  volume: number;
   sheet: boolean;
   /** What the player has reported for the item now on. */
   report: PlayerReport;
@@ -95,6 +126,8 @@ export interface WatchState {
   stop: (why?: StopReason) => void;
   setPaused: (p: boolean) => void;
   setMuted: (m: boolean) => void;
+  /** Set the video's level (bounded, whole numbers) and keep it; it is also the level the next video starts at. */
+  setVolume: (v: number) => void;
   setLooks: (s: LookSettings) => void;
   /** Change settings of one look (each value bounded by its control). */
   setTune: (look: LookId, patch: Record<string, number | boolean>, persist?: 'now' | 'soon') => void;
@@ -116,6 +149,7 @@ export const useWatchStore = create<WatchState>((set, get) => ({
   lastStopped: null,
   paused: false,
   muted: false,
+  volume: loadVolume(),
   report: NO_REPORT,
   needsClick: false,
   clickHint: false,
@@ -125,7 +159,7 @@ export const useWatchStore = create<WatchState>((set, get) => ({
   peek: false,
   load: () => {
     cancelTuneWrite();
-    set({ saved: loadSaved(), looks: loadLooks(), tune: loadTune() });
+    set({ saved: loadSaved(), looks: loadLooks(), tune: loadTune(), volume: loadVolume() });
   },
   setTab: (tab) => {
     if (tab === get().tab) return;
@@ -185,6 +219,12 @@ export const useWatchStore = create<WatchState>((set, get) => ({
   },
   setPaused: (paused) => set({ paused }),
   setMuted: (muted) => set({ muted }),
+  setVolume: (v) => {
+    const volume = clampLevel(v);
+    if (volume === get().volume) return;
+    saveVolume(volume);
+    set({ volume });
+  },
   setTune: (look, patch, persist = 'now') => {
     set({ tune: withPatch(get().tune, look, patch) });
     if (persist === 'soon') writeTuneSoon();
@@ -285,5 +325,5 @@ usePlaceStore.subscribe((s) => {
 /** Tests only: back to a fresh store over whatever local storage holds now. */
 export function resetWatch(): void {
   cancelTuneWrite();
-  useWatchStore.setState({ tab: 'listen', saved: loadSaved(), looks: loadLooks(), tune: loadTune(), playing: null, lastStopped: null, paused: false, muted: false, report: NO_REPORT, needsClick: false, clickHint: false, sheet: false, stopped: null, editing: null, peek: false });
+  useWatchStore.setState({ tab: 'listen', saved: loadSaved(), looks: loadLooks(), tune: loadTune(), volume: loadVolume(), playing: null, lastStopped: null, paused: false, muted: false, report: NO_REPORT, needsClick: false, clickHint: false, sheet: false, stopped: null, editing: null, peek: false });
 }

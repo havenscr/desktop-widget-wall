@@ -9,7 +9,6 @@ import {
   FRAME_SANDBOX,
   LISTENING_MESSAGE,
   pageWhere,
-  PLAYER_VOLUME,
   playerOrigin,
   readPlayerMessage,
   type PlayerInfo,
@@ -32,6 +31,8 @@ export const HANDSHAKE_EVERY_MS = 1000;
 export const HANDSHAKE_TRIES = 10;
 /** The position is taken from the player's own reports at most once a second, and not while the page is hidden. */
 export const REPORT_EVERY_MS = 1000;
+/** A change of the level under the clock reaches the player at most this often (the last value always does). */
+export const LEVEL_EVERY_MS = 100;
 
 /**
  * The wall's controls send their commands here; the frame on screen fills it in while it is
@@ -92,6 +93,9 @@ export function PlayerFrame({ item, title, shown = true }: { item: WatchRef; tit
   const lastReport = useRef(0);
   // Set while the store follows the player, so the paused effect does not send it back.
   const fromPlayer = useRef(false);
+  const posted = useRef<number | null>(null);
+  const volTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const volSentAt = useRef(0);
 
   // Posts go only to the loaded frame's own window and only to the exact embed origin, never `*`.
   const post = (msg: string): boolean => {
@@ -106,11 +110,17 @@ export function PlayerFrame({ item, title, shown = true }: { item: WatchRef; tit
     }
   };
 
+  // The store's level (the slider under the clock) goes to the player; `posted` is the last one that reached it.
+  const sendLevel = () => {
+    const level = useWatchStore.getState().volume;
+    if (post(commandMessage('setVolume', [level]))) posted.current = level;
+  };
+
   const fullVolume = () => {
     if (useWatchStore.getState().muted) post(commandMessage('mute'));
     else {
       post(commandMessage('unMute'));
-      post(commandMessage('setVolume', [PLAYER_VOLUME]));
+      sendLevel();
     }
   };
 
@@ -221,9 +231,31 @@ export function PlayerFrame({ item, title, shown = true }: { item: WatchRef; tit
     if (muted) post(commandMessage('mute'));
     else {
       post(commandMessage('unMute'));
-      post(commandMessage('setVolume', [PLAYER_VOLUME]));
+      sendLevel();
     }
   }, [muted, youtube, poster]);
+
+  // A change of the level while sound is on: sent at most every `LEVEL_EVERY_MS`, and always ending on the last value.
+  const volume = useWatchStore((s) => s.volume);
+  useEffect(() => {
+    if (!youtube || poster || useWatchStore.getState().muted || volume === posted.current) return;
+    if (volTimer.current !== undefined) return;
+    const send = () => {
+      volTimer.current = undefined;
+      volSentAt.current = Date.now();
+      if (!useWatchStore.getState().muted) sendLevel();
+    };
+    const wait = volSentAt.current + LEVEL_EVERY_MS - Date.now();
+    if (wait <= 0) send();
+    else volTimer.current = setTimeout(send, wait);
+  }, [volume, youtube, poster]);
+  useEffect(
+    () => () => {
+      clearTimeout(volTimer.current);
+      volTimer.current = undefined;
+    },
+    [],
+  );
 
   // Autoplay refused (YouTube): a play request that has not started within the wait lets the
   // pointer through until it plays. Twitch never says it started: after the same wait the

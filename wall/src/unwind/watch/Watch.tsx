@@ -236,7 +236,7 @@ function Controls({ item, openFailed, setOpenFailed }: { item: WatchRef & { labe
               className="rd"
               aria-label={muted ? 'Sound on' : 'Mute'}
               aria-pressed={muted}
-              {...tip(muted ? 'Sound on (the player plays at full volume; the system volume sets the level)' : 'Mute the video')}
+              {...tip(muted ? 'Sound on (the level is the volume under the clock)' : 'Mute the video')}
               onClick={() => st.setMuted(!muted)}
             >
               {muted ? <IconVolumeOff size={20} aria-hidden="true" /> : <IconVolume size={20} aria-hidden="true" />}

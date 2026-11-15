@@ -52,7 +52,7 @@ export async function runSkips(skips: number, route: SkipRoute = { via: 'key', t
  * album and the length. Hidden with YouTube Music
  * chosen, with Spotify not set up, and when nothing is queued; signed out it says where to sign in.
  */
-export function UpNext() {
+export function UpNext({ rows = UP_NEXT_ROWS }: { rows?: number } = {}) {
   const source = useListenSource((s) => s.source);
   const status = useSpotifyStatus((s) => s.status);
   const title = useNowPlayingStore((s) => s.info?.title ?? '');
@@ -73,7 +73,7 @@ export function UpNext() {
       spotify.queue().then(
         (q) => {
           if (q?.current?.id) useSpotifyNow.setState({ id: q.current.id });
-          if (mounted.current) setNext(Array.isArray(q?.next) && q.current ? q.next.slice(0, UP_NEXT_ROWS) : []);
+          if (mounted.current) setNext(Array.isArray(q?.next) && q.current ? q.next.slice(0, rows) : []);
         },
         // Busy keeps what shows (it is still the queue); anything else hides the rows.
         (e) => mounted.current && spotifyProblem(e) !== 'busy' && setNext([]),
@@ -81,7 +81,7 @@ export function UpNext() {
     void read();
     const id = setInterval(() => void read(), QUEUE_POLL_MS);
     return () => clearInterval(id);
-  }, [ready, visible, title]);
+  }, [ready, visible, title, rows]);
   useEffect(() => {
     if (!note) return;
     const id = setTimeout(() => setNote(null), 6000);

@@ -14,7 +14,7 @@ export interface StopInputs {
   inCall: boolean;
 }
 
-export type StopReason = 'hidden' | 'display' | 'screens-off' | 'call';
+export type StopReason = 'hidden' | 'display' | 'screens-off' | 'call' | 'sleep';
 
 /**
  * Why a video must stop now, or null while it may play. Nothing here ever starts a video: once
@@ -39,5 +39,7 @@ export function stopLine(r: StopReason): string {
       return 'Stopped for your call.';
     case 'hidden':
       return 'Stopped while the wall was hidden.';
+    case 'sleep':
+      return 'Stopped by the sleep timer.';
   }
 }
