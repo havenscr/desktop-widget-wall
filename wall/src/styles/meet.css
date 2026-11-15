@@ -1,107 +1,223 @@
-/* Meet tab. Design pixels, inside the top band (.top). */
-/* Meet: two zones, the Next card (460 px) and the Later list across the rest of the work area. The
-   accounts moved to the Tools drawer. Calm by design: no motion, no red; the accent shows only in the last five minutes. */
-/* Meet sits right of the clock, from the same left edge as the Work tab's first panel (.focus, 482px).
-   The left edge is MEET_LEFT_PX in Meet.tsx, set inline so a test can hold it. */
+/* Meet tab. Design pixels, inside the top band (.top, stage x 124 to 2540, y 20 to 510). Layout A of the Meet vote:
+   the hero at the left (stage x 124 to 944), the island in the centre (984 to 1914), the Next card at the upper right
+   and Capture under it (both 1944 to 2540). The frame clock is hidden here; the hero draws the time. Stage x minus 124
+   and stage y minus 20 give the numbers below. Calm by design: no motion, red only for a call and Leave. */
 .meet-body {
   position: absolute;
-  right: 0;
-  top: 0;
-  bottom: 0;
+  inset: 0;
 }
-.meet-next,
-.meet-later {
-  top: 4px;
-  /* Each card is as tall as what is in it (up to the band), never a tall box with a few lines. */
-  height: auto;
-  max-height: 486px;
+/* The hero draws its own time, so the frame clock steps aside. */
+.main[data-place='meet'] > .top > div:has(> .clk) {
+  display: none;
 }
-.meet-next {
-  left: 0;
-  width: 460px;
-  gap: 16px;
+/* The hero carries the recording chip itself; the floating one would double it. */
+:root:has(.meet-hero) .rec-float {
+  display: none;
 }
-.meet-later {
-  left: 490px;
-  right: 0;
-}
-.meet-title {
-  font: 600 46px/1.1 var(--body);
-  letter-spacing: -0.01em;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-.meet-count {
-  font: 300 44px/1.1 var(--disp);
-  color: var(--tx);
-}
-.meet-count.soon {
-  color: var(--cyan);
-}
-/* Mouse sizes inside cards: 32 to 40 px tall, not the 72 px touch size. */
-.meet .btn {
-  height: 40px;
-  min-width: 0;
-  padding: 0 18px;
-  border-radius: 12px;
-  font-size: 18px;
-}
-.meet-join-big {
-  align-self: flex-start;
-  margin-top: 4px;
-  padding: 0 24px;
-}
-.meet-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-height: 0;
-}
-.meet-list {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  grid-auto-flow: row;
-  column-gap: 40px;
-  align-content: start;
-  overflow: hidden;
-}
-.meet-row {
-  min-height: 64px;
-  display: flex;
-  align-items: center;
-  gap: 24px;
-  min-width: 0;
-  padding: 8px 0;
-  border-top: 1px solid var(--line);
-}
-/* The first row of each column has no rule above it. */
-.meet-row:nth-child(-n + 2) {
-  border-top: 0;
-}
-.meet-row-text {
-  flex: 1;
-  min-width: 0;
-}
-.meet-name {
-  min-width: 0;
-}
-.meet-when {
-  font-size: 19px;
-}
-.meet-join {
-  flex: none;
-  height: 36px;
-  padding: 0 18px;
-}
+.meet .amber,
 .meet-notice {
   color: var(--amber);
 }
-/* The one amber line when a calendar account needs attention; its link opens Tools at Accounts. */
+.meet-k {
+  display: block;
+  min-width: 0;
+  white-space: nowrap;
+}
+.meet-k.sm {
+  font-size: 16px;
+}
+.meet-k[data-amber='true'] {
+  color: var(--amber);
+}
+.meet-xxs {
+  font: 16px/1.3 var(--body);
+  color: var(--dim);
+}
+.meet-xs {
+  font: 19px/1.3 var(--body);
+  color: var(--dim);
+}
+.meet-dimline,
+.meet-stale {
+  color: var(--dim);
+}
+
+/* Pointer sized buttons: 40 px, a hover and a focus ring each. */
+.meet-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  height: 40px;
+  padding: 0 22px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  font: 600 19px/1 var(--body);
+  color: var(--dim);
+  white-space: nowrap;
+  flex: none;
+  box-sizing: border-box;
+  transition: background 160ms ease, border-color 160ms ease, color 160ms ease;
+}
+.meet-btn:hover {
+  color: var(--tx);
+  border-color: var(--dim);
+}
+.meet-btn.cy {
+  background: var(--cyan);
+  color: #06041a;
+  border-color: transparent;
+}
+.meet-btn.cy:hover {
+  background: #6af0f3;
+}
+.meet-btn:focus-visible,
+.meet-key:focus-visible,
+.meet-cap:focus-visible,
+.meet-cap-open:focus-visible,
+.meet-arrow:focus-visible,
+.meet-dot:focus-visible,
+.meet-isl-row:focus-visible,
+.meet-isl-item:focus-visible,
+.meet-trouble-link:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: 2px;
+}
+
+/* ---------- The hero: stage x 124 to 944, y 24 to 510 ---------- */
+.meet-hero {
+  position: absolute;
+  left: 0;
+  top: 4px;
+  width: 820px;
+  height: 486px;
+  box-sizing: border-box;
+}
+.meet-hero.dimmed .meet-hero-title,
+.meet-hero.dimmed .meet-by {
+  opacity: 0.55;
+}
+.meet-hero-note {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 8px;
+}
+.meet-hero-st {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 820px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.meet-st {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font: 600 18px/1 var(--disp);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.meet-st i {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex: none;
+}
+.meet-st[data-tone='call'] {
+  color: #ff8fa6;
+}
+.meet-st[data-tone='call'] i {
+  background: var(--red);
+  box-shadow: 0 0 12px var(--red);
+}
+.meet-st[data-tone='now'] {
+  color: var(--cyan);
+}
+.meet-st[data-tone='now'] i {
+  background: var(--cyan);
+  box-shadow: 0 0 12px var(--cyan);
+}
+.meet-st[data-tone='next'] {
+  color: var(--cyan);
+}
+.meet-st[data-tone='next'] i {
+  border: 2px solid var(--cyan);
+  box-sizing: border-box;
+}
+.meet-st[data-tone='stale'] {
+  color: var(--dim);
+}
+.meet-st[data-tone='stale'] i {
+  border: 2px solid var(--dim);
+  box-sizing: border-box;
+}
+.meet-time {
+  font: 300 40px/1 var(--disp);
+  white-space: nowrap;
+}
+.meet-time small {
+  font: 500 18px/1 var(--disp);
+  letter-spacing: 0.08em;
+  color: var(--cyan);
+  margin-left: 8px;
+}
+.meet-hero-title {
+  position: absolute;
+  left: 0;
+  top: 58px;
+  width: 590px;
+  font: 600 54px/1.12 var(--body);
+  letter-spacing: -0.015em;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+/* Over 50 characters: 32 px on three lines, then an ellipsis. */
+.meet-hero-title[data-long='true'] {
+  font-size: 32px;
+  -webkit-line-clamp: 3;
+}
+.meet-hero-below {
+  position: absolute;
+  left: 0;
+  top: 186px;
+  width: 600px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.meet-by {
+  font: 22px/1.3 var(--body);
+  color: var(--dim);
+}
+.meet-agenda {
+  display: flex;
+  gap: 12px;
+  color: var(--dim);
+}
+.meet-agenda svg {
+  flex: none;
+  margin-top: 2px;
+}
+.meet-agenda span {
+  font: 21px/1.32 var(--body);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+/* With the amber line shown the agenda gives up its second line, so nothing reaches the keys. */
+.meet-hero-below[data-trouble='true'] .meet-agenda span {
+  -webkit-line-clamp: 1;
+}
 .meet-trouble {
   font: 19px/1.3 var(--body);
   color: var(--amber);
@@ -116,25 +232,210 @@
 .meet-trouble-link:hover {
   color: var(--tx);
 }
-.meet-empty {
-  top: 4px;
-  height: auto;
-  left: 0;
-  width: 460px;
+
+/* The ring: 164 px at stage x 756, y 80, with its line under it. */
+.meet-ring {
+  position: absolute;
+  left: 632px;
+  top: 56px;
+  width: 188px;
   display: flex;
   flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.meet-ring-dial {
+  position: relative;
+  width: 164px;
+  height: 164px;
+  flex: none;
+}
+.meet-ring-dial svg {
+  transform: rotate(-90deg);
+}
+.meet-ring-arc {
+  stroke: var(--cyan);
+}
+.meet-ring-dial[data-tone='violet'] .meet-ring-arc {
+  stroke: var(--violet);
+}
+.meet-ring-dial[data-tone='amber'] .meet-ring-arc {
+  stroke: var(--amber);
+}
+.meet-ring-in {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+.meet-ring-n {
+  font: 300 66px/0.9 var(--disp);
+}
+.meet-ring-u {
+  font: 600 16px/1 var(--disp);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+.meet-ring-under {
+  font: 19px/1.3 var(--body);
+  color: var(--dim);
+  white-space: nowrap;
+}
+
+/* The keys: stage y 336, 148 by 100, gap 12. */
+.meet-keys {
+  position: absolute;
+  left: 0;
+  top: 312px;
+  display: flex;
   gap: 12px;
 }
-.meet-tried,
-.meet-reason {
+.meet-key {
+  box-sizing: border-box;
+  width: 148px;
+  height: 100px;
+  border-radius: 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font: 600 18px/1 var(--body);
+  background: rgba(8, 6, 26, 0.8);
+  border: 1px solid var(--line);
+  color: var(--tx);
+  white-space: nowrap;
+  flex: none;
+  transition: background 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+}
+.meet-key:hover:not(.off) {
+  border-color: var(--dim);
+  background: rgba(20, 15, 50, 0.9);
+}
+.meet-key:active:not(.off) {
+  transform: translateY(2px);
+}
+.meet-key.cy {
+  background: rgba(53, 230, 234, 0.1);
+  border-color: rgba(53, 230, 234, 0.45);
+  color: var(--cyan);
+}
+.meet-key.red {
+  background: rgba(255, 77, 109, 0.12);
+  border-color: rgba(255, 77, 109, 0.45);
+  color: #ff9db0;
+}
+.meet-key.red:hover:not(.off) {
+  border-color: rgba(255, 77, 109, 0.9);
+}
+/* Join takes two keys' width: filled cyan only for a meeting that is live or within 15 minutes. */
+.meet-key.join {
+  width: 308px;
+  background: var(--cyan);
+  border-color: transparent;
+  color: #06041a;
+  font-size: 22px;
+}
+.meet-key.join:hover:not(.off) {
+  background: #6af0f3;
+  border-color: transparent;
+}
+.meet-key.join.quiet {
+  background: rgba(53, 230, 234, 0.08);
+  border: 1px solid rgba(53, 230, 234, 0.45);
+  color: var(--cyan);
+}
+.meet-key.join.quiet:hover:not(.off) {
+  background: rgba(53, 230, 234, 0.16);
+  border-color: var(--cyan);
+}
+.meet-key.off {
+  background: rgba(11, 8, 32, 0.62);
+  border: 1px dashed rgba(183, 175, 214, 0.78);
   color: var(--dim);
-  overflow-wrap: anywhere;
+  box-shadow: none;
+}
+.meet-key.wide {
+  width: 308px;
+  font-size: 19px;
+}
+
+/* The people block, right of the keys: stage x 776, y 340, 168 wide. */
+.meet-ppl {
+  position: absolute;
+  left: 652px;
+  top: 316px;
+  width: 168px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 0;
+}
+.meet-ppl-row {
+  display: flex;
+  align-items: center;
+}
+.meet-ini {
+  box-sizing: border-box;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font: 600 16px/1 var(--disp);
+  letter-spacing: 0.02em;
+  color: var(--tx);
+  background: #1b1546;
+  border: 2px solid #0b0822;
+  flex: none;
+}
+.meet-ini.more {
+  background: #2a2260;
+}
+.meet-ini.lg {
+  width: 44px;
+  height: 44px;
+}
+.meet-ppl-n {
+  font: 600 20px/1.15 var(--body);
+  white-space: nowrap;
+}
+.meet-ppl-r {
+  font: 16px/1.3 var(--body);
+  color: var(--dim);
+  white-space: nowrap;
+}
+
+/* The last row: the recording chip while a recorder runs, then the one quiet line. */
+.meet-hero-last {
+  position: absolute;
+  left: 0;
+  top: 430px;
+  width: 820px;
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  gap: 22px;
+}
+.meet-brief {
+  font: 600 19px/1.3 var(--body);
+  color: var(--amber);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.meet-count {
+  font: 300 44px/1.1 var(--disp);
+  color: var(--tx);
 }
 .meet-retry {
   align-self: flex-start;
   margin-top: 8px;
 }
-
 .meet-headline-block {
   display: flex;
   flex-direction: column;
@@ -146,27 +447,465 @@
   color: var(--tx);
 }
 
-/* Quiet outlined button: same size and place as the filled one, still clickable. */
-.meet .btn.meet-quiet {
-  background: transparent;
-  color: var(--dim);
-  border: 1px solid var(--line);
+/* ---------- The island: stage x 984 to 1914, y 24 to 510 ---------- */
+.panel.meet-island {
+  left: 860px;
+  top: 4px;
+  width: 930px;
+  height: 486px;
+  padding: 22px 30px 14px;
+  gap: 0;
 }
-.meet .btn.meet-quiet:hover:not(:disabled) {
+.meet-isl-hd {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 30px;
+  flex: none;
+}
+.meet-isl-ico {
+  color: var(--dim);
+  display: grid;
+  place-items: center;
+}
+.meet-cnt {
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 11px;
+  box-sizing: border-box;
+  display: inline-grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.1);
+  font: 600 16px/1 var(--disp);
   color: var(--tx);
-  border-color: var(--dim);
 }
-.meet-dimline,
-.meet-stale {
+.meet-src {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 15px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.05);
+  font: 500 16px/1 var(--body);
   color: var(--dim);
+  white-space: nowrap;
+  flex: none;
 }
-.meet-later-empty {
+.meet-isl-body {
+  flex: 1;
+  min-height: 0;
+  margin-top: 18px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 30px;
+}
+.meet-isl-body[data-many='true'] {
+  grid-template-columns: minmax(0, 1fr) 300px;
+}
+.meet-isl-main {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.meet-isl-invite {
+  font: 24px/1.36 var(--body);
+  border-left: 3px solid var(--violet);
+  padding-left: 16px;
+  display: -webkit-box;
+  -webkit-line-clamp: 9;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.meet-isl-people,
+.meet-isl-check,
+.meet-isl-notes {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  min-width: 0;
 }
-.meet-next.dimmed .meet-title,
-.meet-next.dimmed .meet-count,
-.meet-next.dimmed .s {
-  opacity: 0.55;
+.meet-isl-person {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  height: 48px;
+  min-width: 0;
+}
+.meet-isl-name {
+  font: 600 22px/1.2 var(--body);
+  flex: 1;
+  min-width: 0;
+}
+.meet-isl-reply {
+  font: 16px/1 var(--body);
+  color: var(--dim);
+  white-space: nowrap;
+}
+.meet-isl-person[data-reply='yes'] .meet-isl-reply,
+.meet-isl-person[data-reply='organizer'] .meet-isl-reply {
+  color: var(--mint);
+}
+.meet-isl-person[data-reply='no'] {
+  opacity: 0.6;
+}
+.meet-isl-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  height: 40px;
+  min-width: 0;
+  padding: 0 8px;
+  border-radius: 10px;
+  text-align: left;
+  color: var(--tx);
+  font: 500 22px/1.3 var(--body);
+  transition: background 160ms ease;
+}
+.meet-isl-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+.meet-isl-box {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  flex: none;
+  color: var(--dim);
+}
+.meet-isl-item[data-on='true'] .meet-isl-box {
+  color: var(--mint);
+}
+.meet-isl-item[data-on='true'] .meet-isl-itext {
+  color: var(--dim);
+  text-decoration: line-through;
+}
+.meet-isl-itext {
+  min-width: 0;
+  flex: 1;
+}
+.meet-isl-note {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  height: 40px;
+}
+.meet-isl-note .meet-isl-box {
+  color: var(--mag);
+}
+.meet-isl-ntime {
+  font: 600 22px/1 var(--disp);
+  font-variant-numeric: tabular-nums;
+}
+.meet-isl-index {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border-left: 1px solid var(--line);
+  padding-left: 24px;
+  gap: 0;
+  overflow: hidden;
+}
+.meet-isl-index > .k {
+  margin-bottom: 8px;
+}
+.meet-isl-row {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  min-width: 0;
+  min-height: 56px;
+  padding: 8px 6px;
+  border-top: 1px solid var(--line);
+  text-align: left;
+  color: var(--tx);
+  border-radius: 0;
+  transition: background 160ms ease;
+}
+.meet-isl-row:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+.meet-isl-rowhd {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--dim);
+}
+.meet-isl-rowname {
+  font: 600 19px/1.2 var(--body);
+  color: var(--tx);
+  white-space: nowrap;
+}
+.meet-isl-prev {
+  min-width: 0;
+}
+.meet-isl-foot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  height: 56px;
+  border-top: 1px solid var(--line);
+  padding-top: 6px;
+  box-sizing: border-box;
+}
+.meet-isl-order {
+  flex: 1;
+  min-width: 0;
+}
+.meet-arrow {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: var(--dim);
+  background: linear-gradient(rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.08)), rgba(8, 6, 26, 0.9);
+  border: 1px solid var(--line);
+  flex: none;
+}
+.meet-arrow:hover {
+  color: var(--tx);
+  border-color: var(--dim);
+}
+.meet-dots {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+}
+.meet-dot {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+}
+.meet-dot i {
+  display: block;
+  width: 9px;
+  height: 9px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.28);
+  transition: width 160ms ease, background 160ms ease;
+}
+.meet-dot:hover i {
+  background: rgba(255, 255, 255, 0.55);
+}
+.meet-dot[data-on='true'] i {
+  width: 26px;
+  background: var(--cyan);
+}
+/* No kind has anything: how the checklist file works, and its Open file button. */
+.meet-isl-howto {
+  flex: 1;
+  margin-top: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 0;
+}
+.meet-isl-how {
+  font: 24px/1.36 var(--body);
+  border-left: 3px solid var(--violet);
+  padding-left: 16px;
+}
+.meet-isl-howrow {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 6px;
+}
+
+/* ---------- The Next card: stage x 1944 to 2540 from y 24, as tall as its words ---------- */
+.panel.meet-later {
+  left: 1820px;
+  top: 4px;
+  width: 596px;
+  height: auto;
+  max-height: 340px;
+  padding: 18px 24px 14px;
+  gap: 0;
+  overflow: hidden;
+}
+.meet-next-hd {
+  height: 22px;
+  flex: none;
+}
+.meet-next-title {
+  font: 600 27px/1.18 var(--body);
+  letter-spacing: -0.01em;
+  margin-top: 12px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.meet-next-title[data-long='true'] {
+  font-size: 23px;
+}
+.meet-next-when {
+  font: 19px/1.3 var(--body);
+  color: var(--dim);
+  margin-top: 4px;
+}
+.meet-next-act {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
+  min-height: 40px;
+}
+.meet-next-note {
+  font: 600 19px/1.2 var(--body);
+}
+.meet-next-note.amber {
+  color: var(--amber);
+}
+.meet-next-note.cyan {
+  color: var(--cyan);
+}
+.meet-after-list {
+  border-top: 1px solid var(--line);
+  margin-top: 12px;
+  padding-top: 6px;
+  display: flex;
+  flex-direction: column;
+}
+.meet-after-list > .k {
+  margin: 4px 0 2px;
+}
+.meet-later-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  height: 30px;
+  min-width: 0;
+}
+.meet-later-t {
+  font: 500 17px/1 var(--disp);
+  letter-spacing: 0.04em;
+  width: 88px;
+  flex: none;
+  color: var(--dim);
+  white-space: nowrap;
+}
+.meet-later-n {
+  font: 19px/1.2 var(--body);
+  flex: 1;
+  min-width: 0;
+}
+.meet-later-more {
+  margin-top: 4px;
+}
+.meet-next-none {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 14px;
+}
+.meet-next-nothing {
+  font: 500 24px/1.3 var(--body);
+}
+
+/* ---------- Capture: stage x 1944 to 2540, y 384 ---------- */
+.meet-capture {
+  position: absolute;
+  left: 1820px;
+  top: 364px;
+  width: 596px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.meet-cap-hd {
+  height: 20px;
+}
+.meet-cap-row {
+  box-sizing: border-box;
+  height: 96px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-radius: 14px;
+  --g: 255, 61, 154;
+  background: linear-gradient(180deg, rgba(var(--g), 0.24), rgba(var(--g), 0.1)), rgba(11, 8, 32, 0.86);
+  border: 1px solid rgba(var(--g), 0.92);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 2px 0 rgba(3, 2, 14, 0.65);
+  color: var(--tx);
+  transition: background 200ms ease, border-color 200ms ease;
+}
+.meet-cap-row.off {
+  background: rgba(11, 8, 32, 0.62);
+  border: 1px dashed rgba(183, 175, 214, 0.78);
+  box-shadow: none;
+  color: var(--dim);
+}
+.meet-cap {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 0 0 0 20px;
+  text-align: left;
+  border-radius: 14px;
+  color: inherit;
+}
+.meet-cap-row:not(.off) .meet-cap:hover {
+  background: rgba(var(--g), 0.1);
+}
+.meet-cap-row.off .meet-cap {
+  cursor: default;
+}
+.meet-cap-ico {
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.07);
+  display: grid;
+  place-items: center;
+  flex: none;
+  color: rgb(var(--g));
+}
+.meet-cap-row.off .meet-cap-ico {
+  color: var(--dim);
+}
+.meet-cap-tx {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.meet-cap-t {
+  font: 600 25px/30px var(--body);
+}
+.meet-cap-s {
+  font: 19px/1.3 var(--body);
+  color: var(--dim);
+}
+.meet-cap-s.amber {
+  color: var(--amber);
+}
+.meet-cap-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 14px;
+  margin-right: 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.06);
+  font: 600 17px/1 var(--body);
+  color: var(--tx);
+  white-space: nowrap;
+  flex: none;
+  box-sizing: border-box;
+}
+.meet-cap-open:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: var(--dim);
 }

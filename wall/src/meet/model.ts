@@ -8,6 +8,25 @@ export interface MeetAccount {
   reason?: string;
 }
 
+export type Reply = 'yes' | 'maybe' | 'no' | 'none' | 'organizer';
+
+/** One invited person: a name and how they replied. Never an address. */
+export interface Person {
+  name: string;
+  reply: Reply;
+}
+
+/** Who is in a meeting and what the invite says, from the next read only; null when the calendar gave none. */
+export interface MeetingDetails {
+  calledBy: string | null;
+  /** At most 20 named people. */
+  people: Person[];
+  /** Invited people not in `people`: past the 20 kept, or with no usable name. */
+  peopleMore: number;
+  /** The invite's own words, cleaned in Rust (no link, address, meeting id or passcode); null when none. */
+  invite: string | null;
+}
+
 export interface Meeting {
   /** Opaque key; the native side holds the join link behind it. */
   key: string;
@@ -17,6 +36,7 @@ export interface Meeting {
   start: string;
   end: string;
   canJoin: boolean;
+  details?: MeetingDetails | null;
 }
 
 export interface MeetData {
