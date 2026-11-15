@@ -49,9 +49,10 @@ export function YtFoot() {
   const seekable = on && !twitch && !needsClick && duration !== null && duration > 0;
   const shownPaused = paused || ended;
 
+  const showPlay = shownPaused || !(music || (watchItem && !twitch));
   const controls = {
     previous: music ? { ok: true, tip: music.place > 1 && (time ?? 0) <= 3 ? 'Previous in the list' : 'Back to the start of this video', run: previous } : playlist ? { ok: true, tip: `Previous. Item ${report.index + 1} of ${report.count}`, run: () => void playerLink.send('previousVideo') } : { ok: false, tip: twitch ? 'Twitch takes only Stop, on Watch' : watchItem ? 'Only for a playlist' : EMPTY_TITLE, run: () => undefined },
-    play: music || (watchItem && !twitch) ? { ok: true, tip: shownPaused ? 'Play' : 'Pause', run: () => musicControls.togglePause() } : { ok: false, tip: twitch ? 'Twitch takes only Stop, on Watch' : EMPTY_TITLE, run: () => undefined },
+    play: music || (watchItem && !twitch) ? { ok: true, tip: showPlay ? 'Play' : 'Pause', run: () => musicControls.togglePause() } : { ok: false, tip: twitch ? 'Twitch takes only Stop, on Watch' : EMPTY_TITLE, run: () => undefined },
     next: music ? { ok: music.hasNext, tip: music.hasNext ? 'Next in the list' : 'This is the last video in the list', run: next } : playlist ? { ok: true, tip: `Next. Item ${report.index + 1} of ${report.count}`, run: () => void playerLink.send('nextVideo') } : { ok: false, tip: twitch ? 'Twitch takes only Stop, on Watch' : watchItem ? 'Only for a playlist' : EMPTY_TITLE, run: () => undefined },
   };
 
@@ -147,7 +148,7 @@ export function YtFoot() {
         <small>{line}</small>
       </span>
       {button('previous', 'Previous', false, <IconPlayerSkipBackFilled size={18} aria-hidden="true" />)}
-      {button('play', shownPaused ? 'Play' : 'Pause', true, shownPaused ? <IconPlayerPlayFilled size={20} aria-hidden="true" /> : <IconPlayerPauseFilled size={20} aria-hidden="true" />)}
+      {button('play', showPlay ? 'Play' : 'Pause', true, showPlay ? <IconPlayerPlayFilled size={20} aria-hidden="true" /> : <IconPlayerPauseFilled size={20} aria-hidden="true" />)}
       {button('next', 'Next', false, <IconPlayerSkipForwardFilled size={18} aria-hidden="true" />)}
       {music && needsClick ? (
         <>
