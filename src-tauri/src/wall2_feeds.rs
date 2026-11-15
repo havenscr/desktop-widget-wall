@@ -745,6 +745,7 @@ fn summarize_core(body: &Value, f: Filters, now: i64, off: &dyn Fn(i64) -> i64, 
 #[tauri::command]
 #[allow(non_snake_case)]
 pub async fn wall2_tasks_summary(
+    window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     tag: Option<String>,
     notTag: Option<String>,
@@ -752,6 +753,7 @@ pub async fn wall2_tasks_summary(
     limit: Option<u32>,
     due: Option<String>,
 ) -> Result<TasksSummary, String> {
+    crate::wall2_meet::require_wall2(window.label())?;
     let (tag, notTag, list) = check_filters(tag, notTag, list)?;
     let due = check_due(due)?;
     let limit = task_limit(limit, due);
@@ -781,7 +783,8 @@ pub async fn wall2_tasks_summary(
 }
 
 #[tauri::command]
-pub async fn wall2_tasks_next(app: tauri::AppHandle) -> Result<Vec<TaskItem>, String> {
+pub async fn wall2_tasks_next(window: tauri::WebviewWindow, app: tauri::AppHandle) -> Result<Vec<TaskItem>, String> {
+    crate::wall2_meet::require_wall2(window.label())?;
     let base = read_base(&app, "tasksBaseUrl", true)?;
     tauri::async_runtime::spawn_blocking(move || {
         let body = get_json(&format!("{base}/api/tasks?status=open"))?;
@@ -794,7 +797,8 @@ pub async fn wall2_tasks_next(app: tauri::AppHandle) -> Result<Vec<TaskItem>, St
 }
 
 #[tauri::command]
-pub async fn wall2_task_done(app: tauri::AppHandle, id: String) -> Result<(), String> {
+pub async fn wall2_task_done(window: tauri::WebviewWindow, app: tauri::AppHandle, id: String) -> Result<(), String> {
+    crate::wall2_meet::require_wall2(window.label())?;
     if !valid_task_id(&id) {
         return Err("Invalid task id".to_string());
     }
@@ -1249,7 +1253,8 @@ fn shape_security(body: &Value) -> SecuritySummary {
 }
 
 #[tauri::command]
-pub async fn wall2_home_security(app: tauri::AppHandle) -> Result<SecuritySummary, String> {
+pub async fn wall2_home_security(window: tauri::WebviewWindow, app: tauri::AppHandle) -> Result<SecuritySummary, String> {
+    crate::wall2_meet::require_wall2(window.label())?;
     let base = read_base(&app, "homeBaseUrl", false)?;
     let summary = tauri::async_runtime::spawn_blocking(move || {
         let body = get_json(&format!("{base}/api/security?lite=1"))?;
@@ -1368,6 +1373,11 @@ mod tests {
         for (command, check) in [
             ("pub fn wall2_links(", "if crate::wall2_meet::require_wall2(window.label()).is_err()"),
             ("pub fn wall2_open_link(", "crate::wall2_meet::require_wall2(window.label())?;"),
+            ("pub async fn wall2_tasks_summary(", "crate::wall2_meet::require_wall2(window.label())?;"),
+            ("pub async fn wall2_tasks_next(", "crate::wall2_meet::require_wall2(window.label())?;"),
+            ("pub async fn wall2_task_done(", "crate::wall2_meet::require_wall2(window.label())?;"),
+            ("pub async fn wall2_home_security(", "crate::wall2_meet::require_wall2(window.label())?;"),
+
         ] {
             let body = &src[src.find(command).expect("command")..];
             let first = body[body.find('{').expect("body") + 1..].trim_start();

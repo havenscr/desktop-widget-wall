@@ -932,6 +932,17 @@ mod tests {
     use super::*;
 
     #[test]
+    fn account_position_wrappers_are_not_defined() {
+        let source = include_str!("service.rs");
+        for name in ["record", "record_detail"] {
+            for prefix in ["pub fn ", "fn ", "pub(crate) fn "] {
+                let declaration = format!("{prefix}{name}(");
+                assert!(!source.lines().any(|line| line.trim_start().starts_with(&declaration)), "{name}");
+            }
+        }
+    }
+
+    #[test]
     fn log_account_keys_are_bounded_and_never_email_like() {
         assert_eq!(log_account_key("hc-2",1), "hc-2");
         assert_eq!(log_account_key("first@example.test",1), "account-1");
