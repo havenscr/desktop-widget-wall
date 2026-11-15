@@ -50,7 +50,11 @@ export function validRef(v: unknown): v is WatchRef {
   return isKind(r.kind) && validId(r.kind, r.id);
 }
 
-export type ParseResult = { ok: true; ref: WatchRef } | { ok: false; error: string };
+/**
+ * A read link: what it names, and, for a video link that also carries a valid playlist id, that
+ * playlist as a second, optional choice (never saved unless the owner asks).
+ */
+export type ParseResult = { ok: true; ref: WatchRef; alsoList?: WatchRef } | { ok: false; error: string };
 
 export const LINK_ERRORS = {
   empty: 'Paste a YouTube or Twitch link first.',
@@ -61,6 +65,8 @@ export const LINK_ERRORS = {
 } as const;
 
 const YOUTUBE_HOSTS = new Set(['youtube.com', 'www.youtube.com', 'm.youtube.com']);
+/** YouTube Music: exactly this host, and only its `watch` and `playlist` links. */
+const MUSIC_HOSTS = new Set(['music.youtube.com']);
 const TWITCH_HOSTS = new Set(['twitch.tv', 'www.twitch.tv', 'm.twitch.tv']);
 /** Twitch's own top-level routes (site pages, not channels); a link to one is refused. */
 const TWITCH_PAGES = new Set([
@@ -101,6 +107,30 @@ const TWITCH_PAGES = new Set([
 const fail = (error: string): ParseResult => ({ ok: false, error });
 const ok = (kind: WatchKind, id: string): ParseResult => ({ ok: true, ref: { kind, id } });
 
+/**
+ * True for a list the offer may name: a valid playlist id that the embedded player can be trusted
+ * to play. A Mix or radio list (`RD...`) is made per viewer, and `WL` and `LL` (Watch later and
+ * Liked videos) need a sign-in, so a saved entry for one would often play nothing.
+ */
+function offerable(list: string | null): list is string {
+  return validId('playlist', list) && !list.startsWith('RD') && list !== 'WL' && list !== 'LL';
+}
+
+/** A video, with the playlist the link also names when that list may be offered. */
+function video(id: string, list: string | null): ParseResult {
+  if (offerable(list)) return { ok: true, ref: { kind: 'video', id }, alsoList: { kind: 'playlist', id: list } };
+  return ok('video', id);
+}
+
+/** A `watch` link: the video when it names one (with its list as the second choice), else the playlist. */
+function watch(params: URLSearchParams): ParseResult {
+  const v = params.get('v');
+  const list = params.get('list');
+  if (validId('video', v)) return video(v, list);
+  if (validId('playlist', list)) return ok('playlist', list);
+  return fail(LINK_ERRORS.youtube);
+}
+
 /** The path split into its parts, with an empty last part (a trailing slash) dropped. */
 function parts(pathname: string): string[] {
   const p = pathname.split('/').slice(1);
@@ -109,11 +139,15 @@ function parts(pathname: string): string[] {
 }
 
 /**
- * Read a pasted link. Accepted: `youtu.be/<id>`, `youtube.com/watch?v=<id>` (with a valid
- * `list=` it is that playlist), `youtube.com/live/<id>`, `youtube.com/playlist?list=<id>` and
- * `twitch.tv/<login>`, with or without `https://` (or `http://`), `www.` or `m.`, in any case
- * for the host and the path words. Other parameters and a fragment are ignored. Anything else,
- * including user names, ports, other schemes and look-alike hosts, is refused with one plain line.
+ * Read a pasted link. Accepted: `youtu.be/<id>`, `youtube.com/watch?v=<id>`,
+ * `youtube.com/shorts/<id>`, `youtube.com/live/<id>`, `youtube.com/playlist?list=<id>`,
+ * `music.youtube.com/watch?v=<id>`, `music.youtube.com/playlist?list=<id>` and
+ * `twitch.tv/<login>`, with or without `https://` (or `http://`), `www.` or `m.` (YouTube and
+ * Twitch only), in any case for the host and the path words. A link that names a video is that
+ * video; a valid `list=` beside it comes back as `alsoList`, a second choice, never taken
+ * silently (not for a Mix or radio list `RD...`, nor `WL` or `LL`: the video alone is saved). A `watch` link with only a list is that playlist. Other parameters and a fragment
+ * are ignored. Anything else, including user names, ports, other schemes and look-alike hosts,
+ * is refused with one plain line.
  */
 export function parseLink(input: unknown): ParseResult {
   if (typeof input !== 'string') return fail(LINK_ERRORS.empty);
@@ -145,19 +179,16 @@ export function parseLink(input: unknown): ParseResult {
   const word = (i: number) => (path[i] ?? '').toLowerCase();
 
   if (host === 'youtu.be') {
-    if (path.length === 1 && validId('video', path[0])) return ok('video', path[0]);
+    if (path.length === 1 && validId('video', path[0])) return video(path[0], url.searchParams.get('list'));
     return fail(LINK_ERRORS.youtube);
   }
-  if (YOUTUBE_HOSTS.has(host)) {
+  if (YOUTUBE_HOSTS.has(host) || MUSIC_HOSTS.has(host)) {
+    const music = MUSIC_HOSTS.has(host);
     const list = url.searchParams.get('list');
-    if (path.length === 1 && word(0) === 'watch') {
-      if (list !== null && validId('playlist', list)) return ok('playlist', list);
-      const v = url.searchParams.get('v');
-      if (validId('video', v)) return ok('video', v);
-      return fail(LINK_ERRORS.youtube);
-    }
-    if (path.length === 2 && word(0) === 'live' && validId('live', path[1])) return ok('live', path[1]);
+    if (path.length === 1 && word(0) === 'watch') return watch(url.searchParams);
     if (path.length === 1 && word(0) === 'playlist' && validId('playlist', list)) return ok('playlist', list);
+    if (!music && path.length === 2 && word(0) === 'live' && validId('live', path[1])) return ok('live', path[1]);
+    if (!music && path.length === 2 && word(0) === 'shorts' && validId('video', path[1])) return ok('video', path[1]);
     return fail(LINK_ERRORS.youtube);
   }
   if (TWITCH_HOSTS.has(host)) {
