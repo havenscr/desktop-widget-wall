@@ -4,7 +4,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { mocks } from '../bridge/tauri';
 import { BACKOFF_MS } from './model';
 import { WeatherCard } from './WeatherCard';
-import { FETCH_TIMEOUT_MS, refreshWeather, resetWeatherStore, useWeather, useWeatherStore, type WeatherReader } from './useWeather';
+import { FETCH_TIMEOUT_MS, KEEP_READING_MS, refreshWeather, resetWeatherStore, useWeather, useWeatherStore, type WeatherReader } from './useWeather';
 
 const body = {
   current: { time: '2026-11-11T10:15', temperature_2m: 57.6, weather_code: 3, is_day: 1 },
@@ -260,4 +260,34 @@ it('asks the Weather Service when Open-Meteo cannot be reached, and keeps the fi
   expect(calls).toEqual(['open-meteo', 'nws']);
   expect(useWeatherStore.getState().failure).toBe('dns');
   expect(useWeatherStore.getState().nextTryAt).toBeNull();
+});
+
+it('keeps the last good reading through failed reads for a day, then drops it and says unavailable', async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date(2026, 10, 11, 10, 0, 0));
+  let fail = false;
+  const read: WeatherReader = async () => {
+    if (fail) throw 'dns';
+    return JSON.stringify(body);
+  };
+  renderHook(() => useWeather(read));
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(10);
+  });
+  expect(useWeatherStore.getState().reading?.temp).toBe(58);
+  fail = true;
+  const hour = 3_600_000;
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(23 * hour);
+  });
+  // At 23 hours: every read since has failed, and the reading is still kept.
+  expect(useWeatherStore.getState().failed).toBe(true);
+  expect(useWeatherStore.getState().reading?.temp).toBe(58);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(2 * hour);
+  });
+  // At 25 hours it is dropped; the failure stays, and a minute-by-minute retry carries on.
+  expect(KEEP_READING_MS).toBe(24 * hour);
+  expect(useWeatherStore.getState().reading).toBeNull();
+  expect(useWeatherStore.getState().failed).toBe(true);
 });

@@ -105,6 +105,9 @@ async function attempt(source: WeatherSource, latitude: number, longitude: numbe
   }
 }
 
+/** A reading kept through failed reads is dropped when it is older than this. */
+export const KEEP_READING_MS = 24 * 3_600_000;
+
 /**
  * One try. Open-Meteo first (not while a 429 holds it back, unless `force`); when it refuses (429)
  * or cannot be reached, the National Weather Service. A 429 moves the next Open-Meteo try 15, then
@@ -152,8 +155,12 @@ async function run(force = false): Promise<void> {
     if (mine !== epoch) return;
     if (reading) rememberHigh(reading);
     if (reading) useWeatherStore.setState({ reading, failed: false, failure: null, nextTryAt: reading.source === 'nws' && failure === 'http 429' ? blockedUntil : null });
-    /* a failure keeps the last good reading; the card shows its age */
-    else useWeatherStore.setState({ failed: true, failure, nextTryAt: failure === 'http 429' ? blockedUntil : null });
+    /* a failure keeps the last good reading, and the card shows its age; one older than a day is dropped, so the card says it is unavailable */
+    else {
+      const kept = useWeatherStore.getState().reading;
+      const tooOld = kept !== null && Date.now() - kept.fetchedAt > KEEP_READING_MS;
+      useWeatherStore.setState({ ...(tooOld ? { reading: null } : {}), failed: true, failure, nextTryAt: failure === 'http 429' ? blockedUntil : null });
+    }
   } finally {
     if (mine === epoch) inFlight = false;
   }
