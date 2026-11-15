@@ -41,6 +41,7 @@ const states = [
  * each other), every control 40 to 48 px tall, text 16 px or more, a long label on two lines inside its pill, the rows
  * present and readable at rest, and the office slot empty and taking no pointer. With `uccheck=next` Up next starts at y
  * 382, shows one row and ends above y 457. With `uccheck=menu` the open pin menu lies inside the wall, right of the rail.
+ * With `uccheck=block` the left block of Watch (up to two title lines and a channel line) never overlaps the two rows.
  */
 const measureUnderClock = () => {
   const mode = new URLSearchParams(location.search).get('uccheck');
@@ -70,6 +71,17 @@ const measureUnderClock = () => {
       if (end > 457) fails.push('Up next ends at y ' + Math.round(end) + ' (above 457, Watt\'s head)');
       return { fails, mode };
     }
+    if (mode === 'block') {
+      const now = document.querySelector('.w-now');
+      if (!now || !quick) return { fails: ['under the clock: no left block or no rows to compare'], mode };
+      const n = R(now);
+      for (const [name, e] of [['the pins', document.querySelector('.u-pins')], ['the volume row', document.querySelector('.u-qsound')]]) {
+        const r = R(e);
+        if (meet(n, r)) fails.push('the left block at ' + where(n) + ' overlaps ' + name + ' at ' + where(r));
+        else if (n.l >= r.l && n.l - r.r < 8 && n.t < r.b && n.b > r.t) fails.push('the left block at ' + where(n) + ' is under 8 px from ' + name + ' at ' + where(r));
+      }
+      return { fails, mode };
+    }
     if (mode === 'menu') {
       const menu = document.querySelector('.u-pin-menu');
       if (!menu) return { fails: ['under the clock: no pin menu is open'], mode };
@@ -94,10 +106,20 @@ const measureUnderClock = () => {
       if (r.t < tabs.b - 0.5) fails.push('a pin at ' + where(r) + ' is over the tabs (they end at y ' + Math.round(tabs.b) + ')');
       if (i > 0 && meet(r, pins[i - 1].r)) fails.push('two pins overlap');
     });
-    const controls = [...pins.map((p) => p.e), document.querySelector('.u-snd'), document.querySelector('.u-sleep')].filter(Boolean);
+    const controls = [...pins.map((p) => p.e), document.querySelector('.u-snd'), document.querySelector('.u-qvol input'), document.querySelector('.u-sleep')].filter(Boolean);
     for (const e of controls) {
       const h = R(e).h;
       if (h < 39.5 || h > 48.5) fails.push('a control is ' + Math.round(h * 10) / 10 + ' px tall (40 to 48)');
+    }
+    const val = document.querySelector('.u-qval');
+    const track = document.querySelector('.u-qvol');
+    if (val && track && val.textContent.trim()) {
+      const rg = document.createRange();
+      rg.selectNodeContents(val);
+      const t = R(rg);
+      const box = R(val);
+      if (t.w > box.w + 0.5 || t.l < box.l - 0.5) fails.push('the value "' + val.textContent.trim() + '" is ' + Math.round(t.w) + ' px wide, past its ' + Math.round(box.w) + ' px box');
+      if (box.l - R(track).r < 6) fails.push('the value box starts ' + Math.round(box.l - R(track).r) + ' px from the slider (6 or more, so three digits clear the thumb)');
     }
     const texts = [...document.querySelectorAll('.u-pin-name, .u-pin-add, .u-sleep span, .u-qval')].filter((e) => e.textContent.trim());
     const small = texts.filter((e) => px(e, 'fontSize') < 15.99);
@@ -106,6 +128,9 @@ const measureUnderClock = () => {
       const pill = R(e.closest('.u-pin'));
       const n = R(e);
       const line = px(e, 'lineHeight');
+      const wrap = getComputedStyle(e).overflowWrap;
+      if (wrap === 'anywhere' || wrap === 'break-word') fails.push('a label may break inside a word (overflow-wrap ' + wrap + ')');
+      for (const w of e.querySelectorAll('.u-pin-word')) if (R(w).r > n.r + 0.5) fails.push('the word "' + w.textContent.slice(0, 16) + '" runs past its label (a word too long for the pin ends in an ellipsis on its line)');
       if (n.h > line * 2 + 1) fails.push('a label is ' + Math.round(n.h / line) + ' lines tall (two at most, then an ellipsis)');
       if (n.l < pill.l - 0.5 || n.r > pill.r + 0.5 || n.t < pill.t - 0.5 || n.b > pill.b + 0.5) fails.push('a label at ' + where(n) + ' is outside its pill ' + where(pill));
     }
@@ -126,12 +151,15 @@ const rule = (variant, results, emit) => {
   if (r.fails.length) return true;
   if (r.mode === 'next') emit('  ok   under the clock: Up next starts at y 382, shows one row and ends above y 457');
   else if (r.mode === 'menu') emit('  ok   under the clock: the open menu is inside the wall, right of the rail, text 16 px or more');
+  else if (r.mode === 'block') emit('  ok   under the clock: the left block of Watch never overlaps the two rows and keeps 8 px from them');
   else emit('  ok   under the clock: rows at y 272 and 330, pins 151 wide inside the wing, controls 40 to 48 px, text 16 px or more, labels inside their pills, present at rest, the office slot empty');
   return false;
 };
 
 const Q = '?hz=unwind&at=2026-11-11T10:24:00-08:00&long=1&agents=3&watch=mock&wlook=sky';
+const Q0 = '?hz=unwind&at=2026-11-11T10:24:00-08:00&long=1&agents=3&watch=mock';
 const V = {
+  blockSky: 'Under the clock, the left block, whole sky',
   rest: 'Under the clock, Watch at rest, three pins',
   long: 'Under the clock, Watch, long labels',
   none: 'Under the clock, Watch, nothing pinned',
@@ -140,7 +168,9 @@ const V = {
   menuLeft: 'Under the clock, the add menu from the second place',
   menuRight: 'Under the clock, the add menu from the third place',
 };
+const block = (look) => ({ name: look === 'sky' ? V.blockSky : `Under the clock, the left block, ${look}`, q: `${Q0}&wlook=${look}&wlist=three&wpins=three&wplay=0&wmeta=long&wrows=shown&uccheck=block`, checks: ['.w-now', '.u-quick'] });
 const variants = [
+  ...['feather', 'sky', 'sun', 'drivein', 'holo'].map(block),
   { name: V.rest, q: `${Q}&wlist=three&wpins=three&uccheck=rows`, checks: ['.u-quick', '.u-pins'] },
   { name: V.long, q: `${Q}&wlist=three&wpins=long&wrows=shown&uccheck=rows`, checks: ['.u-quick', '.u-pins'] },
   { name: V.none, q: `${Q}&wlist=three&wpins=none&uccheck=rows`, checks: ['.u-quick', '.u-pins'] },
@@ -163,6 +193,10 @@ export default {
       'underclock-rows': { css: '.u-quick { top: 300px !important; }', expect: /^ *FAIL under the clock: row one is at y \d+/m, appliesTo: on(V.rest) },
       'underclock-pin-width': { css: '.u-pin { width: 200px !important; }', expect: /^ *FAIL under the clock: a pin is [\d.]+ px wide/m, appliesTo: on(V.rest) },
       'underclock-control-height': { css: '.u-sleep { height: 30px !important; }', expect: /^ *FAIL under the clock: a control is [\d.]+ px tall/m, appliesTo: on(V.rest) },
+      'underclock-slider-height': { css: '.u-qvol input { height: 30px !important; }', expect: /^ *FAIL under the clock: a control is [\d.]+ px tall/m, appliesTo: on(V.rest) },
+      'underclock-value': { css: '.u-qval { width: 18px !important; }', expect: /^ *FAIL under the clock: the value "\d+" is \d+ px wide/m, appliesTo: on(V.rest) },
+      'underclock-word': { css: '.u-pin-word { max-width: none !important; }', expect: /^ *FAIL under the clock: the word "[^"]+" runs past its label/m, appliesTo: on(V.long) },
+      'underclock-block': { css: '.w-now { left: 300px !important; }', expect: /^ *FAIL under the clock: the left block at [\d,]+ overlaps the pins/m, appliesTo: on(V.blockSky) },
       'underclock-text': { css: '.u-pin-name { font-size: 13px !important; }', expect: /^ *FAIL under the clock: text under 16 px in the rows/m, appliesTo: on(V.rest) },
       'underclock-two-lines': { css: '.u-pin-name { -webkit-line-clamp: unset !important; display: block !important; }', expect: /^ *FAIL under the clock: a label is \d+ lines tall/m, appliesTo: on(V.long) },
       'underclock-rest': { css: '.u-quick[data-rest] { opacity: 0 !important; }', expect: /^ *FAIL under the clock: at rest the rows are at opacity/m, appliesTo: on(V.rest) },

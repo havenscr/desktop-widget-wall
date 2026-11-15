@@ -60,7 +60,7 @@ const THREE = [
 const LONG_THREE = [
   { kind: 'video', id: 'Ab3dEfGh1jK', label: 'Night drive mix for the long way home, the whole album with the extended intro and the bonus tracks' },
   { kind: 'live', id: 'Lofi_Live01', label: 'Lofi beats radio, live from the harbor studio all night long' },
-  { kind: 'twitch', id: 'pixel_harbor', label: 'pixel_harbor and the long channel name' },
+  { kind: 'twitch', id: 'pixel_harbor', label: 'pixel_harbor_and_the_long_channel_name_of_a_streamer' },
 ];
 const DEFAULTS = [
   { kind: 'video', id: 'Ab3dEfGh1jK', label: 'YouTube video' },

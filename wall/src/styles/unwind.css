@@ -3930,7 +3930,15 @@ button.sp-qrow:hover {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  overflow-wrap: anywhere;
+}
+/* Each word is its own box: a word too long for the pin is cut with an ellipsis on its line (the full label is in the tip). */
+.u-pin-word {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: top;
 }
 .u-pin-add {
   white-space: nowrap;
@@ -3967,8 +3975,13 @@ button.sp-qrow:hover {
 }
 .u-qvol {
   flex: none;
-  width: 205px;
+  width: 197px;
+  height: 40px;
   transition: opacity 150ms ease;
+}
+/* The grab area is 40 px tall; the drawn track and thumb stay as they are. */
+.u-qvol input {
+  height: 40px;
 }
 .u-qvol[data-dim] {
   opacity: 0.5;
@@ -3979,7 +3992,7 @@ button.sp-qrow:hover {
 }
 .u-qval {
   flex: none;
-  width: 28px;
+  width: 36px;
   text-align: right;
   font: 17px/1 var(--body);
   color: var(--dim);

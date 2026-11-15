@@ -3,6 +3,7 @@ import { IconPlus, IconVolume, IconVolumeOff, IconZzz } from '@tabler/icons-reac
 import { playerName, procName, sourceKey } from '../music/players';
 import { useNowPlaying } from '../music/useNowPlaying';
 import { quietFocus, tip } from '../ui/HoverTip';
+import { useVisible } from '../ui/useVisible';
 import { clampVolume, volumePercent } from './model';
 import { useAppVolume } from './Volume';
 import { kindName, refKey } from './watch/links';
@@ -31,7 +32,7 @@ const TWITCH_SOUND = 'Twitch keeps its own volume. Use the sound control on the 
 
 /**
  * Whether the rows are at rest (quiet) or shown. They start at rest. The pointer anywhere in the zone (the
- * column from the date line to the last row, not the foot) or keyboard focus inside the rows or an open pin
+ * column from the date line to the last row, not the foot) or keyboard focus inside the rows or on the two tabs, or an open pin
  * menu shows them; `ctlTiming.restMs` after the last of those leaves they go quiet again.
  */
 function useRest(zone: { current: HTMLDivElement | null }, held: boolean) {
@@ -47,11 +48,18 @@ function useRest(zone: { current: HTMLDivElement | null }, held: boolean) {
     const mouse = () => {
       keys.current = false;
     };
+    // Keyboard focus on the rows or on the Listen and Watch tabs (inside the zone) holds the rows shown.
+    const into = (e: FocusEvent) => setFocus(keys.current && e.target instanceof Element && e.target.closest('.u-tabs, .u-quick') !== null);
+    const away = () => setFocus(false);
     document.addEventListener('keydown', key, true);
     document.addEventListener('pointerdown', mouse, true);
+    document.addEventListener('focusin', into);
+    document.addEventListener('focusout', away);
     return () => {
       document.removeEventListener('keydown', key, true);
       document.removeEventListener('pointerdown', mouse, true);
+      document.removeEventListener('focusin', into);
+      document.removeEventListener('focusout', away);
     };
   }, []);
   useEffect(() => {
@@ -78,12 +86,17 @@ function useRest(zone: { current: HTMLDivElement | null }, held: boolean) {
     const id = setTimeout(() => setRest(true), ctlTiming.restMs);
     return () => clearTimeout(id);
   }, [shown]);
-  return { rest, focusIn: () => keys.current && setFocus(true), focusOut: () => setFocus(false) };
+  return rest;
 }
 
 interface MenuAt {
   index: number;
   byKeyboard: boolean;
+}
+
+/** A label as words, each its own box: a word too long for the pin is cut with an ellipsis on its line, never broken mid-word. */
+function words(label: string) {
+  return label.split(' ').flatMap((w, i) => (i === 0 ? [<span className="u-pin-word" key={i}>{w}</span>] : [' ', <span className="u-pin-word" key={i}>{w}</span>]));
 }
 
 function Pins({ onMenu }: { onMenu: (open: boolean) => void }) {
@@ -94,6 +107,8 @@ function Pins({ onMenu }: { onMenu: (open: boolean) => void }) {
   const [menu, setMenu] = useState<MenuAt | null>(null);
   const buttons = useRef<(HTMLButtonElement | null)[]>([]);
   const wasOpen = useRef<number | null>(null);
+  // True from an Enter or Space press on a pin to its click: that click opens the menu as a keyboard opening, not a mouse one.
+  const viaKey = useRef(false);
   useEffect(() => onMenu(menu !== null), [menu, onMenu]);
 
   const open = (index: number, byKeyboard: boolean) => setMenu({ index, byKeyboard });
@@ -112,6 +127,7 @@ function Pins({ onMenu }: { onMenu: (open: boolean) => void }) {
         const lit = !!item && !!playing && refKey(playing) === refKey(item);
         const press = () => {
           wasOpen.current = menu?.index ?? null;
+          viaKey.current = false;
         };
         return (
           <div className="u-pinslot" key={i}>
@@ -137,7 +153,8 @@ function Pins({ onMenu }: { onMenu: (open: boolean) => void }) {
               onPointerDown={press}
               onClick={() => {
                 if (!item) {
-                  if (wasOpen.current !== i) open(i, false);
+                  if (wasOpen.current !== i) open(i, viaKey.current);
+                  viaKey.current = false;
                   return;
                 }
                 // The pin that plays does nothing new: it never restarts.
@@ -148,6 +165,7 @@ function Pins({ onMenu }: { onMenu: (open: boolean) => void }) {
                 open(i, false);
               }}
               onKeyDown={(e: KeyboardEvent) => {
+                if (e.key === 'Enter' || e.key === ' ') viaKey.current = true;
                 if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) {
                   e.preventDefault();
                   open(i, true);
@@ -159,7 +177,7 @@ function Pins({ onMenu }: { onMenu: (open: boolean) => void }) {
                   <i className="u-pin-art" style={{ background: artBackground(refKey(item)) }}>
                     <PinGlyph kind={item.kind} />
                   </i>
-                  <span className="u-pin-name">{item.label}</span>
+                  <span className="u-pin-name">{words(item.label)}</span>
                 </>
               ) : (
                 <>
@@ -285,11 +303,14 @@ function SleepChip() {
   const endsAt = useSleep((s) => s.endsAt);
   const step = useSleep((s) => s.step);
   const [, tick] = useState(0);
+  const visible = useVisible();
+  // The words are read again every `CHIP_TICK_MS` while the timer runs and the page shows, and at once when it shows again.
   useEffect(() => {
-    if (endsAt === null) return;
+    if (endsAt === null || !visible) return;
+    tick((n) => n + 1);
     const id = setInterval(() => tick((n) => n + 1), CHIP_TICK_MS);
     return () => clearInterval(id);
-  }, [endsAt]);
+  }, [endsAt, visible]);
   const next = nextStep(step);
   const on = endsAt !== null;
   return (
@@ -300,7 +321,7 @@ function SleepChip() {
       {...tip(() => (
         <div className="sp-tipline">
           <b>{on ? `Stops at ${clock(endsAt)}. ${next === 0 ? 'Click to turn it off.' : `Click for ${next} min.`}` : 'Stop in 30 min. Click again for 60, then 90.'}</b>
-          <span>{on ? "Stops the wall's video and pauses the player shown on Listen" : "Stops the wall's video and pauses the player shown on Listen. It cannot stop an app the wall does not follow."}</span>
+          <span>{on ? "Stops the wall's video and pauses the player shown on Listen; an app Windows cannot name is left alone" : "Stops the wall's video and pauses the player shown on Listen; an app Windows cannot name is left alone. It cannot stop an app the wall does not follow."}</span>
         </div>
       ))}
       onClick={() => stepSleep()}
@@ -319,7 +340,7 @@ function SleepChip() {
 export function UnderClock() {
   const zone = useRef<HTMLDivElement | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
-  const { rest, focusIn, focusOut } = useRest(zone, menuOpen);
+  const rest = useRest(zone, menuOpen);
   return (
     <>
       {/* The pointer zone: the date line down to the last row. It only measures; it takes no pointer. */}
@@ -327,10 +348,6 @@ export function UnderClock() {
       <div
         className="u-quick"
         data-rest={rest ? 'true' : undefined}
-        onFocus={focusIn}
-        onBlur={(e) => {
-          if (!e.currentTarget.contains(e.relatedTarget as Node | null)) focusOut();
-        }}
       >
         <Pins onMenu={setMenuOpen} />
         <div className="u-qsound">

@@ -45,8 +45,9 @@ describe('reading the stored pins', () => {
     expect(parsePins(JSON.stringify([kA, kA, kB]))).toEqual([kA, null, kB]);
   });
 
-  it('reads at most three places', () => {
-    expect(parsePins(JSON.stringify([kA, kB, kT, kP]))).toEqual([kA, kB, kT]);
+  it('refuses an array of more than three, whole', () => {
+    expect(parsePins(JSON.stringify([kA, kB, kT, kP]))).toEqual([null, null, null]);
+    expect(parsePins(JSON.stringify([kA, kB, kT]))).toEqual([kA, kB, kT]);
   });
 
   it('does not read a value over 1000 characters', () => {

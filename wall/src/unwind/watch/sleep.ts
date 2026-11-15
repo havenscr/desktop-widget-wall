@@ -1,17 +1,16 @@
 import { create } from 'zustand';
+import { invoke } from '../../bridge/tauri';
 import { isPlaying, type NowPlayingInfo } from '../../music/model';
 import { isKnownPlayer, playerName, sourceKey } from '../../music/players';
-import { spotify } from '../../music/spotify';
-import { acquireNowPlaying, refreshNowPlaying, sendMediaCommand, useNowPlayingStore } from '../../music/store';
+import { spotify, type SpotifyPlayback } from '../../music/spotify';
+import { mediaTarget } from '../../music/store';
 import { spotifyReady, useSpotifyStatus } from '../spotify/status';
 import { useWatchStore } from './store';
 
 /** The steps one click moves through, in minutes: Off, 30, 60, 90, then Off again. */
 export const SLEEP_STEPS = [30, 60, 90] as const;
 const MINUTE = 60_000;
-/** What the player showed less than this long ago may be trusted for a play or pause toggle. */
-export const INFO_FRESH_MS = 10_000;
-/** The end waits this long at most for a fresh read of what the player shows. */
+/** Each native answer the end asks for is waited for this long at most. */
 export const READ_WAIT_MS = 3_000;
 
 interface SleepState {
@@ -89,68 +88,62 @@ export function startSleepAt(endsAt: number, step = 30): void {
   arm();
 }
 
-/** True when the now playing session is the wall's own video or an app the wall cannot tell from it (a toggle sent there could start another player). */
-function ownVideo(source: string | null): boolean {
-  return source !== null && (playerName(source)?.toLowerCase() === 'msedgewebview2' || !isKnownPlayer(source));
+/** True for a source the wall can name as an outside app: a known player, and not the web view the wall's own video plays in. */
+function outsideApp(source: string | null): boolean {
+  return source !== null && isKnownPlayer(source) && playerName(source)?.toLowerCase() !== 'msedgewebview2';
 }
 
-/**
- * One fresh read of what the player shows, whether or not Unwind is polling it now: the poll is held for the read
- * and a read is asked for. Gives up after `READ_WAIT_MS`; the freshness check below then refuses a stale answer.
- */
-function freshRead(): Promise<void> {
-  const since = Date.now();
-  const release = acquireNowPlaying();
+type Read<T> = { ok: true; value: T } | { ok: false };
+
+/** A native answer within `READ_WAIT_MS`, else "unknown": a failure and a silence read the same. Nothing cached stands in for it. */
+function limited<T>(call: Promise<T>): Promise<Read<T>> {
   return new Promise((resolve) => {
-    let t: ReturnType<typeof setTimeout> | undefined;
-    const done = () => {
-      unsub();
-      clearTimeout(t);
-      release();
-      resolve();
-    };
-    const unsub = useNowPlayingStore.subscribe((s) => {
-      if (s.at >= since) done();
-    });
-    t = setTimeout(done, READ_WAIT_MS);
-    void refreshNowPlaying().catch(() => {});
+    const t = setTimeout(() => resolve({ ok: false }), READ_WAIT_MS);
+    call.then(
+      (value) => {
+        clearTimeout(t);
+        resolve({ ok: true, value });
+      },
+      () => {
+        clearTimeout(t);
+        resolve({ ok: false });
+      },
+    );
   });
 }
 
 /**
- * What the timer's end does to the player the wall follows, decided from what was true BEFORE the wall's video was
- * stopped (`wallVideo`, and the player's answer read just before). When the wall's own video was on, stopping it is the
- * whole job: no media key is ever sent, because once the video is gone its session lingers in the player's answer and
- * a key sent then lands on whatever session Windows has current, which could start Spotify or another app. Spotify,
- * when signed in, gets its own pause (a real pause, never a toggle), and with the wall's video on only when it said
- * `playing`. With no wall video, another known player gets one play and pause key, only when its fresh answer says
- * `playing`. Anything else (paused, no information, a stale answer, an app the wall does not know): nothing, because
- * a toggle must never start music.
+ * The end of the timer, in this order. One observation is taken for this end: a one-shot `get_now_playing` that does
+ * not depend on the visible-only poll (it works while the page is hidden, the display being off), limited to three
+ * seconds; a failed or silent read is "unknown" and no answer cached before this attempt stands in for it.
+ *  1. Spotify, by its own state: when it is signed in and its own `playback` says playing, one `spotify.pause()`, whether
+ *     or not a wall video is on and whatever session the observation names. Paused or unreadable: nothing for Spotify.
+ *  2. The play and pause key, at most once, only when the observation succeeded and names a known outside app (not the
+ *     wall's own web view, not an unknown or missing source, not Spotify when it is signed in, since step 1 owns it)
+ *     that says `playing`; aimed at that session. A wall video being on does not forbid it. It is sent before the video
+ *     is stopped.
+ *  3. The wall's video is stopped with its reason, always, also when the read failed.
+ * Every failure is silent; the chip is already Off.
  */
-function pausePlayer(wallVideo: boolean, info: NowPlayingInfo | null, at: number): void {
-  const source = sourceKey(info);
-  const playingNow = !!info && isPlaying(info) && Date.now() - at <= INFO_FRESH_MS;
-  if (playerName(source) === 'Spotify' && spotifyReady(useSpotifyStatus.getState())) {
-    if (!wallVideo || playingNow) spotify.pause().catch(() => {});
-    return;
-  }
-  if (wallVideo || ownVideo(source) || !playingNow) return;
-  sendMediaCommand('media_play_pause');
-}
-
 async function finish(): Promise<void> {
   clearSleep();
   try {
-    // The player is read again first (the video still plays meanwhile), then the decision is taken from that
-    // answer and from whether the wall's video is on, and only then the video is stopped with its reason.
-    await freshRead();
-    const wallVideo = useWatchStore.getState().playing !== null;
-    const { info, at } = useNowPlayingStore.getState();
-    useWatchStore.getState().stop('sleep');
-    pausePlayer(wallVideo, info, at);
+    const ready = spotifyReady(useSpotifyStatus.getState());
+    const noRead: Read<SpotifyPlayback | null> = { ok: false };
+    const [seen, own] = await Promise.all([limited(invoke<NowPlayingInfo | null>('get_now_playing', { artFor: '' })), ready ? limited(spotify.playback()) : Promise.resolve(noRead)]);
+    const sends: Promise<unknown>[] = [];
+    if (ready && own.ok && own.value?.playing === true) sends.push(limited(spotify.pause()));
+    if (seen.ok && seen.value) {
+      const info = seen.value;
+      const source = sourceKey(info);
+      const spotifyOwned = ready && playerName(source) === 'Spotify';
+      if (outsideApp(source) && !spotifyOwned && isPlaying(info) && !info.ended) sends.push(limited(invoke('media_play_pause', mediaTarget(info))));
+    }
+    await Promise.all(sends);
   } catch {
     /* every failure is silent apart from the chip going back to Off */
   }
+  useWatchStore.getState().stop('sleep');
 }
 
 /** Development only: end the timer now, as its end does. */

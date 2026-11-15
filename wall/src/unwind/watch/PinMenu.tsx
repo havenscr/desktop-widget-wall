@@ -1,6 +1,7 @@
 import { IconArrowsExchange, IconDeviceTv, IconPinnedOff } from '@tabler/icons-react';
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { overlayOwnsPointer } from '../../ribbon/DrawerScrim';
+import { tip } from '../../ui/HoverTip';
 import { PinGlyph } from './PinGlyph';
 import { refKey } from './links';
 import type { SavedItem } from './saved';
@@ -154,7 +155,7 @@ export function PinMenu({ items, listHasItems, pinned, name, onPick, onRemove, o
           ) : (
             <div className="u-pin-menu-list">
               {items.map((item) => (
-                <button key={refKey(item)} type="button" role="menuitem" title={item.label} onClick={choose(() => onPick(refKey(item)))}>
+                <button key={refKey(item)} type="button" role="menuitem" {...tip(item.label)} onClick={choose(() => onPick(refKey(item)))}>
                   <PinGlyph kind={item.kind} size={20} />
                   <span>{item.label}</span>
                 </button>

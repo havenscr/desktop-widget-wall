@@ -24,8 +24,8 @@ function validKey(v: unknown): v is string {
 }
 
 /**
- * The pins from their stored text, checked whole on every read: an array (only its first three
- * entries count), each entry null or a key of a known kind with a valid id, no key twice (the
+ * The pins from their stored text, checked whole on every read: an array (one of more than three is
+ * refused whole), each entry null or a key of a known kind with a valid id, no key twice (the
  * second one becomes an empty place). Anything else is an empty place; a stored value over
  * 1000 characters, or one that is not an array, is not read at all.
  */
@@ -40,7 +40,8 @@ export function parsePins(raw: string | null): PinPlace[] {
   }
   if (!Array.isArray(v)) return out;
   const seen = new Set<string>();
-  for (let i = 0; i < PIN_PLACES && i < v.length; i++) {
+  if (v.length > PIN_PLACES) return out;
+  for (let i = 0; i < v.length; i++) {
     const k = v[i];
     if (!validKey(k) || seen.has(k)) continue;
     seen.add(k);

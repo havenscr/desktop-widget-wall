@@ -81,6 +81,7 @@ beforeEach(() => {
   mocks.set('set_audio_session_volume', (a) => void sets.push(a));
   underClock.hold = false;
   ctlTiming.restMs = CTL_REST_MS;
+  Object.defineProperty(document, 'hidden', { value: false, configurable: true });
 });
 afterEach(() => {
   resetTip();
@@ -224,6 +225,59 @@ describe('the pin menu', () => {
   });
 });
 
+describe('the pin menu opened by the keyboard', () => {
+  it('opened by Enter then a click stays open past the close delay with no key', async () => {
+    seed();
+    await show();
+    act(() => pins()[0]!.focus());
+    fireEvent.keyDown(pins()[0]!, { key: 'Enter' });
+    await act(async () => pins()[0]!.click());
+    expect(menu()).not.toBeNull();
+    await flush(PIN_MENU_CLOSE_MS * 2);
+    expect(menu()).not.toBeNull();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(menu()).toBeNull();
+  });
+
+  it('opened by Space the same way stays open', async () => {
+    seed();
+    await show();
+    act(() => pins()[1]!.focus());
+    fireEvent.keyDown(pins()[1]!, { key: ' ' });
+    fireEvent.keyUp(pins()[1]!, { key: ' ' });
+    await act(async () => pins()[1]!.click());
+    expect(menu()).not.toBeNull();
+    await flush(PIN_MENU_CLOSE_MS * 2);
+    expect(menu()).not.toBeNull();
+  });
+
+  it('opened by the mouse still closes after the delay with the pointer away', async () => {
+    seed();
+    await show();
+    fireEvent.pointerDown(pins()[2]!);
+    await act(async () => pins()[2]!.click());
+    await flush(PIN_MENU_CLOSE_MS + 10);
+    expect(menu()).toBeNull();
+  });
+
+  it('shows a long label whole in a tip on hover and on keyboard focus, not in a title attribute', async () => {
+    const long = 'Night drive mix for the long way home, the whole album';
+    seed({ saved: [{ kind: 'video', id: 'Ab3dEfGh1jK', label: long }, ...ITEMS.slice(1)] });
+    await show();
+    await act(async () => pins()[0]!.click());
+    const row = within(menu()!).getAllByRole('menuitem')[0]!;
+    expect(row.hasAttribute('title')).toBe(false);
+    const before = screen.getAllByText(long).length;
+    await hover(row);
+    expect(screen.getAllByText(long).length).toBe(before + 1);
+    resetTip();
+    act(() => row.blur());
+    await act(async () => void row.focus());
+    await flush(10);
+    expect(screen.getAllByText(long).length).toBe(before + 1);
+  });
+});
+
 describe('rest and shown', () => {
   const zoneRect = (r: DOMRect) => {
     const zone = document.querySelector('.u-zone') as HTMLElement;
@@ -258,6 +312,20 @@ describe('rest and shown', () => {
     await act(async () => pins()[0]!.click());
     await flush(CTL_REST_MS * 1);
     expect(quick().hasAttribute('data-rest')).toBe(false);
+  });
+
+  it('is held shown by keyboard focus on the Listen and Watch tabs, not by a click on one', async () => {
+    seed();
+    await show();
+    fireEvent.keyDown(document, { key: 'Tab' });
+    act(() => (document.querySelector('.u-tab') as HTMLElement).focus());
+    expect(quick().hasAttribute('data-rest')).toBe(false);
+    act(() => (document.querySelector('.u-tab') as HTMLElement).blur());
+    await flush(CTL_REST_MS + 10);
+    expect(quick().hasAttribute('data-rest')).toBe(true);
+    fireEvent.pointerDown(document.querySelector('.u-tab')!);
+    act(() => (document.querySelector('.u-tab') as HTMLElement).focus());
+    expect(quick().hasAttribute('data-rest')).toBe(true);
   });
 
   it('keeps the lit pin cyan at rest in the stylesheet, and has no transition under reduced motion', () => {
@@ -435,7 +503,26 @@ describe('the sleep chip', () => {
     act(() => stepSleep());
     await hover(chip());
     expect(screen.getByText(/^Stops at \d{1,2}:\d{2} (AM|PM)\. Click for 60 min\.$/)).toBeTruthy();
-    expect(screen.getByText("Stops the wall's video and pauses the player shown on Listen")).toBeTruthy();
+    expect(screen.getByText("Stops the wall's video and pauses the player shown on Listen; an app Windows cannot name is left alone")).toBeTruthy();
+  });
+
+  it('does not tick its words while the page is hidden, and reads them at once when it shows', async () => {
+    seed();
+    await show();
+    act(() => stepSleep());
+    expect(chip().textContent).toBe('Stops in 30 min');
+    // Visible: the words follow the clock every ten seconds.
+    vi.setSystemTime(Date.now() + 2 * 60_000);
+    await flush(10_000);
+    expect(chip().textContent).toBe('Stops in 28 min');
+    Object.defineProperty(document, 'hidden', { value: true, configurable: true });
+    act(() => void document.dispatchEvent(new Event('visibilitychange')));
+    vi.setSystemTime(Date.now() + 10 * 60_000);
+    await flush(60_000);
+    expect(chip().textContent).toBe('Stops in 28 min');
+    Object.defineProperty(document, 'hidden', { value: false, configurable: true });
+    act(() => void document.dispatchEvent(new Event('visibilitychange')));
+    expect(chip().textContent).toBe('Stops in 17 min');
   });
 
   it('ends a playing video with its line', async () => {
@@ -444,6 +531,7 @@ describe('the sleep chip', () => {
     await show();
     await act(async () => chip().click());
     await flush(30 * 60_000 + 50);
+    await flush(10);
     expect(useWatchStore.getState().playing).toBeNull();
     expect(screen.getByText(/Stopped by the sleep timer\./)).toBeTruthy();
     expect(chip().textContent).toBe('Stop in 30 min');
@@ -468,6 +556,8 @@ describe('the keyboard order and sizes', () => {
     expect(rule('.u-snd')).toContain('width: 40px');
     expect(rule('.u-sleep')).toContain('height: 40px');
     expect(rule('.u-sleep')).toContain('width: 173px');
+    expect(rule('.u-qvol input')).toContain('height: 40px');
+    expect(rule('.u-qval')).toContain('width: 36px');
     expect(rule('.u-next')).toContain('top: 362px');
   });
 });

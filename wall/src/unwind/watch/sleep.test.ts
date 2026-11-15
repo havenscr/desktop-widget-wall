@@ -2,20 +2,35 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mocks } from '../../bridge/tauri';
 import { resetNowPlaying, useNowPlayingStore } from '../../music/store';
 import { resetSpotifyStatus, useSpotifyStatus } from '../spotify/status';
-import { minutesLeft, READ_WAIT_MS, nextStep, resetSleep, sleepWords, startSleepAt, stepSleep, useSleep } from './sleep';
+import { minutesLeft, nextStep, READ_WAIT_MS, resetSleep, sleepWords, startSleepAt, stepSleep, useSleep } from './sleep';
 import { resetWatch, useWatchStore } from './store';
 
 vi.setConfig({ testTimeout: 20_000 });
 
 const MIN = 60_000;
 const calls: string[] = [];
-// What the player shows when the end asks for a fresh read (null: nothing; 'hang': the read never answers).
-let shows: Record<string, unknown> | null | 'hang' = null;
-const playing = (source: string, status = 'playing') => {
-  shows = { title: 'Song', artist: 'Band', playback_status: status, source_app: source };
+// What the one-shot read answers at the end (null: nothing; 'hang': never answers; 'fail': rejects).
+let shows: Record<string, unknown> | null | 'hang' | 'fail' = null;
+// What Spotify's own state answers (null: no playback; 'fail': rejects).
+let own: { playing: boolean } | null | 'fail' = null;
+let reads = 0;
+let unsubscribe: () => void = () => {};
+const playing = (source: string | null, status = 'playing') => {
+  shows = { title: 'Song', artist: 'Band', playback_status: status, ...(source ? { source_app: source } : {}) };
 };
+const spotifyReady = () => useSpotifyStatus.setState({ status: { setup: true, signedIn: true, reason: null }, failed: false });
 const flush = async (ms = 0) => {
   await vi.advanceTimersByTimeAsync(ms);
+};
+const playOwn = () => {
+  useWatchStore.setState({ saved: [{ kind: 'video', id: 'Ab3dEfGh1jK', label: 'Night drive mix' }] });
+  useWatchStore.getState().play({ kind: 'video', id: 'Ab3dEfGh1jK' });
+};
+/** Runs a whole timer to its end. */
+const end = async () => {
+  stepSleep();
+  await flush(30 * MIN + 10);
+  await flush(10);
 };
 
 beforeEach(() => {
@@ -24,16 +39,31 @@ beforeEach(() => {
   localStorage.clear();
   calls.length = 0;
   shows = null;
-  mocks.set('get_now_playing', () => (shows === 'hang' ? new Promise(() => {}) : shows));
+  own = null;
+  reads = 0;
   resetWatch();
   resetSleep();
   resetNowPlaying();
   resetSpotifyStatus();
+  unsubscribe = useWatchStore.subscribe((s, p) => {
+    if (p.playing && !s.playing) calls.push('stop');
+  });
+  mocks.set('get_now_playing', () => {
+    reads++;
+    if (shows === 'hang') return new Promise(() => {});
+    if (shows === 'fail') throw new Error('down');
+    return shows;
+  });
+  mocks.set('wall2_spotify_playback', () => {
+    if (own === 'fail') throw new Error('down');
+    return own;
+  });
   mocks.set('wall2_spotify_pause', () => void calls.push('spotify.pause'));
-  mocks.set('media_play_pause', () => void calls.push('media_play_pause'));
+  mocks.set('media_play_pause', () => void calls.push('key'));
   Object.defineProperty(document, 'hidden', { value: false, configurable: true });
 });
 afterEach(() => {
+  unsubscribe();
   resetSleep();
   vi.useRealTimers();
   mocks.clear();
@@ -67,14 +97,32 @@ describe('the steps and the words', () => {
     expect(sleepWords(now + 1_000, now)).toBe('Stops in 1 min');
     expect(minutesLeft(null)).toBe(0);
   });
+
+  it('has no timer at all while Off, and never fires twice', async () => {
+    expect(vi.getTimerCount()).toBe(0);
+    stepSleep();
+    expect(vi.getTimerCount()).toBe(1);
+    stepSleep();
+    stepSleep();
+    stepSleep();
+    expect(useSleep.getState().endsAt).toBeNull();
+    expect(vi.getTimerCount()).toBe(0);
+    // The timer and a page that shows again at the same moment: one end.
+    playOwn();
+    playing('Edge');
+    startSleepAt(Date.now() + 5_000);
+    vi.setSystemTime(Date.now() + 6_000);
+    document.dispatchEvent(new Event('visibilitychange'));
+    document.dispatchEvent(new Event('visibilitychange'));
+    await flush(10_000);
+    await flush(10);
+    expect(reads).toBe(1);
+    expect(calls).toEqual(['key', 'stop']);
+    expect(vi.getTimerCount()).toBe(0);
+  });
 });
 
-describe('the end', () => {
-  const playOwn = () => {
-    useWatchStore.setState({ saved: [{ kind: 'video', id: 'Ab3dEfGh1jK', label: 'Night drive mix' }] });
-    useWatchStore.getState().play({ kind: 'video', id: 'Ab3dEfGh1jK' });
-  };
-
+describe('the end of the timer', () => {
   it('stops the wall video with the sleep reason when the time comes, and not before', async () => {
     playOwn();
     stepSleep();
@@ -82,46 +130,79 @@ describe('the end', () => {
     expect(useWatchStore.getState().playing).not.toBeNull();
     expect(useSleep.getState().endsAt).not.toBeNull();
     await flush(10);
+    await flush(10);
     expect(useWatchStore.getState().playing).toBeNull();
     expect(useWatchStore.getState().stopped).toBe('Stopped by the sleep timer.');
     expect(useSleep.getState().endsAt).toBeNull();
   });
 
-  it('pauses Spotify once with its own pause when it is signed in', async () => {
-    useSpotifyStatus.setState({ status: { setup: true, signedIn: true, reason: null }, failed: false });
-    playing('Spotify');
+  it('a read that fails never lets an answer cached five seconds ago send the key; the video still stops', async () => {
+    playOwn();
+    useNowPlayingStore.setState({ info: { title: 'Song', artist: 'Band', playback_status: 'playing', source_app: 'Edge' } as never, at: Date.now() - 5_000 });
+    shows = 'fail';
+    await end();
+    expect(calls).toEqual(['stop']);
+    expect(useWatchStore.getState().stopped).toBe('Stopped by the sleep timer.');
+  });
+
+  it('a read that never answers is unknown after three seconds, not a cached answer', async () => {
+    playOwn();
+    useNowPlayingStore.setState({ info: { title: 'Song', artist: 'Band', playback_status: 'playing', source_app: 'Edge' } as never, at: Date.now() });
+    shows = 'hang';
     stepSleep();
     await flush(30 * MIN + 10);
-    await flush(10);
+    expect(useWatchStore.getState().playing).not.toBeNull();
+    await flush(READ_WAIT_MS + 10);
+    expect(calls).toEqual(['stop']);
+  });
+
+  it('a failed read gives Spotify only what its own state says: playing is paused once', async () => {
+    spotifyReady();
+    own = { playing: true };
+    shows = 'fail';
+    await end();
     expect(calls).toEqual(['spotify.pause']);
   });
 
-  it('sends one play and pause key to another app that is playing', async () => {
-    playing('Edge');
-    stepSleep();
-    await flush(30 * MIN + 10);
-    expect(calls).toEqual(['media_play_pause']);
+  it('a playing answer with no source sends no key', async () => {
+    playing(null);
+    await end();
+    expect(calls).toEqual([]);
   });
 
-  it('sends Spotify no toggle when it is not signed in and says paused', async () => {
+  it('no wall video, Spotify ready and its own state paused: nothing, even when the session says playing', async () => {
+    spotifyReady();
+    own = { playing: false };
+    playing('Spotify');
+    await end();
+    expect(calls).toEqual([]);
+  });
+
+  it('no wall video, Spotify ready and its own state playing: one pause, no key', async () => {
+    spotifyReady();
+    own = { playing: true };
+    playing('Spotify');
+    await end();
+    expect(calls).toEqual(['spotify.pause']);
+  });
+
+  it('no wall video, Spotify ready but its own state cannot be read: nothing for Spotify', async () => {
+    spotifyReady();
+    own = 'fail';
+    playing('Spotify');
+    await end();
+    expect(calls).toEqual([]);
+  });
+
+  it('no wall video, Spotify not signed in and playing in the session: one key', async () => {
     useSpotifyStatus.setState({ status: { setup: true, signedIn: false, reason: null }, failed: false });
-    playing('Spotify', 'paused');
-    stepSleep();
-    await flush(30 * MIN + 10);
-    expect(calls).toEqual([]);
+    playing('Spotify');
+    await end();
+    expect(calls).toEqual(['key']);
   });
 
-  it('sends no command when the player is paused, when there is no information, or when the answer is stale', async () => {
-    playing('Edge', 'paused');
-    stepSleep();
-    await flush(30 * MIN + 10);
-    expect(calls).toEqual([]);
-    shows = null;
-    stepSleep();
-    await flush(30 * MIN + 10);
-    expect(calls).toEqual([]);
-    // A read that never answers leaves only the old answer, which is too old to trust for a toggle.
-    useNowPlayingStore.setState({ info: { title: 'Song', artist: 'Band', playback_status: 'playing', source_app: 'Edge' } as never, at: Date.now() });
+  it('no wall video and a stale read (never answers): nothing', async () => {
+    useNowPlayingStore.setState({ info: { title: 'Song', artist: 'Band', playback_status: 'playing', source_app: 'Edge' } as never, at: Date.now() - 1_000 });
     shows = 'hang';
     stepSleep();
     await flush(30 * MIN + 10);
@@ -129,74 +210,67 @@ describe('the end', () => {
     expect(calls).toEqual([]);
   });
 
-  it('never sends a toggle to the wall own video or an app it does not know', async () => {
-    playing('msedgewebview2.exe');
-    stepSleep();
-    await flush(30 * MIN + 10);
-    playing('Some Unknown Player 7');
-    stepSleep();
-    await flush(30 * MIN + 10);
-    expect(calls).toEqual([]);
-  });
-
-  it('wall video playing and nothing else: stopping it is the whole job, no command', async () => {
+  it('wall video and background Spotify playing by its own state while the session names the web view: one pause, no key', async () => {
+    spotifyReady();
+    own = { playing: true };
     playOwn();
     playing('msedgewebview2.exe');
-    stepSleep();
-    await flush(30 * MIN + 10);
-    expect(useWatchStore.getState().playing).toBeNull();
-    expect(calls).toEqual([]);
+    await end();
+    expect(calls).toEqual(['spotify.pause', 'stop']);
   });
 
-  it('wall video playing while Spotify is paused in the background: no command, Spotify stays paused', async () => {
-    useSpotifyStatus.setState({ status: { setup: true, signedIn: true, reason: null }, failed: false });
+  it('wall video and Spotify paused by its own state: nothing is sent to Spotify', async () => {
+    spotifyReady();
+    own = { playing: false };
     playOwn();
     playing('Spotify', 'paused');
-    stepSleep();
-    await flush(30 * MIN + 10);
-    expect(useWatchStore.getState().playing).toBeNull();
-    expect(calls).toEqual([]);
+    await end();
+    expect(calls).toEqual(['stop']);
   });
 
-  it('wall video playing while another app is playing: no media key (it could land on the wrong session)', async () => {
+  it('wall video and a followed outside app playing: one key, sent before the stop', async () => {
     playOwn();
     playing('Edge');
+    let release: () => void = () => {};
+    mocks.set('media_play_pause', () => {
+      calls.push('key');
+      return new Promise<void>((r) => {
+        release = r;
+      });
+    });
     stepSleep();
     await flush(30 * MIN + 10);
-    expect(useWatchStore.getState().playing).toBeNull();
-    expect(calls).toEqual([]);
+    expect(calls).toEqual(['key']);
+    expect(useWatchStore.getState().playing).not.toBeNull();
+    release();
+    await flush(10);
+    expect(calls).toEqual(['key', 'stop']);
   });
 
-  it('wall video playing while Spotify plays too: Spotify gets its own pause, never a key', async () => {
-    useSpotifyStatus.setState({ status: { setup: true, signedIn: true, reason: null }, failed: false });
+  it('wall video and the followed session is the wall own (web view, or an id no one knows): no key', async () => {
     playOwn();
-    playing('Spotify');
-    stepSleep();
-    await flush(30 * MIN + 10);
-    expect(calls).toEqual(['spotify.pause']);
-  });
-
-  it('another app playing and no wall video: one command', async () => {
-    playing('Edge');
-    stepSleep();
-    await flush(30 * MIN + 10);
-    expect(calls).toEqual(['media_play_pause']);
-  });
-
-  it('stale playing information for the wall own session after the stop: no command', async () => {
-    playOwn();
-    // The player still reports the web view as playing before and after the stop.
     playing('msedgewebview2.exe');
-    stepSleep();
-    await flush(30 * MIN + 10);
-    await flush(READ_WAIT_MS + 10);
-    expect(useWatchStore.getState().stopped).toBe('Stopped by the sleep timer.');
-    expect(calls).toEqual([]);
-    // An unknown id for the same session (the web view id changes by build) is no different.
+    await end();
+    expect(calls).toEqual(['stop']);
+    calls.length = 0;
     playOwn();
     playing('0a1b2c3d4e5f6a7b!App');
-    stepSleep();
-    await flush(30 * MIN + 10);
+    await end();
+    expect(calls).toEqual(['stop']);
+  });
+
+  it('the page hidden at the end with an outside app playing: one key', async () => {
+    Object.defineProperty(document, 'hidden', { value: true, configurable: true });
+    playing('Edge');
+    await end();
+    expect(calls).toEqual(['key']);
+  });
+
+  it('nothing playing, or a paused app, or no information: nothing', async () => {
+    shows = null;
+    await end();
+    playing('Edge', 'paused');
+    await end();
     expect(calls).toEqual([]);
   });
 
@@ -206,6 +280,7 @@ describe('the end', () => {
     vi.setSystemTime(Date.now() + 90 * MIN);
     document.dispatchEvent(new Event('visibilitychange'));
     await flush(0);
+    await flush(0);
     expect(useWatchStore.getState().playing).toBeNull();
     expect(useWatchStore.getState().stopped).toBe('Stopped by the sleep timer.');
   });
@@ -214,10 +289,11 @@ describe('the end', () => {
     mocks.set('wall2_spotify_pause', () => {
       throw new Error('down');
     });
-    useSpotifyStatus.setState({ status: { setup: true, signedIn: true, reason: null }, failed: false });
-    playing('Spotify');
-    stepSleep();
-    await flush(30 * MIN + 10);
+    spotifyReady();
+    own = { playing: true };
+    playOwn();
+    await end();
     expect(useSleep.getState().endsAt).toBeNull();
+    expect(useWatchStore.getState().playing).toBeNull();
   });
 });
