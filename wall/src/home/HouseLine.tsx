@@ -46,10 +46,10 @@ export function houseView(house: FeedState<House>, rooms: FeedState<DeskRooms>):
 export const ROOMS_ROW_PX = 424;
 const DOT_PX = 17; // the dot and its gap to the name
 const ROOM_GAP_PX = 18;
-const NAME_CHAR_PX = 9.4;
+const NAME_CHAR_PX = 9.2;
 const MORE_PX = 74;
 /** Room kept at the right end of the dots row for "as of 9:41 AM" (17 px type) and a gap. */
-export const ASOF_PX = 150;
+export const ASOF_PX = 128;
 
 type RoomDot = { id: string; name: string; on: boolean };
 
