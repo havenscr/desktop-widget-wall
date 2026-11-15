@@ -675,7 +675,7 @@ const EXPECT = [
   ['unwind', 'broken: calendar read fails', '!First thing'],
   ['unwind', 'broken: task app down', 'First thing: Planning check-in at 9:30'],
   ['unwind', 'broken: weather down', ['Wednesday morning', '!58°']],
-  ['unwind', 'typical', ['Tokyo Burnout', 'Play on', '!Lights']],
+  ['unwind', 'typical', ['Tokyo Burnout', '!Which player the wall follows', '!Lights']],
   ['unwind', 'network alarm', '4 network alerts.'],
   ['unwind', 'watch: nothing saved', ['Nothing on', 'Paste a YouTube or Twitch link', '!saved']],
   ['unwind', 'watch: three saved, nothing on', ['Nothing on', 'Play Night drive mix', '3 saved']],
@@ -823,7 +823,7 @@ const EXPECT = [
   ['zen', 'recording: none on zen', ['Breathe in', '!Recording00']],
   ['unwind', 'unwind: hide screen note', ['Could not watch input', 'Hide screen']],
   // unwind listen
-  ['unwind', 'listen: playing', ['Tokyo Burnout', 'Up next', 'Lantern Song 2', 'Road Trip 1', 'Play on', '!Which player the wall follows']],
+  ['unwind', 'listen: playing', ['Tokyo Burnout', 'Up next', 'Lantern Song 2', 'Road Trip 1', '!Which player the wall follows']],
   ['unwind', 'listen: nothing playing', ['Nothing playing', 'Road Trip 1']],
   ['unwind', 'listen: youtube music', ['Open YouTube Music', 'Browsing happens in its own window', '!Up next']],
   ['unwind', 'listen: songs of a playlist', ['Shuffle', 'Lantern Song 9', '58 songs', 'Playlist']],

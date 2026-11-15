@@ -93,8 +93,8 @@ export default {
   name: 'music-card',
   gallery: {
     states: [
-    state('tall music: button under the pointer', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo', ['Play on', 'Road Trip 1'], 'hover:.sp-grow'),
-    state('tall music: open on Playlists', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo', ['Play on', 'Up next', 'Road Trip 8'], '.sp-grow'),
+    state('tall music: button under the pointer', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo', ['!Which player the wall follows', 'Road Trip 1'], 'hover:.sp-grow'),
+    state('tall music: open on Playlists', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo', ['!Which player the wall follows', 'Up next', 'Road Trip 8'], '.sp-grow'),
     state('tall music: a playlist opened', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo', ['Lantern Song 9', 'Shuffle', '58 songs', 'Playlists'], '.sp-grow >> .sp-tile'),
     state('tall music: search in groups', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo', ['Songs', 'Albums', 'Playlists', 'Track 1', 'Album 1', 'Playlist 1'], '.sp-grow >> type:.sp-search input=road'),
     state('tall music: Up next', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo', ['Playing now', 'Spotify sets the order. A click skips ahead to that song.', 'Lantern Song 2'], '.sp-grow >> .sp-tabs button:nth-child(5)'),
@@ -106,7 +106,7 @@ export default {
     state('tall music: YouTube Music', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo', ['Open YouTube Music', '!Search Spotify'], '.sp-switch button:nth-child(2) >> .sp-grow'),
     state('tall music: long names', 'hz=unwind&at=2026-11-11T10%3A24%3A00-08%3A00&clock=review&weather=ok&long=1&media=long&spotify=long', ['Road Trip 1, an extremely long name', 'Up next'], '.sp-grow'),
     state('tall music: long names, a playlist opened', 'hz=unwind&at=2026-11-11T10%3A24%3A00-08%3A00&clock=review&weather=ok&long=1&media=long&spotify=long', ['240 songs', 'Lantern Song 9, an extremely long name'], '.sp-grow >> .sp-tile'),
-    state('tall music pictures: open on Playlists', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo&spotify=picture', ['Road Trip 10', 'Play on'], '.sp-grow'),
+    state('tall music pictures: open on Playlists', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo&spotify=picture', ['Road Trip 10', '!Which player the wall follows'], '.sp-grow'),
     state('tall music pictures: a playlist opened', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo&spotify=picture', ['Lantern Song 9', 'Shuffle', 'Playlists'], '.sp-grow >> .sp-tile'),
     state('tall music pictures: search in groups', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo&spotify=picture', ['Track 6', 'Album 3', 'Playlist 3', '3:00'], '.sp-grow >> type:.sp-search input=night'),
     state('tall music pictures: Up next', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo&spotify=picture', ['Playing now', 'Lantern Song 2'], '.sp-grow >> .sp-tabs button:nth-child(5)'),
