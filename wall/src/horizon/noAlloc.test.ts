@@ -4,6 +4,8 @@ import spectrumSrc from '../audio/spectrum.ts?raw';
 import rendererSrc from './renderer.ts?raw';
 import reflectionSrc from './reflection.ts?raw';
 import lineTypesSrc from './lineTypes.ts?raw';
+import weatherFxSrc from './weatherFx.ts?raw';
+import weatherLayerSrc from './weatherLayer.ts?raw';
 
 /**
  * A source guard for the per-frame paths this branch added: their bodies may not create arrays,
@@ -22,8 +24,14 @@ function bodyOf(src: string, name: string): string {
   throw new Error(`unclosed ${name}`);
 }
 
-/** What a body may not contain; `allowGradient` lets `createLinearGradient` stand when the line above is the cache test. */
-export function allocations(body: string, allowGradient = false): string[] {
+/** The one gradient the wind lines may make: a line's own, made after it is known to be on screen (at most five a frame). */
+export const GUST_GRADIENT = /if \(xh < o\.view\.x - 20 \|\| xh - len > o\.view\.x \+ o\.view\.w \+ 20\) continue;[\s\S]*const g = ctx\.createLinearGradient\(xh - len, 0, xh, 0\);/;
+
+/**
+ * What a body may not contain; `allowGradient` lets `createLinearGradient` stand when the line above is the cache test
+ * (or, given a pattern, when the body matches it).
+ */
+export function allocations(body: string, allowGradient: boolean | RegExp = false): string[] {
   const code = body.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
   const bad: string[] = [];
   const rules: [string, RegExp][] = [
@@ -39,12 +47,13 @@ export function allocations(body: string, allowGradient = false): string[] {
   ];
   for (const [label, re] of rules) if (re.test(code)) bad.push(label);
   const grads = (code.match(/create(Linear|Radial)Gradient/g) ?? []).length;
-  if (grads > 0 && !(allowGradient && grads === 1 && /if \(!r\.fade \|\| r\.fadeH !== h\) \{\s*const g = x\.createLinearGradient/.test(code))) bad.push('gradient');
+  const cacheBranch = allowGradient instanceof RegExp ? allowGradient : /if \(!r\.fade \|\| r\.fadeH !== h\) \{\s*const g = x\.createLinearGradient/;
+  if (grads > 0 && !(allowGradient && grads === 1 && cacheBranch.test(code))) bad.push('gradient');
   return bad;
 }
 
 describe('the frame path allocates nothing', () => {
-  const paths: [string, string, string, boolean][] = [
+  const paths: [string, string, string, boolean | RegExp][] = [
     ['stepDance', danceSrc, 'stepDance', false],
     ['sampleDance', spectrumSrc, 'sampleDance', false],
     ['echoEdge', rendererSrc, 'echoEdge', false],
@@ -58,6 +67,13 @@ describe('the frame path allocates nothing', () => {
     ['drawSparks', lineTypesSrc, 'drawSparks', false],
     ['drawSkyline', lineTypesSrc, 'drawSkyline', false],
     ['drawRestLine', lineTypesSrc, 'drawRestLine', false],
+    ['streaks', weatherFxSrc, 'streaks', false],
+    ['rings', weatherFxSrc, 'rings', false],
+    ['mist', weatherFxSrc, 'mist', false],
+    ['drift', weatherFxSrc, 'drift', false],
+    ['gusts', weatherFxSrc, 'gusts', GUST_GRADIENT],
+    ['drawWeatherBack', weatherLayerSrc, 'drawWeatherBack', false],
+    ['drawWeatherMid', weatherLayerSrc, 'drawWeatherMid', false],
   ];
   for (const [label, src, name, grad] of paths) {
     it(`${label} has no array, object, closure or typed array in its body`, () => {
@@ -74,6 +90,10 @@ describe('the frame path allocates nothing', () => {
     }
     const body = bodyOf(reflectionSrc, 'drawReflection');
     expect(allocations(`const g = x.createLinearGradient(0, 0, 0, h);\n${body}`, true)).toContain('gradient');
+    // The wind lines may make their one gradient each; a second one, or one in a colour template, is found.
+    const gust = bodyOf(weatherFxSrc, 'gusts');
+    expect(allocations(`const h = ctx.createLinearGradient(0, 0, 1, 1);\n${gust}`, GUST_GRADIENT)).toContain('gradient');
+    expect(allocations(gust.replace("'rgb(205,215,255)'", '`rgba(205,215,255,${o.alpha})`'), GUST_GRADIENT)).toContain('string template');
   });
 });
 
